@@ -22,10 +22,15 @@ Sicherheit:
   den die SessionTenantMiddleware setzt.
 """
 
+import logging
 import threading
+import time
 from contextlib import contextmanager
+from typing import Any
 
 from apps.common import audit_core
+
+logger = logging.getLogger(__name__)
 
 # Öffentliche API (unverändert) — delegiert an den gemeinsamen Baustein
 set_current_request = audit_core.set_current_request
@@ -102,8 +107,11 @@ def tenant_pre_delete(sender, instance, **kwargs):
 
 
 def tenant_post_delete(sender, instance, **kwargs):
-    """post_delete(SessionTenant): Kaskadenlöschung abgeschlossen."""
+    """post_delete(SessionTenant): Kaskadenlöschung abgeschlossen, Kettenkopf entfernen (Issue #221)."""
+    from apps.common import audit_chain
+
     unmark_tenant_deleting(instance.pk)
+    audit_chain.drop_head(audit_chain.SESSION, instance.pk)
 
 
 def resolve_tenant(instance):
@@ -123,7 +131,17 @@ def resolve_tenant(instance):
     return None
 
 
-def log_event(action, instance, *, tenant=None, user=None, changes=None, request=None, on_behalf_of=None):
+def log_event(
+    action: str,
+    instance: Any,
+    *,
+    tenant: Any = None,
+    user: Any = None,
+    changes: Any = None,
+    request: Any = None,
+    on_behalf_of: Any = None,
+    object_repr: str | None = None,
+) -> Any:
     """
     Audit-Eintrag schreiben.
 
@@ -135,6 +153,7 @@ def log_event(action, instance, *, tenant=None, user=None, changes=None, request
         changes: Optionaler Änderungs-Diff (dict)
         request: Optionaler Request (sonst Thread-Local)
         on_behalf_of: Vertretene Person (sonst aus :func:`in_vertretung`), Issue #222
+        object_repr: Objekt-Beschreibung statt ``str(instance)`` (Lesezugriffe: nur Referenz, Issue #221)
     """
     from apps.session.models import SessionAuditLog
 
@@ -158,6 +177,7 @@ def log_event(action, instance, *, tenant=None, user=None, changes=None, request
     if on_behalf_of is not None and on_behalf_of.tenant_id != tenant.pk:
         on_behalf_of = None
 
+    # Schreiben über die Hash-Kette des Mandanten (SessionAuditLog.save, Issue #221)
     return SessionAuditLog.objects.create(
         tenant=tenant,
         user=user,
@@ -167,14 +187,172 @@ def log_event(action, instance, *, tenant=None, user=None, changes=None, request
         action=action,
         model_name=instance.__class__.__name__,
         object_id=instance.pk,
-        object_repr=str(instance)[:500],
+        object_repr=(str(instance) if object_repr is None else object_repr)[:500],
         changes=changes or {},
     )
+
+
+def log_role_assignment(
+    session_user: Any, old_roles: Any, new_roles: Any, *, request: Any = None, user: Any = None, reason: str = ""
+) -> Any:
+    """
+    Rollenzuweisung eines Nutzers protokollieren (Issue #221): hinzugefügte und entzogene Rollen.
+
+    Die M2M-Zuordnung löst kein ``post_save`` aus; ohne diesen direkten Eintrag bliebe eine
+    Rechteausweitung unsichtbar. Ohne Unterschied entsteht kein Eintrag.
+    """
+    old = {role.pk: role.name for role in old_roles}
+    new = {role.pk: role.name for role in new_roles}
+    added = sorted(new[pk] for pk in new.keys() - old.keys())
+    removed = sorted(old[pk] for pk in old.keys() - new.keys())
+    if not added and not removed:
+        return None
+    changes = {"hinzugefuegt": added, "entzogen": removed}
+    if reason:
+        changes["anlass"] = reason
+    return log_event(
+        "roles_changed", session_user, tenant=session_user.tenant, user=user, request=request, changes=changes
+    )
+
+
+# =============================================================================
+# Lesezugriffe (Issue #221)
+# =============================================================================
+#
+# Lesezugriffe auf nichtöffentliche Inhalte werden datensparsam protokolliert: wer, wann,
+# welches Objekt – nie der Inhalt. Wiederholte Aufrufe desselben Objekts durch dieselbe Person
+# innerhalb von READ_DEDUP_SECONDS fasst der Eintrag des ersten Aufrufs zusammen. Der Merker
+# liegt in der ohnehin geladenen und gespeicherten Login-Session: Ein wiederholter Aufruf kostet
+# keine Abfrage, ein neuer Eintrag die drei Abfragen der Hash-Kette. Scheitert das
+# Protokollieren, wird der Fehler geloggt und die Seite trotzdem ausgeliefert.
+
+#: Zeitfenster, in dem wiederholte Lesezugriffe zusammengefasst werden
+READ_DEDUP_SECONDS = 600
+#: Session-Schlüssel des Merkers und dessen Obergrenze (älteste Einträge fallen heraus)
+READ_SESSION_KEY = "audit_read_seen"
+READ_SESSION_MAX = 200
+
+
+def _meeting_date(meeting: Any) -> str:
+    from django.utils import timezone
+
+    start = getattr(meeting, "start", None)
+    return timezone.localtime(start).strftime("%d.%m.%Y") if start else "ohne Datum"
+
+
+def read_reference(instance: Any) -> str:
+    """Neutrale Objekt-Referenz für Lesezugriffe – ohne Betreff oder Titel (Datensparsamkeit)."""
+    name = instance.__class__.__name__
+    if name == "SessionPaper":
+        return f"Vorlage {instance.reference or instance.pk}"
+    if name == "SessionMeeting":
+        return f"Sitzung vom {_meeting_date(instance)}"
+    if name == "SessionAgendaItem":
+        return f"TOP {instance.number or '?'}, Sitzung vom {_meeting_date(instance.meeting)}"
+    if name == "SessionProtocol":
+        return f"Niederschrift, Sitzung vom {_meeting_date(instance.meeting)}"
+    if name == "SessionTenant":
+        return "Protokoll"
+    return f"{name} {instance.pk}"
+
+
+def read_logging_enabled(tenant: Any) -> bool:
+    """Protokolliert der Mandant Lesezugriffe auf nichtöffentliche Inhalte? (Standard: ja)."""
+    privacy = (tenant.settings or {}).get("privacy", {})
+    if not isinstance(privacy, dict):
+        return True
+    return bool(privacy.get("read_logging", True))
+
+
+def _read_seen(request: Any, key: str, now: float) -> bool:
+    session = getattr(request, "session", None)
+    if session is None:
+        return False
+    seen = session.get(READ_SESSION_KEY)
+    if not isinstance(seen, dict):
+        return False
+    stamp = seen.get(key)
+    return isinstance(stamp, int | float) and now - stamp < READ_DEDUP_SECONDS
+
+
+def _remember_read(request: Any, key: str, now: float) -> None:
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    seen = session.get(READ_SESSION_KEY)
+    fresh = {
+        k: v
+        for k, v in (seen.items() if isinstance(seen, dict) else [])
+        if isinstance(v, int | float) and now - v < READ_DEDUP_SECONDS
+    }
+    fresh[key] = now
+    if len(fresh) > READ_SESSION_MAX:
+        fresh = dict(sorted(fresh.items(), key=lambda item: item[1])[-READ_SESSION_MAX:])
+    session[READ_SESSION_KEY] = fresh
+
+
+def log_read(
+    request: Any,
+    instance: Any,
+    *,
+    tenant: Any,
+    user: Any = None,
+    action: str = "view",
+    changes: Any = None,
+    respect_setting: bool = True,
+    dedup_suffix: str = "",
+) -> Any:
+    """
+    Lesezugriff protokollieren – datensparsam, zusammengefasst, fehlertolerant.
+
+    Args:
+        request: aktueller Request (für Nutzer, Session-Merker und IP)
+        instance: gelesenes Objekt (nur die Referenz wird gespeichert)
+        tenant: Mandant
+        user: SessionUser (sonst aus dem Request)
+        action: ``view`` (Ansicht), ``download`` (erzeugtes Dokument) oder ``audit_view``
+        changes: knappe Angaben zum Umfang, nie Inhalte
+        respect_setting: False für Zugriffe, die immer protokolliert werden (Protokoll-Einsicht)
+        dedup_suffix: unterscheidet Zugriffe auf dasselbe Objekt (z. B. verschiedene Filter)
+
+    Returns: der neue Eintrag oder ``None`` (abgeschaltet, zusammengefasst oder Fehler)
+    """
+    if respect_setting and not read_logging_enabled(tenant):
+        return None
+    now = time.time()
+    key = f"{tenant.pk}:{action}:{instance.__class__.__name__}:{instance.pk}:{dedup_suffix}"
+    if _read_seen(request, key, now):
+        return None
+    try:
+        entry = log_event(
+            action,
+            instance,
+            tenant=tenant,
+            user=user,
+            changes=changes,
+            request=request,
+            object_repr=read_reference(instance),
+        )
+    except Exception:
+        # Die Seite darf am Protokoll nicht scheitern; der Fehler landet im Betriebslog
+        logger.exception("Lesezugriff konnte nicht protokolliert werden")
+        return None
+    _remember_read(request, key, now)
+    return entry
 
 
 # =============================================================================
 # Signal-Receiver (in signals.py registriert)
 # =============================================================================
+
+
+#: Entschädigungen mit sprechenden Aktionen je Posten (Sitzungsgeld, Monatspauschalen, Issue #221)
+ALLOWANCE_MODELS = frozenset({"SessionAllowance", "SessionMonthlyAllowance"})
+_ALLOWANCE_STATUS_ACTIONS = {
+    "approved": "allowance_approved",
+    "paid": "allowance_paid",
+    "cancelled": "allowance_cancelled",
+}
 
 
 def _special_action(old_instance, new_instance) -> str | None:
@@ -184,6 +362,8 @@ def _special_action(old_instance, new_instance) -> str | None:
     old_status = getattr(old_instance, "status", None)
     new_status = getattr(new_instance, "status", None)
     if old_status != new_status:
+        if model_name in ALLOWANCE_MODELS and new_status in _ALLOWANCE_STATUS_ACTIONS:
+            return _ALLOWANCE_STATUS_ACTIONS[new_status]
         if new_status == "approved":
             return "approve"
         if new_status == "published":
@@ -215,7 +395,8 @@ def audit_post_save(sender, instance, created, **kwargs):
     if kwargs.get("raw"):
         return
     if created:
-        log_event("create", instance)
+        created_action = "allowance_created" if instance.__class__.__name__ in ALLOWANCE_MODELS else "create"
+        log_event(created_action, instance)
         return
 
     old_instance = getattr(instance, "_audit_old", None)

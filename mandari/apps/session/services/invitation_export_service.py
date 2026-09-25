@@ -22,6 +22,7 @@ from typing import Any, cast
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from apps.common.csv_safety import csv_safe_cell
 from apps.common.pdf import html_to_pdf
 from apps.session.models import SessionInvitationDispatch, SessionInvitationRecipient, SessionMeeting
 from apps.session.services import agenda_service, invitation_token
@@ -30,8 +31,6 @@ from apps.session.services.invitation_response_service import MeetingOverview, m
 logger = logging.getLogger(__name__)
 
 LETTER_STATUSES = ("letter_pending", "letter_sent")
-# Zellen, die eine Tabellenkalkulation als Formel lesen würde (CSV-Injection)
-_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 def _address_lines(tenant: Any) -> list[str]:
@@ -176,9 +175,8 @@ def _agenda(meeting: SessionMeeting, *, include_non_public: bool, supplementary_
     return {"public": _only_supplementary(agenda["public"]), "non_public": _only_supplementary(agenda["non_public"])}
 
 
-def _csv_cell(value: Any) -> str:
-    text = "" if value is None else str(value)
-    return "'" + text if text.startswith(_FORMULA_PREFIXES) else text
+# Schutz gegen Formel-Injektion, gemeinsam mit dem Protokollexport (apps/common/csv_safety.py)
+_csv_cell = csv_safe_cell
 
 
 def build_serial_letter_csv(dispatch: SessionInvitationDispatch) -> str:

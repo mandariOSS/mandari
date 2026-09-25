@@ -117,6 +117,16 @@ class PaperVersionDetailView(_PaperVersionView):
         older = SessionPaperVersion.objects.filter(paper=paper, number__lt=version.number)
         if "view_non_public_papers" not in permissions:
             older = older.filter(is_public=True)
+        if not paper.is_public or not version.is_public:
+            # Lesezugriff auf eine nichtöffentliche Fassung (Issue #221): nur Objekt, nie Inhalt
+            cast(Any, audit).log_read(
+                request,
+                paper,
+                tenant=self.tenant,
+                user=self.user,
+                changes={"umfang": f"nichtöffentliche Vorlage, Fassung {version.number}"},
+                dedup_suffix=f"fassung-{version.number}",
+            )
         context = self.base_context(
             paper,
             version=version,
@@ -156,6 +166,18 @@ class PaperVersionCompareView(_PaperVersionView):
             older_entries=paper_version_service.visible_entries(permissions, paper, older).entries,
             newer_entries=paper_version_service.visible_entries(permissions, paper, newer).entries,
         )
+        if not paper.is_public or not older.is_public or not newer.is_public:
+            # Vergleich nichtöffentlicher Fassungen ist ein Lesezugriff (Issue #221)
+            cast(Any, audit).log_read(
+                request,
+                paper,
+                tenant=self.tenant,
+                user=self.user,
+                changes={
+                    "umfang": f"nichtöffentliche Vorlage, Vergleich der Fassungen {older.number} und {newer.number}"
+                },
+                dedup_suffix=f"vergleich-{older.number}-{newer.number}",
+            )
         return render(request, "session/papers/versions/compare.html", self.base_context(paper, comparison=comparison))
 
 
@@ -214,13 +236,10 @@ class PaperVersionFileDownloadView(_PaperVersionView):
         handle = file_version_service.open_blob(entry.blob)
         if handle is None:
             raise Http404("Der Inhalt dieser Anlage ist nicht mehr vorhanden.")
-        _log_event(
-            "download",
-            version,
-            user=self.user,
-            request=request,
-            changes={"anlage": entry.name, "fassung": version.number},
-        )
+        changes: dict[str, Any] = {"anlage": entry.name, "fassung": version.number}
+        if not paper.is_public or not version.is_public or not entry.is_public:
+            changes["nichtoeffentlich"] = True  # Lesezugriff auf Nichtöffentliches (Issue #221)
+        _log_event("download", version, user=self.user, request=request, changes=changes)
         return protected_download(handle, entry.name, entry.mime_type)
 
 

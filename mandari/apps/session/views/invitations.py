@@ -151,6 +151,18 @@ class MeetingAgendaPdfView(SessionViewMixin, TemplateView):
             supplementary_only=supplementary,
         )
         filename = "nachtrags-tagesordnung.pdf" if supplementary else "einladung-tagesordnung.pdf"
+        # Vollständige Fassung mit nichtöffentlichem Teil: Abruf protokollieren (Issue #221)
+        if include_np and (not meeting.is_public or meeting.agenda_items.filter(is_public=False).exists()):
+            from .. import audit
+
+            audit.log_read(
+                request,
+                meeting,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                action="download",
+                changes={"dokument": "Tagesordnung mit nichtöffentlichem Teil (PDF)"},
+            )
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response

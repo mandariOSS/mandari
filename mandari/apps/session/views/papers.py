@@ -240,6 +240,18 @@ class PaperDetailView(SessionViewMixin, DetailView):
         context = super().get_context_data(**kwargs)
         paper = self.object
 
+        # Lesezugriff auf eine nichtöffentliche Vorlage protokollieren (Issue #221): nur Objekt, nie Inhalt
+        if not paper.is_public:
+            from .. import audit
+
+            audit.log_read(
+                self.request,
+                paper,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                changes={"umfang": "nichtöffentliche Vorlage"},
+            )
+
         # Files — NÖ-Anlagen nur für Berechtigte sichtbar
         files = paper.files.order_by("name")
         if not self.has_permission("view_non_public_papers"):

@@ -18,10 +18,15 @@
         <div>
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Audit-Log</h1>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Revisionssichere Änderungshistorie — Einträge können weder bearbeitet noch gelöscht werden.
+                Revisionssicheres Protokoll — Einträge können weder bearbeitet noch gelöscht werden; eine Hash-Kette
+                macht nachträgliche Änderungen erkennbar. Auch diese Einsicht wird protokolliert.
             </p>
         </div>
     </div>
+
+    {% if can_export %}
+    {% include "session/audit/_kontrolle.html" %}
+    {% endif %}
 
     <!-- Filter -->
     <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
@@ -98,9 +103,10 @@
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 align-top">
                         <td class="px-4 py-3 whitespace-nowrap text-gray-500 dark:text-gray-400">
                             {{ entry.created_at|date:"d.m.Y H:i:s" }}
+                            {% if entry.seq %}<div class="text-xs text-gray-400">Nr. {{ entry.seq }}</div>{% endif %}
                         </td>
                         <td class="px-4 py-3 text-gray-900 dark:text-white">
-                            {% if entry.user %}{{ entry.user.user.email }}{% else %}<span class="text-gray-400">System/API</span>{% endif %}
+                            {% if entry.user %}{{ entry.user.user.email }}{% elif entry.user_ref %}<span class="text-gray-400">gelöschtes Konto</span>{% else %}<span class="text-gray-400">System/API</span>{% endif %}
                             {% if entry.on_behalf_of %}<div class="text-xs text-amber-700 dark:text-amber-400">in Vertretung für {{ entry.on_behalf_of.user.email }}</div>{% endif %}
                         </td>
                         <td class="px-4 py-3">
@@ -118,18 +124,22 @@
                             <div class="text-xs text-gray-500 dark:text-gray-400">{{ entry.model_name }}</div>
                         </td>
                         <td class="px-4 py-3 text-gray-600 dark:text-gray-300">
-                            {% if entry.changes %}
+                            {% if entry.change_rows %}
                             <details>
                                 <summary class="cursor-pointer text-primary-600 dark:text-primary-400 text-xs">
-                                    {{ entry.changes|length }} Feld{{ entry.changes|length|pluralize:"er" }}
+                                    {{ entry.change_rows|length }} Angabe{{ entry.change_rows|length|pluralize:"n" }}
                                 </summary>
-                                <dl class="mt-2 space-y-1 text-xs">
-                                    {% for field, diff in entry.changes.items %}
+                                <dl class="mt-2 space-y-1 text-xs break-words">
+                                    {% for row in entry.change_rows %}
                                     <div>
-                                        <dt class="font-semibold inline">{{ field }}:</dt>
+                                        <dt class="font-semibold inline">{{ row.field }}:</dt>
                                         <dd class="inline">
-                                            <span class="line-through text-gray-400">{{ diff.alt|default:"—" }}</span>
-                                            &rarr; {{ diff.neu|default:"—" }}
+                                            {% if row.is_diff %}
+                                            <span class="line-through text-gray-400">{{ row.alt|default:"—" }}</span>
+                                            &rarr; {{ row.neu|default:"—" }}
+                                            {% else %}
+                                            {{ row.value|default:"—" }}
+                                            {% endif %}
                                         </dd>
                                     </div>
                                     {% endfor %}

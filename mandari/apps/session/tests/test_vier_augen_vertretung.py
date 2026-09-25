@@ -271,8 +271,9 @@ class TestVertretung:
         eintrag = SessionAuditLog.objects.get(object_id=paper.id, action="approve")
         assert eintrag.user == vertretung and eintrag.on_behalf_of == leitung
 
-        admin = _nutzer(tenant, "revision", admin=True)
-        protokoll = _client(admin).get(f"/session/{tenant.slug}/audit/?object={paper.id}")
+        # Das Protokoll sieht die Revision; die Administrator-Vollmacht umfasst es nicht (Issue #221)
+        revision = _nutzer(tenant, "revision", "view_audit_log")
+        protokoll = _client(revision).get(f"/session/{tenant.slug}/audit/?object={paper.id}")
         assert "in Vertretung für leitung@example.org".encode() in protokoll.content
 
     @pytest.mark.parametrize(

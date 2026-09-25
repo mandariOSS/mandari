@@ -938,6 +938,10 @@ class Command(BaseCommand):
                 s_user.roles.set([role])
             session_users[user_key] = s_user
         session_user = session_users["verwaltung"]
+        # Protokoll einsehen und exportieren gehört nicht zur Administrator-Vollmacht (Issue #221);
+        # in der Demo bekommt die Verwaltung zusätzlich die Rolle „Revision“, damit es vorführbar ist
+        if revision_role := roles_by_name.get("Revision"):
+            session_user.roles.add(revision_role)
         self._count("Session: Verwaltungsnutzer", len(session_users))
 
         # --- Gremien --------------------------------------------------

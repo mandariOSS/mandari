@@ -41,7 +41,9 @@ from .attendance import (
     AttendanceGenerateView,
 )
 from .audit import (
+    AuditLogExportView,
     AuditLogListView,
+    AuditLogVerifyView,
 )
 from .calendar import (
     MeetingCalendarView,
@@ -288,7 +290,9 @@ __all__ = [
     "AttendanceDeleteView",
     "AttendanceGenerateView",
     "AttendanceUpdateView",
+    "AuditLogExportView",
     "AuditLogListView",
+    "AuditLogVerifyView",
     "ConsultationCreateView",
     "ConsultationDeleteView",
     "ConsultationForwardView",

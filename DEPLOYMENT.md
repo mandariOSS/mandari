@@ -349,7 +349,27 @@ Jedes dieser Commands hält während des Laufs eine Singleton-Sperre in Redis; e
 15 * * * *  docker exec mandari-app python manage.py check_source_health    >> /var/log/mandari-source-health.log 2>&1
 30 6 * * *  docker exec mandari-app python manage.py check_service_levels   >> /var/log/mandari-service-levels.log 2>&1
 15 0 1 * *  docker exec mandari-app python manage.py availability_report --out /var/lib/mandari/reports/verfuegbarkeit-$(date -d "yesterday" +\%Y-\%m).md >> /var/log/mandari-availability.log 2>&1
+# Protokollierung (Issue #221, docs/PROTOKOLLIERUNG.md): Hash-Ketten täglich prüfen (Exit-Code 1 bei Befund),
+# Sicherheitsprotokoll nach Frist archivieren und löschen, DSGVO-Löschlauf mit Archivpaket monatlich
+20 4 * * *  docker exec mandari-app python manage.py verify_audit_chain       >> /var/log/mandari-audit-chain.log 2>&1
+40 4 * * *  docker exec mandari-app python manage.py purge_security_audit_log >> /var/log/mandari-security-audit.log 2>&1
+0 5 1 * *   docker exec mandari-app python manage.py session_privacy_purge    >> /var/log/mandari-privacy-purge.log 2>&1
 ```
+
+Nach dem Update mit der Hash-Kette (Issue #221) einmal den Altbestand verketten; bis dahin
+schreiben betroffene Mandanten unverkettet weiter. Der Befehl ist wiederholbar und arbeitet in
+kurzen Transaktionen:
+
+```bash
+docker exec mandari-app python manage.py audit_chain_backfill
+```
+
+Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vorgabe
+`<MEDIA_ROOT>/audit_archive`, also im persistenten Medien-Volume und in der Sicherung; nie per
+URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE_STORAGE` nennt.
+`AUDIT_EXPORT_MAX_ROWS` (Vorgabe 100000) begrenzt Exporte aus der Oberfläche, größere Zeiträume
+exportiert `export_audit_log`; `SECURITY_AUDIT_RETENTION_DAYS` (Vorgabe 365) ist die Frist des
+Sicherheitsprotokolls.
 
 Dazu minütlich die Hintergrund-Erzeugung der Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218).
 Die Oberfläche legt nur Anforderungen an; ohne diesen Job bleibt eine Mappe bei „wird erstellt“:

@@ -96,14 +96,16 @@ class CosignatureActionView(SessionViewMixin, View):
                     f"{paper.reference} ist wieder im Entwurf.",
                 )
 
+            # Direkter Eintrag je Mitzeichnung (Issue #221), am Objekt der Vorlage
             audit.log_event(
-                "update",
+                "cosign",
                 paper,
                 tenant=self.session_tenant,
                 user=self.session_user,
                 request=request,
                 changes={
                     "mitzeichnung": cosignature.department.name,
+                    "station": str(cosignature.pk),
                     "entscheidung": cosignature.get_status_display(),
                     "kommentar": comment[:300],
                 },

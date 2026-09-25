@@ -13,3 +13,9 @@ class AccountsConfig(AppConfig):
     name = "apps.accounts"
     label = "accounts"
     verbose_name = "Benutzerverwaltung"
+
+    def ready(self) -> None:
+        # Anmeldungen, Abmeldungen und Fehlversuche protokollieren (Issue #221)
+        from .security_audit import connect
+
+        connect()

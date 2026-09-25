@@ -9,7 +9,8 @@ Prüft:
 - Aufbewahrungsfrist-Einstellungen je Datenart (UI, auditiert)
 - Anonymisierungs-/Löschlauf (UI + Management-Command, Dry-Run):
   Kontakt-/Bankdaten ausgeschiedener Personen weg, Name bleibt;
-  NÖ-Protokollteil/interne Notizen geleert; alte Audit-Einträge gelöscht;
+  NÖ-Protokollteil/interne Notizen geleert; alte Audit-Einträge gelöscht –
+  vorher als Archivpaket abgelegt, die Hash-Kette bleibt prüfbar (Issue #221);
   Lauf selbst nachweisbar im Audit-Log
 - Betroffenenauskunft: JSON-Export mit allen Datenarten; Bankdaten nur
   mit manage_allowances entschlüsselt; Export auditiert
@@ -38,6 +39,8 @@ os.environ["ELASTICSEARCH_AUTO_INDEX"] = "False"
 os.environ["MANDARI_SYNC_WATCHDOG"] = "0"
 os.environ["EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 os.environ["ALLOWED_HOSTS"] = "testserver,localhost"
+_archive_root = Path(tempfile.mkdtemp(prefix="mandari_smoke_archiv_"))
+os.environ["AUDIT_ARCHIVE_ROOT"] = str(_archive_root)
 
 import django  # noqa: E402
 
@@ -57,10 +60,13 @@ from _smoke_db import prepare_database  # noqa: E402
 prepare_database(PROJECT_DIR)
 
 import json  # noqa: E402
+import uuid  # noqa: E402
 from datetime import timedelta  # noqa: E402
 from io import StringIO  # noqa: E402
+from unittest import mock  # noqa: E402
 
 from apps.accounts.models import User  # noqa: E402
+from apps.common import audit_chain  # noqa: E402
 from apps.session.models import (  # noqa: E402
     SessionAuditLog,
     SessionMeeting,
@@ -92,6 +98,14 @@ def check(name, condition, detail=""):
 # =============================================================================
 tenant = SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt")
 other_tenant = SessionTenant.objects.create(name="Stadt Anderswo", slug="anderswo")
+
+# Alter Audit-Eintrag (Frist überschritten): erster Eintrag der Hash-Kette, mit zurückgedrehter
+# Uhr geschrieben. created_at nachträglich umzuschreiben wäre eine Manipulation, die der
+# Löschlauf erkennt und verweigert (Issue #221).
+with mock.patch("django.utils.timezone.now", return_value=timezone.now() - timedelta(days=365 * 12)):
+    old_audit = SessionAuditLog.objects.create(
+        tenant=tenant, action="update", model_name="SessionMeeting", object_id=uuid.uuid4(), object_repr="alt"
+    )
 
 admin_user = User.objects.create_user(email="admin@example.org", password="pw-Smoke-Test-1!")
 clerk_user = User.objects.create_user(email="clerk@example.org", password="pw-Smoke-Test-1!")
@@ -151,11 +165,6 @@ new_meeting = SessionMeeting.objects.create(
 new_meeting.set_internal_notes_encrypted("Aktuelle Notiz")
 new_meeting.save()
 
-# Alter Audit-Eintrag (Frist überschritten)
-old_audit = SessionAuditLog.objects.create(
-    tenant=tenant, action="update", model_name="SessionMeeting", object_id=old_meeting.pk, object_repr="alt"
-)
-SessionAuditLog.objects.filter(pk=old_audit.pk).update(created_at=timezone.now() - timedelta(days=365 * 12))
 
 # =============================================================================
 # Phase A: Einstellungen
@@ -227,6 +236,8 @@ check("Öffentlicher Protokollteil bleibt", protocol.content == "Öffentlicher T
 check("Junge Sitzung unangetastet", new_meeting.get_internal_notes_decrypted() == "Aktuelle Notiz")
 
 check("Alter Audit-Eintrag gelöscht", not SessionAuditLog.objects.filter(pk=old_audit.pk).exists())
+check("Archivpaket vor der Löschung abgelegt", any(_archive_root.rglob("*.zip")))
+check("Hash-Kette nach der Löschung prüfbar", audit_chain.verify(audit_chain.SESSION, tenant.pk).ok)
 check(
     "Anonymisierung je Person auditiert (ohne Klartext)",
     SessionAuditLog.objects.filter(tenant=tenant, changes__has_key="dsgvo_anonymisiert").exists(),

@@ -1,0 +1,64 @@
+{# Protokoll-Kontrolle (Issue #221): Kettenstatus, Export mit Prüfsumme, Kettenprüfung – nur mit export_audit_log #}
+<c-ui.card title="Export und Manipulationsschutz" subtitle="Hash-Kette je Mandant; jeder Export und jede Prüfung wird selbst protokolliert.">
+    <div class="grid lg:grid-cols-2 gap-6">
+        <div class="space-y-2 text-sm text-gray-700 dark:text-gray-300">
+            <p class="flex items-center gap-2">
+                <i data-lucide="link" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                {% if chain.verkettung_aktiv %}
+                Verkettung aktiv – letzter Eintrag Nr. {{ chain.kopf_nr }}
+                {% else %}
+                <span class="text-amber-700 dark:text-amber-400">Altbestand noch nicht verkettet (Betrieb: audit_chain_backfill)</span>
+                {% endif %}
+            </p>
+            {% if chain.kopf_hash %}
+            <p class="text-xs text-gray-500 dark:text-gray-400 break-all">Kettenkopf: <code>{{ chain.kopf_hash }}</code></p>
+            {% endif %}
+            {% if chain.anker_nr %}
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+                Einträge bis Nr. {{ chain.anker_nr }} wurden fristgerecht archiviert und gelöscht{% if chain.anker_am %} ({{ chain.anker_am|date:"d.m.Y" }}){% endif %}.
+                Die Prüfung beginnt am Kettenanker.
+            </p>
+            {% endif %}
+            {% if last_verify %}
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+                Letzte Prüfung: {{ last_verify.created_at|date:"d.m.Y H:i" }} –
+                {% if last_verify.changes.intakt %}intakt{% else %}<span class="text-red-600 dark:text-red-400">Befund</span>{% endif %}
+                ({{ last_verify.changes.geprueft }} Einträge)
+            </p>
+            {% endif %}
+            <form method="post" action="{% url 'session:audit_log_verify' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="shield-check">Kette jetzt prüfen</c-ui.button>
+            </form>
+        </div>
+        <form method="post" action="{% url 'session:audit_log_export' tenant_slug=tenant_slug %}" class="space-y-3">
+            {% csrf_token %}
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label for="export_from" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Von</label>
+                    <input type="date" name="from" id="export_from" value="{{ request.GET.from }}"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label for="export_to" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bis</label>
+                    <input type="date" name="to" id="export_to" value="{{ request.GET.to }}"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label for="export_format" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Format</label>
+                    <select name="format" id="export_format"
+                            class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for value, label in export_formats %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+                Jede Datei trägt eine SHA-256-Prüfsumme (im JSON-Umschlag, als SHA256SUMS im ZIP und im Protokolleintrag des
+                Exports). Höchstens {{ export_max_rows }} Einträge je Export.
+            </p>
+            <c-ui.button type="submit" size="sm" icon="download">Zeitraum exportieren</c-ui.button>
+        </form>
+    </div>
+</c-ui.card>

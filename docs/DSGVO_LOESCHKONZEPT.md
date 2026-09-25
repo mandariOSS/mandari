@@ -21,7 +21,8 @@ die hier genannten Fristen sind konfigurierbare Voreinstellungen.
 | Grund einer Absage | `SessionAttendance.response_reason_encrypted` | AES-256-GCM, nur in der Rückmeldeübersicht des Sitzungsdienstes sichtbar, nicht in OParl, Nachweis oder Mails an Dritte |
 | Nicht-öffentliche Protokollteile | `SessionProtocol.content_encrypted` | AES-256-GCM |
 | Interne Sitzungsnotizen | `SessionMeeting.internal_notes_encrypted` | AES-256-GCM |
-| Audit-Log | `SessionAuditLog` | unveränderbar (revisionssicher), keine Klartext-Werte verschlüsselter Felder |
+| Audit-Log (Änderungen, Lesezugriffe auf Nichtöffentliches, Anmeldungen) | `SessionAuditLog` | unveränderbar, Hash-Kette je Mandant, keine Inhalte und keine Klartext-Werte verschlüsselter Felder; Einsicht nur mit Kontrollrechten ([Protokollierungskonzept](PROTOKOLLIERUNG.md)) |
+| Sicherheitsprotokoll (Anmeldungen von Konten ohne Session-Mandant, Fehlversuche mit unbekannter Kennung) | `SecurityAuditLog` | unveränderbar, eigene Hash-Kette, Kennungen nur als HMAC, kein Passwort; nur für den Plattformbetrieb |
 | Anlagen und ihre früheren Fassungen | `SessionFile`, `SessionFileVersion`, Inhalte in `SessionFileBlob` | nur über zugriffsgeprüfte Downloads, Sichtbarkeit wie die Anlage (Ö/NÖ) |
 | Fassungen von Vorlagen (Texte, Angaben, Anlagen-Stand) | `SessionPaperVersion`, `SessionPaperVersionFile` | unveränderbar; Sichtbarkeit wie die Vorlage heute und zum Zeitpunkt der Fassung |
 
@@ -34,12 +35,18 @@ Die Fristen werden **je Mandant** in den Einstellungen gepflegt
 |---|---|---|
 | Kontakt-/Bankdaten ausgeschiedener Mandatsträger | `persons_years` (ab Mandatsende) | E-Mail, Telefon, Adresse und Bankdaten werden entfernt, ebenso Absagegründe und die in Ladungsprotokollen mitgeschriebene E-Mail-Adresse. **Der Name bleibt erhalten**, damit historische Beschlüsse, Protokolle und Ladungsnachweise nachvollziehbar bleiben. |
 | Nicht-öffentliche Inhalte | `np_content_years` (ab Sitzungsdatum) | NÖ-Protokollteil und interne Notizen werden geleert. Der öffentliche Protokollteil bleibt unberührt. |
-| Audit-Log | `audit_years` (ab Eintragsdatum) | Einträge werden gelöscht. |
+| Audit-Log | `audit_years` (ab Eintragsdatum) | Einträge werden gelöscht – vorher entsteht ein geprüftes Archivpaket (JSON, CSV, Kettenanker, `SHA256SUMS`) im Archivspeicher; gelöscht wird nur ein intaktes Anfangsstück der Hash-Kette, die danach ab dem Anker prüfbar bleibt. |
 
 Empfehlungswerte (unverbindlich): Kontakt-/Bankdaten 2 Jahre nach
 Mandatsende; Audit-Log 5–10 Jahre; NÖ-Inhalte gemäß örtlicher
 Archivsatzung (häufig dauerhafte Aufbewahrung — dann Frist deaktiviert
 lassen und dem Kommunalarchiv anbieten).
+
+Archivpakete des Audit-Logs löscht mandari nicht selbst; die Kommune bietet
+sie ihrem Archiv an oder legt eine eigene Frist fest. Das plattformweite
+Sicherheitsprotokoll wird nach `SECURITY_AUDIT_RETENTION_DAYS` (Standard
+365 Tage) mit `purge_security_audit_log` nach demselben Verfahren
+archiviert und gelöscht.
 
 ### Konten ohne Zuordnung (plattformweit)
 
@@ -88,7 +95,9 @@ Jeder Lauf schreibt Audit-Einträge:
 - je anonymisierter Person ein Eintrag mit den geleerten Datenarten
   (niemals die Werte selbst),
 - je bereinigter Sitzung ein Eintrag,
-- ein Abschluss-Eintrag mit Zählern und den angewandten Fristen.
+- ein Abschluss-Eintrag mit Zählern und den angewandten Fristen,
+- bei gelöschten Audit-Einträgen ein Eintrag „Protokoll archiviert“ mit
+  Paketname, Prüfsumme, Nummernbereich und Kettenanker.
 
 Damit kann die Verwaltung die Durchführung gegenüber der Aufsichtsbehörde
 belegen (Rechenschaftspflicht, Art. 5 Abs. 2 DSGVO).
@@ -131,3 +140,4 @@ Backups der verschlüsselten Felder nicht mehr lesbar).
 
 - [AVV-Muster](DSGVO_AVV_MUSTER.md)
 - [Technische und organisatorische Maßnahmen (TOM)](DSGVO_TOM.md)
+- [Protokollierungskonzept](PROTOKOLLIERUNG.md)

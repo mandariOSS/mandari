@@ -73,7 +73,14 @@ PERMISSION_GROUPS = [
             "can_manage_users",
             "can_manage_organizations",
             "can_manage_settings",
+        ],
+    ),
+    (
+        # Issue #221: nicht in der Administrator-Vollmacht enthalten (Funktionstrennung)
+        "Kontrolle (Revision, Datenschutz)",
+        [
             "can_view_audit_log",
+            "can_export_audit_log",
         ],
     ),
     (
@@ -192,31 +199,39 @@ class RoleSaveView(SessionViewMixin, View):
             )
             return redirect("session:settings_roles", tenant_slug=tenant_slug)
 
+        all_fields = [field_name for _group, entries in permission_fields() for field_name, _label in entries]
+        old_granted = set() if creating else {f for f in all_fields if getattr(role, f)}
+        old_admin = False if creating else role.is_admin
+        old_name = "" if creating else role.name
+
         role.name = name
         role.description = request.POST.get("description", "").strip()
         role.is_admin = wants_admin
-        for _group, entries in permission_fields():
-            for field_name, _label in entries:
-                setattr(role, field_name, request.POST.get(field_name) == "1")
+        for field_name in all_fields:
+            setattr(role, field_name, request.POST.get(field_name) == "1")
         role.save()
 
-        granted = [
-            field_name
-            for _group, entries in permission_fields()
-            for field_name, _label in entries
-            if getattr(role, field_name)
-        ]
+        granted = {f for f in all_fields if getattr(role, f)}
+        # Rechteänderung als eigener, sprechender Eintrag mit erteilten und entzogenen Rechten (Issue #221)
+        rights_changed = creating or granted != old_granted or old_admin != wants_admin
+        changes = {
+            "rolle": name,
+            "admin": wants_admin if creating else {"alt": old_admin, "neu": wants_admin},
+            "rechte": sorted(f[4:] for f in granted),
+            "erteilt": sorted(f[4:] for f in granted - old_granted),
+            "entzogen": sorted(f[4:] for f in old_granted - granted),
+        }
+        if creating:
+            changes["angelegt"] = True
+        elif old_name != name:
+            changes["name"] = {"alt": old_name, "neu": name}
         audit.log_event(
-            "create" if creating else "update",
+            "permissions_changed" if rights_changed else "update",
             role,
             tenant=self.session_tenant,
             user=self.session_user,
             request=request,
-            changes={
-                "rolle": name,
-                "admin": wants_admin,
-                "rechte": [f[4:] for f in granted],
-            },
+            changes=changes,
         )
         messages.success(request, f"Rolle „{name}“ gespeichert.")
         return redirect("session:settings_roles", tenant_slug=tenant_slug)

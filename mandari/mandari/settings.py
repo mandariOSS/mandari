@@ -406,6 +406,17 @@ INSIGHT_SOURCE_BACKOFF_FAILURES = int(os.environ.get("INSIGHT_SOURCE_BACKOFF_FAI
 SESSION_PACKAGE_MAX_EMBED_MB = int(os.environ.get("SESSION_PACKAGE_MAX_EMBED_MB", "200"))
 SESSION_PACKAGE_MAX_PAGES = int(os.environ.get("SESSION_PACKAGE_MAX_PAGES", "3000"))
 
+# Protokollierung (Issue #221, docs/PROTOKOLLIERUNG.md)
+# Archivpakete vor der fristgerechten Löschung: Alias eines Eintrags in STORAGES (z. B. ein
+# S3-Speicher) oder – leer – ein Verzeichnis. Liegt es unter MEDIA_ROOT, liefert serve_media es
+# nie aus (PROTECTED_MEDIA_PREFIXES). Die Pakete löscht mandari nicht selbst.
+AUDIT_ARCHIVE_STORAGE = os.environ.get("AUDIT_ARCHIVE_STORAGE", "")
+AUDIT_ARCHIVE_ROOT = Path(os.environ.get("AUDIT_ARCHIVE_ROOT", str(MEDIA_ROOT / "audit_archive")))
+# Obergrenze eines Exports aus der Oberfläche; größere Zeiträume über manage.py export_audit_log
+AUDIT_EXPORT_MAX_ROWS = int(os.environ.get("AUDIT_EXPORT_MAX_ROWS", "100000"))
+# Aufbewahrung des mandantenübergreifenden Sicherheitsprotokolls in Tagen (purge_security_audit_log)
+SECURITY_AUDIT_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_RETENTION_DAYS", "365"))
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field

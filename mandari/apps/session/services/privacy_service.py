@@ -35,17 +35,22 @@ PRIVACY_DEFAULTS = {
     "audit_years": 0,
     "np_content_years": 0,
     "notice": "",
+    # Lesezugriffe auf nichtöffentliche Inhalte protokollieren (Issue #221), Standard: an
+    "read_logging": True,
 }
 
 
 def get_privacy_settings(tenant) -> dict:
     """Datenschutz-Einstellungen des Mandanten (mit Defaults)."""
     stored = (tenant.settings or {}).get("privacy", {})
+    if not isinstance(stored, dict):
+        stored = {}
     result = dict(PRIVACY_DEFAULTS)
     for key in ("persons_years", "audit_years", "np_content_years"):
         with contextlib.suppress(TypeError, ValueError):
             result[key] = max(0, min(int(stored.get(key, result[key])), 100))
     result["notice"] = str(stored.get("notice", "") or "")
+    result["read_logging"] = bool(stored.get("read_logging", True))
     return result
 
 
@@ -96,19 +101,25 @@ def _anonymize_person(person) -> list[str]:
     return cleared
 
 
-def run_privacy_purge(tenant, *, now=None, dry_run=False, user=None, request=None) -> dict:
+def run_privacy_purge(
+    tenant, *, now=None, dry_run=False, user=None, request=None, audit_limit=None, allow_backfill=False
+) -> dict:
     """
     Anonymisierungs-/Löschlauf gemäß den konfigurierten Fristen (Issue #43).
 
     Nachweisbarkeit: Jede Anonymisierung und der Lauf selbst werden im
     Audit-Log dokumentiert (ohne Klartext-Werte).
 
+    Audit-Log (Issue #221): Vor dem Löschen entsteht ein Archivpaket; gelöscht wird nur ein
+    geprüftes Anfangsstück der Hash-Kette. ``audit_limit`` begrenzt die Menge je Lauf (Oberfläche),
+    ``allow_backfill`` verkettet vorher den Altbestand (Befehlszeile).
+
     Returns:
-        dict: persons_anonymized, audit_deleted, np_meetings_cleared,
+        dict: persons_anonymized, audit_deleted, audit_archive, np_meetings_cleared,
               skipped (Liste deaktivierter Datenarten), dry_run
     """
     from apps.session import audit
-    from apps.session.models import SessionAuditLog, SessionMeeting, SessionPerson, SessionProtocol
+    from apps.session.models import SessionMeeting, SessionPerson, SessionProtocol
 
     now = now or timezone.now()
     today = now.date()
@@ -184,15 +195,27 @@ def run_privacy_purge(tenant, *, now=None, dry_run=False, user=None, request=Non
     else:
         stats["skipped"].append("NÖ-Inhalte (Frist deaktiviert)")
 
-    # 3) Audit-Log nach Frist (QuerySet-Delete — Einzellöschung ist gesperrt)
+    # 3) Audit-Log nach Frist (Issue #221): erst ein geprüftes Archivpaket, dann Löschung eines
+    # Anfangsstücks der Hash-Kette mit Kettenanker – die Kette bleibt danach prüfbar
     if settings["audit_years"] > 0:
+        from apps.session.services import audit_log_service
+
         cutoff_dt = now - timedelta(days=365 * settings["audit_years"])
-        old_entries = SessionAuditLog.objects.filter(tenant=tenant, created_at__lte=cutoff_dt)
         if dry_run:
-            stats["audit_deleted"] = old_entries.count()
+            stats["audit_deleted"] = audit_log_service.count_expired(tenant, cutoff_dt)
         else:
-            stats["audit_deleted"] = old_entries.count()
-            old_entries._raw_delete(old_entries.db)
+            outcome = audit_log_service.archive_expired(
+                tenant, cutoff_dt, user=user, request=request, limit=audit_limit, allow_backfill=allow_backfill
+            )
+            stats["audit_deleted"] = outcome.deleted
+            stats["audit_archive"] = outcome.archive_name
+            if outcome.deferred:
+                stats["skipped"].append(f"Audit-Log: {outcome.deferred} Einträge folgen beim nächsten Lauf")
+            if outcome.not_chained:
+                stats["skipped"].append("Audit-Log (Altbestand noch nicht verkettet: audit_chain_backfill ausführen)")
+            if outcome.error:
+                logger.error("Audit-Log von %s nicht gelöscht: %s", tenant.slug, outcome.error)
+                stats["skipped"].append(f"Audit-Log (Löschung ausgesetzt: {outcome.error})")
     else:
         stats["skipped"].append("Audit-Log (Frist deaktiviert)")
 
@@ -209,6 +232,7 @@ def run_privacy_purge(tenant, *, now=None, dry_run=False, user=None, request=Non
                     "personen_anonymisiert": stats["persons_anonymized"],
                     "noe_inhalte_geleert": stats["np_meetings_cleared"],
                     "audit_geloescht": stats["audit_deleted"],
+                    "audit_archiv": stats.get("audit_archive", ""),
                     "fristen": {
                         "personen_jahre": settings["persons_years"],
                         "noe_jahre": settings["np_content_years"],

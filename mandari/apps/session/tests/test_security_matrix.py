@@ -88,10 +88,12 @@ MATRIX_PERMS = [
 ADMIN = "admin"
 NO_PERM = "ohne_rechte"
 COMBO = "process_applications+create_papers"
+# Kontrollrechte (Issue #221): gehören nicht zur Administrator-Vollmacht (Funktionstrennung)
+AUDIT_PERMS = frozenset({"view_audit_log", "export_audit_log"})
 
-# Rolle → effektive Berechtigungen (Admin: alles)
+# Rolle → effektive Berechtigungen (Admin: alles außer den Kontrollrechten)
 ROLE_PERMS: dict[str, frozenset[str]] = {
-    ADMIN: frozenset(MATRIX_PERMS),
+    ADMIN: frozenset(MATRIX_PERMS) - AUDIT_PERMS,
     NO_PERM: frozenset(),
     **{perm: frozenset({perm}) for perm in MATRIX_PERMS},
     COMBO: frozenset({"process_applications", "create_papers"}),
@@ -197,6 +199,9 @@ MUTATIONS: list[tuple[str, dict[str, str]]] = [
     ("/papers/{paper_pub}/fassungen/sichern/", {"note": "x"}),
     ("/papers/{paper_pub}/fassungen/1/wiederherstellen/", {}),
     ("/files/inhalte/{blob_pub}/loeschen/", {"reason": "x"}),
+    # Protokoll-Export und Kettenprüfung (Issue #221): nur mit dem Kontrollrecht export_audit_log
+    ("/audit/export/", {"format": "json"}),
+    ("/audit/pruefen/", {}),
 ]
 
 # Listen-/API-Views des eigenen Tenants, die keine Fremddaten enthalten dürfen
@@ -532,7 +537,8 @@ def test_mutations_without_permission_change_nothing(world: World) -> None:
 @pytest.mark.parametrize("path", LIST_PATHS)
 def test_list_views_contain_no_foreign_data(world: World, path: str) -> None:
     url = world.url(path)
-    response = world.clients[ADMIN].get(url)
+    # Das Protokoll sieht nicht der Administrator, sondern wer das Kontrollrecht hat (Issue #221)
+    response = world.clients["view_audit_log" if path == "/audit/" else ADMIN].get(url)
     assert response.status_code == 200, f"GET {url}: Status {response.status_code}"
     assert not any(marker in response.content for marker in FOREIGN_MARKERS), f"GET {url}: Fremddaten sichtbar"
 
