@@ -1,0 +1,84 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Niederschrift berichtigen: {{ meeting.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Niederschrift</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Berichtigung</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-3xl space-y-6">
+    <c-layout.page-header title="Niederschrift berichtigen"
+        subtitle="{% if item %}TOP {{ item.number }}: {{ item.name }}{% elif target == 'general_np' %}Allgemeiner Teil (nichtöffentlich){% else %}Allgemeiner Teil{% endif %}" />
+
+    <c-ui.alert variant="{% if public_scope %}warning{% else %}info{% endif %}" icon="{% if public_scope %}globe{% else %}lock{% endif %}">
+        {% if public_scope %}
+        Die Berichtigung betrifft den öffentlichen Teil. Datum und Grund erscheinen in der öffentlichen Niederschrift
+        (OParl und Bürgerportal) – bitte keine nichtöffentlichen Inhalte in den Grund schreiben.
+        {% else %}
+        Die Berichtigung betrifft den nichtöffentlichen Teil. Der Grund wird verschlüsselt gespeichert und erscheint nur intern.
+        {% endif %}
+        {% if four_eyes %}Wirksam wird sie erst, wenn eine zweite Person sie bestätigt (Vier-Augen-Prinzip).{% else %}Sie wird sofort wirksam und im Audit-Log protokolliert.{% endif %}
+    </c-ui.alert>
+
+    <form method="post" class="space-y-6" data-testid="berichtigung-formular">
+        {% csrf_token %}
+        {% if item %}<input type="hidden" name="top" value="{{ item.pk }}">{% else %}<input type="hidden" name="teil" value="{{ teil }}">{% endif %}
+
+        <c-ui.card title="Geänderte Werte" subtitle="Übernommen werden nur Felder, die Sie ändern.">
+            <div class="space-y-4">
+                {% for entry in fields %}
+                {% with spec=entry.spec %}
+                {% if spec.kind == 'choice' %}
+                <c-form.select name="{{ spec.name }}" label="{{ spec.label }}">
+                    {% for value, label in result_choices %}
+                    <option value="{{ value }}"{% if value == entry.value %} selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </c-form.select>
+                {% elif spec.kind == 'count' %}
+                <c-form.field name="{{ spec.name }}" label="{{ spec.label }}" type="number" :value="entry.value" />
+                {% elif spec.long %}
+                <c-form.textarea name="{{ spec.name }}" label="{{ spec.label }}" rows="4" :value="entry.value" />
+                {% else %}
+                <c-form.field name="{{ spec.name }}" label="{{ spec.label }}" :value="entry.value" />
+                {% endif %}
+                {% endwith %}
+                {% endfor %}
+            </div>
+        </c-ui.card>
+
+        {% if voters %}
+        <c-ui.card title="Einzelstimmen" subtitle="Nur stimmberechtigte Anwesende; beratende Mitglieder und Gäste stimmen nicht ab." padding="none">
+            <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for attendance in voters %}
+                <li class="px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                    <span class="text-sm font-medium text-gray-900 dark:text-white">{{ attendance.person.display_name }}</span>
+                    <select name="vote_{{ attendance.person_id }}" aria-label="Stimme {{ attendance.person.display_name }}"
+                            class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        <option value="">—</option>
+                        {% for value, label in vote_choices %}
+                        <option value="{{ value }}"{% if attendance.current_vote == value %} selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </li>
+                {% endfor %}
+            </ul>
+        </c-ui.card>
+        {% endif %}
+
+        <c-ui.card title="Grund der Berichtigung">
+            <c-form.textarea name="reason" label="Grund" rows="3" required
+                help="Pflichtangabe. Erscheint in der Niederschrift als „Berichtigung vom … (Grund)“." />
+        </c-ui.card>
+
+        <div class="flex items-center gap-3">
+            <c-ui.button type="submit" icon="file-check">{% if four_eyes %}Berichtigung beantragen{% else %}Berichtigen{% endif %}</c-ui.button>
+            <c-ui.button variant="ghost" href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}">Abbrechen</c-ui.button>
+        </div>
+    </form>
+</div>
+{% endblock %}

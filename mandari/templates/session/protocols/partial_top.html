@@ -1,12 +1,20 @@
-{% comment %}Ein TOP in der Protokoll-Ansicht (Issue #31). Erwartet: item, can_view_np.{% endcomment %}
+{% comment %}Ein TOP in der Protokoll-Ansicht (Issue #31). Erwartet: item, can_view_np, can_correct.{% endcomment %}
 <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0">
     <div class="flex items-start gap-3">
         <span class="text-sm font-bold text-gray-500 dark:text-gray-400 w-10">{{ item.number }}</span>
         <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-gray-900 dark:text-white {% if item.is_withdrawn %}line-through text-gray-400{% endif %}">
-                {{ item.name }}
-                {% if item.is_supplementary %}<span class="text-xs text-amber-600">(Nachtrag)</span>{% endif %}
-            </p>
+            <div class="flex items-start justify-between gap-2">
+                <p class="text-sm font-medium text-gray-900 dark:text-white {% if item.is_withdrawn %}line-through text-gray-400{% endif %}">
+                    {{ item.name }}
+                    {% if item.is_supplementary %}<span class="text-xs text-amber-600">(Nachtrag)</span>{% endif %}
+                </p>
+                {% if can_correct %}
+                <a href="{% url 'session:meeting_protocol_correction' tenant_slug=tenant_slug meeting_id=item.meeting_id %}?top={{ item.pk }}"
+                   class="inline-flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline flex-none" data-testid="top-berichtigen">
+                    <i data-lucide="file-pen-line" class="w-3.5 h-3.5"></i> Berichtigen
+                </a>
+                {% endif %}
+            </div>
             {% if item.vote_result != "pending" %}
             <p class="text-xs mt-1">
                 <span class="font-medium

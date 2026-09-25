@@ -11,6 +11,8 @@ Je Mandant und Vorgangsart schaltbar (Einstellungen → Vier-Augen-Prinzip), „
 - Sitzungsgeld und Pauschalen (Standard an): wer den Abrechnungs- bzw. Monatslauf erzeugt hat
 - Übergabe von Beschlussauszügen (Standard aus): Ersteller:in und letzte:r inhaltliche:r
   Bearbeiter:in der Niederschrift der Sitzung
+- Berichtigung einer genehmigten Niederschrift (Issue #318, folgt der Einstellung für die
+  Niederschrift): wer die Berichtigung beantragt hat, auch in Vertretung
 
 Warum „Ersteller:in und letzte:r inhaltliche:r Bearbeiter:in“: Wer eine Vorlage erstellt, trägt
 die fachliche Verantwortung; wer sie zuletzt inhaltlich geändert hat, hat genau den Stand
@@ -45,6 +47,9 @@ PROCESS_PAPER = "paper"
 PROCESS_PROTOCOL = "protocol"
 PROCESS_ALLOWANCE = "allowance"
 PROCESS_FORWARDING = "forwarding"
+#: Berichtigung einer genehmigten Niederschrift (Issue #318): keine eigene Einstellung, sie folgt
+#: dem Vier-Augen-Prinzip für die Niederschrift und erscheint deshalb nicht in ``PROCESSES``
+PROCESS_CORRECTION = "correction"
 
 #: Vorgangsarten mit Beschriftung für die Einstellungen
 PROCESSES: dict[str, str] = {
@@ -59,7 +64,8 @@ SELF_DEFINITION: dict[str, str] = {
     PROCESS_PAPER: "Wer die Vorlage erstellt oder zuletzt inhaltlich bearbeitet hat (Text, Anlagen).",
     PROCESS_PROTOCOL: (
         "Wer die Niederschrift erstellt oder zuletzt inhaltlich bearbeitet hat "
-        "(allgemeiner Teil, Protokoll der TOPs, Beschlussergebnisse)."
+        "(allgemeiner Teil, Protokoll der TOPs, Beschlussergebnisse). Berichtigungen nach der "
+        "Genehmigung bestätigt, wer sie nicht beantragt hat."
     ),
     PROCESS_ALLOWANCE: "Wer den Abrechnungs- bzw. Monatslauf erzeugt hat.",
     PROCESS_FORWARDING: "Wer die Niederschrift der Sitzung erstellt oder zuletzt inhaltlich bearbeitet hat.",
@@ -79,6 +85,7 @@ PERMISSIONS: dict[str, str] = {
     PROCESS_PROTOCOL: "approve_protocols",
     PROCESS_ALLOWANCE: "manage_allowances",
     PROCESS_FORWARDING: "edit_meetings",
+    PROCESS_CORRECTION: "approve_protocols",
 }
 
 _SUBJECT = {
@@ -86,12 +93,14 @@ _SUBJECT = {
     PROCESS_PROTOCOL: "diese Niederschrift",
     PROCESS_ALLOWANCE: "diese Position",
     PROCESS_FORWARDING: "die Niederschrift dieser Sitzung",
+    PROCESS_CORRECTION: "diese Berichtigung",
 }
 _CONSEQUENCE = {
     PROCESS_PAPER: "Freigeben muss eine andere Person.",
     PROCESS_PROTOCOL: "Genehmigen muss eine andere Person.",
     PROCESS_ALLOWANCE: "Genehmigen muss eine andere Person.",
     PROCESS_FORWARDING: "Den Beschlussauszug übergibt eine andere Person.",
+    PROCESS_CORRECTION: "Bestätigen muss eine andere Person.",
 }
 
 # Felder, deren Änderung als inhaltliche Bearbeitung zählt
@@ -124,6 +133,11 @@ EDITED = "zuletzt inhaltlich bearbeitet"
 class ApprovalError(Exception):
     """Freigabe nicht zulässig; die Meldung ist für die Oberfläche formuliert."""
 
+    def __init__(self, user_message: str) -> None:
+        super().__init__(user_message)
+        #: fester, für Nutzer formulierter Text – nur diesen in Antworten ausgeben
+        self.user_message = user_message
+
 
 @dataclass(frozen=True)
 class Decision:
@@ -139,7 +153,7 @@ def required(tenant: SessionTenant, process: str, obj: Any = None) -> bool:
     if process == PROCESS_PAPER:
         mode = tenant.four_eyes_papers
         return mode == "always" or (mode == "financial" and getattr(obj, "has_financial_impact", None) is True)
-    if process == PROCESS_PROTOCOL:
+    if process in (PROCESS_PROTOCOL, PROCESS_CORRECTION):
         return bool(tenant.four_eyes_protocols)
     if process == PROCESS_ALLOWANCE:
         return bool(tenant.four_eyes_allowances)
@@ -161,6 +175,9 @@ def responsible(process: str, obj: Any) -> dict[Any, str]:
         add(obj.content_edited_by_id, EDITED)
     elif process == PROCESS_ALLOWANCE:
         add(obj.created_by_id, "erzeugt")
+    elif process == PROCESS_CORRECTION:
+        add(obj.requested_by_id, "beantragt")
+        add(obj.requested_on_behalf_of_id, "beantragt")
     elif process == PROCESS_FORWARDING:
         from apps.session.models import SessionProtocol
 
@@ -194,6 +211,10 @@ def visible_to(process: str, obj: Any, person: SessionUser) -> bool:
         return "view_papers" in perms and (obj.is_public or "view_non_public_papers" in perms)
     if process == PROCESS_PROTOCOL:
         return "view_protocols" in perms and (obj.meeting.is_public or "view_non_public_meetings" in perms)
+    if process == PROCESS_CORRECTION:
+        return visible_to(PROCESS_PROTOCOL, obj.protocol, person) and (
+            obj.is_public or "view_non_public_meetings" in perms
+        )
     return True
 
 

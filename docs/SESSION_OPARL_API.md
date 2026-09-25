@@ -25,7 +25,7 @@ markiert sind:
 | Meeting | `is_public=True` |
 | AgendaItem | `is_public=True` **und** Sitzung öffentlich (NÖ-Teil niemals; `resolutionText` nur der öffentliche Beschlusstext) |
 | Paper | `is_public=True` |
-| File | `is_public=True` **und** übergeordnetes Objekt (Vorlage/Sitzung/TOP) öffentlich |
+| File | `is_public=True` **und** übergeordnetes Objekt (Vorlage/Sitzung/TOP) öffentlich; die öffentliche Niederschrift nur, solange sie veröffentlicht ist |
 | Consultation | Vorlage öffentlich; Referenzen auf NÖ-Sitzungen/-TOPs werden ausgelassen |
 | Person | ohne geschützte Daten — verschlüsselte Felder (Telefon, Adresse, Bankdaten) werden nie gelesen |
 | Organization, Membership, LegislativeTerm | vollständig (keine Ö/NÖ-Unterteilung) |
@@ -69,6 +69,28 @@ Sachverhalt und Beschlussvorschlag der Vorlage sind nicht Teil der OParl-Ausgabe
 Offen: Änderungen an Betreff oder öffentlichen Anlagen nach der Freigabe erscheinen
 sofort – eine Ausgabe, die bis zu einer erneuten Freigabe den freigegebenen Stand
 zeigt, ist nicht umgesetzt.
+
+## Öffentliche Niederschrift (`resultsProtocol`, Issue #318)
+
+Mit dem Veröffentlichen einer Niederschrift entsteht eine Datei mit ihrem öffentlichen Teil
+(PDF, dazu der Text im OParl-Feld `File.text`). Sie hängt an der Sitzung und erscheint als
+`Meeting.resultsProtocol` (OParl 1.1: Ergebnisprotokoll), nicht zusätzlich unter
+`auxiliaryFile`; abrufbar über den üblichen Datei-Endpunkt. Name und Dateiname sind fest
+(„Niederschrift (öffentlicher Teil)“), der Speichername trägt nur das Sitzungsdatum.
+
+- Grundlage sind ausschließlich unverschlüsselte Felder der öffentlichen Sitzung und ihrer
+  öffentlichen TOPs (ohne nichtöffentliche Unterpunkte), der öffentliche allgemeine Teil und
+  Berichtigungen des öffentlichen Teils. Verschlüsselte Felder werden dafür nie entschlüsselt;
+  eine nichtöffentliche Sitzung hat keine öffentliche Fassung.
+- Erzeugt wird beim Veröffentlichen, nicht beim Abruf. Ändert sich danach der öffentliche Inhalt
+  (Berichtigung, TOP oder Sitzung wird nichtöffentlich, Anwesenheit korrigiert), entsteht eine
+  neue Datei mit neuer Kennung; die alte wird gelöscht, hinterlässt einen Tombstone und
+  verschwindet sofort aus dem Bürgerportal. Dasselbe gilt für „Veröffentlichung zurücknehmen“.
+- Niederschriften, die vor diesem Stand veröffentlicht wurden, erhalten ihre Datei einmalig über
+  `python manage.py session_publish_protocols` (siehe `DEPLOYMENT.md`).
+
+Das Bürgerportal zeigt die Datei auf der Sitzungsseite (Karte „Niederschrift“), gespeist aus dem
+gespiegelten `resultsProtocol` bzw. `verbatimProtocol` – auch bei fremden OParl-Quellen.
 
 ## Abstimmungsergebnisse (Erweiterung, Issue #41)
 

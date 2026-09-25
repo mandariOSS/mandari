@@ -174,8 +174,13 @@ def run_privacy_purge(
             if protocol is not None and protocol.get_content_decrypted():
                 cleared.append("NÖ-Protokollteil")
                 if not dry_run:
+                    # Fristgerechte Löschung ist keine Änderung der Niederschrift: Sie darf auch den
+                    # nichtöffentlichen Teil einer genehmigten Niederschrift leeren (Issue #318)
+                    from apps.session.services import protocol_lock
+
                     protocol.set_content_encrypted("")
-                    protocol.save(update_fields=["content_encrypted", "updated_at"])
+                    with protocol_lock.permit(meeting.pk):
+                        protocol.save(update_fields=["content_encrypted", "updated_at"])
             if meeting.get_internal_notes_decrypted():
                 cleared.append("Interne Notizen")
                 if not dry_run:

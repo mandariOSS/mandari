@@ -364,6 +364,9 @@ def _special_action(old_instance, new_instance) -> str | None:
     if old_status != new_status:
         if model_name in ALLOWANCE_MODELS and new_status in _ALLOWANCE_STATUS_ACTIONS:
             return _ALLOWANCE_STATUS_ACTIONS[new_status]
+        # Issue #318: Rücknahme einer veröffentlichten Niederschrift ist keine erneute Genehmigung
+        if model_name == "SessionProtocol" and old_status == "published" and new_status == "approved":
+            return "unpublish"
         if new_status == "approved":
             return "approve"
         if new_status == "published":

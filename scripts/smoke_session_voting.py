@@ -209,6 +209,8 @@ check("Erfassung ohne edit_protocols -> 403", resp.status_code == 403, f"got {re
 # =============================================================================
 print()
 print("=== Phase B: Geheime Abstimmung ===")
+# Stimmrecht (Issue #318): Bei vollständiger Anwesenheit (3 Stimmberechtigte, davon 1 befangen)
+# sind höchstens 2 Stimmen möglich – mehr wird abgewiesen
 resp = admin.post(
     f"{base}/agenda/{item_secret.id}/voting/",
     {
@@ -222,7 +224,21 @@ resp = admin.post(
     },
 )
 item_secret.refresh_from_db()
-check("Geheim: manuelle Summen gespeichert", item_secret.votes_yes == 5 and item_secret.votes_no == 2)
+check("Geheim: Summen über den Stimmberechtigten abgewiesen", item_secret.votes_yes == 0)
+resp = admin.post(
+    f"{base}/agenda/{item_secret.id}/voting/",
+    {
+        "voting_method": "secret",
+        "vote_result": "approved",
+        "votes_yes": "1",
+        "votes_no": "1",
+        "votes_abstain": "0",
+        f"vote_{p1.id}": "yes",
+        f"vote_{p3.id}": "excluded",
+    },
+)
+item_secret.refresh_from_db()
+check("Geheim: manuelle Summen gespeichert", item_secret.votes_yes == 1 and item_secret.votes_no == 1)
 check("Geheim: keine Ja/Nein-Einzelstimmen", not item_secret.votes.filter(vote__in=("yes", "no", "abstain")).exists())
 check("Geheim: Befangenheit dokumentierbar", item_secret.votes.filter(vote="excluded").count() == 1)
 

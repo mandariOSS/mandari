@@ -1,0 +1,55 @@
+{% comment %}Berichtigungen der Niederschrift (Issue #318). Erwartet: corrections, can_correct, can_view_np, meeting.{% endcomment %}
+{% if corrections or can_correct %}
+<c-ui.card title="Berichtigungen" subtitle="Nach der Genehmigung ändert sich die Niederschrift nur über eine dokumentierte Berichtigung." data-testid="berichtigungen">
+    {% if can_correct %}
+    <c-slot name="actions">
+        <c-ui.button variant="secondary" size="sm" icon="file-pen-line" href="{% url 'session:meeting_protocol_correction' tenant_slug=tenant_slug meeting_id=meeting.id %}?teil=allgemein">Allgemeinen Teil berichtigen</c-ui.button>
+        {% if can_view_np %}
+        <c-ui.button variant="ghost" size="sm" icon="lock" href="{% url 'session:meeting_protocol_correction' tenant_slug=tenant_slug meeting_id=meeting.id %}?teil=allgemein-noe">NÖ-Teil</c-ui.button>
+        {% endif %}
+    </c-slot>
+    {% endif %}
+    {% if corrections %}
+    <ul class="divide-y divide-gray-100 dark:divide-gray-700/50 -my-3">
+        {% for row in corrections %}
+        {% with c=row.correction %}
+        <li class="py-3 space-y-1">
+            <div class="flex items-center gap-2 flex-wrap">
+                <c-ui.badge color="{{ row.tone }}">{{ c.get_status_display }}</c-ui.badge>
+                <span class="text-sm font-medium text-gray-900 dark:text-white">Berichtigung vom {{ c.requested_at|date:"d.m.Y" }} – {{ c.subject_label }}</span>
+                {% if not c.is_public %}<c-ui.badge color="red" icon="lock">nichtöffentlich</c-ui.badge>{% endif %}
+            </div>
+            <p class="text-sm text-gray-700 dark:text-gray-300">Grund: {{ row.reason }}</p>
+            {% if row.changes %}
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ row.changes|join:"; " }}</p>
+            {% endif %}
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+                Beantragt von {{ c.requested_by.user.email|default:"—" }}{% if c.decided_by and c.decided_by != c.requested_by %}, {{ c.get_status_display|lower }} durch {{ c.decided_by.user.email }}{% endif %}{% if c.decision_note %} ({{ c.decision_note }}){% endif %}
+            </p>
+            {% if c.status == 'pending' and can_correct %}
+            {% include "session/partials/four_eyes_hint.html" with decision=row.decision %}
+            <div class="flex items-center gap-2 flex-wrap pt-1">
+                {% if row.decision.allowed %}
+                <form method="post" action="{% url 'session:meeting_protocol_correction_decision' tenant_slug=tenant_slug meeting_id=meeting.id correction_id=c.id decision='confirm' %}">
+                    {% csrf_token %}
+                    <c-ui.button type="submit" size="sm" icon="check">Bestätigen</c-ui.button>
+                </form>
+                {% endif %}
+                <form method="post" action="{% url 'session:meeting_protocol_correction_decision' tenant_slug=tenant_slug meeting_id=meeting.id correction_id=c.id decision='reject' %}"
+                      class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="text" name="note" placeholder="Vermerk (optional)" aria-label="Vermerk zur Ablehnung"
+                           class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <c-ui.button type="submit" variant="ghost" size="sm" icon="x">Ablehnen</c-ui.button>
+                </form>
+            </div>
+            {% endif %}
+        </li>
+        {% endwith %}
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">Noch keine Berichtigungen. Einzelne Tagesordnungspunkte berichtigen Sie über „Berichtigen“ am jeweiligen TOP.</p>
+    {% endif %}
+</c-ui.card>
+{% endif %}

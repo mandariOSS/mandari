@@ -255,6 +255,7 @@
 
         <!-- Sidebar -->
         <div class="space-y-6">
+            {% include "pages/meetings/_protocol_card.html" %}
             <!-- Organizations / Gremien -->
             {% if meeting.organizations.all %}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">

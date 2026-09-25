@@ -1,0 +1,84 @@
+{% comment %}Status und Workflow-Aktionen der Niederschrift (Issues #31, #318).
+Erwartet: protocol, status_tone, meeting, can_edit, can_approve, locked, direct_mode, freigabe, approval_items, approval_meetings.{% endcomment %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+    <div class="flex items-center justify-between flex-wrap gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
+            <c-ui.badge color="{{ status_tone }}">{{ protocol.get_status_display }}</c-ui.badge>
+            {% if locked %}
+            <c-ui.badge color="gray" icon="lock" data-testid="niederschrift-gesperrt">Schreibgeschützt</c-ui.badge>
+            {% endif %}
+            {% if protocol.approval_note %}
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{ protocol.approval_note }}</span>
+            {% endif %}
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            {% if can_edit and protocol.status == 'draft' or can_edit and protocol.status == 'review' %}
+            <c-ui.button variant="ghost" size="sm" icon="edit" href="{% url 'session:meeting_protocol_edit' tenant_slug=tenant_slug meeting_id=meeting.id %}">Bearbeiten</c-ui.button>
+            {% endif %}
+            {% if can_edit and protocol.status == 'draft' %}
+            <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='submit' %}">
+                {% csrf_token %}
+                <c-ui.button type="submit" size="sm" icon="send">Zur Prüfung geben</c-ui.button>
+            </form>
+            {% endif %}
+            {% if can_approve and protocol.status == 'approved' %}
+            <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='publish' %}">
+                {% csrf_token %}
+                <c-ui.button type="submit" variant="success" size="sm" icon="globe">Ö-Fassung veröffentlichen</c-ui.button>
+            </form>
+            {% endif %}
+            {% if can_approve and protocol.status == 'published' %}
+            <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='unpublish' %}">
+                {% csrf_token %}
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="eye-off">Veröffentlichung zurücknehmen</c-ui.button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if can_approve and protocol.status == 'review' %}
+    {% include "session/partials/four_eyes_hint.html" with decision=freigabe %}
+    <div class="flex items-end gap-3 flex-wrap">
+        {% if freigabe.allowed and direct_mode %}
+        <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='publish' %}">
+            {% csrf_token %}
+            <c-ui.button type="submit" variant="success" size="sm" icon="globe">Freigeben und veröffentlichen</c-ui.button>
+        </form>
+        <p class="text-xs text-gray-500 dark:text-gray-400">Dieser Mandant veröffentlicht Niederschriften ohne Genehmigungsschritt.</p>
+        {% elif freigabe.allowed %}
+        <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='approve' %}"
+              class="flex items-end gap-2 flex-wrap" data-testid="genehmigen-formular">
+            {% csrf_token %}
+            <c-form.select name="approval_item" label="Genehmigt unter TOP der Folgesitzung" class="min-w-[16rem]">
+                <option value="">— ohne Verknüpfung —</option>
+                {% for top in approval_items %}
+                <option value="{{ top.id }}">{{ top.meeting.start|date:"d.m.Y" }} – TOP {{ top.number }}: {{ top.name|truncatechars:60 }}</option>
+                {% endfor %}
+            </c-form.select>
+            <c-form.select name="approval_meeting" label="oder: Genehmigt in Sitzung" class="min-w-[14rem]">
+                <option value="">— optional —</option>
+                {% for am in approval_meetings %}
+                <option value="{{ am.id }}">{{ am.name }} ({{ am.start|date:"d.m.Y" }})</option>
+                {% endfor %}
+            </c-form.select>
+            <c-ui.button type="submit" size="sm" icon="check">Genehmigen</c-ui.button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='reject' %}"
+              class="flex items-end gap-2">
+            {% csrf_token %}
+            <input type="text" name="comment" placeholder="Anmerkung zur Zurückweisung" aria-label="Anmerkung zur Zurückweisung"
+                   class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            <c-ui.button type="submit" variant="ghost" size="sm" icon="undo-2">Zurückweisen</c-ui.button>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if locked %}
+    <p class="text-xs text-gray-500 dark:text-gray-400">
+        Ergebnis, Stimmen und Texte sind seit der {% if protocol.status == 'published' and direct_mode %}Veröffentlichung{% else %}Genehmigung{% endif %} schreibgeschützt.
+        {% if protocol.approval_agenda_item %}Genehmigt unter TOP {{ protocol.approval_agenda_item.number }} der Sitzung vom {{ protocol.approval_agenda_item.meeting.start|date:"d.m.Y" }}.{% endif %}
+        {% if protocol.status == 'published' %}{% if meeting.is_public %}Die öffentliche Fassung steht über OParl und im Bürgerportal bereit.{% else %}Nichtöffentliche Sitzung: keine öffentliche Fassung.{% endif %}{% endif %}
+    </p>
+    {% endif %}
+</div>

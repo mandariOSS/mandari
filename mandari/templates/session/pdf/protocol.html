@@ -1,5 +1,5 @@
 {% extends "session/pdf/base_pdf.html" %}
-{% comment %}Niederschrift-PDF (Issue #31): Ö-Fassung bzw. interne NÖ-Fassung.{% endcomment %}
+{% comment %}Niederschrift-PDF (Issue #31): Ö-Fassung bzw. interne NÖ-Fassung, mit Berichtigungen (Issue #318).{% endcomment %}
 
 {% block content %}
     <h1>Niederschrift</h1>
@@ -64,6 +64,13 @@
         {% endfor %}
         {% endfor %}
     </table>
+    {% endif %}
+
+    {% if corrections %}
+    <h2>Berichtigungen</h2>
+    {% for note in corrections %}
+    <p><strong>Berichtigung vom {{ note.date|date:"d.m.Y" }}</strong> ({{ note.reason }}) – {{ note.subject }}{% if note.changes %}<br><span class="muted">{{ note.changes|join:"; " }}</span>{% endif %}</p>
+    {% endfor %}
     {% endif %}
 
     {% if protocol.approval_note %}
