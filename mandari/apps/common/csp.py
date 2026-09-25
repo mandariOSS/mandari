@@ -34,6 +34,8 @@ logger = logging.getLogger("mandari.csp")
 MAX_BODY = 16 * 1024
 RATE_LIMIT = 60  # Meldungen je Adresse und Minute
 FIELDS = ("effective-directive", "blocked-uri", "document-uri", "source-file", "line-number", "disposition")
+# Browser-Erweiterungen schleusen eigene Skripte und Schriften ein; ihre Meldungen sagen nichts über mandari aus
+EXTENSION_SCHEMES = ("moz-extension:", "chrome-extension:", "safari-extension:", "safari-web-extension:")
 
 VIOLATIONS = Counter("mandari_csp_violations_total", "Gemeldete CSP-Verstöße je Direktive", ["directive"])
 
@@ -70,6 +72,11 @@ def parse_reports(raw: bytes, content_type: str) -> list[dict[str, str]]:
     return [_normalize(r) for r in reports[:20]]
 
 
+def from_extension(report: dict[str, str]) -> bool:
+    """Stammt der Verstoß aus einer Browser-Erweiterung statt aus mandari?"""
+    return any(report[feld].startswith(EXTENSION_SCHEMES) for feld in ("source-file", "blocked-uri"))
+
+
 def _rate_limited(request: HttpRequest) -> bool:
     key = f"csp-report:{client_ip(request)}"
     cache.add(key, 0, 60)
@@ -88,6 +95,8 @@ def csp_report(request: HttpRequest) -> HttpResponse:
     if _rate_limited(request):
         return HttpResponse(status=204)
     for report in parse_reports(request.body, request.content_type or ""):
+        if from_extension(report):
+            continue
         directive = report["effective-directive"].split()[0] if report["effective-directive"] else "unbekannt"
         VIOLATIONS.labels(directive=directive).inc()
         logger.warning(

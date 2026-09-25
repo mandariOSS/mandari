@@ -606,18 +606,22 @@ from django.utils.csp import CSP
 
 SECURE_CSP_REPORT_ONLY = {
     "default-src": [CSP.SELF],
-    # Alpine braucht heute noch unsafe-eval (Inline-Ausdrücke); die Report-Only-Policy nennt es bewusst nicht,
-    # damit die Konsole den Abstand zum Ziel (Alpine-CSP-Build, #172) sichtbar macht.
-    "script-src": [CSP.SELF, CSP.NONCE],
+    # Alpine wertet Inline-Ausdrücke per eval aus und braucht unsafe-eval, bis der Alpine-CSP-Build kommt (#172).
+    # Ohne den Eintrag schickte jeder Seitenaufruf Dutzende gleichlautende Meldungen an /csp-report/
+    # (im September 2026 knapp die Hälfte aller Anfragen); so melden die Browser nur echte Abweichungen.
+    "script-src": [CSP.SELF, CSP.NONCE, CSP.UNSAFE_EVAL],
     "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],  # Inline-Styles bleiben bis zur Auslagerung erlaubt
     "img-src": [CSP.SELF, "data:", "https:", "blob:"],
     "font-src": [CSP.SELF, "data:"],
     "connect-src": [CSP.SELF, "https://tiles.versatiles.org"],
     "worker-src": [CSP.SELF, "blob:"],
     "child-src": ["blob:"],
+    # Dokumentvorschau (Insight, Work) lädt Seiten des eigenen Ursprungs im iframe
+    "frame-src": [CSP.SELF, "blob:"],
     "object-src": [CSP.NONE],
     "base-uri": [CSP.SELF],
-    "frame-ancestors": [CSP.NONE],
+    # Eigene Seiten dürfen die Vorschau einbetten, fremde nicht (wie die erzwungene Policy des Reverse Proxy)
+    "frame-ancestors": [CSP.SELF],
     # Verstöße landen im Protokoll (Logger mandari.csp) und im Zähler mandari_csp_violations_total (#172)
     "report-uri": ["/csp-report/"],
 }

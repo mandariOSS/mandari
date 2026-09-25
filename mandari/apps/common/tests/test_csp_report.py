@@ -83,3 +83,21 @@ def test_zu_grosse_koerper_und_ratenlimit_werden_still_verworfen(client: Client)
     for _ in range(csp.RATE_LIMIT + 5):
         assert client.post("/csp-report/", data=body, content_type="application/reports+json").status_code == 204
     assert _zaehler("style-src-attr") == vorher + csp.RATE_LIMIT
+
+
+def test_meldungen_von_browser_erweiterungen_werden_verworfen(client: Client, caplog: pytest.LogCaptureFixture) -> None:
+    vorher = _zaehler("font-src")
+    erweiterung = {
+        "csp-report": {
+            "effective-directive": "font-src",
+            "blocked-uri": "https://cdn.example/font.woff2",
+            "source-file": "moz-extension://1234/content.js",
+        }
+    }
+    with caplog.at_level(logging.WARNING, logger="mandari.csp"):
+        response = client.post("/csp-report/", data=json.dumps(erweiterung), content_type="application/csp-report")
+    assert response.status_code == 204
+    assert _zaehler("font-src") == vorher
+    assert not any("CSP-Verstoß" in r.getMessage() for r in caplog.records)
+    assert csp.from_extension({"source-file": "", "blocked-uri": "chrome-extension://abc/x.js"})
+    assert not csp.from_extension({"source-file": "https://mandari.example/x.js", "blocked-uri": "eval"})
