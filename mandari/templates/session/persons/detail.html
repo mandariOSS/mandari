@@ -229,6 +229,10 @@
                 {% endif %}
                 {% endwith %}
                 <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Zustellweg für Ladungen</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ person.get_delivery_channel_display }}</dd>
+                </div>
+                <div>
                     <dt class="text-gray-500 dark:text-gray-400">Status</dt>
                     <dd class="font-medium text-gray-900 dark:text-white mt-1">
                         {% if person.is_active %}

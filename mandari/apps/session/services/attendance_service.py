@@ -9,10 +9,12 @@ Zentrale Logik für:
   stimmberechtigten Mitglieder anwesend)
 """
 
-from django.db.models import Q
+from typing import Any
+
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
-from apps.session.models import SessionAttendance, SessionMeeting
+from apps.session.models import SessionAttendance, SessionMeeting, SessionOrganizationMembership, SessionPerson
 
 # Besetzungs-Funktion -> Anwesenheits-Funktion
 _ROLE_MAP = {
@@ -28,7 +30,7 @@ _ROLE_MAP = {
 PRESENT_STATUSES = ("present", "joined_late")
 
 
-def active_memberships(meeting: SessionMeeting):
+def active_memberships(meeting: SessionMeeting) -> QuerySet[SessionOrganizationMembership]:
     """Aktive Mitgliedschaften der Besetzung zum Sitzungsdatum."""
     meeting_date = timezone.localtime(meeting.start).date()
     return (
@@ -55,22 +57,43 @@ def generate_attendance(meeting: SessionMeeting) -> int:
     """
     created_count = 0
     for membership in active_memberships(meeting):
-        notes = ""
-        if membership.substitute_for_id:
-            notes = f"Vertretung für {membership.substitute_for.display_name}"
         _attendance, created = SessionAttendance.objects.get_or_create(
             meeting=meeting,
             person=membership.person,
-            defaults={
-                "status": "invited",
-                "role": _ROLE_MAP.get(membership.role, "member"),
-                "has_voting_rights": membership.has_voting_rights,
-                "notes": notes,
-            },
+            defaults=attendance_defaults(membership),
         )
         if created:
             created_count += 1
     return created_count
+
+
+def attendance_defaults(membership: SessionOrganizationMembership | None) -> dict[str, Any]:
+    """
+    Vorbelegung einer Anwesenheitszeile aus der Besetzung.
+
+    Funktion und Stimmrecht kommen aus der Mitgliedschaft; Vertreter erhalten den Hinweis,
+    für wen sie vertreten. Ohne Mitgliedschaft (z. B. ausgeschieden) gilt: Mitglied ohne Notiz.
+    """
+    if membership is None:
+        return {"status": "invited", "role": "member", "has_voting_rights": True, "notes": ""}
+    notes = ""
+    if membership.substitute_for_id and membership.substitute_for is not None:
+        notes = f"Vertretung für {membership.substitute_for.display_name}"
+    return {
+        "status": "invited",
+        "role": _ROLE_MAP.get(membership.role, "member"),
+        "has_voting_rights": membership.has_voting_rights,
+        "notes": notes,
+    }
+
+
+def ensure_attendance(meeting: SessionMeeting, person: SessionPerson) -> SessionAttendance:
+    """Anwesenheitszeile einer Person holen oder aus ihrer Besetzung anlegen (Issue #225)."""
+    membership = active_memberships(meeting).filter(person=person).first()
+    attendance, _created = SessionAttendance.objects.get_or_create(
+        meeting=meeting, person=person, defaults=attendance_defaults(membership)
+    )
+    return attendance
 
 
 def quorum_status(meeting: SessionMeeting) -> dict:

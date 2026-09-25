@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% comment %}
+Rückmeldung zur Ladung per persönlichem Link (Issue #225), ohne Anmeldung.
+Der Aufruf allein bestätigt nichts – erst ein Klick auf einen der Knöpfe (POST).
+{% endcomment %}
+
+{% block title %}{{ page_title|default:"Rückmeldung zur Ladung" }}{% endblock %}
+
+{% block extra_head %}
+<meta name="robots" content="noindex, nofollow">
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-10 space-y-6">
+    {% if state == "invalid" or state == "expired" or state == "rate_limited" %}
+    <c-ui.card>
+        {% if state == "rate_limited" %}
+        <c-ui.empty-state icon="timer" title="Zu viele Anfragen">
+            Bitte versuchen Sie es in einigen Minuten erneut.
+        </c-ui.empty-state>
+        {% elif state == "expired" %}
+        <c-ui.empty-state icon="clock" title="Link abgelaufen">
+            Dieser Rückmeldelink ist nicht mehr gültig. Bitte wenden Sie sich an den Sitzungsdienst.
+        </c-ui.empty-state>
+        {% else %}
+        <c-ui.empty-state icon="link-2-off" title="Link ungültig">
+            Dieser Rückmeldelink ist ungültig oder wurde ersetzt. Bitte nutzen Sie den Link aus Ihrer aktuellen Ladung oder wenden Sie sich an den Sitzungsdienst.
+        </c-ui.empty-state>
+        {% endif %}
+    </c-ui.card>
+    {% else %}
+    <c-layout.page-header title="{{ page_title }}" subtitle="{{ tenant.name }}" />
+
+    {% if saved %}
+    <c-ui.alert variant="success" icon="check-circle" title="Vielen Dank">Ihre Angaben sind gespeichert. Sie können sie bis zum Sitzungsbeginn über diesen Link ändern.</c-ui.alert>
+    {% endif %}
+    {% if error %}
+    <c-ui.alert variant="error" icon="alert-circle">{{ error }}</c-ui.alert>
+    {% endif %}
+    {% if state == "cancelled" %}
+    <c-ui.alert variant="warning" icon="calendar-x" title="Sitzung abgesagt">Diese Sitzung wurde abgesagt. Eine Rückmeldung ist nicht erforderlich.</c-ui.alert>
+    {% elif state == "closed" %}
+    <c-ui.alert variant="info" icon="info" title="Sitzung hat begonnen">
+        Rückmeldungen über diesen Link sind nicht mehr möglich. Bitte wenden Sie sich an den Sitzungsdienst{% if tenant.contact_email %} ({{ tenant.contact_email }}){% endif %}.
+    </c-ui.alert>
+    {% endif %}
+
+    <c-ui.card title="{{ meeting.name }}" subtitle="{{ meeting.organization.name }}">
+        <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+            <dt class="text-gray-500 dark:text-gray-400">Termin</dt>
+            <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr</dd>
+            {% if location %}
+            <dt class="text-gray-500 dark:text-gray-400">Ort</dt>
+            <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ location }}</dd>
+            {% endif %}
+            {% if is_substitution and recipient.substitute_for %}
+            <dt class="text-gray-500 dark:text-gray-400">Vertretung für</dt>
+            <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ recipient.substitute_for.display_name }}</dd>
+            {% endif %}
+            <dt class="text-gray-500 dark:text-gray-400">Empfang</dt>
+            <dd class="sm:col-span-2">
+                {% if recipient.acknowledged_at %}
+                <c-ui.badge color="green" icon="check">bestätigt am {{ recipient.acknowledged_at|date:"d.m.Y, H:i" }} Uhr</c-ui.badge>
+                {% else %}
+                <c-ui.badge color="amber" icon="clock">noch nicht bestätigt</c-ui.badge>
+                {% endif %}
+            </dd>
+            <dt class="text-gray-500 dark:text-gray-400">Ihre Rückmeldung</dt>
+            <dd class="sm:col-span-2">
+                {% if attendance.status == "confirmed" %}
+                <c-ui.badge color="green" icon="user-check">Zugesagt</c-ui.badge>
+                {% elif attendance.status == "declined" %}
+                <c-ui.badge color="red" icon="user-x">Abgesagt{% if attendance.substitute_requested %}, Vertretung erbeten{% endif %}</c-ui.badge>
+                {% else %}
+                <c-ui.badge>offen</c-ui.badge>
+                {% endif %}
+                {% if attendance.responded_at %}
+                <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">am {{ attendance.responded_at|date:"d.m.Y, H:i" }} Uhr</span>
+                {% endif %}
+            </dd>
+        </dl>
+        {% if attendance.substitute_requested and attendance.substitutes_notified_at %}
+        <p class="mt-4 text-sm text-gray-600 dark:text-gray-300">
+            {% if substitution_rows %}
+            Ihre Stellvertretung wurde um Vertretung gebeten: {% for row in substitution_rows %}{{ row.name }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+            {% else %}
+            Für Sie ist keine Stellvertretung erreichbar hinterlegt; der Sitzungsdienst ist informiert.
+            {% endif %}
+        </p>
+        {% endif %}
+    </c-ui.card>
+
+    {% if state == "ok" %}
+    <c-ui.card title="Rückmeldung" subtitle="Jede Rückmeldung bestätigt zugleich den Erhalt der Ladung.">
+        <div class="space-y-6">
+            <form method="post" class="flex flex-wrap gap-3">
+                {% csrf_token %}
+                <c-ui.button type="submit" name="action" value="confirm" variant="success" icon="user-check">Ich nehme teil</c-ui.button>
+                {% if not recipient.acknowledged_at %}
+                <c-ui.button type="submit" name="action" value="acknowledge" variant="secondary" icon="mail-check">Nur Erhalt bestätigen</c-ui.button>
+                {% endif %}
+            </form>
+
+            <form method="post" class="space-y-4 pt-6 border-t border-gray-200 dark:border-gray-700">
+                {% csrf_token %}
+                <h3 class="font-semibold text-gray-900 dark:text-white">Ich kann nicht teilnehmen</h3>
+                <c-form.textarea name="reason" label="Grund (optional)" rows="3" help="Nur für den Sitzungsdienst sichtbar und verschlüsselt gespeichert – nicht öffentlich." />
+                {% if has_substitutes and not is_substitution %}
+                {% if attendance.substitute_requested %}
+                <c-form.checkbox name="substitute" label="Meine Stellvertretung um Vertretung bitten" checked />
+                {% else %}
+                <c-form.checkbox name="substitute" label="Meine Stellvertretung um Vertretung bitten" />
+                {% endif %}
+                {% endif %}
+                <c-ui.button type="submit" name="action" value="decline" variant="danger" icon="user-x">Absagen</c-ui.button>
+            </form>
+        </div>
+    </c-ui.card>
+    {% endif %}
+
+    <p class="text-xs text-gray-500 dark:text-gray-400">
+        Dieser Link ist persönlich und gilt bis zum Sitzungsbeginn. Das Öffnen der Ladungsmail oder dieses Links wird nicht als Bestätigung gewertet.
+    </p>
+    {% endif %}
+</div>
+{% endblock %}

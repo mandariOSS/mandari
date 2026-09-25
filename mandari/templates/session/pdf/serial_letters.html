@@ -1,0 +1,118 @@
+{# djlint:off H025 – xhtml2pdf-Tags wie <pdf:nextpage> sind hier gültig #}
+{% comment %}
+Serienbrief zur Ladung (Issue #225): ein Anschreiben je Person mit Zustellweg Brief –
+Anschrift, Sitzungsdaten, Tagesordnung (Ö/NÖ je Berechtigung) und persönlicher Rückmeldelink
+mit QR-Code. Gerendert über apps/common/pdf.py (xhtml2pdf).
+{% endcomment %}<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<style>
+    @page {
+        size: A4;
+        margin: 20mm 20mm 22mm 25mm;
+        @frame footer_frame {
+            -pdf-frame-content: footer_content;
+            left: 25mm; width: 165mm; top: 280mm; height: 10mm;
+        }
+    }
+    body { font-family: Helvetica, sans-serif; font-size: 10.5pt; color: #111111; }
+    .letterhead { border-bottom: 2px solid {{ tenant.primary_color|default:"#1e40af" }}; padding-bottom: 6pt; margin-bottom: 10pt; }
+    .org-name { font-size: 14pt; font-weight: bold; color: {{ tenant.primary_color|default:"#1e40af" }}; }
+    .org-meta { font-size: 8pt; color: #444444; margin-top: 2pt; }
+    .sender-line { font-size: 7pt; color: #666666; border-bottom: 0.5pt solid #999999; margin-top: 12pt; }
+    .address { height: 32mm; margin-top: 3pt; font-size: 10.5pt; }
+    .date { text-align: right; margin-bottom: 10pt; }
+    .subject { font-weight: bold; font-size: 11pt; margin-bottom: 10pt; }
+    .meta-table td { font-size: 10pt; padding: 1pt 8pt 1pt 0; vertical-align: top; }
+    table.agenda { width: 100%; border-collapse: collapse; margin-top: 4pt; }
+    table.agenda td { font-size: 9.5pt; padding: 2pt 4pt; border-bottom: 0.5pt solid #cccccc; vertical-align: top; }
+    td.top-nr { width: 14mm; font-weight: bold; }
+    .section-title { font-size: 9.5pt; font-weight: bold; text-transform: uppercase; margin-top: 8pt; padding: 2pt 0; border-bottom: 1pt solid #888888; }
+    .response { margin-top: 12pt; border: 1pt solid #cccccc; padding: 6pt; }
+    .qr { width: 26mm; height: 26mm; }
+    .url { font-size: 7.5pt; color: #333333; }
+    .muted { color: #666666; }
+    .warning { color: #92400e; }
+    .footer { font-size: 7.5pt; color: #666666; text-align: center; }
+</style>
+</head>
+<body>
+    {% for entry in entries %}
+    <div class="letterhead">
+        <div class="org-name">{{ tenant.name }}</div>
+        <div class="org-meta">
+            {% if address_lines %}{{ address_lines|join:" · " }}{% endif %}
+            {% if tenant.contact_email %} · {{ tenant.contact_email }}{% endif %}
+            {% if tenant.contact_phone %} · Tel. {{ tenant.contact_phone }}{% endif %}
+        </div>
+    </div>
+
+    <div class="sender-line">{{ tenant.name }}{% if address_lines %} · {{ address_lines|join:" · " }}{% endif %}</div>
+    <div class="address">
+        {{ entry.recipient.name }}<br>
+        {% for line in entry.address_lines %}{{ line }}<br>{% empty %}<span class="warning">Anschrift fehlt – bitte in den Personendaten ergänzen.</span>{% endfor %}
+    </div>
+
+    <p class="date">{{ generated_at|date:"d.m.Y" }}</p>
+
+    <p class="subject">
+        {% if dispatch.dispatch_type == "substitution" %}Vertretungsanfrage: {% elif supplementary %}Nachtrag zur Einladung: {% else %}Einladung: {% endif %}{{ meeting.name }} am {{ meeting.start|date:"d.m.Y" }}
+    </p>
+
+    <p>{{ entry.salutation }}</p>
+    {% if dispatch.dispatch_type == "substitution" %}
+    <p>{% if entry.recipient.substitute_for %}{{ entry.recipient.substitute_for.display_name }}{% else %}Ein Mitglied{% endif %} kann an der folgenden Sitzung nicht teilnehmen und bittet um Vertretung. Sie sind als Stellvertretung hinterlegt.</p>
+    {% elif supplementary %}
+    <p>zur bereits versandten Einladung erhalten Sie die Nachtrags-Tagesordnung für die folgende Sitzung.</p>
+    {% else %}
+    <p>hiermit laden wir Sie zur Sitzung des Gremiums {{ meeting.organization.name }} ein.</p>
+    {% endif %}
+
+    <table class="meta-table">
+        <tr><td><strong>Gremium:</strong></td><td>{{ meeting.organization.name }}</td></tr>
+        <tr><td><strong>Sitzung:</strong></td><td>{{ meeting.name }}</td></tr>
+        <tr><td><strong>Termin:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr</td></tr>
+        {% if location %}<tr><td><strong>Ort:</strong></td><td>{{ location }}</td></tr>{% endif %}
+    </table>
+
+    {% if dispatch.message and dispatch.dispatch_type != "substitution" %}<p>{{ dispatch.message|linebreaksbr }}</p>{% endif %}
+
+    {% if entry.agenda.public %}
+    <div class="section-title">{% if supplementary %}Nachtrags-Tagesordnung – {% endif %}Öffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in entry.agenda.public %}
+        <tr><td class="top-nr">{{ item.number }}</td><td>{{ item.name }}{% if item.is_withdrawn %} (abgesetzt){% endif %}{% for sub in item.children_list %}<br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.name }}{% endfor %}</td></tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+    {% if entry.agenda.non_public %}
+    <div class="section-title">{% if supplementary %}Nachtrags-Tagesordnung – {% endif %}Nichtöffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in entry.agenda.non_public %}
+        <tr><td class="top-nr">{{ item.number }}</td><td>{{ item.name }}{% if item.is_withdrawn %} (abgesetzt){% endif %}{% for sub in item.children_list %}<br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.name }}{% endfor %}</td></tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    <div class="response">
+        <table>
+            <tr>
+                <td>
+                    <strong>Ihre Rückmeldung</strong><br>
+                    Bitte bestätigen Sie den Erhalt dieses Schreibens und teilen Sie mit, ob Sie teilnehmen – über den
+                    QR-Code bzw. den persönlichen Link (ohne Anmeldung, bis Sitzungsbeginn) oder beim Sitzungsdienst{% if tenant.contact_phone %} unter {{ tenant.contact_phone }}{% endif %}.<br>
+                    <span class="url">{{ entry.response_url }}</span>
+                </td>
+                {% if entry.qr_data_uri %}<td width="30mm"><img class="qr" src="{{ entry.qr_data_uri }}" alt="QR-Code zur Rückmeldung"></td>{% endif %}
+            </tr>
+        </table>
+    </div>
+
+    <p>Mit freundlichen Grüßen<br>{{ tenant.name }}<br><span class="muted">Der Sitzungsdienst</span></p>
+    {% if not forloop.last %}<pdf:nextpage />{% endif %}
+    {% endfor %}
+
+    <div id="footer_content" class="footer">{{ tenant.name }} · Serienbrief erstellt am {{ generated_at|date:"d.m.Y H:i" }} Uhr</div>
+</body>
+</html>

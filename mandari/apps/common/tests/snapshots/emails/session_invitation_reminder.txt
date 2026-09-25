@@ -1,0 +1,20 @@
+# Erinnerung an Ihre Ladung
+
+Stadt Musterstadt
+
+Guten Tag Max Mitglied,
+
+für die Sitzung „Sitzung des Hauptausschusses“ (Hauptausschuss) am Montag, 14.09.2026 um 18:30 Uhr liegt uns noch keine Bestätigung vor, dass die Ladung Sie erreicht hat.
+
+Bitte bestätigen Sie den Erhalt und teilen Sie mit, ob Sie teilnehmen.
+
+[Erhalt bestätigen und rückmelden](https://mandari.example/ladung/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/)
+
+Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:
+https://mandari.example/ladung/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/
+
+Haben Sie die Ladung nicht erhalten? Über den Link können Sie trotzdem zu- oder absagen; die Unterlagen erhalten Sie beim Sitzungsdienst.
+
+Diese E-Mail wurde im Auftrag von Stadt Musterstadt über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

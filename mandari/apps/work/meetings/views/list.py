@@ -11,6 +11,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.session.services import portal_link_service
 
 from .. import selectors
 from ..serializers import serialize_calendar_event
@@ -25,6 +26,8 @@ class MeetingListView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "meetings"
+        # Ladungen der Verwaltung (Issue #225) nur bei aktiver Verbindung Fraktion ↔ Verwaltung anbieten
+        context["has_session_connection"] = portal_link_service.tenant_for_organization(self.organization) is not None
 
         bodies = selectors.organization_bodies(self.organization)
         if bodies is None:

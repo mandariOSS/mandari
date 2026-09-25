@@ -82,6 +82,17 @@ def _anonymize_person(person) -> list[str]:
         cleared.append("Bankdaten")
     if cleared:
         person.save()
+
+    # Ladung und Rückmeldung (Issue #225): Absagegründe und die in Ladungsprotokollen
+    # mitgeschriebene Adresse; Name, Versand- und Rückmeldezeitpunkte bleiben als Nachweis
+    from apps.session.models import SessionAttendance
+
+    if SessionAttendance.objects.filter(person=person, response_reason_encrypted__isnull=False).update(
+        response_reason_encrypted=None
+    ):
+        cleared.append("Absagegründe")
+    if person.invitation_receipts.exclude(email="").update(email=""):
+        cleared.append("E-Mail in Ladungsprotokollen")
     return cleared
 
 
@@ -240,6 +251,7 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
             "aktiv": person.is_active,
             "mandatsbeginn": person.start_date.isoformat() if person.start_date else None,
             "mandatsende": person.end_date.isoformat() if person.end_date else None,
+            "zustellweg_ladungen": person.get_delivery_channel_display(),
         },
     }
 
@@ -275,8 +287,29 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
             "datum": timezone.localtime(a.meeting.start).date().isoformat(),
             "status": a.get_status_display(),
             "funktion": a.get_role_display(),
+            # Rückmeldung zur Ladung (Issue #225) – der Grund ist Teil der Auskunft an die Person selbst
+            "rueckmeldung_am": a.responded_at.isoformat() if a.responded_at else None,
+            "rueckmeldung_ueber": a.get_response_source_display() if a.response_source else "",
+            "vertretung_erbeten": a.substitute_requested,
+            "grund": a.get_response_reason_decrypted() or "",
         }
-        for a in person.attendances.select_related("meeting__organization").order_by("meeting__start")
+        for a in person.attendances.select_related("meeting__organization", "meeting__tenant").order_by(
+            "meeting__start"
+        )
+    ]
+
+    data["ladungen"] = [
+        {
+            "sitzung": r.dispatch.meeting.name,
+            "versandart": r.dispatch.get_dispatch_type_display(),
+            "zustellweg": r.get_channel_display(),
+            "zustellstatus": r.get_status_display(),
+            "e_mail": r.email,
+            "versandt_am": r.delivered_at.isoformat() if r.delivered_at else None,
+            "empfang_bestaetigt_am": r.acknowledged_at.isoformat() if r.acknowledged_at else None,
+            "empfang_bestaetigt_ueber": r.get_acknowledged_via_display() if r.acknowledged_via else "",
+        }
+        for r in person.invitation_receipts.select_related("dispatch__meeting").order_by("dispatch__sent_at")
     ]
 
     data["sitzungsgelder"] = [

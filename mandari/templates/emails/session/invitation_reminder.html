@@ -1,0 +1,19 @@
+{% extends "emails/base_email.html" %}
+{% comment %}Erinnerung an Ladungsempfänger ohne Empfangsbestätigung (Issue #225).{% endcomment %}
+{% block subject %}Erinnerung: {{ meeting.name }}{% endblock %}
+{% block preheader %}Bitte bestätigen Sie den Erhalt der Ladung zur Sitzung am {{ start_local|date:"d.m.Y" }}.{% endblock %}
+{% block content %}
+<h1 class="h1">Erinnerung an Ihre Ladung</h1>
+<p class="muted">{{ tenant.name }}</p>
+<p>Guten Tag {{ recipient.name }},</p>
+<p>für die Sitzung „{{ meeting.name }}“ ({{ meeting.organization.name }}) am {{ start_local|date:"l, d.m.Y" }} um {{ start_local|date:"H:i" }} Uhr liegt uns noch keine Bestätigung vor, dass die Ladung Sie erreicht hat.</p>
+<p>Bitte bestätigen Sie den Erhalt und teilen Sie mit, ob Sie teilnehmen.</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ response_url }}">Erhalt bestätigen und rückmelden</a>
+</div>
+<p class="muted small">Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:<br>{{ response_url }}</p>
+<p class="muted small">Haben Sie die Ladung nicht erhalten? Über den Link können Sie trotzdem zu- oder absagen; die Unterlagen erhalten Sie beim Sitzungsdienst.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde im Auftrag von {{ tenant.name }} über mandari versendet.</p>
+{% endblock %}

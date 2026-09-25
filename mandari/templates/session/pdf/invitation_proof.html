@@ -1,0 +1,68 @@
+{% extends "session/pdf/base_pdf.html" %}
+{% comment %}
+Ladungsnachweis für die Akte (Issue #225): je Person Versand, Empfangsbestätigung und
+Rückmeldung mit Zeitstempel und Herkunft. Absagegründe gehören bewusst nicht hinein.
+{% endcomment %}
+
+{% block content %}
+    <h1>Ladungsnachweis</h1>
+
+    <table class="meta-table">
+        <tr><td><strong>Gremium:</strong></td><td>{{ meeting.organization.name }}</td></tr>
+        <tr><td><strong>Sitzung:</strong></td><td>{{ meeting.name }}</td></tr>
+        <tr><td><strong>Termin:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr</td></tr>
+        {% if location %}<tr><td><strong>Ort:</strong></td><td>{{ location }}</td></tr>{% endif %}
+        <tr><td><strong>Ladungsfrist:</strong></td><td>{{ meeting.organization.invitation_period_days }} Tage (Ladung bis {{ meeting.invitation_deadline|date:"d.m.Y" }})</td></tr>
+        <tr><td><strong>Erstladung:</strong></td><td>{% if meeting.invitation_sent_at %}versandt am {{ meeting.invitation_sent_at|date:"d.m.Y, H:i" }} Uhr{% else %}noch nicht versandt{% endif %}</td></tr>
+    </table>
+
+    <h2>Übersicht</h2>
+    <p>
+        {{ overview.total }} Empfänger · Empfang bestätigt: {{ overview.acknowledged }} ·
+        Zusagen: {{ overview.confirmed }} · Absagen: {{ overview.declined }} · ohne Rückmeldung: {{ overview.open_responses }}
+    </p>
+
+    <h2>Nachweis je Person</h2>
+    {% if overview.rows %}
+    <table class="agenda">
+        <tr>
+            <td width="24%"><strong>Person</strong></td>
+            <td width="34%"><strong>Versand</strong></td>
+            <td width="20%"><strong>Empfang bestätigt</strong></td>
+            <td width="22%"><strong>Rückmeldung</strong></td>
+        </tr>
+        {% for status in overview.rows %}
+        <tr>
+            <td>
+                {{ status.name }}<br>
+                <span class="muted">{{ status.role|default:"" }}{% if status.substitution_for %} · Vertretung für {{ status.substitution_for.display_name }}{% endif %}</span>
+            </td>
+            <td>
+                {% for row in status.rows %}
+                {{ row.dispatch.get_dispatch_type_display }} ({{ row.get_channel_display }}):
+                {% if row.status == "failed" %}fehlgeschlagen{% elif row.status == "letter_pending" %}Brief noch nicht versandt{% else %}{{ row.delivered_at|date:"d.m.Y, H:i" }}{% endif %}{% if row.reminder_count %}, {{ row.reminder_count }}× erinnert{% endif %}{% if not forloop.last %}<br>{% endif %}
+                {% endfor %}
+            </td>
+            <td>
+                {% for row in status.rows %}
+                {% if row.acknowledged_at %}{{ row.acknowledged_at|date:"d.m.Y, H:i" }} ({{ row.get_acknowledged_via_display }}){% else %}–{% endif %}{% if not forloop.last %}<br>{% endif %}
+                {% endfor %}
+            </td>
+            <td>
+                {{ status.response_label }}
+                {% if status.attendance.responded_at %}<br><span class="muted">{{ status.attendance.responded_at|date:"d.m.Y, H:i" }} ({{ status.attendance.get_response_source_display }})</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">Für diese Sitzung wurde noch keine Ladung versandt.</p>
+    {% endif %}
+
+    <p class="muted">
+        Empfangsbestätigungen entstehen ausschließlich durch aktive Handlung der Empfänger (persönlicher Link,
+        Portal) oder durch Eintrag des Sitzungsdienstes – nicht durch das Öffnen einer E-Mail.
+        Gründe für Absagen sind nicht Bestandteil dieses Nachweises.
+    </p>
+    <p class="muted">Erstellt von {{ generated_by }} am {{ generated_at|date:"d.m.Y, H:i" }} Uhr.</p>
+{% endblock %}

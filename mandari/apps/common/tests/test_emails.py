@@ -504,6 +504,56 @@ def session_user_invitation(org: Any, make_member: Any) -> dict[str, Any]:
     }
 
 
+def _session_ladung(**extra: Any) -> dict[str, Any]:
+    """Beispielkontext der Ladungs-Mails (Issue #225)."""
+    tenant = _ns(name="Stadt Musterstadt")
+    meeting = _ns(name="Sitzung des Hauptausschusses", organization=_ns(name="Hauptausschuss"))
+    context: dict[str, Any] = {
+        "tenant": tenant,
+        "meeting": meeting,
+        "recipient": _ns(name="Max Mitglied"),
+        "start_local": WHEN,
+        "location": "Rathaus, Sitzungssaal 1",
+        "response_url": f"{SITE_URL}/ladung/{'r' * 40}/",
+        "portal_url": f"{SITE_URL}/work/",
+        "is_portal": False,
+    }
+    context.update(extra)
+    return context
+
+
+def session_invitation(org: Any, make_member: Any) -> dict[str, Any]:
+    return _session_ladung(
+        message="Bitte pünktlich erscheinen.\nKaffee steht bereit.", supplementary=False, has_attachments=True
+    )
+
+
+def session_invitation_portal(org: Any, make_member: Any) -> dict[str, Any]:
+    return _session_ladung(message="", supplementary=True, has_attachments=False, is_portal=True)
+
+
+def session_invitation_reminder(org: Any, make_member: Any) -> dict[str, Any]:
+    return _session_ladung()
+
+
+def session_substitute_request(org: Any, make_member: Any) -> dict[str, Any]:
+    return _session_ladung(
+        recipient=_ns(name="Vera Vertretung"), absent=_ns(display_name="Max Mitglied"), has_attachments=True
+    )
+
+
+def session_substitute_withdrawn(org: Any, make_member: Any) -> dict[str, Any]:
+    return _session_ladung(recipient=_ns(name="Vera Vertretung"), absent=_ns(display_name="Max Mitglied"))
+
+
+def session_substitute_missing(org: Any, make_member: Any) -> dict[str, Any]:
+    return _session_ladung(
+        absent=_ns(display_name="Max Mitglied"),
+        outcome=_ns(by_letter=[], failed=[], notified=[]),
+        overview_url=f"{SITE_URL}/session/musterstadt/meetings/{_uuid(0x501)}/invitation/rueckmeldungen/",
+    )
+
+
 def provisioning_admin_invitation(org: Any, make_member: Any) -> dict[str, Any]:
     invitation = _ns(email="admin@example.org", expires_at=WHEN, token="p" * 32)
     return {
@@ -533,6 +583,12 @@ CASES = [
     ),
     MailCase("questions_verification", "emails/questions/verification.html", questions_verification),
     MailCase("session_user_invitation", "emails/session/user_invitation.html", session_user_invitation),
+    MailCase("session_invitation", "emails/session/invitation.html", session_invitation),
+    MailCase("session_invitation_portal", "emails/session/invitation.html", session_invitation_portal),
+    MailCase("session_invitation_reminder", "emails/session/invitation_reminder.html", session_invitation_reminder),
+    MailCase("session_substitute_request", "emails/session/substitute_request.html", session_substitute_request),
+    MailCase("session_substitute_withdrawn", "emails/session/substitute_withdrawn.html", session_substitute_withdrawn),
+    MailCase("session_substitute_missing", "emails/session/substitute_missing.html", session_substitute_missing),
     MailCase(
         "provisioning_admin_invitation", "emails/provisioning/admin_invitation.html", provisioning_admin_invitation
     ),

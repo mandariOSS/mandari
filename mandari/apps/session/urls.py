@@ -10,6 +10,7 @@ from django.urls import path
 from . import views
 from .api import oparl as oparl_api_views
 from .api import views as api_views
+from .views import invitation_responses as invitation_response_views
 
 app_name = "session"
 
@@ -838,5 +839,41 @@ urlpatterns = [
         "<slug:tenant_slug>/api/session/applications/submit/",
         api_views.ApplicationSubmitAPIView.as_view(),
         name="api_application_submit",
+    ),
+]
+
+# Ladung mit Empfangsbestätigung und Rückmeldung (Issue #225): Übersicht, Erinnerung, manuelle
+# Einträge, Ladungsnachweis und Serienbrief. Der öffentliche Rückmeldelink liegt tenant-unabhängig
+# unter /ladung/<token>/ (mandari/urls.py).
+urlpatterns += [
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/invitation/rueckmeldungen/",
+        invitation_response_views.MeetingInvitationStatusView.as_view(),
+        name="meeting_invitation_status",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/invitation/erinnern/",
+        invitation_response_views.MeetingInvitationReminderView.as_view(),
+        name="meeting_invitation_remind",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/invitation/rueckmeldungen/<uuid:person_id>/",
+        invitation_response_views.MeetingResponseEntryView.as_view(),
+        name="meeting_response_entry",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/invitation/ladungsnachweis.pdf",
+        invitation_response_views.MeetingInvitationProofView.as_view(),
+        name="meeting_invitation_proof",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/invitation/serienbrief/<uuid:dispatch_id>/versandt/",
+        invitation_response_views.MeetingLettersSentView.as_view(),
+        name="meeting_letters_sent",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/invitation/serienbrief/<uuid:dispatch_id>/<str:fmt>/",
+        invitation_response_views.MeetingSerialLetterView.as_view(),
+        name="meeting_serial_letter",
     ),
 ]

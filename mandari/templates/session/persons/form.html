@@ -83,6 +83,8 @@
                     <textarea name="address" id="id_address" rows="2"
                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{ form.address.value|default:form.address.initial|default:'' }}</textarea>
                 </div>
+                <c-form.select :field="form.delivery_channel" label="Zustellweg für Ladungen" class="mt-4"
+                               help="E-Mail: Ladung mit Unterlagen. Portal: Hinweis-Mail, Unterlagen und Rückmeldung in mandari Work (sonst per E-Mail). Brief: keine Mail, Serienbrief für den Postversand." />
             </div>
 
             {% if form.show_bank_fields %}

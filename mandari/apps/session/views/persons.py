@@ -48,6 +48,7 @@ class SessionPersonForm(forms.ModelForm):
             "given_name",
             "family_name",
             "email",
+            "delivery_channel",
             "is_active",
             "start_date",
             "end_date",
@@ -55,6 +56,8 @@ class SessionPersonForm(forms.ModelForm):
 
     def __init__(self, *args, show_bank_fields: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
+        # Zustellweg (Issue #225): ohne Angabe bleibt es bei E-Mail (Importe, ältere Formulare)
+        self.fields["delivery_channel"].required = False
         self.show_bank_fields = show_bank_fields
         if not show_bank_fields:
             for field in ("bank_account_holder", "bank_iban", "bank_bic"):
@@ -67,6 +70,9 @@ class SessionPersonForm(forms.ModelForm):
                 self.fields["bank_account_holder"].initial = self.instance.get_bank_account_holder_decrypted()
                 self.fields["bank_iban"].initial = self.instance.get_bank_iban_decrypted()
                 self.fields["bank_bic"].initial = self.instance.get_bank_bic_decrypted()
+
+    def clean_delivery_channel(self) -> str:
+        return str(self.cleaned_data.get("delivery_channel") or "email")
 
     def save(self, commit=True):
         person = super().save(commit=False)

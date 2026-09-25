@@ -10,6 +10,7 @@ from django.urls import path
 from apps.work.dashboard import views as dashboard_views
 from apps.work.faction import views as faction_views
 from apps.work.meetings import views as meetings_views
+from apps.work.meetings.views import session_invitations as session_invitation_views
 from apps.work.motions import views as motions_views
 from apps.work.notifications import views as notifications_views
 from apps.work.organization import views as organization_views
@@ -60,6 +61,22 @@ urlpatterns = [
         "<slug:org_slug>/meetings/calendar/events/",
         meetings_views.MeetingCalendarEventsView.as_view(),
         name="meetings_calendar_events",
+    ),
+    # Ladungen der Verwaltung mit Rückmeldung (Issue #225)
+    path(
+        "<slug:org_slug>/meetings/ladungen/",
+        session_invitation_views.SessionInvitationListView.as_view(),
+        name="session_invitations",
+    ),
+    path(
+        "<slug:org_slug>/meetings/ladungen/<uuid:recipient_id>/rueckmeldung/",
+        session_invitation_views.SessionInvitationRespondView.as_view(),
+        name="session_invitation_respond",
+    ),
+    path(
+        "<slug:org_slug>/meetings/ladungen/<uuid:recipient_id>/tagesordnung.pdf",
+        session_invitation_views.SessionInvitationAgendaView.as_view(),
+        name="session_invitation_agenda",
     ),
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/",

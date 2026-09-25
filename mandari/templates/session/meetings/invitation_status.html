@@ -1,0 +1,163 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Ladung und Rückmeldungen je Sitzung (Issue #225): Status je Empfänger mit Zeitstempeln,
+Erinnerung an alle ohne Bestätigung, manuelle Einträge des Sitzungsdienstes, Ladungsnachweis
+und Serienbrief. Absagegründe sind nur hier (Sitzungsdienst) sichtbar.
+{% endcomment %}
+
+{% block page_title %}Rückmeldungen: {{ meeting.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Sitzungen</a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 truncate max-w-[200px]">{{ meeting.name }}</a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Ladung</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Rückmeldungen</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="space-y-6">
+    <c-layout.page-header title="Ladung und Rückmeldungen" subtitle="{{ meeting.organization.name }} · {{ meeting.start|date:'l, d.m.Y, H:i' }} Uhr">
+        <c-ui.button variant="secondary" icon="send" href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}">Versand</c-ui.button>
+        <c-ui.button variant="secondary" icon="file-check" href="{% url 'session:meeting_invitation_proof' tenant_slug=tenant_slug meeting_id=meeting.id %}">Ladungsnachweis (PDF)</c-ui.button>
+    </c-layout.page-header>
+
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <c-ui.kpi-tile label="Empfänger" value="{{ overview.total }}" />
+        <c-ui.kpi-tile label="Empfang bestätigt" value="{{ overview.acknowledged }}" tone="green" />
+        <c-ui.kpi-tile label="Zusagen" value="{{ overview.confirmed }}" tone="green" />
+        <c-ui.kpi-tile label="Absagen" value="{{ overview.declined }}" tone="red" />
+        <c-ui.kpi-tile label="Ohne Rückmeldung" value="{{ overview.open_responses }}" tone="amber" />
+    </div>
+
+    {% if is_open and reminder_count %}
+    <c-ui.alert variant="warning" icon="bell" title="{{ reminder_count }} Empfänger ohne Bestätigung und ohne Rückmeldung">
+        <form method="post" action="{% url 'session:meeting_invitation_remind' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="mt-2">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" icon="send" data-confirm="Erinnerung an {{ reminder_count }} Empfänger senden?">Erinnerung an alle ohne Bestätigung senden</c-ui.button>
+        </form>
+    </c-ui.alert>
+    {% endif %}
+
+    {% if letter_batches %}
+    <c-ui.card title="Zustellung per Brief" subtitle="Serienbrief mit einem Anschreiben je Person (Anschrift, Tagesordnung, persönlicher Rückmeldelink mit QR-Code).">
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for batch in letter_batches %}
+            <li class="py-3 flex flex-wrap items-center justify-between gap-3">
+                <div class="text-sm">
+                    <p class="font-medium text-gray-900 dark:text-white">{{ batch.dispatch.get_dispatch_type_display }} vom {{ batch.dispatch.sent_at|date:"d.m.Y, H:i" }} Uhr</p>
+                    <p class="text-gray-500 dark:text-gray-400">{{ batch.total }} Brief{{ batch.total|pluralize:"e" }}{% if batch.pending %}, {{ batch.pending }} noch nicht als versandt vermerkt{% else %}, alle versandt{% endif %}</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <c-ui.button size="sm" variant="secondary" icon="file-text" href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='pdf' %}">Serienbrief (PDF)</c-ui.button>
+                    <c-ui.button size="sm" variant="secondary" icon="table" href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='csv' %}">Daten (CSV)</c-ui.button>
+                    {% if batch.pending %}
+                    <form method="post" action="{% url 'session:meeting_letters_sent' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id %}">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" size="sm" icon="mailbox">Briefe versandt</c-ui.button>
+                    </form>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </c-ui.card>
+    {% endif %}
+
+    <c-ui.card title="Status je Empfänger" subtitle="Bestätigt wird nur durch aktive Handlung (Link, Portal oder Eintrag des Sitzungsdienstes) – nie durch das Öffnen der Mail." padding="none">
+        {% if overview.rows %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 dark:bg-gray-900/40">
+                    <tr>
+                        <c-ui.th>Person</c-ui.th>
+                        <c-ui.th>Versand</c-ui.th>
+                        <c-ui.th>Empfang</c-ui.th>
+                        <c-ui.th>Rückmeldung</c-ui.th>
+                        {% if can_enter_responses %}<c-ui.th><span class="sr-only">Eintragen</span></c-ui.th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    {% for status in overview.rows %}
+                    <tr class="align-top">
+                        <td class="px-4 py-3">
+                            <p class="font-medium text-gray-900 dark:text-white">{{ status.name }}</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">{{ status.role|default:"–" }}{% if status.substitution_for %} · Vertretung für {{ status.substitution_for.display_name }}{% endif %}</p>
+                        </td>
+                        <td class="px-4 py-3">
+                            <ul class="space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                {% for row in status.rows %}
+                                <li>
+                                    {{ row.dispatch.get_dispatch_type_display }} · {{ row.get_channel_display }}:
+                                    {% if row.status == "failed" %}<span class="text-red-600 dark:text-red-400">fehlgeschlagen</span>
+                                    {% elif row.status == "letter_pending" %}<span class="text-amber-700 dark:text-amber-400">Brief vorzubereiten</span>
+                                    {% else %}{{ row.delivered_at|date:"d.m.Y, H:i" }}{% endif %}
+                                    {% if row.reminder_count %}<span class="text-gray-400">({{ row.reminder_count }}× erinnert)</span>{% endif %}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </td>
+                        <td class="px-4 py-3">
+                            {% if status.acknowledgement == "confirmed" %}<c-ui.badge color="green" icon="check">bestätigt</c-ui.badge>
+                            {% elif status.acknowledgement == "partial" %}<c-ui.badge color="amber">teilweise</c-ui.badge>
+                            {% elif status.acknowledgement == "open" %}<c-ui.badge color="amber" icon="clock">offen</c-ui.badge>
+                            {% else %}<span class="text-xs text-gray-400">–</span>{% endif %}
+                            <ul class="mt-1 space-y-0.5 text-xs text-gray-500 dark:text-gray-400">
+                                {% for row in status.rows %}{% if row.acknowledged_at %}
+                                <li>{{ row.acknowledged_at|date:"d.m.Y, H:i" }} ({{ row.get_acknowledged_via_display }})</li>
+                                {% endif %}{% endfor %}
+                            </ul>
+                        </td>
+                        <td class="px-4 py-3">
+                            {% if status.attendance.status == "confirmed" %}<c-ui.badge color="green" icon="user-check">{{ status.response_label }}</c-ui.badge>
+                            {% elif status.attendance.status == "declined" %}<c-ui.badge color="red" icon="user-x">{{ status.response_label }}</c-ui.badge>
+                            {% else %}<c-ui.badge>{{ status.response_label }}</c-ui.badge>{% endif %}
+                            {% if status.attendance.responded_at %}
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ status.attendance.responded_at|date:"d.m.Y, H:i" }} ({{ status.attendance.get_response_source_display }})</p>
+                            {% endif %}
+                            {% if status.reason %}
+                            <p class="mt-1 text-xs text-gray-600 dark:text-gray-300"><span class="font-medium">Grund:</span> {{ status.reason }}</p>
+                            {% endif %}
+                        </td>
+                        {% if can_enter_responses %}
+                        <td class="px-4 py-3">
+                            {% if status.person and is_open %}
+                            <details class="text-xs">
+                                <summary class="cursor-pointer text-primary-600 dark:text-primary-400">Eintragen</summary>
+                                <form method="post" action="{% url 'session:meeting_response_entry' tenant_slug=tenant_slug meeting_id=meeting.id person_id=status.person.id %}" class="mt-2 space-y-2 min-w-[14rem]">
+                                    {% csrf_token %}
+                                    <label for="reason-{{ status.person.id }}" class="block font-medium text-gray-700 dark:text-gray-300">Grund (bei Absage)</label>
+                                    <textarea id="reason-{{ status.person.id }}" name="reason" rows="2" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-xs"></textarea>
+                                    <label for="substitute-{{ status.person.id }}" class="flex items-center gap-2 min-h-[24px] text-gray-600 dark:text-gray-400">
+                                        <input type="checkbox" id="substitute-{{ status.person.id }}" name="substitute" value="1" class="rounded border-gray-300 text-primary-600">
+                                        Vertretung erbeten
+                                    </label>
+                                    <div class="flex flex-wrap gap-2">
+                                        <c-ui.button type="submit" size="sm" variant="success" name="action" value="confirm">Zusage</c-ui.button>
+                                        <c-ui.button type="submit" size="sm" variant="danger" name="action" value="decline">Absage</c-ui.button>
+                                        {% if status.acknowledgement != "confirmed" %}
+                                        <c-ui.button type="submit" size="sm" variant="secondary" name="action" value="acknowledge">Empfang vermerken</c-ui.button>
+                                        {% endif %}
+                                    </div>
+                                </form>
+                            </details>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <c-ui.empty-state icon="send" title="Noch keine Ladung versandt">
+            Nach dem Versand der Ladung erscheinen hier die Empfänger mit Zustellung, Empfangsbestätigung und Rückmeldung.
+        </c-ui.empty-state>
+        {% endif %}
+    </c-ui.card>
+</div>
+{% endblock %}

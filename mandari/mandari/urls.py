@@ -22,6 +22,7 @@ from apps.common.uploads import is_embeddable
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
 from apps.session.api.v1.api import api as session_api_v1
+from apps.session.views.invitation_responses import InvitationResponseView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
 from insight_core.admin_monitoring import monitoring_view
@@ -151,6 +152,12 @@ urlpatterns = [
         "nachweis/<slug:token>/",
         CertificateVerifyView.as_view(),
         name="certificate_verify",
+    ),
+    # Rückmeldung zur Ladung (Issue #225) — signiertes Token je Ladungsempfänger, ohne Login
+    path(
+        "ladung/<str:token>/",
+        InvitationResponseView.as_view(),
+        name="session_invitation_response",
     ),
     # Persönlicher iCal-Feed (Issue #70) — opakes Token, ohne Login
     # (Kalender-Clients können sich nicht anmelden)

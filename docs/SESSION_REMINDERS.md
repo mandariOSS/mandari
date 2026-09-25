@@ -11,7 +11,7 @@ idempotent: jede Erinnerung wird pro Objekt und Frist genau einmal versendet
 | Ladungsfrist läuft ab | Benutzer mit `edit_meetings` | 3 Tage |
 | Ladungsfrist verstrichen | Benutzer mit `edit_meetings` | sofort |
 | Vorlagenfrist läuft ab (Status Entwurf/In Prüfung) | Benutzer mit `edit_papers` | 3 Tage |
-| Fehlende Rückmeldung zur Sitzung (nach Ladungsversand) | eingeladene Person | 5 Tage |
+| Fehlende Rückmeldung zur Sitzung (nach Ladungsversand) | eingeladene Person (mit persönlichem Rückmeldelink; nicht bei Zustellweg Brief) | 5 Tage |
 | Wiedervorlage Beschlusskontrolle (Frist naht/überfällig) | Benutzer mit `edit_meetings` | 7 Tage |
 
 Vorlaufzeiten und An/Aus je Typ konfiguriert jeder Mandant unter
@@ -38,3 +38,11 @@ Beispiel-Crontab (07:00 Uhr, Container `mandari`):
 ```
 
 Mehrfaches Ausführen am selben Tag erzeugt keine doppelten E-Mails.
+
+## Erinnerung an die Ladung (Issue #225)
+
+Unabhängig vom täglichen Lauf kann der Sitzungsdienst in der Übersicht
+*Sitzung → Ladung → Rückmeldungen* jederzeit „Erinnerung an alle ohne Bestätigung
+senden“: Sie geht an alle Empfänger, die weder den Erhalt bestätigt noch zu- oder
+abgesagt haben, jeweils mit ihrem persönlichen Rückmeldelink. Für die automatische
+Erinnerung genügt der bestehende Cron-Eintrag oben; ein zusätzlicher ist nicht nötig.

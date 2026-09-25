@@ -1,0 +1,14 @@
+{% extends "emails/base_email.html" %}
+{% comment %}Entwarnung an die Stellvertretung: Vertretung wird nicht mehr benötigt (Issue #225).{% endcomment %}
+{% block subject %}Vertretung nicht mehr erforderlich: {{ meeting.name }}{% endblock %}
+{% block preheader %}{{ absent.display_name }} benötigt für die Sitzung am {{ start_local|date:"d.m.Y" }} keine Vertretung mehr.{% endblock %}
+{% block content %}
+<h1 class="h1">Vertretung nicht mehr erforderlich</h1>
+<p class="muted">{{ tenant.name }}</p>
+<p>Guten Tag {{ recipient.name }},</p>
+<p><strong>{{ absent.display_name }}</strong> hat die Rückmeldung zur Sitzung „{{ meeting.name }}“ ({{ meeting.organization.name }}) am {{ start_local|date:"l, d.m.Y" }} um {{ start_local|date:"H:i" }} Uhr geändert. Ihre Vertretung wird nicht mehr benötigt.</p>
+<p>Wenn Sie als Mitglied des Gremiums ohnehin eingeladen sind, gilt Ihre eigene Ladung unverändert.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde im Auftrag von {{ tenant.name }} über mandari versendet.</p>
+{% endblock %}

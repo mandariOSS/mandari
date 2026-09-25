@@ -1,0 +1,15 @@
+# Vertretung gesucht
+
+Stadt Musterstadt · Hauptausschuss
+
+Max Mitglied hat für die Sitzung „Sitzung des Hauptausschusses“ am Montag, 14.09.2026 um 18:30 Uhr abgesagt und um Vertretung gebeten.
+
+Für Max Mitglied ist in diesem Gremium keine Stellvertretung hinterlegt, die noch zusagen kann.
+
+Bitte kümmern Sie sich um die Vertretung.
+
+[Rückmeldungen ansehen](https://mandari.example/session/musterstadt/meetings/00000000-0000-0000-0000-000000000501/invitation/rueckmeldungen/)
+
+Diese E-Mail wurde automatisch vom Sitzungsdienst von Stadt Musterstadt in mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
