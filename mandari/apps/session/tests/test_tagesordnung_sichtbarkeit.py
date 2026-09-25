@@ -10,6 +10,7 @@ nichtöffentlichen Vorlagen.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, cast
 
 import pytest
@@ -60,7 +61,7 @@ def welt() -> dict[str, Any]:
 
 
 def _client(tenant: SessionTenant, **rechte: bool) -> Client:
-    role = SessionRole.objects.create(tenant=tenant, name=f"Rolle {len(rechte)}-{sorted(rechte)}", **rechte)
+    role = SessionRole.objects.create(tenant=tenant, name=f"Rolle {uuid.uuid4().hex[:8]}", **rechte)
     user = cast(Any, UserFactory)()
     session_user = SessionUser.objects.create(user=user, tenant=tenant)
     session_user.roles.add(role)
