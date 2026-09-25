@@ -228,10 +228,13 @@ class MotionStatusView(WorkViewMixin, View):
 
         # Zentrale Übergangsmatrix (Motion.VALID_TRANSITIONS) – einziger Weg, den Status zu ändern
         was_locked = motion.is_status_locked
+        old_label = motion.get_status_display()
         try:
             motion.transition_to(new_status)
-        except StatusTransitionError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
+        except StatusTransitionError:
+            # Meldung aus bekannten Werten, nie aus dem Ausnahmetext (CodeQL py/stack-trace-exposure)
+            new_label = dict(Motion.STATUS_CHOICES)[new_status]
+            return JsonResponse({"error": f"Ungültiger Statusübergang von „{old_label}“ zu „{new_label}“."}, status=400)
 
         # Statuswechsel über die Sperrgrenze (Motion.EDITABLE_STATUSES):
         # offene Kollab-Editoren neu laden lassen, damit die herabgestufte
