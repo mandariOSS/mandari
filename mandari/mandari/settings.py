@@ -400,6 +400,11 @@ FILE_PROXY_TIMEOUT_SECONDS = int(os.environ.get("FILE_PROXY_TIMEOUT_SECONDS", "1
 # Quellen-Schonung (Issue #89): ab so vielen Sync-Fehlversuchen in Folge lassen Dokument-Cache
 # und Datei-Proxy das Ratsinformationssystem in Ruhe (Ratenlimits, IP-Sperren).
 INSIGHT_SOURCE_BACKOFF_FAILURES = int(os.environ.get("INSIGHT_SOURCE_BACKOFF_FAILURES", "3"))
+# Sitzungsmappe (Issue #218): Obergrenzen der in das Gesamt-PDF eingebundenen PDF-Anlagen je Mappe.
+# Darüber hinaus werden Anlagen als Verweisseite aufgenommen (im ZIP-Paket bleiben sie vollständig) –
+# so bleibt der Speicherbedarf der Erzeugung im Rahmen des Containers.
+SESSION_PACKAGE_MAX_EMBED_MB = int(os.environ.get("SESSION_PACKAGE_MAX_EMBED_MB", "200"))
+SESSION_PACKAGE_MAX_PAGES = int(os.environ.get("SESSION_PACKAGE_MAX_PAGES", "3000"))
 
 
 # Default primary key field type

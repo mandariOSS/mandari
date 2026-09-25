@@ -166,6 +166,11 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         # Protocol
         context["protocol"] = getattr(meeting, "protocol", None)
 
+        # Sitzungsmappe (Issue #218): abrufbare Fassungen – reine Rechteprüfung, Stand lädt per HTMX nach
+        from ..services.meeting_package_plan import variants_for
+
+        context["package_variants"] = variants_for(context["permission_checker"].permissions, meeting)
+
         return context
 
 

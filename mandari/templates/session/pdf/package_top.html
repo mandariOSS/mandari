@@ -1,0 +1,26 @@
+{% extends "session/pdf/package_base.html" %}
+{% comment %}Trennblatt eines Tagesordnungspunkts in der Sitzungsmappe (Issue #218).{% endcomment %}
+
+{% block letterhead %}{% endblock %}
+
+{% block content %}
+    <p class="kicker">{% if top.item.is_public %}Öffentlicher Teil{% else %}Nichtöffentlicher Teil{% endif %}</p>
+    <h1 class="top-number">TOP {{ top.item.number }}</h1>
+    <p class="top-name">{{ top.item.name }}</p>
+    {% if top.item.is_supplementary %}
+    <p class="tag">Nachtrag zur Tagesordnung</p>
+    {% endif %}
+
+    <h2>Unterlagen zu diesem Tagesordnungspunkt</h2>
+    <table class="docs">
+        {% if top.paper %}
+        <tr><td>{{ reference_label }} {{ top.paper.paper.display_reference }}: {{ top.paper.paper.name }} ({{ top.paper.paper.get_paper_type_display }})</td></tr>
+        {% for planned in top.paper.files %}
+        <tr><td class="doc-sub">Anlage: {{ planned.file.name }}</td></tr>
+        {% endfor %}
+        {% endif %}
+        {% for planned in top.files %}
+        <tr><td>Anlage: {{ planned.file.name }}</td></tr>
+        {% endfor %}
+    </table>
+{% endblock %}

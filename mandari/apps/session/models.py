@@ -2487,6 +2487,121 @@ class SessionFile(models.Model):
 
 
 # =============================================================================
+# SITZUNGSMAPPE (Issue #218)
+# =============================================================================
+
+
+class SessionMeetingPackage(models.Model):
+    """
+    Sitzungsmappe einer Sitzung in einer Fassung (Issue #218).
+
+    Gesamt-PDF (Deckblatt, Inhaltsverzeichnis, Lesezeichen, fortlaufende Seitenzählung) und
+    ZIP-Paket aller Unterlagen, je Sitzung in der öffentlichen und der nichtöffentlichen
+    Fassung. Erzeugt wird im Hintergrund (Management-Command ``build_meeting_packages``),
+    Seitenaufrufe legen nur die Anforderung an.
+
+    Fassungen: Ein Fingerabdruck der Eingaben (Tagesordnung, Vorlagen, Anlagen) erkennt
+    Änderungen; die nächste Anforderung danach erzeugt eine neue Fassung mit eigenem Stand,
+    ältere bleiben abrufbar. ``contents`` merkt sich die enthaltenen Objekte, damit eine
+    ältere Fassung gesperrt wird, sobald ein enthaltener Teil gelöscht oder (öffentliche
+    Fassung) nichtöffentlich wurde.
+
+    Die Dateien liegen unter ``session/files/`` und sind damit nie direkt über /media/
+    abrufbar (PROTECTED_MEDIA_PREFIXES), nur über die zugriffsgeprüfte Download-View.
+    """
+
+    VARIANT_PUBLIC = "public"
+    VARIANT_INTERNAL = "internal"
+    VARIANT_CHOICES = [
+        (VARIANT_PUBLIC, "Öffentliche Fassung"),
+        (VARIANT_INTERNAL, "Nichtöffentliche Fassung"),
+    ]
+
+    STATUS_REQUESTED = "requested"
+    STATUS_BUILDING = "building"
+    STATUS_READY = "ready"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_REQUESTED, "Angefordert"),
+        (STATUS_BUILDING, "In Arbeit"),
+        (STATUS_READY, "Fertig"),
+        (STATUS_FAILED, "Fehlgeschlagen"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="meeting_packages",
+        verbose_name="Mandant",
+    )
+    meeting = models.ForeignKey(
+        SessionMeeting,
+        on_delete=models.CASCADE,
+        related_name="packages",
+        verbose_name="Sitzung",
+    )
+    variant = models.CharField(max_length=20, choices=VARIANT_CHOICES, verbose_name="Fassung")
+    version = models.PositiveIntegerField(verbose_name="Fassungsnummer")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_REQUESTED, verbose_name="Status")
+
+    fingerprint = models.CharField(
+        max_length=64,
+        blank=True,
+        verbose_name="Fingerabdruck",
+        help_text="SHA-256 über die Eingaben (Tagesordnung, Vorlagen, Anlagen) dieser Fassung",
+    )
+    content_as_of = models.DateTimeField(null=True, blank=True, verbose_name="Stand")
+    contents = models.JSONField(default=dict, blank=True, verbose_name="Enthaltene Objekte")
+
+    pdf_file = models.FileField(upload_to="session/files/mappen/%Y/%m/", blank=True, verbose_name="Gesamt-PDF")
+    zip_file = models.FileField(upload_to="session/files/mappen/%Y/%m/", blank=True, verbose_name="ZIP-Paket")
+    pdf_size = models.PositiveBigIntegerField(default=0, verbose_name="Größe PDF (Bytes)")
+    zip_size = models.PositiveBigIntegerField(default=0, verbose_name="Größe ZIP (Bytes)")
+    page_count = models.PositiveIntegerField(default=0, verbose_name="Seiten")
+    embedded_count = models.PositiveIntegerField(default=0, verbose_name="Eingebundene Anlagen")
+    referenced_count = models.PositiveIntegerField(default=0, verbose_name="Anlagen als Verweisseite")
+
+    error = models.TextField(blank=True, verbose_name="Fehler")
+    attempts = models.PositiveSmallIntegerField(default=0, verbose_name="Versuche")
+
+    requested_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="requested_meeting_packages",
+        verbose_name="Angefordert von",
+    )
+    requested_at = models.DateTimeField(default=timezone.now, verbose_name="Angefordert am")
+    started_at = models.DateTimeField(null=True, blank=True, verbose_name="Begonnen am")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Fertig am")
+
+    class Meta:
+        db_table = "session_meeting_packages"
+        verbose_name = "Sitzungsmappe"
+        verbose_name_plural = "Sitzungsmappen"
+        ordering = ["-version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["meeting", "variant", "version"], name="uniq_session_meeting_package_version"
+            ),
+        ]
+        indexes = [models.Index(fields=["status", "requested_at"])]
+
+    def __str__(self) -> str:
+        return f"Sitzungsmappe {self.meeting.name} – {self.get_variant_display()}, Fassung {self.version}"
+
+    @property
+    def is_internal(self) -> bool:
+        return self.variant == self.VARIANT_INTERNAL
+
+    @property
+    def in_progress(self) -> bool:
+        return self.status in (self.STATUS_REQUESTED, self.STATUS_BUILDING)
+
+
+# =============================================================================
 # AUDIT LOG
 # =============================================================================
 

@@ -389,6 +389,10 @@
             </div>
         </div>
 
+        {% if package_variants %}
+        <div id="meeting-package" hx-get="{% url 'session:meeting_package_status' tenant_slug=tenant_slug meeting_id=meeting.id %}" hx-trigger="load" hx-swap="outerHTML"></div>
+        {% endif %}
+
         <!-- Protocol (Issue #31) -->
         {% if "view_protocols" in permission_checker.permissions %}
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">

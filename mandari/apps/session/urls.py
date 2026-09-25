@@ -93,6 +93,22 @@ urlpatterns = [
         views.ProtocolPdfView.as_view(),
         name="meeting_protocol_pdf",
     ),
+    # Sitzungsmappe: Gesamt-PDF und ZIP-Paket (Issue #218)
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/mappe/",
+        views.MeetingPackageStatusView.as_view(),
+        name="meeting_package_status",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/mappe/anfordern/",
+        views.MeetingPackageRequestView.as_view(),
+        name="meeting_package_request",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/mappe/<uuid:package_id>/<str:fmt>/",
+        views.MeetingPackageDownloadView.as_view(),
+        name="meeting_package_download",
+    ),
     # Sitzungskalender und Jahresplanung (Issue #82)
     path(
         "<slug:tenant_slug>/meetings/calendar/",

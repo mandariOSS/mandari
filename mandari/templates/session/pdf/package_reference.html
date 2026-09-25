@@ -1,0 +1,28 @@
+{% extends "session/pdf/package_base.html" %}
+{% comment %}
+Verweisseite der Sitzungsmappe (Issue #218): steht für eine Anlage, die nicht in die Gesamt-PDF
+eingebunden wird (Office-Format, geschützt, beschädigt, zu umfangreich).
+{% endcomment %}
+
+{% block letterhead %}{% endblock %}
+
+{% block content %}
+    <p class="kicker">Verweisseite</p>
+    <h1>Anlage: {{ file.name }}</h1>
+    <p>{{ reason }}</p>
+
+    <table class="meta-table">
+        <tr><td class="meta-label"><strong>Gehört zu:</strong></td><td>{{ context_title }}</td></tr>
+        <tr><td class="meta-label"><strong>Dateiname:</strong></td><td>{{ file.name }}</td></tr>
+        <tr><td class="meta-label"><strong>Größe:</strong></td><td>{{ file.size|filesizeformat }}{% if file.version > 1 %}, Version {{ file.version }}{% endif %}</td></tr>
+        {% if in_zip %}
+        <tr><td class="meta-label"><strong>Im ZIP-Paket:</strong></td><td>{{ zip_path }}</td></tr>
+        {% endif %}
+    </table>
+
+    <h2>Wo ist die Anlage abrufbar?</h2>
+    <p>
+        {% if in_zip %}Die Anlage liegt im Originalformat im ZIP-Paket dieser Fassung (Pfad siehe oben).{% endif %}
+        In mandari ist sie bei der Sitzung bzw. der Vorlage unter „Anlagen“ einzeln abrufbar{% if site_url %}:<br>{{ site_url }}{% url 'session:file_download' tenant_slug=tenant.slug file_id=file.id %}{% else %}.{% endif %}
+    </p>
+{% endblock %}

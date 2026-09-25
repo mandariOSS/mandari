@@ -10,6 +10,8 @@ Bietet:
 
 import logging
 import mimetypes
+from collections.abc import Set
+from typing import Any
 
 from django.conf import settings
 from django.utils.module_loading import import_string
@@ -91,6 +93,47 @@ def scan_upload(uploaded_file) -> None:
         logger.error("SESSION_FILE_SCAN_HOOK '%s' konnte nicht geladen werden.", hook_path)
         return
     hook(uploaded_file)
+
+
+def file_parent(session_file: Any) -> Any:
+    """Elternobjekt einer Anlage (Vorlage, TOP oder Sitzung); None ohne Zuordnung."""
+    if session_file.paper_id:
+        return session_file.paper
+    if session_file.agenda_item_id:
+        return session_file.agenda_item
+    if session_file.meeting_id:
+        return session_file.meeting
+    return None
+
+
+def file_visible(permissions: Set[str], session_file: Any) -> bool:
+    """
+    Darf, wer genau diese Berechtigungen hat, die Anlage sehen/herunterladen?
+
+    Die eine Regel für Anlagen – Download-View und Sitzungsmappe (Issue #218) prüfen beide hiermit:
+    - Basis-Sichtberechtigung des Elternobjekts (view_papers/view_meetings)
+    - NÖ-Anlage oder NÖ-Elternobjekt (beim TOP auch die NÖ-Sitzung): zusätzlich die NÖ-Berechtigung
+    """
+    parent = file_parent(session_file)
+    if session_file.paper_id:
+        base_perm, np_perm = "view_papers", "view_non_public_papers"
+        parent_public = parent.is_public if parent else True
+    elif session_file.agenda_item_id:
+        base_perm, np_perm = "view_meetings", "view_non_public_meetings"
+        parent_public = (parent.is_public and parent.meeting.is_public) if parent else True
+    elif session_file.meeting_id:
+        base_perm, np_perm = "view_meetings", "view_non_public_meetings"
+        parent_public = parent.is_public if parent else True
+    else:
+        # Anlage ohne Elternobjekt: restriktiv behandeln
+        base_perm, np_perm = "view_papers", "view_non_public_papers"
+        parent_public = True
+
+    if base_perm not in permissions:
+        return False
+    if not session_file.is_public or not parent_public:
+        return np_perm in permissions
+    return True
 
 
 def guess_mime_type(name: str) -> str:

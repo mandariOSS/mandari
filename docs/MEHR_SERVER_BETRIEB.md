@@ -79,7 +79,8 @@ eingerichtet wurde. Drei Schutzmechanismen:
    meldet `läuft bereits auf <host:pid> – übersprungen` und endet mit Exit-Code 0.
    Geschützt: `send_session_reminders`, `send_question_reminders`,
    `send_task_due_reminders`, `fetch_person_photos`, `cleanup_orphaned_accounts`,
-   `check_source_health`, `check_service_levels`, `availability_report`.
+   `check_source_health`, `check_service_levels`, `availability_report`,
+   `build_meeting_packages`.
    `--ohne-sperre` erzwingt den Lauf (Notfall). Cron trotzdem nur auf **einem** Server
    einrichten – die Sperre ist das Sicherheitsnetz, nicht das Konzept.
 2. **Protokoll-Orchestrator** (`minutes_orchestrator`) hält dieselbe Sperre je Durchlauf;
