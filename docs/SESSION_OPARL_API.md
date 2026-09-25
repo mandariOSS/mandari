@@ -57,6 +57,19 @@ Objekttypen für `<typ>`: `organization`, `person`, `membership`, `meeting`,
 `Paper.mainFile` ist die älteste öffentliche Anlage der Vorlage, alle
 weiteren erscheinen unter `auxiliaryFile`.
 
+`File.fileName` und der Dateiname beim Download sind der Anzeigename der Anlage,
+nie der Speichername: Seit der Deduplizierung (Issue #226) teilen sich Anlagen mit
+gleichem Inhalt eine Datei, deren Speichername aus einem anderen, womöglich
+nichtöffentlichen Upload stammen kann.
+
+Fassungen (Issue #226) werden nicht ausgeliefert: Die API zeigt eine freigegebene
+Vorlage mit Betreff, Metadaten und öffentlichen Anlagen im aktuellen Stand; ältere
+Fassungen von Vorlagen und Anlagen erscheinen weder hier noch im Bürgerportal.
+Sachverhalt und Beschlussvorschlag der Vorlage sind nicht Teil der OParl-Ausgabe.
+Offen: Änderungen an Betreff oder öffentlichen Anlagen nach der Freigabe erscheinen
+sofort – eine Ausgabe, die bis zu einer erneuten Freigabe den freigegebenen Stand
+zeigt, ist nicht umgesetzt.
+
 ## Abstimmungsergebnisse (Erweiterung, Issue #41)
 
 Öffentliche TOPs mit Ergebnis tragen zusätzlich zu `result`/`resolutionText` die Vendor-Felder

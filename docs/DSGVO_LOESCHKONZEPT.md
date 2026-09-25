@@ -22,6 +22,8 @@ die hier genannten Fristen sind konfigurierbare Voreinstellungen.
 | Nicht-öffentliche Protokollteile | `SessionProtocol.content_encrypted` | AES-256-GCM |
 | Interne Sitzungsnotizen | `SessionMeeting.internal_notes_encrypted` | AES-256-GCM |
 | Audit-Log | `SessionAuditLog` | unveränderbar (revisionssicher), keine Klartext-Werte verschlüsselter Felder |
+| Anlagen und ihre früheren Fassungen | `SessionFile`, `SessionFileVersion`, Inhalte in `SessionFileBlob` | nur über zugriffsgeprüfte Downloads, Sichtbarkeit wie die Anlage (Ö/NÖ) |
+| Fassungen von Vorlagen (Texte, Angaben, Anlagen-Stand) | `SessionPaperVersion`, `SessionPaperVersionFile` | unveränderbar; Sichtbarkeit wie die Vorlage heute und zum Zeitpunkt der Fassung |
 
 ## 2. Aufbewahrungsfristen
 
@@ -100,14 +102,32 @@ Ladungen mit Zustellweg und Empfangsbestätigung, Sitzungsgelder, Vorlagen als
 Verfasser/in). Bankdaten werden nur entschlüsselt, wenn die abrufende
 Person zusätzlich `manage_allowances` besitzt. Jeder Export wird auditiert.
 
-## 5. Löschung ganzer Mandanten
+## 5. Anlagen und Fassungen (Issue #226)
+
+Vorlagen und Anlagen haben Fassungen: Bei jedem Workflow-Schritt und jedem
+Beratungsergebnis sichert mandari den Stand einer Vorlage, beim Ersetzen einer
+Anlage bleibt die bisherige Datei abrufbar. Jeder Dateiinhalt liegt je Mandant
+nur einmal im Speicher (SHA-256); Anlagen und Fassungen verweisen darauf.
+
+| Vorgang | Wirkung |
+|---|---|
+| Anlage ersetzen | Neue Fassung der Anlage; die bisherige bleibt im Verlauf, sichtbar wie die Anlage. |
+| Anlage löschen | Die Anlage und ihr Verlauf verschwinden. Inhalte, die in einer gesicherten Fassung der Vorlage stecken, bleiben dort erhalten – sichtbar nur noch mit dem Recht für nichtöffentliche Vorlagen. Alles andere wird nach dem Löschen aus dem Speicher entfernt. |
+| Inhalt endgültig löschen (Datenschutz) | Mit dem Einstellungsrecht und einem Grund entfernt die Verwaltung einen Inhalt aus dem Speicher, auch aus allen Fassungen. Prüfsumme und Größe bleiben als Nachweis, die Fassung zeigt „Inhalt gelöscht“; der Grund steht im Audit-Log. |
+| Beschlossene Fassung | Ihr Inhalt lässt sich nicht löschen: Sie ist der amtliche Stand, den das Gremium beschlossen hat (Aufbewahrung nach Archivrecht, Art. 17 Abs. 3 lit. b DSGVO). |
+| Vorlage oder Mandant löschen | Alle Fassungen und nicht mehr benötigten Inhalte werden mitgelöscht. |
+
+Der aktuelle Inhalt einer Anlage lässt sich nicht über die Datenschutz-Löschung
+entfernen – dafür die Anlage ersetzen oder löschen.
+
+## 6. Löschung ganzer Mandanten
 
 Beim Löschen eines `SessionTenant` (Vertragsende) werden alle abhängigen
 Daten kaskadiert gelöscht, einschließlich Audit-Log und tenant-spezifischem
 Verschlüsselungsschlüssel (Crypto-Shredding: ohne Schlüssel sind etwaige
 Backups der verschlüsselten Felder nicht mehr lesbar).
 
-## 6. Zugehörige Dokumente
+## 7. Zugehörige Dokumente
 
 - [AVV-Muster](DSGVO_AVV_MUSTER.md)
 - [Technische und organisatorische Maßnahmen (TOM)](DSGVO_TOM.md)
