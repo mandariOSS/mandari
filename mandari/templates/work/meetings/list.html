@@ -14,6 +14,9 @@
 {% endblock %}
 
 {% block header_actions %}
+{% if has_session_connection %}
+<c-ui.button variant="secondary" icon="mail-check" href="{% url 'work:session_invitations' org_slug=organization.slug %}">Ladungen der Verwaltung</c-ui.button>
+{% endif %}
 <a href="{% url 'work:meetings_calendar' org_slug=organization.slug %}"
    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
     <i data-lucide="calendar" class="w-4 h-4"></i>

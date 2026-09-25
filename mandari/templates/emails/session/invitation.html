@@ -1,0 +1,61 @@
+{% extends "emails/base_email.html" %}
+{% comment %}
+Ladung bzw. Nachladung zu einer Sitzung (Issue #29, Rückmeldelink seit Issue #225).
+Keine Lesebestätigung, kein Tracking-Pixel: Der Erhalt gilt erst als bestätigt, wenn die Person
+selbst über den persönlichen Link bestätigt. Zustellweg Portal: Hinweis ohne Anhänge.
+{% endcomment %}
+{% block subject %}{% if supplementary %}Nachtrag zur Einladung{% else %}Einladung{% endif %}: {{ meeting.name }}{% endblock %}
+{% block preheader %}{{ meeting.organization.name }} am {{ start_local|date:"d.m.Y" }} um {{ start_local|date:"H:i" }} Uhr – bitte bestätigen Sie den Erhalt und melden Sie Ihre Teilnahme.{% endblock %}
+{% block content %}
+<h1 class="h1">{% if supplementary %}Nachtrag zur Einladung{% else %}Einladung zur Sitzung{% endif %}</h1>
+<p class="muted">{{ tenant.name }}</p>
+<p>Guten Tag {{ recipient.name }},</p>
+{% if supplementary %}
+<p>zur bereits versandten Einladung erhalten Sie die Nachtrags-Tagesordnung für die Sitzung „{{ meeting.name }}“.</p>
+{% else %}
+<p>hiermit laden wir Sie zur Sitzung „{{ meeting.name }}“ ein.</p>
+{% endif %}
+<table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+        <td class="key">Gremium</td>
+        <td>{{ meeting.organization.name }}</td>
+    </tr>
+    <tr>
+        <td class="key">Termin</td>
+        <td>{{ start_local|date:"l, d.m.Y" }}, {{ start_local|date:"H:i" }} Uhr</td>
+    </tr>
+    {% if location %}
+    <tr>
+        <td class="key">Ort</td>
+        <td>{{ location }}</td>
+    </tr>
+    {% endif %}
+</table>
+{% if message %}
+<div class="card">
+    <p class="pre">{{ message }}</p>
+</div>
+{% endif %}
+{% if is_portal %}
+<p>Die Tagesordnung finden Sie in mandari Work unter „Sitzungen“ → „Ladungen der Verwaltung“.</p>
+{% elif has_attachments %}
+<p>Die Tagesordnung finden Sie im Anhang (PDF); der Termin liegt als Kalenderdatei (ICS) bei.</p>
+{% endif %}
+<div class="card card-accent">
+    <p class="label">Ihre Rückmeldung</p>
+    <p>Bitte bestätigen Sie den Erhalt dieser Ladung und teilen Sie mit, ob Sie teilnehmen. Das geht ohne Anmeldung und bis zum Sitzungsbeginn.</p>
+</div>
+<div class="btn-wrap">
+    <a class="btn" href="{{ response_url }}">Erhalt bestätigen und rückmelden</a>
+</div>
+{% if is_portal %}
+<div class="btn-wrap">
+    <a class="btn btn-secondary" href="{{ portal_url }}">mandari Work öffnen</a>
+</div>
+{% endif %}
+<p class="muted small">Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:<br>{{ response_url }}</p>
+<p class="muted small">Der Link ist persönlich, bitte geben Sie ihn nicht weiter. Diese E-Mail enthält keine Lesebestätigung: Der Erhalt gilt erst als bestätigt, wenn Sie ihn selbst bestätigen.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde im Auftrag von {{ tenant.name }} über mandari versendet.</p>
+{% endblock %}

@@ -27,6 +27,27 @@ from django.utils.text import slugify
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
 
+# Ladung mit Rückmeldung (Issue #225)
+DELIVERY_CHANNEL_CHOICES = [
+    ("email", "E-Mail"),
+    ("portal", "Portal (mandari Work)"),
+    ("letter", "Brief"),
+]
+# Herkunft einer Empfangsbestätigung bzw. Rückmeldung
+RESPONSE_SOURCE_CHOICES = [
+    ("link", "Rückmeldelink"),
+    ("portal", "Portal"),
+    ("staff", "Sitzungsdienst"),
+]
+
+
+def new_response_nonce() -> str:
+    """Zufallswert je Ladungsempfänger; fließt in den signierten Rückmeldelink ein (Issue #225)."""
+    import secrets
+
+    return secrets.token_urlsafe(12)
+
+
 # =============================================================================
 # TENANT MODEL
 # =============================================================================
@@ -681,6 +702,16 @@ class SessionPerson(EncryptionMixin, models.Model):
     bank_iban_encrypted = EncryptedTextField(verbose_name="IBAN (verschlüsselt)")
     bank_bic_encrypted = EncryptedTextField(verbose_name="BIC (verschlüsselt)")
 
+    # Zustellweg für Ladungen (Issue #225): E-Mail mit Unterlagen, Portal
+    # (Hinweis-Mail ohne Anhänge, Unterlagen und Rückmeldung in mandari Work)
+    # oder Brief (keine Mail, Serienbrief-Export für den Postversand)
+    delivery_channel = models.CharField(
+        max_length=10,
+        choices=DELIVERY_CHANNEL_CHOICES,
+        default="email",
+        verbose_name="Zustellweg für Ladungen",
+    )
+
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     start_date = models.DateField(blank=True, null=True, verbose_name="Mandatsbeginn")
@@ -952,6 +983,8 @@ class SessionInvitationDispatch(models.Model):
         choices=[
             ("invitation", "Ladung"),
             ("supplementary", "Nachladung/Nachtrag"),
+            # Issue #225: automatische Benachrichtigung der Stellvertretung nach einer Absage
+            ("substitution", "Vertretungsanfrage"),
         ],
         default="invitation",
         verbose_name="Versandart",
@@ -982,6 +1015,11 @@ class SessionInvitationDispatch(models.Model):
 class SessionInvitationRecipient(models.Model):
     """
     Einzelner Empfänger eines Ladungsversands inkl. Zustellstatus (Issue #29).
+
+    Seit Issue #225 zusätzlich: Zustellweg, Versandzeitpunkt, Empfangsbestätigung
+    (nur durch aktive Handlung – Link, Portal oder Eintrag des Sitzungsdienstes,
+    nie durch bloßes Öffnen) und Erinnerungen. Die Rückmeldung selbst (Zu-/Absage,
+    Vertretungswunsch) steht an der SessionAttendance der Person.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1002,7 +1040,7 @@ class SessionInvitationRecipient(models.Model):
     )
 
     name = models.CharField(max_length=255, verbose_name="Name")
-    email = models.EmailField(verbose_name="E-Mail")
+    email = models.EmailField(blank=True, verbose_name="E-Mail")
     membership_role = models.CharField(max_length=100, blank=True, verbose_name="Funktion")
 
     # Ö/NÖ: hat dieser Empfänger die vollständige (inkl. NÖ-Teil) Tagesordnung erhalten?
@@ -1011,16 +1049,56 @@ class SessionInvitationRecipient(models.Model):
         verbose_name="Inkl. nichtöffentlicher Teil",
     )
 
+    # Tatsächlich genutzter Zustellweg (Portal ohne Portalzugang fällt auf E-Mail zurück)
+    channel = models.CharField(
+        max_length=10,
+        choices=DELIVERY_CHANNEL_CHOICES,
+        default="email",
+        verbose_name="Zustellweg",
+    )
+
     status = models.CharField(
         max_length=20,
         choices=[
             ("sent", "Versandt"),
             ("failed", "Fehlgeschlagen"),
+            ("letter_pending", "Brief vorzubereiten"),
+            ("letter_sent", "Brief versandt"),
         ],
         default="sent",
         verbose_name="Zustellstatus",
     )
     error = models.TextField(blank=True, verbose_name="Fehler")
+    sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Versandt am")
+
+    # Vertretungsanfrage: für wen soll diese Person vertreten?
+    substitute_for = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="substitution_requests",
+        verbose_name="Vertretung für",
+    )
+
+    # Empfangs-/Kenntnisnahmebestätigung (Issue #225)
+    acknowledged_at = models.DateTimeField(blank=True, null=True, verbose_name="Empfang bestätigt am")
+    acknowledged_via = models.CharField(
+        max_length=10,
+        choices=RESPONSE_SOURCE_CHOICES,
+        blank=True,
+        verbose_name="Empfang bestätigt über",
+    )
+    reminder_count = models.PositiveSmallIntegerField(default=0, verbose_name="Erinnerungen")
+    last_reminded_at = models.DateTimeField(blank=True, null=True, verbose_name="Zuletzt erinnert am")
+
+    # Geht in den signierten Rückmeldelink ein; ein neuer Wert macht alle bisherigen Links ungültig
+    response_nonce = models.CharField(
+        max_length=32,
+        default=new_response_nonce,
+        editable=False,
+        verbose_name="Link-Schlüssel",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -1032,6 +1110,13 @@ class SessionInvitationRecipient(models.Model):
 
     def __str__(self):
         return f"{self.name} <{self.email}> ({self.get_status_display()})"
+
+    @property
+    def delivered_at(self):
+        """Versandzeitpunkt; Altbestand vor Issue #225 hat nur created_at."""
+        if self.status in ("failed", "letter_pending"):
+            return None
+        return self.sent_at or self.created_at
 
 
 class SessionAgendaItem(EncryptionMixin, models.Model):
@@ -2183,9 +2268,15 @@ class SessionProtocol(EncryptionMixin, models.Model):
 # =============================================================================
 
 
-class SessionAttendance(models.Model):
+class SessionAttendance(EncryptionMixin, models.Model):
     """
     Attendance record for a meeting.
+
+    Rückmeldungen der Mandatstragenden (Issue #225) landen hier: Zusage
+    (status="confirmed") oder Absage (status="declined", optional mit Grund und
+    Vertretungswunsch) mit Zeitstempel und Herkunft (Link, Portal, Sitzungsdienst).
+    Der Grund ist verschlüsselt und nur für den Sitzungsdienst sichtbar – weder
+    OParl noch öffentliche Seiten geben ihn aus.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -2246,6 +2337,20 @@ class SessionAttendance(models.Model):
     # Voting rights (can be different from organization membership)
     has_voting_rights = models.BooleanField(default=True, verbose_name="Stimmberechtigt")
 
+    # Rückmeldung der Person (Issue #225)
+    responded_at = models.DateTimeField(blank=True, null=True, verbose_name="Rückmeldung am")
+    response_source = models.CharField(
+        max_length=10,
+        choices=RESPONSE_SOURCE_CHOICES,
+        blank=True,
+        verbose_name="Rückmeldung über",
+    )
+    substitute_requested = models.BooleanField(default=False, verbose_name="Vertretung erbeten")
+    response_reason_encrypted = EncryptedTextField(verbose_name="Grund der Absage (verschlüsselt)")
+    substitutes_notified_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="Stellvertretung benachrichtigt am"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2258,6 +2363,10 @@ class SessionAttendance(models.Model):
 
     def __str__(self):
         return f"{self.person} - {self.meeting}: {self.status}"
+
+    def get_encryption_organization(self):
+        """Mandanten-Schlüssel der Sitzung für den Absagegrund."""
+        return self.meeting.tenant
 
 
 class SessionAllowanceRate(models.Model):

@@ -52,8 +52,10 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
             {
                 "meeting": meeting,
                 "recipients": recipients,
+                # Zustellbar: per Mail (mit Adresse) oder per Brief (Issue #225)
                 "recipients_with_email": [r for r in recipients if not r["missing_email"]],
                 "recipients_without_email": [r for r in recipients if r["missing_email"]],
+                "letter_recipients": [r for r in recipients if r["channel"] == "letter"],
                 "invitation_deadline": meeting.invitation_deadline,
                 "invitation_overdue": meeting.invitation_overdue,
                 "invitation_period_days": meeting.organization.invitation_period_days,
@@ -89,7 +91,8 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
         if not recipients:
             messages.error(
                 request,
-                "Kein Empfänger mit E-Mail-Adresse in der Gremienbesetzung — Versand nicht möglich.",
+                "Kein zustellbarer Empfänger (E-Mail-Adresse oder Zustellweg Brief) in der Gremienbesetzung "
+                "— Versand nicht möglich.",
             )
             return redirect(
                 "session:meeting_invitation",
@@ -108,6 +111,7 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
 
         sent = dispatch.recipients.filter(status="sent").count()
         failed = dispatch.recipients.filter(status="failed").count()
+        letters = dispatch.recipients.filter(status="letter_pending").count()
         if failed:
             messages.warning(
                 request,
@@ -115,6 +119,11 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
             )
         else:
             messages.success(request, f"{dispatch.get_dispatch_type_display()} wurde an {sent} Empfänger versandt.")
+        if letters:
+            messages.info(
+                request,
+                f"{letters} Empfänger erhalten die Ladung per Brief – Serienbrief unter „Rückmeldungen“.",
+            )
         return redirect(
             "session:meeting_invitation",
             tenant_slug=self.session_tenant.slug,

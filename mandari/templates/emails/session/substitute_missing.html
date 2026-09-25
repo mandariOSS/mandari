@@ -1,0 +1,28 @@
+{% extends "emails/base_email.html" %}
+{% comment %}
+Hinweis an den Sitzungsdienst: Absage mit Vertretungswunsch, aber keine Stellvertretung per Mail
+erreicht (Issue #225). Enthält bewusst keinen Absagegrund.
+{% endcomment %}
+{% block subject %}Vertretung gesucht: {{ meeting.name }}{% endblock %}
+{% block preheader %}{{ absent.display_name }} hat abgesagt und bittet um Vertretung – keine Stellvertretung per E-Mail erreichbar.{% endblock %}
+{% block content %}
+<h1 class="h1">Vertretung gesucht</h1>
+<p class="muted">{{ tenant.name }} · {{ meeting.organization.name }}</p>
+<p><strong>{{ absent.display_name }}</strong> hat für die Sitzung „{{ meeting.name }}“ am {{ start_local|date:"l, d.m.Y" }} um {{ start_local|date:"H:i" }} Uhr abgesagt und um Vertretung gebeten.</p>
+<div class="card card-warning">
+    {% if outcome.by_letter %}
+    <p>Die hinterlegte Stellvertretung erhält Ladungen per Brief: {{ outcome.by_letter|join:", " }}. Den Brief finden Sie in der Übersicht der Rückmeldungen (Serienbrief).</p>
+    {% elif outcome.failed %}
+    <p>Die Vertretungsanfrage konnte nicht zugestellt werden: {{ outcome.failed|join:", " }}.</p>
+    {% else %}
+    <p>Für {{ absent.display_name }} ist in diesem Gremium keine Stellvertretung hinterlegt, die noch zusagen kann.</p>
+    {% endif %}
+</div>
+<p>Bitte kümmern Sie sich um die Vertretung.</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ overview_url }}">Rückmeldungen ansehen</a>
+</div>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch vom Sitzungsdienst von {{ tenant.name }} in mandari versendet.</p>
+{% endblock %}

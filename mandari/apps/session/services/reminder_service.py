@@ -7,7 +7,8 @@ Mandant fünf Fristtypen und versendet E-Mails:
 
 - Ladungsfrist läuft ab / ist verstrichen  -> Sitzungsdienst (edit_meetings)
 - Vorlagenfrist läuft ab                   -> Vorlagen-Bearbeitung (edit_papers)
-- Rückmeldung zur Sitzung fehlt            -> eingeladene Person selbst
+- Rückmeldung zur Sitzung fehlt            -> eingeladene Person selbst (mit
+  persönlichem Rückmeldelink, Issue #225; nicht bei Zustellweg Brief)
 - Wiedervorlage Beschlusskontrolle (#37)   -> Sitzungsdienst (edit_meetings)
 
 Idempotenz: Jede Erinnerung wird über SessionReminderLog mit einem
@@ -20,14 +21,16 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.common.email import send_email
+from apps.session.services import invitation_response_service, invitation_token
 
 from ..models import (
     SessionAgendaItem,
     SessionAttendance,
+    SessionInvitationRecipient,
     SessionMeeting,
     SessionPaper,
     SessionReminderLog,
@@ -64,7 +67,9 @@ def _claim(tenant: SessionTenant, kind: str, dedup_key: str, recipients: list[st
     Erinnerung atomar beanspruchen. False, wenn sie bereits versendet wurde.
     """
     try:
-        SessionReminderLog.objects.create(tenant=tenant, kind=kind, dedup_key=dedup_key, recipients=recipients)
+        # Savepoint: Der Konflikt darf eine umgebende Transaktion nicht abbrechen
+        with transaction.atomic():
+            SessionReminderLog.objects.create(tenant=tenant, kind=kind, dedup_key=dedup_key, recipients=recipients)
         return True
     except IntegrityError:
         return False
@@ -172,41 +177,79 @@ def _remind_papers(tenant, config, today, *, dry_run) -> dict:
 
 
 def _remind_rsvp(tenant, config, today, *, dry_run) -> dict:
-    """Eingeladene ohne Zu-/Absage kurz vor der Sitzung erinnern."""
+    """
+    Eingeladene ohne Zu-/Absage kurz vor der Sitzung erinnern.
+
+    Grundlage sind Anwesenheitszeilen mit Status „Eingeladen“ und – seit Issue #225 – auch
+    Ladungsempfänger ohne Anwesenheitszeile (Liste noch nicht erzeugt). Die Mail enthält den
+    persönlichen Rückmeldelink aus dem jüngsten Versand; Personen mit Zustellweg Brief erhalten
+    keine Mail.
+    """
     sent = {"attendance_rsvp": 0}
     if not config["rsvp_enabled"]:
         return sent
 
     horizon = today + timedelta(days=config["rsvp_days_before"])
+    meeting_filter = {
+        "meeting__tenant": tenant,
+        "meeting__cancelled": False,
+        "meeting__start__date__gte": today,
+        "meeting__start__date__lte": horizon,
+        "meeting__invitation_sent_at__isnull": False,
+    }
     attendances = (
-        SessionAttendance.objects.filter(
-            meeting__tenant=tenant,
-            meeting__cancelled=False,
-            meeting__start__date__gte=today,
-            meeting__start__date__lte=horizon,
-            meeting__invitation_sent_at__isnull=False,
-            status="invited",
-        )
+        SessionAttendance.objects.filter(status="invited", **meeting_filter)
         .select_related("person", "meeting__organization")
         .order_by("meeting__start")
     )
     base = _base_url(tenant)
+    targets = [(attendance.meeting, attendance.person, str(attendance.id)) for attendance in attendances]
 
-    for attendance in attendances:
-        email = attendance.person.email
-        if not email:
+    # Ladungsempfänger ohne Anwesenheitszeile (jede Zeile – auch Zu-/Absagen – zählt als erfasst)
+    covered = set(SessionAttendance.objects.filter(**meeting_filter).values_list("meeting_id", "person_id"))
+    receipts = (
+        SessionInvitationRecipient.objects.filter(
+            **{f"dispatch__{key}": value for key, value in meeting_filter.items()},
+            dispatch__dispatch_type__in=("invitation", "supplementary"),
+            person__isnull=False,
+            person__is_active=True,
+        )
+        .select_related("person", "dispatch__meeting__organization")
+        .order_by("dispatch__meeting__start")
+    )
+    for receipt in receipts:
+        key = (receipt.dispatch.meeting_id, receipt.person_id)
+        if key in covered:
             continue
-        meeting = attendance.meeting
+        covered.add(key)
+        targets.append((receipt.dispatch.meeting, receipt.person, f"{receipt.dispatch.meeting_id}:{receipt.person_id}"))
+
+    for meeting, person, dedup_key in targets:
+        email = person.email
+        # Zustellweg Brief (Issue #225): keine Mails an diese Person
+        if not email or person.delivery_channel == "letter":
+            continue
         start_local = timezone.localtime(meeting.start)
         subject = f"[{tenant.name}] Bitte Rückmeldung: {meeting.name} am {start_local.strftime('%d.%m.%Y')}"
+        # Persönlicher Rückmeldelink aus dem jüngsten Versand, sonst Verweis auf den Sitzungsdienst
+        recipient = invitation_response_service.latest_recipient(meeting, person)
+        if recipient is not None:
+            link_text = (
+                "Bitte melden Sie sich über Ihren persönlichen Rückmeldelink zurück "
+                "(ohne Anmeldung, gültig bis Sitzungsbeginn):\n"
+                f"{invitation_token.response_url(recipient)}\n"
+            )
+        else:
+            link_text = (
+                f"Bitte melden Sie sich beim Sitzungsdienst zurück.\n\nZur Sitzung: {base}/meetings/{meeting.id}/\n"
+            )
         body = (
-            f"Guten Tag {attendance.person.display_name},\n\n"
+            f"Guten Tag {person.display_name},\n\n"
             f"für die Sitzung „{meeting.name}“ ({meeting.organization.name}) am "
             f"{start_local.strftime('%d.%m.%Y um %H:%M Uhr')} liegt noch keine "
-            f"Zu- oder Absage von Ihnen vor. Bitte melden Sie sich beim "
-            f"Sitzungsdienst zurück.\n\nZur Sitzung: {base}/meetings/{meeting.id}/\n"
+            f"Zu- oder Absage von Ihnen vor. {link_text}"
         )
-        if _send(tenant, "attendance_rsvp", str(attendance.id), [email], subject, body, dry_run=dry_run):
+        if _send(tenant, "attendance_rsvp", dedup_key, [email], subject, body, dry_run=dry_run):
             sent["attendance_rsvp"] += 1
     return sent
 

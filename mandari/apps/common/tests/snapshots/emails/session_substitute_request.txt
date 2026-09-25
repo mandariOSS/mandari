@@ -1,0 +1,27 @@
+# Vertretungsanfrage
+
+Stadt Musterstadt
+
+Guten Tag Vera Vertretung,
+
+Max Mitglied kann an der folgenden Sitzung nicht teilnehmen und bittet um Vertretung. Sie sind als Stellvertretung hinterlegt.
+
+Gremium Hauptausschuss
+Sitzung Sitzung des Hauptausschusses
+Termin Montag, 14.09.2026, 18:30 Uhr
+Ort Rathaus, Sitzungssaal 1
+
+Die Tagesordnung finden Sie im Anhang (PDF).
+
+Bitte teilen Sie über Ihren persönlichen Link mit, ob Sie die Vertretung übernehmen.
+
+[Vertretung zusagen oder absagen](https://mandari.example/ladung/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/)
+
+Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:
+https://mandari.example/ladung/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/
+
+Der Link ist persönlich und gilt bis zum Sitzungsbeginn.
+
+Diese E-Mail wurde im Auftrag von Stadt Musterstadt über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

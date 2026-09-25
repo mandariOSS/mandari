@@ -16,6 +16,9 @@ die hier genannten Fristen sind konfigurierbare Voreinstellungen.
 | Kontaktdaten (Telefon, Adresse) | `SessionPerson.*_encrypted` | AES-256-GCM, Tenant-Schlüssel |
 | Bankdaten (Kontoinhaber, IBAN, BIC) | `SessionPerson.bank_*_encrypted` | AES-256-GCM, Zugriff nur mit `manage_allowances` |
 | Sitzungsgeld-Positionen | `SessionAllowance` | Beträge/Status, keine Bankdaten |
+| Ladungsprotokoll (Empfänger, Zustellweg, Versand, Empfangsbestätigung) | `SessionInvitationRecipient` | Zugriff nur mit `edit_meetings` |
+| Rückmeldung zur Sitzung (Zu-/Absage, Zeitpunkt, Herkunft, Vertretungswunsch) | `SessionAttendance` | Zugriff nur mit Rollenberechtigung |
+| Grund einer Absage | `SessionAttendance.response_reason_encrypted` | AES-256-GCM, nur in der Rückmeldeübersicht des Sitzungsdienstes sichtbar, nicht in OParl, Nachweis oder Mails an Dritte |
 | Nicht-öffentliche Protokollteile | `SessionProtocol.content_encrypted` | AES-256-GCM |
 | Interne Sitzungsnotizen | `SessionMeeting.internal_notes_encrypted` | AES-256-GCM |
 | Audit-Log | `SessionAuditLog` | unveränderbar (revisionssicher), keine Klartext-Werte verschlüsselter Felder |
@@ -27,7 +30,7 @@ Die Fristen werden **je Mandant** in den Einstellungen gepflegt
 
 | Datenart | Einstellung | Wirkung nach Fristablauf |
 |---|---|---|
-| Kontakt-/Bankdaten ausgeschiedener Mandatsträger | `persons_years` (ab Mandatsende) | E-Mail, Telefon, Adresse und Bankdaten werden entfernt. **Der Name bleibt erhalten**, damit historische Beschlüsse und Protokolle nachvollziehbar bleiben. |
+| Kontakt-/Bankdaten ausgeschiedener Mandatsträger | `persons_years` (ab Mandatsende) | E-Mail, Telefon, Adresse und Bankdaten werden entfernt, ebenso Absagegründe und die in Ladungsprotokollen mitgeschriebene E-Mail-Adresse. **Der Name bleibt erhalten**, damit historische Beschlüsse, Protokolle und Ladungsnachweise nachvollziehbar bleiben. |
 | Nicht-öffentliche Inhalte | `np_content_years` (ab Sitzungsdatum) | NÖ-Protokollteil und interne Notizen werden geleert. Der öffentliche Protokollteil bleibt unberührt. |
 | Audit-Log | `audit_years` (ab Eintragsdatum) | Einträge werden gelöscht. |
 
@@ -92,7 +95,8 @@ belegen (Rechenschaftspflicht, Art. 5 Abs. 2 DSGVO).
 
 *Einstellungen → Datenschutz → Betroffenenauskunft* exportiert alle zu
 einer Person gespeicherten Daten als JSON-Datei (Stammdaten,
-Gremienmitgliedschaften, Anwesenheiten, Sitzungsgelder, Vorlagen als
+Gremienmitgliedschaften, Anwesenheiten mit Rückmeldungen und Absagegründen,
+Ladungen mit Zustellweg und Empfangsbestätigung, Sitzungsgelder, Vorlagen als
 Verfasser/in). Bankdaten werden nur entschlüsselt, wenn die abrufende
 Person zusätzlich `manage_allowances` besitzt. Jeder Export wird auditiert.
 

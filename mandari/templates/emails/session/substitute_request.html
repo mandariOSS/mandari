@@ -1,0 +1,44 @@
+{% extends "emails/base_email.html" %}
+{% comment %}Vertretungsanfrage an die hinterlegte Stellvertretung nach einer Absage (Issue #225).{% endcomment %}
+{% block subject %}Vertretungsanfrage: {{ meeting.name }}{% endblock %}
+{% block preheader %}{{ absent.display_name }} kann nicht teilnehmen und bittet Sie um Vertretung am {{ start_local|date:"d.m.Y" }}.{% endblock %}
+{% block content %}
+<h1 class="h1">Vertretungsanfrage</h1>
+<p class="muted">{{ tenant.name }}</p>
+<p>Guten Tag {{ recipient.name }},</p>
+<p><strong>{{ absent.display_name }}</strong> kann an der folgenden Sitzung nicht teilnehmen und bittet um Vertretung. Sie sind als Stellvertretung hinterlegt.</p>
+<table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+        <td class="key">Gremium</td>
+        <td>{{ meeting.organization.name }}</td>
+    </tr>
+    <tr>
+        <td class="key">Sitzung</td>
+        <td>{{ meeting.name }}</td>
+    </tr>
+    <tr>
+        <td class="key">Termin</td>
+        <td>{{ start_local|date:"l, d.m.Y" }}, {{ start_local|date:"H:i" }} Uhr</td>
+    </tr>
+    {% if location %}
+    <tr>
+        <td class="key">Ort</td>
+        <td>{{ location }}</td>
+    </tr>
+    {% endif %}
+</table>
+{% if is_portal %}
+<p>Die Tagesordnung finden Sie in mandari Work unter „Sitzungen“ → „Ladungen der Verwaltung“.</p>
+{% elif has_attachments %}
+<p>Die Tagesordnung finden Sie im Anhang (PDF).</p>
+{% endif %}
+<p>Bitte teilen Sie über Ihren persönlichen Link mit, ob Sie die Vertretung übernehmen.</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ response_url }}">Vertretung zusagen oder absagen</a>
+</div>
+<p class="muted small">Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:<br>{{ response_url }}</p>
+<p class="muted small">Der Link ist persönlich und gilt bis zum Sitzungsbeginn.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde im Auftrag von {{ tenant.name }} über mandari versendet.</p>
+{% endblock %}

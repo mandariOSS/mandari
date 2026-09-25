@@ -12,6 +12,7 @@ from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
+from django.utils import timezone
 from django.views import View
 from django.views.generic import (
     CreateView,
@@ -241,7 +242,13 @@ class AttendanceUpdateView(SessionViewMixin, UpdateView):
         return SessionAttendance.objects.filter(meeting__tenant=self.session_tenant)
 
     def form_valid(self, form):
-        self.object = form.save()
+        attendance = form.save(commit=False)
+        # Zu-/Absage durch den Sitzungsdienst: Zeitstempel und Herkunft der Rückmeldung (Issue #225)
+        if "status" in form.changed_data and attendance.status in ("confirmed", "declined"):
+            attendance.responded_at = timezone.now()
+            attendance.response_source = "staff"
+        attendance.save()
+        self.object = attendance
 
         if self.is_htmx:
             context = {"attendance": self.object}

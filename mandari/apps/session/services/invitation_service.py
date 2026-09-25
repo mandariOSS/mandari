@@ -10,9 +10,12 @@ Zentrale Logik für:
 - ICS-Kalenderanhang
 - Nachladung/Nachtrags-Tagesordnung als eigener Versandtyp
 - lückenlose Versand-Protokollierung (Dispatch + Empfänger + Audit-Log)
+- Zustellweg je Person (Issue #225): E-Mail mit Unterlagen, Portal-Hinweis ohne Anhänge,
+  Brief (keine Mail, Serienbrief-Export); jede Mail trägt den persönlichen Rückmeldelink
 """
 
 import logging
+from typing import Any, cast
 
 from django.db.models import Q
 from django.template.loader import render_to_string
@@ -37,24 +40,30 @@ def get_recipients(meeting: SessionMeeting) -> list[dict]:
 
     Regeln:
     - aktive Mitgliedschaften zum Sitzungsdatum (start_date/end_date)
-    - nur aktive Personen mit E-Mail-Adresse
+    - nur aktive Personen
     - Gäste erhalten nur den öffentlichen Teil der Tagesordnung,
       alle übrigen Funktionen (Mitglied, Vorsitz, Vertreter, beratende
       Mitglieder, sachkundige Bürger) die vollständige Tagesordnung
+    - Zustellweg der Person (Issue #225); „Portal“ ohne Portalzugang wird per E-Mail zugestellt
 
     Returns:
         Liste von dicts: person, membership, name, email, role,
-        include_non_public, missing_email (Personen ohne E-Mail werden
-        mit missing_email=True aufgeführt, damit die Verwaltung sie sieht)
+        include_non_public, channel (tatsächlicher Zustellweg), configured_channel,
+        portal_fallback, missing_email (Zustellung per Mail ohne Adresse – wird mit
+        aufgeführt, damit die Verwaltung sie sieht) und missing_address (Brief ohne Anschrift)
     """
+    from apps.session.services import invitation_response_service, portal_link_service
+
     meeting_date = timezone.localtime(meeting.start).date()
-    memberships = (
+    memberships = list(
         meeting.organization.memberships.select_related("person", "substitute_for")
         .filter(person__is_active=True)
         .filter(Q(start_date__isnull=True) | Q(start_date__lte=meeting_date))
         .filter(Q(end_date__isnull=True) | Q(end_date__gte=meeting_date))
         .order_by("person__family_name", "person__given_name")
     )
+    needs_portal = any(m.person.delivery_channel == "portal" for m in memberships)
+    portal_ids = portal_link_service.portal_person_ids(meeting.tenant) if needs_portal else set()
 
     recipients = []
     seen_person_ids = set()
@@ -63,6 +72,7 @@ def get_recipients(meeting: SessionMeeting) -> list[dict]:
         if person.pk in seen_person_ids:
             continue
         seen_person_ids.add(person.pk)
+        channel = invitation_response_service.effective_channel(person, portal_ids)
         recipients.append(
             {
                 "person": person,
@@ -71,7 +81,11 @@ def get_recipients(meeting: SessionMeeting) -> list[dict]:
                 "email": person.email,
                 "role": membership.get_role_display(),
                 "include_non_public": membership.role != "guest",
-                "missing_email": not person.email,
+                "channel": channel,
+                "configured_channel": person.delivery_channel,
+                "portal_fallback": person.delivery_channel == "portal" and channel != "portal",
+                "missing_email": channel != "letter" and not person.email,
+                "missing_address": channel == "letter" and not cast(Any, person).get_address_decrypted(),
             }
         )
     return recipients
@@ -153,15 +167,16 @@ def send_invitations(
     """
     Ladung/Nachladung an die Gremienbesetzung versenden und protokollieren.
 
-    - E-Mail mit PDF-Tagesordnung (Ö/NÖ je Empfängerberechtigung) + ICS
-    - Dispatch + Empfänger inkl. Zustellstatus werden gespeichert
+    - E-Mail mit PDF-Tagesordnung (Ö/NÖ je Empfängerberechtigung) + ICS und persönlichem
+      Rückmeldelink; Zustellweg „Portal“ ohne Anhänge, „Brief“ ohne Mail (Serienbrief)
+    - Dispatch + Empfänger inkl. Zustellweg und Zustellstatus werden gespeichert
     - Audit-Eintrag "invitation_sent" mit Versandzusammenfassung
     - Erstladung setzt meeting_state="invitation_sent" und invitation_sent_at
 
     Returns:
         der angelegte SessionInvitationDispatch
     """
-    from apps.common.email import send_email
+    from apps.session.services import invitation_response_service
 
     if dispatch_type not in ("invitation", "supplementary"):
         raise ValueError(f"Unbekannte Versandart: {dispatch_type}")
@@ -187,39 +202,46 @@ def send_invitations(
 
     sent_count = 0
     failed_count = 0
+    letter_count = 0
     for recipient in get_recipients(meeting):
         if recipient["missing_email"]:
             continue
         include_np = recipient["include_non_public"]
-        body = _build_email_body(meeting, message, supplementary)
+        channel = recipient["channel"]
+        row = SessionInvitationRecipient.objects.create(
+            dispatch=dispatch,
+            person=recipient["person"],
+            name=recipient["name"],
+            email=recipient["email"] or "",
+            membership_role=recipient["role"],
+            includes_non_public=include_np,
+            channel=channel,
+            # Erst nach erfolgreichem Versand „versandt“ – bricht der Lauf ab, bleibt der Nachweis ehrlich
+            status="letter_pending" if channel == "letter" else "failed",
+            error="" if channel == "letter" else "Versand nicht abgeschlossen",
+        )
+        if channel == "letter":
+            # Keine Mail: Die Person erhält die Ladung per Serienbrief (Übersicht der Rückmeldungen)
+            letter_count += 1
+            continue
         try:
-            send_email(
+            invitation_response_service.send_invitation_mail(
+                row,
                 subject=subject,
-                body=body,
-                to=[recipient["email"]],
+                message=message,
+                supplementary=supplementary,
                 attachments=[
                     (pdf_name, pdf_full if include_np else pdf_public, "application/pdf"),
                     ("sitzung.ics", ics_bytes, "text/calendar"),
                 ],
-                fail_silently=False,
             )
-            status, error = "sent", ""
+            row.status, row.error, row.sent_at = "sent", "", timezone.now()
             sent_count += 1
         except Exception as exc:  # noqa: BLE001 — Zustellstatus je Empfänger dokumentieren
-            logger.exception("Ladung an %s konnte nicht versendet werden.", recipient["email"])
-            status, error = "failed", str(exc)[:1000]
+            logger.exception("Ladung an einen Empfänger konnte nicht versendet werden.")
+            row.error = str(exc)[:1000]
             failed_count += 1
-
-        SessionInvitationRecipient.objects.create(
-            dispatch=dispatch,
-            person=recipient["person"],
-            name=recipient["name"],
-            email=recipient["email"],
-            membership_role=recipient["role"],
-            includes_non_public=include_np,
-            status=status,
-            error=error,
-        )
+        row.save(update_fields=["status", "error", "sent_at"])
 
     # Erstladung: Sitzungsstatus fortschreiben
     if not supplementary and meeting.invitation_sent_at is None:
@@ -238,6 +260,7 @@ def send_invitations(
             "versandart": dispatch.get_dispatch_type_display(),
             "empfaenger_versandt": sent_count,
             "empfaenger_fehlgeschlagen": failed_count,
+            "empfaenger_brief": letter_count,
             "betreff": subject[:300],
         },
     )
@@ -250,37 +273,3 @@ def _default_subject(meeting: SessionMeeting, supplementary: bool) -> str:
     if supplementary:
         return f"Nachtrag zur Einladung: {meeting.name} am {date_str}"
     return f"Einladung: {meeting.name} am {date_str}"
-
-
-def _build_email_body(meeting: SessionMeeting, message: str, supplementary: bool) -> str:
-    start_local = timezone.localtime(meeting.start)
-    lines = ["Guten Tag,", ""]
-    if supplementary:
-        lines.append(
-            "zur bereits versandten Einladung erhalten Sie anbei die Nachtrags-Tagesordnung "
-            f"für die Sitzung „{meeting.name}“."
-        )
-    else:
-        lines.append(f"hiermit laden wir Sie zur Sitzung „{meeting.name}“ ein.")
-    lines.extend(
-        [
-            "",
-            f"Gremium: {meeting.organization.name}",
-            f"Termin:  {start_local.strftime('%d.%m.%Y, %H:%M Uhr')}",
-        ]
-    )
-    if meeting.location:
-        location = meeting.location + (f", {meeting.room}" if meeting.room else "")
-        lines.append(f"Ort:     {location}")
-    if message:
-        lines.extend(["", message])
-    lines.extend(
-        [
-            "",
-            "Die Tagesordnung finden Sie im Anhang (PDF); der Termin liegt als Kalenderdatei (ICS) bei.",
-            "",
-            "Mit freundlichen Grüßen",
-            meeting.tenant.name,
-        ]
-    )
-    return "\n".join(lines)

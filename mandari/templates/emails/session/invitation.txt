@@ -1,0 +1,24 @@
+{% autoescape off %}Guten Tag {{ recipient.name }},
+
+{% if supplementary %}zur bereits versandten Einladung erhalten Sie die Nachtrags-Tagesordnung für die Sitzung „{{ meeting.name }}“.{% else %}hiermit laden wir Sie zur Sitzung „{{ meeting.name }}“ ein.{% endif %}
+
+Gremium: {{ meeting.organization.name }}
+Termin:  {{ start_local|date:"l, d.m.Y" }}, {{ start_local|date:"H:i" }} Uhr{% if location %}
+Ort:     {{ location }}{% endif %}
+{% if message %}
+{{ message }}
+{% endif %}
+{% if is_portal %}Die Tagesordnung finden Sie in mandari Work unter „Sitzungen“ → „Ladungen der Verwaltung“:
+{{ portal_url }}{% elif has_attachments %}Die Tagesordnung finden Sie im Anhang (PDF); der Termin liegt als Kalenderdatei (ICS) bei.{% endif %}
+
+IHRE RÜCKMELDUNG
+Bitte bestätigen Sie den Erhalt dieser Ladung und teilen Sie mit, ob Sie teilnehmen.
+Das geht ohne Anmeldung und bis zum Sitzungsbeginn über Ihren persönlichen Link:
+{{ response_url }}
+
+Der Link ist persönlich, bitte geben Sie ihn nicht weiter. Diese E-Mail enthält keine
+Lesebestätigung: Der Erhalt gilt erst als bestätigt, wenn Sie ihn selbst bestätigen.
+
+Mit freundlichen Grüßen
+{{ tenant.name }}
+{% endautoescape %}

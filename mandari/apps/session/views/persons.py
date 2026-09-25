@@ -48,6 +48,7 @@ class SessionPersonForm(forms.ModelForm):
             "given_name",
             "family_name",
             "email",
+            "delivery_channel",
             "is_active",
             "start_date",
             "end_date",
