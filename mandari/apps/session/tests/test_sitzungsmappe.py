@@ -24,7 +24,7 @@ import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 import pytest
@@ -103,11 +103,12 @@ def _encrypted_pdf(label: str) -> bytes:
 
 
 def _attach(tenant: SessionTenant, name: str, data: bytes, *, public: bool = True, **parent: Any) -> SessionFile:
+    """Anlage anlegen; der Anzeigename darf beliebig sein, der Speichername ist neutral (wie nach dem Upload)."""
     mime = "application/pdf" if name.lower().endswith(".pdf") else "application/octet-stream"
     return SessionFile.objects.create(
         tenant=tenant,
         name=name,
-        file=SimpleUploadedFile(name, data),
+        file=SimpleUploadedFile(f"anlage{PurePosixPath(name).suffix}", data),
         mime_type=mime,
         size=len(data),
         is_public=public,
@@ -164,11 +165,11 @@ def _client(tenant: SessionTenant, name: str, perms: set[str], *, admin: bool = 
 
 def _download(client: Client, url: str) -> tuple[int, bytes]:
     response = cast(Any, client.get(url))
-    try:
-        body = b"".join(cast(Iterator[bytes], response.streaming_content)) if response.streaming else response.content
-    finally:
-        response.close()
-    return response.status_code, body
+    if response.streaming:
+        # Vollständig lesen schließt die Antwort samt Datei – wie ein WSGI-Server, ohne request_finished
+        # ein zweites Mal auszulösen (das gäbe die Datenbankverbindung des Tests zurück)
+        return response.status_code, b"".join(cast(Iterator[bytes], response.streaming_content))
+    return response.status_code, bytes(response.content)
 
 
 # =============================================================================
