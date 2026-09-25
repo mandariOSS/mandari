@@ -11,6 +11,7 @@ Bietet:
 import logging
 import mimetypes
 from collections.abc import Set
+from pathlib import PurePosixPath
 from typing import Any
 
 from django.conf import settings
@@ -134,6 +135,24 @@ def file_visible(permissions: Set[str], session_file: Any) -> bool:
     if not session_file.is_public or not parent_public:
         return np_perm in permissions
     return True
+
+
+def download_name(session_file: Any) -> str:
+    """
+    Dateiname für Downloads und das OParl-Feld ``fileName``: der Anzeigename der Anlage.
+
+    Nie der Speichername – seit der Deduplizierung (Issue #226) teilen sich Anlagen mit
+    gleichem Inhalt eine Datei, deren Name aus einem anderen (womöglich nichtöffentlichen)
+    Upload stammen kann. Fehlt dem Anzeigenamen die Endung, kommt sie vom Speichernamen.
+    """
+    name = str(session_file.name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    name = "".join(ch for ch in name if ch.isprintable()).strip()
+    stored = PurePosixPath(str(session_file.file.name or "")) if session_file.file else None
+    if not name:
+        name = "Anlage"
+    if not PurePosixPath(name).suffix and stored is not None and stored.suffix:
+        name += stored.suffix
+    return name[:255]
 
 
 def guess_mime_type(name: str) -> str:

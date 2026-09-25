@@ -77,11 +77,14 @@ from .devices import (
     DeviceSaveView,
 )
 from .files import (
+    FileContentPurgeView,
     FileDeleteView,
     FileDownloadView,
     FileReplaceView,
     FileUpdateView,
     FileUploadView,
+    FileVersionDownloadView,
+    FileVersionListView,
 )
 from .invitations import (
     MeetingAgendaPdfView,
@@ -123,6 +126,14 @@ from .packages import (
     MeetingPackageDownloadView,
     MeetingPackageRequestView,
     MeetingPackageStatusView,
+)
+from .paper_versions import (
+    PaperVersionCompareView,
+    PaperVersionCreateView,
+    PaperVersionDetailView,
+    PaperVersionFileDownloadView,
+    PaperVersionListView,
+    PaperVersionRestoreView,
 )
 from .papers import (
     PaperChildCreateView,
@@ -285,11 +296,20 @@ __all__ = [
     "ConsultationScheduleView",
     "ConsultationUpdateView",
     "DashboardView",
+    "FileContentPurgeView",
     "FileDeleteView",
     "FileDownloadView",
     "FileReplaceView",
     "FileUpdateView",
     "FileUploadView",
+    "FileVersionDownloadView",
+    "FileVersionListView",
+    "PaperVersionCompareView",
+    "PaperVersionCreateView",
+    "PaperVersionDetailView",
+    "PaperVersionFileDownloadView",
+    "PaperVersionListView",
+    "PaperVersionRestoreView",
     "ImplementationPublishView",
     "InsightPublishView",
     "InvitationAcceptView",

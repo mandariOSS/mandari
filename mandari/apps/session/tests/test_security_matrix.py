@@ -39,18 +39,22 @@ from apps.session.models import (
     SessionConsultation,
     SessionDelegation,
     SessionFile,
+    SessionFileBlob,
+    SessionFileVersion,
     SessionInvitationDispatch,
     SessionMeeting,
     SessionMeetingPackage,
     SessionOrganization,
     SessionOrganizationMembership,
     SessionPaper,
+    SessionPaperVersion,
     SessionPerson,
     SessionProtocol,
     SessionRole,
     SessionTenant,
     SessionUser,
 )
+from apps.session.services import paper_version_service
 
 pytestmark = pytest.mark.django_db
 
@@ -138,6 +142,13 @@ GET_MATRIX: list[tuple[str, frozenset[str]]] = [
     ("/settings/delegations/", frozenset({"manage_users"})),
     ("/audit/", frozenset({"view_audit_log"})),
     ("/files/{file_pub}/download/", frozenset({"view_papers"})),
+    # Fassungen (Issue #226): wie die Vorlage bzw. Anlage selbst
+    ("/papers/{paper_pub}/fassungen/", frozenset({"view_papers"})),
+    ("/papers/{paper_pub}/fassungen/1/", frozenset({"view_papers"})),
+    ("/papers/{paper_pub}/fassungen/vergleich/?a=1&b=2", frozenset({"view_papers"})),
+    ("/papers/{paper_pub}/fassungen/1/anlagen/{entry_pub}/", frozenset({"view_papers"})),
+    ("/files/{file_pub}/fassungen/", frozenset({"view_papers"})),
+    ("/files/{file_pub}/fassungen/1/", frozenset({"view_papers"})),
 ]
 
 # (Pfad-Vorlage, POST-Daten) — Mutationen, die ohne Berechtigung 403 liefern und nichts verändern dürfen
@@ -182,6 +193,10 @@ MUTATIONS: list[tuple[str, dict[str, str]]] = [
         "/settings/delegations/create/",
         {"principal": "{admin_a}", "deputy": "{person_user_a}", "start_date": "2026-01-01", "end_date": "2099-01-01"},
     ),
+    # Fassungen (Issue #226)
+    ("/papers/{paper_pub}/fassungen/sichern/", {"note": "x"}),
+    ("/papers/{paper_pub}/fassungen/1/wiederherstellen/", {}),
+    ("/files/inhalte/{blob_pub}/loeschen/", {"reason": "x"}),
 ]
 
 # Listen-/API-Views des eigenen Tenants, die keine Fremddaten enthalten dürfen
@@ -226,6 +241,11 @@ FOREIGN_DETAIL_PATHS = [
     "/persons/{person_b}/edit/",
     "/agenda/{top_b}/edit/",
     "/files/{file_b}/download/",
+    "/papers/{paper_b}/fassungen/",
+    "/papers/{paper_b}/fassungen/1/",
+    "/papers/{paper_b}/fassungen/vergleich/?a=1&b=1",
+    "/files/{file_b}/fassungen/",
+    "/files/{file_b}/fassungen/1/",
 ]
 
 # Fremde Objekt-Mutationen unter eigenem Tenant-Slug (POST) → 404
@@ -242,6 +262,9 @@ FOREIGN_MUTATIONS: list[tuple[str, dict[str, str]]] = [
     ("/papers/{paper_b}/consultations/add/", {"organization": "{org_b}"}),
     ("/consultations/{consultation_b}/update/", {"role": "hearing"}),
     ("/consultations/{consultation_b}/delete/", {}),
+    ("/papers/{paper_b}/fassungen/sichern/", {}),
+    ("/papers/{paper_b}/fassungen/1/wiederherstellen/", {}),
+    ("/files/inhalte/{blob_b}/loeschen/", {"reason": "x"}),
 ]
 
 OPARL_SEGMENTS = [
@@ -378,6 +401,15 @@ def _build_world() -> World:
     membership_b = SessionOrganizationMembership.objects.create(organization=org_b, person=person_b)
     consultation_b = SessionConsultation.objects.create(paper=paper_b, organization=org_b, order=1)
 
+    # Fassungen (Issue #226): zwei Stände der Ö-Vorlage (mit Ö- und NÖ-Anlage), einer der NÖ-Vorlage, einer fremd
+    manual = SessionPaperVersion.TRIGGER_MANUAL
+    version_pub = paper_version_service.snapshot(paper_pub, trigger=manual)
+    paper_version_service.snapshot(paper_pub, trigger=manual)
+    paper_version_service.snapshot(paper_np, trigger=manual)
+    paper_version_service.snapshot(paper_b, trigger=manual)
+    entry_pub = version_pub.files.get(attachment_id=file_pub.id)
+    entry_np = version_pub.files.get(attachment_id=file_np.id)
+
     ids: dict[str, Any] = {
         "org_a": org_a.id,
         "person_a": person_a.id,
@@ -401,6 +433,10 @@ def _build_world() -> World:
         "file_b": file_b.id,
         "membership_b": membership_b.id,
         "consultation_b": consultation_b.id,
+        "entry_pub": entry_pub.id,
+        "entry_np": entry_np.id,
+        "blob_pub": entry_pub.blob_id,
+        "blob_b": SessionFileVersion.objects.get(session_file=file_b).blob_id,
     }
     world = World(tenant_a=tenant_a, tenant_b=tenant_b, ids=ids, clients={})
 
@@ -445,6 +481,8 @@ def _counts() -> tuple[int, ...]:
             SessionConsultation,
             SessionMeetingPackage,
             SessionDelegation,
+            SessionPaperVersion,
+            SessionFileVersion,
         )
     )
 
@@ -483,6 +521,7 @@ def test_mutations_without_permission_change_nothing(world: World) -> None:
     assert not SessionAgendaItem.objects.get(pk=world.ids["top_pub"]).is_withdrawn, "TOP wurde abgesetzt"
     assert SessionApplication.objects.get(pk=world.ids["app_a"]).status == "submitted", "Antrag-Status verändert"
     assert SessionTenant.objects.get(pk=world.tenant_a.pk).four_eyes_papers == "off", "Vier-Augen-Einstellung verändert"
+    assert SessionFileBlob.objects.get(pk=world.ids["blob_pub"]).purged_at is None, "Inhalt gelöscht"
 
 
 # =============================================================================
@@ -578,6 +617,24 @@ def test_paper_detail_hides_non_public_file(world: World) -> None:
 def test_non_public_file_download_without_right_is_forbidden(world: World) -> None:
     status = world.clients["view_papers"].get(world.url("/files/{file_np}/download/")).status_code
     assert status == 403, f"NÖ-Anlagen-Download ohne NÖ-Recht: erwartet 403, erhalten {status}"
+
+
+def test_versions_of_non_public_paper_are_hidden(world: World) -> None:
+    status = world.clients["view_papers"].get(world.url("/papers/{paper_np}/fassungen/")).status_code
+    assert status == 404, f"Fassungen einer NÖ-Vorlage ohne NÖ-Recht: erwartet 404, erhalten {status}"
+    assert world.clients[ADMIN].get(world.url("/papers/{paper_np}/fassungen/1/")).status_code == 200
+
+
+def test_version_hides_non_public_file(world: World) -> None:
+    response = world.clients["view_papers"].get(world.url("/papers/{paper_pub}/fassungen/1/"))
+    assert b"geheime-anlage-a.txt" not in response.content, "Fassung: NÖ-Anlage sichtbar"
+    assert b"oeffentliche-anlage-a.txt" in response.content, "Fassung: Ö-Anlage fehlt"
+    status = (
+        world.clients["view_papers"].get(world.url("/papers/{paper_pub}/fassungen/1/anlagen/{entry_np}/")).status_code
+    )
+    assert status == 403, f"NÖ-Anlage einer Fassung ohne NÖ-Recht: erwartet 403, erhalten {status}"
+    status = world.clients["view_papers"].get(world.url("/files/{file_np}/fassungen/")).status_code
+    assert status == 403, f"Verlauf einer NÖ-Anlage ohne NÖ-Recht: erwartet 403, erhalten {status}"
 
 
 def test_session_api_meetings_respect_non_public_right(world: World) -> None:

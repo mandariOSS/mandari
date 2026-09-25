@@ -1,0 +1,109 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Vergleich der Fassungen {{ comparison.older.number }} und {{ comparison.newer.number }} – {{ paper.name }}{% endblock %}
+
+{% block breadcrumb %}
+{% include "session/papers/versions/_breadcrumb.html" with current="Vergleich" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="space-y-6" data-testid="fassungsvergleich">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+            Fassung {{ comparison.older.number }} → Fassung {{ comparison.newer.number }}
+        </h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {{ session_tenant.reference_label }} {{ paper.display_reference }} · {{ paper.name }}
+        </p>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-4">
+        {% include "session/papers/versions/_compare_head.html" with version=comparison.older label="Ältere Fassung" %}
+        {% include "session/papers/versions/_compare_head.html" with version=comparison.newer label="Neuere Fassung" %}
+    </div>
+
+    {% if not comparison.has_changes %}
+    <c-ui.alert variant="success" icon="check">Keine Unterschiede bei Texten, Angaben und Anlagen.</c-ui.alert>
+    {% endif %}
+
+    <p class="text-xs text-gray-500 dark:text-gray-400">
+        Wortgenauer Vergleich: <del class="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">entfernt</del>,
+        <ins class="bg-green-100 text-green-800 no-underline dark:bg-green-900/40 dark:text-green-300">hinzugefügt</ins>.
+    </p>
+
+    {% for text in comparison.texts %}
+    {% if text.changed %}
+    <c-ui.card title="{{ text.label }}" subtitle="geändert" data-feld="{{ text.label }}">
+        <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words [&_del]:bg-red-100 [&_del]:text-red-800 dark:[&_del]:bg-red-900/40 dark:[&_del]:text-red-300 [&_ins]:bg-green-100 [&_ins]:text-green-800 [&_ins]:no-underline dark:[&_ins]:bg-green-900/40 dark:[&_ins]:text-green-300">{{ text.html }}</div>
+    </c-ui.card>
+    {% elif not text.empty %}
+    <details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-4" data-feld="{{ text.label }}">
+        <summary class="cursor-pointer text-sm text-gray-600 dark:text-gray-300">
+            <span class="font-semibold text-gray-900 dark:text-white">{{ text.label }}</span> · unverändert
+        </summary>
+        <div class="mt-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{{ text.html }}</div>
+    </details>
+    {% endif %}
+    {% endfor %}
+
+    {% if comparison.fields %}
+    <c-ui.card title="Angaben" padding="none">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 dark:bg-gray-900/40">
+                    <tr>
+                        <c-ui.th>Angabe</c-ui.th>
+                        <c-ui.th>Fassung {{ comparison.older.number }}</c-ui.th>
+                        <c-ui.th>Fassung {{ comparison.newer.number }}</c-ui.th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    {% for change in comparison.fields %}
+                    <tr>
+                        <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ change.label }}</td>
+                        <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ change.old }}</td>
+                        <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ change.new }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </c-ui.card>
+    {% endif %}
+
+    <c-ui.card title="Anlagen" subtitle="Vergleich über Name, Größe, Prüfsumme und Sichtbarkeit" padding="none">
+        {% if comparison.files %}
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for item in comparison.files %}
+            <li class="px-6 py-3 flex items-start gap-3" data-anlage="{{ item.name }}" data-art="{{ item.kind }}">
+                {% if item.kind == "added" %}<c-ui.badge color="green" icon="plus">Hinzugefügt</c-ui.badge>
+                {% elif item.kind == "removed" %}<c-ui.badge color="red" icon="minus">Entfernt</c-ui.badge>
+                {% elif item.kind == "changed" %}<c-ui.badge color="amber" icon="pencil">Geändert</c-ui.badge>
+                {% else %}<c-ui.badge icon="equal">Unverändert</c-ui.badge>{% endif %}
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ item.name }}</p>
+                    {% if item.kind == "changed" %}
+                    <ul class="text-xs text-gray-600 dark:text-gray-300 mt-0.5 space-y-0.5">
+                        {% for change in item.changes %}<li>{{ change }}</li>{% endfor %}
+                    </ul>
+                    {% else %}
+                    {% with entry=item.new|default:item.old %}
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ entry.size_human }} · Version {{ entry.file_version_number }}{% if entry.sha256 %} · <span class="font-mono">{{ entry.sha256|slice:":12" }}</span>{% endif %}
+                    </p>
+                    {% endwith %}
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">Keine Anlagen in beiden Fassungen.</p>
+        {% endif %}
+    </c-ui.card>
+
+    <p class="text-xs text-gray-500 dark:text-gray-400">
+        Anlagen werden über ihre Metadaten verglichen; ein seitenweiser Vergleich von PDF-Inhalten ist nicht Teil dieser Ansicht.
+    </p>
+</div>
+{% endblock %}

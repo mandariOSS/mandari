@@ -1,0 +1,112 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Fassungen – {{ paper.name }}{% endblock %}
+
+{% block breadcrumb %}
+{% include "session/papers/versions/_breadcrumb.html" with current="" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="space-y-6" data-testid="fassungen-liste">
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div class="min-w-0">
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Fassungen</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                {{ session_tenant.reference_label }} {{ paper.display_reference }} · {{ paper.name }}
+            </p>
+        </div>
+        {% if can_edit %}
+        <form method="post" action="{% url 'session:paper_version_create' tenant_slug=tenant_slug paper_id=paper.id %}"
+              class="flex items-end gap-2 flex-wrap">
+            {% csrf_token %}
+            <div>
+                <label for="version_note" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bemerkung (optional)</label>
+                <input type="text" name="note" id="version_note" maxlength="300" placeholder="z. B. Stand nach Rücksprache mit dem Amt"
+                       class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-72">
+            </div>
+            <c-ui.button type="submit" size="sm" icon="save">Fassung sichern</c-ui.button>
+        </form>
+        {% endif %}
+    </div>
+
+    <c-ui.alert variant="info" icon="info">
+        mandari sichert bei jedem Workflow-Schritt und jedem Beratungsergebnis automatisch eine Fassung.
+        Fassungen lassen sich nicht ändern; Wiederherstellen legt eine neue an.
+        Ins Bürgerportal gelangt nie eine ältere Fassung: Dort steht nur die freigegebene Vorlage im aktuellen Stand,
+        mit Betreff und öffentlichen Anlagen – Sachverhalt und Beschlussvorschlag werden nicht veröffentlicht.
+    </c-ui.alert>
+
+    {% if rows %}
+    <form method="get" action="{% url 'session:paper_version_compare' tenant_slug=tenant_slug paper_id=paper.id %}">
+        <c-ui.card title="Verlauf" subtitle="Zwei Fassungen auswählen und vergleichen – ältere links, neuere rechts." padding="none">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 dark:bg-gray-900/40">
+                        <tr>
+                            <c-ui.th class="w-14">Von</c-ui.th>
+                            <c-ui.th class="w-14">Zu</c-ui.th>
+                            <c-ui.th>Fassung</c-ui.th>
+                            <c-ui.th>Anlass</c-ui.th>
+                            <c-ui.th>Status</c-ui.th>
+                            <c-ui.th>Gesichert</c-ui.th>
+                            <c-ui.th align="right"><span class="sr-only">Aktionen</span></c-ui.th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                        {% for row in rows %}
+                        {% with version=row.version %}
+                        <tr data-fassung="{{ version.number }}">
+                            <td class="px-4 py-3">
+                                <input type="radio" name="a" value="{{ version.number }}" {% if version.number == default_a %}checked{% endif %}
+                                       aria-label="Fassung {{ version.number }} als ältere Fassung wählen"
+                                       class="w-4 h-4 text-primary-600 border-gray-300 focus:ring-primary-500">
+                            </td>
+                            <td class="px-4 py-3">
+                                <input type="radio" name="b" value="{{ version.number }}" {% if version.number == default_b %}checked{% endif %}
+                                       aria-label="Fassung {{ version.number }} als neuere Fassung wählen"
+                                       class="w-4 h-4 text-primary-600 border-gray-300 focus:ring-primary-500">
+                            </td>
+                            <td class="px-4 py-3">
+                                <a href="{% url 'session:paper_version_detail' tenant_slug=tenant_slug paper_id=paper.id number=version.number %}"
+                                   class="font-medium text-primary-600 dark:text-primary-400 hover:underline">Fassung {{ version.number }}</a>
+                                <div class="mt-1 flex flex-wrap gap-1">
+                                    {% if version.is_resolved %}<c-ui.badge color="green" icon="gavel" class="whitespace-nowrap">Beschlossene Fassung</c-ui.badge>{% endif %}
+                                    {% if not version.is_public %}<c-ui.badge color="red" icon="lock">Nichtöffentlich</c-ui.badge>{% endif %}
+                                </div>
+                            </td>
+                            <td class="px-4 py-3 text-gray-700 dark:text-gray-300">
+                                {{ version.get_trigger_display }}
+                                {% if version.note %}<p class="text-xs text-gray-500 dark:text-gray-400">{{ version.note }}</p>{% endif %}
+                                {% if row.unchanged %}<p class="text-xs text-gray-400">Inhalt wie Fassung {{ row.previous.number }}</p>{% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ version.status_display }}</td>
+                            <td class="px-4 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                {{ version.created_at|date:"d.m.Y, H:i" }} Uhr
+                                <p class="text-xs text-gray-500 dark:text-gray-400">{{ version.created_by.user.email|default:"automatisch" }}</p>
+                            </td>
+                            <td class="px-4 py-3 text-right whitespace-nowrap">
+                                {% if row.previous %}
+                                <a href="{% url 'session:paper_version_compare' tenant_slug=tenant_slug paper_id=paper.id %}?a={{ row.previous.number }}&amp;b={{ version.number }}"
+                                   class="text-xs text-primary-600 dark:text-primary-400 hover:underline">Mit Fassung {{ row.previous.number }} vergleichen</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endwith %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <c-slot name="footer">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="git-compare">Ausgewählte Fassungen vergleichen</c-ui.button>
+            </c-slot>
+        </c-ui.card>
+    </form>
+    {% else %}
+    <c-ui.card>
+        <c-ui.empty-state icon="history" title="Noch keine Fassung gesichert">
+            Die erste Fassung entsteht, sobald die Vorlage zur Freigabe vorgelegt wird – oder jetzt über „Fassung sichern“.
+        </c-ui.empty-state>
+    </c-ui.card>
+    {% endif %}
+</div>
+{% endblock %}

@@ -2693,7 +2693,7 @@ class SessionFile(models.Model):
     # Extracted text (for search)
     text_content = models.TextField(blank=True, verbose_name="Textinhalt")
 
-    # Versioning (Ersetzen erhöht die Version, Audit-Log hält Historie)
+    # Nummer der aktuellen Fassung; Ersetzen erhöht sie, frühere Fassungen in SessionFileVersion (Issue #226)
     version = models.PositiveIntegerField(default=1, verbose_name="Version")
 
     # Visibility
@@ -2759,12 +2759,338 @@ class SessionFile(models.Model):
     @property
     def size_human(self) -> str:
         """Human-readable file size."""
-        size = self.size
-        for unit in ["B", "KB", "MB", "GB"]:
-            if size < 1024:
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB"
+        return human_size(self.size)
+
+
+def human_size(size: float) -> str:
+    """Dateigröße lesbar, z. B. „1.5 MB“."""
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+# =============================================================================
+# FASSUNGEN VON VORLAGEN UND ANLAGEN (Issue #226)
+# =============================================================================
+
+
+class ImmutableRecord(models.Model):
+    """
+    Revisionssicherer Eintrag: nach dem Anlegen weder änderbar noch einzeln löschbar (Issue #226).
+
+    Verschwinden kann er nur mit seinem Elternobjekt (Vorlage, Anlage, Mandant) über die
+    Kaskade der Datenbank – solange es die Vorlage gibt, bleibt jede gesicherte Fassung,
+    insbesondere die beschlossene, genau so, wie sie entstanden ist.
+    """
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValueError(f"{self._meta.verbose_name} ist unveränderlich und kann nicht geändert werden.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> Any:
+        raise ValueError(f"{self._meta.verbose_name} ist unveränderlich und kann nicht einzeln gelöscht werden.")
+
+
+class SessionFileBlob(models.Model):
+    """
+    Gespeicherter Dateiinhalt, je Mandant eindeutig über die SHA-256-Prüfsumme (Issue #226).
+
+    Speicherkonzept: Jeder Inhalt liegt je Mandant genau einmal im Speicher. Die Anlage
+    (``SessionFile.file``), ihre Fassungen und die Fassungen der Vorlagen verweisen auf
+    denselben Speichernamen – wer eine Anlage durch eine schon bekannte Datei ersetzt oder
+    eine ältere Fassung wiederherstellt, legt nichts doppelt ab. Gelöscht wird ein Inhalt
+    erst, wenn nichts mehr auf ihn verweist (``file_version_service.collect_garbage``).
+
+    Datenschutz-Löschung (``purged_at``): Der Inhalt verschwindet aus dem Speicher,
+    Prüfsumme und Größe bleiben als Nachweis, Fassungen zeigen „Inhalt gelöscht“.
+
+    Die Dateien liegen unter ``session/files/`` und sind nie direkt über /media/ abrufbar
+    (PROTECTED_MEDIA_PREFIXES), nur über die zugriffsgeprüften Download-Views.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="file_blobs",
+        verbose_name="Mandant",
+    )
+    sha256 = models.CharField(max_length=64, verbose_name="SHA-256")
+    size = models.PositiveBigIntegerField(default=0, verbose_name="Größe (Bytes)")
+    file = models.FileField(upload_to="session/files/%Y/%m/", blank=True, verbose_name="Datei")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    purged_at = models.DateTimeField(null=True, blank=True, verbose_name="Inhalt gelöscht am")
+    purged_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Inhalt gelöscht von",
+    )
+    purge_reason = models.CharField(max_length=300, blank=True, verbose_name="Grund der Löschung")
+
+    class Meta:
+        db_table = "session_file_blobs"
+        verbose_name = "Dateiinhalt"
+        verbose_name_plural = "Dateiinhalte"
+        constraints = [
+            # Gelöschte Inhalte zählen nicht: Wird dieselbe Datei später neu hochgeladen, entsteht ein neuer Eintrag
+            models.UniqueConstraint(
+                fields=["tenant", "sha256"],
+                condition=models.Q(purged_at__isnull=True),
+                name="uniq_session_file_blob_sha256",
+            ),
+        ]
+        indexes = [models.Index(fields=["file"], name="session_blob_file_idx")]
+
+    def __str__(self) -> str:
+        return f"Dateiinhalt {self.sha256[:12]}"
+
+    @property
+    def is_available(self) -> bool:
+        return self.purged_at is None and bool(self.file)
+
+
+class SessionFileVersion(ImmutableRecord):
+    """
+    Fassung einer Anlage (Issue #226): jeder gespeicherte Inhalt mit Nummer, Zeitpunkt und Urheber.
+
+    Beim Ersetzen entsteht eine neue Fassung, die bisherige bleibt abrufbar. Sichtbar ist eine
+    Fassung genau für die, die die Anlage selbst sehen dürfen (``file_service.file_visible``).
+    Anlagen aus der Zeit vor der Versionierung werden beim ersten Bedarf nachträglich erfasst
+    (``file_version_service.ensure_current_version``) – ältere Inhalte kennt das System dann nicht.
+    Mit der Anlage verschwindet ihr Verlauf; Inhalte, die in einer Fassung der Vorlage stecken,
+    bleiben dort erhalten (``SessionPaperVersionFile``).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="file_versions",
+        verbose_name="Mandant",
+    )
+    session_file = models.ForeignKey(
+        SessionFile,
+        on_delete=models.CASCADE,
+        related_name="versions",
+        verbose_name="Anlage",
+    )
+    number = models.PositiveIntegerField(verbose_name="Fassung")
+    blob = models.ForeignKey(
+        SessionFileBlob,
+        on_delete=models.RESTRICT,
+        related_name="file_versions",
+        verbose_name="Inhalt",
+    )
+    name = models.CharField(max_length=500, verbose_name="Name")
+    mime_type = models.CharField(max_length=100, blank=True, verbose_name="MIME-Typ")
+    size = models.PositiveBigIntegerField(default=0, verbose_name="Größe (Bytes)")
+    note = models.CharField(max_length=200, blank=True, verbose_name="Hinweis")
+    created_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Erfasst von",
+    )
+    created_at = models.DateTimeField(default=timezone.now, verbose_name="Erfasst am")
+
+    class Meta:
+        db_table = "session_file_versions"
+        verbose_name = "Anlagen-Fassung"
+        verbose_name_plural = "Anlagen-Fassungen"
+        ordering = ["-number"]
+        constraints = [
+            models.UniqueConstraint(fields=["session_file", "number"], name="uniq_session_file_version_number"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} – Fassung {self.number}"
+
+    @property
+    def size_human(self) -> str:
+        return human_size(self.size)
+
+
+class SessionPaperVersion(ImmutableRecord):
+    """
+    Fassung einer Vorlage (Issue #226): unveränderlicher Stand von Texten, Angaben und Anlagen.
+
+    Entsteht automatisch bei jedem Workflow-Übergang (Statuswechsel, egal wo ausgelöst) und bei
+    jedem erfassten Beratungsergebnis, zusätzlich von Hand („Fassung sichern“). Wiederherstellen
+    legt eine neue Fassung an – die Historie wird nie überschrieben.
+
+    Die beschlossene Fassung (``is_resolved``) ist je Vorlage eindeutig: der Stand, zu dem die
+    entscheidende Beratung „Angenommen“ erfasst hat. Wie jede Fassung ist sie unveränderlich;
+    ihr Inhalt lässt sich auch nicht per Datenschutz-Löschung entfernen.
+
+    Sichtbarkeit: wie die Vorlage und zusätzlich wie zum Zeitpunkt der Fassung – was damals
+    nichtöffentlich war, bleibt es für die Historie (``paper_version_service.version_visible``).
+    Der verschlüsselte „Vertrauliche Inhalt“ ist bewusst nicht Teil der Fassung.
+    """
+
+    TRIGGER_TRANSITION = "transition"
+    TRIGGER_CONSULTATION = "consultation"
+    TRIGGER_MANUAL = "manual"
+    TRIGGER_BACKUP = "backup"
+    TRIGGER_RESTORE = "restore"
+    TRIGGER_CHOICES = [
+        (TRIGGER_TRANSITION, "Workflow-Übergang"),
+        (TRIGGER_CONSULTATION, "Beratungsergebnis"),
+        (TRIGGER_MANUAL, "Von Hand gesichert"),
+        (TRIGGER_BACKUP, "Sicherung vor Wiederherstellung"),
+        (TRIGGER_RESTORE, "Wiederherstellung"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="paper_versions",
+        verbose_name="Mandant",
+    )
+    paper = models.ForeignKey(
+        SessionPaper,
+        on_delete=models.CASCADE,
+        related_name="versions",
+        verbose_name="Vorlage",
+    )
+    number = models.PositiveIntegerField(verbose_name="Fassung")
+    trigger = models.CharField(max_length=20, choices=TRIGGER_CHOICES, verbose_name="Anlass")
+    note = models.CharField(max_length=300, blank=True, verbose_name="Bemerkung")
+    status = models.CharField(max_length=50, verbose_name="Status der Vorlage")
+    previous_status = models.CharField(max_length=50, blank=True, verbose_name="Vorheriger Status")
+    is_resolved = models.BooleanField(default=False, verbose_name="Beschlossene Fassung")
+    agenda_item = models.ForeignKey(
+        SessionAgendaItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="paper_versions",
+        verbose_name="Tagesordnungspunkt",
+    )
+    restored_from = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Wiederhergestellt aus",
+    )
+    fingerprint = models.CharField(max_length=64, verbose_name="Fingerabdruck")
+
+    # Stand der Vorlage
+    name = models.CharField(max_length=500, verbose_name="Betreff")
+    reference = models.CharField(max_length=100, blank=True, verbose_name="Vorlagennummer")
+    paper_type = models.CharField(max_length=100, verbose_name="Vorlagenart")
+    is_public = models.BooleanField(verbose_name="Öffentlich")
+    date = models.DateField(null=True, blank=True, verbose_name="Datum")
+    deadline = models.DateField(null=True, blank=True, verbose_name="Frist")
+    main_text = models.TextField(blank=True, verbose_name="Sachverhalt")
+    resolution_text = models.TextField(blank=True, verbose_name="Beschlussvorschlag")
+    has_financial_impact = models.BooleanField(null=True, blank=True, verbose_name="Finanzielle Auswirkungen")
+    financial_impact_note = models.TextField(blank=True, verbose_name="Erläuterung der finanziellen Auswirkungen")
+    details = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Weitere Angaben",
+        help_text="Gremien, Amt, Urheber und Bezug im Wortlaut der Fassung, dazu die Kennungen",
+    )
+
+    created_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Gesichert von",
+    )
+    created_at = models.DateTimeField(default=timezone.now, verbose_name="Gesichert am")
+
+    class Meta:
+        db_table = "session_paper_versions"
+        verbose_name = "Vorlagen-Fassung"
+        verbose_name_plural = "Vorlagen-Fassungen"
+        ordering = ["-number"]
+        constraints = [
+            models.UniqueConstraint(fields=["paper", "number"], name="uniq_session_paper_version_number"),
+            # Genau eine beschlossene Fassung je Vorlage
+            models.UniqueConstraint(
+                fields=["paper"],
+                condition=models.Q(is_resolved=True),
+                name="uniq_session_paper_resolved_version",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.reference or 'ohne Nummer'} – Fassung {self.number}"
+
+    @property
+    def status_display(self) -> str:
+        """Status der Vorlage zum Zeitpunkt der Fassung, im Wortlaut der Oberfläche."""
+        return str(dict(SessionPaper._meta.get_field("status").choices or []).get(self.status, self.status))
+
+    @property
+    def paper_type_display(self) -> str:
+        return str(dict(SessionPaper._meta.get_field("paper_type").choices or []).get(self.paper_type, self.paper_type))
+
+
+class SessionPaperVersionFile(ImmutableRecord):
+    """
+    Anlage, wie sie in einer Fassung der Vorlage enthalten ist (Issue #226).
+
+    Verweist direkt auf den Inhalt (``SessionFileBlob``), nicht auf die Anlage: Wird die Anlage
+    später ersetzt oder gelöscht, bleibt die Fassung vollständig. ``attachment_id`` hält die
+    Kennung der Anlage fest (für den Vergleich und die Sichtbarkeit); ``blob`` ist leer, wenn
+    der Inhalt beim Sichern nicht lesbar war.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    version = models.ForeignKey(
+        SessionPaperVersion,
+        on_delete=models.CASCADE,
+        related_name="files",
+        verbose_name="Fassung",
+    )
+    attachment_id = models.UUIDField(verbose_name="Anlage")
+    file_version_number = models.PositiveIntegerField(verbose_name="Fassung der Anlage")
+    blob = models.ForeignKey(
+        SessionFileBlob,
+        on_delete=models.RESTRICT,
+        null=True,
+        blank=True,
+        related_name="paper_version_files",
+        verbose_name="Inhalt",
+    )
+    name = models.CharField(max_length=500, verbose_name="Name")
+    mime_type = models.CharField(max_length=100, blank=True, verbose_name="MIME-Typ")
+    size = models.PositiveBigIntegerField(default=0, verbose_name="Größe (Bytes)")
+    sha256 = models.CharField(max_length=64, blank=True, verbose_name="SHA-256")
+    is_public = models.BooleanField(verbose_name="Öffentlich")
+    position = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
+
+    class Meta:
+        db_table = "session_paper_version_files"
+        verbose_name = "Anlage einer Vorlagen-Fassung"
+        verbose_name_plural = "Anlagen einer Vorlagen-Fassung"
+        ordering = ["position"]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def size_human(self) -> str:
+        return human_size(self.size)
 
 
 # =============================================================================

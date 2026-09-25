@@ -1,0 +1,18 @@
+{% comment %}
+Kopf einer Fassung in der Vergleichsansicht (Issue #226). Kontext: version, label, paper, tenant_slug.
+{% endcomment %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+    <p class="text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ label }}</p>
+    <div class="mt-1 flex flex-wrap items-center gap-2">
+        <a href="{% url 'session:paper_version_detail' tenant_slug=tenant_slug paper_id=paper.id number=version.number %}"
+           class="font-semibold text-primary-600 dark:text-primary-400 hover:underline">Fassung {{ version.number }}</a>
+        {% if version.is_resolved %}<c-ui.badge color="green" icon="gavel">Beschlossene Fassung</c-ui.badge>{% endif %}
+        {% if not version.is_public %}<c-ui.badge color="red" icon="lock">Nichtöffentlich</c-ui.badge>{% endif %}
+    </div>
+    <p class="text-sm text-gray-600 dark:text-gray-300 mt-1">
+        {{ version.get_trigger_display }}{% if version.note %}: {{ version.note }}{% endif %}
+    </p>
+    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        {{ version.created_at|date:"d.m.Y, H:i" }} Uhr · {{ version.status_display }}
+    </p>
+</div>

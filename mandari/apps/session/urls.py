@@ -252,6 +252,37 @@ urlpatterns = [
         views.PaperChildCreateView.as_view(),
         name="paper_child_create",
     ),
+    # Fassungen einer Vorlage (Issue #226)
+    path(
+        "<slug:tenant_slug>/papers/<uuid:paper_id>/fassungen/",
+        views.PaperVersionListView.as_view(),
+        name="paper_versions",
+    ),
+    path(
+        "<slug:tenant_slug>/papers/<uuid:paper_id>/fassungen/sichern/",
+        views.PaperVersionCreateView.as_view(),
+        name="paper_version_create",
+    ),
+    path(
+        "<slug:tenant_slug>/papers/<uuid:paper_id>/fassungen/vergleich/",
+        views.PaperVersionCompareView.as_view(),
+        name="paper_version_compare",
+    ),
+    path(
+        "<slug:tenant_slug>/papers/<uuid:paper_id>/fassungen/<int:number>/",
+        views.PaperVersionDetailView.as_view(),
+        name="paper_version_detail",
+    ),
+    path(
+        "<slug:tenant_slug>/papers/<uuid:paper_id>/fassungen/<int:number>/wiederherstellen/",
+        views.PaperVersionRestoreView.as_view(),
+        name="paper_version_restore",
+    ),
+    path(
+        "<slug:tenant_slug>/papers/<uuid:paper_id>/fassungen/<int:number>/anlagen/<uuid:entry_id>/",
+        views.PaperVersionFileDownloadView.as_view(),
+        name="paper_version_file",
+    ),
     # Beratungsfolge (Issue #34)
     path(
         "<slug:tenant_slug>/papers/<uuid:paper_id>/consultations/add/",
@@ -781,6 +812,22 @@ urlpatterns = [
         "<slug:tenant_slug>/files/<uuid:file_id>/delete/",
         views.FileDeleteView.as_view(),
         name="file_delete",
+    ),
+    # Fassungen einer Anlage und Datenschutz-Löschung von Inhalten (Issue #226)
+    path(
+        "<slug:tenant_slug>/files/<uuid:file_id>/fassungen/",
+        views.FileVersionListView.as_view(),
+        name="file_versions",
+    ),
+    path(
+        "<slug:tenant_slug>/files/<uuid:file_id>/fassungen/<int:number>/",
+        views.FileVersionDownloadView.as_view(),
+        name="file_version_download",
+    ),
+    path(
+        "<slug:tenant_slug>/files/inhalte/<uuid:blob_id>/loeschen/",
+        views.FileContentPurgeView.as_view(),
+        name="file_content_purge",
     ),
     # Anwesenheit (Issue #30)
     path(

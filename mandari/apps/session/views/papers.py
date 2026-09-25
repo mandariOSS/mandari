@@ -299,6 +299,11 @@ class PaperDetailView(SessionViewMixin, DetailView):
         # Vier-Augen-Prinzip und Vertretung (Issue #222): Hinweis statt wirkungslosem Knopf
         if paper.status == "review" and self.has_permission("approve_papers"):
             context["freigabe"] = four_eyes_service.evaluate(four_eyes_service.PROCESS_PAPER, paper, self.session_user)
+
+        # Fassungen (Issue #226): neueste und beschlossene Fassung für die Seitenleiste
+        from ..services import paper_version_service
+
+        context.update(paper_version_service.detail_context(paper, context["permission_checker"].permissions))
         return context
 
 
