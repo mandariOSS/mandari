@@ -1,0 +1,19 @@
+{% comment %}
+Datenschutz-Löschung eines gespeicherten Inhalts (Issue #226) – nur für Einstellungsberechtigte eingebunden.
+Der Server prüft, ob die Löschung zulässig ist (nicht aktueller Inhalt einer Anlage, nicht beschlossene Fassung).
+Kontext: blob, purge_key (eindeutig je Seite), tenant_slug, request.
+{% endcomment %}
+<details class="text-xs">
+    <summary class="cursor-pointer text-red-600 dark:text-red-400">Inhalt endgültig löschen (Datenschutz)</summary>
+    <form method="post" action="{% url 'session:file_content_purge' tenant_slug=tenant_slug blob_id=blob.id %}"
+          class="mt-2 flex flex-wrap items-center gap-2"
+          data-confirm="Inhalt endgültig löschen? Er verschwindet aus allen gesicherten Fassungen und lässt sich nicht wiederherstellen.">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <label for="purge_reason_{{ purge_key }}" class="sr-only">Grund der Löschung</label>
+        <input type="text" name="reason" id="purge_reason_{{ purge_key }}" required maxlength="300"
+               placeholder="Grund (Pflicht), z. B. personenbezogene Daten"
+               class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-64">
+        <c-ui.text-button type="submit" variant="danger" icon="trash-2">Endgültig löschen</c-ui.text-button>
+    </form>
+</details>

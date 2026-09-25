@@ -1,0 +1,184 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Fassung {{ version.number }} – {{ paper.name }}{% endblock %}
+
+{% block breadcrumb %}
+{% include "session/papers/versions/_breadcrumb.html" with current="Fassung" number=version.number %}
+{% endblock %}
+
+{% block page_content %}
+<div class="grid lg:grid-cols-3 gap-6" data-testid="fassung">
+    <div class="lg:col-span-2 space-y-6">
+        <c-ui.card>
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                        <span class="text-sm font-mono font-semibold text-gray-700 dark:text-gray-200">
+                            {{ session_tenant.reference_label }} {{ version.reference|default:"ohne Nummer" }}
+                        </span>
+                        <c-ui.badge color="primary" icon="history">Fassung {{ version.number }}</c-ui.badge>
+                        {% if version.is_resolved %}<c-ui.badge color="green" icon="gavel">Beschlossene Fassung</c-ui.badge>{% endif %}
+                        {% if not version.is_public %}<c-ui.badge color="red" icon="lock">Nichtöffentlich</c-ui.badge>{% endif %}
+                    </div>
+                    <h1 class="text-xl font-bold text-gray-900 dark:text-white">{{ version.name }}</h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        {{ version.get_trigger_display }}{% if version.note %}: {{ version.note }}{% endif %}
+                    </p>
+                    {% if version.is_resolved %}
+                    <p class="text-sm text-green-700 dark:text-green-400 mt-2">
+                        Stand, den die entscheidende Beratung angenommen hat. Diese Fassung ist unveränderlich.
+                    </p>
+                    {% endif %}
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    {% if previous_number %}
+                    <c-ui.button variant="secondary" size="sm" icon="git-compare"
+                                 href="{% url 'session:paper_version_compare' tenant_slug=tenant_slug paper_id=paper.id %}?a={{ previous_number }}&amp;b={{ version.number }}">
+                        Mit Fassung {{ previous_number }} vergleichen
+                    </c-ui.button>
+                    {% endif %}
+                    {% if can_edit and not restore_blocker %}
+                    <form method="post"
+                          action="{% url 'session:paper_version_restore' tenant_slug=tenant_slug paper_id=paper.id number=version.number %}"
+                          data-confirm="Fassung {{ version.number }} wiederherstellen? Der aktuelle Stand wird vorher als eigene Fassung gesichert.">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" size="sm" icon="rotate-ccw">Wiederherstellen</c-ui.button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% if can_edit and restore_blocker %}
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-3">{{ restore_blocker }}</p>
+            {% endif %}
+        </c-ui.card>
+
+        <c-ui.card title="Sachverhalt">
+            {% if version.main_text %}
+            <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{{ version.main_text }}</div>
+            {% else %}
+            <p class="text-sm text-gray-400">Kein Sachverhalt erfasst.</p>
+            {% endif %}
+        </c-ui.card>
+
+        <c-ui.card title="Beschlussvorschlag">
+            {% if version.resolution_text %}
+            <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{{ version.resolution_text }}</div>
+            {% else %}
+            <p class="text-sm text-gray-400">Kein Beschlussvorschlag erfasst.</p>
+            {% endif %}
+        </c-ui.card>
+
+        <c-ui.card title="Anlagen in dieser Fassung" padding="none">
+            {% if entries %}
+            <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for entry in entries %}
+                <li class="px-6 py-3 flex items-start gap-3" data-anlage="{{ entry.name }}">
+                    <i data-lucide="file" class="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" aria-hidden="true"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ entry.name }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-2">
+                            <span>{{ entry.size_human }}</span>
+                            <span>· Version {{ entry.file_version_number }}</span>
+                            {% if entry.sha256 %}<span class="font-mono" title="SHA-256 {{ entry.sha256 }}">· {{ entry.sha256|slice:":12" }}</span>{% endif %}
+                            {% if not entry.is_public %}<span class="text-red-600 dark:text-red-400">· Nichtöffentlich</span>{% endif %}
+                        </p>
+                        {% if entry.blob.purged_at %}
+                        <p class="text-xs text-red-600 dark:text-red-400 mt-1">Inhalt am {{ entry.blob.purged_at|date:"d.m.Y" }} aus Datenschutzgründen gelöscht.</p>
+                        {% elif not entry.blob %}
+                        <p class="text-xs text-amber-700 dark:text-amber-400 mt-1">Inhalt war beim Sichern nicht lesbar.</p>
+                        {% elif entry.blob_id in purgeable %}
+                        <div class="mt-1">{% include "session/files/_purge_form.html" with blob=entry.blob purge_key=entry.id %}</div>
+                        {% endif %}
+                    </div>
+                    {% if entry.blob and not entry.blob.purged_at %}
+                    <a href="{% url 'session:paper_version_file' tenant_slug=tenant_slug paper_id=paper.id number=version.number entry_id=entry.id %}"
+                       class="p-1.5 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg"
+                       title="Anlage in dieser Fassung herunterladen" aria-label="{{ entry.name }} herunterladen">
+                        <i data-lucide="download" class="w-4 h-4" aria-hidden="true"></i>
+                    </a>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">Keine Anlagen in dieser Fassung.</p>
+            {% endif %}
+        </c-ui.card>
+    </div>
+
+    <div class="space-y-6">
+        <c-ui.card title="Angaben der Fassung">
+            <dl class="space-y-3 text-sm">
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Gesichert</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">
+                        {{ version.created_at|date:"d.m.Y, H:i" }} Uhr
+                        <span class="block font-normal text-gray-500 dark:text-gray-400">{{ version.created_by.user.email|default:"automatisch" }}</span>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Status der Vorlage</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ version.status_display }}</dd>
+                </div>
+                {% if version.restored_from %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Wiederhergestellt aus</dt>
+                    <dd>
+                        <a href="{% url 'session:paper_version_detail' tenant_slug=tenant_slug paper_id=paper.id number=version.restored_from.number %}"
+                           class="text-primary-600 dark:text-primary-400 hover:underline">Fassung {{ version.restored_from.number }}</a>
+                    </dd>
+                </div>
+                {% endif %}
+                {% if version.agenda_item %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Beratung</dt>
+                    <dd>
+                        <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=version.agenda_item.meeting_id %}"
+                           class="text-primary-600 dark:text-primary-400 hover:underline">TOP {{ version.agenda_item.number }} · {{ version.agenda_item.meeting.start|date:"d.m.Y" }}</a>
+                    </dd>
+                </div>
+                {% endif %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Vorlagenart</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ version.paper_type_display }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Datum / Frist</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ version.date|date:"d.m.Y"|default:"–" }} / {{ version.deadline|date:"d.m.Y"|default:"–" }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Finanzielle Auswirkungen</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">
+                        {% if version.has_financial_impact %}Ja{% elif version.has_financial_impact is False %}Nein{% else %}nicht erfasst{% endif %}
+                        {% if version.financial_impact_note %}<span class="block font-normal text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{{ version.financial_impact_note }}</span>{% endif %}
+                    </dd>
+                </div>
+                {% if version.details.main_organization %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Federführendes Gremium</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ version.details.main_organization.name }}</dd>
+                </div>
+                {% endif %}
+                {% if version.details.lead_department %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Federführendes Amt</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ version.details.lead_department.name }}</dd>
+                </div>
+                {% endif %}
+                {% if version.details.originator_organization or version.details.originator_person %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Urheber</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">
+                        {{ version.details.originator_organization.name }}{% if version.details.originator_organization and version.details.originator_person %}, {% endif %}{{ version.details.originator_person.name }}
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
+            <c-slot name="footer">
+                <a href="{% url 'session:paper_versions' tenant_slug=tenant_slug paper_id=paper.id %}"
+                   class="text-sm text-primary-600 dark:text-primary-400 hover:underline">Alle Fassungen</a>
+            </c-slot>
+        </c-ui.card>
+    </div>
+</div>
+{% endblock %}

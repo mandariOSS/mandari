@@ -22,7 +22,6 @@ Session-Modellen: Jeder aktive SessionTenant erhält unter
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
 
-import os
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -38,6 +37,7 @@ from apps.session.models import (
     SessionOParlTombstone,
     SessionTenant,
 )
+from apps.session.services import file_service
 from oparl_api.utils import (
     OParlBadRequestError,
     error_response,
@@ -399,7 +399,8 @@ def serialize_file(api, file_obj, include_text=False):
             "id": api.obj_url("file", file_obj.id),
             "type": schema_type("file"),
             "name": file_obj.name,
-            "fileName": os.path.basename(file_obj.file.name) if file_obj.file else None,
+            # Anzeigename statt Speichername: gleiche Inhalte teilen sich eine Datei (Issue #226)
+            "fileName": file_service.download_name(file_obj) if file_obj.file else None,
             "mimeType": file_obj.mime_type,
             "size": file_obj.size,
             "date": iso(file_obj.created_at),
@@ -707,7 +708,7 @@ def file_download_view(request, tenant_slug, pk):
     response = FileResponse(
         file_obj.file.open("rb"),
         as_attachment="download" in request.GET,
-        filename=os.path.basename(file_obj.file.name),
+        filename=file_service.download_name(file_obj),
         content_type=file_obj.mime_type or "application/octet-stream",
     )
     response["Access-Control-Allow-Origin"] = "*"

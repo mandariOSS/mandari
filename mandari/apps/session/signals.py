@@ -18,12 +18,15 @@ from apps.session.models import (
     SessionAttendance,
     SessionConsultation,
     SessionFile,
+    SessionFileBlob,
+    SessionFileVersion,
     SessionLegislativeTerm,
     SessionMeeting,
     SessionMeetingPackage,
     SessionOrganization,
     SessionOrganizationMembership,
     SessionPaper,
+    SessionPaperVersionFile,
     SessionPerson,
     SessionProtocol,
     SessionTenant,
@@ -213,3 +216,112 @@ post_delete.connect(
     sender=SessionMeetingPackage,
     dispatch_uid="session_meeting_package_files_post_delete",
 )
+
+
+# =============================================================================
+# Fassungen (Issue #226): bei Workflow-Übergängen und Beratungsergebnissen sichern
+# =============================================================================
+#
+# Die Hooks hängen am Speichern der Modelle, nicht am Workflow-Code: Jeder Statuswechsel der
+# Vorlage (Freigabelauf, Mitzeichnung, Terminierung, Bearbeiten-Formular) und jedes erfasste
+# Beratungsergebnis erzeugt eine Fassung. Der Alt-Zustand kommt aus audit.audit_pre_save.
+
+
+def paper_version_on_status_change(sender, instance, created, **kwargs):
+    """Workflow-Übergang: Statuswechsel der Vorlage -> neue Fassung."""
+    if created or kwargs.get("raw"):
+        return
+    old = getattr(instance, "_audit_old", None)
+    if old is None or old.status == instance.status:
+        return
+    from apps.session.services import paper_version_service
+
+    paper_version_service.record_transition(instance, old.status)
+
+
+def paper_version_on_consultation_result(sender, instance, created, **kwargs):
+    """Beratungsergebnis an der Station erfasst (direkt oder vom TOP zurückgeschrieben) -> neue Fassung."""
+    if created or kwargs.get("raw") or instance.result == "pending":
+        return
+    old = getattr(instance, "_audit_old", None)
+    if old is None or old.result == instance.result:
+        return
+    from apps.session.services import paper_version_service
+
+    paper_version_service.record_consultation(
+        instance.paper,
+        result=instance.result,
+        result_label=instance.get_result_display(),
+        consultation=instance,
+        agenda_item=instance.agenda_item,
+    )
+
+
+def paper_version_on_agenda_result(sender, instance, created, **kwargs):
+    """Ergebnis an einem TOP mit Vorlage, aber ohne Beratungsstation -> neue Fassung."""
+    if created or kwargs.get("raw") or not instance.paper_id or instance.vote_result == "pending":
+        return
+    old = getattr(instance, "_audit_old", None)
+    if old is None or old.vote_result == instance.vote_result:
+        return
+    if SessionConsultation.objects.filter(agenda_item=instance).exists():
+        return  # übernimmt paper_version_on_consultation_result
+    from apps.session.services import paper_version_service
+
+    paper_version_service.record_consultation(
+        instance.paper,
+        result=instance.vote_result,
+        result_label=instance.get_vote_result_display(),
+        agenda_item=instance,
+    )
+
+
+post_save.connect(paper_version_on_status_change, sender=SessionPaper, dispatch_uid="session_paper_version_status")
+post_save.connect(
+    paper_version_on_consultation_result,
+    sender=SessionConsultation,
+    dispatch_uid="session_paper_version_consultation",
+)
+post_save.connect(
+    paper_version_on_agenda_result,
+    sender=SessionAgendaItem,
+    dispatch_uid="session_paper_version_agenda_item",
+)
+
+
+# =============================================================================
+# Speicher der Anlagen (Issue #226): Inhalte ohne Verweis entfernen
+# =============================================================================
+
+
+def file_storage_post_delete(sender, instance, **kwargs):
+    """Anlage gelöscht: ihre Datei verschwindet, sofern kein Inhalt und keine andere Anlage darauf zeigt."""
+    from apps.session.services import file_version_service
+
+    file_version_service.release_storage_names([instance.file.name] if instance.file else [])
+
+
+def blob_reference_post_delete(sender, instance, **kwargs):
+    """Anlagen- oder Vorlagen-Fassung gelöscht: Inhalt prüfen, ob noch jemand darauf verweist."""
+    from apps.session.services import file_version_service
+
+    file_version_service.collect_garbage([instance.blob_id])
+
+
+def blob_post_delete(sender, instance, **kwargs):
+    """Inhalt gelöscht (Aufräumen oder Mandanten-Löschung): Datei aus dem Speicher entfernen."""
+    from apps.session.services import file_version_service
+
+    file_version_service.release_storage_names([instance.file.name] if instance.file else [])
+
+
+post_delete.connect(file_storage_post_delete, sender=SessionFile, dispatch_uid="session_file_storage_post_delete")
+post_delete.connect(
+    blob_reference_post_delete, sender=SessionFileVersion, dispatch_uid="session_file_version_post_delete"
+)
+post_delete.connect(
+    blob_reference_post_delete,
+    sender=SessionPaperVersionFile,
+    dispatch_uid="session_paper_version_file_post_delete",
+)
+post_delete.connect(blob_post_delete, sender=SessionFileBlob, dispatch_uid="session_file_blob_post_delete")

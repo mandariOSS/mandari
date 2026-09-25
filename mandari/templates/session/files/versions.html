@@ -1,0 +1,79 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Verlauf – {{ session_file.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm" aria-label="Brotkrumen">
+    {% if session_file.paper_id %}
+    <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=session_file.paper_id %}"
+       class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Vorlage {{ parent.display_reference }}</a>
+    {% elif session_file.agenda_item_id %}
+    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=parent.meeting_id %}"
+       class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">TOP {{ parent.number }}</a>
+    {% elif session_file.meeting_id %}
+    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=session_file.meeting_id %}"
+       class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">{{ parent.name }}</a>
+    {% endif %}
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Verlauf der Anlage</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="space-y-6 max-w-4xl" data-testid="anlagen-verlauf">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white break-words">{{ session_file.name }}</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Aktuell Version {{ session_file.version }} · {{ session_file.size_human }}
+            {% if not session_file.is_public %}· <span class="text-red-600 dark:text-red-400">Nichtöffentlich</span>{% endif %}
+        </p>
+    </div>
+
+    <c-ui.card title="Aktuelle Fassung" padding="sm">
+        <div class="flex items-center justify-between gap-3">
+            <p class="text-sm text-gray-700 dark:text-gray-300">Version {{ session_file.version }} · {{ session_file.updated_at|date:"d.m.Y, H:i" }} Uhr</p>
+            <c-ui.button variant="secondary" size="sm" icon="download"
+                         href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=session_file.id %}">Herunterladen</c-ui.button>
+        </div>
+    </c-ui.card>
+
+    <c-ui.card title="Frühere Fassungen" subtitle="Beim Ersetzen bleibt die bisherige Datei hier abrufbar – mit derselben Sichtbarkeit wie die Anlage." padding="none">
+        {% if older_versions %}
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for version in older_versions %}
+            <li class="px-6 py-3 flex items-start gap-3" data-fassung="{{ version.number }}">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white break-words">Version {{ version.number }} · {{ version.name }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ version.size_human }} · <span class="font-mono" title="SHA-256 {{ version.blob.sha256 }}">{{ version.blob.sha256|slice:":12" }}</span>
+                        · {{ version.created_at|date:"d.m.Y, H:i" }} Uhr{% if version.created_by %} · {{ version.created_by.user.email }}{% endif %}
+                        {% if version.note %}· {{ version.note }}{% endif %}
+                    </p>
+                    {% if version.blob.purged_at %}
+                    <p class="text-xs text-red-600 dark:text-red-400 mt-1">Inhalt am {{ version.blob.purged_at|date:"d.m.Y" }} aus Datenschutzgründen gelöscht.</p>
+                    {% elif version.blob_id in purgeable %}
+                    <div class="mt-1">{% include "session/files/_purge_form.html" with blob=version.blob purge_key=version.id %}</div>
+                    {% endif %}
+                </div>
+                {% if not version.blob.purged_at %}
+                <a href="{% url 'session:file_version_download' tenant_slug=tenant_slug file_id=session_file.id number=version.number %}"
+                   class="p-1.5 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg"
+                   title="Version {{ version.number }} herunterladen" aria-label="Version {{ version.number }} herunterladen">
+                    <i data-lucide="download" class="w-4 h-4" aria-hidden="true"></i>
+                </a>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">Keine früheren Fassungen gespeichert.</p>
+        {% endif %}
+    </c-ui.card>
+
+    {% if history_incomplete %}
+    <p class="text-xs text-gray-500 dark:text-gray-400">
+        Stände aus der Zeit vor der Versionierung von Anlagen sind nicht gespeichert; ihre Ersetzungen stehen im Audit-Log.
+    </p>
+    {% endif %}
+</div>
+{% endblock %}

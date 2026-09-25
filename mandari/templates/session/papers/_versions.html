@@ -1,0 +1,38 @@
+{% comment %}
+Fassungen einer Vorlage in der Seitenleiste (Issue #226): beschlossene und neueste Fassung, Link zu
+Übersicht und Vergleich, „Fassung sichern“. Kontext: paper, version_latest, version_resolved, version_can_save.
+{% endcomment %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" data-testid="fassungen">
+    <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <i data-lucide="history" class="w-5 h-5 text-indigo-500" aria-hidden="true"></i>
+        Fassungen
+    </h3>
+    {% if version_resolved %}
+    <p class="mb-2">
+        <a href="{% url 'session:paper_version_detail' tenant_slug=tenant_slug paper_id=paper.id number=version_resolved.number %}"
+           class="hover:underline">
+            <c-ui.badge color="green" icon="gavel">Beschlossene Fassung {{ version_resolved.number }}</c-ui.badge>
+        </a>
+    </p>
+    {% endif %}
+    {% if version_latest %}
+    <p class="text-sm text-gray-600 dark:text-gray-300">
+        Zuletzt
+        <a href="{% url 'session:paper_version_detail' tenant_slug=tenant_slug paper_id=paper.id number=version_latest.number %}"
+           class="text-primary-600 dark:text-primary-400 hover:underline">Fassung {{ version_latest.number }}</a>
+        · {{ version_latest.get_trigger_display }} · {{ version_latest.created_at|date:"d.m.Y" }}
+    </p>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">Noch keine Fassung. Die erste entsteht beim nächsten Workflow-Schritt.</p>
+    {% endif %}
+    <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <a href="{% url 'session:paper_versions' tenant_slug=tenant_slug paper_id=paper.id %}"
+           class="text-sm text-primary-600 dark:text-primary-400 hover:underline">Alle Fassungen und Vergleich</a>
+        {% if version_can_save %}
+        <form method="post" action="{% url 'session:paper_version_create' tenant_slug=tenant_slug paper_id=paper.id %}">
+            {% csrf_token %}
+            <c-ui.text-button type="submit" icon="save">Fassung sichern</c-ui.text-button>
+        </form>
+        {% endif %}
+    </div>
+</div>

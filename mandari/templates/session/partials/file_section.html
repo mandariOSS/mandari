@@ -26,7 +26,10 @@ Erwarteter Kontext:
                 <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ file.name }}</p>
                 <p class="text-xs text-gray-500 flex items-center gap-2">
                     {{ file.size_human }}
-                    {% if file.version > 1 %}<span>· Version {{ file.version }}</span>{% endif %}
+                    {% if file.version > 1 %}
+                    <a href="{% url 'session:file_versions' tenant_slug=tenant_slug file_id=file.id %}"
+                       class="hover:underline" title="Frühere Fassungen dieser Anlage">· Version {{ file.version }} (Verlauf)</a>
+                    {% endif %}
                     {% if file.is_public %}
                     <span class="inline-flex px-1.5 py-0.5 rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">Öffentlich</span>
                     {% else %}
@@ -58,7 +61,7 @@ Erwarteter Kontext:
             </button>
             <!-- Löschen -->
             <form method="post" action="{% url 'session:file_delete' tenant_slug=tenant_slug file_id=file.id %}" class="inline"
-                  data-confirm="Anlage {{ file.name }} wirklich löschen?">
+                  data-confirm="Anlage {{ file.name }} wirklich löschen?{% if file_target_type == 'paper' %} Stände in gesicherten Fassungen der Vorlage bleiben dort erhalten.{% endif %}">
                 {% csrf_token %}
                 <button type="submit" class="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg" title="Löschen">
                     <i data-lucide="trash-2" class="w-4 h-4"></i>

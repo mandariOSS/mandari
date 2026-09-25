@@ -1,0 +1,22 @@
+{% comment %}
+Brotkrumen der Fassungs-Seiten einer Vorlage (Issue #226).
+Kontext: paper, tenant_slug, current (letzter Eintrag, leer = Übersicht), number (optional, wird angehängt).
+{% endcomment %}
+<nav class="flex items-center gap-2 text-sm" aria-label="Brotkrumen">
+    <a href="{% url 'session:papers' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Vorlagen
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
+       class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 truncate max-w-[200px]">{{ paper.display_reference }}</a>
+    <span class="text-gray-400">/</span>
+    {% if current %}
+    <a href="{% url 'session:paper_versions' tenant_slug=tenant_slug paper_id=paper.id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Fassungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">{{ current }}{% if number %} {{ number }}{% endif %}</span>
+    {% else %}
+    <span class="text-gray-900 dark:text-white font-medium">Fassungen</span>
+    {% endif %}
+</nav>
