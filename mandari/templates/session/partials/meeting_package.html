@@ -1,0 +1,99 @@
+{% comment %}
+Sitzungsmappe (Issue #218) in der Seitenleiste der Sitzung: je abrufbarer Fassung Stand,
+Downloads und Anforderung. Wird per HTMX nachgeladen und fragt alle paar Sekunden neu ab,
+solange eine Fassung erstellt wird – erzeugt wird im Hintergrund, nie im Seitenaufruf.
+
+Erwarteter Kontext: meeting, tenant_slug, entries (VariantOverview), polling, poll_seconds
+{% endcomment %}
+{% partialdef request-form %}
+<form method="post"
+      action="{% url 'session:meeting_package_request' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+      hx-post="{% url 'session:meeting_package_request' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+      hx-target="#meeting-package"
+      hx-swap="outerHTML">
+    {% csrf_token %}
+    <input type="hidden" name="variant" value="{{ entry.variant }}">
+    <c-ui.text-button type="submit" icon="file-stack">{{ button_label }}</c-ui.text-button>
+</form>
+{% endpartialdef %}
+<div id="meeting-package"
+     data-testid="sitzungsmappe"
+     {% if polling %}hx-get="{% url 'session:meeting_package_status' tenant_slug=tenant_slug meeting_id=meeting.id %}" hx-trigger="every {{ poll_seconds }}s" hx-swap="outerHTML"{% endif %}>
+    <c-ui.card title="Sitzungsmappe" subtitle="Gesamt-PDF mit Inhaltsverzeichnis und ZIP-Paket aller Unterlagen" padding="sm">
+        <div class="space-y-4">
+            {% for entry in entries %}
+            <section class="space-y-1.5" data-variant="{{ entry.variant }}">
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                    {% if entry.variant == "internal" %}<i data-lucide="lock" class="w-3.5 h-3.5 text-red-500" aria-hidden="true"></i>{% endif %}
+                    {{ entry.label }}
+                </h3>
+
+                {% if entry.in_progress %}
+                <p class="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2" role="status">
+                    <i data-lucide="loader-circle" class="w-4 h-4 animate-spin" aria-hidden="true"></i>
+                    Fassung {{ entry.latest.version }} wird erstellt …
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Die Mappe entsteht im Hintergrund; diese Anzeige aktualisiert sich selbst. Sie können die Seite verlassen.</p>
+                {% elif entry.failed %}
+                <p class="text-sm text-red-600 dark:text-red-400">Die Erstellung von Fassung {{ entry.latest.version }} ist fehlgeschlagen.</p>
+                {% with button_label="Erneut versuchen" %}{% partial request-form %}{% endwith %}
+                {% endif %}
+
+                {% if entry.current %}
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    Fassung {{ entry.current.version }} · Stand {{ entry.current.content_as_of|date:"d.m.Y, H:i" }} Uhr · {{ entry.current.page_count }} Seiten
+                </p>
+                {% if entry.current_blocked %}
+                <p class="text-xs text-red-600 dark:text-red-400">Nicht mehr abrufbar: Enthaltene Unterlagen wurden inzwischen gelöscht oder sind nichtöffentlich.</p>
+                {% else %}
+                <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                    <a href="{% url 'session:meeting_package_download' tenant_slug=tenant_slug meeting_id=meeting.id package_id=entry.current.id fmt='pdf' %}"
+                       class="inline-flex items-center gap-1.5 text-primary-600 dark:text-primary-400 hover:underline">
+                        <i data-lucide="file-down" class="w-4 h-4" aria-hidden="true"></i>PDF ({{ entry.current.pdf_size|filesizeformat }})
+                    </a>
+                    <a href="{% url 'session:meeting_package_download' tenant_slug=tenant_slug meeting_id=meeting.id package_id=entry.current.id fmt='zip' %}"
+                       class="inline-flex items-center gap-1.5 text-primary-600 dark:text-primary-400 hover:underline">
+                        <i data-lucide="file-archive" class="w-4 h-4" aria-hidden="true"></i>ZIP ({{ entry.current.zip_size|filesizeformat }})
+                    </a>
+                </div>
+                {% if entry.current.referenced_count %}
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ entry.current.referenced_count }} Anlage{{ entry.current.referenced_count|pluralize:"n" }} als Verweisseite (Office-Format oder nicht lesbar) – im ZIP-Paket im Original.</p>
+                {% endif %}
+                {% endif %}
+                {% if entry.outdated or entry.current_blocked %}
+                {% if not entry.in_progress and not entry.failed %}
+                <p class="text-xs text-amber-700 dark:text-amber-400">Seit dieser Fassung wurden Unterlagen geändert.</p>
+                {% with button_label="Neue Fassung erstellen" %}{% partial request-form %}{% endwith %}
+                {% endif %}
+                {% endif %}
+                {% elif not entry.in_progress and not entry.failed %}
+                <p class="text-xs text-gray-500 dark:text-gray-400">Noch nicht erstellt.</p>
+                {% with button_label="Sitzungsmappe erstellen" %}{% partial request-form %}{% endwith %}
+                {% endif %}
+
+                {% if entry.older %}
+                <details class="text-xs text-gray-500 dark:text-gray-400">
+                    <summary class="cursor-pointer">Frühere Fassungen ({{ entry.older|length }})</summary>
+                    <ul class="mt-1 space-y-0.5">
+                        {% for package, blocked in entry.older %}
+                        <li>
+                            Fassung {{ package.version }} · Stand {{ package.content_as_of|date:"d.m.Y, H:i" }} Uhr ·
+                            {% if blocked %}
+                            gesperrt
+                            {% else %}
+                            <a class="text-primary-600 dark:text-primary-400 hover:underline"
+                               href="{% url 'session:meeting_package_download' tenant_slug=tenant_slug meeting_id=meeting.id package_id=package.id fmt='pdf' %}">PDF</a>
+                            ·
+                            <a class="text-primary-600 dark:text-primary-400 hover:underline"
+                               href="{% url 'session:meeting_package_download' tenant_slug=tenant_slug meeting_id=meeting.id package_id=package.id fmt='zip' %}">ZIP</a>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </details>
+                {% endif %}
+            </section>
+            {% endfor %}
+        </div>
+    </c-ui.card>
+</div>

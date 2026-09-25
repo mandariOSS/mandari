@@ -1,0 +1,19 @@
+{% extends "session/pdf/package_base.html" %}
+{% comment %}
+Inhaltsverzeichnis der Sitzungsmappe (Issue #218). Die Links „mappe:<n>“ schreibt der
+Mappen-Baustein nach dem Zusammenfügen in Sprünge auf die Zielseite um.
+{% endcomment %}
+
+{% block letterhead %}{% endblock %}
+
+{% block content %}
+    <h1>Inhaltsverzeichnis</h1>
+    <table class="toc">
+        {% for row in rows %}
+        <tr>
+            <td class="lvl{{ row.level }}"><a href="{{ row.href }}">{{ row.title }}</a>{% if row.note %} <span class="tag">({{ row.note }})</span>{% endif %}</td>
+            <td class="toc-page">{% if row.page %}<a href="{{ row.href }}">{{ row.page }}</a>{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </table>
+{% endblock %}

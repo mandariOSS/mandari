@@ -1,0 +1,43 @@
+{% extends "session/pdf/package_base.html" %}
+{% comment %}Deckblatt der Sitzungsmappe (Issue #218).{% endcomment %}
+
+{% block content %}
+    <h1 class="cover-title">Sitzungsmappe</h1>
+    <p class="cover-subtitle">{{ meeting.name }}</p>
+
+    {% if is_internal %}
+    <p class="np-banner">Nichtöffentliche Fassung – vertraulich. Enthält Unterlagen des nichtöffentlichen Teils; Weitergabe nur an Berechtigte.</p>
+    {% else %}
+    <p class="variant">Öffentliche Fassung</p>
+    {% endif %}
+
+    <table class="meta-table">
+        <tr><td class="meta-label"><strong>Gremium:</strong></td><td>{{ meeting.organization.name }}</td></tr>
+        {% if plan.ordinal %}
+        <tr><td class="meta-label"><strong>Sitzungsnummer:</strong></td><td>{{ plan.ordinal }}</td></tr>
+        {% endif %}
+        <tr><td class="meta-label"><strong>Datum:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% if meeting.end %} bis {{ meeting.end|date:"H:i" }} Uhr{% endif %}</td></tr>
+        {% if meeting.location %}
+        <tr><td class="meta-label"><strong>Ort:</strong></td><td>{{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}{% if meeting.street_address %}, {{ meeting.street_address }}{% endif %}{% if meeting.postal_code or meeting.locality %}, {{ meeting.postal_code }} {{ meeting.locality }}{% endif %}</td></tr>
+        {% endif %}
+        <tr>
+            <td class="meta-label"><strong>Ladung:</strong></td>
+            <td>{% if meeting.invitation_sent_at %}versandt am {{ meeting.invitation_sent_at|date:"d.m.Y" }}{% else %}noch nicht versandt (Ladungsfrist bis {{ meeting.invitation_deadline|date:"d.m.Y" }}){% endif %}</td>
+        </tr>
+        <tr><td class="meta-label"><strong>Stand:</strong></td><td>Fassung {{ version }} vom {{ as_of|date:"d.m.Y" }}, {{ as_of|date:"H:i" }} Uhr</td></tr>
+        <tr>
+            <td class="meta-label"><strong>Umfang:</strong></td>
+            <td>{{ counts.tops }} Tagesordnungspunkte, {{ counts.papers }} Vorlagen, {{ counts.files }} Anlagen{% if counts.referenced %} (davon {{ counts.referenced }} als Verweisseite){% endif %}</td>
+        </tr>
+    </table>
+
+    {% if meeting.cancelled %}
+    <p class="np-banner">Diese Sitzung wurde abgesagt.</p>
+    {% endif %}
+
+    <p class="hint">
+        Die Seitenzahl oben rechts zählt fortlaufend durch die gesamte Mappe; Anlagen behalten zusätzlich ihre
+        eigene Seitenzählung. Das Inhaltsverzeichnis und die Lesezeichen führen direkt zu jedem Tagesordnungspunkt,
+        jeder Vorlage und jeder Anlage.
+    </p>
+{% endblock %}

@@ -351,6 +351,18 @@ Jedes dieser Commands hält während des Laufs eine Singleton-Sperre in Redis; e
 15 0 1 * *  docker exec mandari-app python manage.py availability_report --out /var/lib/mandari/reports/verfuegbarkeit-$(date -d "yesterday" +\%Y-\%m).md >> /var/log/mandari-availability.log 2>&1
 ```
 
+Dazu minütlich die Hintergrund-Erzeugung der Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218).
+Die Oberfläche legt nur Anforderungen an; ohne diesen Job bleibt eine Mappe bei „wird erstellt“:
+
+```cron
+* * * * *   docker exec mandari-app python manage.py build_meeting_packages --limit 5 --max-seconds 240 >> /var/log/mandari-meeting-packages.log 2>&1
+```
+
+Im Leerlauf schreibt der Job nichts. Er läuft im Web-Container und teilt sich dessen Speicher;
+`SESSION_PACKAGE_MAX_EMBED_MB` (Vorgabe 200) und `SESSION_PACKAGE_MAX_PAGES` (Vorgabe 3000) begrenzen,
+wie viele PDF-Anlagen je Mappe in das Gesamt-PDF eingebunden werden – weitere erscheinen dort als
+Verweisseite und bleiben im ZIP-Paket vollständig.
+
 `check_service_levels` braucht `INSIGHT_ALERT_EMAILS` als Empfänger und erreicht die Metriken
 der laufenden Instanz über `METRICS_URL` (Vorgabe `http://127.0.0.1:8000/metrics/`, also im
 Container selbst). `availability_report` braucht `GATUS_URL` (Statusseite) und ein

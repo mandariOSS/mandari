@@ -52,49 +52,17 @@ def _edit_permission(file_or_target) -> str:
     return "edit_meetings"
 
 
-def _file_parent(session_file: SessionFile):
-    """Elternobjekt einer Anlage (Vorlage, TOP oder Sitzung)."""
-    if session_file.paper_id:
-        return session_file.paper
-    if session_file.agenda_item_id:
-        return session_file.agenda_item
-    if session_file.meeting_id:
-        return session_file.meeting
-    return None
-
-
 def can_view_file(session_user, session_file: SessionFile) -> bool:
     """
     Prüft, ob ein Nutzer eine Anlage sehen/herunterladen darf.
 
-    Regeln:
+    Regeln (file_service.file_visible, dieselbe Prüfung nutzt die Sitzungsmappe):
     - Basis-Sichtberechtigung des Elternobjekts (view_papers/view_meetings)
     - NÖ-Anlage oder NÖ-Elternobjekt: zusätzlich die NÖ-Berechtigung
     """
     if session_user is None:
         return False
-    checker = SessionPermissionChecker(session_user)
-
-    parent = _file_parent(session_file)
-    if session_file.paper_id:
-        base_perm, np_perm = "view_papers", "view_non_public_papers"
-        parent_public = parent.is_public if parent else True
-    elif session_file.agenda_item_id:
-        base_perm, np_perm = "view_meetings", "view_non_public_meetings"
-        parent_public = (parent.is_public and parent.meeting.is_public) if parent else True
-    elif session_file.meeting_id:
-        base_perm, np_perm = "view_meetings", "view_non_public_meetings"
-        parent_public = parent.is_public if parent else True
-    else:
-        # Anlage ohne Elternobjekt: restriktiv behandeln
-        base_perm, np_perm = "view_papers", "view_non_public_papers"
-        parent_public = True
-
-    if not checker.has_permission(base_perm):
-        return False
-    if not session_file.is_public or not parent_public:
-        return checker.has_permission(np_perm)
-    return True
+    return file_service.file_visible(SessionPermissionChecker(session_user).permissions, session_file)
 
 
 def _redirect_to_parent(tenant_slug: str, session_file: SessionFile):

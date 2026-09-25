@@ -6,6 +6,7 @@ Verbindet die Audit-Receiver (apps/session/audit.py) mit den zentralen
 Session-Models. Wird über SessionConfig.ready() geladen.
 """
 
+from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 
 from apps.session import audit, oparl_publication
@@ -19,6 +20,7 @@ from apps.session.models import (
     SessionFile,
     SessionLegislativeTerm,
     SessionMeeting,
+    SessionMeetingPackage,
     SessionOrganization,
     SessionOrganizationMembership,
     SessionPaper,
@@ -161,4 +163,34 @@ post_save.connect(
     sync_consultation_result,
     sender=SessionAgendaItem,
     dispatch_uid="session_consultation_result_sync",
+)
+
+
+# =============================================================================
+# Sitzungsmappe (Issue #218): Dateien einer gelöschten Fassung entfernen
+# =============================================================================
+
+
+def meeting_package_post_delete(sender, instance, **kwargs):
+    """
+    Gesamt-PDF und ZIP-Paket aus dem Speicher löschen, sobald die Fassung gelöscht ist –
+    auch bei Kaskaden (Sitzung oder Mandant gelöscht). Die Mappe enthält ggf. NÖ-Inhalte
+    und darf ihre Datenbankzeile nicht überleben.
+    """
+    names = [field.name for field in (instance.pdf_file, instance.zip_file) if field]
+    if not names:
+        return
+    storage = instance.pdf_file.storage
+
+    def delete_files():
+        for name in names:
+            storage.delete(name)
+
+    transaction.on_commit(delete_files)
+
+
+post_delete.connect(
+    meeting_package_post_delete,
+    sender=SessionMeetingPackage,
+    dispatch_uid="session_meeting_package_files_post_delete",
 )

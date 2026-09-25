@@ -1,0 +1,30 @@
+{% extends "session/pdf/base_pdf.html" %}
+{% comment %}
+Grundlage aller Seiten der Sitzungsmappe (Issue #218). Die Fußzeile nennt Fassung und Stand
+statt einer eigenen Seitenzählung – die Mappe zählt fortlaufend oben rechts.
+{% endcomment %}
+
+{% block extra_style %}
+    a { color: #111111; text-decoration: none; }
+    .kicker { font-size: 9pt; color: #666666; text-transform: uppercase; margin: 0 0 2pt 0; }
+    .cover-title { font-size: 22pt; margin: 36pt 0 4pt 0; }
+    .cover-subtitle { font-size: 13pt; margin: 0 0 14pt 0; }
+    .variant { font-size: 11pt; font-weight: bold; margin: 0 0 12pt 0; }
+    .np-banner { font-size: 10.5pt; font-weight: bold; color: #991b1b; border: 1pt solid #991b1b; padding: 5pt; margin: 0 0 12pt 0; }
+    .hint { font-size: 9pt; color: #666666; margin-top: 18pt; }
+    table.toc { width: 100%; }
+    table.toc td { font-size: 9.5pt; padding-top: 1.5pt; padding-bottom: 1.5pt; vertical-align: top; }
+    table.toc td.toc-page { width: 14mm; text-align: right; }
+    table.toc td.lvl0 { font-weight: bold; padding-top: 6pt; }
+    table.toc td.lvl1 { padding-left: 5mm; }
+    table.toc td.lvl2 { padding-left: 10mm; }
+    table.toc td.lvl3 { padding-left: 15mm; }
+    table.toc td.lvl4 { padding-left: 20mm; }
+    .top-number { font-size: 24pt; margin: 48pt 0 6pt 0; }
+    .top-name { font-size: 15pt; margin: 0 0 14pt 0; }
+    table.docs td { font-size: 10pt; padding-top: 2pt; padding-bottom: 2pt; vertical-align: top; }
+    table.docs td.doc-sub { padding-left: 6mm; }
+    table.meta-table td.meta-label { width: 40mm; }
+{% endblock %}
+
+{% block footer %}Sitzungsmappe · {{ meeting.organization.name }} · {{ meeting.start|date:"d.m.Y" }} · {{ variant_label }} · Fassung {{ version }}, Stand {{ as_of|date:"d.m.Y H:i" }} Uhr{% endblock %}

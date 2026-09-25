@@ -1,0 +1,39 @@
+{% extends "session/pdf/package_base.html" %}
+{% comment %}Vorlage als Dokument der Sitzungsmappe und des ZIP-Pakets (Issue #218).{% endcomment %}
+
+{% block content %}
+    <p class="kicker">{{ paper.get_paper_type_display }}</p>
+    <h1>{{ paper.name }}</h1>
+
+    <table class="meta-table">
+        <tr><td class="meta-label"><strong>{{ reference_label }}:</strong></td><td>{{ paper.display_reference }}</td></tr>
+        {% if paper.date %}
+        <tr><td class="meta-label"><strong>Datum:</strong></td><td>{{ paper.date|date:"d.m.Y" }}</td></tr>
+        {% endif %}
+        {% if paper.lead_department %}
+        <tr><td class="meta-label"><strong>Federführendes Amt:</strong></td><td>{{ paper.lead_department.name }}</td></tr>
+        {% endif %}
+        {% if not paper.is_public %}
+        <tr><td class="meta-label"><strong>Öffentlichkeit:</strong></td><td>nichtöffentlich</td></tr>
+        {% endif %}
+    </table>
+
+    {% if paper.main_text %}
+    <h2>Sachverhalt</h2>
+    <p>{{ paper.main_text|linebreaksbr }}</p>
+    {% endif %}
+
+    {% if paper.resolution_text %}
+    <h2>Beschlussvorschlag</h2>
+    <p>{{ paper.resolution_text|linebreaksbr }}</p>
+    {% endif %}
+
+    {% if paper.has_financial_impact is not None %}
+    <h2>Finanzielle Auswirkungen</h2>
+    <p>{% if paper.has_financial_impact %}Ja{% if paper.financial_impact_note %} – {{ paper.financial_impact_note|linebreaksbr }}{% endif %}{% else %}Keine{% endif %}</p>
+    {% endif %}
+
+    {% if not paper.main_text and not paper.resolution_text %}
+    <p class="muted">Zu dieser Vorlage ist kein Text erfasst; maßgeblich sind die Anlagen.</p>
+    {% endif %}
+{% endblock %}

@@ -119,6 +119,11 @@ from .organizations import (
     OrganizationListView,
     OrganizationUpdateView,
 )
+from .packages import (
+    MeetingPackageDownloadView,
+    MeetingPackageRequestView,
+    MeetingPackageStatusView,
+)
 from .papers import (
     PaperChildCreateView,
     PaperCreateView,
@@ -300,6 +305,9 @@ __all__ = [
     "MeetingIcsView",
     "MeetingInvitationView",
     "MeetingListView",
+    "MeetingPackageDownloadView",
+    "MeetingPackageRequestView",
+    "MeetingPackageStatusView",
     "MeetingUpdateView",
     "OrganizationCreateView",
     "OrganizationDeactivateView",

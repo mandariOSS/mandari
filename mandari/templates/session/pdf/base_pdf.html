@@ -32,9 +32,11 @@ gerendert über die gemeinsamen PDF-Bausteine (apps/common/pdf.py, xhtml2pdf).
     .tag { font-size: 8pt; color: #92400e; }
     .footer { font-size: 7.5pt; color: #666666; text-align: center; }
     .signature { margin-top: 28pt; }
+    {% block extra_style %}{% endblock %}
 </style>
 </head>
 <body>
+    {% block letterhead %}
     <div class="letterhead">
         <div class="org-name">{{ tenant.name }}</div>
         <div class="org-meta">
@@ -43,11 +45,12 @@ gerendert über die gemeinsamen PDF-Bausteine (apps/common/pdf.py, xhtml2pdf).
             {% if tenant.contact_phone %} · Tel. {{ tenant.contact_phone }}{% endif %}
         </div>
     </div>
+    {% endblock %}
 
     {% block content %}{% endblock %}
 
     <div id="footer_content" class="footer">
-        {{ tenant.name }} · erstellt am {{ generated_at|date:"d.m.Y H:i" }} Uhr · Seite <pdf:pagenumber> von <pdf:pagecount>
+        {% block footer %}{{ tenant.name }} · erstellt am {{ generated_at|date:"d.m.Y H:i" }} Uhr · Seite <pdf:pagenumber> von <pdf:pagecount>{% endblock %}
     </div>
 </body>
 </html>

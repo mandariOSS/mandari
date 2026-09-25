@@ -40,6 +40,7 @@ from apps.session.models import (
     SessionFile,
     SessionInvitationDispatch,
     SessionMeeting,
+    SessionMeetingPackage,
     SessionOrganization,
     SessionOrganizationMembership,
     SessionPaper,
@@ -105,6 +106,8 @@ GET_MATRIX: list[tuple[str, frozenset[str]]] = [
     ("/meetings/{meeting_pub}/protocol/", frozenset({"view_protocols"})),
     ("/meetings/{meeting_pub}/protocol/edit/", frozenset({"edit_protocols"})),
     ("/meetings/{meeting_pub}/niederschrift.pdf", frozenset({"view_protocols"})),
+    # Sitzungsmappe (Issue #218): enthält Tagesordnung und Vorlagen, braucht beide Sichtrechte
+    ("/meetings/{meeting_pub}/mappe/", frozenset({"view_meetings", "view_papers"})),
     ("/agenda/{top_pub}/edit/", frozenset({"edit_meetings"})),
     ("/resolutions/", frozenset({"view_meetings"})),
     ("/agenda/{top_decided}/beschlussauszug.pdf", frozenset({"view_meetings"})),
@@ -147,6 +150,7 @@ MUTATIONS: list[tuple[str, dict[str, str]]] = [
     ("/meetings/{meeting_pub}/protocol/submit/", {}),
     ("/meetings/{meeting_pub}/protocol/approve/", {}),
     ("/meetings/{meeting_pub}/resolutions/generate/", {}),
+    ("/meetings/{meeting_pub}/mappe/anfordern/", {"variant": "public"}),
     ("/agenda/{top_decided}/forwarding/add/", {"recipient": "Bauamt"}),
     ("/meetings/{meeting_pub}/agenda/reorder/", {"order": ""}),
     ("/agenda/{top_pub}/withdraw/", {"reason": "x"}),
@@ -202,6 +206,7 @@ FOREIGN_DETAIL_PATHS = [
     "/meetings/{meeting_b}/sitzung.ics",
     "/meetings/{meeting_b}/protocol/",
     "/meetings/{meeting_b}/niederschrift.pdf",
+    "/meetings/{meeting_b}/mappe/",
     "/papers/{paper_b}/",
     "/papers/{paper_b}/edit/",
     "/applications/{app_b}/",
@@ -221,6 +226,7 @@ FOREIGN_MUTATIONS: list[tuple[str, dict[str, str]]] = [
     ("/organizations/{org_b}/deactivate/", {}),
     ("/meetings/{meeting_b}/attendance/generate/", {}),
     ("/meetings/{meeting_b}/resolutions/generate/", {}),
+    ("/meetings/{meeting_b}/mappe/anfordern/", {"variant": "public"}),
     ("/agenda/{top_b}/forwarding/add/", {"recipient": "Bauamt"}),
     ("/papers/{paper_b}/workflow/submit/", {}),
     ("/papers/{paper_b}/consultations/add/", {"organization": "{org_b}"}),
@@ -424,6 +430,7 @@ def _counts() -> tuple[int, ...]:
             SessionInvitationDispatch,
             SessionAttendance,
             SessionConsultation,
+            SessionMeetingPackage,
         )
     )
 
