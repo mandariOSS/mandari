@@ -9,6 +9,19 @@
     class="fixed inset-y-0 left-0 z-50 flex flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transition-transform duration-300"
     style="width:260px;">
 
+    {% if insight_portal %}
+    {# Bürgerportal einer Körperschaft (Issue #317): eigener Name und eigenes Logo, Kommune fest #}
+    {% if insight_portal.accent_color %}<div class="portal-accent-bar" aria-hidden="true"></div>{% endif %}
+    <a href="{{ insight_portal.home_url }}" class="flex items-center gap-3 min-h-16 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+        {% if insight_portal.logo_url %}
+        <img src="{{ insight_portal.logo_url }}" alt="Logo {{ insight_portal.name }}" class="w-9 h-9 object-contain flex-shrink-0">
+        {% endif %}
+        <span class="flex-1 min-w-0">
+            <span class="block text-sm font-bold text-gray-900 dark:text-white leading-tight truncate">{{ insight_portal.name }}</span>
+            <span class="block text-[10px] font-bold uppercase tracking-widest {% if insight_portal.accent_color %}portal-accent-text{% else %}text-primary-500 dark:text-primary-400{% endif %}">Bürgerportal</span>
+        </span>
+    </a>
+    {% else %}
     {# Brand #}
     <a href="{% url 'insight_core:insight:portal_home' %}" class="flex items-center h-16 px-4 border-b border-gray-200 dark:border-gray-700">
         <span class="flex items-baseline">
@@ -35,6 +48,7 @@
         </div>
         <i data-lucide="chevrons-up-down" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
     </button>
+    {% endif %}
 
     {# Navigation #}
     {% with nav=request.resolver_match.url_name %}
@@ -43,10 +57,10 @@
         {# Portal Section #}
         <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-3 pt-3 pb-1.5">Portal</div>
 
-        <a href="{% url 'insight_core:insight:portal_home' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'portal_home' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'portal_home' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
-            <i data-lucide="layout-dashboard" class="w-[18px] h-[18px] {% if nav != 'portal_home' %}opacity-50{% endif %}"></i> Übersicht
+        <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'portal_home' or nav == 'portal_entry' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'portal_home' or nav == 'portal_entry' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="layout-dashboard" class="w-[18px] h-[18px] {% if nav != 'portal_home' and nav != 'portal_entry' %}opacity-50{% endif %}"></i> Übersicht
         </a>
 
         <a href="{% url 'insight_core:insight:meeting_list' %}"
@@ -164,6 +178,13 @@
         </a>
         {% endif %}
     </div>
+
+    {% if insight_portal.can_leave %}
+    <a href="{% url 'insight_core:insight:clear_body' %}" class="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+        <i data-lucide="layout-grid" class="w-3.5 h-3.5 text-gray-400"></i>
+        <span class="text-[11px] font-medium text-gray-500 dark:text-gray-400">Alle Kommunen im Bürgerportal</span>
+    </a>
+    {% endif %}
 
     {# mandari.de Link #}
     <a href="{{ marketing_url }}/" class="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors group">

@@ -166,6 +166,14 @@ es findet kein weiterer Sync statt. Bereits gespiegelte Daten bleiben
 erhalten, bis die Kommune eine Löschung beauftragt
 (`manage.py purge_deleted`, siehe `docs/OPARL_API.md`).
 
+Anders beim **Deaktivieren des Mandanten** (Issue #317): Dann nimmt mandari die
+Quelle vollständig zurück – Quelle inaktiv, Kommune nicht mehr gelistet, alle
+gespiegelten Einträge zurückgenommen –, und das Reaktivieren stellt sie wieder
+her. Dazu, zum eigenen Einstieg `/insight/k/<slug>/` je Körperschaft und zum
+Anlegen neuer Mandanten siehe `docs/SESSION_MANDANT_ANLEGEN.md`. Der Body der
+API nennt Körperschaftstyp und AGS des Mandanten als `classification` und `ags`,
+sofern gepflegt (sonst wie bisher `classification: "Kommune"`).
+
 ## Quelle per CLI registrieren
 
 ```bash

@@ -1,0 +1,45 @@
+{
+  "profile": {
+    "nrw_stadt": {
+      "bezeichnung": "Stadt in Nordrhein-Westfalen",
+      "koerperschaftstyp": "stadt",
+      "nummernkreis": "nrw_verwaltung_politik",
+      "wahlperiode": {
+        "name": "Wahlperiode 2025–2030",
+        "nummer": null,
+        "beginn": "2025-11-01",
+        "ende": "2030-10-31"
+      },
+      "gremienvorlage": "nrw_stadt"
+    },
+    "hamburg_bezirk": {
+      "bezeichnung": "Bezirk in Hamburg (Bezirksversammlung)",
+      "koerperschaftstyp": "bezirk",
+      "nummernkreis": "hamburg_bezirk",
+      "wahlperiode": {
+        "name": "22. Wahlperiode",
+        "nummer": 22,
+        "beginn": "2024-06-09",
+        "ende": "2029-06-30"
+      },
+      "gremienvorlage": "hamburg_bezirk"
+    }
+  },
+  "gremienvorlagen": {
+    "nrw_stadt": {
+      "bezeichnung": "Rat, Hauptausschuss, Finanzausschuss",
+      "gremien": [
+        {"name": "Rat", "kurzname": "Rat", "art": "council"},
+        {"name": "Hauptausschuss", "kurzname": "HA", "art": "committee"},
+        {"name": "Finanzausschuss", "kurzname": "FA", "art": "committee"}
+      ]
+    },
+    "hamburg_bezirk": {
+      "bezeichnung": "Bezirksversammlung, Hauptausschuss",
+      "gremien": [
+        {"name": "Bezirksversammlung", "kurzname": "BV", "art": "council"},
+        {"name": "Hauptausschuss", "kurzname": "HA", "art": "committee"}
+      ]
+    }
+  }
+}

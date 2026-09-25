@@ -919,8 +919,8 @@ class Command(BaseCommand):
         )
         self._count("Session: Mandant")
 
-        if not tenant.roles.exists():
-            SessionRole.create_default_roles(tenant)
+        # Wie beim Anlegen eines Mandanten (Issue #317): fehlende Standardrollen ergänzen, auch Revision/Datenschutz
+        SessionRole.ensure_default_roles(tenant)
         self._count("Session: Rollen", tenant.roles.count())
 
         # --- Demo-Verwaltungsnutzer (ein Login je Rolle) --------------

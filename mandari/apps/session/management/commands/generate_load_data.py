@@ -329,7 +329,8 @@ class Command(BaseCommand):
             oparl_body=body,
             is_active=True,
         )
-        cast(Any, SessionRole).create_default_roles(tenant)
+        # Dieselben Standardrollen wie beim Anlegen eines Mandanten (Issue #317)
+        cast(Any, SessionRole).ensure_default_roles(tenant)
         self._zaehle("Session: Mandanten")
         return tenant
 

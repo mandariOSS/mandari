@@ -167,6 +167,12 @@ def _seiten() -> list[Seite]:
     fraktion = f"last-klein-stadt-fraktion-1@{DOMAENE}"
     return [
         Seite("insight_startseite", "Insight: Startseite der Kommune", lambda k: "/insight/", None),
+        Seite(
+            "insight_einstieg_koerperschaft",
+            "Insight: Einstieg einer Körperschaft (/insight/k/<slug>/, Issue #317)",
+            lambda k: f"/insight/k/{SESSION_SLUG}/",
+            None,
+        ),
         Seite("insight_suche", "Insight: Suchseite mit Suchbegriff", lambda k: "/insight/suche/?q=Radweg", None),
         Seite(
             "insight_suche_ergebnisse",
