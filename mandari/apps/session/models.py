@@ -741,6 +741,134 @@ class SessionDelegation(models.Model):
 
 
 # =============================================================================
+# MANDANTENGRUPPEN UND LEITSTELLE (Issue #317)
+# =============================================================================
+
+
+class SessionTenantGroup(models.Model):
+    """
+    Mandantengruppe mit Leitstelle (Issue #317), z. B. die Bezirksämter eines Stadtstaats.
+
+    Die Leitstelle sieht auf einer Übersichtsseite die Arbeitsvorräte, Fristen, Sitzungen und
+    Kennzahlen aller Mandanten der Gruppe. Die Gruppe öffnet keinen Zugang zu den Mandanten selbst:
+    Arbeiten, Lesen einzelner Vorgänge und Nichtöffentliches gibt es nur über eine echte
+    Mitgliedschaft im Mandanten (SessionUser). Schlüssel und Ö/NÖ-Rechte bleiben je Mandant getrennt.
+
+    Gepflegt wird die Gruppe im Django-Admin (Superuser bzw. Staff mit Modellrechten).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, verbose_name="Name")
+    slug = models.SlugField(max_length=100, unique=True, verbose_name="URL-Kürzel")
+    description = models.TextField(blank=True, verbose_name="Beschreibung")
+    tenants = models.ManyToManyField(
+        SessionTenant,
+        through="SessionTenantGroupTenant",
+        related_name="tenant_groups",
+        blank=True,
+        verbose_name="Mandanten",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_tenant_groups"
+        verbose_name = "Mandantengruppe"
+        verbose_name_plural = "Mandantengruppen"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class SessionTenantGroupTenant(models.Model):
+    """
+    Zugehörigkeit eines Mandanten zu einer Mandantengruppe (Issue #317).
+
+    Ein Mandant gehört höchstens einer Gruppe an (``tenant`` ist eindeutig): So bleibt für jeden
+    Mandanten klar, welche Leitstelle seine Übersicht sieht, und die Liste der Personen mit
+    mandantenübergreifender Sicht wächst nicht über mehrere Gruppen unbemerkt an.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.ForeignKey(
+        SessionTenantGroup,
+        on_delete=models.CASCADE,
+        related_name="tenant_links",
+        verbose_name="Mandantengruppe",
+    )
+    tenant = models.OneToOneField(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="group_link",
+        verbose_name="Mandant",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "session_tenant_group_tenants"
+        verbose_name = "Mandant der Gruppe"
+        verbose_name_plural = "Mandanten der Gruppe"
+        ordering = ["tenant__name"]
+
+    def __str__(self) -> str:
+        return f"{self.tenant} in {self.group}"
+
+
+class SessionTenantGroupMembership(models.Model):
+    """
+    Mitgliedschaft in der Leitstelle einer Mandantengruppe (Issue #317).
+
+    Die Gruppenrolle gilt nur für die Leitstellen-Übersicht. Sie ersetzt keine Rolle im Mandanten
+    und öffnet keine Mandantenseite.
+    """
+
+    ROLE_LEITSTELLE = "leitstelle"
+    ROLE_KENNZAHLEN = "kennzahlen"
+    ROLE_CHOICES = [
+        (ROLE_LEITSTELLE, "Leitstelle (Arbeitsvorräte, Fristen, Sitzungen, Kennzahlen, Suche)"),
+        (ROLE_KENNZAHLEN, "Kennzahlen (nur Zählwerte je Mandant)"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.ForeignKey(
+        SessionTenantGroup,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+        verbose_name="Mandantengruppe",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="session_group_memberships",
+        verbose_name="Benutzer",
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_LEITSTELLE, verbose_name="Gruppenrolle")
+    note = models.CharField(max_length=255, blank=True, verbose_name="Vermerk", help_text="z. B. Anlass der Freigabe")
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_tenant_group_memberships"
+        verbose_name = "Leitstellen-Mitgliedschaft"
+        verbose_name_plural = "Leitstellen-Mitgliedschaften"
+        ordering = ["group__name", "user__email"]
+        constraints = [
+            models.UniqueConstraint(fields=["group", "user"], name="uniq_session_tenant_group_member"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user} – {self.group} ({self.get_role_display()})"
+
+    @property
+    def sees_worklists(self) -> bool:
+        """Listen, Fristen, Sitzungen und Suche – nicht nur Zählwerte."""
+        return self.role == self.ROLE_LEITSTELLE
+
+
+# =============================================================================
 # ORGANIZATION MODELS
 # =============================================================================
 
@@ -1059,6 +1187,15 @@ class SessionMeeting(EncryptionMixin, models.Model):
         related_name="meetings",
         verbose_name="Gremium",
     )
+    # Gemeinsame Sitzung mehrerer Gremien (Issue #317): weitere Gremien desselben Mandanten neben
+    # dem federführenden Gremium. Wirkt auf Anzeige, Ladung, Anwesenheit, OParl und Gremienfilter.
+    joint_organizations = models.ManyToManyField(
+        SessionOrganization,
+        blank=True,
+        related_name="joint_meetings",
+        verbose_name="Weitere beteiligte Gremien",
+        help_text="Gemeinsame Sitzung: Gremien, die zusätzlich zum federführenden Gremium tagen",
+    )
 
     # Wahlperiode (Issue #39) — wird bei Anlage automatisch aus dem
     # Sitzungsdatum abgeleitet, bleibt beim Periodenwechsel erhalten
@@ -1147,16 +1284,85 @@ class SessionMeeting(EncryptionMixin, models.Model):
         """Return tenant for encryption."""
         return self.tenant
 
+    # --- Gemeinsame Sitzung mehrerer Gremien (Issue #317) -------------------------------------
+    #: Annotation aus ``SessionMeeting.with_joint_flag``: hat die Sitzung weitere Gremien?
+    JOINT_FLAG = "has_joint_organizations"
+
+    @classmethod
+    def with_joint_flag(cls, queryset: Any) -> Any:
+        """
+        Sitzungen vorab markieren, ob weitere Gremien beteiligt sind – ohne zusätzliche Abfrage.
+
+        Listen und Detailseiten zeigen die weiteren Gremien nur für markierte Sitzungen und laden
+        sie nur dann nach (Performance-Budgets).
+        """
+        through = cls.joint_organizations.through
+        return queryset.annotate(
+            **{cls.JOINT_FLAG: models.Exists(through.objects.filter(sessionmeeting_id=models.OuterRef("pk")))}
+        )
+
+    @property
+    def joint_organization_list(self) -> list[Any]:
+        """Weitere beteiligte Gremien, nach Namen sortiert (leer bei einer gewöhnlichen Sitzung)."""
+        cached = getattr(self, "_joint_organization_list", None)
+        if cached is not None:
+            return list(cached)
+        prefetched = getattr(self, "_prefetched_objects_cache", {}).get("joint_organizations")
+        if prefetched is not None:
+            items = list(prefetched)
+        elif self._state.adding or getattr(self, self.JOINT_FLAG, True) in (False, 0):
+            items = []
+        else:
+            items = list(self.joint_organizations.all())
+        items.sort(key=lambda org: org.name)
+        self._joint_organization_list = items
+        return list(items)
+
+    @property
+    def is_joint(self) -> bool:
+        """Gemeinsame Sitzung mehrerer Gremien?"""
+        return bool(self.joint_organization_list)
+
+    @property
+    def participating_organizations(self) -> list[Any]:
+        """Federführendes Gremium zuerst, danach die weiteren beteiligten Gremien."""
+        return [self.organization, *self.joint_organization_list]
+
+    @property
+    def participating_organization_ids(self) -> list[Any]:
+        return [self.organization_id, *(org.pk for org in self.joint_organization_list)]
+
+    @property
+    def organizations_label(self) -> str:
+        """Gremien für Anzeige, Ladung und Kalender, z. B. „Bauausschuss und Umweltausschuss“."""
+        names = [org.name for org in self.participating_organizations]
+        if len(names) == 1:
+            return names[0]
+        return f"{', '.join(names[:-1])} und {names[-1]}"
+
+    @staticmethod
+    def organization_q(organization: Any, prefix: str = "") -> models.Q:
+        """Filter „Sitzungen dieses Gremiums“ – federführend oder als weiteres Gremium beteiligt."""
+        return models.Q(**{f"{prefix}organization": organization}) | models.Q(
+            **{f"{prefix}joint_organizations": organization}
+        )
+
+    @property
+    def invitation_period_days(self) -> int:
+        """Ladungsfrist in Tagen; bei gemeinsamen Sitzungen gilt die längste Frist der Gremien."""
+        return max((org.invitation_period_days or 0) for org in self.participating_organizations)
+
     @property
     def invitation_deadline(self):
         """
         Spätester Ladungstermin gemäß Ladungsfrist des Gremiums (Issue #29).
 
         Beispiel: Sitzung am 20.08., Ladungsfrist 7 Tage -> Ladung bis 13.08.
+        Bei gemeinsamen Sitzungen gilt die längste Ladungsfrist der beteiligten Gremien (Issue #317).
         """
         from datetime import timedelta
 
-        period = self.organization.invitation_period_days or 0
+        period = self.invitation_period_days
         return (timezone.localtime(self.start) - timedelta(days=period)).date()
 
     @property

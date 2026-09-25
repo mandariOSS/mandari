@@ -25,6 +25,7 @@ from ..models import (
     SessionProtocol,
 )
 from ..permissions import SessionViewMixin
+from ..services import joint_meeting_service
 
 RESULT_LIMIT = 25
 
@@ -66,7 +67,8 @@ class SessionSearchView(SessionViewMixin, TemplateView):
         if not self.has_permission("view_non_public_meetings"):
             qs = qs.filter(is_public=True)
         if filters["organization"]:
-            qs = qs.filter(organization=filters["organization"])
+            # Auch gemeinsame Sitzungen, an denen das Gremium beteiligt ist (Issue #317)
+            qs = qs.filter(pk__in=SessionMeeting.objects.filter(SessionMeeting.organization_q(filters["organization"])))
         if filters["year"]:
             qs = qs.filter(start__year=filters["year"])
         if filters["term"]:
@@ -112,7 +114,12 @@ class SessionSearchView(SessionViewMixin, TemplateView):
                 meetings = meetings_scope.filter(
                     Q(name__icontains=query) | Q(location__icontains=query) | Q(room__icontains=query)
                 )
-                results["meetings"] = list(meetings.select_related("organization").order_by("-start")[:RESULT_LIMIT])
+                results["meetings"] = list(
+                    SessionMeeting.with_joint_flag(meetings.select_related("organization")).order_by("-start")[
+                        :RESULT_LIMIT
+                    ]
+                )
+                joint_meeting_service.prefetch_joint(results["meetings"])
 
             # TOPs / Beschlüsse
             if wants("resolutions") and self.has_permission("view_meetings"):
@@ -144,10 +151,10 @@ class SessionSearchView(SessionViewMixin, TemplateView):
                     files = files.filter(is_public=True)
                 if filters["organization"]:
                     files = files.filter(
-                        Q(meeting__organization=filters["organization"])
-                        | Q(agenda_item__meeting__organization=filters["organization"])
+                        SessionMeeting.organization_q(filters["organization"], "meeting__")
+                        | SessionMeeting.organization_q(filters["organization"], "agenda_item__meeting__")
                         | Q(paper__main_organization=filters["organization"])
-                    )
+                    ).distinct()
                 if filters["year"]:
                     files = files.filter(created_at__year=filters["year"])
                 results["files"] = list(

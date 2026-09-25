@@ -25,7 +25,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.common.email import send_email
-from apps.session.services import invitation_response_service, invitation_token
+from apps.session.services import invitation_response_service, invitation_token, joint_meeting_service
 
 from ..models import (
     SessionAgendaItem,
@@ -99,17 +99,21 @@ def _remind_invitations(tenant, config, today, *, dry_run) -> dict:
     if not recipients:
         return sent
 
-    meetings = (
-        SessionMeeting.objects.filter(
-            tenant=tenant,
-            start__gte=timezone.now(),
-            cancelled=False,
-            invitation_sent_at__isnull=True,
-            meeting_state__in=["draft", "scheduled"],
+    meetings = list(
+        SessionMeeting.with_joint_flag(
+            SessionMeeting.objects.filter(
+                tenant=tenant,
+                start__gte=timezone.now(),
+                cancelled=False,
+                invitation_sent_at__isnull=True,
+                meeting_state__in=["draft", "scheduled"],
+            )
+            .select_related("organization")
+            .order_by("start")
         )
-        .select_related("organization")
-        .order_by("start")
     )
+    # Gemeinsame Sitzungen (Issue #317): längste Ladungsfrist der beteiligten Gremien
+    joint_meeting_service.prefetch_joint(meetings)
     horizon = today + timedelta(days=config["invitation_days_before"])
     base = _base_url(tenant)
 
@@ -119,7 +123,7 @@ def _remind_invitations(tenant, config, today, *, dry_run) -> dict:
         if deadline < today:
             subject = f"[{tenant.name}] Ladungsfrist verstrichen: {meeting.name}"
             body = (
-                f"Die Ladungsfrist für „{meeting.name}“ ({meeting.organization.name}, "
+                f"Die Ladungsfrist für „{meeting.name}“ ({meeting.organizations_label}, "
                 f"Sitzung am {timezone.localtime(meeting.start).strftime('%d.%m.%Y %H:%M')}) "
                 f"ist am {deadline.strftime('%d.%m.%Y')} verstrichen — die Einladung wurde "
                 f"noch nicht versandt.\n\nZur Sitzung: {url}\n"
@@ -129,7 +133,7 @@ def _remind_invitations(tenant, config, today, *, dry_run) -> dict:
         elif deadline <= horizon:
             subject = f"[{tenant.name}] Ladung muss bis {deadline.strftime('%d.%m.')} raus: {meeting.name}"
             body = (
-                f"Für „{meeting.name}“ ({meeting.organization.name}, Sitzung am "
+                f"Für „{meeting.name}“ ({meeting.organizations_label}, Sitzung am "
                 f"{timezone.localtime(meeting.start).strftime('%d.%m.%Y %H:%M')}) muss die "
                 f"Einladung bis zum {deadline.strftime('%d.%m.%Y')} versandt werden.\n\n"
                 f"Zur Sitzung: {url}\n"

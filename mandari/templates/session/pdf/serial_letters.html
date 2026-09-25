@@ -66,11 +66,11 @@ mit QR-Code. Gerendert über apps/common/pdf.py (xhtml2pdf).
     {% elif supplementary %}
     <p>zur bereits versandten Einladung erhalten Sie die Nachtrags-Tagesordnung für die folgende Sitzung.</p>
     {% else %}
-    <p>hiermit laden wir Sie zur Sitzung des Gremiums {{ meeting.organization.name }} ein.</p>
+    <p>hiermit laden wir Sie zur {% if meeting.is_joint %}gemeinsamen Sitzung der Gremien{% else %}Sitzung des Gremiums{% endif %} {{ meeting.organizations_label }} ein.</p>
     {% endif %}
 
     <table class="meta-table">
-        <tr><td><strong>Gremium:</strong></td><td>{{ meeting.organization.name }}</td></tr>
+        <tr><td><strong>{% if meeting.is_joint %}Gremien:{% else %}Gremium:{% endif %}</strong></td><td>{{ meeting.organizations_label }}</td></tr>
         <tr><td><strong>Sitzung:</strong></td><td>{{ meeting.name }}</td></tr>
         <tr><td><strong>Termin:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr</td></tr>
         {% if location %}<tr><td><strong>Ort:</strong></td><td>{{ location }}</td></tr>{% endif %}

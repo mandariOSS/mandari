@@ -190,6 +190,16 @@ class LoginView(View):
         if session_membership:
             return f"/session/{session_membership.tenant.slug}/"
 
+        # Nur Leitstelle einer Mandantengruppe (Issue #317): direkt in die Übersicht
+        leitstelle = (
+            request.user.session_group_memberships.filter(is_active=True, group__is_active=True)
+            .select_related("group")
+            .order_by("group__name")
+            .first()
+        )
+        if leitstelle:
+            return f"/session/leitstelle/{leitstelle.group.slug}/"
+
         # Fallback to home
         return "/"
 

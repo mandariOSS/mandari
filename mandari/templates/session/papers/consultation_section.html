@@ -81,7 +81,7 @@ consultation_meetings, tenant_slug
                                 {% if station.agenda_item %}disabled title="Zielsitzung fest, solange ein TOP existiert"{% endif %}>
                             <option value="">— Zielsitzung wählen —</option>
                             {% for meeting in consultation_meetings %}
-                            {% if meeting.organization_id == station.organization_id %}
+                            {% if station.organization_id in meeting.participating_organization_ids %}
                             <option value="{{ meeting.id }}" {% if station.meeting_id == meeting.id %}selected{% endif %}>
                                 {{ meeting.start|date:"d.m.Y" }} — {{ meeting.name|truncatechars:40 }}
                             </option>

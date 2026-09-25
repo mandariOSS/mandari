@@ -7,7 +7,7 @@
 
     <table class="meta-table">
         <tr><td><strong>Sitzung:</strong></td><td>{{ meeting.name }}</td></tr>
-        <tr><td><strong>Gremium:</strong></td><td>{{ meeting.organization.name }}</td></tr>
+        <tr><td><strong>{% if meeting.is_joint %}Gremien:{% else %}Gremium:{% endif %}</strong></td><td>{{ meeting.organizations_label }}</td></tr>
         <tr><td><strong>Termin:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% if meeting.end %} bis {{ meeting.end|date:"H:i" }} Uhr{% endif %}</td></tr>
         {% if meeting.location %}
         <tr><td><strong>Ort:</strong></td><td>{{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}</td></tr>

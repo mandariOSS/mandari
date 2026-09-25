@@ -1,0 +1,58 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Leitstellen-Übersicht einer Mandantengruppe (Issue #317): Kennzahlen je Mandant sowie – für die
+Gruppenrolle „Leitstelle“ – Vorlagen in Prüfung, Mitzeichnungen, Fristen und nächste Sitzungen
+aller Mandanten. Regeln zu Sichtbarkeit und Protokoll: apps/session/services/leitstelle_service.py
+{% endcomment %}
+
+{% block title %}Leitstelle {{ group.name }} | mandari{% endblock %}
+{% block meta_description %}Leitstelle {{ group.name }}{% endblock %}
+{% block sidebar_header %}{% include "session/leitstelle/_sidebar.html#header" %}{% endblock %}
+{% block sidebar_nav %}{% include "session/leitstelle/_sidebar.html#nav" %}{% endblock %}
+{% block topbar_search %}{% include "session/leitstelle/_sidebar.html#search" %}{% endblock %}
+{% block breadcrumb %}<span class="text-sm font-medium text-gray-900 dark:text-white">Leitstelle</span>{% endblock %}
+
+{% block page_content %}
+<c-layout.page-header title="Leitstelle {{ group.name }}"
+                      subtitle="{{ accesses|length }} Mandant{{ accesses|length|pluralize:'en' }} · Stand {{ stand|date:'d.m.Y, H:i' }} Uhr" />
+
+<c-ui.alert variant="info" icon="shield-check" class="mb-6">
+    Titel nichtöffentlicher Vorgänge sehen Sie nur in Mandanten, in denen Sie selbst das Sichtrecht haben; sonst
+    erscheinen sie als „Nichtöffentlich“. Links führen nur in Mandanten, in denen Sie Mitglied sind. Jeder Aufruf
+    wird im Protokoll der Mandanten festgehalten.
+</c-ui.alert>
+
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-testid="leitstelle-kennzahlen">
+    <c-ui.kpi-tile label="Vorlagen in Prüfung" value="{{ overview.totals.papers_review }}" tone="blue" />
+    <c-ui.kpi-tile label="Offene Mitzeichnungen" value="{{ overview.totals.cosignatures_open }}" tone="indigo" />
+    <c-ui.kpi-tile label="Fristen bis {{ deadline_days }} Tage" value="{{ deadline_total }}" tone="{{ deadline_tone }}" />
+    <c-ui.kpi-tile label="Sitzungen in {{ meeting_days }} Tagen" value="{{ overview.totals.meetings_upcoming }}" tone="green" />
+</div>
+
+{% include "session/leitstelle/_figures.html" %}
+
+{% if membership.sees_worklists %}
+<div class="grid lg:grid-cols-2 gap-6 mt-6">
+    <c-ui.card title="Vorlagen in Prüfung" subtitle="Warten auf Freigabe, die ältesten zuerst" padding="none" data-testid="leitstelle-vorlagen">
+        {% include "session/leitstelle/_rows.html" with rows=overview.review_papers total=overview.totals.papers_review empty="Keine Vorlagen in Prüfung." date_label="seit" %}
+    </c-ui.card>
+    <c-ui.card title="Offene Mitzeichnungen" subtitle="Stationen von Vorlagen in Prüfung" padding="none" data-testid="leitstelle-mitzeichnungen">
+        {% include "session/leitstelle/_rows.html" with rows=overview.cosignatures total=overview.totals.cosignatures_open empty="Keine offenen Mitzeichnungen." date_label="seit" %}
+    </c-ui.card>
+    <c-ui.card title="Ladungsfristen" subtitle="Ladung noch nicht versandt, Frist verstrichen oder in {{ deadline_days }} Tagen" padding="none" data-testid="leitstelle-ladungsfristen">
+        {% include "session/leitstelle/_rows.html" with rows=overview.invitation_deadlines total=overview.totals.invitation_deadlines empty="Keine Ladungsfristen in Sicht." date_label="Sitzung am" %}
+    </c-ui.card>
+    <c-ui.card title="Vorlagenfristen" subtitle="Offene Vorlagen mit Frist, verstrichen oder in {{ deadline_days }} Tagen" padding="none" data-testid="leitstelle-vorlagenfristen">
+        {% include "session/leitstelle/_rows.html" with rows=overview.paper_deadlines total=overview.totals.paper_deadlines empty="Keine Vorlagenfristen in Sicht." %}
+    </c-ui.card>
+</div>
+
+<c-ui.card title="Nächste Sitzungen" subtitle="Alle Mandanten, die nächsten {{ meeting_days }} Tage" padding="none" class="mt-6" data-testid="leitstelle-sitzungen">
+    {% include "session/leitstelle/_rows.html" with rows=overview.meetings total=overview.totals.meetings_upcoming empty="Keine Sitzungen in den nächsten Wochen." date_label="am" %}
+</c-ui.card>
+{% else %}
+<c-ui.alert variant="info" class="mt-6">
+    Ihre Gruppenrolle umfasst nur die Kennzahlen. Arbeitsvorräte, Fristen und die Suche sieht die Gruppenrolle „Leitstelle“.
+</c-ui.alert>
+{% endif %}
+{% endblock %}

@@ -19,6 +19,7 @@ from typing import Any, cast
 import pytest
 from django.core.management import call_command
 from django.db.models import Model
+from django.test import Client
 
 from apps.accounts.models import User
 from apps.common.management.commands import setup_demo_praesentation as drehbuch
@@ -35,10 +36,13 @@ from apps.session.models import (
     SessionPaper,
     SessionProtocol,
     SessionTenant,
+    SessionTenantGroup,
+    SessionTenantGroupMembership,
+    SessionTenantGroupTenant,
     SessionUser,
     SessionVote,
 )
-from apps.session.services import allowance_service
+from apps.session.services import allowance_service, invitation_service
 from apps.tenants.models import Membership
 from apps.work.motions import ris_submission
 from apps.work.motions.models import AdministrationConnection, Motion
@@ -60,6 +64,9 @@ ZAEHLMODELLE: tuple[type[Model], ...] = (
     SessionApplication,
     SessionLegislativeTerm,
     SessionAPIToken,
+    SessionTenantGroup,
+    SessionTenantGroupMembership,
+    SessionTenantGroupTenant,
     AdministrationConnection,
     Motion,
     User,
@@ -277,6 +284,42 @@ class TestDrehbuchDaten:
                 "status", flat=True
             )
         ) == {"pending"}
+
+
+class TestLeitstellenGruppeUndGemeinsameSitzung:
+    """Profil hamburg: beide Bezirke als Mandantengruppe mit Leitstelle, gemeinsame Sitzung zweier Ausschüsse."""
+
+    def test_hamburg_legt_gruppe_und_gemeinsame_sitzung_an(self) -> None:
+        ausgabe = ausfuehren("--profil", "hamburg")
+        gruppe = SessionTenantGroup.objects.get(slug=drehbuch.GRUPPE_SLUG)
+        assert set(gruppe.tenants.values_list("slug", flat=True)) == {DEMO_SESSION_SLUG, drehbuch.MANDANT_B_SLUG}
+        leitstelle = User.objects.get(email=drehbuch.LEITSTELLE["email"])
+        assert gruppe.memberships.get(user=leitstelle).role == SessionTenantGroupMembership.ROLE_LEITSTELLE
+
+        sitzung = SessionMeeting.objects.get(tenant__slug=DEMO_SESSION_SLUG, name=drehbuch.SITZUNG_GEMEINSAM)
+        assert sitzung.organization.name == drehbuch.GREMIUM_HA
+        assert [o.name for o in sitzung.joint_organizations.all()] == [drehbuch.GREMIUM_BAU]
+        empfaenger = [r["person"].family_name for r in invitation_service.get_recipients(sitzung)]
+        assert empfaenger.count("Heller") == 1  # sitzt in beiden Ausschüssen
+
+        client = Client()
+        client.force_login(leitstelle)
+        seite = client.get(f"/session/leitstelle/{drehbuch.GRUPPE_SLUG}/")
+        assert seite.status_code == 200
+        assert drehbuch.VORLAGE_LEITSTELLE.name in seite.content.decode()
+        assert f"/session/leitstelle/{drehbuch.GRUPPE_SLUG}/" in ausgabe
+        assert "Gemeinsame Sitzung" in ausgabe
+
+    def test_nrw_und_reset_entfernen_gruppe_und_gemeinsame_sitzung(self) -> None:
+        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "nrw")
+        assert not SessionTenantGroup.objects.filter(slug=drehbuch.GRUPPE_SLUG).exists()
+        assert not SessionMeeting.objects.filter(name=drehbuch.SITZUNG_GEMEINSAM).exists()
+        assert not SessionPaper.objects.filter(name=drehbuch.VORLAGE_LEITSTELLE.name).exists()
+        ausfuehren("--profil", "hamburg")
+        ausfuehren("--reset")
+        assert not SessionTenantGroup.objects.exists()
+        assert not SessionTenantGroupTenant.objects.exists()
 
 
 class TestSpiegel:

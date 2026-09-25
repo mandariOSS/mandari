@@ -72,7 +72,8 @@ class ConsultationBaseView(SessionViewMixin, View):
         meeting = SessionMeeting.objects.filter(pk=raw_meeting_id, tenant=self.session_tenant).first()
         if meeting is None:
             return None, "Die gewählte Sitzung wurde nicht gefunden."
-        if meeting.organization_id != organization.id:
+        # Gemeinsame Sitzung (Issue #317): auch weitere beteiligte Gremien beraten dort
+        if organization.id not in meeting.participating_organization_ids:
             return None, "Die gewählte Sitzung gehört nicht zum Gremium dieser Station."
         return meeting, None
 

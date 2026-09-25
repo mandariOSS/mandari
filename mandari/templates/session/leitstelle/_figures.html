@@ -1,0 +1,57 @@
+{% comment %}
+Kennzahlen je Mandant der Leitstelle (Issue #317). Zählwerte schließen Nichtöffentliches ein,
+nennen aber keine Titel. Erwartet: overview, meeting_days.
+{% endcomment %}
+<c-ui.card title="Kennzahlen je Mandant" subtitle="Zählwerte einschließlich nichtöffentlicher Vorgänge, Jahr {{ overview.year }}" padding="none" data-testid="leitstelle-tabelle">
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+            <caption class="sr-only">Kennzahlen je Mandant der Gruppe {{ group.name }}</caption>
+            <thead class="bg-gray-50 dark:bg-gray-900/40">
+                <tr>
+                    <c-ui.th>Mandant</c-ui.th>
+                    <c-ui.th align="right">In Prüfung</c-ui.th>
+                    <c-ui.th align="right">Mitzeichnungen</c-ui.th>
+                    <c-ui.th align="right">Ladungsfristen</c-ui.th>
+                    <c-ui.th align="right">Vorlagenfristen</c-ui.th>
+                    <c-ui.th align="right">Sitzungen {{ meeting_days }} Tage / {{ overview.year }}</c-ui.th>
+                    <c-ui.th align="right">Beschlüsse {{ overview.year }}</c-ui.th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-gray-700 text-gray-700 dark:text-gray-300">
+                {% for f in overview.figures %}
+                <tr>
+                    <th scope="row" class="px-4 py-3 text-left font-medium">
+                        {% if f.access.dashboard_url %}
+                        <a href="{{ f.access.dashboard_url }}" class="text-primary-600 dark:text-primary-400 hover:underline">{{ f.tenant.name }}</a>
+                        {% else %}
+                        <span class="text-gray-900 dark:text-white">{{ f.tenant.name }}</span>
+                        <div class="mt-1"><c-ui.badge icon="lock">kein Zugang</c-ui.badge></div>
+                        {% endif %}
+                    </th>
+                    <td class="px-4 py-3 text-right">{{ f.papers_review }}{% if f.papers_review_non_public %} <span class="text-xs text-gray-500">(davon {{ f.papers_review_non_public }} NÖ)</span>{% endif %}</td>
+                    <td class="px-4 py-3 text-right">{{ f.cosignatures_open }}</td>
+                    <td class="px-4 py-3 text-right">{{ f.invitation_deadlines }}{% if f.invitation_overdue %} <span class="text-xs text-red-600 dark:text-red-400">({{ f.invitation_overdue }} überfällig)</span>{% endif %}</td>
+                    <td class="px-4 py-3 text-right">{{ f.paper_deadlines }}{% if f.paper_deadlines_overdue %} <span class="text-xs text-red-600 dark:text-red-400">({{ f.paper_deadlines_overdue }} überfällig)</span>{% endif %}</td>
+                    <td class="px-4 py-3 text-right">{{ f.meetings_upcoming }} / {{ f.meetings_year }}</td>
+                    <td class="px-4 py-3 text-right">{{ f.resolutions_year }}{% if f.resolutions_overdue %} <span class="text-xs text-red-600 dark:text-red-400" title="Beschlusskontrolle: Erledigungsfrist verstrichen">({{ f.resolutions_overdue }} überfällig)</span>{% endif %}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="px-4 py-6 text-gray-500 dark:text-gray-400">Der Gruppe ist noch kein aktiver Mandant zugeordnet.</td></tr>
+                {% endfor %}
+            </tbody>
+            {% if overview.figures|length > 1 %}
+            <tfoot class="bg-gray-50 dark:bg-gray-900/40 font-semibold text-gray-900 dark:text-white">
+                <tr>
+                    <th scope="row" class="px-4 py-3 text-left">Summe</th>
+                    <td class="px-4 py-3 text-right">{{ overview.totals.papers_review }}</td>
+                    <td class="px-4 py-3 text-right">{{ overview.totals.cosignatures_open }}</td>
+                    <td class="px-4 py-3 text-right">{{ overview.totals.invitation_deadlines }}</td>
+                    <td class="px-4 py-3 text-right">{{ overview.totals.paper_deadlines }}</td>
+                    <td class="px-4 py-3 text-right">{{ overview.totals.meetings_upcoming }} / {{ overview.totals.meetings_year }}</td>
+                    <td class="px-4 py-3 text-right">{{ overview.totals.resolutions_year }}</td>
+                </tr>
+            </tfoot>
+            {% endif %}
+        </table>
+    </div>
+</c-ui.card>

@@ -5,9 +5,9 @@
     <h1>{{ title }}</h1>
     <p>
         {% if supplementary_only %}
-        Nachtrag zur Einladung zur Sitzung des Gremiums <strong>{{ meeting.organization.name }}</strong>.
+        Nachtrag zur Einladung zur {% if meeting.is_joint %}gemeinsamen Sitzung der Gremien{% else %}Sitzung des Gremiums{% endif %} <strong>{{ meeting.organizations_label }}</strong>.
         {% else %}
-        Hiermit wird zur Sitzung des Gremiums <strong>{{ meeting.organization.name }}</strong> eingeladen.
+        Hiermit wird zur {% if meeting.is_joint %}gemeinsamen Sitzung der Gremien{% else %}Sitzung des Gremiums{% endif %} <strong>{{ meeting.organizations_label }}</strong> eingeladen.
         {% endif %}
     </p>
 

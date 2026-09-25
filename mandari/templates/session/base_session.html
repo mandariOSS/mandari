@@ -349,6 +349,7 @@
         <!-- Sidebar -->
         <aside class="session-sidebar" :class="{ 'open': sidebarOpen, 'collapsed': sidebarCollapsed }">
             <!-- Kommune-Header -->
+            {% block sidebar_header %}
             <div class="session-org-header">
                 <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}"
                    class="session-org-logo {% if not session_tenant.logo %}has-fallback{% endif %}">
@@ -375,10 +376,11 @@
                     {% endif %}
                 </div>
             </div>
+            {% endblock sidebar_header %}
 
             <!-- Navigation -->
             <nav class="flex-1 py-4 overflow-y-auto overflow-x-hidden">
-                {% include "session/partials/nav_items.html" %}
+                {% block sidebar_nav %}{% include "session/partials/nav_items.html" %}{% endblock sidebar_nav %}
             </nav>
 
             <!-- User Info (unten) -->
@@ -430,7 +432,8 @@
                 </div>
 
                 <div class="flex items-center gap-2">
-                    <!-- Suche (Issue #45) -->
+                    <!-- Suche (Issue #45); die Leitstelle ersetzt den Block durch ihre eigene Suche (Issue #317) -->
+                    {% block topbar_search %}
                     <form method="get" action="{% url 'session:search' tenant_slug=tenant_slug %}" class="hidden md:block">
                         <div class="relative">
                             <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
@@ -438,6 +441,7 @@
                                    class="w-44 lg:w-56 pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                         </div>
                     </form>
+                    {% endblock topbar_search %}
 
                     <!-- Dark Mode Toggle -->
                     <button type="button" @click="darkMode = !darkMode"

@@ -18,6 +18,16 @@
     <span class="nav-label">Suche</span>
 </a>
 
+<!-- Leitstelle der Mandantengruppe (Issue #317); der Zugriff wird dort selbst geprüft -->
+{% for leitstelle in user_leitstellen %}
+<a href="{% url 'session:leitstelle' group_slug=leitstelle.slug %}"
+   class="session-nav-item"
+   :title="sidebarCollapsed ? 'Leitstelle' : ''">
+    <i data-lucide="radar" class="flex-none"></i>
+    <span class="nav-label truncate">Leitstelle {{ leitstelle.name }}</span>
+</a>
+{% endfor %}
+
 <div class="session-nav-section"><span class="nav-label">Sitzungsdienst</span></div>
 
 <!-- Sitzungen -->

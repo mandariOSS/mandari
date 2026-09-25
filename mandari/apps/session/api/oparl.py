@@ -273,7 +273,8 @@ def serialize_meeting(api, meeting):
             "cancelled": meeting.cancelled,
             "start": iso(meeting.start),
             "end": iso(meeting.end),
-            "organization": [api.obj_url("organization", meeting.organization_id)],
+            # Gemeinsame Sitzung (Issue #317): federführendes Gremium zuerst, dann die weiteren Gremien
+            "organization": [api.obj_url("organization", org_id) for org_id in meeting.participating_organization_ids],
             # Ergebnisprotokoll: öffentliche Fassung der Niederschrift (Issue #318)
             "resultsProtocol": serialize_file(api, protocol_file) if protocol_file is not None else None,
             "auxiliaryFile": [serialize_file(api, f) for f in files],
@@ -474,6 +475,7 @@ def _public_files_qs():
 
 def _prepare_meetings(qs, tenant):
     return qs.select_related("protocol__public_file__meeting").prefetch_related(
+        "joint_organizations",
         Prefetch(
             "agenda_items",
             queryset=pub.visible_agenda_items(tenant).select_related("consultation__paper").order_by("order", "number"),

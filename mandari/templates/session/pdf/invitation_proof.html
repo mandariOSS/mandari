@@ -8,11 +8,11 @@ Rückmeldung mit Zeitstempel und Herkunft. Absagegründe gehören bewusst nicht 
     <h1>Ladungsnachweis</h1>
 
     <table class="meta-table">
-        <tr><td><strong>Gremium:</strong></td><td>{{ meeting.organization.name }}</td></tr>
+        <tr><td><strong>{% if meeting.is_joint %}Gremien:{% else %}Gremium:{% endif %}</strong></td><td>{{ meeting.organizations_label }}</td></tr>
         <tr><td><strong>Sitzung:</strong></td><td>{{ meeting.name }}</td></tr>
         <tr><td><strong>Termin:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr</td></tr>
         {% if location %}<tr><td><strong>Ort:</strong></td><td>{{ location }}</td></tr>{% endif %}
-        <tr><td><strong>Ladungsfrist:</strong></td><td>{{ meeting.organization.invitation_period_days }} Tage (Ladung bis {{ meeting.invitation_deadline|date:"d.m.Y" }})</td></tr>
+        <tr><td><strong>Ladungsfrist:</strong></td><td>{{ meeting.invitation_period_days }} Tage (Ladung bis {{ meeting.invitation_deadline|date:"d.m.Y" }})</td></tr>
         <tr><td><strong>Erstladung:</strong></td><td>{% if meeting.invitation_sent_at %}versandt am {{ meeting.invitation_sent_at|date:"d.m.Y, H:i" }} Uhr{% else %}noch nicht versandt{% endif %}</td></tr>
     </table>
 

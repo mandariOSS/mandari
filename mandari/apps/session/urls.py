@@ -12,6 +12,7 @@ from .api import oparl as oparl_api_views
 from .api import views as api_views
 from .views import approvals as approval_views
 from .views import invitation_responses as invitation_response_views
+from .views import leitstelle as leitstelle_views
 
 app_name = "session"
 
@@ -21,6 +22,18 @@ urlpatterns = [
         "invite/<str:token>/",
         views.InvitationAcceptView.as_view(),
         name="invitation_accept",
+    ),
+    # Leitstelle einer Mandantengruppe (Issue #317) – vor den Mandanten-Routen, „leitstelle“ ist
+    # als Mandanten-Slug reserviert (apps/session/middleware.py: RESERVED_SLUGS)
+    path(
+        "leitstelle/<slug:group_slug>/",
+        leitstelle_views.LeitstelleOverviewView.as_view(),
+        name="leitstelle",
+    ),
+    path(
+        "leitstelle/<slug:group_slug>/suche/",
+        leitstelle_views.LeitstelleSearchView.as_view(),
+        name="leitstelle_search",
     ),
     # Dashboard
     path(

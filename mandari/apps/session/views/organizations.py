@@ -18,6 +18,7 @@ from django.views.generic import (
 )
 
 from ..models import (
+    SessionMeeting,
     SessionOrganization,
     SessionPaper,
     SessionPerson,
@@ -112,7 +113,10 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
         )
 
         # Recent meetings
-        context["recent_meetings"] = org.meetings.order_by("-start")[:5]
+        # Auch gemeinsame Sitzungen, an denen das Gremium beteiligt ist (Issue #317)
+        context["recent_meetings"] = (
+            SessionMeeting.objects.filter(SessionMeeting.organization_q(org)).distinct().order_by("-start")[:5]
+        )
 
         # Recent papers
         context["recent_papers"] = SessionPaper.objects.filter(

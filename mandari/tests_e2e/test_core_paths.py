@@ -154,6 +154,26 @@ class TestSessionPortal:
             _assert_axe_clean(axe(), name)
         screenshot("session-dashboard")
 
+    def test_leitstelle_barrierefrei(
+        self, page: Any, goto: Any, login: Any, session_user: Any, axe: Any, screenshot: Any, dark_mode: Any
+    ) -> None:
+        """Leitstellen-Übersicht einer Mandantengruppe (Issue #317): axe ohne schwere Befunde, Screenshots hell/dunkel."""
+        from apps.session.models import SessionTenant, SessionTenantGroup, SessionTenantGroupMembership
+
+        su, password = session_user
+        gruppe = SessionTenantGroup.objects.create(name="E2E-Bezirke", slug="e2e-bezirke")
+        gruppe.tenant_links.create(tenant=su.tenant)
+        gruppe.tenant_links.create(tenant=SessionTenant.objects.create(name="E2E-Nachbarbezirk", slug="e2e-nachbar"))
+        SessionTenantGroupMembership.objects.create(group=gruppe, user=su.user)
+        login(su.user.email, password)
+        goto("/session/leitstelle/e2e-bezirke/")
+        expect(page.get_by_test_id("leitstelle-tabelle")).to_contain_text("E2E-Nachbarbezirk")
+        _assert_axe_clean(axe(), "Leitstelle")
+        screenshot("session-leitstelle")
+        dark_mode(True)
+        screenshot("session-leitstelle-dunkel")
+        dark_mode(False)
+
 
 class TestInsightPortal:
     def test_startseite_barrierefrei(self, page: Any, goto: Any, axe: Any, screenshot: Any) -> None:

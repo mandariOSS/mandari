@@ -45,7 +45,8 @@
                         {{ meeting.name }}
                     </h1>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        {{ meeting.organization.name }}
+                        {{ meeting.organizations_label }}
+                        {% if meeting.is_joint %}<c-ui.badge color="blue" icon="users" class="ml-1">Gemeinsame Sitzung</c-ui.badge>{% endif %}
                     </p>
                 </div>
                 {% if "edit_meetings" in permission_checker.permissions %}
@@ -302,13 +303,15 @@
                     </dd>
                 </div>
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400">Gremium</dt>
+                    <dt class="text-gray-500 dark:text-gray-400">{% if meeting.is_joint %}Gremien (gemeinsame Sitzung){% else %}Gremium{% endif %}</dt>
+                    {% for org in meeting.participating_organizations %}
                     <dd class="font-medium text-gray-900 dark:text-white mt-1">
-                        <a href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=meeting.organization.id %}"
+                        <a href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=org.id %}"
                            class="text-primary-600 dark:text-primary-400 hover:underline">
-                            {{ meeting.organization.name }}
-                        </a>
+                            {{ org.name }}
+                        </a>{% if meeting.is_joint and forloop.first %} <span class="text-xs font-normal text-gray-500 dark:text-gray-400">(federführend)</span>{% endif %}
                     </dd>
+                    {% endfor %}
                 </div>
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400">Datum & Zeit</dt>

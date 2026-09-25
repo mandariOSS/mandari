@@ -1,0 +1,75 @@
+{% comment %}
+Seitenleiste der Leitstelle (Issue #317): Kopf mit Gruppe, Navigation und die Mandanten der Gruppe.
+Links in einen Mandanten nur bei eigener Mitgliedschaft – sonst „kein Zugang“.
+{% endcomment %}
+{% partialdef header %}
+<div class="session-org-header">
+    <a href="{% url 'session:leitstelle' group_slug=group.slug %}" class="session-org-logo has-fallback"
+       aria-label="Leitstelle {{ group.name }}">
+        <i data-lucide="radar" class="w-5 h-5" aria-hidden="true"></i>
+    </a>
+    <div class="session-org-info">
+        <div class="session-org-name">{{ group.name }}</div>
+        <div class="session-org-type">{% if membership.sees_worklists %}Leitstelle{% else %}Leitstelle · Kennzahlen{% endif %}</div>
+    </div>
+</div>
+{% endpartialdef %}
+
+{% partialdef nav %}
+{% with current_url=request.resolver_match.url_name %}
+<a href="{% url 'session:leitstelle' group_slug=group.slug %}"
+   class="session-nav-item {% if current_url == 'leitstelle' %}active{% endif %}"
+   :title="sidebarCollapsed ? 'Übersicht' : ''">
+    <i data-lucide="layout-dashboard"></i>
+    <span class="nav-label">Übersicht</span>
+</a>
+{% if membership.sees_worklists %}
+<a href="{% url 'session:leitstelle_search' group_slug=group.slug %}"
+   class="session-nav-item {% if current_url == 'leitstelle_search' %}active{% endif %}"
+   :title="sidebarCollapsed ? 'Suche' : ''">
+    <i data-lucide="search"></i>
+    <span class="nav-label">Suche in allen Mandanten</span>
+</a>
+{% endif %}
+
+<div class="session-nav-section"><span class="nav-label">Mandanten der Gruppe</span></div>
+{% for access in accesses %}
+{% if access.dashboard_url %}
+<a href="{{ access.dashboard_url }}" class="session-nav-item" title="{{ access.tenant.name }}">
+    <i data-lucide="building-2" class="flex-none"></i>
+    <span class="nav-label truncate">{{ access.tenant.name }}</span>
+</a>
+{% else %}
+<div class="session-nav-item cursor-default" title="{{ access.tenant.name }}: kein Zugang – keine eigene Mitgliedschaft in diesem Mandanten">
+    <i data-lucide="lock" class="flex-none"></i>
+    <span class="nav-label truncate">{{ access.tenant.name }} <span class="text-xs">(kein Zugang)</span></span>
+</div>
+{% endif %}
+{% empty %}
+<p class="px-5 py-2 text-xs text-gray-500 dark:text-gray-400 nav-label">Der Gruppe ist noch kein Mandant zugeordnet.</p>
+{% endfor %}
+
+{% if user_leitstellen|length > 1 %}
+<div class="session-nav-section"><span class="nav-label">Weitere Leitstellen</span></div>
+{% for leitstelle in user_leitstellen %}{% if leitstelle.slug != group.slug %}
+<a href="{% url 'session:leitstelle' group_slug=leitstelle.slug %}" class="session-nav-item" title="{{ leitstelle.name }}">
+    <i data-lucide="radar" class="flex-none"></i>
+    <span class="nav-label truncate">{{ leitstelle.name }}</span>
+</a>
+{% endif %}{% endfor %}
+{% endif %}
+{% endwith %}
+{% endpartialdef %}
+
+{% partialdef search %}
+{% if membership.sees_worklists %}
+<form method="get" action="{% url 'session:leitstelle_search' group_slug=group.slug %}" class="hidden md:block" role="search">
+    <div class="relative">
+        <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        <input type="search" name="q" value="{{ raw_query|default:'' }}" placeholder="Alle Mandanten…"
+               minlength="2" maxlength="100" aria-label="In allen Mandanten der Gruppe suchen"
+               class="w-44 lg:w-56 pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+    </div>
+</form>
+{% endif %}
+{% endpartialdef %}

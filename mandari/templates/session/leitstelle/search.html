@@ -1,0 +1,56 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Suche der Leitstelle über Titel und Nummern aller Mandanten der Gruppe (Issue #317). Nichtöffentliches
+nur aus Mandanten, in denen die Person selbst das Sichtrecht hat; Links nur bei eigener Mitgliedschaft.
+{% endcomment %}
+
+{% block title %}Suche · Leitstelle {{ group.name }} | mandari{% endblock %}
+{% block meta_description %}Leitstelle {{ group.name }}: Suche{% endblock %}
+{% block sidebar_header %}{% include "session/leitstelle/_sidebar.html#header" %}{% endblock %}
+{% block sidebar_nav %}{% include "session/leitstelle/_sidebar.html#nav" %}{% endblock %}
+{% block topbar_search %}{% endblock %}
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm" aria-label="Brotkrumen">
+    <a href="{% url 'session:leitstelle' group_slug=group.slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Leitstelle</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Suche</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<c-layout.page-header title="Suche in allen Mandanten" subtitle="{{ group.name }} · Titel und Nummern von Vorlagen, Sitzungen und Tagesordnungspunkten" />
+
+<form method="get" class="mb-6 flex flex-col sm:flex-row gap-3" role="search">
+    <label for="leitstelle-q" class="sr-only">Suchbegriff</label>
+    <input type="search" id="leitstelle-q" name="q" value="{{ raw_query }}" minlength="2" maxlength="100" autofocus
+           placeholder="z. B. Drucksachennummer oder Stichwort"
+           class="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500">
+    <c-ui.button type="submit" icon="search">Suchen</c-ui.button>
+</form>
+
+{% if too_short %}
+<c-ui.alert variant="warning" class="mb-6">Bitte geben Sie mindestens zwei Zeichen ein.</c-ui.alert>
+{% endif %}
+
+{% if query %}
+<p class="mb-4 text-sm text-gray-600 dark:text-gray-400" data-testid="leitstelle-treffer">
+    {{ result.total }} Treffer für „{{ query }}“. Je Art höchstens {{ search_limit }} Treffer; Nichtöffentliches nur aus
+    Mandanten, in denen Sie selbst das Sichtrecht haben.
+</p>
+<div class="space-y-6">
+    <c-ui.card title="Vorlagen" subtitle="{{ result.papers|length }} Treffer" padding="none">
+        {% include "session/leitstelle/_rows.html" with rows=result.papers empty="Keine Vorlagen gefunden." date_label="vom" %}
+    </c-ui.card>
+    <c-ui.card title="Sitzungen" subtitle="{{ result.meetings|length }} Treffer" padding="none">
+        {% include "session/leitstelle/_rows.html" with rows=result.meetings empty="Keine Sitzungen gefunden." date_label="am" %}
+    </c-ui.card>
+    <c-ui.card title="Tagesordnungspunkte und Beschlüsse" subtitle="{{ result.items|length }} Treffer" padding="none">
+        {% include "session/leitstelle/_rows.html" with rows=result.items empty="Keine Tagesordnungspunkte gefunden." date_label="Sitzung am" %}
+    </c-ui.card>
+</div>
+{% elif not too_short %}
+<c-ui.empty-state icon="search" title="Suche über alle Mandanten der Gruppe">
+    Gesucht wird in Betreff und Nummer der Vorlagen, im Namen der Sitzungen sowie in Betreff und Beschlussnummer der Tagesordnungspunkte.
+</c-ui.empty-state>
+{% endif %}
+{% endblock %}

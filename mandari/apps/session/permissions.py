@@ -18,6 +18,7 @@ from django.http import Http404
 
 USER_TENANTS_MAX_AGE = 600
 USER_TENANTS_SESSION_KEY = "session_user_tenants"
+USER_GROUPS_SESSION_KEY = "session_user_leitstellen"
 
 #: Kontrollrechte (Issue #221): Protokoll einsehen bzw. exportieren und prüfen. Funktionstrennung:
 #: Sie sind nicht in der Administrator-Vollmacht enthalten und werden je Rolle vergeben.
@@ -48,6 +49,32 @@ def user_tenants(request: Any) -> list[dict[str, str]]:
         ]
         eintrag = {"u": str(user.pk), "t": jetzt, "list": liste}
         request.session[USER_TENANTS_SESSION_KEY] = eintrag
+    return list(eintrag["list"])
+
+
+def user_leitstellen(request: Any) -> list[dict[str, str]]:
+    """
+    Leitstellen (Mandantengruppen) des angemeldeten Nutzers für den Link in der Seitenleiste (Issue #317).
+
+    Zwischengespeichert wie :func:`user_tenants` – die Seitenleiste kostet keine zusätzliche Abfrage.
+    Der Link ist nur ein Wegweiser: Die Übersicht prüft die Mitgliedschaft bei jedem Aufruf selbst.
+    """
+    user = request.user
+    jetzt = time.time()
+    eintrag = request.session.get(USER_GROUPS_SESSION_KEY)
+    if (
+        not isinstance(eintrag, dict)
+        or eintrag.get("u") != str(user.pk)
+        or jetzt - float(eintrag.get("t", 0)) > USER_TENANTS_MAX_AGE
+    ):
+        liste = [
+            {"slug": slug, "name": name}
+            for slug, name in user.session_group_memberships.filter(is_active=True, group__is_active=True)
+            .order_by("group__name")
+            .values_list("group__slug", "group__name")
+        ]
+        eintrag = {"u": str(user.pk), "t": jetzt, "list": liste}
+        request.session[USER_GROUPS_SESSION_KEY] = eintrag
     return list(eintrag["list"])
 
 
@@ -242,6 +269,8 @@ class SessionMixin(LoginRequiredMixin):
         context["permission_checker"] = checker
         # Mandantenwechsel (z. B. Bezirke mit gemeinsamer Leitstelle): aktive Mandanten des Nutzers
         context["user_tenants"] = user_tenants(self.request)
+        # Leitstellen-Übersicht (Issue #317): nur ein Wegweiser, der Zugriff wird dort selbst geprüft
+        context["user_leitstellen"] = user_leitstellen(self.request)
 
         # Arbeitsvorrat-Badge (Issue #33): Anzahl zu prüfender Vorlagen
         if checker.has_permission("approve_papers"):

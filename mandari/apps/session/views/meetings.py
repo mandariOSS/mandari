@@ -5,7 +5,10 @@ Session views.
 Provides views for the Session RIS administration interface.
 """
 
+import contextlib
+
 from django.contrib import messages
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.urls import reverse
 from django.views.generic import (
@@ -22,10 +25,25 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..services import joint_meeting_service
 
 # =============================================================================
 # MEETINGS
 # =============================================================================
+
+
+def _joint_selected(form) -> set[str]:
+    """Gewählte weitere Gremien als Zeichenketten (Formular-Vorbelegung, Issue #317)."""
+    return {str(value) for value in (form["joint_organizations"].value() or [])}
+
+
+def _joint_valid(form) -> bool:
+    """Das federführende Gremium ist nicht zugleich weiteres Gremium der gemeinsamen Sitzung."""
+    lead = form.cleaned_data.get("organization")
+    if lead is not None and lead in form.cleaned_data.get("joint_organizations", []):
+        form.add_error("joint_organizations", "Das federführende Gremium ist bereits beteiligt – bitte abwählen.")
+        return False
+    return True
 
 
 class MeetingListView(SessionViewMixin, ListView):
@@ -39,16 +57,20 @@ class MeetingListView(SessionViewMixin, ListView):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        qs = qs.select_related("organization").order_by("-start")
+        # Gemeinsame Sitzungen (Issue #317) vorab markieren – weitere Gremien nur für diese nachladen
+        qs = SessionMeeting.with_joint_flag(qs.select_related("organization")).order_by("-start")
 
         # Ö/NÖ: Nichtöffentliche Sitzungen nur für Berechtigte
         if not self.has_permission("view_non_public_meetings"):
             qs = qs.filter(is_public=True)
 
-        # Filter by organization
+        # Filter nach Gremium: federführend oder als weiteres Gremium beteiligt (Issue #317)
         org_id = self.request.GET.get("organization")
         if org_id:
-            qs = qs.filter(organization_id=org_id)
+            organization = None
+            with contextlib.suppress(ValueError, DjangoValidationError):
+                organization = SessionOrganization.objects.filter(tenant=self.session_tenant, pk=org_id).first()
+            qs = qs.filter(SessionMeeting.organization_q(organization)).distinct() if organization else qs.none()
 
         # Filter by state
         state = self.request.GET.get("state")
@@ -71,12 +93,17 @@ class MeetingListView(SessionViewMixin, ListView):
         # Search
         search = self.request.GET.get("q")
         if search:
-            qs = qs.filter(Q(name__icontains=search) | Q(organization__name__icontains=search))
+            qs = qs.filter(
+                Q(name__icontains=search)
+                | Q(organization__name__icontains=search)
+                | Q(joint_organizations__name__icontains=search)
+            ).distinct()
 
         return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        joint_meeting_service.prefetch_joint(context["meetings"])
         context["organizations"] = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         ).order_by("name")
@@ -104,7 +131,8 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         # Ö/NÖ: Nichtöffentliche Sitzungen nur für Berechtigte
         if not self.has_permission("view_non_public_meetings"):
             qs = qs.filter(is_public=True)
-        return qs.select_related("organization", "created_by__user")
+        # Gemeinsame Sitzung (Issue #317): weitere Gremien nur laden, wenn es welche gibt
+        return SessionMeeting.with_joint_flag(qs.select_related("organization", "created_by__user"))
 
     def get_context_data(self, **kwargs):
         from ..services import agenda_service
@@ -194,6 +222,7 @@ class MeetingCreateView(SessionViewMixin, CreateView):
     fields = [
         "name",
         "organization",
+        "joint_organizations",
         "start",
         "end",
         "location",
@@ -209,9 +238,19 @@ class MeetingCreateView(SessionViewMixin, CreateView):
         form.fields["organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         ).exclude(organization_type="department")
+        form.fields["joint_organizations"].queryset = joint_meeting_service.selectable_organizations(
+            self.session_tenant
+        )
         return form
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["joint_selected"] = _joint_selected(context["form"])
+        return context
+
     def form_valid(self, form):
+        if not _joint_valid(form):
+            return self.form_invalid(form)
         form.instance.tenant = self.session_tenant
         form.instance.created_by = self.session_user
 
@@ -255,6 +294,7 @@ class MeetingUpdateView(SessionViewMixin, UpdateView):
     fields = [
         "name",
         "organization",
+        "joint_organizations",
         "start",
         "end",
         "location",
@@ -280,9 +320,19 @@ class MeetingUpdateView(SessionViewMixin, UpdateView):
         form.fields["organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         ).exclude(organization_type="department")
+        form.fields["joint_organizations"].queryset = joint_meeting_service.selectable_organizations(
+            self.session_tenant
+        )
         return form
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["joint_selected"] = _joint_selected(context["form"])
+        return context
+
     def form_valid(self, form):
+        if not _joint_valid(form):
+            return self.form_invalid(form)
         messages.success(self.request, "Sitzung wurde aktualisiert.")
         return super().form_valid(form)
 

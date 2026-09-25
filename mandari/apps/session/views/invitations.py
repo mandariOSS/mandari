@@ -58,7 +58,7 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
                 "letter_recipients": [r for r in recipients if r["channel"] == "letter"],
                 "invitation_deadline": meeting.invitation_deadline,
                 "invitation_overdue": meeting.invitation_overdue,
-                "invitation_period_days": meeting.organization.invitation_period_days,
+                "invitation_period_days": meeting.invitation_period_days,
                 "dispatches": meeting.invitation_dispatches.select_related("sent_by__user").prefetch_related(
                     "recipients"
                 ),

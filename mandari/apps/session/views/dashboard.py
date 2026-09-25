@@ -21,6 +21,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..services import joint_meeting_service
 
 # =============================================================================
 # DASHBOARD
@@ -52,7 +53,8 @@ class DashboardView(SessionViewMixin, TemplateView):
         # Fristwarnung Ladung (Issue #29): kommende Sitzungen ohne versandte
         # Einladung — „Ladung muss bis TT.MM. raus" (überfällige zuerst)
         if self.has_permission("view_meetings"):
-            pending_invitations = (
+            # Gemeinsame Sitzungen (Issue #317): längste Ladungsfrist der beteiligten Gremien
+            pending_invitations = SessionMeeting.with_joint_flag(
                 SessionMeeting.objects.filter(
                     tenant=tenant,
                     start__gte=timezone.now(),
@@ -65,7 +67,9 @@ class DashboardView(SessionViewMixin, TemplateView):
             )
             if not self.has_permission("view_non_public_meetings"):
                 pending_invitations = pending_invitations.filter(is_public=True)
-            warnings = sorted(pending_invitations[:20], key=lambda m: m.invitation_deadline)
+            candidates = list(pending_invitations[:20])
+            joint_meeting_service.prefetch_joint(candidates)
+            warnings = sorted(candidates, key=lambda m: m.invitation_deadline)
             context["invitation_warnings"] = warnings
             context["invitation_overdue_count"] = sum(1 for m in warnings if m.invitation_overdue)
 

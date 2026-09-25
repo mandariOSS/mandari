@@ -124,7 +124,7 @@
                     {% endif %}
                 </div>
                 <p class="text-sm text-gray-500 dark:text-gray-400">
-                    <span class="font-medium">{{ meeting.organization.name }}</span>
+                    <span class="font-medium">{{ meeting.organizations_label }}</span>{% if meeting.is_joint %} (gemeinsame Sitzung){% endif %}
                     &middot; {{ meeting.start|date:"d.m.Y" }} um {{ meeting.start|date:"H:i" }} Uhr
                     {% if meeting.location %}&middot; {{ meeting.location }}{% endif %}
                 </p>

@@ -13,6 +13,7 @@ vorgeführt wird – jede Rolle in einem eigenen Browser-Kontext:
    Dazu Beschlusskontrolle (überfällige Frist intern, Umsetzungsstand öffentlich) und Sitzungsgeld:
    Die Verwaltung darf ihre eigenen Positionen nicht genehmigen.
 5. Die Leitstelle genehmigt das Sitzungsgeld und wechselt über „Mandant wechseln“ in Mandant B.
+6. Die Leitstelle öffnet die Übersicht beider Bezirke und die gemeinsame Sitzung zweier Ausschüsse.
 
 Auf keiner besuchten Seite darf eine unbehandelte JavaScript-Ausnahme oder ein Serverfehler
 auftreten. WebSocket-Verbindungen (Editor-Kollaboration) scheitern gegen den WSGI-Testserver
@@ -39,6 +40,7 @@ from apps.session.models import (
     SessionAgendaItem,
     SessionAllowance,
     SessionApplication,
+    SessionMeeting,
     SessionOrganization,
     SessionPaper,
 )
@@ -250,5 +252,18 @@ def test_drehbuch(live_server: Any, praesentation: None, neue_seite: Any) -> Non
     expect(leitstelle.locator(".session-org-name")).to_have_text(drehbuch.MANDANT_B_NAME)
     bildschirmfoto(leitstelle, "5-mandant-b")
 
-    # --- 6. Keine JS-Ausnahmen und keine Serverfehler auf den besuchten Seiten ---------------
+    # --- 6. Leitstellen-Übersicht beider Bezirke und gemeinsame Sitzung (Issue #317) ----------
+    leitstelle.get_by_role("link", name=f"Leitstelle {drehbuch.GRUPPE_NAME}").click()
+    leitstelle.wait_for_url(re.compile(rf"/session/leitstelle/{drehbuch.GRUPPE_SLUG}/$"))
+    wait_for_bundle(leitstelle)
+    expect(leitstelle.get_by_test_id("leitstelle-vorlagen")).to_contain_text(drehbuch.VORLAGE_LEITSTELLE.name)
+    expect(leitstelle.get_by_test_id("leitstelle-tabelle")).to_contain_text(drehbuch.MANDANT_B_NAME)
+    bildschirmfoto(leitstelle, "6-leitstelle")
+    gemeinsam = SessionMeeting.objects.get(tenant__slug=A, name=drehbuch.SITZUNG_GEMEINSAM)
+    leitstelle.goto(f"{basis}/session/{A}/meetings/{gemeinsam.id}/")
+    wait_for_bundle(leitstelle)
+    expect(leitstelle.locator("main")).to_contain_text("Gemeinsame Sitzung")
+    expect(leitstelle.locator("main")).to_contain_text(drehbuch.GREMIUM_BAU)
+
+    # --- 7. Keine JS-Ausnahmen und keine Serverfehler auf den besuchten Seiten ---------------
     assert not beobachter.probleme, "\n".join(beobachter.probleme)

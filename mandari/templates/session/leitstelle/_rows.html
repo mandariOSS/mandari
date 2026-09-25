@@ -1,0 +1,41 @@
+{% comment %}
+Liste der Leitstelle (Issue #317). Erwartet: rows (leitstelle_service.Row), empty (Text ohne Einträge),
+optional total (Gesamtzahl über alle Mandanten) und date_label.
+Nichtöffentliches ohne Sichtrecht erscheint als „Nichtöffentlich“ ohne Titel, Nummer und Gremium;
+ohne Mitgliedschaft im Mandanten (oder ohne Recht auf die Zielseite) gibt es keinen Link.
+{% endcomment %}
+{% if rows %}
+<ul class="divide-y divide-gray-100 dark:divide-gray-700">
+    {% for row in rows %}
+    <li class="px-6 py-3 flex items-start gap-3">
+        <div class="min-w-0 flex-1">
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ row.tenant.short_name|default:row.tenant.name }}{% if row.reference %} · {{ row.reference }}{% endif %}</p>
+            {% if row.hidden %}
+            <p class="text-sm text-gray-600 dark:text-gray-300 italic">
+                <i data-lucide="lock" class="w-3.5 h-3.5 inline -mt-0.5" aria-hidden="true"></i> {{ row.title }}
+            </p>
+            {% elif row.url %}
+            <a href="{{ row.url }}" class="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">{{ row.title }}</a>
+            {% else %}
+            <p class="text-sm font-medium text-gray-900 dark:text-white">{{ row.title }}</p>
+            {% endif %}
+            {% if row.detail %}<p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ row.detail }}</p>{% endif %}
+        </div>
+        <div class="flex-none text-right space-y-1">
+            {% if row.due %}
+            <p class="text-xs {% if row.overdue %}text-red-600 dark:text-red-400 font-semibold{% else %}text-amber-700 dark:text-amber-400{% endif %}">
+                {% if row.overdue %}überfällig seit{% else %}bis{% endif %} {{ row.due|date:"d.m.Y" }}
+            </p>
+            {% endif %}
+            {% if row.when %}<p class="text-xs text-gray-500 dark:text-gray-400">{{ date_label|default:"seit" }} {{ row.when|date:"d.m.Y" }}</p>{% endif %}
+            {% if not row.url %}<c-ui.badge icon="lock" title="Kein Zugang: Links führen nur in Mandanten, in denen Sie selbst Mitglied mit passendem Recht sind">kein Zugang</c-ui.badge>{% endif %}
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% if total and total > rows|length %}
+<p class="px-6 py-2 text-xs text-gray-500 dark:text-gray-400">{{ rows|length }} von {{ total }} angezeigt.</p>
+{% endif %}
+{% else %}
+<p class="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">{{ empty }}</p>
+{% endif %}

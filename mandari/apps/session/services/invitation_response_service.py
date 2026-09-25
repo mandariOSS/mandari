@@ -262,12 +262,20 @@ def record_response(
 
 
 def substitute_memberships(meeting: SessionMeeting, person: SessionPerson) -> list[Any]:
-    """Aktive Stellvertretungen einer Person im Gremium der Sitzung."""
-    return [
-        membership
-        for membership in attendance_service.active_memberships(meeting).filter(substitute_for=person)
-        if membership.person_id != person.pk
-    ]
+    """
+    Aktive Stellvertretungen einer Person im Gremium der Sitzung.
+
+    Bei gemeinsamen Sitzungen (Issue #317) zählen alle beteiligten Gremien; wer dort mehrfach als
+    Stellvertretung eingetragen ist, wird nur einmal benachrichtigt.
+    """
+    result: list[Any] = []
+    seen: set[Any] = set()
+    for membership in attendance_service.active_memberships(meeting).filter(substitute_for=person):
+        if membership.person_id == person.pk or membership.person_id in seen:
+            continue
+        seen.add(membership.person_id)
+        result.append(membership)
+    return result
 
 
 def notify_substitutes(attendance: SessionAttendance) -> SubstituteOutcome:
