@@ -724,6 +724,14 @@ def portal_invitations(person: SessionPerson) -> list[PortalInvitation]:
     return list(grouped.values())
 
 
+class PortalResponseError(Exception):
+    """Rückmeldung im Portal nicht möglich; ``message`` ist ein fester Text für die Oberfläche."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 def respond_via_portal(
     person: SessionPerson, recipient: SessionInvitationRecipient, form: ResponseForm
 ) -> ResponseResult | None:
@@ -731,17 +739,17 @@ def respond_via_portal(
     Rückmeldung aus mandari Work: bestätigt den Empfang aller Versände der Sitzung an die Person.
 
     Raises:
-        ValueError: unbekannte Aktion oder Sitzung nicht mehr offen
+        PortalResponseError: unbekannte Aktion oder Sitzung nicht mehr offen (Meldung für die Oberfläche)
     """
     meeting = recipient.dispatch.meeting
     if not is_open_for_responses(meeting):
-        raise ValueError("Die Sitzung hat bereits begonnen oder ist abgesagt.")
+        raise PortalResponseError("Die Sitzung hat bereits begonnen oder ist abgesagt.")
     if form.action == "acknowledge":
         acknowledge_meeting(person, meeting, via="portal")
         return None
     decision = form.decision
     if decision is None:
-        raise ValueError("Unbekannte Aktion.")
+        raise PortalResponseError("Unbekannte Aktion.")
     result = record_response(
         meeting,
         person,

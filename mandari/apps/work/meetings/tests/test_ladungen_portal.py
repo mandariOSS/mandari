@@ -134,6 +134,16 @@ def test_ladung_im_portal_bestaetigen_und_absagen(portal: Portal) -> None:
     assert pdf.status_code == 200 and pdf["Content-Type"] == "application/pdf"
 
 
+def test_nach_sitzungsbeginn_keine_rueckmeldung_im_portal(portal: Portal) -> None:
+    recipient = _versenden(portal)
+    SessionMeeting.objects.filter(pk=portal.meeting.pk).update(start=timezone.now() - timedelta(minutes=1))
+
+    response = portal.client.post(_url(portal, f"{recipient.id}/rueckmeldung/"), {"action": "confirm"}, follow=True)
+
+    assert "bereits begonnen" in response.content.decode()
+    assert not SessionAttendance.objects.filter(person=portal.person).exists()
+
+
 def test_fremde_ladungen_bleiben_unsichtbar(portal: Portal) -> None:
     _versenden(portal)
     other = SessionPerson.objects.create(

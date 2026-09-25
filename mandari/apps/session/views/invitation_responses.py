@@ -16,6 +16,7 @@ from typing import Any, cast
 from django.contrib import messages
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -119,7 +120,7 @@ class InvitationResponseView(View):
             )
         else:
             return self._page(request, check, error="Unbekannte Aktion.")
-        return redirect(f"{request.path}?gespeichert=1")
+        return redirect(f"{reverse('session_invitation_response', kwargs={'token': token})}?gespeichert=1")
 
 
 # =============================================================================

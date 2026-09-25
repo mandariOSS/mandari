@@ -64,8 +64,8 @@ class SessionInvitationRespondView(WorkViewMixin, View):
         form = invitation_response_service.parse_response_form(request.POST)
         try:
             result = invitation_response_service.respond_via_portal(person, recipient, form)
-        except ValueError as exc:
-            messages.error(request, str(exc))
+        except invitation_response_service.PortalResponseError as exc:
+            messages.error(request, exc.message)
             return redirect("work:session_invitations", org_slug=org_slug)
         if result is None:
             messages.success(request, "Empfang bestätigt.")
