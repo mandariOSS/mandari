@@ -103,6 +103,11 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "bbox_west",
         "osm_relation_id",
         "ags",
+        # OParlBody: automatische Geo-Zuordnung (Django-managed, resolve_body_geodata, Issue #351)
+        "rgs",
+        "is_non_territorial",
+        "territory_parent_id",
+        "territory_set_manually",
         # OParlBody: person photo scraping configuration (Django-managed)
         "person_photo_url_template",
         "person_photo_id_pattern",

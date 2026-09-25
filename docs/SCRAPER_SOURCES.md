@@ -397,3 +397,16 @@ seit Issue #122; die Kommune muss nichts freischalten.
 4. Nach dem ersten inkrementellen Lauf im Admin prüfen: `oparl_version = 1.0`,
    `sync_config.modified_since_unsupported_hosts` enthält den Host, im
    SyncLog stehen nur noch wenige neue/aktualisierte Objekte.
+
+5. Geo-Daten zuordnen (OSM-Grenze, Gemeindeschlüssel, Kartenausschnitt,
+   Straßen, Adressen; Zweckverbände und Gesellschaften als „keine
+   Gebietskörperschaft“), erst als Probelauf:
+
+   ```bash
+   python manage.py resolve_body_geodata --source <mandant>.gremien.info --dry-run
+   python manage.py resolve_body_geodata --source <mandant>.gremien.info
+   ```
+
+   more! rubin liefert keinen Gemeindeschlüssel; die Ortsgemeinden werden per
+   Name im Gebiet der Verbandsgemeinde gefunden. Mehrdeutiges steht danach im
+   Admin unter „Geo-Vorschläge“. Einzelheiten: `docs/INSIGHT_GEO.md`.

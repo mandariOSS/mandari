@@ -20,18 +20,13 @@ Verwendung:
 
 import time
 
-import httpx
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
 from insight_core.models import Address, OParlBody, Street
 from insight_core.services.gazetteer import normalize_house_number, normalize_street_name
-
-OVERPASS_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-]
+from insight_core.services.overpass import run_overpass
 
 # Straßenklassen, die für Ortsbezüge in Vorlagen relevant sind
 HIGHWAY_FILTER = (
@@ -318,30 +313,5 @@ class Command(BaseCommand):
         return self._run_overpass(query, timeout)
 
     def _run_overpass(self, query: str, timeout: int):
-        """Overpass-Abfrage mit Endpoint-Fallback und Retry bei 429/504."""
-        for endpoint in OVERPASS_ENDPOINTS:
-            for attempt in range(3):
-                try:
-                    response = httpx.post(
-                        endpoint,
-                        data={"data": query},
-                        timeout=float(timeout + 30),
-                        headers={"User-Agent": "Mandari/1.0 (https://mandari.de)"},
-                    )
-                    if response.status_code == 200:
-                        return response.json().get("elements", [])
-                    if response.status_code in (429, 504):
-                        wait = 15 * (attempt + 1)
-                        self.stdout.write(
-                            self.style.WARNING(
-                                f"  Overpass {response.status_code} — warte {wait}s (Versuch {attempt + 1}/3)..."
-                            )
-                        )
-                        time.sleep(wait)
-                        continue
-                    self.stdout.write(self.style.WARNING(f"  Overpass HTTP {response.status_code} ({endpoint})"))
-                    break
-                except httpx.HTTPError as e:
-                    self.stdout.write(self.style.WARNING(f"  Overpass-Fehler ({endpoint}): {e}"))
-                    time.sleep(5)
-        return None
+        """Overpass-Abfrage mit Endpoint-Fallback und Retry bei 429/504 (``services/overpass.py``)."""
+        return run_overpass(query, timeout, log=lambda message: self.stdout.write(self.style.WARNING(message)))

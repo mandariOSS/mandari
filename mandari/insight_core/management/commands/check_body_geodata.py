@@ -4,9 +4,10 @@ Management Command: Kommunen ohne OSM-Zuordnung bzw. mit Geo-Lücken auflisten.
 
 Zeigt je Kommune, was für die Georeferenzierung fehlt: OSM-Relation-ID, AGS,
 Bounding-Box, Straßenverzeichnis, Adressen. Gebiete oberhalb der Gemeinde (AGS kürzer
-als acht Stellen) brauchen nur Relation und Bounding-Box. Es werden keine Daten geändert –
-die Pflege erfolgt im Admin (Kommune → „Geografische Daten“) und anschließend mit
-``fetch_osm_geodata`` sowie ``import_streets --with-addresses`` (Issue #54).
+als acht Stellen) brauchen nur Relation und Bounding-Box; Körperschaften ohne eigenes Gebiet
+(Zweckverband, GmbH …) sind keine Lücke. Es werden keine Daten geändert – zuordnen und laden
+erledigt ``resolve_body_geodata`` (Issue #351), Einzelfälle der Admin (Kommune → „Geografische
+Daten“, Geo-Vorschläge).
 
 Verwendung:
     python manage.py check_body_geodata           # nur Kommunen mit Lücken
@@ -19,7 +20,9 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandParser
 
-from insight_core.services.geo_coverage import geo_status_for_bodies
+from insight_core.models import OParlBodyGeoSuggestion
+from insight_core.services.body_geo_resolver import body_label
+from insight_core.services.geo_coverage import BodyGeoStatus, geo_status_for_bodies
 
 
 class Command(BaseCommand):
@@ -34,16 +37,24 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Alle Kommunen sind vollständig an OSM angebunden."))
             return
 
-        header = f"{'Kommune':<40} {'Ebene':<8} {'OSM-Rel.':>10} {'AGS':>9} {'BBox':>5} {'Straßen':>8} {'Adressen':>9}  fehlt"
+        def level(status: BodyGeoStatus) -> str:
+            if status.non_territorial:
+                return "o. Gebiet"
+            if status.regional:
+                return "Region"
+            # Verbandsgemeinde, Amt, Samtgemeinde: nur 9-stelliger Regionalschlüssel
+            return "Verband" if not status.body.ags and len(status.body.rgs or "") == 9 else "Gemeinde"
+
+        header = f"{'Kommune':<40} {'Ebene':<9} {'OSM-Rel.':>10} {'AGS/RGS':>12} {'BBox':>5} {'Straßen':>8} {'Adressen':>9}  fehlt"
         self.stdout.write(header)
         self.stdout.write("-" * len(header))
         for status in statuses:
             body = status.body
             line = (
-                f"{(body.display_name or body.short_name or body.name)[:40]:<40} "
-                f"{('Region' if status.regional else 'Gemeinde'):<8} "
+                f"{body_label(body)[:40]:<40} "
+                f"{level(status):<9} "
                 f"{(str(body.osm_relation_id) if body.osm_relation_id else '—'):>10} "
-                f"{(body.ags or '—'):>9} "
+                f"{(body.ags or body.rgs or '—'):>12} "
                 f"{('ja' if status.has_bbox else '—'):>5} "
                 f"{status.street_count:>8} "
                 f"{status.address_count:>9}  "
@@ -53,6 +64,12 @@ class Command(BaseCommand):
 
         with_gaps = sum(1 for s in statuses if s.missing)
         self.stdout.write("")
-        self.stdout.write(f"{with_gaps} Kommune(n) mit Lücken. Pflege: Admin → Kommune → „Geografische Daten“,")
-        self.stdout.write("danach fetch_osm_geodata --all und import_streets --all --with-addresses.")
+        self.stdout.write(
+            f"{with_gaps} Kommune(n) mit Lücken. Zuordnen und laden: resolve_body_geodata --source <Quelle>"
+        )
+        self.stdout.write("(erst mit --dry-run); Einzelfälle im Admin → Kommune → „Geografische Daten“.")
+        suggested = OParlBodyGeoSuggestion.objects.values("body_id").distinct().count()
+        if suggested:
+            self.stdout.write(f"{suggested} Kommune(n) mit Zuordnungsvorschlag: Admin → Geo-Vorschläge.")
         self.stdout.write("Regionalebene (AGS kürzer als 8 Stellen): nur OSM-Relation und Bounding-Box nötig.")
+        self.stdout.write("Körperschaften ohne eigenes Gebiet (Zweckverband, GmbH …) sind keine Lücke.")

@@ -90,7 +90,7 @@ def test_parse_address_element_handles_nodes_ways_and_gaps() -> None:
 
 def test_import_with_addresses_is_idempotent(geo_body: OParlBody, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr("insight_core.management.commands.import_streets.httpx.post", _fake_post(calls))
+    monkeypatch.setattr("insight_core.services.overpass.httpx.post", _fake_post(calls))
     monkeypatch.setattr("insight_core.management.commands.import_streets.time.sleep", lambda _seconds: None)
 
     out = StringIO()
@@ -115,7 +115,7 @@ def test_import_with_addresses_is_idempotent(geo_body: OParlBody, monkeypatch: p
 
 def test_import_without_flag_skips_addresses(geo_body: OParlBody, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr("insight_core.management.commands.import_streets.httpx.post", _fake_post(calls))
+    monkeypatch.setattr("insight_core.services.overpass.httpx.post", _fake_post(calls))
     call_command("import_streets", body="beispielstadt", stdout=StringIO())
     assert len(calls) == 1
     assert Address.objects.count() == 0
@@ -132,7 +132,7 @@ def test_regional_body_is_skipped(geo_body: OParlBody, monkeypatch: pytest.Monke
         ags="053",
     )
     calls: list[str] = []
-    monkeypatch.setattr("insight_core.management.commands.import_streets.httpx.post", _fake_post(calls))
+    monkeypatch.setattr("insight_core.services.overpass.httpx.post", _fake_post(calls))
     monkeypatch.setattr("insight_core.management.commands.import_streets.time.sleep", lambda _seconds: None)
 
     out = StringIO()

@@ -6,11 +6,15 @@ Verwendet Django Unfold für modernes Admin-Interface.
 """
 
 import threading
+from typing import Any
 
 from django.contrib import admin, messages
+from django.db.models import QuerySet
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
@@ -23,6 +27,7 @@ from .models import (
     InsightSubscriber,
     OParlAgendaItem,
     OParlBody,
+    OParlBodyGeoSuggestion,
     OParlConsultation,
     OParlFile,
     OParlLegislativeTerm,
@@ -276,6 +281,8 @@ class GeoCoverageListFilter(admin.SimpleListFilter):
             ("ohne_ags", "ohne AGS"),
             ("ohne_strassen", "ohne Straßenverzeichnis"),
             ("vollstaendig", "vollständig"),
+            ("mit_vorschlag", "mit Geo-Vorschlag"),
+            ("ohne_gebiet", "keine Gebietskörperschaft"),
         ]
 
     def queryset(self, request, queryset):
@@ -294,7 +301,41 @@ class GeoCoverageListFilter(admin.SimpleListFilter):
             return queryset.filter(streets__isnull=True)
         if value == "vollstaendig":
             return queryset.exclude(bodies_without_osm_filter()).filter(streets__isnull=False).distinct()
+        if value == "mit_vorschlag":
+            return queryset.filter(geo_suggestions__isnull=False).distinct()
+        if value == "ohne_gebiet":
+            return queryset.filter(is_non_territorial=True)
         return queryset
+
+
+def _osm_relation_link(relation_id: int | None) -> str:
+    """Link auf die Relation bei openstreetmap.org (neuer Tab)."""
+    if not relation_id:
+        return "—"
+    return format_html(
+        '<a href="https://www.openstreetmap.org/relation/{}" target="_blank" rel="noopener">{}</a>',
+        relation_id,
+        relation_id,
+    )
+
+
+class GeoSuggestionInline(TabularInline):
+    """Offene Geo-Vorschläge einer Kommune (übernehmen über den Änderungslink, Issue #351)."""
+
+    model = OParlBodyGeoSuggestion
+    extra = 0
+    show_change_link = True
+    fields = ["name", "admin_level", "ags", "rgs", "osm_link", "reason"]
+    readonly_fields = fields
+    verbose_name = "Geo-Vorschlag"
+    verbose_name_plural = "Geo-Vorschläge (übernehmen über den Änderungslink)"
+
+    def has_add_permission(self, request: HttpRequest, obj: OParlBody | None = None) -> bool:
+        return False
+
+    @admin.display(description="OSM")
+    def osm_link(self, obj: OParlBodyGeoSuggestion) -> str:
+        return _osm_relation_link(obj.osm_relation_id)
 
 
 @admin.register(OParlBody)
@@ -372,6 +413,8 @@ class OParlBodyAdmin(ModelAdmin):
     ]
     list_filter = ["is_listed", GeoCoverageListFilter, "source", "classification", "deleted"]
     search_fields = ["name", "short_name", "display_name"]
+    autocomplete_fields = ["territory_parent"]
+    inlines = [GeoSuggestionInline]
     readonly_fields = [
         "id",
         "external_id",
@@ -417,11 +460,15 @@ class OParlBodyAdmin(ModelAdmin):
                     ("bbox_north", "bbox_south"),
                     ("bbox_east", "bbox_west"),
                     "osm_relation_id",
-                    "ags",
+                    ("ags", "rgs"),
+                    ("is_non_territorial", "territory_parent"),
+                    "territory_set_manually",
                 ),
                 "description": (
-                    "Zentrum und Bounding Box der Kommune für die Kartenanzeige. "
-                    "OSM Relation ID findest du auf https://www.openstreetmap.org/ - Suche nach der Stadt und kopiere die Relation ID aus der URL."
+                    "Zentrum und Bounding Box der Kommune für die Kartenanzeige. Zuordnen und laden "
+                    "übernimmt „resolve_body_geodata --body <ID>“ (OSM-Grenze per AGS oder Name, danach "
+                    "Kartenausschnitt, Straßen und Adressen); mehrdeutige Treffer stehen unten als Geo-Vorschlag. "
+                    "Von Hand: Relation-ID aus der URL der Grenze auf https://www.openstreetmap.org/ kopieren."
                 ),
             },
         ),
@@ -447,6 +494,13 @@ class OParlBodyAdmin(ModelAdmin):
         ),
     )
 
+    def save_model(self, request: HttpRequest, obj: OParlBody, form: Any, change: bool) -> None:
+        # Gebietsangabe von Hand: resolve_body_geodata ändert sie danach nicht mehr (Issue #351)
+        territory_fields = {"is_non_territorial", "territory_parent"}
+        if territory_fields & set(form.changed_data) and "territory_set_manually" not in form.changed_data:
+            obj.territory_set_manually = True
+        super().save_model(request, obj, form, change)
+
     @admin.display(boolean=True, description="Geo")
     def has_geo_data(self, obj):
         return bool(obj.latitude and obj.longitude and obj.bbox_north)
@@ -463,6 +517,71 @@ class OParlBodyAdmin(ModelAdmin):
     @admin.display(boolean=True, description="Logo")
     def has_logo(self, obj):
         return bool(obj.logo)
+
+
+@admin.register(OParlBodyGeoSuggestion)
+class OParlBodyGeoSuggestionAdmin(ModelAdmin):
+    """
+    Geo-Vorschläge aus ``resolve_body_geodata`` bestätigen (Issue #351).
+
+    Die Namenssuche übernimmt nur eindeutige Treffer. Mehrdeutige oder ungefähre Treffer landen
+    hier; „Vorschlag übernehmen“ setzt Relation und fehlende Schlüssel an der Kommune und verwirft
+    deren übrige Vorschläge. Kartenausschnitt, Straßen und Adressen lädt danach
+    ``resolve_body_geodata --body <ID>``.
+    """
+
+    list_display = ["body", "name", "admin_level", "ags", "rgs", "osm_link", "reason", "created_at"]
+    list_filter = ["body__source", "admin_level"]
+    list_select_related = ["body"]
+    search_fields = ["name", "body__name"]
+    readonly_fields = ["body", "osm_relation_id", "name", "admin_level", "ags", "rgs", "reason", "created_at"]
+    ordering = ["body__name", "name"]
+    actions = ["apply_selected"]
+    actions_row = ["apply_row"]
+    actions_detail = ["apply_detail"]
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    @admin.display(description="OSM")
+    def osm_link(self, obj: OParlBodyGeoSuggestion) -> str:
+        return _osm_relation_link(obj.osm_relation_id)
+
+    def _apply(self, request: HttpRequest, suggestion: OParlBodyGeoSuggestion) -> OParlBody:
+        from .services.body_geo_resolver import apply_suggestion
+
+        body = apply_suggestion(suggestion)
+        messages.success(
+            request,
+            f"„{body.name}“: Relation {body.osm_relation_id} übernommen. Kartenausschnitt, Straßen und "
+            f"Adressen laden: python manage.py resolve_body_geodata --body {body.id}",
+        )
+        return body
+
+    @admin.action(description="Ausgewählte Vorschläge übernehmen")
+    def apply_selected(self, request: HttpRequest, queryset: QuerySet[OParlBodyGeoSuggestion]) -> None:
+        per_body: dict[Any, list[OParlBodyGeoSuggestion]] = {}
+        for suggestion in queryset.select_related("body"):
+            per_body.setdefault(suggestion.body_id, []).append(suggestion)
+        for suggestions in per_body.values():
+            if len(suggestions) > 1:
+                messages.error(
+                    request,
+                    f"„{suggestions[0].body.name}“: {len(suggestions)} Vorschläge gewählt – bitte genau einen.",
+                )
+                continue
+            self._apply(request, suggestions[0])
+
+    @action(description="Übernehmen", url_path="uebernehmen")
+    def apply_row(self, request: HttpRequest, object_id: str) -> HttpResponse:
+        self._apply(request, get_object_or_404(OParlBodyGeoSuggestion.objects.select_related("body"), pk=object_id))
+        return redirect(reverse("admin:insight_core_oparlbodygeosuggestion_changelist"))
+
+    @action(description="Vorschlag übernehmen", url_path="detail-uebernehmen")
+    def apply_detail(self, request: HttpRequest, object_id: str) -> HttpResponse:
+        suggestion = get_object_or_404(OParlBodyGeoSuggestion.objects.select_related("body"), pk=object_id)
+        body = self._apply(request, suggestion)
+        return redirect(reverse("admin:insight_core_oparlbody_change", args=[body.pk]))
 
 
 @admin.register(OParlOrganization)
