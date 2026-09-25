@@ -275,6 +275,48 @@ class OParlBody(SourceDeletionModel):
         verbose_name="AGS",
         help_text="Amtlicher Gemeindeschlüssel (8-stellig, z.B. 05515000 für Münster)",
     )
+    # Amtlicher Regionalschlüssel (Issue #351). Verbandsgemeinden, Ämter und Samtgemeinden haben
+    # keinen Gemeindeschlüssel, nur diesen (9 Stellen); ihre Gemeinden beginnen mit ihm.
+    rgs = models.CharField(
+        max_length=12,
+        blank=True,
+        null=True,
+        verbose_name="Regionalschlüssel",
+        help_text=(
+            "Amtlicher Regionalschlüssel (12-stellig, bei Verbandsgemeinden, Ämtern und Samtgemeinden "
+            "9-stellig). Wird von resolve_body_geodata aus OParl oder OSM übernommen."
+        ),
+    )
+    # Körperschaften ohne eigenes Gebiet (Zweckverband, GmbH, Waldgemarkung …, Issue #351).
+    # DB-seitige Defaults: Der Ingestor legt Kommunen per SQLAlchemy an und kennt die Spalten nicht.
+    is_non_territorial = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Keine Gebietskörperschaft",
+        help_text=(
+            "Zweckverband, Gesellschaft, Anstalt, Waldgemarkung o. Ä. ohne eigenes Gebiet: keine OSM-Grenze, "
+            "kein Straßenverzeichnis, erscheint nicht als Lücke. Die Karte zeigt das Gebiet der "
+            "übergeordneten Körperschaft. Verbandsgemeinden sind Gebietskörperschaften."
+        ),
+    )
+    territory_parent = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="non_territorial_members",
+        verbose_name="Gebiet von",
+        help_text="Übergeordnete Körperschaft, deren Gebiet für die Karte gilt (nur ohne eigenes Gebiet).",
+    )
+    territory_set_manually = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Gebietsangabe von Hand gesetzt",
+        help_text=(
+            "Wird beim Ändern von „Keine Gebietskörperschaft“ oder „Gebiet von“ im Admin gesetzt. "
+            "resolve_body_geodata ändert die beiden Angaben dann nicht mehr."
+        ),
+    )
 
     # Sichtbarkeit im Portal
     is_listed = models.BooleanField(
@@ -1233,6 +1275,46 @@ class Address(models.Model):
 
     def __str__(self) -> str:
         return f"{self.street} {self.house_number} ({self.body.get_display_name()})"
+
+
+class OParlBodyGeoSuggestion(models.Model):
+    """Vorschlag für die OSM-Grenze einer Kommune, wenn die automatische Suche nicht eindeutig war.
+
+    ``resolve_body_geodata`` rät nicht: Findet die Namenssuche mehrere oder nur ungefähre Treffer,
+    legt sie je Kandidat einen Vorschlag an. Im Admin übernimmt „Vorschlag übernehmen“ Relation und
+    Schlüssel an die Kommune und verwirft die übrigen Vorschläge (Issue #351).
+    """
+
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="geo_suggestions",
+        verbose_name="Kommune",
+    )
+    osm_relation_id = models.BigIntegerField(verbose_name="OSM-Relation")
+    name = models.CharField(max_length=255, verbose_name="Name in OSM")
+    admin_level = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        verbose_name="Verwaltungsebene",
+        help_text="OSM admin_level: 6 Kreis/kreisfreie Stadt, 7 Verbandsgemeinde/Amt, 8 Gemeinde, 9–10 Ortsteil",
+    )
+    ags = models.CharField(max_length=8, blank=True, default="", verbose_name="AGS")
+    rgs = models.CharField(max_length=12, blank=True, default="", verbose_name="Regionalschlüssel")
+    reason = models.CharField(max_length=255, blank=True, default="", verbose_name="Herkunft")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "insight_body_geo_suggestions"
+        verbose_name = "Geo-Vorschlag"
+        verbose_name_plural = "Geo-Vorschläge"
+        ordering = ["body__name", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["body", "osm_relation_id"], name="uniq_geo_suggestion_body_rel"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} (Relation {self.osm_relation_id}) für {self.body.get_display_name()}"
 
 
 class PaperLocation(models.Model):

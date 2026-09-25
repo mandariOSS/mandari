@@ -9,6 +9,11 @@ AGS. Dieser Service listet Lücken; die Datenpflege selbst bleibt beim Betreiber
 
 Gebiete oberhalb der Gemeinde (Regierungsbezirk, Kreis; AGS kürzer als acht Stellen, siehe
 ``OParlBody.is_regional_level``) brauchen nur OSM-Relation und Bounding-Box.
+
+Körperschaften ohne eigenes Gebiet (``is_non_territorial``: Zweckverband, GmbH, Waldgemarkung …)
+sind keine Lücke. Verbandsgemeinden, Ämter und Samtgemeinden haben keinen Gemeindeschlüssel;
+bei ihnen genügt der Regionalschlüssel (``rgs``). Die Zuordnung übernimmt seit Issue #351
+``resolve_body_geodata``.
 """
 
 from __future__ import annotations
@@ -31,9 +36,12 @@ class BodyGeoStatus:
     street_count: int
     address_count: int
     regional: bool = False
+    non_territorial: bool = False
 
     @property
     def missing(self) -> list[str]:
+        if self.non_territorial:
+            return []  # kein eigenes Gebiet, keine Grenze – keine Lücke
         gaps: list[str] = []
         if not self.has_osm_relation:
             gaps.append("osm_relation_id")
@@ -74,11 +82,12 @@ def geo_status_for_bodies(only_gaps: bool = True) -> list[BodyGeoStatus]:
         status = BodyGeoStatus(
             body=body,
             has_osm_relation=bool(body.osm_relation_id),
-            has_ags=bool((body.ags or "").strip()),
+            has_ags=bool((body.ags or "").strip() or (body.rgs or "").strip()),
             has_bbox=bool(body.bbox_north and body.bbox_south and body.bbox_east and body.bbox_west),
             street_count=streets.get(body.id, 0),
             address_count=addresses.get(body.id, 0),
             regional=body.is_regional_level,
+            non_territorial=body.is_non_territorial,
         )
         if only_gaps and status.complete:
             continue
@@ -87,5 +96,9 @@ def geo_status_for_bodies(only_gaps: bool = True) -> list[BodyGeoStatus]:
 
 
 def bodies_without_osm_filter() -> Q:
-    """Q-Objekt „ohne OSM-Zuordnung“ (keine Relation-ID oder kein AGS) für Admin-Filter."""
-    return Q(osm_relation_id__isnull=True) | Q(ags__isnull=True) | Q(ags="")
+    """Q-Objekt „ohne OSM-Zuordnung“ (keine Relation-ID oder weder AGS noch RGS) für Admin-Filter.
+
+    Körperschaften ohne eigenes Gebiet zählen nicht dazu.
+    """
+    without_key = (Q(ags__isnull=True) | Q(ags="")) & (Q(rgs__isnull=True) | Q(rgs=""))
+    return (Q(osm_relation_id__isnull=True) | without_key) & Q(is_non_territorial=False)
