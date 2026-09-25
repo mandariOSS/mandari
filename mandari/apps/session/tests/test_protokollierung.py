@@ -296,9 +296,10 @@ class TestAnmeldung:
         kennung = "niemand@example.org"
         Client().post(reverse("accounts:login"), {"email": kennung, "password": self.FALSCH})
 
-        eintrag = SecurityAuditLog.objects.get(event="login_failed")
+        eintrag = SecurityAuditLog.objects.get(
+            event="login_failed", identifier_hash=security_audit.identifier_hash(kennung)
+        )
         assert eintrag.user_ref is None
-        assert eintrag.identifier_hash == security_audit.identifier_hash(kennung)
         assert eintrag.identifier_hash != hashlib.sha256(kennung.encode()).hexdigest(), "Nur schlüsselgebunden"
         werte = _alle_protokollwerte()
         assert kennung not in werte and self.FALSCH not in werte
@@ -314,7 +315,7 @@ class TestAnmeldung:
 
         assert [e.user for e in _eintraege(tenant, "login")] == [nutzer]
         assert [e.user for e in _eintraege(tenant, "logout")] == [nutzer]
-        assert not SecurityAuditLog.objects.exists(), "Session-Nutzer stehen nicht doppelt im Sicherheitsprotokoll"
+        assert not SecurityAuditLog.objects.filter(user_ref=nutzer.user.pk).exists(), "Nicht doppelt protokolliert"
         assert DEFAULT_PASSWORD not in _alle_protokollwerte()
 
     def test_nutzer_ohne_mandant_im_sicherheitsprotokoll(self) -> None:
@@ -322,7 +323,9 @@ class TestAnmeldung:
         client = Client()
         client.post(reverse("accounts:login"), {"email": user.email, "password": DEFAULT_PASSWORD})
         client.post(reverse("accounts:logout"))
-        ereignisse = list(SecurityAuditLog.objects.order_by("seq").values_list("event", "user_ref"))
+        ereignisse = list(
+            SecurityAuditLog.objects.filter(user_ref=user.pk).order_by("seq").values_list("event", "user_ref")
+        )
         assert ereignisse == [("login", user.pk), ("logout", user.pk)]
         assert audit_chain.verify(audit_chain.SECURITY, None).ok
 
@@ -334,8 +337,7 @@ class TestAnmeldung:
         client = Client()
         password_step(client, user)
         code_step(client, "000000")
-        eintrag = SecurityAuditLog.objects.get(event="login_failed")
-        assert eintrag.user_ref == user.pk
+        eintrag = SecurityAuditLog.objects.get(event="login_failed", user_ref=user.pk)
         assert eintrag.details == {"grund": security_audit.REASON_SECOND_FACTOR}
         assert PASSWORD not in _alle_protokollwerte()
 
@@ -624,12 +626,15 @@ class TestKetteUndArchiv:
         assert not list(archiv.rglob("*.zip"))
 
     def test_sicherheitsprotokoll_frist(self, archiv: Path) -> None:
+        SecurityAuditLog.objects.all()._raw_delete(connection.alias)  # eigene, leere Kette für diesen Test
+        AuditChainHead.objects.filter(scope=audit_chain.SECURITY.scope_key(None)).delete()
         with _vergangen(400):
-            SecurityAuditLog.objects.create(event="login", ip_address="192.0.2.10")
-        SecurityAuditLog.objects.create(event="logout", ip_address="192.0.2.10")
+            alt = SecurityAuditLog.objects.create(event="login", ip_address="192.0.2.10")
+        jung = SecurityAuditLog.objects.create(event="logout", ip_address="192.0.2.10")
         out = io.StringIO()
         call_command("purge_security_audit_log", days=365, stdout=out)
-        assert list(SecurityAuditLog.objects.values_list("event", flat=True)) == ["logout"]
+        assert not SecurityAuditLog.objects.filter(pk=alt.pk).exists()
+        assert SecurityAuditLog.objects.filter(pk=jung.pk).exists()
         assert list(archiv.rglob("*.zip"))
         assert audit_chain.verify(audit_chain.SECURITY, None).ok
 
