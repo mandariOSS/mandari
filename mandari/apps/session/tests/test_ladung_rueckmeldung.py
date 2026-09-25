@@ -200,6 +200,21 @@ def test_zustellweg_brief_ohne_mail_mit_serienbrief(welt: Welt) -> None:
     assert recipient.status == "letter_sent" and recipient.sent_at is not None
 
 
+def test_zustellweg_im_personenformular(welt: Welt) -> None:
+    role = SessionRole.objects.create(tenant=welt.tenant, name="Stammdaten", can_manage_organizations=True)
+    welt.staff.roles.add(role)
+    url = f"/session/{welt.tenant.slug}/persons/create/"
+
+    ohne = welt.staff_client.post(url, {"given_name": "Ohne", "family_name": "Angabe", "is_active": "on"})
+    brief = welt.staff_client.post(
+        url, {"given_name": "Per", "family_name": "Post", "is_active": "on", "delivery_channel": "letter"}
+    )
+
+    assert ohne.status_code == 302 and brief.status_code == 302
+    assert SessionPerson.objects.get(family_name="Angabe").delivery_channel == "email"
+    assert SessionPerson.objects.get(family_name="Post").delivery_channel == "letter"
+
+
 # =============================================================================
 # Rückmeldelink
 # =============================================================================
