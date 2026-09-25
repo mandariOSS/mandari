@@ -76,6 +76,7 @@
                             {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
                             {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
                             {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+                            {% elif motion.status == 'adopted' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
                             {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
                             {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
                             {{ motion.get_status_display }}
@@ -133,15 +134,23 @@
                     <i data-lucide="panel-right" class="w-5 h-5"></i>
                 </button>
 
+                {% if ris_application and not is_guest %}
                 {% if can_submit_ris %}
-                {% if ris_application %}
                 <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
                    class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-100"
                    title="Status bei der Verwaltung">
                     <i data-lucide="landmark" class="w-4 h-4"></i>
-                    {{ ris_application.reference|default:"Eingereicht" }}
+                    {% include "work/motions/partials/_ris_reference.html" %}
                 </a>
-                {% elif motion.is_submittable %}
+                {% else %}
+                <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                      title="Stand bei der Verwaltung">
+                    <i data-lucide="landmark" class="w-4 h-4"></i>
+                    {% include "work/motions/partials/_ris_reference.html" %}
+                </span>
+                {% endif %}
+                {% elif can_submit_ris %}
+                {% if motion.is_submittable %}
                 <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
                    class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Bei Verwaltung einreichen">
                     <i data-lucide="send" class="w-5 h-5"></i>

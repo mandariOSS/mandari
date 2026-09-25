@@ -543,6 +543,10 @@ class FolderGuestShare(models.Model):
         return levels
 
 
+class StatusTransitionError(ValueError):
+    """Statuswechsel, der in ``Motion.VALID_TRANSITIONS`` nicht vorgesehen ist."""
+
+
 class Motion(EncryptionMixin, models.Model):
     """
     Motion/Antrag/Anfrage document.
@@ -579,6 +583,9 @@ class Motion(EncryptionMixin, models.Model):
         ("external_review", "Externe Absprache"),  # Coalition review
         ("at_admin", "Bei Verwaltung"),
         ("on_agenda", "Auf Tagesordnung"),
+        # Ergebnis der Beratung (Rückmeldung der Verwaltung, Issue #316)
+        ("adopted", "Beschlossen"),
+        ("withdrawn", "Zurückgezogen"),
     ]
 
     # Geführte Pipeline (Reihenfolge für den Status-Tracker in der Übersicht).
@@ -596,20 +603,28 @@ class Motion(EncryptionMixin, models.Model):
 
     # Zentrale Übergangsmatrix: Status -> erlaubte Folgestatus.
     # Rücksprünge (z. B. zurück zu draft) sind bewusst erlaubt.
+    # Ergebnisse der Beratung (Beschlossen, Erledigt, Abgelehnt, Zurückgezogen) lassen sich zurück
+    # auf „Auf Tagesordnung“ setzen: Korrigiert die Verwaltung ein erfasstes Ergebnis, folgt die
+    # Rückmeldung über diesen Weg (Issue #316).
     VALID_TRANSITIONS = {
         "draft": ["internal_review", "archived"],
         "internal_review": ["external_review", "approved", "draft", "rejected"],
         "external_review": ["approved", "internal_review", "draft", "rejected"],
         "approved": ["submitted", "internal_review", "draft"],
-        "submitted": ["at_admin", "completed", "rejected", "approved"],
-        "at_admin": ["on_agenda", "completed", "rejected", "submitted"],
-        "on_agenda": ["completed", "rejected", "at_admin"],
+        "submitted": ["at_admin", "completed", "rejected", "withdrawn", "approved"],
+        "at_admin": ["on_agenda", "completed", "rejected", "withdrawn", "submitted"],
+        "on_agenda": ["adopted", "completed", "rejected", "withdrawn", "at_admin"],
+        "adopted": ["completed", "archived", "on_agenda"],
         "completed": ["archived", "on_agenda"],
-        "rejected": ["draft", "archived"],
+        "rejected": ["draft", "archived", "on_agenda"],
+        "withdrawn": ["draft", "archived", "on_agenda"],
         "archived": ["draft"],
         # Legacy-Status: Bestandsdokumente können in die neue Pipeline wechseln
         "review": ["internal_review", "draft", "approved", "rejected"],
     }
+
+    # Abgeschlossene Dokumente: keine Fristen-Erinnerungen, nicht „überfällig“
+    CLOSED_STATUSES = ("completed", "adopted", "rejected", "withdrawn", "archived", "deleted")
 
     # Status, in denen der Inhalt bearbeitet werden darf (Status-Sperre).
     # Alle anderen Status frieren die Bearbeitung ein — im HTTP-Editor UND
@@ -808,6 +823,15 @@ class Motion(EncryptionMixin, models.Model):
         blank=True,
         related_name="work_motion",
         verbose_name="Antrag bei der Verwaltung",
+    )
+    # Zuletzt aus der Rückmeldung der Verwaltung abgeleiteter Status (Issue #316). Der Work-Status
+    # folgt der Verwaltung nur, wenn sich dieser Stand ändert – eine Hand-Korrektur der Fraktion
+    # (z. B. „Erledigt“) bleibt stehen, bis in Session wieder etwas passiert.
+    administration_status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        blank=True,
+        verbose_name="Stand laut Verwaltung",
     )
     deleted_at = models.DateTimeField(
         blank=True,
@@ -1106,6 +1130,76 @@ class Motion(EncryptionMixin, models.Model):
         status_labels = dict(self.STATUS_CHOICES)
         return [(value, status_labels[value]) for value in self.VALID_TRANSITIONS.get(self.status, [])]
 
+    # -------------------------------------------------------------------------
+    # Status-Übergänge: einziger Weg, den Status zu ändern (Issue #316)
+    # -------------------------------------------------------------------------
+
+    def transition_to(self, new_status: str) -> None:
+        """
+        Einen Übergang der Übergangsmatrix ausführen und speichern.
+
+        Raises:
+            StatusTransitionError: Der Übergang ist in VALID_TRANSITIONS nicht vorgesehen.
+        """
+        if new_status not in self.VALID_TRANSITIONS.get(self.status, []):
+            labels = dict(self.STATUS_CHOICES)
+            raise StatusTransitionError(
+                f"Ungültiger Statusübergang von '{labels.get(self.status, self.status)}' "
+                f"zu '{labels.get(new_status, new_status)}'"
+            )
+        self.status = new_status
+        fields = ["status", "updated_at"]
+        if new_status == "submitted":
+            self.submitted_at = timezone.now()
+            fields.append("submitted_at")
+        self.save(update_fields=fields)
+
+    def transition_path(
+        self, target: str, *, via: tuple[str, ...] | set[str] | frozenset[str] = ()
+    ) -> list[str] | None:
+        """
+        Kürzeste Folge definierter Übergänge vom aktuellen Status zu ``target`` (ohne Startstatus).
+
+        Zwischenschritte sind nur über Status aus ``via`` erlaubt; ``None``, wenn es keinen Weg gibt.
+        """
+        if target == self.status:
+            return []
+        allowed = set(via) | {target}
+        previous: dict[str, str] = {}
+        queue = [self.status]
+        seen = {self.status}
+        while queue:
+            current = queue.pop(0)
+            for nxt in self.VALID_TRANSITIONS.get(current, []):
+                if nxt in seen or nxt not in allowed:
+                    continue
+                previous[nxt] = current
+                if nxt == target:
+                    path = [nxt]
+                    while previous.get(path[0]) not in (None, self.status):
+                        path.insert(0, previous[path[0]])
+                    return path
+                seen.add(nxt)
+                queue.append(nxt)
+        return None
+
+    def advance_to(self, target: str, *, via: tuple[str, ...] | set[str] | frozenset[str] = ()) -> list[str]:
+        """
+        Über definierte Übergänge zum Zielstatus wechseln (jeder Schritt einzeln geprüft und gespeichert).
+
+        Raises:
+            StatusTransitionError: Es gibt keinen Weg über die erlaubten Zwischenschritte.
+        """
+        path = self.transition_path(target, via=via)
+        if path is None:
+            labels = dict(self.STATUS_CHOICES)
+            raise StatusTransitionError(
+                f"Kein Übergang von '{labels.get(self.status, self.status)}' zu '{labels.get(target, target)}'"
+            )
+        for step in path:
+            self.transition_to(step)
+        return path
+
     def get_pipeline_steps(self) -> list[dict]:
         """
         Status-Tracker für die Übersicht: Pipeline-Schritte mit Füllstand.
@@ -1115,18 +1209,23 @@ class Motion(EncryptionMixin, models.Model):
         entsprechend markiert (state "rejected"/"off").
         """
         status_labels = dict(self.STATUS_CHOICES)
+        # „Beschlossen“ ist wie „Erledigt“ der letzte Schritt der Pipeline
+        pipeline_status = "completed" if self.status == "adopted" else self.status
         try:
-            current_index = self.PIPELINE_ORDER.index(self.status)
+            current_index = self.PIPELINE_ORDER.index(pipeline_status)
         except ValueError:
-            # Nicht auf der Pipeline (rejected, archived, legacy review)
+            # Nicht auf der Pipeline (rejected, withdrawn, archived, legacy review)
             current_index = -1
 
         steps = []
         for index, key in enumerate(self.PIPELINE_ORDER):
+            label = status_labels[key]
+            if key == "completed" and self.status == "adopted":
+                label = status_labels["adopted"]
             steps.append(
                 {
                     "key": key,
-                    "label": status_labels[key],
+                    "label": label,
                     "reached": current_index >= 0 and index <= current_index,
                     "current": index == current_index,
                 }
@@ -1138,7 +1237,7 @@ class Motion(EncryptionMixin, models.Model):
         """Zustand für den Tracker: 'on' (auf Pipeline), 'rejected' oder 'off'."""
         if self.status == "rejected":
             return "rejected"
-        if self.status in self.PIPELINE_ORDER:
+        if self.status in self.PIPELINE_ORDER or self.status == "adopted":
             return "on"
         return "off"
 
@@ -1147,7 +1246,7 @@ class Motion(EncryptionMixin, models.Model):
         """Frist überschritten und Dokument noch nicht abgeschlossen?"""
         if not self.due_date:
             return False
-        if self.status in ("completed", "rejected", "archived", "deleted"):
+        if self.status in self.CLOSED_STATUSES:
             return False
         return self.due_date < timezone.localdate()
 
@@ -1681,6 +1780,50 @@ class AdministrationConnection(models.Model):
         from apps.session.models import SessionAPIToken
 
         return SessionAPIToken.objects.filter(token=self.token_hash, tenant_id=self.tenant_id).first()
+
+
+class MotionAdministrationEvent(models.Model):
+    """
+    Bereits gemeldete Rückmeldung der Verwaltung zu einem eingereichten Antrag (Issue #316).
+
+    Der Schlüssel macht jede Meldung idempotent: „Beratung terminiert“ genau einmal je Termin (Sitzung,
+    in der die Vorlage beraten wird), jeder Antragsstatus und jedes Beratungsergebnis genau einmal –
+    egal, wie oft die Verwaltung die Station speichert, umsortiert oder neu nummeriert. Wird die Station
+    auf eine andere Sitzung verschoben, ist das ein neuer Termin. Gespeichert wird bewusst nur
+    der Schlüssel, kein Text: Die Anzeige in Work entsteht immer neu aus dem aktuellen, öffentlich
+    zulässigen Stand. Wird eine Beratung später nicht-öffentlich, bleibt hier nichts davon lesbar.
+    """
+
+    KIND_CHOICES = [
+        ("submitted", "Eingereicht"),
+        ("status", "Antragsstatus"),
+        ("paper", "Vorlagennummer"),
+        ("scheduled", "Beratung terminiert"),
+        ("result", "Beratungsergebnis"),
+        ("decision", "Beschluss"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    motion = models.ForeignKey(
+        Motion,
+        on_delete=models.CASCADE,
+        related_name="administration_events",
+        verbose_name="Dokument",
+    )
+    key = models.CharField(max_length=200, verbose_name="Schlüssel")
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, verbose_name="Art")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Gemeldet am")
+
+    class Meta:
+        verbose_name = "Rückmeldung der Verwaltung"
+        verbose_name_plural = "Rückmeldungen der Verwaltung"
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["motion", "key"], name="uniq_motion_administration_event"),
+        ]
+
+    def __str__(self):
+        return f"{self.motion_id}: {self.key}"
 
 
 def content_fingerprint(content: str | None) -> str:

@@ -13,10 +13,21 @@ RFC 9457, versionierte Pfade.
 | GET | `/api/v1/session/{tenant_slug}/papers/` | öffentlich; NÖ-Vorlagen samt Texten mit `view_non_public_papers` oder `can_read_papers` |
 | GET | `/api/v1/session/{tenant_slug}/applications/` | nur mit Recht `view_applications` |
 | POST | `/api/v1/session/{tenant_slug}/applications/submit/` | API-Token mit `can_submit_applications` |
+| GET | `/api/v1/session/{tenant_slug}/applications/{id}/feedback/` | nur das einreichende API-Token (bzw. ein Token derselben in Work verbundenen Organisation) |
 | GET | `/api/v1/session/openapi.json` | OpenAPI-3-Dokument |
 | GET | `/api/v1/session/docs` | Swagger UI (lokale Assets, kein CDN) |
 
 Listen unterstützen `limit` (1–200, Standard 100) und `offset`; `meta.total` ist die Gesamtzahl.
+
+### Rückmeldestand eines Antrags (Issue #316)
+
+`GET …/applications/{id}/feedback/` liefert Eingangsnummer und Status, die Vorlage (`converted`,
+`public`, `reference` nur bei veröffentlichter Vorlage), die Stationen der Beratungsfolge und den
+Beschluss. Es gelten die Ö/NÖ-Regeln der OParl-Schnittstelle: Eine nicht-öffentliche Station trägt
+nur `order`, `public: false` und `label: "nicht-öffentlich beraten"`; der Beschluss stammt nur aus
+einer öffentlichen, entscheidenden Station. Bearbeitungsnotizen und andere Interna der Verwaltung
+werden nie ausgeliefert. Anträge anderer Tokens bzw. Organisationen antworten mit 404. Die Antwort
+auf `…/applications/submit/` enthält die URL unter `feedback`.
 Öffentliche OParl-1.1-Daten liefert unverändert `/session/<slug>/api/oparl/` (`docs/SESSION_OPARL_API.md`).
 
 ## Authentifizierung

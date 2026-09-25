@@ -6,7 +6,6 @@ Provides views for the Session RIS administration interface.
 """
 
 from django.contrib import messages
-from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -24,6 +23,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
+from ..services.application_service import ConversionError, convert_to_paper, default_paper_type
 
 # =============================================================================
 # APPLICATIONS
@@ -150,7 +150,7 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
         context["application"] = application
         context["organizations"] = SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)
         context["paper_types"] = SessionPaper._meta.get_field("paper_type").choices
-        context["paper_type"] = self.PAPER_TYPE_FOR.get(application.application_type, "motion")
+        context["paper_type"] = default_paper_type(application)
         return context
 
     def post(self, request, *args, **kwargs):
@@ -160,63 +160,35 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
             tenant=self.session_tenant,
         )
 
-        existing = SessionPaper.objects.filter(tenant=self.session_tenant, source_application=application).first()
-        if existing is not None:
-            messages.info(request, f'Der Antrag wurde bereits in die Vorlage "{existing.reference}" umgewandelt.')
-            return redirect(
-                "session:paper_detail",
-                tenant_slug=self.session_tenant.slug,
-                paper_id=existing.id,
-            )
-
-        # Vorlage anlegen; die Nummer vergibt der Nummernkreis atomar beim Speichern (Issue #150)
+        # Ein Weg für Portal und Admin (Issue #316): Nummer aus dem Nummernkreis (Issue #150),
+        # Statuswechsel per Einzel-Speichern, damit die Rückmeldung an die Fraktion läuft.
         from ..services.numbering_service import NumberingError
 
         try:
-            with transaction.atomic():
-                paper = self._create_paper(request, application)
-        except NumberingError as exc:
+            paper, created = convert_to_paper(
+                application,
+                session_user=self.session_user,
+                name=request.POST.get("name") or "",
+                paper_type=request.POST.get("paper_type", ""),
+                main_organization_id=request.POST.get("main_organization") or None,
+            )
+        except (NumberingError, ConversionError) as exc:
             messages.error(request, f"Umwandlung nicht möglich: {exc}")
             return redirect(
                 "session:application_detail", tenant_slug=self.session_tenant.slug, application_id=application.id
             )
 
-        messages.success(
-            request,
-            f"Antrag wurde in eine Vorlage umgewandelt – {self.session_tenant.reference_label} {paper.display_reference}.",
-        )
+        if created:
+            messages.success(
+                request,
+                f"Antrag wurde in eine Vorlage umgewandelt – {self.session_tenant.reference_label} "
+                f"{paper.display_reference}.",
+            )
+        else:
+            messages.info(request, f'Der Antrag wurde bereits in die Vorlage "{paper.reference}" umgewandelt.')
 
         return redirect(
             "session:paper_detail",
             tenant_slug=self.session_tenant.slug,
             paper_id=paper.id,
         )
-
-    #: Antragsart → Vorlagenart (bestimmt den Nummernkreis, z. B. „AN/…“ für Anträge der Politik)
-    PAPER_TYPE_FOR = {"inquiry": "inquiry", "amendment": "amendment", "resolution": "resolution"}
-
-    def _create_paper(self, request, application):
-        # Titel und Vorlagenart aus dem Formular; ohne gültige Angabe gelten Antragstitel und -art
-        paper_type = request.POST.get("paper_type", "")
-        if paper_type not in {wert for wert, _ in SessionPaper._meta.get_field("paper_type").flatchoices}:
-            paper_type = self.PAPER_TYPE_FOR.get(application.application_type, "motion")
-        paper = SessionPaper.objects.create(
-            tenant=self.session_tenant,
-            name=(request.POST.get("name") or "").strip()[:500] or application.title,
-            paper_type=paper_type,
-            main_text=application.justification,
-            resolution_text=application.resolution_proposal,
-            is_public=True,
-            date=timezone.localdate(),
-            main_organization_id=request.POST.get("main_organization") or None,
-            source_application=application,
-            created_by=self.session_user,
-            # Ein angenommener Antrag der Politik ist sofort Drucksache und beratungsfähig –
-            # anders als eine Verwaltungsvorlage durchläuft er keinen Freigabelauf.
-            status="approved",
-            approved_by=self.session_user,
-            approved_at=timezone.now(),
-        )
-        application.status = "converted"
-        application.save(update_fields=["status", "updated_at"])
-        return paper

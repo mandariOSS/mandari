@@ -21,6 +21,7 @@ Kontext: motion_rows, folder_entries, organization sowie die Filtervariablen fü
                 {% endif %}
                 <h3 class="font-medium text-gray-900 dark:text-white text-sm truncate group-hover:text-primary-600">{{ motion.title }}</h3>
                 <p class="text-xs text-gray-500 mt-0.5">{{ motion.get_type_display }}{% if motion.folder %} · <i data-lucide="folder" class="w-3 h-3 inline-block"></i> {{ motion.folder.name }}{% endif %}</p>
+                {% if motion.administration_reference %}<p class="mt-1">{% include "work/motions/partials/_ris_list_chip.html" %}</p>{% endif %}
             </div>
             <div class="flex items-center gap-1 flex-shrink-0">
                 {% include "work/motions/partials/_folder_move_menu.html" %}

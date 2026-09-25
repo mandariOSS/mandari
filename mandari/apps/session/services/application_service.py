@@ -9,13 +9,90 @@ enabling political organizations to submit applications (Anträge) directly.
 from typing import Any
 from uuid import UUID
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 from apps.session.models import (
     SessionApplication,
     SessionOrganization,
+    SessionPaper,
     SessionTenant,
 )
+
+#: Antragsart → Vorlagenart (bestimmt den Nummernkreis, z. B. „AN/…“ für Anträge der Politik)
+PAPER_TYPE_FOR_APPLICATION = {"inquiry": "inquiry", "amendment": "amendment", "resolution": "resolution"}
+
+
+class ConversionError(ValueError):
+    """Umwandlung in eine Vorlage nicht möglich (Text ist für Nutzer:innen gedacht)."""
+
+
+def default_paper_type(application: SessionApplication) -> str:
+    return PAPER_TYPE_FOR_APPLICATION.get(application.application_type, "motion")
+
+
+def convert_to_paper(
+    application: SessionApplication,
+    *,
+    session_user: Any = None,
+    name: str = "",
+    paper_type: str = "",
+    main_organization_id: object = None,
+) -> tuple[SessionPaper, bool]:
+    """
+    Antrag in eine Vorlage umwandeln (Issue #316: ein Weg für Portal und Admin).
+
+    Ein angenommener Antrag der Politik ist sofort Drucksache und beratungsfähig: Die Vorlage wird
+    freigegeben und öffentlich angelegt, die Nummer vergibt der Nummernkreis atomar beim Speichern
+    (Issue #150). Der Antrag wechselt per Einzel-Speichern auf „In Vorlage umgewandelt“ – so laufen
+    Audit-Log und die Rückmeldung an die einreichende Fraktion über die Signale.
+
+    Returns:
+        (Vorlage, neu angelegt?) – ein bereits umgewandelter Antrag liefert seine Vorlage zurück.
+
+    Raises:
+        ConversionError: Federführendes Gremium gehört nicht zum Mandanten.
+        NumberingError: Der Nummernkreis kann keine Nummer vergeben.
+    """
+    tenant = application.tenant
+    existing = SessionPaper.objects.filter(tenant=tenant, source_application=application).first()
+    if existing is not None:
+        return existing, False
+
+    valid_types = {value for value, _ in SessionPaper._meta.get_field("paper_type").flatchoices}
+    if paper_type not in valid_types:
+        paper_type = default_paper_type(application)
+
+    main_organization = None
+    if main_organization_id:
+        try:
+            main_organization = SessionOrganization.objects.filter(pk=main_organization_id, tenant=tenant).first()
+        except (ValueError, ValidationError):
+            main_organization = None
+        if main_organization is None:
+            raise ConversionError("Das gewählte federführende Gremium wurde nicht gefunden.")
+
+    with transaction.atomic():
+        paper = SessionPaper.objects.create(
+            tenant=tenant,
+            name=(name or "").strip()[:500] or application.title,
+            paper_type=paper_type,
+            main_text=application.justification,
+            resolution_text=application.resolution_proposal,
+            is_public=True,
+            date=timezone.localdate(),
+            main_organization=main_organization,
+            source_application=application,
+            created_by=session_user,
+            status="approved",
+            approved_by=session_user,
+            approved_at=timezone.now(),
+        )
+        application.status = "converted"
+        application.save(update_fields=["status", "updated_at"])
+    return paper, True
+
 
 #: Antworttext der APIs bei abweichender Organisation (fester Text, keine Ausnahme-Details nach außen)
 SUBMITTING_ORGANIZATION_MISMATCH = (
@@ -124,6 +201,7 @@ class ApplicationService:
         is_urgent: bool = False,
         urgency_reason: str = "",
         deadline=None,
+        submitted_via_token=None,
     ) -> SessionApplication:
         """
         Submit a new application from Work module.
@@ -146,6 +224,7 @@ class ApplicationService:
             is_urgent: Whether this is urgent (optional)
             urgency_reason: Reason for urgency (optional)
             deadline: Requested decision deadline (optional)
+            submitted_via_token: SessionAPIToken der Einreichung (für den Abruf des Rückmeldestands)
 
         Returns:
             Created SessionApplication
@@ -199,6 +278,7 @@ class ApplicationService:
             is_urgent=is_urgent,
             urgency_reason=urgency_reason.strip() if urgency_reason else "",
             deadline=deadline,
+            submitted_via_token=submitted_via_token,
             status="submitted",
         )
 

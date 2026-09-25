@@ -10,7 +10,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.session.services.application_service import ApplicationService
 
-from .. import ris_submission
+from .. import administration_feedback, ris_submission
 from ..models import Motion
 
 APPLICATION_TYPE_CHOICES = [
@@ -60,7 +60,8 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
                 "block_reason": block_reason,
                 "can_manage_connection": self.membership.has_permission("faction.manage"),
                 "application": motion.session_application,
-                "timeline": ris_submission.consultation_timeline(motion.session_application),
+                # Öffentlich zulässiger Rückmeldestand der Verwaltung (Issue #316)
+                "feedback": administration_feedback.feedback_for(motion),
                 "application_type_choices": APPLICATION_TYPE_CHOICES,
                 "target_organizations": (
                     ApplicationService.get_target_organizations(connection.tenant) if connection else []

@@ -46,6 +46,17 @@ from .models import (
 # These are managed through the Session portal itself.
 
 
+def _save_each(queryset, **changes) -> int:
+    """Sammel-Aktion als Einzel-Speichern: Signale (Audit, Rückmeldungen) laufen für jedes Objekt."""
+    count = 0
+    for obj in queryset:
+        for field, value in changes.items():
+            setattr(obj, field, value)
+        obj.save(update_fields=[*changes, "updated_at"])
+        count += 1
+    return count
+
+
 # =============================================================================
 # TENANT ADMIN
 # =============================================================================
@@ -438,19 +449,22 @@ class SessionMeetingAdmin(ModelAdmin):
     def attendance_count(self, obj):
         return obj.attendances.count()
 
+    # Sammel-Aktionen speichern jede Sitzung einzeln statt per queryset.update(): Nur so laufen
+    # Audit-Log, OParl-Veröffentlichung und die Rückmeldung an einreichende Fraktionen (Issue #316).
+
     @admin.action(description="Als geplant markieren")
     def mark_scheduled(self, request, queryset):
-        count = queryset.update(meeting_state="scheduled", cancelled=False)
+        count = _save_each(queryset, meeting_state="scheduled", cancelled=False)
         messages.success(request, f"{count} Sitzung(en) als geplant markiert.")
 
     @admin.action(description="Als abgeschlossen markieren")
     def mark_completed(self, request, queryset):
-        count = queryset.update(meeting_state="completed")
+        count = _save_each(queryset, meeting_state="completed")
         messages.success(request, f"{count} Sitzung(en) als abgeschlossen markiert.")
 
     @admin.action(description="Absagen")
     def cancel_meetings(self, request, queryset):
-        count = queryset.update(cancelled=True)
+        count = _save_each(queryset, cancelled=True)
         messages.success(request, f"{count} Sitzung(en) abgesagt.")
 
 
@@ -659,43 +673,44 @@ class SessionApplicationAdmin(ModelAdmin):
             count += 1
         messages.success(request, f"{count} Antrag/Anträge als empfangen markiert.")
 
+    # Einzel-Speichern statt queryset.update(): Statuswechsel lösen Audit-Log und die Rückmeldung an
+    # die einreichende Fraktion aus – genau wie im Session-Portal (Issue #316).
+
     @admin.action(description="In Prüfung setzen")
     def mark_in_review(self, request, queryset):
-        count = queryset.filter(status__in=["submitted", "received"]).update(status="in_review")
+        count = _save_each(queryset.filter(status__in=["submitted", "received"]), status="in_review")
         messages.success(request, f"{count} Antrag/Anträge in Prüfung gesetzt.")
 
     @admin.action(description="Annehmen")
     def mark_accepted(self, request, queryset):
-        count = queryset.exclude(status__in=["accepted", "rejected", "withdrawn"]).update(status="accepted")
+        count = _save_each(
+            queryset.exclude(status__in=["accepted", "rejected", "withdrawn", "converted"]), status="accepted"
+        )
         messages.success(request, f"{count} Antrag/Anträge angenommen.")
 
     @admin.action(description="Ablehnen")
     def mark_rejected(self, request, queryset):
-        count = queryset.exclude(status__in=["accepted", "rejected", "withdrawn"]).update(status="rejected")
+        count = _save_each(
+            queryset.exclude(status__in=["accepted", "rejected", "withdrawn", "converted"]), status="rejected"
+        )
         messages.success(request, f"{count} Antrag/Anträge abgelehnt.")
 
     @action(description="Vorlage erstellen", url_path="create-paper")
     def create_paper_from_application(self, request, object_id):
-        """Create a Paper from this application."""
-        app = self.model.objects.get(pk=object_id)
+        """Vorlage über denselben Dienst wie das Session-Portal anlegen (Nummernkreis, Rückmeldung)."""
+        from apps.session.services.application_service import ConversionError, convert_to_paper
+        from apps.session.services.numbering_service import NumberingError
 
-        # Create paper from application
-        paper = SessionPaper.objects.create(
-            tenant=app.tenant,
-            name=app.title,
-            paper_type="motion",
-            main_text=f"{app.justification}\n\n---\n\n{app.resolution_proposal}",
-            main_organization=app.target_organization,
-            source_application=app,
-            is_public=False,
-            status="draft",
-        )
-
-        # Link application to paper
-        app.status = "accepted"
-        app.save()
-
-        messages.success(request, f"Vorlage '{paper.reference}' wurde aus dem Antrag erstellt.")
+        app = self.model.objects.select_related("tenant").get(pk=object_id)
+        try:
+            paper, created = convert_to_paper(app, main_organization_id=app.target_organization_id)
+        except (ConversionError, NumberingError) as exc:
+            messages.error(request, f"Umwandlung nicht möglich: {exc}")
+            return
+        if created:
+            messages.success(request, f"Vorlage '{paper.display_reference}' wurde aus dem Antrag erstellt.")
+        else:
+            messages.info(request, f"Der Antrag wurde bereits in die Vorlage '{paper.display_reference}' umgewandelt.")
         return
 
 

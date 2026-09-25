@@ -12,7 +12,7 @@
     "long_functions": 0
   },
   "motions": {
-    "orm_calls": 530,
+    "orm_calls": 528,
     "long_functions": 4
   },
   "notifications": {
@@ -20,7 +20,7 @@
     "long_functions": 0
   },
   "organization": {
-    "orm_calls": 161,
+    "orm_calls": 160,
     "long_functions": 0
   },
   "ris": {

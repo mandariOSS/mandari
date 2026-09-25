@@ -1976,6 +1976,16 @@ class SessionApplication(EncryptionMixin, models.Model):
         verbose_name="Einreichende Organisation",
         help_text="Fraktion/Partei, die den Antrag einreicht",
     )
+    # Einreichung per API-Token (Issue #316): Nur dieses Token (bzw. ein Token derselben verbundenen
+    # Organisation) darf den Rückmeldestand über die Session-API abrufen.
+    submitted_via_token = models.ForeignKey(
+        "SessionAPIToken",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Eingereicht mit API-Token",
+    )
     submitter_name = models.CharField(max_length=255, verbose_name="Name des Einreichers")
     submitter_email = models.EmailField(verbose_name="E-Mail des Einreichers")
     submitter_phone = models.CharField(max_length=50, blank=True, verbose_name="Telefon des Einreichers")

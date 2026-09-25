@@ -145,6 +145,13 @@ einfacheren Prozess annimmt, als die Praxis ihn hat. Am folgenreichsten ist **(c
 die Verknüpfung bleibt der Kreis zwischen Antrag und Beschlusskontrolle offen, und genau
 dieser geschlossene Kreis ist das Versprechen des Produkts.
 
+**Nachtrag 09/2026 (Issues #40, #316):** Digital eingereichte Anträge sind mit dem
+Verwaltungsvorgang verknüpft (`Motion.session_application`). Work zeigt Eingangsnummer,
+Drucksachennummer, die Stationen der Beratungsfolge mit Ergebnis (nicht-öffentliche nur als
+„nicht-öffentlich beraten“) und den Beschluss; die Zustände **Beschlossen** und **Zurückgezogen**
+unterscheiden Annahme, Ablehnung und Rücknahme. Damit sind (b) und (c) für eingereichte Anträge
+geschlossen, (a) bis auf die Verweisung. Details: `docs/WORK_SESSION_SUBMISSION.md`.
+
 ---
 
 ## 4. Abweichungen anderer Länder

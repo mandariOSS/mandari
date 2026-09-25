@@ -16,6 +16,7 @@ automatisch vom TOP zurück (Issues #31/#32).
 """
 
 from django.contrib import messages
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 
@@ -229,24 +230,27 @@ def schedule_consultation(view, request, consultation):
             return False
         consultation.meeting = meeting
 
-    item = SessionAgendaItem.objects.create(
-        meeting=meeting,
-        number="?",  # wird durch renumber_agenda gesetzt
-        name=f"{paper.reference}: {paper.name}"[:500],
-        order=(meeting.agenda_items.count() + 1) * 100,
-        is_public=paper.is_public,
-        is_supplementary=bool(meeting.invitation_sent_at or meeting.meeting_state == "invitation_sent"),
-        paper=paper,
-    )
-    agenda_service.renumber_agenda(meeting)
+    # TOP, Verknüpfung und Status in einer Transaktion: Nachgelagerte Empfänger (Rückmeldung an die
+    # einreichende Fraktion, Issue #316) sehen nie einen TOP ohne seine Beratungsstation.
+    with transaction.atomic():
+        item = SessionAgendaItem.objects.create(
+            meeting=meeting,
+            number="?",  # wird durch renumber_agenda gesetzt
+            name=f"{paper.reference}: {paper.name}"[:500],
+            order=(meeting.agenda_items.count() + 1) * 100,
+            is_public=paper.is_public,
+            is_supplementary=bool(meeting.invitation_sent_at or meeting.meeting_state == "invitation_sent"),
+            paper=paper,
+        )
+        agenda_service.renumber_agenda(meeting)
 
-    consultation.agenda_item = item
-    consultation.save()
+        consultation.agenda_item = item
+        consultation.save()
 
-    # Vorlage gilt mit der ersten Terminierung als „Terminiert“
-    if paper.status == "approved":
-        paper.status = "scheduled"
-        paper.save()
+        # Vorlage gilt mit der ersten Terminierung als „Terminiert“
+        if paper.status == "approved":
+            paper.status = "scheduled"
+            paper.save()
 
     item.refresh_from_db(fields=["number"])
     messages.success(

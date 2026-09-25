@@ -1,0 +1,42 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Eingangsbestätigung {{ application.reference }}{% endblock %}
+{% block preheader %}Ihr Antrag liegt bei {{ application.tenant.name }} unter der Eingangsnummer {{ application.reference }} vor.{% endblock %}
+{% block content %}
+<h1 class="h1">Ihr Antrag ist eingegangen</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Guten Tag {{ recipient.get_full_name|default:recipient.email }},</p>
+<p>Sie haben den folgenden Antrag im Namen von {{ organization.name }} digital bei {{ application.tenant.name }} eingereicht. Die Verwaltung hat ihn unter einer Eingangsnummer registriert.</p>
+<table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+        <td class="key">Eingangsnummer:</td>
+        <td><strong>{{ application.reference }}</strong></td>
+    </tr>
+    <tr>
+        <td class="key">Titel:</td>
+        <td>{{ application.title }}</td>
+    </tr>
+    <tr>
+        <td class="key">Antragsart:</td>
+        <td>{{ application.get_application_type_display }}</td>
+    </tr>
+    <tr>
+        <td class="key">Verwaltung:</td>
+        <td>{{ application.tenant.name }}</td>
+    </tr>
+    <tr>
+        <td class="key">Eingereicht am:</td>
+        <td>{{ application.submitted_at|date:"d.m.Y, H:i" }} Uhr</td>
+    </tr>
+</table>
+<div class="card card-accent">
+    <p><strong>Wie geht es weiter?</strong></p>
+    <p>Sobald die Verwaltung den Antrag bearbeitet, in eine Vorlage umwandelt, eine Beratung terminiert oder ein Beschluss vorliegt, sehen Sie das in mandari am Dokument „{{ motion.title }}“ und erhalten eine Benachrichtigung.</p>
+</div>
+<div class="btn-wrap">
+    <a class="btn" href="{{ status_url }}">Stand bei der Verwaltung ansehen</a>
+</div>
+<p class="muted small">Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:<br>{{ status_url }}</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

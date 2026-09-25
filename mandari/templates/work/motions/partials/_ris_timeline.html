@@ -1,0 +1,40 @@
+{% comment %}
+Beratungsfolge eines eingereichten Antrags (Issue #316): je Station Gremium, Rolle, Sitzung und Ergebnis.
+Nicht-öffentliche Stationen erscheinen nur als „nicht-öffentlich beraten“ – ohne Gremium, Sitzung oder Ergebnis.
+Kontext: feedback (apps.session.services.application_feedback.Feedback), compact (optional, für die Seitenleiste)
+{% endcomment %}
+{% if feedback.stations %}
+<ol class="relative border-l border-gray-200 dark:border-gray-700 ml-2 {% if compact %}space-y-3 mt-2{% else %}space-y-5{% endif %}" data-testid="beratungsfolge">
+    {% for station in feedback.stations %}
+    <li class="ml-4" data-station="{{ station.order }}">
+        <span class="absolute -left-1.5 mt-1.5 w-3 h-3 rounded-full {% if not station.public %}bg-gray-300 dark:bg-gray-600{% elif station.decisive %}bg-primary-600{% else %}bg-primary-300 dark:bg-primary-700{% endif %}" aria-hidden="true"></span>
+        {% if station.public %}
+        <p class="{% if compact %}text-xs{% else %}text-sm{% endif %} font-medium text-gray-900 dark:text-white">
+            {{ station.organization }} <span class="font-normal text-gray-500 dark:text-gray-400">· {{ station.role_label }}</span>
+        </p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            {% if station.scheduled %}
+            {% if not compact %}{{ station.meeting_name }} · {% endif %}{{ station.start|date:"d.m.Y H:i" }} Uhr{% if station.agenda_number %} · TOP {{ station.agenda_number }}{% endif %}
+            {% if station.cancelled %} · Sitzung abgesagt{% endif %}{% if station.removed_from_agenda %} · von der Tagesordnung abgesetzt{% endif %}
+            {% else %}
+            {% if compact %}Termin offen{% else %}Termin noch offen{% endif %}
+            {% endif %}
+        </p>
+        {% if station.result %}
+        <p class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <c-ui.badge color="{{ station.result_tone }}">{{ station.result_label }}</c-ui.badge>
+            {% if station.resolution_number %}<span>Beschlussnummer {{ station.resolution_number }}</span>{% endif %}
+        </p>
+        {% endif %}
+        {% else %}
+        <p class="{% if compact %}text-xs{% else %}text-sm{% endif %} italic text-gray-500 dark:text-gray-400" data-testid="station-nicht-oeffentlich">{{ station.not_public_label }}</p>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ol>
+{% elif not compact %}
+<p class="text-sm text-gray-500 dark:text-gray-400">
+    Noch keine Beratung terminiert. Sobald die Verwaltung den Antrag einer Sitzung zuordnet, erscheinen hier Gremium
+    und Termin, und Sie werden benachrichtigt.
+</p>
+{% endif %}

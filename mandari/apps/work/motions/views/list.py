@@ -21,6 +21,7 @@ logger = logging.getLogger("apps.work.motions")
 
 from apps.common.mixins import WorkViewMixin
 
+from ..administration_feedback import with_administration_reference
 from ..models import (
     DocumentFolder,
     FolderGuestShare,
@@ -108,12 +109,14 @@ class MotionListView(WorkViewMixin, TemplateView):
         motions = motions.distinct()
 
         # Select/prefetch related for tracker, chips and progress columns
-        related = ("author__user", "responsible__user", "document_type", "template")
+        related = ("author__user", "responsible__user", "document_type", "template", "session_application__tenant")
         prefetches = ("topics", "checklist_items", "approvals")
 
         # Hauptanträge paginieren, Änderungsanträge (parent_motion) unter
-        # ihrem Hauptantrag eingerückt anzeigen
-        parents = motions.filter(parent_motion__isnull=True).select_related(*related).prefetch_related(*prefetches)
+        # ihrem Hauptantrag eingerückt anzeigen; Drucksachennummer der Verwaltung (Issue #316)
+        parents = with_administration_reference(
+            motions.filter(parent_motion__isnull=True).select_related(*related).prefetch_related(*prefetches)
+        )
 
         paginator = Paginator(parents, 20)
         page = self.request.GET.get("page", 1)
@@ -122,7 +125,7 @@ class MotionListView(WorkViewMixin, TemplateView):
         context["paginator"] = paginator
 
         # Kinder der Seite laden und gruppiert anhängen
-        amendments = (
+        amendments = with_administration_reference(
             visible.filter(parent_motion__in=list(page_obj))
             .select_related(*related)
             .prefetch_related(*prefetches)
@@ -146,11 +149,9 @@ class MotionListView(WorkViewMixin, TemplateView):
             "total": all_motions.count(),
             "draft": all_motions.filter(status="draft").count(),
             "submitted": all_motions.filter(status="submitted").count(),
-            "completed": all_motions.filter(status="completed").count(),
+            "completed": all_motions.filter(status__in=["completed", "adopted"]).count(),
             "in_consultation": all_motions.filter(status__in=["at_admin", "on_agenda"]).count(),
-            "overdue": all_motions.filter(due_date__lt=today)
-            .exclude(status__in=["completed", "rejected", "archived"])
-            .count(),
+            "overdue": all_motions.filter(due_date__lt=today).exclude(status__in=Motion.CLOSED_STATUSES).count(),
         }
 
         # Filter out 'deleted' from visible status choices
