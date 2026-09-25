@@ -1,0 +1,65 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Vertretungen{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:users' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Benutzer
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Vertretungen</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-5xl space-y-6">
+    <c-layout.page-header title="Vertretungen"
+        subtitle="Eine Vertretung wirkt nur im eingetragenen Zeitraum, nie mit mehr Rechten als die vertretene Person und wird nicht an weitere Vertretungen weitergereicht. Handlungen in Vertretung stehen im Audit-Log." />
+
+    <c-ui.card title="Vertretung eintragen">
+        <form method="post" action="{% url 'session:settings_delegation_create' tenant_slug=tenant_slug %}"
+              class="grid sm:grid-cols-2 gap-4" data-testid="vertretung-eintragen">
+            {% csrf_token %}
+            <c-form.select name="principal" label="Vertretene Person" placeholder="Bitte wählen" required>
+                {% for tenant_user in tenant_users %}<option value="{{ tenant_user.id }}">{{ tenant_user.user.email }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="deputy" label="Vertretung" placeholder="Bitte wählen" required>
+                {% for tenant_user in tenant_users %}<option value="{{ tenant_user.id }}">{{ tenant_user.user.email }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.field name="start_date" label="Von" type="date" required />
+            <c-form.field name="end_date" label="Bis einschließlich" type="date" required help="Höchstens ein Jahr." />
+            <fieldset class="sm:col-span-2">
+                <legend class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Umfang</legend>
+                <div class="space-y-2">
+                    {% for key, scope in scopes %}
+                    <label for="scope-{{ key }}" class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" id="scope-{{ key }}" name="scopes" value="{{ key }}" checked
+                               class="mt-0.5 w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            {{ scope.0 }}
+                            <span class="block text-xs text-gray-500 dark:text-gray-400">{{ scope.1 }}</span>
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </fieldset>
+            <div class="sm:col-span-2 flex justify-end">
+                <c-ui.button type="submit" icon="user-check">Vertretung eintragen</c-ui.button>
+            </div>
+        </form>
+    </c-ui.card>
+
+    <c-ui.card title="Aktiv" subtitle="Heute wirksame Vertretungen" padding="none">
+        {% include "session/settings/_delegation_rows.html" with rows=overview.active revocable=True empty_text="Derzeit wirkt keine Vertretung." %}
+    </c-ui.card>
+
+    <c-ui.card title="Geplant" padding="none">
+        {% include "session/settings/_delegation_rows.html" with rows=overview.planned revocable=True empty_text="Keine geplanten Vertretungen." %}
+    </c-ui.card>
+
+    <c-ui.card title="Beendet und aufgehoben" subtitle="Die letzten Einträge; sie bleiben als Nachweis erhalten." padding="none">
+        {% include "session/settings/_delegation_rows.html" with rows=overview.past revocable=False empty_text="Noch keine beendeten Vertretungen." %}
+    </c-ui.card>
+</div>
+{% endblock %}

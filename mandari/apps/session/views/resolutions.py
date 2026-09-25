@@ -25,7 +25,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionResolutionForwarding
 from ..permissions import SessionViewMixin
-from ..services import resolution_service
+from ..services import four_eyes_service, resolution_service
 from .nexturl import safe_next_url
 
 
@@ -218,6 +218,13 @@ class ResolutionForwardingCreateView(SessionViewMixin, View):
         method = request.POST.get("method", "internal")
         if method not in self.VALID_METHODS:
             method = "internal"
+
+        # Vier-Augen-Prinzip (Issue #222): nicht, wer die Niederschrift erstellt bzw. zuletzt bearbeitet hat
+        try:
+            four_eyes_service.authorize(four_eyes_service.PROCESS_FORWARDING, item, self.session_user)
+        except four_eyes_service.ApprovalError as exc:
+            messages.error(request, str(exc))
+            return redirect("session:resolutions", tenant_slug=self.session_tenant.slug)
 
         forwarding = SessionResolutionForwarding.objects.create(
             agenda_item=item,

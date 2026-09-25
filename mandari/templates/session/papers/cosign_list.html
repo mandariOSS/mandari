@@ -19,6 +19,7 @@
         Offene Mitzeichnungsstationen
         {% if my_departments %}Ihrer Ämter: {% for dep in my_departments %}{{ dep.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}
     </p>
+    {% include "session/partials/my_delegations.html" %}
 
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
@@ -33,6 +34,7 @@
                         Station {{ cosign.order }}: {{ cosign.department.name }}
                         {% if cosign.paper.has_financial_impact %} · <span class="text-amber-700 dark:text-amber-400">finanzielle Auswirkungen</span>{% endif %}
                         {% if not cosign.actionable %} · <span class="text-gray-400">wartet auf vorherige Station</span>{% endif %}
+                        {% if cosign.on_behalf_of %} · <span class="text-blue-700 dark:text-blue-400">in Vertretung für {{ cosign.on_behalf_of.user.email }}</span>{% endif %}
                     </p>
                 </div>
                 {% if cosign.actionable %}

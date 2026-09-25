@@ -63,17 +63,47 @@ def is_actionable(cosignature: SessionCosignature) -> bool:
     return not cosignature.paper.cosignatures.filter(order__lt=cosignature.order).exclude(status="signed").exists()
 
 
-def can_decide(session_user: SessionUser, cosignature: SessionCosignature) -> bool:
-    """Darf diese Person für die Station entscheiden? (Amts-Zuordnung oder Admin)"""
-    if session_user.is_admin():
+def _is_admin(session_user: SessionUser) -> bool:
+    """Admin-Rolle (nutzt vorgeladene Rollen)."""
+    return any(role.is_admin for role in session_user.roles.all())
+
+
+def _decides_own(session_user: SessionUser, department_id) -> bool:
+    """Eigene Zuständigkeit (Amts-Zuordnung oder Admin) – ohne Vertretungen."""
+    if _is_admin(session_user):
         return True
-    return session_user.departments.filter(pk=cosignature.department_id).exists()
+    return session_user.departments.filter(pk=department_id).exists()
+
+
+def acting_for(session_user: SessionUser, cosignature: SessionCosignature) -> SessionUser | None:
+    """
+    Vertretene Person, für die hier mitgezeichnet wird (Issue #222, Umfang „Arbeitsvorrat“).
+
+    None, wenn die Person selbst zuständig ist oder keine passende Vertretung wirkt. Zählt
+    nur die eigene Zuständigkeit der vertretenen Person – keine Kettenvertretung.
+    """
+    if _decides_own(session_user, cosignature.department_id):
+        return None
+    from .delegation_service import SCOPE_WORKLIST, principals
+
+    for principal in principals(session_user, SCOPE_WORKLIST):
+        if _decides_own(principal, cosignature.department_id):
+            return principal
+    return None
+
+
+def can_decide(session_user: SessionUser, cosignature: SessionCosignature) -> bool:
+    """Darf diese Person für die Station entscheiden? (Amts-Zuordnung, Admin oder Vertretung)"""
+    if _decides_own(session_user, cosignature.department_id):
+        return True
+    return acting_for(session_user, cosignature) is not None
 
 
 def my_pending_cosignatures(session_user: SessionUser):
     """
     Arbeitsvorrat „Meine Mitzeichnungen": offene Stationen der Ämter
-    dieser Person für Vorlagen, die gerade in Prüfung sind.
+    dieser Person für Vorlagen, die gerade in Prüfung sind – dazu die Ämter
+    der Personen, die sie im Umfang „Arbeitsvorrat“ vertritt (Issue #222).
     """
     qs = SessionCosignature.objects.filter(
         paper__tenant=session_user.tenant,
@@ -81,5 +111,12 @@ def my_pending_cosignatures(session_user: SessionUser):
         status="pending",
     )
     if not session_user.is_admin():
-        qs = qs.filter(department__in=session_user.departments.all())
+        from .delegation_service import SCOPE_WORKLIST, principals
+
+        represented = principals(session_user, SCOPE_WORKLIST)
+        if not any(_is_admin(principal) for principal in represented):
+            departments = Q(department__in=session_user.departments.all())
+            for principal in represented:
+                departments |= Q(department__in=principal.departments.all())
+            qs = qs.filter(departments)
     return qs.select_related("paper__main_organization", "department").order_by("paper__created_at", "order")

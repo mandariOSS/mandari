@@ -25,7 +25,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
-from ..services import allowance_service
+from ..services import allowance_service, four_eyes_service
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +244,11 @@ class AllowanceApproveView(SessionViewMixin, View):
         allowances = _allowance_queryset(
             self, period_start, period_end, request.POST.get("organization", ""), status="pending"
         )
-        stats = allowance_service.approve_allowances(allowances, self.session_user)
+        stats = allowance_service.approve_allowances(
+            allowances,
+            self.session_user,
+            four_eyes=four_eyes_service.required(self.session_tenant, four_eyes_service.PROCESS_ALLOWANCE),
+        )
 
         if stats["blocked_four_eyes"]:
             messages.warning(

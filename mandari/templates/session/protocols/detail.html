@@ -62,6 +62,8 @@
                     </form>
                     {% endif %}
                     {% if can_approve and protocol.status == 'review' %}
+                    {% include "session/partials/four_eyes_hint.html" with decision=freigabe %}
+                    {% if freigabe.allowed %}
                     <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='approve' %}"
                           class="flex items-center gap-2">
                         {% csrf_token %}
@@ -75,6 +77,7 @@
                             <i data-lucide="check" class="w-4 h-4"></i> Genehmigen
                         </button>
                     </form>
+                    {% endif %}
                     <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='reject' %}"
                           class="flex items-center gap-2">
                         {% csrf_token %}
@@ -151,7 +154,7 @@
                 {% if protocol.approved_at %}
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400">Genehmigt</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ protocol.approved_at|date:"d.m.Y H:i" }} ({{ protocol.approved_by.user.email|default:"—" }})</dd>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ protocol.approved_at|date:"d.m.Y H:i" }} ({{ protocol.approved_by.user.email|default:"—" }}{% if protocol.approved_on_behalf_of %}, in Vertretung für {{ protocol.approved_on_behalf_of.user.email }}{% endif %})</dd>
                     {% if protocol.approval_meeting %}
                     <dd class="text-xs text-gray-500 dark:text-gray-400 mt-1">in: {{ protocol.approval_meeting.name }} ({{ protocol.approval_meeting.start|date:"d.m.Y" }})</dd>
                     {% endif %}

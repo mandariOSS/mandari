@@ -101,6 +101,7 @@
                         </td>
                         <td class="px-4 py-3 text-gray-900 dark:text-white">
                             {% if entry.user %}{{ entry.user.user.email }}{% else %}<span class="text-gray-400">System/API</span>{% endif %}
+                            {% if entry.on_behalf_of %}<div class="text-xs text-amber-700 dark:text-amber-400">in Vertretung für {{ entry.on_behalf_of.user.email }}</div>{% endif %}
                         </td>
                         <td class="px-4 py-3">
                             <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-full

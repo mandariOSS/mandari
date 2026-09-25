@@ -37,6 +37,7 @@ from apps.session.models import (
     SessionApplication,
     SessionAttendance,
     SessionConsultation,
+    SessionDelegation,
     SessionFile,
     SessionInvitationDispatch,
     SessionMeeting,
@@ -132,6 +133,9 @@ GET_MATRIX: list[tuple[str, frozenset[str]]] = [
     ("/settings/", frozenset({"manage_settings"})),
     ("/settings/users/", frozenset({"manage_users"})),
     ("/settings/users/invite/", frozenset({"manage_users"})),
+    # Vier-Augen-Prinzip und Vertretungen (Issue #222)
+    ("/settings/four-eyes/", frozenset({"manage_settings"})),
+    ("/settings/delegations/", frozenset({"manage_users"})),
     ("/audit/", frozenset({"view_audit_log"})),
     ("/files/{file_pub}/download/", frozenset({"view_papers"})),
 ]
@@ -172,6 +176,12 @@ MUTATIONS: list[tuple[str, dict[str, str]]] = [
     ("/consultations/{consultation_a}/move/", {"direction": "up"}),
     ("/consultations/{consultation_a}/schedule/", {"meeting": "{meeting_pub}"}),
     ("/consultations/{consultation_a}/forward/", {}),
+    # Vier-Augen-Prinzip und Vertretungen (Issue #222)
+    ("/settings/four-eyes/", {"four_eyes_papers": "always"}),
+    (
+        "/settings/delegations/create/",
+        {"principal": "{admin_a}", "deputy": "{person_user_a}", "start_date": "2026-01-01", "end_date": "2099-01-01"},
+    ),
 ]
 
 # Listen-/API-Views des eigenen Tenants, die keine Fremddaten enthalten dürfen
@@ -402,6 +412,9 @@ def _build_world() -> World:
     world.clients[COMBO] = _make_user(world, tenant_a, "konverter", set(ROLE_PERMS[COMBO]))
     world.clients["admin_b"] = _make_user(world, tenant_b, "admin-b", set(), is_admin=True)
     world.clients["anon"] = Client()
+    # Vertretungen (Issue #222): Nutzer-IDs für die Mutations-Prüfung
+    world.ids["admin_a"] = SessionUser.objects.get(tenant=tenant_a, user__email="admin-a@example.org").id
+    world.ids["person_user_a"] = SessionUser.objects.get(tenant=tenant_a, user__email="nichts@example.org").id
     return world
 
 
@@ -431,6 +444,7 @@ def _counts() -> tuple[int, ...]:
             SessionAttendance,
             SessionConsultation,
             SessionMeetingPackage,
+            SessionDelegation,
         )
     )
 
@@ -468,6 +482,7 @@ def test_mutations_without_permission_change_nothing(world: World) -> None:
     assert _counts() == before, f"Mutation ohne Berechtigung ausgeführt: {before} -> {_counts()}"
     assert not SessionAgendaItem.objects.get(pk=world.ids["top_pub"]).is_withdrawn, "TOP wurde abgesetzt"
     assert SessionApplication.objects.get(pk=world.ids["app_a"]).status == "submitted", "Antrag-Status verändert"
+    assert SessionTenant.objects.get(pk=world.tenant_a.pk).four_eyes_papers == "off", "Vier-Augen-Einstellung verändert"
 
 
 # =============================================================================

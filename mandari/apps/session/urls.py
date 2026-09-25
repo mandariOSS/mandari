@@ -10,6 +10,7 @@ from django.urls import path
 from . import views
 from .api import oparl as oparl_api_views
 from .api import views as api_views
+from .views import approvals as approval_views
 from .views import invitation_responses as invitation_response_views
 
 app_name = "session"
@@ -727,6 +728,27 @@ urlpatterns = [
         "<slug:tenant_slug>/settings/invitations/<uuid:invitation_id>/resend/",
         views.InvitationResendView.as_view(),
         name="invitation_resend",
+    ),
+    # Vier-Augen-Prinzip und Vertretungen (Issue #222)
+    path(
+        "<slug:tenant_slug>/settings/four-eyes/",
+        approval_views.FourEyesSettingsView.as_view(),
+        name="settings_four_eyes",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/delegations/",
+        approval_views.DelegationListView.as_view(),
+        name="settings_delegations",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/delegations/create/",
+        approval_views.DelegationCreateView.as_view(),
+        name="settings_delegation_create",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/delegations/<uuid:delegation_id>/revoke/",
+        approval_views.DelegationRevokeView.as_view(),
+        name="settings_delegation_revoke",
     ),
     # Audit-Log
     path(

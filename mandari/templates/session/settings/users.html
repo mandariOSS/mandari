@@ -25,11 +25,14 @@
             Benutzer und ihre Rollen im Session-RIS
         </p>
     </div>
-    <a href="{% url 'session:user_invite' tenant_slug=tenant_slug %}"
-       class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
-        <i data-lucide="user-plus" class="w-5 h-5"></i>
-        Benutzer einladen
-    </a>
+    <div class="flex items-center gap-2 flex-wrap">
+        <c-ui.button variant="secondary" icon="user-check" href="{% url 'session:settings_delegations' tenant_slug=tenant_slug %}">Vertretungen</c-ui.button>
+        <a href="{% url 'session:user_invite' tenant_slug=tenant_slug %}"
+           class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+            <i data-lucide="user-plus" class="w-5 h-5"></i>
+            Benutzer einladen
+        </a>
+    </div>
 </div>
 
 {% if pending_invitations %}
