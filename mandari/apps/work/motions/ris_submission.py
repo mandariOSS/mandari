@@ -8,10 +8,11 @@ Ablauf:
 2. Die Fraktion hinterlegt den Token in den Organisationseinstellungen
    (``AdministrationConnection``); dabei wird er geprüft und nur als Hash gespeichert.
 3. Aus dem Dokument-Editor heraus wird der Antrag mit Vorschau eingereicht —
-   Beschlussvorschlag und Begründung werden aus dem Dokument vorbelegt.
-4. Statuswechsel der Verwaltung (eingegangen, in Vorlage umgewandelt, Beratung
-   terminiert, abgelehnt) laufen per Signal zurück in den Work-Status und
-   benachrichtigen Autor:in und Federführung.
+   Beschlussvorschlag und Begründung werden aus dem Dokument vorbelegt. Der Status
+   wechselt über die definierten Übergänge auf „Eingereicht“, die einreichende Person
+   erhält eine Eingangsbestätigung per E-Mail (Issue #316).
+4. Was danach in Session passiert (Eingang, Vorlagennummer, Beratungsfolge, Beschluss),
+   meldet ``administration_feedback`` zurück (Issue #316).
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ import re
 
 from django.db import transaction
 from django.utils import timezone
+
+from .models import StatusTransitionError
 
 # Reihenfolge = Priorität beim Erkennen der Abschnitte im Dokument
 SECTION_PATTERNS = [
@@ -40,18 +43,8 @@ APPLICATION_TYPE_HINTS = [
     ("motion", ("antrag",)),
 ]
 
-# Session-Antragsstatus → Work-Dokumentstatus
-STATUS_MAP = {
-    "submitted": "submitted",
-    "received": "at_admin",
-    "in_review": "at_admin",
-    "accepted": "at_admin",
-    "converted": "at_admin",
-    "rejected": "rejected",
-    "withdrawn": "approved",
-}
-# Work-Status, die von der Verwaltung nicht mehr überschrieben werden
-FROZEN_WORK_STATUSES = {"completed", "archived", "deleted"}
+# Status, aus denen nicht (mehr) eingereicht wird
+NOT_SUBMITTABLE_STATUSES = {"completed", "adopted", "rejected", "withdrawn", "archived", "deleted"}
 
 
 class SubmissionError(ValueError):
@@ -229,7 +222,7 @@ def can_submit(motion, membership) -> tuple[bool, str]:
         return False, "Dieses Dokument wurde bereits eingereicht."
     if not motion.is_submittable:
         return False, "Dieser Dokumenttyp ist nicht zum Einreichen vorgesehen."
-    if motion.status in FROZEN_WORK_STATUSES or motion.status == "rejected":
+    if motion.status in NOT_SUBMITTABLE_STATUSES:
         return False, f"Im Status „{motion.get_status_display()}“ kann nicht eingereicht werden."
     if motion.status not in ("approved", "submitted") and not membership.has_permission("motions.approve"):
         return False, "Das Dokument muss zuerst freigegeben werden (Status „Freigegeben“)."
@@ -266,6 +259,7 @@ def submit_motion(motion, membership, data: dict):
 
     user = membership.user
     submitter_name = user.get_full_name() or user.email
+    token = connection.get_token()
     try:
         application = ApplicationService.submit_application(
             tenant=connection.tenant,
@@ -282,103 +276,32 @@ def submit_motion(motion, membership, data: dict):
             is_urgent=bool(data.get("is_urgent")),
             urgency_reason=data.get("urgency_reason", ""),
             deadline=data.get("deadline"),
+            submitted_via_token=token,
         )
     except ValueError as exc:
         raise SubmissionError(str(exc)) from exc
 
-    motion.session_application = application
-    motion.status = "submitted"
-    motion.submitted_at = timezone.now()
-    motion.save(update_fields=["session_application", "status", "submitted_at", "updated_at"])
+    from .administration_feedback import SUBMISSION_VIA, record_submission, send_receipt
 
-    token = connection.get_token()
+    motion.session_application = application
+    motion.administration_status = "submitted"
+    motion.save(update_fields=["session_application", "administration_status", "updated_at"])
+    # Status über die definierten Übergänge (Issue #316): Wer mit Freigaberecht einreicht, gibt damit frei
+    if motion.status == "submitted":
+        motion.submitted_at = timezone.now()
+        motion.save(update_fields=["submitted_at", "updated_at"])
+    else:
+        try:
+            motion.advance_to("submitted", via=SUBMISSION_VIA)
+        except StatusTransitionError as exc:
+            raise SubmissionError(f"Im Status „{motion.get_status_display()}“ kann nicht eingereicht werden.") from exc
+    record_submission(motion, application)
+
     if token is not None:
         token.record_usage()
     connection.last_used_at = timezone.now()
     connection.save(update_fields=["last_used_at"])
+
+    motion_id, membership_id = motion.pk, membership.pk
+    transaction.on_commit(lambda: send_receipt(motion_id, membership_id), robust=True)
     return application
-
-
-# =============================================================================
-# Rückmeldung der Verwaltung
-# =============================================================================
-
-
-def consultation_timeline(application) -> list[dict]:
-    """Beratungsfolge der aus dem Antrag entstandenen Vorlage(n)."""
-    if application is None:
-        return []
-    entries = []
-    papers = application.created_papers.all().prefetch_related("consultations__organization", "consultations__meeting")
-    for paper in papers:
-        for consultation in paper.consultations.all():
-            entries.append(
-                {
-                    "paper": paper,
-                    "organization": consultation.organization.name if consultation.organization_id else "",
-                    "meeting": consultation.meeting,
-                    "start": consultation.meeting.start if consultation.meeting_id else None,
-                    "role": consultation.get_role_display() if hasattr(consultation, "get_role_display") else "",
-                    "authoritative": consultation.authoritative,
-                    "result": consultation.get_result_display() if getattr(consultation, "result", "") else "",
-                    "order": consultation.order,
-                }
-            )
-    entries.sort(key=lambda e: (e["start"] is None, e["start"] or timezone.now(), e["order"]))
-    return entries
-
-
-def _notify(motion, title: str, message: str):
-    from apps.work.notifications.services import NotificationHub
-
-    recipients = []
-    for member in (motion.author, getattr(motion, "responsible", None)):
-        if member is not None and member not in recipients:
-            recipients.append(member)
-    for recipient in recipients:
-        NotificationHub.notify_motion_ris_status(motion, recipient, title, message)
-
-
-def sync_motion_from_application(application, old_status: str | None) -> None:
-    """Statuswechsel der Verwaltung ins Work-Dokument übernehmen."""
-    motion = getattr(application, "work_motion", None)
-    if motion is None or motion.status in FROZEN_WORK_STATUSES:
-        return
-    new_status = STATUS_MAP.get(application.status)
-    if new_status and new_status != motion.status and motion.status != "on_agenda":
-        motion.status = new_status
-        motion.save(update_fields=["status", "updated_at"])
-    elif new_status == "rejected" and motion.status != "rejected":
-        motion.status = "rejected"
-        motion.save(update_fields=["status", "updated_at"])
-
-    label = application.get_status_display()
-    reference = application.reference or "ohne Eingangsnummer"
-    note = f" Hinweis der Verwaltung: {application.processing_notes.strip()}" if application.processing_notes else ""
-    _notify(
-        motion,
-        f"Verwaltung: {label}",
-        f'Ihr Antrag "{motion.title}" ({reference}) hat bei {application.tenant.name} jetzt den Status „{label}“.{note}',
-    )
-
-
-def sync_motion_from_consultation(consultation) -> None:
-    """Beratung terminiert → Dokument „Auf Tagesordnung“ + Benachrichtigung."""
-    paper = consultation.paper
-    application = getattr(paper, "source_application", None)
-    if application is None or not consultation.meeting_id:
-        return
-    motion = getattr(application, "work_motion", None)
-    if motion is None or motion.status in FROZEN_WORK_STATUSES:
-        return
-    meeting = consultation.meeting
-    if motion.status != "on_agenda":
-        motion.status = "on_agenda"
-        motion.save(update_fields=["status", "updated_at"])
-    when = timezone.localtime(meeting.start).strftime("%d.%m.%Y %H:%M") if meeting.start else "Termin offen"
-    org_name = consultation.organization.name if consultation.organization_id else "Gremium"
-    _notify(
-        motion,
-        "Beratung terminiert",
-        f'Ihr Antrag "{motion.title}" ({application.reference}) wird am {when} im Gremium „{org_name}“ beraten.',
-    )

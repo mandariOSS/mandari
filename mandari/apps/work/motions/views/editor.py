@@ -325,11 +325,11 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         approvals = motion.approvals.select_related("approver__user").order_by("created_at")
         context["approvals"] = approvals
 
-        # Digitale Einreichung bei der Verwaltung (Issue #40)
-        from .. import ris_submission
+        # Digitale Einreichung bei der Verwaltung (Issue #40) und Rückmeldung (Issue #316)
+        from .. import administration_feedback
 
         context["ris_application"] = motion.session_application
-        context["ris_timeline"] = ris_submission.consultation_timeline(motion.session_application)
+        context["ris_feedback"] = administration_feedback.feedback_for(motion)
         context["can_submit_ris"] = (
             not context["is_guest"] and context["can_edit"] and self.membership.has_permission("motions.submit_to_ris")
         )

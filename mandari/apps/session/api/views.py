@@ -503,6 +503,7 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
             is_urgent=bool(data.get("is_urgent", False)),
             urgency_reason=data.get("urgency_reason", "")[: max_lengths["urgency_reason"]],
             deadline=data.get("deadline"),
+            submitted_via_token=api_token,
         )
 
         # Record token usage

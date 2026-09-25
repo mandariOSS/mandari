@@ -30,6 +30,7 @@ from .auth import BearerOrSession, Principal, client_ip, resolve_principal
 from .problems import Problem
 from .schemas import (
     ApplicationCreated,
+    ApplicationFeedbackOut,
     ApplicationIn,
     ApplicationList,
     ListMeta,
@@ -246,9 +247,56 @@ def submit_application(request: HttpRequest, tenant_slug: str, payload: Applicat
         is_urgent=payload.is_urgent,
         urgency_reason=payload.urgency_reason,
         deadline=payload.deadline,
+        submitted_via_token=principal.token,
     )
     principal.token.record_usage(client_ip(request))
-    return 201, {"id": application.id, "reference": application.reference, "status": application.status}
+    feedback_url = request.build_absolute_uri(
+        reverse(
+            "session_api_v1:application_feedback",
+            kwargs={"tenant_slug": tenant.slug, "application_id": application.id},
+        )
+    )
+    return 201, {
+        "id": application.id,
+        "reference": application.reference,
+        "status": application.status,
+        "feedback": feedback_url,
+    }
+
+
+@router.get(
+    "/{tenant_slug}/applications/{application_id}/feedback/",
+    response=ApplicationFeedbackOut,
+    url_name="application_feedback",
+    summary="Rückmeldestand eines eingereichten Antrags (API-Token)",
+    exclude_none=True,
+)
+def application_feedback(request: HttpRequest, tenant_slug: str, application_id: UUID) -> dict[str, Any]:
+    """
+    Eingang, Vorlagennummer, Beratungsfolge und Beschluss eines eingereichten Antrags (Issue #316).
+
+    Nur mit dem API-Token, mit dem der Antrag eingereicht wurde, oder einem Token, das dieselbe
+    Organisation in mandari Work verbunden hat. Fremde Anträge sind nicht auffindbar (404). Es gelten
+    die Ö/NÖ-Regeln der OParl-Schnittstelle: Nicht-öffentliche Stationen erscheinen nur als
+    „nicht-öffentlich beraten“.
+    """
+    from apps.session.services import application_feedback as feedback_service
+
+    tenant = get_tenant(tenant_slug)
+    principal = resolve_principal(request, tenant)
+    if principal.token is None:
+        raise Problem(
+            401,
+            "Der Rückmeldestand ist nur mit dem API-Token abrufbar, mit dem der Antrag eingereicht wurde.",
+            kind="nicht-authentifiziert",
+        )
+    if not principal.has_permission("submit_applications"):
+        raise Problem(403, "Dieses Token darf keine Anträge einreichen.", kind="keine-berechtigung")
+    application = feedback_service.application_for_token(principal.token, application_id)
+    if application is None:
+        raise Problem(404, "Antrag nicht gefunden.", kind="nicht-gefunden")
+    principal.token.record_usage(client_ip(request))
+    return feedback_service.build(application).as_dict()
 
 
 __all__ = ["router", "UUID"]

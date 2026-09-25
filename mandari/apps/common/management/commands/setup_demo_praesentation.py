@@ -537,6 +537,7 @@ class Command(BaseCommand):
                 "summary": "Entwurf: Tempo 30 und eine Querungshilfe vor der Grundschule am Musterweg.",
                 "folder": None,
                 "session_application": None,
+                "administration_status": "",
                 "submitted_at": None,
             },
         )
@@ -546,6 +547,7 @@ class Command(BaseCommand):
 
     def _einreichung_zuruecknehmen(self, antrag: Motion) -> None:
         """Eingang in Session samt daraus umgewandelter Vorlage löschen (Probe zurücksetzen)."""
+        antrag.administration_events.all().delete()
         eingang = antrag.session_application
         if eingang is None:
             return

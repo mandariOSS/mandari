@@ -38,6 +38,7 @@ from ..models import (
     MotionDocument,
     MotionShare,
     MotionType,
+    StatusTransitionError,
 )
 from ..services import MotionAIService
 from ._helpers import _broadcast_doc_reload, _get_org_folder_or_404
@@ -225,20 +226,12 @@ class MotionStatusView(WorkViewMixin, View):
         if new_status not in dict(Motion.STATUS_CHOICES):
             return JsonResponse({"error": "Ungültiger Status"}, status=400)
 
-        # Zentrale Übergangsmatrix (Motion.VALID_TRANSITIONS)
-        if new_status not in Motion.VALID_TRANSITIONS.get(motion.status, []):
-            return JsonResponse(
-                {
-                    "error": f"Ungültiger Statusübergang von '{motion.get_status_display()}' zu '{dict(Motion.STATUS_CHOICES)[new_status]}'"
-                },
-                status=400,
-            )
-
+        # Zentrale Übergangsmatrix (Motion.VALID_TRANSITIONS) – einziger Weg, den Status zu ändern
         was_locked = motion.is_status_locked
-        motion.status = new_status
-        if new_status == "submitted":
-            motion.submitted_at = timezone.now()
-        motion.save()
+        try:
+            motion.transition_to(new_status)
+        except StatusTransitionError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
 
         # Statuswechsel über die Sperrgrenze (Motion.EDITABLE_STATUSES):
         # offene Kollab-Editoren neu laden lassen, damit die herabgestufte

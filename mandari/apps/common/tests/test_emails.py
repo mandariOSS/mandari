@@ -464,6 +464,23 @@ def work_org_registration_request(org: Any, make_member: Any) -> dict[str, Any]:
     }
 
 
+def work_org_submission_receipt(org: Any, make_member: Any) -> dict[str, Any]:
+    """Eingangsbestätigung nach dem Einreichen bei der Verwaltung (Issue #316)."""
+    return {
+        "organization": org,
+        "recipient": _ns(get_full_name=lambda: "Eva Muster", email="eva@example.org"),
+        "motion": _ns(title="Radweg an der Hauptstraße"),
+        "application": _ns(
+            reference="A/2026/0012",
+            title="Radweg an der Hauptstraße",
+            tenant=_ns(name="Stadt Musterstadt"),
+            submitted_at=WHEN,
+            get_application_type_display=lambda: "Antrag",
+        ),
+        "status_url": f"{SITE_URL}/work/{org.slug}/documents/{_uuid(0x801)}/submit-ris/",
+    }
+
+
 def _access_granted(org: Any, variant: str, needs_two_factor: bool) -> dict[str, Any]:
     return {
         "organization": org,
@@ -626,6 +643,11 @@ CASES = [
         "work_org_registration_rejected",
         "work/organization/email/registration_rejected.html",
         work_org_registration_rejected,
+    ),
+    MailCase(
+        "work_org_submission_receipt",
+        "work/organization/email/submission_receipt.html",
+        work_org_submission_receipt,
     ),
 ]
 

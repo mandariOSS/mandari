@@ -118,6 +118,58 @@ class ApplicationCreated(Schema):
     id: UUID
     reference: str
     status: str
+    feedback: str | None = Field(None, description="URL des Rückmeldestands (mit demselben Token abrufbar)")
+
+
+class FeedbackPaper(Schema):
+    converted: bool = Field(description="Aus dem Antrag ist eine Vorlage entstanden")
+    public: bool = Field(description="Die Vorlage ist veröffentlicht (öffentlich und freigegeben)")
+    reference: str | None = Field(
+        None, description="Vorlagen- bzw. Drucksachennummer, nur bei veröffentlichter Vorlage"
+    )
+    reference_label: str = Field(description="Bezeichnung der Nummer beim Mandanten, z. B. „Drucksache“")
+
+
+class FeedbackStation(Schema):
+    """Station der Beratungsfolge. Nicht-öffentliche Stationen tragen nur ``order``, ``public`` und ``label``."""
+
+    order: int
+    public: bool
+    label: str | None = Field(None, description="„nicht-öffentlich beraten“ bei nicht-öffentlichen Stationen")
+    organization: str | None = None
+    role: str | None = None
+    role_label: str | None = None
+    decisive: bool | None = None
+    meeting_name: str | None = None
+    start: datetime | None = None
+    cancelled: bool | None = None
+    agenda_number: str | None = None
+    removed_from_agenda: bool | None = None
+    result: str | None = None
+    result_label: str | None = None
+    resolution_number: str | None = None
+
+
+class FeedbackDecision(Schema):
+    result: Literal["approved", "rejected", "noted", "withdrawn"]
+    result_label: str
+    organization: str
+    decided_on: date | None
+    resolution_number: str | None = None
+
+
+class ApplicationFeedbackOut(Schema):
+    """Rückmeldestand eines eingereichten Antrags – nur öffentlich zulässige Angaben (Issue #316)."""
+
+    id: UUID
+    reference: str = Field(description="Eingangsnummer")
+    status: str
+    status_label: str
+    submitted_at: datetime | None
+    received_at: datetime | None
+    paper: FeedbackPaper
+    stations: list[FeedbackStation]
+    decision: FeedbackDecision | None = Field(None, description="Nur aus einer öffentlichen, entscheidenden Beratung")
 
 
 class TenantRoot(Schema):

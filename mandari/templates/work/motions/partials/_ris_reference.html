@@ -1,0 +1,2 @@
+{# Nummer eines eingereichten Antrags im Editor-Kopf: Drucksachennummer, sonst Eingangsnummer (Issue #316). Kontext: ris_application, ris_feedback #}
+{% if ris_feedback.paper_reference %}<span data-testid="kopf-drucksachennummer">{{ ris_feedback.reference_label }} {{ ris_feedback.paper_reference }}</span>{% else %}{{ ris_application.reference|default:"Eingereicht" }}{% endif %}{% if ris_feedback.decision %} · {{ ris_feedback.decision.result_label }}{% endif %}

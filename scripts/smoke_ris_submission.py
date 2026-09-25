@@ -7,8 +7,9 @@ Fraktion (Work) → Verwaltung (Session) → Rückmeldung:
 2. Fraktion hinterlegt den Token (ungültiger Token wird abgelehnt), Reiter „Verwaltung“
 3. Einreichen aus dem Editor: Vorschau mit vorbelegten Abschnitten, Antrag mit Eingangsnummer,
    Dokument „Eingereicht“, Verknüpfung, Token-Nutzung gezählt; doppelte Einreichung blockiert
-4. Statusrückmeldung: eingegangen → „Bei Verwaltung“ + Benachrichtigung; Beratung terminiert →
-   „Auf Tagesordnung“ + Beratungsfolge in Work; abgelehnt → „Abgelehnt“
+4. Statusrückmeldung: eingegangen → „Bei Verwaltung“ + Benachrichtigung (ohne interne
+   Bearbeitungsnotiz); Beratung terminiert → „Auf Tagesordnung“ + Beratungsfolge und
+   Drucksachennummer in Work (Issue #316); abgelehnt → „Abgelehnt“
 5. Rechte: Gast/ohne Recht kein Zugriff; zurückgezogener Token blockiert Einreichung
 """
 
@@ -65,7 +66,7 @@ from apps.session.models import (  # noqa: E402
     SessionUser,
 )
 from apps.tenants.models import Membership, Organization, Role  # noqa: E402
-from apps.work.motions import ris_submission  # noqa: E402
+from apps.work.motions import administration_feedback, ris_submission  # noqa: E402
 from apps.work.motions.models import AdministrationConnection, Motion  # noqa: E402
 from apps.work.notifications.models import Notification  # noqa: E402
 from insight_core.models import OParlBody, OParlSource  # noqa: E402
@@ -308,10 +309,10 @@ check("Verwaltung: eingegangen", resp.status_code == 200 and app.status == "rece
 check("Work-Status folgt: Bei Verwaltung", motion.status == "at_admin", motion.status)
 notif = Notification.objects.filter(recipient=m_admin).order_by("-created_at").first()
 check(
-    "Autor:in benachrichtigt (mit Hinweis)",
+    "Autor:in benachrichtigt (ohne interne Bearbeitungsnotiz)",
     notif is not None
     and "Eingegangen" in notif.title
-    and "Bauausschuss beraten" in notif.message
+    and "Bauausschuss beraten" not in notif.message
     and "submit-ris" in notif.link,
     getattr(notif, "message", ""),
 )
@@ -336,16 +337,24 @@ check(
     "Benachrichtigung nennt Gremium und Termin",
     notif is not None and "Bauausschuss" in notif.message and "Beratung terminiert" in notif.title,
 )
-timeline = ris_submission.consultation_timeline(app)
+feedback = administration_feedback.feedback_for(motion)
+stations = feedback.stations if feedback else ()
 check(
-    "Beratungsfolge: Termin zuerst, Rat ohne Termin danach",
-    len(timeline) == 2 and timeline[0]["organization"] == "Bauausschuss" and timeline[1]["start"] is None,
+    "Beratungsfolge: Bauausschuss mit Termin, Rat ohne Termin danach",
+    len(stations) == 2
+    and stations[0].organization == "Bauausschuss"
+    and stations[0].start is not None
+    and stations[1].start is None,
 )
 resp = c_admin.get(f"{WORK}/documents/{motion.id}/submit-ris/")
 page = html(resp)
 check(
     "Statusseite zeigt Beratungsfolge",
     "Bauausschuss" in page and "Termin noch offen" in page and "In Vorlage umgewandelt" in page,
+)
+check(
+    "Statusseite zeigt Vorlagennummer, keine interne Notiz",
+    bool(paper.reference) and paper.reference in page and "Bauausschuss beraten" not in page,
 )
 resp = c_admin.get(f"{WORK}/documents/{motion.id}/")
 check("Sidebar zeigt Beratungstermin", "Bauausschuss" in html(resp) and "Termin offen" in html(resp))

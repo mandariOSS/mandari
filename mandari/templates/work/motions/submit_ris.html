@@ -15,89 +15,7 @@
 </div>
 
 {% if application %}
-{# ---------------------------------------------------------------- Statusseite #}
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <div class="lg:col-span-2 space-y-6">
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-            <div class="flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Eingangsnummer</p>
-                    <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ application.reference|default:"wird vergeben" }}</p>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Eingereicht am {{ application.submitted_at|date:"d.m.Y H:i" }} bei <strong>{{ application.tenant.name }}</strong>
-                    </p>
-                </div>
-                <span class="px-3 py-1.5 text-sm font-semibold rounded-full
-                    {% if application.status == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300
-                    {% elif application.status == 'converted' or application.status == 'accepted' %}bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300
-                    {% elif application.status == 'submitted' %}bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
-                    {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300{% endif %}">
-                    {{ application.get_status_display }}
-                </span>
-            </div>
-            <dl class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                <div>
-                    <dt class="text-gray-500 dark:text-gray-400">Antragsart</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ application.get_application_type_display }}</dd>
-                </div>
-                <div>
-                    <dt class="text-gray-500 dark:text-gray-400">Zuständiges Gremium</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ application.target_organization.name|default:"wird von der Verwaltung zugeordnet" }}</dd>
-                </div>
-                {% if application.received_at %}
-                <div>
-                    <dt class="text-gray-500 dark:text-gray-400">Eingegangen</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ application.received_at|date:"d.m.Y H:i" }}</dd>
-                </div>
-                {% endif %}
-                {% if application.processing_notes %}
-                <div class="sm:col-span-2">
-                    <dt class="text-gray-500 dark:text-gray-400">Hinweis der Verwaltung</dt>
-                    <dd class="text-gray-900 dark:text-white whitespace-pre-line">{{ application.processing_notes }}</dd>
-                </div>
-                {% endif %}
-            </dl>
-        </div>
-
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
-                <i data-lucide="route" class="w-5 h-5 text-primary-500"></i> Beratungsfolge
-            </h3>
-            {% if timeline %}
-            <ol class="relative border-l border-gray-200 dark:border-gray-700 ml-2 space-y-5">
-                {% for entry in timeline %}
-                <li class="ml-5">
-                    <span class="absolute -left-1.5 mt-1.5 w-3 h-3 rounded-full {% if entry.authoritative %}bg-primary-600{% else %}bg-primary-300 dark:bg-primary-700{% endif %}"></span>
-                    <p class="font-medium text-gray-900 dark:text-white">{{ entry.organization }}{% if entry.role %} <span class="text-xs font-normal text-gray-500">· {{ entry.role }}</span>{% endif %}</p>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                        {% if entry.start %}{{ entry.start|date:"l, d.m.Y H:i" }} Uhr{% else %}Termin noch offen{% endif %}
-                        {% if entry.result %} · Ergebnis: {{ entry.result }}{% endif %}
-                    </p>
-                </li>
-                {% endfor %}
-            </ol>
-            {% else %}
-            <p class="text-sm text-gray-500 dark:text-gray-400">
-                Noch keine Beratung terminiert. Sobald die Verwaltung den Antrag einer Sitzung zuordnet, erscheint hier
-                Gremium und Termin, und ihr werdet benachrichtigt.
-            </p>
-            {% endif %}
-        </div>
-    </div>
-    <aside class="space-y-4">
-        <div class="bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700 p-5 text-sm text-gray-600 dark:text-gray-300">
-            <p class="font-semibold text-gray-900 dark:text-white mb-2">Übermittelter Inhalt</p>
-            <p class="text-xs uppercase tracking-wider text-gray-500 mt-3">Beschlussvorschlag</p>
-            <p class="whitespace-pre-line mt-1">{{ application.resolution_proposal }}</p>
-            <p class="text-xs uppercase tracking-wider text-gray-500 mt-4">Begründung</p>
-            <p class="whitespace-pre-line mt-1">{{ application.justification }}</p>
-            {% if application.financial_impact %}
-            <p class="text-xs uppercase tracking-wider text-gray-500 mt-4">Finanzielle Auswirkungen</p>
-            <p class="whitespace-pre-line mt-1">{{ application.financial_impact }}</p>
-            {% endif %}
-        </div>
-    </aside>
-</div>
+{% include "work/motions/partials/_ris_status.html" %}
 
 {% else %}
 {# ---------------------------------------------------------------- Einreichen #}
@@ -204,7 +122,8 @@
                     Ich reiche diesen Antrag im Namen von <strong>{{ organization.name }}</strong> verbindlich bei
                     <strong>{{ connection.tenant.name|default:"der Verwaltung" }}</strong> ein. Übermittelt werden Titel, Antragsart,
                     Beschlussvorschlag, Begründung, finanzielle Auswirkungen, Mitunterzeichnende sowie mein Name und meine E-Mail-Adresse
-                    als Ansprechperson. Das Dokument wechselt in den Status „Eingereicht“.
+                    als Ansprechperson. Das Dokument wechselt in den Status „Eingereicht“, und Sie erhalten eine
+                    Eingangsbestätigung per E-Mail.
                 </span>
             </label>
             <div class="mt-4 flex items-center gap-3">

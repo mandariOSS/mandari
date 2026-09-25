@@ -1,0 +1,26 @@
+# Ihr Antrag ist eingegangen
+
+Fraktion Test
+
+Guten Tag Eva Muster,
+
+Sie haben den folgenden Antrag im Namen von Fraktion Test digital bei Stadt Musterstadt eingereicht. Die Verwaltung hat ihn unter einer Eingangsnummer registriert.
+
+Eingangsnummer: A/2026/0012
+Titel: Radweg an der Hauptstraße
+Antragsart: Antrag
+Verwaltung: Stadt Musterstadt
+Eingereicht am: 14.09.2026, 18:30 Uhr
+
+Wie geht es weiter?
+
+Sobald die Verwaltung den Antrag bearbeitet, in eine Vorlage umwandelt, eine Beratung terminiert oder ein Beschluss vorliegt, sehen Sie das in mandari am Dokument „Radweg an der Hauptstraße“ und erhalten eine Benachrichtigung.
+
+[Stand bei der Verwaltung ansehen](https://mandari.example/work/fraktion-test/documents/00000000-0000-0000-0000-000000000801/submit-ris/)
+
+Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:
+https://mandari.example/work/fraktion-test/documents/00000000-0000-0000-0000-000000000801/submit-ris/
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

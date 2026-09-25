@@ -1,0 +1,8 @@
+{# Drucksachennummer der Verwaltung in der Dokumentenliste (Issue #316). Kontext: motion (mit Annotation administration_reference) #}
+{% if motion.administration_reference %}
+<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] flex-shrink-0 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300"
+      title="{{ motion.session_application.tenant.reference_label }} bei {{ motion.session_application.tenant.name }}" data-testid="liste-drucksachennummer">
+    <i data-lucide="landmark" class="w-2.5 h-2.5"></i>
+    {{ motion.administration_reference }}
+</span>
+{% endif %}
