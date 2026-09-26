@@ -13,6 +13,10 @@ from django.test import Client
 
 from apps.common import csp
 
+# Die Anfragen laufen durch den vollständigen Middleware-Stack; dessen Verbindungs-Aufräumen darf die DB
+# berühren. Ohne Freigabe hingen die Tests von der Reihenfolge ab (unter pytest-xdist rot).
+pytestmark = pytest.mark.django_db
+
 LEGACY = {
     "csp-report": {
         "document-uri": "https://mandari.example/work/",
