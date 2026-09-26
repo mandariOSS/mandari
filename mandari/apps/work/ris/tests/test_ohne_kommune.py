@@ -46,7 +46,7 @@ def mitglied(org: Any, make_member: Any) -> Any:
 @pytest.mark.django_db
 @pytest.mark.parametrize(("name", "kwargs", "params"), SEITEN, ids=[f"{s[0]}{'?' if s[2] else ''}" for s in SEITEN])
 def test_ris_seite_ohne_kommune_zeigt_hinweis(
-    org: Any, mitglied: Any, client_for: Any, name: str, kwargs: dict, params: dict
+    org: Any, mitglied: Any, client_for: Any, name: str, kwargs: dict[str, Any], params: dict[str, str]
 ) -> None:
     url = reverse(name, kwargs={"org_slug": org.slug, **kwargs})
 
@@ -71,7 +71,7 @@ def test_ris_seite_ohne_kommune_zeigt_hinweis(
     ids=lambda wert: wert if isinstance(wert, str) else "",
 )
 def test_sitzungsvorbereitung_ohne_kommune_ohne_serverfehler(
-    org: Any, make_member: Any, client_for: Any, name: str, kwargs: dict, status: int, mit_hinweis: bool
+    org: Any, make_member: Any, client_for: Any, name: str, kwargs: dict[str, Any], status: int, mit_hinweis: bool
 ) -> None:
     mitglied = make_member(org, ["meetings.view", "meetings.prepare"], email="vorbereitung@example.org")
     url = reverse(name, kwargs={"org_slug": org.slug, **kwargs})

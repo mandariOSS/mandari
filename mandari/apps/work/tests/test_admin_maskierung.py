@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any
 
 from django.contrib import admin
 from django.utils import timezone
@@ -20,7 +21,7 @@ BOESE = '<script>alert("x")</script>'
 
 
 def _nachricht(**werte: object) -> SimpleNamespace:
-    basis = {
+    basis: dict[str, Any] = {
         "get_content_decrypted": lambda: BOESE,
         "author_staff": None,
         "author_membership": SimpleNamespace(user=SimpleNamespace(get_full_name=lambda: BOESE, email="a@example.org")),
@@ -32,7 +33,7 @@ def _nachricht(**werte: object) -> SimpleNamespace:
 
 
 def test_nachricht_maskiert_inhalt_und_autor() -> None:
-    inline = SupportTicketMessageInline(SupportTicketMessage, admin.site)
+    inline: Any = SupportTicketMessageInline(SupportTicketMessage, admin.site)
 
     html = str(inline.message_display(_nachricht()))
 
@@ -44,7 +45,7 @@ def test_nachricht_maskiert_inhalt_und_autor() -> None:
 
 
 def test_nachricht_vom_support_maskiert_namen() -> None:
-    inline = SupportTicketMessageInline(SupportTicketMessage, admin.site)
+    inline: Any = SupportTicketMessageInline(SupportTicketMessage, admin.site)
     staff = SimpleNamespace(get_full_name=lambda: BOESE, email="s@example.org")
 
     html = str(inline.message_display(_nachricht(author_staff=staff, is_internal=False)))
@@ -55,7 +56,7 @@ def test_nachricht_vom_support_maskiert_namen() -> None:
 
 
 def test_beschreibung_maskiert() -> None:
-    ticket_admin = SupportTicketAdmin(SupportTicket, admin.site)
+    ticket_admin: Any = SupportTicketAdmin(SupportTicket, admin.site)
 
     html = str(ticket_admin.description_display(SimpleNamespace(get_description_decrypted=lambda: BOESE)))
 

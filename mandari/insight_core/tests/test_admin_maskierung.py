@@ -24,11 +24,11 @@ BOESE = '<script>alert("x")</script>'
 
 
 @pytest.fixture
-def source_admin() -> OParlSourceAdmin:
+def source_admin() -> Any:
     return OParlSourceAdmin(OParlSource, admin.site)
 
 
-def test_quellenart_normal_unveraendert(source_admin: OParlSourceAdmin) -> None:
+def test_quellenart_normal_unveraendert(source_admin: Any) -> None:
     quelle = OParlSource(name="Test", url="https://ris.example.org/system", sync_config={})
 
     assert source_admin.source_type_display(quelle) == '<span style="color: #16a34a; font-weight: 600;">oparl</span>'
@@ -40,7 +40,7 @@ def test_quellenart_normal_unveraendert(source_admin: OParlSourceAdmin) -> None:
     )
 
 
-def test_quellenart_mit_skript_wird_maskiert(source_admin: OParlSourceAdmin) -> None:
+def test_quellenart_mit_skript_wird_maskiert(source_admin: Any) -> None:
     quelle = OParlSource(
         name="Test", url="https://ris.example.org/system", sync_config={"source_type": "bridge:" + BOESE}
     )
@@ -52,13 +52,13 @@ def test_quellenart_mit_skript_wird_maskiert(source_admin: OParlSourceAdmin) -> 
 
 
 def _bewertung(label: str, gruende: list[str], farbe: str = "green") -> Any:
-    def evaluate_source(_source: Any, now: Any = None) -> dict:
+    def evaluate_source(_source: Any, now: Any = None) -> dict[str, Any]:
         return {"color": farbe, "label": label, "reasons": gruende}
 
     return evaluate_source
 
 
-def test_gesundheit_normal_unveraendert(source_admin: OParlSourceAdmin, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gesundheit_normal_unveraendert(source_admin: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(source_health, "evaluate_source", _bewertung("OK", ["Sync aktuell", "keine Fehler"]))
 
     html = source_admin.health_display(OParlSource(name="Test"))
@@ -66,7 +66,7 @@ def test_gesundheit_normal_unveraendert(source_admin: OParlSourceAdmin, monkeypa
     assert html == '<span title="Sync aktuell; keine Fehler" style="color: #16a34a; font-weight: 600;">OK</span>'
 
 
-def test_gesundheit_mit_skript_wird_maskiert(source_admin: OParlSourceAdmin, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gesundheit_mit_skript_wird_maskiert(source_admin: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(source_health, "evaluate_source", _bewertung(BOESE, ['" onmouseover="alert(1)', BOESE], "red"))
 
     html = str(source_admin.health_display(OParlSource(name="Test")))
@@ -77,7 +77,7 @@ def test_gesundheit_mit_skript_wird_maskiert(source_admin: OParlSourceAdmin, mon
 
 
 def test_synclauf_status_normal_unveraendert() -> None:
-    log_admin = SyncLogAdmin(SyncLog, admin.site)
+    log_admin: Any = SyncLogAdmin(SyncLog, admin.site)
 
     html = log_admin.status_badge(SyncLog(status=SyncLog.Status.SUCCESS))
 
