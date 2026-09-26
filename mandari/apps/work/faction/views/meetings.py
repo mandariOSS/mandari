@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""
-Faction meeting views for the Work module.
-
-Simplified architecture: 4 views instead of 13.
-- FactionMeetingListView: List + Create (POST)
-- FactionMeetingDetailView: Detail/Protocol page
-- FactionActionView: Central HTMX action handler
-- FactionSettingsView: Legacy redirect to organization settings
-"""
+"""Liste (mit Anlage per POST) und Detail-/Protokollseite der Fraktionssitzungen."""
 
 import logging
 import uuid

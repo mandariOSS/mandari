@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""
-Faction meeting views for the Work module.
-
-Simplified architecture: 4 views instead of 13.
-- FactionMeetingListView: List + Create (POST)
-- FactionMeetingDetailView: Detail/Protocol page
-- FactionActionView: Central HTMX action handler
-- FactionSettingsView: Legacy redirect to organization settings
-"""
+"""Seitenpanel eines Tagesordnungspunkts: Anzeige, Panel-Aktionen und Anhang-Download."""
 
 import json
 import logging
@@ -261,10 +253,6 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         view.kwargs = {"meeting_id": meeting.id, "item_id": item.id}
         context = view.get_context_data(meeting_id=meeting.id, item_id=item.id)
         return render_to_string("work/faction/_agenda_item_panel.html", context, request=request)
-
-    def _render_section(self, template, context, request):
-        """Render a single section partial."""
-        return render_to_string(template, context, request=request)
 
     def _success_response(self, html, message=None):
         """Build response with optional toast trigger."""

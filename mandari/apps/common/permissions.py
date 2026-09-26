@@ -971,16 +971,6 @@ DEFAULT_ROLES = {
 # =============================================================================
 
 
-def get_all_permissions() -> list[str]:
-    """Get list of all permission codenames."""
-    return list(PERMISSIONS.keys())
-
-
-def get_permission_choices() -> list[tuple]:
-    """Get permission choices for Django model fields."""
-    return list(PERMISSIONS.items())
-
-
 def get_permissions_by_category() -> dict:
     """
     Get permissions grouped by category.
@@ -1000,16 +990,6 @@ def get_permissions_by_category() -> dict:
             ],
         }
     return result
-
-
-def get_role_info(role_key: str) -> dict:
-    """Get info about a default role."""
-    return DEFAULT_ROLES.get(role_key, {})
-
-
-def get_all_default_roles() -> dict:
-    """Get all default role definitions."""
-    return DEFAULT_ROLES
 
 
 class PermissionChecker:
@@ -1139,10 +1119,6 @@ class PermissionChecker:
         """Check if the user has voting rights."""
         return self.has_permission("voting.participate")
 
-    def has_speaking_rights(self) -> bool:
-        """Check if the user has automatic speaking rights."""
-        return self.has_permission("speaking.automatic")
-
     def can_access_non_public(self) -> bool:
         """
         Check if user can access non-public faction content.
@@ -1164,18 +1140,6 @@ class PermissionChecker:
     def can_approve_agenda_items(self) -> bool:
         """Check if user can approve agenda proposals."""
         return self.has_permission("agenda.approve")
-
-    def can_start_faction_meeting(self) -> bool:
-        """Check if user can start/end faction meetings."""
-        return self.has_permission("faction.start")
-
-    def can_invite_to_faction_meeting(self) -> bool:
-        """Check if user can send faction meeting invitations."""
-        return self.has_permission("faction.invite")
-
-    def can_manage_faction_meeting(self) -> bool:
-        """Check if user can fully manage faction meetings (status changes, etc.)."""
-        return self.has_permission("faction.manage")
 
     def can_create_protocols(self) -> bool:
         """Check if user can create protocols during meetings."""
