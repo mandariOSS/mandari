@@ -200,9 +200,13 @@ check("Ungültiger Betrag abgelehnt", SessionDeviceGrant.objects.filter(tenant=t
 resp = device_client.post(f"{base}/device-grants/{grant.id}/pay/")
 grant.refresh_from_db()
 check("Auszahlung vor Genehmigung blockiert", grant.status == "pending")
+# Vier-Augen-Prinzip (Standard): Wer den Zuschuss erfasst hat, genehmigt ihn nicht selbst
 resp = device_client.post(f"{base}/device-grants/{grant.id}/approve/")
 grant.refresh_from_db()
-check("Genehmigt", grant.status == "approved" and grant.approved_by_id == su_device.id)
+check("Eigene Genehmigung blockiert", grant.status == "pending")
+resp = admin.post(f"{base}/device-grants/{grant.id}/approve/")
+grant.refresh_from_db()
+check("Genehmigt", grant.status == "approved" and grant.approved_by_id == su_admin.id)
 resp = device_client.post(f"{base}/device-grants/{grant.id}/pay/")
 grant.refresh_from_db()
 check("Ausgezahlt", grant.status == "paid" and grant.paid_at is not None)
@@ -215,10 +219,13 @@ resp = device_client.post(f"{base}/device-grants/add/", {"person": str(person.id
 check("Doppel-Zuschuss mit Warnhinweis", "bereits ein Zuschuss" in resp.content.decode("utf-8"))
 
 # CSV
+# Bankdaten wie überall nur mit dem Recht für Sitzungsgelder – die Geräteverwaltung erhält sie nicht
 resp = device_client.post(f"{base}/device-grants/export/csv/")
 csv_text = resp.content.decode("utf-8")
-check("CSV -> 200 mit IBAN", resp.status_code == 200 and "DE02120300000000202051" in csv_text)
+check("CSV -> 200 ohne IBAN (Geräteverwaltung)", resp.status_code == 200 and "DE02120300000000202051" not in csv_text)
 check("CSV: Beträge", "300,00" in csv_text)
+resp = admin.post(f"{base}/device-grants/export/csv/")
+check("CSV mit IBAN (Sitzungsgeldrecht)", resp.status_code == 200 and "DE02120300000000202051" in resp.content.decode())
 
 # =============================================================================
 print()

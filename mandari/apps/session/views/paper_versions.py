@@ -205,7 +205,7 @@ class PaperVersionRestoreView(_PaperVersionView):
         paper = self.get_paper()
         version = self.get_version(paper, number)
         try:
-            result = paper_version_service.restore(paper, version, user=self.user)
+            result = paper_version_service.restore(paper, version, user=self.user, permissions=self.permissions())
         except paper_version_service.RestoreRefusedError as exc:
             messages.error(request, str(exc))
             return redirect(

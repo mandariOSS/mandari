@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from apps.common.pdf import html_to_pdf
 from apps.session.models import SessionAgendaItem, SessionMeeting, SessionProtocol, SessionTenant
+from apps.session.visibility import paper_visible
 
 # Abstimmungsergebnisse, die als gefasster Beschluss ins Register aufgenommen werden
 DECIDED_RESULTS = ("approved", "rejected", "deferred", "noted")
@@ -86,13 +87,15 @@ def ensure_numbers_for_meeting(meeting: SessionMeeting) -> int:
     return assigned
 
 
-def build_extract_pdf(items: list, *, internal: bool) -> bytes:
+def build_extract_pdf(items: list, *, internal: bool, permissions=None) -> bytes:
     """
     Beschlussauszug-PDF erzeugen (ein oder mehrere TOPs, je TOP eine Seite).
 
     Args:
         items: Liste von SessionAgendaItems (bereits Ö/NÖ-gefiltert!)
         internal: True = interne Ausfertigung inkl. NÖ-Beschlusstexten
+        permissions: Rechte der abrufenden Person; eine nichtöffentliche Vorlage nennt auch die
+            interne Ausfertigung nur mit dem NÖ-Recht für Vorlagen (das Sitzungsrecht genügt nicht)
 
     Returns:
         bytes: PDF-Inhalt
@@ -127,7 +130,8 @@ def build_extract_pdf(items: list, *, internal: bool) -> bytes:
             item.correction_notes = []
         paper = item.paper
         item.paper_visible = paper is not None and (
-            internal or (paper.is_public and paper.status not in UNVEROEFFENTLICHT)
+            (internal and (permissions is None or paper_visible(permissions, paper)))
+            or (paper.is_public and paper.status not in UNVEROEFFENTLICHT)
         )
         item.resolution_np = item.get_resolution_text_decrypted() if internal else ""
         # Namentliche Abstimmung + Befangenheit (Issue #41)

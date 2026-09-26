@@ -31,7 +31,23 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import protocol_lock, voting_service
+from ..visibility import meeting_q, paper_visible
 from .nexturl import safe_next_url
+
+
+def _circulars(view):
+    """
+    Umlaufbeschlüsse des Mandanten; nichtöffentliche nur mit dem NÖ-Sichtrecht für Sitzungen –
+    für Liste, Detail, Rücklauf und Abschluss gleichermaßen.
+    """
+    return SessionCircularResolution.objects.filter(meeting_q(view.session_permissions), tenant=view.session_tenant)
+
+
+def _papers_for_circulars(view):
+    """Auswahl „Vorlage“ eines Umlaufs: freigegebene Vorlagen, nichtöffentliche nur mit NÖ-Recht."""
+    return SessionPaper.objects.filter(tenant=view.session_tenant, status="approved").visible_to(
+        view.session_permissions
+    )
 
 
 def _get_item(view, item_id):
@@ -175,9 +191,7 @@ class CircularListView(SessionViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        qs = SessionCircularResolution.objects.filter(tenant=self.session_tenant).select_related("organization")
-        if not self.has_permission("view_non_public_meetings"):
-            qs = qs.filter(is_public=True)
+        qs = _circulars(self).select_related("organization")
         context.update(
             {
                 "circulars": qs[:200],
@@ -185,9 +199,7 @@ class CircularListView(SessionViewMixin, TemplateView):
                 "organizations": SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)
                 .exclude(organization_type="department")
                 .order_by("name"),
-                "papers": SessionPaper.objects.filter(tenant=self.session_tenant, status="approved").order_by(
-                    "-created_at"
-                )[:100],
+                "papers": _papers_for_circulars(self).order_by("-created_at")[:100],
                 "today": timezone.localdate(),
             }
         )
@@ -231,9 +243,22 @@ class CircularCreateView(SessionViewMixin, View):
         paper_id = request.POST.get("paper", "").strip()
         if paper_id:
             try:
-                paper = SessionPaper.objects.filter(tenant=self.session_tenant, pk=paper_id).first()
+                paper = (
+                    SessionPaper.objects.filter(tenant=self.session_tenant, pk=paper_id)
+                    .visible_to(self.session_permissions)
+                    .first()
+                )
             except (ValueError, DjangoValidationError):
                 paper = None
+            if paper is None:
+                messages.error(request, "Die gewählte Vorlage wurde nicht gefunden.")
+                return redirect("session:circulars", tenant_slug=tenant_slug)
+
+        is_public = request.POST.get("is_public", "1") == "1"
+        # Die Nummer der Vorlage stünde sonst für alle mit Sitzungsrecht am öffentlichen Umlauf
+        if is_public and paper is not None and not paper.is_public:
+            messages.error(request, "Ein Umlauf zu einer nichtöffentlichen Vorlage muss selbst nichtöffentlich sein.")
+            return redirect("session:circulars", tenant_slug=tenant_slug)
 
         circular = SessionCircularResolution.objects.create(
             tenant=self.session_tenant,
@@ -242,7 +267,7 @@ class CircularCreateView(SessionViewMixin, View):
             resolution_text=resolution_text,
             paper=paper,
             deadline=deadline,
-            is_public=request.POST.get("is_public", "1") == "1",
+            is_public=is_public,
             created_by=self.session_user,
         )
         voting_service.assign_circular_number(circular)
@@ -265,11 +290,7 @@ class CircularDetailView(SessionViewMixin, TemplateView):
     permission_required = "view_meetings"
 
     def _get_circular(self):
-        qs = SessionCircularResolution.objects.filter(tenant=self.session_tenant).select_related(
-            "organization", "paper", "created_by__user"
-        )
-        if not self.has_permission("view_non_public_meetings"):
-            qs = qs.filter(is_public=True)
+        qs = _circulars(self).select_related("organization", "paper", "created_by__user")
         return get_object_or_404(qs, pk=self.kwargs["circular_id"])
 
     def get_context_data(self, **kwargs):
@@ -283,6 +304,8 @@ class CircularDetailView(SessionViewMixin, TemplateView):
         context.update(
             {
                 "circular": circular,
+                # Bezugsvorlage nur, wenn die Person sie sehen darf
+                "paper_visible": circular.paper is not None and paper_visible(self.session_permissions, circular.paper),
                 "tally": tally,
                 "members": members,
                 "can_manage": self.has_permission("edit_meetings"),
@@ -300,10 +323,7 @@ class CircularVoteView(SessionViewMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug, circular_id):
-        circular = get_object_or_404(
-            SessionCircularResolution.objects.filter(tenant=self.session_tenant),
-            pk=circular_id,
-        )
+        circular = get_object_or_404(_circulars(self), pk=circular_id)
         if circular.status != "open":
             messages.error(request, "Der Umlauf ist bereits abgeschlossen.")
             return redirect("session:circular_detail", tenant_slug=tenant_slug, circular_id=circular.id)
@@ -365,10 +385,7 @@ class CircularCloseView(SessionViewMixin, View):
     RESULTS = {"adopted", "rejected", "cancelled"}
 
     def post(self, request, tenant_slug, circular_id):
-        circular = get_object_or_404(
-            SessionCircularResolution.objects.filter(tenant=self.session_tenant),
-            pk=circular_id,
-        )
+        circular = get_object_or_404(_circulars(self), pk=circular_id)
         result = request.POST.get("result", "")
         if circular.status != "open" or result not in self.RESULTS:
             messages.error(request, "Der Umlauf ist bereits abgeschlossen.")

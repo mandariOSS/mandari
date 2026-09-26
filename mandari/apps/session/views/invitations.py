@@ -149,6 +149,7 @@ class MeetingAgendaPdfView(SessionViewMixin, TemplateView):
             meeting,
             include_non_public=include_np,
             supplementary_only=supplementary,
+            permissions=self.session_permissions,
         )
         filename = "nachtrags-tagesordnung.pdf" if supplementary else "einladung-tagesordnung.pdf"
         # Vollständige Fassung mit nichtöffentlichem Teil: Abruf protokollieren (Issue #221)

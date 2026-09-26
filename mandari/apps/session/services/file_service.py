@@ -115,6 +115,9 @@ def scan_upload(uploaded_file) -> None:
     wird die Datei damit geprüft. Das Callable erhält das UploadedFile und
     muss bei Befund eine Exception mit nutzerfreundlicher Meldung werfen.
     Ohne Konfiguration: No-Op (Hook vorbereitet für z. B. ClamAV).
+
+    Ist ein Hook eingerichtet, lässt er sich aber nicht laden, wird die Datei abgelehnt: Eine
+    eingerichtete Prüfung fällt nie stillschweigend aus.
     """
     hook_path = getattr(settings, "SESSION_FILE_SCAN_HOOK", None)
     if not hook_path:
@@ -123,7 +126,10 @@ def scan_upload(uploaded_file) -> None:
         hook = import_string(hook_path)
     except ImportError:
         logger.error("SESSION_FILE_SCAN_HOOK '%s' konnte nicht geladen werden.", hook_path)
-        return
+        raise FileValidationError(
+            "Der Virenscan ist gerade nicht verfügbar – die Datei wurde nicht angenommen. "
+            "Bitte später erneut versuchen oder den Sitzungsdienst informieren."
+        ) from None
     hook(uploaded_file)
 
 
