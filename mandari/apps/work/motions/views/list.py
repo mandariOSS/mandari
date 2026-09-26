@@ -431,7 +431,9 @@ class MotionFolderMoveView(WorkViewMixin, View):
     Dokumente in einen Ordner verschieben (einzeln oder Mehrfachauswahl).
 
     Verschoben werden nur Dokumente, die der Nutzer bearbeiten darf —
-    die Sichtbarkeit der Dokumente ändert sich dadurch NICHT.
+    die Sichtbarkeit der Dokumente ändert sich dadurch NICHT. In einen für
+    Gäste freigegebenen Ordner verschiebt nur, wer das Dokument freigeben darf
+    (das Verschieben erweitert dort den Kreis der Lesenden).
     """
 
     permission_required = "motions.edit"
@@ -449,9 +451,10 @@ class MotionFolderMoveView(WorkViewMixin, View):
 
         motions = Motion.objects.filter(organization=self.organization, id__in=motion_ids).exclude(status="deleted")
 
+        guest_folder = folder is not None and folder.is_shared_with_guests()
         moved = 0
         for motion in motions:
-            if motion.can_edit(self.membership):
+            if motion.can_edit(self.membership) and (not guest_folder or motion.can_share(self.membership)):
                 motion.folder = folder
                 motion.save(update_fields=["folder", "updated_at"])
                 moved += 1

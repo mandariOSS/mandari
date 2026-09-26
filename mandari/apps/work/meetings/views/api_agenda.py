@@ -85,7 +85,7 @@ class PrivateNoteAPIView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         if not self.membership:
             return unauthorized()
-        agenda_item = selectors.get_agenda_item_or_404(self.kwargs["item_id"])
+        agenda_item = selectors.get_org_agenda_item_or_404(self.organization, self.kwargs["item_id"])
         content = request_payload(request).get("content", "")
         services.save_private_note(self.organization, agenda_item, self.membership, content)
         return JsonResponse({"success": True})
@@ -111,7 +111,7 @@ class SpeechNoteAPIView(WorkViewMixin, View):
     def get(self, request, *args, **kwargs):
         if not self.membership:
             return unauthorized()
-        agenda_item = selectors.get_agenda_item_or_404(self.kwargs["item_id"])
+        agenda_item = selectors.get_org_agenda_item_or_404(self.organization, self.kwargs["item_id"])
         own = selectors.get_own_speech(self.membership, agenda_item)
         shared = selectors.shared_speeches(self.organization, agenda_item, exclude_author=self.membership)
         return JsonResponse(
@@ -124,7 +124,7 @@ class SpeechNoteAPIView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         if not self.membership:
             return unauthorized()
-        agenda_item = selectors.get_agenda_item_or_404(self.kwargs["item_id"])
+        agenda_item = selectors.get_org_agenda_item_or_404(self.organization, self.kwargs["item_id"])
         try:
             note = services.save_speech_note(self.organization, agenda_item, self.membership, request_payload(request))
         except PreparationError as exc:
@@ -136,7 +136,8 @@ class SpeechNoteAPIView(WorkViewMixin, View):
     def delete(self, request, *args, **kwargs):
         if not self.membership:
             return unauthorized()
-        services.delete_speech_note(self.membership, self.kwargs["item_id"])
+        agenda_item = selectors.get_org_agenda_item_or_404(self.organization, self.kwargs["item_id"])
+        services.delete_speech_note(self.membership, agenda_item.id)
         return JsonResponse({"success": True})
 
 

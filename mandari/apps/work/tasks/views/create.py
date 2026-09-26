@@ -35,13 +35,13 @@ class TaskCreateView(WorkViewMixin, TemplateView):
         # Prefill: Aufgabe aus einem Dokument heraus erstellen (?related_motion=)
         related_motion_id = self.request.GET.get("related_motion")
         if related_motion_id:
-            motion = selectors.find_motion(self.organization, related_motion_id)
+            motion = selectors.find_motion(self.organization, self.membership, related_motion_id)
             if motion is not None:
                 context["related_motion"] = motion
 
         from_protocol = self.request.GET.get("from_protocol")
         if from_protocol:
-            entry = selectors.find_protocol_entry(self.organization, from_protocol)
+            entry = selectors.find_protocol_entry(self.organization, self.membership, from_protocol)
             if entry is not None:
                 context["form"] = TaskForm(
                     organization=self.organization,

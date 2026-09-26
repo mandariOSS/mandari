@@ -31,6 +31,41 @@ class OrgMailError(Exception):
     """Versand über das organisationseigene SMTP ist fehlgeschlagen (ohne Fallback)."""
 
 
+#: Mail-Einlieferungsports, die das eigene SMTP nutzen darf (SMTP, SMTPS, Submission, alternativ)
+SMTP_PORTS = (25, 465, 587, 2525)
+
+
+def check_smtp_server(host: str, port: int) -> None:
+    """
+    Der eigene SMTP-Server muss öffentlich erreichbar sein und einen Mail-Port nutzen.
+
+    Wirft ``OrgMailError`` für andere Ports sowie für IP-Adressen – direkt angegeben oder
+    aufgelöst – in privaten, Loopback-, Link-Local-, reservierten oder Multicast-Netzen.
+    Nicht auflösbare Namen bleiben erlaubt; der Versand scheitert dann ohnehin.
+    """
+    import ipaddress
+    import socket
+
+    if port not in SMTP_PORTS:
+        raise OrgMailError("Der SMTP-Port ist nicht zulässig.")
+    name = (host or "").strip().strip("[]")
+    if not name:
+        return
+    try:
+        addresses = [ipaddress.ip_address(name)]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(name, None)
+        except (OSError, UnicodeError):
+            return
+        addresses = [ipaddress.ip_address(str(info[4][0]).split("%")[0]) for info in infos]
+    for address in addresses:
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
+        if not address.is_global or address.is_multicast:
+            raise OrgMailError("Der SMTP-Server liegt in einem internen Netz.")
+
+
 def organization_uses_own_smtp(organization) -> bool:
     """Ist der Versand über das eigene SMTP aktiv und konfiguriert?"""
     if organization is None:
@@ -43,14 +78,17 @@ def get_organization_connection(organization):
     SMTP-Verbindung aus den Organisations-Feldern aufbauen.
 
     Das Passwort wird über den Accessor entschlüsselt (tenant-spezifische
-    AES-256-GCM-Ablage) und niemals geloggt.
+    AES-256-GCM-Ablage) und niemals geloggt. Vor dem Aufbau wird der Server
+    geprüft (``check_smtp_server``) – auch für ältere Einstellungen.
     """
     from apps.common.mail_backends import SMTP_BACKEND, build_backend
 
+    port = organization.smtp_port or 587
+    check_smtp_server(organization.smtp_host, port)
     return build_backend(
         SMTP_BACKEND,
         host=organization.smtp_host,
-        port=organization.smtp_port or 587,
+        port=port,
         username=organization.smtp_username,
         password=organization.get_smtp_password(),
         use_tls=organization.smtp_use_tls,

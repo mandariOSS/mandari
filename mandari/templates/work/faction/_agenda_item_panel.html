@@ -18,10 +18,10 @@
         {% include "work/faction/partials/_agenda_item_panel_references.html" %}
 
         {# Unterpunkte #}
-        {% if item.children.all %}
+        {% if visible_children %}
         <c-ui.panel-section title="Unterpunkte">
             <div class="space-y-1">
-                {% for child in item.children.all %}
+                {% for child in visible_children %}
                 <button type="button"
                         @click="$dispatch('open-item-panel', { id: '{{ child.id }}' })"
                         class="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm text-left">

@@ -38,6 +38,40 @@ from ..visibility import can_view_item, can_view_item_with_parents
 from ._helpers import _apply_approval_item_decision
 
 
+def _visible_children(item, membership) -> list:
+    """Unterpunkte, die das Mitglied sehen darf (NÖ-Unterpunkte öffentlicher TOPs nur für Vereidigte)."""
+    from ..visibility import can_view_internal, visible_children
+
+    return visible_children(item, include_internal=can_view_internal(membership))
+
+
+def _visible_tasks(item, membership):
+    """Aufgaben am TOP, soweit sichtbar (private Aufgaben anderer bleiben verborgen)."""
+    from .. import services as faction_services
+
+    return faction_services.visible_item_tasks(item, membership)
+
+
+def _visible_motions(item, membership):
+    """Verknüpfte Dokumente, soweit sichtbar (Motion.visible_to)."""
+    from .. import services as faction_services
+
+    return faction_services.visible_linked_motions(item, membership)
+
+
+def _org_member(organization, raw_id):
+    """Mitgliedschaft der eigenen Organisation zu einer Formular-ID (sonst ``None``)."""
+    from .. import services as faction_services
+
+    return faction_services.org_member(organization, raw_id)
+
+
+def _safe_link(url: str) -> bool:
+    from .. import services as faction_services
+
+    return faction_services.safe_link_url(url)
+
+
 class FactionItemPanelView(WorkViewMixin, TemplateView):
     """GET: Render agenda item slide-over panel content."""
 
@@ -107,7 +141,6 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
             .order_by("user__last_name", "user__first_name")
         )
 
-        # Linked RIS papers
         linked_papers = item.related_papers.all().order_by("-date")
 
         context.update(
@@ -123,12 +156,13 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
                     "order", "created_at"
                 ),
                 "attachments": item.attachments.select_related("uploaded_by__user").order_by("-created_at"),
-                "tasks": item.tasks.select_related("assigned_to__user", "created_by__user"),
-                "linked_motions": item.related_motions.all(),
+                "tasks": _visible_tasks(item, self.membership),
+                "linked_motions": _visible_motions(item, self.membership),
                 "linked_papers": linked_papers,
                 "available_motions": available_motions,
                 "available_members": available_members,
                 "reference_links": item.reference_links or [],
+                "visible_children": _visible_children(item, self.membership),
                 "organization": self.organization,
                 "org_slug": self.organization.slug,
                 "membership": self.membership,
@@ -309,15 +343,16 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             order=meeting.protocol_entries.count() + 1,
         )
 
+        # Personen nur aus der eigenen Organisation
         speaker_id = request.POST.get("speaker")
         if speaker_id and entry_type == "speech":
-            entry.speaker_id = speaker_id
+            entry.speaker = _org_member(self.organization, speaker_id)
 
         if entry_type == "action":
             assignee_id = request.POST.get("action_assignee")
             due_date = request.POST.get("action_due_date")
             if assignee_id:
-                entry.action_assignee_id = assignee_id
+                entry.action_assignee = _org_member(self.organization, assignee_id)
             if due_date:
                 entry.action_due_date = due_date
 
@@ -335,7 +370,8 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         if not entry_id or not content:
             return HttpResponse(status=400)
 
-        entry = get_object_or_404(FactionProtocolEntry, id=entry_id, meeting=meeting)
+        # Nur Einträge dieses TOPs – dessen NÖ-Prüfung ist bereits erfolgt
+        entry = get_object_or_404(FactionProtocolEntry, id=entry_id, meeting=meeting, agenda_item=item)
         is_own = entry.created_by == self.membership and not meeting.protocol_approved
         if not can_edit and not self._can_protocol(meeting) and not is_own:
             return HttpResponse(status=403)
@@ -348,7 +384,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
         speaker_id = request.POST.get("speaker")
         if speaker_id:
-            entry.speaker_id = speaker_id
+            entry.speaker = _org_member(self.organization, speaker_id)
 
         entry.save()
         return self._panel_response(request, meeting, item, "Eintrag aktualisiert")
@@ -467,6 +503,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         from apps.work.motions.models import Motion
 
         motion = get_object_or_404(Motion, id=motion_id, organization=self.organization)
+        # Nur Dokumente, die das Mitglied selbst sehen darf (sonst erschiene ihr Titel am TOP)
+        if not motion.can_access(self.membership):
+            return HttpResponse(status=404)
         item.related_motions.add(motion)
 
         return self._panel_response(request, meeting, item, f'Antrag "{motion.title[:50]}" verknüpft')
@@ -560,7 +599,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             organization=self.organization,
             title=title,
             description=f"Aus Fraktionssitzung: {meeting.title}\nTOP: {item.number} {item.title}",
-            assigned_to_id=assigned_to_id if assigned_to_id else None,
+            assigned_to=_org_member(self.organization, assigned_to_id) if assigned_to_id else None,
             due_date=due_date,
             created_by=self.membership,
             related_faction_meeting=meeting,
@@ -579,6 +618,8 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
         if not label or not url:
             return HttpResponse("Label und URL sind erforderlich.", status=400)
+        if not _safe_link(url):
+            return HttpResponse("Bitte eine Adresse mit http:// oder https:// angeben.", status=400)
 
         links = item.reference_links or []
         links.append({"label": label, "url": url})

@@ -402,6 +402,17 @@ def resolve_paper_anchor(
     return paper, _truthy(share_flag)
 
 
+def _safe_link_url(url: str) -> bool:
+    """Nur http(s)-Adressen (kein ``javascript:``, ``data:`` u. Ä.)."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.scheme.lower() in ("http", "https") and bool(parts.netloc)
+
+
 @transaction.atomic
 def add_document_link(
     organization: Organization,
@@ -414,6 +425,10 @@ def add_document_link(
     title = str(payload.get("title", "")).strip()
     if not title:
         raise PreparationError("Titel erforderlich")
+    # Verweise nur als http(s)-Adresse; hochgeladene Dateien laufen über add_document_upload
+    url = str(payload.get("url", "")).strip()
+    if not _safe_link_url(url):
+        raise PreparationError("Bitte eine Adresse mit http:// oder https:// angeben.")
     paper, share_across = resolve_paper_anchor(
         agenda_item, payload.get("paper_id"), payload.get("share_across_committees", False)
     )
@@ -423,9 +438,9 @@ def add_document_link(
         agenda_item=agenda_item,
         paper=paper,
         share_across_committees=share_across,
-        document_type=payload.get("document_type", "link"),
+        document_type="link",
         title=title,
-        url=payload.get("url", ""),
+        url=url,
         description=payload.get("description", ""),
     )
     record_activity(organization, meeting, membership)

@@ -10,15 +10,6 @@
 {% block work_content %}
 {% include "work/profile/_tabs.html" with active_tab="security" %}
 
-{% if messages %}
-<div class="space-y-2 mb-6">
-    {% for message in messages %}
-    <c-ui.alert variant="{% if message.tags == 'success' %}success{% elif message.tags == 'error' %}error{% else %}info{% endif %}"
-                icon="{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}alert-circle{% else %}info{% endif %}">{{ message }}</c-ui.alert>
-    {% endfor %}
-</div>
-{% endif %}
-
 {{ password_requirements|json_script:"password-requirements" }}
 <div x-data="securitySettings">
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">

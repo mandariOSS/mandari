@@ -159,8 +159,8 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
         meeting.previous_meeting = previous
         meeting.save()
 
-        # Create attendance records for all active members
-        for member in self.organization.memberships.filter(is_active=True):
+        # Anwesenheit für alle aktiven Mitglieder – ohne Gastzugänge
+        for member in self.organization.memberships.filter(is_active=True, is_guest=False):
             FactionAttendance.objects.create(meeting=meeting, membership=member, status="invited")
 
         # Auto-create approval agenda item if enabled — über den Service, damit

@@ -123,6 +123,10 @@ def test_can_edit_task(org: Any, member: Any, other: Any, manager: Any) -> None:
     task = make_task(org, member)
     assert services.can_edit_task(task, member)
     assert not services.can_edit_task(task, other)
+    # tasks.manage wirkt nur auf Aufgaben, die das Mitglied sehen darf (private Aufgaben bleiben privat)
+    assert not services.can_edit_task(task, manager)
+    task.visibility = "organization"
+    task.save()
     assert services.can_edit_task(task, manager)
 
 
@@ -291,7 +295,7 @@ def test_import_protocol_entries_creates_tasks(org: Any, member: Any, other: Any
     entry = make_entry(meeting, "Antrag vorbereiten", entry_type="action", action_assignee=other, created_by=member)
     note = make_entry(meeting, "Notiz", entry_type="note", created_by=member)
 
-    assert list(selectors.open_protocol_action_items(org)) == [entry]
+    assert list(selectors.open_protocol_action_items(org, member)) == [entry]
     created = services.import_protocol_entries(org, member, [str(entry.id), str(note.id), "keine-uuid"])
 
     assert created == 1

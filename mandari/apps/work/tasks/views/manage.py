@@ -51,7 +51,7 @@ class TaskImportView(WorkViewMixin, View):
     permission_required = "tasks.create"
 
     def get(self, request, *args, **kwargs):
-        action_items = selectors.open_protocol_action_items(self.organization)
+        action_items = selectors.open_protocol_action_items(self.organization, self.membership)
         return JsonResponse(
             {
                 "items": [

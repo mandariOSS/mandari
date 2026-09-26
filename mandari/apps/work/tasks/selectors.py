@@ -9,7 +9,7 @@ Board, Panel, Export und Import dieselbe Grenze ziehen.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from django.db.models import Prefetch, Q, QuerySet
 from django.utils import timezone
@@ -96,6 +96,14 @@ def visible_tasks(
         | Q(assigned_to=membership)
         | Q(shares__membership=membership)
     ).distinct()
+
+
+def tasks_for_motion(organization: Organization, membership: Membership, motion: Motion) -> QuerySet[Task]:
+    """Mit einem Dokument verknüpfte Aufgaben, die das Mitglied sehen darf; Gastzugänge sehen keine Aufgaben."""
+    if membership.is_guest:
+        return Task.objects.none()
+    base = Task.objects.filter(organization=organization, related_motion=motion).select_related("assigned_to__user")
+    return visible_tasks(organization, membership, base=base).order_by("is_completed", "due_date", "-created_at")
 
 
 def own_tasks(membership: Membership, *, base: QuerySet[Task]) -> QuerySet[Task]:
@@ -241,46 +249,55 @@ def export_queryset(organization: Organization, membership: Membership) -> Query
     )
 
 
-def find_motion(organization: Organization, motion_id: Any) -> Motion | None:
-    """Dokument der Organisation per ID (Prefill "Aufgabe aus Dokument"), sonst ``None``."""
+def find_motion(organization: Organization, membership: Membership, motion_id: Any) -> Motion | None:
+    """Dokument per ID, das das Mitglied sehen darf (Prefill "Aufgabe aus Dokument"), sonst ``None``."""
     from django.core.exceptions import ValidationError
 
     from apps.work.motions.models import Motion
 
     try:
-        return Motion.objects.get(id=motion_id, organization=organization)
+        visible = cast(Any, Motion).visible_to(membership)
+        return cast("Motion", visible.get(id=motion_id, organization=organization))
     except (Motion.DoesNotExist, ValueError, ValidationError):
         return None
 
 
+def _visible_protocol_entries(organization: Organization, membership: Membership) -> QuerySet[FactionProtocolEntry]:
+    """Protokolleinträge der Organisation; Einträge nicht-öffentlicher TOPs nur für Vereidigte."""
+    from apps.work.faction.models import FactionProtocolEntry
+    from apps.work.faction.visibility import can_view_internal
+
+    qs = FactionProtocolEntry.objects.filter(meeting__organization=organization)
+    if not can_view_internal(membership):
+        qs = qs.exclude(Q(agenda_item__visibility="internal") | Q(agenda_item__parent__visibility="internal"))
+    return qs
+
+
 def find_protocol_entry(
-    organization: Organization, entry_id: Any, *, action_only: bool = False
+    organization: Organization, membership: Membership, entry_id: Any, *, action_only: bool = False
 ) -> FactionProtocolEntry | None:
-    """Protokolleintrag einer Fraktionssitzung der Organisation, sonst ``None``."""
+    """Protokolleintrag einer Fraktionssitzung der Organisation, den das Mitglied sehen darf, sonst ``None``."""
     from django.core.exceptions import ValidationError
 
     from apps.work.faction.models import FactionProtocolEntry
 
-    filters: dict[str, Any] = {"id": entry_id, "meeting__organization": organization}
+    filters: dict[str, Any] = {"id": entry_id}
     if action_only:
         filters["entry_type"] = "action"
     try:
-        return FactionProtocolEntry.objects.get(**filters)
+        return _visible_protocol_entries(organization, membership).get(**filters)
     except (FactionProtocolEntry.DoesNotExist, ValueError, ValidationError):
         return None
 
 
-def open_protocol_action_items(organization: Organization, *, limit: int = 50) -> QuerySet[FactionProtocolEntry]:
-    """Offene Aufgaben-Einträge aus Fraktionsprotokollen, die noch nicht importiert wurden."""
-    from apps.work.faction.models import FactionProtocolEntry
-
+def open_protocol_action_items(
+    organization: Organization, membership: Membership, *, limit: int = 50
+) -> QuerySet[FactionProtocolEntry]:
+    """Offene Aufgaben-Einträge aus Fraktionsprotokollen (sichtbar für das Mitglied), noch nicht importiert."""
     imported_meetings = Task.objects.filter(organization=organization).values_list("related_faction_meeting", flat=True)
     return (
-        FactionProtocolEntry.objects.filter(
-            meeting__organization=organization,
-            entry_type="action",
-            action_completed=False,
-        )
+        _visible_protocol_entries(organization, membership)
+        .filter(entry_type="action", action_completed=False)
         .exclude(id__in=imported_meetings)
         .select_related("meeting", "agenda_item", "action_assignee__user")
         .order_by("-created_at")[:limit]

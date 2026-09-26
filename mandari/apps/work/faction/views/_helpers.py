@@ -12,6 +12,7 @@ Simplified architecture: 4 views instead of 13.
 import logging
 from datetime import timedelta
 
+from django.db.models import Q
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -33,7 +34,7 @@ def _get_meeting_context(view, meeting):
     """Build shared context dict for detail page and partials."""
     from apps.common.permissions import PermissionChecker
 
-    from ..visibility import LOCKED_PLACEHOLDER
+    from ..visibility import LOCKED_PLACEHOLDER, visible_children
     from ..visibility import can_view_internal as _can_view_internal
 
     checker = PermissionChecker(view.membership)
@@ -52,6 +53,9 @@ def _get_meeting_context(view, meeting):
     # Kontext — nur die Anzahl für "Gesperrte Information"-Platzhalter
     internal_items = [i for i in agenda_items if i.visibility == "internal"] if can_view_internal else []
     locked_internal_count = 0 if can_view_internal else sum(1 for i in agenda_items if i.visibility == "internal")
+    # Unterpunkte: NÖ-Unterpunkte öffentlicher TOPs nur für Vereidigte (Children sind vorab geladen)
+    for item in agenda_items:
+        item.visible_children = visible_children(item, include_internal=can_view_internal)
 
     # Attendance
     attendances = meeting.attendances.select_related("membership__user")
@@ -152,7 +156,9 @@ def _get_meeting_context(view, meeting):
         "agenda_item", "speaker__user", "created_by__user"
     ).order_by("-created_at")
     if not can_view_internal:
-        protocol_entries_qs = protocol_entries_qs.exclude(agenda_item__visibility="internal")
+        protocol_entries_qs = protocol_entries_qs.exclude(
+            Q(agenda_item__visibility="internal") | Q(agenda_item__parent__visibility="internal")
+        )
     protocol_entries = protocol_entries_qs[:10]
 
     protocol_entry_count = protocol_entries_qs.count()

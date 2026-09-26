@@ -10,17 +10,6 @@
 {% block work_content %}
 {% include "work/profile/_tabs.html" with active_tab="committees" %}
 
-{% if messages %}
-<div class="space-y-2 mb-6">
-    {% for message in messages %}
-    <div class="p-3 rounded-lg flex items-center gap-3 {% if message.tags == 'success' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400{% elif message.tags == 'error' %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400{% else %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400{% endif %}">
-        <i data-lucide="{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}alert-circle{% else %}info{% endif %}" class="w-4 h-4 flex-shrink-0"></i>
-        <span class="text-sm">{{ message }}</span>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-
 <form method="post">
 {% csrf_token %}
 <div class="space-y-6">

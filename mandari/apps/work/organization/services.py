@@ -23,6 +23,7 @@ from django.contrib.messages import constants as message_levels
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, URLValidator
 from django.db import transaction
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 
@@ -297,18 +298,25 @@ def _invitation_roles(invitation: UserInvitation) -> list[Role]:
 @transaction.atomic
 def accept_invitation(invitation: UserInvitation, user: User) -> str:
     """
-    Einladung annehmen: Mitgliedschaft anlegen oder reaktivieren, Rollen übernehmen,
-    ggf. Eigentümer setzen, Einladung als angenommen markieren. Liefert die Meldung.
+    Einladung annehmen: Mitgliedschaft anlegen, Rollen übernehmen, ggf. Eigentümer setzen,
+    Einladung als angenommen markieren. Liefert die Meldung.
+
+    Nur das Konto mit der eingeladenen Adresse kann annehmen; eine deaktivierte Mitgliedschaft
+    wird dabei nicht wieder aktiv (Reaktivieren bleibt der Mitgliederverwaltung vorbehalten).
     """
     organization = invitation.organization
+    if (user.email or "").strip().lower() != (invitation.email or "").strip().lower():
+        raise ServiceError(
+            "Diese Einladung gilt für eine andere E-Mail-Adresse. Bitte melde dich mit dem eingeladenen Konto an."
+        )
     existing = selectors.find_membership(organization, user)
     if existing:
         if existing.is_active:
             message = "Sie sind bereits Mitglied dieser Organisation."
         else:
-            existing.is_active = True
-            existing.save()
-            message = f"Willkommen zurück bei {organization.name}!"
+            raise ServiceError(
+                "Dein Zugang zu dieser Organisation ist deaktiviert. Bitte wende dich an ihre Verwaltung."
+            )
     else:
         membership = Membership.objects.create(
             user=user,
@@ -590,6 +598,10 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
     _ensure_may_remove(organization, member, actor_user)
     member.is_active = False
     member.save()
+    # Offene Einladungen an die Person und von ihr verfallen
+    UserInvitation.objects.filter(organization=organization, accepted_at__isnull=True).filter(
+        Q(email__iexact=member.user.email) | Q(invited_by=member.user)
+    ).delete()
 
 
 def reactivate_member(organization: Organization, member: Membership, actor: Membership) -> bool:
@@ -1055,9 +1067,13 @@ class EmailSettingsInput:
 def save_email_settings(organization: Organization, data: EmailSettingsInput) -> bool:
     """
     E-Mail-Einstellungen speichern. Passwort nur überschreiben, wenn ein neues eingegeben wurde —
-    Ablage ausschließlich über den verschlüsselnden Accessor. Liefert ``True``, wenn eigenes SMTP
-    aktiv ist, aber kein Server hinterlegt wurde (Hinweis für die Oberfläche).
+    Ablage ausschließlich über den verschlüsselnden Accessor. Ändern sich Server, Port oder Benutzer
+    ohne neues Passwort, verfällt das gespeicherte: Zugangsdaten gehen nur an den Server, für den
+    sie eingegeben wurden. Server in internen Netzen und andere als Mail-Ports sind nicht möglich.
+    Liefert ``True``, wenn eigenes SMTP aktiv ist, aber kein Server hinterlegt wurde (Hinweis für die Oberfläche).
     """
+    from apps.common.org_email import SMTP_PORTS, OrgMailError, check_smtp_server
+
     mode = data.mail_sender_mode if data.mail_sender_mode in dict(organization.MAIL_SENDER_MODE_CHOICES) else "mandari"
     if data.smtp_from_email:
         try:
@@ -1065,9 +1081,21 @@ def save_email_settings(organization: Organization, data: EmailSettingsInput) ->
         except ValidationError as exc:
             raise ServiceError("Ungültige Absender-Adresse.") from exc
     try:
-        port = max(1, min(int(data.smtp_port_raw or 587), 65535))
+        port = int(data.smtp_port_raw or 587)
     except (TypeError, ValueError):
         port = 587
+    try:
+        check_smtp_server(data.smtp_host, port)
+    except OrgMailError as exc:
+        ports = ", ".join(str(p) for p in SMTP_PORTS)
+        raise ServiceError(
+            f"Dieser SMTP-Server ist nicht möglich: Er muss öffentlich erreichbar sein und einen Mail-Port nutzen ({ports})."
+        ) from exc
+    verbindung_geaendert = (data.smtp_host, port, data.smtp_username) != (
+        organization.smtp_host,
+        organization.smtp_port,
+        organization.smtp_username,
+    )
 
     organization.mail_sender_mode = mode
     organization.smtp_fallback_to_mandari = data.smtp_fallback_to_mandari
@@ -1079,7 +1107,7 @@ def save_email_settings(organization: Organization, data: EmailSettingsInput) ->
     organization.smtp_from_name = data.smtp_from_name
     if data.smtp_password:
         organization.set_smtp_password(data.smtp_password)
-    elif data.smtp_password_clear:
+    elif data.smtp_password_clear or verbindung_geaendert:
         organization.set_smtp_password("")
     _save_organization(organization)
     return mode == "smtp" and not organization.smtp_host
@@ -1701,17 +1729,21 @@ def update_contact_settings(
 
 @transaction.atomic
 def update_parties(organization: Organization, party_ids: list[str], new_party_name: str) -> None:
-    """Parteizugehörigkeit setzen; optional neue Partei anlegen; primäre Parteigruppe bleibt immer verknüpft."""
-    from apps.tenants.models import PartyGroup
+    """
+    Parteizugehörigkeit setzen; primäre Parteigruppe bleibt immer verknüpft.
 
+    Parteien sind plattformweit sichtbar – eine Organisation wählt bestehende aus (auch per Name),
+    legt aber keine neuen an; das übernimmt die Plattform-Verwaltung.
+    """
     parties = selectors.parties_by_ids(party_ids)
     if new_party_name:
         existing = selectors.find_party_group_by_name(new_party_name)
-        if existing:
-            if existing not in parties:
-                parties.append(existing)
-        else:
-            parties.append(PartyGroup.objects.create(name=new_party_name))
+        if existing is None:
+            raise ServiceError(
+                f"Die Partei „{new_party_name}“ gibt es noch nicht. Neue Parteien legt der mandari-Support an."
+            )
+        if existing not in parties:
+            parties.append(existing)
     if organization.party_group and organization.party_group not in parties:
         parties.append(organization.party_group)
     organization.parties.set(parties)

@@ -4,11 +4,9 @@ Kommentare zu OParl-Vorlagen (gremienübergreifende Zusammenarbeit).
 """
 
 from django.http import Http404, JsonResponse
-from django.shortcuts import get_object_or_404
 from django.views import View
 
 from apps.common.mixins import WorkViewMixin
-from insight_core.models import OParlPaper
 
 from .. import selectors, services
 from ..serializers import decrypted, serialize_paper_comment
@@ -24,14 +22,14 @@ class PaperCommentAPIView(WorkViewMixin, View):
     def get(self, request, *args, **kwargs):
         if not self.membership:
             return unauthorized()
-        paper = get_object_or_404(OParlPaper, id=self.kwargs["paper_id"])
+        paper = selectors.get_org_paper_or_404(self.organization, self.kwargs["paper_id"])
         comments = selectors.visible_paper_comments(paper, self.membership)
         return JsonResponse({"comments": [serialize_paper_comment(c, self.membership) for c in comments]})
 
     def post(self, request, *args, **kwargs):
         if not self.membership:
             return unauthorized()
-        paper = get_object_or_404(OParlPaper, id=self.kwargs["paper_id"])
+        paper = selectors.get_org_paper_or_404(self.organization, self.kwargs["paper_id"])
         try:
             comment = services.create_paper_comment(self.organization, paper, self.membership, request_payload(request))
         except PreparationError as exc:

@@ -11,6 +11,7 @@ Benachrichtigungen. Pfade mit mehreren Schreibzugriffen laufen in
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -42,8 +43,10 @@ def _hub() -> Any:
 
 
 def can_edit_task(task: Task, membership: Membership) -> bool:
-    """Ersteller, Zugewiesene und Mitglieder mit ``tasks.manage`` dürfen bearbeiten."""
-    return task.created_by == membership or task.assigned_to == membership or membership.has_permission("tasks.manage")
+    """Ersteller, Zugewiesene und Mitglieder mit ``tasks.manage`` – letztere nur bei Aufgaben, die sie sehen dürfen."""
+    if task.created_by == membership or task.assigned_to == membership:
+        return True
+    return membership.has_permission("tasks.manage") and task.can_access(membership)
 
 
 def _sync_completion(task: Task, *, previous_status: str | None = None) -> None:
@@ -84,7 +87,7 @@ def create_task(
     if not task.assigned_to:
         task.assigned_to = membership
     if related_motion_id:
-        motion = selectors.find_motion(organization, related_motion_id)
+        motion = selectors.find_motion(organization, membership, related_motion_id)
         if motion is not None:
             task.related_motion = motion
     task.position = selectors.next_position(organization, task.status)
@@ -95,6 +98,21 @@ def create_task(
     return task
 
 
+def _org_member_ids(organization_id: Any, raw_ids: Sequence[str]) -> list[Any]:
+    """IDs aktiver Mitgliedschaften (ohne Gäste) der Organisation aus einer Formularliste; Fremdes fällt weg."""
+    parsed = []
+    for raw_id in raw_ids:
+        try:
+            parsed.append(uuid.UUID(str(raw_id)))
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return list(
+        Membership.objects.filter(
+            id__in=parsed, organization_id=organization_id, is_active=True, is_guest=False
+        ).values_list("id", flat=True)
+    )
+
+
 @transaction.atomic
 def update_visibility(task: Task, membership: Membership, visibility: str, share_with_ids: Sequence[str]) -> None:
     """Sichtbarkeit setzen und Freigaben angleichen (nur bei ``shared`` bleiben Freigaben bestehen)."""
@@ -102,8 +120,10 @@ def update_visibility(task: Task, membership: Membership, visibility: str, share
         task.visibility = visibility
         task.save(update_fields=["visibility"])
     if visibility == "shared":
-        TaskShare.objects.filter(task=task).exclude(membership_id__in=share_with_ids).delete()
-        for member_id in share_with_ids:
+        # Nur aktive Mitglieder (keine Gastzugänge) derselben Organisation
+        member_ids = _org_member_ids(task.organization_id, share_with_ids)
+        TaskShare.objects.filter(task=task).exclude(membership_id__in=member_ids).delete()
+        for member_id in member_ids:
             TaskShare.objects.get_or_create(task=task, membership_id=member_id, defaults={"shared_by": membership})
     else:
         TaskShare.objects.filter(task=task).delete()
@@ -126,7 +146,7 @@ def import_protocol_entries(organization: Organization, membership: Membership, 
     """Aufgaben aus Protokolleinträgen (Typ ``action``) anlegen; liefert die Anzahl."""
     created = 0
     for entry_id in entry_ids:
-        entry = selectors.find_protocol_entry(organization, entry_id, action_only=True)
+        entry = selectors.find_protocol_entry(organization, membership, entry_id, action_only=True)
         if entry is None:
             continue
         task = Task.objects.create(

@@ -60,8 +60,10 @@ def build_personal_feed(user) -> bytes:
     events = []
 
     # -- Fraktionssitzungen aller Organisationen -------------------------
-    org_ids = [m.organization_id for m in memberships]
-    org_by_id = {m.organization_id: m.organization for m in memberships}
+    # Nur Organisationen, in denen die Person Fraktionssitzungen sehen darf (keine Gastzugänge)
+    faction_memberships = [m for m in memberships if not m.is_guest and m.has_permission("faction.view_public")]
+    org_ids = [m.organization_id for m in faction_memberships]
+    org_by_id = {m.organization_id: m.organization for m in faction_memberships}
     faction_meetings = (
         FactionMeeting.objects.filter(
             organization_id__in=org_ids,

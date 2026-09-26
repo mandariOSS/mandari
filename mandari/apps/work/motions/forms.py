@@ -206,6 +206,13 @@ class MotionCommentForm(forms.ModelForm):
             "parent": forms.HiddenInput(),
         }
 
+    def __init__(self, *args, motion=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Antworten nur auf Kommentare desselben Dokuments
+        self.fields["parent"].queryset = (
+            MotionComment.objects.filter(motion=motion) if motion is not None else MotionComment.objects.none()
+        )
+
 
 class MotionStatusForm(forms.Form):
     """Form for changing motion status."""
