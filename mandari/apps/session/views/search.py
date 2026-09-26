@@ -142,13 +142,15 @@ class SessionSearchView(SessionViewMixin, TemplateView):
                     protocols.select_related("meeting__organization").order_by("-meeting__start")[:RESULT_LIMIT]
                 )
 
-            # Anlagen (Dateiname + extrahierter Text)
-            if wants("files") and self.has_permission("view_meetings"):
-                files = SessionFile.objects.filter(tenant=self.session_tenant).filter(
-                    Q(name__icontains=query) | Q(text_content__icontains=query)
+            # Anlagen (Dateiname + extrahierter Text): nur Anlagen, die die Person herunterladen dürfte –
+            # Sichtrecht des Elternobjekts, NÖ-Anlage oder NÖ-Elternobjekt nur mit NÖ-Recht. Sonst nennte
+            # die Trefferliste NÖ-Kontext, und die Volltextsuche verriete den Inhalt Wort für Wort.
+            if wants("files") and self.session_permissions & {"view_meetings", "view_papers"}:
+                files = (
+                    SessionFile.objects.filter(tenant=self.session_tenant)
+                    .visible_to(self.session_permissions)
+                    .filter(Q(name__icontains=query) | Q(text_content__icontains=query))
                 )
-                if not self.has_permission("view_non_public_meetings"):
-                    files = files.filter(is_public=True)
                 if filters["organization"]:
                     files = files.filter(
                         SessionMeeting.organization_q(filters["organization"], "meeting__")

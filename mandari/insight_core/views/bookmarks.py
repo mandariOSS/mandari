@@ -6,6 +6,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import json
+import uuid
 
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -18,7 +19,28 @@ from ..models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    withdrawn_q,
 )
+
+#: Höchstzahl der Einträge je Art, die die anonyme Merkliste in einer Anfrage auflöst
+MAX_ENTITY_IDS = 200
+
+
+def _parse_ids(raw: str) -> list[uuid.UUID]:
+    """Kommagetrennte IDs lesen: ungültige verwerfen, höchstens MAX_ENTITY_IDS."""
+    ids: list[uuid.UUID] = []
+    for part in raw.split(",")[:MAX_ENTITY_IDS]:
+        try:
+            ids.append(uuid.UUID(part.strip()))
+        except ValueError:
+            continue
+    return ids
+
+
+def _visible(model):
+    """Einträge für die Merkliste: nie etwas, das mandari Session zurückgenommen hat."""
+    return model.objects.exclude(withdrawn_q())
+
 
 # =============================================================================
 # SEO: robots.txt und Sitemaps
@@ -45,19 +67,21 @@ class MerklisteView(TemplateView):
             for b in bookmarks:
                 bookmark_ids.setdefault(b.entity_type, []).append(b.entity_id)
 
-            context["bookmarked_papers"] = OParlPaper.objects.filter(id__in=bookmark_ids.get("paper", [])).order_by(
-                "-date", "-oparl_created"
+            context["bookmarked_papers"] = (
+                _visible(OParlPaper).filter(id__in=bookmark_ids.get("paper", [])).order_by("-date", "-oparl_created")
             )
             context["bookmarked_meetings"] = (
-                OParlMeeting.objects.filter(id__in=bookmark_ids.get("meeting", []))
+                _visible(OParlMeeting)
+                .filter(id__in=bookmark_ids.get("meeting", []))
                 .prefetch_related("organizations")
                 .order_by("-start")
             )
-            context["bookmarked_organizations"] = OParlOrganization.objects.filter(
-                id__in=bookmark_ids.get("organization", [])
-            ).order_by("name")
+            context["bookmarked_organizations"] = (
+                _visible(OParlOrganization).filter(id__in=bookmark_ids.get("organization", [])).order_by("name")
+            )
             context["bookmarked_persons"] = (
-                OParlPerson.objects.filter(id__in=bookmark_ids.get("person", []))
+                _visible(OParlPerson)
+                .filter(id__in=bookmark_ids.get("person", []))
                 .select_related("body")
                 .order_by("family_name", "given_name")
             )
@@ -93,6 +117,10 @@ def bookmark_toggle(request):
 
     if not entity_id:
         return JsonResponse({"error": "ID fehlt"}, status=400)
+    try:
+        entity_id = uuid.UUID(str(entity_id))
+    except ValueError:
+        return JsonResponse({"error": "Ungültige ID"}, status=400)
 
     bookmark, created = Bookmark.objects.get_or_create(
         user=request.user,
@@ -130,30 +158,26 @@ def bookmark_entities(request):
     if not entity_type or not ids_str:
         return HttpResponse("")
 
-    try:
-        ids = [id.strip() for id in ids_str.split(",") if id.strip()]
-    except Exception:
-        return HttpResponse("")
-
+    ids = _parse_ids(ids_str)
     if not ids:
         return HttpResponse("")
 
     template_map = {
         "paper": (
             "partials/merkliste_papers.html",
-            OParlPaper.objects.filter(id__in=ids).order_by("-date", "-oparl_created"),
+            _visible(OParlPaper).filter(id__in=ids).order_by("-date", "-oparl_created"),
         ),
         "meeting": (
             "partials/merkliste_meetings.html",
-            OParlMeeting.objects.filter(id__in=ids).prefetch_related("organizations").order_by("-start"),
+            _visible(OParlMeeting).filter(id__in=ids).prefetch_related("organizations").order_by("-start"),
         ),
         "organization": (
             "partials/merkliste_organizations.html",
-            OParlOrganization.objects.filter(id__in=ids).order_by("name"),
+            _visible(OParlOrganization).filter(id__in=ids).order_by("name"),
         ),
         "person": (
             "partials/merkliste_persons.html",
-            OParlPerson.objects.filter(id__in=ids).select_related("body").order_by("family_name", "given_name"),
+            _visible(OParlPerson).filter(id__in=ids).select_related("body").order_by("family_name", "given_name"),
         ),
     }
 

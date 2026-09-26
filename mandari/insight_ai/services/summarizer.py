@@ -103,14 +103,18 @@ class SummaryService:
         # Get organizations from consultations via meetings
         organizations = set()
         try:
-            from insight_core.models import OParlMeeting
+            from insight_core.models import OParlMeeting, withdrawn_q
 
-            # Get meeting external IDs from consultations
-            meeting_ext_ids = paper.consultations.values_list("meeting_external_id", flat=True).distinct()[:10]
+            # Get meeting external IDs from consultations (ohne von Session zurückgenommene)
+            meeting_ext_ids = (
+                paper.consultations.exclude(withdrawn_q()).values_list("meeting_external_id", flat=True).distinct()[:10]
+            )
 
             # Find meetings and their organizations
-            meetings = OParlMeeting.objects.filter(external_id__in=[m for m in meeting_ext_ids if m]).prefetch_related(
-                "organizations"
+            meetings = (
+                OParlMeeting.objects.filter(external_id__in=[m for m in meeting_ext_ids if m])
+                .exclude(withdrawn_q())
+                .prefetch_related("organizations")
             )
 
             for meeting in meetings:
@@ -187,7 +191,7 @@ class SummaryService:
         files_to_extract = []
 
         # First pass: collect existing text and identify files needing extraction
-        for file in paper.files.all():
+        for file in self._current_files(paper):
             if file.text_content and file.text_content.strip():
                 file_name = file.name or file.file_name or "Dokument"
                 texts.append(f"### {file_name}\n{file.text_content.strip()}")
@@ -267,12 +271,23 @@ class SummaryService:
         """
         texts = []
 
-        for file in paper.files.all():
+        for file in self._current_files(paper):
             if file.text_content and file.text_content.strip():
                 file_name = file.name or file.file_name or "Dokument"
                 texts.append(f"### {file_name}\n{file.text_content.strip()}")
 
         return "\n\n---\n\n".join(texts)
+
+    @staticmethod
+    def _current_files(paper: "OParlPaper"):
+        """
+        Anlagen, die in die Zusammenfassung einfließen dürfen: nur nicht gelöschte.
+
+        Zurückgenommene Anlagen (in Session nicht-öffentlich gestellt oder gelöscht) und in der
+        Quelle gelöschte Dateien gehören nicht mehr zum Vorgang; ihr Text darf nicht über eine
+        öffentlich abrufbare Zusammenfassung weiterleben.
+        """
+        return paper.files.filter(deleted=False)
 
     def is_available(self) -> bool:
         """

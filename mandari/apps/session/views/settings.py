@@ -24,10 +24,24 @@ from ..models import (
     SessionRole,
     SessionUser,
 )
-from ..permissions import SessionViewMixin
+from ..permissions import SessionViewMixin, grantable_permissions, is_admin_user, role_within_scope
 from ..services.user_invitations import resend_user_invitation, send_user_invitation
 
 logger = logging.getLogger(__name__)
+
+#: Meldung, wenn eine Rolle außerhalb des eigenen Umfangs zugewiesen oder entzogen werden soll
+OUTSIDE_SCOPE = (
+    "Rollen mit Rechten, die Sie selbst nicht haben – darunter die Administrator-Rolle und die "
+    "Kontrollrechte –, weist nur ein Administrator zu oder entzieht sie."
+)
+
+
+def roles_within_scope(session_user, roles) -> bool:
+    """Darf diese Person alle genannten Rollen zuweisen bzw. entziehen? (keine Rechteausweitung)"""
+    grantable = grantable_permissions(session_user)
+    admin = is_admin_user(session_user)
+    return all(role_within_scope(role, grantable, admin=admin) for role in roles)
+
 
 # =============================================================================
 # SETTINGS
@@ -253,6 +267,9 @@ class UserInviteView(SessionViewMixin, TemplateView):
             return redirect("session:user_invite", tenant_slug=self.session_tenant.slug)
 
         roles = list(SessionRole.objects.filter(id__in=role_ids, tenant=self.session_tenant))
+        if not roles_within_scope(self.session_user, roles):
+            messages.error(request, OUTSIDE_SCOPE)
+            return redirect("session:user_invite", tenant_slug=self.session_tenant.slug)
 
         # Existiert bereits ein Konto, das per Adresse übernommen werden darf? Dann direkt Mitglied machen.
         # Konten aus einer nie bestätigten Selbstregistrierung erhalten eine Einladung:
@@ -316,7 +333,12 @@ class UserRolesUpdateView(SessionViewMixin, View):
     def post(self, request, tenant_slug, session_user_id):
         target = get_object_or_404(SessionUser, pk=session_user_id, tenant=self.session_tenant)
         role_ids = request.POST.getlist("roles")
-        roles = SessionRole.objects.filter(id__in=role_ids, tenant=self.session_tenant)
+        roles = list(SessionRole.objects.filter(id__in=role_ids, tenant=self.session_tenant))
+
+        # Keine Rechteausweitung: Jede hinzugefügte oder entzogene Rolle muss im eigenen Umfang liegen
+        if not roles_within_scope(self.session_user, set(target.roles.all()) ^ set(roles)):
+            messages.error(request, OUTSIDE_SCOPE)
+            return redirect("session:users", tenant_slug=tenant_slug)
 
         # Schutz: Der letzte Administrator darf sich nicht selbst entmachten
         if target.is_admin() and not any(r.is_admin for r in roles):
@@ -334,7 +356,7 @@ class UserRolesUpdateView(SessionViewMixin, View):
         old_roles = list(target.roles.all())
         target.roles.set(roles)
         # Rollen- und Rechteänderung direkt protokollieren (Issue #221)
-        audit.log_role_assignment(target, old_roles, list(roles), request=request, user=self.session_user)
+        audit.log_role_assignment(target, old_roles, roles, request=request, user=self.session_user)
         messages.success(request, f"Rollen von {target.user.email} wurden aktualisiert.")
         return redirect("session:users", tenant_slug=tenant_slug)
 
@@ -350,6 +372,14 @@ class UserDeactivateView(SessionViewMixin, View):
 
         if target.pk == self.session_user.pk:
             messages.error(request, "Sie können sich nicht selbst deaktivieren.")
+            return redirect("session:users", tenant_slug=tenant_slug)
+
+        # Keine Rechteausweitung: Reaktivieren gibt die Rollen des Kontos zurück
+        if not roles_within_scope(self.session_user, target.roles.all()):
+            messages.error(
+                request,
+                "Konten mit Rollen, deren Rechte Sie selbst nicht haben, aktiviert oder deaktiviert nur ein Administrator.",
+            )
             return redirect("session:users", tenant_slug=tenant_slug)
 
         # Schutz: letzter aktiver Admin bleibt

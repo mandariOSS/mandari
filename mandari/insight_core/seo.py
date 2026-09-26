@@ -17,7 +17,28 @@ from typing import Any
 from urllib.parse import urljoin
 
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpRequest
+from django.utils.safestring import SafeString, mark_safe
+
+#: Wie ``django.utils.html.json_script``: Maskiert, kann JSON nie aus einem ``<script>``-Element
+#: ausbrechen (``</script>``, ``<!--``) und bleibt gültiges JSON. U+2028/2029 dazu für Alt-Parser.
+_SCRIPT_JSON_ESCAPES = {
+    ord("<"): "\\u003C",
+    ord(">"): "\\u003E",
+    ord("&"): "\\u0026",
+    0x2028: "\\u2028",
+    0x2029: "\\u2029",
+}
+
+
+def script_json(value: Any) -> SafeString:
+    """JSON zum Einbetten in ein ``<script>``-Element (JSON-LD, Diagrammdaten).
+
+    Die Werte stammen oft aus fremden Ratsinformationssystemen oder von Bürger:innen.
+    """
+    text = json.dumps(value, ensure_ascii=False, cls=DjangoJSONEncoder).translate(_SCRIPT_JSON_ESCAPES)
+    return mark_safe(text)  # durch die Maskierung oben sicher
 
 
 @dataclass
@@ -50,7 +71,7 @@ class SEOContext:
             "og_image": self.og_image,
             "og_locale": self.og_locale,
             "twitter_card": self.twitter_card,
-            "json_ld": json.dumps(self.json_ld, ensure_ascii=False) if self.json_ld else None,
+            "json_ld": script_json(self.json_ld) if self.json_ld else None,
             "keywords": ", ".join(self.keywords) if self.keywords else None,
             "robots": self.robots,
             "author": self.author,

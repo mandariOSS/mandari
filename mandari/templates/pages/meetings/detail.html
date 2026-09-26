@@ -1,5 +1,5 @@
 {% extends "base_insight.html" %}
-{% load static %}
+{% load static l10n %}
 
 {% block title %}{{ meeting.get_display_name }}{% endblock %}
 
@@ -293,7 +293,9 @@
                     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ meeting.location_name }}</p>
                     {% endif %}
                 </div>
-                <div id="location-map" class="h-64 w-full"></div>
+                <div id="location-map" class="h-64 w-full"
+                     data-lat="{{ location_coordinates.lat|unlocalize }}" data-lng="{{ location_coordinates.lng|unlocalize }}"
+                     data-location-name="{{ meeting.location_name|default:'' }}" data-location-address="{{ meeting.location_address|default:'' }}"></div>
             </div>
             {% endif %}
 
@@ -338,8 +340,10 @@
 {% if location_coordinates %}
 <script nonce="{{ csp_nonce }}">
 document.addEventListener('DOMContentLoaded', function() {
-    const lat = {{ location_coordinates.lat }};
-    const lng = {{ location_coordinates.lng }};
+    // Koordinaten, Ort und Adresse kommen als Datenattribute (Ort und Adresse stammen aus der Quelle)
+    const mapEl = document.getElementById('location-map');
+    const lat = parseFloat(mapEl.dataset.lat);
+    const lng = parseFloat(mapEl.dataset.lng);
 
     // Leaflet Karte initialisieren
     const map = L.map('location-map', {
@@ -363,24 +367,30 @@ document.addEventListener('DOMContentLoaded', function() {
         popupAnchor: [0, -40]
     });
 
-    // Marker mit Popup
-    const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
-    marker.bindPopup(`
-        <div class="p-3">
-            <div class="flex items-center gap-2 mb-2">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-100 to-purple-100 dark:from-primary-900/50 dark:to-purple-900/50 flex items-center justify-center">
-                    <svg class="w-4 h-4 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                    </svg>
-                </div>
-                <p class="font-semibold text-gray-900 dark:text-white text-sm">{{ meeting.location_name|escapejs }}</p>
+    // Marker mit Popup: festes Markup, Ort und Adresse nur als Text
+    const popup = document.createElement('div');
+    popup.className = 'p-3';
+    popup.innerHTML = `
+        <div class="flex items-center gap-2 mb-2">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-100 to-purple-100 dark:from-primary-900/50 dark:to-purple-900/50 flex items-center justify-center">
+                <svg class="w-4 h-4 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
             </div>
-            {% if meeting.location_address %}
-            <p class="text-xs text-gray-500 dark:text-gray-400 pl-10">{{ meeting.location_address|escapejs }}</p>
-            {% endif %}
+            <p class="font-semibold text-gray-900 dark:text-white text-sm" data-popup="name"></p>
         </div>
-    `, { maxWidth: 280 }).openPopup();
+        <p class="text-xs text-gray-500 dark:text-gray-400 pl-10" data-popup="address"></p>
+    `;
+    popup.querySelector('[data-popup="name"]').textContent = mapEl.dataset.locationName || '';
+    const address = popup.querySelector('[data-popup="address"]');
+    if (mapEl.dataset.locationAddress) {
+        address.textContent = mapEl.dataset.locationAddress;
+    } else {
+        address.remove();
+    }
+    const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+    marker.bindPopup(popup, { maxWidth: 280 }).openPopup();
 });
 </script>
 {% endif %}

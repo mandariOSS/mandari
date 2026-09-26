@@ -5,12 +5,14 @@ Dashboard-Konfiguration für Django Unfold Admin.
 Zeigt Statistiken und Übersichten für das Mandari-Projekt.
 """
 
-import json
 from datetime import timedelta
 
 from django.db.models import Count
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
+
+# Diagrammdaten landen im Skript der Admin-Startseite; Kommunennamen stammen aus den Quellen
+from .seo import script_json
 
 
 def dashboard_callback(request, context):
@@ -143,14 +145,14 @@ def dashboard_callback(request, context):
             chart_papers.append(item["count"])
             chart_meetings.append(meetings_by_month.get(item["month"], 0))
 
-    context["chart_months"] = json.dumps(chart_months)
-    context["chart_papers"] = json.dumps(chart_papers)
-    context["chart_meetings"] = json.dumps(chart_meetings)
+    context["chart_months"] = script_json(chart_months)
+    context["chart_papers"] = script_json(chart_papers)
+    context["chart_meetings"] = script_json(chart_meetings)
 
     # Papers by body (for doughnut chart)
     papers_by_body = list(OParlPaper.objects.values("body__name").annotate(count=Count("id")).order_by("-count")[:10])
 
-    context["papers_by_body_labels"] = json.dumps([p["body__name"] or "Unbekannt" for p in papers_by_body])
-    context["papers_by_body_data"] = json.dumps([p["count"] for p in papers_by_body])
+    context["papers_by_body_labels"] = script_json([p["body__name"] or "Unbekannt" for p in papers_by_body])
+    context["papers_by_body_data"] = script_json([p["count"] for p in papers_by_body])
 
     return context

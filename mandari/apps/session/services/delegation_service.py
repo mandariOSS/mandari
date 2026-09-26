@@ -19,6 +19,8 @@ Regeln gegen Rechteausweitung:
 - Nie mehr, als die vertretene Person selbst darf – gerechnet aus ihren eigenen Rollen
   (:func:`apps.session.permissions.role_permissions`), nie aus ihren Vertretungen.
   Damit gibt es keine Kettenvertretung.
+- Wer eine Vertretung einträgt, überträgt keine Freigaberechte, die er selbst nicht hat, und trägt
+  sich nicht selbst als Vertretung ein – beides nur als Administrator.
 - Das Vier-Augen-Prinzip gilt für Handelnde und vertretene Person
   (:mod:`apps.session.services.four_eyes_service`).
 - Jede Handlung aus einer Vertretung steht im Audit-Log mit „in Vertretung für …“.
@@ -33,7 +35,7 @@ from typing import TYPE_CHECKING, Any, cast
 from django.db.models import Exists, F, OuterRef, Q, QuerySet
 from django.utils import timezone
 
-from apps.session.permissions import role_permissions
+from apps.session.permissions import grantable_permissions, is_admin_user, role_permissions
 
 if TYPE_CHECKING:
     from apps.session.models import SessionDelegation, SessionTenant, SessionUser
@@ -211,6 +213,25 @@ def overlapping_absences(session_user: SessionUser, start: date, end: date) -> l
     )
 
 
+def _check_scope_of_creator(
+    created_by: SessionUser | None, *, principal: SessionUser, deputy: SessionUser, scopes: set[str]
+) -> None:
+    """Keine Rechteausweitung über Vertretungen (nur Administratoren tragen beliebig ein)."""
+    if created_by is None or is_admin_user(created_by):
+        return
+    if deputy.pk == created_by.pk:
+        raise DelegationError(
+            "Sich selbst als Vertretung eintragen kann nur ein Administrator – bitte eine zweite Person "
+            "mit der Benutzerverwaltung darum bitten."
+        )
+    if SCOPE_APPROVALS in scopes:
+        gained = (DELEGABLE_PERMISSIONS & role_permissions(principal)) - role_permissions(deputy)
+        if gained - grantable_permissions(created_by):
+            raise DelegationError(
+                "Freigaberechte, die Sie selbst nicht haben, überträgt nur ein Administrator per Vertretung."
+            )
+
+
 def create(
     tenant: SessionTenant,
     *,
@@ -239,6 +260,7 @@ def create(
         raise DelegationError("Eine Vertretung gilt höchstens ein Jahr. Dauerhafte Aufgaben bitte über Rollen regeln.")
     if not chosen:
         raise DelegationError("Bitte mindestens einen Umfang der Vertretung wählen.")
+    _check_scope_of_creator(created_by, principal=principal, deputy=deputy, scopes=chosen)
     overlap = SessionDelegation.objects.filter(
         tenant=tenant,
         principal=principal,

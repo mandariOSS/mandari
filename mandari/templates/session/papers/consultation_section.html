@@ -2,7 +2,7 @@
 Beratungsfolge einer Vorlage (Issue #34).
 Kontext: paper, consultations, consultation_can_edit, consultation_can_schedule,
 consultation_roles, consultation_results, consultation_organizations,
-consultation_meetings, tenant_slug
+consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sichtrecht nicht nennen.
 {% endcomment %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -49,7 +49,9 @@ consultation_meetings, tenant_slug
                         {% endif %}
                     </div>
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {% if station.agenda_item %}
+                        {% if station.noe_hidden %}
+                        Nichtöffentliche Sitzung
+                        {% elif station.agenda_item %}
                         <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=station.agenda_item.meeting_id %}"
                            class="text-primary-600 dark:text-primary-400 hover:underline">
                             TOP {{ station.agenda_item.number }} — {{ station.agenda_item.meeting.name }}
@@ -67,7 +69,7 @@ consultation_meetings, tenant_slug
                         {% endif %}
                     </p>
 
-                    {% if consultation_can_edit %}
+                    {% if consultation_can_edit and not station.noe_hidden %}
                     <!-- Station bearbeiten -->
                     <form method="post" action="{% url 'session:consultation_update' tenant_slug=tenant_slug consultation_id=station.id %}"
                           class="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -115,7 +117,7 @@ consultation_meetings, tenant_slug
                 </div>
 
                 <div class="flex items-center gap-1 flex-shrink-0">
-                    {% if consultation_can_schedule and not station.agenda_item and station.meeting %}
+                    {% if consultation_can_schedule and not station.agenda_item and station.meeting and not station.noe_hidden %}
                     <form method="post" action="{% url 'session:consultation_schedule' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
                         {% csrf_token %}
                         <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"

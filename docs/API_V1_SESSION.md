@@ -9,8 +9,8 @@ RFC 9457, versionierte Pfade.
 | Methode | Pfad | Zugriff |
 |---------|------|---------|
 | GET | `/api/v1/session/{tenant_slug}/` | Einstiegspunkt mit allen Links |
-| GET | `/api/v1/session/{tenant_slug}/meetings/` | öffentlich; NÖ-Sitzungen mit Recht `view_non_public_meetings` oder Token-Flag `can_read_meetings` |
-| GET | `/api/v1/session/{tenant_slug}/papers/` | veröffentlichte Vorlagen (öffentlich und freigegeben, wie OParl); NÖ-Vorlagen, Entwürfe und Vorlagen in Prüfung samt Texten mit `view_non_public_papers` oder `can_read_papers` |
+| GET | `/api/v1/session/{tenant_slug}/meetings/` | öffentlich; NÖ-Sitzungen (samt internen Notizen) nur für angemeldete Nutzer mit Recht `view_non_public_meetings` |
+| GET | `/api/v1/session/{tenant_slug}/papers/` | veröffentlichte Vorlagen (öffentlich und freigegeben, wie OParl); NÖ-Vorlagen, Entwürfe und Vorlagen in Prüfung samt Texten nur für angemeldete Nutzer mit Recht `view_non_public_papers` |
 | GET | `/api/v1/session/{tenant_slug}/applications/` | nur mit Recht `view_applications` |
 | POST | `/api/v1/session/{tenant_slug}/applications/submit/` | API-Token mit `can_submit_applications` |
 | GET | `/api/v1/session/{tenant_slug}/applications/{id}/feedback/` | nur das einreichende API-Token (bzw. ein Token derselben in Work verbundenen Organisation) |
@@ -33,8 +33,10 @@ auf `…/applications/submit/` enthält die URL unter `feedback`.
 ## Authentifizierung
 
 - **API-Token**: `Authorization: Bearer <token>` (64 Zeichen, angelegt unter Einstellungen → API-Tokens).
-  Token gehören zu genau einem Mandanten; Rechte über die Flags `can_read_meetings`, `can_read_papers`,
-  `can_submit_applications`; optional IP-Beschränkung und Ratenlimit je Minute (429 mit `Retry-After`).
+  Token gehören zu genau einem Mandanten; Rechte über die Flags `can_read_meetings`, `can_read_papers`
+  („Öffentliche Sitzungen/Vorlagen lesen“) und `can_submit_applications`; optional IP-Beschränkung und
+  Ratenlimit je Minute (429 mit `Retry-After`). Ein Token liest nur öffentliche Daten – nichtöffentliche
+  Sitzungen, Vorlagen, Texte und interne Notizen liefert die API nie an ein Token, unabhängig von den Flags.
 - **Sitzung**: angemeldete Nutzer des Session-RIS mit ihren Rollenrechten (nur GET).
 - Ohne beides: anonym, nur öffentliche Daten.
 
