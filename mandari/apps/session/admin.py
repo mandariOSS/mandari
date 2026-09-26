@@ -1033,9 +1033,9 @@ class SessionAPITokenAdmin(ModelAdmin):
         if obj.can_submit_applications:
             perms.append("Anträge")
         if obj.can_read_meetings:
-            perms.append("Sitzungen")
+            perms.append("Öffentliche Sitzungen")
         if obj.can_read_papers:
-            perms.append("Vorlagen")
+            perms.append("Öffentliche Vorlagen")
         return ", ".join(perms) if perms else "-"
 
     @admin.action(description="Ausgewählte Tokens deaktivieren")

@@ -4,7 +4,8 @@ Endpunkte der Session-API v1 unter ``/api/v1/session/{tenant_slug}/``.
 
 Fachlich identisch mit den bisherigen Views unter ``/session/<slug>/api/session/…`` (die bleiben bis
 zur angekündigten Abschaltung mit ``Deprecation``-Header erreichbar), zusätzlich: OpenAPI-Schema,
-``limit``/``offset``, Token-Lesezugriff auf NÖ-Daten über die Token-Flags, RFC-9457-Fehler.
+``limit``/``offset``, RFC-9457-Fehler. API-Token lesen nur Öffentliches; Nichtöffentliches und interne
+Notizen gibt es nur für angemeldete Personen mit dem NÖ-Recht (``auth.TOKEN_PERMISSIONS``).
 """
 
 from __future__ import annotations
@@ -121,7 +122,13 @@ def meetings(
             "cancelled": meeting.cancelled,
             "is_public": meeting.is_public,
         }
-        if non_public and not meeting.is_public and hasattr(meeting, "get_internal_notes_decrypted"):
+        # Interne Notizen nur für angemeldete Personen mit NÖ-Recht, nie für API-Token
+        if (
+            non_public
+            and principal.session_user is not None
+            and not meeting.is_public
+            and hasattr(meeting, "get_internal_notes_decrypted")
+        ):
             item["internal_notes"] = meeting.get_internal_notes_decrypted()
         data.append(item)
     return {"data": data, "meta": _meta(total, limit, offset, principal)}

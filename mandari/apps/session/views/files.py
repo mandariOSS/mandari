@@ -9,8 +9,12 @@ Sicherheit:
 - Nichtöffentliche Anlagen sind ausschließlich über die geschützte
   Download-View erreichbar (kein direktes Media-URL-Leak; /media/ blockt
   den Pfad session/files/).
-- Upload/Ersetzen/Löschen erfordern die Edit-Berechtigung des jeweiligen
-  Elternobjekts, NÖ-Downloads die entsprechende NÖ-Sichtberechtigung.
+- Upload/Ändern/Ersetzen/Löschen erfordern die Edit-Berechtigung des jeweiligen
+  Elternobjekts (Vorlage: edit_papers, Sitzung und TOP: edit_meetings), NÖ-Downloads
+  die entsprechende NÖ-Sichtberechtigung.
+- Nichtöffentliche Anlagen und Ziele (NÖ-Vorlage, NÖ-Sitzung, NÖ-TOP, TOP einer NÖ-Sitzung)
+  gibt es ohne NÖ-Sichtrecht nicht (404) – auch nicht für Bearbeitungsberechtigte.
+- Den MIME-Typ bestimmt der Server aus der Endung, nie der Browser (``file_service``).
 
 Fassungen (Issue #226): Ersetzen legt eine neue Fassung an, die bisherige bleibt im Verlauf
 abrufbar – mit genau der Sichtbarkeit der Anlage. Gespeichert wird über
@@ -44,22 +48,51 @@ from .paper_versions import protected_download
 # =============================================================================
 
 
-def _resolve_target(session_tenant, target_type: str, target_id):
-    """Zielobjekt (Vorlage/Sitzung/TOP) tenant-sicher auflösen."""
+#: Anlagen-Ziel → benötigtes Bearbeitungsrecht (ein TOP gehört zur Sitzung, auch mit verknüpfter Vorlage)
+TARGET_EDIT_PERMISSIONS = {"paper": "edit_papers", "meeting": "edit_meetings", "agenda_item": "edit_meetings"}
+
+
+def _resolve_target(view, target_type: str, target_id):
+    """
+    Zielobjekt (Vorlage/Sitzung/TOP) zum Hochladen laden: erst das Bearbeitungsrecht (403),
+    dann mandantensicher und nach der Ö/NÖ-Regel (``visible_to``, sonst 404).
+    """
+    permission = TARGET_EDIT_PERMISSIONS.get(target_type)
+    if permission is None:
+        raise Http404("Unbekannter Anlagen-Typ")
+    if permission not in view.session_permissions:
+        raise PermissionDenied("Fehlende Berechtigung")
     if target_type == "paper":
-        return get_object_or_404(SessionPaper, pk=target_id, tenant=session_tenant)
-    if target_type == "meeting":
-        return get_object_or_404(SessionMeeting, pk=target_id, tenant=session_tenant)
-    if target_type == "agenda_item":
-        return get_object_or_404(SessionAgendaItem, pk=target_id, meeting__tenant=session_tenant)
-    raise Http404("Unbekannter Anlagen-Typ")
+        qs = SessionPaper.objects.filter(tenant=view.session_tenant)
+    elif target_type == "meeting":
+        qs = SessionMeeting.objects.filter(tenant=view.session_tenant)
+    else:
+        qs = SessionAgendaItem.objects.filter(meeting__tenant=view.session_tenant)
+    return get_object_or_404(qs.visible_to(view.session_permissions), pk=target_id)
 
 
-def _edit_permission(file_or_target) -> str:
-    """Benötigte Edit-Berechtigung für ein Datei-Elternobjekt."""
-    if isinstance(file_or_target, SessionPaper) or getattr(file_or_target, "paper_id", None):
+def _edit_permission(session_file: SessionFile) -> str:
+    """Benötigte Edit-Berechtigung für eine Anlage: die ihres Elternobjekts."""
+    if session_file.paper_id:
         return "edit_papers"
     return "edit_meetings"
+
+
+def _editable_file(view, file_id) -> SessionFile:
+    """
+    Anlage zum Ändern, Ersetzen oder Löschen laden: Bearbeitungsrecht des Elternobjekts (sonst 403),
+    nichtöffentliche Anlage oder Anlage an einem NÖ-Objekt nur mit NÖ-Sichtrecht (sonst 404).
+    """
+    session_file = get_object_or_404(
+        SessionFile.objects.select_related("paper", "meeting", "agenda_item__meeting"),
+        pk=file_id,
+        tenant=view.session_tenant,
+    )
+    if _edit_permission(session_file) not in view.session_permissions:
+        raise PermissionDenied("Fehlende Berechtigung")
+    if not file_service.non_public_allowed(view.session_permissions, session_file):
+        raise Http404("Anlage nicht gefunden")
+    return session_file
 
 
 def can_view_file(session_user, session_file: SessionFile) -> bool:
@@ -111,11 +144,7 @@ class FileUploadView(SessionMixin, View):
     def post(self, request, tenant_slug):
         target_type = request.POST.get("target_type", "")
         target_id = request.POST.get("target_id", "")
-        target = _resolve_target(self.session_tenant, target_type, target_id)
-
-        checker = SessionPermissionChecker(self.session_user)
-        if not checker.has_permission(_edit_permission(target)):
-            raise PermissionDenied("Fehlende Berechtigung")
+        target = _resolve_target(self, target_type, target_id)
 
         uploads = request.FILES.getlist("files")
         if not uploads:
@@ -135,7 +164,8 @@ class FileUploadView(SessionMixin, View):
                 messages.error(request, f"Datei '{uploaded.name}' wurde vom Virenscan abgelehnt.")
                 continue
 
-            mime_type = uploaded.content_type or file_service.guess_mime_type(uploaded.name)
+            # Typ aus der (geprüften) Endung – die Angabe des Browsers ist frei wählbar
+            mime_type = file_service.mime_type_for_name(uploaded.name)
             data = uploaded.read()
             uploaded.seek(0)
 
@@ -187,7 +217,7 @@ class FileDownloadView(SessionMixin, View):
         except (FileNotFoundError, ValueError):
             raise Http404("Datei nicht gefunden") from None
 
-        return protected_download(handle, session_file.name, session_file.mime_type)
+        return protected_download(handle, file_service.download_name(session_file))
 
 
 class FileUpdateView(SessionMixin, View):
@@ -196,11 +226,7 @@ class FileUpdateView(SessionMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug, file_id):
-        session_file = get_object_or_404(SessionFile, pk=file_id, tenant=self.session_tenant)
-
-        checker = SessionPermissionChecker(self.session_user)
-        if not checker.has_permission(_edit_permission(session_file)):
-            raise PermissionDenied("Fehlende Berechtigung")
+        session_file = _editable_file(self, file_id)
 
         if "name" in request.POST and request.POST["name"].strip():
             session_file.name = request.POST["name"].strip()[:500]
@@ -217,11 +243,7 @@ class FileReplaceView(SessionMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug, file_id):
-        session_file = get_object_or_404(SessionFile, pk=file_id, tenant=self.session_tenant)
-
-        checker = SessionPermissionChecker(self.session_user)
-        if not checker.has_permission(_edit_permission(session_file)):
-            raise PermissionDenied("Fehlende Berechtigung")
+        session_file = _editable_file(self, file_id)
 
         uploaded = request.FILES.get("file")
         if not uploaded:
@@ -240,7 +262,7 @@ class FileReplaceView(SessionMixin, View):
         old_name = session_file.name
         old_version = session_file.version
 
-        mime_type = uploaded.content_type or file_service.guess_mime_type(uploaded.name)
+        mime_type = file_service.mime_type_for_name(uploaded.name)
         data = uploaded.read()
         uploaded.seek(0)
 
@@ -278,11 +300,7 @@ class FileDeleteView(SessionMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug, file_id):
-        session_file = get_object_or_404(SessionFile, pk=file_id, tenant=self.session_tenant)
-
-        checker = SessionPermissionChecker(self.session_user)
-        if not checker.has_permission(_edit_permission(session_file)):
-            raise PermissionDenied("Fehlende Berechtigung")
+        session_file = _editable_file(self, file_id)
 
         response = _redirect_to_parent(tenant_slug, session_file)
         name = session_file.name
@@ -349,7 +367,7 @@ class FileVersionDownloadView(_FileVersionMixin):
         if handle is None:
             raise Http404("Der Inhalt dieser Fassung ist nicht mehr vorhanden.")
         audit.log_event("download", session_file, changes=_download_changes(session_file, fassung=version.number))
-        return protected_download(handle, version.name, version.mime_type)
+        return protected_download(handle, file_service.blob_download_name(version.name, version.blob))
 
 
 class FileContentPurgeView(SessionViewMixin, View):

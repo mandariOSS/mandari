@@ -27,6 +27,8 @@ from django.utils.text import slugify
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
 
+from .visibility import AgendaItemQuerySet, FileQuerySet, MeetingQuerySet, PaperQuerySet
+
 # Ladung mit Rückmeldung (Issue #225)
 DELIVERY_CHANNEL_CHOICES = [
     ("email", "E-Mail"),
@@ -1195,6 +1197,9 @@ class SessionMeeting(EncryptionMixin, models.Model):
     Extends OParlMeeting with non-public fields and workflow support.
     """
 
+    # Sichtbarkeit nichtöffentlicher Sitzungen: SessionMeeting.objects.visible_to(permissions)
+    objects = MeetingQuerySet.as_manager()
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         SessionTenant,
@@ -1576,6 +1581,9 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     Extends OParlAgendaItem with voting results and non-public content.
     """
 
+    # Sichtbarkeit nichtöffentlicher TOPs: SessionAgendaItem.objects.visible_to(permissions)
+    objects = AgendaItemQuerySet.as_manager()
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     meeting = models.ForeignKey(
@@ -1945,6 +1953,9 @@ class SessionPaper(EncryptionMixin, models.Model):
 
     Extends OParlPaper with workflow and non-public content support.
     """
+
+    # Sichtbarkeit nichtöffentlicher Vorlagen: SessionPaper.objects.visible_to(permissions)
+    objects = PaperQuerySet.as_manager()
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -3182,6 +3193,9 @@ class SessionFile(models.Model):
 
     Files can be attached to papers, agenda items, or meetings.
     """
+
+    # Sichtbarkeit nach der Anlagenregel (file_service.file_visible): SessionFile.objects.visible_to(permissions)
+    objects = FileQuerySet.as_manager()
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -4666,15 +4680,17 @@ class SessionAPIToken(models.Model):
         verbose_name="Anträge einreichen",
         help_text="Erlaubt das Einreichen von Anträgen",
     )
+    # Lese-Flags: nur Öffentliches. Nichtöffentliche Daten und interne Notizen liefert die API nie an ein
+    # Token (api/v1/auth.TOKEN_PERMISSIONS) – auch nicht bei Tokens, die vor dieser Regel angelegt wurden.
     can_read_meetings = models.BooleanField(
         default=True,
-        verbose_name="Sitzungen lesen",
-        help_text="Erlaubt das Lesen öffentlicher Sitzungsdaten",
+        verbose_name="Öffentliche Sitzungen lesen",
+        help_text="Erlaubt das Lesen öffentlicher Sitzungsdaten – nie nichtöffentliche Sitzungen oder interne Notizen",
     )
     can_read_papers = models.BooleanField(
         default=True,
-        verbose_name="Vorlagen lesen",
-        help_text="Erlaubt das Lesen öffentlicher Vorlagen",
+        verbose_name="Öffentliche Vorlagen lesen",
+        help_text="Erlaubt das Lesen öffentlicher Vorlagen – nie nichtöffentliche Vorlagen oder deren Texte",
     )
 
     # Rate limiting

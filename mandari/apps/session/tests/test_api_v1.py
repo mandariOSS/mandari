@@ -121,11 +121,25 @@ class TestVisibility:
         client = make_session_client(tenant)
         assert names(client.get(f"{BASE}/{tenant.slug}/meetings/").json()) == {"OEFFENTLICH"}
 
-    def test_token_flags_grant_non_public_reads(self, client: Client, tenant: SessionTenant) -> None:
-        raw = make_token(tenant, can_read_meetings=True, can_read_papers=False)
-        auth = bearer(raw)
-        assert names(client.get(f"{BASE}/{tenant.slug}/meetings/", headers=auth).json()) == {"OEFFENTLICH", "GEHEIM"}
-        assert names(client.get(f"{BASE}/{tenant.slug}/papers/", headers=auth).json()) == {"OEFFENTLICHE-VORLAGE"}
+    def test_token_flags_grant_only_public_reads(self, client: Client, tenant: SessionTenant) -> None:
+        # „Öffentliche Sitzungen/Vorlagen lesen“: Ein Token erhält nie Nichtöffentliches, auch mit allen Häkchen
+        geheim = SessionMeeting.objects.get(tenant=tenant, name="GEHEIM")
+        cast(Any, geheim).set_internal_notes_encrypted("INTERNE-NOTIZ")
+        geheim.save()
+        auth = bearer(make_token(tenant, can_read_meetings=True, can_read_papers=True, can_submit_applications=True))
+        meetings = client.get(f"{BASE}/{tenant.slug}/meetings/", headers=auth)
+        assert meetings.status_code == 200
+        assert "GEHEIM" not in names(meetings.json())
+        assert b"INTERNE-NOTIZ" not in meetings.content
+        papers = client.get(f"{BASE}/{tenant.slug}/papers/", headers=auth).json()
+        assert "GEHEIME-VORLAGE" not in names(papers)
+        assert all(row.get("main_text") is None for row in papers["data"])
+
+    def test_default_token_reads_nothing_non_public(self, client: Client, tenant: SessionTenant) -> None:
+        # Bestehende Tokens mit den bisherigen Standardwerten
+        auth = bearer(make_token(tenant))
+        assert "GEHEIM" not in names(client.get(f"{BASE}/{tenant.slug}/meetings/", headers=auth).json())
+        assert "GEHEIME-VORLAGE" not in names(client.get(f"{BASE}/{tenant.slug}/papers/", headers=auth).json())
 
     def test_token_of_other_tenant_is_rejected(
         self, client: Client, tenant: SessionTenant, other_tenant: SessionTenant
