@@ -7,18 +7,19 @@ Fachlogik und Datenzugriff liegen in ``apps.work.meetings.selectors`` /
 einheitliche JSON-Fehlerantwort.
 """
 
-import json
 from collections.abc import Mapping
 from typing import Any
 
 from django.http import HttpRequest, JsonResponse
 
+from apps.common.params import json_body
+
 
 def request_payload(request: HttpRequest) -> Mapping[str, Any]:
     """JSON-Body oder Formulardaten als Mapping (beide Varianten werden von der UI genutzt)."""
     if request.content_type == "application/json":
-        data: dict[str, Any] = json.loads(request.body)
-        return data
+        # Kaputtes JSON oder kein Objekt: leere Angaben (die Fachprüfung meldet dann 400) statt Serverfehler
+        return json_body(request) or {}
     return request.POST
 
 

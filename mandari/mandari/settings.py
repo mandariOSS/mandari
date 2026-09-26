@@ -23,10 +23,17 @@ if env_path.exists():
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-change-me-in-production-with-a-real-secret-key")
+_INSECURE_SECRET_KEY = "django-insecure-change-me-in-production-with-a-real-secret-key"
+SECRET_KEY = os.environ.get("SECRET_KEY", "") or _INSECURE_SECRET_KEY
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "True").lower() in ("true", "1", "yes")
+
+# Der eingebaute Rückfallschlüssel ist öffentlich und taugt nur für die Entwicklung (DEBUG).
+if not DEBUG and SECRET_KEY == _INSECURE_SECRET_KEY:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("SECRET_KEY muss ohne DEBUG gesetzt sein (Umgebungsvariable SECRET_KEY).")
 
 # Site URL for emails and external links
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")

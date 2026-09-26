@@ -10,7 +10,6 @@ Provides:
 """
 
 import base64
-import contextlib
 import hashlib
 import hmac
 import io
@@ -19,11 +18,13 @@ import logging
 import secrets
 import struct
 import time
+from importlib import import_module
 
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils import timezone
 
 from .models import (
@@ -177,7 +178,7 @@ class TwoFactorService:
         """Zeitschritt, zu dem der Code passt, oder None (ohne gültiges Secret nie ein Treffer)."""
         if not secret:
             return None
-        code = (code or "").replace(" ", "").strip()
+        code = "".join((code or "").split())  # jeder Leerraum, auch Tabulator und geschütztes Leerzeichen
         if len(code) != self.TOTP_DIGITS or not code.isdigit():
             return None
         try:
@@ -423,17 +424,20 @@ class SessionService:
         )
         return session
 
+    @staticmethod
+    def _end_django_session(session_key: str) -> None:
+        """Sitzung über den eingestellten Speicher löschen – bei ``cached_db`` auch aus dem Cache."""
+        if session_key:
+            import_module(settings.SESSION_ENGINE).SessionStore(session_key=session_key).delete()
+
     @classmethod
     def revoke_session(cls, user, session_key: str) -> bool:
         """Revoke a specific session."""
-        from django.contrib.sessions.models import Session
-
         try:
             session = UserSession.objects.get(user=user, session_key=session_key)
 
             # Delete Django session
-            with contextlib.suppress(Session.DoesNotExist):
-                Session.objects.get(session_key=session_key).delete()
+            cls._end_django_session(session_key)
 
             session.delete()
 
@@ -452,15 +456,12 @@ class SessionService:
     @classmethod
     def revoke_all_sessions(cls, user, except_current: str = None):
         """Revoke all sessions for a user except optionally the current one."""
-        from django.contrib.sessions.models import Session
-
         sessions = UserSession.objects.filter(user=user)
         if except_current:
             sessions = sessions.exclude(session_key=except_current)
 
         for session in sessions:
-            with contextlib.suppress(Session.DoesNotExist):
-                Session.objects.get(session_key=session.session_key).delete()
+            cls._end_django_session(session.session_key)
 
         count = sessions.count()
         sessions.delete()
@@ -479,7 +480,7 @@ class SessionService:
 class PasswordService:
     """Service for password management."""
 
-    MIN_LENGTH = 8
+    MIN_LENGTH = 12  # wie MinimumLengthValidator in AUTH_PASSWORD_VALIDATORS
     REQUIRE_UPPERCASE = True
     REQUIRE_LOWERCASE = True
     REQUIRE_DIGIT = True
@@ -553,6 +554,11 @@ class PasswordService:
         strength = cls.check_strength(new_password)
         if not strength["is_valid"]:
             return False, "; ".join(strength["issues"])
+        # Dieselbe Richtlinie wie bei Registrierung und Zurücksetzen (AUTH_PASSWORD_VALIDATORS)
+        try:
+            validate_password(new_password, user=user)
+        except ValidationError as exc:
+            return False, " ".join(exc.messages)
 
         # Set new password
         user.set_password(new_password)

@@ -3,13 +3,13 @@
 Statistiken und Berichte (Issue #84).
 """
 
-import csv
-
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import HttpResponse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
+
+from apps.common import csv_safety
 
 from .. import audit
 from ..models import SessionOrganization
@@ -85,7 +85,7 @@ class ReportCsvExportView(SessionViewMixin, View):
 
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response.write("﻿")  # BOM für Excel
-        writer = csv.writer(response, delimiter=";")
+        writer = csv_safety.writer(response, delimiter=";")
 
         if export_type == "allowances":
             if not self.has_permission("manage_allowances"):

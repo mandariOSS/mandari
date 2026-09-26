@@ -5,6 +5,7 @@ Admin configuration for common app.
 Includes SiteSettings admin for global configuration.
 """
 
+import logging
 from urllib.parse import urlparse
 
 from django import forms
@@ -39,15 +40,16 @@ def get_safe_admin_redirect(request):
 class SiteSettingsAdminForm(forms.ModelForm):
     """Custom form for SiteSettings with password widget."""
 
+    # Gespeicherte Geheimnisse werden nie ins HTML ausgegeben; leer gelassen bleiben sie erhalten
     email_host_password = forms.CharField(
-        widget=forms.PasswordInput(render_value=True),
+        widget=forms.PasswordInput(render_value=False),
         required=False,
         label="SMTP Passwort",
         help_text="Leer lassen, um vorhandenes Passwort beizubehalten",
     )
 
     nebius_api_key = forms.CharField(
-        widget=forms.PasswordInput(render_value=True),
+        widget=forms.PasswordInput(render_value=False),
         required=False,
         label="Nebius API Key",
         help_text="API Key für Nebius TokenFactory. Kann auch via NEBIUS_API_KEY Umgebungsvariable gesetzt werden.",
@@ -64,6 +66,18 @@ class SiteSettingsAdminForm(forms.ModelForm):
             self.fields["email_host_password"].help_text = "Passwort ist gesetzt. Leer lassen, um es beizubehalten."
         if self.instance and self.instance.pk and self.instance.nebius_api_key:
             self.fields["nebius_api_key"].help_text = "Key ist gesetzt. Leer lassen, um ihn beizubehalten."
+
+    def _keep_existing(self, field: str) -> str:
+        value = self.cleaned_data.get(field) or ""
+        if not value and self.instance and self.instance.pk:
+            return getattr(self.instance, field) or ""
+        return value
+
+    def clean_email_host_password(self) -> str:
+        return self._keep_existing("email_host_password")
+
+    def clean_nebius_api_key(self) -> str:
+        return self._keep_existing("nebius_api_key")
 
 
 @admin.register(SiteSettings)
@@ -185,8 +199,14 @@ class SiteSettingsAdmin(ModelAdmin):
             send_with(connection, email)
 
             messages.success(request, f"Test-E-Mail wurde erfolgreich an {request.user.email} gesendet.")
-        except Exception as e:
-            messages.error(request, f"Fehler beim Senden der Test-E-Mail: {str(e)}")
+        except Exception:
+            # Details (Server-Antwort, Ausnahme) nur ins Protokoll
+            logging.getLogger(__name__).exception("Test-E-Mail über die Systemeinstellungen fehlgeschlagen")
+            messages.error(
+                request,
+                "Die Test-E-Mail konnte nicht gesendet werden. Bitte die SMTP-Einstellungen prüfen; "
+                "Einzelheiten stehen im Anwendungsprotokoll.",
+            )
 
         from django.http import HttpResponseRedirect
 

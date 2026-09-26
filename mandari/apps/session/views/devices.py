@@ -315,8 +315,9 @@ class DeviceGrantCsvExportView(SessionViewMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug):
-        import csv
         import io
+
+        from apps.common import csv_safety
 
         grants = list(
             SessionDeviceGrant.objects.filter(tenant=self.session_tenant)
@@ -329,7 +330,7 @@ class DeviceGrantCsvExportView(SessionViewMixin, View):
             return redirect("session:devices", tenant_slug=tenant_slug)
 
         buffer = io.StringIO()
-        writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+        writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
         writer.writerow(["Name", "Betrag", "Status", "Vermerk", "Kontoinhaber", "IBAN", "BIC"])
         for grant in grants:
             person = grant.person

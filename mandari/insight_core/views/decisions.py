@@ -12,6 +12,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
+from apps.common.params import uuid_param
+
 from ..models import DecisionSubscription
 from ..services import decision_tracking
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
@@ -45,7 +47,8 @@ class DecisionListView(ActiveBodyRequiredMixin, TemplateView):
         if only_open:
             qs = qs.exclude(implementation_status="done")
         if organization_id:
-            qs = qs.filter(meeting__organization_id=organization_id)
+            organization_uuid = uuid_param(organization_id)  # ungültig: kein Treffer statt Serverfehler
+            qs = qs.filter(meeting__organization_id=organization_uuid) if organization_uuid else qs.none()
         if year.isdigit():
             qs = qs.filter(meeting__start__year=int(year))
         if query:

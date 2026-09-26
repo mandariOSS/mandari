@@ -19,7 +19,6 @@ werden stapelweise aus der Datenbank gelesen; große Protokolle belasten den Spe
 
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
 import tempfile
@@ -35,8 +34,7 @@ from django.db import transaction
 from django.db.models import Min
 from django.utils import timezone
 
-from apps.common import audit_chain
-from apps.common.csv_safety import csv_safe_cell
+from apps.common import audit_chain, csv_safety
 
 #: Formatkennung und -version im JSON-Umschlag
 FORMAT_EXPORT = "mandari-protokoll-export"
@@ -189,7 +187,7 @@ class CsvWriter:
         self.columns = columns
         self.out = _HashingWriter()
         self.out.write("﻿")
-        self.rows = csv.writer(self.out, delimiter=";", lineterminator="\r\n")
+        self.rows = csv_safety.writer(self.out, delimiter=";", lineterminator="\r\n")
         self.rows.writerow(columns)
         self.count = 0
 
@@ -198,7 +196,7 @@ class CsvWriter:
         row = []
         for column in self.columns:
             value = extra.get(column[len("anzeige.") :]) if column.startswith("anzeige.") else record.get(column)
-            row.append(csv_safe_cell(_csv_value(value)))
+            row.append(_csv_value(value))
         self.rows.writerow(row)
         self.count += 1
 

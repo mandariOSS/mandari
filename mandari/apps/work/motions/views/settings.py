@@ -16,6 +16,7 @@ logger = logging.getLogger("apps.work.motions")
 import contextlib
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.params import int_param
 from apps.common.uploads import MB, PDF, validate_upload
 
 from ..forms import (
@@ -30,6 +31,23 @@ from ..models import (
 
 #: Briefköpfe sind einseitige PDFs; 10 MB lassen auch hochauflösende Logos zu (#260).
 LETTERHEAD_MAX_BYTES = 10 * MB
+
+#: Zahlenfelder des generierten Briefkopfs mit Vorgabe (ungültige Eingaben ergeben die Vorgabe)
+_LETTERHEAD_NUMBERS = {
+    "content_margin_top": 60,
+    "content_margin_left": 25,
+    "content_margin_right": 20,
+    "content_margin_bottom": 30,
+    "font_size": 11,
+}
+
+
+def _letterhead_numbers(post) -> dict[str, int]:
+    return {
+        feld: int_param(post.get(feld), vorgabe, minimum=0, maximum=1000)
+        for feld, vorgabe in _LETTERHEAD_NUMBERS.items()
+    }
+
 
 # =============================================================================
 # Settings Views for Motion Types, Templates, and Letterheads
@@ -512,12 +530,8 @@ class LetterheadCreateView(WorkViewMixin, TemplateView):
             address_block=request.POST.get("address_block", "").strip(),
             footer_text=request.POST.get("footer_text", "").strip(),
             accent_color_enabled=request.POST.get("accent_color_enabled") == "on",
-            content_margin_top=int(request.POST.get("content_margin_top", 60)),
-            content_margin_left=int(request.POST.get("content_margin_left", 25)),
-            content_margin_right=int(request.POST.get("content_margin_right", 20)),
-            content_margin_bottom=int(request.POST.get("content_margin_bottom", 30)),
+            **_letterhead_numbers(request.POST),
             font_family=request.POST.get("font_family", "Arial").strip(),
-            font_size=int(request.POST.get("font_size", 11)),
             is_default=is_default,
         )
 
@@ -575,12 +589,9 @@ class LetterheadEditView(WorkViewMixin, TemplateView):
         letterhead.footer_text = request.POST.get("footer_text", "").strip()
         letterhead.accent_color_enabled = request.POST.get("accent_color_enabled") == "on"
 
-        letterhead.content_margin_top = int(request.POST.get("content_margin_top", 60))
-        letterhead.content_margin_left = int(request.POST.get("content_margin_left", 25))
-        letterhead.content_margin_right = int(request.POST.get("content_margin_right", 20))
-        letterhead.content_margin_bottom = int(request.POST.get("content_margin_bottom", 30))
+        for feld, wert in _letterhead_numbers(request.POST).items():
+            setattr(letterhead, feld, wert)
         letterhead.font_family = request.POST.get("font_family", "Arial").strip()
-        letterhead.font_size = int(request.POST.get("font_size", 11))
 
         is_default = request.POST.get("is_default") == "on"
         if is_default and not letterhead.is_default:

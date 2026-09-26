@@ -126,10 +126,19 @@ class TenantEncryption:
                 # Generate new key for this tenant
                 self.logger.info(f"[Encryption] Generating new key for org {self.organization.slug}")
                 new_key = generate_key()
-                self.organization.encryption_key = encrypt_key(new_key)
-                self.organization.save(update_fields=["encryption_key"])
-                self._key = new_key
-                self.logger.info("[Encryption] New key generated and saved")
+                encrypted = encrypt_key(new_key)
+                if self.organization.pk is None:
+                    self.organization.encryption_key = encrypted
+                    self.organization.save(update_fields=["encryption_key"])
+                    self._key = new_key
+                elif self._store_if_empty(encrypted):
+                    self.organization.encryption_key = encrypted
+                    self._key = new_key
+                    self.logger.info("[Encryption] New key generated and saved")
+                else:
+                    # Eine gleichzeitige Anfrage war schneller: deren Schlüssel gilt, nie überschreiben
+                    self.organization.encryption_key = self._stored_key()
+                    self._key = decrypt_key(bytes(self.organization.encryption_key))
             else:
                 # Decrypt existing key
                 try:
@@ -140,6 +149,16 @@ class TenantEncryption:
                     raise
 
         return self._key
+
+    def _store_if_empty(self, encrypted: bytes) -> bool:
+        """Schlüssel nur speichern, wenn in der Datenbank noch keiner steht (atomar, ohne Sperre)."""
+        manager = type(self.organization)._default_manager
+        leer = models.Q(encryption_key__isnull=True) | models.Q(encryption_key=b"")
+        return bool(manager.filter(leer, pk=self.organization.pk).update(encryption_key=encrypted))
+
+    def _stored_key(self) -> bytes:
+        manager = type(self.organization)._default_manager
+        return bytes(manager.filter(pk=self.organization.pk).values_list("encryption_key", flat=True).get())
 
     def encrypt(self, plaintext: str) -> bytes:
         """

@@ -9,7 +9,6 @@ inkl. Labels und Checklisten.
 
 from __future__ import annotations
 
-import csv
 import io
 import json
 import xml.etree.ElementTree as ET
@@ -18,6 +17,7 @@ from typing import Any
 
 from django.utils import timezone
 
+from apps.common import csv_safety
 from apps.tenants.models import Membership, Organization
 
 from . import selectors
@@ -92,7 +92,7 @@ def serialize_task(task: Task) -> dict[str, Any]:
 def render_csv(tasks: Iterable[Task]) -> tuple[str, str]:
     """CSV mit Semikolon, CRLF und BOM (Excel erkennt so UTF-8)."""
     buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
     writer.writerow(CSV_COLUMNS)
     for task in tasks:
         writer.writerow(

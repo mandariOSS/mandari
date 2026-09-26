@@ -5,12 +5,12 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
-import json
-
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
+
+from apps.common.params import json_body, uuid_param
 
 from ..models import (
     Bookmark,
@@ -80,9 +80,8 @@ def bookmark_toggle(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Login erforderlich"}, status=401)
 
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
+    data = json_body(request)
+    if data is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     entity_type = data.get("type", "")
@@ -93,6 +92,9 @@ def bookmark_toggle(request):
 
     if not entity_id:
         return JsonResponse({"error": "ID fehlt"}, status=400)
+    entity_id = uuid_param(entity_id)
+    if entity_id is None:
+        return JsonResponse({"error": "Ungültige ID"}, status=400)
 
     bookmark, created = Bookmark.objects.get_or_create(
         user=request.user,
@@ -130,10 +132,8 @@ def bookmark_entities(request):
     if not entity_type or not ids_str:
         return HttpResponse("")
 
-    try:
-        ids = [id.strip() for id in ids_str.split(",") if id.strip()]
-    except Exception:
-        return HttpResponse("")
+    # Nur gültige Kennungen (die Liste kommt aus dem lokalen Speicher des Browsers)
+    ids = [gueltig for teil in ids_str.split(",") if (gueltig := uuid_param(teil))]
 
     if not ids:
         return HttpResponse("")

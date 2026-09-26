@@ -10,6 +10,8 @@ from django.shortcuts import render
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
+from apps.common.params import int_param
+
 from ..models import (
     OParlBody,
     OParlMeeting,
@@ -63,7 +65,7 @@ def search_results(request):
     """
     query = request.GET.get("q", "").strip()
     search_type = request.GET.get("type", "all")
-    page = int(request.GET.get("page", 1))
+    page = int_param(request.GET.get("page"), 1, minimum=1, maximum=1000)
     is_dropdown = request.GET.get("dropdown") == "1"
     # Im "Alle Kommunen"-Modus wird kommunenübergreifend gesucht (kein Body-Filter)
     body = None if is_all_bodies_mode(request) else get_active_body(request)

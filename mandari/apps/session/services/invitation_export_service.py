@@ -13,7 +13,6 @@ Ladungsnachweis und Serienbrief (Issue #225).
 
 from __future__ import annotations
 
-import csv
 import io
 import logging
 from dataclasses import dataclass
@@ -22,7 +21,7 @@ from typing import Any, cast
 from django.template.loader import render_to_string
 from django.utils import timezone
 
-from apps.common.csv_safety import csv_safe_cell
+from apps.common import csv_safety
 from apps.common.pdf import html_to_pdf
 from apps.session.models import SessionInvitationDispatch, SessionInvitationRecipient, SessionMeeting
 from apps.session.services import agenda_service, invitation_token
@@ -176,7 +175,7 @@ def _agenda(meeting: SessionMeeting, *, include_non_public: bool, supplementary_
 
 
 # Schutz gegen Formel-Injektion, gemeinsam mit dem Protokollexport (apps/common/csv_safety.py)
-_csv_cell = csv_safe_cell
+_csv_cell = csv_safety.csv_safe_cell
 
 
 def build_serial_letter_csv(dispatch: SessionInvitationDispatch) -> str:
@@ -184,7 +183,7 @@ def build_serial_letter_csv(dispatch: SessionInvitationDispatch) -> str:
     meeting = dispatch.meeting
     start_local = timezone.localtime(meeting.start)
     buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
     writer.writerow(
         [
             "Anrede",

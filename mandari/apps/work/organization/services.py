@@ -160,8 +160,9 @@ def invite_member(organization: Organization, inviter: User, email: str, role_id
             valid_days=INVITATION_VALID_DAYS,
         )
         send_invitation_email(organization, invitation)
-    except Exception as exc:  # noqa: BLE001 — Fehler verständlich anzeigen
-        raise ServiceError(f"Fehler beim Erstellen der Einladung: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 — Fehler verständlich anzeigen, Details nur ins Protokoll
+        logger.exception("Einladung für Organisation %s konnte nicht erstellt werden", organization.slug)
+        raise ServiceError("Die Einladung konnte nicht erstellt werden. Bitte später erneut versuchen.") from exc
     return f"Einladung an {email} wurde versendet."
 
 

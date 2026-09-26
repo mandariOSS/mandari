@@ -19,7 +19,6 @@ Jahresübersicht:
   der Berechtigung ``manage_allowances`` verwendet.
 """
 
-import csv
 import io
 import logging
 import re
@@ -29,6 +28,8 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.sax.saxutils import escape  # noqa: F401  (Doku: Escaping via ElementTree)
 
 from django.utils import timezone
+
+from apps.common import csv_safety
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ def build_export_csv(allowances) -> str:
     ist auf die Berechtigung manage_allowances beschränkt.
     """
     buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
     writer.writerow(
         [
             "Name",
@@ -407,7 +408,7 @@ def year_summary(tenant, year) -> list[dict]:
 def year_summary_csv(rows, year) -> str:
     """Jahresübersicht als CSV (Semikolon, CRLF)."""
     buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
     writer.writerow(["Jahr", "Name", "Positionen", "Summe", "Ausgezahlt", "Genehmigt", "Ausstehend"])
     for row in rows:
         writer.writerow(
@@ -535,7 +536,7 @@ def approve_monthly_allowances(allowances, approver, *, four_eyes: bool = True) 
 def build_monthly_export_csv(allowances) -> str:
     """CSV der Monats-Pauschalen fürs Finanzverfahren (analog Sitzungsgeld-CSV)."""
     buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
     writer.writerow(
         [
             "Name",

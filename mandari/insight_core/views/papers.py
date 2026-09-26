@@ -276,16 +276,16 @@ def paper_summary(request, pk):
             },
         )
 
-    except Exception as e:
+    except Exception:
         import logging
 
-        logger = logging.getLogger(__name__)
-        logger.exception(f"Unexpected error in paper_summary: {e}")
+        # Details nur ins Protokoll – der Ausnahmetext kann Interna enthalten
+        logging.getLogger(__name__).exception("Unexpected error in paper_summary")
         return render(
             request,
             "partials/paper_summary.html",
             {
                 "paper": paper,
-                "error": f"Unerwarteter Fehler: {str(e)}",
+                "error": "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen.",
             },
         )

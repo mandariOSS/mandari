@@ -13,6 +13,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
+from apps.common.params import int_param
+
 from ..models import (
     OParlAgendaItem,
     OParlConsultation,
@@ -157,7 +159,7 @@ class FileListView(ActiveBodyRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         body = get_active_body(self.request)
         q = self.request.GET.get("q", "").strip()
-        page_num = int(self.request.GET.get("page", 1))
+        page_num = int_param(self.request.GET.get("page"), 1, minimum=1)
 
         if body:
             qs = (

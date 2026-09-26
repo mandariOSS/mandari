@@ -17,6 +17,8 @@ from django.views.generic import (
     UpdateView,
 )
 
+from apps.common.params import uuid_param
+
 from ..models import (
     SessionMeeting,
     SessionOrganization,
@@ -57,7 +59,9 @@ class OrganizationListView(SessionViewMixin, ListView):
         # Perioden-Filter (Issue #39): Gremien mit Besetzungen in der Periode
         term_id = self.request.GET.get("term")
         if term_id:
-            qs = qs.filter(memberships__legislative_term_id=term_id).distinct()
+            # Ungültige Kennung: kein Treffer statt Serverfehler
+            term_uuid = uuid_param(term_id)
+            qs = qs.filter(memberships__legislative_term_id=term_uuid).distinct() if term_uuid else qs.none()
 
         return qs
 

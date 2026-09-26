@@ -15,7 +15,6 @@ Datenschutz (Akzeptanzkriterium):
   Zeitraum. Der Name steht ausschließlich im PDF selbst.
 """
 
-import csv
 import hashlib
 import io
 import logging
@@ -24,6 +23,7 @@ from django.conf import settings
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from apps.common import csv_safety
 from apps.common.pdf import html_to_pdf
 
 from .models import FactionAttendance, FactionAttendanceCertificate
@@ -202,7 +202,7 @@ def build_bulk_export_pdf(organization, period_start, period_end, attendances) -
 def build_bulk_export_csv(organization, period_start, period_end, attendances) -> str:
     """Sammel-Export als CSV (Semikolon-getrennt, für die Verwaltung)."""
     buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
     writer.writerow(
         [
             "Name",

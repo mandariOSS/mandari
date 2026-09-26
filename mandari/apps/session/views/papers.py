@@ -29,6 +29,8 @@ from django.views.generic import (
     UpdateView,
 )
 
+from apps.common.params import uuid_param
+
 from .. import audit
 from ..models import (
     SessionConsultation,
@@ -175,10 +177,16 @@ class PaperListView(SessionViewMixin, ListView):
         # Filter by organization
         org_id = self.request.GET.get("organization")
         if org_id:
-            qs = qs.filter(Q(main_organization_id=org_id) | Q(originator_organization_id=org_id))
+            # Ungültige Kennung: kein Treffer statt Serverfehler
+            org_uuid = uuid_param(org_id)
+            qs = (
+                qs.filter(Q(main_organization_id=org_uuid) | Q(originator_organization_id=org_uuid))
+                if org_uuid
+                else qs.none()
+            )
 
         # Perioden-Filter (Issue #39): Vorlagen über den Zeitraum der Periode
-        term_id = self.request.GET.get("term")
+        term_id = uuid_param(self.request.GET.get("term"))
         if term_id:
             from ..models import SessionLegislativeTerm
             from .terms import term_date_filter

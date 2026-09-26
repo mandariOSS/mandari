@@ -8,6 +8,8 @@ Provides views for:
 """
 
 import contextlib
+import hashlib
+import ipaddress
 import time
 from datetime import timedelta
 from urllib.parse import quote, urlencode
@@ -27,6 +29,8 @@ from django.contrib.auth.views import (
 from django.contrib.auth.views import (
     PasswordResetView as DjangoPasswordResetView,
 )
+from django.core.cache import cache
+from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -53,6 +57,34 @@ MAX_2FA_FAILURES = 5
 # Pflicht-Einrichtung nach dem Passwort: etwas mehr Zeit für App-Installation und Scan
 PENDING_ENROLL_MAX_AGE_SECONDS = 900
 ENROLL_SETUP_SESSION_KEY = "auth_2fa_enroll"
+
+# Ratenbegrenzung der Anmeldung: Fehlversuche je Adresse (IPv6 je /64-Netz) und je Konto
+LOGIN_WINDOW_MINUTES = 15
+LOGIN_FAILURES_PER_IP = 5
+LOGIN_FAILURES_PER_ACCOUNT = 10
+# „Passwort vergessen“: Mails je Stunde
+PASSWORD_RESET_MAILS_PER_IP_PER_HOUR = 10
+PASSWORD_RESET_MAILS_PER_ADDRESS_PER_HOUR = 3
+
+
+def _ipv6_network(ip_address: str) -> str:
+    """/64-Netz einer IPv6-Adresse (ein Anschluss verfügt meist über ein ganzes /64), sonst ``""``."""
+    try:
+        adresse = ipaddress.ip_address(ip_address)
+    except ValueError:
+        return ""
+    if adresse.version != 6:
+        return ""
+    return str(ipaddress.ip_network(f"{adresse}/64", strict=False))
+
+
+def _network_failure_key(network: str) -> str:
+    return "login-failures:net:" + hashlib.sha256(network.encode()).hexdigest()
+
+
+def normalize_code(code: str) -> str:
+    """Eingegebenen Code ohne jeden Leerraum (auch Tabulator, Zeilenumbruch, geschütztes Leerzeichen)."""
+    return "".join((code or "").split())
 
 
 def complete_login(request, user, remember: bool) -> None:
@@ -221,32 +253,40 @@ class LoginView(View):
         return request.META.get("REMOTE_ADDR", "")
 
     def is_rate_limited(self, ip_address, email):
-        """Check if login attempts are rate limited."""
-        from datetime import timedelta
+        """
+        Fehlversuche der letzten 15 Minuten: je Adresse, je IPv6-/64-Netz und je Konto.
 
-        from django.utils import timezone
-
-        # Allow 5 attempts per 15 minutes
-        threshold = timezone.now() - timedelta(minutes=15)
-        recent_failures = LoginAttempt.objects.filter(
-            ip_address=ip_address,
-            was_successful=False,
-            timestamp__gte=threshold,
-        ).count()
-
-        return recent_failures >= 5
+        Die Zählung je Konto greift auch dann, wenn die Versuche von vielen Adressen kommen;
+        ihre Schwelle liegt höher, damit Tippfehler der Person selbst nicht sofort sperren.
+        """
+        threshold = timezone.now() - timedelta(minutes=LOGIN_WINDOW_MINUTES)
+        failures = LoginAttempt.objects.filter(was_successful=False, timestamp__gte=threshold)
+        if failures.filter(ip_address=ip_address).count() >= LOGIN_FAILURES_PER_IP:
+            return True
+        netz = _ipv6_network(ip_address)
+        if netz and cache.get(_network_failure_key(netz), 0) >= LOGIN_FAILURES_PER_IP:
+            return True
+        email = (email or "").strip()
+        return bool(email) and failures.filter(email__iexact=email).count() >= LOGIN_FAILURES_PER_ACCOUNT
 
     def log_attempt(self, request, email, success):
         """Log login attempt for security monitoring."""
+        ip_address = self.get_client_ip(request)
         # Login darf nicht scheitern, wenn das Protokollieren fehlschlägt
         with contextlib.suppress(Exception):
             LoginAttempt.objects.create(
                 email=email,
-                ip_address=self.get_client_ip(request),
+                ip_address=ip_address,
                 user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
                 was_successful=success,
                 failure_reason="" if success else "invalid_credentials",
             )
+        netz = _ipv6_network(ip_address)
+        if not success and netz:
+            key = _network_failure_key(netz)
+            cache.add(key, 0, LOGIN_WINDOW_MINUTES * 60)
+            with contextlib.suppress(ValueError):
+                cache.incr(key)
 
     def _get_pending_invitation(self, request):
         """Get pending invitation from session if any."""
@@ -334,9 +374,10 @@ class LoginTwoFactorView(View):
             )
             return redirect("accounts:login")
 
-        code = request.POST.get("code", "")
+        # Einmal normalisieren: Sperre und Prüfung sehen denselben Wert
+        code = normalize_code(request.POST.get("code", ""))
         has_security_key = webauthn_service.has_credentials(user)
-        if security_key_required(user) and has_security_key and code.replace(" ", "").isdigit():
+        if security_key_required(user) and has_security_key and code.isdigit():
             # Pflicht zum Sicherheitsschlüssel: App-Codes gelten nicht, Backup-Codes bleiben der Rückfall
             return render(
                 request,
@@ -476,6 +517,11 @@ class TwoFactorEnrollView(View):
                 messages.success(request, "Zweiter Faktor eingerichtet.")
             return redirect(LoginView().get_success_url(request, next_url or None))
 
+        if service.is_2fa_enabled(user):
+            # Ein aktiver zweiter Faktor wird hier nie ersetzt (Gerät, Secret und Backup-Codes bleiben);
+            # Deaktivieren geht nur mit Passwort im Profil. Die Seite zeigt dann Codes oder leitet weiter.
+            return self.get(request)
+
         setup = self._setup(request, user)
         if LoginTwoFactorView()._recent_failures(user) >= MAX_2FA_FAILURES:
             if pending is not None:
@@ -564,6 +610,15 @@ class PasswordResetView(DjangoPasswordResetView):
 
     def form_valid(self, form):
         # Always show success message (don't reveal if email exists)
+        # Mails je Adresse und IP drosseln – bei Überschreitung dieselbe Antwort, nur ohne Versand
+        if not _mail_allowed(
+            self.request,
+            form.cleaned_data["email"],
+            scope="password-reset",
+            per_ip=PASSWORD_RESET_MAILS_PER_IP_PER_HOUR,
+            per_address=PASSWORD_RESET_MAILS_PER_ADDRESS_PER_HOUR,
+        ):
+            return HttpResponseRedirect(self.get_success_url())
         return super().form_valid(form)
 
 
@@ -691,25 +746,33 @@ SELF_REGISTER_MAILS_PER_IP_PER_HOUR = 10
 SELF_REGISTER_MAILS_PER_ADDRESS_PER_HOUR = 3
 
 
-def _registration_mail_allowed(request, email: str) -> bool:
-    """Bestätigungsmails je IP und Adresse drosseln – die Registrierung darf kein Werkzeug für Mail-Fluten sein."""
-    import hashlib
-
-    from django.core.cache import cache
-
+def _mail_allowed(request, email: str, *, scope: str, per_ip: int, per_address: int) -> bool:
+    """Mails an eine Adresse je IP und Adresse und Stunde drosseln (``scope`` trennt die Zähler)."""
     from .two_factor_policy import client_ip
 
-    address_key = hashlib.sha256(email.lower().encode()).hexdigest()
+    address_key = hashlib.sha256(email.strip().lower().encode()).hexdigest()
     limits = {
-        f"self-register:ip:{client_ip(request)}": SELF_REGISTER_MAILS_PER_IP_PER_HOUR,
-        f"self-register:address:{address_key}": SELF_REGISTER_MAILS_PER_ADDRESS_PER_HOUR,
+        f"{scope}:ip:{client_ip(request)}": per_ip,
+        f"{scope}:address:{address_key}": per_address,
     }
     if any(cache.get(key, 0) >= limit for key, limit in limits.items()):
         return False
     for key in limits:
         cache.add(key, 0, 60 * 60)
-        cache.incr(key)
+        with contextlib.suppress(ValueError):  # zwischenzeitlich abgelaufen
+            cache.incr(key)
     return True
+
+
+def _registration_mail_allowed(request, email: str) -> bool:
+    """Bestätigungsmails je IP und Adresse drosseln – die Registrierung darf kein Werkzeug für Mail-Fluten sein."""
+    return _mail_allowed(
+        request,
+        email,
+        scope="self-register",
+        per_ip=SELF_REGISTER_MAILS_PER_IP_PER_HOUR,
+        per_address=SELF_REGISTER_MAILS_PER_ADDRESS_PER_HOUR,
+    )
 
 
 def registration_state_response(request, org, membership):

@@ -11,7 +11,6 @@ Views für:
 - CSV-Export des Registers inkl. Umsetzungsstand
 """
 
-import csv
 from datetime import date
 
 from django.contrib import messages
@@ -21,6 +20,9 @@ from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
+
+from apps.common import csv_safety
+from apps.common.params import uuid_param
 
 from .. import audit
 from ..models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionResolutionForwarding
@@ -58,7 +60,8 @@ class ResolutionRegisterView(SessionViewMixin, TemplateView):
 
         org_id = self.request.GET.get("organization")
         if org_id:
-            qs = qs.filter(meeting__organization_id=org_id)
+            org_uuid = uuid_param(org_id)  # ungültig: kein Treffer statt Serverfehler
+            qs = qs.filter(meeting__organization_id=org_uuid) if org_uuid else qs.none()
         year = self.request.GET.get("year")
         if year and year.isdigit():
             qs = qs.filter(meeting__start__year=int(year))
@@ -372,7 +375,8 @@ class ResolutionCsvExportView(SessionViewMixin, View):
 
         org_id = request.GET.get("organization")
         if org_id:
-            qs = qs.filter(meeting__organization_id=org_id)
+            org_uuid = uuid_param(org_id)  # ungültig: kein Treffer statt Serverfehler
+            qs = qs.filter(meeting__organization_id=org_uuid) if org_uuid else qs.none()
         year = request.GET.get("year")
         if year and year.isdigit():
             qs = qs.filter(meeting__start__year=int(year))
@@ -384,7 +388,7 @@ class ResolutionCsvExportView(SessionViewMixin, View):
         response["Content-Disposition"] = 'attachment; filename="beschlussregister.csv"'
         response.write("﻿")  # BOM für Excel
 
-        writer = csv.writer(response, delimiter=";")
+        writer = csv_safety.writer(response, delimiter=";")
         writer.writerow(
             [
                 "Beschluss-Nr.",

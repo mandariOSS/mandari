@@ -18,6 +18,7 @@ from django.contrib.auth.forms import (
 from django.contrib.auth.forms import (
     SetPasswordForm as DjangoSetPasswordForm,
 )
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
@@ -25,6 +26,15 @@ from django.template.loader import render_to_string
 from apps.common.email import render_email
 
 User = get_user_model()
+
+
+def _candidate_user(email: str, cleaned_data: dict[str, Any]) -> Any:
+    """Ungespeichertes Konto mit den Formularangaben – für den Ähnlichkeitsvergleich der Passwortprüfung."""
+    return User(
+        email=email or "",
+        first_name=cleaned_data.get("first_name", ""),
+        last_name=cleaned_data.get("last_name", ""),
+    )
 
 
 class LoginForm(forms.Form):
@@ -148,7 +158,7 @@ class SetPasswordForm(DjangoSetPasswordForm):
             }
         ),
         label="Neues Passwort",
-        help_text="Mindestens 8 Zeichen.",
+        help_text="Mindestens 12 Zeichen.",
     )
     new_password2 = forms.CharField(
         widget=forms.PasswordInput(
@@ -192,12 +202,12 @@ class RegistrationForm(forms.Form):
         widget=forms.PasswordInput(
             attrs={
                 "class": "form-control",
-                "placeholder": "Mindestens 8 Zeichen",
+                "placeholder": "Mindestens 12 Zeichen",
                 "autocomplete": "new-password",
             }
         ),
         label="Passwort",
-        help_text="Mindestens 8 Zeichen.",
+        help_text="Mindestens 12 Zeichen.",
     )
     password2 = forms.CharField(
         widget=forms.PasswordInput(
@@ -221,9 +231,9 @@ class RegistrationForm(forms.Form):
         if password1 and password2 and password1 != password2:
             raise ValidationError("Die Passwörter stimmen nicht überein.")
 
-        # Check password strength
-        if password1 and len(password1) < 8:
-            raise ValidationError("Das Passwort muss mindestens 8 Zeichen lang sein.")
+        # Passwortrichtlinie wie überall (AUTH_PASSWORD_VALIDATORS)
+        if password1:
+            validate_password(password1, user=_candidate_user(self.email, self.cleaned_data))
 
         return password2
 
@@ -276,7 +286,7 @@ class SelfRegistrationForm(forms.Form):
         widget=forms.PasswordInput(
             attrs={
                 "class": "form-control",
-                "placeholder": "Mindestens 8 Zeichen",
+                "placeholder": "Mindestens 12 Zeichen",
                 "autocomplete": "new-password",
             }
         ),
@@ -322,6 +332,7 @@ class SelfRegistrationForm(forms.Form):
         password2 = self.cleaned_data.get("password2")
         if password1 and password2 and password1 != password2:
             raise ValidationError("Die Passwörter stimmen nicht überein.")
-        if password1 and len(password1) < 8:
-            raise ValidationError("Das Passwort muss mindestens 8 Zeichen lang sein.")
+        # Passwortrichtlinie wie überall (AUTH_PASSWORD_VALIDATORS)
+        if password1:
+            validate_password(password1, user=_candidate_user(self.cleaned_data.get("email", ""), self.cleaned_data))
         return password2

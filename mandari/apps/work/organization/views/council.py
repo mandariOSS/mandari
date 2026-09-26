@@ -8,6 +8,7 @@ from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.params import int_param
 
 from .. import selectors, services
 from ..services import ServiceError
@@ -61,7 +62,7 @@ class CouncilPartyListView(WorkViewMixin, TemplateView):
             contact_phone=request.POST.get("contact_phone", "").strip(),
             color=request.POST.get("color", "#6b7280").strip(),
             is_coalition_member=request.POST.get("is_coalition_member") == "on",
-            coalition_order=int(request.POST.get("coalition_order", 0) or 0),
+            coalition_order=int_param(request.POST.get("coalition_order"), 0, minimum=-(10**6), maximum=10**6),
             is_active=request.POST.get("is_active") == "on",
         )
 

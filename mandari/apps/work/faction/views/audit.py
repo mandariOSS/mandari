@@ -16,6 +16,7 @@ from django.core.paginator import Paginator
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.params import uuid_param
 
 from ..models import FactionAuditLog
 from ..visibility import LOCKED_PLACEHOLDER, can_view_internal
@@ -47,14 +48,17 @@ class FactionAuditLogView(WorkViewMixin, TemplateView):
             qs = qs.filter(action=action)
             context["selected_action"] = action
 
+        # Ungültige Kennungen: kein Treffer statt Serverfehler
         object_id = self.request.GET.get("object")
         if object_id:
-            qs = qs.filter(object_id=object_id)
+            object_uuid = uuid_param(object_id)
+            qs = qs.filter(object_id=object_uuid) if object_uuid else qs.none()
             context["selected_object"] = object_id
 
         meeting_id = self.request.GET.get("meeting")
         if meeting_id:
-            qs = qs.filter(meeting_id_ref=meeting_id)
+            meeting_uuid = uuid_param(meeting_id)
+            qs = qs.filter(meeting_id_ref=meeting_uuid) if meeting_uuid else qs.none()
             context["selected_meeting"] = meeting_id
 
         paginator = Paginator(qs, 50)

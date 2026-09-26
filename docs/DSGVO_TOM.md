@@ -13,7 +13,8 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
   SSH mit Schlüssel-Authentifizierung.
 - Anmeldung an der Anwendung mit E-Mail/Passwort, optional TOTP-basierte
   Zwei-Faktor-Authentifizierung; Rate-Limiting gegen Brute-Force
-  (5 Versuche / 15 Minuten), Sitzungs- und Geräteverwaltung je Konto.
+  (5 Versuche je Adresse bzw. IPv6-/64-Netz und 10 je Konto in 15 Minuten),
+  Sitzungs- und Geräteverwaltung je Konto.
 
 ### Zugriffskontrolle (Berechtigungskonzept)
 - Mandantenfähigkeit mit strikter Datenisolation je Kommune/Organisation

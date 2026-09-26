@@ -32,6 +32,21 @@ Karte „Anmeldesicherheit“) und in den Session-Einstellungen (Karte
   Health-Check. Das Ergebnis wird je Sitzung fünf Minuten zwischengespeichert;
   Änderungen an Rollen oder Schaltern wirken spätestens nach fünf Minuten.
 - **Profil:** Wer verpflichtet ist, kann den zweiten Faktor nicht deaktivieren.
+- **Einrichtungsseite:** Ein aktiver zweiter Faktor wird dort nie ersetzt (Secret und
+  Backup-Codes bleiben); Deaktivieren geht nur mit Passwort im Profil.
+
+## Anmeldung und Konto
+
+- **Ratenbegrenzung:** Fehlversuche der letzten 15 Minuten zählen je Adresse (5),
+  bei IPv6 je /64-Netz (5), und je Konto (10) – auch wenn die Versuche von vielen
+  Adressen kommen.
+- **Passwortrichtlinie:** Registrierung, Einladung, Passwortwechsel und Zurücksetzen
+  prüfen gegen `AUTH_PASSWORD_VALIDATORS` (mindestens 12 Zeichen, keine gängigen
+  oder rein numerischen Passwörter).
+- **„Passwort vergessen“:** höchstens 3 Mails je Adresse und 10 je IP-Adresse und
+  Stunde; darüber dieselbe Antwort ohne Versand.
+- **„Sitzung beenden“** löscht die Sitzung über den eingestellten Sitzungsspeicher
+  (bei `cached_db` auch aus dem Cache).
 
 ## Sicherheitsschlüssel und Passkeys (WebAuthn/FIDO2)
 
@@ -60,7 +75,7 @@ Karte „Anmeldesicherheit“) und in den Session-Einstellungen (Karte
 | Variable | Standard | Bedeutung |
 |---|---|---|
 | `TWO_FACTOR_ENFORCEMENT` | `true` in Produktion, `false` bei `DEBUG` | Pflicht durchsetzen |
-| `TWO_FACTOR_EXEMPT_EMAIL_DOMAINS` | `demo.mandari.de` | Ausgenommene Domains für gemeinsam genutzte Demo-Zugänge ohne echte Daten |
+| `TWO_FACTOR_EXEMPT_EMAIL_DOMAINS` | `demo.mandari.de` | Ausgenommene Domains für gemeinsam genutzte Demo-Zugänge ohne echte Daten; gilt nie für Plattform-Administration (Staff, Superuser). In Installationen ohne Demo-Zugänge leer setzen. |
 | `TWO_FACTOR_REQUIRE_SECURITY_KEY_FOR_SUPERUSERS` | `false` | Superuser nur mit Sicherheitsschlüssel |
 | `WEBAUTHN_RP_ID` | `MAIN_DOMAIN` | Relying-Party-ID (Hauptdomain ohne Port) |
 | `WEBAUTHN_RP_NAME` | `mandari` | Anzeigename im Browser-Dialog |
