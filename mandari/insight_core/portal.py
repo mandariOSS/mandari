@@ -269,7 +269,8 @@ def deep_link_target(rest: str) -> str | None:
         return None
     if match.namespace != "insight_core:insight" or match.url_name not in DEEP_LINK_NAMES:
         return None
-    return path
+    # Ziel aus der aufgelösten Route neu bauen statt den Eingabepfad weiterzureichen
+    return reverse(f"{match.namespace}:{match.url_name}", args=match.args, kwargs=match.kwargs)
 
 
 # ---------------------------------------------------------------------------
