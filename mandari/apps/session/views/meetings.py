@@ -28,6 +28,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import joint_meeting_service
+from ..visibility import paper_visible
 
 # =============================================================================
 # MEETINGS
@@ -171,7 +172,12 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         for top in context["agenda_public"] + context["agenda_non_public"]:
             all_items.append(top)
             all_items.extend(getattr(top, "children_list", []))
-        paper_ids = {item.paper_id for item in all_items if item.paper_id}
+        # Vorlage eines TOPs nur, wenn die Person sie sehen darf – das Sitzungs-NÖ-Recht allein nennt
+        # keine nichtöffentliche Vorlage (Nummer, Link, Beratungsfolge)
+        permissions = self.session_permissions
+        for item in all_items:
+            item.paper_visible = item.paper is not None and paper_visible(permissions, item.paper)
+        paper_ids = {item.paper_id for item in all_items if item.paper_id and item.paper_visible}
         if paper_ids:
             chains = {}
             stations = (
@@ -182,7 +188,7 @@ class MeetingDetailView(SessionViewMixin, DetailView):
             for station in stations:
                 chains.setdefault(station.paper_id, []).append(station)
             for item in all_items:
-                if item.paper_id:
+                if item.paper_id and item.paper_visible:
                     item.consultation_chain = chains.get(item.paper_id, [])
 
         # Attendances (Issue #30): Schnellerfassung, Quorum, Gäste-Ergänzung

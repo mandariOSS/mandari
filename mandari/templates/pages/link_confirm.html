@@ -1,0 +1,23 @@
+{% extends "base_insight.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+{% comment %}
+Bestätigungsseite für Links aus E-Mails (Abo bestätigen/abmelden, Frage bestätigen).
+Der Aufruf per GET ändert nichts; erst der Klick auf die Schaltfläche (POST) wirkt.
+Mail-Scanner, die Links vorab öffnen, lösen so nichts aus.
+{% endcomment %}
+<div class="max-w-xl mx-auto mt-8 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
+    <i data-lucide="{{ icon|default:'mail-check' }}" class="w-12 h-12 mx-auto text-primary-500 mb-4"></i>
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">{{ title }}</h1>
+    <p class="text-gray-600 dark:text-gray-400">{{ message }}</p>
+    <form method="post" class="mt-6">
+        {% csrf_token %}
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-semibold transition-colors">
+            {{ button }}
+        </button>
+    </form>
+</div>
+{% endblock %}

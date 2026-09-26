@@ -107,14 +107,18 @@ Die Beratungsfolge aus Issue #34 (`SessionConsultation`) wird spec-konform
 als `Consultation` ausgeliefert: `paper`, `organization`, `meeting`/
 `agendaItem` (sobald terminiert und öffentlich), `role`
 (Vorberatung/Anhörung/Entscheidung/Kenntnisnahme) und `authoritative`
-für die entscheidende Station.
+für die entscheidende Station. Eine Station in einer nichtöffentlichen
+Sitzung bzw. auf einem nichtöffentlichen TOP nennt nur `paper` – ohne
+`organization`, `role`, `authoritative`, `meeting` und `agendaItem`.
 
 ## Pagination und Zeitfilter
 
 Wie beim Aggregator: OParl-Listen-Envelope (`data`/`pagination`/`links`)
 mit echten `links.next`-URLs und HTTP-`Link`-Headern; Seitengröße über
 `OPARL_API_PAGE_SIZE` (Standard 100). Sortierung nach `modified`
-aufsteigend — stabil für inkrementelle Clients.
+aufsteigend — stabil für inkrementelle Clients. Mit `modified_since`
+werden Objekte und Tombstones seitenweise zusammengeführt; geladen
+werden nur die Objekte der angefragten Seite.
 
 Alle Listen unterstützen `created_since`, `created_until`,
 `modified_since`, `modified_until`. **Zeitstempel MÜSSEN eine explizite

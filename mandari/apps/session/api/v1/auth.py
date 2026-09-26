@@ -105,20 +105,29 @@ def _token_from_request(request: HttpRequest, tenant: SessionTenant) -> SessionA
     return token
 
 
-def _throttle(token: SessionAPIToken) -> None:
-    """Ratenlimit je Token und Minute (Feld ``rate_limit_per_minute``) über den Cache."""
+def rate_limit_exceeded(token: SessionAPIToken) -> bool:
+    """
+    Anfrage zählen und melden, ob das Ratenlimit des Tokens je Minute (``rate_limit_per_minute``)
+    überschritten ist – ein Zähler je Token für alle Wege der Session-API (auch die alten Pfade).
+    """
     limit = int(getattr(token, "rate_limit_per_minute", 0) or 0)
     if limit <= 0:
-        return
+        return False
     key = f"session-api:token:{token.pk}:rate"
     if cache.add(key, 1, timeout=60):
-        return
+        return False
     try:
         count = cache.incr(key)
     except ValueError:  # Schlüssel zwischenzeitlich abgelaufen
         cache.add(key, 1, timeout=60)
-        return
-    if count > limit:
+        return False
+    return int(count) > limit
+
+
+def _throttle(token: SessionAPIToken) -> None:
+    """Ratenlimit je Token und Minute über den Cache; überschritten → 429 mit ``Retry-After``."""
+    if rate_limit_exceeded(token):
+        limit = int(getattr(token, "rate_limit_per_minute", 0) or 0)
         raise Problem(
             429,
             f"Ratenlimit von {limit} Anfragen pro Minute für dieses Token erreicht.",

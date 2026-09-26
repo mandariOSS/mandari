@@ -38,21 +38,34 @@ class DashboardView(SessionViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         tenant = self.session_tenant
         today = timezone.now().date()
+        permissions = self.session_permissions
+        # Jede Kachel nur mit ihrem Fachrecht (Funktionstrennung, Issue #221): Das Dashboard-Recht
+        # allein zeigt keine Sitzungen, Vorlagen oder Anträge
+        can_meetings = "view_meetings" in permissions
+        can_papers = "view_papers" in permissions
+        can_applications = "view_applications" in permissions
+        context.update(
+            {
+                "can_view_meetings": can_meetings,
+                "can_view_papers": can_papers,
+                "can_view_applications": can_applications,
+            }
+        )
+        meetings = SessionMeeting.objects.filter(tenant=tenant).visible_to(permissions)
+        papers = SessionPaper.objects.filter(tenant=tenant).visible_to(permissions)
 
         # Upcoming meetings (next 30 days) — Ö/NÖ nur für Berechtigte
-        upcoming = SessionMeeting.objects.filter(
-            tenant=tenant,
-            start__date__gte=today,
-            start__date__lte=today + timedelta(days=30),
-            cancelled=False,
-        )
-        if not self.has_permission("view_non_public_meetings"):
-            upcoming = upcoming.filter(is_public=True)
-        context["upcoming_meetings"] = upcoming.select_related("organization").order_by("start")[:5]
+        if can_meetings:
+            upcoming = meetings.filter(
+                start__date__gte=today,
+                start__date__lte=today + timedelta(days=30),
+                cancelled=False,
+            )
+            context["upcoming_meetings"] = upcoming.select_related("organization").order_by("start")[:5]
 
         # Fristwarnung Ladung (Issue #29): kommende Sitzungen ohne versandte
         # Einladung — „Ladung muss bis TT.MM. raus" (überfällige zuerst)
-        if self.has_permission("view_meetings"):
+        if can_meetings:
             # Gemeinsame Sitzungen (Issue #317): längste Ladungsfrist der beteiligten Gremien
             pending_invitations = SessionMeeting.with_joint_flag(
                 SessionMeeting.objects.filter(
@@ -74,7 +87,7 @@ class DashboardView(SessionViewMixin, TemplateView):
             context["invitation_overdue_count"] = sum(1 for m in warnings if m.invitation_overdue)
 
         # Beschlusskontrolle (Issue #37): überfällige Beschlüsse prominent warnen
-        if self.has_permission("view_meetings"):
+        if can_meetings:
             overdue_resolutions = (
                 SessionAgendaItem.objects.filter(
                     meeting__tenant=tenant,
@@ -91,42 +104,36 @@ class DashboardView(SessionViewMixin, TemplateView):
             context["overdue_resolutions_count"] = overdue_resolutions.count()
 
         # Recent papers — Ö/NÖ nur für Berechtigte
-        recent_papers = SessionPaper.objects.filter(tenant=tenant)
-        if not self.has_permission("view_non_public_papers"):
-            recent_papers = recent_papers.filter(is_public=True)
-        context["recent_papers"] = recent_papers.select_related(
-            "main_organization", "originator_organization"
-        ).order_by("-created_at")[:5]
+        if can_papers:
+            context["recent_papers"] = papers.select_related("main_organization", "originator_organization").order_by(
+                "-created_at"
+            )[:5]
 
         # Pending applications
-        context["pending_applications"] = SessionApplication.objects.filter(
+        open_applications = SessionApplication.objects.filter(
             tenant=tenant,
             status__in=["submitted", "received", "in_review"],
-        ).order_by("-submitted_at")[:5]
+        )
+        if can_applications:
+            context["pending_applications"] = open_applications.order_by("-submitted_at")[:5]
 
         # Arbeitsvorrat „Meine zu prüfenden Vorlagen" (Issue #33)
-        if self.has_permission("approve_papers"):
-            review_papers = SessionPaper.objects.filter(tenant=tenant, status="review")
-            if not self.has_permission("view_non_public_papers"):
-                review_papers = review_papers.filter(is_public=True)
+        if "approve_papers" in permissions:
+            review_papers = papers.filter(status="review")
             context["review_papers"] = review_papers.select_related("main_organization").order_by("created_at")[:5]
 
-        # Statistics
-        context["stats"] = {
-            "meetings_total": SessionMeeting.objects.filter(tenant=tenant).count(),
-            "meetings_upcoming": SessionMeeting.objects.filter(
-                tenant=tenant,
-                start__date__gte=today,
-                cancelled=False,
-            ).count(),
-            "papers_total": SessionPaper.objects.filter(tenant=tenant).count(),
-            "papers_draft": SessionPaper.objects.filter(tenant=tenant, status="draft").count(),
-            "applications_pending": SessionApplication.objects.filter(
-                tenant=tenant,
-                status__in=["submitted", "received", "in_review"],
-            ).count(),
-            "organizations_count": SessionOrganization.objects.filter(tenant=tenant, is_active=True).count(),
-            "persons_count": SessionPerson.objects.filter(tenant=tenant, is_active=True).count(),
-        }
+        # Statistics – nur Zahlen, die die Person auch in den Listen sähe
+        stats = {}
+        if can_meetings:
+            stats["meetings_total"] = meetings.count()
+            stats["meetings_upcoming"] = meetings.filter(start__date__gte=today, cancelled=False).count()
+            stats["organizations_count"] = SessionOrganization.objects.filter(tenant=tenant, is_active=True).count()
+            stats["persons_count"] = SessionPerson.objects.filter(tenant=tenant, is_active=True).count()
+        if can_papers:
+            stats["papers_total"] = papers.count()
+            stats["papers_draft"] = papers.filter(status="draft").count()
+        if can_applications:
+            stats["applications_pending"] = open_applications.count()
+        context["stats"] = stats
 
         return context

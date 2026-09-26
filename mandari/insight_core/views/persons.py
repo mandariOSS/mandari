@@ -14,8 +14,10 @@ from ..models import (
     OParlOrganization,
     OParlPerson,
     PublicQuestion,
+    withdrawn_q,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._withdrawn import withdrawn_response
 
 # =============================================================================
 # Personen
@@ -100,12 +102,22 @@ class PersonDetailView(DetailView):
     template_name = "pages/persons/detail.html"
     context_object_name = "person"
 
+    def get(self, request, *args, **kwargs):
+        # Von mandari Session zurückgenommen (auf Antrag gelöscht, Mandant deaktiviert): kein Inhalt
+        self.object = self.get_object()
+        if self.object.withdrawn_by_publisher:
+            return withdrawn_response(request, self.object)
+        return self.render_to_response(self.get_context_data(object=self.object))
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         person = self.object
         today = timezone.now().date()
 
-        all_memberships = person.memberships.select_related("organization")
+        # Nur bestehende Mitgliedschaften in nicht zurückgenommenen Gremien
+        all_memberships = (
+            person.memberships.filter(deleted=False).exclude(withdrawn_q("organization")).select_related("organization")
+        )
         context["active_memberships"] = all_memberships.filter(
             Q(end_date__isnull=True) | Q(end_date__gte=today)
         ).order_by("organization__name")

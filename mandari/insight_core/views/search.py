@@ -10,8 +10,6 @@ from django.shortcuts import render
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
-from apps.common.params import int_param
-
 from ..models import (
     OParlBody,
     OParlMeeting,
@@ -19,7 +17,7 @@ from ..models import (
     OParlPaper,
     OParlPerson,
 )
-from ._helpers import get_active_body, is_all_bodies_mode
+from ._helpers import get_active_body, is_all_bodies_mode, page_number
 
 # =============================================================================
 # Suche
@@ -65,7 +63,7 @@ def search_results(request):
     """
     query = request.GET.get("q", "").strip()
     search_type = request.GET.get("type", "all")
-    page = int_param(request.GET.get("page"), 1, minimum=1, maximum=1000)
+    page = page_number(request)
     is_dropdown = request.GET.get("dropdown") == "1"
     # Im "Alle Kommunen"-Modus wird kommunenübergreifend gesucht (kein Body-Filter)
     body = None if is_all_bodies_mode(request) else get_active_body(request)
@@ -138,7 +136,8 @@ def search_results(request):
         )
 
     except Exception as e:
-        # Fallback auf Django-Suche bei Fehler
+        # Fallback auf Django-Suche bei Fehler. Die Titel sind hier reine Texte aus der Quelle;
+        # das Template maskiert sie (nur Titel aus dem Suchdienst sind vorab maskierte SafeStrings).
         import logging
 
         logger = logging.getLogger(__name__)

@@ -9,14 +9,15 @@ from django.forms import ValidationError
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
 from apps.common.params import uuid_param
 
+from .. import throttle
 from ..models import DecisionSubscription
 from ..services import decision_tracking
-from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
 PAGE_SIZE = 25
 
@@ -153,6 +154,10 @@ class DecisionDetailView(TemplateView):
         if request.POST.get("privacy") != "on":
             messages.error(request, "Bitte der Verarbeitung der E-Mail-Adresse zustimmen.")
             return redirect("insight_core:insight:decision_detail", pk=item.id)
+        # Das Formular löst eine Bestätigungsmail aus: je IP-Adresse gedrosselt
+        if throttle.mail_ip_exceeded(request):
+            messages.error(request, "Es wurden gerade zu viele Benachrichtigungen angefragt. Bitte später erneut.")
+            return redirect("insight_core:insight:decision_detail", pk=item.id)
 
         subscription, created = DecisionSubscription.objects.get_or_create(agenda_item=item, email=email)
         if not created and subscription.confirmed and subscription.unsubscribed_at is None:
@@ -162,7 +167,9 @@ class DecisionDetailView(TemplateView):
             subscription.unsubscribed_at = None
             subscription.confirmed = False
             subscription.save(update_fields=["unsubscribed_at", "confirmed"])
-        decision_tracking.send_confirmation(subscription)
+        # Je Empfängeradresse gedrosselt; die Antwort bleibt gleich
+        if not throttle.mail_address_exceeded(email):
+            decision_tracking.send_confirmation(subscription)
         messages.success(
             request,
             "Fast geschafft: Wir haben eine E-Mail zur Bestätigung geschickt. Erst nach dem Klick auf den Link "
@@ -171,10 +178,19 @@ class DecisionDetailView(TemplateView):
         return redirect("insight_core:insight:decision_detail", pk=item.id)
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 def confirm_decision_subscription(request, token):
+    """GET zeigt die Bestätigungsseite, erst der Klick darauf (POST) aktiviert das Abo."""
     subscription = get_object_or_404(DecisionSubscription.objects.select_related("agenda_item__meeting"), token=token)
     already = subscription.confirmed and subscription.unsubscribed_at is None
+    if request.method == "GET" and not already:
+        return link_confirmation(
+            request,
+            title="Benachrichtigung aktivieren",
+            message=f"Bitte bestätigen Sie die Benachrichtigung zum Beschluss „{subscription.agenda_item.name}“.",
+            button="Benachrichtigung aktivieren",
+            icon="bell-ring",
+        )
     if not already:
         subscription.confirmed = True
         subscription.confirmed_at = timezone.now()
@@ -196,9 +212,18 @@ def confirm_decision_subscription(request, token):
     )
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 def unsubscribe_decision(request, token):
+    """GET zeigt die Bestätigungsseite, erst der Klick darauf (POST) meldet ab."""
     subscription = get_object_or_404(DecisionSubscription.objects.select_related("agenda_item__meeting"), token=token)
+    if request.method == "GET" and subscription.unsubscribed_at is None:
+        return link_confirmation(
+            request,
+            title="Benachrichtigung beenden",
+            message=f"Möchten Sie keine E-Mails mehr zum Beschluss „{subscription.agenda_item.name}“ erhalten?",
+            button="Abmelden",
+            icon="bell-off",
+        )
     if subscription.unsubscribed_at is None:
         subscription.unsubscribed_at = timezone.now()
         subscription.save(update_fields=["unsubscribed_at"])

@@ -181,7 +181,9 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
         entries = [
             {
                 "start": start,
-                "conflicts": calendar_service.find_conflicts(self.session_tenant, start, room=form["room"]),
+                "conflicts": calendar_service.find_conflicts(
+                    self.session_tenant, start, room=form["room"], permissions=self.session_permissions
+                ),
             }
             for start in starts
         ]

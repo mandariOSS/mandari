@@ -14,9 +14,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
+from .. import throttle
 from ..models import OParlOrganization, OParlPerson, PublicQuestion
 from ..services import question_service
-from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
 SORT_OPTIONS = [
     ("neu", "Neueste zuerst"),
@@ -263,6 +264,10 @@ class AskQuestionView(FormView):
                 "Sie haben heute bereits zu viele Fragen eingereicht. Bitte versuchen Sie es morgen erneut.",
             )
             return self.form_invalid(form)
+        # Die Frage löst eine Bestätigungsmail aus: zusätzlich je IP-Adresse gedrosselt
+        if throttle.mail_ip_exceeded(self.request):
+            form.add_error(None, "Es wurden gerade zu viele Fragen gestellt. Bitte versuchen Sie es später erneut.")
+            return self.form_invalid(form)
 
         question = form.save(commit=False)
         question.recipient = self.person
@@ -275,9 +280,18 @@ class AskQuestionView(FormView):
 
 
 class VerifyQuestionView(View):
-    """E-Mail-Verifizierung einer eingereichten Frage."""
+    """E-Mail-Verifizierung einer eingereichten Frage (GET zeigt die Bestätigungsseite, POST bestätigt)."""
 
     def get(self, request, token):
+        question = get_object_or_404(PublicQuestion, verification_token=token, status="unverified")
+        return link_confirmation(
+            request,
+            title="Frage bestätigen",
+            message=f"Bitte bestätigen Sie Ihre Frage an {question.recipient.display_name}.",
+            button="Frage bestätigen",
+        )
+
+    def post(self, request, token):
         question = get_object_or_404(PublicQuestion, verification_token=token, status="unverified")
         question.status = "pending"
         question.save(update_fields=["status", "updated_at"])

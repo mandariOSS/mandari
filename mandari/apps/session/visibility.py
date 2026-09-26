@@ -60,6 +60,16 @@ def paper_q(permissions: Collection[str], prefix: str = "") -> Q:
     return Q(**{f"{prefix}is_public": True})
 
 
+def optional(condition: Q, relation: str) -> Q:
+    """
+    Optionale Beziehung: leer oder sichtbar. Eine leere Bedingung (volles Recht) bleibt leer –
+    ``Q() | Q(x__isnull=True)`` ergäbe in Django sonst nur ``x__isnull=True``.
+    """
+    if not condition:
+        return Q()
+    return condition | Q(**{f"{relation}__isnull": True})
+
+
 def file_q(permissions: Collection[str], prefix: str = "") -> Q:
     """
     Anlagen nach der Regel von ``file_service.file_visible``.

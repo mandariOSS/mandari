@@ -262,6 +262,12 @@ check("Unverifizierte Frage: Detail 404", client.get(f"/insight/fragen/{q1.id}/"
 mail.outbox.clear()
 resp = client.get(f"/insight/fragen/verifizieren/{q1.verification_token}/")
 q1.refresh_from_db()
+check(
+    "Link aus der Mail zeigt Bestätigungsseite, ändert nichts",
+    resp.status_code == 200 and q1.status == "unverified" and not mail.outbox,
+)
+resp = client.post(f"/insight/fragen/verifizieren/{q1.verification_token}/")
+q1.refresh_from_db()
 check("Verifizierung -> 200 + pending", resp.status_code == 200 and q1.status == "pending")
 check("Moderations-Hinweis an Superuser", len(mail.outbox) == 1 and mail.outbox[0].to == ["moderation@example.org"])
 check(

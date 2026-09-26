@@ -288,6 +288,16 @@ class DeviceGrantActionView(SessionViewMixin, View):
         if grant.status == "paid" and action == "cancel":
             messages.error(request, "Ausgezahlte Zuschüsse können nicht storniert werden.")
             return redirect("session:devices", tenant_slug=tenant_slug)
+        # Vier-Augen-Prinzip für Auszahlungen (Einstellung „Sitzungsgeld und Pauschalen“): Wer den
+        # Zuschuss erfasst hat, genehmigt ihn nicht selbst
+        if (
+            action == "approve"
+            and self.session_tenant.four_eyes_allowances
+            and grant.created_by_id is not None
+            and grant.created_by_id == self.session_user.pk
+        ):
+            messages.error(request, "Genehmigen muss eine andere Person als die, die den Zuschuss erfasst hat.")
+            return redirect("session:devices", tenant_slug=tenant_slug)
 
         grant.status = new_status
         if action == "approve":
@@ -329,29 +339,34 @@ class DeviceGrantCsvExportView(SessionViewMixin, View):
             messages.warning(request, "Keine Zuschüsse vorhanden.")
             return redirect("session:devices", tenant_slug=tenant_slug)
 
+        # Bankdaten wie überall nur mit dem Recht für Sitzungsgelder (Kämmerei), nicht mit der Geräteverwaltung
+        with_bank = self.has_permission("manage_allowances")
         buffer = io.StringIO()
         writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
-        writer.writerow(["Name", "Betrag", "Status", "Vermerk", "Kontoinhaber", "IBAN", "BIC"])
+        header = ["Name", "Betrag", "Status", "Vermerk"]
+        writer.writerow([*header, "Kontoinhaber", "IBAN", "BIC"] if with_bank else header)
         for grant in grants:
             person = grant.person
-            writer.writerow(
-                [
-                    person.display_name,
-                    f"{grant.amount:.2f}".replace(".", ","),
-                    grant.get_status_display(),
-                    grant.note[:200],
+            row = [
+                person.display_name,
+                f"{grant.amount:.2f}".replace(".", ","),
+                grant.get_status_display(),
+                grant.note[:200],
+            ]
+            if with_bank:
+                row += [
                     person.get_bank_account_holder_decrypted() or "",
                     person.get_bank_iban_decrypted() or "",
                     person.get_bank_bic_decrypted() or "",
                 ]
-            )
+            writer.writerow(row)
         audit.log_event(
             "download",
             self.session_tenant,
             tenant=self.session_tenant,
             user=self.session_user,
             request=request,
-            changes={"export": "endgeraete_zuschuesse_csv", "anzahl": len(grants)},
+            changes={"export": "endgeraete_zuschuesse_csv", "anzahl": len(grants), "bankdaten": with_bank},
         )
         response = HttpResponse(_BOM + buffer.getvalue(), content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="endgeraete-zuschuesse.csv"'

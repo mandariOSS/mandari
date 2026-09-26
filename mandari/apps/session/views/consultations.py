@@ -29,6 +29,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import agenda_service
+from ..visibility import agenda_item_q, meeting_q, meeting_visible, optional, paper_q
 
 ROLE_VALUES = {value for value, _ in SessionConsultation.ROLE_CHOICES}
 RESULT_VALUES = {value for value, _ in SessionConsultation.RESULT_CHOICES}
@@ -46,11 +47,15 @@ class ConsultationBaseView(SessionViewMixin, View):
         return get_object_or_404(qs, pk=paper_id)
 
     def get_consultation(self, consultation_id):
-        qs = SessionConsultation.objects.select_related("paper", "organization", "meeting", "agenda_item").filter(
-            paper__tenant=self.session_tenant
+        """Station laden: Vorlage, Zielsitzung und TOP nach der Ö/NÖ-Regel (sonst 404)."""
+        permissions = self.session_permissions
+        qs = (
+            SessionConsultation.objects.select_related("paper", "organization", "meeting", "agenda_item")
+            .filter(paper__tenant=self.session_tenant)
+            .filter(paper_q(permissions, "paper__"))
+            .filter(optional(meeting_q(permissions, "meeting__"), "meeting"))
+            .filter(optional(agenda_item_q(permissions, "agenda_item__"), "agenda_item"))
         )
-        if not self.has_permission("view_non_public_papers"):
-            qs = qs.filter(paper__is_public=True)
         return get_object_or_404(qs, pk=consultation_id)
 
     def redirect_to_paper(self, paper):
@@ -69,7 +74,12 @@ class ConsultationBaseView(SessionViewMixin, View):
         """
         if not raw_meeting_id:
             return None, None
-        meeting = SessionMeeting.objects.filter(pk=raw_meeting_id, tenant=self.session_tenant).first()
+        # Nichtöffentliche Sitzungen nur mit NÖ-Sichtrecht – sonst „nicht gefunden“
+        meeting = (
+            SessionMeeting.objects.filter(pk=raw_meeting_id, tenant=self.session_tenant)
+            .visible_to(self.session_permissions)
+            .first()
+        )
         if meeting is None:
             return None, "Die gewählte Sitzung wurde nicht gefunden."
         # Gemeinsame Sitzung (Issue #317): auch weitere beteiligte Gremien beraten dort
@@ -220,6 +230,10 @@ def schedule_consultation(view, request, consultation):
         return False
 
     meeting = consultation.meeting
+    if meeting is not None and not meeting_visible(view.session_permissions, meeting):
+        # Auch beim Weiterleiten: TOPs in nichtöffentlichen Sitzungen nur mit NÖ-Sichtrecht
+        messages.error(request, "Die Zielsitzung dieser Station ist nicht verfügbar.")
+        return False
     if meeting is None:
         raw_meeting = request.POST.get("meeting")
         meeting, error = view.resolve_meeting(raw_meeting, consultation.organization)

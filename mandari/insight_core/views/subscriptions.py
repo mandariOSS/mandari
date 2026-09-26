@@ -7,16 +7,19 @@ Server-Side Rendering mit Django Templates + HTMX.
 
 import logging
 
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_http_methods
 from django.views.generic import TemplateView
 
+from .. import throttle
 from ..models import (
     InsightSubscriber,
 )
-from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
 # =============================================================================
 # Benachrichtigungen (Subscriptions)
@@ -57,9 +60,18 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
             return JsonResponse({"error": "Keine Kommune ausgewählt"}, status=400)
 
         email = request.POST.get("email", "").strip().lower()
-        if not email or "@" not in email:
+        try:
+            validate_email(email)
+        except ValidationError:
             return render(
                 request, "partials/subscribe_error.html", {"error": "Bitte geben Sie eine gültige E-Mail-Adresse ein."}
+            )
+        # Das Formular löst eine Bestätigungsmail aus: je IP-Adresse gedrosselt
+        if throttle.mail_ip_exceeded(request):
+            return render(
+                request,
+                "partials/subscribe_error.html",
+                {"error": "Es wurden gerade zu viele Abos angefragt. Bitte versuchen Sie es später erneut."},
             )
 
         # Abo-Typen aus Feldinhalt ableiten (kein Checkbox mehr)
@@ -124,8 +136,9 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
         subscriber.unsubscribed_at = None  # Resubscribe falls abgemeldet
         subscriber.save()
 
-        # Bestätigungsmail senden
-        _send_confirmation_email(subscriber)
+        # Bestätigungsmail senden – je Empfängeradresse gedrosselt (die Antwort bleibt gleich)
+        if not throttle.mail_address_exceeded(email):
+            _send_confirmation_email(subscriber)
 
         return render(
             request,
@@ -173,10 +186,18 @@ def _send_confirmation_email(subscriber):
         logging.getLogger(__name__).warning(f"Failed to send confirmation email: {e}")
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 def confirm_subscription(request, token):
-    """Bestätigt Double Opt-In."""
+    """Bestätigt Double Opt-In (GET zeigt die Bestätigungsseite, POST bestätigt)."""
     subscriber = get_object_or_404(InsightSubscriber, token=token)
+
+    if request.method == "GET" and not subscriber.confirmed:
+        return link_confirmation(
+            request,
+            title="Abo bestätigen",
+            message=f"Bitte bestätigen Sie Ihr Benachrichtigungs-Abo für {subscriber.body.get_display_name()}.",
+            button="Abo bestätigen",
+        )
 
     if subscriber.confirmed:
         return render(
@@ -253,10 +274,19 @@ def manage_subscription(request, token):
     )
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 def unsubscribe(request, token):
-    """Sofort abmelden (1-Klick)."""
+    """Abmelden: GET zeigt die Bestätigungsseite, der Klick darauf (POST) meldet ab."""
     subscriber = get_object_or_404(InsightSubscriber, token=token)
+
+    if request.method == "GET" and subscriber.unsubscribed_at is None:
+        return link_confirmation(
+            request,
+            title="Abo beenden",
+            message=f"Möchten Sie die Benachrichtigungen für {subscriber.body.get_display_name()} abbestellen?",
+            button="Abmelden",
+            icon="bell-off",
+        )
 
     if subscriber.unsubscribed_at is None:
         subscriber.unsubscribed_at = timezone.now()

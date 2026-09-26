@@ -176,7 +176,9 @@ class ResolutionMeetingPdfView(SessionViewMixin, TemplateView):
                 meeting_id=meeting.id,
             )
 
-        pdf_bytes = resolution_service.build_extract_pdf(items, internal=include_np)
+        pdf_bytes = resolution_service.build_extract_pdf(
+            items, internal=include_np, permissions=self.session_permissions
+        )
         # Nichtöffentliche Beschlüsse im Dokument: Abruf protokollieren (Issue #221)
         if not meeting.is_public or any(not i.is_public for i in items):
             audit.log_read(
@@ -207,7 +209,9 @@ class ResolutionExtractPdfView(SessionViewMixin, TemplateView):
                 meeting_id=item.meeting_id,
             )
         include_np = self.has_permission("view_non_public_meetings")
-        pdf_bytes = resolution_service.build_extract_pdf([item], internal=include_np)
+        pdf_bytes = resolution_service.build_extract_pdf(
+            [item], internal=include_np, permissions=self.session_permissions
+        )
         # Beschlussauszug eines nichtöffentlichen TOP: Abruf protokollieren (Issue #221)
         if not item.is_public or not item.meeting.is_public:
             audit.log_read(

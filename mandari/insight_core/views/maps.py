@@ -5,6 +5,7 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
+import contextlib
 import logging
 from datetime import timedelta
 
@@ -22,6 +23,33 @@ from ..models import (
     TileCache,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
+
+#: Höchste Zoomstufe der Karten (Leaflet maxZoom) und Größengrenze einer Kachel
+MAX_TILE_ZOOM = 19
+MAX_TILE_BYTES = 1024 * 1024
+_TILE_COUNT_CACHE_KEY = "insight:tiles:count"
+
+
+def _tile_cache_full() -> bool:
+    """Obergrenze des Kachel-Caches erreicht? Die Zahl wird nur alle zehn Minuten neu gezählt."""
+    from .. import throttle
+
+    limit = throttle.setting("INSIGHT_TILE_CACHE_MAX_TILES")
+    if limit <= 0:
+        return False
+    count = cache.get(_TILE_COUNT_CACHE_KEY)
+    if count is None:
+        count = TileCache.objects.count()
+        cache.set(_TILE_COUNT_CACHE_KEY, count, timeout=600)
+    return count >= limit
+
+
+def _count_stored_tile() -> None:
+    """Gespeicherte Kachel mitzählen, damit die Grenze auch zwischen zwei Zählungen hält."""
+    # ValueError: noch nicht gezählt – die nächste Prüfung zählt neu
+    with contextlib.suppress(ValueError):
+        cache.incr(_TILE_COUNT_CACHE_KEY)
+
 
 # =============================================================================
 # Karte
@@ -188,7 +216,17 @@ def tile_proxy(request, z, x, y):
 
     Dies ist 100% DSGVO-konform, da alle Tiles serverseitig geladen werden.
     OSM Tile Usage Policy: https://operations.osmfoundation.org/policies/tiles/
+
+    Nur gültige Kacheln (Zoom 0–19, x/y innerhalb des Zoomlevels); Abrufe bei OSM sind je IP und
+    insgesamt gedrosselt, der Cache hat eine Obergrenze. Kacheln aus dem Cache sind nicht gedrosselt.
     """
+    from django.http import HttpResponseNotFound
+
+    from .. import throttle
+
+    if not (0 <= z <= MAX_TILE_ZOOM and 0 <= x < 2**z and 0 <= y < 2**z):
+        return HttpResponseNotFound()
+
     # 1. Prüfe den lokalen Cache
     tile_data, content_type = TileCache.get_tile(z, x, y)
 
@@ -207,7 +245,15 @@ def tile_proxy(request, z, x, y):
             },
         )
 
-    # 2. Nicht im Cache - von OSM laden
+    # 2. Nicht im Cache - von OSM laden (gedrosselt: je IP und insgesamt, OSM-Nutzungsregeln)
+    ip = throttle.client_ip(request)
+    if throttle.hit(
+        "tile-ip", ip, limit=throttle.setting("INSIGHT_TILE_FETCHES_PER_IP_MINUTE"), window=throttle.MINUTE
+    ) or throttle.hit(
+        "tile-all", "alle", limit=throttle.setting("INSIGHT_TILE_FETCHES_PER_MINUTE"), window=throttle.MINUTE
+    ):
+        return HttpResponse(status=429, headers={"Retry-After": "60"})
+
     subdomain = ["a", "b", "c"][x % 3]
     tile_url = f"https://{subdomain}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 
@@ -218,9 +264,11 @@ def tile_proxy(request, z, x, y):
         ) as client:
             response = client.get(tile_url)
 
-            if response.status_code == 200:
-                # Im Cache speichern für zukünftige Requests
-                TileCache.store_tile(z, x, y, response.content, "image/png", "openstreetmap")
+            if response.status_code == 200 and len(response.content) <= MAX_TILE_BYTES:
+                # Im Cache speichern für zukünftige Requests (solange die Obergrenze nicht erreicht ist)
+                if not _tile_cache_full():
+                    TileCache.store_tile(z, x, y, response.content, "image/png", "openstreetmap")
+                    _count_stored_tile()
 
                 # SECURITY NOTE: CORS "*" is intentional for public map tiles.
                 return HttpResponse(
