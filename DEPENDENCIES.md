@@ -24,7 +24,6 @@ Mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **MapLibre GL** | Open-Source Kartenbibliothek | BSD-3-Clause | [maplibre.org](https://maplibre.org) |
 | **Chart.js** | Diagramme & Visualisierungen | MIT License | [chartjs.org](https://chartjs.org) |
 | **FullCalendar** | Kalender-Komponente | MIT License | [fullcalendar.io](https://fullcalendar.io) |
-| **EasyMDE** | Markdown-Editor | MIT License | [GitHub](https://github.com/Ionaru/easy-markdown-editor) |
 
 ## Python-Bibliotheken
 
