@@ -22,6 +22,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..visibility import meeting_q
 
 
 class SessionPersonForm(forms.ModelForm):
@@ -135,10 +136,12 @@ class PersonDetailView(SessionViewMixin, DetailView):
         # Memberships
         context["memberships"] = person.memberships.select_related("organization").order_by("-start_date")
 
-        # Recent attendances
-        context["recent_attendances"] = person.attendances.select_related("meeting__organization").order_by(
-            "-meeting__start"
-        )[:10]
+        # Recent attendances – Sitzungen nach derselben Ö/NÖ-Regel wie die Sitzungsliste
+        context["recent_attendances"] = (
+            person.attendances.filter(meeting_q(self.session_permissions, "meeting__"))
+            .select_related("meeting__organization")
+            .order_by("-meeting__start")[:10]
+        )
 
         # Bankdaten nur für Berechtigte entschlüsseln (Sitzungsgeld-Verwaltung)
         context["can_manage_persons"] = self.has_permission("manage_organizations")

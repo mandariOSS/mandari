@@ -11,6 +11,7 @@ werden. Eine Zurückweisung wirft die Vorlage zurück in den Entwurf.
 from django.db.models import Q
 
 from ..models import SessionCosignature, SessionCosignatureRule, SessionPaper, SessionUser
+from ..visibility import paper_q
 
 
 def build_chain(paper: SessionPaper) -> int:
@@ -99,14 +100,26 @@ def can_decide(session_user: SessionUser, cosignature: SessionCosignature) -> bo
     return acting_for(session_user, cosignature) is not None
 
 
-def my_pending_cosignatures(session_user: SessionUser):
+def visible_cosignatures(session_user: SessionUser, permissions=None):
+    """
+    Mitzeichnungsstationen des Mandanten, deren Vorlage diese Person sehen darf – nichtöffentliche
+    Vorlagen nur mit dem NÖ-Sichtrecht, auch nicht über Amts-Zuordnung oder Vertretung.
+    """
+    if permissions is None:
+        from ..permissions import SessionPermissionChecker
+
+        permissions = SessionPermissionChecker(session_user).permissions
+    return SessionCosignature.objects.filter(paper_q(permissions, "paper__"), paper__tenant=session_user.tenant)
+
+
+def my_pending_cosignatures(session_user: SessionUser, permissions=None):
     """
     Arbeitsvorrat „Meine Mitzeichnungen": offene Stationen der Ämter
     dieser Person für Vorlagen, die gerade in Prüfung sind – dazu die Ämter
     der Personen, die sie im Umfang „Arbeitsvorrat“ vertritt (Issue #222).
+    Nichtöffentliche Vorlagen nur mit dem eigenen NÖ-Sichtrecht.
     """
-    qs = SessionCosignature.objects.filter(
-        paper__tenant=session_user.tenant,
+    qs = visible_cosignatures(session_user, permissions).filter(
         paper__status="review",
         status="pending",
     )

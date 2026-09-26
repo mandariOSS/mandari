@@ -30,7 +30,6 @@ from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.paginator import Paginator
 from django.db.models import Prefetch
-from django.http import FileResponse
 from django.urls import reverse
 
 from apps.session import oparl_publication as pub
@@ -414,6 +413,7 @@ def serialize_consultation(api, consultation):
 
 def serialize_file(api, file_obj, include_text=False):
     download = api.file_download_url(file_obj.id)
+    file_name = file_service.download_name(file_obj)
     refs = {}
     if file_obj.paper_id and pub._is_published(file_obj.paper):
         refs["paper"] = [api.obj_url("paper", file_obj.paper_id)]
@@ -427,8 +427,9 @@ def serialize_file(api, file_obj, include_text=False):
             "type": schema_type("file"),
             "name": file_obj.name,
             # Anzeigename statt Speichername: gleiche Inhalte teilen sich eine Datei (Issue #226)
-            "fileName": file_service.download_name(file_obj) if file_obj.file else None,
-            "mimeType": file_obj.mime_type,
+            "fileName": file_name if file_obj.file else None,
+            # Der Typ, mit dem der Download ausgeliefert wird (aus der Endung, nicht aus dem Upload)
+            "mimeType": file_service.mime_type_for_name(file_name),
             "size": file_obj.size,
             "date": iso(file_obj.created_at),
             "accessUrl": download,
@@ -733,11 +734,11 @@ def file_download_view(request, tenant_slug, pk):
     file_obj = pub.visible_files(tenant).filter(pk=pk).first()
     if file_obj is None or not file_obj.file:
         return error_response(404, "Datei nicht gefunden.")
-    response = FileResponse(
+    # Im Browser nur PDF und Rasterbilder; HTML, SVG und alles andere als Download (file_service)
+    response = file_service.file_response(
         file_obj.file.open("rb"),
-        as_attachment="download" in request.GET,
-        filename=file_service.download_name(file_obj),
-        content_type=file_obj.mime_type or "application/octet-stream",
+        file_service.download_name(file_obj),
+        inline="download" not in request.GET,
     )
     response["Access-Control-Allow-Origin"] = "*"
     return response

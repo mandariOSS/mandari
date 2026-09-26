@@ -119,7 +119,13 @@ def grouped_agenda(meeting: SessionMeeting, include_non_public: bool = True):
     Returns:
         dict mit "public" und "non_public": Listen von Top-Level-TOPs,
         jeweils mit vorgeladenen ``item.children_list``-Unterpunkten.
+
+    Die öffentliche Fassung (``include_non_public=False``: Ladung an Gäste, Serienbrief,
+    Vertretungsanfrage, Ö-Niederschrift, Nutzer ohne NÖ-Recht) einer nichtöffentlichen Sitzung
+    ist leer: Dort ist jeder TOP nichtöffentlich, auch wenn er selbst als öffentlich markiert ist.
     """
+    if not include_non_public and not meeting.is_public:
+        return {"public": [], "non_public": []}
     qs = meeting.agenda_items.select_related("paper").order_by("order", "number")
     items = list(qs)
 

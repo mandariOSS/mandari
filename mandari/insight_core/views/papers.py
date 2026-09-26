@@ -15,6 +15,7 @@ from ..models import (
     OParlAgendaItem,
     OParlMeeting,
     OParlPaper,
+    withdrawn_q,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
@@ -146,7 +147,9 @@ class PaperDetailView(DetailView):
         - Consultation referenziert Meeting und AgendaItem als URL-Strings
         - Wir lösen diese Referenzen auf, um den Beratungsverlauf anzuzeigen
         """
-        consultations = paper.consultations.all()
+        # Von mandari Session zurückgenommene Beratungen, Sitzungen und TOPs (z. B. nicht-öffentlich
+        # gestellt) erscheinen nicht – wie in der Session-OParl-API, die solche Verweise auslässt.
+        consultations = list(paper.consultations.exclude(withdrawn_q()))
         if not consultations:
             return []
 
@@ -157,13 +160,21 @@ class PaperDetailView(DetailView):
         # Batch-Lookup für Meetings
         meetings_by_id = {}
         if meeting_ids:
-            meetings = OParlMeeting.objects.filter(external_id__in=meeting_ids).prefetch_related("organizations")
+            meetings = (
+                OParlMeeting.objects.filter(external_id__in=meeting_ids)
+                .exclude(withdrawn_q())
+                .prefetch_related("organizations")
+            )
             meetings_by_id = {m.external_id: m for m in meetings}
 
         # Batch-Lookup für AgendaItems
         agenda_items_by_id = {}
         if agenda_item_ids:
-            agenda_items = OParlAgendaItem.objects.filter(external_id__in=agenda_item_ids)
+            agenda_items = (
+                OParlAgendaItem.objects.filter(external_id__in=agenda_item_ids)
+                .exclude(withdrawn_q())
+                .exclude(withdrawn_q("meeting"))
+            )
             agenda_items_by_id = {a.external_id: a for a in agenda_items}
 
         # Baue angereicherte Consultation-Liste
@@ -213,6 +224,8 @@ def paper_summary(request, pk):
     Nutzt gecachte Zusammenfassung oder generiert neue via Nebius AI.
     """
     paper = get_object_or_404(OParlPaper, pk=pk)
+    if paper.withdrawn_by_publisher:
+        return withdrawn_response(request, paper)
 
     # Return cached summary if available
     if paper.summary:
@@ -225,15 +238,15 @@ def paper_summary(request, pk):
             },
         )
 
+    from insight_ai.services.summarizer import (
+        APINotConfiguredError,
+        NoTextContentError,
+        SummaryError,
+        SummaryService,
+    )
+
     # Generate new summary
     try:
-        from insight_ai.services.summarizer import (
-            APINotConfiguredError,
-            NoTextContentError,
-            SummaryError,
-            SummaryService,
-        )
-
         service = SummaryService()
         summary = service.generate_summary(paper)
 
@@ -246,46 +259,16 @@ def paper_summary(request, pk):
             },
         )
 
-    except NoTextContentError as e:
-        return render(
-            request,
-            "partials/paper_summary.html",
-            {
-                "paper": paper,
-                "error": str(e),
-            },
-        )
-
-    except APINotConfiguredError as e:
-        return render(
-            request,
-            "partials/paper_summary.html",
-            {
-                "paper": paper,
-                "error": str(e),
-            },
-        )
-
-    except SummaryError as e:
-        return render(
-            request,
-            "partials/paper_summary.html",
-            {
-                "paper": paper,
-                "error": str(e),
-            },
-        )
-
+    except NoTextContentError:
+        error = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."
+    except APINotConfiguredError:
+        error = "Die KI-Zusammenfassung ist derzeit nicht verfügbar."
+    except SummaryError:
+        error = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte versuche es später erneut."
     except Exception:
         import logging
 
-        # Details nur ins Protokoll – der Ausnahmetext kann Interna enthalten
-        logging.getLogger(__name__).exception("Unexpected error in paper_summary")
-        return render(
-            request,
-            "partials/paper_summary.html",
-            {
-                "paper": paper,
-                "error": "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen.",
-            },
-        )
+        logging.getLogger(__name__).exception("Unerwarteter Fehler bei der Zusammenfassung von Vorgang %s", paper.pk)
+        error = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte versuche es später erneut."
+    # Nie Ausnahmetexte ausgeben: Sie können Details des KI-Dienstes oder der Quelle enthalten
+    return render(request, "partials/paper_summary.html", {"paper": paper, "error": error})

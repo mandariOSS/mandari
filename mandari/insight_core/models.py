@@ -10,7 +10,25 @@ from typing import Any
 
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
+
+#: Kennung gespiegelter Objekte aus der OParl-API von mandari Session: ``…/session/<slug>/api/oparl/…``
+SESSION_OPARL_MARKERS = ("/session/", "/api/oparl/")
+
+
+def withdrawn_q(prefix: str = "") -> Q:
+    """
+    Queryset-Gegenstück zu ``withdrawn_by_publisher``: von mandari Session zurückgenommen.
+
+    ``prefix`` gilt für Beziehungen, z. B. ``OParlConsultation.objects.exclude(withdrawn_q("paper"))``.
+    Ein leerer Fremdschlüssel zählt nicht als zurückgenommen.
+    """
+    feld = f"{prefix}__" if prefix else ""
+    bedingung = Q(**{f"{feld}deleted": True})
+    for marker in SESSION_OPARL_MARKERS:
+        bedingung &= Q(**{f"{feld}external_id__contains": marker})
+    return bedingung
 
 
 class SourceDeletionModel(models.Model):
@@ -57,6 +75,20 @@ class SourceDeletionModel(models.Model):
         self.deleted_at = when or timezone.now()
         self.oparl_modified = self.deleted_at
         self.save(update_fields=["deleted", "deleted_at", "oparl_modified", "updated_at"])
+        if self.withdrawn_by_publisher:
+            self._forget_summaries()
+
+    def _forget_summaries(self) -> None:
+        """KI-Zusammenfassungen, die zurückgenommene Inhalte enthalten können, verwerfen.
+
+        Eine Zusammenfassung fasst alle Anlagen eines Vorgangs zusammen. Wird der Vorgang oder
+        eine seiner Anlagen zurückgenommen, entsteht sie bei Bedarf neu – ohne diese Inhalte.
+        """
+        paper_id = self.pk if isinstance(self, OParlPaper) else getattr(self, "paper_id", None)
+        if isinstance(self, OParlPaper | OParlFile) and paper_id:
+            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(summary=None)
+            if isinstance(self, OParlPaper):
+                self.summary = None
 
     @property
     def withdrawn_by_publisher(self) -> bool:
@@ -68,7 +100,7 @@ class SourceDeletionModel(models.Model):
         Ö→NÖ-Umstellung darf im Bürgerportal keinen Inhalt mehr zeigen.
         """
         ext = getattr(self, "external_id", "") or ""
-        return bool(self.deleted) and "/session/" in ext and "/api/oparl/" in ext
+        return bool(self.deleted) and all(marker in ext for marker in SESSION_OPARL_MARKERS)
 
 
 class OParlSource(models.Model):
@@ -796,11 +828,18 @@ class OParlAgendaItem(SourceDeletionModel):
         # Nutze prefetched Daten wenn vorhanden (von MeetingDetailView)
         if hasattr(self, "_prefetched_papers"):
             return self._prefetched_papers
-        return OParlPaper.objects.filter(consultations__agenda_item_external_id=self.external_id).distinct()
+        return OParlPaper.objects.filter(
+            id__in=self.get_consultations().filter(paper__isnull=False).values("paper_id")
+        ).distinct()
 
     def get_consultations(self):
-        """Liefert alle Consultations für diesen TOP."""
-        return OParlConsultation.objects.filter(agenda_item_external_id=self.external_id).select_related("paper")
+        """Liefert die Consultations für diesen TOP – ohne die von mandari Session zurückgenommenen."""
+        return (
+            OParlConsultation.objects.filter(agenda_item_external_id=self.external_id)
+            .exclude(withdrawn_q())
+            .exclude(withdrawn_q("paper"))
+            .select_related("paper")
+        )
 
 
 class OParlFile(SourceDeletionModel):

@@ -12,6 +12,9 @@ Schutzmechanismen:
 - Die letzte Admin-Rolle mit aktiven Nutzern kann weder gelöscht noch
   entmachtet werden (sonst sperrt sich der Mandant aus).
 - Rollen mit zugewiesenen Nutzern können nicht gelöscht werden.
+- Keine Rechteausweitung: Wer nicht Administrator ist, vergibt und entzieht nur
+  Rechte aus den eigenen Rollen (``permissions.grantable_permissions``). Die
+  Administrator-Rolle und die Kontrollrechte ändern nur Administratoren.
 """
 
 from django.contrib import messages
@@ -22,7 +25,7 @@ from django.views.generic import TemplateView
 
 from .. import audit
 from ..models import SessionRole, SessionUser
-from ..permissions import SessionViewMixin
+from ..permissions import SessionViewMixin, grantable_permissions, is_admin_user
 
 # Gruppierung der Rechte für die Matrix; unbekannte can_*-Felder landen
 # automatisch unter „Sonstiges" (zukunftssicher bei neuen Rechten).
@@ -165,6 +168,7 @@ class RoleListView(SessionViewMixin, TemplateView):
                 "edit_role": edit_role,
                 "edit_role_permissions": json.dumps(edit_role_permissions),
                 "permission_groups": permission_fields(),
+                "grants_everything": is_admin_user(self.session_user),
             }
         )
         return context
@@ -199,16 +203,35 @@ class RoleSaveView(SessionViewMixin, View):
             )
             return redirect("session:settings_roles", tenant_slug=tenant_slug)
 
-        all_fields = [field_name for _group, entries in permission_fields() for field_name, _label in entries]
+        labels = {field_name: label for _group, entries in permission_fields() for field_name, label in entries}
+        all_fields = list(labels)
         old_granted = set() if creating else {f for f in all_fields if getattr(role, f)}
         old_admin = False if creating else role.is_admin
         old_name = "" if creating else role.name
+
+        # Keine Rechteausweitung: Administrator-Rolle nur durch Administratoren, sonst nur eigene Rechte
+        actor_admin = is_admin_user(self.session_user)
+        if not actor_admin and (old_admin or wants_admin):
+            messages.error(request, "Administrator-Rollen legt nur an und ändert nur, wer selbst Administrator ist.")
+            return redirect("session:settings_roles", tenant_slug=tenant_slug)
+        requested = {f for f in all_fields if request.POST.get(f) == "1"}
+        grantable = grantable_permissions(self.session_user)
+        changed = requested ^ old_granted
+        outside = [] if actor_admin else sorted(str(labels[f]) for f in changed if f[4:] not in grantable)
+        if outside:
+            messages.error(
+                request,
+                "Diese Rechte vergibt oder entzieht nur, wer sie selbst hat (Kontrollrechte nur Administratoren): "
+                + ", ".join(outside)
+                + ".",
+            )
+            return redirect("session:settings_roles", tenant_slug=tenant_slug)
 
         role.name = name
         role.description = request.POST.get("description", "").strip()
         role.is_admin = wants_admin
         for field_name in all_fields:
-            setattr(role, field_name, request.POST.get(field_name) == "1")
+            setattr(role, field_name, field_name in requested)
         role.save()
 
         granted = {f for f in all_fields if getattr(role, f)}

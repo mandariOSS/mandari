@@ -700,7 +700,8 @@ class TestDirekteEintraege:
 
     def test_rollenzuweisung(self) -> None:
         tenant = _tenant()
-        verwaltung = _nutzer(tenant, "verwaltung", "manage_users")
+        # Rollen mit Kontrollrechten weist nur ein Administrator zu
+        verwaltung = _nutzer(tenant, "verwaltung", "manage_users", admin=True)
         ziel = _nutzer(tenant, "ziel", "view_meetings")
         revision = SessionRole.objects.create(tenant=tenant, name="Revision", can_view_audit_log=True)
         alt = ziel.roles.get()
@@ -714,7 +715,8 @@ class TestDirekteEintraege:
 
     def test_rechteaenderung_einer_rolle(self) -> None:
         tenant = _tenant()
-        verwaltung = _nutzer(tenant, "verwaltung", "manage_users")
+        # Kontrollrechte vergibt nur ein Administrator
+        verwaltung = _nutzer(tenant, "verwaltung", "manage_users", admin=True)
         rolle = SessionRole.objects.create(tenant=tenant, name="Sitzungsdienst", can_view_meetings=True)
         _client(verwaltung).post(
             f"/session/{tenant.slug}/settings/roles/save/",

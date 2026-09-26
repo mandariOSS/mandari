@@ -35,10 +35,7 @@ from ..services import agenda_service
 
 def _meetings(view):
     """Sitzungen des Mandanten, nichtöffentliche nur mit dem NÖ-Sichtrecht (wie die Sitzungsansicht)."""
-    qs = SessionMeeting.objects.filter(tenant=view.session_tenant)
-    if not view.has_permission("view_non_public_meetings"):
-        qs = qs.filter(is_public=True)
-    return qs
+    return SessionMeeting.objects.filter(tenant=view.session_tenant).visible_to(view.session_permissions)
 
 
 def _items(view):
@@ -47,18 +44,16 @@ def _items(view):
     Das Bearbeitungsrecht allein genügt nicht: Sonst ließen sich Betreff und Vorlage eines NÖ-TOPs
     über die Bearbeitungsseite lesen bzw. der TOP absetzen, löschen oder verschieben.
     """
-    qs = SessionAgendaItem.objects.filter(meeting__tenant=view.session_tenant).select_related("meeting")
-    if not view.has_permission("view_non_public_meetings"):
-        qs = qs.filter(is_public=True, meeting__is_public=True)
-    return qs
+    return (
+        SessionAgendaItem.objects.filter(meeting__tenant=view.session_tenant)
+        .visible_to(view.session_permissions)
+        .select_related("meeting")
+    )
 
 
 def _papers(view):
     """Auswahl „Vorlage“: nichtöffentliche Vorlagen nur mit dem NÖ-Sichtrecht für Vorlagen."""
-    qs = SessionPaper.objects.filter(tenant=view.session_tenant)
-    if not view.has_permission("view_non_public_papers"):
-        qs = qs.filter(is_public=True)
-    return qs
+    return SessionPaper.objects.filter(tenant=view.session_tenant).visible_to(view.session_permissions)
 
 
 def _get_meeting(view, meeting_id):

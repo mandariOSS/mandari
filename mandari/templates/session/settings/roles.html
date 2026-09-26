@@ -94,6 +94,12 @@
                     wenn sie unten angehakt sind. Die letzte Admin-Rolle des Mandanten ist gegen Entmachtung und Löschung geschützt.
                 </span>
             </label>
+            {% if not grants_everything %}
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+                Sie vergeben und entziehen nur Rechte, die Sie selbst haben. Die Administrator-Rolle und die
+                Kontrollrechte ändern Administratoren.
+            </p>
+            {% endif %}
 
             <div class="space-y-4">
                 {% for group_name, entries in permission_groups %}
