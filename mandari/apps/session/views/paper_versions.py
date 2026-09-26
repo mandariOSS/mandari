@@ -8,8 +8,9 @@ Sicherheit:
   ``entry_visible`` es erlauben (nie weiter als heute und nie weiter als damals).
 - Sichern und Wiederherstellen brauchen das Bearbeitungsrecht; Wiederherstellen zusätzlich den
   Workflow-Zustand „Entwurf“ (``paper_version_service.RESTORE_STATUSES``).
-- Downloads laufen über die zugriffsgeprüfte View, mit ``Cache-Control: private, no-store`` und
-  ``X-Content-Type-Options: nosniff``, und stehen im Audit-Log.
+- Downloads laufen über die zugriffsgeprüfte View, immer als Download mit Typ aus der Endung,
+  ``Cache-Control: private, no-store``, ``X-Content-Type-Options: nosniff`` und Sandbox-CSP, und
+  stehen im Audit-Log.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from django.views.generic.base import ContextMixin
 from .. import audit
 from ..models import SessionPaper, SessionPaperVersion, SessionPaperVersionFile, SessionTenant, SessionUser
 from ..permissions import SessionPermissionChecker, SessionViewMixin
-from ..services import file_version_service, paper_version_diff, paper_version_service
+from ..services import file_service, file_version_service, paper_version_diff, paper_version_service
 
 _log_event = cast(Any, audit).log_event
 
@@ -240,17 +241,14 @@ class PaperVersionFileDownloadView(_PaperVersionView):
         if not paper.is_public or not version.is_public or not entry.is_public:
             changes["nichtoeffentlich"] = True  # Lesezugriff auf Nichtöffentliches (Issue #221)
         _log_event("download", version, user=self.user, request=request, changes=changes)
-        return protected_download(handle, entry.name, entry.mime_type)
+        return protected_download(handle, file_service.blob_download_name(entry.name, entry.blob))
 
 
-def protected_download(handle: Any, filename: str, mime_type: str) -> FileResponse:
-    """Download mit den Schutz-Headern der Anlagen (kein Caching, kein MIME-Sniffing)."""
-    response = FileResponse(
-        handle,
-        as_attachment=True,
-        filename=filename,
-        content_type=mime_type or "application/octet-stream",
-    )
-    response["X-Content-Type-Options"] = "nosniff"
+def protected_download(handle: Any, filename: str) -> FileResponse:
+    """
+    Download mit den Schutz-Headern der Anlagen: immer als Download, Typ aus der Endung,
+    kein MIME-Sniffing, Sandbox-CSP, kein Caching (``file_service.file_response``).
+    """
+    response = file_service.file_response(handle, filename)
     response["Cache-Control"] = "private, no-store"
     return response

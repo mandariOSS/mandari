@@ -40,6 +40,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin, role_permissions
 from ..services import delegation_service, four_eyes_service
+from ..visibility import agenda_item_visible, meeting_visible, paper_visible
 from .nexturl import safe_next_url
 
 logger = logging.getLogger(__name__)
@@ -68,11 +69,27 @@ class PaperNumberingFormMixin:
     Vorlagennummer im Formular (Issue #150): Die Nummer vergibt der Nummernkreis. Nach der
     Vergabe ist sie unveränderlich; vorher dürfen nur Einstellungsberechtigte eine Nummer
     von Hand setzen (Altbestand aus einem Vorsystem). Der Status wechselt über den Freigabelauf,
-    nicht über das Bearbeiten-Formular.
+    nicht über das Bearbeiten-Formular: Vor der Freigabe bietet und nimmt das Formular keinen
+    anderen Status an, danach nur Abschluss und Rücknahme.
     """
 
-    #: Status, die im Bearbeiten-Formular zusätzlich zum aktuellen wählbar sind
+    #: Status, die im Bearbeiten-Formular nach der Freigabe zusätzlich zum aktuellen wählbar sind
     MANUELLE_STATUS = ("withdrawn", "completed")
+    #: Freigegebene Stände – nur von hier aus lassen sich Abschluss und Rücknahme von Hand setzen
+    FREIGEGEBEN = ("approved", "scheduled", "completed")
+
+    @classmethod
+    def allowed_statuses(cls, paper: Any) -> set[str]:
+        """Status, die das Formular für diese Vorlage anbietet und annimmt."""
+        erlaubt = {paper.status}
+        if paper.status in cls.FREIGEGEBEN:
+            erlaubt.update(cls.MANUELLE_STATUS)
+        elif paper.status == "withdrawn":
+            # Zurück in den Entwurf (erneuter Freigabelauf); abschließen nur, was einmal freigegeben war
+            erlaubt.add("draft")
+            if paper.approved_at is not None:
+                erlaubt.add("completed")
+        return erlaubt
 
     def _prepare_numbering(self, form: Any) -> Any:
         instance = form.instance
@@ -85,9 +102,8 @@ class PaperNumberingFormMixin:
                 feld.label = self.session_tenant.reference_label
                 feld.help_text = "Leer lassen für die automatische Vergabe – nur für Altbestände ausfüllen."
         if "status" in form.fields:
-            erlaubt = {instance.status, *self.MANUELLE_STATUS}
-            if instance.status == "withdrawn":
-                erlaubt.add("draft")
+            # Die Auswahl begrenzt zugleich, was das Formular annimmt (ChoiceField prüft gegen choices)
+            erlaubt = self.allowed_statuses(instance)
             feld = form.fields["status"]
             feld.choices = [(wert, text) for wert, text in feld.choices if wert in erlaubt]
         return form
@@ -253,21 +269,33 @@ class PaperDetailView(SessionViewMixin, DetailView):
             )
 
         # Files — NÖ-Anlagen nur für Berechtigte sichtbar
+        permissions = self.session_permissions
         files = paper.files.order_by("name")
         if not self.has_permission("view_non_public_papers"):
             files = files.filter(is_public=True)
         context["files"] = list(files)
         context["file_can_edit"] = self.has_permission("edit_papers")
 
-        # Agenda items (where this paper was discussed)
-        context["agenda_items"] = paper.agenda_items.select_related("meeting__organization").order_by("-meeting__start")
+        # Beratungshistorie: TOPs, auf denen die Vorlage stand – NÖ-TOPs und TOPs in NÖ-Sitzungen
+        # nur mit NÖ-Sichtrecht (sonst erschienen Betreff, Sitzung und Ergebnis)
+        context["agenda_items"] = (
+            paper.agenda_items.visible_to(permissions)
+            .select_related("meeting__organization")
+            .order_by("-meeting__start")
+        )
 
-        # Beratungsfolge (Issue #34): Stationen + Formulardaten
+        # Beratungsfolge (Issue #34): Stationen + Formulardaten; Sitzung/TOP einer Station ohne
+        # NÖ-Sichtrecht nur als „nichtöffentliche Sitzung“
         context["consultations"] = list(
             paper.consultations.select_related("organization", "meeting", "agenda_item__meeting").order_by(
                 "order", "created_at"
             )
         )
+        for station in context["consultations"]:
+            station.noe_hidden = bool(
+                (station.agenda_item_id and not agenda_item_visible(permissions, station.agenda_item))
+                or (station.meeting_id and not meeting_visible(permissions, station.meeting))
+            )
         context["consultation_can_edit"] = self.has_permission("edit_papers")
         context["consultation_can_schedule"] = self.has_permission("edit_meetings")
 
@@ -304,11 +332,11 @@ class PaperDetailView(SessionViewMixin, DetailView):
                 meetings.select_related("organization").prefetch_related("joint_organizations").order_by("start")[:200]
             )
 
-        # Bezüge (Issue #150): Unternummern wie Ergänzung, Neufassung, Antwort
-        children = paper.child_papers.order_by("sub_number", "created_at")
-        if not self.has_permission("view_non_public_papers"):
-            children = children.filter(is_public=True)
-        context["child_papers"] = list(children)
+        # Bezüge (Issue #150): Unternummern wie Ergänzung, Neufassung, Antwort – die Bezugsvorlage und
+        # Unternummern nur, soweit sie selbst sichtbar sind
+        context["child_papers"] = list(paper.child_papers.visible_to(permissions).order_by("sub_number", "created_at"))
+        parent = paper.parent_paper
+        context["parent_paper"] = parent if parent is not None and paper_visible(permissions, parent) else None
         context["relation_choices"] = SessionPaper.RELATION_CHOICES
         context["can_create_papers"] = self.has_permission("create_papers")
         # Vier-Augen-Prinzip und Vertretung (Issue #222): Hinweis statt wirkungslosem Knopf

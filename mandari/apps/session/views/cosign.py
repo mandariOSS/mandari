@@ -17,7 +17,6 @@ from django.views.generic import TemplateView
 
 from .. import audit
 from ..models import (
-    SessionCosignature,
     SessionCosignatureRule,
     SessionOrganization,
     SessionPaper,
@@ -39,10 +38,12 @@ class CosignatureActionView(SessionViewMixin, View):
             messages.error(request, "Unbekannte Aktion.")
             return redirect("session:my_cosignatures", tenant_slug=tenant_slug)
 
+        # Nichtöffentliche Vorlagen nur mit dem NÖ-Sichtrecht – sonst existiert die Station hier nicht
         cosignature = get_object_or_404(
-            SessionCosignature.objects.select_related("paper", "department"),
+            cosign_service.visible_cosignatures(self.session_user, self.session_permissions).select_related(
+                "paper", "department"
+            ),
             pk=cosign_id,
-            paper__tenant=self.session_tenant,
         )
         paper = cosignature.paper
 
@@ -127,7 +128,7 @@ class MyCosignaturesView(SessionViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        cosignatures = list(cosign_service.my_pending_cosignatures(self.session_user))
+        cosignatures = list(cosign_service.my_pending_cosignatures(self.session_user, self.session_permissions))
         for cosignature in cosignatures:
             cosignature.actionable = cosign_service.is_actionable(cosignature)
             # Vertretung (Issue #222): Stationen aus dem Arbeitsvorrat einer vertretenen Person

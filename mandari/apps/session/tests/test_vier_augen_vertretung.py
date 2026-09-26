@@ -645,7 +645,8 @@ class TestEinstellungen:
 
     def test_vertretung_eintragen_uebersicht_und_aufheben(self) -> None:
         tenant = _tenant()
-        admin = _nutzer(tenant, "admin", "manage_users")
+        # Freigaberechte überträgt per Vertretung nur, wer sie selbst vergeben darf (hier: Administrator)
+        admin = _nutzer(tenant, "admin", "manage_users", admin=True)
         leitung = _nutzer(tenant, "leitung", "approve_papers")
         vertretung = _nutzer(tenant, "vertretung")
         client = _client(admin)

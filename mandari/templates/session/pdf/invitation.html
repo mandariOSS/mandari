@@ -61,7 +61,9 @@
     </table>
     {% endif %}
 
-    {% if not agenda_public and not agenda_non_public %}
+    {% if not include_non_public and not meeting.is_public %}
+    <p class="muted">Nichtöffentliche Sitzung: Die Tagesordnung erhalten nur die Mitglieder des Gremiums.</p>
+    {% elif not agenda_public and not agenda_non_public %}
     <p class="muted">Keine Tagesordnungspunkte.</p>
     {% endif %}
 

@@ -14,6 +14,8 @@ Geprüft wird:
 - Ö/NÖ-Sichtbarkeit: NÖ-Sitzungen, NÖ-Vorlagen, NÖ-TOPs und NÖ-Anlagen sind für unberechtigte Rollen
   unsichtbar — UI und Session-API
 - OParl-API liefert ausschließlich is_public-Daten (anonym)
+- NÖ hinter dem Fachrecht: Wer bearbeiten darf, aber kein NÖ-Recht hat, erreicht NÖ-Objekte über
+  Detail- und Aktionsrouten nicht (404) – Anlagen, TOPs, Sitzungen, Vorlagen, Mitzeichnung
 
 Die Testdaten sind modulweit angelegt (beide Tenants, alle Rollen-Clients); sämtliche Tests sind lesend bzw.
 erwarten abgewiesene Mutationen, sodass sie den gemeinsamen Datenstand nicht verändern.
@@ -34,9 +36,12 @@ from apps.accounts.models import User
 from apps.common.tests.factories import UserFactory
 from apps.session.models import (
     SessionAgendaItem,
+    SessionAPIToken,
     SessionApplication,
     SessionAttendance,
+    SessionCircularResolution,
     SessionConsultation,
+    SessionCosignature,
     SessionDelegation,
     SessionFile,
     SessionFileBlob,
@@ -151,6 +156,22 @@ GET_MATRIX: list[tuple[str, frozenset[str]]] = [
     ("/papers/{paper_pub}/fassungen/1/anlagen/{entry_pub}/", frozenset({"view_papers"})),
     ("/files/{file_pub}/fassungen/", frozenset({"view_papers"})),
     ("/files/{file_pub}/fassungen/1/", frozenset({"view_papers"})),
+    # Suche, Arbeitsvorräte, Kalender, Berichte und Einstellungen
+    ("/search/?q=zz", frozenset({"view_dashboard"})),
+    ("/cosignatures/", frozenset({"view_papers"})),
+    ("/meetings/calendar/", frozenset({"view_meetings"})),
+    ("/meetings/plan/", frozenset({"edit_meetings"})),
+    ("/meetings/{meeting_pub}/invitation/rueckmeldungen/", frozenset({"edit_meetings"})),
+    ("/circulars/", frozenset({"view_meetings"})),
+    ("/reports/", frozenset({"view_meetings"})),
+    ("/archive/", frozenset({"view_meetings"})),
+    ("/settings/roles/", frozenset({"manage_users"})),
+    ("/settings/api-tokens/", frozenset({"manage_settings"})),
+    ("/settings/numbering/", frozenset({"manage_settings"})),
+    ("/settings/textblocks/", frozenset({"manage_settings"})),
+    ("/settings/cosign/", frozenset({"manage_settings"})),
+    ("/settings/privacy/", frozenset({"manage_settings"})),
+    ("/settings/terms/", frozenset({"manage_settings"})),
 ]
 
 # (Pfad-Vorlage, POST-Daten) — Mutationen, die ohne Berechtigung 403 liefern und nichts verändern dürfen
@@ -202,6 +223,16 @@ MUTATIONS: list[tuple[str, dict[str, str]]] = [
     # Protokoll-Export und Kettenprüfung (Issue #221): nur mit dem Kontrollrecht export_audit_log
     ("/audit/export/", {"format": "json"}),
     ("/audit/pruefen/", {}),
+    # Anlagen, Unternummern, Mitzeichnung, Umlaufbeschlüsse
+    ("/files/{file_pub}/replace/", {}),
+    ("/papers/{paper_pub}/unternummer/", {"relation_type": "supplement"}),
+    ("/cosignatures/{cosign_np}/sign/", {}),
+    ("/circulars/create/", {"title": "U", "question": "Q"}),
+    # Rollen, Rechte, Konten und Zugänge
+    ("/settings/roles/save/", {"name": "Hintertuer", "is_admin": "1", "can_view_audit_log": "1"}),
+    ("/settings/users/{person_user_a}/roles/", {"roles": "{role_admin_a}"}),
+    ("/settings/users/{person_user_a}/deactivate/", {}),
+    ("/settings/api-tokens/create/", {"name": "T", "can_read_meetings": "on"}),
 ]
 
 # Listen-/API-Views des eigenen Tenants, die keine Fremddaten enthalten dürfen
@@ -270,6 +301,36 @@ FOREIGN_MUTATIONS: list[tuple[str, dict[str, str]]] = [
     ("/papers/{paper_b}/fassungen/sichern/", {}),
     ("/papers/{paper_b}/fassungen/1/wiederherstellen/", {}),
     ("/files/inhalte/{blob_b}/loeschen/", {"reason": "x"}),
+]
+
+# NÖ hinter dem Fachrecht: (Rolle mit genau diesem Recht, Methode, Pfad, POST-Daten) → 404.
+# Das Bearbeitungs- bzw. Sichtrecht allein erreicht keine nichtöffentlichen Objekte.
+NON_PUBLIC_BEHIND_RIGHT: list[tuple[str, str, str, dict[str, str]]] = [
+    ("edit_papers", "post", "/files/{file_np}/update/", {"is_public": "on"}),
+    ("edit_papers", "post", "/files/{file_np}/replace/", {}),
+    ("edit_papers", "post", "/files/{file_np}/delete/", {}),
+    ("edit_papers", "post", "/files/upload/", {"target_type": "paper", "target_id": "{paper_np}"}),
+    ("edit_papers", "get", "/papers/{paper_np}/edit/", {}),
+    ("edit_papers", "post", "/papers/{paper_np}/workflow/submit/", {}),
+    ("edit_papers", "post", "/papers/{paper_np}/fassungen/sichern/", {}),
+    ("edit_meetings", "post", "/files/upload/", {"target_type": "meeting", "target_id": "{meeting_np}"}),
+    ("edit_meetings", "post", "/files/upload/", {"target_type": "agenda_item", "target_id": "{top_np}"}),
+    ("edit_meetings", "get", "/meetings/{meeting_np}/edit/", {}),
+    ("edit_meetings", "post", "/meetings/{meeting_np}/agenda/add/", {"name": "T"}),
+    ("edit_meetings", "get", "/agenda/{top_np}/edit/", {}),
+    ("edit_meetings", "post", "/agenda/{top_np}/withdraw/", {"reason": "x"}),
+    ("edit_meetings", "post", "/agenda/{top_np}/move/", {"direction": "up"}),
+    ("edit_meetings", "post", "/agenda/{top_np}/delete/", {}),
+    ("view_papers", "get", "/papers/{paper_np}/", {}),
+    ("view_papers", "post", "/cosignatures/{cosign_np}/sign/", {}),
+    ("view_meetings", "get", "/meetings/{meeting_np}/", {}),
+]
+
+# Detailseiten öffentlicher Objekte nennen keine NÖ-Titel: (Rolle, Pfad, Marker)
+NON_PUBLIC_TITLES: list[tuple[str, str, bytes]] = [
+    ("view_meetings", "/organizations/{org_a}/", b"GEHEIME-SITZUNG-A"),
+    ("view_meetings", "/persons/{person_a}/", b"GEHEIME-SITZUNG-A"),
+    ("view_papers", "/papers/{paper_pub}/", b"GEHEIMER-TOP-A"),
 ]
 
 OPARL_SEGMENTS = [
@@ -349,7 +410,10 @@ def _build_world() -> World:
     top_pub = SessionAgendaItem.objects.create(
         meeting=meeting_pub, number="1", name="OEFFENTLICHER-TOP-A", is_public=True
     )
-    top_np = SessionAgendaItem.objects.create(meeting=meeting_pub, number="N1", name="GEHEIMER-TOP-A", is_public=False)
+    # Die Ö-Vorlage stand auch auf einem NÖ-TOP (Beratungshistorie der Vorlage)
+    top_np = SessionAgendaItem.objects.create(
+        meeting=meeting_pub, number="N1", name="GEHEIMER-TOP-A", is_public=False, paper=paper_pub
+    )
     top_decided = SessionAgendaItem.objects.create(
         meeting=meeting_pub, number="2", name="BESCHLOSSENER-TOP-A", is_public=True, vote_result="approved"
     )
@@ -377,6 +441,10 @@ def _build_world() -> World:
         is_public=False,
         paper=paper_pub,
     )
+    # Mitzeichnung einer NÖ-Vorlage und Anwesenheit in einer NÖ-Sitzung
+    department_a = SessionOrganization.objects.create(tenant=tenant_a, name="Amt A", organization_type="department")
+    cosign_np = SessionCosignature.objects.create(paper=paper_np, department=department_a, order=1)
+    SessionAttendance.objects.create(meeting=meeting_np, person=person_a)
 
     # Tenant B: Fremddaten mit Markern
     org_b = SessionOrganization.objects.create(tenant=tenant_b, name="FREMDGREMIUM-XYZ")
@@ -440,6 +508,7 @@ def _build_world() -> World:
         "consultation_b": consultation_b.id,
         "entry_pub": entry_pub.id,
         "entry_np": entry_np.id,
+        "cosign_np": cosign_np.id,
         "blob_pub": entry_pub.blob_id,
         "blob_b": SessionFileVersion.objects.get(session_file=file_b).blob_id,
     }
@@ -456,6 +525,7 @@ def _build_world() -> World:
     # Vertretungen (Issue #222): Nutzer-IDs für die Mutations-Prüfung
     world.ids["admin_a"] = SessionUser.objects.get(tenant=tenant_a, user__email="admin-a@example.org").id
     world.ids["person_user_a"] = SessionUser.objects.get(tenant=tenant_a, user__email="nichts@example.org").id
+    world.ids["role_admin_a"] = SessionRole.objects.get(tenant=tenant_a, name="rolle_admin-a").id
     return world
 
 
@@ -488,6 +558,9 @@ def _counts() -> tuple[int, ...]:
             SessionDelegation,
             SessionPaperVersion,
             SessionFileVersion,
+            SessionRole,
+            SessionAPIToken,
+            SessionCircularResolution,
         )
     )
 
@@ -717,3 +790,54 @@ def test_anonymous_meeting_list_redirects_to_login(world: World) -> None:
 def test_anonymous_cannot_download_non_public_file(world: World) -> None:
     status = world.clients["anon"].get(world.url("/files/{file_np}/download/")).status_code
     assert status in (302, 403), f"Anonym NÖ-Anlage: erwartet 302/403, erhalten {status}"
+
+
+# =============================================================================
+# Phase F: NÖ hinter dem Fachrecht
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ("role", "method", "path", "data"),
+    NON_PUBLIC_BEHIND_RIGHT,
+    ids=[f"{role}-{method}-{path}" for role, method, path, _ in NON_PUBLIC_BEHIND_RIGHT],
+)
+def test_non_public_object_behind_right_is_404(
+    world: World, role: str, method: str, path: str, data: dict[str, str]
+) -> None:
+    client = world.clients[role]
+    url = world.url(path)
+    response = client.post(url, world.data(data)) if method == "post" else client.get(url)
+    assert response.status_code == 404, f"{method.upper()} {url} ({role}, ohne NÖ-Recht): {response.status_code}"
+
+
+def test_non_public_objects_behind_right_stay_unchanged(world: World) -> None:
+    before = _counts()
+    for role, method, path, data in NON_PUBLIC_BEHIND_RIGHT:
+        if method == "post":
+            world.clients[role].post(world.url(path), world.data(data))
+    assert _counts() == before, f"NÖ-Objekt ohne NÖ-Recht verändert: {before} -> {_counts()}"
+    file_np = SessionFile.objects.get(pk=world.ids["file_np"])
+    assert file_np.is_public is False and file_np.version == 1, "NÖ-Anlage verändert"
+    assert not SessionAgendaItem.objects.get(pk=world.ids["top_np"]).is_withdrawn, "NÖ-TOP abgesetzt"
+    assert SessionCosignature.objects.get(pk=world.ids["cosign_np"]).status == "pending", "NÖ-Mitzeichnung entschieden"
+
+
+@pytest.mark.parametrize(("role", "path", "marker"), NON_PUBLIC_TITLES, ids=[path for _, path, _ in NON_PUBLIC_TITLES])
+def test_detail_pages_hide_non_public_titles(world: World, role: str, path: str, marker: bytes) -> None:
+    response = world.clients[role].get(world.url(path))
+    assert response.status_code == 200, f"GET {path}: {response.status_code}"
+    assert marker not in response.content, f"GET {path} ({role}): NÖ-Titel sichtbar"
+    admin = world.clients[ADMIN].get(world.url(path))
+    assert marker in admin.content, f"GET {path} (Admin): NÖ-Titel fehlt"
+
+
+def test_role_escalation_without_admin_is_refused(world: World) -> None:
+    """Benutzerverwaltung ohne Admin-Recht vergibt keine Administrator-Rolle und keine Kontrollrechte."""
+    client = world.clients["manage_users"]
+    client.post(world.url("/settings/roles/save/"), {"name": "Hintertuer", "is_admin": "1"})
+    client.post(world.url("/settings/roles/save/"), {"name": "Revision", "can_view_audit_log": "1"})
+    assert not SessionRole.objects.filter(tenant=world.tenant_a, name__in=["Hintertuer", "Revision"]).exists()
+    target = SessionUser.objects.get(tenant=world.tenant_a, user__email="nur-manage-users@example.org")
+    client.post(world.url(f"/settings/users/{target.id}/roles/"), {"roles": [str(world.ids["role_admin_a"])]})
+    assert not target.roles.filter(is_admin=True).exists(), "Admin-Rolle selbst zugewiesen"

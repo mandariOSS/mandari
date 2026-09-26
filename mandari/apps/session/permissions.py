@@ -136,6 +136,43 @@ def role_permissions(session_user: Any) -> set[str]:
     return permissions
 
 
+def is_admin_user(session_user: Any) -> bool:
+    """Hat die Person eine Administrator-Rolle? (nutzt vorgeladene Rollen)"""
+    if not session_user:
+        return False
+    return any(role.is_admin for role in session_user.roles.all())
+
+
+def grantable_permissions(session_user: Any) -> set[str]:
+    """
+    Rechte, die diese Person über Rollen, Rollenzuweisungen, Einladungen und Vertretungen
+    vergeben oder entziehen darf: nur Rechte aus den eigenen Rollen – nie aus Vertretungen.
+
+    Die Kontrollrechte (Issue #221) vergeben nur Administratoren. Sie haben sie selbst meist nicht
+    (Funktionstrennung), richten aber die Rolle der Revision bzw. des Datenschutzes ein.
+    """
+    own = role_permissions(session_user)
+    if is_admin_user(session_user):
+        return own | AUDIT_PERMISSIONS
+    return own - AUDIT_PERMISSIONS
+
+
+def role_flags(role: Any) -> set[str]:
+    """Rechte, die eine Rolle über ihre Einzelhaken gewährt (ohne ``can_``)."""
+    return {
+        field.name[4:]
+        for field in role._meta.concrete_fields
+        if field.name.startswith("can_") and getattr(role, field.name)
+    }
+
+
+def role_within_scope(role: Any, grantable: set[str], *, admin: bool) -> bool:
+    """Darf jemand mit diesem Umfang die Rolle zuweisen oder entziehen? (Administratoren: jede Rolle)"""
+    if admin:
+        return True
+    return not role.is_admin and role_flags(role) <= grantable
+
+
 class SessionPermissionChecker:
     """
     Utility class for checking permissions.
@@ -207,6 +244,14 @@ class SessionMixin(LoginRequiredMixin):
 
     session_tenant = None
     session_user = None
+    _session_permissions = None
+
+    @property
+    def session_permissions(self) -> set[str]:
+        """Rechte der angemeldeten Person, einmal je Anfrage berechnet – Grundlage für ``visible_to()``."""
+        if self._session_permissions is None:
+            self._session_permissions = SessionPermissionChecker(self.session_user).permissions
+        return self._session_permissions
 
     def dispatch(self, request, *args, **kwargs):
         """Set up session context before view processing."""
@@ -277,15 +322,15 @@ class SessionMixin(LoginRequiredMixin):
             from apps.session.models import SessionPaper
 
             review_qs = SessionPaper.objects.filter(tenant=self.session_tenant, status="review")
-            if not checker.has_permission("view_non_public_papers"):
-                review_qs = review_qs.filter(is_public=True)
-            context["papers_review_count"] = review_qs.count()
+            context["papers_review_count"] = review_qs.visible_to(checker.permissions).count()
 
         # Arbeitsvorrat-Badge (Issue #81): offene Mitzeichnungen der eigenen Ämter
         if checker.has_permission("view_papers"):
             from apps.session.services import cosign_service
 
-            context["cosign_count"] = cosign_service.my_pending_cosignatures(self.session_user).count()
+            context["cosign_count"] = cosign_service.my_pending_cosignatures(
+                self.session_user, checker.permissions
+            ).count()
 
         return context
 

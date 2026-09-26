@@ -90,8 +90,8 @@ class ApplicationDetailView(SessionViewMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Created papers from this application
-        context["created_papers"] = self.object.created_papers.all()
+        # Created papers from this application – nichtöffentliche nur mit NÖ-Sichtrecht
+        context["created_papers"] = self.object.created_papers.visible_to(self.session_permissions)
         return context
 
 

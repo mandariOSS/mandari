@@ -6,7 +6,10 @@ Zwei Wege, beide ergeben ein ``Principal``:
 
 - **API-Token** (``Authorization: Bearer <token>``, ``SessionAPIToken``): für Integrationen, z. B. das
   Work-Portal beim Einreichen von Anträgen. Token sind mandantengebunden; Rechte über die
-  ``can_*``-Flags des Tokens, optional IP-Beschränkung und Ratenlimit je Minute.
+  ``can_*``-Flags des Tokens, optional IP-Beschränkung und Ratenlimit je Minute. Ein Token liest nur
+  Öffentliches – „Öffentliche Sitzungen/Vorlagen lesen“ heißt genau das. Nichtöffentliche Sitzungen,
+  Vorlagen, Texte und interne Notizen gibt es nur für angemeldete Personen mit dem NÖ-Recht: Ein Token
+  gehört zu keiner Person, deren Berechtigung für Nichtöffentliches geprüft wäre.
 - **Angemeldete Sitzung** (Cookie): für Nutzer des Session-RIS; Rechte über ``SessionUser``-Rollen.
 
 Ohne beides ist der Aufrufer anonym und sieht nur öffentliche Daten. Die Auth-Klasse lehnt deshalb
@@ -29,9 +32,9 @@ from .problems import Problem
 
 TOKEN_LENGTH = 64
 TOKEN_PERMISSIONS: dict[str, str] = {
-    # Berechtigungsname der Rollen → Flag am Token
-    "view_non_public_meetings": "can_read_meetings",
-    "view_non_public_papers": "can_read_papers",
+    # Berechtigungsname der Rollen → Flag am Token. Die Lese-Flags (can_read_meetings/-papers) stehen
+    # bewusst nicht hier: Sie erlauben nur das Lesen öffentlicher Daten, das ohnehin jedem offensteht,
+    # und geben nie ein NÖ-Recht (view_non_public_*).
     "submit_applications": "can_submit_applications",
 }
 

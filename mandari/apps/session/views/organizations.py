@@ -112,16 +112,24 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
             org.memberships.select_related("person").filter(end_date__isnull=False).order_by("-end_date")[:10]
         )
 
-        # Recent meetings
+        # Recent meetings – nichtöffentliche nur mit NÖ-Sichtrecht
         # Auch gemeinsame Sitzungen, an denen das Gremium beteiligt ist (Issue #317)
+        permissions = self.session_permissions
         context["recent_meetings"] = (
-            SessionMeeting.objects.filter(SessionMeeting.organization_q(org)).distinct().order_by("-start")[:5]
+            SessionMeeting.objects.filter(SessionMeeting.organization_q(org))
+            .visible_to(permissions)
+            .distinct()
+            .order_by("-start")[:5]
         )
 
-        # Recent papers
-        context["recent_papers"] = SessionPaper.objects.filter(
-            Q(main_organization=org) | Q(originator_organization=org)
-        ).order_by("-date")[:5]
+        # Recent papers – nur mit dem Vorlagenrecht, nichtöffentliche nur mit NÖ-Sichtrecht
+        context["recent_papers"] = (
+            SessionPaper.objects.filter(Q(main_organization=org) | Q(originator_organization=org))
+            .visible_to(permissions)
+            .order_by("-date")[:5]
+            if "view_papers" in permissions
+            else []
+        )
 
         # Besetzungs-Verwaltung
         context["can_manage"] = self.has_permission("manage_organizations")
