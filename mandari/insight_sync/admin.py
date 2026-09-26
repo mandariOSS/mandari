@@ -10,7 +10,7 @@ Admin-Konfiguration für Sync-Verwaltung.
 from django.contrib import admin, messages
 from django.http import HttpResponseNotAllowed, HttpResponseRedirect
 from django.urls import reverse
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 
 from apps.common.admin_mixins import ReadOnlyAdminMixin, SingletonAdminMixin
@@ -59,10 +59,13 @@ class SyncLogAdmin(ReadOnlyAdminMixin, ModelAdmin):
         }
         color, icon = colors.get(obj.status, ("#64748b", "help"))
         label = obj.get_status_display()
-        return mark_safe(
-            f'<span style="color: {color}; font-weight: 600;">'
-            f'<span class="material-symbols-outlined" style="font-size: 16px; vertical-align: middle;">{icon}</span> '
-            f"{label}</span>"
+        return format_html(
+            '<span style="color: {}; font-weight: 600;">'
+            '<span class="material-symbols-outlined" style="font-size: 16px; vertical-align: middle;">{}</span> '
+            "{}</span>",
+            color,
+            icon,
+            label,
         )
 
     @admin.display(description="Quelle")
