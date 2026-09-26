@@ -261,25 +261,6 @@ class EventEmitter:
         else:
             await self._publish(self.CHANNEL_ENTITIES, event)
 
-    async def emit_entity_updated(
-        self,
-        entity_type: str,
-        entity_id: str,
-        entity_external_id: str,
-        entity_name: str | None = None,
-        changes: dict[str, Any] | None = None,
-    ) -> None:
-        """Emit event when an existing entity is updated."""
-        event = SyncEvent(
-            event_type=EventType.ENTITY_UPDATED,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            entity_external_id=entity_external_id,
-            entity_name=entity_name,
-            metadata={"changes": changes} if changes else {},
-        )
-        await self._publish(self.CHANNEL_ENTITIES, event)
-
     # ========== Convenience Methods ==========
 
     async def emit_new_meeting(
@@ -323,24 +304,3 @@ class EventEmitter:
         )
         # Papers are high-priority - emit immediately
         await self._publish(self.CHANNEL_ENTITIES, event)
-
-
-# Global emitter instance (lazy initialization)
-_emitter: EventEmitter | None = None
-
-
-async def get_emitter() -> EventEmitter:
-    """Get or create the global event emitter."""
-    global _emitter
-    if _emitter is None:
-        _emitter = EventEmitter()
-        await _emitter.__aenter__()
-    return _emitter
-
-
-async def close_emitter() -> None:
-    """Close the global event emitter."""
-    global _emitter
-    if _emitter:
-        await _emitter.__aexit__(None, None, None)
-        _emitter = None

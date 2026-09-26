@@ -27,7 +27,6 @@ Inactive penalty:
       inactive and get a penalty added to their priority.
 """
 
-import re
 from datetime import timedelta
 
 from django.db.models import Case, IntegerField, Max, Value, When
@@ -79,32 +78,6 @@ RANKING_RULES = [
     # Special purpose associations
     (r"^Zweckverband ", 210, False),
 ]
-
-
-def get_organization_priority(name: str) -> int:
-    """
-    Calculate the ranking priority for an organization based on its name.
-
-    Args:
-        name: The organization name
-
-    Returns:
-        Integer priority (lower = more important)
-    """
-    if not name:
-        return 300
-
-    for pattern, priority, is_exact in RANKING_RULES:
-        if is_exact:
-            # Exact match (case-insensitive)
-            if re.match(pattern, name, re.IGNORECASE):
-                return priority
-        else:
-            # Pattern match
-            if re.search(pattern, name, re.IGNORECASE):
-                return priority
-
-    return 300  # Default priority for unknown types
 
 
 def get_ranking_annotation():

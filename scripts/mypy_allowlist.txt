@@ -226,7 +226,6 @@ insight_core.services.search_documents
 insight_core.services.search_service
 insight_core.services.source_health
 insight_core.signals
-insight_core.templatetags.markdownify
 insight_core.urls
 insight_core.views._helpers
 insight_core.views.bookmarks

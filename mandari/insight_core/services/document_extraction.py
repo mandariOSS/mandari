@@ -72,10 +72,6 @@ class DocumentDownloadError(RuntimeError):
     """Wird geworfen, wenn ein Dokument nicht heruntergeladen werden kann."""
 
 
-class DocumentExtractionError(RuntimeError):
-    """Wird geworfen, wenn Text nicht extrahiert werden kann."""
-
-
 def _http_get(url: str, timeout: float = 60.0, extra_headers: dict[str, str] | None = None) -> httpx.Response:
     """Führt einen HTTP-GET Request aus (``extra_headers``: Download-Header je Quelle, Issue #116)."""
     headers = {
@@ -289,63 +285,6 @@ def download_and_extract(
         ExtractedDocument mit Binärdaten, Text und Metadaten
     """
     response = _http_get(url, timeout=timeout, extra_headers=extra_headers)
-    binary = response.content
-    resolved_mime = mime_type or response.headers.get("Content-Type", "").split(";")[0]
-    checksum = hashlib.sha256(binary).hexdigest()
-
-    text, ocr_used, page_count, extraction_method = extract_text_from_file(
-        binary,
-        mime_type=resolved_mime,
-        file_name=original_name or url.split("/")[-1],
-    )
-
-    return ExtractedDocument(
-        binary=binary,
-        text=text,
-        checksum=checksum,
-        mime_type=resolved_mime,
-        original_name=original_name or url.split("/")[-1],
-        source_url=url,
-        ocr_performed=ocr_used,
-        page_count=page_count,
-        extraction_method=extraction_method,
-    )
-
-
-async def download_and_extract_async(
-    *,
-    url: str,
-    mime_type: str | None = None,
-    original_name: str = "",
-    timeout: float = 60.0,
-    extra_headers: dict[str, str] | None = None,
-) -> ExtractedDocument:
-    """
-    Asynchrone Version von download_and_extract.
-
-    Args:
-        url: Download-URL
-        mime_type: MIME-Typ (optional)
-        original_name: Originaler Dateiname
-        timeout: HTTP-Timeout in Sekunden
-
-    Returns:
-        ExtractedDocument mit Binärdaten, Text und Metadaten
-    """
-    headers = {
-        "User-Agent": "Mandari/2.0 (https://mandari.dev; contact@mandari.dev)",
-        **(extra_headers or {}),
-    }
-
-    from .safe_fetch import guarded_async_client
-
-    try:
-        async with guarded_async_client(timeout=timeout) as client:
-            response = await client.get(url, headers=headers, follow_redirects=True)
-            response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise DocumentDownloadError(f"Download fehlgeschlagen: {url}") from exc
-
     binary = response.content
     resolved_mime = mime_type or response.headers.get("Content-Type", "").split(";")[0]
     checksum = hashlib.sha256(binary).hexdigest()

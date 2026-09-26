@@ -105,20 +105,6 @@ def transition_for(protocol: SessionProtocol, action: str) -> str | None:
     return transition[1] if protocol.status in sources else None
 
 
-def apply_transition(protocol: SessionProtocol, action: str) -> bool:
-    """
-    Statusübergang prüfen und Status setzen (ohne save()).
-
-    Returns:
-        True, wenn der Übergang zulässig war.
-    """
-    target = transition_for(protocol, action)
-    if target is None:
-        return False
-    protocol.status = target
-    return True
-
-
 def approval_candidates(meeting: SessionMeeting, *, include_non_public: bool):
     """
     TOPs „Genehmigung der Niederschrift“ der Folgesitzungen desselben Gremiums (Issue #318).

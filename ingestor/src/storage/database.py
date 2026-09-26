@@ -14,7 +14,6 @@ from mandari_oparl import (
     ProcessedAgendaItem,
     ProcessedBody,
     ProcessedConsultation,
-    ProcessedEntity,
     ProcessedFile,
     ProcessedLegislativeTerm,
     ProcessedLocation,
@@ -611,24 +610,6 @@ class DatabaseStorage:
 
             return body_id
 
-    async def get_body_by_external_id(self, external_id: str) -> OParlBody | None:
-        """Get a body by external ID."""
-        async with self.get_session() as session:
-            stmt = select(OParlBody).where(OParlBody.external_id == external_id)
-            result = await session.execute(stmt)
-            return result.scalar_one_or_none()
-
-    async def get_body_uuid(self, external_id: str) -> UUID | None:
-        """Get a body's UUID by external ID (cached)."""
-        if external_id in self._body_uuid_cache:
-            return self._body_uuid_cache[external_id]
-
-        body = await self.get_body_by_external_id(external_id)
-        if body:
-            self._body_uuid_cache[external_id] = body.id
-            return body.id
-        return None
-
     async def update_body_sync_time(self, body_id: UUID) -> None:
         """Update the last sync timestamp for a body."""
         async with self.get_session() as session:
@@ -638,43 +619,6 @@ class DatabaseStorage:
                 await session.commit()
 
     # ========== Entity Existence Check ==========
-
-    async def get_entity_modified_date(
-        self,
-        entity_type: str,
-        external_id: str,
-    ) -> datetime | None:
-        """
-        Check if an entity exists and return its oparl_modified date.
-
-        Args:
-            entity_type: Type of entity (meeting, paper, person, organization, membership)
-            external_id: The OParl external ID
-
-        Returns:
-            The oparl_modified datetime if exists, None if not found
-        """
-        model_map = {
-            "meeting": OParlMeeting,
-            "paper": OParlPaper,
-            "person": OParlPerson,
-            "organization": OParlOrganization,
-            "membership": OParlMembership,
-            "location": OParlLocation,
-            "agendaitem": OParlAgendaItem,
-            "consultation": OParlConsultation,
-            "file": OParlFile,
-            "legislativeterm": OParlLegislativeTerm,
-        }
-
-        model = model_map.get(entity_type)
-        if not model:
-            return None
-
-        async with self.get_session() as session:
-            stmt = select(model.oparl_modified).where(model.external_id == external_id)
-            result = await session.execute(stmt)
-            return result.scalar_one_or_none()
 
     async def batch_check_entities_exist(
         self,
@@ -1518,61 +1462,6 @@ class DatabaseStorage:
             await session.commit()
             return term_id
 
-    # ========== Generic Entity Dispatcher ==========
-
-    async def upsert_entity(
-        self,
-        entity: ProcessedEntity,
-        body_id: UUID,
-    ) -> UUID | None:
-        """
-        Generic upsert that dispatches to the correct handler.
-
-        Args:
-            entity: The processed entity to upsert
-            body_id: The body UUID this entity belongs to
-
-        Returns:
-            The entity UUID or None if type not supported
-        """
-        if isinstance(entity, ProcessedMeeting):
-            return await self.upsert_meeting(entity, body_id)
-        if isinstance(entity, ProcessedPaper):
-            return await self.upsert_paper(entity, body_id)
-        if isinstance(entity, ProcessedPerson):
-            return await self.upsert_person(entity, body_id)
-        if isinstance(entity, ProcessedOrganization):
-            return await self.upsert_organization(entity, body_id)
-        if isinstance(entity, ProcessedFile):
-            return await self.upsert_file(entity, body_id)
-        if isinstance(entity, ProcessedLocation):
-            return await self.upsert_location(entity, body_id)
-        if isinstance(entity, ProcessedMembership):
-            return await self.upsert_membership(entity, body_id)
-        if isinstance(entity, ProcessedLegislativeTerm):
-            return await self.upsert_legislative_term(entity, body_id)
-
-        return None
-
-    # ========== Batch Operations ==========
-
-    async def upsert_entities_batch(
-        self,
-        entities: list[ProcessedEntity],
-        body_id: UUID,
-    ) -> int:
-        """
-        Upsert multiple entities in a batch.
-
-        Returns the number of entities processed.
-        """
-        count = 0
-        for entity in entities:
-            result = await self.upsert_entity(entity, body_id)
-            if result:
-                count += 1
-        return count
-
     # ========== Statistics ==========
 
     async def get_stats(self) -> dict[str, Any]:
@@ -1606,13 +1495,6 @@ class DatabaseStorage:
         """Get all bodies from the database."""
         async with self.get_session() as session:
             stmt = select(OParlBody).order_by(OParlBody.name)
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
-
-    async def get_bodies_for_source(self, source_id: UUID) -> list[OParlBody]:
-        """Get all bodies for a source."""
-        async with self.get_session() as session:
-            stmt = select(OParlBody).where(OParlBody.source_id == source_id).order_by(OParlBody.name)
             result = await session.execute(stmt)
             return list(result.scalars().all())
 

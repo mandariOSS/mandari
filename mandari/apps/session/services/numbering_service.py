@@ -238,32 +238,6 @@ def assign_if_due(paper: SessionPaper) -> bool:
     raise NumberingError("Keine freie Nummer gefunden – bitte den Zählerstand prüfen.")
 
 
-def assign_now(paper: SessionPaper) -> str:
-    """Nummer sofort vergeben (unabhängig von „bei Freigabe“), z. B. für Altbestände; speichert."""
-    if paper.reference:
-        return str(paper.reference)
-    with transaction.atomic():
-        if paper.parent_paper_id and paper.relation_type:
-            ok = _assign_sub_number(paper)
-        else:
-            number_range = range_for(paper.tenant, paper.paper_type)
-            if number_range is None:
-                raise NumberingError("Für diese Vorlagenart ist kein Nummernkreis eingerichtet.")
-            werte = _werte(number_range, paper, timezone.localdate())
-            scope = _scope(number_range, werte)
-            ok = False
-            for _ in range(1000):
-                werte["lfd"] = _naechster_zaehler(number_range, scope)
-                reference = _format(number_range.pattern, werte)
-                if not _reference_taken(paper, reference):
-                    paper.reference, paper.reference_assigned_at, ok = reference, timezone.now(), True
-                    break
-        if not ok:
-            raise NumberingError("Die Bezugsvorlage hat noch keine Nummer.")
-        paper.save()
-    return str(paper.reference)
-
-
 # ---------------------------------------------------------------------------
 # Vorschau, Startwert, Presets
 # ---------------------------------------------------------------------------

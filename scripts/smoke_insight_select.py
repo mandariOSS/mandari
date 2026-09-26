@@ -357,8 +357,6 @@ check("Suche (Kommune A): kein Fremdtreffer", "Klimaschutzprogramm Beispielfurt"
 # =============================================================================
 print("=== 6. Kommune-Filter Listen ===")
 
-resp = client.get("/insight/termine/partials/list/")
-check("MeetingListPartial: nur aktive Kommune", "Stadtratssitzung Beispielfurt" not in html(resp))
 resp = client.get("/insight/termine/", HTTP_HX_REQUEST="true")
 check("MeetingList (HTMX): nur aktive Kommune", "Stadtratssitzung Beispielfurt" not in html(resp))
 

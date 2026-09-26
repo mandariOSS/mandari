@@ -1613,17 +1613,6 @@ class ContactRequest(models.Model):
     def __str__(self):
         return f"{self.name} - {self.get_subject_display()} ({self.created_at.strftime('%d.%m.%Y')})"
 
-    def get_subject_display_with_icon(self):
-        """Returns subject with appropriate icon."""
-        icons = {
-            "demo": "🎯",
-            "preise": "💰",
-            "support": "🛠️",
-            "datenschutz": "🔒",
-            "sonstiges": "💬",
-        }
-        return f"{icons.get(self.subject, '💬')} {self.get_subject_display()}"
-
     def mark_as_read(self):
         """Mark the request as read if it's new."""
         if self.status == "new":

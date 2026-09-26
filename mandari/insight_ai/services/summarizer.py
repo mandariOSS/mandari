@@ -286,25 +286,6 @@ class SummaryService:
             logger.exception(f"Failed to extract text from file {file.id}: {e}")
             return ""
 
-    def _collect_text_content(self, paper: "OParlPaper") -> str:
-        """
-        Collect existing text content from all files (no extraction).
-
-        Args:
-            paper: OParlPaper instance
-
-        Returns:
-            Combined text content from all files
-        """
-        texts = []
-
-        for file in self._current_files(paper):
-            if file.text_content and file.text_content.strip():
-                file_name = file.name or file.file_name or "Dokument"
-                texts.append(f"### {file_name}\n{file.text_content.strip()}")
-
-        return "\n\n---\n\n".join(texts)
-
     @staticmethod
     def _withdrawn_since(paper: "OParlPaper", started: tuple[bool, list]) -> bool:
         """Vorgang oder eine der verwendeten Anlagen seit Beginn gelöscht bzw. zurückgenommen?"""

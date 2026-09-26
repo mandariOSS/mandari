@@ -29,16 +29,10 @@ insight_patterns = [
     # Gremien (Organizations)
     path("gremien/", views.OrganizationListView.as_view(), name="organization_list"),
     path("gremien/<uuid:pk>/", views.OrganizationDetailView.as_view(), name="organization_detail"),
-    path(
-        "gremien/partials/list/",
-        views.OrganizationListPartial.as_view(),
-        name="organization_list_partial",
-    ),
     # Personen
     path("personen/", views.PersonListView.as_view(), name="person_list"),
     path("personen/<uuid:pk>/", views.PersonDetailView.as_view(), name="person_detail"),
     path("personen/<uuid:pk>/frage-stellen/", views.AskQuestionView.as_view(), name="ask_question"),
-    path("personen/partials/list/", views.PersonListPartial.as_view(), name="person_list_partial"),
     # Öffentliche Fragen (Ratsfragen-Portal)
     # Öffentliches Beschluss-Tracking „Was wurde aus …?“ (Issue #48)
     path("beschluesse/", views.DecisionListView.as_view(), name="decision_list"),
@@ -55,14 +49,12 @@ insight_patterns = [
     path("vorgaenge/", views.PaperListView.as_view(), name="paper_list"),
     path("vorgaenge/<uuid:pk>/", views.PaperDetailView.as_view(), name="paper_detail"),
     path("vorgaenge/<uuid:pk>/zusammenfassung/", views.paper_summary, name="paper_summary"),
-    path("vorgaenge/partials/list/", views.PaperListPartial.as_view(), name="paper_list_partial"),
     # Termine (Meetings)
     path("termine/", views.MeetingListView.as_view(), name="meeting_list"),
     path("termine/kalender/", views.MeetingCalendarView.as_view(), name="meeting_calendar"),
     path("termine/kalender.ics", views.calendar_feed, name="calendar_feed"),
     path("termine/jahresplan/", views.MeetingYearPlanView.as_view(), name="meeting_year_plan"),
     path("termine/<uuid:pk>/", views.MeetingDetailView.as_view(), name="meeting_detail"),
-    path("termine/partials/list/", views.MeetingListPartial.as_view(), name="meeting_list_partial"),
     path("termine/partials/calendar-events/", views.calendar_events, name="calendar_events"),
     # Dokumente (Files)
     path("dokumente/", views.FileListView.as_view(), name="file_list"),

@@ -314,12 +314,6 @@ class CircuitBreakerRegistry:
         async with self._lock:
             return [breaker.get_status() for breaker in self._breakers.values()]
 
-    async def reset_all(self) -> None:
-        """Reset all circuit breakers."""
-        async with self._lock:
-            for breaker in self._breakers.values():
-                await breaker.reset()
-
 
 # Global registry
 circuit_breakers = CircuitBreakerRegistry(

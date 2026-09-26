@@ -52,7 +52,6 @@ from .maps import (
 from .meetings import (
     MeetingCalendarView,
     MeetingDetailView,
-    MeetingListPartial,
     MeetingListView,
     MeetingYearPlanView,
     calendar_events,
@@ -65,19 +64,16 @@ from .neighborhood import (
 )
 from .organizations import (
     OrganizationDetailView,
-    OrganizationListPartial,
     OrganizationListView,
 )
 from .papers import (
     PaperDetailView,
-    PaperListPartial,
     PaperListView,
     paper_summary,
 )
 from .persons import (
     COUNCIL_ROLES,
     PersonDetailView,
-    PersonListPartial,
     PersonListView,
 )
 from .portal import portal_entry
@@ -122,18 +118,14 @@ __all__ = [
     "MeetingCalendarView",
     "MeetingYearPlanView",
     "MeetingDetailView",
-    "MeetingListPartial",
     "MeetingListView",
     "MerklisteView",
     "NeighborhoodView",
     "OrganizationDetailView",
-    "OrganizationListPartial",
     "OrganizationListView",
     "PaperDetailView",
-    "PaperListPartial",
     "PaperListView",
     "PersonDetailView",
-    "PersonListPartial",
     "PersonListView",
     "PortalHomeView",
     "portal_entry",

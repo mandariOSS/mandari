@@ -736,24 +736,6 @@ class OParlClient:
 
         return []
 
-    async def fetch_many(
-        self,
-        urls: list[str],
-        use_cache: bool = True,
-    ) -> list[FetchResult]:
-        """
-        Fetch multiple URLs concurrently.
-
-        Args:
-            urls: List of URLs to fetch
-            use_cache: Whether to use caching
-
-        Returns:
-            List of FetchResults in same order as input
-        """
-        tasks = [self.fetch(url, use_cache=use_cache) for url in urls]
-        return await asyncio.gather(*tasks)
-
     async def fetch_system(self, url: str) -> dict[str, Any] | None:
         """
         Fetch the OParl system object (entry point).

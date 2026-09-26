@@ -208,17 +208,3 @@ class ElasticsearchIndexer:
         except Exception as e:
             logger.warning("Elasticsearch delete error: %s", e)
             return False
-
-    async def delete_index(self, index_name: str) -> bool:
-        """Delete all documents in an index."""
-        if not self._client:
-            return False
-        try:
-            response = await self._client.post(
-                f"/{index_name}/_delete_by_query",
-                json={"query": {"match_all": {}}},
-            )
-            return response.status_code == 200
-        except Exception as e:
-            logger.warning("Elasticsearch delete error: %s", e)
-            return False
