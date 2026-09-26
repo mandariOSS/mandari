@@ -163,7 +163,7 @@ class SupportDetailView(WorkViewMixin, TemplateView):
         if self.ticket.created_by != self.membership and not self.has_permission("support.manage"):
             messages.error(request, "Sie haben keinen Zugriff auf dieses Ticket.")
             return redirect("work:support", org_slug=self.organization.slug)
-        return super().get(request, *args, **kwargs)
+        return self.render_to_response(self.get_context_data(**kwargs))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
