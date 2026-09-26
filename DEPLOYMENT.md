@@ -2,149 +2,29 @@
 
 ## Übersicht
 
-Es gibt **3 Wege** zum Deployment:
+| Weg | Wann nutzen |
+|-----|-------------|
+| `install.sh` | Erstinstallation auf einem Server mit Docker Compose (siehe [README](README.md#installation)) |
+| `update.sh` | Aktualisieren für Selbstbetreiber: Sicherung, Migration, Umschalten, Prüfung, Rückfall |
+| `deploy/scripts/deploy.sh` | Nicht interaktiv (Betrieb, Cron, CI), gleiche Prüfung und gleicher Rückfall |
+| `install-k8s.sh` bzw. Helm | Kubernetes, siehe [`deploy/kubernetes/README.md`](deploy/kubernetes/README.md) |
 
-| Methode | Wann nutzen | Automatisierung |
-|---------|-------------|-----------------|
-| **GitHub Actions** | Empfohlen für Produktion | Vollautomatisch |
-| **Make Commands** | Lokales Deployment / Debugging | Semi-automatisch |
-| **Shell Scripts** | Server-Zugriff / Notfälle | Manuell |
-
----
-
-## 🚀 Option 1: GitHub Actions (Empfohlen)
-
-### Automatisches Deployment bei Push
-
-Jeder Push auf `main` oder `production` löst automatisch aus:
-1. Tests laufen
-2. Docker Images werden gebaut
-3. Images werden zu GitHub Container Registry gepusht
-4. Ansible deployed auf die Server
-
-```
-git add .
-git commit -m "Feature: Neue Funktion"
-git push origin main
-# → Deployment startet automatisch!
-```
-
-### Manuelles Deployment
-
-1. Gehe zu **Actions** → **Deploy Mandari**
-2. Klicke **Run workflow**
-3. Wähle Environment (`staging` oder `production`)
-4. Klicke **Run workflow**
-
-### Erforderliche GitHub Secrets
-
-Gehe zu **Settings** → **Secrets and variables** → **Actions** und füge hinzu:
-
-| Secret | Beschreibung | Beispiel |
-|--------|--------------|----------|
-| `SSH_PRIVATE_KEY` | SSH Key für Server-Zugriff | `-----BEGIN OPENSSH...` |
-| `MASTER_IP` | IP des Master-Servers | `168.119.xxx.xxx` |
-| `SLAVE_IP` | IP des Slave-Servers | `168.119.xxx.xxx` |
-| `SITE_URL` | Produktions-URL | `https://mandari.de` |
-| `SECRET_KEY` | Django Secret Key | (generiert) |
-| `ENCRYPTION_MASTER_KEY` | Verschlüsselungs-Key | (generiert) |
-| `POSTGRES_USER` | DB Benutzer | `mandari` |
-| `POSTGRES_PASSWORD` | DB Passwort | (generiert) |
-| `POSTGRES_DB` | DB Name | `mandari` |
-| `REPLICATION_PASSWORD` | Replikations-Passwort | (generiert) |
-| `ELASTICSEARCH_URL` | Elasticsearch URL | `http://elasticsearch:9200` |
-
-**Secrets generieren:**
-```bash
-make secrets-generate
-```
+Die Images baut `.github/workflows/release.yml` und legt sie in der GitHub Container Registry ab
+(`ghcr.io/mandarioss/mandari`, `ghcr.io/mandarioss/ingestor`): `dev` → `:dev`, `main` → `:latest`,
+ein Release → `:<version>` und `:latest`. Ein Push deployt nichts; umgeschaltet wird auf dem Server
+mit `update.sh` oder `deploy/scripts/deploy.sh`.
 
 ---
 
-## 🛠️ Option 2: Make Commands (Lokal)
+## 🚀 Aktualisieren
 
-### Voraussetzungen
-
-```bash
-# macOS
-brew install terraform ansible
-
-# Oder mit pip
-pip install ansible ansible-lint
-
-# Ansible Dependencies
-make ansible-deps
-```
-
-### Erstes Deployment
+### Mit `update.sh`
 
 ```bash
-# 1. Terraform konfigurieren
-cd infrastructure/terraform
-cp terraform.tfvars.example terraform.tfvars
-# → Hetzner API Token eintragen
-
-# 2. Environment konfigurieren
-cd ../docker
-cp .env.example .env
-# → Alle Secrets eintragen (make secrets-generate hilft)
-
-# 3. Vollständiges Deployment
-make deploy-full
-```
-
-### Alltägliches Deployment
-
-```bash
-# Nur App deployen (Infrastruktur existiert schon)
-make deploy
-
-# Status prüfen
-make status
-
-# Logs anschauen
-make logs
-make logs-api
-make logs-ingestor
-```
-
-### Alle verfügbaren Commands
-
-```bash
-make help
-```
-
-Wichtige Commands:
-| Command | Beschreibung |
-|---------|--------------|
-| `make deploy` | App deployen |
-| `make deploy-full` | Infra + Setup + App |
-| `make status` | Deployment-Status |
-| `make logs` | Live-Logs |
-| `make ssh-master` | SSH zum Master |
-| `make backup` | Backup erstellen |
-| `make db-replication` | Replikations-Status |
-
----
-
-## 📜 Option 3: Shell Scripts (Direkt)
-
-### Auf dem Server
-
-```bash
-# SSH zum Master
-ssh root@<MASTER_IP>
-
-# Deployment
-cd /opt/mandari
-docker compose pull
-docker compose up -d
-
-# Logs
-docker compose logs -f
-
-# Status
-docker ps
+./update.sh                # auf latest
+./update.sh --tag v1.3.0   # bestimmte Version
+./update.sh --dry-run      # nur prüfen, nichts ändern
+./update.sh --rollback     # auf die vorherige Version zurück
 ```
 
 ### Mit Skript: Gesundheitsprüfung und automatischer Rückfall
@@ -178,74 +58,44 @@ bei Fehlschlag ebenfalls zurück.
 
 ## 📋 Deployment Checkliste
 
-### Vor dem ersten Deployment
+### Vor der Installation
 
-- [ ] Hetzner Cloud Account mit API Token
-- [ ] Domain (mandari.de) mit DNS-Zugriff
-- [ ] SSH Key generiert (`ssh-keygen -t ed25519`)
-- [ ] GitHub Secrets konfiguriert
-- [ ] `terraform.tfvars` ausgefüllt
-- [ ] `.env` mit allen Secrets
+- [ ] Linux-Server mit mindestens 4 GB Arbeitsspeicher (siehe [README](README.md#installation))
+- [ ] Domain, deren DNS auf den Server zeigt
 
-### Nach dem Deployment
+### Nach der Installation
 
-- [ ] `make status` zeigt alle Services als "healthy"
-- [ ] https://mandari.de/health erreichbar
-- [ ] `make db-replication` zeigt aktive Replikation
-- [ ] Backup funktioniert (`make backup`)
+- [ ] `https://<domain>/health/ready/` meldet `"status": "ok"`
+- [ ] Tägliche Sicherung eingetragen (`crontab -l`), Probelauf mit `./backup.sh --verify`
+- [ ] Geplante Aufgaben eingerichtet (Abschnitt „Geplante Aufgaben (Cron)“)
 
 ---
 
 ## 🔄 Typische Workflows
 
-### Feature deployen
-
-```bash
-# 1. Lokal entwickeln
-cd mandari
-python manage.py runserver
-
-# 2. Tests
-make test
-
-# 3. Commit & Push
-git add .
-git commit -m "Feature: XYZ"
-git push origin main
-
-# 4. GitHub Action läuft automatisch
-# → Warte auf grünes Häkchen
-```
-
-### Hotfix deployen
-
-```bash
-# Schnelles Deployment ohne Tests
-# GitHub Actions → Run workflow → skip_tests: true
-
-# Oder manuell:
-make deploy
-```
-
 ### Rollback
 
 ```bash
-# Backups auflisten
-make backup-list
-
-# Rollback zu bestimmtem Backup
-make rollback BACKUP=deploy-1234567890.tar.gz
+./update.sh --rollback                        # vorherige Version
+sh deploy/scripts/deploy.sh rollback v0.10.0  # bestimmte Version
+./backup.sh --restore <Sicherungsdatei>       # Daten aus einer Sicherung zurückspielen
 ```
 
 ### Datenbank-Migration
 
-```bash
-# Migrationen werden automatisch bei Deploy ausgeführt
+Migrationen laufen beim Update, nicht im Entrypoint: verträgliche vor dem Umschalten
+(`safemigrate`), `update.sh` spielt die übrigen danach ein. Von Hand (Containername folgt
+`COMPOSE_PROJECT_NAME`, Vorgabe `mandari`):
 
-# Manuell:
-ssh root@<MASTER_IP>
-docker exec mandari-api python manage.py migrate
+```bash
+docker exec mandari python manage.py migrate
 ```
+
+### Sicherung
+
+`./backup.sh` sichert Datenbank, Medien und Konfiguration nach `./backups/`; `install.sh`
+richtet dafür einen täglichen Cron-Lauf ein. Verschlüsselte Sicherung an zwei Standorten mit
+restic: [docs/BACKUP.md](docs/BACKUP.md).
 
 ---
 
@@ -521,42 +371,29 @@ Fristen, Begründungen, Sicherung und Zugriffsschutz: [docs/PROTOKOLLE.md](docs/
 
 ## 🚨 Troubleshooting
 
+Container heißen nach `COMPOSE_PROJECT_NAME` (Vorgabe `mandari`, Dienst `mandari`).
+
 ### Deployment schlägt fehl
 
 ```bash
 # 1. Logs prüfen
-make logs-api
+docker compose logs --tail=100 mandari
 
 # 2. Container-Status
-ssh root@<MASTER_IP>
-docker ps -a
-docker logs mandari-api
+docker compose ps
 
 # 3. Health-Check manuell
-curl http://<MASTER_IP>/health
-```
-
-### PostgreSQL Replikation kaputt
-
-```bash
-# Status prüfen
-make db-replication
-
-# Replikation neu initialisieren
-ssh root@<SLAVE_IP>
-/opt/mandari/scripts/init-replica.sh
+curl -s https://<domain>/health/ready/
 ```
 
 ### Container startet nicht
 
 ```bash
-ssh root@<MASTER_IP>
-
 # Logs anschauen
-docker logs mandari-api
+docker logs mandari
 
 # Container neu starten
-docker compose restart api
+docker compose restart mandari
 
 # Alles neu starten
 docker compose down && docker compose up -d
@@ -569,22 +406,17 @@ docker compose down && docker compose up -d
 ### Basis-Monitoring
 
 ```bash
-# Server-Status
-make status
-
-# Live-Logs
-make logs
-
-# Replikation
-make db-replication
+docker compose ps                # Status aller Dienste
+docker compose logs -f mandari   # Live-Logs der Anwendung
 ```
 
 ### Health-Endpoints
 
 | Endpoint | Beschreibung |
 |----------|--------------|
-| `/health` | Allgemeiner Health-Check |
-| `/api/health` | API Health |
+| `/health/` | Datenbankprüfung für bestehende Healthchecks (Compose, Statusseite) |
+| `/health/live/` | Liveness: Prozess antwortet, Datenbank-Pool nicht festgefahren |
+| `/health/ready/` | Readiness: Datenbank, Cache, Elasticsearch und Medienspeicher |
 
 ### Metriken (optional)
 
@@ -593,27 +425,17 @@ Für erweiteres Monitoring empfohlen:
 - **Sentry** - Error Tracking
 - **Prometheus + Grafana** - Metriken
 
----
-
-## 💰 Kosten
-
-| Ressource | Typ | Monatlich |
-|-----------|-----|-----------|
-| 2× VM | cx31 | €31.18 |
-| 1× Load Balancer | lb11 | €5.39 |
-| 2× Volume | 50GB | €4.80 |
-| **Gesamt** | | **~€42** |
+Metriken-Endpunkt, Alarme und Statusseite: [docs/MONITORING.md](docs/MONITORING.md).
 
 ---
 
 ## 🔒 Sicherheit
 
-- SSH nur mit Key-Auth (kein Passwort)
-- Firewall (UFW) auf allen Servern
-- fail2ban gegen Brute-Force
-- TLS-Terminierung am Load Balancer
-- Alle Secrets in GitHub Secrets / .env (nie im Code!)
+- TLS: Caddy holt und erneuert die Zertifikate selbst
+- Alle Secrets in der `.env` (nie im Code!); `install.sh` erzeugt sie
 - Daten verschlüsselt (AES-256-GCM)
+- Härtung des Hosts (SSH nur mit Schlüssel, Firewall, fail2ban) richtet der Installer nicht ein;
+  sie liegt beim Betreiber
 
 ### Ursprünge, Hosts und Cookies
 

@@ -141,7 +141,6 @@
 | MapLibre GL | — | BSD-3-Clause | Karten-Rendering |
 | Chart.js | — | MIT | Diagramme |
 | FullCalendar | — | MIT | Kalender-Komponente |
-| EasyMDE | — | MIT | Markdown-Editor |
 
 ---
 

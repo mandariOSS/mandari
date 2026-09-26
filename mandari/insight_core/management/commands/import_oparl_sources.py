@@ -23,7 +23,7 @@ from insight_core.models import OParlSource
 #   - Landkreis Ludwigslust-Parchim (DNS), Stadt Olpe (DNS)
 #   - OParl Mirror (DNS), Stadt Rees (401)
 #   - Edenkoben (kein Body-Feld), Salzatal (kein Body-Feld)
-# Archiv: archive/oparl_sources_2026-03-11/
+# Archiv der Prüfung: git show ba07d82:archive/oparl_sources_2026-03-11/check_result.txt
 # =============================================================================
 
 OPARL_SOURCES = [

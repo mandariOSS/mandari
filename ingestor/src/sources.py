@@ -6,7 +6,7 @@ This module contains a curated list of German municipalities with OParl endpoint
 Sources are categorized by size and priority.
 
 Letzte Prüfung: 2026-03-11 (alle Endpoints live getestet)
-Archiv: archive/oparl_sources_2026-03-11/
+Archiv der Prüfung: git show ba07d82:archive/oparl_sources_2026-03-11/check_result.txt
 """
 
 from dataclasses import dataclass
