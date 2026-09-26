@@ -93,7 +93,7 @@ class MeetingPackageRequestView(_MeetingPackageView):
         if variant not in variants:
             raise PermissionDenied("Diese Fassung ist für Sie nicht abrufbar")
         package, created = meeting_package_service.request_package(meeting, variant, self.user)
-        if request.headers.get("HX-Request") == "true":
+        if self.is_htmx:
             return self.render_status(meeting, variants)
         if created:
             messages.success(

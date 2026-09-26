@@ -5,13 +5,16 @@ View mixins for the Work module.
 Provides:
 - OrganizationMixin: Base mixin for all organization-scoped views
 - PermissionRequiredMixin: Permission checking for views
-- HTMXMixin: HTMX-specific functionality
+- HTMXMixin: HTMX-Erkennung (auch für Session- und Insight-Views)
 """
+
+from typing import cast
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpRequest
 from django.shortcuts import redirect
+from django_htmx.middleware import HtmxDetails
 
 from .permissions import PermissionChecker
 
@@ -228,63 +231,21 @@ class PermissionRequiredMixin(OrganizationMixin):
         return PermissionChecker(self.membership).has_permission(permission)
 
 
-class HTMXMixin:
-    """
-    Mixin for HTMX-enabled views.
+class HtmxHttpRequest(HttpRequest):
+    """Anfrage mit ``request.htmx`` aus der django-htmx-Middleware (Typangabe für mypy)."""
 
-    Provides:
-    - is_htmx: Check if request is from HTMX
-    - htmx_trigger: Trigger client-side events
-    - htmx_redirect: Redirect with HX-Redirect header
-    """
+    htmx: HtmxDetails
+
+
+class HTMXMixin:
+    """HTMX-Erkennung für klassenbasierte Views über django-htmx (``request.htmx``)."""
+
+    request: HttpRequest
 
     @property
     def is_htmx(self) -> bool:
-        """Check if the request is from HTMX."""
-        return self.request.headers.get("HX-Request") == "true"
-
-    def htmx_trigger(self, event: str, detail: dict = None) -> dict:
-        """
-        Create headers to trigger a client-side event.
-
-        Usage:
-            response["HX-Trigger"] = json.dumps(self.htmx_trigger("itemCreated"))
-        """
-        if detail:
-            return {event: detail}
-        return event
-
-    def htmx_redirect(self, url: str) -> HttpResponse:
-        """
-        Redirect for HTMX requests.
-
-        HTMX ignores normal redirects, so we use HX-Redirect header.
-        """
-        if self.is_htmx:
-            response = HttpResponse(status=204)
-            response["HX-Redirect"] = url
-            return response
-        return redirect(url)
-
-    def get_template_names(self):
-        """
-        Select partial template for HTMX requests.
-
-        If is_htmx and a *_partial.html template exists, use it.
-        """
-        templates = super().get_template_names()
-
-        if self.is_htmx:
-            # Try to find partial versions
-            partial_templates = []
-            for template in templates:
-                # Convert template.html to template_partial.html
-                partial = template.replace(".html", "_partial.html")
-                partial_templates.append(partial)
-            # Partials first, then fallback to full templates
-            return partial_templates + templates
-
-        return templates
+        """Anfrage kommt von htmx (Header ``HX-Request: true``)."""
+        return bool(cast(HtmxHttpRequest, self.request).htmx)
 
 
 class WorkViewMixin(HTMXMixin, PermissionRequiredMixin):

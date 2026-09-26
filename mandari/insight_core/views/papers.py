@@ -11,6 +11,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from django.views.generic import DetailView, ListView
 
+from apps.common.mixins import HTMXMixin
+
 from ..models import (
     OParlAgendaItem,
     OParlMeeting,
@@ -25,7 +27,7 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class PaperListView(ActiveBodyRequiredMixin, ListView):
+class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
     """Liste aller Vorgänge."""
 
     model = OParlPaper
@@ -35,7 +37,7 @@ class PaperListView(ActiveBodyRequiredMixin, ListView):
 
     def get_template_names(self):
         # Für HTMX-Requests nur das Partial zurückgeben
-        if self.request.headers.get("HX-Request"):
+        if self.is_htmx:
             return ["partials/paper_list_items.html"]
         return [self.template_name]
 
@@ -211,7 +213,7 @@ RETRY_MESSAGE = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte 
 def _summary_response(request, context, status=200):
     """Teilansicht der Zusammenfassung; HTMX tauscht nur 2xx ein, deshalb dort immer 200."""
     response = render(request, "partials/paper_summary.html", context)
-    if status != 200 and not request.headers.get("HX-Request"):
+    if status != 200 and not request.htmx:
         response.status_code = status
     return response
 

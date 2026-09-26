@@ -109,7 +109,7 @@ class AttendanceDeleteView(SessionViewMixin, View):
         name = attendance.person.display_name
         attendance.delete()
         messages.success(request, f"{name} wurde von der Anwesenheitsliste entfernt.")
-        if request.headers.get("HX-Request") == "true":
+        if self.is_htmx:
             from django.http import HttpResponse
 
             return HttpResponse(status=204, headers={"HX-Refresh": "true"})

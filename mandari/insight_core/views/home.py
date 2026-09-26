@@ -199,9 +199,6 @@ def set_body(request, body_id):
     default_redirect = "/insight/"
     referer = request.META.get("HTTP_REFERER", "")
 
-    # For HTMX requests, use HX-Redirect header for reliable navigation
-    is_htmx = request.headers.get("HX-Request") == "true"
-
     if referer and url_has_allowed_host_and_scheme(
         referer,
         allowed_hosts={request.get_host()},
@@ -211,7 +208,8 @@ def set_body(request, body_id):
     else:
         redirect_url = default_redirect
 
-    if is_htmx:
+    # For HTMX requests, use HX-Redirect header for reliable navigation
+    if request.htmx:
         response = HttpResponse(status=200)
         response["HX-Redirect"] = redirect_url
         return response
@@ -235,10 +233,9 @@ def clear_body(request):
     request.session.save()
 
     # For HTMX requests, use HX-Redirect header
-    is_htmx = request.headers.get("HX-Request") == "true"
     redirect_url = "/insight/"
 
-    if is_htmx:
+    if request.htmx:
         response = HttpResponse(status=200)
         response["HX-Redirect"] = redirect_url
         return response

@@ -41,7 +41,6 @@ class FactionActionView(WorkViewMixin, View):
         meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
 
         action = request.POST.get("action")
-        is_htmx = request.headers.get("HX-Request")
 
         handlers = {
             # Status
@@ -86,7 +85,7 @@ class FactionActionView(WorkViewMixin, View):
         if handler:
             return handler(request, meeting)
 
-        if is_htmx:
+        if self.is_htmx:
             return HttpResponse(status=400)
         messages.error(request, "Ungültige Aktion.")
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
@@ -121,7 +120,7 @@ class FactionActionView(WorkViewMixin, View):
         """Return HX-Refresh for HTMX requests, redirect otherwise."""
         if msg:
             messages.success(request, msg)
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             resp = HttpResponse(status=200)
             resp["HX-Refresh"] = "true"
             return resp
@@ -298,7 +297,7 @@ class FactionActionView(WorkViewMixin, View):
 
         if not can_release_invitations(self.membership):
             messages.error(request, "Keine Berechtigung zur Freigabe des Einladungsversands.")
-            if request.headers.get("HX-Request"):
+            if self.is_htmx:
                 return HttpResponse(status=403)
             return self._redirect_detail(meeting)
 
@@ -329,7 +328,7 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse(status=403)
 
         if not title:
-            if request.headers.get("HX-Request"):
+            if self.is_htmx:
                 return HttpResponse("Titel ist erforderlich.", status=400)
             messages.error(request, "Titel ist erforderlich.")
             return self._redirect_detail(meeting)
@@ -372,7 +371,7 @@ class FactionActionView(WorkViewMixin, View):
             item.set_description_encrypted(description)
             item.save()
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
@@ -387,7 +386,7 @@ class FactionActionView(WorkViewMixin, View):
         title = request.POST.get("title", "").strip()
 
         if not title:
-            if request.headers.get("HX-Request"):
+            if self.is_htmx:
                 return HttpResponse("Titel ist erforderlich.", status=400)
             messages.error(request, "Titel ist erforderlich.")
             return self._redirect_detail(meeting)
@@ -406,7 +405,7 @@ class FactionActionView(WorkViewMixin, View):
 
         item.save()
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
@@ -428,7 +427,7 @@ class FactionActionView(WorkViewMixin, View):
             item.delete()
             _renumber_items(meeting, item.visibility if item else "public")
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
@@ -476,7 +475,7 @@ class FactionActionView(WorkViewMixin, View):
                     swap_target.save()
                     _renumber_items(meeting, item.visibility)
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
@@ -501,7 +500,7 @@ class FactionActionView(WorkViewMixin, View):
         agenda_item_id = request.POST.get("agenda_item_id")
 
         if not content:
-            if request.headers.get("HX-Request"):
+            if self.is_htmx:
                 return HttpResponse("Inhalt ist erforderlich.", status=400)
             return self._redirect_detail(meeting)
 
@@ -558,7 +557,7 @@ class FactionActionView(WorkViewMixin, View):
             except ValueError:
                 pass
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
@@ -580,7 +579,7 @@ class FactionActionView(WorkViewMixin, View):
 
         content = request.POST.get("content", "").strip()
         if not content:
-            if request.headers.get("HX-Request"):
+            if self.is_htmx:
                 return HttpResponse("Inhalt ist erforderlich.", status=400)
             return self._redirect_detail(meeting)
 
@@ -634,7 +633,7 @@ class FactionActionView(WorkViewMixin, View):
 
         entry.save()
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
@@ -652,7 +651,7 @@ class FactionActionView(WorkViewMixin, View):
                 return HttpResponse(status=403)
             entry.delete()
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
@@ -705,7 +704,7 @@ class FactionActionView(WorkViewMixin, View):
         # der vorherigen Sitzung (ProtocolApprovalService setzt Status + Metadaten)
         _apply_approval_item_decision(agenda_item, decision, meeting, self.membership)
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
@@ -735,7 +734,7 @@ class FactionActionView(WorkViewMixin, View):
         try:
             attendance = meeting.attendances.get(membership=self.membership)
         except FactionAttendance.DoesNotExist:
-            if request.headers.get("HX-Request"):
+            if self.is_htmx:
                 return HttpResponse('<p class="text-red-600 text-sm">Keine Einladung gefunden</p>')
             return self._redirect_detail(meeting)
 
@@ -746,7 +745,7 @@ class FactionActionView(WorkViewMixin, View):
             attendance.responded_at = timezone.now()
             attendance.save()
 
-            if request.headers.get("HX-Request"):
+            if self.is_htmx:
                 ctx = _get_meeting_context(self, meeting)
                 html = _render_partial("work/faction/_sidebar.html", ctx, request=request)
                 return _htmx_response(html)
@@ -780,7 +779,7 @@ class FactionActionView(WorkViewMixin, View):
                 attendance.participation_type = participation_type
             attendance.save()
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_attendance(request, meeting)
             return _htmx_response(html)
 
@@ -797,7 +796,7 @@ class FactionActionView(WorkViewMixin, View):
             attendance.checked_out_at = timezone.now()
             attendance.save()
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_attendance(request, meeting)
             return _htmx_response(html)
 
@@ -817,7 +816,7 @@ class FactionActionView(WorkViewMixin, View):
             attendance.participation_type = participation_type
             attendance.save(update_fields=["participation_type", "updated_at"])
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_attendance(request, meeting)
             return _htmx_response(html)
 
@@ -836,13 +835,13 @@ class FactionActionView(WorkViewMixin, View):
 
         if not can_confirm_attendance(self.membership):
             messages.error(request, "Nur Vorstand/Vorsitz können Teilnahmen bestätigen.")
-            if request.headers.get("HX-Request"):
+            if self.is_htmx:
                 return HttpResponse(status=403)
             return self._redirect_detail(meeting)
 
         if meeting.status != "completed":
             messages.error(request, "Teilnahmen können erst nach Sitzungsende bestätigt werden.")
-            if request.headers.get("HX-Request"):
+            if self.is_htmx:
                 return HttpResponse(status=400)
             return self._redirect_detail(meeting)
 
@@ -912,7 +911,7 @@ class FactionActionView(WorkViewMixin, View):
                 attendance.checked_in_at = timezone.now()
                 attendance.save()
 
-        if request.headers.get("HX-Request"):
+        if self.is_htmx:
             html = self._render_attendance(request, meeting)
             return _htmx_response(html)
 

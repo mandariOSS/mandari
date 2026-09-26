@@ -15,6 +15,8 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
 
+from apps.common.mixins import HTMXMixin
+
 USER_TENANTS_MAX_AGE = 600
 USER_TENANTS_SESSION_KEY = "session_user_tenants"
 USER_GROUPS_SESSION_KEY = "session_user_leitstellen"
@@ -394,42 +396,6 @@ class SessionPermissionMixin(SessionMixin):
         if not self.session_user:
             return False
         return SessionPermissionChecker(self.session_user).has_permission(permission)
-
-
-class HTMXMixin:
-    """
-    Mixin for HTMX-enabled views.
-
-    Provides:
-    - is_htmx: Check if request is from HTMX
-    - htmx_trigger: Trigger client-side events
-    - htmx_redirect: Redirect with HX-Redirect header
-    """
-
-    @property
-    def is_htmx(self) -> bool:
-        """Check if the request is from HTMX."""
-        return self.request.headers.get("HX-Request") == "true"
-
-    def htmx_trigger(self, event: str, detail: dict = None) -> dict:
-        """Create headers to trigger a client-side event."""
-        if detail:
-            return {event: detail}
-        return event
-
-    def get_template_names(self):
-        """Select partial template for HTMX requests."""
-        templates = super().get_template_names()
-
-        if self.is_htmx:
-            # Try to find partial versions
-            partial_templates = []
-            for template in templates:
-                partial = template.replace(".html", "_partial.html")
-                partial_templates.append(partial)
-            return partial_templates + templates
-
-        return templates
 
 
 class SessionViewMixin(HTMXMixin, SessionPermissionMixin):
