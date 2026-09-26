@@ -10,8 +10,8 @@ Prüft:
   (auch nicht für den Autor) – nur über die zugriffsgeprüfte Download-View:
   Autor 200, Gast mit Freigabe 200, Gast ohne Freigabe 403, Fremd-Org 404,
   anonym -> Login-Redirect
-- Übrige Uploads (z. B. Aufgaben-Anhänge) unter /media/ nur angemeldet;
-  Logos bleiben öffentlich
+- Aufgaben-Anhänge unter /media/ auch angemeldet nicht (nur über ihre
+  geprüfte Download-View, apps/work/files.py); Logos bleiben öffentlich
 - Teilen-Dialog: Stufenwahl (view/comment/edit) wird übernommen, "admin"
   wird auf "view" normalisiert, erneutes Hinzufügen aktualisiert die Stufe
 - Teilen-Dialog: nur aktive Mitglieder/Gäste DIESER Organisation
@@ -191,9 +191,9 @@ print("=== 1b. Übrige Medien: Login-Pflicht, Logos öffentlich ===")
 (MEDIA_DIR / "organizations" / "logos" / "logo.svg").write_text("<svg/>", encoding="utf-8")
 resp = c_anon.get("/media/tasks/attachments/notiz.txt")
 check("Anonym: Aufgaben-Anhang -> 404", resp.status_code == 404, f"got {resp.status_code}")
+# Work-Anhänge gehen nur über zugriffsgeprüfte Views hinaus (apps/work/files.py), auch nicht an Angemeldete
 resp = c_member.get("/media/tasks/attachments/notiz.txt")
-check("Angemeldet: Aufgaben-Anhang -> 200", resp.status_code == 200, f"got {resp.status_code}")
-check("Angemeldet: kein öffentliches Caching", "no-store" in resp.get("Cache-Control", ""), resp.get("Cache-Control"))
+check("Angemeldet: Aufgaben-Anhang über /media/ -> 404", resp.status_code == 404, f"got {resp.status_code}")
 resp = c_anon.get("/media/organizations/logos/logo.svg")
 check("Anonym: Logo -> 200", resp.status_code == 200, f"got {resp.status_code}")
 resp = c_anon.get("/media/session/files/2026/01/x.pdf")

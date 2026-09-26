@@ -9,6 +9,7 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.session.services.application_service import ApplicationService
+from apps.work.sanitize import safe_editor_html
 
 from .. import administration_feedback, ris_submission
 from ..models import Motion
@@ -52,7 +53,7 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
             {
                 "active_nav": "documents",
                 "motion": motion,
-                "motion_content": motion.get_content_decrypted(),
+                "motion_content": safe_editor_html(motion.get_content_decrypted()),
                 "connection": connection,
                 "connection_usable": usable,
                 "connection_reason": reason,

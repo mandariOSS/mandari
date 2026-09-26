@@ -345,7 +345,10 @@ class SupportTicketAttachmentInline(TabularInline):
 
     def file_link(self, obj):
         if obj.file:
-            return format_html('<a href="{}" target="_blank">Herunterladen</a>', obj.file.url)
+            from django.urls import reverse
+
+            url = reverse("admin:work_supportticket_attachment", args=[obj.ticket_id, obj.id])
+            return format_html('<a href="{}" target="_blank" rel="noopener">Herunterladen</a>', url)
         return "—"
 
     file_link.short_description = "Datei"
@@ -778,8 +781,25 @@ class SupportTicketAdmin(ModelAdmin):
                 self.admin_site.admin_view(self.reply_view),
                 name="work_supportticket_reply",
             ),
+            path(
+                "<uuid:ticket_id>/attachments/<uuid:attachment_id>/",
+                self.admin_site.admin_view(self.attachment_view),
+                name="work_supportticket_attachment",
+            ),
         ]
         return custom_urls + urls
+
+    def attachment_view(self, request, ticket_id, attachment_id):
+        """Ticket-Anhang für das Support-Team (Anhänge gehen nie über /media/, apps/work/files.py)."""
+        from django.core.exceptions import PermissionDenied
+        from django.shortcuts import get_object_or_404
+
+        from .files import attachment_response
+
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        attachment = get_object_or_404(SupportTicketAttachment, id=attachment_id, ticket_id=ticket_id)
+        return attachment_response(attachment.file, attachment.filename)
 
     def reply_view(self, request, object_id):
         """Handle reply submission."""
@@ -844,7 +864,9 @@ class FactionAgendaItemAttachmentAdmin(ModelAdmin):
     list_display = ("filename", "agenda_item", "file_size_display", "created_at")
     list_filter = ("created_at",)
     search_fields = ("filename", "agenda_item__title")
-    readonly_fields = ("id", "agenda_item", "file", "filename", "mime_type", "file_size", "uploaded_by", "created_at")
+    # Ohne Dateifeld: TOP-Anhänge gehen nur über die zugriffsgeprüfte Work-View hinaus (apps/work/files.py)
+    exclude = ("file",)
+    readonly_fields = ("id", "agenda_item", "filename", "mime_type", "file_size", "uploaded_by", "created_at")
     ordering = ("-created_at",)
 
     def file_size_display(self, obj):

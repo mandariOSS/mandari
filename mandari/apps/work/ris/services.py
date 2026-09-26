@@ -13,6 +13,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from django.utils.html import escape
+from django.utils.safestring import SafeString, mark_safe
+
 from insight_core.models import OParlBody
 
 from . import selectors
@@ -87,6 +90,29 @@ def resolve_search_bodies(bodies: Bodies, body_filter: str) -> tuple[list[str], 
     return all_body_ids, ""
 
 
+#: Felder, deren Treffer-Hervorhebung die Suchseite als HTML zeigt
+HIGHLIGHT_FIELDS = ("name", "text_content")
+
+
+def highlight_html(value: Any) -> SafeString:
+    """
+    Treffer-Hervorhebung als HTML: alles maskiert, nur die Such-Markierung bleibt.
+
+    Elasticsearch fügt ``HIGHLIGHT_PRE``/``HIGHLIGHT_POST`` in den unmaskierten Quelltext ein;
+    Namen und Volltexte stammen aus fremden Ratsinformationssystemen und PDFs.
+    """
+    from insight_core.services.search_service import HIGHLIGHT_POST, HIGHLIGHT_PRE
+
+    teile: list[str] = []
+    for index, abschnitt in enumerate(str(value or "").split(HIGHLIGHT_PRE)):
+        if index == 0:
+            teile.append(escape(abschnitt))
+            continue
+        markiert, _, rest = abschnitt.partition(HIGHLIGHT_POST)
+        teile.append(f"{HIGHLIGHT_PRE}{escape(markiert)}{HIGHLIGHT_POST}{escape(rest)}")
+    return mark_safe("".join(teile))
+
+
 def _elasticsearch_search(params: SearchQuery, body_ids: list[str]) -> SearchResult:
     from insight_core.services.search_service import ElasticsearchService
 
@@ -102,9 +128,10 @@ def _elasticsearch_search(params: SearchQuery, body_ids: list[str]) -> SearchRes
         organization_name=params.committee or None,
         paper_type=params.paper_type or None,
     )
-    # Django-Templates erlauben keinen Zugriff auf _-Attribute
+    # Django-Templates erlauben keinen Zugriff auf _-Attribute; als HTML nur maskiert mit Markierung
     for doc in result["results"]:
-        doc["formatted"] = doc.get("_formatted", {})
+        formatted = doc.get("_formatted") or {}
+        doc["formatted"] = {name: highlight_html(formatted[name]) for name in HIGHLIGHT_FIELDS if formatted.get(name)}
     return SearchResult(
         backend="elasticsearch",
         total=result["total"],

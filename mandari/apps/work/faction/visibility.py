@@ -36,3 +36,13 @@ def is_item_internal(item) -> bool:
 def can_view_item(item, membership) -> bool:
     """Darf das Mitglied Inhalte dieses TOPs sehen?"""
     return not is_item_internal(item) or can_view_internal(membership)
+
+
+def can_view_item_with_parents(item, membership) -> bool:
+    """Wie ``can_view_item``, zusätzlich darf kein übergeordneter TOP nicht-öffentlich sein."""
+    node = item
+    while node is not None:
+        if not can_view_item(node, membership):
+            return False
+        node = node.parent
+    return True

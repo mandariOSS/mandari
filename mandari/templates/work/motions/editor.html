@@ -99,7 +99,7 @@
                 {% else %}
                 <div class="content-readonly">
                     {% if motion_content %}
-                        {{ motion_content|safe }}
+                        {{ motion_content }}
                     {% else %}
                         <p class="text-gray-400">Kein Inhalt vorhanden.</p>
                     {% endif %}
@@ -189,7 +189,7 @@
 
             <!-- Hidden: initial content for TipTap -->
             {% if can_edit %}
-            <template id="editor-initial-content">{{ motion_content|default:''|safe }}</template>
+            <template id="editor-initial-content">{{ motion_content }}</template>
             {% endif %}
         </div>
 

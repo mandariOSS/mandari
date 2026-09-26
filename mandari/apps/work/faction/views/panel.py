@@ -12,7 +12,7 @@ Simplified architecture: 4 views instead of 13.
 import json
 import logging
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -22,6 +22,7 @@ from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import DOCUMENTS, MB, validate_upload
+from apps.work.files import attachment_response
 
 from ..models import (
     FactionAgendaItem,
@@ -33,7 +34,7 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
-from ..visibility import can_view_item
+from ..visibility import can_view_item, can_view_item_with_parents
 from ._helpers import _apply_approval_item_decision
 
 
@@ -65,8 +66,6 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
         # NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs NICHTS —
         # auch nicht über das Panel (serverseitig)
         if not can_view_item(item, self.membership):
-            from django.core.exceptions import PermissionDenied
-
             raise PermissionDenied("Gesperrte Information")
 
         # Try to get decision (OneToOne, may not exist)
@@ -143,6 +142,26 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
             }
         )
         return context
+
+
+class FactionAttachmentDownloadView(WorkViewMixin, View):
+    """
+    Anhang eines Fraktions-TOPs herunterladen.
+
+    Anhänge gehen nicht über ``/media/`` hinaus (apps/work/files.py), sondern nur hier – mit
+    derselben NÖ-Grenze wie das Panel (Issue #64): Nicht-Vereidigte erhalten von
+    nicht-öffentlichen TOPs (auch als Unterpunkt) nichts.
+    """
+
+    permission_required = "faction.view_public"
+
+    def get(self, request, *args, **kwargs):
+        meeting = get_object_or_404(FactionMeeting, id=kwargs["meeting_id"], organization=self.organization)
+        item = get_object_or_404(FactionAgendaItem, id=kwargs["item_id"], meeting=meeting)
+        if not can_view_item_with_parents(item, self.membership):
+            raise PermissionDenied("Gesperrte Information")
+        attachment = get_object_or_404(FactionAgendaItemAttachment, id=kwargs["attachment_id"], agenda_item=item)
+        return attachment_response(attachment.file, attachment.filename)
 
 
 class FactionItemPanelActionView(WorkViewMixin, View):

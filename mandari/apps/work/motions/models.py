@@ -22,6 +22,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
+from apps.work.files import letterhead_path
 
 
 class MotionType(models.Model):
@@ -127,7 +128,7 @@ class OrganizationLetterhead(models.Model):
     )
 
     # The PDF file (only for kind=pdf)
-    pdf_file = models.FileField(upload_to="motions/letterheads/%Y/%m/", blank=True, null=True, verbose_name="PDF-Datei")
+    pdf_file = models.FileField(upload_to=letterhead_path, blank=True, null=True, verbose_name="PDF-Datei")
 
     # === Generated letterhead (kind=generated) ===
     header_logo_enabled = models.BooleanField(
@@ -1052,24 +1053,59 @@ class Motion(EncryptionMixin, models.Model):
             return "edit"
         return "comment" if membership.has_permission("motions.comment") else "view"
 
-    def get_collab_access_level(self, membership) -> str | None:
+    def editor_access_level(self, membership) -> str:
         """
-        Zugriffsstufe im Live-Kollaborationsmodus (WebSocket-Consumer).
+        Zugriffsstufe im Editor: 'admin', 'edit', 'comment', 'view' oder 'none'.
 
-        Freigabe-Level (inkl. Gast-/Ordner-Freigaben) bleiben über
-        can_edit/can_comment die Obergrenze; darauf wird die zentrale
-        Status-Sperre (apply_status_lock) angewendet. Returns
-        'edit'/'comment'/'view' oder None ohne Zugriff.
+        Einzige Stelle für die Stufenlogik – der HTTP-Editor (DocumentEditorView) und der
+        WebSocket-Consumer (get_collab_access_level) nutzen sie gemeinsam:
+        - Gäste: ausschließlich ihre persönliche Freigabe (nie Verwaltungsrechte)
+        - Mitglieder brauchen ``motions.view``; Autor:in verwaltet, ``motions.edit_all``
+          bearbeitet, eine persönliche Freigabe „Bearbeiten“ bearbeitet mit ``motions.edit``,
+          sonst Kommentieren (``motions.comment``) oder Lesen
+        - danach greift die Status-Sperre (apply_status_lock)
         """
         if not self.can_access(membership):
-            return None
-        if self.can_edit(membership):
+            return "none"
+
+        if getattr(membership, "is_guest", False):
+            level = self.get_guest_share_level(membership)
+            if level is None:
+                return "none"
+            if level == "admin":
+                level = "edit"  # Gäste erhalten nie Verwaltungsrechte
+            return self.apply_status_lock(level, membership)
+
+        if not membership.has_permission("motions.view"):
+            return "none"
+        if self.author_id == membership.id:
+            level = "admin"
+        elif membership.has_permission("motions.edit_all") or (
+            membership.has_permission("motions.edit") and self._member_share_level(membership) in ("edit", "admin")
+        ):
             level = "edit"
-        elif self.can_comment(membership):
+        elif membership.has_permission("motions.comment"):
             level = "comment"
         else:
             level = "view"
         return self.apply_status_lock(level, membership)
+
+    def _member_share_level(self, membership) -> str | None:
+        """Höchste persönliche Freigabestufe (scope=user) eines Mitglieds oder ``None``."""
+        levels = set(self.shares.filter(scope="user", user_id=membership.user_id).values_list("level", flat=True))
+        return next((level for level in ("admin", "edit", "comment", "view") if level in levels), None)
+
+    def get_collab_access_level(self, membership) -> str | None:
+        """
+        Zugriffsstufe im Live-Kollaborationsmodus (WebSocket-Consumer).
+
+        Dieselbe Stufe wie im HTTP-Editor (editor_access_level, inkl. Status-Sperre);
+        'admin' zählt hier als 'edit'. Returns 'edit'/'comment'/'view' oder None ohne Zugriff.
+        """
+        level = self.editor_access_level(membership)
+        if level == "none":
+            return None
+        return "edit" if level == "admin" else level
 
     def can_comment(self, membership) -> bool:
         """

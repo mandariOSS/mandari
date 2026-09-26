@@ -103,6 +103,95 @@ def _save_organization(organization: Organization, **kwargs: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Rechte-Invariante: Niemand vergibt mehr Rechte, als er selbst hat
+# ---------------------------------------------------------------------------
+#
+# Gilt für alle Wege, auf denen Rollen oder Rechte entstehen: Einladung (auch beim Annehmen),
+# Standardrolle der Selbstregistrierung, Rollenverwaltung, Rollenvergabe, Reaktivierung und
+# Änderungsanträge. Administrator-Rollen vergeben, entziehen und bearbeiten nur Administratoren.
+
+ADMIN_ONLY_MESSAGE = "Nur Administratoren können die Administrator-Rolle vergeben oder entziehen."
+
+
+def _is_admin(membership: Membership | None) -> bool:
+    return membership is not None and bool(selectors.permission_checker(membership).is_admin())
+
+
+def _role_codes(role: Role) -> set[str]:
+    """Rechte einer Rolle; eine Administrator-Rolle umfasst alle."""
+    if role.is_admin:
+        from apps.common.permissions import PERMISSIONS
+
+        return set(PERMISSIONS)
+    return selectors.role_permission_codes(role)
+
+
+def _exceeds_own_rights(actor: Membership, codes: set[str]) -> bool:
+    return any(not actor.has_permission(code) for code in codes)
+
+
+def _grant_problem(actor: Membership | None, roles: list[Role], *, bestand: set[Any] | None = None) -> str | None:
+    """
+    Grund, warum ``actor`` diese Rollen nicht vergeben darf – oder ``None``.
+
+    Rollen in ``bestand`` (IDs) hat die Person schon; sie gelten nicht als neu vergeben.
+    """
+    if _is_admin(actor):
+        return None
+    for role in roles:
+        if bestand and role.id in bestand:
+            continue
+        if role.is_admin:
+            return ADMIN_ONLY_MESSAGE
+        if actor is None or _exceeds_own_rights(actor, _role_codes(role)):
+            return (
+                f"Die Rolle „{role.name}“ umfasst Rechte, die Sie selbst nicht haben. "
+                "Nur Administratoren können sie vergeben."
+            )
+    return None
+
+
+def grantable_roles(actor: Membership, roles: Any) -> list[Role]:
+    """Rollen, die ``actor`` vergeben darf (Auswahl im Einladungsformular)."""
+    return [role for role in roles if _grant_problem(actor, [role]) is None]
+
+
+def _ensure_may_restore(actor: Membership | None, member: Membership) -> None:
+    """Reaktivieren gibt die bisherigen Rechte zurück – nur im Rahmen der eigenen Rechte."""
+    if _is_admin(actor):
+        return
+    if _grant_problem(actor, list(member.roles.all())) is not None or (
+        actor is not None
+        and _exceeds_own_rights(actor, set(member.individual_permissions.values_list("codename", flat=True)))
+    ):
+        raise ServiceError("Mitglieder mit weitergehenden Rechten können nur Administratoren reaktivieren.")
+
+
+def _has_admin_role(member: Membership) -> bool:
+    return member.roles.filter(is_admin=True).exists()
+
+
+def _other_admins_exist(
+    organization: Organization, *, member: Membership | None = None, role: Role | None = None
+) -> bool:
+    """Gibt es außer ``member`` (bzw. ohne die Admin-Eigenschaft von ``role``) noch aktive Administratoren?"""
+    admin_roles = Role.objects.filter(organization=organization, is_admin=True)
+    if role is not None:
+        admin_roles = admin_roles.exclude(id=role.id)
+    admins = Membership.objects.filter(organization=organization, is_active=True, is_guest=False, roles__in=admin_roles)
+    if member is not None:
+        admins = admins.exclude(id=member.id)
+    return admins.exists()
+
+
+def _active_membership(organization: Organization, user: User | None) -> Membership | None:
+    membership = selectors.find_membership(organization, user) if user is not None else None
+    if membership is None or not membership.is_active or membership.is_guest:
+        return None
+    return membership
+
+
+# ---------------------------------------------------------------------------
 # Einladungen
 # ---------------------------------------------------------------------------
 
@@ -132,14 +221,17 @@ def invite_member(organization: Organization, inviter: User, email: str, role_id
     Mitglied einladen: bestehende inaktive Mitgliedschaft reaktivieren, sonst Einladung anlegen und mailen.
 
     Wirft ``ServiceError`` (Warnung) bei bereits aktivem Mitglied oder offener Einladung.
-    Liefert die Erfolgsmeldung.
+    Rollen und Reaktivierungen nur im Rahmen der eigenen Rechte (Administrator-Rolle nur
+    durch Administratoren). Liefert die Erfolgsmeldung.
     """
+    actor = _active_membership(organization, inviter)
     existing_user = selectors.find_user_by_email(email)
     if existing_user:
         existing_membership = selectors.find_membership(organization, existing_user)
         if existing_membership:
             if existing_membership.is_active:
                 raise ServiceError(f"{email} ist bereits Mitglied dieser Organisation.", message_levels.WARNING)
+            _ensure_may_restore(actor, existing_membership)
             existing_membership.is_active = True
             existing_membership.registration_requested_at = None
             existing_membership.save()
@@ -150,6 +242,9 @@ def invite_member(organization: Organization, inviter: User, email: str, role_id
         raise ServiceError(f"Eine Einladung für {email} ist bereits ausstehend.", message_levels.WARNING)
 
     roles = selectors.roles_by_ids(organization, role_ids) if role_ids else None
+    problem = _grant_problem(actor, list(roles)) if roles is not None else None
+    if problem is not None:
+        raise ServiceError(problem)
     try:
         invitation = UserInvitation.create_for_organization(
             organization=organization,
@@ -179,6 +274,24 @@ def cancel_invitation(invitation: UserInvitation) -> str:
     return email
 
 
+def _invitation_roles(invitation: UserInvitation) -> list[Role]:
+    """
+    Rollen, die eine Einladung beim Annehmen verleiht – geprüft gegen die einladende Person.
+
+    So verleihen auch Einladungen, die vor der Rechte-Invariante entstanden sind, nichts über
+    deren Rahmen hinaus. Einladungen der Plattform-Einrichtung (Superuser, Provisionierung)
+    bleiben unverändert; ohne einladendes Mitglied entfällt die Administrator-Rolle.
+    """
+    roles = list(invitation.roles.all())
+    inviter = invitation.invited_by
+    if inviter is not None and inviter.is_superuser:
+        return roles
+    actor = _active_membership(invitation.organization, inviter)
+    if actor is None:
+        return [role for role in roles if not role.is_admin]
+    return grantable_roles(actor, roles)
+
+
 @transaction.atomic
 def accept_invitation(invitation: UserInvitation, user: User) -> str:
     """
@@ -201,8 +314,9 @@ def accept_invitation(invitation: UserInvitation, user: User) -> str:
             invited_by=invitation.invited_by,
             invitation_accepted_at=timezone.now(),
         )
-        if invitation.roles.exists():
-            membership.roles.set(invitation.roles.all())
+        roles = _invitation_roles(invitation)
+        if roles:
+            membership.roles.set(roles)
         if not organization.owner:
             organization.owner = user
             _save_organization(organization)
@@ -413,16 +527,27 @@ def update_member_expertise(organization: Organization, member: Membership, topi
 def update_member_roles(organization: Organization, member: Membership, actor: Membership, role_ids: list[str]) -> None:
     """
     Rollen setzen. Rechte-Eskalation verhindern: Nicht-Admins dürfen weder ihre eigenen
-    Rollen ändern noch die Administrator-Rolle vergeben oder entziehen.
+    Rollen ändern noch die Administrator-Rolle vergeben oder entziehen, und neu vergebene
+    Rollen dürfen nicht über ihre eigenen Rechte hinausgehen. Mindestens ein Administrator bleibt.
     """
     if member.is_guest:
         raise ServiceError("Gast-Zugänge können keine Rollen erhalten.")
-    roles = selectors.roles_by_ids(organization, role_ids)
-    if not selectors.permission_checker(actor).is_admin():
+    roles = list(selectors.roles_by_ids(organization, role_ids))
+    bestand = list(member.roles.all())
+    if not _is_admin(actor):
         if member.user == actor.user:
             raise ServiceError("Eigene Rollen können nur Administratoren ändern.")
-        if selectors.contains_admin_role(member.roles.all()) or selectors.contains_admin_role(roles):
-            raise ServiceError("Nur Administratoren können die Administrator-Rolle vergeben oder entziehen.")
+        if any(role.is_admin for role in bestand):
+            raise ServiceError(ADMIN_ONLY_MESSAGE)
+        problem = _grant_problem(actor, roles, bestand={role.id for role in bestand})
+        if problem is not None:
+            raise ServiceError(problem)
+    if (
+        any(role.is_admin for role in bestand)
+        and not any(role.is_admin for role in roles)
+        and not _other_admins_exist(organization, member=member)
+    ):
+        raise ServiceError("Mindestens ein Administrator muss bleiben.")
     member.roles.set(roles)
 
 
@@ -442,23 +567,32 @@ def update_member_permissions(
     member.denied_permissions.set(selectors.permissions_by_codenames(denied_codes))
 
 
+def _ensure_may_remove(organization: Organization, member: Membership, actor_user: User) -> None:
+    """Administratoren deaktivieren oder entfernen nur Administratoren."""
+    if _has_admin_role(member) and not _is_admin(_active_membership(organization, actor_user)):
+        raise ServiceError("Administratoren können nur von Administratoren deaktiviert oder entfernt werden.")
+
+
 def deactivate_member(organization: Organization, member: Membership, actor_user: User) -> None:
     """Mitglied deaktivieren (Soft-Delete); Eigentümer und man selbst sind ausgenommen."""
     if member.user == organization.owner:
         raise ServiceError("Der Eigentümer kann nicht deaktiviert werden.")
     if member.user == actor_user:
         raise ServiceError("Sie können sich nicht selbst deaktivieren.")
+    _ensure_may_remove(organization, member, actor_user)
     member.is_active = False
     member.save()
 
 
-def reactivate_member(organization: Organization, member: Membership) -> bool:
+def reactivate_member(organization: Organization, member: Membership, actor: Membership) -> bool:
     """
     Mitglied reaktivieren und per E-Mail informieren; liefert, ob die Mail versendet wurde.
-    Das Gast-Limit gilt auch hier (sonst per Deaktivieren/Reaktivieren umgehbar).
+    Das Gast-Limit gilt auch hier (sonst per Deaktivieren/Reaktivieren umgehbar); die
+    bisherigen Rechte kehren nur im Rahmen der Rechte der handelnden Person zurück.
     """
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
+    _ensure_may_restore(actor, member)
     variant: emails.AccessVariant = "approved" if member.registration_requested_at else "reactivated"
     member.is_active = True
     member.registration_requested_at = None
@@ -472,6 +606,7 @@ def remove_member(organization: Organization, member: Membership, actor_user: Us
         raise ServiceError("Der Eigentümer kann nicht entfernt werden.")
     if member.user == actor_user:
         raise ServiceError("Sie können sich nicht selbst entfernen.")
+    _ensure_may_remove(organization, member, actor_user)
     name = display_name(member.user)
     member.delete()
     return name
@@ -564,8 +699,10 @@ def join_by_self_registration(organization: Organization, user: User) -> Members
                 "registration_requested_at": None if auto_approve else timezone.now(),
             },
         )
-        if created and organization.registration_default_role is not None:
-            membership.roles.add(organization.registration_default_role)
+        default_role = organization.registration_default_role
+        # Nie automatisch Administrator – auch nicht bei einer älteren Einstellung
+        if created and default_role is not None and not default_role.is_admin:
+            membership.roles.add(default_role)
     if created:
         announce_self_registration(membership)
     return membership
@@ -693,8 +830,9 @@ def approver_may_apply(organization: Organization, change_request: MemberChangeR
     """
     Darf ein Nicht-Admin diesen Antrag genehmigen?
 
-    Nein bei eigenem Antrag, bei Vergabe direkter Berechtigungen und bei
-    role_change, der eine Administrator-Rolle enthält.
+    Nein bei eigenem Antrag, bei Vergabe direkter Berechtigungen, bei role_change, der eine
+    Administrator-Rolle enthält oder einem Administrator Rollen ändert, und bei Rollen, die
+    über die eigenen Rechte der genehmigenden Person hinausgehen.
     """
     if change_request.requester == approver:
         return False
@@ -702,7 +840,11 @@ def approver_may_apply(organization: Organization, change_request: MemberChangeR
         return False
     if change_request.request_type == "role_change":
         role_ids = change_request.request_data.get("requested_roles", [])
-        if Role.objects.filter(id__in=role_ids, organization=organization, is_admin=True).exists():
+        requester = change_request.requester
+        if _has_admin_role(requester):
+            return False
+        bestand = set(requester.roles.values_list("id", flat=True))
+        if _grant_problem(approver, list(selectors.roles_by_ids(organization, role_ids)), bestand=bestand):
             return False
     return True
 
@@ -715,7 +857,14 @@ def _apply_change(organization: Organization, change_request: MemberChangeReques
     if change_request.request_type == "role_change":
         role_ids = data.get("requested_roles", [])
         if role_ids:
-            requester.roles.set(selectors.roles_by_ids(organization, role_ids))
+            roles = list(selectors.roles_by_ids(organization, role_ids))
+            if (
+                _has_admin_role(requester)
+                and not any(role.is_admin for role in roles)
+                and not _other_admins_exist(organization, member=requester)
+            ):
+                raise ServiceError("Mindestens ein Administrator muss bleiben.")
+            requester.roles.set(roles)
     elif change_request.request_type == "committee_change":
         bodies = selectors.organization_bodies(organization)
         if bodies.exists():
@@ -1060,17 +1209,33 @@ def regenerate_api_token(organization: Organization, membership: Membership) -> 
 
 
 def save_registration_settings(
-    organization: Organization, *, enabled: bool, auto_approve: bool, domains_text: str, default_role_id: str
+    organization: Organization,
+    *,
+    actor: Membership,
+    enabled: bool,
+    auto_approve: bool,
+    domains_text: str,
+    default_role_id: str,
 ) -> None:
-    """Selbstregistrierungs-Einstellungen speichern (Domains eine pro Zeile, bereinigt)."""
+    """
+    Selbstregistrierungs-Einstellungen speichern (Domains eine pro Zeile, bereinigt).
+
+    Die Standardrolle ist nie eine Administrator-Rolle und geht nicht über die Rechte der
+    handelnden Person hinaus – sonst verliehe die Registrierung Rechte, die diese nicht vergeben darf.
+    """
+    default_role = selectors.find_role(organization, default_role_id) if default_role_id else None
+    if default_role is not None:
+        if default_role.is_admin:
+            raise ServiceError("Die Administrator-Rolle kann nicht Standardrolle der Registrierung sein.")
+        problem = _grant_problem(actor, [default_role])
+        if problem is not None:
+            raise ServiceError(problem)
     organization.registration_enabled = enabled
     organization.registration_auto_approve = auto_approve
     organization.registration_email_domains = [
         d.strip().lower().lstrip("@") for d in domains_text.splitlines() if d.strip()
     ]
-    organization.registration_default_role = (
-        selectors.find_role(organization, default_role_id) if default_role_id else None
-    )
+    organization.registration_default_role = default_role
     _save_organization(
         organization,
         update_fields=[
@@ -1351,6 +1516,11 @@ class RoleInput:
     permission_codes: list[str] = field(default_factory=list)
 
 
+def _known_codes(codes: list[str]) -> set[str]:
+    """Nur Codenames, die es als Berechtigung gibt (unbekannte vergibt ``permissions_by_codenames`` nicht)."""
+    return set(selectors.permissions_by_codenames(codes).values_list("codename", flat=True))
+
+
 def _priority(raw: str, fallback: int) -> int:
     return min(max(int(raw or fallback), 0), 100)
 
@@ -1359,13 +1529,31 @@ def _color(raw: str, fallback: str) -> str:
     return raw if HEX_COLOR_RE.match(raw) else fallback
 
 
+def _ensure_role_change_allowed(actor: Membership, *, role: Role | None, is_admin: bool, added_codes: set[str]) -> None:
+    """
+    Rollenverwaltung ohne Administrator-Rolle: keine Administrator-Rollen anlegen oder
+    bearbeiten, nicht die eigene Rolle ändern, keine Rechte über die eigenen hinaus vergeben.
+    """
+    if _is_admin(actor):
+        return
+    if is_admin or (role is not None and role.is_admin):
+        raise ServiceError("Administrator-Rollen können nur Administratoren anlegen oder bearbeiten.")
+    if role is not None and actor.roles.filter(id=role.id).exists():
+        raise ServiceError("Die eigene Rolle können nur Administratoren ändern.")
+    if _exceeds_own_rights(actor, added_codes):
+        raise ServiceError("Sie können einer Rolle keine Rechte geben, die Sie selbst nicht haben.")
+
+
 @transaction.atomic
-def create_role(organization: Organization, data: RoleInput) -> Role:
+def create_role(organization: Organization, data: RoleInput, actor: Membership) -> Role:
     """Rolle anlegen (Name je Organisation eindeutig); Berechtigungen nur für Nicht-Admin-Rollen."""
     if not data.name:
         raise ServiceError("Der Name ist erforderlich.")
     if selectors.role_name_exists(organization, data.name):
         raise ServiceError(f"Eine Rolle mit dem Namen '{data.name}' existiert bereits.")
+    _ensure_role_change_allowed(
+        actor, role=None, is_admin=data.is_admin, added_codes=_known_codes(data.permission_codes)
+    )
     role = Role.objects.create(
         organization=organization,
         name=data.name,
@@ -1382,12 +1570,25 @@ def create_role(organization: Organization, data: RoleInput) -> Role:
 
 
 @transaction.atomic
-def update_role(organization: Organization, role: Role, data: RoleInput) -> None:
+def update_role(organization: Organization, role: Role, data: RoleInput, actor: Membership) -> None:
     """Rolle aktualisieren; bei Systemrollen bleiben is_admin und Priorität unverändert."""
     if not data.name:
         raise ServiceError("Der Name ist erforderlich.")
     if selectors.role_name_exists(organization, data.name, exclude_id=role.id):
         raise ServiceError(f"Eine Rolle mit dem Namen '{data.name}' existiert bereits.")
+    _ensure_role_change_allowed(
+        actor,
+        role=role,
+        is_admin=data.is_admin and not role.is_system_role,
+        added_codes=_known_codes(data.permission_codes) - selectors.role_permission_codes(role),
+    )
+    if (
+        role.is_admin
+        and not role.is_system_role
+        and not data.is_admin
+        and not _other_admins_exist(organization, role=role)
+    ):
+        raise ServiceError("Mindestens ein Administrator muss bleiben.")
     role.name = data.name
     role.description = data.description
     role.color = _color(data.color, role.color)
@@ -1417,8 +1618,17 @@ def delete_role(role: Role) -> str:
     return name
 
 
-def reset_role(role: Role) -> bool:
-    """Standard-Rolle auf ihre Definition aus setup_roles zurücksetzen."""
+def reset_role(role: Role, actor: Membership) -> bool:
+    """Standard-Rolle auf ihre Definition aus setup_roles zurücksetzen (Rechte-Invariante wie beim Bearbeiten)."""
+    definition = cast(Any, Role).get_default_definition(role.name)
+    if definition is None:
+        return False
+    _ensure_role_change_allowed(
+        actor,
+        role=role,
+        is_admin=bool(definition.get("is_admin")),
+        added_codes=set(definition.get("permissions", [])) - selectors.role_permission_codes(role),
+    )
     return role.reset_to_default()
 
 

@@ -10,7 +10,7 @@ import re
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -19,6 +19,7 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import DOCUMENTS, MB, validate_upload
+from apps.work.files import attachment_response
 from apps.work.notifications.services import NotificationHub
 
 from .models import (
@@ -273,6 +274,27 @@ class SupportDetailView(WorkViewMixin, TemplateView):
                 messages.success(request, "Das Ticket wurde wieder geöffnet.")
 
         return redirect("work:support_detail", org_slug=self.organization.slug, ticket_id=ticket.id)
+
+
+class SupportAttachmentDownloadView(WorkViewMixin, View):
+    """
+    Anhang eines Support-Tickets herunterladen.
+
+    Anhänge gehen nicht über ``/media/`` hinaus (apps/work/files.py), sondern nur hier – mit
+    derselben Grenze wie die Ticket-Ansicht: Ersteller:in oder ``support.manage``; Anhänge
+    interner Notizen nur für das Support-Team.
+    """
+
+    permission_required = "support.view"
+
+    def get(self, request, *args, **kwargs):
+        ticket = get_object_or_404(SupportTicket, id=kwargs["ticket_id"], organization=self.organization)
+        if ticket.created_by != self.membership and not self.has_permission("support.manage"):
+            raise Http404("Datei nicht gefunden.")
+        attachment = get_object_or_404(SupportTicketAttachment, id=kwargs["attachment_id"], ticket=ticket)
+        if attachment.message is not None and attachment.message.is_internal and not request.user.is_staff:
+            raise Http404("Datei nicht gefunden.")
+        return attachment_response(attachment.file, attachment.filename)
 
 
 class SupportTicketMessagesPartialView(WorkViewMixin, View):

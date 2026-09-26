@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 from django.urls import reverse
 
-EDIT_PERMISSIONS = ["members.view", "members.edit"]
+# Rollen vergeben und Mitglieder entfernen verlangen je ein eigenes Recht zusätzlich zu members.edit
+EDIT_PERMISSIONS = ["members.view", "members.edit", "members.manage_roles", "members.remove"]
 INLINE_SCRIPT_RE = re.compile(r"<script\b(?![^>]*type=\"application/json\")", re.I)
 ON_HANDLER_RE = re.compile(r"\son[a-z]+=\"", re.I)
 

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from django.core.files.uploadedfile import UploadedFile
 
+from apps.work.sanitize import sanitize_editor_html
 from insight_core.services.document_extraction import extract_text_from_file
 
 if TYPE_CHECKING:
@@ -121,10 +122,11 @@ class MotionImportService:
                 if not text_content.strip().startswith("<"):
                     # Convert line breaks to paragraphs
                     paragraphs = text_content.split("\n\n")
-                    html_content = "\n".join(f"<p>{p.strip()}</p>" for p in paragraphs if p.strip())
+                    html_content = "\n".join(f"<p>{_escape_html(p.strip())}</p>" for p in paragraphs if p.strip())
                     motion.set_content_encrypted(html_content)
                 else:
-                    motion.set_content_encrypted(text_content)
+                    # Übernommenes HTML nur als Positivliste des Editors (apps/work/sanitize.py)
+                    motion.set_content_encrypted(sanitize_editor_html(text_content))
             else:
                 motion.set_content_encrypted(
                     "<p><em>Text konnte nicht extrahiert werden. Bitte überprüfen Sie das Original-PDF.</em></p>"
@@ -261,7 +263,7 @@ class MotionImportService:
                 motion.document_type = motion_type
 
             if html_content.strip():
-                motion.set_content_encrypted(html_content)
+                motion.set_content_encrypted(sanitize_editor_html(html_content))
             else:
                 motion.set_content_encrypted("<p><em>Kein Text im Dokument gefunden.</em></p>")
             motion.save()

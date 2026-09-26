@@ -29,6 +29,7 @@ from .api_agenda import (
 from .api_documents import (
     FileAnnotationAPIView,
     SupplementaryDocumentAPIView,
+    SupplementaryDocumentDownloadView,
 )
 from .list import (
     MeetingCalendarEventsView,
@@ -64,6 +65,7 @@ __all__ = [
     "SpeechLinkableDocumentsAPIView",
     "SpeechNoteAPIView",
     "SupplementaryDocumentAPIView",
+    "SupplementaryDocumentDownloadView",
     "TeleprompterView",
     "get_primary_paper_for_item",
     "is_pdf_file",

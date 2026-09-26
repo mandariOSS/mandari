@@ -392,7 +392,7 @@ def test_search_uses_elasticsearch_result(monkeypatch: Any, body: OParlBody) -> 
         def search_all(self, **kwargs: Any) -> dict[str, Any]:
             calls.append(kwargs)
             return {
-                "results": [{"title": "Treffer", "_formatted": {"title": "<em>Treffer</em>"}}],
+                "results": [{"name": "Treffer", "_formatted": {"name": "<em>Treffer</em>", "title": "x"}}],
                 "total": 1,
                 "page": 2,
                 "pages": 3,
@@ -405,7 +405,8 @@ def test_search_uses_elasticsearch_result(monkeypatch: Any, body: OParlBody) -> 
     result = services.search(services.SearchQuery(query="x", paper_type="Antrag", page=2), [str(body.id)])
 
     assert result.backend == "elasticsearch" and (result.total, result.page, result.pages) == (1, 2, 3)
-    assert result.es_results[0]["formatted"] == {"title": "<em>Treffer</em>"}
+    # Nur die angezeigten Felder, maskiert (die Such-Markierung selbst bleibt, siehe test_suche_hervorhebung)
+    assert result.es_results[0]["formatted"] == {"name": "&lt;em&gt;Treffer&lt;/em&gt;"}
     assert calls[0]["body_ids"] == [str(body.id)] and calls[0]["index_names"] == ["papers"]
     assert calls[0]["page_size"] == services.SEARCH_PAGE_SIZE
 

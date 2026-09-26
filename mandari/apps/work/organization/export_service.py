@@ -554,7 +554,7 @@ class DsgvoExportService:
     def export_to_pdf(self, data: dict, user, organization) -> HttpResponse:
         """Export data as PDF download."""
         context = {
-            "data": data,
+            "data": self.pdf_data(data),
             "user": user,
             "organization": organization,
             "export_date": timezone.now(),
@@ -568,6 +568,19 @@ class DsgvoExportService:
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+    @staticmethod
+    def pdf_data(data: dict) -> dict:
+        """
+        Daten für die HTML-/PDF-Ausgabe: Dokumentinhalte nur als bereinigtes Editor-HTML.
+
+        Der JSON-Export bleibt unverändert vollständig; als HTML wird Inhalt dagegen nie
+        ungeprüft ausgegeben (apps/work/sanitize.py).
+        """
+        from apps.work.sanitize import safe_editor_html
+
+        motions = [{**m, "content": safe_editor_html(m.get("content"))} for m in data.get("motions") or []]
+        return {**data, "motions": motions}
 
     def _html_to_pdf(self, html_content: str) -> bytes:
         """Convert HTML to PDF using xhtml2pdf with reportlab fallback."""

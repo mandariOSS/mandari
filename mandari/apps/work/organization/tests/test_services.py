@@ -137,7 +137,7 @@ def test_invite_guest_creates_account_and_respects_limit(org: Any, admin: Any, m
         org, admin, email="dritter@example.org", note="", share_level="view", document_ids=[], folder_ids=[]
     )
     with pytest.raises(ServiceError):
-        services.reactivate_member(org, guest)
+        services.reactivate_member(org, guest, admin)
 
 
 # ---------------------------------------------------------------------------
@@ -309,21 +309,22 @@ def test_council_parties_and_contacts(org: Any) -> None:
 
 
 @pytest.mark.django_db
-def test_role_services(org: Any, member: Any) -> None:
+def test_role_services(org: Any, member: Any, admin: Any) -> None:
     PermissionFactory(codename="motions.view")  # type: ignore[no-untyped-call]
     with pytest.raises(ServiceError, match="erforderlich"):
-        services.create_role(org, services.RoleInput(name=""))
+        services.create_role(org, services.RoleInput(name=""), admin)
     role = services.create_role(
         org,
         services.RoleInput(name="Beisitz", color="rot", priority_raw="150", permission_codes=["motions.view"]),
+        admin,
     )
     assert role.color == "#6b7280"
     assert role.priority == 100
     assert selectors.role_permission_codes(role) == {"motions.view"}
     with pytest.raises(ServiceError, match="existiert bereits"):
-        services.create_role(org, services.RoleInput(name="Beisitz"))
+        services.create_role(org, services.RoleInput(name="Beisitz"), admin)
 
-    services.update_role(org, role, services.RoleInput(name="Beisitz neu", is_admin=True, color="#112233"))
+    services.update_role(org, role, services.RoleInput(name="Beisitz neu", is_admin=True, color="#112233"), admin)
     role.refresh_from_db()
     assert role.is_admin is True
     assert role.color == "#112233"
@@ -336,7 +337,7 @@ def test_role_services(org: Any, member: Any) -> None:
     assert services.delete_role(role) == "Beisitz neu"
 
     system_role = Role.objects.create(organization=org, name="System", is_system_role=True, priority=10)
-    services.update_role(org, system_role, services.RoleInput(name="System", is_admin=True, priority_raw="99"))
+    services.update_role(org, system_role, services.RoleInput(name="System", is_admin=True, priority_raw="99"), admin)
     system_role.refresh_from_db()
     assert system_role.is_admin is False
     assert system_role.priority == 10
@@ -409,6 +410,7 @@ def test_email_api_and_registration_settings(org: Any, admin: Any) -> None:
     role = Role.objects.create(organization=org, name="Standard")
     services.save_registration_settings(
         org,
+        actor=admin,
         enabled=True,
         auto_approve=False,
         domains_text="@Example.org\n\n beispiel.de ",

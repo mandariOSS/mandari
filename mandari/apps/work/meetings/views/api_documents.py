@@ -8,6 +8,7 @@ from django.http import Http404, JsonResponse
 from django.views import View
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.files import attachment_response
 
 from .. import selectors, services
 from ..serializers import serialize_document, serialize_file_annotation, serialize_new_document
@@ -61,6 +62,22 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
         if not services.delete_document(self.membership, doc_id):
             raise Http404
         return JsonResponse({"success": True})
+
+
+class SupplementaryDocumentDownloadView(WorkViewMixin, View):
+    """
+    Hochgeladene Anlage der Sitzungsvorbereitung herunterladen bzw. als PDF-Vorschau zeigen.
+
+    Anlagen gehen nicht über ``/media/`` hinaus (apps/work/files.py), sondern nur hier: für
+    Mitglieder der eigenen Organisation mit Vorbereitungsrecht (wie die Dokument-API).
+    ``?vorschau=1`` liefert PDF eingebettet für den Vorschau-Rahmen.
+    """
+
+    permission_required = "meetings.prepare"
+
+    def get(self, request, *args, **kwargs):
+        doc = selectors.get_uploaded_document_or_404(self.organization, self.kwargs["doc_id"])
+        return attachment_response(doc.file, doc.filename, allow_pdf_inline="vorschau" in request.GET)
 
 
 class FileAnnotationAPIView(WorkViewMixin, View):

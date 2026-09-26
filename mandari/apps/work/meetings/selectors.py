@@ -451,6 +451,11 @@ def resolve_file_anchor(organization: Organization | None, anchor_type: str | No
     raise Http404
 
 
+def get_uploaded_document_or_404(organization: Organization, doc_id: Any) -> AgendaSupplementaryDocument:
+    """Hochgeladene Anlage der eigenen Organisation; fremde Organisationen und Links ergeben 404."""
+    return get_object_or_404(AgendaSupplementaryDocument, id=doc_id, organization=organization, document_type="file")
+
+
 def file_annotations(organization: Organization, anchor: dict[str, Any]) -> list[FileAnnotation]:
     """Alle Anmerkungen der Organisation an einem Anker."""
     return list(
@@ -568,7 +573,7 @@ def _documents_by_item(
     docs_qs = (
         AgendaSupplementaryDocument.objects.filter(organization=organization)
         .filter(Q(agenda_item__in=agenda_items) | Q(paper_id__in=all_paper_ids, share_across_committees=True))
-        .select_related("added_by__user", "oparl_file")
+        .select_related("organization", "added_by__user", "oparl_file")
     )
     item_ids = {item.id for item in agenda_items}
     items_by_paper: dict[Any, list[Any]] = {}

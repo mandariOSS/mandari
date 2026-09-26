@@ -41,8 +41,8 @@
                 <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <div class="flex flex-wrap gap-2">
                         {% for attachment in message.attachments.all %}
-                        <a href="{{ attachment.file.url }}"
-                           target="_blank"
+                        <a href="{% url 'work:support_attachment_download' org_slug=organization.slug ticket_id=ticket.id attachment_id=attachment.id %}"
+                           target="_blank" rel="noopener"
                            class="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                             {% if 'image' in attachment.mime_type %}
                             <i data-lucide="image" class="w-4 h-4 text-blue-500"></i>

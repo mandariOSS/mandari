@@ -14,6 +14,8 @@ import uuid
 
 from django.db import models
 
+from apps.work.files import task_attachment_path
+
 
 class TaskLabel(models.Model):
     """Farbiges Label für Aufgaben, pro Organisation."""
@@ -359,7 +361,7 @@ class TaskAttachment(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="attachments", verbose_name="Aufgabe")
-    file = models.FileField(upload_to="tasks/attachments/%Y/%m/", verbose_name="Datei")
+    file = models.FileField(upload_to=task_attachment_path, verbose_name="Datei")
     filename = models.CharField(max_length=255, verbose_name="Dateiname")
     mime_type = models.CharField(max_length=100, verbose_name="MIME-Typ")
     file_size = models.PositiveIntegerField(default=0, verbose_name="Dateigröße (Bytes)")

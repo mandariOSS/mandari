@@ -17,6 +17,8 @@ import contextlib
 
 from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import MB, PDF, validate_upload
+from apps.work.files import attachment_response
+from apps.work.sanitize import safe_editor_html
 
 from ..forms import (
     MotionTemplateForm,
@@ -685,6 +687,23 @@ class LetterheadEditorPreviewView(WorkViewMixin, View):
         return render(request, "work/motions/_generated_letterhead.html", context)
 
 
+class LetterheadFileView(WorkViewMixin, View):
+    """
+    PDF eines Briefkopfs (Hintergrund im Editor, „Anzeigen“ in den Einstellungen).
+
+    Briefköpfe gehen nicht über ``/media/`` hinaus (apps/work/files.py), sondern nur hier:
+    für Mitglieder der eigenen Organisation mit Dokumentrecht (wie die Editor-Vorschau).
+    """
+
+    permission_required = "motions.view"
+
+    def get(self, request, *args, **kwargs):
+        letterhead = get_object_or_404(
+            OrganizationLetterhead, id=kwargs["letterhead_id"], organization=self.organization
+        )
+        return attachment_response(letterhead.pdf_file, f"{letterhead.name}.pdf", allow_pdf_inline=True)
+
+
 class MotionTemplatePreviewView(WorkViewMixin, TemplateView):
     """
     Vorschau einer Dokumentvorlage: Inhaltsvorlage + gewählter Briefkopf
@@ -704,7 +723,7 @@ class MotionTemplatePreviewView(WorkViewMixin, TemplateView):
         context["template"] = template
 
         values = build_placeholder_values(self.organization, responsible_name="Erika Musterfrau")
-        context["content_html"] = apply_placeholders(template.content_template or "", values)
+        context["content_html"] = safe_editor_html(apply_placeholders(template.content_template or "", values))
         context["signature_text"] = apply_placeholders(template.signature_block or "", values)
 
         letterhead = template.letterhead

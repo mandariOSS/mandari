@@ -20,6 +20,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.common.uploads import DOCUMENTS, validate_upload
+from apps.work.sanitize import sanitize_editor_html
 
 from . import consumers, selectors
 from .models import (
@@ -215,7 +216,8 @@ def save_speech_note(
     """
     Redebeitrag partiell speichern: title / content / estimated_duration / is_shared / linked_document.
 
-    content enthält HTML (WYSIWYG); es wird nichts gestrippt — nur Ausgabe-Views sanitizen.
+    content enthält HTML (WYSIWYG) und wird auf die Positivliste des Editors reduziert
+    (apps/work/sanitize.py); geteilte Redebeiträge gehen an andere Mitglieder.
     Ein verknüpftes Dokument wird VOR dem Anlegen geprüft (403 ohne Seiteneffekt).
     """
     linked_document = None
@@ -228,7 +230,7 @@ def save_speech_note(
         author=membership, agenda_item=agenda_item, defaults={"organization": organization}
     )
     if "content" in payload:
-        set_encrypted(note, "content", payload.get("content") or "")
+        set_encrypted(note, "content", sanitize_editor_html(payload.get("content") or ""))
     if "title" in payload:
         note.title = payload.get("title") or ""
     if "estimated_duration" in payload:

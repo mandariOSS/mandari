@@ -919,8 +919,8 @@ def submitted_applications(organization: Organization) -> QuerySet[SessionApplic
 
 
 def registration_roles(organization: Organization) -> QuerySet[Role]:
-    """Rollen für das Standardrollen-Dropdown der Selbstregistrierung."""
-    return organization.roles.order_by("priority", "name")
+    """Rollen für das Standardrollen-Dropdown der Selbstregistrierung (nie Administrator-Rollen)."""
+    return organization.roles.exclude(is_admin=True).order_by("priority", "name")
 
 
 def find_role(organization: Organization, role_id: Any) -> Role | None:

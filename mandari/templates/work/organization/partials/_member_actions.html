@@ -1,9 +1,9 @@
 {# Mitglied-Detail: Aktionen (deaktivieren, reaktivieren, entfernen, Eigentümerschaft übertragen) #}
-{# Kontext: member, organization, is_self, is_owner, request #}
+{# Kontext: member, organization, is_self, is_owner, can_remove, request #}
 <c-ui.card title="Aktionen">
     <div class="space-y-4">
         {% if not is_self and not is_owner %}
-            {% if member.is_active %}
+            {% if member.is_active and can_remove %}
             <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied deaktivieren', message: 'Das Mitglied kann sich danach nicht mehr anmelden.', confirmText: 'Deaktivieren', variant: 'warning'}).then(ok => ok && $el.submit())">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="deactivate">
@@ -16,7 +16,7 @@
                     <i data-lucide="user-x" class="w-5 h-5 text-gray-400"></i>
                 </button>
             </form>
-            {% else %}
+            {% elif not member.is_active %}
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="reactivate">
@@ -31,6 +31,7 @@
             </form>
             {% endif %}
 
+            {% if can_remove %}
             <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied entfernen', message: 'Das Mitglied wird komplett aus der Organisation entfernt. Diese Aktion kann nicht rückgängig gemacht werden.', confirmText: 'Entfernen', variant: 'danger'}).then(ok => ok && $el.submit())">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="remove">
@@ -43,6 +44,7 @@
                     <i data-lucide="trash-2" class="w-5 h-5 text-red-400"></i>
                 </button>
             </form>
+            {% endif %}
         {% endif %}
 
         {% if request.user == organization.owner and not is_self %}

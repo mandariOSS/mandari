@@ -61,9 +61,9 @@
                 <div class="mb-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg flex items-center justify-between">
                     <div class="flex items-center gap-2">
                         <i data-lucide="file" class="w-4 h-4 text-gray-400"></i>
-                        <span class="text-sm text-gray-700 dark:text-gray-300">{{ letterhead.pdf_file.name }}</span>
+                        <span class="text-sm text-gray-700 dark:text-gray-300">Aktuelle PDF-Datei</span>
                     </div>
-                    <a href="{{ letterhead.pdf_file.url }}" target="_blank" class="text-sm text-primary-600 hover:underline">Anzeigen</a>
+                    <a href="{% url 'work:document_letterhead_file' org_slug=organization.slug letterhead_id=letterhead.id %}" target="_blank" rel="noopener" class="text-sm text-primary-600 hover:underline">Anzeigen</a>
                 </div>
                 <p class="text-xs text-gray-500 mb-2">Laden Sie eine neue Datei hoch, um die bestehende zu ersetzen:</p>
                 {% endif %}

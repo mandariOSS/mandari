@@ -35,6 +35,7 @@ from .meetings import (
     FactionMeetingListView,
 )
 from .panel import (
+    FactionAttachmentDownloadView,
     FactionItemPanelActionView,
     FactionItemPanelView,
 )
@@ -45,6 +46,7 @@ from .settings import (
 __all__ = [
     "CertificateVerifyView",
     "FactionActionView",
+    "FactionAttachmentDownloadView",
     "FactionAttendanceExportView",
     "FactionAuditLogView",
     "FactionCertificateDownloadView",

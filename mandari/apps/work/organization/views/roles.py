@@ -61,7 +61,7 @@ class RoleCreateView(WorkViewMixin, TemplateView):
 
     def post(self, request, *args, **kwargs):
         try:
-            role = services.create_role(self.organization, _role_input(request))
+            role = services.create_role(self.organization, _role_input(request), self.membership)
         except ServiceError as exc:
             flash_error(request, exc)
             return redirect("work:role_create", org_slug=self.organization.slug)
@@ -88,7 +88,9 @@ class RoleEditView(WorkViewMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         role = selectors.get_role_or_404(self.organization, kwargs["role_id"])
         try:
-            services.update_role(self.organization, role, _role_input(request, role.color, str(role.priority)))
+            services.update_role(
+                self.organization, role, _role_input(request, role.color, str(role.priority)), self.membership
+            )
         except ServiceError as exc:
             flash_error(request, exc)
             return redirect("work:role_edit", org_slug=self.organization.slug, role_id=role.id)
@@ -123,10 +125,15 @@ class RoleResetView(WorkViewMixin, View):
 
     def post(self, request, *args, **kwargs):
         role = selectors.get_role_or_404(self.organization, kwargs["role_id"])
-        if services.reset_role(role):
-            messages.success(request, f"Rolle '{role.name}' wurde auf den Standard zurückgesetzt.")
+        try:
+            reset = services.reset_role(role, self.membership)
+        except ServiceError as exc:
+            flash_error(request, exc)
         else:
-            messages.error(request, f"Für '{role.name}' existiert keine Standard-Definition.")
+            if reset:
+                messages.success(request, f"Rolle '{role.name}' wurde auf den Standard zurückgesetzt.")
+            else:
+                messages.error(request, f"Für '{role.name}' existiert keine Standard-Definition.")
         return redirect("work:roles", org_slug=self.organization.slug)
 
 

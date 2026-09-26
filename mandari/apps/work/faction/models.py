@@ -18,6 +18,7 @@ from django.db import models
 from django.utils import timezone
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
+from apps.work.files import faction_attachment_path
 
 
 def generate_opaque_token() -> str:
@@ -1401,7 +1402,7 @@ class FactionAgendaItemAttachment(models.Model):
         related_name="attachments",
         verbose_name="TOP",
     )
-    file = models.FileField(upload_to="faction/attachments/%Y/%m/", verbose_name="Datei")
+    file = models.FileField(upload_to=faction_attachment_path, verbose_name="Datei")
     filename = models.CharField(max_length=255, verbose_name="Dateiname")
     mime_type = models.CharField(max_length=100, blank=True, verbose_name="MIME-Typ")
     file_size = models.PositiveIntegerField(default=0, verbose_name="Dateigröße (Bytes)")

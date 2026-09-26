@@ -12,6 +12,9 @@ Beweist:
 - yjs_save persistiert in gesperrten Status NICHT (weder yjs_document noch
   content_encrypted), mit edit_all weiterhin schon.
 - Normale Status (draft/internal_review): unverändert 'edit' + Persistenz.
+- Die Stufe folgt im WebSocket wie im HTTP-Editor Motion.editor_access_level: Ein
+  Mitglied mit persönlicher Freigabe „Bearbeiten“ bearbeitet, ohne Freigabe nur
+  Kommentieren (fremdes Dokument, kein motions.edit_all).
 - HTTP-Editor: Zugriffsstufen wie bisher (Autor 'admin' im Entwurf,
   'comment' im gesperrten Status, Speichern → 403); edit_all darf weiterhin
   speichern.
@@ -134,6 +137,10 @@ motion.save()
 
 # Gast: persönliche Freigabe mit Level edit
 MotionShare.objects.create(motion=motion, scope="user", user=guest_user, level="edit", created_by=author_user)
+# Mitglied: persönliche Freigabe „Bearbeiten“ (ohne sie bliebe es beim Kommentieren wie im HTTP-Editor)
+MotionShare.objects.create(motion=motion, scope="user", user=member_user, level="edit", created_by=author_user)
+colleague_user = User.objects.create_user(email="kollegin-sl@example.org", password="test1234!")
+Membership.objects.create(user=colleague_user, organization=org).roles.add(edit_role)
 
 DOCS = f"/work/{org.slug}/documents"
 
@@ -157,7 +164,12 @@ def ws_access(user):
 print("=== 1. WS-Zugriffsstufen (Status-Sperre) ===")
 
 check("Modell: draft nicht gesperrt", motion.is_status_locked is False)
-check("(c) draft: Mitglied (motions.edit) -> edit", ws_access(member_user) == "edit", ws_access(member_user))
+check("(c) draft: Mitglied mit Freigabe Bearbeiten -> edit", ws_access(member_user) == "edit", ws_access(member_user))
+check(
+    "draft: Mitglied ohne Freigabe -> comment (wie HTTP-Editor)",
+    ws_access(colleague_user) == "comment",
+    ws_access(colleague_user),
+)
 check("draft: Autor -> edit", ws_access(author_user) == "edit", ws_access(author_user))
 check("draft: edit_all -> edit", ws_access(editall_user) == "edit", ws_access(editall_user))
 check("draft: Gast mit edit-Freigabe -> edit", ws_access(guest_user) == "edit", ws_access(guest_user))
@@ -294,7 +306,15 @@ check("draft: Autor Editor 200", resp.status_code == 200, f"got {resp.status_cod
 check("draft: Autor access_level admin", resp.context["access_level"] == "admin", str(resp.context["access_level"]))
 resp = member_client.get(f"{DOCS}/{motion.id}/")
 check(
-    "draft: Mitglied access_level comment (HTTP wie bisher)",
+    "draft: Mitglied mit Freigabe Bearbeiten access_level edit (wie WebSocket)",
+    resp.context["access_level"] == "edit",
+    str(resp.context["access_level"]),
+)
+colleague_client = Client()
+colleague_client.force_login(colleague_user)
+resp = colleague_client.get(f"{DOCS}/{motion.id}/")
+check(
+    "draft: Mitglied ohne Freigabe access_level comment",
     resp.context["access_level"] == "comment",
     str(resp.context["access_level"]),
 )

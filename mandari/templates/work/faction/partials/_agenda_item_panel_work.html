@@ -71,7 +71,7 @@
         {% for att in attachments %}
         <div class="group/att flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm">
             <i data-lucide="{{ att.icon_name }}" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
-            <a href="{{ att.file.url }}" target="_blank" class="flex-1 min-w-0 truncate text-primary-600 hover:text-primary-700">
+            <a href="{% url 'work:faction_attachment_download' org_slug=org_slug meeting_id=meeting.id item_id=item.id attachment_id=att.id %}" target="_blank" rel="noopener" class="flex-1 min-w-0 truncate text-primary-600 hover:text-primary-700">
                 {{ att.filename }}
             </a>
             <span class="text-xs text-gray-400 flex-shrink-0">{{ att.size_human }}</span>
