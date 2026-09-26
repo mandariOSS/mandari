@@ -12,13 +12,27 @@ on:
     branches:
       - dev
       - main
+    # Reine Doku-Änderungen brauchen keine Test-Suite (keine Pflicht-Checks im Branch-Schutz)
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSES/**'
   pull_request:
     branches:
       - dev
       - main
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSES/**'
 
 permissions:
   contents: read
+
+# Neuer Push in einen PR bricht dessen laufende Prüfung ab; dev/main laufen immer vollständig durch
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # ===========================================================================
@@ -85,11 +99,13 @@ jobs:
           POSTGRES_DB: test
         ports:
           - 5432:5432
+        # Datenbank im Arbeitsspeicher: Testdaten müssen keinen Neustart überleben
         options: >-
+          --tmpfs /var/lib/postgresql/data:rw
           --health-cmd pg_isready
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
       redis:
         image: redis:7-alpine
@@ -124,7 +140,7 @@ jobs:
           pip install shared/
           cd mandari
           pip install -r requirements.lock
-          pip install pytest pytest-django pytest-cov factory-boy
+          pip install pytest pytest-django pytest-cov pytest-xdist factory-boy
           pip install "sqlalchemy>=2.0"  # Schema-Contract gegen die Ingestor-Modelle
 
       - uses: actions/setup-node@v7
@@ -174,19 +190,64 @@ jobs:
           DEBUG: 'false'
         run: |
           cd mandari
-          # Coverage-Gate (Issue #157): Stand 09/2026 40 % – Schwelle darf nur steigen
-          pytest -v --cov=apps --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38 --ignore=tests_e2e
+          # Coverage-Gate (Issue #157): Stand 09/2026 40 % – Schwelle darf nur steigen.
+          # Parallel auf allen Kernen (pytest-xdist; je Worker eine eigene Test-Datenbank), Tests einer
+          # Datei bleiben auf einem Worker. --durations zeigt die langsamsten Tests für gezielte Arbeit.
+          pytest -n auto --dist loadfile -q -rfE --durations=25 --cov=apps --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38 --ignore=tests_e2e
 
       - name: Schema-Contract Django ↔ Ingestor (docs/adr/20260909-schema-contract-django-ingestor.md)
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
         run: python scripts/check_schema_contract.py
 
-      # Die Smoke-Skripte migrieren sonst jedes fuer sich rund 38 Sekunden lang
-      # eine frische SQLite hoch — 42-mal dasselbe Schema. Einmal bauen, danach
-      # kopieren (scripts/_smoke_db.py). Der Pfad landet ueber GITHUB_ENV in
-      # MANDARI_SMOKE_DB_TEMPLATE. Passt der Fingerabdruck der Migrationen
-      # nicht, migriert ein Skript von selbst wieder vollstaendig.
+
+  # ===========================================================================
+  # Smoke-Tests: eigener Job, läuft parallel zu pytest
+  # ===========================================================================
+  smoke:
+    name: Smoke-Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2-dev libpango1.0-dev libffi-dev shared-mime-info pkg-config poppler-utils tesseract-ocr tesseract-ocr-deu
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install shared/
+          cd mandari
+          pip install -r requirements.lock
+          pip install pytest pytest-django factory-boy
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: mandari/package-lock.json
+      - name: Frontend-Assets bauen (Vite-Manifest für django-vite)
+        run: cd mandari && npm ci --ignore-scripts && npx vite build
+
+      - name: Collect static files
+        env:
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+          DEBUG: 'false'
+        run: cd mandari && python manage.py collectstatic --noinput
+
+      # Die Smoke-Skripte migrieren sonst jedes für sich rund 38 Sekunden lang eine frische SQLite hoch.
+      # Einmal bauen, danach kopieren (scripts/_smoke_db.py); der Pfad landet über GITHUB_ENV in
+      # MANDARI_SMOKE_DB_TEMPLATE. Ohne Vorlage migriert jedes Skript selbst – das machte Läufe mit
+      # einem roten Test früher 40 Minuten lang, weil die Vorlage dann übersprungen wurde.
       - name: Smoke-Datenbankvorlage einmalig erzeugen
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
@@ -197,98 +258,80 @@ jobs:
       # scripts/performance_budgets.json und duerfen nur sinken; die Antwortzeit
       # ist wegen der Schwankung der Laeufer nur eine Warnung.
       - name: Performance-Budgets der Kernseiten (Abfragen hart, Zeit als Warnung)
-        if: ${{ !cancelled() }}
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
         run: python scripts/check_performance_budgets.py
 
-      # Session-Sicherheits-Suiten (Issue #28): Tenant-Isolation,
-      # OE/NOE-Sichtbarkeit und Permission-Matrix. Die Skripte setzen ihre
-      # Umgebung (SQLite, Schluessel) selbst.
-      - name: Session security smoke tests
-        env:
-          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-        run: |
-          python scripts/smoke_session_applications.py
-          python scripts/smoke_session_audit_log.py
-          python scripts/smoke_session_files.py
-          python scripts/smoke_session_agenda.py
-          python scripts/smoke_session_stammdaten.py
-          python scripts/smoke_session_invitations.py
-          python scripts/smoke_session_attendance.py
-          python scripts/smoke_session_protocols.py
-          python scripts/smoke_session_resolutions.py
-          python scripts/smoke_session_reminders.py
-          python scripts/smoke_session_calendar.py
-          python scripts/smoke_session_textblocks.py
-          python scripts/smoke_session_reports.py
-          python scripts/smoke_session_search.py
-          python scripts/smoke_session_cosign.py
-          python scripts/smoke_session_voting.py
-          python scripts/smoke_feedback.py
-          python scripts/smoke_session_paper_workflow.py
-          python scripts/smoke_session_consultations.py
-          python scripts/smoke_session_oparl.py
-          python scripts/smoke_insight_durchstich.py
-          python scripts/smoke_faction_meetings.py
-
-      # Work-Portal: Gastzugänge, Dokument-Freigaben und geschützte Anhänge
-      # Diese 21 Skripte liefen bisher in keinem CI-Schritt; sieben davon waren
-      # unbemerkt verfallen (Issue #249). Mit der Schema-Vorlage kosten sie
-      # zusammen rund zwei Minuten.
-      - name: Uebrige Smoke-Tests (bisher ohne CI-Abdeckung)
+      # Jedes Skript nutzt eine eigene temporäre Datenbank; vier laufen gleichzeitig (scripts/run_smokes.py).
+      - name: Smoke-Skripte (parallel)
         if: ${{ !cancelled() }}
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-        run: |
-          python scripts/smoke_admin_dashboard.py
-          python scripts/smoke_collab_ai.py
-          python scripts/smoke_editor_polish.py
-          python scripts/smoke_insight_select.py
-          python scripts/smoke_letterhead_export.py
-          python scripts/smoke_meetings_rework.py
-          python scripts/smoke_member_privilege.py
-          python scripts/smoke_motions_status_lock.py
-          python scripts/smoke_motions_tracking.py
-          python scripts/smoke_oparl_api.py
-          python scripts/smoke_oparl_file_size.py
-          python scripts/smoke_org_logo.py
-          python scripts/smoke_pdf_annotations.py
-          python scripts/smoke_prepare_ui.py
-          python scripts/smoke_prepare_ws_guard.py
-          python scripts/smoke_pwa.py
-          python scripts/smoke_session_privacy.py
-          python scripts/smoke_session_terms.py
-          python scripts/smoke_tombstones.py
-          python scripts/smoke_url_reachability.py
-          python scripts/smoke_work_idor.py
-
-      - name: Work guest & document smoke tests
-        # Auch ausführen, wenn ein vorheriger Smoke-Step rot ist (kein Verdecken)
-        if: ${{ !cancelled() }}
-        env:
-          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-        run: |
-          python scripts/smoke_org_guests.py
-          python scripts/smoke_document_folders.py
-          python scripts/smoke_document_sharing.py
-          python scripts/smoke_demo_environment.py
-          python scripts/smoke_work_public_api.py
-          python scripts/smoke_session_roles.py
-          python scripts/smoke_ris_submission.py
-          python scripts/smoke_work_decisions.py
-          python scripts/smoke_insight_decisions.py
-          python scripts/smoke_session_devices.py
-          python scripts/smoke_session_monthly_allowances.py
-          python scripts/smoke_session_allowances.py
-          python scripts/smoke_session_encryption.py
-          python scripts/smoke_tasks_import_export.py
-          python scripts/smoke_insight_questions.py
-          python scripts/smoke_admin_monitoring.py
-          python scripts/smoke_file_cache.py
-          python scripts/smoke_guest_notifications.py
-          python scripts/smoke_guest_overview.py
-          python scripts/smoke_insight_calendar.py
+        run: >-
+          python scripts/run_smokes.py -j 4
+          scripts/smoke_session_applications.py
+          scripts/smoke_session_audit_log.py
+          scripts/smoke_session_files.py
+          scripts/smoke_session_agenda.py
+          scripts/smoke_session_stammdaten.py
+          scripts/smoke_session_invitations.py
+          scripts/smoke_session_attendance.py
+          scripts/smoke_session_protocols.py
+          scripts/smoke_session_resolutions.py
+          scripts/smoke_session_reminders.py
+          scripts/smoke_session_calendar.py
+          scripts/smoke_session_textblocks.py
+          scripts/smoke_session_reports.py
+          scripts/smoke_session_search.py
+          scripts/smoke_session_cosign.py
+          scripts/smoke_session_voting.py
+          scripts/smoke_feedback.py
+          scripts/smoke_session_paper_workflow.py
+          scripts/smoke_session_consultations.py
+          scripts/smoke_session_oparl.py
+          scripts/smoke_insight_durchstich.py
+          scripts/smoke_faction_meetings.py
+          scripts/smoke_admin_dashboard.py
+          scripts/smoke_collab_ai.py
+          scripts/smoke_editor_polish.py
+          scripts/smoke_insight_select.py
+          scripts/smoke_letterhead_export.py
+          scripts/smoke_meetings_rework.py
+          scripts/smoke_member_privilege.py
+          scripts/smoke_motions_status_lock.py
+          scripts/smoke_motions_tracking.py
+          scripts/smoke_oparl_api.py
+          scripts/smoke_oparl_file_size.py
+          scripts/smoke_org_logo.py
+          scripts/smoke_pdf_annotations.py
+          scripts/smoke_prepare_ui.py
+          scripts/smoke_prepare_ws_guard.py
+          scripts/smoke_pwa.py
+          scripts/smoke_session_privacy.py
+          scripts/smoke_session_terms.py
+          scripts/smoke_tombstones.py
+          scripts/smoke_url_reachability.py
+          scripts/smoke_work_idor.py
+          scripts/smoke_org_guests.py
+          scripts/smoke_document_folders.py
+          scripts/smoke_document_sharing.py
+          scripts/smoke_demo_environment.py
+          scripts/smoke_work_public_api.py
+          scripts/smoke_session_roles.py
+          scripts/smoke_ris_submission.py
+          scripts/smoke_work_decisions.py
+          scripts/smoke_insight_decisions.py
+          scripts/smoke_session_devices.py
+          scripts/smoke_session_monthly_allowances.py
+          scripts/smoke_session_allowances.py
+          scripts/smoke_session_encryption.py
+          scripts/smoke_tasks_import_export.py
+          scripts/smoke_insight_questions.py
+          scripts/smoke_admin_monitoring.py
+          scripts/smoke_file_cache.py
+          scripts/smoke_guest_notifications.py
+          scripts/smoke_guest_overview.py
+          scripts/smoke_insight_calendar.py
 
   # ===========================================================================
   # Docker Build Validation

@@ -16,6 +16,10 @@ from prometheus_client import REGISTRY
 
 from apps.common import metrics
 
+# Die Anfragen laufen durch den vollständigen Middleware-Stack; dessen Verbindungs-Aufräumen darf die DB
+# berühren. Ohne Freigabe hingen die Tests von der Reihenfolge ab (unter pytest-xdist rot).
+pytestmark = pytest.mark.django_db
+
 AUSSEN = "203.0.113.5"  # Dokumentationsnetz, in keinem privaten Bereich
 
 

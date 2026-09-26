@@ -15,6 +15,10 @@ from django.test import Client
 
 from apps.common import health
 
+# Die Anfragen laufen durch den vollständigen Middleware-Stack; dessen Verbindungs-Aufräumen darf die DB
+# berühren. Ohne Freigabe hingen die Tests von der Reihenfolge ab (unter pytest-xdist rot).
+pytestmark = pytest.mark.django_db
+
 
 @pytest.fixture
 def alles_ok(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -30,11 +34,14 @@ def _ausfall(name: str, monkeypatch: pytest.MonkeyPatch, fehler: Exception | Non
     monkeypatch.setattr(health, "CHECKS", checks)
 
 
-def test_liveness_braucht_keine_abhaengigkeiten(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_liveness_braucht_keine_abhaengigkeiten(
+    client: Client, monkeypatch: pytest.MonkeyPatch, django_assert_num_queries: Any
+) -> None:
     _ausfall("database", monkeypatch)
     _ausfall("cache", monkeypatch)
 
-    response = client.get("/health/live/")
+    with django_assert_num_queries(0):
+        response = client.get("/health/live/")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
