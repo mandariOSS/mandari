@@ -155,8 +155,11 @@ class OParlSourceAdmin(ModelAdmin):
         item = evaluate_source(obj)
         colors = {"green": "#16a34a", "amber": "#d97706", "red": "#dc2626", "gray": "#64748b"}
         title = "; ".join(item["reasons"])
-        return mark_safe(
-            f'<span title="{title}" style="color: {colors[item["color"]]}; font-weight: 600;">{item["label"]}</span>'
+        return format_html(
+            '<span title="{}" style="color: {}; font-weight: 600;">{}</span>',
+            title,
+            colors[item["color"]],
+            item["label"],
         )
 
     @admin.action(description="Fehlerzähler und Alarm zurücksetzen")
@@ -179,7 +182,7 @@ class OParlSourceAdmin(ModelAdmin):
             color, label = "#0891b2", source_type
         else:
             color, label = "#16a34a", "oparl"
-        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{label}</span>')
+        return status_text(color, label)
 
     @admin.display(description="Scraper-Status")
     def scraper_status_display(self, obj):

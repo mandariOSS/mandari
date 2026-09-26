@@ -359,38 +359,45 @@ class SupportTicketMessageInline(ReadOnlyAdminMixin, StackedInline):
 
     def message_display(self, obj):
         """Rich display of message with author and timestamp."""
-        import html as html_module
-
         try:
-            content = html_module.escape(obj.get_content_decrypted())
+            content = obj.get_content_decrypted()
         except Exception:
             content = "[Inhalt verschlüsselt]"
 
         if obj.author_staff:
-            author_name = html_module.escape(obj.author_staff.get_full_name() or obj.author_staff.email)
-            author = f"<strong class='ticket-msg-staff'>⚡ {author_name} (Support)</strong>"
+            author = format_html(
+                "<strong class='ticket-msg-staff'>⚡ {} (Support)</strong>",
+                obj.author_staff.get_full_name() or obj.author_staff.email,
+            )
             msg_class = "ticket-msg ticket-msg-from-staff"
         else:
-            author_name = html_module.escape(
-                obj.author_membership.user.get_full_name() if obj.author_membership else "Unbekannt"
+            author = format_html(
+                "<strong class='ticket-msg-customer'>{}</strong> <span class='ticket-msg-email'>({})</span>",
+                obj.author_membership.user.get_full_name() if obj.author_membership else "Unbekannt",
+                obj.author_membership.user.email if obj.author_membership else "",
             )
-            author_email = html_module.escape(obj.author_membership.user.email if obj.author_membership else "")
-            author = f"<strong class='ticket-msg-customer'>{author_name}</strong> <span class='ticket-msg-email'>({author_email})</span>"
             msg_class = "ticket-msg ticket-msg-from-customer"
 
         internal_badge = ""
         if obj.is_internal:
-            internal_badge = "<span class='ticket-msg-internal-badge'>Interne Notiz</span>"
+            internal_badge = mark_safe("<span class='ticket-msg-internal-badge'>Interne Notiz</span>")
 
-        return mark_safe(f"""
-            <div class="{msg_class}">
+        return format_html(
+            """
+            <div class="{}">
                 <div class="ticket-msg-header">
-                    {author} {internal_badge}
-                    <span class="ticket-msg-time">{obj.created_at.strftime("%d.%m.%Y %H:%M")}</span>
+                    {} {}
+                    <span class="ticket-msg-time">{}</span>
                 </div>
-                <div class="ticket-msg-content">{content}</div>
+                <div class="ticket-msg-content">{}</div>
             </div>
-        """)
+        """,
+            msg_class,
+            author,
+            internal_badge,
+            obj.created_at.strftime("%d.%m.%Y %H:%M"),
+            content,
+        )
 
     message_display.short_description = ""
 
@@ -525,40 +532,44 @@ class SupportTicketAdmin(NoAddAdminMixin, ModelAdmin):
         age = timezone.now() - obj.created_at
         age_str = f"{age.days} Tage" if age.days > 0 else f"{age.seconds // 3600} Stunden"
 
-        return mark_safe(f"""
+        return format_html(
+            """
             <div class="ticket-stats">
                 <div class="ticket-stat">
-                    <div class="ticket-stat-value ticket-stat-blue">{messages_count}</div>
+                    <div class="ticket-stat-value ticket-stat-blue">{}</div>
                     <div class="ticket-stat-label">Nachrichten</div>
                 </div>
                 <div class="ticket-stat">
-                    <div class="ticket-stat-value ticket-stat-purple">{customer_messages}</div>
+                    <div class="ticket-stat-value ticket-stat-purple">{}</div>
                     <div class="ticket-stat-label">Vom Kunden</div>
                 </div>
                 <div class="ticket-stat">
-                    <div class="ticket-stat-value ticket-stat-green">{staff_messages}</div>
+                    <div class="ticket-stat-value ticket-stat-green">{}</div>
                     <div class="ticket-stat-label">Vom Support</div>
                 </div>
                 <div class="ticket-stat">
-                    <div class="ticket-stat-value ticket-stat-amber">{attachments}</div>
+                    <div class="ticket-stat-value ticket-stat-amber">{}</div>
                     <div class="ticket-stat-label">Anhänge</div>
                 </div>
                 <div class="ticket-stat">
-                    <div class="ticket-stat-value ticket-stat-gray">{age_str}</div>
+                    <div class="ticket-stat-value ticket-stat-gray">{}</div>
                     <div class="ticket-stat-label">Alter</div>
                 </div>
             </div>
-        """)
+        """,
+            messages_count,
+            customer_messages,
+            staff_messages,
+            attachments,
+            age_str,
+        )
 
     ticket_stats.short_description = "Übersicht"
 
     def description_display(self, obj):
         """Display decrypted description with formatting."""
-        import html as html_module
-
         try:
-            desc = html_module.escape(obj.get_description_decrypted())
-            return mark_safe(f'<div class="ticket-description">{desc}</div>')
+            return format_html('<div class="ticket-description">{}</div>', obj.get_description_decrypted())
         except Exception:
             return "[Verschlüsselt - Kein Zugriff]"
 

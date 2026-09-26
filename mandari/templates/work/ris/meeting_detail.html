@@ -1,10 +1,12 @@
 {% extends "work/base_work.html" %}
 
-{% block page_title %}{{ meeting.get_display_name|truncatechars:50 }}{% endblock %}
+{% block page_title %}{% if meeting %}{{ meeting.get_display_name|truncatechars:50 }}{% else %}Sitzung{% endif %}{% endblock %}
 
 {% block header_title %}Sitzung{% endblock %}
 {% block header_subtitle %}
+{% if meeting %}
 <p class="work-page-subtitle">{{ meeting.start|date:"l, d. F Y" }}</p>
+{% endif %}
 {% endblock %}
 
 {% block header_actions %}
@@ -13,16 +15,18 @@
     <i data-lucide="arrow-left" class="w-4 h-4"></i>
     Zurück
 </a>
+{% if meeting %}
 <a href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}"
    class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
     <i data-lucide="clipboard-check" class="w-4 h-4"></i>
     Sitzung vorbereiten
 </a>
+{% endif %}
 {% endblock %}
 
 {% block work_content %}
 {% if no_body_linked %}
-{% include "work/ris/partials/_no_body_notice_short.html" %}
+{% include "work/ris/partials/_no_body_notice.html" %}
 {% else %}
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
