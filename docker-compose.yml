@@ -200,6 +200,8 @@ services:
       # Security
       SECRET_KEY: ${SECRET_KEY:?Django secret key required}
       ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
+      # Nur während eines Schlüsselwechsels (docs/KRYPTOKONZEPT.md)
+      ENCRYPTION_MASTER_KEY_PREVIOUS: ${ENCRYPTION_MASTER_KEY_PREVIOUS:-}
       # Application
       DEBUG: "false"
       ALLOWED_HOSTS: ${DOMAIN:-localhost}
@@ -253,6 +255,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       SECRET_KEY: ${SECRET_KEY:?Django secret key required}
       ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
+      ENCRYPTION_MASTER_KEY_PREVIOUS: ${ENCRYPTION_MASTER_KEY_PREVIOUS:-}
       DEBUG: "false"
       ALLOWED_HOSTS: ${DOMAIN:-localhost}
       SITE_URL: https://${DOMAIN:-localhost}

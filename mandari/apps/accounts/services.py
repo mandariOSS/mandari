@@ -20,12 +20,14 @@ import struct
 import time
 from importlib import import_module
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import InvalidToken, MultiFernet
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils import timezone
+
+from apps.common.encryption import two_factor_keys
 
 from .models import (
     SecurityNotification,
@@ -56,13 +58,14 @@ class TwoFactorService:
         self._fernet = self._build_fernet()
 
     @staticmethod
-    def _build_fernet() -> Fernet | None:
-        """Zweckgebundener Fernet-Schlüssel aus ENCRYPTION_MASTER_KEY (Fallback: ENCRYPTION_KEY)."""
-        material = getattr(settings, "ENCRYPTION_MASTER_KEY", "") or getattr(settings, "ENCRYPTION_KEY", "") or ""
-        if not material:
-            return None
-        derived_key = hashlib.sha256(b"mandari-2fa-v1:" + str(material).encode()).digest()
-        return Fernet(base64.urlsafe_b64encode(derived_key))
+    def _build_fernet() -> MultiFernet | None:
+        """
+        Zweckgebundener Fernet-Schlüssel aus ENCRYPTION_MASTER_KEY (Fallback: ENCRYPTION_KEY).
+
+        Während eines Schlüsselwechsels liest der Bund zusätzlich mit den Schlüsseln aus
+        ENCRYPTION_MASTER_KEY_PREVIOUS; verschlüsselt wird immer mit dem aktuellen.
+        """
+        return two_factor_keys()
 
     def _encrypt(self, data: str) -> bytes:
         """Verschlüsseln; ohne Schlüssel nur im DEBUG-Betrieb im Klartext."""
@@ -86,7 +89,7 @@ class TwoFactorService:
             return ""
 
     def _is_encrypted(self, data) -> bool:
-        """True, wenn die Daten mit dem aktuellen Schlüssel entschlüsselbar sind."""
+        """True, wenn die Daten mit einem gültigen Schlüssel (auch einem vorherigen) entschlüsselbar sind."""
         if not self._fernet or data is None:
             return False
         try:

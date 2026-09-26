@@ -25,7 +25,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 
-from apps.common.encryption import EncryptedTextField, EncryptionMixin
+from apps.common.encryption import EncryptedTextField, EncryptionMixin, exclude_key_fields_from_save
 
 from .visibility import AgendaItemQuerySet, FileQuerySet, MeetingQuerySet, PaperQuerySet
 
@@ -136,6 +136,13 @@ class SessionTenant(models.Model):
         verbose_name="Verschlüsselungsschlüssel",
         help_text="AES-256 Schlüssel, verschlüsselt mit Master-Key",
     )
+    encryption_key_previous = models.BinaryField(
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="Vorheriger Verschlüsselungsschlüssel",
+        help_text="Nur während eines Schlüsselwechsels gesetzt, nur zum Lesen; mit dem Hauptschlüssel verschlüsselt",
+    )
 
     # Settings
     settings = models.JSONField(default=dict, blank=True, verbose_name="Einstellungen")
@@ -243,10 +250,11 @@ class SessionTenant(models.Model):
     def __str__(self):
         return self.name
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         if not self.slug:
             self.slug = slugify(self.name)
-        super().save(*args, **kwargs)
+        # Schlüsselspalten nie über ein allgemeines save() zurückschreiben (Schlüsselwechsel)
+        super().save(*args, **exclude_key_fields_from_save(self, kwargs))
 
     @property
     def protocol_direct_publication(self) -> bool:

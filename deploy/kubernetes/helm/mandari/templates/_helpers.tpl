@@ -143,6 +143,13 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
     secretKeyRef:
       name: {{ include "mandari.secretName" . }}
       key: encryption-key
+# Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+- name: ENCRYPTION_MASTER_KEY_PREVIOUS
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "mandari.secretName" . }}
+      key: encryption-key-previous
+      optional: true
 {{- with (include "mandari.elasticsearchUrl" .) }}
 - name: ELASTICSEARCH_URL
   value: {{ . | quote }}

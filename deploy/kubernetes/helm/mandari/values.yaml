@@ -32,6 +32,9 @@ secrets:
   existingSecret: ""
   secretKey: ""
   encryptionKey: ""
+  # Nur während eines Schlüsselwechsels: der bisherige encryptionKey (wird nur zum Lesen
+  # verwendet). Ablauf in docs/KRYPTOKONZEPT.md, danach wieder leeren.
+  encryptionKeyPrevious: ""
   websiteSecretKey: ""
 
 # Admin-Konto, das der Migrations-Job anlegt (leer = kein Konto anlegen)
