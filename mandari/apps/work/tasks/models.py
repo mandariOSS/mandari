@@ -14,7 +14,7 @@ import uuid
 
 from django.db import models
 
-from apps.work.files import task_attachment_path
+from apps.work.files import AttachmentDisplayMixin, task_attachment_path
 
 
 class TaskLabel(models.Model):
@@ -356,7 +356,7 @@ class TaskChecklistItem(models.Model):
         return f"{check} {self.title}"
 
 
-class TaskAttachment(models.Model):
+class TaskAttachment(AttachmentDisplayMixin, models.Model):
     """Datei-Anhang einer Aufgabe."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -380,33 +380,6 @@ class TaskAttachment(models.Model):
 
     def __str__(self):
         return self.filename
-
-    @property
-    def size_human(self) -> str:
-        """Menschenlesbare Dateigröße."""
-        size = self.file_size
-        if size < 1024:
-            return f"{size} B"
-        if size < 1024 * 1024:
-            return f"{size / 1024:.1f} KB"
-        return f"{size / (1024 * 1024):.1f} MB"
-
-    @property
-    def icon_name(self) -> str:
-        """Lucide Icon-Name basierend auf MIME-Typ."""
-        if self.mime_type.startswith("image/"):
-            return "image"
-        if self.mime_type == "application/pdf":
-            return "file-text"
-        if self.mime_type.startswith("video/"):
-            return "film"
-        if self.mime_type.startswith("audio/"):
-            return "music"
-        if "spreadsheet" in self.mime_type or "excel" in self.mime_type:
-            return "table"
-        if "presentation" in self.mime_type or "powerpoint" in self.mime_type:
-            return "presentation"
-        return "file"
 
 
 class TaskActivity(models.Model):

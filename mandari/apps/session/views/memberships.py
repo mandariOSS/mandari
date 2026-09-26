@@ -9,12 +9,12 @@ in einem Schritt). Alle Änderungen werden über die Audit-Signale
 protokolliert.
 """
 
-from datetime import date
-
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
+
+from apps.common.formatting import parse_iso_date
 
 from ..models import (
     SessionLegislativeTerm,
@@ -27,15 +27,6 @@ from ..permissions import SessionViewMixin
 # =============================================================================
 # HELPERS
 # =============================================================================
-
-
-def _parse_date(value):
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
 
 
 def _get_membership(view, membership_id):
@@ -72,7 +63,7 @@ def _membership_from_post(view, request, organization) -> SessionOrganizationMem
     valid_roles = {c[0] for c in SessionOrganizationMembership._meta.get_field("role").choices}
     if role not in valid_roles:
         role = "member"
-    start_date = _parse_date(request.POST.get("start_date")) or timezone.now().date()
+    start_date = parse_iso_date(request.POST.get("start_date")) or timezone.now().date()
     return SessionOrganizationMembership(
         organization=organization,
         person=person,
@@ -80,7 +71,7 @@ def _membership_from_post(view, request, organization) -> SessionOrganizationMem
         has_voting_rights=request.POST.get("has_voting_rights") == "on",
         substitute_for=substitute_for,
         start_date=start_date,
-        end_date=_parse_date(request.POST.get("end_date")),
+        end_date=parse_iso_date(request.POST.get("end_date")),
         # Wahlperiode automatisch aus dem Beginn ableiten (Issue #39)
         legislative_term=SessionLegislativeTerm.for_date(view.session_tenant, start_date),
     )
@@ -133,9 +124,9 @@ class MembershipUpdateView(SessionViewMixin, View):
             membership.role = role
         membership.has_voting_rights = request.POST.get("has_voting_rights") == "on"
         if "start_date" in request.POST:
-            membership.start_date = _parse_date(request.POST.get("start_date")) or membership.start_date
+            membership.start_date = parse_iso_date(request.POST.get("start_date")) or membership.start_date
         if "end_date" in request.POST:
-            membership.end_date = _parse_date(request.POST.get("end_date"))
+            membership.end_date = parse_iso_date(request.POST.get("end_date"))
         if "substitute_for" in request.POST:
             if request.POST["substitute_for"]:
                 membership.substitute_for = get_object_or_404(
@@ -158,7 +149,7 @@ class MembershipEndView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, membership_id):
         membership = _get_membership(self, membership_id)
-        membership.end_date = _parse_date(request.POST.get("end_date")) or timezone.now().date()
+        membership.end_date = parse_iso_date(request.POST.get("end_date")) or timezone.now().date()
         membership.save()
         messages.success(
             request,
@@ -188,7 +179,7 @@ class MembershipSuccessionView(SessionViewMixin, View):
             messages.error(request, "Nachrücker/in darf nicht die ausscheidende Person sein.")
             return _org_redirect(self, organization)
 
-        change_date = _parse_date(request.POST.get("change_date")) or timezone.now().date()
+        change_date = parse_iso_date(request.POST.get("change_date")) or timezone.now().date()
 
         # 1) Ausscheiden dokumentieren
         membership.end_date = change_date

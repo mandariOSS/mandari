@@ -8,6 +8,8 @@ import uuid
 from django.db import models
 from django.utils import timezone
 
+from apps.common.formatting import human_size
+
 
 class MemberChangeRequest(models.Model):
     """
@@ -237,14 +239,7 @@ class DataExport(models.Model):
 
     @property
     def file_size_human(self):
-        if not self.file_size:
-            return ""
-        size = self.file_size
-        for unit in ("B", "KB", "MB", "GB"):
-            if size < 1024:
-                return f"{size:.1f} {unit}" if unit != "B" else f"{size} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB"
+        return human_size(self.file_size, whole_bytes=True) if self.file_size else ""
 
     def get_absolute_path(self):
         if not self.file_path:

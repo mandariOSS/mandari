@@ -17,8 +17,9 @@ from typing import Any
 from django.db import models
 from django.utils import timezone
 
+from apps.common import formatting
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
-from apps.work.files import faction_attachment_path
+from apps.work.files import AttachmentDisplayMixin, faction_attachment_path
 
 
 def generate_opaque_token() -> str:
@@ -47,15 +48,7 @@ class FactionMeetingSchedule(models.Model):
         ("monthly_last", "Jeden letzten im Monat"),
     ]
 
-    WEEKDAY_CHOICES = [
-        (0, "Montag"),
-        (1, "Dienstag"),
-        (2, "Mittwoch"),
-        (3, "Donnerstag"),
-        (4, "Freitag"),
-        (5, "Samstag"),
-        (6, "Sonntag"),
-    ]
+    WEEKDAY_CHOICES = formatting.WEEKDAY_CHOICES
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -1392,7 +1385,7 @@ class FactionPublicApiAccess(models.Model):
         return [origin.strip().rstrip("/") for origin in normalized.split(",") if origin.strip()]
 
 
-class FactionAgendaItemAttachment(models.Model):
+class FactionAgendaItemAttachment(AttachmentDisplayMixin, models.Model):
     """Datei-Anhang eines Fraktions-TOPs."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1422,30 +1415,3 @@ class FactionAgendaItemAttachment(models.Model):
 
     def __str__(self):
         return self.filename
-
-    @property
-    def size_human(self) -> str:
-        """Menschenlesbare Dateigröße."""
-        size = self.file_size
-        if size < 1024:
-            return f"{size} B"
-        if size < 1024 * 1024:
-            return f"{size / 1024:.1f} KB"
-        return f"{size / (1024 * 1024):.1f} MB"
-
-    @property
-    def icon_name(self) -> str:
-        """Lucide Icon-Name basierend auf MIME-Typ."""
-        if self.mime_type.startswith("image/"):
-            return "image"
-        if self.mime_type == "application/pdf":
-            return "file-text"
-        if self.mime_type.startswith("video/"):
-            return "film"
-        if self.mime_type.startswith("audio/"):
-            return "music"
-        if "spreadsheet" in self.mime_type or "excel" in self.mime_type:
-            return "table"
-        if "presentation" in self.mime_type or "powerpoint" in self.mime_type:
-            return "presentation"
-        return "file"

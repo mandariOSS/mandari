@@ -14,6 +14,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
+from .admin_mixins import SingletonAdminMixin
 from .models import AISettings, ProblemReport, SiteSettings
 
 
@@ -81,7 +82,7 @@ class SiteSettingsAdminForm(forms.ModelForm):
 
 
 @admin.register(SiteSettings)
-class SiteSettingsAdmin(ModelAdmin):
+class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
     """
     Admin for global site settings.
 
@@ -141,14 +142,6 @@ class SiteSettingsAdmin(ModelAdmin):
     )
 
     actions_detail = ["test_email"]
-
-    def has_add_permission(self, request):
-        # Only allow one instance
-        return not SiteSettings.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
-        # Prevent deletion
-        return False
 
     def save_model(self, request, obj, form, change):
         # Keep existing password if not changed
@@ -255,7 +248,7 @@ class AISettingsAdminForm(forms.ModelForm):
 
 
 @admin.register(AISettings)
-class AISettingsAdmin(ModelAdmin):
+class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
     """
     Admin for global AI configuration (Work DMS editor).
 
@@ -287,12 +280,6 @@ class AISettingsAdmin(ModelAdmin):
             },
         ),
     )
-
-    def has_add_permission(self, request):
-        return not AISettings.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
         # Always edit the singleton instance

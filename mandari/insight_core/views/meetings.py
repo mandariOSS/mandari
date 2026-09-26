@@ -15,6 +15,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 from django.views.generic import DetailView, ListView, TemplateView
 
+from apps.common.formatting import MONTH_ABBREVIATIONS
+
 from ..models import (
     OParlBody,
     OParlConsultation,
@@ -81,9 +83,6 @@ class MeetingListView(ActiveBodyRequiredMixin, ListView):
         # "all" zeigt alles
 
         return qs.order_by("-start")
-
-
-MONTH_NAMES = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
 
 
 def _select_body_from_query(request):
@@ -190,7 +189,7 @@ class MeetingYearPlanView(ActiveBodyRequiredMixin, TemplateView):
             {
                 "year": year,
                 "rows": rows,
-                "month_names": MONTH_NAMES,
+                "month_names": MONTH_ABBREVIATIONS,
                 "total_meetings": meetings.count(),
                 "cancelled_meetings": meetings.filter(cancelled=True).count(),
             }

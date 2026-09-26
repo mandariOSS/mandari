@@ -18,26 +18,12 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.common.formatting import MONTH_NAMES, WEEKDAY_CHOICES
+
 from .. import audit
 from ..models import SessionMeeting, SessionOrganization
 from ..permissions import SessionViewMixin
 from ..services import calendar_service
-
-MONTH_NAMES = [
-    "",
-    "Januar",
-    "Februar",
-    "März",
-    "April",
-    "Mai",
-    "Juni",
-    "Juli",
-    "August",
-    "September",
-    "Oktober",
-    "November",
-    "Dezember",
-]
 
 
 class MeetingCalendarView(SessionViewMixin, TemplateView):
@@ -102,7 +88,7 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
                 .exclude(organization_type="department")
                 .order_by("name"),
                 "rhythm_choices": calendar_service.RHYTHM_CHOICES,
-                "weekday_choices": calendar_service.WEEKDAY_CHOICES,
+                "weekday_choices": WEEKDAY_CHOICES,
                 "next_year": timezone.localdate().year + 1,
             }
         )

@@ -19,6 +19,7 @@ from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
+from apps.common.admin_mixins import NoAddAdminMixin, ReadOnlyAdminMixin, status_text
 from apps.common.db_connections import releases_db_connections
 
 from .models import (
@@ -319,7 +320,7 @@ def _osm_relation_link(relation_id: int | None) -> str:
     )
 
 
-class GeoSuggestionInline(TabularInline):
+class GeoSuggestionInline(NoAddAdminMixin, TabularInline):
     """Offene Geo-Vorschläge einer Kommune (übernehmen über den Änderungslink, Issue #351)."""
 
     model = OParlBodyGeoSuggestion
@@ -329,9 +330,6 @@ class GeoSuggestionInline(TabularInline):
     readonly_fields = fields
     verbose_name = "Geo-Vorschlag"
     verbose_name_plural = "Geo-Vorschläge (übernehmen über den Änderungslink)"
-
-    def has_add_permission(self, request: HttpRequest, obj: OParlBody | None = None) -> bool:
-        return False
 
     @admin.display(description="OSM")
     def osm_link(self, obj: OParlBodyGeoSuggestion) -> str:
@@ -520,7 +518,7 @@ class OParlBodyAdmin(ModelAdmin):
 
 
 @admin.register(OParlBodyGeoSuggestion)
-class OParlBodyGeoSuggestionAdmin(ModelAdmin):
+class OParlBodyGeoSuggestionAdmin(NoAddAdminMixin, ModelAdmin):
     """
     Geo-Vorschläge aus ``resolve_body_geodata`` bestätigen (Issue #351).
 
@@ -539,9 +537,6 @@ class OParlBodyGeoSuggestionAdmin(ModelAdmin):
     actions = ["apply_selected"]
     actions_row = ["apply_row"]
     actions_detail = ["apply_detail"]
-
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return False
 
     @admin.display(description="OSM")
     def osm_link(self, obj: OParlBodyGeoSuggestion) -> str:
@@ -638,7 +633,7 @@ class OParlMeetingAdmin(ModelAdmin):
 from .models import PaperLocation
 
 
-class PaperLocationInline(TabularInline):
+class PaperLocationInline(NoAddAdminMixin, TabularInline):
     """Verortungen eines Vorgangs mit Herkunft und Prüfstatus (Korrektur über den Änderungslink)."""
 
     model = PaperLocation
@@ -649,9 +644,6 @@ class PaperLocationInline(TabularInline):
     readonly_fields = fields
     verbose_name = "Verortung"
     verbose_name_plural = "Verortungen (Herkunft und Prüfstatus; bestätigen/entfernen über den Änderungslink)"
-
-    def has_add_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(OParlPaper)
@@ -724,8 +716,7 @@ class OParlPaperAdmin(ModelAdmin):
             "failed": "#dc2626",
             "skipped": "#64748b",
         }
-        color = colors.get(obj.georef_status, "#64748b")
-        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_georef_status_display()}</span>')
+        return status_text(colors.get(obj.georef_status, "#64748b"), obj.get_georef_status_display())
 
     @admin.action(description="Verortungen aus dem JSON neu aufbauen (Tabelle abgleichen)")
     def rebuild_paper_locations(self, request, queryset):
@@ -813,7 +804,7 @@ from .models import LocationMapping, TileCache
 
 
 @admin.register(TileCache)
-class TileCacheAdmin(ModelAdmin):
+class TileCacheAdmin(ReadOnlyAdminMixin, ModelAdmin):
     list_display = ["tile_coords", "content_type", "fetched_from", "created_at", "updated_at"]
     list_filter = ["z", "fetched_from"]
     search_fields = ["z", "x", "y"]
@@ -832,12 +823,6 @@ class TileCacheAdmin(ModelAdmin):
     @admin.display(description="Tile")
     def tile_coords(self, obj):
         return f"{obj.z}/{obj.x}/{obj.y}"
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
 
 
 from .models import Address, Street
@@ -900,8 +885,7 @@ class PaperLocationAdmin(ModelAdmin):
             PaperLocation.STATUS_CONFIRMED: "#16a34a",
             PaperLocation.STATUS_REMOVED: "#dc2626",
         }
-        color = colors.get(obj.status, "#64748b")
-        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_status_display()}</span>')
+        return status_text(colors.get(obj.status, "#64748b"), obj.get_status_display())
 
     @admin.display(description="Vorgang")
     def paper_reference(self, obj):
@@ -1087,8 +1071,7 @@ class ContactRequestAdmin(ModelAdmin):
             "converted": "#8b5cf6",  # purple
             "closed": "#64748b",  # gray
         }
-        color = colors.get(obj.status, "#64748b")
-        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_status_display()}</span>')
+        return status_text(colors.get(obj.status, "#64748b"), obj.get_status_display())
 
     @admin.display(description="E-Mails")
     def email_status(self, obj):
@@ -1201,8 +1184,7 @@ class PublicQuestionAdmin(ModelAdmin):
             "published": "#16a34a",
             "rejected": "#dc2626",
         }
-        color = colors.get(obj.status, "#64748b")
-        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_status_display()}</span>')
+        return status_text(colors.get(obj.status, "#64748b"), obj.get_status_display())
 
     @admin.display(description="Antwort")
     def answer_status_badge(self, obj):
@@ -1211,8 +1193,7 @@ class PublicQuestionAdmin(ModelAdmin):
             "pending": "#f59e0b",
             "published": "#16a34a",
         }
-        color = colors.get(obj.answer_status, "#64748b")
-        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_answer_status_display()}</span>')
+        return status_text(colors.get(obj.answer_status, "#64748b"), obj.get_answer_status_display())
 
     @admin.action(description="Fragen freischalten")
     def approve_questions(self, request, queryset):
@@ -1256,7 +1237,7 @@ class PublicQuestionAdmin(ModelAdmin):
 
 
 @admin.register(ChatUsage)
-class ChatUsageAdmin(ModelAdmin):
+class ChatUsageAdmin(ReadOnlyAdminMixin, ModelAdmin):
     list_display = ["created_at", "ip_address", "filter_result", "tokens_used", "user", "short_message"]
     list_filter = ["filter_result", "created_at"]
     search_fields = ["ip_address", "session_key", "message"]
@@ -1279,12 +1260,6 @@ class ChatUsageAdmin(ModelAdmin):
 
     short_message.short_description = "Nachricht"
 
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
 
 # =============================================================================
 # Bookmark Admin (Merkliste)
@@ -1294,16 +1269,13 @@ from .models import Bookmark
 
 
 @admin.register(Bookmark)
-class BookmarkAdmin(ModelAdmin):
+class BookmarkAdmin(NoAddAdminMixin, ModelAdmin):
     list_display = ["user", "entity_type", "entity_id", "created_at"]
     list_filter = ["entity_type", "created_at"]
     search_fields = ["user__email", "entity_id"]
     readonly_fields = ["id", "created_at"]
     ordering = ["-created_at"]
     list_per_page = 50
-
-    def has_add_permission(self, request):
-        return False
 
 
 # =============================================================================
@@ -1360,7 +1332,7 @@ class InsightSubscriberAdmin(ModelAdmin):
 
 
 @admin.register(SubscriptionAlert)
-class SubscriptionAlertAdmin(ModelAdmin):
+class SubscriptionAlertAdmin(NoAddAdminMixin, ModelAdmin):
     list_display = ["subscriber", "alert_type", "entity_title", "created_at", "is_sent"]
     list_filter = ["alert_type", "created_at"]
     search_fields = ["entity_title", "subscriber__email"]
@@ -1372,21 +1344,12 @@ class SubscriptionAlertAdmin(ModelAdmin):
     def is_sent(self, obj):
         return obj.sent_in_digest is not None
 
-    def has_add_permission(self, request):
-        return False
-
 
 @admin.register(DigestLog)
-class DigestLogAdmin(ModelAdmin):
+class DigestLogAdmin(ReadOnlyAdminMixin, ModelAdmin):
     list_display = ["subscriber", "sent_at", "alert_count", "success"]
     list_filter = ["success", "sent_at"]
     search_fields = ["subscriber__email"]
     readonly_fields = ["id", "sent_at", "subscriber", "alert_count", "success", "error"]
     ordering = ["-sent_at"]
     list_per_page = 50
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False

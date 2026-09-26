@@ -13,6 +13,8 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.common.formatting import human_size
+
 #: Kennung gespiegelter Objekte aus der OParl-API von mandari Session: ``…/session/<slug>/api/oparl/…``
 SESSION_OPARL_MARKERS = ("/session/", "/api/oparl/")
 
@@ -960,14 +962,7 @@ class OParlFile(SourceDeletionModel):
     @property
     def size_human(self):
         """Menschenlesbare Dateigröße."""
-        if not self.size:
-            return ""
-        size = self.size
-        for unit in ["B", "KB", "MB", "GB"]:
-            if size < 1024:
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB"
+        return human_size(self.size) if self.size else ""
 
 
 class OParlMembership(SourceDeletionModel):

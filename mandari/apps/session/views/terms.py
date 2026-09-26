@@ -14,7 +14,7 @@ Alle Mutationen laufen über die Audit-Signale (signals.py) bzw. werden
 zusätzlich als Audit-Ereignis dokumentiert.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 from django.contrib import messages
 from django.db.models import Count, Q
@@ -22,6 +22,8 @@ from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
+
+from apps.common.formatting import parse_iso_date
 
 from ..models import (
     SessionLegislativeTerm,
@@ -34,15 +36,6 @@ from ..permissions import SessionViewMixin
 # =============================================================================
 # HELPERS
 # =============================================================================
-
-
-def _parse_date(value):
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
 
 
 def _parse_number(value):
@@ -105,8 +98,8 @@ class TermSaveView(SessionViewMixin, View):
             messages.error(request, "Bitte einen Namen für die Wahlperiode angeben.")
             return redirect("session:terms", tenant_slug=tenant_slug)
 
-        start_date = _parse_date(request.POST.get("start_date"))
-        end_date = _parse_date(request.POST.get("end_date"))
+        start_date = parse_iso_date(request.POST.get("start_date"))
+        end_date = parse_iso_date(request.POST.get("end_date"))
         if start_date and end_date and start_date > end_date:
             messages.error(request, "Der Beginn der Wahlperiode liegt nach ihrem Ende.")
             return redirect("session:terms", tenant_slug=tenant_slug)
@@ -175,11 +168,11 @@ class TermChangeView(SessionViewMixin, View):
         from .. import audit
 
         name = (request.POST.get("name") or "").strip()
-        start_date = _parse_date(request.POST.get("start_date"))
+        start_date = parse_iso_date(request.POST.get("start_date"))
         if not name or start_date is None:
             messages.error(request, "Bitte Name und Beginn der neuen Wahlperiode angeben.")
             return redirect("session:terms", tenant_slug=tenant_slug)
-        end_date = _parse_date(request.POST.get("end_date"))
+        end_date = parse_iso_date(request.POST.get("end_date"))
         if end_date and start_date > end_date:
             messages.error(request, "Der Beginn der Wahlperiode liegt nach ihrem Ende.")
             return redirect("session:terms", tenant_slug=tenant_slug)

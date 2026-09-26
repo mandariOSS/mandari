@@ -11,6 +11,8 @@ from django.db.models import Count
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
+from apps.common.formatting import MONTH_ABBREVIATIONS
+
 # Diagrammdaten landen im Skript der Admin-Startseite; Kommunennamen stammen aus den Quellen
 from .seo import script_json
 
@@ -97,22 +99,6 @@ def dashboard_callback(request, context):
 
     # === CHART DATA ===
 
-    # German month names
-    month_names = [
-        "Jan",
-        "Feb",
-        "Mär",
-        "Apr",
-        "Mai",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Okt",
-        "Nov",
-        "Dez",
-    ]
-
     # Papers per month
     papers_monthly = list(
         OParlPaper.objects.filter(date__gte=twelve_months_ago, date__isnull=False)
@@ -141,7 +127,7 @@ def dashboard_callback(request, context):
 
     for item in papers_monthly:
         if item["month"]:
-            chart_months.append(month_names[item["month"].month - 1])
+            chart_months.append(MONTH_ABBREVIATIONS[item["month"].month - 1])
             chart_papers.append(item["count"])
             chart_meetings.append(meetings_by_month.get(item["month"], 0))
 

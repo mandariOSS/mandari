@@ -21,6 +21,8 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
+from apps.common.admin_mixins import ImmutableAdminMixin, status_pill
+
 from . import audit
 from .models import (
     SessionAgendaItem,
@@ -535,12 +537,7 @@ class SessionMeetingAdmin(ModelAdmin):
             "completed": "#34d399",  # green
             "archived": "#9ca3af",  # gray
         }
-        color = colors.get(obj.meeting_state, "#9ca3af")
-        return format_html(
-            '<span style="background: {}; color: white; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem;">{}</span>',
-            color,
-            obj.get_meeting_state_display(),
-        )
+        return status_pill(colors.get(obj.meeting_state, "#9ca3af"), obj.get_meeting_state_display())
 
     @admin.display(description="Öffentlich", boolean=True)
     def is_public_display(self, obj):
@@ -762,12 +759,7 @@ class SessionApplicationAdmin(ModelAdmin):
             "rejected": "#f87171",  # red
             "withdrawn": "#9ca3af",  # gray
         }
-        color = colors.get(obj.status, "#9ca3af")
-        return format_html(
-            '<span style="background: {}; color: white; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem;">{}</span>',
-            color,
-            obj.get_status_display(),
-        )
+        return status_pill(colors.get(obj.status, "#9ca3af"), obj.get_status_display())
 
     @admin.display(description="Dringend", boolean=True)
     def is_urgent_display(self, obj):
@@ -890,7 +882,7 @@ class SessionProtocolAdmin(ModelAdmin):
 
 
 @admin.register(SessionAuditLog)
-class SessionAuditLogAdmin(ModelAdmin):
+class SessionAuditLogAdmin(ImmutableAdminMixin, ModelAdmin):
     """
     Admin for Session audit logs.
 
@@ -934,15 +926,6 @@ class SessionAuditLogAdmin(ModelAdmin):
         ("Hash-Kette", {"fields": ("seq", "prev_hash", "entry_hash")}),
         # User/IP information not shown - privacy
     )
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 # =============================================================================

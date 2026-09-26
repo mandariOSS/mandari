@@ -62,17 +62,7 @@ def sync_all_sources(full: bool = False) -> dict[str, Any]:
             source_results = []
 
             for result in results:
-                entities = (
-                    result.organizations_synced
-                    + result.persons_synced
-                    + result.memberships_synced
-                    + result.meetings_synced
-                    + result.papers_synced
-                    + result.files_synced
-                    + result.locations_synced
-                    + result.agenda_items_synced
-                    + result.consultations_synced
-                )
+                entities = count_synced_entities(result)
                 total_entities += entities
                 source_results.append(
                     {
@@ -115,24 +105,12 @@ def sync_source(source_url: str, full: bool = False) -> dict[str, Any]:
         async with SyncOrchestrator(max_concurrent=10) as orchestrator:
             result = await orchestrator.sync_source(source_url, full=full)
 
-            entities = (
-                result.organizations_synced
-                + result.persons_synced
-                + result.memberships_synced
-                + result.meetings_synced
-                + result.papers_synced
-                + result.files_synced
-                + result.locations_synced
-                + result.agenda_items_synced
-                + result.consultations_synced
-            )
-
             return {
                 "sync_type": "full" if full else "incremental",
                 "timestamp": datetime.now().isoformat(),
                 "source": result.source_name,
                 "success": result.success,
-                "entities": entities,
+                "entities": count_synced_entities(result),
                 "duration": result.duration_seconds,
                 "errors": result.errors,
             }
@@ -140,8 +118,8 @@ def sync_source(source_url: str, full: bool = False) -> dict[str, Any]:
     return asyncio.run(_run_sync())
 
 
-def _count_result_entities(result) -> int:
-    """Zählt alle synchronisierten Entitäten eines SyncResult."""
+def count_synced_entities(result) -> int:
+    """Zählt alle synchronisierten Entitäten eines SyncResult (Tasks, sync_oparl, sync_daemon)."""
     return (
         result.organizations_synced
         + result.persons_synced
@@ -214,7 +192,7 @@ def run_sync_with_logging(
         all_errors = []
         details = {}
         for result in results:
-            entities = _count_result_entities(result)
+            entities = count_synced_entities(result)
             total_entities += entities
             if result.errors:
                 all_errors.extend(result.errors)
