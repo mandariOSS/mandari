@@ -93,7 +93,6 @@ django==6.1.1
     #   django-cotton
     #   django-htmx
     #   django-ninja
-    #   django-redis
     #   django-safemigrate
     #   django-unfold
     #   django-vite
@@ -102,8 +101,6 @@ django-cotton==2.7.2
 django-htmx==1.29.0
     # via -r requirements.txt
 django-ninja==1.7.0
-    # via -r requirements.txt
-django-redis==7.0.0
     # via -r requirements.txt
 django-safemigrate==6.0
     # via -r requirements.txt
@@ -123,8 +120,6 @@ googleapis-common-protos==1.75.3
     # via opentelemetry-exporter-otlp-proto-http
 greenlet==3.5.5
     # via sqlalchemy
-gunicorn==26.2.0
-    # via -r requirements.txt
 h11==0.16.0
     # via httpcore
 html2text==2025.4.15
@@ -154,8 +149,6 @@ lxml==6.1.3
     #   pyhanko
     #   python-docx
     #   svglib
-markdown==3.10.3
-    # via -r requirements.txt
 markdown-it-py==4.2.0
     # via rich
 mdurl==0.1.2
@@ -302,9 +295,7 @@ pytesseract==0.3.13
 python-bidi==0.6.11
     # via xhtml2pdf
 python-dateutil==2.9.0.post0
-    # via
-    #   -r requirements.txt
-    #   elasticsearch
+    # via elasticsearch
 python-docx==1.2.0
     # via -r requirements.txt
 python-dotenv==1.2.3
@@ -317,7 +308,6 @@ redis==8.1.0
     # via
     #   -r requirements.txt
     #   channels-redis
-    #   django-redis
 reportlab==5.0.1
     # via
     #   -r requirements.txt
@@ -356,7 +346,6 @@ typing-extensions==4.16.0
     #   aiohttp
     #   aiosignal
     #   anyio
-    #   django-redis
     #   elasticsearch
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-http
