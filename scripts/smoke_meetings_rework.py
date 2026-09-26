@@ -440,16 +440,23 @@ speech_url = f"{BASE_A}/{meeting_1.id}/speech/{item_m1_paper.id}/"
 evil_html = (
     '<h2>Rede</h2><p onclick="x()">Hallo <b>Welt</b></p><script>alert(1)</script><a href="https://evil">Link</a>'
 )
+# Gespeichert wird die Positivliste des Editors (apps/work/sanitize.py): Formatierung und Links
+# bleiben, Skripte und Ereignis-Attribute fallen weg
+clean_html = '<h2>Rede</h2><p>Hallo <b>Welt</b></p><a href="https://evil">Link</a>'
 resp = api_post(c_admin, speech_url, {"content": evil_html, "title": "Meine Rede"})
 check("Redebeitrag speichern", resp.status_code == 200)
 resp = c_admin.get(speech_url)
-check("Lesen strippt nichts (Roh-HTML bleibt)", resp.json()["own"]["content"] == evil_html)
+check(
+    "Speichern bereinigt auf die Positivliste des Editors",
+    resp.json()["own"]["content"] == clean_html,
+    resp.json()["own"]["content"],
+)
 # Partieller Save: nur Titel ändern, Inhalt bleibt
 resp = api_post(c_admin, speech_url, {"title": "Neuer Titel"})
 resp = c_admin.get(speech_url)
 check(
     "Partieller Save (nur title)",
-    resp.json()["own"]["title"] == "Neuer Titel" and resp.json()["own"]["content"] == evil_html,
+    resp.json()["own"]["title"] == "Neuer Titel" and resp.json()["own"]["content"] == clean_html,
 )
 # Teleprompter rendert sanitized
 resp = c_admin.get(f"{BASE_A}/{meeting_1.id}/teleprompter/{item_m1_paper.id}/")
@@ -496,7 +503,7 @@ check(
 # Verknüpfung lösen
 resp = api_post(c_admin, speech_url, {"linked_document": None})
 resp = c_admin.get(speech_url)
-check("Verknüpfung lösen -> eigener Inhalt wieder da", resp.json()["own"]["content"] == evil_html)
+check("Verknüpfung lösen -> eigener Inhalt wieder da", resp.json()["own"]["content"] == clean_html)
 
 # --- 10. Vorlagen-Anhänge (share_across_committees) -------------------------------
 print("=== 10. Vorlagen-Anhänge (übergreifend teilbar) ===")
