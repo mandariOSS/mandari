@@ -186,27 +186,3 @@ class OrganizationDetailView(DetailView):
         context["seo"] = get_organization_seo(org, self.request).to_dict()
 
         return context
-
-
-class OrganizationListPartial(ListView):
-    """HTMX Partial für Gremien-Liste."""
-
-    model = OParlOrganization
-    template_name = "partials/organization_list_items.html"
-    context_object_name = "organizations"
-    paginate_by = 20
-
-    def get_queryset(self):
-        body = get_active_body(self.request)
-        if not body:
-            return OParlOrganization.objects.none()
-
-        tab = self.request.GET.get("tab", "active")
-        today = timezone.now().date()
-        base_qs = OParlOrganization.objects.filter(body=body, deleted=False)
-
-        if tab == "active":
-            qs = base_qs.filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
-        else:
-            qs = base_qs.filter(end_date__lt=today)
-        return sort_organizations_by_ranking(qs)

@@ -4,12 +4,11 @@ Session permission system.
 
 Provides:
 - Permission checking utilities
-- Permission-based view decorators
+- Permission-based view mixins
 - Role-based access control
 """
 
 import time
-from functools import wraps
 from typing import Any
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -445,45 +444,3 @@ class SessionViewMixin(HTMXMixin, SessionPermissionMixin):
     """
 
     pass
-
-
-def session_permission_required(permission: str | list[str], require_all: bool = True):
-    """
-    Decorator for function-based views that require permissions.
-
-    Usage:
-        @session_permission_required("view_meetings")
-        def my_view(request, tenant_slug):
-            ...
-
-        @session_permission_required(["edit_meetings", "create_meetings"])
-        def my_view(request, tenant_slug):
-            ...
-    """
-
-    def decorator(view_func):
-        @wraps(view_func)
-        def _wrapped_view(request, *args, **kwargs):
-            # Get session user from request
-            session_user = getattr(request, "session_user", None)
-            if not session_user:
-                raise PermissionDenied("Nicht authentifiziert")
-
-            checker = SessionPermissionChecker(session_user)
-
-            # Normalize to list
-            perms = permission if isinstance(permission, list) else [permission]
-
-            # Check permissions
-            if require_all:
-                if not checker.has_all_permissions(perms):
-                    raise PermissionDenied("Fehlende Berechtigung")
-            else:
-                if not checker.has_any_permission(perms):
-                    raise PermissionDenied("Fehlende Berechtigung")
-
-            return view_func(request, *args, **kwargs)
-
-        return _wrapped_view
-
-    return decorator

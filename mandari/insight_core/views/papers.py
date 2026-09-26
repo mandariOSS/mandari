@@ -204,18 +204,6 @@ class PaperDetailView(DetailView):
         return result
 
 
-class PaperListPartial(ListView):
-    """HTMX Partial für Vorgänge-Liste."""
-
-    model = OParlPaper
-    template_name = "partials/paper_list_items.html"
-    context_object_name = "papers"
-    paginate_by = 20
-
-    def get_queryset(self):
-        return super().get_queryset().filter(deleted=False, body__is_listed=True)
-
-
 NO_TEXT_MESSAGE = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."
 RETRY_MESSAGE = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte versuche es später erneut."
 

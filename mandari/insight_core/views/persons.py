@@ -152,15 +152,3 @@ class PersonDetailView(DetailView):
         context["seo"] = get_person_seo(person, self.request).to_dict()
 
         return context
-
-
-class PersonListPartial(ListView):
-    """HTMX Partial für Personen-Liste."""
-
-    model = OParlPerson
-    template_name = "partials/person_list_items.html"
-    context_object_name = "persons"
-    paginate_by = 20
-
-    def get_queryset(self):
-        return super().get_queryset().filter(deleted=False, body__is_listed=True)

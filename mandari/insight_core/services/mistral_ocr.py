@@ -233,18 +233,6 @@ class MistralOCRService:
             logger.exception(f"Mistral OCR Fehler für {file_name}: {e}")
             raise OCRExtractionError(f"Extraktion fehlgeschlagen: {e}") from e
 
-    async def extract_text_sync(
-        self,
-        pdf_bytes: bytes,
-        file_name: str = "document.pdf",
-    ) -> str:
-        """
-        Synchrone Wrapper-Methode für extract_text.
-
-        Für Verwendung in synchronem Code.
-        """
-        return await self.extract_text(pdf_bytes, file_name)
-
 
 # Singleton-Instanz
 _mistral_service: MistralOCRService | None = None

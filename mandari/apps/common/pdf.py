@@ -24,27 +24,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_MARGINS = {"top": 30, "right": 25, "bottom": 25, "left": 25}
 
 
-def frame_geometry(margins: dict | None = None) -> dict:
-    """
-    A4-Frame-Geometrie (210 x 297 mm) für xhtml2pdf-Templates vorberechnen.
-
-    Args:
-        margins: dict mit top/right/bottom/left in mm (Default: DEFAULT_MARGINS)
-
-    Returns:
-        dict mit content_left/top/width/height sowie footer_top/height (mm)
-    """
-    m = {**DEFAULT_MARGINS, **(margins or {})}
-    return {
-        "content_left": m["left"],
-        "content_top": m["top"],
-        "content_width": 210 - m["left"] - m["right"],
-        "content_height": 297 - m["top"] - m["bottom"],
-        "footer_top": 297 - m["bottom"] + 3,
-        "footer_height": max(m["bottom"] - 6, 8),
-    }
-
-
 def html_to_pdf(html_content: str) -> bytes:
     """
     HTML in ein PDF umwandeln (xhtml2pdf, Fallback: reportlab).

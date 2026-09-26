@@ -99,12 +99,6 @@ def build_canonical_url(request: HttpRequest, path: str | None = None) -> str:
     return urljoin(site_url, path)
 
 
-def get_default_og_image() -> str:
-    """Gibt die Standard Open Graph Bild-URL zurück."""
-    site_url = get_site_url()
-    return urljoin(site_url, "/static/images/og-default.png")
-
-
 # =============================================================================
 # Entitäts-spezifische SEO-Generatoren
 # =============================================================================

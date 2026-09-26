@@ -365,23 +365,6 @@ class MeetingDetailView(DetailView):
         return context
 
 
-class MeetingListPartial(ListView):
-    """HTMX Partial für Sitzungen-Liste."""
-
-    model = OParlMeeting
-    template_name = "partials/meeting_list_items.html"
-    context_object_name = "meetings"
-    paginate_by = 20
-
-    def get_queryset(self):
-        body = get_active_body(self.request)
-        if not body:
-            return OParlMeeting.objects.none()
-        return (
-            OParlMeeting.objects.filter(body=body, deleted=False).prefetch_related("organizations").order_by("-start")
-        )
-
-
 @require_GET
 def calendar_events(request):
     """JSON-Endpoint für Kalender-Events (FullCalendar/Alpine.js)."""
