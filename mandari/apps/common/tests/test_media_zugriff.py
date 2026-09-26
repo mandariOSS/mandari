@@ -29,6 +29,7 @@ DATEIEN = (
     "tasks/attachments/aufgabe.txt",
     "demo/logo.png",
     "avatars/bild.png",
+    "sonstiges/notiz.txt",
 )
 
 
@@ -105,11 +106,18 @@ def test_oeffentliche_dateien_weiter_anonym(media: Path, client: Client) -> None
 
 
 def test_anmeldepflichtige_dateien_angemeldet_weiter(media: Path, client: Client) -> None:
-    assert client.get("/media/tasks/attachments/aufgabe.txt").status_code == 404
+    # Weder öffentlich noch geschützt: nur angemeldet, nie im öffentlichen Cache
+    assert client.get("/media/sonstiges/notiz.txt").status_code == 404
     client.force_login(cast(Any, UserFactory)())
-    antwort = client.get("/media/tasks/attachments/aufgabe.txt")
+    antwort = client.get("/media/sonstiges/notiz.txt")
     assert _geliefert(antwort)
     assert antwort["Cache-Control"] == "private, no-store"
+
+
+def test_work_anhaenge_auch_angemeldet_nur_ueber_ansichten(media: Path, client: Client) -> None:
+    # Aufgaben-Anhänge laufen nur über zugriffsgeprüfte Download-Ansichten (apps/work/files.py)
+    client.force_login(cast(Any, UserFactory)())
+    assert client.get("/media/tasks/attachments/aufgabe.txt").status_code == 404
 
 
 def test_umweg_auf_oeffentliche_datei_ist_nicht_oeffentlich_gecacht(media: Path, client: Client) -> None:
