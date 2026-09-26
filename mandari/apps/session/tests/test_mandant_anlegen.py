@@ -96,7 +96,7 @@ class TestBefehl:
         assert eintrag.entry_hash
 
     def test_vorhandenes_konto_wird_administrator(self) -> None:
-        konto = cast(Any, UserFactory)(email="leitung@example.org")
+        konto = cast(Any, UserFactory)(email="leitung@example.org", email_verified=True)
 
         ausgabe = _anlegen(
             "--profile",

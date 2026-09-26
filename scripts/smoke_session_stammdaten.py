@@ -315,8 +315,8 @@ print("=== Phase D: Benutzerverwaltung ===")
 resp = admin.get(f"{base}/settings/users/")
 check("Benutzerliste -> 200", resp.status_code == 200, f"got {resp.status_code}")
 
-# Einladung: bestehendes Konto wird direkt Mitglied
-existing = User.objects.create_user(email="bestand@example.org", password="pw-Smoke-Test-1!")
+# Einladung: bestehendes Konto mit bestätigter Adresse wird direkt Mitglied
+existing = User.objects.create_user(email="bestand@example.org", password="pw-Smoke-Test-1!", email_verified=True)
 resp = admin.post(
     f"{base}/settings/users/invite/",
     {"email": "bestand@example.org", "roles": [str(roles["viewer"].id)]},

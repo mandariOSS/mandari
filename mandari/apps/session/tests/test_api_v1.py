@@ -37,7 +37,9 @@ def tenant() -> SessionTenant:
     now = timezone.now()
     SessionMeeting.objects.create(tenant=tenant, name="OEFFENTLICH", organization=org, start=now, is_public=True)
     SessionMeeting.objects.create(tenant=tenant, name="GEHEIM", organization=org, start=now, is_public=False)
-    SessionPaper.objects.create(tenant=tenant, reference="V/1", name="OEFFENTLICHE-VORLAGE", is_public=True)
+    SessionPaper.objects.create(
+        tenant=tenant, reference="V/1", name="OEFFENTLICHE-VORLAGE", is_public=True, status="approved"
+    )
     SessionPaper.objects.create(tenant=tenant, reference="V/2", name="GEHEIME-VORLAGE", is_public=False)
     return tenant
 

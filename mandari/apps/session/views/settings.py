@@ -254,8 +254,10 @@ class UserInviteView(SessionViewMixin, TemplateView):
 
         roles = list(SessionRole.objects.filter(id__in=role_ids, tenant=self.session_tenant))
 
-        # Existiert bereits ein Konto? Dann direkt Mitglied machen.
-        existing_user = User.objects.filter(email=email).first()
+        # Existiert bereits ein Konto mit bestätigter Adresse? Dann direkt Mitglied machen.
+        # Unbestätigte Konten (z. B. aus einer Selbstregistrierung) erhalten eine Einladung:
+        # Wer sie einlöst, beweist die Kontrolle über das Postfach.
+        existing_user = User.objects.filter(email=email, email_verified=True).first()
         if existing_user:
             session_user, created = SessionUser.objects.get_or_create(
                 user=existing_user,
@@ -452,6 +454,10 @@ class InvitationAcceptView(View):
                 messages.error(request, "Diese Einladung ist für eine andere E-Mail-Adresse bestimmt.")
                 return redirect("session:invitation_accept", token=token)
             user = request.user
+            if not user.email_verified:
+                # Der Einladungslink kam per E-Mail – die Adresse ist damit bestätigt
+                user.email_verified = True
+                user.save(update_fields=["email_verified"])
         else:
             existing = User.objects.filter(email=invitation.email).first()
             if existing:
@@ -479,6 +485,8 @@ class InvitationAcceptView(View):
                 password=password,
                 first_name=request.POST.get("first_name", "").strip()[:150],
                 last_name=request.POST.get("last_name", "").strip()[:150],
+                # Der Einladungslink kam per E-Mail – die Adresse ist damit bestätigt
+                email_verified=True,
             )
             login(request, user)
 

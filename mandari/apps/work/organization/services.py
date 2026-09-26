@@ -329,6 +329,12 @@ def invite_guest(
                 f"{email} hat bereits eine deaktivierte Mitgliedschaft. Reaktivieren Sie diese in der Mitgliederliste.",
                 message_levels.WARNING,
             )
+        if not user.email_verified and user.has_usable_password():
+            # Unbestätigte Adresse (z. B. Selbstregistrierung ohne Bestätigung): Das gesetzte Passwort
+            # stammt nicht nachweislich von der Inhaberin des Postfachs. Es verliert seine Gültigkeit
+            # (bestehende Sitzungen enden damit); der Zugang entsteht über den Passwort-Link der Gast-Mail.
+            user.set_unusable_password()
+            user.save(update_fields=["password"])
 
     guest_membership = Membership.objects.create(
         user=user, organization=organization, is_guest=True, invited_by=inviter_user

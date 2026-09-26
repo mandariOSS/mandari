@@ -9,5 +9,6 @@ function readCookie(name: string): string {
 
 export function csrfToken(): string {
   const meta = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
-  return meta?.content || readCookie('csrftoken')
+  // Über HTTPS trägt das Cookie das Präfix __Host- (siehe settings.py, CSRF_COOKIE_NAME)
+  return meta?.content || readCookie('__Host-csrftoken') || readCookie('csrftoken')
 }

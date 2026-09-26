@@ -57,9 +57,13 @@ class _Mandari(HttpUser):
     abstract = True
     wait_time = between(1, 4)
 
+    def csrf_token(self) -> str:
+        # Über HTTPS heißt das Cookie __Host-csrftoken (DEPLOYMENT.md, „Ursprünge, Hosts und Cookies“)
+        return self.client.cookies.get("__Host-csrftoken") or self.client.cookies.get("csrftoken", "")
+
     def anmelden(self, email: str) -> None:
         antwort = self.client.get("/accounts/login/", name="/accounts/login/ [GET]")
-        token = self.client.cookies.get("csrftoken", "")
+        token = self.csrf_token()
         self.client.post(
             "/accounts/login/",
             data={"csrfmiddlewaretoken": token, "email": email, "password": PASSWORT, "next": "/insight/"},
@@ -78,7 +82,7 @@ class _Mandari(HttpUser):
             self.client.get(f"/insight/kommune/{treffer.group(1)}/", name="/insight/kommune/<id>/")
 
     def csrf(self) -> dict[str, str]:
-        return {"X-CSRFToken": self.client.cookies.get("csrftoken", ""), "Referer": self.host or ""}
+        return {"X-CSRFToken": self.csrf_token(), "Referer": self.host or ""}
 
 
 class PortalBesucher(_Mandari):
@@ -231,7 +235,7 @@ class LiveAbstimmung(_Mandari):
         seite = self.client.get(url, name="/session/agenda/<id>/voting/ [GET]")
         personen = set(re.findall(rf'name="vote_({UUID})"', seite.text))
         daten: dict[str, Any] = {
-            "csrfmiddlewaretoken": self.client.cookies.get("csrftoken", ""),
+            "csrfmiddlewaretoken": self.csrf_token(),
             "voting_method": "roll_call",
             "vote_result": "approved",
         }
