@@ -21,7 +21,7 @@ from ..models import (
     withdrawn_q,
 )
 from ..services import file_delivery
-from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body, page_number
 
 # =============================================================================
 # Dokumente (Files)
@@ -160,7 +160,7 @@ class FileListView(ActiveBodyRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         body = get_active_body(self.request)
         q = self.request.GET.get("q", "").strip()
-        page_num = int(self.request.GET.get("page", 1))
+        page_num = page_number(self.request, maximum=100_000)
 
         if body:
             qs = (
@@ -200,15 +200,25 @@ class FileListView(ActiveBodyRequiredMixin, TemplateView):
 # =============================================================================
 
 import logging
+import tempfile
+import threading
 
 import httpx
 from django.conf import settings
 from django.views.decorators.clickjacking import xframe_options_exempt
 
+from .. import throttle
+from ..services import safe_fetch
+
 logger = logging.getLogger(__name__)
 
+#: Gleichzeitige Abrufe beim Quell-RIS je Prozess: Langsame Quellen dürfen nicht alle Worker binden
+_LIVE_FETCH_SLOTS = threading.BoundedSemaphore(throttle.setting("FILE_PROXY_MAX_CONCURRENT"))
+#: Bis zu dieser Größe bleibt ein Live-Abruf im Speicher, darüber in einer temporären Datei
+_SPOOL_BYTES = 2 * 1024 * 1024
 
-def _file_proxy_error(title, message):
+
+def _file_proxy_error(title, message, status=200):
     """Return a styled HTML error page for the file proxy iframe."""
     html = f"""<!DOCTYPE html>
 <html lang="de">
@@ -229,8 +239,9 @@ a{{color:#4f46e5;text-decoration:underline}}
 <h1>{title}</h1>
 <p>{message}</p>
 </div></body></html>"""
-    response = HttpResponse(html, content_type="text/html; charset=utf-8")
+    response = HttpResponse(html, content_type="text/html; charset=utf-8", status=status)
     response["X-Frame-Options"] = "ALLOWALL"
+    response["Cache-Control"] = "no-store"
     return response
 
 
@@ -289,16 +300,61 @@ def file_proxy(request, file_id):
         response["Retry-After"] = "3600"
         return response
 
-    read_timeout = float(getattr(settings, "FILE_PROXY_TIMEOUT_SECONDS", 15))
-    try:
-        upstream = httpx.get(
-            url,
-            timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=5.0, pool=5.0),
-            follow_redirects=True,
-            headers={"User-Agent": file_cache.USER_AGENT},
+    # Abrufe beim Quell-RIS sind begrenzt: je IP-Adresse und Minute sowie gleichzeitig je Prozess.
+    # Dateien aus dem Zwischenspeicher (oben) zählen nicht mit.
+    if throttle.hit(
+        "file-live",
+        throttle.client_ip(request),
+        limit=throttle.setting("FILE_PROXY_FETCHES_PER_IP_MINUTE"),
+        window=throttle.MINUTE,
+    ):
+        response = _file_proxy_error(
+            "Zu viele Abrufe",
+            "Von deinem Anschluss kamen in kurzer Zeit sehr viele Dokumentabrufe. Bitte warte einen Moment.",
+            status=429,
         )
-        upstream.raise_for_status()
+        response["Retry-After"] = "60"
+        return response
+    if not _LIVE_FETCH_SLOTS.acquire(timeout=2):
+        response = _file_proxy_error(
+            "Gerade viele Abrufe",
+            "Das Dokument lag noch nicht in unserem Zwischenspeicher, und gerade laufen viele Abrufe "
+            "bei Ratsinformationssystemen. Bitte versuche es gleich noch einmal.",
+            status=503,
+        )
+        response["Retry-After"] = "30"
+        return response
+    try:
+        return _fetch_live(file_obj, url, filename, force_download)
+    finally:
+        _LIVE_FETCH_SLOTS.release()
+
+
+def _fetch_live(file_obj, url, filename, force_download):
+    """Datei beim Quell-RIS abrufen (Größe, Dauer und Ziel begrenzt) und ausliefern (Write-Through)."""
+    from django.http import FileResponse
+
+    from apps.common.db_connections import release_idle_thread_connections
+
+    from ..services import file_cache
+
+    read_timeout = float(getattr(settings, "FILE_PROXY_TIMEOUT_SECONDS", 15))
+    headers = file_cache.download_headers(file_obj.body)
+    spool = tempfile.SpooledTemporaryFile(max_size=_SPOOL_BYTES)  # noqa: SIM115 – FileResponse schließt sie
+    # Während des Abrufs keine Datenbankverbindung festhalten (Pool)
+    release_idle_thread_connections()
+    try:
+        download = safe_fetch.download_to(
+            spool,
+            url,
+            max_bytes=file_cache.max_bytes(),
+            total_seconds=throttle.setting("FILE_PROXY_TOTAL_SECONDS"),
+            timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=5.0, pool=5.0),
+            headers=headers,
+            user_agent=file_cache.USER_AGENT,
+        )
     except httpx.HTTPStatusError as e:
+        spool.close()
         if e.response.status_code == 404 and file_obj.local_status == "none":
             file_obj.local_status = "missing"
             file_obj.local_error = "HTTP 404"
@@ -311,7 +367,25 @@ def file_proxy(request, file_id):
             "Bei längerfristigen Problemen mit bestimmten Dokumenten melde dich bitte bei "
             'unserem Support unter <a href="mailto:support@mandari.de">support@mandari.de</a>.',
         )
-    except httpx.RequestError:
+    except safe_fetch.TooLargeError:
+        spool.close()
+        return _file_proxy_error(
+            "Datei zu groß für die Vorschau",
+            "Dieses Dokument ist größer, als die Vorschau direkt abrufen kann. "
+            "Bitte lade es beim Ratsinformationssystem der Kommune herunter.",
+            status=413,
+        )
+    except safe_fetch.DeadlineExceededError:
+        spool.close()
+        return _file_proxy_error(
+            "Abruf dauert zu lange",
+            "Das Ratsinformationssystem liefert das Dokument gerade sehr langsam. Bitte versuche es später erneut.",
+            status=504,
+        )
+    except httpx.RequestError as exc:
+        spool.close()
+        if isinstance(exc, safe_fetch.BlockedDestinationError):
+            logger.warning("Dokument %s: Download-Adresse nicht öffentlich erreichbar, Abruf gesperrt", file_obj.id)
         return _file_proxy_error(
             "Server nicht erreichbar",
             "Das Ratsinformationssystem ist momentan nicht erreichbar und dieses Dokument lag noch nicht "
@@ -319,11 +393,13 @@ def file_proxy(request, file_id):
             "bitte versuche es später erneut.",
         )
 
-    data = upstream.content
+    spool.seek(0)
+    head = spool.read(512)
     content_type = file_cache.content_type_for(
-        file_obj, upstream.headers.get("content-type", "application/octet-stream").split(";")[0]
+        file_obj, (download.content_type or "application/octet-stream").split(";")[0]
     )
-    if file_cache.looks_like_html(data) and "html" not in (file_obj.mime_type or "").lower():
+    if file_cache.looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
+        spool.close()
         return _file_proxy_error(
             "Quelle liefert derzeit keine Datei",
             "Das Ratsinformationssystem antwortet mit einer Hinweisseite statt mit dem Dokument "
@@ -332,18 +408,14 @@ def file_proxy(request, file_id):
 
     # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte (nur gelistete Kommunen)
     try:
-        if (
-            file_cache.caches_body(file_obj.body)
-            and len(data) <= file_cache.max_bytes()
-            and file_cache.has_room_for(len(data))
-        ):
-            file_cache.store_bytes(file_obj, data, content_type=content_type)
+        if file_cache.caches_body(file_obj.body) and file_cache.has_room_for(download.size):
+            file_cache.store_stream(file_obj, spool, content_type=content_type)
     except Exception as exc:  # Cache-Fehler dürfen die Auslieferung nie verhindern
         logger.warning("Dokument %s konnte nicht zwischengespeichert werden: %s", file_obj.id, exc)
 
-    response = HttpResponse(data)
+    spool.seek(0)
+    response = FileResponse(spool)
     file_delivery.apply(response, content_type, filename, download=force_download)
-    response["Content-Length"] = len(data)
     response["Cache-Control"] = "public, max-age=86400"
     response["X-Mandari-Cache"] = "miss"
     return response

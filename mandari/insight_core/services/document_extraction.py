@@ -82,8 +82,11 @@ def _http_get(url: str, timeout: float = 60.0, extra_headers: dict[str, str] | N
         "User-Agent": "Mandari/2.0 (https://mandari.dev; contact@mandari.dev)",
         **(extra_headers or {}),
     }
+    from .safe_fetch import guarded_client
+
     try:
-        with httpx.Client(timeout=timeout) as client:
+        # Nur öffentliche Ziele, auch nach Weiterleitungen (Adressen stammen aus der Quelle)
+        with guarded_client(timeout=timeout) as client:
             response = client.get(url, headers=headers, follow_redirects=True)
             response.raise_for_status()
     except httpx.HTTPError as exc:
@@ -334,8 +337,10 @@ async def download_and_extract_async(
         **(extra_headers or {}),
     }
 
+    from .safe_fetch import guarded_async_client
+
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with guarded_async_client(timeout=timeout) as client:
             response = await client.get(url, headers=headers, follow_redirects=True)
             response.raise_for_status()
     except httpx.HTTPError as exc:

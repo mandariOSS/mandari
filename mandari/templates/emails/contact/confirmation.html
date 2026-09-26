@@ -4,13 +4,13 @@
 {% block content %}
 <h1 class="h1">Anfrage erhalten!</h1>
 <p class="muted">Vielen Dank für Ihre Nachricht</p>
-<p>Hallo {{ contact.name }},</p>
+<p>Hallo,</p>
 <p>wir haben Ihre Anfrage erhalten und werden uns schnellstmöglich bei Ihnen melden.</p>
 <div class="card">
     <p class="label">Betreff</p>
     <p><strong>{{ contact.get_subject_display }}</strong></p>
-    <p class="label">Ihre Nachricht</p>
-    <p class="muted">{{ contact.message|truncatewords:50 }}</p>
+    <p class="label">Eingegangen am</p>
+    <p>{{ contact.created_at|date:"d.m.Y, H:i" }} Uhr</p>
 </div>
 <div class="card card-success">
     <p><strong>Was passiert als nächstes?</strong></p>
@@ -20,6 +20,7 @@
         <li>Registrierte Nutzer*innen können das Ticket-System im Work-Portal nutzen</li>
     </ul>
 </div>
+<p class="muted">Sie haben diese Anfrage nicht gestellt? Dann können Sie diese E-Mail ignorieren.</p>
 {% endblock %}
 {% block footer %}
 <p><strong>Mandari</strong> - Open Source Ratsinformationssystem · <a href="https://mandari.de">mandari.de</a></p>

@@ -112,12 +112,24 @@ def contact_submit(request):
 
     logger = logging.getLogger(__name__)
 
+    from . import throttle
+
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
+    # Drosselung je IP-Adresse: Das Formular löst E-Mails aus (Team und Bestätigung)
+    if throttle.mail_ip_exceeded(request):
+        return JsonResponse(
+            {"error": "Zu viele Anfragen. Bitte versuchen Sie es später erneut."},
+            status=429,
+            headers={"Retry-After": "3600"},
+        )
+
     try:
         data = json.loads(request.body)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    if not isinstance(data, dict):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     # Honeypot check
@@ -125,11 +137,11 @@ def contact_submit(request):
         logger.warning(f"Honeypot triggered from IP {_get_client_ip(request)}")
         return JsonResponse({"error": "Submission rejected"}, status=400)
 
-    name = (data.get("name") or "").strip()
-    email = (data.get("email") or "").strip()
-    organization = (data.get("organization") or "").strip()
-    subject = (data.get("subject") or "").strip()
-    message = (data.get("message") or "").strip()
+    name = str(data.get("name") or "").strip()[:200]
+    email = str(data.get("email") or "").strip()[:254]
+    organization = str(data.get("organization") or "").strip()[:200]
+    subject = str(data.get("subject") or "").strip()
+    message = str(data.get("message") or "").strip()[:10_000]
 
     # Validation
     if not all([name, email, subject, message]):
@@ -189,15 +201,18 @@ def contact_submit(request):
         if notification_sent:
             contact.notification_sent = True
 
-        confirmation_sent = send_template_email(
-            subject="Ihre Anfrage bei Mandari - Bestätigung",
-            template_name="emails/contact/confirmation",
-            context=email_context,
-            to=[email],
-            fail_silently=True,
-        )
-        if confirmation_sent:
-            contact.confirmation_sent = True
+        # Die Bestätigung geht an eine frei eingetragene Adresse: je Adresse gedrosselt und ohne die
+        # eingegebenen Texte, damit das Formular kein Werkzeug für Mails an Dritte ist
+        if not throttle.mail_address_exceeded(email):
+            confirmation_sent = send_template_email(
+                subject="Ihre Anfrage bei Mandari - Bestätigung",
+                template_name="emails/contact/confirmation",
+                context={"contact": contact},
+                to=[email],
+                fail_silently=True,
+            )
+            if confirmation_sent:
+                contact.confirmation_sent = True
 
         contact.save(update_fields=["notification_sent", "confirmation_sent"])
     except Exception as e:

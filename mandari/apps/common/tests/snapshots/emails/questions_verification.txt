@@ -1,25 +1,15 @@
 Bitte bestätigen Sie Ihre Frage
 =================================
 
-Hallo Erika Mustermann,
+Hallo,
 
-Sie haben eine Frage an Max Beispiel gestellt.
-Bitte bestätigen Sie Ihre E-Mail-Adresse, damit Ihre Frage geprüft werden kann.
-
-Ihre Frage:
------------
-Betreff: Radweg an der Hauptstraße
-
-Wann wird der Radweg an der Hauptstraße fertiggestellt?
-
-Die Baustelle steht seit Monaten.
-
------------
+über mandari Insight wurde mit dieser E-Mail-Adresse eine Frage an Max Beispiel gestellt.
+Bitte bestätigen Sie Ihre E-Mail-Adresse, damit die Frage geprüft werden kann. Den Wortlaut sehen Sie nach dem Klick.
 
 Bitte klicken Sie auf folgenden Link zur Bestätigung:
 https://mandari.example/insight/fragen/verifizieren/00000000-0000-0000-0000-000000000403/
 
-Der Link ist 48 Stunden gültig.
+Der Link ist 48 Stunden gültig. Sie haben keine Frage gestellt? Dann ignorieren Sie diese E-Mail einfach.
 
 Mit freundlichen Grüßen,
 Das Mandari-Team

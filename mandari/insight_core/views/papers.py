@@ -8,7 +8,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_http_methods
 from django.views.generic import DetailView, ListView
 
 from ..models import (
@@ -216,28 +216,66 @@ class PaperListPartial(ListView):
         return super().get_queryset().filter(deleted=False, body__is_listed=True)
 
 
-@require_GET
+NO_TEXT_MESSAGE = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."
+RETRY_MESSAGE = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte versuche es später erneut."
+
+
+def _summary_response(request, context, status=200):
+    """Teilansicht der Zusammenfassung; HTMX tauscht nur 2xx ein, deshalb dort immer 200."""
+    response = render(request, "partials/paper_summary.html", context)
+    if status != 200 and not request.headers.get("HX-Request"):
+        response.status_code = status
+    return response
+
+
+@require_http_methods(["GET", "POST"])
 def paper_summary(request, pk):
     """
-    HTMX Endpoint für KI-Zusammenfassung eines Vorgangs.
+    HTMX-Endpunkt für die KI-Zusammenfassung eines Vorgangs.
 
-    Nutzt gecachte Zusammenfassung oder generiert neue via Nebius AI.
+    GET liefert die gespeicherte Zusammenfassung oder das Angebot, eine zu erstellen – ohne
+    KI-Aufruf. Erstellt wird nur per POST (Klick, CSRF-geschützt) und in den Grenzen aus
+    ``summary_guard``: eine Erstellung je Vorgang gleichzeitig, je IP-Adresse wenige pro Stunde
+    und Tag, insgesamt ein Tagesbudget.
     """
+    from ..services import summary_guard
+
     paper = get_object_or_404(OParlPaper, pk=pk)
     if paper.withdrawn_by_publisher:
         return withdrawn_response(request, paper)
 
-    # Return cached summary if available
     if paper.summary:
-        return render(
+        return _summary_response(request, {"paper": paper, "summary": paper.summary})
+    if summary_guard.has_no_text(paper.pk):
+        return _summary_response(request, {"paper": paper, "error": NO_TEXT_MESSAGE, "retry": False})
+    if request.method != "POST":
+        return _summary_response(request, {"paper": paper, "offer": True})
+
+    if not summary_guard.acquire(paper.pk):
+        return _summary_response(
             request,
-            "partials/paper_summary.html",
             {
                 "paper": paper,
-                "summary": paper.summary,
+                "error": "Die Zusammenfassung wird gerade erstellt. Bitte lade die Seite in einer Minute neu.",
             },
+            status=409,
         )
+    try:
+        if summary_guard.budget_exceeded(request):
+            return _summary_response(
+                request,
+                {
+                    "paper": paper,
+                    "error": "Gerade werden sehr viele Zusammenfassungen erstellt. Bitte versuche es später erneut.",
+                },
+                status=429,
+            )
+        return _generate_summary(request, paper)
+    finally:
+        summary_guard.release(paper.pk)
 
+
+def _generate_summary(request, paper):
     from insight_ai.services.summarizer import (
         APINotConfiguredError,
         NoTextContentError,
@@ -245,30 +283,23 @@ def paper_summary(request, pk):
         SummaryService,
     )
 
-    # Generate new summary
+    from ..services import summary_guard
+
+    retry = True
     try:
-        service = SummaryService()
-        summary = service.generate_summary(paper)
-
-        return render(
-            request,
-            "partials/paper_summary.html",
-            {
-                "paper": paper,
-                "summary": summary,
-            },
-        )
-
+        summary = SummaryService().generate_summary(paper)
+        return _summary_response(request, {"paper": paper, "summary": summary})
     except NoTextContentError:
-        error = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."
+        summary_guard.remember_no_text(paper.pk)
+        error, retry = NO_TEXT_MESSAGE, False
     except APINotConfiguredError:
         error = "Die KI-Zusammenfassung ist derzeit nicht verfügbar."
     except SummaryError:
-        error = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte versuche es später erneut."
+        error = RETRY_MESSAGE
     except Exception:
         import logging
 
         logging.getLogger(__name__).exception("Unerwarteter Fehler bei der Zusammenfassung von Vorgang %s", paper.pk)
-        error = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte versuche es später erneut."
+        error = RETRY_MESSAGE
     # Nie Ausnahmetexte ausgeben: Sie können Details des KI-Dienstes oder der Quelle enthalten
-    return render(request, "partials/paper_summary.html", {"paper": paper, "error": error})
+    return _summary_response(request, {"paper": paper, "error": error, "retry": retry})
