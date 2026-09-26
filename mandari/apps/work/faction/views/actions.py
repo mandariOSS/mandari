@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""
-Faction meeting views for the Work module.
-
-Simplified architecture: 4 views instead of 13.
-- FactionMeetingListView: List + Create (POST)
-- FactionMeetingDetailView: Detail/Protocol page
-- FactionActionView: Central HTMX action handler
-- FactionSettingsView: Legacy redirect to organization settings
-"""
+"""Zentraler HTMX-Aktions-Endpunkt einer Fraktionssitzung: Status, Tagesordnung, Protokoll, Anwesenheit."""
 
 import logging
 from datetime import datetime
@@ -107,14 +99,6 @@ class FactionActionView(WorkViewMixin, View):
             return _render_partial("work/faction/_agenda.html", ctx, request=request)
         except Exception:
             logger.exception("Fehler beim Rendern der Agenda für Meeting %s", meeting.id)
-            raise
-
-    def _render_sidebar(self, request, meeting):
-        try:
-            ctx = _get_meeting_context(self, meeting)
-            return _render_partial("work/faction/_sidebar.html", ctx, request=request)
-        except Exception:
-            logger.exception("Fehler beim Rendern der Sidebar für Meeting %s", meeting.id)
             raise
 
     def _render_attendance(self, request, meeting):

@@ -933,12 +933,6 @@ class Motion(EncryptionMixin, models.Model):
             | models.Q(visibility="shared", shares__user=membership.user)
         ).distinct()
 
-    def get_type_color(self):
-        """Get the color for the document type."""
-        if self.document_type:
-            return self.document_type.color
-        return "blue"
-
     @property
     def content(self):
         """
@@ -1490,34 +1484,6 @@ class MotionShare(models.Model):
     def __str__(self):
         target = self.user or self.role or self.organization or self.party_group or self.body
         return f"{self.motion.title} → {target} ({self.level})"
-
-    def grants_access_to(self, membership) -> bool:
-        """Check if this share grants access to a membership."""
-        if self.scope == "user":
-            return membership.user == self.user
-
-        if self.scope == "role":
-            return self.role in membership.roles.all()
-
-        if self.scope == "organization":
-            return membership.organization == self.organization
-
-        if self.scope == "party_group":
-            if not membership.organization.party_group:
-                return False
-            org_group = membership.organization.party_group
-            # Check if org is in this party group or its descendants
-            all_groups = [self.party_group] + self.party_group.get_descendants()
-            return org_group in all_groups
-
-        if self.scope == "regional":
-            if not self.body_id:
-                return False
-            org = membership.organization
-            # Multi-Kommune: primäre Kommune (FK) ODER eine der M2M-Kommunen
-            return org.body_id == self.body_id or org.bodies.filter(pk=self.body_id).exists()
-
-        return False
 
 
 class MotionDocument(models.Model):

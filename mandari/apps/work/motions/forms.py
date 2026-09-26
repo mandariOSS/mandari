@@ -101,20 +101,6 @@ class MotionForm(forms.ModelForm):
             self.fields["parent_motion"].required = False
 
 
-class MotionContentForm(forms.Form):
-    """Form for motion content (separate from metadata)."""
-
-    content = forms.CharField(
-        widget=forms.Textarea(
-            attrs={
-                "class": "hidden",  # Will be replaced by TipTap editor
-                "id": "motion-content",
-            }
-        ),
-        required=False,
-    )
-
-
 #: Anlagen zu Anträgen — wie Sitzungsvorbereitung 50 MB (#260).
 MOTION_DOCUMENT_MAX_BYTES = 50 * MB
 

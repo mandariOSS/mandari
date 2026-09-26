@@ -517,36 +517,6 @@ class FactionMeeting(EncryptionMixin, models.Model):
 
         return result
 
-    def approve_previous_protocol(self, approved_by: "apps.tenants.models.Membership"):  # noqa: F821
-        """
-        Approve the previous meeting's protocol.
-
-        Called when the approval agenda item is passed.
-        """
-        if not self.previous_meeting:
-            return False
-
-        prev = self.previous_meeting
-        if prev.protocol_approved:
-            return False  # Already approved
-
-        prev.protocol_status = "approved"
-        prev.protocol_approved = True
-        prev.protocol_approved_at = timezone.now()
-        prev.protocol_approved_by = approved_by
-        prev.protocol_approved_in = self
-        prev.save(
-            update_fields=[
-                "protocol_status",
-                "protocol_approved",
-                "protocol_approved_at",
-                "protocol_approved_by",
-                "protocol_approved_in",
-            ]
-        )
-
-        return True
-
     def submit_protocol_for_approval(self):
         """Submit the protocol for approval in the next meeting."""
         if self.protocol_status == "approved":

@@ -94,7 +94,6 @@ apps.work.dashboard.views
 apps.work.faction.audit
 apps.work.faction.certificates
 apps.work.faction.feeds
-apps.work.faction.forms
 apps.work.faction.generation
 apps.work.faction.invitations
 apps.work.faction.models

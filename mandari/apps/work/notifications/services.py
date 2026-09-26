@@ -28,12 +28,8 @@ Usage:
 import logging
 from datetime import timedelta
 
-from django.conf import settings
 from django.core.cache import cache
-from django.core.mail import send_mail
 from django.utils import timezone
-
-from apps.common.email import render_email
 
 from .models import Notification, NotificationPreference, NotificationType
 
@@ -307,45 +303,6 @@ class NotificationHub:
         if start > end:
             return now >= start or now <= end
         return start <= now <= end
-
-    @classmethod
-    def _send_notification_email(cls, notification: Notification):
-        """Send the actual notification email."""
-        recipient_email = notification.recipient.user.email
-
-        if not recipient_email:
-            return
-
-        # Render email content
-        context = {
-            "notification": notification,
-            "recipient": notification.recipient,
-            "actor": notification.actor,
-            "site_name": "Mandari Work",
-            "base_url": getattr(settings, "SITE_URL", "http://localhost:8000"),
-        }
-
-        html_content, text_content = render_email("work/notifications/email/notification.html", context)
-
-        # Send email
-        try:
-            send_mail(
-                subject=notification.title,
-                message=text_content,
-                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"),
-                recipient_list=[recipient_email],
-                html_message=html_content,
-            )
-
-            # Mark as sent
-            notification.email_sent = True
-            notification.email_sent_at = timezone.now()
-            notification.save(update_fields=["email_sent", "email_sent_at"])
-
-            logger.info(f"Notification email sent to {recipient_email}")
-
-        except Exception as e:
-            logger.error(f"Failed to send email to {recipient_email}: {e}")
 
     # =========================================================================
     # Convenience methods for common notification types

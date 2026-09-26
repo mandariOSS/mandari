@@ -124,11 +124,6 @@ class PartyGroup(models.Model):
             descendants.extend(child.get_descendants())
         return descendants
 
-    def get_all_organizations(self):
-        """Return all organizations in this group and descendants."""
-        org_ids = [self.id] + [d.id for d in self.get_descendants()]
-        return Organization.objects.filter(party_group_id__in=org_ids)
-
 
 class Organization(models.Model):
     """
@@ -568,36 +563,6 @@ class Organization(models.Model):
         if self.party_group and self.party_group.logo:
             return self.party_group.logo
         return None
-
-    def get_party_siblings(self):
-        """Get organizations sharing at least one party (group)."""
-        party_ids = list(self.get_all_parties().values_list("id", flat=True))
-        if not party_ids:
-            return Organization.objects.none()
-        return (
-            Organization.objects.filter(models.Q(party_group_id__in=party_ids) | models.Q(parties__id__in=party_ids))
-            .exclude(id=self.id)
-            .distinct()
-        )
-
-    def get_regional_siblings(self):
-        """Get organizations sharing at least one OParl Body (same municipality)."""
-        body_ids = self.all_body_ids
-        if not body_ids:
-            return Organization.objects.none()
-        return (
-            Organization.objects.filter(models.Q(body_id__in=body_ids) | models.Q(bodies__id__in=body_ids))
-            .exclude(id=self.id)
-            .distinct()
-        )
-
-    def get_party_ancestry_organizations(self):
-        """Get all organizations in parent party groups."""
-        if not self.party_group:
-            return Organization.objects.none()
-
-        ancestor_ids = [g.id for g in self.party_group.get_ancestors()]
-        return Organization.objects.filter(party_group_id__in=ancestor_ids)
 
     def get_encryption_organization(self):
         """Required for EncryptionMixin compatibility."""
@@ -1043,16 +1008,6 @@ class Membership(models.Model):
                         f"Role '{role.name}' belongs to a different organization. "
                         "Roles must belong to the same organization as the membership."
                     )
-
-    def add_role(self, role):
-        """
-        Safely add a role to this membership.
-
-        Security: Validates role belongs to the same organization.
-        """
-        if role.organization_id != self.organization_id:
-            raise ValueError(f"Cannot add role '{role.name}' - it belongs to a different organization")
-        self.roles.add(role)
 
     def has_permission(self, permission: str) -> bool:
         """

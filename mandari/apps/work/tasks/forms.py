@@ -177,14 +177,6 @@ class QuickTaskForm(forms.Form):
     )
 
 
-class TaskStatusForm(forms.Form):
-    """Form for updating task status via drag & drop."""
-
-    task_id = forms.UUIDField()
-    status = forms.ChoiceField(choices=Task.STATUS_CHOICES)
-    position = forms.IntegerField(min_value=0)
-
-
 class TaskAttachmentForm(forms.ModelForm):
     """Form for uploading attachments to a task."""
 
