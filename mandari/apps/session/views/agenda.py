@@ -256,7 +256,7 @@ class AgendaReorderView(SessionViewMixin, View):
         raw = request.POST.get("order", "")
         ordered_ids = [part.strip() for part in raw.split(",") if part.strip()]
         agenda_service.apply_order(meeting, ordered_ids)
-        if request.headers.get("HX-Request") == "true" or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        if self.is_htmx or request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse({"ok": True})
         return _meeting_redirect(self, meeting)
 

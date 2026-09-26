@@ -16,6 +16,7 @@ from django.views.decorators.http import require_GET
 from django.views.generic import DetailView, ListView, TemplateView
 
 from apps.common.formatting import MONTH_ABBREVIATIONS
+from apps.common.mixins import HTMXMixin
 
 from ..models import (
     OParlBody,
@@ -33,7 +34,7 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class MeetingListView(ActiveBodyRequiredMixin, ListView):
+class MeetingListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
     """Liste aller Sitzungen."""
 
     model = OParlMeeting
@@ -43,7 +44,7 @@ class MeetingListView(ActiveBodyRequiredMixin, ListView):
 
     def get_template_names(self):
         # Für HTMX-Requests nur das Partial zurückgeben
-        if self.request.headers.get("HX-Request"):
+        if self.is_htmx:
             return ["partials/meeting_list_items.html"]
         return [self.template_name]
 

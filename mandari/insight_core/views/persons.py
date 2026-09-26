@@ -9,6 +9,8 @@ from django.db.models import OuterRef, Q, Subquery
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
+from apps.common.mixins import HTMXMixin
+
 from ..models import (
     OParlMembership,
     OParlOrganization,
@@ -32,7 +34,7 @@ COUNCIL_ROLES = [
 ]
 
 
-class PersonListView(ActiveBodyRequiredMixin, ListView):
+class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
     """Liste aller Personen mit Ratsrolle-Annotation."""
 
     model = OParlPerson
@@ -41,7 +43,7 @@ class PersonListView(ActiveBodyRequiredMixin, ListView):
     paginate_by = 50
 
     def get_template_names(self):
-        if self.request.headers.get("HX-Request"):
+        if self.is_htmx:
             return ["partials/person_list_items.html"]
         return [self.template_name]
 

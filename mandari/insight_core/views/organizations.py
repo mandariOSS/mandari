@@ -9,6 +9,8 @@ from django.db.models import Exists, OuterRef, Q, Subquery
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
+from apps.common.mixins import HTMXMixin
+
 from ..models import (
     OParlMeeting,
     OParlOrganization,
@@ -23,7 +25,7 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class OrganizationListView(ActiveBodyRequiredMixin, ListView):
+class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
     """Liste aller Gremien mit Aktiv/Alle-Tabs."""
 
     model = OParlOrganization
@@ -33,7 +35,7 @@ class OrganizationListView(ActiveBodyRequiredMixin, ListView):
 
     def get_template_names(self):
         # Für HTMX-Requests nur das Partial zurückgeben
-        if self.request.headers.get("HX-Request"):
+        if self.is_htmx:
             return ["partials/organization_list_items.html"]
         return [self.template_name]
 

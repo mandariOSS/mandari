@@ -13,6 +13,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
+from apps.common.mixins import HTMXMixin
+
 from ..models import (
     OParlAgendaItem,
     OParlConsultation,
@@ -146,13 +148,13 @@ def _annotate_files_with_context(files):
         f.context_info = ctx
 
 
-class FileListView(ActiveBodyRequiredMixin, TemplateView):
+class FileListView(HTMXMixin, ActiveBodyRequiredMixin, TemplateView):
     """Liste aller Dokumente/Dateien."""
 
     template_name = "pages/files/list.html"
 
     def get_template_names(self):
-        if self.request.headers.get("HX-Request"):
+        if self.is_htmx:
             return ["partials/file_list_items.html"]
         return [self.template_name]
 

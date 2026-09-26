@@ -9,11 +9,15 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 from django.http import HttpRequest, HttpResponse, HttpResponseBase, HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect
 from django.urls import reverse
+
+if TYPE_CHECKING:
+    from apps.common.mixins import HtmxHttpRequest
 
 from .services import TwoFactorService
 from .two_factor_policy import (
@@ -84,7 +88,8 @@ class TwoFactorEnforcementMiddleware:
     def __init__(self, get_response: GetResponse) -> None:
         self.get_response = get_response
 
-    def __call__(self, request: HttpRequest) -> HttpResponseBase:
+    def __call__(self, request: HtmxHttpRequest) -> HttpResponseBase:
+        # request.htmx setzt die django-htmx-Middleware, die in MIDDLEWARE davor steht
         user = getattr(request, "user", None)
         if user is not None and user.is_authenticated and not request.path.startswith(TWO_FACTOR_EXEMPT_PREFIXES):
             requirement = self._open_requirement(request, user)
@@ -113,8 +118,8 @@ class TwoFactorEnforcementMiddleware:
         return need
 
     @staticmethod
-    def _redirect_response(request: HttpRequest, target: str) -> HttpResponseBase:
-        if request.headers.get("HX-Request"):
+    def _redirect_response(request: HtmxHttpRequest, target: str) -> HttpResponseBase:
+        if request.htmx:
             response = HttpResponse(status=204)
             response["HX-Redirect"] = target
             return response
