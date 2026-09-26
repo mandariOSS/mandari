@@ -11,6 +11,7 @@ nicht eingetragen ist oder ein Eintrag nicht mehr zum Modell passt.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from typing import Any, cast
 
@@ -60,6 +61,30 @@ def test_felder_mit_verschluesselungsnamen_sind_eingetragen() -> None:
         if (field.name.endswith("_encrypted") or field.name in TENANT_KEY_FIELDS) and label not in REGISTERED
     ]
     assert not fehlend, f"Verschlüsselte Felder ohne Eintrag in apps/common/crypto_registry.py: {fehlend}"
+
+
+#: Feldnamen, die auf ein Geheimnis deuten
+GEHEIMNIS_NAME = re.compile(r"passw|secret|api_?key|private_?key", re.IGNORECASE)
+
+#: Solche Felder, die bewusst kein verschlüsseltes Binärfeld sind – jeweils mit Begründung
+KEIN_KLARTEXT_GEHEIMNIS: dict[str, str] = {
+    "accounts.User.password": "Passwort-Hash (PBKDF2), nicht umkehrbar",
+    "common.SiteSettings.email_host_password_legacy": "frühere Klartextspalte, von Migration common/0006 geleert",
+    "common.SiteSettings.nebius_api_key_legacy": "frühere Klartextspalte, von Migration common/0006 geleert",
+}
+
+
+def test_geheimnisse_liegen_nicht_im_klartext() -> None:
+    """Ein Feld, das nach Passwort oder Schlüssel klingt, ist verschlüsselt eingetragen oder begründet."""
+    offen = [
+        label
+        for label, field in _all_fields()
+        if GEHEIMNIS_NAME.search(field.name) and label not in REGISTERED and label not in KEIN_KLARTEXT_GEHEIMNIS
+    ]
+    assert not offen, f"Geheimnis im Klartext? Verschlüsseln und in crypto_registry.py eintragen: {offen}"
+    for label in KEIN_KLARTEXT_GEHEIMNIS:
+        model_label, field_name = label.rsplit(".", 1)
+        apps.get_model(model_label)._meta.get_field(field_name)  # veraltete Ausnahmen fallen auf
 
 
 def test_encrypted_text_fields_nutzen_den_mandantenschluessel() -> None:

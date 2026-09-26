@@ -9,7 +9,7 @@ Key Hierarchy:
     ENCRYPTION_MASTER_KEY (env var)
         ├── Organization / SessionTenant encryption_key (per tenant)
         │       └── Encrypted fields (notes, protocols, etc.)
-        ├── platform secrets (AISettings, ComputeSettings)
+        ├── platform secrets (SiteSettings, AISettings, ComputeSettings)
         └── derived 2FA key (Fernet: TOTP secrets, backup codes)
 
 Schlüsselwechsel: Während eines Wechsels gelten alter und neuer Schlüssel nebeneinander.
@@ -336,14 +336,22 @@ class TenantEncryption:
         """
         if not plaintext:
             return b""
+        return self.encrypt_bytes(plaintext.encode("utf-8"))
+
+    def encrypt_bytes(self, data: bytes | memoryview) -> bytes:
+        """
+        Binärdaten mit AES-256-GCM verschlüsseln (etwa den Zustand des gemeinsamen Editors).
+
+        Gleiches Format wie ``encrypt``: Nonce vor dem Geheimtext. Leere Daten ergeben ``b""``.
+        """
+        if not data:
+            return b""
 
         try:
-            self.logger.debug(f"[Encryption] Encrypting {len(plaintext)} chars")
-            aesgcm = AESGCM(self.key)
-            nonce = os.urandom(12)
-            ciphertext = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
+            self.logger.debug(f"[Encryption] Encrypting {len(data)} bytes")
+            ciphertext = aes_seal(self.key, bytes(data))
             self.logger.debug(f"[Encryption] Encrypted to {len(ciphertext)} bytes")
-            return nonce + ciphertext
+            return ciphertext
         except Exception as e:
             self.logger.exception(f"[Encryption] ENCRYPT FAILED: {e}")
             raise
@@ -363,9 +371,22 @@ class TenantEncryption:
 
         Security: Uses authenticated encryption (GCM) to detect tampering.
         """
+        plaintext = self.decrypt_bytes(ciphertext)
+        try:
+            return plaintext.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise DecryptionError("Decryption failed: data may be corrupted or tampered") from e
+
+    def decrypt_bytes(self, ciphertext: bytes | memoryview) -> bytes:
+        """
+        Gegenstück zu ``encrypt_bytes``: Binärdaten entschlüsseln, ``b""`` bei leerem Wert.
+
+        Raises:
+            DecryptionError: falscher Schlüssel oder veränderte Daten
+        """
         if not ciphertext:
             self.logger.debug("[Encryption] Decrypt called with empty ciphertext")
-            return ""
+            return b""
 
         data = bytes(ciphertext)
         self.logger.debug(f"[Encryption] Decrypting {len(data)} bytes")
@@ -385,7 +406,7 @@ class TenantEncryption:
                     except InvalidTag:
                         continue
                     self.logger.debug(f"[Encryption] Decrypted to {len(plaintext)} bytes")
-                    return plaintext.decode("utf-8")
+                    return plaintext
                 if attempt or not self._reload_keys():
                     break
         except Exception as e:

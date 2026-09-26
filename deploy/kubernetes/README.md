@@ -51,7 +51,8 @@ helm upgrade --install mandari deploy/kubernetes/helm/mandari \
 ```bash
 kubectl create namespace mandari
 # In deploy/kubernetes/manifests/mandari.yaml alle Werte "BITTE-ERSETZEN-*" und die
-# Domain anpassen, dann:
+# Domain anpassen (Werte unter data: sind Base64-kodiert; encryption-key zum Beispiel
+# mit: openssl rand -base64 32 | tr -d '\n' | base64), dann:
 kubectl kustomize deploy/kubernetes/manifests | kubectl apply -f -
 kubectl -n mandari apply -f deploy/kubernetes/manifests/job-migrate.yaml
 ```
@@ -92,6 +93,20 @@ kubectl -n mandari get secret mandari-secrets -o yaml > mandari-secrets-backup.y
 Der Eintrag `encryption-key` verschlüsselt Fachdaten (Protokolle, Anträge, personenbezogene
 Felder). Geht er verloren, sind diese Daten unwiederbringlich unlesbar. Die Sicherung gehört
 in einen Passwortspeicher, nicht in die Versionsverwaltung.
+
+**Format des `encryption-key`:** Base64 von genau 32 zufälligen Bytes, also 44 Zeichen, erzeugt
+mit `openssl rand -base64 32`. Ein beliebiges Passwort oder 32 Buchstaben und Ziffern genügen
+nicht: Dekodiert ergeben sie weniger als 32 Byte, und die Anwendung kann damit nichts
+verschlüsseln. Das Chart prüft das und bricht mit einem Hinweis ab, sowohl für
+`secrets.encryptionKey` als auch für einen im vorhandenen Secret gefundenen Wert.
+
+> **Installationen mit einem älteren Chart:** Bis September 2026 erzeugte das Chart den
+> Schlüssel aus 32 Buchstaben und Ziffern und damit ungültig. Die Feldverschlüsselung war
+> dort nicht nutzbar, ein `helm upgrade` bricht jetzt mit obigem Hinweis ab. Abhilfe: einen
+> gültigen Schlüssel erzeugen, sicher hinterlegen und setzen, zum Beispiel
+> `helm upgrade … --reuse-values --set secrets.encryptionKey="$(openssl rand -base64 32)"`.
+> Bereits eingerichtete zweite Faktoren sind danach nicht mehr lesbar; die betroffenen Konten
+> richten sie neu ein (`python manage.py reset_two_factor <E-Mail> --reason "…"`).
 
 Eigene Schlüssel vorgeben statt erzeugen lassen:
 

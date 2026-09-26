@@ -196,7 +196,7 @@ def warten_bis_yjs_gesichert(page: Any, motion: Motion) -> None:
     """Pollt die Datenbank, bis der Server den Yjs-Zustand persistiert hat (yjs_save ist asynchron)."""
     for _ in range(100):
         motion.refresh_from_db()
-        if motion.yjs_document:
+        if motion.get_yjs_state():
             return
         page.wait_for_timeout(100)
     raise AssertionError("Yjs-Zustand wurde nicht gesichert")
@@ -291,7 +291,7 @@ class TestKollaboration:
         expect(page_a.locator("header")).to_contain_text(SAVED_PATTERN, use_inner_text=True)
         assert not unsaved_changes(page_a)
         assert "Alt Alpha Offline" in decrypted_content(motion)
-        assert motion.yjs_document is None, "POST-Speichern muss den veralteten Yjs-Zustand verwerfen (#184)"
+        assert motion.get_yjs_state() is None, "POST-Speichern muss den veralteten Yjs-Zustand verwerfen (#184)"
 
         # B war verbunden, wird zum Neuladen aufgefordert und zeigt den gespeicherten Stand
         warte_auf_editor_text(page_b, "Alt Alpha Offline", timeout=15000)

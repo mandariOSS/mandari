@@ -176,7 +176,7 @@ def _get_motion_state():
     m = Motion.objects.get(id=motion.id)
     return {
         "content": m.get_content_decrypted(),
-        "yjs": bytes(m.yjs_document) if m.yjs_document else None,
+        "yjs": m.get_yjs_state(),
         "revisions": list(
             MotionRevision.objects.filter(motion=m).order_by("version").values_list("version", "change_summary")
         ),

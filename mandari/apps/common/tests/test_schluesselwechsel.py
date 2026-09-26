@@ -34,18 +34,21 @@ from apps.common import key_rotation
 from apps.common.crypto_registry import ENCRYPTED_FIELDS
 from apps.common.encryption import TenantEncryption, aes_open, decode_master_key
 from apps.common.key_rotation import FieldReport, KeyRotation, RotationError, ScanResult, Status
-from apps.common.models import AISettings
+from apps.common.models import AISettings, SiteSettings
 from apps.common.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 from apps.minutes.models import Recording, RecordingSegment, TranscriptSegment
 from apps.minutes.models_compute import ComputeSettings
 from apps.session.models import SessionMeeting, SessionOrganization, SessionPerson, SessionTenant
 from apps.tenants.models import Organization
 from apps.work.faction.models import FactionMeeting
+from apps.work.motions.models import Motion
 from apps.work.support.models import SupportTicket, SupportTicketMessage
 
 pytestmark = pytest.mark.django_db
 
 ALT_TOTP = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+#: Editor-Zustand: beliebige Bytes, nicht als Text lesbar
+YJS_ZUSTAND = bytes(range(256)) + b"yjs-geheim" + secrets.token_bytes(64)
 
 
 def _neuer_schluessel() -> str:
@@ -77,6 +80,7 @@ class Bestand:
     transkript_fraktion: TranscriptSegment
     nutzer: User
     altnutzer: User
+    dokument: Motion
 
 
 def _transkript(text: str, **sitzung: Any) -> TranscriptSegment:
@@ -100,6 +104,10 @@ def _anlegen() -> Bestand:
     nachricht = SupportTicketMessage(ticket=ticket, author_membership=mitglied)
     cast(Any, nachricht).set_content_encrypted("nachricht-geheim")
     nachricht.save()
+    dokument = Motion(organization=org, author=mitglied, title="Antrag")
+    cast(Any, dokument).set_content_encrypted("antrag-geheim")
+    dokument.set_yjs_state(YJS_ZUSTAND)
+    dokument.save()
 
     mandant = SessionTenant.objects.create(name="Stadt Wechsel", slug="stadt-wechsel")
     person = SessionPerson(tenant=mandant, given_name="P", family_name="Iban")
@@ -114,6 +122,10 @@ def _anlegen() -> Bestand:
     ki = AISettings.objects.get_or_create(pk=1)[0]
     ki.set_api_key("ki-geheim-global")
     cast(Any, ki).save()
+    system = SiteSettings.get_settings()
+    system.set_email_host_password("smtp-geheim-system")
+    system.set_nebius_api_key("nebius-geheim-system")
+    cast(Any, system).save()
     rechenknoten = ComputeSettings.load(use_cache=False)
     rechenknoten.set_client_secret("client-geheim")
     rechenknoten.set_s3_secret_key("s3-geheim")
@@ -135,6 +147,7 @@ def _anlegen() -> Bestand:
         transkript_fraktion=_transkript("transkript-fraktion-geheim", faction_meeting=fraktionssitzung),
         nutzer=nutzer,
         altnutzer=altnutzer,
+        dokument=dokument,
     )
 
 
@@ -148,6 +161,9 @@ def _lesen(b: Bestand) -> dict[str, str]:
     def entschluesselt(model: Any, pk: Any, getter: str) -> str:
         return str(getattr(model.objects.get(pk=pk), getter)())
 
+    system = SiteSettings.objects.get(pk=1)  # an der Zwischenspeicherung vorbei
+    zustand = Motion.objects.get(pk=b.dokument.pk).get_yjs_state()
+
     return {
         "smtp": org.get_smtp_password(),
         "ki_org": org.get_ai_api_key(),
@@ -158,6 +174,10 @@ def _lesen(b: Bestand) -> dict[str, str]:
         "transkript_session": entschluesselt(TranscriptSegment, b.transkript_session.pk, "get_text_decrypted"),
         "transkript_fraktion": entschluesselt(TranscriptSegment, b.transkript_fraktion.pk, "get_text_decrypted"),
         "ki_global": AISettings.objects.get(pk=1).get_api_key(),
+        "smtp_system": system.get_email_host_password(),
+        "nebius_system": system.get_stored_nebius_api_key(),
+        "antrag": entschluesselt(Motion, b.dokument.pk, "get_content_decrypted"),
+        "yjs": zustand.hex() if zustand == YJS_ZUSTAND else "abweichend",
         "client": rechenknoten.get_client_secret(),
         "s3": rechenknoten.get_s3_secret_key(),
         "totp": service._decrypt(geraet.secret_encrypted),
@@ -214,6 +234,8 @@ def test_wechsel_erfasst_jede_schluesselart(bestand: tuple[Bestand, dict[str, st
 
     with _nur(NEU):
         assert _lesen(b) == erwartet
+        # Die zwischengespeicherte Instanz mit dem alten Geheimtext ist verworfen
+        assert SiteSettings.get_settings().get_email_host_password() == erwartet["smtp_system"]
         neu_org = _mandantenschluessel(Organization, b.org.pk, NEU)
         neu_session = _mandantenschluessel(SessionTenant, b.mandant.pk, NEU)
         scan = KeyRotation().scan()
@@ -226,8 +248,12 @@ def test_wechsel_erfasst_jede_schluesselart(bestand: tuple[Bestand, dict[str, st
     # Weder alter Hauptschlüssel noch alte Mandantenschlüssel öffnen noch irgendetwas
     alt_master = decode_master_key(ALT)
     org = Organization.objects.get(pk=b.org.pk)
+    system = SiteSettings.objects.get(pk=1)
     for wert, schluessel in (
         (AISettings.objects.get(pk=1).api_key_encrypted, alt_master),
+        (system.email_host_password_encrypted, alt_master),
+        (system.nebius_api_key_encrypted, alt_master),
+        (Motion.objects.get(pk=b.dokument.pk).yjs_document_encrypted, alt_org),
         (org.encryption_key, alt_master),
         (org.smtp_password_encrypted, alt_org),
         (SupportTicketMessage.objects.get(pk=b.nachricht.pk).content_encrypted, alt_org),

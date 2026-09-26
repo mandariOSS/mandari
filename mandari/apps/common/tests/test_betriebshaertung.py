@@ -47,8 +47,8 @@ class TestSystemeinstellungen:
         from apps.common.models import SiteSettings
 
         einstellungen = cast(Any, SiteSettings).get_settings()
-        einstellungen.email_host_password = "SMTP-GEHEIM-123"
-        einstellungen.nebius_api_key = "NEBIUS-GEHEIM-456"
+        einstellungen.set_email_host_password("SMTP-GEHEIM-123")
+        einstellungen.set_nebius_api_key("NEBIUS-GEHEIM-456")
         einstellungen.save()
         return einstellungen
 
@@ -72,8 +72,8 @@ class TestSystemeinstellungen:
         assert formular.is_valid(), formular.errors
         formular.save()
         einstellungen.refresh_from_db()
-        assert einstellungen.email_host_password == "SMTP-GEHEIM-123"
-        assert einstellungen.nebius_api_key == "NEBIUS-GEHEIM-456"
+        assert einstellungen.get_email_host_password() == "SMTP-GEHEIM-123"
+        assert einstellungen.get_stored_nebius_api_key() == "NEBIUS-GEHEIM-456"
 
 
 @pytest.mark.django_db

@@ -167,7 +167,11 @@ def _tenant_paths(entry: EncryptedField) -> list[tuple[str, str]]:
 
 
 def _batches(
-    model: type[models.Model], field_name: str, extra: Sequence[str] = (), where: models.Q | None = None
+    model: type[models.Model],
+    field_name: str,
+    extra: Sequence[str] = (),
+    where: models.Q | None = None,
+    size: int = BATCH_SIZE,
 ) -> Iterator[list[tuple[Any, ...]]]:
     """Zeilen mit gesetztem Feld, seitenweise nach Primärschlüssel (kein offener Cursor, wenig Speicher)."""
     queryset = model._base_manager.filter(**{f"{field_name}__isnull": False})
@@ -177,7 +181,7 @@ def _batches(
     last: Any = None
     while True:
         page = queryset if last is None else queryset.filter(pk__gt=last)
-        rows = list(page.values_list("pk", field_name, *extra)[:BATCH_SIZE])
+        rows = list(page.values_list("pk", field_name, *extra)[:size])
         if not rows:
             return
         yield rows
@@ -305,7 +309,7 @@ class KeyRotation:
             if entry.kind is KeyKind.TENANT:
                 paths = _tenant_paths(entry)
                 extra = [path for path, _target in paths if path != SELF]
-                for rows in _batches(model, entry.field, extra):
+                for rows in _batches(model, entry.field, extra, size=entry.batch_size):
                     for row in rows:
                         data = _bytes(row[1])
                         if not data:
@@ -316,7 +320,7 @@ class KeyRotation:
                         if tenant is not None:
                             per_tenant.setdefault(tenant, Counter())[status] += 1
             else:
-                for rows in _batches(model, entry.field):
+                for rows in _batches(model, entry.field, size=entry.batch_size):
                     for pk, value in rows:
                         data = _bytes(value)
                         if data:
@@ -362,7 +366,7 @@ class KeyRotation:
         with transaction.atomic():
             for entry in fields_of_kind(*MASTER_LEVEL):
                 model = _model(entry.model)
-                for rows in _batches(model, entry.field):
+                for rows in _batches(model, entry.field, size=entry.batch_size):
                     for pk, value in rows:
                         data = _bytes(value)
                         if not data:
@@ -404,7 +408,7 @@ class KeyRotation:
             where = models.Q()
             for path in matching:
                 where |= models.Q(**{path: pk})
-            for rows in _batches(model, entry.field, where=where):
+            for rows in _batches(model, entry.field, where=where, size=entry.batch_size):
                 for row_pk, value in rows:
                     data = _bytes(value)
                     if not data:
