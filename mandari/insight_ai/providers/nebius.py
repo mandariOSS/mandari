@@ -6,6 +6,7 @@ Uses OpenAI-compatible API with Kimi K2 Thinking model.
 """
 
 import logging
+import os
 
 import httpx
 
@@ -21,14 +22,15 @@ class NebiusProvider(AbstractAIProvider):
     Uses httpx instead of OpenAI SDK to properly handle
     Kimi K2 Thinking's reasoning_content field.
 
-    Models (by priority):
-    1. moonshotai/Kimi-K2-Thinking (256k context, reasoning)
-    2. thudm/GLM-4.5 (128k context, fallback)
+    Modelle (Reihenfolge): Hauptmodell, bei Fehler das Ausweichmodell. Beide lassen sich per
+    Umgebung überschreiben (``NEBIUS_PRIMARY_MODEL``, ``NEBIUS_FALLBACK_MODEL``) – Nebius schaltet
+    Modelle ohne Vorwarnung ab: Im September 2026 verschwanden Kimi-K2-Thinking und GLM-4.5
+    gleichzeitig, und alle KI-Zusammenfassungen scheiterten mit 404.
     """
 
     BASE_URL = "https://api.tokenfactory.nebius.com/v1/chat/completions"
-    PRIMARY_MODEL = "moonshotai/Kimi-K2-Thinking"
-    FALLBACK_MODEL = "thudm/GLM-4.5"
+    PRIMARY_MODEL = os.environ.get("NEBIUS_PRIMARY_MODEL", "moonshotai/Kimi-K2.6")
+    FALLBACK_MODEL = os.environ.get("NEBIUS_FALLBACK_MODEL", "zai-org/GLM-5.2")
 
     def __init__(self, api_key: str | None = None):
         """
