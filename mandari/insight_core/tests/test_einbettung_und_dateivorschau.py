@@ -34,7 +34,8 @@ from insight_core.services import file_cache
 pytestmark = pytest.mark.django_db
 
 AUSBRUCH = "Radweg </script><script>alert(document.domain)</script>"
-SCRIPT_RE = re.compile(r"<script\b([^>]*)>(.*?)</script>", re.S | re.I)
+# Browser beenden ein Skript auch bei "</script >" oder "</script foo>" – der Test muss das ebenso sehen
+SCRIPT_RE = re.compile(r"<script\b([^>]*)>(.*?)</script\b[^>]*>", re.S | re.I)
 
 
 @pytest.fixture
