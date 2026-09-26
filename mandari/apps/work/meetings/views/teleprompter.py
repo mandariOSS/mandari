@@ -3,6 +3,7 @@
 Teleprompter-Ansicht für den eigenen Redebeitrag zu einem TOP.
 """
 
+from django.http import Http404
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
@@ -29,8 +30,9 @@ class TeleprompterView(WorkViewMixin, TemplateView):
 
         bodies = selectors.organization_bodies(self.organization)
         if bodies is None or not self.membership:
-            context["error"] = "Keine OParl-Körperschaft verknüpft"
-            return context
+            # Ohne verknüpfte Kommune gibt es keine Sitzung dieser Organisation; die Vollbildseite
+            # hat keinen Platz für einen Hinweis und braucht die Sitzung für den Rückweg.
+            raise Http404
 
         meeting = selectors.get_meeting_or_404(bodies, self.kwargs["meeting_id"])
         agenda_item = selectors.get_agenda_item_or_404(self.kwargs["item_id"], meeting)

@@ -21,7 +21,7 @@ class PreparationSummaryView(WorkViewMixin, TemplateView):
 
         bodies = selectors.organization_bodies(self.organization)
         if bodies is None:
-            context["error"] = "Keine OParl-Körperschaft verknüpft"
+            context["no_body_linked"] = True
             return context
 
         meeting = selectors.get_meeting_or_404(bodies, self.kwargs["meeting_id"])

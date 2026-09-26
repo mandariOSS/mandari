@@ -1,7 +1,24 @@
-{% comment %}Hinweis ohne verknüpfte Kommune, mit Erklärung; endet ohne Zeilenumbruch, damit die Ausgabe byte-gleich bleibt.{% endcomment %}<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
-    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
-    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
-    <p class="text-amber-700 dark:text-amber-300">
-        Dieser Organisation ist noch keine Kommune zugewiesen.
+{% load permission_tags %}
+{% comment %}
+Hinweis für Organisationen ohne verknüpfte Kommune. Alle RIS-Seiten binden ihn ein; er braucht
+nur organization und membership aus dem WorkViewMixin, keine RIS-Daten.
+{% endcomment %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="landmark" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Noch keine Kommune verknüpft</h3>
+    <p class="text-amber-700 dark:text-amber-300 max-w-xl mx-auto">
+        Sobald eurer Organisation eine Stadt oder Kommune zugeordnet ist, findet ihr hier Vorgänge,
+        Sitzungen, Gremien und Personen aus deren Ratsinformationssystem.
     </p>
+    {% if membership|has_perm:"support.create" %}
+    <a href="{% url 'work:support_create' org_slug=organization.slug %}"
+       class="inline-flex items-center gap-2 mt-4 px-4 py-2 text-sm font-medium bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors">
+        <i data-lucide="life-buoy" class="w-4 h-4"></i>
+        Zuordnung beim Support anfragen
+    </a>
+    {% else %}
+    <p class="text-sm text-amber-700 dark:text-amber-300 mt-3">
+        Die Zuordnung übernimmt der Support auf Anfrage eurer Organisationsverwaltung.
+    </p>
+    {% endif %}
 </div>

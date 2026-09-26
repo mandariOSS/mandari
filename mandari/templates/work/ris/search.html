@@ -15,10 +15,7 @@
 
 {% block work_content %}
 {% if no_body_linked %}
-<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
-    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
-    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
-</div>
+{% include "work/ris/partials/_no_body_notice.html" %}
 {% else %}
 
 <!-- Search Input + Filter -->
@@ -121,7 +118,8 @@
         {% if hit.reference %}<span class="text-xs font-mono text-gray-500">{{ hit.reference }}</span>{% endif %}
     </a>
     {% elif hit.type == 'file' %}
-    {% if hit.paper_id %}<a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=hit.paper_id %}"{% else %}<div{% endif %} class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+    {% comment %}Ohne zugehörigen Vorgang bleibt der Treffer ein Anker ohne Ziel: ein Element statt zwei bedingter Tags.{% endcomment %}
+    <a {% if hit.paper_id %}href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=hit.paper_id %}" {% endif %}class="group block px-6 py-3 {% if hit.paper_id %}hover:bg-gray-50 dark:hover:bg-gray-700/50 {% endif %}transition-colors">
         <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-teal-500 mb-0.5">
             <i data-lucide="file-search" class="w-3.5 h-3.5"></i> Dokument (Volltext-Treffer)
             {% if hit.meeting_date %}<span class="normal-case font-normal text-gray-400">· {{ hit.meeting_date|slice:":10" }}</span>{% endif %}
@@ -131,7 +129,7 @@
         <p class="text-xs text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">…{{ hit.formatted.text_content }}…</p>
         {% endif %}
         {% if hit.paper_name %}<span class="text-xs text-gray-500">zu: {{ hit.paper_name|truncatechars:70 }}</span>{% endif %}
-    {% if hit.paper_id %}</a>{% else %}</div>{% endif %}
+    </a>
     {% elif hit.type == 'meeting' %}
     <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
         <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-green-500 mb-0.5">

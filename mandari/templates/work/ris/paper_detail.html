@@ -1,6 +1,6 @@
 {% extends "work/base_work.html" %}
 
-{% block page_title %}{{ paper.name|truncatechars:50 }}{% endblock %}
+{% block page_title %}{% if paper %}{{ paper.name|truncatechars:50 }}{% else %}Vorgang{% endif %}{% endblock %}
 
 {% block header_title %}Vorgang{% endblock %}
 {% block header_subtitle %}
@@ -19,7 +19,7 @@
 
 {% block work_content %}
 {% if no_body_linked %}
-{% include "work/ris/_no_body.html" %}
+{% include "work/ris/partials/_no_body_notice.html" %}
 {% else %}
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">

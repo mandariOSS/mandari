@@ -1,10 +1,12 @@
 {% extends "work/base_work.html" %}
 
-{% block page_title %}{{ person.name }}{% endblock %}
+{% block page_title %}{% if person %}{{ person.name }}{% else %}Person{% endif %}{% endblock %}
 
 {% block header_title %}Person{% endblock %}
 {% block header_subtitle %}
+{% if person %}
 <p class="work-page-subtitle">{{ person.name }}</p>
+{% endif %}
 {% endblock %}
 
 {% block header_actions %}
@@ -17,7 +19,7 @@
 
 {% block work_content %}
 {% if no_body_linked %}
-{% include "work/ris/partials/_no_body_notice_short.html" %}
+{% include "work/ris/partials/_no_body_notice.html" %}
 {% else %}
 
 <div x-data="{ tab: '{{ active_tab }}' }">

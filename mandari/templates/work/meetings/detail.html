@@ -1,15 +1,17 @@
 {% extends "work/base_work.html" %}
 {% load i18n %}
 
-{% block page_title %}{{ meeting.committee_name|default:meeting.get_display_name|default:"Sitzung" }}{% endblock %}
+{% block page_title %}{% if meeting %}{{ meeting.committee_name|default:meeting.get_display_name|default:"Sitzung" }}{% else %}Sitzung{% endif %}{% endblock %}
 
-{% block header_title %}{{ meeting.committee_name|default:meeting.get_display_name|default:"Sitzungsdetails" }}{% endblock %}
+{% block header_title %}{% if meeting %}{{ meeting.committee_name|default:meeting.get_display_name|default:"Sitzungsdetails" }}{% else %}Sitzungsdetails{% endif %}{% endblock %}
 {% block header_subtitle %}
+{% if meeting %}
 <p class="work-page-subtitle">
     {% if meeting.name and meeting.name != meeting.committee_name %}{{ meeting.name }} &middot; {% endif %}
     {% if meeting.start %}{{ meeting.start|date:"l, d. F Y" }} um {{ meeting.start|date:"H:i" }} Uhr{% endif %}
     {% if meeting.location_name %} &middot; {{ meeting.location_name }}{% endif %}
 </p>
+{% endif %}
 {% endblock %}
 
 {% block header_actions %}
@@ -30,16 +32,8 @@
 {% endblock %}
 
 {% block work_content %}
-{% if error %}
-<div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
-    <i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-3 text-yellow-600 dark:text-yellow-400"></i>
-    <p class="text-yellow-700 dark:text-yellow-300 mb-4">{{ error }}</p>
-    <a href="{% url 'work:meetings' org_slug=organization.slug %}"
-       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-        <i data-lucide="arrow-left" class="w-4 h-4"></i>
-        Zurück zur Übersicht
-    </a>
-</div>
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
 {% elif meeting %}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Main content -->
