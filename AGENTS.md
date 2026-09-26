@@ -1,7 +1,7 @@
 # Mandari 2.0 - AI Assistant Context
 
-> Diese Datei enthält Kontext und Anweisungen für KI-Assistenten (ChatGPT, Copilot, Gemini, etc.)
-> Für Claude-spezifische Anweisungen siehe CLAUDE.md
+> Gemeinsamer Kontext für alle KI-Assistenten (Claude, Copilot, Codex, Gemini usw.).
+> Claude-spezifische Ergänzungen stehen in CLAUDE.md, das diese Datei einbindet.
 
 ## Projekt-Überblick
 
@@ -17,7 +17,7 @@ Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz in De
 
 | Komponente | Technologie |
 |------------|-------------|
-| **Backend** | Django 6.0 (Python 3.12+) |
+| **Backend** | Django 6.1 (Python 3.12+) |
 | **Frontend** | Django Templates + HTMX + Alpine.js |
 | **CSS** | Tailwind CSS |
 | **Datenbank** | PostgreSQL 16 |
@@ -30,7 +30,7 @@ Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz in De
 ## Projektstruktur
 
 ```
-mandari2.0/
+mandari/
 ├── mandari/                    # Haupt-Django-Projekt
 │   ├── apps/                   # Django Apps
 │   │   ├── accounts/           # Benutzer-Authentifizierung
@@ -47,15 +47,18 @@ mandari2.0/
 │   │       ├── ris/            # RIS-Datenansicht
 │   │       ├── support/        # Support-Tickets
 │   │       └── tasks/          # Aufgabenverwaltung
-│   ├── insight_core/           # OParl-Datenmodelle
+│   ├── insight_core/           # OParl-Datenmodelle & Services
+│   │   └── services/           # Text-Extraktion, OCR, Suche
 │   ├── insight_sync/           # OParl-Synchronisation
-│   ├── insight_search/         # Suchfunktionalität
+│   ├── insight_search/         # Elasticsearch-Integration
 │   ├── insight_ai/             # KI-Pipelines
 │   ├── templates/              # Django Templates
 │   ├── static/                 # Statische Dateien
-│   └── settings.py             # Django-Einstellungen
-├── CLAUDE.md                   # Claude-spezifischer Kontext
-└── AGENTS.md                   # Diese Datei (generisch)
+│   └── mandari/settings.py     # Django-Einstellungen
+├── ingestor/                   # Python-basierter OParl-Ingestor (httpx, SQLAlchemy)
+├── AGENTS.md                   # Diese Datei (gemeinsamer Kontext)
+├── CLAUDE.md                   # Claude-spezifische Ergänzungen
+└── LICENSE                     # AGPL-3.0-or-later
 ```
 
 ---
@@ -77,7 +80,8 @@ mandari2.0/
 
 **Wichtige Views**:
 - `LoginView` - Login mit Rate Limiting
-- `RegisterView` - Nur per Einladung möglich
+- `RegisterView` - Registrierung per Einladung
+- `SelfRegisterView` - Selbstregistrierung mit E-Mail-Bestätigung, wenn die Organisation sie zulässt
 - Password Reset Flow (4 Schritte)
 
 ---
@@ -300,6 +304,13 @@ python manage.py sync_oparl --background
 python manage.py sync_oparl --concurrent 20
 ```
 
+**Sync-Workflow**:
+1. `OParlSource` → System-Endpoint abrufen
+2. `OParlBody` → Bodies der Quelle laden
+3. Pro Body: Organizations, Persons, Meetings, Papers parallel laden
+4. Verknüpfungen (Memberships, Consultations, Files) auflösen
+5. `raw_json` speichern für spätere Analyse
+
 **Automatisierung via Cron**:
 ```bash
 # Incremental alle 15 Minuten
@@ -363,12 +374,31 @@ class OParlXxx(models.Model):
 | `OParlBody` | `display_name`, `logo` | Frontend-Anpassung |
 | `OParlBody` | `latitude`, `longitude`, `bbox_*` | Geo-Koordinaten für Karten |
 | `OParlBody` | `osm_relation_id` | OpenStreetMap-Verknüpfung |
+| `OParlBody` | `slug` | SEO-freundliche URLs |
 | `OParlPaper` | `summary` | KI-generierte Zusammenfassung |
 | `OParlPaper` | `locations` | Extrahierte Ortsreferenzen |
 | `OParlFile` | `local_path` | Lokale Dateispeicherung |
 | `OParlFile` | `text_content` | OCR-extrahierter Text |
+| `OParlFile` | `text_extraction_status/method/error` | Extraktions-Tracking |
 | `LocationMapping` | - | Ortsname → Koordinaten-Mapping |
 | `TileCache` | - | Gecachte OSM-Kartenkacheln |
+
+### Services (insight_core/services/)
+
+| Service | Zweck |
+|---------|-------|
+| `document_extraction.py` | PDF-Textextraktion (pypdf → Mistral → Tesseract) |
+| `mistral_ocr.py` | Mistral AI OCR-Integration |
+| `search_service.py` | Elasticsearch Multi-Index-Suche |
+
+### SEO & Sitemaps
+
+| Datei | Zweck |
+|-------|-------|
+| `insight_core/seo.py` | SEO-Context-Generatoren für alle Entitäten |
+| `insight_core/views/sitemap.py` | Hierarchische Sitemaps pro Kommune |
+| `insight_core/signals.py` | Auto-Indexierung bei Model-Änderungen |
+| `insight_search/synonyms.py` | 100+ deutsche Kommunal-Synonyme |
 
 ### Code-Beispiele für OParl-Zugriff
 
@@ -433,14 +463,14 @@ class MeetingPreparation(models.Model):
     organization = models.ForeignKey("tenants.Organization", ...)
 
     # Verknüpfung zur OParl-Sitzung
-    oparl_meeting = models.ForeignKey(
+    meeting = models.ForeignKey(
         "insight_core.OParlMeeting",
         on_delete=models.CASCADE
     )
 
 class AgendaItemNote(models.Model):
     # Verknüpfung zum OParl-TOP
-    oparl_agenda_item = models.ForeignKey(
+    agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
         on_delete=models.CASCADE
     )
@@ -516,46 +546,38 @@ class MyListView(WorkViewMixin, ListView):
 |-------|-------|
 | `OrganizationMixin` | Setzt `request.organization` und `request.membership` |
 | `PermissionRequiredMixin` | Prüft `permission_required` Attribut |
-| `HTMXMixin` | Bietet `is_htmx` Property und `htmx_redirect()` |
+| `HTMXMixin` | Bietet `is_htmx` (HTMX-Anfrage erkennen); außerhalb von Views `request.htmx` aus django-htmx |
 | `WorkViewMixin` | Kombiniert alle obigen für Work-Portal |
 
-### Template-Struktur
+### Templates
+
+Verbindlich: [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) und die ADRs unter `docs/adr/`.
+Kurzfassung: Templates sind Struktur, nicht Programm.
+
+- Kein `<script>`/`<style>` in Seiten-Templates (Allowlist: Layouts, E-Mails, PDF, PWA). JavaScript lebt in
+  `frontend/` (TypeScript, Vite → `static/dist/`, Layouts laden per `{% vite_asset %}`); Alpine-Komponenten
+  werden in `frontend/js/main.ts` mit `Alpine.data()` registriert und im Template nur per `x-data="name"`
+  referenziert. Server-Daten gehen per `{{ data|json_script:"id" }}` an den Client. Icons brauchen kein
+  `lucide.createIcons()` mehr (MutationObserver). Entwicklung: `npm run watch` + `DJANGO_VITE_DEV_MODE=1`.
+- Höchstens 300 Zeilen je Template; HTMX-Fragmente als Django-6-Template-Partials (`{% partialdef %}`).
+- Wiederkehrendes Markup (Buttons, Cards, Badges, Formularfelder, Modals) als django-cotton-Komponente aus
+  `templates/cotton/` statt kopierter Klassenketten: `<c-ui.button type="submit" full>`, `<c-ui.card title="…">`,
+  `<c-form.field :field="form.email" label="E-Mail" type="email" required />`, `<c-form.errors :form="form" />`.
+  Vorschau aller Komponenten unter `/dev/ui/` (nur DEBUG); Tests in `apps/common/tests/test_components.py`.
+- `scripts/check_frontend_ratchet.py` misst Inline-Code und Template-Größe; die Werte dürfen nur sinken.
+- Template-Kommentare mit `{# … #}` nur einzeilig; mehrzeilig `{% comment %}…{% endcomment %}`. Ein
+  mehrzeiliges `{# #}` erscheint als Text auf der Seite (`scripts/check_template_comments.py` prüft das).
 
 ```html
 {% extends "work/base_work.html" %}
-{% load static %}
-
-{% block page_title %}Meine Seite{% endblock %}
 
 {% block content %}
-<div x-data="myComponent()" class="p-6">
-    <!-- Alpine.js Component für Client-Logik -->
-    <template x-for="item in items" :key="item.id">
-        <div class="p-4 bg-white rounded-lg shadow">
-            <span x-text="item.title"></span>
-        </div>
-    </template>
+{{ board_data|json_script:"task-board-data" }}
+<div x-data="taskBoard" class="...">
+    {% partialdef task-list inline %}
+    <ul id="task-list">…</ul>
+    {% endpartialdef %}
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-function myComponent() {
-    return {
-        items: {{ items_json|safe }},
-        loading: false,
-
-        init() {
-            console.log('Component initialized');
-        },
-
-        async loadMore() {
-            this.loading = true;
-            // HTMX oder fetch für Daten
-        }
-    }
-}
-</script>
 {% endblock %}
 ```
 
@@ -589,11 +611,14 @@ python manage.py fix_permissions   # Berechtigungen aus Code sync
 python manage.py sync_oparl --full  # Vollständiger Sync
 python manage.py extract_texts      # OCR für PDFs
 
+# Elasticsearch konfigurieren (Synonyme, Typo-Toleranz)
+python manage.py setup_elasticsearch
+
 # Statische Dateien (Production)
 python manage.py collectstatic
 
 # Interaktive Shell
-python manage.py shell_plus  # django-extensions
+python manage.py shell
 ```
 
 ---
@@ -618,6 +643,25 @@ EMAIL_HOST_USER=user
 EMAIL_HOST_PASSWORD=pass
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=noreply@example.com
+
+# Logging / Tracing (apps/common/observability.py)
+LOG_FORMAT=json            # json (Produktion) oder text (Entwicklung)
+LOG_LEVEL=INFO             # DEBUG wird in Produktion auf INFO gekappt
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318   # leer = kein Tracing
+OTEL_SERVICE_NAME=mandari-web
+
+# Elasticsearch (Volltextsuche)
+ELASTICSEARCH_URL=http://localhost:9200
+ELASTICSEARCH_AUTO_INDEX=True
+
+# Text-Extraktion
+TEXT_EXTRACTION_ENABLED=True
+TEXT_EXTRACTION_ASYNC=True
+TEXT_EXTRACTION_MAX_SIZE_MB=50
+
+# Mistral OCR (optional, für bessere PDF-OCR)
+MISTRAL_API_KEY=sk-...
+MISTRAL_OCR_RATE_LIMIT=60
 ```
 
 ---
@@ -626,23 +670,31 @@ DEFAULT_FROM_EMAIL=noreply@example.com
 
 ```
 /                               # Public Portal (insight_core)
+/robots.txt                     # SEO: robots.txt
+/sitemap-insight-index.xml      # SEO: Sitemap-Index
+/sitemap-insight-<slug>.xml     # SEO: Pro Kommune
+/insight/                       # Insight Portal
+    /vorgaenge/<uuid>/          # Paper-Detail
+    /termine/<uuid>/            # Meeting-Detail
+    /gremien/<uuid>/            # Organization-Detail
+    /personen/<uuid>/           # Person-Detail
 /admin/                         # Django Admin (Unfold Theme)
 /accounts/                      # Authentifizierung
     /login/
     /logout/
     /password-reset/
-    /register/<token>/
+    /register/                  # Registrierung per Einladung
+    /register/<org_slug>/       # Selbstregistrierung
 /work/<org_slug>/               # Work Portal (pro Organisation)
     /dashboard/                 # Übersicht
     /ris/                       # RIS-Datenansicht
     /meetings/                  # Sitzungsvorbereitung
         /<meeting_id>/prepare/  # Vorbereitung einer Sitzung
     /faction/                   # Fraktionssitzungen
-        /create/
         /<meeting_id>/
     /motions/                   # Anträge
     /tasks/                     # Aufgaben
-    /settings/                  # Organisationseinstellungen
+    /organization/              # Organisationseinstellungen
         /members/
         /roles/
 /session/<tenant_slug>/         # Session RIS (Verwaltung)
@@ -736,7 +788,7 @@ class MyView(WorkViewMixin, TemplateView):
     def get_queryset(self):
         return MyModel.objects.filter(organization=self.organization)
 
-# HTMX-Partial automatisch wählen
+# HTMX-Partial wählen
 def get_template_names(self):
     if self.is_htmx:
         return ["work/partials/my_partial.html"]
@@ -786,6 +838,8 @@ python manage.py migrate
 ## Referenzen
 
 - **OParl-Spezifikation**: https://oparl.org/spezifikation/
+- **Projekt-Repository**: https://github.com/mandariOSS/mandari
+- **Dokumentation**: `docs/`
 - **Django Dokumentation**: https://docs.djangoproject.com/
 - **HTMX**: https://htmx.org/
 - **Alpine.js**: https://alpinejs.dev/
