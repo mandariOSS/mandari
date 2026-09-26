@@ -11,7 +11,7 @@ Notizen gibt es nur für angemeldete Personen mit dem NÖ-Recht (``auth.TOKEN_PE
 from __future__ import annotations
 
 import contextlib
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from django.db.models import QuerySet
@@ -26,6 +26,7 @@ from apps.session.models import (
     SessionPaper,
     SessionTenant,
 )
+from apps.session.oparl_publication import visible_papers
 
 from .auth import BearerOrSession, Principal, client_ip, resolve_principal
 from .problems import Problem
@@ -141,13 +142,18 @@ def papers(
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, Any]:
-    """Öffentliche Vorlagen für alle; nicht-öffentliche samt Texten mit Recht ``view_non_public_papers``."""
+    """
+    Veröffentlichte Vorlagen für alle; nicht-öffentliche samt Texten mit Recht ``view_non_public_papers``.
+
+    Veröffentlicht heißt wie in der OParl-Schnittstelle: öffentlich UND freigegeben – Entwürfe und
+    Vorlagen in Prüfung erscheinen nur mit dem Leserecht.
+    """
     tenant = get_tenant(tenant_slug)
     principal = resolve_principal(request, tenant)
     non_public = principal.has_permission("view_non_public_papers")
-    qs = SessionPaper.objects.filter(tenant=tenant)
-    if not non_public:
-        qs = qs.filter(is_public=True)
+    qs: QuerySet[SessionPaper] = (
+        SessionPaper.objects.filter(tenant=tenant) if non_public else cast(Any, visible_papers)(tenant)
+    )
     rows, total = _page(
         qs.select_related("main_organization", "originator_organization").order_by("-date", "-created_at"),
         limit,

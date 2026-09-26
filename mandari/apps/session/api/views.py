@@ -26,6 +26,7 @@ from apps.session.models import (
     SessionPaper,
     SessionTenant,
 )
+from apps.session.oparl_publication import visible_papers
 from apps.session.permissions import SessionPermissionChecker
 
 
@@ -227,11 +228,12 @@ class SessionPaperListAPIView(SessionAPIMixin, View):
         tenant = self.get_tenant(tenant_slug)
         session_user = self.get_session_user(request, tenant)
 
-        # Determine what papers to show
+        # Ohne NÖ-Leserecht gilt die Veröffentlichungsregel der OParl-Schnittstelle:
+        # öffentlich UND freigegeben (Entwürfe und Vorlagen in Prüfung sind Verwaltungsinterna).
         if session_user and self.check_permission(session_user, "view_non_public_papers"):
             papers = SessionPaper.objects.filter(tenant=tenant)
         else:
-            papers = SessionPaper.objects.filter(tenant=tenant, is_public=True)
+            papers = visible_papers(tenant)
 
         papers = papers.select_related("main_organization", "originator_organization").order_by("-date", "-created_at")[
             :100

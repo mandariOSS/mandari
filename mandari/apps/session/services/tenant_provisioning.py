@@ -505,7 +505,14 @@ def _ensure_key(tenant: SessionTenant, result: ProvisioningResult) -> None:
 
 
 def _ensure_admin(tenant: SessionTenant, email: str, result: ProvisioningResult) -> None:
-    """Vorhandenes Konto aufnehmen oder über die bestehende Einladung einladen – nie ein Passwort."""
+    """
+    Vorhandenes Konto aufnehmen oder über die bestehende Einladung einladen – nie ein Passwort.
+
+    Aufgenommen wird nur ein Konto, das per Adresse übernommen werden darf (``can_adopt_by_email``).
+    Ein Konto aus einer nie bestätigten Selbstregistrierung erhält wie ein fehlendes eine Einladung
+    an das Postfach.
+    """
+    from apps.accounts.adoption import can_adopt_by_email
     from apps.session import audit
     from apps.session.models import SessionInvitation, SessionUser
 
@@ -513,6 +520,8 @@ def _ensure_admin(tenant: SessionTenant, email: str, result: ProvisioningResult)
     if admin_role is None:  # pragma: no cover - ensure_default_roles legt die Rolle an
         raise ProvisioningError(["Der Mandant hat keine Administrator-Rolle."])
     konto = get_user_model().objects.filter(email__iexact=email).first()
+    if konto is not None and not can_adopt_by_email(konto):
+        konto = None
     if konto is not None:
         zugang, neu = SessionUser.objects.get_or_create(user=konto, tenant=tenant)
         if not zugang.is_active:

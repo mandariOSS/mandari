@@ -46,22 +46,24 @@ if "localhost" not in ALLOWED_HOSTS:
 if _site_domain and _site_domain not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_site_domain)
 # Add wildcard subdomain support (e.g., *.mandari.de)
-# Django uses leading dot for subdomain matching
+# Django uses leading dot for subdomain matching. Nötig für die Weiterleitung von
+# Organisations-Subdomains (volt.mandari.de -> /work/volt/). Vertrauen für Formulare und
+# WebSockets folgt daraus NICHT (siehe CSRF_TRUSTED_ORIGINS und apps/common/websocket_origin.py).
 _wildcard_domain = f".{_site_domain.replace('www.', '')}"
 if _wildcard_domain not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_wildcard_domain)
 
-# CSRF trusted origins from environment (filter empty strings)
+# Vertrauenswürdige Ursprünge für Formulare (CSRF): nur SITE_URL und ausdrücklich genannte
+# Ursprünge aus der Umgebung, kommagetrennt mit Schema (z. B. https://ratsinfo.stadt.example).
+# Subdomains gelten nicht pauschal als vertrauenswürdig, denn dort können andere Anwendungen oder
+# Inhalte liegen (z. B. eine Demo-Instanz). Anfragen an den eigenen Host (Organisations-Subdomains,
+# PORTAL_HOSTS) prüft Django ohnehin gegen den Host der Anfrage; dafür ist kein Eintrag nötig.
 _csrf_env = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_env.split(",") if o.strip()]
 
 # Ensure SITE_URL is always in CSRF trusted origins
 if SITE_URL and SITE_URL not in CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS.append(SITE_URL)
-# Add wildcard subdomain support for CSRF (Django 4.0+)
-_wildcard_csrf_origin = f"https://*.{_site_domain.replace('www.', '')}"
-if _wildcard_csrf_origin not in CSRF_TRUSTED_ORIGINS:
-    CSRF_TRUSTED_ORIGINS.append(_wildcard_csrf_origin)
 
 # Subdomain redirect settings (e.g., volt.mandari.de -> /work/volt/)
 # Extract main domain from SITE_URL (e.g., 'mandari.de')
@@ -673,6 +675,17 @@ if not DEBUG:
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
+
+# Sitzungs- und CSRF-Cookie gelten nur für genau den Host, der sie gesetzt hat (kein
+# Domain-Attribut). Mit HTTPS tragen sie zusätzlich das Präfix __Host-: Browser nehmen ein
+# solches Cookie nur mit Secure, Path=/ und ohne Domain an, eine Subdomain kann es also weder
+# setzen noch überschreiben. Ohne HTTPS (lokale Entwicklung) bleiben die Standardnamen.
+# Hinweis: Die Umstellung der Namen beendet einmalig alle bestehenden Sitzungen.
+SESSION_COOKIE_DOMAIN = None
+CSRF_COOKIE_DOMAIN = None
+_host_only_cookies = not DEBUG and SITE_URL.startswith("https://")
+SESSION_COOKIE_NAME = "__Host-sessionid" if _host_only_cookies else "sessionid"
+CSRF_COOKIE_NAME = "__Host-csrftoken" if _host_only_cookies else "csrftoken"
 
 SILENCED_SYSTEM_CHECKS = [
     "security.W008",  # SSL-Redirect übernimmt der Reverse Proxy (Healthchecks über HTTP)

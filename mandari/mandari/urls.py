@@ -5,7 +5,7 @@ URL configuration for Mandari project.
 Mandari Insight - Kommunalpolitische Transparenz
 """
 
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from django.conf import settings
 from django.contrib import admin
@@ -49,6 +49,37 @@ PROTECTED_MEDIA_PREFIXES = (
 )
 
 
+def _media_path(path: str) -> str | None:
+    """Relativer Medienpfad in eindeutiger Schreibweise – oder ``None``.
+
+    Die Zugriffsregeln unten gelten für genau die Datei, die ausgeliefert würde.
+    Darum wird jeder Pfad abgelehnt, den das Dateisystem anders auflösen könnte
+    als er geschrieben steht: Punkt-Segmente (``.``/``..``), leere Segmente,
+    Backslashes, Steuerzeichen und weitere Prozent-Kodierungen (Django hat den
+    Pfad bereits einmal dekodiert). Zusätzlich muss der aufgelöste Pfad unter
+    ``MEDIA_ROOT`` liegen und derselbe sein (keine Symlinks hinaus, keine andere
+    Groß-/Kleinschreibung auf Dateisystemen, die sie ignorieren).
+    """
+    from urllib.parse import unquote
+
+    from django.core.exceptions import SuspiciousFileOperation
+    from django.utils._os import safe_join
+
+    if not path or "\\" in path or any(ord(zeichen) < 32 for zeichen in path) or unquote(path) != path:
+        return None
+    if any(segment in ("", ".", "..") for segment in path.split("/")):
+        return None
+    root = Path(settings.MEDIA_ROOT).resolve()
+    try:
+        aufgeloest = Path(safe_join(root, path)).resolve()
+        relativ = aufgeloest.relative_to(root).as_posix()
+    except (SuspiciousFileOperation, ValueError, OSError):
+        return None
+    if aufgeloest.exists() and relativ != path:
+        return None
+    return path
+
+
 def serve_media(request, path):
     """Serve uploaded media files (logos, uploads) via Django.
 
@@ -57,7 +88,8 @@ def serve_media(request, path):
     dort für alle Uploads 404. ``django.views.static.serve`` kümmert
     sich um Last-Modified/304; wir ergänzen einen moderaten Cache-Header.
 
-    Sicherheit (drei Stufen):
+    Sicherheit (drei Stufen, jeweils auf dem normalisierten Pfad aus
+    ``_media_path``):
     - PROTECTED_MEDIA_PREFIXES werden hier NIE ausgeliefert – sie können
       nichtöffentlich sein und sind nur über die zugriffsgeprüften
       Download-Views erreichbar (Session-Anlagen, Dokument-Anhänge).
@@ -69,7 +101,10 @@ def serve_media(request, path):
     """
     from django.http import Http404
 
-    if path.startswith(PROTECTED_MEDIA_PREFIXES):
+    path = _media_path(path)
+    if path is None:
+        raise Http404("Datei nicht gefunden.")
+    if path.lower().startswith(PROTECTED_MEDIA_PREFIXES):
         raise Http404("Diese Datei wird nur über die geschützte Download-View ausgeliefert.")
     if not path.startswith(PUBLIC_MEDIA_PREFIXES) and not request.user.is_authenticated:
         raise Http404("Datei nicht gefunden.")

@@ -26,6 +26,7 @@ from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.adoption import can_adopt_by_email
 from apps.accounts.models import EmailVerificationToken, User
 from apps.common.uploads import IMAGES, validate_upload
 from apps.tenants.models import (
@@ -329,6 +330,12 @@ def invite_guest(
                 f"{email} hat bereits eine deaktivierte Mitgliedschaft. Reaktivieren Sie diese in der Mitgliederliste.",
                 message_levels.WARNING,
             )
+        if user.has_usable_password() and not can_adopt_by_email(user):
+            # Konto aus einer nie bestätigten Selbstregistrierung: Das gesetzte Passwort stammt nicht
+            # nachweislich von der Inhaberin des Postfachs. Es verliert seine Gültigkeit (bestehende
+            # Sitzungen enden damit); der Zugang entsteht über den Passwort-Link der Gast-Mail.
+            user.set_unusable_password()
+            user.save(update_fields=["password"])
 
     guest_membership = Membership.objects.create(
         user=user, organization=organization, is_guest=True, invited_by=inviter_user

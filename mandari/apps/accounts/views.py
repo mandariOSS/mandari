@@ -580,6 +580,15 @@ class PasswordResetConfirmView(DjangoPasswordResetConfirmView):
     success_url = reverse_lazy("accounts:password_reset_complete")
     form_class = SetPasswordForm
 
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        # Der Link kam per E-Mail – wer ihn einlöst, kontrolliert das Postfach
+        user = form.user
+        if not user.email_verified:
+            user.email_verified = True
+            user.save(update_fields=["email_verified"])
+        return response
+
 
 class PasswordResetCompleteView(DjangoPasswordResetCompleteView):
     """Password reset complete confirmation."""

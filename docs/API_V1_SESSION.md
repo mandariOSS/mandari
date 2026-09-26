@@ -10,7 +10,7 @@ RFC 9457, versionierte Pfade.
 |---------|------|---------|
 | GET | `/api/v1/session/{tenant_slug}/` | Einstiegspunkt mit allen Links |
 | GET | `/api/v1/session/{tenant_slug}/meetings/` | öffentlich; NÖ-Sitzungen (samt internen Notizen) nur für angemeldete Nutzer mit Recht `view_non_public_meetings` |
-| GET | `/api/v1/session/{tenant_slug}/papers/` | öffentlich; NÖ-Vorlagen samt Texten nur für angemeldete Nutzer mit Recht `view_non_public_papers` |
+| GET | `/api/v1/session/{tenant_slug}/papers/` | veröffentlichte Vorlagen (öffentlich und freigegeben, wie OParl); NÖ-Vorlagen, Entwürfe und Vorlagen in Prüfung samt Texten nur für angemeldete Nutzer mit Recht `view_non_public_papers` |
 | GET | `/api/v1/session/{tenant_slug}/applications/` | nur mit Recht `view_applications` |
 | POST | `/api/v1/session/{tenant_slug}/applications/submit/` | API-Token mit `can_submit_applications` |
 | GET | `/api/v1/session/{tenant_slug}/applications/{id}/feedback/` | nur das einreichende API-Token (bzw. ein Token derselben in Work verbundenen Organisation) |
