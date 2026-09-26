@@ -49,7 +49,10 @@ def test_zusammenfassungsdienst_gibt_anbietertext_nicht_weiter() -> None:
     paper = mock.Mock(id="1", reference="V/1", paper_type="", date=None, body=None)
     paper.name = "Vorlage"
     paper.consultations.values_list.return_value.distinct.return_value = []
+    dateien = mock.Mock()
+    dateien.values_list.return_value = []
     with (
+        mock.patch.object(SummaryService, "_current_files", return_value=dateien),
         mock.patch.object(SummaryService, "_collect_text_content_with_extraction", return_value="Text"),
         pytest.raises(SummaryError) as fehler,
     ):
