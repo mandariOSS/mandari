@@ -29,7 +29,6 @@
 | django-htmx | ≥ 1.19.0 | MIT | HTMX-Integration für Django |
 | django-unfold | ≥ 0.40.0 | MIT | Modernes Admin-Theme |
 | whitenoise | ≥ 6.7.0 | MIT | Static-File-Serving in Produktion |
-| gunicorn | ≥ 23.0.0 | MIT | WSGI-Produktionsserver |
 | daphne | ≥ 4.1.0 | BSD-3-Clause | ASGI-Server für WebSockets |
 | channels | ≥ 4.2.0 | BSD-3-Clause | WebSocket-/Echtzeit-Unterstützung |
 | channels-redis | ≥ 4.2.0 | BSD-3-Clause | Redis-Channel-Layer für Channels |
@@ -44,7 +43,6 @@
 | sqlalchemy | ≥ 2.0.36 | MIT | DB-Zugriff für Ingestor-Integration (Sync-Daemon) |
 | asyncpg | ≥ 0.30.0 | Apache-2.0 | Asynchroner PostgreSQL-Treiber |
 | redis | ≥ 5.2.0 | MIT | Redis-Client (Cache, Sessions, Queues) |
-| django-redis | ≥ 5.4.0 | BSD-3-Clause | Redis-Cache-Backend für Django |
 
 ### Suche & KI
 
@@ -72,8 +70,6 @@
 | cryptography | ≥ 44.0.0 | Apache-2.0 / BSD-3-Clause | Feldverschlüsselung (AES-256-GCM, tenant-spezifisch) |
 | pydantic-settings | ≥ 2.6.0 | MIT | Typisierte Konfiguration |
 | python-dotenv | ≥ 1.0.0 | BSD-3-Clause | .env-Konfiguration |
-| python-dateutil | ≥ 2.9.0 | Apache-2.0 / BSD-3-Clause | Datums-Utilities |
-| markdown | ≥ 3.7 | BSD-3-Clause | Markdown-Rendering (Template-Filter) |
 | rich | ≥ 13.9.0 | MIT | Konsolen-Ausgabe (Management-Commands) |
 | mandari-oparl (`shared/`) | 0.1.0.dev0 | AGPL-3.0 | Eigenes Shared-Package: OParl-Pydantic-Schemas |
 
