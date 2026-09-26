@@ -270,7 +270,7 @@ class TestLinksAusEmails:
             question_text="Wann kommt der Radweg?",
         )
         client = Client()
-        url = f"/insight/fragen/verifizieren/{frage.verification_token}/"
+        url = f"/insight/fragen/verifizieren/{frage.token_for_link()}/"
         mail.outbox.clear()
         assert client.get(url).status_code == 200
         frage.refresh_from_db()

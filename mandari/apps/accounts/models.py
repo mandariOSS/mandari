@@ -19,6 +19,8 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.db import models
 from django.utils import timezone
 
+from apps.common.tokens import HashedTokenMixin, unusable_token_hash
+
 
 class UserManager(BaseUserManager):
     """Custom user manager with email as the unique identifier."""
@@ -159,19 +161,26 @@ class TwoFactorDevice(models.Model):
         return f"2FA für {self.user.email}"
 
 
-class TrustedDevice(models.Model):
+class TrustedDevice(HashedTokenMixin, models.Model):
     """
     Trusted device for reduced 2FA prompts.
 
     When a user marks a device as trusted, they won't need to
     enter their 2FA code for a specified duration.
+
+    Gespeichert wird nur der SHA-256-Hash des Geräte-Tokens (apps/common/tokens.py); das Token
+    selbst kennt nur das Gerät.
     """
+
+    token_field = "device_token"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trusted_devices")
 
     # Device identification
-    device_token = models.CharField(max_length=64, unique=True)
+    device_token = models.CharField(
+        max_length=64, unique=True, default=unusable_token_hash, editable=False, verbose_name="Geräte-Token (SHA-256)"
+    )
     device_name = models.CharField(max_length=200, blank=True)
 
     # Browser info
@@ -198,18 +207,22 @@ class TrustedDevice(models.Model):
 
     @classmethod
     def create_for_user(cls, user, request, device_name: str = "", valid_days: int = 30):
-        """Create a new trusted device for a user."""
-        token = secrets.token_hex(32)
-        expires_at = timezone.now() + timedelta(days=valid_days)
-
-        return cls.objects.create(
+        """Neues vertrauenswürdiges Gerät; das Token für das Gerät steht nur in ``plain_token``."""
+        device = cls(
             user=user,
-            device_token=token,
             device_name=device_name or cls._get_device_name(request),
             user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
             ip_address=cls._get_ip_address(request),
-            expires_at=expires_at,
+            expires_at=timezone.now() + timedelta(days=valid_days),
         )
+        device.issue_token()
+        device.save()
+        return device
+
+    @classmethod
+    def find_valid(cls, user, raw_token: object):
+        """Noch gültiges Gerät der Person zum Token, sonst ``None``."""
+        return cls.find_by_token(raw_token, cls.objects.filter(user=user, expires_at__gt=timezone.now()))
 
     @staticmethod
     def _get_device_name(request) -> str:
@@ -357,15 +370,19 @@ class PasswordResetToken(models.Model):
         )
 
 
-class EmailVerificationToken(models.Model):
+class EmailVerificationToken(HashedTokenMixin, models.Model):
     """
-    Email verification token for new accounts.
+    Bestätigungslink für eine E-Mail-Adresse (Selbstregistrierung).
+
+    Gespeichert wird nur der SHA-256-Hash (apps/common/tokens.py); das Token steht einmal in der Mail.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="email_verification_tokens")
 
-    token = models.CharField(max_length=64, unique=True)
+    token = models.CharField(
+        max_length=64, unique=True, default=unusable_token_hash, editable=False, verbose_name="Token (SHA-256)"
+    )
     email = models.EmailField()  # The email being verified
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
@@ -382,16 +399,11 @@ class EmailVerificationToken(models.Model):
 
     @classmethod
     def create_for_user(cls, user, valid_hours: int = 48):
-        """Create a new email verification token."""
-        token = secrets.token_urlsafe(48)
-        expires_at = timezone.now() + timedelta(hours=valid_hours)
-
-        return cls.objects.create(
-            user=user,
-            token=token,
-            email=user.email,
-            expires_at=expires_at,
-        )
+        """Neuer Bestätigungslink; das Token für die Mail steht nur in ``plain_token``."""
+        verification = cls(user=user, email=user.email, expires_at=timezone.now() + timedelta(hours=valid_hours))
+        verification.issue_token()
+        verification.save()
+        return verification
 
 
 class SecurityNotification(models.Model):

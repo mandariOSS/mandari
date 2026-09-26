@@ -430,11 +430,8 @@ class InvitationAcceptView(View):
     template_name = "session/settings/invitation_accept.html"
 
     def _get_invitation(self, token):
-        try:
-            invitation = SessionInvitation.objects.select_related("tenant").get(token=token)
-        except SessionInvitation.DoesNotExist:
-            return None
-        if not invitation.is_valid:
+        invitation = SessionInvitation.find_by_token(token, SessionInvitation.objects.select_related("tenant"))
+        if invitation is None or not invitation.is_valid:
             return None
         return invitation
 

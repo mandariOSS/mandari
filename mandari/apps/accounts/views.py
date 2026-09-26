@@ -298,12 +298,13 @@ class LoginView(View):
 
         from apps.tenants.models import UserInvitation
 
-        try:
-            return UserInvitation.objects.get(token=token, accepted_at__isnull=True, expires_at__gt=timezone.now())
-        except UserInvitation.DoesNotExist:
+        invitation = UserInvitation.find_by_token(
+            token, UserInvitation.objects.filter(accepted_at__isnull=True, expires_at__gt=timezone.now())
+        )
+        if invitation is None:
             # Clear invalid token
             request.session.pop("pending_invitation_token", None)
-            return None
+        return invitation
 
 
 class LoginTwoFactorView(View):
@@ -745,10 +746,9 @@ class RegisterView(View):
 
         from apps.tenants.models import UserInvitation
 
-        try:
-            return UserInvitation.objects.get(token=token, accepted_at__isnull=True, expires_at__gt=timezone.now())
-        except UserInvitation.DoesNotExist:
-            return None
+        return UserInvitation.find_by_token(
+            token, UserInvitation.objects.filter(accepted_at__isnull=True, expires_at__gt=timezone.now())
+        )
 
 
 SELF_REGISTER_MAILS_PER_IP_PER_HOUR = 10

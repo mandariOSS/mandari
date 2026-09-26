@@ -273,7 +273,7 @@ def _question() -> Any:
         subject="Radweg an der Hauptstraße",
         question_text="Wann wird der Radweg an der Hauptstraße fertiggestellt?\n\nDie Baustelle steht seit Monaten.",
         answer_text="Vielen Dank für die Frage.\nDie Fertigstellung ist für Oktober geplant.",
-        verification_token=_uuid(0x403),
+        verification_token=str(_uuid(0x403)),  # im Feld steht sonst ein Hash; fester Wert für die Vorlage
         answer_token=_uuid(0x404),
         status="published",
         answer_status="published",

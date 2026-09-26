@@ -34,7 +34,7 @@ from .models import DataExport, MemberAbsence, MemberChangeRequest
 
 if TYPE_CHECKING:
     from apps.session.models import SessionApplication
-    from apps.work.faction.models import FactionMeetingSchedule
+    from apps.work.faction.models import CalendarFeedToken, FactionMeetingSchedule
     from apps.work.motions.models import (
         DocumentFolder,
         FolderGuestShare,
@@ -251,7 +251,7 @@ def registration_reviewers(organization: Organization) -> list[Membership]:
 
 def find_registration_token(token: str) -> EmailVerificationToken | None:
     """Gültiger, noch nicht eingelöster Bestätigungslink einer Selbstregistrierung."""
-    candidate = EmailVerificationToken.objects.select_related("user").filter(token=token).first()
+    candidate = EmailVerificationToken.find_by_token(token, EmailVerificationToken.objects.select_related("user"))
     if candidate is None or not candidate.is_valid:
         return None
     return candidate
@@ -550,11 +550,8 @@ def get_open_invitation_or_404(organization: Organization, invitation_id: Any) -
 
 def find_invitation_by_token(token: str | None) -> UserInvitation | None:
     """Einladung per Token (öffentlicher Annahme-Fluss) inkl. Organisation, Einladendem und Rollen."""
-    return (
-        UserInvitation.objects.select_related("organization", "invited_by")
-        .prefetch_related("roles")
-        .filter(token=token)
-        .first()
+    return UserInvitation.find_by_token(
+        token, UserInvitation.objects.select_related("organization", "invited_by").prefetch_related("roles")
     )
 
 
@@ -647,6 +644,13 @@ def recent_sessions(user: User) -> QuerySet[UserSession]:
 def trusted_devices(user: User) -> QuerySet[TrustedDevice]:
     """Vertrauenswürdige Geräte mit gültiger Laufzeit."""
     return TrustedDevice.objects.filter(user=user, expires_at__gt=timezone.now()).order_by("-last_used_at")
+
+
+def calendar_feed(user: User) -> CalendarFeedToken | None:
+    """Eingerichteter persönlicher iCal-Feed der Person oder ``None``."""
+    from apps.work.faction.models import CalendarFeedToken
+
+    return CalendarFeedToken.objects.filter(user=user).first()
 
 
 def find_trusted_device(user: User, device_id: Any) -> TrustedDevice | None:

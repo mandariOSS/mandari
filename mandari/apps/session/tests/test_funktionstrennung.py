@@ -12,6 +12,7 @@ Funktionstrennung und festgeschriebene Stände im Session RIS.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import timedelta
 from pathlib import Path
@@ -19,6 +20,7 @@ from typing import Any, cast
 
 import pytest
 from django.contrib.messages import get_messages
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.utils import timezone
@@ -259,8 +261,11 @@ def test_bestehendes_konto_wird_nicht_ungefragt_aufgenommen(tenant: SessionTenan
     assert SessionInvitation.objects.filter(tenant=tenant, email="bestand@example.org").exists()
     assert _meldungen(antwort_bestand).replace("bestand", "X") == _meldungen(antwort_neu).replace("neu", "X")
 
-    einladung = SessionInvitation.objects.get(tenant=tenant, email="bestand@example.org")
+    # Nur der Hash steht in der Datenbank; den Link gibt es nur in der Mail
+    einladungsmail = next(m for m in mail.outbox if m.to == ["bestand@example.org"])
+    link = re.search(r"/session/invite/[^/\s\"]+/", str(einladungsmail.body))
+    assert link is not None
     annahme = Client()
     annahme.force_login(bestand)
-    assert annahme.post(f"/session/invite/{einladung.token}/").status_code == 302
+    assert annahme.post(link.group(0)).status_code == 302
     assert SessionUser.objects.filter(tenant=tenant, user=bestand, is_active=True).exists()

@@ -23,6 +23,7 @@ from django.utils.text import slugify
 
 from apps.common.encryption import exclude_key_fields_from_save
 from apps.common.permissions import DEFAULT_ROLES, PERMISSIONS
+from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 
 
 class PartyGroup(models.Model):
@@ -1026,11 +1027,14 @@ class Membership(models.Model):
         return bool(checker.has_permission(permission))
 
 
-class UserInvitation(models.Model):
+class UserInvitation(HashedTokenMixin, models.Model):
     """
     Invitation for a user to join an organization.
 
     Used when inviting someone who may or may not have an account yet.
+
+    Gespeichert wird nur der SHA-256-Hash des Tokens (apps/common/tokens.py); das Token steht einmal
+    in der Einladungsmail. Erneutes Senden erzeugt einen neuen Link.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1044,7 +1048,9 @@ class UserInvitation(models.Model):
 
     # Invitation details
     email = models.EmailField(verbose_name="E-Mail")
-    token = models.CharField(max_length=64, unique=True)
+    token = models.CharField(
+        max_length=64, unique=True, default=unusable_token_hash, editable=False, verbose_name="Token (SHA-256)"
+    )
 
     # Pre-assigned roles
     roles = models.ManyToManyField(Role, blank=True, related_name="invitations", verbose_name="Rollen")
@@ -1100,26 +1106,21 @@ class UserInvitation(models.Model):
         valid_days: int = 7,
     ):
         """
-        Create a new invitation with a secure token.
-
-        Security: Uses cryptographically secure token generation.
+        Neue Einladung; das Token für den Link steht nur in ``plain_token`` (gespeichert wird der Hash).
         """
-        import secrets
         from datetime import timedelta
 
         from django.utils import timezone
 
-        token = secrets.token_urlsafe(48)
-        expires_at = timezone.now() + timedelta(days=valid_days)
-
-        invitation = cls.objects.create(
+        invitation = cls(
             organization=organization,
             email=email.lower().strip(),
-            token=token,
             invited_by=invited_by,
             message=message,
-            expires_at=expires_at,
+            expires_at=timezone.now() + timedelta(days=valid_days),
         )
+        invitation.issue_token()
+        invitation.save()
 
         if roles:
             # Security: Validate roles belong to the organization
