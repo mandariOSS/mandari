@@ -70,10 +70,12 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Editor: Speichern ohne Kollaborationsverbindung überschreibt keinen neueren Stand mehr still; Konflikthinweis mit „Neu laden“ / „Trotzdem speichern“ (#184).
 - Editor: Ein verbundener Client konnte nach der Reload-Aufforderung mit einem späten `yjs_save` den ohne Verbindung gespeicherten Stand überschreiben; Server und Client verwerfen ihn jetzt (#298).
 - Fünf Lösch-Routen antworteten auf GET mit 500 statt 405; Federführende und Mitwirkende sahen ihre Anträge nicht (#249).
+- Work: Organisationen ohne verknüpfte Kommune bekamen auf den RIS-Detailseiten (Vorgang, Sitzung, Gremium) und in der Sitzungsvorbereitung einen Serverfehler. Alle RIS-Seiten zeigen jetzt denselben Hinweis mit Weg zur Support-Anfrage; der Teleprompter antwortet mit 404.
 
 ### Sicherheit
 - Einheitliche Validierung hochgeladener Dateien; Nicht-Bild-Anhänge werden als Download ausgeliefert (GHSA-6p5c-wv4v-8g24, #260).
 - SMTP-Passwort und Nebius-Schlüssel der Systemeinstellungen werden mit dem Hauptschlüssel verschlüsselt gespeichert, der Zustand des gemeinsamen Editors mit dem Organisationsschlüssel; beide sind im Verzeichnis der verschlüsselten Felder und damit im Schlüsselwechsel enthalten. Die Migrationen `common/0006` und `work/0057` verschlüsseln den Bestand und leeren die früheren Spalten; ohne gültigen `ENCRYPTION_MASTER_KEY` brechen sie ab, ohne etwas zu ändern. Das Helm-Chart erzeugt einen gültigen `encryption-key` (Base64 von 32 Byte) und prüft vorgegebene und vorhandene Werte; Hinweise für bestehende Installationen in `deploy/kubernetes/README.md`.
+- Admin: Werte aus der Datenbank in Listenspalten (Art und Gesundheit der OParl-Quellen, Support-Nachrichten und -Tickets, Status der Sync-Läufe) werden über `format_html` maskiert statt per `mark_safe` eingesetzt.
 
 ## [0.10.0] – in Vorbereitung (Tag folgt mit der Veröffentlichung des Advisories)
 
