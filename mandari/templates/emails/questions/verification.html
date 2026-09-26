@@ -4,18 +4,13 @@
 {% block content %}
 <h1 class="h1">E-Mail bestätigen</h1>
 <p class="muted">Ihre Frage an {{ question.recipient.display_name }}</p>
-<p>Hallo {{ question.questioner_name }},</p>
-<p>Sie haben eine Frage an <strong>{{ question.recipient.display_name }}</strong> gestellt. Bitte bestätigen Sie Ihre E-Mail-Adresse, damit Ihre Frage geprüft werden kann.</p>
-<div class="card card-accent">
-    <p class="label">Betreff</p>
-    <p><strong>{{ question.subject }}</strong></p>
-    <p class="muted">{{ question.question_text|truncatewords:50 }}</p>
-</div>
+<p>Hallo,</p>
+<p>über mandari Insight wurde mit dieser E-Mail-Adresse eine Frage an <strong>{{ question.recipient.display_name }}</strong> gestellt. Bitte bestätigen Sie Ihre E-Mail-Adresse, damit die Frage geprüft werden kann. Den Wortlaut sehen Sie nach dem Klick.</p>
 <div class="btn-wrap">
     <a class="btn" href="{{ verify_url }}">Frage bestätigen</a>
 </div>
 <div class="card card-warning">
-    <p><strong>Hinweis:</strong> Der Bestätigungslink ist 48 Stunden gültig.</p>
+    <p><strong>Hinweis:</strong> Der Bestätigungslink ist 48 Stunden gültig. Sie haben keine Frage gestellt? Dann ignorieren Sie diese E-Mail einfach.</p>
 </div>
 {% endblock %}
 {% block footer %}

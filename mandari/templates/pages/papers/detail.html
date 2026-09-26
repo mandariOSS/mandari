@@ -92,7 +92,7 @@
                                      clearInterval(interval);
                                  }
                              })">
-                            <button type="button" hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
+                            <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
                                     hx-target="#paper-summary"
                                     hx-swap="innerHTML"
                                     hx-request="timeout:300000"

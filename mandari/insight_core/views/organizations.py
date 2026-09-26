@@ -12,9 +12,11 @@ from django.views.generic import DetailView, ListView
 from ..models import (
     OParlMeeting,
     OParlOrganization,
+    withdrawn_q,
 )
 from ..ranking import sort_organizations_by_ranking
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._withdrawn import withdrawn_response
 
 # =============================================================================
 # Gremien (Organizations)
@@ -123,13 +125,25 @@ class OrganizationDetailView(DetailView):
     template_name = "pages/organizations/detail.html"
     context_object_name = "organization"
 
+    def get(self, request, *args, **kwargs):
+        # Von mandari Session zurückgenommen (gelöscht, Mandant deaktiviert): kein Inhalt
+        self.object = self.get_object()
+        if self.object.withdrawn_by_publisher:
+            return withdrawn_response(request, self.object)
+        return self.render_to_response(self.get_context_data(object=self.object))
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         org = self.object
         today = timezone.now().date()
         now = timezone.now()
 
-        all_memberships = org.memberships.select_related("person", "person__body")
+        # Nur bestehende Mitgliedschaften von nicht zurückgenommenen Personen
+        all_memberships = (
+            org.memberships.filter(deleted=False)
+            .exclude(withdrawn_q("person"))
+            .select_related("person", "person__body")
+        )
         active_qs = all_memberships.filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).order_by(
             "person__family_name"
         )

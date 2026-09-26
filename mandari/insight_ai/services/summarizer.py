@@ -9,6 +9,7 @@ Includes on-demand text extraction from PDFs if text_content is not available.
 import logging
 from typing import TYPE_CHECKING
 
+from apps.common.db_connections import release_idle_thread_connections
 from insight_ai.providers import NebiusProvider
 from insight_ai.providers.base import ChatMessage
 
@@ -18,6 +19,9 @@ if TYPE_CHECKING:
     from insight_core.models import OParlFile, OParlPaper
 
 logger = logging.getLogger(__name__)
+
+#: Höchstens so viele Anlagen werden bei Bedarf heruntergeladen und ausgelesen (Dauer, OCR-Kosten)
+MAX_ON_DEMAND_EXTRACTIONS = 3
 
 
 class SummaryError(Exception):
@@ -34,6 +38,12 @@ class NoTextContentError(SummaryError):
 
 class APINotConfiguredError(SummaryError):
     """Raised when the AI API is not properly configured."""
+
+    pass
+
+
+class SummaryRevokedError(SummaryError):
+    """Raised when the paper or one of its files was withdrawn while the summary was generated."""
 
     pass
 
@@ -85,6 +95,10 @@ class SummaryService:
                 "KI-API nicht konfiguriert. Bitte setzen Sie NEBIUS_API_KEY "
                 "als Umgebungsvariable oder in den Systemeinstellungen."
             )
+
+        # Stand zu Beginn: Wird der Vorgang oder eine dieser Anlagen während der Erstellung
+        # zurückgenommen, darf das Ergebnis weder gespeichert noch ausgegeben werden
+        started = (bool(paper.deleted), list(self._current_files(paper).values_list("pk", flat=True)))
 
         # Collect text content from all files (with on-demand extraction)
         text_content = self._collect_text_content_with_extraction(paper)
@@ -145,6 +159,9 @@ class SummaryService:
         try:
             logger.info(f"Generating summary for paper {paper.id} ({paper.reference})")
 
+            # Der KI-Aufruf dauert Minuten: Datenbankverbindung solange an den Pool zurückgeben
+            release_idle_thread_connections()
+
             # Call AI provider
             # Kimi K2 Thinking needs high max_tokens - the thinking process
             # can use 10k+ tokens before producing the actual answer
@@ -161,6 +178,10 @@ class SummaryService:
                 f"{response.input_tokens} input, {response.output_tokens} output tokens"
             )
 
+            # Während der Erstellung zurückgenommen (Vorgang oder Anlage)? Dann nichts ausgeben
+            if self._withdrawn_since(paper, started):
+                raise SummaryRevokedError("Vorgang oder Anlage wurde während der Erstellung zurückgenommen.")
+
             # Save to paper if requested
             if save:
                 paper.summary = summary
@@ -169,7 +190,7 @@ class SummaryService:
 
             return summary
 
-        except (NoTextContentError, APINotConfiguredError):
+        except (NoTextContentError, APINotConfiguredError, SummaryRevokedError):
             raise
         except Exception as e:
             logger.exception(f"Summary generation failed for paper {paper.id}: {e}")
@@ -200,6 +221,7 @@ class SummaryService:
 
         # Second pass: extract text from files that need it
         if files_to_extract and not texts:
+            files_to_extract = files_to_extract[:MAX_ON_DEMAND_EXTRACTIONS]
             logger.info(f"Extracting text from {len(files_to_extract)} files on-demand")
             for file in files_to_extract:
                 extracted_text = self._extract_text_from_file(file)
@@ -235,6 +257,8 @@ class SummaryService:
         try:
             logger.info(f"Extracting text from file {file.id}: {url}")
 
+            # Download und OCR dauern: Datenbankverbindung solange an den Pool zurückgeben
+            release_idle_thread_connections()
             result = download_and_extract(
                 url=url,
                 mime_type=file.mime_type,
@@ -277,6 +301,16 @@ class SummaryService:
                 texts.append(f"### {file_name}\n{file.text_content.strip()}")
 
         return "\n\n---\n\n".join(texts)
+
+    @staticmethod
+    def _withdrawn_since(paper: "OParlPaper", started: tuple[bool, list]) -> bool:
+        """Vorgang oder eine der verwendeten Anlagen seit Beginn gelöscht bzw. zurückgenommen?"""
+        from insight_core.models import OParlFile, OParlPaper
+
+        was_deleted, file_ids = started
+        return (
+            not was_deleted and OParlPaper.objects.filter(pk=paper.pk, deleted=True).exists()
+        ) or OParlFile.objects.filter(pk__in=file_ids, deleted=True).exists()
 
     @staticmethod
     def _current_files(paper: "OParlPaper"):

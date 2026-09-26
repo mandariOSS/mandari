@@ -10,10 +10,10 @@
     <p class="label">Ihre Abos</p>
     <p>
         {% if subscriber.neighborhood_active %}
-        &#127968; Nachbarschaft: {{ subscriber.neighborhood_name|default:"Standort" }} ({{ subscriber.neighborhood_radius }}m)<br>
+        &#127968; Nachbarschaft im Umkreis von {{ subscriber.neighborhood_radius }}&nbsp;m<br>
         {% endif %}
         {% if subscriber.keyword_active %}
-        &#128269; Suchbegriff: {{ subscriber.keyword }}<br>
+        &#128269; Suchbegriff<br>
         {% endif %}
         &#128337; {{ subscriber.get_digest_frequency_display }}er Digest
     </p>
@@ -21,6 +21,7 @@
 <div class="btn-wrap">
     <a class="btn" href="{{ confirm_url }}">Abo bestätigen</a>
 </div>
+<p class="muted center">Ort und Suchbegriff sehen Sie nach der Bestätigung in der Abo-Verwaltung.</p>
 <p class="muted center">Falls Sie dieses Abo nicht erstellt haben, ignorieren Sie diese E-Mail einfach.</p>
 {% endblock %}
 {% block footer %}
