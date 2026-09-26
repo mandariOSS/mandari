@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Bestehende Konten werden nur mit bestätigter E-Mail-Adresse per Adresse übernommen.
+Bestehende Konten werden per Adresse nur übernommen, wenn sie zur Inhaberin des Postfachs gehören.
 
 Die Selbstregistrierung legt ein Konto an, bevor die Adresse bestätigt ist. Solange sie
 unbestätigt ist, darf ein solches Konto nicht allein anhand der Adresse Mitglied eines
 Session-Mandanten, Administrator eines neu angelegten Mandanten oder Gast einer
 Organisation werden. Stattdessen geht eine Einladung bzw. ein Link an das Postfach –
 wer ihn einlöst, beweist die Kontrolle über die Adresse. Einladungs- und Passwort-Links
-bestätigen die Adresse deshalb auch.
+bestätigen die Adresse deshalb auch. Konten, die schon Zugang zu einer Organisation oder
+einem Mandanten haben, bleiben wie bisher übernehmbar (``apps/accounts/adoption.py``).
 """
 
 from __future__ import annotations
@@ -118,6 +119,20 @@ def test_session_einladung_nimmt_bestaetigtes_konto_direkt_auf(tenant: SessionTe
     assert not SessionInvitation.objects.filter(tenant=tenant).exists()
 
 
+def test_session_einladung_nimmt_konto_mit_bestehendem_zugang_direkt_auf(
+    org: Any, make_member: Any, tenant: SessionTenant, verwaltung: Client
+) -> None:
+    """Altbestand ohne Bestätigungsvermerk, aber Mitglied einer Organisation: wie bisher direkt."""
+    mitglied = make_member(org, [], email="mitglied@stadt-x.example")
+    assert not mitglied.user.email_verified
+
+    verwaltung.post(
+        reverse("session:user_invite", kwargs={"tenant_slug": tenant.slug}), {"email": "mitglied@stadt-x.example"}
+    )
+
+    assert SessionUser.objects.filter(user=mitglied.user, tenant=tenant, is_active=True).exists()
+
+
 def test_eingeloest_einladung_bestaetigt_die_adresse(tenant: SessionTenant) -> None:
     konto = cast(Any, UserFactory)(email="inhaber@stadt-x.example")
     assert not konto.email_verified
@@ -202,6 +217,26 @@ def test_gast_einladung_entzieht_unbestaetigtem_konto_das_fremde_passwort(
     assert not unbestaetigt.check_password(FREMDES_PASSWORT)
     assert [m.to for m in mail.outbox] == [[ADRESSE]]
     assert "/accounts/reset/" in mail.outbox[0].body or "/accounts/password" in mail.outbox[0].body
+
+
+def test_gast_einladung_laesst_konto_mit_bestehendem_zugang_unveraendert(
+    org: Any, make_member: Any, client_for: Any
+) -> None:
+    """Mitglied in einer Organisation (ohne Bestätigungsvermerk) wird anderswo Gast – Anmeldung bleibt."""
+    einladend = make_member(org, ["members.invite"], email="orga@example.org")
+    andere = type(org).objects.create(name="Andere Fraktion", slug="andere-fraktion")
+    mitglied = make_member(org, [], email="mitglied@example.org")
+    mitglied.user.set_password(EIGENES_PASSWORT)
+    mitglied.user.save()
+    angemeldet = client_for(mitglied.user)
+
+    organization_services.invite_guest(
+        andere, einladend, email="mitglied@example.org", note="", share_level="view", document_ids=[], folder_ids=[]
+    )
+
+    mitglied.user.refresh_from_db()
+    assert mitglied.user.check_password(EIGENES_PASSWORT)
+    assert "_auth_user_id" in angemeldet.session
 
 
 def test_gast_einladung_laesst_bestaetigtes_konto_unveraendert(org: Any, make_member: Any) -> None:

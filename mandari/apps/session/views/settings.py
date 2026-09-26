@@ -254,11 +254,13 @@ class UserInviteView(SessionViewMixin, TemplateView):
 
         roles = list(SessionRole.objects.filter(id__in=role_ids, tenant=self.session_tenant))
 
-        # Existiert bereits ein Konto mit bestätigter Adresse? Dann direkt Mitglied machen.
-        # Unbestätigte Konten (z. B. aus einer Selbstregistrierung) erhalten eine Einladung:
-        # Wer sie einlöst, beweist die Kontrolle über das Postfach.
-        existing_user = User.objects.filter(email=email, email_verified=True).first()
-        if existing_user:
+        # Existiert bereits ein Konto, das per Adresse übernommen werden darf? Dann direkt Mitglied machen.
+        # Konten aus einer nie bestätigten Selbstregistrierung erhalten eine Einladung:
+        # Wer sie einlöst, beweist die Kontrolle über das Postfach (apps/accounts/adoption.py).
+        from apps.accounts.adoption import can_adopt_by_email
+
+        existing_user = User.objects.filter(email=email).first()
+        if existing_user and can_adopt_by_email(existing_user):
             session_user, created = SessionUser.objects.get_or_create(
                 user=existing_user,
                 tenant=self.session_tenant,

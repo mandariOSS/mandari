@@ -129,9 +129,13 @@ async def _annehmen(scope: dict[str, Any], receive: Any, send: Any) -> None:
 
 
 def _websocket_erlaubt(origin: str, host: str) -> bool:
-    asgi = importlib.reload(importlib.import_module("mandari.asgi"))
-    pruefung = asgi.application.application_mapping["websocket"]
-    pruefung.application = _annehmen  # nur die Herkunftsprüfung selbst, ohne Anmeldung und Consumer
+    from apps.common.websocket_origin import SameOriginWebSocketValidator
+
+    # Die Anwendung prüft WebSockets mit dieser Hülle ...
+    eingebaut = importlib.import_module("mandari.asgi").application.application_mapping["websocket"]
+    assert isinstance(eingebaut, SameOriginWebSocketValidator)
+    # ... geprüft wird die Hülle selbst, ohne Anmeldung und Consumer
+    pruefung = SameOriginWebSocketValidator(_annehmen)
 
     async def lauf() -> bool:
         kommunikator = WebsocketCommunicator(
