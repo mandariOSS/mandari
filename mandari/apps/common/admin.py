@@ -39,21 +39,36 @@ def get_safe_admin_redirect(request):
 
 
 class SiteSettingsAdminForm(forms.ModelForm):
-    """Custom form for SiteSettings with password widget."""
+    """
+    Systemeinstellungen mit Geheimnissen, die nur geschrieben werden.
 
-    # Gespeicherte Geheimnisse werden nie ins HTML ausgegeben; leer gelassen bleiben sie erhalten
+    SMTP-Passwort und Nebius-Schlüssel sind reine Formularfelder: Sie werden nie ins HTML
+    ausgegeben, eingetragene Werte verschlüsselt gespeichert (Hauptschlüssel), und ein leer
+    gelassenes Feld behält den gespeicherten Wert. Steht noch ein Klartextwert in der früheren
+    Spalte, wird er beim Speichern verschlüsselt übernommen.
+    """
+
+    #: Formularfeld → Setter am Modell
+    SECRET_FIELDS = {
+        "email_host_password": "set_email_host_password",
+        "nebius_api_key": "set_nebius_api_key",
+    }
+
     email_host_password = forms.CharField(
-        widget=forms.PasswordInput(render_value=False),
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
         required=False,
         label="SMTP Passwort",
-        help_text="Leer lassen, um vorhandenes Passwort beizubehalten",
+        help_text="Wird verschlüsselt gespeichert. Leer lassen, um ein vorhandenes Passwort beizubehalten.",
     )
 
     nebius_api_key = forms.CharField(
-        widget=forms.PasswordInput(render_value=False),
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
         required=False,
         label="Nebius API Key",
-        help_text="API Key für Nebius TokenFactory. Kann auch via NEBIUS_API_KEY Umgebungsvariable gesetzt werden.",
+        help_text=(
+            "API Key für Nebius TokenFactory, wird verschlüsselt gespeichert. "
+            "Kann auch via NEBIUS_API_KEY Umgebungsvariable gesetzt werden."
+        ),
     )
 
     class Meta:
@@ -62,23 +77,37 @@ class SiteSettingsAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Don't require password to be re-entered if already set
-        if self.instance and self.instance.pk and self.instance.email_host_password:
+        if self.instance and self.instance.pk and self.instance.has_email_host_password:
             self.fields["email_host_password"].help_text = "Passwort ist gesetzt. Leer lassen, um es beizubehalten."
-        if self.instance and self.instance.pk and self.instance.nebius_api_key:
+        if self.instance and self.instance.pk and self.instance.has_nebius_api_key:
             self.fields["nebius_api_key"].help_text = "Key ist gesetzt. Leer lassen, um ihn beizubehalten."
 
-    def _keep_existing(self, field: str) -> str:
-        value = self.cleaned_data.get(field) or ""
-        if not value and self.instance and self.instance.pk:
-            return getattr(self.instance, field) or ""
-        return value
+    def _secret_to_store(self, field: str) -> str:
+        """Neu eingetragener Wert, sonst ein Klartextwert einer älteren Version (Rückfall), sonst leer."""
+        return self.cleaned_data.get(field) or getattr(self.instance, f"{field}_legacy", "") or ""
 
-    def clean_email_host_password(self) -> str:
-        return self._keep_existing("email_host_password")
+    def clean(self):
+        cleaned_data = super().clean()
+        if any(self._secret_to_store(field) for field in self.SECRET_FIELDS):
+            from apps.common.encryption import get_master_key
 
-    def clean_nebius_api_key(self) -> str:
-        return self._keep_existing("nebius_api_key")
+            try:
+                get_master_key()
+            except ValueError:
+                raise forms.ValidationError(
+                    "Geheimnisse können nicht verschlüsselt werden: ENCRYPTION_MASTER_KEY fehlt oder ist ungültig."
+                ) from None
+        return cleaned_data
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        for field, setter in self.SECRET_FIELDS.items():
+            value = self._secret_to_store(field)
+            if value:
+                getattr(obj, setter)(value)
+        if commit:
+            obj.save()
+        return obj
 
 
 @admin.register(SiteSettings)
@@ -142,13 +171,6 @@ class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
     )
 
     actions_detail = ["test_email"]
-
-    def save_model(self, request, obj, form, change):
-        # Keep existing password if not changed
-        if change and not form.cleaned_data.get("email_host_password"):
-            old_obj = SiteSettings.objects.get(pk=obj.pk)
-            obj.email_host_password = old_obj.email_host_password
-        super().save_model(request, obj, form, change)
 
     @action(description="Test-E-Mail senden")
     def test_email(self, request, object_id):

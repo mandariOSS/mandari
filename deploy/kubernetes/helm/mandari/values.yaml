@@ -31,6 +31,7 @@ secrets:
   # Vorhandenes Secret verwenden statt eines erzeugten (Schlüssel siehe README)
   existingSecret: ""
   secretKey: ""
+  # Base64 von genau 32 Byte: openssl rand -base64 32 (kein beliebiges Passwort; das Chart prüft das)
   encryptionKey: ""
   # Nur während eines Schlüsselwechsels: der bisherige encryptionKey (wird nur zum Lesen
   # verwendet). Ablauf in docs/KRYPTOKONZEPT.md, danach wieder leeren.

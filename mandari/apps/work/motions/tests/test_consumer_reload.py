@@ -70,7 +70,7 @@ def test_yjs_save_vor_reload_wird_gespeichert(author: Any, motion: Motion) -> No
 
     asyncio.run(lauf())
     motion.refresh_from_db()
-    assert motion.yjs_document == b"veralteter-zustand"
+    assert motion.get_yjs_state() == b"veralteter-zustand"
     assert cast(Any, motion).get_content_decrypted() == "<p>Alt Alpha Beta</p>"
 
 
@@ -90,5 +90,5 @@ def test_yjs_save_nach_reload_wird_verworfen(author: Any, motion: Motion) -> Non
 
     asyncio.run(lauf())
     motion.refresh_from_db()
-    assert motion.yjs_document is None, "veralteter Yjs-Zustand darf nach reload nicht persistiert werden"
+    assert motion.get_yjs_state() is None, "veralteter Yjs-Zustand darf nach reload nicht persistiert werden"
     assert cast(Any, motion).get_content_decrypted() == "<p>Alt Alpha Offline</p>"

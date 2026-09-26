@@ -83,6 +83,29 @@ Aufruf: include "mandari.secretValue" (dict "ctx" $ "key" "secret-key" "value" .
 {{- end -}}
 {{- end -}}
 
+{{/*
+Hauptschlüssel der Feldverschlüsselung (Eintrag encryption-key, ENCRYPTION_MASTER_KEY):
+Base64 von genau 32 zufälligen Bytes. Gesetzter Wert, sonst vorhandener, sonst neu erzeugt.
+Nicht über mandari.secretValue: 32 Buchstaben und Ziffern ergeben dekodiert nur 24 Byte, damit
+verschlüsselt die Anwendung nichts. Ein solcher Wert bricht die Installation deshalb ab.
+*/}}
+{{- define "mandari.encryptionKey" -}}
+{{- $key := .Values.secrets.encryptionKey -}}
+{{- if not $key -}}
+{{- $name := printf "%s-secrets" (include "mandari.fullname" .) -}}
+{{- $found := lookup "v1" "Secret" .Release.Namespace $name -}}
+{{- if and $found (hasKey $found.data "encryption-key") -}}
+{{- $key = index $found.data "encryption-key" | b64dec -}}
+{{- else -}}
+{{- $key = randBytes 32 -}}
+{{- end -}}
+{{- end -}}
+{{- if ne (len (b64dec $key)) 32 -}}
+{{- fail "encryption-key muss Base64 von genau 32 Byte sein (erzeugen: openssl rand -base64 32). Siehe deploy/kubernetes/README.md, Abschnitt „Zugangsdaten sichern“." -}}
+{{- end -}}
+{{- $key | b64enc -}}
+{{- end -}}
+
 {{- define "mandari.postgresHost" -}}
 {{- printf "%s-postgres" (include "mandari.fullname" .) -}}
 {{- end -}}

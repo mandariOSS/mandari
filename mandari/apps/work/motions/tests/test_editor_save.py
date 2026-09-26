@@ -40,7 +40,7 @@ def motion(org: Any, author: Any) -> Motion:
         visibility="organization",
     )
     cast(Any, motion).set_content_encrypted("<p>Alt</p>")
-    motion.yjs_document = STALE_STATE
+    motion.set_yjs_state(STALE_STATE)
     motion.save()
     return motion
 
@@ -87,7 +87,7 @@ def test_geaenderter_inhalt_verwirft_veralteten_kollaborationsstand(
 
     motion.refresh_from_db()
     assert cast(Any, motion).get_content_decrypted() == "<p>Neu</p>"
-    assert motion.yjs_document is None
+    assert motion.get_yjs_state() is None
     assert [reloaded.pk for reloaded in reloads] == [motion.pk]
 
 
@@ -98,8 +98,7 @@ def test_unveraenderter_inhalt_behaelt_kollaborationsstand(
     save(client_for(author.user), org, motion, content="<p>Alt</p>")
 
     motion.refresh_from_db()
-    assert motion.yjs_document is not None
-    assert bytes(motion.yjs_document) == STALE_STATE
+    assert motion.get_yjs_state() == STALE_STATE
     assert reloads == []
 
 
@@ -124,8 +123,7 @@ def test_veralteter_stand_wird_nicht_still_ueberschrieben(
     assert "an anderer Stelle geändert" in daten["message"]
     motion.refresh_from_db()
     assert cast(Any, motion).get_content_decrypted() == "<p>Alt</p>"
-    assert motion.yjs_document is not None
-    assert bytes(motion.yjs_document) == STALE_STATE
+    assert motion.get_yjs_state() == STALE_STATE
     assert reloads == []
 
 

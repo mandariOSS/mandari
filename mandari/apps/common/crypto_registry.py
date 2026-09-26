@@ -65,14 +65,20 @@ class EncryptedField:
     kind: KeyKind
     #: nur ``TENANT``: Lookup-Pfade zum Mandanten (Organisation oder Session-Mandant); genau einer ist je Zeile gesetzt
     tenant_paths: tuple[str, ...] = ()
+    #: Zeilen je Abruf beim Schlüsselwechsel; kleiner bei Feldern mit großen Werten (Dokumente mit eingebetteten Bildern)
+    batch_size: int = 500
 
     @property
     def label(self) -> str:
         return f"{self.model}.{self.field}"
 
 
-def _tenant(model: str, *fields: str, paths: tuple[str, ...]) -> tuple[EncryptedField, ...]:
-    return tuple(EncryptedField(model, name, KeyKind.TENANT, paths) for name in fields)
+def _tenant(model: str, *fields: str, paths: tuple[str, ...], batch_size: int = 500) -> tuple[EncryptedField, ...]:
+    return tuple(EncryptedField(model, name, KeyKind.TENANT, paths, batch_size) for name in fields)
+
+
+#: Dokumentinhalte und Editor-Zustände können eingebettete Bilder enthalten und mehrere MB groß sein
+_LARGE = 50
 
 
 _ORG = ("organization",)
@@ -89,6 +95,8 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     EncryptedField("session.SessionTenant", "encryption_key", KeyKind.TENANT_KEY),
     EncryptedField("session.SessionTenant", "encryption_key_previous", KeyKind.TENANT_KEY),
     # --- Plattformweite Zugangsdaten (Hauptschlüssel) -------------------------------------------
+    EncryptedField("common.SiteSettings", "email_host_password_encrypted", KeyKind.MASTER),
+    EncryptedField("common.SiteSettings", "nebius_api_key_encrypted", KeyKind.MASTER),
     EncryptedField("common.AISettings", "api_key_encrypted", KeyKind.MASTER),
     EncryptedField("minutes.ComputeSettings", "client_secret_encrypted", KeyKind.MASTER),
     EncryptedField("minutes.ComputeSettings", "s3_secret_key_encrypted", KeyKind.MASTER),
@@ -108,8 +116,8 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     *_tenant("work.AgendaItemNote", "content_encrypted", paths=_ORG),
     *_tenant("work.FileAnnotation", "content_encrypted", paths=_ORG),
     *_tenant("work.PaperComment", "content_encrypted", paths=_ORG),
-    *_tenant("work.Motion", "content_encrypted", paths=_ORG),
-    *_tenant("work.MotionRevision", "content_encrypted", paths=("motion__organization",)),
+    *_tenant("work.Motion", "content_encrypted", "yjs_document_encrypted", paths=_ORG, batch_size=_LARGE),
+    *_tenant("work.MotionRevision", "content_encrypted", paths=("motion__organization",), batch_size=_LARGE),
     *_tenant("work.SupportTicket", "description_encrypted", paths=_ORG),
     *_tenant("work.SupportTicketMessage", "content_encrypted", paths=("ticket__organization",)),
     # --- Session (Verwaltungs-RIS) ---------------------------------------------------------------
@@ -150,7 +158,10 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
 UNENCRYPTED_BINARY_FIELDS: dict[str, str] = {
     "insight_core.TileCache.tile_data": "Kartenkacheln aus öffentlichen Geodaten",
     "accounts.WebAuthnCredential.public_key": "öffentlicher Schlüssel eines Sicherheitsschlüssels, kein Geheimnis",
-    "work.Motion.yjs_document": "Bearbeitungszustand des gemeinsamen Editors, nicht verschlüsselt",
+    "work.Motion.yjs_document_legacy": (
+        "frühere Klartextspalte des Editor-Zustands; die Migration work/0057 verschlüsselt sie in "
+        "yjs_document_encrypted, danach enthält sie nur eine Markierung (leer). Entfällt mit einer Folgeversion"
+    ),
 }
 
 

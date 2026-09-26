@@ -121,7 +121,7 @@ class DocumentRevisionRestoreView(WorkViewMixin, View):
         motion.set_content_encrypted(restored_content)
         # Kollaboration: Yjs-Zustand verwerfen, damit alle Clients nach dem
         # Reload frisch aus dem wiederhergestellten HTML seeden.
-        motion.yjs_document = None
+        motion.set_yjs_state(None)
         motion.save()
 
         # Create another revision marking the restore

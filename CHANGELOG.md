@@ -73,6 +73,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ### Sicherheit
 - Einheitliche Validierung hochgeladener Dateien; Nicht-Bild-Anhänge werden als Download ausgeliefert (GHSA-6p5c-wv4v-8g24, #260).
+- SMTP-Passwort und Nebius-Schlüssel der Systemeinstellungen werden mit dem Hauptschlüssel verschlüsselt gespeichert, der Zustand des gemeinsamen Editors mit dem Organisationsschlüssel; beide sind im Verzeichnis der verschlüsselten Felder und damit im Schlüsselwechsel enthalten. Die Migrationen `common/0006` und `work/0057` verschlüsseln den Bestand und leeren die früheren Spalten; ohne gültigen `ENCRYPTION_MASTER_KEY` brechen sie ab, ohne etwas zu ändern. Das Helm-Chart erzeugt einen gültigen `encryption-key` (Base64 von 32 Byte) und prüft vorgegebene und vorhandene Werte; Hinweise für bestehende Installationen in `deploy/kubernetes/README.md`.
 
 ## [0.10.0] – in Vorbereitung (Tag folgt mit der Veröffentlichung des Advisories)
 

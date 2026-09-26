@@ -7,7 +7,8 @@ Bezug: BSI IT-Grundschutz **CON.1 Kryptokonzept**, Parameterwahl abgeglichen mit
 **BSI TR-02102-1** (kryptografische Verfahren) und **TR-02102-2** (TLS).
 
 Stand: 16.09.2026, geprüft gegen Version 0.10.0 im Produktivbetrieb. Schlüsselwechsel
-(Abschnitt 5) überarbeitet am 26.09.2026.
+(Abschnitt 5) überarbeitet am 26.09.2026; am selben Tag Systemeinstellungen und
+Editor-Zustand in die Verschlüsselung aufgenommen (Abschnitt 1).
 
 ---
 
@@ -26,18 +27,26 @@ Verschlüsselung folgt dieser Unterscheidung, statt pauschal alles zu verschlüs
 | Öffentliche Ratsinformationen (OParl-Bestand) | **keine** | Sind per Gesetz öffentlich; Verschlüsselung brächte keinen Schutz, aber Kosten bei Suche und Auslieferung |
 | Protokolle und Audit-Log | **keine Inhaltsverschlüsselung** | Enthalten bewusst keine personenbezogenen Inhalte; Schutz über Zugriffsrechte |
 
-Insgesamt sind **38 Felder** verschlüsselt:
+Insgesamt sind **41 Felder** verschlüsselt:
 
-- **33 mit dem Mandantenschlüssel** – Verwaltungs-RIS (14), Sitzungsvorbereitung und
-  Fraktionsarbeit (11), Anträge (2), Support (2), Protokollassistenz (2) sowie SMTP-Passwort
-  und KI-Schlüssel der Organisation (2)
-- **3 mit dem Hauptschlüssel** – plattformweite Zugangsdaten (KI-Anbieter, GPU-Rechenknoten)
+- **34 mit dem Mandantenschlüssel** – Verwaltungs-RIS (14), Sitzungsvorbereitung und
+  Fraktionsarbeit (11), Anträge (3: Inhalt, Versionen und der Zustand des gemeinsamen
+  Editors), Support (2), Protokollassistenz (2) sowie SMTP-Passwort und KI-Schlüssel der
+  Organisation (2)
+- **5 mit dem Hauptschlüssel** – plattformweite Zugangsdaten: SMTP-Passwort und
+  Nebius-Schlüssel der Systemeinstellungen, KI-Anbieter, GPU-Rechenknoten (2)
 - **2 für den zweiten Faktor** – TOTP-Geheimnis und Backup-Codes
 
 Dazu kommen die Mandantenschlüssel selbst, eingepackt mit dem Hauptschlüssel. Maßgeblich
 ist das Verzeichnis `mandari/apps/common/crypto_registry.py`: Dort steht jedes
 verschlüsselte Feld mit seiner Schlüsselart, und ein Test schlägt fehl, sobald ein Feld
-fehlt.
+fehlt. Ein weiterer Test schlägt an, sobald ein Feld, dessen Name nach Passwort oder
+Schlüssel klingt, weder verschlüsselt eingetragen noch begründet ausgenommen ist
+(etwa der Passwort-Hash).
+
+Die Geheimnisse der Systemeinstellungen und der Editor-Zustand der Dokumente sind seit dem
+26.09.2026 verschlüsselt. Die Migrationen `common/0006` und `work/0057` verschlüsseln den
+Bestand und leeren die früheren Spalten; die Spalten selbst entfallen mit einer Folgeversion.
 
 ## 2. Eingesetzte Verfahren
 
@@ -115,7 +124,8 @@ ENCRYPTION_MASTER_KEY          (32 Byte, aus der Umgebung, nie in der Datenbank)
         │                     (in der Datenbank, mit vorangestellter Nonce)
         │                           └──► Feldinhalte, Zugangsdaten der Organisation
         │
-        ├── verschlüsselt ──► plattformweite Zugangsdaten (KI-Anbieter, GPU-Rechenknoten)
+        ├── verschlüsselt ──► plattformweite Zugangsdaten (Systemeinstellungen, KI-Anbieter,
+        │                     GPU-Rechenknoten)
         │
         └── abgeleitet ────► 2FA-Schlüssel ──► TOTP-Geheimnisse, Backup-Codes
 ```
@@ -183,7 +193,8 @@ Rückmeldelinks ungültig, gespeicherte Daten bleiben unberührt.
   Mandanten mit begonnenem Wechsel erhalten keinen weiteren neuen Schlüssel. Nach einem
   Abbruch wird derselbe Befehl einfach wiederholt.
 - **Speicherschonend.** Die Datensätze werden seitenweise gelesen, nicht vollständig
-  geladen.
+  geladen; Dokumentinhalte und Editor-Zustände, die mit eingebetteten Bildern mehrere MB
+  groß sein können, in kleineren Seiten.
 - **Keine Werte in der Ausgabe.** Ausgegeben und protokolliert werden nur Anzahlen und
   Datensatzkennungen.
 - **`--dry-run`** zeigt vorab je Feld, wie viele Werte mit welchem Schlüssel verschlüsselt

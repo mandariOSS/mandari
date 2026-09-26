@@ -207,7 +207,7 @@ def _get_motion_state():
     m = Motion.objects.get(id=motion.id)
     return {
         "content": m.get_content_decrypted(),
-        "yjs": bytes(m.yjs_document) if m.yjs_document else None,
+        "yjs": m.get_yjs_state(),
     }
 
 
@@ -268,7 +268,7 @@ for name, cond, detail in asyncio.run(run_persistence_tests()):
 
 # (c) Normaler Status: Mitglied persistiert unverändert
 set_status("draft")
-Motion.objects.filter(id=motion.id).update(yjs_document=None)
+Motion.objects.filter(id=motion.id).update(yjs_document_encrypted=None, yjs_document_legacy=None)
 motion.refresh_from_db()
 
 

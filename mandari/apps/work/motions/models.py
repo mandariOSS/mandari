@@ -14,6 +14,7 @@ Provides motion management with:
 """
 
 import hashlib
+import logging
 import uuid
 from datetime import timedelta
 
@@ -21,8 +22,10 @@ from django.db import models
 from django.db.models import F
 from django.utils import timezone
 
-from apps.common.encryption import EncryptedTextField, EncryptionMixin
+from apps.common.encryption import DecryptionError, EncryptedTextField, EncryptionMixin, TenantEncryption
 from apps.work.files import letterhead_path
+
+logger = logging.getLogger(__name__)
 
 
 class MotionType(models.Model):
@@ -792,12 +795,22 @@ class Motion(EncryptionMixin, models.Model):
         verbose_name="Bezugsantrag",
     )
 
-    # Real-time collaboration state (Yjs document)
-    yjs_document = models.BinaryField(
+    # Zustand des gemeinsamen Editors (Yjs), mit dem Organisationsschlüssel verschlüsselt.
+    # Nur über get_yjs_state()/set_yjs_state() lesen und schreiben.
+    yjs_document_encrypted = models.BinaryField(
         blank=True,
         null=True,
-        verbose_name="Yjs-Dokument",
-        help_text="Binary state for real-time collaboration",
+        editable=False,
+        verbose_name="Editor-Zustand (verschlüsselt)",
+        help_text="Yjs-Zustand des gemeinsamen Editors, AES-256-GCM mit dem Organisationsschlüssel",
+    )
+    # Frühere Klartextspalte, siehe get_yjs_state(). Entfällt mit einer Folgeversion.
+    yjs_document_legacy = models.BinaryField(
+        blank=True,
+        null=True,
+        editable=False,
+        db_column="yjs_document",
+        verbose_name="Editor-Zustand (Altbestand)",
     )
 
     # Visibility (simplified permission system)
@@ -892,6 +905,46 @@ class Motion(EncryptionMixin, models.Model):
 
     def get_encryption_organization(self):
         return self.organization
+
+    #: Spalten des Editor-Zustands (für ``only()``/``defer()`` und ``update_fields``)
+    YJS_FIELDS = ("yjs_document_encrypted", "yjs_document_legacy")
+
+    def get_yjs_state(self) -> bytes | None:
+        """
+        Gespeicherter Zustand des gemeinsamen Editors im Klartext oder ``None``.
+
+        Übergang von der früheren Klartextspalte (``yjs_document_legacy``): Diese Version
+        schreibt dort beim Speichern ``b""`` als Markierung, die Migration work/0057 ebenso.
+        Eine ältere Version (Rückfall) kennt nur diese Spalte:
+
+        - enthält sie Daten, hat eine ältere Version sie nach dem letzten verschlüsselten
+          Stand geschrieben – sie sind die jüngeren;
+        - ist sie ``NULL`` neben einem verschlüsselten Stand, hat eine ältere Version den
+          Zustand verworfen (Speichern ohne Verbindung, Wiederherstellung, #184). Der
+          verschlüsselte Stand ist dann veraltet und wird nicht ausgeliefert.
+
+        Nicht lesbar (falscher Schlüssel): ``None``; der Editor baut den Zustand dann aus
+        dem gespeicherten Inhalt neu auf.
+        """
+        legacy = self.yjs_document_legacy
+        if legacy:
+            return bytes(legacy)
+        if legacy is None or not self.yjs_document_encrypted:
+            return None
+        try:
+            return TenantEncryption(self.organization).decrypt_bytes(self.yjs_document_encrypted) or None
+        except DecryptionError:
+            logger.warning("Editor-Zustand von Dokument %s nicht lesbar, wird neu aufgebaut", self.pk)
+            return None
+
+    def set_yjs_state(self, state: bytes | None) -> None:
+        """Zustand des gemeinsamen Editors verschlüsselt ablegen; ``None`` verwirft ihn. Erst ``save()`` speichert."""
+        if not state:
+            self.yjs_document_encrypted = None
+            self.yjs_document_legacy = None
+            return
+        self.yjs_document_encrypted = TenantEncryption(self.organization).encrypt_bytes(state)
+        self.yjs_document_legacy = b""
 
     @classmethod
     def visible_to(cls, membership, *, include_deleted=False):

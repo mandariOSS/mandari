@@ -5,8 +5,32 @@ Common models for the Mandari platform.
 Includes global site settings that can be configured via Admin.
 """
 
+import logging
+
 from django.core.cache import cache
 from django.db import models
+
+logger = logging.getLogger(__name__)
+
+
+def _encrypt_platform_secret(value: str) -> bytes | None:
+    """Plattformweites Geheimnis mit dem Hauptschlüssel verschlüsseln (AES-256-GCM); leer ergibt ``None``."""
+    from apps.common.encryption import encrypt_key
+
+    return encrypt_key(value.encode("utf-8")) if value else None
+
+
+def _decrypt_platform_secret(value: bytes | memoryview | None, label: str) -> str:
+    """Gegenstück zu ``_encrypt_platform_secret``. Nicht lesbar: leer, mit Protokolleintrag ohne Wert."""
+    from apps.common.encryption import decrypt_key
+
+    if not value:
+        return ""
+    try:
+        return decrypt_key(bytes(value)).decode("utf-8")
+    except Exception:
+        logger.error("%s der Systemeinstellungen ist nicht lesbar (Hauptschlüssel prüfen)", label)
+        return ""
 
 
 class SiteSettings(models.Model):
@@ -15,6 +39,17 @@ class SiteSettings(models.Model):
 
     Accessible via Admin, with fallback to environment variables.
     Use SiteSettings.get_settings() to retrieve the instance.
+
+    SMTP-Passwort und Nebius-Schlüssel liegen mit dem ENCRYPTION_MASTER_KEY verschlüsselt
+    in der Datenbank (AES-256-GCM, wie ``AISettings``). Lesen und Schreiben nur über
+    ``get_email_host_password()``/``set_email_host_password()`` und
+    ``get_stored_nebius_api_key()``/``set_nebius_api_key()``.
+
+    Die ``*_legacy``-Felder sind die früheren Klartextspalten. Die Migration common/0006
+    verschlüsselt ihren Inhalt und leert sie; neu beschrieben werden sie nur noch von einer
+    älteren Version nach einem Rückfall. Ein Wert darin ist deshalb stets der jüngere und
+    gewinnt; das nächste Speichern im Admin-Formular verschlüsselt ihn. Die Spalten entfallen
+    mit einer Folgeversion.
     """
 
     CACHE_KEY = "site_settings"
@@ -40,11 +75,20 @@ class SiteSettings(models.Model):
         default=587, verbose_name="SMTP Port", help_text="Standardport: 587 (TLS) oder 465 (SSL)"
     )
     email_host_user = models.CharField(max_length=255, blank=True, verbose_name="SMTP Benutzername")
-    email_host_password = models.CharField(
+    email_host_password_encrypted = models.BinaryField(
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="SMTP Passwort (verschlüsselt)",
+        help_text="AES-256-GCM verschlüsselt mit dem ENCRYPTION_MASTER_KEY.",
+    )
+    email_host_password_legacy = models.CharField(
         max_length=255,
         blank=True,
-        verbose_name="SMTP Passwort",
-        help_text="Wird verschlüsselt gespeichert",
+        editable=False,
+        db_column="email_host_password",
+        verbose_name="SMTP Passwort (Altbestand)",
+        help_text="Frühere Klartextspalte, wird nicht mehr beschrieben.",
     )
     email_use_tls = models.BooleanField(default=True, verbose_name="TLS verwenden", help_text="STARTTLS (Port 587)")
     email_use_ssl = models.BooleanField(
@@ -65,11 +109,20 @@ class SiteSettings(models.Model):
     # ==========================================================================
     # AI API Settings
     # ==========================================================================
-    nebius_api_key = models.CharField(
+    nebius_api_key_encrypted = models.BinaryField(
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="Nebius API Key (verschlüsselt)",
+        help_text="AES-256-GCM verschlüsselt mit dem ENCRYPTION_MASTER_KEY.",
+    )
+    nebius_api_key_legacy = models.CharField(
         max_length=255,
         blank=True,
-        verbose_name="Nebius API Key",
-        help_text="API Key für Nebius TokenFactory (KI-Zusammenfassungen)",
+        editable=False,
+        db_column="nebius_api_key",
+        verbose_name="Nebius API Key (Altbestand)",
+        help_text="Frühere Klartextspalte, wird nicht mehr beschrieben.",
     )
 
     # ==========================================================================
@@ -124,6 +177,35 @@ class SiteSettings(models.Model):
             cache.set(cls.CACHE_KEY, settings, cls.CACHE_TIMEOUT)
         return settings
 
+    # -- Geheimnisse (verschlüsselt mit dem Hauptschlüssel) ----------------------------------
+
+    def set_email_host_password(self, value: str) -> None:
+        """SMTP-Passwort verschlüsselt ablegen; leer löscht es. Erst ``save()`` speichert."""
+        self.email_host_password_encrypted = _encrypt_platform_secret(value)
+        self.email_host_password_legacy = ""
+
+    def get_email_host_password(self) -> str:
+        return self.email_host_password_legacy or _decrypt_platform_secret(
+            self.email_host_password_encrypted, "SMTP-Passwort"
+        )
+
+    def set_nebius_api_key(self, value: str) -> None:
+        """Nebius-Schlüssel verschlüsselt ablegen; leer löscht ihn. Erst ``save()`` speichert."""
+        self.nebius_api_key_encrypted = _encrypt_platform_secret(value)
+        self.nebius_api_key_legacy = ""
+
+    def get_stored_nebius_api_key(self) -> str:
+        """Der hier gespeicherte Nebius-Schlüssel (ohne Umgebungsvariable, siehe ``get_nebius_api_key``)."""
+        return self.nebius_api_key_legacy or _decrypt_platform_secret(self.nebius_api_key_encrypted, "Nebius-Schlüssel")
+
+    @property
+    def has_email_host_password(self) -> bool:
+        return bool(self.email_host_password_legacy or self.email_host_password_encrypted)
+
+    @property
+    def has_nebius_api_key(self) -> bool:
+        return bool(self.nebius_api_key_legacy or self.nebius_api_key_encrypted)
+
     @classmethod
     def get_nebius_api_key(cls) -> str:
         """
@@ -139,8 +221,7 @@ class SiteSettings(models.Model):
             return env_key
 
         # Fallback to SiteSettings
-        site_settings = cls.get_settings()
-        return site_settings.nebius_api_key or ""
+        return cls.get_settings().get_stored_nebius_api_key()
 
     @classmethod
     def get_email_config(cls) -> dict:
@@ -167,7 +248,7 @@ class SiteSettings(models.Model):
             if site_settings.email_host
             else django_settings.SMTP_FALLBACK["port"],
             "EMAIL_HOST_USER": site_settings.email_host_user or django_settings.SMTP_FALLBACK["username"],
-            "EMAIL_HOST_PASSWORD": site_settings.email_host_password or django_settings.SMTP_FALLBACK["password"],
+            "EMAIL_HOST_PASSWORD": site_settings.get_email_host_password() or django_settings.SMTP_FALLBACK["password"],
             "EMAIL_USE_TLS": site_settings.email_use_tls
             if site_settings.email_host
             else django_settings.SMTP_FALLBACK["use_tls"],

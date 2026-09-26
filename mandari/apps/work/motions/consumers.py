@@ -284,7 +284,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         from .models import Motion
 
         try:
-            motion = Motion.objects.get(id=self.document_id)
+            motion = Motion.objects.defer(*Motion.YJS_FIELDS).get(id=self.document_id)
         except Motion.DoesNotExist:
             return None, None
 
@@ -319,8 +319,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         from .models import Motion
 
         try:
-            motion = Motion.objects.only("yjs_document").get(id=self.document_id)
-            return bytes(motion.yjs_document) if motion.yjs_document else None
+            motion = Motion.objects.select_related("organization").only("organization", *Motion.YJS_FIELDS)
+            return motion.get(id=self.document_id).get_yjs_state()
         except Motion.DoesNotExist:
             return None
 
@@ -340,7 +340,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             return None
 
         try:
-            motion = Motion.objects.get(id=self.document_id)
+            # Den bisherigen Editor-Zustand nicht laden: Er wird ohnehin ersetzt und kann mehrere MB groß sein
+            motion = Motion.objects.defer(*Motion.YJS_FIELDS).get(id=self.document_id)
         except Motion.DoesNotExist:
             return None
 
@@ -363,8 +364,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             # gemeinsamen Dokumentzustand überschreiben (wird beim naechsten
             # Verbindungsaufbau an alle Clients ausgeliefert).
             if data_b64 and can_write:
-                motion.yjs_document = base64.b64decode(data_b64)
-                update_fields.append("yjs_document")
+                motion.set_yjs_state(base64.b64decode(data_b64))
+                update_fields.extend(Motion.YJS_FIELDS)
 
             content_changed = False
             if html is not None and can_write:
@@ -434,7 +435,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         from .models import Motion
 
         try:
-            motion = Motion.objects.get(id=self.document_id)
+            motion = Motion.objects.defer(*Motion.YJS_FIELDS).get(id=self.document_id)
         except Motion.DoesNotExist:
             return
 

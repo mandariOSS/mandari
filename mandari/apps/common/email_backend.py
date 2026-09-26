@@ -70,7 +70,7 @@ class SiteSettingsEmailBackend(SMTPBackend):
                     "host": site_settings.email_host,
                     "port": site_settings.email_port,
                     "username": site_settings.email_host_user,
-                    "password": site_settings.email_host_password,
+                    "password": site_settings.get_email_host_password(),
                     "use_tls": site_settings.email_use_tls,
                     "use_ssl": site_settings.email_use_ssl,
                     "timeout": site_settings.email_timeout,

@@ -81,11 +81,11 @@ def _persist(motion, access_level):
 def test_readonly_collaboration_client_does_not_persist_state(setup, access_level):
     motion = setup["motion"]
     _persist(motion, access_level)
-    assert not motion.yjs_document
+    assert not motion.get_yjs_state()
 
 
 @pytest.mark.django_db(transaction=True)
 def test_edit_collaboration_client_persists_state(setup):
     motion = setup["motion"]
     _persist(motion, "edit")
-    assert motion.yjs_document
+    assert motion.get_yjs_state()

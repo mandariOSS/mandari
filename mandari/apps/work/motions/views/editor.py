@@ -64,7 +64,7 @@ def _store_content(motion, new_content: str, old_content: str) -> bool:
     motion.set_content_encrypted(new_content)
     if new_content == old_content:
         return False
-    motion.yjs_document = None
+    motion.set_yjs_state(None)
     return True
 
 
