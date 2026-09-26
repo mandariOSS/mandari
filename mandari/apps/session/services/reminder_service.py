@@ -18,6 +18,7 @@ SessionTenant.reminder_config().
 """
 
 import logging
+from collections.abc import Callable
 from datetime import timedelta
 
 from django.conf import settings
@@ -25,7 +26,9 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.common.email import send_email
+from apps.session.permissions import role_permissions
 from apps.session.services import invitation_response_service, invitation_token, joint_meeting_service
+from apps.session.visibility import agenda_item_visible, meeting_visible, paper_visible
 
 from ..models import (
     SessionAgendaItem,
@@ -48,18 +51,32 @@ def _base_url(tenant: SessionTenant) -> str:
     return f"{settings.SITE_URL.rstrip('/')}/session/{tenant.slug}"
 
 
-def _staff_recipients(tenant: SessionTenant, permission: str) -> list[str]:
-    """E-Mail-Adressen aller aktiven Session-Benutzer mit einer Berechtigung."""
-    recipients = []
-    users = (
-        SessionUser.objects.filter(tenant=tenant, is_active=True, user__is_active=True)
-        .select_related("user")
-        .prefetch_related("roles")
-    )
-    for su in users:
-        if su.has_permission(permission) and su.user.email:
-            recipients.append(su.user.email)
-    return sorted(set(recipients))
+class _Staff:
+    """Empfängerkreis einer Erinnerungsart: Adressen mit den Rechten der Person."""
+
+    def __init__(self, tenant: SessionTenant, permission: str) -> None:
+        self.people: list[tuple[str, set[str]]] = []
+        users = (
+            SessionUser.objects.filter(tenant=tenant, is_active=True, user__is_active=True)
+            .select_related("user")
+            .prefetch_related("roles")
+        )
+        for su in users:
+            permissions = role_permissions(su)
+            if permission in permissions and su.user.email:
+                self.people.append((su.user.email, permissions))
+
+    def __bool__(self) -> bool:
+        return bool(self.people)
+
+    def emails(self, visible: Callable[[set[str]], bool] | None = None) -> list[str]:
+        """Adressen – bei Nichtöffentlichem nur derer, die das Objekt selbst sehen dürfen."""
+        return sorted({email for email, perms in self.people if visible is None or visible(perms)})
+
+
+def _staff_recipients(tenant: SessionTenant, permission: str) -> _Staff:
+    """Aktive Session-Benutzer mit einer Berechtigung (Adressen je Objekt über ``emails``)."""
+    return _Staff(tenant, permission)
 
 
 def _claim(tenant: SessionTenant, kind: str, dedup_key: str, recipients: list[str]) -> bool:
@@ -95,8 +112,8 @@ def _remind_invitations(tenant, config, today, *, dry_run) -> dict:
     if not config["invitation_enabled"]:
         return sent
 
-    recipients = _staff_recipients(tenant, "edit_meetings")
-    if not recipients:
+    staff = _staff_recipients(tenant, "edit_meetings")
+    if not staff:
         return sent
 
     meetings = list(
@@ -120,6 +137,8 @@ def _remind_invitations(tenant, config, today, *, dry_run) -> dict:
     for meeting in meetings:
         deadline = meeting.invitation_deadline
         url = f"{base}/meetings/{meeting.id}/"
+        # Nichtöffentliche Sitzungen nur an Personen, die sie selbst sehen dürfen
+        recipients = staff.emails(lambda perms, m=meeting: meeting_visible(perms, m))
         if deadline < today:
             subject = f"[{tenant.name}] Ladungsfrist verstrichen: {meeting.name}"
             body = (
@@ -149,8 +168,8 @@ def _remind_papers(tenant, config, today, *, dry_run) -> dict:
     if not config["paper_enabled"]:
         return sent
 
-    recipients = _staff_recipients(tenant, "edit_papers")
-    if not recipients:
+    staff = _staff_recipients(tenant, "edit_papers")
+    if not staff:
         return sent
 
     horizon = today + timedelta(days=config["paper_days_before"])
@@ -163,6 +182,8 @@ def _remind_papers(tenant, config, today, *, dry_run) -> dict:
     base = _base_url(tenant)
 
     for paper in papers:
+        # Nichtöffentliche Vorlagen nur an Personen, die sie selbst sehen dürfen
+        recipients = staff.emails(lambda perms, p=paper: paper_visible(perms, p))
         overdue = paper.deadline < today
         subject = (
             f"[{tenant.name}] Vorlagenfrist {'verstrichen' if overdue else 'läuft ab'}: {paper.reference or paper.name}"
@@ -264,8 +285,8 @@ def _remind_resolutions(tenant, config, today, *, dry_run) -> dict:
     if not config["resolution_enabled"]:
         return sent
 
-    recipients = _staff_recipients(tenant, "edit_meetings")
-    if not recipients:
+    staff = _staff_recipients(tenant, "edit_meetings")
+    if not staff:
         return sent
 
     horizon = today + timedelta(days=config["resolution_days_before"])
@@ -283,6 +304,8 @@ def _remind_resolutions(tenant, config, today, *, dry_run) -> dict:
     base = _base_url(tenant)
 
     for item in items:
+        # Beschlüsse aus nichtöffentlichen TOPs/Sitzungen nur an Personen mit NÖ-Sichtrecht
+        recipients = staff.emails(lambda perms, i=item: agenda_item_visible(perms, i))
         overdue = item.implementation_deadline < today
         label = item.resolution_number or f"TOP {item.number}"
         subject = f"[{tenant.name}] Beschlusskontrolle: {label} {'überfällig' if overdue else 'zur Wiedervorlage'}"

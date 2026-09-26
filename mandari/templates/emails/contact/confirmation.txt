@@ -1,16 +1,14 @@
 Ihre Anfrage bei Mandari
 ========================
 
-Hallo {{ contact.name }},
+Hallo,
 
 vielen Dank für Ihre Nachricht! Wir haben Ihre Anfrage erhalten und werden uns schnellstmöglich bei Ihnen melden.
 
 Ihre Anfrage im Überblick:
 --------------------------
 Betreff: {{ contact.get_subject_display }}
-
-Ihre Nachricht:
-{{ contact.message }}
+Eingegangen am: {{ contact.created_at|date:"d.m.Y, H:i" }} Uhr
 
 --------------------------
 
@@ -18,6 +16,8 @@ Was passiert als nächstes?
 - Wir bearbeiten Anfragen in der Regel innerhalb von 1-2 Werktagen
 - Bei dringenden Anliegen erreichen Sie uns auch unter hello@mandari.de
 - Für technischen Support können registrierte Nutzer*innen das Ticket-System im Work-Portal nutzen
+
+Sie haben diese Anfrage nicht gestellt? Dann können Sie diese E-Mail ignorieren.
 
 Mit freundlichen Grüßen,
 Das Mandari-Team

@@ -108,31 +108,6 @@ def test_session_einladung_uebernimmt_unbestaetigtes_konto_nicht(
     assert fremd.get(f"/session/{tenant.slug}/").status_code in (302, 403, 404)
 
 
-def test_session_einladung_nimmt_bestaetigtes_konto_direkt_auf(tenant: SessionTenant, verwaltung: Client) -> None:
-    konto = cast(Any, UserFactory)(email="bestaetigt@stadt-x.example", email_verified=True)
-
-    verwaltung.post(
-        reverse("session:user_invite", kwargs={"tenant_slug": tenant.slug}), {"email": "bestaetigt@stadt-x.example"}
-    )
-
-    assert SessionUser.objects.filter(user=konto, tenant=tenant, is_active=True).exists()
-    assert not SessionInvitation.objects.filter(tenant=tenant).exists()
-
-
-def test_session_einladung_nimmt_konto_mit_bestehendem_zugang_direkt_auf(
-    org: Any, make_member: Any, tenant: SessionTenant, verwaltung: Client
-) -> None:
-    """Altbestand ohne Bestätigungsvermerk, aber Mitglied einer Organisation: wie bisher direkt."""
-    mitglied = make_member(org, [], email="mitglied@stadt-x.example")
-    assert not mitglied.user.email_verified
-
-    verwaltung.post(
-        reverse("session:user_invite", kwargs={"tenant_slug": tenant.slug}), {"email": "mitglied@stadt-x.example"}
-    )
-
-    assert SessionUser.objects.filter(user=mitglied.user, tenant=tenant, is_active=True).exists()
-
-
 def test_eingeloest_einladung_bestaetigt_die_adresse(tenant: SessionTenant) -> None:
     konto = cast(Any, UserFactory)(email="inhaber@stadt-x.example")
     assert not konto.email_verified

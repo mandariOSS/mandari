@@ -29,6 +29,7 @@ import shutil
 import time
 from collections import Counter
 from pathlib import Path
+from typing import IO
 
 from django.conf import settings
 from django.db.models import Q, Sum
@@ -188,10 +189,30 @@ def store_bytes(file_obj, data: bytes, *, content_type: str | None = None) -> Pa
     with open(tmp, "wb") as fh:
         fh.write(data)
     os.replace(tmp, path)
+    return _record_stored(file_obj, path, len(data), hashlib.sha256(data).hexdigest(), content_type)
 
+
+def store_stream(file_obj, source: IO[bytes], *, content_type: str | None = None) -> Path:
+    """Wie ``store_bytes``, aber aus einer Datei gelesen (ohne alles in den Speicher zu laden)."""
+    path = target_path(file_obj)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".part")
+    digest = hashlib.sha256()
+    size = 0
+    source.seek(0)
+    with open(tmp, "wb") as fh:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            fh.write(chunk)
+            digest.update(chunk)
+            size += len(chunk)
+    os.replace(tmp, path)
+    return _record_stored(file_obj, path, size, digest.hexdigest(), content_type)
+
+
+def _record_stored(file_obj, path: Path, size: int, sha256: str, content_type: str | None) -> Path:
     file_obj.local_path = str(path)
-    file_obj.size = len(data)
-    file_obj.sha256_hash = hashlib.sha256(data).hexdigest()
+    file_obj.size = size
+    file_obj.sha256_hash = sha256
     file_obj.local_status = "ok"
     file_obj.local_error = ""
     file_obj.local_cached_at = timezone.now()
@@ -221,9 +242,12 @@ def fetch_and_cache(file_obj, client=None) -> str:
     if not url:
         return _mark(file_obj, "error", "Keine Download-URL")
 
+    from .safe_fetch import guarded_client
+
     own_client = client is None
     if own_client:
-        client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True)
+        # Nur öffentliche Ziele, auch nach Weiterleitungen: die Kopie wird später ausgeliefert
+        client = guarded_client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True)
     try:
         try:
             with client.stream("GET", url, headers=download_headers(file_obj.body)) as response:
@@ -282,14 +306,14 @@ def pending_queryset(body=None, retry_errors: bool = False):
 
 def cache_pending(body=None, *, limit: int = 500, retry_errors: bool = False, sleep: float = 0.05) -> Counter:
     """Fehlende Kopien nachladen — neueste Dokumente zuerst, mit Festplatten-Schutz."""
-    import httpx
+    from .safe_fetch import guarded_client
 
     results: Counter = Counter()
     if not has_room_for(0):
         results["disk_full"] += 1
         return results
 
-    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True) as client:
+    with guarded_client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True) as client:
         for file_obj in pending_queryset(body, retry_errors)[:limit].iterator(chunk_size=200):
             status = fetch_and_cache(file_obj, client)
             results[status] += 1

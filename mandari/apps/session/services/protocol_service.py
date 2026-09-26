@@ -237,10 +237,14 @@ def perform_action(
         else:
             approval_meeting_id = str(data.get("approval_meeting", ""))
             if approval_meeting_id:
+                candidates = SessionMeeting.objects.filter(
+                    pk=approval_meeting_id, tenant_id=meeting.tenant_id, organization_id=meeting.organization_id
+                )
+                # Nichtöffentliche Folgesitzungen nur mit NÖ-Sichtrecht (wie die Auswahl der TOPs)
+                if not include_non_public:
+                    candidates = candidates.filter(is_public=True)
                 try:
-                    protocol.approval_meeting = SessionMeeting.objects.filter(
-                        pk=approval_meeting_id, tenant_id=meeting.tenant_id, organization_id=meeting.organization_id
-                    ).first()
+                    protocol.approval_meeting = candidates.first()
                 except (ValueError, ValidationError):
                     protocol.approval_meeting = None
         note = str(data.get("approval_note", "")).strip()[:500]

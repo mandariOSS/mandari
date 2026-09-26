@@ -43,6 +43,12 @@ def vorlage(tenant: SessionTenant) -> SessionPaper:
 
 
 @pytest.fixture
+def entwurf(tenant: SessionTenant) -> SessionPaper:
+    """Hochladen und Ersetzen gibt es nur vor der Freigabe."""
+    return SessionPaper.objects.create(tenant=tenant, name="Entwurf", is_public=True, status="draft")
+
+
+@pytest.fixture
 def sachbearbeitung(tenant: SessionTenant) -> Client:
     role = SessionRole.objects.create(
         tenant=tenant,
@@ -75,22 +81,22 @@ def _sandboxed(response: Any) -> bool:
 
 
 def test_upload_bestimmt_den_mime_typ_aus_der_endung(
-    tenant: SessionTenant, vorlage: SessionPaper, sachbearbeitung: Client
+    tenant: SessionTenant, entwurf: SessionPaper, sachbearbeitung: Client
 ) -> None:
     upload = SimpleUploadedFile("bericht.pdf", AKTIV, content_type="text/html")
     antwort = sachbearbeitung.post(
         f"/session/{tenant.slug}/files/upload/",
-        {"target_type": "paper", "target_id": str(vorlage.pk), "is_public": "on", "files": upload},
+        {"target_type": "paper", "target_id": str(entwurf.pk), "is_public": "on", "files": upload},
     )
     assert antwort.status_code == 302
-    datei = SessionFile.objects.get(paper=vorlage)
+    datei = SessionFile.objects.get(paper=entwurf)
     assert datei.mime_type == "application/pdf"
 
 
 def test_ersetzen_bestimmt_den_mime_typ_aus_der_endung(
-    tenant: SessionTenant, vorlage: SessionPaper, sachbearbeitung: Client
+    tenant: SessionTenant, entwurf: SessionPaper, sachbearbeitung: Client
 ) -> None:
-    datei = _anlage(vorlage, "tabelle.csv", "text/csv", b"a;b\n1;2\n")
+    datei = _anlage(entwurf, "tabelle.csv", "text/csv", b"a;b\n1;2\n")
     upload = SimpleUploadedFile("tabelle.csv", AKTIV, content_type="text/html")
     antwort = sachbearbeitung.post(f"/session/{tenant.slug}/files/{datei.pk}/replace/", {"file": upload})
     assert antwort.status_code == 302

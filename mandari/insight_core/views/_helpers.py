@@ -42,6 +42,33 @@ def get_active_body(request: HttpRequest) -> OParlBody | None:
     return None
 
 
+def link_confirmation(request: HttpRequest, *, title: str, message: str, button: str, icon: str = "mail-check"):
+    """
+    Bestätigungsseite für Links aus E-Mails: Der Aufruf per GET ändert nichts.
+
+    Mail-Scanner und Vorschauen öffnen Links vorab. Bestätigen und Abmelden wirken deshalb erst
+    mit dem Klick auf der Seite (POST, CSRF-geschützt). Links in bereits versandten Mails bleiben
+    gültig und führen auf diese Seite.
+    """
+    from django.shortcuts import render
+
+    response = render(
+        request, "pages/link_confirm.html", {"title": title, "message": message, "button": button, "icon": icon}
+    )
+    response["X-Robots-Tag"] = "noindex"
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def page_number(request: HttpRequest, maximum: int = 500) -> int:
+    """``?page=`` als Zahl zwischen 1 und ``maximum``; Ungültiges ergibt Seite 1 statt eines Fehlers."""
+    try:
+        page = int(str(request.GET.get("page", "1")).strip())
+    except ValueError:
+        return 1
+    return min(max(page, 1), maximum)
+
+
 def is_all_bodies_mode(request):
     """Prüft ob der 'Alle Kommunen' Modus aktiv ist."""
     if get_portal(request) is not None:

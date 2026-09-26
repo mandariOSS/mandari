@@ -56,7 +56,6 @@ prepare_database(PROJECT_DIR)
 from apps.accounts.models import User  # noqa: E402
 from insight_core.models import OParlBody, OParlFile, OParlPaper, OParlSource  # noqa: E402
 from insight_core.services import file_cache, source_health  # noqa: E402
-from insight_core.views import files as files_view  # noqa: E402
 
 PASS = 0
 FAIL = 0
@@ -120,9 +119,9 @@ class FakeResponse:
         self.content = content
         self.headers = {"content-type": ctype, "content-length": str(len(content))}
 
-    def iter_bytes(self):
-        for i in range(0, len(self.content), 4096):
-            yield self.content[i : i + 4096]
+    def iter_bytes(self, chunk_size=4096):
+        for i in range(0, len(self.content), chunk_size):
+            yield self.content[i : i + chunk_size]
 
     def __enter__(self):
         return self
@@ -309,8 +308,8 @@ check(
 print()
 print("=== Phase 2: Datei-Proxy ===")
 client = Client()
-_real_get = files_view.httpx.get
-files_view.httpx.get = lambda url, **kw: FakeClient.respond(url)
+# Der Live-Abruf der Vorschau streamt über httpx.Client (safe_fetch.download_to)
+httpx.Client = FakeClient
 try:
     resp = client.get(f"/insight/dokumente/{f_ok.id}/preview/")
     body_bytes = b"".join(resp.streaming_content) if resp.streaming else resp.content
@@ -372,7 +371,7 @@ try:
         "keine Datei" in resp.content.decode() and f_html2.local_status != "ok",
     )
 finally:
-    files_view.httpx.get = _real_get
+    httpx.Client = _real_client
 
 # =============================================================================
 print()

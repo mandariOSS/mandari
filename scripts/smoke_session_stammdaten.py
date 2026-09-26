@@ -315,13 +315,24 @@ print("=== Phase D: Benutzerverwaltung ===")
 resp = admin.get(f"{base}/settings/users/")
 check("Benutzerliste -> 200", resp.status_code == 200, f"got {resp.status_code}")
 
-# Einladung: bestehendes Konto mit bestätigter Adresse wird direkt Mitglied
-existing = User.objects.create_user(email="bestand@example.org", password="pw-Smoke-Test-1!", email_verified=True)
+# Einladung: Auch ein bestehendes Konto tritt erst mit der Annahme bei (keine Aufnahme ohne Zustimmung,
+# dieselbe Meldung wie bei neuen Adressen)
+existing = User.objects.create_user(email="bestand@example.org", password="pw-Smoke-Test-1!")
 resp = admin.post(
     f"{base}/settings/users/invite/",
     {"email": "bestand@example.org", "roles": [str(roles["viewer"].id)]},
+    follow=True,
 )
-check("Bestehendes Konto direkt hinzugefügt", SessionUser.objects.filter(user=existing, tenant=tenant).exists())
+check(
+    "Bestehendes Konto nicht ungefragt aufgenommen",
+    not SessionUser.objects.filter(user=existing, tenant=tenant).exists(),
+)
+check("Einheitliche Meldung", "Einladung an bestand@example.org wurde versendet" in resp.content.decode("utf-8"))
+invitation_existing = SessionInvitation.objects.get(tenant=tenant, email="bestand@example.org")
+existing_client = Client()
+existing_client.force_login(existing)
+resp = existing_client.post(f"/session/invite/{invitation_existing.token}/")
+check("Annahme durch das bestehende Konto", resp.status_code == 302, f"got {resp.status_code}")
 su_existing = SessionUser.objects.get(user=existing, tenant=tenant)
 check("Rollen vorbelegt", list(su_existing.roles.all()) == [roles["viewer"]])
 

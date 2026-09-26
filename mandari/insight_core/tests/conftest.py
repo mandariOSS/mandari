@@ -17,6 +17,16 @@ CENTER_LAT = 51.9606649
 CENTER_LON = 7.6261347
 
 
+@pytest.fixture(autouse=True)
+def _drosselung_zuruecksetzen() -> Any:
+    """Zähler der Drosselung (Django-Cache) sollen nicht von einem Test in den nächsten reichen."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture
 def geo_body(db: Any) -> OParlBody:
     source = OParlSource.objects.create(name="Beispielquelle", url="https://ris.beispielstadt.example/oparl/system")

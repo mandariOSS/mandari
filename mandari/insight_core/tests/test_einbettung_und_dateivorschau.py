@@ -250,9 +250,9 @@ def _quelle_liefert(monkeypatch: Any, tmp_path: Path, inhalt: bytes, content_typ
     """Das Quell-RIS antwortet mit ``inhalt``; der Dokument-Cache schreibt nach ``tmp_path``."""
     monkeypatch.setattr(file_cache, "cache_root", lambda: tmp_path)
 
-    def upstream(url: str, **kwargs: Any) -> httpx.Response:
-        return httpx.Response(
-            200, content=inhalt, headers={"content-type": content_type}, request=httpx.Request("GET", url)
-        )
+    def handle_request(self: Any, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=inhalt, headers={"content-type": content_type})
 
-    monkeypatch.setattr("insight_core.views.files.httpx.get", upstream)
+    # Auf Transportebene: jede ausgehende Verbindung landet hier statt im Netz
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", handle_request)
+    monkeypatch.setattr("insight_core.services.safe_fetch._resolve", lambda host: ["93.184.215.14"])

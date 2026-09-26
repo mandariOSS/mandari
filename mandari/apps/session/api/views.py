@@ -392,6 +392,20 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
                 status=401,
             )
 
+        # Ratenlimit des Tokens – derselbe Zähler wie in der Session-API v1
+        from apps.session.api.v1.auth import rate_limit_exceeded
+
+        if rate_limit_exceeded(api_token):
+            response = self.json_response(
+                {
+                    "error": "Too Many Requests",
+                    "message": "Rate limit for this token reached. Please retry in one minute.",
+                },
+                status=429,
+            )
+            response["Retry-After"] = "60"
+            return response
+
         # Check permission
         if not api_token.can_submit_applications:
             return self.json_response(

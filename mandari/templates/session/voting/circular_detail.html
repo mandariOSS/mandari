@@ -33,7 +33,7 @@
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ circular.title }}</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
             {{ circular.organization.name }} · Rückmeldefrist {{ circular.deadline|date:"d.m.Y" }}
-            {% if circular.paper %} · Vorlage
+            {% if circular.paper and paper_visible %} · Vorlage
             <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=circular.paper.id %}" class="text-primary-600 dark:text-primary-400 hover:underline">{{ circular.paper.reference }}</a>
             {% endif %}
             {% if circular.decided_at %} · Ergebnis festgestellt am {{ circular.decided_at|date:"d.m.Y H:i" }}{% endif %}

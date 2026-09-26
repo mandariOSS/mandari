@@ -105,11 +105,16 @@ class ProtocolDetailView(SessionViewMixin, TemplateView):
         # Genehmigungsvermerk: TOP „Genehmigung der Niederschrift“ bzw. Folgesitzung des Gremiums
         if protocol and protocol.status == "review" and can_approve:
             context["approval_items"] = protocol_service.approval_candidates(meeting, include_non_public=can_view_np)
-            context["approval_meetings"] = SessionMeeting.objects.filter(
-                tenant=self.session_tenant,
-                organization=meeting.organization,
-                start__gt=meeting.start,
-            ).order_by("start")[:20]
+            # Folgesitzungen des Gremiums – nichtöffentliche nur mit NÖ-Sichtrecht (wie approval_candidates)
+            context["approval_meetings"] = (
+                SessionMeeting.objects.filter(
+                    tenant=self.session_tenant,
+                    organization=meeting.organization,
+                    start__gt=meeting.start,
+                )
+                .visible_to(self.session_permissions)
+                .order_by("start")[:20]
+            )
             # Vier-Augen-Prinzip und Vertretung (Issue #222): Hinweis statt wirkungslosem Knopf
             context["freigabe"] = four_eyes_service.evaluate(
                 four_eyes_service.PROCESS_PROTOCOL, protocol, self.session_user

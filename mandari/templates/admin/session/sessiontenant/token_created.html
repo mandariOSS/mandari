@@ -1,0 +1,29 @@
+{% extends "admin/base_site.html" %}
+{% load i18n unfold %}
+
+{% comment %}
+Neu erzeugter API-Token – einmalig auf dieser Seite, nie in einer Meldung (Messages-Cookie) oder im Verlauf.
+{% endcomment %}
+
+{% block breadcrumbs %}
+    <div class="px-4">
+        <div class="container mb-6 mx-auto -my-3 lg:mb-12">
+            <ul class="flex flex-wrap">
+                {% url "admin:index" as index_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=index_url name=_("Home") %}
+                {% url "admin:session_sessiontenant_changelist" as changelist_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=changelist_url name=opts.verbose_name_plural|capfirst %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link="" name=title %}
+            </ul>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div class="flex flex-col gap-6 max-w-4xl">
+        <p>Neuer API-Token für <strong>{{ tenant.name }}</strong> („{{ token.name }}“). Er wird nur jetzt angezeigt –
+            bitte sofort kopieren und sicher weitergeben. Danach lässt er sich nicht erneut abrufen.</p>
+        <p><code data-testid="api-token">{{ raw_token }}</code></p>
+        <p><a href="{% url 'admin:session_sessiontenant_change' tenant.pk %}">Zurück zum Mandanten</a></p>
+    </div>
+{% endblock %}

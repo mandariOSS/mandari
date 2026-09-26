@@ -11,11 +11,12 @@
     <div class="flex items-start gap-3">
         <i data-lucide="alert-triangle" class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5"></i>
         <div>
-            <p class="font-medium text-red-800 dark:text-red-300">Zusammenfassung fehlgeschlagen</p>
+            <p class="font-medium text-red-800 dark:text-red-300">Zusammenfassung nicht verfügbar</p>
             <p class="text-sm text-red-700 dark:text-red-400 mt-1">{{ error }}</p>
         </div>
     </div>
-    <button type="button" hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
+    {% if retry is not False %}
+    <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
             hx-target="#paper-summary"
             hx-swap="innerHTML"
             hx-request="timeout:300000"
@@ -23,7 +24,17 @@
         <i data-lucide="refresh-cw" class="w-4 h-4"></i>
         Erneut versuchen
     </button>
+    {% endif %}
 </div>
+{% elif offer %}
+<button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
+        hx-target="#paper-summary"
+        hx-swap="innerHTML"
+        hx-request="timeout:300000"
+        class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+    <i data-lucide="sparkles" class="w-4 h-4"></i>
+    Zusammenfassung generieren
+</button>
 {% else %}
 <!-- Fallback loading state (should rarely be shown) -->
 <div class="flex items-center justify-center py-4">

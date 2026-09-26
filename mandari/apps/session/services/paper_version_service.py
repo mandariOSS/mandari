@@ -59,6 +59,21 @@ Entry = SessionPaperVersionFile
 #: Vorlage über eine Neufassung (Unternummer) oder nach Zurückweisung wieder im Entwurf.
 RESTORE_STATUSES = frozenset({"draft"})
 
+#: Ab der Freigabe ist der Inhalt einer Vorlage (Texte, Angaben, Anlagen) festgeschrieben – sonst ließe
+#: sich das Vier-Augen-Prinzip nachträglich umgehen. Änderungen entstehen als Neufassung (Unternummer)
+#: oder nach Zurückziehen und erneutem Freigabelauf.
+CONTENT_LOCKED_STATUSES = frozenset({"approved", "scheduled", "completed", "withdrawn"})
+CONTENT_LOCKED_MESSAGE = (
+    "Nach der Freigabe lassen sich Inhalt und Anlagen der Vorlage nicht mehr ändern. Bitte eine Neufassung "
+    "(Unternummer) anlegen oder die Vorlage zurückziehen und erneut zur Freigabe vorlegen."
+)
+
+
+def content_locked(paper: SessionPaper | None) -> bool:
+    """Ist der Inhalt der Vorlage festgeschrieben (freigegeben, terminiert, abgeschlossen, zurückgezogen)?"""
+    return paper is not None and paper.status in CONTENT_LOCKED_STATUSES
+
+
 #: Felder, die „Wiederherstellen“ aus der Fassung übernimmt. Nicht dabei: Nummer (unveränderlich),
 #: Status (Workflow) und Ö/NÖ (Sichtbarkeitsentscheidung, keine Inhaltsfrage).
 RESTORED_FIELDS = (
@@ -417,11 +432,24 @@ def _restore_relations(paper: SessionPaper, details: dict[str, Any], notes: list
 
 
 def _restore_files(
-    paper: SessionPaper, version: SessionPaperVersion, *, user: SessionUser | None, notes: list[str]
+    paper: SessionPaper,
+    version: SessionPaperVersion,
+    *,
+    user: SessionUser | None,
+    notes: list[str],
+    permissions: Set[str] | None = None,
 ) -> None:
+    """
+    Anlagen aus der Fassung zurückholen. Mit ``permissions`` nur Anlagen, die die Person sehen
+    darf – nichtöffentliche bleiben ohne NÖ-Recht unberührt und werden nicht genannt.
+    """
     note = f"Wiederhergestellt aus Fassung {version.number} der Vorlage"
-    current = {session_file.pk: session_file for session_file in paper.files.all()}
-    for entry in version.files.select_related("blob").order_by("position"):
+    current = {session_file.pk: session_file for session_file in paper.files.select_related("paper")}
+    entries = list(version.files.select_related("blob").order_by("position"))
+    if permissions is not None:
+        entries = [e for e in entries if entry_visible(permissions, paper, version, e, current)]
+        current = {pk: f for pk, f in current.items() if file_service.file_visible(permissions, f)}
+    for entry in entries:
         blob = entry.blob
         if blob is None or not blob.is_available:
             notes.append(f"„{entry.name}“: Der Inhalt ist nicht mehr vorhanden und wurde nicht wiederhergestellt.")
@@ -448,7 +476,13 @@ def _restore_files(
         notes.append("Später hinzugefügte Anlagen bleiben erhalten: " + ", ".join(f"„{name}“" for name in kept))
 
 
-def restore(paper: SessionPaper, version: SessionPaperVersion, *, user: SessionUser | None) -> RestoreResult:
+def restore(
+    paper: SessionPaper,
+    version: SessionPaperVersion,
+    *,
+    user: SessionUser | None,
+    permissions: Set[str] | None = None,
+) -> RestoreResult:
     """
     Fassung als neue Fassung wiederherstellen – die Historie bleibt unberührt.
 
@@ -476,7 +510,7 @@ def restore(paper: SessionPaper, version: SessionPaperVersion, *, user: SessionU
             setattr(paper, name, getattr(version, name))
         _restore_relations(paper, version.details or {}, notes)
         paper.save()
-        _restore_files(paper, version, user=user, notes=notes)
+        _restore_files(paper, version, user=user, notes=notes, permissions=permissions)
         restored = snapshot(
             paper,
             trigger=Version.TRIGGER_RESTORE,

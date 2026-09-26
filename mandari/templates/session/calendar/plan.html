@@ -112,7 +112,11 @@
                     {% for conflict in entry.conflicts %}
                     <p class="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-0.5">
                         <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+                        {% if conflict.conflict_hidden %}
+                        {{ conflict.conflict_reason }}: Termin belegt
+                        {% else %}
                         {{ conflict.conflict_reason }}: {{ conflict.name }} ({{ conflict.organization.name }}, {{ conflict.start|date:"H:i" }} Uhr{% if conflict.room %}, {{ conflict.room }}{% endif %})
+                        {% endif %}
                     </p>
                     {% endfor %}
                 </div>

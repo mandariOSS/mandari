@@ -10,6 +10,7 @@ from typing import Any
 
 from django.conf import settings
 from django.utils.html import escape
+from django.utils.safestring import SafeString, mark_safe
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
 
@@ -420,18 +421,23 @@ def get_search_service() -> ElasticsearchService:
     return _search_service
 
 
-def _safe_highlight(text: str | None) -> str:
+def _safe_highlight(text: str | None) -> SafeString:
     """Sanitize highlighted text: escape HTML, restore only <mark> tags."""
     if not text:
-        return text or ""
+        return SafeString("")
     # Replace highlight tags with placeholders
-    text = text.replace(HIGHLIGHT_PRE, "\x00MARK_START\x00")
+    text = str(text).replace(HIGHLIGHT_PRE, "\x00MARK_START\x00")
     text = text.replace(HIGHLIGHT_POST, "\x00MARK_END\x00")
     # Escape all remaining HTML
     text = escape(text)
     # Restore highlight tags
     text = text.replace("\x00MARK_START\x00", HIGHLIGHT_PRE)
-    return text.replace("\x00MARK_END\x00", HIGHLIGHT_POST)
+    return mark_safe(text.replace("\x00MARK_END\x00", HIGHLIGHT_POST))  # nur <mark> bleibt HTML
+
+
+def _text(value: Any, fallback: str = "") -> SafeString:
+    """Rückfallwert (Name, Aktenzeichen …) aus der Quelle: immer maskiert."""
+    return escape(str(value) if value not in (None, "") else fallback)
 
 
 def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
@@ -448,10 +454,12 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
     highlighted_name = _safe_highlight(formatted.get("name", hit.get("name")))
     highlighted_text = _safe_highlight(formatted.get("text_content", ""))
 
+    # Titel und Vorschautexte sind immer SafeString: Hervorhebungen mit <mark>, alle Rückfallwerte
+    # (Aktenzeichen, Namensteile, IDs) maskiert. Das Template gibt sie ohne |safe aus.
     if result_type == "paper":
         return {
             "type": "paper",
-            "title": highlighted_name or hit.get("name") or hit.get("reference", "Vorgang"),
+            "title": highlighted_name or _text(hit.get("name") or hit.get("reference"), "Vorgang"),
             "subtitle": hit.get("paper_type"),
             "url": f"/insight/vorgaenge/{hit.get('id')}/",
             "reference": hit.get("reference"),
@@ -459,14 +467,14 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
         }
 
     if result_type == "person":
-        title = highlighted_name or hit.get("name")
+        title = highlighted_name or (_text(hit.get("name")) if hit.get("name") else None)
         if not title:
             parts = []
             if hit.get("given_name"):
-                parts.append(hit["given_name"])
+                parts.append(str(hit["given_name"]))
             if hit.get("family_name"):
-                parts.append(hit["family_name"])
-            title = " ".join(parts) if parts else "Person"
+                parts.append(str(hit["family_name"]))
+            title = _text(" ".join(parts), "Person")
         return {
             "type": "person",
             "title": title,
@@ -477,7 +485,7 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
     if result_type == "organization":
         return {
             "type": "organization",
-            "title": highlighted_name or hit.get("name", "Gremium"),
+            "title": highlighted_name or _text(hit.get("name"), "Gremium"),
             "subtitle": hit.get("organization_type"),
             "url": f"/insight/gremien/{hit.get('id')}/",
         }
@@ -494,7 +502,7 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
                 pass
         return {
             "type": "meeting",
-            "title": highlighted_name or hit.get("name", "Sitzung"),
+            "title": highlighted_name or _text(hit.get("name"), "Sitzung"),
             "subtitle": subtitle,
             "url": f"/insight/termine/{hit.get('id')}/",
         }
@@ -519,18 +527,29 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
                 pass
         return {
             "type": "file",
-            "title": highlighted_name or escape(hit.get("name") or hit.get("file_name", "Datei")),
+            "title": highlighted_name or _text(hit.get("name") or hit.get("file_name"), "Datei"),
             "subtitle": " \u00b7 ".join(subtitle_parts) if subtitle_parts else None,
             "url": f"/insight/vorgaenge/{hit.get('paper_id')}/",
-            "access_url": hit.get("access_url", ""),
-            "text_preview": highlighted_text or escape(hit.get("text_preview", "")),
+            # Vorschau immer \u00fcber den eigenen Datei-Proxy, nie die Adresse aus der Quelle
+            "access_url": _preview_url(hit.get("id")),
+            "text_preview": highlighted_text or _text(hit.get("text_preview")),
             "paper_id": hit.get("paper_id"),
             "highlight": highlighted_text if highlighted_text else None,
         }
 
     return {
         "type": result_type,
-        "title": str(hit.get("id", "Unbekannt")),
+        "title": _text(hit.get("id"), "Unbekannt"),
         "subtitle": None,
         "url": "#",
     }
+
+
+def _preview_url(file_id: Any) -> str:
+    """Vorschau-URL des Datei-Proxys für eine Datei-ID aus dem Index (leer bei ungültiger ID)."""
+    import uuid
+
+    try:
+        return f"/insight/dokumente/{uuid.UUID(str(file_id))}/preview/"
+    except ValueError:
+        return ""

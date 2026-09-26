@@ -119,7 +119,8 @@ def welt() -> Welt:
         reference="V/2026/9",
         name="PERSONALIE-GEHEIM",
         is_public=False,
-        status="approved",
+        # Entwurf: Anlagen lassen sich nur vor der Freigabe ändern
+        status="draft",
         main_organization=gremium,
         source_application=antrag,
     )
@@ -128,7 +129,7 @@ def welt() -> Welt:
         reference="V/2026/1",
         name="OEFFENTLICHE-VORLAGE",
         is_public=True,
-        status="approved",
+        status="draft",
         main_organization=gremium,
         parent_paper=noe_vorlage,
         relation_type="supplement",

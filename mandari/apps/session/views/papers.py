@@ -39,7 +39,7 @@ from ..models import (
     SessionUser,
 )
 from ..permissions import SessionViewMixin, role_permissions
-from ..services import delegation_service, four_eyes_service
+from ..services import delegation_service, four_eyes_service, paper_version_service
 from ..visibility import agenda_item_visible, meeting_visible, paper_visible
 from .nexturl import safe_next_url
 
@@ -344,8 +344,6 @@ class PaperDetailView(SessionViewMixin, DetailView):
             context["freigabe"] = four_eyes_service.evaluate(four_eyes_service.PROCESS_PAPER, paper, self.session_user)
 
         # Fassungen (Issue #226): neueste und beschlossene Fassung für die Seitenleiste
-        from ..services import paper_version_service
-
         context.update(paper_version_service.detail_context(paper, context["permission_checker"].permissions))
         return context
 
@@ -637,13 +635,21 @@ class PaperWorkflowView(SessionViewMixin, View):
         )
 
     def _approver_emails(self, paper):
-        """E-Mails aller Freigabeberechtigten des Mandanten und ihrer Vertretungen (Issue #222)."""
-        approvers = list(
-            SessionUser.objects.filter(tenant=self.session_tenant, is_active=True)
+        """
+        E-Mails aller Freigabeberechtigten des Mandanten und ihrer Vertretungen (Issue #222).
+
+        Nichtöffentliche Vorlagen nur an Freigabeberechtigte, die sie selbst sehen dürfen –
+        Betreff und Titel stehen in der Mail.
+        """
+        approvers = [
+            su
+            for su in SessionUser.objects.filter(tenant=self.session_tenant, is_active=True)
             .filter(Q(roles__is_admin=True) | Q(roles__can_approve_papers=True))
             .select_related("user")
+            .prefetch_related("roles")
             .distinct()
-        )
+            if paper_visible(role_permissions(su), paper)
+        ]
         emails = {su.user.email for su in approvers if su.user.email} | _deputy_emails(approvers, paper)
         return sorted(emails - {self.session_user.user.email})
 
@@ -738,9 +744,22 @@ class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
     pk_url_kwarg = "paper_id"
     permission_required = "edit_papers"
 
+    #: Inhaltliche Felder – ab der Freigabe festgeschrieben (paper_version_service.CONTENT_LOCKED_STATUSES)
+    CONTENT_FIELDS = (
+        "name",
+        "paper_type",
+        "main_text",
+        "resolution_text",
+        "has_financial_impact",
+        "financial_impact_note",
+    )
+    content_locked = False
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["text_blocks"] = _active_text_blocks(self.session_tenant)
+        context["content_locked"] = self.content_locked
+        context["content_locked_message"] = paper_version_service.CONTENT_LOCKED_MESSAGE
         return self._numbering_context(context)
 
     def get_queryset(self):
@@ -752,6 +771,8 @@ class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
+        # Stand vor dem Binden: Das Formular schreibt beim Prüfen in form.instance
+        self.content_locked = paper_version_service.content_locked(form.instance)
         form.fields["main_organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         )
@@ -767,6 +788,10 @@ class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
         return self._prepare_numbering(form)
 
     def form_valid(self, form):
+        # Nach der Freigabe: Inhalt festgeschrieben – Änderungen nur als Neufassung oder nach Rücknahme
+        if self.content_locked and set(form.changed_data) & set(self.CONTENT_FIELDS):
+            form.add_error(None, paper_version_service.CONTENT_LOCKED_MESSAGE)
+            return self.form_invalid(form)
         # Ö→NÖ: Steht die Vorlage noch auf einem öffentlichen TOP, erschiene ihr Betreff dort weiter
         if "is_public" in form.changed_data and not form.instance.is_public:
             offen = list(
