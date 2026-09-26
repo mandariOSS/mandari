@@ -189,6 +189,10 @@ def logging_config(*, debug: bool, log_format: str | None = None, log_level: str
                 "propagate": False,
             },
             "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+            # Jede Schreibanfrage an Elasticsearch als INFO und jede Unsauberkeit in PDFs als Warnung
+            # füllten das Journal (Sept. 2026: >10 000 bzw. >70 000 Zeilen am Tag) ohne Nutzen
+            "elastic_transport": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+            "pypdf": {"handlers": ["console"], "level": "ERROR", "propagate": False},
             **{name: {"handlers": ["console"], "level": app_level, "propagate": False} for name in app_loggers},
         },
     }

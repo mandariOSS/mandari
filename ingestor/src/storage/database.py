@@ -1705,6 +1705,15 @@ class DatabaseStorage:
         """Update a file with text extraction results."""
         from datetime import datetime
 
+        # PostgreSQL lehnt Null-Bytes in Textfeldern ab („invalid byte sequence for encoding UTF8:
+        # 0x00“). Manche PDFs enthalten sie im Textstrom; ohne diese Bereinigung scheiterte das
+        # Speichern, die Datei blieb in „processing“ und wurde nach PROCESSING_STALE_AFTER immer
+        # wieder neu verarbeitet (Sept. 2026: ~14 000 Fehlversuche am Tag).
+        if text_content is not None:
+            text_content = text_content.replace("\x00", "")
+        if error is not None:
+            error = error.replace("\x00", "")
+
         async with self.get_session() as session:
             values: dict = {
                 "text_extraction_status": status,

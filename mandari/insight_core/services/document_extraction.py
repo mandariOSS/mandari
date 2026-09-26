@@ -260,7 +260,8 @@ def extract_text_from_file(
         text = _extract_text_from_plain(data)
         extraction_method = "text" if text.strip() else "none"
 
-    text = force_str(text or "").strip()
+    # PostgreSQL speichert keine Null-Bytes in Textfeldern; manche PDFs enthalten sie im Textstrom
+    text = force_str(text or "").replace("\x00", "").strip()
     return text, ocr_used, page_count, extraction_method
 
 
