@@ -18,7 +18,9 @@ from ..models import (
     OParlConsultation,
     OParlFile,
     OParlMeeting,
+    withdrawn_q,
 )
+from ..services import file_delivery
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
@@ -45,10 +47,10 @@ def _annotate_files_with_context(files):
     if not paper_ids and not meeting_fk_ids:
         return
 
-    # 1. Consultations für alle Papers
+    # 1. Consultations für alle Papers (von mandari Session zurückgenommenes bleibt überall außen vor)
     consultations_by_paper = {}
     if paper_ids:
-        consultations = OParlConsultation.objects.filter(paper_id__in=paper_ids)
+        consultations = OParlConsultation.objects.filter(paper_id__in=paper_ids).exclude(withdrawn_q())
         for c in consultations:
             consultations_by_paper.setdefault(c.paper_id, []).append(c)
 
@@ -63,8 +65,9 @@ def _annotate_files_with_context(files):
     meetings_by_pk = {}
     all_meeting_pks = set()
 
+    visible_meetings = OParlMeeting.objects.exclude(withdrawn_q()).prefetch_related("organizations")
     if meeting_ext_ids:
-        meetings = OParlMeeting.objects.filter(external_id__in=meeting_ext_ids).prefetch_related("organizations")
+        meetings = visible_meetings.filter(external_id__in=meeting_ext_ids)
         for m in meetings:
             meetings_by_ext_id[m.external_id] = m
             meetings_by_pk[m.pk] = m
@@ -73,7 +76,7 @@ def _annotate_files_with_context(files):
     if meeting_fk_ids:
         missing = meeting_fk_ids - all_meeting_pks
         if missing:
-            fk_meetings = OParlMeeting.objects.filter(pk__in=missing).prefetch_related("organizations")
+            fk_meetings = visible_meetings.filter(pk__in=missing)
             for m in fk_meetings:
                 meetings_by_pk[m.pk] = m
 
@@ -86,7 +89,7 @@ def _annotate_files_with_context(files):
 
     agenda_items_by_ext_id = {}
     if agenda_ext_ids:
-        for ai in OParlAgendaItem.objects.filter(external_id__in=agenda_ext_ids):
+        for ai in OParlAgendaItem.objects.filter(external_id__in=agenda_ext_ids).exclude(withdrawn_q()):
             agenda_items_by_ext_id[ai.external_id] = ai
 
     # 4. Pro Paper die nächste (zukünftige) Consultation wählen, Fallback auf neueste
@@ -259,11 +262,11 @@ def file_proxy(request, file_id):
 
     local = file_cache.local_file(file_obj)
     if local is not None:
-        response = FileResponse(
-            open(local, "rb"),  # noqa: SIM115 – FileResponse schließt die Datei nach dem Streaming selbst
-            content_type=file_cache.content_type_for(file_obj, "application/pdf"),
-            as_attachment=force_download,
-            filename=filename,
+        # FileResponse schließt die Datei nach dem Streaming selbst
+        response = FileResponse(open(local, "rb"))  # noqa: SIM115
+        # Nur passive Formate im Browser, alles andere als Download (fremde Quelle, gemeinsamer Ursprung)
+        file_delivery.apply(
+            response, file_cache.content_type_for(file_obj, "application/pdf"), filename, download=force_download
         )
         response["Cache-Control"] = "public, max-age=86400"
         response["X-Mandari-Cache"] = "hit"
@@ -338,11 +341,8 @@ def file_proxy(request, file_id):
     except Exception as exc:  # Cache-Fehler dürfen die Auslieferung nie verhindern
         logger.warning("Dokument %s konnte nicht zwischengespeichert werden: %s", file_obj.id, exc)
 
-    response = HttpResponse(data, content_type=content_type)
-    if force_download:
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    else:
-        response["Content-Disposition"] = "inline"
+    response = HttpResponse(data)
+    file_delivery.apply(response, content_type, filename, download=force_download)
     response["Content-Length"] = len(data)
     response["Cache-Control"] = "public, max-age=86400"
     response["X-Mandari-Cache"] = "miss"

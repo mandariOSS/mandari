@@ -21,6 +21,7 @@ from ..models import (
     OParlFile,
     OParlMeeting,
     OParlOrganization,
+    withdrawn_q,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
@@ -314,9 +315,13 @@ class MeetingDetailView(DetailView):
         )
         if agenda_items:
             ext_ids = [item.external_id for item in agenda_items]
-            # Alle Consultations + Papers in 1 Query laden
-            consultations = OParlConsultation.objects.filter(agenda_item_external_id__in=ext_ids).select_related(
-                "paper"
+            # Alle Consultations + Papers in 1 Query laden; von Session zurückgenommene Vorlagen
+            # und Beratungen erscheinen nicht mehr
+            consultations = (
+                OParlConsultation.objects.filter(agenda_item_external_id__in=ext_ids)
+                .exclude(withdrawn_q())
+                .exclude(withdrawn_q("paper"))
+                .select_related("paper")
             )
             # Papers pro AgendaItem zuordnen
             papers_by_agenda = {}
