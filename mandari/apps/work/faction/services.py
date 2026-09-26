@@ -88,6 +88,14 @@ class FactionMeetingEmailService:
                 .order_by("order", "number")
             )
 
+        from .visibility import visible_children
+
+        # Unterpunkte: im öffentlichen Teil ohne NÖ-Unterpunkte, außer in der internen Fassung
+        for item in public_items:
+            item.visible_children = visible_children(item, include_internal=include_internal)
+        for item in internal_items:
+            item.visible_children = visible_children(item, include_internal=True)
+
         context = {
             "meeting": meeting,
             "organization": meeting.organization,
@@ -126,7 +134,8 @@ class FactionMeetingEmailService:
         else:
             attendances = meeting.attendances.filter(status="invited", membership__isnull=False)
 
-        attendances = attendances.select_related("membership__user")
+        # Gastzugänge (nur freigegebene Dokumente) erhalten keine Einladungen zu Fraktionssitzungen
+        attendances = attendances.exclude(membership__is_guest=True).select_related("membership__user")
 
         # PDF-Varianten nur einmal erzeugen (Ö-only und vollständig) + ICS
         pdf_public = self.build_agenda_pdf(meeting, include_internal=False)
@@ -234,14 +243,21 @@ class FactionMeetingEmailService:
             if update
             else "du bist zur folgenden Fraktionssitzung eingeladen:"
         )
+        # Ortszeit und deutsche Wochentags-/Monatsnamen – unabhängig von der gerade aktiven Sprache
+        from django.utils import translation
+        from django.utils.formats import date_format
+
+        local_start = timezone.localtime(meeting.start)
+        with translation.override("de"):
+            datum = date_format(local_start, "l, d. F Y")
         lines = [
             f"Hallo {user.first_name or user.email},",
             "",
             intro,
             "",
             f"{meeting.title}",
-            f"Datum: {meeting.start.strftime('%A, %d. %B %Y')}",
-            f"Uhrzeit: {meeting.start.strftime('%H:%M')} Uhr",
+            f"Datum: {datum}",
+            f"Uhrzeit: {local_start:%H:%M} Uhr",
         ]
 
         if meeting.location:
@@ -432,8 +448,49 @@ def run_faction_reminder_pass(now=None) -> dict:
         cache.delete(_REMINDER_LOCK_KEY)
 
 
-def _decorate_protocol_items(items, entries_by_item):
-    """TOPs für das Niederschrift-PDF mit Einträgen/Beschlüssen anreichern."""
+def org_member(organization, raw_id):
+    """Aktive Mitgliedschaft (kein Gastzugang) der Organisation zu einer Formular-ID, sonst ``None``."""
+    import uuid
+
+    from apps.tenants.models import Membership
+
+    try:
+        member_id = uuid.UUID(str(raw_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return Membership.objects.filter(id=member_id, organization=organization, is_active=True, is_guest=False).first()
+
+
+def safe_link_url(url: str) -> bool:
+    """Verweise nur als http(s)-Adresse (kein ``javascript:``, ``data:`` u. Ä.)."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit((url or "").strip())
+    except ValueError:
+        return False
+    return parts.scheme.lower() in ("http", "https") and bool(parts.netloc)
+
+
+def visible_item_tasks(item, membership):
+    """Aufgaben am TOP im Rahmen der Aufgaben-Sichtbarkeit (private Aufgaben anderer bleiben verborgen)."""
+    from apps.work.tasks.selectors import visible_tasks
+
+    base = item.tasks.select_related("assigned_to__user", "created_by__user")
+    return visible_tasks(item.meeting.organization, membership, base=base)
+
+
+def visible_linked_motions(item, membership):
+    """Mit dem TOP verknüpfte Dokumente, soweit das Mitglied sie sehen darf (Motion.visible_to)."""
+    from apps.work.motions.models import Motion
+
+    return Motion.visible_to(membership).filter(id__in=item.related_motions.values("id"))
+
+
+def _decorate_protocol_items(items, entries_by_item, *, include_internal: bool):
+    """TOPs für das Niederschrift-PDF mit Einträgen/Beschlüssen anreichern (NÖ-Unterpunkte nur intern)."""
+    from .visibility import is_item_internal
+
     decorated = []
     for item in items:
         item.entries_list = entries_by_item.get(item.id, [])
@@ -443,6 +500,8 @@ def _decorate_protocol_items(items, entries_by_item):
             item.decision_obj = None
         item.children_list = []
         for child in item.children.all().order_by("order", "number"):
+            if not include_internal and is_item_internal(child):
+                continue
             child.entries_list = entries_by_item.get(child.id, [])
             try:
                 child.decision_obj = child.decision
@@ -513,8 +572,10 @@ def build_faction_protocol_pdf(meeting, *, internal: bool) -> bytes:
         "organization": meeting.organization,
         "internal": internal,
         "variant_label": "Interne Fassung (inkl. nichtöffentlicher Teil)" if internal else "Öffentliche Fassung",
-        "agenda_public": _decorate_protocol_items(public_items, entries_by_item),
-        "agenda_internal": _decorate_protocol_items(internal_items, entries_by_item) if internal else [],
+        "agenda_public": _decorate_protocol_items(public_items, entries_by_item, include_internal=internal),
+        "agenda_internal": (
+            _decorate_protocol_items(internal_items, entries_by_item, include_internal=True) if internal else []
+        ),
         "general_entries": general_entries if internal else [],
         "participants": participants,
         "generated_at": timezone.localtime(),

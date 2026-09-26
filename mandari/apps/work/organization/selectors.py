@@ -650,8 +650,14 @@ def trusted_devices(user: User) -> QuerySet[TrustedDevice]:
 
 
 def find_trusted_device(user: User, device_id: Any) -> TrustedDevice | None:
-    """Vertrauenswürdiges Gerät des Benutzers oder ``None``."""
-    return TrustedDevice.objects.filter(id=device_id, user=user).first()
+    """Vertrauenswürdiges Gerät des Benutzers oder ``None`` (auch bei ungültiger ID)."""
+    import uuid
+
+    try:
+        device_uuid = uuid.UUID(str(device_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return TrustedDevice.objects.filter(id=device_uuid, user=user).first()
 
 
 def recent_exports(organization: Organization, membership: Membership) -> QuerySet[DataExport]:

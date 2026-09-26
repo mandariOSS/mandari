@@ -29,7 +29,7 @@
             <td class="top-nr">TOP {{ item.number }}</td>
             <td>
                 {{ item.title }}
-                {% for sub in item.children.all %}
+                {% for sub in item.visible_children %}
                 <br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.title }}
                 {% endfor %}
             </td>
@@ -46,7 +46,7 @@
             <td class="top-nr">{{ item.number }}</td>
             <td>
                 {{ item.title }}
-                {% for sub in item.children.all %}
+                {% for sub in item.visible_children %}
                 <br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.title }}
                 {% endfor %}
             </td>

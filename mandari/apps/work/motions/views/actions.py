@@ -168,7 +168,7 @@ class MotionCommentView(WorkViewMixin, View):
         if not motion.can_comment(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
-        form = MotionCommentForm(request.POST)
+        form = MotionCommentForm(request.POST, motion=motion)
         if form.is_valid():
             comment = form.save(commit=False)
             comment.motion = motion
@@ -403,12 +403,25 @@ class MotionApprovalRequestView(WorkViewMixin, View):
         if not motion.can_access(self.membership):
             return JsonResponse({"error": "Kein Zugriff auf dieses Dokument."}, status=403)
 
+        # Freigaben entscheiden Mitglieder, nie Gäste
         approver = get_object_or_404(
-            Membership, id=request.POST.get("approver", ""), organization=self.organization, is_active=True
+            Membership,
+            id=request.POST.get("approver", ""),
+            organization=self.organization,
+            is_active=True,
+            is_guest=False,
         )
         approval_type = request.POST.get("approval_type")
         if approval_type not in dict(MotionApproval.APPROVAL_TYPE_CHOICES):
             return JsonResponse({"error": "Ungültiger Genehmigungstyp"}, status=400)
+        # Braucht die angefragte Person erst Zugriff, ist das eine Freigabe – nur mit Freigaberecht
+        if not motion.can_access(approver) and not motion.can_share(self.membership):
+            return JsonResponse(
+                {
+                    "error": "Die angefragte Person hat keinen Zugriff; freigeben darf nur, wer das Dokument teilen darf."
+                },
+                status=403,
+            )
 
         approval, created = MotionApproval.objects.get_or_create(
             motion=motion,

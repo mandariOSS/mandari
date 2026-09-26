@@ -95,6 +95,22 @@ def get_agenda_item_or_404(item_id: Any, meeting: OParlMeeting | None = None) ->
     return get_object_or_404(OParlAgendaItem, id=item_id)
 
 
+def get_org_agenda_item_or_404(organization: Organization, item_id: Any) -> OParlAgendaItem:
+    """Tagesordnungspunkt aus den Körperschaften der Organisation, sonst 404 (Org-Grenze)."""
+    bodies = organization_bodies(organization)
+    if bodies is None:
+        raise Http404
+    return get_object_or_404(OParlAgendaItem, id=item_id, meeting__body__in=bodies)
+
+
+def get_org_paper_or_404(organization: Organization, paper_id: Any) -> OParlPaper:
+    """Vorlage aus den Körperschaften der Organisation, sonst 404 (Org-Grenze)."""
+    bodies = organization_bodies(organization)
+    if bodies is None:
+        raise Http404
+    return get_object_or_404(OParlPaper, id=paper_id, body__in=bodies)
+
+
 def find_agenda_item(item_id: Any) -> OParlAgendaItem | None:
     """Tagesordnungspunkt per ID oder ``None``."""
     return OParlAgendaItem.objects.filter(id=item_id).first()

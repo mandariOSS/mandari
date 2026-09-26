@@ -13,9 +13,11 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.http import HttpRequest, JsonResponse
 
 from apps.common.models import AISettings, SiteSettings
@@ -540,3 +542,39 @@ def speicherkonflikt(request: HttpRequest, old_content: str, new_content: str) -
             status=409,
         )
     return KONFLIKT_HINWEIS
+
+
+# ---------------------------------------------------------------------------
+# Metadaten aus dem Editor: nur Objekte der eigenen Organisation
+# ---------------------------------------------------------------------------
+
+
+class FremdeAuswahlError(ValueError):
+    """Eine im Formular übergebene ID gehört nicht zur Organisation (oder ist ungültig)."""
+
+
+def _aus_organisation(model: Any, organization: Any, raw_id: str) -> Any:
+    """Objekt der Organisation zu einer Formular-ID; leer ergibt ``None``, fremd/ungültig ``FremdeAuswahlError``."""
+    if not raw_id:
+        return None
+    try:
+        found = model.objects.filter(id=raw_id, organization=organization).first()
+    except (ValueError, ValidationError):
+        found = None
+    if found is None:
+        raise FremdeAuswahlError(raw_id)
+    return found
+
+
+def document_type_for(organization: Any, raw_id: str) -> Any:
+    """Dokumenttyp der Organisation (Editor-Auswahl)."""
+    from .models import MotionType
+
+    return _aus_organisation(MotionType, organization, raw_id)
+
+
+def letterhead_for(organization: Any, raw_id: str) -> Any:
+    """Briefkopf der Organisation (Editor-Auswahl)."""
+    from .models import OrganizationLetterhead
+
+    return _aus_organisation(OrganizationLetterhead, organization, raw_id)

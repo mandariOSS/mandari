@@ -29,8 +29,18 @@ def can_view_internal(membership) -> bool:
 
 
 def is_item_internal(item) -> bool:
-    """Gehört der TOP zum nicht-öffentlichen Teil?"""
-    return getattr(item, "visibility", None) == "internal"
+    """Gehört der TOP zum nicht-öffentlichen Teil? Unterpunkte erben ihn vom übergeordneten TOP."""
+    node = item
+    while node is not None:
+        if getattr(node, "visibility", None) == "internal":
+            return True
+        node = getattr(node, "parent", None)
+    return False
+
+
+def visible_children(item, *, include_internal: bool) -> list:
+    """Unterpunkte eines TOPs; ohne ``include_internal`` nur die öffentlichen."""
+    return [child for child in item.children.all() if include_internal or not is_item_internal(child)]
 
 
 def can_view_item(item, membership) -> bool:

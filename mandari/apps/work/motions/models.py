@@ -375,6 +375,11 @@ class DocumentFolder(models.Model):
         ancestors.reverse()
         return ancestors
 
+    def is_shared_with_guests(self) -> bool:
+        """Ist dieser Ordner (direkt oder über einen übergeordneten Ordner) für Gäste freigegeben?"""
+        folder_ids = [self.id, *(ancestor.id for ancestor in self.get_ancestors())]
+        return FolderGuestShare.objects.filter(folder_id__in=folder_ids).exists()
+
     def get_descendants(self) -> list["DocumentFolder"]:
         """Alle Unterordner (rekursiv)."""
         result = []
@@ -542,6 +547,37 @@ class FolderGuestShare(models.Model):
         for root_id in children.get(None, []):
             walk(root_id, None)
         return levels
+
+    @classmethod
+    def shared_folder_scopes(cls, user, organization) -> list[tuple[set, int | None]]:
+        """
+        Je Ordner-Freigabe eines Nutzers: (IDs des Ordners und aller Unterordner, User-ID der freigebenden Person).
+
+        Grundlage dafür, welche Dokumente eine Ordner-Freigabe umfasst (Motion._folder_share_applies).
+        """
+        shares = list(
+            cls.objects.filter(user=user, folder__organization=organization).values_list("folder_id", "created_by_id")
+        )
+        if not shares:
+            return []
+        children: dict = {}
+        for folder_id, parent_id in DocumentFolder.objects.filter(organization=organization).values_list(
+            "id", "parent_id"
+        ):
+            children.setdefault(parent_id, []).append(folder_id)
+
+        scopes = []
+        for root_id, created_by_id in shares:
+            subtree = set()
+            stack = [root_id]
+            while stack:
+                folder_id = stack.pop()
+                if folder_id in subtree:
+                    continue
+                subtree.add(folder_id)
+                stack.extend(children.get(folder_id, []))
+            scopes.append((subtree, created_by_id))
+        return scopes
 
 
 class StatusTransitionError(ValueError):
@@ -875,10 +911,16 @@ class Motion(EncryptionMixin, models.Model):
         if not include_deleted:
             qs = qs.exclude(status="deleted")
         if getattr(membership, "is_guest", False):
-            shared_folder_ids = list(FolderGuestShare.shared_folder_levels(membership.user, membership.organization))
-            return qs.filter(
-                models.Q(shares__scope="user", shares__user=membership.user) | models.Q(folder_id__in=shared_folder_ids)
-            ).distinct()
+            # Ordner-Freigaben: organisationsweite und eigene Dokumente der freigebenden Person
+            folder_q = models.Q(pk__in=[])
+            for folder_ids, created_by_id in FolderGuestShare.shared_folder_scopes(
+                membership.user, membership.organization
+            ):
+                applies = models.Q(visibility="organization")
+                if created_by_id is not None:
+                    applies |= models.Q(author__user_id=created_by_id)
+                folder_q |= models.Q(folder_id__in=folder_ids) & applies
+            return qs.filter(models.Q(shares__scope="user", shares__user=membership.user) | folder_q).distinct()
         return qs.filter(
             models.Q(author=membership)
             # Federfuehrung und Mitarbeit sehen das Dokument, fuer das sie
@@ -936,7 +978,11 @@ class Motion(EncryptionMixin, models.Model):
         # Ordner-Freigaben gelten rekursiv: Ordner des Dokuments + Vorfahren
         node = self.folder
         while node is not None:
-            levels.update(node.guest_shares.filter(user=membership.user).values_list("level", flat=True))
+            for level, created_by_id in node.guest_shares.filter(user=membership.user).values_list(
+                "level", "created_by_id"
+            ):
+                if self._folder_share_applies(created_by_id):
+                    levels.add(level)
             node = node.parent
         for level in ("admin", "edit", "comment", "view"):
             if level in levels:
@@ -956,7 +1002,11 @@ class Motion(EncryptionMixin, models.Model):
         timestamps = list(self.shares.filter(scope="user", user=membership.user).values_list("created_at", flat=True))
         node = self.folder
         while node is not None:
-            timestamps.extend(node.guest_shares.filter(user=membership.user).values_list("created_at", flat=True))
+            for created_at, created_by_id in node.guest_shares.filter(user=membership.user).values_list(
+                "created_at", "created_by_id"
+            ):
+                if self._folder_share_applies(created_by_id):
+                    timestamps.append(created_at)
             node = node.parent
         return min(timestamps) if timestamps else None
 
@@ -1118,6 +1168,23 @@ class Motion(EncryptionMixin, models.Model):
             return self.get_guest_share_level(membership) in ("comment", "edit", "admin")
 
         return self.can_access(membership)
+
+    def can_share(self, membership) -> bool:
+        """Darf das Mitglied das Dokument weiteren Personen zugänglich machen (Autor:in oder ``motions.share``)?"""
+        if getattr(membership, "is_guest", False) or not self.can_access(membership):
+            return False
+        return self.author_id == membership.id or membership.has_permission("motions.share")
+
+    def _folder_share_applies(self, created_by_id) -> bool:
+        """
+        Gilt eine Ordner-Freigabe (angelegt von ``created_by_id``) für dieses Dokument?
+
+        Ordner-Freigaben umfassen organisationsweite Dokumente und die eigenen Dokumente der
+        freigebenden Person – private oder gezielt geteilte Dokumente anderer bleiben außen vor.
+        """
+        if self.visibility == "organization":
+            return True
+        return created_by_id is not None and self.author.user_id == created_by_id
 
     def get_visibility_icon(self) -> str:
         """Get the Lucide icon name for the current visibility."""

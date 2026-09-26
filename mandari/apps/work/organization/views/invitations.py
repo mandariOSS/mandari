@@ -202,7 +202,11 @@ class AcceptInvitationView(TemplateView):
             messages.error(request, "Diese Einladung ist nicht mehr gültig.")
             return redirect("accounts:login")
 
-        message = services.accept_invitation(invitation, request.user)
+        try:
+            message = services.accept_invitation(invitation, request.user)
+        except ServiceError as exc:
+            flash_error(request, exc)
+            return redirect("accounts:login")
         if message.startswith("Sie sind bereits"):
             messages.info(request, message)
         else:

@@ -369,7 +369,7 @@ def test_email_api_and_registration_settings(org: Any, admin: Any) -> None:
             mail_sender_mode="smtp",
             smtp_fallback_to_mandari=False,
             smtp_host="",
-            smtp_port_raw="99999",
+            smtp_port_raw="2525",
             smtp_username="user",
             smtp_use_tls=False,
             smtp_from_email="info@example.org",
@@ -380,7 +380,7 @@ def test_email_api_and_registration_settings(org: Any, admin: Any) -> None:
     )
     org.refresh_from_db()
     assert needs_host is True
-    assert org.smtp_port == 65535
+    assert org.smtp_port == 2525  # nur Mail-Ports, siehe test_smtp_grenzen.py
     assert org.mail_sender_mode == "smtp"
     assert org.get_smtp_password() == "geheim"
 
@@ -443,6 +443,12 @@ def test_organization_settings_and_parties(org: Any) -> None:
     org.refresh_from_db()
     assert org.website == "https://example.org"
 
+    # Parteien sind plattformweit: Work wählt nur bestehende aus, legt keine neuen an
+    with pytest.raises(ServiceError, match="gibt es noch nicht"):
+        services.update_parties(org, [], "Neue Partei")
+    from apps.tenants.models import PartyGroup
+
+    PartyGroup.objects.create(name="Neue Partei")
     services.update_parties(org, [], "Neue Partei")
     names = {p.name for p in selectors.org_parties(org)}
     assert "Neue Partei" in names

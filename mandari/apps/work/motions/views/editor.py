@@ -36,7 +36,7 @@ from ..models import (
     OrganizationLetterhead,
     content_fingerprint,
 )
-from ..services import MotionAIService, speicherkonflikt
+from ..services import FremdeAuswahlError, MotionAIService, document_type_for, letterhead_for, speicherkonflikt
 from ._helpers import _broadcast_doc_reload, _flatten_folder_tree, _get_org_folder_or_404
 
 
@@ -269,7 +269,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         # Zuständigkeit, Themen, Checkliste, Aufgaben und Freigaben (Sidebar)
         from apps.tenants.models import Membership, Topic
-        from apps.work.tasks.models import Task
+        from apps.work.tasks import selectors as task_selectors
 
         context["org_members"] = (
             Membership.objects.filter(organization=self.organization, is_active=True)
@@ -298,11 +298,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         context["checklist_items"] = motion.checklist_items.all()
         context["checklist_progress"] = motion.checklist_progress
-        context["linked_tasks"] = (
-            Task.objects.filter(organization=self.organization, related_motion=motion)
-            .select_related("assigned_to__user")
-            .order_by("is_completed", "due_date", "-created_at")
-        )
+        # Nur Aufgaben, die das Mitglied sehen darf; Gäste sehen keine Aufgaben
+        context["linked_tasks"] = task_selectors.tasks_for_motion(self.organization, self.membership, motion)
 
         approvals = motion.approvals.select_related("approver__user").order_by("created_at")
         context["approvals"] = approvals
@@ -475,6 +472,11 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             return redirect("work:documents", org_slug=self.organization.slug)
 
         action = request.POST.get("action", "save")
+        # Gäste bearbeiten nur Titel und Inhalt; Papierkorb, Metadaten und das Formular
+        # bleiben Mitgliedern vorbehalten (Issue #76)
+        is_guest = bool(getattr(self.membership, "is_guest", False))
+        if is_guest and action != "save":
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         # Handle delete action (soft delete - move to trash)
         if action == "delete":
@@ -501,24 +503,22 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 if title:
                     motion.title = title
 
-                # Nur übernehmen, wenn mitgeschickt: Der Editor sendet die beim Anlegen
-                # erfasste Zusammenfassung nicht mit und würde sie sonst leeren (#183).
-                if "summary" in request.POST:
-                    motion.summary = request.POST.get("summary", "").strip()
+                if not is_guest:
+                    # Nur übernehmen, wenn mitgeschickt: Der Editor sendet die beim Anlegen
+                    # erfasste Zusammenfassung nicht mit und würde sie sonst leeren (#183).
+                    if "summary" in request.POST:
+                        motion.summary = request.POST.get("summary", "").strip()
 
-                # Update document type if provided
-                document_type_id = request.POST.get("document_type_id", "").strip()
-                if document_type_id:
-                    motion.document_type_id = document_type_id
-                elif document_type_id == "":
-                    motion.document_type = None
-
-                # Update letterhead if provided
-                letterhead_id = request.POST.get("letterhead_id", "").strip()
-                if letterhead_id:
-                    motion.letterhead_id = letterhead_id
-                elif letterhead_id == "":
-                    motion.letterhead = None
+                    # Dokumenttyp und Briefkopf nur aus der eigenen Organisation (leer = keiner)
+                    try:
+                        motion.document_type = document_type_for(
+                            self.organization, request.POST.get("document_type_id", "").strip()
+                        )
+                        motion.letterhead = letterhead_for(
+                            self.organization, request.POST.get("letterhead_id", "").strip()
+                        )
+                    except FremdeAuswahlError:
+                        return JsonResponse({"error": "Ungültiger Dokumenttyp oder Briefkopf."}, status=400)
 
                 try:
                     old_content = motion.get_content_decrypted()
@@ -663,9 +663,11 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
         if current_folder is not None:
             # Innerhalb eines Ordners: Unterordner + enthaltene Dokumente
             subfolders = current_folder.children.all()
+            # Nur, was die Freigabe umfasst (Motion.visible_to: organisationsweite und eigene
+            # Dokumente der freigebenden Person, persönliche Freigaben)
             folder_documents = list(
-                Motion.objects.filter(organization=self.organization, folder=current_folder)
-                .exclude(status="deleted")
+                Motion.visible_to(self.membership)
+                .filter(folder=current_folder)
                 .select_related("author__user")
                 .order_by("title" if sort == "name" else "-updated_at")
             )

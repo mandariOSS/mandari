@@ -20,6 +20,7 @@ from django.views.generic import View
 
 from apps.common.mixins import WorkViewMixin
 
+from .. import services as faction_services
 from ..models import (
     FactionAgendaItem,
     FactionAttendance,
@@ -163,6 +164,10 @@ class FactionActionView(WorkViewMixin, View):
         """Ersteller der Sitzung oder faction.manage — für Status-/Verwaltungsaktionen."""
         return meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
 
+    def _may_set_status(self, status: str) -> bool:
+        """Starten und Beenden (laufend/abgeschlossen) verlangen faction.start – wie die Start-/Ende-Aktionen."""
+        return status not in ("ongoing", "completed") or self.membership.has_permission("faction.start")
+
     def _can_addendum(self, meeting):
         """
         Wer darf nach endgültiger Genehmigung Nachträge erfassen (Issue #63)?
@@ -223,6 +228,9 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, "Keine Berechtigung zum Ändern des Status.")
             return self._redirect_detail(meeting)
         new_status = request.POST.get("status")
+        if new_status and not self._may_set_status(new_status):
+            messages.error(request, "Keine Berechtigung zum Starten oder Beenden.")
+            return self._redirect_detail(meeting)
         if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES):
             meeting.status = new_status
             meeting.save()
@@ -256,7 +264,7 @@ class FactionActionView(WorkViewMixin, View):
         meeting.video_link = request.POST.get("video_link", "") if meeting.is_virtual else ""
 
         new_status = request.POST.get("status")
-        if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES):
+        if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES) and self._may_set_status(new_status):
             meeting.status = new_status
 
         meeting.save()
@@ -533,16 +541,17 @@ class FactionActionView(WorkViewMixin, View):
             if agenda_item is not None:
                 entry.agenda_item = agenda_item
 
+        # Personen nur aus der eigenen Organisation
         if entry_type == "speech":
             speaker_id = request.POST.get("speaker")
             if speaker_id:
-                entry.speaker_id = speaker_id
+                entry.speaker = faction_services.org_member(self.organization, speaker_id)
 
         if entry_type == "action":
             assignee_id = request.POST.get("action_assignee")
             due_date = request.POST.get("action_due_date")
             if assignee_id:
-                entry.action_assignee_id = assignee_id
+                entry.action_assignee = faction_services.org_member(self.organization, assignee_id)
             if due_date:
                 entry.action_due_date = due_date
 
@@ -637,7 +646,7 @@ class FactionActionView(WorkViewMixin, View):
 
         speaker_id = request.POST.get("speaker")
         if speaker_id:
-            entry.speaker_id = speaker_id
+            entry.speaker = faction_services.org_member(self.organization, speaker_id)
 
         entry.save()
 

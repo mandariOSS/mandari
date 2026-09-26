@@ -67,9 +67,16 @@ class OrganizationEmailSettingsView(WorkViewMixin, TemplateView):
             smtp_password=request.POST.get("smtp_password", ""),
             smtp_password_clear=request.POST.get("smtp_password_clear") == "on",
         )
+        hatte_passwort = bool(self.organization.smtp_password_encrypted)
         if services.save_email_settings(self.organization, data):
             messages.warning(
                 request,
                 "Eigenes SMTP ist aktiviert, aber kein Server hinterlegt — bis dahin läuft der Versand über mandari.",
+            )
+        if hatte_passwort and not data.smtp_password_clear and not self.organization.smtp_password_encrypted:
+            messages.warning(
+                request,
+                "Server, Port oder Benutzer haben sich geändert – das gespeicherte Passwort wurde verworfen. "
+                "Bitte gib es erneut ein.",
             )
         messages.success(request, "E-Mail-Einstellungen gespeichert.")

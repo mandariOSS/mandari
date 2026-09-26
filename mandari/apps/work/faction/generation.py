@@ -287,7 +287,7 @@ def generate_meetings_for_schedule(schedule, now=None) -> dict:
         # Anwesenheiten für alle aktiven Mitglieder (wie manuelle Anlage)
         from apps.work.faction.models import FactionAttendance
 
-        for member in organization.memberships.filter(is_active=True):
+        for member in organization.memberships.filter(is_active=True, is_guest=False):
             FactionAttendance.objects.create(meeting=meeting, membership=member, status="invited")
 
         # Automatischer erster TOP (Genehmigung TO/Protokoll)

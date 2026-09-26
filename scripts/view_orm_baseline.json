@@ -4,7 +4,7 @@
     "long_functions": 1
   },
   "faction": {
-    "orm_calls": 349,
+    "orm_calls": 348,
     "long_functions": 1
   },
   "meetings": {
@@ -12,7 +12,7 @@
     "long_functions": 0
   },
   "motions": {
-    "orm_calls": 528,
+    "orm_calls": 522,
     "long_functions": 4
   },
   "notifications": {

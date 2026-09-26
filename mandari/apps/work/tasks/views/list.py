@@ -215,7 +215,10 @@ class TaskBoardAPIView(WorkViewMixin, View):
         task = self._load_task(request.POST.get("task_id"))
         if task is None:
             return JsonResponse({"error": "Keine Berechtigung."}, status=403)
-        services.set_status(task, request.POST.get("status"))
+        new_status = request.POST.get("status")
+        if new_status not in services.VALID_STATUSES:
+            return JsonResponse({"error": "Ungültiger Status."}, status=400)
+        services.set_status(task, new_status)
         return JsonResponse({"success": True})
 
     def _toggle_complete(self, request):

@@ -22,7 +22,7 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
     permission_required = "meetings.prepare"
 
     def get(self, request, *args, **kwargs):
-        agenda_item = selectors.get_agenda_item_or_404(self.kwargs["item_id"])
+        agenda_item = selectors.get_org_agenda_item_or_404(self.organization, self.kwargs["item_id"])
         # TOP-Anhänge + über Gremien geteilte Vorlagen-Anhänge der eigenen Org
         docs = selectors.documents_with_annotation_counts(self.organization, agenda_item)
         return JsonResponse({"documents": [serialize_document(d, agenda_item.id, count) for d, count in docs]})
