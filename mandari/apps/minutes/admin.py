@@ -10,6 +10,8 @@ from django.contrib import admin
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from unfold.admin import ModelAdmin
 
+from apps.common.admin_mixins import ImmutableAdminMixin, SingletonAdminMixin
+
 from .models_compute import ComputeSettings, GpuNode
 
 
@@ -56,7 +58,7 @@ class ComputeSettingsForm(forms.ModelForm):  # type: ignore[type-arg]
 
 
 @admin.register(ComputeSettings)
-class ComputeSettingsAdmin(ModelAdmin):  # type: ignore[misc]
+class ComputeSettingsAdmin(SingletonAdminMixin, ModelAdmin):  # type: ignore[misc]
     form = ComputeSettingsForm
     fieldsets = (
         (
@@ -106,12 +108,6 @@ class ComputeSettingsAdmin(ModelAdmin):  # type: ignore[misc]
         ),
     )
 
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return not ComputeSettings.objects.exists()
-
-    def has_delete_permission(self, request: HttpRequest, obj: object = None) -> bool:
-        return False
-
     def changelist_view(self, request: HttpRequest, extra_context: dict[str, Any] | None = None) -> HttpResponse:
         # Singleton: direkt zur Bearbeitung.
         instance = ComputeSettings.load(use_cache=False)
@@ -119,7 +115,7 @@ class ComputeSettingsAdmin(ModelAdmin):  # type: ignore[misc]
 
 
 @admin.register(GpuNode)
-class GpuNodeAdmin(ModelAdmin):  # type: ignore[misc]
+class GpuNodeAdmin(ImmutableAdminMixin, ModelAdmin):  # type: ignore[misc]
     """Nur Ansicht: Knoten entstehen und verschwinden ausschließlich über den Orchestrator."""
 
     list_display = ("hostname", "state", "gpu_model", "detected_gpu", "created_at", "ready_at", "deleted_at")
@@ -139,12 +135,3 @@ class GpuNodeAdmin(ModelAdmin):  # type: ignore[misc]
         "error",
     )
     exclude = ("token_hash",)
-
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return False
-
-    def has_change_permission(self, request: HttpRequest, obj: object = None) -> bool:
-        return False
-
-    def has_delete_permission(self, request: HttpRequest, obj: object = None) -> bool:
-        return False

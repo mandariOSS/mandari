@@ -13,11 +13,13 @@ from django.urls import reverse
 from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin
 
+from apps.common.admin_mixins import ReadOnlyAdminMixin, SingletonAdminMixin
+
 from .models import SyncConfig, SyncLog
 
 
 @admin.register(SyncLog)
-class SyncLogAdmin(ModelAdmin):
+class SyncLogAdmin(ReadOnlyAdminMixin, ModelAdmin):
     list_display = [
         "status_badge",
         "source_display",
@@ -44,12 +46,6 @@ class SyncLogAdmin(ModelAdmin):
     ordering = ["-started_at"]
     date_hierarchy = "started_at"
     list_per_page = 50
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
 
     def has_delete_permission(self, request, obj=None):
         return request.user.is_superuser
@@ -85,7 +81,7 @@ class SyncLogAdmin(ModelAdmin):
 
 
 @admin.register(SyncConfig)
-class SyncConfigAdmin(ModelAdmin):
+class SyncConfigAdmin(SingletonAdminMixin, ModelAdmin):
     list_display = [
         "sync_enabled",
         "interval_minutes",
@@ -94,13 +90,6 @@ class SyncConfigAdmin(ModelAdmin):
         "updated_at",
     ]
     readonly_fields = ["updated_at"]
-
-    def has_add_permission(self, request):
-        # Singleton: nur 1 Objekt erlaubt
-        return not SyncConfig.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
     def changelist_view(self, request, extra_context=None):
         """Direkt zum einzigen Objekt weiterleiten."""

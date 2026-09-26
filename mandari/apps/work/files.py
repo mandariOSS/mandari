@@ -69,6 +69,40 @@ def letterhead_path(instance: Any, filename: str) -> str:
     return _random_name(LETTERHEADS, filename)
 
 
+class AttachmentDisplayMixin:
+    """Anzeige eines Anhangs mit ``file_size`` und ``mime_type`` (Aufgaben, Fraktions-TOPs)."""
+
+    file_size: Any
+    mime_type: Any
+
+    @property
+    def size_human(self) -> str:
+        """Menschenlesbare Dateigröße."""
+        size = self.file_size
+        if size < 1024:
+            return f"{size} B"
+        if size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        return f"{size / (1024 * 1024):.1f} MB"
+
+    @property
+    def icon_name(self) -> str:
+        """Lucide Icon-Name basierend auf MIME-Typ."""
+        if self.mime_type.startswith("image/"):
+            return "image"
+        if self.mime_type == "application/pdf":
+            return "file-text"
+        if self.mime_type.startswith("video/"):
+            return "film"
+        if self.mime_type.startswith("audio/"):
+            return "music"
+        if "spreadsheet" in self.mime_type or "excel" in self.mime_type:
+            return "table"
+        if "presentation" in self.mime_type or "powerpoint" in self.mime_type:
+            return "presentation"
+        return "file"
+
+
 def attachment_response(fieldfile: Any, filename: str = "", *, allow_pdf_inline: bool = False) -> FileResponse:
     """
     Datei eines Anhangs nach bestandener Zugriffsprüfung ausliefern.

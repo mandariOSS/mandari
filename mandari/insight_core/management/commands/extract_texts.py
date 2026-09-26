@@ -21,6 +21,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
 from apps.common.db_connections import releases_db_connections
+from insight_core.management.arguments import add_extraction_arguments
 from insight_core.models import OParlBody, OParlFile
 from insight_core.services.document_extraction import (
     DocumentDownloadError,
@@ -35,45 +36,7 @@ class Command(BaseCommand):
     help = "Extrahiert Text aus OParl-Dateien (PDFs) mittels pypdf und OCR."
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--limit",
-            type=int,
-            default=0,
-            help="Maximale Anzahl zu verarbeitender Dateien (0 = unbegrenzt)",
-        )
-        parser.add_argument(
-            "--batch-size",
-            type=int,
-            default=50,
-            help="Anzahl Dateien pro Batch (Standard: 50)",
-        )
-        parser.add_argument(
-            "--workers",
-            type=int,
-            default=4,
-            help="Anzahl paralleler Worker (Standard: 4)",
-        )
-        parser.add_argument(
-            "--body",
-            type=str,
-            default=None,
-            help="UUID der Kommune (nur Dateien dieser Kommune verarbeiten)",
-        )
-        parser.add_argument(
-            "--verbose",
-            action="store_true",
-            help="Detaillierte Ausgabe",
-        )
-        parser.add_argument(
-            "--reprocess",
-            action="store_true",
-            help="Auch bereits verarbeitete Dateien neu extrahieren",
-        )
-        parser.add_argument(
-            "--dry-run",
-            action="store_true",
-            help="Nur zählen, keine Extraktion durchführen",
-        )
+        add_extraction_arguments(parser, noun="Dateien", batch_size=50, workers=4)
         parser.add_argument(
             "--pdf-only",
             action="store_true",

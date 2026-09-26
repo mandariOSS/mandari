@@ -20,6 +20,8 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 from unfold.admin import ModelAdmin
 
+from apps.common.admin_mixins import ImmutableAdminMixin, ReadOnlyAdminMixin
+
 from .models import LoginAttempt, SecurityAuditLog, User
 
 
@@ -200,7 +202,7 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
 
 
 @admin.register(LoginAttempt)
-class LoginAttemptAdmin(ModelAdmin):
+class LoginAttemptAdmin(ReadOnlyAdminMixin, ModelAdmin):
     """
     Login-Versuche für Sicherheitsmonitoring.
 
@@ -221,13 +223,6 @@ class LoginAttemptAdmin(ModelAdmin):
     )
     ordering = ("-timestamp",)
 
-    # Keine Bearbeitung erlaubt
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
     def email_masked(self, obj):
         """Maskiert E-Mail für Datenschutz."""
         email = obj.email
@@ -242,7 +237,7 @@ class LoginAttemptAdmin(ModelAdmin):
 
 
 @admin.register(SecurityAuditLog)
-class SecurityAuditLogAdmin(ModelAdmin):
+class SecurityAuditLogAdmin(ImmutableAdminMixin, ModelAdmin):
     """
     Mandantenübergreifendes Sicherheitsprotokoll (Issue #221), nur lesend.
 
@@ -267,15 +262,6 @@ class SecurityAuditLogAdmin(ModelAdmin):
         "entry_hash",
     )
     ordering = ("-created_at",)
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 # ============================================================================

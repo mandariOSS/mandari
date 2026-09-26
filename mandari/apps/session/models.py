@@ -26,6 +26,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin, exclude_key_fields_from_save
+from apps.common.formatting import human_size
 
 from .visibility import AgendaItemQuerySet, FileQuerySet, MeetingQuerySet, PaperQuerySet
 
@@ -3292,15 +3293,6 @@ class SessionFile(models.Model):
     def size_human(self) -> str:
         """Human-readable file size."""
         return human_size(self.size)
-
-
-def human_size(size: float) -> str:
-    """Dateigröße lesbar, z. B. „1.5 MB“."""
-    for unit in ["B", "KB", "MB", "GB"]:
-        if size < 1024:
-            return f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{size:.1f} TB"
 
 
 # =============================================================================

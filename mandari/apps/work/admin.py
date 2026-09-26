@@ -13,6 +13,8 @@ from django.utils import timezone
 from django.utils.html import format_html, mark_safe
 from unfold.admin import ModelAdmin, StackedInline, TabularInline
 
+from apps.common.admin_mixins import NoAddAdminMixin, ReadOnlyAdminMixin
+
 from .faction.models import FactionAgendaItemAttachment
 from .motions.models import OrganizationAITokenUsage
 from .support.models import (
@@ -41,7 +43,7 @@ def support_ticket_badge(request):
 
 
 @admin.register(OrganizationAITokenUsage)
-class OrganizationAITokenUsageAdmin(ModelAdmin):
+class OrganizationAITokenUsageAdmin(NoAddAdminMixin, ModelAdmin):
     """Readonly overview of organization-level AI token consumption."""
 
     list_display = (
@@ -56,9 +58,6 @@ class OrganizationAITokenUsageAdmin(ModelAdmin):
     search_fields = ("organization__name", "organization__slug")
     readonly_fields = ("organization", "period_type", "period_start", "tokens_used", "requests_count", "updated_at")
     ordering = ("-period_start", "period_type")
-
-    def has_add_permission(self, request):
-        return False
 
 
 # =============================================================================
@@ -251,7 +250,7 @@ class KnowledgeBaseArticleAdmin(ModelAdmin):
 
 
 @admin.register(ArticleFeedback)
-class ArticleFeedbackAdmin(ModelAdmin):
+class ArticleFeedbackAdmin(ReadOnlyAdminMixin, ModelAdmin):
     """
     Admin für Artikel-Feedback (nur lesen).
 
@@ -263,12 +262,6 @@ class ArticleFeedbackAdmin(ModelAdmin):
     search_fields = ("article__title", "comment")
     readonly_fields = ("article", "is_helpful", "comment", "user", "session_key", "created_at")
     ordering = ("-created_at",)
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
 
     def has_comment(self, obj):
         return bool(obj.comment)
@@ -325,7 +318,7 @@ class OpenTicketsFilter(admin.SimpleListFilter):
         return queryset
 
 
-class SupportTicketAttachmentInline(TabularInline):
+class SupportTicketAttachmentInline(NoAddAdminMixin, TabularInline):
     """Inline für Ticket-Anhänge."""
 
     model = SupportTicketAttachment
@@ -353,11 +346,8 @@ class SupportTicketAttachmentInline(TabularInline):
 
     file_link.short_description = "Datei"
 
-    def has_add_permission(self, request, obj=None):
-        return False
 
-
-class SupportTicketMessageInline(StackedInline):
+class SupportTicketMessageInline(ReadOnlyAdminMixin, StackedInline):
     """Inline für Ticket-Nachrichten mit besserer Darstellung."""
 
     model = SupportTicketMessage
@@ -404,15 +394,9 @@ class SupportTicketMessageInline(StackedInline):
 
     message_display.short_description = ""
 
-    def has_add_permission(self, request, obj=None):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
 
 @admin.register(SupportTicket)
-class SupportTicketAdmin(ModelAdmin):
+class SupportTicketAdmin(NoAddAdminMixin, ModelAdmin):
     """
     Vollständiges Admin-Interface für Support-Tickets.
 
@@ -699,9 +683,6 @@ class SupportTicketAdmin(ModelAdmin):
     age_display.short_description = "Alter"
     age_display.admin_order_field = "created_at"
 
-    def has_add_permission(self, request):
-        return False
-
     def has_delete_permission(self, request, obj=None):
         return False
 
@@ -858,7 +839,7 @@ class SupportTicketAdmin(ModelAdmin):
 
 
 @admin.register(FactionAgendaItemAttachment)
-class FactionAgendaItemAttachmentAdmin(ModelAdmin):
+class FactionAgendaItemAttachmentAdmin(ReadOnlyAdminMixin, ModelAdmin):
     """Readonly admin für TOP-Anhänge."""
 
     list_display = ("filename", "agenda_item", "file_size_display", "created_at")
@@ -873,9 +854,3 @@ class FactionAgendaItemAttachmentAdmin(ModelAdmin):
         return obj.size_human
 
     file_size_display.short_description = "Größe"
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False

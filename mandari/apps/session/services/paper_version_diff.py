@@ -25,7 +25,8 @@ from typing import Any
 from django.utils.html import escape, format_html
 from django.utils.safestring import SafeString, mark_safe
 
-from apps.session.models import SessionPaper, SessionPaperVersion, SessionPaperVersionFile, human_size
+from apps.common.formatting import human_size
+from apps.session.models import SessionPaper, SessionPaperVersion, SessionPaperVersionFile
 
 _TOKEN_RE = re.compile(r"\s+|[^\s]+")
 #: Oberhalb dieser Größe (Wörter alt × Wörter neu) wird ein Absatzblock als Ganzes ersetzt

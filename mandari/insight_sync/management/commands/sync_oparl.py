@@ -30,6 +30,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from insight_core.services import portal_stats
+from insight_sync.tasks import count_synced_entities
 
 
 class Command(BaseCommand):
@@ -107,7 +108,7 @@ class Command(BaseCommand):
 
                     if result.success:
                         self.stdout.write(
-                            self.style.SUCCESS(f"Sync erfolgreich: {self._count_entities(result)} Entitäten")
+                            self.style.SUCCESS(f"Sync erfolgreich: {count_synced_entities(result)} Entitäten")
                         )
                     else:
                         self.stdout.write(self.style.ERROR(f"Sync fehlgeschlagen: {', '.join(result.errors)}"))
@@ -119,7 +120,7 @@ class Command(BaseCommand):
                     for result in results:
                         orchestrator.print_result(result)
                         if result.success:
-                            total_entities += self._count_entities(result)
+                            total_entities += count_synced_entities(result)
 
                     self.stdout.write(
                         self.style.SUCCESS(f"Sync abgeschlossen: {total_entities} Entitäten synchronisiert")
@@ -130,17 +131,3 @@ class Command(BaseCommand):
         # Die Startseite zeigt zwischengespeicherte Kennzahlen — nach einem Sync
         # sollen sie sofort stimmen, nicht erst nach Ablauf der Cache-Dauer.
         portal_stats.invalidate_portal_stats()
-
-    def _count_entities(self, result) -> int:
-        """Zählt alle synchronisierten Entitäten."""
-        return (
-            result.organizations_synced
-            + result.persons_synced
-            + result.memberships_synced
-            + result.meetings_synced
-            + result.papers_synced
-            + result.files_synced
-            + result.locations_synced
-            + result.agenda_items_synced
-            + result.consultations_synced
-        )

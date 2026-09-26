@@ -6,7 +6,6 @@ Comprehensive GDPR Art. 15/20 data export covering all personal data
 stored in Mandari, with JSON and PDF output formats.
 """
 
-import io
 import json as json_mod
 import logging
 
@@ -583,59 +582,10 @@ class DsgvoExportService:
         return {**data, "motions": motions}
 
     def _html_to_pdf(self, html_content: str) -> bytes:
-        """Convert HTML to PDF using xhtml2pdf with reportlab fallback."""
-        try:
-            from xhtml2pdf import pisa
+        """Convert HTML to PDF (gemeinsamer Baustein in apps/common/pdf.py)."""
+        from apps.common.pdf import html_to_pdf
 
-            result = io.BytesIO()
-            pisa_status = pisa.CreatePDF(
-                src=html_content,
-                dest=result,
-                encoding="UTF-8",
-            )
-
-            if pisa_status.err:
-                raise Exception(f"PDF generation error: {pisa_status.err}")
-
-            return result.getvalue()
-
-        except ImportError:
-            return self._simple_pdf_fallback(html_content)
-
-    def _simple_pdf_fallback(self, html_content: str) -> bytes:
-        """Fallback PDF generation using reportlab."""
-        import re
-
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.lib.units import mm
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
-
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=A4,
-            leftMargin=20 * mm,
-            rightMargin=20 * mm,
-            topMargin=25 * mm,
-            bottomMargin=20 * mm,
-        )
-
-        styles = getSampleStyleSheet()
-        story = []
-
-        text = re.sub(r"<[^>]+>", "", html_content)
-        text = text.replace("&nbsp;", " ").replace("&amp;", "&")
-
-        for line in text.split("\n"):
-            line = line.strip()
-            if line:
-                story.append(Paragraph(line, styles["Normal"]))
-                story.append(Spacer(1, 4))
-
-        if story:
-            doc.build(story)
-        return buffer.getvalue()
+        return html_to_pdf(html_content)
 
 
 # =============================================================================

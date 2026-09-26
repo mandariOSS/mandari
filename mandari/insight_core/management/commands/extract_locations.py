@@ -23,6 +23,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Exists, OuterRef, Q
 
 from apps.common.db_connections import releases_db_connections
+from insight_core.management.arguments import add_extraction_arguments
 from insight_core.models import OParlBody, OParlFile, OParlPaper
 from insight_core.services.georeferencing import (
     process_paper_georef,
@@ -43,44 +44,8 @@ class Command(BaseCommand):
             choices=["regex", "ai", "all"],
             help="Extraktionsmodus: regex (schnell), ai (LLM), all (beide). Standard: regex",
         )
-        parser.add_argument(
-            "--limit",
-            type=int,
-            default=0,
-            help="Maximale Anzahl zu verarbeitender Papers (0 = unbegrenzt)",
-        )
-        parser.add_argument(
-            "--batch-size",
-            type=int,
-            default=20,
-            help="Anzahl Papers pro Batch (Standard: 20)",
-        )
-        parser.add_argument(
-            "--workers",
-            type=int,
-            default=2,
-            help="Anzahl paralleler Worker (Standard: 2, niedrig wegen Geocoding-API)",
-        )
-        parser.add_argument(
-            "--body",
-            type=str,
-            default=None,
-            help="UUID der Kommune (nur Papers dieser Kommune verarbeiten)",
-        )
-        parser.add_argument(
-            "--verbose",
-            action="store_true",
-            help="Detaillierte Ausgabe",
-        )
-        parser.add_argument(
-            "--reprocess",
-            action="store_true",
-            help="Auch bereits verarbeitete Papers neu extrahieren",
-        )
-        parser.add_argument(
-            "--dry-run",
-            action="store_true",
-            help="Nur zählen, keine Extraktion durchführen",
+        add_extraction_arguments(
+            parser, noun="Papers", batch_size=20, workers=2, workers_note=", niedrig wegen Geocoding-API"
         )
 
     def handle(self, *args, **options):

@@ -21,6 +21,8 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.common.formatting import parse_iso_date
+
 from .. import audit
 from ..models import (
     SessionMonthlyAllowance,
@@ -193,18 +195,12 @@ class MonthlyAssignmentSaveView(SessionViewMixin, View):
             messages.error(request, "Bitte Person und Pauschale auswählen.")
             return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
 
-        def _parse_date(raw):
-            try:
-                return date.fromisoformat(raw)
-            except (TypeError, ValueError):
-                return None
-
         assignment, created = SessionPersonMonthlyRate.objects.update_or_create(
             person=person,
             rate=rate,
             defaults={
-                "start_date": _parse_date(request.POST.get("start_date", "")),
-                "end_date": _parse_date(request.POST.get("end_date", "")),
+                "start_date": parse_iso_date(request.POST.get("start_date", "")),
+                "end_date": parse_iso_date(request.POST.get("end_date", "")),
             },
         )
         audit.log_event(

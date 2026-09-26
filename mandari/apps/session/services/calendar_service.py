@@ -34,16 +34,6 @@ RHYTHM_CHOICES = [
     ("monthly_4", "Monatlich (4. Woche)"),
 ]
 
-WEEKDAY_CHOICES = [
-    (0, "Montag"),
-    (1, "Dienstag"),
-    (2, "Mittwoch"),
-    (3, "Donnerstag"),
-    (4, "Freitag"),
-    (5, "Samstag"),
-    (6, "Sonntag"),
-]
-
 
 def _window(start: datetime, end: datetime | None) -> tuple[datetime, datetime]:
     return start, end or (start + DEFAULT_DURATION)

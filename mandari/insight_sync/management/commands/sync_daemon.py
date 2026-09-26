@@ -44,6 +44,8 @@ from datetime import datetime
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
+from insight_sync.tasks import count_synced_entities
+
 
 class Command(BaseCommand):
     help = "Startet einen Daemon für kontinuierliche OParl Synchronisation"
@@ -278,7 +280,7 @@ class Command(BaseCommand):
                 total_entities = 0
                 for result in results:
                     if result.success:
-                        total_entities += self._count_entities(result)
+                        total_entities += count_synced_entities(result)
                     orchestrator.print_result(result)
 
                 duration = (datetime.now() - start_time).total_seconds()
@@ -291,17 +293,3 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f"Sync fehlgeschlagen: {e}"))
         finally:
             self._is_syncing = False
-
-    def _count_entities(self, result) -> int:
-        """Zählt alle synchronisierten Entitäten."""
-        return (
-            result.organizations_synced
-            + result.persons_synced
-            + result.memberships_synced
-            + result.meetings_synced
-            + result.papers_synced
-            + result.files_synced
-            + result.locations_synced
-            + result.agenda_items_synced
-            + result.consultations_synced
-        )
