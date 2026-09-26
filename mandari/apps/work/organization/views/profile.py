@@ -3,7 +3,6 @@
 Profil und Konto-Sicherheit im Organisationskontext.
 """
 
-from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
 from django.http import JsonResponse
@@ -13,11 +12,13 @@ from django.views.generic import TemplateView
 from apps.accounts.services import PasswordService, SessionService, TwoFactorService
 from apps.accounts.two_factor_policy import two_factor_required
 from apps.common.mixins import WorkViewMixin
-from apps.work.faction.models import CalendarFeedToken
 
 from .. import selectors, services
 from ..services import ServiceError
 from ._helpers import flash_error
+
+# Neue Feed-URL bis zur nächsten Anzeige der Profilseite (Post/Redirect/Get), danach verworfen
+SESSION_KEY_NEW_FEED_URL = "calendar_feed_url_once"
 
 
 class ProfileView(WorkViewMixin, TemplateView):
@@ -43,11 +44,10 @@ class ProfileView(WorkViewMixin, TemplateView):
         context["is_2fa_enabled"] = is_2fa
         context["sessions_count"] = SessionService.get_user_sessions(user).count()
 
-        # Persönlicher iCal-Feed (Issue #70): opakes Token, erneuerbar
-        feed_token = CalendarFeedToken.for_user(user)
-        base_url = getattr(django_settings, "SITE_URL", "").rstrip("/")
-        context["calendar_feed_url"] = f"{base_url}/kalender/feed/{feed_token.token}.ics"
-        context["calendar_feed_token"] = feed_token
+        # Persönlicher iCal-Feed (Issue #70): gespeichert ist nur der Hash des Tokens, die URL erscheint
+        # deshalb genau einmal – auf der Seite direkt nach dem Erzeugen
+        context["calendar_feed"] = selectors.calendar_feed(user)
+        context["calendar_feed_url"] = self.request.session.pop(SESSION_KEY_NEW_FEED_URL, None)
         return context
 
     def post(self, request, *args, **kwargs):
@@ -67,12 +67,16 @@ class ProfileView(WorkViewMixin, TemplateView):
                 if services.remove_avatar(request.user):
                     messages.success(request, "Profilbild entfernt.")
             elif action == "regenerate_calendar_feed":
-                services.regenerate_calendar_feed(request.user)
-                messages.success(
-                    request,
-                    "Kalender-Feed-URL erneuert. Die bisherige URL ist ab sofort ungültig — "
-                    "bitte den Feed im Kalender neu abonnieren.",
-                )
+                had_feed = selectors.calendar_feed(request.user) is not None
+                request.session[SESSION_KEY_NEW_FEED_URL] = services.regenerate_calendar_feed(request.user)
+                if had_feed:
+                    messages.success(
+                        request,
+                        "Neue Kalender-Feed-URL erzeugt. Die bisherige URL ist ab sofort ungültig — "
+                        "bitte den Feed im Kalender neu abonnieren.",
+                    )
+                else:
+                    messages.success(request, "Kalender-Feed-URL erzeugt.")
         except ServiceError as exc:
             flash_error(request, exc)
         return redirect("work:profile", org_slug=self.organization.slug)

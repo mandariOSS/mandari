@@ -27,6 +27,7 @@ from django.utils.text import slugify
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin, exclude_key_fields_from_save
 from apps.common.formatting import human_size
+from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 
 from .visibility import AgendaItemQuerySet, FileQuerySet, MeetingQuerySet, PaperQuerySet
 
@@ -584,13 +585,16 @@ class SessionUser(models.Model):
         return self.roles.filter(is_admin=True).exists()
 
 
-class SessionInvitation(models.Model):
+class SessionInvitation(HashedTokenMixin, models.Model):
     """
     Einladung eines Benutzers in einen Session-Mandanten (Issue #27).
 
     Vorbild: Work-Einladungsflow (tenants.UserInvitation). Ermöglicht das
     Einladen per E-Mail mit vorbelegten Rollen — auch für Personen, die
     noch kein Konto haben.
+
+    Gespeichert wird nur der SHA-256-Hash des Tokens (apps/common/tokens.py); das Token steht einmal
+    in der Einladungsmail. Erneutes Senden erzeugt einen neuen Link.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -603,7 +607,9 @@ class SessionInvitation(models.Model):
     )
 
     email = models.EmailField(verbose_name="E-Mail")
-    token = models.CharField(max_length=64, unique=True, editable=False)
+    token = models.CharField(
+        max_length=64, unique=True, default=unusable_token_hash, editable=False, verbose_name="Token (SHA-256)"
+    )
 
     # Vorbelegte Rollen
     roles = models.ManyToManyField(
@@ -649,17 +655,17 @@ class SessionInvitation(models.Model):
 
     @classmethod
     def create_for_tenant(cls, tenant, email: str, invited_by=None, roles=None, valid_days: int = 7):
-        """Neue Einladung mit kryptografisch sicherem Token anlegen."""
-        import secrets
+        """Neue Einladung; das Token für den Link steht nur in ``plain_token`` (gespeichert wird der Hash)."""
         from datetime import timedelta
 
-        invitation = cls.objects.create(
+        invitation = cls(
             tenant=tenant,
             email=email.lower().strip(),
-            token=secrets.token_urlsafe(48),
             invited_by=invited_by,
             expires_at=timezone.now() + timedelta(days=valid_days),
         )
+        invitation.issue_token()
+        invitation.save()
         if roles:
             for role in roles:
                 if role.tenant_id != tenant.id:

@@ -254,19 +254,30 @@ check("Gültige Frage -> Redirect", resp.status_code == 302 and resp["Location"]
 q1 = PublicQuestion.objects.get()
 check("Status unverified + Themenbereich", q1.status == "unverified" and q1.topic == "verkehr")
 check("Verifizierungs-Mail an Fragestellerin", len(mail.outbox) == 1 and mail.outbox[0].to == ["frieda@example.org"])
-check("Verifizierungslink in Mail", str(q1.verification_token) in mail.outbox[0].body)
+_mailtext = str(mail.outbox[0].body)
+verify_token = (
+    _mailtext.split("/insight/fragen/verifizieren/", 1)[1].split("/", 1)[0]
+    if "/insight/fragen/verifizieren/" in _mailtext
+    else ""
+)
+check("Verifizierungslink in Mail", bool(verify_token))
+check(
+    "In der Datenbank nur der Hash des Tokens",
+    q1.verification_token != verify_token
+    and not PublicQuestion.objects.filter(verification_token=verify_token).exists(),
+)
 
 check("Unverifizierte Frage nicht im Portal", "Radweg" not in html(client.get("/insight/fragen/")))
 check("Unverifizierte Frage: Detail 404", client.get(f"/insight/fragen/{q1.id}/").status_code == 404)
 
 mail.outbox.clear()
-resp = client.get(f"/insight/fragen/verifizieren/{q1.verification_token}/")
+resp = client.get(f"/insight/fragen/verifizieren/{verify_token}/")
 q1.refresh_from_db()
 check(
     "Link aus der Mail zeigt Bestätigungsseite, ändert nichts",
     resp.status_code == 200 and q1.status == "unverified" and not mail.outbox,
 )
-resp = client.post(f"/insight/fragen/verifizieren/{q1.verification_token}/")
+resp = client.post(f"/insight/fragen/verifizieren/{verify_token}/")
 q1.refresh_from_db()
 check("Verifizierung -> 200 + pending", resp.status_code == 200 and q1.status == "pending")
 check("Moderations-Hinweis an Superuser", len(mail.outbox) == 1 and mail.outbox[0].to == ["moderation@example.org"])
@@ -276,7 +287,7 @@ check(
 )
 check(
     "Verifizierungslink nur einmal nutzbar",
-    client.get(f"/insight/fragen/verifizieren/{q1.verification_token}/").status_code == 404,
+    client.get(f"/insight/fragen/verifizieren/{verify_token}/").status_code == 404,
 )
 check("Pending nicht im Portal", "Radweg" not in html(client.get("/insight/fragen/")))
 

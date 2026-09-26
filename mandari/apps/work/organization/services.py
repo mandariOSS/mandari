@@ -200,7 +200,7 @@ def _active_membership(organization: Organization, user: User | None) -> Members
 
 def send_invitation_email(organization: Organization, invitation: UserInvitation) -> bool:
     """Einladungs-Mail mit Annahme-Link über den Versandweg der Organisation; die Einladung bleibt auch ohne Mail."""
-    accept_url = emails.absolute_url(reverse("work:accept_invitation", kwargs={"token": invitation.token}))
+    accept_url = emails.absolute_url(reverse("work:accept_invitation", kwargs={"token": invitation.token_for_link()}))
     success = emails.send_organization_mail(
         organization,
         template="invitation.html",
@@ -264,8 +264,13 @@ def invite_member(organization: Organization, inviter: User, email: str, role_id
 
 
 def resend_invitation(organization: Organization, invitation: UserInvitation) -> None:
-    """Ablauf um sieben Tage verlängern und Einladung erneut mailen."""
+    """
+    Ablauf um sieben Tage verlängern und Einladung mit neuem Link erneut mailen.
+
+    Gespeichert ist nur der Hash des bisherigen Tokens; der Link der ersten Mail wird damit ungültig.
+    """
     invitation.expires_at = timezone.now() + timedelta(days=INVITATION_VALID_DAYS)
+    invitation.issue_token()
     invitation.save()
     send_invitation_email(organization, invitation)
 
@@ -700,7 +705,9 @@ def start_self_registration(organization: Organization, user: User) -> bool:
     """
     _ensure_registration_open(organization, user.email)
     token = EmailVerificationToken.create_for_user(user, valid_hours=REGISTRATION_CONFIRM_VALID_HOURS)
-    return emails.send_registration_confirmation(organization, user, str(token.token), REGISTRATION_CONFIRM_VALID_HOURS)
+    return emails.send_registration_confirmation(
+        organization, user, token.token_for_link(), REGISTRATION_CONFIRM_VALID_HOURS
+    )
 
 
 def join_by_self_registration(organization: Organization, user: User) -> Membership:
@@ -1370,11 +1377,17 @@ def remove_avatar(user: User) -> bool:
     return True
 
 
-def regenerate_calendar_feed(user: User) -> None:
-    """Persönlichen iCal-Feed-Token erneuern (Issue #70) — die bisherige Feed-URL wird sofort ungültig."""
+def regenerate_calendar_feed(user: User) -> str:
+    """
+    Neue persönliche iCal-Feed-URL (Issue #70); die bisherige wird sofort ungültig.
+
+    Liefert die neue URL. Gespeichert ist nur der Hash des Tokens, die URL gibt es also nur jetzt.
+    """
     from apps.work.faction.models import CalendarFeedToken
 
-    cast(Any, CalendarFeedToken.for_user(user)).regenerate()
+    feed = CalendarFeedToken.issue_for_user(user)
+    path = reverse("personal_calendar_feed", kwargs={"token": feed.plain_token})
+    return f"{str(getattr(django_settings, 'SITE_URL', '')).rstrip('/')}{path}"
 
 
 def remove_trusted_device(user: User, device_id: str) -> bool:

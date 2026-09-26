@@ -102,7 +102,8 @@ def test_session_einladung_uebernimmt_unbestaetigtes_konto_nicht(
     assert not SessionUser.objects.filter(user=unbestaetigt, tenant=tenant).exists()
     einladung = SessionInvitation.objects.get(tenant=tenant, email=ADRESSE)
     assert [m.to for m in mail.outbox] == [[ADRESSE]]
-    assert einladung.token in mail.outbox[0].body
+    assert f"/session/invite/{einladung.token}/" not in mail.outbox[0].body, "Link mit dem Hash statt dem Token"
+    assert "/session/invite/" in mail.outbox[0].body
     # Mit dem Passwort aus der Registrierung gibt es keinen Zugang zum Mandanten
     fremd = _anmelden(ADRESSE, FREMDES_PASSWORT)
     assert fremd.get(f"/session/{tenant.slug}/").status_code in (302, 403, 404)
@@ -115,7 +116,7 @@ def test_eingeloest_einladung_bestaetigt_die_adresse(tenant: SessionTenant) -> N
     client = Client()
     client.force_login(konto)
 
-    client.post(reverse("session:invitation_accept", kwargs={"token": einladung.token}))
+    client.post(reverse("session:invitation_accept", kwargs={"token": einladung.plain_token}))
 
     konto.refresh_from_db()
     assert konto.email_verified
@@ -126,7 +127,7 @@ def test_neues_konto_ueber_einladung_ist_bestaetigt(tenant: SessionTenant) -> No
     einladung = SessionInvitation.create_for_tenant(tenant=tenant, email="neu@stadt-x.example")
 
     Client().post(
-        reverse("session:invitation_accept", kwargs={"token": einladung.token}),
+        reverse("session:invitation_accept", kwargs={"token": einladung.plain_token}),
         {"password": EIGENES_PASSWORT, "password_confirm": EIGENES_PASSWORT, "first_name": "N", "last_name": "N"},
     )
 

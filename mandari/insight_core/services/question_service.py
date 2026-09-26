@@ -328,11 +328,16 @@ def get_moderator_emails() -> list[str]:
 
 
 def send_verification_email(question) -> bool:
-    """Sendet Verifizierungs-E-Mail an Fragesteller:in."""
+    """
+    Sendet Verifizierungs-E-Mail an Fragesteller:in.
+
+    Gespeichert ist nur der Hash des Bestätigungstokens; ohne frisch erzeugtes Token enthält die Mail
+    einen neuen Link.
+    """
     from apps.common.email import send_template_email
 
     site_url = _site_url()
-    verify_url = f"{site_url}/insight/fragen/verifizieren/{question.verification_token}/"
+    verify_url = f"{site_url}/insight/fragen/verifizieren/{question.token_for_link()}/"
 
     return send_template_email(
         subject=f"Bitte bestätigen Sie Ihre Frage an {question.recipient.display_name}",

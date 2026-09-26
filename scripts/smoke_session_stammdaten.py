@@ -86,6 +86,15 @@ def check(name, condition, detail=""):
         print(f"  FAIL {name}" + (f" — {detail}" if detail else ""))
 
 
+def _invite_token_aus_mail(email):
+    """Token aus dem Annahme-Link der letzten Einladungsmail an ``email`` (gespeichert ist nur der Hash)."""
+    for nachricht in reversed(mail.outbox):
+        text = str(nachricht.body)
+        if email in nachricht.to and "/session/invite/" in text:
+            return text.split("/session/invite/", 1)[1].split("/", 1)[0]
+    return ""
+
+
 # =============================================================================
 # Setup
 # =============================================================================
@@ -329,9 +338,12 @@ check(
 )
 check("Einheitliche Meldung", "Einladung an bestand@example.org wurde versendet" in resp.content.decode("utf-8"))
 invitation_existing = SessionInvitation.objects.get(tenant=tenant, email="bestand@example.org")
+# In der Datenbank steht nur der Hash; das Token gibt es nur im Link der Mail
+token_existing = _invite_token_aus_mail("bestand@example.org")
+check("Einladung: nur der Hash gespeichert", bool(token_existing) and invitation_existing.token != token_existing)
 existing_client = Client()
 existing_client.force_login(existing)
-resp = existing_client.post(f"/session/invite/{invitation_existing.token}/")
+resp = existing_client.post(f"/session/invite/{token_existing}/")
 check("Annahme durch das bestehende Konto", resp.status_code == 302, f"got {resp.status_code}")
 su_existing = SessionUser.objects.get(user=existing, tenant=tenant)
 check("Rollen vorbelegt", list(su_existing.roles.all()) == [roles["viewer"]])
@@ -345,14 +357,18 @@ resp = admin.post(
 invitation = SessionInvitation.objects.get(tenant=tenant, email="neu@example.org")
 check("Einladung angelegt", invitation.is_valid)
 check("Einladungs-E-Mail versendet", len(mail.outbox) == 1 and "neu@example.org" in mail.outbox[0].to)
-check("E-Mail enthält Token-Link", invitation.token in mail.outbox[0].body)
+token_neu = _invite_token_aus_mail("neu@example.org")
+check("E-Mail enthält Token-Link", bool(token_neu))
+check("Einladung: nur der Hash gespeichert", invitation.token != token_neu)
+resp = Client().get(f"/session/invite/{invitation.token}/")
+check("Gespeicherter Hash als Token -> 404", resp.status_code == 404, f"got {resp.status_code}")
 
 # Annahme durch neuen Nutzer (Registrierung über Einladung)
 anon = Client()
-resp = anon.get(f"/session/invite/{invitation.token}/")
+resp = anon.get(f"/session/invite/{token_neu}/")
 check("Accept-Seite -> 200", resp.status_code == 200, f"got {resp.status_code}")
 resp = anon.post(
-    f"/session/invite/{invitation.token}/",
+    f"/session/invite/{token_neu}/",
     {
         "first_name": "Nina",
         "last_name": "Neu",
@@ -370,7 +386,7 @@ invitation.refresh_from_db()
 check("Einladung als angenommen markiert", invitation.accepted_at is not None)
 
 # Abgelaufener/verbrauchter Token
-resp = anon.get(f"/session/invite/{invitation.token}/")
+resp = anon.get(f"/session/invite/{token_neu}/")
 check("Verbrauchter Token -> 404", resp.status_code == 404, f"got {resp.status_code}")
 
 # Rollen zuweisen/entziehen

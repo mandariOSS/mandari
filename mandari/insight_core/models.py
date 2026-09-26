@@ -14,6 +14,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.common.formatting import human_size
+from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 
 #: Kennung gespiegelter Objekte aus der OParl-API von mandari Session: ``…/session/<slug>/api/oparl/…``
 SESSION_OPARL_MARKERS = ("/session/", "/api/oparl/")
@@ -1625,13 +1626,18 @@ class ContactRequest(models.Model):
 # =============================================================================
 
 
-class PublicQuestion(models.Model):
+class PublicQuestion(HashedTokenMixin, models.Model):
     """
     Öffentliche Frage an ein Ratsmitglied.
 
     Workflow: Formular → E-Mail-Verifizierung → Moderation → Veröffentlichung
     → Ratsmitglied antwortet über Token-Link → Antwort-Moderation → Öffentlich
+
+    Vom Bestätigungslink steht nur der SHA-256-Hash in der Datenbank (apps/common/tokens.py). Der
+    Antwortlink bleibt im Klartext, weil die Erinnerungsmail ihn erneut verschickt.
     """
+
+    token_field = "verification_token"
 
     STATUS_CHOICES = [
         ("unverified", "E-Mail nicht bestätigt"),
@@ -1697,7 +1703,13 @@ class PublicQuestion(models.Model):
     )
 
     # Tokens
-    verification_token = models.UUIDField(default=uuid.uuid4, unique=True)
+    verification_token = models.CharField(
+        max_length=64,
+        unique=True,
+        default=unusable_token_hash,
+        editable=False,
+        verbose_name="Bestätigungs-Token (SHA-256)",
+    )
     answer_token = models.UUIDField(default=uuid.uuid4, unique=True)
 
     # DSGVO

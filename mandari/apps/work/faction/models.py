@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from apps.common import formatting
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
+from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 from apps.work.files import AttachmentDisplayMixin, faction_attachment_path
 
 
@@ -1224,7 +1225,7 @@ class FactionAttendanceCertificate(models.Model):
         )
 
 
-class CalendarFeedToken(models.Model):
+class CalendarFeedToken(HashedTokenMixin, models.Model):
     """
     Persönlicher iCal-Feed-Token (Issue #70).
 
@@ -1233,6 +1234,9 @@ class CalendarFeedToken(models.Model):
     Kalender-Clients rufen den Feed OHNE Login ab; die Sicherheit liegt
     ausschließlich im Token, das jederzeit in den Profileinstellungen
     erneuert werden kann (alte URL wird sofort ungültig).
+
+    Gespeichert wird nur der SHA-256-Hash (apps/common/tokens.py). Die Feed-URL erscheint deshalb nur
+    direkt nach dem Erzeugen; wer sie später noch einmal braucht, erzeugt eine neue.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1245,7 +1249,11 @@ class CalendarFeedToken(models.Model):
     )
 
     token = models.CharField(
-        max_length=64, unique=True, default=generate_opaque_token, editable=False, verbose_name="Feed-Token"
+        max_length=64,
+        unique=True,
+        default=unusable_token_hash,
+        editable=False,
+        verbose_name="Feed-Token (SHA-256)",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1259,17 +1267,27 @@ class CalendarFeedToken(models.Model):
         return f"Kalender-Feed für {self.user.email}"
 
     @classmethod
-    def for_user(cls, user) -> "CalendarFeedToken":
-        """Token holen oder beim ersten Zugriff anlegen."""
-        obj, _created = cls.objects.get_or_create(user=user)
-        return obj
+    def issue_for_user(cls, user) -> "CalendarFeedToken":
+        """
+        Neue Feed-URL für die Person: legt den Eintrag an oder erneuert das Token.
 
-    def regenerate(self):
-        """Token erneuern — die bisherige Feed-URL wird sofort ungültig."""
-        self.token = generate_opaque_token()
-        self.regenerated_at = timezone.now()
-        self.save(update_fields=["token", "regenerated_at"])
-        return self
+        Die bisherige URL wird sofort ungültig. Das neue Token steht nur in ``plain_token``.
+        """
+        feed = cls.objects.filter(user=user).first()
+        if feed is None:
+            feed = cls(user=user)
+            feed.issue_token()
+            feed.save()
+            return feed
+        feed.issue_token()
+        feed.regenerated_at = timezone.now()
+        feed.save(update_fields=["token", "regenerated_at"])
+        return feed
+
+    @classmethod
+    def find_active(cls, raw_token: object) -> "CalendarFeedToken | None":
+        """Feed eines aktiven Kontos zum Token aus der URL, sonst ``None``."""
+        return cls.find_by_token(raw_token, cls.objects.select_related("user").filter(user__is_active=True))
 
 
 class FactionPublicApiAccess(models.Model):

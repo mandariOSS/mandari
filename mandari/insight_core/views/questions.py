@@ -273,6 +273,7 @@ class AskQuestionView(FormView):
         question.recipient = self.person
         question.body = self.person.body
         question.status = "unverified"
+        question.issue_token()
         question.save()
 
         question_service.send_verification_email(question)
@@ -282,8 +283,15 @@ class AskQuestionView(FormView):
 class VerifyQuestionView(View):
     """E-Mail-Verifizierung einer eingereichten Frage (GET zeigt die Bestätigungsseite, POST bestätigt)."""
 
+    @staticmethod
+    def _question_or_404(token: str) -> PublicQuestion:
+        question = PublicQuestion.find_by_token(token, PublicQuestion.objects.filter(status="unverified"))
+        if question is None:
+            raise Http404
+        return question
+
     def get(self, request, token):
-        question = get_object_or_404(PublicQuestion, verification_token=token, status="unverified")
+        question = self._question_or_404(token)
         return link_confirmation(
             request,
             title="Frage bestätigen",
@@ -292,7 +300,7 @@ class VerifyQuestionView(View):
         )
 
     def post(self, request, token):
-        question = get_object_or_404(PublicQuestion, verification_token=token, status="unverified")
+        question = self._question_or_404(token)
         question.status = "pending"
         question.save(update_fields=["status", "updated_at"])
         question_service.send_moderation_notification(question, kind="question")

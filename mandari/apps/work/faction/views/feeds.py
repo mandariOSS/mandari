@@ -23,8 +23,7 @@ class PersonalCalendarFeedView(View):
     """iCal-Feed einer Benutzer:in ausliefern (Token-geschützt, ohne Login)."""
 
     def get(self, request, *args, **kwargs):
-        token = kwargs.get("token", "")
-        feed_token = CalendarFeedToken.objects.select_related("user").filter(token=token, user__is_active=True).first()
+        feed_token = CalendarFeedToken.find_active(kwargs.get("token", ""))
         if feed_token is None:
             raise Http404("Unbekanntes Feed-Token.")
 

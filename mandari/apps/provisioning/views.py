@@ -70,7 +70,7 @@ def _invitation_accept_url(invitation: UserInvitation) -> str:
     from django.urls import reverse
 
     base_url = getattr(django_settings, "SITE_URL", "https://mandari.de").rstrip("/")
-    return f"{base_url}{reverse('work:accept_invitation', kwargs={'token': invitation.token})}"
+    return f"{base_url}{reverse('work:accept_invitation', kwargs={'token': invitation.token_for_link()})}"
 
 
 def _send_admin_invitation(org: Organization, invitation: UserInvitation, accept_url: str) -> bool:

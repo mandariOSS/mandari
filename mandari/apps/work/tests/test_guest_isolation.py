@@ -673,7 +673,7 @@ def test_existing_guest_can_accept_regular_invitation(guests: Guests) -> None:
         roles=Role.objects.filter(id=member_role_d.id),
         valid_days=7,
     )
-    guests.c_guest.post(f"/work/invitation/{invitation.token}/")
+    guests.c_guest.post(f"/work/invitation/{invitation.plain_token}/")
     m_member_d = Membership.objects.filter(user=guests.user_multi, organization=org_d).first()
     assert m_member_d is not None and not m_member_d.is_guest, "Reguläre Einladung ergab keine Voll-Mitgliedschaft"
     invitation.refresh_from_db()

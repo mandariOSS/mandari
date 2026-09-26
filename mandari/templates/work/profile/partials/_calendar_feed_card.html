@@ -1,0 +1,46 @@
+{% comment %}
+Persönlicher iCal-Feed (Issue #70). Gespeichert ist nur der Hash des Tokens: calendar_feed_url ist
+nur direkt nach dem Erzeugen gesetzt, sonst bietet die Karte einen neuen Link an.
+{% endcomment %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 100ms">
+    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Kalender-Feed (iCal)</h4>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Abonnieren Sie Ihre Fraktionssitzungen (alle Ihre Organisationen) und die RIS-Termine
+            Ihrer zugeordneten Gremien in Ihrem privaten Kalender.
+        </p>
+    </div>
+    <div class="px-6 py-5 space-y-3">
+        {% if calendar_feed_url %}
+        <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ihre persönliche Feed-URL</label>
+            <input type="text" readonly value="{{ calendar_feed_url }}" data-action="select"
+                   class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs font-mono text-gray-600 dark:text-gray-300">
+            <p class="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                Kopieren Sie die URL jetzt in Ihren Kalender. Aus Sicherheitsgründen zeigen wir sie nur dieses eine Mal an.
+            </p>
+        </div>
+        {% elif calendar_feed %}
+        <p class="text-sm text-gray-600 dark:text-gray-300">
+            Ihr Kalender-Feed ist eingerichtet{% if calendar_feed.regenerated_at %} (zuletzt erneuert am {{ calendar_feed.regenerated_at|date:"d.m.Y" }}){% endif %}.
+            Bestehende Abos laufen weiter. Die URL zeigen wir nicht erneut an; brauchen Sie sie noch einmal,
+            erzeugen Sie eine neue.
+        </p>
+        {% else %}
+        <p class="text-sm text-gray-600 dark:text-gray-300">Sie haben noch keinen Kalender-Feed eingerichtet.</p>
+        {% endif %}
+        <p class="text-xs text-gray-400 dark:text-gray-500">
+            Die URL enthält ein zufälliges Token ohne Personenbezug — behandeln Sie sie wie ein Passwort.
+            Der Feed enthält nur Sitzungstitel, Zeit und Ort, keine Tagesordnungs- oder Protokollinhalte.
+        </p>
+        <form method="post"{% if calendar_feed %} data-confirm="Neue Feed-URL erzeugen? Die bisherige URL wird sofort ungültig."{% endif %}>
+            {% csrf_token %}
+            <input type="hidden" name="action" value="regenerate_calendar_feed">
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="{% if calendar_feed %}refresh-cw{% else %}link{% endif %}" class="w-4 h-4"></i>
+                {% if calendar_feed %}Feed-URL neu erzeugen{% else %}Feed-URL erzeugen{% endif %}
+            </button>
+        </form>
+    </div>
+</div>

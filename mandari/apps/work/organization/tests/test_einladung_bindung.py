@@ -30,7 +30,7 @@ def _konto(email: str) -> Any:
 
 
 def _annehmen(client: Any, invitation: UserInvitation) -> Any:
-    return client.post(reverse("work:accept_invitation", kwargs={"token": invitation.token}))
+    return client.post(reverse("work:accept_invitation", kwargs={"token": invitation.plain_token}))
 
 
 @pytest.mark.django_db

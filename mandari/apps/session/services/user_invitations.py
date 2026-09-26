@@ -28,8 +28,9 @@ TEMPLATE = "emails/session/user_invitation"
 
 
 def accept_url(invitation: SessionInvitation) -> str:
+    """Annahme-Link; ohne frisch erzeugtes Token (etwa beim erneuten Senden) mit neuem Token."""
     base_url = str(getattr(django_settings, "SITE_URL", "https://mandari.de")).rstrip("/")
-    return f"{base_url}{reverse('session:invitation_accept', kwargs={'token': invitation.token})}"
+    return f"{base_url}{reverse('session:invitation_accept', kwargs={'token': invitation.token_for_link()})}"
 
 
 def sender_for(tenant_name: str) -> str:
@@ -67,7 +68,12 @@ def send_user_invitation(invitation: SessionInvitation) -> bool:
 
 
 def resend_user_invitation(invitation: SessionInvitation, *, valid_days: int = INVITATION_VALID_DAYS) -> bool:
-    """Offene Einladung erneut senden; die Gültigkeit läuft ab jetzt neu."""
+    """
+    Offene Einladung mit neuem Link erneut senden; die Gültigkeit läuft ab jetzt neu.
+
+    Gespeichert ist nur der Hash des bisherigen Tokens; der Link der ersten Mail wird damit ungültig.
+    """
     invitation.expires_at = timezone.now() + timedelta(days=valid_days)
-    invitation.save(update_fields=["expires_at"])
+    invitation.issue_token()
+    invitation.save(update_fields=["expires_at", "token"])
     return send_user_invitation(invitation)
