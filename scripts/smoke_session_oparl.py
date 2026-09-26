@@ -408,9 +408,12 @@ cons1 = paper_obj["consultation"][0]
 cons2 = paper_obj["consultation"][1]
 check("Consultation 1: agendaItem + meeting referenziert", "agendaItem" in cons1 and "meeting" in cons1)
 check("Consultation 1: role/authoritative", cons1.get("role") == "Vorberatung" and cons1.get("authoritative") is False)
+# Station in einer NÖ-Sitzung: öffentlich bleibt nur, dass die Vorlage dort beraten wird – ohne Sitzung,
+# TOP, Gremium, Rolle und Kennzeichen „entscheidend“
 check(
-    "Consultation 2: NÖ-Sitzungs-Referenz ausgelassen, authoritative",
-    "meeting" not in cons2 and "agendaItem" not in cons2 and cons2.get("authoritative") is True,
+    "Consultation 2: NÖ-Station nennt nur die Vorlage",
+    all(key not in cons2 for key in ("meeting", "agendaItem", "organization", "role", "authoritative"))
+    and "paper" in cons2,
 )
 
 status, meeting_obj = get_json(f"{BASE}meeting/{meeting_pub.id}/")

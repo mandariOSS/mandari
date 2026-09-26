@@ -257,8 +257,6 @@ class UserInviteView(SessionViewMixin, TemplateView):
         return context
 
     def post(self, request, *args, **kwargs):
-        from apps.accounts.models import User
-
         email = request.POST.get("email", "").strip().lower()
         role_ids = request.POST.getlist("roles")
 
@@ -271,28 +269,14 @@ class UserInviteView(SessionViewMixin, TemplateView):
             messages.error(request, OUTSIDE_SCOPE)
             return redirect("session:user_invite", tenant_slug=self.session_tenant.slug)
 
-        # Existiert bereits ein Konto? Dann direkt Mitglied machen.
-        existing_user = User.objects.filter(email=email).first()
-        if existing_user:
-            session_user, created = SessionUser.objects.get_or_create(
-                user=existing_user,
-                tenant=self.session_tenant,
-            )
-            if not created and session_user.is_active:
-                messages.warning(request, f"{email} ist bereits Mitglied dieses Mandanten.")
-                return redirect("session:users", tenant_slug=self.session_tenant.slug)
-            session_user.is_active = True
-            session_user.save()
-            if roles:
-                from .. import audit
-
-                old_roles = [] if created else list(session_user.roles.all())
-                session_user.roles.set(roles)
-                audit.log_role_assignment(
-                    session_user, old_roles, roles, request=request, user=self.session_user, reason="Aufnahme"
-                )
-            messages.success(request, f"{email} wurde als Benutzer hinzugefügt.")
+        # Bereits aktives Mitglied dieses Mandanten (steht ohnehin in der Benutzerliste)?
+        if SessionUser.objects.filter(tenant=self.session_tenant, is_active=True, user__email__iexact=email).exists():
+            messages.warning(request, f"{email} ist bereits Mitglied dieses Mandanten.")
             return redirect("session:users", tenant_slug=self.session_tenant.slug)
+
+        # Alle anderen – mit oder ohne Konto – erhalten eine Einladung und treten erst mit der Annahme bei
+        # (angemeldet mit genau dieser Adresse). Niemand wird ungefragt aufgenommen, und die Meldung verrät
+        # nicht, ob es zu der Adresse schon ein Konto gibt.
 
         # Offene Einladung vorhanden?
         pending = SessionInvitation.objects.filter(

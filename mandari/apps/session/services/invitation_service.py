@@ -89,6 +89,7 @@ def build_agenda_pdf(
     *,
     include_non_public: bool,
     supplementary_only: bool = False,
+    permissions=None,
 ) -> bytes:
     """
     Einladungs-PDF mit Tagesordnung erzeugen (amtlicher Briefkopf des Mandanten).
@@ -97,11 +98,21 @@ def build_agenda_pdf(
         meeting: die Sitzung
         include_non_public: NÖ-Teil aufnehmen (nur für berechtigte Empfänger)
         supplementary_only: nur Nachtrags-TOPs (Nachtrags-Tagesordnung)
+        permissions: Rechte einer abrufenden Person im Sitzungsdienst: Vorlagennummern
+            nichtöffentlicher Vorlagen nur mit dem NÖ-Recht für Vorlagen. Ohne Angabe (Ladung an
+            Gremienmitglieder) nennt die Tagesordnung alle Vorlagen ihres Teils.
 
     Returns:
         bytes: PDF-Inhalt
     """
+    from apps.session.visibility import paper_visible
+
     agenda = agenda_service.grouped_agenda(meeting, include_non_public=include_non_public)
+    for item in [*agenda["public"], *agenda["non_public"]]:
+        for entry in [item, *item.children_list]:
+            entry.paper_visible = entry.paper is not None and (
+                permissions is None or paper_visible(permissions, entry.paper)
+            )
 
     def _filter(items):
         if not supplementary_only:

@@ -396,16 +396,19 @@ def serialize_consultation(api, consultation):
     # Ö/NÖ: Referenzen auf NÖ-Sitzungen/-TOPs werden ausgelassen
     meeting_visible = meeting is not None and meeting.is_public
     item_visible = item is not None and item.is_public and item.meeting.is_public
+    # Eine Station in einer nichtöffentlichen Sitzung bzw. auf einem NÖ-TOP nennt auch Gremium und Rolle
+    # nicht – öffentlich bleibt nur, dass die Vorlage dort beraten wird
+    non_public = (meeting is not None and not meeting_visible) or (item is not None and not item_visible)
     return _clean(
         {
             "id": api.obj_url("consultation", consultation.id),
             "type": schema_type("consultation"),
             "paper": api.obj_url("paper", consultation.paper_id),
-            "organization": [api.obj_url("organization", consultation.organization_id)],
+            "organization": None if non_public else [api.obj_url("organization", consultation.organization_id)],
             "meeting": api.obj_url("meeting", meeting.id) if meeting_visible else None,
             "agendaItem": api.obj_url("agendaitem", item.id) if item_visible else None,
-            "authoritative": consultation.authoritative,
-            "role": consultation.get_role_display(),
+            "authoritative": None if non_public else consultation.authoritative,
+            "role": None if non_public else consultation.get_role_display(),
             **_timestamps(consultation),
         }
     )
@@ -586,6 +589,39 @@ def _page_number(request):
     return number
 
 
+class _MergedEntries:
+    """
+    Objekte und Tombstones als eine nach ``(modified, Quelle, id)`` sortierte Folge für den Paginator –
+    ohne eine der Tabellen ganz zu laden.
+
+    Für eine Seite ``[start:stop]`` liest jede Quelle nur Zeitstempel und Kennung ihrer ersten ``stop``
+    Einträge (in derselben Sortierung wie hier), die Seite entsteht durch Zusammenführen; vollständig
+    geladen werden nur die Objekte der Seite – mit Select/Prefetch des Querysets.
+    """
+
+    def __init__(self, objects, tombstones):
+        self.objects = objects.order_by("updated_at", "pk")
+        self.tombstones = tombstones.order_by("deleted_at", "pk")
+
+    def count(self):
+        return self.objects.count() + self.tombstones.count()
+
+    def __len__(self):
+        return self.count()
+
+    def __getitem__(self, index):
+        if not isinstance(index, slice):
+            raise TypeError("Nur Ausschnitte (Seiten) werden unterstützt.")
+        start, stop = index.start or 0, index.stop
+        keys = [(stamp, 0, pk) for stamp, pk in self.objects.values_list("updated_at", "pk")[:stop]]
+        keys += [(stamp, 1, pk) for stamp, pk in self.tombstones.values_list("deleted_at", "pk")[:stop]]
+        keys.sort()
+        window = keys[start:stop]
+        objects = {obj.pk: obj for obj in self.objects.filter(pk__in=[pk for _, src, pk in window if src == 0])}
+        tombs = {t.pk: t for t in self.tombstones.filter(pk__in=[pk for _, src, pk in window if src == 1])}
+        return [("obj", objects[pk]) if src == 0 else ("tomb", tombs[pk]) for _, src, pk in window]
+
+
 def _paginated_response(api, request, base_url, queryset, serializer, kind):
     """
     OParl-Listen-Envelope (data/pagination/links) mit Link-Header.
@@ -607,10 +643,7 @@ def _paginated_response(api, request, base_url, queryset, serializer, kind):
         tomb_qs = SessionOParlTombstone.objects.filter(tenant=api.tenant, oparl_type=kind)
         for name, value in parsed.items():
             tomb_qs = tomb_qs.filter(**{TOMBSTONE_LOOKUPS[name]: value})
-        entries = [(obj.updated_at, "obj", obj) for obj in queryset]
-        entries += [(t.deleted_at, "tomb", t) for t in tomb_qs]
-        entries.sort(key=lambda e: (e[0], str(e[2].pk)))
-        paginator = Paginator(entries, page_size)
+        paginator = Paginator(_MergedEntries(queryset, tomb_qs), page_size)
     else:
         paginator = Paginator(queryset, page_size)
 
@@ -621,7 +654,7 @@ def _paginated_response(api, request, base_url, queryset, serializer, kind):
     data = []
     for entry in page.object_list:
         if isinstance(entry, tuple):
-            _, entry_type, obj = entry
+            entry_type, obj = entry
             data.append(serialize_tombstone(api, obj) if entry_type == "tomb" else serializer(api, obj))
         else:
             data.append(serializer(api, entry))

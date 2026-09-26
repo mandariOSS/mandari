@@ -646,10 +646,11 @@ class TestSichtbarkeit:
             assert welt.admin.get(f"{welt.base}/papers/{fremd.pk}/{path}").status_code == 404
 
     def test_oparl_nennt_nie_den_speichernamen(self, welt: Welt) -> None:
-        welt.paper.status = "approved"
-        welt.paper.save()
+        # Anlagen vor der Freigabe – danach sind sie festgeschrieben
         welt.upload(welt.clerk, "GEHEIM-kuendigung.txt", b"GLEICHER INHALT", public=False)
         welt.upload(welt.clerk, "Lageplan.txt", b"GLEICHER INHALT", public=True)
+        welt.paper.status = "approved"
+        welt.paper.save()
         response = Client().get(f"{welt.base}/api/oparl/papers/")
         assert response.status_code == 200
         assert b"Lageplan.txt" in response.content

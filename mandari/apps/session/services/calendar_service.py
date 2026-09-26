@@ -56,13 +56,19 @@ def find_conflicts(
     end: datetime | None = None,
     room: str = "",
     exclude_id=None,
+    permissions=None,
 ) -> list[SessionMeeting]:
     """
     Kollidierende Sitzungen zu einem geplanten Termin finden.
 
     Kollision = am selben Tag UND (gleicher Raum ODER zeitliche
     Überschneidung der Sitzungsfenster).
+
+    Mit ``permissions``: Nichtöffentliche Sitzungen, die die Person nicht sehen darf, zählen als
+    Kollision, tragen aber ``conflict_hidden`` – die Anzeige nennt dann nur „Termin belegt“.
     """
+    from apps.session.visibility import meeting_visible
+
     day = timezone.localtime(start).date()
     qs = (
         SessionMeeting.objects.filter(tenant=tenant, cancelled=False, start__date=day)
@@ -82,6 +88,7 @@ def find_conflicts(
         same_room = bool(room_norm) and meeting.room.strip().lower() == room_norm
         if overlaps or same_room:
             meeting.conflict_reason = "Raum belegt" if same_room and not overlaps else "Zeitliche Überschneidung"
+            meeting.conflict_hidden = permissions is not None and not meeting_visible(permissions, meeting)
             conflicts.append(meeting)
     return conflicts
 

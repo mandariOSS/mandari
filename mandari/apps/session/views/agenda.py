@@ -27,6 +27,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import agenda_service
+from ..visibility import meeting_q
 
 # =============================================================================
 # HELPERS
@@ -270,7 +271,10 @@ class AttendanceUpdateView(SessionViewMixin, UpdateView):
     permission_required = "manage_attendance"
 
     def get_queryset(self):
-        return SessionAttendance.objects.filter(meeting__tenant=self.session_tenant)
+        # Anwesenheit nichtöffentlicher Sitzungen nur mit NÖ-Sichtrecht (wie das Anlegen)
+        return SessionAttendance.objects.filter(
+            meeting_q(self.session_permissions, "meeting__"), meeting__tenant=self.session_tenant
+        )
 
     def form_valid(self, form):
         attendance = form.save(commit=False)

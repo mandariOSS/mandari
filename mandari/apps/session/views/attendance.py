@@ -15,6 +15,7 @@ from django.views import View
 from ..models import SessionAttendance, SessionMeeting, SessionPerson
 from ..permissions import SessionViewMixin
 from ..services import attendance_service
+from ..visibility import meeting_q
 
 
 def _get_meeting(view, meeting_id):
@@ -96,8 +97,11 @@ class AttendanceDeleteView(SessionViewMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug, attendance_id):
+        # Anwesenheit nichtöffentlicher Sitzungen nur mit NÖ-Sichtrecht (wie das Anlegen)
         attendance = get_object_or_404(
-            SessionAttendance.objects.select_related("meeting", "person"),
+            SessionAttendance.objects.select_related("meeting", "person").filter(
+                meeting_q(self.session_permissions, "meeting__")
+            ),
             pk=attendance_id,
             meeting__tenant=self.session_tenant,
         )

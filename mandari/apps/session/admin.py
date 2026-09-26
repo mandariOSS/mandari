@@ -13,9 +13,11 @@ from accessing personal information.
 """
 
 from django.contrib import admin, messages
+from django.shortcuts import get_object_or_404, redirect
+from django.template.response import TemplateResponse
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
@@ -194,23 +196,29 @@ class SessionTenantAdmin(ModelAdmin):
             f"{count} Mandant(en) wurden deaktiviert; {entries} Einträge aus dem Bürgerportal zurückgenommen.",
         )
 
-    @action(description="API-Token generieren", url_path="generate-token")
+    @action(description="API-Token generieren", url_path="generate-token", permissions=["change"])
     def generate_api_token_action(self, request, object_id):
-        """Generate a new API token for this tenant."""
-        tenant = self.model.objects.get(pk=object_id)
+        """
+        Neuen API-Token für den Mandanten erzeugen – nur mit Änderungsrecht am Mandanten. Der Token
+        erscheint einmalig auf einer eigenen, nicht zwischengespeicherten Seite, nie in einer Meldung
+        (die im Messages-Cookie stünde).
+        """
+        tenant = get_object_or_404(self.model, pk=object_id)
         token_obj, raw_token = SessionAPIToken.create_token(
             tenant=tenant,
             name=f"Auto-generiert am {timezone.now().strftime('%Y-%m-%d %H:%M')}",
         )
-        messages.success(
-            request,
-            mark_safe(
-                f"Neuer API-Token erstellt! <strong>Token (nur einmal sichtbar):</strong><br>"
-                f"<code style='background: #fef3c7; padding: 4px 8px; border-radius: 4px; font-family: monospace;'>{raw_token}</code><br>"
-                f"<small>Kopieren Sie diesen Token sofort, er kann nicht erneut angezeigt werden!</small>"
-            ),
-        )
-        return
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "API-Token erzeugt",
+            "opts": self.model._meta,
+            "tenant": tenant,
+            "token": token_obj,
+            "raw_token": raw_token,
+        }
+        response = TemplateResponse(request, "admin/session/sessiontenant/token_created.html", context)
+        response["Cache-Control"] = "private, no-store"
+        return response
 
 
 # =============================================================================
@@ -798,23 +806,30 @@ class SessionApplicationAdmin(ModelAdmin):
         )
         messages.success(request, f"{count} Antrag/Anträge abgelehnt.")
 
-    @action(description="Vorlage erstellen", url_path="create-paper")
+    @action(description="Vorlage erstellen", url_path="create-paper", permissions=["change"])
     def create_paper_from_application(self, request, object_id):
-        """Vorlage über denselben Dienst wie das Session-Portal anlegen (Nummernkreis, Rückmeldung)."""
+        """
+        Vorlage über denselben Dienst wie das Session-Portal anlegen (Nummernkreis, Rückmeldung) –
+        nur mit Änderungsrecht am Antrag.
+        """
         from apps.session.services.application_service import ConversionError, convert_to_paper
         from apps.session.services.numbering_service import NumberingError
 
-        app = self.model.objects.select_related("tenant").get(pk=object_id)
+        app = get_object_or_404(self.model.objects.select_related("tenant"), pk=object_id)
+        back = redirect(reverse("admin:session_sessionapplication_change", args=[app.pk]))
         try:
             paper, created = convert_to_paper(app, main_organization_id=app.target_organization_id)
-        except (ConversionError, NumberingError) as exc:
-            messages.error(request, f"Umwandlung nicht möglich: {exc}")
-            return
+        except (ConversionError, NumberingError):
+            messages.error(
+                request,
+                "Umwandlung nicht möglich – bitte Zielgremium und Nummernkreis im Sitzungsdienst prüfen.",
+            )
+            return back
         if created:
             messages.success(request, f"Vorlage '{paper.display_reference}' wurde aus dem Antrag erstellt.")
         else:
             messages.info(request, f"Der Antrag wurde bereits in die Vorlage '{paper.display_reference}' umgewandelt.")
-        return
+        return back
 
 
 # =============================================================================

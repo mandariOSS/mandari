@@ -39,7 +39,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionMixin, SessionPermissionChecker, SessionViewMixin
-from ..services import file_service, file_version_service
+from ..services import file_service, file_version_service, paper_version_service
 from .nexturl import safe_next_url
 from .paper_versions import protected_download
 
@@ -145,6 +145,9 @@ class FileUploadView(SessionMixin, View):
         target_type = request.POST.get("target_type", "")
         target_id = request.POST.get("target_id", "")
         target = _resolve_target(self, target_type, target_id)
+        if isinstance(target, SessionPaper) and paper_version_service.content_locked(target):
+            messages.error(request, paper_version_service.CONTENT_LOCKED_MESSAGE)
+            return self._redirect(tenant_slug, target_type, target)
 
         uploads = request.FILES.getlist("files")
         if not uploads:
@@ -229,7 +232,12 @@ class FileUpdateView(SessionMixin, View):
         session_file = _editable_file(self, file_id)
 
         if "name" in request.POST and request.POST["name"].strip():
-            session_file.name = request.POST["name"].strip()[:500]
+            new_name = request.POST["name"].strip()[:500]
+            # Ö/NÖ bleibt umstellbar (Datenschutz); der Name gehört ab der Freigabe zum festgeschriebenen Inhalt
+            if new_name != session_file.name and paper_version_service.content_locked(session_file.paper):
+                messages.error(request, paper_version_service.CONTENT_LOCKED_MESSAGE)
+                return _redirect_to_parent(tenant_slug, session_file)
+            session_file.name = new_name
         session_file.is_public = request.POST.get("is_public") == "on"
         session_file.save()
 
@@ -244,6 +252,9 @@ class FileReplaceView(SessionMixin, View):
 
     def post(self, request, tenant_slug, file_id):
         session_file = _editable_file(self, file_id)
+        if paper_version_service.content_locked(session_file.paper):
+            messages.error(request, paper_version_service.CONTENT_LOCKED_MESSAGE)
+            return _redirect_to_parent(tenant_slug, session_file)
 
         uploaded = request.FILES.get("file")
         if not uploaded:
@@ -303,6 +314,9 @@ class FileDeleteView(SessionMixin, View):
         session_file = _editable_file(self, file_id)
 
         response = _redirect_to_parent(tenant_slug, session_file)
+        if paper_version_service.content_locked(session_file.paper):
+            messages.error(request, paper_version_service.CONTENT_LOCKED_MESSAGE)
+            return response
         name = session_file.name
         session_file.delete()
         messages.success(self.request, f"Anlage „{name}“ wurde gelöscht.")

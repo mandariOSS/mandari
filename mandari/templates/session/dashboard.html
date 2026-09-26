@@ -100,6 +100,8 @@
 
 <!-- Stats Grid -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 fade-up d1">
+    {% comment %}Jede Kachel nur mit ihrem Fachrecht (can_view_meetings/-papers/-applications){% endcomment %}
+    {% if can_view_meetings %}
     <!-- Sitzungen -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-center gap-3 mb-2">
@@ -113,7 +115,9 @@
         </div>
         <p class="text-xs text-gray-400 dark:text-gray-500">{{ stats.meetings_total }} gesamt</p>
     </div>
+    {% endif %}
 
+    {% if can_view_papers %}
     <!-- Vorlagen -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-center gap-3 mb-2">
@@ -127,7 +131,9 @@
         </div>
         <p class="text-xs text-gray-400 dark:text-gray-500">{{ stats.papers_total }} gesamt</p>
     </div>
+    {% endif %}
 
+    {% if can_view_applications %}
     <!-- Anträge -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-center gap-3 mb-2">
@@ -141,7 +147,9 @@
         </div>
         <p class="text-xs text-gray-400 dark:text-gray-500">Von Fraktionen eingereicht</p>
     </div>
+    {% endif %}
 
+    {% if can_view_meetings %}
     <!-- Gremien/Personen -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-center gap-3 mb-2">
@@ -155,9 +163,11 @@
         </div>
         <p class="text-xs text-gray-400 dark:text-gray-500">{{ stats.persons_count }} Personen</p>
     </div>
+    {% endif %}
 </div>
 
 <div class="grid lg:grid-cols-2 gap-6 fade-up d2">
+    {% if can_view_meetings %}
     <!-- Anstehende Sitzungen -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
@@ -196,7 +206,9 @@
             {% endfor %}
         </div>
     </div>
+    {% endif %}
 
+    {% if can_view_papers %}
     <!-- Neueste Vorlagen -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
@@ -234,6 +246,7 @@
             {% endfor %}
         </div>
     </div>
+    {% endif %}
 
     <!-- Offene Anträge -->
     {% if pending_applications %}
