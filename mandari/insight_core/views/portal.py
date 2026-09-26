@@ -11,6 +11,7 @@ nur auf geprüfte, relative Pfade und ohne Parameter.
 from __future__ import annotations
 
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from .. import portal
 from .home import PortalHomeView
@@ -29,7 +30,10 @@ def portal_entry(request: HttpRequest, slug: str, rest: str = "") -> HttpRespons
         portal.enter(request, body, slug)
     if rest:
         ziel = portal.deep_link_target(rest)
-        if ziel is None:
+        # Zweite Schutzschicht: nur relative Ziele auf dem eigenen Host (CodeQL py/url-redirection)
+        if ziel is None or not url_has_allowed_host_and_scheme(
+            ziel, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+        ):
             raise Http404("Keine Portalseite unter dieser Adresse")
         return HttpResponseRedirect(ziel)
     return PortalHomeView.as_view()(request)
