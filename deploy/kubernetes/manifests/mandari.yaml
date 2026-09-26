@@ -260,6 +260,13 @@ spec:
                 secretKeyRef:
                   name: mandari-secrets
                   key: encryption-key
+            # Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+            - name: ENCRYPTION_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key-previous
+                  optional: true
             - name: ELASTICSEARCH_URL
               value: "http://mandari-elasticsearch:9200"
             - name: ELASTICSEARCH_AUTO_INDEX
@@ -393,6 +400,13 @@ spec:
                 secretKeyRef:
                   name: mandari-secrets
                   key: encryption-key
+            # Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+            - name: ENCRYPTION_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key-previous
+                  optional: true
             - name: ELASTICSEARCH_URL
               value: "http://mandari-elasticsearch:9200"
             - name: ELASTICSEARCH_AUTO_INDEX

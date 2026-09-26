@@ -15,11 +15,13 @@ enabling features like:
 """
 
 import uuid
+from typing import Any
 
 from django.conf import settings as django_settings
 from django.db import models
 from django.utils.text import slugify
 
+from apps.common.encryption import exclude_key_fields_from_save
 from apps.common.permissions import DEFAULT_ROLES, PERMISSIONS
 
 
@@ -334,6 +336,13 @@ class Organization(models.Model):
         verbose_name="Verschlüsselungsschlüssel",
         help_text="Encrypted with master key, used for tenant data",
     )
+    encryption_key_previous = models.BinaryField(
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="Vorheriger Verschlüsselungsschlüssel",
+        help_text="Nur während eines Schlüsselwechsels gesetzt, nur zum Lesen; mit dem Hauptschlüssel verschlüsselt",
+    )
 
     # === SETTINGS ===
 
@@ -433,10 +442,11 @@ class Organization(models.Model):
     def __str__(self):
         return self.name
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         if not self.slug:
             self.slug = slugify(self.name)
-        super().save(*args, **kwargs)
+        # Schlüsselspalten nie über ein allgemeines save() zurückschreiben (Schlüsselwechsel)
+        super().save(*args, **exclude_key_fields_from_save(self, kwargs))
 
     def clean(self):
         """

@@ -510,6 +510,9 @@ MAP_MARKERS_CACHE_SECONDS = int(os.environ.get("MAP_MARKERS_CACHE_SECONDS", "600
 # Encryption Master Key (für Work-Module Datenverschlüsselung)
 # Generate with: python -c "import secrets; import base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
 ENCRYPTION_MASTER_KEY = os.environ.get("ENCRYPTION_MASTER_KEY", "")
+# Nur während eines Schlüsselwechsels: der bisherige Hauptschlüssel (mehrere durch Komma getrennt).
+# Wird ausschließlich zum Lesen verwendet; Ablauf in docs/KRYPTOKONZEPT.md, danach wieder leeren.
+ENCRYPTION_MASTER_KEY_PREVIOUS = os.environ.get("ENCRYPTION_MASTER_KEY_PREVIOUS", "")
 
 # OParl
 OPARL_REQUEST_TIMEOUT = int(os.environ.get("OPARL_REQUEST_TIMEOUT", "300"))

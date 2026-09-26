@@ -25,7 +25,12 @@ Zeitpläne und Aufbewahrung sind über die `.env` des Stacks einstellbar.
 - **Dateien:** Dokument-Cache (`mandari_files`) und Uploads (`mandari_media`).
 - **Konfiguration:** Installationsverzeichnis inklusive `.env` (enthält den
   `ENCRYPTION_MASTER_KEY` – ohne ihn sind verschlüsselte Felder nach einer
-  Wiederherstellung unlesbar) sowie die TLS-Daten von Caddy.
+  Wiederherstellung unlesbar) sowie die TLS-Daten von Caddy. Nach einem
+  Schlüsselwechsel passt eine ältere Datenbanksicherung nur zum damaligen Schlüssel
+  aus derselben Sicherung. Soll sie in eine Installation mit neuem Schlüssel
+  zurück, wird der damalige als `ENCRYPTION_MASTER_KEY_PREVIOUS` gesetzt und
+  `rotate_encryption --master-only` ausgeführt (siehe `docs/KRYPTOKONZEPT.md`,
+  Abschnitt 5).
 - **Protokolle:** das systemd-Journal des Hosts (`/var/log/journal`, Container- und
   Anwendungslogs, 90 Tage) und die Zugriffslogs im Caddy-Volume; Fristen und
   Zugriffsschutz in `docs/PROTOKOLLE.md`.

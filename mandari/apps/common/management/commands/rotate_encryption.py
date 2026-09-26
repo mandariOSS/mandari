@@ -1,319 +1,186 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Management-Command: Verschlüsselung rotieren.
+Management-Command: Schlüsselwechsel.
 
-Rotiert den Master-Key UND alle Tenant-Keys. Jedes verschlüsselte Feld
-wird mit dem alten Schlüssel entschlüsselt und mit einem neuen Schlüssel
-neu verschlüsselt.
+Erfasst jedes Feld aus ``apps/common/crypto_registry.py``: Inhalte mit
+Mandantenschlüssel, eingepackte Mandantenschlüssel, plattformweite Zugangsdaten mit
+dem Hauptschlüssel und den zweiten Faktor. Ablauf und Sicherheitseigenschaften stehen
+in ``apps/common/key_rotation.py``, der Betriebsablauf in ``docs/KRYPTOKONZEPT.md``
+(Abschnitt „Schlüsselwechsel (Routine und Notfall)“).
 
-Use Case:
-    Nach DB-Migration zwischen Servern (z.B. Prod → Dev), wenn der
-    Prod-Master-Key auf dem Ziel-Server nicht verwendet werden soll.
+    # Bestandsaufnahme, ändert nichts
+    python manage.py rotate_encryption --dry-run
 
-Workflow:
-    1. Alter Master-Key über ENV-Variable `OLD_MASTER_KEY` setzen
-    2. Neuer Master-Key in `settings.ENCRYPTION_MASTER_KEY` (aus .env)
-    3. Command ausführen: `python manage.py rotate_encryption`
-    4. Bei Erfolg: Alle Tenant-Keys wurden neu generiert und mit
-       neuem Master-Key verschlüsselt; alle Feld-Daten wurden mit
-       neuen Tenant-Keys neu verschlüsselt.
+    # Hauptschlüssel gewechselt (alter in ENCRYPTION_MASTER_KEY_PREVIOUS): nur neu einpacken
+    python manage.py rotate_encryption --master-only
 
-Safety:
-    - Läuft transaktional pro Tenant
-    - Erstellt Backup der DB empfohlen (sollte vor Ausführung erstellt werden)
-    - Bei Fehler: Rollback der aktuellen Tenant-Transaktion
+    # Zusätzlich neue Mandantenschlüssel; nach einem Neustart der Anwendung abschließen
+    python manage.py rotate_encryption
+    python manage.py rotate_encryption --finalize
+
+Ausgegeben werden nur Anzahlen und Datensatzkennungen, nie Werte oder Schlüssel.
 """
 
-import base64
+from __future__ import annotations
+
 import os
+from argparse import ArgumentParser
+from typing import Any
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from django.apps import apps
-from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
 
+from apps.common.crypto_registry import KIND_LABELS, TENANT_MODELS, KeyKind
+from apps.common.key_rotation import MASTER_LEVEL, KeyRotation, RotationError, RotationResult, ScanResult, Status
 
-def aes_encrypt(key: bytes, plaintext: bytes) -> bytes:
-    """Verschlüsselt plaintext mit AES-256-GCM. Nonce wird vorne angehängt."""
-    aesgcm = AESGCM(key)
-    nonce = os.urandom(12)
-    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
-    return nonce + ciphertext
-
-
-def aes_decrypt(key: bytes, ciphertext: bytes) -> bytes:
-    """Entschlüsselt Daten mit AES-256-GCM. Nonce wird von vorne gelesen."""
-    aesgcm = AESGCM(key)
-    nonce = ciphertext[:12]
-    encrypted = ciphertext[12:]
-    return aesgcm.decrypt(nonce, encrypted, None)
+COLUMNS = (Status.CURRENT, Status.PREVIOUS, Status.PLAINTEXT, Status.UNREADABLE, Status.UNASSIGNED)
 
 
 class Command(BaseCommand):
-    help = "Rotiert Master-Key + alle Tenant-Keys + alle verschlüsselten Feld-Daten."
+    help = "Schlüsselwechsel für alle verschlüsselten Werte (Hauptschlüssel, Mandantenschlüssel, zweiter Faktor)."
 
-    def add_arguments(self, parser):
-        parser.add_argument(
-            "--old-master-key",
-            type=str,
-            default=os.environ.get("OLD_MASTER_KEY"),
-            help="Alter Master-Key (base64). Default: ENV OLD_MASTER_KEY",
-        )
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--dry-run",
             action="store_true",
-            help="Nur simulieren, keine Änderungen speichern",
+            help="Nur zeigen, was betroffen wäre – Anzahlen je Feld, keine Werte, keine Änderung",
+        )
+        mode = parser.add_mutually_exclusive_group()
+        mode.add_argument(
+            "--master-only",
+            action="store_true",
+            help="Nur die Hauptschlüssel-Ebene umschreiben (Mandantenschlüssel, Plattform-Zugangsdaten, 2FA)",
+        )
+        mode.add_argument(
+            "--finalize",
+            action="store_true",
+            help="Begonnenen Wechsel abschließen: Nachzügler neu verschlüsseln, vorherige Mandantenschlüssel löschen",
         )
         parser.add_argument(
             "--tenant-type",
             choices=["organization", "session", "both"],
             default="both",
-            help="Welche Tenant-Typen rotieren (default: both)",
+            help="Welche Mandanten neue Schlüssel erhalten bzw. abgeschlossen werden (Standard: both)",
+        )
+        parser.add_argument(
+            "--old-master-key",
+            action="append",
+            default=[],
+            help=(
+                "Zusätzlicher alter Hauptschlüssel (Base64), etwa nach einem Datenbankumzug. Auch über die "
+                "Umgebungsvariable OLD_MASTER_KEY. Im laufenden Betrieb ENCRYPTION_MASTER_KEY_PREVIOUS verwenden."
+            ),
+        )
+        parser.add_argument(
+            "--ignore-unreadable",
+            action="store_true",
+            help="Unlesbare Werte (z. B. mit unbekanntem Schlüssel) unverändert lassen, statt abzubrechen",
         )
 
-    def handle(self, *args, **options):
-        old_master_b64 = options["old_master_key"]
-        dry_run = options["dry_run"]
+    def handle(self, *args: Any, **options: Any) -> None:
+        extra = [*options["old_master_key"]]
+        if os.environ.get("OLD_MASTER_KEY"):
+            extra.append(os.environ["OLD_MASTER_KEY"])
         tenant_type = options["tenant_type"]
-
-        if not old_master_b64:
-            raise CommandError(
-                "Alter Master-Key fehlt. Setze OLD_MASTER_KEY env-Variable oder nutze --old-master-key <base64>"
+        tenant_types = tuple(TENANT_MODELS.values()) if tenant_type == "both" else (tenant_type,)
+        try:
+            rotation = KeyRotation(
+                extra_master_keys=extra,
+                tenant_types=tenant_types,
+                ignore_unreadable=options["ignore_unreadable"],
             )
+        except (ImproperlyConfigured, ValueError) as exc:
+            raise CommandError(str(exc)) from None
+
+        master_only, finalize = options["master_only"], options["finalize"]
+        self.stdout.write(f"Hauptschlüssel: aktueller und {len(rotation.previous_masters)} vorherige(r)")
+
+        if options["dry_run"]:
+            scan = rotation.scan()
+            self._print_scan(scan)
+            self._print_plan(scan, rotation, master_only=master_only, finalize=finalize)
+            self.stdout.write(self.style.WARNING("DRY-RUN – es wurde nichts geändert."))
+            return
 
         try:
-            old_master = base64.b64decode(old_master_b64)
-        except Exception as e:
-            raise CommandError(f"Alter Master-Key ist kein gültiges base64: {e}") from e
-        if len(old_master) != 32:
-            raise CommandError(f"Alter Master-Key muss 32 Bytes sein, ist {len(old_master)}")
+            result = rotation.run(master_only=master_only, finalize=finalize)
+        except RotationError as exc:
+            raise CommandError(f"Abgebrochen, nichts Unvollständiges gespeichert: {exc}") from None
+        self._print_result(result)
 
-        try:
-            new_master = base64.b64decode(settings.ENCRYPTION_MASTER_KEY)
-        except Exception as e:
-            raise CommandError(f"Neuer Master-Key (aus ENCRYPTION_MASTER_KEY) ist ungültig: {e}") from e
-        if len(new_master) != 32:
-            raise CommandError(f"Neuer Master-Key muss 32 Bytes sein, ist {len(new_master)}")
-
-        if old_master == new_master:
-            raise CommandError("Alter und neuer Master-Key sind identisch — nichts zu tun.")
-
-        self.stdout.write(self.style.WARNING(f"Dry-Run: {dry_run}"))
-        self.stdout.write(self.style.WARNING(f"Tenant-Type: {tenant_type}"))
-        self.stdout.write("")
-
-        # Sammle alle verschlüsselten Feld-Definitionen
-        encrypted_fields = self._collect_encrypted_fields()
-        self.stdout.write(f"Gefundene verschlüsselte Felder: {sum(len(v) for v in encrypted_fields.values())}")
-        for model, fields in encrypted_fields.items():
-            self.stdout.write(f"  {model.__name__}: {', '.join(fields)}")
-        self.stdout.write("")
-
-        # Rotiere Organization-Tenants
-        total_stats = {"tenants": 0, "fields": 0, "skipped": 0, "errors": 0}
-
-        if tenant_type in ("organization", "both"):
-            from apps.tenants.models import Organization
-
-            self.stdout.write(self.style.NOTICE("=== Organization-Tenants ==="))
-            stats = self._rotate_tenant_type(
-                Organization, encrypted_fields, old_master, new_master, dry_run, "organization"
+        if master_only or finalize:
+            self._print_verification(rotation.scan(), rotation, finalize=finalize)
+        else:
+            self.stdout.write(
+                "\nNächste Schritte:\n"
+                "  1. Anwendung neu starten (alle Dienste mit ENCRYPTION_MASTER_KEY).\n"
+                "  2. python manage.py rotate_encryption --finalize\n"
+                "  3. Erst danach ENCRYPTION_MASTER_KEY_PREVIOUS leeren (falls gesetzt) und erneut neu starten."
             )
-            for k, v in stats.items():
-                total_stats[k] += v
 
-        if tenant_type in ("session", "both"):
-            try:
-                from apps.session.models import SessionTenant
+    # -- Ausgabe --------------------------------------------------------------------------------
 
-                self.stdout.write(self.style.NOTICE("\n=== Session-Tenants ==="))
-                stats = self._rotate_tenant_type(
-                    SessionTenant, encrypted_fields, old_master, new_master, dry_run, "session"
-                )
-                for k, v in stats.items():
-                    total_stats[k] += v
-            except (ImportError, LookupError):
-                self.stdout.write(self.style.WARNING("Session-App nicht verfügbar — überspringe."))
+    def _print_scan(self, scan: ScanResult) -> None:
+        width = max(len(report.entry.label) for report in scan.fields)
+        header = f"{'Feld':<{width}}  {'Schlüssel':<38}" + "".join(f"{status.value:>18}" for status in COLUMNS)
+        self.stdout.write(header)
+        for report in scan.fields:
+            line = f"{report.entry.label:<{width}}  {KIND_LABELS[report.entry.kind]:<38}"
+            line += "".join(f"{report.counts[status]:>18}" for status in COLUMNS)
+            if report.unreadable_ids:
+                line += f"   z. B. {', '.join(report.unreadable_ids)}"
+            self.stdout.write(line)
 
-        # Zusammenfassung
-        self.stdout.write("")
-        self.stdout.write(self.style.SUCCESS("=" * 60))
-        self.stdout.write(self.style.SUCCESS(f"Tenants rotiert:    {total_stats['tenants']}"))
-        self.stdout.write(self.style.SUCCESS(f"Felder rotiert:     {total_stats['fields']}"))
-        self.stdout.write(self.style.WARNING(f"Leere Felder übersprungen: {total_stats['skipped']}"))
-        if total_stats["errors"]:
-            self.stdout.write(self.style.ERROR(f"Fehler:             {total_stats['errors']}"))
-        self.stdout.write(self.style.SUCCESS("=" * 60))
-
-        if dry_run:
-            self.stdout.write(self.style.WARNING("\nDRY-RUN — keine Daten wurden geändert."))
-
-    def _collect_encrypted_fields(self):
-        """
-        Findet alle Models mit EncryptedTextField und gibt ein Dict zurück:
-            {ModelClass: [field_name, ...]}
-
-        Erkennt Felder anhand des Suffix `_encrypted` UND anhand des Typs.
-        """
-        from apps.common.encryption import EncryptedTextField
-
-        result = {}
-        for model in apps.get_models():
-            encrypted = []
-            for f in model._meta.get_fields():
-                if isinstance(f, EncryptedTextField):
-                    encrypted.append(f.name)
-            if encrypted:
-                result[model] = encrypted
-        return result
-
-    def _get_tenant_field_for_model(self, model, tenant_model):
-        """
-        Findet den ForeignKey vom Model zum Tenant-Model (direkt oder indirekt).
-        Gibt den Pfad als Liste zurück, z.B. ["organization"] oder ["meeting", "organization"].
-        """
-        # Direkter FK zum Tenant
-        for f in model._meta.get_fields():
-            if hasattr(f, "related_model") and f.related_model == tenant_model and (f.many_to_one or f.one_to_one):
-                return [f.name]
-
-        # Indirekter FK über andere FKs (einfacher Fall: 1 Hop)
-        for f in model._meta.get_fields():
-            if hasattr(f, "related_model") and f.related_model is not None and (f.many_to_one or f.one_to_one):
-                # Prüfe ob das related_model einen FK zum Tenant hat
-                for rf in f.related_model._meta.get_fields():
-                    if (
-                        hasattr(rf, "related_model")
-                        and rf.related_model == tenant_model
-                        and (rf.many_to_one or rf.one_to_one)
-                    ):
-                        return [f.name, rf.name]
-
-        return None
-
-    def _rotate_tenant_type(self, tenant_model, encrypted_fields, old_master, new_master, dry_run, tenant_type):
-        """
-        Rotiert alle Tenants eines Typs und deren verschlüsselte Felder.
-        """
-        stats = {"tenants": 0, "fields": 0, "skipped": 0, "errors": 0}
-
-        # Finde alle Models die zu diesem Tenant-Typ gehören
-        relevant_models = {}
-        for model, fields in encrypted_fields.items():
-            if model == tenant_model:
-                continue  # Tenant selbst behandeln wir separat
-            path = self._get_tenant_field_for_model(model, tenant_model)
-            if path:
-                relevant_models[model] = (fields, path)
-
-        self.stdout.write(f"Relevante Models für {tenant_model.__name__}:")
-        for model, (fields, path) in relevant_models.items():
-            self.stdout.write(f"  {model.__name__} via {'.'.join(path)}: {fields}")
-
-        tenants = list(tenant_model.objects.all())
-        self.stdout.write(f"\nGefundene Tenants: {len(tenants)}")
-
-        for tenant in tenants:
-            self.stdout.write(f"\n--- Tenant: {tenant} (id={tenant.pk}) ---")
-
-            if not tenant.encryption_key:
-                self.stdout.write(self.style.WARNING("  Kein encryption_key — überspringe."))
-                continue
-
-            # Alten Tenant-Key entschlüsseln
-            try:
-                old_tenant_key = aes_decrypt(old_master, bytes(tenant.encryption_key))
-            except Exception as e:
+    def _print_plan(self, scan: ScanResult, rotation: KeyRotation, *, master_only: bool, finalize: bool) -> None:
+        master = scan.count(Status.PREVIOUS, Status.PLAINTEXT, kinds=MASTER_LEVEL)
+        self.stdout.write("\nGeplant:")
+        self.stdout.write(f"  Hauptschlüssel-Ebene: {master} Wert(e) auf den aktuellen Hauptschlüssel umschreiben")
+        if not master_only:
+            selected = {label for label, short in TENANT_MODELS.items() if short in rotation.tenant_types}
+            fresh = [ref for ref, begun in scan.tenants.items() if ref[0] in selected and not begun]
+            started = [ref for ref, begun in scan.tenants.items() if ref[0] in selected and begun]
+            pending = sum(scan.tenant_count(ref, Status.PREVIOUS) for ref in started)
+            if finalize:
                 self.stdout.write(
-                    self.style.ERROR(f"  FEHLER: Konnte Tenant-Key nicht mit altem Master entschlüsseln: {e}")
+                    f"  Abschluss: {len(started)} Mandant(en), {pending} Nachzügler neu verschlüsseln, "
+                    "danach vorherige Mandantenschlüssel löschen"
                 )
-                stats["errors"] += 1
-                continue
-
-            # Neuen Tenant-Key generieren
-            new_tenant_key = AESGCM.generate_key(bit_length=256)
-
-            tenant_field_count = 0
-            tenant_skipped = 0
-
-            if dry_run:
-                # Nur simulieren: Versuche jedes Feld zu entschlüsseln
-                for model, (fields, path) in relevant_models.items():
-                    lookup = "__".join(path) + "_id" if len(path) == 1 else None
-                    if lookup:
-                        objects = model.objects.filter(**{path[0]: tenant})
-                    else:
-                        # Indirekt — komplexere Filter
-                        filter_kwargs = {"__".join(path): tenant}
-                        objects = model.objects.filter(**filter_kwargs)
-
-                    for obj in objects:
-                        for fname in fields:
-                            val = getattr(obj, fname)
-                            if not val:
-                                tenant_skipped += 1
-                                continue
-                            try:
-                                aes_decrypt(old_tenant_key, bytes(val))
-                                tenant_field_count += 1
-                            except Exception as e:
-                                self.stdout.write(
-                                    self.style.ERROR(f"  {model.__name__}({obj.pk}).{fname}: Decrypt failed: {e}")
-                                )
-                                stats["errors"] += 1
-
+            else:
+                values = sum(scan.tenant_count(ref, Status.CURRENT, Status.PREVIOUS) for ref in fresh)
                 self.stdout.write(
-                    f"  [Dry-Run] Würde {tenant_field_count} Felder rotieren, {tenant_skipped} übersprungen"
+                    f"  Neue Mandantenschlüssel: {len(fresh)}; begonnene Wechsel fortsetzen: {len(started)}"
                 )
-                stats["tenants"] += 1
-                stats["fields"] += tenant_field_count
-                stats["skipped"] += tenant_skipped
-                continue
+                self.stdout.write(f"  Mandanteninhalte neu verschlüsseln: {values + pending} Wert(e)")
+        blocked = scan.count(Status.UNASSIGNED) + (0 if rotation.ignore_unreadable else scan.count(Status.UNREADABLE))
+        if blocked:
+            self.stdout.write(
+                self.style.ERROR(f"  Achtung: {blocked} Wert(e) würden den Lauf abbrechen (siehe Tabelle).")
+            )
 
-            # Real-Run: Atomare Transaktion pro Tenant
-            try:
-                with transaction.atomic():
-                    for model, (fields, path) in relevant_models.items():
-                        filter_kwargs = {"__".join(path): tenant}
-                        objects = model.objects.filter(**filter_kwargs)
+    def _print_result(self, result: RotationResult) -> None:
+        self.stdout.write(self.style.SUCCESS("Schlüsselwechsel ausgeführt:"))
+        self.stdout.write(f"  Hauptschlüssel-Ebene umgeschrieben: {result.master_values_rewritten}")
+        self.stdout.write(f"  Neue Mandantenschlüssel:            {result.tenants_switched}")
+        self.stdout.write(f"  Fortgesetzte Wechsel:               {result.tenants_resumed}")
+        self.stdout.write(f"  Mandanteninhalte neu verschlüsselt: {result.tenant_values_rewritten}")
+        self.stdout.write(f"  Abgeschlossene Mandanten:           {result.tenants_finalized}")
+        if result.skipped_unreadable:
+            self.stdout.write(self.style.WARNING(f"  Unlesbar, unverändert gelassen:     {result.skipped_unreadable}"))
 
-                        for obj in objects:
-                            update_fields = []
-                            for fname in fields:
-                                val = getattr(obj, fname)
-                                if not val:
-                                    tenant_skipped += 1
-                                    continue
-                                try:
-                                    plaintext = aes_decrypt(old_tenant_key, bytes(val))
-                                    new_ciphertext = aes_encrypt(new_tenant_key, plaintext)
-                                    setattr(obj, fname, new_ciphertext)
-                                    update_fields.append(fname)
-                                    tenant_field_count += 1
-                                except Exception as e:
-                                    self.stdout.write(self.style.ERROR(f"  {model.__name__}({obj.pk}).{fname}: {e}"))
-                                    stats["errors"] += 1
-                                    raise  # Rollback für diesen Tenant
-
-                            if update_fields:
-                                obj.save(update_fields=update_fields)
-
-                    # Tenant-Key mit neuem Master-Key verschlüsseln
-                    new_encrypted_tenant_key = aes_encrypt(new_master, new_tenant_key)
-                    tenant.encryption_key = new_encrypted_tenant_key
-                    tenant.save(update_fields=["encryption_key"])
-
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"  OK — {tenant_field_count} Felder rotiert, {tenant_skipped} leere übersprungen"
-                    )
-                )
-                stats["tenants"] += 1
-                stats["fields"] += tenant_field_count
-                stats["skipped"] += tenant_skipped
-            except Exception as e:
-                self.stdout.write(self.style.ERROR(f"  FEHLER — Rollback für Tenant {tenant.pk}: {e}"))
-                stats["errors"] += 1
-
-        return stats
+    def _print_verification(self, scan: ScanResult, rotation: KeyRotation, *, finalize: bool) -> None:
+        on_old_master = scan.count(Status.PREVIOUS, Status.PLAINTEXT, kinds=MASTER_LEVEL)
+        on_old_tenant = scan.count(Status.PREVIOUS, kinds=(KeyKind.TENANT,))
+        started = sum(1 for begun in scan.tenants.values() if begun)
+        self.stdout.write("\nPrüfung nach dem Lauf:")
+        self.stdout.write(f"  Werte mit vorherigem Hauptschlüssel: {on_old_master}")
+        self.stdout.write(f"  Werte mit vorherigem Mandantenschlüssel: {on_old_tenant}")
+        self.stdout.write(f"  Mandanten mit nicht abgeschlossenem Wechsel: {started}")
+        if on_old_master:
+            self.stdout.write(self.style.ERROR("  ENCRYPTION_MASTER_KEY_PREVIOUS noch NICHT entfernen."))
+        elif rotation.previous_masters:
+            # Auch vorherige Mandantenschlüssel sind jetzt mit dem aktuellen Hauptschlüssel eingepackt
+            self.stdout.write(
+                self.style.SUCCESS("  ENCRYPTION_MASTER_KEY_PREVIOUS kann jetzt geleert werden; danach neu starten.")
+            )
+        if finalize and (on_old_tenant or started):
+            self.stdout.write(self.style.WARNING("  Nicht alles abgeschlossen – bitte den Lauf wiederholen."))
