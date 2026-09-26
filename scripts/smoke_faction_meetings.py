@@ -1916,14 +1916,20 @@ check(
 )
 
 # -- Persönlicher iCal-Feed ---------------------------------------------------
-feed_token = CalendarFeedToken.for_user(sworn_user)
+# Gespeichert ist nur der SHA-256-Hash; das Token gibt es nur direkt nach dem Erzeugen
+feed_token = CalendarFeedToken.issue_for_user(sworn_user)
+feed_raw = feed_token.plain_token or ""
 check(
     "Feed-Token opak (kein Personen-/Org-Bezug)",
-    len(feed_token.token) >= 20
-    and org.slug not in feed_token.token.lower()
-    and "veraxa" not in feed_token.token.lower()
-    and str(sworn_user.pk) not in feed_token.token,
-    feed_token.token,
+    len(feed_raw) >= 20
+    and org.slug not in feed_raw.lower()
+    and "veraxa" not in feed_raw.lower()
+    and str(sworn_user.pk) not in feed_raw,
+)
+check(
+    "Feed-Token nur als Hash in der Datenbank",
+    not CalendarFeedToken.objects.filter(token=feed_raw).exists()
+    and CalendarFeedToken.objects.filter(user=sworn_user).values_list("token", flat=True).get() != feed_raw,
 )
 
 # RIS-Gremium zuordnen + RIS-Termin anlegen
@@ -1949,7 +1955,7 @@ FactionMeeting.objects.create(
 )
 
 anon_q = Client()
-resp = anon_q.get(f"/kalender/feed/{feed_token.token}.ics")
+resp = anon_q.get(f"/kalender/feed/{feed_raw}.ics")
 check("Feed ohne Login -> 200", resp.status_code == 200, f"got {resp.status_code}")
 check("Feed: text/calendar", resp["Content-Type"].startswith("text/calendar"))
 feed_text = resp.content.decode("utf-8")
@@ -1966,8 +1972,8 @@ check(
 )
 
 # Anderer User ohne Gremien-Zuordnung: Fraktionssitzungen ja, RIS-Termin nein
-feed_token_unsworn = CalendarFeedToken.for_user(unsworn_user)
-resp = anon_q.get(f"/kalender/feed/{feed_token_unsworn.token}.ics")
+feed_token_unsworn = CalendarFeedToken.issue_for_user(unsworn_user)
+resp = anon_q.get(f"/kalender/feed/{feed_token_unsworn.plain_token}.ics")
 feed_text_unsworn = resp.content.decode("utf-8")
 check("Feed je User individuell (RIS nur bei Zuordnung)", "Feed-Gremium QQ" not in feed_text_unsworn)
 check("Feed des zweiten Users enthält Fraktionssitzungen", "Fraktionssitzung Eins" in feed_text_unsworn)
@@ -1975,20 +1981,30 @@ check("Feed des zweiten Users enthält Fraktionssitzungen", "Fraktionssitzung Ei
 # Tokenschutz: unbekanntes Token -> 404
 resp = anon_q.get("/kalender/feed/unbekanntes-token-999.ics")
 check("Unbekanntes Feed-Token -> 404", resp.status_code == 404, f"got {resp.status_code}")
+resp = anon_q.get(f"/kalender/feed/{feed_token.token}.ics")
+check("Gespeicherter Hash als Feed-Token -> 404", resp.status_code == 404, f"got {resp.status_code}")
 
-# Erneuerung über die Profileinstellungen: alte URL sofort ungültig
+# Erneuerung über die Profileinstellungen: alte URL sofort ungültig, neue URL genau einmal sichtbar
 sworn_role_q = sworn_ms.roles.first()
 sworn_role_q.permissions.add(perm("dashboard.view"))
-old_feed_token = feed_token.token
 resp = sworn.get(f"{base}/profile/")
-check("Profil zeigt Feed-URL", resp.status_code == 200 and old_feed_token in resp.content.decode("utf-8"))
+profil_html = resp.content.decode("utf-8")
+check(
+    "Profil zeigt die Feed-URL nicht erneut, bietet neue an",
+    resp.status_code == 200 and feed_raw not in profil_html and "Feed-URL neu erzeugen" in profil_html,
+)
 resp = sworn.post(f"{base}/profile/", {"action": "regenerate_calendar_feed"})
 check("Feed-Erneuerung -> Redirect", resp.status_code == 302, f"got {resp.status_code}")
-feed_token.refresh_from_db()
-check("Token wurde erneuert", feed_token.token != old_feed_token)
-resp = anon_q.get(f"/kalender/feed/{old_feed_token}.ics")
+profil_html = sworn.get(f"{base}/profile/").content.decode("utf-8")
+_neu = profil_html.split("/kalender/feed/", 1)[1].split(".ics", 1)[0] if "/kalender/feed/" in profil_html else ""
+check("Neue Feed-URL direkt nach dem Erzeugen sichtbar", bool(_neu) and _neu != feed_raw)
+check(
+    "Neue Feed-URL beim nächsten Aufruf nicht mehr sichtbar",
+    _neu not in sworn.get(f"{base}/profile/").content.decode("utf-8"),
+)
+resp = anon_q.get(f"/kalender/feed/{feed_raw}.ics")
 check("Alte Feed-URL nach Erneuerung -> 404", resp.status_code == 404, f"got {resp.status_code}")
-resp = anon_q.get(f"/kalender/feed/{feed_token.token}.ics")
+resp = anon_q.get(f"/kalender/feed/{_neu}.ics")
 check("Neue Feed-URL -> 200", resp.status_code == 200, f"got {resp.status_code}")
 
 # =============================================================================
