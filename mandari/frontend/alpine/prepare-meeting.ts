@@ -1032,9 +1032,8 @@ export const preparationApp = defineComponent(() => {
     },
 
     stripHtml(html: string | null | undefined): string {
-      const div = document.createElement('div')
-      div.innerHTML = html || ''
-      return div.textContent || ''
+      // DOMParser statt innerHTML: inertes Dokument, Bilder laden und Ereignis-Attribute feuern nicht
+      return new DOMParser().parseFromString(html || '', 'text/html').body.textContent || ''
     },
 
     fmtDateTime(iso: string | null | undefined): string {

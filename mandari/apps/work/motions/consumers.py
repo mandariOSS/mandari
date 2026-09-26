@@ -9,11 +9,14 @@ Protocol: JSON messages with base64-encoded binary Yjs data.
 """
 
 import base64
+import binascii
 import logging
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.utils import timezone
+
+from apps.work.sanitize import sanitize_editor_html
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,49 @@ CURSOR_COLORS = [
     "#14b8a6",  # teal
     "#f97316",  # orange
 ]
+
+
+# y-protocols (frontend/editor/collaboration.ts): erste Zahl = Nachrichtentyp, bei Sync die zweite
+# den Schritt. Schritt 1 fragt nur den Stand an; Schritt 2 und Update tragen Dokumentänderungen.
+MSG_SYNC = 0
+MSG_AWARENESS = 1
+SYNC_STEP1 = 0
+
+
+def _read_var_uint(data: bytes, pos: int) -> tuple[int, int] | None:
+    """lib0-VarUint ab ``pos`` lesen: (Wert, nächste Position) oder ``None`` bei Fehlern."""
+    value = 0
+    shift = 0
+    while pos < len(data) and shift < 35:
+        byte = data[pos]
+        pos += 1
+        value |= (byte & 0x7F) << shift
+        if byte < 0x80:
+            return value, pos
+        shift += 7
+    return None
+
+
+def ist_lesende_sync_nachricht(data_b64: str) -> bool:
+    """
+    Darf eine Verbindung ohne Schreibrecht diese Yjs-Nachricht senden?
+
+    Ja nur für die Sync-Anfrage (Schritt 1, enthält keinen Inhalt) und Cursor-/Präsenzdaten.
+    """
+    try:
+        raw = base64.b64decode(data_b64 or "", validate=True)
+    except (ValueError, binascii.Error):
+        return False
+    head = _read_var_uint(raw, 0)
+    if head is None:
+        return False
+    msg_type, pos = head
+    if msg_type == MSG_AWARENESS:
+        return True
+    if msg_type != MSG_SYNC:
+        return False
+    step = _read_var_uint(raw, pos)
+    return step is not None and step[0] == SYNC_STEP1
 
 
 class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
@@ -151,6 +197,10 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         msg_type = content.get("type")
 
         if msg_type == "yjs_sync":
+            # Ohne Schreibrecht nur Sync-Anfragen und Cursor weiterleiten – Yjs-Änderungen
+            # Lesender würden die Schreibenden übernehmen und speichern.
+            if not self._darf_weiterleiten(content.get("data", "")):
+                return
             # Broadcast Yjs sync update to all other clients
             await self.channel_layer.group_send(
                 self.group_name,
@@ -184,6 +234,12 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                 # Fingerabdruck des gespeicherten Inhalts zurückmelden: Von diesem Stand
                 # geht der Client aus, wenn er später ohne Verbindung speichert (#184).
                 await self.send_json({"type": "yjs_saved", "content_hash": content_hash})
+
+    def _darf_weiterleiten(self, data_b64: str) -> bool:
+        """Schreibende leiten alles weiter, alle anderen nur lesende Protokollnachrichten."""
+        if self.user_info and self.user_info.get("access_level") == "edit":
+            return True
+        return ist_lesende_sync_nachricht(data_b64)
 
     # --- Group message handlers ---
 
@@ -312,6 +368,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
 
             content_changed = False
             if html is not None and can_write:
+                # Gespeichert wird nur die Positivliste des Editors (apps/work/sanitize.py)
+                html = sanitize_editor_html(html)
                 try:
                     old_content = motion.get_content_decrypted()
                 except Exception:

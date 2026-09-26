@@ -143,6 +143,11 @@ urlpatterns = [
         meetings_views.SupplementaryDocumentAPIView.as_view(http_method_names=["delete"]),
         name="meeting_supplementary_delete",
     ),
+    path(
+        "<slug:org_slug>/meetings/supplementary/<uuid:doc_id>/download/",
+        meetings_views.SupplementaryDocumentDownloadView.as_view(),
+        name="meeting_document_download",
+    ),
     # Legacy URL compatibility (redirects to new supplementary endpoint)
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/documents/<uuid:item_id>/",
@@ -306,6 +311,12 @@ urlpatterns = [
         "<slug:org_slug>/documents/letterheads/<uuid:letterhead_id>/preview/",
         motions_views.LetterheadEditorPreviewView.as_view(),
         name="document_letterhead_editor_preview",
+    ),
+    # Briefkopf-PDF (nie über /media/, siehe apps/work/files.py)
+    path(
+        "<slug:org_slug>/documents/letterheads/<uuid:letterhead_id>/file/",
+        motions_views.LetterheadFileView.as_view(),
+        name="document_letterhead_file",
     ),
     # Trash (Papierkorb)
     path(
@@ -494,6 +505,11 @@ urlpatterns = [
         name="faction_item_panel_action",
     ),
     path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/item/<uuid:item_id>/attachments/<uuid:attachment_id>/download/",
+        faction_views.FactionAttachmentDownloadView.as_view(),
+        name="faction_attachment_download",
+    ),
+    path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/niederschrift/<slug:variant>.pdf",
         faction_views.FactionProtocolPdfView.as_view(),
         name="faction_protocol_pdf",
@@ -529,6 +545,11 @@ urlpatterns = [
         "<slug:org_slug>/tasks/<uuid:task_id>/panel/action/",
         tasks_views.TaskPanelActionView.as_view(),
         name="task_panel_action",
+    ),
+    path(
+        "<slug:org_slug>/tasks/<uuid:task_id>/attachments/<uuid:attachment_id>/download/",
+        tasks_views.TaskAttachmentDownloadView.as_view(),
+        name="task_attachment_download",
     ),
     path(
         "<slug:org_slug>/tasks/<uuid:task_id>/share/",
@@ -713,6 +734,11 @@ urlpatterns = [
         "<slug:org_slug>/support/<uuid:ticket_id>/messages/",
         support_views.SupportTicketMessagesPartialView.as_view(),
         name="support_messages_partial",
+    ),
+    path(
+        "<slug:org_slug>/support/<uuid:ticket_id>/attachments/<uuid:attachment_id>/download/",
+        support_views.SupportAttachmentDownloadView.as_view(),
+        name="support_attachment_download",
     ),
     # Knowledge Base
     path(

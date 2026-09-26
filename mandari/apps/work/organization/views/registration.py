@@ -11,6 +11,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 
 from .. import selectors, services
+from ._helpers import flash_error
 
 
 class RegistrationSettingsView(WorkViewMixin, TemplateView):
@@ -31,14 +32,19 @@ class RegistrationSettingsView(WorkViewMixin, TemplateView):
 
     def post(self, request, *args, **kwargs):
         # Ungesetzte Checkboxen fehlen im POST ganz; die Anwesenheit des Feldes genügt
-        services.save_registration_settings(
-            self.organization,
-            enabled="registration_enabled" in request.POST,
-            auto_approve="registration_auto_approve" in request.POST,
-            domains_text=request.POST.get("registration_email_domains", ""),
-            default_role_id=request.POST.get("registration_default_role", ""),
-        )
-        messages.success(request, "Registrierungseinstellungen gespeichert.")
+        try:
+            services.save_registration_settings(
+                self.organization,
+                actor=self.membership,
+                enabled="registration_enabled" in request.POST,
+                auto_approve="registration_auto_approve" in request.POST,
+                domains_text=request.POST.get("registration_email_domains", ""),
+                default_role_id=request.POST.get("registration_default_role", ""),
+            )
+        except services.ServiceError as exc:
+            flash_error(request, exc)
+        else:
+            messages.success(request, "Registrierungseinstellungen gespeichert.")
         return redirect("work:organization_registration", org_slug=self.organization.slug)
 
 

@@ -57,7 +57,7 @@
     {# Gast: keine Rollen, keine Berechtigungen – nur Freigaben #}
     {% if member.is_guest %}
     {% include "work/organization/partials/_member_guest_access.html" %}
-    {% elif can_edit %}
+    {% elif can_manage_roles %}
     <c-ui.card title="Rollen verwalten" class="mb-6">
         <form method="post">
             {% csrf_token %}

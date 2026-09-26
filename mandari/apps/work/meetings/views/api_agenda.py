@@ -97,8 +97,9 @@ class SpeechNoteAPIView(WorkViewMixin, View):
 
     POST unterstützt partielle, idempotente Saves: title / content /
     estimated_duration / is_shared / linked_document sind einzeln patchbar.
-    content enthält HTML (WYSIWYG); beim Lesen/Schreiben wird nichts
-    gestrippt — nur Ausgabe-Views (Teleprompter) sanitizen.
+    content enthält HTML (WYSIWYG); beim Speichern und Ausgeben wird es auf
+    die Positivliste des Editors reduziert (apps/work/sanitize.py), der
+    Teleprompter nutzt die noch engere Liste aus ``..sanitize``.
 
     "Dokument als Redebeitrag": linked_document verknüpft ein work.Motion-
     Dokument; die API liefert dessen Inhalt read-only als Redetext

@@ -15,6 +15,7 @@ import uuid
 from django.db import models
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
+from apps.work.files import meeting_document_path
 
 
 class MeetingPreparation(EncryptionMixin, models.Model):
@@ -695,7 +696,7 @@ class AgendaSupplementaryDocument(models.Model):
     url = models.URLField(blank=True, verbose_name="URL")
 
     # Für Datei-Uploads
-    file = models.FileField(upload_to="meetings/documents/%Y/%m/", blank=True, verbose_name="Datei")
+    file = models.FileField(upload_to=meeting_document_path, blank=True, verbose_name="Datei")
     filename = models.CharField(max_length=255, blank=True, verbose_name="Dateiname")
     mime_type = models.CharField(max_length=100, blank=True, verbose_name="MIME-Typ")
     file_size = models.PositiveIntegerField(default=0, verbose_name="Dateigröße (Bytes)")
@@ -726,7 +727,13 @@ class AgendaSupplementaryDocument(models.Model):
         if self.document_type == "link":
             return self.url
         if self.document_type == "file" and self.file:
-            return self.file.url
+            # Nie die Media-URL: Uploads gehen nur über die geprüfte Download-View (apps/work/files.py)
+            from django.urls import reverse
+
+            return reverse(
+                "work:meeting_document_download",
+                kwargs={"org_slug": self.organization.slug, "doc_id": self.id},
+            )
         if self.document_type == "oparl" and self.oparl_file:
             return self.oparl_file.access_url
         return ""
@@ -755,7 +762,7 @@ class AgendaSupplementaryDocument(models.Model):
         return (
             cls.objects.filter(organization=organization)
             .filter(q)
-            .select_related("added_by__user", "oparl_file")
+            .select_related("organization", "added_by__user", "oparl_file")
             .distinct()
         )
 

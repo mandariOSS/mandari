@@ -77,8 +77,8 @@
                         <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Anhänge</h4>
                         <div class="flex flex-wrap gap-2">
                             {% for attachment in attachments %}
-                            <a href="{{ attachment.file.url }}"
-                               target="_blank"
+                            <a href="{% url 'work:support_attachment_download' org_slug=organization.slug ticket_id=ticket.id attachment_id=attachment.id %}"
+                               target="_blank" rel="noopener"
                                class="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                                 {% if 'image' in attachment.mime_type %}
                                 <i data-lucide="image" class="w-4 h-4 text-blue-500"></i>

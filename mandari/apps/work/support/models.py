@@ -10,6 +10,7 @@ import uuid
 from django.db import models
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
+from apps.work.files import support_attachment_path
 
 
 class SupportTicket(EncryptionMixin, models.Model):
@@ -202,7 +203,7 @@ class SupportTicketAttachment(models.Model):
         verbose_name="Nachricht",
     )
 
-    file = models.FileField(upload_to="support/attachments/%Y/%m/", verbose_name="Datei")
+    file = models.FileField(upload_to=support_attachment_path, verbose_name="Datei")
     filename = models.CharField(max_length=255, verbose_name="Dateiname")
     mime_type = models.CharField(max_length=100, verbose_name="MIME-Typ")
     file_size = models.PositiveIntegerField(default=0, verbose_name="Dateigröße (Bytes)")

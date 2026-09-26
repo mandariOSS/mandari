@@ -62,6 +62,9 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         context["is_owner"] = self.organization.owner == member.user
         context["is_self"] = member.user == self.request.user
         context["can_edit"] = checker.has_permission("members.edit") or checker.is_admin()
+        # Je Aktion das passende Recht: Rollen vergeben bzw. deaktivieren/entfernen
+        context["can_manage_roles"] = context["can_edit"] and checker.has_permission("members.manage_roles")
+        context["can_remove"] = context["can_edit"] and checker.has_permission("members.remove")
         context["can_invite_guests"] = checker.has_permission("guests.invite") or checker.is_admin()
         if member.is_guest:
             # „Was sieht dieser Gast?“ (Issue #77): alle wirksamen Freigaben mit Entzugs-Möglichkeit
@@ -123,7 +126,13 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         services.update_member_expertise(self.organization, member, request.POST.getlist("expertise_topics"))
         messages.success(request, f"Fachgebiete für {display_name(member.user)} aktualisiert.")
 
+    def _require(self, permission: str, message: str) -> None:
+        """Aktionsrecht zusätzlich zu members.edit prüfen (Rollen vergeben, Mitglieder entfernen)."""
+        if not selectors.permission_checker(self.membership).has_permission(permission):
+            raise ServiceError(message)
+
     def _update_roles(self, request, member):
+        self._require("members.manage_roles", "Keine Berechtigung zum Zuweisen von Rollen.")
         services.update_member_roles(self.organization, member, self.membership, request.POST.getlist("roles"))
         messages.success(request, f"Rollen für {display_name(member.user)} aktualisiert.")
 
@@ -137,15 +146,17 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         messages.success(request, f"Individuelle Berechtigungen für {display_name(member.user)} aktualisiert.")
 
     def _deactivate(self, request, member):
+        self._require("members.remove", "Keine Berechtigung zum Deaktivieren von Mitgliedern.")
         services.deactivate_member(self.organization, member, request.user)
         messages.success(request, f"{display_name(member.user)} wurde deaktiviert.")
         return redirect("work:members", org_slug=self.organization.slug)
 
     def _reactivate(self, request, member):
-        services.reactivate_member(self.organization, member)
+        services.reactivate_member(self.organization, member, self.membership)
         messages.success(request, f"{display_name(member.user)} wurde reaktiviert.")
 
     def _remove(self, request, member):
+        self._require("members.remove", "Keine Berechtigung zum Entfernen von Mitgliedern.")
         name = services.remove_member(self.organization, member, request.user)
         messages.success(request, f"{name} wurde aus der Organisation entfernt.")
         return redirect("work:members", org_slug=self.organization.slug)

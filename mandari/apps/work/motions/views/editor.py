@@ -18,6 +18,7 @@ logger = logging.getLogger("apps.work.motions")
 import contextlib
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.sanitize import safe_editor_html, sanitize_editor_html
 
 from ..forms import (
     MotionCommentForm,
@@ -154,7 +155,9 @@ class MotionCreateView(WorkViewMixin, TemplateView):
                 if template.content_template:
                     from ..export_service import replace_placeholders
 
-                    motion.set_content_encrypted(replace_placeholders(template.content_template, motion))
+                    motion.set_content_encrypted(
+                        sanitize_editor_html(replace_placeholders(template.content_template, motion))
+                    )
             except MotionTemplate.DoesNotExist:
                 pass
 
@@ -184,32 +187,10 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         """
         Determine access level: 'view', 'comment', 'edit', or 'admin'.
 
-        Die Status-Sperre (gesperrte Status frieren die Bearbeitung ein,
-        motions.edit_all darf trotzdem) liegt zentral in
-        Motion.apply_status_lock — dieselbe Logik nutzt auch der
-        WebSocket-Consumer (Live-Kollaboration).
+        Stufenlogik und Status-Sperre liegen zentral in Motion.editor_access_level —
+        dieselbe Stufe erhält der WebSocket-Consumer (Live-Kollaboration).
         """
-        if not motion.can_access(self.membership):
-            return "none"
-
-        # Gäste: Level ergibt sich ausschließlich aus der persönlichen Freigabe
-        if getattr(self.membership, "is_guest", False):
-            level = motion.get_guest_share_level(self.membership)
-            if level is None:
-                return "none"
-            if level == "admin":
-                level = "edit"  # Gäste erhalten nie Verwaltungsrechte
-            return motion.apply_status_lock(level, self.membership)
-
-        if motion.author == self.membership:
-            level = "admin"
-        elif self.membership.has_permission("motions.edit_all"):
-            level = "edit"
-        elif self.membership.has_permission("motions.comment"):
-            level = "comment"
-        else:
-            level = "view"
-        return motion.apply_status_lock(level, self.membership)
+        return motion.editor_access_level(self.membership)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -222,7 +203,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             raise PermissionDenied("Keine Berechtigung für dieses Dokument.")
 
         context["motion"] = motion
-        context["motion_content"] = motion.get_content_decrypted()
+        # Nur bereinigt als HTML ausgeben – auch Altbestand vor der Positivliste (apps/work/sanitize.py)
+        context["motion_content"] = safe_editor_html(motion.get_content_decrypted())
         context["access_level"] = access_level
         context["is_author"] = motion.author == self.membership
         context["can_edit"] = access_level in ("edit", "admin")
@@ -363,7 +345,14 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                     "id": str(lh.id),
                     "name": lh.name,
                     "kind": lh.kind,
-                    "pdf_url": lh.pdf_file.url if (not lh.is_generated and lh.pdf_file) else "",
+                    "pdf_url": (
+                        reverse(
+                            "work:document_letterhead_file",
+                            kwargs={"org_slug": self.organization.slug, "letterhead_id": lh.id},
+                        )
+                        if (not lh.is_generated and lh.pdf_file)
+                        else ""
+                    ),
                     "preview_url": (
                         reverse(
                             "work:document_letterhead_editor_preview",
@@ -437,7 +426,10 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 letterhead_config = {
                     "kind": "pdf",
                     "previewUrl": "",
-                    "pdfUrl": letterhead.pdf_file.url,
+                    "pdfUrl": reverse(
+                        "work:document_letterhead_file",
+                        kwargs={"org_slug": org_slug, "letterhead_id": letterhead.id},
+                    ),
                     "margins": margins,
                 }
 
@@ -533,7 +525,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 except Exception:
                     old_content = ""
 
-                new_content = request.POST.get("content", "")
+                # Gespeichert wird nur die Positivliste des Editors (apps/work/sanitize.py)
+                new_content = sanitize_editor_html(request.POST.get("content", ""))
 
                 # Konflikt sichtbar machen statt still überschreiben (#184)
                 konflikt = speicherkonflikt(request, old_content, new_content)
@@ -587,7 +580,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         if form.is_valid():
             motion = form.save(commit=False)
-            new_content = request.POST.get("content", "")
+            new_content = sanitize_editor_html(request.POST.get("content", ""))
             content_changed = bool(new_content) and _store_content(motion, new_content, _current_content(motion))
             motion.save()
             if content_changed:

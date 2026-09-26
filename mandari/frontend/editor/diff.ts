@@ -19,8 +19,9 @@ interface TextBlock {
 }
 
 function htmlToBlocks(html: string): TextBlock[] {
-  const div = document.createElement('div')
-  div.innerHTML = html
+  // DOMParser statt innerHTML: Das geparste Dokument ist inert – Bilder laden nicht,
+  // Ereignis-Attribute (onerror …) feuern nicht.
+  const div = new DOMParser().parseFromString(html, 'text/html').body
   const blocks: TextBlock[] = []
 
   function extractBlocks(el: Element) {
@@ -31,8 +32,9 @@ function htmlToBlocks(html: string): TextBlock[] {
       if (['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'tr'].includes(tag)) {
         const text = (child.textContent || '').trim()
         if (text) {
-          // Preserve class/style attributes for rendering
-          const attrs = child.getAttribute('class') ? ` class="${child.getAttribute('class')}"` : ''
+          // Klasse für die Darstellung übernehmen – maskiert, sie landet wieder in HTML
+          const cls = child.getAttribute('class')
+          const attrs = cls ? ` class="${escapeHtml(cls)}"` : ''
           blocks.push({ tag, text, attrs })
         }
       } else if (['ul', 'ol', 'table', 'tbody', 'thead', 'div', 'section'].includes(tag)) {

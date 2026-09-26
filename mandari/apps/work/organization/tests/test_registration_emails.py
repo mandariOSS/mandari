@@ -216,9 +216,11 @@ def test_deaktivierte_mitglieder_sind_keine_anfragen(
     assert Membership.objects.filter(id=plain_member.id, is_active=False).exists()
 
 
-def test_reaktivierung_informiert_per_mail(org: Any, reviewer: Any, plain_member: Any) -> None:
+def test_reaktivierung_informiert_per_mail(org: Any, make_member: Any, reviewer: Any, plain_member: Any) -> None:
+    # Reaktivieren gibt die bisherigen Rechte zurück – die handelnde Person muss sie selbst haben
+    verwaltung = make_member(org, ["members.edit", "dashboard.view"], email="verwaltung@example.org")
     services.deactivate_member(org, plain_member, reviewer.user)
-    assert services.reactivate_member(org, plain_member) is True
+    assert services.reactivate_member(org, plain_member, verwaltung) is True
     assert subjects_to("mitglied@example.org") == [f"Dein Zugang zu {org.name} ist wieder aktiv"]
 
 

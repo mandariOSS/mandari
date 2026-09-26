@@ -16,6 +16,7 @@ from django.template.loader import render_to_string
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.files import attachment_response
 
 from .. import selectors, services
 from ..forms import TaskAttachmentForm, TaskChecklistItemForm, TaskPanelForm
@@ -66,6 +67,25 @@ class TaskPanelView(WorkViewMixin, TemplateView):
             raise PermissionDenied("Kein Zugriff auf diese Aufgabe.")
         context.update(panel_context(task, self.organization, self.membership))
         return context
+
+
+class TaskAttachmentDownloadView(WorkViewMixin, View):
+    """
+    Anhang einer Aufgabe herunterladen.
+
+    Anhänge gehen nicht über ``/media/`` hinaus (apps/work/files.py), sondern nur hier – mit
+    derselben Grenze wie das Panel: Organisation und Zugriff auf die Aufgabe (private und
+    geteilte Aufgaben nur für Beteiligte).
+    """
+
+    permission_required = "tasks.view"
+
+    def get(self, request, *args, **kwargs):
+        task = get_object_or_404(selectors.tasks_for_organization(self.organization), id=kwargs["task_id"])
+        if not task.can_access(self.membership):
+            raise PermissionDenied("Kein Zugriff auf diese Aufgabe.")
+        attachment = get_object_or_404(TaskAttachment, id=kwargs["attachment_id"], task=task)
+        return attachment_response(attachment.file, attachment.filename)
 
 
 class TaskPanelActionView(WorkViewMixin, View):

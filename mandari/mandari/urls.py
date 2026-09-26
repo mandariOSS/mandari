@@ -25,6 +25,7 @@ from apps.session.api.v1.api import api as session_api_v1
 from apps.session.views.invitation_responses import InvitationResponseView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
+from apps.work.files import PROTECTED_PREFIXES as WORK_PROTECTED_PREFIXES
 from insight_core.admin_monitoring import monitoring_view
 from mandari import pwa
 
@@ -46,6 +47,8 @@ PROTECTED_MEDIA_PREFIXES = (
     "motions/documents/",
     # Archivpakete des Protokolls (Issue #221): nie über eine URL
     "audit_archive/",
+    # Anhänge von Aufgaben, Fraktionssitzungen, Vorbereitung, Support und Briefköpfe (apps/work/files.py)
+    *WORK_PROTECTED_PREFIXES,
 )
 
 

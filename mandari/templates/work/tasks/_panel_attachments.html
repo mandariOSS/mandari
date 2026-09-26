@@ -16,7 +16,7 @@
         <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
             <i data-lucide="{{ att.icon_name }}" class="w-4 h-4 text-blue-500 dark:text-blue-400"></i>
         </div>
-        <a href="{{ att.file.url }}" target="_blank" class="flex-1 min-w-0 group/link">
+        <a href="{% url 'work:task_attachment_download' org_slug=organization.slug task_id=task.id attachment_id=att.id %}" target="_blank" rel="noopener" class="flex-1 min-w-0 group/link">
             <span class="text-sm text-gray-700 dark:text-gray-300 group-hover/link:text-primary-600 dark:group-hover/link:text-primary-400 truncate block transition-colors">{{ att.filename }}</span>
             <span class="text-[10px] text-gray-400">{{ att.size_human }}</span>
         </a>

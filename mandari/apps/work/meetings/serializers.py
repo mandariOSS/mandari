@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, cast
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.work.sanitize import sanitize_editor_html
+
 if TYPE_CHECKING:
     from apps.tenants.models import Membership, Organization
     from insight_core.models import OParlFile, OParlMeeting
@@ -175,7 +177,8 @@ def serialize_speech_note(note: AgendaSpeechNote | None, membership: Membership)
             content = ""
             readonly = True
     return {
-        "content": content,
+        # Redetext ist Editor-HTML: nur die Positivliste geht an den Client (auch Altbestand)
+        "content": sanitize_editor_html(content),
         "title": note.title,
         "estimated_duration": note.estimated_duration,
         "is_shared": note.is_shared,
@@ -185,8 +188,11 @@ def serialize_speech_note(note: AgendaSpeechNote | None, membership: Membership)
 
 
 def serialize_shared_speech(note: AgendaSpeechNote) -> dict[str, Any]:
-    """Geteilter Redebeitrag eines anderen Mitglieds (Autor + Inhalt)."""
-    return {"author": note.author.user.get_display_name(), "content": decrypted(note, "content")}
+    """Geteilter Redebeitrag eines anderen Mitglieds (Autor + bereinigter Inhalt)."""
+    return {
+        "author": note.author.user.get_display_name(),
+        "content": sanitize_editor_html(decrypted(note, "content")),
+    }
 
 
 def serialize_file_annotation(annotation: FileAnnotation, membership: Membership) -> dict[str, Any]:
@@ -210,15 +216,15 @@ def preview_info(doc: AgendaSupplementaryDocument) -> dict[str, Any]:
     """
     Vorschau-Informationen einer Anlage (Muster RIS-Inline-Vorschau).
 
-    PDF-Uploads werden über ihre Media-URL im iframe angezeigt (Anmerkungs-Anker
-    "doc"), OParl-Referenzen über den file_proxy (Anmerkungs-Anker "oparl").
+    PDF-Uploads werden über die geprüfte Download-View eingebettet im iframe angezeigt
+    (Anmerkungs-Anker "doc"), OParl-Referenzen über den file_proxy (Anmerkungs-Anker "oparl").
     """
     if doc.document_type == "file" and doc.file and is_pdf_file(doc.mime_type, doc.filename, doc.title):
         return {
             "is_pdf": True,
             "preview_kind": "doc",
             "preview_id": str(doc.id),
-            "preview_url": doc.display_url,
+            "preview_url": f"{doc.display_url}?vorschau=1",
         }
     if doc.document_type == "oparl" and doc.oparl_file_id:
         f = doc.oparl_file
@@ -331,7 +337,7 @@ def serialize_prepared_item(entry: PreparedItem, index: int, data: PreparationDa
         # Redebeitrag (pro User)
         "hasSpeechNote": bool(speech),
         "speechTitle": speech.title if speech else "",
-        "speechContent": decrypted(speech, "content") if speech else "",
+        "speechContent": sanitize_editor_html(decrypted(speech, "content")) if speech else "",
         "speechDuration": speech.estimated_duration if speech else 0,
         "speechShared": speech.is_shared if speech else False,
         "speechLinkedDocument": {"id": str(speech.linked_document.id), "title": speech.linked_document.title}

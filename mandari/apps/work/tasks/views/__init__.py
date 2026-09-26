@@ -25,11 +25,13 @@ from .manage import (
     TaskLabelManageView,
 )
 from .panel import (
+    TaskAttachmentDownloadView,
     TaskPanelActionView,
     TaskPanelView,
 )
 
 __all__ = [
+    "TaskAttachmentDownloadView",
     "TaskBoardAPIView",
     "TaskCreateView",
     "TaskExportView",
