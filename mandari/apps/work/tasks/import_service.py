@@ -31,6 +31,7 @@ from defusedxml.ElementTree import fromstring as defused_fromstring
 from django.db import transaction
 from django.utils import timezone
 
+from apps.common import csv_safety
 from apps.tenants.models import Membership, Organization
 
 from . import selectors
@@ -244,7 +245,8 @@ def rows_from_csv(text: str) -> tuple[list[Row], list[str]]:
         row: Row = {"_line": line_no}
         for idx, mapped in field_map.items():
             if idx < len(cells):
-                row[mapped] = cells[idx].strip()
+                # Eigene Exporte entschärfen Formel-Anfänge mit einem Hochkomma (apps/common/csv_safety.py)
+                row[mapped] = csv_safety.csv_unescape_cell(cells[idx].strip())
         rows.append(row)
     return rows, []
 

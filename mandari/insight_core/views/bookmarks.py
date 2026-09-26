@@ -108,6 +108,8 @@ def bookmark_toggle(request):
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     entity_type = data.get("type", "")
     entity_id = data.get("id", "")

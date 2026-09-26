@@ -11,6 +11,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.params import int_param
 
 from .models import Notification, NotificationType
 from .services import NotificationHub
@@ -30,7 +31,7 @@ class NotificationCenterView(WorkViewMixin, TemplateView):
         context["active_nav"] = "notifications"
 
         # Get notifications with pagination
-        page = int(self.request.GET.get("page", 1))
+        page = int_param(self.request.GET.get("page"), 1, minimum=1)
         per_page = 20
         offset = (page - 1) * per_page
 
@@ -152,7 +153,7 @@ class NotificationLatestView(WorkViewMixin, View):
     def get(self, request, *args, **kwargs):
         """Return latest unread notifications."""
         since = request.GET.get("since")
-        limit = min(int(request.GET.get("limit", 5)), 20)
+        limit = int_param(request.GET.get("limit"), 5, minimum=1, maximum=20)
 
         notifications = Notification.objects.filter(
             recipient=self.membership,

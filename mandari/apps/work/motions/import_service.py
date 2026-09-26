@@ -25,6 +25,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Meldung bei unerwarteten Fehlern; die Ausnahme selbst steht im Protokoll
+IMPORT_FAILED_MESSAGE = "Die Datei konnte nicht gelesen werden. Bitte prüfen Sie, ob sie beschädigt ist."
+
 
 @dataclass
 class ImportResult:
@@ -160,10 +163,8 @@ class MotionImportService:
 
         except Exception as e:
             logger.exception(f"Failed to import PDF '{pdf_file.name}': {e}")
-            return ImportResult(
-                success=False,
-                error=str(e),
-            )
+            # Feste Meldung: Texte aus Bibliotheken bleiben im Protokoll
+            return ImportResult(success=False, error=IMPORT_FAILED_MESSAGE)
 
     @classmethod
     def import_docx(
@@ -296,7 +297,7 @@ class MotionImportService:
             return ImportResult(success=False, error="DOCX-Import nicht verfügbar (python-docx fehlt)")
         except Exception as e:
             logger.exception(f"Failed to import DOCX '{docx_file.name}': {e}")
-            return ImportResult(success=False, error=str(e))
+            return ImportResult(success=False, error=IMPORT_FAILED_MESSAGE)
 
     @staticmethod
     def _runs_to_html(runs) -> str:

@@ -8,13 +8,12 @@ Org-weite Sitzungsvorbereitung — Hauptansicht mit 5 Sektionen pro TOP:
 5. Dokumente (org-weit)
 """
 
-import json
-
 from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.params import json_body
 
 from .. import selectors, services
 from ..models import AgendaItemNote, AgendaItemPosition
@@ -86,7 +85,9 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         if request.content_type == "application/json":
             if not self.membership:
                 return unauthorized()
-            data = json.loads(request.body)
+            data = json_body(request)
+            if data is None:
+                return JsonResponse({"error": "Ungültige Anfrage."}, status=400)
             if "notes" in data:
                 services.save_meeting_notes(self.organization, meeting, self.membership, data.get("notes") or "")
             return JsonResponse({"success": True})

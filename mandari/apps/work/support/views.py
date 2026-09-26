@@ -153,22 +153,23 @@ class SupportDetailView(WorkViewMixin, TemplateView):
     template_name = "work/support/detail.html"
     permission_required = "support.view"
 
+    def get(self, request, *args, **kwargs):
+        # Zugriffsprüfung vor dem Rendern: Eine Weiterleitung ist keine Kontextangabe
+        self.ticket = get_object_or_404(
+            SupportTicket.objects.select_related("created_by__user", "assigned_to"),
+            id=self.kwargs.get("ticket_id"),
+            organization=self.organization,
+        )
+        if self.ticket.created_by != self.membership and not self.has_permission("support.manage"):
+            messages.error(request, "Sie haben keinen Zugriff auf dieses Ticket.")
+            return redirect("work:support", org_slug=self.organization.slug)
+        return self.render_to_response(self.get_context_data(**kwargs))
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "support"
 
-        ticket_id = self.kwargs.get("ticket_id")
-        ticket = get_object_or_404(
-            SupportTicket.objects.select_related("created_by__user", "assigned_to"),
-            id=ticket_id,
-            organization=self.organization,
-        )
-
-        # Check if user can access this ticket
-        if ticket.created_by != self.membership and not self.has_permission("support.manage"):
-            messages.error(self.request, "Sie haben keinen Zugriff auf dieses Ticket.")
-            return redirect("work:support", org_slug=self.organization.slug)
-
+        ticket = self.ticket
         context["ticket"] = ticket
 
         # Get messages (exclude internal notes for non-staff)

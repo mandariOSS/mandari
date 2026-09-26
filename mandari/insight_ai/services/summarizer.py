@@ -194,7 +194,10 @@ class SummaryService:
             raise
         except Exception as e:
             logger.exception(f"Summary generation failed for paper {paper.id}: {e}")
-            raise SummaryError(f"Fehler bei der Zusammenfassung: {str(e)}") from e
+            # Feste Meldung: Anbieter-Ausnahmen können Adressen, Schlüssel oder Interna enthalten
+            raise SummaryError(
+                "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
+            ) from e
 
     def _collect_text_content_with_extraction(self, paper: "OParlPaper") -> str:
         """

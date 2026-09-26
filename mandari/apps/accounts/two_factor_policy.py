@@ -35,6 +35,9 @@ def _enforcement_enabled() -> bool:
 
 
 def _is_exempt(user: Any) -> bool:
+    # Plattform-Administration ist nie ausgenommen, gleich unter welcher Adresse
+    if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
+        return False
     domains = {str(d).lower().lstrip("@") for d in getattr(settings, "TWO_FACTOR_EXEMPT_EMAIL_DOMAINS", ()) if d}
     email = str(getattr(user, "email", "") or "").lower()
     return bool(domains) and email.rpartition("@")[2] in domains

@@ -110,7 +110,10 @@ def _ergebnis(name: str, start: float, future: Future[str]) -> CheckResult:
     except FutureTimeoutError:
         ok, detail = False, f"Zeitlimit {CHECK_TIMEOUT:g} s überschritten"
     except Exception as exc:  # jede Ausnahme ist hier ein Prüfergebnis, kein Absturz
-        ok, detail = False, f"{type(exc).__name__}: {exc}"[:200]
+        # Nur die Art des Fehlers: Der Endpunkt ist erreichbar, Ausnahmetexte können Adressen oder
+        # Zugangsdaten enthalten. Die Einzelheiten stehen im Protokoll.
+        logger.warning("Readiness-Prüfung %s fehlgeschlagen", name, exc_info=exc)
+        ok, detail = False, f"fehlgeschlagen ({type(exc).__name__})"
     return CheckResult(name, ok, detail, int((time.monotonic() - start) * 1000))
 
 

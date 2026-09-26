@@ -18,6 +18,8 @@ from django.views.generic import (
     UpdateView,
 )
 
+from apps.common.params import date_param, uuid_param
+
 from ..models import (
     SessionAttendance,
     SessionMeeting,
@@ -81,11 +83,13 @@ class MeetingListView(SessionViewMixin, ListView):
         # Perioden-Filter (Issue #39)
         term_id = self.request.GET.get("term")
         if term_id:
-            qs = qs.filter(legislative_term_id=term_id)
+            # Ungültige Kennung: kein Treffer statt Serverfehler
+            term_uuid = uuid_param(term_id)
+            qs = qs.filter(legislative_term_id=term_uuid) if term_uuid else qs.none()
 
-        # Filter by date range
-        date_from = self.request.GET.get("from")
-        date_to = self.request.GET.get("to")
+        # Filter by date range (ungültige Datumsangaben werden ignoriert)
+        date_from = date_param(self.request.GET.get("from"))
+        date_to = date_param(self.request.GET.get("to"))
         if date_from:
             qs = qs.filter(start__date__gte=date_from)
         if date_to:

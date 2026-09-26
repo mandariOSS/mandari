@@ -325,8 +325,9 @@ class DeviceGrantCsvExportView(SessionViewMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug):
-        import csv
         import io
+
+        from apps.common import csv_safety
 
         grants = list(
             SessionDeviceGrant.objects.filter(tenant=self.session_tenant)
@@ -341,7 +342,7 @@ class DeviceGrantCsvExportView(SessionViewMixin, View):
         # Bankdaten wie überall nur mit dem Recht für Sitzungsgelder (Kämmerei), nicht mit der Geräteverwaltung
         with_bank = self.has_permission("manage_allowances")
         buffer = io.StringIO()
-        writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+        writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
         header = ["Name", "Betrag", "Status", "Vermerk"]
         writer.writerow([*header, "Kontoinhaber", "IBAN", "BIC"] if with_bank else header)
         for grant in grants:

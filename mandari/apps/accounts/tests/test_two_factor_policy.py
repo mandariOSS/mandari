@@ -133,8 +133,14 @@ class TestPolicy:
         assert two_factor_reasons(user) == [f"Verwaltung {tenant.name}"]
 
     def test_demo_zugaenge_sind_ausgenommen(self) -> None:
-        user = make_user("demo-verwaltung@demo.mandari.de", is_superuser=True, is_staff=True)
+        user = make_user("demo-verwaltung@demo.mandari.de")
+        work_member(user, is_admin=True)
+        session_member(user, is_admin=True)
         assert not two_factor_required(user)
+
+    def test_plattform_administration_ist_nie_ausgenommen(self) -> None:
+        user = make_user("demo-verwaltung@demo.mandari.de", is_superuser=True, is_staff=True)
+        assert two_factor_required(user)
 
     def test_ohne_durchsetzung_keine_pflicht(self, settings: Any) -> None:
         settings.TWO_FACTOR_ENFORCEMENT = False

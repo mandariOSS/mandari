@@ -18,6 +18,8 @@ from pathlib import Path
 os.environ.setdefault("MANDARI_SYNC_WATCHDOG", "0")
 os.environ.setdefault("ELASTICSEARCH_AUTO_INDEX", "False")
 os.environ.setdefault("ENCRYPTION_MASTER_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
+# Ohne DEBUG verlangt settings.py einen eigenen Schlüssel – auch Tests, die die Settings neu laden
+os.environ.setdefault("SECRET_KEY", "test-only-" + secrets.token_urlsafe(40))
 os.environ.setdefault("ALLOWED_HOSTS", "testserver,localhost")
 if not os.environ.get("DATABASE_URL"):
     _db = Path(tempfile.mkdtemp(prefix="mandari_pytest_")) / "test.sqlite3"

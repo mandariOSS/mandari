@@ -286,6 +286,7 @@ def generate_dsgvo_export_task(export_id: str):
     except Exception as e:
         logger.error(f"DSGVO export {export_id} failed: {e}")
         export.status = "failed"
-        export.error_message = str(e)
+        # Feste Meldung für die Anzeige; Details stehen im Protokoll
+        export.error_message = "Der Export konnte nicht erstellt werden. Bitte später erneut anfordern."
         export.completed_at = timezone.now()
         export.save(update_fields=["status", "error_message", "completed_at"])

@@ -18,6 +18,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from apps.common.params import date_param, uuid_param
 from apps.session.models import (
     SessionAPIToken,
     SessionApplication,
@@ -419,7 +420,9 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
         # Parse JSON body
         try:
             data = json.loads(request.body)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return self.json_response({"error": "Invalid JSON"}, status=400)
+        if not isinstance(data, dict):
             return self.json_response({"error": "Invalid JSON"}, status=400)
 
         # Validate and sanitize required fields
@@ -456,6 +459,17 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
                     {"error": f"Field '{field}' exceeds maximum length"},
                     status=400,
                 )
+        # Textfelder müssen Texte sein (sonst Serverfehler beim Kürzen bzw. Speichern)
+        for field in [*max_lengths, "application_type"]:
+            if field in data and data[field] is not None and not isinstance(data[field], str):
+                return self.json_response({"error": f"Field '{field}' must be a string"}, status=400)
+        deadline = None
+        if data.get("deadline"):
+            deadline = date_param(data["deadline"])
+            if deadline is None:
+                return self.json_response({"error": "Invalid deadline (expected YYYY-MM-DD)"}, status=400)
+        if data.get("target_organization_id") and not uuid_param(data["target_organization_id"]):
+            return self.json_response({"error": "Invalid target_organization_id"}, status=400)
 
         # Validate email format (basic validation)
         submitter_email = data.get("submitter_email", "")
@@ -509,16 +523,16 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
             application_type=application_type,
             justification=data["justification"][: max_lengths["justification"]],
             resolution_proposal=data["resolution_proposal"][: max_lengths["resolution_proposal"]],
-            financial_impact=data.get("financial_impact", "")[: max_lengths["financial_impact"]],
+            financial_impact=(data.get("financial_impact") or "")[: max_lengths["financial_impact"]],
             submitting_organization=submitting_org,
             submitter_name=data["submitter_name"][: max_lengths["submitter_name"]],
             submitter_email=submitter_email[: max_lengths["submitter_email"]],
-            submitter_phone=data.get("submitter_phone", "")[: max_lengths["submitter_phone"]],
-            co_signers=data.get("co_signers", "")[: max_lengths["co_signers"]],
+            submitter_phone=(data.get("submitter_phone") or "")[: max_lengths["submitter_phone"]],
+            co_signers=(data.get("co_signers") or "")[: max_lengths["co_signers"]],
             target_organization=target_org,
             is_urgent=bool(data.get("is_urgent", False)),
-            urgency_reason=data.get("urgency_reason", "")[: max_lengths["urgency_reason"]],
-            deadline=data.get("deadline"),
+            urgency_reason=(data.get("urgency_reason") or "")[: max_lengths["urgency_reason"]],
+            deadline=deadline,
             submitted_via_token=api_token,
         )
 

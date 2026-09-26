@@ -20,6 +20,8 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.common.params import uuid_param
+
 from .. import audit
 from ..models import (
     SessionAgendaItem,
@@ -328,11 +330,8 @@ class CircularVoteView(SessionViewMixin, View):
             messages.error(request, "Der Umlauf ist bereits abgeschlossen.")
             return redirect("session:circular_detail", tenant_slug=tenant_slug, circular_id=circular.id)
 
-        membership = (
-            voting_service.voting_members(circular).filter(person_id=request.POST.get("person")).first()
-            if request.POST.get("person")
-            else None
-        )
+        person_id = uuid_param(request.POST.get("person"))
+        membership = voting_service.voting_members(circular).filter(person_id=person_id).first() if person_id else None
         vote_value = request.POST.get("vote", "")
         if membership is None or vote_value not in {v for v, _ in SessionCircularVote.VOTE_CHOICES}:
             messages.error(request, "Bitte Person und Stimme angeben.")
