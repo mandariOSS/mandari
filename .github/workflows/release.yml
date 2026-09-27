@@ -210,6 +210,9 @@ jobs:
           format: cyclonedx-json
           artifact-name: mandari-sbom-cyclonedx.json
           upload-artifact: true
+          # Ans Release hängt der Job „SBOM (CycloneDX)“ die SBOMs; dieser Job darf nur lesen
+          # (contents: read) und scheiterte beim Release-Ereignis am Hochladen (v0.11.0).
+          upload-release-assets: false
 
       - name: Make container packages public
         continue-on-error: true
