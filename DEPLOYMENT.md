@@ -41,10 +41,10 @@ zurück** und meldet das per Mail. Jeder Lauf schreibt eine Zeile in `deploy-log
 ```bash
 # Umgebung einmalig in einer Datei ablegen (Dienstnamen, Compose-Dateien, Empfänger)
 set -a; . /opt/mandari/deploy.env; set +a
-sh deploy/scripts/deploy.sh plan   v0.11.0   # Images ziehen, migrate --plan, check
-sh deploy/scripts/deploy.sh apply  v0.11.0   # Sicherung, Migration, Umschalten, Prüfung, ggf. Rückfall
+sh deploy/scripts/deploy.sh plan   v0.12.0   # Images ziehen, migrate --plan, check
+sh deploy/scripts/deploy.sh apply  v0.12.0   # Sicherung, Migration, Umschalten, Prüfung, ggf. Rückfall
 sh deploy/scripts/deploy.sh verify           # nur die Prüfung gegen den laufenden Stand
-sh deploy/scripts/deploy.sh rollback v0.10.0 # von Hand zurück
+sh deploy/scripts/deploy.sh rollback v0.11.0 # von Hand zurück
 ```
 
 Alle Parameter (`MANDARI_DIR`, `COMPOSE_FILES`, `APP_SERVICE`, `WORKER_SERVICES`,
@@ -77,7 +77,7 @@ bei Fehlschlag ebenfalls zurück.
 
 ```bash
 ./update.sh --rollback                        # vorherige Version
-sh deploy/scripts/deploy.sh rollback v0.10.0  # bestimmte Version
+sh deploy/scripts/deploy.sh rollback v0.11.0  # bestimmte Version
 ./backup.sh --restore <Sicherungsdatei>       # Daten aus einer Sicherung zurückspielen
 ```
 
