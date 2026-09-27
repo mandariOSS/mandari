@@ -6,7 +6,34 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+## [0.11.0] – 2026-09-27
+
+Erstes Release seit 0.9.0-beta. Die Version 0.10.0 war vorbereitet, wurde aber nicht als
+eigenes Release veröffentlicht; ihre Inhalte (Zwei-Faktor-Pflicht, Selbstregistrierung,
+Kryptokonzept, Versionsprüfung) sind hier enthalten. Alle Änderungen liefen vor dem
+Release in Produktion. Selbst-Hoster lesen vor dem Update den Abschnitt „Brechend“.
+
+### Brechend
+- Sitzungs- und CSRF-Cookie gelten nur noch für den Host, der sie gesetzt hat, und heißen über HTTPS `__Host-sessionid` und `__Host-csrftoken`. **Das Update meldet alle Nutzer einmalig ab.** Werkzeuge, die das Cookie beim Namen lesen (Lasttests, Überwachung mit Anmeldung), auf die neuen Namen umstellen (`DEPLOYMENT.md`, „Ursprünge, Hosts und Cookies“).
+- `CSRF_TRUSTED_ORIGINS` enthält keinen automatischen Platzhalter für Subdomains mehr, sondern nur `SITE_URL` und ausdrücklich genannte Ursprünge; WebSockets werden nur vom eigenen Host oder aus dieser Liste angenommen. Anfragen an den eigenen Host (Organisations-Subdomains, `PORTAL_HOSTS`) bleiben zulässig. Migration: `SITE_URL` mit `https://` setzen; einen anderen Host nur dann einzeln und ohne `*` eintragen, wenn er tatsächlich Formulare an mandari sendet.
+- Ohne `DEBUG` startet die Anwendung nur mit eigenem `SECRET_KEY`; der eingebaute Platzhalterwert wird abgelehnt.
+- Die Migrationen `common/0006` und `work/0057` verschlüsseln bisher unverschlüsselte Geheimnisse (siehe „Sicherheit“) und brechen ohne gültigen `ENCRYPTION_MASTER_KEY` ab, ohne etwas zu ändern.
+- Links in Bestätigungs- und Abmeldemails (Abos, öffentliche Fragen) öffnen eine Seite mit Schaltfläche; erst der Klick wirkt. KI-Zusammenfassungen im Bürgerportal entstehen nur noch per POST.
+- Das Bürgerportal ruft Dokumente nur noch von öffentlichen Adressen ab. Liegt das Ratsinformationssystem im internen Netz, `INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS=true` setzen (in `docker-compose.yml` durchgereicht, Beschreibung in `.env.example`).
+- `gunicorn`, `django-redis` und `markdown` sind nicht mehr im Image. Der Container startet wie bisher `daphne`; eigene Startbefehle mit `gunicorn` müssen umgestellt werden.
+- Nach dem Update einmal ausführen (beide wiederholbar, Details in `DEPLOYMENT.md`): `python manage.py audit_chain_backfill` (verkettet den Altbestand des Protokolls) und `python manage.py session_publish_protocols` (öffentliche Fassung bereits veröffentlichter Niederschriften). Für die Umkreissuche im Bestand zusätzlich `python manage.py backfill_paper_locations`.
+- Eigene Compose-Dateien und Manifeste reichen `ENCRYPTION_MASTER_KEY_PREVIOUS` optional durch (für den Schlüsselwechsel, leer lassen im Normalbetrieb); die mitgelieferten Dateien und das Helm-Chart sind angepasst.
+
 ### Hinzugefügt
+- Zwei-Faktor-Pflicht mit TOTP und WebAuthn, vertrauenswürdige Geräte, Sitzungsübersicht (#236).
+- Selbstregistrierung mit E-Mail-Bestätigung und Freigabe durch die Organisation (#237).
+- Kryptokonzept (#262), Skalierungs- und Verfügbarkeitskonzept, BPMN-Modell des Antragslaufs.
+- Deploy mit Anwendungsprüfung und automatischem Rückfall: `deploy/scripts/deploy.sh` (`plan`, `apply`, `verify`, `rollback`) sichert die Datenbank, spielt verträgliche Migrationen vor dem Umschalten ein, prüft Anmeldeseite, Bürgerportal und OParl-Schnittstelle und schaltet bei Fehlschlag selbsttätig auf das vorherige Image zurück; `update.sh` für Selbst-Hoster nutzt dieselbe Prüfung (#285).
+- Ingestor: OParl 1.0 wird toleriert – Versionserkennung, Fehlerobjekte bei HTTP 200, Rückfall auf 1.0-Pfade in der Autodiscovery, Erkennung ignorierter `modified_since`-Parameter und synthetischer Zeitstempel (#122).
+- Ingestor: Sperren auf den User-Agent und Serien von 5xx-Fehlern werden erkannt, eingeordnet und im Betriebsmonitor gezeigt; identifizierbarer Standard-User-Agent mit Kontaktadresse (`INGESTOR_USER_AGENT`), User-Agent je Quelle im Admin (#123).
+- Ingestor: `mandari-ingestor probe-ris` bestimmt Hersteller, robots-Status und vorhandene OParl-Schnittstellen einer Kommune mit höchstens fünf Anfragen, einzeln oder als Liste (#114).
+- Editor: Warnung beim Verlassen mit ungespeicherten Änderungen und E2E-Tests der Kernpfade (#185).
+- KI-Modelle für Zusammenfassungen per Umgebung einstellbar (`NEBIUS_PRIMARY_MODEL`, `NEBIUS_FALLBACK_MODEL`).
 - Session: Mandantengruppe mit Leitstelle und gemeinsame Sitzungen mehrerer Gremien (#317, Teil B). Eine Mandantengruppe (Django-Admin) fasst Mandanten zusammen, etwa die Bezirke eines Stadtstaats; ein Mandant gehört höchstens einer Gruppe an. Mitglieder der Leitstelle sehen unter `/session/leitstelle/<gruppe>/` Kennzahlen je Mandant sowie Vorlagen in Prüfung, offene Mitzeichnungen, Ladungs- und Vorlagenfristen und die nächsten Sitzungen aller Mandanten auf einer Seite, dazu eine Suche über Titel und Nummern; die Gruppenrolle „Kennzahlen“ sieht nur Zählwerte. Sichtbarkeit strikt je Mandant: Titel nichtöffentlicher Vorgänge nur mit eigenem NÖ-Recht im Mandanten, sonst „Nichtöffentlich“ ohne Titel und in der Suche gar nicht; verschlüsselte Felder werden nie geladen. Die Gruppenrolle öffnet keine Mandantenseite, Links in einen Mandanten gibt es nur bei eigener Mitgliedschaft. Jede Nutzung steht als Lesezugriff im Protokoll jedes Mandanten der Gruppe, jede Änderung der Leitstellen-Rechte als „Rechte geändert“; Mitglieder einer Leitstelle brauchen einen zweiten Faktor. Sitzungen können weitere Gremien desselben Mandanten haben: Ladung an die Mitglieder aller beteiligten Gremien (jede Person einmal), eine Anwesenheitszeile und eine Stimme je Person, längste Ladungsfrist, alle Gremien in Anzeige, Kalender, Ladungs-PDF, Gremienfiltern und OParl `Meeting.organization`. Das Demo-Drehbuch zeigt beides im Profil `hamburg` (`docs/SESSION_LEITSTELLE.md`).
 - Session: Mandant anlegen mit einem Befehl (#317, Teil A). `session_create_tenant` macht einen Mandanten arbeitsfähig – Standardrollen einschließlich Revision und Datenschutz, Nummernkreis-Preset, aktuelle Wahlperiode mit Beginn und Ende, optional Gremien aus einer Vorlage, erster Administrator (vorhandenes Konto oder Einladung per E-Mail, nie ein Passwort oder Link in der Ausgabe) und Schlüssel für verschlüsselte Felder; Profile `nrw_stadt` und `hamburg_bezirk` in `apps/session/presets/mandanten.json`, eigene Preset-Datei möglich, `--dry-run` als Prüflauf, ein erneuter Lauf ergänzt nur Fehlendes. Derselbe Service steht im Django-Admin als Assistent „Mandant anlegen“ bereit (Staff mit Anlegerecht); „Hinzufügen“ führt dorthin. Neue Felder Körperschaftstyp und AGS am Mandanten, in der OParl-API als `classification` und `ags` des Body.
 - Bürgerportal je Körperschaft (#317, Teil A): eigener Einstieg `/insight/k/<slug>/` (Slug der Kommune oder des Session-Mandanten) mit eigenem Namen, Logo und optionaler Akzentfarbe (neues Feld an der Kommune, sonst Primärfarbe des Mandanten); die Kommunenauswahl ist dort festgelegt, Links bleiben im Kontext, `/insight/k/<slug>/termine/` führt auf geprüfte Portalseiten. Optional eigener Host je Körperschaft über `PORTAL_HOSTS` – nur für Hosts aus `ALLOWED_HOSTS`, Systemprüfung `insight_core.W001` (`docs/SESSION_MANDANT_ANLEGEN.md`).
@@ -56,6 +83,16 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Python 3.14, Node 26, pdfjs-dist 6 (#255, #254, #253).
 - PostgreSQL-Grundeinstellungen werden mit der Compose-Datei ausgeliefert (#258).
 - Datenbankverbindungen laufen über einen Pool (#257).
+- Versionsangaben in `pyproject.toml`, `package.json` und Git-Tag werden gegeneinander geprüft.
+- Session: Die Einzelstimmen einer Abstimmung werden gesammelt gespeichert statt einzeln (#291).
+- PWA: Der Service Worker ist reines JavaScript, seine Konfiguration setzt die View ein; die CI prüft alle JavaScript-Dateien unter `templates/` mit `node --check`.
+- Protokolle: journald-Obergrenze 8 GB statt 2 GB (nur Schutz gegen Log-Fluten, die Aufbewahrung bleibt zeitbasiert bei 90 Tagen); pypdf meldet erst ab ERROR, der Elasticsearch-Client erst ab WARNING.
+- CI: pytest auf allen Kernen, Smoke-Tests parallel, PostgreSQL im Arbeitsspeicher, überholte PR-Läufe werden abgebrochen, reine Dokumentationsänderungen lösen keinen Testlauf aus; ein Lauf dauert rund 9 statt bis zu 40 Minuten.
+- Code aufgeräumt ohne Funktionsänderung: Kleinsthelfer, Admin-Mixins und Befehlsargumente zusammengeführt, `request.htmx` statt eigener Header-Auswertung, identische Template-Blöcke als Include.
+
+### Entfernt
+- Toter Python-Code in Work, Fraktionssitzungen, Insight, Suche, Session und Ingestor, nie gerenderte Templates und verwaiste statische Dateien.
+- Ungenutzte direkte Abhängigkeiten `gunicorn`, `django-redis`, `python-dateutil` und `markdown` (siehe „Brechend“).
 
 ### Behoben
 - Session: Der Erinnerungslauf bricht eine umgebende Transaktion nicht mehr ab, wenn eine Erinnerung bereits verschickt war (Savepoint um den Dublettenschutz).
@@ -71,24 +108,21 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Editor: Ein verbundener Client konnte nach der Reload-Aufforderung mit einem späten `yjs_save` den ohne Verbindung gespeicherten Stand überschreiben; Server und Client verwerfen ihn jetzt (#298).
 - Fünf Lösch-Routen antworteten auf GET mit 500 statt 405; Federführende und Mitwirkende sahen ihre Anträge nicht (#249).
 - Work: Organisationen ohne verknüpfte Kommune bekamen auf den RIS-Detailseiten (Vorgang, Sitzung, Gremium) und in der Sitzungsvorbereitung einen Serverfehler. Alle RIS-Seiten zeigen jetzt denselben Hinweis mit Weg zur Support-Anfrage; der Teleprompter antwortet mit 404.
+- KI-Zusammenfassungen im Bürgerportal scheiterten seit dem 24.09.2026, weil der Anbieter Haupt- und Ausweichmodell gleichzeitig abgeschaltet hatte. Neue Vorgaben: `moonshotai/Kimi-K2.6` und `zai-org/GLM-5.2`.
+- Textextraktion: Null-Bytes aus manchen PDFs verhinderten das Speichern des extrahierten Texts; die Dateien blieben in Bearbeitung und wurden immer wieder neu verarbeitet. Ingestor und Django entfernen Null-Bytes jetzt vor dem Speichern.
+- Content-Security-Policy (Report-Only): Jeder Seitenaufruf schickte Dutzende gleichlautende Meldungen an `/csp-report/` und band damit einen Großteil der Serverzeit. `script-src` enthält `unsafe-eval`, bis der Alpine-CSP-Build kommt; die Dokumentvorschau in Insight und Work bleibt mit `frame-src 'self' blob:` und `frame-ancestors 'self'` auch beim Erzwingen der Policy möglich (#172).
+- Work: Fristen-Erinnerungen richten sich nach dem lokalen Kalendertag.
+- Work: Gäste bekamen auf jeder Seite einen JavaScript-Fehler, weil die Benachrichtigungsglocke eine Umleitung statt JSON erhielt; Glocke und Benachrichtigungen sind für Gäste freigegeben und zeigen nur eigene Hinweise. Links auf Seiten ohne passendes Recht werden nicht mehr angezeigt.
 
 ### Sicherheit
 - Zugangstoken nur als Hash: Einladungslinks (Work und Sitzungsdienst), Bestätigungslinks der Selbstregistrierung und öffentlicher Fragen, persönliche Kalender-Feed-URLs und Geräte-Tokens stehen nur noch als SHA-256-Hash in der Datenbank; geprüft wird in konstanter Zeit. Die Migrationen hashen den Bestand, verschickte Links und abonnierte Kalender laufen weiter. Die Kalender-Feed-URL zeigt das Profil nur direkt nach dem Erzeugen, danach bietet es „Feed-URL neu erzeugen“ an; „Einladung erneut senden“ verschickt einen neuen Link, der alte wird ungültig. Welche Tokens bewusst im Klartext bleiben und warum, steht in `apps/common/tokens.py`.
 - Einheitliche Validierung hochgeladener Dateien; Nicht-Bild-Anhänge werden als Download ausgeliefert (GHSA-6p5c-wv4v-8g24, #260).
 - SMTP-Passwort und Nebius-Schlüssel der Systemeinstellungen werden mit dem Hauptschlüssel verschlüsselt gespeichert, der Zustand des gemeinsamen Editors mit dem Organisationsschlüssel; beide sind im Verzeichnis der verschlüsselten Felder und damit im Schlüsselwechsel enthalten. Die Migrationen `common/0006` und `work/0057` verschlüsseln den Bestand und leeren die früheren Spalten; ohne gültigen `ENCRYPTION_MASTER_KEY` brechen sie ab, ohne etwas zu ändern. Das Helm-Chart erzeugt einen gültigen `encryption-key` (Base64 von 32 Byte) und prüft vorgegebene und vorhandene Werte; Hinweise für bestehende Installationen in `deploy/kubernetes/README.md`.
 - Admin: Werte aus der Datenbank in Listenspalten (Art und Gesundheit der OParl-Quellen, Support-Nachrichten und -Tickets, Status der Sync-Läufe) werden über `format_html` maskiert statt per `mark_safe` eingesetzt.
-
-## [0.10.0] – in Vorbereitung (Tag folgt mit der Veröffentlichung des Advisories)
-
-### Hinzugefügt
-- Zwei-Faktor-Pflicht mit TOTP und WebAuthn, vertrauenswürdige Geräte, Sitzungsübersicht (#236).
-- Selbstregistrierung mit E-Mail-Bestätigung und Freigabe durch die Organisation (#237).
-- Kryptokonzept (#262), Skalierungs- und Verfügbarkeitskonzept, BPMN-Modell des Antragslaufs.
-
-### Geändert
-- Versionsangaben in `pyproject.toml`, `package.json` und Git-Tag werden gegeneinander geprüft.
-
-### Sicherheit
+- Sicherheitsprüfung aller Portale: Rechte und Sichtbarkeit werden in Session, Work, Insight und den Schnittstellen durchgängig serverseitig durchgesetzt – nichtöffentliche Inhalte nur mit NÖ-Recht, Tagesordnungen nur im Rahmen der eigenen Sichtrechte, Rechte- und Rollenvergabe nie über die eigenen Rechte hinaus, Administrator-Rollen nur durch Administratoren. Gehärtet wurden außerdem Medienauslieferung (Anhänge nur über Ansichten mit Rechteprüfung, zufällige Speichernamen für neue Work-Dateien), Einbettung und Dateivorschau im Bürgerportal, Anmeldung und Sitzungsverwaltung, CSV-Exporte (Formel-Injektion), Fehlerbehandlung und die Ausgabe von Editor-Inhalten. Aufwendige Aktionen im Bürgerportal (Zusammenfassungen, Formulare, Kartenkacheln, Dokumentabrufe) haben einstellbare Grenzen (`insight_core/throttle.py`). Die Systemeinstellungen geben SMTP-Passwort und API-Schlüssel nicht mehr ins Formular aus.
+- Einreichung per API-Token: Einreichende Organisation ist immer die, die den Token in mandari Work verbunden hat; abweichende Angaben werden mit 403 abgewiesen.
+- Schlüsselwechsel: `rotate_encryption` erfasst alle verschlüsselten Werte und unterstützt einen Übergang mit zwei Schlüsseln ohne Ausfallzeit (`ENCRYPTION_MASTER_KEY_PREVIOUS`, je Organisation bzw. Mandant `encryption_key_previous`); Ablauf für Routine und Notfall in `docs/KRYPTOKONZEPT.md`, Abschnitt 5.
+- Regulärer Ausdruck für Hausnummern mit linearem Aufwand; Einreichungs-API und Statuswechsel melden Fehler ohne Ausnahmetext; Direktlinks des Portal-Einstiegs doppelt abgesichert (CodeQL).
 - Alle offenen Abhängigkeitslücken und CodeQL-Meldungen geschlossen; `pip-audit` und `npm audit` blockieren in der CI (#241).
 
 ## [0.9.0-beta] – 2026-07-19
@@ -96,6 +130,6 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 Erste öffentliche Beta: Bürgerportal (Insight) mit OParl-Ingestor, mandari work für
 Fraktionen, mandari session für Verwaltungen.
 
-[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.9.0-beta...dev
-[0.10.0]: https://github.com/mandariOSS/mandari/compare/v0.9.0-beta...dev
+[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.11.0...dev
+[0.11.0]: https://github.com/mandariOSS/mandari/compare/v0.9.0-beta...v0.11.0
 [0.9.0-beta]: https://github.com/mandariOSS/mandari/releases/tag/v0.9.0-beta
