@@ -55,7 +55,7 @@ reportlab>=5.0.1
 segno>=1.6.6  # QR-Codes (reines Python, Teilnahmenachweis-Verifikation)
 
 # DOCX generation
-python-docx>=1.1.0
+python-docx>=1.2.0
 
 # Real-time collaboration (WebSocket)
 channels>=4.3.2
