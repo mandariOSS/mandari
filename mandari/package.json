@@ -40,7 +40,7 @@
     "pdfjs-dist": "^6.0.0",
     "y-indexeddb": "^9.0.12",
     "y-websocket": "^3.1.0",
-    "yjs": "^13.6.32"
+    "yjs": "^13.6.33"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
