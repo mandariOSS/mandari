@@ -207,6 +207,13 @@ resp = admin.get(f"{base}/reports/?year={year}")
 html = resp.content.decode("utf-8")
 check("Bericht: Pauschalen-Spalte", "Pauschalen" in html)
 check("Bericht: Summe enthält Pauschalen", "1196.50" in html or "1196,50" in html, "")
+resp = admin.get(f"{base}/allowances/year/", {"year": year})
+check(
+    "Jahresübersicht: Pauschalen je Person enthalten",
+    resp.status_code == 200 and resp.context["totals"]["monthly"]["total"] == Decimal("1196.50"),
+)
+resp = admin.get(f"{base}/allowances/year/", {"year": year, "format": "csv"})
+check("Jahresübersicht CSV: Pauschalen-Spalte", "Monatspauschalen" in resp.content.decode("utf-8"))
 
 resp = admin.post(f"{base}/allowances/monthly/rate/delete/", {"rate_id": str(zulage.id)})
 check("Löschen nach Abrechnung blockiert", SessionMonthlyRate.objects.filter(pk=zulage.id).exists())
