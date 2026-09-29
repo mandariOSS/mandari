@@ -88,7 +88,8 @@ Ist eine Korrektur in der Frist nicht möglich, veröffentlichen wir eine
 | **Provisioning-API** (Kundenportal) | intern, nur für den Betreiber | keine Zusage |
 
 Abkündigungen stehen im Changelog unter „Abgekündigt“ mit Datum des Wegfalls, in der
-API-Antwort als Header `Deprecation` und `Sunset` (RFC 8594) und auf docs.mandari.de.
+API-Antwort als Header `Deprecation` (RFC 9745, Zeitpunkt der Abkündigung) und `Sunset` (RFC 8594, Zeitpunkt
+des Wegfalls) und auf docs.mandari.de.
 Felder werden nie umgedeutet; sie werden ergänzt oder nach Frist entfernt.
 
 ## 6. Changelog
