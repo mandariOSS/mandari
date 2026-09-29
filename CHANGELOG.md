@@ -6,6 +6,9 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+### Abgekündigt
+- Alte Session-API unter `/session/<kommune>/api/session/…` (`meetings/`, `papers/`, `applications/`, `applications/submit/`): **Wegfall am 31.03.2027.** Ersatz ist die Session-API v1 unter `/api/v1/session/<kommune>/…` mit OpenAPI-Schema; Unterschiede beim Umstieg in `docs/API_V1_SESSION.md`, Abschnitt „Ablösung der alten Pfade“. Die alten Pfade antworten seit 0.11.0 mit `Deprecation: true`, `Sunset: Wed, 31 Mar 2027 00:00:00 GMT` und `Link: <Nachfolger>; rel="successor-version"`. Der Einstiegspunkt `/session/<kommune>/api/` und die OParl-Schnittstelle `/session/<kommune>/api/oparl/` bleiben (#163, #430).
+
 ### Behoben
 - Work: Der PDF-Import von Dokumenten schlug immer mit „Datei konnte nicht gelesen werden“ fehl, weil er die Rückgabe der Textextraktion falsch entpackte. Text-PDFs werden jetzt übernommen, gescannte PDFs über die Texterkennung (ohne verfügbare Texterkennung mit Hinweis im Dokument); die Fehlermeldung erscheint nur noch bei tatsächlich unlesbaren Dateien (#422).
 

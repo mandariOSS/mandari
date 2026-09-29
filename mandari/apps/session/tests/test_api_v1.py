@@ -274,7 +274,8 @@ class TestDeprecatedPaths:
         response = client.get(f"/session/{tenant.slug}/api/session/meetings/")
         assert response.status_code == 200
         assert response["Deprecation"] == "true"
-        assert response["Sunset"].endswith("GMT")
+        # Dasselbe Datum steht im CHANGELOG („Abgekündigt“) und in docs/API_V1_SESSION.md
+        assert response["Sunset"] == "Wed, 31 Mar 2027 00:00:00 GMT"
         assert response["Link"] == f'</api/v1/session/{tenant.slug}/meetings/>; rel="successor-version"'
         root = client.get(f"/session/{tenant.slug}/api/").json()
         assert root["v1"].endswith(f"{BASE}/{tenant.slug}/")

@@ -111,7 +111,8 @@ class APIRootView(OParlMixin, View):
 # =============================================================================
 
 
-#: Abschaltdatum der alten Session-API-Pfade (Release-Politik: Ankündigung mindestens zwei Releases vorher)
+#: Abschaltdatum der alten Session-API-Pfade (Release-Politik §5: mindestens 6 Monate Ankündigung; dasselbe
+#: Datum steht im CHANGELOG unter „Abgekündigt“ und in docs/API_V1_SESSION.md)
 SESSION_API_SUNSET = "Wed, 31 Mar 2027 00:00:00 GMT"
 
 
