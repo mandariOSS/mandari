@@ -511,6 +511,40 @@ def test_anwesenheitsliste_vermerkt_herkunft_sitzungsdienst(welt: Welt) -> None:
     assert attendance.responded_at is not None
 
 
+def test_anwesenheitszeile_per_htmx_speichern_liefert_die_zeile(welt: Welt) -> None:
+    attendance = SessionAttendance.objects.create(meeting=welt.meeting, person=welt.member)
+    url = f"/session/{welt.tenant.slug}/attendance/{attendance.id}/update/"
+
+    response = welt.staff_client.post(
+        url,
+        {"status": "present", "arrival_time": "17:05", "departure_time": "", "notes": ""},
+        HTTP_HX_REQUEST="true",
+    )
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert f'hx-post="{url}"' in html, "Zeile verweist wieder auf die eigene Speicher-Adresse"
+    assert 'value="present" selected' in html and 'value="17:05"' in html
+    attendance.refresh_from_db()
+    assert attendance.status == "present"
+
+    # Ungültige Eingabe: Zeile wird wieder ausgeliefert, nichts gespeichert
+    response = welt.staff_client.post(url, {"status": "unsinn"}, HTTP_HX_REQUEST="true")
+    assert response.status_code == 200 and f'hx-post="{url}"' in response.content.decode()
+    attendance.refresh_from_db()
+    assert attendance.status == "present"
+
+
+def test_anwesenheitszeile_nimmt_nur_post_an(welt: Welt) -> None:
+    attendance = SessionAttendance.objects.create(meeting=welt.meeting, person=welt.member)
+
+    response = welt.staff_client.get(
+        f"/session/{welt.tenant.slug}/attendance/{attendance.id}/update/", HTTP_HX_REQUEST="true"
+    )
+
+    assert response.status_code == 405
+
+
 def test_ladungsnachweis_je_person_ohne_gruende(welt: Welt) -> None:
     dispatch = _versenden(welt)
     Client().post(_link(_empfaenger(dispatch, welt.member)), {"action": "decline", "reason": GRUND})

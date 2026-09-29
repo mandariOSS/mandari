@@ -562,10 +562,6 @@ class MeetingOverview:
     def open_responses(self) -> int:
         return sum(1 for r in self.rows if not r.responded)
 
-    @property
-    def letters_pending(self) -> int:
-        return sum(1 for r in self.rows for row in r.rows if row.status == "letter_pending")
-
 
 def meeting_overview(meeting: SessionMeeting, *, include_reasons: bool) -> MeetingOverview:
     """Status je Empfänger: Versände, Empfangsbestätigung und Rückmeldung (zwei Abfragen)."""

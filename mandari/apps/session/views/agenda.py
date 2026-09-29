@@ -265,13 +265,15 @@ class AgendaReorderView(SessionViewMixin, View):
 
 
 class AttendanceUpdateView(SessionViewMixin, UpdateView):
-    """Update attendance status via HTMX."""
+    """Anwesenheitszeile speichern (Schnellerfassung per HTMX, nur POST)."""
 
     model = SessionAttendance
     template_name = "session/partials/attendance_row.html"
+    context_object_name = "attendance"  # auch bei ungültiger Eingabe rendert die Zeile
     fields = ["status", "arrival_time", "departure_time", "notes"]
     pk_url_kwarg = "attendance_id"
     permission_required = "manage_attendance"
+    http_method_names = ["post"]
 
     def get_queryset(self):
         # Anwesenheit nichtöffentlicher Sitzungen nur mit NÖ-Sichtrecht (wie das Anlegen)
@@ -289,7 +291,7 @@ class AttendanceUpdateView(SessionViewMixin, UpdateView):
         self.object = attendance
 
         if self.is_htmx:
-            context = {"attendance": self.object}
+            context = {"attendance": self.object, "tenant_slug": self.session_tenant.slug}
             return self.render_to_response(context)
         return redirect(
             "session:meeting_detail",
