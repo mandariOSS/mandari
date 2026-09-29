@@ -139,16 +139,6 @@ class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
             },
         ),
         (
-            "Allgemeine Einstellungen",
-            {
-                "fields": (
-                    "site_name",
-                    "site_description",
-                ),
-                "classes": ("collapse",),
-            },
-        ),
-        (
             "KI-Einstellungen",
             {
                 "fields": ("nebius_api_key",),
@@ -164,6 +154,12 @@ class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
                 "fields": (
                     "maintenance_mode",
                     "maintenance_message",
+                ),
+                "description": (
+                    "Im Wartungsmodus antworten Bürgerportal, Work, Session und die APIs mit 503 und "
+                    "der Wartungsnachricht. Erreichbar bleiben die Administration samt Anmeldung, "
+                    "Gesundheitsprüfungen und Metriken; angemeldete Konten mit Mitarbeiterstatus sehen "
+                    "die Anwendung weiter. Die Umstellung wirkt sofort nach dem Speichern."
                 ),
                 "classes": ("collapse",),
             },

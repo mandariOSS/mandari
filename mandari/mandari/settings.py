@@ -163,6 +163,8 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # Wartungsmodus aus den Systemeinstellungen (Issue #588): 503 für Besucher, Admin bleibt erreichbar
+    "apps.common.maintenance.MaintenanceModeMiddleware",
     # Nur in der Demo-Instanz aktiv: sperrt Konto-Sicherheitsänderungen (Issue #99)
     "apps.common.demo.DemoInstanceMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -176,6 +178,11 @@ MIDDLEWARE = [
     # Session RIS tenant context + Audit-Log-Attribution (nur /session/-Pfade)
     "apps.session.middleware.SessionTenantMiddleware",
 ]
+
+# Wartungsmodus (apps/common/maintenance.py, Issue #588): Der Schalter in den Systemeinstellungen
+# wirkt nur, wenn die Durchsetzung an ist. Die Tests schalten sie ab (jede Anfrage läse sonst die
+# Einstellungen aus der Datenbank); die Durchsetzung testet apps/common/tests/test_wartungsmodus.py.
+MAINTENANCE_MODE_ENFORCEMENT = True
 
 # Zugangsschutz: Pflicht zum zweiten Faktor für Admins sowie je Organisation/Mandant
 # (apps/accounts/two_factor_policy.py). Standard: in Produktion aktiv, bei DEBUG aus.
