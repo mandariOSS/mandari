@@ -100,15 +100,17 @@ def perm(code, name, cat):
 
 
 p_view = perm("motions.view", "Anträge sehen", "motions")
+# Wie in den Standardrollen: Entwürfe anderer sehen (sonst kein Zugriff auf fremde Entwürfe)
+p_view_drafts = perm("motions.view_drafts", "Entwürfe anderer anzeigen", "motions")
 p_edit = perm("motions.edit", "Anträge bearbeiten", "motions")
 p_comment = perm("motions.comment", "Anträge kommentieren", "motions")
 p_edit_all = perm("motions.edit_all", "Alle Anträge bearbeiten", "motions")
 
 edit_role = Role.objects.create(organization=org, name="Bearbeiter", is_admin=False)
-edit_role.permissions.add(p_view, p_edit, p_comment)
+edit_role.permissions.add(p_view, p_view_drafts, p_edit, p_comment)
 
 editall_role = Role.objects.create(organization=org, name="Vorstand", is_admin=False)
-editall_role.permissions.add(p_view, p_edit, p_comment, p_edit_all)
+editall_role.permissions.add(p_view, p_view_drafts, p_edit, p_comment, p_edit_all)
 
 author_user = User.objects.create_user(email="autor-sl@example.org", password="test1234!")
 author_ms = Membership.objects.create(user=author_user, organization=org)

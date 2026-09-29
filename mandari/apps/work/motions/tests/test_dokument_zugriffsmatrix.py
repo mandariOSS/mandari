@@ -6,15 +6,18 @@ Die Regel steht hier unabhängig vom Code (``soll_stufe``); jeder Weg muss sie e
 
 - **Liste** (``Motion.visible_to`` – Dokumentliste, Papierkorb, Dashboard, Auswahlfelder) und **Öffnen**
   stimmen überein: Niemand öffnet über einen Weg etwas, das die Liste ihm nicht zeigt.
-- Mitglieder brauchen ``motions.view``. Zugang haben Autor:in, Federführung, Mitarbeit, alle bei
-  organisationsweiten Dokumenten und persönlich Freigegebene bei geteilten Dokumenten.
+- Mitglieder brauchen ``motions.view``, für Entwürfe anderer zusätzlich ``motions.view_drafts``. Zugang haben
+  Autor:in, Federführung, Mitarbeit, alle bei organisationsweiten Dokumenten und persönlich Freigegebene bei
+  geteilten Dokumenten.
 - Stufe: Autor:in verwaltet (mit ``motions.edit``), ``motions.edit_all`` bearbeitet; Federführung,
   Mitarbeit und eine persönliche Freigabe „Bearbeiten“ bearbeiten mit ``motions.edit``; wer nur über eine Freigabe Zugang hat, bleibt
   bei deren Stufe; sonst Kommentieren (``motions.comment``) oder Lesen.
 - Gäste: ausschließlich persönliche oder Ordner-Freigaben, nie Verwaltung, nie Papierkorb.
 - Status-Sperre (eingereicht, gelöscht …): Inhalt nur mit ``motions.edit_all``; Gäste kommentieren.
-- Status, Metadaten, Checkliste, Anhänge, Papierkorb folgen der Stufe ohne Sperre; Teilen, Versionen
-  wiederherstellen und endgültig Löschen verlangen Autor:in oder ``motions.edit_all``.
+- Status, Metadaten, Checkliste, Anhänge, Wiederherstellen aus dem Papierkorb folgen der Stufe ohne Sperre;
+  Teilen und Versionen wiederherstellen verlangen Autor:in oder ``motions.edit_all``.
+- Löschen (in den Papierkorb und endgültig): eigene Dokumente als Autor:in, Dokumente anderer nur mit
+  ``motions.delete`` und Bearbeiten-Stufe.
 """
 
 from __future__ import annotations
@@ -51,17 +54,27 @@ PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 RANG = {"none": 0, "view": 1, "comment": 2, "edit": 3, "admin": 4}
 BEARBEITBAR = ("draft", "review", "internal_review", "external_review")
 
-MITGLIED = ("motions.view", "motions.create", "motions.edit", "motions.comment", "motions.share")
+MITGLIED = (
+    "motions.view",
+    "motions.view_drafts",
+    "motions.create",
+    "motions.edit",
+    "motions.comment",
+    "motions.share",
+)
 #: Mitglieder und ihre Rechte
 RECHTE: dict[str, tuple[str, ...]] = {
     "autor": MITGLIED,
     "mitglied": MITGLIED,
-    "leser": ("motions.view",),
+    "leser": ("motions.view", "motions.view_drafts"),
+    # wie die Standardrolle Parteimitglied: ohne Entwürfe anderer
+    "ohne_entwuerfe": ("motions.view", "motions.comment"),
     "ohne_view": ("dashboard.view",),
     "vorsitz": (*MITGLIED, "motions.edit_all"),
+    "loeschberechtigt": (*MITGLIED, "motions.edit_all", "motions.delete"),
     "federfuehrung": MITGLIED,
     "mitarbeit": MITGLIED,
-    # Zugewiesen, aber ohne motions.edit: Zugang, jedoch kein Bearbeiten
+    # Zugewiesen, aber ohne motions.edit (und ohne Entwürfe anderer): Zugang, jedoch kein Bearbeiten
     "mitarbeit_kommentar": ("motions.view", "motions.comment"),
     "mitarbeit_lesen": ("motions.view",),
     "freigabe_lesen": MITGLIED,
@@ -115,6 +128,8 @@ def soll_stufe(person: str, dok: str, *, sperre: bool = True) -> str:
     rechte = set(RECHTE[person])
     if "motions.view" not in rechte:
         return "none"
+    if status == "draft" and person != "autor" and "motions.view_drafts" not in rechte:
+        return "none"
     autor = person == "autor"
     zugeteilt = person in ("federfuehrung", "mitarbeit", "mitarbeit_kommentar", "mitarbeit_lesen")
     freigabe = FREIGABEN.get(person) if sichtbarkeit != "private" else None
@@ -144,6 +159,12 @@ def soll_verwalten(person: str, dok: str) -> bool:
     return person not in GAESTE and (
         stufe == "admin" or (stufe != "none" and _mitglied_mit(person, "motions.edit_all"))
     )
+
+
+def soll_loeschen(person: str, dok: str) -> bool:
+    """Eigene Dokumente (Autor:in verwaltet) oder ``motions.delete`` mit Bearbeiten-Stufe."""
+    stufe = soll_stufe(person, dok, sperre=False)
+    return person not in GAESTE and (stufe == "admin" or (stufe == "edit" and _mitglied_mit(person, "motions.delete")))
 
 
 def _bearbeiten_ohne_sperre(person: str, dok: str) -> bool:
@@ -305,6 +326,14 @@ WEGE: tuple[Weg, ...] = (
         lambda w, d: {"action": "save", "title": w.dokumente[d].title, "content": "<p>Neu</p>"},
     ),
     Weg(
+        "in_papierkorb",
+        "post",
+        lambda w, d: reverse("work:document_editor", kwargs=_k(w, d)),
+        lambda p, d: soll_stufe(p, d) in ("edit", "admin") and soll_loeschen(p, d),
+        lambda w, d: {"action": "delete"},
+        nur=_nicht_geloescht,
+    ),
+    Weg(
         "status",
         "post",
         lambda w, d: reverse("work:document_status", kwargs=_k(w, d)),
@@ -367,7 +396,7 @@ WEGE: tuple[Weg, ...] = (
         "endgueltig_loeschen",
         "post",
         lambda w, d: reverse("work:document_permanent_delete", kwargs=_k(w, d)),
-        lambda p, d: _bearbeiten_ohne_sperre(p, d) and soll_verwalten(p, d),
+        lambda p, d: _bearbeiten_ohne_sperre(p, d) and soll_loeschen(p, d),
         nur=_geloescht,
     ),
 )
@@ -450,6 +479,7 @@ def test_stufen_im_modell(welt: Welt) -> None:
                 "can_comment": motion.can_comment(membership),
                 "can_edit": motion.can_edit(membership),
                 "can_share": motion.can_share(membership),
+                "can_delete": motion.can_delete(membership),
             }
             soll = {
                 "editor": stufe,
@@ -458,6 +488,7 @@ def test_stufen_im_modell(welt: Welt) -> None:
                 "can_comment": stufe in ("comment", "edit", "admin"),
                 "can_edit": soll_stufe(person, dok, sperre=False) in ("edit", "admin"),
                 "can_share": soll_verwalten(person, dok) and _mitglied_mit(person, "motions.share"),
+                "can_delete": soll_loeschen(person, dok),
             }
             for schluessel, wert in soll.items():
                 if ist[schluessel] != wert:

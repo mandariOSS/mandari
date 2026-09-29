@@ -962,7 +962,8 @@ class Motion(EncryptionMixin, models.Model):
         ``"none"`` liefert (``motions/tests/test_dokument_zugriffsmatrix.py`` prüft das):
 
         - Mitglieder brauchen ``motions.view``; dann eigene Dokumente, Federführung, Mitarbeit,
-          organisationsweite und bei geteilten Dokumenten persönlich freigegebene.
+          organisationsweite und bei geteilten Dokumenten persönlich freigegebene. Entwürfe anderer
+          nur mit ``motions.view_drafts``.
         - Gäste ausschließlich persönlich freigegebene Dokumente sowie Dokumente in für sie
           freigegebenen Ordnern (rekursiv) – nie Dokumente im Papierkorb.
 
@@ -986,6 +987,8 @@ class Motion(EncryptionMixin, models.Model):
             return qs.filter(models.Q(shares__scope="user", shares__user=membership.user) | folder_q).distinct()
         if not membership.has_permission("motions.view"):
             return qs.none()
+        if not membership.has_permission("motions.view_drafts"):
+            qs = qs.exclude(models.Q(status="draft") & ~models.Q(author=membership))
         return qs.filter(
             models.Q(author=membership)
             # Federführung und Mitarbeit sehen und öffnen das Dokument, für das sie eingeteilt
@@ -1128,8 +1131,9 @@ class Motion(EncryptionMixin, models.Model):
         - Mandantengrenze: nur Dokumente der eigenen Organisation.
         - Gäste: ausschließlich ihre persönliche oder Ordner-Freigabe (nie Verwaltungsrechte), nie
           Dokumente im Papierkorb.
-        - Mitglieder brauchen ``motions.view``. Zugang: Autor:in, Federführung, Mitarbeit, alle bei
-          organisationsweiten, persönlich Freigegebene bei geteilten Dokumenten.
+        - Mitglieder brauchen ``motions.view``, für Entwürfe anderer zusätzlich ``motions.view_drafts``.
+          Zugang: Autor:in, Federführung, Mitarbeit, alle bei organisationsweiten, persönlich
+          Freigegebene bei geteilten Dokumenten.
         - Stufe: Autor:in verwaltet (mit ``motions.edit``), ``motions.edit_all`` bearbeitet;
           Federführung, Mitarbeit und eine persönliche Freigabe „Bearbeiten“ bearbeiten mit
           ``motions.edit``; wer nur über eine Freigabe Zugang hat, bleibt bei deren Stufe; sonst
@@ -1150,6 +1154,12 @@ class Motion(EncryptionMixin, models.Model):
             return self.apply_status_lock(level, membership) if status_lock else level
 
         if not membership.has_permission("motions.view"):
+            return "none"
+        if (
+            self.status == "draft"
+            and self.author_id != membership.id
+            and not membership.has_permission("motions.view_drafts")
+        ):
             return "none"
         base = "comment" if membership.has_permission("motions.comment") else "view"
         if self.author_id == membership.id:
@@ -1217,12 +1227,23 @@ class Motion(EncryptionMixin, models.Model):
     def can_manage(self, membership) -> bool:
         """
         Verwaltungsrecht: Autor:in (Stufe ``admin``) oder ``motions.edit_all`` mit Zugang, nie Gäste.
-        Grundlage für Teilen, Versionen wiederherstellen und endgültiges Löschen.
+        Grundlage für Teilen und Versionen wiederherstellen.
         """
         if getattr(membership, "is_guest", False):
             return False
         level = self.access_level(membership, status_lock=False)
         return level == "admin" or (level != "none" and membership.has_permission("motions.edit_all"))
+
+    def can_delete(self, membership) -> bool:
+        """
+        Löschen – in den Papierkorb und endgültig: eigene Dokumente als Autor:in (Stufe ``admin``),
+        Dokumente anderer nur mit ``motions.delete`` und Bearbeiten-Stufe; nie Gäste. Stufe ohne
+        Status-Sperre; der Editor verlangt fürs Verschieben zusätzlich seine Schreibstufe.
+        """
+        if getattr(membership, "is_guest", False):
+            return False
+        level = self.access_level(membership, status_lock=False)
+        return level == "admin" or (level == "edit" and membership.has_permission("motions.delete"))
 
     def can_share(self, membership) -> bool:
         """Darf die Person Freigaben und Sichtbarkeit ändern? Verwaltungsrecht und ``motions.share``."""

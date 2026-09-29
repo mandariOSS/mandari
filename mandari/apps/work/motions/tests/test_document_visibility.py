@@ -19,7 +19,7 @@ from apps.work.dashboard.views import DashboardView
 from apps.work.motions.forms import MotionForm
 from apps.work.motions.models import Motion, MotionShare
 
-PERMISSIONS = ["motions.view", "motions.create", "motions.edit", "motions.comment"]
+PERMISSIONS = ["motions.view", "motions.view_drafts", "motions.create", "motions.edit", "motions.comment"]
 
 
 @pytest.fixture

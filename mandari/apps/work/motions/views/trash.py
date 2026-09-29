@@ -36,8 +36,8 @@ def _editable_trashed_motion(membership, motion_id):
 
 
 def _can_purge(membership, motion):
-    """Endgültig löschen: Verwaltungsrecht (Motion.can_manage) – wie Freigaben und Versionen."""
-    return motion.can_manage(membership)
+    """Endgültig löschen: eigene Dokumente bzw. motions.delete (Motion.can_delete)."""
+    return motion.can_delete(membership)
 
 
 # =============================================================================
@@ -69,6 +69,8 @@ class MotionTrashView(WorkViewMixin, TemplateView):
         page = self.request.GET.get("page", 1)
         context["motions"] = paginator.get_page(page)
         context["paginator"] = paginator
+        # „Endgültig löschen“ nur anbieten, wo es erlaubt ist (Motion.can_delete)
+        context["purgeable_ids"] = {motion.id for motion in context["motions"] if _can_purge(self.membership, motion)}
         context["trash_count"] = _visible_trash(self.membership).count()
 
         return context
@@ -103,7 +105,7 @@ class MotionPermanentDeleteView(WorkViewMixin, View):
         motion = _editable_trashed_motion(self.membership, kwargs.get("motion_id"))
 
         if not _can_purge(self.membership, motion):
-            raise PermissionDenied("Endgültig löschen dürfen nur Autor:in oder Berechtigte für alle Anträge.")
+            raise PermissionDenied("Endgültig löschen dürfen nur Autor:in oder Berechtigte zum Löschen von Anträgen.")
 
         title = motion.title
         motion.delete()

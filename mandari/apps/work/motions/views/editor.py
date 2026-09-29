@@ -210,6 +210,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         context["is_author"] = motion.author == self.membership
         context["can_edit"] = access_level in ("edit", "admin")
         context["can_comment"] = access_level in ("comment", "edit", "admin")
+        # In den Papierkorb: Schreibstufe im Editor und Löschrecht (Motion.can_delete)
+        context["can_delete"] = context["can_edit"] and motion.can_delete(self.membership)
         # Gäste dürfen inhaltlich bearbeiten (Stufe „Bearbeiten“), aber keine
         # Verwaltungsaktionen: Status, Dokumenttyp, KI, Zuständigkeit, Themen,
         # Frist, Freigaben, Papierkorb — die Views sind nicht guest_allowed (Issue #76)
@@ -479,8 +481,13 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         if is_guest and action != "save":
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
-        # Handle delete action (soft delete - move to trash)
+        # Handle delete action (soft delete - move to trash): eigene Dokumente bzw. motions.delete
         if action == "delete":
+            if not motion.can_delete(self.membership):
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+                messages.error(request, "Keine Berechtigung.")
+                return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
             try:
                 motion.status = "deleted"
                 motion.deleted_at = timezone.now()
