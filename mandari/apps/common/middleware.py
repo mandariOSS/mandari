@@ -68,13 +68,20 @@ def database_unavailable_response(request: HttpRequest, *, pool: bool = False) -
             status=503,
             headers=headers,
         )
-    inhalt: str
+    return HttpResponse(render_maintenance_page(), status=503, headers=headers)
+
+
+def render_maintenance_page(context: dict[str, str] | None = None) -> str:
+    """Die Wartungsseite als HTML, notfalls die minimale Notseite.
+
+    Ohne Request-Kontext gerendert (siehe ``database_unavailable_response``); auch der
+    Wartungsmodus (``apps.common.maintenance``) nutzt sie.
+    """
     try:
-        inhalt = render_to_string("errors/maintenance.html")
+        return render_to_string("errors/maintenance.html", context)
     except Exception:  # noqa: BLE001 - die Notseite darf nie selbst zum Fehler werden
         logger.exception("Wartungsseite ließ sich nicht rendern, liefere Notseite")
-        inhalt = _NOTSEITE
-    return HttpResponse(inhalt, status=503, headers=headers)
+        return _NOTSEITE
 
 
 class DatabaseErrorMiddleware:

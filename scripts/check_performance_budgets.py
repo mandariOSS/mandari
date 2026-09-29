@@ -277,6 +277,8 @@ def messen(seiten: list[Seite], kontext: dict[str, Any]) -> dict[str, Messwert]:
     from django.db import connection
     from django.test.utils import CaptureQueriesContext
 
+    from apps.common.models import SiteSettings
+
     ergebnis: dict[str, Messwert] = {}
     for seite in seiten:
         client = _client(seite.konto, kontext["body_id"])
@@ -287,6 +289,9 @@ def messen(seiten: list[Seite], kontext: dict[str, Any]) -> dict[str, Messwert]:
         status = 0
         for _ in range(WIEDERHOLUNGEN):
             cache.clear()
+            # Die Systemeinstellungen (Wartungsmodus, #588) gelten für alle Seiten und liegen fünf Minuten
+            # im Cache: keine Kosten der einzelnen Seite, deshalb vor der Messung geladen.
+            SiteSettings.get_settings()
             with CaptureQueriesContext(connection) as erfasst:
                 start = time.perf_counter()
                 antwort = client.get(url)

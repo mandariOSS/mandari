@@ -6,6 +6,7 @@ Includes global site settings that can be configured via Admin.
 """
 
 import logging
+from typing import Any
 
 from django.core.cache import cache
 from django.db import models
@@ -126,12 +127,11 @@ class SiteSettings(models.Model):
     )
 
     # ==========================================================================
-    # General Settings
+    # Wartungsmodus (wirkt über apps.common.maintenance.MaintenanceModeMiddleware)
     # ==========================================================================
-    site_name = models.CharField(max_length=100, default="Mandari", verbose_name="Seitenname")
-    site_description = models.TextField(
-        blank=True, default="Kommunalpolitische Transparenz", verbose_name="Seitenbeschreibung"
-    )
+    # Die früheren Felder „Seitenname“ und „Seitenbeschreibung“ wirkten nirgends und sind
+    # entfallen (Migration common/0007). Ihre Spalten bleiben mit Datenbank-Standardwert
+    # stehen, damit eine ältere Version nach einem Rückfall weiterläuft.
     maintenance_mode = models.BooleanField(
         default=False, verbose_name="Wartungsmodus", help_text="Website für Besucher sperren"
     )
@@ -153,7 +153,7 @@ class SiteSettings(models.Model):
     def __str__(self):
         return "Systemeinstellungen"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         # Ensure only one instance exists (Singleton pattern)
         self.pk = 1
         super().save(*args, **kwargs)
