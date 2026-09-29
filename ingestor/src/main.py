@@ -230,12 +230,66 @@ def add_source(
         raise typer.Exit(1) from e
 
 
+def _format_sync_time(value: Any) -> str:
+    return value.strftime("%Y-%m-%d %H:%M") if value else "nie"
+
+
 @app.command("list-sources")
 def list_sources() -> None:
     """
-    List all registered OParl sources.
+    Registrierte OParl-Quellen auflisten (auch inaktive).
 
-    Shows source name, URL, last sync time, and entity counts.
+    Zeigt je Quelle Name, URL, Betriebsstatus (aktiv, inaktiv, Fehler, Schonung), letzten Sync,
+    letzten Vollsync und die Zahl der Kommunen. Die Kommunen selbst listet ``list-bodies``.
+    """
+    from collections import Counter
+
+    from src.sync.orchestrator import source_status_label
+
+    print_banner()
+
+    async def run_list() -> None:
+        async with SyncOrchestrator() as orchestrator:
+            sources = await orchestrator.storage.get_all_sources(active_only=False)
+
+            if not sources:
+                console.print("[yellow]Noch keine Quelle registriert.[/yellow]")
+                console.print()
+                console.print("[dim]Quelle hinzufügen:[/dim]")
+                console.print("  mandari-ingestor add-source https://example.oparl.org/oparl/v1")
+                return
+
+            bodies_per_source = Counter(body.source_id for body in await orchestrator.storage.get_all_bodies())
+
+            table = Table(title="Registrierte Quellen")
+            table.add_column("Name", style="green")
+            table.add_column("URL", style="dim", overflow="fold")
+            table.add_column("Status")
+            table.add_column("Letzter Sync")
+            table.add_column("Letzter Vollsync")
+            table.add_column("Kommunen", justify="right")
+
+            for source in sources:
+                table.add_row(
+                    source.name,
+                    source.url,
+                    source_status_label(source),
+                    _format_sync_time(source.last_sync),
+                    _format_sync_time(source.last_full_sync),
+                    str(bodies_per_source.get(source.id, 0)),
+                )
+
+            console.print(table)
+
+    asyncio.run(run_list())
+
+
+@app.command("list-bodies")
+def list_bodies() -> None:
+    """
+    Kommunen (OParl-Bodies) aller Quellen mit letztem Sync auflisten.
+
+    Früher zeigte ``list-sources`` diese Liste; die Quellen selbst listet jetzt ``list-sources``.
     """
     print_banner()
 
@@ -244,23 +298,23 @@ def list_sources() -> None:
             bodies = await orchestrator.storage.get_all_bodies()
 
             if not bodies:
-                console.print("[yellow]No sources registered yet.[/yellow]")
+                console.print("[yellow]Noch keine Kommune synchronisiert.[/yellow]")
                 console.print()
-                console.print("[dim]Add a source:[/dim]")
-                console.print("  mandari-ingestor add-source https://example.oparl.org/oparl/v1")
+                console.print("[dim]Registrierte Quellen anzeigen:[/dim]")
+                console.print("  mandari-ingestor list-sources")
                 return
 
-            table = Table(title="Registered Bodies")
+            table = Table(title="Kommunen")
             table.add_column("Name", style="green")
-            table.add_column("External ID", style="dim")
-            table.add_column("Last Sync")
-            table.add_column("Classification")
+            table.add_column("Externe ID", style="dim")
+            table.add_column("Letzter Sync")
+            table.add_column("Klassifikation")
 
             for body in bodies:
                 table.add_row(
                     body.name,
                     body.external_id[:50] + "..." if len(body.external_id) > 50 else body.external_id,
-                    str(body.last_sync.strftime("%Y-%m-%d %H:%M")) if body.last_sync else "Never",
+                    _format_sync_time(body.last_sync),
                     body.classification or "-",
                 )
 

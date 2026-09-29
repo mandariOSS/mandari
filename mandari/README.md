@@ -105,6 +105,12 @@ Admin angelegt; manuelle Läufe im Ingestor-Container:
 # OParl-Quelle registrieren
 python -m src.main add-source https://oparl.example.com/api
 
+# Registrierte Quellen mit Status, letztem Sync und Zahl der Kommunen anzeigen
+python -m src.main list-sources
+
+# Kommunen (Bodies) aller Quellen anzeigen
+python -m src.main list-bodies
+
 # Alle Quellen synchronisieren
 python -m src.main sync --all
 ```
