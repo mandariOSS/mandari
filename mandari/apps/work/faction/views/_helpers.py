@@ -34,7 +34,7 @@ def _get_meeting_context(view, meeting):
     # Agenda items (top-level only, children via prefetch)
     agenda_items = (
         meeting.agenda_items.filter(parent__isnull=True)
-        .select_related("related_agenda_item", "approves_meeting")
+        .select_related("related_agenda_item", "approves_meeting", "decision")
         .prefetch_related("protocol_entries", "protocol_entries__speaker__user", "children")
         .order_by("order", "number")
     )

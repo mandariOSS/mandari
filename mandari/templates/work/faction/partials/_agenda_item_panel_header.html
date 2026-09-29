@@ -65,7 +65,7 @@
             </span>
             {% endif %}
 
-            {% if item.has_decision %}<c-ui.badge color="green" icon="check-circle">Beschluss</c-ui.badge>{% endif %}
+            {% if item.recorded_decision %}<c-ui.badge color="green" icon="check-circle">Beschluss</c-ui.badge>{% endif %}
             {% if item.is_approval_item %}
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
                 <i data-lucide="shield-check" class="w-3 h-3"></i>

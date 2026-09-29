@@ -290,15 +290,54 @@ def find_protocol_entry(
         return None
 
 
+def protocol_import_state(organization: Organization) -> tuple[set[Any], set[tuple[Any, str]]]:
+    """
+    Stand der Übernahme aus Fraktionsprotokollen: IDs der Einträge mit gespeicherter Herkunft und
+    (Sitzung, Titel) von Aufgaben aus Fraktionssitzungen ohne Herkunft (Altbestand vor der Kennung).
+    """
+    imported_ids = set(
+        Task.objects.filter(organization=organization, related_protocol_entry__isnull=False).values_list(
+            "related_protocol_entry_id", flat=True
+        )
+    )
+    legacy_keys = set(
+        Task.objects.filter(
+            organization=organization, related_protocol_entry__isnull=True, related_faction_meeting__isnull=False
+        ).values_list("related_faction_meeting_id", "title")
+    )
+    return imported_ids, legacy_keys
+
+
+def is_protocol_entry_imported(
+    entry: FactionProtocolEntry, legacy_keys: set[tuple[Any, str]], imported_ids: set[Any]
+) -> bool:
+    """
+    Wurde aus dem Eintrag schon eine Aufgabe? Über die Herkunft (``Task.related_protocol_entry``);
+    Aufgaben von vor dieser Kennung erkennt der Vergleich von Sitzung und Titel (Import: Inhalt
+    bis 500 Zeichen, Übernahme in der Sitzung: bis 200 Zeichen).
+    """
+    if entry.id in imported_ids:
+        return True
+    content = entry.content or ""
+    return bool(content) and any((entry.meeting_id, content[:cut]) in legacy_keys for cut in (500, 200))
+
+
 def open_protocol_action_items(
     organization: Organization, membership: Membership, *, limit: int = 50
-) -> QuerySet[FactionProtocolEntry]:
-    """Offene Aufgaben-Einträge aus Fraktionsprotokollen (sichtbar für das Mitglied), noch nicht importiert."""
-    imported_meetings = Task.objects.filter(organization=organization).values_list("related_faction_meeting", flat=True)
-    return (
+) -> list[FactionProtocolEntry]:
+    """Offene Aufgaben-Einträge aus Fraktionsprotokollen (sichtbar für das Mitglied), noch nicht übernommen."""
+    imported_ids, legacy_keys = protocol_import_state(organization)
+    entries = (
         _visible_protocol_entries(organization, membership)
         .filter(entry_type="action", action_completed=False)
-        .exclude(id__in=imported_meetings)
+        .exclude(id__in=imported_ids)
         .select_related("meeting", "agenda_item", "action_assignee__user")
-        .order_by("-created_at")[:limit]
+        .order_by("-created_at")
     )
+    result = []
+    for entry in entries.iterator():
+        if not is_protocol_entry_imported(entry, legacy_keys, imported_ids):
+            result.append(entry)
+            if len(result) >= limit:
+                break
+    return result

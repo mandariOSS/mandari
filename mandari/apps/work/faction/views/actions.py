@@ -542,20 +542,9 @@ class FactionActionView(WorkViewMixin, View):
         entry.set_content_encrypted(content)
         entry.save()
 
-        # If decision, update agenda item (nur der zu dieser Sitzung gehörende TOP)
-        if entry_type == "decision" and agenda_item is not None:
-            try:
-                votes_yes = int(request.POST.get("votes_yes", 0))
-                votes_no = int(request.POST.get("votes_no", 0))
-                votes_abstain = int(request.POST.get("votes_abstain", 0))
-
-                agenda_item.has_decision = True
-                agenda_item.votes_for = votes_yes
-                agenda_item.votes_against = votes_no
-                agenda_item.votes_abstain = votes_abstain
-                agenda_item.save()
-            except ValueError:
-                pass
+        # Ein Protokolleintrag „Beschluss“ ist Text. Das Abstimmungsergebnis erfasst allein
+        # „Abstimmung erfassen“ (FactionDecision) – der Eintrag lässt Stimmen am TOP unberührt
+        # (früher 0/0/0, das eine erfasste Abstimmung überschrieb).
 
         if self.is_htmx:
             html = self._render_agenda(request, meeting)
@@ -1026,6 +1015,7 @@ class FactionActionView(WorkViewMixin, View):
             due_date=entry.action_due_date,
             created_by=self.membership,
             related_faction_meeting=meeting,
+            related_protocol_entry=entry,
         )
 
         # Endgültig genehmigte Protokolle sind unveränderbar (Issue #63) —

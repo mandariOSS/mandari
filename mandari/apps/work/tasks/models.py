@@ -176,6 +176,17 @@ class Task(models.Model):
         related_name="tasks",
         verbose_name="Fraktions-TOP",
     )
+    # Herkunft: übernommener Aufgaben-Eintrag eines Fraktionsprotokolls. Grundlage dafür, dass
+    # der Import übernommene Einträge nicht erneut anbietet (auch aus genehmigten Protokollen,
+    # deren Einträge sich nicht mehr als erledigt markieren lassen).
+    related_protocol_entry = models.ForeignKey(
+        "work.FactionProtocolEntry",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_tasks",
+        verbose_name="Protokolleintrag",
+    )
 
     # Labels (M2M)
     labels = models.ManyToManyField(TaskLabel, blank=True, related_name="tasks", verbose_name="Labels")

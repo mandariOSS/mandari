@@ -58,12 +58,14 @@
                     {% endwith %}
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0">
-                    {% if item.has_decision %}
+                    {% with decision=item.recorded_decision %}
+                    {% if decision %}
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
                         <i data-lucide="check-circle" class="w-3 h-3"></i>
-                        {{ item.votes_for }}/{{ item.votes_against }}/{{ item.votes_abstain }}
+                        {{ decision.votes_yes }}/{{ decision.votes_no }}/{{ decision.votes_abstain }}
                     </span>
                     {% endif %}
+                    {% endwith %}
                     {% if item.tasks.count > 0 %}
                     <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20">
                         <i data-lucide="check-square" class="w-3 h-3"></i>
