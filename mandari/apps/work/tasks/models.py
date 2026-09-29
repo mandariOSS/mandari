@@ -14,6 +14,7 @@ import uuid
 
 from django.db import models
 
+from apps.common.formatting import member_name
 from apps.work.files import AttachmentDisplayMixin, task_attachment_path
 
 
@@ -119,13 +120,15 @@ class Task(models.Model):
     # Assignment
     created_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="created_tasks",
         verbose_name="Erstellt von",
     )
     assigned_to = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="assigned_tasks",
@@ -290,7 +293,9 @@ class TaskShare(models.Model):
     )
     shared_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="task_shares_given",
         verbose_name="Geteilt von",
     )
@@ -318,7 +323,9 @@ class TaskComment(models.Model):
 
     author = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="task_comments",
         verbose_name="Autor",
     )
@@ -333,7 +340,7 @@ class TaskComment(models.Model):
 
     def __str__(self):
         preview = self.content[:50] + "..." if len(self.content) > 50 else self.content
-        return f"{self.author.user.email}: {preview}"
+        return f"{member_name(self.author)}: {preview}"
 
 
 class TaskChecklistItem(models.Model):
@@ -367,7 +374,9 @@ class TaskAttachment(AttachmentDisplayMixin, models.Model):
     file_size = models.PositiveIntegerField(default=0, verbose_name="Dateigröße (Bytes)")
     uploaded_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="task_attachments",
         verbose_name="Hochgeladen von",
     )
@@ -408,7 +417,9 @@ class TaskActivity(models.Model):
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="activities", verbose_name="Aufgabe")
     actor = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="task_activities",
         verbose_name="Akteur",
     )
@@ -431,7 +442,7 @@ class TaskActivity(models.Model):
     @property
     def description(self) -> str:
         """Menschenlesbare Beschreibung der Aktivität."""
-        actor_name = self.actor.user.get_display_name()
+        actor_name = member_name(self.actor)
         details = self.details or {}
 
         filename = details.get("filename", "Datei")

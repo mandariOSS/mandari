@@ -251,6 +251,20 @@ def delete_speech_note(membership: Membership, item_id: Any) -> None:
     AgendaSpeechNote.objects.filter(author=membership, agenda_item_id=item_id).delete()
 
 
+def delete_private_member_notes(membership: Membership) -> int:
+    """
+    Nur für das Mitglied sichtbare Beiträge löschen (Issue #420).
+
+    Wird beim Entfernen der Mitgliedschaft aufgerufen: nicht geteilte Redebeiträge und private
+    Vorgangs-Kommentare sind persönliche Notizen. Geteilte Redebeiträge und für die Organisation
+    sichtbare Kommentare bleiben mit geleertem Autor erhalten; private TOP-Notizen entfallen per
+    Kaskade. Liefert die Anzahl gelöschter Einträge.
+    """
+    speeches, _ = AgendaSpeechNote.objects.filter(author=membership, is_shared=False).delete()
+    comments, _ = PaperComment.objects.filter(author=membership, visibility="private").delete()
+    return speeches + comments
+
+
 # ---------------------------------------------------------------------------
 # Sektion 4: Diskussions-Thread
 # ---------------------------------------------------------------------------

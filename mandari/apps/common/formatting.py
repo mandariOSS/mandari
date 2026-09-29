@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Kleinsthelfer für Datum und Dateigröße, die vorher mehrfach kopiert waren.
+Kleinsthelfer für Datum, Dateigröße und Personennamen, die vorher mehrfach kopiert waren.
 
 Die Namen sind fest deutsch und bewusst nicht aus ``django.utils.dates`` übersetzt: Viele Aufrufer
 laufen in Hintergrundaufgaben oder Befehlen, und die Ausgabe soll unabhängig von der aktiven Sprache
@@ -8,6 +8,7 @@ dieselbe bleiben.
 """
 
 from datetime import date
+from typing import Any
 
 #: Monatsnamen, Index = Monatsnummer (Index 0 bleibt leer)
 MONTH_NAMES = [
@@ -62,3 +63,22 @@ def human_size(size: float, *, whole_bytes: bool = False) -> str:
             return f"{size} {unit}" if whole_bytes and unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} TB"
+
+
+#: Anzeige für Inhalte, deren Mitglied aus der Organisation entfernt wurde (Issue #420)
+FORMER_MEMBER = "Ehemaliges Mitglied"
+FORMER_MEMBER_INITIALS = "EM"
+
+
+def member_name(membership: Any) -> str:
+    """Anzeigename einer Mitgliedschaft; „Ehemaliges Mitglied“, wenn der Verweis geleert wurde."""
+    if not membership:
+        return FORMER_MEMBER
+    return str(membership.user.get_display_name())
+
+
+def member_initials(membership: Any) -> str:
+    """Initialen für Avatare; „EM“ für ein ehemaliges Mitglied."""
+    if not membership:
+        return FORMER_MEMBER_INITIALS
+    return str(membership.user.get_initials())

@@ -1,3 +1,4 @@
+{% load member_tags %}
 {% if meeting and preparation %}
 <div class="space-y-6">
     <!-- Positionen nach Art (alle Positionsarten aus POSITION_CHOICES) -->
@@ -49,7 +50,7 @@
             <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
                 <p class="text-sm font-medium text-gray-900 dark:text-white mb-1" title="{{ speech.agenda_item.name }}">
                     {{ speech.agenda_item.number }}. {{ speech.agenda_item.name|truncatechars:50 }}
-                    <span class="text-xs font-normal text-gray-500">({{ speech.author.user.get_display_name }})</span>
+                    <span class="text-xs font-normal text-gray-500">({{ speech.author|member_name }})</span>
                 </p>
                 <p class="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line">{{ speech.get_content_decrypted|striptags|truncatechars:300 }}</p>
             </div>

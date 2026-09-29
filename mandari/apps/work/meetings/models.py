@@ -44,7 +44,7 @@ class MeetingPreparation(EncryptionMixin, models.Model):
     # Phase 1: membership bleibt nullable für Datenmigration, wird in Phase 3 entfernt
     membership = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="meeting_preparations",
         verbose_name="Mitglied",
         null=True,
@@ -387,7 +387,9 @@ class AgendaSpeechNote(EncryptionMixin, models.Model):
     )
     author = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="speech_notes",
         verbose_name="Autor",
     )
@@ -512,7 +514,9 @@ class AgendaItemNote(EncryptionMixin, models.Model):
     # Autor
     author = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="authored_notes",
         verbose_name="Autor",
     )
@@ -651,7 +655,9 @@ class AgendaSupplementaryDocument(models.Model):
     )
     added_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="added_documents",
         verbose_name="Hinzugefügt von",
     )
@@ -816,7 +822,9 @@ class FileAnnotation(EncryptionMixin, models.Model):
     page = models.PositiveIntegerField(default=1, verbose_name="Seite")
     author = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="file_annotations",
         verbose_name="Autor",
     )
@@ -885,7 +893,9 @@ class PaperComment(EncryptionMixin, models.Model):
     )
     author = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="paper_comments",
         verbose_name="Autor",
     )

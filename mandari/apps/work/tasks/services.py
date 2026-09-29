@@ -17,6 +17,7 @@ from typing import Any
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from apps.tenants.models import Membership, Organization
@@ -127,6 +128,27 @@ def update_visibility(task: Task, membership: Membership, visibility: str, share
             TaskShare.objects.get_or_create(task=task, membership_id=member_id, defaults={"shared_by": membership})
     else:
         TaskShare.objects.filter(task=task).delete()
+
+
+def delete_personal_tasks(membership: Membership) -> int:
+    """
+    Persönliche Aufgaben eines Mitglieds löschen (Issue #420).
+
+    Wird beim Entfernen der Mitgliedschaft aufgerufen. Persönlich ist eine Aufgabe, die außer dem
+    Mitglied niemand sieht: nicht organisationsweit, von ihm angelegt, ihm oder niemandem
+    zugewiesen und mit niemand anderem geteilt. Alle anderen Aufgaben bleiben erhalten; der
+    Verweis auf das Mitglied wird geleert. Liefert die Anzahl gelöschter Aufgaben.
+    """
+    shared_with_others = TaskShare.objects.filter(task=OuterRef("pk")).exclude(membership=membership)
+    personal = (
+        Task.objects.filter(organization_id=membership.organization_id, created_by=membership)
+        .exclude(visibility="organization")
+        .filter(Q(assigned_to=membership) | Q(assigned_to__isnull=True))
+        .exclude(Exists(shared_with_others))
+    )
+    task_ids = list(personal.values_list("pk", flat=True))
+    Task.objects.filter(pk__in=task_ids).delete()
+    return len(task_ids)
 
 
 def save_label(organization: Organization, label: TaskLabel) -> TaskLabel:

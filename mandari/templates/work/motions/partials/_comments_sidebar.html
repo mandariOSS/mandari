@@ -1,4 +1,4 @@
-{% load permission_tags %}
+{% load permission_tags member_tags %}
 <!-- Comments Sidebar (Google Docs Style) -->
 <div class="flex flex-col flex-1 min-h-0">
     <!-- Header -->
@@ -34,11 +34,11 @@
                 <div class="flex items-center gap-2 mb-2">
                     <div class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
                         <span class="text-xs font-medium text-primary-600 dark:text-primary-400">
-                            {{ comment.author.user.get_initials }}
+                            {{ comment.author|member_initials }}
                         </span>
                     </div>
                     <span class="text-xs font-medium text-gray-900 dark:text-white">
-                        {{ comment.author.user.get_display_name }}
+                        {{ comment.author|member_name }}
                     </span>
                     <span class="text-xs text-gray-500">·</span>
                     <span class="text-xs text-gray-500">{{ comment.created_at|timesince }}</span>
@@ -94,13 +94,13 @@
                     <div class="flex gap-2">
                         <div class="w-5 h-5 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
                             <span class="text-[10px] font-medium text-gray-600 dark:text-gray-400">
-                                {{ reply.author.user.get_initials }}
+                                {{ reply.author|member_initials }}
                             </span>
                         </div>
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-1">
                                 <span class="text-xs font-medium text-gray-900 dark:text-white">
-                                    {{ reply.author.user.get_display_name }}
+                                    {{ reply.author|member_name }}
                                 </span>
                                 <span class="text-xs text-gray-500">{{ reply.created_at|timesince }}</span>
                             </div>

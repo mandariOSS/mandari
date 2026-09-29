@@ -25,3 +25,8 @@ class WorkConfig(AppConfig):
         from apps.work.motions import signals as motion_signals
 
         motion_signals.register()
+
+        # Mitgliedschaft gelöscht: persönliche Einträge weg, Organisationsinhalte bleiben (Issue #420)
+        from apps.work.organization import member_data
+
+        member_data.register()

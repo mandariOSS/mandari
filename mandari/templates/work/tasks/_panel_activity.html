@@ -1,4 +1,5 @@
 {% load i18n %}
+{% load member_tags %}
 <div class="space-y-1">
     {% for activity in activities %}
     {% if activity.activity_type == 'comment' %}
@@ -6,12 +7,12 @@
     <div class="flex gap-3 p-3 rounded-xl bg-white dark:bg-gray-800 ring-1 ring-gray-100 dark:ring-gray-700/50 shadow-sm">
         <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
             <span class="text-xs font-bold text-primary-600 dark:text-primary-400">
-                {{ activity.actor.user.get_display_name|slice:":1" }}
+                {{ activity.actor|member_name|slice:":1" }}
             </span>
         </div>
         <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-1">
-                <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ activity.actor.user.get_display_name }}</span>
+                <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ activity.actor|member_name }}</span>
                 <span class="text-[11px] text-gray-400 dark:text-gray-500">{{ activity.created_at|timesince }} her</span>
             </div>
             <p class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{{ activity.content }}</p>

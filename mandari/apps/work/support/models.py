@@ -63,7 +63,9 @@ class SupportTicket(EncryptionMixin, models.Model):
     # Creator
     created_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="created_tickets",
         verbose_name="Erstellt von",
     )
@@ -134,7 +136,7 @@ class SupportTicketMessage(EncryptionMixin, models.Model):
     # Author - either membership (customer) or user (support staff)
     author_membership = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="ticket_messages",

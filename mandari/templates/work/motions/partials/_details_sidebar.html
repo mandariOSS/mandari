@@ -5,6 +5,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
          competent_members, approvals, approval_summary, my_pending_approval,
          approval_type_choices, can_edit, membership, organization
 {% endcomment %}
+{% load member_tags %}
 {% load permission_tags %}
 <div class="flex-1 overflow-y-auto p-4 space-y-6">
 
@@ -200,7 +201,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
                 <i data-lucide="clock" class="w-4 h-4 text-amber-500 flex-shrink-0"></i>
                 {% endif %}
                 <div class="flex-1 min-w-0">
-                    <span class="block text-sm text-gray-800 dark:text-gray-200 truncate">{{ approval.approver.user.get_display_name }}</span>
+                    <span class="block text-sm text-gray-800 dark:text-gray-200 truncate">{{ approval.approver|member_name }}</span>
                     <span class="block text-[11px] text-gray-400 truncate">{{ approval.get_approval_type_display }}{% if approval.comment %} · „{{ approval.comment }}“{% endif %}</span>
                 </div>
             </div>

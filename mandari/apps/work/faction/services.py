@@ -461,6 +461,21 @@ def org_member(organization, raw_id):
     return Membership.objects.filter(id=member_id, organization=organization, is_active=True, is_guest=False).first()
 
 
+def discard_open_invitations(membership) -> int:
+    """
+    Teilnahmen eines Mitglieds an noch nicht begonnenen Sitzungen löschen (Issue #420).
+
+    Wird beim Entfernen der Mitgliedschaft aufgerufen: Einladungen und Zusagen für künftige
+    Sitzungen sind persönlich und gegenstandslos. Teilnahmen an bereits begonnenen Sitzungen
+    gehören zur Anwesenheitsliste der Sitzung und bleiben mit geleertem Verweis erhalten.
+    Liefert die Anzahl gelöschter Teilnahmen.
+    """
+    from .models import FactionAttendance
+
+    count, _ = FactionAttendance.objects.filter(membership=membership, meeting__start__gt=timezone.now()).delete()
+    return count
+
+
 def safe_link_url(url: str) -> bool:
     """Verweise nur als http(s)-Adresse (kein ``javascript:``, ``data:`` u. Ä.)."""
     from urllib.parse import urlsplit

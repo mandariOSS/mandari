@@ -365,7 +365,7 @@ class FactionMeeting(EncryptionMixin, models.Model):
     # Sitzungen (Issue #61)
     created_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="created_faction_meetings",
@@ -752,7 +752,7 @@ class FactionAttendance(models.Model):
     )
     membership = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="faction_attendances",
@@ -810,13 +810,14 @@ class FactionAttendance(models.Model):
     def __str__(self):
         if self.is_guest:
             return f"{self.guest_name} (Gast) @ {self.meeting.title}"
-        return f"{self.membership.user.email} @ {self.meeting.title}"
+        who = self.membership.user.email if self.membership else formatting.FORMER_MEMBER
+        return f"{who} @ {self.meeting.title}"
 
     def get_display_name(self):
-        """Return display name for member or guest."""
+        """Return display name for member or guest (entferntes Mitglied: „Ehemaliges Mitglied“)."""
         if self.is_guest:
             return self.guest_name
-        return self.membership.user.get_display_name() if self.membership else "Unbekannt"
+        return formatting.member_name(self.membership)
 
     @property
     def duration(self) -> timedelta | None:
@@ -899,7 +900,9 @@ class FactionProtocolEntry(EncryptionMixin, models.Model):
     # Metadata
     created_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="created_protocol_entries",
         verbose_name="Erstellt von",
     )
@@ -1008,7 +1011,9 @@ class FactionDecision(models.Model):
     # Metadata
     recorded_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="recorded_decisions",
         verbose_name="Erfasst von",
     )
@@ -1178,7 +1183,9 @@ class FactionAttendanceCertificate(models.Model):
     # Verifikations-Seite
     membership = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="attendance_certificates",
         verbose_name="Mitglied",
     )

@@ -578,3 +578,17 @@ def letterhead_for(organization: Any, raw_id: str) -> Any:
     from .models import OrganizationLetterhead
 
     return _aus_organisation(OrganizationLetterhead, organization, raw_id)
+
+
+def withdraw_pending_approvals(membership: Any) -> int:
+    """
+    Offene Freigabe-Anfragen an ein Mitglied löschen (Issue #420).
+
+    Wird beim Entfernen der Mitgliedschaft aufgerufen: Eine entfernte Person kann nicht mehr
+    entscheiden, die Anfrage bliebe sonst für immer offen. Bereits getroffene Entscheidungen
+    gehören zum Dokument und bleiben mit geleertem Verweis erhalten. Liefert die Anzahl.
+    """
+    from .models import MotionApproval
+
+    count, _ = MotionApproval.objects.filter(approver=membership, approved__isnull=True).delete()
+    return int(count)

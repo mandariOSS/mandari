@@ -480,9 +480,11 @@ class MotionApprovalDecideView(WorkViewMixin, View):
         approval.decided_at = timezone.now()
         approval.save(update_fields=["approved", "comment", "decided_at"])
 
-        # Autor und Federführung informieren
+        # Autor und Federführung informieren (ehemalige Mitglieder haben keinen Verweis mehr)
         motion = approval.motion
-        recipients = {motion.author_id: motion.author}
+        recipients = {}
+        if motion.author:
+            recipients[motion.author_id] = motion.author
         if motion.responsible:
             recipients[motion.responsible_id] = motion.responsible
         for recipient in recipients.values():
