@@ -1130,10 +1130,10 @@ class Motion(EncryptionMixin, models.Model):
           Dokumente im Papierkorb.
         - Mitglieder brauchen ``motions.view``. Zugang: Autor:in, Federführung, Mitarbeit, alle bei
           organisationsweiten, persönlich Freigegebene bei geteilten Dokumenten.
-        - Stufe: Autor:in verwaltet (mit ``motions.edit``), ``motions.edit_all`` bearbeitet, eine
-          persönliche Freigabe „Bearbeiten“ bearbeitet mit ``motions.edit``; wer nur über eine
-          Freigabe Zugang hat, bleibt bei deren Stufe; sonst Kommentieren (``motions.comment``)
-          oder Lesen.
+        - Stufe: Autor:in verwaltet (mit ``motions.edit``), ``motions.edit_all`` bearbeitet;
+          Federführung, Mitarbeit und eine persönliche Freigabe „Bearbeiten“ bearbeiten mit
+          ``motions.edit``; wer nur über eine Freigabe Zugang hat, bleibt bei deren Stufe; sonst
+          Kommentieren (``motions.comment``) oder Lesen.
         - ``status_lock``: danach greift die Status-Sperre für den Inhalt (apply_status_lock).
         """
         if membership is None or membership.organization_id != self.organization_id:
@@ -1158,9 +1158,11 @@ class Motion(EncryptionMixin, models.Model):
 
         # Abfragen nur, wo sie das Ergebnis ändern können (Freigaben, Mitarbeit)
         edit_all = membership.has_permission("motions.edit_all")
+        can_edit_own = membership.has_permission("motions.edit")
         if self.visibility == "organization":
             if edit_all or (
-                membership.has_permission("motions.edit") and self._member_share_level(membership) in ("edit", "admin")
+                can_edit_own
+                and (self._member_share_level(membership) in ("edit", "admin") or self._is_assigned(membership))
             ):
                 level = "edit"
             else:
@@ -1170,7 +1172,7 @@ class Motion(EncryptionMixin, models.Model):
             assigned = self._is_assigned(membership)
             if not share and not assigned:
                 return "none"
-            if edit_all or (share in ("edit", "admin") and membership.has_permission("motions.edit")):
+            if edit_all or (can_edit_own and (share in ("edit", "admin") or assigned)):
                 level = "edit"
             elif share and not assigned:
                 # Zugang nur über die persönliche Freigabe: nicht mehr als deren Stufe
@@ -1180,11 +1182,11 @@ class Motion(EncryptionMixin, models.Model):
         else:  # privat: nur Autor:in, Federführung und Mitarbeit
             if not self._is_assigned(membership):
                 return "none"
-            level = "edit" if edit_all else base
+            level = "edit" if (edit_all or can_edit_own) else base
         return self.apply_status_lock(level, membership) if status_lock else level
 
     def _is_assigned(self, membership) -> bool:
-        """Federführung oder Mitarbeit?"""
+        """Federführung oder Mitarbeit? (Zugang und – mit ``motions.edit`` – Bearbeiten)"""
         return self.responsible_id == membership.id or self.contributors.filter(pk=membership.pk).exists()
 
     def editor_access_level(self, membership) -> str:

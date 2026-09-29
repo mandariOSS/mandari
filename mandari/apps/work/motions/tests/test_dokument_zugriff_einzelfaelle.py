@@ -161,3 +161,29 @@ def test_freigabeanfrage_an_personen_ohne_zugang_braucht_das_freigaberecht(
     assert not privat.can_access(pruefer)
     # Hat die angefragte Person schon Zugang, ist die Anfrage keine Freigabe
     assert anfrage(offen).status_code == 200
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("sichtbarkeit", ["private", "shared", "organization"])
+def test_federfuehrung_bearbeitet_ihr_dokument_mit_bearbeitungsrecht(
+    org: Any, make_member: Any, client_for: Any, sichtbarkeit: str
+) -> None:
+    """Federführung und Mitarbeit behalten Status, Metadaten und Inhalt – sofern sie ``motions.edit`` haben."""
+    autorin = make_member(org, MITGLIED, email="autorin@example.org")
+    zustaendig = make_member(org, MITGLIED, email="zustaendig@example.org")
+    ohne_recht = make_member(org, ["motions.view", "motions.comment"], email="ohne@example.org")
+    dokument = Motion.objects.create(
+        organization=org, author=autorin, title="Radweg", visibility=sichtbarkeit, responsible=zustaendig
+    )
+    status_url = reverse("work:document_status", kwargs={"org_slug": org.slug, "motion_id": dokument.id})
+
+    assert dokument.access_level(zustaendig) == "edit"
+    assert _xhr(client_for(zustaendig.user), status_url, {"status": "internal_review"}).status_code == 200
+    # Teilen und endgültiges Löschen bleiben Autor:in bzw. motions.edit_all vorbehalten
+    assert not dokument.can_share(zustaendig)
+    assert not dokument.can_manage(zustaendig)
+
+    Motion.objects.filter(pk=dokument.pk).update(responsible=ohne_recht)
+    dokument.refresh_from_db()
+    assert dokument.access_level(ohne_recht) == "comment"
+    assert not dokument.can_edit(ohne_recht)

@@ -8,8 +8,8 @@ Die Regel steht hier unabhängig vom Code (``soll_stufe``); jeder Weg muss sie e
   stimmen überein: Niemand öffnet über einen Weg etwas, das die Liste ihm nicht zeigt.
 - Mitglieder brauchen ``motions.view``. Zugang haben Autor:in, Federführung, Mitarbeit, alle bei
   organisationsweiten Dokumenten und persönlich Freigegebene bei geteilten Dokumenten.
-- Stufe: Autor:in verwaltet (mit ``motions.edit``), ``motions.edit_all`` bearbeitet, eine persönliche
-  Freigabe „Bearbeiten“ bearbeitet mit ``motions.edit``; wer nur über eine Freigabe Zugang hat, bleibt
+- Stufe: Autor:in verwaltet (mit ``motions.edit``), ``motions.edit_all`` bearbeitet; Federführung,
+  Mitarbeit und eine persönliche Freigabe „Bearbeiten“ bearbeiten mit ``motions.edit``; wer nur über eine Freigabe Zugang hat, bleibt
   bei deren Stufe; sonst Kommentieren (``motions.comment``) oder Lesen.
 - Gäste: ausschließlich persönliche oder Ordner-Freigaben, nie Verwaltung, nie Papierkorb.
 - Status-Sperre (eingereicht, gelöscht …): Inhalt nur mit ``motions.edit_all``; Gäste kommentieren.
@@ -61,6 +61,9 @@ RECHTE: dict[str, tuple[str, ...]] = {
     "vorsitz": (*MITGLIED, "motions.edit_all"),
     "federfuehrung": MITGLIED,
     "mitarbeit": MITGLIED,
+    # Zugewiesen, aber ohne motions.edit: Zugang, jedoch kein Bearbeiten
+    "mitarbeit_kommentar": ("motions.view", "motions.comment"),
+    "mitarbeit_lesen": ("motions.view",),
     "freigabe_lesen": MITGLIED,
     "freigabe_bearbeiten": MITGLIED,
 }
@@ -113,14 +116,14 @@ def soll_stufe(person: str, dok: str, *, sperre: bool = True) -> str:
     if "motions.view" not in rechte:
         return "none"
     autor = person == "autor"
-    zugeteilt = person in ("federfuehrung", "mitarbeit")
+    zugeteilt = person in ("federfuehrung", "mitarbeit", "mitarbeit_kommentar", "mitarbeit_lesen")
     freigabe = FREIGABEN.get(person) if sichtbarkeit != "private" else None
     if not (autor or zugeteilt or sichtbarkeit == "organization" or (sichtbarkeit == "shared" and freigabe)):
         return "none"
     kommentar = "comment" if "motions.comment" in rechte else "view"
     if autor:
         stufe = "admin" if "motions.edit" in rechte else kommentar
-    elif "motions.edit_all" in rechte or (freigabe == "edit" and "motions.edit" in rechte):
+    elif "motions.edit_all" in rechte or ("motions.edit" in rechte and (freigabe == "edit" or zugeteilt)):
         stufe = "edit"
     elif sichtbarkeit == "shared" and freigabe:  # Zugang nur über die Freigabe
         stufe = min(freigabe, kommentar, key=RANG.__getitem__)
@@ -204,7 +207,9 @@ def welt(tmp_path: Any) -> Any:
             )
             motion.set_content_encrypted("<p>Inhalt</p>")  # type: ignore[attr-defined]
             motion.save()
-            motion.contributors.add(mitglieder["mitarbeit"])
+            motion.contributors.add(
+                mitglieder["mitarbeit"], mitglieder["mitarbeit_kommentar"], mitglieder["mitarbeit_lesen"]
+            )
             for person, stufe in FREIGABEN.items():
                 share = MotionShare.objects.create(
                     motion=motion,
