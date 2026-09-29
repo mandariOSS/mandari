@@ -4,7 +4,8 @@ Wie wir eine gemeldete oder selbst gefundene Schwachstelle behandeln — von der
 Aufnahme bis zur Veröffentlichung. Gilt für mandari und die zugehörigen Repos.
 
 Meldewege für Externe stehen in [`SECURITY.md`](../SECURITY.md). Dieses Dokument
-beschreibt, was danach bei uns passiert.
+beschreibt, was danach bei uns passiert. Für aktiv ausgenutzte Schwachstellen und
+schwerwiegende Sicherheitsvorfälle gelten zusätzlich die Meldepflichten aus Abschnitt 7.
 
 ---
 
@@ -121,3 +122,89 @@ kann, ob sie betroffen ist.
 
 Bei extern gemeldeten Lücken gilt zusätzlich: Eingangsbestätigung innerhalb von
 drei Werktagen, Zwischenstand spätestens nach zwei Wochen.
+
+## 7. Meldepflichten nach dem Cyber Resilience Act
+
+Der Cyber Resilience Act (Verordnung (EU) 2024/2847, CRA) verlangt seit dem **11.09.2026**
+Meldungen über aktiv ausgenutzte Schwachstellen und schwerwiegende Sicherheitsvorfälle
+(Art. 14). Die übrigen Pflichten gelten ab dem **11.12.2027**. Die Abschnitte 1 bis 6
+regeln den Umgang mit der Schwachstelle; dieser Abschnitt die Meldung an Behörden und Nutzer.
+
+### 7.1 Rolle: Hersteller oder Open-Source-Steward
+
+Der CRA knüpft die Pflichten an Rollen. Die Rolle hängt vom Vertriebsweg ab, nicht vom Quellcode:
+
+| Rolle | Wer | Meldepflicht |
+|---|---|---|
+| **Hersteller** | wer ein Produkt im Rahmen einer Geschäftstätigkeit unter eigenem Namen auf dem Markt bereitstellt, etwa eine kommerziell gelieferte Edition | volle Pflichten nach Art. 14 |
+| **Open-Source-Steward** | eine juristische Person, die freie Software für kommerzielle Verwendung dauerhaft unterstützt, ohne deren Hersteller zu sein (Art. 3 Nr. 14) | Meldungen, soweit sie an der Entwicklung beteiligt ist, und eine dokumentierte Cybersicherheitsrichtlinie (Art. 24) |
+| **Nutzer** | wer mandari unverändert selbst betreibt | keine nach dem CRA |
+
+Ein Anbieter kann für eine monetarisierte Edition Hersteller und zugleich für die freie Edition
+Steward sein; die Rolle wird je Produkt bestimmt (Leitlinien der Kommission vom 27.07.2026).
+Der reine Betrieb als Dienst (SaaS) ist kein Produkt im Sinne des CRA; dafür gelten Datenschutz-
+und Vertragspflichten. Wer mandari verändert und unter eigenem Namen anbietet, wird selbst
+Hersteller.
+
+Wir behandeln jede aktiv ausgenutzte Schwachstelle in mandari nach dem Ablauf in 7.4,
+unabhängig davon, welche Rolle im Einzelfall greift.
+
+### 7.2 Begriffe
+
+- **Aktiv ausgenutzte Schwachstelle:** Es gibt verlässliche Belege, dass ein Angreifer sie
+  ohne Erlaubnis in einem System ausgenutzt hat (Art. 3 Nr. 42). Eine gemeldete, aber nicht
+  ausgenutzte Schwachstelle löst keine Meldepflicht aus; für sie gelten die Abschnitte 1 bis 6.
+- **Schwerwiegender Sicherheitsvorfall:** Er beeinträchtigt die Fähigkeit des Produkts,
+  Verfügbarkeit, Authentizität, Integrität oder Vertraulichkeit sensibler Daten oder Funktionen
+  zu schützen, oder er hat zur Ausführung von Schadcode im Produkt oder bei Nutzern geführt
+  oder kann dazu führen (Art. 14 Abs. 5).
+
+### 7.3 Meldeweg und Fristen
+
+Gemeldet wird über die einheitliche Meldeplattform der ENISA (Art. 16), gleichzeitig an das
+koordinierende CSIRT des Mitgliedstaats der Hauptniederlassung (für uns das BSI) und an die
+ENISA. Die Fristen laufen ab Kenntnis, auch an Wochenenden und Feiertagen:
+
+| | Frühwarnung | Meldung | Abschlussbericht |
+|---|---|---|---|
+| **Aktiv ausgenutzte Schwachstelle** (Art. 14 Abs. 2) | 24 Stunden | 72 Stunden | 14 Tage, nachdem eine Korrektur oder Abhilfe verfügbar ist |
+| **Schwerwiegender Sicherheitsvorfall** (Art. 14 Abs. 4) | 24 Stunden | 72 Stunden | ein Monat nach der Meldung |
+
+Die Frühwarnung nennt, soweit bekannt, die Mitgliedstaaten, in denen das Produkt bereitgestellt
+ist. Die Meldung beschreibt die Art der Schwachstelle, die ergriffenen Maßnahmen und was Nutzer
+selbst tun können. Der Abschlussbericht enthält Schweregrad und Auswirkung, Angaben zum Angreifer,
+soweit bekannt, und die Korrektur.
+
+### 7.4 Ablauf
+
+1. Eingang festhalten, Zeitpunkt der Kenntnis in UTC notieren.
+2. Innerhalb weniger Stunden einstufen: aktiv ausgenutzt? schwerwiegender Vorfall? Welche
+   Versionen und Editionen? Sind personenbezogene Daten betroffen?
+3. Privates Advisory anlegen (Abschnitt 1, Schritt 1).
+4. Meldeentscheidung mit Begründung festhalten.
+5. Frühwarnung vor Ablauf von 24 Stunden, Meldung vor Ablauf von 72 Stunden absenden.
+6. Betroffene Nutzer informieren (Art. 14 Abs. 8): mit Gegenmaßnahmen, ohne Angriffsweg.
+7. Beheben und ausliefern nach Abschnitt 6 und der
+   [Release- und Support-Politik](RELEASE_POLITIK.md).
+8. Abschlussbericht fristgerecht absenden, danach Advisory veröffentlichen und CVE anfordern
+   (Abschnitt 4).
+9. Liegt die Ursache in einer Fremdkomponente, deren Betreuer informieren.
+
+**Verhältnis zur Grundregel aus Abschnitt 1:** Die Meldung an CSIRT und ENISA ist keine
+Veröffentlichung. Sie ist vertraulich und darf dem Fix vorausgehen. Öffentlich gilt weiter:
+erst der Fix, dann die Veröffentlichung. Die Nutzerinformation sagt, was zu tun ist, nicht, wie
+der Angriff funktioniert.
+
+Betrifft ein Vorfall personenbezogene Daten in einer von uns betriebenen Instanz, gelten
+zusätzlich die Meldepflichten der DSGVO (Art. 33) mit eigenen Fristen. Zuständigkeit, Vorlagen
+für die einzelnen Meldungen und eine Checkliste führen wir intern.
+
+### 7.5 Ab dem 11.12.2027
+
+Dann gelten die übrigen Pflichten des CRA, darunter die Anforderungen an die
+Schwachstellenbehandlung aus Anhang I Teil II: Stückliste der Komponenten, Richtlinie zur
+koordinierten Offenlegung mit Kontaktadresse, Sicherheitsupdates getrennt von
+Funktionsupdates und kostenlos, ein festgelegter Supportzeitraum sowie technische
+Dokumentation und Konformitätsbewertung. Vorhanden sind die Stückliste je Release
+([SBOM.md](SBOM.md)), die Richtlinie in [`SECURITY.md`](../SECURITY.md) und die
+[Release- und Support-Politik](RELEASE_POLITIK.md); den Rest bauen wir bis dahin auf.
