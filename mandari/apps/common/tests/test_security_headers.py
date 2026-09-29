@@ -34,6 +34,11 @@ def test_csp_report_only_policy_is_strict_on_frames_and_objects():
     assert CSP.UNSAFE_INLINE not in policy["script-src"]
 
 
+def test_csp_connect_src_allows_only_own_origin():
+    # Karten nutzen den eigenen Kachel-Proxy; externe Verbindungsziele nur mit tatsächlichem Nutzer im Browser (#614)
+    assert settings.SECURE_CSP_REPORT_ONLY["connect-src"] == [CSP.SELF]
+
+
 def test_password_policy_requires_twelve_characters():
     min_length = next(
         v["OPTIONS"]["min_length"]
