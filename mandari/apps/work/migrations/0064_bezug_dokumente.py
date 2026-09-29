@@ -24,7 +24,7 @@ def zielsitzung_leeren(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [
         ("insight_core", "0037_zugangstoken_als_hash"),
-        ("work", "0062_aufgaben_herkunft_protokolleintrag"),
+        ("work", "0063_namen_in_protokollen_sichern"),
     ]
 
     operations = [

@@ -304,7 +304,7 @@ def test_suche_in_der_liste_findet_aenderungsantrag(
     assert "Änderung zum Radwegeantrag" in html
 
 
-MIGRATION = importlib.import_module("apps.work.migrations.0063_bezug_dokumente")
+MIGRATION = importlib.import_module("apps.work.migrations.0064_bezug_dokumente")
 NACHHER = ("work", MIGRATION.__name__.rsplit(".", 1)[1])
 VORHER = next(dep for dep in MIGRATION.Migration.dependencies if dep[0] == "work")
 
