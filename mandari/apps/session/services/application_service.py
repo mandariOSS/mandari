@@ -6,6 +6,8 @@ This service provides the integration between Work module and Session RIS,
 enabling political organizations to submit applications (Anträge) directly.
 """
 
+import logging
+from pathlib import PurePosixPath
 from typing import Any
 from uuid import UUID
 
@@ -19,6 +21,8 @@ from apps.session.models import (
     SessionPaper,
     SessionTenant,
 )
+
+logger = logging.getLogger(__name__)
 
 #: Antragsart → Vorlagenart (bestimmt den Nummernkreis, z. B. „AN/…“ für Anträge der Politik)
 PAPER_TYPE_FOR_APPLICATION = {"inquiry": "inquiry", "amendment": "amendment", "resolution": "resolution"}
@@ -91,7 +95,60 @@ def convert_to_paper(
         )
         application.status = "converted"
         application.save(update_fields=["status", "updated_at"])
+        # Anhänge des Antrags hängen jetzt auch an der Vorlage – nichtöffentlich, bis die
+        # Verwaltung sie freigibt (#584)
+        application.files.filter(paper__isnull=True).update(paper=paper, is_public=False)
     return paper, True
+
+
+def attachment_accepted(name: str, size: int) -> str | None:
+    """Warum eine Datei nicht als Antrags-Anhang angenommen wird – oder ``None`` (#584)."""
+    from . import file_service
+
+    ext = PurePosixPath(name or "").suffix.lower()
+    if ext not in file_service.ALLOWED_EXTENSIONS:
+        return "Dateityp wird von der Verwaltung nicht angenommen"
+    if size > file_service.MAX_FILE_SIZE_MB * 1024 * 1024:
+        return f"größer als {file_service.MAX_FILE_SIZE_MB} MB"
+    return None
+
+
+def attach_application_files(application: SessionApplication, files: list[tuple[str, Any]]) -> list[str]:
+    """
+    Anhänge eines eingereichten Antrags speichern (Work → Session, #584).
+
+    ``files``: Paare aus Anzeigename und Django-``File`` (Dateiname ohne Pfad). Geprüft wird wie bei Anlagen der
+    Verwaltung (Dateityp, Größe, Virenscan-Hook); gespeichert über die Fassungsablage
+    (Deduplizierung je Mandant). Anhänge bleiben nichtöffentlich.
+
+    Returns:
+        Namen der nicht angenommenen Dateien (mit Grund).
+    """
+    from apps.session.models import SessionFile
+
+    from . import file_service, file_version_service
+
+    skipped: list[str] = []
+    for name, content in files:
+        reason = attachment_accepted(name, int(getattr(content, "size", 0) or 0))
+        if reason is None:
+            try:
+                file_service.scan_upload(content)
+            except Exception:  # Befund oder Prüfung nicht verfügbar – der Hook wirft beliebige Ausnahmen
+                logger.warning("Antrags-Anhang abgelehnt (Virenprüfung): Antrag %s", application.pk)
+                reason = "Virenprüfung nicht bestanden oder nicht verfügbar"
+        if reason is not None:
+            skipped.append(f"{name} ({reason})")
+            continue
+        session_file = SessionFile(
+            tenant=application.tenant,
+            application=application,
+            name=name[:500],
+            mime_type=file_service.mime_type_for_name(name),
+            is_public=False,
+        )
+        file_version_service.attach_upload(session_file, content, user=None)
+    return skipped
 
 
 #: Antworttext der APIs bei abweichender Organisation (fester Text, keine Ausnahme-Details nach außen)

@@ -20,7 +20,6 @@ from .actions import (
     MotionCommentResolveView,
     MotionCommentView,
     MotionDocumentDownloadView,
-    MotionDocumentUploadView,
     MotionExportView,
     MotionImportView,
     MotionMetaUpdateView,
@@ -29,6 +28,11 @@ from .actions import (
     MotionShareUpdateView,
     MotionShareView,
     MotionStatusView,
+)
+from .attachments import (
+    MotionDocumentDeleteView,
+    MotionDocumentRenameView,
+    MotionDocumentUploadView,
 )
 from .editor import (
     DocumentEditorView,
@@ -114,6 +118,8 @@ __all__ = [
     "MotionDetailRedirectView",
     "MotionDocumentDownloadView",
     "MotionDocumentUploadView",
+    "MotionDocumentRenameView",
+    "MotionDocumentDeleteView",
     "MotionEmptyTrashView",
     "MotionExportView",
     "MotionFolderMoveView",

@@ -3,49 +3,16 @@
 Forms for motion/document management.
 """
 
-from typing import Any
-
 from django import forms
-
-from apps.common.uploads import DOCUMENTS, MB, validate_upload
 
 from .models import (
     Motion,
     MotionComment,
-    MotionDocument,
     MotionShare,
     MotionTemplate,
     MotionType,
     OrganizationLetterhead,
 )
-
-#: Anlagen zu Anträgen — wie Sitzungsvorbereitung 50 MB (#260).
-MOTION_DOCUMENT_MAX_BYTES = 50 * MB
-
-
-class MotionDocumentForm(forms.ModelForm):
-    """Form for uploading documents to a motion."""
-
-    class Meta:
-        model = MotionDocument
-        fields = ["file"]
-        widgets = {
-            "file": forms.FileInput(
-                attrs={
-                    "class": "hidden",
-                    "accept": ".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg",
-                }
-            )
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def clean_file(self) -> Any:
-        f = self.cleaned_data.get("file")
-        if f:
-            validate_upload(f, allowed=DOCUMENTS, max_bytes=MOTION_DOCUMENT_MAX_BYTES, bezeichnung="Datei")
-        return f
 
 
 class MotionShareForm(forms.ModelForm):

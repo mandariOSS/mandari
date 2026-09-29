@@ -30,6 +30,7 @@ MUSTER_PRUEFUNG = re.compile(r"from apps\.common\.uploads import [^\n]*validate_
 #: Module, die die Datei ungeprüft an eine prüfende Stelle weiterreichen.
 DELEGIERT: dict[str, str] = {
     "work/meetings/views/api_documents.py": "reicht an meetings/services.add_document_upload weiter (validate_upload)",
+    "work/motions/views/attachments.py": "reicht an motions/attachments.add_attachments weiter (validate_upload)",
     "work/organization/views/profile.py": "reicht an organization/services.update_profile weiter (_pruefe_bild)",
     "work/organization/views/team.py": "reicht an organization/services.update_general_settings weiter (_pruefe_bild)",
     "work/tasks/views/panel.py": "nutzt TaskAttachmentForm.clean_file (validate_upload)",

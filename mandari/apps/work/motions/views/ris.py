@@ -71,6 +71,8 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
         )
         if "form" not in context:
             context["form"] = kwargs.get("form") or ris_submission.build_prefill(motion)
+        # Anhänge, die mitgehen, und solche, die die Verwaltung nicht annimmt (#584)
+        context["attachments_accepted"], context["attachments_rejected"] = ris_submission.attachment_preview(motion)
         return context
 
     def post(self, request, *args, **kwargs):
@@ -111,9 +113,13 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
             except ris_submission.SubmissionError as exc:
                 errors.append(str(exc))
             else:
+                anhaenge = application.files.count()
+                hinweis = (
+                    f" Mit {anhaenge} Anhang." if anhaenge == 1 else (f" Mit {anhaenge} Anhängen." if anhaenge else "")
+                )
                 messages.success(
                     request,
-                    f"Antrag eingereicht. Eingangsnummer bei {application.tenant.name}: {application.reference}.",
+                    f"Antrag eingereicht. Eingangsnummer bei {application.tenant.name}: {application.reference}.{hinweis}",
                 )
                 return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 

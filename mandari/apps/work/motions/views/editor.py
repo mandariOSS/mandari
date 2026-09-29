@@ -253,8 +253,17 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 )
         context["inline_comments_data"] = inline_comments_data
 
-        # Documents (attachments)
+        # Anhänge (#584): Bearbeiten nach der Dokumentregel ohne Status-Sperre, ohne Gäste
+        from .. import attachments
+
         context["documents"] = motion.documents.all()
+        context["can_edit_attachments"] = (
+            not getattr(self.membership, "is_guest", False)
+            and self.membership.has_permission("motions.edit")
+            and motion.can_edit(self.membership)
+        )
+        context["attachment_accept"] = attachments.ACCEPT
+        context["attachment_max_mb"] = attachments.ATTACHMENT_MAX_BYTES // (1024 * 1024)
 
         # Revisions
         context["revisions"] = motion.revisions.all()[:10]

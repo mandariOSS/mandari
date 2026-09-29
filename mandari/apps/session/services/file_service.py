@@ -134,19 +134,29 @@ def scan_upload(uploaded_file) -> None:
 
 
 def file_parent(session_file: Any) -> Any:
-    """Elternobjekt einer Anlage (Vorlage, TOP oder Sitzung); None ohne Zuordnung."""
+    """Elternobjekt einer Anlage (Vorlage, TOP, Sitzung oder eingereichter Antrag); None ohne Zuordnung."""
     if session_file.paper_id:
         return session_file.paper
     if session_file.agenda_item_id:
         return session_file.agenda_item
     if session_file.meeting_id:
         return session_file.meeting
+    if getattr(session_file, "application_id", None):
+        return session_file.application
     return None
+
+
+def is_application_file(session_file: Any) -> bool:
+    """Anhang eines eingereichten Antrags, der (noch) an keiner Vorlage, Sitzung oder TOP hängt (#584)."""
+    return bool(
+        getattr(session_file, "application_id", None)
+        and not (session_file.paper_id or session_file.agenda_item_id or session_file.meeting_id)
+    )
 
 
 def is_non_public(session_file: Any) -> bool:
     """Ist die Anlage selbst oder ihr Elternobjekt nichtöffentlich? (Kennzeichen im Protokoll, Issue #221)."""
-    if not session_file.is_public:
+    if not session_file.is_public or is_application_file(session_file):
         return True
     parent = file_parent(session_file)
     if parent is None:
@@ -158,6 +168,8 @@ def is_non_public(session_file: Any) -> bool:
 
 def non_public_permission(session_file: Any) -> str:
     """NÖ-Sichtrecht, das eine nichtöffentliche Anlage bzw. eine Anlage an einem NÖ-Objekt verlangt."""
+    if is_application_file(session_file):
+        return "view_applications"
     if session_file.paper_id or not (session_file.agenda_item_id or session_file.meeting_id):
         return "view_non_public_papers"
     return "view_non_public_meetings"
@@ -191,6 +203,10 @@ def file_visible(permissions: Set[str], session_file: Any) -> bool:
     elif session_file.meeting_id:
         base_perm, np_perm = "view_meetings", "view_non_public_meetings"
         parent_public = parent.is_public if parent else True
+    elif is_application_file(session_file):
+        # Anträge sind intern: sichtbar mit dem Recht, Anträge zu sehen (#584)
+        base_perm, np_perm = "view_applications", "view_applications"
+        parent_public = False
     else:
         # Anlage ohne Elternobjekt: restriktiv behandeln
         base_perm, np_perm = "view_papers", "view_non_public_papers"

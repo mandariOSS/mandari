@@ -28,6 +28,8 @@ FACTION_ATTACHMENTS = "faction/attachments/"
 MEETING_DOCUMENTS = "meetings/documents/"
 SUPPORT_ATTACHMENTS = "support/attachments/"
 LETTERHEADS = "motions/letterheads/"
+#: Anhänge an Dokumenten (Anträge, Anfragen …) – Import und eigene Uploads (#584)
+MOTION_DOCUMENTS = "motions/documents/"
 #: Datenexporte: ``exports/<organisation>/<mitgliedschaft>/…``, Download nur über ``work:export_download``
 DATA_EXPORTS = "exports/"
 
@@ -38,6 +40,7 @@ PROTECTED_PREFIXES = (
     MEETING_DOCUMENTS,
     SUPPORT_ATTACHMENTS,
     LETTERHEADS,
+    MOTION_DOCUMENTS,
     DATA_EXPORTS,
 )
 
@@ -71,6 +74,10 @@ def support_attachment_path(instance: Any, filename: str) -> str:
 
 def letterhead_path(instance: Any, filename: str) -> str:
     return _random_name(LETTERHEADS, filename)
+
+
+def motion_document_path(instance: Any, filename: str) -> str:
+    return _random_name(MOTION_DOCUMENTS, filename)
 
 
 class AttachmentDisplayMixin:

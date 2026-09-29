@@ -18,12 +18,15 @@ Ablauf:
 from __future__ import annotations
 
 import html
+import logging
 import re
 
 from django.db import transaction
 from django.utils import timezone
 
 from .models import StatusTransitionError
+
+logger = logging.getLogger(__name__)
 
 # Reihenfolge = Priorität beim Erkennen der Abschnitte im Dokument
 SECTION_PATTERNS = [
@@ -241,6 +244,45 @@ def build_prefill(motion) -> dict:
     }
 
 
+def attachment_preview(motion) -> tuple[list, list[tuple]]:
+    """Anhänge für die Einreichung: (werden übermittelt, [(Anhang, Grund)] nicht angenommen) (#584)."""
+    from apps.session.services.application_service import attachment_accepted
+
+    accepted, rejected = [], []
+    for document in motion.documents.all():
+        reason = attachment_accepted(document.filename, document.file_size)
+        if reason is None:
+            accepted.append(document)
+        else:
+            rejected.append((document, reason))
+    return accepted, rejected
+
+
+def _transfer_attachments(motion, application) -> list[str]:
+    """Anhänge des Dokuments an den eingereichten Antrag in Session geben; liefert Nicht-Übernommenes."""
+    from pathlib import PurePosixPath
+
+    from django.core.files import File
+
+    from apps.session.services.application_service import attach_application_files
+
+    pairs, handles, missing = [], [], []
+    try:
+        for document in motion.documents.all():
+            try:
+                handle = document.file.open("rb")
+            except (FileNotFoundError, ValueError, OSError):
+                missing.append(f"{document.filename} (Datei nicht gefunden)")
+                continue
+            handles.append(handle)
+            name = PurePosixPath((document.filename or "").replace("\\", "/")).name or "Anhang"
+            pairs.append((document.filename or name, File(handle, name=name)))
+        return missing + attach_application_files(application, pairs)
+    finally:
+        for handle in handles:
+            handle.close()
+
+
 @transaction.atomic
 def submit_motion(motion, membership, data: dict):
     """
@@ -280,6 +322,11 @@ def submit_motion(motion, membership, data: dict):
         )
     except ValueError as exc:
         raise SubmissionError(str(exc)) from exc
+
+    # Anhänge gehen mit (#584); nicht angenommene stehen vorher in der Vorschau
+    skipped = _transfer_attachments(motion, application)
+    if skipped:
+        logger.info("Einreichung %s: %s Anhänge nicht übernommen", application.pk, len(skipped))
 
     from .administration_feedback import SUBMISSION_VIA, record_submission, send_receipt
 

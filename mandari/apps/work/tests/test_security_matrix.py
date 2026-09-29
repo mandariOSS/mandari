@@ -87,6 +87,7 @@ from apps.work.motions.models import (
     MotionApproval,
     MotionChecklistItem,
     MotionComment,
+    MotionDocument,
     MotionRevision,
     MotionShare,
     MotionTemplate,
@@ -462,6 +463,8 @@ CASES: list[Case] = [
     ),
     Case("document_comment_resolve", path={"motion_id": "motion", "comment_id": "comment"}),
     Case("document_upload", path=MOTION, files={"file": "anlage.pdf"}),
+    Case("document_file_rename", path={"motion_id": "motion", "document_id": "motion_file"}, data={"filename": "neu"}),
+    Case("document_file_delete", path={"motion_id": "motion", "document_id": "motion_file"}),
     Case("document_submit_ris", path=MOTION, data=EINREICHUNG),
     Case("document_empty_trash"),
     Case("document_restore", path={"motion_id": "motion_trash"}),
@@ -1050,6 +1053,14 @@ class _Builder:
         revision = MotionRevision(motion=motion, version=1, changed_by=admin, change_summary="Erste Fassung")
         cast(Any, revision).set_content_encrypted("<p>Erste Fassung</p>")
         revision.save()
+        motion_file = MotionDocument.objects.create(
+            motion=motion,
+            file=SimpleUploadedFile("plan.pdf", b"%PDF-1.4"),
+            filename="plan.pdf",
+            mime_type="application/pdf",
+            file_size=8,
+            uploaded_by=admin,
+        )
 
         # Fraktionssitzung mit Tagesordnung, Protokoll, Teilnahmen und Sitzungsreihe
         fmeeting = FactionMeeting.objects.create(
@@ -1205,6 +1216,7 @@ class _Builder:
             "approval": approval,
             "checklist": checklist,
             "revision": revision,
+            "motion_file": motion_file,
             "fmeeting": fmeeting,
             "fmeeting_ongoing": fmeeting_ongoing,
             "fmeeting_completed": fmeeting_completed,

@@ -75,6 +75,8 @@ def _edit_permission(session_file: SessionFile) -> str:
     """Benötigte Edit-Berechtigung für eine Anlage: die ihres Elternobjekts."""
     if session_file.paper_id:
         return "edit_papers"
+    if file_service.is_application_file(session_file):
+        return "process_applications"
     return "edit_meetings"
 
 
@@ -128,6 +130,10 @@ def _redirect_to_parent(tenant_slug: str, session_file: SessionFile):
         )
     if session_file.meeting_id:
         return redirect("session:meeting_detail", tenant_slug=tenant_slug, meeting_id=session_file.meeting_id)
+    if file_service.is_application_file(session_file):
+        return redirect(
+            "session:application_detail", tenant_slug=tenant_slug, application_id=session_file.application_id
+        )
     return redirect("session:dashboard", tenant_slug=tenant_slug)
 
 
@@ -238,7 +244,10 @@ class FileUpdateView(SessionMixin, View):
                 messages.error(request, paper_version_service.CONTENT_LOCKED_MESSAGE)
                 return _redirect_to_parent(tenant_slug, session_file)
             session_file.name = new_name
-        session_file.is_public = request.POST.get("is_public") == "on"
+        # Anhänge eines Antrags bleiben nichtöffentlich, bis sie an einer Vorlage hängen (#584)
+        session_file.is_public = request.POST.get("is_public") == "on" and not file_service.is_application_file(
+            session_file
+        )
         session_file.save()
 
         messages.success(request, f"Anlage „{session_file.name}“ wurde aktualisiert.")

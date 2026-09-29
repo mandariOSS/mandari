@@ -24,7 +24,7 @@ from django.utils import timezone
 
 from apps.common.encryption import DecryptionError, EncryptedTextField, EncryptionMixin, TenantEncryption
 from apps.common.formatting import member_name
-from apps.work.files import letterhead_path
+from apps.work.files import AttachmentDisplayMixin, letterhead_path, motion_document_path
 
 logger = logging.getLogger(__name__)
 
@@ -1580,19 +1580,20 @@ class MotionShare(models.Model):
         return f"{self.motion.title} → {target} ({self.level})"
 
 
-class MotionDocument(models.Model):
+class MotionDocument(AttachmentDisplayMixin, models.Model):
     """
-    File attachment for a motion.
+    Anhang eines Dokuments (Import oder eigener Upload, #584).
 
-    Supports PDF, Word, and other document formats.
-    Text is extracted for search.
+    Neue Dateien liegen unter einem Zufallsnamen (``apps/work/files.py``); der Originalname steht in
+    ``filename`` und wird beim Download gesetzt. Ausgeliefert wird nur über die zugriffsgeprüfte
+    Download-View. Bei der Einreichung gehen die Anhänge an die Verwaltung mit.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     motion = models.ForeignKey(Motion, on_delete=models.CASCADE, related_name="documents", verbose_name="Antrag")
 
-    file = models.FileField(upload_to="motions/documents/%Y/%m/", verbose_name="Datei")
+    file = models.FileField(upload_to=motion_document_path, verbose_name="Datei")
     filename = models.CharField(max_length=255, verbose_name="Dateiname")
     mime_type = models.CharField(max_length=100, verbose_name="MIME-Typ")
     file_size = models.PositiveIntegerField(default=0, verbose_name="Dateigröße (Bytes)")

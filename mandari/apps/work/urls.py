@@ -301,6 +301,16 @@ urlpatterns = [
         name="document_file_download",
     ),
     path(
+        "<slug:org_slug>/documents/<uuid:motion_id>/files/<uuid:document_id>/rename/",
+        motions_views.MotionDocumentRenameView.as_view(),
+        name="document_file_rename",
+    ),
+    path(
+        "<slug:org_slug>/documents/<uuid:motion_id>/files/<uuid:document_id>/delete/",
+        motions_views.MotionDocumentDeleteView.as_view(),
+        name="document_file_delete",
+    ),
+    path(
         "<slug:org_slug>/documents/<uuid:motion_id>/export/",
         motions_views.MotionExportView.as_view(),
         name="document_export",
