@@ -1,0 +1,20 @@
+{% autoescape off %}
+Sicherheitshinweis: {{ notification.title }}
+
+Hallo{% if name %} {{ name }}{% endif %},
+
+{{ notification.message }}
+
+Zeitpunkt: {{ occurred_at|date:"d.m.Y, H:i" }} Uhr{% if notification.device_info %}
+Gerät: {{ notification.device_info }}{% endif %}{% if notification.ip_address %}
+IP-Adresse: {{ notification.ip_address }}{% endif %}
+
+Warst du das? Dann ist nichts weiter zu tun.
+
+Warst du es nicht? Setze dein Passwort sofort zurück und informiere die Administration deiner Organisation:
+
+{{ reset_url }}
+
+Mit freundlichen Grüßen,
+Das Mandari-Team
+{% endautoescape %}

@@ -101,8 +101,27 @@ nicht vertrauenswürdige Clients). Ohne Proxy wird `REMOTE_ADDR` verwendet.
 
   Entfernt werden Authenticator-App, Backup-Codes, Sicherheitsschlüssel und
   vertrauenswürdige Geräte; beim nächsten Login folgt die erneute Einrichtung.
+  Die Person erhält darüber einen Sicherheitshinweis per E-Mail.
+
+## Sicherheitshinweise
+
+Sicherheitsrelevante Änderungen am eigenen Konto legen einen Hinweis an
+(`apps/accounts/security_notifications.py`, Modell `SecurityNotification`). Die
+Sicherheitsseite im Profil (`/work/<org>/profile/security/`) zeigt die letzten zehn;
+neue sind markiert und gelten mit dem Anzeigen als gelesen.
+
+| Ereignis | Hinweis | E-Mail |
+|---|---|---|
+| Passwort im Profil geändert oder über den Link zurückgesetzt | ja | ja |
+| Zweiter Faktor eingerichtet, abgeschaltet oder per `reset_two_factor` zurückgesetzt | ja | ja |
+| Sicherheitsschlüssel/Passkey hinzugefügt oder entfernt | ja | ja |
+| Sitzung(en) im Profil beendet | ja | nein |
+
+Die Mail geht nach dem Commit über die SMTP-Konfiguration der Plattform an die Adresse des
+Kontos und nennt Zeitpunkt, Gerät und IP-Adresse der auslösenden Anfrage sowie den Weg zum
+Zurücksetzen des Passworts. Scheitert der Versand, bleibt die Änderung wirksam; der Hinweis
+bleibt mit „nicht per E-Mail gemeldet“ stehen (`email_sent`).
 
 ## Ausblick
 
-- E-Mail-Benachrichtigung, wenn ein zweiter Faktor eingerichtet oder entfernt wird.
 - Netzbeschränkung je Session-Mandant (Zugriff nur aus dem Verwaltungsnetz).

@@ -321,6 +321,21 @@ def accounts_password_reset(org: Any, make_member: Any) -> dict[str, Any]:
     return {"protocol": "https", "domain": "mandari.example", "uid": "MTIz", "token": "cabc12-0123456789abcdef"}
 
 
+def accounts_security_notification(org: Any, make_member: Any) -> dict[str, Any]:
+    notification = _ns(
+        title="Passwort geändert",
+        message="Das Passwort deines Kontos wurde geändert.",
+        device_info="Windows PC",
+        ip_address="198.51.100.7",
+    )
+    return {
+        "notification": notification,
+        "name": "Pat Beispiel",
+        "occurred_at": WHEN,
+        "reset_url": f"{SITE_URL}/accounts/password-reset/",
+    }
+
+
 def _member(org: Any, make_member: Any, email: str, first_name: str, last_name: str) -> Any:
     """Mitglied mit Namen (make_member verwirft user_kwargs, sobald eine E-Mail angegeben ist)."""
     member = make_member(org, email=email)
@@ -617,6 +632,11 @@ CASES = [
     MailCase("questions_answer_reminder", "emails/questions/answer_reminder.html", questions_answer_reminder),
     MailCase("questions_moderation", "emails/questions/moderation.html", questions_moderation),
     MailCase("accounts_password_reset", "accounts/emails/password_reset.html", accounts_password_reset),
+    MailCase(
+        "accounts_security_notification",
+        "accounts/emails/security_notification.html",
+        accounts_security_notification,
+    ),
     MailCase("work_faction_invitation", "work/faction/email/invitation.html", work_faction_invitation),
     MailCase("work_faction_reminder", "work/faction/email/reminder.html", work_faction_reminder),
     MailCase("work_notification", "work/notifications/email/notification.html", work_notification),

@@ -29,8 +29,8 @@ from django.utils import timezone
 
 from apps.common.encryption import two_factor_keys
 
+from . import security_notifications
 from .models import (
-    SecurityNotification,
     TrustedDevice,
     TwoFactorDevice,
     UserSession,
@@ -265,12 +265,11 @@ class TwoFactorService:
             device.confirmed_at = timezone.now()
             device.save()
 
-            # Create security notification
-            SecurityNotification.objects.create(
-                user=user,
-                notification_type="2fa_enabled",
-                title="2FA aktiviert",
-                message="Die Zwei-Faktor-Authentifizierung wurde für Ihr Konto aktiviert.",
+            security_notifications.notify(
+                user,
+                security_notifications.TWO_FACTOR_ENABLED,
+                "Zweiter Faktor eingerichtet",
+                "Für dein Konto wurde die Anmeldung mit Authenticator-App (zweiter Faktor) eingerichtet.",
             )
 
             return True
@@ -374,12 +373,12 @@ class TwoFactorService:
             # Sicherheitsschlüssel setzen die Authenticator-App als Rückfall voraus
             WebAuthnCredential.objects.filter(user=user).delete()
 
-            # Create security notification
-            SecurityNotification.objects.create(
-                user=user,
-                notification_type="2fa_disabled",
-                title="2FA deaktiviert",
-                message="Die Zwei-Faktor-Authentifizierung wurde für Ihr Konto deaktiviert.",
+            security_notifications.notify(
+                user,
+                security_notifications.TWO_FACTOR_DISABLED,
+                "Zweiter Faktor abgeschaltet",
+                "Für dein Konto wurde der zweite Faktor abgeschaltet; hinterlegte Sicherheitsschlüssel "
+                "wurden entfernt.",
             )
 
             return True
@@ -444,12 +443,11 @@ class SessionService:
 
             session.delete()
 
-            # Create security notification
-            SecurityNotification.objects.create(
-                user=user,
-                notification_type="session_revoked",
-                title="Sitzung beendet",
-                message="Eine Ihrer Sitzungen wurde beendet.",
+            security_notifications.notify(
+                user,
+                security_notifications.SESSION_REVOKED,
+                "Sitzung beendet",
+                "Eine deiner Sitzungen wurde beendet.",
             )
 
             return True
@@ -470,11 +468,11 @@ class SessionService:
         sessions.delete()
 
         if count > 0:
-            SecurityNotification.objects.create(
-                user=user,
-                notification_type="session_revoked",
-                title="Sitzungen beendet",
-                message=f"{count} Sitzung(en) wurden beendet.",
+            security_notifications.notify(
+                user,
+                security_notifications.SESSION_REVOKED,
+                "Sitzungen beendet",
+                f"{count} Sitzung(en) wurden beendet.",
             )
 
         return count
@@ -567,12 +565,11 @@ class PasswordService:
         user.set_password(new_password)
         user.save()
 
-        # Create security notification
-        SecurityNotification.objects.create(
-            user=user,
-            notification_type="password_changed",
-            title="Passwort geändert",
-            message="Ihr Passwort wurde erfolgreich geändert.",
+        security_notifications.notify(
+            user,
+            security_notifications.PASSWORD_CHANGED,
+            "Passwort geändert",
+            "Das Passwort deines Kontos wurde geändert.",
         )
 
         return True, "Passwort erfolgreich geändert."
