@@ -605,7 +605,8 @@ python manage.py migrate
 
 # Rollen/Berechtigungen synchronisieren
 python manage.py setup_roles       # Standard-Rollen erstellen
-python manage.py fix_permissions   # Berechtigungen aus Code sync
+python manage.py fix_permissions   # Probelauf: zeigt, was fehlt
+python manage.py fix_permissions --fix  # ergänzt fehlende Rechte/Standardrollen, ändert keine vorhandenen
 
 # OParl-Daten
 python manage.py sync_oparl --full  # Vollständiger Sync
@@ -820,7 +821,7 @@ def post(self, request, *args, **kwargs):
 ### Neue Berechtigung hinzufügen
 
 1. `apps/common/permissions.py` → `PERMISSIONS` dict erweitern
-2. `python manage.py fix_permissions` ausführen
+2. `python manage.py fix_permissions --fix` ausführen (legt die Berechtigung an; vorhandene Rollen bleiben unverändert)
 3. Rollen im Admin oder Code anpassen
 
 ### Neues Model mit Migration

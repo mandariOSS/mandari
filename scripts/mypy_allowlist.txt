@@ -82,7 +82,6 @@ apps.session.views.textblocks
 apps.session.views.voting
 apps.tenants.admin
 apps.tenants.apps
-apps.tenants.management.commands.fix_permissions
 apps.tenants.management.commands.setup_roles
 apps.tenants.middleware
 apps.tenants.models
