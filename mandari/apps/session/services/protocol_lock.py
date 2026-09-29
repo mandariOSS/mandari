@@ -6,7 +6,8 @@ Mit der Genehmigung (bzw. der direkten Veröffentlichung, wenn der Mandant keine
 Genehmigungsschritt vorsieht) sind Ergebnis, Stimmen (Zähler und namentliche Stimmen),
 Beschluss- und Protokolltexte aller TOPs der Sitzung sowie der allgemeine Teil der Niederschrift
 schreibgeschützt. Die Sperre sitzt im Modell (``save``/``delete`` von TOP, Einzelstimme,
-Beratungsstation, Niederschrift und Sitzung) und im Abstimmungs-Service (Sammelschreibzugriffe),
+Beratungsstation, Niederschrift und Sitzung), in ``pre_delete``-Signalen für Sitzung und Vorlage
+(Kaskaden und ``QuerySet.delete()``, Issue #427) und im Abstimmungs-Service (Sammelschreibzugriffe),
 nicht in der Oberfläche: Views, Admin, Signale und Befehle laufen alle hier durch.
 
 Geändert werden darf danach nur innerhalb von :func:`permit` – das nutzen die Berichtigung
@@ -70,6 +71,9 @@ MESSAGE_DELETE_ITEM = (
     "Die Niederschrift dieser Sitzung ist genehmigt. Tagesordnungspunkte lassen sich nicht mehr löschen."
 )
 MESSAGE_DELETE_MEETING = "Die Niederschrift dieser Sitzung ist genehmigt. Die Sitzung lässt sich nicht mehr löschen."
+MESSAGE_DELETE_PAPER = (
+    "Die Vorlage steht auf der Tagesordnung einer Sitzung mit genehmigter Niederschrift und lässt sich nicht löschen."
+)
 MESSAGE_STATUS = (
     "Eine genehmigte Niederschrift geht nicht zurück in Entwurf oder Prüfung. Korrekturen laufen über "
     "eine Berichtigung."
@@ -211,6 +215,53 @@ def guard_meeting_delete(meeting: SessionMeeting) -> None:
     """``SessionMeeting.delete``: Sitzungen mit genehmigter Niederschrift bleiben erhalten."""
     if not is_permitted(meeting.pk) and is_locked(meeting.pk):
         raise ProtocolLockedError(MESSAGE_DELETE_MEETING)
+
+
+def _deleting_whole_tenant(origin: Any) -> bool:
+    """
+    Geht die Löschung vom Mandanten selbst aus? Das Entfernen eines ganzen Mandanten räumt bewusst
+    alles ab (Issue #56) und bleibt von der Sperre unberührt.
+    """
+    from django.db.models import QuerySet
+
+    from apps.session.models import SessionTenant
+
+    if isinstance(origin, QuerySet):
+        return issubclass(origin.model, SessionTenant)
+    return isinstance(origin, SessionTenant)
+
+
+def meeting_pre_delete(sender: Any, instance: SessionMeeting, origin: Any = None, **kwargs: Any) -> None:
+    """
+    ``pre_delete(SessionMeeting)``: Die Sperre greift auch bei Kaskaden und Sammel-Löschen (Issue #427).
+
+    ``SessionMeeting.delete`` läuft nur beim Löschen einer einzelnen Sitzung. Das Signal kommt für
+    jede Sitzung, die Django entfernt – auch über ``QuerySet.delete()`` und die Kaskade eines
+    Gremiums. Der Fehler bricht die gesamte Löschung ab (Django löscht in einer Transaktion).
+    """
+    if _deleting_whole_tenant(origin):
+        return
+    guard_meeting_delete(instance)
+
+
+def paper_pre_delete(sender: Any, instance: Any, origin: Any = None, **kwargs: Any) -> None:
+    """
+    ``pre_delete(SessionPaper)``: Vorlage auf der Tagesordnung einer gesperrten Sitzung bleibt (Issue #427).
+
+    Beim Löschen der Vorlage leert Django die Vorlagenzuordnung ihrer TOPs und löscht deren
+    Beratungsstationen – ohne ``save`` und damit an :func:`guard_agenda_item` vorbei.
+    """
+    if _deleting_whole_tenant(origin):
+        return
+    from django.db.models import Q
+
+    from apps.session.models import SessionAgendaItem
+
+    meeting_ids = SessionAgendaItem.objects.filter(Q(paper=instance) | Q(consultation__paper=instance)).values_list(
+        "meeting_id", flat=True
+    )
+    if any(not is_permitted(meeting_id) for meeting_id in locked_meeting_ids(meeting_ids)):
+        raise ProtocolLockedError(MESSAGE_DELETE_PAPER)
 
 
 def guard_vote(vote: SessionVote) -> None:

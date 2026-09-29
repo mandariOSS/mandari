@@ -65,6 +65,54 @@ def _save_each(queryset, **changes) -> int:
     return count
 
 
+#: So viele verwendende Objekte je Art nennt die Löschbestätigung einzeln
+_USAGE_LIMIT = 10
+
+
+def _usage_lines(label: str, queryset, describe=str) -> list[str]:
+    """
+    Verwendende Objekte als Zeilen für die Liste „geschützte Objekte“ der Löschbestätigung.
+
+    ``describe=None`` nennt nur die Anzahl – für Personenbezug, den der Admin nicht zeigt.
+    """
+    total = queryset.count()
+    if not total:
+        return []
+    if describe is None:
+        return [f"{label}: {total}"]
+    lines = [f"{label}: {describe(obj)}" for obj in queryset[:_USAGE_LIMIT]]
+    if total > _USAGE_LIMIT:
+        lines.append(f"{label}: … und {total - _USAGE_LIMIT} weitere")
+    return lines
+
+
+class DeleteOnlyUnusedMixin:
+    """
+    Löschen im Admin nur für Objekte, die nirgends verwendet werden (Issue #427).
+
+    ``delete_usages(pks)`` liefert je Art verwendender Objekte ``(Bezeichnung, QuerySet, Darstellung)``.
+    Gibt es welche, nennt die Bestätigungsseite (Einzel- und Sammel-Löschen) sie als geschützt, und
+    Django löscht nichts – auch nicht bei einem abgeschickten Formular.
+    """
+
+    delete_blocked_message = "Die Auswahl wird noch verwendet und lässt sich nicht löschen."
+
+    def delete_usages(self, pks):
+        raise NotImplementedError
+
+    def get_deleted_objects(self, objs, request):
+        pks = [obj.pk for obj in objs]
+        protected = [line for usage in self.delete_usages(pks) for line in _usage_lines(*usage)]
+        if protected:
+            self.message_user(request, self.delete_blocked_message, level=messages.WARNING, fail_silently=True)
+            return [], {}, set(), protected
+        return super().get_deleted_objects(objs, request)
+
+
+def _meeting_label(meeting) -> str:
+    return f"{meeting} ({timezone.localtime(meeting.start):%d.%m.%Y})"
+
+
 # =============================================================================
 # TENANT ADMIN
 # =============================================================================
@@ -338,13 +386,47 @@ class SessionRoleAdmin(ModelAdmin):
 
 
 @admin.register(SessionOrganization)
-class SessionOrganizationAdmin(ModelAdmin):
+class SessionOrganizationAdmin(DeleteOnlyUnusedMixin, ModelAdmin):
     """
     Admin for Session organizations (committee structure).
 
     NOTE: Organization memberships are NOT shown here to protect personal data.
     Members are managed through the Session portal.
+
+    Löschen nur ohne Sitzungen und Vorgänge (Issue #427): Die Kaskade nähme sonst Sitzungen samt
+    Tagesordnung, Anwesenheit und Niederschrift, Beratungsstationen, Umlaufbeschlüsse und
+    Mitzeichnungen mit. Gremien, die nicht mehr tagen, werden deaktiviert.
     """
+
+    delete_blocked_message = (
+        "Gremien mit Sitzungen, Beratungsfolgen, Umlaufbeschlüssen oder Mitzeichnungen lassen sich nicht "
+        "löschen. Deaktivieren Sie das Gremium stattdessen (Status → Aktiv)."
+    )
+
+    def delete_usages(self, pks):
+        from django.db.models import Q
+
+        from .models import SessionCircularResolution, SessionCosignature
+
+        meetings = (
+            SessionMeeting.objects.filter(Q(organization__in=pks) | Q(joint_organizations__in=pks))
+            .select_related("organization")
+            .distinct()
+        )
+        return [
+            ("Sitzung", meetings, _meeting_label),
+            (
+                "Beratungsstation",
+                SessionConsultation.objects.filter(organization__in=pks).select_related("paper", "organization"),
+                lambda station: f"{station.paper.display_reference} – {station.organization.name}",
+            ),
+            ("Umlaufbeschluss", SessionCircularResolution.objects.filter(organization__in=pks), str),
+            (
+                "Mitzeichnung",
+                SessionCosignature.objects.filter(department__in=pks).select_related("paper", "department"),
+                lambda cosignature: f"{cosignature.paper.display_reference} – {cosignature.department.name}",
+            ),
+        ]
 
     list_display = ["name", "tenant", "organization_type", "member_count", "is_active"]
     list_filter = ["tenant", "organization_type", "is_active"]
@@ -584,12 +666,31 @@ class SessionFileInline(TabularInline):
 
 
 @admin.register(SessionPaper)
-class SessionPaperAdmin(ModelAdmin):
+class SessionPaperAdmin(DeleteOnlyUnusedMixin, ModelAdmin):
     """
     Admin for Session papers.
 
     NOTE: Workflow fields (created_by, approved_by) removed to protect personal data.
+
+    Löschen nur, solange die Vorlage auf keiner Tagesordnung steht (Issue #427): Sonst verlöre der TOP
+    seine Vorlage und die Station der Beratungsfolge ihr Ergebnis – bei genehmigter Niederschrift
+    lehnt das Modell das ohnehin ab.
     """
+
+    delete_blocked_message = (
+        "Vorlagen, die auf einer Tagesordnung stehen, lassen sich nicht löschen. Nehmen Sie die Vorlage "
+        "zuerst im Sitzungsdienst von der Tagesordnung."
+    )
+
+    def delete_usages(self, pks):
+        from django.db.models import Q
+
+        items = (
+            SessionAgendaItem.objects.filter(Q(paper__in=pks) | Q(consultation__paper__in=pks))
+            .select_related("meeting__organization")
+            .distinct()
+        )
+        return [("Tagesordnungspunkt", items, lambda item: f"TOP {item.number} – {_meeting_label(item.meeting)}")]
 
     list_display = ["reference", "name", "paper_type", "status", "is_public", "date"]
     list_filter = ["tenant", "paper_type", "status", "is_public"]
@@ -650,12 +751,33 @@ class SessionPaperAdmin(ModelAdmin):
 
 
 @admin.register(SessionLegislativeTerm)
-class SessionLegislativeTermAdmin(ModelAdmin):
-    """Admin für Wahlperioden (werden über die OParl-API als legislativeTerm ausgeliefert)."""
+class SessionLegislativeTermAdmin(DeleteOnlyUnusedMixin, ModelAdmin):
+    """
+    Admin für Wahlperioden (werden über die OParl-API als legislativeTerm ausgeliefert).
+
+    Löschen wie im Sitzungsdienst (``TermDeleteView``) nur ohne zugeordnete Sitzungen und Besetzungen.
+    """
 
     list_display = ["name", "tenant", "start_date", "end_date"]
     list_filter = ["tenant"]
     search_fields = ["name"]
+
+    delete_blocked_message = (
+        "Wahlperioden mit zugeordneten Sitzungen oder Besetzungen lassen sich nicht löschen – wie im Sitzungsdienst."
+    )
+
+    def delete_usages(self, pks):
+        from .models import SessionOrganizationMembership
+
+        return [
+            (
+                "Sitzung",
+                SessionMeeting.objects.filter(legislative_term__in=pks).select_related("organization"),
+                _meeting_label,
+            ),
+            # Besetzungen sind personenbezogen: nur die Anzahl
+            ("Besetzungen", SessionOrganizationMembership.objects.filter(legislative_term__in=pks), None),
+        ]
 
 
 # =============================================================================

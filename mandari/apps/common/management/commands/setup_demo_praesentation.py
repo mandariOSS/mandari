@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -1119,7 +1120,7 @@ class Command(BaseCommand):
             SessionTenant,
             SessionTenantGroup,
         )
-        from apps.session.services import numbering_service
+        from apps.session.services import numbering_service, protocol_lock
         from apps.tenants.models import Organization
         from apps.work.motions.models import AdministrationConnection, Motion
         from insight_core.models import OParlSource
@@ -1142,7 +1143,13 @@ class Command(BaseCommand):
         if mandant_a is not None:
             anzahl, _ = SessionAPIToken.objects.filter(tenant=mandant_a, name=TOKEN_NAME).delete()
             entfernt.append(f"Einreichungs-Token: {anzahl}")
-            anzahl, _ = SessionMeeting.objects.filter(tenant=mandant_a, name__in=DREHBUCH_SITZUNGEN).delete()
+            sitzungen = SessionMeeting.objects.filter(tenant=mandant_a, name__in=DREHBUCH_SITZUNGEN)
+            # Die Drehbuch-Niederschrift ist genehmigt (Issue #318); das Aufräumen der Präsentation ist
+            # Datenpflege und löscht die Sitzung ausdrücklich mit (Sperre bei Sammel-Löschen, Issue #427).
+            with ExitStack() as erlaubt:
+                for pk in sitzungen.values_list("pk", flat=True):
+                    erlaubt.enter_context(protocol_lock.permit(pk))
+                anzahl, _ = sitzungen.delete()
             entfernt.append(f"Drehbuch-Sitzungen (+abhängige Objekte): {anzahl}")
             anzahl, _ = SessionPaper.objects.filter(tenant=mandant_a, name__in=[v.name for v in VORLAGEN_A]).delete()
             entfernt.append(f"Drehbuch-Vorlagen (+Beratungsfolge): {anzahl}")

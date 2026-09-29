@@ -36,7 +36,7 @@ from apps.session.models import (
     SessionTenantGroupTenant,
     SessionUser,
 )
-from apps.session.services import four_eyes_service, joint_meeting_service, leitstelle_service
+from apps.session.services import four_eyes_service, joint_meeting_service, leitstelle_service, protocol_lock
 
 # Zentrale Models, deren Änderungen revisionssicher protokolliert werden
 AUDITED_MODELS = [
@@ -71,6 +71,20 @@ for _model in AUDITED_MODELS:
 # verschwindenden Mandanten anlegen (IntegrityError/hängende Fremdschlüssel).
 pre_delete.connect(audit.tenant_pre_delete, sender=SessionTenant, dispatch_uid="session_audit_tenant_pre_delete")
 post_delete.connect(audit.tenant_post_delete, sender=SessionTenant, dispatch_uid="session_audit_tenant_post_delete")
+
+
+# =============================================================================
+# Genehmigte Niederschrift (Issue #318/#427): Sperre auch bei Kaskaden und Sammel-Löschen
+# =============================================================================
+# SessionMeeting.delete() läuft nur beim Einzel-Löschen. Die Signale kommen für jedes Objekt, das
+# Django entfernt – auch per QuerySet.delete() oder über die Kaskade eines Gremiums.
+
+pre_delete.connect(
+    protocol_lock.meeting_pre_delete, sender=SessionMeeting, dispatch_uid="session_protocol_lock_meeting_delete"
+)
+pre_delete.connect(
+    protocol_lock.paper_pre_delete, sender=SessionPaper, dispatch_uid="session_protocol_lock_paper_delete"
+)
 
 
 # =============================================================================
