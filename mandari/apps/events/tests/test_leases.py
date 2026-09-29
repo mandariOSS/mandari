@@ -6,6 +6,7 @@ from __future__ import annotations
 import threading
 import time
 from datetime import timedelta
+from unittest import mock
 
 import pytest
 from django.db import connection, transaction
@@ -72,6 +73,24 @@ def test_fence_gilt_auch_nach_ablauf_solange_niemand_uebernommen_hat() -> None:
     Lease.objects.filter(name=NAME).update(expires_at=timezone.now() - timedelta(minutes=5))
     with transaction.atomic():
         leases.fence(NAME, "a")
+
+
+@pytest.mark.django_db
+def test_ablauf_richtet_sich_nach_der_datenbankzeit_nicht_nach_der_prozessuhr() -> None:
+    """Worker auf mehreren Rechnern: Eine vorgehende Uhr darf keine gültige Lease übernehmen und keine
+    Lease weit in die Zukunft verlängern; eine nachgehende nicht an einer abgelaufenen festhalten."""
+    assert leases.acquire(NAME, "a")
+    echte_zeit = timezone.now()
+
+    with mock.patch("django.utils.timezone.now", return_value=echte_zeit + timedelta(minutes=5)):
+        assert not leases.acquire(NAME, "b"), "Uhr von b geht vor: die Lease von a ist noch gültig"
+        assert leases.acquire(NAME, "a")
+    assert Lease.objects.get(name=NAME).expires_at < timezone.now() + leases.LEASE_TTL + timedelta(seconds=30)
+
+    Lease.objects.filter(name=NAME).update(expires_at=timezone.now() - timedelta(seconds=1))
+    with mock.patch("django.utils.timezone.now", return_value=echte_zeit - timedelta(minutes=5)):
+        assert leases.acquire(NAME, "b"), "Uhr von b geht nach: die Lease von a ist trotzdem abgelaufen"
+    assert Lease.objects.get(name=NAME).holder == "b"
 
 
 def test_kennung_eines_prozesses_ist_eindeutig() -> None:

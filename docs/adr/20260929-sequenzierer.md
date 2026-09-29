@@ -110,6 +110,30 @@ Raadsinformatie verlangt ausdrücklich, dass nie vor einer bereits gelesenen Num
 - Schema-Vertrag: Der Ingestor schreibt `seq` nie.
 - Monitoring: `mandari_events_sequencer_blocked_seconds` mit Alarm ab fünf Minuten.
 
+## Nachtrag zur Umsetzung (#503)
+
+Die Umsetzung in `apps/events/sequencer.py` weicht an drei Stellen bewusst vom SQL oben ab; die
+Entscheidung selbst bleibt unverändert.
+
+- **Nummernvergabe in der Anwendung statt `nextval()` im `UPDATE … FROM`.** PostgreSQL garantiert
+  dort die Auswertungsreihenfolge nicht. Der Lauf holt die Nummern und ordnet sie den nach
+  `(xid, id)` sortierten Zeilen zu; Ereignisse einer Transaktion bleiben so in Schreibreihenfolge.
+- **`FOR UPDATE` ohne `SKIP LOCKED`.** Es vergibt ohnehin nur ein Prozess. Eine übersprungene
+  gesperrte Zeile bekäme später eine größere Nummer als jüngere Ereignisse und verletzte still die
+  Ordnungsgarantie. Das droht, wenn der bisherige Inhaber nach dem Sperren pausiert und ein anderer
+  übernimmt, oder wenn eine andere Transaktion eine unnummerierte Zeile sperrt (etwa beim
+  Neutralisieren der Nutzlast). Mit `FOR UPDATE` wartet der Lauf; der pausierte Inhaber scheitert
+  an der Abgrenzung (`leases.fence`) und rollt zurück.
+- **Zeilen aus einem anderen Cluster.** Nach einer Wiederherstellung tragen noch unnummerierte
+  Zeilen Transaktionskennungen des alten Clusters. Liegen sie über dem Kennungszähler des neuen
+  (`xid >= pg_snapshot_xmax`), kann keine hier laufende Transaktion sie geschrieben haben; sichtbar
+  heißt festgeschrieben. Sie werden sofort und vor allen anderen nummeriert, statt liegen zu
+  bleiben, bis der Zähler sie einholt.
+
+Zur Stau-Metrik kommt `mandari_events_sequencer_lag_seconds` (ältestes vergebbares Ereignis ohne
+Nummer): Sie zeigt einen ausgefallenen oder hängenden Sequenzierer, den
+`mandari_events_sequencer_blocked_seconds` nicht erfasst.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),

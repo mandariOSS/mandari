@@ -85,6 +85,38 @@ def _festgeschrieben(anzahl: int = 1) -> list[uuid.UUID]:
         return [ereignis_anlegen().event_id for _ in range(anzahl)]
 
 
+def _wartet_auf_sperre(beobachter: psycopg.Connection[Any], sperrende_pid: int) -> bool:
+    """Wartet irgendeine Sitzung auf eine Sperre der Sitzung ``sperrende_pid``?"""
+    zeile = beobachter.execute(
+        "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE %s = ANY (pg_blocking_pids(pid)))", (sperrende_pid,)
+    ).fetchone()
+    return bool(zeile and zeile[0])
+
+
+def _bis_blockiert(beobachter: psycopg.Connection[Any], sperrende_pid: int, juengere: list[uuid.UUID]) -> None:
+    """Wartet, bis der Sequenzierer an der Sperre hängt; bis dahin darf keine jüngere Zeile eine Nummer haben."""
+    ende = time.monotonic() + FRIST
+    while not _wartet_auf_sperre(beobachter, sperrende_pid):
+        assert set(folgenummern(juengere)) == {None}, "jüngere Ereignisse an einer gesperrten älteren vorbei nummeriert"
+        assert time.monotonic() < ende, "der Lauf hätte auf die gesperrte ältere Zeile warten müssen"
+        time.sleep(0.05)
+    assert set(folgenummern(juengere)) == {None}
+
+
+def _nummerieren_bis(sequencer: Sequencer, event_ids: list[uuid.UUID], fehler: list[BaseException]) -> None:
+    """Fadenfunktion: lässt ``sequencer`` laufen, bis alle Ereignisse eine Nummer haben (höchstens ``FRIST``)."""
+    try:
+        ende = time.monotonic() + FRIST
+        while None in folgenummern(event_ids) and time.monotonic() < ende:
+            sequencer.drain()
+            time.sleep(0.05)
+    except BaseException as exc:  # noqa: BLE001 – im Hauptfaden prüfen
+        fehler.append(exc)
+    finally:
+        sequencer.release()
+        connection.close()
+
+
 # --- ohne Datenbank bzw. SQLite ----------------------------------------------------------------
 
 
@@ -140,9 +172,8 @@ def test_offene_aeltere_transaktion_haelt_zurueck_und_kommt_danach_zuerst(pg_ver
     time.sleep(1.1)
     werte = sequencer_backlog()
     assert werte is not None
-    stau, aelteste = werte
-    assert stau >= 1.0
-    assert aelteste is not None and aelteste >= 1.0
+    assert werte.blocked_seconds >= 1.0
+    assert werte.oldest_transaction_seconds is not None and werte.oldest_transaction_seconds >= 1.0
     assert (REGISTRY.get_sample_value("mandari_events_sequencer_blocked_seconds") or 0.0) >= 1.0
 
     langlaeufer.commit()
@@ -150,7 +181,129 @@ def test_offene_aeltere_transaktion_haelt_zurueck_und_kommt_danach_zuerst(pg_ver
 
     assert nummer_alt < nummer_neu, "Reihenfolge nach Transaktionskennung"
     werte = sequencer_backlog()
-    assert werte is not None and werte[0] == 0.0
+    assert werte is not None and werte.blocked_seconds == 0.0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rueckstand_zeigt_einen_ausgefallenen_sequenzierer() -> None:
+    """Läuft kein Sequenzierer, ist nichts „aufgehalten“, aber vergebbare Ereignisse bleiben liegen."""
+    nur_postgres()
+    ereignisse = _festgeschrieben(2)
+    ende = time.monotonic() + FRIST
+    while True:
+        werte = sequencer_backlog()
+        assert werte is not None
+        if werte.lag_seconds >= 1.0:
+            break
+        assert time.monotonic() < ende, f"Rückstand nicht sichtbar: {werte}"
+        time.sleep(0.1)
+    assert (REGISTRY.get_sample_value("mandari_events_sequencer_lag_seconds") or 0.0) >= 1.0
+
+    _bis_alle_nummeriert(Sequencer(), ereignisse)
+    werte = sequencer_backlog()
+    assert werte is not None and werte.lag_seconds == 0.0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_zeilen_aus_einem_anderen_cluster_bleiben_nicht_liegen(pg_verbindungen: Verbindungen) -> None:
+    """Nach Wiederherstellung in einen neuen Cluster (Sicherung, Staging-Abgleich) tragen unnummerierte
+    Zeilen Transaktionskennungen, die dieser Cluster noch nicht vergeben hat. Sie sind festgeschrieben
+    und werden vor jüngeren Ereignissen nummeriert, statt auf den Kennungszähler zu warten."""
+    nur_postgres()
+    wiederhergestellt = uuid.uuid4()
+    pg_verbindungen().execute(
+        """
+        INSERT INTO events_event
+            (event_id, type, version, aggregate_type, aggregate_id, tenant_ref, visibility, occurred_at,
+             correlation_id, payload, xid)
+        VALUES (%s, 'test.objekt.geaendert', 1, 'Objekt', %s, 'org:test', 'intern', now(), %s, '{}'::jsonb,
+                (pg_current_xact_id()::text::bigint + 1000000000)::text::xid8)
+        """,
+        (wiederhergestellt, uuid.uuid4(), uuid.uuid4()),
+    )
+    neu = _festgeschrieben()
+
+    _bis_alle_nummeriert(Sequencer(), neu)
+
+    nummer_wiederhergestellt = folgenummern([wiederhergestellt])[0]
+    assert nummer_wiederhergestellt is not None, "Zeile aus dem alten Cluster bleibt liegen"
+    assert nummer_wiederhergestellt < _vergeben(neu)[0]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_gesperrte_aeltere_zeile_wird_nicht_uebersprungen(pg_verbindungen: Verbindungen) -> None:
+    """Sperrt eine andere Transaktion eine ältere, noch unnummerierte Zeile (etwa beim Neutralisieren
+    der Nutzlast), wartet der Lauf auf sie, statt jüngere Ereignisse davor zu nummerieren."""
+    nur_postgres()
+    alt = _festgeschrieben()
+    neu = _festgeschrieben(2)
+    sperre = pg_verbindungen(autocommit=False)
+    sperre.execute("UPDATE events_event SET payload = '{}'::jsonb WHERE event_id = %s", (alt[0],))
+    fehler: list[BaseException] = []
+    faden = threading.Thread(target=_nummerieren_bis, args=(Sequencer(), alt + neu, fehler))
+    faden.start()
+    try:
+        _bis_blockiert(pg_verbindungen(), sperre.info.backend_pid, neu)
+    finally:
+        sperre.commit()
+        faden.join(timeout=FRIST)
+
+    assert not faden.is_alive() and not fehler, fehler
+    nummern_alt, nummern_neu = _vergeben(alt), _vergeben(neu)
+    assert max(nummern_alt) < min(nummern_neu), "Reihenfolge nach Transaktionskennung"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_uebernahme_waehrend_der_alte_inhaber_zeilen_sperrt(
+    monkeypatch: pytest.MonkeyPatch, pg_verbindungen: Verbindungen
+) -> None:
+    """Der bisherige Inhaber hat die ältesten Zeilen gesperrt und pausiert vor der Abgrenzung (GC,
+    angehaltene VM); ein zweiter Prozess übernimmt die abgelaufene Lease. Der zweite wartet auf die
+    Sperren, statt jüngere Ereignisse davor zu nummerieren; der erste scheitert an der Abgrenzung."""
+    nur_postgres()
+    alt = _festgeschrieben(2)
+    neu = _festgeschrieben(2)
+    a = Sequencer(batch_size=2)
+    b = Sequencer()
+    assert a.ensure_lease()
+    echte_abgrenzung = leases.fence
+    a_sperrt, a_weiter = threading.Event(), threading.Event()
+    a_pid: list[int] = []
+
+    def angehalten(name: str, holder: str) -> None:
+        if holder == a.holder and not a_sperrt.is_set():
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_backend_pid()")
+                a_pid.append(cursor.fetchone()[0])
+            a_sperrt.set()
+            a_weiter.wait(FRIST)
+        echte_abgrenzung(name, holder)
+
+    monkeypatch.setattr(leases, "fence", angehalten)
+    fehler_a: list[BaseException] = []
+    fehler_b: list[BaseException] = []
+    faden_a = threading.Thread(target=_nummerieren_bis, args=(a, alt, fehler_a))
+    faden_a.start()
+    faden_b: threading.Thread | None = None
+    try:
+        assert a_sperrt.wait(FRIST), "a hätte die ältesten Zeilen sperren müssen"
+        Lease.objects.filter(name=LEASE_NAME).update(expires_at=timezone.now() - timedelta(seconds=1))
+        assert b.ensure_lease(), "b übernimmt die abgelaufene Lease"
+        faden_b = threading.Thread(target=_nummerieren_bis, args=(b, alt + neu, fehler_b))
+        faden_b.start()
+        _bis_blockiert(pg_verbindungen(), a_pid[0], neu)
+    finally:
+        a_weiter.set()
+        faden_a.join(timeout=FRIST)
+        if faden_b is not None:
+            faden_b.join(timeout=FRIST)
+
+    assert not fehler_a and not fehler_b, (fehler_a, fehler_b)
+    assert not a.is_leader, "a scheitert an der Abgrenzung"
+    nummern_alt, nummern_neu = _vergeben(alt), _vergeben(neu)
+    assert max(nummern_alt) < min(nummern_neu), "Reihenfolge nach Transaktionskennung"
+    alle = list(Event.objects.values_list("seq", flat=True))
+    assert len(alle) == len(set(alle)) == 4
 
 
 @pytest.mark.django_db(transaction=True)
@@ -264,6 +417,7 @@ class _Schreiber:
     langlaeufer: bool
     verbindung: psycopg.Connection[Any]
     zufall: random.Random
+    verwerfen: bool = False
     ereignisse: list[uuid.UUID] = field(default_factory=list)
     festgeschrieben: bool = False
     erstes_schreiben: float = 0.0
@@ -278,11 +432,11 @@ class _Schreiber:
             self.ereignisse.append(roh_einfuegen(self.verbindung))
             time.sleep(self.zufall.uniform(0.0, 0.05))
         time.sleep(1.2 if self.langlaeufer else self.zufall.uniform(0.0, 0.3))
-        if self.langlaeufer or self.zufall.random() > 0.15:
+        if self.verwerfen:
+            self.verbindung.rollback()
+        else:
             self.verbindung.commit()
             self.festgeschrieben = True
-        else:
-            self.verbindung.rollback()
         self.commit_fertig = time.monotonic()
 
 
@@ -291,8 +445,11 @@ def test_zwanzig_parallele_transaktionen_ohne_luecke(pg_verbindungen: Verbindung
     nur_postgres()
     saat = random.randrange(1_000_000)
     zufall = random.Random(saat)
+    # Drei der 20 normalen Schreiber verwerfen: zufällig gewählt, aber immer genau drei
+    verwerfer = set(zufall.sample(range(20), k=3))
     schreiber = [
-        _Schreiber(i, i >= 20, pg_verbindungen(autocommit=False), random.Random(zufall.random())) for i in range(22)
+        _Schreiber(i, i >= 20, pg_verbindungen(autocommit=False), random.Random(zufall.random()), i in verwerfer)
+        for i in range(22)
     ]
     leser_verbindung = pg_verbindungen()
     gesehen: list[tuple[int, uuid.UUID]] = []

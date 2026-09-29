@@ -11,8 +11,8 @@ sind festgeschrieben oder verworfen.
 
 Ein Lauf:
 
-1. Zeilen ohne Nummer unterhalb der Grenze sperren, sortiert nach ``(xid, id)``
-   (``FOR UPDATE SKIP LOCKED``, höchstens ``batch_size``).
+1. Zeilen ohne Nummer unterhalb der Grenze sperren, sortiert nach ``(xid, id)``, höchstens
+   ``batch_size`` (``FOR UPDATE``, bewusst ohne ``SKIP LOCKED``; siehe unten).
 2. In derselben Transaktion prüfen, dass die Lease noch diesem Prozess gehört, und sie sperren
    (``leases.fence``). Eine Übernahme wartet dadurch, bis dieser Lauf festgeschrieben ist, und
    bekommt danach größere Nummern.
@@ -20,6 +20,19 @@ Ein Lauf:
    garantiert die Auswertungsreihenfolge von ``nextval()`` in ``UPDATE … FROM`` nicht; so bleiben
    Ereignisse einer Transaktion sicher in Schreibreihenfolge.
 4. ``pg_notify('mandari_events_seq', '')`` weckt die Zustellung; die Meldung kommt beim Commit an.
+
+Warum ohne ``SKIP LOCKED``: Es vergibt ohnehin nur ein Prozess. Eine übersprungene gesperrte Zeile
+bekäme später eine größere Nummer als jüngere Ereignisse, die Reihenfolge würde still verletzt.
+Das droht, wenn der bisherige Inhaber nach dem Sperren pausiert (GC, angehaltene VM) und ein
+anderer übernimmt, oder wenn eine andere Transaktion eine unnummerierte Zeile sperrt (z. B. beim
+Neutralisieren der Nutzlast). Mit ``FOR UPDATE`` wartet der Lauf, bis die Sperre frei ist; der
+Pausierte scheitert danach an der Abgrenzung und rollt zurück.
+
+Zeilen aus einem anderen Cluster: Nach einer Wiederherstellung (Sicherung, Staging-Abgleich,
+Umzug) tragen noch unnummerierte Zeilen Transaktionskennungen des alten Clusters. Liegen sie
+über dem Kennungszähler des neuen (``xid >= pg_snapshot_xmax``), können sie von keiner hier
+laufenden Transaktion stammen; sichtbar heißt dann festgeschrieben. Sie werden sofort und vor
+allen anderen nummeriert, statt zu warten, bis der Zähler sie einholt.
 
 Lange Schreibtransaktionen halten den Sequenzierer auf, auch solche anderer Datenbanken im selben
 Cluster. Das misst ``mandari_events_sequencer_blocked_seconds`` (``apps.events.metrics``).
@@ -49,17 +62,20 @@ BATCH_SIZE = 1000
 #: Wartezeit zwischen zwei Läufen im Dauerbetrieb (Sekunden)
 POLL_INTERVAL = 1.0
 
+#: Vergebbare Zeilen: Transaktion beendet (unter ``xmin``) oder aus einem anderen Cluster (ab
+#: ``xmax``, zuerst). Ohne ``SKIP LOCKED``, siehe Moduldokumentation.
 _FREIE_ZEILEN = """
     WITH grenze AS MATERIALIZED (
-        SELECT pg_snapshot_xmin(pg_current_snapshot()) AS xmin
+        SELECT pg_snapshot_xmin(s.snap) AS xmin, pg_snapshot_xmax(s.snap) AS xmax
+          FROM pg_current_snapshot() AS s(snap)
     )
     SELECT e.id
       FROM events_event e, grenze g
      WHERE e.seq IS NULL
-       AND e.xid < g.xmin
-     ORDER BY e.xid, e.id
+       AND (e.xid < g.xmin OR e.xid >= g.xmax)
+     ORDER BY e.xid < g.xmax, e.xid, e.id
      LIMIT %s
-       FOR UPDATE OF e SKIP LOCKED
+       FOR UPDATE OF e
 """
 
 _NUMMERN_HOLEN = f"SELECT nextval('{SEQUENCE_NAME}') FROM generate_series(1, %s)"

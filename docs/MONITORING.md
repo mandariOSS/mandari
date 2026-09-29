@@ -147,6 +147,7 @@ das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 | `mandari_pdf_documents_total`, `mandari_pdf_generation_seconds` | `result` | PDF-Erzeugung an der zentralen Stelle `apps.common.pdf.html_to_pdf` |
 | `mandari_transcription_jobs` | `status` | wartende und laufende Transkriptionsaufträge |
 | `mandari_events_sequencer_blocked_seconds` | – | Ereignistechnik: wie lange eine offene Transaktion den Sequenzierer schon aufhält, auch aus einer anderen Datenbank desselben PostgreSQL-Clusters; 0 = nichts aufgehalten. Alarm ab 300 s (`apps/events/metrics.py`, beim Abruf aus der Datenbank gemessen) |
+| `mandari_events_sequencer_lag_seconds` | – | Rückstand des Sequenzierers: Alter (ab Erfassung) des ältesten Ereignisses, das eine Folgenummer bekommen könnte, aber noch keine hat; 0 = kein Rückstand. Wächst, wenn kein Sequenzierer läuft oder er hängt – das zeigt `…_blocked_seconds` nicht. Direkt nach dem Commit einer langen Transaktion kurz hoch, Alarme deshalb mit Mindestdauer. Solange kein Dienst den Sequenzierer startet (#508), wächst der Wert, sobald Ereignisse geschrieben werden |
 | `mandari_events_oldest_transaction_seconds` | – | Alter der ältesten offenen Transaktion mit Transaktionskennung im Cluster, soweit die Datenbankrolle sie sehen darf |
 | `mandari_events_sequenced_total` | – | vergebene Folgenummern; nur im Prozess des Sequenzierers (`manage.py events_sequencer`) |
 

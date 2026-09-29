@@ -10,6 +10,9 @@ Eine Lease sorgt nur dafür, dass normalerweise genau ein Prozess arbeitet. Wo z
 Leader Schaden anrichten würden, prüft die Arbeit selbst in ihrer Transaktion mit ``fence()``, ob
 die Lease noch ihr gehört, und sperrt die Zeile bis zum Commit. Eine Übernahme wartet dann, bis
 diese Transaktion abgeschlossen ist.
+
+Ablaufzeiten rechnet und vergleicht die Datenbank (``Now()``), nicht die Uhr des Prozesses: Worker
+auf mehreren Rechnern mit Uhrenversatz reichen die Lease sonst hin und her.
 """
 
 from __future__ import annotations
@@ -19,8 +22,8 @@ import socket
 import uuid
 from datetime import timedelta
 
-from django.db import IntegrityError, transaction
-from django.utils import timezone
+from django.db import IntegrityError, models, transaction
+from django.db.models.functions import Now
 
 from .models import Lease
 
@@ -39,28 +42,32 @@ def new_holder_id() -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
 
 
+def _ablauf(ttl: timedelta) -> models.Expression:
+    return models.ExpressionWrapper(Now() + ttl, output_field=models.DateTimeField())
+
+
 def acquire(name: str, holder: str, ttl: timedelta = LEASE_TTL) -> bool:
     """Übernimmt oder verlängert die Lease ``name``; ``True``, wenn ``holder`` sie danach hält.
 
-    Übernommen wird nur eine abgelaufene Lease oder die eigene. Die Zeile bleibt dabei bis zum
-    Commit gesperrt, sodass ein ``fence()`` eines anderen Prozesses entweder vorher abgeschlossen
-    ist oder danach die neue Inhaberschaft sieht.
+    Übernommen wird nur eine abgelaufene Lease oder die eigene, beides nach Datenbankzeit. Hält
+    gerade ein ``fence()`` des bisherigen Inhabers die Zeile, wartet die Übernahme bis zu dessen
+    Commit und prüft dann erneut; die Arbeit des bisherigen Inhabers ist dann schon abgeschlossen.
     """
-    jetzt = timezone.now()
     with transaction.atomic():
-        lease = Lease.objects.select_for_update().filter(name=name).first()
-        if lease is None:
-            try:
-                with transaction.atomic():
-                    Lease.objects.create(name=name, holder=holder, expires_at=jetzt + ttl)
-            except IntegrityError:
-                return False  # gleichzeitig von einem anderen Prozess angelegt
+        uebernommen = (
+            Lease.objects.filter(name=name)
+            .filter(models.Q(holder=holder) | models.Q(expires_at__lte=Now()))
+            .update(holder=holder, expires_at=_ablauf(ttl))
+        )
+        if uebernommen:
             return True
-        if lease.holder != holder and lease.expires_at > jetzt:
-            return False
-        lease.holder = holder
-        lease.expires_at = jetzt + ttl
-        lease.save(update_fields=["holder", "expires_at"])
+        if Lease.objects.filter(name=name).exists():
+            return False  # gültige Lease eines anderen Prozesses
+        try:
+            with transaction.atomic():
+                Lease.objects.create(name=name, holder=holder, expires_at=_ablauf(ttl))
+        except IntegrityError:
+            return False  # gleichzeitig von einem anderen Prozess angelegt
         return True
 
 
