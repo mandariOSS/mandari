@@ -32,6 +32,7 @@ from apps.session.models import (
     SessionProtocolCorrection,
 )
 from apps.session.services import agenda_service, attendance_service, four_eyes_service
+from apps.session.visibility import paper_visible
 
 logger = logging.getLogger(__name__)
 
@@ -350,7 +351,7 @@ def correction_notes(protocol: SessionProtocol, *, internal: bool, visible_item_
     return notes
 
 
-def build_protocol_pdf(protocol: SessionProtocol, *, internal: bool) -> bytes:
+def build_protocol_pdf(protocol: SessionProtocol, *, internal: bool, permissions: Any = None) -> bytes:
     """
     Niederschrift-PDF erzeugen.
 
@@ -358,6 +359,8 @@ def build_protocol_pdf(protocol: SessionProtocol, *, internal: bool) -> bytes:
         protocol: das Protokoll
         internal: True = interne NÖ-Fassung (inkl. nichtöffentlicher Teile),
                   False = Ö-Fassung (NÖ-Inhalte erscheinen niemals; nichts wird entschlüsselt)
+        permissions: Rechte der abrufenden Person; eine nichtöffentliche Vorlage nennt auch die
+            interne Fassung nur mit dem NÖ-Recht für Vorlagen (wie Beschlussauszug und Tagesordnung)
 
     Returns:
         bytes: PDF-Inhalt
@@ -376,10 +379,12 @@ def build_protocol_pdf(protocol: SessionProtocol, *, internal: bool) -> bytes:
             [v for v in votes if v.vote in ("yes", "no", "abstain")] if item.voting_method == "roll_call" else []
         )
         item.excluded_persons = [v.person for v in votes if v.vote == "excluded"]
-        # Vorlagennummer in der Ö-Fassung nur, wenn die Vorlage selbst veröffentlicht ist (Issue #318)
+        # Vorlagennummer in der Ö-Fassung nur, wenn die Vorlage selbst veröffentlicht ist (Issue #318);
+        # in der internen Fassung nach dem Sichtrecht auf die Vorlage (das Sitzungsrecht genügt nicht)
         paper = item.paper
         item.paper_visible = paper is not None and (
-            internal or (paper.is_public and paper.status not in UNVEROEFFENTLICHT)
+            (internal and (permissions is None or paper_visible(permissions, paper)))
+            or (paper.is_public and paper.status not in UNVEROEFFENTLICHT)
         )
 
     def decorate(items):
