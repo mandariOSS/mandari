@@ -52,8 +52,69 @@ Voraussetzung ist `osm_relation_id` an der Kommune. Die Adressabfrage nutzt
 - Backfill nach der Migration: `python manage.py backfill_paper_locations [--body <slug>] [--dry-run]`.
 
 Leistungsnachweis: `insight_core/tests/test_paper_locations.py::test_nearby_papers_scales_with_index`
-legt 20 000 Verortungen an und prüft, dass die Umkreissuche mit einer Abfrage und deutlich unter
-einer Sekunde antwortet (SQLite; auf PostgreSQL mit Index deutlich schneller).
+legt 20 000 Verortungen an und prüft, dass die Umkreissuche mit zwei Abfragen (Verortungen und
+amtliche Umringe) und deutlich unter einer Sekunde antwortet (SQLite; auf PostgreSQL mit Index deutlich
+schneller).
+
+## Amtliche Umringe von Bebauungsplänen (`services/plan_boundaries.py`, #598)
+
+Viele Kommunen und das Land NRW veröffentlichen die Umringe (Geltungsbereiche) ihrer Bebauungspläne
+als Geodienst. mandari verlinkt sie, statt sie aus PDF-Anlagen zu rekonstruieren.
+
+| Modell | Tabelle | Zweck |
+|--------|---------|-------|
+| `PlanBoundarySource` | `insight_plan_boundary_sources` | Quelle je Kommune: OGC API – Features oder WFS 2.0 (GeoJSON), Eigenschaften für Plannummer, Titel und Planseite, Planstand, Quellenangabe, Rang |
+| `PlanBoundary` | `insight_plan_boundaries` | Zwischenspeicher der Umringe (GeoJSON in WGS84, Box, Punkt im Umring, Fläche) |
+| `PaperPlanReference` | `insight_paper_plan_references` | Plannummer aus dem Vorlagentitel und die zugeordneten Umringe; ohne Umring (`match = none`) ist das eine protokollierte Lücke |
+
+**Ablauf (täglich, `sync_plan_boundaries`):**
+
+1. Jede aktive Quelle wird einmal abgerufen (eigener User-Agent, eine Sekunde Pause zwischen Seiten,
+   zwei Sekunden zwischen Quellen, Obergrenzen für Seiten, Objekte und Antwortgröße). Liefert ein
+   Dienst mit Bestand plötzlich nichts, bleibt der Bestand erhalten und der Fehler steht an der Quelle.
+   Objekte außerhalb der Kommune (Rand 0,05°) werden übersprungen; liefert ein Dienst Breite vor Länge,
+   werden die Achsen anhand des Gemeindezentrums getauscht.
+2. Vorlagen mit „Bebauungsplan Nr. …“ bzw. „B-Plan Nr. …“ im Titel werden zugeordnet. Nennt der Titel
+   eine Änderung („1. Änderung des Bebauungsplans Nr. 579“, „Bebauungsplan Nr. 388 – 3. Änderung“),
+   gilt: Umring der Änderung, sonst Umring des laufenden Verfahrens, sonst Umring des Ursprungsplans
+   (mit Hinweis). Ohne Änderung: der rechtskräftige Plan, sonst das Verfahren. Von mehreren Quellen
+   gewinnt die mit dem kleinsten Rang.
+3. Ein Punkt im Umring kommt als Verortung (`source = plan_boundary`, „amtlich“) an den Vorgang. Er
+   wirkt damit in Karte, Umkreissuche und Abos. Ein neuer Georef-Lauf behält ihn; wer ihn im Admin
+   entfernt, sperrt auch Umring und Umkreistreffer des Vorgangs.
+
+**Umkreissuche:** `nearby_papers` findet zusätzlich Vorgänge, deren Umring den Suchkreis berührt – auch
+wenn der Punkt im Umring weiter weg liegt; die Entfernung ist dann die zum Umring (0 = darin).
+`generate_alerts` nutzt dieselbe Prüfung.
+
+**Vorgangsseite:** Karte mit Umring (Fläche) und Orten (`frontend/js/paper-map.ts`), darunter je Plan
+Planstand, Link zur Planseite der Kommune und die Quellenangabe der Quelle, auch in der Kartenleiste.
+
+**Einrichten:**
+
+```bash
+# Landesquelle NRW (rechtskräftige Pläne, OGC API) für eine Kommune mit AGS anlegen
+python manage.py sync_plan_boundaries --add-nrw-source --body muenster
+# Probelauf: abrufen und zählen, nichts speichern
+python manage.py sync_plan_boundaries --body muenster --dry-run
+# Abrufen, zuordnen, Abdeckung der letzten 12 Monate und Lücken ausgeben
+python manage.py sync_plan_boundaries --body muenster
+```
+
+Kommunale Dienste legt der Admin unter „Umring-Quellen (Bebauungspläne)“ an. Beispiel MapServer-WFS
+(Stadt Münster, Ebene „Im Verfahren“): Art `WFS`, Adresse `https://geo.stadt-muenster.de/mapserv/bplan_serv`,
+Ebene `ms:bplan1`, Abfrageparameter `{"OUTPUTFORMAT": "GEOJSON"}`, Plannummer `plannr`, Titel `name`,
+Planseite `scanurl`, Planstand „Im Verfahren“, Rang kleiner als der der Landesquelle. Die Ebene
+`ms:bplan2` enthält die rechtskräftigen Pläne; dort trägt `planid` (INSPIRE-Kennung) auch die Nummer der
+Änderung und ist als Plannummer besser geeignet als `plannr`. Für „im Verfahren“ gibt Münster keine Lizenz an; vor dem
+Einschalten klären (siehe Machbarkeitsbericht, Abschnitt Urheberrecht). Lücken zeigt der Admin unter
+„Bebauungspläne der Vorgänge“, Filter „Kein Umring gefunden“.
+
+Cron (siehe `DEPLOYMENT.md`):
+
+```cron
+50 4 * * *  docker exec mandari-app python manage.py sync_plan_boundaries >> /var/log/mandari-plan-boundaries.log 2>&1
+```
 
 ## Nachbarschafts-Autocomplete (`services/neighborhood.py`)
 

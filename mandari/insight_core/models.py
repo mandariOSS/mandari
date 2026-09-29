@@ -1378,6 +1378,7 @@ class PaperLocation(models.Model):
         ("street_match", "Straße (Straßenverzeichnis)"),
         ("ai", "KI-Extraktion"),
         ("manual", "Manuell"),
+        ("plan_boundary", "Amtlicher Umring (Bebauungsplan)"),
     ]
     STATUS_AUTO = "auto"
     STATUS_CONFIRMED = "confirmed"
@@ -1434,6 +1435,256 @@ class PaperLocation(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name or 'Verortung'} ({self.get_source_display()})"
+
+
+# =============================================================================
+# Amtliche Umringe von Bebauungsplänen (Issue #598)
+# =============================================================================
+
+
+class PlanBoundarySource(models.Model):
+    """Geodienst, der die amtlichen Umringe (Geltungsbereiche) der Bebauungspläne einer Kommune liefert.
+
+    Umringe werden verlinkt statt aus PDFs rekonstruiert: Viele Kommunen und das Land NRW veröffentlichen
+    sie als WFS bzw. OGC API – Features. ``sync_plan_boundaries`` lädt die Umringe einmal täglich in
+    ``PlanBoundary`` (kein Abruf je Seitenaufruf) und ordnet sie den Vorlagen zu, deren Titel die
+    Plannummer nennt. Mehrere Quellen je Kommune sind möglich, etwa „rechtskräftig“ und „im Verfahren“.
+    """
+
+    KIND_OGC_API = "ogc_api_features"
+    KIND_WFS = "wfs"
+    KIND_CHOICES = [
+        (KIND_OGC_API, "OGC API – Features (z. B. Land NRW)"),
+        (KIND_WFS, "WFS 2.0 mit GeoJSON-Ausgabe"),
+    ]
+    PLAN_STATUS_IN_FORCE = "in_force"
+    PLAN_STATUS_IN_PROCEDURE = "in_procedure"
+    PLAN_STATUS_CHOICES = [
+        (PLAN_STATUS_IN_FORCE, "Rechtskräftig"),
+        (PLAN_STATUS_IN_PROCEDURE, "Im Verfahren"),
+    ]
+
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="plan_boundary_sources",
+        verbose_name="Kommune",
+    )
+    name = models.CharField(
+        max_length=200,
+        verbose_name="Bezeichnung",
+        help_text="z. B. „Land NRW – rechtskräftige Bebauungspläne“",
+    )
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, default=KIND_OGC_API, verbose_name="Art des Dienstes")
+    url = models.URLField(
+        max_length=1000,
+        verbose_name="Adresse",
+        help_text=(
+            "OGC API: Adresse der Objektliste einer Sammlung (…/collections/<id>/items). "
+            "WFS: Adresse des Dienstes ohne Parameter."
+        ),
+    )
+    layer = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Ebene (nur WFS)",
+        help_text="Wert für TYPENAMES, z. B. ms:bplan2",
+    )
+    query_params = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Zusätzliche Abfrageparameter",
+        help_text='z. B. {"gkz": "05515000"} (NRW) oder {"OUTPUTFORMAT": "GEOJSON"} (MapServer-WFS)',
+    )
+    property_filter = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Filter auf Eigenschaften",
+        help_text='Nur Objekte mit einem dieser Werte übernehmen, z. B. {"planTypeName.code": [1000]}',
+    )
+    number_property = models.CharField(
+        max_length=100,
+        default="plannr",
+        verbose_name="Eigenschaft: Plannummer",
+        help_text="Land NRW: nr (mit Änderungsnummer), MapServer-WFS der Stadt Münster: plannr",
+    )
+    title_property = models.CharField(
+        max_length=100, blank=True, default="name", verbose_name="Eigenschaft: Bezeichnung des Plans"
+    )
+    link_property = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Eigenschaft: Link zur Planseite",
+        help_text="Land NRW: officialDocument, Stadt Münster: scanurl",
+    )
+    plan_status = models.CharField(
+        max_length=20, choices=PLAN_STATUS_CHOICES, default=PLAN_STATUS_IN_FORCE, verbose_name="Planstand"
+    )
+    attribution = models.CharField(
+        max_length=300,
+        verbose_name="Quellenangabe",
+        help_text="Steht im Portal an Karte und Umring, z. B. „Land NRW, Datenlizenz Deutschland – Namensnennung – 2.0“",
+    )
+    license_url = models.URLField(max_length=500, blank=True, default="", verbose_name="Lizenz (Link)")
+    priority = models.PositiveSmallIntegerField(
+        default=100,
+        verbose_name="Rang",
+        help_text="Liefern mehrere Quellen denselben Plan, gewinnt die kleinere Zahl.",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+
+    # Betriebszustand, gesetzt von sync_plan_boundaries
+    last_attempt_at = models.DateTimeField(blank=True, null=True, verbose_name="Letzter Abruf")
+    last_success_at = models.DateTimeField(blank=True, null=True, verbose_name="Letzter erfolgreicher Abruf")
+    last_error = models.CharField(max_length=300, blank=True, default="", verbose_name="Letzter Fehler")
+    feature_count = models.PositiveIntegerField(default=0, verbose_name="Umringe")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "insight_plan_boundary_sources"
+        verbose_name = "Umring-Quelle (Bebauungspläne)"
+        verbose_name_plural = "Umring-Quellen (Bebauungspläne)"
+        ordering = ["body__name", "priority", "name"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.body.get_display_name()})"
+
+
+class PlanBoundary(models.Model):
+    """Zwischengespeicherter amtlicher Umring eines Bebauungsplans (ein Objekt des Geodienstes).
+
+    Die Geometrie liegt als GeoJSON in WGS84 (Länge, Breite) vor. Bounding-Box und ein Punkt im Umring
+    stehen in eigenen Spalten: Die Umkreissuche filtert über die Box vor und prüft danach den Abstand
+    zum Umring; der Punkt dient als Verortung des Vorgangs (Karte, Abos).
+    """
+
+    source = models.ForeignKey(
+        PlanBoundarySource,
+        on_delete=models.CASCADE,
+        related_name="boundaries",
+        verbose_name="Quelle",
+    )
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="plan_boundaries",
+        verbose_name="Kommune",
+    )
+    feature_key = models.CharField(max_length=300, verbose_name="Kennung in der Quelle")
+    plan_number = models.CharField(max_length=100, verbose_name="Plannummer (Quelle)")
+    number_key = models.CharField(max_length=100, verbose_name="Plannummer (normalisiert)")
+    change_number = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Änderung",
+        help_text="Nummer der Änderung, sofern die Quelle Änderungen getrennt führt",
+    )
+    title = models.CharField(max_length=500, blank=True, default="", verbose_name="Bezeichnung")
+    plan_status = models.CharField(
+        max_length=20,
+        choices=PlanBoundarySource.PLAN_STATUS_CHOICES,
+        default=PlanBoundarySource.PLAN_STATUS_IN_FORCE,
+        verbose_name="Planstand",
+    )
+    document_url = models.URLField(max_length=1000, blank=True, default="", verbose_name="Planseite")
+    geometry = models.JSONField(verbose_name="Umring (GeoJSON, WGS84)")
+    bbox_south = models.FloatField()
+    bbox_north = models.FloatField()
+    bbox_west = models.FloatField()
+    bbox_east = models.FloatField()
+    point_lat = models.FloatField(verbose_name="Punkt im Umring (Breite)")
+    point_lon = models.FloatField(verbose_name="Punkt im Umring (Länge)")
+    area_m2 = models.FloatField(blank=True, null=True, verbose_name="Fläche (m²)")
+    fetched_at = models.DateTimeField(verbose_name="Abgerufen am")
+
+    class Meta:
+        db_table = "insight_plan_boundaries"
+        verbose_name = "Amtlicher Umring"
+        verbose_name_plural = "Amtliche Umringe"
+        ordering = ["body__name", "number_key", "change_number"]
+        constraints = [
+            models.UniqueConstraint(fields=["source", "feature_key"], name="uniq_planboundary_source_key"),
+        ]
+        indexes = [
+            models.Index(fields=["body", "number_key"], name="idx_planboundary_body_number"),
+            # Vorfilter der Umkreissuche (Box des Umrings schneidet die Box des Suchkreises)
+            models.Index(fields=["body", "bbox_south", "bbox_north"], name="idx_planboundary_body_bbox"),
+        ]
+
+    def __str__(self) -> str:
+        suffix = f", {self.change_number}. Änderung" if self.change_number else ""
+        return f"Bebauungsplan Nr. {self.plan_number}{suffix}"
+
+
+class PaperPlanReference(models.Model):
+    """Bebauungsplan, den der Titel eines Vorgangs nennt, mit den zugeordneten amtlichen Umringen.
+
+    Eine Zeile ohne Umring (``match = none``) ist eine protokollierte Lücke: Die Plannummer steht im
+    Titel, die Quellen der Kommune kennen sie aber nicht.
+    """
+
+    MATCH_CHANGE = "change"
+    MATCH_PROCEDURE = "procedure"
+    MATCH_PLAN = "plan"
+    MATCH_BASE_PLAN = "base_plan"
+    MATCH_NONE = "none"
+    MATCH_CHOICES = [
+        (MATCH_CHANGE, "Umring der genannten Änderung"),
+        (MATCH_PROCEDURE, "Umring des laufenden Verfahrens"),
+        (MATCH_PLAN, "Umring des Plans"),
+        (MATCH_BASE_PLAN, "Umring des Ursprungsplans"),
+        (MATCH_NONE, "Kein Umring gefunden"),
+    ]
+
+    paper = models.ForeignKey(
+        OParlPaper,
+        on_delete=models.CASCADE,
+        related_name="plan_references",
+        verbose_name="Vorgang",
+    )
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="plan_references",
+        verbose_name="Kommune",
+    )
+    number_key = models.CharField(max_length=100, verbose_name="Plannummer (normalisiert)")
+    number_label = models.CharField(max_length=100, verbose_name="Plannummer (Titel)")
+    change_number = models.CharField(max_length=20, blank=True, default="", verbose_name="Änderung")
+    match = models.CharField(
+        max_length=12, choices=MATCH_CHOICES, default=MATCH_NONE, db_index=True, verbose_name="Zuordnung"
+    )
+    boundaries = models.ManyToManyField(
+        PlanBoundary,
+        blank=True,
+        related_name="paper_references",
+        db_table="insight_paper_plan_reference_boundaries",
+        verbose_name="Umringe",
+    )
+    matched_at = models.DateTimeField(verbose_name="Zuordnung vom")
+
+    class Meta:
+        db_table = "insight_paper_plan_references"
+        verbose_name = "Bebauungsplan eines Vorgangs"
+        verbose_name_plural = "Bebauungspläne der Vorgänge"
+        ordering = ["-matched_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["paper", "number_key", "change_number"], name="uniq_paperplanref_paper_number"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["body", "number_key"], name="idx_paperplanref_body_number"),
+        ]
+
+    def __str__(self) -> str:
+        suffix = f", {self.change_number}. Änderung" if self.change_number else ""
+        return f"Bebauungsplan Nr. {self.number_label}{suffix}"
 
 
 # =============================================================================

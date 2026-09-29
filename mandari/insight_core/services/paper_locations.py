@@ -235,14 +235,42 @@ def _distance_expression(lat: float, lon: float) -> Expression:
     )
 
 
+def _result_row(
+    paper_id: Any,
+    distance: float,
+    lat: float,
+    lon: float,
+    name: str | None,
+    reference: str | None,
+    paper_type: str | None,
+    date: Any,
+) -> dict[str, Any]:
+    dist_int = int(distance)
+    return {
+        "id": str(paper_id),
+        "name": name,
+        "reference": reference,
+        "paper_type": paper_type,
+        "date": date,
+        "distance": dist_int,
+        "distance_km": f"{dist_int / 1000:.1f}",
+        "lat": lat,
+        "lon": lon,
+        "url": f"/insight/vorgaenge/{paper_id}/",
+    }
+
+
 def nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int, limit: int = 50) -> list[dict[str, Any]]:
     """
     Vorgänge im Umkreis, nächster Punkt je Vorgang, sortiert nach Entfernung.
 
     Zwei Stufen: Bounding-Box auf den Index (body, latitude, longitude), dann
     Haversine-Feinfilter in SQL. Entfernte Verortungen und gelöschte Vorgänge bleiben außen vor.
+    Dazu kommen Vorgänge, deren amtlicher Umring (Bebauungsplan, #598) den Suchkreis berührt –
+    auch wenn der Punkt im Umring weiter weg liegt; die Entfernung ist dann die zum Umring.
     """
-    from insight_core.models import PaperLocation
+    from insight_core.models import OParlPaper, PaperLocation
+    from insight_core.services.plan_boundaries import nearby_plan_papers
 
     south, north, west, east = bounding_box(lat, lon, float(radius_m))
     rows = (
@@ -270,28 +298,44 @@ def nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int, limit:
         )
     )
 
-    results: list[dict[str, Any]] = []
-    seen: set[Any] = set()
+    results: dict[Any, dict[str, Any]] = {}
     for row in rows:
         paper_id = row["paper_id"]
-        if paper_id in seen:
+        if paper_id in results:
             continue
-        seen.add(paper_id)
-        dist_int = int(row["distance"])
-        results.append(
-            {
-                "id": str(paper_id),
-                "name": row["paper__name"],
-                "reference": row["paper__reference"],
-                "paper_type": row["paper__paper_type"],
-                "date": row["paper__date"],
-                "distance": dist_int,
-                "distance_km": f"{dist_int / 1000:.1f}",
-                "lat": row["latitude"],
-                "lon": row["longitude"],
-                "url": f"/insight/vorgaenge/{paper_id}/",
-            }
+        results[paper_id] = _result_row(
+            paper_id,
+            row["distance"],
+            row["latitude"],
+            row["longitude"],
+            row["paper__name"],
+            row["paper__reference"],
+            row["paper__paper_type"],
+            row["paper__date"],
         )
         if len(results) >= limit:
             break
-    return results
+
+    plan_hits = {
+        paper_id: hit
+        for paper_id, hit in nearby_plan_papers(body, lat, lon, float(radius_m)).items()
+        if paper_id not in results or hit.distance < results[paper_id]["distance"]
+    }
+    if plan_hits:
+        papers = OParlPaper.objects.filter(pk__in=list(plan_hits), deleted=False).values(
+            "id", "name", "reference", "paper_type", "date"
+        )
+        for paper in papers:
+            hit = plan_hits[paper["id"]]
+            results[paper["id"]] = _result_row(
+                paper["id"],
+                hit.distance,
+                hit.lat,
+                hit.lon,
+                paper["name"],
+                paper["reference"],
+                paper["paper_type"],
+                paper["date"],
+            )
+
+    return sorted(results.values(), key=lambda item: item["distance"])[:limit]

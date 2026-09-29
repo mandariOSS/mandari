@@ -1,0 +1,60 @@
+{% comment %}
+Orte und amtliche Umringe eines Vorgangs (Seitenleiste der Vorgangsseite).
+Kontext: paper_locations (Liste aus paper.locations), plan_areas (services.plan_boundaries.paper_plan_context),
+paper_map_data (Daten der Karte, gelesen von frontend/js/paper-map.ts).
+{% endcomment %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+    <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <i data-lucide="map-pin" class="w-4 h-4 text-primary-500"></i>
+        Orte ({{ paper_locations|length }})
+    </h3>
+    <div id="paper-map"
+         class="mb-4 h-56 rounded-lg z-0"
+         data-tile-url="{% url 'insight_core:insight:tile_proxy' z=0 x=0 y=0 %}"
+         role="img"
+         aria-label="Karte mit den Orten dieses Vorgangs"></div>
+    {{ paper_map_data|json_script:"paper-map-data" }}
+    <ul class="space-y-2">
+        {% for loc in paper_locations %}
+            <li class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <i data-lucide="map-pin" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-400"></i>
+                <span class="min-w-0">
+                    {{ loc.name }}
+                    {% if loc.source == "oparl" or loc.source == "plan_boundary" %}
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 align-middle ml-1">{% if loc.source == "oparl" %}offiziell{% else %}amtlich{% endif %}</span>
+                    {% endif %}
+                </span>
+            </li>
+        {% endfor %}
+    </ul>
+    {% for area in plan_areas %}
+        <div class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-sm">
+            <p class="font-medium text-gray-900 dark:text-white">{{ area.label }}</p>
+            <p class="text-gray-600 dark:text-gray-400">
+                Amtlicher Umring, {{ area.status }}{% if area.title %} – {{ area.title }}{% endif %}
+            </p>
+            {% if area.note %}<p class="text-xs text-gray-500 dark:text-gray-400">{{ area.note }}</p>{% endif %}
+            {% if area.document_url %}
+                <a href="{{ area.document_url }}"
+                   class="inline-flex items-center gap-1 mt-1 text-primary-600 dark:text-primary-400 hover:underline"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    Planseite der Kommune
+                    <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                </a>
+            {% endif %}
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Quelle: {{ area.attribution }}
+                {% if area.license_url %}
+                    <a href="{{ area.license_url }}"
+                       class="hover:underline"
+                       target="_blank"
+                       rel="noopener noreferrer">(Lizenz)</a>
+                {% endif %}
+            </p>
+        </div>
+    {% endfor %}
+    <p class="mt-3 text-xs text-gray-400 dark:text-gray-500">
+        Ortsbezüge werden automatisch aus den Dokumenten ermittelt und können unvollständig sein.
+    </p>
+</div>

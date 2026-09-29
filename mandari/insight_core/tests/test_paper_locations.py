@@ -160,7 +160,7 @@ def test_nearby_papers_excludes_removed_rows(geo_body: OParlBody, make_paper: Ca
 
 
 def test_nearby_papers_scales_with_index(geo_body: OParlBody, make_paper: Callable[..., OParlPaper]) -> None:
-    """20 000 Verortungen: eine Abfrage, Antwort deutlich unter einer Sekunde (SQLite)."""
+    """20 000 Verortungen: zwei Abfragen (Verortungen, Umringe), Antwort deutlich unter einer Sekunde (SQLite)."""
     rng = random.Random(54)
     papers = [
         OParlPaper(
@@ -192,7 +192,9 @@ def test_nearby_papers_scales_with_index(geo_body: OParlBody, make_paper: Callab
         results = nearby_papers(geo_body, CENTER_LAT, CENTER_LON, 500)
         elapsed = time.perf_counter() - started
 
-    assert len(ctx.captured_queries) == 1
+    # Eine Abfrage für die Verortungen, eine für amtliche Umringe im Suchkreis (#598) – unabhängig
+    # von der Zahl der Treffer
+    assert len(ctx.captured_queries) == 2
     assert elapsed < 1.0, f"Umkreissuche zu langsam: {elapsed:.3f}s"
     assert results and results[0]["distance"] == 0
     assert all(r["distance"] <= 500 for r in results)

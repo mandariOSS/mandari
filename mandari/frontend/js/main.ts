@@ -14,6 +14,7 @@ import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
 import { showToast, toastManager } from './alpine/toast'
 import { setupHtmx } from './htmx-setup'
 import { installIconObserver, renderIcons } from './icons'
+import { initPaperMap } from './paper-map'
 import { registerBookmarksStore } from './stores/bookmarks'
 
 // ---- HTMX --------------------------------------------------------------------
@@ -37,6 +38,8 @@ Alpine.data('confirmDialog', confirmDialog)
 
 if (document.documentElement.dataset.portal === 'insight') {
   registerBookmarksStore(Alpine)
+  // Vorgangsseite: Orte und amtliche Umringe (Leaflet als Vendor-Skript, läuft vor diesem Modul)
+  initPaperMap()
 }
 
 // Mobile: Seitenleiste nach Navigation schließen (Layouts halten `sidebarOpen` am <html>)

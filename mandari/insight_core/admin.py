@@ -995,6 +995,94 @@ class PaperLocationAdmin(ModelAdmin):
         return redirect(reverse("admin:insight_core_paperlocation_change", args=[object_id]))
 
 
+from .models import PaperPlanReference, PlanBoundary, PlanBoundarySource
+
+
+@admin.register(PlanBoundarySource)
+class PlanBoundarySourceAdmin(ModelAdmin):
+    """Geodienste mit amtlichen Umringen von Bebauungsplänen je Kommune (Issue #598).
+
+    Abgerufen wird nur von ``sync_plan_boundaries`` (täglich, Cron), nie aus dem Admin heraus.
+    """
+
+    list_display = [
+        "name",
+        "body",
+        "kind",
+        "plan_status",
+        "priority",
+        "is_active",
+        "feature_count",
+        "last_success_at",
+        "error_display",
+    ]
+    list_filter = ["is_active", "kind", "plan_status", "body"]
+    list_select_related = ["body"]
+    search_fields = ["name", "url", "body__name"]
+    autocomplete_fields = ["body"]
+    readonly_fields = ["last_attempt_at", "last_success_at", "last_error", "feature_count", "created_at", "updated_at"]
+    fieldsets = [
+        (None, {"fields": ["body", "name", "is_active", "priority", "plan_status"]}),
+        (
+            "Dienst",
+            {"fields": ["kind", "url", "layer", "query_params", "property_filter"]},
+        ),
+        (
+            "Eigenschaften der Objekte",
+            {"fields": ["number_property", "title_property", "link_property"]},
+        ),
+        ("Quellenangabe", {"fields": ["attribution", "license_url"]}),
+        (
+            "Betrieb",
+            {
+                "fields": [
+                    "feature_count",
+                    "last_attempt_at",
+                    "last_success_at",
+                    "last_error",
+                    "created_at",
+                    "updated_at",
+                ]
+            },
+        ),
+    ]
+
+    @admin.display(description="Fehler")
+    def error_display(self, obj: PlanBoundarySource) -> str:
+        return obj.last_error or "–"
+
+
+@admin.register(PlanBoundary)
+class PlanBoundaryAdmin(ReadOnlyAdminMixin, ModelAdmin):
+    """Zwischengespeicherte Umringe; sie entstehen nur beim Abruf der Quelle."""
+
+    list_display = ["__str__", "title", "plan_status", "body", "source", "area_m2", "fetched_at"]
+    list_filter = ["plan_status", "source", "body"]
+    list_select_related = ["body", "source"]
+    search_fields = ["plan_number", "number_key", "title"]
+    exclude = ["geometry"]
+
+
+@admin.register(PaperPlanReference)
+class PaperPlanReferenceAdmin(ReadOnlyAdminMixin, ModelAdmin):
+    """Bebauungspläne aus Vorlagentiteln; Filter „Kein Umring gefunden“ zeigt die Lücken."""
+
+    list_display = ["__str__", "match", "paper_reference", "paper_date", "body", "matched_at"]
+    list_filter = ["match", "body"]
+    list_select_related = ["paper", "body"]
+    search_fields = ["number_label", "number_key", "paper__reference", "paper__name"]
+    raw_id_fields = ["paper"]
+    exclude = ["boundaries"]
+
+    @admin.display(description="Vorgang")
+    def paper_reference(self, obj: PaperPlanReference) -> str:
+        return str(obj.paper)
+
+    @admin.display(description="Datum", ordering="paper__date")
+    def paper_date(self, obj: PaperPlanReference) -> Any:
+        return obj.paper.date
+
+
 @admin.register(LocationMapping)
 class LocationMappingAdmin(ModelAdmin):
     list_display = ["location_name", "body", "latitude", "longitude", "address"]

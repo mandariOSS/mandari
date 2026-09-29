@@ -132,6 +132,12 @@ class PaperDetailView(DetailView):
             for loc in locations
             if isinstance(loc, dict) and loc.get("lat") is not None and loc.get("lon") is not None
         ]
+        # Amtliche Umringe von Bebauungsplänen mit Planseite und Quellenangabe (#598)
+        from ..services.plan_boundaries import paper_map_data, paper_plan_context
+
+        plan_areas = paper_plan_context(paper)
+        context["plan_areas"] = plan_areas
+        context["paper_map_data"] = paper_map_data(context["paper_locations"], plan_areas)
 
         # SEO-Kontext
         from ..seo import get_paper_seo
