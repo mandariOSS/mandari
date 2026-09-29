@@ -4,7 +4,9 @@ Kartenanalyse über den lokalen Dateicache einer Kommune (Issue #599).
 
 Liest ausschließlich Dateien, die schon im Dateicache liegen (``OParlFile.local_path``), und nie etwas
 aus dem Netz – also keinen einzigen Abruf beim Ratsinformationssystem. Nur öffentliche Dateien:
-gelöschte und von mandari Session zurückgenommene Dateien bleiben außen vor.
+gelöschte Dateien, Dateien gelöschter Vorgänge und Sitzungen sowie von mandari Session
+zurückgenommene Dateien bleiben außen vor. Eine Datei, deren Auswertung scheitert, wird gezählt und
+übersprungen; der Lauf geht weiter.
 
 Je Seite misst ``apps.common.documents.page_analysis`` die Merkmale und ordnet sie als Karte ein;
 Straßennamen zählt das Straßenverzeichnis der Kommune. ``MapSurvey`` sammelt daraus die Kennzahlen
@@ -16,6 +18,7 @@ ausgefüllten Stichprobe Präzision und Trefferquote – roh und nach Schichten 
 from __future__ import annotations
 
 import csv
+import logging
 import random
 import statistics
 import time
@@ -37,6 +40,8 @@ from apps.common.documents.page_analysis import (
 
 if TYPE_CHECKING:
     from insight_core.models import OParlBody, OParlFile
+
+logger = logging.getLogger(__name__)
 
 MANY_STREETS = 4
 SAMPLE_FIELDS = [
@@ -136,6 +141,7 @@ class MapSurvey:
     map_pages_scan: int = 0
     map_pages_bitonal: int = 0
     scan_pages: int = 0
+    unreadable_pages: int = 0
     truncated_files: int = 0
     street_directory: bool = False
     skipped: Counter[str] = field(default_factory=Counter)
@@ -159,6 +165,7 @@ class MapSurvey:
         self.max_file_seconds = max(self.max_file_seconds, seconds)
         if document.truncated:
             self.truncated_files += 1
+        self.unreadable_pages += document.unreadable_pages
         has_map = False
         for record in records:
             page = record.page
@@ -216,6 +223,7 @@ class MapSurvey:
             "formate": dict(self.formats.most_common()),
             "erzeuger": dict(self.producers.most_common(10)),
             "uebersprungen": dict(self.skipped),
+            "seiten_nicht_lesbar": self.unreadable_pages,
             "abgeschnitten": self.truncated_files,
             "sekunden": round(self.seconds, 1),
             "max_sekunden_je_datei": round(self.max_file_seconds, 2),
@@ -223,13 +231,18 @@ class MapSurvey:
 
 
 def cached_files(body: OParlBody, *, max_bytes: int) -> Iterator[tuple[OParlFile, Path | None, str]]:
-    """Öffentliche Dateien der Kommune mit lokaler Kopie: (Datei, Pfad oder None, Grund fürs Überspringen)."""
-    from insight_core.models import OParlFile, withdrawn_q
+    """Öffentliche Dateien der Kommune mit lokaler Kopie: (Datei, Pfad oder None, Grund fürs Überspringen).
+
+    Außen vor bleiben gelöschte Dateien und Dateien gelöschter Vorgänge bzw. Sitzungen. Das schließt
+    alles ein, was mandari Session zurückgenommen hat (``withdrawn_q`` setzt ``deleted`` voraus).
+    """
+    from insight_core.models import OParlFile
     from insight_core.services.file_cache import local_file
 
     files = (
         OParlFile.objects.filter(body=body, deleted=False)
-        .exclude(withdrawn_q())
+        .exclude(paper__deleted=True)
+        .exclude(meeting__deleted=True)
         .exclude(local_path__isnull=True)
         .exclude(local_path="")
         .select_related("paper")
@@ -275,13 +288,15 @@ def survey_body(
         started = time.perf_counter()
         try:
             document = analyze_pdf(path, max_pages=max_pages)
-        except DocumentError:
+            records = list(_records(file_obj, document, gazetteer))
+        except (DocumentError, OSError):
             survey.skipped["nicht lesbar"] += 1
             continue
-        except OSError:
-            survey.skipped["nicht lesbar"] += 1
+        except Exception as exc:  # noqa: BLE001 – letzter Schutz: eine Datei darf den stundenlangen Lauf nicht beenden
+            # Nur Datei und Fehlerart, kein Ausnahmetext (kann Inhalte aus dem PDF enthalten)
+            logger.warning("Kartenanalyse: Datei %s übersprungen (%s)", file_obj.id, type(exc).__name__)
+            survey.skipped["Analysefehler"] += 1
             continue
-        records = list(_records(file_obj, document, gazetteer))
         analyzed += 1
         survey.add(document, records, time.perf_counter() - started)
         if progress is not None and analyzed % 500 == 0:

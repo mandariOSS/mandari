@@ -12,7 +12,8 @@ kein Netz – und speichert nichts in der Datenbank:
 
 Die Kennzahlen: Kartenseiten, davon mit Maßstab im PDF, GeoPDF, Koordinatenbeschriftung, mindestens
 vier Straßennamen aus dem Straßenverzeichnis, Scans ohne Text; dazu Formate, Erzeuger und Laufzeit.
-Das Ablegen der Ergebnisse und der Auftrag im Dokument-Worker folgen (siehe docs/INSIGHT_KARTENANALYSE.md).
+Auf dem Server in einem eigenen Container starten, nicht im Web-Dienst (docs/INSIGHT_KARTENANALYSE.md).
+Das Ablegen der Ergebnisse und der Auftrag im Dokument-Worker folgen.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from apps.common.einmalig import EinmaligMixin
 
 
 def _peak_rss_mb() -> float | None:
-    """Höchster Speicherbedarf des Prozesses in MB (Linux; im Container des Web-Dienstes)."""
+    """Höchster Speicherbedarf des Prozesses in MB (Linux; auf dem Server im eigenen Container des Laufs)."""
     if sys.platform != "linux":
         return None
     import resource
@@ -134,8 +135,8 @@ class Command(EinmaligMixin, BaseCommand):
             f"Median der Rasterauflösung: {summary['median_dpi_kartenraster'] or '–'} dpi",
             f"  Formate der Kartenseiten: {summary['formate'] or '–'}",
             f"  Häufigste Erzeuger: {summary['erzeuger'] or '–'}",
-            f"  Übersprungen: {summary['uebersprungen'] or '–'}; Dateien mit mehr Seiten als ausgewertet: "
-            f"{summary['abgeschnitten']}",
+            f"  Übersprungen: {summary['uebersprungen'] or '–'}; nicht lesbare Seiten: "
+            f"{summary['seiten_nicht_lesbar']}; Dateien mit mehr Seiten als ausgewertet: {summary['abgeschnitten']}",
             f"  Laufzeit: {summary['sekunden']} s (längste Datei {summary['max_sekunden_je_datei']} s); "
             f"Speicher höchstens: {summary['speicher_max_mb'] or '–'} MB",
         ]

@@ -29,10 +29,39 @@ python manage.py analyze_maps --body muenster --dry-run --sample-csv /tmp/stichp
 python manage.py analyze_maps --evaluate /tmp/stichprobe.csv
 ```
 
-Der Befehl hält eine Singleton-Sperre (`--ohne-sperre` erzwingt). Er läuft im Web-Container und liest
-Datei für Datei; `--max-mb` (Vorgabe `FILE_CACHE_MAX_MB`) und `--max-pages` (Vorgabe 300) begrenzen
-große Dokumente. Nur öffentliche Dateien: gelöschte und von mandari Session zurückgenommene Dateien
-bleiben außen vor.
+Der Befehl hält eine Singleton-Sperre (`--ohne-sperre` erzwingt) und liest Datei für Datei;
+`--max-mb` (Vorgabe `FILE_CACHE_MAX_MB`) und `--max-pages` (Vorgabe 300) begrenzen große Dokumente.
+Nur öffentliche Dateien: gelöschte Dateien, Dateien gelöschter Vorgänge und Sitzungen sowie von
+mandari Session zurückgenommene Dateien bleiben außen vor. Eine Seite, die PDFium nicht lesen kann,
+wird übersprungen und gezählt (`seiten_nicht_lesbar`); scheitert eine ganze Datei unerwartet, zählt
+sie unter „Analysefehler“ (im Log nur Datei-ID und Fehlerart), und der Lauf geht weiter.
+
+### Lauf auf dem Server: eigener Container, nicht im Web-Dienst
+
+Ein Lauf über den ganzen Cache einer großen Kommune dauert Stunden und braucht viel Rechenzeit.
+Deshalb nicht per `docker exec` im laufenden Web-Container starten, sondern in einem kurzlebigen
+Container des Anwendungsdienstes (`docker compose run`, wie bei `backup.sh`): gleiches Image, gleiche
+Umgebung und dieselben Volumes bzw. Bind-Mounts für den Dateicache, aber ein eigener Prozessraum mit
+der Speichergrenze des Dienstes (`mem_limit: 1g` in `docker-compose.yml`). Läuft der Speicher über,
+beendet der Kernel nur diesen Container, nicht die Web-Worker.
+
+```bash
+# im Verzeichnis mit docker-compose.yml und .env
+docker compose run -d --no-deps --label mandari.autoheal=false --name mandari-kartenanalyse \
+  mandari python manage.py analyze_maps --body muenster --dry-run \
+  --json /tmp/karten.json --sample-csv /tmp/stichprobe.csv --sample-size 200
+docker inspect -f '{{.HostConfig.Memory}}' mandari-kartenanalyse   # 1073741824 = 1 GB
+docker logs -f mandari-kartenanalyse                                # Fortschritt alle 500 Dateien
+docker wait mandari-kartenanalyse                                   # 0 = fertig
+docker inspect -f '{{.State.OOMKilled}}' mandari-kartenanalyse      # true = Speichergrenze gerissen
+docker cp mandari-kartenanalyse:/tmp/karten.json .
+docker cp mandari-kartenanalyse:/tmp/stichprobe.csv .
+docker rm mandari-kartenanalyse
+```
+
+Der Befehl öffnet die Dateien nur lesend und schreibt nichts in die Datenbank. „Speicher höchstens“
+in der Ausgabe (bzw. `speicher_max_mb` im JSON) ist der Spitzenwert dieses Containers über alle
+Dateien, also auch über den größten Plan – das ist die Messung für die Obergrenze von 1 GB.
 
 ## Kennzahlen
 
@@ -41,8 +70,8 @@ bleiben außen vor.
   mit Koordinatenbeschriftung (Rechts-/Hochwert-Paare im Textlayer), mit mindestens vier Straßennamen
   aus dem Straßenverzeichnis der Kommune, als Scan ohne Textlayer, mit 1-bit-Rastergrundkarte
 - Median der effektiven Rasterauflösung, Papierformate, häufigste Erzeuger (Creator/Producer)
-- Übersprungene Dateien (nicht im Cache, kein PDF, zu groß, nicht lesbar), Laufzeit, höchster
-  Speicherbedarf des Prozesses (Linux)
+- Übersprungene Dateien (nicht im Cache, kein PDF, zu groß, nicht lesbar, Analysefehler), nicht
+  lesbare Seiten, Laufzeit, höchster Speicherbedarf des Prozesses (Linux)
 
 ## Messwerte je Seite und Einordnung
 

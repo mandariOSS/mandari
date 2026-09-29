@@ -7,10 +7,17 @@ Die PDFs entstehen im Test (``pdf_samples``); nichts kommt aus dem Netz.
 
 from __future__ import annotations
 
+import io
+from typing import Any
+
+import pypdfium2 as pdfium
 import pytest
+from pypdf import PdfReader, PdfWriter
+from pypdf.errors import PdfReadError
 from pypdf.generic import DictionaryObject
 from reportlab.lib.pagesizes import A1, A4
 
+from apps.common.documents import page_analysis
 from apps.common.documents.page_analysis import (
     DocumentError,
     analyze_pdf,
@@ -19,6 +26,15 @@ from apps.common.documents.page_analysis import (
     viewport_scales,
 )
 from apps.common.tests.pdf_samples import map_pdf, photo_pdf, text_pdf, viewport_dict, with_page_entries
+
+
+def _two_pages() -> bytes:
+    writer = PdfWriter()
+    for data in (text_pdf(), map_pdf()):
+        writer.append(PdfReader(io.BytesIO(data)))
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
 
 
 def test_map_page_measures_and_classification() -> None:
@@ -87,6 +103,57 @@ def test_viewport_scales_skip_paper_space_and_read_units() -> None:
 def test_unreadable_pdf_raises_document_error() -> None:
     with pytest.raises(DocumentError):
         analyze_pdf(b"kein PDF")
+
+
+def test_unreadable_page_is_skipped_and_counted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ein PDFium-Fehler auf einer Seite beendet nicht die Auswertung des Dokuments."""
+    read_text = page_analysis._read_text
+    calls: list[int] = []
+
+    def _first_page_breaks(page: Any, result: Any, with_spans: bool) -> None:
+        calls.append(result.number)
+        if result.number == 1:
+            raise pdfium.PdfiumError("Seite kaputt")
+        read_text(page, result, with_spans)
+
+    monkeypatch.setattr(page_analysis, "_read_text", _first_page_breaks)
+    document = analyze_pdf(_two_pages())
+
+    assert calls == [1, 2]
+    assert document.page_count == 2 and document.unreadable_pages == 1
+    assert [page.number for page in document.pages] == [2]
+    assert classify_page(document.pages[0]).is_map
+
+
+def test_document_without_readable_page_raises_document_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _broken(*args: Any, **kwargs: Any) -> None:
+        raise pdfium.PdfiumError("kaputt")
+
+    monkeypatch.setattr(page_analysis, "_measure_objects", _broken)
+    with pytest.raises(DocumentError):
+        analyze_pdf(map_pdf())
+
+
+def test_broken_preview_keeps_page_without_palette(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _broken(*args: Any, **kwargs: Any) -> float:
+        raise pdfium.PdfiumError("Vorschau kaputt")
+
+    monkeypatch.setattr(page_analysis, "palette_share", _broken)
+    document = analyze_pdf(photo_pdf())
+    assert document.unreadable_pages == 0
+    assert document.pages[0].is_scan and document.pages[0].palette_share is None
+
+
+def test_viewport_scales_tolerate_broken_indirect_objects() -> None:
+    """pypdf löst Verweise erst beim Zugriff auf; ein defekter Verweis kostet nur den Maßstab."""
+
+    class _BrokenPage(dict):  # type: ignore[type-arg]
+        def get(self, key: Any, default: Any = None) -> Any:
+            if key == "/VP":
+                raise PdfReadError("Verweis zeigt ins Leere")
+            return super().get(key, default)
+
+    assert viewport_scales(_BrokenPage(), 595, 842) == ([], False)
 
 
 @pytest.mark.parametrize(

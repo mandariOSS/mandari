@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pypdf.errors import PyPdfError
+
 logger = logging.getLogger(__name__)
 
 MM_PER_PT = 25.4 / 72
@@ -184,6 +186,7 @@ class DocumentAnalysis:
     producer: str = ""
     creator: str = ""
     truncated: bool = False  # mehr Seiten als ausgewertet
+    unreadable_pages: int = 0  # übersprungen, weil PDFium sie nicht lesen konnte
 
 
 @dataclass(frozen=True)
@@ -259,7 +262,8 @@ def viewport_scales(page_dict: Any, width_pt: float, height_pt: float) -> tuple[
             meters_per_pt = float(number_format.get("/C", 0)) * UNIT_TO_METERS.get(unit, 1.0)
             if meters_per_pt > 0:
                 found.append((meters_per_pt / METERS_PER_PT, _box(viewport.get("/BBox"))))
-    except (AttributeError, TypeError, ValueError, KeyError, IndexError):
+    except (AttributeError, TypeError, ValueError, KeyError, IndexError, PyPdfError):
+        # pypdf löst indirekte Objekte erst beim Zugriff auf; defekte Verweise werfen dann PdfReadError
         logger.debug("Viewport-Angaben nicht lesbar", exc_info=True)
         return [], geo
 
@@ -375,7 +379,11 @@ def analyze_pdf(
     with_spans: bool = False,
     with_palette: bool = True,
 ) -> DocumentAnalysis:
-    """Alle Seiten eines PDFs messen (höchstens ``max_pages``); wirft ``DocumentError``."""
+    """Alle Seiten eines PDFs messen (höchstens ``max_pages``); wirft ``DocumentError``.
+
+    Eine einzelne Seite, die PDFium nicht lesen kann, wird übersprungen und in ``unreadable_pages``
+    gezählt; erst wenn keine Seite lesbar ist, gilt das ganze Dokument als nicht lesbar.
+    """
     import pypdfium2 as pdfium
 
     data = source if isinstance(source, bytes) else Path(source).read_bytes()
@@ -385,34 +393,55 @@ def analyze_pdf(
         raise DocumentError("PDF lässt sich nicht öffnen") from None
     try:
         page_count = len(pdf)
-        metadata = pdf.get_metadata_dict()
+        try:
+            metadata = pdf.get_metadata_dict()
+        except pdfium.PdfiumError:
+            metadata = {}
         pypdf_pages = _open_pypdf_pages(data)
         pages: list[PageAnalysis] = []
+        unreadable = 0
         for index in range(min(page_count, max_pages)):
-            page = pdf[index]
+            pypdf_page = pypdf_pages[index] if pypdf_pages is not None and index < len(pypdf_pages) else None
             try:
-                width_pt, height_pt = page.get_size()
-                result = PageAnalysis(
-                    number=index + 1, width_pt=width_pt, height_pt=height_pt, rotation=page.get_rotation()
-                )
-                _measure_objects(page, result)
-                _read_text(page, result, with_spans)
-                if pypdf_pages is not None and index < len(pypdf_pages):
-                    result.scale_denominators, result.geo_pdf = viewport_scales(pypdf_pages[index], width_pt, height_pt)
-                if with_palette and result.image_coverage >= IMAGE_DOMINANT_COVERAGE:
-                    result.palette_share = palette_share(page)
-                pages.append(result)
-            finally:
-                page.close()
+                pages.append(_analyze_page(pdf, index, pypdf_page, with_spans=with_spans, with_palette=with_palette))
+            except pdfium.PdfiumError:
+                logger.debug("Seite %s nicht lesbar, übersprungen", index + 1, exc_info=True)
+                unreadable += 1
+        if unreadable and not pages:
+            raise DocumentError("Keine Seite des PDFs lesbar")
         return DocumentAnalysis(
             page_count=page_count,
             pages=pages,
             producer=str(metadata.get("Producer") or "")[:200],
             creator=str(metadata.get("Creator") or "")[:200],
             truncated=page_count > max_pages,
+            unreadable_pages=unreadable,
         )
     finally:
         pdf.close()
+
+
+def _analyze_page(pdf: Any, index: int, pypdf_page: Any, *, with_spans: bool, with_palette: bool) -> PageAnalysis:
+    """Eine Seite messen; PDFium-Fehler (``PdfiumError``) gehen an den Aufrufer."""
+    import pypdfium2 as pdfium
+
+    page = pdf[index]
+    try:
+        width_pt, height_pt = page.get_size()
+        result = PageAnalysis(number=index + 1, width_pt=width_pt, height_pt=height_pt, rotation=page.get_rotation())
+        _measure_objects(page, result)
+        _read_text(page, result, with_spans)
+        if pypdf_page is not None:
+            result.scale_denominators, result.geo_pdf = viewport_scales(pypdf_page, width_pt, height_pt)
+        if with_palette and result.image_coverage >= IMAGE_DOMINANT_COVERAGE:
+            try:
+                result.palette_share = palette_share(page)
+            except (pdfium.PdfiumError, OSError, ValueError):
+                # Vorschau nicht darstellbar: Seite bleibt ausgewertet, nur ohne Farbpalette
+                logger.debug("Vorschau der Seite %s nicht darstellbar", index + 1, exc_info=True)
+        return result
+    finally:
+        page.close()
 
 
 def classify_page(page: PageAnalysis, street_count: int = 0) -> MapVerdict:

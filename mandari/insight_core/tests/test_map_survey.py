@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import uuid
 from collections.abc import Callable
 from io import StringIO
@@ -19,8 +20,9 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
+from apps.common.documents.page_analysis import analyze_pdf
 from apps.common.tests.pdf_samples import map_pdf, photo_pdf, text_pdf
-from insight_core.models import OParlBody, OParlFile, Street
+from insight_core.models import OParlBody, OParlFile, OParlMeeting, OParlPaper, Street
 from insight_core.services.map_survey import evaluate_labels, survey_body
 
 pytestmark = pytest.mark.django_db
@@ -90,6 +92,48 @@ def test_survey_counts_maps_from_local_cache_only(geo_body: OParlBody, cache_wit
     map_row = next(row for row in rows if row["predicted"] == "ja")
     assert map_row["scales"] == "1:500" and map_row["streets"] == 4
     assert {row["weight"] for row in rows} == {1.0}
+
+
+def test_files_of_deleted_papers_and_meetings_are_left_out(
+    geo_body: OParlBody, cached: Callable[..., OParlFile], make_paper: Callable[..., OParlPaper]
+) -> None:
+    public = make_paper(geo_body)
+    deleted = make_paper(geo_body, deleted=True)
+    meeting = OParlMeeting.objects.create(
+        external_id=f"https://ris.beispielstadt.example/oparl/meetings/{uuid.uuid4()}",
+        body=geo_body,
+        name="Rat",
+        deleted=True,
+    )
+    cached("oeffentlich.pdf", map_pdf(), paper=public)
+    cached("vorgang-geloescht.pdf", map_pdf(), paper=deleted)
+    cached("sitzung-geloescht.pdf", map_pdf(), meeting=meeting)
+    cached("ohne-vorgang.pdf", text_pdf())
+
+    summary = survey_body(geo_body).summary()
+
+    assert summary["dateien"] == 2
+    assert summary["kartenseiten"] == 1
+
+
+def test_failing_file_is_counted_and_the_survey_goes_on(
+    geo_body: OParlBody, cache_with_files: None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Ein unerwarteter Fehler in einer Datei beendet nicht den stundenlangen Lauf über den Cache."""
+
+    def _breaks_on_the_plan(path: Path, **kwargs: Any) -> Any:
+        if Path(path).name == "lageplan.pdf":
+            raise RuntimeError("geheimer Inhalt aus dem PDF")
+        return analyze_pdf(path, **kwargs)
+
+    monkeypatch.setattr("insight_core.services.map_survey.analyze_pdf", _breaks_on_the_plan)
+    with caplog.at_level(logging.WARNING, logger="insight_core.services.map_survey"):
+        summary = survey_body(geo_body).summary()
+
+    assert summary["dateien"] == 2  # Textseite und Foto
+    assert summary["kartenseiten"] == 0
+    assert summary["uebersprungen"]["Analysefehler"] == 1
+    assert "RuntimeError" in caplog.text and "geheimer Inhalt" not in caplog.text
 
 
 def test_command_requires_dry_run(geo_body: OParlBody) -> None:
