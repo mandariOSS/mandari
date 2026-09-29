@@ -12,7 +12,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("work", "0060_benachrichtigungsarten_zuruecksetzen"),
+        ("work", "0061_migrierte_notizen_entfernen"),
     ]
 
     operations = [
