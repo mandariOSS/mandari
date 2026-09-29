@@ -30,7 +30,14 @@ expect = playwright_sync.expect
 pytestmark = pytest.mark.django_db(transaction=True)
 
 PASSWORD = "E2e-Passwort-123456"
-PERMISSIONS = ["dashboard.view", "motions.view", "motions.create", "motions.edit", "motions.comment"]
+PERMISSIONS = [
+    "dashboard.view",
+    "motions.view",
+    "motions.view_drafts",
+    "motions.create",
+    "motions.edit",
+    "motions.comment",
+]
 PROSEMIRROR = "#editor-container .ProseMirror"
 STATUSBAR = "#editor-statusbar"
 SAVE_BUTTON = "header button:has-text('Speichern')"

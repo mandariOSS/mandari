@@ -57,11 +57,11 @@ PERMISSIONS = {
     "speaking.grant": "Rederecht an andere erteilen",
     # === ANTRÄGE (Motions) ===
     "motions.view": "Anträge anzeigen",
-    "motions.view_drafts": "Entwürfe anzeigen",
+    "motions.view_drafts": "Entwürfe anderer anzeigen",
     "motions.create": "Anträge erstellen",
     "motions.edit": "Eigene Anträge bearbeiten",
     "motions.edit_all": "Alle Anträge bearbeiten",
-    "motions.delete": "Anträge löschen",
+    "motions.delete": "Anträge anderer löschen",
     "motions.approve": "Anträge freigeben",
     "motions.submit_to_ris": "Anträge ans RIS übermitteln",
     "motions.share": "Anträge mit anderen Organisationen teilen",

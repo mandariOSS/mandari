@@ -19,7 +19,7 @@ from django.urls import reverse
 from apps.work.motions.models import Motion, MotionApproval, MotionShare
 from apps.work.organization import selectors as organization_selectors
 
-MITGLIED = ["motions.view", "motions.create", "motions.edit", "motions.comment", "motions.share"]
+MITGLIED = ["motions.view", "motions.view_drafts", "motions.create", "motions.edit", "motions.comment", "motions.share"]
 
 
 def _dokument(org: Any, autor: Any, sichtbarkeit: str, titel: str = "Radweg") -> Motion:
@@ -32,7 +32,7 @@ def _xhr(client: Any, url: str, daten: dict[str, Any]) -> Any:
 
 @pytest.mark.django_db
 def test_autorin_ohne_bearbeitungsrecht_kommentiert_nur(org: Any, make_member: Any, client_for: Any) -> None:
-    autorin = make_member(org, ["motions.view", "motions.comment"], email="autorin@example.org")
+    autorin = make_member(org, ["motions.view", "motions.view_drafts", "motions.comment"], email="autorin@example.org")
     dokument = _dokument(org, autorin, "private")
 
     assert dokument.access_level(autorin) == "comment"
@@ -96,7 +96,9 @@ def test_freigabe_entscheiden_nur_mit_zugang(org: Any, make_member: Any, client_
 @pytest.mark.django_db
 def test_gastverwaltung_entzieht_gastfreigaben(org: Any, make_member: Any, client_for: Any) -> None:
     autorin = make_member(org, MITGLIED, email="autorin@example.org")
-    verwaltung = make_member(org, ["motions.view", "motions.share", "guests.manage"], email="gaeste@example.org")
+    verwaltung = make_member(
+        org, ["motions.view", "motions.view_drafts", "motions.share", "guests.manage"], email="gaeste@example.org"
+    )
     gast = make_member(org, [], email="gast@example.org")
     gast.is_guest = True
     gast.save(update_fields=["is_guest"])
@@ -133,7 +135,7 @@ def test_uebersicht_zeigt_keine_freigaben_privater_dokumente(org: Any, make_memb
 def test_gast_einladung_bietet_nur_sichtbare_dokumente_an(org: Any, make_member: Any) -> None:
     autorin = make_member(org, MITGLIED, email="autorin@example.org")
     ohne_sicht = make_member(org, ["guests.invite"], email="einladend@example.org")
-    mit_sicht = make_member(org, ["guests.invite", "motions.view"], email="sieht@example.org")
+    mit_sicht = make_member(org, ["guests.invite", "motions.view", "motions.view_drafts"], email="sieht@example.org")
     org_weit = _dokument(org, autorin, "organization")
 
     assert list(organization_selectors.shareable_documents(org, ohne_sicht)) == []
@@ -145,7 +147,9 @@ def test_freigabeanfrage_an_personen_ohne_zugang_braucht_das_freigaberecht(
     org: Any, make_member: Any, client_for: Any
 ) -> None:
     """Die Anfrage legt für die angefragte Person eine Freigabe an – wie der Teilen-Dialog nur mit ``can_share``."""
-    autorin = make_member(org, ["motions.view", "motions.edit", "motions.comment"], email="autorin@example.org")
+    autorin = make_member(
+        org, ["motions.view", "motions.view_drafts", "motions.edit", "motions.comment"], email="autorin@example.org"
+    )
     pruefer = make_member(org, MITGLIED, email="pruefer@example.org")
     privat = _dokument(org, autorin, "private")
     offen = _dokument(org, autorin, "organization", titel="Offen")
@@ -171,7 +175,7 @@ def test_federfuehrung_bearbeitet_ihr_dokument_mit_bearbeitungsrecht(
     """Federführung und Mitarbeit behalten Status, Metadaten und Inhalt – sofern sie ``motions.edit`` haben."""
     autorin = make_member(org, MITGLIED, email="autorin@example.org")
     zustaendig = make_member(org, MITGLIED, email="zustaendig@example.org")
-    ohne_recht = make_member(org, ["motions.view", "motions.comment"], email="ohne@example.org")
+    ohne_recht = make_member(org, ["motions.view", "motions.view_drafts", "motions.comment"], email="ohne@example.org")
     dokument = Motion.objects.create(
         organization=org, author=autorin, title="Radweg", visibility=sichtbarkeit, responsible=zustaendig
     )

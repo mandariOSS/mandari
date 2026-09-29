@@ -20,7 +20,7 @@ from django.urls import reverse
 from apps.common.tests.factories import MembershipFactory, UserFactory
 from apps.work.motions.models import DocumentFolder, FolderGuestShare, Motion, MotionApproval, MotionShare
 
-RECHTE = ["motions.view", "motions.edit", "motions.comment"]
+RECHTE = ["motions.view", "motions.view_drafts", "motions.edit", "motions.comment"]
 
 
 def _gast(org: Any, email: str) -> Any:

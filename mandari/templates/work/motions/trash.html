@@ -77,6 +77,7 @@
                         <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
                         Wiederherstellen
                     </button>
+                    {% if motion.id in purgeable_ids %}
                     <button type="button" data-post="{% url 'work:document_permanent_delete' org_slug=organization.slug motion_id=motion.id %}"
                             data-confirm-title="Endgültig löschen" data-confirm-message="„{{ motion.title }}“ wird unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
                             data-confirm-text="Löschen" data-confirm-variant="danger"
@@ -84,6 +85,7 @@
                         <i data-lucide="x" class="w-4 h-4"></i>
                         Endgültig löschen
                     </button>
+                    {% endif %}
                 </div>
             </div>
         </div>

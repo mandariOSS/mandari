@@ -31,7 +31,7 @@ def _org() -> Organization:
 
 def _mitglied(organization: Organization) -> Membership:
     """Mitglied mit Leserecht für Dokumente (ohne motions.view sieht niemand Dokumente)."""
-    rolle = cast(Any, RoleFactory)(organization=organization, permissions=["motions.view"])
+    rolle = cast(Any, RoleFactory)(organization=organization, permissions=["motions.view", "motions.view_drafts"])
     return cast(Membership, cast(Any, MembershipFactory)(organization=organization, roles=[rolle]))
 
 

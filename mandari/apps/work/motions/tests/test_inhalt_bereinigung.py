@@ -49,7 +49,7 @@ EDITOR_HTML = (
     '<pre><code class="language-python">x = 1 &lt; 2</code></pre><hr><p>Umbruch<br>Zeile &amp; mehr</p>'
 )
 
-PERMISSIONS = ["motions.view", "motions.edit", "motions.comment"]
+PERMISSIONS = ["motions.view", "motions.view_drafts", "motions.edit", "motions.comment"]
 
 
 def _frei_von_skript(html: str) -> None:
@@ -107,7 +107,7 @@ def autorin(org: Any, make_member: Any) -> Any:
 
 @pytest.fixture
 def leser(org: Any, make_member: Any) -> Any:
-    return make_member(org, ["motions.view"], email="leser@example.org")
+    return make_member(org, ["motions.view", "motions.view_drafts"], email="leser@example.org")
 
 
 @pytest.fixture
@@ -223,7 +223,9 @@ def test_einreichungsvorschau_ist_bereinigt(org: Any, autorin: Any, altbestand: 
 
 @pytest.mark.django_db
 def test_vorlagenvorschau_ist_bereinigt(org: Any, make_member: Any, client_for: Any) -> None:
-    verwaltung = make_member(org, ["organization.edit", "motions.view"], email="verwaltung@example.org")
+    verwaltung = make_member(
+        org, ["organization.edit", "motions.view", "motions.view_drafts"], email="verwaltung@example.org"
+    )
     vorlage = MotionTemplate.objects.create(organization=org, name="Vorlage", content_template=BOESE)
     url = reverse("work:document_template_preview", kwargs={"org_slug": org.slug, "template_id": vorlage.id})
 

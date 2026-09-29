@@ -13,7 +13,7 @@ import pytest
 
 from apps.work.motions.models import Motion
 
-EDIT_PERMISSIONS = ["motions.view", "motions.edit", "motions.comment"]
+EDIT_PERMISSIONS = ["motions.view", "motions.view_drafts", "motions.edit", "motions.comment"]
 CONFIG_RE = re.compile(r'<script[^>]*id="document-editor-config"[^>]*>(.*?)</script>', re.S)
 
 
@@ -72,7 +72,7 @@ def test_editor_page_provides_json_config_and_no_inline_script(
 def test_editor_page_for_viewer_has_config_without_editor(
     org: Any, motion: Motion, make_member: Any, client_for: Any
 ) -> None:
-    viewer = make_member(org, ["motions.view"], email="leser@example.org")
+    viewer = make_member(org, ["motions.view", "motions.view_drafts"], email="leser@example.org")
     response = client_for(viewer.user).get(editor_url(org, motion))
     html = response.content.decode()
 

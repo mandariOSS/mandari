@@ -33,7 +33,9 @@ def _b64(data: bytes) -> str:
 
 @pytest.fixture
 def autorin(org: Any, make_member: Any) -> Any:
-    return make_member(org, ["motions.view", "motions.edit", "motions.comment"], email="autorin@example.org")
+    return make_member(
+        org, ["motions.view", "motions.view_drafts", "motions.edit", "motions.comment"], email="autorin@example.org"
+    )
 
 
 @pytest.fixture
@@ -45,10 +47,11 @@ def dokument(org: Any, autorin: Any) -> Motion:
 @pytest.mark.parametrize(
     ("rechte", "erwartet"),
     [
-        (["motions.view"], "view"),  # Standardrolle „Parteimitglied“
-        (["motions.view", "motions.comment"], "comment"),
-        (["motions.view", "motions.edit", "motions.comment"], "comment"),  # fremdes Dokument
-        (["motions.view", "motions.edit_all"], "edit"),
+        (["motions.view", "motions.view_drafts"], "view"),
+        (["motions.view", "motions.comment"], None),  # Standardrolle „Parteimitglied“: keine Entwürfe anderer
+        (["motions.view", "motions.view_drafts", "motions.comment"], "comment"),
+        (["motions.view", "motions.view_drafts", "motions.edit", "motions.comment"], "comment"),  # fremdes Dokument
+        (["motions.view", "motions.view_drafts", "motions.edit_all"], "edit"),
         (["dashboard.view"], None),  # ohne Leserecht keine Verbindung
     ],
 )
@@ -62,9 +65,11 @@ def test_stufe_folgt_dem_editor(
 
 @pytest.mark.django_db
 def test_autorin_und_freigabe_bearbeiten(org: Any, make_member: Any, autorin: Any, dokument: Motion) -> None:
-    kollegin = make_member(org, ["motions.view", "motions.edit", "motions.comment"], email="kollegin@example.org")
+    kollegin = make_member(
+        org, ["motions.view", "motions.view_drafts", "motions.edit", "motions.comment"], email="kollegin@example.org"
+    )
     MotionShare.objects.create(motion=dokument, scope="user", user=kollegin.user, level="edit", created_by=autorin.user)
-    ohne_bearbeitungsrecht = make_member(org, ["motions.view"], email="nur-lesen@example.org")
+    ohne_bearbeitungsrecht = make_member(org, ["motions.view", "motions.view_drafts"], email="nur-lesen@example.org")
     MotionShare.objects.create(
         motion=dokument, scope="user", user=ohne_bearbeitungsrecht.user, level="edit", created_by=autorin.user
     )
@@ -102,7 +107,7 @@ async def _verbinden(user: Any, motion: Motion) -> WebsocketCommunicator:
 def test_lesende_verbindung_sendet_keine_aenderungen(
     org: Any, make_member: Any, autorin: Any, dokument: Motion
 ) -> None:
-    leser = make_member(org, ["motions.view"], email="leser@example.org")
+    leser = make_member(org, ["motions.view", "motions.view_drafts"], email="leser@example.org")
 
     async def lauf() -> list[bytes]:
         schreiberin = await _verbinden(autorin.user, dokument)

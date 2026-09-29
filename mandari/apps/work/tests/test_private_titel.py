@@ -113,7 +113,7 @@ def test_editor_zeigt_nur_sichtbare_aufgaben_und_gaesten_keine(
     org: Any, autorin: Any, make_member: Any, client_for: Any
 ) -> None:
     dokument = Motion.objects.create(organization=org, author=autorin, title="Antrag", visibility="organization")
-    kollege = make_member(org, ["motions.view", "tasks.view"], email="kollege@example.org")
+    kollege = make_member(org, ["motions.view", "motions.view_drafts", "tasks.view"], email="kollege@example.org")
     Task.objects.create(
         organization=org, title=PRIVATE_AUFGABE, created_by=autorin, visibility="private", related_motion=dokument
     )

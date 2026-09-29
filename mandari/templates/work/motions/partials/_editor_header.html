@@ -207,6 +207,7 @@
                     </div>
                 </div>
 
+                {% if can_delete %}
                 <!-- More Actions -->
                 <div x-data="{ open: false }" class="relative">
                     <button type="button" @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Mehr">
@@ -221,6 +222,7 @@
                         </button>
                     </div>
                 </div>
+                {% endif %}
 
                 {% endif %}
 
