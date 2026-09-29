@@ -501,7 +501,9 @@ class ProtocolPdfView(SessionViewMixin, TemplateView):
         if internal and not self.has_permission("view_non_public_meetings"):
             raise PermissionDenied("Fehlende Berechtigung für die interne Fassung")
 
-        pdf_bytes = protocol_service.build_protocol_pdf(protocol, internal=internal)
+        pdf_bytes = protocol_service.build_protocol_pdf(
+            protocol, internal=internal, permissions=self.session_permissions
+        )
         if internal:
             # Interne Fassung enthält den nichtöffentlichen Teil (Issue #221)
             audit.log_read(

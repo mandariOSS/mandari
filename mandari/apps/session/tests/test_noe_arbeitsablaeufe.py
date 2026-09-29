@@ -293,6 +293,28 @@ def test_noe_vorlage_nur_mit_vorlagen_noe_recht(welt: Welt) -> None:
     assert "PERSONALIE-GEHEIM" in _pdf_text(beide.get(welt.url(f"/agenda/{top.id}/beschlussauszug.pdf")).content)
 
 
+def test_interne_niederschrift_nennt_noe_vorlage_nur_mit_vorlagen_noe_recht(welt: Welt) -> None:
+    SessionAgendaItem.objects.create(
+        meeting=welt["klausur"], number="N1", order=1, name="TOP-KLAUSUR", paper=welt["noe_vorlage"], is_public=False
+    )
+    SessionAgendaItem.objects.create(
+        meeting=welt["klausur"], number="N2", order=2, name="TOP-OEFFENTLICHE-VORLAGE", paper=welt["vorlage"]
+    )
+    SessionProtocol.objects.create(meeting=welt["klausur"], content="Allgemeines", status="draft")
+    url = welt.url(f"/meetings/{welt['klausur'].id}/niederschrift.pdf?fassung=intern")
+
+    nur_sitzung = _client(welt, "view_meetings", "view_protocols", "view_non_public_meetings")
+    antwort = nur_sitzung.get(url)
+    assert antwort.status_code == 200
+    text = _pdf_text(antwort.content)
+    assert "TOP-KLAUSUR" in text
+    assert "V/9" not in text
+    assert "V/1" in text, "öffentliche Vorlage bleibt genannt"
+
+    beide = _client(welt, "view_meetings", "view_protocols", *NOE)
+    assert "V/9" in _pdf_text(beide.get(url).content)
+
+
 # =============================================================================
 # Fassung wiederherstellen
 # =============================================================================
