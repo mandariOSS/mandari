@@ -26,11 +26,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, TypeVar
 
-from rich.console import Console
-
 from src.metrics import metrics
+from src.redaction import MaskingConsole
 
-console = Console()
+console = MaskingConsole()
 
 T = TypeVar("T")
 

@@ -28,7 +28,6 @@ from mandari_oparl import (
     ProcessedPaper,
     ProcessedPerson,
 )
-from rich.console import Console
 from rich.progress import (
     BarColumn,
     Progress,
@@ -54,6 +53,7 @@ from src.client.oparl_compat import (
 )
 from src.config import settings
 from src.metrics import metrics
+from src.redaction import MaskingConsole
 from src.scrapers.base import CONTENT_HASH_FIELD, content_hash
 from src.storage.database import DatabaseStorage
 from src.sync.processor import OParlProcessor
@@ -95,7 +95,7 @@ def source_backoff_until(source, now: datetime | None = None) -> datetime | None
     return until if until > now else None
 
 
-console = Console()
+console = MaskingConsole()
 
 
 @dataclass

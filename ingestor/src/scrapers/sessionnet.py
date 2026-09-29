@@ -29,9 +29,9 @@ from urllib.parse import parse_qs, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
-from rich.console import Console
 
 from src.metrics import metrics
+from src.redaction import MaskingConsole
 from src.scrapers.base import (
     CrawlWindow,
     ScraperConfig,
@@ -41,7 +41,7 @@ from src.scrapers.base import (
 )
 from src.scrapers.politeness import PoliteFetcher
 
-console = Console()
+console = MaskingConsole()
 
 OPARL = "https://schema.oparl.org/1.1/"
 TZ_BERLIN = ZoneInfo("Europe/Berlin")

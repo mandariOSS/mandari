@@ -23,12 +23,12 @@ from mandari_oparl import (
     ProcessedPaper,
     ProcessedPerson,
 )
-from rich.console import Console
 from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.config import settings
+from src.redaction import MaskingConsole
 from src.storage.models import (
     OParlAgendaItem,
     OParlBody,
@@ -44,7 +44,7 @@ from src.storage.models import (
     OParlSource,
 )
 
-console = Console()
+console = MaskingConsole()
 
 
 # Entity-Typ-Name -> SQLAlchemy-Modell (für generische Lookups, u. a.

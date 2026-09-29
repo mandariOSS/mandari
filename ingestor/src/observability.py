@@ -25,6 +25,8 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
+from src.redaction import mask_credentials
+
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 trace_id_var: ContextVar[str] = ContextVar("trace_id", default="")
 
@@ -62,14 +64,18 @@ class ContextFilter(logging.Filter):
 
 
 class JsonFormatter(logging.Formatter):
-    """Eine JSON-Zeile je Eintrag – gleiches Format wie im Django-Projekt."""
+    """Eine JSON-Zeile je Eintrag – gleiches Format wie im Django-Projekt.
+
+    Meldung, Traceback und Text-Zusatzfelder laufen durch ``mask_credentials``, damit Verbindungs-URLs aus
+    Fehlermeldungen keine Zugangsdaten ins Log tragen.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
             "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(timespec="milliseconds"),
             "level": record.levelname,
             "logger": record.name,
-            "msg": record.getMessage(),
+            "msg": mask_credentials(record.getMessage()),
             "service": os.environ.get("OTEL_SERVICE_NAME", "mandari-ingestor"),
             "request_id": getattr(record, "request_id", "-"),
             "trace_id": getattr(record, "trace_id", "-"),
@@ -82,10 +88,20 @@ class JsonFormatter(logging.Formatter):
                 json.dumps(value)
             except (TypeError, ValueError):
                 value = repr(value)
-            payload[key] = value
+            payload[key] = mask_credentials(value) if isinstance(value, str) else value
         if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
+            payload["exception"] = mask_credentials(self.formatException(record.exc_info))
         return json.dumps(payload, ensure_ascii=False)
+
+
+class TextFormatter(logging.Formatter):
+    """Textzeile für die Entwicklung; wie ``JsonFormatter`` ohne Zugangsdaten aus URLs."""
+
+    def __init__(self) -> None:
+        super().__init__("{levelname} {asctime} {name} req={request_id} trace={trace_id} {message}", style="{")
+
+    def format(self, record: logging.LogRecord) -> str:
+        return mask_credentials(super().format(record))
 
 
 _logging_ready = False
@@ -100,15 +116,7 @@ def setup_logging(log_format: str | None = None, log_level: str | None = None) -
     level = (log_level or os.environ.get("LOG_LEVEL") or "INFO").upper()
     handler = logging.StreamHandler(sys.stderr)
     handler.addFilter(ContextFilter())
-    if fmt == "json":
-        handler.setFormatter(JsonFormatter())
-    else:
-        handler.setFormatter(
-            logging.Formatter(
-                "{levelname} {asctime} {name} req={request_id} trace={trace_id} {message}",
-                style="{",
-            )
-        )
+    handler.setFormatter(JsonFormatter() if fmt == "json" else TextFormatter())
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
@@ -163,7 +171,9 @@ def setup_opentelemetry() -> bool:
         except Exception:  # noqa: BLE001 – fehlende Instrumentierung darf den Start nicht verhindern
             logger.exception("OpenTelemetry-Instrumentierung fehlgeschlagen: %s", name)
     _otel_ready = True
-    logger.info("OpenTelemetry aktiv (%s): %s", endpoint, ", ".join(instrumented) or "keine Instrumentierung")
+    logger.info(
+        "OpenTelemetry aktiv (%s): %s", mask_credentials(endpoint), ", ".join(instrumented) or "keine Instrumentierung"
+    )
     return True
 
 

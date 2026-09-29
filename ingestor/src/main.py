@@ -31,11 +31,11 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from src.config import settings
+from src.redaction import MaskingConsole, mask_credentials
 from src.sync.orchestrator import SyncOrchestrator
 
 app = typer.Typer(
@@ -43,7 +43,7 @@ app = typer.Typer(
     help="OParl data synchronization service for Mandari",
     add_completion=False,
 )
-console = Console()
+console = MaskingConsole()
 
 
 # Typer merkt sich je App genau einen Callback; ein zweites @app.callback() ersetzt diesen stillschweigend,
@@ -304,12 +304,11 @@ def status() -> None:
         except Exception as e:
             console.print(f"[red]Could not connect to database: {e}[/red]")
 
+    # Verbindungs-URLs tragen im Betrieb Benutzer und Passwort; angezeigt wird nur Schema, Host und Pfad.
     console.print("[bold]Configuration:[/bold]")
-    console.print(
-        f"  Database: {settings.database_url.split('@')[-1] if '@' in settings.database_url else settings.database_url}"
-    )
-    console.print(f"  Redis: {settings.redis_url}")
-    console.print(f"  Elasticsearch: {settings.elasticsearch_url}")
+    console.print(f"  Database: {mask_credentials(settings.database_url)}")
+    console.print(f"  Redis: {mask_credentials(settings.redis_url)}")
+    console.print(f"  Elasticsearch: {mask_credentials(settings.elasticsearch_url)}")
     console.print()
 
     asyncio.run(run_status())
