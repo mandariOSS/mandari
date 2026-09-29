@@ -47,9 +47,34 @@ PROTECTED_MEDIA_PREFIXES = (
     "motions/documents/",
     # Archivpakete des Protokolls (Issue #221): nie über eine URL
     "audit_archive/",
-    # Anhänge von Aufgaben, Fraktionssitzungen, Vorbereitung, Support und Briefköpfe (apps/work/files.py)
+    # Dokument-Cache der OParl-Dateien (Standardablage ohne OPARL_FILES_ROOT): nur über den
+    # Datei-Proxy, der auch zurückgezogene Dokumente berücksichtigt
+    "oparl_files/",
+    # Anhänge von Aufgaben, Fraktionssitzungen, Vorbereitung, Support, Briefköpfe und
+    # Datenexporte (apps/work/files.py)
     *WORK_PROTECTED_PREFIXES,
 )
+
+#: Einstellungen mit eigenen Ablagen, die nie über ``/media/`` hinausgehen. Zeigen sie in ein
+#: Verzeichnis unter ``MEDIA_ROOT``, gilt dessen Präfix zusätzlich als geschützt.
+_PROTECTED_ROOT_SETTINGS = ("OPARL_FILES_ROOT", "AUDIT_ARCHIVE_ROOT")
+
+
+def _protected_prefixes() -> tuple[str, ...]:
+    """``PROTECTED_MEDIA_PREFIXES`` plus die eingestellten Ablagen, sofern sie unter ``MEDIA_ROOT`` liegen."""
+    root = Path(settings.MEDIA_ROOT).resolve()
+    extra: list[str] = []
+    for name in _PROTECTED_ROOT_SETTINGS:
+        value = getattr(settings, name, None)
+        if not value:
+            continue
+        try:
+            relative = Path(value).resolve().relative_to(root).as_posix()
+        except (ValueError, OSError):
+            continue
+        if relative != ".":
+            extra.append(f"{relative.lower()}/")
+    return PROTECTED_MEDIA_PREFIXES + tuple(extra)
 
 
 def _media_path(path: str) -> str | None:
@@ -93,9 +118,10 @@ def serve_media(request, path):
 
     Sicherheit (drei Stufen, jeweils auf dem normalisierten Pfad aus
     ``_media_path``):
-    - PROTECTED_MEDIA_PREFIXES werden hier NIE ausgeliefert – sie können
-      nichtöffentlich sein und sind nur über die zugriffsgeprüften
-      Download-Views erreichbar (Session-Anlagen, Dokument-Anhänge).
+    - PROTECTED_MEDIA_PREFIXES (und die eingestellten Ablagen unter
+      MEDIA_ROOT) werden hier NIE ausgeliefert – sie können nichtöffentlich
+      sein und sind nur über die zugriffsgeprüften Download-Views erreichbar
+      (Session-Anlagen, Dokument-Anhänge, Datenexporte).
     - PUBLIC_MEDIA_PREFIXES (Logos, Hero-Bilder) sind ohne Anmeldung
       abrufbar.
     - Alle übrigen Uploads (z. B. Anhänge von Aufgaben, Fraktionssitzungen,
@@ -107,7 +133,7 @@ def serve_media(request, path):
     path = _media_path(path)
     if path is None:
         raise Http404("Datei nicht gefunden.")
-    if path.lower().startswith(PROTECTED_MEDIA_PREFIXES):
+    if path.lower().startswith(_protected_prefixes()):
         raise Http404("Diese Datei wird nur über die geschützte Download-View ausgeliefert.")
     if not path.startswith(PUBLIC_MEDIA_PREFIXES) and not request.user.is_authenticated:
         raise Http404("Datei nicht gefunden.")

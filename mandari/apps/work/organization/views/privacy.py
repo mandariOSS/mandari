@@ -82,7 +82,7 @@ class DataExportStatusView(WorkViewMixin, View):
 
 
 class DataExportDownloadView(WorkViewMixin, View):
-    """Serve export file for download."""
+    """Exportdatei der eigenen Mitgliedschaft ausliefern – der einzige Weg zu ``exports/``."""
 
     permission_required = "dashboard.view"
 
@@ -98,6 +98,8 @@ class DataExportDownloadView(WorkViewMixin, View):
         filename = f"mandari-datenexport-{export.created_at.strftime('%Y%m%d')}.{export.export_format}"
         response = HttpResponse(file_path.read_bytes(), content_type=content_type)
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
         return response
 
 
