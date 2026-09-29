@@ -38,6 +38,8 @@ def panel_context(task, organization, membership) -> dict:
         "activities": selectors.task_activities(task),
         "available_labels": selectors.labels_for_organization(organization),
         "task_label_ids": selectors.task_label_ids(task),
+        # Labels anlegen und löschen: Label-Verwaltung der Organisation (Issue #585)
+        "can_manage_labels": membership.has_permission("tasks.manage"),
         "checklist_form": TaskChecklistItemForm(),
         "shared_members": selectors.task_shares(task),
     }
@@ -136,6 +138,7 @@ class TaskPanelActionView(WorkViewMixin, View):
             "available_labels": selectors.labels_for_organization(self.organization),
             "task_label_ids": selectors.task_label_ids(task),
             "can_edit": True,
+            "can_manage_labels": self.membership.has_permission("tasks.manage"),
             "organization": self.organization,
         }
         return self._render("work/tasks/_panel_labels.html", context)
