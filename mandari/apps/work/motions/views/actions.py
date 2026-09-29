@@ -29,7 +29,7 @@ from ..forms import (
     MotionDocumentForm,
     MotionShareForm,
 )
-from ..import_service import motion_import_service
+from ..import_service import import_ocr_max_pages, motion_import_service
 from ..models import (
     Motion,
     MotionApproval,
@@ -704,6 +704,12 @@ class MotionImportView(WorkViewMixin, TemplateView):
         context["document_types"] = MotionType.objects.filter(organization=self.organization, is_active=True).order_by(
             "sort_order", "name"
         )
+        context["import_max_mb"] = self.IMPORT_MAX_BYTES // MB
+        context["import_ocr_max_pages"] = import_ocr_max_pages()
+        context["import_config"] = {
+            "maxBytes": self.IMPORT_MAX_BYTES,
+            "extensions": sorted(IMPORTABLE_DOCUMENTS),
+        }
         return context
 
     def post(self, request, *args, **kwargs):
@@ -719,7 +725,10 @@ class MotionImportView(WorkViewMixin, TemplateView):
             try:
                 validate_upload(f, allowed=IMPORTABLE_DOCUMENTS, max_bytes=self.IMPORT_MAX_BYTES, bezeichnung="Datei")
             except ValidationError as exc:
-                messages.warning(request, f"'{f.name}' übersprungen: {' '.join(exc.messages)}")
+                hinweis = ""
+                if (f.name or "").lower().rsplit(".", 1)[-1] in ("doc", "odt", "rtf"):
+                    hinweis = " Bitte in Word oder LibreOffice als DOCX oder PDF speichern."
+                messages.warning(request, f"'{f.name}' übersprungen: {' '.join(exc.messages)}{hinweis}")
                 continue
             valid_files.append(f)
 
@@ -755,6 +764,9 @@ class MotionImportView(WorkViewMixin, TemplateView):
         # Fehlschläge immer melden – auch wenn danach direkt in den Editor des einen Erfolgs gewechselt wird
         for failure in failures:
             messages.error(request, f"Import fehlgeschlagen: {failure.error}")
+        for result in successes:
+            if result.notice and result.motion:
+                messages.info(request, f"{result.motion.title}: {result.notice}")
 
         if successes:
             if len(successes) == 1:

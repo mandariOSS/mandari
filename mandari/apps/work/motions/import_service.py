@@ -1,22 +1,27 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Import Service for Motions/Documents.
+Import von PDF- und DOCX-Dateien als Dokumente.
 
-Imports PDF and DOCX files as documents, extracting text content
-and storing the original file as an attachment.
+Der Text wird mit Gliederung (Absätze, Listen, Tabellen) in den Editor übernommen
+(``import_text``), die Originaldatei bleibt als Anhang am Dokument. Gescannte PDFs ohne
+Textebene gehen durch die Texterkennung – im laufenden Seitenaufruf höchstens
+``IMPORT_OCR_MAX_PAGES`` Seiten, damit Laufzeit und Arbeitsspeicher begrenzt bleiben (#620).
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction
 
 from apps.work.sanitize import sanitize_editor_html
 from insight_core.services.document_extraction import extract_text_from_file
+
+from . import import_text
 
 if TYPE_CHECKING:
     from apps.tenants.models import Membership, Organization
@@ -29,6 +34,14 @@ logger = logging.getLogger(__name__)
 #: Meldung bei unerwarteten Fehlern; die Ausnahme selbst steht im Protokoll
 IMPORT_FAILED_MESSAGE = "Die Datei konnte nicht gelesen werden. Bitte prüfen Sie, ob sie beschädigt ist."
 
+#: Texterkennung im Seitenaufruf: rund 5 s je Seite, darum begrenzt (Rest bleibt im Anhang)
+IMPORT_OCR_MAX_PAGES = 10
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+#: Länge des Suchtexts am Anhang
+_SEARCH_TEXT_LIMIT = 50000
+
 
 @dataclass
 class ImportResult:
@@ -40,20 +53,73 @@ class ImportResult:
     error: str | None = None
     extracted_text_length: int = 0
     ocr_performed: bool = False
+    #: Hinweis für die Nutzerin (z. B. Texterkennung nur für die ersten Seiten)
+    notice: str | None = None
 
 
-def _escape_html(text: str) -> str:
-    """Escape HTML special characters."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def import_ocr_max_pages() -> int:
+    return int(getattr(settings, "WORK_IMPORT_OCR_MAX_PAGES", IMPORT_OCR_MAX_PAGES))
+
+
+def title_from_filename(name: str, extensions: tuple[str, ...]) -> str:
+    """Titel aus dem Dateinamen: ohne Endung, Unter-/Bindestriche als Leerzeichen, einfacher Abstand."""
+    title = name or ""
+    lowered = title.lower()
+    for ext in extensions:
+        if lowered.endswith(ext):
+            title = title[: -len(ext)]
+            break
+    title = " ".join(title.replace("_", " ").replace("-", " ").split())
+    return (title[0].upper() + title[1:])[:500] if title else "Importiertes Dokument"
 
 
 class MotionImportService:
-    """
-    Service for importing files (PDF/DOCX) as Motion documents.
+    """Importiert Dateien (PDF/DOCX) als neue Dokumente mit Anhang."""
 
-    Extracts text content and creates Motion instances
-    with the extracted text as editor-ready HTML content.
-    """
+    @classmethod
+    def _create(
+        cls,
+        *,
+        uploaded_file: UploadedFile,
+        organization: Organization,
+        author: Membership,
+        motion_type: MotionType | None,
+        title: str,
+        visibility: str,
+        html: str,
+        search_text: str,
+        mime_type: str,
+        file_size: int,
+    ) -> tuple[Motion, MotionDocument]:
+        """Dokument und Anhang gemeinsam anlegen – scheitert der Anhang, entsteht kein halbes Dokument."""
+        from .models import Motion, MotionDocument
+
+        with transaction.atomic():
+            motion = Motion(
+                organization=organization,
+                author=author,
+                title=title,
+                status="draft",
+                visibility=visibility,
+                responsible=author,
+            )
+            if motion_type:
+                motion.document_type = motion_type
+            motion.set_content_encrypted(html)
+            motion.save()
+            motion.apply_default_checklist()
+
+            document = MotionDocument(
+                motion=motion,
+                file=uploaded_file,
+                filename=(uploaded_file.name or "")[:255],
+                mime_type=mime_type,
+                file_size=file_size,
+                text_content=search_text[:_SEARCH_TEXT_LIMIT],
+                uploaded_by=author,
+            )
+            document.save()
+        return motion, document
 
     @classmethod
     def import_pdf(
@@ -65,112 +131,75 @@ class MotionImportService:
         title: str | None = None,
         visibility: str = "private",
     ) -> ImportResult:
-        """
-        Import a PDF file as a new Motion document.
-
-        Args:
-            pdf_file: The uploaded PDF file
-            organization: The organization to create the motion in
-            author: The membership creating the motion
-            motion_type: Optional document type
-            title: Optional title (defaults to filename)
-            visibility: Visibility setting (default: private)
-
-        Returns:
-            ImportResult with the created motion and document
-        """
-        from .models import Motion, MotionDocument
-
+        """PDF als neues Dokument: Text mit Absätzen; ohne Textebene per Texterkennung."""
         try:
-            # Read file content
             file_content = pdf_file.read()
-            pdf_file.seek(0)  # Reset for later save
+            pdf_file.seek(0)  # für das Speichern als Anhang
 
-            # Extract text (Rückgabe: Text, OCR genutzt, Seitenzahl, Verfahren)
-            text_content, ocr_performed, page_count, _method = extract_text_from_file(
-                data=file_content,
-                mime_type="application/pdf",
-                file_name=pdf_file.name,
-            )
+            ocr_performed = False
+            notice = None
+            parsed = import_text.pdf_page_lines(file_content)
+            paragraphs = import_text.paragraphs_from_lines(parsed[0]) if parsed else []
+            page_count = parsed[1] if parsed else None
 
-            # Weder Text noch Seiten: keine lesbare PDF (beschädigt oder nur dem Namen nach PDF).
-            # Gescannte PDFs ohne verfügbare Texterkennung haben Seiten und werden mit Hinweis übernommen.
-            if not text_content and page_count is None:
-                logger.warning("PDF '%s' ist nicht lesbar, Import abgebrochen", pdf_file.name)
-                return ImportResult(success=False, error=IMPORT_FAILED_MESSAGE)
+            if not paragraphs:
+                # Keine Textebene (Scan) oder pypdf kann die Datei nicht öffnen: Texterkennung
+                limit = import_ocr_max_pages()
+                text, ocr_performed, ocr_page_count, _method = extract_text_from_file(
+                    data=file_content,
+                    mime_type="application/pdf",
+                    file_name=pdf_file.name or "",
+                    ocr_max_pages=limit,
+                )
+                page_count = page_count or ocr_page_count
+                # Weder Text noch Seiten: keine lesbare PDF (beschädigt oder nur dem Namen nach PDF).
+                # Gescannte PDFs ohne verfügbare Texterkennung haben Seiten und werden mit Hinweis übernommen.
+                if not text and page_count is None:
+                    logger.warning("PDF '%s' ist nicht lesbar, Import abgebrochen", pdf_file.name)
+                    return ImportResult(success=False, error=IMPORT_FAILED_MESSAGE)
+                paragraphs = import_text.text_paragraphs(text) if text else []
+                if ocr_performed and page_count and page_count > limit:
+                    notice = (
+                        f"Texterkennung für die ersten {limit} von {page_count} Seiten. "
+                        "Die vollständige Datei liegt als Anhang am Dokument."
+                    )
 
-            # Generate title from filename if not provided
-            if not title:
-                # Remove .pdf extension and clean up
-                title = pdf_file.name
-                if title.lower().endswith(".pdf"):
-                    title = title[:-4]
-                # Clean up common patterns
-                title = title.replace("_", " ").replace("-", " ").strip()
-                # Capitalize first letter
-                if title:
-                    title = title[0].upper() + title[1:]
+            if paragraphs:
+                html = import_text.paragraphs_to_html(paragraphs)
+            else:
+                html = "<p><em>Text konnte nicht extrahiert werden. Bitte überprüfen Sie das Original-PDF.</em></p>"
+            search_text = "\n\n".join(paragraphs)
 
-            # Create the Motion
-            motion = Motion(
+            motion, document = cls._create(
+                uploaded_file=pdf_file,
                 organization=organization,
                 author=author,
-                title=title,
-                status="draft",
+                motion_type=motion_type,
+                title=title or title_from_filename(pdf_file.name or "", (".pdf",)),
                 visibility=visibility,
-                responsible=author,
-            )
-
-            # Set document type if provided
-            if motion_type:
-                motion.document_type = motion_type
-
-            # Set content (encrypted)
-            if text_content:
-                # Wrap in basic HTML if it's plain text
-                if not text_content.strip().startswith("<"):
-                    # Convert line breaks to paragraphs
-                    paragraphs = text_content.split("\n\n")
-                    html_content = "\n".join(f"<p>{_escape_html(p.strip())}</p>" for p in paragraphs if p.strip())
-                    motion.set_content_encrypted(html_content)
-                else:
-                    # Übernommenes HTML nur als Positivliste des Editors (apps/work/sanitize.py)
-                    motion.set_content_encrypted(sanitize_editor_html(text_content))
-            else:
-                motion.set_content_encrypted(
-                    "<p><em>Text konnte nicht extrahiert werden. Bitte überprüfen Sie das Original-PDF.</em></p>"
-                )
-
-            motion.save()
-            motion.apply_default_checklist()
-
-            # Create MotionDocument attachment
-            document = MotionDocument(
-                motion=motion,
-                file=pdf_file,
-                filename=pdf_file.name,
+                html=sanitize_editor_html(html),
+                search_text=search_text,
                 mime_type="application/pdf",
                 file_size=len(file_content),
-                text_content=text_content[:50000] if text_content else "",  # Limit for search
-                uploaded_by=author,
             )
-            document.save()
-
             logger.info(
-                f"Imported PDF '{pdf_file.name}' as motion '{motion.title}' "
-                f"(ID: {motion.id}, text length: {len(text_content)}, OCR: {ocr_performed})"
+                "PDF-Import: Dokument %s angelegt (%s Seiten, %s Absätze, Texterkennung: %s)",
+                motion.id,
+                page_count,
+                len(paragraphs),
+                ocr_performed,
             )
-
             return ImportResult(
                 success=True,
                 motion=motion,
                 document=document,
-                extracted_text_length=len(text_content),
+                extracted_text_length=len(search_text),
                 ocr_performed=ocr_performed,
+                notice=notice,
             )
 
-        except Exception as e:
-            logger.exception(f"Failed to import PDF '{pdf_file.name}': {e}")
+        except Exception:
+            logger.exception("PDF-Import fehlgeschlagen: %s", pdf_file.name)
             # Feste Meldung: Texte aus Bibliotheken bleiben im Protokoll
             return ImportResult(success=False, error=IMPORT_FAILED_MESSAGE)
 
@@ -184,149 +213,43 @@ class MotionImportService:
         title: str | None = None,
         visibility: str = "private",
     ) -> ImportResult:
-        """
-        Import a DOCX file as a new Motion document.
-
-        Extracts text and basic formatting from DOCX using python-docx,
-        converts to HTML for the TipTap editor.
-
-        Args:
-            docx_file: The uploaded DOCX file
-            organization: The organization to create the motion in
-            author: The membership creating the motion
-            motion_type: Optional document type
-            title: Optional title (defaults to filename)
-            visibility: Visibility setting (default: private)
-
-        Returns:
-            ImportResult with the created motion and document
-        """
-        from .models import Motion, MotionDocument
-
+        """DOCX als neues Dokument: Absätze, Überschriften, Listen, Tabellen und Formatierung."""
         try:
-            from docx import Document
-
             file_content = docx_file.read()
             docx_file.seek(0)
 
-            # Parse the DOCX
-            import io
-
-            doc = Document(io.BytesIO(file_content))
-
-            # Convert to HTML
-            html_parts = []
-            for para in doc.paragraphs:
-                text = para.text.strip()
-                if not text:
-                    continue
-
-                # Detect heading styles
-                style_name = (para.style.name or "").lower()
-                if style_name.startswith("heading 1") or style_name == "title":
-                    html_parts.append(f"<h1>{_escape_html(text)}</h1>")
-                elif style_name.startswith("heading 2"):
-                    html_parts.append(f"<h2>{_escape_html(text)}</h2>")
-                elif style_name.startswith("heading 3"):
-                    html_parts.append(f"<h3>{_escape_html(text)}</h3>")
-                elif style_name.startswith("list"):
-                    html_parts.append(f"<li>{_escape_html(text)}</li>")
-                elif style_name == "quote" or style_name.startswith("block"):
-                    html_parts.append(f"<blockquote><p>{_escape_html(text)}</p></blockquote>")
-                else:
-                    # Build inline formatting
-                    inline_html = cls._runs_to_html(para.runs)
-                    html_parts.append(f"<p>{inline_html}</p>")
-
-            # Wrap adjacent list items in <ul>
-            html_content = "\n".join(html_parts)
-            html_content = re.sub(
-                r"((?:<li>.*?</li>\n?)+)",
-                r"<ul>\1</ul>",
-                html_content,
+            html_content = import_text.docx_to_html(file_content)
+            search_text = import_text.html_to_text(html_content)
+            html = (
+                sanitize_editor_html(html_content) if search_text else "<p><em>Kein Text im Dokument gefunden.</em></p>"
             )
 
-            # Generate title from filename if not provided
-            if not title:
-                title = docx_file.name
-                for ext in (".docx", ".DOCX", ".doc", ".DOC"):
-                    if title.endswith(ext):
-                        title = title[: -len(ext)]
-                        break
-                title = title.replace("_", " ").replace("-", " ").strip()
-                if title:
-                    title = title[0].upper() + title[1:]
-
-            # Create the Motion
-            motion = Motion(
+            motion, document = cls._create(
+                uploaded_file=docx_file,
                 organization=organization,
                 author=author,
-                title=title,
-                status="draft",
+                motion_type=motion_type,
+                title=title or title_from_filename(docx_file.name or "", (".docx",)),
                 visibility=visibility,
-                responsible=author,
-            )
-            if motion_type:
-                motion.document_type = motion_type
-
-            if html_content.strip():
-                motion.set_content_encrypted(sanitize_editor_html(html_content))
-            else:
-                motion.set_content_encrypted("<p><em>Kein Text im Dokument gefunden.</em></p>")
-            motion.save()
-            motion.apply_default_checklist()
-
-            # Create attachment
-            document = MotionDocument(
-                motion=motion,
-                file=docx_file,
-                filename=docx_file.name,
-                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                html=html,
+                search_text=search_text,
+                mime_type=DOCX_MIME,
                 file_size=len(file_content),
-                text_content=re.sub(r"<[^>]+>", "", html_content)[:50000],
-                uploaded_by=author,
             )
-            document.save()
-
-            logger.info(
-                f"Imported DOCX '{docx_file.name}' as motion '{motion.title}' "
-                f"(ID: {motion.id}, text length: {len(html_content)})"
-            )
-
+            logger.info("DOCX-Import: Dokument %s angelegt (%s Zeichen Text)", motion.id, len(search_text))
             return ImportResult(
                 success=True,
                 motion=motion,
                 document=document,
-                extracted_text_length=len(html_content),
+                extracted_text_length=len(search_text),
             )
 
         except ImportError:
             logger.error("python-docx is not installed. Install with: pip install python-docx")
             return ImportResult(success=False, error="DOCX-Import nicht verfügbar (python-docx fehlt)")
-        except Exception as e:
-            logger.exception(f"Failed to import DOCX '{docx_file.name}': {e}")
+        except Exception:
+            logger.exception("DOCX-Import fehlgeschlagen: %s", docx_file.name)
             return ImportResult(success=False, error=IMPORT_FAILED_MESSAGE)
-
-    @staticmethod
-    def _runs_to_html(runs) -> str:
-        """Convert paragraph runs to HTML with inline formatting."""
-        if not runs:
-            return ""
-        parts = []
-        for run in runs:
-            text = _escape_html(run.text)
-            if not text:
-                continue
-            if run.bold:
-                text = f"<strong>{text}</strong>"
-            if run.italic:
-                text = f"<em>{text}</em>"
-            if run.underline:
-                text = f"<u>{text}</u>"
-            if run.font and run.font.strike:
-                text = f"<s>{text}</s>"
-            parts.append(text)
-        return "".join(parts)
 
     @classmethod
     def import_file(
@@ -338,11 +261,7 @@ class MotionImportService:
         title: str | None = None,
         visibility: str = "private",
     ) -> ImportResult:
-        """
-        Import a file (PDF or DOCX) as a new Motion document.
-
-        Dispatches to the appropriate import method based on file type.
-        """
+        """Importiert eine Datei (PDF oder DOCX) je nach Endung."""
         name = (uploaded_file.name or "").lower()
         if name.endswith(".docx"):
             return cls.import_docx(
@@ -372,17 +291,16 @@ class MotionImportService:
         visibility: str = "private",
     ) -> list[ImportResult]:
         """Import multiple files (PDF/DOCX) as Motion documents."""
-        results = []
-        for f in files:
-            result = cls.import_file(
+        return [
+            cls.import_file(
                 uploaded_file=f,
                 organization=organization,
                 author=author,
                 motion_type=motion_type,
                 visibility=visibility,
             )
-            results.append(result)
-        return results
+            for f in files
+        ]
 
     @classmethod
     def import_multiple_pdfs(
@@ -393,30 +311,17 @@ class MotionImportService:
         motion_type: MotionType | None = None,
         visibility: str = "private",
     ) -> list[ImportResult]:
-        """
-        Import multiple PDF files as Motion documents.
-
-        Args:
-            pdf_files: List of uploaded PDF files
-            organization: The organization to create motions in
-            author: The membership creating the motions
-            motion_type: Optional document type for all imports
-            visibility: Visibility setting for all imports
-
-        Returns:
-            List of ImportResult objects
-        """
-        results = []
-        for pdf_file in pdf_files:
-            result = cls.import_pdf(
+        """Import multiple PDF files as Motion documents."""
+        return [
+            cls.import_pdf(
                 pdf_file=pdf_file,
                 organization=organization,
                 author=author,
                 motion_type=motion_type,
                 visibility=visibility,
             )
-            results.append(result)
-        return results
+            for pdf_file in pdf_files
+        ]
 
 
 # Singleton instance for convenience
