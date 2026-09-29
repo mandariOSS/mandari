@@ -20,6 +20,6 @@ Dateiname `JJJJMMTT-kurztitel.md`. Status: vorgeschlagen, angenommen, abgelöst.
 | [20260929-fremdschluessel-ris-bestand.md](20260929-fremdschluessel-ris-bestand.md) | Datendrehscheibe A8: Fremdschlüssel auf den RIS-Bestand: nie CASCADE | angenommen |
 | [20260929-adapter-rahmen.md](20260929-adapter-rahmen.md) | Datendrehscheibe A9: Adapter-Rahmen: übersetzen ohne Geschäftsregeln, Zustellprotokoll, dünne Webhooks mit HMAC | angenommen |
 | [20260929-aenderungsfeed-format.md](20260929-aenderungsfeed-format.md) | Datendrehscheibe A10: Änderungsfeed: Cursor, upsert/delete/redact, Snapshot-Übergabe, 410 | angenommen |
-| [20260929-portal-modul.md](20260929-portal-modul.md) | Datendrehscheibe A11: Bürgerportal als eigenes Fachmodul; `insight_core` wird reiner RIS-Bestand | angenommen |
+| [20260929-portal-modul.md](20260929-portal-modul.md) | Datendrehscheibe A11: Bürgerportal als eigenes Fachmodul; `insight_core` wird reiner RIS-Bestand | vorgeschlagen |
 
 Die Einträge „Datendrehscheibe A1–A11“ gehören zusammen (Epic #476); die Reihenfolge der Nummern entspricht den Abhängigkeiten.

@@ -1,6 +1,7 @@
 # Bürgerportal als eigenes Fachmodul; `insight_core` wird reiner RIS-Bestand
 
-- Status: angenommen
+- Status: vorgeschlagen
+- Hinweis: wird überarbeitet – geprüft wird ein eigenständiges Bürgerportal, das seine Daten nur über die offene Schnittstelle bezieht
 - Datum: 2026-09-29
 - Issue: #476
 - Paket: Datendrehscheibe, A11
