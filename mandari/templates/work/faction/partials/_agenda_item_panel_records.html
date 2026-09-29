@@ -126,10 +126,11 @@
                 {% else %}<i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>{% endif %}
             </span>
             <div class="flex-1 min-w-0">
-                {% if entry.speaker %}
-                <span class="font-medium text-gray-700 dark:text-gray-300">{{ entry.speaker.user.get_display_name }}:</span>
+                {% if entry.speaker_name %}
+                <span class="font-medium text-gray-700 dark:text-gray-300">{{ entry.speaker_name }}:</span>
                 {% endif %}
                 <span class="text-gray-600 dark:text-gray-400">{{ entry.get_content_decrypted }}</span>
+                {% if entry.entry_type == 'action' and entry.action_assignee_name %}<span class="text-xs text-gray-400">· zuständig: {{ entry.action_assignee_name }}</span>{% endif %}
             </div>
             {% if can_edit or can_protocol or entry.created_by == membership and not meeting.protocol_approved %}
             <div class="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover/entry:opacity-100 transition-opacity">

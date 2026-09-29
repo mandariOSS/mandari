@@ -69,12 +69,27 @@ def human_size(size: float, *, whole_bytes: bool = False) -> str:
 FORMER_MEMBER = "Ehemaliges Mitglied"
 FORMER_MEMBER_INITIALS = "EM"
 
+#: Länge eines gesicherten Namens: Vor- und Nachname (je 150 Zeichen) mit Leerzeichen (Issue #591)
+MEMBER_NAME_MAX_LENGTH = 301
 
-def member_name(membership: Any) -> str:
-    """Anzeigename einer Mitgliedschaft; „Ehemaliges Mitglied“, wenn der Verweis geleert wurde."""
+
+def member_name(membership: Any, snapshot: str = "") -> str:
+    """
+    Anzeigename einer Mitgliedschaft.
+
+    Ist der Verweis geleert (Mitglied entfernt), gilt der gesicherte Name des Eintrags
+    (``snapshot``, Issue #591), ohne ihn „Ehemaliges Mitglied“.
+    """
     if not membership:
-        return FORMER_MEMBER
+        return snapshot or FORMER_MEMBER
     return str(membership.user.get_display_name())
+
+
+def member_name_snapshot(membership: Any) -> str:
+    """Name einer Mitgliedschaft zum Sichern an Protokoll- und Anwesenheitseinträgen (Issue #591)."""
+    if not membership:
+        return ""
+    return str(membership.user.get_display_name())[:MEMBER_NAME_MAX_LENGTH]
 
 
 def member_initials(membership: Any) -> str:

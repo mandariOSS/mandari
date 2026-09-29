@@ -66,7 +66,7 @@
     <div class="section-title">Allgemeine Einträge (ohne TOP-Zuordnung, intern)</div>
     {% for entry in general_entries %}
     <p class="entry">
-        <span class="entry-type">{{ entry.type_display }}</span>{% if entry.speaker %} · {{ entry.speaker }}{% endif %}<br>
+        <span class="entry-type">{{ entry.type_display }}</span>{% if entry.speaker %} · {{ entry.speaker }}{% endif %}{% if entry.assignee %} · zuständig: {{ entry.assignee }}{% endif %}<br>
         {{ entry.content|linebreaksbr }}
     </p>
     {% endfor %}

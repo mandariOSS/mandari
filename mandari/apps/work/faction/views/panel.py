@@ -78,6 +78,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
                 "meeting", "parent", "approves_meeting", "related_agenda_item"
             ).prefetch_related(
                 "protocol_entries__speaker__user",
+                "protocol_entries__action_assignee__user",
                 "protocol_entries__created_by__user",
                 "attachments__uploaded_by__user",
                 "tasks__assigned_to__user",
@@ -144,9 +145,9 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
                 "is_protocol_phase": is_protocol_phase,
                 "can_protocol": can_protocol,
                 "attendances": attendances,
-                "protocol_entries": item.protocol_entries.select_related("speaker__user", "created_by__user").order_by(
-                    "order", "created_at"
-                ),
+                "protocol_entries": item.protocol_entries.select_related(
+                    "speaker__user", "action_assignee__user", "created_by__user"
+                ).order_by("order", "created_at"),
                 "attachments": item.attachments.select_related("uploaded_by__user").order_by("-created_at"),
                 "tasks": _visible_tasks(item, self.membership),
                 "linked_motions": _visible_motions(item, self.membership),

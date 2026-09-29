@@ -271,7 +271,12 @@ def audit_post_save(sender, instance, created, **kwargs):
         log_event("update", instance)
         return
 
-    changes = audit_core.build_changes(old_instance, instance)
+    # Gesicherte Namen (Issue #591) nicht in die unveränderbare Historie: Der Wechsel der Person
+    # steht dort schon als Verweis, der Name wäre zusätzlicher Personenbezug.
+    snapshot_fields = set(getattr(instance, "MEMBER_NAME_SNAPSHOTS", {}).values())
+    changes = audit_core.build_changes(
+        old_instance, instance, skip_fields=audit_core.DEFAULT_SKIP_FIELDS | snapshot_fields
+    )
     if not changes:
         return
     action = _special_action(old_instance, instance) or "update"

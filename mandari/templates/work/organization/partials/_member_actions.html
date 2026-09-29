@@ -32,7 +32,7 @@
             {% endif %}
 
             {% if can_remove %}
-            <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied entfernen', message: 'Das Mitglied wird komplett aus der Organisation entfernt. Dokumente, Aufgaben, Sitzungen und Tickets bleiben erhalten und zeigen danach „Ehemaliges Mitglied“; persönliche Notizen und Einstellungen werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.', confirmText: 'Entfernen', variant: 'danger'}).then(ok => ok && $el.submit())">
+            <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied entfernen', message: 'Das Mitglied wird komplett aus der Organisation entfernt. Dokumente, Aufgaben, Sitzungen und Tickets bleiben erhalten und zeigen danach „Ehemaliges Mitglied“, Protokolle und Anwesenheitslisten weiter den Namen; persönliche Notizen und Einstellungen werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.', confirmText: 'Entfernen', variant: 'danger'}).then(ok => ok && $el.submit())">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="remove">
                 <button type="submit"

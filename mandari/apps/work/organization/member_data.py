@@ -4,6 +4,9 @@ Was mit den Daten eines Mitglieds geschieht, wenn seine Mitgliedschaft gelöscht
 
 Grundsatz: Inhalte der Organisation bleiben erhalten, rein persönliche Daten entfallen.
 
+- **Namen in Protokollen** (Anwesenheit, Redner:innen, Zuständige, Teilnahmebestätigungen) sichert
+  :func:`preserve_names` vor dem Löschen; sie bleiben unabhängig von der Genehmigung sichtbar
+  (Issue #591, Zweck: Nachweis der Beschlussfassung und der Teilnahme).
 - **Organisationsinhalte** verweisen mit ``on_delete=SET_NULL`` auf die Mitgliedschaft. Der Verweis
   wird geleert, die Oberfläche zeigt „Ehemaliges Mitglied“ (``apps.common.formatting.member_name``):
   Dokumente mit Anhängen, Versionen, Kommentaren und Entscheidungen über Freigaben; Aufgaben mit
@@ -60,10 +63,18 @@ def _organization_deleted_with(origin: Any) -> bool:
     return isinstance(origin, QuerySet) and issubclass(origin.model, Organization)
 
 
+def preserve_names(membership: Membership) -> int:
+    """Namen in Anwesenheit und Protokollen sichern, bevor ``SET_NULL`` die Verweise leert (Issue #591)."""
+    from apps.work.faction.services import preserve_member_names
+
+    return preserve_member_names(membership)
+
+
 def membership_pre_delete(sender: Any, instance: Membership, origin: Any = None, **kwargs: Any) -> None:
-    """pre_delete(Membership): persönliche Einträge löschen, Organisationsinhalte bleiben (SET_NULL)."""
+    """pre_delete(Membership): Namen sichern, persönliche Einträge löschen, Organisationsinhalte bleiben."""
     if _organization_deleted_with(origin):
         return
+    preserve_names(instance)
     counts = purge_personal_data(instance)
     if any(counts.values()):
         logger.info("Mitgliedschaft %s entfernt, persönliche Einträge gelöscht: %s", instance.pk, counts)

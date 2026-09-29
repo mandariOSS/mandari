@@ -72,6 +72,12 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
   auditierter Anonymisierungs-/Löschlauf (UI + `manage.py
   session_privacy_purge`) — Details im [Löschkonzept](DSGVO_LOESCHKONZEPT.md).
 - Betroffenenauskunft als strukturierter Export (Art. 15 DSGVO).
+- Work-Portal, Mitglied entfernen: Persönliche Daten (private Notizen, Benachrichtigungen,
+  Einstellungen, Abwesenheiten) werden gelöscht, Inhalte der Organisation bleiben ohne Personenbezug
+  („Ehemaliges Mitglied“). In Anwesenheitslisten, Protokolleinträgen (Redner:innen, Zuständige) und
+  Teilnahmebestätigungen der Fraktionssitzungen bleibt der Name erhalten – Zweck: Nachweis der
+  Beschlussfassung und der Teilnahme; die Organisation vermerkt dies in ihrem Verzeichnis von
+  Verarbeitungstätigkeiten.
 - Öffentliche Schnittstellen (OParl-API, öffentliche Fraktions-API,
   iCal-Feeds) liefern ausschließlich als öffentlich gekennzeichnete Inhalte;
   opake Zufalls-Tokens statt personenbezogener URLs.
