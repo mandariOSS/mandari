@@ -77,6 +77,10 @@ DOMAIN=ris.meine-kommune.de ADMIN_EMAIL=admin@meine-kommune.de \
 ADMIN_PASSWORD='EinLangesPasswort' ./install.sh --unattended
 ```
 
+Liegt im Verzeichnis bereits eine Installation, bricht der Lauf ohne Änderung ab (Exit-Code 1);
+aktualisiert wird mit `./update.sh`. Neu aufsetzen lässt sie sich ohne Rückfragen nur ausdrücklich
+mit `--reinstall-destroy-data` – das löscht alle Daten (siehe [DEPLOYMENT.md](DEPLOYMENT.md#installation-ohne-rückfragen)).
+
 Mehrere Installationen auf einem Host brauchen unterschiedliche Projektnamen:
 
 ```bash
