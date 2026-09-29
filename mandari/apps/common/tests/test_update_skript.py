@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-``update.sh``: Der Ingestor steht während aller Migrationen (wie ``deploy/scripts/deploy.sh``).
+``update.sh``: Der Ingestor steht während aller Migrationen (wie ``deploy/scripts/deploy.sh``), der
+Protokoll-Orchestrator wechselt danach auf das neue Image (Issue #479).
 
 Das Skript läuft gegen ein nachgebautes ``docker`` (protokolliert nur die Aufrufe), damit die CI
 die Reihenfolge ohne Docker prüft: erst Worker anhalten, dann migrieren, Worker erst nach den
@@ -30,7 +31,7 @@ case "$1" in
     ;;
   compose)
     if [ "$2" = config ] && [ "$3" = --services ]; then
-      printf '%s\\n' postgres redis elasticsearch mandari minutes-orchestrator website ingestor caddy
+      printf '%s\\n' ${FAKE_SERVICES:-postgres redis elasticsearch mandari minutes-orchestrator website ingestor caddy}
     fi
     ;;
 esac
@@ -50,12 +51,15 @@ BASH = _bash()
 pytestmark = pytest.mark.skipif(BASH is None, reason="bash nicht vorhanden")
 
 
-def _lauf(tmp_path: Path, *, env_zusatz: dict[str, str] | None = None) -> tuple[int, list[str]]:
+def _lauf(
+    tmp_path: Path, *, env_zusatz: dict[str, str] | None = None, args: tuple[str, ...] = ()
+) -> tuple[int, list[str]]:
     arbeit = tmp_path / "mandari"
     arbeit.mkdir()
     # LF erzwingen (Checkout unter Windows kann CRLF liefern)
     (arbeit / "update.sh").write_bytes(SKRIPT.read_bytes().replace(b"\r\n", b"\n"))
     (arbeit / ".env").write_text("IMAGE_TAG=v1.0.0\nDOMAIN=localhost\n", encoding="utf-8")
+    (arbeit / ".env.pre-update").write_text("IMAGE_TAG=v0.9.0\nDOMAIN=localhost\n", encoding="utf-8")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     docker = bin_dir / "docker"
@@ -68,7 +72,7 @@ def _lauf(tmp_path: Path, *, env_zusatz: dict[str, str] | None = None) -> tuple[
     env.update({"PATH": f"{bin_dir}{os.pathsep}{env['PATH']}", "DOCKER_LOG": str(log), **(env_zusatz or {})})
     assert BASH is not None
     ergebnis = subprocess.run(  # noqa: S603 — fester Aufruf im Test
-        [BASH, "update.sh", "--tag", "v1.1.0", "--no-backup", "--no-cleanup"],
+        [BASH, "update.sh", *(args or ("--tag", "v1.1.0", "--no-backup", "--no-cleanup"))],
         cwd=arbeit,
         env=env,
         capture_output=True,
@@ -118,3 +122,42 @@ def test_abbruch_startet_worker_wieder(tmp_path: Path) -> None:
     assert rc != 0
     assert _index(aufrufe, "compose stop ingestor") < _index(aufrufe, "compose up -d --no-deps ingestor")
     assert not any("exec mandari python manage.py migrate --noinput" in z for z in aufrufe)
+
+
+def test_orchestrator_steht_waehrend_der_migrationen_und_wechselt_danach(tmp_path: Path) -> None:
+    rc, aufrufe = _lauf(tmp_path)
+
+    assert rc == 0, "\n".join(aufrufe)
+    assert _index(aufrufe, "compose stop ingestor minutes-orchestrator") < _index(aufrufe, "manage.py safemigrate")
+    assert _index(aufrufe, "exec mandari python manage.py migrate --noinput") < _index(
+        aufrufe, "compose up -d --no-deps ingestor minutes-orchestrator"
+    )
+    assert sum("minutes-orchestrator" in z and "compose up" in z for z in aufrufe) == 1, "genau ein Start"
+
+
+def test_orchestrator_wechselt_auch_ohne_eintrag_in_worker_services(tmp_path: Path) -> None:
+    """Eigenes WORKER_SERVICES ohne Orchestrator: Er läuft weiter und wechselt nach den Migrationen."""
+    rc, aufrufe = _lauf(tmp_path, env_zusatz={"WORKER_SERVICES": "ingestor"})
+
+    assert rc == 0, "\n".join(aufrufe)
+    assert not any("stop" in z and "minutes-orchestrator" in z for z in aufrufe)
+    assert _index(aufrufe, "exec mandari python manage.py migrate --noinput") < _index(
+        aufrufe, "compose up -d --no-deps minutes-orchestrator"
+    )
+
+
+def test_ohne_orchestrator_dienst_kein_aufruf(tmp_path: Path) -> None:
+    rc, aufrufe = _lauf(
+        tmp_path, env_zusatz={"FAKE_SERVICES": "postgres redis elasticsearch mandari website ingestor caddy"}
+    )
+
+    assert rc == 0, "\n".join(aufrufe)
+    assert not any("minutes-orchestrator" in z for z in aufrufe)
+    assert _index(aufrufe, "compose stop ingestor") < _index(aufrufe, "manage.py safemigrate")
+
+
+def test_rueckfall_setzt_auch_den_orchestrator_zurueck(tmp_path: Path) -> None:
+    rc, aufrufe = _lauf(tmp_path, args=("--rollback",))
+
+    assert rc == 0, "\n".join(aufrufe)
+    assert any("compose up -d --no-deps ingestor minutes-orchestrator" in z for z in aufrufe), "\n".join(aufrufe)
