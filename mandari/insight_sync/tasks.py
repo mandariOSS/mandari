@@ -1,20 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Django 6.0 Background Tasks für OParl Synchronisation.
+Sync-Lauf mit Protokoll (SyncLog) für den Admin-Sync und ``sync_daemon``.
 
-Diese Tasks können über Django's eingebautes Task-Framework ausgeführt werden:
-- Sofort: task.call(...)
-- Im Hintergrund: task.enqueue(...)
-- Geplant: Über Management Commands und System-Scheduler (cron/systemd)
+Regulär synchronisiert der Ingestor-Daemon; einen manuellen Lauf startet
+``python -m src.main sync`` im Ingestor-Container.
 """
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import Any
 
 from django.conf import settings
-from django.tasks import task
 
 logger = logging.getLogger(__name__)
 
@@ -39,87 +34,8 @@ def _get_sync_orchestrator():
     return SyncOrchestrator
 
 
-@task
-def sync_all_sources(full: bool = False) -> dict[str, Any]:
-    """
-    Synchronisiert alle registrierten OParl-Quellen.
-
-    Args:
-        full: True für Full Sync, False für Incremental Sync
-
-    Returns:
-        Dict mit Sync-Statistiken
-    """
-    logger.info(f"Starting {'full' if full else 'incremental'} sync of all sources")
-
-    SyncOrchestrator = _get_sync_orchestrator()
-
-    async def _run_sync():
-        async with SyncOrchestrator(max_concurrent=10) as orchestrator:
-            results = await orchestrator.sync_all(full=full)
-
-            total_entities = 0
-            source_results = []
-
-            for result in results:
-                entities = count_synced_entities(result)
-                total_entities += entities
-                source_results.append(
-                    {
-                        "source": result.source_name,
-                        "success": result.success,
-                        "entities": entities,
-                        "duration": result.duration_seconds,
-                        "errors": result.errors,
-                    }
-                )
-
-            return {
-                "sync_type": "full" if full else "incremental",
-                "timestamp": datetime.now().isoformat(),
-                "total_entities": total_entities,
-                "sources": source_results,
-            }
-
-    # Run async code in sync context
-    return asyncio.run(_run_sync())
-
-
-@task
-def sync_source(source_url: str, full: bool = False) -> dict[str, Any]:
-    """
-    Synchronisiert eine einzelne OParl-Quelle.
-
-    Args:
-        source_url: URL der OParl-Quelle
-        full: True für Full Sync, False für Incremental Sync
-
-    Returns:
-        Dict mit Sync-Statistiken
-    """
-    logger.info(f"Starting {'full' if full else 'incremental'} sync of {source_url}")
-
-    SyncOrchestrator = _get_sync_orchestrator()
-
-    async def _run_sync():
-        async with SyncOrchestrator(max_concurrent=10) as orchestrator:
-            result = await orchestrator.sync_source(source_url, full=full)
-
-            return {
-                "sync_type": "full" if full else "incremental",
-                "timestamp": datetime.now().isoformat(),
-                "source": result.source_name,
-                "success": result.success,
-                "entities": count_synced_entities(result),
-                "duration": result.duration_seconds,
-                "errors": result.errors,
-            }
-
-    return asyncio.run(_run_sync())
-
-
 def count_synced_entities(result) -> int:
-    """Zählt alle synchronisierten Entitäten eines SyncResult (Tasks, sync_oparl)."""
+    """Zählt alle synchronisierten Entitäten eines SyncResult."""
     return (
         result.organizations_synced
         + result.persons_synced
@@ -209,6 +125,11 @@ def run_sync_with_logging(
         log.errors = all_errors
         log.details = details
         log.save()
+
+        # Kennzahlen der Startseite sofort neu zählen statt erst nach Ablauf des Caches
+        from insight_core.services import portal_stats
+
+        portal_stats.invalidate_portal_stats()
 
     except Exception as e:
         end = timezone.now()

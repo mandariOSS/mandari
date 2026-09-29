@@ -303,9 +303,6 @@ def status() -> None:
 
         except Exception as e:
             console.print(f"[red]Could not connect to database: {e}[/red]")
-            console.print()
-            console.print("[dim]Make sure PostgreSQL is running:[/dim]")
-            console.print("  docker compose -f infrastructure/docker/docker-compose.dev.yml up -d")
 
     console.print("[bold]Configuration:[/bold]")
     console.print(
@@ -316,30 +313,6 @@ def status() -> None:
     console.print()
 
     asyncio.run(run_status())
-
-
-@app.command()
-def init_db() -> None:
-    """
-    Initialize the database schema.
-
-    Creates all required tables if they don't exist.
-    """
-    print_banner()
-    console.print("[blue]Initializing database schema...[/blue]")
-
-    async def run_init() -> None:
-        async with SyncOrchestrator():
-            console.print("[green]Database schema initialized successfully![/green]")
-
-    try:
-        asyncio.run(run_init())
-    except Exception as e:
-        console.print(f"[red]Failed to initialize database: {e}[/red]")
-        console.print()
-        console.print("[dim]Make sure PostgreSQL is running:[/dim]")
-        console.print("  docker compose -f infrastructure/docker/docker-compose.dev.yml up -d")
-        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -581,93 +554,6 @@ def init_sources(
     except Exception as e:
         console.print(f"\n[red]Initialization failed: {e}[/red]")
         raise typer.Exit(1) from e
-
-
-@app.command("metrics")
-def show_metrics() -> None:
-    """
-    Show current metrics (for debugging without Prometheus).
-
-    Displays in-memory metrics including HTTP request counts,
-    entity sync counts, and error rates.
-    """
-    print_banner()
-
-    from src.metrics import metrics
-
-    console.print("[bold]Current Metrics:[/bold]")
-    console.print()
-
-    data = metrics.get_simple_metrics()
-
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", justify="right", style="green")
-
-    table.add_row("HTTP Requests", f"{data['http_requests_total']:,}")
-    table.add_row("HTTP Errors", f"{data['http_errors_total']:,}")
-    table.add_row("Avg Request Duration", f"{data['http_avg_duration_seconds']:.3f}s")
-    table.add_row("Entities Synced (Total)", f"{data['entities_synced_total']:,}")
-    table.add_row("Sync Runs", f"{data['sync_runs_total']:,}")
-    table.add_row("Sync Errors", f"{data['sync_errors_total']:,}")
-    table.add_row("Active Syncs", f"{data['active_syncs']}")
-
-    console.print(table)
-
-    if data["entities_by_type"]:
-        console.print()
-        console.print("[bold]Entities by Type:[/bold]")
-        for entity_type, count in sorted(data["entities_by_type"].items()):
-            console.print(f"  {entity_type}: {count:,}")
-
-
-@app.command("circuit-breakers")
-def show_circuit_breakers() -> None:
-    """
-    Show circuit breaker status for all sources.
-
-    Displays the current state of circuit breakers protecting
-    against failing OParl API endpoints.
-    """
-    print_banner()
-
-    from src.circuit_breaker import circuit_breakers
-
-    async def get_status():
-        return await circuit_breakers.get_all_status()
-
-    statuses = asyncio.run(get_status())
-
-    if not statuses:
-        console.print("[yellow]No circuit breakers active (no requests made yet)[/yellow]")
-        return
-
-    console.print("[bold]Circuit Breaker Status:[/bold]")
-    console.print()
-
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Source", style="cyan")
-    table.add_column("State", style="green")
-    table.add_column("Failures")
-    table.add_column("Successes")
-    table.add_column("Timeout")
-
-    for status in statuses:
-        state_style = {
-            "closed": "green",
-            "open": "red",
-            "half_open": "yellow",
-        }.get(status["state"], "white")
-
-        table.add_row(
-            status["name"],
-            f"[{state_style}]{status['state']}[/{state_style}]",
-            str(status["failure_count"]),
-            str(status["success_count"]),
-            f"{status['remaining_timeout']:.1f}s" if status["remaining_timeout"] else "-",
-        )
-
-    console.print(table)
 
 
 @app.command("probe-ris")

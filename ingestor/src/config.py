@@ -94,10 +94,6 @@ class Settings(BaseSettings):
     full_sync_interval_hours: int = 24  # Full sync once a day
     sync_enabled: bool = True
 
-    # Event Emission Settings
-    events_enabled: bool = True  # Enable Redis event emission
-    events_batch_size: int = 50  # Batch size for entity events
-
     # Metrics Settings
     metrics_enabled: bool = True  # Enable Prometheus metrics
     metrics_port: int = 9090  # Port for metrics HTTP server

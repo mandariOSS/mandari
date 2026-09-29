@@ -108,27 +108,6 @@ class TestSyncStats:
         assert "100" in str_repr
 
 
-class TestURLHashing:
-    """Tests for URL hashing utility."""
-
-    def test_get_url_hash(self) -> None:
-        """Test URL hash generation."""
-        client = OParlClient()
-        hash1 = client.get_url_hash("https://example.org/test")
-        hash2 = client.get_url_hash("https://example.org/test")
-
-        assert hash1 == hash2
-        assert len(hash1) == 8
-
-    def test_different_urls_different_hashes(self) -> None:
-        """Test different URLs get different hashes."""
-        client = OParlClient()
-        hash1 = client.get_url_hash("https://example.org/test1")
-        hash2 = client.get_url_hash("https://example.org/test2")
-
-        assert hash1 != hash2
-
-
 class TestClientContextManager:
     """Tests for async context manager."""
 

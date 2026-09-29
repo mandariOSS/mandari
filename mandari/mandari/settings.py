@@ -473,19 +473,6 @@ NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 MISTRAL_OCR_RATE_LIMIT = int(os.environ.get("MISTRAL_OCR_RATE_LIMIT", "60"))  # Requests pro Minute
 
-# Text Extraction
-TEXT_EXTRACTION_ENABLED = os.environ.get("TEXT_EXTRACTION_ENABLED", "True").lower() in (
-    "true",
-    "1",
-    "yes",
-)
-TEXT_EXTRACTION_ASYNC = os.environ.get("TEXT_EXTRACTION_ASYNC", "True").lower() in (
-    "true",
-    "1",
-    "yes",
-)
-TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", "50"))
-
 # Insight Subscriptions (E-Mail-Digest)
 # Abos zu Themen und Orten (Seite /insight/benachrichtigungen/, generate_alerts, send_digest).
 # Standard aus: Die Befehle sind nirgends eingeplant; der Wiederaufbau über die Datendrehscheibe
@@ -544,9 +531,6 @@ OPARL_API_CACHE_SECONDS = int(os.environ.get("OPARL_API_CACHE_SECONDS", "60"))  
 # Sync-Einstellungen (alle 10 Minuten inkrementell, Full-Sync um 3 Uhr)
 SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))
 SYNC_FULL_HOUR = int(os.environ.get("SYNC_FULL_HOUR", "3"))
-# Daemon startet automatisch als Background-Thread mit runserver
-# Steuerung (Pause/Intervall/Full-Hour) über Admin → Sync-Einstellungen
-SYNC_DAEMON_AUTOSTART = os.environ.get("SYNC_DAEMON_AUTOSTART", "false").lower() in ("true", "1", "yes")
 
 # Django 6.0 Background Tasks
 # https://docs.djangoproject.com/en/6.0/topics/tasks/

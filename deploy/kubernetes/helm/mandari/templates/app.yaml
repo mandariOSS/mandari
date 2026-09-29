@@ -58,8 +58,6 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
             {{- include "mandari.commonEnv" . | nindent 12 }}
-            - name: SYNC_DAEMON_AUTOSTART
-              value: "false"   # Synchronisation läuft im eigenen Ingestor-Pod
             {{- range $key, $value := .Values.app.extraEnv }}
             - name: {{ $key }}
               value: {{ $value | quote }}

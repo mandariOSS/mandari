@@ -43,10 +43,7 @@ from .home import (
 )
 from .maps import (
     MapView,
-    map_glyphs,
     map_markers,
-    map_sprite,
-    style_proxy,
     tile_proxy,
 )
 from .meetings import (
@@ -157,15 +154,12 @@ __all__ = [
     "get_active_body",
     "is_all_bodies_mode",
     "manage_subscription",
-    "map_glyphs",
     "map_markers",
-    "map_sprite",
     "neighborhood_autocomplete",
     "neighborhood_results",
     "paper_summary",
     "search_results",
     "set_body",
-    "style_proxy",
     "tile_proxy",
     "unsubscribe",
 ]

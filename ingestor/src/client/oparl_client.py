@@ -12,7 +12,6 @@ Features:
 """
 
 import asyncio
-import hashlib
 import time
 from collections import deque
 from collections.abc import AsyncIterator
@@ -748,8 +747,3 @@ class OParlClient:
         """
         result = await self.fetch(url, use_cache=False, skip_wait=True)
         return result.data
-
-    def get_url_hash(self, url: str) -> str:
-        """Generate a short hash for a URL (for logging)."""
-        # Use SHA256 instead of MD5 (MD5 is considered weak)
-        return hashlib.sha256(url.encode()).hexdigest()[:8]

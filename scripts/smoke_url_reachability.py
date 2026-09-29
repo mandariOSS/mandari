@@ -194,10 +194,6 @@ SKIP_PREFIXES = (
 SKIP_NAME_SUFFIXES = (
     "accounts:logout",  # würde die Client-Session beenden
     ":tile_proxy",  # externe Tile-/Karten-Proxies (Netzwerk nötig)
-    ":map_style",
-    ":map_sprite",
-    ":map_sprite_base",
-    ":map_glyphs",
     ":file_proxy",  # lädt externe Datei nach (Netzwerk nötig)
 )
 

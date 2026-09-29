@@ -123,7 +123,6 @@ def make_orchestrator(storage: FakeStorage) -> SyncOrchestrator:
     orch.processor = OParlProcessor()
     orch.max_concurrent = 1
     orch._parallel_mode = False
-    orch._event_emitter = None
     return orch
 
 

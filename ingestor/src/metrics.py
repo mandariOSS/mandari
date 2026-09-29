@@ -402,10 +402,6 @@ class MetricsCollector:
 
         console.print(f"[green]Metrics server started on port {port}[/green]")
 
-    def get_simple_metrics(self) -> dict[str, Any]:
-        """Get simple metrics as dictionary (for non-Prometheus use)."""
-        return self.simple.to_dict()
-
 
 # Global metrics instance
 metrics = MetricsCollector()
