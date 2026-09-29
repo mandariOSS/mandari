@@ -89,8 +89,8 @@ def _send_admin_invitation(org: Organization, invitation: UserInvitation, accept
             fail_silently=False,
         )
     except Exception as e:
-        # Einladung bleibt in der DB — das Portal erhält die URL im Response
-        # und kann sie anzeigen bzw. den Versand wiederholen.
+        # Einladung bleibt in der DB; die Antwort meldet invitation_sent=False. Der Link geht nur
+        # per Mail, nie über die Provisionierungs-Antwort.
         logger.warning(f"[Provisioning] Einladungs-Mail an {invitation.email} fehlgeschlagen: {e}")
         return False
 
@@ -207,7 +207,6 @@ class OrganizationCollectionView(ProvisioningView):
         logger.info(f"[Provisioning] Organisation '{slug}' angelegt (Plan {plan}) für {admin_email}")
         payload = _org_payload(org)
         payload["invitation_sent"] = invitation_sent
-        payload["invitation_url"] = accept_url
         return JsonResponse(payload, status=201)
 
 

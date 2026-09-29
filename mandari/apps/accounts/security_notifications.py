@@ -28,7 +28,8 @@ from django.db.models import QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import SecurityNotification, TrustedDevice
+from .device_names import device_name
+from .models import SecurityNotification
 
 logger = logging.getLogger(__name__)
 
@@ -122,4 +123,4 @@ def _client(request: Any) -> tuple[str | None, str]:
     if request is None:
         return None, ""
     ip_address, _user_agent = get_client_meta(request)
-    return ip_address, TrustedDevice._get_device_name(request)[:200]
+    return ip_address, device_name(request)[:200]

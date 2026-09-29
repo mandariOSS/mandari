@@ -1118,10 +1118,6 @@ class PermissionChecker:
             self._load_permissions()
         return bool(self._admin)
 
-    def has_voting_rights(self) -> bool:
-        """Check if the user has voting rights."""
-        return self.has_permission("voting.participate")
-
     def can_access_non_public(self) -> bool:
         """
         Check if user can access non-public faction content.
@@ -1143,11 +1139,3 @@ class PermissionChecker:
     def can_approve_agenda_items(self) -> bool:
         """Check if user can approve agenda proposals."""
         return self.has_permission("agenda.approve")
-
-    def can_create_protocols(self) -> bool:
-        """Check if user can create protocols during meetings."""
-        return self.has_permission("protocols.create")
-
-    def can_edit_protocols(self) -> bool:
-        """Check if user can edit protocols after meetings."""
-        return self.has_permission("protocols.edit")

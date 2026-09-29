@@ -89,32 +89,3 @@ class SiteSettingsEmailBackend(SMTPBackend):
             "use_ssl": fallback.get("use_ssl", False),
             "timeout": fallback.get("timeout", 30),
         }
-
-
-class ConsoleOrSiteSettingsBackend(SiteSettingsEmailBackend):
-    """
-    Email backend that uses console in DEBUG mode, SMTP otherwise.
-
-    In development (DEBUG=True), emails are printed to console.
-    In production (DEBUG=False), emails are sent via SMTP using SiteSettings.
-    """
-
-    def __init__(self, **kwargs):
-        from django.conf import settings as django_settings
-
-        self.debug_mode = django_settings.DEBUG
-
-        if self.debug_mode:
-            # Don't initialize SMTP in debug mode
-            self.connection = None
-        else:
-            super().__init__(**kwargs)
-
-    def send_messages(self, email_messages):
-        if self.debug_mode:
-            # Print to console in debug mode
-            from django.core.mail.backends.console import EmailBackend as ConsoleBackend
-
-            console_backend = ConsoleBackend()
-            return console_backend.send_messages(email_messages)
-        return super().send_messages(email_messages)

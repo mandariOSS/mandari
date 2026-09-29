@@ -120,7 +120,7 @@ WATCHED_APPS = frozenset({"accounts", "common", "insight_core", "session", "tena
 #: „ohne Rechte“ (nur fremde Organisation, fremde Objekt-IDs und fremde Objekte derselben Organisation).
 SELBSTBEDIENUNG: dict[str, str] = {
     "profile": "eigenes Profil (Name, Telefon, Profilbild, Kalender-Feed)",
-    "security": "eigene Kontosicherheit (Passwort, 2FA, Sitzungen, vertrauenswürdige Geräte)",
+    "security": "eigene Kontosicherheit (Passwort, 2FA, Sitzungen)",
     "profile_notifications": "eigene Benachrichtigungseinstellungen",
     "notification_preferences": "Weiterleitung zu den eigenen Benachrichtigungseinstellungen",
     "notifications_mark_all_read": "eigene Benachrichtigungen als gelesen markieren",
@@ -799,7 +799,6 @@ CASES: list[Case] = [
     _sicherheit("regenerate_backup_codes", password=DEFAULT_PASSWORD),
     _sicherheit("revoke_session", session_key="unbekannt"),
     _sicherheit("revoke_all_sessions"),
-    _sicherheit("remove_trusted_device", device_id="{unbekannt}"),
     Case("profile_notifications", data={"email_enabled": "on", "email_digest": "daily"}),
     Case(
         "profile_absence",

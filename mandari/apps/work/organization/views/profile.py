@@ -103,7 +103,6 @@ class SecurityView(WorkViewMixin, TemplateView):
         for session in sessions:
             session.is_current = session.session_key == current_session_key
         context["sessions"] = sessions
-        context["trusted_devices"] = selectors.trusted_devices(user)
 
         # Sicherheitshinweise: „Neu“ gilt für den Stand vor diesem Aufruf, danach gelesen
         hinweise = security_notifications.recent_for(user)
@@ -130,7 +129,6 @@ class SecurityView(WorkViewMixin, TemplateView):
             "regenerate_backup_codes": self._regenerate_backup_codes,
             "revoke_session": self._revoke_session,
             "revoke_all_sessions": self._revoke_all_sessions,
-            "remove_trusted_device": self._remove_trusted_device,
         }.get(request.POST.get("action"))
         if handler is not None:
             return handler(request, request.user)
@@ -239,12 +237,4 @@ class SecurityView(WorkViewMixin, TemplateView):
             messages.success(request, f"{count} Sitzung(en) wurden beendet.")
         else:
             messages.info(request, "Keine anderen Sitzungen vorhanden.")
-        return self._redirect()
-
-    def _remove_trusted_device(self, request, user):
-        """Remove a trusted device."""
-        if services.remove_trusted_device(user, request.POST.get("device_id", "")):
-            messages.success(request, "Gerät wurde entfernt.")
-        else:
-            messages.error(request, "Gerät nicht gefunden.")
         return self._redirect()

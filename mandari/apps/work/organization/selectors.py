@@ -16,7 +16,7 @@ from django.db.models import Count, Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from apps.accounts.models import EmailVerificationToken, TrustedDevice, User, UserSession
+from apps.accounts.models import EmailVerificationToken, User, UserSession
 from apps.tenants.models import (
     AdministrationContact,
     CouncilParty,
@@ -637,27 +637,11 @@ def recent_sessions(user: User) -> QuerySet[UserSession]:
     return UserSession.objects.filter(user=user).order_by("-created_at")[:10]
 
 
-def trusted_devices(user: User) -> QuerySet[TrustedDevice]:
-    """Vertrauenswürdige Geräte mit gültiger Laufzeit."""
-    return TrustedDevice.objects.filter(user=user, expires_at__gt=timezone.now()).order_by("-last_used_at")
-
-
 def calendar_feed(user: User) -> CalendarFeedToken | None:
     """Eingerichteter persönlicher iCal-Feed der Person oder ``None``."""
     from apps.work.faction.models import CalendarFeedToken
 
     return CalendarFeedToken.objects.filter(user=user).first()
-
-
-def find_trusted_device(user: User, device_id: Any) -> TrustedDevice | None:
-    """Vertrauenswürdiges Gerät des Benutzers oder ``None`` (auch bei ungültiger ID)."""
-    import uuid
-
-    try:
-        device_uuid = uuid.UUID(str(device_id))
-    except (TypeError, ValueError, AttributeError):
-        return None
-    return TrustedDevice.objects.filter(id=device_uuid, user=user).first()
 
 
 def recent_exports(organization: Organization, membership: Membership) -> QuerySet[DataExport]:

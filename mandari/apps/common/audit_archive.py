@@ -137,10 +137,6 @@ class ExportFile:
     count: int = 0
     entries_sha256: str = ""
 
-    def read_all(self) -> bytes:
-        self.file.seek(0)
-        return self.file.read()
-
 
 class JsonEnvelopeWriter:
     """JSON-Umschlag: Metadaten, Einträge (kanonisch), Anzahl und Prüfsumme der Einträge."""

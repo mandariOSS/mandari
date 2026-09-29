@@ -72,10 +72,8 @@ mandari/
 **Modelle**:
 - `User` - Custom User (E-Mail als Login, UUID als PK)
 - `TwoFactorDevice` - TOTP-basierte 2FA mit Backup-Codes
-- `TrustedDevice` - "Dieses Gerät merken" (30 Tage Gültigkeit)
 - `UserSession` - Aktive Sitzungen mit IP/Standort-Tracking
 - `LoginAttempt` - Rate Limiting (5 Versuche pro 15 Minuten)
-- `PasswordResetToken` - Einmalig verwendbar, 24h gültig
 - `SecurityNotification` - Sicherheitswarnungen an Benutzer
 
 **Wichtige Views**:

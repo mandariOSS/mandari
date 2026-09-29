@@ -59,13 +59,6 @@ class SiteSettings(models.Model):
     # ==========================================================================
     # Email / SMTP Settings
     # ==========================================================================
-    email_backend = models.CharField(
-        max_length=200,
-        blank=True,
-        verbose_name="E-Mail Backend",
-        help_text="Leer lassen für Standardwert aus Umgebungsvariablen",
-        default="",
-    )
     email_host = models.CharField(
         max_length=255,
         blank=True,
@@ -237,9 +230,9 @@ class SiteSettings(models.Model):
 
         # If email_host is set in SiteSettings, use SMTP backend automatically
         if site_settings.email_host:
-            backend = site_settings.email_backend or "django.core.mail.backends.smtp.EmailBackend"
+            backend = "django.core.mail.backends.smtp.EmailBackend"
         else:
-            backend = site_settings.email_backend or django_settings.MAIL_BACKEND
+            backend = django_settings.MAIL_BACKEND
 
         return {
             "EMAIL_BACKEND": backend,

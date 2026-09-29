@@ -27,11 +27,12 @@ from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils import timezone
 
+from apps.common.audit_core import get_client_meta
 from apps.common.encryption import two_factor_keys
 
 from . import security_notifications
+from .device_names import device_name
 from .models import (
-    TrustedDevice,
     TwoFactorDevice,
     UserSession,
     WebAuthnCredential,
@@ -413,13 +414,14 @@ class SessionService:
             # Browser-close sessions: default to 24h for display purposes
             expires_at = timezone.now() + timezone.timedelta(hours=24)
 
+        ip_address, user_agent = get_client_meta(request)
         session, created = UserSession.objects.update_or_create(
             session_key=session_key,
             defaults={
                 "user": user,
-                "device_name": TrustedDevice._get_device_name(request),
-                "user_agent": request.META.get("HTTP_USER_AGENT", "")[:500],
-                "ip_address": TrustedDevice._get_ip_address(request),
+                "device_name": device_name(request),
+                "user_agent": user_agent,
+                "ip_address": ip_address,
                 "expires_at": expires_at,
                 "is_current": True,
             },

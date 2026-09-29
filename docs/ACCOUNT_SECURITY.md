@@ -101,8 +101,8 @@ nicht vertrauenswürdige Clients). Ohne Proxy wird `REMOTE_ADDR` verwendet.
   python manage.py reset_two_factor person@example.org --reason "Ticket 123, Identität per Rückruf geprüft"
   ```
 
-  Entfernt werden Authenticator-App, Backup-Codes, Sicherheitsschlüssel und
-  vertrauenswürdige Geräte; beim nächsten Login folgt die erneute Einrichtung.
+  Entfernt werden Authenticator-App, Backup-Codes und Sicherheitsschlüssel;
+  beim nächsten Login folgt die erneute Einrichtung.
   Die Person erhält darüber einen Sicherheitshinweis per E-Mail.
 
 ## Sicherheitshinweise

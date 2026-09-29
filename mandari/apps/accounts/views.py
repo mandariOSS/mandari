@@ -236,16 +236,6 @@ class LoginView(View):
         # Fallback to home
         return "/"
 
-    def is_safe_url(self, url, request):
-        """Check if URL is safe for redirect."""
-        from django.utils.http import url_has_allowed_host_and_scheme
-
-        return url_has_allowed_host_and_scheme(
-            url,
-            allowed_hosts={request.get_host()},
-            require_https=request.is_secure(),
-        )
-
     def get_client_ip(self, request):
         """Get client IP address."""
         return client_ip(request)

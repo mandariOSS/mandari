@@ -126,7 +126,6 @@ class HashedTokenMixin:
 HASHED_TOKEN_FIELDS: frozenset[str] = frozenset(
     {
         "accounts.EmailVerificationToken.token",
-        "accounts.TrustedDevice.device_token",
         "insight_core.PublicQuestion.verification_token",
         "session.SessionAPIToken.token",
         "session.SessionInvitation.token",
@@ -139,10 +138,6 @@ HASHED_TOKEN_FIELDS: frozenset[str] = frozenset(
 
 #: Token-Felder, die bewusst im Klartext bleiben, mit Begründung
 PLAINTEXT_TOKEN_FIELDS: dict[str, str] = {
-    "accounts.PasswordResetToken.token": (
-        "Ungenutzt: Das Zurücksetzen läuft über die zustandslosen Tokens von Django "
-        "(default_token_generator); dieses Modell legt keine Zeilen an."
-    ),
     "insight_core.PublicQuestion.answer_token": (
         "Die Erinnerungsmail an das Ratsmitglied verschickt denselben Antwortlink erneut. Eine Antwort "
         "erscheint erst nach Freigabe durch die Moderation."
