@@ -550,6 +550,41 @@ def test_erinnerungslauf_mit_link_auch_ohne_anwesenheitsliste(welt: Welt) -> Non
     assert reminder_service.run_for_tenant(welt.tenant)["attendance_rsvp"] == 0
 
 
+def test_erinnerung_nicht_erneut_nach_erzeugen_der_anwesenheitsliste(welt: Welt) -> None:
+    """Wer vor dem Erzeugen der Liste erinnert wurde, bekommt danach keine zweite Erinnerung."""
+    from apps.session.services import attendance_service
+
+    SessionMeeting.objects.filter(pk=welt.meeting.pk).update(start=timezone.now() + timedelta(days=2))
+    welt.meeting.refresh_from_db()
+    _versenden(welt)
+    assert reminder_service.run_for_tenant(welt.tenant)["attendance_rsvp"] == 3
+
+    assert attendance_service.generate_attendance(welt.meeting) == 4
+    assert SessionAttendance.objects.filter(meeting=welt.meeting, status="invited").count() == 4
+    mail.outbox = []
+
+    assert reminder_service.run_for_tenant(welt.tenant)["attendance_rsvp"] == 0
+    assert not [m for m in mail.outbox if "Rückmeldung" in m.subject]
+
+
+def test_erinnerung_frueherer_laeufe_nach_anwesenheitszeile_gilt_weiter(welt: Welt) -> None:
+    """Einträge mit dem früheren Schlüssel (ID der Anwesenheitszeile) verhindern eine erneute Erinnerung."""
+    from apps.session.models import SessionReminderLog
+
+    SessionMeeting.objects.filter(pk=welt.meeting.pk).update(start=timezone.now() + timedelta(days=2))
+    welt.meeting.refresh_from_db()
+    _versenden(welt)
+    zeile = SessionAttendance.objects.create(meeting=welt.meeting, person=welt.member, status="invited")
+    SessionReminderLog.objects.create(tenant=welt.tenant, kind="attendance_rsvp", dedup_key=str(zeile.id))
+    mail.outbox = []
+
+    reminder_service.run_for_tenant(welt.tenant)
+
+    empfaenger = {addr for m in mail.outbox if "Rückmeldung" in m.subject for addr in m.to}
+    assert "mitglied@example.org" not in empfaenger
+    assert {"vorsitz@example.org", "vertretung@example.org"} <= empfaenger
+
+
 def test_auskunft_enthaelt_ladungen_und_rueckmeldung(welt: Welt) -> None:
     recipient = _empfaenger(_versenden(welt), welt.member)
     Client().post(_link(recipient), {"action": "decline", "reason": GRUND})

@@ -15,7 +15,7 @@ Zentrale Logik für:
 """
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -27,11 +27,12 @@ from apps.common.pdf import html_to_pdf
 from apps.session import audit
 from apps.session.models import (
     SessionAgendaItem,
+    SessionAttendance,
     SessionMeeting,
     SessionProtocol,
     SessionProtocolCorrection,
 )
-from apps.session.services import agenda_service, attendance_service, four_eyes_service
+from apps.session.services import agenda_service, four_eyes_service
 
 logger = logging.getLogger(__name__)
 
@@ -280,10 +281,39 @@ def perform_action(
     return f"Veröffentlichung wurde zurückgenommen{vermerk}. Die öffentliche Fassung ist aus OParl und Bürgerportal entfernt."
 
 
+#: Teilnahme an der Sitzung für das Teilnehmerverzeichnis – anders als bei der Beschlussfähigkeit
+#: (attendance_service.PRESENT_STATUSES, „jetzt im Raum“) zählen vorzeitig Gegangene mit
+PARTICIPATED_STATUSES = ("present", "joined_late", "left_early")
+
+
+def presence_note(attendance: SessionAttendance) -> str:
+    """
+    Vermerk zur Teilnahme im Teilnehmerverzeichnis: verspätet (ab …) bzw. vorzeitig gegangen (bis …).
+
+    Die Uhrzeit erscheint, wenn Ankunft bzw. Abgang erfasst sind; sonst nur der Vermerk.
+    """
+    if attendance.status == "joined_late":
+        if attendance.arrival_time:
+            return f"verspätet, ab {attendance.arrival_time:%H:%M} Uhr"
+        return "verspätet"
+    if attendance.status == "left_early":
+        if attendance.departure_time:
+            return f"vorzeitig gegangen, bis {attendance.departure_time:%H:%M} Uhr"
+        return "vorzeitig gegangen"
+    return ""
+
+
 def participant_directory(meeting: SessionMeeting) -> dict:
-    """Teilnehmerverzeichnis aus der Anwesenheitserfassung gruppieren."""
+    """
+    Teilnehmerverzeichnis aus der Anwesenheitserfassung gruppieren.
+
+    „Anwesend“ umfasst alle, die an der Sitzung teilgenommen haben, auch Verspätete und vorzeitig
+    Gegangene; ihr Vermerk steht in ``presence_note`` (Uhrzeit, falls erfasst).
+    """
     attendances = list(meeting.attendances.select_related("person").order_by("person__family_name"))
-    present = [a for a in attendances if a.status in attendance_service.PRESENT_STATUSES]
+    present = [a for a in attendances if a.status in PARTICIPATED_STATUSES]
+    for attendance in present:
+        cast(Any, attendance).presence_note = presence_note(attendance)
     excused = [a for a in attendances if a.status in ("excused", "declined")]
     absent = [a for a in attendances if a.status == "absent"]
     other = [a for a in attendances if a not in present and a not in excused and a not in absent]

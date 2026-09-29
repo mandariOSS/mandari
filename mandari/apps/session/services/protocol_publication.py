@@ -125,7 +125,9 @@ def public_text(protocol: SessionProtocol) -> str:
     participants = protocol_service.participant_directory(meeting)
     if participants["present"]:
         lines += ["", "Anwesend:"]
-        lines += [f"{a.person.display_name} ({a.get_role_display()})" for a in participants["present"]]
+        for a in participants["present"]:
+            vermerk = f", {a.presence_note}" if a.presence_note else ""
+            lines.append(f"{a.person.display_name} ({a.get_role_display()}{vermerk})")
     if participants["excused"]:
         lines += ["", "Entschuldigt:"] + [a.person.display_name for a in participants["excused"]]
     if participants["absent"]:

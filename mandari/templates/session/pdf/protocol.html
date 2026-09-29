@@ -18,7 +18,7 @@
     <h2>Teilnehmerverzeichnis</h2>
     {% if participants.present %}
     <p><strong>Anwesend:</strong><br>
-    {% for a in participants.present %}{{ a.person.display_name }} ({{ a.get_role_display }}{% if a.status == "joined_late" %}, verspätet{% endif %}){% if not forloop.last %}; {% endif %}{% endfor %}</p>
+    {% for a in participants.present %}{{ a.person.display_name }} ({{ a.get_role_display }}{% if a.presence_note %}, {{ a.presence_note }}{% endif %}){% if not forloop.last %}; {% endif %}{% endfor %}</p>
     {% endif %}
     {% if participants.excused %}
     <p><strong>Entschuldigt:</strong><br>

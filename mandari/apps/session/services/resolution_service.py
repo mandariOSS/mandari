@@ -41,9 +41,11 @@ def assign_resolution_number(item: SessionAgendaItem) -> bool:
     """
     Beschlussnummer vergeben (idempotent).
 
-    Sicherheit: Die Vergabe läuft in einer Transaktion mit Zeilen-Lock auf
-    dem Tenant, damit parallele Ausfertigungen keine doppelten Nummern
-    erzeugen (Muster: SessionApplication._next_reference).
+    Die Vergabe läuft in einer Transaktion mit Zeilen-Lock auf dem Tenant, damit parallele
+    Ausfertigungen keine doppelten Nummern erzeugen (Muster: SessionApplication._next_reference).
+    Ob der TOP schon eine Nummer hat, wird erst unter dieser Sperre an der Datenbank geprüft:
+    Eine doppelte Auslösung (zwei Anfragen mit demselben, noch nummernlosen Stand) vergibt sonst
+    eine zweite Nummer und überschreibt die erste. Gespeichert wird nur die Nummer.
 
     Returns:
         True, wenn eine neue Nummer vergeben wurde.
@@ -57,6 +59,11 @@ def assign_resolution_number(item: SessionAgendaItem) -> bool:
 
     with transaction.atomic():
         SessionTenant.objects.select_for_update().get(pk=tenant_id)
+        current = SessionAgendaItem.objects.select_for_update().get(pk=item.pk)
+        if current.resolution_number:
+            # Inzwischen von einer parallelen Ausfertigung vergeben: übernehmen, nicht neu vergeben
+            item.resolution_number = current.resolution_number
+            return False
         max_num = 0
         refs = SessionAgendaItem.objects.filter(
             meeting__tenant_id=tenant_id,
@@ -68,8 +75,11 @@ def assign_resolution_number(item: SessionAgendaItem) -> bool:
             except (TypeError, ValueError):
                 continue
             max_num = max(max_num, num)
-        item.resolution_number = f"{prefix}{max_num + 1:04d}"
-        item.save()  # Audit: update-Eintrag über Signal
+        current.resolution_number = f"{prefix}{max_num + 1:04d}"
+        # Nur die Nummer speichern (frischer Stand aus der Datenbank): Ein veralteter Stand des
+        # Aufrufers überschreibt keine zwischenzeitlichen Änderungen. Audit: update-Eintrag über Signal.
+        current.save(update_fields=["resolution_number", "updated_at"])
+    item.resolution_number = current.resolution_number
     return True
 
 

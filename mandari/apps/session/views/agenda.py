@@ -101,7 +101,10 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
         if form.errors:
             return self.form_invalid(form)
         form.instance.meeting = meeting
-        form.instance.order = (meeting.agenda_items.count() + 1) * 100
+        # Vor den Ende-TOPs (z. B. „Verschiedenes“) einreihen, nicht dahinter
+        form.instance.order = agenda_service.insertion_order(
+            meeting, is_public=form.instance.is_public, parent_id=form.instance.parent_id
+        )
         form.instance.number = "?"  # wird durch renumber_agenda gesetzt
 
         # Nachtrag: nach Versand der Ladung hinzugefügte TOPs kennzeichnen
