@@ -963,7 +963,8 @@ class Motion(EncryptionMixin, models.Model):
 
         - Mitglieder brauchen ``motions.view``; dann eigene Dokumente, Federführung, Mitarbeit,
           organisationsweite und bei geteilten Dokumenten persönlich freigegebene. Entwürfe anderer
-          nur mit ``motions.view_drafts``.
+          nur mit ``motions.view_drafts``. Dokumente entfernter Mitglieder (ohne Autor:in) zusätzlich
+          mit ``motions.view_former_members``, auch Entwürfe und private (Issue #590).
         - Gäste ausschließlich persönlich freigegebene Dokumente sowie Dokumente in für sie
           freigegebenen Ordnern (rekursiv) – nie Dokumente im Papierkorb.
 
@@ -987,9 +988,14 @@ class Motion(EncryptionMixin, models.Model):
             return qs.filter(models.Q(shares__scope="user", shares__user=membership.user) | folder_q).distinct()
         if not membership.has_permission("motions.view"):
             return qs.none()
+        # Dokumente entfernter Mitglieder (Autor:in geleert, #420) für Berechtigte (Issue #590)
+        former = membership.has_permission("motions.view_former_members")
         if not membership.has_permission("motions.view_drafts"):
-            qs = qs.exclude(models.Q(status="draft") & ~models.Q(author=membership))
-        return qs.filter(
+            hidden_drafts = models.Q(status="draft") & ~models.Q(author=membership)
+            if former:
+                hidden_drafts &= models.Q(author__isnull=False)
+            qs = qs.exclude(hidden_drafts)
+        access = (
             models.Q(author=membership)
             # Federführung und Mitarbeit sehen und öffnen das Dokument, für das sie eingeteilt
             # sind (Issue #249).
@@ -997,7 +1003,10 @@ class Motion(EncryptionMixin, models.Model):
             | models.Q(contributors=membership)
             | models.Q(visibility="organization")
             | models.Q(visibility="shared", shares__scope="user", shares__user=membership.user)
-        ).distinct()
+        )
+        if former:
+            access |= models.Q(author__isnull=True)
+        return qs.filter(access).distinct()
 
     @property
     def content(self):
@@ -1138,6 +1147,8 @@ class Motion(EncryptionMixin, models.Model):
           Federführung, Mitarbeit und eine persönliche Freigabe „Bearbeiten“ bearbeiten mit
           ``motions.edit``; wer nur über eine Freigabe Zugang hat, bleibt bei deren Stufe; sonst
           Kommentieren (``motions.comment``) oder Lesen.
+        - Dokumente entfernter Mitglieder (Autor:in geleert): mit ``motions.view_former_members``
+          mindestens Lesen, auch Entwürfe und private Dokumente (Issue #590).
         - ``status_lock``: danach greift die Status-Sperre für den Inhalt (apply_status_lock).
         """
         if membership is None or membership.organization_id != self.organization_id:
@@ -1155,9 +1166,13 @@ class Motion(EncryptionMixin, models.Model):
 
         if not membership.has_permission("motions.view"):
             return "none"
+        # Dokument eines entfernten Mitglieds (Autor:in geleert, #420): mit dem Recht mindestens
+        # lesbar, auch als Entwurf oder privat (Issue #590)
+        former = self.author_id is None and membership.has_permission("motions.view_former_members")
         if (
             self.status == "draft"
             and self.author_id != membership.id
+            and not former
             and not membership.has_permission("motions.view_drafts")
         ):
             return "none"
@@ -1181,7 +1196,7 @@ class Motion(EncryptionMixin, models.Model):
             share = self._member_share_level(membership)
             assigned = self._is_assigned(membership)
             if not share and not assigned:
-                return "none"
+                return "view" if former else "none"
             if edit_all or (can_edit_own and (share in ("edit", "admin") or assigned)):
                 level = "edit"
             elif share and not assigned:
@@ -1191,7 +1206,7 @@ class Motion(EncryptionMixin, models.Model):
                 level = base
         else:  # privat: nur Autor:in, Federführung und Mitarbeit
             if not self._is_assigned(membership):
-                return "none"
+                return "view" if former else "none"
             level = "edit" if (edit_all or can_edit_own) else base
         return self.apply_status_lock(level, membership) if status_lock else level
 

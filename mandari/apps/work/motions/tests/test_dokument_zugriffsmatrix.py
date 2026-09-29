@@ -18,6 +18,8 @@ Die Regel steht hier unabhängig vom Code (``soll_stufe``); jeder Weg muss sie e
   Teilen und Versionen wiederherstellen verlangen Autor:in oder ``motions.edit_all``.
 - Löschen (in den Papierkorb und endgültig): eigene Dokumente als Autor:in, Dokumente anderer nur mit
   ``motions.delete`` und Bearbeiten-Stufe.
+- Dokumente entfernter Mitglieder (Autor:in geleert): mit ``motions.view_former_members`` mindestens lesbar,
+  auch Entwürfe und private Dokumente; ohne das Recht wie Dokumente anderer (Issue #590).
 """
 
 from __future__ import annotations
@@ -79,6 +81,10 @@ RECHTE: dict[str, tuple[str, ...]] = {
     "mitarbeit_lesen": ("motions.view",),
     "freigabe_lesen": MITGLIED,
     "freigabe_bearbeiten": MITGLIED,
+    # Dokumente ehemaliger Mitglieder (Issue #590): nur lesend, ohne Entwürfe anderer …
+    "ehemalige_einsicht": ("motions.view", "motions.comment", "motions.view_former_members"),
+    # … und wie die Standardrollen Administrator/Fraktionsvorsitz
+    "verwaltung": (*MITGLIED, "motions.edit_all", "motions.delete", "motions.view_former_members"),
 }
 #: Gäste (keine Rechte)
 GAESTE = ("gast_lesen", "gast_bearbeiten", "gast_ordner", "gast_ordner_fremd", "gast_ohne")
@@ -86,7 +92,8 @@ PERSONEN = (*RECHTE, *GAESTE)
 #: Persönliche Freigaben (MotionShare, scope=user) an allen Dokumenten
 FREIGABEN = {"freigabe_lesen": "view", "freigabe_bearbeiten": "edit", "gast_lesen": "view", "gast_bearbeiten": "edit"}
 
-#: Alle Dokumente stammen von „autor“, liegen im Ordner und haben Federführung, Mitarbeit und Freigaben
+#: Alle Dokumente stammen von „autor“ (``ehemalig_*``: von einem entfernten Mitglied, Autor:in geleert),
+#: liegen im Ordner und haben Federführung, Mitarbeit und Freigaben
 DOKUMENTE: dict[str, tuple[str, str]] = {
     "privat_entwurf": ("private", "draft"),
     "geteilt_entwurf": ("shared", "draft"),
@@ -96,6 +103,10 @@ DOKUMENTE: dict[str, tuple[str, str]] = {
     "org_eingereicht": ("organization", "submitted"),
     "privat_geloescht": ("private", "deleted"),
     "org_geloescht": ("organization", "deleted"),
+    "ehemalig_privat_entwurf": ("private", "draft"),
+    "ehemalig_geteilt_eingereicht": ("shared", "submitted"),
+    "ehemalig_org_entwurf": ("organization", "draft"),
+    "ehemalig_privat_geloescht": ("private", "deleted"),
 }
 NAECHSTER_STATUS = {"draft": "internal_review", "submitted": "at_admin"}
 
@@ -103,6 +114,10 @@ NAECHSTER_STATUS = {"draft": "internal_review", "submitted": "at_admin"}
 # =============================================================================
 # Die Regel (Soll)
 # =============================================================================
+
+
+def _ehemalig(dok: str) -> bool:
+    return dok.startswith("ehemalig_")
 
 
 def soll_stufe(person: str, dok: str, *, sperre: bool = True) -> str:
@@ -114,7 +129,8 @@ def soll_stufe(person: str, dok: str, *, sperre: bool = True) -> str:
         stufen = []
         if person in FREIGABEN:
             stufen.append(FREIGABEN[person])
-        if person == "gast_ordner":  # Ordner-Freigabe der Autorin: organisationsweite und ihre eigenen
+        # Ordner-Freigabe der Autorin: organisationsweite und ihre eigenen
+        if person == "gast_ordner" and (sichtbarkeit == "organization" or not _ehemalig(dok)):
             stufen.append("view")
         if person == "gast_ordner_fremd" and sichtbarkeit == "organization":  # von jemand anderem
             stufen.append("view")
@@ -128,13 +144,14 @@ def soll_stufe(person: str, dok: str, *, sperre: bool = True) -> str:
     rechte = set(RECHTE[person])
     if "motions.view" not in rechte:
         return "none"
-    if status == "draft" and person != "autor" and "motions.view_drafts" not in rechte:
+    autor = person == "autor" and not _ehemalig(dok)
+    ehemalige = _ehemalig(dok) and "motions.view_former_members" in rechte
+    if status == "draft" and not autor and not ehemalige and "motions.view_drafts" not in rechte:
         return "none"
-    autor = person == "autor"
     zugeteilt = person in ("federfuehrung", "mitarbeit", "mitarbeit_kommentar", "mitarbeit_lesen")
     freigabe = FREIGABEN.get(person) if sichtbarkeit != "private" else None
     if not (autor or zugeteilt or sichtbarkeit == "organization" or (sichtbarkeit == "shared" and freigabe)):
-        return "none"
+        return "view" if ehemalige else "none"
     kommentar = "comment" if "motions.comment" in rechte else "view"
     if autor:
         stufe = "admin" if "motions.edit" in rechte else kommentar
@@ -218,7 +235,7 @@ def welt(tmp_path: Any) -> Any:
         for dok, (sichtbarkeit, status) in DOKUMENTE.items():
             motion = Motion.objects.create(
                 organization=org,
-                author=mitglieder["autor"],
+                author=None if _ehemalig(dok) else mitglieder["autor"],
                 title=f"Dokument {dok}",
                 visibility=sichtbarkeit,
                 status=status,
