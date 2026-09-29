@@ -5,13 +5,20 @@
 Beide Modelle wurden nie beschrieben: „Gerät merken“ war nicht umgesetzt, das Zurücksetzen des
 Passworts nutzt die zustandslosen Tokens von Django. In Produktion sind beide Tabellen leer.
 
-Nur der Modellstand wird entfernt, die Tabellen bleiben stehen: Ein Rückfall auf das vorherige
-Image (das die Modelle noch kennt) funktioniert so ohne Rückbau der Migration. Die Tabellen
-entfallen im Folge-Release (Issue #481). Weil der neue Code keine Zeilen anlegt, bleiben die
-Tabellen leer und ihre Fremdschlüssel auf ``accounts_user`` behindern das Löschen von Konten nicht.
+1. Der Fremdschlüssel der beiden Tabellen auf ``accounts_user`` entfällt in der Datenbank. Sonst
+   verweisen Tabellen, die Django nicht mehr kennt, auf die Kontotabelle; PostgreSQL lehnt dann
+   z. B. ``TRUNCATE accounts_user`` ab (Leeren der Testdatenbank), und Löschungen hingen an Zeilen,
+   die kein Code mehr pflegt.
+2. Nur der Modellstand wird entfernt, die Tabellen bleiben stehen: Ein Rückfall auf das vorherige
+   Image (das die Modelle noch kennt) funktioniert ohne Rückbau der Migration; ein fehlender
+   Fremdschlüssel stört es nicht.
+
+Die Tabellen entfallen im Folge-Release (Issue #481).
 """
 
-from django.db import migrations
+import django.db.models.deletion
+from django.conf import settings
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
@@ -20,6 +27,26 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.AlterField(
+            model_name="trusteddevice",
+            name="user",
+            field=models.ForeignKey(
+                db_constraint=False,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="trusted_devices",
+                to=settings.AUTH_USER_MODEL,
+            ),
+        ),
+        migrations.AlterField(
+            model_name="passwordresettoken",
+            name="user",
+            field=models.ForeignKey(
+                db_constraint=False,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="password_reset_tokens",
+                to=settings.AUTH_USER_MODEL,
+            ),
+        ),
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.DeleteModel(name="TrustedDevice"),
