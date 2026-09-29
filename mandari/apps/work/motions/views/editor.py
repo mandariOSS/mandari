@@ -258,8 +258,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         # Revisions
         context["revisions"] = motion.revisions.all()[:10]
 
-        # Shares (for share modal)
-        if motion.author == self.membership or self.membership.has_permission("motions.share"):
+        # Shares (for share modal) – dieselbe Regel wie die Freigabe-Endpunkte (Motion.can_share)
+        if motion.can_share(self.membership):
             context["shares"] = motion.shares.select_related("user", "role", "organization").order_by("-created_at")
             context["can_share"] = True
         else:
@@ -699,11 +699,14 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
         # === Dokument-Freigaben (nur auf der Übersichtsseite) ===
         entries = {}
         if current_folder is None:
+            # Nur Dokumente, die die Person öffnen darf (Motion.visible_to) – bei Mitgliedern z. B.
+            # keine Freigaben an inzwischen privaten Dokumenten
             shares = (
                 MotionShare.objects.filter(
                     scope="user",
                     user=self.request.user,
                     motion__organization=self.organization,
+                    motion__in=Motion.visible_to(self.membership),
                 )
                 .exclude(motion__status="deleted")
                 .select_related("motion", "motion__author__user", "created_by")

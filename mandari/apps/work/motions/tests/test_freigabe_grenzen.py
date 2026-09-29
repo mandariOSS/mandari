@@ -3,7 +3,8 @@
 Freigaben erweitern den Kreis nie über das eigene Freigaberecht hinaus.
 
 - Freigabeanfragen gehen nur an Mitglieder (keine Gäste); bekommt die angefragte Person
-  dafür Zugriff, braucht die anfragende Person das Freigaberecht (Autor:in oder ``motions.share``).
+  dafür Zugriff, braucht die anfragende Person das Freigaberecht (``Motion.can_share``: Autor:in
+  oder ``motions.edit_all``, jeweils mit ``motions.share``).
 - Eine Ordner-Freigabe an Gäste umfasst organisationsweite Dokumente und die eigenen Dokumente
   der freigebenden Person – nicht die privaten oder gezielt geteilten Dokumente anderer.
 - In einen für Gäste freigegebenen Ordner verschiebt nur, wer das Dokument freigeben darf.
@@ -29,7 +30,7 @@ def _gast(org: Any, email: str) -> Any:
 
 @pytest.fixture
 def autorin(org: Any, make_member: Any) -> Any:
-    return make_member(org, RECHTE, email="autorin@example.org")
+    return make_member(org, [*RECHTE, "motions.share"], email="autorin@example.org")
 
 
 @pytest.fixture
@@ -125,9 +126,11 @@ def test_verschieben_in_gastordner_nur_mit_freigaberecht(
     )
     dokument = Motion.objects.create(organization=org, author=autorin, title="Für alle", visibility="organization")
     kollegin.roles.get().permissions.add(*autorin.roles.get().permissions.all())
+    MotionShare.objects.create(motion=dokument, scope="user", user=kollegin.user, level="edit", created_by=autorin.user)
     url = reverse("work:document_move_to_folder", kwargs={"org_slug": org.slug})
 
-    # Die Kollegin darf das organisationsweite Dokument bearbeiten, aber nicht freigeben
+    # Die Kollegin darf das organisationsweite Dokument bearbeiten (Freigabe „Bearbeiten“), aber nicht freigeben
+    assert dokument.can_edit(kollegin) and not dokument.can_share(kollegin)
     client_for(kollegin.user).post(url, {"folder": str(ordner.id), "motion_ids": [str(dokument.id)]})
     dokument.refresh_from_db()
     assert dokument.folder_id is None

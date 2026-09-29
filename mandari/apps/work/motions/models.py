@@ -949,24 +949,31 @@ class Motion(EncryptionMixin, models.Model):
         self.yjs_document_encrypted = TenantEncryption(self.organization).encrypt_bytes(state)
         self.yjs_document_legacy = b""
 
+    #: Rangfolge der Zugriffsstufen (access_level)
+    ACCESS_RANK = {"none": 0, "view": 1, "comment": 2, "edit": 3, "admin": 4}
+
     @classmethod
     def visible_to(cls, membership, *, include_deleted=False):
         """
-        Queryset der Dokumente, die ein Mitglied sehen darf (analog can_access).
+        Queryset der Dokumente, die ein Mitglied sehen darf – Gegenstück zu ``access_level``.
 
-        Einzige Quelle für Dokumentlisten aller Art – Liste, Kacheln,
-        Ordner-Zähler, Dashboard, Auswahlfelder, Papierkorb: eigene Dokumente,
-        organisationsweite sowie persönlich geteilte. Gäste sehen ausschließlich
-        persönlich freigegebene Dokumente sowie Dokumente in für sie
-        freigegebenen Ordnern (rekursiv).
+        Einzige Quelle für Dokumentlisten aller Art – Liste, Kacheln, Ordner-Zähler, Dashboard,
+        Auswahlfelder, Papierkorb. Enthält genau die Dokumente, für die ``access_level`` nicht
+        ``"none"`` liefert (``motions/tests/test_dokument_zugriffsmatrix.py`` prüft das):
+
+        - Mitglieder brauchen ``motions.view``; dann eigene Dokumente, Federführung, Mitarbeit,
+          organisationsweite und bei geteilten Dokumenten persönlich freigegebene.
+        - Gäste ausschließlich persönlich freigegebene Dokumente sowie Dokumente in für sie
+          freigegebenen Ordnern (rekursiv) – nie Dokumente im Papierkorb.
 
         Args:
-            include_deleted: Auch Dokumente im Papierkorb liefern.
+            include_deleted: Auch Dokumente im Papierkorb liefern (nur für Mitglieder).
         """
         qs = cls.objects.filter(organization=membership.organization)
-        if not include_deleted:
+        is_guest = getattr(membership, "is_guest", False)
+        if not include_deleted or is_guest:
             qs = qs.exclude(status="deleted")
-        if getattr(membership, "is_guest", False):
+        if is_guest:
             # Ordner-Freigaben: organisationsweite und eigene Dokumente der freigebenden Person
             folder_q = models.Q(pk__in=[])
             for folder_ids, created_by_id in FolderGuestShare.shared_folder_scopes(
@@ -977,16 +984,16 @@ class Motion(EncryptionMixin, models.Model):
                     applies |= models.Q(author__user_id=created_by_id)
                 folder_q |= models.Q(folder_id__in=folder_ids) & applies
             return qs.filter(models.Q(shares__scope="user", shares__user=membership.user) | folder_q).distinct()
+        if not membership.has_permission("motions.view"):
+            return qs.none()
         return qs.filter(
             models.Q(author=membership)
-            # Federfuehrung und Mitarbeit sehen das Dokument, fuer das sie
-            # eingeteilt sind. Ohne das erhaelt die Federfuehrung zwar eine
-            # Benachrichtigung ueber die Zuweisung, laeuft beim Oeffnen aber in
-            # ein 404 — die Zuweisung waere folgenlos (Issue #249).
+            # Federführung und Mitarbeit sehen und öffnen das Dokument, für das sie eingeteilt
+            # sind (Issue #249).
             | models.Q(responsible=membership)
             | models.Q(contributors=membership)
             | models.Q(visibility="organization")
-            | models.Q(visibility="shared", shares__user=membership.user)
+            | models.Q(visibility="shared", shares__scope="user", shares__user=membership.user)
         ).distinct()
 
     @property
@@ -1076,56 +1083,15 @@ class Motion(EncryptionMixin, models.Model):
         return qs
 
     def can_access(self, membership) -> bool:
-        """
-        Check if a membership has access to this document.
-
-        Access is granted based on visibility:
-        - private: Only the author
-        - shared: Author + users with MotionShare entries
-        - organization: Anyone in the same organization
-
-        Gäste (Membership.is_guest) sehen unabhängig von der Sichtbarkeit
-        NUR Dokumente mit persönlicher Freigabe (scope=user).
-        """
-        # Gäste: ausschließlich explizit freigegebene Dokumente
-        if getattr(membership, "is_guest", False):
-            return self.get_guest_share_level(membership) is not None
-
-        # Author always has access
-        if self.author == membership:
-            return True
-
-        if self.visibility == "private":
-            return False
-
-        if self.visibility == "organization":
-            return membership.organization == self.organization
-
-        if self.visibility == "shared":
-            # Check MotionShare entries
-            return self.shares.filter(user=membership.user).exists()
-
-        return False
+        """Darf die Person das Dokument sehen und öffnen? (``access_level`` ≠ ``"none"``, wie ``visible_to``)."""
+        return self.access_level(membership, status_lock=False) != "none"
 
     def can_edit(self, membership) -> bool:
         """
-        Check if a membership can edit this document.
-
-        With simplified permissions, anyone with access can edit
-        (except in private mode, only author can edit).
-        Gäste: nur mit Freigabe-Level edit/admin.
+        Darf die Person das Dokument bearbeiten – Status, Metadaten, Checkliste, Anhänge, Papierkorb,
+        Einreichung? Stufe ``edit``/``admin`` ohne Status-Sperre (die Sperre betrifft nur den Inhalt).
         """
-        if getattr(membership, "is_guest", False):
-            return self.get_guest_share_level(membership) in ("edit", "admin")
-
-        if self.author == membership:
-            return True
-
-        if self.visibility == "private":
-            return False
-
-        # For shared/organization, anyone with access can edit
-        return self.can_access(membership)
+        return self.access_level(membership, status_lock=False) in ("edit", "admin")
 
     @property
     def is_status_locked(self) -> bool:
@@ -1153,42 +1119,77 @@ class Motion(EncryptionMixin, models.Model):
             return "edit"
         return "comment" if membership.has_permission("motions.comment") else "view"
 
-    def editor_access_level(self, membership) -> str:
+    def access_level(self, membership, *, status_lock: bool = True) -> str:
         """
-        Zugriffsstufe im Editor: 'admin', 'edit', 'comment', 'view' oder 'none'.
+        Zugriffsstufe ``admin``, ``edit``, ``comment``, ``view`` oder ``none`` – die einzige Zugriffsregel
+        für Dokumente. Liste (``visible_to``), Öffnen, Editor, Live-Kollaboration, Export, Anhänge,
+        Versionen, Kommentare, Bearbeiten und Teilen leiten sich daraus ab.
 
-        Einzige Stelle für die Stufenlogik – der HTTP-Editor (DocumentEditorView) und der
-        WebSocket-Consumer (get_collab_access_level) nutzen sie gemeinsam:
-        - Gäste: ausschließlich ihre persönliche Freigabe (nie Verwaltungsrechte)
-        - Mitglieder brauchen ``motions.view``; Autor:in verwaltet, ``motions.edit_all``
-          bearbeitet, eine persönliche Freigabe „Bearbeiten“ bearbeitet mit ``motions.edit``,
-          sonst Kommentieren (``motions.comment``) oder Lesen
-        - danach greift die Status-Sperre (apply_status_lock)
+        - Mandantengrenze: nur Dokumente der eigenen Organisation.
+        - Gäste: ausschließlich ihre persönliche oder Ordner-Freigabe (nie Verwaltungsrechte), nie
+          Dokumente im Papierkorb.
+        - Mitglieder brauchen ``motions.view``. Zugang: Autor:in, Federführung, Mitarbeit, alle bei
+          organisationsweiten, persönlich Freigegebene bei geteilten Dokumenten.
+        - Stufe: Autor:in verwaltet (mit ``motions.edit``), ``motions.edit_all`` bearbeitet, eine
+          persönliche Freigabe „Bearbeiten“ bearbeitet mit ``motions.edit``; wer nur über eine
+          Freigabe Zugang hat, bleibt bei deren Stufe; sonst Kommentieren (``motions.comment``)
+          oder Lesen.
+        - ``status_lock``: danach greift die Status-Sperre für den Inhalt (apply_status_lock).
         """
-        if not self.can_access(membership):
+        if membership is None or membership.organization_id != self.organization_id:
             return "none"
 
         if getattr(membership, "is_guest", False):
+            if self.status == "deleted":
+                return "none"
             level = self.get_guest_share_level(membership)
             if level is None:
                 return "none"
             if level == "admin":
                 level = "edit"  # Gäste erhalten nie Verwaltungsrechte
-            return self.apply_status_lock(level, membership)
+            return self.apply_status_lock(level, membership) if status_lock else level
 
         if not membership.has_permission("motions.view"):
             return "none"
+        base = "comment" if membership.has_permission("motions.comment") else "view"
         if self.author_id == membership.id:
-            level = "admin"
-        elif membership.has_permission("motions.edit_all") or (
-            membership.has_permission("motions.edit") and self._member_share_level(membership) in ("edit", "admin")
-        ):
-            level = "edit"
-        elif membership.has_permission("motions.comment"):
-            level = "comment"
-        else:
-            level = "view"
-        return self.apply_status_lock(level, membership)
+            level = "admin" if membership.has_permission("motions.edit") else base
+            return self.apply_status_lock(level, membership) if status_lock else level
+
+        # Abfragen nur, wo sie das Ergebnis ändern können (Freigaben, Mitarbeit)
+        edit_all = membership.has_permission("motions.edit_all")
+        if self.visibility == "organization":
+            if edit_all or (
+                membership.has_permission("motions.edit") and self._member_share_level(membership) in ("edit", "admin")
+            ):
+                level = "edit"
+            else:
+                level = base
+        elif self.visibility == "shared":
+            share = self._member_share_level(membership)
+            assigned = self._is_assigned(membership)
+            if not share and not assigned:
+                return "none"
+            if edit_all or (share in ("edit", "admin") and membership.has_permission("motions.edit")):
+                level = "edit"
+            elif share and not assigned:
+                # Zugang nur über die persönliche Freigabe: nicht mehr als deren Stufe
+                level = min(share, base, key=self.ACCESS_RANK.__getitem__)
+            else:
+                level = base
+        else:  # privat: nur Autor:in, Federführung und Mitarbeit
+            if not self._is_assigned(membership):
+                return "none"
+            level = "edit" if edit_all else base
+        return self.apply_status_lock(level, membership) if status_lock else level
+
+    def _is_assigned(self, membership) -> bool:
+        """Federführung oder Mitarbeit?"""
+        return self.responsible_id == membership.id or self.contributors.filter(pk=membership.pk).exists()
+
+    def editor_access_level(self, membership) -> str:
+        """Zugriffsstufe im Editor (HTTP und Live-Kollaboration): ``access_level`` mit Status-Sperre."""
+        return self.access_level(membership)
 
     def _member_share_level(self, membership) -> str | None:
         """Höchste persönliche Freigabestufe (scope=user) eines Mitglieds oder ``None``."""
@@ -1208,22 +1209,22 @@ class Motion(EncryptionMixin, models.Model):
         return "edit" if level == "admin" else level
 
     def can_comment(self, membership) -> bool:
-        """
-        Check if a membership can comment on this document.
+        """Darf die Person kommentieren? Stufe ``comment`` oder höher (mit Status-Sperre)."""
+        return self.access_level(membership) in ("comment", "edit", "admin")
 
-        With simplified permissions, anyone with access can comment.
-        Gäste: nur mit Freigabe-Level comment/edit/admin.
+    def can_manage(self, membership) -> bool:
+        """
+        Verwaltungsrecht: Autor:in (Stufe ``admin``) oder ``motions.edit_all`` mit Zugang, nie Gäste.
+        Grundlage für Teilen, Versionen wiederherstellen und endgültiges Löschen.
         """
         if getattr(membership, "is_guest", False):
-            return self.get_guest_share_level(membership) in ("comment", "edit", "admin")
-
-        return self.can_access(membership)
+            return False
+        level = self.access_level(membership, status_lock=False)
+        return level == "admin" or (level != "none" and membership.has_permission("motions.edit_all"))
 
     def can_share(self, membership) -> bool:
-        """Darf das Mitglied das Dokument weiteren Personen zugänglich machen (Autor:in oder ``motions.share``)?"""
-        if getattr(membership, "is_guest", False) or not self.can_access(membership):
-            return False
-        return self.author_id == membership.id or membership.has_permission("motions.share")
+        """Darf die Person Freigaben und Sichtbarkeit ändern? Verwaltungsrecht und ``motions.share``."""
+        return self.can_manage(membership) and membership.has_permission("motions.share")
 
     def _folder_share_applies(self, created_by_id) -> bool:
         """
