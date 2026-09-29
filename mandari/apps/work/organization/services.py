@@ -233,10 +233,7 @@ def invite_member(organization: Organization, inviter: User, email: str, role_id
         if existing_membership:
             if existing_membership.is_active:
                 raise ServiceError(f"{email} ist bereits Mitglied dieser Organisation.", message_levels.WARNING)
-            _ensure_may_restore(actor, existing_membership)
-            existing_membership.is_active = True
-            existing_membership.registration_requested_at = None
-            existing_membership.save()
+            _restore_membership(organization, existing_membership, actor)
             emails.send_access_granted(existing_membership, "reactivated")
             return f"{email} wurde reaktiviert und per E-Mail informiert."
 
@@ -609,19 +606,24 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
     ).delete()
 
 
-def reactivate_member(organization: Organization, member: Membership, actor: Membership) -> bool:
+def _restore_membership(organization: Organization, member: Membership, actor: Membership | None) -> None:
     """
-    Mitglied reaktivieren und per E-Mail informieren; liefert, ob die Mail versendet wurde.
-    Das Gast-Limit gilt auch hier (sonst per Deaktivieren/Reaktivieren umgehbar); die
-    bisherigen Rechte kehren nur im Rahmen der Rechte der handelnden Person zurück.
+    Deaktivierte Mitgliedschaft wieder aktivieren – einzige Stelle dafür (Mitgliederverwaltung und
+    „Mitglied einladen“). Das Gast-Limit gilt auch hier (sonst per Deaktivieren/Reaktivieren
+    umgehbar); die bisherigen Rechte kehren nur im Rahmen der Rechte der handelnden Person zurück.
     """
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
     _ensure_may_restore(actor, member)
-    variant: emails.AccessVariant = "approved" if member.registration_requested_at else "reactivated"
     member.is_active = True
     member.registration_requested_at = None
     member.save()
+
+
+def reactivate_member(organization: Organization, member: Membership, actor: Membership) -> bool:
+    """Mitglied reaktivieren (:func:`_restore_membership`) und per E-Mail informieren; liefert, ob die Mail rausging."""
+    variant: emails.AccessVariant = "approved" if member.registration_requested_at else "reactivated"
+    _restore_membership(organization, member, actor)
     return emails.send_access_granted(member, variant)
 
 
