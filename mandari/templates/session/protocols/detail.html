@@ -133,7 +133,7 @@
                 {% if participants.present %}
                 <div>
                     <p class="text-xs font-semibold text-green-700 dark:text-green-400 uppercase mb-1">Anwesend</p>
-                    {% for a in participants.present %}<p class="text-gray-700 dark:text-gray-300">{{ a.person.display_name }} ({{ a.get_role_display }})</p>{% endfor %}
+                    {% for a in participants.present %}<p class="text-gray-700 dark:text-gray-300">{{ a.person.display_name }} ({{ a.get_role_display }}{% if a.presence_note %}, {{ a.presence_note }}{% endif %})</p>{% endfor %}
                 </div>
                 {% endif %}
                 {% if participants.excused %}

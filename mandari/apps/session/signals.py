@@ -260,7 +260,7 @@ PUBLIC_PROTOCOL_FIELDS = {
         "votes_abstain",
     ),
     SessionMeeting: ("is_public", "name", "start", "end", "location", "room", "organization_id"),
-    SessionAttendance: ("status", "role", "person_id"),
+    SessionAttendance: ("status", "role", "person_id", "arrival_time", "departure_time"),
     SessionProtocol: ("status", "content", "chair_name", "recorder_name", "approval_note"),
 }
 
