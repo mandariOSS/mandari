@@ -30,4 +30,4 @@ Mandari - Kommunalpolitische Transparenz
 
 Diese E-Mail wurde an erika@example.org gesendet, weil Sie ein Abo für Musterstadt erstellt haben.
 
-© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

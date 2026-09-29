@@ -3,7 +3,7 @@ name = "mandari"
 version = "0.11.0"
 description = "Mandari Insight - Kommunalpolitische Transparenz"
 readme = "README.md"
-license = { text = "AGPL-3.0" }
+license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.12"
 authors = [{ name = "Mandari Contributors" }]
 

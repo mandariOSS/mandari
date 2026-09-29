@@ -95,7 +95,7 @@ KI-gestütztes Web-Interface für das Kölner Ratsinformationssystem. Natural La
 
 ## Lizenzhinweis
 
-Mandari selbst steht unter der **AGPL-3.0 Lizenz**.
+Mandari selbst steht unter der **AGPL-3.0-or-later**.
 
 Die hier aufgeführten Abhängigkeiten haben ihre eigenen Lizenzen (MIT, BSD, Apache, etc.), die alle mit der AGPL kompatibel sind und kommerzielle Nutzung erlauben.
 

@@ -16,4 +16,4 @@ Passwort vergessen? Auf der Anmeldeseite setzt du es über „Passwort vergessen
 
 Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
 
-© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

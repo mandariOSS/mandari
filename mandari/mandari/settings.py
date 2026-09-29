@@ -116,13 +116,13 @@ INSTALLED_APPS = [
     "insight_search",
     "insight_ai",
     "oparl_api",
-    # Mandari Work apps (OSS - AGPL 3.0)
+    # Mandari Work apps (OSS - AGPL-3.0-or-later)
     "apps.common",
     "apps.accounts",
     "apps.tenants",
     "apps.provisioning",
     "apps.work",
-    # Mandari Session RIS (OSS - AGPL 3.0)
+    # Mandari Session RIS (OSS - AGPL-3.0-or-later)
     "apps.session",
     # Protokollierung (Aufzeichnung, Transkription, KI-Entwurf) — Session + Work
     "apps.minutes",

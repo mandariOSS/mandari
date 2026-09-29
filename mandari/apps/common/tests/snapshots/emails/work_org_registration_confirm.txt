@@ -15,4 +15,4 @@ Du hast dich nicht registriert? Dann ignoriere diese E-Mail. Ohne Bestätigung e
 
 Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
 
-© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

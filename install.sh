@@ -132,7 +132,7 @@ show_banner() {
  |_|  |_|\__,_|_| |_|\__,_|\__,_|_|  |_|
 
  Kommunalpolitische Transparenz fuer Deutschland
- Open Source unter AGPL-3.0
+ Open Source unter AGPL-3.0-or-later
 
 EOF
     echo -e "${NC}"

@@ -2,7 +2,7 @@
 name = "mandari-oparl"
 version = "0.1.0.dev0"
 description = "Shared OParl types for Mandari (Pydantic schemas)"
-license = { text = "AGPL-3.0" }
+license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.12"
 authors = [{ name = "Mandari Contributors" }]
 
