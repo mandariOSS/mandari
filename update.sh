@@ -4,9 +4,10 @@
 # =============================================================================
 # Updates Mandari ohne Ausfallzeit:
 #   1. Images vorziehen (alter Container läuft weiter)
-#   2. Migrationen via temporären Container (vor dem Swap)
+#   2. Worker (Ingestor) anhalten, Migrationen via temporären Container (vor dem Swap)
 #   3. Container einzeln tauschen (Caddy puffert Requests)
 #   4. Health-Check + automatisches Rollback bei Fehler
+#   5. Nach den Post-Deploy-Migrationen Worker mit neuem Image starten
 #
 # Usage:
 #   ./update.sh                # Update auf latest
@@ -27,6 +28,12 @@ APP_CONTAINER="${COMPOSE_PROJECT_NAME}"
 DB_CONTAINER="${COMPOSE_PROJECT_NAME}-postgres"
 WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
 
+# Dienste, die während der Migrationen stehen (wie WORKER_SERVICES in deploy/scripts/deploy.sh).
+# Der Ingestor – und ein getrennter OCR-Worker, falls in einer eigenen Compose-Datei betrieben –
+# schreibt in Tabellen, die Migrationen ändern; liefe er weiter, bräche ein Sync-Zyklus ab.
+# Überschreibbar per Umgebung oder .env, z. B. WORKER_SERVICES="ingestor ocr-worker";
+# Dienste, die Compose nicht kennt, werden übersprungen.
+WORKER_SERVICES_DEFAULT="ingestor"
 
 # =============================================================================
 # Configuration
@@ -204,6 +211,65 @@ rollback_service() {
         docker compose up -d --no-deps "$service"
     fi
 }
+
+# Worker, die während der Migrationen stehen: WORKER_SERVICES aus Umgebung oder .env,
+# beschränkt auf Dienste, die Compose kennt (Hinweise auf stderr, Ergebnis auf stdout)
+resolve_workers() {
+    local wanted defined svc result=""
+    wanted="${WORKER_SERVICES:-$(get_env_var WORKER_SERVICES "$WORKER_SERVICES_DEFAULT")}"
+    wanted="${wanted//\"/}"
+    wanted="${wanted//\'/}"
+    defined=$(docker compose config --services 2>/dev/null || true)
+    for svc in $wanted; do
+        if printf '%s\n' "$defined" | grep -qxF -- "$svc"; then
+            result="$result $svc"
+        else
+            warn "Dienst '$svc' aus WORKER_SERVICES ist nicht definiert – übersprungen." >&2
+        fi
+    done
+    echo "${result# }"
+}
+
+# Angehaltene Worker; start_workers startet sie (mit dem dann gültigen Image) wieder –
+# auch beim Abbruch des Skripts (trap), damit kein Worker dauerhaft steht.
+STOPPED_WORKERS=""
+
+stop_workers() {
+    local workers
+    workers=$(resolve_workers)
+    if [ -z "$workers" ]; then
+        info "  Keine Worker anzuhalten"
+        return 0
+    fi
+    STOPPED_WORKERS="$workers"
+    # shellcheck disable=SC2086  # Dienstliste bewusst aufgeteilt
+    run_step "Worker anhalten ($workers)" docker compose stop $workers || \
+        error "Worker konnten nicht angehalten werden. Update abgebrochen, keine Migration eingespielt."
+}
+
+start_workers() {
+    [ -n "$STOPPED_WORKERS" ] || return 0
+    local workers="$STOPPED_WORKERS"
+    STOPPED_WORKERS=""
+    # shellcheck disable=SC2086  # Dienstliste bewusst aufgeteilt
+    if docker compose up -d --no-deps $workers >> "$UPDATE_LOG" 2>&1; then
+        printf "  %-30s ${GREEN}✓${NC}\n" "$workers"
+    else
+        printf "  %-30s ${RED}✗${NC}\n" "$workers"
+        warn "Worker nicht gestartet — von Hand: docker compose up -d --no-deps $workers"
+    fi
+}
+
+is_stopped_worker() {
+    case " $STOPPED_WORKERS " in
+        *" $1 "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+trap start_workers EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Verifikation aller Container (wie install.sh)
 verify_installation() {
@@ -427,6 +493,9 @@ if [ "$DRY_RUN" = true ]; then
         info "Zielversion: ${CYAN}latest${NC}"
     fi
 
+    dry_run_workers=$(resolve_workers)
+    info "Während der Migrationen angehalten: ${CYAN}${dry_run_workers:-keine}${NC}"
+
     echo ""
     verify_installation
 
@@ -500,6 +569,10 @@ echo ""
 log "Phase 2: Pre-Deploy Migrationen"
 info "  (Temporärer Container, alter bedient weiter Requests)"
 
+# Worker stehen bis nach den Post-Deploy-Migrationen (Phase 4): Kein Sync-Zyklus läuft gegen
+# ein Schema, das sich gerade ändert. Für Besucher unsichtbar.
+stop_workers
+
 run_step "Pre-Deploy Migrationen" docker compose run --rm --no-deps \
     mandari python manage.py safemigrate --noinput || \
     warn "  Pre-Deploy Migrationen fehlgeschlagen (möglicherweise bereits aktuell)"
@@ -570,9 +643,11 @@ if ! swap_container website mandari-website 30; then
     warn "Website-Container unhealthy — prüfe Logs: docker logs $WEBSITE_CONTAINER"
 fi
 
-# Ingestor (kein User-Impact)
-docker compose up -d --no-deps ingestor >> "$UPDATE_LOG" 2>&1
-printf "  %-30s ${GREEN}✓${NC}\n" "ingestor"
+# Ingestor (kein User-Impact); als angehaltener Worker startet er erst nach Phase 4
+if ! is_stopped_worker ingestor; then
+    docker compose up -d --no-deps ingestor >> "$UPDATE_LOG" 2>&1
+    printf "  %-30s ${GREEN}✓${NC}\n" "ingestor"
+fi
 
 # =============================================================================
 # Phase 4: Post-Deploy Migrationen
@@ -584,19 +659,26 @@ run_step "Post-Deploy Migrationen" docker exec "$APP_CONTAINER" python manage.py
     warn "  Post-Deploy Migrationen fehlgeschlagen — prüfe: docker logs $APP_CONTAINER"
 
 # =============================================================================
-# Phase 5: Caddy reload (falls Caddyfile geändert)
+# Phase 5: Worker mit neuem Image starten (nach allen Migrationen)
 # =============================================================================
 echo ""
-log "Phase 5: Caddy-Konfiguration"
+log "Phase 5: Worker starten"
+start_workers
+
+# =============================================================================
+# Phase 6: Caddy reload (falls Caddyfile geändert)
+# =============================================================================
+echo ""
+log "Phase 6: Caddy-Konfiguration"
 
 run_step "Caddy reload" docker exec "${COMPOSE_PROJECT_NAME}-caddy" caddy reload --config /etc/caddy/Caddyfile || \
     info "  Caddy-Reload übersprungen (kein Reload nötig oder Caddy nicht verfügbar)"
 
 # =============================================================================
-# Phase 6: Verifikation
+# Phase 7: Verifikation
 # =============================================================================
 echo ""
-log "Phase 6: Verifikation"
+log "Phase 7: Verifikation"
 sleep 3
 
 verify_installation
