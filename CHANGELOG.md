@@ -6,6 +6,9 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+### Abgekündigt
+- Alte Session-API unter `/session/<kommune>/api/session/…` (`meetings/`, `papers/`, `applications/`, `applications/submit/`): **Wegfall am 31.05.2027.** Ersatz ist die Session-API v1 unter `/api/v1/session/<kommune>/…` mit OpenAPI-Schema; Unterschiede beim Umstieg in `docs/API_V1_SESSION.md`, Abschnitt „Ablösung der alten Pfade“. Die alten Pfade antworten mit `Deprecation: true`, `Sunset: Mon, 31 May 2027 00:00:00 GMT` und `Link: <Nachfolger>; rel="successor-version"`. Seit 0.11.0 nannten die Header zunächst den 31.03.2027; der Termin ist zugunsten der Nutzer verlängert, damit ab dieser Ankündigung die volle Frist von sechs Monaten bleibt. Der Einstiegspunkt `/session/<kommune>/api/` und die OParl-Schnittstelle `/session/<kommune>/api/oparl/` bleiben (#163, #430).
+
 ### Behoben
 - Work: Der PDF-Import von Dokumenten schlug immer mit „Datei konnte nicht gelesen werden“ fehl, weil er die Rückgabe der Textextraktion falsch entpackte. Text-PDFs werden jetzt übernommen, gescannte PDFs über die Texterkennung (ohne verfügbare Texterkennung mit Hinweis im Dokument); die Fehlermeldung erscheint nur noch bei tatsächlich unlesbaren Dateien (#422).
 - Work: „Mitglied endgültig entfernen“ löschte per Kaskade alles, was die Person angelegt hatte – auch organisationsweit geteilte Dokumente, Aufgaben, Fraktionssitzungen samt Protokoll und Beschlüssen sowie Support-Tickets. Diese Inhalte bleiben jetzt erhalten und zeigen „Ehemaliges Mitglied“. Rein persönliche Daten entfallen weiter: private TOP-Notizen, nicht geteilte Redebeiträge, private Vorgangs-Kommentare, Aufgaben, die nur die Person sah, offene Freigabe-Anfragen an sie, Einladungen zu künftigen Fraktionssitzungen, Benachrichtigungen und Einstellungen. Das gilt ebenso, wenn ein Konto gelöscht wird. Die Migration `work/0059` erlaubt dafür leere Verweise (#420).

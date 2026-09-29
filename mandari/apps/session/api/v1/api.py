@@ -17,8 +17,8 @@ from .problems import install_problem_handlers
 DESCRIPTION = """
 Erweiterte, authentifizierte Schnittstelle des Session-RIS je Mandant (Kommune).
 
-- Öffentliche Daten sind anonym abrufbar; nicht-öffentliche Daten erfordern eine angemeldete Sitzung
-  mit passenden Rechten oder ein API-Token mit den entsprechenden Flags.
+- Öffentliche Daten sind anonym abrufbar; nicht-öffentliche Daten gibt es nur für eine angemeldete
+  Sitzung mit passenden Rechten. Ein API-Token liest nur öffentliche Daten, unabhängig von seinen Flags.
 - Anträge einreichen: `POST /{tenant_slug}/applications/submit/` mit `Authorization: Bearer <token>`.
 - Fehler kommen als `application/problem+json` (RFC 9457) mit `request_id` zur Korrelation.
 - Rein öffentliche OParl-1.1-Daten liefert weiterhin `/session/<slug>/api/oparl/`.

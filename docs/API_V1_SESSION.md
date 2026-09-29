@@ -61,15 +61,16 @@ entspricht dem `X-Request-ID`-Header und findet sich in den Server-Logs.
 ## Ablösung der alten Pfade
 
 `/session/<slug>/api/session/meetings/`, `…/papers/`, `…/applications/`, `…/applications/submit/`
-bleiben bis **31.03.2027** erreichbar und antworten mit `Deprecation: true`, `Sunset` und
-`Link: <neuer Pfad>; rel="successor-version"`. Der Einstiegspunkt `/session/<slug>/api/` verweist
+sind abgekündigt und entfallen am **31.05.2027** (`Sunset: Mon, 31 May 2027 00:00:00 GMT`, CHANGELOG
+unter „Abgekündigt“; bis Version 0.11.x nannte der Header den 31.03.2027). Bis dahin bleiben sie erreichbar und antworten mit `Deprecation: true`, `Sunset`
+und `Link: <neuer Pfad>; rel="successor-version"`. Der Einstiegspunkt `/session/<slug>/api/` verweist
 unter `v1` auf die neue API. Unterschiede beim Umstieg:
 
 | Alt | Neu |
 |-----|-----|
 | Fehler als `{"error": "…"}` mit 400/401/403 | `application/problem+json`; fehlende/ungültige Felder → 422 mit `errors` |
 | feste 100 Einträge | `limit`/`offset`, `meta.total` |
-| Token nur zum Einreichen | Token liest NÖ-Daten gemäß Flags |
+| Token nur zum Einreichen | Token reicht ein und fragt den Rückmeldestand eigener Anträge ab (`…/feedback/`); lesend nur öffentliche Daten wie anonyme Aufrufer – nichtöffentliche Daten nie, unabhängig von den Flags |
 | `application_type`-Aliase `proposal`, `urgent_motion` | weiterhin akzeptiert (auf `motion`/`urgent` abgebildet) |
 
 ## Neue Endpunkte anlegen (Leitfaden)
