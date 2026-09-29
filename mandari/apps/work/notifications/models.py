@@ -132,6 +132,12 @@ PREFERENCE_HINTS: dict[str, str] = {
     NotificationType.FACTION_INVITATION.value: "Die förmliche Einladungs-Mail kommt unabhängig davon.",
 }
 
+
+def preference_hint(notification_type: str) -> str:
+    """Hinweis zu einer Art im Einstellungsformular (leer, wenn es keinen gibt)."""
+    return PREFERENCE_HINTS.get(notification_type, "")
+
+
 #: Immer aktive Arten – nicht im Formular, gespeicherte Einstellungen werden ignoriert:
 #: - Registrierungsanfrage: Hinweis an die Verwaltenden; ohne ihn bliebe eine Anfrage unbemerkt liegen.
 ALWAYS_ACTIVE_TYPES: frozenset[str] = frozenset({NotificationType.REGISTRATION_REQUEST.value})

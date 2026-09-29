@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
-from apps.work.notifications.models import PREFERENCE_CATEGORIES, PREFERENCE_HINTS, NotificationType
+from apps.work.notifications.models import PREFERENCE_CATEGORIES, NotificationType, preference_hint
 
 from .. import selectors, services
 from ..services import ServiceError
@@ -38,7 +38,7 @@ class ProfileNotificationsView(WorkViewMixin, TemplateView):
                 "in_app_enabled": prefs.is_type_enabled(val, "in_app"),
                 "email_enabled": prefs.is_type_enabled(val, "email"),
                 "category": category_name,
-                "hint": PREFERENCE_HINTS.get(val, ""),
+                "hint": preference_hint(val),
             }
             # Einzige Quelle für angezeigte und gespeicherte Arten (Issue #423)
             for category_name, type_values in PREFERENCE_CATEGORIES.items()
