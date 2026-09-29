@@ -9,7 +9,6 @@ from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
-from apps.accounts import second_factor
 from apps.accounts.services import PasswordService, SessionService, TwoFactorService
 from apps.accounts.two_factor_policy import two_factor_required
 from apps.common.mixins import WorkViewMixin
@@ -173,6 +172,8 @@ class SecurityView(WorkViewMixin, TemplateView):
 
     def _confirm_2fa(self, request, user):
         """Einrichtung bestätigen – gleiche Zählung und gleiches Protokoll wie unter /accounts/."""
+        from apps.accounts import second_factor
+
         result = second_factor.confirm_setup(request, user, request.POST.get("code", ""))
         if result == second_factor.CONFIRMED:
             messages.success(request, "2FA wurde erfolgreich aktiviert.")

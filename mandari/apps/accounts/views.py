@@ -39,9 +39,10 @@ from django.views.generic import TemplateView
 
 from apps.common.next_url import safe_next_url
 
-from . import second_factor, webauthn_service
+from . import webauthn_service
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
+from .second_factor import CONFIRMED, LOCKED, MAX_FAILURES, client_ip, confirm_setup, log_attempt, recent_failures
 from .services import SessionService, TwoFactorService
 from .two_factor_policy import (
     POLICY_CACHE_SESSION_KEY,
@@ -53,7 +54,7 @@ from .two_factor_policy import (
 # Zweiter Anmeldeschritt: Passwort ist geprüft, angemeldet wird erst nach gültigem Code
 PENDING_2FA_SESSION_KEY = "auth_2fa_pending"
 PENDING_2FA_MAX_AGE_SECONDS = 300
-MAX_2FA_FAILURES = second_factor.MAX_FAILURES
+MAX_2FA_FAILURES = MAX_FAILURES
 # Pflicht-Einrichtung nach dem Passwort: etwas mehr Zeit für App-Installation und Scan
 PENDING_ENROLL_MAX_AGE_SECONDS = 900
 ENROLL_SETUP_SESSION_KEY = "auth_2fa_enroll"
@@ -247,7 +248,7 @@ class LoginView(View):
 
     def get_client_ip(self, request):
         """Get client IP address."""
-        return second_factor.client_ip(request)
+        return client_ip(request)
 
     def is_rate_limited(self, ip_address, email):
         """
@@ -329,10 +330,10 @@ class LoginTwoFactorView(View):
         return redirect("accounts:login")
 
     def _recent_failures(self, user) -> int:
-        return second_factor.recent_failures(user)
+        return recent_failures(user)
 
     def _log(self, request, user, success: bool) -> None:
-        second_factor.log_attempt(request, user, success=success)
+        log_attempt(request, user, success=success)
 
     def get(self, request):
         _data, user = self._pending(request)
@@ -503,8 +504,8 @@ class TwoFactorEnrollView(View):
             return self.get(request)
 
         setup = self._setup(request, user)
-        result = second_factor.confirm_setup(request, user, request.POST.get("code", ""))
-        if result == second_factor.LOCKED:
+        result = confirm_setup(request, user, request.POST.get("code", ""))
+        if result == LOCKED:
             if pending is not None:
                 request.session.pop(PENDING_2FA_SESSION_KEY, None)
                 messages.error(
@@ -520,7 +521,7 @@ class TwoFactorEnrollView(View):
                 status=429,
             )
 
-        if result == second_factor.CONFIRMED:
+        if result == CONFIRMED:
             setup["confirmed"] = True
             request.session[ENROLL_SETUP_SESSION_KEY] = setup
             request.session.pop(POLICY_CACHE_SESSION_KEY, None)
