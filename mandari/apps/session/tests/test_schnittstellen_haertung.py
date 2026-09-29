@@ -190,6 +190,31 @@ def test_token_erscheint_einmalig_auf_eigener_seite(tenant: SessionTenant) -> No
     assert token.token_prefix not in str(antwort.cookies.get("messages", ""))
 
 
+def test_token_im_admin_nicht_anlegbar_mit_hinweis_auf_den_sitzungsdienst(tenant: SessionTenant) -> None:
+    """Das Admin-Formular konnte keinen Token erzeugen; Anlage dort gesperrt, Hinweis auf den Portalweg."""
+    from django.contrib.messages import get_messages
+
+    betrieb = cast(Any, UserFactory)(email="betrieb@example.org", is_staff=True, is_superuser=True)
+    client = Client()
+    client.force_login(betrieb)
+    SessionAPIToken.create_token(tenant=tenant, name="Fraktion A")
+
+    liste = client.get("/admin/session/sessionapitoken/")
+    assert liste.status_code == 200
+    assert "/admin/session/sessionapitoken/add/" not in liste.content.decode()
+
+    antwort = client.get("/admin/session/sessionapitoken/add/")
+    assert antwort.status_code == 302
+    assert antwort["Location"] == "/admin/session/sessionapitoken/"
+    assert "Einreichungs-Zugänge" in " ".join(str(m) for m in get_messages(antwort.wsgi_request))
+
+    client.post(
+        "/admin/session/sessionapitoken/add/",
+        {"tenant": str(tenant.pk), "name": "Ohne Token", "rate_limit_per_minute": "60", "is_active": "on"},
+    )
+    assert list(SessionAPIToken.objects.filter(tenant=tenant).values_list("name", flat=True)) == ["Fraktion A"]
+
+
 def test_antrag_umwandeln_braucht_das_aenderungsrecht(tenant: SessionTenant) -> None:
     antrag = SessionApplication.objects.create(
         tenant=tenant,

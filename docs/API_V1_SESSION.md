@@ -32,7 +32,7 @@ auf `…/applications/submit/` enthält die URL unter `feedback`.
 
 ## Authentifizierung
 
-- **API-Token**: `Authorization: Bearer <token>` (64 Zeichen, angelegt unter Einstellungen → API-Tokens).
+- **API-Token**: `Authorization: Bearer <token>` (64 Zeichen, angelegt im Sitzungsdienst unter Einstellungen → Einreichungs-Zugänge).
   Token gehören zu genau einem Mandanten; Rechte über die Flags `can_read_meetings`, `can_read_papers`
   („Öffentliche Sitzungen/Vorlagen lesen“) und `can_submit_applications`; optional IP-Beschränkung und
   Ratenlimit je Minute (429 mit `Retry-After`). Ein Token liest nur öffentliche Daten – nichtöffentliche
