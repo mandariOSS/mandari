@@ -62,8 +62,11 @@ entspricht dem `X-Request-ID`-Header und findet sich in den Server-Logs.
 
 `/session/<slug>/api/session/meetings/`, `…/papers/`, `…/applications/`, `…/applications/submit/`
 sind abgekündigt und entfallen am **31.05.2027** (`Sunset: Mon, 31 May 2027 00:00:00 GMT`, CHANGELOG
-unter „Abgekündigt“; bis Version 0.11.x nannte der Header den 31.03.2027). Bis dahin bleiben sie erreichbar und antworten mit `Deprecation: true`, `Sunset`
-und `Link: <neuer Pfad>; rel="successor-version"`. Der Einstiegspunkt `/session/<slug>/api/` verweist
+unter „Abgekündigt“; bis Version 0.11.x nannte der Header den 31.03.2027). Bis dahin bleiben sie erreichbar und antworten mit
+`Deprecation: @1790467200`, `Sunset` und `Link: <neuer Pfad>; rel="successor-version"`. Der Wert von
+`Deprecation` ist nach [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745) der Zeitpunkt der Abkündigung als
+Structured-Field-Date („@“ und Unix-Sekunden): 27.09.2026 00:00 UTC, das Erscheinen von 0.11.0. Bis Version 0.11.x
+stand dort `true`; wer den Header auswertet, prüft am besten nur auf sein Vorhandensein oder liest das Datum. Der Einstiegspunkt `/session/<slug>/api/` verweist
 unter `v1` auf die neue API. Unterschiede beim Umstieg:
 
 | Alt | Neu |

@@ -273,7 +273,8 @@ class TestDeprecatedPaths:
     def test_old_session_api_announces_successor(self, client: Client, tenant: SessionTenant) -> None:
         response = client.get(f"/session/{tenant.slug}/api/session/meetings/")
         assert response.status_code == 200
-        assert response["Deprecation"] == "true"
+        # RFC 9745: Zeitpunkt der Abkündigung (27.09.2026, Release 0.11.0) als Structured-Field-Date
+        assert response["Deprecation"] == "@1790467200"
         # Dasselbe Datum steht im CHANGELOG („Abgekündigt“) und in docs/API_V1_SESSION.md
         assert response["Sunset"] == "Mon, 31 May 2027 00:00:00 GMT"
         assert response["Link"] == f'</api/v1/session/{tenant.slug}/meetings/>; rel="successor-version"'
@@ -287,3 +288,16 @@ class TestDeprecatedPaths:
         from apps.session.api.views import SESSION_API_SUNSET
 
         assert format_datetime(parsedate_to_datetime(SESSION_API_SUNSET), usegmt=True) == SESSION_API_SUNSET
+
+    def test_deprecation_is_structured_field_date_before_sunset(self) -> None:
+        """RFC 9745: ``@`` und ganzzahlige Unix-Sekunden; die Abkündigung liegt vor der Abschaltung."""
+        import re
+        from datetime import UTC, datetime
+        from email.utils import parsedate_to_datetime
+
+        from apps.session.api.views import SESSION_API_DEPRECATION, SESSION_API_SUNSET
+
+        assert re.fullmatch(r"@-?\d{1,15}", SESSION_API_DEPRECATION)
+        abgekuendigt = datetime.fromtimestamp(int(SESSION_API_DEPRECATION[1:]), tz=UTC)
+        assert abgekuendigt == datetime(2026, 9, 27, tzinfo=UTC)
+        assert abgekuendigt < parsedate_to_datetime(SESSION_API_SUNSET)

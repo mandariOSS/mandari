@@ -9,7 +9,7 @@ Provides:
 
 import contextlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from django.http import Http404, JsonResponse
@@ -115,6 +115,13 @@ class APIRootView(OParlMixin, View):
 #: Datum steht im CHANGELOG unter „Abgekündigt“ und in docs/API_V1_SESSION.md)
 SESSION_API_SUNSET = "Mon, 31 May 2027 00:00:00 GMT"
 
+#: Zeitpunkt der Abkündigung: Release 0.11.0 am 27.09.2026 (Issue #482)
+SESSION_API_DEPRECATED_AT = datetime(2026, 9, 27, tzinfo=UTC)
+
+#: Wert des ``Deprecation``-Headers nach RFC 9745: Structured-Field-Date (RFC 9651), also „@“ und die
+#: Unix-Sekunden des Abkündigungszeitpunkts. Bis 0.11.x stand hier ``true``.
+SESSION_API_DEPRECATION = f"@{int(SESSION_API_DEPRECATED_AT.timestamp())}"
+
 
 class SessionAPIMixin(OParlMixin):
     """Mixin for authenticated Session API views.
@@ -129,7 +136,7 @@ class SessionAPIMixin(OParlMixin):
 
     def json_response(self, data: Any, status: int = 200) -> JsonResponse:
         response = super().json_response(data, status=status)
-        response["Deprecation"] = "true"
+        response["Deprecation"] = SESSION_API_DEPRECATION
         response["Sunset"] = SESSION_API_SUNSET
         tenant_slug = getattr(self, "_tenant_slug", None)
         if self.successor_url_name and tenant_slug:
