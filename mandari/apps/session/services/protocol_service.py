@@ -32,7 +32,6 @@ from apps.session.models import (
     SessionProtocolCorrection,
 )
 from apps.session.services import agenda_service, attendance_service, four_eyes_service
-from apps.session.visibility import paper_visible
 
 logger = logging.getLogger(__name__)
 
@@ -366,6 +365,7 @@ def build_protocol_pdf(protocol: SessionProtocol, *, internal: bool, permissions
         bytes: PDF-Inhalt
     """
     from apps.session.oparl_publication import UNVEROEFFENTLICHT
+    from apps.session.visibility import paper_visible
 
     meeting = protocol.meeting
     tenant = meeting.tenant
