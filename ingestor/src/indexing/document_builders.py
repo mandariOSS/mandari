@@ -1,17 +1,42 @@
 """
 Entity -> Elasticsearch Document Converters.
 
-Mirrors the logic in mandari/insight_core/signals.py but works with
-SQLAlchemy model instances from the ingestor's storage layer.
+Teildokumente: Die vollständigen Suchdokumente baut Django
+(mandari/insight_core/services/search_documents.py). Der Ingestor liefert nur
+die Felder, die er aus seinen eigenen Zeilen kennt, und schreibt sie per
+partiellem Update (siehe elasticsearch.py). Felder, die allein Django setzt,
+dürfen hier nicht auftauchen, sonst überschriebe jeder Sync die Werte des
+Portals (Issue #429): siehe ``DJANGO_ONLY_FIELDS``.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+# Felder, die nur die Portal-Indexierung (Django) setzt. Der Ingestor lässt sie weg;
+# das partielle Update erhält sie in vorhandenen Dokumenten.
+DJANGO_ONLY_FIELDS = frozenset(
+    {
+        "organization_names",  # Gremienfilter (Vorlagen über Beratungen, Sitzungen über M2M, Dateien über Kontext)
+        "access_url",
+        "paper_name",
+        "paper_reference",
+        "meeting_name",
+        "meeting_date",
+        "agenda_number",
+    }
+)
+
+
+def _with_name(doc: dict[str, Any], name: str | None) -> dict[str, Any]:
+    """Name nur setzen, wenn vorhanden: Für namenlose Sitzungen/Personen bildet Django einen Ersatznamen."""
+    if name:
+        doc["name"] = name
+    return doc
+
 
 def paper_to_doc(paper, files=None) -> dict[str, Any]:
-    """Convert a Paper SQLAlchemy row to a Elasticsearch document.
+    """Convert a Paper SQLAlchemy row to a partial Elasticsearch document (organization_names kommt von Django).
 
     Args:
         paper: Paper SQLAlchemy row.
@@ -52,35 +77,35 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
 
 
 def meeting_to_doc(meeting) -> dict[str, Any]:
-    """Convert a Meeting SQLAlchemy row to a Elasticsearch document.
+    """Convert a Meeting SQLAlchemy row to a partial Elasticsearch document.
 
-    Note: organization_names is not available here (M2M only in Django).
+    organization_names und der Ersatzname namenloser Sitzungen kommen von Django.
     """
-    return {
+    doc = {
         "id": str(meeting.id),
         "type": "meeting",
         "body_id": str(meeting.body_id) if meeting.body_id else None,
-        "name": meeting.name or "",
         "location_name": meeting.location_name or "",
         "start": meeting.start.isoformat() if meeting.start else None,
         "end": meeting.end.isoformat() if meeting.end else None,
         "cancelled": meeting.cancelled,
         "oparl_modified": meeting.oparl_modified.isoformat() if meeting.oparl_modified else None,
     }
+    return _with_name(doc, meeting.name)
 
 
 def person_to_doc(person) -> dict[str, Any]:
-    """Convert a Person SQLAlchemy row to a Elasticsearch document."""
-    return {
+    """Convert a Person SQLAlchemy row to a partial Elasticsearch document (Ersatzname kommt von Django)."""
+    doc = {
         "id": str(person.id),
         "type": "person",
         "body_id": str(person.body_id) if person.body_id else None,
-        "name": person.name or "",
         "given_name": person.given_name or "",
         "family_name": person.family_name or "",
         "title": person.title or "",
         "oparl_modified": person.oparl_modified.isoformat() if person.oparl_modified else None,
     }
+    return _with_name(doc, person.name)
 
 
 def organization_to_doc(org) -> dict[str, Any]:
@@ -98,10 +123,10 @@ def organization_to_doc(org) -> dict[str, Any]:
 
 
 def file_to_doc(file) -> dict[str, Any]:
-    """Convert a File SQLAlchemy row to a Elasticsearch document.
+    """Convert a File SQLAlchemy row to a partial Elasticsearch document.
 
-    Note: paper_name/paper_reference not available here (needs Django JOIN).
-    The Django reindex_elasticsearch command fills those fields.
+    access_url, paper_name/paper_reference und der Kontext (Gremien, Sitzung, TOP)
+    kommen von Django und bleiben beim partiellen Update erhalten.
     """
     text_preview = ""
     if file.text_content:

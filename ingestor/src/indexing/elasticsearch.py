@@ -3,10 +3,16 @@ Async Elasticsearch Client for the Ingestor.
 
 Uses httpx directly (no elasticsearch-py dependency needed).
 Indexes entities after sync + text extraction.
+
+Vollständige Suchdokumente baut allein Django (``insight_core/services/search_documents.py``). Der Ingestor
+schreibt per ``update`` mit ``doc_as_upsert`` nur die Felder, die er selbst kennt. Felder, die nur Django setzt
+(u. a. ``organization_names`` für den Gremienfilter, ``access_url``, Vorgangs- und Sitzungsangaben an Dateien),
+bleiben bei einem Sync erhalten statt überschrieben zu werden (Issue #429).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -111,6 +117,10 @@ class ElasticsearchIndexer:
         """
         Add or update documents in an Elasticsearch index using bulk API.
 
+        Partielles Update (``update`` mit ``doc_as_upsert``): Vorhandene Dokumente behalten alle Felder, die
+        ``documents`` nicht enthält – insbesondere die nur von Django gesetzten. Fehlt ein Dokument, wird es mit
+        den übergebenen Feldern angelegt. Unveränderte Dokumente erkennt Elasticsearch als No-op.
+
         Args:
             index_name: The index to write to (e.g. "papers", "files")
             documents: List of documents with "id" field
@@ -131,10 +141,9 @@ class ElasticsearchIndexer:
             # NDJSON bulk format
             lines = []
             for doc in documents:
-                lines.append(f'{{"index":{{"_index":"{index_name}","_id":"{doc["id"]}"}}}}')
-                import json
-
-                lines.append(json.dumps(doc))
+                action = {"update": {"_index": index_name, "_id": str(doc["id"]), "retry_on_conflict": 3}}
+                lines.append(json.dumps(action))
+                lines.append(json.dumps({"doc": doc, "doc_as_upsert": True}))
             bulk_body = "\n".join(lines) + "\n"
 
             response = await self._client.post(
@@ -145,7 +154,9 @@ class ElasticsearchIndexer:
             if response.status_code == 200:
                 result = response.json()
                 if result.get("errors"):
-                    error_count = sum(1 for item in result.get("items", []) if "error" in item.get("index", {}))
+                    error_count = sum(
+                        1 for item in result.get("items", []) for outcome in item.values() if "error" in outcome
+                    )
                     logger.warning("Elasticsearch bulk indexing: %d errors out of %d", error_count, len(documents))
                 else:
                     logger.debug("Indexed %d documents in '%s'", len(documents), index_name)
