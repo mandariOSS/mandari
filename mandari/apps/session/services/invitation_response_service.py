@@ -11,7 +11,7 @@ Ladung mit Empfangsbestätigung und Rückmeldung (Issue #225).
 - automatische Vertretungsanfrage an die hinterlegte Stellvertretung (eigener Versand vom Typ
   „Vertretungsanfrage“ mit eigenem Rückmeldelink); ohne erreichbare Stellvertretung erfährt es
   der Sitzungsdienst per Mail
-- Übersicht je Sitzung und Erinnerung an alle ohne Bestätigung
+- Übersicht je Sitzung; Erinnerungen nach der Regel des Mandanten (``rsvp_reminders``, Issue #619)
 - Rückmeldung im Portal (mandari Work) für eindeutig zugeordnete Personen
   (siehe :mod:`apps.session.services.portal_link_service`)
 """
@@ -593,54 +593,27 @@ def meeting_overview(meeting: SessionMeeting, *, include_reasons: bool) -> Meeti
     return MeetingOverview(rows)
 
 
-def reminder_candidates(
-    meeting: SessionMeeting, overview: MeetingOverview | None = None
-) -> list[SessionInvitationRecipient]:
-    """Je Person ohne Empfangsbestätigung und ohne Rückmeldung der jüngste offene Mail-Versand."""
-    candidates = []
-    overview = overview or meeting_overview(meeting, include_reasons=False)
-    for status in overview.rows:
-        if status.responded or status.person is None or not status.person.is_active:
-            continue
-        open_rows = [r for r in status.mail_rows if r.acknowledged_at is None and r.email]
-        if open_rows:
-            candidates.append(open_rows[-1])
-    return candidates
-
-
-def send_acknowledgement_reminders(meeting: SessionMeeting) -> tuple[int, int]:
+def send_reminder_mail(
+    recipient: SessionInvitationRecipient, *, subject: str, missing_acknowledgement: bool, missing_response: bool
+) -> None:
     """
-    Erinnerung an alle ohne Empfangsbestätigung versenden (Knopf in der Übersicht).
+    Erinnerung zur Ladung an einen Empfänger mit persönlichem Rückmeldelink (Issue #619).
 
-    Returns:
-        (versandt, fehlgeschlagen)
+    Wer erinnert wird, entscheidet :mod:`apps.session.services.rsvp_reminders` (Knopf und täglicher
+    Lauf); Fehler beim Versand gehen an den Aufrufer.
     """
-    sent = failed = 0
-    for recipient in reminder_candidates(meeting):
-        recipient.dispatch.meeting = meeting
-        try:
-            _send(
-                "emails/session/invitation_reminder.html",
-                _mail_context(recipient),
-                subject=f"Erinnerung: {recipient.dispatch.subject}",
-                to=recipient.email,
-                tenant=meeting.tenant,
-            )
-        except Exception:  # noqa: BLE001 — Erinnerung je Empfänger, ein Fehlschlag stoppt die übrigen nicht
-            logger.exception("Erinnerung zur Ladung konnte nicht versendet werden.")
-            failed += 1
-            continue
-        recipient.reminder_count += 1
-        recipient.last_reminded_at = timezone.now()
-        recipient.save(update_fields=["reminder_count", "last_reminded_at"])
-        sent += 1
-    if sent or failed:
-        _log_event(
-            "update",
-            meeting,
-            changes={"erinnerung_ladung": {"versandt": sent, "fehlgeschlagen": failed}},
-        )
-    return sent, failed
+    context = _mail_context(recipient)
+    context.update({"missing_acknowledgement": missing_acknowledgement, "missing_response": missing_response})
+    _send(
+        "emails/session/invitation_reminder.html",
+        context,
+        subject=subject,
+        to=recipient.email,
+        tenant=recipient.dispatch.meeting.tenant,
+    )
+    recipient.reminder_count += 1
+    recipient.last_reminded_at = timezone.now()
+    recipient.save(update_fields=["reminder_count", "last_reminded_at"])
 
 
 def mark_letters_sent(dispatch: SessionInvitationDispatch) -> int:

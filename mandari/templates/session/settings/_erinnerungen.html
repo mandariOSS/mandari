@@ -1,0 +1,98 @@
+{% comment %}
+Karte „Fristen-Erinnerungen“ in den Einstellungen (Issues #83, #619). Die Erinnerung zur Ladung hat eigene
+Einstellungen (Anlass, Empfängerkreis, Zeitpunkte); sie gelten für den täglichen Lauf und den Knopf in der
+Übersicht der Rückmeldungen.
+{% endcomment %}
+<div class="sm:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" data-testid="karte-erinnerungen">
+    <div class="flex items-center gap-4 mb-3">
+        <div class="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center">
+            <i data-lucide="alarm-clock" class="w-6 h-6 text-orange-600 dark:text-orange-400"></i>
+        </div>
+        <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">Fristen-Erinnerungen</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Automatische E-Mails vor Fristablauf (täglicher Lauf)</p>
+        </div>
+    </div>
+    <form method="post" action="{% url 'session:settings_reminders' tenant_slug=tenant_slug %}" class="mt-4 space-y-3">
+        {% csrf_token %}
+        {% with cfg=reminder_config %}
+        <div class="grid sm:grid-cols-2 gap-3 text-sm">
+            <label class="flex items-center justify-between gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                <span class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" name="invitation_enabled" {% if cfg.invitation_enabled %}checked{% endif %}
+                           class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                    Ladungsfrist (an Sitzungsdienst)
+                </span>
+                <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                    <input type="number" name="invitation_days_before" value="{{ cfg.invitation_days_before }}" min="0" max="60"
+                           class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    Tage vorher
+                </span>
+            </label>
+            <label class="flex items-center justify-between gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                <span class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" name="paper_enabled" {% if cfg.paper_enabled %}checked{% endif %}
+                           class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                    Vorlagenfrist (an Sachbearbeitung)
+                </span>
+                <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                    <input type="number" name="paper_days_before" value="{{ cfg.paper_days_before }}" min="0" max="60"
+                           class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    Tage vorher
+                </span>
+            </label>
+            <label class="flex items-center justify-between gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                <span class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" name="resolution_enabled" {% if cfg.resolution_enabled %}checked{% endif %}
+                           class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                    Wiedervorlage Beschlusskontrolle
+                </span>
+                <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                    <input type="number" name="resolution_days_before" value="{{ cfg.resolution_days_before }}" min="0" max="60"
+                           class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    Tage vorher
+                </span>
+            </label>
+        </div>
+
+        <fieldset class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 text-sm space-y-3" data-testid="erinnerung-ladung">
+            <legend class="px-1 font-medium text-gray-900 dark:text-white">Erinnerung zur Ladung (an die Geladenen)</legend>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+                Pflicht ist nur die Ladung. Ob und wie an Rückmeldungen erinnert wird, entscheiden Sie hier – für den
+                täglichen Lauf und den Knopf „Jetzt erinnern“ in der Übersicht der Rückmeldungen gleichermaßen.
+            </p>
+            <label class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                <input type="checkbox" name="rsvp_enabled" {% if cfg.rsvp_enabled %}checked{% endif %}
+                       class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                An Rückmeldungen erinnern
+            </label>
+            <div class="grid sm:grid-cols-3 gap-3">
+                <label class="block">
+                    <span class="block text-gray-700 dark:text-gray-300 mb-1">Anlass</span>
+                    <select name="rsvp_reason" class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for key, label in rsvp_reason_choices %}<option value="{{ key }}" {% if cfg.rsvp_reason == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="block">
+                    <span class="block text-gray-700 dark:text-gray-300 mb-1">Empfängerkreis</span>
+                    <select name="rsvp_audience" class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for key, label in rsvp_audience_choices %}<option value="{{ key }}" {% if cfg.rsvp_audience == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="block">
+                    <span class="block text-gray-700 dark:text-gray-300 mb-1">Tage vor der Sitzung</span>
+                    <input type="text" name="rsvp_days" value="{{ cfg.rsvp_days|join:', ' }}" inputmode="numeric" placeholder="z. B. 7, 2"
+                           class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <span class="block mt-1 text-xs text-gray-500 dark:text-gray-400">Bis zu drei Zeitpunkte, durch Komma getrennt</span>
+                </label>
+            </div>
+        </fieldset>
+        {% endwith %}
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+                Voraussetzung: Der tägliche Erinnerungslauf (<code>send_session_reminders</code>) ist im Betrieb eingerichtet.
+            </p>
+            <c-ui.button type="submit" size="sm" icon="save">Speichern</c-ui.button>
+        </div>
+    </form>
+</div>
