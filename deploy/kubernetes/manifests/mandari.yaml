@@ -273,8 +273,6 @@ spec:
               value: "True"
             - name: OPARL_FILES_ROOT
               value: /app/files
-            - name: SYNC_DAEMON_AUTOSTART
-              value: "false"   # Synchronisation läuft im eigenen Ingestor-Pod
           ports:
             - name: http
               containerPort: 8000

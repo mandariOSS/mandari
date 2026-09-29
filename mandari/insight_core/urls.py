@@ -67,10 +67,6 @@ insight_patterns = [
     path("karte/partials/markers/", views.map_markers, name="map_markers"),
     # Tile Proxy (DSGVO-konform - alle Map-Tiles werden serverseitig geladen)
     path("tiles/<int:z>/<int:x>/<int:y>", views.tile_proxy, name="tile_proxy"),
-    path("map-style.json", views.style_proxy, name="map_style"),
-    path("map-assets/sprite<path:filename>", views.map_sprite, name="map_sprite"),
-    path("map-assets/sprite", views.map_sprite, name="map_sprite_base"),
-    path("map-assets/glyphs/<str:fontstack>/<str:range_>.pbf", views.map_glyphs, name="map_glyphs"),
     # Nachbarschaft
     path("nachbarschaft/", views.NeighborhoodView.as_view(), name="neighborhood"),
     path("nachbarschaft/autocomplete/", views.neighborhood_autocomplete, name="neighborhood_autocomplete"),

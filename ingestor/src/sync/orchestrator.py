@@ -53,7 +53,6 @@ from src.client.oparl_compat import (
     timestamps_unreliable,
 )
 from src.config import settings
-from src.events import EventEmitter
 from src.metrics import metrics
 from src.scrapers.base import CONTENT_HASH_FIELD, content_hash
 from src.storage.database import DatabaseStorage
@@ -157,22 +156,14 @@ class SyncOrchestrator:
         self.max_concurrent = max_concurrent or settings.oparl_max_concurrent
         # Track if we're in parallel mode (disables Rich Progress to avoid conflicts)
         self._parallel_mode = False
-        # Event emitter for Redis pub/sub
-        self._event_emitter: EventEmitter | None = None
 
     async def __aenter__(self) -> "SyncOrchestrator":
         """Async context manager entry."""
         await self.storage.initialize()
-        # Initialize event emitter
-        self._event_emitter = EventEmitter()
-        await self._event_emitter.__aenter__()
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
-        # Close event emitter
-        if self._event_emitter:
-            await self._event_emitter.__aexit__(exc_type, exc_val, exc_tb)
         await self.storage.close()
 
     # ========== Source Management ==========
@@ -214,13 +205,6 @@ class SyncOrchestrator:
 
         console.print(f"[green]Registered source: {source_name} (ID: {source_id})[/green]")
         return source_id
-
-    async def list_sources(self) -> list[tuple[UUID, str, str]]:
-        """List all registered sources as (id, name, url) tuples."""
-        source = await self.storage.get_source_by_url("")  # Get first
-        if source:
-            return [(source.id, source.name, source.url)]
-        return []
 
     # ========== URL Auto-Detection ==========
 
@@ -398,14 +382,6 @@ class SyncOrchestrator:
                 result.source_name = bodies_data[0].get("name", "Unknown")
                 console.print(f"[green]Source: {result.source_name} ({url_type}, OParl {oparl_version or '?'})[/green]")
 
-                # Emit sync started event
-                if self._event_emitter:
-                    await self._event_emitter.emit_sync_started(
-                        source_url=url,
-                        source_name=result.source_name,
-                        full_sync=full,
-                    )
-
                 # Ensure source exists in database (use URL as source identifier)
                 source_id = await self.storage.upsert_source(
                     url=url,
@@ -472,18 +448,6 @@ class SyncOrchestrator:
                     + result.consultations_synced
                 )
 
-                end_time = datetime.now(UTC)
-                duration = (end_time - start_time).total_seconds()
-
-                if self._event_emitter:
-                    await self._event_emitter.emit_sync_completed(
-                        source_url=url,
-                        source_name=result.source_name,
-                        duration_seconds=duration,
-                        entities_synced=total_synced,
-                        errors_count=len(result.errors),
-                    )
-
                 # Sync log is written by the scheduler (one per cycle, not per source)
 
                 metrics.record_entities_batch(result.source_name, total_synced)
@@ -494,14 +458,6 @@ class SyncOrchestrator:
             await self._record_source_failure(url, str(e), client.error_kind if client else None)
             if client is not None:
                 self._collect_host_findings(result, client)
-
-            if self._event_emitter:
-                await self._event_emitter.emit_sync_failed(
-                    source_url=url,
-                    source_name=result.source_name or "Unknown",
-                    error=str(e),
-                    duration_seconds=(datetime.now(UTC) - start_time).total_seconds(),
-                )
 
         # Neu erkannte Hosts ohne modified_since-Support persistieren (Issue #22)
         await self._persist_modified_since_cache(url, capability_snapshot)
@@ -633,14 +589,6 @@ class SyncOrchestrator:
                 result.source_name = system_data.get("name", "Unknown")
                 console.print(f"[green]Connected to: {result.source_name}[/green]")
 
-                # Emit sync started event
-                if self._event_emitter:
-                    await self._event_emitter.emit_sync_started(
-                        source_url=url,
-                        source_name=result.source_name,
-                        full_sync=full,
-                    )
-
                 # Ensure source exists in database
                 source_id = await self.storage.upsert_source(
                     url=url,
@@ -736,16 +684,6 @@ class SyncOrchestrator:
                 end_time = datetime.now(UTC)
                 duration = (end_time - start_time).total_seconds()
 
-                # Emit sync completed event
-                if self._event_emitter:
-                    await self._event_emitter.emit_sync_completed(
-                        source_url=url,
-                        source_name=result.source_name,
-                        duration_seconds=duration,
-                        entities_synced=total_synced,
-                        errors_count=len(result.errors),
-                    )
-
                 # Write sync log to Django's SyncLog table
                 try:
                     await self.storage.write_sync_log(
@@ -784,15 +722,6 @@ class SyncOrchestrator:
                 self._collect_host_findings(result, client)
 
             # Sync log is written by the scheduler (one per cycle, not per source)
-
-            # Emit sync failed event
-            if self._event_emitter:
-                await self._event_emitter.emit_sync_failed(
-                    source_url=url,
-                    source_name=result.source_name or "Unknown",
-                    error=str(e),
-                    duration_seconds=(datetime.now(UTC) - start_time).total_seconds(),
-                )
 
         # Neu erkannte Hosts ohne modified_since-Support persistieren (Issue #22)
         await self._persist_modified_since_cache(url, capability_snapshot)
@@ -1415,52 +1344,26 @@ class SyncOrchestrator:
         entity_type: str,
         body_name: str | None = None,
     ) -> bool:
-        """Store a processed entity to the database and emit events.
+        """Store a processed entity to the database.
 
         Returns True if the entity was actually stored, False if skipped
         (e.g. membership with unresolvable FK references).
         """
-        entity_id: str | None = None
-
         if isinstance(entity, ProcessedMeeting):
-            entity_id = str(await self.storage.upsert_meeting(entity, body_id))
-            meeting_uuid = UUID(entity_id)
-            # Emit high-priority event for new meetings
-            if self._event_emitter and entity_id:
-                await self._event_emitter.emit_new_meeting(
-                    meeting_id=entity_id,
-                    external_id=entity.external_id,
-                    name=entity.name or "Unbekannte Sitzung",
-                    body_name=body_name,
-                    start_time=entity.start,
-                )
-            # Process nested entities (files, agenda items) with meeting_id
+            await self.storage.upsert_meeting(entity, body_id)
+            # Eingebettete TOPs und Dateien speichert upsert_meeting selbst; hier nur zählen
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedFile):
-                    await self.storage.upsert_file(nested, body_id, meeting_id=meeting_uuid)
                     metrics.record_entity_synced("file", body_name or "unknown")
                 elif isinstance(nested, ProcessedAgendaItem):
-                    await self.storage.upsert_agenda_item(nested, meeting_uuid)
                     metrics.record_entity_synced("agendaitem", body_name or "unknown")
         elif isinstance(entity, ProcessedPaper):
-            entity_id = str(await self.storage.upsert_paper(entity, body_id))
-            paper_uuid = UUID(entity_id)
-            # Emit high-priority event for new papers
-            if self._event_emitter and entity_id:
-                await self._event_emitter.emit_new_paper(
-                    paper_id=entity_id,
-                    external_id=entity.external_id,
-                    name=entity.name or "Unbekannte Vorlage",
-                    body_name=body_name,
-                    paper_type=entity.paper_type,
-                )
-            # Process nested entities (files, consultations) with paper_id
+            await self.storage.upsert_paper(entity, body_id)
+            # Eingebettete Dateien und Beratungen speichert upsert_paper selbst; hier nur zählen
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedFile):
-                    await self.storage.upsert_file(nested, body_id, paper_id=paper_uuid)
                     metrics.record_entity_synced("file", body_name or "unknown")
                 elif isinstance(nested, ProcessedConsultation):
-                    await self.storage.upsert_consultation(nested, body_id, paper_uuid)
                     metrics.record_entity_synced("consultation", body_name or "unknown")
         elif isinstance(entity, ProcessedPerson):
             await self.storage.upsert_person(entity, body_id)

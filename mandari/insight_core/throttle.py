@@ -72,11 +72,6 @@ def hit(scope: str, key: str, *, limit: int, window: int) -> bool:
     return count > limit
 
 
-def peek(scope: str, key: str, *, window: int) -> int:
-    """Aktueller Zählerstand ohne zu zählen."""
-    return int(cache.get(_key(scope, key, window)) or 0)
-
-
 def mail_ip_exceeded(request: HttpRequest) -> bool:
     """Formulare, die E-Mails auslösen: Grenze je IP-Adresse und Stunde überschritten? (zählt mit)"""
     return hit("mail-ip", client_ip(request), limit=setting("INSIGHT_MAILS_PER_IP_HOUR"), window=HOUR)

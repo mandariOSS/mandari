@@ -92,17 +92,6 @@ def guarded_client(**kwargs: Any) -> httpx.Client:
     return httpx.Client(event_hooks={"request": [_check_request]}, **kwargs)
 
 
-async def _check_request_async(request: httpx.Request) -> None:
-    import asyncio
-
-    await asyncio.to_thread(_check_request, request)
-
-
-def guarded_async_client(**kwargs: Any) -> httpx.AsyncClient:
-    """Asynchrones Gegenstück zu ``guarded_client``."""
-    return httpx.AsyncClient(event_hooks={"request": [_check_request_async]}, **kwargs)
-
-
 @dataclass
 class Download:
     content_type: str

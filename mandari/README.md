@@ -98,12 +98,15 @@ mandari/
 
 ## OParl-Synchronisation
 
-```bash
-# OParl-Quelle hinzufügen (via Admin oder Command)
-python manage.py sync_oparl --source https://oparl.example.com/api --create
+Die Synchronisation übernimmt der Ingestor (`ingestor/`, eigener Container). Quellen werden im
+Admin angelegt; manuelle Läufe im Ingestor-Container:
 
-# Daten synchronisieren
-python manage.py sync_oparl --all
+```bash
+# OParl-Quelle registrieren
+python -m src.main add-source https://oparl.example.com/api
+
+# Alle Quellen synchronisieren
+python -m src.main sync --all
 ```
 
 ## Lizenz

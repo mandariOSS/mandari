@@ -183,21 +183,12 @@ def sort_organizations_by_ranking(queryset, include_activity=True):
         # Annotate with last meeting date and calculate final priority
         from django.db.models import F
 
-        cutoff_date = timezone.now() - timedelta(days=INACTIVITY_MONTHS * 30)
-
         return (
             queryset.annotate(
                 ranking_priority=get_ranking_annotation(),
                 last_meeting_date=Max("meetings__start"),
             )
-            .annotate(
-                inactivity_penalty=Case(
-                    When(last_meeting_date__isnull=True, then=Value(INACTIVITY_PENALTY)),
-                    When(last_meeting_date__lt=cutoff_date, then=Value(INACTIVITY_PENALTY)),
-                    default=Value(0),
-                    output_field=IntegerField(),
-                ),
-            )
+            .annotate(inactivity_penalty=get_inactivity_penalty_annotation())
             .annotate(final_priority=F("ranking_priority") + F("inactivity_penalty"))
             .order_by("final_priority", "name")
         )

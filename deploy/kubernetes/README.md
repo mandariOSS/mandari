@@ -159,7 +159,7 @@ kubectl -n mandari logs job/mandari-migrate
 
 ```bash
 kubectl -n mandari exec -it deploy/mandari -- python manage.py createsuperuser
-kubectl -n mandari exec -it deploy/mandari -- python manage.py sync_oparl --full
+kubectl -n mandari exec -it deploy/mandari-ingestor -- python -m src.main sync --all --full
 ```
 
 **Skalieren.** Mehr Repliken der Anwendung brauchen eine Speicherklasse mit `ReadWriteMany`

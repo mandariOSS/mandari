@@ -285,23 +285,21 @@ Paper (z.B. "Antrag: Neuer Spielplatz Südpark")
 
 ### OParl-Synchronisation in Mandari
 
-**Modul**: `insight_sync`
+**Dienst**: `ingestor/` (eigener Container). Der Ingestor-Daemon synchronisiert alle Quellen
+regelmäßig selbst; einen Cron-Eintrag braucht es nicht. Manuelle Läufe im Ingestor-Container:
 
 ```bash
-# Incremental Sync (nur Änderungen seit letztem Sync)
-python manage.py sync_oparl
+# Incremental Sync aller registrierten Quellen
+docker compose exec ingestor python -m src.main sync --all
 
 # Full Sync (alle Daten komplett neu laden)
-python manage.py sync_oparl --full
+docker compose exec ingestor python -m src.main sync --all --full
 
-# Einzelne Quelle synchronisieren
-python manage.py sync_oparl --source https://oparl.stadt-muenster.de/system
-
-# Im Hintergrund ausführen (Django 6.0 Background Tasks)
-python manage.py sync_oparl --background
+# Einzelne Kommune über die Body-URL
+docker compose exec ingestor python -m src.main sync --body https://oparl.stadt-muenster.de/bodies/0001
 
 # Mit mehr parallelen Requests (schneller, aber mehr Last)
-python manage.py sync_oparl --concurrent 20
+docker compose exec ingestor python -m src.main sync --all --concurrent 20
 ```
 
 **Sync-Workflow**:
@@ -310,15 +308,6 @@ python manage.py sync_oparl --concurrent 20
 3. Pro Body: Organizations, Persons, Meetings, Papers parallel laden
 4. Verknüpfungen (Memberships, Consultations, Files) auflösen
 5. `raw_json` speichern für spätere Analyse
-
-**Automatisierung via Cron**:
-```bash
-# Incremental alle 15 Minuten
-*/15 * * * * cd /path/to/mandari && python manage.py sync_oparl
-
-# Full Sync täglich um 3:00 Uhr
-0 3 * * * cd /path/to/mandari && python manage.py sync_oparl --full
-```
 
 ### Datenfluss im Projekt
 
@@ -608,8 +597,7 @@ python manage.py setup_roles       # Standard-Rollen erstellen
 python manage.py fix_permissions   # Probelauf: zeigt, was fehlt
 python manage.py fix_permissions --fix  # ergänzt fehlende Rechte/Standardrollen, ändert keine vorhandenen
 
-# OParl-Daten
-python manage.py sync_oparl --full  # Vollständiger Sync
+# OParl-Daten (Sync läuft im Ingestor, siehe oben)
 python manage.py extract_texts      # OCR für PDFs
 
 # Elasticsearch konfigurieren (Synonyme, Typo-Toleranz)
@@ -655,9 +643,8 @@ OTEL_SERVICE_NAME=mandari-web
 ELASTICSEARCH_URL=http://localhost:9200
 ELASTICSEARCH_AUTO_INDEX=True
 
-# Text-Extraktion
+# Text-Extraktion (liest nur der Ingestor)
 TEXT_EXTRACTION_ENABLED=True
-TEXT_EXTRACTION_ASYNC=True
 TEXT_EXTRACTION_MAX_SIZE_MB=50
 
 # Mistral OCR (optional, für bessere PDF-OCR)

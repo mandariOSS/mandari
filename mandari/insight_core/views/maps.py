@@ -14,7 +14,6 @@ from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
-from django.views.decorators.cache import cache_page
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
@@ -288,96 +287,3 @@ def tile_proxy(request, z, x, y):
 
         logging.getLogger(__name__).exception(f"Tile proxy error: {e}")
         return HttpResponseServerError("Tile proxy error")
-
-
-@require_GET
-@cache_page(60 * 60 * 24)  # Cache für 24 Stunden
-def style_proxy(request):
-    """
-    Proxy für VersaTiles Style JSON.
-
-    Lädt die Style-Konfiguration und ersetzt die Tile-URLs
-    mit lokalen Proxy-URLs.
-    """
-    style_url = "https://tiles.versatiles.org/assets/styles/colorful/style.json"
-
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(style_url)
-
-            if response.status_code == 200:
-                style = response.json()
-
-                # Ersetze externe Tile-URLs mit lokalem Proxy
-                if "sources" in style:
-                    for _source_name, source in style["sources"].items():
-                        if "tiles" in source:
-                            # Ersetze VersaTiles URL mit lokalem Proxy
-                            source["tiles"] = [request.build_absolute_uri("/insight/tiles/{z}/{x}/{y}")]
-                        if "url" in source:
-                            # Für TileJSON URLs
-                            del source["url"]
-                            source["tiles"] = [request.build_absolute_uri("/insight/tiles/{z}/{x}/{y}")]
-
-                # Ersetze Sprite und Glyphs URLs
-                if "sprite" in style:
-                    style["sprite"] = request.build_absolute_uri("/insight/map-assets/sprite")
-                if "glyphs" in style:
-                    style["glyphs"] = request.build_absolute_uri("/insight/map-assets/glyphs/{fontstack}/{range}.pbf")
-
-                return JsonResponse(style, safe=False)
-            return JsonResponse({"error": "Style not found"}, status=404)
-    except Exception as e:
-        logging.getLogger(__name__).exception(f"Style proxy error: {e}")
-        return JsonResponse({"error": "Style proxy error"}, status=500)
-
-
-@require_GET
-@cache_page(60 * 60 * 24)
-def map_sprite(request, filename="sprite"):
-    """Proxy für Map Sprites."""
-    ext = request.GET.get("ext", "json")
-    if filename.endswith(".png"):
-        ext = "png"
-        filename = filename[:-4]
-    elif filename.endswith(".json"):
-        ext = "json"
-        filename = filename[:-5]
-
-    sprite_url = f"https://tiles.versatiles.org/assets/styles/colorful/{filename}.{ext}"
-
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(sprite_url)
-            if response.status_code == 200:
-                from django.http import HttpResponse
-
-                content_type = "application/json" if ext == "json" else "image/png"
-                return HttpResponse(response.content, content_type=content_type)
-    except Exception:
-        pass
-
-    from django.http import HttpResponseNotFound
-
-    return HttpResponseNotFound()
-
-
-@require_GET
-@cache_page(60 * 60 * 24)
-def map_glyphs(request, fontstack, range_):
-    """Proxy für Map Glyphs (Fonts)."""
-    glyphs_url = f"https://tiles.versatiles.org/assets/fonts/{fontstack}/{range_}.pbf"
-
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(glyphs_url)
-            if response.status_code == 200:
-                from django.http import HttpResponse
-
-                return HttpResponse(response.content, content_type="application/x-protobuf")
-    except Exception:
-        pass
-
-    from django.http import HttpResponseNotFound
-
-    return HttpResponseNotFound()

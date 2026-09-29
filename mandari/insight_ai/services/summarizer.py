@@ -48,12 +48,6 @@ class SummaryRevokedError(SummaryError):
     pass
 
 
-class TextExtractionError(SummaryError):
-    """Raised when text extraction fails."""
-
-    pass
-
-
 class SummaryService:
     """
     Service for generating AI summaries of OParl documents.

@@ -215,8 +215,6 @@ services:
       INSIGHT_SUBSCRIPTIONS_ENABLED: ${INSIGHT_SUBSCRIPTIONS_ENABLED:-false}
       # AI (optional)
       NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
-      # Sync Daemon
-      SYNC_DAEMON_AUTOSTART: "true"
       # Timezone
       TZ: ${TZ:-Europe/Berlin}
     volumes:

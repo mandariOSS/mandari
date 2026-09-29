@@ -1609,17 +1609,6 @@ class ContactRequest(models.Model):
     def __str__(self):
         return f"{self.name} - {self.get_subject_display()} ({self.created_at.strftime('%d.%m.%Y')})"
 
-    def mark_as_read(self):
-        """Mark the request as read if it's new."""
-        if self.status == "new":
-            self.status = "read"
-            self.save(update_fields=["status", "updated_at"])
-
-    def mark_as_replied(self):
-        """Mark the request as replied."""
-        self.status = "replied"
-        self.save(update_fields=["status", "updated_at"])
-
 
 # =============================================================================
 # Public Questions (Ratsfragen - Abgeordnetenwatch-Stil)
@@ -1901,17 +1890,6 @@ class InsightSubscriber(models.Model):
     @property
     def is_active(self):
         return self.confirmed and self.unsubscribed_at is None
-
-    @property
-    def active_types(self):
-        types = []
-        if self.neighborhood_active:
-            types.append("neighborhood")
-        if self.keyword_active:
-            types.append("keyword")
-        if self.bookmarks_active:
-            types.append("bookmark")
-        return types
 
 
 class SubscriptionAlert(models.Model):

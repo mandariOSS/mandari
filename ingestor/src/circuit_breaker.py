@@ -135,11 +135,6 @@ class CircuitBreaker:
         return self._state.state
 
     @property
-    def is_closed(self) -> bool:
-        """Check if circuit is closed (normal operation)."""
-        return self._state.state == CircuitState.CLOSED
-
-    @property
     def is_open(self) -> bool:
         """Check if circuit is open (failing fast)."""
         return self._state.state == CircuitState.OPEN
@@ -266,60 +261,3 @@ class CircuitBreaker:
             "success_count": self._state.success_count,
             "remaining_timeout": (self._get_remaining_timeout() if self.is_open else None),
         }
-
-
-class CircuitBreakerRegistry:
-    """
-    Registry for managing multiple circuit breakers.
-
-    Provides a central place to get or create circuit breakers by name.
-    """
-
-    def __init__(self, default_config: CircuitBreakerConfig | None = None) -> None:
-        """
-        Initialize registry.
-
-        Args:
-            default_config: Default configuration for new breakers
-        """
-        self._breakers: dict[str, CircuitBreaker] = {}
-        self._default_config = default_config or CircuitBreakerConfig()
-        self._lock = asyncio.Lock()
-
-    async def get(
-        self,
-        name: str,
-        config: CircuitBreakerConfig | None = None,
-    ) -> CircuitBreaker:
-        """
-        Get or create a circuit breaker by name.
-
-        Args:
-            name: Unique identifier for the breaker
-            config: Configuration (uses default if not provided)
-
-        Returns:
-            CircuitBreaker instance
-        """
-        async with self._lock:
-            if name not in self._breakers:
-                self._breakers[name] = CircuitBreaker(
-                    name=name,
-                    config=config or self._default_config,
-                )
-            return self._breakers[name]
-
-    async def get_all_status(self) -> list[dict[str, Any]]:
-        """Get status of all circuit breakers."""
-        async with self._lock:
-            return [breaker.get_status() for breaker in self._breakers.values()]
-
-
-# Global registry
-circuit_breakers = CircuitBreakerRegistry(
-    default_config=CircuitBreakerConfig(
-        failure_threshold=5,
-        recovery_timeout=60.0,
-        success_threshold=2,
-    )
-)
