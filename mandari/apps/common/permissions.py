@@ -66,6 +66,7 @@ PERMISSIONS = {
     "motions.submit_to_ris": "Anträge ans RIS übermitteln",
     "motions.share": "Anträge mit anderen Organisationen teilen",
     "motions.comment": "Anträge kommentieren",
+    "motions.view_former_members": "Dokumente ehemaliger Mitglieder einsehen",
     # === PROTOKOLLE (Protocols) ===
     "protocols.view_public": "Öffentliche Protokolle anzeigen",
     "protocols.view_full": "Vollständige Protokolle anzeigen",
@@ -184,6 +185,7 @@ PERMISSION_CATEGORIES = {
             "motions.submit_to_ris",
             "motions.share",
             "motions.comment",
+            "motions.view_former_members",
         ],
     },
     "protocols": {
@@ -347,6 +349,7 @@ DEFAULT_ROLES = {
             "motions.submit_to_ris",
             "motions.share",
             "motions.comment",
+            "motions.view_former_members",  # private Dokumente ausgeschiedener Mitglieder (Issue #590)
             # Protocols
             "protocols.view_public",
             "protocols.view_full",
