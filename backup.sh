@@ -289,8 +289,9 @@ verify_installation() {
         label="${entry#*:}"
         local status
         local health
-        status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
-        health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container" 2>/dev/null || echo "no-healthcheck")
+        # docker inspect schreibt bei unbekanntem Container eine Leerzeile – nicht in die Anzeige übernehmen
+        status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null) || status="missing"
+        health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container" 2>/dev/null) || health="no-healthcheck"
 
         printf "  %-14s " "$label"
         if [ "$status" = "running" ]; then
@@ -769,7 +770,9 @@ if [ "$RESTORE_MODE" = true ]; then
         warn "Migrationen von Hand nachholen: docker exec $APP_CONTAINER python manage.py migrate"
         RESTORE_PROBLEMS+=("Migrationen")
     fi
-    if archive_has postgres_website.sql; then
+    # Website nur, wenn ihr Container läuft (Installationen ohne Website haben trotzdem deren Datenbank)
+    if archive_has postgres_website.sql &&
+        [ "$(docker inspect -f '{{.State.Running}}' "$WEBSITE_CONTAINER" 2>/dev/null)" = true ]; then
         if ! run_step "Website-Migrationen" docker exec "$WEBSITE_CONTAINER" python manage.py migrate --noinput; then
             warn "Website-Migrationen von Hand nachholen: docker exec $WEBSITE_CONTAINER python manage.py migrate"
         fi

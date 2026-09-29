@@ -212,7 +212,7 @@ jobs:
 
       - name: Wiederherstellen (./backup.sh --restore)
         run: |
-          echo j | BACKUP_PASSPHRASE="$BACKUP_TEST_PASSPHRASE" ./backup.sh --restore "$ARCHIVE" | tee "$RUNNER_TEMP/restore.txt"
+          echo j | BACKUP_PASSPHRASE="$BACKUP_TEST_PASSPHRASE" ./backup.sh --restore "$ARCHIVE" 2>&1 | tee "$RUNNER_TEMP/restore.txt"
 
       - name: Wiederhergestellten Stand prüfen
         run: |
@@ -244,8 +244,8 @@ jobs:
           grep -E "Datenbank-Migrationen.*✓" "$RUNNER_TEMP/restore.txt"
           grep -E "Suchindex neu aufbauen.*✓" "$RUNNER_TEMP/restore.txt"
           docker exec mandari python manage.py migrate --check
-          if grep -q "unvollständig" "$RUNNER_TEMP/restore.txt"; then
-            echo "::error::Wiederherstellung meldet unvollständig"; exit 1
+          if grep -q -e "unvollständig" -e "Fehlgeschlagen" "$RUNNER_TEMP/restore.txt"; then
+            echo "::error::Wiederherstellung meldet fehlgeschlagene Schritte"; exit 1
           fi
 
       - name: Diagnose bei Fehler
