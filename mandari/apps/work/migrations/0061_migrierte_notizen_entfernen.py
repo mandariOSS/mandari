@@ -26,7 +26,7 @@ def markierte_originale_loeschen(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("work", "0059_mitglied_entfernen_inhalte_erhalten"),
+        ("work", "0060_benachrichtigungsarten_zuruecksetzen"),
     ]
 
     operations = [
