@@ -15,6 +15,8 @@ Mit der Teilnahme gilt der [Verhaltenskodex](CODE_OF_CONDUCT.md).
 | Frage | [Diskussionen](https://github.com/mandariOSS/mandari/discussions) |
 | Erster Beitrag | Issues mit der Markierung [`good first issue`](https://github.com/mandariOSS/mandari/labels/good%20first%20issue) |
 
+Wie wir Arbeit planen und verfolgen (Epics, Meilensteine, Status, Entscheidungen), steht in [docs/PROJEKTSTEUERUNG.md](docs/PROJEKTSTEUERUNG.md).
+
 Bei größeren Änderungen lohnt sich ein Issue vorab — das erspart Arbeit, die am Ende nicht
 zum Projekt passt.
 
