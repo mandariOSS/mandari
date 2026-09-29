@@ -278,8 +278,9 @@ class SessionMirror:
                 "cancelled": bool(data.get("cancelled", False)),
                 "start": _parse_dt(data.get("start")),
                 "end": _parse_dt(data.get("end")),
-                "location_name": data.get("mandari:locationName"),
-                "location_address": data.get("mandari:locationAddress"),
+                # Gleiche Abbildung wie der Ingestor (ingestor/src/sync/processor.py, process_meeting)
+                "location_name": data.get("mandari:locationName") or data.get("mandari:locationRoom") or None,
+                "location_address": data.get("mandari:locationAddress") or None,
                 **self._base_defaults(data),
             },
         )

@@ -199,6 +199,14 @@ class OParlProcessor:
         elif isinstance(location, str):
             meeting.location_external_id = location
 
+        # Session-RIS von mandari liefert den Ort nicht als OParl-Location, sondern als
+        # Erweiterung (mandari:locationName/-Room/-Address, apps/session/api/oparl.py).
+        # Dieselbe Abbildung wie insight_sync/session_mirror.py, damit beide Wege gleich schreiben.
+        if not meeting.location_name:
+            meeting.location_name = data.get("mandari:locationName") or data.get("mandari:locationRoom") or None
+        if not meeting.location_address:
+            meeting.location_address = data.get("mandari:locationAddress") or None
+
         # Extract organization references
         orgs = data.get("organization", [])
         if orgs:
