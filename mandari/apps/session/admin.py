@@ -12,7 +12,9 @@ This ensures data isolation between tenants and prevents Django admins
 from accessing personal information.
 """
 
+from django import forms
 from django.contrib import admin, messages
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect
 from django.template.response import TemplateResponse
 from django.urls import reverse
@@ -20,6 +22,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
+from unfold.widgets import UnfoldAdminTextInputWidget
 
 from apps.common.admin_mixins import ImmutableAdminMixin, status_pill
 
@@ -52,6 +55,17 @@ from .models import (
 # - SessionOrganizationMembership: Member relationships
 #
 # These are managed through the Session portal itself.
+
+
+class TokenErzeugenForm(forms.Form):
+    """Bestätigung „API-Token erzeugen“ am Mandanten: Ohne abgeschicktes Formular entsteht kein Token."""
+
+    name = forms.CharField(
+        label="Name",
+        max_length=100,
+        help_text="Wofür der Zugang gedacht ist, z. B. der Name der Fraktion.",
+        widget=UnfoldAdminTextInputWidget,
+    )
 
 
 def _save_each(queryset, **changes) -> int:
@@ -249,23 +263,38 @@ class SessionTenantAdmin(ModelAdmin):
     @action(description="API-Token generieren", url_path="generate-token", permissions=["change"])
     def generate_api_token_action(self, request, object_id):
         """
-        Neuen API-Token für den Mandanten erzeugen – nur mit Änderungsrecht am Mandanten. Der Token
-        erscheint einmalig auf einer eigenen, nicht zwischengespeicherten Seite, nie in einer Meldung
-        (die im Messages-Cookie stünde).
+        Neuen API-Token für den Mandanten erzeugen – nur mit Änderungsrecht am Mandanten.
+
+        Der Aufruf (GET) zeigt nur die Bestätigungsseite; erzeugt wird erst mit dem abgeschickten
+        Formular (POST, CSRF-geschützt über ``admin_view``). Wer im Admin erzeugt hat, steht in der
+        Beschreibung des Tokens und im Audit-Log des Mandanten. Der Token erscheint einmalig auf einer
+        eigenen, nicht zwischengespeicherten Seite, nie in einer Meldung (die im Messages-Cookie stünde).
         """
+        from .admin_provisioning import actor_for
+
         tenant = get_object_or_404(self.model, pk=object_id)
-        token_obj, raw_token = SessionAPIToken.create_token(
-            tenant=tenant,
-            name=f"Auto-generiert am {timezone.now().strftime('%Y-%m-%d %H:%M')}",
-        )
-        context = {
-            **self.admin_site.each_context(request),
-            "title": "API-Token erzeugt",
-            "opts": self.model._meta,
-            "tenant": tenant,
-            "token": token_obj,
-            "raw_token": raw_token,
-        }
+        context = {**self.admin_site.each_context(request), "opts": self.model._meta, "tenant": tenant}
+        form = TokenErzeugenForm(request.POST if request.method == "POST" else None)
+        if not form.is_valid():
+            context.update(title="API-Token erzeugen", form=form)
+            return TemplateResponse(request, "admin/session/sessiontenant/token_confirm.html", context)
+
+        name = form.cleaned_data["name"]
+        durch = actor_for(request)
+        with transaction.atomic():
+            token_obj, raw_token = SessionAPIToken.create_token(
+                tenant=tenant,
+                name=name,
+                description=f"Im Admin erzeugt am {timezone.localtime():%d.%m.%Y %H:%M} – {durch}",
+            )
+            audit.log_event(
+                "create",
+                token_obj,
+                tenant=tenant,
+                request=request,
+                changes={"name": name, "token_prefix": token_obj.token_prefix, "durch": durch},
+            )
+        context.update(title="API-Token erzeugt", token=token_obj, raw_token=raw_token)
         response = TemplateResponse(request, "admin/session/sessiontenant/token_created.html", context)
         response["Cache-Control"] = "private, no-store"
         return response
@@ -1071,6 +1100,11 @@ class SessionAPITokenAdmin(ModelAdmin):
     Anlegen ist hier gesperrt: Das Formular kann keinen Token erzeugen (Token und Präfix sind nicht
     editierbar) und legte Einträge ohne Token an. Tokens entstehen im Sitzungsdienst oder über die
     Aktion am Mandanten; hier bleiben Ansicht, Bearbeiten und Deaktivieren.
+
+    Wieder aktivieren lässt sich ein Token hier nicht: Ein im Sitzungsdienst zurückgezogener Zugang
+    bleibt zurückgezogen (``is_active`` ist schreibgeschützt, eine Sammelaktion dafür gibt es nicht).
+    Bei Bedarf legt der Mandant einen neuen Zugang an. Deaktivieren und Änderungen im Formular landen
+    mit dem handelnden Admin-Konto im Audit-Log des Mandanten; der Mandant eines Tokens ist fest.
     """
 
     list_display = [
@@ -1094,13 +1128,14 @@ class SessionAPITokenAdmin(ModelAdmin):
     readonly_fields = [
         "token",
         "token_prefix",
+        "is_active",
         "last_used_at",
         "usage_count",
         "created_at",
         "updated_at",
     ]
     # last_used_ip removed for privacy
-    actions = ["deactivate_tokens", "activate_tokens"]
+    actions = ["deactivate_tokens"]
 
     fieldsets = (
         (None, {"fields": ("tenant", "name", "description")}),
@@ -1174,15 +1209,44 @@ class SessionAPITokenAdmin(ModelAdmin):
 
     @admin.action(description="Ausgewählte Tokens deaktivieren")
     def deactivate_tokens(self, request, queryset):
-        count = queryset.update(is_active=False)
+        """Einzeln speichern und je Token im Audit-Log des Mandanten festhalten, wer deaktiviert hat."""
+        from .admin_provisioning import actor_for
+
+        durch = actor_for(request)
+        count = 0
+        for token in queryset.filter(is_active=True).select_related("tenant"):
+            with transaction.atomic():
+                token.is_active = False
+                token.save(update_fields=["is_active", "updated_at"])
+                audit.log_event(
+                    "update",
+                    token,
+                    tenant=token.tenant,
+                    request=request,
+                    changes={"is_active": {"alt": True, "neu": False}, "durch": durch},
+                )
+            count += 1
         messages.success(request, f"{count} Token(s) wurden deaktiviert.")
 
-    @admin.action(description="Ausgewählte Tokens aktivieren")
-    def activate_tokens(self, request, queryset):
-        count = queryset.update(is_active=True)
-        messages.success(request, f"{count} Token(s) wurden aktiviert.")
+    def get_readonly_fields(self, request, obj=None):
+        # Der Mandant eines bestehenden Tokens ist fest (kein Umhängen in einen anderen Mandanten)
+        felder = list(super().get_readonly_fields(request, obj))
+        return [*felder, "tenant"] if obj is not None else felder
 
-    # NOTE: save_model for created_by removed - handled in Session portal
+    def save_model(self, request, obj, form, change):
+        """Änderungen im Formular mit Feldnamen und handelndem Admin-Konto protokollieren (ohne Werte)."""
+        from .admin_provisioning import actor_for
+
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            if change and form.changed_data:
+                audit.log_event(
+                    "update",
+                    obj,
+                    tenant=obj.tenant,
+                    request=request,
+                    changes={"felder": sorted(form.changed_data), "durch": actor_for(request)},
+                )
 
     def has_add_permission(self, request):
         return False
