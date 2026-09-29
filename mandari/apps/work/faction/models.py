@@ -12,7 +12,7 @@ Internal meetings for political organizations with:
 import secrets
 import uuid
 from datetime import timedelta
-from typing import Any
+from typing import Any, ClassVar
 
 from django.db import models
 from django.utils import timezone
@@ -747,10 +747,85 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
             return None
 
 
-class FactionAttendance(models.Model):
+class MemberNameSnapshotMixin(models.Model):
+    """
+    Namen beteiligter Mitglieder am Eintrag sichern (Issue #591).
+
+    Anwesenheitslisten, Protokolleinträge und Teilnahmebestätigungen belegen, wer an einer
+    Beschlussfassung beteiligt war. Wird die Mitgliedschaft entfernt, leert ``SET_NULL`` den
+    Verweis (#420); der Name muss trotzdem erhalten bleiben, unabhängig davon, ob das Protokoll
+    schon genehmigt ist. Deshalb hat jeder Verweis aus ``MEMBER_NAME_SNAPSHOTS`` ein Feld mit dem
+    gesicherten Namen. Es wird gesetzt
+
+    - beim Speichern, sobald der Verweis gesetzt oder geändert wird (ein ausdrücklich geleerter
+      Verweis leert auch den Namen),
+    - spätestens beim Entfernen der Mitgliedschaft mit dem dann aktuellen Namen
+      (:func:`apps.work.faction.services.preserve_member_names`, ohne ``save()``).
+
+    Angezeigt wird, solange die Mitgliedschaft besteht, der aktuelle Name, danach der gesicherte
+    (:func:`apps.common.formatting.member_name`).
+    """
+
+    #: Verweis auf die Mitgliedschaft → Feld mit dem gesicherten Namen
+    MEMBER_NAME_SNAPSHOTS: ClassVar[dict[str, str]] = {}
+
+    class Meta:
+        abstract = True
+
+    @classmethod
+    def from_db(cls, db: Any, field_names: Any, values: Any, **kwargs: Any) -> Any:
+        # Geladene Verweise merken: So erkennt save() geänderte und ausdrücklich geleerte Verweise.
+        instance = super().from_db(db, field_names, values, **kwargs)
+        instance._stored_member_ids = instance._loaded_member_ids()
+        return instance
+
+    def _loaded_member_ids(self) -> dict[str, Any]:
+        """Geladene Verweise; zurückgestellte Felder bleiben außen vor (keine zusätzliche Abfrage)."""
+        return {fk: self.__dict__[f"{fk}_id"] for fk in self.MEMBER_NAME_SNAPSHOTS if f"{fk}_id" in self.__dict__}
+
+    def _refresh_member_name_snapshots(self, update_fields: Any) -> list[str]:
+        """Gesicherte Namen zu gesetzten oder geänderten Verweisen nachführen; liefert die geänderten Felder."""
+        stored: dict[str, Any] = getattr(self, "_stored_member_ids", {})
+        changed = []
+        for fk, snapshot_field in self.MEMBER_NAME_SNAPSHOTS.items():
+            attname = f"{fk}_id"
+            if attname not in self.__dict__:
+                continue
+            if update_fields is not None and fk not in update_fields and attname not in update_fields:
+                continue
+            member_id = self.__dict__[attname]
+            current = getattr(self, snapshot_field)
+            if member_id is None:
+                # Nur ein ausdrücklich geleerter Verweis leert den Namen. Beim Entfernen des Mitglieds
+                # leert SET_NULL den Verweis ohne save(); der gesicherte Name bleibt dann stehen.
+                name = "" if stored.get(fk) is not None else current
+            elif current and stored.get(fk) == member_id:
+                continue
+            else:
+                name = formatting.member_name_snapshot(getattr(self, fk))
+            if name != current:
+                setattr(self, snapshot_field, name)
+                changed.append(snapshot_field)
+        return changed
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        update_fields = kwargs.get("update_fields")
+        changed = self._refresh_member_name_snapshots(update_fields)
+        if update_fields is not None and changed:
+            kwargs["update_fields"] = [*update_fields, *changed]
+        super().save(*args, **kwargs)
+        self._stored_member_ids = self._loaded_member_ids()
+
+
+class FactionAttendance(MemberNameSnapshotMixin):
     """
     Attendance tracking for faction meetings.
     """
+
+    MEMBER_NAME_SNAPSHOTS = {
+        "membership": "member_name_snapshot",
+        "confirmed_final_by": "confirmed_final_by_name_snapshot",
+    }
 
     STATUS_CHOICES = [
         ("invited", "Eingeladen"),
@@ -774,6 +849,14 @@ class FactionAttendance(models.Model):
         blank=True,
         related_name="faction_attendances",
         verbose_name="Mitglied",
+    )
+    # Name des Mitglieds, bleibt nach dem Entfernen der Mitgliedschaft erhalten (Issue #591)
+    member_name_snapshot = models.CharField(
+        max_length=formatting.MEMBER_NAME_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Name des Mitglieds (gesichert)",
     )
 
     # Guest support
@@ -807,6 +890,13 @@ class FactionAttendance(models.Model):
         related_name="finally_confirmed_attendances",
         verbose_name="Final bestätigt von",
     )
+    confirmed_final_by_name_snapshot = models.CharField(
+        max_length=formatting.MEMBER_NAME_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Final bestätigt von (Name, gesichert)",
+    )
 
     # Response
     response_message = models.TextField(blank=True, verbose_name="Nachricht", help_text="Begründung bei Absage")
@@ -827,14 +917,21 @@ class FactionAttendance(models.Model):
     def __str__(self):
         if self.is_guest:
             return f"{self.guest_name} (Gast) @ {self.meeting.title}"
-        who = self.membership.user.email if self.membership else formatting.FORMER_MEMBER
+        who = self.membership.user.email if self.membership else self.get_display_name()
         return f"{who} @ {self.meeting.title}"
 
-    def get_display_name(self):
-        """Return display name for member or guest (entferntes Mitglied: „Ehemaliges Mitglied“)."""
+    def get_display_name(self) -> str:
+        """Name des Mitglieds oder Gasts; nach dem Entfernen der gesicherte Name (Issue #591)."""
         if self.is_guest:
             return self.guest_name
-        return formatting.member_name(self.membership)
+        return formatting.member_name(self.membership, self.member_name_snapshot)
+
+    @property
+    def confirmed_final_by_name(self) -> str:
+        """Wer die Teilnahme final bestätigt hat; leer, wenn unbekannt."""
+        if not self.confirmed_final_by_id and not self.confirmed_final_by_name_snapshot:
+            return ""
+        return formatting.member_name(self.confirmed_final_by, self.confirmed_final_by_name_snapshot)
 
     @property
     def duration(self) -> timedelta | None:
@@ -844,7 +941,7 @@ class FactionAttendance(models.Model):
         return None
 
 
-class FactionProtocolEntry(EncryptionMixin, models.Model):
+class FactionProtocolEntry(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
     """
     Protocol entry during a faction meeting.
 
@@ -854,6 +951,11 @@ class FactionProtocolEntry(EncryptionMixin, models.Model):
     - Action items (Aufgaben)
     - General notes
     """
+
+    MEMBER_NAME_SNAPSHOTS = {
+        "speaker": "speaker_name_snapshot",
+        "action_assignee": "action_assignee_name_snapshot",
+    }
 
     ENTRY_TYPE_CHOICES = [
         ("speech", "Wortbeitrag"),
@@ -898,6 +1000,14 @@ class FactionProtocolEntry(EncryptionMixin, models.Model):
         related_name="protocol_speeches",
         verbose_name="Redner",
     )
+    # Namen bleiben nach dem Entfernen der Mitgliedschaft erhalten (Issue #591)
+    speaker_name_snapshot = models.CharField(
+        max_length=formatting.MEMBER_NAME_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Redner (Name, gesichert)",
+    )
 
     # Action item specifics
     action_assignee = models.ForeignKey(
@@ -907,6 +1017,13 @@ class FactionProtocolEntry(EncryptionMixin, models.Model):
         blank=True,
         related_name="protocol_actions",
         verbose_name="Verantwortlich",
+    )
+    action_assignee_name_snapshot = models.CharField(
+        max_length=formatting.MEMBER_NAME_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Verantwortlich (Name, gesichert)",
     )
     action_due_date = models.DateField(null=True, blank=True, verbose_name="Fällig bis")
     action_completed = models.BooleanField(default=False, verbose_name="Erledigt")
@@ -954,6 +1071,20 @@ class FactionProtocolEntry(EncryptionMixin, models.Model):
     def content(self):
         """Get decrypted content for templates."""
         return self.get_content_decrypted()
+
+    @property
+    def speaker_name(self) -> str:
+        """Redner:in; nach dem Entfernen der Mitgliedschaft der gesicherte Name (Issue #591), sonst leer."""
+        if not self.speaker_id and not self.speaker_name_snapshot:
+            return ""
+        return formatting.member_name(self.speaker, self.speaker_name_snapshot)
+
+    @property
+    def action_assignee_name(self) -> str:
+        """Zuständige Person einer Aufgabe; nach dem Entfernen der gesicherte Name, sonst leer."""
+        if not self.action_assignee_id and not self.action_assignee_name_snapshot:
+            return ""
+        return formatting.member_name(self.action_assignee, self.action_assignee_name_snapshot)
 
     def get_encryption_organization(self):
         return self.meeting.organization

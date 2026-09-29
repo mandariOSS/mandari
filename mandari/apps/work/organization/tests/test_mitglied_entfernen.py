@@ -381,8 +381,9 @@ def test_darstellungen_ohne_mitglied(org: Any, admin: Any, mitglied: Any, bestan
     b = bestand
     services.remove_member(org, mitglied, admin.user)
 
-    assert _neu(b["teilnahme_vergangen"]).get_display_name() == FORMER_MEMBER
-    assert FORMER_MEMBER in str(_neu(b["teilnahme_vergangen"]))
+    # Anwesenheit belegt die Beschlussfassung: der Name bleibt erhalten (Issue #591)
+    assert _neu(b["teilnahme_vergangen"]).get_display_name() == "geht"
+    assert "geht" in str(_neu(b["teilnahme_vergangen"]))
     assert FORMER_MEMBER in str(_neu(b["kommentar"]))
     assert FORMER_MEMBER in str(_neu(b["aufgabenkommentar"]))
     assert _neu(b["aufgabenverlauf"]).description.startswith(FORMER_MEMBER)

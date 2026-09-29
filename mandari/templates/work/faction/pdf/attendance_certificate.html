@@ -30,7 +30,7 @@ Der Name der Inhaberin/des Inhabers steht NUR in diesem PDF — die
             <td>{{ attendance.get_participation_type_display }}</td>
             <td>
                 Bestätigt durch
-                {% if attendance.confirmed_final_by %}{{ attendance.confirmed_final_by.user.get_display_name }}{% else %}den Vorstand{% endif %},
+                {{ attendance.confirmed_final_by_name|default:"den Vorstand" }},
                 {{ attendance.confirmed_final_at|date:"d.m.Y" }}
             </td>
         </tr>

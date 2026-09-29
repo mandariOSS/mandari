@@ -18,8 +18,12 @@ Datenschutz (Akzeptanzkriterium):
 import hashlib
 import io
 import logging
+from collections.abc import Iterable
+from datetime import date
+from typing import Any
 
 from django.conf import settings
+from django.db.models import Q, QuerySet
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -57,19 +61,25 @@ def confirmed_attendances(membership, period_start, period_end):
     )
 
 
-def bulk_confirmed_attendances(organization, period_start, period_end):
-    """Alle final bestätigten Anwesenheiten der Organisation im Zeitraum (je Person)."""
+def bulk_confirmed_attendances(organization: Any, period_start: date, period_end: date) -> QuerySet[FactionAttendance]:
+    """
+    Alle final bestätigten Anwesenheiten der Organisation im Zeitraum (je Person).
+
+    Ehemalige Mitglieder zählen mit ihrem gesicherten Namen mit (Issue #591): Der Export dient
+    z. B. der Abrechnung von Sitzungsgeld und muss auch Teilnahmen vor dem Ausscheiden belegen.
+    """
     return (
         FactionAttendance.objects.filter(
+            Q(membership__isnull=False) | ~Q(member_name_snapshot=""),
             meeting__organization=organization,
-            membership__isnull=False,
+            is_guest=False,
             status="present",
             confirmed_final_at__isnull=False,
             meeting__start__date__gte=period_start,
             meeting__start__date__lte=period_end,
         )
         .select_related("membership__user", "meeting", "confirmed_final_by__user")
-        .order_by("membership__user__last_name", "membership__user__email", "meeting__start")
+        .order_by("membership__user__last_name", "membership__user__email", "member_name_snapshot", "meeting__start")
     )
 
 
@@ -176,12 +186,13 @@ def build_certificate_pdf(certificate, attendances) -> bytes:
     return html_to_pdf(html)
 
 
-def _group_by_member(attendances):
-    """Teilnahmen je Mitglied gruppieren (für den Sammel-Export)."""
-    groups: dict = {}
+def _group_by_member(attendances: Iterable[FactionAttendance]) -> list[dict[str, Any]]:
+    """Teilnahmen je Mitglied gruppieren (für den Sammel-Export); ehemalige Mitglieder nach gesichertem Namen."""
+    groups: dict[Any, dict[str, Any]] = {}
     for attendance in attendances:
-        groups.setdefault(attendance.membership_id, {"membership": attendance.membership, "attendances": []})
-        groups[attendance.membership_id]["attendances"].append(attendance)
+        key = attendance.membership_id or ("ehemalig", attendance.member_name_snapshot)
+        group = groups.setdefault(key, {"name": attendance.get_display_name(), "attendances": []})
+        group["attendances"].append(attendance)
     return list(groups.values())
 
 
@@ -215,17 +226,15 @@ def build_bulk_export_csv(organization, period_start, period_end, attendances) -
         ]
     )
     for attendance in attendances:
-        confirmed_by = ""
-        if attendance.confirmed_final_by_id and attendance.confirmed_final_by:
-            confirmed_by = attendance.confirmed_final_by.user.get_display_name()
         writer.writerow(
             [
-                attendance.membership.user.get_display_name(),
-                attendance.membership.user.email,
+                attendance.get_display_name(),
+                # Ehemalige Mitglieder: nur der gesicherte Name, keine Kontaktdaten
+                attendance.membership.user.email if attendance.membership else "",
                 attendance.meeting.title,
                 timezone.localtime(attendance.meeting.start).strftime("%d.%m.%Y"),
                 attendance.get_participation_type_display(),
-                confirmed_by,
+                attendance.confirmed_final_by_name,
                 timezone.localtime(attendance.confirmed_final_at).strftime("%d.%m.%Y %H:%M"),
             ]
         )

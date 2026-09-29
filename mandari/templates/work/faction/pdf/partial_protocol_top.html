@@ -5,7 +5,7 @@
         <strong>{{ item.title }}</strong>
         {% for entry in item.entries_list %}
         <p class="entry">
-            <span class="entry-type">{{ entry.type_display }}</span>{% if entry.speaker %} · {{ entry.speaker }}{% endif %}<br>
+            <span class="entry-type">{{ entry.type_display }}</span>{% if entry.speaker %} · {{ entry.speaker }}{% endif %}{% if entry.assignee %} · zuständig: {{ entry.assignee }}{% endif %}<br>
             {{ entry.content|linebreaksbr }}
         </p>
         {% endfor %}

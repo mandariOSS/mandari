@@ -476,6 +476,28 @@ def discard_open_invitations(membership) -> int:
     return count
 
 
+def preserve_member_names(membership) -> int:
+    """
+    Namen eines Mitglieds an Anwesenheit und Protokolleinträgen sichern (Issue #591).
+
+    Wird vor dem Löschen der Mitgliedschaft aufgerufen: Danach leert ``SET_NULL`` die Verweise,
+    Protokolle, Anwesenheitslisten und Teilnahmebestätigungen zeigen den hier gesicherten Namen.
+    Gilt unabhängig von der Genehmigung des Protokolls; der Eintrag selbst bleibt unverändert
+    (``update()`` ohne Sperrprüfung und ohne Änderungshistorie, nur das Namensfeld).
+    Liefert die Anzahl aktualisierter Einträge.
+    """
+    from apps.common.formatting import member_name_snapshot
+
+    from .models import FactionAttendance, FactionProtocolEntry
+
+    name = member_name_snapshot(membership)
+    count = 0
+    for model in (FactionAttendance, FactionProtocolEntry):
+        for fk, snapshot_field in model.MEMBER_NAME_SNAPSHOTS.items():
+            count += model.objects.filter(**{fk: membership}).update(**{snapshot_field: name})
+    return count
+
+
 def safe_link_url(url: str) -> bool:
     """Verweise nur als http(s)-Adresse (kein ``javascript:``, ``data:`` u. Ä.)."""
     from urllib.parse import urlsplit
@@ -551,14 +573,15 @@ def build_faction_protocol_pdf(meeting, *, internal: bool) -> bytes:
     # Protokolleinträge entschlüsseln und je TOP gruppieren
     entries_by_item: dict = {}
     general_entries = []
-    for entry in meeting.protocol_entries.select_related("speaker__user", "agenda_item").order_by(
-        "order", "created_at"
-    ):
+    for entry in meeting.protocol_entries.select_related(
+        "speaker__user", "action_assignee__user", "agenda_item"
+    ).order_by("order", "created_at"):
         payload = {
             "type_display": entry.get_entry_type_display(),
             "entry_type": entry.entry_type,
             "content": entry.get_content_decrypted() or "",
-            "speaker": entry.speaker.user.get_display_name() if entry.speaker_id else "",
+            "speaker": entry.speaker_name,
+            "assignee": entry.action_assignee_name if entry.entry_type == "action" else "",
         }
         if entry.agenda_item_id:
             entries_by_item.setdefault(entry.agenda_item_id, []).append(payload)

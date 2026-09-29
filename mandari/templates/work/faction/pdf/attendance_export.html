@@ -18,7 +18,7 @@ eines Zeitraums in einem Durchgang — zum Einreichen bei der Verwaltung
     </p>
 
     {% for group in groups %}
-    <h2>{{ group.membership.user.get_display_name }} — {{ group.attendances|length }} Teilnahme{{ group.attendances|length|pluralize:"n" }}</h2>
+    <h2>{{ group.name }} — {{ group.attendances|length }} Teilnahme{{ group.attendances|length|pluralize:"n" }}</h2>
     <table class="agenda">
         <tr>
             <td class="top-nr"><strong>Datum</strong></td>
@@ -32,7 +32,7 @@ eines Zeitraums in einem Durchgang — zum Einreichen bei der Verwaltung
             <td>{{ attendance.meeting.title }}</td>
             <td>{{ attendance.get_participation_type_display }}</td>
             <td>
-                {% if attendance.confirmed_final_by %}{{ attendance.confirmed_final_by.user.get_display_name }}{% else %}Vorstand{% endif %},
+                {{ attendance.confirmed_final_by_name|default:"Vorstand" }},
                 {{ attendance.confirmed_final_at|date:"d.m.Y" }}
             </td>
         </tr>
