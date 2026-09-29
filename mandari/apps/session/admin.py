@@ -1055,9 +1055,23 @@ class SessionAuditLogAdmin(ImmutableAdminMixin, ModelAdmin):
 # =============================================================================
 
 
+#: Wo Tokens entstehen – nur dort wird der Token einmalig angezeigt und als Hash gespeichert
+TOKEN_ADD_HINT = (
+    "Gespeichert ist nur der Hash des Tokens; der Token selbst wurde bei der Anlage einmalig angezeigt. "
+    "Neue Tokens legt der Mandant im Sitzungsdienst unter „Einstellungen → Einreichungs-Zugänge“ an; "
+    "im Admin über die Aktion „API-Token generieren“ am Mandanten."
+)
+
+
 @admin.register(SessionAPIToken)
 class SessionAPITokenAdmin(ModelAdmin):
-    """Admin for Session API tokens."""
+    """
+    Admin for Session API tokens.
+
+    Anlegen ist hier gesperrt: Das Formular kann keinen Token erzeugen (Token und Präfix sind nicht
+    editierbar) und legte Einträge ohne Token an. Tokens entstehen im Sitzungsdienst oder über die
+    Aktion am Mandanten; hier bleiben Ansicht, Bearbeiten und Deaktivieren.
+    """
 
     list_display = [
         "name",
@@ -1094,7 +1108,7 @@ class SessionAPITokenAdmin(ModelAdmin):
             "Token",
             {
                 "fields": ("token_prefix", "token"),
-                "description": "Der Token wird beim Erstellen einmalig angezeigt und kann danach nicht mehr abgerufen werden. Nutzen Sie 'Neuen Token generieren' um einen Token zu erstellen.",
+                "description": TOKEN_ADD_HINT,
             },
         ),
         (
@@ -1170,15 +1184,13 @@ class SessionAPITokenAdmin(ModelAdmin):
 
     # NOTE: save_model for created_by removed - handled in Session portal
 
+    def has_add_permission(self, request):
+        return False
+
     def add_view(self, request, form_url="", extra_context=None):
-        """Show info message when adding new token."""
-        extra_context = extra_context or {}
-        messages.info(
-            request,
-            "Nach dem Speichern wird der vollständige Token einmalig angezeigt. "
-            "Kopieren Sie ihn sofort, da er danach nicht mehr abgerufen werden kann!",
-        )
-        return super().add_view(request, form_url, extra_context)
+        """Direkter Aufruf der Anlage: Hinweis auf den Weg über den Sitzungsdienst."""
+        messages.info(request, TOKEN_ADD_HINT)
+        return redirect("admin:session_sessionapitoken_changelist")
 
 
 # =============================================================================
