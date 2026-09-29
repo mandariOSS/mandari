@@ -16,11 +16,6 @@
             {% if item.decision_obj.decision_text %}<br>{{ item.decision_obj.decision_text|linebreaksbr }}{% endif %}
             {% if item.decision_obj.notes %}<br><span class="muted">{{ item.decision_obj.notes|linebreaksbr }}</span>{% endif %}
         </div>
-        {% elif item.has_decision %}
-        <div class="decision-box">
-            <strong>Abstimmung:</strong>
-            Ja: {{ item.votes_for }}, Nein: {{ item.votes_against }}, Enthaltung: {{ item.votes_abstain }}
-        </div>
         {% endif %}
     </td>
 </tr>

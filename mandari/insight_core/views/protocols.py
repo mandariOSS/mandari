@@ -130,10 +130,15 @@ class PublicProtocolDetailView(TemplateView):
         context["body"] = meeting.organization.get_primary_body() if meeting.organization else None
 
         # Only show public agenda items
-        agenda_items = meeting.agenda_items.filter(
-            visibility="public",
-            proposal_status="active",  # Only accepted items
-        ).order_by("order", "number")
+        # Abstimmungsergebnis aus FactionDecision (recorded_decision), nicht aus der Kopie am TOP
+        agenda_items = (
+            meeting.agenda_items.filter(
+                visibility="public",
+                proposal_status="active",  # Only accepted items
+            )
+            .select_related("decision")
+            .order_by("order", "number")
+        )
 
         context["agenda_items"] = agenda_items
 

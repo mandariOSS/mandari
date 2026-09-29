@@ -621,7 +621,8 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
     decision_encrypted = EncryptedTextField(verbose_name="Beschluss")
     has_decision = models.BooleanField(default=False, verbose_name="Beschluss gefasst")
 
-    # Voting result
+    # Kopie des Abstimmungsergebnisses. Anzeigen lesen ausschließlich FactionDecision
+    # (recorded_decision); die Felder bleiben für ältere Images beim Rückfall bestehen.
     votes_for = models.PositiveIntegerField(default=0, verbose_name="Ja-Stimmen")
     votes_against = models.PositiveIntegerField(default=0, verbose_name="Nein-Stimmen")
     votes_abstain = models.PositiveIntegerField(default=0, verbose_name="Enthaltungen")
@@ -728,6 +729,22 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
     def is_rejected(self) -> bool:
         """Check if this proposal was rejected."""
         return self.proposal_status == "rejected"
+
+    @property
+    def recorded_decision(self):
+        """
+        Erfasstes Abstimmungsergebnis (FactionDecision) oder ``None``.
+
+        Einzige Quelle für Anzeigen (Niederschrift, öffentliches Protokoll): Die Kopie am TOP
+        (``has_decision``/``votes_*``) setzte früher auch ein Protokolleintrag „Beschluss“ ohne
+        Stimmen – als 0/0/0.
+        """
+        from django.core.exceptions import ObjectDoesNotExist
+
+        try:
+            return self.decision
+        except ObjectDoesNotExist:
+            return None
 
 
 class FactionAttendance(models.Model):

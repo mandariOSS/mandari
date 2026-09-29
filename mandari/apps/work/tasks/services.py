@@ -165,12 +165,23 @@ def delete_label(label: TaskLabel) -> None:
 
 @transaction.atomic
 def import_protocol_entries(organization: Organization, membership: Membership, entry_ids: Iterable[str]) -> int:
-    """Aufgaben aus Protokolleinträgen (Typ ``action``) anlegen; liefert die Anzahl."""
+    """
+    Aufgaben aus Protokolleinträgen (Typ ``action``) anlegen; liefert die Anzahl.
+
+    Schon übernommene oder erledigte Einträge werden übersprungen – ein erneutes Absenden legt
+    keine doppelten Aufgaben an. Die Aufgabe merkt sich ihre Herkunft (``related_protocol_entry``).
+    """
+    imported_ids, legacy_keys = selectors.protocol_import_state(organization)
     created = 0
     for entry_id in entry_ids:
         entry = selectors.find_protocol_entry(organization, membership, entry_id, action_only=True)
-        if entry is None:
+        if (
+            entry is None
+            or entry.action_completed
+            or selectors.is_protocol_entry_imported(entry, legacy_keys, imported_ids)
+        ):
             continue
+        imported_ids.add(entry.id)
         task = Task.objects.create(
             organization=organization,
             title=entry.content[:500] if entry.content else "Protokoll-Aufgabe",
@@ -181,6 +192,7 @@ def import_protocol_entries(organization: Organization, membership: Membership, 
             priority="medium",
             position=selectors.next_position(organization, "todo"),
             related_faction_meeting=entry.meeting,
+            related_protocol_entry=entry,
         )
         log_activity(task, membership, "created")
         created += 1

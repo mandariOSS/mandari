@@ -113,7 +113,8 @@
                             </p>
                             {% endif %}
 
-                            {% if item.has_decision %}
+                            {% with decision=item.recorded_decision %}
+                            {% if decision %}
                             <div class="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                                 <div class="flex items-center gap-2 mb-2">
                                     <i data-lucide="vote" class="w-4 h-4 text-primary-600 dark:text-primary-400"></i>
@@ -122,19 +123,20 @@
                                 <div class="flex items-center gap-4 text-sm">
                                     <span class="text-green-600 dark:text-green-400">
                                         <i data-lucide="check" class="w-4 h-4 inline"></i>
-                                        {{ item.votes_for }} Ja
+                                        {{ decision.votes_yes }} Ja
                                     </span>
                                     <span class="text-red-600 dark:text-red-400">
                                         <i data-lucide="x" class="w-4 h-4 inline"></i>
-                                        {{ item.votes_against }} Nein
+                                        {{ decision.votes_no }} Nein
                                     </span>
                                     <span class="text-gray-500 dark:text-gray-400">
                                         <i data-lucide="minus" class="w-4 h-4 inline"></i>
-                                        {{ item.votes_abstain }} Enthaltung
+                                        {{ decision.votes_abstain }} Enthaltung
                                     </span>
                                 </div>
                             </div>
                             {% endif %}
+                            {% endwith %}
                         </div>
                     </div>
                 </div>

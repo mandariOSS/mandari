@@ -509,19 +509,13 @@ def _decorate_protocol_items(items, entries_by_item, *, include_internal: bool):
     decorated = []
     for item in items:
         item.entries_list = entries_by_item.get(item.id, [])
-        try:
-            item.decision_obj = item.decision
-        except Exception:
-            item.decision_obj = None
+        item.decision_obj = item.recorded_decision
         item.children_list = []
         for child in item.children.all().order_by("order", "number"):
             if not include_internal and is_item_internal(child):
                 continue
             child.entries_list = entries_by_item.get(child.id, [])
-            try:
-                child.decision_obj = child.decision
-            except Exception:
-                child.decision_obj = None
+            child.decision_obj = child.recorded_decision
             item.children_list.append(child)
         decorated.append(item)
     return decorated
