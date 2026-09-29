@@ -1,0 +1,34 @@
+{% comment %}
+Stand einer Einreichung per E-Mail (Issue #580): wer, wann, an wen, Zustellung und Eingangsbestätigung.
+Kontext: email_submission (mit recipients), motion
+{% endcomment %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+    <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+        <i data-lucide="mail-check" class="w-5 h-5 text-green-500"></i> Eingereicht per E-Mail
+    </h3>
+    <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+        <dt class="text-gray-500 dark:text-gray-400">Versendet am</dt>
+        <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ email_submission.sent_at|date:"d.m.Y, H:i" }} Uhr</dd>
+        <dt class="text-gray-500 dark:text-gray-400">Eingereicht von</dt>
+        <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ email_submission.submitted_by_name }}</dd>
+        <dt class="text-gray-500 dark:text-gray-400">Betreff</dt>
+        <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ email_submission.subject }}</dd>
+        <dt class="text-gray-500 dark:text-gray-400">Anhänge</dt>
+        <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ email_submission.attachment_names|join:", " }}</dd>
+    </dl>
+    <ul class="divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+        {% for recipient in email_submission.recipients.all %}
+        <li class="py-2 flex flex-wrap items-center gap-2">
+            <span class="font-medium text-gray-900 dark:text-white">{{ recipient.label }}</span>
+            <span class="text-gray-500">{{ recipient.email }}</span>
+            {% if not recipient.delivered %}
+            <span class="ml-auto text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">nicht zugestellt</span>
+            {% elif recipient.confirmed_at %}
+            <span class="ml-auto text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">Eingang bestätigt am {{ recipient.confirmed_at|date:"d.m.Y, H:i" }} Uhr</span>
+            {% else %}
+            <span class="ml-auto text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Eingang noch nicht bestätigt</span>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</div>

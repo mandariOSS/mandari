@@ -1,0 +1,37 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Per E-Mail eingereicht: {{ motion.title }}{% endblock %}
+{% block preheader %}Ihr Antrag ist an die Verwaltung versendet.{% endblock %}
+{% block content %}
+<h1 class="h1">Ihr Antrag ist versendet</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Guten Tag {{ recipient.get_full_name|default:recipient.email }},</p>
+<p>Sie haben „{{ motion.title }}“ im Namen von {{ organization.name }} per E-Mail bei der Verwaltung eingereicht.</p>
+<table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+        <td class="key">Betreff:</td>
+        <td>{{ submission.subject }}</td>
+    </tr>
+    <tr>
+        <td class="key">Empfänger:</td>
+        <td>{% for r in submission.recipients.all %}{{ r.label }} ({{ r.email }}){% if not r.delivered %} – nicht zugestellt{% endif %}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+    </tr>
+    <tr>
+        <td class="key">Versendet am:</td>
+        <td>{{ submission.sent_at|date:"d.m.Y, H:i" }} Uhr</td>
+    </tr>
+    <tr>
+        <td class="key">Anhänge:</td>
+        <td>{% for name in submission.attachment_names %}{{ name }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+    </tr>
+</table>
+<div class="card card-accent">
+    <p><strong>Wie geht es weiter?</strong></p>
+    <p>Bestätigt die Verwaltung den Eingang über den Link in ihrer E-Mail, sehen Sie das in mandari am Dokument und erhalten eine Benachrichtigung.</p>
+</div>
+<div class="btn-wrap">
+    <a class="btn" href="{{ status_url }}">Einreichung ansehen</a>
+</div>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

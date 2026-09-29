@@ -1998,6 +1998,72 @@ class MotionAdministrationEvent(models.Model):
         return f"{self.motion_id}: {self.key}"
 
 
+def _confirmation_nonce() -> str:
+    import secrets
+
+    return secrets.token_hex(16)
+
+
+class MotionEmailSubmission(models.Model):
+    """
+    Einreichung eines Dokuments per E-Mail an die Verwaltungskontakte (Issue #580).
+
+    Für Kommunen ohne mandari Session: Der Antrag geht als PDF mit seinen Anhängen über den
+    Mailweg der Organisation an die gewählten Verwaltungskontakte. Festgehalten wird, wer wann
+    an wen eingereicht hat; je Empfänger lässt sich der Eingang über einen Link bestätigen.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    motion = models.ForeignKey(
+        Motion, on_delete=models.CASCADE, related_name="email_submissions", verbose_name="Dokument"
+    )
+    submitted_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Eingereicht von",
+    )
+    # Name und Adresse zum Zeitpunkt der Einreichung (bleiben nach Austritt nachvollziehbar)
+    submitted_by_name = models.CharField(max_length=255, verbose_name="Name der einreichenden Person")
+    submitted_by_email = models.EmailField(blank=True, verbose_name="E-Mail der einreichenden Person")
+    subject = models.CharField(max_length=300, verbose_name="Betreff")
+    attachment_names = models.JSONField(default=list, blank=True, verbose_name="Anhänge")
+    sent_at = models.DateTimeField(default=timezone.now, verbose_name="Versendet am")
+
+    class Meta:
+        verbose_name = "Einreichung per E-Mail"
+        verbose_name_plural = "Einreichungen per E-Mail"
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"{self.subject} ({self.sent_at:%d.%m.%Y})"
+
+
+class MotionEmailRecipient(models.Model):
+    """Empfänger einer Einreichung per E-Mail – mit Zustellung und Eingangsbestätigung (Issue #580)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    submission = models.ForeignKey(
+        MotionEmailSubmission, on_delete=models.CASCADE, related_name="recipients", verbose_name="Einreichung"
+    )
+    label = models.CharField(max_length=200, verbose_name="Bezeichnung")
+    email = models.EmailField(verbose_name="E-Mail")
+    delivered = models.BooleanField(default=False, verbose_name="Versendet")
+    # Nur in der Datenbank: Neu setzen macht den Bestätigungslink ungültig
+    confirmation_nonce = models.CharField(max_length=32, default=_confirmation_nonce, editable=False)
+    confirmed_at = models.DateTimeField(null=True, blank=True, verbose_name="Eingang bestätigt am")
+
+    class Meta:
+        verbose_name = "Empfänger der Einreichung"
+        verbose_name_plural = "Empfänger der Einreichung"
+        ordering = ["label", "email"]
+
+    def __str__(self):
+        return f"{self.label} <{self.email}>"
+
+
 def content_fingerprint(content: str | None) -> str:
     """
     Kurzer Fingerabdruck des gespeicherten Inhalts für die Konflikterkennung (#184).
