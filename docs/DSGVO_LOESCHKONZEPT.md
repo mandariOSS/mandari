@@ -63,7 +63,7 @@ eine dieser Fristen gerissen ist:
 | Bestätigt, aber nie zugeordnet (Altbestand ohne Ablehnungsstempel) | 30 Tage ohne Anmeldung | Konto älter als 30 Tage und seit 30 Tagen kein Login |
 
 Mitarbeiter- und Superuser-Konten sind ausgenommen. Der Lauf löscht mit dem Konto nur
-dessen eigene Artefakte (2FA-Gerät, vertraute Geräte, Sitzungen, Tokens,
+dessen eigene Artefakte (2FA-Gerät, Sitzungen, Tokens,
 Sicherheitsbenachrichtigungen); jede andere Beziehung schützt das Konto. Die Ausgabe
 nennt nur Zahlen, keine Adressen.
 

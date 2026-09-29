@@ -14,7 +14,7 @@ Ein Konto gilt als verwaist, wenn es in eine dieser Gruppen fällt …
 … und zugleich nirgends mehr gebraucht wird: kein Staff/Superuser, keine Gruppe, keine
 Mitgliedschaft in Organisation oder Session-Mandant, keine gültige Einladung auf die
 Adresse und kein weiteres verknüpftes Objekt außer den reinen Konto-Artefakten
-(2FA-Gerät, vertraute Geräte, Sitzungen, Tokens, Sicherheitsbenachrichtigungen).
+(2FA-Gerät, Sitzungen, Tokens, Sicherheitsbenachrichtigungen).
 Die letzte Bedingung ist absichtlich generisch über alle Rückbeziehungen des
 User-Modells: Jede neue Beziehung schützt ein Konto automatisch, bis sie hier
 ausdrücklich als Konto-Artefakt freigegeben wird.
@@ -46,9 +46,7 @@ ALTBESTAND_TAGE = 30
 KONTO_ARTEFAKTE: frozenset[str] = frozenset(
     {
         "totp_device",
-        "trusted_devices",
         "sessions",
-        "password_reset_tokens",
         "email_verification_tokens",
         "security_notifications",
         "webauthn_credentials",

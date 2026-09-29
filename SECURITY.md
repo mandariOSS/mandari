@@ -89,7 +89,7 @@ verändert und unter eigenem Namen anbietet, wird selbst Hersteller.
 | Bereich | Maßnahme |
 |---------|----------|
 | Verschlüsselung | AES-256-GCM für vertrauliche Felder, Schlüsselhierarchie Hauptschlüssel → Mandantenschlüssel → Feld; Verfahren und Parameter im [Kryptokonzept](docs/KRYPTOKONZEPT.md), abgeglichen mit BSI TR-02102 |
-| Anmeldung | Zwei-Faktor per TOTP, vertrauenswürdige Geräte, Sitzungsübersicht, Ratenbegrenzung (5 Versuche je 15 Minuten), Mindestpasswortlänge 12 Zeichen nach BSI-Empfehlung |
+| Anmeldung | Zwei-Faktor per TOTP und Sicherheitsschlüssel, Sitzungsübersicht, Ratenbegrenzung (5 Versuche je 15 Minuten), Mindestpasswortlänge 12 Zeichen nach BSI-Empfehlung |
 | Berechtigungen | Rollenbasiert mit über 50 Einzelrechten, zusätzlich individuelle Erteilung und Entzug je Mitgliedschaft |
 | Mandantentrennung | Jede Abfrage ist organisationsgebunden; eine automatisierte Matrix prüft über 160 Adressen des Arbeitsbereichs gegen jede Rolle |
 | Uploads | Eine gemeinsame Prüfung nach Dateityp und Größe für alle Upload-Pfade (`apps/common/uploads.py`, Profile und Limits in [docs/UPLOADS.md](docs/UPLOADS.md)); aktive Inhalte wie HTML, SVG oder Skripte werden nie angenommen; Nicht-Bild-Anhänge werden als Download ausgeliefert, nicht eingebettet; ein CI-Gate meldet neue Upload-Stellen ohne Prüfung |

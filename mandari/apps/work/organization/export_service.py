@@ -363,7 +363,6 @@ class DsgvoExportService:
             "security_sessions": self._collect_sessions(user),
             "security_logins": self._collect_login_attempts(user),
             "security_2fa": self._collect_2fa(user),
-            "security_trusted": self._collect_trusted_devices(user),
             "security_alerts": self._collect_security_alerts(user),
             "account_extras": self._collect_account_extras(user, membership),
             "tasks": self._collect_tasks(membership, organization),
@@ -460,22 +459,6 @@ class DsgvoExportService:
             "has_backup_codes": bool(device.backup_codes_encrypted),
             # Secrets and backup codes deliberately excluded for security
         }
-
-    def _collect_trusted_devices(self, user) -> list:
-        from apps.accounts.models import TrustedDevice
-
-        return [
-            {
-                "device_name": d.device_name,
-                "user_agent": d.user_agent,
-                "ip_address": d.ip_address or "",
-                "created_at": _dt(d.created_at),
-                "last_used_at": _dt(d.last_used_at),
-                "expires_at": _dt(d.expires_at),
-                "is_valid": d.is_valid,
-            }
-            for d in TrustedDevice.objects.filter(user=user)
-        ]
 
     def _collect_security_alerts(self, user) -> list:
         from apps.accounts.models import SecurityNotification

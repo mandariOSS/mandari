@@ -495,11 +495,6 @@ class Organization(models.Model):
         return OParlBody.objects.filter(q)
 
     @property
-    def all_bodies(self):
-        """Alias für get_all_bodies() (Template-freundlich)."""
-        return self.get_all_bodies()
-
-    @property
     def all_body_ids(self) -> list:
         """Liste aller verknüpften Body-UUIDs (für ES-terms-Queries)."""
         return list(self.get_all_bodies().values_list("id", flat=True))
@@ -524,18 +519,6 @@ class Organization(models.Model):
         if self.party_group_id:
             q |= models.Q(pk=self.party_group_id)
         return PartyGroup.objects.filter(q)
-
-    @property
-    def all_parties(self):
-        """Alias für get_all_parties() (Template-freundlich)."""
-        return self.get_all_parties()
-
-    @property
-    def full_party_path(self) -> str:
-        """Return full party hierarchy path if in a party group."""
-        if self.party_group:
-            return f"{self.party_group.full_path} > {self.name}"
-        return self.name
 
     def is_email_allowed_for_registration(self, email: str) -> bool:
         """Prüft ob eine E-Mail-Adresse für Selbstregistrierung zugelassen ist."""

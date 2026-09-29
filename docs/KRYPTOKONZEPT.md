@@ -23,7 +23,7 @@ Verschlüsselung folgt dieser Unterscheidung, statt pauschal alles zu verschlüs
 | Personenbezogene Stammdaten im Verwaltungs-RIS (u. a. Bankverbindungen für Sitzungsgelder) | **Feldverschlüsselung** | Besondere Sensibilität, Zweckbindung |
 | Support-Nachrichten | **Feldverschlüsselung** | Können Betriebsinterna der Kommune enthalten |
 | Passwörter | **Hash, nicht umkehrbar** | Dürfen nie wiederherstellbar sein |
-| Zugangstoken (Einladungs-, Bestätigungs- und Feed-Links, Geräte- und API-Tokens) | **SHA-256-Hash, nicht umkehrbar** | Zufallswerte mit mindestens 122 Bit; zum Prüfen genügt der Hash, eine abgeflossene Datenbank enthält keine nutzbaren Links |
+| Zugangstoken (Einladungs-, Bestätigungs- und Feed-Links, API-Tokens) | **SHA-256-Hash, nicht umkehrbar** | Zufallswerte mit mindestens 122 Bit; zum Prüfen genügt der Hash, eine abgeflossene Datenbank enthält keine nutzbaren Links |
 | Zweiter Faktor (TOTP-Geheimnis, Backup-Codes) | **Feldverschlüsselung** | Ein Klartext-Geheimnis entwertet den zweiten Faktor |
 | Öffentliche Ratsinformationen (OParl-Bestand) | **keine** | Sind per Gesetz öffentlich; Verschlüsselung brächte keinen Schutz, aber Kosten bei Suche und Auslieferung |
 | Protokolle und Audit-Log | **keine Inhaltsverschlüsselung** | Enthalten bewusst keine personenbezogenen Inhalte; Schutz über Zugriffsrechte |

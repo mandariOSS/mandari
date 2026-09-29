@@ -1397,15 +1397,6 @@ def regenerate_calendar_feed(user: User) -> str:
     return f"{str(getattr(django_settings, 'SITE_URL', '')).rstrip('/')}{path}"
 
 
-def remove_trusted_device(user: User, device_id: str) -> bool:
-    """Vertrauenswürdiges Gerät entfernen; ``False``, wenn nicht gefunden."""
-    device = selectors.find_trusted_device(user, device_id)
-    if device is None:
-        return False
-    device.delete()
-    return True
-
-
 def save_profile_visibility(
     user: User, *, bio: str, show_email: bool, show_phone: bool, preferred_contact: str, contact_signal: str
 ) -> None:

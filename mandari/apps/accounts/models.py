@@ -5,12 +5,10 @@ Account models for user management and authentication.
 Provides:
 - Custom User model with email-based authentication
 - Two-factor authentication (2FA) with TOTP
-- Trusted device management
 - Session management
 - Security logging
 """
 
-import secrets
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -161,95 +159,6 @@ class TwoFactorDevice(models.Model):
         return f"2FA für {self.user.email}"
 
 
-class TrustedDevice(HashedTokenMixin, models.Model):
-    """
-    Trusted device for reduced 2FA prompts.
-
-    When a user marks a device as trusted, they won't need to
-    enter their 2FA code for a specified duration.
-
-    Gespeichert wird nur der SHA-256-Hash des Geräte-Tokens (apps/common/tokens.py); das Token
-    selbst kennt nur das Gerät.
-    """
-
-    token_field = "device_token"
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trusted_devices")
-
-    # Device identification
-    device_token = models.CharField(
-        max_length=64, unique=True, default=unusable_token_hash, editable=False, verbose_name="Geräte-Token (SHA-256)"
-    )
-    device_name = models.CharField(max_length=200, blank=True)
-
-    # Browser info
-    user_agent = models.CharField(max_length=500, blank=True)
-    ip_address = models.GenericIPAddressField(blank=True, null=True)
-
-    # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
-    last_used_at = models.DateTimeField(auto_now=True)
-    expires_at = models.DateTimeField()
-
-    class Meta:
-        verbose_name = "Vertrauenswürdiges Gerät"
-        verbose_name_plural = "Vertrauenswürdige Geräte"
-        ordering = ["-last_used_at"]
-
-    def __str__(self):
-        return f"{self.device_name or 'Unbenannt'} ({self.user.email})"
-
-    @property
-    def is_valid(self) -> bool:
-        """Check if the trusted device is still valid."""
-        return timezone.now() < self.expires_at
-
-    @classmethod
-    def create_for_user(cls, user, request, device_name: str = "", valid_days: int = 30):
-        """Neues vertrauenswürdiges Gerät; das Token für das Gerät steht nur in ``plain_token``."""
-        device = cls(
-            user=user,
-            device_name=device_name or cls._get_device_name(request),
-            user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
-            ip_address=cls._get_ip_address(request),
-            expires_at=timezone.now() + timedelta(days=valid_days),
-        )
-        device.issue_token()
-        device.save()
-        return device
-
-    @classmethod
-    def find_valid(cls, user, raw_token: object):
-        """Noch gültiges Gerät der Person zum Token, sonst ``None``."""
-        return cls.find_by_token(raw_token, cls.objects.filter(user=user, expires_at__gt=timezone.now()))
-
-    @staticmethod
-    def _get_device_name(request) -> str:
-        """Extract device name from user agent."""
-        ua = request.META.get("HTTP_USER_AGENT", "")
-        # Simple extraction - can be enhanced with user-agents library
-        if "Windows" in ua:
-            return "Windows PC"
-        if "Mac" in ua:
-            return "Mac"
-        if "Linux" in ua:
-            return "Linux PC"
-        if "iPhone" in ua:
-            return "iPhone"
-        if "Android" in ua:
-            return "Android"
-        return "Unbekanntes Gerät"
-
-    @staticmethod
-    def _get_ip_address(request) -> str:
-        """Get client IP address from request."""
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        if x_forwarded_for:
-            return x_forwarded_for.split(",")[0].strip()
-        return request.META.get("REMOTE_ADDR")
-
-
 class UserSession(models.Model):
     """
     Track user sessions for security and management.
@@ -317,57 +226,6 @@ class LoginAttempt(models.Model):
             models.Index(fields=["email", "timestamp"]),
             models.Index(fields=["ip_address", "timestamp"]),
         ]
-
-    @classmethod
-    def get_recent_failures(cls, email: str, minutes: int = 30) -> int:
-        """Count recent failed login attempts for an email."""
-        cutoff = timezone.now() - timedelta(minutes=minutes)
-        return cls.objects.filter(email=email, was_successful=False, timestamp__gte=cutoff).count()
-
-    @classmethod
-    def is_rate_limited(cls, email: str, max_attempts: int = 5) -> bool:
-        """Check if login should be rate limited."""
-        return cls.get_recent_failures(email) >= max_attempts
-
-
-class PasswordResetToken(models.Model):
-    """
-    Secure password reset token.
-
-    Tokens are single-use and expire after a short period.
-    """
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="password_reset_tokens")
-
-    token = models.CharField(max_length=64, unique=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-    used_at = models.DateTimeField(blank=True, null=True)
-
-    class Meta:
-        verbose_name = "Passwort-Reset-Token"
-        verbose_name_plural = "Passwort-Reset-Tokens"
-
-    @property
-    def is_valid(self) -> bool:
-        """Check if the token is still valid."""
-        return self.used_at is None and timezone.now() < self.expires_at
-
-    @classmethod
-    def create_for_user(cls, user, valid_hours: int = 24):
-        """Create a new password reset token."""
-        token = secrets.token_urlsafe(48)
-        expires_at = timezone.now() + timedelta(hours=valid_hours)
-
-        # Invalidate previous tokens
-        cls.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
-
-        return cls.objects.create(
-            user=user,
-            token=token,
-            expires_at=expires_at,
-        )
 
 
 class EmailVerificationToken(HashedTokenMixin, models.Model):

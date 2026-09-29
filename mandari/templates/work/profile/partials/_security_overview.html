@@ -1,6 +1,6 @@
 {% comment %}
-Linke Spalte der Sicherheitsseite: Sicherheitsübersicht (2FA, E-Mail, Sitzungen, Geräte) und Tipps.
-Kontext: is_2fa_enabled, request.user, sessions, trusted_devices
+Linke Spalte der Sicherheitsseite: Sicherheitsübersicht (2FA, E-Mail, Sitzungen) und Tipps.
+Kontext: is_2fa_enabled, request.user, sessions
 {% endcomment %}
 <div class="space-y-4">
     <c-ui.card title="Sicherheitsübersicht" padding="none" class="fade-up">
@@ -42,15 +42,6 @@ Kontext: is_2fa_enabled, request.user, sessions, trusted_devices
                 </div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">{{ sessions|length }} aktive Sitzung{{ sessions|length|pluralize:"en" }}</span>
             </div>
-
-            {% if trusted_devices %}
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-                    <i data-lucide="smartphone" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
-                </div>
-                <span class="text-sm text-gray-700 dark:text-gray-300">{{ trusted_devices|length }} vertr. Gerät{{ trusted_devices|length|pluralize:"e" }}</span>
-            </div>
-            {% endif %}
         </div>
     </c-ui.card>
 

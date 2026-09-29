@@ -21,10 +21,10 @@ from django.apps import apps as django_apps
 from django.core import mail
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
-from django.test import Client, RequestFactory
+from django.test import Client
 from django.urls import reverse
 
-from apps.accounts.models import EmailVerificationToken, TrustedDevice
+from apps.accounts.models import EmailVerificationToken
 from apps.common.tests.factories import UserFactory
 from apps.common.tokens import hash_token, new_token
 from apps.session.models import SessionInvitation, SessionTenant
@@ -228,23 +228,6 @@ def test_bestaetigungslink_einer_frage(frage: PublicQuestion) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Vertrauenswürdiges Gerät
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_geraete_token_nur_als_hash() -> None:
-    person = _konto("geraet@example.org")
-    geraet = TrustedDevice.create_for_user(person, RequestFactory().get("/", HTTP_USER_AGENT="Firefox auf Linux"))
-    token = cast(str, geraet.plain_token)
-
-    assert _gespeichert(TrustedDevice, geraet.pk, "device_token") == hash_token(token) != token
-    assert TrustedDevice.find_valid(person, token) == geraet
-    assert TrustedDevice.find_valid(person, geraet.device_token) is None
-    assert TrustedDevice.find_valid(_konto("fremd@example.org"), token) is None
-
-
-# ---------------------------------------------------------------------------
 # Datenmigrationen: Bestand im Klartext wird gehasht, Links funktionieren weiter
 # ---------------------------------------------------------------------------
 
@@ -285,20 +268,20 @@ class TestBestandNachMigration:
         assert not SessionInvitation.objects.filter(token=alt).exists()
         assert Client().get(reverse("session:invitation_accept", kwargs={"token": alt})).status_code == 200
 
-    def test_bestaetigung_und_geraet(self) -> None:
+    def test_bestaetigungslink(self) -> None:
         person = _konto("alt@example.org")
         bestaetigung = EmailVerificationToken.create_for_user(person)
-        geraet = TrustedDevice.create_for_user(person, RequestFactory().get("/"))
-        alt_bestaetigung, alt_geraet = secrets.token_urlsafe(48), secrets.token_hex(32)
+        alt_bestaetigung = secrets.token_urlsafe(48)
         EmailVerificationToken.objects.filter(pk=bestaetigung.pk).update(token=alt_bestaetigung)
-        TrustedDevice.objects.filter(pk=geraet.pk).update(device_token=alt_geraet)
 
-        _migration("apps.accounts", "0005_zugangstoken_als_hash").hash_tokens(django_apps, None)
+        # Historischer Modellstand: Die Migration hasht auch die Geräte-Tokens der seither
+        # entfernten Tabelle „Gerät merken“ (Modell nur noch im Migrationsstand).
+        migration = "0005_zugangstoken_als_hash"
+        historisch = MigrationExecutor(connection).loader.project_state([("accounts", migration)]).apps
+        _migration("apps.accounts", migration).hash_tokens(historisch, None)
 
         assert not EmailVerificationToken.objects.filter(token=alt_bestaetigung).exists()
-        assert not TrustedDevice.objects.filter(device_token=alt_geraet).exists()
         assert org_selectors.find_registration_token(alt_bestaetigung) == bestaetigung
-        assert TrustedDevice.find_valid(person, alt_geraet) == geraet
 
     def test_abonnierter_kalender_feed_laeuft_weiter(self) -> None:
         person = _konto("abo@example.org")

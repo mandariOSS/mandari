@@ -17,7 +17,7 @@ from django.core.mail import EmailMessage
 from django.core.mail.backends.smtp import EmailBackend as SMTPEmailBackend
 
 from apps.common import email as email_modul
-from apps.common.email_backend import ConsoleOrSiteSettingsBackend, SiteSettingsEmailBackend
+from apps.common.email_backend import SiteSettingsEmailBackend
 from apps.common.mail_backends import SMTP_BACKEND, build_backend, send_with, smtp_options
 
 
@@ -61,8 +61,6 @@ def test_sitesettings_backend_ohne_argumente_wie_ueber_mailers(settings: Any) ->
     }
     backend = cast(Any, SiteSettingsEmailBackend)()
     assert (backend.host, backend.port, backend.use_ssl, backend.timeout) == ("smtp.fallback.example", 465, True, 9)
-    settings.DEBUG = False
-    assert cast(Any, ConsoleOrSiteSettingsBackend)().host == "smtp.fallback.example"
 
 
 @pytest.mark.django_db
@@ -72,7 +70,6 @@ def test_send_email_ueber_sitesettings_smtp(settings: Any, monkeypatch: pytest.M
     site = SiteSettings.get_settings()
     site.email_host = "smtp.site.example"
     site.email_port = 587
-    site.email_backend = SMTP_BACKEND
     cast(Any, site).save()
     gesendet: list[EmailMessage] = []
     monkeypatch.setattr(SMTPEmailBackend, "open", lambda self: True)

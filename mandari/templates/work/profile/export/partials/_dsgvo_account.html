@@ -102,30 +102,6 @@
 <p class="empty">Keine Zwei-Faktor-Authentifizierung eingerichtet.</p>
 {% endif %}
 
-<h3>Vertrauensw&uuml;rdige Ger&auml;te</h3>
-{% if data.security_trusted %}
-<table>
-    <tr>
-        <th class="col-wide">Ger&auml;t</th>
-        <th class="col-ip">IP-Adresse</th>
-        <th class="col-date">Erstellt</th>
-        <th class="col-date">Zuletzt verwendet</th>
-        <th class="col-narrow">G&uuml;ltig</th>
-    </tr>
-    {% for d in data.security_trusted %}
-    <tr>
-        <td>{{ d.device_name|default:"&mdash;" }}</td>
-        <td>{{ d.ip_address|default:"&mdash;" }}</td>
-        <td>{{ d.created_at|default:"&mdash;" }}</td>
-        <td>{{ d.last_used_at|default:"&mdash;" }}</td>
-        <td>{% if d.is_valid %}Ja{% else %}Nein{% endif %}</td>
-    </tr>
-    {% endfor %}
-</table>
-{% else %}
-<p class="empty">Keine vertrauensw&uuml;rdigen Ger&auml;te gespeichert.</p>
-{% endif %}
-
 <h3>Sicherheitswarnungen</h3>
 {% if data.security_alerts %}
 <table>
