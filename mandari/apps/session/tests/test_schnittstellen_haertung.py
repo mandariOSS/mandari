@@ -5,8 +5,11 @@ Schnittstellen des Session RIS: OParl, alte Einreichungs-API und Django-Admin.
 - ``modified_since`` blättert Objekte und Tombstones seitenweise, ohne die Tabellen ganz zu laden.
 - Beratungsstationen in nichtöffentlichen Sitzungen nennen in OParl weder Gremium noch Rolle.
 - Die alte Einreichungs-API hält das Ratenlimit des Tokens ein.
-- Admin-Aktionen am Mandanten und am Antrag brauchen das Änderungsrecht; ein erzeugter API-Token
-  erscheint einmalig auf einer eigenen Seite, nie in einer Meldung.
+- Admin-Aktionen am Mandanten und am Antrag brauchen das Änderungsrecht; ein API-Token entsteht im Admin
+  nur mit abgeschicktem Formular (POST, CSRF), wird protokolliert und erscheint einmalig auf einer eigenen
+  Seite, nie in einer Meldung.
+- Im Admin lässt sich ein zurückgezogener Token nicht wieder aktivieren; Deaktivieren und Änderungen
+  landen mit dem Admin-Konto im Audit-Log des Mandanten.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from apps.common.tests.factories import UserFactory
 from apps.session.models import (
     SessionAPIToken,
     SessionApplication,
+    SessionAuditLog,
     SessionConsultation,
     SessionMeeting,
     SessionOParlTombstone,
@@ -174,6 +178,8 @@ def test_token_aktion_braucht_das_aenderungsrecht(tenant: SessionTenant) -> None
     client = Client(raise_request_exception=False)
     client.force_login(staff)
     client.get(f"/admin/session/sessiontenant/{tenant.pk}/generate-token/")
+    antwort = client.post(f"/admin/session/sessiontenant/{tenant.pk}/generate-token/", {"name": "Fraktion A"})
+    assert antwort.status_code == 403
     assert not SessionAPIToken.objects.filter(tenant=tenant).exists()
 
 
@@ -181,7 +187,7 @@ def test_token_erscheint_einmalig_auf_eigener_seite(tenant: SessionTenant) -> No
     betrieb = cast(Any, UserFactory)(email="betrieb@example.org", is_staff=True, is_superuser=True)
     client = Client()
     client.force_login(betrieb)
-    antwort = client.get(f"/admin/session/sessiontenant/{tenant.pk}/generate-token/")
+    antwort = client.post(f"/admin/session/sessiontenant/{tenant.pk}/generate-token/", {"name": "Fraktion A"})
     assert antwort.status_code == 200
     token = SessionAPIToken.objects.get(tenant=tenant)
     inhalt = antwort.content.decode()
@@ -230,3 +236,131 @@ def test_antrag_umwandeln_braucht_das_aenderungsrecht(tenant: SessionTenant) -> 
     client.force_login(staff)
     client.get(f"/admin/session/sessionapplication/{antrag.pk}/create-paper/")
     assert not SessionPaper.objects.filter(source_application=antrag).exists()
+
+
+# =============================================================================
+# Django-Admin: API-Tokens erzeugen, deaktivieren, nicht wieder aktivieren
+# =============================================================================
+
+
+def _betrieb_client(**client_kwargs: Any) -> Client:
+    betrieb = cast(Any, UserFactory)(email="betrieb@example.org", is_staff=True, is_superuser=True)
+    client = Client(**client_kwargs)
+    client.force_login(betrieb)
+    return client
+
+
+def test_token_aufruf_ohne_formular_erzeugt_nichts(tenant: SessionTenant) -> None:
+    antwort = _betrieb_client().get(f"/admin/session/sessiontenant/{tenant.pk}/generate-token/")
+
+    assert antwort.status_code == 200
+    assert 'method="post"' in antwort.content.decode()
+    assert not SessionAPIToken.objects.filter(tenant=tenant).exists()
+
+
+def test_token_ohne_namen_wird_nicht_erzeugt(tenant: SessionTenant) -> None:
+    antwort = _betrieb_client().post(f"/admin/session/sessiontenant/{tenant.pk}/generate-token/", {"name": "  "})
+
+    assert antwort.status_code == 200
+    assert not SessionAPIToken.objects.filter(tenant=tenant).exists()
+
+
+def test_token_erzeugen_braucht_csrf(tenant: SessionTenant) -> None:
+    client = _betrieb_client(enforce_csrf_checks=True)
+
+    antwort = client.post(f"/admin/session/sessiontenant/{tenant.pk}/generate-token/", {"name": "Fraktion A"})
+
+    assert antwort.status_code == 403
+    assert not SessionAPIToken.objects.filter(tenant=tenant).exists()
+
+
+def test_token_erzeugen_haelt_ersteller_und_audit_fest(tenant: SessionTenant) -> None:
+    _betrieb_client().post(f"/admin/session/sessiontenant/{tenant.pk}/generate-token/", {"name": "Fraktion A"})
+
+    token = SessionAPIToken.objects.get(tenant=tenant)
+    assert token.name == "Fraktion A"
+    assert "betrieb@example.org" in token.description
+    eintrag = SessionAuditLog.objects.get(tenant=tenant, model_name="SessionAPIToken", action="create")
+    assert eintrag.object_id == token.pk
+    assert "betrieb@example.org" in eintrag.changes["durch"]
+    assert eintrag.changes["token_prefix"] == token.token_prefix
+    assert token.token not in json.dumps(eintrag.changes), "kein Hash im Protokoll"
+
+
+def test_zurueckgezogener_token_laesst_sich_im_admin_nicht_reaktivieren(tenant: SessionTenant) -> None:
+    token, _roh = SessionAPIToken.create_token(tenant=tenant, name="Fraktion A")
+    token.is_active = False
+    token.save(update_fields=["is_active", "updated_at"])
+    client = _betrieb_client()
+
+    # Keine Sammelaktion zum Aktivieren
+    liste = client.get("/admin/session/sessionapitoken/")
+    assert "activate_tokens" not in liste.content.decode().replace("deactivate_tokens", "")
+    client.post(
+        "/admin/session/sessionapitoken/",
+        {"action": "activate_tokens", "_selected_action": [str(token.pk)], "index": "0"},
+    )
+    # Im Formular ist „Aktiv“ schreibgeschützt
+    client.post(
+        f"/admin/session/sessionapitoken/{token.pk}/change/",
+        {
+            "name": "Fraktion A",
+            "description": "",
+            "can_submit_applications": "on",
+            "can_read_meetings": "on",
+            "can_read_papers": "on",
+            "is_active": "on",
+            "rate_limit_per_minute": "60",
+            "allowed_ips": "",
+            "expires_at_0": "",
+            "expires_at_1": "",
+        },
+    )
+
+    token.refresh_from_db()
+    assert token.is_active is False
+
+
+def test_formular_aenderung_wird_protokolliert_mandant_bleibt_fest(tenant: SessionTenant) -> None:
+    anderer = SessionTenant.objects.create(name="Andere Stadt", slug="andere-stadt")
+    token, _roh = SessionAPIToken.create_token(tenant=tenant, name="Fraktion A")
+
+    antwort = _betrieb_client().post(
+        f"/admin/session/sessionapitoken/{token.pk}/change/",
+        {
+            "tenant": str(anderer.pk),
+            "name": "Fraktion B",
+            "description": "",
+            "can_submit_applications": "on",
+            "can_read_meetings": "on",
+            "can_read_papers": "on",
+            "rate_limit_per_minute": "60",
+            "allowed_ips": "",
+            "expires_at_0": "",
+            "expires_at_1": "",
+        },
+    )
+
+    assert antwort.status_code == 302, antwort.content.decode()[:2000]
+    token.refresh_from_db()
+    assert token.name == "Fraktion B"
+    assert token.tenant_id == tenant.pk
+    eintrag = SessionAuditLog.objects.get(tenant=tenant, model_name="SessionAPIToken", action="update")
+    assert eintrag.changes["felder"] == ["name"]
+    assert "betrieb@example.org" in eintrag.changes["durch"]
+
+
+def test_deaktivieren_im_admin_wird_protokolliert(tenant: SessionTenant) -> None:
+    token, _roh = SessionAPIToken.create_token(tenant=tenant, name="Fraktion A")
+    schon_aus, _ = SessionAPIToken.create_token(tenant=tenant, name="Fraktion B", is_active=False)
+
+    _betrieb_client().post(
+        "/admin/session/sessionapitoken/",
+        {"action": "deactivate_tokens", "_selected_action": [str(token.pk), str(schon_aus.pk)], "index": "0"},
+    )
+
+    token.refresh_from_db()
+    assert token.is_active is False
+    eintraege = SessionAuditLog.objects.filter(tenant=tenant, model_name="SessionAPIToken", action="update")
+    assert [e.object_id for e in eintraege] == [token.pk], "nur tatsächlich deaktivierte Tokens"
+    assert eintraege[0].changes["is_active"] == {"alt": True, "neu": False}

@@ -1,0 +1,41 @@
+{% extends "admin/base_site.html" %}
+{% load i18n unfold %}
+
+{% comment %}
+Bestätigung vor dem Erzeugen eines API-Tokens im Admin: Erst das abgeschickte Formular (POST) erzeugt ihn.
+{% endcomment %}
+
+{% block breadcrumbs %}
+    <div class="px-4">
+        <div class="container mb-6 mx-auto -my-3 lg:mb-12">
+            <ul class="flex flex-wrap">
+                {% url "admin:index" as index_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=index_url name=_("Home") %}
+                {% url "admin:session_sessiontenant_changelist" as changelist_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=changelist_url name=opts.verbose_name_plural|capfirst %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link="" name=title %}
+            </ul>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div class="flex flex-col gap-6 max-w-4xl">
+        <p>
+            Neuen API-Token für <strong>{{ tenant.name }}</strong> erzeugen. Er erscheint danach einmalig und lässt sich
+            später nicht erneut abrufen. Das Erzeugen wird mit Ihrem Admin-Konto im Audit-Log des Mandanten festgehalten.
+            Üblicherweise legt der Mandant Zugänge selbst im Sitzungsdienst unter „Einstellungen → Einreichungs-Zugänge“ an.
+        </p>
+
+        {% component "unfold/components/card.html" with title="API-Token erzeugen" %}
+            <form method="post" novalidate>
+                {% csrf_token %}
+                {% include "unfold/helpers/field.html" with field=form.name %}
+                <div class="flex gap-4 items-center">
+                    {% component "unfold/components/button.html" with submit=1 %}Token erzeugen{% endcomponent %}
+                    <a href="{% url 'admin:session_sessiontenant_change' tenant.pk %}">Abbrechen</a>
+                </div>
+            </form>
+        {% endcomponent %}
+    </div>
+{% endblock %}
