@@ -23,6 +23,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import IMPORTABLE_DOCUMENTS, MB, validate_upload
 from apps.work.notifications.services import NotificationHub
 
+from .. import references
 from ..forms import (
     AIAssistantForm,
     MotionCommentForm,
@@ -340,10 +341,59 @@ class MotionMetaUpdateView(WorkViewMixin, View):
                 motion.due_date = None
             motion.save(update_fields=["due_date", "updated_at"])
 
+        elif action == "set_parent":
+            # Bezugsantrag: Dokument der Organisation oder RIS-Vorlage (Issue #586)
+            error = references.set_parent(
+                motion,
+                self.membership,
+                motion_id=request.POST.get("parent_motion", "").strip(),
+                paper_id=request.POST.get("parent_paper", "").strip(),
+            )
+            if error:
+                return JsonResponse({"error": error}, status=400)
+
+        elif action == "set_reference_meeting":
+            error = references.set_reference_meeting(motion, request.POST.get("meeting", "").strip())
+            if error:
+                return JsonResponse({"error": error}, status=400)
+
         else:
             return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
 
         return JsonResponse({"success": True})
+
+
+class MotionReferenceSearchView(WorkViewMixin, TemplateView):
+    """
+    Suche für den Bezug eines Dokuments (Issue #586): Dokumente und RIS-Vorlagen als Bezugsantrag
+    (``?art=antrag``) oder RIS-Sitzungen als Bezugssitzung (``?art=sitzung``). Liefert die Treffer
+    als Fragment für die Details-Seitenleiste; setzen lässt sich ein Treffer über ``document_meta``.
+    """
+
+    template_name = "work/motions/partials/_reference_results.html"
+    permission_required = "motions.edit"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+        # Wie document_meta: nur wer das Dokument bearbeiten darf
+        if not motion.can_edit(self.membership):
+            raise PermissionDenied("Kein Zugriff auf dieses Dokument.")
+        query = self.request.GET.get("q", "")
+        kind = "sitzung" if self.request.GET.get("art") == "sitzung" else "antrag"
+        context.update({"motion": motion, "kind": kind, "query": query.strip()})
+        if kind == "sitzung":
+            context["meetings"] = [
+                (meeting, references.meeting_label(meeting))
+                for meeting in references.search_meetings(self.organization, query)
+            ]
+        else:
+            context["documents"] = references.search_documents(motion, self.membership, query)
+            context["papers"] = [
+                (paper, references.paper_label(paper)) for paper in references.search_papers(self.organization, query)
+            ]
+        context["min_length"] = references.MIN_QUERY_LENGTH
+        return context
 
 
 class MotionChecklistActionView(WorkViewMixin, View):

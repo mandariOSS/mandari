@@ -113,9 +113,13 @@ class MotionListView(WorkViewMixin, TemplateView):
         prefetches = ("topics", "checklist_items", "approvals")
 
         # Hauptanträge paginieren, Änderungsanträge (parent_motion) unter
-        # ihrem Hauptantrag eingerückt anzeigen; Drucksachennummer der Verwaltung (Issue #316)
+        # ihrem Hauptantrag eingerückt anzeigen; Drucksachennummer der Verwaltung (Issue #316).
+        # Steht der Bezugsantrag nicht in der Liste (nicht sichtbar oder ausgefiltert), erscheint
+        # der Änderungsantrag als eigener Eintrag (Issue #616).
         parents = with_administration_reference(
-            motions.filter(parent_motion__isnull=True).select_related(*related).prefetch_related(*prefetches)
+            motions.filter(Q(parent_motion__isnull=True) | ~Q(parent_motion__in=motions.values("pk")))
+            .select_related(*related)
+            .prefetch_related(*prefetches)
         )
 
         paginator = Paginator(parents, 20)

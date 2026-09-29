@@ -1,5 +1,5 @@
 {% comment %}
-Sidebar-Tab "Details" im Dokument-Editor: Zuständigkeit, Themen,
+Sidebar-Tab "Details" im Dokument-Editor: Zuständigkeit, Themen, Bezug,
 Kompetenz im Thema, Frist und Freigaben.
 Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
          competent_members, approvals, approval_summary, my_pending_approval,
@@ -117,6 +117,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
     </div>
     {% endif %}
 
+    {% include "work/motions/partials/_reference_sidebar.html" %}
     <!-- Kompetenz im Thema -->
     {% if competent_members %}
     <div class="bg-primary-50/50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 rounded-xl p-3">
