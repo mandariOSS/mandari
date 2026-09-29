@@ -221,7 +221,14 @@
         <!-- Page content -->
         <div class="px-4 lg:px-8 py-6 flex flex-col" style="min-height:calc(100vh - 52px);">
             <div class="flex-1 flex flex-col">
-                {% if active_body_stale_days %}
+                {% if active_body_archive %}
+                <div class="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-900 dark:text-amber-200" role="status" data-testid="archiv-hinweis">
+                    <i data-lucide="archive" class="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400"></i>
+                    <div>
+                        <strong>Archiv – nicht mehr aktuell.</strong> Die Kommune veröffentlicht hier {% if active_body_archive.since %}seit dem {{ active_body_archive.since|date:"d.m.Y" }} {% endif %}keine neuen Ratsinformationen mehr. Die Inhalte bleiben als Archiv lesbar, werden aber nicht mehr aktualisiert.
+                    </div>
+                </div>
+                {% elif active_body_stale_days %}
                 <div class="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-900 dark:text-amber-200" role="status">
                     <i data-lucide="alert-triangle" class="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400"></i>
                     <div>

@@ -542,6 +542,11 @@ urlpatterns = [
         name="insight_publish",
     ),
     path(
+        "<slug:tenant_slug>/settings/buergerportal-beenden/",
+        views.PortalPublicationEndView.as_view(),
+        name="portal_publication_end",
+    ),
+    path(
         "<slug:tenant_slug>/settings/implementation-publish/",
         views.ImplementationPublishView.as_view(),
         name="implementation_publish",

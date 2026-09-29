@@ -31,6 +31,7 @@ from django.core.paginator import Paginator
 from django.db.models import Prefetch
 from django.db.models.functions import Coalesce
 
+from insight_core import publication
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -67,6 +68,22 @@ FILTER_LOOKUPS = {
     "modified_since": "sort_modified__gte",
     "modified_until": "sort_modified__lte",
 }
+
+
+def _paused_response(body_id):
+    """
+    Vorübergehend abgeschaltete Kommune (Issue #618): 503 mit ``Retry-After`` statt Daten.
+
+    Inkrementelle Clients versuchen es später wieder und behalten ihren Stand; nichts gilt als gelöscht.
+    Archiv und dauerhafte Rücknahme brauchen hier nichts Eigenes (lesbar bzw. Tombstones).
+    """
+    state = publication.body_state(body_id)
+    if state is None or not state.paused:
+        return None
+    response = error_response(503, "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet.")
+    response["Retry-After"] = str(publication.RETRY_AFTER_SECONDS)
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 # Eingebettete Relationen blenden in der Quelle gelöschte Objekte aus
@@ -277,6 +294,9 @@ def body_sub_list(request, pk, segment):
         return error_response(404, f"Unbekannte Liste '{segment}'. Verfügbar: {', '.join(sorted(BODY_LISTS))}.")
     model, serializer, prepare, ctx_factory, kind = spec
     base_url = sub_list_url(pk, segment)
+    paused = _paused_response(pk)
+    if paused is not None:
+        return paused
 
     # Filter validieren, bevor der Cache greift (400 auch bei Cache-Hit korrekt)
     queryset = model.objects.filter(body_id=pk)
@@ -312,5 +332,9 @@ def object_view(request, kind, pk):
         # OParl 1.1 §2.8: gelöschte Objekte bleiben unter ihrer URL abrufbar —
         # als gekürztes Objekt mit "deleted": true und HTTP 200.
         return json_response(s.serialize_tombstone(obj, kind))
+    if publication.states():
+        paused = _paused_response(publication.body_id_of(model, pk))
+        if paused is not None:
+            return paused
     ctx = ctx_factory([obj])
     return json_response(serializer(obj, ctx))

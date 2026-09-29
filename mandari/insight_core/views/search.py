@@ -24,6 +24,14 @@ from ._helpers import get_active_body, is_all_bodies_mode, page_number
 # =============================================================================
 
 
+def _searchable_body_ids() -> list[str]:
+    """Kommunenübergreifende Suche: gelistete Kommunen, ohne vorübergehend abgeschaltete (Issue #618)."""
+    from ..publication import paused_body_ids
+
+    paused = paused_body_ids()
+    return [str(pk) for pk in OParlBody.objects.listed().values_list("id", flat=True) if str(pk) not in paused]
+
+
 class SearchView(TemplateView):
     """Suchseite mit erweiterter Filterung."""
 
@@ -92,9 +100,9 @@ def search_results(request):
 
         search_service = get_search_service()
 
-        # Body-ID für Filter; kommunenübergreifend nur gelistete Kommunen
+        # Body-ID für Filter; kommunenübergreifend nur gelistete Kommunen ohne vorübergehende Abschaltung
         body_id = str(body.id) if body else None
-        body_ids = None if body else [str(pk) for pk in OParlBody.objects.listed().values_list("id", flat=True)]
+        body_ids = None if body else _searchable_body_ids()
 
         # Index-Auswahl basierend auf Typ
         index_map = {
@@ -146,7 +154,7 @@ def search_results(request):
         results = []
 
         # Optionaler Body-Filter: body=None bedeutet kommunenübergreifende Suche über gelistete Kommunen
-        body_filter = {"body": body} if body else {"body__is_listed": True}
+        body_filter = {"body": body} if body else {"body_id__in": _searchable_body_ids()}
 
         # Vorgänge
         papers = OParlPaper.objects.filter(deleted=False, **body_filter).filter(

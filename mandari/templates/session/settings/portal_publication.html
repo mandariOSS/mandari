@@ -1,0 +1,77 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Veröffentlichung im Bürgerportal beenden (Issue #618): Auswahl mit Hilfetext, dann Bestätigung mit
+Zusammenfassung der Folgen. Texte der Möglichkeiten: apps/session/services/portal_publication.py.
+{% endcomment %}
+
+{% block page_title %}Veröffentlichung im Bürgerportal beenden{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Einstellungen</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Bürgerportal</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-3xl mx-auto space-y-6">
+    <c-layout.page-header title="Daten nicht mehr im Bürgerportal veröffentlichen" subtitle="Derzeit: {{ state_label }}" />
+
+    {% if step == "confirm" %}
+    <c-ui.card title="{{ chosen.title }}: Bitte bestätigen" data-testid="bestaetigung">
+        <div class="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+            <p>
+                Im Bürgerportal stehen derzeit {{ inventory.sitzungen }} Sitzungen, {{ inventory.vorlagen }} Vorlagen,
+                {{ inventory.dokumente }} Dokumente, {{ inventory.gremien }} Gremien und {{ inventory.personen }} Personen
+                Ihrer Kommune.
+            </p>
+            <p class="font-medium text-gray-900 dark:text-white">Das bewirkt „{{ chosen.title }}“:</p>
+            <ul class="list-disc pl-5 space-y-1">
+                {% for effect in chosen.effects %}<li>{{ effect }}</li>{% endfor %}
+                {% if implementation_publish %}<li>Die Seiten zum Umsetzungsstand Ihrer Beschlüsse folgen derselben Regel.</li>{% endif %}
+            </ul>
+            <c-ui.alert variant="info" icon="undo-2" title="Rückgängig machen">{{ chosen.undo }}</c-ui.alert>
+            <form method="post" class="flex flex-wrap items-center gap-3 pt-2">
+                {% csrf_token %}
+                <input type="hidden" name="mode" value="{{ chosen.key }}">
+                <input type="hidden" name="confirm" value="1">
+                <c-ui.button type="submit" variant="{% if chosen.key == 'withdrawn' %}danger{% else %}primary{% endif %}" icon="{{ chosen.icon }}">{{ chosen.title }}</c-ui.button>
+                <c-ui.button variant="secondary" href="{% url 'session:portal_publication_end' tenant_slug=tenant_slug %}">Andere Möglichkeit wählen</c-ui.button>
+            </form>
+        </div>
+    </c-ui.card>
+    {% else %}
+    <c-ui.alert variant="info" icon="info" title="Was geschieht mit den bereits veröffentlichten Daten?">
+        Beenden Sie die Veröffentlichung, bleibt der Abgleich aus. Wählen Sie, wie das Bürgerportal den bisherigen
+        Bestand zeigt. Die Daten in mandari Session ändern sich dadurch nicht, und jede Möglichkeit lässt sich später
+        wechseln oder mit „Wieder veröffentlichen“ aufheben.
+    </c-ui.alert>
+
+    <form method="post" class="space-y-4" data-testid="auswahl">
+        {% csrf_token %}
+        {% for option in options %}
+        <label class="block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 cursor-pointer hover:border-primary-300">
+            <span class="flex items-start gap-3">
+                <input type="radio" name="mode" value="{{ option.key }}" required class="mt-1 text-primary-600 focus:ring-primary-500" {% if current and current.key == option.key %}checked{% endif %}>
+                <span class="min-w-0">
+                    <span class="flex items-center gap-2 font-semibold text-gray-900 dark:text-white">
+                        <i data-lucide="{{ option.icon }}" class="w-4 h-4" aria-hidden="true"></i>{{ option.title }}
+                        {% if current and current.key == option.key %}<c-ui.badge>derzeit eingestellt</c-ui.badge>{% endif %}
+                    </span>
+                    <span class="block mt-1 text-sm text-gray-600 dark:text-gray-400">{{ option.when }}</span>
+                    <ul class="mt-2 list-disc pl-5 space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                        {% for effect in option.effects %}<li>{{ effect }}</li>{% endfor %}
+                    </ul>
+                </span>
+            </span>
+        </label>
+        {% endfor %}
+        <div class="flex flex-wrap items-center gap-3">
+            <c-ui.button type="submit" icon="arrow-right">Weiter zur Bestätigung</c-ui.button>
+            <c-ui.button variant="secondary" href="{% url 'session:settings' tenant_slug=tenant_slug %}">Abbrechen</c-ui.button>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

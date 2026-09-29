@@ -165,10 +165,44 @@ im Audit-Log protokolliert).
 
 Beim Aktivieren wird die OParl-API des Mandanten automatisch als
 `OParlSource` registriert (Signal-Hook, `sync_config.session_tenant` =
-Mandanten-Slug); beim Deaktivieren wird die Quelle inaktiv gesetzt —
-es findet kein weiterer Sync statt. Bereits gespiegelte Daten bleiben
-erhalten, bis die Kommune eine Löschung beauftragt
-(`manage.py purge_deleted`, siehe `docs/OPARL_API.md`).
+Mandanten-Slug). Beendet wird die Veröffentlichung nur mit einer Entscheidung,
+was mit dem bereits gespiegelten Bestand geschieht (nächster Abschnitt).
+
+## Veröffentlichung beenden (Issue #618)
+
+**Session → Einstellungen → Bürgerportal → „Veröffentlichung beenden …“** führt auf
+eine eigene Seite mit drei Möglichkeiten. Nach der Auswahl zeigt mandari eine
+Zusammenfassung der Folgen (wie viele Sitzungen, Vorlagen, Dokumente, Gremien und
+Personen betroffen sind); erst die Bestätigung wirkt. Jede Änderung steht im
+Audit-Log (`unpublish` bzw. `publish`, mit altem und neuem Stand und der Wirkung).
+In allen drei Fällen ruht der Abgleich (Quelle inaktiv); die Daten in Session und
+die eigene OParl-Schnittstelle des Mandanten bleiben unberührt.
+
+| | Vorübergehend abschalten | Als Archiv behalten | Dauerhaft zurücknehmen |
+|---|---|---|---|
+| Wofür | Wartung, Prüfung der veröffentlichten Daten | Wechsel zu einem anderen System | Daten sollen nicht mehr über das Bürgerportal abrufbar sein |
+| Seiten der Kommune | Hinweis statt Inhalt, HTTP 503 mit `Retry-After` | lesbar, Hinweis „Archiv – nicht mehr aktuell“ | „nicht mehr verfügbar“, HTTP 410 |
+| Einstieg `/insight/k/<slug>/` | Hinweis (503) | lesbar mit Hinweis | 410 |
+| Kommunenauswahl | bleibt gelistet | bleibt gelistet | nicht mehr gelistet |
+| Suche, Merkliste | Einträge ausgeblendet | Einträge bleiben | Einträge entfernt |
+| Sitemap der Kommune | 503 mit `Retry-After` | unverändert | 410, nicht mehr im Sitemap-Index |
+| OParl-API des Bürgerportals (`/oparl/v1/`) | 503 mit `Retry-After` für Listen und Objekte der Kommune | unverändert | Einträge als gelöscht (`"deleted": true`, in `modified_since`-Listen) |
+| Beschlussseiten „Was wurde aus …?“ | Hinweis (503) | lesbar, keine neuen Abos, keine E-Mails mehr | 410 |
+| Bestand in der Datenbank | unverändert | unverändert | als zurückgenommen markiert (nicht gelöscht) |
+
+**Umkehrbar:** Die Möglichkeiten lassen sich untereinander wechseln („Möglichkeit
+ändern …“); aus einer dauerhaften Rücknahme heraus kommt der Bestand dabei zurück.
+„Wieder veröffentlichen“ hebt jede Möglichkeit auf und nimmt den Abgleich wieder auf.
+Nach einer dauerhaften Rücknahme kommen genau die Einträge zurück, die in Session
+weiterhin öffentlich sind (wie beim Reaktivieren eines Mandanten, Issue #317).
+
+**Technik:** Die Entscheidung steht in `SessionTenant.insight_end_mode`
+(`paused`, `archived`, `withdrawn`; leer = alter Stand ohne Hinweis). Den Stand, nach dem
+das Bürgerportal Seiten, Suche, Sitemaps und OParl richtet, trägt die Quelle in
+`OParlSource.sync_config["portal_state"]` (`insight_core/publication.py`,
+Middleware `PublicationStateMiddleware`). Eine endgültige Löschung des Bestands
+bleibt ein eigener Auftrag der Kommune (`manage.py purge_deleted`, siehe
+`docs/OPARL_API.md`).
 
 Anders beim **Deaktivieren des Mandanten** (Issue #317): Dann nimmt mandari die
 Quelle vollständig zurück – Quelle inaktiv, Kommune nicht mehr gelistet, alle
@@ -187,8 +221,11 @@ python manage.py session_insight_source --tenant musterstadt
 # Alle veröffentlichten Mandanten (nach)registrieren, z. B. nach Umzug
 python manage.py session_insight_source --all
 
-# Deaktivieren
+# Deaktivieren (alter Weg: Quelle aus, Bestand bleibt ohne Hinweis sichtbar)
 python manage.py session_insight_source --tenant musterstadt --deactivate
+
+# Veröffentlichung beenden mit Auswahl (paused, archived oder withdrawn)
+python manage.py session_insight_source --tenant musterstadt --deactivate --mode archived
 
 # Abweichende Basis-URL (z. B. lokale Instanz)
 python manage.py session_insight_source --tenant musterstadt --base-url http://localhost:8000

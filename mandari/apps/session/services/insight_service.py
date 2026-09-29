@@ -22,6 +22,12 @@ gelistet, alle gespiegelten Einträge als zurückgenommen markiert (wie
 ``oparl_publication.retract_from_portal``). ``restore_source`` macht genau das
 beim Reaktivieren rückgängig – ohne Einträge, die in Session inzwischen gelöscht
 oder nichtöffentlich sind (Tombstone).
+
+Beendet der Mandant die Veröffentlichung (Issue #618, ``insight_end_mode``), wählt er,
+was mit dem Bestand geschieht: vorübergehend abschalten, als Archiv behalten oder
+dauerhaft zurücknehmen. ``sync_publication_state`` setzt das um; den Stand, nach dem
+das Bürgerportal Seiten, Suche, Sitemaps und OParl richtet, trägt die Quelle
+(``insight_core.publication``, ``apply_portal_state``).
 """
 
 import logging
@@ -92,14 +98,65 @@ def deactivate_source(tenant, base_url: str | None = None):
     return bool(updated)
 
 
-def sync_publication_state(tenant, base_url: str | None = None):
-    """Quellen-Registrierung an den Veröffentlichungs-Schalter angleichen."""
-    if tenant.insight_publish and tenant.is_active:
+def sync_publication_state(tenant, base_url: str | None = None) -> "PortalChange":
+    """
+    Quellen und Bürgerportal an Veröffentlichungs-Schalter und Ende-Möglichkeit angleichen.
+
+    - veröffentlicht: Quelle aktiv, eine frühere Rücknahme aufgehoben, kein Hinweis
+    - vorübergehend abgeschaltet bzw. Archiv: Quelle inaktiv, Bestand (wieder) da, Stand an der Quelle
+    - dauerhaft zurückgenommen: Quelle zurückgenommen (``retract_source``), Stand an der Quelle
+    - leer (alter Stand): nur die Quelle inaktiv
+
+    Deaktivierte Mandanten regelt ``tenant_provisioning.on_active_changed``; hier nur die Quelle aus.
+    """
+    from apps.session.models import SessionTenant
+
+    change = PortalChange()
+    if not tenant.is_active:
+        deactivate_source(tenant, base_url)
+        return change
+    mode = tenant.insight_end_mode or ""
+    if tenant.insight_publish:
         register_source(tenant, base_url)
-        # Eine Rücknahme aus der Zeit der Deaktivierung endet mit der Veröffentlichung
-        restore_source(tenant)
+        # Eine Rücknahme aus der Zeit der Deaktivierung bzw. dauerhaften Rücknahme endet mit der Veröffentlichung
+        change = restore_source(tenant)
+    elif mode == SessionTenant.PORTAL_END_WITHDRAWN:
+        change = retract_source(tenant)
+    elif mode in SessionTenant.PORTAL_END_KEEPS_ENTRY:
+        # Aus einer dauerhaften Rücknahme heraus kommt der Bestand zurück, die Quelle bleibt aus
+        change = restore_source(tenant, activate=False)
+        deactivate_source(tenant, base_url)
     else:
         deactivate_source(tenant, base_url)
+    apply_portal_state(tenant)
+    return change
+
+
+def portal_state_for(tenant: Any) -> str | None:
+    """
+    Stand im Bürgerportal (``insight_core.publication``) für den Mandanten; ``None`` = kein Stand.
+
+    Deaktivierte Mandanten haben keinen: Ihre Rücknahme (``retract_source``, Issue #317) wirkt schon
+    auf Einträge und Listung; beim Reaktivieren gilt wieder die gewählte Möglichkeit.
+    """
+    from apps.session.models import SessionTenant
+    from insight_core import publication
+
+    if not tenant.is_active or tenant.insight_publish:
+        return None
+    return {
+        SessionTenant.PORTAL_END_PAUSED: publication.PAUSED,
+        SessionTenant.PORTAL_END_ARCHIVED: publication.ARCHIVED,
+        SessionTenant.PORTAL_END_WITHDRAWN: publication.WITHDRAWN,
+    }.get(tenant.insight_end_mode or "")
+
+
+def apply_portal_state(tenant: Any) -> int:
+    """Stand an allen Bürgerportal-Quellen des Mandanten setzen bzw. aufheben; Zahl der Änderungen."""
+    from insight_core import publication
+
+    mode = portal_state_for(tenant)
+    return sum(publication.set_source_state(source, mode) for source in session_sources(tenant))
 
 
 # =============================================================================
@@ -204,19 +261,21 @@ def retract_source(tenant: Any) -> PortalChange:
     return change
 
 
-def restore_source(tenant: Any) -> PortalChange:
+def restore_source(tenant: Any, *, activate: bool = True) -> PortalChange:
     """
     Rücknahme aus ``retract_source`` aufheben (Reaktivieren bzw. erneutes Veröffentlichen); idempotent.
 
-    Nur für aktive, veröffentlichende Mandanten. Zurück kommen genau die Einträge mit dem Zeitpunkt
-    der Rücknahme, außer denen, die in Session inzwischen einen Tombstone haben (gelöscht oder
-    nichtöffentlich). Die Kommune wird wieder gelistet, sofern sie es vorher war.
+    Nur für aktive Mandanten; mit ``activate`` (Standard) nur für veröffentlichende, deren Quelle
+    wieder synchronisiert. Ohne ``activate`` kommt der Bestand zurück, die Quelle bleibt aus
+    (vorübergehend abgeschaltet oder Archiv, Issue #618). Zurück kommen genau die Einträge mit dem
+    Zeitpunkt der Rücknahme, außer denen, die in Session inzwischen einen Tombstone haben (gelöscht
+    oder nichtöffentlich). Die Kommune wird wieder gelistet, sofern sie es vorher war.
     """
     from apps.session.models import SessionOParlTombstone
     from insight_core.models import OParlBody
 
     change = PortalChange()
-    if not (tenant.is_active and tenant.insight_publish):
+    if not tenant.is_active or (activate and not tenant.insight_publish):
         return change
     tombstoned = {
         f"{kind}/{object_id}"
@@ -246,7 +305,8 @@ def restore_source(tenant: Any) -> PortalChange:
                     obj.deleted, obj.deleted_at, obj.oparl_modified = False, None, now
                     obj.save(update_fields=["deleted", "deleted_at", "oparl_modified", "updated_at"])
                     change.entries += 1
-        source.is_active = True
+        if activate:
+            source.is_active = True
         source.sync_config = config
         source.save(update_fields=["is_active", "sync_config", "updated_at"])
         change.sources += 1

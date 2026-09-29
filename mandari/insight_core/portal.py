@@ -32,6 +32,7 @@ from django.conf import settings
 from django.core import checks
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, HttpResponseRedirect
 from django.http.request import split_domain_port, validate_host
 from django.urls import Resolver404, resolve, reverse
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from insight_core.models import OParlBody
+    from insight_core.publication import BodyState
 
 #: Session-Schlüssel des Portal-Kontexts: {"body": <uuid>, "slug": <einstiegs-slug>}
 PORTAL_SESSION_KEY = "insight_portal"
@@ -135,13 +137,44 @@ def _find_body(slug: str) -> OParlBody | None:
     from apps.session.models import SessionTenant
     from apps.session.services.insight_service import session_sources
 
-    tenant = SessionTenant.objects.filter(slug=slug, is_active=True, insight_publish=True).first()
+    # Vorübergehend abgeschaltet oder Archiv (Issue #618): Einstieg bleibt, die Seiten zeigen den Hinweis
+    tenant = (
+        SessionTenant.objects.filter(slug=slug, is_active=True)
+        .filter(Q(insight_publish=True) | Q(insight_end_mode__in=SessionTenant.PORTAL_END_KEEPS_ENTRY))
+        .first()
+    )
     if tenant is None:
         return None
     body = OParlBody.objects.listed().filter(source__in=session_sources(tenant)).order_by("created_at").first()
     if body is None and tenant.oparl_body_id:
         body = OParlBody.objects.listed().filter(pk=tenant.oparl_body_id).first()
     return cast("OParlBody | None", body)
+
+
+def withdrawn_state(slug: str) -> BodyState | None:
+    """
+    Stand „dauerhaft zurückgenommen“ zum Einstiegs-Slug (Issue #618), sonst ``None``.
+
+    Zurückgenommene Kommunen sind nicht mehr gelistet; ihr Einstieg antwortet mit 410 statt 404.
+    """
+    from insight_core.models import OParlBody
+
+    from .publication import body_state, states
+
+    if not states():
+        return None
+    body_ids = list(OParlBody.objects.filter(slug=slug).values_list("id", flat=True))
+    from apps.session.models import SessionTenant
+    from apps.session.services.insight_service import session_sources
+
+    tenant = SessionTenant.objects.filter(slug=slug).first()
+    if tenant is not None:
+        body_ids += list(OParlBody.objects.filter(source__in=session_sources(tenant)).values_list("id", flat=True))
+    for body_id in body_ids:
+        state = body_state(body_id)
+        if state is not None and state.withdrawn:
+            return state
+    return None
 
 
 def host_slug(request: HttpRequest) -> str | None:

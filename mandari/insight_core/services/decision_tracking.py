@@ -17,6 +17,7 @@ nach außen geht nur die separate öffentliche Statusmeldung.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from django.conf import settings
 from django.core.mail import send_mail
@@ -34,15 +35,53 @@ PUBLIC_STATUS_LABELS = {
 }
 
 
-def publishing_tenants(body):
+#: Sichtbarkeit eines Beschlusses bzw. der Beschlussseiten einer Kommune (Issue #618)
+VISIBLE = "visible"  # veröffentlicht: lesbar, Abos und Benachrichtigungen
+ARCHIVED = "archived"  # Archiv: lesbar mit Hinweis, keine Abos und Benachrichtigungen mehr
+PAUSED = "paused"  # vorübergehend abgeschaltet: Hinweis statt Inhalt (503)
+WITHDRAWN = "withdrawn"  # dauerhaft zurückgenommen: nicht mehr verfügbar (410)
+HIDDEN = "hidden"  # nie oder nicht (mehr) freigegeben: 404
+
+
+def _tenant_visibility(tenant: Any) -> str:
+    """Beschlussseiten eines Mandanten folgen der Veröffentlichung im Bürgerportal (Issue #618)."""
+    if not (tenant.is_active and tenant.implementation_publish):
+        return HIDDEN
+    if tenant.insight_publish:
+        return VISIBLE
+    return {
+        tenant.PORTAL_END_ARCHIVED: ARCHIVED,
+        tenant.PORTAL_END_PAUSED: PAUSED,
+        tenant.PORTAL_END_WITHDRAWN: WITHDRAWN,
+    }.get(tenant.insight_end_mode or "", HIDDEN)
+
+
+def publishing_tenants(body: Any) -> Any:
+    """Mandanten, deren Beschlüsse lesbar sind: veröffentlichend oder als Archiv."""
+    from django.db.models import Q
+
     from apps.session.models import SessionTenant
 
-    return SessionTenant.objects.filter(
-        oparl_body=body, is_active=True, insight_publish=True, implementation_publish=True
+    return SessionTenant.objects.filter(oparl_body=body, is_active=True, implementation_publish=True).filter(
+        Q(insight_publish=True) | Q(insight_end_mode=SessionTenant.PORTAL_END_ARCHIVED)
     )
 
 
-def public_decisions(body):
+def body_visibility(body: Any) -> str:
+    """Beschlussseiten einer Kommune: lesbar, Archiv, abgeschaltet, zurückgenommen oder nichts."""
+    from apps.session.models import SessionTenant
+
+    found = {
+        _tenant_visibility(tenant)
+        for tenant in SessionTenant.objects.filter(oparl_body=body, is_active=True, implementation_publish=True)
+    }
+    for visibility in (VISIBLE, ARCHIVED, PAUSED, WITHDRAWN):
+        if visibility in found:
+            return visibility
+    return HIDDEN
+
+
+def public_decisions(body: Any) -> Any:
     """Öffentlich sichtbare Beschlüsse einer Kommune (nur mit Freigabe der Verwaltung)."""
     from apps.session.models import SessionAgendaItem
 
@@ -60,19 +99,29 @@ def public_decisions(body):
     )
 
 
-def is_publicly_visible(item) -> bool:
+def visibility(item: Any) -> str:
+    """Sichtbarkeit eines Beschlusses (``VISIBLE``, ``ARCHIVED``, ``PAUSED``, ``WITHDRAWN``, ``HIDDEN``)."""
     tenant = item.meeting.tenant
-    return bool(
-        tenant.is_active
-        and tenant.insight_publish
-        and tenant.implementation_publish
-        and tenant.oparl_body_id
+    if not (
+        tenant.oparl_body_id
         and item.vote_result == "approved"
         and item.is_public
         and item.meeting.is_public
         and item.implementation_public
         and not item.is_withdrawn
-    )
+    ):
+        return HIDDEN
+    return _tenant_visibility(tenant)
+
+
+def is_readable(item: Any) -> bool:
+    """Seite lesbar (veröffentlicht oder Archiv)."""
+    return visibility(item) in (VISIBLE, ARCHIVED)
+
+
+def is_publicly_visible(item: Any) -> bool:
+    """Aktiv veröffentlicht: Abos und Benachrichtigungen (im Archiv nicht mehr)."""
+    return visibility(item) == VISIBLE
 
 
 def stats(body) -> dict:

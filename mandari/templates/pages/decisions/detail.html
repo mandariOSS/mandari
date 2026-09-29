@@ -77,6 +77,9 @@
                     Wir schreiben Ihnen, wenn die Verwaltung einen neuen Umsetzungsstand zu diesem Beschluss meldet.
                     {% if subscriber_count %}<span class="block mt-1 text-xs text-gray-500">{{ subscriber_count }} Person{{ subscriber_count|pluralize:"en" }} verfolg{{ subscriber_count|pluralize:"t,en" }} diesen Beschluss.</span>{% endif %}
                 </p>
+                {% if not can_subscribe %}
+                <p class="text-sm text-gray-600 dark:text-gray-400" data-testid="archiv-keine-abos">Dieser Beschluss steht im Archiv. Die Verwaltung meldet hier keinen neuen Stand mehr; neue Abonnements sind deshalb nicht möglich.</p>
+                {% else %}
                 <form method="post" class="space-y-3">
                     {% csrf_token %}
                     <input type="email" name="email" required placeholder="ihre@e-mail.de" autocomplete="email"
@@ -87,6 +90,7 @@
                     </label>
                     <button type="submit" class="w-full px-4 py-2 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700">Beschluss abonnieren</button>
                 </form>
+                {% endif %}
             </div>
         </aside>
     </div>

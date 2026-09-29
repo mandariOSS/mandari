@@ -13,8 +13,11 @@ Dieser Befehl ist das CLI-Gegenstück für Betrieb/Provisioning:
     # Alle bereits veröffentlichten Mandanten (nach)registrieren
     python manage.py session_insight_source --all
 
-    # Quelle deaktivieren (setzt insight_publish zurück)
+    # Quelle deaktivieren (setzt insight_publish zurück; Bestand bleibt ohne Hinweis)
     python manage.py session_insight_source --tenant musterstadt --deactivate
+
+    # Veröffentlichung beenden mit Auswahl, was mit dem Bestand geschieht (Issue #618)
+    python manage.py session_insight_source --tenant musterstadt --deactivate --mode archived
 
     # Abweichende Basis-URL (z. B. lokale Instanz)
     python manage.py session_insight_source --tenant musterstadt --base-url http://localhost:8000
@@ -33,6 +36,11 @@ class Command(BaseCommand):
         parser.add_argument("--tenant", help="Slug des Session-Mandanten")
         parser.add_argument("--all", action="store_true", help="Alle Mandanten mit aktivem Veröffentlichungs-Schalter")
         parser.add_argument("--deactivate", action="store_true", help="Quelle deaktivieren statt registrieren")
+        parser.add_argument(
+            "--mode",
+            choices=[key for key, _ in SessionTenant.PORTAL_END_CHOICES],
+            help="Mit --deactivate: paused (vorübergehend), archived (Archiv) oder withdrawn (dauerhaft zurücknehmen)",
+        )
         parser.add_argument("--base-url", help="Basis-URL der Instanz (Standard: SITE_URL)")
 
     def handle(self, *args, **options):
@@ -56,6 +64,17 @@ class Command(BaseCommand):
         if tenant is None:
             raise CommandError(f"Session-Mandant '{slug}' nicht gefunden.")
 
+        if options.get("mode") and not options["deactivate"]:
+            raise CommandError("--mode gilt nur zusammen mit --deactivate.")
+        if options["deactivate"] and options.get("mode"):
+            from apps.session.services import portal_publication
+
+            change = portal_publication.end_publication(tenant, options["mode"])
+            label = portal_publication.state_label(tenant)
+            wirkung = f" ({change.entries} Einträge zurückgenommen)" if change and change.entries else ""
+            self.stdout.write(self.style.SUCCESS(f"{tenant.slug}: Veröffentlichung beendet – {label}{wirkung}."))
+            return
+
         if options["deactivate"]:
             # Schalter zurücksetzen — das Signal deaktiviert die Quelle
             if tenant.insight_publish:
@@ -70,7 +89,8 @@ class Command(BaseCommand):
         # bei abweichender Basis-URL zusätzlich explizit registrieren.
         if not tenant.insight_publish:
             tenant.insight_publish = True
-            tenant.save(update_fields=["insight_publish", "updated_at"])
+            tenant.insight_end_mode = ""
+            tenant.save(update_fields=["insight_publish", "insight_end_mode", "updated_at"])
         source, created = insight_service.register_source(tenant, base_url)
         state = "registriert" if created else "bereits registriert (aktualisiert)"
         self.stdout.write(self.style.SUCCESS(f"{tenant.slug}: Quelle {state} -> {source.url}"))

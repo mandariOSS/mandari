@@ -83,9 +83,21 @@ def active_body(request):
             body=body, start__gte=timezone.now(), cancelled=False, deleted=False
         ).count()
 
+    # Archiv (Issue #618): Die Kommune veröffentlicht nicht mehr, der Bestand bleibt lesbar. Maßgeblich
+    # ist die Kommune der Seite (Middleware), sonst die gewählte.
+    from .publication import body_state
+
+    publication_state = getattr(request, "insight_publication_state", None)
+    if publication_state is None and body is not None:
+        try:
+            publication_state = body_state(body.pk)
+        except Exception:  # noqa: BLE001 - der Hinweis darf keine Seite brechen (wie oben)
+            publication_state = None
+    archive = publication_state if publication_state is not None and publication_state.archived else None
+
     # Datenstand-Hinweis: Quelle der Kommune seit der kritischen Schwelle nicht synchronisiert
     stale_days = None
-    if body and body.last_sync:
+    if body and body.last_sync and archive is None:
         from datetime import timedelta
 
         from django.utils import timezone
@@ -101,5 +113,6 @@ def active_body(request):
         "show_all_bodies": show_all_bodies,
         "upcoming_meeting_count": upcoming_count,
         "active_body_stale_days": stale_days,
+        "active_body_archive": archive,
         "insight_portal": portal,
     }

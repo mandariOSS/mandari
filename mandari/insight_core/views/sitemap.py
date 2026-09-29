@@ -8,6 +8,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 from django.http import Http404, HttpResponse
 from django.views.decorators.http import require_GET
 
+from .. import publication
 from ..models import (
     OParlBody,
     OParlMeeting,
@@ -85,7 +86,23 @@ def body_sitemap(request, body_slug):
     try:
         body = OParlBody.objects.listed().get(slug=body_slug)
     except OParlBody.DoesNotExist:
+        # Dauerhaft zurückgenommen (Issue #618): „nicht mehr verfügbar“ statt „gibt es nicht“
+        gone = OParlBody.objects.filter(slug=body_slug).values_list("id", flat=True).first()
+        state = publication.body_state(gone)
+        if state is not None and state.withdrawn:
+            return HttpResponse("Sitemap nicht mehr verfügbar", status=410, content_type="text/plain; charset=utf-8")
         raise Http404("Kommune nicht gefunden") from None
+
+    # Vorübergehend abgeschaltet (Issue #618): wie die Seiten 503 mit Retry-After, Suchmaschinen
+    # behalten die Adressen. Archiv: unverändert, der Bestand bleibt lesbar.
+    state = publication.body_state(body.pk)
+    if state is not None and state.paused:
+        response = HttpResponse(
+            "Sitemap vorübergehend nicht verfügbar", status=503, content_type="text/plain; charset=utf-8"
+        )
+        response["Retry-After"] = str(publication.RETRY_AFTER_SECONDS)
+        response["Cache-Control"] = "no-store"
+        return response
 
     # XML generieren
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']

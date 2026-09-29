@@ -609,6 +609,7 @@ def set_tenant_active(tenant: SessionTenant, active: bool, *, actor: str = "", r
 def on_active_changed(tenant: SessionTenant) -> PortalChange:
     """Signal-Hook: ``is_active`` wurde gespeichert – Bürgerportal nachziehen und protokollieren."""
     from apps.session import audit
+    from apps.session.models import SessionTenant
     from apps.session.services import insight_service
 
     actor = getattr(tenant, "_lifecycle_actor", "") or "unbekannt"
@@ -618,10 +619,15 @@ def on_active_changed(tenant: SessionTenant) -> PortalChange:
         if tenant.insight_publish:
             insight_service.register_source(tenant)
             portal = insight_service.restore_source(tenant)
+        elif tenant.insight_end_mode in SessionTenant.PORTAL_END_KEEPS_ENTRY:
+            # Vorübergehend abgeschaltet bzw. Archiv (Issue #618): Bestand zurück, Quelle bleibt aus
+            portal = insight_service.restore_source(tenant, activate=False)
         aktion = "publish"
     else:
         portal = insight_service.retract_source(tenant)
         aktion = "unpublish"
+    # Stand im Bürgerportal (Hinweis, 503/410) folgt dem Mandanten
+    insight_service.apply_portal_state(tenant)
     audit.log_event(
         "update",
         tenant,

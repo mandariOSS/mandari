@@ -14,16 +14,47 @@ from django.views.generic import TemplateView
 
 from apps.common.params import uuid_param
 
-from .. import throttle
+from .. import publication, throttle
 from ..models import DecisionSubscription
 from ..services import decision_tracking
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
 PAGE_SIZE = 25
 
+#: Sichtbarkeit der Beschlussseiten → Stand im Bürgerportal (Hinweis, 503, 410; Issue #618)
+_STATE_MODES = {
+    decision_tracking.ARCHIVED: publication.ARCHIVED,
+    decision_tracking.PAUSED: publication.PAUSED,
+    decision_tracking.WITHDRAWN: publication.WITHDRAWN,
+}
+
+
+def _apply_state(request, visibility: str, body):
+    """
+    Beschlussseiten folgen der Veröffentlichung des Mandanten: Hinweisseite (503/410) oder Archiv-Hinweis.
+
+    Gibt die Hinweisseite zurück oder ``None``, wenn die Seite (ggf. mit Archiv-Hinweis) laufen darf.
+    """
+    mode = _STATE_MODES.get(visibility)
+    if mode is None:
+        return None
+    state = publication.body_state(body.pk) if body is not None else None
+    if state is None or state.mode != mode:
+        state = publication.BodyState(mode=mode)
+    request.insight_publication_state = state
+    return publication.state_response(request, state)
+
 
 class DecisionListView(ActiveBodyRequiredMixin, TemplateView):
     template_name = "pages/decisions/list.html"
+
+    def get(self, request, *args, **kwargs):
+        body = get_active_body(request)
+        if body is not None:
+            response = _apply_state(request, decision_tracking.body_visibility(body), body)
+            if response is not None:
+                return response
+        return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -107,9 +138,17 @@ class DecisionDetailView(TemplateView):
             SessionAgendaItem.objects.select_related("meeting__organization", "meeting__tenant__oparl_body", "paper"),
             id=self.kwargs["pk"],
         )
-        if not decision_tracking.is_publicly_visible(item):
+        self.visibility = decision_tracking.visibility(item)
+        if self.visibility == decision_tracking.HIDDEN:
             raise Http404("Beschluss nicht öffentlich")
         return item
+
+    def get(self, request, *args, **kwargs):
+        item = self._get_item()
+        response = _apply_state(request, self.visibility, item.meeting.tenant.oparl_body)
+        if response is not None:
+            return response
+        return self.render_to_response(self.get_context_data(item=item, **kwargs))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -138,6 +177,8 @@ class DecisionDetailView(TemplateView):
                 "subscriber_count": DecisionSubscription.objects.filter(
                     agenda_item=item, confirmed=True, unsubscribed_at__isnull=True
                 ).count(),
+                # Archiv (Issue #618): keine neuen Abos, es kommen keine Meldungen mehr
+                "can_subscribe": getattr(self, "visibility", None) == decision_tracking.VISIBLE,
             }
         )
         return context
@@ -145,6 +186,12 @@ class DecisionDetailView(TemplateView):
     def post(self, request, *args, **kwargs):
         """Beschluss abonnieren (Double-Opt-In)."""
         item = self._get_item()
+        if self.visibility != decision_tracking.VISIBLE:
+            response = _apply_state(request, self.visibility, item.meeting.tenant.oparl_body)
+            if response is not None:
+                return response
+            messages.info(request, "Dieser Beschluss steht im Archiv; es gibt keine neuen Meldungen mehr.")
+            return redirect("insight_core:insight:decision_detail", pk=item.id)
         email = (request.POST.get("email") or "").strip().lower()
         try:
             validate_email(email)
