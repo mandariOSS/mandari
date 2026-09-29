@@ -23,6 +23,7 @@ PARTIALS = (
     "work/profile/export/partials/_dsgvo_tasks_motions.html",
     "work/profile/export/partials/_dsgvo_meetings.html",
     "work/profile/export/partials/_dsgvo_misc.html",
+    "work/profile/export/partials/_dsgvo_beteiligung.html",
 )
 
 

@@ -466,10 +466,10 @@ class AgendaItemNote(EncryptionMixin, models.Model):
     hängen an der Vorlage (OParlPaper) und sind damit automatisch im gesamten
     Beratungsverlauf (allen Gremien) der Organisation sichtbar.
     AgendaItemNote bleibt NUR für TOPs ohne Vorlage (org-lokal) bestehen.
-    Bestehende Notizen an TOPs mit Vorlage wurden per Datenmigration nach
-    PaperComment überführt; die Originale bleiben erhalten und sind über
-    ``migrated_to_paper_comment`` markiert (Queries schließen sie aus, um
-    Doppelanzeige zu vermeiden).
+    Bestehende Notizen an TOPs mit Vorlage wurden per Datenmigration (0037) nach
+    PaperComment überführt. Die dabei markierten Originale (``migrated_to_paper_comment``)
+    hat Migration 0061 entfernt – der Inhalt liegt nur noch im PaperComment, ein
+    Löschwunsch wirkt damit vollständig.
 
     Alle Mitglieder der Organisation sehen und können beitragen.
     Kann als Beschluss oder wichtig markiert werden.
@@ -529,12 +529,14 @@ class AgendaItemNote(EncryptionMixin, models.Model):
     )
     is_pinned = models.BooleanField(default=False, verbose_name="Angeheftet")
 
-    # Datenmigration: Notizen an TOPs mit Vorlage wurden nach PaperComment
-    # überführt. Das Original bleibt erhalten (nichts löschen!), wird aber
-    # markiert, damit UI-Queries es ausschließen (keine Doppelanzeige).
+    # Altfeld der Datenmigration 0037 (Notizen an TOPs mit Vorlage → PaperComment).
+    # Markierte Originale hat Migration 0061 gelöscht; das Feld bleibt nur, damit ein
+    # Rückfall auf ein älteres Image ohne Migrationsrückbau lauffähig bleibt. Kaskade statt
+    # SET_NULL: Mit dem Kommentar entfällt auch ein etwaiges Original – es darf nicht wieder
+    # im Thread auftauchen.
     migrated_to_paper_comment = models.ForeignKey(
         "work.PaperComment",
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name="migrated_from_notes",
