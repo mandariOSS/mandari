@@ -244,9 +244,11 @@ class DataExport(models.Model):
     def get_absolute_path(self):
         if not self.file_path:
             return None
+        from pathlib import Path
+
         from django.conf import settings
 
-        return settings.MEDIA_ROOT / self.file_path
+        return Path(settings.MEDIA_ROOT) / self.file_path
 
     def delete_file(self):
         path = self.get_absolute_path()

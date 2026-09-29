@@ -43,6 +43,14 @@ Gemessen wird die letzte Endung des Dateinamens; Pfadangaben im Namen ändern ni
 hochgeladenes Dokument wird also heruntergeladen, nicht im Browser gerendert; nur
 Logos, Profilbilder und ähnliche Bilder werden eingebettet (`is_embeddable`).
 
+Dateien unter `PROTECTED_MEDIA_PREFIXES` (`mandari/urls.py`) liefert `serve_media` gar
+nicht aus, auch nicht an angemeldete Personen: Session-Anlagen, Work-Anhänge
+(`apps/work/files.py`), Datenexporte, Archivpakete des Protokolls und der Dokument-Cache.
+Sie gehen nur über Download-Ansichten hinaus, die Mandant, Sichtbarkeit und Rechte prüfen.
+Zeigen `OPARL_FILES_ROOT` oder `AUDIT_ARCHIVE_ROOT` in ein Verzeichnis unter `MEDIA_ROOT`,
+gilt es ebenfalls als geschützt. Wer eine neue nichtöffentliche Ablage unter `MEDIA_ROOT`
+einführt, trägt ihr Präfix dort ein.
+
 ## Gate
 
 `scripts/check_upload_validation.py` läuft im Lint-Job und meldet jedes Modul, das

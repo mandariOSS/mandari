@@ -149,9 +149,12 @@ def generate_dsgvo_export_task(export_id: str):
             file_bytes = content.encode("utf-8")
             ext = "json"
 
-        # Write file to MEDIA_ROOT/exports/<org_id>/<membership_id>/
-        rel_dir = Path("exports") / str(export.organization_id) / str(export.membership_id)
-        abs_dir = settings.MEDIA_ROOT / rel_dir
+        from apps.work.files import DATA_EXPORTS
+
+        # MEDIA_ROOT/exports/<org_id>/<membership_id>/ – geschütztes Präfix, /media/ liefert es nie aus;
+        # heruntergeladen wird nur über work:export_download (Organisation und Mitgliedschaft geprüft)
+        rel_dir = Path(DATA_EXPORTS) / str(export.organization_id) / str(export.membership_id)
+        abs_dir = Path(settings.MEDIA_ROOT) / rel_dir
         abs_dir.mkdir(parents=True, exist_ok=True)
 
         filename = f"dsgvo-export-{export.id}.{ext}"
@@ -161,7 +164,7 @@ def generate_dsgvo_export_task(export_id: str):
         abs_path.write_bytes(file_bytes)
 
         export.status = "completed"
-        export.file_path = str(rel_path)
+        export.file_path = rel_path.as_posix()
         export.file_size = len(file_bytes)
         export.completed_at = timezone.now()
         export.save(update_fields=["status", "file_path", "file_size", "completed_at"])

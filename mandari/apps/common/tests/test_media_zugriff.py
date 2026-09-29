@@ -27,6 +27,9 @@ DATEIEN = (
     "motions/documents/2026/09/antrag.txt",
     "audit_archive/paket-2026.json",
     "tasks/attachments/aufgabe.txt",
+    "exports/org-1/mitglied-1/dsgvo-export-1.json",
+    "oparl_files/musterstadt/2026/vorlage.pdf",
+    "dokumente/musterstadt/2026/vorlage.pdf",
     "demo/logo.png",
     "avatars/bild.png",
     "sonstiges/notiz.txt",
@@ -88,6 +91,11 @@ ANGEMELDET_GESPERRT = (
     "/media/tasks/%2e%2e/audit_archive/paket-2026.json",
     "/media/Session/files/2026/09/geheim.txt",
     "/media/SESSION/FILES/2026/09/geheim.txt",
+    # Datenexporte nur über work:export_download, Dokument-Cache nur über den Datei-Proxy
+    "/media/exports/org-1/mitglied-1/dsgvo-export-1.json",
+    "/media/Exports/org-1/mitglied-1/dsgvo-export-1.json",
+    "/media/sonstiges/../exports/org-1/mitglied-1/dsgvo-export-1.json",
+    "/media/oparl_files/musterstadt/2026/vorlage.pdf",
 )
 
 
@@ -118,6 +126,30 @@ def test_work_anhaenge_auch_angemeldet_nur_ueber_ansichten(media: Path, client: 
     # Aufgaben-Anhänge laufen nur über zugriffsgeprüfte Download-Ansichten (apps/work/files.py)
     client.force_login(cast(Any, UserFactory)())
     assert client.get("/media/tasks/attachments/aufgabe.txt").status_code == 404
+
+
+def test_eingestellte_ablagen_unter_media_root_sind_geschuetzt(media: Path, client: Client, settings: Any) -> None:
+    """Liegt der Dokument-Cache in einem anders benannten Verzeichnis unter MEDIA_ROOT, gilt es als geschützt."""
+    client.force_login(cast(Any, UserFactory)())
+    url = "/media/dokumente/musterstadt/2026/vorlage.pdf"
+    settings.OPARL_FILES_ROOT = str(media / "elsewhere")
+    assert _geliefert(client.get(url))
+
+    settings.OPARL_FILES_ROOT = str(media / "dokumente")
+    antwort = client.get(url)
+    assert not _geliefert(antwort)
+    assert antwort.status_code == 404
+
+
+def test_ablagen_ausserhalb_von_media_root_aendern_nichts(
+    media: Path, client: Client, settings: Any, tmp_path_factory: Any
+) -> None:
+    """Ablagen außerhalb von MEDIA_ROOT (Container: eigenes Volume) schränken ``/media/`` nicht ein."""
+    settings.OPARL_FILES_ROOT = str(tmp_path_factory.mktemp("files"))
+    settings.AUDIT_ARCHIVE_ROOT = str(tmp_path_factory.mktemp("archiv"))
+    assert _geliefert(client.get("/media/demo/logo.png"))
+    client.force_login(cast(Any, UserFactory)())
+    assert _geliefert(client.get("/media/sonstiges/notiz.txt"))
 
 
 def test_umweg_auf_oeffentliche_datei_ist_nicht_oeffentlich_gecacht(media: Path, client: Client) -> None:
