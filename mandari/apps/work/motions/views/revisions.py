@@ -100,10 +100,12 @@ class DocumentRevisionRestoreView(WorkViewMixin, View):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
         revision = get_object_or_404(MotionRevision, id=kwargs.get("revision_id"), motion=motion)
 
-        # Check edit permission
-        is_author = motion.author == self.membership
-        has_edit_all = self.membership.has_permission("motions.edit_all")
-        if not is_author and not has_edit_all:
+        # Verwaltungsrecht (Autor:in oder motions.edit_all mit Zugang) und Schreibstufe inkl.
+        # Status-Sperre – eine Wiederherstellung ändert den Inhalt wie der Editor
+        if not motion.can_manage(self.membership) or motion.editor_access_level(self.membership) not in (
+            "edit",
+            "admin",
+        ):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         # Save current content as a new revision (safety net)

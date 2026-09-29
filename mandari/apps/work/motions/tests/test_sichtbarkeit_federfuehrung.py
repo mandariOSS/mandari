@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import pytest
 
-from apps.common.tests.factories import MembershipFactory, OrganizationFactory
+from apps.common.tests.factories import MembershipFactory, OrganizationFactory, RoleFactory
 from apps.tenants.models import Membership, Organization
 from apps.work.motions.models import Motion
 
@@ -30,7 +30,9 @@ def _org() -> Organization:
 
 
 def _mitglied(organization: Organization) -> Membership:
-    return cast(Membership, cast(Any, MembershipFactory)(organization=organization))
+    """Mitglied mit Leserecht für Dokumente (ohne motions.view sieht niemand Dokumente)."""
+    rolle = cast(Any, RoleFactory)(organization=organization, permissions=["motions.view"])
+    return cast(Membership, cast(Any, MembershipFactory)(organization=organization, roles=[rolle]))
 
 
 def _sichtbar_fuer(membership: Membership) -> Any:
@@ -54,7 +56,8 @@ def test_federfuehrung_sieht_das_dokument() -> None:
     motion = _motion(org, autor, responsible=zustaendig)
 
     sichtbar = _sichtbar_fuer(zustaendig)
-    assert motion in sichtbar, "Wer die Federführung hat, muss das Dokument öffnen können"
+    assert motion in sichtbar, "Wer die Federführung hat, muss das Dokument sehen können"
+    assert motion.can_access(zustaendig), "… und öffnen (Liste und Öffnen folgen derselben Regel)"
 
 
 def test_mitarbeit_sieht_das_dokument() -> None:
@@ -65,6 +68,7 @@ def test_mitarbeit_sieht_das_dokument() -> None:
     motion.contributors.add(mitarbeit)
 
     assert motion in _sichtbar_fuer(mitarbeit)
+    assert motion.can_access(mitarbeit)
 
 
 def test_unbeteiligte_sehen_es_weiterhin_nicht() -> None:

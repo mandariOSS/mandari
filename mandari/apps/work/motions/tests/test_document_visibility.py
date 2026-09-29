@@ -180,11 +180,17 @@ def test_fremdes_privates_dokument_ist_weder_wiederherstellbar_noch_loeschbar(
 
 
 @pytest.mark.django_db
-def test_organisationsweites_dokument_darf_wiederhergestellt_werden(
-    org: Any, colleague: Any, documents: dict[str, Motion], client_for: Any
+def test_organisationsweites_dokument_stellt_wieder_her_wer_es_bearbeiten_darf(
+    org: Any, author: Any, colleague: Any, documents: dict[str, Motion], client_for: Any
 ) -> None:
+    """Wiederherstellen ist Bearbeiten (Motion.can_edit): Autorin, motions.edit_all oder Freigabe „Bearbeiten“."""
     public = move_to_trash(documents["public"])
 
+    assert client_for(colleague.user).post(url("document_restore", org, public)).status_code == 403
+    public.refresh_from_db()
+    assert public.status == "deleted"
+
+    MotionShare.objects.create(motion=public, scope="user", user=colleague.user, level="edit", created_by=author.user)
     response = client_for(colleague.user).post(url("document_restore", org, public))
 
     assert response.status_code == 302

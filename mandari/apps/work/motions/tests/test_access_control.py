@@ -22,7 +22,8 @@ EDIT_PERMISSIONS = ["motions.view", "motions.edit", "motions.comment"]
 
 @pytest.fixture
 def setup(org, make_member):
-    author = make_member(org, EDIT_PERMISSIONS, email="author@example.org")
+    # Freigabeanfragen an Personen ohne Zugriff sind Freigaben: die Autorin braucht motions.share
+    author = make_member(org, [*EDIT_PERMISSIONS, "motions.share"], email="author@example.org")
     attacker = make_member(org, EDIT_PERMISSIONS, email="attacker@example.org")
     motion = Motion.objects.create(organization=org, author=author, title="Geheimer Antrag", visibility="private")
     return {"org": org, "author": author, "attacker": attacker, "motion": motion}

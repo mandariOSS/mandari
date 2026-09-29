@@ -505,15 +505,11 @@ def guest_shared_folders(organization: Organization, user: User) -> list[Documen
 
 
 def shareable_documents(organization: Organization, membership: Membership) -> QuerySet[Motion]:
-    """Dokumente, die der Einladende freigeben darf (eigene + org-sichtbare, nicht gelöscht)."""
+    """Dokumente, die der Einladende freigeben darf: eigene und org-sichtbare, die er selbst sieht (visible_to)."""
     from apps.work.motions.models import Motion
 
-    return (
-        Motion.objects.filter(organization=organization)
-        .filter(Q(visibility="organization") | Q(author=membership))
-        .exclude(status="deleted")
-        .order_by("-updated_at")
-    )
+    visible = cast("QuerySet[Motion]", cast(Any, Motion).visible_to(membership))
+    return visible.filter(Q(visibility="organization") | Q(author=membership)).order_by("-updated_at")
 
 
 def shareable_folders(organization: Organization, membership: Membership) -> list[tuple[DocumentFolder, int]]:

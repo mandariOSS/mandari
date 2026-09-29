@@ -36,8 +36,8 @@ def _editable_trashed_motion(membership, motion_id):
 
 
 def _can_purge(membership, motion):
-    """Endgültig löschen: nur Autor:in oder „alle Anträge bearbeiten" (wie Freigaben und Versionen)."""
-    return motion.author_id == membership.id or membership.has_permission("motions.edit_all")
+    """Endgültig löschen: Verwaltungsrecht (Motion.can_manage) – wie Freigaben und Versionen."""
+    return motion.can_manage(membership)
 
 
 # =============================================================================

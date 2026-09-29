@@ -57,9 +57,8 @@ class MotionShareView(WorkViewMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
-        # Per-Objekt-Recht: Freigeben nur durch Autor oder motions.edit_all
-        # (konsistent zu MotionShareUpdateView/MotionShareRemoveView).
-        if motion.author != self.membership and not self.membership.has_permission("motions.edit_all"):
+        # Per-Objekt-Recht: einheitliche Freigaberegel (Motion.can_share)
+        if not motion.can_share(self.membership):
             messages.error(request, "Keine Berechtigung für dieses Dokument.")
             return redirect("work:documents", org_slug=self.organization.slug)
 
@@ -255,6 +254,19 @@ class MotionStatusView(WorkViewMixin, View):
         return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
 
+_ASSIGNMENT_DENIED = {
+    "error": "Die Person hat keinen Zugriff auf dieses Dokument; zuweisen darf nur, wer das Dokument teilen darf."
+}
+
+
+def _assignment_allowed(motion, actor, members) -> bool:
+    """
+    Federführung und Mitarbeit erhalten Zugang zum Dokument. Personen, die es bisher nicht sehen
+    durften, zuzuweisen, ist damit eine Freigabe – nur mit Freigaberecht (Motion.can_share).
+    """
+    return all(motion.can_access(member) for member in members) or motion.can_share(actor)
+
+
 class MotionMetaUpdateView(WorkViewMixin, View):
     """API endpoint for updating tracking metadata (Zuständigkeit, Themen, Frist)."""
 
@@ -280,6 +292,9 @@ class MotionMetaUpdateView(WorkViewMixin, View):
                 responsible = get_object_or_404(
                     Membership, id=responsible_id, organization=self.organization, is_active=True
                 )
+                # Federführung öffnet das Dokument: wer es damit erst zugänglich macht, gibt es frei
+                if not _assignment_allowed(motion, self.membership, [responsible]):
+                    return JsonResponse(_ASSIGNMENT_DENIED, status=403)
                 motion.responsible = responsible
             else:
                 motion.responsible = None
@@ -294,6 +309,9 @@ class MotionMetaUpdateView(WorkViewMixin, View):
             contributors = Membership.objects.filter(
                 id__in=contributor_ids, organization=self.organization, is_active=True
             )
+            # Mitarbeit öffnet das Dokument (siehe Federführung)
+            if not _assignment_allowed(motion, self.membership, list(contributors)):
+                return JsonResponse(_ASSIGNMENT_DENIED, status=403)
             motion.contributors.set(contributors)
 
         elif action == "set_topics":
@@ -465,8 +483,8 @@ class MotionApprovalDecideView(WorkViewMixin, View):
             motion__organization=self.organization,
         )
 
-        # Nur die angefragte Person darf entscheiden
-        if approval.approver_id != self.membership.id:
+        # Nur die angefragte Person darf entscheiden – und nur, solange sie das Dokument sehen darf
+        if approval.approver_id != self.membership.id or not approval.motion.can_access(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
         if approval.approved is not None:
             return JsonResponse({"error": "Diese Freigabe wurde bereits entschieden."}, status=400)
@@ -761,8 +779,8 @@ class MotionShareUpdateView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
-        # Check if user can share this motion
-        if motion.author != self.membership and not self.membership.has_permission("motions.edit_all"):
+        # Einheitliche Freigaberegel (Motion.can_share): Verwaltungsrecht mit Zugang und motions.share
+        if not motion.can_share(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         # Update visibility
@@ -836,11 +854,8 @@ class MotionShareRemoveView(WorkViewMixin, View):
             and self.membership.has_permission("guests.manage")
             and Membership.objects.filter(user_id=share.user_id, organization=self.organization, is_guest=True).exists()
         )
-        if (
-            motion.author != self.membership
-            and not self.membership.has_permission("motions.edit_all")
-            and not manages_guest_share
-        ):
+        # Entziehen verengt nur den Zugang: Freigaberecht (Motion.can_share) oder Gast-Verwaltung
+        if not motion.can_share(self.membership) and not manages_guest_share:
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         share.delete()
