@@ -1,3 +1,4 @@
+{% load member_tags %}
     <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex-shrink-0">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-4">
@@ -82,7 +83,7 @@
                             {{ motion.get_status_display }}
                         </span>
                         <span>·</span>
-                        <span class="text-xs text-gray-400">{{ motion.author.user.get_display_name }}</span>
+                        <span class="text-xs text-gray-400">{{ motion.author|member_name }}</span>
                         {% if can_edit %}
                         <span x-show="lastSaved" x-cloak class="flex items-center gap-1">
                             <span>·</span>

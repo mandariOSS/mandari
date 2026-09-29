@@ -11,6 +11,7 @@ from django.views.generic import View
 
 logger = logging.getLogger("apps.work.motions")
 
+from apps.common.formatting import member_name
 from apps.common.mixins import WorkViewMixin
 from apps.work.sanitize import sanitize_editor_html
 
@@ -51,7 +52,7 @@ class DocumentRevisionsAPIView(WorkViewMixin, View):
                     "id": str(rev.id),
                     "version": rev.version,
                     "change_summary": rev.change_summary,
-                    "changed_by": rev.changed_by.user.get_display_name(),
+                    "changed_by": member_name(rev.changed_by),
                     "created_at": rev.created_at.isoformat(),
                 }
             )
@@ -83,7 +84,7 @@ class DocumentRevisionDetailAPIView(WorkViewMixin, View):
                     # Wird im Editor als HTML angezeigt: nur die Positivliste (apps/work/sanitize.py)
                     "content": sanitize_editor_html(revision.get_content_decrypted()),
                     "change_summary": revision.change_summary,
-                    "changed_by": revision.changed_by.user.get_display_name(),
+                    "changed_by": member_name(revision.changed_by),
                     "created_at": revision.created_at.isoformat(),
                 },
             }

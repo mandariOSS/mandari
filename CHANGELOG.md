@@ -8,6 +8,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ### Behoben
 - Work: Der PDF-Import von Dokumenten schlug immer mit „Datei konnte nicht gelesen werden“ fehl, weil er die Rückgabe der Textextraktion falsch entpackte. Text-PDFs werden jetzt übernommen, gescannte PDFs über die Texterkennung (ohne verfügbare Texterkennung mit Hinweis im Dokument); die Fehlermeldung erscheint nur noch bei tatsächlich unlesbaren Dateien (#422).
+- Work: „Mitglied endgültig entfernen“ löschte per Kaskade alles, was die Person angelegt hatte – auch organisationsweit geteilte Dokumente, Aufgaben, Fraktionssitzungen samt Protokoll und Beschlüssen sowie Support-Tickets. Diese Inhalte bleiben jetzt erhalten und zeigen „Ehemaliges Mitglied“. Rein persönliche Daten entfallen weiter: private TOP-Notizen, nicht geteilte Redebeiträge, private Vorgangs-Kommentare, Aufgaben, die nur die Person sah, offene Freigabe-Anfragen an sie, Einladungen zu künftigen Fraktionssitzungen, Benachrichtigungen und Einstellungen. Das gilt ebenso, wenn ein Konto gelöscht wird. Die Migration `work/0059` erlaubt dafür leere Verweise (#420).
 
 ## [0.11.0] – 2026-09-27
 

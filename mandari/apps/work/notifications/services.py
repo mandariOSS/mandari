@@ -505,7 +505,8 @@ class NotificationHub:
             .select_related("author__user")
         )
         for prev in previous:
-            recipients.setdefault(prev.author_id, prev.author)
+            if prev.author is not None:  # Kommentare ehemaliger Mitglieder
+                recipients.setdefault(prev.author_id, prev.author)
 
         excerpt = " ".join((comment.content or "").split())[:140]
         actor_name = actor.user.get_display_name() if hasattr(actor.user, "get_display_name") else actor.user.email

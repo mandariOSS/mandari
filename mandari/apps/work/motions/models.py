@@ -23,6 +23,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.common.encryption import DecryptionError, EncryptedTextField, EncryptionMixin, TenantEncryption
+from apps.common.formatting import member_name
 from apps.work.files import letterhead_path
 
 logger = logging.getLogger(__name__)
@@ -825,7 +826,9 @@ class Motion(EncryptionMixin, models.Model):
     # Metadata
     author = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="authored_motions",
         verbose_name="Autor",
     )
@@ -1231,7 +1234,7 @@ class Motion(EncryptionMixin, models.Model):
         """
         if self.visibility == "organization":
             return True
-        return created_by_id is not None and self.author.user_id == created_by_id
+        return created_by_id is not None and self.author is not None and self.author.user_id == created_by_id
 
     def get_visibility_icon(self) -> str:
         """Get the Lucide icon name for the current visibility."""
@@ -1562,7 +1565,9 @@ class MotionDocument(models.Model):
     # Metadata
     uploaded_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="uploaded_documents",
         verbose_name="Hochgeladen von",
     )
@@ -1596,7 +1601,9 @@ class MotionRevision(EncryptionMixin, models.Model):
     # Metadata
     changed_by = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="motion_revisions",
         verbose_name="Geändert von",
     )
@@ -1656,7 +1663,9 @@ class MotionComment(models.Model):
     # Metadata
     author = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="motion_comments",
         verbose_name="Autor",
     )
@@ -1681,7 +1690,7 @@ class MotionComment(models.Model):
 
     def __str__(self):
         preview = self.content[:50] + "..." if len(self.content) > 50 else self.content
-        return f"{self.author.user.email}: {preview}"
+        return f"{member_name(self.author)}: {preview}"
 
 
 class MotionApproval(models.Model):
@@ -1703,7 +1712,9 @@ class MotionApproval(models.Model):
     motion = models.ForeignKey(Motion, on_delete=models.CASCADE, related_name="approvals", verbose_name="Antrag")
     approver = models.ForeignKey(
         "tenants.Membership",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="motion_approvals",
         verbose_name="Genehmiger",
     )

@@ -626,7 +626,12 @@ def reactivate_member(organization: Organization, member: Membership, actor: Mem
 
 
 def remove_member(organization: Organization, member: Membership, actor_user: User) -> str:
-    """Mitglied endgültig entfernen; liefert den Anzeigenamen für die Meldung."""
+    """
+    Mitglied endgültig entfernen; liefert den Anzeigenamen für die Meldung.
+
+    Inhalte der Organisation (Dokumente, Aufgaben, Sitzungen, Tickets …) bleiben erhalten und zeigen
+    danach „Ehemaliges Mitglied“; persönliche Daten entfallen (Issue #420, siehe ``member_data``).
+    """
     if member.user == organization.owner:
         raise ServiceError("Der Eigentümer kann nicht entfernt werden.")
     if member.user == actor_user:

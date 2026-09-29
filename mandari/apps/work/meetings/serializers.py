@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.common.formatting import member_name
 from apps.work.sanitize import sanitize_editor_html
 
 if TYPE_CHECKING:
@@ -71,7 +72,7 @@ def serialize_paper_comment_as_note(comment: PaperComment, membership: Membershi
         "is_decision": comment.is_recommendation,
         "is_recommendation": comment.is_recommendation,
         "is_pinned": False,
-        "author": comment.author.user.get_display_name(),
+        "author": member_name(comment.author),
         "organization": comment.organization.name,
         "is_own": comment.author == membership,
         "is_own_org": comment.organization_id == membership.organization_id,
@@ -91,7 +92,7 @@ def serialize_paper_comment(comment: PaperComment, membership: Membership) -> di
         "visibility": comment.visibility,
         "visibility_display": comment.get_visibility_display(),
         "is_recommendation": comment.is_recommendation,
-        "author": comment.author.user.get_display_name(),
+        "author": member_name(comment.author),
         "organization": comment.organization.name,
         "is_own": comment.author == membership,
         "is_own_org": comment.organization == membership.organization,
@@ -115,7 +116,7 @@ def serialize_agenda_note(
         "is_decision": note.is_decision,
         "is_recommendation": note.is_decision,
         "is_pinned": note.is_pinned,
-        "author": note.author.user.get_display_name(),
+        "author": member_name(note.author),
         "is_own": note.author == membership,
         "created_at": note.created_at.isoformat(),
         "visibility": note.visibility,
@@ -190,7 +191,7 @@ def serialize_speech_note(note: AgendaSpeechNote | None, membership: Membership)
 def serialize_shared_speech(note: AgendaSpeechNote) -> dict[str, Any]:
     """Geteilter Redebeitrag eines anderen Mitglieds (Autor + bereinigter Inhalt)."""
     return {
-        "author": note.author.user.get_display_name(),
+        "author": member_name(note.author),
         "content": sanitize_editor_html(decrypted(note, "content")),
     }
 
@@ -201,7 +202,7 @@ def serialize_file_annotation(annotation: FileAnnotation, membership: Membership
         "id": str(annotation.id),
         "page": annotation.page,
         "content": decrypted(annotation, "content"),
-        "author": annotation.author.user.get_display_name(),
+        "author": member_name(annotation.author),
         "is_own": annotation.author_id == membership.id,
         "created_at": annotation.created_at.isoformat(),
     }
@@ -260,7 +261,7 @@ def serialize_document(doc: AgendaSupplementaryDocument, agenda_item_id: Any, an
         "url": doc.display_url,
         "document_type": doc.document_type,
         "description": doc.description,
-        "added_by": doc.added_by.user.get_display_name(),
+        "added_by": member_name(doc.added_by),
         "created_at": doc.created_at.isoformat(),
         "paper_id": str(doc.paper_id) if doc.paper_id else None,
         "share_across_committees": doc.share_across_committees,
@@ -369,7 +370,7 @@ def serialize_prepared_item(entry: PreparedItem, index: int, data: PreparationDa
                 "title": d.title,
                 "url": d.display_url,
                 "type": d.document_type,
-                "addedBy": d.added_by.user.get_display_name(),
+                "addedBy": member_name(d.added_by),
                 "paperId": str(d.paper_id) if d.paper_id else None,
                 "sharedAcrossCommittees": d.share_across_committees,
             }

@@ -17,6 +17,7 @@ logger = logging.getLogger("apps.work.motions")
 
 import contextlib
 
+from apps.common.formatting import member_initials, member_name
 from apps.common.mixins import WorkViewMixin
 from apps.work.sanitize import safe_editor_html, sanitize_editor_html
 
@@ -233,16 +234,16 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                         "mark_id": str(comment.mark_id),
                         "content": comment.content,
                         "selected_text": comment.selected_text or "",
-                        "author_name": comment.author.user.get_display_name(),
-                        "author_initials": comment.author.user.get_initials(),
+                        "author_name": member_name(comment.author),
+                        "author_initials": member_initials(comment.author),
                         "created_at": comment.created_at.isoformat(),
                         "is_resolved": comment.is_resolved,
                         "replies": [
                             {
                                 "id": str(reply.id),
                                 "content": reply.content,
-                                "author_name": reply.author.user.get_display_name(),
-                                "author_initials": reply.author.user.get_initials(),
+                                "author_name": member_name(reply.author),
+                                "author_initials": member_initials(reply.author),
                                 "created_at": reply.created_at.isoformat(),
                             }
                             for reply in comment.replies.all()

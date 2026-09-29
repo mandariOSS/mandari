@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load member_tags %}
 
 {% block page_title %}Ticket #{{ ticket.id.hex|slice:":8" }}{% endblock %}
 
@@ -55,13 +56,13 @@
             <div class="flex items-start gap-4">
                 <div class="flex-shrink-0 w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
                     <span class="text-sm font-medium text-primary-700 dark:text-primary-300">
-                        {{ ticket.created_by.user.first_name|first|upper }}{{ ticket.created_by.user.last_name|first|upper }}
+                        {% if ticket.created_by %}{{ ticket.created_by.user.first_name|first|upper }}{{ ticket.created_by.user.last_name|first|upper }}{% else %}{{ ticket.created_by|member_initials }}{% endif %}
                     </span>
                 </div>
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center justify-between">
                         <h3 class="text-sm font-medium text-gray-900 dark:text-white">
-                            {{ ticket.created_by.user.get_full_name|default:ticket.created_by.user.email }}
+                            {% if ticket.created_by %}{{ ticket.created_by.user.get_full_name|default:ticket.created_by.user.email }}{% else %}{{ ticket.created_by|member_name }}{% endif %}
                         </h3>
                         <time class="text-xs text-gray-500 dark:text-gray-400">
                             {{ ticket.created_at|date:"d.m.Y H:i" }}
