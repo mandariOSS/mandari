@@ -466,5 +466,5 @@ class AllowanceYearView(SessionViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["year"] = self.year
         context["rows"] = allowance_service.year_summary(self.session_tenant, self.year)
-        context["year_total"] = sum((row["total"] for row in context["rows"]), Decimal("0.00"))
+        context["totals"] = allowance_service.year_summary_totals(context["rows"])
         return context

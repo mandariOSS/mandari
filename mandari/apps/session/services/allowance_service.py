@@ -508,65 +508,127 @@ def last_export_reference(allowances: QuerySet[Any]) -> str:
 # =============================================================================
 
 
-def year_summary(tenant, year) -> list[dict]:
+#: Beträge je Status in der Jahresübersicht (alles außer ausgezahlt/genehmigt gilt als ausstehend)
+_YEAR_AMOUNT_KEYS = ("total", "paid", "approved", "pending")
+
+
+def _year_amounts() -> dict[str, Any]:
+    return {"count": 0, **{key: Decimal("0.00") for key in _YEAR_AMOUNT_KEYS}}
+
+
+def _add_to_year(amounts: dict[str, Any], allowance: Any) -> None:
+    """Eine Position nach der Statuslogik der Jahresübersicht aufaddieren."""
+    amounts["count"] += 1
+    amounts["total"] += allowance.amount
+    if allowance.status == "paid":
+        amounts["paid"] += allowance.amount
+    elif allowance.status == "approved":
+        amounts["approved"] += allowance.amount
+    else:
+        amounts["pending"] += allowance.amount
+
+
+def year_summary(tenant: Any, year: int) -> list[dict[str, Any]]:
     """
     Jahresübersicht je Person (Grundlage Steuerbescheinigung, Issue #38).
 
+    Sitzungsgeld (Jahr der Sitzung) und Monatspauschalen (Jahr des Abrechnungsmonats) je Person,
+    getrennt ausgewiesen und zusammengerechnet; stornierte Positionen zählen nicht. Zuschüsse
+    (z. B. für Endgeräte) sind nicht enthalten.
+
     Returns:
-        Liste von dicts: person, count, total, paid, approved, pending
+        Liste von dicts: person, session und monthly (je count, total, paid, approved, pending)
+        sowie die Summen count, total, paid, approved, pending über beide Arten
     """
-    from apps.session.models import SessionAllowance
+    from apps.session.models import SessionAllowance, SessionMonthlyAllowance
+
+    per_person: dict[Any, dict[str, Any]] = {}
+
+    def entry_for(person: Any) -> dict[str, Any]:
+        return per_person.setdefault(
+            person.pk,
+            {"person": person, "session": _year_amounts(), "monthly": _year_amounts(), **_year_amounts()},
+        )
 
     allowances = (
-        SessionAllowance.objects.filter(
-            attendance__meeting__tenant=tenant,
-            attendance__meeting__start__year=year,
-        )
+        SessionAllowance.objects.filter(attendance__meeting__tenant=tenant, attendance__meeting__start__year=year)
         .exclude(status="cancelled")
-        .select_related("attendance__person", "attendance__meeting")
+        .select_related("attendance__person")
     )
-    per_person: dict = {}
     for allowance in allowances:
-        # Sitzungsgelder hängen an der Anwesenheit, Monats-Pauschalen
-        # direkt an der Person — beide Typen werden unterstützt.
-        person = getattr(allowance, "person", None) or allowance.attendance.person
-        entry = per_person.setdefault(
-            person.pk,
-            {
-                "person": person,
-                "count": 0,
-                "total": Decimal("0.00"),
-                "paid": Decimal("0.00"),
-                "approved": Decimal("0.00"),
-                "pending": Decimal("0.00"),
-            },
-        )
-        entry["count"] += 1
-        entry["total"] += allowance.amount
-        if allowance.status == "paid":
-            entry["paid"] += allowance.amount
-        elif allowance.status == "approved":
-            entry["approved"] += allowance.amount
-        else:
-            entry["pending"] += allowance.amount
+        entry = entry_for(allowance.attendance.person)
+        _add_to_year(entry["session"], allowance)
+        _add_to_year(entry, allowance)
+
+    monthly = (
+        SessionMonthlyAllowance.objects.filter(tenant=tenant, period__year=year)
+        .exclude(status="cancelled")
+        .select_related("person")
+    )
+    for pauschale in monthly:
+        entry = entry_for(pauschale.person)
+        _add_to_year(entry["monthly"], pauschale)
+        _add_to_year(entry, pauschale)
+
     return sorted(per_person.values(), key=lambda e: (e["person"].family_name, e["person"].given_name))
 
 
-def year_summary_csv(rows, year) -> str:
-    """Jahresübersicht als CSV (Semikolon, CRLF)."""
+def year_summary_totals(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Gesamtsummen der Jahresübersicht (Sitzungsgeld, Pauschalen, je Status)."""
+    totals = {"session": _year_amounts(), "monthly": _year_amounts(), **_year_amounts()}
+    for row in rows:
+        for part in ("session", "monthly"):
+            totals[part]["count"] += row[part]["count"]
+            for key in _YEAR_AMOUNT_KEYS:
+                totals[part][key] += row[part][key]
+        totals["count"] += row["count"]
+        for key in _YEAR_AMOUNT_KEYS:
+            totals[key] += row[key]
+    return totals
+
+
+def _csv_amount(value: Decimal) -> str:
+    return f"{value:.2f}".replace(".", ",")
+
+
+def year_summary_csv(rows: Iterable[dict[str, Any]], year: int) -> str:
+    """
+    Jahresübersicht als CSV (Semikolon, CRLF).
+
+    Die ersten Spalten behalten Position und Bedeutung (Summen über Sitzungsgeld und Pauschalen);
+    die getrennten Beträge stehen dahinter.
+    """
     buffer = io.StringIO()
     writer = csv_safety.writer(buffer, delimiter=";", lineterminator="\r\n")
-    writer.writerow(["Jahr", "Name", "Positionen", "Summe", "Ausgezahlt", "Genehmigt", "Ausstehend"])
+    writer.writerow(
+        [
+            "Jahr",
+            "Name",
+            "Positionen",
+            "Summe",
+            "Ausgezahlt",
+            "Genehmigt",
+            "Ausstehend",
+            "Sitzungsgeld Positionen",
+            "Sitzungsgeld",
+            "Monatspauschalen Positionen",
+            "Monatspauschalen",
+        ]
+    )
     for row in rows:
         writer.writerow(
             [
                 year,
                 row["person"].display_name,
                 row["count"],
-                f"{row['total']:.2f}".replace(".", ","),
-                f"{row['paid']:.2f}".replace(".", ","),
-                f"{row['approved']:.2f}".replace(".", ","),
-                f"{row['pending']:.2f}".replace(".", ","),
+                _csv_amount(row["total"]),
+                _csv_amount(row["paid"]),
+                _csv_amount(row["approved"]),
+                _csv_amount(row["pending"]),
+                row["session"]["count"],
+                _csv_amount(row["session"]["total"]),
+                row["monthly"]["count"],
+                _csv_amount(row["monthly"]["total"]),
             ]
         )
     return buffer.getvalue()

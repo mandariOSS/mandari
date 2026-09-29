@@ -89,14 +89,20 @@ def _person(name: str) -> Any:
 def test_sitzungsgeld_jahresuebersicht() -> None:
     from apps.session.services.allowance_service import year_summary_csv
 
+    betraege = {"total": Decimal("10"), "paid": Decimal("0"), "approved": Decimal("0"), "pending": Decimal("10")}
     zeilen = [
         {
             "person": _person(BOESE),
             "count": 1,
-            "total": Decimal("10"),
-            "paid": Decimal("0"),
-            "approved": Decimal("0"),
-            "pending": Decimal("10"),
+            **betraege,
+            "session": {"count": 1, **betraege},
+            "monthly": {
+                "count": 0,
+                "total": Decimal("0"),
+                "paid": Decimal("0"),
+                "approved": Decimal("0"),
+                "pending": Decimal("0"),
+            },
         }
     ]
     zellen = _zellen(year_summary_csv(zeilen, 2026))
