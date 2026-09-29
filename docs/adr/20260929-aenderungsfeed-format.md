@@ -53,7 +53,9 @@ Delta-Dateien von Lokaal Beslist in Flandern.
 - **Einordnung:** Der Feed ist das Profil „Änderungsfeed“ der kompatiblen Erweiterungen
   von OParl 1.1 ([A7](20260929-kanonisches-modell.md)). OParl-1.1-Clients sind
   nicht betroffen; `modified_since` bleibt erhalten.
-- Ein Inhalts-Hash je Eintrag ist als spätere, rein additive Ergänzung vorgesehen.
+- **Inhalts-Hash:** Jeder Eintrag kann ab Version 1 optional `content_hash` tragen (SHA-256 über die nach
+  RFC 8785 kanonisierte JSON-Darstellung des Objekts). Abnehmer erkennen damit unveränderte Wiederholungen
+  und prüfen die Unversehrtheit; fehlt das Feld, gilt der Eintrag als geändert.
 
 ## Alternativen
 
