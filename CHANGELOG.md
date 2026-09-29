@@ -6,6 +6,13 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+### Hinzugefügt
+- Konto: Sicherheitshinweise auf der Sicherheitsseite im Profil und per E-Mail bei geändertem oder zurückgesetztem Passwort, eingerichtetem, abgeschaltetem oder zurückgesetztem zweiten Faktor sowie hinzugefügtem oder entferntem Sicherheitsschlüssel (#462).
+
+### Geändert
+- Bürgerportal: Abos zu Themen und Orten sind über `INSIGHT_SUBSCRIPTIONS_ENABLED` abschaltbar und **standardmäßig aus**; ausgeschaltet gibt es keine Links auf die Abo-Seite, `generate_alerts` und `send_digest` brechen mit Hinweis ab, Abmelden bleibt möglich. Wer die Abos nutzt und den Versand eingeplant hat, setzt `INSIGHT_SUBSCRIPTIONS_ENABLED=true` (#460).
+- `update.sh` hält den Ingestor und weitere Worker aus `WORKER_SERVICES` (Vorgabe `ingestor`) während aller Migrationen an und startet sie danach mit dem neuen Image (#450).
+
 ### Abgekündigt
 - Alte Session-API unter `/session/<kommune>/api/session/…` (`meetings/`, `papers/`, `applications/`, `applications/submit/`): **Wegfall am 31.05.2027.** Ersatz ist die Session-API v1 unter `/api/v1/session/<kommune>/…` mit OpenAPI-Schema; Unterschiede beim Umstieg in `docs/API_V1_SESSION.md`, Abschnitt „Ablösung der alten Pfade“. Die alten Pfade antworten mit `Deprecation: true`, `Sunset: Mon, 31 May 2027 00:00:00 GMT` und `Link: <Nachfolger>; rel="successor-version"`. Seit 0.11.0 nannten die Header zunächst den 31.03.2027; der Termin ist zugunsten der Nutzer verlängert, damit ab dieser Ankündigung die volle Frist von sechs Monaten bleibt. Der Einstiegspunkt `/session/<kommune>/api/` und die OParl-Schnittstelle `/session/<kommune>/api/oparl/` bleiben (#163, #430).
 
@@ -20,11 +27,22 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Suche: Der Gremienfilter bleibt nach einer Synchronisation vollständig. Der Ingestor aktualisiert in den Suchdokumenten nur noch die Felder, die er selbst kennt (#429).
 - Session: Gremien, Vorlagen und Wahlperioden lassen sich im Admin nur noch löschen, solange sie nicht verwendet werden. Sitzungen mit genehmigter Niederschrift sind auch bei Sammel-Löschungen und Kaskaden geschützt (#427).
 - Session: Der SEPA-Export vergibt Referenzen über Sitzungsgeld und Monatspauschalen hinweg eindeutig, läuft unter Sperre (eine doppelte Auslösung gibt keine Position zweimal aus) und nennt bei Pauschalen „Monatspauschale“ im Verwendungszweck. Migration `session/0040` (#428).
+- Session: Die Jahresübersicht (Grundlage der Steuerbescheinigung) weist Sitzungsgeld und Monatspauschalen je Person getrennt aus und rechnet beide zusammen; bisher fehlten die Pauschalen in Seite und CSV. Bei Kommunen mit Pauschalen steigen die ausgewiesenen Summen entsprechend (#454).
+- Session: Eine doppelt ausgelöste Beschlussausfertigung vergibt keine zweite Beschlussnummer mehr (#464).
+- Session: Vorzeitig Gegangene und verspätet Gekommene erscheinen im Teilnehmerverzeichnis der Niederschrift (Ansicht, PDF, öffentliche Fassung) mit Vermerk und Uhrzeit (#465).
+- Session: Die tägliche Rückmelde-Erinnerung geht je Sitzung und Person nur einmal hinaus, auch nachdem die Anwesenheitsliste erzeugt wurde (#466).
+- Session: Ergänzte oder aus der Beratungsfolge terminierte TOPs stehen vor den Ende-TOPs wie „Verschiedenes“ und „Schluss der Sitzung“. Migration `session/0041` (#467).
+- Session: API-Tokens lassen sich im Django-Admin nicht mehr über das funktionslose Formular anlegen; der Hinweis verweist auf „Einstellungen → Einreichungs-Zugänge“ im Sitzungsdienst (#471).
+- Bürgerportal: Sitzungen aus dem Sitzungsdienst zeigen wieder ihren Ort (#446).
+- `manage.py sync_daemon` beendet periodische Läufe wieder erfolgreich und berechnet den nächsten Lauf über Stundengrenzen hinweg korrekt (#447).
+- Suche: Die Volltextsuche liefert auch ab Seite 3 Treffer und lädt Inhalte nur für die angezeigte Seite (#456).
 
 ### Sicherheit
 - Work: Dateien der Datenauskunft und der Dokument-Cache werden ausschließlich über die zugriffsgeprüften Download-Wege ausgeliefert.
 - `fix_permissions --fix` ergänzt nur noch fehlende Berechtigungen und Standardrollen und vergibt keine Rollen mehr automatisch. Gezielte Zuweisung an Mitgliedschaften ohne Rolle: `--org <slug> --assign-role <Rolle>` (nie Rollen mit Vollzugriff, nie an Gast-Zugänge).
 - Session: Die Meldung „Vertretung gesucht“ geht bei nichtöffentlichen Sitzungen nur an Personen, die die Sitzung sehen dürfen.
+- Session: Die interne Fassung der Niederschrift nennt Vorlagen nach denselben Sichtregeln wie Beschlussauszug und Tagesordnung.
+- Konto: Die Einrichtung des zweiten Faktors im Work-Profil nutzt dieselbe Bestätigung, Begrenzung und Protokollierung wie die Einrichtung im Konto.
 
 ## [0.11.0] – 2026-09-27
 
