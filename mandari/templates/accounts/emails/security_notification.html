@@ -1,0 +1,20 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Sicherheitshinweis: {{ notification.title }} - Mandari{% endblock %}
+{% block preheader %}An deinem Mandari-Konto wurde gerade etwas geändert: {{ notification.title }}.{% endblock %}
+{% block content %}
+<h1 class="h1">{{ notification.title }}</h1>
+<p>Hallo{% if name %} {{ name }}{% endif %},</p>
+<p>{{ notification.message }}</p>
+<p class="muted small">
+    Zeitpunkt: {{ occurred_at|date:"d.m.Y, H:i" }} Uhr{% if notification.device_info %}<br>Gerät: {{ notification.device_info }}{% endif %}{% if notification.ip_address %}<br>IP-Adresse: {{ notification.ip_address }}{% endif %}
+</p>
+<p>Warst du das? Dann ist nichts weiter zu tun.</p>
+<p><strong>Warst du es nicht?</strong> Setze dein Passwort sofort zurück und informiere die Administration deiner Organisation.</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ reset_url }}">Passwort zurücksetzen</a>
+</div>
+<p>Mit freundlichen Grüßen,<br>Das Mandari-Team</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch versendet, weil sich die Sicherheitseinstellungen deines Kontos geändert haben.</p>
+{% endblock %}

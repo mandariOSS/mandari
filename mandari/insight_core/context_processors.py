@@ -24,6 +24,8 @@ def navigation_context(request):
         "nav_context": "portal",
         "has_chat_consent": request.session.get("chat_consent", False),
         "marketing_url": marketing_url,
+        # Abos zu Themen und Orten (INSIGHT_SUBSCRIPTIONS_ENABLED): ausgeschaltet keine Links darauf
+        "insight_subscriptions_enabled": bool(getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False)),
     }
 
 

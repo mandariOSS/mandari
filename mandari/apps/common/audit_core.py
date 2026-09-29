@@ -41,17 +41,17 @@ MASKED = "[verschlüsselt geändert]"
 # =============================================================================
 
 
-def set_current_request(request):
+def set_current_request(request: Any) -> None:
     """Aktuellen Request für die Audit-Attribution merken (Middleware)."""
     _thread_state.request = request
 
 
-def clear_current_request():
+def clear_current_request() -> None:
     """Thread-Local-Request wieder entfernen (Middleware, Response/Exception)."""
     _thread_state.request = None
 
 
-def get_current_request():
+def get_current_request() -> Any:
     """Aktuellen Request abrufen (oder None außerhalb eines Requests)."""
     return getattr(_thread_state, "request", None)
 

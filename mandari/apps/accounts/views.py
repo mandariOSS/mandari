@@ -39,7 +39,7 @@ from django.views.generic import TemplateView
 
 from apps.common.next_url import safe_next_url
 
-from . import webauthn_service
+from . import security_notifications, webauthn_service
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
 from .services import SessionService, TwoFactorService
@@ -643,6 +643,13 @@ class PasswordResetConfirmView(DjangoPasswordResetConfirmView):
         if not user.email_verified:
             user.email_verified = True
             user.save(update_fields=["email_verified"])
+        security_notifications.notify(
+            user,
+            security_notifications.PASSWORD_CHANGED,
+            "Passwort zurückgesetzt",
+            "Das Passwort deines Kontos wurde über den Link aus der E-Mail „Passwort zurücksetzen“ neu gesetzt.",
+            request=self.request,
+        )
         return response
 
 

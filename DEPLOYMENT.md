@@ -349,6 +349,13 @@ Die Oberfläche legt nur Anforderungen an; ohne diesen Job bleibt eine Mappe bei
 * * * * *   docker exec mandari-app python manage.py build_meeting_packages --limit 5 --max-seconds 240 >> /var/log/mandari-meeting-packages.log 2>&1
 ```
 
+**Abos zu Themen und Orten im Bürgerportal** (`/insight/benachrichtigungen/`) sind standardmäßig
+abgeschaltet (`INSIGHT_SUBSCRIPTIONS_ENABLED=false`): keine Links im Portal, die Abo-Seiten antworten
+mit 404, `generate_alerts` und `send_digest` brechen mit Hinweis ab. Abmelden über bereits versandte
+Links bleibt möglich; Beschluss-Abos sind nicht betroffen. Wer die Abos einschaltet, plant beide
+Befehle selbst ein (z. B. `generate_alerts` täglich, `send_digest` wöchentlich). Ein Neuaufbau der
+Abos über die Datendrehscheibe ist geplant.
+
 Im Leerlauf schreibt der Job nichts. Er läuft im Web-Container und teilt sich dessen Speicher;
 `SESSION_PACKAGE_MAX_EMBED_MB` (Vorgabe 200) und `SESSION_PACKAGE_MAX_PAGES` (Vorgabe 3000) begrenzen,
 wie viele PDF-Anlagen je Mappe in das Gesamt-PDF eingebunden werden – weitere erscheinen dort als

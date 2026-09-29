@@ -1,0 +1,32 @@
+{% comment %}
+Karte „Sicherheitshinweise“: letzte sicherheitsrelevante Änderungen am Konto (apps/accounts/security_notifications.py).
+Kontext: security_notifications (neueste zuerst; is_read gilt für den Stand vor diesem Aufruf)
+{% endcomment %}
+<c-ui.card title="Sicherheitshinweise" subtitle="Letzte Änderungen an Passwort, zweitem Faktor und Sitzungen" padding="none" class="fade-up">
+    {% if security_notifications %}
+    <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
+        {% for hinweis in security_notifications %}
+        <li class="px-6 py-4 flex items-start gap-3">
+            <div class="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="{% if hinweis.notification_type == 'password_changed' %}key-round{% elif hinweis.notification_type == 'session_revoked' %}log-out{% elif 'device' in hinweis.notification_type %}usb{% else %}shield{% endif %}"
+                   class="w-4 h-4 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ hinweis.title }}</p>
+                    {% if not hinweis.is_read %}<c-ui.badge color="primary">Neu</c-ui.badge>{% endif %}
+                </div>
+                <p class="text-sm text-gray-600 dark:text-gray-300 mt-0.5">{{ hinweis.message }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {{ hinweis.created_at|date:"d.m.Y, H:i" }} Uhr{% if hinweis.device_info %} · {{ hinweis.device_info }}{% endif %}{% if hinweis.ip_address %} · {{ hinweis.ip_address }}{% endif %}{% if hinweis.email_sent %} · per E-Mail gemeldet{% endif %}
+                </p>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <c-ui.empty-state icon="shield-check" title="Keine Hinweise">
+        Hier erscheinen Änderungen an Passwort, zweitem Faktor, Sicherheitsschlüsseln und Sitzungen.
+    </c-ui.empty-state>
+    {% endif %}
+</c-ui.card>

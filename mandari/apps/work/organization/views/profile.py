@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
+from apps.accounts import security_notifications
 from apps.accounts.services import PasswordService, SessionService, TwoFactorService
 from apps.accounts.two_factor_policy import two_factor_required
 from apps.common.mixins import WorkViewMixin
@@ -103,6 +104,11 @@ class SecurityView(WorkViewMixin, TemplateView):
             session.is_current = session.session_key == current_session_key
         context["sessions"] = sessions
         context["trusted_devices"] = selectors.trusted_devices(user)
+
+        # Sicherheitshinweise: „Neu“ gilt für den Stand vor diesem Aufruf, danach gelesen
+        hinweise = security_notifications.recent_for(user)
+        context["security_notifications"] = hinweise
+        security_notifications.mark_read(user, hinweise)
 
         # Passwortregeln (für den UI-Hinweis)
         context["password_requirements"] = {

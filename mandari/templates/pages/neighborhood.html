@@ -119,6 +119,7 @@
             {% endif %}
 
             <!-- Subscribe CTA -->
+            {% if insight_subscriptions_enabled %}
             <div x-show="selectedLat" x-cloak
                  class="bg-gradient-to-br from-primary-50 to-primary-100/50 dark:from-primary-900/20 dark:to-primary-900/10 rounded-xl border border-primary-200 dark:border-primary-800/50 p-4">
                 <div class="flex items-start gap-3">
@@ -136,6 +137,7 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
         </div>
 
         <!-- Right Column: Map + Results -->

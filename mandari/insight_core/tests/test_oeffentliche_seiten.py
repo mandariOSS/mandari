@@ -205,7 +205,8 @@ class TestSuche:
 
 
 @pytest.fixture
-def abonnent(body: OParlBody) -> InsightSubscriber:
+def abonnent(body: OParlBody, settings: Any) -> InsightSubscriber:
+    settings.INSIGHT_SUBSCRIPTIONS_ENABLED = True  # Abos sind standardmäßig abgeschaltet
     return InsightSubscriber.objects.create(email="leser@example.org", body=body, keyword="Radweg", keyword_active=True)
 
 

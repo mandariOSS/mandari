@@ -487,6 +487,14 @@ TEXT_EXTRACTION_ASYNC = os.environ.get("TEXT_EXTRACTION_ASYNC", "True").lower() 
 TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", "50"))
 
 # Insight Subscriptions (E-Mail-Digest)
+# Abos zu Themen und Orten (Seite /insight/benachrichtigungen/, generate_alerts, send_digest).
+# Standard aus: Die Befehle sind nirgends eingeplant; der Wiederaufbau über die Datendrehscheibe
+# ist geplant. Abmelden bleibt immer möglich. Beschluss-Abos sind davon nicht betroffen.
+INSIGHT_SUBSCRIPTIONS_ENABLED = os.environ.get("INSIGHT_SUBSCRIPTIONS_ENABLED", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 INSIGHT_DIGEST_ENABLED = os.environ.get("INSIGHT_DIGEST_ENABLED", "True").lower() in ("true", "1", "yes")
 INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL = int(os.environ.get("INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL", "20"))
 INSIGHT_DIGEST_FROM_EMAIL = os.environ.get("INSIGHT_DIGEST_FROM_EMAIL", "")  # Falls leer → DEFAULT_FROM_EMAIL

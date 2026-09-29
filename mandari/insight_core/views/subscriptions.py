@@ -7,9 +7,10 @@ Server-Side Rendering mit Django Templates + HTMX.
 
 import logging
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -26,10 +27,23 @@ from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmatio
 # =============================================================================
 
 
+def _require_subscriptions() -> None:
+    """Abos abgeschaltet (INSIGHT_SUBSCRIPTIONS_ENABLED, Standard aus): Seiten antworten mit 404.
+
+    Abmelden bleibt immer möglich; nur Anlegen, Bestätigen und Verwalten sind gesperrt.
+    """
+    if not getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False):
+        raise Http404("Benachrichtigungen sind abgeschaltet.")
+
+
 class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
     """Abo-Formular für E-Mail-Benachrichtigungen."""
 
     template_name = "pages/subscribe.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        _require_subscriptions()
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -189,6 +203,7 @@ def _send_confirmation_email(subscriber):
 @require_http_methods(["GET", "POST"])
 def confirm_subscription(request, token):
     """Bestätigt Double Opt-In (GET zeigt die Bestätigungsseite, POST bestätigt)."""
+    _require_subscriptions()
     subscriber = get_object_or_404(InsightSubscriber, token=token)
 
     if request.method == "GET" and not subscriber.confirmed:
@@ -225,6 +240,7 @@ def confirm_subscription(request, token):
 
 def manage_subscription(request, token):
     """Abo verwalten (GET zeigt Formular, POST aktualisiert)."""
+    _require_subscriptions()
     subscriber = get_object_or_404(InsightSubscriber, token=token)
 
     if request.method == "POST":

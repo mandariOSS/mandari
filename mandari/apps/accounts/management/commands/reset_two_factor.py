@@ -18,6 +18,7 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.accounts import security_notifications
 from apps.accounts.models import TrustedDevice, TwoFactorDevice, User, WebAuthnCredential
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,14 @@ class Command(BaseCommand):
         totp = _deleted(TwoFactorDevice.objects.filter(user=user))
         keys = _deleted(WebAuthnCredential.objects.filter(user=user))
         trusted = _deleted(TrustedDevice.objects.filter(user=user))
+        if totp or keys:
+            security_notifications.notify(
+                user,
+                security_notifications.TWO_FACTOR_DISABLED,
+                "Zweiter Faktor zurückgesetzt",
+                "Die Administration hat Authenticator-App, Backup-Codes und Sicherheitsschlüssel deines Kontos "
+                "zurückgesetzt. Richte den zweiten Faktor bei der nächsten Anmeldung neu ein.",
+            )
         logger.warning(
             "Zweiter Faktor zurückgesetzt",
             extra={"user_id": str(user.pk), "reason": reason, "totp": totp, "security_keys": keys, "trusted": trusted},

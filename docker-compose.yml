@@ -211,6 +211,8 @@ services:
       OPARL_FILES_ROOT: /app/files
       # Nur mit Ratsinformationssystem im internen Netz (siehe .env.example)
       INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
+      # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus
+      INSIGHT_SUBSCRIPTIONS_ENABLED: ${INSIGHT_SUBSCRIPTIONS_ENABLED:-false}
       # AI (optional)
       NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
       # Sync Daemon

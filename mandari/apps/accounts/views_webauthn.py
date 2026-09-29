@@ -18,7 +18,7 @@ from django.views import View
 
 from apps.common.next_url import safe_next_url
 
-from . import webauthn_service
+from . import security_notifications, webauthn_service
 from .models import User, WebAuthnCredential
 from .services import TwoFactorService
 from .two_factor_policy import POLICY_CACHE_SESSION_KEY
@@ -80,6 +80,13 @@ class SecurityKeysView(LoginRequiredMixin, View):
             else:
                 credential.delete()
                 request.session.pop(POLICY_CACHE_SESSION_KEY, None)
+                security_notifications.notify(
+                    user,
+                    security_notifications.DEVICE_REMOVED,
+                    "Sicherheitsschlüssel entfernt",
+                    f"Der Sicherheitsschlüssel „{credential.name}“ wurde aus deinem Konto entfernt.",
+                    request=request,
+                )
                 messages.success(request, f"„{credential.name}“ wurde entfernt.")
         return redirect("accounts:security_keys")
 
@@ -112,6 +119,13 @@ class RegistrationVerifyView(LoginRequiredMixin, View):
         except webauthn_service.WebAuthnError as exc:
             return _error(str(exc))
         request.session.pop(POLICY_CACHE_SESSION_KEY, None)
+        security_notifications.notify(
+            user,
+            security_notifications.DEVICE_ADDED,
+            "Sicherheitsschlüssel hinzugefügt",
+            f"Deinem Konto wurde der Sicherheitsschlüssel „{credential.name}“ hinzugefügt.",
+            request=request,
+        )
         messages.success(request, f"„{credential.name}“ wurde hinzugefügt.")
         return JsonResponse({"ok": True})
 
