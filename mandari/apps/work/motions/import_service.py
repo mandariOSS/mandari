@@ -86,12 +86,18 @@ class MotionImportService:
             file_content = pdf_file.read()
             pdf_file.seek(0)  # Reset for later save
 
-            # Extract text
-            text_content, ocr_performed, page_count = extract_text_from_file(
+            # Extract text (Rückgabe: Text, OCR genutzt, Seitenzahl, Verfahren)
+            text_content, ocr_performed, page_count, _method = extract_text_from_file(
                 data=file_content,
                 mime_type="application/pdf",
                 file_name=pdf_file.name,
             )
+
+            # Weder Text noch Seiten: keine lesbare PDF (beschädigt oder nur dem Namen nach PDF).
+            # Gescannte PDFs ohne verfügbare Texterkennung haben Seiten und werden mit Hinweis übernommen.
+            if not text_content and page_count is None:
+                logger.warning("PDF '%s' ist nicht lesbar, Import abgebrochen", pdf_file.name)
+                return ImportResult(success=False, error=IMPORT_FAILED_MESSAGE)
 
             # Generate title from filename if not provided
             if not title:
