@@ -91,6 +91,8 @@ bei Fehlschlag ebenfalls zurück.
 
 - [ ] `https://<domain>/health/ready/` meldet `"status": "ok"`
 - [ ] Tägliche Sicherung eingetragen (`crontab -l`), Probelauf mit `./backup.sh --verify`
+- [ ] Passphrase für die Konfiguration in der Sicherung eingerichtet und außerhalb des Servers verwahrt
+  (Abschnitt „Sicherung“)
 - [ ] Geplante Aufgaben eingerichtet (Abschnitt „Geplante Aufgaben (Cron)“)
 
 ---
@@ -117,9 +119,91 @@ docker exec mandari python manage.py migrate
 
 ### Sicherung
 
-`./backup.sh` sichert Datenbank, Medien und Konfiguration nach `./backups/`; `install.sh`
-richtet dafür einen täglichen Cron-Lauf ein. Verschlüsselte Sicherung an zwei Standorten mit
-restic: [docs/BACKUP.md](docs/BACKUP.md).
+`./backup.sh` schreibt ein Archiv nach `./backups/` (die letzten sieben bleiben); `install.sh`
+richtet dafür einen täglichen Cron-Lauf ein (`./backup.sh --quiet`). `./backup.sh --help` zeigt
+alle Optionen. Verschlüsselte Sicherung an zwei Standorten mit restic: [docs/BACKUP.md](docs/BACKUP.md).
+
+| Inhalt | Im Archiv | Abschalten |
+|---|---|---|
+| Datenbanken mandari und Website | `postgres.sql`, `postgres_website.sql` (`pg_dump`) | – |
+| Uploads (`/app/media`, Volume `mandari_media`) | `media.tar` | `--no-media` bzw. `BACKUP_NO_MEDIA=true` |
+| Dokument-Cache (`/app/files`, Volume `mandari_files`) | `files.tar` | `--no-files` bzw. `BACKUP_NO_FILES=true` |
+| Konfiguration (`.env`) | `config.env.enc`, nur verschlüsselt | ohne Passphrase ausgelassen |
+| Suchindex, Redis, TLS-Zertifikate | nicht enthalten | Index wird bei der Wiederherstellung neu aufgebaut, Caddy holt neue Zertifikate |
+
+Die Datei-Volumes liest ein kurzlebiger Container des Anwendungsdienstes (`docker compose run`),
+also mit denselben Volumes bzw. Bind-Mounts wie im Betrieb. Der Dokument-Cache kann je Kommune
+mehrere Gigabyte groß werden und lässt sich aus den Ratsinformationssystemen neu laden; bei sehr
+großen Ablagen `BACKUP_NO_FILES=true` in die `.env` schreiben (gilt dann auch für Cron und
+`update.sh`). Während der Sicherung braucht das Zielverzeichnis Platz für die unkomprimierten
+Bestandteile und das Archiv.
+
+Ein unvollständiger Lauf (Uploads nicht lesbar, Passphrase-Datei fehlt …) schreibt das Archiv
+trotzdem, endet aber mit Exit-Code 1 und räumt dann keine alten Archive auf.
+
+#### Konfiguration nur verschlüsselt
+
+Die `.env` enthält alle Schlüssel, darunter den `ENCRYPTION_MASTER_KEY`, ohne den verschlüsselte
+Inhalte unlesbar sind. `backup.sh` legt sie deshalb nur verschlüsselt ins Archiv
+(`openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -md sha256`) und prüft das Ergebnis durch
+Zurück-Entschlüsseln. Die Passphrase kommt aus `BACKUP_PASSPHRASE` (nur Umgebung) oder aus der
+ersten Zeile der Datei `BACKUP_PASSPHRASE_FILE` (Umgebung oder `.env`, Vorgabe
+`./.backup-passphrase`). Ohne Passphrase fehlt die Konfiguration im Archiv, und jeder Lauf warnt.
+
+Einrichtung, damit auch der Cron-Lauf und `update.sh` die Passphrase finden:
+
+```bash
+(umask 077; openssl rand -base64 32 > .backup-passphrase)
+./backup.sh --verify
+```
+
+Die Passphrase **zusätzlich außerhalb des Servers** verwahren (Passwort-Manager): Für eine
+Wiederherstellung auf einem neuen Server wird sie gebraucht, und auf dem Server liegt sie neben der
+`.env`. Ein Archiv, das den Server verlässt (z. B. über `S3_BACKUP_BUCKET`), enthält so keine
+Geheimnisse im Klartext. Datenbank und Uploads darin sind weiterhin personenbezogene Daten; das
+Archiv wird nur für den Eigentümer lesbar angelegt. Archive früherer Versionen enthalten die `.env`
+im Klartext und gehören entsprechend geschützt oder gelöscht.
+
+Von Hand entschlüsseln (fragt nach der Passphrase):
+
+```bash
+tar -xzf mandari_backup_<zeit>.tar.gz mandari_backup_<zeit>/config.env.enc
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 \
+  -in mandari_backup_<zeit>/config.env.enc -out env.aus-sicherung
+```
+
+#### Wiederherstellen
+
+```bash
+./backup.sh --restore backups/mandari_backup_<zeit>.tar.gz
+# Passphrase aus ./.backup-passphrase oder z. B. BACKUP_PASSPHRASE_FILE=/pfad/zur/datei
+```
+
+Das Skript liest zuerst das ganze Archiv (Prüfsumme) und entschlüsselt die Konfiguration; scheitert
+eins davon, bricht es ab, ohne etwas zu verändern. Nach Übersicht und Rückfrage:
+
+1. Dienste stoppen und die Konfiguration aus der Sicherung einsetzen. Eine abweichende bisherige
+   `.env` bleibt als `.env.vor-wiederherstellung-<zeit>` liegen; das Passwort der Datenbankrolle wird
+   an die wiederhergestellte `.env` angeglichen.
+2. Nur PostgreSQL starten, jede Datenbank in eine Zwischen-Datenbank einspielen und erst danach
+   gegen die bestehende tauschen. Schlägt das Einspielen fehl, bleibt die bisherige Datenbank
+   unverändert.
+3. Uploads und Dokument-Cache zurückspielen (gleichnamige Dateien werden überschrieben, später
+   hinzugekommene bleiben liegen).
+4. Alle Dienste starten, `migrate` ausführen und den Suchindex neu aufbauen
+   (`setup_elasticsearch`, `reindex_elasticsearch --clear`).
+
+**Neuer Server:** Docker installieren, Repository klonen, Archiv und Passphrase bereitstellen und direkt
+`./backup.sh --restore …` aufrufen, ohne vorher `install.sh` auszuführen – die Konfiguration kommt
+aus der Sicherung. Danach die tägliche Sicherung wieder eintragen:
+
+```cron
+0 2 * * * cd /opt/mandari && ./backup.sh --quiet >> /opt/mandari/logs/backup.log 2>&1
+```
+
+Enthält die Sicherung keine Konfiguration, vorher die `.env` der alten Installation (mit demselben
+`ENCRYPTION_MASTER_KEY`) ins Verzeichnis legen. Eine Wiederherstellung regelmäßig in einer
+Testumgebung durchspielen – erst sie zeigt, dass die Sicherung taugt.
 
 ---
 

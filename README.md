@@ -113,7 +113,7 @@ Ohne Helm liegen fertige Manifeste unter [`deploy/kubernetes/manifests/`](deploy
 
 ```bash
 ./update.sh     # Aktualisieren mit Sicherung und Rückfallebene
-./backup.sh     # Datenbank, Medien und Konfiguration sichern
+./backup.sh     # Datenbanken, Uploads, Dokument-Cache und verschlüsselte Konfiguration sichern
 ```
 
 Vollständige Betriebsanleitung: <https://docs.mandari.de/betrieb/>

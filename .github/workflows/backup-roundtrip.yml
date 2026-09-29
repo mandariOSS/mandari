@@ -1,0 +1,264 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# =============================================================================
+# Sicherung und Wiederherstellung mit backup.sh – echter Rundlauf (Issue #425)
+# =============================================================================
+# Baut das Anwendungs-Image, startet PostgreSQL, Redis, Elasticsearch und die
+# Anwendung mit der mitgelieferten docker-compose.yml, legt Testdaten an, sichert
+# mit ./backup.sh --verify, verändert Daten, Datenbank-Passwort und Hauptschlüssel
+# und stellt wieder her. Geprüft wird, dass Datenbankzeile, verschlüsselter Wert,
+# Dateien und Konfiguration zurück sind und die Anwendung läuft – und dass eine
+# falsche Passphrase die Wiederherstellung abbricht, ohne etwas zu verändern.
+#
+# Läuft nur auf einem frischen Runner: Die Volumes der Compose-Datei haben feste
+# Namen (mandari_*_data) und dürfen nie gegen eine bestehende Installation laufen.
+# =============================================================================
+
+name: Sicherung (Rundlauf)
+
+on:
+  pull_request:
+    paths:
+      - backup.sh
+      - install.sh
+      - docker-compose.yml
+      - .github/workflows/backup-roundtrip.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-roundtrip-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Nur die Dienste für Datenbank, Cache, Suche und Anwendung; die übrigen stehen
+  # in einem Profil, das nie aktiviert wird (Override-Datei aus dem ersten Schritt)
+  COMPOSE_FILE: docker-compose.yml:docker-compose.ci-backup.yml
+  IMAGE_TAG: ci-backup
+  PROBE_EMAIL: backup-probe@example.org
+  PROBE_SECRET: probe-smtp-geheim
+
+jobs:
+  roundtrip:
+    name: Sichern und wiederherstellen
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Compose-Override und Testkonfiguration anlegen
+        run: |
+          cat > docker-compose.ci-backup.yml <<'YAML'
+          services:
+            caddy:
+              profiles: ["ci-aus"]
+            website:
+              profiles: ["ci-aus"]
+            ingestor:
+              profiles: ["ci-aus"]
+            minutes-orchestrator:
+              profiles: ["ci-aus"]
+          YAML
+
+          secret_key=$(openssl rand -hex 40)
+          master_key=$(openssl rand -base64 32)
+          db_password=$(openssl rand -hex 24)
+          redis_password=$(openssl rand -hex 24)
+          passphrase=$(openssl rand -base64 32)
+          for value in "$secret_key" "$master_key" "$db_password" "$redis_password" "$passphrase"; do
+            echo "::add-mask::$value"
+          done
+
+          umask 077
+          cat > .env <<EOF
+          DOMAIN=localhost
+          ACME_EMAIL=noreply@example.org
+          TZ=Europe/Berlin
+          POSTGRES_USER=mandari
+          POSTGRES_PASSWORD=${db_password}
+          POSTGRES_DB=mandari
+          SECRET_KEY=${secret_key}
+          ENCRYPTION_MASTER_KEY=${master_key}
+          WEBSITE_SECRET_KEY=${secret_key}
+          REDIS_PASSWORD=${redis_password}
+          REDIS_MAXMEMORY=256mb
+          IMAGE_TAG=${IMAGE_TAG}
+          EOF
+          cp .env "$RUNNER_TEMP/env.original"
+          echo "BACKUP_TEST_PASSPHRASE=$passphrase" >> "$GITHUB_ENV"
+          docker compose config --services
+
+      - name: Docker Buildx einrichten
+        uses: docker/setup-buildx-action@v3
+
+      - name: Anwendungs-Image bauen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./mandari/Dockerfile
+          push: false
+          load: true
+          tags: ghcr.io/mandarioss/mandari:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=mandari
+
+      - name: Dienste starten und Schema anlegen
+        run: |
+          sudo sysctl -w vm.max_map_count=262144
+          docker compose up -d mandari
+          for _ in $(seq 1 90); do
+            state=$(docker inspect -f '{{.State.Health.Status}}' mandari 2>/dev/null || echo unbekannt)
+            [ "$state" = healthy ] && break
+            sleep 2
+          done
+          docker compose ps
+          [ "$state" = healthy ] || { docker logs --tail 100 mandari; exit 1; }
+          docker exec mandari python manage.py migrate --noinput
+
+      - name: Testdaten anlegen
+        run: |
+          docker exec -e PROBE_EMAIL -e PROBE_SECRET mandari python manage.py shell -c "
+          import os
+          from apps.accounts.models import User
+          from apps.common.models import SiteSettings
+          User.objects.create_user(email=os.environ['PROBE_EMAIL'], password=None)
+          settings, _ = SiteSettings.objects.get_or_create(pk=1)
+          settings.set_email_host_password(os.environ['PROBE_SECRET'])
+          settings.save()
+          print('Testdaten angelegt')
+          "
+          docker exec -u root mandari sh -c '
+            mkdir -p /app/media/ci /app/files/ci &&
+            echo inhalt-uploads > /app/media/ci/probe.txt &&
+            echo inhalt-dokument > /app/files/ci/probe.pdf'
+
+      - name: Sichern (./backup.sh --verify)
+        run: |
+          BACKUP_PASSPHRASE="$BACKUP_TEST_PASSPHRASE" ./backup.sh --verify
+          archive=$(ls backups/mandari_backup_*.tar.gz)
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+          tar -tzf "$archive" | tee "$RUNNER_TEMP/inhalt.txt"
+          for part in postgres.sql postgres_website.sql media.tar files.tar config.env.enc metadata.json; do
+            grep -q "/$part\$" "$RUNNER_TEMP/inhalt.txt" || { echo "::error::$part fehlt im Archiv"; exit 1; }
+          done
+          if grep -q '/\.env$' "$RUNNER_TEMP/inhalt.txt"; then
+            echo "::error::Klartext-.env im Archiv"; exit 1
+          fi
+          # Kein Geheimnis der Konfiguration im Klartext – auch nicht in Dumps oder Datei-Archiven
+          mkdir "$RUNNER_TEMP/archiv"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/archiv"
+          for key in SECRET_KEY ENCRYPTION_MASTER_KEY POSTGRES_PASSWORD REDIS_PASSWORD; do
+            value=$(grep "^$key=" .env | cut -d= -f2-)
+            if grep -rqF -- "$value" "$RUNNER_TEMP/archiv"; then
+              echo "::error::$key steht im Klartext im Archiv"; exit 1
+            fi
+          done
+          stat -c '%a %n' "$archive"
+          [ "$(stat -c '%a' "$archive")" = 600 ] || { echo "::error::Archiv nicht nur für den Eigentümer lesbar"; exit 1; }
+
+      - name: Daten, Datenbank-Passwort und Hauptschlüssel verändern
+        run: |
+          docker exec -e PROBE_EMAIL mandari python manage.py shell -c "
+          import os
+          from apps.accounts.models import User
+          deleted, _ = User.objects.filter(email=os.environ['PROBE_EMAIL']).delete()
+          assert deleted, 'Testzeile nicht gefunden'
+          "
+          docker exec -u root mandari sh -c '
+            rm /app/media/ci/probe.txt /app/files/ci/probe.pdf &&
+            echo spaeter > /app/media/ci/spaeter.txt'
+
+          # Wie eine Neuinstallation: neues Datenbank-Passwort (in Rolle und .env) und neuer Hauptschlüssel
+          new_password=$(openssl rand -hex 24)
+          new_key=$(openssl rand -base64 32)
+          echo "::add-mask::$new_password"
+          echo "::add-mask::$new_key"
+          docker exec -i mandari-postgres psql -X -q -v ON_ERROR_STOP=1 -U mandari -d postgres -v pw="$new_password" <<'SQL'
+          ALTER ROLE mandari WITH PASSWORD :'pw';
+          SQL
+          sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$new_password/" .env
+          sed -i "s#^ENCRYPTION_MASTER_KEY=.*#ENCRYPTION_MASTER_KEY=$new_key#" .env
+          docker compose up -d mandari
+          for _ in $(seq 1 90); do
+            state=$(docker inspect -f '{{.State.Health.Status}}' mandari 2>/dev/null || echo unbekannt)
+            [ "$state" = healthy ] && break
+            sleep 2
+          done
+          [ "$state" = healthy ] || { docker logs --tail 100 mandari; exit 1; }
+          # Die Anwendung arbeitet jetzt mit dem neuen Passwort
+          docker exec mandari python manage.py shell -c "from apps.accounts.models import User; print(User.objects.count())"
+          cp .env "$RUNNER_TEMP/env.veraendert"
+
+      - name: Falsche Passphrase bricht ohne Änderung ab
+        run: |
+          container_before=$(docker inspect -f '{{.Id}}' mandari)
+          set +e
+          echo j | BACKUP_PASSPHRASE="falsche-passphrase-0000000000" ./backup.sh --restore "$ARCHIVE"
+          rc=$?
+          set -e
+          echo "Exit-Code: $rc"
+          [ "$rc" -ne 0 ] || { echo "::error::Wiederherstellung mit falscher Passphrase lief durch"; exit 1; }
+          cmp .env "$RUNNER_TEMP/env.veraendert" || { echo "::error::.env wurde verändert"; exit 1; }
+          [ "$(docker inspect -f '{{.Id}}' mandari)" = "$container_before" ] || { echo "::error::Container ersetzt"; exit 1; }
+          [ "$(docker inspect -f '{{.State.Running}}' mandari)" = true ] || { echo "::error::Anwendung gestoppt"; exit 1; }
+          docker exec mandari test ! -e /app/media/ci/probe.txt
+          if ls .env.vor-wiederherstellung-* 2>/dev/null; then echo "::error::Konfiguration angefasst"; exit 1; fi
+
+      - name: Wiederherstellen (./backup.sh --restore)
+        run: |
+          echo j | BACKUP_PASSPHRASE="$BACKUP_TEST_PASSPHRASE" ./backup.sh --restore "$ARCHIVE" 2>&1 | tee "$RUNNER_TEMP/restore.txt"
+
+      - name: Wiederhergestellten Stand prüfen
+        run: |
+          # Konfiguration aus der Sicherung, die veränderte bleibt daneben liegen
+          cmp .env "$RUNNER_TEMP/env.original" || { echo "::error::.env nicht wiederhergestellt"; exit 1; }
+          ls .env.vor-wiederherstellung-*
+          cmp .env.vor-wiederherstellung-* "$RUNNER_TEMP/env.veraendert"
+
+          state=$(docker inspect -f '{{.State.Health.Status}}' mandari)
+          echo "Anwendung: $state"
+          [ "$state" = healthy ] || { echo "::error::Anwendung nicht healthy"; exit 1; }
+
+          # Datenbankzeile zurück, verschlüsselter Wert mit dem wiederhergestellten Hauptschlüssel lesbar
+          docker exec -e PROBE_EMAIL -e PROBE_SECRET mandari python manage.py shell -c "
+          import os
+          from apps.accounts.models import User
+          from apps.common.models import SiteSettings
+          assert User.objects.filter(email=os.environ['PROBE_EMAIL']).exists(), 'Testzeile fehlt'
+          assert SiteSettings.objects.get(pk=1).get_email_host_password() == os.environ['PROBE_SECRET'], 'verschlüsselter Wert nicht lesbar'
+          print('Datenbank und Hauptschlüssel: in Ordnung')
+          "
+
+          # Dateien zurück; später hinzugekommene bleiben liegen (dokumentiertes Verhalten)
+          [ "$(docker exec mandari cat /app/media/ci/probe.txt)" = inhalt-uploads ]
+          [ "$(docker exec mandari cat /app/files/ci/probe.pdf)" = inhalt-dokument ]
+          docker exec mandari test -e /app/media/ci/spaeter.txt
+
+          # Migrationen und Suchindex liefen, das Schema ist vollständig
+          grep -E "Datenbank-Migrationen.*✓" "$RUNNER_TEMP/restore.txt"
+          grep -E "Suchindex neu aufbauen.*✓" "$RUNNER_TEMP/restore.txt"
+          docker exec mandari python manage.py migrate --check
+          if grep -q -e "unvollständig" -e "Fehlgeschlagen" "$RUNNER_TEMP/restore.txt"; then
+            echo "::error::Wiederherstellung meldet fehlgeschlagene Schritte"; exit 1
+          fi
+
+      - name: Diagnose bei Fehler
+        if: failure()
+        run: |
+          docker compose ps -a || true
+          echo "----- logs/backup.log"
+          cat logs/backup.log || true
+          echo "----- mandari"
+          docker logs --tail 150 mandari || true
+          echo "----- postgres"
+          docker logs --tail 80 mandari-postgres || true
+
+      - name: Aufräumen
+        if: always()
+        run: docker compose down -v --remove-orphans || true
