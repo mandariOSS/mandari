@@ -275,7 +275,15 @@ class TestDeprecatedPaths:
         assert response.status_code == 200
         assert response["Deprecation"] == "true"
         # Dasselbe Datum steht im CHANGELOG („Abgekündigt“) und in docs/API_V1_SESSION.md
-        assert response["Sunset"] == "Wed, 31 Mar 2027 00:00:00 GMT"
+        assert response["Sunset"] == "Mon, 31 May 2027 00:00:00 GMT"
         assert response["Link"] == f'</api/v1/session/{tenant.slug}/meetings/>; rel="successor-version"'
         root = client.get(f"/session/{tenant.slug}/api/").json()
         assert root["v1"].endswith(f"{BASE}/{tenant.slug}/")
+
+    def test_sunset_is_valid_http_date(self) -> None:
+        """Wochentag und Format des Sunset-Headers passen zum Datum (RFC 9110 IMF-fixdate)."""
+        from email.utils import format_datetime, parsedate_to_datetime
+
+        from apps.session.api.views import SESSION_API_SUNSET
+
+        assert format_datetime(parsedate_to_datetime(SESSION_API_SUNSET), usegmt=True) == SESSION_API_SUNSET

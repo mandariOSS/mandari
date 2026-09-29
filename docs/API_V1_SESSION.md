@@ -61,8 +61,8 @@ entspricht dem `X-Request-ID`-Header und findet sich in den Server-Logs.
 ## Ablösung der alten Pfade
 
 `/session/<slug>/api/session/meetings/`, `…/papers/`, `…/applications/`, `…/applications/submit/`
-sind abgekündigt und entfallen am **31.03.2027** (`Sunset: Wed, 31 Mar 2027 00:00:00 GMT`, CHANGELOG
-unter „Abgekündigt“). Bis dahin bleiben sie erreichbar und antworten mit `Deprecation: true`, `Sunset`
+sind abgekündigt und entfallen am **31.05.2027** (`Sunset: Mon, 31 May 2027 00:00:00 GMT`, CHANGELOG
+unter „Abgekündigt“; bis Version 0.11.x nannte der Header den 31.03.2027). Bis dahin bleiben sie erreichbar und antworten mit `Deprecation: true`, `Sunset`
 und `Link: <neuer Pfad>; rel="successor-version"`. Der Einstiegspunkt `/session/<slug>/api/` verweist
 unter `v1` auf die neue API. Unterschiede beim Umstieg:
 
