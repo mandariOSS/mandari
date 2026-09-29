@@ -38,9 +38,9 @@ from apps.session.models import (
     SessionMeeting,
     SessionPerson,
     SessionTenant,
-    SessionUser,
 )
 from apps.session.services import attendance_service, invitation_token, portal_link_service
+from apps.session.services.staff_recipients import StaffRecipients
 from apps.session.services.user_invitations import sender_for
 
 logger = logging.getLogger(__name__)
@@ -109,16 +109,6 @@ def effective_channel(person: SessionPerson, portal_ids: set[Any]) -> str:
 
 def _site_url() -> str:
     return str(getattr(settings, "SITE_URL", "https://mandari.de")).rstrip("/")
-
-
-def _staff_emails(tenant: SessionTenant) -> list[str]:
-    """Adressen aller aktiven Sitzungsdienst-Nutzer (Berechtigung edit_meetings)."""
-    users = (
-        SessionUser.objects.filter(tenant=tenant, is_active=True, user__is_active=True)
-        .select_related("user")
-        .prefetch_related("roles")
-    )
-    return sorted({su.user.email for su in users if su.user.email and su.has_permission("edit_meetings")})
 
 
 def _send(
@@ -402,9 +392,14 @@ def _send_substitution(meeting: SessionMeeting, absent: SessionPerson, membershi
 
 
 def _notify_staff_without_substitute(attendance: SessionAttendance, outcome: SubstituteOutcome) -> bool:
-    """Sitzungsdienst informieren, wenn keine Stellvertretung per Mail erreicht wurde."""
+    """
+    Sitzungsdienst informieren, wenn keine Stellvertretung per Mail erreicht wurde.
+
+    Empfänger wie bei den Fristen-Erinnerungen: Sitzungsdienst (``edit_meetings``), bei einer
+    nichtöffentlichen Sitzung nur, wer sie selbst sehen darf.
+    """
     meeting = attendance.meeting
-    recipients = _staff_emails(meeting.tenant)
+    recipients = StaffRecipients(meeting.tenant, "edit_meetings").for_meeting(meeting)
     if not recipients or not cache.add(f"session-ladung:vertretung-gesucht:{attendance.pk}", 1, timeout=60 * 60):
         return False
     context = {

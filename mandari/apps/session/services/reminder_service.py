@@ -18,7 +18,6 @@ SessionTenant.reminder_config().
 """
 
 import logging
-from collections.abc import Callable
 from datetime import timedelta
 
 from django.conf import settings
@@ -26,9 +25,9 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.common.email import send_email
-from apps.session.permissions import role_permissions
 from apps.session.services import invitation_response_service, invitation_token, joint_meeting_service
-from apps.session.visibility import agenda_item_visible, meeting_visible, paper_visible
+from apps.session.services.staff_recipients import StaffRecipients
+from apps.session.visibility import agenda_item_visible, paper_visible
 
 from ..models import (
     SessionAgendaItem,
@@ -38,7 +37,6 @@ from ..models import (
     SessionPaper,
     SessionReminderLog,
     SessionTenant,
-    SessionUser,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,34 +47,6 @@ PAPER_OPEN_STATUSES = ("draft", "review")
 
 def _base_url(tenant: SessionTenant) -> str:
     return f"{settings.SITE_URL.rstrip('/')}/session/{tenant.slug}"
-
-
-class _Staff:
-    """Empfängerkreis einer Erinnerungsart: Adressen mit den Rechten der Person."""
-
-    def __init__(self, tenant: SessionTenant, permission: str) -> None:
-        self.people: list[tuple[str, set[str]]] = []
-        users = (
-            SessionUser.objects.filter(tenant=tenant, is_active=True, user__is_active=True)
-            .select_related("user")
-            .prefetch_related("roles")
-        )
-        for su in users:
-            permissions = role_permissions(su)
-            if permission in permissions and su.user.email:
-                self.people.append((su.user.email, permissions))
-
-    def __bool__(self) -> bool:
-        return bool(self.people)
-
-    def emails(self, visible: Callable[[set[str]], bool] | None = None) -> list[str]:
-        """Adressen – bei Nichtöffentlichem nur derer, die das Objekt selbst sehen dürfen."""
-        return sorted({email for email, perms in self.people if visible is None or visible(perms)})
-
-
-def _staff_recipients(tenant: SessionTenant, permission: str) -> _Staff:
-    """Aktive Session-Benutzer mit einer Berechtigung (Adressen je Objekt über ``emails``)."""
-    return _Staff(tenant, permission)
 
 
 def _claim(tenant: SessionTenant, kind: str, dedup_key: str, recipients: list[str]) -> bool:
@@ -112,7 +82,7 @@ def _remind_invitations(tenant, config, today, *, dry_run) -> dict:
     if not config["invitation_enabled"]:
         return sent
 
-    staff = _staff_recipients(tenant, "edit_meetings")
+    staff = StaffRecipients(tenant, "edit_meetings")
     if not staff:
         return sent
 
@@ -138,7 +108,7 @@ def _remind_invitations(tenant, config, today, *, dry_run) -> dict:
         deadline = meeting.invitation_deadline
         url = f"{base}/meetings/{meeting.id}/"
         # Nichtöffentliche Sitzungen nur an Personen, die sie selbst sehen dürfen
-        recipients = staff.emails(lambda perms, m=meeting: meeting_visible(perms, m))
+        recipients = staff.for_meeting(meeting)
         if deadline < today:
             subject = f"[{tenant.name}] Ladungsfrist verstrichen: {meeting.name}"
             body = (
@@ -168,7 +138,7 @@ def _remind_papers(tenant, config, today, *, dry_run) -> dict:
     if not config["paper_enabled"]:
         return sent
 
-    staff = _staff_recipients(tenant, "edit_papers")
+    staff = StaffRecipients(tenant, "edit_papers")
     if not staff:
         return sent
 
@@ -285,7 +255,7 @@ def _remind_resolutions(tenant, config, today, *, dry_run) -> dict:
     if not config["resolution_enabled"]:
         return sent
 
-    staff = _staff_recipients(tenant, "edit_meetings")
+    staff = StaffRecipients(tenant, "edit_meetings")
     if not staff:
         return sent
 

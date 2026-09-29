@@ -321,6 +321,34 @@ def test_ohne_stellvertretung_wird_der_sitzungsdienst_informiert(welt: Welt) -> 
     assert GRUND not in hinweis.body
 
 
+def _sitzungsdienst_ohne_noe(welt: Welt) -> None:
+    role = SessionRole.objects.create(
+        tenant=welt.tenant, name="Sitzungsdienst ohne NÖ", can_view_meetings=True, can_edit_meetings=True
+    )
+    user = cast(Any, UserFactory)(email="dienst-ohne-noe@example.org")
+    SessionUser.objects.create(user=user, tenant=welt.tenant).roles.add(role)
+
+
+@pytest.mark.parametrize(("oeffentlich", "ohne_noe_erhaelt"), [(False, False), (True, True)])
+def test_vertretung_gesucht_nur_an_sitzungsdienst_mit_sichtrecht(
+    welt: Welt, oeffentlich: bool, ohne_noe_erhaelt: bool
+) -> None:
+    """Wie bei den Fristen-Erinnerungen: nichtöffentliche Sitzung nur an Personen, die sie sehen dürfen."""
+    _sitzungsdienst_ohne_noe(welt)
+    welt.meeting.is_public = oeffentlich
+    welt.meeting.save(update_fields=["is_public", "updated_at"])
+    recipient = _empfaenger(_versenden(welt), welt.chair)
+    mail.outbox = []
+
+    Client().post(_link(recipient), {"action": "decline", "substitute": "1"})
+
+    empfaenger = {
+        adresse for nachricht in mail.outbox if "Vertretung gesucht" in nachricht.subject for adresse in nachricht.to
+    }
+    assert "sitzungsdienst@example.org" in empfaenger
+    assert ("dienst-ohne-noe@example.org" in empfaenger) is ohne_noe_erhaelt
+
+
 @pytest.mark.parametrize(
     "manipulation",
     ["signatur", "fremdes_salt", "sitzung_getauscht", "schluessel_erneuert", "unsinn"],
