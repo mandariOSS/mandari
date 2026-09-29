@@ -17,7 +17,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("common", "0006_systemeinstellungen_verschluesselt"),
+        ("common", "0007_systemeinstellungen_ohne_seitenname"),
     ]
 
     operations = [
