@@ -37,6 +37,7 @@ Mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **Pillow** | Bildverarbeitung | HPND | [Docs](https://pillow.readthedocs.io/) |
 | **cryptography** | Verschlüsselung (AES-256-GCM) | BSD/Apache 2.0 | [Docs](https://cryptography.io/) |
 | **pytesseract** | OCR für PDFs | Apache 2.0 | [GitHub](https://github.com/tesseract-ocr/tesseract) |
+| **pypdfium2** | PDF-Seitenanalyse und Rendern (PDFium, Karten und Pläne) | Apache 2.0 / BSD-3-Clause | [GitHub](https://github.com/pypdfium2-team/pypdfium2) |
 | **xhtml2pdf** | PDF-Generierung | Apache 2.0 | [GitHub](https://github.com/xhtml2pdf/xhtml2pdf) |
 | **segno** | QR-Code-Erzeugung (reines Python) | BSD-3-Clause | [GitHub](https://github.com/heuer/segno) |
 

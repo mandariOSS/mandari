@@ -21,5 +21,6 @@ Dateiname `JJJJMMTT-kurztitel.md`. Status: vorgeschlagen, angenommen, abgelöst.
 | [20260929-adapter-rahmen.md](20260929-adapter-rahmen.md) | Datendrehscheibe A9: Adapter-Rahmen: übersetzen ohne Geschäftsregeln, Zustellprotokoll, dünne Webhooks mit HMAC | angenommen |
 | [20260929-aenderungsfeed-format.md](20260929-aenderungsfeed-format.md) | Datendrehscheibe A10: Änderungsfeed: Cursor, upsert/delete/redact, Snapshot-Übergabe, 410 | angenommen |
 | [20260929-portal-modul.md](20260929-portal-modul.md) | Datendrehscheibe A11: Bürgerportal als eigenes Fachmodul; `insight_core` wird reiner RIS-Bestand | vorgeschlagen |
+| [20260930-pdf-seitenanalyse-bibliothek.md](20260930-pdf-seitenanalyse-bibliothek.md) | PDF-Seitenanalyse mit pypdfium2 und pypdf statt PyMuPDF (Lizenz, OEM) | angenommen |
 
 Die Einträge „Datendrehscheibe A1–A11“ gehören zusammen (Epic #476); die Reihenfolge der Nummern entspricht den Abhängigkeiten.

@@ -290,6 +290,8 @@ pypdf==6.19.0
     # via
     #   -r requirements.txt
     #   xhtml2pdf
+pypdfium2==5.13.0
+    # via -r requirements.txt
 pytesseract==0.3.13
     # via -r requirements.txt
 python-bidi==0.6.11
