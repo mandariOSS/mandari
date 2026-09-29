@@ -13,7 +13,10 @@ Jahresübersicht:
 - **Vier-Augen-Prinzip**: Wer die Positionen erzeugt hat, darf sie nicht
   selbst genehmigen (je Mandant schaltbar, Standard: an – Issue #222).
 - **Exporte**: generisches CSV fürs Finanzverfahren und SEPA-pain.001-XML
-  (Überweisungs-Datei); Abrechnungsmitteilung als PDF je Empfänger.
+  (Überweisungs-Datei); Abrechnungsmitteilung als PDF je Empfänger. Der SEPA-Export
+  (:func:`export_sepa`) läuft für Sitzungsgeld und Monatspauschalen gleich: in einer Transaktion,
+  mit gesperrten Positionen, nur für genehmigte und noch nicht exportierte Positionen, mit einer
+  Referenz aus dem gemeinsamen Zähler je Mandant und Jahr (Issue #428).
 - **Bankdaten**: IBAN/BIC/Kontoinhaber werden ausschließlich über die
   verschlüsselten Person-Accessoren gelesen und nur in Export-Pfaden mit
   der Berechtigung ``manage_allowances`` verwendet.
@@ -22,11 +25,16 @@ Jahresübersicht:
 import io
 import logging
 import re
-from datetime import datetime
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.sax.saxutils import escape  # noqa: F401  (Doku: Escaping via ElementTree)
 
+from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from apps.common import csv_safety
@@ -160,22 +168,52 @@ def approve_allowances(allowances, approver, *, four_eyes: bool = True) -> dict:
 # =============================================================================
 
 
-def next_export_reference(tenant) -> str:
-    """Nächste fortlaufende Export-Referenz, z. B. SG-2026-0003."""
-    from apps.session.models import SessionAllowance
+#: Arten des SEPA-Exports (Verwendungszweck und Kennzeichnung der Positionen)
+KIND_SESSION = "sitzungsgeld"
+KIND_MONTHLY = "pauschale"
 
-    year = timezone.localdate().year
-    prefix = f"SG-{year}-"
+
+def _max_used_reference(tenant: Any, prefix: str) -> int:
+    """Höchste bereits vergebene Nummer mit diesem Präfix – Sitzungsgeld und Pauschalen zusammen."""
+    from apps.session.models import SessionAllowance, SessionMonthlyAllowance
+
+    refs = set(
+        SessionAllowance.objects.filter(
+            attendance__meeting__tenant=tenant, export_reference__startswith=prefix
+        ).values_list("export_reference", flat=True)
+    )
+    refs.update(
+        SessionMonthlyAllowance.objects.filter(tenant=tenant, export_reference__startswith=prefix).values_list(
+            "export_reference", flat=True
+        )
+    )
     max_num = 0
-    refs = SessionAllowance.objects.filter(
-        attendance__meeting__tenant=tenant, export_reference__startswith=prefix
-    ).values_list("export_reference", flat=True)
     for ref in refs:
         try:
             max_num = max(max_num, int(ref.rsplit("-", 1)[-1]))
         except (TypeError, ValueError):
             continue
-    return f"{prefix}{max_num + 1:04d}"
+    return max_num
+
+
+def next_export_reference(tenant: Any) -> str:
+    """
+    Nächste fortlaufende Export-Referenz, z. B. SG-2026-0003 (Issue #428).
+
+    Ein Zähler je Mandant und Jahr für Sitzungsgeld und Monatspauschalen. Die Zählerzeile bleibt
+    bis zum Ende der umgebenden Transaktion gesperrt; bricht der Export ab, ist auch die Nummer
+    nicht verbraucht. Der Zähler setzt mindestens auf der höchsten bereits vergebenen Nummer auf –
+    so entstehen auch nach Exporten aus älteren Ständen keine Doppelungen.
+    """
+    from apps.session.models import SessionExportCounter
+
+    year = timezone.localdate().year
+    prefix = f"SG-{year}-"
+    with transaction.atomic():
+        counter, _ = SessionExportCounter.objects.select_for_update().get_or_create(tenant=tenant, year=year)
+        counter.value = max(counter.value, _max_used_reference(tenant, prefix)) + 1
+        counter.save(update_fields=["value", "updated_at"])
+    return f"{prefix}{counter.value:04d}"
 
 
 def build_export_csv(allowances) -> str:
@@ -235,12 +273,41 @@ def _sepa_text(value: str, max_length: int = 70) -> str:
     return value.strip()[:max_length] or "-"
 
 
-def build_sepa_xml(tenant, allowances, *, debtor_name, debtor_iban, debtor_bic="", reference="", execution_date=None):
+def _person_of(allowance: Any) -> Any:
+    """Empfänger einer Position: Sitzungsgeld hängt an der Anwesenheit, Pauschalen an der Person."""
+    return getattr(allowance, "person", None) or allowance.attendance.person
+
+
+def _iban_of(person: Any) -> str:
+    """IBAN ohne Leerraum – leer heißt: nicht überweisbar (gleiche Regel für XML und Kennzeichnung)."""
+    return re.sub(r"\s+", "", person.get_bank_iban_decrypted() or "")
+
+
+def _purpose(kind: str, entry: dict[str, Any], reference: str) -> str:
+    """Verwendungszweck je Art des Exports (Issue #428)."""
+    if kind == KIND_MONTHLY:
+        months = ", ".join(f"{period:%m/%Y}" for period in sorted(entry["periods"]))
+        return f"Monatspauschale {months} {reference}".strip()
+    return f"Sitzungsgeld {entry['count']} Sitzung(en) {reference}".strip()
+
+
+def build_sepa_xml(
+    tenant: Any,
+    allowances: Iterable[Any],
+    *,
+    debtor_name: str,
+    debtor_iban: str,
+    debtor_bic: str = "",
+    reference: str = "",
+    execution_date: date | None = None,
+    kind: str = KIND_SESSION,
+) -> tuple[bytes, int, Decimal, list[str]]:
     """
     SEPA-pain.001.001.03-Überweisungsdatei (Issue #38).
 
     Je Person eine Sammel-Transaktion (Summe ihrer Positionen). Personen
     ohne hinterlegte IBAN werden übersprungen und namentlich zurückgemeldet.
+    ``kind`` bestimmt den Verwendungszweck (Sitzungsgeld oder Monatspauschale).
 
     Returns:
         Tuple (xml_bytes, transaction_count, total (Decimal), skipped_names)
@@ -248,20 +315,22 @@ def build_sepa_xml(tenant, allowances, *, debtor_name, debtor_iban, debtor_bic="
     execution_date = execution_date or timezone.localdate()
 
     # Je Person summieren (Bankdaten über die verschlüsselten Accessoren)
-    per_person: dict = {}
+    per_person: dict[Any, dict[str, Any]] = {}
     for allowance in allowances:
-        # Sitzungsgelder hängen an der Anwesenheit, Monats-Pauschalen
-        # direkt an der Person — beide Typen werden unterstützt.
-        person = getattr(allowance, "person", None) or allowance.attendance.person
-        entry = per_person.setdefault(person.pk, {"person": person, "amount": Decimal("0.00"), "count": 0})
+        person = _person_of(allowance)
+        entry = per_person.setdefault(
+            person.pk, {"person": person, "amount": Decimal("0.00"), "count": 0, "periods": set()}
+        )
         entry["amount"] += allowance.amount
         entry["count"] += 1
+        if getattr(allowance, "period", None) is not None:
+            entry["periods"].add(allowance.period)
 
-    transactions = []
-    skipped = []
+    transactions: list[dict[str, Any]] = []
+    skipped: list[str] = []
     for entry in per_person.values():
         person = entry["person"]
-        iban = re.sub(r"\s+", "", person.get_bank_iban_decrypted() or "")
+        iban = _iban_of(person)
         if not iban:
             skipped.append(person.display_name)
             continue
@@ -271,7 +340,7 @@ def build_sepa_xml(tenant, allowances, *, debtor_name, debtor_iban, debtor_bic="
                 "iban": iban.upper(),
                 "bic": re.sub(r"\s+", "", person.get_bank_bic_decrypted() or "").upper(),
                 "amount": entry["amount"],
-                "count": entry["count"],
+                "purpose": _purpose(kind, entry, reference),
             }
         )
 
@@ -333,7 +402,7 @@ def build_sepa_xml(tenant, allowances, *, debtor_name, debtor_iban, debtor_bic="
         cdtr_acct_id = SubElement(cdtr_acct, "Id")
         SubElement(cdtr_acct_id, "IBAN").text = txn["iban"]
         rmt = SubElement(cdt, "RmtInf")
-        SubElement(rmt, "Ustrd").text = _sepa_text(f"Sitzungsgeld {txn['count']} Sitzung(en) {reference}".strip(), 140)
+        SubElement(rmt, "Ustrd").text = _sepa_text(txn["purpose"], 140)
 
     xml_bytes = b'<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(root, encoding="unicode").encode("utf-8")
     return xml_bytes, len(transactions), total, skipped
@@ -354,6 +423,84 @@ def mark_exported(allowances, reference, *, mark_paid=True) -> int:
         allowance.save(update_fields=update_fields)
         count += 1
     return count
+
+
+@dataclass
+class SepaExport:
+    """Ergebnis von :func:`export_sepa`."""
+
+    #: Export-Referenz; leer, wenn nichts exportiert wurde
+    reference: str = ""
+    xml: bytes = b""
+    transaction_count: int = 0
+    total: Decimal = Decimal("0.00")
+    #: Personen ohne IBAN (ihre Positionen bleiben genehmigt und offen)
+    skipped: list[str] = field(default_factory=list)
+    #: als exportiert gekennzeichnete Positionen
+    exported: int = 0
+
+
+def export_sepa(
+    tenant: Any,
+    allowances: QuerySet[Any],
+    *,
+    kind: str,
+    debtor_name: str,
+    debtor_iban: str,
+    debtor_bic: str = "",
+) -> SepaExport:
+    """
+    SEPA-Export in einem Zug für Sitzungsgeld oder Monatspauschalen (Issue #428).
+
+    ``allowances`` ist das QuerySet der Auswahl (Zeitraum, Gremium bzw. Monat). In einer
+    Transaktion werden die Positionen gesperrt und nur die genehmigten, noch nicht exportierten
+    übernommen; Referenz, Datei und Kennzeichnung entstehen unter dieser Sperre. Ein zweiter,
+    gleichzeitiger Export derselben Auswahl wartet und findet danach nichts mehr – keine Position
+    wird zweimal ausgegeben. Beträge und Summen berechnet :func:`build_sepa_xml` unverändert.
+
+    Ohne überweisbare Position (niemand mit IBAN) wird nichts gekennzeichnet und keine Referenz
+    verbraucht; ``skipped`` nennt dann die Personen.
+    """
+    with transaction.atomic():
+        positions = list(allowances.select_for_update(of=("self",)).filter(status="approved", export_reference=""))
+        if not positions:
+            return SepaExport()
+        exportable = [a for a in positions if _iban_of(_person_of(a))]
+        if not exportable:
+            names = {_person_of(a).pk: _person_of(a).display_name for a in positions}
+            return SepaExport(skipped=list(names.values()))
+
+        reference = next_export_reference(tenant)
+        xml_bytes, txn_count, total, skipped = build_sepa_xml(
+            tenant,
+            positions,
+            debtor_name=debtor_name,
+            debtor_iban=debtor_iban,
+            debtor_bic=debtor_bic,
+            reference=reference,
+            kind=kind,
+        )
+        mark = mark_monthly_exported if kind == KIND_MONTHLY else mark_exported
+        exported = mark(exportable, reference, mark_paid=True)
+    return SepaExport(
+        reference=reference,
+        xml=xml_bytes,
+        transaction_count=txn_count,
+        total=total,
+        skipped=skipped,
+        exported=exported,
+    )
+
+
+def last_export_reference(allowances: QuerySet[Any]) -> str:
+    """Zuletzt vergebene Export-Referenz einer Auswahl – für den Hinweis „bereits exportiert“."""
+    return (
+        allowances.exclude(export_reference="")
+        .order_by("-export_date", "-export_reference")
+        .values_list("export_reference", flat=True)
+        .first()
+        or ""
+    )
 
 
 # =============================================================================
@@ -577,7 +724,8 @@ def mark_monthly_exported(allowances, reference, *, mark_paid=True) -> int:
     for allowance in allowances:
         allowance.export_reference = reference
         allowance.export_date = now
-        if mark_paid:
+        # Wie beim Sitzungsgeld: „ausgezahlt“ nur aus „genehmigt“
+        if mark_paid and allowance.status == "approved":
             allowance.status = "paid"
             allowance.paid_at = now
         allowance.save(update_fields=["export_reference", "export_date", "status", "paid_at", "updated_at"])
