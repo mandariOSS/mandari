@@ -238,6 +238,7 @@ class TestMailFormulare:
         assert len([m for m in mail.outbox if m.to == ["opfer@example.org"]]) == 2
 
     def test_abo_je_ip_gedrosselt(self, body: OParlBody, settings: Any) -> None:
+        settings.INSIGHT_SUBSCRIPTIONS_ENABLED = True
         settings.INSIGHT_MAILS_PER_IP_HOUR = 2
         client = Client()
         client.get(f"/insight/kommune/{body.id}/")
@@ -246,7 +247,8 @@ class TestMailFormulare:
             client.post("/insight/benachrichtigungen/", {"email": f"a{n}@example.org", "keyword": "Radweg"}, **_ip(1))
         assert len(mail.outbox) == 2
 
-    def test_abo_bestaetigung_ohne_freitext(self, body: OParlBody) -> None:
+    def test_abo_bestaetigung_ohne_freitext(self, body: OParlBody, settings: Any) -> None:
+        settings.INSIGHT_SUBSCRIPTIONS_ENABLED = True
         client = Client()
         client.get(f"/insight/kommune/{body.id}/")
         mail.outbox.clear()

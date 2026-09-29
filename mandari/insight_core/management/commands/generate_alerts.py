@@ -12,6 +12,7 @@ Usage: python manage.py generate_alerts
 
 import logging
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import connection
 from django.utils import timezone
@@ -37,6 +38,14 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from insight_core.models import InsightSubscriber
+
+        if not getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False):
+            self.stdout.write(
+                self.style.WARNING(
+                    "Insight-Abos sind abgeschaltet (INSIGHT_SUBSCRIPTIONS_ENABLED=False) – keine Benachrichtigungen erzeugt."
+                )
+            )
+            return
 
         days = options["days"]
         dry_run = options["dry_run"]

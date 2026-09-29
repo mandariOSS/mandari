@@ -40,6 +40,14 @@ class Command(BaseCommand):
         dry_run = options["dry_run"]
         filter_email = options.get("email")
 
+        if not getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False):
+            self.stdout.write(
+                self.style.WARNING(
+                    "Insight-Abos sind abgeschaltet (INSIGHT_SUBSCRIPTIONS_ENABLED=False) – keine Digest-Mails versendet."
+                )
+            )
+            return
+
         if not getattr(settings, "INSIGHT_DIGEST_ENABLED", True):
             self.stdout.write("Digest-Versand ist deaktiviert (INSIGHT_DIGEST_ENABLED=False)")
             return
