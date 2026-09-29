@@ -28,6 +28,11 @@ Zwei Wege stehen offen:
 Hilfreich sind: betroffene Version oder Commit, Beschreibung, Schritte zur Reproduktion,
 mögliche Auswirkung und — falls vorhanden — ein Vorschlag zur Behebung.
 
+**Wird die Lücke bereits ausgenutzt?** Dann ergänzen Sie den Betreff um `[AKTIV AUSGENUTZT]` und
+schreiben Sie, woran Sie das erkennen. Solche Meldungen bearbeiten wir vorrangig, denn für aktiv
+ausgenutzte Schwachstellen gelten gesetzliche Meldefristen (siehe
+[Meldepflichten nach dem Cyber Resilience Act](#meldepflichten-nach-dem-cyber-resilience-act)).
+
 ### Was Sie von uns erwarten können
 
 | Zeitpunkt | Reaktion |
@@ -58,6 +63,26 @@ und Fristen je Schweregrad — steht in
 [docs/SICHERHEITSMELDUNGEN.md](docs/SICHERHEITSMELDUNGEN.md). Kurz: erst der Fix,
 dann die Veröffentlichung. Wir bestätigen den Eingang innerhalb von drei
 Werktagen und melden spätestens nach zwei Wochen einen Zwischenstand.
+
+## Meldepflichten nach dem Cyber Resilience Act
+
+Seit dem 11.09.2026 müssen Hersteller von Produkten mit digitalen Elementen aktiv ausgenutzte
+Schwachstellen und schwerwiegende Sicherheitsvorfälle melden (Art. 14 der Verordnung (EU) 2024/2847,
+„Cyber Resilience Act“). Gemeldet wird über die einheitliche Meldeplattform der ENISA, gleichzeitig an
+das koordinierende CSIRT (in Deutschland das BSI) und an die ENISA:
+
+| Frist ab Kenntnis | Meldung |
+|-------------------|---------|
+| 24 Stunden | Frühwarnung |
+| 72 Stunden | Meldung mit ersten Angaben und Gegenmaßnahmen |
+| 14 Tage nach verfügbarer Korrektur (Vorfälle: ein Monat nach der Meldung) | Abschlussbericht |
+
+Betroffene Betreiber informieren wir über den Sicherheitshinweis (GitHub Security Advisory), die
+Release Notes und bei gelieferten Installationen direkt, jeweils mit den Maßnahmen, die sie selbst
+ergreifen können. Welche Rolle mandari nach dem CRA hat und wie wir vorgehen, beschreibt
+[docs/SICHERHEITSMELDUNGEN.md](docs/SICHERHEITSMELDUNGEN.md#7-meldepflichten-nach-dem-cyber-resilience-act).
+Wer mandari unverändert selbst betreibt, hat als Nutzer keine Meldepflicht nach dem CRA; wer mandari
+verändert und unter eigenem Namen anbietet, wird selbst Hersteller.
 
 ## Was mandari mitbringt
 
