@@ -71,6 +71,72 @@ class NotificationType(models.TextChoices):
     ANNOUNCEMENT = "announcement", "Ankündigung"
 
 
+#: Arten, die Mitglieder in den Benachrichtigungseinstellungen steuern, nach Bereich in
+#: Anzeigereihenfolge. Formular und Speichern nutzen dieselbe Liste: Gespeichert werden nur diese
+#: Arten, alle übrigen bleiben unverändert (Issue #423).
+PREFERENCE_CATEGORIES: dict[str, tuple[str, ...]] = {
+    "meetings": (
+        NotificationType.MEETING_REMINDER.value,
+        NotificationType.MEETING_UPDATED.value,
+        NotificationType.MEETING_CANCELLED.value,
+    ),
+    "tasks": (
+        NotificationType.TASK_ASSIGNED.value,
+        NotificationType.TASK_DUE_SOON.value,
+        NotificationType.TASK_COMPLETED.value,
+        NotificationType.TASK_COMMENT.value,
+    ),
+    "motions": (
+        NotificationType.MOTION_SHARED.value,
+        NotificationType.MOTION_COMMENT.value,
+        NotificationType.MOTION_STATUS.value,
+        NotificationType.MOTION_ASSIGNED.value,
+        NotificationType.MOTION_DUE_SOON.value,
+        NotificationType.MOTION_APPROVAL_REQUESTED.value,
+        NotificationType.MOTION_APPROVAL_DECIDED.value,
+    ),
+    "faction": (
+        NotificationType.FACTION_INVITATION.value,
+        NotificationType.FACTION_MEETING_REMINDER.value,
+        NotificationType.FACTION_MEETING_UPDATED.value,
+        NotificationType.FACTION_INVITATION_RELEASE.value,
+        NotificationType.FACTION_PROPOSAL_DECIDED.value,
+        NotificationType.FACTION_PROTOCOL_APPROVED.value,
+    ),
+    "organization": (
+        NotificationType.MEMBER_JOINED.value,
+        NotificationType.ROLE_CHANGED.value,
+    ),
+    "support": (
+        NotificationType.SUPPORT_TICKET_CREATED.value,
+        NotificationType.SUPPORT_TICKET_REPLY.value,
+        NotificationType.SUPPORT_TICKET_STATUS.value,
+        NotificationType.SUPPORT_TICKET_RESOLVED.value,
+        NotificationType.SUPPORT_TICKET_ESCALATED.value,
+    ),
+    "system": (
+        NotificationType.CHANGE_REQUEST_NEW.value,
+        NotificationType.CHANGE_REQUEST_DECIDED.value,
+        NotificationType.ABSENCE_DEPUTY.value,
+        NotificationType.SYSTEM_MESSAGE.value,
+        NotificationType.ANNOUNCEMENT.value,
+    ),
+}
+
+#: Im Formular steuerbare Arten (flach, in Anzeigereihenfolge).
+CONFIGURABLE_TYPES: tuple[str, ...] = tuple(ntype for types in PREFERENCE_CATEGORIES.values() for ntype in types)
+
+#: Hinweise im Formular zu einzelnen Arten
+PREFERENCE_HINTS: dict[str, str] = {
+    # Abschaltbar ist nur der Hinweis in mandari; die Einladung selbst geht immer per E-Mail raus
+    NotificationType.FACTION_INVITATION.value: "Die förmliche Einladungs-Mail kommt unabhängig davon.",
+}
+
+#: Immer aktive Arten – nicht im Formular, gespeicherte Einstellungen werden ignoriert:
+#: - Registrierungsanfrage: Hinweis an die Verwaltenden; ohne ihn bliebe eine Anfrage unbemerkt liegen.
+ALWAYS_ACTIVE_TYPES: frozenset[str] = frozenset({NotificationType.REGISTRATION_REQUEST.value})
+
+
 class Notification(models.Model):
     """
     A notification for a user.
@@ -295,6 +361,10 @@ class NotificationPreference(models.Model):
         # Check global email setting
         if channel == "email" and not self.email_enabled:
             return False
+
+        # Nicht abschaltbare Arten (Issue #423)
+        if notification_type in ALWAYS_ACTIVE_TYPES:
+            return True
 
         # Check type-specific setting
         type_config = self.type_settings.get(notification_type, {})

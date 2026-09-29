@@ -1452,13 +1452,17 @@ def save_notification_preferences(membership: Membership, form: Mapping[str, str
             prefs.quiet_hours_start = start
         if end:
             prefs.quiet_hours_end = end
-    prefs.type_settings = {
-        ntype: {
+    from apps.work.notifications.models import CONFIGURABLE_TYPES
+
+    # Nur die im Formular angezeigten Arten übernehmen; alle übrigen behalten ihren Stand (Issue #423).
+    # Eine nicht angekreuzte Checkbox fehlt im POST, deshalb dürfen nur angezeigte Arten "aus" werden.
+    type_settings = dict(prefs.type_settings or {})
+    for ntype in CONFIGURABLE_TYPES:
+        type_settings[ntype] = {
             "in_app": form.get(f"type_{ntype}_in_app") == "on",
             "email": form.get(f"type_{ntype}_email") == "on",
         }
-        for ntype, _label in _notification_types().choices
-    }
+    prefs.type_settings = type_settings
     prefs.save()
     return prefs
 

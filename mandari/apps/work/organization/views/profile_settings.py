@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
-from apps.work.notifications.models import NotificationType
+from apps.work.notifications.models import PREFERENCE_CATEGORIES, PREFERENCE_HINTS, NotificationType
 
 from .. import selectors, services
 from ..services import ServiceError
@@ -21,23 +21,6 @@ class ProfileNotificationsView(WorkViewMixin, TemplateView):
 
     template_name = "work/profile/notifications.html"
     permission_required = "dashboard.view"
-
-    # Notification type categories for grouping
-    NOTIFICATION_CATEGORIES = {
-        "meetings": ["meeting_reminder", "meeting_updated", "meeting_cancelled"],
-        "tasks": ["task_assigned", "task_due_soon", "task_completed", "task_comment"],
-        "motions": ["motion_shared", "motion_comment", "motion_status"],
-        "faction": ["faction_reminder", "faction_updated"],
-        "organization": ["member_joined", "role_changed"],
-        "support": [
-            "support_created",
-            "support_reply",
-            "support_status",
-            "support_resolved",
-            "support_escalated",
-        ],
-        "system": ["change_request_new", "change_request_decided", "absence_deputy", "system", "announcement"],
-    }
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -55,8 +38,10 @@ class ProfileNotificationsView(WorkViewMixin, TemplateView):
                 "in_app_enabled": prefs.is_type_enabled(val, "in_app"),
                 "email_enabled": prefs.is_type_enabled(val, "email"),
                 "category": category_name,
+                "hint": PREFERENCE_HINTS.get(val, ""),
             }
-            for category_name, type_values in self.NOTIFICATION_CATEGORIES.items()
+            # Einzige Quelle für angezeigte und gespeicherte Arten (Issue #423)
+            for category_name, type_values in PREFERENCE_CATEGORIES.items()
             for val in type_values
             if val in type_lookup
         ]
