@@ -77,8 +77,15 @@ Migrationen müssen abwärtskompatibel sein: Der Rückfall rollt Code zurück, k
 Migrationen (`django-safemigrate` spielt nur verträgliche Migrationen vor dem Umschalten ein).
 Das interaktive `update.sh` für Selbst-Hoster nutzt dieselbe Anwendungsprüfung und rollt
 bei Fehlschlag ebenfalls zurück. Wie `deploy.sh` hält es die Worker (`WORKER_SERVICES`,
-Standard `ingestor`) während aller Migrationen an und startet sie erst danach mit dem neuen
-Image – auch bei Abbruch oder Rückfall werden sie wieder gestartet.
+Standard `ingestor minutes-orchestrator`) während aller Migrationen an und startet sie erst danach
+mit dem neuen Image – auch bei Abbruch oder Rückfall werden sie wieder gestartet. Der
+Protokoll-Orchestrator (`minutes-orchestrator`) nutzt das Anwendungs-Image und wechselt nach den
+Migrationen immer mit, auch wenn ein eigenes `WORKER_SERVICES` ihn nicht nennt; `--rollback`
+setzt ihn ebenfalls zurück. Dienste, die die Compose-Datei nicht kennt, überspringt das Skript.
+
+Für `deploy.sh` gehört der Orchestrator ebenfalls in `WORKER_SERVICES`
+(z. B. `WORKER_SERVICES="ingestor minutes-orchestrator"`); sonst läuft er nach dem Deploy mit dem
+alten Image weiter.
 
 ---
 
@@ -112,14 +119,14 @@ sh deploy/scripts/deploy.sh rollback v0.11.0  # bestimmte Version
 ### Datenbank-Migration
 
 Migrationen laufen beim Update, nicht im Entrypoint: verträgliche vor dem Umschalten
-(`safemigrate`), `update.sh` spielt die übrigen danach ein. Der Ingestor steht dabei, damit
-kein Sync-Zyklus gegen ein Schema läuft, das sich gerade ändert. Von Hand ebenso (Containername
-folgt `COMPOSE_PROJECT_NAME`, Vorgabe `mandari`):
+(`safemigrate`), `update.sh` spielt die übrigen danach ein. Ingestor und Protokoll-Orchestrator
+stehen dabei, damit kein Durchlauf gegen ein Schema läuft, das sich gerade ändert. Von Hand ebenso
+(Containername folgt `COMPOSE_PROJECT_NAME`, Vorgabe `mandari`):
 
 ```bash
-docker compose stop ingestor
+docker compose stop ingestor minutes-orchestrator
 docker exec mandari python manage.py migrate
-docker compose up -d ingestor
+docker compose up -d ingestor minutes-orchestrator
 ```
 
 ### Sicherung

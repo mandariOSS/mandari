@@ -7,7 +7,7 @@
 #   2. Worker (Ingestor) anhalten, Migrationen via temporären Container (vor dem Swap)
 #   3. Container einzeln tauschen (Caddy puffert Requests)
 #   4. Health-Check + automatisches Rollback bei Fehler
-#   5. Nach den Post-Deploy-Migrationen Worker mit neuem Image starten
+#   5. Nach den Post-Deploy-Migrationen Worker und Protokoll-Orchestrator mit neuem Image starten
 #
 # Usage:
 #   ./update.sh                # Update auf latest
@@ -29,11 +29,17 @@ DB_CONTAINER="${COMPOSE_PROJECT_NAME}-postgres"
 WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
 
 # Dienste, die während der Migrationen stehen (wie WORKER_SERVICES in deploy/scripts/deploy.sh).
-# Der Ingestor – und ein getrennter OCR-Worker, falls in einer eigenen Compose-Datei betrieben –
-# schreibt in Tabellen, die Migrationen ändern; liefe er weiter, bräche ein Sync-Zyklus ab.
-# Überschreibbar per Umgebung oder .env, z. B. WORKER_SERVICES="ingestor ocr-worker";
-# Dienste, die Compose nicht kennt, werden übersprungen.
-WORKER_SERVICES_DEFAULT="ingestor"
+# Der Ingestor und der Protokoll-Orchestrator – und ein getrennter OCR-Worker, falls in einer
+# eigenen Compose-Datei betrieben – schreiben in Tabellen, die Migrationen ändern; liefen sie
+# weiter, bräche ein Durchlauf ab. Überschreibbar per Umgebung oder .env, z. B.
+# WORKER_SERVICES="ingestor minutes-orchestrator ocr-worker". Dienste, die Compose nicht kennt,
+# werden übersprungen (bei der Vorgabe ohne Hinweis).
+WORKER_SERVICES_DEFAULT="ingestor minutes-orchestrator"
+
+# Dienste mit dem Anwendungs-Image, die nach den Migrationen immer auf das neue Image wechseln
+# (Issue #479) – auch wenn ein eigenes WORKER_SERVICES sie nicht nennt; dann laufen sie während
+# der Migrationen weiter. Nicht definierte Dienste werden übersprungen.
+APP_IMAGE_SERVICES="minutes-orchestrator"
 
 # =============================================================================
 # Configuration
@@ -212,27 +218,43 @@ rollback_service() {
     fi
 }
 
-# Worker, die während der Migrationen stehen: WORKER_SERVICES aus Umgebung oder .env,
-# beschränkt auf Dienste, die Compose kennt (Hinweise auf stderr, Ergebnis auf stdout)
-resolve_workers() {
-    local wanted defined svc result=""
-    wanted="${WORKER_SERVICES:-$(get_env_var WORKER_SERVICES "$WORKER_SERVICES_DEFAULT")}"
+# Dienste aus der Liste $1, die Compose kennt – in der gegebenen Reihenfolge, ohne Doppelte.
+# Mit $2 = warn wird jeder unbekannte Dienst gemeldet (Hinweise auf stderr, Ergebnis auf stdout).
+defined_services() {
+    local wanted="$1" mode="${2:-}" defined svc result=""
     wanted="${wanted//\"/}"
     wanted="${wanted//\'/}"
     defined=$(docker compose config --services 2>/dev/null || true)
     for svc in $wanted; do
+        case " $result " in
+            *" $svc "*) continue ;;
+        esac
         if printf '%s\n' "$defined" | grep -qxF -- "$svc"; then
             result="$result $svc"
-        else
+        elif [ "$mode" = "warn" ]; then
             warn "Dienst '$svc' aus WORKER_SERVICES ist nicht definiert – übersprungen." >&2
         fi
     done
     echo "${result# }"
 }
 
+# Worker, die während der Migrationen stehen: WORKER_SERVICES aus Umgebung oder .env,
+# sonst die Vorgabe; beschränkt auf Dienste, die Compose kennt
+resolve_workers() {
+    local configured
+    configured="${WORKER_SERVICES:-$(get_env_var WORKER_SERVICES "")}"
+    if [ -n "$configured" ]; then
+        defined_services "$configured" warn
+    else
+        defined_services "$WORKER_SERVICES_DEFAULT"
+    fi
+}
+
 # Angehaltene Worker; start_workers startet sie (mit dem dann gültigen Image) wieder –
 # auch beim Abbruch des Skripts (trap), damit kein Worker dauerhaft steht.
 STOPPED_WORKERS=""
+# Von start_workers bereits mit dem neuen Image gestartete Worker
+STARTED_WORKERS=""
 
 stop_workers() {
     local workers
@@ -251,6 +273,7 @@ start_workers() {
     [ -n "$STOPPED_WORKERS" ] || return 0
     local workers="$STOPPED_WORKERS"
     STOPPED_WORKERS=""
+    STARTED_WORKERS="$workers"
     # shellcheck disable=SC2086  # Dienstliste bewusst aufgeteilt
     if docker compose up -d --no-deps $workers >> "$UPDATE_LOG" 2>&1; then
         printf "  %-30s ${GREEN}✓${NC}\n" "$workers"
@@ -258,6 +281,22 @@ start_workers() {
         printf "  %-30s ${RED}✗${NC}\n" "$workers"
         warn "Worker nicht gestartet — von Hand: docker compose up -d --no-deps $workers"
     fi
+}
+
+# APP_IMAGE_SERVICES, die nicht schon als Worker gestartet wurden, auf das neue Image bringen
+update_app_image_services() {
+    local svc
+    for svc in $(defined_services "$APP_IMAGE_SERVICES"); do
+        case " $STARTED_WORKERS " in
+            *" $svc "*) continue ;;
+        esac
+        if docker compose up -d --no-deps "$svc" >> "$UPDATE_LOG" 2>&1; then
+            printf "  %-30s ${GREEN}✓${NC}\n" "$svc"
+        else
+            printf "  %-30s ${RED}✗${NC}\n" "$svc"
+            warn "$svc nicht aktualisiert — von Hand: docker compose up -d --no-deps $svc"
+        fi
+    done
 }
 
 is_stopped_worker() {
@@ -464,8 +503,13 @@ if [ "$DO_ROLLBACK" = true ]; then
     swap_container mandari mandari 45 || true
     swap_container website mandari-website 30 || true
 
-    docker compose up -d --no-deps ingestor >> "$UPDATE_LOG" 2>&1
-    printf "  %-30s ${GREEN}✓${NC}\n" "ingestor"
+    # Ingestor, Worker und übrige Dienste mit dem Anwendungs-Image ebenfalls zurück
+    rollback_services=$(defined_services "ingestor $(resolve_workers) $APP_IMAGE_SERVICES")
+    if [ -n "$rollback_services" ]; then
+        # shellcheck disable=SC2086  # Dienstliste bewusst aufgeteilt
+        docker compose up -d --no-deps $rollback_services >> "$UPDATE_LOG" 2>&1
+        printf "  %-30s ${GREEN}✓${NC}\n" "$rollback_services"
+    fi
 
     echo ""
     verify_installation
@@ -495,6 +539,8 @@ if [ "$DRY_RUN" = true ]; then
 
     dry_run_workers=$(resolve_workers)
     info "Während der Migrationen angehalten: ${CYAN}${dry_run_workers:-keine}${NC}"
+    dry_run_app_services=$(defined_services "$APP_IMAGE_SERVICES")
+    info "Nach den Migrationen auf das neue Image: ${CYAN}${dry_run_app_services:-keine}${NC}"
 
     echo ""
     verify_installation
@@ -664,6 +710,7 @@ run_step "Post-Deploy Migrationen" docker exec "$APP_CONTAINER" python manage.py
 echo ""
 log "Phase 5: Worker starten"
 start_workers
+update_app_image_services
 
 # =============================================================================
 # Phase 6: Caddy reload (falls Caddyfile geändert)
