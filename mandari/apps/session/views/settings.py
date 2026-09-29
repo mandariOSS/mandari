@@ -56,11 +56,14 @@ class SettingsView(SessionViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         from ..models import SessionTenant
+        from ..services import portal_publication
 
         context = super().get_context_data(**kwargs)
         context["reminder_config"] = self.session_tenant.reminder_config()
         context["rsvp_reason_choices"] = SessionTenant.RSVP_REASON_CHOICES
         context["rsvp_audience_choices"] = SessionTenant.RSVP_AUDIENCE_CHOICES
+        # Vor Issue #618 beendet: Bestand ohne Hinweis öffentlich, Auswahl anbieten
+        context["portal_legacy_stock"] = portal_publication.legacy_stock(self.session_tenant)
         return context
 
 

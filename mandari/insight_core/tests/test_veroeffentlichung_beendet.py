@@ -310,3 +310,73 @@ class TestWiederVeroeffentlichen:
             assert 'data-testid="archiv-hinweis"' not in response.content.decode(), url
         assert f"/insight/vorgaenge/{welt['paper'].pk}/" in _suche(client)
         assert publication.states() == {}
+
+
+class TestKommuneErstImView:
+    """Seiten, die ihre Kommune erst im View wählen: per ``?kommune=`` oder beim Erstaufruf ohne Session."""
+
+    KALENDER = ("/insight/termine/kalender.ics", "/insight/termine/jahresplan/", "/insight/termine/kalender/")
+
+    @pytest.mark.parametrize(("mode", "status"), [(PAUSED, 503), (WITHDRAWN, 410)])
+    def test_kalender_per_parameter_ohne_session(self, welt: dict[str, Any], mode: str, status: int) -> None:
+        _beenden(welt, mode)
+
+        for url in self.KALENDER:
+            response = Client().get(url, {"kommune": str(welt["body"].pk)})
+            assert response.status_code == status, url
+            assert "Hafenkante" not in response.content.decode(), url
+            if status == 503:
+                assert response["Retry-After"] == str(publication.RETRY_AFTER_SECONDS), url
+
+    def test_kalender_per_parameter_bei_anderer_kommune_in_der_session(self, welt: dict[str, Any]) -> None:
+        _beenden(welt, PAUSED)
+        client = Client()
+        client.get(f"/insight/kommune/{welt['fremd'].pk}/")
+
+        for url in self.KALENDER:
+            assert client.get(url, {"kommune": str(welt["body"].pk)}).status_code == 503, url
+
+    def test_parameter_der_fremden_kommune_schlaegt_die_session(self, welt: dict[str, Any]) -> None:
+        """Kein falscher Hinweis: Die Session steht auf der abgeschalteten Kommune, abgerufen wird die fremde."""
+        _beenden(welt, PAUSED)
+        client = _mit_kommune(welt)
+
+        for url in self.KALENDER:
+            assert client.get(url, {"kommune": str(welt["fremd"].pk)}).status_code == 200, url
+        # Ungültige oder unbekannte Angabe: Es gilt wie im View die Kommune der Session
+        client.get(f"/insight/kommune/{welt['body'].pk}/")
+        assert client.get(self.KALENDER[0], {"kommune": "kein-uuid"}).status_code == 503
+        assert client.get(self.KALENDER[0], {"kommune": str(uuid.uuid4())}).status_code == 503
+
+    def test_erstaufruf_mit_einziger_kommune(self, welt: dict[str, Any]) -> None:
+        """Self-Hosting: Die einzige Kommune wird erst im View gewählt."""
+        OParlBody.objects.filter(pk=welt["fremd"].pk).update(is_listed=False)
+        _beenden(welt, PAUSED)
+
+        for url in ("/insight/termine/", "/insight/vorgaenge/", "/insight/termine/partials/calendar-events/"):
+            response = Client().get(url)
+            assert response.status_code == 503, url
+            assert "Hafenkante" not in response.content.decode(), url
+
+    def test_erstaufruf_mit_rueckfall_auf_die_erste_kommune(self, welt: dict[str, Any]) -> None:
+        """Teilseiten ohne gewählte Kommune zeigen die erste gelistete – hier die abgeschaltete."""
+        _beenden(welt, PAUSED)
+
+        response = Client().get("/insight/termine/partials/calendar-events/")
+        assert response.status_code == 503
+        assert "Hafenkante" not in response.content.decode()
+        # Seiten mit Auswahlzwang leiten weiter statt einen Hinweis zu einer nicht gewählten Kommune zu zeigen
+        assert Client().get("/insight/termine/").status_code == 302
+        assert Client().get("/insight/").status_code == 200
+
+
+class TestArchivHinweisNurFuerDieEigeneKommune:
+    def test_fremde_vorlage_bei_archiv_in_der_session(self, welt: dict[str, Any]) -> None:
+        _beenden(welt, ARCHIVED)
+        client = _mit_kommune(welt)
+
+        fremd = client.get(f"/insight/vorgaenge/{welt['fremd_vorlage'].pk}/")
+        assert fremd.status_code == 200
+        assert 'data-testid="archiv-hinweis"' not in fremd.content.decode()
+        # Seiten ohne eigene Kommune (Listen der gewählten) tragen den Hinweis weiter
+        assert 'data-testid="archiv-hinweis"' in client.get("/insight/termine/").content.decode()

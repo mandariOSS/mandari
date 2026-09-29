@@ -84,14 +84,16 @@ def active_body(request):
         ).count()
 
     # Archiv (Issue #618): Die Kommune veröffentlicht nicht mehr, der Bestand bleibt lesbar. Maßgeblich
-    # ist die Kommune der Seite (Middleware), sonst die gewählte.
+    # ist die Kommune der Seite (Middleware), sonst die gewählte. Detailseiten haben eine eigene
+    # Kommune: Ohne deren Stand gilt nicht der Stand der gewählten Kommune.
     from .publication import body_state
 
     publication_state = getattr(request, "insight_publication_state", None)
     match = getattr(request, "resolver_match", None)
     # Nur Seiten des Bürgerportals zeigen den Hinweis; Work und Session fragen den Stand nicht ab
     portal_page = match is not None and (match.namespace or "").startswith("insight_core")
-    if publication_state is None and body is not None and portal_page:
+    own_body = hasattr(request, "insight_publication_body")
+    if publication_state is None and body is not None and portal_page and not own_body:
         try:
             publication_state = body_state(body.pk)
         except Exception:  # noqa: BLE001 - der Hinweis darf keine Seite brechen (wie oben)

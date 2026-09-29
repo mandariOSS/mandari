@@ -199,3 +199,86 @@ class TestOberflaeche:
         assert leser.get(self.URL).status_code == 403
         assert leser.post(self.URL, {"mode": WITHDRAWN, "confirm": "1"}).status_code == 403
         assert _frisch(welt).insight_publish is True
+
+
+class TestVollstaendigOderGarNicht:
+    """Beenden wirkt ganz oder gar nicht; eine unvollständige Umsetzung zieht derselbe Aufruf nach."""
+
+    def test_abbruch_laesst_alles_beim_alten(self, welt: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+        def _abbruch(tenant: Any) -> int:
+            raise RuntimeError("Abbruch mitten in der Rücknahme")
+
+        monkeypatch.setattr(insight_service, "apply_portal_state", _abbruch)
+
+        with pytest.raises(RuntimeError):
+            portal_publication.end_publication(_frisch(welt), WITHDRAWN)
+
+        tenant = _frisch(welt)
+        assert (tenant.insight_publish, tenant.insight_end_mode) == (True, "")
+        assert _stand(welt) == (True, True, None, [False, False])
+        assert not SessionAuditLog.objects.filter(tenant=tenant, action="unpublish").exists()
+
+    def test_unvollstaendige_ruecknahme_wird_nachgezogen(self, welt: dict[str, Any]) -> None:
+        # Stand wie nach einem Abbruch ohne Transaktion: Möglichkeit gespeichert, Wirkung fehlt
+        SessionTenant.objects.filter(pk=welt["tenant"].pk).update(insight_publish=False, insight_end_mode=WITHDRAWN)
+
+        change = portal_publication.end_publication(_frisch(welt), WITHDRAWN)
+
+        assert change is not None and change.entries == 2
+        assert _stand(welt) == (False, False, publication.WITHDRAWN, [True, True])
+        assert SessionAuditLog.objects.filter(tenant=welt["tenant"], action="unpublish").exists()
+        # Danach ist wirklich nichts mehr zu tun
+        assert portal_publication.end_publication(_frisch(welt), WITHDRAWN) is None
+
+    def test_unvollstaendiges_wiederveroeffentlichen_wird_nachgezogen(self, welt: dict[str, Any]) -> None:
+        portal_publication.end_publication(_frisch(welt), PAUSED)
+        SessionTenant.objects.filter(pk=welt["tenant"].pk).update(insight_publish=True, insight_end_mode="")
+
+        change = portal_publication.resume_publication(_frisch(welt))
+
+        assert change is not None
+        assert _stand(welt) == (True, True, None, [False, False])
+        assert portal_publication.resume_publication(_frisch(welt)) is None
+
+    def test_stand_nach_dem_commit_frisch(self, welt: dict[str, Any], django_capture_on_commit_callbacks: Any) -> None:
+        """Liest eine parallele Anfrage vor dem Commit den alten Stand in den Cache, gilt danach trotzdem der neue."""
+        with django_capture_on_commit_callbacks(execute=True):
+            portal_publication.end_publication(_frisch(welt), PAUSED)
+            cache.set(publication.CACHE_KEY, {}, publication.CACHE_SECONDS)
+
+        state = publication.body_state(welt["body"].pk)
+        assert state is not None and state.paused
+
+
+class TestAltbestand:
+    """Mandanten, die vor der Auswahl beendet haben: Bestand weiter öffentlich, noch keine Möglichkeit gewählt."""
+
+    URL = "/session/nord/settings/buergerportal-beenden/"
+
+    def test_einstellungen_bieten_die_auswahl_an(self, welt: dict[str, Any]) -> None:
+        call_command("session_insight_source", "--tenant", "nord", "--deactivate")
+        admin = angemeldet(nutzer(welt["tenant"], "verwaltung", "manage_settings"))
+
+        inhalt = admin.get("/session/nord/settings/").content.decode()
+
+        assert self.URL in inhalt
+        assert "Umgang mit dem bisherigen Bestand festlegen" in inhalt
+        assert 'data-testid="altbestand-hinweis"' in inhalt
+
+    def test_auswahl_wirkt_auf_den_altbestand(self, welt: dict[str, Any]) -> None:
+        call_command("session_insight_source", "--tenant", "nord", "--deactivate")
+        admin = angemeldet(nutzer(welt["tenant"], "verwaltung", "manage_settings"))
+
+        admin.post(self.URL, {"mode": ARCHIVED, "confirm": "1"})
+
+        assert _stand(welt) == (False, True, publication.ARCHIVED, [False, False])
+        assert 'data-testid="altbestand-hinweis"' not in admin.get("/session/nord/settings/").content.decode()
+
+    def test_ohne_bestand_kein_verweis(self) -> None:
+        tenant = SessionTenant.objects.create(name="Neu", slug="neu")
+        admin = angemeldet(nutzer(tenant, "verwaltung", "manage_settings"))
+
+        inhalt = admin.get("/session/neu/settings/").content.decode()
+
+        assert "/session/neu/settings/buergerportal-beenden/" not in inhalt
+        assert 'data-testid="altbestand-hinweis"' not in inhalt

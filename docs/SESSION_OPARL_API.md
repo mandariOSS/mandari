@@ -196,13 +196,22 @@ die eigene OParl-Schnittstelle des Mandanten bleiben unberührt.
 Nach einer dauerhaften Rücknahme kommen genau die Einträge zurück, die in Session
 weiterhin öffentlich sind (wie beim Reaktivieren eines Mandanten, Issue #317).
 
+**Früher beendet (alter Stand):** Mandanten, die vor dieser Auswahl beendet haben,
+haben keine Möglichkeit gewählt; ihr Bestand steht weiter ohne Hinweis im Bürgerportal.
+Die Einstellungen weisen darauf hin und bieten „Umgang mit dem bisherigen Bestand
+festlegen …“ an. Betrieb: `session_insight_source --tenant <slug> --deactivate --mode <…>`.
+
 **Technik:** Die Entscheidung steht in `SessionTenant.insight_end_mode`
 (`paused`, `archived`, `withdrawn`; leer = alter Stand ohne Hinweis). Den Stand, nach dem
 das Bürgerportal Seiten, Suche, Sitemaps und OParl richtet, trägt die Quelle in
 `OParlSource.sync_config["portal_state"]` (`insight_core/publication.py`,
-Middleware `PublicationStateMiddleware`). Eine endgültige Löschung des Bestands
-bleibt ein eigener Auftrag der Kommune (`manage.py purge_deleted`, siehe
-`docs/OPARL_API.md`).
+Middleware `PublicationStateMiddleware`). Maßgeblich ist die Kommune der Seite: bei
+Detailseiten die des Eintrags, bei Kalender, Kalender-Abo (ICS) und Sitzungsplan eine
+per `?kommune=<uuid>` angegebene, sonst die gewählte – auch wenn erst die Seite selbst
+sie wählt (erster Aufruf ohne gewählte Kommune). Speichern, Wirkung und Audit laufen in einer
+Transaktion; bricht etwa eine große Rücknahme ab, bleibt alles beim alten Stand.
+Eine endgültige Löschung des Bestands bleibt ein eigener Auftrag der Kommune
+(`manage.py purge_deleted`, siehe `docs/OPARL_API.md`).
 
 Anders beim **Deaktivieren des Mandanten** (Issue #317): Dann nimmt mandari die
 Quelle vollständig zurück – Quelle inaktiv, Kommune nicht mehr gelistet, alle

@@ -28,6 +28,12 @@ Karte „Bürgerportal“ in den Einstellungen (Issues #36, #48, #618): Veröffe
             <i data-lucide="circle-off" class="w-4 h-4"></i>
             Veröffentlichung inaktiv — es fließen keine Daten ins Bürgerportal.
         </p>
+        {% if portal_legacy_stock %}
+        <p class="text-xs text-amber-700 dark:text-amber-400" data-testid="altbestand-hinweis">
+            Bisher veröffentlichte Daten stehen weiter ohne Hinweis im Bürgerportal. Legen Sie fest, wie das
+            Bürgerportal mit diesem Bestand umgeht.
+        </p>
+        {% endif %}
         {% endif %}
         <p class="text-xs text-gray-500 dark:text-gray-400">
             Übertragen werden ausschließlich als öffentlich markierte Inhalte
@@ -41,9 +47,9 @@ Karte „Bürgerportal“ in den Einstellungen (Issues #36, #48, #618): Veröffe
                 <c-ui.button type="submit" size="sm" icon="megaphone">{% if session_tenant.insight_end_mode %}Wieder veröffentlichen{% else %}Im Bürgerportal veröffentlichen{% endif %}</c-ui.button>
             </form>
             {% endif %}
-            {% if session_tenant.insight_publish or session_tenant.insight_end_mode %}
+            {% if session_tenant.insight_publish or session_tenant.insight_end_mode or portal_legacy_stock %}
             <c-ui.button variant="ghost" size="sm" icon="{% if session_tenant.insight_publish %}pause{% else %}settings-2{% endif %}" href="{% url 'session:portal_publication_end' tenant_slug=tenant_slug %}">
-                {% if session_tenant.insight_publish %}Veröffentlichung beenden …{% else %}Möglichkeit ändern …{% endif %}
+                {% if session_tenant.insight_publish %}Veröffentlichung beenden …{% elif session_tenant.insight_end_mode %}Möglichkeit ändern …{% else %}Umgang mit dem bisherigen Bestand festlegen …{% endif %}
             </c-ui.button>
             {% endif %}
         </div>

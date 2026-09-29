@@ -21,18 +21,26 @@ nicht und braucht keine neue Spalte). Der Stand gilt für alle Kommunen der Quel
     gelistet. Ihre übrigen Seiten, ihr Einstieg und ihre Sitemap antworten mit 410.
 
 Die Stände aller Kommunen liegen als kleine Tabelle im Cache (Redis in Produktion, fünf Minuten);
-Setzen leert ihn. Solange keine Kommune einen Stand hat, kostet die Prüfung keine Abfrage.
+Setzen leert ihn, nach dem Commit noch einmal. Solange keine Kommune einen Stand hat, kostet die
+Prüfung keine Abfrage.
+
+Maßgeblich ist die Kommune der Seite: bei Detailseiten die des Eintrags, sonst die gewählte (Portal-Host,
+``?kommune=`` bei Kalender und Sitzungsplan, Session). Wählt ein View sie erst selbst – beim Erstaufruf
+ohne Session die einzige bzw. erste gelistete Kommune –, setzt ``enforce_selected_body`` (aus
+``get_active_body``) den Stand durch.
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from django.core.cache import cache
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseBase
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -117,6 +125,9 @@ def set_source_state(source: Any, mode: str | None, *, since: datetime | None = 
     source.sync_config = config
     source.save(update_fields=["sync_config", "updated_at"])
     invalidate()
+    # Liest eine parallele Anfrage vor dem Commit noch den alten Stand in den Cache, gilt er sonst bis
+    # zu fünf Minuten weiter. Ohne offene Transaktion läuft das sofort.
+    transaction.on_commit(invalidate)
     return True
 
 
@@ -287,16 +298,48 @@ BODY_PAGES = frozenset(
         "chat_message",
     }
 )
+#: Seiten, die ihre Kommune per ``?kommune=<uuid>`` wählen (Deep-Links aus Session, Kalender-Abos)
+QUERY_BODY_PAGES = frozenset({"meeting_calendar", "calendar_feed", "meeting_year_plan"})
 PORTAL_NAMESPACE = "insight_core:insight"
 
 
-def _active_body_id(request: HttpRequest) -> str | None:
+class PublicationBlockedError(Exception):
+    """Die gewählte Kommune ist abgeschaltet bzw. zurückgenommen; die Middleware zeigt den Hinweis."""
+
+    def __init__(self, state: BodyState) -> None:
+        super().__init__(state.mode)
+        self.state = state
+
+
+def _query_body_id(request: HttpRequest) -> str | None:
+    """
+    Kommune aus ``?kommune=`` wie ``_select_body_from_query``: gültige UUID einer vorhandenen Kommune.
+
+    Sonst ``None`` – der View bleibt dann bei der Kommune der Session.
+    """
+    raw = request.GET.get("kommune")
+    if not raw:
+        return None
+    try:
+        body_id = str(uuid.UUID(str(raw)))
+    except ValueError:
+        return None
+    from .models import OParlBody
+
+    return body_id if OParlBody.objects.filter(id=body_id, deleted=False).exists() else None
+
+
+def _active_body_id(request: HttpRequest, url_name: str = "") -> str | None:
     """Gewählte Kommune wie ``get_active_body`` – ohne dessen Rückfall auf die erste Kommune."""
     from .portal import get_portal
 
     portal = get_portal(request)
     if portal is not None:
         return str(portal.body.pk)
+    if url_name in QUERY_BODY_PAGES:
+        query_body = _query_body_id(request)
+        if query_body is not None:
+            return query_body
     session = getattr(request, "session", None)
     body_id = session.get("active_body_id") if session is not None else None
     if not body_id or body_id == "all":
@@ -312,8 +355,33 @@ def _page_body_id(request: HttpRequest, url_name: str, kwargs: dict[str, Any]) -
         model_name, key = detail
         return body_id_of(apps.get_model("insight_core", model_name), kwargs.get(key))
     if url_name in BODY_PAGES:
-        return _active_body_id(request)
+        return _active_body_id(request, url_name)
     return None
+
+
+def enforce_selected_body(request: HttpRequest, body_id: Any) -> None:
+    """
+    Stand der Kommune durchsetzen, die ein View selbst gewählt hat (``get_active_body``).
+
+    Die Middleware kennt vorab nur Portal-Host, ``?kommune=`` und Session. Beim Erstaufruf ohne Session
+    wählen ``ActiveBodyRequiredMixin`` bzw. ``get_active_body`` die einzige bzw. erste gelistete
+    Kommune erst im View. Vorübergehend abgeschaltet oder zurückgenommen: ``PublicationBlockedError``, die
+    Middleware antwortet mit dem Hinweis; Archiv: Stand für den Hinweis im Layout. Gilt nur für Seiten
+    der gewählten Kommune (``BODY_PAGES``) – Detailseiten richten sich nach der Kommune des Eintrags.
+    """
+    match = getattr(request, "resolver_match", None)
+    if body_id is None or match is None or match.namespace != PORTAL_NAMESPACE or match.url_name not in BODY_PAGES:
+        return
+    key = str(body_id)
+    if getattr(request, "_insight_publication_checked", None) == key:
+        return
+    request._insight_publication_checked = key  # type: ignore[attr-defined]
+    state = body_state(key)
+    if state is None:
+        return
+    request.insight_publication_state = state  # type: ignore[attr-defined]
+    if state.paused or state.withdrawn:
+        raise PublicationBlockedError(state)
 
 
 class PublicationStateMiddleware:
@@ -322,7 +390,9 @@ class PublicationStateMiddleware:
 
     Vorübergehend abgeschaltet: 503 mit Hinweis; zurückgenommen: 410; Archiv: Die Seite läuft
     normal, ``request.insight_publication_state`` trägt den Stand für den Hinweis im Layout.
-    Maßgeblich ist bei Detailseiten die Kommune des Eintrags, sonst die gewählte Kommune.
+    Maßgeblich ist bei Detailseiten die Kommune des Eintrags (``request.insight_publication_body``,
+    auch ohne Stand – der Archiv-Hinweis der gewählten Kommune gehört nicht auf fremde Einträge),
+    sonst die gewählte Kommune.
     """
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponseBase]) -> None:
@@ -339,8 +409,17 @@ class PublicationStateMiddleware:
             return None
         if not states():
             return None
-        state = body_state(_page_body_id(request, match.url_name or "", view_kwargs))
+        url_name = match.url_name or ""
+        body_id = _page_body_id(request, url_name, view_kwargs)
+        if url_name in DETAIL_PAGES:
+            request.insight_publication_body = body_id  # type: ignore[attr-defined]
+        state = body_state(body_id)
         if state is None:
             return None
         request.insight_publication_state = state  # type: ignore[attr-defined]
         return state_response(request, state)
+
+    def process_exception(self, request: HttpRequest, exception: Exception) -> HttpResponse | None:
+        if isinstance(exception, PublicationBlockedError):
+            return state_response(request, exception.state)
+        return None

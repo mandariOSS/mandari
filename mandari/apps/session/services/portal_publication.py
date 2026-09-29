@@ -15,12 +15,18 @@ Bisher schaltete „Veröffentlichung beenden“ nur den Abgleich ab: Der gespie
 Alle drei lassen sich wechseln und mit „Wieder veröffentlichen“ aufheben. Die Wirkung setzt der
 Signal-Hook über ``insight_service.sync_publication_state`` um; hier liegen Hilfetexte, die
 Zusammenfassung der Folgen für die Bestätigung und das Audit.
+
+Speichern, Wirkung und Audit laufen in einer Transaktion: Bricht eine große Rücknahme ab, bleibt
+alles beim alten Stand. Ist dieselbe Möglichkeit schon gespeichert, wirkt sie aber nicht an allen
+Quellen (etwa nach einem Abbruch vor dieser Regel), zieht derselbe Aufruf die Wirkung nach.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+
+from django.db import transaction
 
 from apps.session.models import SessionTenant
 
@@ -94,6 +100,20 @@ def state_label(tenant: Any) -> str:
     return chosen.title if chosen else "nicht veröffentlicht"
 
 
+def legacy_stock(tenant: Any) -> bool:
+    """
+    Beendet ohne Auswahl (vor Issue #618): nicht veröffentlichend, keine Möglichkeit gewählt, aber
+    gespiegelte Kommunen im Bürgerportal – deren Bestand ist weiter ohne Hinweis öffentlich.
+    """
+    if tenant.insight_publish or tenant.insight_end_mode:
+        return False
+    from insight_core.models import OParlBody
+
+    from .insight_service import session_sources
+
+    return bool(OParlBody.objects.filter(source__in=session_sources(tenant)).exists())
+
+
 def inventory(tenant: Any) -> dict[str, int]:
     """Was derzeit aus diesem Mandanten im Bürgerportal steht (für die Zusammenfassung der Folgen)."""
     from insight_core.models import OParlBody, OParlFile, OParlMeeting, OParlOrganization, OParlPaper, OParlPerson
@@ -113,67 +133,105 @@ def inventory(tenant: Any) -> dict[str, int]:
     return counts
 
 
+def in_effect(tenant: Any) -> bool:
+    """
+    Wirkt der gespeicherte Stand an allen Bürgerportal-Quellen des Mandanten?
+
+    Der Stand an der Quelle (``insight_core.publication``) wird als Letztes gesetzt bzw. aufgehoben –
+    nach Rücknahme bzw. Wiederherstellung der Einträge. Stimmt er, ist die Wirkung vollständig.
+    """
+    from insight_core import publication
+
+    from .insight_service import portal_state_for, session_sources
+
+    expected = portal_state_for(tenant)
+    for source in session_sources(tenant):
+        state = publication.source_state(source)
+        if (state.mode if state else None) != expected:
+            return False
+    return True
+
+
+def _save_choice(tenant: Any, *, publish: bool, mode: str) -> Any:
+    """Schalter und Möglichkeit speichern; der Signal-Hook setzt die Wirkung um und meldet sie zurück."""
+    from .insight_service import PortalChange
+
+    tenant._portal_change = None
+    tenant.insight_publish = publish
+    tenant.insight_end_mode = mode
+    tenant.save(update_fields=["insight_publish", "insight_end_mode", "updated_at"])
+    return getattr(tenant, "_portal_change", None) or PortalChange()
+
+
 def end_publication(tenant: Any, mode: str, *, user: Any = None, request: Any = None) -> Any:
     """
     Veröffentlichung mit der gewählten Möglichkeit beenden bzw. zwischen den Möglichkeiten wechseln.
 
-    Gibt die Wirkung im Bürgerportal zurück (``PortalChange``) oder ``None``, wenn schon so eingestellt.
+    Gibt die Wirkung im Bürgerportal zurück (``PortalChange``) oder ``None``, wenn schon so eingestellt
+    und wirksam.
     """
     from apps.session import audit
 
-    from .insight_service import PortalChange
+    from .insight_service import sync_publication_state
 
     if option(mode) is None:
         raise ValueError(f"Unbekannte Möglichkeit: {mode}")
-    if not tenant.insight_publish and tenant.insight_end_mode == mode:
-        return None
-    vorher, war = state_label(tenant), tenant.insight_publish
-    tenant._portal_change = None
-    tenant.insight_publish = False
-    tenant.insight_end_mode = mode
-    tenant.save(update_fields=["insight_publish", "insight_end_mode", "updated_at"])
-    change = getattr(tenant, "_portal_change", None) or PortalChange()
-    audit.log_event(
-        "unpublish",
-        tenant,
-        tenant=tenant,
-        user=user,
-        request=request,
-        changes={
-            "buergerportal": {"alt": vorher, "neu": state_label(tenant)},
-            "insight_publish": {"alt": war, "neu": False},
-            "wirkung": change.as_dict(),
-        },
-        object_repr="Veröffentlichung im Bürgerportal",
-    )
+    with transaction.atomic():
+        vorher, war = state_label(tenant), tenant.insight_publish
+        if not tenant.insight_publish and tenant.insight_end_mode == mode:
+            if in_effect(tenant):
+                return None
+            # Gespeichert, aber nicht vollständig umgesetzt: Wirkung nachziehen
+            vorher = "unvollständig umgesetzt"
+            change = sync_publication_state(tenant)
+        else:
+            change = _save_choice(tenant, publish=False, mode=mode)
+        audit.log_event(
+            "unpublish",
+            tenant,
+            tenant=tenant,
+            user=user,
+            request=request,
+            changes={
+                "buergerportal": {"alt": vorher, "neu": state_label(tenant)},
+                "insight_publish": {"alt": war, "neu": False},
+                "wirkung": change.as_dict(),
+            },
+            object_repr="Veröffentlichung im Bürgerportal",
+        )
     return change
 
 
 def resume_publication(tenant: Any, *, user: Any = None, request: Any = None) -> Any:
-    """Wieder (bzw. erstmals) veröffentlichen; hebt eine gewählte Möglichkeit auf. ``None``: lief schon."""
+    """
+    Wieder (bzw. erstmals) veröffentlichen; hebt eine gewählte Möglichkeit auf.
+
+    ``None``: lief schon und wirkt an allen Quellen.
+    """
     from apps.session import audit
 
-    from .insight_service import PortalChange
+    from .insight_service import sync_publication_state
 
-    if tenant.insight_publish:
-        return None
-    vorher = state_label(tenant)
-    tenant._portal_change = None
-    tenant.insight_publish = True
-    tenant.insight_end_mode = ""
-    tenant.save(update_fields=["insight_publish", "insight_end_mode", "updated_at"])
-    change = getattr(tenant, "_portal_change", None) or PortalChange()
-    audit.log_event(
-        "publish",
-        tenant,
-        tenant=tenant,
-        user=user,
-        request=request,
-        changes={
-            "buergerportal": {"alt": vorher, "neu": state_label(tenant)},
-            "insight_publish": {"alt": False, "neu": True},
-            "wirkung": change.as_dict(),
-        },
-        object_repr="Veröffentlichung im Bürgerportal",
-    )
+    with transaction.atomic():
+        vorher, war = state_label(tenant), tenant.insight_publish
+        if tenant.insight_publish:
+            if in_effect(tenant):
+                return None
+            vorher = "unvollständig umgesetzt"
+            change = sync_publication_state(tenant)
+        else:
+            change = _save_choice(tenant, publish=True, mode="")
+        audit.log_event(
+            "publish",
+            tenant,
+            tenant=tenant,
+            user=user,
+            request=request,
+            changes={
+                "buergerportal": {"alt": vorher, "neu": state_label(tenant)},
+                "insight_publish": {"alt": war, "neu": True},
+                "wirkung": change.as_dict(),
+            },
+            object_repr="Veröffentlichung im Bürgerportal",
+        )
     return change
