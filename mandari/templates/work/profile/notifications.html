@@ -96,6 +96,7 @@
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Benachrichtigungstypen</h4>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Für jeden Typ festlegen, ob In-App und/oder E-Mail</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Registrierungsanfragen werden immer angezeigt.</p>
             </div>
 
             <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
@@ -120,7 +121,10 @@
                     <div class="space-y-1">
                         {% for ntype in category.list %}
                         <div class="flex items-center justify-between py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 px-2 -mx-2">
-                            <span class="text-sm text-gray-700 dark:text-gray-300">{{ ntype.label }}</span>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">
+                                {{ ntype.label }}
+                                {% if ntype.hint %}<span class="block text-xs text-gray-500 dark:text-gray-400">{{ ntype.hint }}</span>{% endif %}
+                            </span>
                             <div class="flex items-center gap-6">
                                 <label class="flex items-center justify-center w-12 cursor-pointer">
                                     <input type="checkbox" name="type_{{ ntype.value }}_in_app"
