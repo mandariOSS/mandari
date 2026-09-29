@@ -39,7 +39,7 @@ from django.views.generic import TemplateView
 
 from apps.common.next_url import safe_next_url
 
-from . import webauthn_service
+from . import second_factor, webauthn_service
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
 from .services import SessionService, TwoFactorService
@@ -53,7 +53,7 @@ from .two_factor_policy import (
 # Zweiter Anmeldeschritt: Passwort ist geprüft, angemeldet wird erst nach gültigem Code
 PENDING_2FA_SESSION_KEY = "auth_2fa_pending"
 PENDING_2FA_MAX_AGE_SECONDS = 300
-MAX_2FA_FAILURES = 5
+MAX_2FA_FAILURES = second_factor.MAX_FAILURES
 # Pflicht-Einrichtung nach dem Passwort: etwas mehr Zeit für App-Installation und Scan
 PENDING_ENROLL_MAX_AGE_SECONDS = 900
 ENROLL_SETUP_SESSION_KEY = "auth_2fa_enroll"
@@ -247,10 +247,7 @@ class LoginView(View):
 
     def get_client_ip(self, request):
         """Get client IP address."""
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        if x_forwarded_for:
-            return x_forwarded_for.split(",")[0].strip()
-        return request.META.get("REMOTE_ADDR", "")
+        return second_factor.client_ip(request)
 
     def is_rate_limited(self, ip_address, email):
         """
@@ -332,28 +329,10 @@ class LoginTwoFactorView(View):
         return redirect("accounts:login")
 
     def _recent_failures(self, user) -> int:
-        return LoginAttempt.objects.filter(
-            email=user.email,
-            was_successful=False,
-            failure_reason="invalid_2fa",
-            timestamp__gte=timezone.now() - timedelta(minutes=15),
-        ).count()
+        return second_factor.recent_failures(user)
 
     def _log(self, request, user, success: bool) -> None:
-        # Anmeldung darf nicht scheitern, wenn das Protokollieren fehlschlägt
-        with contextlib.suppress(Exception):
-            LoginAttempt.objects.create(
-                email=user.email,
-                ip_address=LoginView().get_client_ip(request),
-                user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
-                was_successful=success,
-                failure_reason="" if success else "invalid_2fa",
-            )
-        if not success:
-            # Revisionsprotokoll (Issue #221); fehlertolerant, die erfolgreiche Anmeldung meldet das Signal
-            from .security_audit import log_second_factor_failed
-
-            log_second_factor_failed(request, user)
+        second_factor.log_attempt(request, user, success=success)
 
     def get(self, request):
         _data, user = self._pending(request)
@@ -524,7 +503,8 @@ class TwoFactorEnrollView(View):
             return self.get(request)
 
         setup = self._setup(request, user)
-        if LoginTwoFactorView()._recent_failures(user) >= MAX_2FA_FAILURES:
+        result = second_factor.confirm_setup(request, user, request.POST.get("code", ""))
+        if result == second_factor.LOCKED:
             if pending is not None:
                 request.session.pop(PENDING_2FA_SESSION_KEY, None)
                 messages.error(
@@ -540,13 +520,12 @@ class TwoFactorEnrollView(View):
                 status=429,
             )
 
-        if service.confirm_2fa(user, request.POST.get("code", "")):
+        if result == second_factor.CONFIRMED:
             setup["confirmed"] = True
             request.session[ENROLL_SETUP_SESSION_KEY] = setup
             request.session.pop(POLICY_CACHE_SESSION_KEY, None)
             return self._render_codes(request, pending, setup)
 
-        LoginTwoFactorView()._log(request, user, success=False)
         return self._render_scan(
             request,
             user,

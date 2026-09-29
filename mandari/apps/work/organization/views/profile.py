@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
+from apps.accounts import second_factor
 from apps.accounts.services import PasswordService, SessionService, TwoFactorService
 from apps.accounts.two_factor_policy import two_factor_required
 from apps.common.mixins import WorkViewMixin
@@ -157,7 +158,6 @@ class SecurityView(WorkViewMixin, TemplateView):
             return self._redirect()
 
         setup_data = tfa_service.setup_2fa(user)
-        request.session["2fa_setup"] = {"secret": setup_data["secret"], "backup_codes": setup_data["backup_codes"]}
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse(
@@ -172,10 +172,12 @@ class SecurityView(WorkViewMixin, TemplateView):
         return self._redirect()
 
     def _confirm_2fa(self, request, user):
-        """Confirm 2FA setup with verification code."""
-        if TwoFactorService().confirm_2fa(user, request.POST.get("code", "").strip()):
-            request.session.pop("2fa_setup", None)
+        """Einrichtung bestätigen – gleiche Zählung und gleiches Protokoll wie unter /accounts/."""
+        result = second_factor.confirm_setup(request, user, request.POST.get("code", ""))
+        if result == second_factor.CONFIRMED:
             messages.success(request, "2FA wurde erfolgreich aktiviert.")
+        elif result == second_factor.LOCKED:
+            messages.error(request, "Zu viele fehlgeschlagene Versuche. Bitte warten Sie 15 Minuten.")
         else:
             messages.error(request, "Ungültiger Code. Bitte versuchen Sie es erneut.")
         return self._redirect()
