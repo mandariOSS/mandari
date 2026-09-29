@@ -25,7 +25,9 @@ Karte „Anmeldesicherheit“) und in den Session-Einstellungen (Karte
   ohne eingerichteten Faktor, direkt in die Einrichtung
   (`/accounts/zwei-faktor/einrichten/`): QR-Code scannen, Code bestätigen,
   Backup-Codes sichern. Angemeldet wird erst danach. Der Zwischenstand gilt
-  15 Minuten; fünf Fehlversuche in 15 Minuten sperren.
+  15 Minuten; fünf Fehlversuche in 15 Minuten sperren. Zählung und Protokoll
+  teilen sich alle Wege, auf denen ein Code geprüft wird – zweiter Anmeldeschritt,
+  diese Einrichtung und die Einrichtung im Work-Profil (`apps/accounts/second_factor.py`).
 - **Bestehende Sitzungen:** `TwoFactorEnforcementMiddleware` leitet angemeldete
   Konten mit offener Pflicht auf die Einrichtung um (HTMX: `HX-Redirect`,
   JSON/XHR: 403). Ausgenommen sind `/accounts/`, statische Dateien und der
