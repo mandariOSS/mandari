@@ -769,10 +769,6 @@ class SessionDelegation(models.Model):
             f"({self.start_date:%d.%m.%Y}–{self.end_date:%d.%m.%Y})"
         )
 
-    def is_active_on(self, day: Any) -> bool:
-        """Wirkt die Vertretung an diesem Tag? Aufgehobene Vertretungen wirken nie."""
-        return self.revoked_at is None and self.start_date <= day <= self.end_date
-
     @property
     def state(self) -> str:
         """Zustand für die Übersicht: aktiv, geplant, beendet oder aufgehoben."""

@@ -102,25 +102,3 @@ class SessionTenantMiddleware(MiddlewareMixin):
         """Thread-Local-Request auch bei Fehlern aufräumen."""
         clear_current_request()
         return
-
-
-def get_current_tenant(request):
-    """
-    Helper to get the current tenant from request.
-
-    Usage in views:
-        from apps.session.middleware import get_current_tenant
-        tenant = get_current_tenant(self.request)
-    """
-    return getattr(request, "session_tenant", None)
-
-
-def get_current_session_user(request):
-    """
-    Helper to get the current session user from request.
-
-    Usage in views:
-        from apps.session.middleware import get_current_session_user
-        session_user = get_current_session_user(self.request)
-    """
-    return getattr(request, "session_user", None)
