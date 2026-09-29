@@ -6,6 +6,9 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+### Behoben
+- Work: Der PDF-Import von Dokumenten schlug immer mit „Datei konnte nicht gelesen werden“ fehl, weil er die Rückgabe der Textextraktion falsch entpackte. Text-PDFs werden jetzt übernommen, gescannte PDFs über die Texterkennung (ohne verfügbare Texterkennung mit Hinweis im Dokument); die Fehlermeldung erscheint nur noch bei tatsächlich unlesbaren Dateien (#422).
+
 ## [0.11.0] – 2026-09-27
 
 Erstes Release seit 0.9.0-beta. Die Version 0.10.0 war vorbereitet, wurde aber nicht als
