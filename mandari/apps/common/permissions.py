@@ -342,6 +342,7 @@ DEFAULT_ROLES = {
             "motions.create",
             "motions.edit",
             "motions.edit_all",
+            "motions.delete",  # Anträge anderer löschen (wie bisher mit edit_all)
             "motions.approve",
             "motions.submit_to_ris",
             "motions.share",
@@ -436,6 +437,7 @@ DEFAULT_ROLES = {
             "motions.create",
             "motions.edit",
             "motions.edit_all",
+            "motions.delete",  # Anträge anderer löschen (wie bisher mit edit_all)
             "motions.approve",
             "motions.submit_to_ris",
             "motions.share",
@@ -836,6 +838,7 @@ DEFAULT_ROLES = {
             "motions.create",
             "motions.edit",
             "motions.edit_all",
+            "motions.delete",  # Anträge anderer löschen (wie bisher mit edit_all)
             "motions.submit_to_ris",
             "motions.share",
             "motions.comment",
