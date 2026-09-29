@@ -7,11 +7,18 @@ bei einer Kommune mit hunderttausenden agenda_items/files führt das zum
 OOM-Kill des Web-Containers. Dieser Service löscht stattdessen in kleinen
 Batches über das ORM (Kaskaden und Signale bleiben intakt, Speicher bleibt
 begrenzt) und läuft als Background-Task.
+
+Verweisen Daten anderer Module (Arbeitsdaten der Fraktionen, Mandanten- und
+Session-Verknüpfungen) noch auf RIS-Daten der Kommune, wird nichts gelöscht
+(Issue #421). Der Admin prüft das schon auf der Bestätigungsseite; die Prüfung
+hier schützt jeden anderen Aufrufer.
 """
 
 import logging
 
 from django.tasks import task
+
+from insight_core.services.external_references import ExternalReference, external_references
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +35,13 @@ def _chunked_delete(queryset, batch_size: int = BATCH_SIZE) -> int:
             return total
         deleted, _ = model.objects.filter(pk__in=pks).delete()
         total += deleted
+
+
+def body_references(body_id: str) -> list[ExternalReference]:
+    """Datensätze anderer Module, die auf die Kommune oder ihre RIS-Daten verweisen (je Typ)."""
+    from insight_core.models import OParlBody
+
+    return external_references(OParlBody.objects.filter(pk=body_id))
 
 
 def delete_body_data(body_id: str) -> dict:
@@ -58,6 +72,17 @@ def delete_body_data(body_id: str) -> dict:
         return {"deleted": 0, "body": None}
 
     body_name = body.name
+    references = body_references(body_id)
+    if references:
+        logger.warning(
+            "[BodyDeletion] Löschung von '%s' (%s) abgebrochen: Daten anderer Module verweisen noch auf "
+            "RIS-Daten der Kommune: %s",
+            body_name,
+            body_id,
+            "; ".join(str(reference) for reference in references),
+        )
+        return {"deleted": 0, "body": body_name, "blocked_by": [str(reference) for reference in references]}
+
     logger.info(f"[BodyDeletion] Starte Löschung von '{body_name}' ({body_id})")
 
     counts = {}

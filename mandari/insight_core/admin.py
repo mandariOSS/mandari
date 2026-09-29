@@ -43,6 +43,20 @@ from .models import (
 )
 
 
+def _reference_protection(label: str, references: list[Any]) -> list[str]:
+    """Einträge für die Liste „geschützte Objekte“ der Lösch-Bestätigung (Issue #421).
+
+    Django zeigt sie an und bietet dann keinen Lösch-Knopf an; der POST wird ebenfalls abgewiesen.
+    """
+    if not references:
+        return []
+    return [
+        f"{label} wird nicht gelöscht: Arbeitsdaten bzw. Verknüpfungen anderer Module verweisen noch auf "
+        "die RIS-Daten. Bitte diese zuerst entfernen oder die Verknüpfung lösen:",
+        *(f"{label} – {reference}" for reference in references),
+    ]
+
+
 def run_sync_in_thread(source, full: bool = False):
     """Run sync in a separate thread to not block the admin.
 
@@ -147,6 +161,19 @@ class OParlSourceAdmin(ModelAdmin):
     ]
     actions_detail = ["sync_incremental_action", "sync_full_action"]
     actions = ["sync_all_incremental", "sync_all_full", "reset_health"]
+
+    def get_deleted_objects(self, objs, request):
+        # Eine Quelle nimmt per Kaskade ihre Kommunen mit – dieselbe Prüfung wie beim Löschen einer
+        # Kommune, bevor Django alle abhängigen Objekte einsammelt (Issue #421).
+        from .services.external_references import external_references
+
+        protected = []
+        for source in objs:
+            references = external_references(OParlSource.objects.filter(pk=source.pk))
+            protected += _reference_protection(f"Quelle „{source.name}“", references)
+        if protected:
+            return [], {}, set(), protected
+        return super().get_deleted_objects(objs, request)
 
     @admin.display(description="Gesundheit")
     def health_display(self, obj):
@@ -346,12 +373,20 @@ class OParlBodyAdmin(ModelAdmin):
     # (bei einer Kommune hunderttausende Zeilen) und OOM-killt den Container.
     # Stattdessen: leichte Zusammenfassung auf der Bestätigungsseite und
     # Batch-Löschung im Hintergrund-Task.
+    # Verweisen Daten anderer Module (Work, Mandanten, Session) auf die RIS-Daten
+    # der Kommune, meldet die Bestätigungsseite sie als geschützt und Django löscht
+    # nicht (Issue #421). Django ruft get_deleted_objects auch beim bestätigenden
+    # POST auf; delete_body_data prüft zusätzlich selbst.
     # -------------------------------------------------------------------------
 
     def get_deleted_objects(self, objs, request):
+        from .services.body_deletion import body_references
+
         summaries = []
         model_count = {}
+        protected = []
         for body in objs:
+            protected += _reference_protection(f"Kommune „{body.name}“", body_references(str(body.pk)))
             n_meetings = body.meetings.count()
             n_papers = body.papers.count()
             n_files = body.files.count()
@@ -364,7 +399,7 @@ class OParlBodyAdmin(ModelAdmin):
             model_count["Vorlagen"] = model_count.get("Vorlagen", 0) + n_papers
             model_count["Dateien"] = model_count.get("Dateien", 0) + n_files
         # (to_delete, model_count, perms_needed, protected)
-        return summaries, model_count, set(), []
+        return summaries, model_count, set(), protected
 
     def delete_model(self, request, obj):
         # Thread statt django.tasks: das Default-TASKS-Backend (Immediate)
