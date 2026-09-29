@@ -119,7 +119,7 @@ def sync_source(source_url: str, full: bool = False) -> dict[str, Any]:
 
 
 def count_synced_entities(result) -> int:
-    """Zählt alle synchronisierten Entitäten eines SyncResult (Tasks, sync_oparl, sync_daemon)."""
+    """Zählt alle synchronisierten Entitäten eines SyncResult (Tasks, sync_oparl)."""
     return (
         result.organizations_synced
         + result.persons_synced

@@ -103,7 +103,7 @@ class SyncConfig(models.Model):
         super().save(*args, **kwargs)
 
     @classmethod
-    def get(cls):
+    def get(cls) -> "SyncConfig":
         """Liefert die Singleton-Instanz (erstellt sie ggf. mit Defaults aus settings)."""
         obj, _ = cls.objects.get_or_create(
             pk=1,

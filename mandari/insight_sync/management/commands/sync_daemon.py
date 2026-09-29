@@ -36,27 +36,39 @@ Für Produktion als Systemd Service:
     WantedBy=multi-user.target
 """
 
-import asyncio
 import signal
-import sys
-from datetime import datetime
+import time
+from argparse import ArgumentParser
+from datetime import date, datetime, timedelta
+from types import FrameType
+from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from insight_sync.tasks import count_synced_entities
+
+def seconds_until_next_slot(now: datetime, interval_minutes: int) -> float:
+    """Sekunden bis zum nächsten Zeitpunkt im Raster von ``interval_minutes`` ab Mitternacht.
+
+    Liegt ``now`` genau auf einem Rasterpunkt, zählt der nächste (kein Sofortlauf direkt nach
+    einem Sync). Über Stunden- und Tagesgrenzen hinweg korrekt, weil mit Zeitspannen statt mit
+    einzelnen Uhrzeitfeldern gerechnet wird.
+    """
+    slot = max(1, int(interval_minutes)) * 60
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed = (now - midnight).total_seconds()
+    return (int(elapsed // slot) + 1) * slot - elapsed
 
 
 class Command(BaseCommand):
     help = "Startet einen Daemon für kontinuierliche OParl Synchronisation"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._running = True
-        self._is_syncing = False
-        self._last_full_sync_date = None
+        self._last_full_sync_date: date | None = None
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--interval",
             "-i",
@@ -89,7 +101,7 @@ class Command(BaseCommand):
             help="Full Sync statt Incremental (bei --once)",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         interval = options["interval"]
         full_hour = options["full_hour"]
         concurrent = options["concurrent"]
@@ -100,18 +112,6 @@ class Command(BaseCommand):
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
-        # Add ingestor to path (wird auch von _get_sync_orchestrator() gemacht,
-        # aber hier für direkten Import via _sync_all)
-        from pathlib import Path
-
-        for path in [
-            settings.BASE_DIR.parent / "ingestor",
-            settings.BASE_DIR.parent / "apps" / "ingestor",
-            Path("/ingestor"),
-        ]:
-            if path.is_dir() and str(path) not in sys.path:
-                sys.path.insert(0, str(path))
-
         if once:
             # Einmalige Ausführung
             self._run_once(full, concurrent)
@@ -119,12 +119,12 @@ class Command(BaseCommand):
             # Daemon-Modus
             self._run_daemon(interval, full_hour, concurrent)
 
-    def _signal_handler(self, signum, frame):
+    def _signal_handler(self, signum: int, frame: FrameType | None) -> None:
         """Graceful shutdown bei SIGINT/SIGTERM."""
         self.stdout.write("\n" + self.style.WARNING("Shutdown Signal empfangen..."))
         self._running = False
 
-    def _get_config(self):
+    def _get_config(self) -> Any:
         """Liest die Sync-Konfiguration aus der Datenbank."""
         try:
             from insight_sync.models import SyncConfig
@@ -133,13 +133,13 @@ class Command(BaseCommand):
         except Exception:
             return None
 
-    def _run_once(self, full: bool, concurrent: int):
+    def _run_once(self, full: bool, concurrent: int) -> None:
         """Führt einen einzelnen Sync aus."""
         sync_type = "Full" if full else "Incremental"
         self.stdout.write(f"Starte {sync_type} Sync...")
         self._sync_all_with_logging(full, concurrent)
 
-    def _run_daemon(self, interval: int, full_hour: int, concurrent: int):
+    def _run_daemon(self, interval: int, full_hour: int, concurrent: int) -> None:
         """Läuft als Daemon mit periodischen Syncs."""
         self.stdout.write(
             self.style.SUCCESS(
@@ -152,10 +152,23 @@ class Command(BaseCommand):
             )
         )
 
-        asyncio.run(self._daemon_loop(interval, full_hour, concurrent))
+        self._daemon_loop(interval, full_hour, concurrent)
 
-    async def _daemon_loop(self, interval: int, full_hour: int, concurrent: int):
-        """Haupt-Loop des Daemons."""
+    def _sleep(self, seconds: float) -> None:
+        """In Sekundenschritten warten, damit SIGINT/SIGTERM zügig greifen."""
+        for _ in range(int(seconds)):
+            if not self._running:
+                return
+            time.sleep(1)
+
+    def _daemon_loop(self, interval: int, full_hour: int, concurrent: int) -> None:
+        """Haupt-Loop des Daemons.
+
+        Bewusst synchron: run_sync_with_logging startet für den Sync eine eigene Event-Loop
+        (asyncio.run) und schreibt das SyncLog über das ORM. Lief diese Schleife selbst unter
+        asyncio.run, scheiterte jeder Lauf an der bereits laufenden Loop bzw. am ORM-Zugriff
+        aus asynchronem Kontext und endete als fehlgeschlagen.
+        """
         # Initialer Sync
         self.stdout.write("Führe initialen Incremental Sync aus...")
         self._sync_all_with_logging(full=False, concurrent=concurrent)
@@ -174,33 +187,18 @@ class Command(BaseCommand):
                             f"[{datetime.now().strftime('%H:%M:%S')}] "
                             f"Sync pausiert (über Admin deaktiviert). Prüfe in 60s erneut..."
                         )
-                        for _ in range(60):
-                            if not self._running:
-                                break
-                            await asyncio.sleep(1)
+                        self._sleep(60)
                         continue
 
-                # Warte bis zum nächsten Sync
-                next_sync = datetime.now().replace(second=0, microsecond=0)
-                minutes_to_wait = interval - (next_sync.minute % interval)
-                next_sync = next_sync.replace(minute=(next_sync.minute + minutes_to_wait) % 60)
-                if minutes_to_wait == interval:
-                    minutes_to_wait = 0
-
-                wait_seconds = max(0, (next_sync - datetime.now()).total_seconds())
-
-                if wait_seconds > 0:
-                    self.stdout.write(
-                        f"[{datetime.now().strftime('%H:%M:%S')}] "
-                        f"Nächster Sync: {next_sync.strftime('%H:%M:%S')} "
-                        f"(in {int(wait_seconds / 60)} Minuten)"
-                    )
-
-                # Warte in kleinen Schritten für responsives Shutdown
-                for _ in range(int(wait_seconds)):
-                    if not self._running:
-                        break
-                    await asyncio.sleep(1)
+                # Warte bis zum nächsten Zeitpunkt im Raster (Stunden- und Tagesübertrag korrekt)
+                wait_seconds = seconds_until_next_slot(datetime.now(), interval)
+                next_sync = datetime.now() + timedelta(seconds=wait_seconds)
+                self.stdout.write(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] "
+                    f"Nächster Sync: {next_sync.strftime('%H:%M:%S')} "
+                    f"(in {int(wait_seconds / 60)} Minuten)"
+                )
+                self._sleep(wait_seconds)
 
                 if not self._running:
                     break
@@ -224,11 +222,11 @@ class Command(BaseCommand):
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f"Sync Fehler: {e}"))
                 # Warte kurz vor erneutem Versuch
-                await asyncio.sleep(60)
+                self._sleep(60)
 
         self.stdout.write(self.style.SUCCESS("Daemon beendet."))
 
-    def _sync_all_with_logging(self, full: bool, concurrent: int):
+    def _sync_all_with_logging(self, full: bool, concurrent: int) -> None:
         """Führt den Sync aus und schreibt ein SyncLog."""
         try:
             from insight_sync.tasks import run_sync_with_logging
@@ -247,7 +245,7 @@ class Command(BaseCommand):
         # Steuerung über GEOREF_AUTO_ENABLED / GEOREF_AUTO_LIMIT.
         self._run_georef_pass()
 
-    def _run_georef_pass(self):
+    def _run_georef_pass(self) -> None:
         """Automatischer Georef-Lauf nach einem Sync-Zyklus (best effort)."""
         try:
             from insight_core.services.georef_runner import run_auto_georef_pass
@@ -261,35 +259,3 @@ class Command(BaseCommand):
                 )
         except Exception as e:
             self.stdout.write(self.style.WARNING(f"Georef-Lauf fehlgeschlagen: {e}"))
-
-    async def _sync_all(self, full: bool, concurrent: int):
-        """Führt den Sync aller Quellen aus."""
-        if self._is_syncing:
-            self.stdout.write(self.style.WARNING("Sync läuft bereits, überspringe..."))
-            return
-
-        self._is_syncing = True
-        start_time = datetime.now()
-
-        try:
-            from src.sync.orchestrator import SyncOrchestrator
-
-            async with SyncOrchestrator(max_concurrent=concurrent) as orchestrator:
-                results = await orchestrator.sync_all(full=full)
-
-                total_entities = 0
-                for result in results:
-                    if result.success:
-                        total_entities += count_synced_entities(result)
-                    orchestrator.print_result(result)
-
-                duration = (datetime.now() - start_time).total_seconds()
-                sync_type = "Full" if full else "Incremental"
-                self.stdout.write(
-                    self.style.SUCCESS(f"{sync_type} Sync abgeschlossen in {duration:.1f}s: {total_entities} Entitäten")
-                )
-
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f"Sync fehlgeschlagen: {e}"))
-        finally:
-            self._is_syncing = False
