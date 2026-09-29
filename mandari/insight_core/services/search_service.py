@@ -28,6 +28,22 @@ INDEX_FILES = "files"
 
 ALL_INDEXES = [INDEX_MEETINGS, INDEX_PAPERS, INDEX_PERSONS, INDEX_ORGANIZATIONS, INDEX_FILES]
 
+# Suchtiefe: So viele Treffer lassen sich über alle Seiten hinweg abrufen (bei 20 je Seite
+# 50 Seiten). Für eine korrekt gemischte Seite p braucht jeder Index seine besten
+# p·page_size Treffer; tiefer blättern wir nicht, weil der Aufwand mit der Seite wächst
+# (Elasticsearch selbst erlaubt höchstens 10.000, index.max_result_window).
+MAX_RESULT_DEPTH = 1000
+
+HIGHLIGHT = {
+    "pre_tags": [HIGHLIGHT_PRE],
+    "post_tags": [HIGHLIGHT_POST],
+    "fields": {
+        "name": {"number_of_fragments": 0},
+        "text_content": {"fragment_size": 200, "number_of_fragments": 1},
+        "reference": {"number_of_fragments": 0},
+    },
+}
+
 
 class ElasticsearchService:
     """Service für Elasticsearch-Integration in Django."""
@@ -77,21 +93,32 @@ class ElasticsearchService:
 
         Returns:
             Dict mit results, total, page, page_size, pages
+
+        Ablauf in zwei Schritten: Zuerst liefert jeder Index Kennung und Relevanz seiner besten
+        ``page * page_size`` Treffer (ohne Dokumentinhalt); gemischt und nach Relevanz sortiert
+        ergibt das die richtige Seite über alle Indexe. Danach werden nur die Dokumente dieser
+        Seite samt Hervorhebung geladen. Vorher holte jeder Index fest ``2 * page_size``
+        Treffer ab Position 0 – ab Seite 3 blieben Seiten leer, obwohl mehr Treffer gemeldet wurden.
         """
         if index_names is None:
             index_names = ALL_INDEXES
 
-        all_results: list[dict[str, Any]] = []
+        page = max(1, int(page))
+        start = (page - 1) * page_size
+        depth = min(page * page_size, MAX_RESULT_DEPTH)
+
+        # (Relevanz, Reihenfolge des Index, Index, Dokument-ID)
+        ranking: list[tuple[float, int, str, str]] = []
+        queries: dict[str, dict[str, Any]] = {}
         total_hits = 0
         error_count = 0
 
-        for index_name in index_names:
+        for position, index_name in enumerate(index_names):
             try:
                 # Prüfen ob Index existiert
                 if not self.client.indices.exists(index=index_name):
                     continue
 
-                # Query aufbauen
                 es_query = self._build_query(
                     query,
                     body_id,
@@ -102,41 +129,16 @@ class ElasticsearchService:
                     paper_type=paper_type,
                     body_ids=body_ids,
                 )
+                queries[index_name] = es_query
 
+                # Schritt 1: nur Kennungen und Relevanz; liegt die Seite hinter der
+                # Suchtiefe, reicht die Anzahl
                 result = self.client.search(
                     index=index_name,
-                    body={
-                        "query": es_query,
-                        "size": page_size * 2,  # Mehr laden für Merge
-                        "from": 0,
-                        "highlight": {
-                            "pre_tags": [HIGHLIGHT_PRE],
-                            "post_tags": [HIGHLIGHT_POST],
-                            "fields": {
-                                "name": {"number_of_fragments": 0},
-                                "text_content": {"fragment_size": 200, "number_of_fragments": 1},
-                                "reference": {"number_of_fragments": 0},
-                            },
-                        },
-                    },
+                    body={"query": es_query, "size": depth if start < depth else 0, "from": 0, "_source": False},
                 )
-
                 for hit in result["hits"]["hits"]:
-                    doc = hit["_source"]
-                    doc["_rankingScore"] = hit.get("_score", 0)
-                    doc["_index"] = index_name
-                    if "type" not in doc:
-                        doc["type"] = index_name.rstrip("s")
-
-                    # Highlighting in _formatted übersetzen (Kompatibilität)
-                    if "highlight" in hit:
-                        formatted = dict(doc)
-                        for field, fragments in hit["highlight"].items():
-                            formatted[field] = fragments[0] if fragments else doc.get(field, "")
-                        doc["_formatted"] = formatted
-
-                    all_results.append(doc)
-
+                    ranking.append((float(hit.get("_score") or 0), position, index_name, hit["_id"]))
                 total_hits += result["hits"]["total"]["value"]
 
             except NotFoundError:
@@ -151,21 +153,65 @@ class ElasticsearchService:
         if index_names and error_count == len(index_names):
             raise RuntimeError("Elasticsearch nicht erreichbar (alle Indexe fehlgeschlagen)")
 
-        # Nach Relevanz sortieren
-        all_results.sort(key=lambda x: x.get("_rankingScore", 0), reverse=True)
-
-        # Paginieren
-        start = (page - 1) * page_size
-        end = start + page_size
-        paginated = all_results[start:end]
+        # Nach Relevanz mischen (bei Gleichstand in der Reihenfolge der Indexe), dann paginieren
+        ranking.sort(key=lambda eintrag: (-eintrag[0], eintrag[1]))
+        page_hits = ranking[start : start + page_size]
 
         return {
-            "results": paginated,
+            "results": self._load_page_documents(page_hits, queries),
             "total": total_hits,
             "page": page,
             "page_size": page_size,
-            "pages": (total_hits + page_size - 1) // page_size if total_hits > 0 else 0,
+            "pages": (min(total_hits, MAX_RESULT_DEPTH) + page_size - 1) // page_size if total_hits > 0 else 0,
         }
+
+    def _load_page_documents(
+        self, page_hits: list[tuple[float, int, str, str]], queries: dict[str, dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Schritt 2: Dokumente einer Seite mit Hervorhebung laden, in der Reihenfolge der Seite."""
+        docs: dict[tuple[str, str], dict[str, Any]] = {}
+        for index_name in dict.fromkeys(eintrag[2] for eintrag in page_hits):
+            ids = [eintrag[3] for eintrag in page_hits if eintrag[2] == index_name]
+            try:
+                result = self.client.search(
+                    index=index_name,
+                    body={
+                        # Dieselbe Abfrage (für die Hervorhebung), eingeschränkt auf die Treffer der Seite
+                        "query": {"bool": {"must": [queries[index_name]], "filter": [{"ids": {"values": ids}}]}},
+                        "size": len(ids),
+                        "highlight": HIGHLIGHT,
+                    },
+                )
+            except Exception as e:
+                logger.error(f"Unerwarteter Fehler beim Laden der Treffer aus Index '{index_name}': {e}")
+                continue
+            for hit in result["hits"]["hits"]:
+                docs[(index_name, hit["_id"])] = self._to_result(hit, index_name)
+
+        results = []
+        for score, _position, index_name, doc_id in page_hits:
+            doc = docs.get((index_name, doc_id))
+            if doc is not None:  # zwischen beiden Schritten gelöscht → auslassen
+                doc["_rankingScore"] = score
+                results.append(doc)
+        return results
+
+    @staticmethod
+    def _to_result(hit: dict[str, Any], index_name: str) -> dict[str, Any]:
+        """Treffer als Ergebnis-Dict (Quelle, Index, Typ, Hervorhebung in ``_formatted``)."""
+        doc: dict[str, Any] = dict(hit.get("_source") or {})
+        doc["_rankingScore"] = hit.get("_score", 0)
+        doc["_index"] = index_name
+        if "type" not in doc:
+            doc["type"] = index_name.rstrip("s")
+
+        # Highlighting in _formatted übersetzen (Kompatibilität)
+        if "highlight" in hit:
+            formatted = dict(doc)
+            for field, fragments in hit["highlight"].items():
+                formatted[field] = fragments[0] if fragments else doc.get(field, "")
+            doc["_formatted"] = formatted
+        return doc
 
     # Datumsfeld je Index für Zeitraum-Filter
     DATE_FIELD_BY_INDEX = {
