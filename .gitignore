@@ -35,6 +35,8 @@
 !.env.*.example
 *.env
 !*.env.example
+# Passphrase für die verschlüsselte Konfiguration in Sicherungen (backup.sh)
+.backup-passphrase
 
 # Terraform state and variables (contain secrets)
 *.tfstate
