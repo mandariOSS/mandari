@@ -19,6 +19,7 @@ SessionTenant.reminder_config().
 
 import logging
 from datetime import timedelta
+from typing import Any
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -171,6 +172,11 @@ def _remind_papers(tenant, config, today, *, dry_run) -> dict:
     return sent
 
 
+def _rsvp_key(meeting_id: Any, person_id: Any) -> str:
+    """Schlüssel der Rückmelde-Erinnerung: je Sitzung und Person, unabhängig vom Weg."""
+    return f"{meeting_id}:{person_id}"
+
+
 def _remind_rsvp(tenant, config, today, *, dry_run) -> dict:
     """
     Eingeladene ohne Zu-/Absage kurz vor der Sitzung erinnern.
@@ -179,6 +185,10 @@ def _remind_rsvp(tenant, config, today, *, dry_run) -> dict:
     Ladungsempfänger ohne Anwesenheitszeile (Liste noch nicht erzeugt). Die Mail enthält den
     persönlichen Rückmeldelink aus dem jüngsten Versand; Personen mit Zustellweg Brief erhalten
     keine Mail.
+
+    Je Sitzung und Person wird höchstens einmal erinnert (Schlüssel ``<Sitzung>:<Person>``), gleich
+    auf welchem Weg – auch wenn die Anwesenheitsliste erst nach der ersten Erinnerung erzeugt wird.
+    Frühere Läufe schlüsselten Anwesenheitszeilen nach deren ID; solche Einträge gelten weiter.
     """
     sent = {"attendance_rsvp": 0}
     if not config["rsvp_enabled"]:
@@ -192,13 +202,23 @@ def _remind_rsvp(tenant, config, today, *, dry_run) -> dict:
         "meeting__start__date__lte": horizon,
         "meeting__invitation_sent_at__isnull": False,
     }
-    attendances = (
+    attendances = list(
         SessionAttendance.objects.filter(status="invited", **meeting_filter)
         .select_related("person", "meeting__organization")
         .order_by("meeting__start")
     )
     base = _base_url(tenant)
-    targets = [(attendance.meeting, attendance.person, str(attendance.id)) for attendance in attendances]
+    # Schlüssel früherer Läufe (ID der Anwesenheitszeile): bereits Erinnerte nicht erneut anschreiben
+    legacy_keys = set(
+        SessionReminderLog.objects.filter(
+            tenant=tenant, kind="attendance_rsvp", dedup_key__in=[str(a.id) for a in attendances]
+        ).values_list("dedup_key", flat=True)
+    )
+    targets = [
+        (attendance.meeting, attendance.person, _rsvp_key(attendance.meeting_id, attendance.person_id))
+        for attendance in attendances
+        if str(attendance.id) not in legacy_keys
+    ]
 
     # Ladungsempfänger ohne Anwesenheitszeile (jede Zeile – auch Zu-/Absagen – zählt als erfasst)
     covered = set(SessionAttendance.objects.filter(**meeting_filter).values_list("meeting_id", "person_id"))
@@ -217,7 +237,7 @@ def _remind_rsvp(tenant, config, today, *, dry_run) -> dict:
         if key in covered:
             continue
         covered.add(key)
-        targets.append((receipt.dispatch.meeting, receipt.person, f"{receipt.dispatch.meeting_id}:{receipt.person_id}"))
+        targets.append((receipt.dispatch.meeting, receipt.person, _rsvp_key(*key)))
 
     for meeting, person, dedup_key in targets:
         email = person.email
