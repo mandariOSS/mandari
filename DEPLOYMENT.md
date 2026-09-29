@@ -14,6 +14,30 @@ Die Images baut `.github/workflows/release.yml` und legt sie in der GitHub Conta
 ein Release → `:<version>` und `:latest`. Ein Push deployt nichts; umgeschaltet wird auf dem Server
 mit `update.sh` oder `deploy/scripts/deploy.sh`.
 
+### Installation ohne Rückfragen
+
+`./install.sh --unattended` übernimmt Domain, Admin-Konto und weitere Werte aus Umgebungsvariablen
+(Beispiel im [README](README.md#installation)) und ist für Automatisierung gedacht. Er richtet nur
+eine **neue** Installation ein: Liegt im Verzeichnis bereits eine `.env`, bricht er mit Exit-Code 1
+ab, ohne Container, Daten oder Konfiguration anzufassen. Eine bestehende Installation wird mit
+`./update.sh` aktualisiert.
+
+Soll eine Installation ohne Rückfragen verworfen und neu aufgesetzt werden (z. B. eine
+Testumgebung), muss das ausdrücklich angegeben werden:
+
+```bash
+./backup.sh                                          # vorher sichern
+./install.sh --unattended --reinstall-destroy-data
+```
+
+Das entfernt die Container und **alle Daten-Volumes** (Datenbank, Uploads, Dokument-Cache,
+Suchindex, Zertifikate) und erzeugt neue Schlüssel. Die bisherige `.env` bleibt als
+`.env.vor-neuinstallation-<Zeitstempel>` liegen: Sie enthält den alten `ENCRYPTION_MASTER_KEY`, ohne
+den ältere Sicherungen nicht mehr lesbar sind. Die Datei nach Gebrauch sicher verwahren oder löschen.
+Interaktiv (`./install.sh` ohne `--unattended`) fragt der Installer wie bisher nach.
+
+`./install.sh --help` zeigt alle Optionen.
+
 ---
 
 ## 🚀 Aktualisieren

@@ -10,6 +10,10 @@
 #   ./install.sh --tag beta         # Install beta version
 #   ./install.sh --tag v1.0.0       # Install specific version
 #   ./install.sh --unattended       # Use defaults or environment variables
+#                                   # (aborts if an installation already exists)
+#   ./install.sh --unattended --reinstall-destroy-data
+#                                   # Replace an existing installation – DELETES ALL DATA
+#   ./install.sh --help             # Show all options
 # =============================================================================
 
 set -euo pipefail
@@ -242,11 +246,20 @@ check_prerequisites() {
         fi
     fi
 
-    # Check for existing installation
+    # Bestehende Installation: Die .env enthält die Schlüssel zu Datenbank und verschlüsselten
+    # Inhalten. Ohne Rückfrage wird sie nie ersetzt – aktualisiert wird mit ./update.sh.
     if [ -f ".env" ]; then
         warn "Bestehende Installation gefunden!"
         if [ "$UNATTENDED" = "true" ]; then
-            log "Überschreibe bestehende Konfiguration (unattended mode)."
+            if [ "$REINSTALL_DESTROY_DATA" != "true" ]; then
+                error "Abbruch: In $SCRIPT_DIR liegt bereits eine Installation (.env vorhanden).
+  Der unbeaufsichtigte Modus verändert eine bestehende Installation nicht.
+
+  Aktualisieren:   ./update.sh
+  Neu aufsetzen (löscht ALLE DATEN: Datenbank, Uploads, Dokument-Cache, Schlüssel):
+                   ./install.sh --unattended --reinstall-destroy-data"
+            fi
+            warn "--reinstall-destroy-data: Die bestehende Installation wird samt aller Daten gelöscht."
         else
             echo ""
             echo "  Optionen:"
@@ -260,6 +273,15 @@ check_prerequisites() {
                 exit 0
             fi
         fi
+
+        # Bisherige Konfiguration aufheben: Sie enthält den alten ENCRYPTION_MASTER_KEY, ohne
+        # den ältere Sicherungen nicht mehr lesbar sind. (.env.* ist per .gitignore ausgeschlossen)
+        local previous_env
+        previous_env=".env.vor-neuinstallation-$(date +%Y%m%d_%H%M%S)"
+        if ! (umask 077 && cp .env "$previous_env"); then
+            error "Konnte die bisherige .env nicht nach $previous_env kopieren – Abbruch, nichts gelöscht."
+        fi
+        info "Bisherige Konfiguration aufgehoben: $previous_env (enthält die alten Schlüssel)"
 
         # Stop and remove existing containers + volumes (old passwords!)
         log "Stoppe bestehende Installation..."
@@ -860,8 +882,28 @@ show_summary() {
 # =============================================================================
 # Main
 # =============================================================================
+show_usage() {
+    cat << 'EOF'
+Verwendung: ./install.sh [OPTIONEN]
+
+Optionen:
+  --tag TAG                  Image-Version: latest (Vorgabe), beta, dev oder z. B. v1.0.0
+  --unattended               Ohne Rückfragen; Werte aus Umgebungsvariablen (DOMAIN, ACME_EMAIL,
+                             ADMIN_EMAIL, ADMIN_PASSWORD, TZ, ...). Bricht mit Exit-Code 1 ab,
+                             wenn in diesem Verzeichnis bereits eine Installation liegt.
+  --reinstall-destroy-data   Nur mit --unattended: eine bestehende Installation verwerfen und
+                             neu aufsetzen. LÖSCHT ALLE DATEN (Datenbank, Uploads, Dokument-Cache,
+                             Suchindex, Zertifikate) und erzeugt neue Schlüssel. Interaktiv
+                             fragt der Installer stattdessen nach.
+  -h, --help                 Diese Hilfe anzeigen
+
+Eine bestehende Installation aktualisieren: ./update.sh
+EOF
+}
+
 main() {
     UNATTENDED=false
+    REINSTALL_DESTROY_DATA=false
     IMAGE_TAG=""
 
     # Parse arguments
@@ -870,6 +912,14 @@ main() {
             --unattended)
                 UNATTENDED=true
                 shift
+                ;;
+            --reinstall-destroy-data)
+                REINSTALL_DESTROY_DATA=true
+                shift
+                ;;
+            -h|--help)
+                show_usage
+                exit 0
                 ;;
             --tag)
                 if [ -z "${2:-}" ]; then
@@ -883,7 +933,8 @@ main() {
                 shift
                 ;;
             *)
-                error "Unknown argument: $1\nUsage: ./install.sh [--tag dev|beta|latest|VERSION] [--unattended]"
+                show_usage
+                error "Unbekanntes Argument: $1"
                 ;;
         esac
     done
