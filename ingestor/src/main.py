@@ -46,9 +46,16 @@ app = typer.Typer(
 console = Console()
 
 
+# Typer merkt sich je App genau einen Callback; ein zweites @app.callback() ersetzt diesen stillschweigend,
+# dann liefen Logging und Tracing nie (Issue #426). tests/test_cli_startup.py sichert das ab.
 @app.callback()
-def _startup() -> None:
-    """Logging (LOG_FORMAT/LOG_LEVEL) und Tracing (OTEL_EXPORTER_OTLP_ENDPOINT) vor jedem Kommando."""
+def main() -> None:
+    """
+    Mandari OParl Ingestor - High-performance sync service for municipal data.
+
+    Runs before every command: sets up logging (LOG_FORMAT/LOG_LEVEL) and tracing
+    (OTEL_EXPORTER_OTLP_ENDPOINT). The help text shown by ``--help`` comes from ``typer.Typer(help=...)``.
+    """
     from src.observability import setup_logging, setup_opentelemetry
 
     setup_logging()
@@ -661,24 +668,6 @@ def show_circuit_breakers() -> None:
         )
 
     console.print(table)
-
-
-@app.callback()
-def main() -> None:
-    """
-    Mandari OParl Ingestor - High-performance sync service for municipal data.
-
-    This tool synchronizes OParl data from municipal information systems
-    into a local PostgreSQL database for fast access.
-
-    Features:
-    - Event emission via Redis for real-time updates
-    - Prometheus metrics for monitoring
-    - Circuit breakers for resilience
-
-    Use 'mandari-ingestor COMMAND --help' for more information on a command.
-    """
-    pass
 
 
 @app.command("probe-ris")
