@@ -32,6 +32,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import allowance_service, four_eyes_service
+from .allowances import warn_nothing_to_export
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +339,12 @@ class MonthlyCsvExportView(SessionViewMixin, View):
 
 
 class MonthlySepaExportView(SessionViewMixin, View):
-    """SEPA-Export der GENEHMIGTEN Monats-Pauschalen; markiert als ausgezahlt."""
+    """
+    SEPA-Export der GENEHMIGTEN Monats-Pauschalen; markiert als ausgezahlt.
+
+    Atomar und unter Sperre, Referenz aus dem gemeinsamen Zähler mit dem Sitzungsgeld, Verwendungszweck
+    „Monatspauschale“ (``allowance_service.export_sepa``, Issue #428).
+    """
 
     permission_required = "manage_allowances"
     http_method_names = ["post"]
@@ -354,29 +360,27 @@ class MonthlySepaExportView(SessionViewMixin, View):
             )
             return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
 
-        allowances = list(_period_allowances(self, period).filter(status="approved"))
-        if not allowances:
-            messages.warning(request, "Keine genehmigten Posten im Monat — nichts zu exportieren.")
-            return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
-
-        reference = allowance_service.next_export_reference(self.session_tenant)
-        xml_bytes, txn_count, total, skipped = allowance_service.build_sepa_xml(
+        selection = _period_allowances(self, period)
+        result = allowance_service.export_sepa(
             self.session_tenant,
-            allowances,
+            selection,
+            kind=allowance_service.KIND_MONTHLY,
             debtor_name=debtor.get("debtor_name") or self.session_tenant.name,
             debtor_iban=debtor["debtor_iban"],
             debtor_bic=debtor.get("debtor_bic", ""),
-            reference=reference,
         )
-        if txn_count == 0:
+        if not result.reference and not result.skipped:
+            warn_nothing_to_export(request, selection, "Keine genehmigten Posten im Monat — nichts zu exportieren.")
+            return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
+        if not result.reference:
             messages.error(
                 request,
-                "SEPA-Export nicht möglich — für keine der Personen ist eine IBAN hinterlegt: " + ", ".join(skipped),
+                "SEPA-Export nicht möglich — für keine der Personen ist eine IBAN hinterlegt: "
+                + ", ".join(result.skipped),
             )
             return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
+        reference, txn_count, total, skipped = result.reference, result.transaction_count, result.total, result.skipped
 
-        exportable = [a for a in allowances if a.person.get_bank_iban_decrypted()]
-        allowance_service.mark_monthly_exported(exportable, reference)
         audit.log_event(
             "download",
             self.session_tenant,
@@ -398,6 +402,6 @@ class MonthlySepaExportView(SessionViewMixin, View):
             request,
             f"SEPA-Datei {reference} erstellt ({txn_count} Überweisungen) — Posten als ausgezahlt markiert.",
         )
-        response = HttpResponse(xml_bytes, content_type="application/xml")
+        response = HttpResponse(result.xml, content_type="application/xml")
         response["Content-Disposition"] = f'attachment; filename="pauschalen-{period:%Y-%m}-{reference}.xml"'
         return response

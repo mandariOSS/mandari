@@ -4087,6 +4087,37 @@ class SessionMonthlyAllowance(models.Model):
         return f"{self.person.display_name}: {self.rate.name} {self.period:%m/%Y}"
 
 
+class SessionExportCounter(models.Model):
+    """
+    Laufende Nummer der SEPA-Export-Referenzen (``SG-JJJJ-NNNN``) je Mandant und Jahr (Issue #428).
+
+    Ein gemeinsamer Zähler für Sitzungsgeld und Monatspauschalen. Vergeben wird nur unter Sperre
+    dieser Zeile (``allowance_service.next_export_reference``); der Stand steigt nur.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="export_counters",
+        verbose_name="Mandant",
+    )
+    year = models.PositiveSmallIntegerField(verbose_name="Jahr")
+    value = models.PositiveIntegerField(default=0, verbose_name="Zuletzt vergeben")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_export_counters"
+        verbose_name = "Zählerstand Export-Referenz"
+        verbose_name_plural = "Zählerstände Export-Referenz"
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "year"], name="uniq_session_export_counter_year"),
+        ]
+
+    def __str__(self):
+        return f"{self.tenant} {self.year}: {self.value}"
+
+
 # =============================================================================
 # ENDGERÄTE FÜR DIE DIGITALE RATSARBEIT
 # =============================================================================

@@ -61,6 +61,17 @@ def _debtor_settings(tenant) -> dict:
     return (tenant.settings or {}).get("allowances", {})
 
 
+def warn_nothing_to_export(request, selection, text: str) -> None:
+    """
+    Hinweis, wenn der SEPA-Export nichts Neues findet. Wurde die Auswahl gerade exportiert (etwa bei
+    einem Doppelklick), nennt er die Referenz der erzeugten Datei (Issue #428).
+    """
+    reference = allowance_service.last_export_reference(selection)
+    if reference:
+        text += f" Zuletzt exportiert mit Referenz {reference}."
+    messages.warning(request, text)
+
+
 class AllowanceListView(SessionViewMixin, TemplateView):
     """Sitzungsgeld-Übersicht: Sätze, Abrechnungslauf, Positionen, Exporte."""
 
@@ -311,7 +322,9 @@ class AllowanceSepaExportView(SessionViewMixin, View):
     SEPA-pain.001-Export der GENEHMIGTEN Positionen (auditiert).
 
     Markiert die exportierten Positionen als ausgezahlt und vergibt eine
-    fortlaufende Export-Referenz fürs Finanzverfahren.
+    fortlaufende Export-Referenz fürs Finanzverfahren. Atomar und unter Sperre
+    (``allowance_service.export_sepa``): Ein doppelt ausgelöster Export gibt
+    keine Position zweimal aus (Issue #428).
     """
 
     permission_required = "manage_allowances"
@@ -333,37 +346,32 @@ class AllowanceSepaExportView(SessionViewMixin, View):
             )
             return redirect("session:allowances", tenant_slug=tenant_slug)
 
-        allowances = list(
-            _allowance_queryset(self, period_start, period_end, request.POST.get("organization", ""), status="approved")
+        selection = _allowance_queryset(self, period_start, period_end, request.POST.get("organization", ""))
+        back = redirect(
+            f"/session/{self.session_tenant.slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
         )
-        if not allowances:
-            messages.warning(request, "Keine genehmigten Positionen im Zeitraum — nichts zu exportieren.")
-            return redirect(
-                f"/session/{self.session_tenant.slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
-            )
-
-        reference = allowance_service.next_export_reference(self.session_tenant)
-        xml_bytes, txn_count, total, skipped = allowance_service.build_sepa_xml(
+        # Nur Positionen von Personen MIT IBAN werden als exportiert/ausgezahlt markiert
+        result = allowance_service.export_sepa(
             self.session_tenant,
-            allowances,
+            selection,
+            kind=allowance_service.KIND_SESSION,
             debtor_name=debtor.get("debtor_name") or self.session_tenant.name,
             debtor_iban=debtor["debtor_iban"],
             debtor_bic=debtor.get("debtor_bic", ""),
-            reference=reference,
         )
-
-        if txn_count == 0:
+        if not result.reference and not result.skipped:
+            warn_nothing_to_export(
+                request, selection, "Keine genehmigten Positionen im Zeitraum — nichts zu exportieren."
+            )
+            return back
+        if not result.reference:
             messages.error(
                 request,
-                "SEPA-Export nicht möglich — für keine der Personen ist eine IBAN hinterlegt: " + ", ".join(skipped),
+                "SEPA-Export nicht möglich — für keine der Personen ist eine IBAN hinterlegt: "
+                + ", ".join(result.skipped),
             )
-            return redirect(
-                f"/session/{self.session_tenant.slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
-            )
-
-        # Nur Positionen von Personen MIT IBAN als exportiert/ausgezahlt markieren
-        exportable = [a for a in allowances if (a.attendance.person.get_bank_iban_decrypted() or "").strip()]
-        allowance_service.mark_exported(exportable, reference, mark_paid=True)
+            return back
+        reference, txn_count, total, skipped = result.reference, result.transaction_count, result.total, result.skipped
 
         audit.log_event(
             "download",
@@ -388,7 +396,7 @@ class AllowanceSepaExportView(SessionViewMixin, View):
                 "Ohne IBAN übersprungen (Positionen bleiben genehmigt): " + ", ".join(skipped),
             )
 
-        response = HttpResponse(xml_bytes, content_type="application/xml")
+        response = HttpResponse(result.xml, content_type="application/xml")
         response["Content-Disposition"] = f'attachment; filename="{reference}-pain001.xml"'
         return response
 
