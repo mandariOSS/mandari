@@ -46,23 +46,38 @@
         <div class="p-2 border-b border-gray-100 dark:border-gray-700">
             <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2 px-2">Verfügbare Labels</p>
             {% for label in available_labels %}
-            <button type="button"
-                    hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
-                    hx-vals='{"action": "toggle_label", "label_id": "{{ label.id }}"}'
-                    hx-target="#panel-labels"
-                    hx-swap="innerHTML"
-                    class="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left group">
-                <span class="w-3.5 h-3.5 rounded-full bg-{{ label.color }}-500 flex-shrink-0 ring-2 ring-{{ label.color }}-200/50 dark:ring-{{ label.color }}-700/30"></span>
-                <span class="text-sm text-gray-700 dark:text-gray-300 flex-1">{{ label.name }}</span>
-                {% if label.id in task_label_ids %}
-                <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+            <div class="flex items-center gap-1 group">
+                <button type="button"
+                        hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+                        hx-vals='{"action": "toggle_label", "label_id": "{{ label.id }}"}'
+                        hx-target="#panel-labels"
+                        hx-swap="innerHTML"
+                        class="flex-1 min-w-0 flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left">
+                    <span class="w-3.5 h-3.5 rounded-full bg-{{ label.color }}-500 flex-shrink-0 ring-2 ring-{{ label.color }}-200/50 dark:ring-{{ label.color }}-700/30"></span>
+                    <span class="text-sm text-gray-700 dark:text-gray-300 flex-1">{{ label.name }}</span>
+                    {% if label.id in task_label_ids %}
+                    <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                    {% endif %}
+                </button>
+                {% if can_manage_labels %}
+                {# Label der Organisation löschen (Issue #585): Aufgaben verlieren es, bleiben erhalten #}
+                <button type="button" @click.stop="deleteLabel($el)"
+                        data-label-url="{% url 'work:task_label_delete' org_slug=organization.slug label_id=label.id %}"
+                        data-label-id="{{ label.id }}"
+                        data-label-name="{{ label.name }}"
+                        title="Label löschen"
+                        aria-label="Label {{ label.name }} löschen"
+                        class="p-1.5 flex-shrink-0 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
                 {% endif %}
-            </button>
+            </div>
             {% empty %}
             <p class="text-xs text-gray-400 dark:text-gray-500 px-2 py-2">Noch keine Labels erstellt</p>
             {% endfor %}
         </div>
-        {# Neues Label erstellen #}
+        {# Neues Label erstellen (Label-Verwaltung: tasks.manage) #}
+        {% if can_manage_labels %}
         <div class="p-2 bg-gray-50/50 dark:bg-gray-900/30">
             <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2 px-2">Neues Label</p>
             <form @submit.prevent="createLabel($event)"
@@ -88,6 +103,7 @@
                 </button>
             </form>
         </div>
+        {% endif %}
     </div>
     {% endif %}
 </div>

@@ -14,7 +14,7 @@
     {% if task.labels.all %}
     <div class="flex flex-wrap gap-1 mb-1.5">
         {% for label in task.labels.all|slice:":4" %}
-        <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-{{ label.color }}-100 dark:bg-{{ label.color }}-900/30 text-{{ label.color }}-700 dark:text-{{ label.color }}-300">
+        <span data-card-label="{{ label.id }}" class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-{{ label.color }}-100 dark:bg-{{ label.color }}-900/30 text-{{ label.color }}-700 dark:text-{{ label.color }}-300">
             {{ label.name }}
         </span>
         {% endfor %}

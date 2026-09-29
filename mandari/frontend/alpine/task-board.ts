@@ -249,4 +249,33 @@ export const labelPicker = defineComponent(() => ({
       console.error('[Labels] Create error:', err)
     }
   },
+
+  /** Label der Organisation nach Rückfrage löschen; Aufgaben verlieren es und bleiben erhalten (Issue #585) */
+  async deleteLabel(button: HTMLElement): Promise<void> {
+    const { labelUrl, labelId, labelName } = button.dataset
+    if (!labelUrl) return
+    const ok = await confirmAction({
+      title: 'Label löschen',
+      message: `Das Label „${labelName ?? ''}“ wird gelöscht und aus allen Aufgaben entfernt. Die Aufgaben bleiben erhalten.`,
+      confirmText: 'Löschen',
+      variant: 'danger',
+    })
+    if (!ok) return
+    try {
+      const response = await fetch(labelUrl, { method: 'DELETE', headers: { 'X-CSRFToken': csrfToken() } })
+      if (!response.ok) {
+        showToast('Label konnte nicht gelöscht werden', 'error')
+        return
+      }
+      // Karten auf dem Board sofort bereinigen, das Panel lädt neu
+      if (labelId) {
+        for (const chip of document.querySelectorAll(`[data-card-label="${CSS.escape(labelId)}"]`)) chip.remove()
+      }
+      showToast('Label gelöscht', 'success')
+      window.dispatchEvent(new CustomEvent(PANEL_RELOAD_EVENT))
+    } catch (err) {
+      console.error('[Labels] Delete error:', err)
+      showToast('Label konnte nicht gelöscht werden', 'error')
+    }
+  },
 }))
