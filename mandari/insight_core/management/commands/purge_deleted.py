@@ -21,6 +21,10 @@ Hinweise:
   abhängige (unmarkierte) Kind-Objekte mitentfernen (z. B. TOPs einer
   gelöschten Sitzung) — das Command löscht Kind-Tabellen zuerst, damit die
   Kaskade klein bleibt, und weist im Dry-Run darauf hin.
+- Objekte, auf die Daten anderer Module verweisen (direkt oder über die
+  Kaskade, z. B. Sitzungsvorbereitungen, Notizen, Positionen aus Work),
+  werden NICHT gelöscht. Dry-Run und Ergebnis listen sie mit der Anzahl der
+  verweisenden Datensätze je Typ (Issue #421).
 - Elasticsearch wird über die bestehenden post_delete-Signale aufgeräumt
   (ELASTICSEARCH_AUTO_INDEX). Lokale Dateikopien (OParlFile.local_path)
   werden vor dem Löschen der DB-Zeile vom Datenträger entfernt.
@@ -48,8 +52,11 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
 )
+from insight_core.services.external_references import external_references, split_by_references
 
 BATCH_SIZE = 1000
+# So viele Objekte je Entität werden im Bericht namentlich aufgeführt
+LIST_LIMIT = 10
 
 # Kind-zuerst-Reihenfolge (kleine Rest-Kaskaden), analog zu
 # services/body_deletion.py. Der Filter-Pfad ordnet jede Entität einem Body zu.
@@ -155,7 +162,9 @@ class Command(BaseCommand):
         if older_than is not None:
             cutoff = timezone.now() - timedelta(days=older_than)
 
-        # Querysets je Entität aufbauen (NUR markierte Objekte)
+        # Querysets je Entität aufbauen (NUR markierte Objekte), getrennt in löschbar und durch
+        # Verweise anderer Module geschützt. Die Querysets bleiben lazy: Beim Löschen wird die Prüfung
+        # je Batch neu ausgewertet und berücksichtigt damit auch bereits gelöschte Kind-Objekte.
         steps = []
         for name, model, body_path in ENTITY_STEPS:
             qs = model.objects.filter(deleted=True)
@@ -165,9 +174,11 @@ class Command(BaseCommand):
                 qs = qs.filter(pk__in=id_set)
             if cutoff is not None:
                 qs = qs.filter(deleted_at__lte=cutoff)
-            steps.append((name, qs))
+            deletable, protected = split_by_references(qs)
+            steps.append((name, qs, deletable, protected))
 
-        total = sum(qs.count() for _, qs in steps)
+        total = sum(qs.count() for _, qs, _, _ in steps)
+        protected_total = 0
         mode = "LÖSCHUNG" if execute else "DRY-RUN (nichts wird gelöscht, --yes zum Ausführen)"
         scope = f"Kommune '{body_slug}'" if body_slug else "ID-Auswahl"
         if id_set is not None and body_slug:
@@ -176,20 +187,24 @@ class Command(BaseCommand):
         self.stdout.write(f"Umfang: {scope}" + (f", Markierung älter als {older_than} Tage" if older_than else ""))
         self.stdout.write(f"Markierte Objekte gesamt: {total}\n")
 
-        for name, qs in steps:
+        for name, qs, _deletable, protected in steps:
             count = qs.count()
             if not count:
                 continue
             self.stdout.write(f"  {name}: {count}")
-            for obj in qs[:10]:
+            for obj in qs[:LIST_LIMIT]:
                 marked = obj.deleted_at.strftime("%d.%m.%Y") if obj.deleted_at else "?"
                 self.stdout.write(f"    - {obj.pk} ({obj}) — markiert am {marked}")
-            if count > 10:
-                self.stdout.write(f"    ... und {count - 10} weitere")
+            if count > LIST_LIMIT:
+                self.stdout.write(f"    ... und {count - LIST_LIMIT} weitere")
+            protected_count = protected.count()
+            if protected_count:
+                protected_total += protected_count
+                self._write_protected(protected, protected_count)
 
         if id_set is not None:
             found = set()
-            for _, qs in steps:
+            for _, qs, _, _ in steps:
                 found.update(qs.values_list("pk", flat=True))
             missing = id_set - found
             for pk in sorted(missing, key=str):
@@ -204,6 +219,18 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Nichts zu löschen."))
             return
 
+        deletable_total = total - protected_total
+        if protected_total:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"\n{protected_total} markierte Objekte bleiben erhalten, weil Daten anderer Module auf sie "
+                    f"verweisen. Löschbar: {deletable_total}."
+                )
+            )
+        if deletable_total <= 0:
+            self.stdout.write(self.style.SUCCESS("Nichts zu löschen."))
+            return
+
         if not execute:
             self.stdout.write(
                 self.style.WARNING(
@@ -213,22 +240,43 @@ class Command(BaseCommand):
             )
             return
 
-        # Tatsächliche Löschung: lokale Dateikopien zuerst, dann Kind-zuerst
+        # Tatsächliche Löschung: lokale Dateikopien zuerst (nur löschbare Dateien), dann Kind-zuerst
         # über das ORM (post_delete-Signale räumen Elasticsearch auf).
-        removed_files = _remove_local_files(steps[0][1])
+        removed_files = _remove_local_files(steps[0][2])
         if removed_files:
             self.stdout.write(f"Lokale Dateikopien entfernt: {removed_files}")
 
         deleted_total = 0
-        for name, qs in steps:
-            deleted_rows = _chunked_delete(qs)
+        for name, _qs, deletable, _protected in steps:
+            deleted_rows = _chunked_delete(deletable)
             if deleted_rows:
                 self.stdout.write(f"  {name}: {deleted_rows} Zeilen gelöscht (inkl. Kaskaden)")
             deleted_total += deleted_rows
 
+        kept_total = sum(protected.count() for _, _, _, protected in steps)
         self.stdout.write(
             self.style.SUCCESS(
                 f"\nEndgültig gelöscht: {deleted_total} Zeilen. "
                 "Elasticsearch-Dokumente wurden über die post_delete-Signale entfernt."
             )
         )
+        if kept_total:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Wegen Verweisen anderer Module nicht gelöscht: {kept_total} markierte Objekte (siehe Liste oben)."
+                )
+            )
+
+    def _write_protected(self, protected, protected_count: int) -> None:
+        """Listet geschützte Objekte und die verweisenden Datensätze je Typ."""
+        self.stdout.write(
+            self.style.WARNING(
+                f"    davon {protected_count} mit Verweisen aus anderen Modulen – werden NICHT gelöscht:"
+            )
+        )
+        for reference in external_references(protected):
+            self.stdout.write(self.style.WARNING(f"      {reference}"))
+        for obj in protected[:LIST_LIMIT]:
+            self.stdout.write(f"      ! {obj.pk} ({obj})")
+        if protected_count > LIST_LIMIT:
+            self.stdout.write(f"      ... und {protected_count - LIST_LIMIT} weitere")
