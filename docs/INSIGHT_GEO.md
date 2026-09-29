@@ -70,8 +70,14 @@ als Geodienst. mandari verlinkt sie, statt sie aus PDF-Anlagen zu rekonstruieren
 **Ablauf (täglich, `sync_plan_boundaries`):**
 
 1. Jede aktive Quelle wird einmal abgerufen (eigener User-Agent, eine Sekunde Pause zwischen Seiten,
-   zwei Sekunden zwischen Quellen, Obergrenzen für Seiten, Objekte und Antwortgröße). Liefert ein
-   Dienst mit Bestand plötzlich nichts, bleibt der Bestand erhalten und der Fehler steht an der Quelle.
+   zwei Sekunden zwischen Quellen, Obergrenzen für Seiten, Objekte und 24 MB je Antwort). Liefert ein
+   Dienst mit Bestand plötzlich nichts oder weniger Objekte, als er selbst meldet (`numberMatched`,
+   bei GeoServer `totalFeatures` – etwa wegen einer Obergrenze des Dienstes), bleibt der Bestand
+   erhalten und der Fehler steht an der Quelle. Ein WFS wird mit einer einzigen Anfrage abgerufen
+   (ohne `STARTINDEX`, weil seitenweises Abrufen ohne feste Sortierung Objekte doppelt liefern oder
+   auslassen kann); seine Obergrenze (`maxFeatures`/`wfs_maxfeatures`) muss also über der Zahl der
+   Pläne liegen. MapServer meldet keine Gesamtzahl – dort die Zahl der Umringe nach dem ersten Lauf
+   mit dem Planverzeichnis der Kommune vergleichen.
    Objekte außerhalb der Kommune (Rand 0,05°) werden übersprungen; liefert ein Dienst Breite vor Länge,
    werden die Achsen anhand des Gemeindezentrums getauscht.
 2. Vorlagen mit „Bebauungsplan Nr. …“ bzw. „B-Plan Nr. …“ im Titel werden zugeordnet. Nennt der Titel
@@ -82,10 +88,17 @@ als Geodienst. mandari verlinkt sie, statt sie aus PDF-Anlagen zu rekonstruieren
 3. Ein Punkt im Umring kommt als Verortung (`source = plan_boundary`, „amtlich“) an den Vorgang. Er
    wirkt damit in Karte, Umkreissuche und Abos. Ein neuer Georef-Lauf behält ihn; wer ihn im Admin
    entfernt, sperrt auch Umring und Umkreistreffer des Vorgangs.
+4. Hat eine Kommune keine aktive Quelle mehr (im Admin deaktiviert oder gelöscht, etwa weil die Lizenz
+   nicht passt), räumt der Lauf auf: Bezüge und automatische Umring-Verortungen verschwinden, im Admin
+   bestätigte Verortungen bleiben. Die Fläche ist sofort weg; wer den Punkt nicht bis zum nächsten
+   Lauf stehen lassen will, ruft `sync_plan_boundaries --body <slug> --no-fetch` auf.
 
 **Umkreissuche:** `nearby_papers` findet zusätzlich Vorgänge, deren Umring den Suchkreis berührt – auch
 wenn der Punkt im Umring weiter weg liegt; die Entfernung ist dann die zum Umring (0 = darin).
-`generate_alerts` nutzt dieselbe Prüfung.
+`generate_alerts` nutzt dieselbe Prüfung. Geometrie lädt die Suche nur für Umringe mit Vorgang und
+davon höchstens für die 200 nächsten (Abstand zur Box als Vorauswahl). Gemessen mit allen 686 Umringen
+Münsters aus der Landes-API (SQLite, lokal): Radius 2 km 36 ms, 5 km und 20 km rund 60 ms statt 115
+bzw. 170 ms.
 
 **Vorgangsseite:** Karte mit Umring (Fläche) und Orten (`frontend/js/paper-map.ts`), darunter je Plan
 Planstand, Link zur Planseite der Kommune und die Quellenangabe der Quelle, auch in der Kartenleiste.

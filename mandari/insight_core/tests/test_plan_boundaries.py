@@ -9,22 +9,27 @@ from __future__ import annotations
 import io
 import math
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
+from decimal import Decimal
 from io import StringIO
 from typing import Any
 
 import httpx
 import pytest
 from django.core.management import call_command
+from django.db import connection
 from django.test import Client
+from django.utils import timezone
 
 from insight_core.models import (
+    InsightSubscriber,
     OParlBody,
     OParlPaper,
     PaperLocation,
     PaperPlanReference,
     PlanBoundary,
     PlanBoundarySource,
+    SubscriptionAlert,
 )
 from insight_core.services import plan_boundaries as pb
 from insight_core.services import polygon_geometry as geo
@@ -132,6 +137,14 @@ def collection(*features: dict[str, Any], next_url: str | None = None) -> dict[s
         ("Bebauungspläne Nr. 12 und 13 – Aufhebung", [("12", "12", ""), ("13", "13", "")]),
         ("B-Plan Nr. 7 Aufhebungsbeschluss", [("7", "7", "")]),
         ("Bebauungsplan Nr. 579, 1. Änderung", [("579", "579", "1")]),
+        # Planwort in beliebiger Schreibweise
+        ("BEBAUUNGSPLAN NR. 579 – SATZUNGSBESCHLUSS", [("579", "579", "")]),
+        ("1. ÄNDERUNG DES BEBAUUNGSPLANS NR. 388", [("388", "388", "1")]),
+        ("Änderung des bebauungsplans Nr. 12", [("12", "12", "")]),
+        # Jahreszahl nach Komma ist keine weitere Plannummer – mit „Nr.“ schon
+        ("Bebauungsplan Nr. 5, 2024", [("5", "5", "")]),
+        ("Bebauungsplan Nr. 5, Stand 2024", [("5", "5", "")]),
+        ("Bebauungspläne Nr. 12 und Nr. 2024", [("12", "12", ""), ("2024", "2024", "")]),
         ("Sanierung Spielplatz Hauptstraße", []),
         ("42. Änderung des Flächennutzungsplans", []),
         (None, []),
@@ -269,6 +282,62 @@ def test_refresh_updates_deletes_and_keeps_stock_on_empty_answer(
     assert nrw_source.last_error == empty.error
 
 
+def test_truncated_answer_keeps_stock(
+    nrw_source: PlanBoundarySource, serve: Callable[[dict[str, Any]], list[str]]
+) -> None:
+    """Meldet der Dienst mehr Treffer als geliefert (Obergrenze des Dienstes), wird nichts gelöscht."""
+    serve(
+        {
+            "items?": collection(
+                feature("_579__", square(CENTER_LAT, CENTER_LON, 100)),
+                feature("_12__", square(CENTER_LAT, CENTER_LON, 10)),
+            )
+        }
+    )
+    pb.refresh_source(nrw_source)
+    assert PlanBoundary.objects.count() == 2
+
+    truncated = collection(feature("_579__", square(CENTER_LAT, CENTER_LON, 100)))
+    truncated["numberMatched"] = 2
+    serve({"items?": truncated})
+    result = pb.refresh_source(nrw_source)
+
+    assert result.error.startswith("Dienst lieferte nicht alle Objekte")
+    assert PlanBoundary.objects.count() == 2
+    nrw_source.refresh_from_db()
+    assert nrw_source.last_error == result.error
+
+    # Vollständige Antwort mit passender Zahl: normaler Abgleich
+    complete = collection(feature("_579__", square(CENTER_LAT, CENTER_LON, 100)))
+    complete["numberMatched"] = 1
+    serve({"items?": complete})
+    assert pb.refresh_source(nrw_source).deleted == 1
+
+
+def test_wfs_total_features_detects_server_limit(
+    geo_body: OParlBody, serve: Callable[[dict[str, Any]], list[str]]
+) -> None:
+    source = PlanBoundarySource.objects.create(
+        body=geo_body,
+        name="Stadt – WFS",
+        kind=PlanBoundarySource.KIND_WFS,
+        url="https://geo.example/wfs",
+        layer="bplan",
+        number_property="nr",
+        attribution="Stadt Beispielstadt",
+    )
+    answer = collection(feature("_579__", square(CENTER_LAT, CENTER_LON, 100)))
+    answer["totalFeatures"] = 1000
+    serve({"wfs": answer})
+    assert pb.refresh_source(source).error.startswith("Dienst lieferte nicht alle Objekte")
+    assert not PlanBoundary.objects.exists()
+
+
+def test_response_limit_fits_the_web_container() -> None:
+    # Die Antwort wird vollständig geparst; im Web-Container (1 GB) nicht mehr als 24 MB je Antwort
+    assert pb.MAX_RESPONSE_BYTES <= 24 * 1024 * 1024
+
+
 def test_fetch_errors_are_fixed_texts_without_exception_details(
     nrw_source: PlanBoundarySource, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -351,9 +420,12 @@ def test_wfs_request_parameters_and_axis_order(
 # =============================================================================
 
 
-def _boundary(source: PlanBoundarySource, nr: str, half_m: float = 100.0, **fields: Any) -> PlanBoundary:
+def _boundary(
+    source: PlanBoundarySource, nr: str, half_m: float = 100.0, east_m: float = 0.0, **fields: Any
+) -> PlanBoundary:
     label, key, change = pb.split_source_number(nr)
-    polygons = geo.polygons_from_geojson({"type": "Polygon", "coordinates": [square(CENTER_LAT, CENTER_LON, half_m)]})
+    ring = square(CENTER_LAT, CENTER_LON + east_m * M_LON, half_m)
+    polygons = geo.polygons_from_geojson({"type": "Polygon", "coordinates": [ring]})
     lon, lat = geo.representative_point(polygons)
     south, north, west, east = geo.bounding_box(polygons)
     values: dict[str, Any] = {
@@ -493,9 +565,100 @@ def test_removed_plan_location_stays_removed_everywhere(
     assert nearby_papers(geo_body, CENTER_LAT, CENTER_LON, 100) == []
 
 
+@pytest.mark.parametrize("aktion", ["deaktiviert", "gelöscht"])
+def test_switched_off_source_is_cleaned_up_on_next_run(
+    geo_body: OParlBody, nrw_source: PlanBoundarySource, make_paper: Callable[..., OParlPaper], aktion: str
+) -> None:
+    """Letzte Quelle im Admin deaktiviert oder gelöscht: Der nächste Lauf entfernt Bezug und Punkt."""
+    _boundary(nrw_source, "_579__", half_m=400)
+    street = {"lat": round(CENTER_LAT + 0.01, 7), "lon": CENTER_LON, "name": "Hauptstraße", "source": "street_match"}
+    paper = make_paper(geo_body, name="Bebauungsplan Nr. 579 – Satzungsbeschluss", locations=[street])
+    pb.link_body_papers(geo_body)
+    paper.refresh_from_db()
+    assert paper.locations is not None
+    assert [loc["source"] for loc in paper.locations] == ["plan_boundary", "street_match"]
+
+    if aktion == "deaktiviert":
+        nrw_source.is_active = False
+        nrw_source.save(update_fields=["is_active"])
+    else:
+        nrw_source.delete()
+    out = StringIO()
+    call_command("sync_plan_boundaries", "--no-fetch", stdout=out)
+
+    assert "keine aktive Umring-Quelle mehr" in out.getvalue()
+    paper.refresh_from_db()
+    assert paper.locations == [street]
+    assert not PaperLocation.objects.filter(paper=paper, source="plan_boundary").exists()
+    assert not PaperPlanReference.objects.filter(paper=paper).exists()
+    assert pb.paper_plan_context(paper) == []
+    assert nearby_papers(geo_body, CENTER_LAT, CENTER_LON, 100) == []
+    html = Client().get(f"/insight/vorgaenge/{paper.id}/").content.decode()
+    assert ">amtlich<" not in html
+
+    # Aufgeräumt: Danach ist für die Kommune nichts mehr zu tun
+    out = StringIO()
+    call_command("sync_plan_boundaries", "--no-fetch", stdout=out)
+    assert "nichts zu tun" in out.getvalue()
+
+
 # =============================================================================
 # Umkreissuche und Vorgangsseite
 # =============================================================================
+
+
+def test_nearby_plan_search_loads_only_nearest_linked_boundaries(
+    geo_body: OParlBody,
+    nrw_source: PlanBoundarySource,
+    make_paper: Callable[..., OParlPaper],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Großer Radius: nur Umringe mit Vorgang, davon die nächsten – nicht jede Fläche der Stadt."""
+    _boundary(nrw_source, "_1__", half_m=50, east_m=300)
+    _boundary(nrw_source, "_2__", half_m=50, east_m=1500)
+    _boundary(nrw_source, "_3__", half_m=50)  # ohne Vorgang, liegt am nächsten
+    near = make_paper(geo_body, name="Bebauungsplan Nr. 1")
+    far = make_paper(geo_body, name="Bebauungsplan Nr. 2")
+    pb.link_body_papers(geo_body)
+
+    assert set(pb.nearby_plan_papers(geo_body, CENTER_LAT, CENTER_LON, 5000)) == {near.id, far.id}
+    monkeypatch.setattr(pb, "MAX_NEARBY_BOUNDARIES", 1)
+    hits = pb.nearby_plan_papers(geo_body, CENTER_LAT, CENTER_LON, 5000)
+    assert list(hits) == [near.id]
+    assert 245 <= hits[near.id].distance <= 255
+
+
+def test_neighborhood_alert_when_subscriber_touches_boundary(
+    geo_body: OParlBody,
+    nrw_source: PlanBoundarySource,
+    make_paper: Callable[..., OParlPaper],
+    settings: Any,
+) -> None:
+    """Nachbarschafts-Abo: Punkt im Umring außerhalb des Radius, Abonnent am Rand – genau ein Hinweis."""
+    if connection.vendor != "postgresql":
+        pytest.skip("generate_alerts sucht die Punkt-Verortungen per PostgreSQL-SQL (jsonb); läuft in der CI")
+    settings.INSIGHT_SUBSCRIPTIONS_ENABLED = True
+    _boundary(nrw_source, "_579__", half_m=400)
+    _boundary(nrw_source, "_12__", half_m=400)
+    new = make_paper(geo_body, name="Bebauungsplan Nr. 579 – Satzungsbeschluss")
+    old = make_paper(geo_body, name="Bebauungsplan Nr. 12 – Satzungsbeschluss")
+    OParlPaper.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=30))
+    pb.link_body_papers(geo_body)
+    subscriber = InsightSubscriber.objects.create(
+        email="nachbarin@example.org",
+        body=geo_body,
+        confirmed=True,
+        neighborhood_active=True,
+        # 350 m östlich des Punkts im Umring, noch im Umring; Radius 100 m
+        neighborhood_lat=Decimal(f"{CENTER_LAT:.7f}"),
+        neighborhood_lon=Decimal(f"{CENTER_LON + 350 * M_LON:.7f}"),
+        neighborhood_radius=100,
+    )
+
+    call_command("generate_alerts", stdout=StringIO())
+
+    alerts = SubscriptionAlert.objects.filter(subscriber=subscriber)
+    assert [(str(alert.entity_id), alert.context["distance"]) for alert in alerts] == [(str(new.id), 0)]
 
 
 def test_nearby_papers_finds_paper_when_search_point_touches_boundary(

@@ -38,7 +38,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from django.db import transaction
-from django.db.models import Prefetch, Q
+from django.db.models import Exists, OuterRef, Prefetch, Q
 from django.utils import timezone
 
 from insight_core.services import polygon_geometry as geo
@@ -61,7 +61,9 @@ LOCATION_SOURCE = "plan_boundary"
 PAGE_SIZE = 1000
 MAX_PAGES = 50
 MAX_FEATURES = 20_000
-MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+# Je Antwort; json.loads braucht ein Vielfaches davon, und der Befehl läuft im Web-Container (1 GB).
+# Alle 686 Umringe Münsters aus der Landes-API sind etwa 3,5 MB.
+MAX_RESPONSE_BYTES = 24 * 1024 * 1024
 TOTAL_SECONDS = 180.0
 PAGE_PAUSE_SECONDS = 1.0
 REQUEST_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
@@ -129,19 +131,33 @@ class PlanReference:
         return f"Bebauungsplan Nr. {self.number_label}{suffix}"
 
 
+# Planwort und „Nr.“ in beliebiger Schreibweise („BEBAUUNGSPLAN NR. 5“, „bebauungsplan Nr. 5“); die
+# Plannummer selbst bleibt schreibungsabhängig (Ortsteil groß, römischer Teil in Großbuchstaben).
 _PLAN_WORD = (
-    r"(?:vorhabenbezogene[nrs]?\s+)?"
-    r"(?:Bebauungspl(?:an(?:e?s)?|äne[n]?)|B-Pl(?:an(?:e?s)?|äne[n]?))"
+    r"(?i:(?:vorhabenbezogene[nrs]?\s+)?"
+    r"(?:Bebauungspl(?:an(?:e?s)?|äne[n]?)|B-Pl(?:an(?:e?s)?|äne[n]?)))"
 )
-_NUMBER = (
-    r"(?:[A-ZÄÖÜ][a-zäöüß]+(?:[ .-][A-ZÄÖÜ][a-zäöüß]+)*\s+)?"  # Ortsteil, etwa „Hiltrup 8“
-    r"\d{1,4}(?!\d)"
-    r"(?:\s?[a-zA-Z](?![a-zA-ZäöüßÄÖÜ]))?"  # Buchstabe: 579a, 7 A
-    r"(?:\s?/\s?\d{1,4})?"  # 22/05
-    r"(?:\s+[IVX]{1,4}\b)?"  # römischer Teil: 1 A II
+_NR_WORD = r"(?i:Nr\.?|Nummer)"
+# Nach Komma oder „und“ ohne „Nr.“ ist eine vierstellige Jahreszahl keine weitere Plannummer
+_YEAR_GUARD = r"(?!(?:19|20)\d\d(?!\d))"
+
+
+def _number_pattern(guard: str = "") -> str:
+    return (
+        r"(?:[A-ZÄÖÜ][a-zäöüß]+(?:[ .-][A-ZÄÖÜ][a-zäöüß]+)*\s+)?"  # Ortsteil, etwa „Hiltrup 8“
+        rf"{guard}\d{{1,4}}(?!\d)"
+        r"(?:\s?[a-zA-Z](?![a-zA-ZäöüßÄÖÜ]))?"  # Buchstabe: 579a, 7 A
+        r"(?:\s?/\s?\d{1,4})?"  # 22/05
+        r"(?:\s+[IVX]{1,4}\b)?"  # römischer Teil: 1 A II
+    )
+
+
+_NUMBER = _number_pattern()
+_PLAN_RE = re.compile(rf"{_PLAN_WORD}\s+{_NR_WORD}\s*(?P<nr>{_NUMBER})")
+_MORE_RE = re.compile(
+    rf"\s*(?i:,|und|sowie|bzw\.)\s*"
+    rf"(?:{_NR_WORD}\s*(?P<nr>{_NUMBER})|(?P<bare>{_number_pattern(_YEAR_GUARD)}))(?![\d.])"
 )
-_PLAN_RE = re.compile(rf"{_PLAN_WORD}\s+(?:Nr\.?|Nummer)\s*(?P<nr>{_NUMBER})")
-_MORE_RE = re.compile(rf"\s*(?:,|und|sowie|bzw\.)\s*(?:Nr\.?\s*)?(?P<nr>{_NUMBER})(?![\d.])")
 _CHANGE_BEFORE_RE = re.compile(
     r"(?:(?P<a>\d{1,3})\.\s*(?:vereinfachte[n]?\s+|vorhabenbezogene[n]?\s+|teilweise[n]?\s+)?Änderung"
     r"|Änderung\s+Nr\.?\s*(?P<b>\d{1,3}))"
@@ -167,7 +183,7 @@ def parse_plan_references(title: str | None) -> list[PlanReference]:
         numbers = [match.group("nr")]
         end = match.end()
         while more := _MORE_RE.match(text, end):
-            numbers.append(more.group("nr"))
+            numbers.append(more.group("nr") or more.group("bare"))
             end = more.end()
         if not change:
             after = _CHANGE_AFTER_RE.match(text[end : end + 40])
@@ -237,6 +253,24 @@ def _feature_list(payload: Any) -> list[dict[str, Any]]:
     return [item for item in payload["features"] if isinstance(item, dict)]
 
 
+def _number_matched(payload: dict[str, Any]) -> int | None:
+    """Gesamtzahl der Treffer laut Dienst (OGC API/WFS 2.0 ``numberMatched``, GeoServer ``totalFeatures``)."""
+    for key in ("numberMatched", "totalFeatures"):
+        value = payload.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+    return None
+
+
+def _check_complete(features: list[dict[str, Any]], matched: int | None) -> None:
+    """Weniger Objekte als der Dienst meldet: gekürzte Antwort (etwa Obergrenze des Dienstes).
+
+    Dann nicht abgleichen – sonst löschte der Abgleich den Rest des Bestands.
+    """
+    if matched is not None and len(features) < matched:
+        raise PlanSourceError("Dienst lieferte nicht alle Objekte (Obergrenze des Dienstes?) – Bestand bleibt erhalten")
+
+
 def _next_link(payload: dict[str, Any]) -> str | None:
     for link in payload.get("links") or []:
         if not isinstance(link, dict) or link.get("rel") != "next":
@@ -268,27 +302,33 @@ def _fetch_wfs(source: PlanBoundarySource, extra: dict[str, str]) -> list[dict[s
     }
     # Zusätzliche Parameter der Quelle ersetzen die Vorgaben, unabhängig von der Schreibweise
     url = _with_params(_with_params(source.url, params, case_insensitive=True), extra, case_insensitive=True)
-    features = _feature_list(_get_json(url))
+    payload = _get_json(url)
+    features = _feature_list(payload)
     if len(features) > MAX_FEATURES:
         raise PlanSourceError("Mehr Objekte als erlaubt – Ebene oder Filter prüfen")
+    _check_complete(features, _number_matched(payload))
     return features
 
 
 def _fetch_ogc_api(source: PlanBoundarySource, extra: dict[str, str]) -> list[dict[str, Any]]:
     next_url: str | None = _with_params(source.url, {"f": "json", "limit": str(PAGE_SIZE), **extra})
     features: list[dict[str, Any]] = []
+    matched: int | None = None
     for page in range(MAX_PAGES):
         if next_url is None:
-            return features
+            break
         if page:
             _sleep(PAGE_PAUSE_SECONDS)
         payload = _get_json(next_url)
+        if page == 0:
+            matched = _number_matched(payload)
         features.extend(_feature_list(payload))
         if len(features) > MAX_FEATURES:
             raise PlanSourceError("Mehr Objekte als erlaubt – Filter (etwa gkz) prüfen")
         next_url = _next_link(payload)
     if next_url is not None:
         raise PlanSourceError("Zu viele Seiten – Filter (etwa gkz) prüfen")
+    _check_complete(features, matched)
     return features
 
 
@@ -618,6 +658,8 @@ class LinkResult:
     unmatched: int = 0
     papers_changed: int = 0
     locations_changed: int = 0
+    # Keine aktive Quelle mehr: Bezüge und Umring-Verortungen wurden entfernt statt zugeordnet
+    retired: bool = False
 
 
 def _candidates_by_key(body: OParlBody) -> dict[str, list[_Candidate]]:
@@ -755,25 +797,38 @@ def link_body_papers(body: OParlBody, *, dry_run: bool = False) -> LinkResult:
 
     Ohne Netzabruf. Geschrieben wird nur, was sich geändert hat; Vorgänge, deren Titel keinen Plan
     mehr nennt, verlieren Bezug und Verortung aus dem Umring.
+
+    Hat die Kommune keine aktive Quelle mehr (im Admin deaktiviert oder gelöscht), räumt der Lauf
+    auf: Alle Bezüge und automatischen Umring-Verortungen verschwinden, damit kein Punkt ohne
+    Umring in Karte, Umkreissuche und Abos zurückbleibt. Im Admin bestätigte Verortungen bleiben.
     """
-    from insight_core.models import OParlPaper, PaperPlanReference, PlanBoundary
+    from insight_core.models import OParlPaper, PaperLocation, PaperPlanReference, PlanBoundary, PlanBoundarySource
 
     result = LinkResult()
-    candidates = _candidates_by_key(body)
+    has_source = PlanBoundarySource.objects.filter(body=body, is_active=True).exists()
+    result.retired = not has_source
+    candidates = _candidates_by_key(body) if has_source else {}
     if not dry_run:
         PaperPlanReference.objects.filter(body=body, paper__deleted=True).delete()
     references = PaperPlanReference.objects.prefetch_related(
         Prefetch("boundaries", queryset=PlanBoundary.objects.only("id"))
     )
+    with_plan = Q(plan_references__isnull=False) | Q(
+        pk__in=PaperLocation.objects.filter(body=body, source=LOCATION_SOURCE)
+        .exclude(status=PaperLocation.STATUS_REMOVED)
+        .values("paper_id")
+    )
+    if has_source:
+        with_plan |= Q(name__iregex=r"bebauungspl|b-pl")
     papers = (
         OParlPaper.objects.filter(body=body, deleted=False)
-        .filter(Q(name__iregex=r"bebauungspl|b-pl") | Q(plan_references__isnull=False))
+        .filter(with_plan)
         .distinct()
         .only("id", "name", "body_id", "locations")
         .prefetch_related(Prefetch("plan_references", queryset=references))
     )
     for paper in papers.iterator(chunk_size=200):
-        desired = _desired_for(paper, candidates)
+        desired = _desired_for(paper, candidates) if has_source else []
         result.papers += 1
         result.references += len(desired)
         result.matched += sum(1 for item in desired if item.boundary_ids)
@@ -789,6 +844,18 @@ def link_body_papers(body: OParlBody, *, dry_run: bool = False) -> LinkResult:
 # =============================================================================
 # Umkreissuche und Vorgangsseite
 # =============================================================================
+
+
+# Höchstens so viele Umringe je Umkreissuche mit Geometrie laden (die nächsten zuerst)
+MAX_NEARBY_BOUNDARIES = 200
+
+
+def _box_distance_m(lat: float, lon: float, box: list[Any]) -> float:
+    """Abstand zum nächsten Punkt der Box (Süd, Nord, West, Ost) – Untergrenze für den Abstand zur Fläche."""
+    from insight_core.services.paper_locations import haversine_m
+
+    south, north, west, east = (float(value) for value in box)
+    return haversine_m(lat, lon, min(max(lat, south), north), min(max(lon, west), east))
 
 
 @dataclass(frozen=True)
@@ -811,23 +878,39 @@ def nearby_plan_papers(
 ) -> dict[Any, PlanHit]:
     """Vorgänge, deren zugeordneter Umring höchstens ``radius_m`` vom Punkt entfernt ist (0 = darin).
 
-    Vorfilter über die Box des Umrings (Index), danach der genaue Abstand zur Fläche. Vorgänge, deren
+    Drei Stufen: Box des Umrings gegen den Suchkreis (Index, nur Umringe mit Vorgang, ohne
+    Geometrie), dann der Abstand zur Box als Untergrenze – die nächsten ``MAX_NEARBY_BOUNDARIES``
+    Umringe –, erst für diese die Geometrie und der genaue Abstand zur Fläche. So bleibt auch ein
+    großer Radius in einer dicht beplanten Stadt bei einer festen Zahl von Flächen. Vorgänge, deren
     Umring-Verortung im Admin entfernt wurde, bleiben außen vor.
     """
     from insight_core.models import PaperLocation, PaperPlanReference, PlanBoundary
     from insight_core.services.paper_locations import bounding_box
 
+    through = PaperPlanReference.boundaries.through
+    linked = through.objects.filter(planboundary_id=OuterRef("pk"), paperplanreference__paper__deleted=False)
+    if created_since is not None:
+        linked = linked.filter(paperplanreference__paper__created_at__gte=created_since)
     south, north, west, east = bounding_box(lat, lon, float(radius_m))
-    boundaries = PlanBoundary.objects.filter(
-        body=body,
-        source__is_active=True,
-        bbox_south__lte=north,
-        bbox_north__gte=south,
-        bbox_west__lte=east,
-        bbox_east__gte=west,
-    ).only("id", "geometry", "point_lat", "point_lon")
+    boxes = (
+        PlanBoundary.objects.filter(
+            body=body,
+            source__is_active=True,
+            bbox_south__lte=north,
+            bbox_north__gte=south,
+            bbox_west__lte=east,
+            bbox_east__gte=west,
+        )
+        .filter(Exists(linked))
+        .values_list("id", "bbox_south", "bbox_north", "bbox_west", "bbox_east")
+    )
+    ranked = sorted((_box_distance_m(lat, lon, box), pk) for pk, *box in boxes)
+    candidate_ids = [pk for lower, pk in ranked if lower <= radius_m][:MAX_NEARBY_BOUNDARIES]
+    if not candidate_ids:
+        return {}
+
     distances: dict[int, tuple[float, float, float]] = {}
-    for boundary in boundaries:
+    for boundary in PlanBoundary.objects.filter(pk__in=candidate_ids).only("id", "geometry", "point_lat", "point_lon"):
         try:
             distance = geo.distance_m(geo.polygons_from_geojson(boundary.geometry), lon, lat)
         except geo.GeometryError:
@@ -837,7 +920,6 @@ def nearby_plan_papers(
     if not distances:
         return {}
 
-    through = PaperPlanReference.boundaries.through
     links = through.objects.filter(
         planboundary_id__in=list(distances),
         paperplanreference__paper__deleted=False,

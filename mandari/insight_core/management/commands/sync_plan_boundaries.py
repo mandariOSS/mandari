@@ -12,6 +12,9 @@ Täglich per Cron (docs/INSIGHT_GEO.md):
 
 Am Ende steht je Kommune die Abdeckung der letzten ``--months`` Monate: Vorlagen mit Plannummer im
 Titel, davon mit Umring, und die Lücken (Vorlagen, deren Plan keine Quelle kennt).
+
+Kommunen, deren letzte Quelle deaktiviert oder gelöscht wurde, räumt der Lauf auf: Bezüge und
+Verortungen aus Umringen verschwinden (sofort: ``--body <slug> --no-fetch``).
 """
 
 from __future__ import annotations
@@ -49,7 +52,8 @@ class Command(EinmaligMixin, BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        from insight_core.models import OParlBody, PlanBoundarySource
+        from insight_core.models import OParlBody, PaperLocation, PaperPlanReference, PlanBoundarySource
+        from insight_core.services.plan_boundaries import LOCATION_SOURCE
 
         body = self._body(str(options["body"])) if options.get("body") else None
         if options["add_nrw_source"]:
@@ -59,10 +63,21 @@ class Command(EinmaligMixin, BaseCommand):
             return
 
         sources = PlanBoundarySource.objects.filter(is_active=True, body__deleted=False).select_related("body")
+        # Kommunen ohne aktive Quelle, aber mit Bezügen oder Umring-Verortungen: aufräumen (Quelle
+        # im Admin deaktiviert oder gelöscht), sonst blieben Punkte ohne Umring stehen
+        leftovers = [
+            PaperPlanReference.objects.values_list("body_id", flat=True),
+            PaperLocation.objects.filter(source=LOCATION_SOURCE)
+            .exclude(status=PaperLocation.STATUS_REMOVED)
+            .values_list("body_id", flat=True),
+        ]
         if body is not None:
             sources = sources.filter(body=body)
+            leftovers = [query.filter(body=body) for query in leftovers]
         sources = sources.order_by("body__name", "priority", "pk")
-        body_ids = list(dict.fromkeys(sources.values_list("body_id", flat=True)))
+        body_ids = set(sources.values_list("body_id", flat=True))
+        for query in leftovers:
+            body_ids.update(query.order_by().distinct())
         if not body_ids:
             self.stdout.write("Keine aktive Umring-Quelle – nichts zu tun.")
             return
@@ -71,8 +86,10 @@ class Command(EinmaligMixin, BaseCommand):
         if not options["no_fetch"]:
             self._refresh(list(sources), dry_run=dry_run)
         for current in OParlBody.objects.filter(pk__in=body_ids).order_by("name"):
-            self._link(current, dry_run=dry_run)
-            self._report(current, months=max(1, int(options["months"])), show_gaps=max(0, int(options["show_gaps"])))
+            if self._link(current, dry_run=dry_run):
+                self._report(
+                    current, months=max(1, int(options["months"])), show_gaps=max(0, int(options["show_gaps"]))
+                )
 
     def _body(self, value: str) -> Any:
         from insight_core.models import OParlBody
@@ -131,16 +148,24 @@ class Command(EinmaligMixin, BaseCommand):
                 + (f"; übersprungen – {skipped}" if skipped else "")
             )
 
-    def _link(self, body: Any, *, dry_run: bool) -> None:
+    def _link(self, body: Any, *, dry_run: bool) -> bool:
+        """Zuordnen; ``False``, wenn die Kommune keine aktive Quelle mehr hat (dann nur aufgeräumt)."""
         from insight_core.services.plan_boundaries import link_body_papers
 
         result = link_body_papers(body, dry_run=dry_run)
         prefix = "[Probelauf] " if dry_run else ""
+        if result.retired:
+            self.stdout.write(
+                f"{prefix}{body.get_display_name()}: keine aktive Umring-Quelle mehr – Bezüge von "
+                f"{result.papers_changed} Vorgängen und {result.locations_changed} Verortungen aus Umringen entfernt"
+            )
+            return False
         self.stdout.write(
             f"{prefix}{body.get_display_name()}: {result.papers} Vorgänge mit Plannummer, "
             f"{result.references} Bezüge ({result.matched} mit Umring, {result.unmatched} ohne), "
             f"{result.papers_changed} Zuordnungen und {result.locations_changed} Verortungen geändert"
         )
+        return True
 
     def _report(self, body: Any, *, months: int, show_gaps: int) -> None:
         from insight_core.models import PaperPlanReference
