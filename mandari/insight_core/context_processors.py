@@ -88,7 +88,10 @@ def active_body(request):
     from .publication import body_state
 
     publication_state = getattr(request, "insight_publication_state", None)
-    if publication_state is None and body is not None:
+    match = getattr(request, "resolver_match", None)
+    # Nur Seiten des Bürgerportals zeigen den Hinweis; Work und Session fragen den Stand nicht ab
+    portal_page = match is not None and (match.namespace or "").startswith("insight_core")
+    if publication_state is None and body is not None and portal_page:
         try:
             publication_state = body_state(body.pk)
         except Exception:  # noqa: BLE001 - der Hinweis darf keine Seite brechen (wie oben)
