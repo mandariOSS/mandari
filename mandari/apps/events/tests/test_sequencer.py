@@ -63,6 +63,23 @@ def _bis_alle_nummeriert(sequencer: Sequencer, event_ids: list[uuid.UUID], frist
         time.sleep(0.05)
 
 
+def _scheitert_an_der_abgrenzung(holder: str, frist: float = FRIST) -> None:
+    """``assign_batch`` muss mit ``LeaseLostError`` abbrechen, sobald es etwas zu vergeben gäbe.
+
+    Ohne vergebbare Zeile prüft der Lauf die Lease nicht; in der CI kann das kurz der Fall sein,
+    solange Transaktionen anderer Worker die Grenze halten.
+    """
+    ende = time.monotonic() + frist
+    while True:
+        try:
+            anzahl = assign_batch(holder)
+        except leases.LeaseLostError:
+            return
+        assert anzahl == 0, "ohne Lease darf nichts vergeben werden"
+        assert time.monotonic() < ende, "der Lauf hätte an der Abgrenzung scheitern müssen"
+        time.sleep(0.05)
+
+
 def _festgeschrieben(anzahl: int = 1) -> list[uuid.UUID]:
     with transaction.atomic():
         return [ereignis_anlegen().event_id for _ in range(anzahl)]
@@ -158,8 +175,7 @@ def test_ohne_lease_wird_nichts_vergeben() -> None:
 
     assert sequencer.drain() == 0
     assert not sequencer.is_leader
-    with pytest.raises(leases.LeaseLostError):
-        assign_batch(sequencer.holder)
+    _scheitert_an_der_abgrenzung(sequencer.holder)
     assert not Event.objects.filter(seq__isnull=False).exists()
 
 
@@ -180,14 +196,7 @@ def test_uebernahme_nach_ausfall_ohne_doppelte_nummern() -> None:
 
     # a meldet sich zurück (etwa nach einer langen Pause) und darf nichts mehr vergeben
     dritte = _festgeschrieben(2)
-    ende = time.monotonic() + FRIST
-    while True:
-        try:
-            assign_batch(a.holder)
-        except leases.LeaseLostError:
-            break
-        assert time.monotonic() < ende, "a hätte an der Abgrenzung scheitern müssen"
-        time.sleep(0.05)
+    _scheitert_an_der_abgrenzung(a.holder)
     assert folgenummern(dritte) == [None, None]
     nachzuegler = _bis_alle_nummeriert(b, dritte)
 

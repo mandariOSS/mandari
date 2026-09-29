@@ -84,7 +84,9 @@ def require_postgresql() -> None:
 def assign_batch(holder: str, batch_size: int = BATCH_SIZE) -> int:
     """Ein Lauf: vergibt Folgenummern an höchstens ``batch_size`` Ereignisse; gibt deren Zahl zurück.
 
-    Wirft ``leases.LeaseLostError``, wenn ``holder`` die Lease nicht (mehr) hält; dann ist nichts vergeben.
+    Wirft ``leases.LeaseLostError``, wenn es etwas zu vergeben gäbe, ``holder`` die Lease aber nicht
+    (mehr) hält; dann ist nichts vergeben. Ohne vergebbare Zeile wird die Lease nicht geprüft, damit
+    ein Leerlauf keine Zeilensperre und keine Transaktionskennung verbraucht.
     """
     require_postgresql()
     with transaction.atomic(), connection.cursor() as cursor:
