@@ -36,7 +36,7 @@ from apps.work.motions.models import Motion, MotionComment
 from apps.work.organization.export_service import IM_EXPORT, NICHT_IM_EXPORT, VERMERKE, dsgvo_export_service
 from apps.work.support.models import SupportTicket, SupportTicketMessage
 from apps.work.tasks import services as task_services
-from apps.work.tasks.models import Task
+from apps.work.tasks.models import Task, TaskActivity
 from insight_core.models import OParlAgendaItem, OParlBody, OParlMeeting, OParlSource
 
 
@@ -180,7 +180,7 @@ def test_fraktion_und_bearbeitungsvermerke(org: Any, person: Any, andere: Any) -
     rede.set_content_encrypted("Wir stimmen zu")
     rede.save()
     aufgabe = Task.objects.create(organization=org, title="Flyer", created_by=andere)
-    task_services.log_activity(aufgabe, person, "status_changed")
+    TaskActivity.objects.create(task=aufgabe, actor=person, activity_type="status_changed")
 
     daten = _export(org, person)
     assert [p["title"] for p in daten["faction"]["proposals"]] == ["Haushalt"]
