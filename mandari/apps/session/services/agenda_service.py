@@ -9,6 +9,9 @@ Zentrale Logik für:
 - Umsortieren (Drag-and-drop-Reihenfolge, Auf/Ab)
 """
 
+from typing import Any
+
+from django.db.models import F
 from django.utils import timezone
 
 from apps.session.models import SessionAgendaItem, SessionMeeting
@@ -46,6 +49,35 @@ def cascade_visibility(item: SessionAgendaItem) -> int:
         child.save()
         anzahl += 1
     return anzahl
+
+
+def insertion_order(meeting: SessionMeeting, *, is_public: bool, parent_id: Any = None) -> int:
+    """
+    Reihenfolge (``order``) für einen neu ergänzten TOP.
+
+    Ein TOP kommt hinter die regulären TOPs seines Teils (öffentlich bzw. nichtöffentlich), aber vor
+    die Ende-TOPs am Schluss dieses Teils (``is_end_item``, z. B. „Verschiedenes“). Dazu rücken diese
+    Ende-TOPs und alles danach um eins auf; der neue TOP erhält den Platz des ersten von ihnen.
+    Ohne Ende-TOPs am Schluss – und für Unterpunkte, die nur unter ihren Geschwistern sortiert
+    werden – kommt er ans Ende. Die Nummern vergibt anschließend :func:`renumber_agenda`.
+    """
+    items = list(
+        meeting.agenda_items.order_by("order", "created_at").values("order", "parent_id", "is_public", "is_end_item")
+    )
+    append = max((item["order"] for item in items), default=0) + 1
+    if parent_id is not None:
+        return append
+    section = [item for item in items if item["parent_id"] is None and item["is_public"] == is_public]
+    closing = []
+    for item in reversed(section):
+        if not item["is_end_item"]:
+            break
+        closing.append(item)
+    if not closing:
+        return append
+    target = int(closing[-1]["order"])
+    meeting.agenda_items.filter(order__gte=target).update(order=F("order") + 1)
+    return target
 
 
 def renumber_agenda(meeting: SessionMeeting) -> None:

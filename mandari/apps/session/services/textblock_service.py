@@ -13,8 +13,9 @@ from django.db.models import Q
 
 from ..models import SessionAgendaItem, SessionMeeting, SessionStandardAgendaItem
 
-# Ende-TOPs bekommen bewusst sehr hohe Order-Werte, damit später manuell
-# ergänzte TOPs (Order = (Anzahl+1)*100) davor einsortiert werden.
+# Ende-TOPs stehen anfangs mit sehr hohen Order-Werten hinter den Anfangs-TOPs. Dass später
+# ergänzte TOPs davor landen, sichert die Kennzeichnung is_end_item (agenda_service.insertion_order),
+# denn renumber_agenda setzt die Reihenfolge auf 1..n.
 END_ORDER_BASE = 900000
 
 
@@ -62,6 +63,7 @@ def apply_standard_items(meeting: SessionMeeting) -> int:
             order=END_ORDER_BASE + index * 100,
             name=template.name,
             is_public=template.is_public and meeting.is_public,
+            is_end_item=True,
         )
         created += 1
 

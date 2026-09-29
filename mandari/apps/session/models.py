@@ -1647,6 +1647,14 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
         help_text="Nach Versand der Einladung hinzugefügt (Nachtragstagesordnung)",
     )
 
+    # Ende-TOP: Standard-TOP am Schluss (z. B. „Verschiedenes“); ergänzte TOPs kommen davor
+    is_end_item = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Ende-TOP",
+        help_text="Standard-TOP am Schluss der Tagesordnung; später ergänzte TOPs werden davor eingereiht",
+    )
+
     # Paper reference
     paper = models.ForeignKey(
         "SessionPaper",

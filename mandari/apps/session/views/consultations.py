@@ -252,7 +252,7 @@ def schedule_consultation(view, request, consultation):
             meeting=meeting,
             number="?",  # wird durch renumber_agenda gesetzt
             name=f"{paper.reference}: {paper.name}"[:500],
-            order=(meeting.agenda_items.count() + 1) * 100,
+            order=agenda_service.insertion_order(meeting, is_public=paper.is_public),  # vor den Ende-TOPs
             is_public=paper.is_public,
             is_supplementary=bool(meeting.invitation_sent_at or meeting.meeting_state == "invitation_sent"),
             paper=paper,
