@@ -1072,6 +1072,9 @@ class SyncOrchestrator:
         Dokumente tombstoneder Objekte. Gemeinsamer Pfad für OParl-Sync
         (_sync_body) und Scraper-Quellen (ScraperSyncRunner).
 
+        Geschrieben werden Teildokumente (partielles Update): Felder, die nur
+        Django setzt (z. B. organization_names), bleiben erhalten (Issue #429).
+
         Fehler landen in stats["errors"]; der Sync bricht dadurch nicht ab.
         """
         total_tombstoned = sum(len(ids) for ids in es_deletions.values())
