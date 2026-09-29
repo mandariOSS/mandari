@@ -20,7 +20,7 @@ from django.urls import reverse
 
 from apps.common.permissions import DEFAULT_ROLES, PERMISSION_CATEGORIES, PERMISSIONS
 from apps.common.tests.factories import MembershipFactory, UserFactory
-from apps.tenants.models import Role
+from apps.tenants.models import Permission, Role
 from apps.work.motions.models import Motion
 from apps.work.organization import services as member_services
 
@@ -39,6 +39,10 @@ def _mitglied(org: Any, email: str, rolle: str) -> Any:
 
 @pytest.fixture
 def personen(org: Any) -> dict[str, Any]:
+    # Katalog und Standardrollen unabhängig vom Datenbankstand: Transaktionale Tests anderer Dateien
+    # leeren die Tabellen, die Datenmigrationen gefüllt haben (CI mit pytest-xdist).
+    Permission.sync_permissions()  # type: ignore[no-untyped-call]
+    Role.create_default_roles(org)  # type: ignore[no-untyped-call]
     return {
         "administrator": _mitglied(org, "admin@example.org", "admin"),
         "vorsitz": _mitglied(org, "vorsitz@example.org", "faction_chair"),
@@ -109,11 +113,8 @@ def test_andere_sehen_private_dokumente_ehemaliger_nicht(
 
 @pytest.mark.django_db
 def test_verweigertes_recht_greift(personen: dict[str, Any], dokumente: dict[str, Motion]) -> None:
-    from apps.tenants.models import Permission
-
     vorsitz = personen["vorsitz"]
-    recht, _ = Permission.objects.get_or_create(codename=RECHT, defaults={"name": "x", "category": "motions"})
-    vorsitz.denied_permissions.add(recht)
+    vorsitz.denied_permissions.add(Permission.objects.get(codename=RECHT))
     vorsitz.__dict__.pop("_permission_checker", None)
 
     assert dokumente["entwurf"].access_level(vorsitz) == "none"
