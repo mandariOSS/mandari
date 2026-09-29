@@ -11,7 +11,7 @@
     <tr><td>Priorit&auml;t</td><td>{{ t.priority }}</td></tr>
     <tr><td>F&auml;llig</td><td>{{ t.due_date|default:"&mdash;" }}</td></tr>
     <tr><td>Erstellt</td><td>{{ t.created_at }}</td></tr>
-    <tr><td>Rolle</td><td>{% if t.is_creator %}Ersteller{% endif %}{% if t.is_creator and t.is_assignee %}, {% endif %}{% if t.is_assignee %}Zugewiesen{% endif %}</td></tr>
+    <tr><td>Rolle</td><td>{% if t.is_creator %}Ersteller {% endif %}{% if t.is_assignee %}Zugewiesen {% endif %}{% if t.is_shared_with %}Freigegeben {% endif %}{% if not t.is_creator and not t.is_assignee and not t.is_shared_with %}Kommentiert{% endif %}</td></tr>
 </table>
 {% if t.description %}
 <div class="content-block">{{ t.description }}</div>

@@ -1,0 +1,130 @@
+{# DSGVO-Datenexport: 12. Beteiligung an Dokumenten, 13. Fraktion, 14. Weitere Vorbereitungsdaten, 15. Weitere Angaben, 16. Bearbeitungsvermerke #}
+{# Kontext: data #}
+<!-- 12. Document involvement -->
+<div class="page-break"></div>
+<h2>12. Beteiligung an Dokumenten anderer</h2>
+{% if data.document_involvement %}
+{% for d in data.document_involvement %}
+<div class="item-header">{{ d.title }}</div>
+<table class="kv-table">
+    <tr><td>Status</td><td>{{ d.status }}</td></tr>
+    <tr><td>Rolle</td><td>{% for r in d.roles %}{{ r }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</td></tr>
+</table>
+{% for c in d.comments %}
+<div class="content-block"><strong>{{ c.created_at }}:</strong> {% if c.selected_text %}&bdquo;{{ c.selected_text }}&ldquo; &ndash; {% endif %}{{ c.content }}</div>
+{% endfor %}
+{% for a in d.approvals %}
+<div class="content-block"><strong>Freigabe ({{ a.approval_type }}):</strong> {% if a.approved == True %}Erteilt{% elif a.approved == False %}Abgelehnt{% else %}Ausstehend{% endif %}{% if a.comment %} &ndash; {{ a.comment }}{% endif %}</div>
+{% endfor %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Beteiligung an Dokumenten anderer.</p>
+{% endif %}
+
+
+<!-- 13. Faction -->
+<h2>13. Fraktionssitzungen: Vorschl&auml;ge und Protokoll</h2>
+<h3>Vorgeschlagene Tagesordnungspunkte</h3>
+{% if data.faction.proposals %}
+<table>
+    <tr><th class="col-28">Sitzung</th><th>Titel</th><th class="col-status">Status</th><th class="col-date">Vorgeschlagen</th></tr>
+    {% for p in data.faction.proposals %}
+    <tr><td>{{ p.meeting }}</td><td>{{ p.title }}{% if p.rejection_reason %}<br><em class="note-small">{{ p.rejection_reason }}</em>{% endif %}</td><td>{{ p.status }}</td><td>{{ p.proposed_at|default:"&mdash;" }}</td></tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Vorschl&auml;ge vorhanden.</p>
+{% endif %}
+
+<h3>Protokolleintr&auml;ge zu deiner Person</h3>
+{% if data.faction.protocol_entries %}
+{% for e in data.faction.protocol_entries %}
+<div class="content-block"><strong>{{ e.meeting }} &ndash; {{ e.role }} ({{ e.created_at }}):</strong> {{ e.content }}{% if e.action_due_date %} (f&auml;llig {{ e.action_due_date }}){% endif %}</div>
+{% endfor %}
+{% else %}
+<p class="empty">Keine Protokolleintr&auml;ge vorhanden.</p>
+{% endif %}
+
+<h3>Teilnahmebescheinigungen</h3>
+{% if data.faction.certificates %}
+<table>
+    <tr><th>Zeitraum</th><th class="col-15">Sitzungen</th><th class="col-date">Ausgestellt</th></tr>
+    {% for c in data.faction.certificates %}
+    <tr><td>{{ c.period_start }} &ndash; {{ c.period_end }}</td><td>{{ c.attendance_count }}</td><td>{{ c.issued_at }}</td></tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Bescheinigungen vorhanden.</p>
+{% endif %}
+
+
+<!-- 14. Further preparation data -->
+<h2>14. Weitere Daten der Sitzungsvorbereitung</h2>
+<h3>Private Notizen</h3>
+{% if data.meetings.private_notes %}
+{% for n in data.meetings.private_notes %}
+<div class="content-block"><strong>{{ n.agenda_item }} ({{ n.created_at }}):</strong> {{ n.content }}</div>
+{% endfor %}
+{% else %}
+<p class="empty">Keine privaten Notizen vorhanden.</p>
+{% endif %}
+
+<h3>Anmerkungen an Dateien</h3>
+{% if data.meetings.file_annotations %}
+{% for a in data.meetings.file_annotations %}
+<div class="content-block"><strong>{{ a.file|default:"Datei" }}, Seite {{ a.page }} ({{ a.created_at }}):</strong> {{ a.content }}</div>
+{% endfor %}
+{% else %}
+<p class="empty">Keine Anmerkungen vorhanden.</p>
+{% endif %}
+
+<h3>Hinzugef&uuml;gte Anlagen</h3>
+{% if data.meetings.added_documents %}
+<table>
+    <tr><th>Titel</th><th class="col-15">Art</th><th class="col-wide">Link bzw. Datei</th><th class="col-date">Hinzugef&uuml;gt</th></tr>
+    {% for d in data.meetings.added_documents %}
+    <tr><td>{{ d.title }}</td><td>{{ d.document_type }}</td><td>{{ d.url|default:d.filename|default:"&mdash;" }}</td><td>{{ d.created_at }}</td></tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Anlagen vorhanden.</p>
+{% endif %}
+
+
+<!-- 15. Further data -->
+<h2>15. Weitere Angaben</h2>
+<h3>Nachrichten in Support-Tickets anderer</h3>
+{% if data.support_messages %}
+{% for m in data.support_messages %}
+<div class="content-block"><strong>{{ m.ticket }} ({{ m.created_at }}):</strong> {{ m.content }}</div>
+{% endfor %}
+{% else %}
+<p class="empty">Keine Nachrichten vorhanden.</p>
+{% endif %}
+
+<table class="kv-table">
+    <tr><td>Kalender-Abo</td><td>{% if data.account_extras.calendar_feed %}Eingerichtet am {{ data.account_extras.calendar_feed.created_at }}{% else %}Nicht eingerichtet{% endif %}</td></tr>
+    <tr><td>Datenexporte</td><td>{% for e in data.account_extras.data_exports %}{{ e.created_at }} ({{ e.format }}, {{ e.status }}){% if not forloop.last %}; {% endif %}{% empty %}&mdash;{% endfor %}</td></tr>
+</table>
+{% if data.account_extras.knowledge_base_feedback %}
+<h3>R&uuml;ckmeldungen zur Wissensdatenbank</h3>
+{% for f in data.account_extras.knowledge_base_feedback %}
+<div class="content-block"><strong>{{ f.article }} ({{ f.created_at }}):</strong> {% if f.is_helpful %}Hilfreich{% else %}Nicht hilfreich{% endif %}{% if f.comment %} &ndash; {{ f.comment }}{% endif %}</div>
+{% endfor %}
+{% endif %}
+
+
+<!-- 16. Activity records -->
+<div class="page-break"></div>
+<h2>16. Bearbeitungsvermerke</h2>
+<p class="note">Vorg&auml;nge, die du ausgel&ouml;st hast; die Inhalte selbst geh&ouml;ren der Organisation.</p>
+{% if data.vermerke %}
+<table>
+    <tr><th class="col-date">Zeitpunkt</th><th class="col-15">Bereich</th><th class="col-25">Vorgang</th><th>Gegenstand</th></tr>
+    {% for v in data.vermerke %}
+    <tr><td>{{ v.at|default:"&mdash;" }}</td><td>{{ v.area }}</td><td>{{ v.action }}</td><td>{{ v.object }}</td></tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Bearbeitungsvermerke vorhanden.</p>
+{% endif %}
