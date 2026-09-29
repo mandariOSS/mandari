@@ -108,4 +108,4 @@ python manage.py sync_oparl --all
 
 ## Lizenz
 
-AGPL-3.0 - siehe [LICENSE](../LICENSE)
+AGPL-3.0-or-later – siehe [LICENSE](../LICENSE)

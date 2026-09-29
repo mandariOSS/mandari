@@ -163,7 +163,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/mandariOSS/mandari
             org.opencontainers.image.description=Mandari - Open-Source Platform for Municipal Political Transparency
-            org.opencontainers.image.licenses=AGPL-3.0
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Scan mandari image for vulnerabilities
@@ -186,7 +186,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/mandariOSS/mandari
             org.opencontainers.image.description=Mandari OParl Ingestor - Data Synchronization Service
-            org.opencontainers.image.licenses=AGPL-3.0
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Scan ingestor image for vulnerabilities

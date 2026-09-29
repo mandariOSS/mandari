@@ -13,7 +13,7 @@
 > Siehe auch [DEPENDENCIES.md](../DEPENDENCIES.md) (Danksagungen).
 
 **Projekt:** Mandari — Open-Source-Plattform für kommunalpolitische Transparenz
-**Lizenz des Projekts:** AGPL-3.0
+**Lizenz des Projekts:** AGPL-3.0-or-later
 **Sprache/Runtime:** Python ≥ 3.12
 **Stand:** Juli 2026
 
@@ -71,7 +71,7 @@
 | pydantic-settings | ≥ 2.6.0 | MIT | Typisierte Konfiguration |
 | python-dotenv | ≥ 1.0.0 | BSD-3-Clause | .env-Konfiguration |
 | rich | ≥ 13.9.0 | MIT | Konsolen-Ausgabe (Management-Commands) |
-| mandari-oparl (`shared/`) | 0.1.0.dev0 | AGPL-3.0 | Eigenes Shared-Package: OParl-Pydantic-Schemas |
+| mandari-oparl (`shared/`) | 0.1.0.dev0 | AGPL-3.0-or-later | Eigenes Shared-Package: OParl-Pydantic-Schemas |
 
 ### Transitive Abhängigkeiten (aus Sicherheitsgründen gepinnt)
 
@@ -88,7 +88,7 @@
 
 | Komponente | Version | Lizenz | Zweck |
 |---|---|---|---|
-| mandari-oparl (`shared/`) | 0.1.0.dev0 | AGPL-3.0 | Shared OParl-Pydantic-Schemas |
+| mandari-oparl (`shared/`) | 0.1.0.dev0 | AGPL-3.0-or-later | Shared OParl-Pydantic-Schemas |
 | httpx | ≥ 0.28.0 | BSD-3-Clause | Asynchrone OParl-API-Abrufe |
 | pydantic | ≥ 2.10.0 | MIT | Datenvalidierung (OParl-Entitäten) |
 | pydantic-settings | ≥ 2.6.0 | MIT | Typisierte Konfiguration |

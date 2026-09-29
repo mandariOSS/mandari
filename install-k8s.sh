@@ -58,7 +58,7 @@ show_banner() {
  |_|  |_|\__,_|_| |_|\__,_|\__,_|_|  |_|
 
  Installation in Kubernetes
- Open Source unter AGPL-3.0
+ Open Source unter AGPL-3.0-or-later
 BANNER
     echo -e "${NC}"
 }

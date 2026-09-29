@@ -16,4 +16,4 @@ Du erhältst diese E-Mail, weil du Benachrichtigungen für Fraktion Test aktivie
 
 © Mandari Work | Mandari Open Source
 
-© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

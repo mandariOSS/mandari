@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="Lizenz" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg" alt="Lizenz" /></a>
   <a href="https://github.com/mandariOSS/mandari/releases"><img src="https://img.shields.io/github/v/release/mandariOSS/mandari?include_prereleases" alt="Release" /></a>
   <a href="https://github.com/mandariOSS/mandari/actions/workflows/pr-check.yml"><img src="https://img.shields.io/github/actions/workflow/status/mandariOSS/mandari/pr-check.yml?label=Tests" alt="Tests" /></a>
   <a href="https://api.reuse.software/info/github.com/mandariOSS/mandari"><img src="https://img.shields.io/badge/REUSE-konform-green.svg" alt="REUSE" /></a>
@@ -45,7 +45,7 @@ OParl-Schnittstelle — die Daten bleiben offen und maschinenlesbar.
 
 ### Eigenschaften
 
-- **Offen** — AGPL-3.0, keine Herstellerbindung, Daten jederzeit exportierbar
+- **Offen** — AGPL-3.0-or-later, keine Herstellerbindung, Daten jederzeit exportierbar
 - **Selbst betreibbar** — ein Server genügt; Docker Compose oder Kubernetes
 - **Mehrmandantenfähig** — mehrere Organisationen und Kommunen in einer Installation
 - **Verschlüsselt** — AES-256-GCM für vertrauliche Inhalte, Schlüssel je Mandant
@@ -212,7 +212,7 @@ Der Ablauf steht in [SECURITY.md](SECURITY.md).
 ## Lizenz
 
 [AGPL-3.0-or-later](LICENSE). mandari darf frei genutzt, verändert und weitergegeben werden;
-Änderungen an einer öffentlich betriebenen Instanz müssen ebenfalls unter AGPL-3.0
+Änderungen an einer öffentlich betriebenen Instanz müssen ebenfalls unter AGPL-3.0-or-later
 veröffentlicht werden. Das Repository ist [REUSE](https://reuse.software)-konform: Jede Datei
 trägt eine maschinenlesbare Lizenz- und Urheberangabe, Lizenztexte liegen unter `LICENSES/`.
 

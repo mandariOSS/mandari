@@ -51,9 +51,15 @@ precedence = "override"
 SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
 SPDX-License-Identifier = "CC0-1.0"
 
-# --- Marke (Logo, Favicons): urheberrechtlich geschützt, keine freie Lizenz ---
+# --- Marke: nur Kennzeichen (Logo, Wortmarke, Favicons, App-Icons), keine freie Lizenz ---
+# Übrige Grafiken (z. B. mandari/static/images/og-default.png) fallen unter die Grundregel oben.
 [[annotations]]
-path = ["mandari/static/brand/**", "mandari/static/images/**", "docs/assets/**"]
+path = [
+  "mandari/static/brand/**",
+  "mandari/static/images/favicon.ico",
+  "mandari/static/images/favicon.svg",
+  "docs/assets/logo*.svg",
+]
 precedence = "override"
 SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
 SPDX-License-Identifier = "LicenseRef-Mandari-Brand"

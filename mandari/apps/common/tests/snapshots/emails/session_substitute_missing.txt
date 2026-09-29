@@ -12,4 +12,4 @@ Bitte kümmern Sie sich um die Vertretung.
 
 Diese E-Mail wurde automatisch vom Sitzungsdienst von Stadt Musterstadt in mandari versendet.
 
-© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

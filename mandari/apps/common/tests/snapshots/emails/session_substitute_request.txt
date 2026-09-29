@@ -24,4 +24,4 @@ Der Link ist persönlich und gilt bis zum Sitzungsbeginn.
 
 Diese E-Mail wurde im Auftrag von Stadt Musterstadt über mandari versendet.
 
-© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
