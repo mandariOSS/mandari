@@ -66,7 +66,7 @@ oder die Abhängigkeit müsste für diese Ausgaben entfernt werden.
 
 ## Prüfung (Fitnessfunktion)
 
-- `requirements.txt` enthält kein PyMuPDF (`pymupdf`, `fitz`); der Abhängigkeitsbericht (SBOM) nennt
-  die Lizenzen.
+- `mandari/pyproject.toml` und `mandari/uv.lock` enthalten kein PyMuPDF (`pymupdf`, `fitz`), geprüft in
+  `apps/common/tests/test_abhaengigkeiten_lock.py`; der Abhängigkeitsbericht (SBOM) nennt die Lizenzen.
 - Tests der Seitenanalyse (`apps/common/tests/test_page_analysis.py`) laufen ohne Netz auf erzeugten
   PDFs.

@@ -1,0 +1,37 @@
+# Link-Prüfung mit lychee (https://github.com/lycheeverse/lychee), Issue #690
+#
+# Die CI (Job „Verweise“ in .github/workflows/pr-check.yml) prüft in zwei Schritten:
+#
+#   1. ohne Netz – interne Verweise, Bilder und Anker aller Markdown-Dateien:
+#        lychee --offline --include-fragments '**/*.md'
+#   2. mit Netz – externe Verweise der Dateien des öffentlichen Auftritts:
+#        lychee README.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md DEPENDENCIES.md …
+#
+# Beide Aufrufe laufen so auch lokal (aus dem Wurzelverzeichnis, diese Datei wird selbsttätig gelesen).
+#
+# Die Prüfung soll nicht von der Tagesform fremder Server abhängen. Sie scheitert deshalb nur an
+# Verweisen, die nachweislich ins Leere führen (404, 410, unbekannter Host, fehlende Datei, fehlender
+# Anker). Zeitüberschreitungen, Drosselung (429), Serverfehler (5xx) und Sperren für automatische
+# Abrufe (403) gelten nach mehreren Versuchen als bestanden.
+
+no_progress = true
+
+# .github/ (Issue- und PR-Vorlagen) gehört dazu
+hidden = true
+
+max_retries = 4
+retry_wait_time = 10
+timeout = 30
+
+# Sparsam gegenüber eigenen und fremden Servern
+max_concurrency = 8
+host_concurrency = 2
+
+accept = ["100..=103", "200..=299", "403", "429", "500..=599"]
+accept_timeouts = true
+
+# http://localhost:8000 in der Anleitung zur Entwicklungsumgebung
+exclude_loopback = true
+
+# Ausnahmen (reguläre Ausdrücke). Jede Ausnahme braucht eine Begründung.
+exclude = []

@@ -171,8 +171,15 @@ class SessionTenantAdmin(ModelAdmin):
     list_filter = ["is_active", "created_at"]
     search_fields = ["name", "slug", "contact_email"]
     prepopulated_fields = {"slug": ("name",)}
-    # Freischaltung der OParl-Schnittstelle nur über die Einstellungen des Mandanten (Audit-Log, Issue #319)
-    readonly_fields = ["encryption_key", "oparl_public_since", "created_at", "updated_at"]
+    # Freischaltung und Lizenz der OParl-Schnittstelle nur über die Einstellungen des Mandanten (Audit-Log, Issue #319)
+    readonly_fields = [
+        "encryption_key",
+        "oparl_public_since",
+        "oparl_license",
+        "oparl_license_valid_since",
+        "created_at",
+        "updated_at",
+    ]
     actions = ["activate_tenants", "deactivate_tenants"]
     actions_detail = ["generate_api_token_action"]
 
@@ -181,10 +188,11 @@ class SessionTenantAdmin(ModelAdmin):
         (
             "OParl-Verknüpfung",
             {
-                "fields": ("oparl_body", "oparl_public_since"),
+                "fields": ("oparl_body", "oparl_public_since", "oparl_license", "oparl_license_valid_since"),
                 "classes": ("collapse",),
                 "description": "Verknüpfung mit einer OParl-Kommune für die automatische Synchronisation öffentlicher Daten. "
-                "Die eigene OParl-Schnittstelle schaltet der Mandant in seinen Einstellungen frei.",
+                "Die eigene OParl-Schnittstelle schaltet der Mandant in seinen Einstellungen frei; dort legt er auch "
+                "die Lizenz der offenen Daten fest.",
             },
         ),
         (

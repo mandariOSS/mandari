@@ -1,7 +1,7 @@
 {% comment %}
 Karte „OParl-Schnittstelle“ in den Einstellungen (Issue #319): Freischaltung mit Datum. Vorher antwortet die
 Schnittstelle mit 404 und das Bürgerportal registriert keine Quelle. Eingebunden aus _buergerportal.html,
-weil das Bürgerportal genau diese Schnittstelle liest.
+weil das Bürgerportal genau diese Schnittstelle liest. Dazu die Lizenz der offenen Daten (OParl „license“).
 {% endcomment %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" data-testid="karte-oparl">
     <div class="flex items-center gap-4 mb-3">
@@ -48,5 +48,17 @@ weil das Bürgerportal genau diese Schnittstelle liest.
             <c-ui.button type="submit" size="sm" icon="radio-tower">OParl-Schnittstelle freischalten</c-ui.button>
         </form>
         {% endif %}
+        <form method="post" action="{% url 'session:oparl_license' tenant_slug=tenant_slug %}"
+              class="pt-3 mt-2 border-t border-gray-200 dark:border-gray-700 space-y-2" data-testid="oparl-lizenz">
+            {% csrf_token %}
+            <c-form.select name="license" label="Lizenz der offenen Daten"
+                           help="Unter dieser Lizenz dürfen andere die öffentlichen Daten weiterverwenden. Ohne Auswahl nennt die Schnittstelle keine Lizenz.">
+                <option value="">Keine Angabe</option>
+                {% for url, label in oparl_licenses %}
+                <option value="{{ url }}"{% if url == session_tenant.oparl_license %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </c-form.select>
+            <c-ui.button type="submit" variant="secondary" size="sm">Lizenz speichern</c-ui.button>
+        </form>
     </div>
 </div>

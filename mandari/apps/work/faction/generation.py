@@ -169,21 +169,17 @@ def check_ris_rules(schedule, date, rules=None) -> str | None:
     if not rules:
         return None
 
-    from insight_core.models import OParlMeeting
+    from hub.ris import selectors as ris
 
     window_start = _occurrence_start(schedule, previous_occurrence(schedule, date))
     window_end = _occurrence_start(schedule, date)
 
-    ris_meeting = (
-        OParlMeeting.objects.filter(
-            organizations__in=[rule.ris_organization_id for rule in rules],
-            start__gt=window_start,
-            start__lte=window_end,
-            cancelled=False,
-        )
-        .order_by("start")
-        .first()
-    )
+    ris_meeting = ris.meetings_of_organizations(
+        [rule.ris_organization_id for rule in rules],
+        starts_after=window_start,
+        starts_until=window_end,
+        include_cancelled=False,
+    ).first()
     if ris_meeting is None:
         return None
 

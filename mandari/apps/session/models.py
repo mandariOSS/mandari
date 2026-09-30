@@ -285,6 +285,23 @@ class SessionTenant(models.Model):
         verbose_name="OParl-Schnittstelle öffentlich seit",
         help_text="Leer: Die OParl-Schnittstelle ist nicht freigeschaltet und antwortet mit 404",
     )
+    # Lizenz der offenen Daten (OParl 1.1 ``license`` an System und Body): URL der Lizenz, leer heißt
+    # keine Angabe. Die Verwaltung legt sie in den Einstellungen fest (Karte „OParl-Schnittstelle“,
+    # services/oparl_access.py). DB-seitiger Default, damit ein älteres Image weiter Mandanten anlegen kann.
+    oparl_license = models.URLField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Lizenz der offenen Daten",
+        help_text="URL der Lizenz, unter der die OParl-Schnittstelle die Daten anbietet; leer: keine Angabe",
+    )
+    oparl_license_valid_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Lizenz gültig seit",
+        help_text="Zeitpunkt, seit dem die angegebene Lizenz gilt (OParl ``licenseValidSince``)",
+    )
 
     # Bürgerportal-Veröffentlichung (Issue #36): Erst wenn der Mandant den
     # Schalter aktiviert, wird seine OParl-API als Quelle im Insight-Ingestor

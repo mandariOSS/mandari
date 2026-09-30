@@ -10,7 +10,7 @@ hier stehen nur die Befehle.
   (Profil `klein`, `mittel` oder `gross`). Das Kommando läuft nur mit `DEBUG=true`
   oder mit `--ich-weiss-was-ich-tue` — niemals gegen eine Produktionsdatenbank.
 - Locust auf dem Lastgeber: `pip install -r loadtest/requirements.txt`
-  (bewusst nicht in `mandari/requirements.txt`).
+  (bewusst nicht in `mandari/pyproject.toml`).
 - Die Konten des Generators melden sich per Passwort an. Die 2FA-Pflicht muss dafür
   aus sein (`DEBUG=true` oder `TWO_FACTOR_ENFORCEMENT=false`).
 

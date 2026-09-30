@@ -6,9 +6,11 @@ labels: bug
 assignees: ''
 ---
 
+<!-- Sicherheitslücken bitte nicht hier melden, sondern vertraulich – siehe SECURITY.md. -->
+
 ## Beschreibung
 
-Eine klare Beschreibung des Bugs.
+Eine klare Beschreibung des Fehlers.
 
 ## Schritte zur Reproduktion
 
@@ -31,10 +33,13 @@ Falls zutreffend, füge Screenshots hinzu.
 
 ## Umgebung
 
-- **Mandari Version**: [z.B. v1.0.0]
-- **Browser**: [z.B. Firefox 120]
-- **Betriebssystem**: [z.B. Ubuntu 22.04]
+- **mandari-Version**: [z. B. v0.11.0 oder Image-Tag]
+- **Betrieb**: [selbst betrieben (Docker Compose / Kubernetes) oder mandari.de]
+- **Bereich**: [Insight, Work, Session, Ingestor]
+- **Browser**: [z. B. Firefox 143]
+- **Betriebssystem**: [z. B. Ubuntu 24.04]
 
 ## Zusätzlicher Kontext
 
-Weitere Informationen zum Problem.
+Weitere Informationen zum Problem, etwa Auszüge aus `docker compose logs mandari` (ohne Zugangsdaten
+und ohne personenbezogene Daten).

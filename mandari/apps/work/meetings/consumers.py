@@ -135,15 +135,10 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
         if not PermissionChecker(membership).has_permission("meetings.prepare"):
             return None
 
-        if self.scope_type == "paper":
-            from insight_core.models import OParlPaper
+        from hub.ris import selectors as ris
 
-            if not OParlPaper.objects.filter(id=self.object_id).exists():
-                return None
-        else:
-            from insight_core.models import OParlAgendaItem
-
-            if not OParlAgendaItem.objects.filter(id=self.object_id).exists():
-                return None
+        exists = ris.paper_exists if self.scope_type == "paper" else ris.agenda_item_exists
+        if not exists(self.object_id):
+            return None
 
         return membership.organization_id

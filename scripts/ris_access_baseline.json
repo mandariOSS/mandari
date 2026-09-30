@@ -1,0 +1,23 @@
+{
+  "beschreibung": "Direktzugriffe auf OParl*.objects außerhalb von hub und insight_core je Datei; dürfen nur sinken (scripts/check_ris_access_ratchet.py, Issue #522).",
+  "files": {
+    "apps/common/management/commands/setup_demo_environment.py": 17,
+    "apps/common/management/commands/setup_demo_praesentation.py": 4,
+    "apps/session/management/commands/generate_load_data.py": 12,
+    "apps/session/oparl_publication.py": 1,
+    "apps/session/services/insight_service.py": 14,
+    "apps/session/services/portal_publication.py": 8,
+    "apps/tenants/models.py": 1,
+    "apps/work/dashboard/views.py": 1,
+    "apps/work/meetings/models.py": 5,
+    "apps/work/meetings/selectors.py": 12,
+    "apps/work/organization/selectors.py": 8,
+    "apps/work/ris/selectors.py": 27,
+    "insight_ai/services/summarizer.py": 3,
+    "insight_search/management/commands/reindex_elasticsearch.py": 1,
+    "insight_sync/management/commands/sync_session_insight.py": 3,
+    "insight_sync/session_mirror.py": 18,
+    "oparl_api/serializers.py": 4,
+    "oparl_api/views.py": 10
+  }
+}
