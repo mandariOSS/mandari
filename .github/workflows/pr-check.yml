@@ -620,7 +620,7 @@ jobs:
           # Coverage-Gate (Issue #157): Stand 09/2026 40 % – Schwelle darf nur steigen.
           # Parallel auf allen Kernen (pytest-xdist; je Worker eine eigene Test-Datenbank), Tests einer
           # Datei bleiben auf einem Worker. --durations zeigt die langsamsten Tests für gezielte Arbeit.
-          pytest -n auto --dist loadfile -q -rfE --durations=25 --cov=apps --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38 --ignore=tests_e2e
+          pytest -n auto --dist loadfile -q -rfE --durations=25 --cov=apps --cov=hub --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38 --ignore=tests_e2e
 
   # ===========================================================================
   # Ereignistechnik hinter PgBouncer (Transaktionsmodus), Issue #505

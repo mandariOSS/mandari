@@ -350,6 +350,12 @@ if DB_POOL_ENABLED and DATABASES["default"]["ENGINE"].endswith("postgresql"):
 # wenige Sekunden später).
 EVENTS_DB_DIRECT_URL = os.environ.get("EVENTS_DB_DIRECT_URL", "")
 
+# Ereignistechnik (apps.events.publish, Issue #502): Jedes veröffentlichte Ereignis gegen das
+# Vertragsregister prüfen (Hülle, Typ und Version, Sichtbarkeit, Nutzlast). Standard wie DEBUG; die
+# Tests schalten die Prüfung ein (settings_test.py). Im Betrieb bleibt sie aus: Dort gelten nur die
+# Formatprüfungen der Hülle, die Verträge sichern die Tests der Produzenten.
+EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBUG)).lower() in ("true", "1", "yes")
+
 # Befehle (hub.commands, Issue #539): So viele Tage bleibt ein Idempotenzschlüssel samt Quittung
 # gespeichert. Bis dahin erhält eine Wiederholung mit demselben Schlüssel dieselbe Quittung, danach
 # gilt der Schlüssel als neu. Aufgeräumt wird täglich per Zeitplan (apps/events/schedules.py).

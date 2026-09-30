@@ -33,6 +33,8 @@ SESSION_ENGINE = "django.contrib.sessions.backends.db"
 MAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 MAILERS = {"default": {"BACKEND": MAIL_BACKEND, "OPTIONS": {}}}
 ELASTICSEARCH_AUTO_INDEX = False
+# publish() prüft jedes Ereignis gegen das Vertragsregister (in der CI läuft die Suite mit DEBUG=false)
+EVENTS_VALIDATE_CONTRACTS = True
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # schnelle Hashes nur im Test
 # Sofort ausführen, wie ohne TASKS_BACKEND in Produktion; JournalBackend testen apps/events/tests
 TASKS = {
