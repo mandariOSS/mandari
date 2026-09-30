@@ -73,6 +73,11 @@ updates:
       time: "05:00"
       timezone: Europe/Berlin
     groups:
+      # SQLAlchemy kommt als eigener PR (Dependabot ordnet ein Paket der ersten passenden Gruppe zu):
+      # Minor-Versionen ändern Verhalten (2.1: greenlet nur noch über das Extra) und werden vor der
+      # Übernahme gegen eine echte Datenbank verglichen, siehe Kommentar in ingestor/pyproject.toml.
+      sqlalchemy:
+        patterns: ["sqlalchemy"]
       ingestor-minor-und-patch:
         update-types: [minor, patch]
       ingestor-sicherheit:
