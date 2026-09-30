@@ -8,8 +8,9 @@ Läuft gegen eine frische SQLite-Instanz mit django.test.Client:
 Prüft:
 - Datenmodell: deleted/deleted_at auf allen OParl-Entitäten, Default False
 - Sync-Pfad: mark_deleted markiert statt löscht (setzt deleted_at + bumpt
-  oparl_modified auf den Löschzeitpunkt), idempotent; Ingestor-Quelltext
-  enthält keinen physischen Delete-Pfad mehr (statische Prüfung)
+  oparl_modified auf den Löschzeitpunkt), idempotent. Dass der Ingestor
+  markiert statt löscht, prüft ingestor/tests/test_loeschmarkierung.py: Dort
+  läuft die Prüfung bei jeder Ingestor-Änderung, dieser Smoke-Test nicht.
 - Öffentliche Portale: Listen/Kalender/Sitemap/Stats blenden markierte
   Objekte aus; Detailseiten liefern 200 mit Rückzugs-Hinweis statt 404
 - OParl-API: Objekt-Endpunkt liefert Tombstone (HTTP 200, exakt die
@@ -292,20 +293,6 @@ check("mark_deleted: idempotent (Zeitstempel unverändert)", paper_gone.deleted_
 # Weitere Entitäten markieren (für Portal-/API-/purge-Checks)
 meeting_gone.mark_deleted()
 file_gone.mark_deleted()
-
-# Statische Prüfung: Ingestor markiert statt zu löschen
-orchestrator_src = (REPO_DIR / "ingestor" / "src" / "sync" / "orchestrator.py").read_text(encoding="utf-8")
-database_src = (REPO_DIR / "ingestor" / "src" / "storage" / "database.py").read_text(encoding="utf-8")
-check("Ingestor: orchestrator nutzt mark-Pfad für deleted:true", "_mark_deleted" in orchestrator_src)
-check("Ingestor: kein delete_entity-Aufruf mehr", "delete_entity" not in orchestrator_src)
-check(
-    "Ingestor: storage markiert (mark_entity_deleted) statt DELETE",
-    "mark_entity_deleted" in database_src and "delete(model)" not in database_src,
-)
-check(
-    "Ingestor: Full-Sync prüft deleted-Flag vor Upsert",
-    orchestrator_src.count('item.get("deleted") is True') >= 2,
-)
 
 # =============================================================================
 # 3. Öffentliche Portale

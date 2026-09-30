@@ -1,8 +1,16 @@
 # =============================================================================
 # Mandari - CI Checks
 # =============================================================================
-# Runs linting, tests, and Docker build validation
-# Triggered on pushes to dev/main/beta and pull requests
+# Lint, Typprüfung, Frontend-Gates, Tests, Smoke, E2E, Docker-Build, CodeQL.
+#
+# Pfadfilter (Issue #621): Der Job "Geänderte Bereiche" ordnet die Dateien eines
+# Pull Requests Bereichen zu; jeder Job läuft nur, wenn sein Bereich betroffen
+# ist. Sicherheitsnetz: push auf dev/main, der Wochenlauf, manuelle Starts, Pull
+# Requests gegen main und jede Änderung an .github/ oder an Abhängigkeitsdateien
+# lassen ALLE Jobs laufen.
+#
+# Kein workflow-weiter paths-Filter für Pull Requests: "CI-Ergebnis" muss in
+# jedem Pull Request berichten, damit es später Pflicht-Check werden kann.
 # =============================================================================
 
 name: CI
@@ -12,19 +20,21 @@ on:
     branches:
       - dev
       - main
-    # Reine Doku-Änderungen brauchen keine Test-Suite (keine Pflicht-Checks im Branch-Schutz)
+    # Reine Text-Doku braucht auf dev/main keinen Lauf (push hat keine Pflicht-Checks)
     paths-ignore:
-      - 'docs/**'
       - '**/*.md'
+      - 'docs/examples/**'
+      - 'docs/prozesse/**'
       - 'LICENSES/**'
   pull_request:
     branches:
       - dev
       - main
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'LICENSES/**'
+  # Wöchentlicher Volllauf auf dem Standardzweig: CodeQL auch ohne Änderung (neue Abfragen)
+  # und pip-audit/npm audit gegen neu veröffentlichte Schwachstellen
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,11 +46,229 @@ concurrency:
 
 jobs:
   # ===========================================================================
-  # Code Quality (Linting)
+  # Pfadfilter: welche Bereiche berührt die Änderung?
   # ===========================================================================
-  lint:
-    name: Lint
+  changes:
+    name: Geänderte Bereiche
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read   # Dateiliste des Pull Requests über die API (kein Checkout nötig)
+    outputs:
+      qualitaet: ${{ steps.ergebnis.outputs.qualitaet }}
+      python: ${{ steps.ergebnis.outputs.python }}
+      vertrag: ${{ steps.ergebnis.outputs.vertrag }}
+      templates: ${{ steps.ergebnis.outputs.templates }}
+      frontend: ${{ steps.ergebnis.outputs.frontend }}
+      test: ${{ steps.ergebnis.outputs.test }}
+      smoke: ${{ steps.ergebnis.outputs.smoke }}
+      e2e: ${{ steps.ergebnis.outputs.e2e }}
+      ingestor: ${{ steps.ergebnis.outputs.ingestor }}
+      audit: ${{ steps.ergebnis.outputs.audit }}
+      docker: ${{ steps.ergebnis.outputs.docker }}
+      codeql: ${{ steps.ergebnis.outputs.codeql }}
+    steps:
+      # some-with-excludes: Eine Datei zählt, wenn sie mindestens ein positives Muster trifft und
+      # kein "!"-Muster. Neue Verzeichnisse lösen die Django-Tests deshalb im Zweifel aus.
+      - name: Dateien des Pull Requests zuordnen
+        id: filter
+        if: github.event_name == 'pull_request'
+        # Drittanbieter-Action, die über alle Prüfungen entscheidet: auf den Commit gepinnt statt auf
+        # den verschiebbaren Tag. Dependabot (github-actions) hebt den Pin samt Kommentar an.
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: some-with-excludes
+          filters: |
+            sicherheitsnetz:
+              - '.github/**'
+              - 'pyproject.toml'
+              - 'mandari/pyproject.toml'
+              - 'mandari/requirements.txt'
+              - 'mandari/requirements.lock'
+              - 'mandari/package.json'
+              - 'mandari/package-lock.json'
+              - 'shared/pyproject.toml'
+              - 'ingestor/pyproject.toml'
+              - 'ingestor/uv.lock'
+            qualitaet:
+              - '**'
+              - '!**/*.md'
+            python:
+              - 'mandari/**/*.py'
+              - 'shared/**'
+              - 'scripts/mypy_allowlist.*'
+            vertrag:
+              - 'ingestor/src/**'
+              - 'scripts/check_schema_contract.py'
+            templates:
+              - 'mandari/**/templates/**'
+            frontend:
+              - 'mandari/frontend/**'
+              - 'mandari/static/**'
+              - 'mandari/vite.config.ts'
+              - 'mandari/tsconfig.json'
+              - 'mandari/tailwind.config.js'
+              - 'mandari/biome.json'
+            test:
+              - '**'
+              - '!**/*.md'
+              - '!LICENSES/**'
+              - '!docs/examples/**'
+              - '!docs/prozesse/**'
+              - '!loadtest/**'
+              - '!ingestor/**'
+              - '!mandari/tests_e2e/**'
+              - '!**/Dockerfile'
+              - '!.dockerignore'
+              - '!mandari/docker-entrypoint.sh'
+            smoke:
+              - 'mandari/**'
+              - 'shared/**'
+              - 'scripts/*smoke*'
+              - 'scripts/check_performance_budgets.py'
+              - 'scripts/performance_budgets.json'
+              - '!**/*.md'
+              - '!mandari/**/tests/test_*.py'
+              - '!mandari/tests_e2e/**'
+              - '!mandari/Dockerfile'
+              - '!mandari/docker-entrypoint.sh'
+            e2e:
+              - 'mandari/**/templates/**'
+              - 'mandari/frontend/**'
+              - 'mandari/static/**'
+              - 'mandari/vite.config.ts'
+              - 'mandari/tsconfig.json'
+              - 'mandari/tailwind.config.js'
+              - 'mandari/tests_e2e/**'
+              - 'mandari/conftest.py'
+              - 'mandari/apps/common/tests/factories.py'
+              - 'mandari/apps/work/tests/test_import_text.py'
+              - 'mandari/mandari/**'
+              - 'mandari/apps/common/csp.py'
+              - 'mandari/**/middleware.py'
+              - 'mandari/**/context_processors.py'
+              - 'mandari/**/templatetags/**'
+              - 'mandari/**/consumers.py'
+              - 'mandari/**/routing.py'
+              - 'mandari/apps/accounts/**'
+              - 'mandari/apps/work/motions/**'
+              - 'mandari/apps/common/demo.py'
+              - 'mandari/apps/common/management/commands/setup_demo_*.py'
+              # Views und Kontext der Seiten, die die E2E-Tests aufrufen (Alpine-Fehler in der Konsole,
+              # Drehbuch): Eine fehlende Kontextvariable für x-data fällt nur im Browser auf. Ruft ein
+              # E2E-Test eine neue Seite auf, gehört deren View hierher.
+              - 'mandari/apps/common/mixins.py'
+              - 'mandari/apps/common/views_dev.py'
+              - 'mandari/apps/work/dashboard/views.py'
+              - 'mandari/apps/work/tasks/views/list.py'
+              - 'mandari/apps/work/organization/views/profile.py'
+              - 'mandari/apps/work/faction/views/{_helpers,meetings,settings}.py'
+              - 'mandari/apps/work/meetings/views/{_helpers,prepare}.py'
+              - 'mandari/apps/work/meetings/serializers.py'
+              - 'mandari/apps/session/permissions.py'
+              - 'mandari/apps/session/views/{dashboard,meetings,papers,leitstelle,applications,resolutions,protocols,allowances}.py'
+              - 'mandari/apps/session/api/oparl.py'
+              - 'mandari/insight_core/views/{_helpers,_withdrawn,home,meetings,decisions}.py'
+              - '!**/*.md'
+              - '!mandari/apps/accounts/tests/**'
+              - '!mandari/apps/work/motions/tests/**'
+            ingestor:
+              - 'ingestor/**'
+              - 'shared/**'
+              - '!**/*.md'
+            audit:
+              - 'scripts/check_requirements_lock.py'
+            docker:
+              - 'mandari/Dockerfile'
+              - 'ingestor/Dockerfile'
+              - '.dockerignore'
+              - 'mandari/docker-entrypoint.sh'
+              - 'ingestor/README.md'
+              - 'shared/**'
+              - 'mandari/frontend/**'
+              - 'mandari/static/**'
+              - 'mandari/vite.config.ts'
+              - 'mandari/tsconfig.json'
+              - 'mandari/tailwind.config.js'
+            codeql_python:
+              - '**/*.py'
+            codeql_js:
+              - '**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx,html,htm,vue}'
+              - 'mandari/tsconfig.json'
+
+      - name: Ergebnis festlegen (Sicherheitsnetz, CodeQL-Sprachen)
+        id: ergebnis
+        env:
+          EREIGNIS: ${{ github.event_name }}
+          ZIELZWEIG: ${{ github.base_ref }}
+          FILTER: ${{ toJSON(steps.filter.outputs) }}
+          # Schalter für den Wechsel vom CodeQL-Default-Setup auf diesen Workflow (siehe Job "codeql")
+          CODEQL_ERWEITERT: ${{ vars.CODEQL_ERWEITERT }}
+        # Fehlerfest: Jeder Wert muss "true" oder "false" sein. Ein leerer Wert würde Jobs still
+        # überspringen und das Sammel-Ergebnis trotzdem grün lassen – daher lieber hier abbrechen.
+        run: |
+          set -euo pipefail
+          wert() {
+            local w
+            w=$(jq -r --arg b "$1" '.[$b] // "false"' <<<"$FILTER")
+            case "$w" in
+              true|false) echo "$w" ;;
+              *) echo "::error::Unerwarteter Filterwert für $1: '$w'" >&2; return 1 ;;
+            esac
+          }
+
+          alle=false
+          grund="Pfadfilter"
+          netz=$(wert sicherheitsnetz)
+          if [ "$EREIGNIS" != "pull_request" ]; then
+            alle=true; grund="Ereignis $EREIGNIS"
+          elif [ "$ZIELZWEIG" = "main" ]; then
+            alle=true; grund="Pull Request gegen main"
+          elif [ "$netz" = "true" ]; then
+            alle=true; grund=".github/ oder Abhängigkeitsdateien geändert"
+          fi
+
+          {
+            echo "### Geänderte Bereiche ($grund)"
+            echo "| Bereich | Job läuft |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          ergebnis() { if [ "$alle" = "true" ]; then echo true; else wert "$1"; fi; }
+          for bereich in qualitaet python vertrag templates frontend test smoke e2e ingestor audit docker; do
+            e=$(ergebnis "$bereich")
+            echo "$bereich=$e" >> "$GITHUB_OUTPUT"
+            echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          if [ "${CODEQL_ERWEITERT:-}" = "true" ]; then
+            py=$(ergebnis codeql_python)
+            js=$(ergebnis codeql_js)
+            # actions nur im Sicherheitsnetz: Workflow-Änderungen liegen unter .github/
+            sprachen=$(jq -nc --argjson alle "$alle" --argjson py "$py" --argjson js "$js" \
+              '[if $alle then "actions" else empty end,
+                if $js then "javascript-typescript" else empty end,
+                if $py then "python" else empty end]')
+          else
+            sprachen='[]'
+            echo "::notice::CodeQL läuft noch über das Default-Setup von GitHub (Variable CODEQL_ERWEITERT nicht gesetzt)."
+          fi
+          echo "codeql=$sprachen" >> "$GITHUB_OUTPUT"
+          echo "| CodeQL-Sprachen | \`$sprachen\` |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ===========================================================================
+  # Qualität: Lint, Typprüfung und Frontend-Gates in einem Job
+  # ===========================================================================
+  # Früher drei Jobs (Lint ~10 s, Typprüfung ~1,5 min, Frontend-Gates ~45 s); zusammen bleiben
+  # sie weit unter der Laufzeit von "Test" (~8–10 min), der Lauf wird also nicht länger.
+  # Die Prüfschritte laufen mit !cancelled() auch nach einem roten Schritt weiter, damit wie
+  # früher alle Befunde auf einmal sichtbar sind.
+  qualitaet:
+    name: Qualität (Lint, Typprüfung, Frontend-Gates)
+    needs: changes
+    if: needs.changes.outputs.qualitaet == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -52,42 +280,147 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
+      # --- Lint und schnelle Prüfskripte (immer, wenige Sekunden) ---------------
       - name: Install linters
         run: pip install ruff==0.14.6
 
       - name: Run Ruff linter
+        if: ${{ !cancelled() }}
         working-directory: mandari
         run: ruff check .
 
       - name: Run Ruff formatter check
+        if: ${{ !cancelled() }}
         working-directory: mandari
         run: ruff format --check .
 
       - name: Template-Kommentare prüfen (kein mehrzeiliges {# … #})
+        if: ${{ !cancelled() }}
         run: python scripts/check_template_comments.py mandari/templates
 
       # Django verwirft Bloecke, die keine Vorlage der Kette definiert, stillschweigend; das Skript
       # darin kommt nie im Browser an (Dokument-Import, Aufgabe anlegen: 09/2026).
       - name: Template-Bloecke und Alpine-Komponenten vollstaendig
+        if: ${{ !cancelled() }}
         run: |
           python scripts/check_template_blocks.py
           python scripts/check_alpine_components.py
 
       - name: Upload-Stellen mit gemeinsamer Pruefung (Issue 260)
+        if: ${{ !cancelled() }}
         run: python scripts/check_upload_validation.py
 
       # Drei Stellen nannten frueher drei verschiedene Versionen. Im Advisory
       # steht dann eine Commit-Kennung statt einer Version (Release v0.10.0).
       - name: Versionsangaben stimmen ueberein
+        if: ${{ !cancelled() }}
         run: python scripts/check_version_consistency.py
+
       - name: Jedes Smoke-Skript laeuft in der CI
+        if: ${{ !cancelled() }}
         run: python scripts/check_smoke_in_ci.py
+
+      - name: Ratchet (Inline-Skripte/-Styles, Template-Größe dürfen nicht zunehmen)
+        if: ${{ !cancelled() }}
+        run: python scripts/check_frontend_ratchet.py
+
+      - name: Service-Layer-Ratchet (ORM-Zugriffe und lange Funktionen in Views dürfen nicht zunehmen, #160)
+        if: ${{ !cancelled() }}
+        run: python scripts/check_view_orm_ratio.py
+
+      - name: REUSE-Lizenzkonformität (zunächst informativ, ab 2027 blockierend)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          pip install reuse
+          reuse lint
+
+      # --- Templates -------------------------------------------------------------
+      - name: djlint (Template-Linting, Profil Django)
+        if: ${{ !cancelled() && needs.changes.outputs.templates == 'true' }}
+        run: |
+          pip install djlint==1.46.1
+          cd mandari && djlint templates --lint
+
+      # --- Python: Typprüfung und Schema-Contract ---------------------------------
+      - name: Python-Abhängigkeiten (Django, mypy, SQLAlchemy)
+        id: pydeps
+        if: ${{ !cancelled() && (needs.changes.outputs.python == 'true' || needs.changes.outputs.vertrag == 'true') }}
+        run: |
+          pip install shared/
+          pip install -r mandari/requirements.lock
+          # Versionen wie in pyproject [dev] – mypy-Ergebnisse unterscheiden sich zwischen Versionen
+          pip install "mypy==2.3.1" "django-stubs[compatible-mypy]==6.1.1" "sqlalchemy>=2.0"
+          # Test-Abhängigkeiten, damit Fixtures/Decorator in Testmodulen typisiert sind (sonst "untyped decorator")
+          pip install pytest pytest-django factory-boy pytest-playwright
+
+      - name: mypy mit Allowlist (darf nur schrumpfen)
+        if: ${{ !cancelled() && steps.pydeps.outcome == 'success' && needs.changes.outputs.python == 'true' }}
+        env:
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+        run: python scripts/mypy_allowlist.py
+
+      # Früher im Job "Test"; hier läuft er auch bei reinen Ingestor-Änderungen, ohne die ganze
+      # Django-Testsuite zu starten.
+      - name: Schema-Contract Django ↔ Ingestor (docs/adr/20260909-schema-contract-django-ingestor.md)
+        if: ${{ !cancelled() && steps.pydeps.outcome == 'success' }}
+        env:
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+        run: python scripts/check_schema_contract.py
+
+      # Die Django-Tests zum Contract lesen den Quellbaum des Ingestors; bei Django-Änderungen
+      # laufen sie ohnehin im Job "Test".
+      - name: Django-Tests zum Ingestor-Contract (bei Ingestor-Änderungen)
+        if: ${{ !cancelled() && steps.pydeps.outcome == 'success' && needs.changes.outputs.vertrag == 'true' }}
+        env:
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+        run: cd mandari && pytest insight_core/tests/test_schema_contract.py -q -p no:cacheprovider
+
+      # --- Frontend: TypeScript, Biome, Vite ---------------------------------------
+      - uses: actions/setup-node@v7
+        if: ${{ !cancelled() && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.templates == 'true') }}
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: mandari/package-lock.json
+
+      - name: npm ci
+        id: npm
+        if: ${{ !cancelled() && needs.changes.outputs.frontend == 'true' }}
+        run: cd mandari && npm ci --ignore-scripts
+
+      - name: TypeScript (tsc --noEmit)
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: cd mandari && npm run typecheck
+
+      - name: Biome (Lint + Format)
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: cd mandari && npm run lint
+
+      - name: Frontend-Unit-Tests (Navigations-Helfer)
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: cd mandari && npm run test:navigation
+
+      # JS-Vorlagen (z. B. der Service Worker) werden von Django gerendert; Template-Tags nur in
+      # Kommentaren oder Strings, sonst kann CodeQL die Datei nicht analysieren.
+      - name: JS-Vorlagen sind gültiges JavaScript
+        if: ${{ !cancelled() && needs.changes.outputs.templates == 'true' }}
+        run: |
+          for f in $(git ls-files 'mandari/templates/*.js' 'mandari/templates/**/*.js'); do node --check "$f"; done
+
+      - name: Vite-Build (Manifest muss entstehen)
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: |
+          cd mandari && npx vite build
+          test -f static/dist/manifest.json
 
   # ===========================================================================
   # Django System Checks & Tests
   # ===========================================================================
   test:
     name: Test
+    needs: changes
+    if: needs.changes.outputs.test == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -195,17 +528,13 @@ jobs:
           # Datei bleiben auf einem Worker. --durations zeigt die langsamsten Tests für gezielte Arbeit.
           pytest -n auto --dist loadfile -q -rfE --durations=25 --cov=apps --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38 --ignore=tests_e2e
 
-      - name: Schema-Contract Django ↔ Ingestor (docs/adr/20260909-schema-contract-django-ingestor.md)
-        env:
-          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-        run: python scripts/check_schema_contract.py
-
-
   # ===========================================================================
   # Smoke-Tests: eigener Job, läuft parallel zu pytest
   # ===========================================================================
   smoke:
     name: Smoke-Tests
+    needs: changes
+    if: needs.changes.outputs.smoke == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -334,10 +663,14 @@ jobs:
           scripts/smoke_insight_calendar.py
 
   # ===========================================================================
-  # Docker Build Validation
+  # Abhängigkeiten: bekannte Schwachstellen, Lockfile-Abgleich
   # ===========================================================================
+  # Läuft bei geänderten Abhängigkeitsdateien (Sicherheitsnetz), bei jedem push auf dev/main
+  # und im Wochenlauf – dort fallen neu veröffentlichte Schwachstellen ohne Codeänderung auf.
   dependency-audit:
     name: Abhängigkeiten prüfen (pip-audit, npm audit)
+    needs: changes
+    if: needs.changes.outputs.audit == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -369,36 +702,11 @@ jobs:
           cd mandari
           npm audit || true
           npm audit --audit-level=high
-      - name: REUSE-Lizenzkonformität (zunächst informativ, ab 2027 blockierend)
-        continue-on-error: true
-        run: |
-          pip install reuse
-          reuse lint
-
-  type-check:
-    name: Typprüfung (mypy, Allowlist darf nur schrumpfen)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-          cache: 'pip'
-      - name: Abhängigkeiten
-        run: |
-          pip install shared/
-          pip install -r mandari/requirements.lock
-          # Versionen wie in pyproject [dev] – mypy-Ergebnisse unterscheiden sich zwischen Versionen
-          pip install "mypy==2.3.1" "django-stubs[compatible-mypy]==6.1.1" "sqlalchemy>=2.0"
-          # Test-Abhängigkeiten, damit Fixtures/Decorator in Testmodulen typisiert sind (sonst "untyped decorator")
-          pip install pytest pytest-django factory-boy pytest-playwright
-      - name: mypy mit Allowlist
-        env:
-          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-        run: python scripts/mypy_allowlist.py
 
   ingestor-tests:
     name: Ingestor Tests
+    needs: changes
+    if: needs.changes.outputs.ingestor == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -413,47 +721,10 @@ jobs:
         # Informativ, bis die Allowlist steht (Issue zu mypy im Epic Code-Qualität)
         run: cd ingestor && uv run mypy src --ignore-missing-imports || true
 
-  frontend-gates:
-    name: Frontend-Qualitätsgates
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-      - name: Ratchet (Inline-Skripte/-Styles, Template-Größe dürfen nicht zunehmen)
-        run: python scripts/check_frontend_ratchet.py
-      - name: Service-Layer-Ratchet (ORM-Zugriffe und lange Funktionen in Views dürfen nicht zunehmen, #160)
-        run: python scripts/check_view_orm_ratio.py
-      - name: djlint (Template-Linting, Profil Django)
-        run: |
-          pip install djlint==1.46.1
-          cd mandari && djlint templates --lint
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '26'
-          cache: npm
-          cache-dependency-path: mandari/package-lock.json
-      - name: npm ci
-        run: cd mandari && npm ci --ignore-scripts
-      - name: TypeScript (tsc --noEmit)
-        run: cd mandari && npm run typecheck
-      - name: Biome (Lint + Format)
-        run: cd mandari && npm run lint
-      - name: Frontend-Unit-Tests (Navigations-Helfer)
-        run: cd mandari && npm run test:navigation
-      # JS-Vorlagen (z. B. der Service Worker) werden von Django gerendert; Template-Tags nur in
-      # Kommentaren oder Strings, sonst kann CodeQL die Datei nicht analysieren.
-      - name: JS-Vorlagen sind gültiges JavaScript
-        run: |
-          for f in $(git ls-files 'mandari/templates/*.js' 'mandari/templates/**/*.js'); do node --check "$f"; done
-      - name: Vite-Build (Manifest muss entstehen)
-        run: |
-          cd mandari && npx vite build
-          test -f static/dist/manifest.json
-
   e2e:
     name: E2E (Playwright, axe-core, Screenshots)
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -490,8 +761,13 @@ jobs:
           path: mandari/tests_e2e/screenshots/
           if-no-files-found: ignore
 
+  # ===========================================================================
+  # Docker Build Validation
+  # ===========================================================================
   docker-build:
     name: Docker Build
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -518,3 +794,84 @@ jobs:
           push: false
           cache-from: type=gha,scope=ingestor
           cache-to: type=gha,scope=ingestor,mode=max
+
+  # ===========================================================================
+  # CodeQL (erweitertes Setup, nur für die betroffenen Sprachen)
+  # ===========================================================================
+  # Ersetzt das Default-Setup von GitHub, das jede Sprache in jedem Pull Request analysiert.
+  # Solange das Default-Setup aktiv ist, lehnt GitHub Uploads dieses Jobs ab; deshalb bleibt er
+  # aus, bis die Repository-Variable CODEQL_ERWEITERT auf "true" steht. Umstellung: erst das
+  # Default-Setup abschalten, dann die Variable setzen. Kategorien wie beim Default-Setup
+  # (/language:<sprache>), damit bestehende Meldungen weitergeführt werden.
+  codeql:
+    # GitHub hängt die Sprache aus der Matrix selbst an ("CodeQL-Analyse (python)"); ein Ausdruck im
+    # Namen bliebe beim übersprungenen Job unaufgelöst stehen. Nicht "CodeQL" allein: So heißt schon
+    # der Ergebnis-Check von Code Scanning.
+    name: CodeQL-Analyse
+    needs: changes
+    if: needs.changes.outputs.codeql != '[]' && needs.changes.outputs.codeql != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.changes.outputs.codeql) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: CodeQL initialisieren
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - name: CodeQL-Analyse
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+
+  # ===========================================================================
+  # Sammel-Ergebnis: läuft immer, geeignet als einziger Pflicht-Check
+  # ===========================================================================
+  # Übersprungene Jobs (Bereich nicht betroffen) gelten als bestanden; ein fehlgeschlagener oder
+  # abgebrochener Job lässt das Ergebnis scheitern. Neue Jobs hier unter needs eintragen.
+  ci-ergebnis:
+    name: CI-Ergebnis
+    if: always()
+    needs:
+      - changes
+      - qualitaet
+      - test
+      - smoke
+      - e2e
+      - ingestor-tests
+      - dependency-audit
+      - docker-build
+      - codeql
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Alle benötigten Jobs bestanden oder bewusst übersprungen
+        env:
+          ERGEBNISSE: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### CI-Ergebnis"
+            echo "| Job | Ergebnis |"
+            echo "|---|---|"
+            jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"' <<<"$ERGEBNISSE"
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$ERGEBNISSE"
+          if [ "$(jq -r '.changes.result' <<<"$ERGEBNISSE")" != "success" ]; then
+            echo "::error::Die Zuordnung der geänderten Dateien ist fehlgeschlagen."
+            exit 1
+          fi
+          if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<<"$ERGEBNISSE" >/dev/null; then
+            echo "::error::Mindestens ein Job ist fehlgeschlagen oder wurde abgebrochen."
+            exit 1
+          fi
+          echo "Alle benötigten Jobs bestanden oder waren für diese Änderung nicht nötig."

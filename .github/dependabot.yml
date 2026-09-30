@@ -3,6 +3,23 @@
 # Zielzweig ist überall `dev`: Dort wird entwickelt, `main` ist nur der
 # Freigabe-Zeiger und wird per Fast-Forward nachgezogen. PRs gegen `main`
 # würden die beiden Zweige auseinanderlaufen lassen.
+#
+# CI-Last (Issue #621): Jeder Dependabot-PR ändert Abhängigkeitsdateien und
+# startet damit die volle CI. Deshalb kommt je Ökosystem höchstens ein
+# gebündelter PR pro Woche (Actions und Docker: pro Monat), verteilt auf
+# verschiedene Wochentage. Sicherheitsupdates kommen weiterhin sofort, aber
+# ebenfalls je Ökosystem gebündelt.
+#
+# pip (/mandari): requirements.txt nennt nur Untergrenzen (>=). Für solche
+# Einträge kennt Dependabot keine installierte Version und kann den Update-Typ
+# (major/minor/patch) nicht bestimmen; eine Gruppe mit `update-types` lehnt sie
+# ab, und jede Abhängigkeit kam als eigener PR (28.09.2026: zwölf Einzel-PRs).
+# Die pip-Gruppen haben deshalb keine `update-types`. Django, Wagtail und ihre
+# Erweiterungen (django-*, wagtail-*) kommen in einem eigenen PR; Dependabot
+# ordnet ein Paket der ersten passenden Gruppe zu. Ein Major-Sprung, der
+# Nacharbeit braucht, hält so nicht alle übrigen Updates der Woche auf.
+# requirements.lock aktualisiert Dependabot nicht; im PR neu erzeugen:
+#   cd mandari && uv pip compile requirements.txt -o requirements.lock --python-version 3.12
 version: 2
 updates:
   - package-ecosystem: pip
@@ -11,45 +28,72 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: "05:00"
+      timezone: Europe/Berlin
     groups:
       django:
         patterns: ["django*", "wagtail*"]
-      minor-and-patch:
-        update-types: [minor, patch]
-    open-pull-requests-limit: 10
+      python:
+        patterns: ["*"]
+      python-sicherheit:
+        applies-to: security-updates
+        patterns: ["*"]
     labels: [dependencies]
   - package-ecosystem: uv
     target-branch: dev
     directory: /ingestor
     schedule:
       interval: weekly
-      day: monday
+      day: tuesday
+      time: "05:00"
+      timezone: Europe/Berlin
+    groups:
+      ingestor-minor-und-patch:
+        update-types: [minor, patch]
+      ingestor-sicherheit:
+        applies-to: security-updates
+        patterns: ["*"]
     labels: [dependencies, app:ingestor]
   - package-ecosystem: npm
     target-branch: dev
     directory: /mandari
     schedule:
       interval: weekly
-      day: monday
+      day: wednesday
+      time: "05:00"
+      timezone: Europe/Berlin
     groups:
-      tiptap:
+      npm-minor-und-patch:
+        update-types: [minor, patch]
+      # TipTap und Yjs nur gemeinsam anheben; ihre minor/patch-Updates stecken
+      # schon in npm-minor-und-patch, hier landen nur die Major-Sprünge.
+      tiptap-major:
         patterns: ["@tiptap/*", "y-*", "yjs"]
+        update-types: [major]
+      npm-sicherheit:
+        applies-to: security-updates
+        patterns: ["*"]
     labels: [dependencies]
   - package-ecosystem: github-actions
     target-branch: dev
     directory: /
     schedule:
       interval: monthly
+    # Actions sind auf Major-Tags gepinnt, Updates sind also fast immer Majors
+    groups:
+      actions:
+        patterns: ["*"]
     labels: [dependencies]
+  # Beide Images bauen auf demselben Python-Basis-Image auf und wandern gemeinsam
+  # (ein PR für beide Verzeichnisse, deshalb auch das Label app:ingestor)
   - package-ecosystem: docker
     target-branch: dev
-    directory: /mandari
+    directories:
+      - /mandari
+      - /ingestor
     schedule:
       interval: monthly
-    labels: [dependencies]
-  - package-ecosystem: docker
-    target-branch: dev
-    directory: /ingestor
-    schedule:
-      interval: monthly
+    groups:
+      docker:
+        patterns: ["*"]
     labels: [dependencies, app:ingestor]
