@@ -31,6 +31,7 @@ from django.core.paginator import Paginator
 from django.db.models import Prefetch
 from django.db.models.functions import Coalesce
 
+from hub.ris import selectors as ris
 from insight_core import publication
 from insight_core.models import (
     OParlAgendaItem,
@@ -320,7 +321,7 @@ def _meeting_location_response(pk):
     (``serializers.serialize_meeting_location``). Entfällt die Ortsangabe oder die Sitzung, bleibt die
     Adresse als gekürztes Objekt mit ``"deleted": true`` abrufbar (OParl 1.1 §2.8).
     """
-    meeting = OParlMeeting.objects.filter(pk=pk).first()
+    meeting = ris.meeting_by_id(pk)
     if meeting is None:
         return error_response(404, f"{obj_url('location', pk)} nicht gefunden.")
     if not meeting.deleted and publication.states():

@@ -239,9 +239,9 @@ def _location_queryset(body_ids: list[Any]) -> Any:
     und legen kein eigenes Objekt an. Steht trotzdem eines im Bestand (älterer Stand des Ingestors), wird
     es mit zurückgenommen. ``restore_source`` holt es nicht zurück: Der Ort kommt mit der Sitzung wieder.
     """
-    from insight_core.models import OParlLocation
+    from hub.ris import selectors as ris
 
-    return OParlLocation.objects.filter(body__in=body_ids)
+    return ris.locations(body_ids)
 
 
 def retract_source(tenant: Any) -> PortalChange:
