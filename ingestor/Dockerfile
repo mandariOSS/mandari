@@ -14,17 +14,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install uv for faster package management
 RUN pip install --no-cache-dir uv
 
-# Install shared package first (mandari-oparl)
-COPY shared/ /tmp/shared/
-RUN uv pip install --system /tmp/shared/
-
 # Copy only dependency files (for caching)
-COPY ingestor/pyproject.toml ingestor/README.md ./
+COPY ingestor/pyproject.toml ingestor/uv.lock ingestor/README.md ./
 
-# Install dependencies (without editable mode for faster install)
-# --no-sources: [tool.uv.sources] (lokales ../shared für uv lock) hier ignorieren,
-# das Shared-Paket ist bereits aus /tmp/shared installiert
-RUN uv pip install --system --no-sources .
+# Abhängigkeiten reproduzierbar aus dem Lockfile – dieselben Versionen, die die CI testet
+# (uv sync --frozen). Früher löste `uv pip install .` die Untergrenzen aus pyproject.toml
+# bei jedem Build gegen den neuesten PyPI-Stand auf; so kam SQLAlchemy 2.1 ohne greenlet
+# ins Image und der Ingestor startete nicht mehr (#636).
+# mandari-oparl stammt aus ../shared ([tool.uv.sources]) und wird unten direkt installiert.
+RUN uv export --frozen --no-emit-project --no-emit-package mandari-oparl --no-hashes \
+        -o /tmp/requirements.txt \
+    && uv pip install --system -r /tmp/requirements.txt
+
+# Shared-Paket (mandari-oparl) und den Ingestor selbst ohne erneute Auflösung installieren;
+# --no-sources: [tool.uv.sources] (lokales ../shared für uv lock) hier ignorieren
+COPY shared/ /tmp/shared/
+RUN uv pip install --system --no-deps /tmp/shared/ \
+    && uv pip install --system --no-deps --no-sources .
 
 # --- Final stage ---
 FROM python:3.14-slim
@@ -46,6 +52,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy application code
 COPY ingestor/src/ src/
+
+# Nur startfähige Images veröffentlichen: fehlt eine Laufzeitabhängigkeit, bricht der Build hier ab
+RUN python -c "import src.main"
 
 # Create data directory and non-root user
 RUN mkdir -p /app/data && \
