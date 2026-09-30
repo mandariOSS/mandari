@@ -74,6 +74,8 @@ class Eligibility:
     remote_excluded: list[SessionAttendance] = field(default_factory=list)
     #: Regel des Landesprofils für Zugeschaltete bei dieser Abstimmung (nur mit TOP)
     remote_rule: Any = None
+    #: alle Zeilen der Anwesenheitsliste (für die Beschlussfähigkeit ohne erneutes Laden)
+    attendances: list[SessionAttendance] = field(default_factory=list)
     #: Anwesenheit vollständig erfasst (Besetzung bekannt, alle Stimmberechtigten mit Status)
     complete: bool = False
     has_list: bool = False
@@ -114,16 +116,16 @@ def eligibility(
     from . import attendance_service
 
     attendances = list(
-        meeting.attendances.select_related("person")
-        .prefetch_related("disruptions")
-        .order_by("person__family_name", "person__given_name")
+        participation_service.with_disruptions(meeting.attendances.select_related("person"), meeting).order_by(
+            "person__family_name", "person__given_name"
+        )
     )
     rule = (
         participation_service.remote_vote_rule(meeting, item, voting_method=voting_method, is_election=is_election)
         if item is not None
         else None
     )
-    result = Eligibility(has_list=bool(attendances), remote_rule=rule)
+    result = Eligibility(has_list=bool(attendances), remote_rule=rule, attendances=attendances)
     for attendance in attendances:
         if can_vote(attendance) and participation_service.is_disrupted(attendance):
             result.unreachable.append(attendance)

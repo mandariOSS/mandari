@@ -310,7 +310,9 @@ def participant_directory(meeting: SessionMeeting) -> dict:
     from apps.session.services import participation_service
 
     attendances = list(
-        meeting.attendances.select_related("person").prefetch_related("disruptions").order_by("person__family_name")
+        participation_service.with_disruptions(meeting.attendances.select_related("person"), meeting).order_by(
+            "person__family_name"
+        )
     )
     present = [a for a in attendances if a.status in PARTICIPATED_STATUSES]
     show_mode = participation_service.show_mode(meeting, attendances)

@@ -52,6 +52,15 @@ def now() -> time:
     return timezone.localtime().time().replace(second=0, microsecond=0)
 
 
+def with_disruptions(queryset: Any, meeting: Any) -> Any:
+    """
+    Störungsvermerke vorab laden – nur in hybriden und digitalen Sitzungen, in denen es Zugeschaltete gibt.
+
+    In Präsenzsitzungen spart das die Abfrage; Vor-Ort-Zeilen lesen ihre Störungen nie.
+    """
+    return queryset.prefetch_related("disruptions") if remote_allowed(meeting) else queryset
+
+
 def disruptions(attendance: Any) -> list[Any]:
     """Störungsvermerke einer Anwesenheit (nutzt vorab geladene Vermerke)."""
     return list(attendance.disruptions.all()) if attendance.pk else []

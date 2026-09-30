@@ -99,7 +99,7 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                 "remote_rule": assessed.remote_rule,
                 "secret_hint": secret_rule.message if secret_rule else "",
                 "election_hint": election_rule.message if election_rule else "",
-                "item_quorum": attendance_service.quorum_status(item.meeting, item),
+                "item_quorum": attendance_service.quorum_status(item.meeting, item, attendances=assessed.attendances),
                 "stray_votes": [a for a in assessed.advisory + assessed.others + not_voting if a.current_vote],
                 "attendance_complete": assessed.complete,
                 "locked": protocol is not None and protocol.is_locked,

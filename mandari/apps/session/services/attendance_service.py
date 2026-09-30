@@ -125,7 +125,9 @@ def quorum_status(meeting: SessionMeeting, item: Any = None, *, attendances: lis
     from apps.common.quorum import quorum_status as common_quorum_status
 
     if attendances is None:
-        attendances = list(meeting.attendances.select_related("person").prefetch_related("disruptions"))
+        attendances = list(
+            participation_service.with_disruptions(meeting.attendances.select_related("person"), meeting)
+        )
     from apps.session.services.voting_service import NON_VOTING_ROLES
 
     rule = participation_service.remote_vote_rule(meeting, item) if item is not None else None
@@ -165,7 +167,9 @@ def attendance_panel(meeting: SessionMeeting) -> dict[str, Any]:
     zur Teilnahmeart (Issue #139). Lädt Personen und Störungsvermerke in je einer Abfrage.
     """
     attendances = list(
-        meeting.attendances.select_related("person").prefetch_related("disruptions").order_by("person__family_name")
+        participation_service.with_disruptions(meeting.attendances.select_related("person"), meeting).order_by(
+            "person__family_name"
+        )
     )
     show_mode = participation_service.show_mode(meeting, attendances)
     for attendance in attendances:

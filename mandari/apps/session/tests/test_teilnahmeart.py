@@ -25,6 +25,7 @@ from apps.session.models import (
 )
 from apps.session.services import (
     attendance_service,
+    meeting_format_service,
     participation_service,
     privacy_service,
     protocol_publication,
@@ -39,6 +40,8 @@ HYBRID = SessionMeeting.FORMAT_HYBRID
 
 
 def _hybrid(w: Welt, profil: str = "NI") -> Welt:
+    # Landesprofile aus der Datei: Tests mit transaction=True leeren die Tabelle der Datenmigration
+    meeting_format_service.sync_profiles()
     w.tenant.state_profile = SessionStateProfile.objects.get(code=profil)
     w.tenant.save(update_fields=["state_profile"])
     SessionMeeting.objects.filter(pk=w.sitzung.pk).update(format=HYBRID)
@@ -59,15 +62,13 @@ def _zuschalten(w: Welt, name: str = "Buche", *, von: time | None = None, bis: t
 
 
 def _verwaltung(w: Welt) -> Any:
-    return client(
-        nutzer(w.tenant, "sitzungsdienst", "view_meetings", "manage_attendance", "view_non_public_meetings")
-    )
+    return client(nutzer(w.tenant, "sitzungsdienst", "view_meetings", "manage_attendance", "view_non_public_meetings"))
 
 
 def _seite(w: Welt, c: Any) -> str:
     antwort = c.get(f"{base(w)}/meetings/{w.sitzung.pk}/")
     assert antwort.status_code == 200
-    return antwort.content.decode()
+    return str(antwort.content.decode())
 
 
 # =============================================================================
