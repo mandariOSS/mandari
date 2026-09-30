@@ -100,6 +100,6 @@ def service_worker(request):
 @require_GET
 def offline(request):
     """Offline-Fallback-Seite (wird vom Service Worker vorgecacht)."""
-    response = render(request, "pages/offline.html")
+    response = render(request, "pwa/offline.html")
     response["Cache-Control"] = "no-cache"
     return response

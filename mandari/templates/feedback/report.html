@@ -14,7 +14,7 @@
 {% endfor %}
 {% endif %}
 
-<form method="post" class="space-y-4" id="report-form">
+<form method="post" class="space-y-4" id="report-form" data-browser-info="#id_browser_info">
     {% csrf_token %}
     <input type="hidden" name="url" value="{{ page_url }}">
     <input type="hidden" name="browser_info" id="id_browser_info">
@@ -71,7 +71,7 @@
             <span class="flex items-center gap-2"><i data-lucide="monitor" class="w-4 h-4"></i> Technische Angaben (werden mitgesendet)</span>
             <i data-lucide="chevron-down" class="w-4 h-4 transition-transform" :class="open && 'rotate-180'"></i>
         </button>
-        <pre x-show="open" x-cloak id="browser-info-preview"
+        <pre x-show="open" x-cloak id="browser-info-preview" data-browser-info-preview
              class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap border-t border-gray-100 dark:border-gray-700"></pre>
     </div>
 
@@ -81,24 +81,6 @@
     </button>
 </form>
 
-<script nonce="{{ csp_nonce }}">
-(function () {
-    // Browser-/Umgebungsinformationen für die Fehlersuche einsammeln
-    var info = [
-        "Browser: " + navigator.userAgent,
-        "Sprache: " + (navigator.language || "-"),
-        "Plattform: " + (navigator.platform || "-"),
-        "Bildschirm: " + screen.width + "x" + screen.height + " (Fenster " + window.innerWidth + "x" + window.innerHeight + ")",
-        "Zeitzone: " + (Intl.DateTimeFormat().resolvedOptions().timeZone || "-"),
-        "Cookies aktiv: " + navigator.cookieEnabled,
-        "Seite: " + (document.querySelector("input[name='url']").value || document.referrer || "-"),
-        "Gemeldet am: " + new Date().toISOString(),
-    ].join("\n");
-    document.getElementById("id_browser_info").value = info;
-    var preview = document.getElementById("browser-info-preview");
-    if (preview) preview.textContent = info;
-})();
-</script>
 {% endblock %}
 
 {% block footer_content %}

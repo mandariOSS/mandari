@@ -8,8 +8,9 @@
 {% endblock %}
 
 {% block work_content %}
+{{ template_options|json_script:"motion-template-options" }}
 <div class="max-w-2xl mx-auto">
-    <form method="post" class="space-y-6" x-data="createMotion()">
+    <form method="post" class="space-y-6" x-data="createMotion" data-default-type="{{ default_document_type }}">
         {% csrf_token %}
         {% if current_folder %}
         <!-- Ordner-Ablage: Dokument landet im aktuell gewählten Ordner -->
@@ -180,57 +181,4 @@
     </form>
 </div>
 
-<script nonce="{{ csp_nonce }}">
-function createMotion() {
-    const allTemplates = [
-        {% for template in templates %}
-        {
-            id: '{{ template.id }}',
-            name: '{{ template.name|escapejs }}',
-            description: '{{ template.description|escapejs }}',
-            type_name: {% if template.motion_type %}'{{ template.motion_type.name|escapejs }}'{% else %}null{% endif %},
-            letterhead_name: {% if template.letterhead %}'{{ template.letterhead.name|escapejs }}'{% else %}null{% endif %},
-            motion_type_id: {% if template.motion_type %}'{{ template.motion_type.id }}'{% else %}null{% endif %},
-            is_default: {{ template.is_default|yesno:"true,false" }}
-        }{% if not forloop.last %},{% endif %}
-        {% endfor %}
-    ];
-
-    return {
-        documentType: '{% for type in document_types %}{% if type.is_default %}{{ type.id }}{% endif %}{% endfor %}',
-        legacyType: 'motion',
-        title: '',
-        selectedTemplate: '',
-        allTemplates: allTemplates,
-
-        get filteredTemplates() {
-            if (!this.documentType) {
-                return this.allTemplates;
-            }
-            return this.allTemplates.filter(tpl =>
-                !tpl.motion_type_id || tpl.motion_type_id === this.documentType
-            );
-        },
-
-        get selectedTemplateInfo() {
-            return this.allTemplates.find(tpl => tpl.id === this.selectedTemplate) || null;
-        },
-
-        filterTemplates() {
-            // Reset template selection when document type changes
-            const filtered = this.filteredTemplates;
-            const defaultTpl = filtered.find(t => t.is_default);
-            this.selectedTemplate = defaultTpl ? defaultTpl.id : '';
-        },
-
-        init() {
-            // Set initial template if there's a default
-            const defaultTpl = this.filteredTemplates.find(t => t.is_default);
-            if (defaultTpl) {
-                this.selectedTemplate = defaultTpl.id;
-            }
-        }
-    }
-}
-</script>
 {% endblock %}

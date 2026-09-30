@@ -113,7 +113,7 @@
     {# Alle Ratsfraktionen (Inline-Bearbeitung)                            #}
     {# ================================================================== #}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
-         x-data="partyManager()">
+         x-data="partyManager">
 
         <div class="flex items-center justify-between mb-4">
             <div>
@@ -291,13 +291,4 @@
         {% endif %}
     </div>
 </div>
-
-<script nonce="{{ csp_nonce }}">
-function partyManager() {
-    return {
-        showAdd: false,
-        editing: null,
-    }
-}
-</script>
 {% endblock %}

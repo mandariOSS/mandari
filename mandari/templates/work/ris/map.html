@@ -17,7 +17,7 @@
 {% block work_extra_head %}
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
 <script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
-<style>
+<style nonce="{{ csp_nonce }}">
     #map {
         height: calc(100vh - 260px);
         min-height: 400px;

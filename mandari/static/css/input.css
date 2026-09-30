@@ -55,3 +55,57 @@
     scroll-snap-align: center;
   }
 }
+
+/* ---- Aus Seiten-Templates ausgelagert (#172: keine Inline-Styles in Seiten) ------------------ */
+
+/* Kommunenauswahl (templates/pages/portal/select_body.html): ruhiger Indigo-Schein hinter dem Hero */
+.select-hero-glow {
+  position: absolute;
+  inset: -120px 0 auto 0;
+  height: 380px;
+  pointer-events: none;
+  background:
+    radial-gradient(420px 220px at 50% 20%, rgba(79, 70, 229, 0.1), transparent 70%),
+    radial-gradient(680px 300px at 50% 0%, rgba(79, 70, 229, 0.05), transparent 75%);
+}
+.dark .select-hero-glow {
+  background:
+    radial-gradient(420px 220px at 50% 20%, rgba(129, 140, 248, 0.12), transparent 70%),
+    radial-gradient(680px 300px at 50% 0%, rgba(129, 140, 248, 0.06), transparent 75%);
+}
+
+/* Sitzungsplan (templates/pages/meetings/year_plan.html): Druckansicht ohne Bedienelemente */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .year-plan-table {
+    font-size: 10px;
+  }
+  body:has(.year-plan-table) {
+    background: white;
+  }
+}
+
+/* Gestaffeltes Einblenden der Profilkarten (.fade-up aus dem Work-Layout) ohne style-Attribut.
+   Zwei Klassen im Selektor: schlägt die animation-Kurzform von .fade-up unabhängig von der Reihenfolge. */
+.fade-up.fade-delay-25 {
+  animation-delay: 25ms;
+}
+.fade-up.fade-delay-50 {
+  animation-delay: 50ms;
+}
+.fade-up.fade-delay-75 {
+  animation-delay: 75ms;
+}
+.fade-up.fade-delay-100 {
+  animation-delay: 100ms;
+}
+.fade-up.fade-delay-150 {
+  animation-delay: 150ms;
+}
+
+/* Insight-Seitenleiste: Markierung des aktiven Eintrags (vorher style-Attribut je Link) */
+.nav-active-bar {
+  box-shadow: inset 3px 0 0 #4f46e5;
+}

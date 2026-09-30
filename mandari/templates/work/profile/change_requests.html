@@ -10,7 +10,7 @@
 {% block work_content %}
 {% include "work/profile/_tabs.html" with active_tab="requests" %}
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6" x-data="changeRequestForm()">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6" x-data="changeRequestForm">
     <!-- Left Column: New Request -->
     <div class="space-y-4">
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
@@ -147,7 +147,7 @@
     <!-- Right Column: My Requests & Review -->
     <div class="lg:col-span-2 space-y-6">
         <!-- My Requests -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 25ms">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-25">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Meine Anträge</h4>
             </div>
@@ -204,7 +204,7 @@
 
         <!-- Pending Review (only for admins/managers) -->
         {% if can_review and pending_requests %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-50">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                 <div>
                     <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Zu prüfen</h4>
@@ -275,12 +275,4 @@
         {% endif %}
     </div>
 </div>
-
-<script nonce="{{ csp_nonce }}">
-function changeRequestForm() {
-    return {
-        requestType: ''
-    }
-}
-</script>
 {% endblock %}

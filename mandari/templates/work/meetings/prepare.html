@@ -27,7 +27,7 @@
 
 {% block work_extra_head %}
 {% load django_vite %}{% vite_asset 'frontend/editor/index.ts' %}
-<style>
+<style nonce="{{ csp_nonce }}">
     /* Sidebar dieser Seite nicht scrollen lassen */
     aside.work-sidebar,
     aside.work-sidebar nav {

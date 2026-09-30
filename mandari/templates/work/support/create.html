@@ -11,7 +11,8 @@
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
     <!-- Main Form -->
     <div class="lg:col-span-2">
-        <form method="post" enctype="multipart/form-data" class="space-y-6" x-data="ticketForm()">
+        <form method="post" enctype="multipart/form-data" class="space-y-6" x-data="ticketForm"
+              data-search-url="{% url 'work:kb_search' org_slug=organization.slug %}">
             {% csrf_token %}
 
             <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
@@ -143,8 +144,10 @@
     <!-- Sidebar - Article Suggestions -->
     <div class="space-y-6">
         <!-- Search Suggestions -->
-        <div x-data="{ suggestions: [], loading: false }"
-             x-show="suggestions.length > 0"
+        <div x-data="kbSuggestions"
+             @kb-suggestions.window="show($event.detail)"
+             x-show="suggestions.length > 0" x-cloak
+             data-testid="kb-vorschlaege"
              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
             <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                 <i data-lucide="lightbulb" class="w-4 h-4 text-amber-500"></i>
@@ -206,59 +209,4 @@
     </div>
 </div>
 
-<script nonce="{{ csp_nonce }}">
-function ticketForm() {
-    return {
-        subject: '',
-        files: [],
-        searchTimeout: null,
-
-        searchArticles() {
-            clearTimeout(this.searchTimeout);
-            if (this.subject.length < 3) return;
-
-            this.searchTimeout = setTimeout(() => {
-                fetch(`{% url 'work:kb_search' org_slug=organization.slug %}?q=${encodeURIComponent(this.subject)}`)
-                    .then(r => r.json())
-                    .then(data => {
-                        // Update suggestions component
-                        const el = document.querySelector('[x-data*="suggestions"]');
-                        if (el && el.__x) {
-                            el.__x.$data.suggestions = data.results;
-                        }
-                    });
-            }, 300);
-        },
-
-        handleFiles(fileList) {
-            for (let i = 0; i < fileList.length && this.files.length < 5; i++) {
-                const file = fileList[i];
-                if (file.size <= 10 * 1024 * 1024) {
-                    this.files.push(file);
-                }
-            }
-            // Update file input
-            this.updateFileInput();
-        },
-
-        removeFile(index) {
-            this.files.splice(index, 1);
-            this.updateFileInput();
-        },
-
-        updateFileInput() {
-            const input = document.getElementById('attachments');
-            const dt = new DataTransfer();
-            this.files.forEach(f => dt.items.add(f));
-            input.files = dt.files;
-        },
-
-        formatSize(bytes) {
-            if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-        }
-    }
-}
-</script>
 {% endblock %}

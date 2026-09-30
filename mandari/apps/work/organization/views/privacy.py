@@ -17,6 +17,28 @@ from ..services import ServiceError
 from ._helpers import flash_error
 
 
+def _export_payload(export, organization) -> dict:
+    """Ein Export als JSON-Objekt: Statusabfrage und Startdaten der Seite (json_script) teilen sich das Format."""
+    download_url = (
+        reverse("work:export_download", kwargs={"org_slug": organization.slug, "export_id": export.id})
+        if export.is_ready
+        else None
+    )
+    return {
+        "id": str(export.id),
+        "status": export.status,
+        "format": export.export_format,
+        "file_size": export.file_size,
+        "file_size_human": export.file_size_human,
+        "is_ready": export.is_ready,
+        "is_in_progress": export.is_in_progress,
+        "download_url": download_url,
+        "error_message": export.error_message,
+        "created_at": export.created_at.isoformat() if export.created_at else None,
+        "completed_at": export.completed_at.isoformat() if export.completed_at else None,
+    }
+
+
 class ProfileDataPrivacyView(WorkViewMixin, TemplateView):
     """DSGVO data export, activity log, and account deletion."""
 
@@ -30,6 +52,7 @@ class ProfileDataPrivacyView(WorkViewMixin, TemplateView):
         context["recent_sessions"] = selectors.recent_sessions(self.request.user)
         context["is_owner"] = self.organization.owner == self.request.user
         context["exports"] = selectors.recent_exports(self.organization, self.membership)
+        context["exports_data"] = [_export_payload(export, self.organization) for export in context["exports"]]
         context["has_active_export"] = selectors.has_active_export(self.organization, self.membership)
         return context
 
@@ -59,26 +82,7 @@ class DataExportStatusView(WorkViewMixin, View):
 
     def get(self, request, *args, **kwargs):
         export = selectors.get_export_or_404(self.organization, self.membership, kwargs["export_id"])
-        download_url = (
-            reverse("work:export_download", kwargs={"org_slug": self.organization.slug, "export_id": export.id})
-            if export.is_ready
-            else None
-        )
-        return JsonResponse(
-            {
-                "id": str(export.id),
-                "status": export.status,
-                "format": export.export_format,
-                "file_size": export.file_size,
-                "file_size_human": export.file_size_human,
-                "is_ready": export.is_ready,
-                "is_in_progress": export.is_in_progress,
-                "download_url": download_url,
-                "error_message": export.error_message,
-                "created_at": export.created_at.isoformat() if export.created_at else None,
-                "completed_at": export.completed_at.isoformat() if export.completed_at else None,
-            }
-        )
+        return JsonResponse(_export_payload(export, self.organization))
 
 
 class DataExportDownloadView(WorkViewMixin, View):

@@ -5,7 +5,9 @@
 {% block header_title %}{% if is_new %}Neuer Briefkopf{% else %}{{ letterhead.name }} bearbeiten{% endif %}{% endblock %}
 
 {% block work_content %}
-<div class="max-w-2xl mx-auto" x-data="letterheadForm()">
+{{ letterhead_form|json_script:"letterhead-form-data" }}
+<div class="max-w-2xl mx-auto" x-data="letterheadForm"
+     data-preview-url="{% url 'work:document_letterhead_preview' org_slug=organization.slug %}">
     <form method="post" enctype="multipart/form-data" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
         {% csrf_token %}
 
@@ -216,43 +218,4 @@
     </form>
 </div>
 
-<script nonce="{{ csp_nonce }}">
-function letterheadForm() {
-    return {
-        kind: '{% if letterhead %}{{ letterhead.kind }}{% else %}generated{% endif %}',
-        headerLogoEnabled: {% if letterhead %}{{ letterhead.header_logo_enabled|yesno:"true,false" }}{% else %}true{% endif %},
-        accentColorEnabled: {% if letterhead %}{{ letterhead.accent_color_enabled|yesno:"true,false" }}{% else %}true{% endif %},
-        senderLine: '{% if letterhead %}{{ letterhead.sender_line|escapejs }}{% else %}{{ generated_defaults.sender_line|escapejs }}{% endif %}',
-        addressBlock: '{% if letterhead %}{{ letterhead.address_block|escapejs }}{% else %}{{ generated_defaults.address_block|escapejs }}{% endif %}',
-        footerText: '{% if letterhead %}{{ letterhead.footer_text|escapejs }}{% else %}{{ generated_defaults.footer_text|escapejs }}{% endif %}',
-
-        init() {
-            this.$nextTick(() => this.refreshPreview());
-        },
-
-        async refreshPreview() {
-            if (this.kind !== 'generated') return;
-            const target = document.getElementById('letterhead-preview');
-            if (!target) return;
-
-            const params = new URLSearchParams({
-                header_logo_enabled: this.headerLogoEnabled ? 'on' : '',
-                accent_color_enabled: this.accentColorEnabled ? 'on' : '',
-                sender_line: this.senderLine,
-                address_block: this.addressBlock,
-                footer_text: this.footerText,
-            });
-
-            try {
-                const response = await fetch(`{% url 'work:document_letterhead_preview' org_slug=organization.slug %}?${params}`);
-                if (response.ok) {
-                    target.innerHTML = await response.text();
-                }
-            } catch (e) {
-                target.innerHTML = '<p class="text-sm text-red-500">Vorschau konnte nicht geladen werden.</p>';
-            }
-        }
-    }
-}
-</script>
 {% endblock %}

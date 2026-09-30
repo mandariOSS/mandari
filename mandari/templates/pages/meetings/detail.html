@@ -8,7 +8,7 @@
 <!-- Leaflet (lokal, DSGVO-konform) -->
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
 <script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
-<style>
+<style nonce="{{ csp_nonce }}">
     #location-map {
         border-radius: 0 0 0.75rem 0.75rem;
     }

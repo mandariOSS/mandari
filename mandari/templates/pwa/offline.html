@@ -7,7 +7,8 @@
     <title>Offline | Mandari</title>
     {# Bewusst komplett self-contained (Inline-CSS/SVG): Die Seite wird vom #}
     {# Service Worker vorab gecacht und muss ohne weitere Requests rendern. #}
-    <style>
+    {# Deshalb unter pwa/ (Allowlist des Frontend-Ratchets); Skript und Style tragen den CSP-Nonce. #}
+    <style nonce="{{ csp_nonce }}">
         :root { color-scheme: light dark; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {

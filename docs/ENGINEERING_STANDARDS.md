@@ -78,7 +78,9 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   `{% vite_asset %}` (django-vite, Manifest in `static/dist/`). Einstiege: `frontend/js/main.ts` (alle
   Layouts: HTMX-Konfiguration, Alpine-Registry, Icon-Observer, Toasts, Bestätigungsdialog) und
   `frontend/editor/index.ts` (nur Editor-Seiten). Alpine-Komponenten werden mit `Alpine.data()`
-  registriert und im Template nur referenziert. Server-Daten kommen per `json_script`.
+  registriert und im Template nur referenziert. Server-Daten kommen per `json_script` oder `data-*` am
+  `x-data`-Element (nie als JavaScript-Literal im Attribut). `this.$el` nur in `init()` verwenden – in
+  Methoden, die das Template aufruft, ist es das auslösende Element. Muster und Stand: `docs/CSP.md`.
 - Icons: `<i data-lucide="name">` genügt, ein MutationObserver ersetzt neue Platzhalter nach HTMX-Swaps
   und Alpine-Rendering. Kein `lucide.createIcons()` in Templates. Server-Toasts per
   `HX-Trigger: {"showToast": {"message": "…", "type": "success"}}`.

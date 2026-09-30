@@ -58,53 +58,45 @@
         <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-3 pt-3 pb-1.5">Portal</div>
 
         <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'portal_home' or nav == 'portal_entry' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'portal_home' or nav == 'portal_entry' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'portal_home' or nav == 'portal_entry' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="layout-dashboard" class="w-[18px] h-[18px] {% if nav != 'portal_home' and nav != 'portal_entry' %}opacity-50{% endif %}"></i> Übersicht
         </a>
 
         <a href="{% url 'insight_core:insight:meeting_list' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'meeting_list' or nav == 'meeting_detail' or nav == 'meeting_calendar' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'meeting_list' or nav == 'meeting_detail' or nav == 'meeting_calendar' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'meeting_list' or nav == 'meeting_detail' or nav == 'meeting_calendar' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="calendar-days" class="w-[18px] h-[18px] {% if nav != 'meeting_list' and nav != 'meeting_detail' and nav != 'meeting_calendar' %}opacity-50{% endif %}"></i> Sitzungen
             {% if upcoming_meeting_count %}<span class="ml-auto text-[10px] font-bold bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 px-2 py-0.5 rounded-full">{{ upcoming_meeting_count }}</span>{% endif %}
         </a>
 
         <a href="{% url 'insight_core:insight:paper_list' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'paper_list' or nav == 'paper_detail' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'paper_list' or nav == 'paper_detail' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'paper_list' or nav == 'paper_detail' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="file-text" class="w-[18px] h-[18px] {% if nav != 'paper_list' and nav != 'paper_detail' %}opacity-50{% endif %}"></i> Vorgänge
         </a>
 
         <a href="{% url 'insight_core:insight:organization_list' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'organization_list' or nav == 'organization_detail' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'organization_list' or nav == 'organization_detail' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'organization_list' or nav == 'organization_detail' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="building-2" class="w-[18px] h-[18px] {% if nav != 'organization_list' and nav != 'organization_detail' %}opacity-50{% endif %}"></i> Gremien
         </a>
 
         <a href="{% url 'insight_core:insight:person_list' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'person_list' or nav == 'person_detail' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'person_list' or nav == 'person_detail' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'person_list' or nav == 'person_detail' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="users" class="w-[18px] h-[18px] {% if nav != 'person_list' and nav != 'person_detail' %}opacity-50{% endif %}"></i> Personen
         </a>
 
         {% with qnav=nav|default:'' %}
         <a href="{% url 'insight_core:insight:question_portal' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if qnav == 'question_portal' or qnav == 'question_detail' or qnav == 'question_start' or qnav == 'ask_question' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if qnav == 'question_portal' or qnav == 'question_detail' or qnav == 'question_start' or qnav == 'ask_question' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if qnav == 'question_portal' or qnav == 'question_detail' or qnav == 'question_start' or qnav == 'ask_question' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="message-circle-question" class="w-[18px] h-[18px] {% if qnav != 'question_portal' and qnav != 'question_detail' and qnav != 'question_start' and qnav != 'ask_question' %}opacity-50{% endif %}"></i> Ratsfragen
         </a>
         {% endwith %}
 
         <a href="{% url 'insight_core:insight:decision_list' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'decision_list' or nav == 'decision_detail' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'decision_list' or nav == 'decision_detail' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'decision_list' or nav == 'decision_detail' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="gavel" class="w-[18px] h-[18px] {% if nav != 'decision_list' and nav != 'decision_detail' %}opacity-50{% endif %}"></i> Beschlüsse
         </a>
 
         <a href="{% url 'insight_core:insight:file_list' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'file_list' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'file_list' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'file_list' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="files" class="w-[18px] h-[18px] {% if nav != 'file_list' %}opacity-50{% endif %}"></i> Dokumente
         </a>
 
@@ -112,20 +104,17 @@
         <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-3 pt-4 pb-1.5">Entdecken</div>
 
         <a href="{% url 'insight_core:insight:search' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'search' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'search' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'search' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="search" class="w-[18px] h-[18px] {% if nav != 'search' %}opacity-50{% endif %}"></i> Suche
         </a>
 
         <a href="{% url 'insight_core:insight:map' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'map' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'map' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'map' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="map" class="w-[18px] h-[18px] {% if nav != 'map' %}opacity-50{% endif %}"></i> Karte
         </a>
 
         <a href="{% url 'insight_core:insight:chat' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'chat' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'chat' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'chat' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="sparkles" class="w-[18px] h-[18px] {% if nav != 'chat' %}opacity-50{% endif %}"></i> KI-Chat
             <span class="ml-auto text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">Neu</span>
         </a>
@@ -134,14 +123,12 @@
         <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-3 pt-4 pb-1.5">Meine Stadt</div>
 
         <a href="{% url 'insight_core:insight:neighborhood' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'neighborhood' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'neighborhood' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'neighborhood' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="home" class="w-[18px] h-[18px] {% if nav != 'neighborhood' %}opacity-50{% endif %}"></i> Nachbarschaft
         </a>
 
         <a href="{% url 'insight_core:insight:saved' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'saved' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'saved' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'saved' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="bookmark" class="w-[18px] h-[18px] {% if nav != 'saved' %}opacity-50{% endif %}"></i> Gespeichert
             <span x-data x-show="$store.bookmarks && $store.bookmarks.count() > 0" x-cloak
                   x-text="$store.bookmarks.count()"
@@ -150,8 +137,7 @@
 
         {% if insight_subscriptions_enabled %}
         <a href="{% url 'insight_core:insight:notifications' %}"
-            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'notifications' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
-            {% if nav == 'notifications' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'notifications' %}nav-active-bar font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}">
             <i data-lucide="bell" class="w-[18px] h-[18px] {% if nav != 'notifications' %}opacity-50{% endif %}"></i> Benachrichtigungen
         </a>
         {% endif %}

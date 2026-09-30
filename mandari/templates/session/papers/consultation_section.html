@@ -176,7 +176,7 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
               class="flex flex-wrap items-center gap-2 text-sm">
             {% csrf_token %}
             <span class="text-sm text-gray-600 dark:text-gray-400">Station hinzufügen:</span>
-            <select name="organization" required id="consultation-add-org"
+            <select name="organization" required id="consultation-add-org" data-filter-options="#consultation-add-meeting" data-filter-attr="org"
                     class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                 <option value="">— Gremium —</option>
                 {% for org in consultation_organizations %}
@@ -202,25 +202,6 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                 Hinzufügen
             </button>
         </form>
-        <script nonce="{{ csp_nonce }}">
-        // Zielsitzungs-Auswahl auf das gewählte Gremium einschränken
-        (function () {
-            var orgSelect = document.getElementById('consultation-add-org');
-            var meetingSelect = document.getElementById('consultation-add-meeting');
-            if (!orgSelect || !meetingSelect) return;
-            function filterMeetings() {
-                var org = orgSelect.value;
-                Array.prototype.forEach.call(meetingSelect.options, function (opt) {
-                    if (!opt.value) return;
-                    var visible = !org || opt.getAttribute('data-org') === org;
-                    opt.hidden = !visible;
-                    if (!visible && opt.selected) meetingSelect.value = '';
-                });
-            }
-            orgSelect.addEventListener('change', filterMeetings);
-            filterMeetings();
-        })();
-        </script>
     </div>
     {% endif %}
 </div>

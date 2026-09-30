@@ -477,6 +477,26 @@ def _generated_letterhead_defaults(organization) -> dict:
     }
 
 
+def _letterhead_form_state(letterhead, organization) -> dict:
+    """Startwerte des Briefkopf-Formulars für die Alpine-Komponente (json_script, #172)."""
+    if letterhead is None:
+        defaults = _generated_letterhead_defaults(organization)
+        return {
+            "kind": "generated",
+            "header_logo_enabled": True,
+            "accent_color_enabled": True,
+            **defaults,
+        }
+    return {
+        "kind": letterhead.kind,
+        "header_logo_enabled": letterhead.header_logo_enabled,
+        "accent_color_enabled": letterhead.accent_color_enabled,
+        "sender_line": letterhead.sender_line,
+        "address_block": letterhead.address_block,
+        "footer_text": letterhead.footer_text,
+    }
+
+
 class LetterheadCreateView(WorkViewMixin, TemplateView):
     """Create a new letterhead."""
 
@@ -488,7 +508,7 @@ class LetterheadCreateView(WorkViewMixin, TemplateView):
         context["active_nav"] = "organization"
         context["settings_tab"] = "letterheads"
         context["is_new"] = True
-        context["generated_defaults"] = _generated_letterhead_defaults(self.organization)
+        context["letterhead_form"] = _letterhead_form_state(None, self.organization)
         return context
 
     def post(self, request, *args, **kwargs):
@@ -556,6 +576,7 @@ class LetterheadEditView(WorkViewMixin, TemplateView):
         context["letterhead"] = get_object_or_404(
             OrganizationLetterhead, id=kwargs.get("letterhead_id"), organization=self.organization
         )
+        context["letterhead_form"] = _letterhead_form_state(context["letterhead"], self.organization)
         return context
 
     def post(self, request, *args, **kwargs):

@@ -10,7 +10,7 @@
 {% endblock %}
 
 {% block work_content %}
-<div class="max-w-3xl mx-auto" x-data="permissionsManager()">
+<div class="max-w-3xl mx-auto" x-data="permissionsManager" data-is-admin="{{ role.is_admin|yesno:'true,false' }}">
     <form method="post" action="" class="space-y-6">
         {% csrf_token %}
 
@@ -29,12 +29,12 @@
                                class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
 
-                    <div x-data="colorPicker('{{ role.color|default:'#6b7280' }}')">
+                    <div x-data="colorPicker" data-color="{{ role.color|default:'#6b7280' }}" data-fallback-color="#6b7280">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Farbe</label>
                         <div class="flex items-center gap-3">
                             <div class="relative">
                                 <div class="w-10 h-10 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer shadow-sm hover:border-primary-400 transition-colors"
-                                     :style="'background-color: ' + color"
+                                     :style="swatchStyle"
                                      @click="$refs.nativePicker.click()"></div>
                                 <input type="color" x-ref="nativePicker" :value="color"
                                        @input="color = $event.target.value"
@@ -125,7 +125,7 @@
                             <span class="text-xs text-gray-500">Alle</span>
                             <input type="checkbox"
                                    :checked="allChecked('{{ cat_code }}')"
-                                   :indeterminate.prop="someChecked('{{ cat_code }}') && !allChecked('{{ cat_code }}')"
+                                   x-effect="syncIndeterminate($el, '{{ cat_code }}')"
                                    @change="toggleAll('{{ cat_code }}', $event.target.checked)"
                                    class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
                         </label>
@@ -162,6 +162,10 @@
             <div class="flex items-center gap-3">
                 {% if is_edit and not role.is_system_role %}
                 <button type="button" id="role-delete-btn"
+                        data-action="confirm-submit" data-target="#role-delete-form"
+                        data-confirm-title="Rolle löschen"
+                        data-confirm-message="Möchten Sie die Rolle «{{ role.name }}» wirklich löschen?"
+                        data-confirm-text="Löschen" data-confirm-variant="danger"
                         class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
                     Löschen
                 </button>
@@ -182,87 +186,4 @@
     {% endif %}
 </div>
 
-<script nonce="{{ csp_nonce }}">
-{% if is_edit and not role.is_system_role %}
-document.addEventListener('DOMContentLoaded', function() {
-    const deleteBtn = document.getElementById('role-delete-btn');
-    const deleteForm = document.getElementById('role-delete-form');
-    if (deleteBtn && deleteForm) {
-        deleteBtn.addEventListener('click', function() {
-            confirmAction({
-                title: 'Rolle löschen',
-                message: 'Möchten Sie die Rolle «{{ role.name }}» wirklich löschen?',
-                confirmText: 'Löschen',
-                variant: 'danger'
-            }).then(function(ok) {
-                if (ok) deleteForm.submit();
-            });
-        });
-    }
-});
-{% endif %}
-
-function permissionsManager() {
-    return {
-        isAdmin: {{ role.is_admin|yesno:"true,false" }},
-        openCategories: [],
-        categoryState: {},
-
-        init() {
-            this.updateState();
-        },
-
-        toggleCategory(cat) {
-            const idx = this.openCategories.indexOf(cat);
-            if (idx === -1) {
-                this.openCategories.push(cat);
-            } else {
-                this.openCategories.splice(idx, 1);
-            }
-        },
-
-        getCheckboxes(cat) {
-            return [...document.querySelectorAll(`input[data-category="${cat}"]`)];
-        },
-
-        allChecked(cat) {
-            const boxes = this.getCheckboxes(cat);
-            return boxes.length > 0 && boxes.every(b => b.checked);
-        },
-
-        someChecked(cat) {
-            return this.getCheckboxes(cat).some(b => b.checked);
-        },
-
-        toggleAll(cat, checked) {
-            this.getCheckboxes(cat).forEach(b => { b.checked = checked; });
-            this.updateState();
-        },
-
-        updateState() {
-            // Trigger reactivity for Alpine
-            this.categoryState = Object.assign({}, this.categoryState, { _t: Date.now() });
-        }
-    }
-}
-
-function colorPicker(initial) {
-    return {
-        color: initial || '#6b7280',
-        hex: (initial || '#6b7280').replace('#', ''),
-        onHexInput() {
-            const clean = this.hex.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
-            this.hex = clean;
-            if (clean.length === 6) {
-                this.color = '#' + clean;
-            }
-        },
-        init() {
-            this.$watch('color', (val) => {
-                this.hex = val.replace('#', '');
-            });
-        }
-    }
-}
-</script>
 {% endblock %}

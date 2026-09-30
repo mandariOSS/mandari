@@ -69,6 +69,19 @@ def _store_content(motion, new_content: str, old_content: str) -> bool:
     return True
 
 
+def _template_option(template) -> dict:
+    """Eine Dokumentvorlage für die Auswahl beim Anlegen (Typ- und Briefkopfname für die Vorschau)."""
+    return {
+        "id": str(template.id),
+        "name": template.name,
+        "description": template.description or "",
+        "type_name": template.motion_type.name if template.motion_type else None,
+        "letterhead_name": template.letterhead.name if template.letterhead else None,
+        "motion_type_id": str(template.motion_type_id) if template.motion_type_id else None,
+        "is_default": template.is_default,
+    }
+
+
 class MotionCreateView(WorkViewMixin, TemplateView):
     """Create a new document (Step 1: Basic data)."""
 
@@ -93,6 +106,10 @@ class MotionCreateView(WorkViewMixin, TemplateView):
             .select_related("motion_type", "letterhead")
             .order_by("-is_default", "name")
         )
+        # Für die Alpine-Komponente createMotion (json_script statt Inline-Skript, #172)
+        context["template_options"] = [_template_option(template) for template in context["templates"]]
+        default_type = next((t for t in context["document_types"] if t.is_default), None)
+        context["default_document_type"] = str(default_type.id) if default_type else ""
 
         # Get letterheads
         context["letterheads"] = OrganizationLetterhead.objects.filter(

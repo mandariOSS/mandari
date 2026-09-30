@@ -55,7 +55,7 @@
     {% vite_asset 'frontend/js/main.ts' %}
 
     <!-- Custom Styles -->
-    <style>
+    <style nonce="{{ csp_nonce }}">
         [x-cloak] { display: none !important; }
 
         /* Loading indicator for HTMX */

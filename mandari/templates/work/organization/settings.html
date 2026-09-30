@@ -18,7 +18,7 @@
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-6">Organisation & Erscheinung</h3>
 
         {% if can_edit %}
-        <form method="post" enctype="multipart/form-data" class="space-y-6" x-data="logoPreview()">
+        <form method="post" enctype="multipart/form-data" class="space-y-6" x-data="logoPreview">
             {% csrf_token %}
             <input type="hidden" name="action" value="update_general">
 
@@ -77,12 +77,12 @@
             </div>
 
             <!-- Primary Color -->
-            <div x-data="colorPicker('{{ organization.primary_color }}')">
+            <div x-data="colorPicker" data-color="{{ organization.primary_color }}" data-fallback-color="#6366f1">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Primaerfarbe</label>
                 <div class="flex items-center gap-3">
                     <div class="relative">
                         <div class="w-10 h-10 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer shadow-sm hover:border-primary-400 transition-colors"
-                             :style="'background-color: ' + color"
+                             :style="swatchStyle"
                              @click="$refs.nativePicker.click()"></div>
                         <input type="color" x-ref="nativePicker" :value="color"
                                @input="color = $event.target.value"
@@ -380,38 +380,4 @@
     </div>
 </div>
 
-<script nonce="{{ csp_nonce }}">
-function logoPreview() {
-    return {
-        previewUrl: '',
-        removeLogo: false,
-        handleFile(event) {
-            const file = event.target.files[0];
-            if (file) {
-                this.removeLogo = false;
-                this.previewUrl = URL.createObjectURL(file);
-            }
-        }
-    }
-}
-
-function colorPicker(initial) {
-    return {
-        color: initial || '#6366f1',
-        hex: (initial || '#6366f1').replace('#', ''),
-        onHexInput() {
-            const clean = this.hex.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
-            this.hex = clean;
-            if (clean.length === 6) {
-                this.color = '#' + clean;
-            }
-        },
-        init() {
-            this.$watch('color', (val) => {
-                this.hex = val.replace('#', '');
-            });
-        }
-    }
-}
-</script>
 {% endblock %}

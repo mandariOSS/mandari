@@ -6,7 +6,7 @@
 {% block meta_description %}{% if active_body %}Ratsinformationen für {{ active_body.get_display_name }}: Sitzungen, Vorgänge, Gremien und Personen transparent einsehen.{% else %}Kommunalpolitische Transparenz: Ratsinformationen durchsuchen und verstehen.{% endif %}{% endblock %}
 
 {% block extra_head %}
-<style>
+<style nonce="{{ csp_nonce }}">
     .item-list a, .item-list a:visited { color: inherit; }
 </style>
 {% endblock %}

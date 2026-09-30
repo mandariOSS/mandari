@@ -20,79 +20,17 @@ bewusst nicht als Fehler.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
-import pytest
 from django.utils import timezone
 from playwright.sync_api import expect
 
 from apps.work.faction.models import FactionAgendaItem, FactionMeeting
 from apps.work.motions.models import Motion
 from insight_core.models import OParlAgendaItem, OParlBody, OParlMeeting, OParlSource
-
-ALPINE_ERROR_MARKERS = ("Alpine Expression Error", "is not defined")
-PASSWORD = "E2e-Admin-Passwort-123456"
-
-
-@dataclass
-class BrowserProblems:
-    """Fehler, die der Browser während eines Tests meldet."""
-
-    alpine: list[str] = field(default_factory=list)
-    exceptions: list[str] = field(default_factory=list)
-    server_errors: list[str] = field(default_factory=list)
-
-    def assert_clean(self, where: str) -> None:
-        found = [*self.alpine, *self.exceptions, *self.server_errors]
-        assert not found, f"{where}: {len(found)} Probleme\n" + "\n".join(found[:15])
-
-
-@pytest.fixture
-def problems(page: Any, live_server: Any) -> BrowserProblems:
-    collected = BrowserProblems()
-
-    def on_console(message: Any) -> None:
-        if any(marker in message.text for marker in ALPINE_ERROR_MARKERS):
-            collected.alpine.append(message.text.splitlines()[0])
-
-    def on_response(response: Any) -> None:
-        if response.status >= 500 and response.url.startswith(live_server.url):
-            collected.server_errors.append(f"HTTP {response.status} {response.url}")
-
-    page.on("console", on_console)
-    page.on("pageerror", lambda error: collected.exceptions.append(f"Ausnahme: {error}"))
-    page.on("response", on_response)
-    return collected
-
-
-@pytest.fixture
-def admin(org: Any, make_member: Any) -> Any:
-    """Mitglied mit Administratorrolle – erreicht alle Work-Seiten."""
-    membership = make_member(org, [], email="e2e-admin@example.org", is_admin=True)
-    membership.user.set_password(PASSWORD)
-    membership.user.save(update_fields=["password"])
-    return membership
-
-
-def wait_for_component(page: Any, name: str) -> None:
-    """Wartet, bis Alpine das erste Element mit `x-data="<name>…"` initialisiert hat."""
-    page.wait_for_function(
-        '(name) => { const el = document.querySelector(`[x-data^="${name}"]`);'
-        " return !!(el && el._x_dataStack && el._x_dataStack.length); }",
-        arg=name,
-        timeout=15000,
-    )
-
-
-def component_state(page: Any, name: str, expression: str) -> Any:
-    """Wertet einen Ausdruck auf den Daten der Komponente aus (`data` ist das Alpine-Objekt)."""
-    return page.evaluate(
-        f'(name) => {{ const data = window.Alpine.$data(document.querySelector(`[x-data^="${{name}}"]`));'
-        f" return {expression}; }}",
-        name,
-    )
+from tests_e2e.conftest import ADMIN_PASSWORD as PASSWORD
+from tests_e2e.conftest import BrowserProblems, component_state, wait_for_component
 
 
 class TestSeitenkomponenten:

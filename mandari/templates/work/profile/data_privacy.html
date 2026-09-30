@@ -10,10 +10,14 @@
 {% block work_content %}
 {% include "work/profile/_tabs.html" with active_tab="data" %}
 
+{{ exports_data|json_script:"data-exports" }}
 <div class="space-y-6">
     <!-- DSGVO Data Export -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up"
-         x-data="dataExport()">
+         x-data="dataExport"
+         data-active="{{ has_active_export|yesno:'true,false' }}"
+         data-status-url="{% url 'work:export_status' org_slug=organization.slug export_id='00000000-0000-0000-0000-000000000000' %}"
+         data-delete-url="{% url 'work:export_delete' org_slug=organization.slug export_id='00000000-0000-0000-0000-000000000000' %}">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="download" class="w-4 h-4 text-gray-400"></i>
@@ -137,7 +141,7 @@
     </div>
 
     <!-- Activity Log -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-50">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="scroll-text" class="w-4 h-4 text-gray-400"></i>
@@ -177,7 +181,7 @@
     </div>
 
     <!-- Stored Data Overview -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 100ms">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-100">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="database" class="w-4 h-4 text-gray-400"></i>
@@ -213,7 +217,7 @@
     </div>
 
     <!-- Account Deletion -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900/50 fade-up" style="animation-delay: 150ms"
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900/50 fade-up fade-delay-150"
          x-data="{ showDelete: false }">
         <div class="px-6 py-4 border-b border-red-200 dark:border-red-900/50">
             <h4 class="text-[15px] font-bold text-red-700 dark:text-red-400 flex items-center gap-2">
@@ -260,108 +264,3 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script nonce="{{ csp_nonce }}">
-function dataExport() {
-    // Placeholder UUID for URL building — will be replaced per export
-    const PLACEHOLDER = '00000000-0000-0000-0000-000000000000';
-    const statusUrlTpl = '{% url "work:export_status" org_slug=organization.slug export_id="00000000-0000-0000-0000-000000000000" %}';
-    const deleteUrlTpl = '{% url "work:export_delete" org_slug=organization.slug export_id="00000000-0000-0000-0000-000000000000" %}';
-    const downloadUrlTpl = '{% url "work:export_download" org_slug=organization.slug export_id="00000000-0000-0000-0000-000000000000" %}';
-
-    return {
-        format: 'json',
-        exports: [
-            {% for exp in exports %}
-            {
-                id: '{{ exp.id }}',
-                status: '{{ exp.status }}',
-                format: '{{ exp.export_format }}',
-                file_size: {{ exp.file_size|default:"null" }},
-                file_size_human: '{{ exp.file_size_human }}',
-                is_ready: {{ exp.is_ready|yesno:"true,false" }},
-                is_in_progress: {{ exp.is_in_progress|yesno:"true,false" }},
-                download_url: {% if exp.is_ready %}'{% url "work:export_download" org_slug=organization.slug export_id=exp.id %}'{% else %}null{% endif %},
-                error_message: '{{ exp.error_message|escapejs }}',
-                created_at: '{{ exp.created_at|date:"c" }}',
-                completed_at: {% if exp.completed_at %}'{{ exp.completed_at|date:"c" }}'{% else %}null{% endif %},
-            },
-            {% endfor %}
-        ],
-        hasActiveExport: {{ has_active_export|yesno:"true,false" }},
-        _pollInterval: null,
-
-        init() {
-            if (this.hasActiveExport) {
-                this.startPolling();
-            }
-        },
-
-        startPolling() {
-            if (this._pollInterval) return;
-            this._pollInterval = setInterval(() => this.pollStatus(), 3000);
-        },
-
-        stopPolling() {
-            if (this._pollInterval) {
-                clearInterval(this._pollInterval);
-                this._pollInterval = null;
-            }
-        },
-
-        destroy() {
-            this.stopPolling();
-        },
-
-        async pollStatus() {
-            let stillActive = false;
-            for (const exp of this.exports) {
-                if (exp.status !== 'pending' && exp.status !== 'processing') continue;
-
-                try {
-                    const url = statusUrlTpl.replace(PLACEHOLDER, exp.id);
-                    const resp = await fetch(url);
-                    if (!resp.ok) continue;
-                    const data = await resp.json();
-                    Object.assign(exp, data);
-                    if (data.is_in_progress) stillActive = true;
-                } catch (e) {
-                    // Ignore fetch errors, retry next cycle
-                }
-            }
-            this.hasActiveExport = stillActive;
-            if (!stillActive) {
-                this.stopPolling();
-                // Re-init lucide icons for newly rendered elements
-            }
-        },
-
-        async deleteExport(id) {
-            const url = deleteUrlTpl.replace(PLACEHOLDER, id);
-            try {
-                const resp = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                });
-                if (resp.ok) {
-                    this.exports = this.exports.filter(e => e.id !== id);
-                    this.hasActiveExport = this.exports.some(e => e.status === 'pending' || e.status === 'processing');
-                }
-            } catch (e) {
-                // Fallback: reload page
-                window.location.reload();
-            }
-        },
-
-        formatDate(isoStr) {
-            if (!isoStr) return '';
-            const d = new Date(isoStr);
-            return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        },
-    };
-}
-</script>
-{% endblock %}
