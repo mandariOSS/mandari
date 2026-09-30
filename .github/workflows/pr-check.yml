@@ -319,11 +319,12 @@ jobs:
       - name: Jedes Smoke-Skript laeuft in der CI
         if: ${{ !cancelled() }}
         run: python scripts/check_smoke_in_ci.py
-      # Schichtregeln (docs/adr/20260929-schichtenmodell.md): Vertraege in mandari/pyproject.toml,
-      # Ausnahmen duerfen nur weniger werden. import-linter in der Version aus dem Lockfile.
+      # Schichtregeln (docs/adr/20260929-schichtenmodell.md): Vertraege in mandari/pyproject.toml duerfen
+      # nur strenger werden, Ausnahmen nur weniger. import-linter nur hier (nicht im Image), Version wie
+      # in pyproject.toml [dev]; grimp mit fester Version, weil es den Importgraphen baut.
       - name: Schichtregeln (import-linter, Ausnahmen duerfen nur sinken)
         run: |
-          pip install -c mandari/requirements.lock import-linter
+          pip install "import-linter==2.15" "grimp==3.17"
           python scripts/check_import_linter_ratchet.py
           cd mandari && lint-imports --no-cache
 

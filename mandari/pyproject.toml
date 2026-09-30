@@ -59,7 +59,7 @@ dev = [
     "factory-boy>=3.3.0",
     "pytest-playwright>=0.7.0",  # E2E (tests_e2e/), Browser: playwright install chromium
     "ruff>=0.8.0",
-    "import-linter>=2.15",  # Schichtregeln: lint-imports (Verträge unten in [tool.importlinter])
+    "import-linter==2.15",  # Schichtregeln: lint-imports, wie CI (Verträge unten in [tool.importlinter])
     "mypy==2.3.1",  # wie CI: Ergebnisse unterscheiden sich zwischen mypy-Versionen
     "django-stubs[compatible-mypy]==6.1.1",
     "sqlalchemy>=2.0",  # Schema-Contract gegen die Ingestor-Modelle (insight_core/schema_contract.py)
@@ -116,7 +116,8 @@ format_js = false
 [tool.importlinter]
 # Schichtregeln der Datendrehscheibe (docs/adr/20260929-schichtenmodell.md): Fachmodule → Drehscheibe →
 # Plattform. Prüfung aus mandari/: lint-imports. Neue Ausnahmen sind nicht erlaubt; die Listen werden
-# nur kürzer (scripts/check_import_linter_ratchet.py, Baseline scripts/import_linter_baseline.json).
+# nur kürzer, die Verträge nur strenger (scripts/check_import_linter_ratchet.py, Baseline
+# scripts/import_linter_baseline.json).
 # Importe innerhalb von Funktionen zählen mit. insight_ai, insight_search, insight_sync und oparl_api
 # gehören bis zu ihrer Auflösung zur Drehscheibe; apps.provisioning (Mandanten anlegen) zur Plattform.
 root_packages = ["apps", "hub", "insight_core", "insight_ai", "insight_search", "insight_sync", "oparl_api"]
@@ -180,7 +181,7 @@ id = "module-unabhaengig"
 name = "Fachmodule kennen sich nicht"
 type = "independence"
 # apps.portal kommt hinzu, sobald es das Paket gibt (docs/adr/20260929-portal-modul.md).
-modules = ["apps.session", "apps.work"]
+modules = ["apps.session", "apps.work", "apps.minutes"]
 ignore_imports = [
     # Tests sind ausgenommen: Sie prüfen modulübergreifend und erzeugen keine Kopplung im Betrieb.
     "**.tests.** -> **",
@@ -190,6 +191,8 @@ ignore_imports = [
     "apps.accounts.security_audit -> apps.session.audit",
     "apps.accounts.security_audit -> apps.session.models",
     "apps.accounts.two_factor_policy -> apps.session.models",
+    "apps.common.metrics -> apps.minutes.models",
+    "apps.common.service_levels -> apps.minutes.models",
     "apps.session.management.commands.generate_load_data -> apps.work.models",
     "apps.session.services.application_service -> apps.work.motions.models",
     "apps.session.services.portal_link_service -> apps.work.motions.models",

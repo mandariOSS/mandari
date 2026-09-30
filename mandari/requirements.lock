@@ -66,8 +66,6 @@ charset-normalizer==3.5.1
     # via
     #   reportlab
     #   requests
-click==8.5.0
-    # via import-linter
 constantly==23.10.4
     # via twisted
 cryptography==50.0.1
@@ -124,8 +122,6 @@ googleapis-common-protos==1.75.3
     # via opentelemetry-exporter-otlp-proto-http
 greenlet==3.5.5
     # via sqlalchemy
-grimp==3.17
-    # via import-linter
 h11==0.16.0
     # via httpcore
 html2text==2025.4.15
@@ -148,8 +144,6 @@ idna==3.19
     #   requests
     #   twisted
     #   yarl
-import-linter==2.15
-    # via -r requirements.txt
 incremental==24.11.0
     # via twisted
 jsonschema==4.26.0
@@ -369,7 +363,6 @@ typing-extensions==4.16.0
     #   aiosignal
     #   anyio
     #   elasticsearch
-    #   import-linter
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk

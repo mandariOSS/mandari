@@ -88,5 +88,3 @@ opentelemetry-instrumentation-httpx>=0.65b0
 # Anwendungsmetriken unter /metrics/ (apps/common/metrics.py, Issue #231)
 prometheus-client>=0.26.0
 pyyaml>=6.0.2  # Prüfung der Compose-Rollenprofile (scripts/check_compose_roles.py, #55)
-# Schichtregeln prüfen (lint-imports in der CI, Verträge in pyproject.toml; docs/adr/20260929-schichtenmodell.md, #567)
-import-linter>=2.15

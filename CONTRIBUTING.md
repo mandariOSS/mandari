@@ -120,10 +120,10 @@ cd mandari
 ruff check . && ruff format --check .            # Python
 djlint templates --lint                          # Django-Templates
 npm run typecheck && npm run lint                # TypeScript und Biome
-lint-imports                                     # Schichtregeln (Verträge in pyproject.toml)
+lint-imports                                     # Schichtregeln (pip install import-linter==2.15)
 
 cd ..
-python scripts/check_import_linter_ratchet.py    # Ausnahmen der Schichtregeln dürfen nur sinken
+python scripts/check_import_linter_ratchet.py    # Schichtverträge nur strenger, Ausnahmen nur weniger
 python scripts/mypy_allowlist.py                 # Typen (strict, schrumpfende Ausnahmeliste)
 python scripts/check_frontend_ratchet.py         # Inline-Code und Template-Größe
 python scripts/check_view_orm_ratio.py           # Datenbankzugriffe in Views
