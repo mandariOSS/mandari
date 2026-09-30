@@ -17,6 +17,7 @@ from django.core.management import CommandError, call_command
 from django.db import connection
 from django.tasks import task_backends
 from django.utils import timezone
+from prometheus_client import REGISTRY
 
 from apps.events import task_runner
 from apps.events.models import Task as TaskRow
@@ -76,6 +77,11 @@ def _zeile(ergebnis: Any) -> TaskRow:
     return TaskRow.objects.get(pk=ergebnis.id)
 
 
+def _wert(name: str, **labels: str) -> float:
+    """Stand einer Metrik dieses Prozesses (0, solange sie für die Labels nichts gemessen hat)."""
+    return REGISTRY.get_sample_value(name, labels) or 0.0
+
+
 # -- Holen ---------------------------------------------------------------------------------
 
 
@@ -120,8 +126,10 @@ def test_erfolg(journal: JournalBackend) -> None:
     ergebnis = T.merken.enqueue("a", zusatz=1)
     geholt = claim("default", journal.config)
     assert geholt is not None
+    gemessen = _wert("mandari_tasks_duration_seconds_count", queue="default")
 
     ausgang = execute(geholt)
+    assert _wert("mandari_tasks_duration_seconds_count", queue="default") == gemessen + 1
     assert ausgang.ok
     assert finish(geholt, ausgang) == TaskStatus.ERLEDIGT
     assert auftraege.aufrufe == [("merken", ("a", 1))]
@@ -139,7 +147,10 @@ def test_fehler_wird_mit_wachsender_wartezeit_wiederholt_und_ist_dann_tot(settin
     for versuch in (1, 2, 3):
         geholt = claim("default", config)
         assert geholt is not None and geholt.attempt == versuch
+        assert _zeile(ergebnis).result_code is None, "Ergebniscode gilt je Versuch"
+        fehler = _wert("mandari_tasks_failed_total", queue="default", grund="fehler")
         ausgang = execute(geholt)
+        assert _wert("mandari_tasks_failed_total", queue="default", grund="fehler") == fehler + 1
         assert ausgang == Outcome("builtins.RuntimeError")
         status = finish(geholt, ausgang)
         zeile = _zeile(ergebnis)
@@ -165,7 +176,9 @@ def test_endgueltiger_fehler_wird_nicht_wiederholt(journal: JournalBackend) -> N
     ergebnis = T.endgueltig.enqueue("x")
     geholt = claim("default", journal.config)
     assert geholt is not None
+    endgueltig = _wert("mandari_tasks_failed_total", queue="default", grund="endgueltig")
     assert finish(geholt, execute(geholt)) == TaskStatus.FEHLGESCHLAGEN
+    assert _wert("mandari_tasks_failed_total", queue="default", grund="endgueltig") == endgueltig + 1
     assert _zeile(ergebnis).result_code == "apps.events.tasks_backend.PermanentTaskError"
 
 
@@ -225,9 +238,11 @@ def test_haengender_auftrag_wird_nach_ablauf_der_sperre_erneut_ausgefuehrt(journ
     assert release_expired() == 0, "Sperre noch gültig"
 
     TaskRow.objects.update(locked_until=timezone.now() - timedelta(seconds=1))
+    abgelaufen = _wert("mandari_tasks_failed_total", queue="default", grund="sperre_abgelaufen")
     assert release_expired() == 1
     zeile = _zeile(ergebnis)
     assert (zeile.status, zeile.result_code, zeile.attempts) == (TaskStatus.WARTEND, CODE_LOCK_EXPIRED, 1)
+    assert _wert("mandari_tasks_failed_total", queue="default", grund="sperre_abgelaufen") == abgelaufen + 1
     assert zeile.run_after > timezone.now()
 
     TaskRow.objects.update(run_after=timezone.now() - timedelta(seconds=1))
@@ -366,24 +381,66 @@ def test_speichergrenze_unter_dem_grundbedarf_wird_ausgeschaltet(journal: Journa
     runner = _runner(journal, max_memory_mb=50, rss=lambda: 100 * 1024 * 1024)
     assert _laufen(runner) == StopReason.LEER
     assert runner.max_memory_bytes == 0
+    assert _wert("mandari_worker_rss_bytes", role="tasks") == 100 * 1024 * 1024
 
 
 @pytest.mark.django_db
 def test_zeitgrenze_je_auftragstyp_fuehrt_zum_neustart(settings: Any) -> None:
-    """Der hängende Auftrag gilt als gescheitert; ein gleichzeitig laufender darf noch fertig werden."""
+    """Der hängende Auftrag gilt als gescheitert; ein gleichzeitig laufender darf noch fertig werden.
+
+    Bis der Prozess endet, bleibt der hängende Auftrag gesperrt: Kein anderer Runner führt ihn parallel
+    zum noch laufenden Thread ein zweites Mal aus. Erst danach läuft die Sperre ab.
+    """
     settings.TASKS = journal_einstellungen(tasks={f"{PFAD}.haengen": {"timeout": 0.3}})
     backend = cast(JournalBackend, task_backends["default"])
     haengt = T.haengen.enqueue("h")
-    T.langsam.enqueue(0.6)
+    T.langsam.enqueue(1.5)
+    zeitgrenzen = _wert("mandari_tasks_failed_total", queue="ai", grund="zeitgrenze")
+    abgelaufen = _wert("mandari_tasks_failed_total", queue="ai", grund="sperre_abgelaufen")
     try:
-        runner = _runner(backend, burst=False)
+        runner = _runner(backend, burst=False, lock_ttl=timedelta(seconds=1), renew_interval=0.1)
         beginn = time.monotonic()
         assert _laufen(runner) == StopReason.ZEITGRENZE
         assert time.monotonic() - beginn < 10
         zeile = _zeile(haengt)
-        assert (zeile.status, zeile.result_code, zeile.attempts) == (TaskStatus.WARTEND, CODE_TIMEOUT, 1)
+        assert (zeile.status, zeile.result_code, zeile.attempts) == (TaskStatus.LAEUFT, CODE_TIMEOUT, 1)
+        assert zeile.locked_until is not None and zeile.locked_until > timezone.now(), "bis zum Ende verlängert"
+        TaskRow.objects.filter(pk=zeile.pk).update(run_after=timezone.now() - timedelta(minutes=1))
+        assert claim("ai", backend.config) is None, "auch nach der Wartezeit nicht neben dem hängenden Thread"
         assert TaskRow.objects.get(task_path=f"{PFAD}.langsam").status == TaskStatus.ERLEDIGT
-        assert ("langsam", 0.6) in auftraege.aufrufe
+        assert ("langsam", 1.5) in auftraege.aufrufe
+        assert _wert("mandari_tasks_failed_total", queue="ai", grund="zeitgrenze") == zeitgrenzen + 1
+
+        # Prozess neu gestartet: Die Sperre läuft ab, der Auftrag wird wiederholt
+        TaskRow.objects.filter(pk=zeile.pk).update(locked_until=timezone.now() - timedelta(seconds=1))
+        assert release_expired() == 1
+        zeile = _zeile(haengt)
+        assert (zeile.status, zeile.result_code, zeile.attempts) == (TaskStatus.WARTEND, CODE_TIMEOUT, 1)
+        assert _wert("mandari_tasks_failed_total", queue="ai", grund="sperre_abgelaufen") == abgelaufen, "einmal"
+    finally:
+        auftraege.FREIGABE.set()
+
+
+@pytest.mark.django_db
+def test_nach_der_zeitgrenze_gilt_ein_spaetes_ergebnis(settings: Any) -> None:
+    """Wird der hängende Thread vor dem Neustart doch fertig, zählt sein Ergebnis; keine Wiederholung."""
+    settings.TASKS = journal_einstellungen(tasks={f"{PFAD}.haengen": {"timeout": 0.3}})
+    backend = cast(JournalBackend, task_backends["default"])
+    haengt = T.haengen.enqueue("h")
+    T.langsam.enqueue(1.5)
+    vermerken = task_runner.mark_timed_out
+
+    def vermerken_und_freigeben(auftrag: task_runner.ClaimedTask) -> bool:
+        ergebnis = vermerken(auftrag)
+        auftraege.FREIGABE.set()
+        return ergebnis
+
+    try:
+        with mock.patch.object(task_runner, "mark_timed_out", side_effect=vermerken_und_freigeben):
+            assert _laufen(_runner(backend, burst=False)) == StopReason.ZEITGRENZE
+        zeile = _zeile(haengt)
+        assert (zeile.status, zeile.result_code, zeile.attempts) == (TaskStatus.ERLEDIGT, "ok", 1)
+        assert ("haengen", "h") in auftraege.aufrufe
     finally:
         auftraege.FREIGABE.set()
 
@@ -582,6 +639,14 @@ def test_metriken_zeigen_rueckstand_laufende_und_tote(journal: JournalBackend) -
         TaskRow.objects.create(
             queue="ai", task_path=f"{PFAD}.haengen", args={}, status=status, finished_at=timezone.now()
         )
+    # Älter als 24 Stunden: Der Alarm soll nicht bis zum Löschen nach 90 Tagen anstehen
+    TaskRow.objects.create(
+        queue="ai",
+        task_path=f"{PFAD}.haengen",
+        args={},
+        status=TaskStatus.TOT,
+        finished_at=timezone.now() - timedelta(hours=25),
+    )
 
     werte = {
         (probe.name, probe.labels["queue"]): probe.value

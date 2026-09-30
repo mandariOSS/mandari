@@ -4,6 +4,7 @@ Organization-level models for change requests and absence management.
 """
 
 import uuid
+from datetime import timedelta
 
 from django.db import models
 from django.utils import timezone
@@ -159,6 +160,15 @@ class MemberAbsence(models.Model):
     def is_past(self):
         today = timezone.now().date()
         return self.end_date < today
+
+
+#: Ab diesem Alter gilt ein Export „in Arbeit“ als abgebrochen (Absturz, Speichergrenze, letzter Versuch
+#: gescheitert): Er sperrt keinen neuen Export mehr, und ein erneuter Auftrag darf ihn übernehmen. Doppelte
+#: Zeitgrenze des Auftrags (``TASKS`` in settings.py, 15 min), weil ein Versuch nach der Zeitgrenze noch bis
+#: zum Neustart des Runners weiterlaufen kann.
+DATA_EXPORT_STALE_AFTER = timedelta(minutes=30)
+#: Feste Meldung für die Anzeige; Details stehen nur im Protokoll
+DATA_EXPORT_FAILED_MESSAGE = "Der Export konnte nicht erstellt werden. Bitte später erneut anfordern."
 
 
 class DataExport(models.Model):

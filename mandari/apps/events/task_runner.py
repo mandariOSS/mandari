@@ -19,9 +19,17 @@ Auftrag aus und melden das Ergebnis zurück.
   Protokoll und in ``mandari_tasks_dead``). ``PermanentTaskError``: sofort „fehlgeschlagen“.
 - **Zeitgrenze je Auftragstyp:** Läuft ein Auftrag zu lange, gilt sein Versuch als gescheitert
   (Ergebniscode ``zeitgrenze``). Einen Thread kann Python nicht abbrechen; der Runner nimmt deshalb
-  nichts Neues mehr an, lässt die übrigen Aufträge zu Ende laufen und startet den Prozess neu.
+  nichts Neues mehr an, lässt die übrigen Aufträge zu Ende laufen und startet den Prozess neu. Bis
+  dahin bleibt der Auftrag gesperrt, damit kein anderer Runner ihn parallel zum hängenden Thread
+  ausführt; nach dem Neustart läuft die Sperre ab, und er wird wiederholt. Wird der Thread vor dem
+  Neustart doch fertig, gilt sein Ergebnis.
 - **Neustart** auch nach ``max_tasks_per_process`` Aufträgen und oberhalb der Speichergrenze (RSS).
+  Jeder Neustart wartet auf den längsten laufenden Auftrag des Prozesses und hält bis dahin alle seine
+  Warteschlangen an. Warteschlangen mit langen Aufträgen (``ocr``, ``ai``) gehören deshalb in einen
+  eigenen Runner (``--queues``), damit ``mail`` und ``default`` nicht bis zu deren Zeitgrenze stehen.
 - **Aufbewahrung:** erledigte Aufträge 14 Tage, fehlgeschlagene und tote 90 Tage.
+- **Metriken** dieses Prozesses: ``mandari_tasks_duration_seconds``, ``mandari_tasks_failed_total``,
+  ``mandari_worker_rss_bytes`` (``apps.events.task_metrics``).
 
 Zustellung mindestens einmal: Stirbt der Prozess nach dem Auftrag, aber vor dem Festschreiben des
 Ergebnisses, läuft der Auftrag noch einmal. Aufträge müssen deshalb idempotent sein.
@@ -56,6 +64,7 @@ from django.utils.module_loading import import_string
 from . import leases
 from .models import Task as TaskRow
 from .models import TaskStatus
+from .task_metrics import TASK_DURATION, TASKS_FAILED, WORKER_RSS
 from .tasks_backend import RESULT_OK, JournalBackend, JournalOptions, PermanentTaskError, journal_options
 
 logger = logging.getLogger(__name__)
@@ -172,8 +181,9 @@ def claim(queue_name: str, config: JournalOptions, lock_ttl: timedelta = LOCK_TT
             return None
         versuch = zeile.attempts + 1
         # Bedingung auf Status und Versuche: ohne Zeilensperren (SQLite) holt so nur einer den Auftrag
+        # Ergebniscode leeren: Ab jetzt gilt er für diesen Versuch (z. B. ``zeitgrenze``)
         geholt = TaskRow.objects.filter(pk=zeile.pk, status=TaskStatus.WARTEND, attempts=zeile.attempts).update(
-            status=TaskStatus.LAEUFT, attempts=versuch, locked_until=_ablauf(lock_ttl)
+            status=TaskStatus.LAEUFT, attempts=versuch, locked_until=_ablauf(lock_ttl), result_code=None
         )
         if not geholt:
             return None
@@ -228,12 +238,15 @@ def execute(claimed: ClaimedTask, *, backend_alias: str = "default", worker_id: 
     except PermanentTaskError as exc:
         logger.warning("Auftrag %s (%s) endgültig gescheitert", claimed.id, claimed.task_path, exc_info=True)
         ausgang = Outcome(_klassenpfad(exc), retry=False)
+        TASKS_FAILED.labels(queue=claimed.queue, grund="endgueltig").inc()
     except Exception as exc:  # noqa: BLE001 – jeder Fehler eines Auftrags wird protokolliert und wiederholt
         logger.exception("Auftrag %s (%s) Versuch %d gescheitert", claimed.id, claimed.task_path, claimed.attempt)
         ausgang = Outcome(_klassenpfad(exc))
+        TASKS_FAILED.labels(queue=claimed.queue, grund="fehler").inc()
     else:
         ausgang = SUCCESS
         logger.info("Auftrag %s (%s) erledigt in %.1f s", claimed.id, claimed.task_path, time.monotonic() - start)
+    TASK_DURATION.labels(queue=claimed.queue).observe(time.monotonic() - start)
 
     object.__setattr__(ergebnis, "finished_at", timezone.now())
     object.__setattr__(ergebnis, "status", TaskResultStatus.SUCCESSFUL if ausgang.ok else TaskResultStatus.FAILED)
@@ -246,8 +259,8 @@ def execute(claimed: ClaimedTask, *, backend_alias: str = "default", worker_id: 
 def finish(claimed: ClaimedTask, outcome: Outcome) -> str | None:
     """Schreibt das Ergebnis des eigenen Versuchs; gibt den neuen Status zurück.
 
-    ``None``: Der Versuch gilt nicht mehr (Sperre abgelaufen und von einem anderen Runner übernommen
-    oder schon als Zeitüberschreitung abgeschlossen); es wird nichts geändert.
+    ``None``: Der Versuch gilt nicht mehr (Sperre abgelaufen, freigegeben oder von einem anderen Runner
+    übernommen); es wird nichts geändert.
     """
     werte: dict[str, Any] = {"locked_until": None, "result_code": outcome.code}
     if outcome.ok:
@@ -294,6 +307,20 @@ def release(claimed: ClaimedTask) -> bool:
     )
 
 
+def mark_timed_out(claimed: ClaimedTask) -> bool:
+    """Vermerkt die Zeitüberschreitung des eigenen Versuchs (Ergebniscode ``zeitgrenze``).
+
+    Der Auftrag bleibt „läuft“ und gesperrt, solange der Prozess mit dem hängenden Thread lebt; sonst
+    könnte ein anderer Runner ihn nach der Wartezeit parallel ein zweites Mal ausführen. Nach dem
+    Neustart läuft die Sperre ab, und ``release_expired`` gibt ihn zur Wiederholung frei.
+    """
+    return bool(
+        TaskRow.objects.filter(pk=claimed.id, status=TaskStatus.LAEUFT, attempts=claimed.attempt).update(
+            result_code=CODE_TIMEOUT
+        )
+    )
+
+
 def renew_locks(claimed: Sequence[ClaimedTask], lock_ttl: timedelta = LOCK_TTL) -> int:
     """Verlängert die Sperren laufender eigener Versuche; gibt die Zahl der noch eigenen zurück."""
     if not claimed:
@@ -308,25 +335,29 @@ def release_expired(limit: int = 100) -> int:
     """Gibt Aufträge mit abgelaufener Sperre frei (Runner abgestürzt oder hängt); gibt deren Zahl zurück.
 
     Der Versuch zählt: Ein Auftrag, der den Prozess jedes Mal abstürzen lässt, ist nach
-    ``max_attempts`` tot.
+    ``max_attempts`` tot. Hatte der Versuch die Zeitgrenze überschritten, bleibt der Ergebniscode
+    ``zeitgrenze`` (sein Runner hat ihn bis zum eigenen Neustart gesperrt gehalten).
     """
     with transaction.atomic():
         abgelaufen = list(
             TaskRow.objects.select_for_update(skip_locked=True)
             .filter(status=TaskStatus.LAEUFT, locked_until__lt=Now())
-            .values_list("pk", "attempts", "max_attempts", "task_path")[:limit]
+            .values_list("pk", "attempts", "max_attempts", "task_path", "queue", "result_code")[:limit]
         )
-        for pk, versuche, hoechstens, pfad in abgelaufen:
+        for pk, versuche, hoechstens, pfad, warteschlange, code in abgelaufen:
             zeile = TaskRow.objects.filter(pk=pk, status=TaskStatus.LAEUFT, attempts=versuche)
+            if code != CODE_TIMEOUT:  # Zeitüberschreitungen hat ihr Runner schon gezählt
+                code = CODE_LOCK_EXPIRED
+                TASKS_FAILED.labels(queue=warteschlange, grund="sperre_abgelaufen").inc()
             if versuche >= hoechstens:
-                zeile.update(status=TaskStatus.TOT, finished_at=Now(), locked_until=None, result_code=CODE_LOCK_EXPIRED)
+                zeile.update(status=TaskStatus.TOT, finished_at=Now(), locked_until=None, result_code=code)
                 logger.error("Auftrag %s (%s): Sperre abgelaufen, nach %d Versuchen tot", pk, pfad, versuche)
             else:
                 zeile.update(
                     status=TaskStatus.WARTEND,
                     run_after=_ablauf(retry_delay(versuche)),
                     locked_until=None,
-                    result_code=CODE_LOCK_EXPIRED,
+                    result_code=code,
                 )
                 logger.warning("Auftrag %s (%s): Sperre abgelaufen, wird wiederholt", pk, pfad)
     return len(abgelaufen)
@@ -410,7 +441,8 @@ class _Slot:
     thread: threading.Thread | None = None
     current: ClaimedTask | None = None
     deadline: float = 0.0
-    #: hing über die Zeitgrenze hinaus; bekommt nichts mehr, bis der Prozess neu startet
+    #: hing über die Zeitgrenze hinaus; bekommt nichts mehr, bis der Prozess neu startet (sein Auftrag
+    #: bleibt bis dahin gesperrt, siehe ``mark_timed_out``)
     abandoned: bool = False
 
     @property
@@ -589,8 +621,8 @@ class TaskRunner:
                 slot.current = None
             self.completed += 1
             if slot.abandoned:
-                logger.info("Auftrag %s wurde nach der Zeitgrenze doch fertig; Ergebnis verworfen", auftrag.id)
-                continue
+                # Noch gesperrt (``mark_timed_out``) und kein anderer Versuch läuft: Das Ergebnis gilt
+                logger.info("Auftrag %s wurde nach der Zeitgrenze doch fertig (%s)", auftrag.id, ausgang.code)
             offen.append((auftrag, ausgang))
         for index, (auftrag, ausgang) in enumerate(offen):
             try:
@@ -606,18 +638,21 @@ class TaskRunner:
             auftrag = slot.current
             if auftrag is None or slot.abandoned or jetzt < slot.deadline:
                 continue
+            self._request(StopReason.ZEITGRENZE)
+            # Bei einem Datenbankfehler im nächsten Durchlauf erneut: Der Slot gilt erst danach als aufgegeben
+            mark_timed_out(auftrag)
             slot.abandoned = True
+            TASKS_FAILED.labels(queue=auftrag.queue, grund="zeitgrenze").inc()
             logger.error(
                 "Auftrag %s (%s) hat die Zeitgrenze von %.0f s überschritten; der Runner startet danach neu",
                 auftrag.id,
                 auftrag.task_path,
                 auftrag.timeout,
             )
-            self._request(StopReason.ZEITGRENZE)
-            finish(auftrag, Outcome(CODE_TIMEOUT))
 
     def _renew(self) -> None:
-        laufend = [slot.current for slot in self._slots if slot.busy and slot.current is not None]
+        # auch aufgegebene (Zeitgrenze): gesperrt, bis dieser Prozess endet
+        laufend = [slot.current for slot in self._slots if slot.current is not None]
         laufend += [auftrag for auftrag, _ in self._unwritten]
         eigene = renew_locks(laufend, self.lock_ttl)
         if eigene < len(laufend):
@@ -628,12 +663,16 @@ class TaskRunner:
             self._request(StopReason.ANZAHL)
         if self.max_memory_bytes and self.completed:
             belegt = self._rss()
+            if belegt is not None:
+                WORKER_RSS.set(belegt)
             if belegt is not None and belegt > self.max_memory_bytes:
                 logger.info("Aufträge: Speichergrenze überschritten (%d MB)", belegt // (1024 * 1024))
                 self._request(StopReason.SPEICHER)
 
     def _check_memory_baseline(self) -> None:
         belegt = self._rss() if self.max_memory_bytes else None
+        if belegt is not None:
+            WORKER_RSS.set(belegt)
         if belegt is not None and belegt >= self.max_memory_bytes:
             # Sonst startete der Runner nach jedem Auftrag neu
             logger.error(

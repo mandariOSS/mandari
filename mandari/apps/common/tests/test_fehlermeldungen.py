@@ -83,7 +83,7 @@ def test_datenexport_speichert_keinen_ausnahmetext(org: Any, make_member: Any) -
         "apps.work.organization.export_service.dsgvo_export_service.collect_user_data",
         side_effect=RuntimeError(GEHEIM),
     ):
-        cast(Any, generate_dsgvo_export_task).call(str(export.id))
+        cast(Any, generate_dsgvo_export_task).enqueue(str(export.id))
     export.refresh_from_db()
     assert export.status == "failed"
     assert export.error_message

@@ -36,7 +36,7 @@ def export(org: Any, make_member: Any) -> DataExport:
     eigentuemerin = make_member(org, ["dashboard.view"], email="eigentuemerin@example.org")
     export = DataExport.objects.create(organization=org, membership=eigentuemerin, export_format="json")
     with mock.patch("apps.work.organization.export_service.dsgvo_export_service.collect_user_data", return_value=DATEN):
-        cast(Any, generate_dsgvo_export_task).call(str(export.id))
+        cast(Any, generate_dsgvo_export_task).enqueue(str(export.id))
     export.refresh_from_db()
     assert export.status == "completed"
     return export

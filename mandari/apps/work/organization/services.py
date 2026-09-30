@@ -41,7 +41,7 @@ from apps.tenants.models import (
 )
 
 from . import emails, selectors
-from .models import DataExport, MemberAbsence, MemberChangeRequest
+from .models import DATA_EXPORT_FAILED_MESSAGE, DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberChangeRequest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -1364,6 +1364,11 @@ def start_data_export(organization: Organization, membership: Membership, export
     """DSGVO-Export asynchron anstoßen (kein Doppel-Export während eines laufenden)."""
     from apps.work.background_tasks import generate_dsgvo_export_task
 
+    # Abgebrochene Exporte (Absturz, alle Versuche gescheitert) als fehlgeschlagen abschließen
+    jetzt = timezone.now()
+    DataExport.objects.filter(organization=organization, membership=membership, status="processing").exclude(
+        started_at__gte=jetzt - DATA_EXPORT_STALE_AFTER
+    ).update(status="failed", error_message=DATA_EXPORT_FAILED_MESSAGE, completed_at=jetzt)
     if selectors.has_active_export(organization, membership):
         raise ServiceError(
             "Es läuft bereits ein Export. Bitte warten Sie, bis dieser abgeschlossen ist.", message_levels.INFO

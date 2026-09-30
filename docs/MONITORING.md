@@ -153,7 +153,10 @@ das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 | `mandari_tasks_queued` | `queue` | Aufträge (`events_task`, Backend `JournalBackend`): fällige wartende Aufträge je Warteschlange, also der Rückstand des Runners `manage.py events_tasks` (`apps/events/task_metrics.py`, beim Abruf aus der Datenbank gemessen) |
 | `mandari_tasks_oldest_queued_seconds` | `queue` | wie lange der älteste fällige Auftrag schon wartet; wächst, wenn kein Runner läuft |
 | `mandari_tasks_running` | `queue` | laufende Aufträge |
-| `mandari_tasks_dead` | `queue` | tote (alle Versuche gescheitert) und fehlgeschlagene Aufträge der letzten 90 Tage; Alarm bei mehr als null, die Ursache steht im Protokoll des Runners |
+| `mandari_tasks_dead` | `queue` | tote (alle Versuche gescheitert) und endgültig fehlgeschlagene Aufträge, die in den letzten 24 Stunden beendet wurden; Alarm bei mehr als null (erlischt nach einem Tag von selbst), die Ursache steht im Protokoll des Runners |
+| `mandari_tasks_duration_seconds` | `queue` | Laufzeit je Auftragsversuch; nur im Prozess des Runners |
+| `mandari_tasks_failed_total` | `queue`, `grund` | gescheiterte Versuche: `fehler` (wird wiederholt), `endgueltig`, `zeitgrenze`, `sperre_abgelaufen` (Runner abgestürzt); nur im Prozess des Runners |
+| `mandari_worker_rss_bytes` | `role` | belegter Arbeitsspeicher des Runners (`role="tasks"`); oberhalb von `TASKS_MAX_MEMORY_MB` startet er neu; nur im Prozess des Runners |
 
 `view` ist der URL-Name samt Namensraum (z. B. `session:meeting_detail`), nie der konkrete
 Pfad – sonst würde jede ID ein neues Label erzeugen. Nicht auflösbare Pfade laufen unter

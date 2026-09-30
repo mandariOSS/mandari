@@ -8,8 +8,16 @@ Arbeit des Runners:
 - ``mandari_tasks_queued{queue}``: fällige wartende Aufträge (Rückstand).
 - ``mandari_tasks_oldest_queued_seconds{queue}``: wie lange der älteste fällige Auftrag schon wartet.
 - ``mandari_tasks_running{queue}``: laufende Aufträge.
-- ``mandari_tasks_dead{queue}``: tote und fehlgeschlagene Aufträge der Aufbewahrungsfrist (90 Tage).
-  Alarm bei mehr als null; die Ursache steht im Protokoll des Runners.
+- ``mandari_tasks_dead{queue}``: in den letzten 24 Stunden tot oder endgültig fehlgeschlagen beendete
+  Aufträge. Alarm bei mehr als null; er erlischt nach einem Tag von selbst, die Ursache steht im
+  Protokoll des Runners.
+
+Nur im Prozess des Runners (``manage.py events_tasks``) und ab dem Start bei null:
+
+- ``mandari_tasks_duration_seconds{queue}``: Laufzeit je Versuch.
+- ``mandari_tasks_failed_total{queue,grund}``: gescheiterte Versuche (``fehler``, ``endgueltig``,
+  ``zeitgrenze``, ``sperre_abgelaufen``).
+- ``mandari_worker_rss_bytes{role}``: belegter Arbeitsspeicher (RSS) des Runners.
 """
 
 from __future__ import annotations
@@ -17,11 +25,13 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import Iterator
+from datetime import timedelta
+from typing import Final
 
 from django.db.models import Count, Min, Q
 from django.db.models.functions import Now
 from django.utils import timezone
-from prometheus_client import REGISTRY
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 from prometheus_client.core import GaugeMetricFamily, Metric
 
 from apps.common.metrics import MisstErstBeimAbruf
@@ -30,12 +40,31 @@ from .models import Task, TaskStatus
 
 logger = logging.getLogger(__name__)
 
+#: Zeitfenster für ``mandari_tasks_dead``
+DEAD_WINDOW: Final = timedelta(hours=24)
+
+TASK_DURATION = Histogram(
+    "mandari_tasks_duration_seconds",
+    "Laufzeit eines Auftragsversuchs (Sekunden)",
+    ["queue"],
+    buckets=(0.1, 0.5, 1.0, 5.0, 15.0, 60.0, 300.0, 900.0, 1800.0, 3600.0),
+)
+TASKS_FAILED = Counter("mandari_tasks_failed_total", "Gescheiterte Auftragsversuche nach Grund", ["queue", "grund"])
+# Mit Label, damit Prozesse ohne Runner (Web) keinen Wert 0 melden
+WORKER_RSS = Gauge("mandari_worker_rss_bytes", "Belegter Arbeitsspeicher des Runners (RSS, Bytes)", ["role"]).labels(
+    role="tasks"
+)
+
 
 class TaskCollector(MisstErstBeimAbruf):
     def collect(self) -> Iterator[Metric]:
+        tot_seit = timezone.now() - DEAD_WINDOW
         try:
             je_status = list(
-                Task.objects.filter(status__in=[TaskStatus.LAEUFT, TaskStatus.FEHLGESCHLAGEN, TaskStatus.TOT])
+                Task.objects.filter(
+                    Q(status=TaskStatus.LAEUFT)
+                    | Q(status__in=[TaskStatus.FEHLGESCHLAGEN, TaskStatus.TOT], finished_at__gte=tot_seit)
+                )
                 .values("queue")
                 .annotate(
                     laufend=Count("id", filter=Q(status=TaskStatus.LAEUFT)),
@@ -62,7 +91,9 @@ class TaskCollector(MisstErstBeimAbruf):
             wartend.add_metric([rueckstand["queue"]], rueckstand["anzahl"])
             alter.add_metric([rueckstand["queue"]], max((jetzt - rueckstand["seit"]).total_seconds(), 0.0))
         laufend = GaugeMetricFamily("mandari_tasks_running", "Laufende Aufträge", labels=["queue"])
-        tot = GaugeMetricFamily("mandari_tasks_dead", "Tote und fehlgeschlagene Aufträge", labels=["queue"])
+        tot = GaugeMetricFamily(
+            "mandari_tasks_dead", "Tote und fehlgeschlagene Aufträge der letzten 24 Stunden", labels=["queue"]
+        )
         for stand in je_status:
             laufend.add_metric([stand["queue"]], stand["laufend"])
             tot.add_metric([stand["queue"]], stand["tot"])
