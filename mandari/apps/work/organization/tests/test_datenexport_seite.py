@@ -13,6 +13,7 @@ import re
 from typing import Any
 
 import pytest
+from django.utils import timezone
 
 from apps.work.organization.models import DataExport
 
@@ -34,7 +35,10 @@ def test_exporte_als_json_script(org: Any, mitglied: Any, client_for: Any) -> No
     fertig = DataExport.objects.create(
         organization=org, membership=mitglied, status="completed", export_format="pdf", file_size=2048
     )
-    laufend = DataExport.objects.create(organization=org, membership=mitglied, status="processing")
+    # Wie im Auftrag: "in Arbeit" immer mit Startzeit (ohne gilt der Export als abgebrochen)
+    laufend = DataExport.objects.create(
+        organization=org, membership=mitglied, status="processing", started_at=timezone.now()
+    )
 
     client = client_for(mitglied.user)
     html = client.get(f"/work/{org.slug}/profile/data/").content.decode()
