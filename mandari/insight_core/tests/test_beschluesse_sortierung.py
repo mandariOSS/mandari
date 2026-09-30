@@ -28,8 +28,13 @@ def _schluessel_absteigend(anzahl: int) -> list[uuid.UUID]:
 
 
 def test_beschluesse_gleichzeitiger_sitzungen_in_tagesordnungsfolge() -> None:
+    # Veröffentlichender Mandant mit freigeschalteter OParl-Schnittstelle: Die Quelle entsteht beim Anlegen
     tenant = SessionTenant.objects.create(
-        name="Bezirk Nord", slug="nord", insight_publish=True, implementation_publish=True
+        name="Bezirk Nord",
+        slug="nord",
+        insight_publish=True,
+        implementation_publish=True,
+        oparl_public_since=timezone.now(),
     )
     source = OParlSource.objects.get(sync_config__session_tenant="nord")
     body = OParlBody.objects.create(external_id=f"{source.url}body/", source=source, name="Bezirk Nord", slug="nord")
