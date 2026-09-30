@@ -22,7 +22,13 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: false,
     target: 'es2020',
-    rollupOptions: {
+    rolldownOptions: {
+      // Einstiege bekommen keine zusätzlichen Exporte: Gemeinsam genutzter Code (z. B. der Preload-Helfer für
+      // das nachgeladene pdf.js) landet in einem eigenen Chunk statt im Einstieg. Sonst importiert der
+      // nachgeladene Chunk den Einstieg über dessen Vite-Namen, während die Seite ihn in Produktion unter dem
+      // Namen des Manifest-Storage geladen hat – der Browser führte den Einstieg ein zweites Mal aus.
+      // Abgesichert durch apps/common/tests/test_vite_manifest.py.
+      preserveEntrySignatures: 'strict',
       input: {
         main: resolve(__dirname, 'frontend/js/main.ts'),
         editor: resolve(__dirname, 'frontend/editor/index.ts'),
