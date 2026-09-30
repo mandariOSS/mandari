@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("session", "0043_antrag_anhaenge"),
+        ("session", "0045_landesprofile_laden"),
     ]
 
     operations = [

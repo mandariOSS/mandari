@@ -378,7 +378,7 @@ class TestKontaktdaten:
 # Datenmigration: Bestand bleibt öffentlich, Ratsmitglieder übernommen
 # =============================================================================
 
-VORHER = ("session", "0043_antrag_anhaenge")
+VORHER = ("session", "0045_landesprofile_laden")
 NACHHER = ("session", "0047_oparl_bestand_uebernehmen")
 
 
