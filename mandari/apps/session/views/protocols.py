@@ -385,7 +385,7 @@ class ProtocolCorrectionView(SessionViewMixin, TemplateView):
         voters = []
         if item is not None and item.voting_method in protocol_correction_service.INDIVIDUAL_METHODS:
             votes = protocol_correction_service.current_votes(item)
-            for attendance in voting_service.eligibility(meeting).voting:
+            for attendance in voting_service.eligibility(meeting, item).voting:
                 attendance.current_vote = votes.get(str(attendance.person_id), "")
                 voters.append(attendance)
         public_scope = (

@@ -32,7 +32,7 @@ from ..models import (
     SessionVote,
 )
 from ..permissions import SessionViewMixin
-from ..services import protocol_lock, voting_service
+from ..services import attendance_service, participation_service, protocol_lock, voting_service
 from ..visibility import meeting_q, paper_visible
 from .nexturl import safe_next_url
 
@@ -75,20 +75,32 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         item = _get_item(self, self.kwargs["item_id"])
         # Stimmrecht (Issue #318): Stimmberechtigte Anwesende stimmen ab, Beratende und Gäste werden
-        # nur ausgewiesen; eine frühere Stimme ohne Stimmrecht entfernt das nächste Speichern
-        assessed = voting_service.eligibility(item.meeting)
+        # nur ausgewiesen; eine frühere Stimme ohne Stimmrecht entfernt das nächste Speichern.
+        # Teilnahmeart (Issue #139): gestörte Zugeschaltete und vom Landesprofil Ausgeschlossene stimmen nicht ab
+        assessed = voting_service.eligibility(item.meeting, item)
         loaded = list(item.votes.select_related("person"))
         votes = {v.person_id: v.vote for v in loaded}
         protocol = getattr(item.meeting, "protocol", None)
-        for attendance in assessed.voting + assessed.advisory + assessed.others:
+        not_voting = assessed.unreachable + assessed.remote_excluded
+        for attendance in assessed.voting + assessed.advisory + assessed.others + not_voting:
             attendance.current_vote = votes.get(attendance.person_id, "")
+        secret_rule = participation_service.remote_vote_rule(item.meeting, item, voting_method="secret")
+        election_rule = participation_service.remote_vote_rule(
+            item.meeting, item, voting_method="summary", is_election=True
+        )
         context.update(
             {
                 "item": item,
                 "meeting": item.meeting,
                 "attendances": assessed.voting,
                 "advisory": assessed.advisory,
-                "stray_votes": [a for a in assessed.advisory + assessed.others if a.current_vote],
+                "unreachable": assessed.unreachable,
+                "remote_excluded": assessed.remote_excluded,
+                "remote_rule": assessed.remote_rule,
+                "secret_hint": secret_rule.message if secret_rule else "",
+                "election_hint": election_rule.message if election_rule else "",
+                "item_quorum": attendance_service.quorum_status(item.meeting, item, attendances=assessed.attendances),
+                "stray_votes": [a for a in assessed.advisory + assessed.others + not_voting if a.current_vote],
                 "attendance_complete": assessed.complete,
                 "locked": protocol is not None and protocol.is_locked,
                 "method_choices": SessionAgendaItem.VOTING_METHOD_CHOICES,
@@ -107,13 +119,15 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         if method not in {value for value, _ in SessionAgendaItem.VOTING_METHOD_CHOICES}:
             method = item.voting_method
         item.voting_method = method
+        # Wahl (Issue #139): Das Landesprofil kann Zugeschaltete ausschließen
+        item.is_election = bool(request.POST.get("is_election"))
 
         # Ergebnis (optional mitpflegen)
         result = request.POST.get("vote_result", "")
         if result in {value for value, _ in item._meta.get_field("vote_result").choices}:
             item.vote_result = result
 
-        assessed = voting_service.eligibility(item.meeting)
+        assessed = voting_service.eligibility(item.meeting, item)
         votes_by_person = {}
         for attendance in item.meeting.attendances.select_related("person"):
             key = f"vote_{attendance.person_id}"
@@ -166,6 +180,7 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
             request=request,
             changes={
                 "abstimmung": item.get_voting_method_display(),
+                "wahl": item.is_election,
                 "ergebnis": item.get_vote_result_display(),
                 "ja": item.votes_yes,
                 "nein": item.votes_no,

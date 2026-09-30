@@ -19,6 +19,7 @@ die hier genannten Fristen sind konfigurierbare Voreinstellungen.
 | Sitzungsgeld-Positionen | `SessionAllowance` | Beträge/Status, keine Bankdaten |
 | Ladungsprotokoll (Empfänger, Zustellweg, Versand, Empfangsbestätigung) | `SessionInvitationRecipient` | Zugriff nur mit `edit_meetings` |
 | Rückmeldung zur Sitzung (Zu-/Absage, Zeitpunkt, Herkunft, Vertretungswunsch) | `SessionAttendance` | Zugriff nur mit Rollenberechtigung |
+| Teilnahmeart und Störungen Zugeschalteter (Zeiten, Ursache, interner Vermerk) | `SessionAttendance.participation_mode`, `SessionAttendanceDisruption` | Zugriff nur mit Rollenberechtigung; Niederschrift nennt Zeiten und Ursache, nie den Vermerk; Anonymisierung leert den Vermerk |
 | Grund einer Absage | `SessionAttendance.response_reason_encrypted` | AES-256-GCM, nur in der Rückmeldeübersicht des Sitzungsdienstes sichtbar, nicht in OParl, Nachweis oder Mails an Dritte |
 | Nicht-öffentliche Protokollteile | `SessionProtocol.content_encrypted` | AES-256-GCM |
 | Interne Sitzungsnotizen | `SessionMeeting.internal_notes_encrypted` | AES-256-GCM |

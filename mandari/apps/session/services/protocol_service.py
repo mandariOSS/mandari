@@ -286,21 +286,17 @@ def perform_action(
 PARTICIPATED_STATUSES = ("present", "joined_late", "left_early")
 
 
-def presence_note(attendance: SessionAttendance) -> str:
+def presence_note(attendance: SessionAttendance, *, show_mode: bool = False) -> str:
     """
     Vermerk zur Teilnahme im Teilnehmerverzeichnis: verspätet (ab …) bzw. vorzeitig gegangen (bis …).
 
-    Die Uhrzeit erscheint, wenn Ankunft bzw. Abgang erfasst sind; sonst nur der Vermerk.
+    Die Uhrzeit erscheint, wenn Ankunft bzw. Abgang erfasst sind; sonst nur der Vermerk. Zugeschaltete
+    (Issue #139) mit Zuschalt- und Trennzeit und Störungen, mit ``show_mode`` auch „vor Ort“
+    (``participation_service.participation_note``).
     """
-    if attendance.status == "joined_late":
-        if attendance.arrival_time:
-            return f"verspätet, ab {attendance.arrival_time:%H:%M} Uhr"
-        return "verspätet"
-    if attendance.status == "left_early":
-        if attendance.departure_time:
-            return f"vorzeitig gegangen, bis {attendance.departure_time:%H:%M} Uhr"
-        return "vorzeitig gegangen"
-    return ""
+    from apps.session.services import participation_service
+
+    return participation_service.participation_note(attendance, show_mode=show_mode)
 
 
 def participant_directory(meeting: SessionMeeting) -> dict:
@@ -308,12 +304,20 @@ def participant_directory(meeting: SessionMeeting) -> dict:
     Teilnehmerverzeichnis aus der Anwesenheitserfassung gruppieren.
 
     „Anwesend“ umfasst alle, die an der Sitzung teilgenommen haben, auch Verspätete und vorzeitig
-    Gegangene; ihr Vermerk steht in ``presence_note`` (Uhrzeit, falls erfasst).
+    Gegangene; ihr Vermerk steht in ``presence_note`` (Uhrzeit, falls erfasst). In hybriden und
+    digitalen Sitzungen nennt er die Teilnahmeart je Person (Issue #139).
     """
-    attendances = list(meeting.attendances.select_related("person").order_by("person__family_name"))
+    from apps.session.services import participation_service
+
+    attendances = list(
+        participation_service.with_disruptions(meeting.attendances.select_related("person"), meeting).order_by(
+            "person__family_name"
+        )
+    )
     present = [a for a in attendances if a.status in PARTICIPATED_STATUSES]
+    show_mode = participation_service.show_mode(meeting, attendances)
     for attendance in present:
-        cast(Any, attendance).presence_note = presence_note(attendance)
+        cast(Any, attendance).presence_note = presence_note(attendance, show_mode=show_mode)
     excused = [a for a in attendances if a.status in ("excused", "declined")]
     absent = [a for a in attendances if a.status == "absent"]
     other = [a for a in attendances if a not in present and a not in excused and a not in absent]

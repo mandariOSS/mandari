@@ -118,6 +118,11 @@ def _anonymize_person(person) -> list[str]:
         cleared.append("Absagegründe")
     if person.invitation_receipts.exclude(email="").update(email=""):
         cleared.append("E-Mail in Ladungsprotokollen")
+    # Störungsvermerke Zugeschalteter (Issue #139): freier Vermerk; Zeiten und Ursache bleiben als Nachweis
+    from apps.session.models import SessionAttendanceDisruption
+
+    if SessionAttendanceDisruption.objects.filter(attendance__person=person).exclude(note="").update(note=""):
+        cleared.append("Vermerke zu Störungen")
     return cleared
 
 
@@ -349,15 +354,26 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
             "datum": timezone.localtime(a.meeting.start).date().isoformat(),
             "status": a.get_status_display(),
             "funktion": a.get_role_display(),
+            # Teilnahmeart und Störungen (Issue #139)
+            "teilnahmeart": a.get_participation_mode_display(),
+            "stoerungen": [
+                {
+                    "beginn": d.started_at.isoformat(timespec="minutes"),
+                    "ende": d.ended_at.isoformat(timespec="minutes") if d.ended_at else None,
+                    "ursache": d.get_cause_display(),
+                    "vermerk": d.note,
+                }
+                for d in a.disruptions.all()
+            ],
             # Rückmeldung zur Ladung (Issue #225) – der Grund ist Teil der Auskunft an die Person selbst
             "rueckmeldung_am": a.responded_at.isoformat() if a.responded_at else None,
             "rueckmeldung_ueber": a.get_response_source_display() if a.response_source else "",
             "vertretung_erbeten": a.substitute_requested,
             "grund": a.get_response_reason_decrypted() or "",
         }
-        for a in person.attendances.select_related("meeting__organization", "meeting__tenant").order_by(
-            "meeting__start"
-        )
+        for a in person.attendances.select_related("meeting__organization", "meeting__tenant")
+        .prefetch_related("disruptions")
+        .order_by("meeting__start")
     ]
 
     data["ladungen"] = [

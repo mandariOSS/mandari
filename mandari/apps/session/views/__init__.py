@@ -38,6 +38,8 @@ from .applications import (
 from .attendance import (
     AttendanceAddView,
     AttendanceDeleteView,
+    AttendanceDisruptionAddView,
+    AttendanceDisruptionUpdateView,
     AttendanceGenerateView,
 )
 from .audit import (
@@ -293,6 +295,8 @@ __all__ = [
     "ApplicationProcessView",
     "AttendanceAddView",
     "AttendanceDeleteView",
+    "AttendanceDisruptionAddView",
+    "AttendanceDisruptionUpdateView",
     "AttendanceGenerateView",
     "AttendanceUpdateView",
     "AuditLogExportView",
