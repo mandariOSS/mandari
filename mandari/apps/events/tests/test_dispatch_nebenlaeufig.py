@@ -52,12 +52,28 @@ def _cursor(name: str = NAME) -> int:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_zwei_zusteller_ohne_lease_wirken_genau_einmal(leeres_register: dict[str, Subscriber], sicht: Sicht) -> None:
+def test_zwei_zusteller_ohne_lease_wirken_genau_einmal(
+    leeres_register: dict[str, Subscriber], sicht: Sicht, pg_verbindungen: Verbindungen
+) -> None:
     nur_postgres()
     beteiligt: set[str] = set()
+    beobachter = pg_verbindungen()
+    erster_aufruf = threading.Event()
+
+    def anderer_wartet_auf_die_sperre() -> bool:
+        zeile = beobachter.execute(
+            "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'"
+        ).fetchone()
+        return bool(zeile and zeile[0])
 
     def handler(events: list[Event], delivery: Delivery) -> None:
         beteiligt.add(threading.current_thread().name)
+        if not erster_aufruf.is_set():
+            # Der erste Batch hält die Zeilensperre, bis der andere Zusteller nachweislich darauf wartet
+            erster_aufruf.set()
+            ende = time.monotonic() + FRIST
+            while not anderer_wartet_auf_die_sperre() and time.monotonic() < ende:
+                time.sleep(0.01)
         sicht.schreiben(events)  # scheitert bei doppelter Zustellung (event_id eindeutig)
         time.sleep(0.005)
 
