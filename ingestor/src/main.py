@@ -699,3 +699,5 @@ def probe_ris(
 
 if __name__ == "__main__":
     app()
+
+# Nachweis Pfadfilter (#621): nur Kommentar, Entwurf wird geschlossen
