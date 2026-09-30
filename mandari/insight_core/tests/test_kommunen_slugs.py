@@ -117,7 +117,7 @@ class TestBefehl:
         [
             ("{id}", "ID=SLUG"),
             ("keine-uuid=muenster", "keine Kommunen-ID"),
-            (f"{uuid.uuid4()}=muenster", "keine Kommune"),
+            ("00000000-0000-4000-8000-000000000373=muenster", "keine Kommune"),  # feste ID: gleiche Test-IDs je Worker
             ("{id}=Münster", "Kleinbuchstaben"),
             ("{id}=muenster--nord", "Kleinbuchstaben"),
             ("{id}=index", "reserviert"),
