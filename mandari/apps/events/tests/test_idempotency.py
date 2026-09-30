@@ -8,11 +8,22 @@ from io import StringIO
 from typing import Any
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import CommandError, call_command
+from django.db import connection, transaction
 from django.utils import timezone
 
-from apps.events.idempotency import IdempotencyConflictError, purge, run_once
+from apps.events import schedules
+from apps.events.idempotency import (
+    IdempotencyConflictError,
+    NestedTransactionError,
+    purge,
+    purge_expired,
+    retention_days,
+    run_once,
+)
 from apps.events.models import IdempotencyKey, Lease
+from apps.events.schedule import Catchup, Cron, registry
 
 pytestmark = pytest.mark.django_db
 
@@ -94,3 +105,67 @@ def test_befehl_zum_aufraeumen(settings: Any) -> None:
     assert "1 Idempotenzschlüssel gelöscht (älter als 7 Tage)" in ausgabe.getvalue()
     with pytest.raises(CommandError):
         call_command("events_idempotency_purge", "--days", "0")
+
+
+def test_frist_aus_den_einstellungen(settings: Any) -> None:
+    assert retention_days() == 30
+    settings.EVENTS_IDEMPOTENCY_RETENTION_DAYS = 7
+    assert retention_days() == 7
+    settings.EVENTS_IDEMPOTENCY_RETENTION_DAYS = 0
+    with pytest.raises(ImproperlyConfigured):
+        retention_days()
+    with pytest.raises(CommandError):
+        call_command("events_idempotency_purge")
+
+
+def test_aufraeumen_nach_der_frist_der_einstellungen(settings: Any) -> None:
+    run_once("s", "alt", HASH, _arbeit([]))
+    run_once("s", "neu", HASH, _arbeit([]))
+    IdempotencyKey.objects.filter(key="alt").update(created_at=timezone.now() - timedelta(days=31))
+    assert purge_expired() == 1
+    settings.EVENTS_IDEMPOTENCY_RETENTION_DAYS = 400
+    assert purge_expired(timezone.now() + timedelta(days=399)) == 0
+    assert purge_expired(timezone.now() + timedelta(days=401)) == 1
+
+
+def test_zeitplan_raeumt_taeglich_auf() -> None:
+    """Ohne Zeitplan blieben Schlüssel und Hashes unbegrenzt liegen."""
+    eintrag = registry.get("apps.events.schedules.idempotenzschluessel_aufraeumen")
+    assert eintrag is not None
+    assert eintrag.task is schedules.idempotenzschluessel_aufraeumen
+    assert eintrag.trigger == Cron("40 3 * * *")
+    assert eintrag.catchup == Catchup.NACHHOLEN
+    run_once("s", "alt", HASH, _arbeit([]))
+    IdempotencyKey.objects.update(created_at=timezone.now() - timedelta(days=31))
+    assert schedules.idempotenzschluessel_aufraeumen.call() == 1
+    assert IdempotencyKey.objects.count() == 0
+
+
+# --- Eigene Transaktion -----------------------------------------------------------------------
+
+
+def test_in_offener_transaktion_des_aufrufers_abgelehnt() -> None:
+    zaehler: list[int] = []
+    with transaction.atomic(), pytest.raises(NestedTransactionError):
+        run_once("s", "k", HASH, _arbeit(zaehler))
+    assert zaehler == []
+    assert IdempotencyKey.objects.count() == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_antwort_ist_festgeschrieben() -> None:
+    gesehen: list[bool] = []
+
+    def arbeit() -> dict[str, Any]:
+        gesehen.append(connection.in_atomic_block)
+        return {"reference": "A/1"}
+
+    assert run_once("s", "k", HASH, arbeit) == ({"reference": "A/1"}, False)
+    assert gesehen == [True]
+    assert not connection.in_atomic_block
+    transaction.set_autocommit(False)
+    try:
+        transaction.rollback()
+    finally:
+        transaction.set_autocommit(True)
+    assert IdempotencyKey.objects.count() == 1

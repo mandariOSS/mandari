@@ -62,6 +62,29 @@ def test_kein_json(wert: Any) -> None:
         canonical_json(wert)
 
 
+@pytest.mark.parametrize(("zahl", "text"), [(2**53 - 1, "9007199254740991"), (-(2**53) + 1, "-9007199254740991")])
+def test_ganzzahlen_bis_zur_sicheren_grenze(zahl: int, text: str) -> None:
+    assert canonical_json(zahl) == text.encode()
+
+
+@pytest.mark.parametrize("zahl", [2**53, -(2**53), 10**21, -(10**30)])
+def test_ganzzahlen_ausserhalb_des_sicheren_bereichs_werden_abgelehnt(zahl: int) -> None:
+    """RFC 8785 rechnet mit Doubles: ``10**21`` hieße dort ``1e+21``, hier stünde die Zahl ausgeschrieben."""
+    with pytest.raises(ValueError):
+        canonical_json({"anzahl": zahl})
+
+
+@pytest.mark.parametrize("wert", ["a\ud800b", {"k": ["a\udfffb"]}, {"a\ud800": 1}])
+def test_einzelnes_surrogat_wird_abgelehnt_ohne_den_wert_zu_nennen(wert: Any) -> None:
+    geheim = "Erika Mustermann"
+    with pytest.raises(ValueError) as info:
+        canonical_json({"name": geheim, "wert": wert})
+    # UnicodeEncodeError trüge die ganze Zeichenkette mit sich (exc.object).
+    assert not isinstance(info.value, UnicodeEncodeError)
+    assert geheim not in repr(info.value.args)
+    assert info.value.__cause__ is None
+
+
 def test_inhalts_hash_ist_sha256_ueber_das_kanonische_json() -> None:
     wert = {"title": "Bänke", "document": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"}
     assert content_hash(wert) == hashlib.sha256(canonical_json(wert)).hexdigest()
@@ -93,6 +116,12 @@ def test_problem_nach_rfc_9457() -> None:
     zurueck = Problem.from_dict(daten, status=422)
     assert (zurueck.status, zurueck.kind, zurueck.errors) == (422, "validierung", problem.errors)
     assert not zurueck.retryable
+
+
+@pytest.mark.parametrize("angabe", ["kaputt", "", None, 200, 4.5, ["x"]])
+def test_status_kommt_aus_der_antwort_nicht_aus_dem_inhalt(angabe: object) -> None:
+    problem = Problem.from_dict({"type": "about:blank", "status": angabe}, status=409)
+    assert problem.status == 409
 
 
 def test_fremdes_problem_bleibt_lesbar() -> None:

@@ -4,6 +4,8 @@ Idempotenzschlüssel nach der Aufbewahrungsfrist löschen (``apps.events.idempot
 
 Die Frist steht in ``EVENTS_IDEMPOTENCY_RETENTION_DAYS`` (Standard 30 Tage). Bis dahin erhält eine
 Wiederholung mit demselben Schlüssel dieselbe Quittung, danach gilt der Schlüssel als neu.
+Im Betrieb räumt der tägliche Zeitplan auf (``apps/events/schedules.py``); dieser Befehl ist für
+Handbetrieb und Fehlersuche.
 
     manage.py events_idempotency_purge            # Frist aus den Einstellungen
     manage.py events_idempotency_purge --days 7
@@ -14,17 +16,11 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.utils import timezone
 
-from apps.events.idempotency import purge
-
-DEFAULT_RETENTION_DAYS = 30
-
-
-def retention_days() -> int:
-    return int(getattr(settings, "EVENTS_IDEMPOTENCY_RETENTION_DAYS", DEFAULT_RETENTION_DAYS))
+from apps.events.idempotency import purge, retention_days
 
 
 class Command(BaseCommand):
@@ -34,7 +30,10 @@ class Command(BaseCommand):
         parser.add_argument("--days", type=int, default=None, help="Aufbewahrung in Tagen (Standard: Einstellung)")
 
     def handle(self, *args: Any, **options: Any) -> None:
-        days = options["days"] if options["days"] is not None else retention_days()
+        try:
+            days = options["days"] if options["days"] is not None else retention_days()
+        except ImproperlyConfigured:
+            days = 0
         if days < 1:
             raise CommandError("Die Aufbewahrung muss mindestens einen Tag betragen.")
         deleted = purge(timezone.now() - timedelta(days=days))

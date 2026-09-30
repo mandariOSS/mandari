@@ -10,5 +10,6 @@ Drehscheibe darf die Plattform (``apps.events``, ``apps.common``, ``apps.account
 
 Unterpakete:
 
+- ``hub.commands``: Befehle an den Eigentümer der Daten (Dispatcher, Quittung, Idempotenz, Clients)
 - ``hub.contracts``: Vertragsregister (Ereignishülle, Schemas je Typ und Version)
 """

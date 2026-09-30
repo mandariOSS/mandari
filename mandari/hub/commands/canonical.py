@@ -6,6 +6,15 @@ Der Inhalts-Hash einer Quittung ist SHA-256 über das kanonische JSON des Befehl
 Einreichende und Fremdsysteme ihn mit einer beliebigen JCS-Bibliothek nachrechnen können, folgt die
 Darstellung RFC 8785: keine Leerzeichen, Schlüssel nach UTF-16-Codeeinheiten sortiert, Zeichenketten
 nur mit den nötigen Escapes, Zahlen wie in ECMAScript (``Number.prototype.toString``).
+
+Zwei Arten von Werten lehnt ``canonical_json`` mit ``ValueError`` ab, weil fremde Bibliotheken dafür
+einen anderen Hash rechnen würden oder gar nicht rechnen können:
+
+- Ganzzahlen außerhalb von ±(2^53 − 1). RFC 8785 behandelt jede Zahl als IEEE-754-Double; größere
+  Ganzzahlen sind dort nicht exakt (``10**21`` würde zu ``1e+21``). Große Zahlen gehören als
+  Zeichenkette in den Inhalt (RFC 7493, I-JSON).
+- Zeichenketten mit einem einzelnen Surrogat (in JSON als ``"\\ud800"`` schreibbar): kein gültiges
+  Unicode, nicht als UTF-8 darstellbar.
 """
 
 from __future__ import annotations
@@ -15,11 +24,24 @@ import json
 import math
 from collections.abc import Mapping
 from decimal import Decimal
+from typing import Final
+
+#: Größte Ganzzahl, die jeder JSON-Leser exakt darstellt (IEEE 754, RFC 7493): 2^53 − 1
+MAX_SAFE_INTEGER: Final = 2**53 - 1
 
 
 def canonical_json(value: object) -> bytes:
-    """``value`` als kanonisches JSON (UTF-8); ``ValueError`` bei Werten, die JSON nicht kennt."""
-    return _serialize(value).encode("utf-8")
+    """
+    ``value`` als kanonisches JSON (UTF-8).
+
+    ``ValueError`` bei Werten, die JSON nicht kennt oder die sich nicht eindeutig darstellen lassen
+    (siehe Moduldokumentation). Die Meldung nennt nie den Wert.
+    """
+    try:
+        return _serialize(value).encode("utf-8")
+    except UnicodeEncodeError:
+        # Die ursprüngliche Ausnahme trägt die ganze Zeichenkette mit sich (``exc.object``).
+        raise ValueError("Zeichenkette mit einzelnem Surrogat ist kein gültiges Unicode") from None
 
 
 def content_hash(value: object) -> str:
@@ -35,6 +57,8 @@ def _serialize(value: object) -> str:
     if value is False:
         return "false"
     if isinstance(value, int):
+        if abs(value) > MAX_SAFE_INTEGER:
+            raise ValueError("Ganzzahl außerhalb von ±(2^53 − 1)")
         return str(value)
     if isinstance(value, float):
         return _number(value)

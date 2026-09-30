@@ -8,6 +8,7 @@ RFC 9457 (``docs/adr/20260929-befehle-synchron.md``, Prüfung „Vertragstestsui
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import timedelta
 from pathlib import Path
@@ -28,7 +29,7 @@ from hub.commands import (
     content_hash,
 )
 from hub.commands import dispatcher as dispatcher_modul
-from hub.commands.dispatcher import INTERNAL
+from hub.commands.dispatcher import INTERNAL, UNREPRESENTABLE
 from hub.commands.problems import PROBLEM_TYPE_BASE
 from hub.commands.tests.hilfen import (
     ACTOR,
@@ -37,6 +38,7 @@ from hub.commands.tests.hilfen import (
     TOKEN,
     DjangoTransport,
     json_body,
+    protokolltext,
     register_mit_testvertraegen,
 )
 
@@ -216,8 +218,11 @@ def test_fachliche_ablehnung_rollt_zurueck_und_darf_wiederholt_werden(sender: Co
     assert len(AUFRUFE) == 2
 
 
-def test_unerwarteter_fehler_ergibt_500_mit_festem_text(sender: CommandClient) -> None:
-    problem = _problem(sender, befehl(json_body(title=f"{ABSTURZ} {GEHEIM}")))
+def test_unerwarteter_fehler_ergibt_500_mit_festem_text(
+    sender: CommandClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.DEBUG):
+        problem = _problem(sender, befehl(json_body(title=f"{ABSTURZ} {GEHEIM}")))
     assert (problem["status"], problem["type"], problem["detail"]) == (
         500,
         f"{PROBLEM_TYPE_BASE}interner-fehler",
@@ -225,6 +230,32 @@ def test_unerwarteter_fehler_ergibt_500_mit_festem_text(sender: CommandClient) -
     )
     assert GEHEIM not in str(problem)
     assert Lease.objects.count() == 0
+    assert IdempotencyKey.objects.count() == 0
+    # Der Handler nennt den Titel in seiner Ausnahme; das Log nennt nur Typ und Aufrufstelle.
+    gescheitert = [r for r in caplog.records if r.name == "hub.commands" and r.levelno == logging.ERROR]
+    assert len(gescheitert) == 1
+    assert "gescheitert: RuntimeError" in gescheitert[0].getMessage()
+    assert "in einreichen" in gescheitert[0].getMessage()
+    assert not gescheitert[0].exc_info
+    assert GEHEIM not in protokolltext(caplog)
+    assert ABSTURZ not in protokolltext(caplog)
+
+
+@pytest.mark.parametrize(
+    "inhalt",
+    [
+        {"title": "a\ud800b"},
+        {"title": "Titel", "anzahl": 10**21},
+        {"title": "Titel", "anzahl": 2**53},
+    ],
+    ids=["surrogat", "zehn-hoch-21", "zwei-hoch-53"],
+)
+def test_inhalt_ohne_kanonische_darstellung_ergibt_422(sender: CommandClient, inhalt: dict[str, Any]) -> None:
+    """Kein 500: Ein Inhalt, für den es keinen Inhalts-Hash gibt, ist ein Fehler des Aufrufers."""
+    problem = _problem(sender, befehl(json_body(**inhalt)))
+    assert (problem["status"], problem["type"]) == (422, f"{PROBLEM_TYPE_BASE}validierung")
+    assert problem["errors"] == [{"pointer": "", "detail": UNREPRESENTABLE.removeprefix("$: ")}]
+    assert AUFRUFE == []
     assert IdempotencyKey.objects.count() == 0
 
 

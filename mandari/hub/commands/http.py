@@ -148,7 +148,8 @@ def _json_object(request: HttpRequest) -> dict[str, Any]:
         data = json.loads(request.body or b"null")
     except RequestDataTooBig:
         raise CommandError.of(413, "anfrage-zu-gross", "Der Inhalt ist zu groß.") from None
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        # RecursionError: zu tief verschachtelt
         raise CommandError.of(400, "ungueltiges-json", "Der Inhalt ist kein gültiges JSON.") from None
     if not isinstance(data, dict):
         raise CommandError.of(400, "ungueltiges-json", "Der Inhalt muss ein JSON-Objekt sein.")

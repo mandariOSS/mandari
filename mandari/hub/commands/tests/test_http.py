@@ -125,6 +125,32 @@ def test_kein_json_objekt_400(dispatcher: Dispatcher, daten: str, kind: str) -> 
     _problem(response, 400, kind)
 
 
+def test_einzelnes_surrogat_im_json_ergibt_422(dispatcher: Dispatcher) -> None:
+    """In JSON schreibbar (Escape), aber kein gültiges Unicode: 422 statt 500, der Handler läuft nicht."""
+    rohtext = json.dumps(json_body(title="a\ud800b"))
+    assert "\\ud800" in rohtext
+    response = Client().post(
+        URL,
+        data=rohtext,
+        content_type="application/json",
+        headers={"Authorization": f"Bearer {TOKEN}", "Idempotency-Key": "k"},
+    )
+    daten = _problem(response, 422, "validierung")
+    assert daten["errors"][0]["pointer"] == ""
+    assert BEFEHLE == []
+
+
+def test_zu_tief_verschachteltes_json_ergibt_400(dispatcher: Dispatcher) -> None:
+    tief = "[" * 100_000 + "]" * 100_000
+    response = Client().post(
+        URL,
+        data='{"title": ' + tief + "}",
+        content_type="application/json",
+        headers={"Authorization": f"Bearer {TOKEN}", "Idempotency-Key": "k"},
+    )
+    _problem(response, 400, "ungueltiges-json")
+
+
 def test_anderes_format_415(dispatcher: Dispatcher) -> None:
     response = Client().post(
         URL,
@@ -184,6 +210,34 @@ def test_unerwartete_antwort_ergibt_502(status: int, inhalt: bytes) -> None:
     with pytest.raises(CommandError) as info:
         client.send(_befehl())
     assert (info.value.problem.status, info.value.problem.detail) == (502, BAD_RESPONSE)
+
+
+@pytest.mark.parametrize("angabe", ["kaputt", 200, None, [409]])
+def test_status_der_antwort_gilt_nicht_die_angabe_im_inhalt(angabe: object) -> None:
+    """Ein nicht numerischer oder abweichender ``status`` im Problem ändert nichts am HTTP-Status."""
+
+    def antworten(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"type": "https://docs.mandari.de/api/probleme/konflikt", "status": angabe})
+
+    with pytest.raises(CommandError) as info:
+        HttpClient(BASE_URL, TOKEN, transport=httpx.MockTransport(antworten)).send(_befehl())
+    assert (info.value.problem.status, info.value.problem.kind) == (409, "konflikt")
+
+
+def test_client_sendet_keinen_inhalt_ohne_kanonische_darstellung() -> None:
+    gesehen: list[httpx.Request] = []
+
+    def antworten(request: httpx.Request) -> httpx.Response:
+        gesehen.append(request)
+        return httpx.Response(500)
+
+    befehl = Command(
+        name="submission.submit", body=json_body(title="a\ud800b"), idempotency_key="k-1", tenant_ref=TENANT
+    )
+    with pytest.raises(CommandError) as info:
+        HttpClient(BASE_URL, TOKEN, transport=httpx.MockTransport(antworten)).send(befehl)
+    assert (info.value.problem.status, info.value.problem.kind) == (422, "validierung")
+    assert gesehen == []
 
 
 def test_client_sendet_schluessel_mandant_und_korrelation() -> None:

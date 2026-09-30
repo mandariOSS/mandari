@@ -80,13 +80,18 @@ class Problem:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any], *, status: int) -> Problem:
-        """Problem aus einer Antwort; fehlende oder fremde Angaben ergeben neutrale Werte."""
+        """
+        Problem aus einer Antwort; fehlende oder fremde Angaben ergeben neutrale Werte.
+
+        Maßgeblich ist der HTTP-Status der Antwort (``status``), nicht die Angabe im Inhalt: RFC 9457
+        nennt ``status`` dort einen Hinweis, und ein fremder Wert darf den Aufrufer nicht täuschen.
+        """
         type_uri = str(data.get("type") or "")
         kind = type_uri.removeprefix(PROBLEM_TYPE_BASE) if type_uri.startswith(PROBLEM_TYPE_BASE) else "unbekannt"
         errors = data.get("errors")
         known = {"type", "title", "status", "detail", "instance", "errors"}
         return cls(
-            status=int(data.get("status") or status),
+            status=status,
             kind=kind,
             detail=str(data.get("detail") or TITLES.get(status, "Fehler")),
             errors=tuple(

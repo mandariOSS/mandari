@@ -13,7 +13,9 @@ eine Quittung oder einen Fehler nach RFC 9457:
     receipt.reference, receipt.received_at, receipt.content_hash
 
 - ``dispatch``/``Dispatcher``: prüft Schlüssel, Vertrag und Inhalt, führt den Handler beim Eigentümer
-  in dessen Transaktion aus und speichert die Quittung zum Idempotenzschlüssel.
+  in dessen Transaktion aus und speichert die Quittung zum Idempotenzschlüssel. Eine Quittung ist
+  immer festgeschrieben; der Aufruf steht deshalb nie in einer offenen Transaktion des Aufrufers
+  (sonst ``apps.events.idempotency.NestedTransactionError``).
 - ``command_handler``: registriert den Handler des Eigentümers.
 - ``InProcessClient``/``HttpClient``: dieselbe Schnittstelle für eine oder getrennte Installationen.
 - ``command_urlpatterns``: HTTP-Weg mit Anmeldung durch die Installation.

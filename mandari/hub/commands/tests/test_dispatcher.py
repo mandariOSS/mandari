@@ -12,12 +12,13 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
-from django.db import connection, connections, transaction
+from django.db import IntegrityError, connection, connections, transaction
 
+from apps.events.idempotency import NestedTransactionError
 from apps.events.models import IdempotencyKey
 from hub.commands import Command, CommandError, Dispatcher, HandlerResult, Receipt, command_handler, get_dispatcher
-from hub.commands.dispatcher import scope, valid_idempotency_key
-from hub.commands.tests.hilfen import ACTOR, TENANT, json_body, register_mit_testvertraegen
+from hub.commands.dispatcher import call_sites, error_types, scope, valid_idempotency_key
+from hub.commands.tests.hilfen import ACTOR, TENANT, json_body, protokolltext, register_mit_testvertraegen
 
 GEHEIM = "Erika Mustermann, Musterweg 1"
 
@@ -153,7 +154,117 @@ def test_protokoll_nennt_keine_inhalte(dispatcher: Dispatcher, caplog: pytest.Lo
         "Befehl submission.submit v1 wiederholt",
         "Befehl submission.submit v1 abgelehnt",
     ]
-    assert GEHEIM not in caplog.text
+    assert GEHEIM not in protokolltext(caplog)
+
+
+class _DriverError(Exception):
+    """Wie der Fehler des Datenbanktreibers: fester Code, Meldung mit Werten."""
+
+    sqlstate = "23505"
+
+
+def absturz_mit_inhalt(command: Command) -> HandlerResult:
+    titel = command.body["title"]
+    try:
+        raise _DriverError(f"duplicate key value: Key (title)=({titel}) already exists")
+    except _DriverError as exc:
+        raise IntegrityError(f"Eintrag mit Titel {titel} gibt es schon") from exc
+
+
+@pytest.mark.django_db
+def test_protokoll_nennt_auch_beim_absturz_keine_inhalte(
+    dispatcher: Dispatcher, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Meldungen von Ausnahmen zitieren Werte; das Log nennt nur Typ, SQLSTATE und Aufrufstellen."""
+    dispatcher.register("submission.submit", 1, absturz_mit_inhalt)
+    befehl = _befehl(body=json_body(title=GEHEIM))
+    with caplog.at_level(logging.DEBUG), pytest.raises(CommandError) as info:
+        dispatcher.dispatch(befehl)
+    assert info.value.problem.status == 500
+    (eintrag,) = [record for record in caplog.records if record.name == "hub.commands"]
+    meldung = eintrag.getMessage()
+    assert eintrag.levelno == logging.ERROR
+    assert meldung.startswith(
+        "Befehl submission.submit v1 gescheitert: IntegrityError <- _DriverError[23505] "
+        f"(correlation_id={befehl.correlation_id})"
+    )
+    assert "in absturz_mit_inhalt" in meldung
+    assert "test_dispatcher.py" in meldung
+    assert not eintrag.exc_info and not eintrag.exc_text
+    assert (eintrag.command, eintrag.tenant_ref, eintrag.error_type) == (  # type: ignore[attr-defined]
+        "submission.submit",
+        TENANT,
+        "IntegrityError",
+    )
+    assert GEHEIM not in protokolltext(caplog)
+    assert "already exists" not in protokolltext(caplog)
+
+
+def test_typen_und_aufrufstellen_einer_ausnahme_ohne_meldung() -> None:
+    def innen() -> None:
+        raise ValueError(GEHEIM)
+
+    try:
+        try:
+            innen()
+        except ValueError:
+            raise KeyError(GEHEIM)  # noqa: B904 – die Kette über __context__ ist hier Gegenstand
+    except KeyError as exc:
+        assert error_types(exc) == "KeyError <- ValueError"
+        stellen = call_sites(exc)
+    assert "in test_typen_und_aufrufstellen_einer_ausnahme_ohne_meldung" in stellen
+    assert GEHEIM not in stellen
+    assert "raise" not in stellen, "kein Quelltext"
+
+
+def test_ursachenkette_ist_begrenzt_und_endet_bei_einem_kreis() -> None:
+    erste, zweite = ValueError("a"), KeyError("b")
+    erste.__cause__, zweite.__cause__ = zweite, erste
+    assert error_types(erste) == "ValueError <- KeyError"
+    kette: BaseException = RuntimeError("0")
+    for nummer in range(20):
+        naechste = RuntimeError(str(nummer))
+        naechste.__cause__ = kette
+        kette = naechste
+    assert error_types(kette).count("RuntimeError") == 6
+
+
+# --- Eigene, festgeschriebene Transaktion ---------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_dispatch_in_offener_transaktion_ist_ein_programmierfehler(dispatcher: Dispatcher) -> None:
+    """
+    Sonst lägen Fachdaten und Schlüssel nur in einem Sicherungspunkt: Die Quittung wäre schon
+    zurückgegeben, ein späteres Rückrollen außen nähme beides wieder weg (anders als über HTTP).
+    """
+    aufrufe: list[str] = []
+
+    def zaehlen(command: Command) -> HandlerResult:
+        aufrufe.append(command.idempotency_key)
+        return HandlerResult(reference="A/1")
+
+    dispatcher.register("submission.submit", 1, zaehlen)
+    with transaction.atomic(), pytest.raises(NestedTransactionError, match="offenen Transaktion"):
+        dispatcher.dispatch(_befehl())
+    assert aufrufe == []
+    assert IdempotencyKey.objects.count() == 0
+    # Außerhalb einer Transaktion des Aufrufers gelingt derselbe Befehl.
+    assert dispatcher.dispatch(_befehl()).reference == "A/1"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_quittung_ist_festgeschrieben_wenn_der_aufrufer_sie_erhaelt(dispatcher: Dispatcher) -> None:
+    dispatcher.register("submission.submit", 1, einreichen)
+    quittung = dispatcher.dispatch(_befehl())
+    assert not connection.in_atomic_block
+    # Ein Rückrollen des Aufrufers nach der Quittung nimmt nichts mehr weg.
+    transaction.set_autocommit(False)
+    try:
+        transaction.rollback()
+    finally:
+        transaction.set_autocommit(True)
+    assert IdempotencyKey.objects.get().response["reference"] == quittung.reference
 
 
 def test_bereich_trennt_mandanten_und_ausloeser() -> None:

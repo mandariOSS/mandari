@@ -98,25 +98,59 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
   in derselben Transaktion, in der der Handler des Eigentümers die Fachdaten schreibt; scheitert der
   Handler, rollt beides zurück. Gleichzeitige Anfragen mit demselben Schlüssel warten am eindeutigen
   Index, der Handler läuft nur einmal. Bereich eines Schlüssels sind Mandant und Auslöser; die
-  Aufbewahrung beträgt 30 Tage (`EVENTS_IDEMPOTENCY_RETENTION_DAYS`, Befehl
-  `events_idempotency_purge`).
+  Aufbewahrung beträgt 30 Tage (`EVENTS_IDEMPOTENCY_RETENTION_DAYS`). Aufgeräumt wird täglich per
+  Zeitplan (`apps/events/schedules.py`), von Hand mit `events_idempotency_purge`.
+- **Eine Quittung ist immer festgeschrieben.** Der Dispatcher öffnet die Transaktion des
+  Eigentümers selbst als äußerste Transaktion. `dispatch()` in einer offenen Transaktion des
+  Aufrufers ist ein Programmierfehler (`NestedTransactionError`): Dort lägen Fachdaten und Schlüssel
+  nur in einem Sicherungspunkt, und ein späteres Rückrollen außen nähme eine schon zurückgegebene
+  Quittung wieder weg. Über HTTP kann das nicht vorkommen; so bedeuten beide Wege dasselbe. Der
+  Aufrufer hält seinen eigenen Stand deshalb getrennt fest: Schlüssel merken, Befehl senden,
+  Quittung speichern. Scheitert der letzte Schritt, liefert die Wiederholung mit demselben
+  Schlüssel dieselbe Quittung.
 - **Reihenfolge der Prüfungen und Probleme** (RFC 9457, Typen unter
   `https://docs.mandari.de/api/probleme/`): fehlender oder ungültiger Schlüssel 400
-  (`idempotenzschluessel-fehlt`), unbekannter Befehl 404 (`befehl-unbekannt`), kein Handler in dieser
-  Installation 501 (`befehl-nicht-verfuegbar`), Inhalt passt nicht zum Schema 422 (`validierung`, mit
-  `errors` als JSON-Pointer ohne Werte), Schlüssel für eine andere Anfrage 422
-  (`idempotenzschluessel-wiederverwendet`). Fachliche Ablehnungen meldet der Handler selbst (z. B. 409),
-  jede andere Ausnahme wird zu 500 mit festem Text. Über HTTP kommen 401, 403, 405, 413 und 415 dazu,
-  im `HttpClient` 503 (Eigentümer nicht erreichbar) und 502 (unerwartete Antwort).
+  (`idempotenzschluessel-fehlt`), Inhalt ohne kanonische Darstellung 422 (`validierung`, siehe
+  Quittung), unbekannter Befehl 404 (`befehl-unbekannt`), kein Handler in dieser Installation 501
+  (`befehl-nicht-verfuegbar`), Inhalt passt nicht zum Schema 422 (`validierung`, mit `errors` als
+  JSON-Pointer ohne Werte), Schlüssel für eine andere Anfrage 422
+  (`idempotenzschluessel-wiederverwendet`). Fachliche Ablehnungen meldet der Handler selbst (z. B.
+  409), jede andere Ausnahme wird zu 500 mit festem Text. Über HTTP kommen 401, 403, 405, 413 und
+  415 dazu, im `HttpClient` 503 (Eigentümer nicht erreichbar) und 502 (unerwartete Antwort). Für den
+  Status eines Problems gilt im `HttpClient` der HTTP-Status der Antwort, nicht die Angabe im Inhalt.
+- **Protokoll ohne Inhalte.** Das Log nennt Name, Version, Mandant, Korrelation und Ergebnis.
+  Scheitert ein Befehl unerwartet, kommen der Typ der Ausnahme (samt Ursachen und SQLSTATE) und die
+  Aufrufstellen dazu, nie die Meldung der Ausnahme und kein Quelltext: Meldungen zitieren Werte,
+  etwa die Datenbank mit „Key (email)=(…) already exists“. Auf diese Zusage stützt sich die
+  Ausnahme für Inhaltsfelder in den Verträgen ([A5](20260929-ereignisvertraege.md), Nachtrag).
 - **Handler beim Eigentümer:** Registriert wird nur für einen Befehl im Register, und nur aus dem
   Paket, das der Vertrag als `x-owner` nennt; sonst bricht der Start ab.
-- **HTTP-Weg:** `POST …/<befehl>/v<version>` mit JSON-Objekt, `Idempotency-Key` (mit oder ohne
-  Anführungszeichen) und Anmeldung über eine Funktion der Installation, die Mandant, Auslöser und
-  erlaubte Befehle liefert; Erfolg 201 mit Quittung. Die Adressen werden erst eingebunden, wenn ein
-  Eigentümer Befehle anbietet (Profil Einreichung, #540).
+- **Zwei HTTP-Ebenen, eine Entscheidung.** Die Entscheidung oben nennt für das Profil Einreichung
+  django-ninja mit OpenAPI und sprechenden Adressen (`POST /api/v1/einreichung/antraege`). Das
+  bleibt so: Es ist die öffentliche, dokumentierte Schnittstelle für Fremdsysteme und entsteht mit
+  dem Profil (#540). Der allgemeine Weg `POST …/<befehl>/v<version>` aus `hub.commands.http` ist
+  etwas anderes: die Verbindung zwischen zwei mandari-Installationen, über die der `HttpClient`
+  jeden Befehl des Registers senden kann (JSON-Objekt, `Idempotency-Key` mit oder ohne
+  Anführungszeichen, Anmeldung über eine Funktion der Installation, die Mandant, Auslöser und
+  erlaubte Befehle liefert; Erfolg 201 mit Quittung). Er hat kein eigenes OpenAPI-Dokument; sein
+  Vertrag sind die Schemas im Register. Beide Ebenen rufen denselben Dispatcher auf, prüfen also
+  gleich und liefern dieselbe Quittung und dieselben Probleme. Die Adressen des allgemeinen Wegs
+  werden erst eingebunden, wenn ein Eigentümer Befehle anbietet.
 - **Quittung:** Eingangsnummer bzw. Kennung des Eigentümers, Eingangszeit und Inhalts-Hash (SHA-256
   über das kanonische JSON des Inhalts nach RFC 8785), dazu optional Kennung des Aggregats und weitere
-  Kennungen. Eine Wiederholung erhält sie unverändert.
+  Kennungen. Eine Wiederholung erhält sie unverändert. Damit fremde JCS-Bibliotheken denselben Hash
+  rechnen, lehnt der Befehlsweg Inhalte ohne eindeutige kanonische Darstellung mit 422 ab:
+  Ganzzahlen außerhalb von ±(2^53 − 1) (RFC 8785 rechnet mit Doubles; große Zahlen gehören als
+  Zeichenkette in den Inhalt) und Zeichenketten mit einem einzelnen Surrogat.
+- **Hashes sind keine Anonymisierung (offen, vor #540 ff. zu entscheiden).** Inhalts-Hash und Hash
+  der Anfrage sind ungesalzene SHA-256-Werte und liegen bis zum Ablauf der Frist im
+  Idempotenzspeicher. Bei `submission.submit` ist das gewollt: Der Hash ist der Nachweis für
+  Einreichende. Bei Befehlen mit wenig Entropie wie `attendance.respond` (bekannte Kennungen, der
+  Grund oft ein Wort) lässt sich der Inhalt aus dem Hash erraten, obwohl der Eigentümer den Grund
+  verschlüsselt speichert. „Der Speicher hält keine Inhalte“ gilt dort nur eingeschränkt. Vor dem
+  ersten Handler für einen personenbezogenen Befehl ist zu entscheiden: Hash der Anfrage als HMAC
+  mit einem Schlüssel der Installation, und der Inhalts-Hash der Quittung je Befehl abschaltbar.
+  Bis dahin führt kein Handler einen solchen Befehl aus.
 
 ## Bezug
 

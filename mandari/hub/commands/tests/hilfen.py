@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 from django.http import HttpRequest
 from django.test import Client
 
@@ -95,3 +97,16 @@ def json_body(**felder: Any) -> dict[str, Any]:
     body: dict[str, Any] = {"document": DOCUMENT, "title": "Mehr Bänke im Park"}
     body.update(felder)
     return body
+
+
+def protokolltext(caplog: pytest.LogCaptureFixture) -> str:
+    """
+    Alles, was ein Log-Handler ausgeben kann: Meldung, Text der Ausnahme und jedes Feld des Eintrags
+    (der JSON-Formatter schreibt auch ``extra``-Felder, ``caplog.text`` zeigt sie nicht).
+    """
+    formatter = logging.Formatter("%(levelname)s %(name)s %(message)s")
+    teile = [caplog.text]
+    for record in caplog.records:
+        teile.append(formatter.format(record))
+        teile.extend(repr(wert) for wert in vars(record).values())
+    return "\n".join(teile)
