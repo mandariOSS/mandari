@@ -325,12 +325,15 @@ class SupportTicketMessagesPartialView(WorkViewMixin, View):
         return response
 
 
-class KnowledgeBaseRedirectView(View):
+class KnowledgeBaseRedirectView(WorkViewMixin, View):
     """
     Adressen der früheren Wissensdatenbank auf die Nachfolgeseite der Dokumentation umleiten.
 
-    Die Dokumentation ist öffentlich; die Weiterleitung braucht daher weder Anmeldung noch Recht.
+    Gleiche Schranke wie die frühere Wissensdatenbank (Mitglieder mit ``support.view``, keine Gäste);
+    die Dokumentation selbst ist öffentlich.
     """
+
+    permission_required = "support.view"
 
     def get(self, request, *args, **kwargs):
         return redirect(alte_wissensdatenbank_url(kwargs.get("category_slug"), kwargs.get("article_slug")))

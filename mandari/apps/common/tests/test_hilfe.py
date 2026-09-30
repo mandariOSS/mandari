@@ -125,13 +125,22 @@ def test_komponente_mit_eigenem_text() -> None:
 
 
 @pytest.mark.django_db
-def test_alte_wissensdatenbank_leitet_ohne_anmeldung_weiter(org: Any) -> None:
-    antwort = Client().get(f"/work/{org.slug}/support/kb/konto-sicherheit/2fa-einrichten/")
+def test_alte_wissensdatenbank_leitet_in_die_dokumentation(org: Any, make_member: Any, client_for: Any) -> None:
+    client = client_for(make_member(org, ["support.view"], email="kb@example.org").user)
+
+    antwort = client.get(f"/work/{org.slug}/support/kb/konto-sicherheit/2fa-einrichten/")
     assert antwort.status_code == 302
     assert antwort["Location"] == "https://docs.mandari.de/work/konto-und-sicherheit/#zwei-faktor"
 
-    antwort = Client().get(f"/work/{org.slug}/support/kb/")
+    antwort = client.get(f"/work/{org.slug}/support/kb/")
     assert antwort["Location"] == "https://docs.mandari.de/work/"
+
+
+@pytest.mark.django_db
+def test_alte_wissensdatenbank_nur_fuer_angemeldete_mitglieder(org: Any) -> None:
+    antwort = Client().get(f"/work/{org.slug}/support/kb/")
+    assert antwort.status_code == 302
+    assert not antwort["Location"].startswith("https://docs.mandari.de")
 
 
 def test_suche_und_rueckmeldung_der_wissensdatenbank_entfallen() -> None:
