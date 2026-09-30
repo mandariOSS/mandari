@@ -171,6 +171,33 @@ def _read_attachments(motion: Motion) -> list[tuple[str, bytes, str]]:
 
 
 # =============================================================================
+# Formular
+# =============================================================================
+
+
+def initial_form(motion: Motion, contacts: list[AdministrationContact]) -> dict[str, Any]:
+    """Vorbelegung des E-Mail-Formulars: Betreff aus dem Titel, alle Kontakte ausgewählt."""
+    return {
+        "subject": f"Antrag: {motion.title}"[:300],
+        "message": "",
+        "contact_ids": [str(c.pk) for c in contacts],
+    }
+
+
+def form_from_post(post: Any) -> dict[str, Any] | None:
+    """Angaben des E-Mail-Formulars aus dem POST; ``None``, wenn der POST den Session-Weg meint."""
+    if post.get("channel") != "email":
+        return None
+    return {
+        # Ohne Zeilenumbrüche: ein Betreff ist eine Kopfzeile der Mail
+        "subject": " ".join((post.get("subject") or "").split())[:300],
+        "message": (post.get("message") or "").strip()[:5000],
+        "contact_ids": post.getlist("contacts"),
+        "confirmed": post.get("confirm") == "on",
+    }
+
+
+# =============================================================================
 # Einreichen
 # =============================================================================
 

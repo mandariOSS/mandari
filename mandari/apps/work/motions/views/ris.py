@@ -53,6 +53,8 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
         connection = ris_submission.get_connection(self.organization)
         usable, reason = ris_submission.connection_state(connection)
         allowed, block_reason = ris_submission.can_submit(motion, self.membership)
+        # E-Mail-Weg (#580): nur ohne nutzbare Session-Verbindung und mit gepflegten Kontakten
+        contacts = email_submission.contacts_for(self.organization)
 
         context.update(
             {
@@ -72,19 +74,12 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
                 "target_organizations": (
                     ApplicationService.get_target_organizations(connection.tenant) if connection else []
                 ),
-            }
-        )
-        # E-Mail-Weg (#580): nur ohne nutzbare Session-Verbindung und mit gepflegten Kontakten
-        contacts = email_submission.contacts_for(self.organization)
-        # Dieselben Regeln wie beim Session-Weg (can_submit berücksichtigt Einreichungen per E-Mail)
-        email_allowed, email_block_reason = allowed, block_reason
-        context.update(
-            {
                 "email_submission": email_submission.latest_submission(motion),
                 "email_mode": not usable and bool(contacts),
                 "email_contacts": contacts,
-                "email_can_submit": email_allowed,
-                "email_block_reason": email_block_reason,
+                # Dieselben Regeln wie beim Session-Weg (can_submit berücksichtigt Einreichungen per E-Mail)
+                "email_can_submit": allowed,
+                "email_block_reason": block_reason,
                 "email_attachments": email_submission.planned_attachments(motion),
                 "email_pdf_name": email_submission.pdf_filename(motion),
                 "email_max_mb": email_submission.EMAIL_ATTACHMENTS_MAX_BYTES // (1024 * 1024),
@@ -92,31 +87,22 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
             }
         )
         if "email_form" not in context:
-            context["email_form"] = kwargs.get("email_form") or {
-                "subject": f"Antrag: {motion.title}"[:300],
-                "message": "",
-                "contact_ids": [str(c.pk) for c in contacts],
-            }
+            # Nach einem abgelehnten POST steht das eingegebene Formular schon im Kontext (kwargs)
+            context["email_form"] = email_submission.initial_form(motion, contacts)
         if "form" not in context:
             context["form"] = kwargs.get("form") or ris_submission.build_prefill(motion)
         # Anhänge, die mitgehen, und solche, die die Verwaltung nicht annimmt (#584)
         context["attachments_accepted"], context["attachments_rejected"] = ris_submission.attachment_preview(motion)
         return context
 
-    def _post_email(self, request, motion):
-        email_form = {
-            # Ohne Zeilenumbrüche: ein Betreff ist eine Kopfzeile der Mail
-            "subject": " ".join((request.POST.get("subject") or "").split())[:300],
-            "message": (request.POST.get("message") or "").strip()[:5000],
-            "contact_ids": request.POST.getlist("contacts"),
-        }
+    def _post_email(self, request, motion, email_form):
         errors = []
         connection = ris_submission.get_connection(self.organization)
         usable, _reason = ris_submission.connection_state(connection)
         if usable:
             # Die Session-Verbindung hat Vorrang
             errors.append("Die Organisation ist mit mandari Session verbunden – bitte darüber einreichen.")
-        if request.POST.get("confirm") != "on":
+        if not email_form["confirmed"]:
             errors.append("Bitte bestätigen, dass der Antrag verbindlich eingereicht werden soll.")
         if not errors:
             try:
@@ -153,8 +139,9 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
 
     def post(self, request, *args, **kwargs):
         motion = self._get_motion()
-        if request.POST.get("channel") == "email":
-            return self._post_email(request, motion)
+        email_form = email_submission.form_from_post(request.POST)
+        if email_form is not None:
+            return self._post_email(request, motion, email_form)
         form = {
             "title": (request.POST.get("title") or "").strip(),
             "application_type": request.POST.get("application_type") or "motion",
