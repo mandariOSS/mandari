@@ -141,6 +141,7 @@ PRUEFAKTIONEN = frozenset({"profile_requests:approve_request", "profile_requests
 #: Schreibende Work-URLs ohne Org-Kontext
 NICHT_IN_MATRIX: dict[str, str] = {
     "accept_invitation": "öffentliche Annahme einer Einladung per Token, ohne Org-Slug",
+    "submission_confirm": "öffentliche Eingangsbestätigung der Verwaltung per signiertem Token, ohne Org-Slug (#580)",
 }
 
 #: Unterobjekte von Pfad-Objekten: bei fremden Pfad-Objekten stammen sie aus derselben Organisation wie der Pfad
@@ -466,6 +467,13 @@ CASES: list[Case] = [
     Case("document_file_rename", path={"motion_id": "motion", "document_id": "motion_file"}, data={"filename": "neu"}),
     Case("document_file_delete", path={"motion_id": "motion", "document_id": "motion_file"}),
     Case("document_submit_ris", path=MOTION, data=EINREICHUNG),
+    Case(
+        "document_submit_ris",
+        action="email",
+        path=MOTION,
+        data={"channel": "email", "contacts": "{contact}", "subject": "Antrag", "confirm": "on"},
+        foreign={"kontakt": {"contacts": "{a_contact}"}},
+    ),
     Case("document_empty_trash"),
     Case("document_restore", path={"motion_id": "motion_trash"}),
     Case("document_permanent_delete", path={"motion_id": "motion_trash"}),

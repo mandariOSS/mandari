@@ -17,6 +17,13 @@
 {% if application %}
 {% include "work/motions/partials/_ris_status.html" %}
 
+{% elif email_submission %}
+{% include "work/motions/partials/_email_submission_status.html" %}
+
+{% elif email_mode %}
+{# Ohne nutzbare Verbindung zu mandari Session: Einreichung per E-Mail an die Verwaltungskontakte (#580) #}
+{% include "work/motions/partials/_email_submission_form.html" %}
+
 {% else %}
 {# ---------------------------------------------------------------- Einreichen #}
 {% if not connection_usable %}
@@ -25,6 +32,7 @@
         <i data-lucide="plug-zap" class="w-5 h-5"></i> Keine nutzbare Verbindung zur Verwaltung
     </p>
     <p class="text-sm text-amber-800 dark:text-amber-200 mt-1">{{ connection_reason }}</p>
+    <p class="text-sm text-amber-800 dark:text-amber-200 mt-1">Ohne Verbindung lässt sich per E-Mail einreichen, sobald Verwaltungskontakte hinterlegt sind{% if can_manage_contacts %} (<a class="underline" href="{% url 'work:council_parties' org_slug=organization.slug %}">Verwaltungskontakte</a>){% endif %}.</p>
     {% if can_manage_connection %}
     <a href="{% url 'work:organization_ris_settings' org_slug=organization.slug %}"
        class="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700">
@@ -40,7 +48,7 @@
 </div>
 {% endif %}
 
-<form method="post" class="grid grid-cols-1 lg:grid-cols-5 gap-6" x-data="{ urgent: {{ form.is_urgent|yesno:'true,false' }} }">
+<form method="post" class="grid grid-cols-1 lg:grid-cols-5 gap-6" data-submit-once x-data="{ urgent: {{ form.is_urgent|yesno:'true,false' }} }">
     {% csrf_token %}
     <div class="lg:col-span-3 space-y-6">
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-5">

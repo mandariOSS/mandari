@@ -43,6 +43,13 @@ def _work_root_redirect(request):
 urlpatterns = [
     # /work/ ohne Slug -> eigene Organisation bzw. Login
     path("", _work_root_redirect, name="root"),
+    # Eingangsbestätigung einer Einreichung per E-Mail durch die Verwaltung (Issue #580) –
+    # signiertes Token, ohne Anmeldung; zweites Segment ist kein Organisationspfad
+    path(
+        "eingang/bestaetigen/<str:token>/",
+        motions_views.SubmissionConfirmView.as_view(),
+        name="submission_confirm",
+    ),
     # Dashboard
     path("<slug:org_slug>/", dashboard_views.DashboardView.as_view(), name="dashboard"),
     path(

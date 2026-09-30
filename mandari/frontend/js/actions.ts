@@ -18,6 +18,8 @@
  *   `data-confirm-message`, `data-confirm-text`, `data-confirm-variant`), danach Neuladen.
  * - `data-submit-to="/pfad/{feld}/"` auf GET-Formularen: Ziel aus Feldwerten bauen; ein
  *   leeres Feld verhindert das Absenden.
+ * - `data-submit-once` auf Formularen: nur einmal absenden (Doppelklick), danach die Knöpfe
+ *   sperren; nach einer Zurück-Navigation aus dem Seiten-Cache wieder frei.
  * - `data-submit-handler="motion-meta|approval-request"` und
  *   `data-approval-decide="URL" data-decision="approve|reject"`: Brücken zu den globalen
  *   Handlern aus `motion-tracking.ts` (Editor-Seitenleiste).
@@ -176,6 +178,39 @@ export function handleSubmit(event: Event): void {
   const handler = form.dataset.submitHandler
   if (handler === 'motion-meta' && window.mandariMotionMeta?.(event) === false) event.preventDefault()
   if (handler === 'approval-request' && window.mandariApprovalRequest?.(event) === false) event.preventDefault()
+
+  if (form.dataset.submitOnce !== undefined && !event.defaultPrevented) {
+    if (form.dataset.submitting === 'true') {
+      event.preventDefault()
+      return
+    }
+    form.dataset.submitting = 'true'
+    // Erst nach dem Absenden sperren – ein gesperrter Knopf gäbe sonst seinen Wert nicht mit
+    window.setTimeout(() => {
+      for (const button of submitButtons(form)) {
+        if (button.disabled) continue
+        button.disabled = true
+        button.dataset.submitOnceLocked = 'true'
+      }
+    }, 0)
+  }
+}
+
+function submitButtons(form: HTMLFormElement): HTMLButtonElement[] {
+  return Array.from(form.querySelectorAll<HTMLButtonElement>('button[type="submit"], button:not([type])'))
+}
+
+/** Zurück-Navigation aus dem Seiten-Cache: gesperrte `data-submit-once`-Formulare wieder freigeben. */
+export function resetSubmitOnce(event: PageTransitionEvent): void {
+  if (!event.persisted) return
+  for (const form of Array.from(document.querySelectorAll<HTMLFormElement>('form[data-submitting]'))) {
+    delete form.dataset.submitting
+    for (const button of submitButtons(form)) {
+      if (button.dataset.submitOnceLocked === undefined) continue
+      button.disabled = false
+      delete button.dataset.submitOnceLocked
+    }
+  }
 }
 
 export function handleChange(event: Event): void {
@@ -197,4 +232,5 @@ export function installActions(root: Document = document): void {
   root.addEventListener('click', handleClick)
   root.addEventListener('submit', handleSubmit)
   root.addEventListener('change', handleChange)
+  root.defaultView?.addEventListener('pageshow', resetSubmitOnce)
 }

@@ -319,10 +319,13 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         context["approvals"] = approvals
 
         # Digitale Einreichung bei der Verwaltung (Issue #40) und Rückmeldung (Issue #316)
-        from .. import administration_feedback
+        from .. import administration_feedback, email_submission
 
         context["ris_application"] = motion.session_application
         context["ris_feedback"] = administration_feedback.feedback_for(motion)
+        # Einreichung per E-Mail (Issue #580); nie eingereichte Dokumente ohne Abfrage (submitted_at
+        # setzt jede Einreichung, auch die per E-Mail)
+        context["email_submission"] = email_submission.latest_submission(motion) if motion.submitted_at else None
         context["can_submit_ris"] = (
             not context["is_guest"] and context["can_edit"] and self.membership.has_permission("motions.submit_to_ris")
         )

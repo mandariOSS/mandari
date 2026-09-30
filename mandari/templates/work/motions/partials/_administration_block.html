@@ -1,0 +1,52 @@
+{% comment %}
+Seitenleiste „Details“: Stand bei der Verwaltung – Einreichung in mandari Session (Issue #40, #316)
+oder per E-Mail an die Verwaltungskontakte (Issue #580).
+Kontext: motion, organization, ris_application, ris_feedback, email_submission, can_submit_ris
+{% endcomment %}
+{% if ris_application or email_submission or can_submit_ris %}
+<div>
+    <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <i data-lucide="landmark" class="w-3.5 h-3.5"></i>
+        Verwaltung
+    </h4>
+    {% if ris_application %}
+    <div class="rounded-lg bg-gray-50 dark:bg-gray-700/40 p-3 text-sm space-y-1.5">
+        <p class="font-semibold text-gray-900 dark:text-white">{{ ris_application.reference|default:"Eingereicht" }}</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">{{ ris_application.tenant.name }} · {{ ris_application.get_status_display }}</p>
+        {% if ris_feedback.paper_reference %}
+        <p class="text-xs text-gray-700 dark:text-gray-200">{{ ris_feedback.reference_label }} <strong>{{ ris_feedback.paper_reference }}</strong></p>
+        {% endif %}
+        {% if ris_feedback.decision %}
+        <p class="text-xs text-gray-700 dark:text-gray-200 flex flex-wrap items-center gap-1.5">
+            <c-ui.badge color="{{ ris_feedback.decision.result_tone }}">{{ ris_feedback.decision.result_label }}</c-ui.badge>
+            {% if ris_feedback.decision.resolution_number %}<span>{{ ris_feedback.decision.resolution_number }}</span>{% endif %}
+        </p>
+        {% endif %}
+        {% include "work/motions/partials/_ris_timeline.html" with feedback=ris_feedback compact=True %}
+        {% if can_submit_ris %}
+        <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+           class="inline-flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">Details &amp; Beratungsfolge</a>
+        {% endif %}
+    </div>
+    {% elif email_submission %}
+    <div class="rounded-lg bg-gray-50 dark:bg-gray-700/40 p-3 text-sm space-y-1.5">
+        <p class="font-semibold text-gray-900 dark:text-white">Per E-Mail eingereicht</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">{{ email_submission.sent_at|date:"d.m.Y, H:i" }} Uhr · {{ email_submission.submitted_by_name }}</p>
+        {% for recipient in email_submission.recipients.all %}
+        <p class="text-xs text-gray-700 dark:text-gray-200">{{ recipient.label }}: {% if not recipient.delivered %}nicht zugestellt{% elif recipient.confirmed_at %}Eingang bestätigt {{ recipient.confirmed_at|date:"d.m.Y" }}{% else %}Eingang offen{% endif %}</p>
+        {% endfor %}
+        {% if can_submit_ris %}
+        <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+           class="inline-flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">Details</a>
+        {% endif %}
+    </div>
+    {% elif motion.is_submittable %}
+    <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+       class="w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+        <i data-lucide="send" class="w-3.5 h-3.5"></i> Bei Verwaltung einreichen
+    </a>
+    {% else %}
+    <p class="text-xs text-gray-400 px-1">Dieser Dokumenttyp wird nicht eingereicht.</p>
+    {% endif %}
+</div>
+{% endif %}

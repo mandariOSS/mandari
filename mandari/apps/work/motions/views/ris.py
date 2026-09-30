@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Antrag bei der Verwaltung einreichen — Vorschau, Formular und Statusseite (Issue #40)."""
+"""
+Antrag bei der Verwaltung einreichen — Vorschau, Formular und Statusseite (Issue #40).
+
+Mit nutzbarer Einreichungsverbindung zu mandari Session geht der Antrag dorthin; sonst per E-Mail
+an die gepflegten Verwaltungskontakte (Issue #580, ``email_submission``).
+"""
 
 from datetime import date
 
@@ -11,7 +16,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.session.services.application_service import ApplicationService
 from apps.work.sanitize import safe_editor_html
 
-from .. import administration_feedback, ris_submission
+from .. import administration_feedback, email_submission, ris_submission
 from ..models import Motion
 
 APPLICATION_TYPE_CHOICES = [
@@ -48,6 +53,8 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
         connection = ris_submission.get_connection(self.organization)
         usable, reason = ris_submission.connection_state(connection)
         allowed, block_reason = ris_submission.can_submit(motion, self.membership)
+        # E-Mail-Weg (#580): nur ohne nutzbare Session-Verbindung und mit gepflegten Kontakten
+        contacts = email_submission.contacts_for(self.organization)
 
         context.update(
             {
@@ -67,16 +74,74 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
                 "target_organizations": (
                     ApplicationService.get_target_organizations(connection.tenant) if connection else []
                 ),
+                "email_submission": email_submission.latest_submission(motion),
+                "email_mode": not usable and bool(contacts),
+                "email_contacts": contacts,
+                # Dieselben Regeln wie beim Session-Weg (can_submit berücksichtigt Einreichungen per E-Mail)
+                "email_can_submit": allowed,
+                "email_block_reason": block_reason,
+                "email_attachments": email_submission.planned_attachments(motion),
+                "email_pdf_name": email_submission.pdf_filename(motion),
+                "email_max_mb": email_submission.EMAIL_ATTACHMENTS_MAX_BYTES // (1024 * 1024),
+                "can_manage_contacts": self.membership.has_permission("organization.edit"),
             }
         )
+        if "email_form" not in context:
+            # Nach einem abgelehnten POST steht das eingegebene Formular schon im Kontext (kwargs)
+            context["email_form"] = email_submission.initial_form(motion, contacts)
         if "form" not in context:
             context["form"] = kwargs.get("form") or ris_submission.build_prefill(motion)
         # Anhänge, die mitgehen, und solche, die die Verwaltung nicht annimmt (#584)
         context["attachments_accepted"], context["attachments_rejected"] = ris_submission.attachment_preview(motion)
         return context
 
+    def _post_email(self, request, motion, email_form):
+        errors = []
+        connection = ris_submission.get_connection(self.organization)
+        usable, _reason = ris_submission.connection_state(connection)
+        if usable:
+            # Die Session-Verbindung hat Vorrang
+            errors.append("Die Organisation ist mit mandari Session verbunden – bitte darüber einreichen.")
+        if not email_form["confirmed"]:
+            errors.append("Bitte bestätigen, dass der Antrag verbindlich eingereicht werden soll.")
+        if not errors:
+            try:
+                submission = email_submission.submit_by_email(
+                    motion,
+                    self.membership,
+                    contact_ids=email_form["contact_ids"],
+                    subject=email_form["subject"],
+                    message=email_form["message"],
+                )
+            except ris_submission.SubmissionError as exc:
+                errors.append(str(exc))
+            else:
+                recipients = list(submission.recipients.all())
+                delivered = [r for r in recipients if r.delivered]
+                messages.success(
+                    request,
+                    "Antrag per E-Mail eingereicht an " + ", ".join(r.label for r in delivered) + ".",
+                )
+                missing = [r for r in recipients if not r.delivered]
+                if missing:
+                    messages.warning(
+                        request,
+                        "Nicht zugestellt an: "
+                        + ", ".join(r.label for r in missing)
+                        + ". Bitte dort direkt nachreichen.",
+                    )
+                return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
+
+        for error in errors:
+            messages.error(request, error)
+        context = self.get_context_data(motion=motion, email_form=email_form)
+        return self.render_to_response(context)
+
     def post(self, request, *args, **kwargs):
         motion = self._get_motion()
+        email_form = email_submission.form_from_post(request.POST)
+        if email_form is not None:
+            return self._post_email(request, motion, email_form)
         form = {
             "title": (request.POST.get("title") or "").strip(),
             "application_type": request.POST.get("application_type") or "motion",

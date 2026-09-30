@@ -83,6 +83,7 @@ from .settings import (
     TopicUpdateView,
     _generated_letterhead_defaults,
 )
+from .submission_confirm import SubmissionConfirmView
 from .trash import (
     MotionEmptyTrashView,
     MotionPermanentDeleteView,
@@ -144,6 +145,7 @@ __all__ = [
     "MotionTemplateListView",
     "MotionTemplatePreviewView",
     "MotionTrashView",
+    "SubmissionConfirmView",
     "MotionTypeCreateView",
     "MotionTypeDeleteView",
     "MotionTypeEditView",

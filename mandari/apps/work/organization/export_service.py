@@ -176,6 +176,15 @@ VERMERKE: tuple[Vermerk, ...] = (
         select=("motion",),
     ),
     Vermerk(
+        "MotionEmailSubmission.submitted_by",
+        "Dokumente",
+        "Per E-Mail bei der Verwaltung eingereicht",
+        "motion__organization",
+        "sent_at",
+        lambda o: f"{o.motion.title}: {o.subject}",
+        select=("motion",),
+    ),
+    Vermerk(
         "MotionChecklistItem.completed_by",
         "Dokumente",
         "Checklistenpunkt erledigt",

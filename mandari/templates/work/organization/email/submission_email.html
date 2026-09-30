@@ -1,0 +1,49 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}{{ submission.subject }}{% endblock %}
+{% block preheader %}{{ organization.name }} reicht „{{ motion.title }}“ ein.{% endblock %}
+{% block content %}
+<h1 class="h1">{{ submission.subject }}</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Sehr geehrte Damen und Herren,</p>
+{% if message %}
+<p>{{ message|linebreaksbr }}</p>
+{% else %}
+<p>im Namen von {{ organization.name }} reichen wir den folgenden Antrag ein und bitten um Aufnahme in die Beratung. Der Antragstext liegt als PDF bei.</p>
+{% endif %}
+<table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+        <td class="key">Titel:</td>
+        <td><strong>{{ motion.title }}</strong></td>
+    </tr>
+    {% if motion.document_type %}
+    <tr>
+        <td class="key">Art:</td>
+        <td>{{ motion.document_type.name }}</td>
+    </tr>
+    {% endif %}
+    <tr>
+        <td class="key">Eingereicht von:</td>
+        <td>{{ submission.submitted_by_name }}{% if submission.submitted_by_email %} ({{ submission.submitted_by_email }}){% endif %} für {{ organization.name }}</td>
+    </tr>
+    <tr>
+        <td class="key">Eingereicht am:</td>
+        <td>{{ submission.sent_at|date:"d.m.Y, H:i" }} Uhr</td>
+    </tr>
+    <tr>
+        <td class="key">Anhänge:</td>
+        <td>{% for name in attachment_names %}{{ name }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+    </tr>
+</table>
+<div class="card card-accent">
+    <p><strong>Eingang bestätigen</strong></p>
+    <p>Bitte bestätigen Sie den Eingang mit einem Klick. Der Link gilt nur für diese Einreichung und gibt keinen Zugang zu weiteren Daten.</p>
+</div>
+<div class="btn-wrap">
+    <a class="btn" href="{{ confirm_url }}">Eingang bestätigen</a>
+</div>
+<p class="muted small">Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:<br>{{ confirm_url }}</p>
+<p>Rückfragen beantwortet {{ submission.submitted_by_name }} – eine Antwort auf diese E-Mail erreicht die einreichende Person.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

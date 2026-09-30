@@ -1,0 +1,24 @@
+# Ihr Antrag ist versendet
+
+Fraktion Test
+
+Guten Tag Eva Muster,
+
+Sie haben „Radweg an der Hauptstraße“ im Namen von Fraktion Test per E-Mail bei der Verwaltung eingereicht.
+
+Betreff: Antrag: Radweg an der Hauptstraße
+Empfänger: Ratsbüro (ratsbuero@stadt.example)
+OB-Büro (ob@stadt.example) – nicht zugestellt
+Versendet am: 14.09.2026, 18:30 Uhr
+Anhänge: Radweg an der Hauptstraße.pdf
+Lageplan.pdf
+
+Wie geht es weiter?
+
+Bestätigt die Verwaltung den Eingang über den Link in ihrer E-Mail, sehen Sie das in mandari am Dokument und erhalten eine Benachrichtigung.
+
+[Einreichung ansehen](https://mandari.example/work/fraktion-test/documents/00000000-0000-0000-0000-000000000802/submit-ris/)
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

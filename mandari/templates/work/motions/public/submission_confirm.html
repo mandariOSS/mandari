@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% comment %}
+Eingangsbestätigung einer Einreichung per E-Mail (Issue #580), ohne Anmeldung.
+Der Aufruf allein bestätigt nichts – erst der Klick auf den Knopf (POST).
+{% endcomment %}
+
+{% block title %}Eingang bestätigen{% endblock %}
+
+{% block extra_head %}
+<meta name="robots" content="noindex, nofollow">
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-10 space-y-6">
+    {% if state != "ok" %}
+    <c-ui.card>
+        {% if state == "rate_limited" %}
+        <c-ui.empty-state icon="timer" title="Zu viele Anfragen">
+            Bitte versuchen Sie es in einigen Minuten erneut.
+        </c-ui.empty-state>
+        {% elif state == "expired" %}
+        <c-ui.empty-state icon="clock" title="Link abgelaufen">
+            Dieser Bestätigungslink ist nicht mehr gültig. Bitte antworten Sie direkt auf die Einreichungsmail.
+        </c-ui.empty-state>
+        {% else %}
+        <c-ui.empty-state icon="link-2-off" title="Link ungültig">
+            Dieser Bestätigungslink ist ungültig. Bitte nutzen Sie den Link aus der Einreichungsmail oder antworten Sie direkt darauf.
+        </c-ui.empty-state>
+        {% endif %}
+    </c-ui.card>
+    {% else %}
+    <c-layout.page-header title="Eingang bestätigen" subtitle="{{ organization_name }}" />
+
+    {% if confirmed_now %}
+    <c-ui.alert variant="success" icon="check-circle" title="Vielen Dank">Der Eingang ist bestätigt. {{ organization_name }} sieht das in mandari.</c-ui.alert>
+    {% endif %}
+
+    <c-ui.card title="{{ motion_title }}" subtitle="{{ submission.subject }}">
+        <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+            <dt class="text-gray-500 dark:text-gray-400">Eingereicht von</dt>
+            <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ organization_name }}</dd>
+            <dt class="text-gray-500 dark:text-gray-400">Versendet am</dt>
+            <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ submission.sent_at|date:"d.m.Y, H:i" }} Uhr</dd>
+            <dt class="text-gray-500 dark:text-gray-400">Empfänger</dt>
+            <dd class="sm:col-span-2 text-gray-900 dark:text-white">{{ recipient.label }} ({{ recipient.email }})</dd>
+            <dt class="text-gray-500 dark:text-gray-400">Eingang</dt>
+            <dd class="sm:col-span-2">
+                {% if recipient.confirmed_at %}
+                <c-ui.badge color="green" icon="check">bestätigt am {{ recipient.confirmed_at|date:"d.m.Y, H:i" }} Uhr</c-ui.badge>
+                {% else %}
+                <c-ui.badge color="amber" icon="clock">noch nicht bestätigt</c-ui.badge>
+                {% endif %}
+            </dd>
+        </dl>
+        {% if not recipient.confirmed_at %}
+        <form method="post" class="mt-6">
+            {% csrf_token %}
+            <c-ui.button type="submit" icon="check">Eingang bestätigen</c-ui.button>
+        </form>
+        {% endif %}
+    </c-ui.card>
+    {% endif %}
+</div>
+{% endblock %}
