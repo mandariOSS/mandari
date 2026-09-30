@@ -34,6 +34,11 @@ PUBLIC_STATUS_LABELS = {
     "deferred": "Zurückgestellt",
 }
 
+#: Beschlussliste: neueste Sitzung zuerst, TOPs einer Sitzung in Tagesordnungsreihenfolge. Sitzung,
+#: TOP-Nummer und Primärschlüssel als eindeutiger Nachrang: Gleichzeitige Sitzungen und TOPs ohne
+#: gepflegte Reihenfolge lägen sonst in beliebiger Folge vor, auch über Seitengrenzen hinweg (Issue #653).
+PUBLIC_DECISIONS_ORDERING = ("-meeting__start", "meeting_id", "order", "number", "id")
+
 
 #: Sichtbarkeit eines Beschlusses bzw. der Beschlussseiten einer Kommune (Issue #618)
 VISIBLE = "visible"  # veröffentlicht: lesbar, Abos und Benachrichtigungen
@@ -95,7 +100,7 @@ def public_decisions(body: Any) -> Any:
         )
         .exclude(is_withdrawn=True)
         .select_related("meeting__organization", "meeting__tenant", "paper")
-        .order_by("-meeting__start", "order")
+        .order_by(*PUBLIC_DECISIONS_ORDERING)
     )
 
 

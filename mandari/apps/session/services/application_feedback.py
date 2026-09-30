@@ -44,6 +44,10 @@ NOT_PUBLIC_LABEL = "nicht-öffentlich beraten"
 FINAL_RESULTS = ("approved", "rejected", "noted", "withdrawn")
 #: Rollenbezeichnung eines TOP, der die Vorlage ohne Station der Beratungsfolge behandelt
 DIRECT_ROLE_LABEL = "Beratung"
+#: TOPs ohne Station in zeitlicher Folge. Sitzung, TOP-Nummer und Primärschlüssel als eindeutiger Nachrang:
+#: Bei gleichzeitigen Sitzungen oder gleicher Reihenfolge bestimmte sonst die Datenbank die Folge der
+#: Stationen – und damit, welche Station als letzte das Beschlussergebnis liefert (Issue #653).
+DIRECT_ITEM_ORDERING = ("meeting__start", "meeting_id", "order", "number", "pk")
 
 #: Farbton je Ergebnis für Badges (gray, green, amber, red, blue)
 RESULT_TONES = {"approved": "green", "rejected": "red", "deferred": "amber", "noted": "blue", "withdrawn": "gray"}
@@ -236,7 +240,7 @@ def paper_for(application: SessionApplication) -> SessionPaper | None:
     """Die aus dem Antrag entstandene Vorlage (die erste, falls mehrere angelegt wurden)."""
     return (
         SessionPaper.objects.filter(tenant_id=application.tenant_id, source_application=application)
-        .order_by("created_at")
+        .order_by("created_at", "pk")
         .first()
     )
 
@@ -261,7 +265,7 @@ def _stations(paper: SessionPaper, paper_public: bool) -> list[Station]:
     consultations = list(
         SessionConsultation.objects.filter(paper=paper)
         .select_related("organization", "meeting", "agenda_item__meeting")
-        .order_by("order", "created_at")
+        .order_by("order", "created_at", "pk")
     )
     has_decisive = any(c.authoritative or c.role == "decision" for c in consultations)
     stations = [
@@ -272,7 +276,7 @@ def _stations(paper: SessionPaper, paper_public: bool) -> list[Station]:
     direct = (
         SessionAgendaItem.objects.filter(paper=paper, meeting__tenant_id=paper.tenant_id, consultation__isnull=True)
         .select_related("meeting__organization")
-        .order_by("meeting__start", "order")
+        .order_by(*DIRECT_ITEM_ORDERING)
     )
     for item in direct:
         stations.append(_from_agenda_item(item, len(stations) + 1, paper, paper_public, decisive=not has_decisive))

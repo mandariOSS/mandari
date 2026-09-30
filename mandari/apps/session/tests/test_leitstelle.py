@@ -9,6 +9,7 @@ keine Mandantenseite über die Gruppenrolle, Zugriffe im Protokoll jedes Mandant
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, cast
@@ -24,6 +25,7 @@ from apps.accounts.two_factor_policy import two_factor_reasons
 from apps.accounts.views import LoginView
 from apps.common.tests.factories import UserFactory
 from apps.session.models import (
+    SessionAgendaItem,
     SessionAuditLog,
     SessionCosignature,
     SessionMeeting,
@@ -252,6 +254,59 @@ def test_arbeitsvorraete_fristen_und_sitzungen(welt: Welt) -> None:
     assert {row.title for row in overview.meetings} == {"Sitzung Regionalausschuss", leitstelle_service.HIDDEN_MEETING}
     sued = next(f for f in overview.figures if f.tenant == welt.sued)
     assert (sued.cosignatures_open, sued.invitation_deadlines, sued.meetings_upcoming) == (1, 2, 2)
+
+
+# =============================================================================
+# Feste Reihenfolge bei gleichen Sortierwerten (Issue #653)
+# =============================================================================
+
+
+def _schluessel_absteigend(anzahl: int) -> list[uuid.UUID]:
+    """Primärschlüssel in absteigender Folge: Ohne eindeutigen Nachrang bliebe die Anlagefolge stehen."""
+    return sorted((uuid.uuid4() for _ in range(anzahl)), reverse=True)
+
+
+def test_suche_ordnet_gleichzeitige_sitzungen_und_tops_fest(welt: Welt) -> None:
+    """
+    Sitzungs- und TOP-Treffer: neueste Sitzung zuerst, TOPs einer Sitzung in Tagesordnungsreihenfolge.
+
+    Zwei Sitzungen beginnen gleichzeitig, die TOPs entstehen gegen die Tagesordnung und alle mit derselben
+    Reihenfolge (order = 0). Ohne eindeutigen Nachrang bestimmte die Datenbank die Folge – und an der
+    Obergrenze der Trefferliste, welche Treffer überhaupt erscheinen.
+    """
+    rat = SessionOrganization.objects.create(tenant=welt.nord, name="Rat")
+    start = timezone.now()
+    sitzungen = [
+        SessionMeeting.objects.create(
+            id=pk, tenant=welt.nord, organization=rat, name=f"Radwegsitzung {name}", start=start - timedelta(days=tage)
+        )
+        for (name, tage), pk in zip((("A", 0), ("B", 0), ("Vorwoche", 7)), _schluessel_absteigend(3), strict=True)
+    ]
+    for sitzung in sitzungen:
+        for nummer, pk in zip(("3", "2", "1"), _schluessel_absteigend(3), strict=True):
+            SessionAgendaItem.objects.create(id=pk, meeting=sitzung, number=nummer, name=f"Radweg {sitzung.name}")
+
+    membership = SessionTenantGroupMembership.objects.select_related("group").get(user=welt.leitstelle)
+    result = leitstelle_service.search(membership, welt.leitstelle, "Radweg")
+
+    erwartet = sorted(sitzungen, key=lambda s: (-s.start.timestamp(), s.pk))
+    assert [row.title for row in result.meetings] == [s.name for s in erwartet]
+    assert [row.title for row in result.items] == [
+        f"TOP {nummer}: Radweg {s.name}" for s in erwartet for nummer in ("1", "2", "3")
+    ]
+
+
+def test_fristen_mit_gleichem_datum_in_fester_folge(welt: Welt) -> None:
+    for nummer, pk in enumerate(_schluessel_absteigend(3), start=1):
+        _vorlage(welt.sued, f"Frist {nummer}", public=True, deadline=welt.oe_b.deadline, id=pk)
+
+    membership = SessionTenantGroupMembership.objects.select_related("group").get(user=welt.leitstelle)
+    overview = leitstelle_service.build_overview(membership, welt.leitstelle)
+
+    gleiche_frist = SessionPaper.objects.filter(tenant=welt.sued, deadline=welt.oe_b.deadline)
+    assert [row.title for row in overview.paper_deadlines] == [
+        p.name for p in sorted(gleiche_frist, key=lambda p: p.pk)
+    ]
 
 
 # =============================================================================

@@ -70,6 +70,11 @@ MEETING_DAYS = 28
 DEADLINE_DAYS = 14
 #: Obergrenze der Sitzungen, aus denen die Ladungsfristen berechnet werden
 INVITATION_CANDIDATES = 500
+#: TOP-Treffer der Suche: neueste Sitzung zuerst, TOPs einer Sitzung in Tagesordnungsreihenfolge.
+#: Alle Listen enden mit einem eindeutigen Nachrang (Primärschlüssel): Bei gleichen Sortierwerten
+#: (gleichzeitige Sitzungen, TOPs ohne gepflegte Reihenfolge, gleiche Frist) bestimmte sonst die
+#: Datenbank die Reihenfolge – und an der Obergrenze der Liste, welche Einträge erscheinen (Issue #653).
+SEARCH_ITEM_ORDERING = ("-meeting__start", "meeting_id", "order", "number", "pk")
 
 #: Offene Vorlagen (Fristen)
 OPEN_PAPER_STATUSES = ("draft", "review")
@@ -310,7 +315,7 @@ def _invitation_candidates(tenant_ids: list[Any], now: datetime, horizon: date) 
             )
             .select_related("organization")
             .defer(*_deferred(SessionMeeting))
-        ).order_by("start")[:INVITATION_CANDIDATES]
+        ).order_by("start", "pk")[:INVITATION_CANDIDATES]
     )
     joint_meeting_service.prefetch_joint(meetings)
     return [meeting for meeting in meetings if meeting.invitation_deadline <= horizon]
@@ -421,13 +426,13 @@ def build_overview(membership: SessionTenantGroupMembership, user: Any) -> Overv
     )
     overview.review_papers = [
         _paper_row(by_id[paper.tenant_id], paper, when=paper.created_at, due=paper.deadline)
-        for paper in papers.filter(status="review").order_by("created_at")[:LIST_LIMIT]
+        for paper in papers.filter(status="review").order_by("created_at", "pk")[:LIST_LIMIT]
     ]
     overview.paper_deadlines = [
         _paper_row(
             by_id[paper.tenant_id], paper, due=paper.deadline, overdue=bool(paper.deadline and paper.deadline < today)
         )
-        for paper in papers.filter(status__in=OPEN_PAPER_STATUSES, deadline__lte=horizon).order_by("deadline")[
+        for paper in papers.filter(status__in=OPEN_PAPER_STATUSES, deadline__lte=horizon).order_by("deadline", "pk")[
             :LIST_LIMIT
         ]
     ]
@@ -435,7 +440,7 @@ def build_overview(membership: SessionTenantGroupMembership, user: Any) -> Overv
         SessionCosignature.objects.filter(paper__tenant_id__in=ids, paper__status="review", status="pending")
         .select_related("paper__main_organization", "department")
         .defer(*(f"paper__{name}" for name in _deferred(SessionPaper)))
-        .order_by("paper__created_at", "order")[:LIST_LIMIT]
+        .order_by("paper__created_at", "paper_id", "order", "pk")[:LIST_LIMIT]
     )
     for cosignature in cosignatures:
         paper = cosignature.paper
@@ -461,7 +466,7 @@ def build_overview(membership: SessionTenantGroupMembership, user: Any) -> Overv
             )
             .select_related("organization")
             .defer(*_deferred(SessionMeeting))
-        ).order_by("start")[:LIST_LIMIT]
+        ).order_by("start", "pk")[:LIST_LIMIT]
     )
     joint_meeting_service.prefetch_joint(upcoming)
     overview.meetings = [_meeting_row(by_id[m.tenant_id], m, when=m.start) for m in upcoming]
@@ -521,7 +526,7 @@ def search(membership: SessionTenantGroupMembership, user: Any, query: str) -> S
         .filter(Q(is_public=True) | Q(tenant_id__in=np_papers))
         .select_related("main_organization")
         .defer(*_deferred(SessionPaper))
-        .order_by("-created_at")[:SEARCH_LIMIT]
+        .order_by("-created_at", "pk")[:SEARCH_LIMIT]
     )
     result.papers = [_paper_row(by_id[p.tenant_id], p, when=p.date or p.created_at) for p in papers]
 
@@ -531,7 +536,7 @@ def search(membership: SessionTenantGroupMembership, user: Any, query: str) -> S
             .filter(Q(is_public=True) | Q(tenant_id__in=np_meetings))
             .select_related("organization")
             .defer(*_deferred(SessionMeeting))
-        ).order_by("-start")[:SEARCH_LIMIT]
+        ).order_by("-start", "pk")[:SEARCH_LIMIT]
     )
     joint_meeting_service.prefetch_joint(meetings)
     result.meetings = [_meeting_row(by_id[m.tenant_id], m, when=m.start) for m in meetings]
@@ -542,7 +547,7 @@ def search(membership: SessionTenantGroupMembership, user: Any, query: str) -> S
         .filter(Q(is_public=True, meeting__is_public=True) | Q(meeting__tenant_id__in=np_meetings))
         .select_related("meeting__organization")
         .defer(*_deferred(SessionAgendaItem), *(f"meeting__{name}" for name in _deferred(SessionMeeting)))
-        .order_by("-meeting__start", "order")[:SEARCH_LIMIT]
+        .order_by(*SEARCH_ITEM_ORDERING)[:SEARCH_LIMIT]
     )
     for item in items:
         meeting = item.meeting

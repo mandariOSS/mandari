@@ -6,6 +6,7 @@ eine Vorlage und Abruf über die Session-API v1 mit dem einreichenden Token.
 
 from __future__ import annotations
 
+import uuid
 from datetime import timedelta
 from typing import Any, cast
 
@@ -72,9 +73,8 @@ def antrag(tenant: SessionTenant, **kwargs: Any) -> SessionApplication:
 
 def sitzung(tenant: SessionTenant, gremium: SessionOrganization, **kwargs: Any) -> SessionMeeting:
     kwargs.setdefault("name", "Ratssitzung")
-    return SessionMeeting.objects.create(
-        tenant=tenant, organization=gremium, start=timezone.now() + timedelta(days=5), **kwargs
-    )
+    kwargs.setdefault("start", timezone.now() + timedelta(days=5))
+    return SessionMeeting.objects.create(tenant=tenant, organization=gremium, **kwargs)
 
 
 def station(paper: SessionPaper, gremium: SessionOrganization, **kwargs: Any) -> SessionConsultation:
@@ -175,6 +175,52 @@ class TestAufbereitung:
         (only,) = feedback.stations
         assert (only.public, only.role_label, only.decisive, only.result) == (True, "Beratung", True, "approved")
         assert feedback.decision is not None and feedback.decision.result == "approved"
+
+    def test_tops_gleichzeitiger_sitzungen_in_fester_folge(
+        self, tenant: SessionTenant, rat: SessionOrganization
+    ) -> None:
+        """
+        Zwei Sitzungen zur selben Zeit behandeln die Vorlage ohne Station der Beratungsfolge (Issue #653).
+
+        Die Folge der Stationen bestimmt, welches Ergebnis als Beschluss gilt (die letzte entscheidende
+        Station). Ohne eindeutigen Nachrang läge sie bei gleichem Beginn im Belieben der Datenbank; die
+        Sitzungen entstehen deshalb gegen die Schlüsselfolge.
+        """
+        application = antrag(tenant)
+        paper, _ = convert_to_paper(application)
+        start = timezone.now() + timedelta(days=5)
+        schluessel = sorted((uuid.uuid4() for _ in range(2)), reverse=True)
+        for pk, ergebnis in zip(schluessel, ("approved", "rejected"), strict=True):
+            meeting = sitzung(tenant, rat, id=pk, start=start)
+            SessionAgendaItem.objects.create(
+                meeting=meeting, number="3", name="Bänke", paper=paper, vote_result=ergebnis
+            )
+
+        feedback = application_feedback.build(application)
+
+        assert [s.meeting_key for s in feedback.stations] == [str(pk) for pk in sorted(schluessel)]
+        assert [s.result for s in feedback.stations] == ["rejected", "approved"]
+        assert feedback.decision is not None and feedback.decision.result == "approved"
+
+    def test_stationen_und_vorlage_bei_gleichem_zeitstempel_in_fester_folge(
+        self, tenant: SessionTenant, rat: SessionOrganization
+    ) -> None:
+        """Gleiche Reihenfolge und gleicher Anlagezeitpunkt: der Primärschlüssel entscheidet (Issue #653)."""
+        application = antrag(tenant)
+        schluessel = sorted((uuid.uuid4() for _ in range(2)), reverse=True)
+        for pk in schluessel:
+            SessionPaper.objects.create(id=pk, tenant=tenant, name="Bänke", source_application=application)
+        zeitpunkt = timezone.now()
+        SessionPaper.objects.filter(source_application=application).update(created_at=zeitpunkt)
+        paper = application_feedback.paper_for(application)
+        assert paper is not None and paper.pk == min(schluessel)
+
+        for pk in sorted((uuid.uuid4() for _ in range(2)), reverse=True):
+            station(paper, rat, id=pk, role="preliminary", order=1)
+        SessionConsultation.objects.filter(paper=paper).update(created_at=zeitpunkt)
+        stationen = application_feedback.build(application).stations
+        erwartet = sorted(SessionConsultation.objects.filter(paper=paper).values_list("pk", flat=True))
+        assert [s.key for s in stationen] == [f"station:{pk}" for pk in erwartet]
 
     def test_interna_der_verwaltung_fehlen(self, tenant: SessionTenant) -> None:
         application = antrag(tenant, processing_notes="Intern: Amt 61 fragen")
