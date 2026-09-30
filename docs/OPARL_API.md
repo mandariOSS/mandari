@@ -244,6 +244,11 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `OPARL_API_CACHE_SECONDS` | `60` | Cache-Dauer ungefilterter Listen-Seiten |
 | `OPARL_LICENSE_URL` | leer | URL der Lizenz am System-Objekt (`license`); leer = keine übergreifende Angabe |
 
+**Gemeinsame Bausteine:** Typ-URLs, Datums- und Zeitformate, gekürzte Objekte für Gelöschtes und
+die Werteliste von `organizationType` liegen in `mandari/hub/ris/canonical.py`; Listen-Hülle,
+Blättern, ETag und Rate-Limit in `mandari/oparl_api/utils.py`. Aggregator und Session-Schnittstelle
+nutzen dieselben Funktionen.
+
 **Kanonische Kennungen** (ADR `docs/adr/20260929-kanonisches-modell.md`): Jedes Objekt des
 RIS-Bestands trägt die Kennung `uuid5(NS_MANDARI_RIS, URI)` aus `shared/mandari_oparl/ids.py`.
 Die URI ist bei Fremd-RIS die `id` der Quelle, bei Session-Mandanten die öffentliche OParl-URL auf

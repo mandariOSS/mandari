@@ -43,8 +43,11 @@ veröffentlichen, mit dem Datum ihrer Anlage freigeschaltet (Migration `session.
 Schnittstelle bleibt ohne Unterbrechung erreichbar.
 
 - **Spezifikation**: https://oparl.org/spezifikation/
-- **Implementierung**: `mandari/apps/session/api/oparl.py`,
-  Sichtbarkeit/Tombstones in `mandari/apps/session/oparl_publication.py`
+- **Implementierung**: Endpunkte, Blättern und gelöschte Objekte in `mandari/apps/session/api/oparl.py`,
+  Sichtbarkeit/Tombstones in `mandari/apps/session/oparl_publication.py`. Wie ein Session-Objekt als
+  OParl-Objekt aussieht, legt allein `mandari/hub/ris/mapping/session.py` fest – die eine Abbildung der
+  Session-Objekte auf das kanonische Modell (ADR `docs/adr/20260929-kanonisches-modell.md`). Wer ein
+  Feld ergänzt oder ändert, tut das dort; die Schnittstelle gibt die Abbildung unverändert aus.
 
 ## Sicherheitsgarantie: NUR öffentliche Daten
 
