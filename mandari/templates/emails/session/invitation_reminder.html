@@ -1,15 +1,23 @@
 {% extends "emails/base_email.html" %}
-{% comment %}Erinnerung an Ladungsempfänger ohne Empfangsbestätigung (Issue #225).{% endcomment %}
+{% comment %}Erinnerung zur Ladung (Issues #225, #619): nennt, was fehlt – Empfangsbestätigung und/oder Zu-/Absage.{% endcomment %}
 {% block subject %}Erinnerung: {{ meeting.name }}{% endblock %}
-{% block preheader %}Bitte bestätigen Sie den Erhalt der Ladung zur Sitzung am {{ start_local|date:"d.m.Y" }}.{% endblock %}
+{% block preheader %}{% if missing_response %}Bitte melden Sie sich zur Sitzung am {{ start_local|date:"d.m.Y" }} zurück.{% else %}Bitte bestätigen Sie den Erhalt der Ladung zur Sitzung am {{ start_local|date:"d.m.Y" }}.{% endif %}{% endblock %}
 {% block content %}
 <h1 class="h1">Erinnerung an Ihre Ladung</h1>
 <p class="muted">{{ tenant.name }}</p>
 <p>Guten Tag {{ recipient.name }},</p>
-<p>für die Sitzung „{{ meeting.name }}“ ({{ meeting.organization.name }}) am {{ start_local|date:"l, d.m.Y" }} um {{ start_local|date:"H:i" }} Uhr liegt uns noch keine Bestätigung vor, dass die Ladung Sie erreicht hat.</p>
+{% if missing_acknowledgement and missing_response %}
+<p>für die Sitzung „{{ meeting.name }}“ ({{ meeting.organization.name }}) am {{ start_local|date:"l, d.m.Y" }} um {{ start_local|date:"H:i" }} Uhr liegt uns noch keine Bestätigung vor, dass die Ladung Sie erreicht hat, und noch keine Zu- oder Absage.</p>
 <p>Bitte bestätigen Sie den Erhalt und teilen Sie mit, ob Sie teilnehmen.</p>
+{% elif missing_response %}
+<p>für die Sitzung „{{ meeting.name }}“ ({{ meeting.organization.name }}) am {{ start_local|date:"l, d.m.Y" }} um {{ start_local|date:"H:i" }} Uhr liegt uns noch keine Zu- oder Absage von Ihnen vor.</p>
+<p>Bitte teilen Sie mit, ob Sie teilnehmen.</p>
+{% else %}
+<p>für die Sitzung „{{ meeting.name }}“ ({{ meeting.organization.name }}) am {{ start_local|date:"l, d.m.Y" }} um {{ start_local|date:"H:i" }} Uhr liegt uns noch keine Bestätigung vor, dass die Ladung Sie erreicht hat.</p>
+<p>Bitte bestätigen Sie den Erhalt der Ladung.</p>
+{% endif %}
 <div class="btn-wrap">
-    <a class="btn" href="{{ response_url }}">Erhalt bestätigen und rückmelden</a>
+    <a class="btn" href="{{ response_url }}">{% if missing_acknowledgement and missing_response %}Erhalt bestätigen und rückmelden{% elif missing_response %}Zu- oder absagen{% else %}Erhalt bestätigen{% endif %}</a>
 </div>
 <p class="muted small">Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:<br>{{ response_url }}</p>
 <p class="muted small">Haben Sie die Ladung nicht erhalten? Über den Link können Sie trotzdem zu- oder absagen; die Unterlagen erhalten Sie beim Sitzungsdienst.</p>

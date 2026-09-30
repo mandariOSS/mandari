@@ -565,7 +565,8 @@ def session_invitation_portal(org: Any, make_member: Any) -> dict[str, Any]:
 
 
 def session_invitation_reminder(org: Any, make_member: Any) -> dict[str, Any]:
-    return _session_ladung()
+    # Erinnerung nennt, was fehlt (Issue #619); hier beides
+    return _session_ladung(missing_acknowledgement=True, missing_response=True)
 
 
 def session_substitute_request(org: Any, make_member: Any) -> dict[str, Any]:

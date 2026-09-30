@@ -55,13 +55,17 @@ class SettingsView(SessionViewMixin, TemplateView):
     permission_required = "manage_settings"
 
     def get_context_data(self, **kwargs):
+        from ..models import SessionTenant
+
         context = super().get_context_data(**kwargs)
         context["reminder_config"] = self.session_tenant.reminder_config()
+        context["rsvp_reason_choices"] = SessionTenant.RSVP_REASON_CHOICES
+        context["rsvp_audience_choices"] = SessionTenant.RSVP_AUDIENCE_CHOICES
         return context
 
 
 class ReminderSettingsView(SessionViewMixin, View):
-    """Fristen-Erinnerungen konfigurieren (Issue #83)."""
+    """Fristen-Erinnerungen konfigurieren (Issue #83), Erinnerung zur Ladung mit Anlass, Kreis, Zeitpunkten (#619)."""
 
     permission_required = "manage_settings"
     http_method_names = ["post"]
@@ -83,6 +87,26 @@ class ReminderSettingsView(SessionViewMixin, View):
                     settings_dict[key] = max(0, min(60, int(raw)))
                 except (TypeError, ValueError):
                     settings_dict[key] = default
+
+        # Erinnerung zur Ladung (Issue #619): Unbekanntes fällt auf den Standard zurück
+        reasons = {key for key, _ in SessionTenant.RSVP_REASON_CHOICES}
+        audiences = {key for key, _ in SessionTenant.RSVP_AUDIENCE_CHOICES}
+        reason = request.POST.get("rsvp_reason", "")
+        audience = request.POST.get("rsvp_audience", "")
+        settings_dict["rsvp_reason"] = reason if reason in reasons else SessionTenant.RSVP_REASON_RESPONSE
+        settings_dict["rsvp_audience"] = audience if audience in audiences else SessionTenant.RSVP_AUDIENCE_ALL
+        if "rsvp_days" in request.POST:
+            days = SessionTenant.parse_rsvp_days(request.POST.get("rsvp_days", ""))
+            if days:
+                settings_dict["rsvp_days"] = days
+                # Früheste Erinnerung auch im bisherigen Feld (ältere Auswertungen lesen nur dieses)
+                settings_dict["rsvp_days_before"] = days[0]
+            else:
+                settings_dict["rsvp_days"] = old_config["rsvp_days"]
+                settings_dict["rsvp_days_before"] = old_config["rsvp_days"][0]
+                messages.warning(
+                    request, "Keine gültigen Zeitpunkte angegeben – die bisherigen Zeitpunkte bleiben bestehen."
+                )
 
         tenant.reminder_settings = settings_dict
         tenant.save(update_fields=["reminder_settings", "updated_at"])

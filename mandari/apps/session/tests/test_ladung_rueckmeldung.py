@@ -466,6 +466,9 @@ def test_uebersicht_fremder_mandant_404(welt: Welt) -> None:
 
 
 def test_erinnerung_nur_an_empfaenger_ohne_bestaetigung(welt: Welt) -> None:
+    """Anlass „Empfangsbestätigung fehlt“ (früheres Verhalten des Knopfs, Issue #619)."""
+    welt.tenant.reminder_settings = {"rsvp_reason": SessionTenant.RSVP_REASON_ACKNOWLEDGEMENT}
+    welt.tenant.save(update_fields=["reminder_settings"])
     dispatch = _versenden(welt)
     Client().post(_link(_empfaenger(dispatch, welt.member)), {"action": "acknowledge"})
     Client().post(_link(_empfaenger(dispatch, welt.chair)), {"action": "confirm"})

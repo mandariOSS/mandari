@@ -5,7 +5,7 @@ Ladung mit Empfangsbestätigung und Rückmeldung (Issue #225).
 - öffentlicher Rückmeldelink (ohne Anmeldung, signiertes Token, Ratenbegrenzung): Erhalt
   bestätigen, Zusage, Absage mit Grund und Vertretungswunsch – GET zeigt nur an, erst ein
   Klick (POST) bestätigt oder meldet zurück
-- Übersicht im Sitzungsdienst: Status je Empfänger, Erinnerung an alle ohne Bestätigung,
+- Übersicht im Sitzungsdienst: Status je Empfänger, Erinnerung nach den Einstellungen (Issue #619),
   manuelle Einträge des Sitzungsdienstes, Ladungsnachweis (PDF) und Serienbrief (PDF/CSV)
 """
 
@@ -23,7 +23,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionInvitationDispatch, SessionMeeting, SessionPerson, SessionTenant
 from ..permissions import SessionViewMixin
-from ..services import invitation_export_service, invitation_response_service, invitation_token
+from ..services import invitation_export_service, invitation_response_service, invitation_token, rsvp_reminders
 
 _log_event = cast(Any, audit).log_event
 
@@ -149,11 +149,16 @@ class MeetingInvitationStatusView(SessionViewMixin, TemplateView):
         context: dict[str, Any] = cast(Any, super()).get_context_data(**kwargs)
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
         overview = invitation_response_service.meeting_overview(meeting, include_reasons=True)
+        config = meeting.tenant.reminder_config()
         context.update(
             {
                 "meeting": meeting,
                 "overview": overview,
-                "reminder_count": len(invitation_response_service.reminder_candidates(meeting, overview)),
+                # Dieselbe Regel und Einstellungen wie der tägliche Lauf (Issue #619)
+                "reminders_enabled": config["rsvp_enabled"],
+                "reminder_count": len(rsvp_reminders.targets(meeting, config)),
+                "reminder_reason": dict(SessionTenant.RSVP_REASON_CHOICES)[config["rsvp_reason"]],
+                "reminder_audience": dict(SessionTenant.RSVP_AUDIENCE_CHOICES)[config["rsvp_audience"]],
                 "is_open": invitation_response_service.is_open_for_responses(meeting),
                 "letter_batches": invitation_export_service.letter_batches(meeting),
                 "can_enter_responses": self.has_permission("manage_attendance"),
@@ -163,7 +168,7 @@ class MeetingInvitationStatusView(SessionViewMixin, TemplateView):
 
 
 class MeetingInvitationReminderView(SessionViewMixin, View):
-    """Erinnerung an alle ohne Empfangsbestätigung senden."""
+    """Sofort erinnern – nach Anlass und Empfängerkreis aus den Einstellungen des Mandanten (Issue #619)."""
 
     http_method_names = ["post"]
     permission_required = "edit_meetings"
@@ -174,9 +179,12 @@ class MeetingInvitationReminderView(SessionViewMixin, View):
         if not invitation_response_service.is_open_for_responses(meeting):
             messages.error(request, "Die Sitzung hat bereits begonnen oder ist abgesagt – keine Erinnerung möglich.")
             return _status_redirect(tenant, meeting)
-        sent, failed = invitation_response_service.send_acknowledgement_reminders(meeting)
+        if not rsvp_reminders.enabled(tenant):
+            messages.error(request, "Erinnerungen zu Ladungen sind in den Einstellungen abgeschaltet.")
+            return _status_redirect(tenant, meeting)
+        sent, failed = rsvp_reminders.send_now(meeting)
         if not sent and not failed:
-            messages.info(request, "Alle Empfänger haben den Erhalt bestätigt oder sich zurückgemeldet.")
+            messages.info(request, "Niemand ist nach den eingestellten Regeln zu erinnern.")
         elif failed:
             messages.warning(request, f"Erinnerung an {sent} Empfänger versandt, {failed} fehlgeschlagen.")
         else:

@@ -231,6 +231,27 @@ class SessionTenant(models.Model):
         "resolution_enabled": True,
         "resolution_days_before": 7,
     }
+    # Erinnerungen zu Ladungen (Issue #619): Anlass, Empfängerkreis und mehrere Zeitpunkte, gemeinsam
+    # für den Knopf in der Übersicht und den täglichen Lauf. Gespeichert in reminder_settings,
+    # Standard wie bisher (fehlende Zu-/Absage, alle Geladenen, 5 Tage vorher).
+    RSVP_REASON_RESPONSE = "response"
+    RSVP_REASON_ACKNOWLEDGEMENT = "acknowledgement"
+    RSVP_REASON_BOTH = "both"
+    RSVP_REASON_CHOICES = [
+        (RSVP_REASON_RESPONSE, "Zu- oder Absage fehlt"),
+        (RSVP_REASON_ACKNOWLEDGEMENT, "Empfangsbestätigung fehlt (und keine Rückmeldung)"),
+        (RSVP_REASON_BOTH, "Empfangsbestätigung oder Zu-/Absage fehlt"),
+    ]
+    RSVP_AUDIENCE_ALL = "all"
+    RSVP_AUDIENCE_MEMBERS = "members"
+    RSVP_AUDIENCE_VOTING = "voting"
+    RSVP_AUDIENCE_CHOICES = [
+        (RSVP_AUDIENCE_ALL, "Alle Geladenen"),
+        (RSVP_AUDIENCE_MEMBERS, "Mitglieder der Gremien (ohne Gäste)"),
+        (RSVP_AUDIENCE_VOTING, "Nur stimmberechtigte Mitglieder und ihre Vertretungen"),
+    ]
+    #: Höchstens so viele Erinnerungszeitpunkte je Sitzung
+    RSVP_MAX_STAGES = 3
     reminder_settings = models.JSONField(
         default=dict,
         blank=True,
@@ -264,8 +285,14 @@ class SessionTenant(models.Model):
         return self.protocol_approval_mode == self.PROTOCOL_APPROVAL_DIRECT
 
     def reminder_config(self) -> dict:
-        """Erinnerungs-Einstellungen mit Defaults zusammenführen (Issue #83)."""
-        config = dict(self.REMINDER_DEFAULTS)
+        """
+        Erinnerungs-Einstellungen mit Defaults zusammenführen (Issues #83, #619).
+
+        Zusätzlich zu den Vorlaufzeiten: ``rsvp_days`` (Zeitpunkte der Erinnerung zur Ladung, absteigend,
+        ohne Angabe ``[rsvp_days_before]``), ``rsvp_reason`` und ``rsvp_audience``. ``rsvp_days_before``
+        ist der früheste Zeitpunkt (ältere Auswertungen lesen nur ihn).
+        """
+        config: dict[str, Any] = dict(self.REMINDER_DEFAULTS)
         stored = self.reminder_settings if isinstance(self.reminder_settings, dict) else {}
         for key, default in self.REMINDER_DEFAULTS.items():
             value = stored.get(key, default)
@@ -276,7 +303,33 @@ class SessionTenant(models.Model):
                     config[key] = max(0, min(60, int(value)))
                 except (TypeError, ValueError):
                     config[key] = default
+        days = self.parse_rsvp_days(stored.get("rsvp_days"))
+        config["rsvp_days"] = days or [config["rsvp_days_before"]]
+        config["rsvp_days_before"] = config["rsvp_days"][0]
+        reasons = {key for key, _ in self.RSVP_REASON_CHOICES}
+        audiences = {key for key, _ in self.RSVP_AUDIENCE_CHOICES}
+        reason = stored.get("rsvp_reason")
+        audience = stored.get("rsvp_audience")
+        config["rsvp_reason"] = reason if reason in reasons else self.RSVP_REASON_RESPONSE
+        config["rsvp_audience"] = audience if audience in audiences else self.RSVP_AUDIENCE_ALL
         return config
+
+    @classmethod
+    def parse_rsvp_days(cls, value: Any) -> list[int]:
+        """Zeitpunkte aus Liste oder Text („7, 2“): ganze Tage 0–60, ohne Doppelte, absteigend, höchstens drei."""
+        if isinstance(value, str):
+            parts: list[Any] = [part for part in value.replace(";", ",").replace(" ", ",").split(",") if part]
+        elif isinstance(value, list | tuple):
+            parts = list(value)
+        else:
+            return []
+        days: set[int] = set()
+        for part in parts:
+            try:
+                days.add(max(0, min(60, int(part))))
+            except (TypeError, ValueError):
+                continue
+        return sorted(days, reverse=True)[: cls.RSVP_MAX_STAGES]
 
     def get_encryption_organization(self):
         """Required for EncryptionMixin compatibility."""
