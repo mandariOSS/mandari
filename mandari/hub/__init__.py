@@ -12,4 +12,5 @@ Unterpakete:
 
 - ``hub.commands``: Befehle an den Eigentümer der Daten (Dispatcher, Quittung, Idempotenz, Clients)
 - ``hub.contracts``: Vertragsregister (Ereignishülle, Schemas je Typ und Version)
+- ``hub.ris``: RIS-Bestand; ``hub.ris.selectors`` ist die Lese-Fassade für die Fachmodule
 """

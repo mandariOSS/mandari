@@ -19,6 +19,12 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   Mit `|` wären auch Pakete derselben Schicht gegenseitig verboten, etwa `apps.tenants` und
   `apps.accounts` in der Plattform. Die Unabhängigkeit der Fachmodule sichert stattdessen der
   eigene Vertrag `module-unabhaengig`.
+- **RIS-Daten nur über die Lese-Fassade:** Fachmodule lesen Sitzungen, Tagesordnungspunkte, Vorlagen,
+  Gremien, Personen und Dateien über `hub.ris.selectors`, nicht über `OParl*.objects`
+  ([ADR Kanonisches Modell](adr/20260929-kanonisches-modell.md)). Fehlt eine Abfrage, kommt sie dort
+  hinzu. `scripts/check_ris_access_ratchet.py` zählt die verbliebenen Direktzugriffe außerhalb von
+  `hub` und `insight_core` je Datei (Baseline `scripts/ris_access_baseline.json`); sie dürfen nur
+  sinken, nach einem Abbau `--update` im selben PR.
 - **Views orchestrieren, Services entscheiden, Selectors lesen, Models validieren.** Ab dem zweiten
   Schreibzugriff oder dem dritten Query gehört Logik in `services.py` bzw. `selectors.py` der App.
 - Jede Service-Funktion, die mehr als ein Objekt schreibt, läuft in `transaction.atomic`.

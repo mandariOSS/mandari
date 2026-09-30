@@ -344,6 +344,12 @@ jobs:
           python scripts/check_import_linter_ratchet.py
           cd mandari && lint-imports --no-cache
 
+      # Lese-Fassade des RIS-Bestands (docs/adr/20260929-kanonisches-modell.md): Direktzugriffe auf
+      # OParl*.objects außerhalb von hub und insight_core dürfen je Datei nur weniger werden (Issue #522).
+      - name: RIS-Bestand nur über die Lese-Fassade (Direktzugriffe dürfen nur sinken)
+        if: ${{ !cancelled() }}
+        run: python scripts/check_ris_access_ratchet.py
+
       - name: Ratchet (Inline-Skripte/-Styles, Template-Größe dürfen nicht zunehmen)
         if: ${{ !cancelled() }}
         run: python scripts/check_frontend_ratchet.py
