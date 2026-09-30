@@ -313,6 +313,8 @@ Jedes dieser Commands hält während des Laufs eine Singleton-Sperre in Redis; e
 30 7 * * *  docker exec mandari-app python manage.py send_question_reminders  >> /var/log/mandari-question-reminders.log 2>&1
 15 7 * * *  docker exec mandari-app python manage.py send_task_due_reminders  >> /var/log/mandari-task-reminders.log 2>&1
 0 3 * * 1   docker exec mandari-app python manage.py fetch_person_photos      >> /var/log/mandari-person-photos.log 2>&1
+# Amtliche Umringe von Bebauungsplänen abrufen und Vorlagen zuordnen (Issue #598, docs/INSIGHT_GEO.md)
+50 4 * * *  docker exec mandari-app python manage.py sync_plan_boundaries     >> /var/log/mandari-plan-boundaries.log 2>&1
 # Verwaiste Konten (unbestätigt, abgelehnt, ohne Zuordnung) nach Frist löschen, Issue #238
 45 3 * * *  docker exec mandari-app python manage.py cleanup_orphaned_accounts >> /var/log/mandari-orphaned-accounts.log 2>&1
 # Betrieb (Issue #231, docs/MONITORING.md): Quellen stündlich, Service-Level täglich, Verfügbarkeitsbericht monatlich

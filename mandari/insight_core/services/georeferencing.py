@@ -994,11 +994,17 @@ def _split_house_number(address: str) -> tuple[str, str | None]:
     return strip_house_number(address)
 
 
+# Verortungen, die ein neuer Georef-Lauf nicht ersetzt: offizielle OParl-Orte, manuelle Einträge und
+# der Punkt im amtlichen Umring eines Bebauungsplans (sync_plan_boundaries, #598)
+PRESERVED_SOURCES = ("oparl", "manual", "plan_boundary")
+
+
 def update_paper_georef(paper, result: dict) -> None:
     """
     Update a paper's georef fields based on pipeline result.
 
-    Einträge mit source "oparl" (offizielle OParl-Locations) oder "manual"
+    Einträge mit source "oparl" (offizielle OParl-Locations), "manual" oder
+    "plan_boundary" (Punkt im amtlichen Umring eines Bebauungsplans, #598)
     bleiben bei Re-Runs erhalten und haben Vorrang bei der Deduplizierung.
 
     Args:
@@ -1023,13 +1029,13 @@ def update_paper_georef(paper, result: dict) -> None:
         loc
         for loc in existing
         if isinstance(loc, dict)
-        and loc.get("source") in ("oparl", "manual")
+        and loc.get("source") in PRESERVED_SOURCES
         and loc.get("lat") is not None
         and loc.get("lon") is not None
     ]
 
     extracted = result.get("locations", [])
-    # Höchste Priorität zuerst: oparl/manual gewinnen bei Dedup (<50m)
+    # Höchste Priorität zuerst: oparl/manual/plan_boundary gewinnen bei Dedup (<50m)
     merged = deduplicate_locations(preserved + extracted)
 
     paper.locations = merged or None

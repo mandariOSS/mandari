@@ -107,29 +107,38 @@ class Command(BaseCommand):
             LIMIT 50
         """
 
-        count = 0
         with connection.cursor() as cursor:
             cursor.execute(sql, [lat, lon, lat, str(subscriber.body_id), cutoff, radius])
-            for row in cursor.fetchall():
-                paper_id, name, reference, distance = row
+            matches = {str(row[0]): (row[1], row[2], row[3]) for row in cursor.fetchall()}
 
-                if dry_run:
-                    count += 1
-                    continue
+        # Amtliche Umringe von Bebauungsplänen (#598): Treffer, wenn der Umring den Kreis berührt
+        from insight_core.models import OParlPaper
+        from insight_core.services.plan_boundaries import nearby_plan_papers
 
-                _, created = SubscriptionAlert.objects.get_or_create(
-                    subscriber=subscriber,
-                    entity_type="paper",
-                    entity_id=paper_id,
-                    defaults={
-                        "alert_type": "neighborhood",
-                        "entity_title": name or reference or "Vorgang",
-                        "entity_url": f"/insight/vorgaenge/{paper_id}/",
-                        "context": {"distance": int(distance)},
-                    },
-                )
-                if created:
-                    count += 1
+        plan_hits = nearby_plan_papers(subscriber.body, lat, lon, radius, created_since=cutoff)
+        extra = {str(paper_id): hit for paper_id, hit in plan_hits.items() if str(paper_id) not in matches}
+        for paper in OParlPaper.objects.filter(pk__in=list(extra)).values("id", "name", "reference"):
+            matches[str(paper["id"])] = (paper["name"], paper["reference"], extra[str(paper["id"])].distance)
+
+        count = 0
+        for paper_id, (name, reference, distance) in matches.items():
+            if dry_run:
+                count += 1
+                continue
+
+            _, created = SubscriptionAlert.objects.get_or_create(
+                subscriber=subscriber,
+                entity_type="paper",
+                entity_id=paper_id,
+                defaults={
+                    "alert_type": "neighborhood",
+                    "entity_title": name or reference or "Vorgang",
+                    "entity_url": f"/insight/vorgaenge/{paper_id}/",
+                    "context": {"distance": int(distance)},
+                },
+            )
+            if created:
+                count += 1
 
         return count
 
