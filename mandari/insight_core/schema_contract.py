@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Schema-Contract zwischen Django (``insight_core.models``) und dem Ingestor
-(``ingestor/src/storage/models.py``, SQLAlchemy).
+Schema-Contract zwischen Django (``insight_core.models``, dazu das Journal der Ereignistechnik aus
+``apps.events.models``) und dem Ingestor (``ingestor/src/storage/models.py``, SQLAlchemy).
 
 Beide Seiten beschreiben dieselben Tabellen unabhängig voneinander. Die Datenbank wird von
 Django-Migrationen erzeugt; der Ingestor schreibt per SQLAlchemy hinein. Dieses Modul normalisiert
@@ -17,9 +17,15 @@ from __future__ import annotations
 import ast
 import importlib.util
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 from typing import Any
+
+#: Django-Apps, in deren Tabellen der Ingestor schreibt: der RIS-Bestand und das Journal der
+#: Ereignistechnik (``events_event``, docs/adr/20260929-ereignistechnik-postgres.md).
+CONTRACT_APPS: tuple[str, ...] = ("insight_core", "events")
 
 # Typfamilien, wie sie in der Datenbank ankommen. "string"/"text" und "integer"/"bigint" sind
 # untereinander verträglich (nur Warnung), alles andere ist ein harter Unterschied.
@@ -110,13 +116,18 @@ class Report:
 # ---------------------------------------------------------------------------
 
 
-def django_schema(app_label: str = "insight_core") -> SchemaSpec:
-    """Liest alle konkreten Modelle (inkl. automatischer M2M-Zwischentabellen) einer App."""
+def django_schema(app_labels: Iterable[str] = CONTRACT_APPS) -> SchemaSpec:
+    """Liest alle konkreten Modelle (inkl. automatischer M2M-Zwischentabellen) der genannten Apps."""
     from django.apps import apps
     from django.db.models.fields import NOT_PROVIDED
 
     schema: SchemaSpec = {}
-    for model in apps.get_app_config(app_label).get_models(include_auto_created=True):
+    models = [
+        model
+        for app_label in app_labels
+        for model in apps.get_app_config(app_label).get_models(include_auto_created=True)
+    ]
+    for model in models:
         opts = model._meta
         if opts.abstract or opts.proxy:
             continue
@@ -184,8 +195,8 @@ def _sa_kind(sa_type: Any) -> tuple[str, int | None]:
     return "unknown", None
 
 
-def sqlalchemy_schema(ingestor_dir: Path) -> SchemaSpec:
-    """Lädt ``src/storage/models.py`` des Ingestors als eigenständiges Modul und liest ``Base.metadata``.
+def ingestor_models(ingestor_dir: Path) -> ModuleType:
+    """Lädt ``src/storage/models.py`` des Ingestors als eigenständiges Modul.
 
     Die Datei wird direkt geladen (ohne das Paket ``src.storage``), damit nur ``sqlalchemy`` gebraucht
     wird und nicht die komplette Ingestor-Umgebung (asyncpg, mandari_oparl, …).
@@ -197,7 +208,12 @@ def sqlalchemy_schema(ingestor_dir: Path) -> SchemaSpec:
     models = importlib.util.module_from_spec(module_spec)
     sys.modules[module_spec.name] = models
     module_spec.loader.exec_module(models)
-    metadata = models.Base.metadata
+    return models
+
+
+def sqlalchemy_schema(ingestor_dir: Path) -> SchemaSpec:
+    """Liest ``Base.metadata`` der Ingestor-Modelle (siehe ``ingestor_models``)."""
+    metadata = ingestor_models(ingestor_dir).Base.metadata
 
     schema: SchemaSpec = {}
     for table in metadata.tables.values():

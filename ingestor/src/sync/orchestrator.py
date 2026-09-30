@@ -56,6 +56,7 @@ from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers.base import CONTENT_HASH_FIELD, content_hash
 from src.storage.database import DatabaseStorage
+from src.storage.events import start_correlation
 from src.sync.processor import OParlProcessor, session_location_id
 
 # Quellen-Schonung (Issue #89): ab BACKOFF_AFTER_FAILURES Fehlversuchen in Folge
@@ -781,6 +782,9 @@ class SyncOrchestrator:
         console.print(f"\n[bold cyan]{'=' * 50}[/bold cyan]")
         console.print(f"[bold cyan]Syncing: {body_name}[/bold cyan]")
         console.print(f"[bold cyan]{'=' * 50}[/bold cyan]")
+
+        # Alle Ereignisse dieses Abgleichs tragen dieselbe Korrelations-ID (src/storage/events.py)
+        start_correlation()
 
         # Process and store body
         processed_body = self.processor.process_body(body_data, body_external_id)

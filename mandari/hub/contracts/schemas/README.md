@@ -91,7 +91,9 @@ verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
   `ris.paper.released`.
 - **Feldnamen der Nutzlast** in `snake_case` (`agenda_item`, `previous_status`) und mit
   `description`. Namen geänderter Felder (`changed`) folgen dem Modell des Eigentümers: bei `ris.*`
-  den OParl-Namen (`paperType`), sonst den Feldnamen des Fachmoduls.
+  den OParl-Namen (`paperType`), sonst den Feldnamen des Fachmoduls. Erweiterungen mit Namensraum
+  erscheinen mit Unterstrich statt Doppelpunkt (`mandari:meetingFormat` als `mandari_meetingFormat`),
+  weil das Muster nur Buchstaben, Ziffern und Unterstrich zulässt; so meldet sie der Ingestor.
 - **Codes** übernehmen die Werte des Eigentümers (`confirmed`/`declined`, `motion`, `in_review` …);
   die Gründe einer Rücknahme stehen wie im Änderungsfeed (`quelle_geloescht`, `zurueckgenommen`,
   `nichtoeffentlich`, `datenschutz`).

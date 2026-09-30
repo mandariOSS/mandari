@@ -17,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    SmallInteger,
     String,
     Text,
     func,
@@ -549,3 +550,35 @@ class OParlLegislativeTerm(Base):
 
     # Relationships
     body: Mapped["OParlBody | None"] = relationship(back_populates="legislative_terms")
+
+
+class JournalEvent(Base):
+    """
+    Eine Zeile im Journal der Ereignistechnik (``events_event``, Django-App ``apps.events``).
+
+    Der Ingestor schreibt Ereignisse in derselben Transaktion wie die Datenänderung
+    (``src/storage/events.py``, ``docs/adr/20260929-ereignistechnik-postgres.md``). Er kennt nur die
+    Spalten der Hülle. ``seq`` (Folgenummer, vergibt der Sequenzierer nach dem Commit), ``xid``
+    (Transaktionskennung) und ``recorded_at`` setzt die Datenbank bzw. der Sequenzierer; sie fehlen
+    hier mit Absicht, damit der Ingestor sie nie schreiben kann.
+    """
+
+    __tablename__ = "events_event"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), unique=True)
+    type: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(SmallInteger)
+    aggregate_type: Mapped[str] = mapped_column(Text)
+    aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    # session:<uuid>, org:<uuid> oder source:<uuid>; der Ingestor schreibt source:<Kennung der Quelle>
+    tenant_ref: Mapped[str] = mapped_column(Text)
+    body_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    visibility: Mapped[str] = mapped_column(Text)
+    operation: Mapped[str] = mapped_column(Text, server_default="upsert")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    actor_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    correlation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    causation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # nur Kennungen, Codes und Namen geänderter Felder, nie Inhalte
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)

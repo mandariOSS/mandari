@@ -77,3 +77,14 @@ deutschen Analyzer dynamisch auto-anlegen. Fehlt ein Index, ist auf der Django-S
 `scripts/check_schema_contract.py` prüft zusätzlich, dass der Ingestor genau die Indexnamen
 kennt, die Django anlegt, und selbst weder Mappings, Settings noch Analyzer definiert.
 
+## Ergänzung: Journal der Ereignistechnik (Issue #513)
+
+Der Ingestor schreibt neben dem RIS-Bestand auch in das Journal der Ereignistechnik
+(`events_event`, Django-App `apps.events`,
+[20260929-ereignistechnik-postgres](20260929-ereignistechnik-postgres.md)). Der Contract umfasst
+deshalb die Apps `insight_core` und `events` (`CONTRACT_APPS`). Die Tabellenbeschreibung des
+Ingestors (`JournalEvent`) nennt nur die Spalten der Ereignishülle. `seq` (Folgenummer des
+Sequenzierers), `xid` (Transaktionskennung) und `recorded_at` kennt sie mit Absicht nicht: Der
+Ingestor kann sie so nicht schreiben, und der Contract verlangt, dass sie auf der Django-Seite
+leer bleiben dürfen oder einen Datenbank-Standard haben. Ein Test führt die INSERT-Anweisung des
+Ingestors gegen die Tabelle aus den Migrationen aus (`insight_core/tests/test_schema_contract.py`).

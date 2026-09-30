@@ -245,6 +245,10 @@ def test_reuse_workflow_prueft_blockierend() -> None:
         ("docs/OPARL_API.md", {"verweise"}),
         ("mandari/apps/session/tests/test_meetings.py", {"qualitaet", "python", "test", "codeql_python"}),
         ("ingestor/src/sync/orchestrator.py", {"qualitaet", "vertrag", "ingestor", "codeql_python"}),
+        # Journal der Ereignistechnik auf der Seite des Ingestors: zusätzlich die Django-Tests (PostgreSQL)
+        ("ingestor/src/storage/models.py", {"qualitaet", "vertrag", "ingestor", "journal", "codeql_python"}),
+        ("ingestor/src/storage/events.py", {"qualitaet", "vertrag", "ingestor", "journal", "codeql_python"}),
+        ("ingestor/src/storage/database.py", {"qualitaet", "vertrag", "ingestor", "codeql_python"}),
         ("ingestor/tests/test_loeschmarkierung.py", {"qualitaet", "ingestor", "codeql_python"}),
         ("scripts/smoke_tombstones.py", {"qualitaet", "test", "smoke", "codeql_python"}),
         ("mandari/Dockerfile", {"qualitaet", "docker"}),
@@ -279,6 +283,25 @@ def test_reuse_workflow_prueft_blockierend() -> None:
 )
 def test_zuordnung_ausgewaehlter_dateien(pfad: str, erwartet: set[str]) -> None:
     assert _bereiche(pfad) == erwartet
+
+
+def test_journal_des_ingestors_loest_die_django_tests_aus() -> None:
+    """
+    Der Ingestor schreibt ins Journal der Ereignistechnik. Ob seine INSERT-Anweisung zur Tabelle aus
+    den Django-Migrationen passt (Trigger, Prüfbedingungen), prüft ein Test, der PostgreSQL braucht
+    und deshalb nur im Job ``test`` läuft. Reine Ingestor-Änderungen lösen diesen Job sonst nicht aus.
+    """
+    bedingung = _jobs()["test"]["if"]
+    assert "needs.changes.outputs.test == 'true'" in bedingung
+    assert "needs.changes.outputs.journal == 'true'" in bedingung
+    assert "||" in bedingung and "&&" not in bedingung
+    # Der Job hat die Datenbank, und der Test steht dort, wo pytest ihn findet.
+    assert "postgres" in _jobs()["test"]["services"]
+    vertragstest = REPO / "mandari" / "insight_core" / "tests" / "test_schema_contract.py"
+    assert "def test_ingestor_insert_gegen_das_journal_aus_den_migrationen" in vertragstest.read_text(encoding="utf-8")
+    # Das Journal beschreibt der Ingestor in genau diesen Dateien.
+    assert "class JournalEvent" in (REPO / "ingestor/src/storage/models.py").read_text(encoding="utf-8")
+    assert "JournalEvent" in (REPO / "ingestor/src/storage/events.py").read_text(encoding="utf-8")
 
 
 def _pfade_im_skript(quelltext: str) -> set[str]:

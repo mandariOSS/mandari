@@ -5,9 +5,11 @@ High-performance async database operations with proper upsert support.
 Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 """
 
+import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
-from typing import Any
+from typing import Any, Final
 from uuid import UUID
 
 from mandari_oparl import (
@@ -28,7 +30,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.config import settings
+from src.metrics import metrics
 from src.redaction import MaskingConsole
+from src.storage import events, ris_events
 from src.storage.models import (
     OParlAgendaItem,
     OParlBody,
@@ -45,6 +49,7 @@ from src.storage.models import (
 )
 
 console = MaskingConsole()
+logger = logging.getLogger(__name__)
 
 
 # Entity-Typ-Name -> SQLAlchemy-Modell (für generische Lookups, u. a.
@@ -121,6 +126,39 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
 )
 
 
+#: Schlüsselraum der Sperre für neu erkannte Objekte (``pg_advisory_xact_lock`` mit zwei Schlüsseln).
+#: Die Form mit zwei Schlüsseln überschneidet sich nicht mit der Form mit einem Schlüssel, die der
+#: Scheduler für seine Einzelinstanz-Sperre nimmt (src/scheduler/singleton.py).
+_NEW_OBJECT_LOCK_CLASS: Final = 513
+
+#: Schlüssel in ``OParlSource.sync_config``: ``false`` nimmt die Quelle von den Ereignissen aus.
+SYNC_CONFIG_EVENTS_KEY: Final = "events_enabled"
+
+
+@dataclass(frozen=True)
+class _Origin:
+    """Herkunft der Ereignisse einer Kommune."""
+
+    #: Quelle der Kommune (Mandant der Hülle, ``source:<uuid>``)
+    source_id: UUID | None
+    #: Name der Kommune, Label ``source`` der Metrik (wie bei ``mandari_ingestor_entities_synced_total``)
+    label: str
+    #: ``False``: Die Quelle ist über ``sync_config`` von den Ereignissen ausgenommen.
+    events: bool
+
+
+def _normalized_urls(value: Any) -> list[str]:
+    """Verweise als Liste von URLs: eine URL, eine Liste von URLs oder eingebettete Objekte mit ``id``."""
+    items = value if isinstance(value, list) else [value]
+    urls: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            item = item.get("id")
+        if isinstance(item, str) and item and item not in urls:
+            urls.append(item)
+    return urls
+
+
 def _assert_no_enrichment_overwrite(update_set: dict) -> None:
     """
     Guard rail for upsert update-sets.
@@ -151,14 +189,19 @@ class DatabaseStorage:
     - Automatic relationship handling
     """
 
-    def __init__(self, database_url: str | None = None) -> None:
+    def __init__(self, database_url: str | None = None, *, events_enabled: bool | None = None) -> None:
         """
         Initialize database storage.
 
         Args:
             database_url: Database connection URL. Defaults to settings.
+            events_enabled: RIS-Ereignisse ins Journal schreiben. Defaults to settings
+                (``INGESTOR_EVENTS_ENABLED``, Standard aus).
         """
         self.database_url = database_url or settings.database_url
+        # Ereignistechnik: Änderungen am RIS-Bestand als ris.*-Ereignisse melden, in derselben
+        # Transaktion wie die Datenänderung (src/storage/events.py, src/storage/ris_events.py).
+        self.events_enabled = settings.events_enabled if events_enabled is None else events_enabled
         self._engine = create_async_engine(
             self.database_url,
             echo=False,
@@ -178,6 +221,11 @@ class DatabaseStorage:
         self._paper_uuid_cache: dict[str, UUID] = {}
         self._person_uuid_cache: dict[str, UUID] = {}
         self._organization_uuid_cache: dict[str, UUID] = {}
+        # Herkunft der Ereignisse: Kommune -> Quelle (tenant_ref, Ausnahme) und Sitzung -> Kommune
+        self._origin_cache: dict[UUID, _Origin] = {}
+        self._meeting_body_cache: dict[UUID, UUID | None] = {}
+        # Gibt es die Zwischentabelle oparl_papers_locations? (None: in diesem Zyklus noch nicht geprüft)
+        self._paper_locations_table: bool | None = None
 
     async def initialize(self) -> None:
         """
@@ -197,6 +245,16 @@ class DatabaseStorage:
                     "Django owns the schema. Please run: "
                     "cd mandari && python manage.py migrate"
                 )
+            if self.events_enabled:
+                # Eingeschaltet, aber ohne Journal scheiterte jeder Upsert an seinem Ereignis und
+                # nähme die Datenänderung mit zurück. Lieber beim Start abbrechen.
+                journal = await conn.execute(text("SELECT to_regclass('events_event') IS NOT NULL"))
+                if not journal.scalar():
+                    raise RuntimeError(
+                        "INGESTOR_EVENTS_ENABLED ist gesetzt, aber die Tabelle events_event fehlt. "
+                        "Zuerst die Django-Migrationen einspielen (cd mandari && python manage.py migrate) "
+                        "oder den Schalter ausschalten."
+                    )
 
     async def close(self) -> None:
         """Close the database connection."""
@@ -533,6 +591,141 @@ class DatabaseStorage:
         self._paper_uuid_cache.clear()
         self._person_uuid_cache.clear()
         self._organization_uuid_cache.clear()
+        self._origin_cache.clear()
+        self._meeting_body_cache.clear()
+        self._paper_locations_table = None
+
+    # ========== Ereignisse (Journal der Ereignistechnik) ==========
+
+    async def _events_for(self, session: AsyncSession, body_id: UUID | None) -> bool:
+        """
+        Ob Änderungen an Objekten dieser Kommune Ereignisse schreiben.
+
+        Der Schalter ``INGESTOR_EVENTS_ENABLED`` gilt für alle Quellen. Eine einzelne Quelle nimmt
+        ``sync_config["events_enabled"] = false`` aus; ihre Upserts laufen dann wie ausgeschaltet,
+        ohne Abfrage des bisherigen Stands. Ohne Quelle gibt es keinen Mandanten für die Hülle.
+        """
+        if not self.events_enabled or body_id is None:
+            return False
+        origin = await self._origin(session, body_id)
+        return origin.source_id is not None and origin.events
+
+    async def _origin(self, session: AsyncSession, body_id: UUID) -> _Origin:
+        """Herkunft der Ereignisse einer Kommune (zwischengespeichert bis zum Ende des Zyklus)."""
+        origin = self._origin_cache.get(body_id)
+        if origin is None:
+            result = await session.execute(
+                select(OParlBody.source_id, OParlBody.name, OParlSource.sync_config)
+                .outerjoin(OParlSource, OParlSource.id == OParlBody.source_id)
+                .where(OParlBody.id == body_id)
+            )
+            row = result.first()
+            sync_config = row[2] if row is not None and isinstance(row[2], dict) else {}
+            origin = _Origin(
+                source_id=row[0] if row is not None else None,
+                label=(row[1] if row is not None else None) or "unknown",
+                events=sync_config.get(SYNC_CONFIG_EVENTS_KEY) is not False,
+            )
+            self._origin_cache[body_id] = origin
+            # Einmal je Zyklus und Kommune, nicht je Objekt
+            if origin.source_id is None:
+                logger.warning("Kommune %s ohne Quelle: Ihre Änderungen schreiben keine Ereignisse", body_id)
+            elif not origin.events:
+                logger.info("Quelle %s ist von den Ereignissen ausgenommen (sync_config)", origin.source_id)
+        return origin
+
+    async def _prior(self, session: AsyncSession, model: type, external_id: str) -> ris_events.Prior | None:
+        """
+        Stand einer Zeile vor dem Upsert, für den Vergleich, ob sich etwas geändert hat.
+
+        Nur mit eingeschalteten Ereignissen aufrufen. Die Zeile bleibt bis zum Commit gesperrt: Der
+        Vergleich gilt damit für genau den Stand, den der folgende Upsert überschreibt, auch wenn ein
+        zweiter Abgleich dasselbe Objekt gleichzeitig schreibt. ``None``: Das Objekt ist neu.
+
+        - Gesperrt wird mit ``FOR NO KEY UPDATE``, so stark wie der folgende Upsert selbst (er ändert
+          keine Schlüsselspalte). ``FOR UPDATE`` wartete zusätzlich auf jede offene Transaktion, die
+          gerade eine Zeile mit Fremdschlüssel auf dieses Objekt einfügt, und hielte solche
+          Einfügungen auf.
+        - Ein neues Objekt hat noch keine Zeile, die sich sperren ließe. Für diesen Fall nimmt der
+          Abgleich eine Sperre auf die Kennung, die bis zum Ende der Transaktion gilt, und liest
+          danach noch einmal. Schreiben zwei Abgleiche dasselbe neue Objekt gleichzeitig (etwa eine
+          Datei, die in einer Sitzung und in einer Vorlage eingebettet ist), sieht der zweite die
+          Zeile des ersten und meldet das Objekt nicht ein zweites Mal als neu.
+        """
+        columns = [model.raw_json, model.deleted]
+        if model is OParlAgendaItem:
+            columns += [OParlAgendaItem.meeting_id, OParlAgendaItem.public]
+        elif model is OParlFile:
+            columns += [OParlFile.meeting_id, OParlFile.paper_id]
+        stmt = select(*columns).where(model.external_id == external_id).with_for_update(key_share=True)
+        row = (await session.execute(stmt)).first()
+        if row is None:
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(CAST(:space AS integer), hashtext(CAST(:external_id AS text)))"),
+                {"space": _NEW_OBJECT_LOCK_CLASS, "external_id": external_id},
+            )
+            row = (await session.execute(stmt)).first()
+            if row is None:
+                return None
+        if model is OParlAgendaItem:
+            return ris_events.Prior(
+                raw_json=row[0] or {}, deleted=bool(row[1]), meeting_id=row[2], public=row[3] is not False
+            )
+        if model is OParlFile:
+            return ris_events.Prior(raw_json=row[0] or {}, deleted=bool(row[1]), meeting_id=row[2], paper_id=row[3])
+        return ris_events.Prior(raw_json=row[0] or {}, deleted=bool(row[1]))
+
+    async def _emit(
+        self,
+        session: AsyncSession,
+        body_id: UUID | None,
+        drafts: list[ris_events.Draft],
+        modified: datetime | None = None,
+    ) -> None:
+        """
+        Schreibt Ereignisse in die laufende Transaktion der Sitzung, also vor deren Commit.
+
+        Nur aufrufen, wenn ``_events_for`` die Kommune freigibt. Mandant ist die Quelle der Kommune
+        (``source:<uuid>``). ``modified`` ist der Änderungszeitpunkt laut Quelle; liegt er in der
+        Zukunft oder fehlt die Zeitzone, gilt der Zeitpunkt des Abgleichs.
+        """
+        if not drafts or body_id is None:
+            return
+        origin = await self._origin(session, body_id)
+        source_id = origin.source_id
+        if source_id is None:
+            return
+        now = datetime.now(UTC)
+        occurred_at = modified if modified is not None and modified.utcoffset() is not None and modified <= now else now
+        await events.publish_many(
+            session,
+            [
+                events.NewEvent(
+                    type=draft.type,
+                    version=draft.version,
+                    aggregate_type=draft.aggregate_type,
+                    aggregate_id=draft.aggregate_id,
+                    tenant_ref=f"source:{source_id}",
+                    body_id=body_id,
+                    visibility=draft.visibility,
+                    operation=draft.operation,
+                    occurred_at=occurred_at,
+                    payload=draft.payload,
+                )
+                for draft in drafts
+            ],
+        )
+        for draft in drafts:
+            metrics.record_event_published(draft.type, origin.label)
+
+    async def _body_of_meeting(self, session: AsyncSession, meeting_id: UUID | None) -> UUID | None:
+        """Kommune einer Sitzung (zwischengespeichert bis zum Ende des Zyklus)."""
+        if meeting_id is None:
+            return None
+        if meeting_id not in self._meeting_body_cache:
+            result = await session.execute(select(OParlMeeting.body_id).where(OParlMeeting.id == meeting_id))
+            self._meeting_body_cache[meeting_id] = result.scalar_one_or_none()
+        return self._meeting_body_cache[meeting_id]
 
     # ========== Body Operations ==========
 
@@ -718,6 +911,17 @@ class DatabaseStorage:
             return None
 
         now = datetime.now(UTC)
+        # Spalte, über die sich die Kommune des Objekts ergibt (für die Herkunft des Ereignisses)
+        if entity_type == "agendaitem":
+            parent = OParlAgendaItem.meeting_id
+        elif entity_type == "membership":
+            parent = OParlMembership.organization_id
+        else:
+            parent = model.body_id
+        returning = [model.id, parent]
+        if entity_type == "agendaitem":
+            # Ein nichtöffentlicher Punkt meldet seine Löschung nicht öffentlich.
+            returning.append(OParlAgendaItem.public)
         async with self.get_session() as session:
             stmt = (
                 update(model)
@@ -728,10 +932,27 @@ class DatabaseStorage:
                     oparl_modified=modified or now,
                     updated_at=func.now(),
                 )
-                .returning(model.id)
+                .returning(*returning)
             )
             result = await session.execute(stmt)
-            entity_id = result.scalar_one_or_none()
+            row = result.first()
+            entity_id = row[0] if row is not None else None
+            if row is not None and self.events_enabled:
+                # Rücknahme melden, in derselben Transaktion wie die Markierung
+                public, meeting_id = True, None
+                if entity_type == "agendaitem":
+                    body_id = await self._body_of_meeting(session, row[1])
+                    public, meeting_id = row[2] is not False, row[1]
+                elif entity_type == "membership":
+                    found = await session.execute(
+                        select(OParlOrganization.body_id).where(OParlOrganization.id == row[1])
+                    )
+                    body_id = found.scalar_one_or_none()
+                else:
+                    body_id = row[1]
+                if await self._events_for(session, body_id):
+                    drafts = ris_events.depublished_events(entity_type, row[0], public=public, meeting_id=meeting_id)
+                    await self._emit(session, body_id, drafts, modified)
             await session.commit()
             return entity_id
 
@@ -742,8 +963,23 @@ class DatabaseStorage:
         meeting: ProcessedMeeting,
         body_id: UUID,
     ) -> UUID:
-        """Insert or update a meeting."""
+        """
+        Insert or update a meeting.
+
+        Zeile, Zuordnung der Gremien und Ereignis entstehen in einer Transaktion: Wer auf das
+        Ereignis hin beim Bestand nachliest, sieht die Sitzung mit ihren Gremien.
+        """
+        # Gremien vorab auflösen (eigene Lesesitzung), damit die Zuordnung in die Transaktion des
+        # Upserts passt. Batched lookup (cache-first, DB fallback).
+        org_ids: list[UUID] = []
+        org_urls = _normalized_urls((meeting.raw_json or {}).get("organization"))
+        if org_urls:
+            org_map = await self.get_organization_ids_by_external_ids(org_urls)
+            org_ids = [org_map[url] for url in org_urls if url in org_map]
+
         async with self.get_session() as session:
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlMeeting, meeting.external_id) if emit else None
             stmt = pg_insert(OParlMeeting).values(
                 id=meeting.id,
                 external_id=meeting.external_id,
@@ -785,35 +1021,19 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             meeting_id = result.scalar_one()
+            # Link M2M organizations from raw_json, vor dem Commit
+            organizations_changed = await self._link_meeting_organizations(
+                session, meeting_id, org_ids, compare=prior is not None
+            )
+            if emit:
+                drafts = ris_events.meeting_events(
+                    meeting_id, meeting.raw_json or {}, prior, organizations_changed=organizations_changed
+                )
+                await self._emit(session, body_id, drafts, meeting.oparl_modified)
             await session.commit()
 
             self._meeting_uuid_cache[meeting.external_id] = meeting_id
-
-            # Link M2M organizations from raw_json
-            org_urls = (meeting.raw_json or {}).get("organization", [])
-            if isinstance(org_urls, str):
-                org_urls = [org_urls]
-            if org_urls:
-                # Batched lookup (cache-first, DB fallback) — previously this
-                # relied on a globally pre-loaded organization cache.
-                org_map = await self.get_organization_ids_by_external_ids(org_urls)
-                org_ids = [org_map[url] for url in org_urls if url in org_map]
-                if org_ids:
-                    # Clear existing M2M links
-                    await session.execute(
-                        text("DELETE FROM oparl_meetings_organizations WHERE oparlmeeting_id = :mid"),
-                        {"mid": meeting_id},
-                    )
-                    # Insert new M2M links
-                    for oid in org_ids:
-                        await session.execute(
-                            text(
-                                "INSERT INTO oparl_meetings_organizations (oparlmeeting_id, oparlorganization_id) "
-                                "VALUES (:mid, :oid) ON CONFLICT DO NOTHING"
-                            ),
-                            {"mid": meeting_id, "oid": oid},
-                        )
-                    await session.commit()
+            self._meeting_body_cache[meeting_id] = body_id
 
             # Process nested entities
             for nested in meeting.nested_entities:
@@ -825,6 +1045,47 @@ class DatabaseStorage:
                     await self.upsert_location(nested, body_id)
 
             return meeting_id
+
+    async def _link_meeting_organizations(
+        self,
+        session: AsyncSession,
+        meeting_id: UUID,
+        org_ids: list[UUID],
+        *,
+        compare: bool,
+    ) -> bool:
+        """
+        Ordnet einer Sitzung ihre Gremien zu (``oparl_meetings_organizations``), in der Transaktion
+        des Upserts und ohne eigenen Commit.
+
+        Ist keines der Gremien im Bestand, bleibt die bisherige Zuordnung stehen. ``compare``: vorher
+        die bisherige Zuordnung lesen. Rückgabe ``True``, wenn sie sich dadurch geändert hat (nur mit
+        ``compare``; für das Ereignis).
+        """
+        if not org_ids:
+            return False
+        changed = False
+        if compare:
+            before = await session.execute(
+                text("SELECT oparlorganization_id FROM oparl_meetings_organizations WHERE oparlmeeting_id = :mid"),
+                {"mid": meeting_id},
+            )
+            changed = {row[0] for row in before} != set(org_ids)
+        # Clear existing M2M links
+        await session.execute(
+            text("DELETE FROM oparl_meetings_organizations WHERE oparlmeeting_id = :mid"),
+            {"mid": meeting_id},
+        )
+        # Insert new M2M links
+        for oid in org_ids:
+            await session.execute(
+                text(
+                    "INSERT INTO oparl_meetings_organizations (oparlmeeting_id, oparlorganization_id) "
+                    "VALUES (:mid, :oid) ON CONFLICT DO NOTHING"
+                ),
+                {"mid": meeting_id, "oid": oid},
+            )
+        return changed
 
     async def get_meeting_uuid(self, external_id: str) -> UUID | None:
         """Get a meeting's UUID by external ID (cached)."""
@@ -846,8 +1107,21 @@ class DatabaseStorage:
         paper: ProcessedPaper,
         body_id: UUID,
     ) -> UUID:
-        """Insert or update a paper."""
+        """
+        Insert or update a paper.
+
+        Zeile, Zuordnung der Orte und Ereignis entstehen in einer Transaktion: Wer auf das Ereignis
+        hin beim Bestand nachliest, sieht die Vorlage mit ihren Orten.
+        """
+        # Eingebettete Orte zuerst (eigene Transaktion je Ort, kein Bezug auf die Vorlage): Die
+        # Verknüpfung unten findet sie dann im Bestand.
+        for nested in paper.nested_entities:
+            if isinstance(nested, ProcessedLocation):
+                await self.upsert_location(nested, body_id)
+
         async with self.get_session() as session:
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlPaper, paper.external_id) if emit else None
             stmt = pg_insert(OParlPaper).values(
                 id=paper.id,
                 external_id=paper.external_id,
@@ -883,61 +1157,70 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             paper_id = result.scalar_one()
+            # Link official OParl locations (M2M table managed by Django), vor dem Commit
+            locations_changed = False
+            if paper.location_external_ids:
+                locations_changed = await self._link_paper_locations(session, paper_id, paper.location_external_ids)
+            if emit:
+                drafts = ris_events.paper_events(
+                    paper_id, paper.raw_json or {}, prior, locations_changed=locations_changed
+                )
+                await self._emit(session, body_id, drafts, paper.oparl_modified)
             await session.commit()
 
             self._paper_uuid_cache[paper.external_id] = paper_id
 
-            # Process nested entities
+            # Process nested entities (Orte stehen schon im Bestand, siehe oben)
             for nested in paper.nested_entities:
                 if isinstance(nested, ProcessedFile):
                     await self.upsert_file(nested, body_id, paper_id=paper_id)
                 elif isinstance(nested, ProcessedConsultation):
                     await self.upsert_consultation(nested, body_id, paper_id)
-                elif isinstance(nested, ProcessedLocation):
-                    await self.upsert_location(nested, body_id)
-
-            # Link official OParl locations (M2M table managed by Django)
-            if paper.location_external_ids:
-                await self._link_paper_locations(paper_id, paper.location_external_ids)
 
             return paper_id
 
     async def _link_paper_locations(
         self,
+        session: AsyncSession,
         paper_id: UUID,
         location_external_ids: list[str],
-    ) -> None:
+    ) -> bool:
         """
-        Link a paper to its official OParl locations via oparl_papers_locations.
+        Link a paper to its official OParl locations via oparl_papers_locations, in der Transaktion
+        des Upserts und ohne eigenen Commit.
 
         Only links locations that already exist in the database (embedded
         objects are upserted beforehand; unresolved string refs are skipped
         and picked up on a later sync once the location list is fetched).
         Defensive: if the M2M table does not exist yet (Django migration
-        not applied), the link step is skipped with a warning.
-        """
-        async with self.get_session() as session:
-            stmt = select(OParlLocation.id, OParlLocation.external_id).where(
-                OParlLocation.external_id.in_(location_external_ids)
-            )
-            result = await session.execute(stmt)
-            location_ids = [row[0] for row in result.fetchall()]
-            if not location_ids:
-                return
+        not applied), the link step is skipped with a warning. Das wird vorab geprüft (einmal je
+        Zyklus), nicht am Fehler erkannt: Ein Fehler machte die Transaktion des Upserts ungültig.
+        Jeder Fehler beim Zuordnen bricht deshalb den Upsert ab; Vorlage und Ereignis werden nie
+        ohne die Zuordnung festgeschrieben.
 
-            try:
-                for loc_id in location_ids:
-                    await session.execute(
-                        text(
-                            "INSERT INTO oparl_papers_locations (oparlpaper_id, oparllocation_id) "
-                            "VALUES (:pid, :lid) ON CONFLICT DO NOTHING"
-                        ),
-                        {"pid": paper_id, "lid": loc_id},
-                    )
-                await session.commit()
-            except Exception as e:  # noqa: BLE001 - table may not exist yet
-                await session.rollback()
-                console.print(f"[yellow]Paper-Location-Link übersprungen (Tabelle fehlt?): {e}[/yellow]")
+        Rückgabe ``True``, wenn ein Ort neu zugeordnet wurde (für das Ereignis).
+        """
+        if self._paper_locations_table is None:
+            found = await session.execute(text("SELECT to_regclass('oparl_papers_locations') IS NOT NULL"))
+            self._paper_locations_table = bool(found.scalar())
+            if not self._paper_locations_table:
+                console.print("[yellow]Paper-Location-Link übersprungen (Tabelle fehlt)[/yellow]")
+        if not self._paper_locations_table:
+            return False
+
+        stmt = select(OParlLocation.id).where(OParlLocation.external_id.in_(location_external_ids))
+        location_ids = [row[0] for row in (await session.execute(stmt)).fetchall()]
+        added = False
+        for loc_id in location_ids:
+            inserted = await session.execute(
+                text(
+                    "INSERT INTO oparl_papers_locations (oparlpaper_id, oparllocation_id) "
+                    "VALUES (:pid, :lid) ON CONFLICT DO NOTHING RETURNING oparllocation_id"
+                ),
+                {"pid": paper_id, "lid": loc_id},
+            )
+            added = inserted.first() is not None or added
+        return added
 
     async def get_paper_uuid(self, external_id: str) -> UUID | None:
         """Get a paper's UUID by external ID (cached)."""
@@ -1137,6 +1420,9 @@ class DatabaseStorage:
     ) -> UUID:
         """Insert or update an agenda item."""
         async with self.get_session() as session:
+            body_id = await self._body_of_meeting(session, meeting_id) if self.events_enabled else None
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlAgendaItem, item.external_id) if emit else None
             stmt = pg_insert(OParlAgendaItem).values(
                 id=item.id,
                 external_id=item.external_id,
@@ -1177,6 +1463,11 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             item_id = result.scalar_one()
+            if emit:
+                drafts = ris_events.agenda_item_events(
+                    item_id, item.raw_json or {}, prior, meeting_id=meeting_id, public=item.public is not False
+                )
+                await self._emit(session, body_id, drafts, item.oparl_modified)
             await session.commit()
             return item_id
 
@@ -1191,6 +1482,8 @@ class DatabaseStorage:
     ) -> UUID:
         """Insert or update a file."""
         async with self.get_session() as session:
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlFile, file.external_id) if emit else None
             stmt = pg_insert(OParlFile).values(
                 id=file.id,
                 external_id=file.external_id,
@@ -1246,6 +1539,11 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             file_id = result.scalar_one()
+            if emit:
+                drafts = ris_events.file_events(
+                    file_id, file.raw_json or {}, prior, paper_id=paper_id, meeting_id=meeting_id
+                )
+                await self._emit(session, body_id, drafts, file.oparl_modified)
             await session.commit()
             return file_id
 
@@ -1310,6 +1608,8 @@ class DatabaseStorage:
     ) -> UUID:
         """Insert or update a consultation."""
         async with self.get_session() as session:
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlConsultation, consultation.external_id) if emit else None
             stmt = pg_insert(OParlConsultation).values(
                 id=consultation.id,
                 external_id=consultation.external_id,
@@ -1349,6 +1649,15 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             consultation_id = result.scalar_one()
+            if emit:
+                drafts = ris_events.consultation_events(
+                    consultation_id,
+                    consultation.raw_json or {},
+                    prior,
+                    paper_id=paper_id,
+                    paper_external_id=consultation.paper_external_id,
+                )
+                await self._emit(session, body_id, drafts, consultation.oparl_modified)
             await session.commit()
             return consultation_id
 
