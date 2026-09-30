@@ -33,6 +33,7 @@ from datetime import date
 
 from django.conf import settings
 
+from hub.ris.canonical import as_list, clean, iso, iso_date, iso_day, schema_type, tombstone
 from insight_core.models import (
     OParlAgendaItem,
     OParlConsultation,
@@ -40,32 +41,7 @@ from insight_core.models import (
     OParlMeeting,
 )
 
-from .utils import (
-    body_list_url,
-    iso,
-    iso_date,
-    iso_day,
-    obj_url,
-    organization_type,
-    schema_type,
-    site_url,
-    sub_list_url,
-    system_url,
-)
-
-
-def _clean(data):
-    """Entfernt leere optionale Felder (None, leere Listen/Strings)."""
-    return {k: v for k, v in data.items() if v is not None and v != [] and v != ""}
-
-
-def _as_list(value):
-    """Hüllt Skalar-Werte in eine Liste (OParl erwartet z. B. email/phone als Array)."""
-    if value is None or value == "":
-        return None
-    if isinstance(value, list):
-        return value
-    return [value]
+from .utils import body_list_url, obj_url, organization_type, site_url, sub_list_url, system_url
 
 
 def _timestamps(obj):
@@ -207,17 +183,16 @@ def serialize_tombstone(obj, kind):
     Pflichtfelder: id, type, created, modified, deleted — alle weiteren
     Attribute entfallen. ``modified`` entspricht dem Löschzeitpunkt.
     """
-    return {
-        "id": obj_url(kind, obj.id),
-        "type": schema_type(kind),
-        "created": iso(obj.oparl_created or obj.created_at),
-        "modified": iso(obj.oparl_modified or obj.deleted_at or obj.updated_at),
-        "deleted": True,
-    }
+    return tombstone(
+        obj_url(kind, obj.id),
+        kind,
+        obj.oparl_created or obj.created_at,
+        obj.oparl_modified or obj.deleted_at or obj.updated_at,
+    )
 
 
 def serialize_system():
-    return _clean(
+    return clean(
         {
             "id": system_url(),
             "type": schema_type("system"),
@@ -237,7 +212,7 @@ def serialize_system():
 
 def serialize_body(body, ctx=None):
     raw = body.raw_json or {}
-    data = _clean(
+    data = clean(
         {
             "id": obj_url("body", body.id),
             "type": schema_type("body"),
@@ -276,7 +251,7 @@ def serialize_body(body, ctx=None):
 def serialize_organization(organization, ctx=None):
     raw = organization.raw_json or {}
     kind = organization_type(organization.organization_type)
-    return _clean(
+    return clean(
         {
             "id": obj_url("organization", organization.id),
             "type": schema_type("organization"),
@@ -303,7 +278,7 @@ def serialize_organization(organization, ctx=None):
 
 def serialize_person(person, ctx=None):
     raw = person.raw_json or {}
-    return _clean(
+    return clean(
         {
             "id": obj_url("person", person.id),
             "type": schema_type("person"),
@@ -313,11 +288,11 @@ def serialize_person(person, ctx=None):
             "givenName": person.given_name,
             "formOfAddress": raw.get("formOfAddress"),
             "affix": raw.get("affix"),
-            "title": _as_list(raw.get("title") or person.title),
+            "title": as_list(raw.get("title") or person.title),
             "gender": person.gender,
-            "email": _as_list(raw.get("email") or person.email),
-            "phone": _as_list(raw.get("phone") or person.phone),
-            "status": _as_list(raw.get("status")),
+            "email": as_list(raw.get("email") or person.email),
+            "phone": as_list(raw.get("phone") or person.phone),
+            "status": as_list(raw.get("status")),
             "life": raw.get("life"),
             "lifeSource": raw.get("lifeSource"),
             # OParl 1.1 bettet Memberships in Person ein
@@ -330,7 +305,7 @@ def serialize_person(person, ctx=None):
 
 
 def serialize_membership(membership, ctx=None):
-    return _clean(
+    return clean(
         {
             "id": obj_url("membership", membership.id),
             "type": schema_type("membership"),
@@ -360,7 +335,7 @@ def serialize_meeting(meeting, ctx):
     location = ctx.location_by_ext.get(_location_ext(raw))
     location_data = serialize_location(location) if location else serialize_meeting_location(meeting)
 
-    return _clean(
+    return clean(
         {
             "id": obj_url("meeting", meeting.id),
             "type": schema_type("meeting"),
@@ -390,7 +365,7 @@ def serialize_meeting(meeting, ctx):
 def serialize_agenda_item(item, ctx):
     consultation_ids = ctx.consultations_by_agenda_ext.get(item.external_id, [])
     raw = item.raw_json or {}
-    return _clean(
+    return clean(
         {
             "id": obj_url("agendaitem", item.id),
             "type": schema_type("agendaitem"),
@@ -419,7 +394,7 @@ def serialize_paper(paper, ctx):
     main_file = files_by_ext.get(_file_ext(raw.get("mainFile")))
     auxiliary = [f for f in files if main_file is None or f.pk != main_file.pk]
 
-    return _clean(
+    return clean(
         {
             "id": obj_url("paper", paper.id),
             "type": schema_type("paper"),
@@ -443,7 +418,7 @@ def serialize_paper(paper, ctx):
 def serialize_consultation(consultation, ctx):
     meeting_id = ctx.meeting_by_ext.get(consultation.meeting_external_id)
     agenda_item_id = ctx.agenda_item_by_ext.get(consultation.agenda_item_external_id)
-    return _clean(
+    return clean(
         {
             "id": obj_url("consultation", consultation.id),
             "type": schema_type("consultation"),
@@ -460,7 +435,7 @@ def serialize_consultation(consultation, ctx):
 
 def serialize_file(file_obj, ctx=None, include_text=False):
     proxy_url = f"{site_url()}/insight/dokumente/{file_obj.id}/preview/"
-    return _clean(
+    return clean(
         {
             "id": obj_url("file", file_obj.id),
             "type": schema_type("file"),
@@ -487,7 +462,7 @@ def serialize_file(file_obj, ctx=None, include_text=False):
 
 
 def serialize_location(location, ctx=None):
-    return _clean(
+    return clean(
         {
             "id": obj_url("location", location.id),
             "type": schema_type("location"),
@@ -514,7 +489,7 @@ def serialize_meeting_location(meeting, ctx=None):
     parts = [part for part in (meeting.location_name, meeting.location_address) if part]
     if not parts:
         return None
-    return _clean(
+    return clean(
         {
             "id": obj_url("location", meeting.id),
             "type": schema_type("location"),
@@ -527,7 +502,7 @@ def serialize_meeting_location(meeting, ctx=None):
 
 
 def serialize_legislative_term(term, ctx=None):
-    return _clean(
+    return clean(
         {
             "id": obj_url("legislativeterm", term.id),
             "type": schema_type("legislativeterm"),

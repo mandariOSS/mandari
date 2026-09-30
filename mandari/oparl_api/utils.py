@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Hilfsfunktionen der OParl-API: URL-Bau, JSON-Antworten, Zeitstempel-Parsing,
-Rate-Limiting, bedingte Anfragen (ETag/304) und die Wertelisten der Spezifikation.
+Hilfsfunktionen der OParl-Ausgaben (Aggregator und Session-Schnittstelle): URL-Bau, JSON-Antworten,
+Listen-Hülle mit Blättern, Zeitstempel-Parsing, Rate-Limiting, bedingte Anfragen (ETag/304).
+
+Die Bausteine des Modells selbst (Typ-URLs, Datums- und Zeitformate, Werteliste von
+``organizationType``) liegen in ``hub.ris.canonical`` und werden hier nur weitergereicht.
 
 Alle Objekt-IDs der API werden aus ``settings.OPARL_BASE_URL`` gebaut
 (host-unabhängig, konfigurierbar per Umgebungsvariable ``OPARL_BASE_URL``).
@@ -10,57 +13,25 @@ Alle Objekt-IDs der API werden aus ``settings.OPARL_BASE_URL`` gebaut
 import hashlib
 import json
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from functools import wraps
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpResponse
-from django.utils import timezone
 from django.utils.cache import get_conditional_response
 
-# Schema-Basis der OParl-1.1-Spezifikation
-SCHEMA_BASE = "https://schema.oparl.org/1.1"
-
-# Objekttyp (URL-Segment) -> Schema-Name
-TYPE_SCHEMA = {
-    "system": "System",
-    "body": "Body",
-    "organization": "Organization",
-    "person": "Person",
-    "membership": "Membership",
-    "meeting": "Meeting",
-    "agendaitem": "AgendaItem",
-    "paper": "Paper",
-    "consultation": "Consultation",
-    "file": "File",
-    "location": "Location",
-    "legislativeterm": "LegislativeTerm",
-}
-
-
-# OParl 1.1, Organization.organizationType: „Mögliche Werte sind …“ – genau diese sieben.
-ORGANIZATION_TYPES = (
-    "Gremium",
-    "Partei",
-    "Fraktion",
-    "Verwaltungsbereich",
-    "externes Gremium",
-    "Institution",
-    "Sonstiges",
+from hub.ris.canonical import (  # noqa: F401 – Bausteine des Modells, für die Ausgaben weitergereicht
+    ORGANIZATION_TYPES,
+    SCHEMA_BASE,
+    TYPE_SCHEMA,
+    iso,
+    iso_date,
+    iso_day,
+    schema_type,
 )
-
-# Schlüssel des Session-RIS (SessionOrganization.organization_type) -> Wert der Spezifikation.
-# Die feinere Einordnung (Ausschuss, Rat, Beirat …) steht weiterhin in ``classification``.
-SESSION_ORGANIZATION_TYPES = {
-    "committee": "Gremium",
-    "council": "Gremium",
-    "advisory": "Gremium",
-    "commission": "Gremium",
-    "faction": "Fraktion",
-    "department": "Verwaltungsbereich",
-    "other": "Sonstiges",
-}
+from hub.ris.mapping.session import ORGANIZATION_TYPES as SESSION_ORGANIZATION_TYPES
 
 # Verbreitete Angaben fremder Quellen, die keiner der sieben Werte sind, aber eindeutig dazugehören.
 # Manche RIS ordnen nach dem Kommunalrecht: Hauptorgan (Rat, Kreistag) und Hilfsorgan (Ausschüsse,
@@ -155,41 +126,9 @@ def sub_list_url(body_id, segment):
     return f"{api_base()}/v1/body/{body_id}/{segment}"
 
 
-def schema_type(kind):
-    """Schema-URL des Objekttyps (Wert des type-Felds)."""
-    return f"{SCHEMA_BASE}/{TYPE_SCHEMA[kind]}"
-
-
 # =============================================================================
 # Zeitstempel
 # =============================================================================
-
-
-def iso(dt):
-    """Datetime -> ISO 8601 mit Zeitzone (None-sicher)."""
-    if dt is None:
-        return None
-    if timezone.is_naive(dt):
-        dt = dt.replace(tzinfo=UTC)
-    return dt.isoformat()
-
-
-def iso_date(d):
-    """Date -> ISO 8601 (None-sicher)."""
-    return d.isoformat() if d else None
-
-
-def iso_day(dt):
-    """
-    Zeitpunkt -> Datum ``yyyy-mm-dd`` (None-sicher), für Felder vom Typ ``date`` wie ``File.date``.
-
-    Es gilt der Tag in der Zeitzone der Installation.
-    """
-    if dt is None:
-        return None
-    if timezone.is_naive(dt):
-        dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(timezone.get_current_timezone()).date().isoformat()
 
 
 def parse_client_datetime(value, param):
@@ -262,6 +201,63 @@ def conditional(request, response):
 def error_response(status, message):
     """Fehler als JSON (auch 404/429 — Clients erwarten kein HTML)."""
     return json_response({"error": message, "status": status}, status=status)
+
+
+# =============================================================================
+# Externe Listen: Seitennummer und Hülle (data/pagination/links)
+# =============================================================================
+
+
+def page_number(request):
+    """Seitennummer aus ``?page=`` (ab 1); alles andere ergibt eine 400 mit klarer Meldung."""
+    raw = request.GET.get("page", "1")
+    try:
+        number = int(raw)
+    except ValueError:
+        raise OParlBadRequestError(f"Parameter 'page': '{raw}' ist keine gültige Seitennummer.") from None
+    if number < 1:
+        raise OParlBadRequestError("Parameter 'page': Seitennummern beginnen bei 1.")
+    return number
+
+
+def page_size():
+    """Objekte je Listen-Seite (``OPARL_API_PAGE_SIZE``)."""
+    return getattr(settings, "OPARL_API_PAGE_SIZE", 100)
+
+
+def list_envelope(base_url, filters, paginator, page, data):
+    """
+    Hülle einer externen Objektliste samt ``Link``-Header: ``(envelope, headers)``.
+
+    ``filters`` sind die Zeitfilter der Anfrage, wie der Client sie geschickt hat; sie bleiben in den
+    Blätter-Links erhalten. Seite 1 hat keinen ``page``-Parameter (eine kanonische Schreibweise je URL).
+    """
+
+    def page_link(number):
+        params = dict(filters)
+        if number > 1:
+            params["page"] = number
+        return f"{base_url}?{urlencode(params)}" if params else base_url
+
+    links = {"first": page_link(1), "self": page_link(page.number)}
+    if page.has_previous():
+        links["prev"] = page_link(page.number - 1)
+    if page.has_next():
+        links["next"] = page_link(page.number + 1)
+    links["last"] = page_link(paginator.num_pages)
+
+    envelope = {
+        "data": data,
+        "pagination": {
+            "totalElements": paginator.count,
+            "elementsPerPage": paginator.per_page,
+            "currentPage": page.number,
+            "totalPages": paginator.num_pages,
+        },
+        "links": links,
+    }
+    headers = {"Link": ", ".join(f'<{url}>; rel="{rel}"' for rel, url in links.items() if rel != "self")}
+    return envelope, headers
 
 
 # =============================================================================
