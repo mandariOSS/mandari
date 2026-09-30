@@ -108,8 +108,9 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
             errors.append("Bitte bestätigen, dass der Antrag verbindlich eingereicht werden soll.")
 
         if not errors:
+            skipped: list[str] = []
             try:
-                application = ris_submission.submit_motion(motion, self.membership, form)
+                application = ris_submission.submit_motion(motion, self.membership, form, skipped=skipped)
             except ris_submission.SubmissionError as exc:
                 errors.append(str(exc))
             else:
@@ -121,6 +122,12 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
                     request,
                     f"Antrag eingereicht. Eingangsnummer bei {application.tenant.name}: {application.reference}.{hinweis}",
                 )
+                if skipped:
+                    # Namen und Gründe stammen aus festen Texten der Prüfung, nicht aus Ausnahmen
+                    messages.warning(
+                        request,
+                        "Nicht übermittelt: " + "; ".join(skipped) + ". Bitte bei Bedarf direkt nachreichen.",
+                    )
                 return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
         for error in errors:

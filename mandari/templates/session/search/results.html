@@ -158,7 +158,7 @@
                class="block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <p class="text-sm font-medium text-gray-900 dark:text-white">{{ file.name }}</p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {% if file.paper %}Vorlage {{ file.paper.reference }}{% elif file.meeting %}Sitzung {{ file.meeting.name }}{% elif file.agenda_item %}TOP {{ file.agenda_item.number }} · {{ file.agenda_item.meeting.name }}{% endif %}
+                    {% if file.paper %}Vorlage {{ file.paper.reference }}{% elif file.meeting %}Sitzung {{ file.meeting.name }}{% elif file.agenda_item %}TOP {{ file.agenda_item.number }} · {{ file.agenda_item.meeting.name }}{% elif file.application %}Antrag {{ file.application.reference }}{% endif %}
                     {% if not file.is_public %} · NÖ{% endif %}
                 </p>
             </a>

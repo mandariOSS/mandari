@@ -140,15 +140,29 @@ def attach_application_files(application: SessionApplication, files: list[tuple[
         if reason is not None:
             skipped.append(f"{name} ({reason})")
             continue
+        mime_type = file_service.mime_type_for_name(name)
         session_file = SessionFile(
             tenant=application.tenant,
             application=application,
             name=name[:500],
-            mime_type=file_service.mime_type_for_name(name),
+            mime_type=mime_type,
             is_public=False,
+            text_content=_search_text(content, mime_type, name),
         )
         file_version_service.attach_upload(session_file, content, user=None)
     return skipped
+
+
+def _search_text(content: Any, mime_type: str, name: str) -> str:
+    """Text für die Session-Suche wie beim Upload der Verwaltung (best effort, Größengrenze)."""
+    from . import file_service
+
+    if int(getattr(content, "size", 0) or 0) > file_service.TEXT_EXTRACTION_MAX_SIZE_MB * 1024 * 1024:
+        return ""
+    content.seek(0)
+    data = content.read()
+    content.seek(0)
+    return file_service.extract_text(data, mime_type, name)
 
 
 #: Antworttext der APIs bei abweichender Organisation (fester Text, keine Ausnahme-Details nach außen)

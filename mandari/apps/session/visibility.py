@@ -12,8 +12,9 @@ statt über eigene ``is_public``-Bedingungen:
 - ``SessionPaper.objects.visible_to(permissions)``: nichtöffentliche Vorlagen nur mit
   ``view_non_public_papers``
 - ``SessionFile.objects.visible_to(permissions)``: Gegenstück zu ``file_service.file_visible`` –
-  Sichtrecht des Elternobjekts (Vorlage: ``view_papers``, Sitzung/TOP: ``view_meetings``), bei einer
-  nichtöffentlichen Anlage oder einem nichtöffentlichen Elternobjekt zusätzlich das NÖ-Recht
+  Sichtrecht des Elternobjekts (Vorlage: ``view_papers``, Sitzung/TOP: ``view_meetings``, Anhang
+  eines eingereichten Antrags: ``view_applications``), bei einer nichtöffentlichen Anlage oder einem
+  nichtöffentlichen Elternobjekt zusätzlich das NÖ-Recht
 
 Für Beziehungen liefern ``meeting_q``, ``agenda_item_q``, ``paper_q`` und ``file_q`` dieselbe
 Bedingung mit Präfix, z. B. ``SessionCosignature.objects.filter(paper_q(permissions, "paper__"))``.
@@ -75,7 +76,9 @@ def file_q(permissions: Collection[str], prefix: str = "") -> Q:
     Anlagen nach der Regel von ``file_service.file_visible``.
 
     Das Elternobjekt bestimmt das Recht in derselben Reihenfolge wie ``file_service.file_parent``:
-    Vorlage vor TOP vor Sitzung; Anlagen ohne Elternobjekt zählen wie Vorlagen-Anlagen.
+    Vorlage vor TOP vor Sitzung vor eingereichtem Antrag; Anlagen ohne Elternobjekt zählen wie
+    Vorlagen-Anlagen. Anhänge eines Antrags (noch ohne Vorlage) sind intern und nur mit
+    ``view_applications`` sichtbar – unabhängig von ``is_public`` (#584).
     """
 
     def cond(**lookups: Any) -> Q:
@@ -84,7 +87,7 @@ def file_q(permissions: Collection[str], prefix: str = "") -> Q:
     parts: list[Q] = []
     if "view_papers" in permissions:
         at_paper = cond(paper__isnull=False)
-        orphan = cond(paper__isnull=True, agenda_item__isnull=True, meeting__isnull=True)
+        orphan = cond(paper__isnull=True, agenda_item__isnull=True, meeting__isnull=True, application__isnull=True)
         if NON_PUBLIC_PAPERS not in permissions:
             at_paper &= cond(is_public=True, paper__is_public=True)
             orphan &= cond(is_public=True)
@@ -96,6 +99,10 @@ def file_q(permissions: Collection[str], prefix: str = "") -> Q:
             at_item &= cond(is_public=True, agenda_item__is_public=True, agenda_item__meeting__is_public=True)
             at_meeting &= cond(is_public=True, meeting__is_public=True)
         parts += [at_item, at_meeting]
+    if "view_applications" in permissions:
+        parts.append(
+            cond(paper__isnull=True, agenda_item__isnull=True, meeting__isnull=True, application__isnull=False)
+        )
     if not parts:
         return cond(pk__in=[])
     result = parts[0]

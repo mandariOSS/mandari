@@ -145,7 +145,7 @@ class SessionSearchView(SessionViewMixin, TemplateView):
             # Anlagen (Dateiname + extrahierter Text): nur Anlagen, die die Person herunterladen dürfte –
             # Sichtrecht des Elternobjekts, NÖ-Anlage oder NÖ-Elternobjekt nur mit NÖ-Recht. Sonst nennte
             # die Trefferliste NÖ-Kontext, und die Volltextsuche verriete den Inhalt Wort für Wort.
-            if wants("files") and self.session_permissions & {"view_meetings", "view_papers"}:
+            if wants("files") and self.session_permissions & {"view_meetings", "view_papers", "view_applications"}:
                 files = (
                     SessionFile.objects.filter(tenant=self.session_tenant)
                     .visible_to(self.session_permissions)
@@ -160,9 +160,9 @@ class SessionSearchView(SessionViewMixin, TemplateView):
                 if filters["year"]:
                     files = files.filter(created_at__year=filters["year"])
                 results["files"] = list(
-                    files.select_related("paper", "meeting", "agenda_item__meeting").order_by("-created_at")[
-                        :RESULT_LIMIT
-                    ]
+                    files.select_related("paper", "meeting", "agenda_item__meeting", "application").order_by(
+                        "-created_at"
+                    )[:RESULT_LIMIT]
                 )
 
             # Anträge

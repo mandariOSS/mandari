@@ -283,11 +283,21 @@ def _transfer_attachments(motion, application) -> list[str]:
             handle.close()
 
 
+#: Meldung, wenn die Ablage der Anhänge in Session scheitert (fester Text, keine Ausnahme-Details)
+ATTACHMENTS_FAILED = (
+    "Die Anhänge konnten nicht an die Verwaltung übergeben werden. Der Antrag wurde nicht eingereicht – "
+    "bitte später erneut versuchen."
+)
+
+
 @transaction.atomic
-def submit_motion(motion, membership, data: dict):
+def submit_motion(motion, membership, data: dict, *, skipped: list[str] | None = None):
     """
     Antrag an die verbundene Verwaltung übergeben und das Dokument auf
     „Eingereicht“ setzen. ``data`` enthält die geprüften Formularwerte.
+
+    Wird ``skipped`` übergeben, stehen danach die Anhänge darin, die nicht übernommen wurden
+    (Name mit Grund) – etwa nach der Virenprüfung oder weil die Datei fehlt.
     """
     from apps.session.services.application_service import ApplicationService
 
@@ -323,10 +333,17 @@ def submit_motion(motion, membership, data: dict):
     except ValueError as exc:
         raise SubmissionError(str(exc)) from exc
 
-    # Anhänge gehen mit (#584); nicht angenommene stehen vorher in der Vorschau
-    skipped = _transfer_attachments(motion, application)
-    if skipped:
-        logger.info("Einreichung %s: %s Anhänge nicht übernommen", application.pk, len(skipped))
+    # Anhänge gehen mit (#584); nicht angenommene stehen vorher in der Vorschau. Scheitert die Ablage,
+    # scheitert die Einreichung als Ganzes (Transaktion) – mit fester Meldung statt einer Fehlerseite.
+    try:
+        not_transferred = _transfer_attachments(motion, application)
+    except Exception as exc:
+        logger.exception("Einreichung von Dokument %s: Anhänge konnten nicht abgelegt werden", motion.pk)
+        raise SubmissionError(ATTACHMENTS_FAILED) from exc
+    if not_transferred:
+        logger.info("Einreichung %s: %s Anhänge nicht übernommen", application.pk, len(not_transferred))
+        if skipped is not None:
+            skipped.extend(not_transferred)
 
     from .administration_feedback import SUBMISSION_VIA, record_submission, send_receipt
 

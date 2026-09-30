@@ -281,3 +281,150 @@ def test_antrags_anhang_laesst_sich_vor_der_umwandlung_nicht_veroeffentlichen(
     assert datei.is_public is False
     assert file_service.is_non_public(datei)
     assert not file_service.file_visible({"view_papers", "view_meetings"}, datei)
+
+
+# =============================================================================
+# Sichtbarkeit in Listen und Suche, Fehler bei der Übergabe
+# =============================================================================
+
+RECHTE_KOMBINATIONEN: list[set[str]] = [
+    set(),
+    {"view_papers"},
+    {"view_papers", "view_non_public_papers"},
+    {"view_meetings", "view_non_public_meetings"},
+    {"view_papers", "view_non_public_papers", "view_meetings", "view_non_public_meetings"},
+    {"view_applications"},
+    {"view_applications", "view_papers"},
+    {"view_applications", "view_papers", "view_non_public_papers"},
+]
+
+
+def _im_queryset(rechte: set[str], datei: SessionFile) -> bool:
+    return SessionFile.objects.visible_to(rechte).filter(pk=datei.pk).exists()
+
+
+def test_queryset_regel_gleicht_der_einzelpruefung_fuer_antrags_anhaenge(
+    org: Any, antrag: Motion, autorin: Any, verbunden: Any, tenant: SessionTenant, commit: Any
+) -> None:
+    from apps.session.services.application_service import convert_to_paper
+
+    MotionDocument.objects.create(motion=antrag, file=_datei("Plan.pdf"), filename="Plan.pdf", file_size=17)
+    with commit():
+        application = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
+    datei = SessionFile.objects.get(application=application)
+
+    # Vor der Umwandlung: nur mit dem Recht, Anträge zu sehen – NÖ-Recht für Vorlagen genügt nicht
+    assert not _im_queryset({"view_papers", "view_non_public_papers"}, datei)
+    assert _im_queryset({"view_applications"}, datei)
+    for rechte in RECHTE_KOMBINATIONEN:
+        assert _im_queryset(rechte, datei) == file_service.file_visible(rechte, datei), rechte
+
+    # Nach der Umwandlung gilt die Regel der Vorlage
+    convert_to_paper(application)
+    datei.refresh_from_db()
+    assert not _im_queryset({"view_applications"}, datei)
+    for rechte in RECHTE_KOMBINATIONEN:
+        assert _im_queryset(rechte, datei) == file_service.file_visible(rechte, datei), rechte
+
+
+def test_suche_nennt_antrags_anhaenge_nur_mit_antragsrecht(
+    org: Any, antrag: Motion, autorin: Any, verbunden: Any, tenant: SessionTenant, commit: Any
+) -> None:
+    MotionDocument.objects.create(
+        motion=antrag, file=_datei("Lageplan Wendehammer.pdf"), filename="Lageplan Wendehammer.pdf", file_size=17
+    )
+    with commit():
+        application = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
+    suche = f"/session/{tenant.slug}/search/?q=Wendehammer"
+
+    ohne = _verwaltung(tenant, can_view_applications=False, can_view_papers=True, can_view_non_public_papers=True)
+    assert "Lageplan Wendehammer.pdf" not in ohne.get(suche).content.decode()
+
+    mit = _verwaltung(tenant, can_view_applications=True, can_view_papers=False, can_view_meetings=False)
+    seite = mit.get(suche).content.decode()
+    assert "Lageplan Wendehammer.pdf" in seite
+    assert f"Antrag {application.reference}" in seite
+
+
+def test_antrags_anhaenge_erhalten_text_fuer_die_suche(
+    org: Any, antrag: Motion, autorin: Any, verbunden: Any, tenant: SessionTenant, commit: Any
+) -> None:
+    MotionDocument.objects.create(
+        motion=antrag,
+        file=_datei("Notiz.txt", "Fahrradständer am Rathaus".encode()),
+        filename="Notiz.txt",
+        file_size=26,
+    )
+    with commit():
+        application = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
+
+    datei = SessionFile.objects.get(application=application)
+    assert "Fahrradständer am Rathaus" in datei.text_content
+    mit = _verwaltung(tenant, can_view_applications=True)
+    assert "Notiz.txt" in mit.get(f"/session/{tenant.slug}/search/?q=Fahrradständer").content.decode()
+
+
+def test_scheiternde_ablage_bricht_die_einreichung_mit_fester_meldung_ab(
+    org: Any,
+    antrag: Motion,
+    autorin: Any,
+    verbunden: Any,
+    tenant: SessionTenant,
+    client_for: Any,
+    monkeypatch: Any,
+) -> None:
+    from apps.session.models import SessionApplication
+    from apps.session.services import file_version_service
+
+    def speicher_voll(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("No space left on device: /srv/geheimer/pfad")
+
+    monkeypatch.setattr(file_version_service, "attach_upload", speicher_voll)
+    MotionDocument.objects.create(motion=antrag, file=_datei("Plan.pdf"), filename="Plan.pdf", file_size=17)
+
+    antwort = client_for(autorin.user).post(
+        _url(org, antrag, "submit-ris/"),
+        {**ris_submission.build_prefill(antrag), "application_type": "motion", "confirm": "on"},
+    )
+    assert antwort.status_code == 200
+    seite = antwort.content.decode()
+    assert "Die Anhänge konnten nicht an die Verwaltung übergeben werden" in seite
+    assert "geheimer" not in seite and "No space left" not in seite
+
+    antrag.refresh_from_db()
+    assert antrag.session_application is None and antrag.status == "approved"
+    assert not SessionApplication.objects.filter(tenant=tenant).exists()
+
+
+def scan_hook_lehnt_virus_ab(upload: Any) -> None:
+    """Test-Hook für ``SESSION_FILE_SCAN_HOOK``: Dateien mit „virus“ im Namen gelten als Befund."""
+    if "virus" in (upload.name or "").lower():
+        raise ValueError("Befund")
+
+
+def test_nicht_uebernommene_anhaenge_werden_namentlich_gemeldet(
+    org: Any,
+    antrag: Motion,
+    autorin: Any,
+    verbunden: Any,
+    tenant: SessionTenant,
+    client_for: Any,
+    commit: Any,
+    settings: Any,
+) -> None:
+    from django.contrib.messages import get_messages
+
+    settings.SESSION_FILE_SCAN_HOOK = f"{__name__}.scan_hook_lehnt_virus_ab"
+    for name in ("Plan.pdf", "Virus.pdf"):
+        MotionDocument.objects.create(motion=antrag, file=_datei(name), filename=name, file_size=17)
+
+    with commit():
+        antwort = client_for(autorin.user).post(
+            _url(org, antrag, "submit-ris/"),
+            {**ris_submission.build_prefill(antrag), "application_type": "motion", "confirm": "on"},
+        )
+    assert antwort.status_code == 302
+    meldungen = [str(m) for m in get_messages(antwort.wsgi_request)]
+    assert any("Mit 1 Anhang." in m for m in meldungen), meldungen
+    (warnung,) = [m for m in meldungen if m.startswith("Nicht übermittelt:")]
+    assert "Virus.pdf (Virenprüfung" in warnung and "Plan.pdf" not in warnung
