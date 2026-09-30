@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("session", "0041_ende_top"),
+        ("session", "0042_buergerportal_ende"),
     ]
 
     operations = [
