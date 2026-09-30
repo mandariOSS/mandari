@@ -25,11 +25,13 @@ from apps.common.email import render_email
 logger = logging.getLogger(__name__)
 
 
+@task(queue_name="mail")
 def send_notification_email_task(notification_id: str):
     """
     Send email for a notification asynchronously.
 
     This task is scheduled to run in the background after a notification is created.
+    Idempotent: a notification whose email was already sent is skipped (at-least-once delivery).
     """
     from apps.work.notifications.models import Notification, NotificationPreference
 
@@ -37,6 +39,10 @@ def send_notification_email_task(notification_id: str):
         notification = Notification.objects.select_related("recipient__user", "actor__user").get(id=notification_id)
     except Notification.DoesNotExist:
         logger.error(f"Notification {notification_id} not found")
+        return
+
+    if notification.email_sent:
+        logger.info("Notification email %s already sent, skipping", notification_id)
         return
 
     recipient_email = notification.recipient.user.email
@@ -89,10 +95,13 @@ def send_notification_email_task(notification_id: str):
         notification.email_sent_at = timezone.now()
         notification.save(update_fields=["email_sent", "email_sent_at"])
 
-        logger.info(f"Notification email sent to {recipient_email}")
+        logger.info("Notification email %s sent", notification_id)
 
-    except Exception as e:
-        logger.error(f"Failed to send email to {recipient_email}: {e}")
+    except Exception:
+        # Weiterreichen: Mit TASKS_BACKEND=journal wiederholt der Runner den Versand mit wachsender
+        # Wartezeit; das sofort ausführende Backend fängt den Fehler selbst ab (wie bisher kein Abbruch).
+        logger.exception("Failed to send notification email %s", notification_id)
+        raise
 
 
 @task

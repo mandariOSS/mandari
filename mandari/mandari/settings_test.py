@@ -34,7 +34,13 @@ MAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 MAILERS = {"default": {"BACKEND": MAIL_BACKEND, "OPTIONS": {}}}
 ELASTICSEARCH_AUTO_INDEX = False
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # schnelle Hashes nur im Test
-TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}
+# Sofort ausführen, wie ohne TASKS_BACKEND in Produktion; JournalBackend testen apps/events/tests
+TASKS = {
+    "default": {
+        **TASKS["default"],  # noqa: F405 – Warteschlangen und Optionen wie in settings.py
+        "BACKEND": "django.tasks.backends.immediate.ImmediateBackend",
+    }
+}
 
 # Tests brauchen kein gebautes Manifest: Dev-URLs erzeugen, ohne Vite-Server zu benötigen.
 # E2E-Tests (MANDARI_E2E=1) laden dagegen die gebauten Assets aus static/dist/ über den Live-Server.

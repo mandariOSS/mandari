@@ -150,6 +150,10 @@ das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 | `mandari_events_sequencer_lag_seconds` | – | Rückstand des Sequenzierers: Alter (ab Erfassung) des ältesten Ereignisses, das eine Folgenummer bekommen könnte, aber noch keine hat; 0 = kein Rückstand. Wächst, wenn kein Sequenzierer läuft oder er hängt – das zeigt `…_blocked_seconds` nicht. Direkt nach dem Commit einer langen Transaktion kurz hoch, Alarme deshalb mit Mindestdauer. Solange kein Dienst den Sequenzierer startet (#508), wächst der Wert, sobald Ereignisse geschrieben werden |
 | `mandari_events_oldest_transaction_seconds` | – | Alter der ältesten offenen Transaktion mit Transaktionskennung im Cluster, soweit die Datenbankrolle sie sehen darf |
 | `mandari_events_sequenced_total` | – | vergebene Folgenummern; nur im Prozess des Sequenzierers (`manage.py events_sequencer`) |
+| `mandari_tasks_queued` | `queue` | Aufträge (`events_task`, Backend `JournalBackend`): fällige wartende Aufträge je Warteschlange, also der Rückstand des Runners `manage.py events_tasks` (`apps/events/task_metrics.py`, beim Abruf aus der Datenbank gemessen) |
+| `mandari_tasks_oldest_queued_seconds` | `queue` | wie lange der älteste fällige Auftrag schon wartet; wächst, wenn kein Runner läuft |
+| `mandari_tasks_running` | `queue` | laufende Aufträge |
+| `mandari_tasks_dead` | `queue` | tote (alle Versuche gescheitert) und fehlgeschlagene Aufträge der letzten 90 Tage; Alarm bei mehr als null, die Ursache steht im Protokoll des Runners |
 
 `view` ist der URL-Name samt Namensraum (z. B. `session:meeting_detail`), nie der konkrete
 Pfad – sonst würde jede ID ein neues Label erzeugen. Nicht auflösbare Pfade laufen unter

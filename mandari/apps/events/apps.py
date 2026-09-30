@@ -11,6 +11,7 @@ class EventsConfig(AppConfig):
     verbose_name = "Ereignistechnik"
 
     def ready(self) -> None:
-        from . import metrics
+        from . import metrics, task_metrics
 
         metrics.register()
+        task_metrics.register()
