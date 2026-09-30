@@ -46,6 +46,9 @@ dependencies = [
 
     # Zero-Downtime Migrations
     "django-safemigrate>=4.3",
+
+    # Verträge der Datendrehscheibe (hub/contracts): JSON Schema 2020-12
+    "jsonschema>=4.25.0",
 ]
 
 [project.optional-dependencies]

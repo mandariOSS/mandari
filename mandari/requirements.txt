@@ -68,6 +68,9 @@ daphne>=4.2.3
 # Zero-Downtime Migrations
 django-safemigrate>=4.3
 
+# Verträge der Datendrehscheibe: JSON Schema 2020-12 für Ereignisse und Befehle (hub/contracts, #517)
+jsonschema>=4.25.0
+
 # Transitive dependencies pinned for security
 urllib3>=2.8.0  # Security: fixes open redirect, info disclosure
 requests>=2.34.2  # Security: fixes control flow, sensitive data issues

@@ -40,6 +40,7 @@ Mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **pypdfium2** | PDF-Seitenanalyse und Rendern (PDFium, Karten und Pläne) | Apache 2.0 / BSD-3-Clause | [GitHub](https://github.com/pypdfium2-team/pypdfium2) |
 | **xhtml2pdf** | PDF-Generierung | Apache 2.0 | [GitHub](https://github.com/xhtml2pdf/xhtml2pdf) |
 | **segno** | QR-Code-Erzeugung (reines Python) | BSD-3-Clause | [GitHub](https://github.com/heuer/segno) |
+| **jsonschema** | Prüfung der Verträge für Ereignisse und Befehle (JSON Schema 2020-12) | MIT | [GitHub](https://github.com/python-jsonschema/jsonschema) |
 
 Vollständige Liste: [mandari/requirements.txt](mandari/requirements.txt)
 
