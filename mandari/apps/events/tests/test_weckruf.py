@@ -169,6 +169,68 @@ def test_ohne_ankommende_meldungen_bleibt_es_bei_der_abfrage(
 
 
 @pytest.mark.django_db(transaction=True)
+def test_nicht_gesendete_selbstpruefung_ist_kein_pgbouncer_befund(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    protokoll_sichtbar: None,
+    stopp: threading.Event,
+) -> None:
+    """Etwa kurz nach einem Neustart der Datenbank: Die Standardverbindung kann die Prüfung nicht senden.
+
+    Das sagt nichts über das Lauschen; statt fünf Minuten Pause mit PgBouncer-Hinweis folgt der
+    nächste Versuch mit der wachsenden Pause wie nach einem Verbindungsfehler.
+    """
+    nur_postgres()
+    monkeypatch.setattr(wakeup, "RECONNECT_MIN", 0.05)
+    fehlschlaege = [2]
+
+    def anfangs_gestoert(kanal: str, token: str) -> None:
+        if fehlschlaege[0] > 0:
+            fehlschlaege[0] -= 1
+            raise psycopg.OperationalError('connection to server at "db-geheim", port 6432 failed')
+        wakeup.ping_via_default_connection(kanal, token)
+
+    with caplog.at_level(logging.WARNING, logger="apps.events.wakeup"):
+        listener, faden = start_listener({KANAL: []}, stopp, send_ping=anfangs_gestoert)
+        _bis(lambda: listener.healthy, hinweis="nach der Störung nicht wieder gesund (fünf Minuten Pause?)")
+        stopp.set()
+        faden.join(timeout=FRIST)
+
+    meldungen = [eintrag.getMessage() for eintrag in caplog.records]
+    assert sum("Selbstprüfung ließ sich nicht senden" in meldung for meldung in meldungen) == 2
+    assert any("psycopg.OperationalError" in meldung for meldung in meldungen)
+    assert not any("EVENTS_DB_DIRECT_URL" in meldung or "PgBouncer" in meldung for meldung in meldungen)
+    assert "db-geheim" not in caplog.text, "keine Verbindungsdaten im Protokoll"
+
+
+def test_protokoll_nennt_bei_verbindungsfehlern_keine_verbindungsdaten(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    protokoll_sichtbar: None,
+    stopp: threading.Event,
+) -> None:
+    """libpq nennt in seinen Meldungen Host und Port; ins Protokoll gehören nur Fehlerklasse und SQLSTATE."""
+    monkeypatch.setattr(wakeup, "RECONNECT_MIN", 0.05)
+    listener = Listener(
+        {KANAL: []}, conninfo="host=127.0.0.1 port=1 user=geheimnutzer dbname=nirgends connect_timeout=2"
+    )
+
+    with caplog.at_level(logging.WARNING, logger="apps.events.wakeup"):
+        faden = threading.Thread(target=listener.run, args=(stopp,), daemon=True)
+        faden.start()
+        _bis(lambda: len(caplog.records) >= 2, hinweis="Verbindungsfehler nicht protokolliert")
+        stopp.set()
+        faden.join(timeout=FRIST)
+
+    eigene = [eintrag for eintrag in caplog.records if eintrag.name == "apps.events.wakeup"]
+    assert not listener.healthy
+    # Fehlerklasse je nach System: psycopg.OperationalError oder eine Unterklasse (Zeitüberschreitung)
+    assert eigene and all("(psycopg." in eintrag.getMessage() for eintrag in eigene)
+    assert "127.0.0.1" not in caplog.text and "geheimnutzer" not in caplog.text
+    assert all(eintrag.exc_info is None for eintrag in eigene), "kein Traceback mit der Meldung"
+
+
+@pytest.mark.django_db(transaction=True)
 def test_abgerissene_verbindung_wird_neu_aufgebaut(
     pg_verbindungen: Verbindungen, monkeypatch: pytest.MonkeyPatch, stopp: threading.Event
 ) -> None:

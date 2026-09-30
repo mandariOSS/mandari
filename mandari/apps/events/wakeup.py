@@ -18,7 +18,13 @@ Standarddatenbank; das genügt ohne Pooler (Standardinstallation).
 Standardverbindung der Anwendung ein ``NOTIFY`` an sich selbst und erwartet es auf der
 Lauschverbindung. Kommt es nicht an (Pooler, abgerissene Verbindung hinter einer Firewall), meldet
 er das, baut die Verbindung neu auf bzw. versucht es später erneut; bis dahin tragen die Abfragen
-allein. ``mandari_events_listener_up`` zeigt den Zustand.
+allein. Lässt sich die Selbstprüfung gar nicht erst senden (Standardverbindung gestört, etwa kurz
+nach einem Neustart der Datenbank), ist das kein Befund über das Lauschen: Dann folgt ein neuer
+Versuch mit wachsender Pause wie nach einem Verbindungsfehler. ``mandari_events_listener_up``
+zeigt den Zustand.
+
+**Protokolle** nennen bei Datenbankfehlern nur Fehlerklasse und SQLSTATE, nie die Meldung: libpq
+nennt darin bei Verbindungsfehlern Host, Port und Benutzernamen.
 
 Leader-Leases und alle übrige Arbeit brauchen keine Direktverbindung: Die Lease-Tabelle und
 ``leases.fence()`` wirken innerhalb einer Transaktion, und die Arbeit muss in derselben
@@ -98,6 +104,23 @@ def ping_via_default_connection(kanal: str, token: str) -> None:
         connection.close()  # die Verbindung nicht dauerhaft aus dem Pool nehmen
 
 
+def error_summary(exc: BaseException) -> str:
+    """Fehlerklasse und SQLSTATE für Protokolle.
+
+    Nie die Meldung und kein Traceback: libpq nennt bei Verbindungsfehlern Host, Port und
+    Benutzernamen. Djangos Datenbankfehler tragen den psycopg-Fehler als Ursache.
+    """
+    klasse = type(exc)
+    name = f"{klasse.__module__}.{klasse.__qualname__}"
+    ursache = exc if isinstance(exc, psycopg.Error) else exc.__cause__
+    sqlstate = ursache.sqlstate if isinstance(ursache, psycopg.Error) else None
+    return f"{name}, SQLSTATE {sqlstate}" if sqlstate else name
+
+
+class PingNotSentError(Exception):
+    """Die Selbstprüfung ließ sich über die Standardverbindung nicht senden; kein Befund über das Lauschen."""
+
+
 @dataclass
 class Listener:
     """Hört auf ``LISTEN``-Kanälen und ruft je Meldung die Rückrufe des Kanals auf."""
@@ -165,19 +188,20 @@ class Listener:
         return False
 
     def _pruefen(self, verbindung: psycopg.Connection[Any]) -> bool:
+        """``True``, wenn die eigene Meldung ankommt; ``PingNotSentError``, wenn sie sich nicht senden lässt."""
         token = uuid.uuid4().hex
         try:
             self.send_ping(PING_CHANNEL, token)
-        except Exception:  # noqa: BLE001 – ohne Selbstprüfung gilt der Weckruf als gestört, der Faden läuft weiter
-            logger.warning("Weckruf: Selbstprüfung konnte nicht gesendet werden", exc_info=True)
-            return False
+        except Exception as exc:  # noqa: BLE001 – eine gestörte Standardverbindung sagt nichts über das Lauschen
+            raise PingNotSentError(error_summary(exc)) from None
         return self._warten_auf(verbindung, PING_TIMEOUT, token)
 
     def _lauschen(self, stop: threading.Event) -> str:
         """Eine Verbindung lang lauschen.
 
         Ergebnis: ``"stop"``, ``"unwirksam"`` (schon die erste Selbstprüfung blieb aus) oder
-        ``"neu"`` (eine spätere blieb aus; die Verbindung wird sofort neu aufgebaut).
+        ``"neu"`` (eine spätere blieb aus; die Verbindung wird sofort neu aufgebaut). Lässt sich die
+        Selbstprüfung nicht senden, endet das Lauschen mit ``PingNotSentError``.
         """
         with self._verbinden() as verbindung:
             if not self._pruefen(verbindung):
@@ -199,42 +223,48 @@ class Listener:
                 naechste_pruefung = time.monotonic() + PING_INTERVAL
         return "stop"
 
+    def _gestoert(self, stop: threading.Event, pause: float, grund: str) -> float:
+        """Neuer Versuch nach wachsender Pause; nach einer gesunden Phase beginnt sie von vorn."""
+        if self.healthy:
+            # Nach einem Abriss können Meldungen fehlen; die Abfragen holen sie nach
+            self.wake_all()
+            pause = RECONNECT_MIN
+        self._zustand(False)
+        logger.warning("Weckruf: %s (Verbindung aus %s), neuer Versuch in %.0f s", grund, self.source, pause)
+        stop.wait(pause)
+        return min(RECONNECT_MAX, pause * 2)
+
     def run(self, stop: threading.Event) -> None:
         """Dauerbetrieb bis ``stop``; baut die Verbindung nach Fehlern neu auf."""
         pause = RECONNECT_MIN
         try:
             while not stop.is_set():
                 try:
-                    if self._lauschen(stop) != "unwirksam":
-                        continue
-                    self._zustand(False)
-                    logger.warning(
-                        "Weckruf: Meldungen erreichen die Lauschverbindung nicht (Verbindung aus %s), etwa hinter "
-                        "PgBouncer im Transaktionsmodus. EVENTS_DB_DIRECT_URL auf eine Direktverbindung zu "
-                        "PostgreSQL setzen. Bis dahin fragen die Schleifen regelmäßig ab; neuer Versuch in %.0f s.",
-                        self.source,
-                        UNHEALTHY_RETRY,
-                    )
-                    stop.wait(UNHEALTHY_RETRY)
-                    pause = RECONNECT_MIN
-                except psycopg.Error:
-                    if self.healthy:
-                        # Nach einem Abriss können Meldungen fehlen; die Abfragen holen sie nach
-                        self.wake_all()
-                    self._zustand(False)
-                    logger.warning(
-                        "Weckruf: Verbindung zum Lauschen verloren oder nicht möglich (Verbindung aus %s), neuer "
-                        "Versuch in %.0f s",
-                        self.source,
-                        pause,
-                        exc_info=True,
-                    )
-                    stop.wait(pause)
-                    pause = min(RECONNECT_MAX, pause * 2)
+                    ergebnis = self._lauschen(stop)
+                except PingNotSentError as exc:
+                    pause = self._gestoert(stop, pause, f"Selbstprüfung ließ sich nicht senden ({exc})")
+                    continue
+                except psycopg.Error as exc:
+                    grund = f"Verbindung zum Lauschen verloren oder nicht möglich ({error_summary(exc)})"
+                    pause = self._gestoert(stop, pause, grund)
+                    continue
                 except Exception:  # noqa: BLE001 – der Weckruf darf nicht sterben; die Abfragen tragen weiter
                     self._zustand(False)
                     logger.exception("Weckruf: unerwarteter Fehler, neuer Versuch in %.0f s", RECONNECT_MAX)
                     stop.wait(RECONNECT_MAX)
+                    continue
+                pause = RECONNECT_MIN
+                if ergebnis != "unwirksam":
+                    continue
+                self._zustand(False)
+                logger.warning(
+                    "Weckruf: Meldungen erreichen die Lauschverbindung nicht (Verbindung aus %s), etwa hinter "
+                    "PgBouncer im Transaktionsmodus. EVENTS_DB_DIRECT_URL auf eine Direktverbindung zu "
+                    "PostgreSQL setzen. Bis dahin fragen die Schleifen regelmäßig ab; neuer Versuch in %.0f s.",
+                    self.source,
+                    UNHEALTHY_RETRY,
+                )
+                stop.wait(UNHEALTHY_RETRY)
         finally:
             self._zustand(False)
             connection.close()

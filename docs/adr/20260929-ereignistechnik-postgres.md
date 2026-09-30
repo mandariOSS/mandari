@@ -179,7 +179,12 @@ Umgesetzt in `apps/events/wakeup.py`, eingebunden in `events_sequencer` und `eve
   Standardverbindung ein `NOTIFY` an sich selbst. Bleibt es aus (PgBouncer im
   Transaktionsmodus, abgerissene Verbindung), warnt er, baut neu auf bzw. versucht es nach
   fünf Minuten erneut; `mandari_events_listener_up` zeigt den Zustand. Nach jedem Neuaufbau weckt
-  er alle Schleifen, weil Meldungen verloren sein können.
+  er alle Schleifen, weil Meldungen verloren sein können. Lässt sich die Prüfung gar nicht senden
+  (Standardverbindung gestört, etwa kurz nach einem Neustart der Datenbank), ist das kein Befund
+  über das Lauschen: Er versucht es mit wachsender Pause (1 s bis 60 s) erneut, ohne
+  PgBouncer-Hinweis.
+- **Protokolle** nennen bei Datenbankfehlern des Weckrufs nur Fehlerklasse und SQLSTATE, nie die
+  Meldung: libpq nennt darin bei Verbindungsfehlern Host, Port und Benutzernamen.
 - **Nachweis:** Die CI führt die Tests von `apps/events` zusätzlich hinter PgBouncer im
   Transaktionsmodus aus (Job „Ereignistechnik hinter PgBouncer“), einschließlich der Messung
   Commit → Sicht (p95 ≤ 5 s) und des Nachweises, dass `LISTEN` über den Pooler als wirkungslos
