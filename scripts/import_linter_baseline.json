@@ -1,0 +1,154 @@
+{
+  "einstellungen": {
+    "root_packages": [
+      "apps",
+      "hub",
+      "insight_core",
+      "insight_ai",
+      "insight_search",
+      "insight_sync",
+      "oparl_api"
+    ]
+  },
+  "vertraege": {
+    "schichten": {
+      "layers": [
+        "apps.session : apps.work : (apps.portal) : apps.minutes",
+        "hub : insight_core : insight_ai : insight_search : insight_sync : oparl_api",
+        "apps.events : apps.common : apps.accounts : apps.tenants : apps.provisioning"
+      ]
+    },
+    "module-unabhaengig": {
+      "modules": [
+        "apps.session",
+        "apps.work",
+        "apps.minutes"
+      ]
+    },
+    "plattform-fachfrei": {
+      "source_modules": [
+        "apps.events",
+        "apps.common",
+        "apps.accounts",
+        "apps.tenants",
+        "apps.provisioning"
+      ],
+      "forbidden_modules": [
+        "apps.session",
+        "apps.work",
+        "apps.minutes",
+        "hub",
+        "insight_core",
+        "insight_ai",
+        "insight_search",
+        "insight_sync",
+        "oparl_api"
+      ]
+    }
+  },
+  "ausnahmen": {
+    "schichten": [
+      "apps.accounts.adoption -> apps.session.models",
+      "apps.accounts.orphaned_accounts -> apps.session.models",
+      "apps.accounts.security_audit -> apps.session.audit",
+      "apps.accounts.security_audit -> apps.session.models",
+      "apps.accounts.two_factor_policy -> apps.session.models",
+      "apps.accounts.views -> apps.work.organization.selectors",
+      "apps.accounts.views -> apps.work.organization.services",
+      "apps.common.management.commands.setup_demo_environment -> apps.session.models",
+      "apps.common.management.commands.setup_demo_environment -> apps.work.meetings.models",
+      "apps.common.management.commands.setup_demo_environment -> apps.work.models",
+      "apps.common.management.commands.setup_demo_environment -> apps.work.motions.models",
+      "apps.common.management.commands.setup_demo_environment -> insight_core.models",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.models",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.agenda_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.allowance_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.insight_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.numbering_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.protocol_lock",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.resolution_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.voting_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.work.motions.models",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.work.motions.ris_submission",
+      "apps.common.management.commands.setup_demo_praesentation -> insight_core.models",
+      "apps.common.management.commands.setup_demo_praesentation -> insight_sync.session_mirror",
+      "apps.common.management.commands.verify_audit_chain -> apps.session.models",
+      "apps.common.metrics -> apps.minutes.models",
+      "apps.common.service_levels -> apps.minutes.models",
+      "apps.common.service_levels -> insight_core.services.source_health",
+      "apps.tenants.models -> insight_core.models",
+      "insight_core.portal -> apps.session.models",
+      "insight_core.portal -> apps.session.services.insight_service",
+      "insight_core.services.decision_tracking -> apps.session.models",
+      "insight_core.views.decisions -> apps.session.models",
+      "insight_core.views.protocols -> apps.work.faction.models",
+      "insight_sync.daemon -> apps.work.faction.generation",
+      "insight_sync.daemon -> apps.work.faction.invitations",
+      "insight_sync.daemon -> apps.work.faction.services"
+    ],
+    "module-unabhaengig": [
+      "apps.accounts.adoption -> apps.session.models",
+      "apps.accounts.orphaned_accounts -> apps.session.models",
+      "apps.accounts.security_audit -> apps.session.audit",
+      "apps.accounts.security_audit -> apps.session.models",
+      "apps.accounts.two_factor_policy -> apps.session.models",
+      "apps.common.metrics -> apps.minutes.models",
+      "apps.common.service_levels -> apps.minutes.models",
+      "apps.session.management.commands.generate_load_data -> apps.work.models",
+      "apps.session.services.application_service -> apps.work.motions.models",
+      "apps.session.services.portal_link_service -> apps.work.motions.models",
+      "apps.work.meetings.views.list -> apps.session.services.portal_link_service",
+      "apps.work.meetings.views.session_invitations -> apps.session.models",
+      "apps.work.meetings.views.session_invitations -> apps.session.services.invitation_response_service",
+      "apps.work.meetings.views.session_invitations -> apps.session.services.invitation_service",
+      "apps.work.meetings.views.session_invitations -> apps.session.services.portal_link_service",
+      "apps.work.motions.administration_feedback -> apps.session.models",
+      "apps.work.motions.administration_feedback -> apps.session.oparl_publication",
+      "apps.work.motions.administration_feedback -> apps.session.services.application_feedback",
+      "apps.work.motions.models -> apps.session.models",
+      "apps.work.motions.ris_submission -> apps.session.models",
+      "apps.work.motions.ris_submission -> apps.session.services.application_service",
+      "apps.work.motions.signals -> apps.session.models",
+      "apps.work.motions.views.ris -> apps.session.services.application_service",
+      "apps.work.organization.selectors -> apps.session.models",
+      "apps.work.ris.selectors -> apps.session.models",
+      "apps.work.ris.selectors -> apps.session.services.resolution_service",
+      "apps.work.ris.views.decisions -> apps.session.models",
+      "insight_core.portal -> apps.session.models",
+      "insight_core.portal -> apps.session.services.insight_service",
+      "insight_core.services.decision_tracking -> apps.session.models",
+      "insight_core.views.decisions -> apps.session.models"
+    ],
+    "plattform-fachfrei": [
+      "apps.accounts.adoption -> apps.session.models",
+      "apps.accounts.orphaned_accounts -> apps.session.models",
+      "apps.accounts.security_audit -> apps.session.audit",
+      "apps.accounts.security_audit -> apps.session.models",
+      "apps.accounts.two_factor_policy -> apps.session.models",
+      "apps.accounts.views -> apps.work.organization.selectors",
+      "apps.accounts.views -> apps.work.organization.services",
+      "apps.common.management.commands.setup_demo_environment -> apps.session.models",
+      "apps.common.management.commands.setup_demo_environment -> apps.work.meetings.models",
+      "apps.common.management.commands.setup_demo_environment -> apps.work.models",
+      "apps.common.management.commands.setup_demo_environment -> apps.work.motions.models",
+      "apps.common.management.commands.setup_demo_environment -> insight_core.models",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.models",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.agenda_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.allowance_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.insight_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.numbering_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.protocol_lock",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.resolution_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.session.services.voting_service",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.work.motions.models",
+      "apps.common.management.commands.setup_demo_praesentation -> apps.work.motions.ris_submission",
+      "apps.common.management.commands.setup_demo_praesentation -> insight_core.models",
+      "apps.common.management.commands.setup_demo_praesentation -> insight_sync.session_mirror",
+      "apps.common.management.commands.verify_audit_chain -> apps.session.models",
+      "apps.common.metrics -> apps.minutes.models",
+      "apps.common.service_levels -> apps.minutes.models",
+      "apps.common.service_levels -> insight_core.services.source_health",
+      "apps.tenants.models -> insight_core.models"
+    ]
+  }
+}

@@ -6,6 +6,19 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 
 ## 1. Schichten (Backend)
 
+- **Abhängigkeiten zeigen nur nach unten:** Fachmodule (`apps.session`, `apps.work`, `apps.minutes`)
+  → Drehscheibe (`hub`, `insight_*`, `oparl_api`) → Plattform (`apps.events`, `apps.common`,
+  `apps.accounts`, `apps.tenants`, `apps.provisioning`); Session, Work und Minutes kennen sich nicht
+  ([ADR Schichtenmodell](adr/20260929-schichtenmodell.md)). `lint-imports` prüft das in der CI,
+  Importe in Funktionen zählen mit, Tests sind ausgenommen. Die Ausnahmelisten in
+  `mandari/pyproject.toml` dürfen nur kürzer werden, die Verträge selbst nur strenger
+  (`scripts/check_import_linter_ratchet.py`, Baseline `scripts/import_linter_baseline.json`; nach
+  einem Abbau oder einer Verschärfung `--update` im selben PR). Jede neue App muss einer Schicht
+  zugeordnet werden, jedes neue Fachmodul zusätzlich dem Vertrag `module-unabhaengig`.
+- **Notation im Schichtenvertrag:** Abweichend von der ADR (`|`) trennt `:` die Pakete einer Schicht.
+  Mit `|` wären auch Pakete derselben Schicht gegenseitig verboten, etwa `apps.tenants` und
+  `apps.accounts` in der Plattform. Die Unabhängigkeit der Fachmodule sichert stattdessen der
+  eigene Vertrag `module-unabhaengig`.
 - **Views orchestrieren, Services entscheiden, Selectors lesen, Models validieren.** Ab dem zweiten
   Schreibzugriff oder dem dritten Query gehört Logik in `services.py` bzw. `selectors.py` der App.
 - Jede Service-Funktion, die mehr als ein Objekt schreibt, läuft in `transaction.atomic`.
