@@ -152,8 +152,15 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         return redirect("work:members", org_slug=self.organization.slug)
 
     def _reactivate(self, request, member):
-        services.reactivate_member(self.organization, member, self.membership)
-        messages.success(request, f"{display_name(member.user)} wurde reaktiviert.")
+        name = display_name(member.user)
+        if services.reactivate_member(self.organization, member, self.membership):
+            messages.success(request, f"{name} wurde reaktiviert und per E-Mail informiert.")
+        else:
+            messages.warning(
+                request,
+                f"{name} wurde reaktiviert, die E-Mail konnte aber nicht versendet werden. "
+                "Bitte informiere die Person direkt.",
+            )
 
     def _remove(self, request, member):
         self._require("members.remove", "Keine Berechtigung zum Entfernen von Mitgliedern.")
