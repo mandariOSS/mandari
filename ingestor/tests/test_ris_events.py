@@ -179,6 +179,40 @@ def test_sitzung_ohne_gremien_und_mit_zu_vielen() -> None:
     assert "organizations" not in zu_viele.payload
 
 
+def test_neu_zugeordnete_gremien_sind_eine_aenderung_der_sitzung() -> None:
+    """Die Quelle liefert dasselbe Objekt, aber ein Gremium steht erst jetzt im Bestand."""
+    (ereignis,) = ris_events.meeting_events(cid(MEETING), meeting(), Prior(meeting()), organizations_changed=True)
+    assert ereignis.type == "ris.meeting.changed"
+    assert ereignis.payload == {
+        "meeting": str(cid(MEETING)),
+        "changed": ["organization"],
+        "cancelled": False,
+        "organizations": [str(cid(ORG))],
+    }
+    # Ändert sich das Feld ohnehin, steht es einmal in der Liste.
+    (beides,) = ris_events.meeting_events(
+        cid(MEETING),
+        meeting(organization=[ORG, f"{BASE}/organization/2"]),
+        Prior(meeting()),
+        organizations_changed=True,
+    )
+    assert beides.payload["changed"] == ["organization"]
+    # Eine neue Sitzung bleibt angesetzt, ihre Gremien gehören dazu.
+    (neu,) = ris_events.meeting_events(cid(MEETING), meeting(), None, organizations_changed=True)
+    assert neu.type == "ris.meeting.scheduled"
+
+
+def test_neu_zugeordneter_ort_ist_eine_aenderung_der_vorlage() -> None:
+    ort = f"{BASE}/location/1"
+    vorlage = paper(location=[ort])
+    assert ris_events.paper_events(cid(PAPER), vorlage, Prior(vorlage)) == []
+    (ereignis,) = ris_events.paper_events(cid(PAPER), vorlage, Prior(vorlage), locations_changed=True)
+    assert ereignis.type == "ris.paper.changed"
+    assert ereignis.payload == {"paper": str(cid(PAPER)), "changed": ["location"]}
+    (neu,) = ris_events.paper_events(cid(PAPER), vorlage, None, locations_changed=True)
+    assert neu.type == "ris.paper.released"
+
+
 def test_neue_vorlage_ist_veroeffentlicht() -> None:
     (ereignis,) = ris_events.paper_events(cid(PAPER), paper(), None)
     assert (ereignis.type, ereignis.aggregate_type) == ("ris.paper.released", "Paper")
@@ -369,6 +403,31 @@ def test_geaenderte_datei(aenderung: dict[str, Any], erwartet: str | None) -> No
     assert [e.payload["change"] for e in ereignisse] == ([erwartet] if erwartet else [])
 
 
+def test_datei_haengt_erstmals_an_vorlage_oder_sitzung() -> None:
+    """Zuerst einzeln geliefert, später eingebettet: Die Quelle liefert dasselbe Objekt, die Zuordnung ist neu."""
+    einzeln = Prior(datei())
+    (an_vorlage,) = ris_events.file_events(cid(FILE), datei(), einzeln, paper_id=cid(PAPER))
+    assert an_vorlage.payload == {"file": str(cid(FILE)), "change": "added", "paper": str(cid(PAPER))}
+    (an_sitzung,) = ris_events.file_events(cid(FILE), datei(), einzeln, meeting_id=cid(MEETING))
+    assert an_sitzung.payload == {"file": str(cid(FILE)), "change": "added", "meeting": str(cid(MEETING))}
+    # Hängt sie schon an der Sitzung und kommt die Vorlage dazu, ist auch das neu.
+    (dazu,) = ris_events.file_events(cid(FILE), datei(), Prior(datei(), meeting_id=cid(MEETING)), paper_id=cid(PAPER))
+    assert dazu.payload["change"] == "added"
+
+
+def test_bekannte_zuordnung_der_datei_ist_keine_aenderung() -> None:
+    an_vorlage = Prior(datei(), paper_id=cid(PAPER), meeting_id=cid(MEETING))
+    assert ris_events.file_events(cid(FILE), datei(), an_vorlage, paper_id=cid(PAPER)) == []
+    assert ris_events.file_events(cid(FILE), datei(), an_vorlage, meeting_id=cid(MEETING)) == []
+    # Einzeln abgeglichen (ohne Zuordnung) bleibt die bisherige stehen.
+    assert ris_events.file_events(cid(FILE), datei(), an_vorlage) == []
+    # Eine Datei an mehreren Vorlagen trägt die zuletzt abgeglichene; der Wechsel zählt nicht.
+    assert ris_events.file_events(cid(FILE), datei(), an_vorlage, paper_id=cid(f"{BASE}/paper/2")) == []
+    # Eine neue Fassung bleibt eine neue Fassung, auch wenn die Zuordnung dazukommt.
+    (ersetzt,) = ris_events.file_events(cid(FILE), datei(size=2000), Prior(datei()), paper_id=cid(PAPER))
+    assert ersetzt.payload["change"] == "replaced"
+
+
 # --- Löschmarkierung -----------------------------------------------------------------------------------------
 
 
@@ -389,6 +448,26 @@ def test_loeschmarkierung_jedes_typs(entity_type: str) -> None:
         "object": str(kennung),
         "reason": "quelle_geloescht",
     }
+
+
+def test_loeschmarkierung_eines_nichtoeffentlichen_punkts_bleibt_nichtoeffentlich() -> None:
+    """Öffentliche Empfänger haben den Punkt nie gesehen; eine Rücknahme nennte ihnen erstmals seine Kennung."""
+    (ereignis,) = ris_events.depublished_events("agendaitem", cid(ITEM), public=False, meeting_id=cid(MEETING))
+    assert (ereignis.type, ereignis.visibility, ereignis.operation) == (
+        "ris.agendaitem.changed",
+        "nichtoeffentlich",
+        "delete",
+    )
+    assert (ereignis.aggregate_type, ereignis.aggregate_id) == ("AgendaItem", cid(ITEM))
+    assert ereignis.payload == {"agenda_item": str(cid(ITEM)), "meeting": str(cid(MEETING)), "change": "deleted"}
+    # Ohne Sitzung lässt sich die Nutzlast nicht bilden; öffentlich wird trotzdem nichts gemeldet.
+    assert ris_events.depublished_events("agendaitem", cid(ITEM), public=False) == []
+    # Ein öffentlicher Punkt meldet die Rücknahme wie jeder andere Typ.
+    (oeffentlich,) = ris_events.depublished_events("agendaitem", cid(ITEM), public=True, meeting_id=cid(MEETING))
+    assert (oeffentlich.type, oeffentlich.visibility) == ("ris.object.depublished", "oeffentlich")
+    # Das Kennzeichen gilt nur für Tagesordnungspunkte.
+    (vorlage,) = ris_events.depublished_events("paper", cid(PAPER), public=False)
+    assert vorlage.type == "ris.object.depublished"
 
 
 def test_unbekannter_typ_meldet_nichts() -> None:

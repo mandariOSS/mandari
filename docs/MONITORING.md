@@ -177,8 +177,12 @@ Beispiel-Scrape-Konfiguration: `deploy/monitoring/prometheus-scrape.example.yml`
 Grafana-Vorlage (p95-Latenz je View, Fehlerquote, Pool-Belegung, Cache-Trefferquote):
 `deploy/monitoring/grafana-mandari.json`. Der Ingestor liefert seine eigenen Metriken
 (`mandari_ingestor_*`) weiterhin über seinen Port, darunter
-`mandari_ingestor_events_published_total{type}`: ins Journal geschriebene Ereignisse je Typ, sobald
-`INGESTOR_EVENTS_ENABLED` eingeschaltet ist (gezählt beim Schreiben, vor dem Commit).
+`mandari_ingestor_events_published_total{type, source}`: ins Journal geschriebene Ereignisse je Typ
+und Kommune (`source` wie bei `mandari_ingestor_entities_synced_total`), sobald
+`INGESTOR_EVENTS_ENABLED` eingeschaltet ist (gezählt beim Schreiben, vor dem Commit). Bleibt der
+Wert einer Kommune nach Vollabgleichen ohne Änderung hoch, liefert ihre Quelle eingebettete und
+einzeln abgerufene Objekte unterschiedlich; `sync_config["events_enabled"] = false` an der Quelle
+nimmt nur sie von den Ereignissen aus.
 
 ## Service-Level-Alarme
 

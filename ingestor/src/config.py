@@ -127,6 +127,8 @@ class Settings(BaseSettings):
     # Django-Migration der Ereignistechnik eingespielt ist und der Sequenzierer läuft
     # (Env INGESTOR_EVENTS_ENABLED). Eingeschaltet kostet jeder Upsert eine zusätzliche Abfrage
     # (bisheriger Stand, mit Zeilensperre) und bei echter Änderung ein INSERT ins Journal.
+    # Der Schalter gilt für alle Quellen; eine einzelne nimmt sync_config["events_enabled"] = false
+    # aus (src/storage/database.py, SYNC_CONFIG_EVENTS_KEY).
     events_enabled: bool = Field(
         default=False,
         validation_alias=AliasChoices("INGESTOR_EVENTS_ENABLED", "events_enabled"),

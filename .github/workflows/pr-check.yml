@@ -63,6 +63,7 @@ jobs:
       templates: ${{ steps.ergebnis.outputs.templates }}
       frontend: ${{ steps.ergebnis.outputs.frontend }}
       test: ${{ steps.ergebnis.outputs.test }}
+      journal: ${{ steps.ergebnis.outputs.journal }}
       ereignisse: ${{ steps.ergebnis.outputs.ereignisse }}
       smoke: ${{ steps.ergebnis.outputs.smoke }}
       oparl: ${{ steps.ergebnis.outputs.oparl }}
@@ -130,6 +131,13 @@ jobs:
               - '!**/Dockerfile'
               - '!.dockerignore'
               - '!mandari/docker-entrypoint.sh'
+            # Journal der Ereignistechnik, wie der Ingestor es kennt und beschreibt. Der Test, der seine
+            # INSERT-Anweisung gegen die Tabelle aus den Django-Migrationen ausführt (Trigger,
+            # Prüfbedingungen), braucht PostgreSQL und läuft deshalb nur im Job "Test"
+            # (insight_core/tests/test_schema_contract.py). Diese beiden Dateien lösen ihn zusätzlich aus.
+            journal:
+              - 'ingestor/src/storage/models.py'
+              - 'ingestor/src/storage/events.py'
             ereignisse:
               - 'mandari/apps/events/**'
               - 'mandari/apps/common/metrics.py'
@@ -270,7 +278,7 @@ jobs:
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           ergebnis() { if [ "$alle" = "true" ]; then echo true; else wert "$1"; fi; }
-          for bereich in qualitaet verweise python vertrag templates frontend test ereignisse smoke oparl e2e ingestor audit docker; do
+          for bereich in qualitaet verweise python vertrag templates frontend test journal ereignisse smoke oparl e2e ingestor audit docker; do
             e=$(ergebnis "$bereich")
             echo "$bereich=$e" >> "$GITHUB_OUTPUT"
             echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
@@ -515,7 +523,8 @@ jobs:
   test:
     name: Test
     needs: changes
-    if: needs.changes.outputs.test == 'true'
+    # journal: Änderungen am Journal auf der Seite des Ingestors (siehe Filter)
+    if: needs.changes.outputs.test == 'true' || needs.changes.outputs.journal == 'true'
     runs-on: ubuntu-latest
 
     services:

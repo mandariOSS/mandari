@@ -142,8 +142,8 @@ class MetricsCollector:
         # Ereignistechnik: ins Journal geschriebene Ereignisse (docs/adr/20260929-ereignistechnik-postgres.md)
         self.events_published_total = Counter(
             "mandari_ingestor_events_published_total",
-            "Events written to the journal (events_event) by type",
-            ["type"],
+            "Events written to the journal (events_event) by type and source (body name)",
+            ["type", "source"],
             registry=self.registry,
         )
 
@@ -288,13 +288,18 @@ class MetricsCollector:
 
     # ========== Event Metrics ==========
 
-    def record_event_published(self, event_type: str, count: int = 1) -> None:
-        """Record events written to the journal (counted when written, before the commit)."""
+    def record_event_published(self, event_type: str, source: str, count: int = 1) -> None:
+        """
+        Record events written to the journal (counted when written, before the commit).
+
+        ``source`` is the body name, as in ``record_entity_synced``: a source that reports changes
+        on every full sync although nothing changed stands out per body.
+        """
         if not self.enabled:
             return
         self.simple.events_published[event_type] = self.simple.events_published.get(event_type, 0) + count
         if self._prometheus_enabled:
-            self.events_published_total.labels(type=event_type).inc(count)
+            self.events_published_total.labels(type=event_type, source=source).inc(count)
 
     # ========== Entity Metrics ==========
 

@@ -65,10 +65,16 @@ def _alle_ereignisse() -> list[tuple[str, Any]]:
         "Sitzung mit Erweiterung": ris_events.meeting_events(
             sitzung_id, sitzung | {"mandari:meetingFormat": "hybrid"}, Prior(sitzung)
         ),
+        "Sitzung mit neu zugeordnetem Gremium": ris_events.meeting_events(
+            sitzung_id, sitzung, Prior(sitzung), organizations_changed=True
+        ),
         "Vorlage neu": ris_events.paper_events(vorlage_id, vorlage, None),
         "Vorlage wieder geliefert": ris_events.paper_events(vorlage_id, vorlage, Prior(vorlage, deleted=True)),
         "Vorlage geändert": ris_events.paper_events(vorlage_id, vorlage | {"name": "Bänke"}, Prior(vorlage)),
         "Vorlage mit vielen Feldern": ris_events.paper_events(vorlage_id, viele_felder, Prior(vorlage)),
+        "Vorlage mit neu zugeordnetem Ort": ris_events.paper_events(
+            vorlage_id, vorlage, Prior(vorlage), locations_changed=True
+        ),
         "Punkt neu": ris_events.agenda_item_events(punkt_id, punkt, None, meeting_id=sitzung_id, public=True),
         "Punkt neu, nichtöffentlich": ris_events.agenda_item_events(
             punkt_id, punkt | {"public": False}, None, meeting_id=sitzung_id, public=False
@@ -111,6 +117,10 @@ def _alle_ereignisse() -> list[tuple[str, Any]]:
         ),
         "Datei ersetzt": ris_events.file_events(cid(FILE), datei | {"size": 2000}, Prior(datei)),
         "Datei umbenannt": ris_events.file_events(cid(FILE), datei | {"name": "Anlage A"}, Prior(datei)),
+        "Datei erstmals an einer Vorlage": ris_events.file_events(cid(FILE), datei, Prior(datei), paper_id=vorlage_id),
+        "Löschmarkierung eines nichtöffentlichen Punkts": ris_events.depublished_events(
+            "agendaitem", punkt_id, public=False, meeting_id=sitzung_id
+        ),
     }
     for entity_type in ris_events.AGGREGATE_TYPES:
         gruppen[f"Löschmarkierung {entity_type}"] = ris_events.depublished_events(
@@ -124,12 +134,18 @@ EREIGNISSE = _alle_ereignisse()
 
 def test_jeder_weg_bildet_ein_ereignis() -> None:
     namen = {name for name, _ in EREIGNISSE}
-    assert len(namen) == 20 + len(ris_events.AGGREGATE_TYPES)
+    assert len(namen) == 24 + len(ris_events.AGGREGATE_TYPES)
     # Wechsel in den nichtöffentlichen Teil: Rücknahme für öffentliche Empfänger und die Änderung selbst
     assert [e.type for name, e in EREIGNISSE if name == "Punkt wird nichtöffentlich"] == [
         "ris.object.depublished",
         "ris.agendaitem.changed",
     ]
+    # Löschmarkierung eines nichtöffentlichen Punkts: keine öffentliche Rücknahme, nur die Änderung
+    assert [
+        (e.type, e.visibility, e.operation, e.payload["change"])
+        for name, e in EREIGNISSE
+        if name == "Löschmarkierung eines nichtöffentlichen Punkts"
+    ] == [("ris.agendaitem.changed", "nichtoeffentlich", "delete", "deleted")]
 
 
 @pytest.mark.parametrize(("name", "ereignis"), EREIGNISSE, ids=[f"{name}: {e.type}" for name, e in EREIGNISSE])

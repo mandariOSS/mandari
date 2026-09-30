@@ -171,10 +171,25 @@ Entscheidung bleibt; präzisiert wurde:
   Das Ereignis wird in derselben Sitzung nach dem Upsert bzw. der Löschmarkierung und vor dem
   Commit geschrieben. Scheitert das Ereignis, bleibt auch die Änderung aus. Mehrere Ereignisse
   einer Transaktion gehen als eine Anweisung in die Datenbank.
+- **Zuordnungen gehören zur Änderung:** Die Gremien einer Sitzung (`oparl_meetings_organizations`)
+  und die Orte einer Vorlage (`oparl_papers_locations`) schreibt der Upsert in derselben
+  Transaktion, vor dem Ereignis. Eingebettete Orte einer Vorlage stehen vorher im Bestand. Wer auf
+  ein Ereignis hin beim Bestand nachliest, sieht das Objekt mit seinen Zuordnungen; bricht der
+  Ingestor ab, gibt es weder Zeile noch Zuordnung noch Ereignis. Ein Fehler beim Zuordnen nimmt den
+  Upsert zurück. Fehlt die Tabelle der Ortszuordnung (Migration nicht eingespielt), entfällt nur
+  die Zuordnung; das wird vorab geprüft. Eingebettete Tagesordnungspunkte, Dateien und Beratungen
+  folgen wie bisher in eigenen Transaktionen mit eigenen Ereignissen.
 - **Schalter:** `INGESTOR_EVENTS_ENABLED`, Standard aus. Eingeschaltet wird erst, wenn die
   Migrationen der Ereignistechnik eingespielt sind und der Sequenzierer läuft; sonst sammeln sich
   Ereignisse ohne Folgenummer, und `mandari_events_sequencer_lag_seconds` wächst. Ausgeschaltet
-  läuft jeder Upsert unverändert, ohne zusätzliche Abfrage.
+  läuft jeder Upsert ohne Abfrage des bisherigen Stands.
+- **Ausnahme je Quelle:** `sync_config["events_enabled"] = false` an einer Quelle nimmt nur sie
+  aus; ihre Upserts laufen dann wie ausgeschaltet. Gedacht für eine Quelle, die bei jedem
+  Vollabgleich Änderungen meldet, obwohl sich nichts geändert hat (sie liefert eingebettete und
+  einzeln abgerufene Objekte unterschiedlich). Erkennbar ist sie an
+  `mandari_ingestor_events_published_total{type, source}` (`source` ist der Name der Kommune). Die
+  Ausnahme wirkt ab dem nächsten Abgleichzyklus. Was sich währenddessen ändert, erfahren die
+  Empfänger nicht; nach dem Aufheben meldet der Ingestor nur, was sich von da an ändert.
 - **Nur echte Änderungen:** Vor dem Upsert liest der Ingestor den bisherigen Stand der Zeile mit
   Zeilensperre und vergleicht das Objekt der Quelle Feld für Feld. `created`, `modified` und der
   Content-Hash zählen auf keiner Ebene, ebenso wenig der Rückverweis eines eingebetteten Objekts
@@ -182,8 +197,22 @@ Entscheidung bleibt; präzisiert wurde:
   `paper`/`meeting`/`agendaItem` an der Datei): Ein Vollabgleich ohne Änderung schreibt kein
   Ereignis. Die Sperre gilt bis zum Commit; schreiben zwei Abgleiche dasselbe Objekt gleichzeitig,
   vergleicht der zweite mit dem Stand des ersten. Der Upsert selbst bleibt, wie er war.
+- **Sperren:** Gesperrt wird mit `FOR NO KEY UPDATE`, so stark wie der Upsert selbst. Einfügungen
+  mit Fremdschlüssel auf das Objekt (Tagesordnungspunkte, Dateien, Beratungen, Zeilen aus Django)
+  warten darauf nicht und halten den Abgleich nicht auf. Ein neues Objekt hat noch keine Zeile;
+  dafür nimmt der Abgleich eine Sperre auf die Kennung bis zum Ende der Transaktion
+  (`pg_advisory_xact_lock`, verträglich mit einem Pooler im Transaktionsmodus) und liest noch
+  einmal. Schreiben zwei Abgleiche dasselbe neue Objekt gleichzeitig, meldet es nur der erste als
+  neu.
+- **Zuordnungen zählen als Änderung:** Liefert die Quelle dasselbe Objekt, aber der Abgleich
+  ordnet erstmals zu, ist das eine Änderung: Eine Datei hängt erstmals an einer Vorlage oder
+  Sitzung (`ris.file.changed` mit `added` und der neuen Zugehörigkeit), ein Gremium der Sitzung
+  oder ein Ort der Vorlage steht erst jetzt im Bestand (`ris.meeting.changed` bzw.
+  `ris.paper.changed` mit `organization` bzw. `location`). Der Wechsel einer Datei von einer
+  Vorlage zu einer anderen zählt nicht: Hängt sie an mehreren, trägt die Zeile die zuletzt
+  abgeglichene.
 - **Ereignisse:** `ris.meeting.scheduled` und `ris.meeting.changed`, `ris.paper.released` und
-  `ris.paper.changed`, `ris.agendaitem.changed` (`added`, `changed`, `moved`),
+  `ris.paper.changed`, `ris.agendaitem.changed` (`added`, `changed`, `moved`, `deleted`),
   `ris.consultation.changed` (`added`, `scheduled`, `changed`), `ris.file.changed` (`added`,
   `replaced`, `renamed`) und für die Löschmarkierung jedes Typs `ris.object.depublished` mit
   Grund `quelle_geloescht` und Operation `delete`. Ein nach einer Löschmarkierung wieder
@@ -200,16 +229,22 @@ Entscheidung bleibt; präzisiert wurde:
   `oeffentlich`. Ausnahme sind Tagesordnungspunkte mit `public: false`: Ihre Ereignisse sind
   `nichtoeffentlich`. Wird ein bisher öffentlicher Punkt nichtöffentlich, meldet zusätzlich
   `ris.object.depublished` (Grund `nichtoeffentlich`) die Rücknahme an öffentliche Empfänger; wird
-  er öffentlich, erscheint er ihnen als `added`. Nutzlasten enthalten nie Inhalte, nur Kennungen,
-  Codes und Namen geänderter Felder.
+  er öffentlich, erscheint er ihnen als `added`. Löscht die Quelle einen nichtöffentlichen Punkt,
+  gibt es keine öffentliche Rücknahme (öffentliche Empfänger haben ihn nie gesehen, das Ereignis
+  nennte ihnen erstmals seine Kennung), sondern `ris.agendaitem.changed` mit `deleted`,
+  Sichtbarkeit `nichtoeffentlich` und Operation `delete`. Nutzlasten enthalten nie Inhalte, nur
+  Kennungen, Codes und Namen geänderter Felder.
 - **Vertragstreue ohne Register:** Der Ingestor hat keinen Zugriff auf `hub.contracts`. Ein
   Vertragstest der Drehscheibe (`hub/contracts/tests/test_ingestor_events.py`) lädt die Abbildung
   des Ingestors und prüft jedes Ereignis, das sie bilden kann, gegen die ausgelieferten Schemas; er
   läuft bei Änderungen am Ingestor wie an den Schemas.
-- **Last:** Eingeschaltet kostet jeder Upsert eine zusätzliche Abfrage (bisheriger Stand) und bei
-  echter Änderung ein INSERT. Gemessen mit 7 800 Upserts je Abgleich auf einem Arbeitsplatzrechner:
-  rund 0,5 bis 1 ms je Upsert zusätzlich (etwa 20 %), rund 540 Bytes je Ereignis im Journal
-  einschließlich Indizes. Der Erstabgleich einer Kommune schreibt je Objekt ein Ereignis.
+- **Last:** Eingeschaltet kostet jeder Upsert eine zusätzliche Abfrage (bisheriger Stand), bei
+  einer bekannten Sitzung eine weitere (bisherige Gremien) und bei echter Änderung ein INSERT. Ein
+  neues Objekt kostet zwei Abfragen mehr (Sperre auf die Kennung, erneutes Lesen). Gemessen mit
+  7 800 Upserts je Abgleich auf einem Arbeitsplatzrechner, ein Schreiber: ohne Änderung bis etwa
+  0,5 ms je Upsert zusätzlich, im Erstabgleich einer Kommune (jedes Objekt neu, je Objekt ein
+  Ereignis) rund 1,5 bis 2,5 ms. Das Journal wächst um rund 540 Bytes je Ereignis einschließlich
+  Indizes. Im Betrieb bestimmt der Abruf bei der Quelle die Dauer eines Abgleichs.
 
 ## Nachtrag zur Umsetzung des Weckrufs (#505)
 

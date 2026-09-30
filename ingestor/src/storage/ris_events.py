@@ -11,11 +11,14 @@ Objekt          Ereignis
 ==============  =====================================================================
 Meeting         ``ris.meeting.scheduled`` (neu erkannt), ``ris.meeting.changed``
 Paper           ``ris.paper.released`` (neu erkannt), ``ris.paper.changed``
-AgendaItem      ``ris.agendaitem.changed`` (``added``, ``changed``, ``moved``)
+AgendaItem      ``ris.agendaitem.changed`` (``added``, ``changed``, ``moved``, ``deleted``)
 Consultation    ``ris.consultation.changed`` (``added``, ``scheduled``, ``changed``)
 File            ``ris.file.changed`` (``added``, ``replaced``, ``renamed``)
 alle Typen      ``ris.object.depublished`` (Löschmarkierung der Quelle)
 ==============  =====================================================================
+
+Die Löschmarkierung eines nichtöffentlichen Tagesordnungspunkts ist keine Rücknahme (öffentliche
+Empfänger haben ihn nie gesehen): Sie erscheint als ``ris.agendaitem.changed`` mit ``deleted``.
 
 Für Gremien, Personen, Mitgliedschaften, Orte, Wahlperioden und Kommunen gibt es noch keinen
 Vertrag für Änderungen; sie melden nur ihre Löschmarkierung.
@@ -29,6 +32,10 @@ Regeln:
   Beratung, ``paper``/``meeting``/``agendaItem`` an der Datei) zählt ebenfalls nicht: Eingebettet
   fehlt er, in der eigenen Liste steht er, und jeder Vollabgleich schriebe sonst beide Fassungen
   abwechselnd.
+- **Zuordnungen zählen mit.** Ändert ein Abgleich nur die Zuordnung im Bestand und nicht das Objekt
+  der Quelle, ist das trotzdem eine Änderung: Eine Datei hängt erstmals an einer Vorlage oder
+  Sitzung (``added`` mit der neuen Zugehörigkeit), die Gremien einer Sitzung oder die Orte einer
+  Vorlage werden erstmals auflösbar (``changed`` mit ``organization`` bzw. ``location``).
 - **Nur Kennungen.** Die Nutzlast nennt Kennungen, Codes und die Namen geänderter Felder, nie
   Inhalte. Feldnamen folgen OParl (``name``, ``paperType``); Erweiterungen mit Namensraum erscheinen
   mit Unterstrich (``mandari:meetingFormat`` als ``mandari_meetingFormat``), weil der Vertrag nur
@@ -41,7 +48,8 @@ Regeln:
   Ausnahme sind Tagesordnungspunkte, die die Quelle als nichtöffentlich kennzeichnet
   (``public: false``): Ihre Ereignisse sind ``nichtoeffentlich``. Wird ein bisher öffentlicher Punkt
   nichtöffentlich, meldet zusätzlich ``ris.object.depublished`` (Grund ``nichtoeffentlich``) die
-  Rücknahme an öffentliche Empfänger; wird er öffentlich, erscheint er ihnen als ``added``.
+  Rücknahme an öffentliche Empfänger; wird er öffentlich, erscheint er ihnen als ``added``. Löscht
+  die Quelle einen nichtöffentlichen Punkt, bleibt auch diese Meldung ``nichtoeffentlich``.
 
 Dieses Modul braucht nur die Standardbibliothek und ``mandari_oparl``; die Vertragstests der
 Drehscheibe laden es ohne die übrige Umgebung des Ingestors
@@ -121,8 +129,10 @@ class Prior:
 
     raw_json: Mapping[str, Any]
     deleted: bool = False
-    #: Sitzung eines Tagesordnungspunkts vor dem Upsert
+    #: Sitzung eines Tagesordnungspunkts oder einer Datei vor dem Upsert
     meeting_id: UUID | None = None
+    #: Vorlage einer Datei vor dem Upsert
+    paper_id: UUID | None = None
     #: Kennzeichen ``public`` eines Tagesordnungspunkts vor dem Upsert
     public: bool = True
 
@@ -203,15 +213,26 @@ def _first_reference(value: Any) -> str | None:
 # --- Ereignisse je Objekt --------------------------------------------------------------------------
 
 
-def meeting_events(meeting_id: UUID, raw: Mapping[str, Any], prior: Prior | None) -> list[Draft]:
-    """``ris.meeting.scheduled`` für eine neu erkannte, ``ris.meeting.changed`` für eine geänderte Sitzung."""
+def meeting_events(
+    meeting_id: UUID, raw: Mapping[str, Any], prior: Prior | None, *, organizations_changed: bool = False
+) -> list[Draft]:
+    """
+    ``ris.meeting.scheduled`` für eine neu erkannte, ``ris.meeting.changed`` für eine geänderte Sitzung.
+
+    ``organizations_changed``: Der Upsert hat die Zuordnung der Gremien geändert, etwa weil ein Gremium
+    erst jetzt im Bestand steht. Das zählt als Änderung von ``organization``, auch wenn die Quelle
+    dasselbe Objekt liefert.
+    """
     payload: dict[str, Any] = {"meeting": str(meeting_id)}
     organizations = references(raw.get("organization"))
     if prior is None or prior.deleted:
         if 0 < len(organizations) <= MAX_ORGANIZATIONS:
             payload["organizations"] = organizations
         return [Draft("ris.meeting.scheduled", "Meeting", meeting_id, payload)]
-    names = field_names(differing_keys(prior.raw_json, raw))
+    keys = differing_keys(prior.raw_json, raw)
+    if organizations_changed:
+        keys.append("organization")
+    names = field_names(keys)
     if not names:
         return []
     payload["changed"] = names
@@ -221,12 +242,22 @@ def meeting_events(meeting_id: UUID, raw: Mapping[str, Any], prior: Prior | None
     return [Draft("ris.meeting.changed", "Meeting", meeting_id, payload)]
 
 
-def paper_events(paper_id: UUID, raw: Mapping[str, Any], prior: Prior | None) -> list[Draft]:
-    """``ris.paper.released`` für eine neu erkannte, ``ris.paper.changed`` für eine geänderte Vorlage."""
+def paper_events(
+    paper_id: UUID, raw: Mapping[str, Any], prior: Prior | None, *, locations_changed: bool = False
+) -> list[Draft]:
+    """
+    ``ris.paper.released`` für eine neu erkannte, ``ris.paper.changed`` für eine geänderte Vorlage.
+
+    ``locations_changed``: Der Upsert hat die Vorlage mit einem Ort verknüpft, der ihr bisher nicht
+    zugeordnet war. Das zählt als Änderung von ``location``.
+    """
     payload: dict[str, Any] = {"paper": str(paper_id)}
     if prior is None or prior.deleted:
         return [Draft("ris.paper.released", "Paper", paper_id, payload)]
-    names = field_names(differing_keys(prior.raw_json, raw))
+    keys = differing_keys(prior.raw_json, raw)
+    if locations_changed:
+        keys.append("location")
+    names = field_names(keys)
     if not names:
         return []
     payload["changed"] = names
@@ -306,16 +337,28 @@ def file_events(
     paper_id: UUID | None = None,
     meeting_id: UUID | None = None,
 ) -> list[Draft]:
-    """``ris.file.changed``: ``added``, ``replaced`` (neue Fassung) oder ``renamed``."""
+    """
+    ``ris.file.changed``: ``added``, ``replaced`` (neue Fassung) oder ``renamed``.
+
+    ``added`` gilt auch, wenn eine bekannte Datei erstmals an einer Vorlage oder Sitzung hängt (zuerst
+    einzeln geliefert, später eingebettet); die Nutzlast nennt die neue Zugehörigkeit. Ein Wechsel
+    von einer Vorlage zu einer anderen zählt nicht: Hängt eine Datei an mehreren Vorlagen, trägt die
+    Zeile die zuletzt abgeglichene, und jeder Vollabgleich meldete sonst den Wechsel.
+    """
     payload: dict[str, Any] = {"file": str(file_id)}
     if prior is None or prior.deleted:
         payload["change"] = "added"
     else:
         keys = differing_keys(prior.raw_json, raw, FILE_BACKREFS)
+        newly_attached = (paper_id is not None and prior.paper_id is None) or (
+            meeting_id is not None and prior.meeting_id is None
+        )
         if FILE_CONTENT_FIELDS.intersection(keys):
             payload["change"] = "replaced"
         elif FILE_NAME_FIELDS.intersection(keys):
             payload["change"] = "renamed"
+        elif newly_attached:
+            payload["change"] = "added"
         else:
             # Übrige Angaben (z. B. Lizenz) kennt der Vertrag nicht als Änderung der Datei.
             return []
@@ -335,8 +378,22 @@ def depublished_draft(entity_type: str, object_id: UUID, reason: str = REASON_DE
     return Draft("ris.object.depublished", aggregate_type, object_id, payload, OEFFENTLICH, DELETE)
 
 
-def depublished_events(entity_type: str, object_id: UUID) -> list[Draft]:
-    """Löschmarkierung der Quelle; unbekannte Typen ergeben kein Ereignis."""
+def depublished_events(
+    entity_type: str, object_id: UUID, *, public: bool = True, meeting_id: UUID | None = None
+) -> list[Draft]:
+    """
+    Löschmarkierung der Quelle; unbekannte Typen ergeben kein Ereignis.
+
+    ``public`` und ``meeting_id`` gelten für Tagesordnungspunkte. Einen nichtöffentlichen Punkt haben
+    öffentliche Empfänger nie gesehen; eine öffentliche Rücknahme nennte ihnen erstmals seine Kennung.
+    Seine Löschung geht deshalb als ``ris.agendaitem.changed`` (``deleted``) nur an Empfänger der
+    Sichtbarkeit ``nichtoeffentlich``.
+    """
     if entity_type not in AGGREGATE_TYPES:
         return []
+    if entity_type == "agendaitem" and not public:
+        if meeting_id is None:
+            return []
+        payload = {"agenda_item": str(object_id), "meeting": str(meeting_id), "change": "deleted"}
+        return [Draft("ris.agendaitem.changed", "AgendaItem", object_id, payload, NICHTOEFFENTLICH, DELETE)]
     return [depublished_draft(entity_type, object_id)]
