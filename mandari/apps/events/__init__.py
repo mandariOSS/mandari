@@ -9,3 +9,8 @@ fachfrei: Sie kennt weder Sitzungen noch Vorlagen und importiert keine Fachmodul
 Grundlagen: ``docs/adr/20260929-ereignistechnik-postgres.md`` und
 ``docs/adr/20260929-sequenzierer.md``.
 """
+
+# Nur Namen ohne Modellimport: Dieses Modul lädt Django beim Start der App-Registry.
+from .registry import Delivery, TargetUnavailableError, subscriber
+
+__all__ = ["Delivery", "TargetUnavailableError", "subscriber"]

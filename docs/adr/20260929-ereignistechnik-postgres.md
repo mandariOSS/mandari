@@ -118,6 +118,49 @@ Derselbe Strom soll später den öffentlichen Änderungsfeed speisen
 - Kennzahl: Hintergrundjobs im Webprozess gleich null (siehe
   [Aufträge und Zeitpläne](20260929-auftraege-und-zeitplaene.md)).
 
+## Nachtrag zur Umsetzung der Zustellung (#504)
+
+Umgesetzt in `apps/events/registry.py` (`@subscriber`) und `apps/events/dispatch.py`, Befehl
+`manage.py events_dispatch`. Die Entscheidung bleibt; präzisiert bzw. ergänzt wurde:
+
+- **Handler-Signatur** `handler(events, delivery)`: `delivery` nennt Abonnement, Schattenbetrieb
+  (`delivery.shadow`) und ob es eine Wiederholung ist. Ohne diese Angabe könnte ein Handler im
+  Schattenbetrieb nicht in sein Schattenziel schreiben.
+- **Datenbank-Sicht oder externer Effekt** wählt `@subscriber(..., transactional=True|False)`.
+  Bei `True` sperrt ein Lauf die Zeile des Abonnements und ruft den Handler in einem
+  Sicherungspunkt derselben Transaktion auf, in der Parken und Cursor festgeschrieben werden; zwei
+  gleichzeitige Zusteller warten aufeinander, der Effekt tritt genau einmal ein. Weil diese
+  Transaktion eine Transaktionskennung hält, hält sie den Sequenzierer für ihre Dauer auf; Handler
+  von Sichten müssen kurz sein. Bei `False` läuft der Handler außerhalb einer Transaktion, und der
+  Cursor wird nur festgeschrieben, wenn er unter Zeilensperre noch derselbe ist. Welche Objekte
+  geparkt sind, liest ein solcher Lauf ohne Sperre; wurde das erste Ereignis einer Kette
+  inzwischen zugestellt oder verworfen, rückt beim Festschreiben das nächste nach, sonst bliebe
+  die Kette ohne Kopf liegen.
+- **Ziel nicht erreichbar:** Wirft der Handler `TargetUnavailableError`, wird nichts geparkt und
+  kein Versuch gezählt; die Schleife pausiert mit wachsender Wartezeit (5 s bis 5 min) und stellt
+  denselben Batch erneut zu. Sonst würde ein Ausfall etwa des Suchindex jedes Objekt parken und
+  nach acht Versuchen für tot erklären.
+- **Wartezeiten** nach dem 1. bis 7. Fehlversuch: 10 s, 30 s, 2 min, 10 min, 1 h, 3 h, 6 h (zusammen
+  gut zehn Stunden); der achte Fehlversuch macht das Ereignis `tot`. Gescheiterte Batches werden
+  einzeln zugestellt, damit nur die fehlerhaften Ereignisse zurückbleiben.
+- **Kette je Objekt:** Die geparkten Ereignisse eines Objekts sind nach Folgenummer geordnet; nur
+  das erste ist `wiederholen` oder `tot`, alle weiteren `blockiert`. Ist das erste zugestellt oder
+  verworfen, rückt das nächste nach und wird sofort zugestellt. Eingriffe (`--retry-parked`,
+  `--discard-parked`, später die Admin-Seite) gehen über dieselben Funktionen, ein Folgeereignis
+  lässt sich nicht vorziehen.
+- **Beginn eines neuen Abonnements:** am Ende des Journals, weil Sichten beim Umschalten einmal aus
+  dem Bestand gebaut werden; `from_beginning=True` beginnt am Anfang. `shadow=True` legt es im
+  Zustand `schatten` an. Danach gilt die Zeile in `events_subscription`.
+- **Eine Leader-Lease je Abonnement** (`dispatch:<name>`) statt einer für die ganze Zustellung:
+  Mehrere Worker teilen sich die Abonnements, nach Warteschlange wählbar
+  (`events_dispatch --queues`). Für die Korrektheit sorgen Zeilensperre und Vergleich.
+- **Datenbankverbindungen:** Im Dauerbetrieb läuft je Abonnement ein Faden. Er gibt seine
+  Verbindung vor jedem Warten zurück (mit Verbindungspool an den Pool), die Zahl belegter
+  Verbindungen hängt also an der gleichzeitigen Arbeit, nicht an der Zahl der Abonnements.
+- **Alarm bei toten Ereignissen:** Fehlerprotokoll, `mandari_events_dead_total` und
+  `mandari_events_parked{state="tot"}`, dazu sofort die Alarmmail der Dienstgüteprüfung
+  (`check_service_levels`, höchstens eine je Abonnement und Tag).
+
 ## Bezug
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A3 Sequenzierer](20260929-sequenzierer.md),

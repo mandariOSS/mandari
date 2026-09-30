@@ -150,6 +150,8 @@ das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 | `mandari_events_sequencer_lag_seconds` | – | Rückstand des Sequenzierers: Alter (ab Erfassung) des ältesten Ereignisses, das eine Folgenummer bekommen könnte, aber noch keine hat; 0 = kein Rückstand. Wächst, wenn kein Sequenzierer läuft oder er hängt – das zeigt `…_blocked_seconds` nicht. Direkt nach dem Commit einer langen Transaktion kurz hoch, Alarme deshalb mit Mindestdauer. Solange kein Dienst den Sequenzierer startet (#508), wächst der Wert, sobald Ereignisse geschrieben werden |
 | `mandari_events_oldest_transaction_seconds` | – | Alter der ältesten offenen Transaktion mit Transaktionskennung im Cluster, soweit die Datenbankrolle sie sehen darf |
 | `mandari_events_sequenced_total` | – | vergebene Folgenummern; nur im Prozess des Sequenzierers (`manage.py events_sequencer`) |
+| `mandari_events_parked` | `subscription`, `state` (`wiederholen`, `blockiert`, `tot`) | geparkte Ereignisse der Zustellung je Abonnement, beim Abruf aus `events_parked` gezählt. `tot` = nach acht Versuchen aufgegeben; Alarm bei `tot` > 0. `blockiert` = Folgeereignisse eines Objekts, das auf ein geparktes Ereignis wartet |
+| `mandari_events_delivered_total`, `mandari_events_delivery_failures_total`, `mandari_events_dead_total` | `subscription` | zugestellte Ereignisse, gescheiterte Zustellversuche und tot gewordene Ereignisse; nur im Prozess der Zustellung (`manage.py events_dispatch`) |
 | `mandari_tasks_queued` | `queue` | Aufträge (`events_task`, Backend `JournalBackend`): fällige wartende Aufträge je Warteschlange, also der Rückstand des Runners `manage.py events_tasks` (`apps/events/task_metrics.py`, beim Abruf aus der Datenbank gemessen) |
 | `mandari_tasks_oldest_queued_seconds` | `queue` | wie lange der älteste fällige Auftrag schon wartet; wächst, wenn kein Runner läuft |
 | `mandari_tasks_running` | `queue` | laufende Aufträge |
@@ -190,6 +192,7 @@ Grafana-Vorlage (p95-Latenz je View, Fehlerquote, Pool-Belegung, Cache-Trefferqu
 | TLS-Zertifikate der eigenen Domains | Restlaufzeit ≥ 14 Tage (`SERVICE_LEVEL_TLS_MIN_DAYS`); auch „nicht prüfbar“ ist ein Alarm | TLS-Handschlag mit dem Host aus `SITE_URL` und `MONITOR_TLS_HOSTS` |
 | Fehlerquote 5xx | ≤ 1 % bei mindestens 100 Anfragen (`SERVICE_LEVEL_ERROR_RATE_MAX_PERCENT`, `…_MIN_REQUESTS`) | `/metrics/` der laufenden Instanz (`METRICS_URL`, Vorgabe `http://127.0.0.1:8000/metrics/`) |
 | Warteschlange Transkription | ältester wartender Auftrag ≤ 120 min (`SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES`) | `minutes.TranscriptionJob` |
+| Tote Ereignisse | keine; ein Alarm je Abonnement mit Fehlerklassen. Die Zustellung löst dieselbe Prüfung sofort aus, wenn ein Ereignis tot wird (gemeinsame 24-h-Sperre) | `events_parked` (`manage.py events_dispatch --list`, danach `--retry-parked` bzw. `--discard-parked`) |
 
 Zur Fehlerquote ehrlich: Die Zähler leben im Web-Prozess und beginnen bei jedem Neustart bei
 null. Der Lauf merkt sich deshalb den letzten Zählerstand im Cache und bewertet die Differenz
