@@ -161,6 +161,30 @@ Umgesetzt in `apps/events/registry.py` (`@subscriber`) und `apps/events/dispatch
   `mandari_events_parked{state="tot"}`, dazu sofort die Alarmmail der Dienstgüteprüfung
   (`check_service_levels`, höchstens eine je Abonnement und Tag).
 
+## Nachtrag zur Umsetzung des Weckrufs (#505)
+
+Umgesetzt in `apps/events/wakeup.py`, eingebunden in `events_sequencer` und `events_dispatch`
+(abschaltbar mit `--no-listen`):
+
+- **Ein Listener je Prozess** hört auf `mandari_events` (weckt den Sequenzierer) und
+  `mandari_events_seq` (weckt die Zustellung). Die Schleifen fragen weiterhin ab, der
+  Sequenzierer jede Sekunde, die Zustellung alle zwei Sekunden; so bleibt die Latenz auch ohne
+  Weckruf unter fünf Sekunden.
+- **Direktverbindung nur für `LISTEN`:** `EVENTS_DB_DIRECT_URL`, sonst die Verbindungsdaten von
+  `DATABASE_URL`. Die Spezifikation nannte die Direktverbindung auch für die Leader-Leases; das
+  ist nicht nötig und wäre falsch. Leases sind Zeilen in `events_lease`, `fence()` prüft und
+  sperrt sie in der Transaktion der Arbeit; liefe die Lease über eine andere Verbindung, wäre die
+  Abgrenzung nicht mehr Teil derselben Transaktion.
+- **Selbstprüfung:** Nach dem Verbinden und alle 30 s schickt der Listener über die
+  Standardverbindung ein `NOTIFY` an sich selbst. Bleibt es aus (PgBouncer im
+  Transaktionsmodus, abgerissene Verbindung), warnt er, baut neu auf bzw. versucht es nach
+  fünf Minuten erneut; `mandari_events_listener_up` zeigt den Zustand. Nach jedem Neuaufbau weckt
+  er alle Schleifen, weil Meldungen verloren sein können.
+- **Nachweis:** Die CI führt die Tests von `apps/events` zusätzlich hinter PgBouncer im
+  Transaktionsmodus aus (Job „Ereignistechnik hinter PgBouncer“), einschließlich der Messung
+  Commit → Sicht (p95 ≤ 5 s) und des Nachweises, dass `LISTEN` über den Pooler als wirkungslos
+  erkannt wird.
+
 ## Bezug
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A3 Sequenzierer](20260929-sequenzierer.md),

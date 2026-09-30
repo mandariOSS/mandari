@@ -5,11 +5,14 @@ Zustellung als eigener Prozess: stellt Ereignisse an die registrierten Abonnemen
 Abonnements registrieren die Apps per ``@subscriber`` in ihrem Modul ``subscribers``
 (``apps.events.registry``). Je Abonnement arbeitet genau ein Prozess (Lease ``dispatch:<name>``);
 weitere warten und übernehmen spätestens 30 s nach dem Ausfall des Inhabers. SIGTERM und SIGINT
-beenden den Dauerbetrieb nach dem laufenden Batch, dessen Cursor noch festgeschrieben wird. Später
-übernimmt ``events_worker`` diese Rolle; der Befehl bleibt für Betrieb und Fehlersuche.
+beenden den Dauerbetrieb nach dem laufenden Batch, dessen Cursor noch festgeschrieben wird. Neue
+Folgenummern wecken die Zustellung per ``LISTEN`` (``apps.events.wakeup``,
+``EVENTS_DB_DIRECT_URL``); dazu fragt sie alle 2 s ab. Später übernimmt ``events_worker`` diese
+Rolle; der Befehl bleibt für Betrieb und Fehlersuche.
 
     manage.py events_dispatch                          # Dauerbetrieb, alle Abonnements
     manage.py events_dispatch --once                   # einmal alles Fällige zustellen, dann Ende
+    manage.py events_dispatch --no-listen              # ohne Weckruf, nur Abfrage
     manage.py events_dispatch --subscription suchindex --queues index
     manage.py events_dispatch --list                   # Zustand, Cursor und geparkte Ereignisse
     manage.py events_dispatch --retry-parked 17        # geparktes Ereignis sofort erneut zustellen
@@ -29,6 +32,8 @@ from django.db.models import Count
 from apps.events.dispatch import POLL_INTERVAL, Dispatcher, discard_parked, head_seq, retry_parked
 from apps.events.models import ParkedEvent, ParkedState, Subscription
 from apps.events.registry import Subscriber, load_subscribers
+from apps.events.sequencer import SEQUENCED_CHANNEL
+from apps.events.wakeup import start_listener
 
 
 class Command(BaseCommand):
@@ -48,6 +53,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--interval", type=float, default=POLL_INTERVAL, help="Sekunden zwischen zwei Abfragen (Dauerbetrieb)."
         )
+        parser.add_argument("--no-listen", action="store_true", help="Ohne Weckruf per LISTEN, nur Abfrage.")
         parser.add_argument("--list", action="store_true", help="Abonnements mit Zustand und Rückstand anzeigen.")
         parser.add_argument(
             "--retry-parked", type=int, metavar="ID", help="Geparktes Ereignis sofort erneut zustellen."
@@ -87,6 +93,8 @@ class Command(BaseCommand):
 
         signal.signal(signal.SIGTERM, _anhalten)
         signal.signal(signal.SIGINT, _anhalten)
+        if not options["no_listen"]:
+            start_listener({SEQUENCED_CHANNEL: [dispatcher.wake]}, stop)
         namen = ", ".join(spec.name for spec in auswahl)
         self.stdout.write(f"Zustellung gestartet für {namen}.")
         dispatcher.run(stop, interval=max(0.05, float(options["interval"])))
