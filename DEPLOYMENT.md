@@ -312,24 +312,24 @@ Jedes dieser Commands hält während des Laufs eine Singleton-Sperre in Redis; e
 überlappender zweiter Aufruf wird mit Hinweis übersprungen (`--ohne-sperre` erzwingt):
 
 ```cron
-# Erinnerungen und Pflege (Beispiel; Containername anpassen)
-0 7 * * *   docker exec mandari-app python manage.py send_session_reminders   >> /var/log/mandari-reminders.log 2>&1
-30 7 * * *  docker exec mandari-app python manage.py send_question_reminders  >> /var/log/mandari-question-reminders.log 2>&1
-15 7 * * *  docker exec mandari-app python manage.py send_task_due_reminders  >> /var/log/mandari-task-reminders.log 2>&1
-0 3 * * 1   docker exec mandari-app python manage.py fetch_person_photos      >> /var/log/mandari-person-photos.log 2>&1
+# Erinnerungen und Pflege (Containername folgt COMPOSE_PROJECT_NAME, Vorgabe mandari)
+0 7 * * *   docker exec mandari python manage.py send_session_reminders   >> /var/log/mandari-reminders.log 2>&1
+30 7 * * *  docker exec mandari python manage.py send_question_reminders  >> /var/log/mandari-question-reminders.log 2>&1
+15 7 * * *  docker exec mandari python manage.py send_task_due_reminders  >> /var/log/mandari-task-reminders.log 2>&1
+0 3 * * 1   docker exec mandari python manage.py fetch_person_photos      >> /var/log/mandari-person-photos.log 2>&1
 # Amtliche Umringe von Bebauungsplänen abrufen und Vorlagen zuordnen (Issue #598, docs/INSIGHT_GEO.md)
-50 4 * * *  docker exec mandari-app python manage.py sync_plan_boundaries     >> /var/log/mandari-plan-boundaries.log 2>&1
+50 4 * * *  docker exec mandari python manage.py sync_plan_boundaries     >> /var/log/mandari-plan-boundaries.log 2>&1
 # Verwaiste Konten (unbestätigt, abgelehnt, ohne Zuordnung) nach Frist löschen, Issue #238
-45 3 * * *  docker exec mandari-app python manage.py cleanup_orphaned_accounts >> /var/log/mandari-orphaned-accounts.log 2>&1
+45 3 * * *  docker exec mandari python manage.py cleanup_orphaned_accounts >> /var/log/mandari-orphaned-accounts.log 2>&1
 # Betrieb (Issue #231, docs/MONITORING.md): Quellen stündlich, Service-Level täglich, Verfügbarkeitsbericht monatlich
-15 * * * *  docker exec mandari-app python manage.py check_source_health    >> /var/log/mandari-source-health.log 2>&1
-30 6 * * *  docker exec mandari-app python manage.py check_service_levels   >> /var/log/mandari-service-levels.log 2>&1
-15 0 1 * *  docker exec mandari-app python manage.py availability_report --out /var/lib/mandari/reports/verfuegbarkeit-$(date -d "yesterday" +\%Y-\%m).md >> /var/log/mandari-availability.log 2>&1
+15 * * * *  docker exec mandari python manage.py check_source_health    >> /var/log/mandari-source-health.log 2>&1
+30 6 * * *  docker exec mandari python manage.py check_service_levels   >> /var/log/mandari-service-levels.log 2>&1
+15 0 1 * *  docker exec mandari python manage.py availability_report --out /var/lib/mandari/reports/verfuegbarkeit-$(date -d "yesterday" +\%Y-\%m).md >> /var/log/mandari-availability.log 2>&1
 # Protokollierung (Issue #221, docs/PROTOKOLLIERUNG.md): Hash-Ketten täglich prüfen (Exit-Code 1 bei Befund),
 # Sicherheitsprotokoll nach Frist archivieren und löschen, DSGVO-Löschlauf mit Archivpaket monatlich
-20 4 * * *  docker exec mandari-app python manage.py verify_audit_chain       >> /var/log/mandari-audit-chain.log 2>&1
-40 4 * * *  docker exec mandari-app python manage.py purge_security_audit_log >> /var/log/mandari-security-audit.log 2>&1
-0 5 1 * *   docker exec mandari-app python manage.py session_privacy_purge    >> /var/log/mandari-privacy-purge.log 2>&1
+20 4 * * *  docker exec mandari python manage.py verify_audit_chain       >> /var/log/mandari-audit-chain.log 2>&1
+40 4 * * *  docker exec mandari python manage.py purge_security_audit_log >> /var/log/mandari-security-audit.log 2>&1
+0 5 1 * *   docker exec mandari python manage.py session_privacy_purge    >> /var/log/mandari-privacy-purge.log 2>&1
 ```
 
 Nach dem Update mit der Hash-Kette (Issue #221) einmal den Altbestand verketten; bis dahin
@@ -337,7 +337,7 @@ schreiben betroffene Mandanten unverkettet weiter. Der Befehl ist wiederholbar u
 kurzen Transaktionen:
 
 ```bash
-docker exec mandari-app python manage.py audit_chain_backfill
+docker exec mandari python manage.py audit_chain_backfill
 ```
 
 Nach dem Update mit der öffentlichen Niederschrift (Issue #318) einmal die öffentliche Fassung für
@@ -345,7 +345,7 @@ bereits veröffentlichte Niederschriften erzeugen (OParl `resultsProtocol`, Bür
 ist wiederholbar, erzeugt nur Fehlendes und kennt `--dry-run` und `--tenant <slug>`:
 
 ```bash
-docker exec mandari-app python manage.py session_publish_protocols
+docker exec mandari python manage.py session_publish_protocols
 ```
 
 Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vorgabe
@@ -359,7 +359,7 @@ Dazu minütlich die Hintergrund-Erzeugung der Sitzungsmappen (Gesamt-PDF und ZIP
 Die Oberfläche legt nur Anforderungen an; ohne diesen Job bleibt eine Mappe bei „wird erstellt“:
 
 ```cron
-* * * * *   docker exec mandari-app python manage.py build_meeting_packages --limit 5 --max-seconds 240 >> /var/log/mandari-meeting-packages.log 2>&1
+* * * * *   docker exec mandari python manage.py build_meeting_packages --limit 5 --max-seconds 240 >> /var/log/mandari-meeting-packages.log 2>&1
 ```
 
 **Abos zu Themen und Orten im Bürgerportal** (`/insight/benachrichtigungen/`) sind standardmäßig
@@ -405,7 +405,7 @@ Obergrenze der Datenbank.
 | Sicherung (`pg_dump`) | 2 | nur während des Laufs |
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
 | **Summe** | **95** | |
-| **`max_connections`** | **200** | in `docker-compose.web01.yml` |
+| **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb (Vorgabe der `docker-compose.yml`: 100) |
 
 Reserve: rund 100 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
 **und** prüft die Summe.
@@ -475,7 +475,7 @@ lohnt der Blick, *warum* der Pool festgefahren war.
 ### Prüfen, was tatsächlich offen ist
 
 ```bash
-docker exec staging-postgres psql -U mandari -d postgres -c "
+docker exec mandari-postgres psql -U mandari -d postgres -c "
 select datname, count(*) as verbindungen, count(*) filter (where state='idle') as idle
 from pg_stat_activity where backend_type='client backend' group by 1 order by 2 desc;"
 ```
@@ -553,8 +553,8 @@ docker compose logs -f mandari   # Live-Logs der Anwendung
 
 ### Metriken (optional)
 
-Für erweiteres Monitoring empfohlen:
-- **Hetzner Cloud Console** - CPU, RAM, Netzwerk
+Für erweitertes Monitoring empfohlen:
+- **Überwachung des Hosting-Anbieters** - CPU, RAM, Netzwerk
 - **Sentry** - Error Tracking
 - **Prometheus + Grafana** - Metriken
 

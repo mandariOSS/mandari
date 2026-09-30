@@ -6,9 +6,11 @@ labels: enhancement
 assignees: ''
 ---
 
+<!-- Größere Ideen gern zuerst in den Diskussionen ansprechen: https://github.com/mandariOSS/mandari/discussions -->
+
 ## Problem / Motivation
 
-Beschreibe das Problem oder die Motivation für dieses Feature.
+Beschreibe das Problem oder die Motivation für diese Funktion.
 
 *Beispiel: Es ist umständlich, wenn [...]*
 
@@ -22,4 +24,4 @@ Hast du alternative Lösungen in Betracht gezogen?
 
 ## Zusätzlicher Kontext
 
-Weitere Informationen, Mockups, Screenshots, etc.
+Weitere Informationen, Mockups, Screenshots usw.

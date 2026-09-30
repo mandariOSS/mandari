@@ -150,6 +150,7 @@ Jede Quelldatei trägt einen `SPDX-License-Identifier`-Header; alles ohne Header
 Konfiguration, lokale Kopien von Fremdbibliotheken) ist in `REUSE.toml` zugeordnet. Die Lizenztexte
 liegen unter `LICENSES/`. Die Zuordnung: Quellcode AGPL-3.0-or-later, Dokumentation CC-BY-4.0,
 Konfiguration und Lockfiles CC0-1.0, Markenzeichen `LicenseRef-Mandari-Brand`, Fremdbibliotheken mit
-ihrer jeweiligen Lizenz. Prüfung lokal mit `pip install reuse && reuse lint`; im CI läuft die Prüfung
-im Job „Abhängigkeiten prüfen“ und wird ab 2027 blockierend. `reuse spdx` erzeugt daraus eine
+ihrer jeweiligen Lizenz. Prüfung lokal mit `pip install reuse && reuse lint`; in der CI läuft sie im
+Workflow „REUSE“ (`.github/workflows/reuse.yml`) bei jedem Pull Request und jedem Push auf `dev` und
+`main` und wird ab 2027 Pflicht-Check. `reuse spdx` erzeugt daraus eine
 SPDX-Stückliste der Lizenzen, ergänzend zur CycloneDX-SBOM.

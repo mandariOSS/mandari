@@ -14,9 +14,9 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg" alt="Lizenz" /></a>
   <a href="https://github.com/mandariOSS/mandari/releases"><img src="https://img.shields.io/github/v/release/mandariOSS/mandari?include_prereleases" alt="Release" /></a>
-  <a href="https://github.com/mandariOSS/mandari/actions/workflows/pr-check.yml"><img src="https://img.shields.io/github/actions/workflow/status/mandariOSS/mandari/pr-check.yml?label=Tests" alt="Tests" /></a>
-  <a href="https://api.reuse.software/info/github.com/mandariOSS/mandari"><img src="https://img.shields.io/badge/REUSE-konform-green.svg" alt="REUSE" /></a>
-  <a href="https://status.mandari.de"><img src="https://img.shields.io/badge/Status-live-brightgreen.svg" alt="Status" /></a>
+  <a href="https://github.com/mandariOSS/mandari/actions/workflows/pr-check.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/mandariOSS/mandari/pr-check.yml?branch=main&amp;label=Tests" alt="Tests" /></a>
+  <a href="https://github.com/mandariOSS/mandari/actions/workflows/reuse.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/mandariOSS/mandari/reuse.yml?branch=main&amp;label=REUSE" alt="REUSE" /></a>
+  <a href="https://status.mandari.de"><img src="https://status.mandari.de/api/v1/endpoints/f%C3%BCr-b%C3%BCrger%3Ainnen_b%C3%BCrgerportal/health/badge.svg" alt="Status des Bürgerportals" /></a>
 </p>
 
 <p align="center">
@@ -165,7 +165,7 @@ selbst betriebenen Installationen entsteht also keine zusätzliche Angriffsfläc
 
 | Bereich | Technologie |
 |---------|-------------|
-| Backend | Django 6.0, Python 3.14 (Image; 3.12+ unterstützt) |
+| Backend | Django 6.1, Python 3.14 (Image; 3.12+ unterstützt) |
 | Frontend | Django-Templates, HTMX, Alpine.js, Tailwind CSS, Vite |
 | Ingestor | Python 3.14 (httpx, SQLAlchemy, APScheduler) |
 | Datenbank | PostgreSQL 16 |
@@ -175,11 +175,12 @@ selbst betriebenen Installationen entsteht also keine zusätzliche Angriffsfläc
 
 ### Qualitätssicherung
 
-Jede Änderung durchläuft dieselben Prüfungen: rund 1.500 Tests mit Coverage-Schwelle, mypy
+Jede Änderung durchläuft dieselben Prüfungen: über 5.000 Tests mit Coverage-Schwelle, mypy
 im strikten Modus mit schrumpfender Ausnahmeliste, ruff, djlint, TypeScript, Biome,
 End-to-End-Tests im Browser mit axe-core für Barrierefreiheit, ein Schema-Abgleich zwischen
-Anwendung und Ingestor, `pip-audit` gegen das Lockfile und eine CycloneDX-Stückliste je
-Release. Einzelheiten: [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) und
+Anwendung und Ingestor, `pip-audit` gegen das Lockfile, die REUSE-Lizenzprüfung, eine
+Link-Prüfung der Dokumentation und eine CycloneDX-Stückliste je Release. Einzelheiten:
+[`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) und
 <https://docs.mandari.de/entwicklung/qualitaetsgates/>.
 
 ## Dokumentation
@@ -213,8 +214,10 @@ Der Ablauf steht in [SECURITY.md](SECURITY.md).
 
 [AGPL-3.0-or-later](LICENSE). mandari darf frei genutzt, verändert und weitergegeben werden;
 Änderungen an einer öffentlich betriebenen Instanz müssen ebenfalls unter AGPL-3.0-or-later
-veröffentlicht werden. Das Repository ist [REUSE](https://reuse.software)-konform: Jede Datei
-trägt eine maschinenlesbare Lizenz- und Urheberangabe, Lizenztexte liegen unter `LICENSES/`.
+veröffentlicht werden. Das Repository folgt der [REUSE](https://reuse.software)-Spezifikation:
+Jede Datei hat eine maschinenlesbare Lizenz- und Urheberangabe – im Dateikopf oder über
+[`REUSE.toml`](REUSE.toml) –, die Lizenztexte liegen unter `LICENSES/`. `reuse lint` prüft das bei
+jeder Änderung (Workflow „REUSE“).
 
 Die Wortmarke „mandari“ und das Logo sind davon ausgenommen (`LicenseRef-Mandari-Brand`).
 Wer eine eigene Installation unter eigenem Namen betreibt, ersetzt die Dateien unter

@@ -1,15 +1,15 @@
 # Danksagungen & Abhängigkeiten
 
-Mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der Open-Source-Community wäre dieses Projekt nicht möglich. Hier listen wir alle Projekte auf, die Mandari möglich machen.
+mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der Open-Source-Community wäre dieses Projekt nicht möglich. Hier listen wir alle Projekte auf, die mandari möglich machen.
 
 ## Kern-Technologien
 
 | Technologie | Beschreibung | Lizenz | Link |
 |-------------|--------------|--------|------|
 | **Python 3.12+** | Programmiersprache | PSF License | [python.org](https://python.org) |
-| **Django 6.0** | Web-Framework | BSD-3-Clause | [djangoproject.com](https://djangoproject.com) |
+| **Django 6.1** | Web-Framework | BSD-3-Clause | [djangoproject.com](https://djangoproject.com) |
 | **PostgreSQL 16** | Relationale Datenbank | PostgreSQL License | [postgresql.org](https://postgresql.org) |
-| **Redis 7** | In-Memory Cache | BSD-3-Clause | [redis.io](https://redis.io) |
+| **Redis 7** | In-Memory Cache | RSALv2 / SSPLv1 (ab Redis 7.4; bis 7.2 BSD-3-Clause) | [redis.io](https://redis.io) |
 | **Elasticsearch 8** | Volltextsuche | SSPL / Elastic License 2.0 | [elastic.co](https://www.elastic.co) |
 | **Docker** | Container-Plattform | Apache 2.0 | [docker.com](https://docker.com) |
 
@@ -56,20 +56,20 @@ Vollständige Liste: [mandari/requirements.txt](mandari/requirements.txt)
 
 ### OParl 1.1
 
-Mandari implementiert den deutschen **OParl-Standard** für offene Ratsinformationssysteme. OParl definiert eine einheitliche API für den anonymen, lesenden Zugriff auf öffentliche parlamentarische Daten.
+mandari implementiert den deutschen **OParl-Standard** für offene Ratsinformationssysteme. OParl definiert eine einheitliche API für den anonymen, lesenden Zugriff auf öffentliche parlamentarische Daten.
 
 - Website: [oparl.org](https://oparl.org)
 - Spezifikation: [Online-Ansicht](https://oparl.org/spezifikation/online-ansicht/)
 
 ## Inspirationen & verwandte Projekte
 
-Mandari ist nicht allein. Es gibt eine lebendige Community von Projekten, die sich für Transparenz in der Kommunalpolitik einsetzen:
+mandari ist nicht allein. Es gibt eine lebendige Community von Projekten, die sich für Transparenz in der Kommunalpolitik einsetzen:
 
 ### Politik bei uns *(eingestellt)*
 
 Pionier der deutschen RIS-Transparenz. Ursprünglich gestartet von **Marian Steinbach** als "Offenes Köln", später von der Open Knowledge Foundation Deutschland (OKFDE) weiterentwickelt. **Unsere wichtigste Inspiration.**
 
-- GitHub: [okfde/politik-bei-uns-web](https://github.com/okfde/politik-bei-uns-web)
+- GitHub: [politik-bei-uns/politik-bei-uns-web-old](https://github.com/politik-bei-uns/politik-bei-uns-web-old)
 
 ### Meine Stadt Transparent *(eingestellt)*
 
@@ -93,12 +93,12 @@ Kommunaler Recherche-Assistent für die Stadt Bonn. Vollständige KI-Pipeline vo
 
 KI-gestütztes Web-Interface für das Kölner Ratsinformationssystem. Natural Language Search, Dokumenten-Zusammenfassung mit Google Gemini AI und MCP-Server für externe AI-Tools.
 
-- GitHub: [ErtanOz/RATISA_Koeln-Ratinformation-System-Assistent](https://github.com/ErtanOz/RATISA_Koeln-Ratinformation-System-Assistent)
+- GitHub: [ErtanOz/RATISA_Koeln-Ratinformation-System-Assistent-docker](https://github.com/ErtanOz/RATISA_Koeln-Ratinformation-System-Assistent-docker)
 
 ## Lizenzhinweis
 
-Mandari selbst steht unter der **AGPL-3.0-or-later**.
+mandari selbst steht unter der **AGPL-3.0-or-later**.
 
-Die hier aufgeführten Abhängigkeiten haben ihre eigenen Lizenzen (MIT, BSD, Apache, etc.), die alle mit der AGPL kompatibel sind und kommerzielle Nutzung erlauben.
+Die eingebundenen Bibliotheken haben ihre eigenen Lizenzen (MIT, BSD, Apache usw.), die mit der AGPL vereinbar sind und kommerzielle Nutzung erlauben. Elasticsearch und Redis sind eigenständige Dienste in getrennten Containern und stehen unter den oben genannten Lizenzen ihrer Hersteller.
 
-Siehe [LICENSE](LICENSE) für die vollständige Mandari-Lizenz.
+Siehe [LICENSE](LICENSE) für die vollständige mandari-Lizenz.

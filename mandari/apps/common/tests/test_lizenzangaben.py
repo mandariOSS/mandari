@@ -23,12 +23,17 @@ UNGENAU = re.compile(r"AGPL[- ]?(?:v)?3(?:\.0)?(?!\.0)(?!-or-later|-only)", re.I
 WEITERE_OBERFLAECHEN = ("install.sh", "install-k8s.sh")
 
 
+#: SPDX-Kopfzeile, die bei der Suche nach ungenauen Angaben nicht zählt. Zusammengesetzt, damit
+#: ``reuse lint`` die Zeichenkette nicht als Lizenzangabe dieser Datei liest (Issue #690).
+SPDX_KOPF = "SPDX-License-" + "Identifier: AGPL-3.0-or-later"
+
+
 def _fundstellen(pfad: Path) -> list[str]:
     text = pfad.read_text(encoding="utf-8")
     return [
         f"{pfad.relative_to(REPO).as_posix()}:{nr}: {zeile.strip()}"
         for nr, zeile in enumerate(text.splitlines(), start=1)
-        if UNGENAU.search(zeile.replace("SPDX-License-Identifier: AGPL-3.0-or-later", ""))
+        if UNGENAU.search(zeile.replace(SPDX_KOPF, ""))
     ]
 
 
