@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 from django.template import engines
@@ -140,7 +141,8 @@ def test_alte_wissensdatenbank_leitet_in_die_dokumentation(org: Any, make_member
 def test_alte_wissensdatenbank_nur_fuer_angemeldete_mitglieder(org: Any) -> None:
     antwort = Client().get(f"/work/{org.slug}/support/kb/")
     assert antwort.status_code == 302
-    assert not antwort["Location"].startswith("https://docs.mandari.de")
+    ziel = urlsplit(antwort["Location"])
+    assert (ziel.netloc, ziel.path) == ("", reverse("accounts:login"))
 
 
 def test_suche_und_rueckmeldung_der_wissensdatenbank_entfallen() -> None:
