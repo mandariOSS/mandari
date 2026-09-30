@@ -239,8 +239,21 @@ Entwicklung findet auf `dev` statt; `main` ist der Produktionsstand.
 
 ## Lizenz und Urheberrecht
 
-Beiträge stehen unter [AGPL-3.0-or-later](LICENSE). Neue Dateien brauchen einen
-SPDX-Kopf, damit das Repository [REUSE](https://reuse.software)-konform bleibt:
+mandari steht unter [AGPL-3.0-or-later](LICENSE).
+
+Beiträge Dritter nehmen wir erst an, nachdem eine Beitragsvereinbarung (Contributor License
+Agreement) geschlossen wurde. Die Vereinbarung wird derzeit finalisiert. Bis sie vorliegt: bitte
+vor einem Pull Request ein Issue öffnen, damit wir das Vorgehen abstimmen können. Beiträge bleiben
+in jedem Fall unter der AGPL frei verfügbar.
+
+Für Organisationen, deren Beschäftigte beitragen, gibt es eine eigene Fassung.
+
+Im Pull Request prüft der Check „Beitragsvereinbarung“, ob für alle Beteiligten eine Zustimmung
+vorliegt; Projektkonten und Bots wie Dependabot sind ausgenommen. Stand, Ablauf und die dabei
+verarbeiteten Daten stehen in [docs/cla/README.md](docs/cla/README.md).
+
+Neue Dateien brauchen einen SPDX-Kopf, damit das Repository
+[REUSE](https://reuse.software)-konform bleibt:
 
 ```python
 # SPDX-License-Identifier: AGPL-3.0-or-later
