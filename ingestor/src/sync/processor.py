@@ -23,7 +23,7 @@ from mandari_oparl import (
     ProcessedOrganization,
     ProcessedPaper,
     ProcessedPerson,
-    generate_uuid,
+    canonical_id,
     parse_date,
     parse_datetime,
 )
@@ -46,15 +46,15 @@ class OParlProcessor:
 
     def generate_uuid(self, external_id: str) -> UUID:
         """
-        Generate a deterministic UUID from external ID.
+        Kanonische Kennung aus der externen ID (``mandari_oparl.ids.canonical_id``).
 
-        Uses UUID5 with URL namespace for consistency.
-        Caches results for performance.
+        Dieselbe Funktion nutzt Django für neue RIS-Objekte (ADR 20260929-kanonisches-modell).
+        Ergebnisse werden zwischengespeichert.
         """
         if external_id in self._id_cache:
             return self._id_cache[external_id]
 
-        uuid = generate_uuid(external_id)
+        uuid = canonical_id(external_id)
         self._id_cache[external_id] = uuid
         return uuid
 

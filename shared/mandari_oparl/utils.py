@@ -5,16 +5,18 @@ Deterministic UUID generation, datetime/date parsing for OParl data.
 """
 
 from datetime import date, datetime
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import UUID
+
+from .ids import canonical_id
 
 
 def generate_uuid(external_id: str) -> UUID:
     """
-    Generate a deterministic UUID from an external ID.
+    Kanonische Kennung aus der externen ID (Alias von :func:`mandari_oparl.ids.canonical_id`).
 
-    Uses UUID5 with URL namespace for consistency.
+    Bleibt für bestehende Aufrufer erhalten; neuer Code verwendet ``canonical_id``.
     """
-    return uuid5(NAMESPACE_URL, external_id)
+    return canonical_id(external_id)
 
 
 def parse_datetime(value: str | None) -> datetime | None:
