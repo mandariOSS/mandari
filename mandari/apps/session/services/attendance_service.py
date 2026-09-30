@@ -118,6 +118,11 @@ def quorum_status(meeting: SessionMeeting, item: Any = None, *, attendances: lis
     andauernden Störung (nicht erreichbar). Für einen TOP (``item``) zählen sie nicht, wenn das
     Landesprofil sie von dieser Abstimmung ausschließt (Wahl, geheime Abstimmung).
 
+    In einer Präsenzsitzung als zugeschaltet erfasste Personen zählen bewusst weiter mit: Meist ist das
+    eine überholte Teilnahmeart nach einer Änderung des Sitzungsformats. Die Beschlussfähigkeit soll nicht
+    stillschweigend kippen; die Sitzungsseite warnt stattdessen und zeigt die Spalte „Teilnahme“ zum
+    Korrigieren (``attendance_panel``).
+
     Returns:
         dict: voting_total, voting_present, required, met, has_list, rule sowie remote_present
         (davon zugeschaltet), disrupted und remote_excluded (Namen, nicht mitgezählt) und remote_rule
@@ -181,6 +186,9 @@ def attendance_panel(meeting: SessionMeeting) -> dict[str, Any]:
         "attendances": attendances,
         "quorum": quorum_status(meeting, attendances=attendances),
         "remote_allowed": participation_service.remote_allowed(meeting),
+        # Spalte „Teilnahme“: in hybriden und digitalen Sitzungen, sonst sobald jemand zugeschaltet erfasst ist –
+        # dann lässt sich die Teilnahmeart in der Zeile korrigieren (Hinweis ``remote_in_presence``)
+        "mode_column": show_mode,
         "remote_attendances": remote,
         "remote_in_presence": bool(remote) and not participation_service.remote_allowed(meeting),
         "chair_hint": participation_service.chair_hint(meeting, attendances),

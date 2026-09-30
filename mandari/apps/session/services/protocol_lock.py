@@ -50,6 +50,8 @@ AGENDA_ITEM_LOCKED_FIELDS = (
     "votes_no",
     "votes_abstain",
     "voting_method",
+    # Wahl (Issue #139): bestimmt Stimmrecht Zugeschalteter und Beschlussfähigkeit für den TOP
+    "is_election",
     "resolution_text",
     "protocol_note",
     "is_withdrawn",

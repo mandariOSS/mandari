@@ -42,7 +42,7 @@ attendance_service.attendance_panel.
         {% endif %}
         {% if remote_in_presence %}
         <c-ui.alert variant="warning" icon="video-off">
-            In dieser Präsenzsitzung sind Personen als zugeschaltet erfasst. Bitte Sitzungsformat oder Teilnahmeart prüfen.
+            In dieser Präsenzsitzung sind Personen als zugeschaltet erfasst; sie zählen zur Beschlussfähigkeit. Bitte Sitzungsformat oder Teilnahmeart prüfen.
         </c-ui.alert>
         {% endif %}
     </div>
@@ -57,9 +57,9 @@ attendance_service.attendance_panel.
                 <tr>
                     <th class="px-4 py-2 font-medium">Person</th>
                     <th class="px-4 py-2 font-medium">Status</th>
-                    {% if remote_allowed %}<th class="px-4 py-2 font-medium">Teilnahme</th>{% endif %}
-                    <th class="px-4 py-2 font-medium">{% if remote_allowed %}Ankunft / Zuschaltung{% else %}Ankunft{% endif %}</th>
-                    <th class="px-4 py-2 font-medium">{% if remote_allowed %}Abgang / Trennung{% else %}Abgang{% endif %}</th>
+                    {% if mode_column %}<th class="px-4 py-2 font-medium">Teilnahme</th>{% endif %}
+                    <th class="px-4 py-2 font-medium">{% if mode_column %}Ankunft / Zuschaltung{% else %}Ankunft{% endif %}</th>
+                    <th class="px-4 py-2 font-medium">{% if mode_column %}Abgang / Trennung{% else %}Abgang{% endif %}</th>
                     <th class="px-4 py-2 font-medium">Notiz</th>
                     <th class="px-4 py-2"></th>
                 </tr>

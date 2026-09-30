@@ -285,15 +285,17 @@ class AttendanceUpdateView(SessionViewMixin, UpdateView):
 
     def _row_context(self, attendance, form=None):
         """Zeile mit Teilnahmeart-Auswahl und Vermerk (Zuschaltung, Störungen) wie in der Sitzungsansicht."""
-        meeting = attendance.meeting
-        attendance.participation_note = participation_service.participation_note(
-            attendance, show_mode=participation_service.remote_allowed(meeting)
+        # Spalte „Teilnahme“ wie in der Tabelle, aus der die Zeile kommt (dort kann sie auch in einer
+        # Präsenzsitzung stehen, solange jemand zugeschaltet erfasst ist) – sonst verrutscht die Zeile
+        mode_column = (
+            participation_service.remote_allowed(attendance.meeting) or self.request.POST.get("mode_column") == "1"
         )
+        attendance.participation_note = participation_service.participation_note(attendance, show_mode=mode_column)
         return {
             "attendance": attendance,
             "form": form,
             "tenant_slug": self.session_tenant.slug,
-            "remote_allowed": participation_service.remote_allowed(meeting) or attendance.is_remote,
+            "mode_column": mode_column,
         }
 
     def form_invalid(self, form):

@@ -34,9 +34,10 @@
         </select>
     </td>
 
-    {% if remote_allowed %}
-    <!-- Teilnahmeart (Issue #139): nur in hybriden und digitalen Sitzungen -->
+    {% if mode_column %}
+    <!-- Teilnahmeart (Issue #139): in hybriden und digitalen Sitzungen bzw. sobald jemand zugeschaltet erfasst ist -->
     <td class="px-4 py-3">
+        <input type="hidden" name="mode_column" value="1">
         <select name="participation_mode" aria-label="Teilnahmeart"
                 class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
             <option value="in_person" {% if not attendance.is_remote %}selected{% endif %}>Vor Ort</option>

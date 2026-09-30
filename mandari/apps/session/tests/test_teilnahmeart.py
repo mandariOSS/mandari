@@ -11,15 +11,17 @@ Störungen mit Dauer und Ursache.
 
 from __future__ import annotations
 
-from datetime import time
+from datetime import datetime, time, timedelta
 from typing import Any
 
 import pytest
+from django.utils import timezone
 
 from apps.session.models import (
     SessionAgendaItem,
     SessionAttendance,
     SessionAttendanceDisruption,
+    SessionAuditLog,
     SessionMeeting,
     SessionStateProfile,
 )
@@ -28,6 +30,7 @@ from apps.session.services import (
     meeting_format_service,
     participation_service,
     privacy_service,
+    protocol_lock,
     protocol_publication,
     protocol_service,
     voting_service,
@@ -189,6 +192,67 @@ def test_stoerung_zu_einem_zeitpunkt() -> None:
     assert not participation_service.is_disrupted(zeile)  # beendet: live wieder dabei
 
 
+def test_stoerung_ende_vor_beginn_und_unlesbare_uhrzeit_abgelehnt() -> None:
+    w = _hybrid(welt())
+    zeile = _zuschalten(w)
+    verwaltung = _verwaltung(w)
+    url = f"{base(w)}/meetings/{w.sitzung.pk}/disruptions/add/"
+
+    # Tippfehler 18:40–18:04 wäre sonst eine Störung von rund 23 Stunden
+    daten = {"attendance": str(zeile.pk), "started_at": "18:40", "ended_at": "18:04"}
+    antwort = verwaltung.post(url, daten, follow=True)
+    assert "Das Ende der Störung liegt vor ihrem Beginn." in antwort.content.decode()
+    antwort = verwaltung.post(url, {"attendance": str(zeile.pk), "started_at": "18:4x"}, follow=True)
+    assert "Die Uhrzeit ist nicht lesbar" in antwort.content.decode()
+    assert not SessionAttendanceDisruption.objects.exists()
+
+    # Sitzung bis in den Folgetag: über Mitternacht zulässig
+    beginn = timezone.make_aware(datetime(2026, 10, 1, 22, 0))
+    SessionMeeting.objects.filter(pk=w.sitzung.pk).update(start=beginn, end=beginn + timedelta(hours=3))
+    verwaltung.post(url, {"attendance": str(zeile.pk), "started_at": "23:50", "ended_at": "00:10"})
+    assert SessionAttendanceDisruption.objects.get(attendance=zeile).duration_minutes == 20
+
+
+def test_stoerung_korrigieren_behaelt_bei_fehler_den_stand() -> None:
+    w = _hybrid(welt())
+    zeile = _zuschalten(w)
+    stoerung = SessionAttendanceDisruption.objects.create(
+        attendance=zeile, started_at=time(18, 40), ended_at=time(18, 44)
+    )
+    verwaltung = _verwaltung(w)
+    url = f"{base(w)}/attendance/disruptions/{stoerung.pk}/"
+
+    # Nicht lesbares Ende: Die beendete Störung wird nicht wieder „andauernd“
+    antwort = verwaltung.post(url, {"started_at": "18:40", "ended_at": "18:4x", "cause": "audio"}, follow=True)
+    assert "Die Uhrzeit ist nicht lesbar" in antwort.content.decode()
+    stoerung.refresh_from_db()
+    assert (stoerung.ended_at, stoerung.cause) == (time(18, 44), SessionAttendanceDisruption.CAUSE_CONNECTION)
+    assert attendance_service.quorum_status(w.sitzung)["disrupted"] == []
+
+    # Ende vor Beginn beim Korrigieren und beim Beenden mit Uhrzeit
+    for daten in ({"started_at": "18:40", "ended_at": "18:04"}, {"action": "end", "ended_at": "18:00"}):
+        antwort = verwaltung.post(url, daten, follow=True)
+        assert "Das Ende der Störung liegt vor ihrem Beginn." in antwort.content.decode()
+        stoerung.refresh_from_db()
+        assert (stoerung.started_at, stoerung.ended_at) == (time(18, 40), time(18, 44))
+
+    # Leeres Ende beim Speichern ist gewollt: Die Störung dauert an
+    verwaltung.post(url, {"started_at": "18:40", "ended_at": ""})
+    stoerung.refresh_from_db()
+    assert stoerung.ongoing
+
+
+def test_jetzt_beenden_nach_mitternacht() -> None:
+    w = _hybrid(welt())
+    # Laufende Sitzung seit gestern Abend, noch ohne Ende: „Jetzt beenden“ nach Mitternacht ist echt
+    SessionMeeting.objects.filter(pk=w.sitzung.pk).update(start=timezone.now() - timedelta(days=1), end=None)
+    w.sitzung.refresh_from_db()
+    assert participation_service.period_error(w.sitzung, time(23, 50), time(0, 5), live=True) == ""
+    # Nacherfassung derselben Zeiten ohne eingetragenes Sitzungsende: abgelehnt
+    fehler = participation_service.period_error(w.sitzung, time(23, 50), time(0, 5))
+    assert fehler == participation_service.END_BEFORE_START
+
+
 def test_stoerung_nur_fuer_zugeschaltete() -> None:
     w = _hybrid(welt())
     zeile = _zeile(w, "Amsel")
@@ -229,6 +293,36 @@ def test_zuschaltung_nur_in_hybrider_oder_digitaler_sitzung() -> None:
     assert antwort.status_code == 200
     zeile.refresh_from_db()
     assert zeile.is_remote
+
+
+def test_zugeschaltete_in_praesenzsitzung_zaehlen_und_lassen_sich_korrigieren() -> None:
+    w = welt()  # Präsenzsitzung
+    zeile = _zeile(w, "Buche")
+    # Überholte Teilnahmeart, etwa nach einer Änderung des Sitzungsformats
+    SessionAttendance.objects.filter(pk=zeile.pk).update(participation_mode=SessionAttendance.PARTICIPATION_REMOTE)
+    status = attendance_service.quorum_status(w.sitzung)
+    assert (status["voting_present"], status["remote_present"], status["met"]) == (3, 1, True)
+
+    verwaltung = _verwaltung(w)
+    seite = _seite(w, verwaltung)
+    assert ">Teilnahme</th>" in seite and 'name="participation_mode"' in seite
+    assert "In dieser Präsenzsitzung sind Personen als zugeschaltet erfasst" in seite
+
+    # Die Zeile nach dem Speichern hat so viele Spalten wie die Kopfzeile (7 mit „Teilnahme“)
+    url = f"{base(w)}/attendance/{zeile.pk}/update/"
+    daten = {"status": "present", "arrival_time": "", "departure_time": "", "notes": ""}
+    antwort = verwaltung.post(url, {**daten, "mode_column": "1"}, HTTP_HX_REQUEST="true")
+    assert antwort.content.decode().count("<td") == 7
+    wechsel = {**daten, "mode_column": "1", "participation_mode": "in_person"}
+    antwort = verwaltung.post(url, wechsel, HTTP_HX_REQUEST="true")
+    assert antwort.content.decode().count("<td") == 7
+    zeile.refresh_from_db()
+    assert not zeile.is_remote
+
+    # Ohne Zugeschaltete keine Spalte – weder in der Tabelle noch in der Zeile
+    seite = _seite(w, verwaltung)
+    assert ">Teilnahme</th>" not in seite
+    assert verwaltung.post(url, daten, HTTP_HX_REQUEST="true").content.decode().count("<td") == 6
 
 
 def test_schnellerfassung_ohne_teilnahmeart_laesst_sie_unveraendert() -> None:
@@ -293,7 +387,7 @@ def test_geheime_abstimmung_ohne_zugeschaltete_wo_das_landesprofil_es_ausschlies
 
 
 def test_wahl_ohne_zugeschaltete_und_stimme_wird_abgelehnt() -> None:
-    w = _hybrid(welt(), "NI")
+    w = _hybrid(welt(status="draft"), "NI")
     zeile = _zuschalten(w)
     top = _offener_top(w)
     abstimmung = _abstimmung(w)
@@ -311,6 +405,34 @@ def test_wahl_ohne_zugeschaltete_und_stimme_wird_abgelehnt() -> None:
 
     seite = abstimmung.get(f"{base(w)}/agenda/{top.pk}/voting/").content.decode()
     assert 'data-testid="hinweis-wahl"' in seite
+
+
+def test_wahl_nach_genehmigung_gesperrt() -> None:
+    w = _hybrid(welt(), "NI")  # genehmigte Niederschrift
+    top = _offener_top(w)
+    top.is_election = True
+    with pytest.raises(protocol_lock.ProtocolLockedError):
+        top.save()
+
+    # Über die Abstimmungserfassung mit unveränderten Stimmen: Fehlermeldung, kein Eintrag „Stimmabgabe“
+    antwort = _abstimmung(w).post(
+        f"{base(w)}/agenda/{top.pk}/voting/", {"voting_method": "open", "is_election": "1"}, follow=True
+    )
+    assert "Die Niederschrift dieser Sitzung ist genehmigt." in antwort.content.decode()
+    top.refresh_from_db()
+    assert top.is_election is False
+    assert not SessionAuditLog.objects.filter(action="vote", object_id=top.pk).exists()
+
+    # Neuer TOP als Wahl in einer genehmigten Niederschrift: ebenso gesperrt
+    with pytest.raises(protocol_lock.ProtocolLockedError):
+        SessionAgendaItem.objects.create(meeting=w.sitzung, number="3", order=4, name="Nachwahl", is_election=True)
+
+    # Innerhalb einer Berichtigung (Freigabe der Sperre) geht es
+    top.is_election = True
+    with protocol_lock.permit(w.sitzung.pk):
+        top.save()
+    top.refresh_from_db()
+    assert top.is_election is True
 
 
 def test_gast_zaehlt_nicht_zur_beschlussfaehigkeit() -> None:

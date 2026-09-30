@@ -52,6 +52,39 @@ def now() -> time:
     return timezone.localtime().time().replace(second=0, microsecond=0)
 
 
+#: Ende vor Beginn in einer Sitzung, die nicht über Mitternacht geht – meist ein Tippfehler (18:40–18:04)
+END_BEFORE_START = (
+    "Das Ende der Störung liegt vor ihrem Beginn. Über Mitternacht geht das nur in einer Sitzung, die bis in "
+    "den Folgetag dauert (Sitzungsende eintragen)."
+)
+
+
+def crosses_midnight(meeting: Any, *, live: bool = False) -> bool:
+    """
+    Reicht die Sitzung über Mitternacht? Maßgeblich sind die tatsächlichen, sonst die geplanten Zeiten.
+
+    ``live``: Die Störung endet jetzt – dann zählt die aktuelle Uhrzeit als Ende (eine laufende Sitzung hat
+    oft noch kein Ende eingetragen). Ohne Ende und ohne ``live``: nein.
+    """
+    start = getattr(meeting, "actual_start", None) or getattr(meeting, "start", None)
+    end = timezone.now() if live else getattr(meeting, "actual_end", None) or getattr(meeting, "end", None)
+    if start is None or end is None:
+        return False
+    return bool(timezone.localtime(end).date() > timezone.localtime(start).date())
+
+
+def period_error(meeting: Any, started_at: time, ended_at: time | None, *, live: bool = False) -> str:
+    """
+    Fehlermeldung zu Beginn und Ende einer Störung, sonst ``""``.
+
+    Ende vor Beginn gilt als Störung über Mitternacht (``SessionAttendanceDisruption.duration_minutes``,
+    ``covers``) – das ist nur in einer Sitzung stimmig, die über Mitternacht reicht.
+    """
+    if ended_at is None or ended_at >= started_at or crosses_midnight(meeting, live=live):
+        return ""
+    return END_BEFORE_START
+
+
 def with_disruptions(queryset: Any, meeting: Any) -> Any:
     """
     Störungsvermerke vorab laden – nur in hybriden und digitalen Sitzungen, in denen es Zugeschaltete gibt.

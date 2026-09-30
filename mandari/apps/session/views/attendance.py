@@ -169,13 +169,32 @@ def _attendance_for(meeting, attendance_id):
     )
 
 
+#: Meldung bei einer nicht lesbaren Uhrzeit; der bisherige Stand bleibt unverändert
+INVALID_TIME = "Die Uhrzeit ist nicht lesbar – bitte im Format HH:MM angeben. Es wurde nichts geändert."
+
+
+class _InvalidTimeError(ValueError):
+    """Uhrzeit im Formular nicht lesbar."""
+
+
 def _time_value(raw):
-    """Uhrzeit aus dem Formular (HH:MM); leer oder ungültig -> None."""
-    field = forms.TimeField(required=False)
-    try:
-        return field.clean(raw or None)
-    except forms.ValidationError:
+    """Uhrzeit aus dem Formular (HH:MM); leer -> None, nicht lesbar -> ``_InvalidTimeError``."""
+    value = (raw or "").strip()
+    if not value:
         return None
+    try:
+        return forms.TimeField().clean(value)
+    except forms.ValidationError:
+        raise _InvalidTimeError from None
+
+
+def _done(view, meeting):
+    """Zurück zur Sitzung; die Schnellerfassung aus der Zeile (HTMX) lädt die Seite neu."""
+    if view.is_htmx:
+        from django.http import HttpResponse
+
+        return HttpResponse(status=204, headers={"HX-Refresh": "true"})
+    return _meeting_redirect(view, meeting)
 
 
 def _cause(raw, default=SessionAttendanceDisruption.CAUSE_CONNECTION):
@@ -199,8 +218,16 @@ class AttendanceDisruptionAddView(SessionViewMixin, View):
         if not attendance.is_remote:
             messages.error(request, "Störungen lassen sich nur für zugeschaltete Personen vermerken.")
             return _meeting_redirect(self, attendance.meeting)
-        started_at = _time_value(request.POST.get("started_at")) or participation_service.now()
-        ended_at = _time_value(request.POST.get("ended_at"))
+        try:
+            started_at = _time_value(request.POST.get("started_at")) or participation_service.now()
+            ended_at = _time_value(request.POST.get("ended_at"))
+        except _InvalidTimeError:
+            messages.error(request, INVALID_TIME)
+            return _done(self, attendance.meeting)
+        fehler = participation_service.period_error(attendance.meeting, started_at, ended_at)
+        if fehler:
+            messages.error(request, fehler)
+            return _done(self, attendance.meeting)
         SessionAttendanceDisruption.objects.create(
             attendance=attendance,
             started_at=started_at,
@@ -216,12 +243,8 @@ class AttendanceDisruptionAddView(SessionViewMixin, View):
             )
         else:
             messages.success(request, f"Störung bei {attendance.person.display_name} vermerkt.")
-        if self.is_htmx:
-            # Schnellerfassung aus der Zeile: Seite neu laden (Beschlussfähigkeit, Störungsliste)
-            from django.http import HttpResponse
-
-            return HttpResponse(status=204, headers={"HX-Refresh": "true"})
-        return _meeting_redirect(self, attendance.meeting)
+        # Schnellerfassung aus der Zeile: Seite neu laden (Beschlussfähigkeit, Störungsliste)
+        return _done(self, attendance.meeting)
 
 
 class AttendanceDisruptionUpdateView(SessionViewMixin, View):
@@ -245,11 +268,27 @@ class AttendanceDisruptionUpdateView(SessionViewMixin, View):
             disruption.delete()
             messages.success(request, f"Störungsvermerk bei {name} entfernt.")
             return _meeting_redirect(self, meeting)
-        if action == "end":
-            disruption.ended_at = _time_value(request.POST.get("ended_at")) or participation_service.now()
-        else:
-            disruption.started_at = _time_value(request.POST.get("started_at")) or disruption.started_at
-            disruption.ended_at = _time_value(request.POST.get("ended_at"))
+        # Nicht lesbare Uhrzeit: nichts ändern – sonst würde aus einer beendeten Störung stillschweigend
+        # wieder eine andauernde, und die Person fiele live aus der Beschlussfähigkeit
+        ending = action == "end"
+        try:
+            started_at = disruption.started_at
+            if not ending:
+                started_at = _time_value(request.POST.get("started_at")) or started_at
+            ended_at = _time_value(request.POST.get("ended_at"))
+        except _InvalidTimeError:
+            messages.error(request, INVALID_TIME)
+            return _meeting_redirect(self, meeting)
+        # „Jetzt beenden“ nach Mitternacht ist echt (laufende Uhr), auch ohne eingetragenes Sitzungsende
+        live = ending and ended_at is None
+        if live:
+            ended_at = participation_service.now()
+        fehler = participation_service.period_error(meeting, started_at, ended_at, live=live)
+        if fehler:
+            messages.error(request, fehler)
+            return _meeting_redirect(self, meeting)
+        disruption.started_at, disruption.ended_at = started_at, ended_at
+        if not ending:
             disruption.cause = _cause(request.POST.get("cause"), disruption.cause)
             disruption.note = (request.POST.get("note") or "").strip()[:255]
         disruption.save()
