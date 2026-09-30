@@ -1,0 +1,30 @@
+# Antrag: Radweg an der Hauptstraße
+
+Fraktion Test
+
+Sehr geehrte Damen und Herren,
+
+Wir bitten um Beratung im Bauausschuss.
+Mit freundlichen Grüßen
+
+Titel: Radweg an der Hauptstraße
+Art: Antrag
+Eingereicht von: Eva Muster (eva@example.org) für Fraktion Test
+Eingereicht am: 14.09.2026, 18:30 Uhr
+Anhänge: Radweg an der Hauptstraße.pdf
+Lageplan.pdf
+
+Eingang bestätigen
+
+Bitte bestätigen Sie den Eingang mit einem Klick. Der Link gilt nur für diese Einreichung und gibt keinen Zugang zu weiteren Daten.
+
+[Eingang bestätigen](https://mandari.example/work/eingang/bestaetigen/abc123:signatur/)
+
+Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:
+https://mandari.example/work/eingang/bestaetigen/abc123:signatur/
+
+Rückfragen beantwortet Eva Muster – eine Antwort auf diese E-Mail erreicht die einreichende Person.
+
+Diese E-Mail wurde im Auftrag von Fraktion Test über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

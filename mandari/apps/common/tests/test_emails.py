@@ -496,6 +496,46 @@ def work_org_submission_receipt(org: Any, make_member: Any) -> dict[str, Any]:
     }
 
 
+def _email_submission(org: Any) -> Any:
+    recipients = [
+        _ns(label="Ratsbüro", email="ratsbuero@stadt.example", delivered=True),
+        _ns(label="OB-Büro", email="ob@stadt.example", delivered=False),
+    ]
+    return _ns(
+        subject="Antrag: Radweg an der Hauptstraße",
+        submitted_by_name="Eva Muster",
+        submitted_by_email="eva@example.org",
+        sent_at=WHEN,
+        attachment_names=["Radweg an der Hauptstraße.pdf", "Lageplan.pdf"],
+        recipients=_ns(all=lambda: recipients),
+    )
+
+
+def work_org_submission_email(org: Any, make_member: Any) -> dict[str, Any]:
+    """Einreichung per E-Mail an einen Verwaltungskontakt (Issue #580)."""
+    submission = _email_submission(org)
+    return {
+        "organization": org,
+        "motion": _ns(title="Radweg an der Hauptstraße", document_type=_ns(name="Antrag")),
+        "submission": submission,
+        "recipient": _ns(label="Ratsbüro", email="ratsbuero@stadt.example"),
+        "message": "Wir bitten um Beratung im Bauausschuss.\nMit freundlichen Grüßen",
+        "attachment_names": submission.attachment_names,
+        "confirm_url": f"{SITE_URL}/work/eingang/bestaetigen/abc123:signatur/",
+    }
+
+
+def work_org_submission_email_receipt(org: Any, make_member: Any) -> dict[str, Any]:
+    """Kopie der Einreichung per E-Mail für die einreichende Person (Issue #580)."""
+    return {
+        "organization": org,
+        "motion": _ns(title="Radweg an der Hauptstraße"),
+        "submission": _email_submission(org),
+        "recipient": _ns(get_full_name=lambda: "Eva Muster", email="eva@example.org"),
+        "status_url": f"{SITE_URL}/work/{org.slug}/documents/{_uuid(0x802)}/submit-ris/",
+    }
+
+
 def _access_granted(org: Any, variant: str, needs_two_factor: bool) -> dict[str, Any]:
     return {
         "organization": org,
@@ -669,6 +709,16 @@ CASES = [
         "work_org_submission_receipt",
         "work/organization/email/submission_receipt.html",
         work_org_submission_receipt,
+    ),
+    MailCase(
+        "work_org_submission_email",
+        "work/organization/email/submission_email.html",
+        work_org_submission_email,
+    ),
+    MailCase(
+        "work_org_submission_email_receipt",
+        "work/organization/email/submission_email_receipt.html",
+        work_org_submission_email_receipt,
     ),
 ]
 
