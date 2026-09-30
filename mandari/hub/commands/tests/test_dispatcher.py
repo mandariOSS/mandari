@@ -14,11 +14,20 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, connection, connections, transaction
 
+from apps.events import CanonicalRef, publish
 from apps.events.idempotency import NestedTransactionError
-from apps.events.models import IdempotencyKey
+from apps.events.models import Event, IdempotencyKey
+from apps.events.publishing import current_context
 from hub.commands import Command, CommandError, Dispatcher, HandlerResult, Receipt, command_handler, get_dispatcher
 from hub.commands.dispatcher import call_sites, error_types, scope, valid_idempotency_key
-from hub.commands.tests.hilfen import ACTOR, TENANT, json_body, protokolltext, register_mit_testvertraegen
+from hub.commands.tests.hilfen import (
+    ACTOR,
+    DOCUMENT,
+    TENANT,
+    json_body,
+    protokolltext,
+    register_mit_testvertraegen,
+)
 from hub.commands.types import MAX_DEPTH, exceeds_depth
 
 GEHEIM = "Erika Mustermann, Musterweg 1"
@@ -117,6 +126,31 @@ def test_handler_laeuft_in_einer_transaktion_mit_dem_schluessel(dispatcher: Disp
     eintrag = IdempotencyKey.objects.get()
     assert (eintrag.scope, eintrag.label) == (f"{TENANT} {ACTOR}", "submission.submit")
     assert eintrag.response["reference"] == "A/1"
+
+
+@pytest.mark.django_db
+def test_ereignisse_des_handlers_tragen_korrelation_und_ausloeser_des_befehls(dispatcher: Dispatcher) -> None:
+    def einreichen_und_melden(command: Command) -> HandlerResult:
+        publish(
+            "ris.paper.released",
+            version=1,
+            aggregate=CanonicalRef("Paper", uuid.UUID(DOCUMENT)),
+            tenant=command.tenant_ref,
+            visibility="nichtoeffentlich",
+            payload={"paper": DOCUMENT},
+        )
+        return HandlerResult(reference="A/1")
+
+    dispatcher.register("submission.submit", 1, einreichen_und_melden)
+    befehl = _befehl()
+    dispatcher.dispatch(befehl)
+
+    ereignis = Event.objects.get()
+    assert ereignis.correlation_id == befehl.correlation_id
+    assert ereignis.actor_ref == ACTOR
+    assert ereignis.tenant_ref == TENANT
+    # Der Kontext gilt nur für die Dauer des Handlers.
+    assert current_context() is None
 
 
 @pytest.mark.django_db

@@ -190,6 +190,45 @@ Umgesetzt in `apps/events/wakeup.py`, eingebunden in `events_sequencer` und `eve
   Commit → Sicht (p95 ≤ 5 s) und des Nachweises, dass `LISTEN` über den Pooler als wirkungslos
   erkannt wird.
 
+## Nachtrag zur Umsetzung von `publish()` (#502)
+
+Umgesetzt in `apps/events/publishing.py`, exportiert als `apps.events.publish`. Die Entscheidung
+bleibt; präzisiert wurde:
+
+- **Aufruf:** `publish(typ, version=…, aggregate=CanonicalRef("Paper", id), tenant=tenant_ref("session", id),
+  visibility=…, payload=…, body_id=…)`, wahlweise mit `operation`, `occurred_at`, `actor_ref`,
+  `correlation_id` und `causation_id`. Mandant und Sichtbarkeit sind Pflicht und kommen nie aus
+  einem Kontext: Ein falscher Mandant wäre ein Fehler der Mandantentrennung.
+- **Transaktionsprüfung:** Ohne offenen `transaction.atomic()`-Block wirft `publish()`
+  `PublishOutsideTransactionError`. Der Block, den Django-Tests um jeden Test legen, zählt dabei
+  nicht (wie bei `atomic(durable=True)`); ein fehlendes `atomic()` fällt so im Test auf und nicht
+  erst im Betrieb.
+- **Korrelation:** in dieser Reihenfolge: Angabe am Aufruf, `event_context()`, Request-Kennung der
+  laufenden Anfrage (`X-Request-ID`, `apps.common.observability`), Trace-Kennung des
+  OpenTelemetry-Kontexts, sonst eine neue Kennung je Ereignis. Eine Request-Kennung, die selbst eine
+  UUID ist, wird übernommen; aus jeder anderen wird eine feste UUID abgeleitet
+  (`correlation_id_for_request`), sodass Logzeilen und Ereignisse einer Anfrage zusammenfinden.
+- **Auslöser:** `actor_ref` ist `user:<uuid>` oder `system:<auftrag>` und wird immer am Format
+  geprüft; ein Name oder eine Mailadresse wird abgelehnt. Ohne Angabe gilt `event_context()`, sonst
+  das angemeldete Konto der laufenden Anfrage, sonst bleibt das Feld leer.
+- **`event_context()`** setzt Korrelation, Auslöser und auslösendes Ereignis für alle
+  `publish()`-Aufrufe eines Blocks, auch in aufgerufenen Funktionen. Aufträge und Befehle ohne
+  Anfrage geben damit allen Ereignissen eines Vorgangs dieselbe Korrelation
+  (`event_context(actor_ref=system_ref("abgleich"))`); Handler setzen für Folgeereignisse
+  `event_context(caused_by=ereignis)`. Der Befehls-Dispatcher (`hub.commands`) legt den Kontext um
+  jeden Handler: Ereignisse eines Befehls tragen dessen `correlation_id` und `actor_ref`.
+- **Formatprüfung der Hülle, immer:** Typname, Version, Objekttyp, Kennungen, Mandant, Sichtbarkeit,
+  Operation und Zeitzone. Das sind Vergleiche gegen feste Muster ohne Schema; sie gelten auch im
+  Betrieb. Meldungen nennen das Feld und die Regel, nie den Wert.
+- **Vertragsprüfung in Tests und bei `DEBUG`:** Mit `EVENTS_VALIDATE_CONTRACTS` (Standard: wie
+  `DEBUG`; die Testeinstellungen schalten ein, weil die CI mit `DEBUG=false` läuft) prüft
+  `publish()` Hülle, Typ und Version, Sichtbarkeit und Nutzlast gegen das Register, bevor die Zeile
+  geschrieben wird. Die Plattform importiert die Drehscheibe nicht
+  ([Schichtenmodell](20260929-schichtenmodell.md)): `hub.contracts` hängt seine Prüfung beim Start
+  über `set_contract_validator()` ein. Ist die Prüfung eingeschaltet, aber nichts eingehängt, ist
+  das ein Konfigurationsfehler; die Prüfung bleibt nie still aus.
+- **Folgenummer:** `publish()` vergibt keine; das zurückgegebene Ereignis hat `seq = None`.
+
 ## Bezug
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A3 Sequenzierer](20260929-sequenzierer.md),

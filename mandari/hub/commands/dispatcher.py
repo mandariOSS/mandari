@@ -9,7 +9,8 @@ Ablauf je Befehl:
    Inhalt passt zum Schema (sonst 422 mit ``errors``).
 2. In einer eigenen Transaktion: Schlüssel belegen (``apps.events.idempotency``), Handler
    ausführen, Quittung speichern. Der Handler schreibt die Fachdaten und veröffentlicht Ereignisse
-   in dieser Transaktion. Scheitert er, rollt alles zurück, auch der Schlüssel. Wer eine Quittung
+   in dieser Transaktion; ``publish()`` übernimmt dabei ``correlation_id`` und ``actor_ref`` des
+   Befehls (``apps.events.event_context``). Scheitert er, rollt alles zurück, auch der Schlüssel. Wer eine Quittung
    erhält, kann sich darauf verlassen, dass sie festgeschrieben ist, wie über HTTP. ``dispatch()``
    darf deshalb nicht in einer offenen Transaktion des Aufrufers stehen (``NestedTransactionError``).
 3. Wiederholung mit gleichem Schlüssel und gleichem Befehl: dieselbe Quittung, ohne den Handler
@@ -47,6 +48,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
 
 from apps.events.idempotency import MAX_KEY_LENGTH, IdempotencyConflictError, NestedTransactionError, run_once
+from apps.events.publishing import event_context
 from hub.contracts import COMMAND, ContractViolationError, Registry, UnknownContractError, get_registry
 
 from .canonical import content_hash
@@ -224,7 +226,9 @@ class Dispatcher:
         received_at = timezone.now()
 
         def execute() -> dict[str, Any]:
-            result = handler(command)
+            # Ereignisse, die der Handler veröffentlicht, tragen Korrelation und Auslöser des Befehls.
+            with event_context(correlation_id=command.correlation_id, actor_ref=command.actor_ref):
+                result = handler(command)
             if not isinstance(result, HandlerResult):
                 raise TypeError("Handler müssen ein HandlerResult liefern")
             return Receipt(

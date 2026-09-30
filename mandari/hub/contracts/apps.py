@@ -10,4 +10,11 @@ class ContractsConfig(AppConfig):
     verbose_name = "Verträge der Datendrehscheibe"
 
     def ready(self) -> None:
+        from apps.events.publishing import set_contract_validator
+
         from . import checks  # noqa: F401  (registriert die Systemprüfung)
+        from .publishing import validate_published_event
+
+        # Die Plattform kennt die Drehscheibe nicht: publish() prüft über diesen Einhängepunkt gegen
+        # das Register (in Tests und bei DEBUG, siehe EVENTS_VALIDATE_CONTRACTS).
+        set_contract_validator(validate_published_event)

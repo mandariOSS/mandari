@@ -40,7 +40,8 @@ versionierte und automatisch geprüfte Verträge.
 - **Datenschutz im Schema:** Für `personenbezogen` und `nichtoeffentlich` sind Freitextfelder
   verboten; erlaubt sind Kennungen, Codes und Feldnamen.
 - **Prüfung zur Laufzeit:** `publish()` prüft das Schema in Tests und bei `DEBUG`, im
-  Produktivbetrieb nicht.
+  Produktivbetrieb nicht (Einstellung `EVENTS_VALIDATE_CONTRACTS`, Umsetzung siehe Nachtrag zu
+  `publish()` in [A2](20260929-ereignistechnik-postgres.md)).
 - **Katalog:** Die lesbare Übersicht aller Ereignisse und Befehle wird aus dem Register erzeugt,
   nicht von Hand gepflegt.
 - **Startumfang:** 27 Ereignistypen und vier Befehle
