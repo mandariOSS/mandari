@@ -89,6 +89,20 @@ def wartungsnachricht() -> str | None:
     return einstellungen.maintenance_message.strip() or STANDARD_NACHRICHT
 
 
+def wartungsmodus_aktiv() -> bool:
+    """Ob der Wartungsmodus Besucher gerade sperrt; ist das nicht feststellbar (Datenbank fehlt), ``True``.
+
+    Für Abkürzungen vor dieser Middleware (``mandari.media.PublicMediaMiddleware``, Issue #667): Im
+    Zweifel nehmen sie den regulären Weg, und ``MaintenanceModeMiddleware`` entscheidet wie bisher.
+    """
+    if not settings.MAINTENANCE_MODE_ENFORCEMENT:
+        return False
+    try:
+        return wartungsnachricht() is not None
+    except _DatenbankFehltError:
+        return True
+
+
 def wartungsantwort(request: HttpRequest, nachricht: str) -> HttpResponse:
     """503 mit Wartungsnachricht: JSON für die APIs, sonst die Wartungsseite."""
     headers = {"Retry-After": str(RETRY_AFTER_SECONDS), "Cache-Control": "no-store"}

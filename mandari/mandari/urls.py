@@ -5,150 +5,25 @@ URL configuration for Mandari project.
 Mandari Insight - Kommunalpolitische Transparenz
 """
 
-from pathlib import Path, PurePosixPath
-
 from django.conf import settings
 from django.contrib import admin
 from django.db import connection
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import include, path, re_path
-from django.views.static import serve as static_serve
 
 from apps.accounts.views import admin_login_redirect
 from apps.common import csp, health, metrics
 from apps.common.db_connections import releases_db_connections
-from apps.common.uploads import is_embeddable
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
 from apps.session.api.v1.api import api as session_api_v1
 from apps.session.views.invitation_responses import InvitationResponseView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
-from apps.work.files import PROTECTED_PREFIXES as WORK_PROTECTED_PREFIXES
 from insight_core.admin_monitoring import monitoring_view
 from mandari import pwa
-
-#: Medien, die ohne Anmeldung ausgeliefert werden (Logos, Hero-Bilder, Demo).
-PUBLIC_MEDIA_PREFIXES = (
-    "bodies/",
-    "persons/photos/",
-    "organizations/logos/",
-    "parties/logos/",
-    "session/tenants/logos/",
-    "avatars/",
-    "demo/",
-)
-
-#: Medien, die NIE direkt ausgeliefert werden – nur über zugriffsgeprüfte
-#: Download-Views (Session-Anlagen, Dokument-Anhänge im Work-Portal).
-PROTECTED_MEDIA_PREFIXES = (
-    "session/files/",
-    "motions/documents/",
-    # Archivpakete des Protokolls (Issue #221): nie über eine URL
-    "audit_archive/",
-    # Dokument-Cache der OParl-Dateien (Standardablage ohne OPARL_FILES_ROOT): nur über den
-    # Datei-Proxy, der auch zurückgezogene Dokumente berücksichtigt
-    "oparl_files/",
-    # Anhänge von Aufgaben, Fraktionssitzungen, Vorbereitung, Support, Briefköpfe und
-    # Datenexporte (apps/work/files.py)
-    *WORK_PROTECTED_PREFIXES,
-)
-
-#: Einstellungen mit eigenen Ablagen, die nie über ``/media/`` hinausgehen. Zeigen sie in ein
-#: Verzeichnis unter ``MEDIA_ROOT``, gilt dessen Präfix zusätzlich als geschützt.
-_PROTECTED_ROOT_SETTINGS = ("OPARL_FILES_ROOT", "AUDIT_ARCHIVE_ROOT")
-
-
-def _protected_prefixes() -> tuple[str, ...]:
-    """``PROTECTED_MEDIA_PREFIXES`` plus die eingestellten Ablagen, sofern sie unter ``MEDIA_ROOT`` liegen."""
-    root = Path(settings.MEDIA_ROOT).resolve()
-    extra: list[str] = []
-    for name in _PROTECTED_ROOT_SETTINGS:
-        value = getattr(settings, name, None)
-        if not value:
-            continue
-        try:
-            relative = Path(value).resolve().relative_to(root).as_posix()
-        except (ValueError, OSError):
-            continue
-        if relative != ".":
-            extra.append(f"{relative.lower()}/")
-    return PROTECTED_MEDIA_PREFIXES + tuple(extra)
-
-
-def _media_path(path: str) -> str | None:
-    """Relativer Medienpfad in eindeutiger Schreibweise – oder ``None``.
-
-    Die Zugriffsregeln unten gelten für genau die Datei, die ausgeliefert würde.
-    Darum wird jeder Pfad abgelehnt, den das Dateisystem anders auflösen könnte
-    als er geschrieben steht: Punkt-Segmente (``.``/``..``), leere Segmente,
-    Backslashes, Steuerzeichen und weitere Prozent-Kodierungen (Django hat den
-    Pfad bereits einmal dekodiert). Zusätzlich muss der aufgelöste Pfad unter
-    ``MEDIA_ROOT`` liegen und derselbe sein (keine Symlinks hinaus, keine andere
-    Groß-/Kleinschreibung auf Dateisystemen, die sie ignorieren).
-    """
-    from urllib.parse import unquote
-
-    from django.core.exceptions import SuspiciousFileOperation
-    from django.utils._os import safe_join
-
-    if not path or "\\" in path or any(ord(zeichen) < 32 for zeichen in path) or unquote(path) != path:
-        return None
-    if any(segment in ("", ".", "..") for segment in path.split("/")):
-        return None
-    root = Path(settings.MEDIA_ROOT).resolve()
-    try:
-        aufgeloest = Path(safe_join(root, path)).resolve()
-        relativ = aufgeloest.relative_to(root).as_posix()
-    except (SuspiciousFileOperation, ValueError, OSError):
-        return None
-    if aufgeloest.exists() and relativ != path:
-        return None
-    return path
-
-
-def serve_media(request, path):
-    """Serve uploaded media files (logos, uploads) via Django.
-
-    In Produktion proxied Caddy /media/* an Django. Der frühere
-    ``static()``-Helper ist bei DEBUG=False ein No-Op und lieferte
-    dort für alle Uploads 404. ``django.views.static.serve`` kümmert
-    sich um Last-Modified/304; wir ergänzen einen moderaten Cache-Header.
-
-    Sicherheit (drei Stufen, jeweils auf dem normalisierten Pfad aus
-    ``_media_path``):
-    - PROTECTED_MEDIA_PREFIXES (und die eingestellten Ablagen unter
-      MEDIA_ROOT) werden hier NIE ausgeliefert – sie können nichtöffentlich
-      sein und sind nur über die zugriffsgeprüften Download-Views erreichbar
-      (Session-Anlagen, Dokument-Anhänge, Datenexporte).
-    - PUBLIC_MEDIA_PREFIXES (Logos, Hero-Bilder) sind ohne Anmeldung
-      abrufbar.
-    - Alle übrigen Uploads (z. B. Anhänge von Aufgaben, Fraktionssitzungen,
-      Support) erfordern mindestens eine Anmeldung; sie sind nicht mehr
-      per bloßer URL-Kenntnis für Dritte abrufbar.
-    """
-    from django.http import Http404
-
-    path = _media_path(path)
-    if path is None:
-        raise Http404("Datei nicht gefunden.")
-    if path.lower().startswith(_protected_prefixes()):
-        raise Http404("Diese Datei wird nur über die geschützte Download-View ausgeliefert.")
-    if not path.startswith(PUBLIC_MEDIA_PREFIXES) and not request.user.is_authenticated:
-        raise Http404("Datei nicht gefunden.")
-    response = static_serve(request, path, document_root=settings.MEDIA_ROOT)
-    response["Cache-Control"] = (
-        "public, max-age=3600" if path.startswith(PUBLIC_MEDIA_PREFIXES) else "private, no-store"
-    )
-    # Zweite Verteidigungslinie zur Upload-Pruefung (Issue #260): Nur Bildformate
-    # werden eingebettet ausgeliefert. Alles andere geht als Download hinaus, damit
-    # eine Datei nicht im Ursprung der Anwendung zur Anzeige und Ausfuehrung kommt.
-    if not is_embeddable(path):
-        dateiname = PurePosixPath(path).name.replace('"', "")
-        response["Content-Disposition"] = f'attachment; filename="{dateiname}"'
-    response["X-Content-Type-Options"] = "nosniff"
-    return response
+from mandari.media import serve_media
 
 
 def health_check(request):
@@ -241,7 +116,8 @@ if settings.DEBUG or getattr(settings, "UI_KIT_PREVIEW", False):
     urlpatterns += [path("dev/ui/", ui_kit, name="dev_ui_kit")]
 
 # Serve media files (logos, uploads) — in production via Caddy → Django.
-# Bewusst unabhängig von DEBUG registriert (siehe serve_media-Docstring).
+# Bewusst unabhängig von DEBUG registriert (siehe mandari/media.py). Vorhandene öffentliche
+# Dateien liefert schon mandari.media.PublicMediaMiddleware aus, ohne Sitzung und Datenbank.
 urlpatterns += [
     re_path(r"^media/(?P<path>.*)$", serve_media, name="media"),
 ]

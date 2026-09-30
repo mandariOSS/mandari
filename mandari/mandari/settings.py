@@ -158,6 +158,10 @@ MIDDLEWARE = [
     # Database error handler - shows maintenance page on DB connection issues
     "apps.common.middleware.DatabaseErrorMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    # Öffentliche Medien (Logos, Personenfotos) vor Sitzung und Anmeldung ausliefern: ohne Datenbank
+    # und ohne Cookie. Sonst schrieb jedes Bild die Sitzung zurück (SESSION_SAVE_EVERY_REQUEST) und
+    # belegte eine Pool-Verbindung; Dutzende Fotos einer Seite scheiterten mit 400 (Issue #667).
+    "mandari.media.PublicMediaMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     # Eigener Host je Körperschaft (PORTAL_HOSTS, Issue #317); ohne Einträge wirkungslos
     "insight_core.portal.PortalHostMiddleware",
