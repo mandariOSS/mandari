@@ -137,6 +137,7 @@ htmlcov/
 .tox/
 .nox/
 .pytest_cache/
+.import_linter_cache/
 coverage.xml
 *.cover
 .hypothesis/
