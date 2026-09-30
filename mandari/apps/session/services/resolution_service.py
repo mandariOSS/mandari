@@ -23,6 +23,12 @@ from apps.session.visibility import paper_visible
 # Abstimmungsergebnisse, die als gefasster Beschluss ins Register aufgenommen werden
 DECIDED_RESULTS = ("approved", "rejected", "deferred", "noted")
 
+# Sortierung der Beschlusslisten: neueste Sitzung zuerst, TOPs einer Sitzung in Tagesordnungsreihenfolge.
+# Sitzung, TOP-Nummer und Primärschlüssel als Nachrang: Gleichzeitige Sitzungen und TOPs mit gleicher
+# Reihenfolge (order = 0, wenn keine gepflegt ist) lägen sonst in beliebiger Folge vor, auch über
+# Seitengrenzen hinweg (Issue #653).
+DECIDED_ITEMS_ORDERING = ("-meeting__start", "meeting_id", "order", "number", "id")
+
 
 def decided_items(tenant, *, include_non_public: bool):
     """Alle gefassten Beschlüsse (TOPs mit Ergebnis) eines Mandanten."""
@@ -30,7 +36,7 @@ def decided_items(tenant, *, include_non_public: bool):
         SessionAgendaItem.objects.filter(meeting__tenant=tenant, vote_result__in=DECIDED_RESULTS)
         .exclude(is_withdrawn=True)
         .select_related("meeting__organization", "paper")
-        .order_by("-meeting__start", "order")
+        .order_by(*DECIDED_ITEMS_ORDERING)
     )
     if not include_non_public:
         qs = qs.filter(is_public=True, meeting__is_public=True)

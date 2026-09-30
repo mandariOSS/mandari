@@ -474,3 +474,43 @@ def test_decisions_are_bound_to_linked_session_tenants(bodies: Any, body: OParlB
     assert [i.name for i in selectors.filter_implementation(items, status="done", today=now.date())] == ["Verschoben"]
     assert [o.name for o in selectors.decision_organizations(tenants)] == ["Rat"]
     assert selectors.decision_years(tenants) == [now.year]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("variant", ["work", "session"])
+def test_decided_items_follow_agenda_order(body: OParlBody, variant: str) -> None:
+    """Beschlusslisten: neueste Sitzung zuerst, TOPs einer Sitzung in Tagesordnungsreihenfolge (Issue #653).
+
+    Die TOPs entstehen absichtlich gegen die Tagesordnung, alle mit derselben Reihenfolge (order = 0),
+    und zwei Sitzungen beginnen gleichzeitig: Ohne eindeutigen Nachrang bestimmt dann die Datenbank
+    die Reihenfolge (auch über Seitengrenzen hinweg).
+    """
+    from apps.session.models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionTenant
+    from apps.session.services import resolution_service
+
+    tenant = SessionTenant.objects.create(name="Verwaltung Test", slug="verwaltung-test", oparl_body=body)
+    council = SessionOrganization.objects.create(tenant=tenant, name="Rat", organization_type="council")
+    start = timezone.now()
+    meetings = [
+        SessionMeeting.objects.create(
+            tenant=tenant, organization=council, name=name, start=start - timedelta(days=days), is_public=True
+        )
+        for name, days in (("Vorsitzung", 7), ("Sitzung A", 0), ("Sitzung B", 0))
+    ]
+    for meeting in reversed(meetings):
+        for number in ("3", "2", "1"):
+            SessionAgendaItem.objects.create(
+                meeting=meeting, number=number, name=f"{meeting.name}/{number}", vote_result="approved"
+            )
+
+    if variant == "work":
+        items = selectors.decided_items(SessionTenant.objects.filter(pk=tenant.pk))
+    else:
+        items = resolution_service.decided_items(tenant, include_non_public=False)
+    names = [i.name for i in items]
+
+    blocks = [names[0:3], names[3:6], names[6:9]]
+    agenda = [[f"{name}/{number}" for number in ("1", "2", "3")] for name in ("Sitzung A", "Sitzung B", "Vorsitzung")]
+    # Gleichzeitige Sitzungen erscheinen je als geschlossener Block (welche zuerst, ist fachlich offen)
+    assert len(names) == 9 and sorted(blocks[:2]) == agenda[:2] and blocks[2] == agenda[2]
+    assert [i.name for i in items] == names, "die Reihenfolge ist bei jeder Abfrage dieselbe"

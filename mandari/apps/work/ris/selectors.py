@@ -19,7 +19,7 @@ from django.db.models import Count, Exists, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 
 from apps.session.models import SessionAgendaItem, SessionOrganization, SessionTenant
-from apps.session.services.resolution_service import DECIDED_RESULTS
+from apps.session.services.resolution_service import DECIDED_ITEMS_ORDERING, DECIDED_RESULTS
 from apps.tenants.models import Organization
 from insight_core.models import (
     OParlAgendaItem,
@@ -519,7 +519,7 @@ def decided_items(tenants: QuerySet[SessionTenant]) -> QuerySet[SessionAgendaIte
         )
         .exclude(is_withdrawn=True)
         .select_related("meeting__organization", "meeting__tenant", "paper")
-        .order_by("-meeting__start", "order")
+        .order_by(*DECIDED_ITEMS_ORDERING)
     )
 
 
