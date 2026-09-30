@@ -339,7 +339,7 @@ jobs:
       - name: djlint (Template-Linting, Profil Django)
         if: ${{ !cancelled() && needs.changes.outputs.templates == 'true' }}
         run: |
-          pip install djlint==1.46.1
+          pip install djlint==1.46.2
           cd mandari && djlint templates --lint
 
       # --- Python: Typprüfung und Schema-Contract ---------------------------------
