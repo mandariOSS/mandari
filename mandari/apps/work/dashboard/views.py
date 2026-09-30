@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.organization.selectors import my_committees
 
 
 class DashboardView(WorkViewMixin, TemplateView):
@@ -22,11 +23,15 @@ class DashboardView(WorkViewMixin, TemplateView):
 
         # "Meine Gremien" personalization: filter meetings/documents to the
         # user's committees unless they explicitly requested the org-wide view.
+        # Followed committees first, else assigned ones; without either the
+        # dashboard stays org-wide. Same rule as the meeting list (Issue #647).
         show_all = self.request.GET.get("alle") == "1"
-        my_committee_ids = self.get_my_committee_ids()
-        context["has_my_committees"] = bool(my_committee_ids)
-        context["dashboard_personalized"] = bool(my_committee_ids) and not show_all
-        context["my_committees"] = self.get_my_committees_display()
+        mine = my_committees(self.membership)
+        my_committee_ids = mine.ids or None
+        context["has_my_committees"] = bool(mine)
+        context["dashboard_personalized"] = bool(mine) and not show_all
+        # Badges im Seitenkopf: höchstens vier Gremien
+        context["my_committees"] = list(mine.committees[:4])
         if show_all:
             my_committee_ids = None
 
@@ -40,27 +45,6 @@ class DashboardView(WorkViewMixin, TemplateView):
         context["recent_documents"] = self.get_recent_documents(my_committee_ids)
 
         return context
-
-    def get_my_committee_ids(self):
-        """
-        IDs of the committees relevant for the current member ("Meine Gremien").
-
-        Preference order: self-selected followed committees, then the
-        admin-assigned committees. Returns None when neither is set, meaning
-        the dashboard stays org-wide.
-        """
-        followed = set(self.membership.followed_organizations.values_list("id", flat=True))
-        if followed:
-            return followed
-        assigned = set(self.membership.oparl_committees.values_list("id", flat=True))
-        return assigned or None
-
-    def get_my_committees_display(self):
-        """Committee objects for the header badges (followed, else assigned)."""
-        followed = list(self.membership.followed_organizations.all().order_by("name")[:4])
-        if followed:
-            return followed
-        return list(self.membership.oparl_committees.all().order_by("name")[:4])
 
     def get_upcoming_meetings(self, my_committee_ids=None):
         """
