@@ -29,10 +29,11 @@ except ImportError:
     PdfReader = None  # type: ignore[assignment, misc]
 
 try:
-    from pdf2image import convert_from_bytes
+    from pdf2image import convert_from_bytes, pdfinfo_from_bytes
     from pdf2image.exceptions import PDFInfoNotInstalledError
 except ImportError:
     convert_from_bytes = None  # type: ignore[assignment, misc]
+    pdfinfo_from_bytes = None  # type: ignore[assignment, misc]
     PDFInfoNotInstalledError = None  # type: ignore[assignment, misc]
 
 try:
@@ -90,14 +91,16 @@ def _http_get(url: str, timeout: float = 60.0, extra_headers: dict[str, str] | N
     return response
 
 
-def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int | None, str]:
+def _extract_text_from_pdf(
+    data: bytes, file_name: str = "", ocr_max_pages: int | None = None
+) -> tuple[str, int | None, str]:
     """
     Extrahiert Text aus einer PDF-Datei.
 
     Fallback-Kette:
     1. pypdf (schnell, nur Text-PDFs)
     2. Mistral OCR (API, wenn konfiguriert)
-    3. Tesseract OCR (lokal)
+    3. Tesseract OCR (lokal; ``ocr_max_pages`` begrenzt die erkannten Seiten)
 
     Returns:
         Tuple mit (text, page_count, extraction_method)
@@ -142,7 +145,7 @@ def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int |
             logger.warning("Mistral OCR fehlgeschlagen: %s", exc)
 
     # 3. Fallback auf Tesseract OCR (lokal)
-    text, success = _extract_text_with_ocr(data)
+    text, success = _extract_text_with_ocr(data, max_pages=ocr_max_pages, page_count=page_count)
     if success and text.strip():
         logger.debug(f"Tesseract OCR erfolgreich: {len(text)} Zeichen")
         return text, page_count, "tesseract"
@@ -152,9 +155,21 @@ def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int |
     return "", page_count, "none"
 
 
-def _extract_text_with_ocr(data: bytes) -> tuple[str, bool]:
+#: Auflösung für die Texterkennung; Tesseract erkennt Fließtext ab etwa 300 dpi zuverlässig
+OCR_DPI = 300
+
+
+def _extract_text_with_ocr(
+    data: bytes, max_pages: int | None = None, page_count: int | None = None
+) -> tuple[str, bool]:
     """
     Extrahiert Text aus einem Dokument mittels OCR.
+
+    Seite für Seite und in Graustufen: Früher wurden alle Seiten auf einmal in Farbe gerastert
+    (rund 26 MB je A4-Seite bei 300 dpi, dazu der Rohdatenstrom) – ein gescannter Antrag mit
+    zwanzig Seiten brauchte über 1 GB Arbeitsspeicher und damit mehr, als der Web-Container hat.
+    Jetzt liegt immer nur eine Seite (rund 9 MB) im Speicher. ``max_pages`` begrenzt die Zahl der
+    erkannten Seiten, etwa für den Import im laufenden Seitenaufruf.
 
     Returns:
         Tuple mit (text, success)
@@ -163,24 +178,40 @@ def _extract_text_with_ocr(data: bytes) -> tuple[str, bool]:
         logger.warning("OCR nicht verfügbar (pdf2image oder pytesseract fehlt).")
         return "", False
 
-    try:
-        images = convert_from_bytes(data, dpi=300)
-    except Exception as exc:
-        if PDFInfoNotInstalledError and isinstance(exc, PDFInfoNotInstalledError):
-            logger.warning("Poppler nicht installiert, OCR wird übersprungen.")
-        else:
-            logger.warning("Fehler beim Konvertieren für OCR: %s", exc)
+    total = page_count
+    if total is None:
+        try:
+            total = int(pdfinfo_from_bytes(data)["Pages"]) if pdfinfo_from_bytes is not None else None
+        except Exception as exc:
+            if PDFInfoNotInstalledError and isinstance(exc, PDFInfoNotInstalledError):
+                logger.warning("Poppler nicht installiert, OCR wird übersprungen.")
+            else:
+                logger.warning("Fehler beim Lesen der Seitenzahl für OCR: %s", type(exc).__name__)
+            return "", False
+    if not total:
         return "", False
+    limit = total if max_pages is None else max(0, min(total, max_pages))
 
     ocr_fragments: list[str] = []
-    for image in images:
+    for number in range(1, limit + 1):
         try:
-            # Deutsche Sprache für bessere Erkennung von Umlauten
-            ocr_text = pytesseract.image_to_string(image, lang="deu")
+            images = convert_from_bytes(data, dpi=OCR_DPI, first_page=number, last_page=number, grayscale=True)
         except Exception as exc:
-            logger.warning("OCR-Fehler für Seite: %s", exc)
-            ocr_text = ""
-        ocr_fragments.append(ocr_text.strip())
+            if PDFInfoNotInstalledError and isinstance(exc, PDFInfoNotInstalledError):
+                logger.warning("Poppler nicht installiert, OCR wird übersprungen.")
+                return "", False
+            logger.warning("Fehler beim Konvertieren von Seite %s für OCR: %s", number, type(exc).__name__)
+            continue
+        for image in images:
+            try:
+                # Deutsche Sprache für bessere Erkennung von Umlauten
+                ocr_text = pytesseract.image_to_string(image, lang="deu")
+            except Exception as exc:
+                logger.warning("OCR-Fehler für Seite %s: %s", number, type(exc).__name__)
+                ocr_text = ""
+            finally:
+                image.close()
+            ocr_fragments.append(ocr_text.strip())
 
     text = "\n\n".join(fragment for fragment in ocr_fragments if fragment)
     return text, True
@@ -217,6 +248,7 @@ def extract_text_from_file(
     data: bytes,
     mime_type: str | None = None,
     file_name: str = "",
+    ocr_max_pages: int | None = None,
 ) -> tuple[str, bool, int | None, str]:
     """
     Extrahiert Text aus Binärdaten basierend auf MIME-Typ.
@@ -225,6 +257,7 @@ def extract_text_from_file(
         data: Binärdaten der Datei
         mime_type: MIME-Typ der Datei
         file_name: Optionaler Dateiname für Fallback-Erkennung
+        ocr_max_pages: Höchstzahl der Seiten für die lokale Texterkennung (``None`` = alle)
 
     Returns:
         Tuple mit (text, ocr_performed, page_count, extraction_method)
@@ -238,7 +271,7 @@ def extract_text_from_file(
 
     # PDF-Erkennung
     if resolved_mime in PDF_MIME_TYPES or file_name.lower().endswith(".pdf"):
-        text, page_count, extraction_method = _extract_text_from_pdf(data, file_name)
+        text, page_count, extraction_method = _extract_text_from_pdf(data, file_name, ocr_max_pages)
         ocr_used = extraction_method in ("mistral", "tesseract")
 
     # Textdateien

@@ -17,9 +17,11 @@
 
 {% block work_content %}
 <div class="max-w-2xl mx-auto">
+    {{ import_config|json_script:"document-import-config" }}
     <form method="post" enctype="multipart/form-data"
           class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
-          x-data="importForm()">
+          x-data="documentImport"
+          @submit="onSubmit($event)">
         {% csrf_token %}
 
         <!-- Drop Zone -->
@@ -36,6 +38,7 @@
                        id="import_files"
                        accept=".pdf,.docx"
                        multiple
+                       x-ref="fileInput"
                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                        @change="handleFileSelect($event)">
                 <div class="border-2 border-dashed rounded-xl p-8 text-center transition-colors"
@@ -48,7 +51,7 @@
                         oder ziehen Sie Dateien hierher
                     </p>
                     <p class="mt-1 text-xs text-gray-500">
-                        PDF- und DOCX-Dateien bis 50 MB
+                        PDF- und DOCX-Dateien bis {{ import_max_mb }} MB
                     </p>
                 </div>
             </div>
@@ -59,9 +62,9 @@
                     <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
                         <div class="flex items-center gap-3">
                             <div class="p-2 rounded-lg"
-                                 :class="file.name.toLowerCase().endsWith('.docx') ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-red-100 dark:bg-red-900/30'">
+                                 :class="isDocx(file) ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-red-100 dark:bg-red-900/30'">
                                 <i data-lucide="file-text" class="w-4 h-4"
-                                   :class="file.name.toLowerCase().endsWith('.docx') ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'"></i>
+                                   :class="isDocx(file) ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'"></i>
                             </div>
                             <div>
                                 <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="file.name"></p>
@@ -75,6 +78,17 @@
                         </button>
                     </div>
                 </template>
+            </div>
+
+            <!-- Abgelehnte Dateien (früher stumm verworfen) -->
+            <div x-show="rejectedFiles.length > 0" x-cloak role="alert"
+                 class="mt-4 p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-800 dark:text-amber-200">
+                <p class="font-medium">Nicht übernommen:</p>
+                <ul class="mt-1 space-y-1">
+                    <template x-for="item in rejectedFiles" :key="item.name">
+                        <li><span class="font-medium" x-text="item.name"></span> – <span x-text="item.reason"></span></li>
+                    </template>
+                </ul>
             </div>
         </div>
 
@@ -150,6 +164,7 @@
                         <li>Text und Formatierung werden automatisch extrahiert</li>
                         <li>DOCX-Dateien behalten Überschriften, Listen und Formatierung</li>
                         <li>Die Originaldatei wird als Anhang gespeichert</li>
+                        <li>Gescannte PDFs laufen durch die Texterkennung (erste {{ import_ocr_max_pages }} Seiten) und brauchen etwas länger</li>
                         <li>Sie können den Inhalt danach im Editor bearbeiten</li>
                     </ul>
                 </div>
@@ -163,68 +178,14 @@
                 Abbrechen
             </a>
             <button type="submit"
-                    :disabled="selectedFiles.length === 0"
+                    :disabled="selectedFiles.length === 0 || submitting"
+                    :aria-busy="submitting"
                     class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
-                <i data-lucide="upload" class="w-4 h-4"></i>
-                <span x-text="selectedFiles.length <= 1 ? 'Importieren' : `${selectedFiles.length} Dateien importieren`">Importieren</span>
+                <i data-lucide="upload" class="w-4 h-4" x-show="!submitting"></i>
+                <i data-lucide="loader-2" class="w-4 h-4 animate-spin" x-show="submitting" x-cloak></i>
+                <span x-text="submitLabel()">Importieren</span>
             </button>
         </div>
     </form>
 </div>
-{% endblock %}
-
-{% block extra_scripts %}
-<script nonce="{{ csp_nonce }}">
-function importForm() {
-    return {
-        isDragging: false,
-        selectedFiles: [],
-        visibility: 'private',
-
-        handleFileSelect(event) {
-            this.addFiles(event.target.files);
-        },
-
-        handleDrop(event) {
-            this.isDragging = false;
-            this.addFiles(event.dataTransfer.files);
-        },
-
-        addFiles(fileList) {
-            const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-            const allowedExts = ['.pdf', '.docx'];
-            for (const file of fileList) {
-                const name = file.name.toLowerCase();
-                const isAllowed = allowedTypes.includes(file.type) || allowedExts.some(ext => name.endsWith(ext));
-                if (isAllowed) {
-                    if (!this.selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
-                        this.selectedFiles.push(file);
-                    }
-                }
-            }
-            this.updateFileInput();
-        },
-
-        removeFile(index) {
-            this.selectedFiles.splice(index, 1);
-            this.updateFileInput();
-        },
-
-        updateFileInput() {
-            // Update the actual file input
-            const dt = new DataTransfer();
-            this.selectedFiles.forEach(file => dt.items.add(file));
-            document.getElementById('import_files').files = dt.files;
-        },
-
-        formatFileSize(bytes) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-    }
-}
-</script>
 {% endblock %}

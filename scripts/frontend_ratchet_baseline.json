@@ -1,8 +1,8 @@
 {
-  "inline_scripts": 37,
+  "inline_scripts": 36,
   "inline_styles": 20,
   "templates_over_300": 25,
   "on_handlers": 0,
-  "style_attrs": 130,
+  "style_attrs": 129,
   "duplicate_class_chains": 94
 }

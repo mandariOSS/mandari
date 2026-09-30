@@ -28,6 +28,11 @@ Alpine.data('importManager', importManager)
 Alpine.data('fileImportManager', fileImportManager)
 Alpine.data('securitySettings', securitySettings)
 
+// ---- Dokument-Import (#620) ----------------------------------------------------------
+import { documentImport } from '../alpine/document-import'
+
+Alpine.data('documentImport', documentImport)
+
 // ---- Satz B (#174): Fraktionssitzung, TOP-Panel, Fraktions-Einstellungen ----------
 import { agendaItemPanel } from '../alpine/agenda-item-panel'
 import { factionDetail } from '../alpine/faction-detail'
