@@ -1598,10 +1598,14 @@ class SyncOrchestrator:
         sync_type: str = "incremental",
         triggered_by: str = "daemon",
     ) -> None:
-        """Schreibt aggregierte Sync-Ergebnisse in Django's SyncLog-Tabelle."""
+        """Schreibt aggregierte Sync-Ergebnisse in Django's SyncLog-Tabelle.
+
+        ``start_time`` ohne Zeitzone gilt als Ortszeit des Prozesses (so entsteht sie mit
+        ``datetime.now()``), nicht als UTC: Im Container mit ``TZ=Europe/Berlin`` läge der Start
+        sonst ein bis zwei Stunden in der Zukunft und die Dauer wäre negativ (Issue #692).
+        """
         end_time = datetime.now(UTC)
-        if start_time.tzinfo is None:
-            start_time = start_time.replace(tzinfo=UTC)
+        start_time = start_time.astimezone(UTC)
 
         total_entities = 0
         all_errors: list[str] = []

@@ -212,7 +212,8 @@ class SyncScheduler:
         """Write a single sync log entry via orchestrator's shared method."""
         await orchestrator.write_results_to_synclog(
             results,
-            start_time,
+            # Ortszeit des Prozesses mit Zeitzone übergeben (start_time stammt aus datetime.now())
+            start_time.astimezone(),
             sync_type,
             triggered_by="daemon",
         )
