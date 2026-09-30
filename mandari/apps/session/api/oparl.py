@@ -510,7 +510,8 @@ def _public_files_qs():
 
 
 def _prepare_meetings(qs, tenant):
-    return qs.select_related("protocol__public_file__meeting").prefetch_related(
+    # tenant__state_profile: Sitzungsformat (_format_extension) ohne Abfrage je Sitzung
+    return qs.select_related("protocol__public_file__meeting", "tenant__state_profile").prefetch_related(
         "joint_organizations",
         Prefetch(
             "agenda_items",

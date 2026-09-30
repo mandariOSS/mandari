@@ -14,6 +14,11 @@
         {% if format_info.public_url %}<a href="{{ format_info.public_url }}" class="text-primary-600 dark:text-primary-400 hover:underline" target="_blank" rel="noopener noreferrer">{{ format_info.public_url }}</a>{% endif %}
     </p>
     {% endif %}
+    {% if format_info.hints and not format_info.warnings %}
+    <c-ui.alert variant="info" icon="scale">
+        {% for hint in format_info.hints %}<p>{{ hint }}</p>{% endfor %}
+    </c-ui.alert>
+    {% endif %}
     {% if format_info.warnings %}
     <c-ui.alert variant="warning" icon="triangle-alert" title="Sitzungsformat nach dem Landesprofil nicht zulässig">
         {% for warning in format_info.warnings %}<p>{{ warning }}</p>{% endfor %}

@@ -468,7 +468,10 @@ class MeetingFormatInfo:
     public_note: str
     public_registration_required: bool
     public_registration_days: int | None
+    #: Fehler der Prüfung – das gespeicherte Format ist nach dem Landesprofil nicht (mehr) zulässig
     warnings: tuple[str, ...]
+    #: Hinweise der Prüfung, die die Ladung nicht sperren (z. B. nicht eingeordneter Ausschuss)
+    hints: tuple[str, ...] = ()
 
     @property
     def is_remote(self) -> bool:
@@ -522,4 +525,5 @@ def describe(meeting: Any, *, for_members: bool = False, checks: bool = True) ->
         public_registration_required=bool(profile and profile.public_registration_required),
         public_registration_days=tenant.digital_public_registration_days,
         warnings=tuple(result.errors),
+        hints=tuple(result.warnings),
     )

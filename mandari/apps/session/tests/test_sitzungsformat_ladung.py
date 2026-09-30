@@ -6,8 +6,10 @@ Sitzungsformat in Ladung, Tagesordnung und Öffentlichkeit (Issue #138, Teil 2).
 - Ladungsmail und Kalendereintrag nennen das Format, nie den Zugangsweg im Kalender
 - Versand gesperrt, solange das Format nach dem Landesprofil nicht zulässig ist
 - Detailseite zeigt Format, Rechtsgrundlage und Warnungen
-- OParl-API liefert Format und Hinweis für die Öffentlichkeit, nie den Zugangsweg
+- OParl-API liefert Format und Hinweis für die Öffentlichkeit, nie den Zugangsweg – ohne Abfrage je Sitzung
 - Bürgerportal zeigt den Hinweis; Links aus fremden Quellen nur mit http(s)
+- Zugangsweg: Empfänger der vollständigen Ladung; im Sitzungsdienst nur mit Bearbeitungsrecht (Abruf
+  protokolliert); nie in der Sitzungsmappe und nie für Gäste
 """
 
 from __future__ import annotations
@@ -21,12 +23,15 @@ from typing import Any, cast
 
 import pytest
 from django.core import mail
+from django.db import connection
 from django.template.loader import render_to_string
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.common.tests.factories import UserFactory
 from apps.session.models import (
+    SessionAuditLog,
     SessionInvitationDispatch,
     SessionMeeting,
     SessionOrganization,
@@ -156,6 +161,88 @@ def test_ladungsmail_nennt_format_und_zugang_kalender_nur_format(welt: Welt) -> 
     assert "4711" not in ics_text
 
 
+def test_versand_ermittelt_formatangaben_einmal_je_fassung_nicht_je_empfaenger(
+    welt: Welt, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for nummer in range(3):
+        person = SessionPerson.objects.create(
+            tenant=welt.tenant, given_name="Max", family_name=f"Muster{nummer}", email=f"max{nummer}@example.org"
+        )
+        SessionOrganizationMembership.objects.create(organization=welt.bau, person=person, role="member")
+    pruefungen: list[Any] = []
+    original = mfs.check_meeting
+
+    def zaehlen(meeting: Any) -> Any:
+        pruefungen.append(meeting.pk)
+        return original(meeting)
+
+    monkeypatch.setattr(mfs, "check_meeting", zaehlen)
+    mail.outbox = []
+    invitation_service.send_invitations(welt.meeting, sent_by=welt.staff)
+    assert len([m for m in mail.outbox if "Konferenzraum 4711" in m.body]) == 4
+    # Einmal für die vollständige, einmal für die öffentliche Fassung – nicht je Empfänger oder Anhang
+    assert len(pruefungen) == 2
+
+
+def test_gaeste_erhalten_format_aber_keinen_zugangsweg(welt: Welt) -> None:
+    """Bewusste Entscheidung: Der Zugangsweg geht an die Empfänger der vollständigen Ladung, nicht an Gäste."""
+    gast = SessionPerson.objects.create(
+        tenant=welt.tenant, given_name="Gerd", family_name="Gast", email="gast@example.org"
+    )
+    SessionOrganizationMembership.objects.create(organization=welt.bau, person=gast, role="guest")
+    mail.outbox = []
+    invitation_service.send_invitations(welt.meeting, sent_by=welt.staff)
+    nachricht = next(m for m in mail.outbox if m.to == ["gast@example.org"])
+    assert "Hybride Sitzung" in nachricht.body
+    assert "4711" not in nachricht.body
+    anhang = next(inhalt for name, inhalt, _typ in nachricht.attachments if name.endswith(".pdf"))
+    assert "4711" not in _pdf_text(anhang)
+
+
+def test_pdf_abruf_zugangsweg_nur_mit_bearbeitungsrecht_und_protokolliert(welt: Welt) -> None:
+    url = f"/session/muster/meetings/{welt.meeting.pk}/agenda.pdf"
+    mit = _pdf_text(welt.client.get(url).content)
+    assert "Konferenzraum 4711" in mit
+    eintrag = SessionAuditLog.objects.filter(tenant=welt.tenant, action="download").latest("created_at")
+    assert "Zugangsweg für Zugeschaltete" in str(eintrag.changes)
+
+    # NÖ-Recht ohne Bearbeitungsrecht: vollständige Tagesordnung, aber kein Zugangsweg (wie auf der Detailseite)
+    SessionRole.objects.filter(tenant=welt.tenant).update(can_edit_meetings=False)
+    ohne = _pdf_text(welt.client.get(url).content)
+    assert "Hybride Sitzung" in ohne
+    assert "4711" not in ohne
+
+
+def test_sitzungsmappe_nennt_format_ohne_zugangsweg(welt: Welt, tmp_path: Any) -> None:
+    from apps.session.services.meeting_package_pdf import build_pdf
+    from apps.session.services.meeting_package_plan import INTERNAL, build_plan
+
+    ergebnis = build_pdf(
+        build_plan(welt.meeting, INTERNAL), version=1, as_of=timezone.now(), target=tmp_path / "mappe.pdf"
+    )
+    tagesordnung = " ".join(_pdf_text(inhalt) for inhalt in ergebnis.generated.values())
+    assert "Hybride Sitzung" in tagesordnung
+    assert "4711" not in tagesordnung
+
+
+def test_versand_gesperrt_fuer_nicht_eingeordneten_haupt_und_finanzausschuss(welt: Welt) -> None:
+    """Die Ladung nennt keine Rechtsgrundlage des Regelbetriebs für einen nicht eingeordneten Hauptausschuss."""
+    hfa = SessionOrganization.objects.create(tenant=welt.tenant, name="Haupt- und Finanzausschuss")
+    SessionOrganizationMembership.objects.create(
+        organization=hfa, person=SessionPerson.objects.get(email="mitglied@example.org"), role="member"
+    )
+    SessionMeeting.objects.filter(pk=welt.meeting.pk).update(organization=hfa)
+    inhalt = welt.client.get(f"/session/muster/meetings/{welt.meeting.pk}/").content.decode()
+    assert "Sitzungsformat nach dem Landesprofil nicht zulässig" in inhalt
+    assert "keiner gesetzlichen Ausschussart zugeordnet" in inhalt
+    assert "§ 58a GO NRW" not in inhalt
+    antwort = welt.client.post(
+        f"/session/muster/meetings/{welt.meeting.pk}/invitation/", {"dispatch_type": "invitation"}, follow=True
+    )
+    assert "nicht zulässig" in antwort.content.decode()
+    assert not SessionInvitationDispatch.objects.filter(meeting=welt.meeting).exists()
+
+
 def test_versand_gesperrt_wenn_format_nicht_mehr_zulaessig(welt: Welt) -> None:
     # Nachweis entfällt: hybride Sitzung im Regelbetrieb nicht mehr gedeckt
     SessionTenant.objects.filter(pk=welt.tenant.pk).update(hybrid_basis_reference="")
@@ -172,6 +259,8 @@ def test_detailseite_zeigt_format_rechtsgrundlage_und_warnung(welt: Welt) -> Non
     assert "§ 58a GO NRW" in inhalt
     assert "Konferenzraum 4711" in inhalt
     assert "nicht zulässig" not in inhalt
+    # Hinweis ohne Sperre: Der Bauausschuss ist keiner gesetzlichen Ausschussart zugeordnet
+    assert "„Bauausschuss“ ist keiner gesetzlichen Ausschussart zugeordnet" in inhalt
 
     SessionMeeting.objects.filter(pk=welt.meeting.pk).update(organization=welt.haupt)
     inhalt = welt.client.get(f"/session/muster/meetings/{welt.meeting.pk}/").content.decode()
@@ -195,6 +284,38 @@ def test_oparl_liefert_format_und_hinweis_nie_den_zugangsweg(welt: Welt) -> None
     assert "4711" not in json.dumps(daten, ensure_ascii=False)
     liste = Client().get("/session/muster/api/oparl/meetings/").content.decode()
     assert "4711" not in liste
+
+
+def test_oparl_sitzungsliste_ohne_abfrage_je_hybrider_sitzung(welt: Welt) -> None:
+    """Der öffentliche Listenendpunkt fragt Mandant und Landesprofil nicht je Sitzung ab."""
+
+    def abfragen() -> int:
+        with CaptureQueriesContext(connection) as erfasst:
+            antwort = Client().get("/session/muster/api/oparl/meetings/")
+        assert antwort.status_code == 200
+        return len(erfasst.captured_queries)
+
+    SessionMeeting.objects.create(
+        tenant=welt.tenant,
+        organization=welt.bau,
+        name="Präsenz mit Übertragung",
+        start=welt.meeting.start + timedelta(days=1),
+        public_access_url="https://stream.example.org/praesenz",
+    )
+    eine = abfragen()
+    for nummer, meeting_format in enumerate(("hybrid", "digital", "hybrid", "presence")):
+        SessionMeeting.objects.create(
+            tenant=welt.tenant,
+            organization=welt.bau,
+            name=f"Weitere Sitzung {nummer}",
+            start=welt.meeting.start + timedelta(days=2 + nummer),
+            format=meeting_format,
+            format_reason="Unwetter",
+            public_access_url="https://stream.example.org/bau",
+        )
+    daten = Client().get("/session/muster/api/oparl/meetings/").json()
+    assert sum(1 for m in daten["data"] if m.get("mandari:meetingFormat") in ("hybrid", "digital")) == 4
+    assert abfragen() == eine
 
 
 def test_oparl_digital_nrw_mit_anmeldung_und_praesenz_unveraendert(welt: Welt) -> None:

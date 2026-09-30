@@ -133,7 +133,14 @@ def _send(
     )
 
 
-def _mail_context(recipient: SessionInvitationRecipient) -> dict[str, Any]:
+def _mail_context(
+    recipient: SessionInvitationRecipient,
+    format_info: meeting_format_service.MeetingFormatInfo | None = None,
+) -> dict[str, Any]:
+    """
+    Gemeinsamer Kontext der Mails zu einer Ladung. ``format_info`` übergibt der Versand einmal je Fassung
+    (mit bzw. ohne Zugangsweg), damit Prüfung und Entschlüsselung nicht je Empfänger laufen.
+    """
     meeting = recipient.dispatch.meeting
     return {
         "tenant": meeting.tenant,
@@ -145,7 +152,9 @@ def _mail_context(recipient: SessionInvitationRecipient) -> dict[str, Any]:
         "portal_url": f"{_site_url()}/work/",
         "is_portal": recipient.channel == "portal",
         # Sitzungsformat (Issue #138): Zugangsweg nur für Empfänger der vollständigen Ladung
-        "format_info": meeting_format_service.describe(meeting, for_members=recipient.includes_non_public),
+        "format_info": format_info
+        if format_info is not None
+        else meeting_format_service.describe(meeting, for_members=recipient.includes_non_public),
     }
 
 
@@ -161,9 +170,10 @@ def send_invitation_mail(
     message: str,
     supplementary: bool,
     attachments: list[tuple[str, Any, str]] | None,
+    format_info: meeting_format_service.MeetingFormatInfo | None = None,
 ) -> None:
     """Ladung bzw. Nachladung an einen Empfänger (E-Mail oder Portal-Hinweis) versenden."""
-    context = _mail_context(recipient)
+    context = _mail_context(recipient, format_info)
     context.update({"message": message, "supplementary": supplementary, "has_attachments": bool(attachments)})
     _send(
         "emails/session/invitation.html",
@@ -331,6 +341,7 @@ def _send_substitution(meeting: SessionMeeting, absent: SessionPerson, membershi
     needs_portal = any(m.person.delivery_channel == "portal" for m in memberships)
     portal_ids = portal_link_service.portal_person_ids(meeting.tenant) if needs_portal else set()
     pdfs: dict[bool, bytes] = {}
+    format_infos: dict[bool, meeting_format_service.MeetingFormatInfo] = {}
 
     for membership in memberships:
         person = membership.person
@@ -355,12 +366,17 @@ def _send_substitution(meeting: SessionMeeting, absent: SessionPerson, membershi
             outcome.by_letter.append(person.display_name)
             continue
         attachments: list[tuple[str, Any, str]] | None = None
+        # Formatangaben einmal je Fassung (mit bzw. ohne Zugangsweg), nicht je Empfänger
+        if include_np not in format_infos:
+            format_infos[include_np] = meeting_format_service.describe(meeting, for_members=include_np)
         if channel == "email":
             if include_np not in pdfs:
-                pdfs[include_np] = invitation_service.build_agenda_pdf(meeting, include_non_public=include_np)
+                pdfs[include_np] = invitation_service.build_agenda_pdf(
+                    meeting, include_non_public=include_np, format_info=format_infos[include_np]
+                )
             attachments = [("einladung-tagesordnung.pdf", pdfs[include_np], "application/pdf")]
         try:
-            context = _mail_context(recipient)
+            context = _mail_context(recipient, format_infos[include_np])
             context.update({"absent": absent, "has_attachments": bool(attachments)})
             _send(
                 "emails/session/substitute_request.html",

@@ -58,8 +58,17 @@ bearbeitbar; der Versand prüft das Format erneut (siehe unten).
 
 - **Ladung und Ladungs-PDF** (auch Nachtrag, Sitzungsmappe, Abruf in mandari Work) nennen bei hybriden und
   digitalen Sitzungen Format, Rechtsgrundlage (Norm i. V. m. örtlichem Nachweis bzw. Norm der Notlage) und
-  Begründung; den **Zugangsweg** nur in der vollständigen Fassung für Gremienmitglieder. Die öffentliche
-  Fassung und der Kalendereintrag (ICS) nennen nur das Format.
+  Begründung. Die öffentliche Fassung und der Kalendereintrag (ICS) nennen nur das Format.
+- **Zugangsweg für Zugeschaltete** (verschlüsselt gespeichert):
+  - Ladungsmail und Ladungs-PDF an die Empfänger der vollständigen Ladung (Gremienmitglieder mit
+    nichtöffentlichem Teil), auch beim Abruf der eigenen Ladung in mandari Work.
+  - Gäste erhalten die öffentliche Fassung und damit keinen Zugangsweg. Das ist bewusst so: Die
+    Zuschaltung nach Landesrecht gilt für Mitglieder; ob ein Gast zugeschaltet wird, entscheidet die
+    Sitzungsleitung im Einzelfall und teilt den Zugang dann selbst mit.
+  - Im Sitzungsdienst nur mit dem Recht „Sitzungen bearbeiten“ – auf der Detailseite wie im PDF-Abruf;
+    der Abruf einer PDF mit Zugangsweg wird im Audit-Log protokolliert.
+  - Nie in der Sitzungsmappe (gespeicherte Datei für alle Berechtigten), in öffentlichen Dokumenten, in der
+    OParl-API oder im Kalendereintrag.
 - **Versand gesperrt**, solange das gespeicherte Format nach dem aktuellen Landesprofil nicht zulässig ist
   (z. B. nach Wechsel des Landesprofils); die Detailseite der Sitzung zeigt den Grund.
 - **Öffentlichkeit:** Hinweis auf Übertragung bzw. geschützten Zugang mit Anmeldefrist (NRW: § 3 DigiSiVO)
