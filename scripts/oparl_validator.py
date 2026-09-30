@@ -185,7 +185,28 @@ def feed_pruefung(body: dict[str, Any]) -> list[str]:
     fehlend = [feld for feld in ("data", "cursor", "links") if feld not in seite]
     if fehlend or not isinstance(seite.get("data"), list):
         return [f"Änderungsfeed {adresse}: Felder fehlen ({', '.join(fehlend) or 'data'})."]
-    return []
+    return snapshot_pruefung(body, seite["links"].get("snapshot"))
+
+
+def snapshot_pruefung(body: dict[str, Any], adresse: str | None) -> list[str]:
+    """Der Snapshot nennt seinen Cursor und enthält nur Objekte, die der Typprüfung standhalten."""
+    from hub.api.tests.konformitaet import pruefe
+
+    if not adresse or body.get("mandari:snapshot") != adresse:
+        return [f"Body {body.get('id')}: mandari:snapshot fehlt oder weicht vom Verweis des Feeds ab."]
+    with urllib.request.urlopen(adresse, timeout=120) as antwort:  # noqa: S310 – eigene Testinstanz
+        zeilen = [json.loads(zeile) for zeile in antwort.read().decode("utf-8").splitlines()]
+    if not zeilen or "snapshot_cursor" not in zeilen[0]:
+        return [f"Snapshot {adresse}: Die erste Zeile nennt keinen snapshot_cursor."]
+    probleme = []
+    if len(zeilen) < 2 or zeilen[1].get("id") != body.get("id"):
+        probleme.append(f"Snapshot {adresse}: Nach der ersten Zeile folgt nicht der Body.")
+    for objekt in zeilen[1:]:
+        probleme += pruefe(objekt, str(objekt.get("type", "")).rsplit("/", 1)[-1])
+    nachher = abruf(zeilen[0]["changes"])
+    if nachher.get("data") != []:
+        probleme.append(f"Snapshot {adresse}: Der Feed ab dem Cursor ist nicht leer.")
+    return probleme
 
 
 def externer_validator(validator: str, system_url: str, bericht: Path) -> tuple[int, list[str]]:

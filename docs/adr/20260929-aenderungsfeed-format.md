@@ -151,6 +151,22 @@ Delta-Dateien von Lokaal Beslist in Flandern.
   Abonnement `feed` mit Tabelle. Die Reihenfolge garantiert der Sequenzierer; eine zweite Tabelle
   bräuchte eigene Folgenummern und ein eigenes Aufräumen.
 
+## Nachtrag zur Umsetzung (#563)
+
+- **Form:** NDJSON, je Zeile ein JSON-Objekt. Die erste Zeile nennt `snapshot_cursor`, die Adresse
+  des Body (`body`), die fertige Adresse für den Feed (`changes`) und den Zeitpunkt (`created`); der
+  Cursor steht zusätzlich in der Kopfzeile `Snapshot-Cursor`. Danach folgen der Body und die Objekte
+  der externen Listen mit ihren Einbettungen – jedes Objekt einmal, Gelöschtes nicht.
+- **Cursor:** der Stand des Feeds der Kommune (ihr neuestes öffentliches Ereignis), festgehalten vor
+  dem ersten Lesen. Er hängt nicht von nichtöffentlichen Ereignissen ab.
+- **Lesen:** in Seiten fortlaufend nach Kennung statt nach Position, damit bei gleichzeitigen
+  Änderungen kein Objekt zwischen zwei Seiten durchrutscht. Es ist kein Abbild eines einzigen
+  Zeitpunkts; die Übergabe gleicht das aus.
+- **Betrieb:** Der Snapshot wird vollständig in eine temporäre Datei geschrieben und danach
+  übertragen (`Content-Length`). So liest nur die Anfrage die Datenbank, und ein langsamer Abnehmer
+  hält keine Verbindung. Gleichzeitige Snapshots sind begrenzt (`OPARL_SNAPSHOT_PARALLEL`, sonst
+  `503` mit `Retry-After`). Der Schalter ist der des Feeds (`OPARL_CHANGES_ENABLED`).
+
 ## Bezug
 
 - [A3 Sequenzierer](20260929-sequenzierer.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),

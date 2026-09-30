@@ -23,6 +23,7 @@ Beide gehen denselben Weg::
   inkrementellen Listen.
 - ``hub.api.changes``: der Änderungsfeed je Kommune (kompatible Erweiterung von OParl 1.1) – eine Sicht
   auf die öffentlichen Ereignisse im Journal, je Installation einzuschalten.
+- ``hub.api.snapshot``: der Snapshot einer Kommune als NDJSON mit dem Cursor, ab dem der Feed fortsetzt.
 - ``hub.api.http``: die HTTP-Hülle aller Endpunkte – JSON mit ``ETag``, bedingte Anfragen (``304``),
   Fehler als JSON, CORS, Ratenbegrenzung, nur lesende Methoden.
 
