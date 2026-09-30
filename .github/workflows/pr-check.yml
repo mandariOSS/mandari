@@ -849,8 +849,10 @@ jobs:
   # (https://github.com/konstin/oparl-validator-rs, MIT oder Apache-2.0) und der eigenen Typprüfung
   # (scripts/oparl_validator.py). Läuft bei Änderungen an den Schnittstellen und bei jedem push auf
   # dev/main. Der Validator wird nur ausgeführt: festgelegter Stand der vom Projekt gebauten
-  # Programmdatei (Commit im Zweig gh-pages, gebaut aus 9ae12e7), geprüft per SHA-256. Der Job hat
-  # nur Leserechte und keine Geheimnisse.
+  # Programmdatei (Commit im Zweig gh-pages, gebaut aus 9ae12e7), geprüft per SHA-256. Das Archiv
+  # liegt im Zwischenspeicher der Actions (Schlüssel: Prüfsumme) und wird nur geladen, wenn es dort
+  # fehlt – der Job hängt so nicht bei jedem Lauf an der fremden Adresse. Die Prüfsumme gilt auch für
+  # das Archiv aus dem Zwischenspeicher. Der Job hat nur Leserechte und keine Geheimnisse.
   oparl-validator:
     name: OParl-Validator (Aggregator und Session-Schnittstelle)
     needs: changes
@@ -881,12 +883,23 @@ jobs:
           pip install shared/
           pip install -r mandari/requirements.lock
 
-      - name: Validator laden und Prüfsumme vergleichen
+      - name: Validator aus dem Zwischenspeicher
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/oparl-validator-archiv
+          key: oparl-validator-${{ env.VALIDATOR_SHA256 }}
+
+      - name: Validator bei Bedarf laden, Prüfsumme vergleichen
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/oparl-validator.tar.gz" "$VALIDATOR_URL"
-          echo "$VALIDATOR_SHA256  $RUNNER_TEMP/oparl-validator.tar.gz" | sha256sum --check --strict
-          tar -xzf "$RUNNER_TEMP/oparl-validator.tar.gz" -C "$RUNNER_TEMP"
+          archiv="$RUNNER_TEMP/oparl-validator-archiv/oparl-validator.tar.gz"
+          stimmt() { echo "$VALIDATOR_SHA256  $archiv" | sha256sum --check --strict --status; }
+          if [ ! -f "$archiv" ] || ! stimmt; then
+            mkdir -p "$(dirname "$archiv")"
+            curl -fsSL --retry 3 -o "$archiv" "$VALIDATOR_URL"
+          fi
+          echo "$VALIDATOR_SHA256  $archiv" | sha256sum --check --strict
+          tar -xzf "$archiv" -C "$RUNNER_TEMP"
           chmod +x "$RUNNER_TEMP/oparl-validator-rs"
 
       - name: Beide OParl-Ausgaben prüfen (Testinstanz mit Demo-Daten)

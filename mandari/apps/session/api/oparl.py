@@ -856,15 +856,23 @@ def _location_response(api, pk):
     (OParl 1.1 §2.8) – ohne Inhalte. Sitzungen, die nie öffentlich waren, ergeben 404.
     """
     location_id = api.obj_url("location", pk)
-    gone = {"id": location_id, "type": schema_type("location"), "deleted": True}
+
+    def gone(created, modified):
+        # Felder und Reihenfolge wie bei jedem gekürzten Objekt (serialize_tombstone)
+        return {
+            "id": location_id,
+            "type": schema_type("location"),
+            "created": iso(created),
+            "modified": iso(modified),
+            "deleted": True,
+        }
+
     meeting = pub.visible_meetings(api.tenant).filter(pk=pk).first()
     if meeting is not None:
-        return json_response(serialize_location(api, meeting) or {**gone, **_timestamps(meeting)})
+        return json_response(serialize_location(api, meeting) or gone(meeting.created_at, meeting.updated_at))
     tombstone = SessionOParlTombstone.objects.filter(tenant=api.tenant, oparl_type="meeting", object_id=pk).first()
     if tombstone is not None:
-        return json_response(
-            {**gone, "created": iso(tombstone.object_created_at), "modified": iso(tombstone.deleted_at)}
-        )
+        return json_response(gone(tombstone.object_created_at, tombstone.deleted_at))
     return error_response(404, f"{location_id} nicht gefunden.")
 
 

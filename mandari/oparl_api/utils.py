@@ -62,16 +62,36 @@ SESSION_ORGANIZATION_TYPES = {
     "other": "Sonstiges",
 }
 
-# Verbreitete Angaben fremder Quellen, die keiner der sieben Werte sind, aber eindeutig dazugehören
+# Verbreitete Angaben fremder Quellen, die keiner der sieben Werte sind, aber eindeutig dazugehören.
+# Manche RIS ordnen nach dem Kommunalrecht: Hauptorgan (Rat, Kreistag) und Hilfsorgan (Ausschüsse,
+# Beiräte) sind Gremien; Amt, Dienststelle und Organisationseinheit gehören zur Verwaltung.
 _ORGANIZATION_TYPE_SYNONYMS = {
     "ausschuss": "Gremium",
+    "ausschüsse": "Gremium",
     "rat": "Gremium",
     "beirat": "Gremium",
+    "beiräte": "Gremium",
     "kommission": "Gremium",
+    "kommissionen": "Gremium",
+    "gremien": "Gremium",
     "hauptorgan": "Gremium",
+    "hauptorgane": "Gremium",
+    "hilfsorgan": "Gremium",
+    "hilfsorgane": "Gremium",
+    "fraktionen": "Fraktion",
+    "parteien": "Partei",
+    "institutionen": "Institution",
     "amt": "Verwaltungsbereich",
+    "ämter": "Verwaltungsbereich",
     "fachbereich": "Verwaltungsbereich",
+    "fachbereiche": "Verwaltungsbereich",
     "dezernat": "Verwaltungsbereich",
+    "dezernate": "Verwaltungsbereich",
+    "dienststelle": "Verwaltungsbereich",
+    "dienststellen": "Verwaltungsbereich",
+    "organisationseinheit": "Verwaltungsbereich",
+    "organisationseinheiten": "Verwaltungsbereich",
+    "verwaltung": "Verwaltungsbereich",
 }
 
 _ORGANIZATION_TYPE_LOOKUP = {
@@ -159,18 +179,17 @@ def iso_date(d):
     return d.isoformat() if d else None
 
 
-def iso_day(dt, tz=None):
+def iso_day(dt):
     """
     Zeitpunkt -> Datum ``yyyy-mm-dd`` (None-sicher), für Felder vom Typ ``date`` wie ``File.date``.
 
-    Ohne ``tz`` gilt der Tag in der Zeitzone der Installation; der Aggregator übergibt UTC, weil der
-    Ingestor ein reines Datum der Quelle als Mitternacht UTC speichert.
+    Es gilt der Tag in der Zeitzone der Installation.
     """
     if dt is None:
         return None
     if timezone.is_naive(dt):
         dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(tz or timezone.get_current_timezone()).date().isoformat()
+    return dt.astimezone(timezone.get_current_timezone()).date().isoformat()
 
 
 def parse_client_datetime(value, param):

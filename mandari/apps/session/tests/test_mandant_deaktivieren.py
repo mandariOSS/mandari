@@ -34,6 +34,7 @@ from insight_core.models import (
     OParlBody,
     OParlFile,
     OParlLegislativeTerm,
+    OParlLocation,
     OParlMeeting,
     OParlMembership,
     OParlOrganization,
@@ -114,6 +115,25 @@ class TestService:
         assert welt["body"].is_listed is True
         assert not any(obj.deleted for obj in _neu_geladen(welt["eintraege"]))
         assert SessionAuditLog.objects.filter(tenant=tenant, action="publish").exists()
+
+    def test_eigenes_ortsobjekt_wird_mit_zurueckgenommen_und_kommt_nicht_wieder(self, welt: dict[str, Any]) -> None:
+        # Der Sitzungsort steht als Text an der Sitzung; ein eigenes Objekt stammt von einem älteren Ingestor
+        sitzung = welt["eintraege"][0]
+        ort = OParlLocation.objects.create(
+            external_id=sitzung.external_id.replace("/meeting/", "/location/"), body=welt["body"], description="Rathaus"
+        )
+
+        ergebnis = tenant_provisioning.set_tenant_active(welt["tenant"], False, actor="Test")
+
+        ort.refresh_from_db()
+        assert ort.deleted is True and ort.withdrawn_by_publisher
+        assert ergebnis.portal is not None and ergebnis.portal.entries == 9
+
+        tenant_provisioning.set_tenant_active(welt["tenant"], True, actor="Test")
+
+        ort.refresh_from_db()
+        assert ort.deleted is True, "der Ort kommt mit der Sitzung wieder, nicht als eigenes Objekt"
+        assert not any(obj.deleted for obj in _neu_geladen(welt["eintraege"]))
 
     def test_inzwischen_zurueckgenommenes_bleibt_zurueckgenommen(self, welt: dict[str, Any]) -> None:
         tenant = welt["tenant"]

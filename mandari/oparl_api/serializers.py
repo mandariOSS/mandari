@@ -29,7 +29,7 @@ Bekannte Einschränkungen (v1, siehe docs/OPARL_API.md):
   statt Original-URLs durchzureichen.
 """
 
-from datetime import UTC
+from datetime import date
 
 from django.conf import settings
 
@@ -84,6 +84,24 @@ def _location_ext(raw_json):
     if isinstance(location, str):
         return location
     return None
+
+
+def _file_day(file_obj):
+    """
+    ``File.date`` als Datum ``yyyy-mm-dd``: der Tag, den die Quelle nennt.
+
+    Nennt die Quelle ein reines Datum, gilt es unverändert. Nennt sie einen Zeitpunkt (oder fehlen die
+    Rohdaten), gilt der Tag des gespeicherten Zeitpunkts in der Zeitzone der Installation: Mitternacht
+    UTC – so speichert der Ingestor ein reines Datum – bleibt dort derselbe Tag, und ein Zeitpunkt mit
+    lokalem Versatz (``2026-03-05T00:00:00+01:00``) rutscht nicht auf den Vortag.
+    """
+    stated = (file_obj.raw_json or {}).get("date")
+    if isinstance(stated, str) and len(stated) == 10:
+        try:
+            return date.fromisoformat(stated).isoformat()
+        except ValueError:
+            pass
+    return iso_day(file_obj.file_date)
 
 
 def _file_ext(ref):
@@ -451,7 +469,7 @@ def serialize_file(file_obj, ctx=None, include_text=False):
             "mimeType": file_obj.mime_type,
             "size": file_obj.size,
             # OParl 1.1: Datum (yyyy-mm-dd), kein Zeitpunkt
-            "date": iso_day(file_obj.file_date, UTC),
+            "date": _file_day(file_obj),
             # Dateien werden über unseren Proxy ausgeliefert (DSGVO-konform,
             # stabil auch wenn der Quellserver offline ist)
             "accessUrl": proxy_url,

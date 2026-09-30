@@ -50,13 +50,29 @@ Objekte eingebettet; alle übrigen Referenzen sind URLs auf diese API.
 
 | Eigenschaft | Ausgabe |
 |---|---|
-| `Organization.organizationType` | einer der sieben Werte der Spezifikation (`Gremium`, `Partei`, `Fraktion`, `Verwaltungsbereich`, `externes Gremium`, `Institution`, `Sonstiges`). Angaben der Quelle werden zugeordnet (Schreibweise, verbreitete Angaben wie „Ausschuss“ oder „Hauptorgan“, Schlüssel eines Session-Mandanten); Unbekanntes gilt als `Sonstiges`. Weicht die Angabe der Quelle ab, steht sie zusätzlich in `mandari:originalOrganizationType` |
-| `File.date` | Datum `yyyy-mm-dd`; der Zeitpunkt der Quelle steht in `created` |
-| `Meeting.location` | immer ein Location-Objekt: das der Quelle oder, wenn die Quelle den Ort nur als Text nennt, eines mit der Kennung der Sitzung (`…/v1/location/<Kennung der Sitzung>`, `description` aus Ort und Anschrift) |
+| `Organization.organizationType` | einer der sieben Werte der Spezifikation (`Gremium`, `Partei`, `Fraktion`, `Verwaltungsbereich`, `externes Gremium`, `Institution`, `Sonstiges`). Angaben der Quelle werden zugeordnet (Tabelle unten); Unbekanntes gilt als `Sonstiges`. Weicht die Angabe der Quelle ab, steht sie zusätzlich in `mandari:originalOrganizationType` |
+| `File.date` | Datum `yyyy-mm-dd`: der Tag, den die Quelle nennt. Nennt sie einen Zeitpunkt, gilt dessen Tag in der Zeitzone der Installation; der Zeitpunkt der Quelle steht in `created` |
+| `Meeting.location` | immer ein Location-Objekt: das der Quelle oder, wenn der Ort im Bestand nur als Text an der Sitzung steht, eines mit der Kennung der Sitzung (`…/v1/location/<Kennung der Sitzung>`, `description` aus Ort und Anschrift). Das gilt für Quellen, die den Ort nur als Text nennen, und für Session-Mandanten (siehe „Orte aus Text“) |
 | `Body.locationList` | URL der Orte-Liste (Standardfeld; zuvor nur `mandari:locationList`) |
 | `Body.legislativeTerm` | immer vorhanden (Pflichtfeld), ohne Wahlperiode als leere Liste |
 | `System.license` | nur, wenn der Betreiber `OPARL_LICENSE_URL` setzt; sonst gilt die Lizenz der Kommune am Body |
 | Bedingte Anfragen | `ETag` an jeder erfolgreichen Antwort, `If-None-Match` ergibt `304` |
+
+Zuordnung von `organizationType` (Groß- und Kleinschreibung spielt keine Rolle):
+
+| Angabe der Quelle | `organizationType` |
+|---|---|
+| einer der sieben Werte der Spezifikation | bleibt (Schreibweise vereinheitlicht) |
+| Ausschuss, Rat, Beirat, Kommission, Hauptorgan, Hilfsorgan (auch Mehrzahl, z. B. „Ausschüsse“, „Gremien“) | `Gremium` |
+| Fraktionen, Parteien, Institutionen | `Fraktion`, `Partei`, `Institution` |
+| Amt, Fachbereich, Dezernat, Dienststelle, Organisationseinheit, Verwaltung (auch Mehrzahl) | `Verwaltungsbereich` |
+| Schlüssel eines Session-Mandanten (`committee`, `council`, `advisory`, `commission`, `faction`, `department`, `other`) | wie in `SESSION_OPARL_API.md` |
+| alles andere | `Sonstiges` |
+
+Einige RIS ordnen ihre Gremien nach dem Kommunalrecht ein: „Hauptorgan“ (Rat, Kreistag) und
+„Hilfsorgan“ (Ausschüsse, Beiräte) sind Gremien, „Amt“, „Dienststellen“ und „Organisationseinheit“
+gehören zur Verwaltung. Die Zuordnung steht in `mandari/oparl_api/utils.py`
+(`_ORGANIZATION_TYPE_SYNONYMS`).
 
 ### Bedingte Anfragen (ETag, 304)
 
@@ -210,7 +226,10 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
   nur, wenn der Betreiber `OPARL_LICENSE_URL` setzt; sie gilt laut Spezifikation für alle Objekte
   ohne eigene Angabe und setzt voraus, dass die Lizenzen der Quellen das zulassen.
 - **Orte aus Text**: Location-Objekte, die aus der Textangabe einer Sitzung entstehen, stehen nicht
-  in der Orte-Liste der Kommune; sie sind eingebettet und unter ihrer ID abrufbar.
+  in der Orte-Liste der Kommune; sie sind eingebettet und unter ihrer ID abrufbar. Dazu gehört der
+  Sitzungsort eines Session-Mandanten: Er gehört zur Sitzung und steht im Bestand als Text an ihr,
+  nicht als eigenes Objekt. Wird die Sitzung zurückgenommen, liefert seine Adresse nur noch ein
+  gekürztes Objekt mit `"deleted": true`.
 - Meetings-Protokolle (`invitation`, `resultsProtocol`, `verbatimProtocol`) und
   `Paper.mainFile` werden über die Original-Rohdaten zugeordnet; fehlt diese
   Zuordnung, erscheinen die Dateien unter `auxiliaryFile`.

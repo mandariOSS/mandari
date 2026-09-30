@@ -7,6 +7,9 @@ den Werten der Spezifikation statt interner Schlüssel, ``File.date`` als Datum,
 Body, der Sitzungsort als Location-Objekt (die bisherigen ``mandari:location*``-Felder bleiben),
 ``legislativeTerm`` als Pflichtfeld und bedingte Anfragen (ETag/304). Dazu läuft die gesamte Ausgabe
 durch die Typprüfung in ``oparl_api/tests/konformitaet.py``.
+
+Der Sitzungsort gehört zur Sitzung: Wird sie zurückgenommen, darf auch ein eigenes Location-Objekt im
+RIS-Bestand nicht über den Aggregator abrufbar bleiben (Abschnitt „Rücknahme des Sitzungsortes“).
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ from apps.session.models import (
 from apps.session.services import insight_service, oparl_access
 from apps.session.tests._niederschrift import client as angemeldet
 from apps.session.tests._niederschrift import nutzer
-from insight_core.models import OParlBody, OParlFile, OParlMeeting, OParlOrganization
+from insight_core.models import OParlBody, OParlFile, OParlLocation, OParlMeeting, OParlOrganization
 from insight_sync.session_mirror import SessionMirror
 from oparl_api.tests.konformitaet import ORGANIZATION_TYPES, pruefe, pruefe_liste
 
@@ -287,6 +290,8 @@ def test_sitzung_ohne_ort_hat_kein_location_objekt(welt: dict[str, Any]) -> None
     gone = _json(f"{PFAD}location/{welt['ohne_ort'].id}/")
     assert gone["deleted"] is True
     assert pruefe(gone, "Location") == []
+    # Felder und Reihenfolge wie bei jedem gekürzten Objekt der Schnittstelle
+    assert list(gone) == ["id", "type", "created", "modified", "deleted"]
 
 
 def test_ort_einer_nichtoeffentlichen_sitzung_existiert_nicht(welt: dict[str, Any]) -> None:
@@ -304,7 +309,7 @@ def test_ort_nach_ruecknahme_der_sitzung_ohne_inhalt(welt: dict[str, Any]) -> No
 
     assert antwort.status_code == 200
     gone = antwort.json()
-    assert set(gone) == {"id", "type", "created", "modified", "deleted"}
+    assert list(gone) == ["id", "type", "created", "modified", "deleted"]
     assert gone["deleted"] is True
     assert b"Rathaus" not in antwort.content and b"Markt" not in antwort.content
 
@@ -443,3 +448,139 @@ def test_spiegel_und_aggregator_bleiben_konform(welt: dict[str, Any]) -> None:
     gespiegelt = _json(f"/oparl/v1/meeting/{sitzung.id}")
     assert gespiegelt["location"]["description"] == "Rathaus, Markt 1, 12345 Musterstadt"
     assert _json(f"/oparl/v1/file/{datei.id}")["date"] == _json(f"{PFAD}file/{welt['datei'].id}/")["date"]
+
+
+def test_spiegel_liest_den_ort_auch_ohne_die_abgekuendigten_textfelder(welt: dict[str, Any]) -> None:
+    """Entfallen ``mandari:location*``, ergibt das Location-Objekt denselben Text – und kein eigenes Objekt."""
+
+    def ohne_textfelder(url: str) -> dict[str, Any]:
+        antwort = _abruf(url)
+        for eintrag in antwort.get("data", [antwort]):
+            for feld in [feld for feld in eintrag if feld.startswith("mandari:location")]:
+                del eintrag[feld]
+        return antwort
+
+    source, _ = insight_service.register_source(welt["tenant"])
+    cast(Any, SessionMirror)(source, fetch=ohne_textfelder).sync(full=True)
+
+    sitzung = OParlMeeting.objects.get(external_id=f"{BASIS}meeting/{welt['sitzung'].id}/")
+    assert "mandari:locationName" not in sitzung.raw_json
+    assert sitzung.location_name == "Rathaus"
+    assert sitzung.location_address == "Markt 1, 12345 Musterstadt"
+    assert not OParlLocation.objects.exists()
+    ohne_ort = OParlMeeting.objects.get(external_id=f"{BASIS}meeting/{welt['ohne_ort'].id}/")
+    assert (ohne_ort.location_name, ohne_ort.location_address) == (None, None)
+
+
+# =============================================================================
+# Rücknahme des Sitzungsortes im RIS-Bestand
+# =============================================================================
+
+
+def _bestand_mit_ortsobjekt(welt: dict[str, Any]) -> tuple[OParlBody, OParlMeeting, OParlLocation]:
+    """
+    Gespiegelter Bestand, in dem der Sitzungsort zusätzlich als eigenes Location-Objekt steht – so hat
+    ihn ein Ingestor angelegt, der eingebettete Orte jeder Quelle übernimmt.
+    """
+    source, _ = insight_service.register_source(welt["tenant"])
+    cast(Any, SessionMirror)(source, fetch=_abruf).sync(full=True)
+    body = OParlBody.objects.get(source=source)
+    sitzung = OParlMeeting.objects.get(external_id=f"{BASIS}meeting/{welt['sitzung'].id}/")
+    ort = OParlLocation.objects.create(
+        external_id=f"{BASIS}location/{welt['sitzung'].id}/",
+        body=body,
+        description="Rathaus",
+        room="Ratssaal",
+        street_address="Markt 1",
+        postal_code="12345",
+        locality="Musterstadt",
+    )
+    return body, sitzung, ort
+
+
+def _ohne_inhalt(pfad: str, *verboten: str) -> None:
+    """Die Adresse liefert nur noch das gekürzte Objekt – ohne Ort, Anschrift oder Kennung der Sitzung."""
+    antwort = Client().get(pfad)
+    assert antwort.status_code == 200, (pfad, antwort.status_code)
+    assert set(antwort.json()) == {"id", "type", "created", "modified", "deleted"}
+    assert antwort.json()["deleted"] is True
+    inhalt = antwort.content.decode()
+    assert not [wort for wort in ("Rathaus", "Ratssaal", "Markt", "12345", *verboten) if wort in inhalt]
+
+
+@pytest.mark.parametrize("weg", ["nichtoeffentlich", "geloescht"])
+def test_ruecknahme_der_sitzung_nimmt_den_ort_im_bestand_mit(
+    welt: dict[str, Any], django_capture_on_commit_callbacks: Any, weg: str
+) -> None:
+    body, gespiegelt, ort = _bestand_mit_ortsobjekt(welt)
+    sitzung = welt["sitzung"]
+    kennung = str(sitzung.id)
+    assert _json(f"/oparl/v1/location/{ort.id}")["mandari:originalId"] == f"{BASIS}location/{kennung}/"
+
+    with django_capture_on_commit_callbacks(execute=True):
+        if weg == "geloescht":
+            sitzung.delete()
+        else:
+            sitzung.is_public = False
+            sitzung.save()
+
+    ort.refresh_from_db()
+    assert ort.deleted is True
+    _ohne_inhalt(f"/oparl/v1/location/{ort.id}", kennung)
+    # … auch unter der Adresse, die der Aggregator aus dem Text an der Sitzung bildet
+    _ohne_inhalt(f"/oparl/v1/location/{gespiegelt.id}", kennung)
+    assert _json(f"/oparl/v1/body/{body.id}/locations")["data"] == []
+    # Inkrementelle Abnehmer erfahren die Rücknahme als gekürztes Objekt
+    seit = _json(f"/oparl/v1/body/{body.id}/locations?modified_since=2000-01-01T00:00:00%2B00:00")["data"]
+    assert [(eintrag["deleted"], set(eintrag)) for eintrag in seit] == [
+        (True, {"id", "type", "created", "modified", "deleted"})
+    ]
+
+
+def test_geleerte_ortsangabe_nimmt_den_ort_im_bestand_zurueck(
+    welt: dict[str, Any], django_capture_on_commit_callbacks: Any
+) -> None:
+    body, _, ort = _bestand_mit_ortsobjekt(welt)
+    sitzung = welt["sitzung"]
+
+    with django_capture_on_commit_callbacks(execute=True):
+        sitzung.location = sitzung.room = sitzung.street_address = sitzung.postal_code = sitzung.locality = ""
+        sitzung.save()
+
+    ort.refresh_from_db()
+    assert ort.deleted is True
+    _ohne_inhalt(f"/oparl/v1/location/{ort.id}", str(sitzung.id))
+    assert _json(f"/oparl/v1/body/{body.id}/locations")["data"] == []
+    # Die Sitzung selbst bleibt öffentlich
+    assert _json(f"{PFAD}meeting/{sitzung.id}/")["name"] == "Ratssitzung"
+
+
+def test_geaenderte_ortsangabe_ist_keine_ruecknahme(
+    welt: dict[str, Any], django_capture_on_commit_callbacks: Any
+) -> None:
+    _, _, ort = _bestand_mit_ortsobjekt(welt)
+    sitzung = welt["sitzung"]
+
+    with django_capture_on_commit_callbacks(execute=True):
+        sitzung.room = "Kleiner Saal"
+        sitzung.save()
+
+    ort.refresh_from_db()
+    assert ort.deleted is False
+
+
+def test_ruecknahme_einer_sitzung_laesst_orte_anderer_sitzungen_stehen(
+    welt: dict[str, Any], django_capture_on_commit_callbacks: Any
+) -> None:
+    body, _, ort = _bestand_mit_ortsobjekt(welt)
+    anderer = OParlLocation.objects.create(
+        external_id=f"{BASIS}location/{welt['ohne_ort'].id}/", body=body, description="Technisches Rathaus"
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        welt["sitzung"].is_public = False
+        welt["sitzung"].save()
+
+    ort.refresh_from_db()
+    anderer.refresh_from_db()
+    assert (ort.deleted, anderer.deleted) == (True, False)

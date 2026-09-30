@@ -146,6 +146,15 @@ def test_abweichende_angabe_der_quelle_bleibt_als_eigenes_feld(welt: dict[str, A
         ("department", "Verwaltungsbereich"),
         ("other", "Sonstiges"),
         ("Ausschuss", "Gremium"),
+        ("Ausschüsse", "Gremium"),
+        ("Fraktionen", "Fraktion"),
+        # Einordnung nach dem Kommunalrecht, wie sie manche RIS liefern
+        ("Hauptorgan", "Gremium"),
+        ("Hilfsorgan", "Gremium"),
+        ("Amt", "Verwaltungsbereich"),
+        ("Organisationseinheit", "Verwaltungsbereich"),
+        ("Dienststelle", "Verwaltungsbereich"),
+        ("Dienststellen", "Verwaltungsbereich"),
         ("irgendwas", "Sonstiges"),
         ("", None),
         (None, None),
@@ -153,6 +162,20 @@ def test_abweichende_angabe_der_quelle_bleibt_als_eigenes_feld(welt: dict[str, A
 )
 def test_zuordnung_organization_type(angabe: str | None, wert: str | None) -> None:
     assert organization_type(angabe) == wert
+
+
+def test_verbreitete_angaben_der_quellen_fallen_nicht_auf_sonstiges() -> None:
+    """Die im Bestand häufigsten Angaben behalten ihre Bedeutung – sonst verlöre ein Filter auf „Gremium“ die Ausschüsse."""
+    verbreitet = ["Amt", "Hilfsorgan", "Organisationseinheit", "Fraktion", "Gremium", "Dienststellen", "Hauptorgan"]
+    assert {angabe: organization_type(angabe) for angabe in verbreitet} == {
+        "Amt": "Verwaltungsbereich",
+        "Hilfsorgan": "Gremium",
+        "Organisationseinheit": "Verwaltungsbereich",
+        "Fraktion": "Fraktion",
+        "Gremium": "Gremium",
+        "Dienststellen": "Verwaltungsbereich",
+        "Hauptorgan": "Gremium",
+    }
 
 
 # =============================================================================
@@ -165,6 +188,32 @@ def test_file_date_ist_ein_datum(welt: dict[str, Any]) -> None:
     assert datei["date"] == "2026-09-30"
     eingebettet = _json(f"/oparl/v1/paper/{welt['vorlage'].id}")["auxiliaryFile"][0]
     assert eingebettet["date"] == "2026-09-30"
+
+
+@pytest.mark.parametrize(
+    ("quelle", "gespeichert", "tag"),
+    [
+        # Reines Datum der Quelle: unverändert (der Ingestor speichert Mitternacht UTC)
+        ("2026-03-05", datetime(2026, 3, 5, 0, 0, tzinfo=UTC), "2026-03-05"),
+        # Zeitpunkt mit lokalem Versatz: derselbe Tag, nicht der Vortag
+        ("2026-03-05T00:00:00+01:00", datetime(2026, 3, 4, 23, 0, tzinfo=UTC), "2026-03-05"),
+        # Ältere Spiegelung eines Session-Mandanten: Zeitpunkt der Ablage kurz nach Mitternacht Ortszeit
+        ("2026-03-04T23:30:00+00:00", datetime(2026, 3, 4, 23, 30, tzinfo=UTC), "2026-03-05"),
+        # Ohne Angabe in den Rohdaten bzw. mit unbrauchbarer Angabe: Tag des gespeicherten Zeitpunkts
+        (None, datetime(2026, 3, 5, 0, 0, tzinfo=UTC), "2026-03-05"),
+        ("2026-13-45", datetime(2026, 3, 5, 0, 0, tzinfo=UTC), "2026-03-05"),
+    ],
+)
+def test_file_date_nennt_den_tag_der_quelle(
+    welt: dict[str, Any], quelle: str | None, gespeichert: datetime, tag: str
+) -> None:
+    datei = welt["datei"]
+    datei.raw_json = {"date": quelle} if quelle else {}
+    datei.file_date = gespeichert
+    datei.save()
+
+    with override_settings(TIME_ZONE="Europe/Berlin"):
+        assert _json(f"/oparl/v1/file/{datei.id}")["date"] == tag
 
 
 def test_system_nennt_lizenz_nur_wenn_festgelegt() -> None:
@@ -229,6 +278,18 @@ def test_ort_einer_geloeschten_sitzung_ist_geloescht(welt: dict[str, Any]) -> No
         "modified": gone["modified"],
         "deleted": True,
     }
+
+
+def test_zurueckgenommener_ort_wird_nicht_mehr_ausgegeben(welt: dict[str, Any]) -> None:
+    """Ein Ort, den die Quelle zurücknimmt, verschwindet aus Sitzung und Liste; seine Adresse bleibt gekürzt abrufbar."""
+    welt["ort"].mark_deleted()
+
+    assert "location" not in _json(f"/oparl/v1/meeting/{welt['mit_ort'].id}")
+    assert _liste(welt, "locations") == []
+    antwort = Client().get(f"/oparl/v1/location/{welt['ort'].id}")
+    assert antwort.status_code == 200
+    assert set(antwort.json()) == {"id", "type", "created", "modified", "deleted"}
+    assert b"Rathaus" not in antwort.content and b"Markt" not in antwort.content
 
 
 def test_unbekannter_ort_ergibt_404(welt: dict[str, Any]) -> None:

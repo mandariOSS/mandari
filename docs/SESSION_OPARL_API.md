@@ -182,6 +182,14 @@ bleiben zusätzlich erhalten. Sie sind **abgekündigt** und entfallen frühesten
 (`RELEASE_POLITIK.md`, zwölf Monate). Das Bürgerportal liest sie bis dahin weiter; seine Ortsangabe
 bleibt unverändert.
 
+Im RIS-Bestand des Bürgerportals steht der Ort als Text an der Sitzung (Gebäude vor Raum, Anschrift
+mit Postleitzahl und Ort) – Spiegel und Ingestor legen dafür kein eigenes Location-Objekt an, weil der
+Ort nur zu dieser einen Sitzung gehört. Er verschwindet deshalb mit ihr: Wird die Sitzung gelöscht
+oder nichtöffentlich, ist auch der Ort im Bürgerportal und im Aggregator (`/oparl/v1/`) sofort nicht
+mehr abrufbar. Ein Location-Objekt, das ein älterer Stand des Ingestors unter der Kennung des Ortes
+angelegt hat, wird dabei mit zurückgenommen; der Ingestor markiert es außerdem beim nächsten Abgleich
+der Sitzung. Der Aggregator bildet den Ort aus dem Text (`…/v1/location/<Kennung der Sitzung>`).
+
 ### Bedingte Anfragen (ETag, 304)
 
 Jede erfolgreiche JSON-Antwort trägt einen `ETag` über ihren Inhalt und `Cache-Control: no-cache`.
