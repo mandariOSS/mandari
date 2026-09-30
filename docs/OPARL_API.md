@@ -46,6 +46,53 @@ Einbettungen gemäß OParl 1.1: `Body.legislativeTerm`, `Person.membership`,
 `Paper.consultation`, `Paper.mainFile`/`auxiliaryFile` werden als vollständige
 Objekte eingebettet; alle übrigen Referenzen sind URLs auf diese API.
 
+## Konformität zu OParl 1.1
+
+| Eigenschaft | Ausgabe |
+|---|---|
+| `Organization.organizationType` | einer der sieben Werte der Spezifikation (`Gremium`, `Partei`, `Fraktion`, `Verwaltungsbereich`, `externes Gremium`, `Institution`, `Sonstiges`). Angaben der Quelle werden zugeordnet (Schreibweise, verbreitete Angaben wie „Ausschuss“ oder „Hauptorgan“, Schlüssel eines Session-Mandanten); Unbekanntes gilt als `Sonstiges`. Weicht die Angabe der Quelle ab, steht sie zusätzlich in `mandari:originalOrganizationType` |
+| `File.date` | Datum `yyyy-mm-dd`; der Zeitpunkt der Quelle steht in `created` |
+| `Meeting.location` | immer ein Location-Objekt: das der Quelle oder, wenn die Quelle den Ort nur als Text nennt, eines mit der Kennung der Sitzung (`…/v1/location/<Kennung der Sitzung>`, `description` aus Ort und Anschrift) |
+| `Body.locationList` | URL der Orte-Liste (Standardfeld; zuvor nur `mandari:locationList`) |
+| `Body.legislativeTerm` | immer vorhanden (Pflichtfeld), ohne Wahlperiode als leere Liste |
+| `System.license` | nur, wenn der Betreiber `OPARL_LICENSE_URL` setzt; sonst gilt die Lizenz der Kommune am Body |
+| Bedingte Anfragen | `ETag` an jeder erfolgreichen Antwort, `If-None-Match` ergibt `304` |
+
+### Bedingte Anfragen (ETag, 304)
+
+Jede erfolgreiche JSON-Antwort trägt einen `ETag` über ihren Inhalt und `Cache-Control: no-cache`.
+Eine Anfrage mit `If-None-Match: <ETag>` erhält `304 Not Modified` ohne Inhalt, solange sich die
+Antwort nicht geändert hat:
+
+```bash
+curl -i https://mandari.de/oparl/v1/system                       # ETag: "5f2c…"
+curl -i -H 'If-None-Match: "5f2c…"' https://mandari.de/oparl/v1/system   # 304
+```
+
+Der `ETag` hängt am Inhalt, nicht an einem Zeitstempel. Anfragen mit `If-None-Match` zählen zum
+Rate-Limit; für den laufenden Abgleich bleibt `modified_since` der richtige Weg.
+
+### Hinweise für bestehende Abnehmer
+
+Adressen und IDs bleiben unverändert. Geändert haben sich Werte zweier Felder: `organizationType`
+reichte bisher die Angabe der Quelle unverändert durch (bei Session-Mandanten deren interne Schlüssel
+wie `committee`) und `File.date` war ein Zeitpunkt. Wer die Angabe der Quelle braucht, liest
+`mandari:originalOrganizationType`; wer den Zeitpunkt braucht, liest `created`. Die Felder
+`mandari:locationName`, `mandari:locationAddress` und `mandari:locationList` sind **abgekündigt** und
+entfallen frühestens am 01.10.2027; Ersatz sind `Meeting.location` und `Body.locationList`.
+
+### Prüfung
+
+`python scripts/oparl_validator.py --validator <Pfad zu oparl-validator-rs>` baut eine Instanz mit
+Demo-Daten, startet sie auf dem eigenen Rechner und prüft Aggregator und Session-Schnittstelle:
+mit dem externen Validator [oparl-validator-rs](https://github.com/konstin/oparl-validator-rs)
+(Pflichtfelder, Feldtypen, externe Listen, Abrufbarkeit verlinkter Objekte) und mit einer eigenen
+Typprüfung (Datums- und Zeitformate, `organizationType`, unbekannte Eigenschaften, gelöschte
+Objekte; `mandari/oparl_api/tests/konformitaet.py`). Ohne `--validator` läuft nur die eigene
+Prüfung. In der CI läuft beides im Job „OParl-Validator“ bei Änderungen an den Schnittstellen und
+bei jedem Push auf `dev` und `main`. Den Hinweis des Validators auf unverschlüsseltes HTTP wertet
+das Skript nicht, weil die Testinstanz lokal läuft.
+
 ## Pagination
 
 Externe Listen liefern 100 Objekte pro Seite (`?page=N`), sortiert nach `modified`
@@ -144,11 +191,12 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 |----------|--------|--------|
 | `mandari:originalId` | alle | Original-URL des Objekts im kommunalen Quellsystem |
 | `mandari:slug`, `mandari:displayName` | Body | URL-Slug / Anzeigename der Kommune |
-| `mandari:locationList` | Body | URL der Orte-Liste (Vendor-Erweiterung) |
+| `mandari:locationList` | Body | abgekündigt: URL der Orte-Liste, jetzt im Standardfeld `locationList` |
+| `mandari:originalOrganizationType` | Organization | Angabe der Quelle, wenn sie keiner der Werte der Spezifikation ist |
 | `mandari:summary` | Paper | KI-generierte Zusammenfassung (falls vorhanden) |
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
 | `mandari:sha256`, `mandari:pageCount` | File | SHA-256-Hash / Seitenzahl |
-| `mandari:locationName`, `mandari:locationAddress` | Meeting | Ortsangabe als Text, falls kein Location-Objekt auflösbar |
+| `mandari:locationName`, `mandari:locationAddress` | Meeting | abgekündigt: Ortsangabe als Text, wenn die Quelle kein Location-Objekt liefert; steht jetzt in `Meeting.location` |
 
 ## Einschränkungen (v1)
 
@@ -158,8 +206,11 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
   `AgendaItem.resolutionFile`) werden ausgelassen, statt Original-URLs
   durchzureichen.
 - **Lizenz**: Die Lizenz der Quelldaten wird — soweit von der Kommune angegeben —
-  am Body-Objekt (`license`) durchgereicht; eine übergreifende Lizenzangabe am
-  System-Objekt ist noch offen (siehe Issue #17).
+  am Body-Objekt (`license`) durchgereicht. Eine übergreifende Angabe am System-Objekt gibt es
+  nur, wenn der Betreiber `OPARL_LICENSE_URL` setzt; sie gilt laut Spezifikation für alle Objekte
+  ohne eigene Angabe und setzt voraus, dass die Lizenzen der Quellen das zulassen.
+- **Orte aus Text**: Location-Objekte, die aus der Textangabe einer Sitzung entstehen, stehen nicht
+  in der Orte-Liste der Kommune; sie sind eingebettet und unter ihrer ID abrufbar.
 - Meetings-Protokolle (`invitation`, `resultsProtocol`, `verbatimProtocol`) und
   `Paper.mainFile` werden über die Original-Rohdaten zugeordnet; fehlt diese
   Zuordnung, erscheinen die Dateien unter `auxiliaryFile`.
@@ -172,6 +223,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `OPARL_API_PAGE_SIZE` | `100` | Objekte pro Listen-Seite |
 | `OPARL_API_RATE_LIMIT` | `120` | Anfragen/Minute je IP (`0` = deaktiviert) |
 | `OPARL_API_CACHE_SECONDS` | `60` | Cache-Dauer ungefilterter Listen-Seiten |
+| `OPARL_LICENSE_URL` | leer | URL der Lizenz am System-Objekt (`license`); leer = keine übergreifende Angabe |
 
 **Kanonische Kennungen** (ADR `docs/adr/20260929-kanonisches-modell.md`): Jedes Objekt des
 RIS-Bestands trägt die Kennung `uuid5(NS_MANDARI_RIS, URI)` aus `shared/mandari_oparl/ids.py`.

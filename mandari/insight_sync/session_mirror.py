@@ -23,7 +23,7 @@ die Session-OParl-API liefert per Konstruktion nur öffentliche Daten
 import json
 import logging
 import urllib.request
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from urllib.parse import quote
 
 from django.utils import timezone
@@ -58,12 +58,14 @@ MODEL_BY_TYPE_SUFFIX = {
 
 
 def _parse_dt(value):
+    """Zeitpunkt lesen; ein reines Datum (OParl ``File.date``) gilt wie im Ingestor als Mitternacht UTC."""
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _parse_date(value):
