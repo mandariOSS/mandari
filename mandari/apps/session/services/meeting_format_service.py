@@ -1,0 +1,434 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""
+Sitzungsformat und Landesprofil (Issue #138).
+
+Eine Sitzung ist präsent, hybrid (einzelne Mitglieder per Bild-Ton-Übertragung zugeschaltet) oder
+digital (alle zugeschaltet). Ob das zulässig ist, entscheidet das Kommunalverfassungsrecht des Landes;
+es liegt als Landesprofil (``SessionStateProfile``) vor und wird je Mandant gewählt.
+
+Prüfregeln (``check``):
+
+- Präsenzsitzungen sind immer zulässig.
+- Hybride oder digitale Sitzungen brauchen ein Landesprofil des Mandanten.
+- Maßgeblich ist die Regel des Landesprofils für den Gremientyp (Rat bzw. Ausschüsse); gesetzlich
+  ausgenommene Ausschussarten (z. B. NRW Hauptausschuss) fallen auf die Regel für ausgenommene
+  Ausschüsse zurück. Bei gemeinsamen Sitzungen gilt die strengste Regel der beteiligten Gremien.
+- Kennt das Landesprofil ausgenommene Ausschussarten, müssen Gremien ohne gesetzliche Ausschussart,
+  deren Name auf eine dieser Arten hindeutet (``suspected_committee_kinds``), erst eingeordnet werden
+  (Fehler); nicht eingeordnete Ausschüsse ohne solchen Namen erzeugen eine Warnung. Bis zur
+  Einordnung gilt bei verdächtigem Namen vorsorglich die strengere Regel.
+- „nicht vorgesehen“ verhindert das Format mit Begründung.
+- „nur in Notlagen“ und jede digitale Sitzung verlangen eine Begründung (Notlage, Beschluss); verlangt
+  das Land auch für die Notlage eine örtliche Regelung (``emergency_needs_local_basis``), zusätzlich
+  deren Nachweis.
+- „zulässig (Regelbetrieb)“ verlangt den Nachweis der örtlichen Rechtsgrundlage (Hauptsatzung bzw.
+  Geschäftsordnung mit Datum und Fundstelle), „ungeklärt“ ebenso.
+
+Fraktionen und Verwaltungseinheiten unterliegen nicht den Sitzungsregeln der Kommunalverfassung.
+
+Die Profile stehen in ``apps/session/presets/landesprofile.json`` (Quellen und Stand je Land) und
+werden per Datenmigration bzw. ``manage.py session_state_profiles --sync`` übernommen.
+Keine Rechtsberatung – die Prüfung setzt die recherchierte Rechtslage um, ersetzt aber keine
+Prüfung vor Ort (docs/SESSION_SITZUNGSFORMAT_LANDESRECHT.md).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+PROFILE_FILE = Path(__file__).resolve().parent.parent / "presets" / "landesprofile.json"
+
+FORMAT_PRESENCE = "presence"
+FORMAT_HYBRID = "hybrid"
+FORMAT_DIGITAL = "digital"
+
+RULE_REGULAR = "regular"
+RULE_EMERGENCY = "emergency"
+RULE_NONE = "none"
+RULE_UNCLEAR = "unclear"
+
+#: Strenge der Regeln – bei gemeinsamen Sitzungen und ausgenommenen Ausschüssen gilt die strengere
+_STRICTNESS = {RULE_REGULAR: 0, RULE_UNCLEAR: 1, RULE_EMERGENCY: 2, RULE_NONE: 3}
+
+#: Gremientypen ohne Sitzungsregeln der Kommunalverfassung (Fraktionen, Verwaltung)
+UNREGULATED_TYPES = frozenset({"faction", "department"})
+
+_FORMAT_PLURAL = {FORMAT_HYBRID: "Hybride Sitzungen", FORMAT_DIGITAL: "Digitale Sitzungen"}
+
+#: Gremientypen, die auch ohne verdächtigen Namen eingeordnet sein sollten (sonst Warnung)
+_COMMITTEE_TYPES = frozenset({"committee"})
+
+#: Namensmuster gesetzlich besonders geregelter Ausschüsse – nur ein Hinweis, keine Einordnung.
+#: Treffer z. B. „Haupt- und Finanzausschuss“, „Ausschuss für Finanzen und Beteiligungen“,
+#: „Rechnungsprüfungsausschuss“; kein Treffer „Hauptsatzungskommission“.
+_KIND_NAME_PATTERNS = {
+    "main": re.compile(r"\bhaupt(?:ausschuss|\s*-|\s*,|\s+und\b)", re.IGNORECASE),
+    "finance": re.compile(r"finanz|haushalt", re.IGNORECASE),
+    "audit": re.compile(r"rechnungspr(?:ü|ue|u)f", re.IGNORECASE),
+}
+#: Übliche Kurznamen (ganzer Kurzname, ohne Groß-/Kleinschreibung)
+_KIND_SHORT_NAMES = {
+    "ha": ("main",),
+    "hfa": ("main", "finance"),
+    "hufa": ("main", "finance"),
+    "rpa": ("audit",),
+    "rpra": ("audit",),
+}
+
+
+# =============================================================================
+# Profile laden
+# =============================================================================
+
+
+def load_profile_data(path: Path | None = None) -> dict[str, Any]:
+    """Profildatei lesen (Stand, Hinweis, Liste der Länder)."""
+    with (path or PROFILE_FILE).open(encoding="utf-8") as handle:
+        data: dict[str, Any] = json.load(handle)
+    return data
+
+
+def profile_rows(path: Path | None = None) -> list[dict[str, Any]]:
+    """Profile als Feldwerte; ``as_of`` fällt auf den Stand der Datei zurück."""
+    data = load_profile_data(path)
+    stand = date.fromisoformat(data["stand"])
+    rows = []
+    for entry in data["profile"]:
+        row = dict(entry)
+        row["as_of"] = date.fromisoformat(row["as_of"]) if row.get("as_of") else stand
+        rows.append(row)
+    return rows
+
+
+def sync_profiles(model: Any = None, path: Path | None = None) -> tuple[int, int]:
+    """
+    Landesprofile aus der Datei anlegen bzw. aktualisieren (idempotent).
+
+    ``model`` erlaubt den Aufruf aus Datenmigrationen mit dem historischen Modell; Schlüssel, die das
+    Modell (noch) nicht kennt, werden übergangen. Rückgabe: (angelegt, aktualisiert).
+    """
+    if model is None:
+        from apps.session.models import SessionStateProfile
+
+        model = SessionStateProfile
+    known = {f.name for f in model._meta.get_fields() if getattr(f, "concrete", False)}
+    created = updated = 0
+    for row in profile_rows(path):
+        values = {key: value for key, value in row.items() if key in known and key != "code"}
+        _obj, was_created = model.objects.update_or_create(code=row["code"], defaults=values)
+        if was_created:
+            created += 1
+        else:
+            updated += 1
+    return created, updated
+
+
+def profile_differences(path: Path | None = None) -> list[str]:
+    """Abweichungen zwischen Datenbank und Profildatei (für ``session_state_profiles --check``)."""
+    from apps.session.models import SessionStateProfile
+
+    known = {f.name for f in SessionStateProfile._meta.get_fields() if getattr(f, "concrete", False)}
+    stored = {p.code: p for p in SessionStateProfile.objects.all()}
+    differences = []
+    for row in profile_rows(path):
+        profile = stored.get(row["code"])
+        if profile is None:
+            differences.append(f"{row['code']}: fehlt in der Datenbank")
+            continue
+        changed = sorted(key for key, value in row.items() if key in known and getattr(profile, key) != value)
+        if changed:
+            differences.append(f"{row['code']}: abweichend ({', '.join(changed)})")
+    return differences
+
+
+# =============================================================================
+# Regeln
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class FormatRule:
+    """Maßgebliche Regel für ein Gremium und ein Format."""
+
+    organization: Any
+    rule: str
+    norm: str
+    excluded_kind: bool = False
+    unregulated: bool = False
+    #: Keine gesetzliche Ausschussart gesetzt, obwohl das Landesprofil Ausschussarten ausnimmt
+    unclassified: bool = False
+    #: Ausgenommene Ausschussarten, auf die der Name eines nicht eingeordneten Gremiums hindeutet
+    suspected_kinds: tuple[str, ...] = ()
+
+
+def _stricter(first: str, second: str) -> str:
+    return first if _STRICTNESS.get(first, 3) >= _STRICTNESS.get(second, 3) else second
+
+
+def suspected_committee_kinds(organization: Any, kinds: Iterable[str] | None = None) -> list[str]:
+    """
+    Gesetzliche Ausschussarten, auf die Name oder Kurzname eines Gremiums hindeuten (nur Hinweis).
+
+    ``kinds`` begrenzt auf die Arten, die ein Landesprofil ausnimmt. Ein „Haupt- und Finanzausschuss“
+    deutet auf Haupt- und Finanzausschuss zugleich hin.
+    """
+    short_name = str(getattr(organization, "short_name", "") or "").strip()
+    text = f"{organization.name or ''} {short_name}"
+    found = [kind for kind, pattern in _KIND_NAME_PATTERNS.items() if pattern.search(text)]
+    for kind in _KIND_SHORT_NAMES.get(short_name.lower(), ()):
+        if kind not in found:
+            found.append(kind)
+    if kinds is not None:
+        allowed = set(kinds)
+        found = [kind for kind in found if kind in allowed]
+    return found
+
+
+def committee_kind_labels(kinds: Iterable[str]) -> list[str]:
+    """Ausschussarten als Bezeichnungen."""
+    from apps.session.models import SessionOrganization
+
+    labels = dict(SessionOrganization.COMMITTEE_KIND_CHOICES)
+    return [str(labels.get(kind, kind)) for kind in kinds]
+
+
+def join_labels(labels: list[str], word: str = "und") -> str:
+    """„A, B und C“ bzw. „A oder B“."""
+    if len(labels) <= 1:
+        return "".join(labels)
+    return f"{', '.join(labels[:-1])} {word} {labels[-1]}"
+
+
+def rule_for(profile: Any, organization: Any, meeting_format: str) -> FormatRule:
+    """Regel des Landesprofils für ein Gremium (Rat bzw. Ausschuss, ausgenommene Ausschussart)."""
+    if organization.organization_type in UNREGULATED_TYPES:
+        return FormatRule(organization, RULE_REGULAR, "", unregulated=True)
+    council = organization.organization_type == "council"
+    if meeting_format == FORMAT_DIGITAL:
+        rule = profile.digital_council if council else profile.digital_committees
+    else:
+        rule = profile.hybrid_council if council else profile.hybrid_committees
+    kind = getattr(organization, "committee_kind", "") or ""
+    excluded_kinds = list(profile.excluded_committee_kinds or [])
+    excluded = not council and bool(kind) and kind in excluded_kinds
+    suspected: tuple[str, ...] = ()
+    unclassified = False
+    if not council and not kind and excluded_kinds:
+        suspected = tuple(suspected_committee_kinds(organization, excluded_kinds))
+        unclassified = bool(suspected) or organization.organization_type in _COMMITTEE_TYPES
+    if excluded or suspected:
+        # Bis zur Einordnung gilt bei verdächtigem Namen vorsorglich die strengere Regel
+        rule = _stricter(rule, profile.excluded_committee_rule)
+    norm = {RULE_REGULAR: profile.norm_regular, RULE_EMERGENCY: profile.norm_emergency}.get(rule, "")
+    return FormatRule(
+        organization,
+        rule,
+        norm,
+        excluded_kind=excluded,
+        unclassified=unclassified,
+        suspected_kinds=suspected,
+    )
+
+
+@dataclass
+class FormatCheck:
+    """Ergebnis der Prüfung: Fehler verhindern das Speichern, ``rules`` erklären die Rechtslage."""
+
+    errors: list[str] = field(default_factory=list)
+    #: Hinweise, die das Speichern nicht verhindern (z. B. nicht eingeordnete Ausschüsse)
+    warnings: list[str] = field(default_factory=list)
+    rules: list[FormatRule] = field(default_factory=list)
+    needs_reason: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+    def _add(self, message: str) -> None:
+        if message not in self.errors:
+            self.errors.append(message)
+
+    def _warn(self, message: str) -> None:
+        if message not in self.warnings:
+            self.warnings.append(message)
+
+
+def check(tenant: Any, organizations: Iterable[Any], meeting_format: str, reason: str = "") -> FormatCheck:
+    """Sitzungsformat für die beteiligten Gremien gegen das Landesprofil des Mandanten prüfen."""
+    result = FormatCheck()
+    if meeting_format == FORMAT_PRESENCE:
+        return result
+    label = _FORMAT_PLURAL.get(meeting_format, "Hybride oder digitale Sitzungen")
+    profile = tenant.state_profile
+    if profile is None:
+        result._add(
+            f"{label} setzen ein Landesprofil voraus. Bitte in den Einstellungen unter „Sitzungsformate“ "
+            "das Land wählen und die örtliche Rechtsgrundlage nachweisen."
+        )
+        return result
+
+    result.rules = [rule_for(profile, org, meeting_format) for org in organizations]
+    regulated = [r for r in result.rules if not r.unregulated]
+    result.needs_reason = meeting_format == FORMAT_DIGITAL and bool(regulated)
+    documented = tenant.hybrid_basis_documented
+    basis_label = profile.get_legal_basis_display()
+    reason_explained = False
+    excluded_labels = join_labels(committee_kind_labels(profile.excluded_committee_kinds or []))
+    excluded_rule = profile.get_excluded_committee_rule_display()
+    if profile.excluded_committee_rule == RULE_EMERGENCY and profile.norm_emergency:
+        excluded_rule = f"{excluded_rule} ({profile.norm_emergency})"
+
+    for item in regulated:
+        org_name = item.organization.name
+        kind_label = item.organization.get_committee_kind_display() if item.excluded_kind else ""
+        if item.suspected_kinds:
+            # Ohne Einordnung lassen sich Zulässigkeit und Rechtsgrundlage nicht sicher bestimmen
+            suspected = join_labels(committee_kind_labels(item.suspected_kinds), "oder")
+            result._add(
+                f"„{org_name}“ ist keiner gesetzlichen Ausschussart zugeordnet; der Name deutet auf "
+                f"{suspected} hin. Für {excluded_labels} gilt im Landesprofil {profile.name} bei "
+                f"{label.lower()}: {excluded_rule}. Bitte beim Gremium die gesetzliche Ausschussart "
+                "festlegen („Anderer Ausschuss“, wenn keine besondere Art zutrifft)."
+            )
+            continue
+        if item.unclassified:
+            result._warn(
+                f"„{org_name}“ ist keiner gesetzlichen Ausschussart zugeordnet. Für {excluded_labels} gilt "
+                f"im Landesprofil {profile.name} bei {label.lower()}: {excluded_rule}. Bitte beim Gremium "
+                "festlegen, ob eine dieser Arten zutrifft."
+            )
+        if item.rule == RULE_NONE:
+            if item.excluded_kind:
+                result._add(
+                    f"{label} sind für „{org_name}“ ({kind_label}) nach dem Landesprofil {profile.name} "
+                    f"ausgeschlossen ({profile.norm_regular or profile.law})."
+                )
+            else:
+                result._add(f"{label} sind für „{org_name}“ nach {profile.law} nicht vorgesehen.")
+        elif item.rule == RULE_EMERGENCY:
+            result.needs_reason = True
+            if profile.emergency_needs_local_basis and not documented:
+                result._add(
+                    f"{label} in einer Notlage setzen nach {profile.norm_emergency or profile.law} eine "
+                    f"Regelung in der {basis_label} voraus. Bitte den Nachweis (Datum und Fundstelle) in den "
+                    "Einstellungen unter „Sitzungsformate“ hinterlegen."
+                )
+            if item.excluded_kind and not reason.strip():
+                reason_explained = True
+                result._add(
+                    f"Für „{org_name}“ ({kind_label}) sind {label.lower()} im Regelbetrieb ausgeschlossen "
+                    f"({profile.norm_regular}); zulässig nur in einer Notlage nach {profile.norm_emergency} "
+                    "mit Begründung."
+                )
+        elif item.rule == RULE_UNCLEAR and not documented:
+            result._add(
+                f"Die Rechtslage für {label.lower()} von „{org_name}“ ist im Landesprofil {profile.name} "
+                "ungeklärt. Bitte die örtliche Rechtsgrundlage mit Datum und Fundstelle in den Einstellungen "
+                "nachweisen."
+            )
+        elif item.rule == RULE_REGULAR:
+            if profile.legal_basis == profile.BASIS_BESCHLUSS:
+                result.needs_reason = True
+            elif not documented:
+                result._add(
+                    f"{label} setzen nach {item.norm or profile.law} eine Regelung in der {basis_label} voraus. "
+                    "Bitte den Nachweis (Datum und Fundstelle) in den Einstellungen unter „Sitzungsformate“ "
+                    "hinterlegen."
+                )
+
+    if result.needs_reason and not reason.strip() and not reason_explained:
+        requirements = profile.emergency_requirements.strip()
+        hint = f" Voraussetzungen: {requirements}" if requirements else ""
+        result._add(f"Bitte das Sitzungsformat begründen (Notlage bzw. Beschluss des Gremiums).{hint}")
+    return result
+
+
+def strictest_rule(rules: Iterable[FormatRule]) -> FormatRule | None:
+    """Strengste Regel der beteiligten Gremien (für Rechtsgrundlage in Ladung und Anzeige)."""
+    regulated = [r for r in rules if not r.unregulated]
+    if not regulated:
+        return None
+    return max(regulated, key=lambda r: _STRICTNESS.get(r.rule, 3))
+
+
+def legal_basis_text(tenant: Any, rules: Iterable[FormatRule]) -> str:
+    """
+    Rechtsgrundlage als Zeile, z. B. „§ 58a GO NRW i. V. m. Hauptsatzung vom 12.03.2024, § 7“.
+
+    Notlage: Norm der Notlage; ungeklärte Rechtslage: nur der örtliche Nachweis.
+    """
+    rule = strictest_rule(rules)
+    if rule is None or tenant.state_profile is None:
+        return ""
+    local: str = tenant.hybrid_basis_label
+    if rule.rule == RULE_EMERGENCY:
+        emergency = f"{rule.norm} (Notlage)" if rule.norm else "Notlage"
+        if tenant.state_profile.emergency_needs_local_basis and local:
+            return f"{emergency} i. V. m. {local}"
+        return emergency
+    if rule.rule == RULE_REGULAR:
+        if rule.norm and local:
+            return f"{rule.norm} i. V. m. {local}"
+        return rule.norm or local
+    return local
+
+
+# =============================================================================
+# Einordnung der Ausschüsse (Einstellungen „Sitzungsformate“)
+# =============================================================================
+
+
+@dataclass
+class CommitteeKindOverview:
+    """Stand der Einordnung, wenn das Landesprofil Ausschussarten von hybriden Sitzungen ausnimmt."""
+
+    profile: Any
+    kind_labels: list[str]
+    rule_label: str
+    #: Gremien mit einer ausgenommenen Ausschussart
+    classified: list[Any] = field(default_factory=list)
+    #: (Gremium, Bezeichnungen der Arten, auf die der Name hindeutet) – nicht eingeordnet
+    unclassified: list[tuple[Any, list[str]]] = field(default_factory=list)
+
+    @property
+    def missing(self) -> bool:
+        """Keinem aktiven Gremium ist eine der ausgenommenen Arten zugeordnet."""
+        return not self.classified
+
+
+def committee_kind_overview(tenant: Any) -> CommitteeKindOverview | None:
+    """
+    Aktive Gremien des Mandanten nach Einordnung; ``None``, wenn das Landesprofil keine Ausschussarten
+    ausnimmt. Grundlage der Warnung in den Einstellungen: Ohne Einordnung behandelt die Prüfung einen
+    Hauptausschuss mit unauffälligem Namen wie einen gewöhnlichen Fachausschuss.
+    """
+    from apps.session.models import SessionOrganization
+
+    profile = tenant.state_profile
+    kinds = list(getattr(profile, "excluded_committee_kinds", None) or [])
+    if profile is None or not kinds:
+        return None
+    overview = CommitteeKindOverview(
+        profile=profile,
+        kind_labels=committee_kind_labels(kinds),
+        rule_label=profile.get_excluded_committee_rule_display(),
+    )
+    organizations = (
+        SessionOrganization.objects.filter(tenant=tenant, is_active=True)
+        .exclude(organization_type__in=[*UNREGULATED_TYPES, "council"])
+        .order_by("name")
+    )
+    for organization in organizations:
+        if organization.committee_kind in kinds:
+            overview.classified.append(organization)
+        elif not organization.committee_kind:
+            suspected = suspected_committee_kinds(organization, kinds)
+            if suspected or organization.organization_type in _COMMITTEE_TYPES:
+                overview.unclassified.append((organization, committee_kind_labels(suspected)))
+    return overview

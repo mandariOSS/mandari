@@ -40,6 +40,7 @@ from .models import (
     SessionPaper,
     SessionProtocol,
     SessionRole,
+    SessionStateProfile,
     SessionTenant,
     SessionTenantGroup,
     SessionTenantGroupMembership,
@@ -132,6 +133,28 @@ def _meeting_label(meeting) -> str:
 # =============================================================================
 
 
+@admin.register(SessionStateProfile)
+class SessionStateProfileAdmin(ModelAdmin):
+    """
+    Landesprofile (Issue #138): nur lesend.
+
+    Quelle ist apps/session/presets/landesprofile.json; Änderungen kommen per Release und
+    ``manage.py session_state_profiles --sync``, damit Doku, Datei und Datenbank übereinstimmen.
+    """
+
+    list_display = ["name", "code", "hybrid_council", "hybrid_committees", "digital_council", "as_of", "verification"]
+    search_fields = ["name", "code", "law"]
+
+    def get_readonly_fields(self, request, obj=None):
+        return [field.name for field in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(SessionTenant)
 class SessionTenantAdmin(ModelAdmin):
     """Admin for Session tenants."""
@@ -172,6 +195,18 @@ class SessionTenantAdmin(ModelAdmin):
             "Kontakt",
             {
                 "fields": ("contact_email", "contact_phone", "website", "address"),
+            },
+        ),
+        (
+            "Sitzungsformate (Issue #138)",
+            {
+                "fields": (
+                    "state_profile",
+                    ("hybrid_basis_kind", "hybrid_basis_date"),
+                    "hybrid_basis_reference",
+                    "digital_public_registration_days",
+                ),
+                "classes": ("collapse",),
             },
         ),
         (
@@ -463,7 +498,7 @@ class SessionOrganizationAdmin(DeleteOnlyUnusedMixin, ModelAdmin):
     # NOTE: No membership inline - protects personal data
 
     fieldsets = (
-        (None, {"fields": ("tenant", "name", "short_name", "organization_type")}),
+        (None, {"fields": ("tenant", "name", "short_name", "organization_type", "committee_kind")}),
         (
             "OParl-Verknüpfung",
             {
@@ -573,6 +608,8 @@ class SessionMeetingAdmin(ModelAdmin):
     search_fields = ["name", "organization__name"]
     date_hierarchy = "start"
     inlines = [SessionAgendaItemInline]  # Attendance inline removed for privacy
+    # Sitzungsformat (Issue #138) nur lesend: die Prüfung gegen das Landesprofil läuft im Session-Portal
+    readonly_fields = ["format", "format_reason", "public_access_url", "public_access_note"]
     actions = ["mark_scheduled", "mark_completed", "cancel_meetings"]
 
     fieldsets = (
@@ -607,6 +644,14 @@ class SessionMeetingAdmin(ModelAdmin):
             "Status",
             {
                 "fields": ("meeting_state", "is_public", "cancelled", "cancellation_reason"),
+            },
+        ),
+        (
+            "Sitzungsformat",
+            {
+                "fields": ("format", "format_reason", "public_access_url", "public_access_note"),
+                "classes": ("collapse",),
+                "description": "Nur lesend: Das Format wird im Session-Portal gegen das Landesprofil geprüft.",
             },
         ),
         (

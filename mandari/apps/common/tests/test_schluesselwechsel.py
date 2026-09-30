@@ -116,6 +116,7 @@ def _anlegen() -> Bestand:
     gremium = SessionOrganization.objects.create(tenant=mandant, name="Rat")
     sitzung = SessionMeeting(tenant=mandant, name="Rat", organization=gremium, start=timezone.now(), is_public=True)
     cast(Any, sitzung).set_internal_notes_encrypted("notiz-geheim")
+    cast(Any, sitzung).set_remote_access_encrypted("zugang-geheim")
     sitzung.save()
     fraktionssitzung = FactionMeeting.objects.create(organization=org, title="Sitzung", start=timezone.now())
 
@@ -171,6 +172,7 @@ def _lesen(b: Bestand) -> dict[str, str]:
         "nachricht": entschluesselt(SupportTicketMessage, b.nachricht.pk, "get_content_decrypted"),
         "iban": entschluesselt(SessionPerson, b.person.pk, "get_bank_iban_decrypted"),
         "notiz": entschluesselt(SessionMeeting, b.sitzung.pk, "get_internal_notes_decrypted"),
+        "zugang": entschluesselt(SessionMeeting, b.sitzung.pk, "get_remote_access_decrypted"),
         "transkript_session": entschluesselt(TranscriptSegment, b.transkript_session.pk, "get_text_decrypted"),
         "transkript_fraktion": entschluesselt(TranscriptSegment, b.transkript_fraktion.pk, "get_text_decrypted"),
         "ki_global": AISettings.objects.get(pk=1).get_api_key(),

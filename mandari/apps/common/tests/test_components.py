@@ -247,6 +247,23 @@ class TestKpiTile:
         assert 'data-test="x"' in html
 
 
+class TestLinkTile:
+    """Verlinkte Kachel (c-ui.link-tile, Einstellungsübersicht Session, Issue #138)."""
+
+    def test_link_icon_tone_title_and_slot(self) -> None:
+        html = render(
+            '<c-ui.link-tile href="/einstellungen/" icon="video" title="Sitzungsformate & mehr" '
+            'tone="bg-sky-100 text-sky-600" data-test="x">Landesprofil</c-ui.link-tile>'
+        )
+        assert html.strip().startswith('<a href="/einstellungen/"')
+        assert 'data-lucide="video"' in html
+        assert 'aria-hidden="true"' in html
+        assert "bg-sky-100 text-sky-600" in html
+        assert "Sitzungsformate &amp; mehr" in html
+        assert "Landesprofil" in html
+        assert 'data-test="x"' in html
+
+
 class TestPanelComponents:
     """Alpine-Modal, Panel-Abschnitt und Textbutton (Hotspot-Zerlegung #174, Satz B)."""
 

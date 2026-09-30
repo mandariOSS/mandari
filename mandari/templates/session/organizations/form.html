@@ -73,6 +73,11 @@
                             </select>
                         </div>
                     </div>
+                    <c-form.select :field="form.committee_kind" label="Gesetzliche Ausschussart"
+                                   help="Für Sitzungsformate: Haupt-, Finanz- und Rechnungsprüfungsausschuss haben teils besondere Regeln; „Anderer Ausschuss“, wenn keine zutrifft" />
+                    {% if committee_kind_hint %}
+                    <p class="-mt-2 text-sm text-amber-700 dark:text-amber-400">Der Name deutet auf {{ committee_kind_hint }} hin. Bitte die Ausschussart festlegen.</p>
+                    {% endif %}
                 </div>
             </div>
 

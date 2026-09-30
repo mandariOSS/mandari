@@ -130,7 +130,8 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
         "bank_bic_encrypted",
         paths=_SESSION,
     ),
-    *_tenant("session.SessionMeeting", "internal_notes_encrypted", paths=_SESSION),
+    # Zugangsweg für zugeschaltete Mitglieder (Sitzungsformat, Issue #138)
+    *_tenant("session.SessionMeeting", "internal_notes_encrypted", "remote_access_encrypted", paths=_SESSION),
     *_tenant(
         "session.SessionAgendaItem",
         "resolution_text_encrypted",

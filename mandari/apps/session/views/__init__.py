@@ -93,6 +93,7 @@ from .invitations import (
     MeetingIcsView,
     MeetingInvitationView,
 )
+from .meeting_formats import MeetingFormatSettingsView
 from .meetings import (
     MeetingCreateView,
     MeetingDetailView,
@@ -357,6 +358,7 @@ __all__ = [
     "PrivacyNoticeView",
     "PrivacyPurgeRunView",
     "PrivacySettingsView",
+    "MeetingFormatSettingsView",
     "PersonDetailView",
     "PersonListView",
     "PersonUpdateView",

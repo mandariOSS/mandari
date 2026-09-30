@@ -1,0 +1,87 @@
+{% extends "session/base_session.html" %}
+{% comment %}Einstellungen Sitzungsformate: Landesprofil, Nachweis der örtlichen Rechtsgrundlage, Rechtslage des Landes (Issue #138).{% endcomment %}
+
+{% block page_title %}Sitzungsformate{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Einstellungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Sitzungsformate</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Sitzungsformate und Landesprofil</h1>
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+        Hybride und digitale Sitzungen richten sich nach dem Kommunalverfassungsrecht des Landes und der örtlichen
+        Hauptsatzung bzw. Geschäftsordnung. mandari prüft beim Anlegen einer Sitzung, ob das gewählte Format zulässig ist.
+    </p>
+
+    <c-ui.card title="Landesprofil und örtliche Rechtsgrundlage">
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <c-form.errors :form="form" />
+            <c-form.select :field="form.state_profile" label="Landesprofil" help="Ohne Landesprofil sind nur Präsenzsitzungen möglich." />
+            <div class="grid sm:grid-cols-3 gap-4">
+                <c-form.select :field="form.hybrid_basis_kind" label="Rechtsgrundlage" />
+                <c-form.field :field="form.hybrid_basis_date" label="Datum" type="date" help="Beschluss oder Inkrafttreten" />
+                <c-form.field :field="form.hybrid_basis_reference" label="Fundstelle" placeholder="z. B. § 7 Hauptsatzung, Amtsblatt 2024 Nr. 5" />
+            </div>
+            <c-form.field :field="form.digital_public_registration_days" label="Anmeldefrist für die digitale Öffentlichkeit (Tage vor der Sitzung)" type="number"
+                          help="Nur wenn die Geschäftsordnung einen geschützten Zugang mit Anmeldung vorsieht (z. B. NRW, § 3 DigiSiVO)." />
+            <c-ui.button type="submit">Speichern</c-ui.button>
+        </form>
+    </c-ui.card>
+
+    {% if profile %}
+    <c-ui.card title="Rechtslage {{ profile.name }}" subtitle="{{ profile.law }} – Stand {{ profile.as_of|date:'d.m.Y' }}">
+        <dl class="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <div><dt class="font-medium text-gray-900 dark:text-white">Hybrid: Rat/Vertretung</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_hybrid_council_display }}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">Hybrid: Ausschüsse</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_hybrid_committees_display }}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">Digital: Rat/Vertretung</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_digital_council_display }}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">Digital: Ausschüsse</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_digital_committees_display }}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">Voraussetzung im Regelbetrieb</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_legal_basis_display }}{% if profile.norm_regular %} ({{ profile.norm_regular }}){% endif %}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">Vorsitz</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_chair_present_display }}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">Wahlen für Zugeschaltete</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_remote_elections_display }}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">Geheime Abstimmungen für Zugeschaltete</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_remote_secret_votes_display }}</dd></div>
+            {% if profile.excluded_committee_kinds %}
+            <div class="sm:col-span-2"><dt class="font-medium text-gray-900 dark:text-white">Ausgenommene Ausschüsse</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.excluded_committee_kind_labels|join:", " }} – {{ profile.get_excluded_committee_rule_display }}</dd></div>
+            {% endif %}
+            {% if profile.norm_emergency %}
+            <div class="sm:col-span-2"><dt class="font-medium text-gray-900 dark:text-white">Notlage ({{ profile.norm_emergency }})</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.emergency_requirements }}</dd></div>
+            {% endif %}
+            <div class="sm:col-span-2"><dt class="font-medium text-gray-900 dark:text-white">Ausschlüsse</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.excluded_matters|default:"–" }}</dd></div>
+            <div class="sm:col-span-2"><dt class="font-medium text-gray-900 dark:text-white">Öffentlichkeit</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.public_rule|default:"–" }}</dd></div>
+            {% if profile.notes %}
+            <div class="sm:col-span-2"><dt class="font-medium text-gray-900 dark:text-white">Hinweise</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.notes }}</dd></div>
+            {% endif %}
+            <div class="sm:col-span-2">
+                <dt class="font-medium text-gray-900 dark:text-white">Quellen ({{ profile.get_verification_display }})</dt>
+                <dd>
+                    <ul class="list-disc ml-5 text-gray-600 dark:text-gray-400">
+                        {% for source in profile.sources %}
+                        <li><a href="{{ source.url }}" class="text-primary-600 dark:text-primary-400 hover:underline" target="_blank" rel="noopener noreferrer">{{ source.title }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </dd>
+            </div>
+        </dl>
+    </c-ui.card>
+    {% endif %}
+
+    {% if committee_kinds %}{% include "session/settings/_committee_kinds.html" %}{% endif %}
+
+    <c-ui.alert variant="warning" icon="scale">
+        Keine Rechtsberatung. Die Landesprofile geben den recherchierten Stand wieder; „ungeklärt“ heißt, dass die Recherche keine
+        gesicherte Aussage ergeben hat. Maßgeblich sind der amtliche Gesetzestext, Ihre Hauptsatzung und Geschäftsordnung.
+    </c-ui.alert>
+</div>
+{% endblock %}

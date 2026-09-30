@@ -186,6 +186,12 @@ def run_privacy_purge(
                 if not dry_run:
                     meeting.set_internal_notes_encrypted("")
                     meeting.save(update_fields=["internal_notes_encrypted", "updated_at"])
+            # Zugangsweg für Zugeschaltete (Issue #138): nach der Frist ohne Zweck
+            if meeting.remote_access_encrypted:
+                cleared.append("Zugangsweg für Zugeschaltete")
+                if not dry_run:
+                    meeting.set_remote_access_encrypted("")
+                    meeting.save(update_fields=["remote_access_encrypted", "updated_at"])
             if cleared:
                 stats["np_meetings_cleared"] += 1
                 if not dry_run:

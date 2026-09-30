@@ -1,0 +1,47 @@
+{% comment %}Einordnung der Ausschüsse, wenn das Landesprofil Ausschussarten von hybriden Sitzungen ausnimmt (Issue #138).{% endcomment %}
+<c-ui.card title="Ausschüsse mit besonderen Regeln" subtitle="{{ committee_kinds.kind_labels|join:', ' }}: {{ committee_kinds.rule_label }}">
+    <div class="space-y-4 text-sm">
+        <p class="text-gray-600 dark:text-gray-400">
+            mandari erkennt diese Ausschüsse nur an der gesetzlichen Ausschussart, die beim Gremium hinterlegt ist. Ein nicht
+            eingeordneter Ausschuss wird wie ein gewöhnlicher Fachausschuss geprüft; deutet sein Name auf eine besondere Art hin,
+            sind hybride und digitale Sitzungen bis zur Einordnung gesperrt.
+        </p>
+        {% if committee_kinds.missing %}
+        <c-ui.alert variant="warning" icon="alert-triangle" title="Noch kein Ausschuss eingeordnet">
+            Keinem aktiven Gremium ist eine dieser Arten zugeordnet. Bitte bei den betroffenen Ausschüssen
+            ({{ committee_kinds.kind_labels|join:", " }}) die gesetzliche Ausschussart festlegen, bevor Sitzungen hybrid oder
+            digital geladen werden.
+        </c-ui.alert>
+        {% endif %}
+        {% if committee_kinds.unclassified %}
+        <div>
+            <h3 class="font-medium text-gray-900 dark:text-white">Nicht eingeordnet</h3>
+            <ul class="mt-2 divide-y divide-gray-100 dark:divide-gray-700">
+                {% for organization, suspected in committee_kinds.unclassified %}
+                <li class="py-2 flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-gray-900 dark:text-white">
+                        {{ organization.name }}
+                        {% if suspected %}<span class="ml-1 text-amber-700 dark:text-amber-400">– Name deutet auf {{ suspected|join:" oder " }} hin</span>{% endif %}
+                    </span>
+                    {% if can_manage_organizations %}
+                    <a href="{% url 'session:organization_edit' tenant_slug=tenant_slug organization_id=organization.id %}" class="text-primary-600 dark:text-primary-400 hover:underline">
+                        Ausschussart festlegen
+                    </a>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        {% if committee_kinds.classified %}
+        <div>
+            <h3 class="font-medium text-gray-900 dark:text-white">Eingeordnet</h3>
+            <ul class="mt-2 list-disc ml-5 text-gray-600 dark:text-gray-400">
+                {% for organization in committee_kinds.classified %}
+                <li>{{ organization.name }}: {{ organization.get_committee_kind_display }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</c-ui.card>
