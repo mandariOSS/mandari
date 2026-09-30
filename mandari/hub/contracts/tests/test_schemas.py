@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
 from hub.contracts import COMMAND, EVENT, Contract, Envelope, get_registry
 from hub.contracts.envelope import RESTRICTED_VISIBILITIES
+from hub.contracts.patterns import excludes_whitespace, max_length
 from hub.contracts.registry import Registry
-from hub.contracts.rules import content_paths, free_text_paths
+from hub.contracts.rules import IDENTIFIER_MAX_LENGTH, content_leaves, content_paths, free_text_paths
 
 OE = "oeffentlich"
 NOE = "nichtoeffentlich"
@@ -72,6 +74,32 @@ INHALTSFELDER: dict[str, list[str]] = {
     "attendance.respond": ["#/properties/reason"],
 }
 
+#: Genauer Zuschnitt der Inhaltsfelder: jedes Feld, das am Ende einen Wert trägt, mit ``maxLength``.
+#: Ein neues Unterfeld (etwa unter ``submitter``) oder eine höhere Grenze ist eine bewusste Entscheidung.
+INHALTSBLAETTER: dict[str, dict[str, int | None]] = {
+    "submission.submit": {
+        "#/properties/title": 500,
+        "#/properties/resolution_proposal": 50000,
+        "#/properties/justification": 50000,
+        "#/properties/financial_impact": 10000,
+        "#/properties/urgency_reason": 5000,
+        "#/properties/submitter/properties/name": 200,
+        "#/properties/submitter/properties/email": 254,
+        "#/properties/submitter/properties/phone": 50,
+        "#/properties/co_signers/items": 200,
+    },
+    "attendance.respond": {"#/properties/reason": 2000},
+}
+
+#: Die einzigen Muster in den ausgelieferten Schemas. „Verankert und ohne Leerraum“ schließt Sätze
+#: aus, nicht jedes Wort (``patterns.py``); ein neues Muster ist deshalb eine bewusste Entscheidung.
+MUSTER: dict[str, int] = {
+    "^[a-z][A-Za-z0-9_]{0,63}$": 64,  # Feldname im kanonischen Modell bzw. im Fachmodul
+    "^[a-z][a-z0-9_]{0,31}$": 32,  # Code
+    "^[0-9a-f]{64}$": 64,  # SHA-256
+    "^SG-[0-9]{4}-[0-9]{4,6}$": 14,  # Eingangsnummer
+}
+
 _FELDNAME = re.compile(r"[a-z][a-z0-9_]{0,39}")
 _ALLE = sorted(STARTUMFANG)
 
@@ -108,10 +136,49 @@ def test_keine_freitextfelder_bei_nichtoeffentlich_und_personenbezogen(register:
     assert content_paths(vertrag.schema) == INHALTSFELDER.get(name, [])
 
 
+@pytest.mark.parametrize("name", _ALLE)
+def test_zuschnitt_der_inhaltsfelder_steht_fest(register: Registry, name: str) -> None:
+    assert content_leaves(_vertrag(register, name).schema) == INHALTSBLAETTER.get(name, {})
+
+
+def test_muster_der_ausgelieferten_schemas_stehen_fest(register: Registry) -> None:
+    verwendet = {muster for vertrag in register for muster in _muster(vertrag.schema)}
+    assert verwendet == set(MUSTER)
+    assert {muster: max_length(muster) for muster in verwendet} == MUSTER
+    assert all(excludes_whitespace(muster) for muster in verwendet)
+    assert max(MUSTER.values()) <= IDENTIFIER_MAX_LENGTH
+
+
+def _muster(knoten: object) -> Iterator[str]:
+    """Alle Muster eines Schemas: ``pattern`` an Werten und Feldnamen, Schlüssel von ``patternProperties``."""
+    if isinstance(knoten, list):
+        for eintrag in knoten:
+            yield from _muster(eintrag)
+    if not isinstance(knoten, dict):
+        return
+    if isinstance(knoten.get("pattern"), str):
+        yield knoten["pattern"]
+    if isinstance(knoten.get("patternProperties"), dict):
+        yield from knoten["patternProperties"]
+    for schluessel, wert in knoten.items():
+        if schluessel != "examples":
+            yield from _muster(wert)
+
+
 @pytest.mark.parametrize("name", [name for name in _ALLE if STARTUMFANG[name][0] == EVENT])
 def test_ereignisse_enthalten_nur_kennungen_codes_und_feldnamen(register: Registry, name: str) -> None:
     """Auch öffentliche und interne Ereignisse tragen keine Inhalte (Nutzlast minimal)."""
     assert free_text_paths(_vertrag(register, name).schema) == []
+
+
+@pytest.mark.parametrize("name", [name for name in _ALLE if OE in STARTUMFANG[name][2]])
+def test_oeffentliche_ereignisse_nennen_keine_einreichung(register: Registry, name: str) -> None:
+    """
+    Die Kennung einer Einreichung ist nichtöffentlich. Ein Ereignis, das öffentlich sein darf, führt
+    sie nicht; den Bezug zur Einreichung meldet ``ris.paper.created`` (nur nichtöffentlich).
+    """
+    assert "submission" not in _vertrag(register, name).schema["properties"]
+    assert "submission" in _vertrag(register, "ris.paper.created").schema["properties"]
 
 
 @pytest.mark.parametrize("name", _ALLE)

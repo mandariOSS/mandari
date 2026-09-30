@@ -7,8 +7,9 @@ und prüft sie; ein Verstoß lässt `manage.py check` (Kennung `hub_contracts.E0
 fehlschlagen.
 
 Ausgeliefert ist der Startumfang: 27 Ereignistypen und die Befehle `submission.submit`,
-`submission.withdraw`, `attendance.respond` und `invitation.acknowledge`. Art, Eigentümer,
-Sichtbarkeit und Inhaltsfelder je Typ hält `hub/contracts/tests/test_schemas.py` fest.
+`submission.withdraw`, `attendance.respond` und `invitation.acknowledge`. Art, Eigentümer und
+Sichtbarkeit je Typ, die Inhaltsfelder mit jedem Unterfeld und seiner Längengrenze sowie die
+verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
 
 ## Aufbau einer Datei
 
@@ -55,16 +56,26 @@ Sichtbarkeit und Inhaltsfelder je Typ hält `hub/contracts/tests/test_schemas.py
   `personenbezogen`. Die Hülle jedes Ereignisses muss eine davon tragen. Interne Bereiche sind nie
   `oeffentlich`.
 - **Keine Freitextfelder** bei `nichtoeffentlich` oder `personenbezogen`: Zeichenketten nur mit
-  `enum`/`const`, Format `uuid`, `date`, `date-time`, `time`, `duration` oder einem Muster, das vorn
-  und hinten verankert ist (`^…$`) und keinen Leerraum zulässt (`patterns.py`; `^[A-Z]{2}` oder
-  `^[a-z ]+$` genügen nicht). Objekte mit `additionalProperties: false`, Listen mit `items`. Die
-  Formate prüft das Register selbst (`formats.py`), unabhängig von optionalen Paketen von
-  `jsonschema`. Auch Feldnamen sind kein Freitext: Ein Objekt mit frei wählbaren Schlüsseln
-  (`additionalProperties` als Schema, `patternProperties` mit einem Muster, das Leerraum zulässt)
-  braucht `propertyNames` mit `enum`/`const`, Kennungsformat oder einem solchen Muster.
+  `enum`/`const`, Format `uuid`, `date`, `date-time`, `time`, `duration` oder einem Kennungsmuster
+  (siehe unten). Objekte mit `additionalProperties: false`, Listen mit `items`. Die Formate prüft
+  das Register selbst (`formats.py`), unabhängig von optionalen Paketen von `jsonschema`. Auch
+  Feldnamen sind kein Freitext: Ein Objekt mit frei wählbaren Schlüsseln (`additionalProperties` als
+  Schema, `patternProperties` mit einem Muster, das kein Kennungsmuster ist) braucht `propertyNames`
+  mit `enum`/`const`, Kennungsformat oder Kennungsmuster.
+- **Kennungsmuster** (`patterns.py`): vorn und hinten mit `^` und `$` verankert, ohne Leerraum und
+  mit Längengrenze von höchstens 255 Zeichen, entweder durch Quantoren mit Obergrenze
+  (`^[a-z][a-z0-9_]{0,31}$`) oder durch `maxLength` am selben Feld. `^[A-Z]{2}`, `^[a-z ]+$` und
+  `^[a-z_]+$` genügen nicht. `\A`, `\Z` und Schalter wie `(?i)` oder `(?m)` kennt nur Python, nicht
+  ECMA-262; solche Muster gelten als Freitext. **Grenze der Regel:** Sie schließt Sätze aus, nicht
+  jedes einzelne Wort; `^\S{1,64}$` ließe einen Namen ohne Leerzeichen oder eine Mailadresse zu.
+  Deshalb stehen die verwendeten Muster als feste Liste im Test, ein neues Muster ist eine bewusste
+  Entscheidung.
 - **Inhaltsfelder nur in Befehlen:** Felder, deren Wert ein Inhalt ist (Antragstext, Grund einer
-  Absage), tragen `"x-content": true`. Sie sind vom Freitextverbot ausgenommen; jede Zeichenkette
-  darin braucht `maxLength`. Ereignisse haben nie Inhaltsfelder, auch öffentliche nicht.
+  Absage), tragen `"x-content": true`. Vom Freitextverbot ausgenommen ist nur die Zeichenkette
+  selbst: Im Teilbaum eines Inhaltsfelds braucht jede freie Zeichenkette `maxLength` und jede Liste
+  `maxItems`; Knoten ohne Typ, `true`, Objekte ohne `additionalProperties: false`, Listen ohne bzw.
+  mit leerem `items` und Verweise (`$ref`) sind dort Verstöße. Ein Inhaltsfeld nimmt also nie
+  beliebiges JSON an. Ereignisse haben nie Inhaltsfelder, auch öffentliche nicht.
 - **`examples`**: mindestens ein gültiges Beispiel.
 - **Meldungen ohne Werte:** Verstöße nennen JSON-Pfad, Regel und Feldnamen. Schlüssel aus der
   Nutzlast erscheinen nur, wenn sie wie ein Feldname aussehen (`^[a-z][a-z0-9_]{0,39}$`), sonst als
@@ -75,6 +86,9 @@ Sichtbarkeit und Inhaltsfelder je Typ hält `hub/contracts/tests/test_schemas.py
 - **Nutzlast minimal:** Ereignisse tragen Kennungen, Codes und Namen geänderter Felder, nie Inhalte,
   Namen, Mailadressen, Beträge oder Bankdaten. Die Kennung des Objekts steht zusätzlich zur Hülle in
   der Nutzlast (`paper`, `meeting` …), Bezüge daneben (`paper` einer Beratung, `meeting` eines TOP).
+  Ein Ereignis, das `oeffentlich` sein darf, nennt keine Kennung eines nichtöffentlichen Objekts:
+  Die Einreichung hinter einer Vorlage steht nur in `ris.paper.created`, nicht in
+  `ris.paper.released`.
 - **Feldnamen der Nutzlast** in `snake_case` (`agenda_item`, `previous_status`) und mit
   `description`. Namen geänderter Felder (`changed`) folgen dem Modell des Eigentümers: bei `ris.*`
   den OParl-Namen (`paperType`), sonst den Feldnamen des Fachmoduls.

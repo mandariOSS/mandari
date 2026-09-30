@@ -15,18 +15,25 @@ Jedes Schema
 Interne Bereiche (``session``, ``work``, ``portal``) gehören ihrem Fachmodul und sind nie
 ``oeffentlich``; ``core`` gehört der Plattform. Schemas der Klassen ``nichtoeffentlich`` und
 ``personenbezogen`` enthalten keine Freitextfelder: Jede Zeichenkette ist Kennung, Code oder
-Feldname (``enum``/``const``, Format wie ``uuid`` oder ein verankertes Muster ohne Leerraum, siehe
-``patterns.py``), und Objekte und Listen lassen keine undeklarierten Werte zu. Auch die Feldnamen
-eines Objekts sind kein Freitext: Frei wählbare Schlüssel (``additionalProperties`` als Schema,
-``patternProperties`` mit einem Muster, das Leerraum zulässt) brauchen ``propertyNames`` mit
-``enum``/``const``, Kennungsformat oder einem verankerten Muster ohne Leerraum.
+Feldname (``enum``/``const``, Format wie ``uuid`` oder ein verankertes Muster ohne Leerraum mit
+Längengrenze, siehe ``patterns.py``), und Objekte und Listen lassen keine undeklarierten Werte zu.
+Ein Muster zählt nur als Kennung, wenn es selbst die Länge begrenzt (Quantoren mit Obergrenze) oder
+das Feld ``maxLength`` trägt, jeweils höchstens ``IDENTIFIER_MAX_LENGTH`` Zeichen. Auch die
+Feldnamen eines Objekts sind kein Freitext: Frei wählbare Schlüssel (``additionalProperties`` als
+Schema, ``patternProperties`` mit einem Muster, das kein solches Kennungsmuster ist) brauchen
+``propertyNames`` mit ``enum``/``const``, Kennungsformat oder Kennungsmuster.
 
 **Inhaltsfelder in Befehlen:** Ein Befehl bittet den Eigentümer, Daten zu speichern; manche davon
 sind Inhalte (Antragstext, Grund einer Absage). Solche Felder tragen ``"x-content": true`` und sind
-vom Freitextverbot ausgenommen, brauchen aber für jede Zeichenkette ``maxLength``. Ereignisse haben
-nie Inhaltsfelder: Sie landen im Journal, im Änderungsfeed und bei Abonnenten; Inhalte holt der
-Empfänger berechtigt beim Eigentümer. Ein Befehl geht dagegen nur an den Eigentümer, und der
-Befehlsweg gibt seinen Inhalt weder in Logs noch in Fehlermeldungen oder Ereignisse weiter.
+vom Freitextverbot ausgenommen. Ausgenommen ist nur die Zeichenkette selbst: Im Teilbaum eines
+Inhaltsfelds gelten dieselben Regeln zur Offenheit wie außerhalb (kein Knoten ohne Typ, kein
+``true``, Objekte mit ``additionalProperties: false``, Listen mit ``items``), jede freie
+Zeichenkette braucht ``maxLength``, jede Liste ``maxItems``, und Verweise (``$ref``) sind dort nicht
+zulässig, weil sich die Grenzen des Ziels an dieser Stelle nicht prüfen lassen. Ein Inhaltsfeld
+nimmt also nie beliebiges JSON an. Ereignisse haben nie Inhaltsfelder: Sie landen im Journal, im
+Änderungsfeed und bei Abonnenten; Inhalte holt der Empfänger berechtigt beim Eigentümer. Ein Befehl
+geht dagegen nur an den Eigentümer, und der Befehlsweg gibt seinen Inhalt weder in Logs noch in
+Fehlermeldungen oder Ereignisse weiter.
 """
 
 from __future__ import annotations
@@ -38,7 +45,7 @@ from typing import Any, Final
 from .envelope import RESTRICTED_VISIBILITIES, VISIBILITIES
 from .formats import IDENTIFIER_FORMATS
 from .naming import COMMAND, EVENT, INTERNAL_DOMAINS, KINDS, PLATFORM_PACKAGES, check_name, domain_of
-from .patterns import excludes_whitespace
+from .patterns import excludes_whitespace, max_length
 from .validation import SCHEMA_DIALECT, instance_problems, schema_problems, validator_for
 
 #: Pakete, die Eigentümer von Ereignissen oder Befehlen sein können (auch deren Unterpakete).
@@ -55,6 +62,12 @@ KNOWN_OWNERS: Final[tuple[str, ...]] = (
 
 #: Kennzeichen eines Inhaltsfelds (nur in Befehlen, siehe oben).
 CONTENT_KEYWORD: Final = "x-content"
+
+#: Größte Länge, bis zu der eine Zeichenkette mit Muster noch als Kennung gilt.
+IDENTIFIER_MAX_LENGTH: Final = 255
+
+_FREE_STRING: Final = "Zeichenkette ohne enum, Kennungsformat oder verankertes Muster ohne Leerraum mit Längengrenze"
+_REFERENCES: Final = ("$ref", "$dynamicRef")
 
 _OWNER_RE = re.compile(r"^[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*$")
 
@@ -131,7 +144,7 @@ def _content_nodes(node: object, pointer: str) -> Iterator[tuple[str, Mapping[st
 
 
 def content_problems(schema: Mapping[str, Any], kind: object) -> list[str]:
-    """Verstöße gegen die Regeln für Inhaltsfelder: nur in Befehlen, nur an Feldern, mit Längengrenze."""
+    """Verstöße gegen die Regeln für Inhaltsfelder: nur in Befehlen, nur an Feldern, geschlossen und begrenzt."""
     problems: list[str] = []
     for pointer, node in _content_nodes(schema, "#"):
         if kind != COMMAND:
@@ -141,18 +154,65 @@ def content_problems(schema: Mapping[str, Any], kind: object) -> list[str]:
         elif node[CONTENT_KEYWORD] is not True:
             problems.append(f"{pointer}: {CONTENT_KEYWORD} muss true sein")
         else:
-            problems += [f"{path}: Inhaltsfeld ohne maxLength" for path in _unbounded_strings(node, pointer)]
-    return problems
+            problems += _content_field_problems(node, pointer)
+    # Ein Inhaltsfeld in einem Inhaltsfeld würde seine Verstöße sonst doppelt melden.
+    return list(dict.fromkeys(problems))
 
 
-def _unbounded_strings(node: object, pointer: str) -> Iterator[str]:
-    """Zeichenketten ohne ``maxLength`` (Kennungen und Codes ausgenommen) in einem Teilschema."""
+def _content_field_problems(node: object, pointer: str) -> Iterator[str]:
+    """
+    Verstöße im Teilbaum eines Inhaltsfelds.
+
+    Vom Freitextverbot ausgenommen ist nur die Zeichenkette; sie braucht ``maxLength``. Alles andere
+    gilt wie außerhalb: Ein Knoten ohne Typ, ``true``, ein offenes Objekt oder eine Liste ohne
+    ``items`` ließe beliebiges JSON ohne Längengrenze zu.
+    """
+    if node is True:
+        yield f"{pointer}: Inhaltsfeld offen (true lässt jeden Wert zu)"
+        return
     if not isinstance(node, Mapping):
         return
-    if "string" in _types(node) and _node_reason(node) and not isinstance(node.get("maxLength"), int):
-        yield pointer
+    if any(key in node for key in _REFERENCES):
+        yield f"{pointer}: Inhaltsfeld mit Verweis ($ref), die Grenzen des Ziels sind hier nicht prüfbar"
+    structure = _structure_reason(node)
+    if structure:
+        yield f"{pointer}: Inhaltsfeld offen ({structure})"
+    if _string_reason(node) and _limit(node.get("maxLength")) is None:
+        yield f"{pointer}: Inhaltsfeld ohne maxLength"
+    if "array" in _types(node) and _limit(node.get("maxItems")) is None:
+        yield f"{pointer}: Inhaltsfeld ohne maxItems"
     for child_pointer, child in _children(node, pointer):
-        yield from _unbounded_strings(child, child_pointer)
+        yield from _content_field_problems(child, child_pointer)
+
+
+def content_leaves(schema: Mapping[str, Any]) -> dict[str, int | None]:
+    """
+    Blätter aller Inhaltsfelder (JSON-Pointer) mit ihrer Längengrenze ``maxLength``.
+
+    Blatt ist jeder Knoten ohne Teilschemas, also jedes Feld, das am Ende einen Wert trägt. Damit
+    lässt sich der genaue Zuschnitt der Inhaltsfelder als Test festhalten: Ein neues Unterfeld oder
+    eine höhere Grenze fällt auf.
+    """
+    leaves: dict[str, int | None] = {}
+    for pointer, node in _content_nodes(schema, "#"):
+        for leaf_pointer, leaf in _leaves(node, pointer):
+            leaves[leaf_pointer] = _limit(leaf.get("maxLength"))
+    return leaves
+
+
+def _leaves(node: object, pointer: str) -> Iterator[tuple[str, Mapping[str, Any]]]:
+    if not isinstance(node, Mapping):
+        return
+    children = list(_children(node, pointer))
+    if not children:
+        yield pointer, node
+    for child_pointer, child in children:
+        yield from _leaves(child, child_pointer)
+
+
+def _limit(value: object) -> int | None:
+    """Wert von ``maxLength``/``maxItems`` als Zahl; ``None``, wenn die Grenze fehlt."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _types(node: Mapping[str, Any]) -> set[str]:
@@ -162,6 +222,20 @@ def _types(node: Mapping[str, Any]) -> set[str]:
 
 def _node_reason(node: Mapping[str, Any]) -> str:
     """Grund, warum dieser Knoten Freitext zulässt; leer, wenn er es nicht tut."""
+    return _string_reason(node) or _structure_reason(node)
+
+
+def _string_reason(node: Mapping[str, Any]) -> str:
+    """Grund, wenn der Knoten eine freie Zeichenkette zulässt (weder Kennung noch Code)."""
+    if "const" in node or "enum" in node:
+        return ""
+    if "string" in _types(node) and not _string_restricted(node):
+        return _FREE_STRING
+    return ""
+
+
+def _structure_reason(node: Mapping[str, Any]) -> str:
+    """Grund, wenn der Knoten undeklarierte Werte zulässt: ohne Typ, offenes Objekt, Liste ohne ``items``."""
     if "const" in node or "enum" in node:
         return ""
     type_set = _types(node)
@@ -170,8 +244,6 @@ def _node_reason(node: Mapping[str, Any]) -> str:
         if any(key in node for key in ("$ref", "allOf", "anyOf", "oneOf")):
             return ""
         return "ohne Typ ist jeder Wert erlaubt"
-    if "string" in type_set and not _string_restricted(node):
-        return "Zeichenkette ohne enum, Kennungsformat oder verankertes Muster ohne Leerraum"
     if "object" in type_set:
         reason = _object_reason(node)
         if reason:
@@ -184,12 +256,19 @@ def _node_reason(node: Mapping[str, Any]) -> str:
 def _string_restricted(node: Mapping[str, Any]) -> bool:
     if node.get("format") in IDENTIFIER_FORMATS:
         return True
-    return _pattern_restricted(node.get("pattern"))
+    return _pattern_restricted(node.get("pattern"), node.get("maxLength"))
 
 
-def _pattern_restricted(pattern: object) -> bool:
-    """Das Muster ist vorn und hinten verankert und lässt keinen Leerraum zu (``patterns.py``)."""
-    return excludes_whitespace(pattern)
+def _pattern_restricted(pattern: object, declared_limit: object = None) -> bool:
+    """
+    Das Muster beschreibt eine Kennung (``patterns.py``): vorn und hinten verankert, ohne Leerraum,
+    und höchstens ``IDENTIFIER_MAX_LENGTH`` Zeichen lang, begrenzt durch das Muster selbst oder durch
+    ``maxLength`` am selben Knoten.
+    """
+    if not excludes_whitespace(pattern):
+        return False
+    limits = [limit for limit in (max_length(pattern), _limit(declared_limit)) if limit is not None]
+    return bool(limits) and min(limits) <= IDENTIFIER_MAX_LENGTH
 
 
 def _object_reason(node: Mapping[str, Any]) -> str:
@@ -210,7 +289,7 @@ def _object_reason(node: Mapping[str, Any]) -> str:
         and any(not _pattern_restricted(pattern) for pattern in patterns)
         and not _names_restricted(node)
     ):
-        return "Objekt mit frei wählbaren Feldnamen (Muster in patternProperties nicht verankert oder mit Leerraum)"
+        return "Objekt mit frei wählbaren Feldnamen (Muster in patternProperties ist kein Kennungsmuster)"
     return ""
 
 

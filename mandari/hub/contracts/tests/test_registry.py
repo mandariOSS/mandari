@@ -248,7 +248,9 @@ def _mit_feld(feld: object, sichtbarkeit: str = "personenbezogen", beispiel: obj
         {"type": "string", "format": "uuid"},
         {"type": "string", "enum": ["zugesagt", "abgesagt"]},
         {"const": "zugesagt"},
-        {"type": "string", "pattern": "^[a-z_]+$"},
+        {"type": "string", "pattern": "^[a-z_]{1,40}$"},
+        {"type": "string", "pattern": "^[a-z_]+$", "maxLength": 40},
+        {"type": "string", "pattern": "^[a-z_]+$", "maxLength": 255},
         {"type": ["string", "null"], "format": "date-time"},
         {"type": "integer"},
         {"type": "array", "items": {"type": "string", "format": "uuid"}},
@@ -258,9 +260,18 @@ def _mit_feld(feld: object, sichtbarkeit: str = "personenbezogen", beispiel: obj
             "propertyNames": {"format": "uuid"},
             "additionalProperties": {"type": "string", "enum": ["zugesagt", "abgesagt"]},
         },
-        {"type": "object", "propertyNames": {"pattern": "^[a-z_]+$"}, "additionalProperties": {"type": "integer"}},
+        {
+            "type": "object",
+            "propertyNames": {"pattern": "^[a-z_]+$", "maxLength": 40},
+            "additionalProperties": {"type": "integer"},
+        },
+        {"type": "object", "propertyNames": {"pattern": "^[a-z_]{1,40}$"}, "additionalProperties": {"type": "integer"}},
         {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "unevaluatedProperties": {"type": "integer"}},
-        {"type": "object", "additionalProperties": False, "patternProperties": {"^[a-z_]+$": {"type": "integer"}}},
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "patternProperties": {"^[a-z_]{1,40}$": {"type": "integer"}},
+        },
         {"anyOf": [{"type": "string", "format": "uuid"}, {"type": "null"}]},
         {"$ref": "#/$defs/kennung"},
     ],
@@ -286,6 +297,13 @@ def test_kennungen_und_codes_sind_erlaubt(tmp_path: Path, feld: dict[str, Any]) 
         ({"type": "string", "pattern": "[0-9]{3}"}, "#/properties/feld (Zeichenkette"),
         ({"type": "string", "pattern": "^[a-z ]+$"}, "#/properties/feld (Zeichenkette"),
         ({"type": "string", "pattern": "(?m)^[a-z]+$"}, "#/properties/feld (Zeichenkette"),
+        # Kennungsmuster brauchen eine Längengrenze von höchstens 255 Zeichen und nur ^ und $ als Anker.
+        ({"type": "string", "pattern": "^[a-z_]+$"}, "#/properties/feld (Zeichenkette"),
+        ({"type": "string", "pattern": "^\\S+$", "maxLength": 256}, "#/properties/feld (Zeichenkette"),
+        ({"type": "string", "pattern": "^\\S{1,5000}$"}, "#/properties/feld (Zeichenkette"),
+        ({"type": "string", "pattern": "^[a-z_]+$", "maxLength": True}, "#/properties/feld (Zeichenkette"),
+        ({"type": "string", "pattern": "\\A[a-z]{1,9}\\Z"}, "#/properties/feld (Zeichenkette"),
+        ({"type": "string", "pattern": "(?i)^[a-z]{1,9}$"}, "#/properties/feld (Zeichenkette"),
         ({}, "#/properties/feld (ohne Typ"),
         (True, "#/properties/feld (true"),
         ({"type": "array"}, "#/properties/feld (Liste"),
@@ -307,6 +325,14 @@ def test_kennungen_und_codes_sind_erlaubt(tmp_path: Path, feld: dict[str, Any]) 
         ),
         (
             {"type": "object", "propertyNames": {"pattern": "^[a-z]"}, "additionalProperties": {"type": "integer"}},
+            "#/properties/feld (Objekt mit frei",
+        ),
+        (
+            {"type": "object", "propertyNames": {"pattern": "^[a-z_]+$"}, "additionalProperties": {"type": "integer"}},
+            "#/properties/feld (Objekt mit frei",
+        ),
+        (
+            {"type": "object", "additionalProperties": False, "patternProperties": {"^[a-z_]+$": {"type": "integer"}}},
             "#/properties/feld (Objekt mit frei",
         ),
         ({"anyOf": [{"type": "string"}, {"type": "null"}]}, "#/properties/feld/anyOf/0 (Zeichenkette"),
@@ -366,7 +392,7 @@ def test_befehl_ohne_kennzeichen_bleibt_freitextfrei(tmp_path: Path) -> None:
     probleme = _eines(tmp_path, _befehl_mit_inhalt({"type": "string", "maxLength": 500}), name="submission.submit")
     assert probleme == (
         "submission.submit v1: Freitext bei Sichtbarkeit nichtoeffentlich: #/properties/titel (Zeichenkette ohne "
-        "enum, Kennungsformat oder verankertes Muster ohne Leerraum)",
+        "enum, Kennungsformat oder verankertes Muster ohne Leerraum mit Längengrenze)",
     )
 
 
@@ -375,8 +401,70 @@ def test_befehl_ohne_kennzeichen_bleibt_freitextfrei(tmp_path: Path) -> None:
     [
         ({"x-content": True, "type": "string"}, "#/properties/titel: Inhaltsfeld ohne maxLength"),
         (
-            {"x-content": True, "type": "array", "items": {"type": "string"}},
+            {"x-content": True, "type": "array", "items": {"type": "string"}, "maxItems": 10},
             "#/properties/titel/items: Inhaltsfeld ohne maxLength",
+        ),
+        (
+            {"x-content": True, "type": "array", "items": {"type": "string", "maxLength": 200}},
+            "#/properties/titel: Inhaltsfeld ohne maxItems",
+        ),
+        # Ein Inhaltsfeld nimmt kein beliebiges JSON an: dieselben Regeln zur Offenheit wie außerhalb.
+        ({"x-content": True}, "#/properties/titel: Inhaltsfeld offen (ohne Typ ist jeder Wert erlaubt)"),
+        (
+            {"x-content": True, "maxLength": 50},
+            "#/properties/titel: Inhaltsfeld offen (ohne Typ ist jeder Wert erlaubt)",
+        ),
+        (
+            {"x-content": True, "type": "object"},
+            "#/properties/titel: Inhaltsfeld offen (Objekt ohne additionalProperties: false)",
+        ),
+        (
+            {"x-content": True, "type": ["string", "object"], "maxLength": 50},
+            "#/properties/titel: Inhaltsfeld offen (Objekt ohne additionalProperties: false)",
+        ),
+        (
+            {"x-content": True, "type": "object", "additionalProperties": {"type": "string", "maxLength": 50}},
+            "#/properties/titel: Inhaltsfeld offen (Objekt mit frei wählbaren Feldnamen (additionalProperties als "
+            "Schema ohne propertyNames als Kennung))",
+        ),
+        (
+            {"x-content": True, "type": "array", "items": {}, "maxItems": 10},
+            "#/properties/titel/items: Inhaltsfeld offen (ohne Typ ist jeder Wert erlaubt)",
+        ),
+        (
+            {"x-content": True, "type": "array", "items": True, "maxItems": 10},
+            "#/properties/titel/items: Inhaltsfeld offen (true lässt jeden Wert zu)",
+        ),
+        (
+            {"x-content": True, "type": "array", "maxItems": 10},
+            "#/properties/titel: Inhaltsfeld offen (Liste ohne Schema für items)",
+        ),
+        (
+            {
+                "x-content": True,
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {"name": {"type": "string", "maxLength": 200}, "mehr": {}},
+            },
+            "#/properties/titel/properties/mehr: Inhaltsfeld offen (ohne Typ ist jeder Wert erlaubt)",
+        ),
+        (
+            {"x-content": True, "anyOf": [{"type": "string", "maxLength": 50}, {}]},
+            "#/properties/titel/anyOf/1: Inhaltsfeld offen (ohne Typ ist jeder Wert erlaubt)",
+        ),
+        (
+            {"x-content": True, "$ref": "#/properties/document"},
+            "#/properties/titel: Inhaltsfeld mit Verweis ($ref), die Grenzen des Ziels sind hier nicht prüfbar",
+        ),
+        (
+            # Ein Inhaltsfeld im Inhaltsfeld meldet seinen Verstoß nur einmal.
+            {
+                "x-content": True,
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {"name": {"x-content": True, "type": "string"}},
+            },
+            "#/properties/titel/properties/name: Inhaltsfeld ohne maxLength",
         ),
         (
             {
@@ -394,6 +482,23 @@ def test_regeln_fuer_inhaltsfelder(tmp_path: Path, feld: dict[str, Any], erwarte
     schema = _befehl_mit_inhalt(feld, "intern")
     schema["examples"] = [{"document": PAPER_ID}]
     assert _eines(tmp_path, schema, name="submission.submit") == (f"submission.submit v1: {erwartet}",)
+
+
+@pytest.mark.parametrize("sichtbarkeit", ["nichtoeffentlich", "personenbezogen"])
+@pytest.mark.parametrize(
+    "feld",
+    [
+        {"x-content": True},
+        {"x-content": True, "type": "object"},
+        {"x-content": True, "type": "array", "items": {}},
+        {"x-content": True, "type": "array", "items": True},
+    ],
+)
+def test_inhaltsfeld_nimmt_kein_beliebiges_json_an(tmp_path: Path, feld: dict[str, Any], sichtbarkeit: str) -> None:
+    """Das Kennzeichen nimmt nur Zeichenketten mit Längengrenze vom Freitextverbot aus, nicht den Aufbau."""
+    schema = _befehl_mit_inhalt(feld, sichtbarkeit)
+    probleme = _eines(tmp_path, schema, name="submission.submit")
+    assert any("Inhaltsfeld offen" in p for p in probleme), probleme
 
 
 def test_inhaltsfeld_gilt_nicht_fuer_den_ganzen_befehl(tmp_path: Path) -> None:

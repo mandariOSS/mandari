@@ -92,7 +92,10 @@ In der CI, blockierend:
 
 ## Nachtrag zur Umsetzung (#517, #518)
 
-Die Entscheidung bleibt unverändert; die Umsetzung präzisiert drei Punkte.
+Die Umsetzung präzisiert drei Punkte. Die ersten beiden lassen die Entscheidung unverändert. Der
+dritte ist eine **Ausnahme von Regel 6** („keine Freitextfelder“): Für Ereignisse gilt die Regel
+ohne Einschränkung, für Befehle mit der unten beschriebenen, feldgenau festgelegten Ausnahme. Wer
+diesen Nachtrag annimmt, nimmt die Ausnahme an.
 
 - **Bereich `invitation`.** Die Bereichsliste oben nennt ihn nicht, der Startumfang der Befehle
   ([A6](20260929-befehle-synchron.md)) braucht ihn für `invitation.acknowledge`. Er gehört zu den
@@ -105,15 +108,33 @@ Die Entscheidung bleibt unverändert; die Umsetzung präzisiert drei Punkte.
   gehört `apps.work`, `core.*` dem jeweiligen Plattformmodul.
 - **Inhaltsfelder in Befehlen.** Ein Befehl bittet den Eigentümer, Daten zu speichern; manche davon
   sind Inhalte (Antragstext, Grund einer Absage) und lassen sich nicht als Kennung ausdrücken. Solche
-  Felder tragen im Schema `"x-content": true` und sind vom Freitextverbot ausgenommen, jede
-  Zeichenkette darin braucht `maxLength`. Ereignisse haben nie Inhaltsfelder. Befehle gehen nur an
-  den Eigentümer; der Befehlsweg gibt ihren Inhalt weder in Logs noch in Fehlermeldungen oder
-  Ereignisse weiter, der Idempotenzspeicher hält nur einen Hash. Die Liste der Inhaltsfelder steht
-  als Test fest (`hub/contracts/tests/test_schemas.py`); ein neues ist eine bewusste Entscheidung.
+  Felder tragen im Schema `"x-content": true` und sind vom Freitextverbot ausgenommen. Ausgenommen
+  ist nur die Zeichenkette selbst: Im Teilbaum eines Inhaltsfelds gelten dieselben Regeln zur
+  Offenheit wie außerhalb (kein Knoten ohne Typ, Objekte mit `additionalProperties: false`, Listen
+  mit `items`, keine Verweise), jede freie Zeichenkette braucht `maxLength`, jede Liste `maxItems`.
+  Ein Inhaltsfeld nimmt also nie beliebiges JSON an. Ereignisse haben nie Inhaltsfelder. Befehle
+  gehen nur an den Eigentümer; der Befehlsweg gibt ihren Inhalt weder in Logs noch in
+  Fehlermeldungen oder Ereignisse weiter, der Idempotenzspeicher hält nur einen Hash. Die Liste der
+  Inhaltsfelder und ihr Zuschnitt (jedes Unterfeld mit seiner Längengrenze) stehen als Test fest
+  (`hub/contracts/tests/test_schemas.py`); ein neues Feld, ein neues Unterfeld oder eine höhere
+  Grenze ist eine bewusste Entscheidung.
 
-Ein Muster (`pattern`) zählt nur als Kennung, wenn es vorn und hinten verankert ist und keinen
-Leerraum zulässt. JSON Schema wendet `pattern` als Suche an; `^[A-Z]{2}` ließe sonst beliebigen
-Text nach zwei Großbuchstaben zu (`hub/contracts/patterns.py`).
+Ein Muster (`pattern`) zählt nur als Kennung, wenn es vorn und hinten mit `^` und `$` verankert
+ist, keinen Leerraum zulässt und die Länge auf höchstens 255 Zeichen begrenzt (Quantoren mit
+Obergrenze oder `maxLength` am Feld). JSON Schema wendet `pattern` als Suche an; `^[A-Z]{2}` ließe
+sonst beliebigen Text nach zwei Großbuchstaben zu (`hub/contracts/patterns.py`). `\A`, `\Z` und
+Schalter wie `(?i)` kennt nur Python, nicht ECMA-262; Muster damit gelten als Freitext, damit die
+Schemas für fremde Prüfer dasselbe bedeuten.
+
+**Grenze dieser Regel:** „Ohne Leerraum“ schließt Sätze aus, nicht jedes einzelne Wort. Ein Muster
+wie `^\S{1,64}$` ließe einen Namen ohne Leerzeichen oder eine Mailadresse zu. Das Register kann
+nicht erkennen, was ein Muster fachlich bedeutet. Deshalb stehen die Muster der ausgelieferten
+Schemas als feste Liste im Test (derzeit vier: Feldname, Code, SHA-256, Eingangsnummer); ein neues
+Muster ist wie ein neues Inhaltsfeld eine bewusste Entscheidung im Review.
+
+Ein Ereignis, das `oeffentlich` sein darf, nennt keine Kennung eines nichtöffentlichen Objekts:
+`ris.paper.released` führt die Einreichung nicht, aus der die Vorlage entstand; diesen Bezug meldet
+`ris.paper.created` (nur `nichtoeffentlich`).
 
 ## Bezug
 
