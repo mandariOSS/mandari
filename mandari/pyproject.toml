@@ -59,11 +59,11 @@ dev = [
     "factory-boy>=3.3.0",
     "pytest-playwright>=0.7.0",  # E2E (tests_e2e/), Browser: playwright install chromium
     "ruff>=0.8.0",
+    "import-linter>=2.15",  # Schichtregeln: lint-imports (Verträge unten in [tool.importlinter])
     "mypy==2.3.1",  # wie CI: Ergebnisse unterscheiden sich zwischen mypy-Versionen
     "django-stubs[compatible-mypy]==6.1.1",
     "sqlalchemy>=2.0",  # Schema-Contract gegen die Ingestor-Modelle (insight_core/schema_contract.py)
     "djlint==1.46.2",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
-    "import-linter>=2.15",  # Schichtregeln: lint-imports (Verträge unten in [tool.importlinter])
 ]
 
 [build-system]
