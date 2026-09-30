@@ -20,6 +20,7 @@ from .entities import (
     ProcessedPerson,
 )
 from .enums import OPARL_TYPE_MAP, OParlType
+from .ids import NS_MANDARI_RIS, canonical_id
 from .utils import generate_uuid, parse_date, parse_datetime
 
 __all__ = [
@@ -40,6 +41,9 @@ __all__ = [
     "ProcessedOrganization",
     "ProcessedPaper",
     "ProcessedPerson",
+    # Kanonische Kennungen
+    "NS_MANDARI_RIS",
+    "canonical_id",
     # Utils
     "generate_uuid",
     "parse_date",

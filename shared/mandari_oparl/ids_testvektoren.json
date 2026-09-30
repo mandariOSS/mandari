@@ -1,0 +1,46 @@
+{
+  "beschreibung": "Gemeinsame Testvektoren der kanonischen RIS-Kennung uuid5(NS_MANDARI_RIS, URI). Django- und Ingestor-Tests prüfen dieselben Werte (ADR docs/adr/20260929-kanonisches-modell.md). Werte nie ändern: Eine Abweichung bedeutet, dass sich bestehende Kennungen ändern würden.",
+  "namensraum": "6ba7b811-9dad-11d1-80b4-00c04fd430c8",
+  "vektoren": [
+    {
+      "uri": "https://oparl.stadt-muenster.de/bodies/0001/papers/12345",
+      "kennung": "68050959-1e0c-5c70-9f7d-13a642b4d432"
+    },
+    {
+      "uri": "https://oparl.stadt-muenster.de/bodies/0001/papers/12345/",
+      "kennung": "226b7772-1480-5d66-96b7-a81ce20dae86"
+    },
+    {
+      "uri": "http://oparl.stadt-muenster.de/bodies/0001/papers/12345",
+      "kennung": "c8d84754-b86f-56e9-9420-17c91b0363fd"
+    },
+    {
+      "uri": "HTTPS://OParl.Stadt-Muenster.de/bodies/0001/papers/12345",
+      "kennung": "15f53ee7-ae46-505b-a9ee-b3621e5f3c4f"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/v1/paper?id=4711&body=1",
+      "kennung": "ad22a126-d6fd-54d4-a9da-8021bc497003"
+    },
+    {
+      "uri": "https://ris.beispiel.example/si0050.asp?__kgrnr=12#membership/34",
+      "kennung": "d789fbb2-b833-5813-b38f-2c9f12950f5b"
+    },
+    {
+      "uri": "https://ris.beispiel.example/körperschaft/straße-1",
+      "kennung": "c3867600-2c6a-52b4-bb3d-173afa282a83"
+    },
+    {
+      "uri": "https://ris.beispiel.example/k%C3%B6rperschaft/stra%C3%9Fe-1",
+      "kennung": "049a3df9-f152-5b41-a832-aa9f3ad9d45a"
+    },
+    {
+      "uri": "https://mandari.example/session/musterstadt/api/oparl/body/",
+      "kennung": "46b2c66f-72b7-53c1-ab1d-46599fc7db7a"
+    },
+    {
+      "uri": "https://mandari.example/session/musterstadt/api/oparl/paper/0f2a3c4d-5e6f-4a1b-8c9d-0e1f2a3b4c5d/",
+      "kennung": "1670af2a-e497-5ec3-9d0d-73ae5cdbc775"
+    }
+  ]
+}

@@ -173,6 +173,20 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `OPARL_API_RATE_LIMIT` | `120` | Anfragen/Minute je IP (`0` = deaktiviert) |
 | `OPARL_API_CACHE_SECONDS` | `60` | Cache-Dauer ungefilterter Listen-Seiten |
 
+**Kanonische Kennungen** (ADR `docs/adr/20260929-kanonisches-modell.md`): Jedes Objekt des
+RIS-Bestands trägt die Kennung `uuid5(NS_MANDARI_RIS, URI)` aus `shared/mandari_oparl/ids.py`.
+Die URI ist bei Fremd-RIS die `id` der Quelle, bei Session-Mandanten die öffentliche OParl-URL auf
+Basis von `SITE_URL`. Der Namensraum ist der URL-Namensraum aus RFC 9562 und ändert sich nie.
+Ingestor und Django vergeben neue Kennungen mit derselben Funktion; beide Testsuiten prüfen die
+gemeinsamen Testvektoren (`shared/mandari_oparl/ids_testvektoren.json`). Bestehende Kennungen bleiben
+unverändert. Abweichungen im Bestand zählt ein lesender Befehl:
+
+```bash
+# je Quelle und Entität: abweichende Kennung, abweichende URI (Session), ohne URI, Kollisionen
+python manage.py check_ris_ids --dry-run
+python manage.py check_ris_ids --dry-run --source <UUID oder URL der Quelle> --examples 5
+```
+
 **Physische Löschung auf Aufforderung einer Kommune** (`purge_deleted`):
 
 ```bash

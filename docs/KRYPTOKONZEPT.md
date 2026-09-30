@@ -122,7 +122,8 @@ ohnehin vorhanden ist oder eine Vergabestelle es ausdrücklich verlangt.
 
 Geheimnisse, Einladungs- und Prüf-Token stammen aus `secrets` (`token_urlsafe`,
 `token_hex`, `token_bytes`), Schlüssel und Nonces aus `os.urandom`, Kennungen aus
-`uuid4`. Eine Prüfung des gesamten Anwendungscodes ergab **keine einzige
+`uuid4`. Ausnahme sind die Kennungen des öffentlichen RIS-Bestands: Sie sind bewusst reproduzierbar
+(`uuid5` aus der öffentlichen URI des Objekts) und schützen nichts. Eine Prüfung des gesamten Anwendungscodes ergab **keine einzige
 Verwendung des `random`-Moduls** für sicherheitsrelevante Zwecke. **Konform.**
 
 ## 3. Schlüsselhierarchie

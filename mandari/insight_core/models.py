@@ -13,6 +13,7 @@ from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
+from mandari_oparl.ids import canonical_id
 
 from apps.common.formatting import human_size
 from apps.common.tokens import HashedTokenMixin, unusable_token_hash
@@ -48,7 +49,41 @@ def withdrawn_q(prefix: str = "") -> Q:
     return bedingung
 
 
-class SourceDeletionModel(models.Model):
+class CanonicalIdModel(models.Model):
+    """Abstrakte Basis: Neue RIS-Objekte erhalten die kanonische Kennung aus ``external_id``.
+
+    ``id = uuid5(NS_MANDARI_RIS, external_id)`` wie im Ingestor (``shared/mandari_oparl/ids.py``,
+    ADR ``docs/adr/20260929-kanonisches-modell.md``). Das gilt für jeden Schreibweg in Django
+    (``create``, ``update_or_create``, ``bulk_create``, Formulare), aber nur für neu angelegte Objekte
+    ohne ausdrücklich gesetzte ``id``. Aus der Datenbank geladene Objekte behalten ihre Kennung; der
+    Bestand ändert sich dadurch nie (Links, Lesezeichen, Suchindex). Abweichungen im Bestand zählt
+    ``manage.py check_ris_ids``.
+    """
+
+    class Meta:
+        abstract = True
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Positionale Werte kommen aus der Datenbank (Model.from_db); eine übergebene id gilt unverändert.
+        self._default_id = None if args or "id" in kwargs or "pk" in kwargs else self.pk
+        self._assign_canonical_id()
+
+    def _assign_canonical_id(self) -> None:
+        """Kanonische Kennung setzen, solange das Objekt neu ist und seine Kennung nicht gesetzt wurde."""
+        if not self._state.adding or self._default_id is None or self.pk != self._default_id:
+            return
+        external_id = getattr(self, "external_id", "")
+        if external_id:
+            self.pk = self._default_id = canonical_id(external_id)
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # external_id kann nach dem Erzeugen gesetzt worden sein (Formulare, Verwaltung)
+        self._assign_canonical_id()
+        super().save(*args, **kwargs)
+
+
+class SourceDeletionModel(CanonicalIdModel):
     """Abstrakte Basis: Lösch-Markierung für OParl-Entitäten (Tombstones).
 
     Objekte, die im Quellsystem gelöscht wurden (OParl ``deleted: true``)
