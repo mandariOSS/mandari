@@ -251,6 +251,10 @@ python manage.py session_insight_source --tenant musterstadt --deactivate --mode
 python manage.py session_insight_source --tenant musterstadt --base-url http://localhost:8000
 ```
 
+Die Schnittstelle vergibt ihre IDs und Links immer aus `SITE_URL`. Eine abweichende Basis-URL
+taugt deshalb nur, wenn sie dieselbe Adresse wie `SITE_URL` hat (etwa eine lokale Instanz mit
+`SITE_URL=http://localhost:8000`).
+
 ## Sync-Wege
 
 1. **Produktion: Ingestor-Daemon** (`ingestor/`): Die registrierte Quelle
@@ -306,9 +310,13 @@ Insight-Datenbestand): `python scripts/smoke_insight_durchstich.py`.
 | `OPARL_API_PAGE_SIZE` | `100` | Objekte pro Listen-Seite |
 | `OPARL_API_RATE_LIMIT` | `120` | Anfragen/Minute je IP (`0` = deaktiviert) |
 
-Die IDs der API werden aus dem Request-Host gebaut (`build_absolute_uri`)
-— die API funktioniert damit unter jedem konfigurierten Host
-(`ALLOWED_HOSTS`) ohne weitere Konfiguration.
+IDs, Listen- und Blätter-Links der API bauen auf der öffentlichen Adresse der Installation auf
+(`SITE_URL`), nicht auf dem Host der Anfrage. Die API antwortet unter jedem konfigurierten Host
+(`ALLOWED_HOSTS`), liefert aber überall dieselben IDs. Diese IDs sind die kanonischen URIs der
+Session-Objekte; aus ihnen leitet der RIS-Bestand seine Kennungen ab
+(`uuid5`, ADR `docs/adr/20260929-kanonisches-modell.md`). Ändert sich `SITE_URL`, ändern sich
+auch die IDs; der nächste Abgleich legt die Objekte im Bürgerportal dann unter neuen Kennungen an.
+Vorher mit `python manage.py check_ris_ids --dry-run` prüfen und die Umstellung planen.
 
 Smoke-Tests: `python scripts/smoke_session_oparl.py` (Spec-Struktur,
 Pagination, Filter, Tombstones, Ö/NÖ-Beweis) und

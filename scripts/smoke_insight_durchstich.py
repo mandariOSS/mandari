@@ -273,6 +273,9 @@ server.is_ready.wait(timeout=30)
 if server.error:
     raise server.error
 base_url = f"http://127.0.0.1:{server.port}"
+# Die Session-OParl-API vergibt IDs und Links aus SITE_URL, nicht aus dem Host der Anfrage; die
+# lokale Pipeline folgt diesen Links. Hier ist die öffentliche Adresse daher der lokale Server.
+_dj_settings.SITE_URL = base_url
 
 # Quelle auf die lokale Server-URL umregistrieren (Command aus Issue #36)
 call_command("session_insight_source", tenant="musterstadt", base_url=base_url)

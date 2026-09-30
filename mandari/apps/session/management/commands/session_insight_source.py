@@ -41,7 +41,10 @@ class Command(BaseCommand):
             choices=[key for key, _ in SessionTenant.PORTAL_END_CHOICES],
             help="Mit --deactivate: paused (vorübergehend), archived (Archiv) oder withdrawn (dauerhaft zurücknehmen)",
         )
-        parser.add_argument("--base-url", help="Basis-URL der Instanz (Standard: SITE_URL)")
+        parser.add_argument(
+            "--base-url",
+            help="Basis-URL der Instanz (Standard: SITE_URL; die Schnittstelle vergibt IDs und Links aus SITE_URL)",
+        )
 
     def handle(self, *args, **options):
         base_url = options.get("base_url")
