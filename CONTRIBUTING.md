@@ -70,6 +70,13 @@ Der Projektname trennt diese Installation von anderen auf demselben Rechner.
 
 Alle Prüfungen laufen auch in der CI und müssen grün sein.
 
+Im Pull Request startet die CI nur die Jobs, deren Bereich die Änderung berührt (Job „Geänderte
+Bereiche“ in `.github/workflows/pr-check.yml`; eine reine Ingestor-Änderung braucht zum Beispiel
+keine Django-Testsuite). Maßgeblich ist der Job **„CI-Ergebnis“**: Er ist grün, wenn jeder nötige Job
+bestanden hat. Änderungen an `.github/` oder an Abhängigkeitsdateien sowie jeder Push auf `dev` und
+`main` lassen alle Jobs laufen. Wer einen neuen Job anlegt, trägt ihn unter `needs` von
+`ci-ergebnis` ein (ein Test prüft das).
+
 ```bash
 cd mandari
 uv run pytest                                    # rund 1.500 Tests, etwa 90 Sekunden
