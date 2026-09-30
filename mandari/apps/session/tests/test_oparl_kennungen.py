@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 import pytest
 from django.test import Client, override_settings
+from django.utils import timezone
 
 from apps.session.models import SessionPaper, SessionTenant
 from apps.session.services import insight_service
@@ -30,7 +31,10 @@ HOSTS = [("testserver", False), ("localhost", True)]
 
 @pytest.fixture
 def tenant() -> SessionTenant:
-    tenant = SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt")
+    # Freigeschaltete Schnittstelle (Issue #319), sonst antwortet sie mit 404
+    tenant = SessionTenant.objects.create(
+        name="Stadt Musterstadt", slug="musterstadt", oparl_public_since=timezone.now()
+    )
     for nummer in range(3):
         SessionPaper.objects.create(
             tenant=tenant, reference=f"V/{nummer}", name=f"Vorlage {nummer}", is_public=True, status="approved"
