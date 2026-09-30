@@ -24,7 +24,10 @@ Sequenzierer erst nach dem Commit, deshalb überspringt ein Leser mit ``seq > cu
   Folgenummern und damit keine Lücken zwischen ihnen.
 - Eine Ausgabe nennt nur Adressen von Objekten, die öffentlich sind oder es waren
   (``Feed.addresses``). Ein Ereignis ohne solche Adresse ergibt keinen Eintrag, und der Cursor rückt
-  nicht darüber hinaus.
+  nicht darüber hinaus – mit einer Ausnahme: Findet eine Anfrage unter ``max(limit × 10, 1000)``
+  gelesenen Ereignissen nicht genug Einträge für ihre Seite, rückt der Cursor bis zum zuletzt
+  gelesenen vor. Sonst bliebe der Feed hinter einem solchen Block für immer stehen. Die Antwort
+  verrät dann nur, dass viele als öffentlich gemeldete Ereignisse ohne Adresse geschehen sind.
 
 **Objekte:** Ein Eintrag nennt ein Objekt, das die Ausgabe unter einer Adresse ausliefert. Ändert sich
 etwas ohne eigene Adresse (eine Abstimmung), nennt der Eintrag das Objekt, das es ausgibt (den
@@ -33,13 +36,16 @@ Tagesordnungspunkt, ``CARRIERS``).
 **Operationen:** ``upsert`` (neu oder geändert), ``delete`` (entfernt oder nicht mehr öffentlich, mit
 ``reason`` ``quelle_geloescht``, ``zurueckgenommen`` oder ``nichtoeffentlich``) und ``redact`` (Inhalte
 sind aus Kopien zu entfernen, ``reason`` ``datenschutz``). Maßgeblich ist der Vertrag des Ereignisses
-(``hub/contracts/schemas``): ``ris.object.depublished`` ist immer ``delete`` bzw. ``redact``.
+(``hub/contracts/schemas``): ``ris.object.depublished`` ist immer ``delete`` bzw. ``redact``. Ein
+``delete`` trägt immer einen Grund; nennt das Ereignis keinen gültigen, gilt ``quelle_geloescht``.
 
 **Aufbewahrung:** Ein Cursor trägt den Tag, an dem er ausgegeben wurde. Er gilt
 ``OPARL_CHANGES_RETENTION_DAYS`` Tage (mindestens 30); jede Antwort – auch eine leere – gibt einen
 frischen Cursor aus. Ein älterer Cursor ergibt ``410 Gone`` mit einer Fehlerbeschreibung nach RFC 9457
 und dem Verweis auf den Snapshot. So lange muss das Journal seine Zeilen mindestens behalten; alles, was
-nach der Ausgabe eines gültigen Cursors geschah, ist dann noch vorhanden.
+nach der Ausgabe eines gültigen Cursors geschah, ist dann noch vorhanden. Ob Zeilen gelöscht wurden,
+hält das Aufräumen ausdrücklich fest (``apps.events.pruning``); aus Lücken in den Folgenummern lässt es
+sich nicht schließen, denn der Sequenzierer darf Nummern verwerfen.
 
 **Schalter:** ``OPARL_CHANGES_ENABLED`` (Standard aus). Solange die Erzeuger der Ereignisse einer
 Installation nicht laufen, wäre der Feed leer und würde Abnehmern vortäuschen, es habe sich nichts
@@ -56,7 +62,7 @@ import struct
 import uuid
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from functools import lru_cache
 from typing import Final
 
@@ -69,6 +75,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 
+from apps.events import pruning
 from apps.events.models import Event, Operation, Visibility
 from hub.api.http import BadRequestError, json_response
 from hub.commands.problems import Problem
@@ -83,6 +90,8 @@ DEPUBLISHED: Final = "ris.object.depublished"
 #: Gründe einer Rücknahme (``delete``) und der Grund für ``redact``
 DELETE_REASONS: Final[frozenset[str]] = frozenset({"quelle_geloescht", "zurueckgenommen", "nichtoeffentlich"})
 REDACT_REASON: Final = "datenschutz"
+#: Grund eines ``delete``, wenn das Ereignis keinen gültigen nennt (Entfernen ohne Rücknahme)
+DEFAULT_DELETE_REASON: Final = "quelle_geloescht"
 
 #: Kanonischer Objekttyp der Ereignishülle -> Objekttyp in den Adressen der Schnittstelle
 KINDS: Final[dict[str, str]] = {name: kind for kind, name in TYPE_SCHEMA.items() if kind != "system"}
@@ -95,7 +104,8 @@ CARRIERS: Final[dict[str, tuple[str, str]]] = {"Voting": ("agendaitem", "agenda_
 DEFAULT_LIMIT: Final = 100
 MAX_LIMIT: Final = 1000
 #: So viele Ereignisse liest eine Anfrage höchstens, wenn Ereignisse ohne Adresse übersprungen werden:
-#: das Zehnfache der Seite, mindestens 1000 – und nach dem ersten Schritt in Schritten dieser Größe
+#: das Zehnfache der Seite, mindestens 1000 – und nach dem ersten Schritt in Schritten dieser Größe.
+#: Ist das erschöpft, rückt der Cursor bis zum zuletzt gelesenen Ereignis vor (``_read``).
 _MAX_EXAMINED_FACTOR: Final = 10
 _MIN_EXAMINED: Final = 1000
 _SKIP_BATCH: Final = 100
@@ -253,33 +263,28 @@ def head(body_id: uuid.UUID) -> int:
     return newest or 0
 
 
-def _oldest_in_journal() -> tuple[int, datetime] | None:
-    """Älteste nummerierte Zeile des Journals über alle Kommunen: (Folgenummer, erfasst am)."""
-    row = Event.objects.filter(seq__isnull=False).order_by("seq").values_list("seq", "recorded_at").first()
-    if row is None or row[0] is None:
-        return None
-    return row[0], row[1]
-
-
 def _beginning_missing() -> bool:
     """
     Fehlt der Anfang des Journals (aufgeräumt)? Dann kann niemand „von vorn“ lesen, ohne etwas zu
     verpassen – der Einstieg ist der Snapshot.
     """
-    oldest = _oldest_in_journal()
-    return oldest is not None and oldest[0] > 1
+    return pruning.horizon() is not None
 
 
 def _missing_since(cursor: Cursor) -> bool:
     """
-    Sicherheitsnetz gegen ein Journal, das kürzer aufbewahrt als der Feed zusagt: Fehlen Zeilen zwischen
-    dem Cursor und der ältesten vorhandenen Zeile, und ist diese jünger als der Cursor, kann seit seiner
-    Ausgabe etwas aufgeräumt worden sein, das der Abnehmer nie gesehen hat.
+    Sicherheitsnetz gegen ein Journal, das kürzer aufbewahrt als der Feed zusagt: Wurden Zeilen hinter
+    dem Cursor gelöscht, die nach seiner Ausgabe erfasst worden sein können, hat der Abnehmer sie nie
+    gesehen.
+
+    Maßgeblich ist, was das Aufräumen festhält (``apps.events.pruning``), nicht die älteste verbliebene
+    Folgenummer: Der Sequenzierer darf Nummern verwerfen, eine Lücke am Anfang heißt nicht, dass etwas
+    gelöscht wurde.
     """
-    oldest = _oldest_in_journal()
-    if oldest is None or cursor.seq >= oldest[0] - 1:
+    horizon = pruning.horizon()
+    if horizon is None or cursor.seq >= horizon.through_seq:
         return False
-    return oldest[1].astimezone(UTC).date() > cursor.day
+    return horizon.recorded_before > datetime.combine(cursor.day, time.min, tzinfo=UTC)
 
 
 def _operation(event: Event) -> tuple[str, str | None]:
@@ -292,17 +297,20 @@ def _operation(event: Event) -> tuple[str, str | None]:
     if event.operation == Operation.REDACT or reason == REDACT_REASON:
         return Operation.REDACT.value, REDACT_REASON
     if event.operation == Operation.DELETE or event.type == DEPUBLISHED:
-        return Operation.DELETE.value, reason if reason in DELETE_REASONS else None
+        # Ein ``delete`` nennt immer seinen Grund (ADR); ein Entfernen ohne Rücknahme hat die Quelle veranlasst
+        return Operation.DELETE.value, reason if reason in DELETE_REASONS else DEFAULT_DELETE_REASON
     return Operation.UPSERT.value, None
 
 
 def _read(feed: Feed, after: int, limit: int, day: date) -> tuple[list[Objekt], int]:
     """
-    Höchstens ``limit`` Einträge nach ``after`` in aufsteigender Reihenfolge und die Folgenummer des
-    letzten ausgegebenen Eintrags (``after``, wenn es keinen gibt).
+    Höchstens ``limit`` Einträge nach ``after`` in aufsteigender Reihenfolge und der neue Stand: die
+    Folgenummer des letzten ausgegebenen Eintrags (``after``, wenn es keinen gibt).
 
-    Ereignisse, deren Objekt in dieser Ausgabe keine Adresse hat, werden übersprungen. Der Stand rückt
-    nur mit ausgegebenen Einträgen vor.
+    Ereignisse, deren Objekt in dieser Ausgabe keine Adresse hat, werden übersprungen; der Stand rückt
+    nur mit ausgegebenen Einträgen vor. Ausnahme: Ist das Lesebudget erschöpft, bevor die Seite voll
+    ist, rückt er bis zum zuletzt gelesenen Ereignis vor. Sonst bliebe ein Abnehmer hinter einem Block
+    solcher Ereignisse stehen und bekäme nie wieder eine Änderung.
     """
     entries: list[Objekt] = []
     position = last = after
@@ -341,18 +349,19 @@ def _read(feed: Feed, after: int, limit: int, day: date) -> tuple[list[Objekt], 
             last = event.seq
             if len(entries) == limit:
                 break
+        position = batch[-1].seq or position
         if len(batch) < size:
             break
-        position = batch[-1].seq or position
         # Es wurde übersprungen: in größeren Schritten weiterlesen
         size = max(limit - len(entries), _SKIP_BATCH)
     if len(entries) < limit and examined >= budget:
-        # Nur Protokoll: Die Antwort verrät übersprungene Ereignisse nicht
-        logger.error(
-            "Änderungsfeed: %s Ereignisse ohne öffentliche Adresse übersprungen (Kommune %s)",
+        # Budget erschöpft: bis zum zuletzt gelesenen Ereignis vorrücken, sonst stünde der Feed hier still
+        logger.warning(
+            "Änderungsfeed: %s Ereignisse ohne Adresse übersprungen, Stand rückt darüber hinaus (Kommune %s)",
             examined - len(entries),
             feed.body_id,
         )
+        last = position
     return entries, last
 
 

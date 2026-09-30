@@ -27,10 +27,11 @@ from apps.events.sequencer import Sequencer
 from apps.events.tests.hilfen import nur_postgres
 from hub.api import changes
 from hub.api.tests.ereignisse import huelle, schreiben
-from insight_core.models import OParlBody, OParlSource
+from insight_core.models import OParlBody, OParlPaper, OParlSource
 
 #: Frist für alles, was auf den Sequenzierer wartet (Last in der CI)
 FRIST = 120.0
+RIS = "https://ris.example/oparl"
 SCHREIBER = 8
 TRANSAKTIONEN = 6
 
@@ -45,8 +46,8 @@ def test_abnehmer_sieht_jede_festgeschriebene_oeffentliche_aenderung_genau_einma
     cache.clear()
     saat = random.randrange(1_000_000)
     hinweis = f"Saat {saat}"
-    source = OParlSource.objects.create(name="Musterstadt", url="https://ris.example/oparl/system")
-    body = OParlBody.objects.create(external_id="https://ris.example/oparl/body/1", source=source, name="Musterstadt")
+    source = OParlSource.objects.create(name="Musterstadt", url=f"{RIS}/system")
+    body = OParlBody.objects.create(external_id=f"{RIS}/body/1", source=source, name="Musterstadt")
     andere = uuid.uuid4()
     pfad = f"/oparl/v1/body/{body.pk}/changes"
 
@@ -70,6 +71,8 @@ def test_abnehmer_sieht_jede_festgeschriebene_oeffentliche_aenderung_genau_einma
                             objekt = uuid.uuid4()
                             wurf = zufall.random()
                             if wurf < 0.6:
+                                # Wie beim Ingestor: Objekt im Bestand und Ereignis in einer Transaktion
+                                OParlPaper.objects.create(id=objekt, external_id=f"{RIS}/paper/{objekt}", body=body)
                                 schreiben(huelle("ris.paper.changed", body.pk, objekt), nummeriert=False)
                                 oeffentlich.append(str(objekt))
                             elif wurf < 0.8:
@@ -115,8 +118,8 @@ def test_abnehmer_sieht_jede_festgeschriebene_oeffentliche_aenderung_genau_einma
     schreiber = [threading.Thread(target=schreiben_lassen, args=(nummer,)) for nummer in range(SCHREIBER)]
     nummerierer = threading.Thread(target=sequenzieren)
     gesehen: list[str] = []
-    # Der Abnehmer beginnt mit einem Cursor (wie nach einem Snapshot): Die Sequenz der Testdatenbank zählt
-    # über die Tests hinweg weiter, das Journal beginnt hier deshalb nicht bei 1
+    # Der Abnehmer beginnt mit dem Cursor einer leeren Kommune, wie nach einem Snapshot vor dem ersten Ereignis.
+    # Die Sequenz der Testdatenbank zählt über die Tests hinweg weiter; eine Lücke am Anfang ist kein Aufräumen
     stand = {"after": changes.encode_cursor(body.pk, 0, changes.today())}
 
     def lesen() -> int:

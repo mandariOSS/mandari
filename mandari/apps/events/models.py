@@ -13,6 +13,8 @@ Tabellen der Ereignistechnik (``docs/adr/20260929-ereignistechnik-postgres.md``)
 - ``ScheduleState`` (``events_schedule``): zuletzt geplanter Termin je Zeitplan.
 - ``IdempotencyKey`` (``events_idempotency``): Idempotenzschlüssel mit Hash der Anfrage und
   gespeicherter Antwort, z. B. für Befehle (``apps.events.idempotency``).
+- ``JournalPruning`` (``events_pruning``): wie weit Zeilen des Journals gelöscht wurden
+  (``apps.events.pruning``).
 
 Spaltenstandards liegen in der Datenbank (``db_default``), weil auch der Ingestor ohne Django in
 das Journal schreibt. Auf PostgreSQL kommen die Sequenz ``events_seq`` und der Weckruf-Trigger
@@ -306,3 +308,34 @@ class IdempotencyKey(models.Model):
 
     def __str__(self) -> str:
         return f"{self.label or 'Idempotenzschlüssel'} ({self.scope})"
+
+
+class JournalPruning(models.Model):
+    """
+    Ein Aufräumen des Journals: bis zu welcher Folgenummer und welchem Erfassungszeitpunkt Zeilen
+    gelöscht wurden (``apps.events.pruning``).
+
+    Wer Zeilen des Journals löscht (etwa ganze Monatspartitionen), hält das in derselben Transaktion
+    hier fest. Aus den verbliebenen Zeilen lässt es sich nicht ablesen: Der Sequenzierer darf Nummern
+    verwerfen (``nextval()`` ist nicht transaktional), Lücken in ``seq`` sind also kein Zeichen für
+    Gelöschtes. Leser mit eigenem Stand (der öffentliche Änderungsfeed) erkennen daran, ob ihnen Zeilen
+    fehlen können.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    through_seq = models.BigIntegerField("gelöscht bis Folgenummer", help_text="höchste Folgenummer, die fehlen kann")
+    recorded_before = models.DateTimeField(
+        "erfasst vor", help_text="alle gelöschten Zeilen wurden vor diesem Zeitpunkt erfasst"
+    )
+    pruned_at = models.DateTimeField("aufgeräumt am", db_default=Now(), editable=False)
+
+    class Meta:
+        db_table = "events_pruning"
+        verbose_name = "Aufräumen des Journals"
+        verbose_name_plural = "Aufräumen des Journals"
+        constraints = [
+            models.CheckConstraint(condition=models.Q(through_seq__gte=1), name="events_pruning_seq_positive"),
+        ]
+
+    def __str__(self) -> str:
+        return f"bis Folgenummer {self.through_seq}"

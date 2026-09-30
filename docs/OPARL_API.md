@@ -250,7 +250,7 @@ curl "https://mandari.de/oparl/v1/body/<uuid>/changes?after=<cursor>"
 | Eintrag `operation` | `upsert` (neu oder geändert), `delete` (entfernt oder nicht mehr öffentlich), `redact` (Inhalte sind aus Kopien zu entfernen) |
 | Eintrag `type`, `id` | Typ und Adresse des Objekts. Inhalte stehen nicht im Feed; der Abnehmer ruft das Objekt unter `id` ab |
 | Eintrag `modified` | Zeitpunkt der Änderung |
-| Eintrag `reason` | bei `delete`: `quelle_geloescht`, `zurueckgenommen` oder `nichtoeffentlich`; bei `redact`: `datenschutz` |
+| Eintrag `reason` | bei `delete` immer: `quelle_geloescht`, `zurueckgenommen` oder `nichtoeffentlich` (nennt die Quelle keinen Grund, `quelle_geloescht`); bei `redact`: `datenschutz` |
 | Eintrag `cursor` | Stand unmittelbar nach diesem Eintrag |
 
 **So liest ein Abnehmer:**
@@ -258,7 +258,9 @@ curl "https://mandari.de/oparl/v1/body/<uuid>/changes?after=<cursor>"
 1. Einstieg über den Snapshot der Kommune (`links.snapshot`); er nennt den Cursor, ab dem der Feed
    fortsetzt. Solange das Journal einer Installation noch vollständig ist, geht es auch ohne Cursor
    von vorn.
-2. `links.next` abrufen, bis `data` leer ist – dann ist der Abnehmer aktuell.
+2. `links.next` abrufen, bis `data` leer ist – dann ist der Abnehmer aktuell. (Ausnahme: Hat eine
+   Anfrage einen großen Block übersprungener Ereignisse gelesen, kann eine leere Seite einen
+   vorgerückten Cursor tragen; der nächste Abruf setzt dort fort, verloren geht nichts.)
 3. Den `cursor` **jeder** Antwort speichern, auch den einer leeren, und beim nächsten Abruf verwenden.
 4. Einträge idempotent verarbeiten: Ein Objekt kann mehrfach erscheinen. Bei `upsert` das Objekt unter
    `id` neu abrufen, bei `delete` entfernen, bei `redact` auch aus Kopien, Caches und Weitergaben
@@ -289,6 +291,12 @@ geschieht, erscheint nicht. Nichtöffentliches ist auch nicht mittelbar erkennba
 einer Antwort ändern sich nur durch öffentliche Einträge (und einmal am Tag durch den Ausgabetag des
 Cursors), und der Cursor lässt keine Zählung der Ereignisse erkennen.
 
+Einträge gibt es nur für Objekte, die die Ausgabe unter ihrer Adresse ausliefert (auch als gekürztes
+Objekt). Ereignisse zu anderen Objekten werden übersprungen, ohne dass sich die Antwort ändert. Eine
+Ausnahme hält den Feed in Gang: Liest eine Anfrage mehr als `max(limit × 10, 1000)` Ereignisse, ohne ihre
+Seite zu füllen, rückt der Cursor bis zum zuletzt gelesenen vor. Daran ist nur erkennbar, dass viele als
+öffentlich gemeldete Ereignisse ohne Adresse geschehen sind.
+
 **HTTP:** wie die übrige Schnittstelle – `ETag` und `304` für unveränderte Seiten, Rate-Limit mit
 `429` und `Retry-After`, `503` mit `Retry-After` bei vorübergehend abgeschalteter Kommune. Die
 Schreibweise mit Schrägstrich am Ende leitet weiter.
@@ -297,12 +305,17 @@ Schreibweise mit Schrägstrich am Ende leitet weiter.
 
 - Einträge gibt es für Objekte mit eigener Adresse (die Objekttypen der Tabelle „Endpunkte“).
   Eine erfasste Abstimmung erscheint als `upsert` ihres Tagesordnungspunkts.
+- Die Rücknahme einer Abstimmung nennt derzeit keinen Tagesordnungspunkt und ergibt deshalb keinen
+  Eintrag – auch nicht beim Grund `datenschutz`. Wer `mandari:vote` bzw. `mandari:rollCall` speichert,
+  erfährt so nicht, dass Einzelstimmen aus seinen Kopien zu entfernen sind; er ruft den
+  Tagesordnungspunkt bei seiner nächsten Änderung neu ab.
 - Eingebettete Objekte: Ändert sich ein Tagesordnungspunkt, eine Beratung oder eine Datei, nennt der
   Feed dieses Objekt. Wer Sitzungen oder Vorlagen samt Einbettungen speichert, ruft das einbettende
   Objekt (`AgendaItem.meeting`, `Consultation.paper`, `File.paper`/`meeting`) mit ab.
-- Ein Eintrag kann dem Bestand vorauseilen: Meldet ein Session-Mandant eine Änderung, bevor der
-  Abgleich sie in den Bestand übernommen hat, liefert `id` kurz noch den alten Stand oder 404. Der
-  Abgleich meldet die Übernahme mit einem weiteren Eintrag.
+- Gespiegelte Session-Mandanten: Der Aggregator nennt nur Objekte, die sein Bestand kennt. Meldet ein
+  Session-Mandant eine Änderung, bevor der Abgleich sie übernommen hat, fehlt ein neues Objekt im Feed,
+  und `id` eines bekannten liefert kurz noch den alten Stand. Die Übernahme erscheint verlässlich erst,
+  wenn der Abgleich sie mit einem eigenen Ereignis meldet (in Arbeit).
 
 ## Dateien (File)
 
@@ -367,9 +380,10 @@ Ereignistechnik. Er gehört erst eingeschaltet (`OPARL_CHANGES_ENABLED=true`), w
 der Sequenzierer läuft (`manage.py events_sequencer`) und die Erzeuger Ereignisse schreiben (Ingestor
 bzw. Session) – sonst bliebe er leer und täuschte Abnehmern vor, es habe sich nichts geändert.
 Ausgeschaltet gibt es die Adresse nicht, und kein Body weist auf sie hin. Das Journal muss seine Zeilen
-mindestens `OPARL_CHANGES_RETENTION_DAYS` Tage behalten; ein Aufräumen darf nie kürzer greifen. Der
-Schlüssel der Cursor ist aus `SECRET_KEY` abgeleitet: Nach einem Wechsel des Schlüssels sind
-ausgegebene Cursor ungültig (`410`), und Abnehmer steigen über den Snapshot wieder ein; Schlüssel in
+mindestens `OPARL_CHANGES_RETENTION_DAYS` Tage behalten; ein Aufräumen darf nie kürzer greifen und
+hält fest, was es gelöscht hat (`apps.events.pruning`) – nur daran erkennt der Feed, dass Abnehmern
+Zeilen fehlen können. Der Schlüssel der Cursor ist aus `SECRET_KEY` abgeleitet: Nach einem Wechsel des
+Schlüssels sind ausgegebene Cursor ungültig (`410`), und Abnehmer steigen über den Snapshot wieder ein; Schlüssel in
 Djangos `SECRET_KEY_FALLBACKS` gelten weiter.
 
 **Eine Serialisierung für beide Ausgaben:** Aggregator und Session-Schnittstelle

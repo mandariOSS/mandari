@@ -17,10 +17,13 @@ from typing import Any, cast
 
 import pytest
 from django.core.cache import cache
+from django.db import connection
 from django.test import Client, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from mandari_oparl.ids import canonical_id
 
+from apps.events.models import Event
 from apps.session.models import (
     SessionMeeting,
     SessionOParlTombstone,
@@ -29,7 +32,8 @@ from apps.session.models import (
     SessionTenant,
 )
 from hub.api import changes
-from hub.api.tests.ereignisse import ereignis, ruecknahme
+from hub.api.tests.ereignisse import ereignis, huelle, naechste_nummer, ruecknahme
+from hub.contracts import get_registry
 
 pytestmark = pytest.mark.django_db
 
@@ -256,3 +260,61 @@ def test_adressen_werden_unter_den_zuletzt_geaenderten_objekten_zuerst_gesucht(w
     assert gefunden == {_kennung("paper", juengste.pk): _adresse("paper", juengste.pk)}
     assert adressen("paper", set()) == {}
     assert adressen("voting", {uuid.uuid4()}) == {}
+
+
+def test_feed_bleibt_hinter_einem_block_unauffindbarer_kennungen_nicht_stehen(welt: dict[str, Any]) -> None:
+    """
+    Mehr Ereignisse ohne Adresse, als eine Anfrage liest (etwa zu Objekten, deren Löschung keinen Eintrag
+    für Gelöschtes hinterlassen hat): Der Cursor rückt über den gelesenen Abschnitt vor, und die Änderung
+    danach kommt an.
+    """
+    ereignis("ris.paper.released", welt["body"], _kennung("paper", welt["paper"].pk), mandant=MANDANT)
+    stand = _feed()["cursor"]
+    muster = huelle("ris.paper.changed", welt["body"], mandant=MANDANT)
+    get_registry().validate_event(muster)
+    erste = naechste_nummer()
+    zeilen = []
+    for nummer in range(changes._MIN_EXAMINED + 1):
+        kennung = uuid.uuid4()
+        zeilen.append(
+            Event(
+                type=muster.type,
+                version=muster.version,
+                aggregate_type=muster.aggregate_type,
+                aggregate_id=kennung,
+                tenant_ref=MANDANT,
+                body_id=welt["body"],
+                visibility=muster.visibility,
+                occurred_at=muster.occurred_at,
+                correlation_id=uuid.uuid4(),
+                payload={**muster.payload, "paper": str(kennung)},
+                seq=erste + nummer,
+            )
+        )
+    Event.objects.bulk_create(zeilen, batch_size=500)
+    ereignis("ris.meeting.changed", welt["body"], _kennung("meeting", welt["meeting"].pk), mandant=MANDANT)
+
+    leer = _feed(after=stand)
+    seite = _feed(after=leer["cursor"])
+
+    assert leer["data"] == [] and leer["cursor"] != stand
+    assert [eintrag["id"] for eintrag in seite["data"]] == [_adresse("meeting", welt["meeting"].pk)]
+    assert _feed(after=seite["cursor"])["data"] == []
+
+
+def test_suche_nach_adressen_durchlaeuft_jeden_typ_je_anfrage_hoechstens_einmal(welt: dict[str, Any]) -> None:
+    """Eine Anfrage fragt je Abschnitt des Journals; unauffindbare Kennungen lösen keinen zweiten Durchlauf aus."""
+    from apps.session.api import oparl as schnittstelle
+
+    modul = cast(Any, schnittstelle)  # die Schnittstelle des Fachmoduls ist nicht typisiert
+    adressen = modul._addresses(modul._mapping(welt["tenant"]))
+    vorlage = _kennung("paper", welt["paper"].pk)
+
+    with CaptureQueriesContext(connection) as erster:
+        assert adressen("paper", {uuid.uuid4()}) == {}
+    with CaptureQueriesContext(connection) as weitere:
+        assert adressen("paper", {uuid.uuid4()}) == {}
+        assert adressen("paper", {vorlage}) == {vorlage: _adresse("paper", welt["paper"].pk)}
+
+    assert len(erster.captured_queries) >= 2  # öffentliche Objekte und Einträge für Gelöschtes
+    assert weitere.captured_queries == []

@@ -30,7 +30,7 @@ weiter: Wie ein Objekt aussieht, legt ``hub.ris.mapping.bestand`` fest, wie eine
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -249,6 +249,34 @@ def body_sub_list(request: HttpRequest, pk: uuid.UUID, segment: str) -> HttpResp
     return _list_response(request, base_url, queryset, spec)
 
 
+def _existing(kind: str, ids: Collection[uuid.UUID]) -> set[uuid.UUID]:
+    """
+    Kennungen, unter denen der Bestand ein Objekt des Typs ausliefert – auch Gelöschtes, das als
+    gekürztes Objekt abrufbar bleibt. Ein Ort ohne eigenes Objekt der Quelle trägt die Kennung seiner
+    Sitzung (``_meeting_location_response``).
+    """
+    spec = OBJECT_TYPES.get(kind)
+    if spec is None or not ids:
+        return set()
+    found: set[uuid.UUID] = set(spec.model._default_manager.filter(pk__in=ids).values_list("pk", flat=True))
+    if kind == "location" and len(found) < len(ids):
+        rest = [object_id for object_id in ids if object_id not in found]
+        found.update(OParlMeeting.objects.filter(pk__in=rest).values_list("pk", flat=True))
+    return found
+
+
+def _feed(output: BestandMapping, pk: uuid.UUID) -> changes.Feed:
+    uris = output.uris
+
+    def addresses(kind: str, ids: Collection[uuid.UUID]) -> dict[uuid.UUID, str]:
+        # Die Kennung im Ereignis ist die des Bestands, und der Bestand enthält nur Öffentliches. Gibt es
+        # das Objekt nicht (noch nicht übernommen oder fälschlich als öffentlich gemeldet), gibt es keinen
+        # Eintrag – wie bei der Session-Schnittstelle
+        return {object_id: uris.obj(kind, object_id) for object_id in _existing(kind, ids)}
+
+    return changes.Feed(body_id=pk, url=uris.changes(pk), snapshot_url=uris.snapshot(pk), addresses=addresses)
+
+
 @endpoint
 def body_changes(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
     """Änderungsfeed einer Kommune (``hub.api.changes``); ausgeschaltet gibt es die Adresse nicht."""
@@ -259,15 +287,7 @@ def body_changes(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
         return paused
     if not OParlBody.objects.filter(pk=pk).exists():
         return error_response(404, "Kommune (Body) nicht gefunden.")
-    uris = mapping().uris
-    feed = changes.Feed(
-        body_id=pk,
-        url=uris.changes(pk),
-        snapshot_url=uris.snapshot(pk),
-        # Der RIS-Bestand enthält nur Öffentliches; die Kennung im Ereignis ist die des Bestands
-        addresses=lambda kind, ids: {object_id: uris.obj(kind, object_id) for object_id in ids},
-    )
-    return changes.changes_response(request, feed)
+    return changes.changes_response(request, _feed(mapping(), pk))
 
 
 def _meeting_location_response(output: BestandMapping, pk: uuid.UUID) -> HttpResponse:

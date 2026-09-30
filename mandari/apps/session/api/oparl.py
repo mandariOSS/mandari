@@ -358,8 +358,15 @@ def _addresses(mapping):
 
     Was nie öffentlich war, hat hier keine Adresse und bekommt im Feed keinen Eintrag, auch wenn ein
     Ereignis es fälschlich als öffentlich meldet.
+
+    Eine Anfrage fragt mehrmals (je gelesenem Abschnitt des Journals). Die Suche setzt deshalb dort fort,
+    wo sie zuletzt aufgehört hat, und merkt sich die gesehenen Kennungen: Jeder Typ wird je Anfrage
+    höchstens einmal durchlaufen, auch wenn Kennungen unauffindbar sind.
     """
     tenant = mapping.tenant
+    #: je Typ: gesehene kanonische Kennungen -> Kennung des Session-Objekts, und die offene Suche
+    seen = {}
+    searches = {}
 
     def candidates(kind):
         """Kennungen öffentlicher und ehemals öffentlicher Objekte eines Typs, jüngste zuerst."""
@@ -377,14 +384,19 @@ def _addresses(mapping):
         if kind == "body":
             url = mapping.uris.body()
             return {canonical_id(url): url} if canonical_id(url) in wanted else {}
-        found = {}
+        known = seen.setdefault(kind, {})
+        found = {key: mapping.uris.obj(kind, known[key]) for key in wanted if key in known}
+        wanted -= found.keys()
         if not wanted:
             return found
-        for pk in candidates(kind):
-            url = mapping.uris.obj(kind, pk)
-            key = canonical_id(url)
+        search = searches.get(kind)
+        if search is None:
+            search = searches[kind] = candidates(kind)
+        for pk in search:
+            key = canonical_id(mapping.uris.obj(kind, pk))
+            known.setdefault(key, pk)
             if key in wanted:
-                found[key] = url
+                found[key] = mapping.uris.obj(kind, pk)
                 wanted.discard(key)
                 if not wanted:
                     break
