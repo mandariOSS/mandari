@@ -256,23 +256,27 @@ def test_weckruf_je_transaktion_bei_mehreren_schreibern(pg_verbindungen: Verbind
 @pytest.mark.django_db(transaction=True)
 def test_migration_laesst_sich_zurueck_und_wieder_einspielen() -> None:
     executor = MigrationExecutor(connection)
-    executor.migrate([("events", None)])
-    tabellen = connection.introspection.table_names()
-    assert "events_event" not in tabellen
-    if connection.vendor == "postgresql":
-        assert _wert("SELECT to_regclass(%s)", SEQUENCE_NAME) is None
-        assert _wert("SELECT count(*) FROM pg_proc WHERE proname = 'events_event_notify'") == 0
+    try:
+        executor.migrate([("events", None)])
+        tabellen = connection.introspection.table_names()
+        assert "events_event" not in tabellen
+        if connection.vendor == "postgresql":
+            assert _wert("SELECT to_regclass(%s)", SEQUENCE_NAME) is None
+            assert _wert("SELECT count(*) FROM pg_proc WHERE proname = 'events_event_notify'") == 0
 
-    executor = MigrationExecutor(connection)
-    executor.migrate([("events", "0001_initial")])
-    assert "events_event" in connection.introspection.table_names()
-    if connection.vendor == "postgresql":
-        assert _wert("SELECT to_regclass(%s)::text", SEQUENCE_NAME) == SEQUENCE_NAME
-        assert _wert("SELECT count(*) FROM pg_trigger WHERE tgname = 'events_event_notify' AND NOT tgisinternal") == 1
-
-    # Zurück auf den neuesten Stand, sonst laufen spätere Tests desselben Workers ohne spätere Migrationen
-    executor = MigrationExecutor(connection)
-    executor.migrate(executor.loader.graph.leaf_nodes("events"))
+        executor = MigrationExecutor(connection)
+        executor.migrate([("events", "0001_initial")])
+        assert "events_event" in connection.introspection.table_names()
+        if connection.vendor == "postgresql":
+            assert _wert("SELECT to_regclass(%s)::text", SEQUENCE_NAME) == SEQUENCE_NAME
+            assert (
+                _wert("SELECT count(*) FROM pg_trigger WHERE tgname = 'events_event_notify' AND NOT tgisinternal") == 1
+            )
+    finally:
+        # Zurück auf den neuesten Stand, sonst laufen spätere Tests desselben Workers ohne spätere Migrationen
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+    assert "events_schedule" in connection.introspection.table_names()
     with connection.cursor() as cursor:
         indizes = connection.introspection.get_constraints(cursor, "events_parked")
     assert "events_parked_chain" in indizes
