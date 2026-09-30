@@ -1050,7 +1050,7 @@ if [ "$VERIFY" = true ]; then
 
     if archive_has config.env.enc; then
         if [ -n "$PASSPHRASE" ] && archive_cat config.env.enc > "$VERIFY_DIR/config.env.enc" 2>> "$BACKUP_LOG" &&
-            decrypt_config "$VERIFY_DIR/config.env.enc" 2>> "$BACKUP_LOG" | grep -q '^SECRET_KEY='; then
+            decrypt_config "$VERIFY_DIR/config.env.enc" 2>> "$BACKUP_LOG" | grep '^SECRET_KEY=' > /dev/null; then
             verify_item "Konfiguration (verschlüsselt)" ok
         else
             verify_item "Konfiguration (verschlüsselt)" fail "nicht entschlüsselbar"

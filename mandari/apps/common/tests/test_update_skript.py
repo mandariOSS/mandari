@@ -32,6 +32,7 @@ case "$1" in
   compose)
     if [ "$2" = config ] && [ "$3" = --services ]; then
       printf '%s\\n' ${FAKE_SERVICES:-postgres redis elasticsearch mandari minutes-orchestrator website ingestor caddy}
+      if [ -n "${FAKE_WEITERE_DIENSTE:-}" ]; then seq -f 'dienst-%g' 1 "$FAKE_WEITERE_DIENSTE"; fi
     fi
     ;;
 esac
@@ -133,6 +134,22 @@ def test_orchestrator_steht_waehrend_der_migrationen_und_wechselt_danach(tmp_pat
         aufrufe, "compose up -d --no-deps ingestor minutes-orchestrator"
     )
     assert sum("minutes-orchestrator" in z and "compose up" in z for z in aufrufe) == 1, "genau ein Start"
+
+
+def test_worker_werden_auch_bei_langer_dienstliste_erkannt(tmp_path: Path) -> None:
+    """
+    Die Dienstliste ist größer als der Pipe-Puffer, die Worker stehen vorn: Endete die Suche beim ersten
+    Treffer (``grep -q``), bekäme der Schreiber „Broken pipe“ und unter ``pipefail`` gälte der Dienst als
+    nicht definiert – er liefe während der Migrationen weiter (Issue #695). Bei kurzer Liste hing das vom
+    Zeitverhalten ab; so tritt es unter Linux verlässlich auf.
+    """
+    rc, aufrufe = _lauf(tmp_path, env_zusatz={"FAKE_WEITERE_DIENSTE": "20000"})
+
+    assert rc == 0, "\n".join(aufrufe[:40])
+    assert _index(aufrufe, "compose stop ingestor minutes-orchestrator") < _index(aufrufe, "manage.py safemigrate")
+    assert _index(aufrufe, "exec mandari python manage.py migrate --noinput") < _index(
+        aufrufe, "compose up -d --no-deps ingestor minutes-orchestrator"
+    )
 
 
 def test_orchestrator_wechselt_auch_ohne_eintrag_in_worker_services(tmp_path: Path) -> None:

@@ -498,7 +498,8 @@ setup_cron_backup() {
     if [ -x "./backup.sh" ]; then
         mkdir -p "$SCRIPT_DIR/logs"
         local cron_line="0 2 * * * cd $SCRIPT_DIR && ./backup.sh --quiet >> $SCRIPT_DIR/logs/backup.log 2>&1"
-        if crontab -l 2>/dev/null | grep -q "mandari.*backup"; then
+        # Ohne -q, damit grep die Eingabe zu Ende liest (pipefail, siehe defined_services in update.sh)
+        if crontab -l 2>/dev/null | grep "mandari.*backup" > /dev/null; then
             info "Tägliches Backup bereits in Crontab eingerichtet"
         else
             (crontab -l 2>/dev/null; echo "$cron_line") | crontab -
