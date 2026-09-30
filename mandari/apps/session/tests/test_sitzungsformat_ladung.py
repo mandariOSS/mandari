@@ -42,13 +42,22 @@ from apps.session.models import (
     SessionTenant,
     SessionUser,
 )
-from apps.session.services import invitation_service
+from apps.session.services import invitation_service, invitation_token
 from apps.session.services import meeting_format_service as mfs
 from insight_core.views.meetings import _broadcast_info
 
 pytestmark = pytest.mark.django_db
 
 ZUGANG = "Konferenzraum 4711, PIN 2468"
+#: Wortteile des Zugangswegs für die Prüfung „kein Zugangsweg“ – nie die bloße Ziffernfolge: Rückmelde-Tokens
+#: und Kennungen in Links enthalten „4711“ zufällig (Issue #666).
+ZUGANG_TEILE = ("Konferenzraum 4711", "PIN 2468")
+
+
+def _nennt_zugangsweg(text: str) -> bool:
+    """Steht der Zugangsweg (auch nur teilweise) im Text? Zeilenumbrüche und ICS-Zeilenfaltung zählen nicht."""
+    einzeilig = " ".join(text.replace("\r\n ", "").split())
+    return any(teil in einzeilig for teil in ZUGANG_TEILE)
 
 
 @dataclass
@@ -134,7 +143,7 @@ def test_ladungs_pdf_nennt_format_zugang_und_rechtsgrundlage(welt: Welt) -> None
     oeffentlich = _pdf_text(invitation_service.build_agenda_pdf(welt.meeting, include_non_public=False))
     assert "Hybride Sitzung" in oeffentlich
     assert "§ 58a GO NRW" in oeffentlich
-    assert "4711" not in oeffentlich
+    assert not _nennt_zugangsweg(oeffentlich)
     assert "übertragen" in oeffentlich
 
 
@@ -160,7 +169,7 @@ def test_ladungsmail_nennt_format_und_zugang_kalender_nur_format(welt: Welt) -> 
     ics = anhaenge["sitzung.ics"]
     ics_text = ics.decode("utf-8") if isinstance(ics, bytes) else str(ics)
     assert "Hybride Sitzung" in " ".join(ics_text.replace("\r\n ", "").split())
-    assert "4711" not in ics_text
+    assert not _nennt_zugangsweg(ics_text)
 
 
 def test_versand_ermittelt_formatangaben_einmal_je_fassung_nicht_je_empfaenger(
@@ -186,8 +195,11 @@ def test_versand_ermittelt_formatangaben_einmal_je_fassung_nicht_je_empfaenger(
     assert len(pruefungen) == 2
 
 
-def test_gaeste_erhalten_format_aber_keinen_zugangsweg(welt: Welt) -> None:
+def test_gaeste_erhalten_format_aber_keinen_zugangsweg(welt: Welt, monkeypatch: pytest.MonkeyPatch) -> None:
     """Bewusste Entscheidung: Der Zugangsweg geht an die Empfänger der vollständigen Ladung, nicht an Gäste."""
+    # Die Ziffernfolge des Zugangswegs kommt im Rückmelde-Token zufällig vor (Issue #666) – hier immer
+    rueckmeldelink = "https://mandari.example/session/ladung/antwort/0c4711e9f2/"
+    monkeypatch.setattr(invitation_token, "response_url", lambda recipient: rueckmeldelink)
     gast = SessionPerson.objects.create(
         tenant=welt.tenant, given_name="Gerd", family_name="Gast", email="gast@example.org"
     )
@@ -196,9 +208,10 @@ def test_gaeste_erhalten_format_aber_keinen_zugangsweg(welt: Welt) -> None:
     invitation_service.send_invitations(welt.meeting, sent_by=welt.staff)
     nachricht = next(m for m in mail.outbox if m.to == ["gast@example.org"])
     assert "Hybride Sitzung" in nachricht.body
-    assert "4711" not in nachricht.body
+    assert rueckmeldelink in nachricht.body
+    assert not _nennt_zugangsweg(str(nachricht.body))
     anhang = next(inhalt for name, inhalt, _typ in nachricht.attachments if name.endswith(".pdf"))
-    assert "4711" not in _pdf_text(anhang)
+    assert not _nennt_zugangsweg(_pdf_text(anhang))
 
 
 def test_pdf_abruf_zugangsweg_nur_mit_bearbeitungsrecht_und_protokolliert(welt: Welt) -> None:
@@ -212,7 +225,7 @@ def test_pdf_abruf_zugangsweg_nur_mit_bearbeitungsrecht_und_protokolliert(welt: 
     SessionRole.objects.filter(tenant=welt.tenant).update(can_edit_meetings=False)
     ohne = _pdf_text(welt.client.get(url).content)
     assert "Hybride Sitzung" in ohne
-    assert "4711" not in ohne
+    assert not _nennt_zugangsweg(ohne)
 
 
 def test_sitzungsmappe_nennt_format_ohne_zugangsweg(welt: Welt, tmp_path: Any) -> None:
@@ -224,7 +237,7 @@ def test_sitzungsmappe_nennt_format_ohne_zugangsweg(welt: Welt, tmp_path: Any) -
     )
     tagesordnung = " ".join(_pdf_text(inhalt) for inhalt in ergebnis.generated.values())
     assert "Hybride Sitzung" in tagesordnung
-    assert "4711" not in tagesordnung
+    assert not _nennt_zugangsweg(tagesordnung)
 
 
 def test_versand_gesperrt_fuer_nicht_eingeordneten_haupt_und_finanzausschuss(welt: Welt) -> None:
@@ -283,9 +296,9 @@ def test_oparl_liefert_format_und_hinweis_nie_den_zugangsweg(welt: Welt) -> None
     assert daten["mandari:publicAccess"]["url"] == "https://stream.example.org/bau"
     assert "übertragen" in daten["mandari:publicAccess"]["hint"]
     assert "registrationRequired" not in daten["mandari:publicAccess"]
-    assert "4711" not in json.dumps(daten, ensure_ascii=False)
+    assert not _nennt_zugangsweg(json.dumps(daten, ensure_ascii=False))
     liste = Client().get("/session/muster/api/oparl/meetings/").content.decode()
-    assert "4711" not in liste
+    assert not _nennt_zugangsweg(liste)
 
 
 def test_oparl_sitzungsliste_ohne_abfrage_je_hybrider_sitzung(welt: Welt) -> None:

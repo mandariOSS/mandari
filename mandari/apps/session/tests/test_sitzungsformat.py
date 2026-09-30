@@ -362,7 +362,7 @@ def test_formular_verhindert_hybriden_hauptausschuss_und_speichert_begruendete_n
     assert sitzung.public_access_url == "https://stream.example.org/rat"
     # Zugangsweg nur verschlüsselt gespeichert
     assert sitzung.remote_access_encrypted
-    assert b"4711" not in bytes(sitzung.remote_access_encrypted)
+    assert b"Konferenzraum" not in bytes(sitzung.remote_access_encrypted)
     assert cast(Any, sitzung).get_remote_access_decrypted() == "Konferenzraum 4711, PIN 2468"
 
 
