@@ -253,6 +253,14 @@ def _mit_feld(feld: object, sichtbarkeit: str = "personenbezogen", beispiel: obj
         {"type": "integer"},
         {"type": "array", "items": {"type": "string", "format": "uuid"}},
         {"type": "object", "additionalProperties": False, "properties": {"id": {"type": "string", "format": "uuid"}}},
+        {
+            "type": "object",
+            "propertyNames": {"format": "uuid"},
+            "additionalProperties": {"type": "string", "enum": ["zugesagt", "abgesagt"]},
+        },
+        {"type": "object", "propertyNames": {"pattern": "^[a-z_]+$"}, "additionalProperties": {"type": "integer"}},
+        {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "unevaluatedProperties": {"type": "integer"}},
+        {"type": "object", "additionalProperties": False, "patternProperties": {"^[a-z_]+$": {"type": "integer"}}},
         {"anyOf": [{"type": "string", "format": "uuid"}, {"type": "null"}]},
         {"$ref": "#/$defs/kennung"},
     ],
@@ -278,6 +286,16 @@ def test_kennungen_und_codes_sind_erlaubt(tmp_path: Path, feld: dict[str, Any]) 
         ({"type": "array"}, "#/properties/feld (Liste"),
         ({"type": "array", "items": {"type": "string"}}, "#/properties/feld/items (Zeichenkette"),
         ({"type": "object"}, "#/properties/feld (Objekt"),
+        ({"type": "object", "additionalProperties": {"type": "integer"}}, "#/properties/feld (Objekt mit frei"),
+        (
+            {"type": "object", "propertyNames": {"maxLength": 40}, "additionalProperties": {"type": "integer"}},
+            "#/properties/feld (Objekt mit frei",
+        ),
+        ({"type": "object", "unevaluatedProperties": {"type": "integer"}}, "#/properties/feld (Objekt mit frei"),
+        (
+            {"type": "object", "additionalProperties": False, "patternProperties": {"^.+$": {"type": "integer"}}},
+            "#/properties/feld (Objekt mit frei",
+        ),
         ({"anyOf": [{"type": "string"}, {"type": "null"}]}, "#/properties/feld/anyOf/0 (Zeichenkette"),
     ],
 )
@@ -286,6 +304,16 @@ def test_freitext_ist_bei_personenbezogenen_daten_verboten(tmp_path: Path, feld:
     schema["examples"] = []
     probleme = _eines(tmp_path, schema, name="attendance.response_recorded")
     assert any(f"Freitext bei Sichtbarkeit personenbezogen: {stelle}" in p for p in probleme), probleme
+
+
+def test_frei_waehlbare_feldnamen_sind_bei_nichtoeffentlich_verboten(tmp_path: Path) -> None:
+    schema = befehl_schema()
+    schema["properties"]["zusagen"] = {"type": "object", "additionalProperties": {"type": "boolean"}}
+    probleme = _eines(tmp_path, schema, name="submission.submit")
+    assert probleme == (
+        "submission.submit v1: Freitext bei Sichtbarkeit nichtoeffentlich: #/properties/zusagen "
+        "(Objekt mit frei wählbaren Feldnamen (additionalProperties als Schema ohne propertyNames als Kennung))",
+    )
 
 
 def test_offenes_objekt_ist_bei_nichtoeffentlich_verboten(tmp_path: Path) -> None:
@@ -332,6 +360,34 @@ def test_ereignis_mit_ungueltiger_nutzlast_nennt_keine_werte(register: Registry)
         "$: nicht vorgesehene Felder (notiz)",
         "$.paper: verletzt „format“",
         "$.changed[0]: verletzt „pattern“",
+    }
+
+
+def test_meldungen_nennen_keine_feldnamen_mit_inhalt(tmp_path: Path) -> None:
+    geheim = "Erika Mustermann"
+    schema = ereignis_schema(
+        "ris.paper.released",
+        **{
+            "x-visibility": "oeffentlich",
+            "required": ["paper"],
+            "properties": {
+                "paper": {"type": "string", "format": "uuid"},
+                "stimmen": {"type": "object", "additionalProperties": {"type": "integer"}},
+            },
+            "examples": [{"paper": PAPER_ID, "stimmen": {"ja": 3}}],
+        },
+    )
+    ablegen(tmp_path, "ris.paper.released", 1, schema)
+    register = load_registry(tmp_path)
+    nutzlast = {"paper": PAPER_ID, "stimmen": {geheim: "drei", "nein": "zwei"}, geheim: 1, "Musterweg 1": 2}
+    with pytest.raises(ContractViolationError) as info:
+        register.validate_event(huelle(payload=nutzlast))
+    assert geheim not in str(info.value)
+    assert "Musterweg" not in str(info.value)
+    assert set(info.value.problems) == {
+        "$: nicht vorgesehene Felder (<Feld> und 1 weitere)",
+        "$.stimmen.<Feld>: verletzt „type“",
+        "$.stimmen.nein: verletzt „type“",
     }
 
 

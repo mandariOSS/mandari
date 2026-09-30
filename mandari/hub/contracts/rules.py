@@ -16,7 +16,10 @@ Interne Bereiche (``session``, ``work``, ``portal``) gehören ihrem Fachmodul un
 ``oeffentlich``; ``core`` gehört der Plattform. Schemas der Klassen ``nichtoeffentlich`` und
 ``personenbezogen`` enthalten keine Freitextfelder: Jede Zeichenkette ist Kennung, Code oder
 Feldname (``enum``/``const``, Format wie ``uuid`` oder ein Muster ohne Leerzeichen), und Objekte und
-Listen lassen keine undeklarierten Werte zu.
+Listen lassen keine undeklarierten Werte zu. Auch die Feldnamen eines Objekts sind kein Freitext:
+Frei wählbare Schlüssel (``additionalProperties`` als Schema, ``patternProperties`` mit einem Muster,
+das Leerzeichen zulässt) brauchen ``propertyNames`` mit ``enum``/``const``, Kennungsformat oder einem
+Muster ohne Leerzeichen.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from collections.abc import Iterator, Mapping
 from typing import Any, Final
 
 from .envelope import RESTRICTED_VISIBILITIES, VISIBILITIES
+from .formats import IDENTIFIER_FORMATS
 from .naming import COMMAND, EVENT, INTERNAL_DOMAINS, KINDS, PLATFORM_PACKAGES, check_name, domain_of
 from .validation import SCHEMA_DIALECT, instance_problems, schema_problems, validator_for
 
@@ -41,8 +45,6 @@ KNOWN_OWNERS: Final[tuple[str, ...]] = (
     "ingestor",
 )
 
-#: Formate, die als Kennung oder Zeitangabe gelten und damit kein Freitext sind.
-IDENTIFIER_FORMATS: Final[frozenset[str]] = frozenset({"uuid", "date", "date-time", "time", "duration"})
 #: Ein Muster, auf das einer dieser Texte passt, lässt Freitext zu.
 _FREE_TEXT_PROBES: Final[tuple[str, ...]] = ("Erika Mustermann", "ein Satz mit Leerzeichen.")
 
@@ -113,8 +115,10 @@ def _node_reason(node: Mapping[str, Any]) -> str:
         return "ohne Typ ist jeder Wert erlaubt"
     if "string" in type_set and not _string_restricted(node):
         return "Zeichenkette ohne enum, Kennungsformat oder Muster ohne Leerzeichen"
-    if "object" in type_set and not _object_closed(node):
-        return "Objekt ohne additionalProperties: false"
+    if "object" in type_set:
+        reason = _object_reason(node)
+        if reason:
+            return reason
     if "array" in type_set and "items" not in node:
         return "Liste ohne Schema für items"
     return ""
@@ -123,7 +127,11 @@ def _node_reason(node: Mapping[str, Any]) -> str:
 def _string_restricted(node: Mapping[str, Any]) -> bool:
     if node.get("format") in IDENTIFIER_FORMATS:
         return True
-    pattern = node.get("pattern")
+    return _pattern_restricted(node.get("pattern"))
+
+
+def _pattern_restricted(pattern: object) -> bool:
+    """Das Muster lässt keinen Text mit Leerzeichen zu."""
     if not isinstance(pattern, str):
         return False
     try:
@@ -133,12 +141,34 @@ def _string_restricted(node: Mapping[str, Any]) -> bool:
     return not any(compiled.search(probe) for probe in _FREE_TEXT_PROBES)
 
 
-def _object_closed(node: Mapping[str, Any]) -> bool:
-    """Undeklarierte Felder sind verboten oder haben ein eigenes (geprüftes) Schema."""
-    return any(
-        node.get(key) is False or isinstance(node.get(key), Mapping)
-        for key in ("additionalProperties", "unevaluatedProperties")
-    )
+def _object_reason(node: Mapping[str, Any]) -> str:
+    """Grund, warum ein Objekt undeklarierte Felder oder frei wählbare Feldnamen zulässt."""
+    additional = node.get("additionalProperties")
+    unevaluated = node.get("unevaluatedProperties")
+    # Ein Teilschema für undeklarierte Felder prüft deren Werte, nicht deren Namen.
+    if isinstance(additional, Mapping) or (additional is None and isinstance(unevaluated, Mapping)):
+        if _names_restricted(node):
+            return ""
+        keyword = "additionalProperties" if isinstance(additional, Mapping) else "unevaluatedProperties"
+        return f"Objekt mit frei wählbaren Feldnamen ({keyword} als Schema ohne propertyNames als Kennung)"
+    if additional is not False and unevaluated is not False:
+        return "Objekt ohne additionalProperties: false"
+    patterns = node.get("patternProperties")
+    if (
+        isinstance(patterns, Mapping)
+        and any(not _pattern_restricted(pattern) for pattern in patterns)
+        and not _names_restricted(node)
+    ):
+        return "Objekt mit frei wählbaren Feldnamen (patternProperties lässt Leerzeichen zu)"
+    return ""
+
+
+def _names_restricted(node: Mapping[str, Any]) -> bool:
+    """``propertyNames`` beschränkt die Feldnamen auf Kennungen oder Codes."""
+    names = node.get("propertyNames")
+    if not isinstance(names, Mapping):
+        return False
+    return "const" in names or "enum" in names or _string_restricted(names)
 
 
 _SCHEMA_MAPS = ("properties", "patternProperties", "$defs", "dependentSchemas")

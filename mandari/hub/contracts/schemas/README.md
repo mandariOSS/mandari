@@ -43,7 +43,14 @@ fehlschlagen.
   `oeffentlich`.
 - **Keine Freitextfelder** bei `nichtoeffentlich` oder `personenbezogen`: Zeichenketten nur mit
   `enum`/`const`, Format `uuid`, `date`, `date-time`, `time`, `duration` oder einem Muster ohne
-  Leerzeichen; Objekte mit `additionalProperties: false`, Listen mit `items`.
+  Leerzeichen; Objekte mit `additionalProperties: false`, Listen mit `items`. Diese Formate prüft das
+  Register selbst (`formats.py`), unabhängig von optionalen Paketen von `jsonschema`. Auch Feldnamen
+  sind kein Freitext: Ein Objekt mit frei wählbaren Schlüsseln (`additionalProperties` als Schema,
+  `patternProperties` mit Leerzeichen im Muster) braucht `propertyNames` mit `enum`/`const`,
+  Kennungsformat oder einem Muster ohne Leerzeichen.
+- **Meldungen ohne Werte:** Verstöße nennen JSON-Pfad, Regel und Feldnamen. Schlüssel aus der
+  Nutzlast erscheinen nur, wenn sie wie ein Feldname aussehen (`^[a-z][a-z0-9_]{0,39}$`), sonst als
+  `<Feld>`.
 - **`examples`**: mindestens ein gültiges Beispiel.
 - **Nur additive Änderungen** an einer bestehenden Version: neue Felder optional. Entfernen,
   Umbenennen, Typwechsel und neue Pflichtfelder ergeben eine neue Version.
