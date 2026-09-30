@@ -38,7 +38,7 @@ from typing import Any
 
 import psycopg
 from django.conf import settings
-from django.db import DatabaseError, connection
+from django.db import connection
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
@@ -168,7 +168,7 @@ class Listener:
         token = uuid.uuid4().hex
         try:
             self.send_ping(PING_CHANNEL, token)
-        except DatabaseError:
+        except Exception:  # noqa: BLE001 – ohne Selbstprüfung gilt der Weckruf als gestört, der Faden läuft weiter
             logger.warning("Weckruf: Selbstprüfung konnte nicht gesendet werden", exc_info=True)
             return False
         return self._warten_auf(verbindung, PING_TIMEOUT, token)
@@ -231,6 +231,10 @@ class Listener:
                     )
                     stop.wait(pause)
                     pause = min(RECONNECT_MAX, pause * 2)
+                except Exception:  # noqa: BLE001 – der Weckruf darf nicht sterben; die Abfragen tragen weiter
+                    self._zustand(False)
+                    logger.exception("Weckruf: unerwarteter Fehler, neuer Versuch in %.0f s", RECONNECT_MAX)
+                    stop.wait(RECONNECT_MAX)
         finally:
             self._zustand(False)
             connection.close()
