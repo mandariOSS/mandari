@@ -89,6 +89,35 @@ einreicht, braucht sofort eine Eingangsnummer oder einen verständlichen Fehler.
 - Kennzahl: je Vorgang genau ein Einreichungs- bzw. Rückmeldeweg nach Ablauf der Abkündigung.
 - Änderungen am OpenAPI-Schema der Einreichungs-API folgen der Release-Politik.
 
+## Nachtrag zur Umsetzung (#539)
+
+Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folgendes fest.
+
+- **Idempotenzspeicher in der Plattform.** Schlüssel, Hash der Anfrage und Quittung liegen fachfrei
+  in `events_idempotency` (`apps.events.idempotency.run_once`). Der Dispatcher belegt den Schlüssel
+  in derselben Transaktion, in der der Handler des Eigentümers die Fachdaten schreibt; scheitert der
+  Handler, rollt beides zurück. Gleichzeitige Anfragen mit demselben Schlüssel warten am eindeutigen
+  Index, der Handler läuft nur einmal. Bereich eines Schlüssels sind Mandant und Auslöser; die
+  Aufbewahrung beträgt 30 Tage (`EVENTS_IDEMPOTENCY_RETENTION_DAYS`, Befehl
+  `events_idempotency_purge`).
+- **Reihenfolge der Prüfungen und Probleme** (RFC 9457, Typen unter
+  `https://docs.mandari.de/api/probleme/`): fehlender oder ungültiger Schlüssel 400
+  (`idempotenzschluessel-fehlt`), unbekannter Befehl 404 (`befehl-unbekannt`), kein Handler in dieser
+  Installation 501 (`befehl-nicht-verfuegbar`), Inhalt passt nicht zum Schema 422 (`validierung`, mit
+  `errors` als JSON-Pointer ohne Werte), Schlüssel für eine andere Anfrage 422
+  (`idempotenzschluessel-wiederverwendet`). Fachliche Ablehnungen meldet der Handler selbst (z. B. 409),
+  jede andere Ausnahme wird zu 500 mit festem Text. Über HTTP kommen 401, 403, 405, 413 und 415 dazu,
+  im `HttpClient` 503 (Eigentümer nicht erreichbar) und 502 (unerwartete Antwort).
+- **Handler beim Eigentümer:** Registriert wird nur für einen Befehl im Register, und nur aus dem
+  Paket, das der Vertrag als `x-owner` nennt; sonst bricht der Start ab.
+- **HTTP-Weg:** `POST …/<befehl>/v<version>` mit JSON-Objekt, `Idempotency-Key` (mit oder ohne
+  Anführungszeichen) und Anmeldung über eine Funktion der Installation, die Mandant, Auslöser und
+  erlaubte Befehle liefert; Erfolg 201 mit Quittung. Die Adressen werden erst eingebunden, wenn ein
+  Eigentümer Befehle anbietet (Profil Einreichung, #540).
+- **Quittung:** Eingangsnummer bzw. Kennung des Eigentümers, Eingangszeit und Inhalts-Hash (SHA-256
+  über das kanonische JSON des Inhalts nach RFC 8785), dazu optional Kennung des Aggregats und weitere
+  Kennungen. Eine Wiederholung erhält sie unverändert.
+
 ## Bezug
 
 - [A5 Verträge](20260929-ereignisvertraege.md), [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md)
