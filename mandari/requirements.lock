@@ -167,8 +167,9 @@ multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
-opentelemetry-api==1.44.0
+opentelemetry-api==1.45.0
     # via
+    #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-dbapi
@@ -180,11 +181,15 @@ opentelemetry-api==1.44.0
     #   opentelemetry-instrumentation-wsgi
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-exporter-http-transport==0.66b0
     # via opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-exporter-otlp-common==0.66b0
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-common==1.45.0
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-http==1.45.0
     # via -r requirements.txt
-opentelemetry-instrumentation==0.65b0
+opentelemetry-instrumentation==0.66b0
     # via
     #   opentelemetry-instrumentation-dbapi
     #   opentelemetry-instrumentation-django
@@ -193,29 +198,30 @@ opentelemetry-instrumentation==0.65b0
     #   opentelemetry-instrumentation-redis
     #   opentelemetry-instrumentation-requests
     #   opentelemetry-instrumentation-wsgi
-opentelemetry-instrumentation-dbapi==0.65b0
+opentelemetry-instrumentation-dbapi==0.66b0
     # via opentelemetry-instrumentation-psycopg
-opentelemetry-instrumentation-django==0.65b0
+opentelemetry-instrumentation-django==0.66b0
     # via -r requirements.txt
-opentelemetry-instrumentation-httpx==0.65b0
+opentelemetry-instrumentation-httpx==0.66b0
     # via -r requirements.txt
-opentelemetry-instrumentation-psycopg==0.65b0
+opentelemetry-instrumentation-psycopg==0.66b0
     # via -r requirements.txt
-opentelemetry-instrumentation-redis==0.65b0
+opentelemetry-instrumentation-redis==0.66b0
     # via -r requirements.txt
-opentelemetry-instrumentation-requests==0.65b0
+opentelemetry-instrumentation-requests==0.66b0
     # via -r requirements.txt
-opentelemetry-instrumentation-wsgi==0.65b0
+opentelemetry-instrumentation-wsgi==0.66b0
     # via opentelemetry-instrumentation-django
-opentelemetry-proto==1.44.0
+opentelemetry-proto==1.45.0
     # via
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.44.0
+opentelemetry-sdk==1.45.0
     # via
     #   -r requirements.txt
+    #   opentelemetry-exporter-otlp-common
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-semantic-conventions==0.65b0
+opentelemetry-semantic-conventions==0.66b0
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-dbapi
@@ -225,7 +231,7 @@ opentelemetry-semantic-conventions==0.65b0
     #   opentelemetry-instrumentation-requests
     #   opentelemetry-instrumentation-wsgi
     #   opentelemetry-sdk
-opentelemetry-util-http==0.65b0
+opentelemetry-util-http==0.66b0
     # via
     #   opentelemetry-instrumentation-django
     #   opentelemetry-instrumentation-httpx
@@ -326,9 +332,7 @@ reportlab==5.0.1
     #   svglib
     #   xhtml2pdf
 requests==2.34.2
-    # via
-    #   -r requirements.txt
-    #   opentelemetry-exporter-otlp-proto-http
+    # via -r requirements.txt
 rich==15.0.0
     # via -r requirements.txt
 rpds-py==2026.6.3
@@ -396,8 +400,9 @@ urllib3==2.8.0
     # via
     #   -r requirements.txt
     #   elastic-transport
+    #   opentelemetry-exporter-http-transport
     #   requests
-webauthn==3.0.0
+webauthn==3.0.1
     # via -r requirements.txt
 webencodings==0.6.1
     # via
@@ -412,7 +417,7 @@ wrapt==2.4.0
     #   opentelemetry-instrumentation-dbapi
     #   opentelemetry-instrumentation-httpx
     #   opentelemetry-instrumentation-redis
-xhtml2pdf==0.2.20
+xhtml2pdf==0.2.21
     # via -r requirements.txt
 yarl==1.24.5
     # via aiohttp
