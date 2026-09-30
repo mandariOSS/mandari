@@ -9,3 +9,8 @@ class EventsConfig(AppConfig):
     name = "apps.events"
     label = "events"
     verbose_name = "Ereignistechnik"
+
+    def ready(self) -> None:
+        from . import metrics
+
+        metrics.register()

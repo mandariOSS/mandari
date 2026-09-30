@@ -58,3 +58,24 @@ def ereignis_daten(**abweichend: Any) -> dict[str, Any]:
 
 def ereignis_anlegen(**abweichend: Any) -> Event:
     return Event.objects.create(**ereignis_daten(**abweichend))
+
+
+_ROH_EINFUEGEN = """
+    INSERT INTO events_event
+        (event_id, type, version, aggregate_type, aggregate_id, tenant_ref, visibility, occurred_at, correlation_id,
+         payload)
+    VALUES (%s, 'test.objekt.geaendert', 1, 'Objekt', %s, 'org:test', 'intern', now(), %s, '{}'::jsonb)
+"""
+
+
+def roh_einfuegen(verbindung: psycopg.Connection[Any]) -> uuid.UUID:
+    """Schreibt ein Ereignis über eine Direktverbindung (in deren laufender Transaktion)."""
+    event_id = uuid.uuid4()
+    verbindung.execute(_ROH_EINFUEGEN, (event_id, uuid.uuid4(), uuid.uuid4()))
+    return event_id
+
+
+def folgenummern(event_ids: list[uuid.UUID]) -> list[int | None]:
+    """Folgenummern der Ereignisse in der Reihenfolge der übergebenen Kennungen."""
+    nach_id = dict(Event.objects.filter(event_id__in=event_ids).values_list("event_id", "seq"))
+    return [nach_id.get(event_id) for event_id in event_ids]

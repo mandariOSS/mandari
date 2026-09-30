@@ -136,7 +136,7 @@ def db_open_connections() -> int | None:
     return int(row[0]) if row else None
 
 
-class _MisstErstBeimAbruf(Collector):
+class MisstErstBeimAbruf(Collector):
     """Sammler, die erst beim Abruf von ``/metrics/`` messen.
 
     Ohne ``describe()`` ruft prometheus_client beim Registrieren einmal ``collect()`` auf,
@@ -151,7 +151,7 @@ class _MisstErstBeimAbruf(Collector):
         return iter(())
 
 
-class DatabaseCollector(_MisstErstBeimAbruf):
+class DatabaseCollector(MisstErstBeimAbruf):
     def collect(self) -> Iterator[Metric]:
         try:
             stats = db_pool_stats()
@@ -201,7 +201,7 @@ def cache_stats() -> dict[str, int] | None:
     return {"hits": int(info.get("keyspace_hits", 0)), "misses": int(info.get("keyspace_misses", 0))}
 
 
-class CacheCollector(_MisstErstBeimAbruf):
+class CacheCollector(MisstErstBeimAbruf):
     def collect(self) -> Iterator[Metric]:
         try:
             stats = cache_stats()
@@ -233,7 +233,7 @@ def transcription_queue() -> dict[str, int]:
     }
 
 
-class QueueCollector(_MisstErstBeimAbruf):
+class QueueCollector(MisstErstBeimAbruf):
     def collect(self) -> Iterator[Metric]:
         try:
             zaehler = transcription_queue()
