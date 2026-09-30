@@ -92,6 +92,14 @@ class ApplicationDetailView(SessionViewMixin, DetailView):
         context = super().get_context_data(**kwargs)
         # Created papers from this application – nichtöffentliche nur mit NÖ-Sichtrecht
         context["created_papers"] = self.object.created_papers.visible_to(self.session_permissions)
+        # Anhänge aus mandari Work (#584) nach der Anlagenregel
+        from ..services import file_service
+
+        context["application_files"] = [
+            f
+            for f in self.object.files.select_related("paper").order_by("created_at")
+            if file_service.file_visible(self.session_permissions, f)
+        ]
         return context
 
 

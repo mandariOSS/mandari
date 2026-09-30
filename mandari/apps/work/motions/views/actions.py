@@ -10,7 +10,6 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView, View
@@ -27,7 +26,6 @@ from .. import references
 from ..forms import (
     AIAssistantForm,
     MotionCommentForm,
-    MotionDocumentForm,
     MotionShareForm,
 )
 from ..import_service import import_ocr_max_pages, motion_import_service
@@ -559,53 +557,6 @@ class MotionApprovalDecideView(WorkViewMixin, View):
             NotificationHub.notify_motion_approval_decided(approval, self.membership, recipient)
 
         return JsonResponse({"success": True, "approved": approval.approved})
-
-
-class MotionDocumentUploadView(WorkViewMixin, View):
-    """API endpoint for uploading documents."""
-
-    permission_required = "motions.edit"
-
-    def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
-
-        # Per-Objekt-Recht (siehe MotionStatusView)
-        if not motion.can_edit(self.membership):
-            return JsonResponse({"error": "Kein Zugriff auf dieses Dokument."}, status=403)
-
-        form = MotionDocumentForm(request.POST, request.FILES)
-        if form.is_valid():
-            document = form.save(commit=False)
-            document.motion = motion
-            document.uploaded_by = self.membership
-
-            file = request.FILES["file"]
-            document.filename = file.name
-            document.mime_type = file.content_type
-            document.file_size = file.size
-
-            document.save()
-
-            return JsonResponse(
-                {
-                    "success": True,
-                    "document": {
-                        "id": str(document.id),
-                        "filename": document.filename,
-                        "size": document.file_size,
-                        "download_url": reverse(
-                            "work:document_file_download",
-                            kwargs={
-                                "org_slug": self.organization.slug,
-                                "motion_id": motion.id,
-                                "document_id": document.id,
-                            },
-                        ),
-                    },
-                }
-            )
-
-        return JsonResponse({"error": form.errors}, status=400)
 
 
 class MotionDocumentDownloadView(WorkViewMixin, View):

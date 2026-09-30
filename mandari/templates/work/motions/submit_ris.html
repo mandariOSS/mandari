@@ -116,12 +116,38 @@
         </div>
 
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-2">
+                <i data-lucide="paperclip" class="w-5 h-5 text-gray-400"></i> Anhänge
+            </h3>
+            {% if attachments_accepted or attachments_rejected %}
+            <ul class="space-y-1 text-sm">
+                {% for attachment in attachments_accepted %}
+                <li class="flex items-center gap-2 text-gray-700 dark:text-gray-200">
+                    <i data-lucide="check" class="w-4 h-4 text-green-600 flex-shrink-0"></i>
+                    <span class="truncate">{{ attachment.filename }}</span>
+                    <span class="text-xs text-gray-400 flex-shrink-0">{{ attachment.file_size|filesizeformat }}</span>
+                </li>
+                {% endfor %}
+                {% for attachment, reason in attachments_rejected %}
+                <li class="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                    <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0"></i>
+                    <span class="truncate">{{ attachment.filename }}</span>
+                    <span class="text-xs flex-shrink-0">– wird nicht übermittelt: {{ reason }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-gray-500">Keine Anhänge. Anhänge fügen Sie im Editor in der Seitenleiste „Details“ hinzu.</p>
+            {% endif %}
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-200">
                 <input type="checkbox" name="confirm" class="mt-0.5 rounded border-gray-300" {% if not can_submit_now %}disabled{% endif %}>
                 <span>
                     Ich reiche diesen Antrag im Namen von <strong>{{ organization.name }}</strong> verbindlich bei
                     <strong>{{ connection.tenant.name|default:"der Verwaltung" }}</strong> ein. Übermittelt werden Titel, Antragsart,
-                    Beschlussvorschlag, Begründung, finanzielle Auswirkungen, Mitunterzeichnende sowie mein Name und meine E-Mail-Adresse
+                    Beschlussvorschlag, Begründung, finanzielle Auswirkungen, Mitunterzeichnende, die aufgeführten Anhänge sowie mein Name und meine E-Mail-Adresse
                     als Ansprechperson. Das Dokument wechselt in den Status „Eingereicht“, und Sie erhalten eine
                     Eingangsbestätigung per E-Mail.
                 </span>

@@ -1,0 +1,80 @@
+{% comment %}
+Anhänge eines Dokuments (Details-Seitenleiste, Issue #584): Liste mit Download, Umbenennen
+und Entfernen, darunter das Hochladen. HTMX ersetzt das ganze Fragment.
+Kontext: organization, motion, documents, can_edit_attachments, attachment_accept,
+         attachment_max_mb, attachment_errors, attachment_notice
+{% endcomment %}
+<div id="motion-attachments">
+    <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
+        Anhänge{% if documents %} ({{ documents|length }}){% endif %}
+    </h4>
+
+    {% if attachment_errors %}
+    <ul role="alert" class="mb-2 space-y-1 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-2 py-1.5 text-xs text-red-700 dark:text-red-300">
+        {% for error in attachment_errors %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if attachment_notice %}
+    <p role="status" class="mb-2 text-xs text-green-700 dark:text-green-400">{{ attachment_notice }}</p>
+    {% endif %}
+
+    {% if documents %}
+    <ul class="space-y-1.5">
+        {% for attachment in documents %}
+        <li class="group rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
+            <div class="flex items-center gap-2 px-2 py-1.5">
+                <i data-lucide="{{ attachment.icon_name }}" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                <a href="{% url 'work:document_file_download' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}"
+                   class="truncate flex-1 text-sm text-gray-700 dark:text-gray-200 hover:text-primary-600 dark:hover:text-primary-400">{{ attachment.filename }}</a>
+                <span class="text-[11px] text-gray-400 flex-shrink-0">{{ attachment.file_size|filesizeformat }}</span>
+                {% if can_edit_attachments %}
+                <form hx-post="{% url 'work:document_file_delete' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}"
+                      hx-target="#motion-attachments" hx-swap="outerHTML"
+                      hx-confirm="Anhang „{{ attachment.filename }}“ entfernen?"
+                      class="flex-shrink-0">
+                    {% csrf_token %}
+                    <button type="submit" title="Anhang entfernen" aria-label="Anhang {{ attachment.filename }} entfernen"
+                            class="p-1 text-gray-400 hover:text-red-600 rounded">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            {% if can_edit_attachments %}
+            <details class="px-2 pb-1.5">
+                <summary class="text-[11px] text-gray-400 hover:text-primary-600 cursor-pointer select-none">Umbenennen</summary>
+                <form hx-post="{% url 'work:document_file_rename' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}"
+                      hx-target="#motion-attachments" hx-swap="outerHTML"
+                      class="mt-1 flex items-center gap-1.5">
+                    {% csrf_token %}
+                    <label class="sr-only" for="attachment-name-{{ attachment.id }}">Neuer Name</label>
+                    <input id="attachment-name-{{ attachment.id }}" type="text" name="filename" value="{{ attachment.filename }}" maxlength="255" required
+                           class="flex-1 min-w-0 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Speichern</button>
+                </form>
+            </details>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-xs text-gray-400 px-1">Keine Anhänge.</p>
+    {% endif %}
+
+    {% if can_edit_attachments %}
+    <form hx-post="{% url 'work:document_upload' org_slug=organization.slug motion_id=motion.id %}"
+          hx-target="#motion-attachments" hx-swap="outerHTML"
+          hx-encoding="multipart/form-data"
+          class="mt-2">
+        {% csrf_token %}
+        <label class="flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors">
+            <i data-lucide="upload" class="w-4 h-4 text-gray-400"></i>
+            <span class="text-xs text-gray-500">Anhang hinzufügen …</span>
+            <input type="file" name="file" multiple class="sr-only" accept="{{ attachment_accept }}"
+                   @change="if ($el.files.length) $el.closest('form').requestSubmit()">
+        </label>
+        <p class="mt-1 text-[11px] text-gray-400 px-1">PDF, Office, Bilder, Tabellen – bis {{ attachment_max_mb }} MB je Datei. Anhänge gehen bei der Einreichung an die Verwaltung mit.</p>
+    </form>
+    {% endif %}
+</div>

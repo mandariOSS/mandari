@@ -3,7 +3,8 @@ Sidebar-Tab "Details" im Dokument-Editor: Zuständigkeit, Themen, Bezug,
 Kompetenz im Thema, Frist und Freigaben.
 Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
          competent_members, approvals, approval_summary, my_pending_approval,
-         approval_type_choices, can_edit, membership, organization
+         approval_type_choices, can_edit, membership, organization,
+         documents, can_edit_attachments, attachment_accept, attachment_max_mb
 {% endcomment %}
 {% load member_tags %}
 {% load permission_tags %}
@@ -273,27 +274,6 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
     </div>
     {% endif %}
 
-    <!-- Anhänge -->
-    <div>
-        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
-            Anhänge{% if documents %} ({{ documents|length }}){% endif %}
-        </h4>
-        {% if documents %}
-        <ul class="space-y-1.5">
-            {% for attachment in documents %}
-            <li>
-                <a href="{% url 'work:document_file_download' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}"
-                   class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
-                    <i data-lucide="file" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
-                    <span class="truncate flex-1">{{ attachment.filename }}</span>
-                    <span class="text-[11px] text-gray-400 flex-shrink-0">{{ attachment.file_size|filesizeformat }}</span>
-                </a>
-            </li>
-            {% endfor %}
-        </ul>
-        {% else %}
-        <p class="text-xs text-gray-400 px-1">Keine Anhänge.</p>
-        {% endif %}
-    </div>
+    <!-- Anhänge (#584) -->
+    {% include "work/motions/partials/_attachments.html" %}
 </div>

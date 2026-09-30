@@ -380,6 +380,19 @@ WEGE: tuple[Weg, ...] = (
         datei=True,
     ),
     Weg(
+        "anhang_umbenennen",
+        "post",
+        lambda w, d: reverse("work:document_file_rename", kwargs=_k(w, d, document_id=w.anhaenge[d].id)),
+        _bearbeiten_ohne_sperre,
+        lambda w, d: {"filename": "Lageplan"},
+    ),
+    Weg(
+        "anhang_entfernen",
+        "post",
+        lambda w, d: reverse("work:document_file_delete", kwargs=_k(w, d, document_id=w.anhaenge[d].id)),
+        _bearbeiten_ohne_sperre,
+    ),
+    Weg(
         "teilen",
         "post",
         lambda w, d: reverse("work:document_share_update", kwargs=_k(w, d)),

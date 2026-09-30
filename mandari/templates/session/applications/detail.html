@@ -113,6 +113,28 @@
         </div>
         {% endif %}
 
+        <!-- Anhänge aus mandari Work (#584), nichtöffentlich -->
+        {% if application_files %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="paperclip" class="w-5 h-5 text-gray-400"></i>
+                    Anhänge ({{ application_files|length }})
+                </h2>
+            </div>
+            <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for file in application_files %}
+                <li class="px-6 py-3 flex items-center gap-3 text-sm">
+                    <i data-lucide="file" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                    <a href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}"
+                       class="flex-1 min-w-0 truncate text-primary-600 hover:text-primary-700 dark:text-primary-400">{{ file.name }}</a>
+                    <span class="text-xs text-gray-400 flex-shrink-0">{{ file.size_human }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
         <!-- Erstellte Vorlagen -->
         {% if created_papers %}
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

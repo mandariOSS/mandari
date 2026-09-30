@@ -3342,6 +3342,16 @@ class SessionFile(models.Model):
         related_name="files",
         verbose_name="Tagesordnungspunkt",
     )
+    # Anhänge eines aus mandari Work eingereichten Antrags (Issue #584): nichtöffentlich, bei der
+    # Umwandlung in eine Vorlage hängen sie zusätzlich an der Vorlage
+    application = models.ForeignKey(
+        "SessionApplication",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="files",
+        verbose_name="Antrag",
+    )
 
     # OParl link
     oparl_file = models.OneToOneField(
