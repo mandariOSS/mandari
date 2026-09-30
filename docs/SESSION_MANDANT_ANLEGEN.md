@@ -145,6 +145,12 @@ veröffentlicht: Quelle aktiv, Kommune wieder gelistet (wenn sie es vorher war),
 außer denen, die in Session inzwischen gelöscht oder nichtöffentlich sind. Ist die
 Veröffentlichung aus, bleibt die Rücknahme bestehen, bis der Mandant wieder veröffentlicht.
 
+Die OParl-Schnittstelle folgt beim Reaktivieren ihrer Freischaltung (Issue #319): Mandanten, die bei
+der Einführung der Freischaltung inaktiv waren und nicht im Bürgerportal veröffentlichten, sind
+gesperrt – anders als vor ihrer Deaktivierung antwortet ihre Schnittstelle mit 404, bis die
+Verwaltung sie freischaltet. Admin-Aktion und Formular melden das, das Protokoll des Mandanten
+vermerkt es beim Eintrag „Aktiv“.
+
 Wege: Admin-Aktionen „Mandanten deaktivieren“ bzw. „aktivieren“ in der Mandantenliste und der
 Schalter „Aktiv“ im Formular. Beide speichern jeden Mandanten einzeln; das Protokoll des
 Mandanten nennt, wer gehandelt hat (Änderung von „Aktiv“ sowie „Veröffentlichung

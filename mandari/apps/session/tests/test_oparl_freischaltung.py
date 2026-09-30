@@ -36,6 +36,7 @@ from apps.session.services import (
     insight_service,
     oparl_access,
     portal_publication,
+    privacy_service,
     tenant_provisioning,
 )
 from apps.session.tests._niederschrift import client as angemeldet
@@ -260,6 +261,73 @@ class TestBuergerportal:
         tenant_provisioning.set_tenant_active(tenant, True)
         assert _quellen(tenant) == []
 
+    def test_reaktivieren_vermerkt_gesperrte_schnittstelle(self) -> None:
+        # Bei der Einführung inaktive Mandanten bleiben gesperrt – anders als vor ihrer Deaktivierung
+        tenant = SessionTenant.objects.create(name="Stadt Test", slug="test")
+        tenant_provisioning.set_tenant_active(tenant, False)
+        tenant_provisioning.set_tenant_active(tenant, True)
+
+        eintrag = SessionAuditLog.objects.filter(tenant=tenant, action="update", model_name="SessionTenant").latest(
+            "seq"
+        )
+        assert eintrag.changes["is_active"]["neu"] is True
+        assert eintrag.changes["oparl_schnittstelle"] == tenant_provisioning.REACTIVATED_LOCKED
+
+        oparl_access.release(tenant)
+        tenant_provisioning.set_tenant_active(tenant, False)
+        tenant_provisioning.set_tenant_active(tenant, True)
+        eintrag = SessionAuditLog.objects.filter(tenant=tenant, action="update", model_name="SessionTenant").latest(
+            "seq"
+        )
+        assert "oparl_schnittstelle" not in eintrag.changes
+
+    def test_admin_aktion_warnt_bei_gesperrter_schnittstelle(self) -> None:
+        from typing import cast
+
+        from apps.common.tests.factories import UserFactory
+
+        gesperrt = SessionTenant.objects.create(name="Stadt Gesperrt", slug="gesperrt", is_active=False)
+        offen = SessionTenant.objects.create(
+            name="Stadt Offen", slug="offen", is_active=False, oparl_public_since=timezone.now()
+        )
+        betrieb = Client()
+        betrieb.force_login(cast(Any, UserFactory)(email="betrieb@example.org", is_staff=True, is_superuser=True))
+
+        antwort = betrieb.post(
+            "/admin/session/sessiontenant/",
+            {"action": "activate_tenants", "_selected_action": [str(gesperrt.pk), str(offen.pk)]},
+            follow=True,
+        )
+
+        text = antwort.content.decode()
+        assert "2 Mandant(en) wurden aktiviert." in text
+        assert "OParl-Schnittstelle nicht freigeschaltet" in text and "Stadt Gesperrt" in text
+        assert "Stadt Offen." not in text
+
+    def test_zuruecknehmen_prueft_den_gespeicherten_stand(self) -> None:
+        # Zwei gleichzeitige Anfragen: Die Rücknahme arbeitet mit einem veralteten Stand, während eine
+        # andere Anfrage inzwischen im Bürgerportal veröffentlicht hat – sie liest unter Sperre neu
+        tenant = SessionTenant.objects.create(name="Stadt Test", slug="test", oparl_public_since=timezone.now())
+        veraltet = SessionTenant.objects.get(pk=tenant.pk)
+        portal_publication.resume_publication(tenant)
+
+        with pytest.raises(oparl_access.OParlAccessError):
+            oparl_access.lock(veraltet)
+        tenant.refresh_from_db()
+        assert tenant.oparl_public and tenant.insight_publish
+
+    def test_veroeffentlichen_prueft_den_gespeicherten_stand(self) -> None:
+        # Umgekehrt: Die Freischaltung wurde inzwischen zurückgenommen – veröffentlichen scheitert
+        tenant = SessionTenant.objects.create(name="Stadt Test", slug="test", oparl_public_since=timezone.now())
+        veraltet = SessionTenant.objects.get(pk=tenant.pk)
+        assert oparl_access.lock(tenant) is True
+
+        with pytest.raises(oparl_access.OParlAccessError):
+            portal_publication.resume_publication(veraltet)
+        tenant.refresh_from_db()
+        assert not tenant.oparl_public and not tenant.insight_publish
+        assert _quellen(tenant) == []
+
 
 # =============================================================================
 # Kontaktdaten nur mit Einwilligung
@@ -356,6 +424,61 @@ class TestKontaktdaten:
             None,
             "",
         )
+
+    def test_auskunft_nennt_einwilligung(self, tenant: SessionTenant) -> None:
+        mit = _person(
+            tenant,
+            "Mit",
+            contact_publish=True,
+            contact_consent_date=date(2026, 9, 1),
+            contact_consent_evidence="Schriftliche Erklärung",
+        )
+        stamm = privacy_service.subject_access_export(tenant, mit)["stammdaten"]
+        assert stamm["kontaktdaten_veroeffentlichen"] is True
+        assert stamm["einwilligung_vom"] == "2026-09-01"
+        assert stamm["einwilligung_nachweis"] == "Schriftliche Erklärung"
+
+        ohne = privacy_service.subject_access_export(tenant, _person(tenant, "Ohne"))["stammdaten"]
+        assert (ohne["kontaktdaten_veroeffentlichen"], ohne["einwilligung_vom"], ohne["einwilligung_nachweis"]) == (
+            False,
+            None,
+            "",
+        )
+
+    def test_anonymisierung_leert_einwilligung(self, tenant: SessionTenant) -> None:
+        person = _person(
+            tenant,
+            "Alt",
+            is_active=False,
+            end_date=date(2020, 1, 31),
+            contact_publish=True,
+            contact_consent_date=date(2019, 5, 1),
+            contact_consent_evidence="Schriftliche Erklärung",
+        )
+        tenant.settings = {"privacy": {"persons_years": 2}}
+        tenant.save()
+
+        assert privacy_service.run_privacy_purge(tenant, dry_run=True)["persons_anonymized"] == 1
+        vorher = timezone.now()
+        assert privacy_service.run_privacy_purge(tenant)["persons_anonymized"] == 1
+
+        person.refresh_from_db()
+        assert (person.email, person.contact_publish, person.contact_consent_date, person.contact_consent_evidence) == (
+            "",
+            False,
+            None,
+            "",
+        )
+        eintraege = list(
+            SessionAuditLog.objects.filter(tenant=tenant, model_name="SessionPerson", created_at__gte=vorher)
+        )
+        (eintrag,) = [e for e in eintraege if "dsgvo_anonymisiert" in e.changes]
+        assert eintrag.changes["dsgvo_anonymisiert"] == ["E-Mail", "Einwilligung zur Veröffentlichung"]
+        # Die gelöschten Werte selbst landen nie im Audit-Log (auch nicht im automatischen Änderungsdiff)
+        for e in eintraege:
+            assert "Schriftliche" not in str(e.changes) and "alt@example.org" not in str(e.changes)
+        # Abnehmer der Schnittstelle (modified_since) erfahren von der Änderung
+        assert person.updated_at > vorher
 
     def test_ohne_email_nichts_zu_veroeffentlichen(self, tenant: SessionTenant) -> None:
         person = SessionPerson.objects.create(tenant=tenant, given_name="P", family_name="Leer")

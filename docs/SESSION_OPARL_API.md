@@ -19,9 +19,14 @@ Mandant (Einführung, Testdaten, Schulung, Umstieg aus einem Altsystem) ist zun�
 abrufbar:
 
 - Alle Endpunkte unter `…/api/oparl/` antworten mit **404** („Mandant nicht gefunden“) – nach außen
-  wie ein unbekannter Mandant, ohne Hinweis auf seine Existenz. Dasselbe gilt für anonyme Lesezugriffe
-  der Session-API (`/api/v1/session/<slug>/…` und die alten Pfade unter `…/api/session/…`);
-  angemeldete Nutzer und API-Token des Mandanten lesen weiter.
+  wie ein unbekannter Mandant, ohne Hinweis auf seine Existenz.
+- Die anonymen Lesezugriffe der Session-API (Einstieg, Sitzungen und Vorlagen unter
+  `/api/v1/session/<slug>/…` und den alten Pfaden unter `…/api/session/…`) antworten ebenfalls mit
+  404; angemeldete Nutzer und API-Token des Mandanten lesen weiter. Die Existenz des Mandanten
+  verbirgt nur die OParl-Schnittstelle: Die Anmeldung zum Sitzungsdienst, die Prüfung von
+  API-Token (401 bei unbekanntem oder fremdem Token) und die Anträge-Endpunkte (401 bzw. 403 ohne
+  Anmeldung) verhalten sich wie bei jedem anderen Mandanten. Die Sperre schützt die Daten, nicht den
+  Namen des Mandanten.
 - Das Bürgerportal registriert keine Quelle. „Im Bürgerportal veröffentlichen“ setzt die
   Freischaltung voraus, weil das Bürgerportal genau diese Schnittstelle liest.
 

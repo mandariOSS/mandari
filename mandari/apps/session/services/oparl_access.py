@@ -32,6 +32,21 @@ LOCK_BLOCKED = (
 RELEASE_REQUIRED = "Das Bürgerportal liest die OParl-Schnittstelle. Schalten Sie zuerst die OParl-Schnittstelle frei."
 
 
+#: Felder, die Freischaltung und Bürgerportal gegenseitig prüfen – unter Zeilensperre frisch gelesen
+LOCKED_FIELDS = ("oparl_public_since", "insight_publish", "insight_end_mode", "is_active")
+
+
+def lock_row(tenant: Any) -> None:
+    """
+    Mandantenzeile sperren und die gegenseitig geprüften Felder frisch lesen (nur in ``transaction.atomic``).
+
+    Freischaltung zurücknehmen prüft ``insight_publish``, Veröffentlichen prüft ``oparl_public_since``.
+    Ohne Sperre könnten zwei gleichzeitige Anfragen jeweils den alten Stand sehen und einen Mandanten
+    hinterlassen, der im Bürgerportal veröffentlicht, obwohl seine Schnittstelle gesperrt ist.
+    """
+    tenant.refresh_from_db(fields=list(LOCKED_FIELDS), from_queryset=type(tenant).objects.select_for_update())
+
+
 def state_label(tenant: Any) -> str:
     """Stand in Worten (Audit, Oberfläche)."""
     if not tenant.oparl_public:
@@ -49,6 +64,7 @@ def release(tenant: Any, *, user: Any = None, request: Any = None) -> bool:
     from apps.session import audit
 
     with transaction.atomic():
+        lock_row(tenant)
         if tenant.oparl_public:
             return False
         vorher = state_label(tenant)
@@ -74,6 +90,7 @@ def lock(tenant: Any, *, user: Any = None, request: Any = None) -> bool:
     from apps.session import audit
 
     with transaction.atomic():
+        lock_row(tenant)
         if not tenant.oparl_public:
             return False
         if tenant.insight_publish:

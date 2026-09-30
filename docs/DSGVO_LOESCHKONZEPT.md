@@ -14,6 +14,7 @@ die hier genannten Fristen sind konfigurierbare Voreinstellungen.
 |---|---|---|
 | Stammdaten Mandatsträger (Name, Funktion) | `SessionPerson` | Zugriff nur mit Rollenberechtigung |
 | Kontaktdaten (Telefon, Adresse) | `SessionPerson.*_encrypted` | AES-256-GCM, Tenant-Schlüssel |
+| Einwilligung zur Veröffentlichung der E-Mail-Adresse (Kennzeichen, Datum, Nachweis) | `SessionPerson.contact_publish`, `contact_consent_date`, `contact_consent_evidence` | Zugriff nur mit Rollenberechtigung; Datum und Nachweis nie in OParl oder im Bürgerportal, die E-Mail-Adresse dort nur mit Kennzeichen ([SESSION_OPARL_API.md](SESSION_OPARL_API.md)) |
 | Bankdaten (Kontoinhaber, IBAN, BIC) | `SessionPerson.bank_*_encrypted` | AES-256-GCM, Zugriff nur mit `manage_allowances` |
 | Sitzungsgeld-Positionen | `SessionAllowance` | Beträge/Status, keine Bankdaten |
 | Ladungsprotokoll (Empfänger, Zustellweg, Versand, Empfangsbestätigung) | `SessionInvitationRecipient` | Zugriff nur mit `edit_meetings` |
@@ -34,7 +35,7 @@ Die Fristen werden **je Mandant** in den Einstellungen gepflegt
 
 | Datenart | Einstellung | Wirkung nach Fristablauf |
 |---|---|---|
-| Kontakt-/Bankdaten ausgeschiedener Mandatsträger | `persons_years` (ab Mandatsende) | E-Mail, Telefon, Adresse und Bankdaten werden entfernt, ebenso Absagegründe und die in Ladungsprotokollen mitgeschriebene E-Mail-Adresse. **Der Name bleibt erhalten**, damit historische Beschlüsse, Protokolle und Ladungsnachweise nachvollziehbar bleiben. |
+| Kontakt-/Bankdaten ausgeschiedener Mandatsträger | `persons_years` (ab Mandatsende) | E-Mail, Telefon, Adresse und Bankdaten werden entfernt, ebenso die Einwilligung zur Veröffentlichung der E-Mail-Adresse (Kennzeichen, Datum, Nachweis), Absagegründe und die in Ladungsprotokollen mitgeschriebene E-Mail-Adresse. **Der Name bleibt erhalten**, damit historische Beschlüsse, Protokolle und Ladungsnachweise nachvollziehbar bleiben. |
 | Nicht-öffentliche Inhalte | `np_content_years` (ab Sitzungsdatum) | NÖ-Protokollteil und interne Notizen werden geleert. Der öffentliche Protokollteil bleibt unberührt. |
 | Audit-Log | `audit_years` (ab Eintragsdatum) | Einträge werden gelöscht – vorher entsteht ein geprüftes Archivpaket (JSON, CSV, Kettenanker, `SHA256SUMS`) im Archivspeicher; gelöscht wird nur ein intaktes Anfangsstück der Hash-Kette, die danach ab dem Anker prüfbar bleibt. |
 
@@ -106,7 +107,8 @@ belegen (Rechenschaftspflicht, Art. 5 Abs. 2 DSGVO).
 ## 4. Betroffenenauskunft (Art. 15 DSGVO)
 
 *Einstellungen → Datenschutz → Betroffenenauskunft* exportiert alle zu
-einer Person gespeicherten Daten als JSON-Datei (Stammdaten,
+einer Person gespeicherten Daten als JSON-Datei (Stammdaten einschließlich
+der Einwilligung zur Veröffentlichung der E-Mail-Adresse mit Datum und Nachweis,
 Gremienmitgliedschaften, Anwesenheiten mit Rückmeldungen und Absagegründen,
 Ladungen mit Zustellweg und Empfangsbestätigung, Sitzungsgelder, Vorlagen als
 Verfasser/in). Bankdaten werden nur entschlüsselt, wenn die abrufende

@@ -23,6 +23,7 @@ docs/DSGVO_TOM.md.
 import contextlib
 import logging
 from datetime import timedelta
+from typing import Any
 
 from django.utils import timezone
 
@@ -65,17 +66,30 @@ def _anonymize_person(person) -> list[str]:
 
     Der Name bleibt erhalten (historische Beschlüsse/Protokolle).
     Returns: Liste der geleerten Datenarten.
+
+    Klartextfelder (E-Mail, Einwilligung) werden ohne ``save()`` geleert: Die automatische
+    Änderungsprotokollierung hielte sonst die gelöschten Werte im Audit-Log fest. Nachweis ist der
+    Eintrag des Löschlaufs mit den geleerten Datenarten; verschlüsselte Felder erscheinen im Diff
+    ohnehin nur maskiert.
     """
     cleared = []
+    plain: dict[str, Any] = {}
     if person.email:
-        person.email = ""
+        plain["email"] = ""
         cleared.append("E-Mail")
+    # Einwilligung zur Veröffentlichung der Kontaktdaten (Issue #319): ohne Adresse ohne Zweck
+    if person.contact_publish or person.contact_consent_date or person.contact_consent_evidence:
+        plain.update(contact_publish=False, contact_consent_date=None, contact_consent_evidence="")
+        cleared.append("Einwilligung zur Veröffentlichung")
+    encrypted = False
     if person.get_phone_decrypted():
         person.set_phone_encrypted("")
         cleared.append("Telefon")
+        encrypted = True
     if person.get_address_decrypted():
         person.set_address_encrypted("")
         cleared.append("Adresse")
+        encrypted = True
     if (
         person.get_bank_iban_decrypted()
         or person.get_bank_bic_decrypted()
@@ -85,7 +99,13 @@ def _anonymize_person(person) -> list[str]:
         person.set_bank_iban_encrypted("")
         person.set_bank_bic_encrypted("")
         cleared.append("Bankdaten")
-    if cleared:
+        encrypted = True
+    if plain:
+        # Änderungszeitpunkt mitsetzen: OParl-Abnehmer (modified_since) holen die Person neu
+        type(person).objects.filter(pk=person.pk).update(**plain, updated_at=timezone.now())
+        for name, value in plain.items():
+            setattr(person, name, value)
+    if encrypted:
         person.save()
 
     # Ladung und Rückmeldung (Issue #225): Absagegründe und die in Ladungsprotokollen
@@ -142,6 +162,9 @@ def run_privacy_purge(
             if dry_run:
                 has_data = bool(
                     person.email
+                    or person.contact_publish
+                    or person.contact_consent_date
+                    or person.contact_consent_evidence
                     or person.get_phone_decrypted()
                     or person.get_address_decrypted()
                     or person.get_bank_iban_decrypted()
@@ -281,6 +304,10 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
             "vorname": person.given_name,
             "nachname": person.family_name,
             "e_mail": person.email,
+            # Veröffentlichung der E-Mail in OParl und Bürgerportal nur mit Einwilligung (Issue #319)
+            "kontaktdaten_veroeffentlichen": person.contact_publish,
+            "einwilligung_vom": person.contact_consent_date.isoformat() if person.contact_consent_date else None,
+            "einwilligung_nachweis": person.contact_consent_evidence,
             "telefon": person.get_phone_decrypted() or "",
             "adresse": person.get_address_decrypted() or "",
             "aktiv": person.is_active,

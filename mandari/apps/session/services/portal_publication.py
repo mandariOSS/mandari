@@ -212,11 +212,14 @@ def resume_publication(tenant: Any, *, user: Any = None, request: Any = None) ->
     from apps.session import audit
 
     from .insight_service import sync_publication_state
-    from .oparl_access import RELEASE_REQUIRED, OParlAccessError
+    from .oparl_access import RELEASE_REQUIRED, OParlAccessError, lock_row
 
-    if not tenant.oparl_public:
-        raise OParlAccessError(RELEASE_REQUIRED)
     with transaction.atomic():
+        # Unter Zeilensperre frisch prüfen: Eine gleichzeitige Rücknahme der Freischaltung gewinnt
+        # entweder ganz oder gar nicht (sonst: veröffentlicht bei gesperrter Schnittstelle)
+        lock_row(tenant)
+        if not tenant.oparl_public:
+            raise OParlAccessError(RELEASE_REQUIRED)
         vorher, war = state_label(tenant), tenant.insight_publish
         if tenant.insight_publish:
             if in_effect(tenant):

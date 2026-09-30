@@ -571,6 +571,13 @@ def _de(tag: date | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+#: Hinweis beim Reaktivieren eines Mandanten ohne freigeschaltete OParl-Schnittstelle (Issue #319)
+REACTIVATED_LOCKED = (
+    "nicht freigeschaltet – die OParl-Schnittstelle antwortet mit 404, bis die Verwaltung sie in den "
+    "Einstellungen freischaltet"
+)
+
+
 @dataclass
 class LifecycleResult:
     changed: bool
@@ -630,13 +637,11 @@ def on_active_changed(tenant: SessionTenant) -> PortalChange:
         aktion = "unpublish"
     # Stand im Bürgerportal (Hinweis, 503/410) folgt dem Mandanten
     insight_service.apply_portal_state(tenant)
-    audit.log_event(
-        "update",
-        tenant,
-        tenant=tenant,
-        request=request,
-        changes={"is_active": {"alt": not tenant.is_active, "neu": tenant.is_active}, "durch": actor},
-    )
+    changes: dict[str, Any] = {"is_active": {"alt": not tenant.is_active, "neu": tenant.is_active}, "durch": actor}
+    if tenant.is_active and not tenant.oparl_public:
+        # Reaktiviert, aber gesperrt (Issue #319): Anders als vor der Deaktivierung womöglich nicht abrufbar
+        changes["oparl_schnittstelle"] = REACTIVATED_LOCKED
+    audit.log_event("update", tenant, tenant=tenant, request=request, changes=changes)
     if portal.sources:
         audit.log_event(
             aktion,
