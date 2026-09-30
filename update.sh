@@ -229,7 +229,9 @@ defined_services() {
         case " $result " in
             *" $svc "*) continue ;;
         esac
-        if printf '%s\n' "$defined" | grep -qxF -- "$svc"; then
+        # Ohne -q: grep liest die Liste zu Ende. Mit -q endet es beim ersten Treffer, printf bekommt beim
+        # Weiterschreiben "Broken pipe", und unter pipefail gälte der Dienst als nicht definiert (#695).
+        if printf '%s\n' "$defined" | grep -xF -- "$svc" > /dev/null; then
             result="$result $svc"
         elif [ "$mode" = "warn" ]; then
             warn "Dienst '$svc' aus WORKER_SERVICES ist nicht definiert – übersprungen." >&2
