@@ -24,7 +24,10 @@ from apps.common.einmalig import EinmaligMixin
 class Command(EinmaligMixin, BaseCommand):
     sperre = "check_service_levels"  # Singleton je Cache/Redis, #55
     sperre_ttl = 3600
-    help = "Prüft Speicherplatz, TLS-Laufzeiten, Fehlerquote und Warteschlange; verschickt Alarme per E-Mail"
+    help = (
+        "Prüft Speicherplatz, TLS-Laufzeiten, Fehlerquote, Warteschlange und tote Ereignisse; "
+        "verschickt Alarme per E-Mail"
+    )
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--report", action="store_true", help="Befunde ausgeben, keine Alarme senden")

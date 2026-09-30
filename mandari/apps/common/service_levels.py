@@ -16,6 +16,9 @@ Geprüft wird:
   Warteschlange). Eine echte Warteschlange gibt es nur für die Transkription
   (``minutes.TranscriptionJob``); gemeldet wird, wenn der älteste wartende Auftrag länger als
   ``SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES`` unbearbeitet ist.
+- **Tote Ereignisse** der Ereignistechnik (``apps.events``): Ereignisse, deren Zustellung an ein
+  Abonnement nach allen Versuchen aufgegeben wurde. Die Zustellung ruft diese Prüfung auch sofort
+  auf, wenn ein Ereignis tot ist; die 24-h-Sperre gilt für beide Wege gemeinsam.
 
 Jeder Alarm geht höchstens einmal je 24 h hinaus (``cache.add`` mit Ablauf); Entwarnungen
 werden nicht verschickt, der Bericht (``--report``) zeigt jederzeit den aktuellen Stand.
@@ -275,12 +278,62 @@ def pruefe_warteschlange(*, max_age_minutes: int | None = None) -> list[Befund]:
 
 
 # ---------------------------------------------------------------------------
+# Tote Ereignisse (Ereignistechnik)
+# ---------------------------------------------------------------------------
+
+
+def pruefe_tote_ereignisse() -> list[Befund]:
+    """Ein Alarm je Abonnement mit toten Ereignissen; ohne tote Ereignisse ein OK-Befund."""
+    try:
+        from django.db.models import Count
+
+        from apps.events.models import ParkedEvent, ParkedState
+
+        zeilen = list(
+            ParkedEvent.objects.filter(state=ParkedState.TOT)
+            .values_list("subscription")
+            .annotate(anzahl=Count("id"))
+            .order_by("subscription")
+        )
+        codes: dict[str, list[str]] = {}
+        for abonnement, code in (
+            ParkedEvent.objects.filter(state=ParkedState.TOT)
+            .values_list("subscription", "error_code")
+            .distinct()
+            .order_by("subscription", "error_code")
+        ):
+            codes.setdefault(abonnement, []).append(code or "unbekannt")
+    except Exception as exc:  # noqa: BLE001 – ohne Tabelle (Migration ausstehend) gibt es keine Ereignisse
+        logger.debug("Tote Ereignisse nicht abfragbar: %s", exc)
+        return []
+    if not zeilen:
+        return [Befund("events:tot", True, "Ereignis-Zustellung", "keine toten Ereignisse")]
+    return [
+        Befund(
+            f"events:tot:{abonnement}",
+            False,
+            f"Tote Ereignisse im Abonnement {abonnement}",
+            f"{anzahl} Ereignis(se) nach allen Versuchen aufgegeben (Fehler: {', '.join(codes.get(abonnement, []))}); "
+            "Objekte mit toten Ereignissen erhalten keine weiteren Ereignisse. Prüfen mit "
+            "'manage.py events_dispatch --list', danach --retry-parked bzw. --discard-parked",
+        )
+        for abonnement, anzahl in zeilen
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Gesamtlauf und Alarm
 # ---------------------------------------------------------------------------
 
 
 def alle_pruefungen() -> list[Befund]:
-    return [*pruefe_speicherplatz(), *pruefe_tls(), *pruefe_fehlerquote(), *pruefe_warteschlange()]
+    return [
+        *pruefe_speicherplatz(),
+        *pruefe_tls(),
+        *pruefe_fehlerquote(),
+        *pruefe_warteschlange(),
+        *pruefe_tote_ereignisse(),
+    ]
 
 
 def faellige_alarme(befunde: list[Befund], *, dry_run: bool = False) -> list[Befund]:

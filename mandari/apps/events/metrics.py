@@ -17,9 +17,15 @@ Metriken der Ereignistechnik im Prometheus-Format (Registrierung in ``EventsConf
   Sequenzierer läuft oder er hängt, was ``…_blocked_seconds`` nicht zeigt. Kurz nach dem Commit
   einer langen Transaktion ist der Wert bis zum nächsten Lauf hoch; Alarme brauchen deshalb eine
   Mindestdauer.
+- ``mandari_events_delivered_total{subscription}``: zugestellte Ereignisse je Abonnement.
+- ``mandari_events_delivery_failures_total{subscription}``: gescheiterte Zustellversuche.
+- ``mandari_events_dead_total{subscription}``: nach allen Versuchen aufgegebene Ereignisse.
+- ``mandari_events_parked{subscription,state}``: geparkte Ereignisse je Zustand (``wiederholen``,
+  ``blockiert``, ``tot``), beim Abruf aus ``events_parked`` gezählt. Alarm bei ``tot`` > 0.
 
 Die Werte werden erst beim Abruf gemessen, damit das Registrieren keine Datenbankverbindung
-belegt (siehe ``apps.common.metrics``, Issue #344). Nur PostgreSQL.
+belegt (siehe ``apps.common.metrics``, Issue #344). Die Werte zum Sequenzierer gibt es nur mit
+PostgreSQL.
 """
 
 from __future__ import annotations
@@ -38,6 +44,13 @@ from apps.common.metrics import MisstErstBeimAbruf
 logger = logging.getLogger(__name__)
 
 SEQUENCED = Counter("mandari_events_sequenced_total", "Vom Sequenzierer vergebene Folgenummern")
+DELIVERED = Counter("mandari_events_delivered_total", "Zugestellte Ereignisse je Abonnement", ["subscription"])
+DELIVERY_FAILURES = Counter(
+    "mandari_events_delivery_failures_total", "Gescheiterte Zustellversuche je Abonnement", ["subscription"]
+)
+DEAD = Counter(
+    "mandari_events_dead_total", "Nach allen Versuchen aufgegebene (tote) Ereignisse je Abonnement", ["subscription"]
+)
 
 # Grenzen wie im Sequenzierer (``apps.events.sequencer._FREIE_ZEILEN``): vergebbar ist, was unter
 # ``xmin`` liegt oder aus einem anderen Cluster stammt (ab ``xmax``); dazwischen wartet es.
@@ -142,10 +155,39 @@ class SequencerCollector(MisstErstBeimAbruf):
             )
 
 
+def parked_counts() -> dict[tuple[str, str], int]:
+    """Geparkte Ereignisse je (Abonnement, Zustand)."""
+    from django.db.models import Count
+
+    from .models import ParkedEvent
+
+    zeilen = ParkedEvent.objects.values_list("subscription", "state").annotate(anzahl=Count("id")).order_by()
+    return {(abonnement, zustand): anzahl for abonnement, zustand, anzahl in zeilen}
+
+
+class ParkedCollector(MisstErstBeimAbruf):
+    def collect(self) -> Iterator[Metric]:
+        try:
+            werte = parked_counts()
+        except Exception:  # noqa: BLE001 – ein Sammler darf den Abruf nie abbrechen (z. B. Migration ausstehend)
+            logger.debug("Geparkte Ereignisse nicht zählbar", exc_info=True)
+            return
+        familie = GaugeMetricFamily(
+            "mandari_events_parked",
+            "Geparkte Ereignisse je Abonnement und Zustand (wiederholen, blockiert, tot)",
+            labels=["subscription", "state"],
+        )
+        for (abonnement, zustand), anzahl in sorted(werte.items()):
+            familie.add_metric([abonnement, zustand], anzahl)
+        yield familie
+
+
 def register() -> None:
     # ValueError: bereits registriert (z. B. erneutes ready() in Tests)
-    with contextlib.suppress(ValueError):
-        REGISTRY.register(_COLLECTOR)
+    for sammler in _COLLECTORS:
+        with contextlib.suppress(ValueError):
+            REGISTRY.register(sammler)
 
 
 _COLLECTOR = SequencerCollector()
+_COLLECTORS = (_COLLECTOR, ParkedCollector())

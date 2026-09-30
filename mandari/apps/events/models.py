@@ -175,8 +175,9 @@ class ParkedEvent(models.Model):
             models.CheckConstraint(condition=models.Q(state__in=ParkedState.values), name="events_parked_state_valid"),
         ]
         indexes = [
-            # Reihenfolge je Objekt: Folgeereignisse eines geparkten Objekts werden mitgeparkt
-            models.Index(fields=["subscription", "aggregate_id"], name="events_parked_aggregate"),
+            # Kette je Objekt: Folgeereignisse eines geparkten Objekts werden mitgeparkt, das nächste
+            # rückt nach Folgenummer nach (``apps.events.dispatch``)
+            models.Index(fields=["subscription", "aggregate_id", "event_seq"], name="events_parked_chain"),
             models.Index(
                 fields=["next_attempt_at"],
                 name="events_parked_due",
