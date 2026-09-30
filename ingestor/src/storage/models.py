@@ -5,6 +5,7 @@ SQLAlchemy models for OParl entities. These mirror the API models
 to ensure database compatibility while keeping the ingestor self-contained.
 """
 
+import datetime as dt
 import uuid
 from datetime import date, datetime
 from typing import Any
@@ -188,7 +189,9 @@ class OParlPaper(Base):
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     paper_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # dt.date statt date: Das Attribut heißt selbst "date" und verdeckt im Klassenrumpf den Typ. Python 3.14
+    # wertet Annotationen erst später aus und fände dann die Spalte statt des Typs (SQLAlchemy 2.1 warnt davor).
+    date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)

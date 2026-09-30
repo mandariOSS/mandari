@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:core.membership.changed:v1",
+  "title": "Mitgliedschaft geändert",
+  "description": "Eine Mitgliedschaft in einer Organisation wurde angelegt, geändert (Rollen, Rechte), deaktiviert, reaktiviert oder beendet. Aggregat: Membership.",
+  "x-kind": "event",
+  "x-owner": "apps.tenants",
+  "x-visibility": "personenbezogen",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "membership",
+    "organization",
+    "user",
+    "change"
+  ],
+  "properties": {
+    "membership": {
+      "description": "Kennung der Mitgliedschaft.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "organization": {
+      "description": "Organisation.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "user": {
+      "description": "Konto der Person.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "change": {
+      "description": "added, roles_changed, permissions_changed, deactivated, reactivated, removed.",
+      "type": "string",
+      "enum": [
+        "added",
+        "roles_changed",
+        "permissions_changed",
+        "deactivated",
+        "reactivated",
+        "removed"
+      ]
+    },
+    "changed": {
+      "description": "Geänderte Felder der Mitgliedschaft.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    }
+  },
+  "examples": [
+    {
+      "membership": "abcdef01-2345-4678-9abc-def012345678",
+      "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "user": "01234567-89ab-4cde-8f01-23456789abcd",
+      "change": "added"
+    },
+    {
+      "membership": "abcdef01-2345-4678-9abc-def012345678",
+      "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "user": "01234567-89ab-4cde-8f01-23456789abcd",
+      "change": "roles_changed",
+      "changed": [
+        "roles"
+      ]
+    }
+  ]
+}

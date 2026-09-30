@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.voting.recorded:v1",
+  "title": "Abstimmung erfasst",
+  "description": "Zu einem Tagesordnungspunkt wurde eine Abstimmung erfasst (Erweiterung des kanonischen Modells). Aggregat: Voting. Stimmen einzelner Personen stehen nie im Ereignis. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": [
+    "oeffentlich",
+    "nichtoeffentlich"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "voting",
+    "agenda_item"
+  ],
+  "properties": {
+    "voting": {
+      "description": "Kanonische Kennung der Abstimmung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "agenda_item": {
+      "description": "Tagesordnungspunkt, zu dem abgestimmt wurde.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "meeting": {
+      "description": "Sitzung der Abstimmung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "paper": {
+      "description": "Vorlage, über die abgestimmt wurde.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "method": {
+      "description": "Abstimmungsart: summary (nur Summen), open (offen, einzeln erfasst), roll_call (namentlich), secret (geheim).",
+      "type": "string",
+      "enum": [
+        "summary",
+        "open",
+        "roll_call",
+        "secret"
+      ]
+    },
+    "result": {
+      "description": "Ergebnis der Abstimmung.",
+      "type": "string",
+      "enum": [
+        "approved",
+        "rejected",
+        "deferred",
+        "withdrawn",
+        "noted"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "voting": "0a1b2c3d-4e5f-5a6b-9c7d-8e9f0a1b2c3d",
+      "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "method": "summary",
+      "result": "approved"
+    },
+    {
+      "voting": "0a1b2c3d-4e5f-5a6b-9c7d-8e9f0a1b2c3d",
+      "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f"
+    }
+  ]
+}

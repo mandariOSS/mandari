@@ -14,6 +14,10 @@ erkennen, ob ihr Stand betroffen ist.
 
 Ohne ``--tag`` wird geprüft, dass die Dateien übereinstimmen. Mit ``--tag``
 zusätzlich, dass der Release-Tag dieselbe Version nennt.
+
+``mandari/uv.lock`` führt die Version des Projekts mit. Wer sie in ``pyproject.toml``
+anhebt, ohne ``uv lock`` auszuführen, bekäme sonst erst im Image-Build (``--locked``)
+einen Abbruch – deshalb wird sie hier mitgeprüft.
 """
 
 from __future__ import annotations
@@ -27,6 +31,8 @@ from pathlib import Path
 WURZEL = Path(__file__).resolve().parent.parent
 PYPROJECT = WURZEL / "mandari" / "pyproject.toml"
 PACKAGE_JSON = WURZEL / "mandari" / "package.json"
+UV_LOCK = WURZEL / "mandari" / "uv.lock"
+UV_LOCK_PROJEKT = re.compile(r'^\[\[package\]\]\nname = "mandari"\nversion = "([^"]+)"', flags=re.MULTILINE)
 
 
 def aus_pyproject() -> str:
@@ -45,6 +51,14 @@ def aus_package_json() -> str:
     return str(version)
 
 
+def aus_uv_lock() -> str:
+    """Version des Projekts selbst, wie sie in der Lock-Datei steht (Eintrag ``name = "mandari"``)."""
+    treffer = UV_LOCK_PROJEKT.search(UV_LOCK.read_text(encoding="utf-8").replace("\r\n", "\n"))
+    if not treffer:
+        sys.exit(f"{UV_LOCK.name}: kein Eintrag für das Projekt mandari gefunden")
+    return treffer.group(1)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", help="Release-Tag, z. B. v0.10.0")
@@ -52,10 +66,13 @@ def main() -> int:
 
     py = aus_pyproject()
     npm = aus_package_json()
+    lock = aus_uv_lock()
 
     probleme: list[str] = []
     if py != npm:
         probleme.append(f"mandari/pyproject.toml sagt {py}, mandari/package.json sagt {npm}")
+    if py != lock:
+        probleme.append(f"mandari/pyproject.toml sagt {py}, mandari/uv.lock sagt {lock}")
 
     if args.tag:
         # Release-Tags tragen ein führendes "v", die Dateien nicht.
@@ -70,12 +87,16 @@ def main() -> int:
         for problem in probleme:
             print(f"  - {problem}")
         print(
-            "\nBeim Anheben der Version beide Dateien ändern und den Tag danach setzen.\n"
-            "Die Version steht in mandari/pyproject.toml und mandari/package.json."
+            "\nBeim Anheben der Version mandari/pyproject.toml und mandari/package.json ändern,\n"
+            "im Ordner mandari `uv lock` ausführen (mandari/uv.lock führt die Version mit)\n"
+            "und den Tag danach setzen."
         )
         return 1
 
-    print(f"OK: Version {py} in pyproject.toml und package.json" + (f", Tag {args.tag} passt." if args.tag else "."))
+    print(
+        f"OK: Version {py} in pyproject.toml, package.json und uv.lock"
+        + (f", Tag {args.tag} passt." if args.tag else ".")
+    )
     return 0
 
 

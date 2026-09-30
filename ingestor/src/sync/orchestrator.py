@@ -56,7 +56,7 @@ from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers.base import CONTENT_HASH_FIELD, content_hash
 from src.storage.database import DatabaseStorage
-from src.sync.processor import OParlProcessor
+from src.sync.processor import OParlProcessor, session_location_id
 
 # Quellen-Schonung (Issue #89): ab BACKOFF_AFTER_FAILURES Fehlversuchen in Folge
 # verdoppelt sich der Abstand bis zum nächsten Versuch (10, 20, 40 … Minuten,
@@ -1153,6 +1153,8 @@ class SyncOrchestrator:
         if not external_id:
             return False
         modified = self.processor.parse_datetime(item.get("modified"))
+        if entity_type == "meeting":
+            await self._retract_session_location(external_id, modified)
         entity_id = await self.storage.mark_entity_deleted(entity_type, external_id, modified=modified)
         if entity_id is None:
             return False
@@ -1160,6 +1162,19 @@ class SyncOrchestrator:
         if index_name is not None and es_deletions is not None:
             es_deletions.setdefault(index_name, []).append(str(entity_id))
         return True
+
+    async def _retract_session_location(self, meeting_external_id: str, modified: datetime | None = None) -> None:
+        """
+        Eigenes Location-Objekt zum Ort einer Session-Sitzung zurücknehmen (``session_location_id``).
+
+        Der Ort einer Session-Sitzung steht im Bestand als Text an der Sitzung. Ein eigenes Objekt unter
+        der Kennung des Ortes kann nur ein älterer Stand des Ingestors angelegt haben; es darf weder die
+        Rücknahme der Sitzung überdauern noch neben ihr veralten. Deshalb bei jeder Änderung und bei der
+        Rücknahme der Sitzung markieren – für Sitzungen anderer Quellen geschieht nichts.
+        """
+        location_id = session_location_id(meeting_external_id)
+        if location_id is not None:
+            await self.storage.mark_entity_deleted("location", location_id, modified=modified)
 
     async def _sync_entity_type(
         self,
@@ -1372,6 +1387,7 @@ class SyncOrchestrator:
         """
         if isinstance(entity, ProcessedMeeting):
             await self.storage.upsert_meeting(entity, body_id)
+            await self._retract_session_location(entity.external_id)
             # Eingebettete TOPs und Dateien speichert upsert_meeting selbst; hier nur zählen
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedFile):

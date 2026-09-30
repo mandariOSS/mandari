@@ -50,7 +50,7 @@ def oparl_system_url(tenant, base_url: str | None = None) -> str:
     Absolute System-URL der Mandanten-OParl-API (Einstiegspunkt für den Ingestor).
 
     Ohne ``base_url`` ist das die öffentliche Adresse aus ``SITE_URL`` und zugleich die Basis aller IDs,
-    die die Schnittstelle vergibt (``apps.session.api.oparl.TenantApi``), unabhängig vom Host der Anfrage.
+    die die Schnittstelle vergibt (``hub.ris.mapping.session.SessionUris``), unabhängig vom Host der Anfrage.
     """
     base = (base_url or getattr(django_settings, "SITE_URL", "http://localhost:8000")).rstrip("/")
     path = reverse("session:oparl_system", kwargs={"tenant_slug": tenant.slug})
@@ -231,6 +231,19 @@ def _entry_querysets(body_ids: list[Any]) -> list[Any]:
     ]
 
 
+def _location_queryset(body_ids: list[Any]) -> Any:
+    """
+    Orte im Bestand der Kommunen – nur für die Rücknahme.
+
+    Session führt den Ort an der Sitzung; Spiegel und Ingestor schreiben ihn als Text an die Sitzung
+    und legen kein eigenes Objekt an. Steht trotzdem eines im Bestand (älterer Stand des Ingestors), wird
+    es mit zurückgenommen. ``restore_source`` holt es nicht zurück: Der Ort kommt mit der Sitzung wieder.
+    """
+    from hub.ris import selectors as ris
+
+    return ris.locations(body_ids)
+
+
 def retract_source(tenant: Any) -> PortalChange:
     """
     Bürgerportal-Quelle des Mandanten zurücknehmen (Deaktivieren, Issue #317); idempotent.
@@ -263,7 +276,8 @@ def retract_source(tenant: Any) -> PortalChange:
                 body.is_listed = False
                 body.save(update_fields=["is_listed", "updated_at"])
                 change.bodies += 1
-        for queryset in _entry_querysets([body.pk for body in bodies]):
+        body_ids = [body.pk for body in bodies]
+        for queryset in [*_entry_querysets(body_ids), _location_queryset(body_ids)]:
             for obj in queryset.filter(deleted=False).iterator(chunk_size=500):
                 obj.mark_deleted(when)
                 change.entries += 1
