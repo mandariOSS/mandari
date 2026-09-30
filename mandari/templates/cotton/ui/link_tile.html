@@ -1,0 +1,17 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Verlinkte Kachel mit Symbol, Titel und Kurztext (z. B. Einstellungsübersicht). Der Kurztext steht im Slot.
+  <c-ui.link-tile href="{% url '…' %}" icon="users" tone="bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400" title="Benutzer">Benutzer und Rollen verwalten</c-ui.link-tile>
+{% endcomment %}
+<c-vars href="" icon="" tone="" title="" class="" />
+<a href="{{ href }}" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group {{ class }}" {{ attrs }}>
+    <div class="flex items-center gap-4 mb-3">
+        <div class="w-12 h-12 rounded-xl flex items-center justify-center {{ tone }}">
+            <i data-lucide="{{ icon }}" class="w-6 h-6" aria-hidden="true"></i>
+        </div>
+        <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">{{ title }}</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ slot }}</p>
+        </div>
+    </div>
+</a>

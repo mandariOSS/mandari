@@ -150,6 +150,8 @@ ORGANIZATION_FORM_FIELDS = [
     "name",
     "short_name",
     "organization_type",
+    # Gesetzliche Ausschussart für Sitzungsformate (Issue #138)
+    "committee_kind",
     "parent",
     "meeting_frequency",
     "invitation_period_days",
@@ -178,6 +180,10 @@ class OrganizationFormMixin:
         if obj is not None and obj.pk:
             parent_qs = parent_qs.exclude(pk=obj.pk)
         form.fields["parent"].queryset = parent_qs
+        form.fields["committee_kind"].choices = [
+            ("", "Keine besondere Art"),
+            *SessionOrganization.COMMITTEE_KIND_CHOICES,
+        ]
         return form
 
     def get_success_url(self):

@@ -53,6 +53,126 @@ def new_response_nonce() -> str:
 
 
 # =============================================================================
+# LANDESPROFIL (Issue #138)
+# =============================================================================
+
+
+class SessionStateProfile(models.Model):
+    """
+    Landesprofil: Was das Kommunalverfassungsrecht eines Landes zu hybriden und digitalen Sitzungen sagt.
+
+    Referenzdaten für alle Mandanten, gepflegt in ``apps/session/presets/landesprofile.json`` und per
+    Datenmigration bzw. ``manage.py session_state_profiles --sync`` übernommen. Quellen, Normen und
+    Stand stehen je Land in der Datei und in ``docs/SESSION_SITZUNGSFORMAT_LANDESRECHT.md``.
+    Keine Rechtsberatung: „ungeklärt“ heißt, die Recherche hat keine gesicherte Aussage ergeben.
+
+    Grundlage für Sitzungsformat (#138), Teilnahmeart (#139) und Selbst-Abstimmung (#141).
+    """
+
+    RULE_REGULAR = "regular"
+    RULE_EMERGENCY = "emergency"
+    RULE_NONE = "none"
+    RULE_UNCLEAR = "unclear"
+    RULE_CHOICES = [
+        (RULE_REGULAR, "zulässig (Regelbetrieb)"),
+        (RULE_EMERGENCY, "nur in Notlagen"),
+        (RULE_NONE, "nicht vorgesehen"),
+        (RULE_UNCLEAR, "ungeklärt"),
+    ]
+    BASIS_HAUPTSATZUNG = "hauptsatzung"
+    BASIS_GESCHAEFTSORDNUNG = "geschaeftsordnung"
+    BASIS_BESCHLUSS = "beschluss"
+    BASIS_CHOICES = [
+        (BASIS_HAUPTSATZUNG, "Hauptsatzung"),
+        (BASIS_GESCHAEFTSORDNUNG, "Geschäftsordnung"),
+        (BASIS_BESCHLUSS, "Beschluss des Gremiums"),
+        (RULE_UNCLEAR, "ungeklärt"),
+    ]
+    CHAIR_CHOICES = [
+        ("required", "muss im Sitzungsraum anwesend sein"),
+        ("not_required", "darf zugeschaltet sein"),
+        (RULE_UNCLEAR, "ungeklärt"),
+    ]
+    REMOTE_VOTE_CHOICES = [
+        ("allowed", "zulässig"),
+        ("excluded", "ausgeschlossen"),
+        ("conditional", "nur unter Bedingungen"),
+        (RULE_UNCLEAR, "ungeklärt"),
+    ]
+    VERIFICATION_CHOICES = [
+        ("wortlaut", "Gesetzeswortlaut eingesehen"),
+        ("teilweise", "teilweise Wortlaut, teilweise Sekundärquellen"),
+        ("sekundaer", "nur Sekundärquellen"),
+    ]
+
+    code = models.CharField(max_length=2, primary_key=True, verbose_name="Länderkürzel")
+    name = models.CharField(max_length=60, verbose_name="Land")
+    law = models.CharField(max_length=255, verbose_name="Kommunalverfassung")
+
+    hybrid_council = models.CharField(max_length=20, choices=RULE_CHOICES, verbose_name="Hybrid: Rat/Vertretung")
+    hybrid_committees = models.CharField(max_length=20, choices=RULE_CHOICES, verbose_name="Hybrid: Ausschüsse")
+    digital_council = models.CharField(max_length=20, choices=RULE_CHOICES, verbose_name="Digital: Rat/Vertretung")
+    digital_committees = models.CharField(max_length=20, choices=RULE_CHOICES, verbose_name="Digital: Ausschüsse")
+    legal_basis = models.CharField(
+        max_length=20,
+        choices=BASIS_CHOICES,
+        verbose_name="Voraussetzung im Regelbetrieb",
+        help_text="Worin die Kommune hybride Sitzungen zulassen muss",
+    )
+    chair_present = models.CharField(max_length=20, choices=CHAIR_CHOICES, verbose_name="Vorsitz")
+    remote_elections = models.CharField(
+        max_length=20, choices=REMOTE_VOTE_CHOICES, verbose_name="Wahlen für Zugeschaltete"
+    )
+    remote_secret_votes = models.CharField(
+        max_length=20, choices=REMOTE_VOTE_CHOICES, verbose_name="Geheime Abstimmungen für Zugeschaltete"
+    )
+    excluded_committee_kinds = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Ausgenommene Ausschussarten",
+        help_text="Ausschussarten (SessionOrganization.committee_kind), für die der Regelbetrieb nicht gilt",
+    )
+    excluded_committee_rule = models.CharField(
+        max_length=20,
+        choices=RULE_CHOICES,
+        default=RULE_NONE,
+        verbose_name="Regel für ausgenommene Ausschüsse",
+        help_text="z. B. NRW: Hauptausschuss nur in Notlagen hybrid (§ 47a statt § 58a GO NRW)",
+    )
+    approved_systems_required = models.BooleanField(
+        default=False, verbose_name="Nur zugelassene Konferenz- und Abstimmungssysteme"
+    )
+    public_registration_required = models.BooleanField(
+        default=False, verbose_name="Digitale Öffentlichkeit nur nach Anmeldung"
+    )
+    norm_regular = models.CharField(max_length=255, blank=True, verbose_name="Norm (Regelbetrieb)")
+    norm_emergency = models.CharField(max_length=255, blank=True, verbose_name="Norm (Notlage)")
+    emergency_requirements = models.TextField(blank=True, verbose_name="Voraussetzungen in der Notlage")
+    excluded_matters = models.TextField(blank=True, verbose_name="Ausschlüsse (Sitzungen, Gegenstände, Wahlen)")
+    public_rule = models.TextField(blank=True, verbose_name="Öffentlichkeit")
+    notes = models.TextField(blank=True, verbose_name="Hinweise")
+    sources = models.JSONField(default=list, blank=True, verbose_name="Quellen")
+    as_of = models.DateField(verbose_name="Stand der Recherche")
+    verification = models.CharField(max_length=20, choices=VERIFICATION_CHOICES, verbose_name="Prüftiefe")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_state_profiles"
+        verbose_name = "Landesprofil"
+        verbose_name_plural = "Landesprofile"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def excluded_committee_kind_labels(self) -> list[str]:
+        """Ausgenommene Ausschussarten als Bezeichnungen (Anzeige)."""
+        labels = dict(SessionOrganization.COMMITTEE_KIND_CHOICES)
+        return [labels.get(kind, kind) for kind in self.excluded_committee_kinds or []]
+
+
+# =============================================================================
 # TENANT MODEL
 # =============================================================================
 
@@ -281,6 +401,51 @@ class SessionTenant(models.Model):
         help_text="Abweichungen von den Standard-Vorlaufzeiten für Fristen-Erinnerungen",
     )
 
+    # Sitzungsformate (Issue #138): Landesprofil und Nachweis der örtlichen Rechtsgrundlage für
+    # hybride Sitzungen im Regelbetrieb (Hauptsatzung oder Geschäftsordnung mit Datum und Fundstelle).
+    # Ohne Landesprofil bleiben nur Präsenzsitzungen möglich.
+    state_profile = models.ForeignKey(
+        SessionStateProfile,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="tenants",
+        verbose_name="Landesprofil",
+        help_text="Kommunalverfassungsrecht des Landes für hybride und digitale Sitzungen",
+    )
+    hybrid_basis_kind = models.CharField(
+        max_length=20,
+        choices=[
+            (SessionStateProfile.BASIS_HAUPTSATZUNG, "Hauptsatzung"),
+            (SessionStateProfile.BASIS_GESCHAEFTSORDNUNG, "Geschäftsordnung"),
+            (SessionStateProfile.BASIS_BESCHLUSS, "Beschluss des Gremiums"),
+        ],
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Örtliche Rechtsgrundlage",
+    )
+    hybrid_basis_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name="Datum der Rechtsgrundlage",
+        help_text="Beschluss- oder Inkrafttretensdatum der Regelung",
+    )
+    hybrid_basis_reference = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Fundstelle",
+        help_text="z. B. „§ 7 Hauptsatzung, Amtsblatt 2024 Nr. 5“",
+    )
+    digital_public_registration_days = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        verbose_name="Anmeldefrist digitale Öffentlichkeit (Tage)",
+        help_text="Frist laut Geschäftsordnung, bis zu der sich Zuhörende für den geschützten Zugang anmelden",
+    )
+
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -305,6 +470,22 @@ class SessionTenant(models.Model):
     def protocol_direct_publication(self) -> bool:
         """Niederschriften ohne Genehmigungsschritt veröffentlichen? (Issue #318)."""
         return self.protocol_approval_mode == self.PROTOCOL_APPROVAL_DIRECT
+
+    @property
+    def hybrid_basis_documented(self) -> bool:
+        """Ist die örtliche Rechtsgrundlage vollständig nachgewiesen (Art, Datum, Fundstelle)? (Issue #138)."""
+        return bool(self.hybrid_basis_kind and self.hybrid_basis_date and self.hybrid_basis_reference.strip())
+
+    @property
+    def hybrid_basis_label(self) -> str:
+        """Nachweis als Zeile, z. B. „Hauptsatzung vom 12.03.2024, § 7 (Amtsblatt 2024 Nr. 5)“."""
+        if not self.hybrid_basis_documented:
+            return ""
+        assert self.hybrid_basis_date is not None  # durch hybrid_basis_documented geprüft
+        return (
+            f"{self.get_hybrid_basis_kind_display()} vom {self.hybrid_basis_date:%d.%m.%Y}, "
+            f"{self.hybrid_basis_reference.strip()}"
+        )
 
     def reminder_config(self) -> dict:
         """
@@ -1037,6 +1218,25 @@ class SessionOrganization(models.Model):
         default="committee",
         verbose_name="Typ",
     )
+    # Gesetzlich besonders geregelte Ausschüsse (Issue #138): Landesprofile nehmen sie teils von hybriden
+    # Sitzungen aus, z. B. NRW Haupt-, Finanz- und Rechnungsprüfungsausschuss (§ 58a i. V. m. § 57 Abs. 2 GO NRW).
+    COMMITTEE_KIND_MAIN = "main"
+    COMMITTEE_KIND_FINANCE = "finance"
+    COMMITTEE_KIND_AUDIT = "audit"
+    COMMITTEE_KIND_CHOICES = [
+        (COMMITTEE_KIND_MAIN, "Hauptausschuss"),
+        (COMMITTEE_KIND_FINANCE, "Finanzausschuss"),
+        (COMMITTEE_KIND_AUDIT, "Rechnungsprüfungsausschuss"),
+    ]
+    committee_kind = models.CharField(
+        max_length=20,
+        choices=COMMITTEE_KIND_CHOICES,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Gesetzliche Ausschussart",
+        help_text="Nur für Ausschüsse mit besonderen Regeln im Kommunalrecht (Sitzungsformat)",
+    )
 
     # Hierarchy
     parent = models.ForeignKey(
@@ -1345,6 +1545,51 @@ class SessionMeeting(EncryptionMixin, models.Model):
     street_address = models.CharField(max_length=255, blank=True, verbose_name="Straße")
     postal_code = models.CharField(max_length=10, blank=True, verbose_name="PLZ")
     locality = models.CharField(max_length=100, blank=True, verbose_name="Stadt")
+
+    # Sitzungsformat (Issue #138): präsent, hybrid (Zuschaltung einzelner Mitglieder) oder digital
+    # (alle zugeschaltet). Zulässigkeit prüft meeting_format_service gegen das Landesprofil des Mandanten.
+    FORMAT_PRESENCE = "presence"
+    FORMAT_HYBRID = "hybrid"
+    FORMAT_DIGITAL = "digital"
+    FORMAT_CHOICES = [
+        (FORMAT_PRESENCE, "Präsenzsitzung"),
+        (FORMAT_HYBRID, "Hybride Sitzung"),
+        (FORMAT_DIGITAL, "Digitale Sitzung"),
+    ]
+    format = models.CharField(
+        max_length=20,
+        choices=FORMAT_CHOICES,
+        default=FORMAT_PRESENCE,
+        db_default=FORMAT_PRESENCE,
+        verbose_name="Sitzungsformat",
+    )
+    format_reason = models.TextField(
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Begründung des Sitzungsformats",
+        help_text="Pflicht bei digitalen Sitzungen und bei hybriden Sitzungen, die das Landesrecht nur in "
+        "Notlagen zulässt: Notlage und zugrunde liegender Beschluss",
+    )
+    # Zugangsweg für zugeschaltete Mitglieder (z. B. Konferenzraum und Einwahl): verschlüsselt, erscheint
+    # nur in der Ladung an die Mitglieder, nie in öffentlichen Dokumenten oder der OParl-API.
+    remote_access_encrypted = EncryptedTextField(blank=True, null=True, verbose_name="Zugangsweg für Zugeschaltete")
+    public_access_url = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Übertragung für die Öffentlichkeit",
+        help_text="Adresse des Livestreams bzw. der Anmeldeseite für den geschützten Zugang",
+    )
+    public_access_note = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Hinweis für die Öffentlichkeit",
+        help_text="z. B. „Anmeldung zum geschützten Zugang bis zwei Tage vor der Sitzung per E-Mail“",
+    )
 
     # Status
     meeting_state = models.CharField(

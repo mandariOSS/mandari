@@ -40,147 +40,37 @@
 
     <!-- Einstellungsbereiche -->
     <div class="grid sm:grid-cols-2 gap-4">
-        <!-- Benutzer -->
         {% if "manage_users" in permission_checker.permissions %}
-        <a href="{% url 'session:users' tenant_slug=tenant_slug %}"
-           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-            <div class="flex items-center gap-4 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                    <i data-lucide="users" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Benutzer</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Benutzer und Rollen verwalten</p>
-                </div>
-            </div>
-        </a>
+        <c-ui.link-tile href="{% url 'session:users' tenant_slug=tenant_slug %}" icon="users" title="Benutzer"
+                        tone="bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400">Benutzer und Rollen verwalten</c-ui.link-tile>
+        <c-ui.link-tile href="{% url 'session:settings_roles' tenant_slug=tenant_slug %}" icon="shield-check" title="Rollen & Rechte"
+                        tone="bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400">Eigene Rollen mit Rechte-Matrix pflegen</c-ui.link-tile>
         {% endif %}
 
-        <!-- Rollen & Rechte -->
-        {% if "manage_users" in permission_checker.permissions %}
-        <a href="{% url 'session:settings_roles' tenant_slug=tenant_slug %}"
-           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-            <div class="flex items-center gap-4 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center">
-                    <i data-lucide="shield-check" class="w-6 h-6 text-purple-600 dark:text-purple-400"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Rollen & Rechte</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Eigene Rollen mit Rechte-Matrix pflegen</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
+        {% if "manage_settings" in permission_checker.permissions %}
         <!-- Vier-Augen-Prinzip und Vertretungen (Issue #222) -->
-        {% if "manage_settings" in permission_checker.permissions %}
-        <a href="{% url 'session:settings_four_eyes' tenant_slug=tenant_slug %}"
-           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-            <div class="flex items-center gap-4 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
-                    <i data-lucide="users" class="w-6 h-6 text-amber-600 dark:text-amber-400"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Vier-Augen-Prinzip & Vertretungen</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Keine Freigabe eigener Vorgänge; Abwesenheiten und Vertretungen</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
+        <c-ui.link-tile href="{% url 'session:settings_four_eyes' tenant_slug=tenant_slug %}" icon="users" title="Vier-Augen-Prinzip & Vertretungen"
+                        tone="bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400">Keine Freigabe eigener Vorgänge; Abwesenheiten und Vertretungen</c-ui.link-tile>
         <!-- Wahlperioden (Issue #39) -->
-        {% if "manage_settings" in permission_checker.permissions %}
-        <a href="{% url 'session:terms' tenant_slug=tenant_slug %}"
-           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-            <div class="flex items-center gap-4 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center">
-                    <i data-lucide="calendar-range" class="w-6 h-6 text-indigo-600 dark:text-indigo-400"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Wahlperioden</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Perioden verwalten, Periodenwechsel, Archiv</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
+        <c-ui.link-tile href="{% url 'session:terms' tenant_slug=tenant_slug %}" icon="calendar-range" title="Wahlperioden"
+                        tone="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">Perioden verwalten, Periodenwechsel, Archiv</c-ui.link-tile>
         <!-- Mitzeichnung & Ämter (Issue #81) -->
-        {% if "manage_settings" in permission_checker.permissions %}
-        <a href="{% url 'session:settings_cosign' tenant_slug=tenant_slug %}"
-           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-            <div class="flex items-center gap-4 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center">
-                    <i data-lucide="pen-line" class="w-6 h-6 text-indigo-600 dark:text-indigo-400"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Mitzeichnung & Ämter</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Mitzeichnungsregeln und Amts-Zuordnungen</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
+        <c-ui.link-tile href="{% url 'session:settings_cosign' tenant_slug=tenant_slug %}" icon="pen-line" title="Mitzeichnung & Ämter"
+                        tone="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">Mitzeichnungsregeln und Amts-Zuordnungen</c-ui.link-tile>
         <!-- Nummernkreise (Issue #150) -->
-        {% if "manage_settings" in permission_checker.permissions %}
-        <a href="{% url 'session:settings_numbering' tenant_slug=tenant_slug %}"
-           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-            <div class="flex items-center gap-4 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center">
-                    <i data-lucide="hash" class="w-6 h-6 text-indigo-600 dark:text-indigo-400"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Nummernkreise</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">{{ session_tenant.reference_label }}: Muster, Zählerbereich, Unternummern</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
+        <c-ui.link-tile href="{% url 'session:settings_numbering' tenant_slug=tenant_slug %}" icon="hash" title="Nummernkreise"
+                        tone="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">{{ session_tenant.reference_label }}: Muster, Zählerbereich, Unternummern</c-ui.link-tile>
         <!-- Textbausteine & Standard-TOPs (Issue #85) -->
-        {% if "manage_settings" in permission_checker.permissions %}
-        <a href="{% url 'session:settings_textblocks' tenant_slug=tenant_slug %}"
-           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-            <div class="flex items-center gap-4 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
-                    <i data-lucide="text-select" class="w-6 h-6 text-emerald-600 dark:text-emerald-400"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Textbausteine & Standard-TOPs</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Wiederkehrende Texte und Tagesordnungspunkte</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
+        <c-ui.link-tile href="{% url 'session:settings_textblocks' tenant_slug=tenant_slug %}" icon="text-select" title="Textbausteine & Standard-TOPs"
+                        tone="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400">Wiederkehrende Texte und Tagesordnungspunkte</c-ui.link-tile>
+        <!-- Sitzungsformate und Landesprofil (Issue #138) -->
+        <c-ui.link-tile href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}" icon="video" title="Sitzungsformate"
+                        tone="bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-400">Landesprofil und Rechtsgrundlage für hybride und digitale Sitzungen</c-ui.link-tile>
         <!-- Datenschutz (Issue #43) -->
-        {% if "manage_settings" in permission_checker.permissions %}
-        <a href="{% url 'session:privacy_settings' tenant_slug=tenant_slug %}"
-           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-            <div class="flex items-center gap-4 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center">
-                    <i data-lucide="shield" class="w-6 h-6 text-rose-600 dark:text-rose-400"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Datenschutz</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Fristen, Löschlauf, Auskunft, Hinweisseite</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if "manage_settings" in permission_checker.permissions %}
-        <a href="{% url 'session:settings_api_tokens' tenant_slug=tenant_slug %}"
-           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-            <div class="flex items-center gap-4 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center">
-                    <i data-lucide="key-round" class="w-6 h-6 text-indigo-600 dark:text-indigo-400"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Einreichungs-Zugänge</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Tokens für Fraktionen, die Anträge digital einreichen</p>
-                </div>
-            </div>
-        </a>
+        <c-ui.link-tile href="{% url 'session:privacy_settings' tenant_slug=tenant_slug %}" icon="shield" title="Datenschutz"
+                        tone="bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400">Fristen, Löschlauf, Auskunft, Hinweisseite</c-ui.link-tile>
+        <c-ui.link-tile href="{% url 'session:settings_api_tokens' tenant_slug=tenant_slug %}" icon="key-round" title="Einreichungs-Zugänge"
+                        tone="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">Tokens für Fraktionen, die Anträge digital einreichen</c-ui.link-tile>
         {% endif %}
 
         <!-- Kontakt -->

@@ -443,6 +443,12 @@ urlpatterns = [
         views.PrivacySettingsView.as_view(),
         name="privacy_settings",
     ),
+    # Sitzungsformate und Landesprofil (Issue #138)
+    path(
+        "<slug:tenant_slug>/settings/meeting-formats/",
+        views.MeetingFormatSettingsView.as_view(),
+        name="settings_meeting_formats",
+    ),
     path(
         "<slug:tenant_slug>/settings/privacy/purge/",
         views.PrivacyPurgeRunView.as_view(),

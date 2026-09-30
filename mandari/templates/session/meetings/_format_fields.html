@@ -1,0 +1,35 @@
+{% comment %}Sitzungsformat (Issue #138): Format, Begründung, Zugangsweg und Hinweis für die Öffentlichkeit.{% endcomment %}
+<fieldset class="space-y-4">
+    <legend class="block text-sm font-semibold text-gray-900 dark:text-white mb-1">Sitzungsformat</legend>
+    {% if state_profile %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">
+        Landesprofil {{ state_profile.name }}: hybrid im Rat {{ state_profile.get_hybrid_council_display }},
+        in Ausschüssen {{ state_profile.get_hybrid_committees_display }}; digital im Rat {{ state_profile.get_digital_council_display }}.
+        {% if session_tenant.hybrid_basis_documented %}Örtliche Rechtsgrundlage: {{ session_tenant.hybrid_basis_label }}.{% endif %}
+    </p>
+    {% else %}
+    <c-ui.alert variant="info" icon="scale">
+        Hybride und digitale Sitzungen sind erst möglich, wenn der Mandant ein Landesprofil gewählt hat{% if can_manage_settings %} –
+        <a href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}" class="underline">Einstellungen „Sitzungsformate“</a>{% endif %}.
+    </c-ui.alert>
+    {% endif %}
+
+    <c-form.select :field="form.format" label="Format"
+                   help="Hybrid: einzelne Mitglieder per Bild-Ton-Übertragung zugeschaltet. Digital: alle zugeschaltet." />
+    {% for error in form.format.errors|slice:"1:" %}
+    <p class="-mt-3 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
+    {% endfor %}
+
+    <c-form.textarea :field="form.format_reason" label="Begründung" rows="2"
+                     help="Pflicht bei digitalen Sitzungen und bei hybriden Sitzungen, die das Landesrecht nur in Notlagen zulässt: Notlage und zugrunde liegender Beschluss." />
+
+    <c-form.textarea :field="form.remote_access" label="Zugangsweg für zugeschaltete Mitglieder" rows="2"
+                     help="Erscheint nur in der Ladung an die Mitglieder, nie in öffentlichen Dokumenten; wird verschlüsselt gespeichert." />
+
+    <div class="grid sm:grid-cols-2 gap-4">
+        <c-form.field :field="form.public_access_url" label="Übertragung für die Öffentlichkeit" type="url"
+                      placeholder="https://" help="Livestream oder Anmeldeseite für den geschützten Zugang (optional)" />
+        <c-form.field :field="form.public_access_note" label="Hinweis für die Öffentlichkeit"
+                      help="z. B. Anmeldefrist für den geschützten Zugang" />
+    </div>
+</fieldset>

@@ -7,6 +7,7 @@ Provides views for the Session RIS administration interface.
 
 import contextlib
 
+from django import forms
 from django.contrib import messages
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
@@ -27,7 +28,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
-from ..services import joint_meeting_service
+from ..services import joint_meeting_service, meeting_format_service
 from ..visibility import paper_visible
 
 # =============================================================================
@@ -47,6 +48,110 @@ def _joint_valid(form) -> bool:
         form.add_error("joint_organizations", "Das federführende Gremium ist bereits beteiligt – bitte abwählen.")
         return False
     return True
+
+
+MEETING_FORM_FIELDS = [
+    "name",
+    "organization",
+    "joint_organizations",
+    "start",
+    "end",
+    "location",
+    "room",
+    "is_public",
+    # Sitzungsformat (Issue #138)
+    "format",
+    "format_reason",
+    "public_access_url",
+    "public_access_note",
+    "invitation_text",
+]
+
+
+class MeetingForm(forms.ModelForm):
+    """
+    Sitzungsformular mit Sitzungsformat (Issue #138).
+
+    Das Format wird gegen das Landesprofil des Mandanten geprüft (meeting_format_service.check), bei
+    gemeinsamen Sitzungen für alle beteiligten Gremien. Der Zugangsweg für Zugeschaltete wird nur
+    verschlüsselt gespeichert und bei Präsenzsitzungen verworfen.
+    """
+
+    remote_access = forms.CharField(
+        label="Zugangsweg für zugeschaltete Mitglieder",
+        required=False,
+        max_length=2000,
+        widget=forms.Textarea(attrs={"rows": 2}),
+    )
+
+    class Meta:
+        model = SessionMeeting
+        fields = MEETING_FORM_FIELDS
+
+    def __init__(self, *args, tenant, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tenant = tenant
+        self.format_check: meeting_format_service.FormatCheck | None = None
+        self.fields["organization"].queryset = SessionOrganization.objects.filter(
+            tenant=tenant, is_active=True
+        ).exclude(organization_type="department")
+        self.fields["joint_organizations"].queryset = joint_meeting_service.selectable_organizations(tenant)
+        # Ohne Angabe bleibt es bei der Präsenzsitzung (Importe, ältere Formulare)
+        self.fields["format"].required = False
+        if self.instance.pk:
+            self.fields["remote_access"].initial = self.instance.get_remote_access_decrypted()
+
+    def clean_format(self) -> str:
+        return str(self.cleaned_data.get("format") or SessionMeeting.FORMAT_PRESENCE)
+
+    def clean(self):
+        cleaned = super().clean()
+        lead = cleaned.get("organization")
+        if lead is not None:
+            organizations = [lead, *(org for org in cleaned.get("joint_organizations") or [] if org != lead)]
+            self.format_check = meeting_format_service.check(
+                self.tenant,
+                organizations,
+                cleaned.get("format") or SessionMeeting.FORMAT_PRESENCE,
+                cleaned.get("format_reason") or "",
+            )
+            for message in self.format_check.errors:
+                self.add_error("format", message)
+        return cleaned
+
+    def save(self, commit=True):
+        meeting = super().save(commit=False)
+        remote_access = self.cleaned_data.get("remote_access", "").strip()
+        if meeting.format == SessionMeeting.FORMAT_PRESENCE:
+            remote_access = ""
+        meeting.set_remote_access_encrypted(remote_access)
+        if commit:
+            meeting.save()
+            self.save_m2m()
+        return meeting
+
+
+class MeetingUpdateForm(MeetingForm):
+    """Bearbeiten: zusätzlich Status und Absage."""
+
+    class Meta(MeetingForm.Meta):
+        fields = [*MEETING_FORM_FIELDS, "meeting_state", "cancelled", "cancellation_reason"]
+
+
+class MeetingFormMixin:
+    """Formular mit Mandant und Kontext für Sitzungsformat und gemeinsame Sitzung."""
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["tenant"] = self.session_tenant
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["joint_selected"] = _joint_selected(context["form"])
+        context["state_profile"] = self.session_tenant.state_profile
+        context["can_manage_settings"] = self.has_permission("manage_settings")
+        return context
 
 
 class MeetingListView(SessionViewMixin, ListView):
@@ -224,39 +329,13 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         return context
 
 
-class MeetingCreateView(SessionViewMixin, CreateView):
+class MeetingCreateView(MeetingFormMixin, SessionViewMixin, CreateView):
     """Create a new meeting."""
 
     model = SessionMeeting
     template_name = "session/meetings/form.html"
-    fields = [
-        "name",
-        "organization",
-        "joint_organizations",
-        "start",
-        "end",
-        "location",
-        "room",
-        "is_public",
-        "invitation_text",
-    ]
+    form_class = MeetingForm
     permission_required = "create_meetings"
-
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-        # Limit organization choices to current tenant
-        form.fields["organization"].queryset = SessionOrganization.objects.filter(
-            tenant=self.session_tenant, is_active=True
-        ).exclude(organization_type="department")
-        form.fields["joint_organizations"].queryset = joint_meeting_service.selectable_organizations(
-            self.session_tenant
-        )
-        return form
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["joint_selected"] = _joint_selected(context["form"])
-        return context
 
     def form_valid(self, form):
         if not _joint_valid(form):
@@ -296,25 +375,12 @@ class MeetingCreateView(SessionViewMixin, CreateView):
         )
 
 
-class MeetingUpdateView(SessionViewMixin, UpdateView):
+class MeetingUpdateView(MeetingFormMixin, SessionViewMixin, UpdateView):
     """Update a meeting."""
 
     model = SessionMeeting
     template_name = "session/meetings/form.html"
-    fields = [
-        "name",
-        "organization",
-        "joint_organizations",
-        "start",
-        "end",
-        "location",
-        "room",
-        "is_public",
-        "meeting_state",
-        "invitation_text",
-        "cancelled",
-        "cancellation_reason",
-    ]
+    form_class = MeetingUpdateForm
     pk_url_kwarg = "meeting_id"
     permission_required = "edit_meetings"
 
@@ -324,21 +390,6 @@ class MeetingUpdateView(SessionViewMixin, UpdateView):
         if not self.has_permission("view_non_public_meetings"):
             qs = qs.filter(is_public=True)
         return qs
-
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-        form.fields["organization"].queryset = SessionOrganization.objects.filter(
-            tenant=self.session_tenant, is_active=True
-        ).exclude(organization_type="department")
-        form.fields["joint_organizations"].queryset = joint_meeting_service.selectable_organizations(
-            self.session_tenant
-        )
-        return form
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["joint_selected"] = _joint_selected(context["form"])
-        return context
 
     def form_valid(self, form):
         if not _joint_valid(form):
