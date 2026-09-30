@@ -7,7 +7,7 @@ Läuft gegen eine frische SQLite-Instanz:
 
 Drei Prüfungen:
   1. URL-Erreichbarkeit: Alle URL-Namen (work, insight, session, accounts,
-     oparl_api, öffentliche Seiten) werden per get_resolver enumeriert und —
+     hub.api, öffentliche Seiten) werden per get_resolver enumeriert und —
      soweit parameterlos bzw. mit Testdaten parametrisierbar — als
      eingeloggtes Org-Admin-Mitglied per Django-Client gerendert.
      Jede Exception/jeder 500er ist ein FAIL. 302/403/404/405 sind ok

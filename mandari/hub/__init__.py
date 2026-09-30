@@ -10,6 +10,8 @@ Drehscheibe darf die Plattform (``apps.events``, ``apps.common``, ``apps.account
 
 Unterpakete:
 
+- ``hub.api``: offene Schnittstelle (OParl 1.1 mit kompatiblen Erweiterungen) – der Aggregator über den
+  RIS-Bestand und die eine Serialisierung, die auch die Schnittstelle der Session-Mandanten ausgibt
 - ``hub.commands``: Befehle an den Eigentümer der Daten (Dispatcher, Quittung, Idempotenz, Clients)
 - ``hub.contracts``: Vertragsregister (Ereignishülle, Schemas je Typ und Version)
 - ``hub.ris``: kanonisches RIS-Modell (OParl 1.1 mit gekennzeichneten Erweiterungen), die Abbildungen

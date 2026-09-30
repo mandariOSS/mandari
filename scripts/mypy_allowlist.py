@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PROJECT = ROOT / "mandari"
 ALLOWLIST = ROOT / "scripts" / "mypy_allowlist.txt"
-TARGETS = ["apps", "hub", "insight_core", "insight_sync", "insight_search", "insight_ai", "oparl_api", "mandari"]
+TARGETS = ["apps", "hub", "insight_core", "insight_sync", "insight_search", "insight_ai", "mandari"]
 
 
 def run_mypy() -> Counter[str]:

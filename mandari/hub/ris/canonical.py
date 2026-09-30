@@ -3,8 +3,9 @@
 Bausteine des kanonischen RIS-Modells (OParl 1.1).
 
 Eine Stelle für das, was jede Abbildung und jede Ausgabe gleich machen muss: Typ-URLs, Datum und
-Zeitpunkt, leere Felder weglassen, gekürzte Objekte für Gelöschtes. Aggregator (``oparl_api``) und
-die Abbildung der Session-Objekte (``hub.ris.mapping.session``) nutzen dieselben Funktionen.
+Zeitpunkt, leere Felder weglassen, gekürzte Objekte für Gelöschtes. Die Abbildungen des RIS-Bestands
+(``hub.ris.mapping.bestand``) und der Session-Objekte (``hub.ris.mapping.session``) nutzen dieselben
+Funktionen.
 """
 
 from __future__ import annotations

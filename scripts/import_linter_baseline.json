@@ -6,15 +6,14 @@
       "insight_core",
       "insight_ai",
       "insight_search",
-      "insight_sync",
-      "oparl_api"
+      "insight_sync"
     ]
   },
   "vertraege": {
     "schichten": {
       "layers": [
         "apps.session : apps.work : (apps.portal) : apps.minutes",
-        "hub : insight_core : insight_ai : insight_search : insight_sync : oparl_api",
+        "hub : insight_core : insight_ai : insight_search : insight_sync",
         "apps.events : apps.common : apps.accounts : apps.tenants : apps.provisioning"
       ]
     },
@@ -41,8 +40,7 @@
         "insight_core",
         "insight_ai",
         "insight_search",
-        "insight_sync",
-        "oparl_api"
+        "insight_sync"
       ]
     }
   },

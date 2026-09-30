@@ -89,7 +89,7 @@ def test_konfiguration_im_repo_hat_die_drei_vertraege_und_nimmt_nur_tests_aus(ra
     for vertrag in linter["contracts"]:
         platzhalter = [e for e in vertrag["ignore_imports"] if "*" in e]
         assert platzhalter == [ratchet.TEST_EXEMPTION]
-    assert {"insight_ai", "insight_search", "insight_sync", "oparl_api", "hub"} <= set(linter["root_packages"])
+    assert {"insight_ai", "insight_search", "insight_sync", "hub"} <= set(linter["root_packages"])
 
 
 def test_neue_ausnahme_wird_erkannt(ratchet: ModuleType) -> None:

@@ -186,9 +186,10 @@ format_js = false
 # Plattform. Prüfung aus mandari/: lint-imports. Neue Ausnahmen sind nicht erlaubt; die Listen werden
 # nur kürzer, die Verträge nur strenger (scripts/check_import_linter_ratchet.py, Baseline
 # scripts/import_linter_baseline.json).
-# Importe innerhalb von Funktionen zählen mit. insight_ai, insight_search, insight_sync und oparl_api
-# gehören bis zu ihrer Auflösung zur Drehscheibe; apps.provisioning (Mandanten anlegen) zur Plattform.
-root_packages = ["apps", "hub", "insight_core", "insight_ai", "insight_search", "insight_sync", "oparl_api"]
+# Importe innerhalb von Funktionen zählen mit. insight_ai, insight_search und insight_sync gehören bis zu
+# ihrer Auflösung zur Drehscheibe (oparl_api ist in hub.api aufgegangen); apps.provisioning (Mandanten
+# anlegen) zur Plattform.
+root_packages = ["apps", "hub", "insight_core", "insight_ai", "insight_search", "insight_sync"]
 
 [[tool.importlinter.contracts]]
 id = "schichten"
@@ -198,7 +199,7 @@ type = "layers"
 # Schicht, die sich gegenseitig nutzen dürfen; (…) markiert Pakete, die es noch nicht gibt.
 layers = [
     "apps.session : apps.work : (apps.portal) : apps.minutes",
-    "hub : insight_core : insight_ai : insight_search : insight_sync : oparl_api",
+    "hub : insight_core : insight_ai : insight_search : insight_sync",
     "apps.events : apps.common : apps.accounts : apps.tenants : apps.provisioning",
 ]
 ignore_imports = [
@@ -301,7 +302,6 @@ forbidden_modules = [
     "insight_ai",
     "insight_search",
     "insight_sync",
-    "oparl_api",
 ]
 ignore_imports = [
     # Tests sind ausgenommen: Sie prüfen modulübergreifend und erzeugen keine Kopplung im Betrieb.

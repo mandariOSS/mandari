@@ -115,7 +115,6 @@ INSTALLED_APPS = [
     "insight_sync",
     "insight_search",
     "insight_ai",
-    "oparl_api",
     # Mandari Work apps (OSS - AGPL-3.0-or-later)
     "apps.common",
     "apps.accounts",

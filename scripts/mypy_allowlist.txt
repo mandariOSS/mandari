@@ -255,6 +255,3 @@ insight_sync.tasks
 mandari.admin_utils
 mandari.pwa
 mandari.urls
-oparl_api.serializers
-oparl_api.utils
-oparl_api.views

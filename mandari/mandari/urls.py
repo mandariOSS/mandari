@@ -79,8 +79,8 @@ urlpatterns = [
     path("api/", include("insight_core.api_urls")),
     # Provisioning-API fürs Billing-Portal (nur aktiv wenn PROVISIONING_API_KEY gesetzt)
     path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),
-    # OParl-1.1-Aggregations-API: mandari als eigene OParl-Datenquelle (Issue #17)
-    path("oparl/", include("oparl_api.urls", namespace="oparl_api")),
+    # Offene Schnittstelle der Drehscheibe: Aggregator über den RIS-Bestand aller Kommunen (OParl 1.1)
+    path("oparl/", include("hub.api.urls", namespace="oparl_api")),
     # Authentication (login, logout, password reset)
     path("accounts/", include("apps.accounts.urls", namespace="accounts")),
     # Session RIS (administrative portal)

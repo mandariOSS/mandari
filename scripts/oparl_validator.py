@@ -16,7 +16,7 @@ Je Ausgabe laufen zwei Prüfungen:
    Apache-2.0): Pflichtfelder, Feldtypen, leere Texte, externe Listen mit Blättern und die Abrufbarkeit
    verlinkter Objekte. Er wird nur ausgeführt, nicht mitgeliefert. Ohne ``--validator`` entfällt er mit
    einem Hinweis (Exit-Code 0); die CI übergibt ihn immer.
-2. **Eigene Typprüfung** (``mandari/oparl_api/tests/konformitaet.py``): Datums- und Zeitformate,
+2. **Eigene Typprüfung** (``mandari/hub/api/tests/konformitaet.py``): Datums- und Zeitformate,
    ``organizationType``, unbekannte Eigenschaften, gelöschte Objekte – über alle externen Listen.
 
 Die Instanz läuft über HTTP auf dem eigenen Rechner. Den Hinweis des Validators auf „unsicheres HTTP“
@@ -155,7 +155,7 @@ def server_starten(port: int) -> Any:
 
 def eigene_pruefung(system_url: str) -> tuple[int, list[str]]:
     """Alle externen Listen ablaufen und jedes Objekt gegen die Feldtypen prüfen."""
-    from oparl_api.tests.konformitaet import pruefe, pruefe_liste
+    from hub.api.tests.konformitaet import pruefe, pruefe_liste
 
     system = abruf(system_url)
     probleme = pruefe(system, "System")

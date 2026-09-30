@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Smoke-Test: OParl-1.1-Aggregations-API (oparl_api, Issue #17).
+Smoke-Test: OParl-1.1-Aggregations-API (hub.api, Issue #17).
 
 Läuft gegen eine frische SQLite-Instanz mit django.test.Client:
     python scripts/smoke_oparl_api.py

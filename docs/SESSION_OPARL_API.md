@@ -43,8 +43,10 @@ veröffentlichen, mit dem Datum ihrer Anlage freigeschaltet (Migration `session.
 Schnittstelle bleibt ohne Unterbrechung erreichbar.
 
 - **Spezifikation**: https://oparl.org/spezifikation/
-- **Implementierung**: Endpunkte, Blättern und gelöschte Objekte in `mandari/apps/session/api/oparl.py`,
-  Sichtbarkeit/Tombstones in `mandari/apps/session/oparl_publication.py`. Wie ein Session-Objekt als
+- **Implementierung**: Endpunkte und gelöschte Objekte in `mandari/apps/session/api/oparl.py`,
+  Sichtbarkeit/Tombstones in `mandari/apps/session/oparl_publication.py`. Zeitfilter, Blättern,
+  Listen-Hülle, `ETag`, Fehler und Rate-Limit kommen aus `mandari/hub/api/` – dieselbe Serialisierung
+  wie beim Aggregator (Tabelle in `OPARL_API.md`, Abschnitt „Betrieb“). Wie ein Session-Objekt als
   OParl-Objekt aussieht, legt allein `mandari/hub/ris/mapping/session.py` fest – die eine Abbildung der
   Session-Objekte auf das kanonische Modell (ADR `docs/adr/20260929-kanonisches-modell.md`). Wer ein
   Feld ergänzt oder ändert, tut das dort; die Schnittstelle gibt die Abbildung unverändert aus.
@@ -125,6 +127,10 @@ DSGVO kann sie die Veröffentlichung so beschreiben:
 
 Objekttypen für `<typ>`: `organization`, `person`, `membership`, `meeting`,
 `agendaitem`, `paper`, `consultation`, `file`, `legislativeterm`, `location`.
+
+Die Adressen enden mit einem Schrägstrich; sie sind die Kennungen der Objekte und ändern sich nicht.
+Wer eine Adresse ohne Schrägstrich abruft (`…/api/oparl/body`), wird dauerhaft auf die gültige
+weitergeleitet (`301`, Parameter der Anfrage bleiben erhalten).
 
 `Paper.mainFile` ist die älteste öffentliche Anlage der Vorlage, alle
 weiteren erscheinen unter `auxiliaryFile`.

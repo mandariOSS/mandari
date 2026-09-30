@@ -71,7 +71,7 @@ Zuordnung von `organizationType` (Groß- und Kleinschreibung spielt keine Rolle)
 
 Einige RIS ordnen ihre Gremien nach dem Kommunalrecht ein: „Hauptorgan“ (Rat, Kreistag) und
 „Hilfsorgan“ (Ausschüsse, Beiräte) sind Gremien, „Amt“, „Dienststellen“ und „Organisationseinheit“
-gehören zur Verwaltung. Die Zuordnung steht in `mandari/oparl_api/utils.py`
+gehören zur Verwaltung. Die Zuordnung steht in `mandari/hub/ris/mapping/bestand.py`
 (`_ORGANIZATION_TYPE_SYNONYMS`).
 
 ### Bedingte Anfragen (ETag, 304)
@@ -104,10 +104,19 @@ Demo-Daten, startet sie auf dem eigenen Rechner und prüft Aggregator und Sessio
 mit dem externen Validator [oparl-validator-rs](https://github.com/konstin/oparl-validator-rs)
 (Pflichtfelder, Feldtypen, externe Listen, Abrufbarkeit verlinkter Objekte) und mit einer eigenen
 Typprüfung (Datums- und Zeitformate, `organizationType`, unbekannte Eigenschaften, gelöschte
-Objekte; `mandari/oparl_api/tests/konformitaet.py`). Ohne `--validator` läuft nur die eigene
+Objekte; `mandari/hub/api/tests/konformitaet.py`). Ohne `--validator` läuft nur die eigene
 Prüfung. In der CI läuft beides im Job „OParl-Validator“ bei Änderungen an den Schnittstellen und
 bei jedem Push auf `dev` und `main`. Den Hinweis des Validators auf unverschlüsseltes HTTP wertet
 das Skript nicht, weil die Testinstanz lokal läuft.
+
+## Adressen und Weiterleitungen
+
+Die Adresse eines Objekts ist seine Kennung (`id`) und ändert sich nicht. Die Adressen des Aggregators
+haben keinen Schrägstrich am Ende (`/oparl/v1/system`, `/oparl/v1/paper/<uuid>`). Wer die Schreibweise
+mit Schrägstrich abruft (`/oparl/v1/system/`), wird dauerhaft auf die gültige Adresse weitergeleitet
+(`301`, Parameter der Anfrage bleiben erhalten) statt auf eine Fehlerseite zu laufen. Die
+Weiterleitung nennt einen Pfad ohne Host; der Abnehmer bleibt auf dem Host, über den er die
+Schnittstelle erreicht. Kennungen in Antworten nennen immer die gültige Schreibweise.
 
 ## Pagination
 
@@ -244,10 +253,21 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `OPARL_API_CACHE_SECONDS` | `60` | Cache-Dauer ungefilterter Listen-Seiten |
 | `OPARL_LICENSE_URL` | leer | URL der Lizenz am System-Objekt (`license`); leer = keine übergreifende Angabe |
 
-**Gemeinsame Bausteine:** Typ-URLs, Datums- und Zeitformate, gekürzte Objekte für Gelöschtes und
-die Werteliste von `organizationType` liegen in `mandari/hub/ris/canonical.py`; Listen-Hülle,
-Blättern, ETag und Rate-Limit in `mandari/oparl_api/utils.py`. Aggregator und Session-Schnittstelle
-nutzen dieselben Funktionen.
+**Eine Serialisierung für beide Ausgaben:** Aggregator und Session-Schnittstelle
+(`SESSION_OPARL_API.md`) gehen denselben Weg – Abbildung auf das kanonische Modell, dann Ausgabe
+(ADR `docs/adr/20260929-kanonisches-modell.md`):
+
+| Schritt | Aggregator | Session-Schnittstelle |
+|---|---|---|
+| Was ist sichtbar, unter welcher Adresse? | `mandari/hub/api/aggregator.py`, Routen in `mandari/hub/api/urls.py` | `mandari/apps/session/api/oparl.py` |
+| Abbildung auf das kanonische Modell | `mandari/hub/ris/mapping/bestand.py` | `mandari/hub/ris/mapping/session.py` |
+| Bausteine des Modells (Typ-URLs, Datum und Zeit, gekürzte Objekte, `organizationType`) | `mandari/hub/ris/canonical.py` | dieselben |
+| Serialisierung: Zeitfilter, Blättern, Listen-Hülle, Gelöschtes in inkrementellen Listen | `mandari/hub/api/serialization.py` | dieselbe |
+| HTTP-Hülle: JSON, `ETag`/`304`, Fehler, CORS, Rate-Limit | `mandari/hub/api/http.py` | dieselbe |
+
+Wer ein Feld ergänzt oder ändert, tut das in der Abbildung der Quelle; wer das Verhalten von Listen,
+Filtern oder Fehlern ändert, in `hub/api` – es gilt dann für beide Ausgaben. Das frühere Paket
+`oparl_api` ist darin aufgegangen.
 
 **Kanonische Kennungen** (ADR `docs/adr/20260929-kanonisches-modell.md`): Jedes Objekt des
 RIS-Bestands trägt die Kennung `uuid5(NS_MANDARI_RIS, URI)` aus `shared/mandari_oparl/ids.py`.
