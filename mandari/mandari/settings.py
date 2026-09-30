@@ -176,6 +176,9 @@ MIDDLEWARE = [
     # Nur in der Demo-Instanz aktiv: sperrt Konto-Sicherheitsänderungen (Issue #99)
     "apps.common.demo.DemoInstanceMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Admin-Ansichten im Dialog (Bezugsobjekte) für dieselbe Herkunft einbettbar; muss nach der
+    # XFrameOptionsMiddleware stehen, damit deren Voreinstellung den Kopf nicht vorher setzt (#686)
+    "apps.common.admin_dialogs.AdminDialogFrameMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
     # Django-Admin nur aus freigegebenen Netzen (ADMIN_ALLOWED_NETWORKS)
     "apps.accounts.middleware.AdminNetworkMiddleware",
