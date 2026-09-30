@@ -32,7 +32,9 @@ BASE = "/api/v1/session"
 
 @pytest.fixture
 def tenant() -> SessionTenant:
-    tenant = SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt")
+    tenant = SessionTenant.objects.create(
+        name="Stadt Musterstadt", slug="musterstadt", oparl_public_since=timezone.now()
+    )
     org = SessionOrganization.objects.create(tenant=tenant, name="Hauptausschuss")
     now = timezone.now()
     SessionMeeting.objects.create(tenant=tenant, name="OEFFENTLICH", organization=org, start=now, is_public=True)
@@ -46,7 +48,7 @@ def tenant() -> SessionTenant:
 
 @pytest.fixture
 def other_tenant() -> SessionTenant:
-    tenant = SessionTenant.objects.create(name="Fremdstadt", slug="fremdstadt")
+    tenant = SessionTenant.objects.create(name="Fremdstadt", slug="fremdstadt", oparl_public_since=timezone.now())
     org = SessionOrganization.objects.create(tenant=tenant, name="Rat")
     SessionMeeting.objects.create(tenant=tenant, name="FREMD", organization=org, start=timezone.now(), is_public=True)
     return tenant

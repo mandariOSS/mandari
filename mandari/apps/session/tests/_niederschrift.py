@@ -78,6 +78,8 @@ def person(tenant: SessionTenant, name: str) -> SessionPerson:
 
 def welt(slug: str = "nord", *, status: str = "approved", four_eyes: bool = False, **tenant_kwargs: Any) -> Welt:
     """Sitzung mit Ö- und NÖ-TOP, vollständiger Anwesenheit und (standardmäßig) genehmigter Niederschrift."""
+    # Freigeschaltete OParl-Schnittstelle (Issue #319): die Tests lesen die öffentliche Fassung über OParl
+    tenant_kwargs.setdefault("oparl_public_since", timezone.now())
     tenant = SessionTenant.objects.create(
         name=f"Stadt {slug}", slug=slug, four_eyes_protocols=four_eyes, **tenant_kwargs
     )

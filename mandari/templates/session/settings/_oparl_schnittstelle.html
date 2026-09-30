@@ -1,0 +1,52 @@
+{% comment %}
+Karte „OParl-Schnittstelle“ in den Einstellungen (Issue #319): Freischaltung mit Datum. Vorher antwortet die
+Schnittstelle mit 404 und das Bürgerportal registriert keine Quelle. Eingebunden aus _buergerportal.html,
+weil das Bürgerportal genau diese Schnittstelle liest.
+{% endcomment %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" data-testid="karte-oparl">
+    <div class="flex items-center gap-4 mb-3">
+        <div class="w-12 h-12 rounded-xl bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
+            <i data-lucide="radio-tower" class="w-6 h-6 text-sky-600 dark:text-sky-400"></i>
+        </div>
+        <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">OParl-Schnittstelle</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Offene Ratsdaten für Bürgerportal, Presse und Forschung</p>
+        </div>
+    </div>
+    <div class="mt-4 space-y-3 text-sm">
+        {% if session_tenant.oparl_public %}
+        <p class="inline-flex items-center gap-2 text-green-700 dark:text-green-400 font-medium" data-testid="oparl-oeffentlich">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            Öffentlich seit {{ session_tenant.oparl_public_since|date:"d.m.Y, H:i" }} Uhr.
+        </p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            Abrufbar unter <a href="{% url 'session:oparl_system' tenant_slug=tenant_slug %}" class="text-primary-600 dark:text-primary-400 hover:underline" target="_blank" rel="noopener">/session/{{ tenant_slug }}/api/oparl/</a>.
+            Ausgeliefert werden nur öffentliche Inhalte, E-Mail-Adressen nur von Personen mit Einwilligung.
+        </p>
+        {% if session_tenant.insight_publish %}
+        <p class="text-xs text-gray-500 dark:text-gray-400">Solange das Bürgerportal veröffentlicht, bleibt die Schnittstelle freigeschaltet.</p>
+        {% else %}
+        <form method="post" action="{% url 'session:oparl_access' tenant_slug=tenant_slug %}">
+            {% csrf_token %}
+            <input type="hidden" name="public" value="0">
+            <c-ui.button type="submit" variant="ghost" size="sm" icon="lock">Freischaltung zurücknehmen</c-ui.button>
+        </form>
+        {% endif %}
+        {% else %}
+        <p class="inline-flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium" data-testid="oparl-gesperrt">
+            <i data-lucide="lock" class="w-4 h-4"></i>
+            Nicht freigeschaltet – die Schnittstelle antwortet mit „nicht gefunden“.
+        </p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            Schalten Sie frei, sobald Test- und Schulungsdaten bereinigt sind. Danach sind alle als öffentlich markierten
+            Sitzungen, Vorlagen und Anlagen sowie Gremien und Personen abrufbar; E-Mail-Adressen nur von Personen mit
+            Einwilligung. Erst danach lässt sich im Bürgerportal veröffentlichen.
+        </p>
+        <form method="post" action="{% url 'session:oparl_access' tenant_slug=tenant_slug %}">
+            {% csrf_token %}
+            <input type="hidden" name="public" value="1">
+            <c-ui.button type="submit" size="sm" icon="radio-tower">OParl-Schnittstelle freischalten</c-ui.button>
+        </form>
+        {% endif %}
+    </div>
+</div>

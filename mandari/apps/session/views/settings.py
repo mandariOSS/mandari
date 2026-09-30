@@ -217,6 +217,7 @@ class InsightPublishView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug):
         from ..services import portal_publication
+        from ..services.oparl_access import RELEASE_REQUIRED, OParlAccessError
 
         tenant = self.session_tenant
         if request.POST.get("publish") != "1":
@@ -227,7 +228,12 @@ class InsightPublishView(SessionViewMixin, View):
             messages.info(request, "Der Veröffentlichungs-Status ist bereits gesetzt.")
             return redirect("session:settings", tenant_slug=tenant_slug)
 
-        change = portal_publication.resume_publication(tenant, user=self.session_user, request=request)
+        try:
+            change = portal_publication.resume_publication(tenant, user=self.session_user, request=request)
+        except OParlAccessError:
+            # Erst die OParl-Schnittstelle freischalten (Issue #319); feste Meldung, nie Ausnahmetexte
+            messages.error(request, RELEASE_REQUIRED)
+            return redirect("session:settings", tenant_slug=tenant_slug)
         if change is None:
             messages.info(request, "Der Veröffentlichungs-Status ist bereits gesetzt.")
         elif change.entries:
@@ -242,6 +248,43 @@ class InsightPublishView(SessionViewMixin, View):
                 "Veröffentlichung aktiviert — die öffentlichen Daten dieses Mandanten "
                 "erscheinen mit dem nächsten Sync-Zyklus im Bürgerportal.",
             )
+        return redirect("session:settings", tenant_slug=tenant_slug)
+
+
+class OParlAccessView(SessionViewMixin, View):
+    """
+    OParl-Schnittstelle freischalten bzw. die Freischaltung zurücknehmen (Issue #319).
+
+    Bis zur Freischaltung antwortet die Schnittstelle mit 404 und das Bürgerportal registriert keine
+    Quelle. Zurücknehmen geht nur, solange der Mandant nicht im Bürgerportal veröffentlicht. Beides steht
+    mit Datum am Mandanten und im Audit-Log.
+    """
+
+    permission_required = "manage_settings"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug):
+        from ..services import oparl_access
+
+        tenant = self.session_tenant
+        if request.POST.get("public") == "1":
+            if oparl_access.release(tenant, user=self.session_user, request=request):
+                messages.success(
+                    request,
+                    "OParl-Schnittstelle freigeschaltet – öffentliche Daten sind ab sofort abrufbar.",
+                )
+            else:
+                messages.info(request, "Die OParl-Schnittstelle ist bereits freigeschaltet.")
+            return redirect("session:settings", tenant_slug=tenant_slug)
+        try:
+            gesperrt = oparl_access.lock(tenant, user=self.session_user, request=request)
+        except oparl_access.OParlAccessError:
+            messages.error(request, oparl_access.LOCK_BLOCKED)
+            return redirect("session:settings", tenant_slug=tenant_slug)
+        if gesperrt:
+            messages.success(request, "Freischaltung zurückgenommen – die OParl-Schnittstelle antwortet mit 404.")
+        else:
+            messages.info(request, "Die OParl-Schnittstelle ist nicht freigeschaltet.")
         return redirect("session:settings", tenant_slug=tenant_slug)
 
 

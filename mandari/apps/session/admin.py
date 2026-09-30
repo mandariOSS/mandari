@@ -171,7 +171,8 @@ class SessionTenantAdmin(ModelAdmin):
     list_filter = ["is_active", "created_at"]
     search_fields = ["name", "slug", "contact_email"]
     prepopulated_fields = {"slug": ("name",)}
-    readonly_fields = ["encryption_key", "created_at", "updated_at"]
+    # Freischaltung der OParl-Schnittstelle nur über die Einstellungen des Mandanten (Audit-Log, Issue #319)
+    readonly_fields = ["encryption_key", "oparl_public_since", "created_at", "updated_at"]
     actions = ["activate_tenants", "deactivate_tenants"]
     actions_detail = ["generate_api_token_action"]
 
@@ -180,9 +181,10 @@ class SessionTenantAdmin(ModelAdmin):
         (
             "OParl-Verknüpfung",
             {
-                "fields": ("oparl_body",),
+                "fields": ("oparl_body", "oparl_public_since"),
                 "classes": ("collapse",),
-                "description": "Verknüpfung mit einer OParl-Kommune für die automatische Synchronisation öffentlicher Daten.",
+                "description": "Verknüpfung mit einer OParl-Kommune für die automatische Synchronisation öffentlicher Daten. "
+                "Die eigene OParl-Schnittstelle schaltet der Mandant in seinen Einstellungen frei.",
             },
         ),
         (
@@ -265,6 +267,22 @@ class SessionTenantAdmin(ModelAdmin):
         obj._lifecycle_actor = actor_for(request)
         obj._lifecycle_request = request
         super().save_model(request, obj, form, change)
+        # Der pre_save-Hook merkt sich den gespeicherten Stand vor dem Speichern (signals.py)
+        if change and getattr(obj, "_is_active_old", None) is False and obj.is_active:
+            self._warn_locked(request, [obj])
+
+    @staticmethod
+    def _warn_locked(request, tenants) -> None:
+        """Reaktiviert, aber OParl-Schnittstelle gesperrt (Issue #319) – anders als vor der Deaktivierung."""
+        gesperrt = [tenant.name for tenant in tenants if tenant.is_active and not tenant.oparl_public]
+        if gesperrt:
+            messages.warning(
+                request,
+                "OParl-Schnittstelle nicht freigeschaltet (antwortet mit 404, kein Bürgerportal): "
+                + ", ".join(gesperrt)
+                + ". Die Verwaltung schaltet sie in den Session-Einstellungen frei.",
+                fail_silently=True,
+            )
 
     # Einzeln über den Service statt queryset.update(): Rücknahme bzw. Wiederherstellung der
     # Bürgerportal-Quelle und Audit-Log laufen für jeden Mandanten (Issue #317).
@@ -273,11 +291,13 @@ class SessionTenantAdmin(ModelAdmin):
         from .admin_provisioning import actor_for
         from .services import tenant_provisioning
 
-        count = sum(
-            tenant_provisioning.set_tenant_active(tenant, True, actor=actor_for(request), request=request).changed
+        aktiviert = [
+            tenant
             for tenant in queryset
-        )
-        messages.success(request, f"{count} Mandant(en) wurden aktiviert.")
+            if tenant_provisioning.set_tenant_active(tenant, True, actor=actor_for(request), request=request).changed
+        ]
+        messages.success(request, f"{len(aktiviert)} Mandant(en) wurden aktiviert.")
+        self._warn_locked(request, aktiviert)
 
     @admin.action(description="Ausgewählte Mandanten deaktivieren (Bürgerportal zurücknehmen)")
     def deactivate_tenants(self, request, queryset):

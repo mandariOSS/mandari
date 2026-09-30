@@ -917,6 +917,10 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
+        # Die Demo zeigt offene Daten: OParl-Schnittstelle freigeschaltet (Issue #319), Datum bleibt beim Neuaufbau
+        if tenant.oparl_public_since is None:
+            tenant.oparl_public_since = now
+            tenant.save(update_fields=["oparl_public_since", "updated_at"])
         self._count("Session: Mandant")
 
         # Wie beim Anlegen eines Mandanten (Issue #317): fehlende Standardrollen ergänzen, auch Revision/Datenschutz

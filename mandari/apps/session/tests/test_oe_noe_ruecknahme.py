@@ -34,7 +34,7 @@ HOST = "https://mandari.example"
 
 @pytest.fixture
 def welt() -> dict[str, Any]:
-    tenant = SessionTenant.objects.create(name="Bezirk Nord", slug="nord")
+    tenant = SessionTenant.objects.create(name="Bezirk Nord", slug="nord", oparl_public_since=timezone.now())
     gremium = SessionOrganization.objects.create(tenant=tenant, name="Hauptausschuss", short_name="HA")
     sitzung = SessionMeeting.objects.create(
         tenant=tenant, name="Sitzung HA", organization=gremium, start=timezone.now(), is_public=True

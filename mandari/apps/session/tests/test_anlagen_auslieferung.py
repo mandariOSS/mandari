@@ -15,6 +15,7 @@ from typing import Any, cast
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
+from django.utils import timezone
 
 from apps.common.tests.factories import UserFactory
 from apps.session.models import SessionFile, SessionPaper, SessionRole, SessionTenant, SessionUser
@@ -32,7 +33,9 @@ def _media(settings: Any, tmp_path: Path) -> None:
 
 @pytest.fixture
 def tenant() -> SessionTenant:
-    return SessionTenant.objects.create(name="Stadt Auslieferung", slug="auslieferung")
+    return SessionTenant.objects.create(
+        name="Stadt Auslieferung", slug="auslieferung", oparl_public_since=timezone.now()
+    )
 
 
 @pytest.fixture

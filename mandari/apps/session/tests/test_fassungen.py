@@ -121,7 +121,9 @@ def media(settings: Any, tmp_path: Path) -> Path:
 
 @pytest.fixture
 def welt(media: Path) -> Welt:
-    tenant = SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt")
+    tenant = SessionTenant.objects.create(
+        name="Stadt Musterstadt", slug="musterstadt", oparl_public_since=timezone.now()
+    )
     paper = SessionPaper.objects.create(
         tenant=tenant,
         name="Radweg Hauptstraße",
@@ -209,7 +211,7 @@ class TestSpeicher:
         assert len([p for p in media.rglob("*") if p.is_file()]) == 1
 
     def test_mandanten_teilen_keine_inhalte(self, welt: Welt) -> None:
-        andere = SessionTenant.objects.create(name="Fremdstadt", slug="fremdstadt")
+        andere = SessionTenant.objects.create(name="Fremdstadt", slug="fremdstadt", oparl_public_since=timezone.now())
         fremde_vorlage = SessionPaper.objects.create(tenant=andere, name="Fremd")
         welt.upload(welt.clerk, "a.txt", b"GLEICH")
         fremd = SessionFile(tenant=andere, paper=fremde_vorlage, name="b.txt", mime_type="text/plain")
@@ -639,7 +641,7 @@ class TestSichtbarkeit:
         assert _download(welt.viewer, url)[0] == 403
 
     def test_fremder_mandant(self, welt: Welt) -> None:
-        andere = SessionTenant.objects.create(name="Fremdstadt", slug="fremdstadt")
+        andere = SessionTenant.objects.create(name="Fremdstadt", slug="fremdstadt", oparl_public_since=timezone.now())
         fremd = SessionPaper.objects.create(tenant=andere, name="FREMD", is_public=True)
         paper_version_service.snapshot(fremd, trigger=Version.TRIGGER_MANUAL)
         for path in ("fassungen/", "fassungen/1/", "fassungen/vergleich/?a=1&b=1"):

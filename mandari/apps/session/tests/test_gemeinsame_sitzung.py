@@ -71,7 +71,7 @@ def _sitz(org: SessionOrganization, person: SessionPerson, **extra: Any) -> None
 
 @pytest.fixture
 def welt() -> Welt:
-    tenant = SessionTenant.objects.create(name="Bezirk Nord", slug="nord")
+    tenant = SessionTenant.objects.create(name="Bezirk Nord", slug="nord", oparl_public_since=timezone.now())
     bau = SessionOrganization.objects.create(tenant=tenant, name="Bauausschuss", invitation_period_days=7)
     umwelt = SessionOrganization.objects.create(tenant=tenant, name="Umweltausschuss", invitation_period_days=10)
     doppelt = _person(tenant, "Dora", "Doppel")
@@ -189,7 +189,7 @@ def test_doppelmitglied_hat_nur_eine_stimme(welt: Welt) -> None:
 
 
 def test_fremdes_und_federfuehrendes_gremium_werden_abgewiesen(welt: Welt) -> None:
-    fremd_tenant = SessionTenant.objects.create(name="Bezirk Süd", slug="sued")
+    fremd_tenant = SessionTenant.objects.create(name="Bezirk Süd", slug="sued", oparl_public_since=timezone.now())
     fremd = SessionOrganization.objects.create(tenant=fremd_tenant, name="Ausschuss Süd")
     # Der Schutz greift beim Zuordnen selbst, nicht nur im Formular (Savepoint je Versuch)
     with pytest.raises(joint_meeting_service.JointOrganizationError), transaction.atomic():
@@ -229,7 +229,7 @@ def test_ladungsfrist_ist_die_laengste_der_gremien(welt: Welt) -> None:
 
 
 def test_formular_legt_gemeinsame_sitzung_an_und_prueft(welt: Welt) -> None:
-    fremd_tenant = SessionTenant.objects.create(name="Bezirk Süd", slug="sued")
+    fremd_tenant = SessionTenant.objects.create(name="Bezirk Süd", slug="sued", oparl_public_since=timezone.now())
     fremd = SessionOrganization.objects.create(tenant=fremd_tenant, name="Ausschuss Süd")
     daten = {
         "name": "Neue gemeinsame Sitzung",

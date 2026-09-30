@@ -68,6 +68,18 @@ class OParlMixin:
         except SessionTenant.DoesNotExist:
             raise Http404("Mandant nicht gefunden") from None
 
+    def require_reader(self, request, tenant: SessionTenant) -> None:
+        """Anonyme lesen erst nach der Freischaltung der OParl-Schnittstelle (Issue #319), vorher 404."""
+        if tenant.oparl_public:
+            return
+        from apps.session.models import SessionUser
+
+        user = request.user
+        if not (
+            user.is_authenticated and SessionUser.objects.filter(user=user, tenant=tenant, is_active=True).exists()
+        ):
+            raise Http404("Mandant nicht gefunden")
+
     def json_response(self, data: Any, status: int = 200) -> JsonResponse:
         """Return JSON response with proper headers."""
         response = JsonResponse(data, safe=False, status=status, json_dumps_params={"ensure_ascii": False})
@@ -87,6 +99,7 @@ class APIRootView(OParlMixin, View):
 
     def get(self, request, tenant_slug: str):
         tenant = self.get_tenant(tenant_slug)
+        self.require_reader(request, tenant)
 
         return self.json_response(
             {
@@ -179,6 +192,8 @@ class SessionMeetingListAPIView(SessionAPIMixin, View):
     def get(self, request, tenant_slug: str):
         tenant = self.get_tenant(tenant_slug)
         session_user = self.get_session_user(request, tenant)
+        if session_user is None:
+            self.require_reader(request, tenant)
 
         # Determine what meetings to show
         if session_user and self.check_permission(session_user, "view_non_public_meetings"):
@@ -236,6 +251,8 @@ class SessionPaperListAPIView(SessionAPIMixin, View):
     def get(self, request, tenant_slug: str):
         tenant = self.get_tenant(tenant_slug)
         session_user = self.get_session_user(request, tenant)
+        if session_user is None:
+            self.require_reader(request, tenant)
 
         # Ohne NÖ-Leserecht gilt die Veröffentlichungsregel der OParl-Schnittstelle:
         # öffentlich UND freigegeben (Entwürfe und Vorlagen in Prüfung sind Verwaltungsinterna).

@@ -4,7 +4,9 @@ Insight-Durchstich: Session-Mandanten als OParl-Quelle im Bürgerportal
 (Issue #36).
 
 Eine Session-Kommune erscheint automatisch im Insight-Bürgerportal, sobald
-der Mandant die Veröffentlichung aktiviert (SessionTenant.insight_publish):
+der Mandant die Veröffentlichung aktiviert (SessionTenant.insight_publish) –
+vorausgesetzt, seine OParl-Schnittstelle ist freigeschaltet (Issue #319,
+``SessionTenant.oparl_public_since``). Vorher wird keine Quelle registriert:
 
 1. Die spec-konforme OParl-API des Mandanten (Issue #35) wird als ganz
    normale OParlSource registriert.
@@ -108,6 +110,7 @@ def sync_publication_state(tenant, base_url: str | None = None) -> "PortalChange
     Quellen und Bürgerportal an Veröffentlichungs-Schalter und Ende-Möglichkeit angleichen.
 
     - veröffentlicht: Quelle aktiv, eine frühere Rücknahme aufgehoben, kein Hinweis
+    - veröffentlicht, aber OParl-Schnittstelle nicht freigeschaltet (Issue #319): keine Quelle, bis zur Freischaltung
     - vorübergehend abgeschaltet bzw. Archiv: Quelle inaktiv, Bestand (wieder) da, Stand an der Quelle
     - dauerhaft zurückgenommen: Quelle zurückgenommen (``retract_source``), Stand an der Quelle
     - leer (alter Stand): nur die Quelle inaktiv
@@ -121,10 +124,13 @@ def sync_publication_state(tenant, base_url: str | None = None) -> "PortalChange
         deactivate_source(tenant, base_url)
         return change
     mode = tenant.insight_end_mode or ""
-    if tenant.insight_publish:
+    if tenant.insight_publish and tenant.oparl_public:
         register_source(tenant, base_url)
         # Eine Rücknahme aus der Zeit der Deaktivierung bzw. dauerhaften Rücknahme endet mit der Veröffentlichung
         change = restore_source(tenant)
+    elif tenant.insight_publish:
+        # Die Schnittstelle antwortet noch mit 404 – das Bürgerportal registriert die Quelle erst danach
+        deactivate_source(tenant, base_url)
     elif mode == SessionTenant.PORTAL_END_WITHDRAWN:
         change = retract_source(tenant)
     elif mode in SessionTenant.PORTAL_END_KEEPS_ENTRY:
@@ -270,8 +276,8 @@ def restore_source(tenant: Any, *, activate: bool = True) -> PortalChange:
     """
     Rücknahme aus ``retract_source`` aufheben (Reaktivieren bzw. erneutes Veröffentlichen); idempotent.
 
-    Nur für aktive Mandanten; mit ``activate`` (Standard) nur für veröffentlichende, deren Quelle
-    wieder synchronisiert. Ohne ``activate`` kommt der Bestand zurück, die Quelle bleibt aus
+    Nur für aktive Mandanten; mit ``activate`` (Standard) nur für veröffentlichende mit freigeschalteter
+    OParl-Schnittstelle, deren Quelle wieder synchronisiert. Ohne ``activate`` kommt der Bestand zurück, die Quelle bleibt aus
     (vorübergehend abgeschaltet oder Archiv, Issue #618). Zurück kommen genau die Einträge mit dem
     Zeitpunkt der Rücknahme, außer denen, die in Session inzwischen einen Tombstone haben (gelöscht
     oder nichtöffentlich). Die Kommune wird wieder gelistet, sofern sie es vorher war.
@@ -280,7 +286,7 @@ def restore_source(tenant: Any, *, activate: bool = True) -> PortalChange:
     from insight_core.models import OParlBody
 
     change = PortalChange()
-    if not tenant.is_active or (activate and not tenant.insight_publish):
+    if not tenant.is_active or (activate and not (tenant.insight_publish and tenant.oparl_public)):
         return change
     tombstoned = {
         f"{kind}/{object_id}"

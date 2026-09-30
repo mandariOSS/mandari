@@ -81,6 +81,10 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
 - Öffentliche Schnittstellen (OParl-API, öffentliche Fraktions-API,
   iCal-Feeds) liefern ausschließlich als öffentlich gekennzeichnete Inhalte;
   opake Zufalls-Tokens statt personenbezogener URLs.
+- Session-OParl-API: erst nach Freischaltung durch die Verwaltung erreichbar (neue Mandanten
+  starten gesperrt); E-Mail-Adressen von Personen nur mit Kennzeichen, Datum und Nachweis der
+  Einwilligung ([Session-OParl-API](SESSION_OPARL_API.md), mit Baustein für das Verzeichnis der
+  Verarbeitungstätigkeiten).
 
 ## 5. Organisatorische Maßnahmen
 

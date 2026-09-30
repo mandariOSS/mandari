@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import pytest
 from django.test import Client
+from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.common.tests.factories import UserFactory
@@ -26,7 +27,9 @@ OPARL = "/session/{slug}/api/oparl/papers/"
 
 @pytest.fixture
 def tenant() -> SessionTenant:
-    tenant = SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt")
+    tenant = SessionTenant.objects.create(
+        name="Stadt Musterstadt", slug="musterstadt", oparl_public_since=timezone.now()
+    )
     for status in ("draft", "review", "approved"):
         SessionPaper.objects.create(
             tenant=tenant,

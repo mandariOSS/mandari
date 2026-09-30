@@ -1,7 +1,9 @@
 {% comment %}
 Karte „Bürgerportal“ in den Einstellungen (Issues #36, #48, #618): Veröffentlichen, Beenden mit Auswahl
-(eigene Seite) und Beschluss-Tracking.
+(eigene Seite) und Beschluss-Tracking. Davor die Karte „OParl-Schnittstelle“ (Issue #319): Das Bürgerportal
+veröffentlicht erst, wenn die Schnittstelle freigeschaltet ist.
 {% endcomment %}
+{% include "session/settings/_oparl_schnittstelle.html" %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" data-testid="karte-buergerportal">
     <div class="flex items-center gap-4 mb-3">
         <div class="w-12 h-12 rounded-xl bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center">
@@ -40,7 +42,11 @@ Karte „Bürgerportal“ in den Einstellungen (Issues #36, #48, #618): Veröffe
             (Ö-Sitzungen, Ö-Vorlagen, Ö-Anlagen) über die OParl-Schnittstelle.
         </p>
         <div class="flex flex-wrap items-center gap-2">
-            {% if not session_tenant.insight_publish %}
+            {% if not session_tenant.insight_publish and not session_tenant.oparl_public %}
+            <p class="text-xs text-amber-700 dark:text-amber-400" data-testid="buergerportal-voraussetzung">
+                Voraussetzung: die freigeschaltete OParl-Schnittstelle.
+            </p>
+            {% elif not session_tenant.insight_publish %}
             <form method="post" action="{% url 'session:insight_publish' tenant_slug=tenant_slug %}">
                 {% csrf_token %}
                 <input type="hidden" name="publish" value="1">

@@ -79,6 +79,8 @@ def welt() -> Welt:
         hybrid_basis_date=date(2024, 3, 12),
         hybrid_basis_reference="§ 7 Hauptsatzung",
         digital_public_registration_days=2,
+        # Freigeschaltete OParl-Schnittstelle (Issue #319): die Tests lesen das Sitzungsformat über OParl
+        oparl_public_since=timezone.now(),
     )
     bau = SessionOrganization.objects.create(tenant=tenant, name="Bauausschuss")
     haupt = SessionOrganization.objects.create(tenant=tenant, name="Hauptausschuss", committee_kind="main")

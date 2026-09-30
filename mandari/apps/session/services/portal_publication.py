@@ -206,13 +206,20 @@ def resume_publication(tenant: Any, *, user: Any = None, request: Any = None) ->
     """
     Wieder (bzw. erstmals) veröffentlichen; hebt eine gewählte Möglichkeit auf.
 
-    ``None``: lief schon und wirkt an allen Quellen.
+    ``None``: lief schon und wirkt an allen Quellen. Das Bürgerportal liest die OParl-Schnittstelle des
+    Mandanten; ohne deren Freischaltung (Issue #319) ``oparl_access.OParlAccessError``.
     """
     from apps.session import audit
 
     from .insight_service import sync_publication_state
+    from .oparl_access import RELEASE_REQUIRED, OParlAccessError, lock_row
 
     with transaction.atomic():
+        # Unter Zeilensperre frisch prüfen: Eine gleichzeitige Rücknahme der Freischaltung gewinnt
+        # entweder ganz oder gar nicht (sonst: veröffentlicht bei gesperrter Schnittstelle)
+        lock_row(tenant)
+        if not tenant.oparl_public:
+            raise OParlAccessError(RELEASE_REQUIRED)
         vorher, war = state_label(tenant), tenant.insight_publish
         if tenant.insight_publish:
             if in_effect(tenant):

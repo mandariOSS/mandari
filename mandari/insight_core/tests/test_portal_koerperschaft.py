@@ -16,6 +16,7 @@ from django.core.cache import cache
 from django.db import connection
 from django.test import Client, RequestFactory, override_settings
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 
 from apps.session.models import SessionTenant
 from insight_core import portal
@@ -139,7 +140,11 @@ class TestEinstieg:
 
     def test_mandanten_slug_fuehrt_zur_gespiegelten_kommune(self, db: Any) -> None:
         tenant = SessionTenant.objects.create(
-            name="Bezirksversammlung Ost", slug="ost", insight_publish=True, primary_color="#9d174d"
+            name="Bezirksversammlung Ost",
+            slug="ost",
+            insight_publish=True,
+            primary_color="#9d174d",
+            oparl_public_since=timezone.now(),
         )
         tenant.logo.name = "session/tenants/logos/ost.png"
         cast(Any, tenant).save(update_fields=["logo"])
@@ -156,7 +161,13 @@ class TestEinstieg:
         assert kontext.home_url == "/insight/k/ost/"
 
     def test_ungueltige_primaerfarbe_wird_nicht_ausgegeben(self, db: Any) -> None:
-        SessionTenant.objects.create(name="Bezirk West", slug="west", insight_publish=True, primary_color="red;}x")
+        SessionTenant.objects.create(
+            name="Bezirk West",
+            slug="west",
+            insight_publish=True,
+            primary_color="red;}x",
+            oparl_public_since=timezone.now(),
+        )
         source = OParlSource.objects.get(sync_config__session_tenant="west")
         OParlBody.objects.create(external_id=f"{source.url}body/", source=source, name="Bezirk West", slug="west-b")
 
