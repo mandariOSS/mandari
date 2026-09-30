@@ -382,6 +382,29 @@ def test_einstellungen_nur_mit_recht(welt: Welt) -> None:
     assert welt.tenant.state_profile_id == "NW"
 
 
+def test_datenschutzlauf_loescht_zugangsweg_nach_frist(welt: Welt) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.session.services import privacy_service
+
+    alt = SessionMeeting.objects.create(
+        tenant=welt.tenant,
+        organization=welt.bau,
+        name="Alt",
+        start=timezone.now() - timedelta(days=800),
+        format="hybrid",
+    )
+    cast(Any, alt).set_remote_access_encrypted("Raum 1, PIN 1234")
+    alt.save()
+    welt.tenant.settings = {"privacy": {"np_content_years": 1}}
+    welt.tenant.save()
+    stats = privacy_service.run_privacy_purge(welt.tenant)
+    assert stats["np_meetings_cleared"] == 1
+    assert not SessionMeeting.objects.get(pk=alt.pk).remote_access_encrypted
+
+
 # =============================================================================
 # Datenmigration und Rückfall per Image
 # =============================================================================

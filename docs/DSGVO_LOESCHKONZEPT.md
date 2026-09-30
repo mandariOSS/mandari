@@ -21,6 +21,7 @@ die hier genannten Fristen sind konfigurierbare Voreinstellungen.
 | Grund einer Absage | `SessionAttendance.response_reason_encrypted` | AES-256-GCM, nur in der Rückmeldeübersicht des Sitzungsdienstes sichtbar, nicht in OParl, Nachweis oder Mails an Dritte |
 | Nicht-öffentliche Protokollteile | `SessionProtocol.content_encrypted` | AES-256-GCM |
 | Interne Sitzungsnotizen | `SessionMeeting.internal_notes_encrypted` | AES-256-GCM |
+| Zugangsweg für zugeschaltete Mitglieder (hybride und digitale Sitzungen) | `SessionMeeting.remote_access_encrypted` | AES-256-GCM, nur in der Ladung an Gremienmitglieder, nie in öffentlichen Dokumenten oder der OParl-API |
 | Audit-Log (Änderungen, Lesezugriffe auf Nichtöffentliches, Anmeldungen) | `SessionAuditLog` | unveränderbar, Hash-Kette je Mandant, keine Inhalte und keine Klartext-Werte verschlüsselter Felder; Einsicht nur mit Kontrollrechten ([Protokollierungskonzept](PROTOKOLLIERUNG.md)) |
 | Sicherheitsprotokoll (Anmeldungen von Konten ohne Session-Mandant, Fehlversuche mit unbekannter Kennung) | `SecurityAuditLog` | unveränderbar, eigene Hash-Kette, Kennungen nur als HMAC, kein Passwort; nur für den Plattformbetrieb |
 | Anlagen und ihre früheren Fassungen | `SessionFile`, `SessionFileVersion`, Inhalte in `SessionFileBlob` | nur über zugriffsgeprüfte Downloads, Sichtbarkeit wie die Anlage (Ö/NÖ) |

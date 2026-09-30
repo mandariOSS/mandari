@@ -71,6 +71,7 @@ KEIN_KLARTEXT_GEHEIMNIS: dict[str, str] = {
     "accounts.User.password": "Passwort-Hash (PBKDF2), nicht umkehrbar",
     "common.SiteSettings.email_host_password_legacy": "frühere Klartextspalte, von Migration common/0006 geleert",
     "common.SiteSettings.nebius_api_key_legacy": "frühere Klartextspalte, von Migration common/0006 geleert",
+    "session.SessionStateProfile.remote_secret_votes": "Regel des Landesprofils zu geheimen Abstimmungen, kein Geheimnis",
 }
 
 
