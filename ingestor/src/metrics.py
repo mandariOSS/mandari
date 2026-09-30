@@ -59,6 +59,7 @@ class SimpleMetrics:
     http_errors: int = 0
     http_total_duration: float = 0.0
     entities_synced: dict[str, int] = field(default_factory=dict)
+    events_published: dict[str, int] = field(default_factory=dict)
     sync_runs: int = 0
     sync_errors: int = 0
     active_syncs: int = 0
@@ -71,6 +72,7 @@ class SimpleMetrics:
             "http_avg_duration_seconds": (self.http_total_duration / max(self.http_requests, 1)),
             "entities_synced_total": sum(self.entities_synced.values()),
             "entities_by_type": self.entities_synced,
+            "events_published_total": sum(self.events_published.values()),
             "sync_runs_total": self.sync_runs,
             "sync_errors_total": self.sync_errors,
             "active_syncs": self.active_syncs,
@@ -134,6 +136,14 @@ class MetricsCollector:
             "mandari_ingestor_entities_synced_total",
             "Total entities synced",
             ["entity_type", "source", "action"],
+            registry=self.registry,
+        )
+
+        # Ereignistechnik: ins Journal geschriebene Ereignisse (docs/adr/20260929-ereignistechnik-postgres.md)
+        self.events_published_total = Counter(
+            "mandari_ingestor_events_published_total",
+            "Events written to the journal (events_event) by type",
+            ["type"],
             registry=self.registry,
         )
 
@@ -275,6 +285,16 @@ class MetricsCollector:
             return
         if self._prometheus_enabled:
             self.scraper_parse_quota.labels(source=source).set(quota)
+
+    # ========== Event Metrics ==========
+
+    def record_event_published(self, event_type: str, count: int = 1) -> None:
+        """Record events written to the journal (counted when written, before the commit)."""
+        if not self.enabled:
+            return
+        self.simple.events_published[event_type] = self.simple.events_published.get(event_type, 0) + count
+        if self._prometheus_enabled:
+            self.events_published_total.labels(type=event_type).inc(count)
 
     # ========== Entity Metrics ==========
 

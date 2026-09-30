@@ -325,6 +325,8 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ELASTICSEARCH_URL: http://elasticsearch:9200
       TZ: ${TZ:-Europe/Berlin}
+      # Änderungen am RIS-Bestand als Ereignisse ins Journal schreiben (Standard aus, siehe .env.example)
+      INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
     volumes:
       - ingestor_data:/app/data
     depends_on:

@@ -176,7 +176,9 @@ enthalten und Prometheus nutzt das Token.
 Beispiel-Scrape-Konfiguration: `deploy/monitoring/prometheus-scrape.example.yml`;
 Grafana-Vorlage (p95-Latenz je View, Fehlerquote, Pool-Belegung, Cache-Trefferquote):
 `deploy/monitoring/grafana-mandari.json`. Der Ingestor liefert seine eigenen Metriken
-(`mandari_ingestor_*`) weiterhin über seinen Port.
+(`mandari_ingestor_*`) weiterhin über seinen Port, darunter
+`mandari_ingestor_events_published_total{type}`: ins Journal geschriebene Ereignisse je Typ, sobald
+`INGESTOR_EVENTS_ENABLED` eingeschaltet ist (gezählt beim Schreiben, vor dem Commit).
 
 ## Service-Level-Alarme
 

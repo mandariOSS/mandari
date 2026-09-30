@@ -3,6 +3,7 @@
 from src.storage.database import DatabaseStorage
 from src.storage.models import (
     Base,
+    JournalEvent,
     OParlAgendaItem,
     OParlBody,
     OParlConsultation,
@@ -20,6 +21,7 @@ from src.storage.models import (
 __all__ = [
     "Base",
     "DatabaseStorage",
+    "JournalEvent",
     "OParlAgendaItem",
     "OParlBody",
     "OParlConsultation",

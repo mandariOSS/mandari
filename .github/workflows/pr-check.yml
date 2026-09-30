@@ -418,12 +418,15 @@ jobs:
         run: python scripts/check_schema_contract.py
 
       # Die Django-Tests zum Contract lesen den Quellbaum des Ingestors; bei Django-Änderungen
-      # laufen sie ohnehin im Job "Test".
+      # laufen sie ohnehin im Job "Test". Dazu gehört der Vertragstest der Ereignisse, die der
+      # Ingestor ins Journal schreibt (ris.*, Schemas in mandari/hub/contracts/schemas/).
       - name: Django-Tests zum Ingestor-Contract (bei Ingestor-Änderungen)
         if: ${{ !cancelled() && steps.pydeps.outcome == 'success' && needs.changes.outputs.vertrag == 'true' }}
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-        run: cd mandari && pytest insight_core/tests/test_schema_contract.py -q -p no:cacheprovider
+        run: >-
+          cd mandari && pytest insight_core/tests/test_schema_contract.py
+          hub/contracts/tests/test_ingestor_events.py -q -p no:cacheprovider
 
       # --- Frontend: TypeScript, Biome, Vite ---------------------------------------
       - uses: actions/setup-node@v7
@@ -968,6 +971,25 @@ jobs:
     needs: changes
     if: needs.changes.outputs.ingestor == 'true'
     runs-on: ubuntu-latest
+
+    services:
+      # Ereignisse in derselben Transaktion wie die Datenänderung (tests/test_events_journal.py):
+      # Die Tests legen ein eigenes Schema aus der Tabellenbeschreibung des Ingestors an.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --tmpfs /var/lib/postgresql/data:rw
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -976,6 +998,8 @@ jobs:
       - name: Abhängigkeiten
         run: cd ingestor && uv sync --frozen --extra dev
       - name: pytest
+        env:
+          INGESTOR_TEST_DATABASE_URL: postgresql://test:test@localhost:5432/test
         run: cd ingestor && uv run pytest -q
       - name: mypy (Ingestor ist bereits strikt typisiert)
         # Informativ, bis die Allowlist steht (Issue zu mypy im Epic Code-Qualität)

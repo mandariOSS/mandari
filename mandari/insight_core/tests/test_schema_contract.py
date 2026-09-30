@@ -8,11 +8,15 @@ Abweichungen erkannt werden (sonst wäre das Gate wertlos).
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from django.db import connection
 
+from apps.events.models import Event, Operation
 from insight_core.schema_contract import (
     ColumnSpec,
     SchemaSpec,
@@ -20,6 +24,7 @@ from insight_core.schema_contract import (
     django_schema,
     elasticsearch_contract,
     ingestor_index_names,
+    ingestor_models,
     sqlalchemy_schema,
 )
 
@@ -91,6 +96,107 @@ def test_compatible_families_only_warn(schemas: tuple[SchemaSpec, SchemaSpec]) -
     report = compare(django, softened)
     assert not any(f.column == "location_address" for f in report.errors)
     assert any(f.column == "location_address" for f in report.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Journal der Ereignistechnik (Issue #513): Der Ingestor schreibt Ereignisse, vergibt aber keine
+# Folgenummer
+# ---------------------------------------------------------------------------
+
+
+def test_journal_gehoert_zum_vertrag(schemas: tuple[SchemaSpec, SchemaSpec]) -> None:
+    django, ingestor = schemas
+    assert "events_event" in compare(django, ingestor).compared_tables
+    assert set(ingestor["events_event"]) <= set(django["events_event"])
+
+
+def test_ingestor_vergibt_keine_folgenummer(schemas: tuple[SchemaSpec, SchemaSpec]) -> None:
+    """``seq`` vergibt der Sequenzierer nach dem Commit, ``xid`` und ``recorded_at`` setzt die Datenbank."""
+    django, ingestor = schemas
+    for spalte in ("seq", "xid", "recorded_at"):
+        assert spalte in django["events_event"]
+        assert spalte not in ingestor["events_event"]
+    # Was der Ingestor nicht schreibt, darf seine INSERTs nicht scheitern lassen.
+    assert django["events_event"]["seq"].nullable
+    assert django["events_event"]["xid"].has_db_default
+    assert django["events_event"]["recorded_at"].has_db_default
+
+
+def test_detects_new_required_journal_column(schemas: tuple[SchemaSpec, SchemaSpec]) -> None:
+    django, ingestor = schemas
+    broken: SchemaSpec = {t: dict(cols) for t, cols in django.items()}
+    broken["events_event"]["neue_pflichtspalte"] = ColumnSpec("neue_pflichtspalte", "text", nullable=False)
+    report = compare(broken, ingestor)
+    assert any(f.table == "events_event" and f.column == "neue_pflichtspalte" for f in report.errors)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ingestor_insert_gegen_das_journal_aus_den_migrationen() -> None:
+    """
+    Die Anweisung des Ingestors (``ingestor/src/storage/events.py``: ein INSERT mit mehreren Zeilen auf
+    seiner Tabellenbeschreibung) gegen die Tabelle, die die Django-Migrationen anlegen: Standards,
+    Transaktionskennung und Prüfbedingungen kommen aus der Datenbank, die Folgenummer bleibt leer.
+    """
+    if connection.vendor != "postgresql":
+        pytest.skip("braucht PostgreSQL (CI); der Ingestor schreibt nur dorthin")
+    import sqlalchemy as sa
+    from sqlalchemy.pool import NullPool
+
+    tabelle = ingestor_models(INGESTOR_DIR).JournalEvent.__table__
+    einstellungen = connection.settings_dict
+    url = sa.URL.create(
+        "postgresql+psycopg",
+        username=einstellungen["USER"],
+        password=einstellungen["PASSWORD"],
+        host=einstellungen["HOST"] or None,
+        port=int(einstellungen["PORT"]) if einstellungen["PORT"] else None,
+        database=einstellungen["NAME"],
+    )
+    quelle = f"source:{uuid.uuid4()}"
+    zeit = datetime(2026, 9, 30, 8, 15, tzinfo=UTC)
+    zeilen = [
+        {
+            "event_id": uuid.uuid4(),
+            "type": typ,
+            "version": 1,
+            "aggregate_type": "Paper",
+            "aggregate_id": uuid.uuid4(),
+            "tenant_ref": quelle,
+            "body_id": uuid.uuid4(),
+            "visibility": "oeffentlich",
+            "operation": operation,
+            "occurred_at": zeit,
+            "actor_ref": "system:ingestor",
+            "correlation_id": uuid.uuid4(),
+            "causation_id": None,
+            "payload": {"changed": ["name"]},
+        }
+        for typ, operation in (("ris.paper.changed", "upsert"), ("ris.object.depublished", "delete"))
+    ]
+    engine = sa.create_engine(url, poolclass=NullPool)
+    try:
+        with engine.begin() as verbindung:
+            verbindung.execute(sa.insert(tabelle).values(zeilen))
+            # ohne Angabe der Operation gilt der Standard der Datenbank
+            ohne_operation = {k: v for k, v in zeilen[0].items() if k != "operation"} | {"event_id": uuid.uuid4()}
+            verbindung.execute(sa.insert(tabelle).values(ohne_operation))
+        with pytest.raises(sa.exc.IntegrityError), engine.begin() as verbindung:
+            verbindung.execute(
+                sa.insert(tabelle).values(zeilen[0] | {"event_id": uuid.uuid4(), "visibility": "geheim"})
+            )
+    finally:
+        engine.dispose()
+
+    ereignisse = list(Event.objects.filter(tenant_ref=quelle).order_by("id"))
+    assert [e.type for e in ereignisse] == ["ris.paper.changed", "ris.object.depublished", "ris.paper.changed"]
+    assert [e.operation for e in ereignisse] == [Operation.UPSERT, Operation.DELETE, Operation.UPSERT]
+    assert {e.event_id for e in ereignisse[:2]} == {zeile["event_id"] for zeile in zeilen}
+    assert ereignisse[0].occurred_at == zeit
+    assert ereignisse[0].payload == {"changed": ["name"]}
+    # Der Ingestor vergibt keine Folgenummer; Transaktion und Erfassungszeit setzt die Datenbank.
+    assert {e.seq for e in ereignisse} == {None}
+    assert len({e.xid for e in ereignisse}) == 1 and ereignisse[0].xid > 0
+    assert all(e.recorded_at is not None for e in ereignisse)
 
 
 # ---------------------------------------------------------------------------

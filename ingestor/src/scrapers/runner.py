@@ -26,6 +26,7 @@ from src.redaction import MaskingConsole
 from src.scrapers import get_adapter
 from src.scrapers.base import CrawlWindow, ScraperConfig
 from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError
+from src.storage.events import start_correlation
 
 if TYPE_CHECKING:
     from src.storage.models import OParlSource
@@ -113,6 +114,9 @@ class ScraperSyncRunner:
                 await self._sperre_festhalten(result, message)
                 return result
             state.pop("robots_disallowed", None)
+
+            # Alle Ereignisse dieses Crawls tragen dieselbe Korrelations-ID (src/storage/events.py)
+            start_correlation()
 
             # Body anlegen/aktualisieren
             body_dict = adapter.build_body()

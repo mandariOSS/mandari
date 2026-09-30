@@ -161,6 +161,56 @@ Umgesetzt in `apps/events/registry.py` (`@subscriber`) und `apps/events/dispatch
   `mandari_events_parked{state="tot"}`, dazu sofort die Alarmmail der Dienstgüteprüfung
   (`check_service_levels`, höchstens eine je Abonnement und Tag).
 
+## Nachtrag zur Umsetzung im Ingestor (#513)
+
+Umgesetzt in `ingestor/src/storage/events.py` (Schreiben ins Journal) und
+`ingestor/src/storage/ris_events.py` (welches Ereignis aus welcher Änderung entsteht). Die
+Entscheidung bleibt; präzisiert wurde:
+
+- **Eine Transaktion je Objekt:** Der Ingestor schreibt jedes Objekt in einer eigenen Transaktion.
+  Das Ereignis wird in derselben Sitzung nach dem Upsert bzw. der Löschmarkierung und vor dem
+  Commit geschrieben. Scheitert das Ereignis, bleibt auch die Änderung aus. Mehrere Ereignisse
+  einer Transaktion gehen als eine Anweisung in die Datenbank.
+- **Schalter:** `INGESTOR_EVENTS_ENABLED`, Standard aus. Eingeschaltet wird erst, wenn die
+  Migrationen der Ereignistechnik eingespielt sind und der Sequenzierer läuft; sonst sammeln sich
+  Ereignisse ohne Folgenummer, und `mandari_events_sequencer_lag_seconds` wächst. Ausgeschaltet
+  läuft jeder Upsert unverändert, ohne zusätzliche Abfrage.
+- **Nur echte Änderungen:** Vor dem Upsert liest der Ingestor den bisherigen Stand der Zeile mit
+  Zeilensperre und vergleicht das Objekt der Quelle Feld für Feld. `created`, `modified` und der
+  Content-Hash zählen auf keiner Ebene, ebenso wenig der Rückverweis eines eingebetteten Objekts
+  auf sein übergeordnetes (`meeting` am Tagesordnungspunkt, `paper` an der Beratung,
+  `paper`/`meeting`/`agendaItem` an der Datei): Ein Vollabgleich ohne Änderung schreibt kein
+  Ereignis. Die Sperre gilt bis zum Commit; schreiben zwei Abgleiche dasselbe Objekt gleichzeitig,
+  vergleicht der zweite mit dem Stand des ersten. Der Upsert selbst bleibt, wie er war.
+- **Ereignisse:** `ris.meeting.scheduled` und `ris.meeting.changed`, `ris.paper.released` und
+  `ris.paper.changed`, `ris.agendaitem.changed` (`added`, `changed`, `moved`),
+  `ris.consultation.changed` (`added`, `scheduled`, `changed`), `ris.file.changed` (`added`,
+  `replaced`, `renamed`) und für die Löschmarkierung jedes Typs `ris.object.depublished` mit
+  Grund `quelle_geloescht` und Operation `delete`. Ein nach einer Löschmarkierung wieder
+  geliefertes Objekt gilt als neu. Für Änderungen an Gremien, Personen, Mitgliedschaften, Orten,
+  Wahlperioden und Kommunen gibt es noch keinen Vertrag; sie melden nur ihre Löschmarkierung.
+- **Hülle:** Mandant ist die Quelle (`source:<uuid>`), `body_id` die Kommune, Auslöser
+  `system:ingestor`. `occurred_at` ist der Änderungszeitpunkt laut Quelle, sofern er nicht in der
+  Zukunft liegt, sonst der Zeitpunkt des Abgleichs. Alle Ereignisse des Abgleichs einer Kommune
+  tragen dieselbe Korrelations-ID. Die Hülle wird wie in Django am Format geprüft.
+- **Keine Folgenummer:** Die Tabellenbeschreibung des Ingestors kennt `seq`, `xid` und
+  `recorded_at` nicht. `events_event` steht im Schema-Vertrag
+  ([20260909-schema-contract-django-ingestor](20260909-schema-contract-django-ingestor.md)).
+- **Sichtbarkeit:** Was der Ingestor liest, hat die Quelle veröffentlicht, die Ereignisse sind
+  `oeffentlich`. Ausnahme sind Tagesordnungspunkte mit `public: false`: Ihre Ereignisse sind
+  `nichtoeffentlich`. Wird ein bisher öffentlicher Punkt nichtöffentlich, meldet zusätzlich
+  `ris.object.depublished` (Grund `nichtoeffentlich`) die Rücknahme an öffentliche Empfänger; wird
+  er öffentlich, erscheint er ihnen als `added`. Nutzlasten enthalten nie Inhalte, nur Kennungen,
+  Codes und Namen geänderter Felder.
+- **Vertragstreue ohne Register:** Der Ingestor hat keinen Zugriff auf `hub.contracts`. Ein
+  Vertragstest der Drehscheibe (`hub/contracts/tests/test_ingestor_events.py`) lädt die Abbildung
+  des Ingestors und prüft jedes Ereignis, das sie bilden kann, gegen die ausgelieferten Schemas; er
+  läuft bei Änderungen am Ingestor wie an den Schemas.
+- **Last:** Eingeschaltet kostet jeder Upsert eine zusätzliche Abfrage (bisheriger Stand) und bei
+  echter Änderung ein INSERT. Gemessen mit 7 800 Upserts je Abgleich auf einem Arbeitsplatzrechner:
+  rund 0,5 bis 1 ms je Upsert zusätzlich (etwa 20 %), rund 540 Bytes je Ereignis im Journal
+  einschließlich Indizes. Der Erstabgleich einer Kommune schreibt je Objekt ein Ereignis.
+
 ## Nachtrag zur Umsetzung des Weckrufs (#505)
 
 Umgesetzt in `apps/events/wakeup.py`, eingebunden in `events_sequencer` und `events_dispatch`

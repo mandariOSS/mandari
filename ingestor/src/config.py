@@ -121,6 +121,17 @@ class Settings(BaseSettings):
     elasticsearch_indexing_enabled: bool = True
     elasticsearch_batch_size: int = 500
 
+    # Ereignistechnik (docs/adr/20260929-ereignistechnik-postgres.md): Der Ingestor meldet Änderungen am
+    # RIS-Bestand als ris.*-Ereignisse im Journal (events_event), in derselben Transaktion wie die
+    # Datenänderung. Standard aus; der Betrieb schaltet das Schreiben gezielt ein, sobald die
+    # Django-Migration der Ereignistechnik eingespielt ist und der Sequenzierer läuft
+    # (Env INGESTOR_EVENTS_ENABLED). Eingeschaltet kostet jeder Upsert eine zusätzliche Abfrage
+    # (bisheriger Stand, mit Zeilensperre) und bei echter Änderung ein INSERT ins Journal.
+    events_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("INGESTOR_EVENTS_ENABLED", "events_enabled"),
+    )
+
     # User-Agent für OParl-Client und Scraper (siehe DEFAULT_USER_AGENT).
     # Env INGESTOR_USER_AGENT; SCRAPER_USER_AGENT bleibt als älterer Name gültig.
     user_agent: str = Field(
