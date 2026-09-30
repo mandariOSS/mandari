@@ -545,16 +545,36 @@ OPARL_API_CACHE_SECONDS = int(os.environ.get("OPARL_API_CACHE_SECONDS", "60"))  
 SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))
 SYNC_FULL_HOUR = int(os.environ.get("SYNC_FULL_HOUR", "3"))
 
-# Django 6.0 Background Tasks
-# https://docs.djangoproject.com/en/6.0/topics/tasks/
+# Hintergrundaufträge über die Tasks-Schnittstelle von Django
+# https://docs.djangoproject.com/en/stable/topics/tasks/ und docs/adr/20260929-auftraege-und-zeitplaene.md
+#
+# TASKS_BACKEND=immediate (Standard): führt @task-Aufträge sofort in der Anfrage aus.
+# TASKS_BACKEND=journal: schreibt sie in die Tabelle events_task; abgearbeitet werden sie vom
+# Runner ``manage.py events_tasks`` (eigener Prozess bzw. Container). Ohne laufenden Runner
+# bleiben Aufträge liegen – erst den Runner starten, dann umschalten.
+# Ein vollständiger Importpfad eines anderen Backends ist ebenfalls erlaubt.
+TASK_QUEUES = ["default", "mail", "index", "ocr", "ai", "adapter"]
+_TASK_BACKENDS = {
+    "immediate": "django.tasks.backends.immediate.ImmediateBackend",
+    "journal": "apps.events.tasks_backend.JournalBackend",
+}
+_tasks_backend = os.environ.get("TASKS_BACKEND", "").strip() or "immediate"
 TASKS = {
     "default": {
-        # ImmediateBackend: Synchrone Ausführung (funktioniert immer)
-        # DatabaseBackend: Async via DB — erfordert `manage.py db_worker`
-        "BACKEND": os.environ.get(
-            "TASKS_BACKEND",
-            "django.tasks.backends.immediate.ImmediateBackend",
-        ),
+        "BACKEND": _TASK_BACKENDS.get(_tasks_backend.lower(), _tasks_backend),
+        # Beide Backends kennen alle Warteschlangen, damit @task(queue_name="mail") auch sofort läuft
+        "QUEUES": TASK_QUEUES,
+        # Nur für JournalBackend und den Runner (apps/events/tasks_backend.py); das sofort
+        # ausführende Backend ignoriert sie. Parallelität und Zeitgrenzen je Warteschlange haben
+        # Standardwerte im Code, Abweichungen je Auftragstyp stehen unter "tasks".
+        "OPTIONS": {
+            "max_tasks_per_process": int(os.environ.get("TASKS_MAX_TASKS_PER_PROCESS", "1000")),
+            "max_memory_mb": int(os.environ.get("TASKS_MAX_MEMORY_MB", "400")),
+            "tasks": {
+                # PDF-Export mit vielen Einträgen braucht länger als die 5 Minuten der Warteschlange
+                "apps.work.background_tasks.generate_dsgvo_export_task": {"timeout": 900, "max_attempts": 3},
+            },
+        },
     }
 }
 

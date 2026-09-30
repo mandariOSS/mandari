@@ -27,6 +27,7 @@ Usage:
 
 import logging
 from datetime import timedelta
+from typing import Any, cast
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -271,17 +272,10 @@ class NotificationHub:
             if prefs.email_digest != "instant":
                 return
 
-            # Queue the email task
+            # Mail-Auftrag (Warteschlange "mail"): mit TASKS_BACKEND=journal im Runner, sonst sofort
             from apps.work.background_tasks import send_notification_email_task
 
-            try:
-                # Try using Django 6.0 background tasks
-                from django.tasks import enqueue
-
-                enqueue(send_notification_email_task, str(notification.id))
-            except ImportError:
-                # Fallback to synchronous execution if tasks not available
-                send_notification_email_task(str(notification.id))
+            cast(Any, send_notification_email_task).enqueue(str(notification.id))
 
         except Exception as e:
             logger.error(f"Failed to queue notification email: {e}")

@@ -30,7 +30,7 @@ from apps.tenants.models import (
 )
 from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson
 
-from .models import DataExport, MemberAbsence, MemberChangeRequest
+from .models import DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberChangeRequest
 
 if TYPE_CHECKING:
     from apps.session.models import SessionApplication
@@ -650,10 +650,16 @@ def recent_exports(organization: Organization, membership: Membership) -> QueryS
 
 
 def has_active_export(organization: Organization, membership: Membership) -> bool:
-    """Läuft bereits ein Export (ausstehend oder in Arbeit)?"""
-    return DataExport.objects.filter(
-        membership=membership, organization=organization, status__in=["pending", "processing"]
-    ).exists()
+    """Läuft bereits ein Export (ausstehend oder in Arbeit)?
+
+    Ein Export, der seit ``DATA_EXPORT_STALE_AFTER`` in Arbeit ist, gilt als abgebrochen und sperrt keinen
+    neuen – sonst bliebe das Auskunftsrecht nach einem Absturz des Auftrags dauerhaft gesperrt.
+    """
+    return (
+        DataExport.objects.filter(membership=membership, organization=organization)
+        .filter(Q(status="pending") | Q(status="processing", started_at__gte=timezone.now() - DATA_EXPORT_STALE_AFTER))
+        .exists()
+    )
 
 
 def get_export_or_404(organization: Organization, membership: Membership, export_id: Any, **filters: Any) -> DataExport:

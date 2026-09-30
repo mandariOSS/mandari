@@ -204,8 +204,13 @@ class TestProfil:
     def test_datenexport_status_wird_nachgeladen(
         self, page: Any, goto: Any, login: Any, admin: Any, problems: BrowserProblems
     ) -> None:
+        # "in Arbeit" wie im Auftrag immer mit Startzeit (ohne gilt der Export als abgebrochen)
         export = DataExport.objects.create(
-            organization=admin.organization, membership=admin, status="processing", export_format="json"
+            organization=admin.organization,
+            membership=admin,
+            status="processing",
+            export_format="json",
+            started_at=timezone.now(),
         )
         slug = _anmelden(login, admin)
         goto(f"/work/{slug}/profile/data/")
