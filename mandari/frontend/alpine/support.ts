@@ -1,30 +1,15 @@
 /**
- * Support (Alpine-Komponenten, #172): neues Ticket mit Artikelvorschlägen und Dateianhängen,
- * Bewertung eines Hilfe-Artikels. Vorher Inline-Skripte der Templates.
+ * Support (Alpine-Komponente, #172): neues Ticket mit Dateianhängen. Vorher Inline-Skript des Templates.
  *
- * - `ticketForm`: `data-search-url` (Artikelsuche) am Formular. Treffer gehen als Fenster-Ereignis
- *   `kb-suggestions` an die Seitenleiste – die frühere Kopplung über `el.__x` stammte aus
- *   Alpine 2 und zeigte in Alpine 3 nie Vorschläge an.
- * - `kbSuggestions`: Seitenleiste, `@kb-suggestions.window="show($event.detail)"`.
- *   Markup beider: `templates/work/support/create.html`.
- * - `feedbackWidget`: `data-url` (POST-Ziel), `data-submitted="true|false"`,
- *   `data-selected="true|false|"` (bisherige Bewertung). Markup: `templates/work/support/kb_article.html`.
+ * - `ticketForm`: Dateiauswahl (höchstens MAX_FILES, je Datei höchstens MAX_FILE_BYTES).
+ *   Markup: `templates/work/support/create.html`. Die frühere Artikelsuche der Wissensdatenbank
+ *   entfällt; die Seite verweist auf die Anwenderdokumentation (#589).
  */
 
 import { defineComponent } from '../js/alpine/component'
-import { csrfToken } from '../js/csrf'
 
 export const MAX_FILES = 5
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
-const SEARCH_MIN_LENGTH = 3
-const SEARCH_DELAY_MS = 300
-
-export interface ArticleSuggestion {
-  id: string
-  title: string
-  excerpt: string
-  url: string
-}
 
 /** Dateigröße lesbar: B, KB, MB. */
 export function formatSize(bytes: number): string {
@@ -42,40 +27,16 @@ export function acceptFiles(current: File[], incoming: ArrayLike<File>): File[] 
   return result
 }
 
-function publishSuggestions(results: ArticleSuggestion[]): void {
-  window.dispatchEvent(new CustomEvent('kb-suggestions', { detail: results }))
-}
-
 export const ticketForm = defineComponent(() => {
-  // Wurzel und Konfiguration aus init(): In Methoden, die das Template aufruft, ist $el das
-  // auslösende Element (Betreff, Dateiauswahl), nicht das Formular.
+  // Wurzel aus init(): In Methoden, die das Template aufruft, ist $el das auslösende Element
+  // (Dateiauswahl), nicht das Formular.
   let root: HTMLElement | null = null
   return {
     subject: '',
     files: [] as File[],
-    searchTimeout: 0,
-    searchUrl: '',
 
     init() {
       root = this.$el
-      this.searchUrl = this.$el.dataset.searchUrl ?? ''
-    },
-
-    searchArticles() {
-      window.clearTimeout(this.searchTimeout)
-      const url = this.searchUrl
-      if (!url) return
-      if (this.subject.length < SEARCH_MIN_LENGTH) {
-        publishSuggestions([])
-        return
-      }
-      const query = this.subject
-      this.searchTimeout = window.setTimeout(() => {
-        fetch(`${url}?q=${encodeURIComponent(query)}`)
-          .then((response) => (response.ok ? response.json() : { results: [] }))
-          .then((data: { results?: ArticleSuggestion[] }) => publishSuggestions(data.results ?? []))
-          .catch(() => publishSuggestions([]))
-      }, SEARCH_DELAY_MS)
     },
 
     handleFiles(fileList: FileList | null) {
@@ -102,42 +63,3 @@ export const ticketForm = defineComponent(() => {
     },
   }
 })
-
-export const kbSuggestions = defineComponent(() => ({
-  suggestions: [] as ArticleSuggestion[],
-
-  show(results: ArticleSuggestion[] | null | undefined) {
-    this.suggestions = Array.isArray(results) ? results : []
-  },
-}))
-
-export const feedbackWidget = defineComponent(() => ({
-  submitted: false,
-  selected: null as boolean | null,
-  url: '',
-
-  init() {
-    this.url = this.$el.dataset.url ?? ''
-    this.submitted = this.$el.dataset.submitted === 'true'
-    const selected = this.$el.dataset.selected
-    this.selected = selected === 'true' ? true : selected === 'false' ? false : null
-  },
-
-  async submitFeedback(isHelpful: boolean) {
-    this.selected = isHelpful
-    const url = this.url
-    if (!url) return
-    const body = new FormData()
-    body.append('is_helpful', isHelpful ? 'true' : 'false')
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        body,
-        headers: { 'X-CSRFToken': csrfToken(), 'X-Requested-With': 'XMLHttpRequest' },
-      })
-      if (response.ok) this.submitted = true
-    } catch (error) {
-      console.error('Feedback konnte nicht gesendet werden:', error)
-    }
-  },
-}))
