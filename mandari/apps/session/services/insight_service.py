@@ -342,3 +342,5 @@ def _parse_stamp(value: Any) -> datetime | None:
 def _oparl_tail(external_id: str) -> str:
     """``…/api/oparl/meeting/<id>/`` → ``meeting/<id>`` (Abgleich mit Session-Tombstones)."""
     return "/".join((external_id or "").rstrip("/").split("/")[-2:])
+
+# Nachweis Pfadfilter (#621): nur Kommentar, Entwurf wird geschlossen
