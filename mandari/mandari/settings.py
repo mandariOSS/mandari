@@ -655,7 +655,9 @@ SECURE_CSP_REPORT_ONLY = {
     "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],  # Inline-Styles bleiben bis zur Auslagerung erlaubt
     "img-src": [CSP.SELF, "data:", "https:", "blob:"],
     "font-src": [CSP.SELF, "data:"],
-    "connect-src": [CSP.SELF, "https://tiles.versatiles.org"],
+    # Nur der eigene Ursprung: Karten laden Rasterkacheln per <img> über den eigenen Kachel-Proxy (img-src),
+    # kein Skript verbindet sich mit einem externen Kartendienst.
+    "connect-src": [CSP.SELF],
     "worker-src": [CSP.SELF, "blob:"],
     "child-src": ["blob:"],
     # Dokumentvorschau (Insight, Work) lädt Seiten des eigenen Ursprungs im iframe
