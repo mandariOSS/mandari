@@ -14,7 +14,10 @@
 # Einträge kennt Dependabot keine installierte Version und kann den Update-Typ
 # (major/minor/patch) nicht bestimmen; eine Gruppe mit `update-types` lehnt sie
 # ab, und jede Abhängigkeit kam als eigener PR (28.09.2026: zwölf Einzel-PRs).
-# Die pip-Gruppe hat deshalb keine `update-types` und bündelt alles.
+# Die pip-Gruppen haben deshalb keine `update-types`. Django, Wagtail und ihre
+# Erweiterungen (django-*, wagtail-*) kommen in einem eigenen PR; Dependabot
+# ordnet ein Paket der ersten passenden Gruppe zu. Ein Major-Sprung, der
+# Nacharbeit braucht, hält so nicht alle übrigen Updates der Woche auf.
 # requirements.lock aktualisiert Dependabot nicht; im PR neu erzeugen:
 #   cd mandari && uv pip compile requirements.txt -o requirements.lock --python-version 3.12
 version: 2
@@ -28,6 +31,8 @@ updates:
       time: "05:00"
       timezone: Europe/Berlin
     groups:
+      django:
+        patterns: ["django*", "wagtail*"]
       python:
         patterns: ["*"]
       python-sicherheit:
@@ -80,6 +85,7 @@ updates:
         patterns: ["*"]
     labels: [dependencies]
   # Beide Images bauen auf demselben Python-Basis-Image auf und wandern gemeinsam
+  # (ein PR für beide Verzeichnisse, deshalb auch das Label app:ingestor)
   - package-ecosystem: docker
     target-branch: dev
     directories:
@@ -90,4 +96,4 @@ updates:
     groups:
       docker:
         patterns: ["*"]
-    labels: [dependencies]
+    labels: [dependencies, app:ingestor]

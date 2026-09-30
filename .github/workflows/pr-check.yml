@@ -74,7 +74,9 @@ jobs:
       - name: Dateien des Pull Requests zuordnen
         id: filter
         if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v4
+        # Drittanbieter-Action, die über alle Prüfungen entscheidet: auf den Commit gepinnt statt auf
+        # den verschiebbaren Tag. Dependabot (github-actions) hebt den Pin samt Kommentar an.
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           predicate-quantifier: some-with-excludes
           filters: |
@@ -153,6 +155,21 @@ jobs:
               - 'mandari/apps/work/motions/**'
               - 'mandari/apps/common/demo.py'
               - 'mandari/apps/common/management/commands/setup_demo_*.py'
+              # Views und Kontext der Seiten, die die E2E-Tests aufrufen (Alpine-Fehler in der Konsole,
+              # Drehbuch): Eine fehlende Kontextvariable für x-data fällt nur im Browser auf. Ruft ein
+              # E2E-Test eine neue Seite auf, gehört deren View hierher.
+              - 'mandari/apps/common/mixins.py'
+              - 'mandari/apps/common/views_dev.py'
+              - 'mandari/apps/work/dashboard/views.py'
+              - 'mandari/apps/work/tasks/views/list.py'
+              - 'mandari/apps/work/organization/views/profile.py'
+              - 'mandari/apps/work/faction/views/{_helpers,meetings,settings}.py'
+              - 'mandari/apps/work/meetings/views/{_helpers,prepare}.py'
+              - 'mandari/apps/work/meetings/serializers.py'
+              - 'mandari/apps/session/permissions.py'
+              - 'mandari/apps/session/views/{dashboard,meetings,papers,leitstelle,applications,resolutions,protocols,allowances}.py'
+              - 'mandari/apps/session/api/oparl.py'
+              - 'mandari/insight_core/views/{_helpers,_withdrawn,home,meetings,decisions}.py'
               - '!**/*.md'
               - '!mandari/apps/accounts/tests/**'
               - '!mandari/apps/work/motions/tests/**'

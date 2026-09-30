@@ -77,6 +77,15 @@ bestanden hat. Änderungen an `.github/` oder an Abhängigkeitsdateien sowie jed
 `main` lassen alle Jobs laufen. Wer einen neuen Job anlegt, trägt ihn unter `needs` von
 `ci-ergebnis` ein (ein Test prüft das).
 
+Zwei Grenzen des Filters: Die E2E-Tests laufen im Pull Request nur bei Templates, Frontend, Settings,
+Anmeldung, Editor und den Views der Seiten, die sie aufrufen. Ändert ein PR etwa einen Service, der
+den Kontext einer solchen Seite liefert, fällt ein Fehler im Browser erst beim Lauf auf `dev` auf.
+Wer eine E2E-Seite mittelbar ändert, startet den Lauf deshalb besser von Hand (Actions → CI →
+„Run workflow“ auf dem eigenen Branch, das startet alle Jobs). Und sobald CodeQL im Workflow statt
+im Default-Setup läuft, analysiert es je PR nur die betroffenen Sprachen; Code Scanning weist dann
+womöglich darauf hin, dass Analysen des Basiszweigs (etwa `/language:actions`) fehlen. Das ist
+erwartet und blockiert nichts.
+
 ```bash
 cd mandari
 uv run pytest                                    # rund 1.500 Tests, etwa 90 Sekunden
