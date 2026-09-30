@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("events", "0001_initial"),
+        ("events", "0002_parked_chain_index"),
     ]
 
     operations = [
