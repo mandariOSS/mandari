@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("tenants", "0025_recht_dokumente_ehemaliger_mitglieder"),
-        ("work", "0063_namen_in_protokollen_sichern"),
+        ("work", "0065_anhang_zufallsname"),
     ]
 
     operations = [
