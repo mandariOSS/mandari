@@ -888,11 +888,14 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
 
+      - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
-          pip install shared/
-          pip install -r mandari/requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
 
       - name: Validator aus dem Zwischenspeicher
         uses: actions/cache@v6

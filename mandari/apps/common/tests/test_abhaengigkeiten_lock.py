@@ -108,6 +108,35 @@ def test_alte_requirements_dateien_sind_weg() -> None:
         )
 
 
+def test_kein_ci_schritt_installiert_aus_einer_datei_die_es_nicht_gibt() -> None:
+    """
+    Ein parallel entstandener Job mit ``pip install -r mandari/requirements.lock`` lässt sich textuell
+    konfliktfrei zusammenführen und scheitert erst danach (so geschehen beim OParl-Validator). Erlaubt sind
+    Dateien im Repo und solche, die der Schritt selbst erzeugt (``/tmp/…`` aus ``export_requirements.sh``).
+    """
+    dateien = [
+        *sorted((REPO / ".github" / "workflows").glob("*.y*ml")),
+        *sorted((REPO / "scripts").glob("*.sh")),
+        REPO / "Makefile",
+        REPO / "mandari" / "Dockerfile",
+        REPO / "ingestor" / "Dockerfile",
+    ]
+    fehlend = []
+    for datei in dateien:
+        for nummer, zeile in enumerate(datei.read_text(encoding="utf-8").splitlines(), start=1):
+            if zeile.lstrip().startswith("#") or not re.search(r"\bpip\b", zeile):
+                continue  # nur pip install, uv pip install und pip-audit
+            for pfad in re.findall(r"\s-r\s+([^\s\"';|&)]+)", zeile):
+                if pfad.startswith(("/tmp/", "$")):  # noqa: S108 – Pfad im CI-Schritt, kein Dateizugriff
+                    continue
+                if not any((basis / pfad).is_file() for basis in (REPO, REPO / "mandari", REPO / "ingestor")):
+                    fehlend.append(f"{datei.relative_to(REPO).as_posix()}:{nummer}: -r {pfad}")
+    assert not fehlend, (
+        "Installation aus einer Datei, die es nicht gibt – für die Django-Anwendung stattdessen "
+        "`sh scripts/export_requirements.sh /tmp/requirements.lock`:\n" + "\n".join(fehlend)
+    )
+
+
 def test_jede_direkte_abhaengigkeit_ist_gesperrt_und_erfuellt_ihre_grenze() -> None:
     gesperrt = _gesperrt()
     probleme = []
