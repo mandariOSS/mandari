@@ -1,7 +1,7 @@
 # =============================================================================
 # Mandari - CI Checks
 # =============================================================================
-# Lint, Typprüfung, Frontend-Gates, Tests, Smoke, E2E, Docker-Build, CodeQL.
+# Lint, Typprüfung, Frontend-Gates, Link-Prüfung, Tests, Smoke, E2E, Docker-Build, CodeQL.
 #
 # Pfadfilter (Issue #621): Der Job "Geänderte Bereiche" ordnet die Dateien eines
 # Pull Requests Bereichen zu; jeder Job läuft nur, wenn sein Bereich betroffen
@@ -57,6 +57,7 @@ jobs:
       pull-requests: read   # Dateiliste des Pull Requests über die API (kein Checkout nötig)
     outputs:
       qualitaet: ${{ steps.ergebnis.outputs.qualitaet }}
+      verweise: ${{ steps.ergebnis.outputs.verweise }}
       python: ${{ steps.ergebnis.outputs.python }}
       vertrag: ${{ steps.ergebnis.outputs.vertrag }}
       templates: ${{ steps.ergebnis.outputs.templates }}
@@ -95,6 +96,11 @@ jobs:
             qualitaet:
               - '**'
               - '!**/*.md'
+            # Link-Prüfung: Markdown-Dateien und die Einstellungen von lychee; die Vorlagen unter
+            # .github/ deckt das Sicherheitsnetz ab
+            verweise:
+              - '**/*.md'
+              - 'lychee.toml'
             python:
               - 'mandari/**/*.py'
               - 'shared/**'
@@ -243,7 +249,7 @@ jobs:
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           ergebnis() { if [ "$alle" = "true" ]; then echo true; else wert "$1"; fi; }
-          for bereich in qualitaet python vertrag templates frontend test ereignisse smoke e2e ingestor audit docker; do
+          for bereich in qualitaet verweise python vertrag templates frontend test ereignisse smoke e2e ingestor audit docker; do
             e=$(ergebnis "$bereich")
             echo "$bereich=$e" >> "$GITHUB_OUTPUT"
             echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
@@ -346,13 +352,6 @@ jobs:
         if: ${{ !cancelled() }}
         run: python scripts/check_view_orm_ratio.py
 
-      - name: REUSE-Lizenzkonformität (zunächst informativ, ab 2027 blockierend)
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: |
-          pip install reuse
-          reuse lint
-
       # --- Templates -------------------------------------------------------------
       - name: djlint (Template-Linting, Profil Django)
         if: ${{ !cancelled() && needs.changes.outputs.templates == 'true' }}
@@ -431,6 +430,49 @@ jobs:
         run: |
           cd mandari && npx vite build
           test -f static/dist/manifest.json
+
+  # ===========================================================================
+  # Verweise: Link-Prüfung der Dokumentation (Issue #690)
+  # ===========================================================================
+  # Läuft bei Änderungen an Markdown-Dateien, die sonst keinen Job auslösen. Einstellungen in
+  # lychee.toml: Die Prüfung scheitert nur an Verweisen, die nachweislich ins Leere führen (404, 410,
+  # unbekannter Host); Zeitüberschreitungen, Drosselung und Serverfehler fremder Seiten gelten nach
+  # mehreren Versuchen als bestanden. So wird aus einem langsamen fremden Server kein roter Lauf.
+  verweise:
+    name: Verweise (Link-Prüfung)
+    needs: changes
+    if: needs.changes.outputs.verweise == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Ohne Netz: jede Datei, jedes Bild und jeder Anker, auf die eine Markdown-Datei verweist
+      - name: Interne Verweise und Anker (alle Markdown-Dateien, offline)
+        # Drittanbieter-Action: auf den Commit gepinnt statt auf den verschiebbaren Tag (wie
+        # dorny/paths-filter). Dependabot (github-actions) hebt den Pin samt Kommentar an.
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: --offline --include-fragments '**/*.md'
+
+      # Mit Netz, nur für die Dateien des öffentlichen Auftritts: README, Mitwirken, Sicherheit,
+      # Verhaltenskodex, Danksagungen, Betrieb, Issue- und PR-Vorlagen. Nicht bei push auf dev/main:
+      # Dort hat der Pull Request schon geprüft; verwaiste Verweise findet der Wochenlauf.
+      - name: Externe Verweise (öffentlicher Auftritt)
+        if: ${{ !cancelled() && github.event_name != 'push' }}
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: >-
+            README.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md DEPENDENCIES.md DEPLOYMENT.md
+            AGENTS.md docs/README.md
+            .github/PULL_REQUEST_TEMPLATE.md
+            .github/ISSUE_TEMPLATE/bug_report.md
+            .github/ISSUE_TEMPLATE/feature_request.md
+            .github/ISSUE_TEMPLATE/config.yml
 
   # ===========================================================================
   # Django System Checks & Tests
@@ -955,6 +997,7 @@ jobs:
     needs:
       - changes
       - qualitaet
+      - verweise
       - test
       - events-pgbouncer
       - smoke

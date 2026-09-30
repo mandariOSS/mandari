@@ -9,16 +9,19 @@ eingebunden. Hier steht nur, was zusätzlich für Claude gilt.
 
 ## Git-Workflow
 
-**Entwicklung erfolgt ausschließlich auf dem `dev` Branch.**
+**Entwickelt wird auf Branches von `dev`; Änderungen kommen per Pull Request nach `dev`.** `main` ist der
+Produktionsstand und wird nur nachgezogen. Ablauf und Prüfungen:
+[CONTRIBUTING.md](CONTRIBUTING.md#commits-und-pull-requests).
 
 ```bash
 # Standard-Workflow
-git checkout dev
-git pull origin dev
-# ... Änderungen ...
+git fetch origin
+git switch -c fix/mein-thema origin/dev
+# ... Änderungen, Tests ...
 git add <files>
-git commit -m "feat/fix/chore: Beschreibung"
-git push origin dev
+git commit -m "fix(bereich): Beschreibung"
+git push -u origin fix/mein-thema
+gh pr create --base dev
 ```
 
 ---
