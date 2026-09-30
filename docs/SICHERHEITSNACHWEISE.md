@@ -78,7 +78,7 @@ nicht fehlend um jeden Preis.
 
 Der Release-Workflow erzeugt für jede veröffentlichte Version drei Stücklisten im
 CycloneDX-Format und hängt sie an das GitHub-Release: `sbom-mandari-python.cdx.json`
-(Django-Anwendung aus `mandari/requirements.lock`), `sbom-ingestor-python.cdx.json`
+(Django-Anwendung aus `mandari/uv.lock`), `sbom-ingestor-python.cdx.json`
 (aus `ingestor/uv.lock`) und `sbom-mandari-npm.cdx.json` (Frontend). Lokal:
 `sh scripts/build_sbom.sh <ausgabeverzeichnis>`. Damit können Kunden ihre eigene
 Schwachstellenüberwachung auf mandari anwenden.

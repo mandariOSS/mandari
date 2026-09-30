@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # uv nur im Builder, nicht im fertigen Image
 COPY --from=uv /uv /bin/uv
 
-# Abhängigkeiten reproduzierbar aus ingestor/uv.lock, analog zu requirements.lock im Django-Image.
+# Abhängigkeiten reproduzierbar aus ingestor/uv.lock, wie das Django-Image aus mandari/uv.lock.
 # Ohne Lock-Datei zog ein Neubau ungeprüfte neue Versionen (SQLAlchemy 2.1 ohne greenlet: Ingestor
 # startete nicht). Verzeichnisse wie im Repo, damit der Pfad ../shared aus [tool.uv.sources] aufgeht.
 # --locked: Build bricht ab, wenn uv.lock nicht mehr zu pyproject.toml passt (dann `uv lock` im Ordner ingestor).
