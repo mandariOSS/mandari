@@ -314,7 +314,7 @@ def propose(
     votes_old: dict[str, str] = {}
     votes_new: dict[str, str] = {}
     if item is not None:
-        assessed = voting_service.eligibility(item.meeting)
+        assessed = voting_service.eligibility(item.meeting, item)
         votes_old, votes_new = _vote_changes(item, data, assessed)
         if any(name in new for name in COUNT_FIELDS):
             counts = {name: new.get(name, before.get(name, 0)) for name in COUNT_FIELDS}

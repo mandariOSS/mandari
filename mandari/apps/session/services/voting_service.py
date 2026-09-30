@@ -14,6 +14,9 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
   Anwesenheit vollständig erfasst ist, sonst als Warnung.
 - Sperre (Issue #318): Nach der Genehmigung der Niederschrift schreibt der Service keine
   Einzelstimmen mehr (``protocol_lock``), außer innerhalb einer Berichtigung.
+- Teilnahmeart (Issue #139): Zugeschaltete stimmen ab wie Anwesende im Raum – außer während einer
+  andauernden Störung und bei Wahlen bzw. geheimen Abstimmungen, von denen das Landesprofil sie
+  ausschließt (``participation_service.remote_vote_rule``).
 """
 
 from dataclasses import dataclass, field
@@ -32,7 +35,7 @@ from ..models import (
     SessionTenant,
     SessionVote,
 )
-from . import protocol_lock
+from . import participation_service, protocol_lock
 
 INDIVIDUAL_METHODS = ("open", "roll_call")
 
@@ -65,6 +68,12 @@ class Eligibility:
     advisory: list[SessionAttendance] = field(default_factory=list)
     #: übrige Zeilen der Anwesenheitsliste (nicht anwesend, noch offen)
     others: list[SessionAttendance] = field(default_factory=list)
+    #: zugeschaltet, aber wegen einer andauernden Störung nicht erreichbar (Issue #139)
+    unreachable: list[SessionAttendance] = field(default_factory=list)
+    #: zugeschaltet und nach dem Landesprofil von dieser Abstimmung ausgeschlossen (Issue #139)
+    remote_excluded: list[SessionAttendance] = field(default_factory=list)
+    #: Regel des Landesprofils für Zugeschaltete bei dieser Abstimmung (nur mit TOP)
+    remote_rule: Any = None
     #: Anwesenheit vollständig erfasst (Besetzung bekannt, alle Stimmberechtigten mit Status)
     complete: bool = False
     has_list: bool = False
@@ -83,7 +92,13 @@ def can_vote(attendance: SessionAttendance) -> bool:
     )
 
 
-def eligibility(meeting: SessionMeeting) -> Eligibility:
+def eligibility(
+    meeting: SessionMeeting,
+    item: SessionAgendaItem | None = None,
+    *,
+    voting_method: str | None = None,
+    is_election: bool | None = None,
+) -> Eligibility:
     """
     Stimmberechtigte Anwesende, beratende Anwesende und Vollständigkeit der Anwesenheit.
 
@@ -91,15 +106,30 @@ def eligibility(meeting: SessionMeeting) -> Eligibility:
     kennt, jedes davon eine Zeile in der Anwesenheitsliste hat und keine stimmberechtigte Zeile
     mehr nur „eingeladen“ oder „zugesagt“ ist. Nur dann ist die Zahl der Stimmberechtigten eine
     verlässliche Obergrenze für die Stimmenzahlen.
+
+    Teilnahmeart (Issue #139): Zugeschaltete mit andauernder Störung stimmen nicht ab
+    (``unreachable``). Mit TOP (``item``, Abstimmungsart und Wahl ggf. aus dem Formular) gilt die Regel
+    des Landesprofils für Wahlen und geheime Abstimmungen (``remote_excluded``).
     """
     from . import attendance_service
 
     attendances = list(
-        meeting.attendances.select_related("person").order_by("person__family_name", "person__given_name")
+        meeting.attendances.select_related("person")
+        .prefetch_related("disruptions")
+        .order_by("person__family_name", "person__given_name")
     )
-    result = Eligibility(has_list=bool(attendances))
+    rule = (
+        participation_service.remote_vote_rule(meeting, item, voting_method=voting_method, is_election=is_election)
+        if item is not None
+        else None
+    )
+    result = Eligibility(has_list=bool(attendances), remote_rule=rule)
     for attendance in attendances:
-        if can_vote(attendance):
+        if can_vote(attendance) and participation_service.is_disrupted(attendance):
+            result.unreachable.append(attendance)
+        elif can_vote(attendance) and rule is not None and rule.excluded and attendance.is_remote:
+            result.remote_excluded.append(attendance)
+        elif can_vote(attendance):
             result.voting.append(attendance)
         elif attendance.status in VOTING_PRESENT_STATUSES:
             result.advisory.append(attendance)
@@ -144,16 +174,19 @@ def check_counts(
     Harter Fehler bei vollständig erfasster Anwesenheit; sonst Warnung – die Zahl der erfassten
     Stimmberechtigten ist dann keine verlässliche Obergrenze. Ohne Anwesenheitsliste keine Prüfung.
     """
-    assessed = assessed or eligibility(agenda_item.meeting)
+    assessed = assessed or eligibility(agenda_item.meeting, agenda_item)
     if not assessed.has_list:
         return CountCheck()
+    # Vom Landesprofil ausgeschlossene Zugeschaltete zählen nicht (auch bei einer Prüfung ohne TOP-Bezug)
+    rule = participation_service.remote_vote_rule(agenda_item.meeting, agenda_item)
+    voting = [a for a in assessed.voting if not (rule is not None and rule.excluded and a.is_remote)]
     total = yes + no + abstain
     if excluded is None:
         # Befangene (Mitwirkungsverbot) zählen nicht; ohne Angabe der gespeicherte Stand
         excluded = 0
         if agenda_item.pk:
-            excluded = agenda_item.votes.filter(vote="excluded", person_id__in=assessed.voting_person_ids).count()
-    limit = max(0, len(assessed.voting) - excluded)
+            excluded = agenda_item.votes.filter(vote="excluded", person_id__in={a.person_id for a in voting}).count()
+    limit = max(0, len(voting) - excluded)
     if total <= limit:
         return CountCheck()
     base = (
@@ -249,13 +282,11 @@ def capture_votes(
         else:
             protocol_lock.ensure_unlocked(agenda_item.meeting_id)
         if schreibende:
-            berechtigt = (assessed or eligibility(agenda_item.meeting)).voting_person_ids
-            ohne = sorted(p.display_name for p in schreibende if p.pk not in berechtigt)
+            beurteilt = assessed or eligibility(agenda_item.meeting, agenda_item)
+            berechtigt = beurteilt.voting_person_ids
+            ohne = [p for p in schreibende if p.pk not in berechtigt]
             if ohne:
-                raise VotingRightsError(
-                    "Stimmen werden nur von stimmberechtigten Anwesenden erfasst. Ohne Stimmrecht oder laut "
-                    "Anwesenheitsliste nicht anwesend: " + ", ".join(ohne) + "."
-                )
+                raise VotingRightsError(rights_message(beurteilt, ohne))
         if loeschen:
             SessionVote.objects.filter(pk__in=loeschen).delete()
         if neu:
@@ -269,6 +300,26 @@ def capture_votes(
     # Einzelne Stimmänderungen für den direkten Protokolleintrag „Stimmabgabe erfasst“ (Issue #221)
     result["changed"] = geaendert
     return result
+
+
+def rights_message(assessed: Eligibility, persons: list[Any]) -> str:
+    """Meldung für Stimmen von Personen, die bei dieser Abstimmung nicht abstimmen (feste Sätze, Namen)."""
+    ausgeschlossen = {a.person_id for a in assessed.remote_excluded}
+    gestoert = {a.person_id for a in assessed.unreachable}
+    saetze = ["Stimmen werden nur von stimmberechtigten Anwesenden erfasst."]
+    gruppen = (
+        ([p for p in persons if p.pk in ausgeschlossen], assessed.remote_rule.message if assessed.remote_rule else ""),
+        ([p for p in persons if p.pk in gestoert], "Wegen einer Störung nicht erreichbar:"),
+        (
+            [p for p in persons if p.pk not in ausgeschlossen and p.pk not in gestoert],
+            "Ohne Stimmrecht oder laut Anwesenheitsliste nicht anwesend:",
+        ),
+    )
+    for gruppe, text in gruppen:
+        if gruppe:
+            namen = ", ".join(sorted(p.display_name for p in gruppe))
+            saetze.append(f"{text} {namen}." if text.endswith(":") else f"{text} Betroffen: {namen}.")
+    return " ".join(saetze)
 
 
 def recompute_sums(agenda_item: SessionAgendaItem) -> None:

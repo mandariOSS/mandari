@@ -9,6 +9,12 @@
             <div>
                 <p class="text-sm font-medium text-gray-900 dark:text-white">{{ attendance.person.display_name }}</p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">{{ attendance.get_role_display }}</p>
+                {% if attendance.participation_note %}
+                <p class="text-xs text-gray-500 dark:text-gray-400" data-testid="teilnahme-vermerk">{{ attendance.participation_note }}</p>
+                {% endif %}
+                {% if form.errors %}
+                <p class="text-xs text-red-600 dark:text-red-400" role="alert">{% for field, errors in form.errors.items %}{{ errors.0 }} {% endfor %}</p>
+                {% endif %}
             </div>
         </div>
     </td>
@@ -27,6 +33,17 @@
             <option value="joined_late" {% if attendance.status == 'joined_late' %}selected{% endif %}>Verspätet</option>
         </select>
     </td>
+
+    {% if remote_allowed %}
+    <!-- Teilnahmeart (Issue #139): nur in hybriden und digitalen Sitzungen -->
+    <td class="px-4 py-3">
+        <select name="participation_mode" aria-label="Teilnahmeart"
+                class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+            <option value="in_person" {% if not attendance.is_remote %}selected{% endif %}>Vor Ort</option>
+            <option value="remote" {% if attendance.is_remote %}selected{% endif %}>Zugeschaltet</option>
+        </select>
+    </td>
+    {% endif %}
 
     <!-- Ankunft -->
     <td class="px-4 py-3">
@@ -62,6 +79,18 @@
                     class="inline-flex items-center gap-1 px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
                 <i data-lucide="save" class="w-3 h-3"></i>
             </button>
+            {% if attendance.is_remote %}
+            <!-- Störung ab jetzt vermerken (Issue #139); Ende und Nacherfassung unter „Störungen“ -->
+            <button type="button"
+                    hx-post="{% url 'session:attendance_disruption_add' tenant_slug=tenant_slug meeting_id=attendance.meeting_id %}"
+                    hx-vals='{"attendance": "{{ attendance.id }}"}'
+                    hx-confirm="Störung bei {{ attendance.person.display_name }} ab jetzt vermerken?"
+                    title="Störung ab jetzt vermerken"
+                    data-testid="stoerung-jetzt"
+                    class="inline-flex items-center px-2 py-1 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors">
+                <i data-lucide="wifi-off" class="w-3 h-3"></i>
+            </button>
+            {% endif %}
             <button type="button"
                     hx-post="{% url 'session:attendance_delete' tenant_slug=tenant_slug attendance_id=attendance.id %}"
                     hx-confirm="{{ attendance.person.display_name }} von der Anwesenheitsliste entfernen?"

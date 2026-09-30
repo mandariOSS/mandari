@@ -26,8 +26,9 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
-from ..services import agenda_service
+from ..services import agenda_service, participation_service
 from ..visibility import meeting_q
+from .attendance import SessionAttendanceForm
 
 # =============================================================================
 # HELPERS
@@ -270,7 +271,8 @@ class AttendanceUpdateView(SessionViewMixin, UpdateView):
     model = SessionAttendance
     template_name = "session/partials/attendance_row.html"
     context_object_name = "attendance"  # auch bei ungültiger Eingabe rendert die Zeile
-    fields = ["status", "arrival_time", "departure_time", "notes"]
+    # Teilnahmeart (Issue #139): nur in hybriden und digitalen Sitzungen zugeschaltet
+    form_class = SessionAttendanceForm
     pk_url_kwarg = "attendance_id"
     permission_required = "manage_attendance"
     http_method_names = ["post"]
@@ -280,6 +282,22 @@ class AttendanceUpdateView(SessionViewMixin, UpdateView):
         return SessionAttendance.objects.filter(
             meeting_q(self.session_permissions, "meeting__"), meeting__tenant=self.session_tenant
         )
+
+    def _row_context(self, attendance, form=None):
+        """Zeile mit Teilnahmeart-Auswahl und Vermerk (Zuschaltung, Störungen) wie in der Sitzungsansicht."""
+        meeting = attendance.meeting
+        attendance.participation_note = participation_service.participation_note(
+            attendance, show_mode=participation_service.remote_allowed(meeting)
+        )
+        return {
+            "attendance": attendance,
+            "form": form,
+            "tenant_slug": self.session_tenant.slug,
+            "remote_allowed": participation_service.remote_allowed(meeting) or attendance.is_remote,
+        }
+
+    def form_invalid(self, form):
+        return self.render_to_response(self._row_context(self.object, form))
 
     def form_valid(self, form):
         attendance = form.save(commit=False)
@@ -291,8 +309,7 @@ class AttendanceUpdateView(SessionViewMixin, UpdateView):
         self.object = attendance
 
         if self.is_htmx:
-            context = {"attendance": self.object, "tenant_slug": self.session_tenant.slug}
-            return self.render_to_response(context)
+            return self.render_to_response(self._row_context(self.object))
         return redirect(
             "session:meeting_detail",
             tenant_slug=self.session_tenant.slug,
