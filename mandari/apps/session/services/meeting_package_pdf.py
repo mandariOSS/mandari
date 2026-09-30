@@ -202,8 +202,14 @@ class PackagePdfBuilder:
         return start
 
     def _add_agenda(self) -> int:
-        """Einladung und Tagesordnung – dasselbe Dokument wie der Einzel-Download."""
-        pdf = invitation_service.build_agenda_pdf(self.plan.meeting, include_non_public=self.plan.is_internal)
+        """
+        Einladung und Tagesordnung – dasselbe Dokument wie der Einzel-Download, aber ohne Zugangsweg für
+        Zugeschaltete: Die Mappe wird gespeichert und von allen Berechtigten abgerufen; den Zugangsweg
+        erhalten die Mitglieder mit der Ladung (Issue #138).
+        """
+        pdf = invitation_service.build_agenda_pdf(
+            self.plan.meeting, include_non_public=self.plan.is_internal, include_remote_access=False
+        )
         self.generated[AGENDA_ZIP_PATH] = pdf
         entry = self._entry("Einladung und Tagesordnung", 0)
         entry.page = self._add_generated(pdf)

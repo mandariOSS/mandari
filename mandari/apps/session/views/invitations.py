@@ -16,7 +16,7 @@ from django.views.generic import TemplateView
 
 from ..models import SessionMeeting
 from ..permissions import SessionViewMixin
-from ..services import invitation_service
+from ..services import invitation_service, meeting_format_service
 
 
 def _get_meeting(view, meeting_id, require_non_public_permission=True):
@@ -87,6 +87,20 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
                 meeting_id=meeting.id,
             )
 
+        # Sitzungsformat (Issue #138): keine Ladung zu einem Format, das das Landesprofil nicht (mehr) zulässt
+        format_check = meeting_format_service.check_meeting(meeting)
+        if not format_check.ok:
+            messages.error(
+                request,
+                "Das Sitzungsformat ist nach dem Landesprofil nicht zulässig – bitte die Sitzung anpassen. "
+                + " ".join(format_check.errors),
+            )
+            return redirect(
+                "session:meeting_invitation",
+                tenant_slug=self.session_tenant.slug,
+                meeting_id=meeting.id,
+            )
+
         recipients = [r for r in invitation_service.get_recipients(meeting) if not r["missing_email"]]
         if not recipients:
             messages.error(
@@ -137,6 +151,9 @@ class MeetingAgendaPdfView(SessionViewMixin, TemplateView):
 
     Ö/NÖ: Die vollständige Variante (inkl. NÖ-Teil) erhalten nur Nutzer
     mit view_non_public_meetings; alle anderen die Ö-Fassung.
+
+    Zugangsweg für Zugeschaltete (Issue #138): wie auf der Detailseite nur mit edit_meetings; der
+    Abruf einer PDF mit Zugangsweg wird protokolliert.
     """
 
     permission_required = "view_meetings"
@@ -144,25 +161,41 @@ class MeetingAgendaPdfView(SessionViewMixin, TemplateView):
     def get(self, request, *args, **kwargs):
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
         include_np = self.has_permission("view_non_public_meetings")
+        include_remote_access = (
+            include_np
+            and meeting.format != SessionMeeting.FORMAT_PRESENCE
+            and bool(meeting.remote_access_encrypted)
+            and self.has_permission("edit_meetings")
+        )
         supplementary = request.GET.get("variante") == "nachtrag"
         pdf_bytes = invitation_service.build_agenda_pdf(
             meeting,
             include_non_public=include_np,
             supplementary_only=supplementary,
             permissions=self.session_permissions,
+            include_remote_access=include_remote_access,
         )
         filename = "nachtrags-tagesordnung.pdf" if supplementary else "einladung-tagesordnung.pdf"
-        # Vollständige Fassung mit nichtöffentlichem Teil: Abruf protokollieren (Issue #221)
-        if include_np and (not meeting.is_public or meeting.agenda_items.filter(is_public=False).exists()):
+        # Vollständige Fassung mit nichtöffentlichem Teil (Issue #221) bzw. mit Zugangsweg: Abruf protokollieren
+        with_np = include_np and (not meeting.is_public or meeting.agenda_items.filter(is_public=False).exists())
+        if with_np or include_remote_access:
             from .. import audit
 
+            parts = [
+                label
+                for label, included in (
+                    ("nichtöffentlichem Teil", with_np),
+                    ("Zugangsweg für Zugeschaltete", include_remote_access),
+                )
+                if included
+            ]
             audit.log_read(
                 request,
                 meeting,
                 tenant=self.session_tenant,
                 user=self.session_user,
                 action="download",
-                changes={"dokument": "Tagesordnung mit nichtöffentlichem Teil (PDF)"},
+                changes={"dokument": f"Tagesordnung mit {' und '.join(parts)} (PDF)"},
             )
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'

@@ -29,7 +29,23 @@ selbst über den persönlichen Link bestätigt. Zustellweg Portal: Hinweis ohne 
         <td class="key">Ort</td>
         <td>{{ location }}</td>
     </tr>
+    {% endif %}{% if format_info.is_remote %}
+    <tr>
+        <td class="key">Format</td>
+        <td>{{ format_info.description }}</td>
+    </tr>
+    {% if format_info.remote_access %}
+    <tr>
+        <td class="key">Zugang</td>
+        <td>{{ format_info.remote_access|linebreaksbr }}</td>
+    </tr>
     {% endif %}
+    {% if format_info.legal_basis %}
+    <tr>
+        <td class="key">Rechtsgrundlage</td>
+        <td>{{ format_info.legal_basis }}</td>
+    </tr>
+    {% endif %}{% endif %}
 </table>
 {% if message %}
 <div class="card">

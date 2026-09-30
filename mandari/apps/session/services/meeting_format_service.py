@@ -432,3 +432,98 @@ def committee_kind_overview(tenant: Any) -> CommitteeKindOverview | None:
             if suspected or organization.organization_type in _COMMITTEE_TYPES:
                 overview.unclassified.append((organization, committee_kind_labels(suspected)))
     return overview
+
+
+# =============================================================================
+# Sitzung beschreiben (Ladung, Tagesordnung, Detailseite, Öffentlichkeit)
+# =============================================================================
+
+_DESCRIPTIONS = {
+    FORMAT_HYBRID: "Hybride Sitzung – Teilnahme im Sitzungsraum oder per Bild-Ton-Übertragung",
+    FORMAT_DIGITAL: "Digitale Sitzung – alle Mitglieder nehmen per Bild-Ton-Übertragung teil",
+}
+
+
+def check_meeting(meeting: Any) -> FormatCheck:
+    """Gespeichertes Format einer Sitzung gegen das aktuelle Landesprofil prüfen (Ladung, Anzeige)."""
+    return check(
+        meeting.tenant,
+        meeting.participating_organizations,
+        meeting.format or FORMAT_PRESENCE,
+        meeting.format_reason or "",
+    )
+
+
+@dataclass(frozen=True)
+class MeetingFormatInfo:
+    """Angaben zum Sitzungsformat für Ladung, Tagesordnung und Anzeige."""
+
+    format: str
+    label: str
+    description: str
+    legal_basis: str
+    reason: str
+    remote_access: str
+    public_url: str
+    public_note: str
+    public_registration_required: bool
+    public_registration_days: int | None
+    #: Fehler der Prüfung – das gespeicherte Format ist nach dem Landesprofil nicht (mehr) zulässig
+    warnings: tuple[str, ...]
+    #: Hinweise der Prüfung, die die Ladung nicht sperren (z. B. nicht eingeordneter Ausschuss)
+    hints: tuple[str, ...] = ()
+
+    @property
+    def is_remote(self) -> bool:
+        return self.format != FORMAT_PRESENCE
+
+    @property
+    def public_hint(self) -> str:
+        """Hinweis für die Öffentlichkeit (Übertragung, Anmeldung); leer, wenn es nichts zu sagen gibt."""
+        parts = []
+        if self.public_registration_required and self.format == FORMAT_DIGITAL:
+            frist = (
+                f" bis {self.public_registration_days} Tag(e) vor der Sitzung"
+                if self.public_registration_days is not None
+                else ""
+            )
+            parts.append(f"Zuhören über einen geschützten Zugang nach vorheriger Anmeldung{frist}.")
+        elif self.public_url and self.format == FORMAT_DIGITAL:
+            parts.append("Die Sitzung wird für die Öffentlichkeit übertragen.")
+        elif self.public_url:
+            parts.append("Die öffentliche Sitzung wird übertragen.")
+        if self.public_note:
+            parts.append(self.public_note)
+        return " ".join(parts)
+
+
+def describe(meeting: Any, *, for_members: bool = False, checks: bool = True) -> MeetingFormatInfo:
+    """
+    Sitzungsformat einer Sitzung beschreiben.
+
+    ``for_members`` entschlüsselt den Zugangsweg für Zugeschaltete – nur für Ladung und Mappe an
+    Gremienmitglieder, nie für öffentliche Dokumente oder Schnittstellen. ``checks=False`` verzichtet
+    auf Prüfung und Rechtsgrundlage (öffentliche Schnittstelle: keine Abfragen je Gremium).
+    """
+    meeting_format = meeting.format or FORMAT_PRESENCE
+    remote = meeting_format != FORMAT_PRESENCE
+    tenant = meeting.tenant
+    profile = tenant.state_profile if remote else None
+    result = check_meeting(meeting) if remote and checks else FormatCheck()
+    remote_access = ""
+    if for_members and remote:
+        remote_access = str(meeting.get_remote_access_decrypted() or "")
+    return MeetingFormatInfo(
+        format=meeting_format,
+        label=str(meeting.get_format_display()),
+        description=_DESCRIPTIONS.get(meeting_format, ""),
+        legal_basis=legal_basis_text(tenant, result.rules) if remote and checks else "",
+        reason=(meeting.format_reason or "").strip() if remote else "",
+        remote_access=remote_access,
+        public_url=meeting.public_access_url or "",
+        public_note=(meeting.public_access_note or "").strip(),
+        public_registration_required=bool(profile and profile.public_registration_required),
+        public_registration_days=tenant.digital_public_registration_days,
+        warnings=tuple(result.errors),
+        hints=tuple(result.warnings),
+    )

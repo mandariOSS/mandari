@@ -1,0 +1,28 @@
+{% comment %}Sitzungsformat auf der Detailseite (Issue #138): Format, Rechtsgrundlage, Zugang, Öffentlichkeit, Warnungen.{% endcomment %}
+<div class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2 text-sm text-gray-600 dark:text-gray-400">
+    {% if format_info.is_remote %}
+    <p class="flex items-center gap-2 font-medium text-gray-800 dark:text-gray-200">
+        <i data-lucide="video" class="w-4 h-4" aria-hidden="true"></i>{{ format_info.description }}
+    </p>
+    {% if format_info.legal_basis %}<p>Rechtsgrundlage: {{ format_info.legal_basis }}</p>{% endif %}
+    {% if format_info.reason %}<p>Begründung: {{ format_info.reason }}</p>{% endif %}
+    {% if format_info.remote_access %}<p>Zugang für Zugeschaltete: {{ format_info.remote_access|linebreaksbr }}</p>{% endif %}
+    {% endif %}
+    {% if format_info.public_hint or format_info.public_url %}
+    <p>
+        Öffentlichkeit: {{ format_info.public_hint }}
+        {% if format_info.public_url %}<a href="{{ format_info.public_url }}" class="text-primary-600 dark:text-primary-400 hover:underline" target="_blank" rel="noopener noreferrer">{{ format_info.public_url }}</a>{% endif %}
+    </p>
+    {% endif %}
+    {% if format_info.hints and not format_info.warnings %}
+    <c-ui.alert variant="info" icon="scale">
+        {% for hint in format_info.hints %}<p>{{ hint }}</p>{% endfor %}
+    </c-ui.alert>
+    {% endif %}
+    {% if format_info.warnings %}
+    <c-ui.alert variant="warning" icon="triangle-alert" title="Sitzungsformat nach dem Landesprofil nicht zulässig">
+        {% for warning in format_info.warnings %}<p>{{ warning }}</p>{% endfor %}
+        <p>Eine Ladung ist erst nach Anpassung der Sitzung oder der Einstellungen möglich.</p>
+    </c-ui.alert>
+    {% endif %}
+</div>

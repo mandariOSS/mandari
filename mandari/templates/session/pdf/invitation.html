@@ -17,6 +17,19 @@
         {% if meeting.location %}
         <tr><td><strong>Ort:</strong></td><td>{{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}{% if meeting.street_address %}, {{ meeting.street_address }}{% endif %}{% if meeting.postal_code or meeting.locality %}, {{ meeting.postal_code }} {{ meeting.locality }}{% endif %}</td></tr>
         {% endif %}
+        {% comment %}Sitzungsformat (Issue #138): Zugangsweg nur in der Fassung für Mitglieder{% endcomment %}
+        {% if format_info.is_remote %}
+        <tr><td><strong>Format:</strong></td><td>{{ format_info.description }}</td></tr>
+        {% if format_info.remote_access %}
+        <tr><td><strong>Zugang:</strong></td><td>{{ format_info.remote_access|linebreaksbr }}</td></tr>
+        {% endif %}
+        {% if format_info.legal_basis or format_info.reason %}
+        <tr><td><strong>Rechtsgrundlage:</strong></td><td>{{ format_info.legal_basis }}{% if format_info.reason %}{% if format_info.legal_basis %}<br>{% endif %}Begründung: {{ format_info.reason }}{% endif %}</td></tr>
+        {% endif %}
+        {% endif %}
+        {% if format_info.public_hint or format_info.public_url %}
+        <tr><td><strong>Öffentlichkeit:</strong></td><td>{{ format_info.public_hint }}{% if format_info.public_url %} {{ format_info.public_url }}{% endif %}</td></tr>
+        {% endif %}
     </table>
 
     <h2>{% if supplementary_only %}Nachtrags-Tagesordnung{% else %}Tagesordnung{% endif %}</h2>

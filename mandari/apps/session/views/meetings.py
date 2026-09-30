@@ -330,6 +330,12 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         context["files"] = list(files)
         context["file_can_edit"] = self.has_permission("edit_meetings")
 
+        # Sitzungsformat (Issue #138): nur für hybride und digitale Sitzungen oder mit Übertragung
+        if meeting.format != SessionMeeting.FORMAT_PRESENCE or meeting.public_access_url or meeting.public_access_note:
+            context["format_info"] = meeting_format_service.describe(
+                meeting, for_members=self.has_permission("edit_meetings")
+            )
+
         # Protocol
         context["protocol"] = getattr(meeting, "protocol", None)
 

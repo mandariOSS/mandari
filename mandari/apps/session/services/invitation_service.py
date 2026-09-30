@@ -28,7 +28,7 @@ from apps.session.models import (
     SessionInvitationRecipient,
     SessionMeeting,
 )
-from apps.session.services import agenda_service, joint_meeting_service
+from apps.session.services import agenda_service, joint_meeting_service, meeting_format_service
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,8 @@ def build_agenda_pdf(
     include_non_public: bool,
     supplementary_only: bool = False,
     permissions=None,
+    include_remote_access: bool | None = None,
+    format_info: meeting_format_service.MeetingFormatInfo | None = None,
 ) -> bytes:
     """
     Einladungs-PDF mit Tagesordnung erzeugen (amtlicher Briefkopf des Mandanten).
@@ -101,6 +103,10 @@ def build_agenda_pdf(
         permissions: Rechte einer abrufenden Person im Sitzungsdienst: Vorlagennummern
             nichtöffentlicher Vorlagen nur mit dem NÖ-Recht für Vorlagen. Ohne Angabe (Ladung an
             Gremienmitglieder) nennt die Tagesordnung alle Vorlagen ihres Teils.
+        include_remote_access: Zugangsweg für Zugeschaltete aufnehmen (Issue #138). Ohne Angabe wie
+            ``include_non_public`` – so erhalten ihn die Empfänger der vollständigen Ladung. Abrufe im
+            Sitzungsdienst entscheiden selbst (nur mit Bearbeitungsrecht), die Sitzungsmappe nie.
+        format_info: bereits ermittelte Formatangaben (Versand: einmal je Fassung statt je PDF)
 
     Returns:
         bytes: PDF-Inhalt
@@ -134,6 +140,12 @@ def build_agenda_pdf(
         "include_non_public": include_non_public,
         "supplementary_only": supplementary_only,
         "title": "Nachtrags-Tagesordnung" if supplementary_only else "Einladung",
+        # Sitzungsformat (Issue #138): Zugangsweg nur in der vollständigen Fassung für Mitglieder
+        "format_info": format_info
+        if format_info is not None
+        else meeting_format_service.describe(
+            meeting, for_members=include_non_public if include_remote_access is None else include_remote_access
+        ),
         "generated_at": timezone.localtime(),
         "address_lines": [line for line in (tenant.address or "").splitlines() if line.strip()],
     }
@@ -160,10 +172,18 @@ def build_meeting_ics(meeting: SessionMeeting) -> bytes:
 
 
 def _meeting_description(meeting: SessionMeeting) -> str:
-    """Beschreibung für den Kalendereintrag; gemeinsame Sitzungen nennen alle Gremien (Issue #317)."""
+    """
+    Beschreibung für den Kalendereintrag; gemeinsame Sitzungen nennen alle Gremien (Issue #317).
+
+    Hybride und digitale Sitzungen nennen das Format (Issue #138), nie den Zugangsweg.
+    """
     if meeting.is_joint:
-        return f"Gemeinsame Sitzung der Gremien {meeting.organizations_label}"
-    return f"Sitzung des Gremiums {meeting.organization.name}"
+        text = f"Gemeinsame Sitzung der Gremien {meeting.organizations_label}"
+    else:
+        text = f"Sitzung des Gremiums {meeting.organization.name}"
+    if meeting.format != SessionMeeting.FORMAT_PRESENCE:
+        text = f"{text}. {meeting_format_service.describe(meeting, checks=False).description}"
+    return text
 
 
 def send_invitations(
@@ -196,9 +216,19 @@ def send_invitations(
     subject = subject.strip() or _default_subject(meeting, supplementary)
     message = message.strip() or (meeting.invitation_text or "").strip()
 
-    # PDF-Varianten nur einmal erzeugen (Ö-only und vollständig)
-    pdf_full = build_agenda_pdf(meeting, include_non_public=True, supplementary_only=supplementary)
-    pdf_public = build_agenda_pdf(meeting, include_non_public=False, supplementary_only=supplementary)
+    # Formatangaben und PDF-Varianten nur einmal erzeugen (Ö-only und vollständig). Den Zugangsweg für
+    # Zugeschaltete erhalten die Empfänger der vollständigen Ladung (Mitglieder mit NÖ-Teil); Gäste
+    # erhalten die öffentliche Fassung ohne Zugangsweg – eine Zuschaltung von Gästen regelt die
+    # Sitzungsleitung im Einzelfall (docs/SESSION_SITZUNGSFORMAT_LANDESRECHT.md).
+    format_infos = {
+        include_np: meeting_format_service.describe(meeting, for_members=include_np) for include_np in (True, False)
+    }
+    pdf_full = build_agenda_pdf(
+        meeting, include_non_public=True, supplementary_only=supplementary, format_info=format_infos[True]
+    )
+    pdf_public = build_agenda_pdf(
+        meeting, include_non_public=False, supplementary_only=supplementary, format_info=format_infos[False]
+    )
     ics_bytes = build_meeting_ics(meeting)
 
     pdf_name = "nachtrags-tagesordnung.pdf" if supplementary else "einladung-tagesordnung.pdf"
@@ -245,6 +275,7 @@ def send_invitations(
                     (pdf_name, pdf_full if include_np else pdf_public, "application/pdf"),
                     ("sitzung.ics", ics_bytes, "text/calendar"),
                 ],
+                format_info=format_infos[include_np],
             )
             row.status, row.error, row.sent_at = "sent", "", timezone.now()
             sent_count += 1
