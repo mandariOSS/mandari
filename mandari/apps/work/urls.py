@@ -261,6 +261,11 @@ urlpatterns = [
         name="document_meta",
     ),
     path(
+        "<slug:org_slug>/documents/<uuid:motion_id>/bezug/suche/",
+        motions_views.MotionReferenceSearchView.as_view(),
+        name="document_reference_search",
+    ),
+    path(
         "<slug:org_slug>/documents/<uuid:motion_id>/checklist/",
         motions_views.MotionChecklistActionView.as_view(),
         name="document_checklist",

@@ -21,9 +21,9 @@ from apps.common.formatting import member_initials, member_name
 from apps.common.mixins import WorkViewMixin
 from apps.work.sanitize import safe_editor_html, sanitize_editor_html
 
+from .. import references
 from ..forms import (
     MotionCommentForm,
-    MotionForm,
     MotionStatusForm,
 )
 from ..models import (
@@ -78,7 +78,6 @@ class MotionCreateView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "documents"
-        context["form"] = MotionForm(organization=self.organization, membership=self.membership)
         context["ai_available"] = MotionAIService(
             organization=self.organization, user_id=self.request.user.id
         ).is_available()
@@ -298,6 +297,9 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         # Ordner-Feld (Details-Sidebar): alle Ordner der Org, eingerückt
         context["org_folders"] = _flatten_folder_tree(self.organization)
+
+        # Bezugsantrag, Bezugssitzung und Änderungsanträge (Details-Sidebar, Issue #586)
+        context["bezug"] = references.reference_context(motion, self.membership, self.organization)
 
         context["checklist_items"] = motion.checklist_items.all()
         context["checklist_progress"] = motion.checklist_progress
@@ -583,29 +585,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 messages.error(request, "Speichern fehlgeschlagen.")
                 return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
-        # Default: use form for full updates
-        form = MotionForm(request.POST, instance=motion, organization=self.organization, membership=self.membership)
-
-        if form.is_valid():
-            motion = form.save(commit=False)
-            new_content = sanitize_editor_html(request.POST.get("content", ""))
-            content_changed = bool(new_content) and _store_content(motion, new_content, _current_content(motion))
-            motion.save()
-            if content_changed:
-                _broadcast_doc_reload(motion)
-
-            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                return JsonResponse({"success": True})
-
-            messages.success(request, "Änderungen gespeichert.")
-            return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
-
-        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return JsonResponse({"error": form.errors}, status=400)
-
-        context = self.get_context_data(**kwargs)
-        context["form"] = form
-        return self.render_to_response(context)
+        # Metadaten (Bezug, Zuständigkeit …) setzt document_meta (Issue #586)
+        return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
 
 
 class GuestSharedDocumentsView(WorkViewMixin, TemplateView):

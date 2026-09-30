@@ -1,0 +1,77 @@
+{% comment %}
+Bezug im Dokument-Editor (Issue #586): Bezugsantrag (Dokument der Organisation oder RIS-Vorlage),
+Bezugssitzung (RIS) und Änderungsanträge zu diesem Dokument. Gesetzt wird über document_meta,
+gesucht über document_reference_search. Kontext: motion, bezug, can_edit, membership, organization
+{% endcomment %}
+{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id as meta_url %}
+{% url 'work:document_reference_search' org_slug=organization.slug motion_id=motion.id as search_url %}
+<div data-testid="dokument-bezug">
+    <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <i data-lucide="link-2" class="w-3.5 h-3.5"></i>
+        Bezug
+    </h4>
+
+    <p class="text-[11px] font-medium text-gray-400 mb-1">Änderungsantrag zu</p>
+    {% if bezug.parent %}
+    <div class="flex items-start gap-2 text-sm">
+        <span class="flex-shrink-0 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-[10px] text-gray-600 dark:text-gray-300">{{ bezug.parent.kind }}</span>
+        {% if bezug.parent.url %}
+        <a href="{{ bezug.parent.url }}" class="flex-1 min-w-0 break-words text-primary-600 hover:underline">{{ bezug.parent.label }}</a>
+        {% else %}
+        <span class="flex-1 min-w-0 italic text-gray-500">{{ bezug.parent.label }}</span>
+        {% endif %}
+        {% if can_edit and not membership.is_guest %}
+        <form data-submit-handler="motion-meta" action="{{ meta_url }}">
+            <input type="hidden" name="action" value="set_parent">
+            <c-ui.text-button type="submit" variant="muted" icon="x" title="Bezugsantrag entfernen">Entfernen</c-ui.text-button>
+        </form>
+        {% endif %}
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500">–</p>
+    {% endif %}
+    {% if can_edit and not membership.is_guest %}
+    <input type="search" name="q" placeholder="Dokument oder RIS-Vorlage suchen …" autocomplete="off"
+           aria-label="Bezugsantrag suchen"
+           hx-get="{{ search_url }}" hx-vals='{"art": "antrag"}'
+           hx-trigger="input changed delay:300ms, search" hx-target="#bezug-antrag-treffer" hx-swap="innerHTML"
+           class="mt-2 w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+    <div id="bezug-antrag-treffer" class="mt-1"></div>
+    {% endif %}
+
+    <p class="text-[11px] font-medium text-gray-400 mt-4 mb-1">Bezugssitzung</p>
+    {% if bezug.meeting %}
+    <div class="flex items-start gap-2 text-sm">
+        <a href="{{ bezug.meeting.url }}" class="flex-1 min-w-0 break-words text-primary-600 hover:underline">{{ bezug.meeting.label }}</a>
+        {% if can_edit and not membership.is_guest %}
+        <form data-submit-handler="motion-meta" action="{{ meta_url }}">
+            <input type="hidden" name="action" value="set_reference_meeting">
+            <c-ui.text-button type="submit" variant="muted" icon="x" title="Bezugssitzung entfernen">Entfernen</c-ui.text-button>
+        </form>
+        {% endif %}
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500">–</p>
+    {% endif %}
+    {% if can_edit and not membership.is_guest %}
+    <input type="search" name="q" placeholder="Sitzung suchen (Name oder TT.MM.JJJJ) …" autocomplete="off"
+           aria-label="Bezugssitzung suchen"
+           hx-get="{{ search_url }}" hx-vals='{"art": "sitzung"}'
+           hx-trigger="input changed delay:300ms, search" hx-target="#bezug-sitzung-treffer" hx-swap="innerHTML"
+           class="mt-2 w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+    <div id="bezug-sitzung-treffer" class="mt-1"></div>
+    {% endif %}
+
+    {% if bezug.amendments %}
+    <p class="text-[11px] font-medium text-gray-400 mt-4 mb-1">Änderungsanträge zu diesem Dokument</p>
+    <ul class="space-y-1">
+        {% for amendment in bezug.amendments %}
+        <li class="flex items-center gap-1.5 text-sm">
+            <i data-lucide="corner-down-right" class="w-3 h-3 text-gray-400 flex-shrink-0"></i>
+            <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=amendment.id %}"
+               class="truncate text-primary-600 hover:underline">{{ amendment.title }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>

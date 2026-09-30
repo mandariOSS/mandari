@@ -1,0 +1,42 @@
+{% comment %}
+Treffer der Bezugs-Suche (Issue #586, MotionReferenceSearchView). Jeder Treffer ist ein Formular an
+document_meta; nach dem Speichern lädt der Editor neu. Kontext: motion, kind, query, min_length,
+documents, papers (Paare Vorlage/Anzeige) bzw. meetings (Paare Sitzung/Anzeige), organization
+{% endcomment %}
+{% if query|length >= min_length %}
+{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id as meta_url %}
+<div class="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
+    {% if kind == "sitzung" %}
+    {% for meeting, label in meetings %}
+    <form data-submit-handler="motion-meta" action="{{ meta_url }}">
+        <input type="hidden" name="action" value="set_reference_meeting">
+        <input type="hidden" name="meeting" value="{{ meeting.id }}">
+        <button type="submit" class="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50">{{ label }}</button>
+    </form>
+    {% empty %}
+    <p class="px-3 py-2 text-xs text-gray-400">Keine Sitzung gefunden.</p>
+    {% endfor %}
+    {% else %}
+    <p class="px-3 pt-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Dokumente</p>
+    {% for document in documents %}
+    <form data-submit-handler="motion-meta" action="{{ meta_url }}">
+        <input type="hidden" name="action" value="set_parent">
+        <input type="hidden" name="parent_motion" value="{{ document.id }}">
+        <button type="submit" class="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50">{{ document.title }}</button>
+    </form>
+    {% empty %}
+    <p class="px-3 py-2 text-xs text-gray-400">Kein Dokument gefunden.</p>
+    {% endfor %}
+    <p class="px-3 pt-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">RIS-Vorlagen</p>
+    {% for paper, label in papers %}
+    <form data-submit-handler="motion-meta" action="{{ meta_url }}">
+        <input type="hidden" name="action" value="set_parent">
+        <input type="hidden" name="parent_paper" value="{{ paper.id }}">
+        <button type="submit" class="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50">{{ label }}</button>
+    </form>
+    {% empty %}
+    <p class="px-3 py-2 text-xs text-gray-400">Keine Vorlage gefunden.</p>
+    {% endfor %}
+    {% endif %}
+</div>
+{% endif %}

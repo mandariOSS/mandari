@@ -220,7 +220,9 @@ def test_migration_im_schema(motion: Motion) -> None:
         executor.migrate([NACHHER])
         verschluesselt, spalte = _roh(motion)
         assert spalte == b"" and verschluesselt is not None and INHALT not in verschluesselt
-        assert Motion.objects.get(pk=motion.pk).get_yjs_state() == ZUSTAND
+        # Nur die Spalten dieses Stands lesen: spätere Migrationen ergänzen Motion (z. B. #586)
+        stand = Motion.objects.only("organization", "yjs_document_encrypted", "yjs_document_legacy")
+        assert stand.get(pk=motion.pk).get_yjs_state() == ZUSTAND
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())

@@ -379,12 +379,6 @@ CASES: list[Case] = [
     ),
     Case("document_editor", "delete", path=MOTION, data={"action": "delete"}),
     Case(
-        "document_editor",
-        "formular",
-        path=MOTION,
-        data={"action": "form", "motion_type": "motion", "title": "Titel per Formular", "tags": "[]"},
-    ),
-    Case(
         "document_share_update",
         path=MOTION,
         data={"visibility": "shared", "add_user_email": "{member_email}", "level": "comment"},
@@ -413,6 +407,27 @@ CASES: list[Case] = [
         foreign={"ordner": {"folder": "{a_folder}"}},
     ),
     Case("document_meta", "set_due_date", path=MOTION, data={"action": "set_due_date", "due_date": IN_60_TAGEN}),
+    Case(
+        "document_meta",
+        "set_parent",
+        path=MOTION,
+        data={"action": "set_parent", "parent_motion": "{motion2}"},
+        foreign={"dokument": {"parent_motion": "{a_motion2}"}},
+    ),
+    Case(
+        "document_meta",
+        "set_parent_paper",
+        path=MOTION,
+        data={"action": "set_parent", "parent_paper": "{paper}"},
+        foreign={"vorlage": {"parent_paper": "{a_paper}"}},
+    ),
+    Case(
+        "document_meta",
+        "set_reference_meeting",
+        path=MOTION,
+        data={"action": "set_reference_meeting", "meeting": "{ris_meeting}"},
+        foreign={"sitzung": {"meeting": "{a_ris_meeting}"}},
+    ),
     Case("document_checklist", "add", path=MOTION, data={"action": "add", "title": "Neuer Punkt"}),
     Case(
         "document_checklist",

@@ -6,7 +6,6 @@ Forms for motion/document management.
 from typing import Any
 
 from django import forms
-from django.db.models import Q
 
 from apps.common.uploads import DOCUMENTS, MB, validate_upload
 
@@ -19,87 +18,6 @@ from .models import (
     MotionType,
     OrganizationLetterhead,
 )
-
-
-class MotionForm(forms.ModelForm):
-    """Form for creating and editing motions."""
-
-    class Meta:
-        model = Motion
-        fields = [
-            "motion_type",
-            "title",
-            "summary",
-            "template",
-            "related_meeting",
-            "parent_motion",
-            "tags",
-        ]
-        widgets = {
-            "motion_type": forms.Select(
-                attrs={
-                    "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
-                }
-            ),
-            "title": forms.TextInput(
-                attrs={
-                    "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
-                    "placeholder": "Titel des Antrags",
-                    "autofocus": True,
-                }
-            ),
-            "summary": forms.Textarea(
-                attrs={
-                    "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
-                    "rows": 3,
-                    "placeholder": "Öffentliche Kurzzusammenfassung (optional)",
-                }
-            ),
-            "template": forms.Select(
-                attrs={
-                    "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
-                }
-            ),
-            "related_meeting": forms.Select(
-                attrs={
-                    "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
-                }
-            ),
-            "parent_motion": forms.Select(
-                attrs={
-                    "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
-                }
-            ),
-        }
-
-    def __init__(self, *args, organization=None, membership=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.organization = organization
-        self.membership = membership
-
-        # Limit template choices to organization's templates
-        if organization:
-            self.fields["template"].queryset = MotionTemplate.objects.filter(
-                organization=organization, is_active=True
-            ).order_by("-is_default", "name")
-
-            # Änderungsantrag: nur Hauptanträge, die das Mitglied sehen darf. Ein bereits
-            # gesetzter Hauptantrag bleibt wählbar, damit Mitbearbeitende speichern können.
-            visible_ids = Motion.visible_to(membership).values("pk") if membership is not None else []
-            current_parent = Q(pk=self.instance.parent_motion_id) if self.instance.parent_motion_id else Q(pk__in=[])
-            self.fields["parent_motion"].queryset = (
-                Motion.objects.filter(Q(pk__in=visible_ids) | current_parent)
-                .exclude(status__in=["archived", "rejected"])
-                .order_by("-created_at")
-            )
-            self.fields["parent_motion"].required = False
-
 
 #: Anlagen zu Anträgen — wie Sitzungsvorbereitung 50 MB (#260).
 MOTION_DOCUMENT_MAX_BYTES = 50 * MB

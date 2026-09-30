@@ -16,7 +16,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.work.dashboard.views import DashboardView
-from apps.work.motions.forms import MotionForm
+from apps.work.motions import references
 from apps.work.motions.models import Motion, MotionShare
 
 PERMISSIONS = ["motions.view", "motions.view_drafts", "motions.create", "motions.edit", "motions.comment"]
@@ -57,8 +57,8 @@ def url(name: str, org: Any, motion: Motion | None = None) -> str:
     return reverse(f"work:{name}", kwargs=kwargs)
 
 
-def parent_choices(form: Any) -> set[str]:
-    return set(cast(Any, form.fields["parent_motion"]).queryset.values_list("title", flat=True))
+def parent_choices(motion: Motion, membership: Any, query: str) -> set[str]:
+    return {doc.title for doc in references.search_documents(motion, membership, query)}
 
 
 # -- Liste und Kacheln -----------------------------------------------------------
@@ -131,23 +131,15 @@ def test_dashboard_zeigt_keine_fremden_privaten_dokumente(
 
 
 @pytest.mark.django_db
-def test_auswahl_des_hauptantrags_enthaelt_keine_fremden_privaten(
+def test_auswahl_des_bezugsantrags_enthaelt_keine_fremden_privaten(
     org: Any, colleague: Any, documents: dict[str, Motion]
 ) -> None:
-    form = cast(Any, MotionForm)(organization=org, membership=colleague)
+    """Die Bezugs-Suche (Issue #586) bietet nur Dokumente an, die das Mitglied sehen darf."""
+    eigenes = Motion.objects.create(organization=org, author=colleague, title="Änderung", visibility="private")
 
-    assert "Vertraulicher Entwurf" not in parent_choices(form)
-    assert "Offener Antrag" in parent_choices(form)
-
-
-@pytest.mark.django_db
-def test_gesetzter_hauptantrag_bleibt_beim_bearbeiten_waehlbar(
-    org: Any, author: Any, colleague: Any, documents: dict[str, Motion]
-) -> None:
-    amendment = Motion(organization=org, author=author, title="Zusatz", parent_motion=documents["private"])
-    form = cast(Any, MotionForm)(instance=amendment, organization=org, membership=colleague)
-
-    assert "Vertraulicher Entwurf" in parent_choices(form)
+    assert "Vertraulicher Entwurf" not in parent_choices(eigenes, colleague, "Entwurf")
+    assert "Offener Antrag" in parent_choices(eigenes, colleague, "Antrag")
+    assert references.set_parent(eigenes, colleague, motion_id=str(documents["private"].id)) is not None
 
 
 # -- Papierkorb --------------------------------------------------------------------

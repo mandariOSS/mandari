@@ -736,17 +736,6 @@ class Motion(EncryptionMixin, models.Model):
         help_text="Standard-Modus für neue Mitarbeiter",
     )
 
-    # Target meeting for agenda integration
-    target_meeting = models.ForeignKey(
-        "work.FactionMeeting",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="proposed_motions",
-        verbose_name="Ziel-Sitzung",
-        help_text="Sitzung, in der dieser Antrag behandelt werden soll",
-    )
-
     # Template used
     template = models.ForeignKey(
         MotionTemplate,
@@ -777,16 +766,18 @@ class Motion(EncryptionMixin, models.Model):
         verbose_name="Verknüpfter Vorgang",
         help_text="OParl-Vorlage wenn eingereicht",
     )
+    # Bezug (Issue #586): Sitzung im RIS, auf die sich das Dokument bezieht
     related_meeting = models.ForeignKey(
         "insight_core.OParlMeeting",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="work_motions",
-        verbose_name="Ziel-Sitzung",
+        verbose_name="Bezugssitzung",
     )
 
-    # For amendments - link to parent motion
+    # Bezugsantrag (Änderungsantrag zu …): ein Dokument der Organisation oder eine Vorlage des RIS,
+    # höchstens eines von beiden (apps.work.motions.references)
     parent_motion = models.ForeignKey(
         "self",
         on_delete=models.SET_NULL,
@@ -794,6 +785,14 @@ class Motion(EncryptionMixin, models.Model):
         blank=True,
         related_name="amendments",
         verbose_name="Bezugsantrag",
+    )
+    parent_paper = models.ForeignKey(
+        "insight_core.OParlPaper",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="work_amendments",
+        verbose_name="Bezugsvorlage (RIS)",
     )
 
     # Zustand des gemeinsamen Editors (Yjs), mit dem Organisationsschlüssel verschlüsselt.
