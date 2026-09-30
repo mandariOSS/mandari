@@ -128,7 +128,10 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   `request_id` und `trace_id`, damit ein Sync der auslösenden Anfrage zugeordnet werden kann.
 - Ausnahmen konkret fangen; ein `except Exception` braucht `logger.exception(...)` und einen Kommentar,
   warum das Weiterlaufen richtig ist.
-- Hintergrundarbeit über Django Tasks oder Management-Kommandos, immer idempotent.
+- Hintergrundarbeit über Django Tasks oder Management-Kommandos, immer idempotent (Aufträge laufen mit
+  `TASKS_BACKEND=journal` mindestens einmal). Wiederkehrende Arbeit als Zeitplan im Code
+  (`every()`/`cron()` aus `apps/events/schedule.py`, registriert in `<app>/schedules.py`), nicht als
+  Host-Cronjob oder Thread im Webprozess.
 - Migrationen additiv; große Apps werden bei Gelegenheit gesquasht.
 
 ## 8. Dokumentation und Commits

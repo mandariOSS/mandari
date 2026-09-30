@@ -319,3 +319,19 @@ def journal_options(alias: str = "default") -> tuple[JournalOptions, tuple[str, 
     params = dict(getattr(settings, "TASKS", {}).get(alias, {}))
     queues = tuple(params.get("QUEUES") or QUEUES) or (DEFAULT_TASK_QUEUE_NAME,)
     return JournalOptions.from_settings(params.get("OPTIONS", {}), frozenset(queues)), queues
+
+
+def journal_backend(alias: str = "default") -> JournalBackend:
+    """Das ``JournalBackend`` für ``alias``, auch wenn ``TASKS`` dort noch ein anderes Backend nennt.
+
+    Für Worker-Rollen (Zeitpläne), die Aufträge immer in ``events_task`` anlegen und nie selbst
+    ausführen sollen.
+    """
+    from django.conf import settings
+    from django.tasks import task_backends
+
+    vorhanden = task_backends[alias]
+    if isinstance(vorhanden, JournalBackend):
+        return vorhanden
+    params = {k: v for k, v in dict(getattr(settings, "TASKS", {}).get(alias, {})).items() if k != "BACKEND"}
+    return JournalBackend(alias, params)

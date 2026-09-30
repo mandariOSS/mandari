@@ -10,6 +10,7 @@ Tabellen der Ereignistechnik (``docs/adr/20260929-ereignistechnik-postgres.md``)
 - ``Task`` (``events_task``): Aufträge des Tasks-Backends.
 - ``Lease`` (``events_lease``): Leader-Rollen (Sequenzierer, Zeitpläne) ohne sitzungsgebundene
   Sperren, damit ein Verbindungspooler im Transaktionsmodus möglich bleibt.
+- ``ScheduleState`` (``events_schedule``): zuletzt geplanter Termin je Zeitplan.
 
 Spaltenstandards liegen in der Datenbank (``db_default``), weil auch der Ingestor ohne Django in
 das Journal schreibt. Auf PostgreSQL kommen die Sequenz ``events_seq`` und der Weckruf-Trigger
@@ -249,3 +250,20 @@ class Lease(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} → {self.holder}"
+
+
+class ScheduleState(models.Model):
+    """Stand eines Zeitplans: zuletzt geplanter Termin. Die Zeitpläne selbst stehen im Code (``schedule.py``)."""
+
+    name = models.TextField("Zeitplan", primary_key=True)
+    last_slot = models.DateTimeField("zuletzt geplanter Termin")
+    last_task_id = models.UUIDField("letzter Auftrag", null=True, blank=True)
+    updated_at = models.DateTimeField("aktualisiert am", auto_now=True, db_default=Now())
+
+    class Meta:
+        db_table = "events_schedule"
+        verbose_name = "Zeitplan-Stand"
+        verbose_name_plural = "Zeitplan-Stände"
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.last_slot:%Y-%m-%d %H:%M})"
