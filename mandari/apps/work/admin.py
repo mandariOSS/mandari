@@ -3,8 +3,9 @@
 Admin configuration for Work module.
 
 Provides admin interfaces for:
-- Knowledge Base (categories and articles)
 - Support tickets with full management capabilities
+- frühere Wissensdatenbank (nur noch lesend, Issue #589): Die Anleitungen stehen in der
+  Anwenderdokumentation; die Tabellen entfallen in einem Folge-Release.
 """
 
 from django.contrib import admin
@@ -61,19 +62,16 @@ class OrganizationAITokenUsageAdmin(NoAddAdminMixin, ModelAdmin):
 
 
 # =============================================================================
-# Knowledge Base Admin
+# Frühere Wissensdatenbank (nur lesend, Issue #589)
 # =============================================================================
 
 
 @admin.register(KnowledgeBaseCategory)
-class KnowledgeBaseCategoryAdmin(ModelAdmin):
+class KnowledgeBaseCategoryAdmin(ReadOnlyAdminMixin, ModelAdmin):
     """
-    Admin für Knowledge Base Kategorien.
+    Kategorien der früheren Wissensdatenbank – nur noch zum Nachsehen.
 
-    Ermöglicht:
-    - Erstellen und Bearbeiten von Kategorien
-    - Festlegen von Icons und Farben
-    - Sortierung anpassen
+    Anleitungen pflegen wir in der Anwenderdokumentation (``apps.common.hilfe``).
     """
 
     list_display = (
@@ -159,15 +157,10 @@ class KnowledgeBaseCategoryAdmin(ModelAdmin):
 
 
 @admin.register(KnowledgeBaseArticle)
-class KnowledgeBaseArticleAdmin(ModelAdmin):
+class KnowledgeBaseArticleAdmin(ReadOnlyAdminMixin, ModelAdmin):
     """
-    Admin für Knowledge Base Artikel.
-
-    Ermöglicht:
-    - Erstellen und Bearbeiten von Artikeln
-    - Markdown-Inhalte
-    - Veröffentlichung steuern
-    - Tags und SEO
+    Artikel der früheren Wissensdatenbank – nur noch zum Nachsehen, etwa um Inhalte zu prüfen,
+    die nicht aus der Grunddaten-Migration stammen, bevor die Tabellen entfallen.
     """
 
     list_display = (
@@ -240,13 +233,6 @@ class KnowledgeBaseArticleAdmin(ModelAdmin):
         )
 
     helpful_rating.short_description = "Bewertung"
-
-    def save_model(self, request, obj, form, change):
-        if obj.is_published and not obj.published_at:
-            obj.published_at = timezone.now()
-        if not obj.author:
-            obj.author = request.user
-        super().save_model(request, obj, form, change)
 
 
 @admin.register(ArticleFeedback)

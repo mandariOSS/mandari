@@ -1,0 +1,16 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Link in die Anwenderdokumentation, öffnet in einem neuen Tab (Issue #589).
+  <c-ui.help-link topic="konto" />                                → „Hilfe“
+  <c-ui.help-link topic="sitzungen">Hilfe zur Vorbereitung</c-ui.help-link>
+topic ist ein Schlüssel aus apps.common.hilfe.SEITEN. Alle weiteren Attribute werden durchgereicht.
+{% endcomment %}
+<c-vars topic="" class="" />
+{% load hilfe_tags %}
+<a href="{% hilfe_url topic %}" target="_blank" rel="noopener"
+   class="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 {{ class }}"
+   {{ attrs }}>
+    <i data-lucide="help-circle" class="w-4 h-4 flex-none" aria-hidden="true"></i>
+    {% if slot %}{{ slot }}{% else %}Hilfe{% endif %}
+    <span class="sr-only">(öffnet die Dokumentation in einem neuen Tab)</span>
+</a>

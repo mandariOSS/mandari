@@ -221,9 +221,19 @@ class SupportTicketAttachment(models.Model):
         return self.filename
 
 
+# -----------------------------------------------------------------------------
+# Frühere Wissensdatenbank – abgekündigt (Issue #589)
+#
+# Die Anleitungen stehen in der Anwenderdokumentation (apps.common.hilfe), die Oberfläche
+# verweist nur noch dorthin. Die Modelle bleiben vorerst bestehen, damit ein Rückfall auf ein
+# älteres Image ohne Migrationsrückbau funktioniert und der DSGVO-Export bestehende
+# Rückmeldungen weiter enthält. Tabellen und Modelle entfallen in einem Folge-Release.
+# -----------------------------------------------------------------------------
+
+
 class KnowledgeBaseCategory(models.Model):
     """
-    Category for knowledge base articles.
+    Category for knowledge base articles (abgekündigt, siehe oben).
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

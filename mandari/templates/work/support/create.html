@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load hilfe_tags %}
 
 {% block page_title %}Neues Ticket{% endblock %}
 
@@ -11,8 +12,7 @@
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
     <!-- Main Form -->
     <div class="lg:col-span-2">
-        <form method="post" enctype="multipart/form-data" class="space-y-6" x-data="ticketForm"
-              data-search-url="{% url 'work:kb_search' org_slug=organization.slug %}">
+        <form method="post" enctype="multipart/form-data" class="space-y-6" x-data="ticketForm">
             {% csrf_token %}
 
             <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
@@ -27,7 +27,6 @@
                                name="subject"
                                required
                                x-model="subject"
-                               @input="searchArticles()"
                                class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
                                placeholder="Worum geht es?">
                     </div>
@@ -141,32 +140,8 @@
         </form>
     </div>
 
-    <!-- Sidebar - Article Suggestions -->
+    <!-- Sidebar: Tipps und Dokumentation -->
     <div class="space-y-6">
-        <!-- Search Suggestions -->
-        <div x-data="kbSuggestions"
-             @kb-suggestions.window="show($event.detail)"
-             x-show="suggestions.length > 0" x-cloak
-             data-testid="kb-vorschlaege"
-             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                <i data-lucide="lightbulb" class="w-4 h-4 text-amber-500"></i>
-                Passende Hilfe-Artikel
-            </h3>
-            <div class="space-y-2">
-                <template x-for="article in suggestions" :key="article.id">
-                    <a :href="article.url"
-                       class="block p-3 bg-gray-50 dark:bg-gray-900 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                        <h4 class="text-sm font-medium text-gray-900 dark:text-white" x-text="article.title"></h4>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1" x-text="article.excerpt"></p>
-                    </a>
-                </template>
-            </div>
-            <p class="text-xs text-gray-500 mt-3">
-                Möglicherweise finden Sie hier bereits die Lösung.
-            </p>
-        </div>
-
         <!-- Tips -->
         <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-5">
             <h3 class="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
@@ -188,21 +163,21 @@
                 </li>
                 <li class="flex gap-2">
                     <i data-lucide="check" class="w-4 h-4 flex-shrink-0 mt-0.5"></i>
-                    <span>Prüfen Sie zuerst die Wissensdatenbank</span>
+                    <span>Schauen Sie zuerst in die Dokumentation</span>
                 </li>
             </ul>
         </div>
 
-        <!-- Knowledge Base Link -->
-        <a href="{% url 'work:knowledge_base' org_slug=organization.slug %}"
+        <!-- Dokumentation (ersetzt die frühere Wissensdatenbank, Issue #589) -->
+        <a href="{% hilfe_url 'faq' %}" target="_blank" rel="noopener"
            class="block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
             <div class="flex items-center gap-3">
                 <div class="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
                     <i data-lucide="book-open" class="w-5 h-5 text-primary-600 dark:text-primary-400"></i>
                 </div>
                 <div>
-                    <h3 class="text-sm font-medium text-gray-900 dark:text-white">Wissensdatenbank</h3>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Anleitungen & FAQ durchsuchen</p>
+                    <h3 class="text-sm font-medium text-gray-900 dark:text-white">Dokumentation</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Anleitungen und häufige Fragen<span class="sr-only"> (neuer Tab)</span></p>
                 </div>
             </div>
         </a>

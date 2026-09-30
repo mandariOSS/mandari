@@ -96,7 +96,7 @@ from apps.work.motions.models import (
 )
 from apps.work.notifications.models import Notification, NotificationType
 from apps.work.organization.models import DataExport, MemberAbsence, MemberChangeRequest
-from apps.work.support.models import KnowledgeBaseArticle, KnowledgeBaseCategory, SupportTicket
+from apps.work.support.models import SupportTicket
 from apps.work.tasks.models import Task, TaskAttachment, TaskChecklistItem, TaskLabel
 from insight_core.models import (
     OParlAgendaItem,
@@ -799,13 +799,6 @@ CASES: list[Case] = [
     Case("support_detail", "reply", path={"ticket_id": "ticket"}, data={"action": "reply", "content": "Antwort"}),
     Case("support_detail", "close", path={"ticket_id": "ticket"}, data={"action": "close"}),
     Case("support_detail", "reopen", path={"ticket_id": "ticket_closed"}, data={"action": "reopen"}),
-    # Wissensdatenbank ist global (keine Org-Objekte), daher keine Prüfung fremder IDs
-    Case(
-        "kb_article_feedback",
-        path={"article_id": "kb_article"},
-        data={"is_helpful": "true", "comment": "Hilfreich"},
-        idor=False,
-    ),
     # --- Selbstbedienung ---
     Case("notification_preferences"),
     Case("notifications_mark_all_read"),
@@ -1329,14 +1322,9 @@ def world(django_db_setup: None, django_db_blocker: Any, tmp_path_factory: pytes
         org_a, ids_a = builder.organization("A")
         org_b, ids_b = builder.organization("B")
 
-        # Plattformweite Objekte: Wissensdatenbank, Partei
-        category = KnowledgeBaseCategory.objects.create(name="Matrix-Hilfe", slug="matrix-hilfe")
-        article = KnowledgeBaseArticle.objects.create(
-            category=category, title="Artikel", slug="matrix-artikel", content="Text", is_published=True
-        )
+        # Plattformweite Objekte: Partei
         party_group = PartyGroup.objects.create(name="Matrix-Partei", slug="matrix-partei")
         for ids in (ids_a, ids_b):
-            ids["kb_article"] = str(article.pk)
             ids["party_group"] = str(party_group.pk)
         # Einstellungs-Singletons vorab anlegen: Ihr erstes Lesen legt sie an und zählte sonst als Änderung
         new_singletons = [model for model in (SiteSettings, AISettings) if not model.objects.exists()]
@@ -1356,7 +1344,7 @@ def world(django_db_setup: None, django_db_blocker: Any, tmp_path_factory: pytes
             "basis": _login(basis.user),
             "admin_b": _login(admin_b.user),
         }
-        global_keys = {"kb_article", "party_group", "unbekannt"}
+        global_keys = {"party_group", "unbekannt"}
         org_a_refs = frozenset({str(org_a.pk), *(value for key, value in ids_a.items() if key not in global_keys)})
         built = World(ids={"A": ids_a, "B": ids_b}, clients=clients, org_a_refs=org_a_refs)
         built.baseline = _snapshot()
@@ -1365,7 +1353,6 @@ def world(django_db_setup: None, django_db_blocker: Any, tmp_path_factory: pytes
         Organization.objects.filter(pk__in=[org_a.pk, org_b.pk]).delete()
         User.objects.filter(pk__in=[user.pk for user in users]).delete()
         source.delete()
-        category.delete()
         party_group.delete()
         Permission.objects.filter(codename__in=created_permissions).delete()
         for model in new_singletons:

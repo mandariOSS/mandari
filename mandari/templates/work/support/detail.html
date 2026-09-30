@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load hilfe_tags %}
 {% load member_tags %}
 
 {% block page_title %}Ticket #{{ ticket.id.hex|slice:":8" }}{% endblock %}
@@ -240,10 +241,10 @@
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
             <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Hilfe</h3>
             <div class="space-y-2">
-                <a href="{% url 'work:knowledge_base' org_slug=organization.slug %}"
+                <a href="{% hilfe_url 'start' %}" target="_blank" rel="noopener"
                    class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
                     <i data-lucide="book-open" class="w-4 h-4"></i>
-                    Wissensdatenbank
+                    Dokumentation<span class="sr-only"> (neuer Tab)</span>
                 </a>
                 <a href="{% url 'work:support' org_slug=organization.slug %}"
                    class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">

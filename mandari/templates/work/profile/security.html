@@ -7,6 +7,10 @@
 <p class="work-page-subtitle">Sicherheitseinstellungen und Passwortverwaltung</p>
 {% endblock %}
 
+{% block header_actions %}
+<c-ui.help-link topic="konto" />
+{% endblock %}
+
 {% block work_content %}
 {% include "work/profile/_tabs.html" with active_tab="security" %}
 
