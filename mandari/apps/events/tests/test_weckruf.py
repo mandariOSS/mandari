@@ -38,7 +38,7 @@ from apps.events.models import NOTIFY_CHANNEL, Event
 from apps.events.registry import Subscriber
 from apps.events.sequencer import SEQUENCED_CHANNEL, Sequencer
 from apps.events.tests.hilfen import ereignis_anlegen, nummeriert, nur_postgres, roh_einfuegen
-from apps.events.wakeup import Listener, conninfo_without_password, listen_conninfo, start_listener
+from apps.events.wakeup import Listener, listen_conninfo, listen_source, start_listener
 
 Verbindungen = Callable[..., psycopg.Connection[Any]]
 
@@ -77,12 +77,13 @@ def protokoll_sichtbar(monkeypatch: pytest.MonkeyPatch) -> None:
 # --- Verbindungsdaten (ohne Datenbank) ---------------------------------------------------------
 
 
-def test_direktverbindung_hat_vorrang_und_erscheint_ohne_passwort(settings: Any) -> None:
+def test_direktverbindung_hat_vorrang(settings: Any) -> None:
     settings.EVENTS_DB_DIRECT_URL = "postgresql://mandari:geheim@db-direkt:5432/mandari"
 
     assert listen_conninfo() == "postgresql://mandari:geheim@db-direkt:5432/mandari"
-    lesbar = conninfo_without_password(listen_conninfo())
-    assert "geheim" not in lesbar and "db-direkt" in lesbar
+    # Protokolle nennen nur die Herkunft, nie Verbindungsdaten (Passwort)
+    assert listen_source() == "EVENTS_DB_DIRECT_URL"
+    assert Listener({}).source == "EVENTS_DB_DIRECT_URL"
 
 
 def test_ohne_direktverbindung_gelten_die_daten_der_standarddatenbank(
@@ -103,6 +104,7 @@ def test_ohne_direktverbindung_gelten_die_daten_der_standarddatenbank(
     )
 
     teile = conninfo_to_dict(listen_conninfo())
+    assert listen_source() == "DATABASE_URL"
 
     assert teile == {
         "dbname": "mandari",

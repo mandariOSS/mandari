@@ -40,7 +40,7 @@ import psycopg
 from django.conf import settings
 from django.db import DatabaseError, connection
 from psycopg import sql
-from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from psycopg.conninfo import make_conninfo
 
 from .metrics import LISTENER_UP
 
@@ -80,14 +80,9 @@ def listen_conninfo() -> str:
     return make_conninfo("", **{k: v for k, v in parameter.items() if v not in (None, "")})
 
 
-def conninfo_without_password(conninfo: str) -> str:
-    """Für Protokolle: Verbindungsdaten ohne Passwort."""
-    try:
-        teile = conninfo_to_dict(conninfo)
-    except psycopg.ProgrammingError:
-        return "(ungültige Verbindungsangabe)"
-    teile.pop("password", None)
-    return make_conninfo("", **{k: v for k, v in teile.items() if k in ("host", "port", "dbname", "user")})
+def listen_source() -> str:
+    """Für Protokolle: woher die Verbindungsdaten kommen (nie die Daten selbst, sie enthalten das Passwort)."""
+    return "EVENTS_DB_DIRECT_URL" if (getattr(settings, "EVENTS_DB_DIRECT_URL", "") or "").strip() else "DATABASE_URL"
 
 
 def ping_via_default_connection(kanal: str, token: str) -> None:
@@ -110,6 +105,8 @@ class Listener:
     callbacks: Mapping[str, Sequence[Callable[[], None]]]
     conninfo: str = ""
     send_ping: Callable[[str, str], None] = ping_via_default_connection
+    #: Herkunft der Verbindungsdaten für Protokolle
+    source: str = ""
     #: ``True``, solange die Selbstprüfung ankommt
     healthy: bool = field(default=False, init=False)
     _backend_pid: int | None = field(default=None, init=False, repr=False)
@@ -117,6 +114,8 @@ class Listener:
     def __post_init__(self) -> None:
         if not self.conninfo:
             self.conninfo = listen_conninfo()
+            self.source = self.source or listen_source()
+        self.source = self.source or "angegebene Verbindung"
 
     # --- Rückrufe ---
 
@@ -184,7 +183,7 @@ class Listener:
             if not self._pruefen(verbindung):
                 return "unwirksam"
             if not self.healthy:
-                logger.info("Weckruf: LISTEN aktiv (%s)", conninfo_without_password(self.conninfo))
+                logger.info("Weckruf: LISTEN aktiv (Verbindung aus %s)", self.source)
             self._zustand(True)
             self.wake_all()
             naechste_pruefung = time.monotonic() + PING_INTERVAL
@@ -210,10 +209,10 @@ class Listener:
                         continue
                     self._zustand(False)
                     logger.warning(
-                        "Weckruf: Meldungen erreichen die Lauschverbindung nicht (%s), etwa hinter PgBouncer im "
-                        "Transaktionsmodus. EVENTS_DB_DIRECT_URL auf eine Direktverbindung zu PostgreSQL setzen. Bis "
-                        "dahin fragen die Schleifen regelmäßig ab; neuer Versuch in %.0f s.",
-                        conninfo_without_password(self.conninfo),
+                        "Weckruf: Meldungen erreichen die Lauschverbindung nicht (Verbindung aus %s), etwa hinter "
+                        "PgBouncer im Transaktionsmodus. EVENTS_DB_DIRECT_URL auf eine Direktverbindung zu "
+                        "PostgreSQL setzen. Bis dahin fragen die Schleifen regelmäßig ab; neuer Versuch in %.0f s.",
+                        self.source,
                         UNHEALTHY_RETRY,
                     )
                     stop.wait(UNHEALTHY_RETRY)
@@ -224,8 +223,9 @@ class Listener:
                         self.wake_all()
                     self._zustand(False)
                     logger.warning(
-                        "Weckruf: Verbindung zum Lauschen verloren oder nicht möglich (%s), neuer Versuch in %.0f s",
-                        conninfo_without_password(self.conninfo),
+                        "Weckruf: Verbindung zum Lauschen verloren oder nicht möglich (Verbindung aus %s), neuer "
+                        "Versuch in %.0f s",
+                        self.source,
                         pause,
                         exc_info=True,
                     )
