@@ -94,6 +94,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "display_name",
         "logo",
         "slug",
+        # OParlBody: festgeschriebenes Verzeichnis im Dokument-Cache (Django-managed, Issue #373)
+        "file_cache_dir",
         "latitude",
         "longitude",
         "bbox_north",

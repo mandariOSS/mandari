@@ -8,6 +8,7 @@ Migriert von SQLAlchemy zu Django ORM.
 import uuid
 from typing import Any
 
+from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
@@ -18,6 +19,19 @@ from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 
 #: Kennung gespiegelter Objekte aus der OParl-API von mandari Session: ``…/session/<slug>/api/oparl/…``
 SESSION_OPARL_MARKERS = ("/session/", "/api/oparl/")
+
+#: Slugs, die mit festen Adressen kollidieren (``/sitemap-insight-index.xml`` ist der Sitemap-Index)
+RESERVED_BODY_SLUGS = frozenset({"index"})
+BODY_SLUG_RE = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+
+
+def validate_body_slug(value: str) -> None:
+    """Slug einer Kommune: klein, ohne Umlaute, Bindestriche nur zwischen Wörtern, nicht reserviert."""
+    RegexValidator(
+        BODY_SLUG_RE, "Nur Kleinbuchstaben (ohne Umlaute), Ziffern und einzelne Bindestriche zwischen Wörtern."
+    )(value)
+    if value in RESERVED_BODY_SLUGS:
+        raise ValidationError(f"„{value}“ ist reserviert.")
 
 
 def withdrawn_q(prefix: str = "") -> Q:
@@ -226,7 +240,23 @@ class OParlBody(SourceDeletionModel):
         unique=True,
         blank=True,
         null=True,
-        help_text="URL-freundlicher Identifikator (z.B. 'muenster' für Münster)",
+        validators=[validate_body_slug],
+        help_text=(
+            "URL-freundlicher Identifikator (z.B. 'muenster' für Münster): Bürgerportal unter /insight/k/<slug>/ "
+            "und Sitemap. Kleinbuchstaben, Ziffern und Bindestriche. Ändern macht bisherige Links ungültig."
+        ),
+    )
+    # Verzeichnis der Kommune im Dokument-Cache (Issue #373), einmal festgeschrieben aus dem damaligen Slug
+    # bzw. Kurznamen. Ein neuer Slug oder ein im RIS geänderter Kurzname legt so keine zweite Ablage an, und
+    # prune_file_cache rechnet mit demselben Namen wie die gespeicherten Pfade (OParlFile.local_path).
+    # Gesetzt nur über services.file_cache.pin_body_dir; nullable, weil der Ingestor die Spalte nicht kennt.
+    file_cache_dir = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="Verzeichnis im Dokument-Cache",
+        help_text="Wird beim ersten Zwischenspeichern festgelegt und danach nicht mehr geändert.",
     )
     # Anzeigename für das Frontend (manuell anpassbar)
     display_name = models.CharField(
@@ -417,6 +447,16 @@ class OParlBody(SourceDeletionModel):
 
     def __str__(self):
         return self.get_display_name()
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # Vor jeder Änderung einer schon gespeicherten Kommune das Cache-Verzeichnis festschreiben – aus dem
+        # Stand in der Datenbank, also vor einem neuen Slug oder Kurznamen. Ein vorher geladenes Objekt
+        # übernimmt einen inzwischen festgeschriebenen Namen, statt ihn mit NULL zu überschreiben (Issue #373).
+        if not self.file_cache_dir and not self._state.adding:
+            from .services.file_cache import pin_body_dir
+
+            pin_body_dir(self)
+        super().save(*args, **kwargs)
 
     def get_display_name(self):
         """Gibt den Anzeigenamen zurück (display_name > short_name > name)."""

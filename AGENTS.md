@@ -361,7 +361,8 @@ class OParlXxx(models.Model):
 | `OParlBody` | `display_name`, `logo` | Frontend-Anpassung |
 | `OParlBody` | `latitude`, `longitude`, `bbox_*` | Geo-Koordinaten für Karten |
 | `OParlBody` | `osm_relation_id` | OpenStreetMap-Verknüpfung |
-| `OParlBody` | `slug` | SEO-freundliche URLs |
+| `OParlBody` | `slug` | SEO-freundliche URLs, Bürgerportal `/insight/k/<slug>/` (`set_body_slugs`) |
+| `OParlBody` | `file_cache_dir` | Festgeschriebenes Verzeichnis im Dokument-Cache (unabhängig vom Slug) |
 | `OParlPaper` | `summary` | KI-generierte Zusammenfassung |
 | `OParlPaper` | `locations` | Extrahierte Ortsreferenzen |
 | `OParlFile` | `local_path` | Lokale Dateispeicherung |

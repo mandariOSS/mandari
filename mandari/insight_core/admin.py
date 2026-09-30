@@ -8,6 +8,7 @@ Verwendet Django Unfold für modernes Admin-Interface.
 import threading
 from typing import Any
 
+from django import forms
 from django.contrib import admin, messages
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
@@ -41,6 +42,7 @@ from .models import (
     OParlSource,
     SubscriptionAlert,
 )
+from .portal import forget_slugs, tenant_slug_conflict
 
 
 def _reference_protection(label: str, references: list[Any]) -> list[str]:
@@ -366,8 +368,32 @@ class GeoSuggestionInline(NoAddAdminMixin, TabularInline):
         return _osm_relation_link(obj.osm_relation_id)
 
 
+class OParlBodyAdminForm(forms.ModelForm):
+    """Slug wie bei ``set_body_slugs`` prüfen: Er darf den Einstieg eines Session-Mandanten nicht verdecken."""
+
+    class Meta:
+        model = OParlBody
+        fields = "__all__"
+
+    def clean_slug(self) -> str | None:
+        slug = self.cleaned_data.get("slug")
+        # Nur ein neuer Slug wird geprüft: Ein schon bestehender Konflikt (etwa ein später angelegter Mandant
+        # mit diesem Slug) soll andere Änderungen an der Kommune nicht blockieren.
+        if slug and slug != self.initial.get("slug"):
+            tenant = tenant_slug_conflict(slug, self.instance.pk)
+            if tenant is not None:
+                raise forms.ValidationError(
+                    f"„{slug}“ ist der Slug des Session-Mandanten „{tenant.name}“ und führt zu dessen "
+                    "Bürgerportal. Bitte einen anderen Slug wählen.",
+                    code="tenant_slug",
+                )
+        return slug
+
+
 @admin.register(OParlBody)
 class OParlBodyAdmin(ModelAdmin):
+    form = OParlBodyAdminForm
+
     # -------------------------------------------------------------------------
     # Löschen: Djangos Standard-Delete sammelt ALLE abhängigen Objekte im RAM
     # (bei einer Kommune hunderttausende Zeilen) und OOM-killt den Container.
@@ -440,6 +466,7 @@ class OParlBodyAdmin(ModelAdmin):
         "name",
         "short_name",
         "display_name",
+        "slug",
         "has_logo",
         "has_geo_data",
         "has_osm_relation",
@@ -448,7 +475,7 @@ class OParlBodyAdmin(ModelAdmin):
         "source",
     ]
     list_filter = ["is_listed", GeoCoverageListFilter, "source", "classification", "deleted"]
-    search_fields = ["name", "short_name", "display_name"]
+    search_fields = ["name", "short_name", "display_name", "slug"]
     autocomplete_fields = ["territory_parent"]
     inlines = [GeoSuggestionInline]
     readonly_fields = [
@@ -458,6 +485,7 @@ class OParlBodyAdmin(ModelAdmin):
         "updated_at",
         "oparl_created",
         "oparl_modified",
+        "file_cache_dir",
     ]
     list_editable = ["display_name"]  # Direkt in der Liste bearbeitbar
 
@@ -465,8 +493,20 @@ class OParlBodyAdmin(ModelAdmin):
         (
             "Anzeige im Frontend",
             {
-                "fields": ("display_name", "is_listed", "description", "logo", "hero_image", "hero_image_credit"),
-                "description": "Diese Felder bestimmen, wie die Kommune im Frontend angezeigt wird.",
+                "fields": (
+                    "display_name",
+                    "slug",
+                    "is_listed",
+                    "description",
+                    "logo",
+                    "hero_image",
+                    "hero_image_credit",
+                ),
+                "description": (
+                    "Diese Felder bestimmen, wie die Kommune im Frontend angezeigt wird. Mit Slug hat die "
+                    "Kommune ein eigenes Bürgerportal unter /insight/k/<slug>/ und eine eigene Sitemap; "
+                    "gesammelt setzen: python manage.py set_body_slugs."
+                ),
             },
         ),
         (
@@ -511,7 +551,7 @@ class OParlBodyAdmin(ModelAdmin):
         (
             "Quelle",
             {
-                "fields": ("source", "external_id"),
+                "fields": ("source", "external_id", "file_cache_dir"),
             },
         ),
         (
@@ -536,6 +576,9 @@ class OParlBodyAdmin(ModelAdmin):
         if territory_fields & set(form.changed_data) and "territory_set_manually" not in form.changed_data:
             obj.territory_set_manually = True
         super().save_model(request, obj, form, change)
+        if "slug" in form.changed_data:
+            # Sonst führt der alte Slug bis zu fünf Minuten weiter auf die Kommune (Portal-Cache)
+            forget_slugs(form.initial.get("slug"), obj.slug)
 
     @admin.display(boolean=True, description="Geo")
     def has_geo_data(self, obj):
