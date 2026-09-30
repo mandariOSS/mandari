@@ -22,7 +22,9 @@ from typing import Any, cast
 import pytest
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import Client, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.session.api import oparl as schnittstelle
@@ -40,7 +42,7 @@ from apps.session.models import (
 )
 from hub.ris.canonical import ORGANIZATION_TYPES
 from hub.ris.mapping import session as mapping
-from hub.ris.mapping.session import SessionMapping, SessionSource, SessionUris
+from hub.ris.mapping.session import NotPublicError, SessionMapping, SessionSource, SessionUris
 from oparl_api.tests.konformitaet import pruefe
 
 SITE = "https://mandari.example"
@@ -135,7 +137,9 @@ def _beratung(*, sitzung_oeffentlich: bool, top_oeffentlich: bool) -> SimpleName
     top = SimpleNamespace(id=4, is_public=top_oeffentlich, meeting=sitzung)
     return _objekt(
         id=2,
+        pk=2,
         paper_id=1,
+        paper=SimpleNamespace(id=1),
         organization_id=8,
         meeting=sitzung,
         agenda_item=top,
@@ -171,6 +175,8 @@ def _datei(**felder: Any) -> SimpleNamespace:
     sitzung = SimpleNamespace(id=3, is_public=True)
     werte: dict[str, Any] = {
         "id": 7,
+        "pk": 7,
+        "is_public": True,
         "name": "Begründung",
         "file": "session/files/x.pdf",
         "size": 1234,
@@ -218,19 +224,23 @@ def test_datei_text_nur_auf_wunsch() -> None:
 
 
 def test_datei_verweist_nur_auf_oeffentliche_objekte() -> None:
-    geheime_sitzung = SimpleNamespace(id=3, is_public=False)
-    datei = _datei(meeting=geheime_sitzung, agenda_item=SimpleNamespace(id=4, is_public=True, meeting=geheime_sitzung))
+    # Vorlage nicht veröffentlicht, Sitzung nichtöffentlich – der TOP einer anderen, öffentlichen Sitzung bleibt
+    datei = _datei(meeting=SimpleNamespace(id=3, is_public=False))
 
     # Die Veröffentlichungsregel der Vorlage entscheidet das Fachmodul (gereichte Funktion)
     ergebnis = _abbildung(is_published=lambda obj: False).file(datei)
 
-    assert "paper" not in ergebnis and "meeting" not in ergebnis and "agendaItem" not in ergebnis
+    assert "paper" not in ergebnis and "meeting" not in ergebnis
+    assert ergebnis["agendaItem"] == [f"{BASIS}agendaitem/4/"]
 
 
 def _top(**felder: Any) -> SimpleNamespace:
     werte: dict[str, Any] = {
         "id": 4,
+        "pk": 4,
+        "is_public": True,
         "meeting_id": 3,
+        "meeting": SimpleNamespace(id=3, is_public=True),
         "number": "1",
         "order": 1,
         "name": "Radweg",
@@ -305,6 +315,64 @@ def test_beratung_am_top_nur_bei_veroeffentlichter_vorlage() -> None:
 
     assert _abbildung().agenda_item(top)["consultation"] == f"{BASIS}consultation/2/"
     assert "consultation" not in _abbildung(is_published=lambda obj: False).agenda_item(top)
+
+
+# -- Vorbedingung: nur Öffentliches ------------------------------------------------------------------
+
+
+def _kein_inhalt(fehler: pytest.ExceptionInfo[NotPublicError]) -> None:
+    """Die Meldung nennt Art und Kennung, nie Inhalte des Objekts."""
+    assert "GEHEIM" not in str(fehler.value)
+
+
+def test_nichtoeffentliche_sitzung_und_ihr_ort_werden_nicht_abgebildet() -> None:
+    sitzung = _objekt(id=3, pk=3, is_public=False, name="GEHEIME SITZUNG", location="GEHEIMER ORT", room="")
+
+    with pytest.raises(NotPublicError) as fehler:
+        _abbildung().meeting(sitzung)
+    _kein_inhalt(fehler)
+    with pytest.raises(NotPublicError) as fehler:
+        _abbildung().location(sitzung)
+    _kein_inhalt(fehler)
+
+
+@pytest.mark.parametrize(("sitzung", "top"), [(False, True), (True, False), (False, False)])
+def test_tagesordnungspunkt_im_nichtoeffentlichen_teil_wird_nicht_abgebildet(sitzung: bool, top: bool) -> None:
+    punkt = _top(name="GEHEIMER TOP", is_public=top, meeting=SimpleNamespace(id=3, is_public=sitzung))
+
+    with pytest.raises(NotPublicError) as fehler:
+        _abbildung().agenda_item(punkt)
+    _kein_inhalt(fehler)
+
+
+def test_unveroeffentlichte_vorlage_und_ihre_beratung_werden_nicht_abgebildet() -> None:
+    abbildung = _abbildung(is_published=lambda obj: False)
+    vorlage = _objekt(id=1, pk=1, name="GEHEIME VORLAGE")
+
+    with pytest.raises(NotPublicError) as fehler:
+        abbildung.paper(vorlage)
+    _kein_inhalt(fehler)
+    with pytest.raises(NotPublicError):
+        abbildung.consultation(_beratung(sitzung_oeffentlich=True, top_oeffentlich=True))
+
+
+def test_datei_ohne_oeffentliches_bezugsobjekt_wird_nicht_abgebildet() -> None:
+    geheime_sitzung = SimpleNamespace(id=3, is_public=False)
+    ohne_bezug = _datei(
+        name="GEHEIME ANLAGE",
+        meeting=geheime_sitzung,
+        agenda_item=SimpleNamespace(id=4, is_public=True, meeting=geheime_sitzung),
+    )
+
+    # Öffentlich gekennzeichnet, aber Vorlage, Sitzung und TOP sind es nicht
+    with pytest.raises(NotPublicError) as fehler:
+        _abbildung(is_published=lambda obj: False).file(ohne_bezug)
+    _kein_inhalt(fehler)
+    # Nicht öffentlich gekennzeichnet, auch wenn die Bezugsobjekte öffentlich sind
+    with pytest.raises(NotPublicError):
+        _abbildung().file(_datei(is_public=False))
+    with pytest.raises(NotPublicError):
+        _abbildung().file_with_text(_datei(is_public=False))
 
 
 def test_geloeschtes_objekt_traegt_nur_kennung_und_zeiten() -> None:
@@ -425,6 +493,80 @@ def test_sitzungsort_aus_der_abbildung(welt: dict[str, Any]) -> None:
     assert ort is not None and ort["id"] == f"{BASIS}location/{welt['meeting'].pk}/"
     assert _json(f"/session/musterstadt/api/oparl/location/{welt['meeting'].pk}/") == ort
     assert _json(f"/session/musterstadt/api/oparl/meeting/{welt['meeting'].pk}/")["location"] == ort
+
+
+def test_nichtoeffentliches_aus_session_wird_nicht_abgebildet(welt: dict[str, Any]) -> None:
+    """Reicht ein Abnehmer ungefilterte Session-Objekte herein, bricht die Abbildung ab, statt sie auszugeben."""
+    abbildung = SessionMapping(welt["tenant"], BASIS, schnittstelle.SOURCE)
+    geheim = SessionMeeting.objects.create(
+        tenant=welt["tenant"],
+        name="Personalausschuss",
+        organization=welt["organization"],
+        start=timezone.now(),
+        is_public=False,
+        location="GEHEIMER-ORT",
+    )
+    top = SessionAgendaItem.objects.create(meeting=geheim, number="1", name="Personalie", is_public=True)
+    noe_top = SessionAgendaItem.objects.create(meeting=welt["meeting"], number="2", name="Grundstück", is_public=False)
+    entwurf = SessionPaper.objects.create(tenant=welt["tenant"], reference="V/2026/2", name="Entwurf", status="draft")
+    anlage = SessionFile.objects.create(tenant=welt["tenant"], name="Anlage", is_public=True, paper=entwurf)
+
+    for abbilden, objekt in (
+        (abbildung.meeting, geheim),
+        (abbildung.location, geheim),
+        (abbildung.agenda_item, top),
+        (abbildung.agenda_item, noe_top),
+        (abbildung.paper, entwurf),
+        (abbildung.file, anlage),
+    ):
+        with pytest.raises(NotPublicError) as fehler:
+            abbilden(objekt)
+        assert "GEHEIMER-ORT" not in str(fehler.value)
+    # Die Schnittstelle wählt vorher aus: Nichtöffentliches existiert nach außen nicht
+    for pfad in (
+        f"meeting/{geheim.pk}/",
+        f"location/{geheim.pk}/",
+        f"agendaitem/{noe_top.pk}/",
+        f"paper/{entwurf.pk}/",
+    ):
+        assert Client().get(f"/session/musterstadt/api/oparl/{pfad}").status_code == 404
+    # … und die öffentliche Sitzung nennt ihren nichtöffentlichen TOP nicht
+    sitzung = _json(f"/session/musterstadt/api/oparl/meeting/{welt['meeting'].pk}/")
+    assert [punkt["name"] for punkt in sitzung["agendaItem"]] == ["Radweg"]
+
+
+def test_absicherung_kostet_keine_abfrage_je_objekt(welt: dict[str, Any]) -> None:
+    """Die Prüfung „nur Öffentliches“ liest nur vorgeladene Beziehungen (Sitzung des TOP, Vorlage der Beratung)."""
+    pfade = ["meetings/", "agendaitems/", "papers/", "consultations/", "files/"]
+
+    def abfragen() -> dict[str, int]:
+        anzahl = {}
+        for pfad in pfade:
+            with CaptureQueriesContext(connection) as erfasst:
+                _json(f"/session/musterstadt/api/oparl/{pfad}")
+            anzahl[pfad] = len(erfasst)
+        return anzahl
+
+    vorher = abfragen()
+    for nummer in range(2, 6):
+        vorlage = SessionPaper.objects.create(
+            tenant=welt["tenant"],
+            reference=f"V/2026/{nummer}",
+            name=f"Vorlage {nummer}",
+            is_public=True,
+            status="approved",
+        )
+        top = SessionAgendaItem.objects.create(
+            meeting=welt["meeting"], number=str(nummer), name=f"TOP {nummer}", is_public=True, paper=vorlage
+        )
+        SessionConsultation.objects.create(
+            paper=vorlage, organization=welt["organization"], meeting=welt["meeting"], agenda_item=top
+        )
+        for bezug in ({"paper": vorlage}, {"agenda_item": top}, {"meeting": welt["meeting"]}):
+            SessionFile.objects.create(tenant=welt["tenant"], name=f"Anlage {nummer}", is_public=True, **bezug)
+
+    assert len(_json("/session/musterstadt/api/oparl/agendaitems/")["data"]) == 5
+    assert abfragen() == vorher
 
 
 def test_session_schnittstelle_uebersetzt_nicht_selbst() -> None:

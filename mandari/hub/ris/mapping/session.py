@@ -12,6 +12,12 @@ Grundsätze:
   Verschlüsselte Felder (Telefon, Adresse, Bankdaten, nichtöffentliche Beschlusstexte) liest die
   Abbildung nie; die E-Mail einer Person nur über ``published_email`` (Einwilligung). Verweise auf
   nichtöffentliche Sitzungen, Tagesordnungspunkte und Vorlagen entfallen.
+- **Vorbedingung: Der Aufrufer reicht nur Öffentliches herein.** Welche Objekte eines Mandanten
+  öffentlich sind, entscheidet das Fachmodul (``apps/session/oparl_publication.py``, Querysets
+  ``visible_*``); die Abbildung wählt nicht aus. Sie verlässt sich aber nicht darauf: Eine
+  nichtöffentliche Sitzung (samt Ort), ein nichtöffentlicher Tagesordnungspunkt, eine nicht
+  veröffentlichte Vorlage oder Beratung und eine Datei ohne öffentliches Bezugsobjekt werden nicht
+  abgebildet – die Methode bricht mit ``NotPublicError`` ab, statt Inhalte auszugeben.
 - **Kennungen** sind die kanonischen URIs der Objekte: die öffentliche Adresse des Mandanten
   (``SessionUris``), unabhängig vom Host einer Anfrage.
 - **Keine Abhängigkeit zum Fachmodul.** Die Drehscheibe importiert Session nicht. Was die Abbildung
@@ -52,6 +58,20 @@ ORGANIZATION_TYPES: Final[dict[str, str]] = {
 
 #: Reihenfolge der Einzelstimmen: Ja, Nein, Enthaltung, dann Befangenheit
 _VOTES: Final = ("yes", "no", "abstain", "excluded")
+
+
+class NotPublicError(ValueError):
+    """
+    Ein nichtöffentliches Objekt wurde zur Abbildung gereicht.
+
+    Das ist ein Fehler des Aufrufers (er wählt aus, was öffentlich ist) und nie ein Zustand der Daten:
+    Die Abbildung gibt in diesem Fall nichts aus. Die Meldung nennt nur Art und Kennung, keine Inhalte.
+    """
+
+
+def _require_public(kind: str, obj: Any, public: bool) -> None:
+    if not public:
+        raise NotPublicError(f"{kind} {obj.pk}: nicht öffentlich, wird nicht abgebildet.")
 
 
 @dataclass(frozen=True)
@@ -244,6 +264,7 @@ class SessionMapping:
     # -- Sitzung, Ort, Tagesordnung ------------------------------------------------------------------
 
     def meeting(self, meeting: Any) -> Objekt:
+        _require_public("meeting", meeting, meeting.is_public)
         protocol_file = self.source.results_protocol(meeting)
         protocol_file_id = protocol_file.pk if protocol_file is not None else None
         files = [f for f in meeting.files.all() if f.is_public and f.pk != protocol_file_id]
@@ -288,8 +309,10 @@ class SessionMapping:
         Sitzungsort als OParl-Location (eingebettet in ``Meeting.location``), ``None`` ohne Ortsangabe.
 
         Session führt den Ort an der Sitzung. Das Location-Objekt gehört deshalb zur Sitzung und trägt
-        deren Kennung (``…/location/<Kennung der Sitzung>/``).
+        deren Kennung (``…/location/<Kennung der Sitzung>/``). Abgebildet wird es nur für öffentliche
+        Sitzungen.
         """
+        _require_public("location", meeting, meeting.is_public)
         fields = {
             "description": meeting.location,
             "room": meeting.room,
@@ -337,6 +360,8 @@ class SessionMapping:
         }
 
     def agenda_item(self, item: Any) -> Objekt:
+        # Nur der öffentliche Teil öffentlicher Sitzungen
+        _require_public("agendaitem", item, item.is_public and item.meeting.is_public)
         consultation = self._visible_consultation(item)
         files = [f for f in item.files.all() if f.is_public]
         return clean(
@@ -408,6 +433,7 @@ class SessionMapping:
     # -- Vorlage, Beratung, Datei -----------------------------------------------------------------
 
     def paper(self, paper: Any) -> Objekt:
+        _require_public("paper", paper, self.source.is_published(paper))
         files = sorted((f for f in paper.files.all() if f.is_public), key=lambda f: f.created_at)
         main_file = files[0] if files else None
         consultations = sorted(paper.consultations.all(), key=lambda c: (c.order, c.created_at))
@@ -438,6 +464,8 @@ class SessionMapping:
         )
 
     def consultation(self, consultation: Any) -> Objekt:
+        # Eine Beratung ist so öffentlich wie ihre Vorlage
+        _require_public("consultation", consultation, self.source.is_published(consultation.paper))
         meeting = consultation.meeting
         item = consultation.agenda_item
         # Verweise auf nichtöffentliche Sitzungen und TOPs entfallen
@@ -470,6 +498,8 @@ class SessionMapping:
             refs["meeting"] = [self.uris.obj("meeting", file_obj.meeting_id)]
         if file_obj.agenda_item_id and file_obj.agenda_item.is_public and file_obj.agenda_item.meeting.is_public:
             refs["agendaItem"] = [self.uris.obj("agendaitem", file_obj.agenda_item_id)]
+        # Öffentlich ist eine Datei nur mit mindestens einem öffentlichen Bezugsobjekt (Vorlage, Sitzung, TOP)
+        _require_public("file", file_obj, bool(file_obj.is_public and refs))
         return clean(
             {
                 "id": self.uris.obj("file", file_obj.id),

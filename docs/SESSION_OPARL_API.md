@@ -48,6 +48,10 @@ Schnittstelle bleibt ohne Unterbrechung erreichbar.
   OParl-Objekt aussieht, legt allein `mandari/hub/ris/mapping/session.py` fest – die eine Abbildung der
   Session-Objekte auf das kanonische Modell (ADR `docs/adr/20260929-kanonisches-modell.md`). Wer ein
   Feld ergänzt oder ändert, tut das dort; die Schnittstelle gibt die Abbildung unverändert aus.
+  Welche Objekte öffentlich sind, wählt weiterhin `oparl_publication.py` aus. Die Abbildung verlässt
+  sich darauf nicht allein: Für eine nichtöffentliche Sitzung (samt Ort), einen nichtöffentlichen
+  Tagesordnungspunkt, eine nicht veröffentlichte Vorlage oder Beratung und eine Datei ohne
+  öffentliches Bezugsobjekt bricht sie mit `NotPublicError` ab, statt Inhalte auszugeben.
 
 ## Sicherheitsgarantie: NUR öffentliche Daten
 
