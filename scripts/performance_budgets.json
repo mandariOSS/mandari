@@ -36,7 +36,7 @@
   },
   "session_sitzungsdetail": {
     "beschreibung": "Session: Sitzungsdetail mit Tagesordnung",
-    "abfragen": 26,
+    "abfragen": 25,
     "ms": 500
   },
   "session_vorlagenliste": {

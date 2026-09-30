@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.protocol.published:v1",
+  "title": "Niederschrift veröffentlicht",
+  "description": "Die Niederschrift einer Sitzung wurde veröffentlicht, erneuert oder berichtigt. Aggregat: Meeting. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "meeting",
+    "change"
+  ],
+  "properties": {
+    "protocol": {
+      "description": "Kennung der Niederschrift.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "meeting": {
+      "description": "Sitzung der Niederschrift.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "change": {
+      "description": "published (erstmals), renewed (neu erzeugt), corrected (berichtigt).",
+      "type": "string",
+      "enum": [
+        "published",
+        "renewed",
+        "corrected"
+      ]
+    },
+    "file": {
+      "description": "Veröffentlichte Datei der Niederschrift.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "protocol": "2c3d4e5f-6a7b-5c8d-9e0f-a1b2c3d4e5f6",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "change": "published",
+      "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b"
+    }
+  ]
+}

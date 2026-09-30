@@ -2103,6 +2103,14 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
         default="summary",
         verbose_name="Abstimmungsart",
     )
+    # Wahl (Issue #139): Personalentscheidung. Das Landesprofil regelt, ob Zugeschaltete an Wahlen
+    # teilnehmen (``SessionStateProfile.remote_elections``); DB-Default für den Rückfall per Image.
+    is_election = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Wahl",
+        help_text="Personalentscheidung, z. B. Wahl in ein Gremium oder Amt",
+    )
 
     # Beschlusskontrolle (Issue #37): Umsetzung nach der Beschlussfassung.
     # Nur für angenommene Beschlüsse relevant; die Verwaltung dokumentiert
@@ -3405,6 +3413,23 @@ class SessionAttendance(EncryptionMixin, models.Model):
         verbose_name="Status",
     )
 
+    # Teilnahmeart (Issue #139): im Sitzungsraum oder per Bild-Ton-Übertragung zugeschaltet (nur hybride
+    # und digitale Sitzungen). Bei Zugeschalteten sind Ankunft und Abgang Zuschaltung und Trennung;
+    # Unterbrechungen stehen als Störungsvermerke (SessionAttendanceDisruption) daneben.
+    PARTICIPATION_IN_PERSON = "in_person"
+    PARTICIPATION_REMOTE = "remote"
+    PARTICIPATION_CHOICES = [
+        (PARTICIPATION_IN_PERSON, "Vor Ort"),
+        (PARTICIPATION_REMOTE, "Zugeschaltet"),
+    ]
+    participation_mode = models.CharField(
+        max_length=10,
+        choices=PARTICIPATION_CHOICES,
+        default=PARTICIPATION_IN_PERSON,
+        db_default=PARTICIPATION_IN_PERSON,
+        verbose_name="Teilnahmeart",
+    )
+
     # Timing
     arrival_time = models.TimeField(blank=True, null=True, verbose_name="Ankunft")
     departure_time = models.TimeField(blank=True, null=True, verbose_name="Abgang")
@@ -3458,9 +3483,86 @@ class SessionAttendance(EncryptionMixin, models.Model):
     def __str__(self):
         return f"{self.person} - {self.meeting}: {self.status}"
 
+    @property
+    def is_remote(self) -> bool:
+        """Per Bild-Ton-Übertragung zugeschaltet? (Issue #139)."""
+        return self.participation_mode == self.PARTICIPATION_REMOTE
+
     def get_encryption_organization(self):
         """Mandanten-Schlüssel der Sitzung für den Absagegrund."""
         return self.meeting.tenant
+
+
+class SessionAttendanceDisruption(models.Model):
+    """
+    Störungsvermerk einer zugeschalteten Person (Issue #139).
+
+    Zugeschaltete gelten nur als anwesend, solange sie sehen und hören und gesehen und gehört werden.
+    Eine Störung (Beginn, Ende, Ursache) nimmt die Person für ihre Dauer aus der Beschlussfähigkeit und
+    der Stimmabgabe; ohne Ende dauert sie an. Niederschrift und Anwesenheitsliste weisen sie mit Zeiten
+    und Ursache aus – den freien Vermerk nur intern.
+    """
+
+    CAUSE_CONNECTION = "connection"
+    CAUSE_AUDIO = "audio"
+    CAUSE_VIDEO = "video"
+    CAUSE_OTHER = "other"
+    CAUSE_CHOICES = [
+        (CAUSE_CONNECTION, "Verbindung abgebrochen"),
+        (CAUSE_AUDIO, "Ton gestört"),
+        (CAUSE_VIDEO, "Bild gestört"),
+        (CAUSE_OTHER, "Sonstige Ursache"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    attendance = models.ForeignKey(
+        SessionAttendance,
+        on_delete=models.CASCADE,
+        related_name="disruptions",
+        verbose_name="Anwesenheit",
+    )
+    started_at = models.TimeField(verbose_name="Beginn")
+    ended_at = models.TimeField(blank=True, null=True, verbose_name="Ende", help_text="Leer: Die Störung dauert an")
+    cause = models.CharField(max_length=20, choices=CAUSE_CHOICES, default=CAUSE_CONNECTION, verbose_name="Ursache")
+    note = models.CharField(max_length=255, blank=True, verbose_name="Vermerk", help_text="Nur intern")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_attendance_disruptions"
+        verbose_name = "Störungsvermerk"
+        verbose_name_plural = "Störungsvermerke"
+        ordering = ["started_at", "created_at"]
+
+    def __str__(self):
+        return f"{self.attendance.person}: {self.get_cause_display()} ab {self.started_at:%H:%M}"
+
+    @property
+    def meeting_id(self):
+        """Sitzung der Störung (Audit, Sperre und öffentliche Fassung der Niederschrift)."""
+        return self.attendance.meeting_id
+
+    @property
+    def ongoing(self) -> bool:
+        return self.ended_at is None
+
+    @property
+    def duration_minutes(self) -> int | None:
+        """Dauer in Minuten (über Mitternacht fortgesetzt); ``None``, solange die Störung andauert."""
+        if self.ended_at is None:
+            return None
+        start = self.started_at.hour * 60 + self.started_at.minute
+        end = self.ended_at.hour * 60 + self.ended_at.minute
+        return (end - start) % (24 * 60)
+
+    def covers(self, moment) -> bool:
+        """Dauert die Störung zu diesem Zeitpunkt (Uhrzeit) an?"""
+        if self.ended_at is None:
+            return moment >= self.started_at
+        if self.ended_at >= self.started_at:
+            return self.started_at <= moment < self.ended_at
+        return moment >= self.started_at or moment < self.ended_at
 
 
 class SessionAllowanceRate(models.Model):

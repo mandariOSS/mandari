@@ -15,6 +15,9 @@ set -eu
 WURZEL=$(cd "$(dirname "$0")/.." && pwd)
 AUS="${1:-$WURZEL/sbom}"
 mkdir -p "$AUS"
+# Absoluter Pfad: Schritt 3 wechselt nach mandari/, ein relatives Ziel laege sonst dort
+# (Release v0.11.0: Frontend-SBOM fehlte im Anhang, Issue #690).
+AUS=$(cd "$AUS" && pwd)
 VERSION=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$WURZEL/mandari/pyproject.toml" | head -1)
 
 echo "SBOM fuer mandari $VERSION -> $AUS"

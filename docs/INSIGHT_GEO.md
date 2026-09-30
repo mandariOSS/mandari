@@ -126,7 +126,7 @@ Einschalten klären (siehe Machbarkeitsbericht, Abschnitt Urheberrecht). Lücken
 Cron (siehe `DEPLOYMENT.md`):
 
 ```cron
-50 4 * * *  docker exec mandari-app python manage.py sync_plan_boundaries >> /var/log/mandari-plan-boundaries.log 2>&1
+50 4 * * *  docker exec mandari python manage.py sync_plan_boundaries >> /var/log/mandari-plan-boundaries.log 2>&1
 ```
 
 ## Nachbarschafts-Autocomplete (`services/neighborhood.py`)

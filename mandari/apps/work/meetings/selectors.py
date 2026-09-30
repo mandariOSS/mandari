@@ -19,6 +19,8 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
+from apps.work.organization import selectors as organization_selectors
+from apps.work.organization.selectors import MyCommittees
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -215,11 +217,13 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
 # ---------------------------------------------------------------------------
 
 
-def assigned_committees(membership: Membership | None, bodies: QuerySet[OParlBody]) -> list[OParlOrganization]:
-    """Dem Mitglied zugewiesene Gremien innerhalb der Körperschaften."""
-    if membership is None:
-        return []
-    return list(membership.oparl_committees.filter(body__in=bodies))
+def my_committees(membership: Membership | None, bodies: QuerySet[OParlBody]) -> MyCommittees:
+    """
+    „Meine Gremien“ innerhalb der Körperschaften: gefolgte Gremien, ersatzweise zugewiesene.
+
+    Dieselbe Regel wie auf dem Dashboard (Issue #647), deshalb aus ``organization.selectors``.
+    """
+    return organization_selectors.my_committees(membership).within(bodies)
 
 
 def meetings_for_list(bodies: QuerySet[OParlBody], time_filter: str, now: datetime) -> list[OParlMeeting]:

@@ -5,8 +5,8 @@
 {% block header_title %}Meine Sitzungen{% endblock %}
 {% block header_subtitle %}
 <p class="work-page-subtitle">
-    {% if view_mode == 'my' and has_assignments %}
-    Sitzungen Ihrer zugewiesenen Gremien
+    {% if view_mode == 'my' and has_my_committees %}
+    {% if my_committees_followed %}Sitzungen der Gremien, denen Sie folgen{% else %}Sitzungen Ihrer zugewiesenen Gremien{% endif %}
     {% else %}
     Alle Sitzungen der Gremien
     {% endif %}
@@ -39,9 +39,9 @@
            {% endif %}">
             <i data-lucide="user" class="w-4 h-4"></i>
             Meine Gremien
-            {% if assigned_committees %}
+            {% if my_committees %}
             <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 rounded-full">
-                {{ assigned_committees|length }}
+                {{ my_committees|length }}
             </span>
             {% endif %}
         </a>
@@ -59,16 +59,17 @@
 </div>
 {% endif %}
 
-<!-- Assigned Committees Info (if no assignments) -->
-{% if has_body and not has_assignments and view_mode == 'my' %}
+<!-- Hinweis: weder gefolgte noch zugewiesene Gremien -->
+{% if has_body and not has_my_committees and view_mode == 'my' %}
 <div class="fade-up mb-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
     <div class="flex items-start gap-3">
         <i data-lucide="info" class="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"></i>
         <div>
-            <h4 class="font-medium text-amber-800 dark:text-amber-200 text-sm">Keine Gremien zugewiesen</h4>
+            <h4 class="font-medium text-amber-800 dark:text-amber-200 text-sm">Keine Gremien ausgewählt</h4>
             <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                Ihnen wurden noch keine Gremien zugewiesen. Bitten Sie einen Administrator, Ihnen Gremien zuzuweisen,
-                oder wechseln Sie zur Ansicht "Alle Sitzungen".
+                Sie folgen noch keinen Gremien, und Ihnen wurden keine zugewiesen. Wählen Sie unter
+                <a href="{% url 'work:profile_committees' org_slug=organization.slug %}" class="font-semibold underline">Profil → Meine Gremien</a>
+                die Gremien aus, deren Sitzungen hier erscheinen sollen, oder wechseln Sie zur Ansicht „Alle Sitzungen“.
             </p>
         </div>
     </div>
@@ -129,8 +130,8 @@
     <!-- No meetings found -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
         <p class="text-sm text-gray-400 dark:text-gray-500">
-            {% if view_mode == 'my' and not has_assignments %}
-            Ihnen wurden noch keine Gremien zugewiesen.
+            {% if view_mode == 'my' and not has_my_committees %}
+            Sie haben noch keine Gremien ausgewählt.
             {% elif time_filter == 'upcoming' %}
             Keine anstehenden Sitzungen vorhanden.
             {% elif time_filter == 'past' %}
@@ -201,17 +202,20 @@
     {% endif %}
 </div>
 
-<!-- Assigned Committees List -->
-{% if has_assignments and view_mode == 'my' %}
+<!-- Meine Gremien: gefolgt, sonst zugewiesen (wie auf dem Dashboard) -->
+{% if has_my_committees and view_mode == 'my' %}
 <div class="fade-up d3 mt-6">
     <div class="flex items-center justify-between mb-1">
         <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <i data-lucide="users" class="w-4 h-4 text-primary-500"></i>
-            Ihre zugewiesenen Gremien
+            {% if my_committees_followed %}Gremien, denen Sie folgen{% else %}Ihre zugewiesenen Gremien{% endif %}
         </h2>
+        <a href="{% url 'work:profile_committees' org_slug=organization.slug %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+            Meine Gremien bearbeiten
+        </a>
     </div>
     <div class="flex flex-wrap gap-2 mt-3">
-        {% for committee in assigned_committees %}
+        {% for committee in my_committees %}
         <span class="px-3 py-1.5 text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 rounded-lg border border-primary-200 dark:border-primary-800/40">
             {{ committee.name }}
         </span>

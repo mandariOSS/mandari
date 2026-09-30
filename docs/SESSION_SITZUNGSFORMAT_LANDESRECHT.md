@@ -76,8 +76,47 @@ bearbeitbar; der Versand prüft das Format erneut (siehe unten).
   und auf der Sitzungsseite im Bürgerportal.
 
 Wahlen, geheime Abstimmungen, konstituierende Sitzungen und Satzungsbeschlüsse betreffen einzelne
-Tagesordnungspunkte bzw. Teilnehmende. Das Landesprofil hält sie fest; durchgesetzt werden sie mit der
-Teilnahmeart (#139) und der Selbst-Abstimmung (#141).
+Tagesordnungspunkte bzw. Teilnehmende. Das Landesprofil hält sie fest; durchgesetzt werden Wahlen und
+geheime Abstimmungen mit der Teilnahmeart (#139, nächster Abschnitt), die Stimmabgabe am eigenen Gerät
+folgt mit der Selbst-Abstimmung (#141).
+
+### Teilnahmeart in der Anwesenheit (Issue #139)
+
+Zugeschaltete gelten als anwesend, solange sie per Bild und Ton teilnehmen. Die Anwesenheitsliste der
+Sitzung (`SessionAttendance`, `apps/session/services/participation_service.py`) hält dafür fest:
+
+- **Teilnahmeart** „vor Ort“ oder „zugeschaltet“ (`participation_mode`). Zugeschaltet werden kann nur in
+  hybriden und digitalen Sitzungen; in digitalen Sitzungen ist es die Vorgabe beim Erzeugen der Liste. Bei
+  Zugeschalteten sind Ankunft und Abgang die Zeiten der **Zuschaltung und Trennung**. Steht in einer
+  Präsenzsitzung jemand als zugeschaltet (etwa nach Änderung des Formats), weist die Sitzungsseite darauf hin
+  und zeigt die Spalte „Teilnahme“, damit sich die Angabe in der Zeile korrigieren lässt. Bis dahin zählt die
+  Person zur Beschlussfähigkeit – bewusst, damit sie nicht stillschweigend kippt.
+- **Störungen** (`SessionAttendanceDisruption`) mit Beginn, Ende und Ursache (Verbindung abgebrochen, Ton
+  gestört, Bild gestört, sonstige) und einem internen Vermerk. In der Sitzung genügt ein Klick in der Zeile
+  („Störung ab jetzt“) bzw. „Jetzt beenden“; Zeiten lassen sich nachtragen und korrigieren. Ein Ende vor
+  dem Beginn gilt als Störung über Mitternacht und ist nur in einer Sitzung möglich, die bis in den Folgetag
+  reicht (tatsächliches bzw. geplantes Sitzungsende; „Jetzt beenden“ nach Mitternacht geht immer). Sonst und
+  bei einer nicht lesbaren Uhrzeit bleibt der bisherige Stand mit einer Fehlermeldung unverändert.
+- **Beschlussfähigkeit:** Zugeschaltete zählen wie Anwesende im Raum, während einer andauernden Störung aber
+  nicht („nicht erreichbar“); nach dem Ende zählen sie wieder. Die Anzeige nennt, wie viele zugeschaltet
+  sind und wer wegen einer Störung nicht mitgezählt wird. Gäste und Protokollführung zählen nie – auch nicht
+  mit gesetztem Stimmrecht (wie bei der Stimmabgabe).
+- **Wahlen und geheime Abstimmungen:** Die Abstimmungserfassung kennt die Angabe „Wahl“ je TOP. Schließt das
+  Landesprofil Zugeschaltete aus (`remote_elections` bzw. `remote_secret_votes` = ausgeschlossen, z. B.
+  Niedersachsen, Rheinland-Pfalz), stimmen sie bei dieser Abstimmung nicht ab, die Summen dürfen die Zahl der
+  Stimmberechtigten im Raum nicht übersteigen und die Beschlussfähigkeit für den TOP zählt sie nicht. „Nur
+  unter Bedingungen“ und „ungeklärt“ ergeben einen Hinweis. Während einer Störung ist keine Stimmabgabe
+  möglich. Mit der Genehmigung der Niederschrift ist die Angabe „Wahl“ gesperrt wie Ergebnis und
+  Abstimmungsart (`protocol_lock`); eine Berichtigung wertet Stimmen nach der gespeicherten Angabe.
+- **Sitzungsleitung:** Verlangt das Landesprofil die Sitzungsleitung im Sitzungsraum (`chair_present`),
+  weist die Anwesenheit in hybriden Sitzungen auf einen zugeschalteten Vorsitz hin (ohne zu sperren – die
+  Leitung kann an die Stellvertretung übergehen).
+- **Niederschrift, Teilnehmerverzeichnis, Protokoll-PDF** (interne und öffentliche Fassung) nennen in
+  hybriden und digitalen Sitzungen die Teilnahmeart je Person, bei Zugeschalteten mit Zeiten und Störungen,
+  z. B. „zugeschaltet 18:03–19:10 Uhr; Störung 18:40–18:44 Uhr (Verbindung abgebrochen)“. Der interne
+  Vermerk einer Störung erscheint dort nie.
+- **Datenschutz:** Die Auskunft an eine Person enthält Teilnahmeart und Störungen; die Anonymisierung leert
+  die Vermerke, Zeiten und Ursache bleiben als Nachweis der Beschlussfassung.
 
 ### Pflege
 

@@ -903,6 +903,17 @@ urlpatterns = [
         views.AttendanceDeleteView.as_view(),
         name="attendance_delete",
     ),
+    # Störungsvermerke Zugeschalteter (Issue #139)
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/disruptions/add/",
+        views.AttendanceDisruptionAddView.as_view(),
+        name="attendance_disruption_add",
+    ),
+    path(
+        "<slug:tenant_slug>/attendance/disruptions/<uuid:disruption_id>/",
+        views.AttendanceDisruptionUpdateView.as_view(),
+        name="attendance_disruption_update",
+    ),
     # HTMX endpoints
     path(
         "<slug:tenant_slug>/attendance/<uuid:attendance_id>/update/",

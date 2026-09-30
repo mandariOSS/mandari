@@ -23,6 +23,7 @@ from apps.common.params import date_param, uuid_param
 
 from ..models import (
     SessionAttendance,
+    SessionAttendanceDisruption,
     SessionMeeting,
     SessionOrganization,
     SessionPerson,
@@ -311,9 +312,10 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         # Attendances (Issue #30): Schnellerfassung, Quorum, Gäste-Ergänzung
         from ..services import attendance_service
 
-        context["attendances"] = meeting.attendances.select_related("person").order_by("person__family_name")
+        # Teilnahmeart, Störungen und Hinweise des Landesprofils (Issue #139)
+        context.update(attendance_service.attendance_panel(meeting))
         context["attendance_can_manage"] = self.has_permission("manage_attendance")
-        context["quorum"] = attendance_service.quorum_status(meeting)
+        context["disruption_causes"] = SessionAttendanceDisruption.CAUSE_CHOICES
         if context["attendance_can_manage"]:
             present_ids = meeting.attendances.values_list("person_id", flat=True)
             context["addable_persons"] = (

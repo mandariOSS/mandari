@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.resolution.adopted:v1",
+  "title": "Beschluss gefasst",
+  "description": "Zu einem Tagesordnungspunkt wurde ein Beschluss gefasst oder die Beschlussnummer vergeben (Erweiterung des kanonischen Modells). Aggregat: AgendaItem. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": [
+    "oeffentlich",
+    "nichtoeffentlich"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agenda_item",
+    "result"
+  ],
+  "properties": {
+    "agenda_item": {
+      "description": "Tagesordnungspunkt mit dem Beschluss.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "result": {
+      "description": "Ergebnis: approved (angenommen), rejected (abgelehnt), deferred (vertagt), withdrawn (zurückgezogen), noted (zur Kenntnis genommen).",
+      "type": "string",
+      "enum": [
+        "approved",
+        "rejected",
+        "deferred",
+        "withdrawn",
+        "noted"
+      ]
+    },
+    "changed": {
+      "description": "Geänderte Beschlussfelder, z. B. resolutionNumber.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "meeting": {
+      "description": "Sitzung des Beschlusses.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "paper": {
+      "description": "Vorlage, über die beschlossen wurde.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "consultation": {
+      "description": "Beratung, in der beschlossen wurde.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+      "result": "approved",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c",
+      "consultation": "c3d4e5f6-a7b8-5c9d-8e0f-1a2b3c4d5e6f"
+    },
+    {
+      "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+      "result": "approved",
+      "changed": [
+        "resolutionNumber"
+      ]
+    }
+  ]
+}

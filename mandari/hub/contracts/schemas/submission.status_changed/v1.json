@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:submission.status_changed:v1",
+  "title": "Bearbeitungsstand einer Einreichung geändert",
+  "description": "Der Bearbeitungsstand einer Einreichung hat sich geändert (in Prüfung, angenommen, zur Vorlage gemacht, zurückgewiesen, zurückgezogen). Aggregat: Submission.",
+  "x-kind": "event",
+  "x-owner": "apps.session",
+  "x-visibility": "nichtoeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "submission",
+    "status"
+  ],
+  "properties": {
+    "submission": {
+      "description": "Kennung der Einreichung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "description": "Neuer Bearbeitungsstand.",
+      "type": "string",
+      "enum": [
+        "submitted",
+        "received",
+        "in_review",
+        "accepted",
+        "rejected",
+        "converted",
+        "withdrawn"
+      ]
+    },
+    "previous_status": {
+      "description": "Bearbeitungsstand vor der Änderung.",
+      "type": "string",
+      "enum": [
+        "submitted",
+        "received",
+        "in_review",
+        "accepted",
+        "rejected",
+        "converted",
+        "withdrawn"
+      ]
+    },
+    "paper": {
+      "description": "Vorlage, die aus der Einreichung entstanden ist (bei status converted).",
+      "type": "string",
+      "format": "uuid"
+    },
+    "submitting_organization": {
+      "description": "Einreichende Organisation.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "submission": "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "status": "in_review",
+      "previous_status": "received",
+      "submitting_organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d"
+    },
+    {
+      "submission": "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "status": "converted",
+      "previous_status": "accepted",
+      "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-CI-Workflow mit Pfadfilter und Sammel-Ergebnis (Issue #621).
+CI-Workflow mit Pfadfilter und Sammel-Ergebnis (Issue #621), Link-Prüfung und Badges (Issue #690).
 
 Die Jobs in ``.github/workflows/pr-check.yml`` laufen nur, wenn der Job ``changes`` ihren Bereich
 als betroffen meldet; ``ci-ergebnis`` fasst alles zusammen und soll später der einzige Pflicht-Check
@@ -164,10 +164,73 @@ def test_pfadfilter_action_ist_auf_einen_commit_gepinnt() -> None:
     assert re.fullmatch(r"dorny/paths-filter@[0-9a-f]{40}", uses), uses
 
 
+def _link_pruefungen() -> list[dict[str, Any]]:
+    return [dict(s) for s in _jobs()["verweise"]["steps"] if "lychee" in s.get("uses", "")]
+
+
+def test_link_pruefung_ist_auf_commit_und_version_gepinnt() -> None:
+    # Issue #690: Drittanbieter-Action wie dorny/paths-filter auf den Commit, lychee auf eine feste Version
+    schritte = _link_pruefungen()
+    assert len(schritte) == 2, "Erwartet: interne Verweise (offline) und externe Verweise"
+    for schritt in schritte:
+        assert re.fullmatch(r"lycheeverse/lychee-action@[0-9a-f]{40}", schritt["uses"]), schritt["uses"]
+        assert re.fullmatch(r"v\d+\.\d+\.\d+", schritt["with"]["lycheeVersion"]), schritt["with"]
+
+
+def test_link_pruefung_intern_offline_extern_nicht_bei_push() -> None:
+    intern, extern = _link_pruefungen()
+    assert "--offline" in intern["with"]["args"] and "--include-fragments" in intern["with"]["args"]
+    assert "--offline" not in extern["with"]["args"]
+    # Externe Verweise nicht bei jedem push auf dev/main abrufen (sparsam, keine Flake-Quelle)
+    assert "github.event_name != 'push'" in extern["if"]
+
+
+def test_externe_link_pruefung_nennt_vorhandene_dateien_des_auftritts() -> None:
+    dateien = _link_pruefungen()[1]["with"]["args"].split()
+    for datei in dateien:
+        assert (REPO / datei).is_file(), f"{datei} existiert nicht – umbenannt?"
+    pflicht = {
+        "README.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/ISSUE_TEMPLATE/config.yml",
+    }
+    vorlagen = {f".github/ISSUE_TEMPLATE/{p.name}" for p in (REPO / ".github" / "ISSUE_TEMPLATE").iterdir()}
+    assert pflicht | vorlagen <= set(dateien), sorted((pflicht | vorlagen) - set(dateien))
+
+
+def test_readme_badges_zeigen_einen_pruefbaren_stand() -> None:
+    # Issue #690: Ein statischer Badge „REUSE konform“ verlinkte ins Leere und stimmte nicht.
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    workflows = set(re.findall(r"actions/workflows?/(?:status/mandariOSS/mandari/)?([\w.-]+\.yml)", readme))
+    assert "pr-check.yml" in workflows
+    # REUSE: Status des eigenen Workflows oder, nach der Anmeldung beim Dienst der FSFE, deren Live-Badge
+    live_badge = "https://api.reuse.software/badge/github.com/mandariOSS/mandari"
+    assert "reuse.yml" in workflows or live_badge in readme
+    for name in workflows:
+        assert (REPO / ".github" / "workflows" / name).is_file(), f"Badge zeigt auf fehlenden Workflow {name}"
+    # Statische Badges dürfen keinen Zustand behaupten (nur die Lizenz ist eine feste Angabe)
+    statisch = re.findall(r"img\.shields\.io/badge/([^\"?]+)", readme)
+    assert all(badge.startswith("License-") for badge in statisch), statisch
+
+
+def test_reuse_workflow_prueft_blockierend() -> None:
+    workflow = yaml.safe_load((REPO / ".github" / "workflows" / "reuse.yml").read_text(encoding="utf-8"))
+    schritte = workflow["jobs"]["reuse"]["steps"]
+    lint = [s for s in schritte if "reuse lint" in s.get("run", "")]
+    assert len(lint) == 1
+    # Der Badge zeigt den Status dieses Workflows; mit continue-on-error wäre er immer grün
+    assert not lint[0].get("continue-on-error") and not workflow["jobs"]["reuse"].get("continue-on-error")
+    assert re.search(r"pip install reuse==\d", lint[0]["run"]), "reuse auf eine feste Version pinnen"
+
+
 @pytest.mark.parametrize(
     ("pfad", "erwartet"),
     [
-        ("README.md", set()),
+        ("README.md", {"verweise"}),
+        ("docs/RELEASE_POLITIK.md", {"verweise"}),
+        ("lychee.toml", {"qualitaet", "verweise", "test"}),
         ("mandari/apps/session/services/insight_service.py", {"qualitaet", "python", "test", "smoke", "codeql_python"}),
         ("mandari/apps/session/tests/test_meetings.py", {"qualitaet", "python", "test", "codeql_python"}),
         ("ingestor/src/sync/orchestrator.py", {"qualitaet", "vertrag", "ingestor", "codeql_python"}),

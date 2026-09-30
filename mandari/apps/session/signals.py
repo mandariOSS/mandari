@@ -16,6 +16,7 @@ from apps.session.models import (
     SessionAllowanceRate,
     SessionApplication,
     SessionAttendance,
+    SessionAttendanceDisruption,
     SessionConsultation,
     SessionFile,
     SessionFileBlob,
@@ -49,6 +50,8 @@ AUDITED_MODELS = [
     SessionOrganization,
     SessionOrganizationMembership,
     SessionAttendance,
+    # Teilnahmeart und Störungen (Issue #139)
+    SessionAttendanceDisruption,
     SessionConsultation,
     SessionLegislativeTerm,
     SessionFile,
@@ -283,7 +286,8 @@ PUBLIC_PROTOCOL_FIELDS = {
         "votes_abstain",
     ),
     SessionMeeting: ("is_public", "name", "start", "end", "location", "room", "organization_id"),
-    SessionAttendance: ("status", "role", "person_id", "arrival_time", "departure_time"),
+    SessionAttendance: ("status", "role", "person_id", "arrival_time", "departure_time", "participation_mode"),
+    SessionAttendanceDisruption: ("attendance_id", "started_at", "ended_at", "cause"),
     SessionProtocol: ("status", "content", "chair_name", "recorder_name", "approval_note"),
 }
 
@@ -313,11 +317,17 @@ def public_protocol_post_save(sender, instance, created, **kwargs):
 
 
 def public_protocol_post_delete(sender, instance, **kwargs):
-    """Anwesenheitszeile gelöscht: Teilnehmerverzeichnis der öffentlichen Fassung nachziehen."""
+    """Anwesenheitszeile oder Störungsvermerk gelöscht: Teilnehmerverzeichnis der öffentlichen Fassung nachziehen."""
+    from django.core.exceptions import ObjectDoesNotExist
+
     from apps.session.services import protocol_publication
 
-    if protocol_publication.has_public_protocol(instance.meeting_id):
-        protocol_publication.schedule_refresh(instance.meeting_id)
+    try:
+        meeting_id = instance.meeting_id
+    except ObjectDoesNotExist:  # Störung mit ihrer Anwesenheitszeile gelöscht
+        return
+    if protocol_publication.has_public_protocol(meeting_id):
+        protocol_publication.schedule_refresh(meeting_id)
 
 
 for _model in PUBLIC_PROTOCOL_FIELDS:
@@ -326,6 +336,11 @@ for _model in PUBLIC_PROTOCOL_FIELDS:
     )
 post_delete.connect(
     public_protocol_post_delete, sender=SessionAttendance, dispatch_uid="session_public_protocol_attendance_delete"
+)
+post_delete.connect(
+    public_protocol_post_delete,
+    sender=SessionAttendanceDisruption,
+    dispatch_uid="session_public_protocol_disruption_delete",
 )
 
 
