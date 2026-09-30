@@ -14,7 +14,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("session", "0042_buergerportal_ende"),
+        ("session", "0043_antrag_anhaenge"),
     ]
 
     operations = [

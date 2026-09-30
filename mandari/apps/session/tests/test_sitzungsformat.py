@@ -386,7 +386,7 @@ def test_einstellungen_nur_mit_recht(welt: Welt) -> None:
 # Datenmigration und Rückfall per Image
 # =============================================================================
 
-VORHER = ("session", "0042_buergerportal_ende")
+VORHER = ("session", "0043_antrag_anhaenge")
 NACHHER = ("session", "0045_landesprofile_laden")
 
 
