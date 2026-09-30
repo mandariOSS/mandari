@@ -100,7 +100,7 @@ django-cotton==2.7.2
     # via -r requirements.txt
 django-htmx==1.29.0
     # via -r requirements.txt
-django-ninja==1.7.0
+django-ninja==1.7.1
     # via -r requirements.txt
 django-safemigrate==6.0
     # via -r requirements.txt
@@ -377,7 +377,7 @@ ujson==6.0.0
     # via autobahn
 uritools==6.1.3
     # via pyhanko-certvalidator
-urllib3==2.7.0
+urllib3==2.8.0
     # via
     #   -r requirements.txt
     #   elastic-transport

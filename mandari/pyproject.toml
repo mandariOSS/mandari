@@ -59,7 +59,7 @@ dev = [
     "mypy==2.3.1",  # wie CI: Ergebnisse unterscheiden sich zwischen mypy-Versionen
     "django-stubs[compatible-mypy]==6.1.1",
     "sqlalchemy>=2.0",  # Schema-Contract gegen die Ingestor-Modelle (insight_core/schema_contract.py)
-    "djlint==1.46.1",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
+    "djlint==1.46.2",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
 ]
 
 [build-system]
