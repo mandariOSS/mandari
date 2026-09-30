@@ -9,6 +9,7 @@ IDs, Filter und den Request-Kontext durch.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Any, cast
 
@@ -441,6 +442,51 @@ def profile_committee_context(organization: Organization, membership: Membership
         "assigned_committees": membership.oparl_committees.all().order_by("name"),
         "show_body_names": organization.has_multiple_bodies,
     }
+
+
+#: Herkunft von „Meine Gremien“: selbst gewählt (gefolgt) oder von der Organisation zugewiesen
+MY_COMMITTEES_FOLLOWED = "followed"
+MY_COMMITTEES_ASSIGNED = "assigned"
+
+
+@dataclass(frozen=True)
+class MyCommittees:
+    """„Meine Gremien“ eines Mitglieds und ihre Herkunft (leer, wenn es weder gefolgte noch zugewiesene gibt)."""
+
+    committees: tuple[OParlOrganization, ...] = ()
+    source: str = ""
+
+    def __bool__(self) -> bool:
+        return bool(self.committees)
+
+    @property
+    def ids(self) -> set[Any]:
+        return {committee.pk for committee in self.committees}
+
+    @property
+    def followed(self) -> bool:
+        return self.source == MY_COMMITTEES_FOLLOWED
+
+    def within(self, bodies: QuerySet[OParlBody]) -> MyCommittees:
+        """Nur die Gremien der angegebenen Körperschaften (Herkunft bleibt, auch wenn keines übrig bleibt)."""
+        body_ids = set(bodies.values_list("pk", flat=True))
+        return MyCommittees(tuple(c for c in self.committees if c.body_id in body_ids), self.source)
+
+
+def my_committees(membership: Membership | None) -> MyCommittees:
+    """
+    „Meine Gremien“ eines Mitglieds – eine Regel für Dashboard und Sitzungsliste (Issue #647).
+
+    Bevorzugt die selbst gewählten (gefolgten) Gremien, ersatzweise die von der Organisation
+    zugewiesenen. Folgt das Mitglied keinem Gremium und hat keine zugewiesenen, ist das Ergebnis leer.
+    """
+    if membership is None:
+        return MyCommittees()
+    followed = tuple(membership.followed_organizations.order_by("name", "pk"))
+    if followed:
+        return MyCommittees(followed, MY_COMMITTEES_FOLLOWED)
+    assigned = tuple(membership.oparl_committees.order_by("name", "pk"))
+    return MyCommittees(assigned, MY_COMMITTEES_ASSIGNED if assigned else "")
 
 
 # ---------------------------------------------------------------------------

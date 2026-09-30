@@ -45,10 +45,11 @@ class MeetingListView(WorkViewMixin, TemplateView):
         search_query = self.request.GET.get("q", "").strip()
         view_mode = self.request.GET.get("view", "my")
 
-        assigned = selectors.assigned_committees(self.membership, bodies)
+        # „Meine Gremien“: gefolgte Gremien, ersatzweise zugewiesene – wie auf dem Dashboard (Issue #647)
+        mine = selectors.my_committees(self.membership, bodies)
         meetings = selectors.filter_meetings(
             selectors.meetings_for_list(bodies, time_filter, now),
-            committee_ids=[c.id for c in assigned] if view_mode == "my" else [],
+            committee_ids=list(mine.ids) if view_mode == "my" else [],
             committee_filter=committee_filter,
             search_query=search_query,
         )
@@ -57,13 +58,14 @@ class MeetingListView(WorkViewMixin, TemplateView):
         context.update(
             {
                 "meetings": meetings,
-                "assigned_committees": assigned,
+                "my_committees": mine.committees,
+                "my_committees_followed": mine.followed,
                 "all_committees": selectors.committee_choices(bodies),
                 "time_filter": time_filter,
                 "committee_filter": committee_filter,
                 "search_query": search_query,
                 "view_mode": view_mode,
-                "has_assignments": bool(assigned),
+                "has_my_committees": bool(mine),
                 "now": now,
             }
         )
