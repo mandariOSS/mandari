@@ -108,6 +108,13 @@ class Event(models.Model):
             # Zustellung: seq > cursor, gefiltert nach Typ
             models.Index(fields=["seq", "type"], name="events_event_seq_type", condition=models.Q(seq__isnull=False)),
             models.Index(fields=["aggregate_id", "seq"], name="events_event_aggregate"),
+            # Öffentliche Ereignisse einer Kommune in Folgenummer-Reihenfolge (öffentlicher Änderungsfeed):
+            # seq > cursor je Kommune, ohne die Ereignisse aller anderen zu durchlaufen
+            models.Index(
+                fields=["body_id", "seq"],
+                name="events_event_body_public",
+                condition=models.Q(seq__isnull=False, visibility=Visibility.OEFFENTLICH),
+            ),
         ]
         constraints = [
             models.CheckConstraint(

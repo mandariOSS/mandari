@@ -13,6 +13,7 @@ Endpunkte (alle rein lesend, anonym, JSON, CORS offen):
 - ``/oparl/v1/body/<uuid>/meetings``
 - ``/oparl/v1/body/<uuid>/papers``
 - ``/oparl/v1/body/<uuid>/locations``
+- ``/oparl/v1/body/<uuid>/changes``               Änderungsfeed (wenn eingeschaltet, ``hub.api.changes``)
 - ``/oparl/v1/<typ>/<uuid>``                      Objekt-Endpunkte aller Typen
 
 Dieses Modul wählt aus, was sichtbar ist (Kommune, Veröffentlichungsstand, Gelöschtes), und reicht es
@@ -39,6 +40,7 @@ from django.db.models import Model, QuerySet
 from django.db.models.functions import Coalesce
 from django.http import HttpRequest, HttpResponse
 
+from hub.api import changes
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import TimeFilters, list_cache_key, list_response, page_number
 from hub.ris import selectors as ris
@@ -130,6 +132,7 @@ def mapping() -> BestandMapping:
         settings.OPARL_BASE_URL,
         settings.SITE_URL,
         license_url=getattr(settings, "OPARL_LICENSE_URL", ""),
+        changes=changes.enabled(),
     )
 
 
@@ -218,11 +221,15 @@ def bodies_view(request: HttpRequest) -> HttpResponse:
     return _list_response(request, mapping().uris.bodies(), queryset, _BODY)
 
 
+def _unknown_list(segment: str) -> HttpResponse:
+    return error_response(404, f"Unbekannte Liste '{segment}'. Verfügbar: {', '.join(sorted(BODY_LISTS))}.")
+
+
 @endpoint
 def body_sub_list(request: HttpRequest, pk: uuid.UUID, segment: str) -> HttpResponse:
     spec = BODY_LISTS.get(segment)
     if spec is None:
-        return error_response(404, f"Unbekannte Liste '{segment}'. Verfügbar: {', '.join(sorted(BODY_LISTS))}.")
+        return _unknown_list(segment)
     base_url = mapping().uris.list(pk, segment)
     paused = _paused_response(pk)
     if paused is not None:
@@ -240,6 +247,27 @@ def body_sub_list(request: HttpRequest, pk: uuid.UUID, segment: str) -> HttpResp
         return error_response(404, "Kommune (Body) nicht gefunden.")
 
     return _list_response(request, base_url, queryset, spec)
+
+
+@endpoint
+def body_changes(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
+    """Änderungsfeed einer Kommune (``hub.api.changes``); ausgeschaltet gibt es die Adresse nicht."""
+    if not changes.enabled():
+        return _unknown_list("changes")
+    paused = _paused_response(pk)
+    if paused is not None:
+        return paused
+    if not OParlBody.objects.filter(pk=pk).exists():
+        return error_response(404, "Kommune (Body) nicht gefunden.")
+    uris = mapping().uris
+    feed = changes.Feed(
+        body_id=pk,
+        url=uris.changes(pk),
+        snapshot_url=uris.snapshot(pk),
+        # Der RIS-Bestand enthält nur Öffentliches; die Kennung im Ereignis ist die des Bestands
+        addresses=lambda kind, ids: {object_id: uris.obj(kind, object_id) for object_id in ids},
+    )
+    return changes.changes_response(request, feed)
 
 
 def _meeting_location_response(output: BestandMapping, pk: uuid.UUID) -> HttpResponse:

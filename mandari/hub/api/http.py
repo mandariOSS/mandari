@@ -5,7 +5,8 @@ HTTP-Hülle der offenen Schnittstelle: eine für alle Endpunkte beider Ausgaben.
 - ``json_response``: JSON mit offenem CORS, ``ETag`` über den Inhalt und ``Cache-Control: no-cache``
 - ``conditional``: ``If-None-Match`` ergibt ``304 Not Modified``
 - ``error_response``: Fehler als JSON (auch 404 und 429 – Abnehmer erwarten kein HTML)
-- ``endpoint``: Dekorator jedes Endpunkts – nur lesende Methoden, Ratenbegrenzung je Adresse,
+- ``endpoint``: Dekorator jedes Endpunkts – nur lesende Methoden, Ratenbegrenzung je Adresse (429 mit
+  ``Retry-After``),
   ``BadRequestError`` als 400, bedingte Anfragen
 
 Die Schnittstelle ist anonym und rein lesend. Meldungen sind feste Texte oder nennen, was der Abnehmer
@@ -165,11 +166,14 @@ def endpoint(view: View) -> View:
         if request.method not in ("GET", "HEAD"):
             return error_response(405, "Diese API ist rein lesend — nur GET ist erlaubt.")
         if _rate_limited(request):
-            return error_response(
+            response = error_response(
                 429,
                 f"Rate-Limit überschritten (max. {rate_limit()} Anfragen pro Minute und IP). "
                 "Bitte Anfragen drosseln — für inkrementelle Syncs modified_since verwenden.",
             )
+            # Das Zählfenster ist die laufende Minute; danach lohnt der nächste Versuch
+            response["Retry-After"] = str(60 - int(time.time()) % 60)
+            return response
         try:
             return conditional(request, view(request, *args, **kwargs))
         except BadRequestError as exc:

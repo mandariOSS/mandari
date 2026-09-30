@@ -21,6 +21,8 @@ Beide gehen denselben Weg::
 - ``hub.api.serialization``: die eine Serialisierung – aus kanonischen Objekten werden Antworten:
   Zeitfilter, Blättern, Listen-Hülle mit ``Link``-Header, gekürzte Objekte für Gelöschtes in
   inkrementellen Listen.
+- ``hub.api.changes``: der Änderungsfeed je Kommune (kompatible Erweiterung von OParl 1.1) – eine Sicht
+  auf die öffentlichen Ereignisse im Journal, je Installation einzuschalten.
 - ``hub.api.http``: die HTTP-Hülle aller Endpunkte – JSON mit ``ETag``, bedingte Anfragen (``304``),
   Fehler als JSON, CORS, Ratenbegrenzung, nur lesende Methoden.
 

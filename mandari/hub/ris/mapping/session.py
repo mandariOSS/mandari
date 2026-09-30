@@ -123,6 +123,14 @@ class SessionUris:
     def file_download(self, pk: Any) -> str:
         return f"{self.base}file/{pk}/download/"
 
+    def changes(self) -> str:
+        """Änderungsfeed des Mandanten (kompatible Erweiterung von OParl 1.1)."""
+        return f"{self.base}body/changes/"
+
+    def snapshot(self) -> str:
+        """Snapshot des Mandanten: Einstieg in den Änderungsfeed."""
+        return f"{self.base}body/snapshot/"
+
 
 def _timestamps(obj: Any) -> Objekt:
     return {"created": iso(obj.created_at), "modified": iso(obj.updated_at)}
@@ -131,10 +139,12 @@ def _timestamps(obj: Any) -> Objekt:
 class SessionMapping:
     """Abbildung der Objekte eines Mandanten; je Objekttyp eine Methode, Ergebnis ist ein OParl-Objekt."""
 
-    def __init__(self, tenant: Any, base: str, source: SessionSource) -> None:
+    def __init__(self, tenant: Any, base: str, source: SessionSource, *, changes: bool = False) -> None:
         self.tenant = tenant
         self.uris = SessionUris(base)
         self.source = source
+        #: Die Ausgabe bietet den Änderungsfeed an; der Body nennt dann dessen Adresse
+        self.changes = changes
 
     # -- System, Körperschaft, Wahlperiode -------------------------------------------------------
 
@@ -184,6 +194,7 @@ class SessionMapping:
                 "file": self.uris.list("files"),
                 "legislativeTermList": self.uris.list("legislativeterms"),
                 **_timestamps(tenant),
+                "mandari:changes": self.uris.changes() if self.changes else None,
             }
         )
         # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)

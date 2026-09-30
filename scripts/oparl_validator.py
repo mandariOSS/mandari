@@ -94,6 +94,8 @@ def umgebung(tmp: Path, port: int) -> dict[str, str]:
         "SITE_URL": f"http://127.0.0.1:{port}",
         "OPARL_API_RATE_LIMIT": "0",
         "OPARL_LICENSE_URL": LIZENZ,
+        # Mit eingeschaltetem Änderungsfeed: Die Erweiterung darf die OParl-1.1-Konformität nicht berühren
+        "OPARL_CHANGES_ENABLED": "true",
     }
 
 
@@ -163,6 +165,7 @@ def eigene_pruefung(system_url: str) -> tuple[int, list[str]]:
     probleme += pruefe_liste(bodies, "Body")
     objekte = 1 + len(bodies["data"])
     for body in bodies["data"]:
+        probleme += feed_pruefung(body)
         for feld, typ in LISTEN.items():
             url = body.get(feld)
             while url:
@@ -171,6 +174,18 @@ def eigene_pruefung(system_url: str) -> tuple[int, list[str]]:
                 objekte += len(seite.get("data", []))
                 url = seite.get("links", {}).get("next")
     return objekte, probleme
+
+
+def feed_pruefung(body: dict[str, Any]) -> list[str]:
+    """Der Body nennt seinen Änderungsfeed (kompatible Erweiterung), und der Feed antwortet in seiner Form."""
+    adresse = body.get("mandari:changes")
+    if not adresse:
+        return [f"Body {body.get('id')}: mandari:changes fehlt (Änderungsfeed eingeschaltet)."]
+    seite = abruf(adresse)
+    fehlend = [feld for feld in ("data", "cursor", "links") if feld not in seite]
+    if fehlend or not isinstance(seite.get("data"), list):
+        return [f"Änderungsfeed {adresse}: Felder fehlen ({', '.join(fehlend) or 'data'})."]
+    return []
 
 
 def externer_validator(validator: str, system_url: str, bericht: Path) -> tuple[int, list[str]]:

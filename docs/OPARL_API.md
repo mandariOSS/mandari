@@ -36,6 +36,7 @@ curl https://mandari.de/oparl/v1/system
 | `GET /oparl/v1/body/<uuid>/meetings` | Sitzungen der Kommune (paginiert, filterbar) |
 | `GET /oparl/v1/body/<uuid>/papers` | Vorlagen/Drucksachen der Kommune (paginiert, filterbar) |
 | `GET /oparl/v1/body/<uuid>/locations` | Orte der Kommune (Vendor-Erweiterung, paginiert) |
+| `GET /oparl/v1/body/<uuid>/changes` | Änderungsfeed der Kommune (kompatible Erweiterung, nur wenn eingeschaltet; Abschnitt „Änderungsfeed“) |
 | `GET /oparl/v1/<typ>/<uuid>` | Objekt-Endpunkte aller Typen (siehe unten) |
 
 Objekttypen für `<typ>`: `body`, `organization`, `person`, `membership`, `meeting`,
@@ -198,6 +199,111 @@ dabei spec-konform (OParl 1.1, „Umgang mit gelöschten Objekten"):
 Physische Löschung erfolgt ausschließlich manuell auf explizite Aufforderung
 einer Kommune (`manage.py purge_deleted`, siehe Betrieb).
 
+## Änderungsfeed (kompatible Erweiterung von OParl 1.1)
+
+Wer eine Kommune laufend nachzieht, muss nicht alle Listen erneut abrufen: Der Änderungsfeed nennt,
+was sich seit dem letzten Abruf geändert hat – einschließlich Löschungen und Rücknahmen
+(ADR `docs/adr/20260929-aenderungsfeed-format.md`). OParl-1.1-Clients sind nicht betroffen;
+`modified_since` bleibt erhalten.
+
+**Einschalten:** Der Feed ist je Installation abgeschaltet, bis die Erzeuger der Ereignisse laufen
+(`OPARL_CHANGES_ENABLED`, Abschnitt „Betrieb“). Eingeschaltet nennt jeder Body die Adresse seines
+Feeds in `mandari:changes`.
+
+```bash
+curl "https://mandari.de/oparl/v1/body/<uuid>/changes?limit=100"
+curl "https://mandari.de/oparl/v1/body/<uuid>/changes?after=<cursor>"
+```
+
+```json
+{
+  "data": [
+    {
+      "cursor": "Zf3n…",
+      "operation": "upsert",
+      "type": "https://schema.oparl.org/1.1/Paper",
+      "id": "https://mandari.de/oparl/v1/paper/<uuid>",
+      "modified": "2026-09-30T08:14:03+00:00"
+    },
+    {
+      "cursor": "k9Qa…",
+      "operation": "delete",
+      "type": "https://schema.oparl.org/1.1/File",
+      "id": "https://mandari.de/oparl/v1/file/<uuid>",
+      "modified": "2026-09-30T08:15:10+00:00",
+      "reason": "nichtoeffentlich"
+    }
+  ],
+  "cursor": "k9Qa…",
+  "links": {
+    "self": "https://mandari.de/oparl/v1/body/<uuid>/changes?limit=100",
+    "next": "https://mandari.de/oparl/v1/body/<uuid>/changes?after=k9Qa…&limit=100",
+    "snapshot": "https://mandari.de/oparl/v1/body/<uuid>/snapshot"
+  }
+}
+```
+
+| Feld | Inhalt |
+|---|---|
+| `data` | höchstens `limit` Einträge (Vorgabe 100, höchstens 1000) in aufsteigender Reihenfolge |
+| `cursor` | Stand für die nächste Anfrage (`after`); `links.next` ist die fertige Adresse dazu |
+| Eintrag `operation` | `upsert` (neu oder geändert), `delete` (entfernt oder nicht mehr öffentlich), `redact` (Inhalte sind aus Kopien zu entfernen) |
+| Eintrag `type`, `id` | Typ und Adresse des Objekts. Inhalte stehen nicht im Feed; der Abnehmer ruft das Objekt unter `id` ab |
+| Eintrag `modified` | Zeitpunkt der Änderung |
+| Eintrag `reason` | bei `delete`: `quelle_geloescht`, `zurueckgenommen` oder `nichtoeffentlich`; bei `redact`: `datenschutz` |
+| Eintrag `cursor` | Stand unmittelbar nach diesem Eintrag |
+
+**So liest ein Abnehmer:**
+
+1. Einstieg über den Snapshot der Kommune (`links.snapshot`); er nennt den Cursor, ab dem der Feed
+   fortsetzt. Solange das Journal einer Installation noch vollständig ist, geht es auch ohne Cursor
+   von vorn.
+2. `links.next` abrufen, bis `data` leer ist – dann ist der Abnehmer aktuell.
+3. Den `cursor` **jeder** Antwort speichern, auch den einer leeren, und beim nächsten Abruf verwenden.
+4. Einträge idempotent verarbeiten: Ein Objekt kann mehrfach erscheinen. Bei `upsert` das Objekt unter
+   `id` neu abrufen, bei `delete` entfernen, bei `redact` auch aus Kopien, Caches und Weitergaben
+   entfernen und die Operation weiterreichen.
+
+**Cursor:** ein opakes Token – speichern, nicht deuten. Er gilt für die Kommune und die Installation,
+die ihn ausgegeben haben, und zwar `OPARL_CHANGES_RETENTION_DAYS` Tage (mindestens 30) ab seiner
+Ausgabe. Jede Antwort gibt einen frischen Cursor aus; wer regelmäßig abruft, bleibt also gültig, auch
+wenn sich lange nichts ändert.
+
+**Abgelaufener Cursor:** `410 Gone` mit einer Fehlerbeschreibung nach RFC 9457
+(`application/problem+json`) und dem Verweis auf den Snapshot:
+
+```json
+{
+  "type": "https://docs.mandari.de/api/probleme/cursor-abgelaufen",
+  "title": "Nicht mehr verfügbar",
+  "status": 410,
+  "detail": "Der Cursor ist nicht mehr gültig: …",
+  "instance": "/oparl/v1/body/<uuid>/changes",
+  "snapshot": "https://mandari.de/oparl/v1/body/<uuid>/snapshot"
+}
+```
+
+**Nur Öffentliches:** Der Feed enthält ausschließlich öffentliche Änderungen. Wird ein Objekt
+nichtöffentlich, erscheint es einmal als `delete` mit dem Grund `nichtoeffentlich`; was danach mit ihm
+geschieht, erscheint nicht. Nichtöffentliches ist auch nicht mittelbar erkennbar: Cursor und `ETag`
+einer Antwort ändern sich nur durch öffentliche Einträge (und einmal am Tag durch den Ausgabetag des
+Cursors), und der Cursor lässt keine Zählung der Ereignisse erkennen.
+
+**HTTP:** wie die übrige Schnittstelle – `ETag` und `304` für unveränderte Seiten, Rate-Limit mit
+`429` und `Retry-After`, `503` mit `Retry-After` bei vorübergehend abgeschalteter Kommune. Die
+Schreibweise mit Schrägstrich am Ende leitet weiter.
+
+**Einschränkungen:**
+
+- Einträge gibt es für Objekte mit eigener Adresse (die Objekttypen der Tabelle „Endpunkte“).
+  Eine erfasste Abstimmung erscheint als `upsert` ihres Tagesordnungspunkts.
+- Eingebettete Objekte: Ändert sich ein Tagesordnungspunkt, eine Beratung oder eine Datei, nennt der
+  Feed dieses Objekt. Wer Sitzungen oder Vorlagen samt Einbettungen speichert, ruft das einbettende
+  Objekt (`AgendaItem.meeting`, `Consultation.paper`, `File.paper`/`meeting`) mit ab.
+- Ein Eintrag kann dem Bestand vorauseilen: Meldet ein Session-Mandant eine Änderung, bevor der
+  Abgleich sie in den Bestand übernommen hat, liefert `id` kurz noch den alten Stand oder 404. Der
+  Abgleich meldet die Übernahme mit einem weiteren Eintrag.
+
 ## Dateien (File)
 
 `accessUrl` und `downloadUrl` zeigen auf den mandari-Datei-Proxy
@@ -217,6 +323,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `mandari:originalId` | alle | Original-URL des Objekts im kommunalen Quellsystem |
 | `mandari:slug`, `mandari:displayName` | Body | URL-Slug / Anzeigename der Kommune |
 | `mandari:locationList` | Body | abgekündigt: URL der Orte-Liste, jetzt im Standardfeld `locationList` |
+| `mandari:changes` | Body | Adresse des Änderungsfeeds der Kommune (nur wenn eingeschaltet) |
 | `mandari:originalOrganizationType` | Organization | Angabe der Quelle, wenn sie keiner der Werte der Spezifikation ist |
 | `mandari:summary` | Paper | KI-generierte Zusammenfassung (falls vorhanden) |
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
@@ -252,6 +359,18 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `OPARL_API_RATE_LIMIT` | `120` | Anfragen/Minute je IP (`0` = deaktiviert) |
 | `OPARL_API_CACHE_SECONDS` | `60` | Cache-Dauer ungefilterter Listen-Seiten |
 | `OPARL_LICENSE_URL` | leer | URL der Lizenz am System-Objekt (`license`); leer = keine übergreifende Angabe |
+| `OPARL_CHANGES_ENABLED` | `false` | Änderungsfeed je Kommune einschalten (Aggregator und Session-Schnittstelle) |
+| `OPARL_CHANGES_RETENTION_DAYS` | `90` | Gültigkeit eines Cursors des Änderungsfeeds in Tagen (mindestens 30) |
+
+**Änderungsfeed einschalten:** Der Feed liest die öffentlichen Ereignisse `ris.*` aus dem Journal der
+Ereignistechnik. Er gehört erst eingeschaltet (`OPARL_CHANGES_ENABLED=true`), wenn in der Installation
+der Sequenzierer läuft (`manage.py events_sequencer`) und die Erzeuger Ereignisse schreiben (Ingestor
+bzw. Session) – sonst bliebe er leer und täuschte Abnehmern vor, es habe sich nichts geändert.
+Ausgeschaltet gibt es die Adresse nicht, und kein Body weist auf sie hin. Das Journal muss seine Zeilen
+mindestens `OPARL_CHANGES_RETENTION_DAYS` Tage behalten; ein Aufräumen darf nie kürzer greifen. Der
+Schlüssel der Cursor ist aus `SECRET_KEY` abgeleitet: Nach einem Wechsel des Schlüssels sind
+ausgegebene Cursor ungültig (`410`), und Abnehmer steigen über den Snapshot wieder ein; Schlüssel in
+Djangos `SECRET_KEY_FALLBACKS` gelten weiter.
 
 **Eine Serialisierung für beide Ausgaben:** Aggregator und Session-Schnittstelle
 (`SESSION_OPARL_API.md`) gehen denselben Weg – Abbildung auf das kanonische Modell, dann Ausgabe
@@ -263,6 +382,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | Abbildung auf das kanonische Modell | `mandari/hub/ris/mapping/bestand.py` | `mandari/hub/ris/mapping/session.py` |
 | Bausteine des Modells (Typ-URLs, Datum und Zeit, gekürzte Objekte, `organizationType`) | `mandari/hub/ris/canonical.py` | dieselben |
 | Serialisierung: Zeitfilter, Blättern, Listen-Hülle, Gelöschtes in inkrementellen Listen | `mandari/hub/api/serialization.py` | dieselbe |
+| Änderungsfeed | `mandari/hub/api/changes.py` | derselbe |
 | HTTP-Hülle: JSON, `ETag`/`304`, Fehler, CORS, Rate-Limit | `mandari/hub/api/http.py` | dieselbe |
 
 Wer ein Feld ergänzt oder ändert, tut das in der Abbildung der Quelle; wer das Verhalten von Listen,

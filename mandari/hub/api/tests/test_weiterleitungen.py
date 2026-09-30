@@ -41,6 +41,8 @@ AGGREGATOR: dict[str, tuple[dict[str, Any], str, Any]] = {
         aggregator.body_sub_list,
     ),
     "oparl_api:object": ({"kind": "paper", "pk": KENNUNG}, f"/oparl/v1/paper/{KENNUNG}", aggregator.object_view),
+    # Änderungsfeed (Issue #562)
+    "oparl_api:body_changes": ({"pk": KENNUNG}, f"/oparl/v1/body/{KENNUNG}/changes", aggregator.body_changes),
 }
 SESSION: dict[str, tuple[dict[str, Any], str, Any]] = {
     "session:oparl_system": ({}, "/session/musterstadt/api/oparl/", session_ausgabe.system_view),
@@ -61,6 +63,7 @@ SESSION: dict[str, tuple[dict[str, Any], str, Any]] = {
         f"/session/musterstadt/api/oparl/file/{KENNUNG}/download/",
         session_ausgabe.file_download_view,
     ),
+    "session:oparl_changes": ({}, "/session/musterstadt/api/oparl/body/changes/", session_ausgabe.changes_view),
 }
 
 

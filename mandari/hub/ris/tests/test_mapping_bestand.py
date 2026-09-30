@@ -144,6 +144,18 @@ def test_uris_sind_die_adressen_der_schnittstelle() -> None:
     assert uris.obj("meeting", 7) == f"{API}/meeting/7"
     assert uris.list(7, "meetings") == f"{API}/body/7/meetings"
     assert uris.web("termine/7/") == f"{SITE}/insight/termine/7/"
+    assert uris.changes(7) == f"{API}/body/7/changes"
+    assert uris.snapshot(7) == f"{API}/body/7/snapshot"
+
+
+def test_body_nennt_den_aenderungsfeed_nur_wenn_die_ausgabe_ihn_anbietet(welt: dict[str, Any]) -> None:
+    ohne = _abbildung().body(welt["body"])
+    mit = BestandMapping(f"{SITE}/oparl", SITE, changes=True).body(welt["body"])
+
+    assert "mandari:changes" not in ohne
+    assert mit["mandari:changes"] == f"{API}/body/{welt['body'].pk}/changes"
+    assert {name: wert for name, wert in mit.items() if name != "mandari:changes"} == ohne
+    assert pruefe(mit, "Body") == []
 
 
 def test_system_nennt_die_lizenz_nur_wenn_der_betreiber_sie_festlegt() -> None:

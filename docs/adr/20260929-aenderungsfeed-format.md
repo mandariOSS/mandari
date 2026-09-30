@@ -99,6 +99,39 @@ Delta-Dateien von Lokaal Beslist in Flandern.
 - Offene Konformitätstests für das Profil laufen gegen die eigenen Implementierungen und gegen
   mindestens eine fremde; der OParl-Validator läuft weiter für den Kern.
 
+## Nachtrag zur Umsetzung (#562)
+
+- **Antwort:** `data` (Einträge), `cursor` (Stand für die nächste Anfrage) und `links` mit `self`,
+  `next` (fertige Adresse der nächsten Anfrage, immer vorhanden) und `snapshot`. `limit` ist
+  höchstens 1000, Vorgabe 100.
+- **Cursor:** mit einem Schlüssel der Installation verschlüsselt (AES-SIV) und an die Kommune
+  gebunden. Er enthält die Folgenummer und den Tag seiner Ausgabe. Abnehmer sehen weder Folgenummern
+  noch Lücken zwischen ihnen.
+- **Aufbewahrung als Gültigkeit des Cursors:** „Ein älterer Cursor“ heißt: vor mehr als
+  `OPARL_CHANGES_RETENTION_DAYS` Tagen ausgegeben (Vorgabe 90, mindestens 30). Jede Antwort, auch eine
+  leere, gibt einen frischen Cursor aus. Damit hängt die Gültigkeit nicht davon ab, wann das Journal
+  aufräumt: Was nach der Ausgabe eines gültigen Cursors geschah, ist jünger als die Aufbewahrung und
+  noch vorhanden, solange das Journal mindestens so lange aufbewahrt. Ein Sicherheitsnetz antwortet
+  mit `410`, wenn Zeilen fehlen, die nach der Ausgabe entstanden sein können.
+- **Ohne Cursor** liest ein Abnehmer von vorn, solange der Anfang des Journals vorhanden ist; sonst
+  `410` mit dem Verweis auf den Snapshot.
+- **Nichtöffentliches ist nicht mittelbar erkennbar:** Der Cursor einer Antwort rückt nur mit
+  ausgegebenen Einträgen vor, nie mit übersprungenen Ereignissen. Antwort und `ETag` ändern sich
+  deshalb nicht, wenn Nichtöffentliches geschieht; der Ausgabetag ändert sie einmal am Tag.
+- **Operation nach Vertrag:** `ris.object.depublished` ergibt immer `delete`, beim Grund
+  `datenschutz` `redact` – auch wenn die Hülle eine andere Operation trägt.
+- **Objekte mit eigener Adresse:** Einträge nennen Objekte, die die Ausgabe unter einer Adresse
+  ausliefert (OParl-1.1-Typen). Ein Ereignis zu einem Typ ohne eigene Adresse (derzeit `Voting`)
+  erscheint als `upsert` des Objekts, das ihn ausgibt (des Tagesordnungspunkts aus der Nutzlast).
+- **Session-Mandanten:** Die Adresse eines Objekts enthält die Kennung des Session-Objekts und lässt
+  sich aus der kanonischen Kennung nicht zurückrechnen. Die Schnittstelle sucht sie unter den
+  Objekten, die öffentlich sind oder es waren; was nie öffentlich war, hat keine Adresse und bekommt
+  keinen Eintrag.
+- **Schalter:** `OPARL_CHANGES_ENABLED` je Installation, Vorgabe aus, bis die Erzeuger laufen.
+- **Abweichung:** Der Feed liest das Journal unmittelbar (Index je Kommune) statt über ein eigenes
+  Abonnement `feed` mit Tabelle. Die Reihenfolge garantiert der Sequenzierer; eine zweite Tabelle
+  bräuchte eigene Folgenummern und ein eigenes Aufräumen.
+
 ## Bezug
 
 - [A3 Sequenzierer](20260929-sequenzierer.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),
