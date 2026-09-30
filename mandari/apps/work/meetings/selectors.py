@@ -285,9 +285,15 @@ def annotate_meetings_for_list(meetings: list[OParlMeeting], organization: Organ
 
 
 def committee_choices(bodies: QuerySet[OParlBody]) -> list[dict[str, Any]]:
-    """Alle Ausschüsse der Körperschaften für das Filter-Dropdown."""
+    """
+    Alle Ausschüsse der Körperschaften für das Filter-Dropdown.
+
+    OParl kennt als ``organizationType`` nur „Gremium“; die Art steht in ``classification``. Ältere
+    Spiegelungen eines Session-Mandanten tragen noch dessen Schlüssel ``committee``.
+    """
     rows = (
-        OParlOrganization.objects.filter(body__in=bodies, organization_type__icontains="committee")
+        OParlOrganization.objects.filter(body__in=bodies)
+        .filter(Q(organization_type__icontains="committee") | Q(classification__iexact="Ausschuss"))
         .order_by("name")
         .values("id", "name")
     )

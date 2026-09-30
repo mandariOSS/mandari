@@ -5,6 +5,7 @@ Processes, validates, and normalizes OParl entities.
 Handles nested objects and extracts relationships.
 """
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -27,6 +28,24 @@ from mandari_oparl import (
     parse_date,
     parse_datetime,
 )
+
+# Sitzung in der Session-Schnittstelle von mandari: …/session/<Mandant>/api/oparl/meeting/<Kennung>/
+_SESSION_MEETING_ID = re.compile(r"^(?P<base>.+/session/[^/]+/api/oparl/)meeting/(?P<key>[^/]+)/$")
+
+
+def session_location_id(meeting_external_id: str | None) -> str | None:
+    """
+    Kennung des Sitzungsortes im Session-RIS von mandari, ``None`` für Sitzungen anderer Quellen.
+
+    Session führt den Ort an der Sitzung: Das Location-Objekt trägt die Kennung der Sitzung
+    (``…/location/<Kennung der Sitzung>/``), gehört nur zu ihr und hat keine eigene Liste. Im Bestand
+    steht ein solcher Ort deshalb als Text an der Sitzung und nicht als eigenes Objekt – sonst bliebe er
+    abrufbar, wenn die Sitzung zurückgenommen wird.
+    """
+    match = _SESSION_MEETING_ID.match(meeting_external_id or "")
+    if match is None:
+        return None
+    return f"{match['base']}location/{match['key']}/"
 
 
 class OParlProcessor:
@@ -189,7 +208,16 @@ class OParlProcessor:
 
         # Extract location
         location = data.get("location")
-        if isinstance(location, dict):
+        if isinstance(location, dict) and location.get("id") == session_location_id(external_id):
+            # Ort des Session-RIS von mandari: gehört zur Sitzung und steht im Bestand als Text an ihr,
+            # nicht als eigenes Objekt (session_location_id). Gebäude vor Raum, Anschrift mit
+            # Postleitzahl und Ort – wie der Text, den Session zusätzlich mitliefert (siehe unten).
+            meeting.location_name = location.get("description") or location.get("room") or None
+            locality = " ".join(part for part in (location.get("postalCode"), location.get("locality")) if part)
+            meeting.location_address = (
+                ", ".join(part for part in (location.get("streetAddress"), locality) if part) or None
+            )
+        elif isinstance(location, dict):
             meeting.location_external_id = location.get("id")
             meeting.location_name = location.get("room") or location.get("description")
             meeting.location_address = location.get("streetAddress")
@@ -199,13 +227,16 @@ class OParlProcessor:
         elif isinstance(location, str):
             meeting.location_external_id = location
 
-        # Session-RIS von mandari liefert den Ort nicht als OParl-Location, sondern als
-        # Erweiterung (mandari:locationName/-Room/-Address, apps/session/api/oparl.py).
-        # Dieselbe Abbildung wie insight_sync/session_mirror.py, damit beide Wege gleich schreiben.
-        if not meeting.location_name:
-            meeting.location_name = data.get("mandari:locationName") or data.get("mandari:locationRoom") or None
-        if not meeting.location_address:
-            meeting.location_address = data.get("mandari:locationAddress") or None
+        # Das Session-RIS von mandari liefert den Ort als OParl-Location und zusätzlich als fertigen
+        # Text (mandari:locationName/-Room/-Address, apps/session/api/oparl.py; abgekündigt). Der Text
+        # gilt, wo er vorhanden ist. Dieselbe Abbildung wie insight_sync/session_mirror.py, damit beide
+        # Wege gleich schreiben: Ort und Anschrift als Text an der Sitzung, kein eigenes Location-Objekt.
+        session_name = data.get("mandari:locationName") or data.get("mandari:locationRoom")
+        if session_name:
+            meeting.location_name = session_name
+        session_address = data.get("mandari:locationAddress")
+        if session_address:
+            meeting.location_address = session_address
 
         # Extract organization references
         orgs = data.get("organization", [])

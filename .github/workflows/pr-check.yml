@@ -1,7 +1,7 @@
 # =============================================================================
 # Mandari - CI Checks
 # =============================================================================
-# Lint, Typprüfung, Frontend-Gates, Link-Prüfung, Tests, Smoke, E2E, Docker-Build, CodeQL.
+# Lint, Typprüfung, Frontend-Gates, Link-Prüfung, Tests, Smoke, OParl-Validator, E2E, Docker-Build, CodeQL.
 #
 # Pfadfilter (Issue #621): Der Job "Geänderte Bereiche" ordnet die Dateien eines
 # Pull Requests Bereichen zu; jeder Job läuft nur, wenn sein Bereich betroffen
@@ -65,6 +65,7 @@ jobs:
       test: ${{ steps.ergebnis.outputs.test }}
       ereignisse: ${{ steps.ergebnis.outputs.ereignisse }}
       smoke: ${{ steps.ergebnis.outputs.smoke }}
+      oparl: ${{ steps.ergebnis.outputs.oparl }}
       e2e: ${{ steps.ergebnis.outputs.e2e }}
       ingestor: ${{ steps.ergebnis.outputs.ingestor }}
       audit: ${{ steps.ergebnis.outputs.audit }}
@@ -86,8 +87,8 @@ jobs:
               - '.github/**'
               - 'pyproject.toml'
               - 'mandari/pyproject.toml'
-              - 'mandari/requirements.txt'
-              - 'mandari/requirements.lock'
+              - 'mandari/uv.lock'
+              - 'scripts/export_requirements.sh'
               - 'mandari/package.json'
               - 'mandari/package-lock.json'
               - 'shared/pyproject.toml'
@@ -144,6 +145,26 @@ jobs:
               - '!mandari/tests_e2e/**'
               - '!mandari/Dockerfile'
               - '!mandari/docker-entrypoint.sh'
+            # Beide OParl-Ausgaben samt allem, woraus sie ihre Objekte bauen (Modelle, Sichtbarkeit,
+            # Demo-Daten der Testinstanz, Prüfskript)
+            oparl:
+              - 'mandari/oparl_api/**'
+              - 'mandari/hub/**'
+              - 'mandari/apps/session/api/oparl.py'
+              - 'mandari/apps/session/oparl_publication.py'
+              - 'mandari/apps/session/models.py'
+              - 'mandari/apps/session/urls.py'
+              - 'mandari/apps/session/services/{file_service,insight_service,meeting_format_service,oparl_access}.py'
+              - 'mandari/insight_core/models.py'
+              - 'mandari/insight_core/publication.py'
+              - 'mandari/insight_sync/session_mirror.py'
+              - 'mandari/apps/common/management/commands/setup_demo_*.py'
+              - 'mandari/apps/session/migrations/**'
+              - 'mandari/insight_core/migrations/**'
+              - 'shared/**'
+              - 'scripts/oparl_validator.py'
+              - 'scripts/_smoke_db.py'
+              - '!**/*.md'
             e2e:
               - 'mandari/**/templates/**'
               - 'mandari/frontend/**'
@@ -192,7 +213,7 @@ jobs:
               - 'shared/**'
               - '!**/*.md'
             audit:
-              - 'scripts/check_requirements_lock.py'
+              - 'scripts/export_requirements.sh'
             docker:
               - 'mandari/Dockerfile'
               - 'ingestor/Dockerfile'
@@ -249,7 +270,7 @@ jobs:
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           ergebnis() { if [ "$alle" = "true" ]; then echo true; else wert "$1"; fi; }
-          for bereich in qualitaet verweise python vertrag templates frontend test ereignisse smoke e2e ingestor audit docker; do
+          for bereich in qualitaet verweise python vertrag templates frontend test ereignisse smoke oparl e2e ingestor audit docker; do
             e=$(ergebnis "$bereich")
             echo "$bereich=$e" >> "$GITHUB_OUTPUT"
             echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
@@ -293,6 +314,7 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
 
       # --- Lint und schnelle Prüfskripte (immer, wenige Sekunden) ---------------
       - name: Install linters
@@ -344,6 +366,12 @@ jobs:
           python scripts/check_import_linter_ratchet.py
           cd mandari && lint-imports --no-cache
 
+      # Lese-Fassade des RIS-Bestands (docs/adr/20260929-kanonisches-modell.md): Direktzugriffe auf
+      # OParl*.objects außerhalb von hub und insight_core dürfen je Datei nur weniger werden (Issue #522).
+      - name: RIS-Bestand nur über die Lese-Fassade (Direktzugriffe dürfen nur sinken)
+        if: ${{ !cancelled() }}
+        run: python scripts/check_ris_access_ratchet.py
+
       - name: Ratchet (Inline-Skripte/-Styles, Template-Größe dürfen nicht zunehmen)
         if: ${{ !cancelled() }}
         run: python scripts/check_frontend_ratchet.py
@@ -360,12 +388,16 @@ jobs:
           cd mandari && djlint templates --lint
 
       # --- Python: Typprüfung und Schema-Contract ---------------------------------
+      - name: uv (Export aus mandari/uv.lock)
+        if: ${{ !cancelled() && (needs.changes.outputs.python == 'true' || needs.changes.outputs.vertrag == 'true') }}
+        uses: astral-sh/setup-uv@v7
       - name: Python-Abhängigkeiten (Django, mypy, SQLAlchemy)
         id: pydeps
         if: ${{ !cancelled() && (needs.changes.outputs.python == 'true' || needs.changes.outputs.vertrag == 'true') }}
         run: |
-          pip install shared/
-          pip install -r mandari/requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           # Versionen wie in pyproject [dev] – mypy-Ergebnisse unterscheiden sich zwischen Versionen
           pip install "mypy==2.3.1" "django-stubs[compatible-mypy]==6.1.1" "sqlalchemy>=2.0"
           # Test-Abhängigkeiten, damit Fixtures/Decorator in Testmodulen typisiert sind (sonst "untyped decorator")
@@ -527,12 +559,14 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
 
+      - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
-          pip install shared/
-          cd mandari
-          pip install -r requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           pip install pytest pytest-django pytest-cov pytest-xdist factory-boy
           pip install "sqlalchemy>=2.0"  # Schema-Contract gegen die Ingestor-Modelle
 
@@ -649,12 +683,14 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
 
+      - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
-          pip install shared/
-          cd mandari
-          pip install -r requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           pip install pytest pytest-django factory-boy
 
       - name: PgBouncer erreichbar
@@ -704,12 +740,14 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
 
+      - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
-          pip install shared/
-          cd mandari
-          pip install -r requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           pip install pytest pytest-django factory-boy
 
       - uses: actions/setup-node@v7
@@ -816,6 +854,72 @@ jobs:
           scripts/smoke_insight_calendar.py
 
   # ===========================================================================
+  # OParl-Konformität: externer Validator gegen eine Testinstanz mit Demo-Daten
+  # ===========================================================================
+  # Prüft beide OParl-Ausgaben (Aggregator und Session-Schnittstelle) mit oparl-validator-rs
+  # (https://github.com/konstin/oparl-validator-rs, MIT oder Apache-2.0) und der eigenen Typprüfung
+  # (scripts/oparl_validator.py). Läuft bei Änderungen an den Schnittstellen und bei jedem push auf
+  # dev/main. Der Validator wird nur ausgeführt: festgelegter Stand der vom Projekt gebauten
+  # Programmdatei (Commit im Zweig gh-pages, gebaut aus 9ae12e7), geprüft per SHA-256. Das Archiv
+  # liegt im Zwischenspeicher der Actions (Schlüssel: Prüfsumme) und wird nur geladen, wenn es dort
+  # fehlt – der Job hängt so nicht bei jedem Lauf an der fremden Adresse. Die Prüfsumme gilt auch für
+  # das Archiv aus dem Zwischenspeicher. Der Job hat nur Leserechte und keine Geheimnisse.
+  oparl-validator:
+    name: OParl-Validator (Aggregator und Session-Schnittstelle)
+    needs: changes
+    if: needs.changes.outputs.oparl == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VALIDATOR_URL: https://raw.githubusercontent.com/konstin/oparl-validator-rs/2fe6d4a9a60e61a843232c778ab16b3d9ba18803/main/oparl-validator-rs-x86_64-unknown-linux-musl.tar.gz
+      VALIDATOR_SHA256: 10e0348709fee5e6ff61835318e5c042350860294b1945082975f5d16f669d3d
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2-dev libpango1.0-dev libffi-dev shared-mime-info pkg-config
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
+
+      - uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: |
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
+
+      - name: Validator aus dem Zwischenspeicher
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/oparl-validator-archiv
+          key: oparl-validator-${{ env.VALIDATOR_SHA256 }}
+
+      - name: Validator bei Bedarf laden, Prüfsumme vergleichen
+        run: |
+          set -euo pipefail
+          archiv="$RUNNER_TEMP/oparl-validator-archiv/oparl-validator.tar.gz"
+          stimmt() { echo "$VALIDATOR_SHA256  $archiv" | sha256sum --check --strict --status; }
+          if [ ! -f "$archiv" ] || ! stimmt; then
+            mkdir -p "$(dirname "$archiv")"
+            curl -fsSL --retry 3 -o "$archiv" "$VALIDATOR_URL"
+          fi
+          echo "$VALIDATOR_SHA256  $archiv" | sha256sum --check --strict
+          tar -xzf "$archiv" -C "$RUNNER_TEMP"
+          chmod +x "$RUNNER_TEMP/oparl-validator-rs"
+
+      - name: Beide OParl-Ausgaben prüfen (Testinstanz mit Demo-Daten)
+        run: python scripts/oparl_validator.py --validator "$RUNNER_TEMP/oparl-validator-rs"
+
+  # ===========================================================================
   # Abhängigkeiten: bekannte Schwachstellen, Lockfile-Abgleich
   # ===========================================================================
   # Läuft bei geänderten Abhängigkeitsdateien (Sicherheitsnetz), bei jedem push auf dev/main
@@ -836,15 +940,18 @@ jobs:
           node-version: '26'
           cache: npm
           cache-dependency-path: mandari/package-lock.json
+      # Installiert wird überall aus den Lock-Dateien. Passt eine nicht mehr zu ihrer pyproject.toml,
+      # würde eine geänderte Abhängigkeit nichts am Laufenden ändern (Issue #241, #682). Die Prüfung
+      # hebt keine Version an: Sie bestätigt nur, dass die gesperrten Versionen die Angaben erfüllen.
+      - name: uv.lock passt zu pyproject.toml (Django-Anwendung und Ingestor)
+        run: |
+          (cd mandari && uv lock --check)
+          (cd ingestor && uv lock --check)
       - name: pip-audit Django-Anwendung (blockierend bei bekannten Schwachstellen)
         run: |
-          pip install pip-audit packaging
-          pip-audit -r mandari/requirements.lock --no-deps --progress-spinner off
-      # Installiert wird ueberall requirements.lock. Eine angehobene Grenze in
-      # requirements.txt ohne neu erzeugtes Lockfile aendert nichts am Laufenden
-      # und laesst beide Dateien auseinanderlaufen (Issue #241).
-      - name: requirements.lock passt zu requirements.txt
-        run: python scripts/check_requirements_lock.py
+          pip install pip-audit
+          sh scripts/export_requirements.sh /tmp/mandari-requirements.txt
+          pip-audit -r /tmp/mandari-requirements.txt --no-deps --progress-spinner off
       - name: pip-audit Ingestor (blockierend bei bekannten Schwachstellen)
         run: |
           cd ingestor
@@ -886,6 +993,7 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
       - uses: actions/setup-node@v7
         with:
           node-version: '26'
@@ -893,11 +1001,12 @@ jobs:
           cache-dependency-path: mandari/package-lock.json
       - name: Frontend-Assets bauen
         run: cd mandari && npm ci --ignore-scripts && npm run build
+      - uses: astral-sh/setup-uv@v7
       - name: Python-Abhängigkeiten
         run: |
-          pip install shared/
-          cd mandari
-          pip install -r requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           pip install pytest pytest-django factory-boy pytest-playwright
           python -m playwright install --with-deps chromium
       - name: E2E-Tests (Kernpfade, axe-core)
@@ -1001,6 +1110,7 @@ jobs:
       - test
       - events-pgbouncer
       - smoke
+      - oparl-validator
       - e2e
       - ingestor-tests
       - dependency-audit

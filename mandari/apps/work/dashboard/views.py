@@ -54,7 +54,8 @@ class DashboardView(WorkViewMixin, TemplateView):
         from django.db.models import Prefetch
 
         from apps.work.faction.models import FactionMeeting
-        from insight_core.models import OParlMeeting, OParlOrganization
+        from hub.ris import selectors as ris
+        from insight_core.models import OParlOrganization
 
         now = timezone.now()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -94,16 +95,12 @@ class DashboardView(WorkViewMixin, TemplateView):
             ris_limit = 25 if my_committee_ids else 5
 
             # Optimize with Prefetch to only fetch needed fields
-            ris_meetings = (
-                OParlMeeting.objects.filter(body__in=org_bodies, start__gte=today_start, cancelled=False)
-                .prefetch_related(
-                    Prefetch(
-                        "organizations",
-                        queryset=OParlOrganization.objects.only("id", "name", "short_name"),
-                    )
+            ris_meetings = ris.upcoming_meetings(org_bodies, since=today_start).prefetch_related(
+                Prefetch(
+                    "organizations",
+                    queryset=OParlOrganization.objects.only("id", "name", "short_name"),
                 )
-                .order_by("start")[:ris_limit]
-            )
+            )[:ris_limit]
 
             ris_meetings = list(ris_meetings)
 
@@ -121,7 +118,7 @@ class DashboardView(WorkViewMixin, TemplateView):
             if unresolved_refs:
                 orgs_by_external_id = {
                     org.external_id: org
-                    for org in OParlOrganization.objects.filter(external_id__in=unresolved_refs).only(
+                    for org in ris.organizations_by_external_id(unresolved_refs).only(
                         "id", "external_id", "name", "short_name"
                     )
                 }

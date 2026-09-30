@@ -29,6 +29,7 @@ from apps.session.models import (
 )
 from apps.session.oparl_publication import visible_papers
 from apps.session.permissions import SessionPermissionChecker
+from hub.ris.canonical import iso, iso_date
 
 
 def get_client_ip(request) -> str:
@@ -42,20 +43,6 @@ def get_client_ip(request) -> str:
 def build_url(request, name: str, **kwargs) -> str:
     """Build absolute URL for API responses."""
     return request.build_absolute_uri(reverse(name, kwargs=kwargs))
-
-
-def oparl_datetime(dt: datetime | None) -> str | None:
-    """Format datetime for OParl (ISO 8601)."""
-    if dt is None:
-        return None
-    return dt.isoformat()
-
-
-def oparl_date(d) -> str | None:
-    """Format date for OParl (ISO 8601)."""
-    if d is None:
-        return None
-    return d.isoformat()
 
 
 class OParlMixin:
@@ -212,8 +199,8 @@ class SessionMeetingListAPIView(SessionAPIMixin, View):
                     "id": str(meeting.organization_id),
                     "name": meeting.organization.name,
                 },
-                "start": oparl_datetime(meeting.start),
-                "end": oparl_datetime(meeting.end),
+                "start": iso(meeting.start),
+                "end": iso(meeting.end),
                 "location": meeting.location,
                 "meeting_state": meeting.meeting_state,
                 "cancelled": meeting.cancelled,
@@ -273,7 +260,7 @@ class SessionPaperListAPIView(SessionAPIMixin, View):
                 "name": paper.name,
                 "paper_type": paper.paper_type,
                 "status": paper.status,
-                "date": oparl_date(paper.date),
+                "date": iso_date(paper.date),
                 "is_public": paper.is_public,
                 "main_organization": {
                     "id": str(paper.main_organization_id),
@@ -342,7 +329,7 @@ class SessionApplicationListAPIView(SessionAPIMixin, View):
                     if app.target_organization
                     else None,
                     "is_urgent": app.is_urgent,
-                    "submitted_at": oparl_datetime(app.submitted_at),
+                    "submitted_at": iso(app.submitted_at),
                 }
             )
 

@@ -231,13 +231,27 @@ def test_reuse_workflow_prueft_blockierend() -> None:
         ("README.md", {"verweise"}),
         ("docs/RELEASE_POLITIK.md", {"verweise"}),
         ("lychee.toml", {"qualitaet", "verweise", "test"}),
-        ("mandari/apps/session/services/insight_service.py", {"qualitaet", "python", "test", "smoke", "codeql_python"}),
+        (
+            "mandari/apps/session/services/insight_service.py",
+            {"qualitaet", "python", "test", "smoke", "oparl", "codeql_python"},
+        ),
+        # OParl-Ausgaben: externer Validator gegen die Testinstanz
+        ("mandari/oparl_api/serializers.py", {"qualitaet", "python", "test", "smoke", "oparl", "codeql_python"}),
+        (
+            "mandari/apps/session/api/oparl.py",
+            {"qualitaet", "python", "test", "smoke", "oparl", "e2e", "codeql_python"},
+        ),
+        ("scripts/oparl_validator.py", {"qualitaet", "test", "oparl", "codeql_python"}),
+        ("docs/OPARL_API.md", {"verweise"}),
         ("mandari/apps/session/tests/test_meetings.py", {"qualitaet", "python", "test", "codeql_python"}),
         ("ingestor/src/sync/orchestrator.py", {"qualitaet", "vertrag", "ingestor", "codeql_python"}),
         ("ingestor/tests/test_loeschmarkierung.py", {"qualitaet", "ingestor", "codeql_python"}),
         ("scripts/smoke_tombstones.py", {"qualitaet", "test", "smoke", "codeql_python"}),
         ("mandari/Dockerfile", {"qualitaet", "docker"}),
         (".github/workflows/pr-check.yml", {"sicherheitsnetz", "qualitaet", "test"}),
+        # Lock-Datei der Django-Anwendung und ihr Export: Daraus installieren alle Jobs (Sicherheitsnetz)
+        ("mandari/uv.lock", {"sicherheitsnetz", "qualitaet", "test", "smoke"}),
+        ("scripts/export_requirements.sh", {"sicherheitsnetz", "qualitaet", "test", "audit"}),
         (
             "mandari/templates/work/base_work.html",
             {"qualitaet", "templates", "test", "smoke", "e2e", "codeql_js"},

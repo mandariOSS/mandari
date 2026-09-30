@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # uv nur im Builder, nicht im fertigen Image
 COPY --from=uv /uv /bin/uv
 
-# Abhängigkeiten reproduzierbar aus ingestor/uv.lock, analog zu requirements.lock im Django-Image.
+# Abhängigkeiten reproduzierbar aus ingestor/uv.lock, wie das Django-Image aus mandari/uv.lock.
 # Ohne Lock-Datei zog ein Neubau ungeprüfte neue Versionen (SQLAlchemy 2.1 ohne greenlet: Ingestor
 # startete nicht). Verzeichnisse wie im Repo, damit der Pfad ../shared aus [tool.uv.sources] aufgeht.
 # --locked: Build bricht ab, wenn uv.lock nicht mehr zu pyproject.toml passt (dann `uv lock` im Ordner ingestor).
@@ -54,11 +54,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy application code
 COPY ingestor/src/ src/
 
-# Build-Pruefung: Abhaengigkeiten vollstaendig und jedes Modul unter src/ importierbar
+# Build-Prüfung: Abhängigkeiten vollständig und jedes Modul unter src/ importierbar
 # (ohne Datenbank und Netz; kein Modul baut beim Import eine Verbindung auf).
-# Ein fehlendes Paket laesst so den Build scheitern statt den Start in Produktion.
+# Ein fehlendes Paket lässt so den Build scheitern statt den Start in Produktion.
+# greenlet ausdrücklich: Es kommt ab SQLAlchemy 2.1 nur noch über das Extra [asyncio]. Unter 2.0 ließ sich
+# sqlalchemy.ext.asyncio auch ohne greenlet importieren und scheiterte erst beim ersten Datenbankzugriff;
+# die eigene Zeile hält die Prüfung von der SQLAlchemy-Version unabhängig.
 RUN python -m pip check \
-    && python -B -c "import importlib, pkgutil, src; import sqlalchemy.ext.asyncio; \
+    && python -B -c "import importlib, pkgutil, src; import greenlet, sqlalchemy.ext.asyncio; \
 [importlib.import_module(m.name) for m in pkgutil.walk_packages(src.__path__, 'src.') if not m.name.endswith('__main__')]"
 
 # Create data directory and non-root user
