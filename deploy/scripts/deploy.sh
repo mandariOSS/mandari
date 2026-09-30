@@ -3,7 +3,7 @@
 #
 #   sh deploy/scripts/deploy.sh plan     <tag>   Images ziehen, migrate --plan, check
 #   sh deploy/scripts/deploy.sh apply    <tag>   Sicherung, Migration, Umschalten, Pruefung, bei Fehlschlag Rueckfall
-#   sh deploy/scripts/deploy.sh verify           nur die Anwendungspruefung gegen den laufenden Stand
+#   sh deploy/scripts/deploy.sh verify           nur die Pruefung (Anwendung + Worker) gegen den laufenden Stand
 #   sh deploy/scripts/deploy.sh rollback <tag>   von Hand auf einen frueheren Stand
 #
 # Nicht interaktiv, fuer Cron/CI/Betrieb. Alles Installationsspezifische kommt aus der
@@ -11,7 +11,11 @@
 #   MANDARI_DIR      Installationsverzeichnis mit .env und Compose-Dateien   (Standard /opt/mandari)
 #   COMPOSE_FILES    Compose-Dateien, durch Leerzeichen getrennt              (Standard docker-compose.yml)
 #   APP_SERVICE      Dienst der Django-Anwendung                              (Standard mandari)
-#   WORKER_SERVICES  Dienste, die waehrend der Migration stehen sollen         (Standard ingestor)
+#   WORKER_SERVICES  Dienste, die waehrend der Migration stehen sollen und     (Standard ingestor)
+#                    nach dem Umschalten geprueft werden
+#   WORKER_CHECK_SECONDS  so lange nach dem Start keine Worker-Beendigung      (Standard 60, 0 = aus)
+#                    mit Exit-Code ungleich 0; Exit 0 ist planmaessig (Worker enden nach
+#                    jedem Durchlauf und werden neu gestartet)
 #   DB_SERVICE       PostgreSQL-Dienst fuer die Sicherung                      (Standard postgres)
 #   BACKUP_DIR       Ablage der Pre-Deploy-Dumps                               (Standard $MANDARI_DIR/backups)
 #   BACKUP_KEEP      wie viele Dumps behalten                                  (Standard 5)
@@ -30,6 +34,7 @@ MANDARI_DIR="${MANDARI_DIR:-/opt/mandari}"
 COMPOSE_FILES="${COMPOSE_FILES:-docker-compose.yml}"
 APP_SERVICE="${APP_SERVICE:-mandari}"
 WORKER_SERVICES="${WORKER_SERVICES:-ingestor}"
+WORKER_CHECK_SECONDS="${WORKER_CHECK_SECONDS:-60}"
 DB_SERVICE="${DB_SERVICE:-postgres}"
 BACKUP_DIR="${BACKUP_DIR:-$MANDARI_DIR/backups}"
 BACKUP_KEEP="${BACKUP_KEEP:-5}"
@@ -79,6 +84,91 @@ verify() {
   rc=$?
   rm -f "$ausgabe"
   return $rc
+}
+
+worker_container() {
+  # Je Worker-Dienst eine Zeile "dienst container-id", auch fuer beendete Container;
+  # "dienst -", wenn der Dienst keinen Container hat
+  for s in $WORKER_SERVICES; do
+    ids=$($DC ps -a -q "$s" < /dev/null 2>/dev/null || true)
+    [ -n "$ids" ] || { echo "$s -"; continue; }
+    for id in $ids; do echo "$s $id"; done
+  done
+}
+
+worker_beobachten() {
+  # Zeichnet im Hintergrund jedes Beenden (Docker-Ereignis "die") der Worker-Container ab
+  # Zeitpunkt $1 (Unix-Sekunden) auf, bis WORKER_CHECK_SECONDS nach diesem Aufruf. --since holt
+  # Beendigungen zwischen Start und Aufruf aus dem Ereignispuffer nach. Laeuft parallel zur
+  # Anwendungspruefung; worker_pruefen wartet auf das Ende und wertet aus.
+  WORKER_EREIGNISSE=$(mktemp)
+  WORKER_PID=""
+  [ "$WORKER_CHECK_SECONDS" -gt 0 ] || return 0
+  filter=""
+  for id in $(worker_container | awk '$2 != "-" { print $2 }'); do
+    filter="$filter --filter container=$id"
+  done
+  [ -n "$filter" ] || return 0
+  # shellcheck disable=SC2086
+  docker events --since "$1" --until "$(( $(date +%s) + WORKER_CHECK_SECONDS ))" \
+    --filter type=container --filter event=die $filter \
+    --format '{{.Actor.Attributes.name}} {{.Actor.Attributes.exitCode}}' > "$WORKER_EREIGNISSE" &
+  WORKER_PID=$!
+}
+
+worker_pruefen() {
+  # Die Worker (Ingestor, OCR-Worker, ...) beenden sich nach jedem Durchlauf planmaessig mit
+  # Exit 0 und werden neu gestartet; Exit 0 ist daher kein Fehler, ebenso wenig die Zahl der
+  # Neustarts. Fehlschlag: jede Beendigung mit Exit-Code ungleich 0 im Zeitfenster (z. B. ein
+  # Image, das beim Start mit einem Importfehler abbricht und in einer Neustart-Schleife haengt),
+  # ein Endzustand ausser "running" mit Exit-Code ungleich 0 und ein Dienst ohne Container.
+  if [ "$WORKER_CHECK_SECONDS" -le 0 ]; then
+    rm -f "$WORKER_EREIGNISSE"
+    return 0
+  fi
+  echo "Pruefe Worker ($WORKER_SERVICES), ${WORKER_CHECK_SECONDS} s nach dem Start"
+  if [ -n "$WORKER_PID" ] && ! wait "$WORKER_PID"; then
+    echo "  WARNUNG Docker-Ereignisse nicht lesbar, pruefe nur den Endzustand"
+  fi
+  fehler=0
+  while read -r name code; do
+    [ -n "$name" ] || continue
+    if [ "$code" = 0 ]; then
+      echo "  OK   $name beendet mit Exit 0 (planmaessig)"
+    else
+      echo "  FAIL $name beendet mit Exit $code"
+      fehler=1
+    fi
+  done < "$WORKER_EREIGNISSE"
+  rm -f "$WORKER_EREIGNISSE"
+
+  for zeile in $(worker_container | tr ' ' ':'); do
+    dienst=${zeile%%:*}
+    id=${zeile#*:}
+    if [ "$id" = "-" ]; then
+      echo "  FAIL $dienst: kein Container"
+      fehler=1
+      continue
+    fi
+    zustand=$(docker inspect -f '{{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' "$id" 2>/dev/null || true)
+    if [ -z "$zustand" ]; then
+      echo "  FAIL $dienst: Zustand von Container $id nicht lesbar"
+      fehler=1
+      continue
+    fi
+    read -r cname status code neustarts <<EOF
+$zustand
+EOF
+    cname=${cname#/}
+    if [ "$status" = running ] || { [ "$code" = 0 ] && { [ "$status" = exited ] || [ "$status" = restarting ]; }; }; then
+      echo "  OK   $cname: $status (Exit $code, Neustarts insgesamt $neustarts)"
+    else
+      echo "  FAIL $cname: $status, Exit $code (Neustarts insgesamt $neustarts)"
+      fehler=1
+    fi
+  done
+  echo "ERGEBNIS Worker: $([ "$fehler" -eq 0 ] && echo 'alle Pruefungen bestanden' || echo 'Pruefung fehlgeschlagen')"
+  [ "$fehler" -eq 0 ]
 }
 
 notify() {
@@ -133,7 +223,12 @@ case "$MODE" in
     ;;
 
   verify)
-    verify && log "Pruefung bestanden ($OLD_TAG)"
+    worker_beobachten "$(date +%s)"
+    GRUND=""
+    verify || GRUND="die Anwendungspruefung"
+    worker_pruefen || GRUND="${GRUND:+$GRUND und }die Worker-Pruefung"
+    [ -z "$GRUND" ] || { log "Nicht bestanden: $GRUND ($OLD_TAG)"; exit 1; }
+    log "Pruefung bestanden ($OLD_TAG)"
     ;;
 
   rollback)
@@ -172,19 +267,24 @@ case "$MODE" in
 
     T0=$(date +%s)
     switch_to "$NEW_TAG"
+    # Worker-Beobachtung laeuft ab dem Umschalten parallel zur Anwendungspruefung
+    worker_beobachten "$T0"
     UNTERBRECHUNG=$(warte_auf_live "$T0")
     log "Umgeschaltet, Unterbrechung ${UNTERBRECHUNG:-?} s"
 
-    if verify; then
+    GRUND=""
+    verify || GRUND="die Anwendungspruefung"
+    worker_pruefen || GRUND="${GRUND:+$GRUND und }die Worker-Pruefung"
+    if [ -z "$GRUND" ]; then
       protokoll "$OLD_TAG" "$NEW_TAG" "ok" "$UNTERBRECHUNG" "$(( $(date +%s) - START ))"
       log "Deploy $NEW_TAG bestanden. Rueckfall: sh $0 rollback $OLD_TAG  (Sicherung $BACKUP)"
     else
-      log "PRUEFUNG FEHLGESCHLAGEN – Rueckfall auf $OLD_TAG"
+      log "PRUEFUNG FEHLGESCHLAGEN ($GRUND) – Rueckfall auf $OLD_TAG"
       T1=$(date +%s)
       switch_to "$OLD_TAG"
       R=$(warte_auf_live "$T1")
       protokoll "$OLD_TAG" "$NEW_TAG" "rollback-automatisch" "$UNTERBRECHUNG+$R" "$(( $(date +%s) - START ))"
-      notify "[deploy] Rueckfall auf $OLD_TAG" "Deploy $NEW_TAG hat die Anwendungspruefung nicht bestanden und wurde automatisch auf $OLD_TAG zurueckgesetzt. Migrationen bleiben eingespielt (safemigrate). Sicherung: $BACKUP"
+      notify "[deploy] Rueckfall auf $OLD_TAG" "Deploy $NEW_TAG hat $GRUND nicht bestanden und wurde automatisch auf $OLD_TAG zurueckgesetzt. Migrationen bleiben eingespielt (safemigrate). Sicherung: $BACKUP"
       verify || true
       exit 1
     fi

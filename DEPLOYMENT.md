@@ -57,8 +57,11 @@ Interaktiv (`./install.sh` ohne `--unattended`) fragt der Installer wie bisher n
 jedem Deploy einen geprüften Vorgang: Sicherung, `safemigrate`, Umschalten mit `--wait`,
 dann **Anwendungsprüfung im Container** (`deploy/scripts/verify_deploy.py`: Readiness,
 Anmeldeseite, Bürgerportal, OParl-System, optional angemeldete Demo-Seiten, jeweils mit
-Inhaltsprüfung). Scheitert sie, schaltet das Skript **selbsttätig auf das vorherige Image
-zurück** und meldet das per Mail. Jeder Lauf schreibt eine Zeile in `deploy-log.tsv`
+Inhaltsprüfung) und **Worker-Prüfung**: Beendet sich ein Container aus `WORKER_SERVICES` in den
+ersten `WORKER_CHECK_SECONDS` (Standard 60) mit einem Exit-Code ungleich 0 (etwa in einer
+Neustart-Schleife nach einem Startfehler), gilt der Deploy als gescheitert; Exit 0 ist planmäßig, weil die Worker nach jedem
+Durchlauf enden und neu starten. Scheitert eine der Prüfungen, schaltet das Skript **selbsttätig auf
+das vorherige Image zurück** und meldet das per Mail. Jeder Lauf schreibt eine Zeile in `deploy-log.tsv`
 (alt, neu, Ergebnis, Unterbrechung in Sekunden, Dauer), die Grundlage für die Kennzahl
 „Ausfallzeit je Deploy“ aus dem Verfügbarkeitskonzept.
 
@@ -67,12 +70,13 @@ zurück** und meldet das per Mail. Jeder Lauf schreibt eine Zeile in `deploy-log
 set -a; . /opt/mandari/deploy.env; set +a
 sh deploy/scripts/deploy.sh plan   v0.12.0   # Images ziehen, migrate --plan, check
 sh deploy/scripts/deploy.sh apply  v0.12.0   # Sicherung, Migration, Umschalten, Prüfung, ggf. Rückfall
-sh deploy/scripts/deploy.sh verify           # nur die Prüfung gegen den laufenden Stand
+sh deploy/scripts/deploy.sh verify           # nur die Prüfungen (Seiten + Worker) gegen den laufenden Stand
 sh deploy/scripts/deploy.sh rollback v0.11.0 # von Hand zurück
 ```
 
 Alle Parameter (`MANDARI_DIR`, `COMPOSE_FILES`, `APP_SERVICE`, `WORKER_SERVICES`,
-`DB_SERVICE`, `BACKUP_DIR`, `NOTIFY_EMAIL`, `VERIFY_*`) stehen im Kopf des Skripts.
+`WORKER_CHECK_SECONDS`, `DB_SERVICE`, `BACKUP_DIR`, `NOTIFY_EMAIL`, `VERIFY_*`) stehen im Kopf
+des Skripts.
 Migrationen müssen abwärtskompatibel sein: Der Rückfall rollt Code zurück, keine
 Migrationen (`django-safemigrate` spielt nur verträgliche Migrationen vor dem Umschalten ein).
 Das interaktive `update.sh` für Selbst-Hoster nutzt dieselbe Anwendungsprüfung und rollt
