@@ -7,7 +7,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("session", "0045_landesprofile_laden"),
+        ("session", "0047_oparl_bestand_uebernehmen"),
     ]
 
     operations = [
