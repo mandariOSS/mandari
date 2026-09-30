@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.protocol.approved:v1",
+  "title": "Niederschrift genehmigt",
+  "description": "Die Niederschrift einer Sitzung wurde genehmigt (Erweiterung des kanonischen Modells). Aggregat: Meeting. Veröffentlicht wird sie mit ris.protocol.published. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "nichtoeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "meeting"
+  ],
+  "properties": {
+    "protocol": {
+      "description": "Kennung der Niederschrift.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "meeting": {
+      "description": "Sitzung, deren Niederschrift genehmigt wurde.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "mode": {
+      "description": "Genehmigungsweg: follow_up (in der Folgesitzung), direct (ohne Genehmigungsschritt).",
+      "type": "string",
+      "enum": [
+        "follow_up",
+        "direct"
+      ]
+    },
+    "approved_in": {
+      "description": "Sitzung, in der genehmigt wurde (bei mode follow_up).",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "protocol": "2c3d4e5f-6a7b-5c8d-9e0f-a1b2c3d4e5f6",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "mode": "follow_up",
+      "approved_in": "8d0f7780-8536-51ef-a55c-f18fd2fa1bf8"
+    }
+  ]
+}

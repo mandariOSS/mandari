@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.agendaitem.changed:v1",
+  "title": "Tagesordnung geändert",
+  "description": "Ein Tagesordnungspunkt wurde angelegt, geändert, abgesetzt, verschoben oder gelöscht. Aggregat: AgendaItem. Die Kennung des Punkts bleibt über Neuveröffentlichungen gleich. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": [
+    "oeffentlich",
+    "nichtoeffentlich"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agenda_item",
+    "meeting",
+    "change"
+  ],
+  "properties": {
+    "agenda_item": {
+      "description": "Kanonische Kennung des Tagesordnungspunkts.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "meeting": {
+      "description": "Sitzung, zu der der Punkt (jetzt) gehört.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "change": {
+      "description": "Art der Änderung: added (neu), changed (geändert), withdrawn (abgesetzt), moved (in eine andere Sitzung verschoben), deleted (gelöscht).",
+      "type": "string",
+      "enum": [
+        "added",
+        "changed",
+        "withdrawn",
+        "moved",
+        "deleted"
+      ]
+    },
+    "changed": {
+      "description": "Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. name, number).",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "previous_meeting": {
+      "description": "Sitzung vor dem Verschieben (bei change moved).",
+      "type": "string",
+      "format": "uuid"
+    },
+    "paper": {
+      "description": "Vorlage, die unter dem Punkt beraten wird.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "change": "added",
+      "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"
+    },
+    {
+      "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+      "meeting": "8d0f7780-8536-51ef-a55c-f18fd2fa1bf8",
+      "change": "moved",
+      "previous_meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
+    },
+    {
+      "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "change": "changed",
+      "changed": [
+        "name",
+        "number"
+      ]
+    }
+  ]
+}

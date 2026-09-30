@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:command:submission.withdraw:v1",
+  "title": "Einreichung zurückziehen",
+  "description": "Die einreichende Organisation zieht eine Einreichung zurück, solange die Verwaltung sie noch nicht zur Vorlage gemacht hat. Handler: apps.session.",
+  "x-kind": "command",
+  "x-owner": "apps.session",
+  "x-visibility": "nichtoeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "submission"
+  ],
+  "properties": {
+    "submission": {
+      "description": "Kennung der Einreichung (aus der Quittung).",
+      "type": "string",
+      "format": "uuid"
+    },
+    "submitting_organization": {
+      "description": "Einreichende Organisation.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "submission": "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "submitting_organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d"
+    },
+    {
+      "submission": "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+    }
+  ]
+}

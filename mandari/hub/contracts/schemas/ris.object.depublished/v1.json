@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.object.depublished:v1",
+  "title": "Objekt zurückgenommen",
+  "description": "Ein Objekt des RIS-Bestands ist nicht mehr öffentlich: in der Quelle gelöscht, zurückgenommen, nichtöffentlich geworden oder aus Datenschutzgründen entfernt. Aggregat: das betroffene Objekt. Die Hülle trägt operation delete, beim Grund datenschutz redact (docs/adr/20260929-aenderungsfeed-format.md).",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "object_type",
+    "object",
+    "reason"
+  ],
+  "properties": {
+    "object_type": {
+      "description": "Kanonischer Typ des Objekts.",
+      "type": "string",
+      "enum": [
+        "Body",
+        "Organization",
+        "Person",
+        "Membership",
+        "LegislativeTerm",
+        "Meeting",
+        "AgendaItem",
+        "Paper",
+        "Consultation",
+        "File",
+        "Location",
+        "Voting"
+      ]
+    },
+    "object": {
+      "description": "Kanonische Kennung des Objekts.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "reason": {
+      "description": "Grund: quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz.",
+      "type": "string",
+      "enum": [
+        "quelle_geloescht",
+        "zurueckgenommen",
+        "nichtoeffentlich",
+        "datenschutz"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "object_type": "Paper",
+      "object": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c",
+      "reason": "nichtoeffentlich"
+    },
+    {
+      "object_type": "File",
+      "object": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
+      "reason": "datenschutz"
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:command:attendance.respond:v1",
+  "title": "Zu- oder Absage zur Sitzung",
+  "description": "Eine geladene Person sagt zu oder ab, optional mit Vertretungswunsch. Handler: apps.session. Der Grund einer Absage ist Inhalt (x-content): Der Eigentümer speichert ihn verschlüsselt und zeigt ihn nur dem Sitzungsdienst.",
+  "x-kind": "command",
+  "x-owner": "apps.session",
+  "x-visibility": "personenbezogen",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meeting",
+    "person",
+    "response"
+  ],
+  "properties": {
+    "meeting": {
+      "description": "Sitzung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "person": {
+      "description": "Geladene Person.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "response": {
+      "description": "confirmed (Zusage) oder declined (Absage).",
+      "type": "string",
+      "enum": [
+        "confirmed",
+        "declined"
+      ]
+    },
+    "substitute_requested": {
+      "description": "Bei einer Absage: Vertretung erbeten.",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "Weg der Rückmeldung.",
+      "type": "string",
+      "enum": [
+        "link",
+        "portal",
+        "staff"
+      ]
+    },
+    "reason": {
+      "description": "Grund der Absage.",
+      "x-content": true,
+      "type": "string",
+      "maxLength": 2000
+    }
+  },
+  "examples": [
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "person": "8e7d6c5b-4a39-4281-9f0e-1d2c3b4a5968",
+      "response": "confirmed",
+      "source": "portal"
+    },
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "person": "8e7d6c5b-4a39-4281-9f0e-1d2c3b4a5968",
+      "response": "declined",
+      "substitute_requested": true,
+      "source": "link",
+      "reason": "Dienstreise"
+    }
+  ]
+}

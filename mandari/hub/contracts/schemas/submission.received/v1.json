@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:submission.received:v1",
+  "title": "Einreichung eingegangen",
+  "description": "Ein Antrag oder eine Anfrage ist bei der Verwaltung eingegangen, egal über welchen Weg (Befehl submission.submit). Aggregat: Submission. Inhalte und Einreichende liest nur, wer berechtigt ist, beim Eigentümer.",
+  "x-kind": "event",
+  "x-owner": "apps.session",
+  "x-visibility": "nichtoeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "submission",
+    "application_type"
+  ],
+  "properties": {
+    "submission": {
+      "description": "Kennung der Einreichung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "application_type": {
+      "description": "Art der Einreichung.",
+      "type": "string",
+      "enum": [
+        "motion",
+        "inquiry",
+        "resolution",
+        "urgent",
+        "amendment",
+        "other"
+      ]
+    },
+    "submitting_organization": {
+      "description": "Einreichende Organisation (Fraktion, Gruppe).",
+      "type": "string",
+      "format": "uuid"
+    },
+    "target_organization": {
+      "description": "Zuständiges Gremium, falls angegeben.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "content_hash": {
+      "description": "SHA-256 (hexadezimal) über den Inhalt der Einreichung, wie in der Quittung.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "examples": [
+    {
+      "submission": "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "application_type": "motion",
+      "submitting_organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "target_organization": "1b4e28ba-2fa1-51d2-883f-0016d3cca427",
+      "content_hash": "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b"
+    },
+    {
+      "submission": "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "application_type": "inquiry"
+    }
+  ]
+}

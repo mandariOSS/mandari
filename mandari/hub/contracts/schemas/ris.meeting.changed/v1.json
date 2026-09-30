@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.meeting.changed:v1",
+  "title": "Sitzung geändert",
+  "description": "Eine Sitzung wurde geändert, verlegt oder abgesagt. Aggregat: Meeting. changed nennt die geänderten Felder; cancelled zeigt eine Absage direkt an. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": [
+    "oeffentlich",
+    "nichtoeffentlich"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meeting",
+    "changed"
+  ],
+  "properties": {
+    "meeting": {
+      "description": "Kanonische Kennung der Sitzung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "changed": {
+      "description": "Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. start, location).",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "cancelled": {
+      "description": "Die Sitzung ist nach der Änderung abgesagt.",
+      "type": "boolean"
+    },
+    "organizations": {
+      "description": "Gremien, die die Sitzung abhalten (kanonische Kennungen).",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "uniqueItems": true,
+      "maxItems": 50
+    }
+  },
+  "examples": [
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "changed": [
+        "start",
+        "location"
+      ]
+    },
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "changed": [
+        "cancelled"
+      ],
+      "cancelled": true,
+      "organizations": [
+        "1b4e28ba-2fa1-51d2-883f-0016d3cca427"
+      ]
+    }
+  ]
+}

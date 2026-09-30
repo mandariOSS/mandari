@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:core.user.registered:v1",
+  "title": "Konto angelegt oder bestätigt",
+  "description": "Ein Konto wurde angelegt oder seine E-Mail-Adresse bestätigt. Aggregat: User.",
+  "x-kind": "event",
+  "x-owner": "apps.accounts",
+  "x-visibility": "personenbezogen",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "user",
+    "step"
+  ],
+  "properties": {
+    "user": {
+      "description": "Kennung des Kontos.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "step": {
+      "description": "created (angelegt) oder confirmed (bestätigt).",
+      "type": "string",
+      "enum": [
+        "created",
+        "confirmed"
+      ]
+    },
+    "via": {
+      "description": "Weg: invitation (Einladung), self_registration (Selbstregistrierung), admin.",
+      "type": "string",
+      "enum": [
+        "invitation",
+        "self_registration",
+        "admin"
+      ]
+    },
+    "organization": {
+      "description": "Organisation, über die das Konto entstand.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "user": "01234567-89ab-4cde-8f01-23456789abcd",
+      "step": "created",
+      "via": "invitation",
+      "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d"
+    },
+    {
+      "user": "01234567-89ab-4cde-8f01-23456789abcd",
+      "step": "confirmed"
+    }
+  ]
+}

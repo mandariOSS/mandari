@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:command:submission.submit:v1",
+  "title": "Antrag einreichen",
+  "description": "Eine Organisation reicht einen Antrag oder eine Anfrage bei der Verwaltung ein. Handler: apps.session. Die Quittung nennt Eingangsnummer, Eingangszeit und Inhalts-Hash. Felder mit x-content sind Inhalte: Der Eigentümer speichert sie, der Befehlsweg gibt sie nie in Logs, Fehlermeldungen oder Ereignisse weiter.",
+  "x-kind": "command",
+  "x-owner": "apps.session",
+  "x-visibility": "nichtoeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "application_type",
+    "title",
+    "resolution_proposal",
+    "justification",
+    "submitter"
+  ],
+  "properties": {
+    "application_type": {
+      "description": "Art der Einreichung.",
+      "type": "string",
+      "enum": [
+        "motion",
+        "inquiry",
+        "resolution",
+        "urgent",
+        "amendment",
+        "other"
+      ]
+    },
+    "title": {
+      "description": "Titel.",
+      "x-content": true,
+      "type": "string",
+      "maxLength": 500,
+      "minLength": 1
+    },
+    "resolution_proposal": {
+      "description": "Beschlussvorschlag.",
+      "x-content": true,
+      "type": "string",
+      "maxLength": 50000,
+      "minLength": 1
+    },
+    "justification": {
+      "description": "Begründung.",
+      "x-content": true,
+      "type": "string",
+      "maxLength": 50000,
+      "minLength": 1
+    },
+    "financial_impact": {
+      "description": "Finanzielle Auswirkungen.",
+      "x-content": true,
+      "type": "string",
+      "maxLength": 10000
+    },
+    "is_urgent": {
+      "description": "Dringlich.",
+      "type": "boolean"
+    },
+    "urgency_reason": {
+      "description": "Begründung der Dringlichkeit.",
+      "x-content": true,
+      "type": "string",
+      "maxLength": 5000
+    },
+    "deadline": {
+      "description": "Gewünschter Beratungstermin.",
+      "type": "string",
+      "format": "date"
+    },
+    "target_organization": {
+      "description": "Zuständiges Gremium der Verwaltung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "submitting_organization": {
+      "description": "Einreichende Organisation.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "submitter": {
+      "description": "Ansprechperson für Rückfragen der Verwaltung.",
+      "x-content": true,
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "email"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 254
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 50
+        }
+      }
+    },
+    "co_signers": {
+      "description": "Mitunterzeichnende, je Eintrag ein Name.",
+      "x-content": true,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "maxItems": 100
+    }
+  },
+  "examples": [
+    {
+      "application_type": "motion",
+      "title": "Mehr Bänke im Stadtpark",
+      "resolution_proposal": "Die Verwaltung wird beauftragt, zehn zusätzliche Bänke aufzustellen.",
+      "justification": "Ältere Menschen finden auf den Wegen zu wenige Sitzgelegenheiten.",
+      "is_urgent": false,
+      "deadline": "2026-11-15",
+      "target_organization": "1b4e28ba-2fa1-51d2-883f-0016d3cca427",
+      "submitting_organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "submitter": {
+        "name": "Erika Mustermann",
+        "email": "fraktion@example.org"
+      },
+      "co_signers": [
+        "Max Mustermann"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.file.changed:v1",
+  "title": "Anlage geändert",
+  "description": "Eine Datei (Anlage) wurde hinzugefügt, ersetzt, umbenannt oder entfernt. Aggregat: File. Die Zugehörigkeit nennt, woran die Datei hängt. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": [
+    "oeffentlich",
+    "nichtoeffentlich"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "file",
+    "change"
+  ],
+  "properties": {
+    "file": {
+      "description": "Kanonische Kennung der Datei.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "change": {
+      "description": "Art der Änderung: added, replaced (neue Fassung), renamed, removed.",
+      "type": "string",
+      "enum": [
+        "added",
+        "replaced",
+        "renamed",
+        "removed"
+      ]
+    },
+    "paper": {
+      "description": "Vorlage, an der die Datei hängt.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "meeting": {
+      "description": "Sitzung, an der die Datei hängt.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "agenda_item": {
+      "description": "Tagesordnungspunkt, an dem die Datei hängt.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
+      "change": "added",
+      "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"
+    },
+    {
+      "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
+      "change": "removed",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
+    }
+  ]
+}
