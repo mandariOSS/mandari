@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from django.contrib.messages import get_messages
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
@@ -104,6 +105,9 @@ def test_profildatei_deckt_alle_16_laender_mit_quellen_und_gueltigen_werten_ab()
         assert row["legal_basis"] in {key for key, _ in SessionStateProfile.BASIS_CHOICES}
         assert row["chair_present"] in {key for key, _ in SessionStateProfile.CHAIR_CHOICES}
         assert row["verification"] in {key for key, _ in SessionStateProfile.VERIFICATION_CHOICES}
+        assert isinstance(row["emergency_needs_local_basis"], bool), row["code"]
+        if row["emergency_needs_local_basis"]:
+            assert "Hauptsatzung" in row["emergency_requirements"], row["code"]
         assert set(row["excluded_committee_kinds"]) <= kinds
         assert row["sources"], row["code"]
         assert all(source["url"].startswith("https://") and source["title"] for source in row["sources"])
@@ -241,6 +245,85 @@ def test_beschluss_als_voraussetzung_verlangt_begruendung(welt: Welt) -> None:
     assert mfs.check(welt.tenant, [welt.bau], "hybrid", "Beschluss des Ausschusses vom 02.09.2026").ok
 
 
+def test_notlage_verlangt_oertlichen_nachweis_wo_das_land_ihn_vorschreibt(welt: Welt) -> None:
+    """Thüringen: Auch die Notlage setzt eine Regelung in der Hauptsatzung voraus (§ 36a ThürKO)."""
+    welt.tenant.state_profile = _profile("TH")
+    ohne = mfs.check(welt.tenant, [welt.rat], "hybrid", "Pandemie; Feststellung des Bürgermeisters")
+    assert not ohne.ok
+    assert "Notlage" in ohne.errors[0] and "Hauptsatzung" in ohne.errors[0]
+    _nachweis(welt.tenant)
+    mit = mfs.check(welt.tenant, [welt.rat], "hybrid", "Pandemie; Feststellung des Bürgermeisters")
+    assert mit.ok
+    assert mfs.legal_basis_text(welt.tenant, mit.rules) == (
+        "§ 36a ThürKO (Notlage) i. V. m. Hauptsatzung vom 12.03.2024, § 7 Hauptsatzung, Amtsblatt 2024 Nr. 5"
+    )
+    # NRW verlangt für die Notlage keinen örtlichen Nachweis
+    welt.tenant.state_profile = _profile("NW")
+    welt.tenant.hybrid_basis_kind = ""
+    assert mfs.check(welt.tenant, [welt.rat], "hybrid", "Epidemische Lage").ok
+
+
+# =============================================================================
+# Ausschussarten: Einordnung, Namenshinweis, Warnung
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ("name", "short_name", "erwartet"),
+    [
+        ("Haupt- und Finanzausschuss", "", ["main", "finance"]),
+        ("Haupt-, Finanz- und Personalausschuss", "", ["main", "finance"]),
+        ("Hauptausschuss und Ältestenrat", "", ["main"]),
+        ("Ausschuss für Finanzen, Beteiligungen und Liegenschaften", "", ["finance"]),
+        ("Haushaltsausschuss", "", ["finance"]),
+        ("Rechnungsprüfungsausschuss", "", ["audit"]),
+        ("Ausschuss für Verwaltung", "HFA", ["main", "finance"]),
+        ("Hauptsatzungskommission", "", []),
+        ("Bauausschuss", "BA", []),
+    ],
+)
+def test_name_deutet_auf_gesetzliche_ausschussart_hin(name: str, short_name: str, erwartet: list[str]) -> None:
+    gremium = SessionOrganization(name=name, short_name=short_name)
+    assert mfs.suspected_committee_kinds(gremium) == erwartet
+
+
+def test_nrw_haupt_und_finanzausschuss_ohne_ausschussart_wird_gesperrt(welt: Welt) -> None:
+    """Ein nicht eingeordneter „Haupt- und Finanzausschuss“ darf nicht als Fachausschuss durchrutschen."""
+    _nachweis(welt.tenant)
+    hfa = SessionOrganization.objects.create(tenant=welt.tenant, name="Haupt- und Finanzausschuss")
+    for grund in ("", "Hochwasser; Ratsbeschluss vom 01.10.2026"):
+        result = mfs.check(welt.tenant, [hfa], "hybrid", grund)
+        assert not result.ok
+        assert "keiner gesetzlichen Ausschussart zugeordnet" in result.errors[0]
+        assert "Hauptausschuss oder Finanzausschuss" in result.errors[0]
+        assert "§ 47a GO NRW" in result.errors[0]
+    # Bis zur Einordnung nennt die Anzeige vorsorglich die strengere Regel
+    assert mfs.legal_basis_text(welt.tenant, result.rules) == "§ 47a GO NRW (Notlage)"
+    # Als gemeinsame Sitzung mit einem Fachausschuss ebenso gesperrt
+    assert not mfs.check(welt.tenant, [welt.bau, hfa], "hybrid").ok
+
+    hfa.committee_kind = "main"
+    assert not mfs.check(welt.tenant, [hfa], "hybrid").ok
+    assert mfs.check(welt.tenant, [hfa], "hybrid", "Hochwasser; Ratsbeschluss vom 01.10.2026").ok
+    hfa.committee_kind = "ordinary"
+    geprueft = mfs.check(welt.tenant, [hfa], "hybrid")
+    assert geprueft.ok and not geprueft.warnings
+
+
+def test_nrw_nicht_eingeordneter_fachausschuss_erzeugt_warnung(welt: Welt) -> None:
+    _nachweis(welt.tenant)
+    result = mfs.check(welt.tenant, [welt.bau], "hybrid")
+    assert result.ok
+    assert len(result.warnings) == 1
+    assert "„Bauausschuss“ ist keiner gesetzlichen Ausschussart zugeordnet" in result.warnings[0]
+    welt.bau.committee_kind = "ordinary"
+    assert not mfs.check(welt.tenant, [welt.bau], "hybrid").warnings
+    # Länder ohne ausgenommene Ausschussarten warnen nicht
+    welt.bau.committee_kind = ""
+    welt.tenant.state_profile = _profile("NI")
+    assert not mfs.check(welt.tenant, [welt.bau], "hybrid").warnings
+
+
 # =============================================================================
 # Sitzungsformular, Gremium und Einstellungen
 # =============================================================================
@@ -281,6 +364,51 @@ def test_formular_verhindert_hybriden_hauptausschuss_und_speichert_begruendete_n
     assert sitzung.remote_access_encrypted
     assert b"4711" not in bytes(sitzung.remote_access_encrypted)
     assert cast(Any, sitzung).get_remote_access_decrypted() == "Konferenzraum 4711, PIN 2468"
+
+
+def test_formular_sperrt_nicht_eingeordneten_haupt_und_finanzausschuss_und_warnt_beim_fachausschuss(
+    welt: Welt,
+) -> None:
+    _nachweis(welt.tenant)
+    hfa = SessionOrganization.objects.create(tenant=welt.tenant, name="Haupt- und Finanzausschuss")
+    antwort = welt.client.post(
+        "/session/muster/meetings/create/", _formular(welt, organization=str(hfa.pk), format="hybrid")
+    )
+    assert antwort.status_code == 200
+    assert "keiner gesetzlichen Ausschussart zugeordnet" in antwort.content.decode()
+    assert not SessionMeeting.objects.filter(name="Sitzung").exists()
+
+    antwort = welt.client.post(
+        "/session/muster/meetings/create/", _formular(welt, organization=str(welt.bau.pk), format="hybrid")
+    )
+    assert antwort.status_code == 302
+    meldungen = " ".join(str(m) for m in get_messages(antwort.wsgi_request))
+    assert "„Bauausschuss“ ist keiner gesetzlichen Ausschussart zugeordnet" in meldungen
+
+
+def test_bearbeiten_ohne_formatwechsel_bleibt_moeglich_wenn_das_profil_sich_aendert(welt: Welt) -> None:
+    """Absagen oder Umbenennen einer gespeicherten hybriden Sitzung scheitert nicht am geänderten Profil."""
+    _nachweis(welt.tenant)
+    sitzung = SessionMeeting.objects.create(
+        tenant=welt.tenant, organization=welt.bau, name="Bau", start="2031-03-01T17:00:00Z", format="hybrid"
+    )
+    welt.tenant.hybrid_basis_kind = ""  # Nachweis entfällt
+    welt.tenant.save()
+    daten = _formular(welt, organization=str(welt.bau.pk), format="hybrid", meeting_state="scheduled")
+    antwort = welt.client.post(
+        f"/session/muster/meetings/{sitzung.pk}/edit/",
+        {**daten, "cancelled": "on", "cancellation_reason": "Terminkollision"},
+    )
+    assert antwort.status_code == 302
+    sitzung.refresh_from_db()
+    assert sitzung.cancelled and sitzung.format == "hybrid"
+
+    # Wer Format oder Begründung ändert, wird erneut geprüft
+    antwort = welt.client.post(
+        f"/session/muster/meetings/{sitzung.pk}/edit/", {**daten, "format_reason": "Neue Begründung"}
+    )
+    assert antwort.status_code == 200
+    assert "Hauptsatzung" in antwort.content.decode()
 
 
 def test_formular_ohne_format_bleibt_praesenz_und_verwirft_zugangsweg(welt: Welt) -> None:
@@ -374,6 +502,35 @@ def test_einstellungen_speichern_landesprofil_und_nachweis_mit_audit(welt: Welt)
     assert eintraege[0]["hybrid_basis_reference"] == {"alt": "", "neu": "§ 7 Hauptsatzung"}
 
 
+def test_einstellungen_warnen_bei_nicht_eingeordnetem_haupt_und_finanzausschuss(welt: Welt) -> None:
+    """NRW-Mandant mit „Haupt- und Finanzausschuss“ ohne Ausschussart: Warnung und Liste zum Einordnen."""
+    welt.haupt.name = "Haupt- und Finanzausschuss"
+    welt.haupt.committee_kind = ""
+    welt.haupt.save()
+    inhalt = welt.client.get("/session/muster/settings/meeting-formats/").content.decode()
+    assert "Ausschüsse mit besonderen Regeln" in inhalt
+    assert "Noch kein Ausschuss eingeordnet" in inhalt
+    assert "Name deutet auf Hauptausschuss oder Finanzausschuss hin" in inhalt
+    assert f"/session/muster/organizations/{welt.haupt.pk}/edit/" in inhalt
+    assert "Bauausschuss" in inhalt  # nicht eingeordneter Ausschuss
+    assert "Fraktion A" not in inhalt
+
+    gremium = welt.client.get(f"/session/muster/organizations/{welt.haupt.pk}/edit/").content.decode()
+    assert "Der Name deutet auf Hauptausschuss oder Finanzausschuss hin" in gremium
+
+    welt.haupt.committee_kind = "main"
+    welt.haupt.save()
+    inhalt = welt.client.get("/session/muster/settings/meeting-formats/").content.decode()
+    assert "Noch kein Ausschuss eingeordnet" not in inhalt
+    assert "Haupt- und Finanzausschuss: Hauptausschuss" in inhalt
+
+    # Länder ohne ausgenommene Ausschussarten zeigen die Liste nicht
+    welt.tenant.state_profile = _profile("NI")
+    welt.tenant.save()
+    inhalt = welt.client.get("/session/muster/settings/meeting-formats/").content.decode()
+    assert "Ausschüsse mit besonderen Regeln" not in inhalt
+
+
 def test_einstellungen_nur_mit_recht(welt: Welt) -> None:
     SessionRole.objects.filter(tenant=welt.tenant).update(can_manage_settings=False)
     antwort = welt.client.post("/session/muster/settings/meeting-formats/", {"state_profile": ""})
@@ -429,7 +586,10 @@ def test_migration_laedt_profile_und_altes_image_legt_weiter_sitzungen_an() -> N
         executor = MigrationExecutor(connection)
         executor.migrate([NACHHER])
         neu = MigrationExecutor(connection).loader.project_state([NACHHER]).apps
-        assert neu.get_model("session", "SessionStateProfile").objects.count() == 16
+        profile = neu.get_model("session", "SessionStateProfile").objects
+        assert profile.count() == 16
+        assert profile.get(code="TH").emergency_needs_local_basis
+        assert profile.get(code="NW").excluded_committee_kinds == ["main", "finance", "audit"]
         assert neu.get_model("session", "SessionMeeting").objects.get(pk=bestand.pk).format == "presence"
 
         # Rückfall per Image: Das alte Modell kennt die neuen Spalten nicht und legt trotzdem an

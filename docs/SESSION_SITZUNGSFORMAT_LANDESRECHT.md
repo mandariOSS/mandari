@@ -24,8 +24,10 @@ Issue: #138 (Grundlage für #139 Teilnahmeart, #140 Cockpit, #141 Selbst-Abstimm
   Quellen und Stand. Die Profile stehen in `mandari/apps/session/presets/landesprofile.json`.
 - **Nachweis der örtlichen Rechtsgrundlage** am Mandanten: Art (Hauptsatzung, Geschäftsordnung, Beschluss),
   Datum und Fundstelle. Ohne vollständigen Nachweis sind hybride Sitzungen im Regelbetrieb gesperrt.
-- **Gesetzliche Ausschussart** am Gremium (Hauptausschuss, Finanzausschuss, Rechnungsprüfungsausschuss),
-  weil einzelne Länder diese Ausschüsse ausnehmen (NRW: § 58a i. V. m. § 57 Abs. 2 GO NRW).
+- **Gesetzliche Ausschussart** am Gremium (Hauptausschuss, Finanzausschuss, Rechnungsprüfungsausschuss oder
+  „anderer Ausschuss“), weil einzelne Länder diese Ausschüsse ausnehmen (NRW: § 58a i. V. m. § 57 Abs. 2
+  GO NRW). Leer heißt „nicht eingeordnet“. Die Einstellungsseite listet bei solchen Landesprofilen die
+  aktiven Ausschüsse mit ihrer Einordnung und warnt, solange keinem Gremium eine der Arten zugeordnet ist.
 - **Sitzungsformat je Sitzung** (`SessionMeeting.format`) mit Begründung (Notlage, Beschluss), verschlüsselt
   gespeichertem Zugangsweg für Zugeschaltete und Hinweis für die Öffentlichkeit (Übertragung, Anmeldung).
 
@@ -36,11 +38,21 @@ Issue: #138 (Grundlage für #139 Teilnahmeart, #140 Cockpit, #141 Selbst-Abstimm
 3. Maßgeblich ist die Regel des Landesprofils für den Gremientyp (Rat bzw. Ausschüsse). Ausgenommene
    Ausschussarten fallen auf die Regel für ausgenommene Ausschüsse zurück (NRW: nur in Notlagen nach
    § 47a GO NRW). Bei gemeinsamen Sitzungen gilt die strengste Regel der beteiligten Gremien.
+   Nimmt das Landesprofil Ausschussarten aus, ist ein nicht eingeordnetes Gremium, dessen Name oder Kurzname
+   auf eine dieser Arten hindeutet (z. B. „Haupt- und Finanzausschuss“, „HFA“, „Rechnungsprüfungsausschuss“),
+   bis zur Einordnung für hybride und digitale Sitzungen gesperrt; ein nicht eingeordneter Ausschuss ohne
+   solchen Namen erzeugt beim Speichern eine Warnung.
 4. „nicht vorgesehen“ verhindert das Format mit Begründung und Norm.
 5. „nur in Notlagen“ und jede digitale Sitzung verlangen eine Begründung (Notlage, zugrunde liegender Beschluss).
+   Wo das Land auch für die Notlage eine örtliche Regelung verlangt (`emergency_needs_local_basis`:
+   Baden-Württemberg, Mecklenburg-Vorpommern, Schleswig-Holstein, Thüringen), zusätzlich deren Nachweis.
 6. „zulässig (Regelbetrieb)“ verlangt den vollständigen Nachweis der örtlichen Rechtsgrundlage, ebenso
    „ungeklärt“. Wo das Land einen Beschluss des Gremiums verlangt (Hamburg, Berlin), ist die Begründung Pflicht.
 7. Fraktionen und Verwaltungseinheiten unterliegen nicht den Sitzungsregeln der Kommunalverfassung.
+
+Beim Bearbeiten einer gespeicherten Sitzung prüft das Formular nur, wenn sich Format, Begründung oder die
+beteiligten Gremien ändern; so bleibt eine Sitzung auch nach einem Wechsel des Landesprofils absag- und
+bearbeitbar.
 
 Wahlen, geheime Abstimmungen, konstituierende Sitzungen und Satzungsbeschlüsse betreffen einzelne
 Tagesordnungspunkte bzw. Teilnehmende. Das Landesprofil hält sie fest; durchgesetzt werden sie mit der

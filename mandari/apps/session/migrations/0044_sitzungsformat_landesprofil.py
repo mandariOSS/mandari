@@ -164,6 +164,14 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
+                    "emergency_needs_local_basis",
+                    models.BooleanField(
+                        default=False,
+                        help_text="Auch Sitzungen in einer Notlage setzen eine Regelung in Hauptsatzung bzw. Geschäftsordnung voraus",
+                        verbose_name="Notlage nur mit örtlicher Rechtsgrundlage",
+                    ),
+                ),
+                (
                     "approved_systems_required",
                     models.BooleanField(
                         default=False,
@@ -302,10 +310,11 @@ class Migration(migrations.Migration):
                     ("main", "Hauptausschuss"),
                     ("finance", "Finanzausschuss"),
                     ("audit", "Rechnungsprüfungsausschuss"),
+                    ("ordinary", "Anderer Ausschuss (keine besondere Art)"),
                 ],
                 db_default="",
                 default="",
-                help_text="Nur für Ausschüsse mit besonderen Regeln im Kommunalrecht (Sitzungsformat)",
+                help_text="Für Sitzungsformate: Haupt-, Finanz- und Rechnungsprüfungsausschuss haben im Kommunalrecht teils besondere Regeln",
                 max_length=20,
                 verbose_name="Gesetzliche Ausschussart",
             ),

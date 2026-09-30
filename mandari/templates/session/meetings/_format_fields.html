@@ -7,6 +7,12 @@
         in Ausschüssen {{ state_profile.get_hybrid_committees_display }}; digital im Rat {{ state_profile.get_digital_council_display }}.
         {% if session_tenant.hybrid_basis_documented %}Örtliche Rechtsgrundlage: {{ session_tenant.hybrid_basis_label }}.{% endif %}
     </p>
+    {% if state_profile.excluded_committee_kinds %}
+    <p class="text-sm text-amber-700 dark:text-amber-400">
+        Für {{ state_profile.excluded_committee_kind_labels|join:", " }} gilt: {{ state_profile.get_excluded_committee_rule_display }}.
+        mandari erkennt sie an der gesetzlichen Ausschussart des Gremiums; bitte vor einer hybriden oder digitalen Sitzung prüfen, ob sie hinterlegt ist.
+    </p>
+    {% endif %}
     {% else %}
     <c-ui.alert variant="info" icon="scale">
         Hybride und digitale Sitzungen sind erst möglich, wenn der Mandant ein Landesprofil gewählt hat{% if can_manage_settings %} –

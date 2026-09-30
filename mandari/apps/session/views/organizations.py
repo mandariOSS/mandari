@@ -181,10 +181,23 @@ class OrganizationFormMixin:
             parent_qs = parent_qs.exclude(pk=obj.pk)
         form.fields["parent"].queryset = parent_qs
         form.fields["committee_kind"].choices = [
-            ("", "Keine besondere Art"),
+            ("", "Nicht eingeordnet"),
             *SessionOrganization.COMMITTEE_KIND_CHOICES,
         ]
         return form
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Hinweis nach dem Namen, solange keine Ausschussart gesetzt ist (Sitzungsformate, Issue #138)
+        obj = getattr(self, "object", None)
+        if obj is not None and not obj.committee_kind:
+            from ..services import meeting_format_service
+
+            suspected = meeting_format_service.suspected_committee_kinds(obj)
+            if suspected:
+                labels = meeting_format_service.committee_kind_labels(suspected)
+                context["committee_kind_hint"] = meeting_format_service.join_labels(labels, "oder")
+        return context
 
     def get_success_url(self):
         return reverse(

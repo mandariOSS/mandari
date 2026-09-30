@@ -77,6 +77,8 @@
     </c-ui.card>
     {% endif %}
 
+    {% if committee_kinds %}{% include "session/settings/_committee_kinds.html" %}{% endif %}
+
     <c-ui.alert variant="warning" icon="scale">
         Keine Rechtsberatung. Die Landesprofile geben den recherchierten Stand wieder; „ungeklärt“ heißt, dass die Recherche keine
         gesicherte Aussage ergeben hat. Maßgeblich sind der amtliche Gesetzestext, Ihre Hauptsatzung und Geschäftsordnung.

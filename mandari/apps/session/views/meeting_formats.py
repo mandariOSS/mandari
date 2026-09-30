@@ -20,6 +20,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionStateProfile, SessionTenant
 from ..permissions import SessionViewMixin
+from ..services import meeting_format_service
 
 _log_event = cast(Any, audit).log_event
 
@@ -86,6 +87,9 @@ class MeetingFormatSettingsView(SessionViewMixin, TemplateView):
         context: dict[str, Any] = cast(Any, super()).get_context_data(**kwargs)
         context.setdefault("form", MeetingFormatSettingsForm(instance=self.tenant))
         context["profile"] = self.tenant.state_profile
+        # Ausgenommene Ausschussarten (z. B. NRW): Welche Gremien sind eingeordnet, welche nicht?
+        context["committee_kinds"] = meeting_format_service.committee_kind_overview(self.tenant)
+        context["can_manage_organizations"] = cast(Any, self).has_permission("manage_organizations")
         return context
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:

@@ -67,14 +67,25 @@ MEETING_FORM_FIELDS = [
     "invitation_text",
 ]
 
+#: Felder, von denen die Zulässigkeit des Sitzungsformats abhängt
+FORMAT_RELEVANT_FIELDS = frozenset({"format", "format_reason", "organization", "joint_organizations"})
+
+
+def _format_warnings(request, form) -> None:
+    """Hinweise der Formatprüfung (z. B. nicht eingeordneter Ausschuss) nach dem Speichern anzeigen."""
+    for warning in getattr(form.format_check, "warnings", None) or []:
+        messages.warning(request, warning)
+
 
 class MeetingForm(forms.ModelForm):
     """
     Sitzungsformular mit Sitzungsformat (Issue #138).
 
     Das Format wird gegen das Landesprofil des Mandanten geprüft (meeting_format_service.check), bei
-    gemeinsamen Sitzungen für alle beteiligten Gremien. Der Zugangsweg für Zugeschaltete wird nur
-    verschlüsselt gespeichert und bei Präsenzsitzungen verworfen.
+    gemeinsamen Sitzungen für alle beteiligten Gremien. Beim Bearbeiten nur, wenn sich Format, Begründung
+    oder Gremien ändern: Eine gespeicherte Sitzung bleibt so absag- und bearbeitbar, auch wenn sich das
+    Landesprofil inzwischen geändert hat. Der Zugangsweg für Zugeschaltete
+    wird nur verschlüsselt gespeichert und bei Präsenzsitzungen verworfen.
     """
 
     remote_access = forms.CharField(
@@ -107,7 +118,8 @@ class MeetingForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         lead = cleaned.get("organization")
-        if lead is not None:
+        relevant = self.instance._state.adding or bool(FORMAT_RELEVANT_FIELDS.intersection(self.changed_data))
+        if lead is not None and relevant:
             organizations = [lead, *(org for org in cleaned.get("joint_organizations") or [] if org != lead)]
             self.format_check = meeting_format_service.check(
                 self.tenant,
@@ -352,6 +364,7 @@ class MeetingCreateView(MeetingFormMixin, SessionViewMixin, CreateView):
             )
 
         messages.success(self.request, "Sitzung wurde erstellt.")
+        _format_warnings(self.request, form)
         response = super().form_valid(form)
 
         # Standard-TOPs des Gremiums automatisch übernehmen (Issue #85)
@@ -395,6 +408,7 @@ class MeetingUpdateView(MeetingFormMixin, SessionViewMixin, UpdateView):
         if not _joint_valid(form):
             return self.form_invalid(form)
         messages.success(self.request, "Sitzung wurde aktualisiert.")
+        _format_warnings(self.request, form)
         return super().form_valid(form)
 
     def get_success_url(self):

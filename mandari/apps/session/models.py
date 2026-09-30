@@ -139,6 +139,11 @@ class SessionStateProfile(models.Model):
         verbose_name="Regel für ausgenommene Ausschüsse",
         help_text="z. B. NRW: Hauptausschuss nur in Notlagen hybrid (§ 47a statt § 58a GO NRW)",
     )
+    emergency_needs_local_basis = models.BooleanField(
+        default=False,
+        verbose_name="Notlage nur mit örtlicher Rechtsgrundlage",
+        help_text="Auch Sitzungen in einer Notlage setzen eine Regelung in Hauptsatzung bzw. Geschäftsordnung voraus",
+    )
     approved_systems_required = models.BooleanField(
         default=False, verbose_name="Nur zugelassene Konferenz- und Abstimmungssysteme"
     )
@@ -1220,13 +1225,18 @@ class SessionOrganization(models.Model):
     )
     # Gesetzlich besonders geregelte Ausschüsse (Issue #138): Landesprofile nehmen sie teils von hybriden
     # Sitzungen aus, z. B. NRW Haupt-, Finanz- und Rechnungsprüfungsausschuss (§ 58a i. V. m. § 57 Abs. 2 GO NRW).
+    # Leer heißt „nicht eingeordnet“; „anderer Ausschuss“ ist die geprüfte Aussage, dass keine besondere
+    # Art zutrifft. Profile mit ausgenommenen Ausschussarten verlangen die Einordnung, bevor ein Ausschuss
+    # hybrid oder digital tagt, dessen Name auf eine dieser Arten hindeutet (meeting_format_service).
     COMMITTEE_KIND_MAIN = "main"
     COMMITTEE_KIND_FINANCE = "finance"
     COMMITTEE_KIND_AUDIT = "audit"
+    COMMITTEE_KIND_ORDINARY = "ordinary"
     COMMITTEE_KIND_CHOICES = [
         (COMMITTEE_KIND_MAIN, "Hauptausschuss"),
         (COMMITTEE_KIND_FINANCE, "Finanzausschuss"),
         (COMMITTEE_KIND_AUDIT, "Rechnungsprüfungsausschuss"),
+        (COMMITTEE_KIND_ORDINARY, "Anderer Ausschuss (keine besondere Art)"),
     ]
     committee_kind = models.CharField(
         max_length=20,
@@ -1235,7 +1245,8 @@ class SessionOrganization(models.Model):
         default="",
         db_default="",
         verbose_name="Gesetzliche Ausschussart",
-        help_text="Nur für Ausschüsse mit besonderen Regeln im Kommunalrecht (Sitzungsformat)",
+        help_text="Für Sitzungsformate: Haupt-, Finanz- und Rechnungsprüfungsausschuss haben im Kommunalrecht "
+        "teils besondere Regeln",
     )
 
     # Hierarchy
