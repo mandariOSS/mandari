@@ -22,8 +22,8 @@ zum Projekt passt.
 
 ## Entwicklungsumgebung
 
-Voraussetzungen: Python 3.12 oder neuer, Node.js 20, Docker (für PostgreSQL, Redis und
-Elasticsearch), [uv](https://github.com/astral-sh/uv).
+Voraussetzungen: Python 3.12 oder neuer, Node.js 22 oder neuer (CI und Image bauen mit 26), Docker
+(für PostgreSQL, Redis und Elasticsearch), [uv](https://github.com/astral-sh/uv).
 
 ```bash
 git clone https://github.com/mandariOSS/mandari.git
