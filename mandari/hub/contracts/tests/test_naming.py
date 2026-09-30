@@ -15,6 +15,7 @@ EREIGNISSE = [
     "ris.agendaitem.changed",
     "ris.paper.created",
     "ris.paper.released",
+    "ris.paper.changed",
     "ris.consultation.changed",
     "ris.file.changed",
     "ris.file.text_extracted",

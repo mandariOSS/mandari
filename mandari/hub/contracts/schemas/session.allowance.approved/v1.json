@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:session.allowance.approved:v1",
+  "title": "Sitzungsgeld genehmigt",
+  "description": "Ein Sitzungsgeld oder eine Monatspauschale wurde genehmigt. Aggregat: Allowance. Beträge und Bankdaten stehen nie im Ereignis.",
+  "x-kind": "event",
+  "x-owner": "apps.session",
+  "x-visibility": "personenbezogen",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "allowance",
+    "person",
+    "kind"
+  ],
+  "properties": {
+    "allowance": {
+      "description": "Kennung der Abrechnungsposition.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "person": {
+      "description": "Empfangende Person.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "description": "meeting (Sitzungsgeld je Sitzung) oder monthly (Monatspauschale).",
+      "type": "string",
+      "enum": [
+        "meeting",
+        "monthly"
+      ]
+    },
+    "meeting": {
+      "description": "Sitzung (bei kind meeting).",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "allowance": "a9b8c7d6-e5f4-4a3b-9c2d-1e0f9a8b7c6d",
+      "person": "8e7d6c5b-4a39-4281-9f0e-1d2c3b4a5968",
+      "kind": "meeting",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
+    },
+    {
+      "allowance": "a9b8c7d6-e5f4-4a3b-9c2d-1e0f9a8b7c6d",
+      "person": "8e7d6c5b-4a39-4281-9f0e-1d2c3b4a5968",
+      "kind": "monthly"
+    }
+  ]
+}

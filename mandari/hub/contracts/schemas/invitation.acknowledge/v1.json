@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:command:invitation.acknowledge:v1",
+  "title": "Empfang einer Ladung bestätigen",
+  "description": "Eine geladene Person bestätigt den Empfang einer Ladung; bloßes Öffnen zählt nicht. Handler: apps.session.",
+  "x-kind": "command",
+  "x-owner": "apps.session",
+  "x-visibility": "personenbezogen",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recipient"
+  ],
+  "properties": {
+    "recipient": {
+      "description": "Kennung des Ladungsempfängers (aus dem Versand).",
+      "type": "string",
+      "format": "uuid"
+    },
+    "meeting": {
+      "description": "Sitzung der Ladung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": {
+      "description": "Weg der Bestätigung.",
+      "type": "string",
+      "enum": [
+        "link",
+        "portal",
+        "staff"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "recipient": "e5f6a7b8-c9d0-4e1f-a2b3-c4d5e6f7a8b9",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "source": "link"
+    },
+    {
+      "recipient": "e5f6a7b8-c9d0-4e1f-a2b3-c4d5e6f7a8b9"
+    }
+  ]
+}

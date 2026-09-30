@@ -20,8 +20,8 @@ versionierte und automatisch geprüfte Verträge.
 
 - **Namen:** `<bereich>.<objekt>.<ereignis>`, Kleinbuchstaben, Ereignis in der Vergangenheitsform,
   z. B. `ris.paper.released`, `submission.status_changed`. Befehle im Imperativ, z. B.
-  `submission.submit`. Bereiche: `ris`, `submission`, `attendance`, `session`, `work`, `portal`,
-  `core`.
+  `submission.submit`. Bereiche: `ris`, `submission`, `attendance`, `invitation`, `session`, `work`,
+  `portal`, `core` (`invitation` nachgetragen, siehe unten).
 - **Öffentliche Sprache:** `ris.*` spricht das kanonische Modell
   ([Kanonisches Modell](20260929-kanonisches-modell.md)). `session.*`, `work.*` und `portal.*`
   sind intern und gelangen nie in öffentliche Schnittstellen.
@@ -89,6 +89,31 @@ In der CI, blockierend:
    Empfängertests verarbeiten die Beispiele (Vertragstests).
 5. `publish()`-Aufrufe liegen im Paket aus `x-owner`.
 6. Schemas der Klassen `personenbezogen` und `nichtoeffentlich` enthalten keine Freitextfelder.
+
+## Nachtrag zur Umsetzung (#517, #518)
+
+Die Entscheidung bleibt unverändert; die Umsetzung präzisiert drei Punkte.
+
+- **Bereich `invitation`.** Die Bereichsliste oben nennt ihn nicht, der Startumfang der Befehle
+  ([A6](20260929-befehle-synchron.md)) braucht ihn für `invitation.acknowledge`. Er gehört zu den
+  erlaubten Bereichen.
+- **Eigentümer der `ris.*`-Verträge ist die Drehscheibe (`hub.ris`).** `ris.*` spricht das
+  kanonische Modell, und dieselben Typen entstehen aus zwei Quellen: aus Session für eigene
+  Mandanten und aus dem Ingestor für fremde RIS. Session veröffentlicht sie über die Abbildung in
+  `hub/ris/` ([A7](20260929-kanonisches-modell.md)), nicht mit eigenem `publish()`.
+  `submission.*`, `attendance.*`, `invitation.*` und `session.*` gehören `apps.session`, `work.*`
+  gehört `apps.work`, `core.*` dem jeweiligen Plattformmodul.
+- **Inhaltsfelder in Befehlen.** Ein Befehl bittet den Eigentümer, Daten zu speichern; manche davon
+  sind Inhalte (Antragstext, Grund einer Absage) und lassen sich nicht als Kennung ausdrücken. Solche
+  Felder tragen im Schema `"x-content": true` und sind vom Freitextverbot ausgenommen, jede
+  Zeichenkette darin braucht `maxLength`. Ereignisse haben nie Inhaltsfelder. Befehle gehen nur an
+  den Eigentümer; der Befehlsweg gibt ihren Inhalt weder in Logs noch in Fehlermeldungen oder
+  Ereignisse weiter, der Idempotenzspeicher hält nur einen Hash. Die Liste der Inhaltsfelder steht
+  als Test fest (`hub/contracts/tests/test_schemas.py`); ein neues ist eine bewusste Entscheidung.
+
+Ein Muster (`pattern`) zählt nur als Kennung, wenn es vorn und hinten verankert ist und keinen
+Leerraum zulässt. JSON Schema wendet `pattern` als Suche an; `^[A-Z]{2}` ließe sonst beliebigen
+Text nach zwei Großbuchstaben zu (`hub/contracts/patterns.py`).
 
 ## Bezug
 

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:attendance.response_recorded:v1",
+  "title": "Zu- oder Absage erfasst",
+  "description": "Eine geladene Person hat zu- oder abgesagt, über den Rückmeldelink, das Portal oder den Sitzungsdienst. Aggregat: Meeting. Der Grund einer Absage steht nie im Ereignis.",
+  "x-kind": "event",
+  "x-owner": "apps.session",
+  "x-visibility": "personenbezogen",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meeting",
+    "person",
+    "response"
+  ],
+  "properties": {
+    "meeting": {
+      "description": "Sitzung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "person": {
+      "description": "Geladene Person.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "response": {
+      "description": "confirmed (Zusage) oder declined (Absage).",
+      "type": "string",
+      "enum": [
+        "confirmed",
+        "declined"
+      ]
+    },
+    "substitute_requested": {
+      "description": "Bei einer Absage: Vertretung erbeten.",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "Weg der Rückmeldung.",
+      "type": "string",
+      "enum": [
+        "link",
+        "portal",
+        "staff"
+      ]
+    },
+    "attendance": {
+      "description": "Kennung des Anwesenheitseintrags.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "person": "8e7d6c5b-4a39-4281-9f0e-1d2c3b4a5968",
+      "response": "confirmed",
+      "source": "link"
+    },
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "person": "8e7d6c5b-4a39-4281-9f0e-1d2c3b4a5968",
+      "response": "declined",
+      "substitute_requested": true,
+      "attendance": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e"
+    }
+  ]
+}

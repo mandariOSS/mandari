@@ -15,11 +15,18 @@ Jedes Schema
 Interne Bereiche (``session``, ``work``, ``portal``) gehören ihrem Fachmodul und sind nie
 ``oeffentlich``; ``core`` gehört der Plattform. Schemas der Klassen ``nichtoeffentlich`` und
 ``personenbezogen`` enthalten keine Freitextfelder: Jede Zeichenkette ist Kennung, Code oder
-Feldname (``enum``/``const``, Format wie ``uuid`` oder ein Muster ohne Leerzeichen), und Objekte und
-Listen lassen keine undeklarierten Werte zu. Auch die Feldnamen eines Objekts sind kein Freitext:
-Frei wählbare Schlüssel (``additionalProperties`` als Schema, ``patternProperties`` mit einem Muster,
-das Leerzeichen zulässt) brauchen ``propertyNames`` mit ``enum``/``const``, Kennungsformat oder einem
-Muster ohne Leerzeichen.
+Feldname (``enum``/``const``, Format wie ``uuid`` oder ein verankertes Muster ohne Leerraum, siehe
+``patterns.py``), und Objekte und Listen lassen keine undeklarierten Werte zu. Auch die Feldnamen
+eines Objekts sind kein Freitext: Frei wählbare Schlüssel (``additionalProperties`` als Schema,
+``patternProperties`` mit einem Muster, das Leerraum zulässt) brauchen ``propertyNames`` mit
+``enum``/``const``, Kennungsformat oder einem verankerten Muster ohne Leerraum.
+
+**Inhaltsfelder in Befehlen:** Ein Befehl bittet den Eigentümer, Daten zu speichern; manche davon
+sind Inhalte (Antragstext, Grund einer Absage). Solche Felder tragen ``"x-content": true`` und sind
+vom Freitextverbot ausgenommen, brauchen aber für jede Zeichenkette ``maxLength``. Ereignisse haben
+nie Inhaltsfelder: Sie landen im Journal, im Änderungsfeed und bei Abonnenten; Inhalte holt der
+Empfänger berechtigt beim Eigentümer. Ein Befehl geht dagegen nur an den Eigentümer, und der
+Befehlsweg gibt seinen Inhalt weder in Logs noch in Fehlermeldungen oder Ereignisse weiter.
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ from typing import Any, Final
 from .envelope import RESTRICTED_VISIBILITIES, VISIBILITIES
 from .formats import IDENTIFIER_FORMATS
 from .naming import COMMAND, EVENT, INTERNAL_DOMAINS, KINDS, PLATFORM_PACKAGES, check_name, domain_of
+from .patterns import excludes_whitespace
 from .validation import SCHEMA_DIALECT, instance_problems, schema_problems, validator_for
 
 #: Pakete, die Eigentümer von Ereignissen oder Befehlen sein können (auch deren Unterpakete).
@@ -45,8 +53,8 @@ KNOWN_OWNERS: Final[tuple[str, ...]] = (
     "ingestor",
 )
 
-#: Ein Muster, auf das einer dieser Texte passt, lässt Freitext zu.
-_FREE_TEXT_PROBES: Final[tuple[str, ...]] = ("Erika Mustermann", "ein Satz mit Leerzeichen.")
+#: Kennzeichen eines Inhaltsfelds (nur in Befehlen, siehe oben).
+CONTENT_KEYWORD: Final = "x-content"
 
 _OWNER_RE = re.compile(r"^[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*$")
 
@@ -84,37 +92,86 @@ def _within(owner: str, packages: tuple[str, ...]) -> bool:
     return any(owner == package or owner.startswith(package + ".") for package in packages)
 
 
-def free_text_paths(schema: Mapping[str, Any]) -> list[str]:
-    """Stellen im Schema, an denen beliebiger Text stehen kann (JSON-Pointer mit Grund)."""
-    return list(_open_nodes(schema, "#"))
+def free_text_paths(schema: Mapping[str, Any], *, skip_content: bool = False) -> list[str]:
+    """
+    Stellen im Schema, an denen beliebiger Text stehen kann (JSON-Pointer mit Grund).
+
+    Mit ``skip_content`` bleiben Inhaltsfelder (``"x-content": true``) samt allem darunter außen vor.
+    """
+    return list(_open_nodes(schema, "#", skip_content=skip_content))
 
 
-def _open_nodes(node: object, pointer: str) -> Iterator[str]:
+def _open_nodes(node: object, pointer: str, *, skip_content: bool) -> Iterator[str]:
     if node is True:
         yield f"{pointer} (true lässt jeden Wert zu)"
         return
     if not isinstance(node, Mapping):
         return
+    if skip_content and node.get(CONTENT_KEYWORD) is True:
+        return
     reason = _node_reason(node)
     if reason:
         yield f"{pointer} ({reason})"
     for child_pointer, child in _children(node, pointer):
-        yield from _open_nodes(child, child_pointer)
+        yield from _open_nodes(child, child_pointer, skip_content=skip_content)
+
+
+def content_paths(schema: Mapping[str, Any]) -> list[str]:
+    """Stellen im Schema mit ``x-content`` (JSON-Pointer), in Dokumentreihenfolge."""
+    return [pointer for pointer, _ in _content_nodes(schema, "#")]
+
+
+def _content_nodes(node: object, pointer: str) -> Iterator[tuple[str, Mapping[str, Any]]]:
+    if not isinstance(node, Mapping):
+        return
+    if CONTENT_KEYWORD in node:
+        yield pointer, node
+    for child_pointer, child in _children(node, pointer):
+        yield from _content_nodes(child, child_pointer)
+
+
+def content_problems(schema: Mapping[str, Any], kind: object) -> list[str]:
+    """Verstöße gegen die Regeln für Inhaltsfelder: nur in Befehlen, nur an Feldern, mit Längengrenze."""
+    problems: list[str] = []
+    for pointer, node in _content_nodes(schema, "#"):
+        if kind != COMMAND:
+            problems.append(f"{pointer}: {CONTENT_KEYWORD} gibt es nur in Befehlen, Ereignisse tragen keine Inhalte")
+        elif pointer == "#":
+            problems.append(f"#: {CONTENT_KEYWORD} gilt für einzelne Felder, nicht für den ganzen Befehl")
+        elif node[CONTENT_KEYWORD] is not True:
+            problems.append(f"{pointer}: {CONTENT_KEYWORD} muss true sein")
+        else:
+            problems += [f"{path}: Inhaltsfeld ohne maxLength" for path in _unbounded_strings(node, pointer)]
+    return problems
+
+
+def _unbounded_strings(node: object, pointer: str) -> Iterator[str]:
+    """Zeichenketten ohne ``maxLength`` (Kennungen und Codes ausgenommen) in einem Teilschema."""
+    if not isinstance(node, Mapping):
+        return
+    if "string" in _types(node) and _node_reason(node) and not isinstance(node.get("maxLength"), int):
+        yield pointer
+    for child_pointer, child in _children(node, pointer):
+        yield from _unbounded_strings(child, child_pointer)
+
+
+def _types(node: Mapping[str, Any]) -> set[str]:
+    types = node.get("type")
+    return {types} if isinstance(types, str) else set(types) if isinstance(types, list) else set()
 
 
 def _node_reason(node: Mapping[str, Any]) -> str:
     """Grund, warum dieser Knoten Freitext zulässt; leer, wenn er es nicht tut."""
     if "const" in node or "enum" in node:
         return ""
-    types = node.get("type")
-    type_set = {types} if isinstance(types, str) else set(types) if isinstance(types, list) else set()
+    type_set = _types(node)
     if not type_set:
         # Ohne Typ muss der Knoten über einen Verweis oder eine Kombination beschränkt sein.
         if any(key in node for key in ("$ref", "allOf", "anyOf", "oneOf")):
             return ""
         return "ohne Typ ist jeder Wert erlaubt"
     if "string" in type_set and not _string_restricted(node):
-        return "Zeichenkette ohne enum, Kennungsformat oder Muster ohne Leerzeichen"
+        return "Zeichenkette ohne enum, Kennungsformat oder verankertes Muster ohne Leerraum"
     if "object" in type_set:
         reason = _object_reason(node)
         if reason:
@@ -131,14 +188,8 @@ def _string_restricted(node: Mapping[str, Any]) -> bool:
 
 
 def _pattern_restricted(pattern: object) -> bool:
-    """Das Muster lässt keinen Text mit Leerzeichen zu."""
-    if not isinstance(pattern, str):
-        return False
-    try:
-        compiled = re.compile(pattern)
-    except re.error:
-        return False
-    return not any(compiled.search(probe) for probe in _FREE_TEXT_PROBES)
+    """Das Muster ist vorn und hinten verankert und lässt keinen Leerraum zu (``patterns.py``)."""
+    return excludes_whitespace(pattern)
 
 
 def _object_reason(node: Mapping[str, Any]) -> str:
@@ -159,7 +210,7 @@ def _object_reason(node: Mapping[str, Any]) -> str:
         and any(not _pattern_restricted(pattern) for pattern in patterns)
         and not _names_restricted(node)
     ):
-        return "Objekt mit frei wählbaren Feldnamen (patternProperties lässt Leerzeichen zu)"
+        return "Objekt mit frei wählbaren Feldnamen (Muster in patternProperties nicht verankert oder mit Leerraum)"
     return ""
 
 
@@ -226,9 +277,11 @@ def document_problems(name: str, version: int, document: object) -> list[str]:
     domain = domain_of(name)
     if domain in INTERNAL_DOMAINS and "oeffentlich" in visibility:
         problems.append(f"Bereich „{domain}“ ist intern und darf nicht oeffentlich sein")
+    problems += content_problems(document, kind)
     restricted = sorted(visibility & RESTRICTED_VISIBILITIES)
     if restricted:
-        problems += [f"Freitext bei Sichtbarkeit {', '.join(restricted)}: {path}" for path in free_text_paths(document)]
+        open_paths = free_text_paths(document, skip_content=kind == COMMAND)
+        problems += [f"Freitext bei Sichtbarkeit {', '.join(restricted)}: {path}" for path in open_paths]
 
     examples = document.get("examples")
     if not isinstance(examples, list) or not examples:

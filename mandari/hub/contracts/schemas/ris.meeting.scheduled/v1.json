@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.meeting.scheduled:v1",
+  "title": "Sitzung angesetzt",
+  "description": "Eine Sitzung wurde angesetzt: in Session terminiert oder beim Abgleich eines fremden RIS neu erkannt. Aggregat: Meeting. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": [
+    "oeffentlich",
+    "nichtoeffentlich"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meeting"
+  ],
+  "properties": {
+    "meeting": {
+      "description": "Kanonische Kennung der Sitzung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "organizations": {
+      "description": "Gremien, die die Sitzung abhalten (kanonische Kennungen).",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "uniqueItems": true,
+      "maxItems": 50
+    }
+  },
+  "examples": [
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "organizations": [
+        "1b4e28ba-2fa1-51d2-883f-0016d3cca427"
+      ]
+    },
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
+    }
+  ]
+}

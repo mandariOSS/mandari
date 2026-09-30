@@ -281,6 +281,11 @@ def test_kennungen_und_codes_sind_erlaubt(tmp_path: Path, feld: dict[str, Any]) 
         ({"type": "string", "format": "email"}, "#/properties/feld (Zeichenkette"),
         ({"type": "string", "pattern": "^.*$"}, "#/properties/feld (Zeichenkette"),
         ({"type": "string", "pattern": "[a-z]"}, "#/properties/feld (Zeichenkette"),
+        # Nicht (ganz) verankerte Muster und Leerzeichen in Klassen (Issue #518)
+        ({"type": "string", "pattern": "^[A-Z]{2}"}, "#/properties/feld (Zeichenkette"),
+        ({"type": "string", "pattern": "[0-9]{3}"}, "#/properties/feld (Zeichenkette"),
+        ({"type": "string", "pattern": "^[a-z ]+$"}, "#/properties/feld (Zeichenkette"),
+        ({"type": "string", "pattern": "(?m)^[a-z]+$"}, "#/properties/feld (Zeichenkette"),
         ({}, "#/properties/feld (ohne Typ"),
         (True, "#/properties/feld (true"),
         ({"type": "array"}, "#/properties/feld (Liste"),
@@ -294,6 +299,14 @@ def test_kennungen_und_codes_sind_erlaubt(tmp_path: Path, feld: dict[str, Any]) 
         ({"type": "object", "unevaluatedProperties": {"type": "integer"}}, "#/properties/feld (Objekt mit frei"),
         (
             {"type": "object", "additionalProperties": False, "patternProperties": {"^.+$": {"type": "integer"}}},
+            "#/properties/feld (Objekt mit frei",
+        ),
+        (
+            {"type": "object", "additionalProperties": False, "patternProperties": {"^[a-z]": {"type": "integer"}}},
+            "#/properties/feld (Objekt mit frei",
+        ),
+        (
+            {"type": "object", "propertyNames": {"pattern": "^[a-z]"}, "additionalProperties": {"type": "integer"}},
             "#/properties/feld (Objekt mit frei",
         ),
         ({"anyOf": [{"type": "string"}, {"type": "null"}]}, "#/properties/feld/anyOf/0 (Zeichenkette"),
@@ -323,6 +336,82 @@ def test_offenes_objekt_ist_bei_nichtoeffentlich_verboten(tmp_path: Path) -> Non
     assert probleme == (
         "submission.submit v1: Freitext bei Sichtbarkeit nichtoeffentlich: # (Objekt ohne additionalProperties: false)",
     )
+
+
+# --- Inhaltsfelder (x-content) nur in Befehlen ----------------------------------------------------
+
+
+def _befehl_mit_inhalt(feld: object, sichtbarkeit: str = "nichtoeffentlich") -> dict[str, Any]:
+    schema = befehl_schema(**{"x-visibility": sichtbarkeit})
+    schema["properties"]["titel"] = feld
+    return schema
+
+
+@pytest.mark.parametrize("sichtbarkeit", ["nichtoeffentlich", "personenbezogen"])
+def test_inhaltsfeld_im_befehl_ist_vom_freitextverbot_ausgenommen(tmp_path: Path, sichtbarkeit: str) -> None:
+    schema = _befehl_mit_inhalt({"x-content": True, "type": "string", "maxLength": 500}, sichtbarkeit)
+    schema["properties"]["mitzeichnende"] = {
+        "x-content": True,
+        "type": "array",
+        "items": {"type": "string", "maxLength": 200},
+        "maxItems": 10,
+    }
+    schema["examples"] = [{"document": PAPER_ID, "titel": "Mehr Bänke im Park", "mitzeichnende": ["Max Muster"]}]
+    ablegen(tmp_path, "submission.submit", 1, schema)
+    register = load_registry(tmp_path)
+    register.validate_command("submission.submit", 1, {"document": PAPER_ID, "titel": "Ein Satz mit Leerzeichen."})
+
+
+def test_befehl_ohne_kennzeichen_bleibt_freitextfrei(tmp_path: Path) -> None:
+    probleme = _eines(tmp_path, _befehl_mit_inhalt({"type": "string", "maxLength": 500}), name="submission.submit")
+    assert probleme == (
+        "submission.submit v1: Freitext bei Sichtbarkeit nichtoeffentlich: #/properties/titel (Zeichenkette ohne "
+        "enum, Kennungsformat oder verankertes Muster ohne Leerraum)",
+    )
+
+
+@pytest.mark.parametrize(
+    ("feld", "erwartet"),
+    [
+        ({"x-content": True, "type": "string"}, "#/properties/titel: Inhaltsfeld ohne maxLength"),
+        (
+            {"x-content": True, "type": "array", "items": {"type": "string"}},
+            "#/properties/titel/items: Inhaltsfeld ohne maxLength",
+        ),
+        (
+            {
+                "x-content": True,
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {"name": {"type": "string"}, "id": {"type": "string", "format": "uuid"}},
+            },
+            "#/properties/titel/properties/name: Inhaltsfeld ohne maxLength",
+        ),
+        ({"x-content": "ja", "type": "string", "maxLength": 5}, "#/properties/titel: x-content muss true sein"),
+    ],
+)
+def test_regeln_fuer_inhaltsfelder(tmp_path: Path, feld: dict[str, Any], erwartet: str) -> None:
+    schema = _befehl_mit_inhalt(feld, "intern")
+    schema["examples"] = [{"document": PAPER_ID}]
+    assert _eines(tmp_path, schema, name="submission.submit") == (f"submission.submit v1: {erwartet}",)
+
+
+def test_inhaltsfeld_gilt_nicht_fuer_den_ganzen_befehl(tmp_path: Path) -> None:
+    schema = befehl_schema(**{"x-content": True})
+    probleme = _eines(tmp_path, schema, name="submission.submit")
+    assert "submission.submit v1: #: x-content gilt für einzelne Felder, nicht für den ganzen Befehl" in probleme
+
+
+@pytest.mark.parametrize("sichtbarkeit", ["oeffentlich", "intern", "personenbezogen"])
+def test_ereignisse_haben_keine_inhaltsfelder(tmp_path: Path, sichtbarkeit: str) -> None:
+    schema = _mit_feld({"x-content": True, "type": "string", "maxLength": 50}, sichtbarkeit, "Dienstreise")
+    probleme = _eines(tmp_path, schema, name="attendance.response_recorded")
+    assert (
+        "attendance.response_recorded v1: #/properties/feld: x-content gibt es nur in Befehlen, "
+        "Ereignisse tragen keine Inhalte" in probleme
+    )
+    if sichtbarkeit == "personenbezogen":
+        assert any("Freitext bei Sichtbarkeit personenbezogen: #/properties/feld" in p for p in probleme)
 
 
 def test_freitext_ist_bei_oeffentlichen_und_internen_daten_erlaubt(tmp_path: Path) -> None:

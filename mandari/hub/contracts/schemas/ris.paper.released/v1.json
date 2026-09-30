@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.paper.released:v1",
+  "title": "Vorlage freigegeben",
+  "description": "Eine Vorlage wurde freigegeben bzw. veröffentlicht, in Session oder in einem fremden RIS. Aggregat: Paper. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": [
+    "oeffentlich",
+    "nichtoeffentlich"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "paper"
+  ],
+  "properties": {
+    "paper": {
+      "description": "Kanonische Kennung der Vorlage.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "submission": {
+      "description": "Eingereichter Antrag, aus dem die Vorlage entstanden ist.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"
+    },
+    {
+      "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c",
+      "submission": "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+    }
+  ]
+}
