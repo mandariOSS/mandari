@@ -35,7 +35,7 @@ dependencies = [
     # [asyncio] zieht greenlet ausdrücklich: Ab SQLAlchemy 2.1 kommt es nicht mehr von selbst mit, und ohne
     # greenlet scheitert der Abgleich. Obergrenze: Die Nebenversion folgt dem Ingestor und wird von Hand gehoben
     # (Dependabot: `ignore`), nachdem sie dort geprüft ist.
-    "sqlalchemy[asyncio]>=2.0.36,<2.1",
+    "sqlalchemy[asyncio]>=2.0.36,<2.2",
     "asyncpg>=0.30.0",
     "pydantic-settings>=2.6.0",
     "rich>=13.9.0",
@@ -49,7 +49,7 @@ dependencies = [
     "tzdata>=2026.1",
 
     # Search: Client-Hauptversion = Server-Hauptversion (docker-compose.yml), deshalb die Obergrenze
-    "elasticsearch>=8.12.0,<9",
+    "elasticsearch>=8.12.0,<10",
 
     # AI / HTTP
     "httpx>=0.28.0",
@@ -119,7 +119,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "factory-boy>=3.3.0",
     "pytest-playwright>=0.7.0",  # E2E (tests_e2e/), Browser: playwright install chromium
-    "ruff==0.14.6",  # wie CI und pre-commit (Format weicht zwischen Versionen ab)
+    "ruff==0.16.9",  # wie CI und pre-commit (Format weicht zwischen Versionen ab)
     "import-linter==2.15",  # Schichtregeln: lint-imports, wie CI (Verträge unten in [tool.importlinter])
     "mypy==2.3.1",  # wie CI: Ergebnisse unterscheiden sich zwischen mypy-Versionen
     "django-stubs[compatible-mypy]==6.1.1",
