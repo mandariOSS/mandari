@@ -56,7 +56,7 @@ class SettingsView(SessionViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         from ..models import SessionTenant
-        from ..services import portal_publication
+        from ..services import oparl_access, portal_publication
 
         context = super().get_context_data(**kwargs)
         context["reminder_config"] = self.session_tenant.reminder_config()
@@ -64,6 +64,7 @@ class SettingsView(SessionViewMixin, TemplateView):
         context["rsvp_audience_choices"] = SessionTenant.RSVP_AUDIENCE_CHOICES
         # Vor Issue #618 beendet: Bestand ohne Hinweis öffentlich, Auswahl anbieten
         context["portal_legacy_stock"] = portal_publication.legacy_stock(self.session_tenant)
+        context["oparl_licenses"] = oparl_access.LICENSES
         return context
 
 
@@ -285,6 +286,29 @@ class OParlAccessView(SessionViewMixin, View):
             messages.success(request, "Freischaltung zurückgenommen – die OParl-Schnittstelle antwortet mit 404.")
         else:
             messages.info(request, "Die OParl-Schnittstelle ist nicht freigeschaltet.")
+        return redirect("session:settings", tenant_slug=tenant_slug)
+
+
+class OParlLicenseView(SessionViewMixin, View):
+    """Lizenz der offenen Daten festlegen (OParl ``license`` an System und Body), mit Audit-Eintrag."""
+
+    permission_required = "manage_settings"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug):
+        from ..services import oparl_access
+
+        try:
+            changed = oparl_access.set_license(
+                self.session_tenant, request.POST.get("license", ""), user=self.session_user, request=request
+            )
+        except oparl_access.OParlAccessError:
+            messages.error(request, oparl_access.UNKNOWN_LICENSE)
+            return redirect("session:settings", tenant_slug=tenant_slug)
+        if changed:
+            messages.success(request, "Lizenz der offenen Daten gespeichert.")
+        else:
+            messages.info(request, "Die Lizenz der offenen Daten ist unverändert.")
         return redirect("session:settings", tenant_slug=tenant_slug)
 
 

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.meeting.invited:v1",
+  "title": "Ladung versendet",
+  "description": "Zu einer Sitzung wurde eine Ladung versandt: Erstladung, Nachtrag oder Vertretungsanfrage. Aggregat: Meeting. Empfänger und Anschreiben liest nur, wer dazu berechtigt ist, beim Eigentümer. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "nichtoeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meeting",
+    "dispatch",
+    "dispatch_type"
+  ],
+  "properties": {
+    "meeting": {
+      "description": "Kanonische Kennung der Sitzung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "dispatch": {
+      "description": "Kennung des Versandvorgangs.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "dispatch_type": {
+      "description": "Art des Versands: invitation (Ladung), supplementary (Nachtrag), substitution (Vertretungsanfrage).",
+      "type": "string",
+      "enum": [
+        "invitation",
+        "supplementary",
+        "substitution"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "dispatch": "d4c3b2a1-9f8e-4d7c-a6b5-4e3d2c1b0a9f",
+      "dispatch_type": "invitation"
+    },
+    {
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "dispatch": "d4c3b2a1-9f8e-4d7c-a6b5-4e3d2c1b0a9f",
+      "dispatch_type": "supplementary"
+    }
+  ]
+}

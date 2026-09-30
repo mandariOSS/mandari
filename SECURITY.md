@@ -2,14 +2,16 @@
 
 ## Unterstützte Versionen
 
-Sicherheitskorrekturen erscheinen für den aktuellen Stand. Wer selbst betreibt, sollte
-Aktualisierungen zeitnah einspielen (`./update.sh` beziehungsweise `helm upgrade`).
+Sicherheitskorrekturen erscheinen für das jüngste Release und sechs Monate lang für das vorherige
+MINOR-Release. Wer selbst betreibt, sollte Aktualisierungen zeitnah einspielen (`./update.sh`
+beziehungsweise `helm upgrade`).
 
 | Version | Unterstützt |
 |---------|-------------|
-| `latest` (aktueller Release) | ja |
-| `beta` | nur Vorschau, keine Zusage |
+| jüngstes Release (Image-Tag `latest` oder `v<Version>`) | ja |
+| vorheriges MINOR-Release | Sicherheitskorrekturen, sechs Monate ab Erscheinen des Nachfolgers |
 | ältere Releases | nein |
+| Entwicklungsstände (Image-Tags `dev`, `dev-<commit>`) | nur Vorschau, keine Zusage |
 
 Supportzeiträume je Version, Release-Kadenz und die Fristen für Sicherheitskorrekturen nach
 Schweregrad stehen in der [Release- und Support-Politik](docs/RELEASE_POLITIK.md).
@@ -37,14 +39,16 @@ ausgenutzte Schwachstellen gelten gesetzliche Meldefristen (siehe
 
 | Zeitpunkt | Reaktion |
 |-----------|----------|
-| 48 Stunden | Eingangsbestätigung |
+| 3 Werktage | Eingangsbestätigung |
 | 7 Tage | Erste Einschätzung mit Schweregrad (CVSS) und geplantem Vorgehen |
 | laufend | Zwischenstände bis zur Behebung |
 | nach der Behebung | Nennung in den Release Notes, sofern gewünscht |
 
-Wir bemühen uns, kritische Lücken innerhalb von 14 Tagen zu schließen, schwere innerhalb von
-30 Tagen. Nach der Veröffentlichung eines Fixes bleibt eine Frist von 90 Tagen bis zur
-vollständigen Offenlegung — kürzer, wenn eine Lücke bereits ausgenutzt wird.
+Wie schnell wir eine Lücke schließen, richtet sich nach dem Schweregrad: kritische innerhalb von
+72 Stunden, hohe innerhalb von 7 Tagen, mittlere innerhalb von 30 Tagen (siehe
+[Release- und Support-Politik, Abschnitt 4](docs/RELEASE_POLITIK.md#4-sicherheitskorrekturen-fristen)).
+Nach der Veröffentlichung eines Fixes bleibt eine Frist von 90 Tagen bis zur vollständigen
+Offenlegung — kürzer, wenn eine Lücke bereits ausgenutzt wird.
 
 ### Was wir von Ihnen erwarten
 
@@ -97,7 +101,7 @@ verändert und unter eigenem Namen anbietet, wird selbst Hersteller.
 | Content-Security-Policy | Aktiv im Berichtsmodus mit Nonce an allen eingebetteten Skripten; die Umstellung auf Erzwingen ist in Arbeit |
 | Protokollierung | Vollständiges Audit-Log im Verwaltungs-RIS, strukturierte Logs mit Anfrage-Kennung, keine personenbezogenen Inhalte in Log-Zeilen; Container-Logs 90 Tage im systemd-Journal, Zugriffslogs 14 Tage, beides in der täglichen Sicherung ([docs/PROTOKOLLE.md](docs/PROTOKOLLE.md)) |
 | Lieferkette | Stückliste (SBOM, CycloneDX) für Anwendung, Ingestor und Frontend als Anhang jedes Releases; Nachweis-Fahrplan in [docs/SICHERHEITSNACHWEISE.md](docs/SICHERHEITSNACHWEISE.md). Alle Abhängigkeiten in Lockfiles; `pip-audit` (Django-Anwendung **und** Ingestor) sowie `npm audit` blockieren jede Änderung, CycloneDX-Stückliste je Release, Dependabot, REUSE-Lizenzinventar |
-| Prüfungen | Rund 1.500 automatisierte Tests je Änderung, darunter Sicherheitsmatrizen für Mandantentrennung, Gastzugänge und die Trennung öffentlicher von nicht-öffentlichen Daten |
+| Prüfungen | Über 5.000 automatisierte Tests je Änderung, darunter Sicherheitsmatrizen für Mandantentrennung, Gastzugänge und die Trennung öffentlicher von nicht-öffentlichen Daten |
 
 ## Für Betreiber
 

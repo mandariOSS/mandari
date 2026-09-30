@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.file.text_extracted:v1",
+  "title": "Text einer Anlage erkannt",
+  "description": "Der Text einer Datei wurde extrahiert (Anreicherung, schreibt nur der Auftrag zur Texterkennung). Aggregat: File. Den Text liest der Empfänger aus dem RIS-Bestand.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "file",
+    "method"
+  ],
+  "properties": {
+    "file": {
+      "description": "Kanonische Kennung der Datei.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "method": {
+      "description": "Verfahren der Erkennung als Code, z. B. pypdf, tesseract, mistral.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "characters": {
+      "description": "Länge des erkannten Texts in Zeichen.",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "examples": [
+    {
+      "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
+      "method": "pypdf",
+      "characters": 18342
+    },
+    {
+      "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
+      "method": "tesseract"
+    }
+  ]
+}

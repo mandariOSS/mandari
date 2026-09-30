@@ -19,22 +19,22 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `WORK_SESSION_SUBMISSION.md` | [Work → Anträge digital einreichen](https://docs.mandari.de/work/antraege-einreichen/) |
 | `SESSION_BESCHLUSSKONTROLLE.md` | [Session → Beschlusskontrolle](https://docs.mandari.de/session/beschlusskontrolle/) |
 | `INSIGHT_DECISION_TRACKING.md` | [Insight → Beschlüsse verfolgen](https://docs.mandari.de/insight/beschluesse/) |
-| `INSIGHT_GEO.md` | [Insight → Nachbarschaft und Verortung](https://docs.mandari.de/insight/nachbarschaft/) (Seite folgt) |
+| `INSIGHT_GEO.md` | Insight → Nachbarschaft und Verortung (Seite folgt) |
 | `INSIGHT_QUESTIONS.md` | [Insight → Ratsfragen](https://docs.mandari.de/insight/ratsfragen/) |
 | `SESSION_REMINDERS.md` | [Session → Fristen-Erinnerungen](https://docs.mandari.de/session/fristen-erinnerungen/) |
 | `PROTOKOLLIERUNG.md` | [Datenschutz → Protokollierungskonzept](https://docs.mandari.de/datenschutz/) (Seite folgt) |
-| `SESSION_MANDANT_ANLEGEN.md` | [Session → Mandanten anlegen und Bürgerportal je Körperschaft](https://docs.mandari.de/session/mandanten/) (Seite folgt) |
-| `SESSION_VIER_AUGEN_VERTRETUNG.md` | [Session → Vier-Augen-Prinzip und Vertretungen](https://docs.mandari.de/session/vier-augen-vertretung/) (Seite folgt) |
-| `SESSION_LEITSTELLE.md` | [Session → Leitstelle und gemeinsame Sitzungen](https://docs.mandari.de/session/leitstelle/) (Seite folgt) |
-| `SESSION_SITZUNGSFORMAT_LANDESRECHT.md` | [Session → Sitzungsformate und Landesrecht](https://docs.mandari.de/session/sitzungsformate/) (Seite folgt) |
+| `SESSION_MANDANT_ANLEGEN.md` | Session → Mandanten anlegen und Bürgerportal je Körperschaft (Seite folgt) |
+| `SESSION_VIER_AUGEN_VERTRETUNG.md` | Session → Vier-Augen-Prinzip und Vertretungen (Seite folgt) |
+| `SESSION_LEITSTELLE.md` | Session → Leitstelle und gemeinsame Sitzungen (Seite folgt) |
+| `SESSION_SITZUNGSFORMAT_LANDESRECHT.md` | Session → Sitzungsformate und Landesrecht (Seite folgt) |
 | `FILE_CACHE.md` | [Betrieb → Dokument-Cache](https://docs.mandari.de/betrieb/dokument-cache/) |
 | `MONITORING.md` | [Betrieb → Betriebsmonitor](https://docs.mandari.de/betrieb/monitoring/) |
-| `BACKUP.md` | [Betrieb → Backups](https://docs.mandari.de/betrieb/backups/) (Seite folgt) |
+| `BACKUP.md` | [Betrieb → Updates und Backups](https://docs.mandari.de/betrieb/updates-backups/) |
 | `SCRAPER_SOURCES.md` | [Betrieb → Quellen anbinden](https://docs.mandari.de/betrieb/quellen-anbinden/) |
 | `DEMO_ENVIRONMENT.md` | [Betrieb → Demo-Umgebung](https://docs.mandari.de/betrieb/demo-umgebung/) |
 | `DEMO_PRAESENTATION.md` | – (Drehbuch für Produktvorstellungen, nur intern) |
-| `ACCOUNT_SECURITY.md` | [Betrieb → Anmeldesicherheit](https://docs.mandari.de/betrieb/anmeldesicherheit/) (Seite folgt) |
-| `WORK_REGISTRATION.md` | [Work → Registrierung und Zugangs-Mails](https://docs.mandari.de/work/registrierung/) (Seite folgt) |
+| `ACCOUNT_SECURITY.md` | [Work → Konto und Sicherheit](https://docs.mandari.de/work/konto-und-sicherheit/); Betrieb → Anmeldesicherheit (Seite folgt) |
+| `WORK_REGISTRATION.md` | Work → Registrierung und Zugangs-Mails (Seite folgt) |
 | `DSGVO_TOM.md`, `DSGVO_LOESCHKONZEPT.md`, `DSGVO_AVV_MUSTER.md` | [Datenschutz](https://docs.mandari.de/datenschutz/) |
 | `SBOM.md` | [Entwicklung → Abhängigkeiten](https://docs.mandari.de/entwicklung/sbom/) |
 | `CSP.md` | – (Content-Security-Policy: Stand, Muster ohne Inline-Code, Bewertung Alpine-CSP-Build; Entwicklung) |

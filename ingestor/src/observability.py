@@ -131,6 +131,63 @@ def setup_logging(log_format: str | None = None, log_level: str | None = None) -
 
 _otel_ready = False
 
+_INSTRUMENTATIONS: tuple[tuple[str, str, str], ...] = (
+    ("httpx", "opentelemetry.instrumentation.httpx", "HTTPXClientInstrumentor"),
+    ("asyncpg", "opentelemetry.instrumentation.asyncpg", "AsyncPGInstrumentor"),
+    ("sqlalchemy", "opentelemetry.instrumentation.sqlalchemy", "SQLAlchemyInstrumentor"),
+)
+
+# Höchste SQLAlchemy-Version (Haupt-, Nebenversion), mit der die Instrumentierung hier selbst geprüft ist
+# (tests/test_observability.py gegen einen In-Memory-Exporter). opentelemetry-instrumentation-sqlalchemy
+# erklärt sich bis einschließlich 0.66b0 nur für "sqlalchemy < 2.1" zuständig: instrument() meldet dann
+# einen DependencyConflict als Fehler im Log, kehrt ohne Ausnahme zurück und instrumentiert nichts. Mit 2.1
+# arbeitet sie unverändert, deshalb entfällt ihre Versionsprüfung bis zu dieser Grenze. Für neuere
+# SQLAlchemy-Versionen gilt sie wieder – erst prüfen, dann die Grenze anheben. Sobald die Bibliothek 2.1
+# selbst freigibt, kann die Sonderbehandlung weg.
+_SQLALCHEMY_VERIFIED = (2, 1)
+
+
+def _instrument_options(name: str) -> dict[str, Any]:
+    """Zusätzliche Argumente für ``instrument()`` der genannten Bibliothek."""
+    if name != "sqlalchemy":
+        return {}
+    import sqlalchemy
+
+    try:
+        version = tuple(int(part) for part in sqlalchemy.__version__.split(".")[:2])
+    except ValueError:
+        return {}
+    return {"skip_dep_check": True} if version <= _SQLALCHEMY_VERIFIED else {}
+
+
+def activate_instrumentations(provider: Any) -> list[str]:
+    """
+    Bibliotheken instrumentieren; liefert die Namen, deren Instrumentierung tatsächlich aktiv ist.
+
+    ``instrument()`` kehrt auch dann ohne Ausnahme zurück, wenn die Instrumentierung die installierte
+    Version der Bibliothek ablehnt – dann entstehen keine Spans. Maßgeblich ist deshalb
+    ``is_instrumented_by_opentelemetry``, nicht der fehlerfreie Aufruf.
+    """
+    active: list[str] = []
+    for name, module_name, class_name in _INSTRUMENTATIONS:
+        try:
+            module = __import__(module_name, fromlist=[class_name])
+            instrumentor = getattr(module, class_name)()
+            instrumentor.instrument(tracer_provider=provider, **_instrument_options(name))
+        except ImportError:
+            continue
+        except Exception:  # noqa: BLE001 – fehlende Instrumentierung darf den Start nicht verhindern
+            logger.exception("OpenTelemetry-Instrumentierung fehlgeschlagen: %s", name)
+            continue
+        if getattr(instrumentor, "is_instrumented_by_opentelemetry", False):
+            active.append(name)
+        else:
+            logger.warning(
+                "OpenTelemetry-Instrumentierung nicht aktiv: %s (die installierte Version wird nicht unterstützt)",
+                name,
+            )
+    return active
+
 
 def setup_opentelemetry() -> bool:
     """Tracing aktivieren, wenn ``OTEL_EXPORTER_OTLP_ENDPOINT`` gesetzt und das SDK installiert ist."""
@@ -156,20 +213,7 @@ def setup_opentelemetry() -> bool:
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
 
-    instrumented: list[str] = []
-    for name, module_name, class_name in (
-        ("httpx", "opentelemetry.instrumentation.httpx", "HTTPXClientInstrumentor"),
-        ("asyncpg", "opentelemetry.instrumentation.asyncpg", "AsyncPGInstrumentor"),
-        ("sqlalchemy", "opentelemetry.instrumentation.sqlalchemy", "SQLAlchemyInstrumentor"),
-    ):
-        try:
-            module = __import__(module_name, fromlist=[class_name])
-            getattr(module, class_name)().instrument()
-            instrumented.append(name)
-        except ImportError:
-            continue
-        except Exception:  # noqa: BLE001 – fehlende Instrumentierung darf den Start nicht verhindern
-            logger.exception("OpenTelemetry-Instrumentierung fehlgeschlagen: %s", name)
+    instrumented = activate_instrumentations(provider)
     _otel_ready = True
     logger.info(
         "OpenTelemetry aktiv (%s): %s", mask_credentials(endpoint), ", ".join(instrumented) or "keine Instrumentierung"

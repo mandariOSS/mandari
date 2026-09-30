@@ -8,9 +8,17 @@ Session-Modellen: Jeder aktive SessionTenant erhält unter
 die Verwaltung die Schnittstelle freigeschaltet hat (Issue #319,
 ``SessionTenant.oparl_public_since``); vorher antwortet jeder Endpunkt mit 404.
 
+Dieses Modul ist die Schnittstelle: Endpunkte, Sichtbarkeit, Blättern, gelöschte Objekte. Wie ein
+Session-Objekt als OParl-Objekt aussieht, legt allein ``hub.ris.mapping.session`` fest (die eine
+Abbildung der Session-Objekte auf das kanonische Modell); ``_mapping`` reicht ihr, was sie aus Session
+braucht.
+
 - **Auflösbare JSON-Objekt-Endpunkte** für alle Objekttypen (System, Body,
   Organization, Person, Membership, Meeting, AgendaItem, Paper, File,
-  Consultation, LegislativeTerm) — IDs zeigen auf JSON, nie auf HTML.
+  Consultation, LegislativeTerm, Location) — IDs zeigen auf JSON, nie auf HTML.
+- **Sitzungsort** als eingebettetes Location-Objekt (``Meeting.location``); es gehört zur Sitzung und
+  trägt deren Kennung. Die älteren Felder ``mandari:location*`` bleiben vorerst zusätzlich erhalten.
+- **Bedingte Anfragen**: jede Antwort trägt einen ``ETag``, ``If-None-Match`` ergibt 304 (oparl_api.utils).
 - **Echte Pagination** (``links.next``, konfigurierbare Seitengröße über
   ``OPARL_API_PAGE_SIZE``) und ``modified_since``/``created_since``-Filter
   (Zeitzonen-Pflicht, naive Zeitstempel -> HTTP 400).
@@ -26,9 +34,6 @@ die Verwaltung die Schnittstelle freigeschaltet hat (Issue #319,
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
 
-from urllib.parse import urlencode
-
-from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.paginator import Paginator
 from django.db.models import Prefetch
@@ -42,15 +47,15 @@ from apps.session.models import (
 )
 from apps.session.services import file_service, meeting_format_service
 from apps.session.services.insight_service import oparl_system_url
+from hub.ris.mapping.session import SessionMapping, SessionSource
 from oparl_api.utils import (
-    OParlBadRequestError,
     error_response,
-    iso,
-    iso_date,
     json_response,
+    list_envelope,
     oparl_endpoint,
+    page_number,
+    page_size,
     parse_client_datetime,
-    schema_type,
 )
 
 
@@ -75,181 +80,6 @@ TOMBSTONE_LOOKUPS = {
 }
 
 
-def _clean(data):
-    """Entfernt leere optionale Felder (None, leere Listen/Strings)."""
-    return {k: v for k, v in data.items() if v is not None and v != [] and v != ""}
-
-
-def _as_list(value):
-    if value is None or value == "":
-        return None
-    if isinstance(value, list):
-        return value
-    return [value]
-
-
-class TenantApi:
-    """
-    URL-Bau je Mandant — alle IDs zeigen auf diese API (JSON), nie auf HTML.
-
-    Basis ist die öffentliche Adresse der Installation (``SITE_URL``), nicht der Host der Anfrage:
-    Die IDs sind die kanonischen URIs der Session-Objekte, aus denen der RIS-Bestand seine Kennungen
-    ableitet (ADR docs/adr/20260929-kanonisches-modell.md). Über jeden Host liefert die Schnittstelle
-    dieselben IDs und Links.
-    """
-
-    def __init__(self, tenant):
-        self.tenant = tenant
-        self.base = oparl_system_url(tenant)  # endet mit "/"
-
-    def system_url(self):
-        return self.base
-
-    def body_url(self):
-        return f"{self.base}body/"
-
-    def bodies_url(self):
-        return f"{self.base}bodies/"
-
-    def list_url(self, segment):
-        return f"{self.base}{segment}/"
-
-    def obj_url(self, kind, pk):
-        return f"{self.base}{kind}/{pk}/"
-
-    def file_download_url(self, pk):
-        return f"{self.base}file/{pk}/download/"
-
-
-def _timestamps(obj):
-    return {"created": iso(obj.created_at), "modified": iso(obj.updated_at)}
-
-
-# =============================================================================
-# Serialisierung (NUR öffentliche Felder)
-# =============================================================================
-
-
-def serialize_system(api):
-    tenant = api.tenant
-    return _clean(
-        {
-            "id": api.system_url(),
-            "type": schema_type("system"),
-            "oparlVersion": "https://schema.oparl.org/1.1/",
-            "body": api.bodies_url(),
-            "name": f"Sitzungsdienst {tenant.name}",
-            "contactEmail": tenant.contact_email,
-            "contactName": tenant.name,
-            "website": tenant.website,
-            "vendor": "https://mandari.de",
-            "product": "https://github.com/mandariOSS/mandari",
-            **_timestamps(tenant),
-        }
-    )
-
-
-def serialize_body(api, tenant=None):
-    tenant = tenant or api.tenant
-    terms = [serialize_legislative_term(api, term) for term in tenant.legislative_terms.all()]
-    return _clean(
-        {
-            "id": api.body_url(),
-            "type": schema_type("body"),
-            "system": api.system_url(),
-            "name": tenant.name,
-            "shortName": tenant.short_name,
-            "website": tenant.website,
-            "contactEmail": tenant.contact_email,
-            # Körperschaftstyp und AGS aus dem Anlegen des Mandanten (Issue #317); ohne Angabe wie bisher
-            "classification": tenant.get_body_type_display() if tenant.body_type else "Kommune",
-            "ags": tenant.ags or None,
-            "organization": api.list_url("organizations"),
-            "person": api.list_url("people"),
-            "meeting": api.list_url("meetings"),
-            "paper": api.list_url("papers"),
-            "membership": api.list_url("memberships"),
-            "agendaItem": api.list_url("agendaitems"),
-            "consultation": api.list_url("consultations"),
-            "file": api.list_url("files"),
-            "legislativeTermList": api.list_url("legislativeterms"),
-            "legislativeTerm": terms,
-            **_timestamps(tenant),
-        }
-    )
-
-
-def serialize_organization(api, org):
-    return _clean(
-        {
-            "id": api.obj_url("organization", org.id),
-            "type": schema_type("organization"),
-            "body": api.body_url(),
-            "name": org.name,
-            "shortName": org.short_name,
-            "organizationType": org.organization_type,
-            "classification": org.get_organization_type_display(),
-            "startDate": iso_date(org.start_date),
-            "endDate": iso_date(org.end_date),
-            "subOrganizationOf": api.obj_url("organization", org.parent_id) if org.parent_id else None,
-            "membership": [api.obj_url("membership", m.id) for m in org.memberships.all()],
-            **_timestamps(org),
-        }
-    )
-
-
-def serialize_person(api, person):
-    """
-    Person OHNE geschützte Daten: Verschlüsselte Felder (Telefon, Adresse,
-    Bankdaten) werden hier bewusst NIE gelesen. Die E-Mail erscheint nur mit
-    Kennzeichen „Kontaktdaten veröffentlichen“ (Einwilligung, Issue #319);
-    Datum und Nachweis der Einwilligung bleiben intern.
-    """
-    return _clean(
-        {
-            "id": api.obj_url("person", person.id),
-            "type": schema_type("person"),
-            "body": api.body_url(),
-            "name": person.display_name,
-            "familyName": person.family_name,
-            "givenName": person.given_name,
-            "formOfAddress": person.form_of_address,
-            "title": _as_list(person.title),
-            "email": _as_list(person.published_email),
-            # OParl 1.1 bettet Memberships in Person ein
-            "membership": [serialize_membership(api, m) for m in person.memberships.all()],
-            **_timestamps(person),
-        }
-    )
-
-
-def serialize_membership(api, membership):
-    return _clean(
-        {
-            "id": api.obj_url("membership", membership.id),
-            "type": schema_type("membership"),
-            "person": api.obj_url("person", membership.person_id),
-            "organization": api.obj_url("organization", membership.organization_id),
-            "role": membership.get_role_display(),
-            "votingRight": membership.has_voting_rights,
-            "startDate": iso_date(membership.start_date),
-            "endDate": iso_date(membership.end_date),
-            **_timestamps(membership),
-        }
-    )
-
-
-def _visible_consultation(item):
-    """Öffentlich sichtbare Beratungsstation eines TOP (oder None)."""
-    try:
-        consultation = item.consultation
-    except SessionConsultation.DoesNotExist:
-        return None
-    if consultation is None or not pub._is_published(consultation.paper):
-        return None
-    return consultation
-
-
 def _results_protocol(meeting):
     """
     Öffentliche Fassung der Niederschrift (Issue #318): nur veröffentlicht, nur öffentliche Sitzung,
@@ -267,245 +97,24 @@ def _results_protocol(meeting):
     return file_obj
 
 
-def serialize_meeting(api, meeting):
-    protocol_file = _results_protocol(meeting)
-    protocol_file_id = protocol_file.pk if protocol_file is not None else None
-    files = [f for f in meeting.files.all() if f.is_public and f.pk != protocol_file_id]
-    items = [i for i in meeting.agenda_items.all() if i.is_public]
-    items.sort(key=lambda i: (i.order, i.number))
-    return _clean(
-        {
-            "id": api.obj_url("meeting", meeting.id),
-            "type": schema_type("meeting"),
-            "name": meeting.name,
-            "meetingState": meeting.get_meeting_state_display(),
-            "cancelled": meeting.cancelled,
-            "start": iso(meeting.start),
-            "end": iso(meeting.end),
-            # Gemeinsame Sitzung (Issue #317): federführendes Gremium zuerst, dann die weiteren Gremien
-            "organization": [api.obj_url("organization", org_id) for org_id in meeting.participating_organization_ids],
-            # Ergebnisprotokoll: öffentliche Fassung der Niederschrift (Issue #318)
-            "resultsProtocol": serialize_file(api, protocol_file) if protocol_file is not None else None,
-            "auxiliaryFile": [serialize_file(api, f) for f in files],
-            # OParl 1.1 bettet Tagesordnungspunkte in Meeting ein (nur Ö-Teil!)
-            "agendaItem": [serialize_agenda_item(api, item) for item in items],
-            **_timestamps(meeting),
-            "mandari:locationName": meeting.location or None,
-            "mandari:locationRoom": meeting.room or None,
-            "mandari:locationAddress": ", ".join(
-                part for part in (meeting.street_address, f"{meeting.postal_code} {meeting.locality}".strip()) if part
-            )
-            or None,
-            # Sitzungsformat (Issue #138): nie der Zugangsweg der Zugeschalteten
-            **_format_extension(meeting),
-        }
-    )
+#: Was die Abbildung aus Session braucht (die Drehscheibe importiert das Fachmodul nicht)
+SOURCE = SessionSource(
+    is_published=pub._is_published,
+    download_name=file_service.download_name,
+    mime_type=file_service.mime_type_for_name,
+    # Ohne Prüfungen: Die Ausgabe nennt das Format, nicht die Hinweise für die Sitzungsvorbereitung
+    meeting_format=lambda meeting: meeting_format_service.describe(meeting, checks=False),
+    results_protocol=_results_protocol,
+)
 
 
-def _format_extension(meeting):
+def _mapping(tenant):
     """
-    Sitzungsformat und Hinweis für die Öffentlichkeit (Übertragung, Anmeldung) als mandari-Erweiterung.
-
-    Präsenzsitzungen ohne Übertragung bleiben unverändert. Der Zugangsweg für zugeschaltete Mitglieder
-    wird nie ausgeliefert.
+    Abbildung für einen Mandanten. Basis aller IDs ist die öffentliche Adresse der Installation
+    (``SITE_URL``), nicht der Host der Anfrage: Die IDs sind die kanonischen URIs der Session-Objekte,
+    aus denen der RIS-Bestand seine Kennungen ableitet (ADR docs/adr/20260929-kanonisches-modell.md).
     """
-    if meeting.format == meeting.FORMAT_PRESENCE and not (meeting.public_access_url or meeting.public_access_note):
-        return {}
-    info = meeting_format_service.describe(meeting, checks=False)
-    public = _clean(
-        {
-            "url": info.public_url or None,
-            "note": info.public_note or None,
-            "hint": info.public_hint or None,
-            "registrationRequired": True if info.public_registration_required and info.format == "digital" else None,
-            "registrationDays": info.public_registration_days
-            if info.public_registration_required and info.format == "digital"
-            else None,
-        }
-    )
-    return {
-        "mandari:meetingFormat": info.format,
-        "mandari:meetingFormatLabel": info.label,
-        "mandari:publicAccess": public or None,
-    }
-
-
-def _vote_extension(item):
-    """Abstimmungsergebnis als Summen (Issue #41). Nie für offene TOPs ohne Ergebnis."""
-    if item.vote_result == "pending":
-        return None
-    return _clean(
-        {
-            "method": item.voting_method,
-            "methodLabel": item.get_voting_method_display(),
-            "result": item.vote_result,
-            "resultLabel": item.get_vote_result_display(),
-            "yes": item.votes_yes,
-            "no": item.votes_no,
-            "abstain": item.votes_abstain,
-        }
-    )
-
-
-def _roll_call(item):
-    """
-    Einzelstimmen ausschließlich bei namentlicher Abstimmung (Issue #41).
-    Offen erfasste, geheime oder nur summierte Abstimmungen liefern nie Namen;
-    Befangenheit (Mitwirkungsverbot) wird wie in der Niederschrift ausgewiesen.
-    """
-    if item.voting_method != "roll_call" or item.vote_result == "pending":
-        return None
-    entries = []
-    for vote in item.votes.all():
-        if vote.vote not in ("yes", "no", "abstain", "excluded"):
-            continue
-        entries.append(
-            {
-                "name": vote.person.display_name,
-                "vote": vote.vote,
-                "voteLabel": vote.get_vote_display(),
-            }
-        )
-    entries.sort(key=lambda e: (e["vote"] != "yes", e["vote"] != "no", e["vote"] != "abstain", e["name"]))
-    return entries or None
-
-
-def serialize_agenda_item(api, item):
-    consultation = _visible_consultation(item)
-    files = [f for f in item.files.all() if f.is_public]
-    return _clean(
-        {
-            "id": api.obj_url("agendaitem", item.id),
-            "type": schema_type("agendaitem"),
-            "meeting": api.obj_url("meeting", item.meeting_id),
-            "number": item.number,
-            "order": item.order,
-            "name": item.name,
-            "public": True,  # NÖ-TOPs werden nie ausgeliefert
-            "consultation": api.obj_url("consultation", consultation.id) if consultation else None,
-            "result": item.get_vote_result_display() if item.vote_result != "pending" else None,
-            # Nur der ÖFFENTLICHE Beschlusstext — resolution_text_encrypted nie
-            "resolutionText": item.resolution_text or None,
-            "auxiliaryFile": [serialize_file(api, f) for f in files],
-            **_timestamps(item),
-            "mandari:resolutionNumber": item.resolution_number or None,
-            "mandari:vote": _vote_extension(item),
-            "mandari:rollCall": _roll_call(item),
-        }
-    )
-
-
-def serialize_paper(api, paper):
-    files = sorted((f for f in paper.files.all() if f.is_public), key=lambda f: f.created_at)
-    main_file = files[0] if files else None
-    auxiliary = files[1:]
-    consultations = list(paper.consultations.all())
-    consultations.sort(key=lambda c: (c.order, c.created_at))
-    return _clean(
-        {
-            "id": api.obj_url("paper", paper.id),
-            "type": schema_type("paper"),
-            "body": api.body_url(),
-            "name": paper.name,
-            "reference": paper.reference,
-            "date": iso_date(paper.date),
-            "paperType": paper.get_paper_type_display(),
-            "mainFile": serialize_file(api, main_file) if main_file else None,
-            "auxiliaryFile": [serialize_file(api, f) for f in auxiliary],
-            # OParl 1.1 bettet Consultations in Paper ein
-            "consultation": [serialize_consultation(api, c) for c in consultations],
-            "originatorPerson": [api.obj_url("person", paper.originator_person_id)]
-            if paper.originator_person_id
-            else None,
-            "originatorOrganization": [api.obj_url("organization", paper.originator_organization_id)]
-            if paper.originator_organization_id
-            else None,
-            "underDirectionOf": [api.obj_url("organization", paper.main_organization_id)]
-            if paper.main_organization_id
-            else None,
-            **_timestamps(paper),
-        }
-    )
-
-
-def serialize_consultation(api, consultation):
-    meeting = consultation.meeting
-    item = consultation.agenda_item
-    # Ö/NÖ: Referenzen auf NÖ-Sitzungen/-TOPs werden ausgelassen
-    meeting_visible = meeting is not None and meeting.is_public
-    item_visible = item is not None and item.is_public and item.meeting.is_public
-    # Eine Station in einer nichtöffentlichen Sitzung bzw. auf einem NÖ-TOP nennt auch Gremium und Rolle
-    # nicht – öffentlich bleibt nur, dass die Vorlage dort beraten wird
-    non_public = (meeting is not None and not meeting_visible) or (item is not None and not item_visible)
-    return _clean(
-        {
-            "id": api.obj_url("consultation", consultation.id),
-            "type": schema_type("consultation"),
-            "paper": api.obj_url("paper", consultation.paper_id),
-            "organization": None if non_public else [api.obj_url("organization", consultation.organization_id)],
-            "meeting": api.obj_url("meeting", meeting.id) if meeting_visible else None,
-            "agendaItem": api.obj_url("agendaitem", item.id) if item_visible else None,
-            "authoritative": None if non_public else consultation.authoritative,
-            "role": None if non_public else consultation.get_role_display(),
-            **_timestamps(consultation),
-        }
-    )
-
-
-def serialize_file(api, file_obj, include_text=False):
-    download = api.file_download_url(file_obj.id)
-    file_name = file_service.download_name(file_obj)
-    refs = {}
-    if file_obj.paper_id and pub._is_published(file_obj.paper):
-        refs["paper"] = [api.obj_url("paper", file_obj.paper_id)]
-    if file_obj.meeting_id and file_obj.meeting.is_public:
-        refs["meeting"] = [api.obj_url("meeting", file_obj.meeting_id)]
-    if file_obj.agenda_item_id and file_obj.agenda_item.is_public and file_obj.agenda_item.meeting.is_public:
-        refs["agendaItem"] = [api.obj_url("agendaitem", file_obj.agenda_item_id)]
-    return _clean(
-        {
-            "id": api.obj_url("file", file_obj.id),
-            "type": schema_type("file"),
-            "name": file_obj.name,
-            # Anzeigename statt Speichername: gleiche Inhalte teilen sich eine Datei (Issue #226)
-            "fileName": file_name if file_obj.file else None,
-            # Der Typ, mit dem der Download ausgeliefert wird (aus der Endung, nicht aus dem Upload)
-            "mimeType": file_service.mime_type_for_name(file_name),
-            "size": file_obj.size,
-            "date": iso(file_obj.created_at),
-            "accessUrl": download,
-            "downloadUrl": f"{download}?download=1",
-            "text": (file_obj.text_content or None) if include_text else None,
-            **refs,
-            **_timestamps(file_obj),
-            "mandari:version": file_obj.version,
-        }
-    )
-
-
-def serialize_legislative_term(api, term):
-    return _clean(
-        {
-            "id": api.obj_url("legislativeterm", term.id),
-            "type": schema_type("legislativeterm"),
-            "body": api.body_url(),
-            "name": term.name,
-            "startDate": iso_date(term.start_date),
-            "endDate": iso_date(term.end_date),
-            **_timestamps(term),
-        }
-    )
-
-
-def serialize_tombstone(api, tombstone):
-    """Gekürztes Objekt für gelöschte/entöffentlichte Einträge (OParl 1.1 §2.8)."""
-    return {
-        "id": api.obj_url(tombstone.oparl_type, tombstone.object_id),
-        "type": schema_type(tombstone.oparl_type),
-        "created": iso(tombstone.object_created_at),
-        "modified": iso(tombstone.deleted_at),
-        "deleted": True,
-    }
+    return SessionMapping(tenant, oparl_system_url(tenant), SOURCE)
 
 
 # =============================================================================
@@ -518,7 +127,7 @@ def _public_files_qs():
 
 
 def _prepare_meetings(qs, tenant):
-    # tenant__state_profile: Sitzungsformat (_format_extension) ohne Abfrage je Sitzung
+    # tenant__state_profile: Sitzungsformat (Erweiterung der Abbildung) ohne Abfrage je Sitzung
     return qs.select_related("protocol__public_file__meeting", "tenant__state_profile").prefetch_related(
         "joint_organizations",
         Prefetch(
@@ -564,30 +173,31 @@ def _prepare_files(qs, tenant):
     return qs.select_related("paper", "meeting", "agenda_item__meeting")
 
 
-# Segment -> (Queryset-Funktion, prepare, Serializer, Objekttyp)
+# Segment -> (Queryset-Funktion, prepare, Abbildung, Objekttyp)
 LIST_SPECS = {
-    "organizations": (pub.visible_organizations, _prepare_organizations, serialize_organization, "organization"),
-    "people": (pub.visible_persons, _prepare_persons, serialize_person, "person"),
-    "memberships": (pub.visible_memberships, None, serialize_membership, "membership"),
-    "meetings": (pub.visible_meetings, _prepare_meetings, serialize_meeting, "meeting"),
-    "agendaitems": (pub.visible_agenda_items, _prepare_agenda_items, serialize_agenda_item, "agendaitem"),
-    "papers": (pub.visible_papers, _prepare_papers, serialize_paper, "paper"),
-    "consultations": (pub.visible_consultations, _prepare_consultations, serialize_consultation, "consultation"),
-    "files": (pub.visible_files, _prepare_files, serialize_file, "file"),
-    "legislativeterms": (pub.visible_legislative_terms, None, serialize_legislative_term, "legislativeterm"),
+    "organizations": (pub.visible_organizations, _prepare_organizations, SessionMapping.organization, "organization"),
+    "people": (pub.visible_persons, _prepare_persons, SessionMapping.person, "person"),
+    "memberships": (pub.visible_memberships, None, SessionMapping.membership, "membership"),
+    "meetings": (pub.visible_meetings, _prepare_meetings, SessionMapping.meeting, "meeting"),
+    "agendaitems": (pub.visible_agenda_items, _prepare_agenda_items, SessionMapping.agenda_item, "agendaitem"),
+    "papers": (pub.visible_papers, _prepare_papers, SessionMapping.paper, "paper"),
+    "consultations": (pub.visible_consultations, _prepare_consultations, SessionMapping.consultation, "consultation"),
+    "files": (pub.visible_files, _prepare_files, SessionMapping.file, "file"),
+    "legislativeterms": (pub.visible_legislative_terms, None, SessionMapping.legislative_term, "legislativeterm"),
 }
 
-# Objekttyp -> (Queryset-Funktion, prepare, Serializer)
+# Objekttyp -> (Queryset-Funktion, prepare, Abbildung)
 OBJECT_SPECS = {
-    "organization": (pub.visible_organizations, _prepare_organizations, serialize_organization),
-    "person": (pub.visible_persons, _prepare_persons, serialize_person),
-    "membership": (pub.visible_memberships, None, serialize_membership),
-    "meeting": (pub.visible_meetings, _prepare_meetings, serialize_meeting),
-    "agendaitem": (pub.visible_agenda_items, _prepare_agenda_items, serialize_agenda_item),
-    "paper": (pub.visible_papers, _prepare_papers, serialize_paper),
-    "consultation": (pub.visible_consultations, _prepare_consultations, serialize_consultation),
-    "file": (pub.visible_files, _prepare_files, lambda api, obj: serialize_file(api, obj, include_text=True)),
-    "legislativeterm": (pub.visible_legislative_terms, None, serialize_legislative_term),
+    "organization": (pub.visible_organizations, _prepare_organizations, SessionMapping.organization),
+    "person": (pub.visible_persons, _prepare_persons, SessionMapping.person),
+    "membership": (pub.visible_memberships, None, SessionMapping.membership),
+    "meeting": (pub.visible_meetings, _prepare_meetings, SessionMapping.meeting),
+    "agendaitem": (pub.visible_agenda_items, _prepare_agenda_items, SessionMapping.agenda_item),
+    "paper": (pub.visible_papers, _prepare_papers, SessionMapping.paper),
+    "consultation": (pub.visible_consultations, _prepare_consultations, SessionMapping.consultation),
+    # Der erkannte Text nur am Objekt-Endpunkt, nicht in Listen und Einbettungen
+    "file": (pub.visible_files, _prepare_files, SessionMapping.file_with_text),
+    "legislativeterm": (pub.visible_legislative_terms, None, SessionMapping.legislative_term),
 }
 
 
@@ -616,17 +226,6 @@ def session_oparl_endpoint(view):
 # =============================================================================
 # Pagination (echte links.next, Tombstone-Merge bei modified_since)
 # =============================================================================
-
-
-def _page_number(request):
-    raw = request.GET.get("page", "1")
-    try:
-        number = int(raw)
-    except ValueError:
-        raise OParlBadRequestError(f"Parameter 'page': '{raw}' ist keine gültige Seitennummer.") from None
-    if number < 1:
-        raise OParlBadRequestError("Parameter 'page': Seitennummern beginnen bei 1.")
-    return number
 
 
 class _MergedEntries:
@@ -662,7 +261,12 @@ class _MergedEntries:
         return [("obj", objects[pk]) if src == 0 else ("tomb", tombs[pk]) for _, src, pk in window]
 
 
-def _paginated_response(api, request, base_url, queryset, serializer, kind):
+def _tombstone(mapping, entry):
+    """Gekürztes Objekt für gelöschte/entöffentlichte Einträge (OParl 1.1 §2.8)."""
+    return mapping.tombstone(entry.oparl_type, entry.object_id, entry.object_created_at, entry.deleted_at)
+
+
+def _paginated_response(mapping, request, base_url, queryset, serializer, kind):
     """
     OParl-Listen-Envelope (data/pagination/links) mit Link-Header.
 
@@ -675,54 +279,30 @@ def _paginated_response(api, request, base_url, queryset, serializer, kind):
     for name, value in parsed.items():
         queryset = queryset.filter(**{FILTER_LOOKUPS[name]: value})
     queryset = queryset.order_by("updated_at", "id")
-    page_number = _page_number(request)
-    page_size = getattr(settings, "OPARL_API_PAGE_SIZE", 100)
+    number = page_number(request)
 
     if "modified_since" in parsed:
         # Inkrementelle Abfrage: Objekte + Tombstones nach modified sortiert
-        tomb_qs = SessionOParlTombstone.objects.filter(tenant=api.tenant, oparl_type=kind)
+        tomb_qs = SessionOParlTombstone.objects.filter(tenant=mapping.tenant, oparl_type=kind)
         for name, value in parsed.items():
             tomb_qs = tomb_qs.filter(**{TOMBSTONE_LOOKUPS[name]: value})
-        paginator = Paginator(_MergedEntries(queryset, tomb_qs), page_size)
+        paginator = Paginator(_MergedEntries(queryset, tomb_qs), page_size())
     else:
-        paginator = Paginator(queryset, page_size)
+        paginator = Paginator(queryset, page_size())
 
-    if page_number > paginator.num_pages:
-        return error_response(404, f"Seite {page_number} existiert nicht (letzte Seite: {paginator.num_pages}).")
-    page = paginator.page(page_number)
+    if number > paginator.num_pages:
+        return error_response(404, f"Seite {number} existiert nicht (letzte Seite: {paginator.num_pages}).")
+    page = paginator.page(number)
 
     data = []
     for entry in page.object_list:
         if isinstance(entry, tuple):
             entry_type, obj = entry
-            data.append(serialize_tombstone(api, obj) if entry_type == "tomb" else serializer(api, obj))
+            data.append(_tombstone(mapping, obj) if entry_type == "tomb" else serializer(mapping, obj))
         else:
-            data.append(serializer(api, entry))
+            data.append(serializer(mapping, entry))
 
-    def page_link(number):
-        params = dict(filters)
-        if number > 1:
-            params["page"] = number
-        return f"{base_url}?{urlencode(params)}" if params else base_url
-
-    links = {"first": page_link(1), "self": page_link(page_number)}
-    if page.has_previous():
-        links["prev"] = page_link(page_number - 1)
-    if page.has_next():
-        links["next"] = page_link(page_number + 1)
-    links["last"] = page_link(paginator.num_pages)
-
-    envelope = {
-        "data": data,
-        "pagination": {
-            "totalElements": paginator.count,
-            "elementsPerPage": page_size,
-            "currentPage": page_number,
-            "totalPages": paginator.num_pages,
-        },
-        "links": links,
-    }
-    headers = {"Link": ", ".join(f'<{url}>; rel="{rel}"' for rel, url in links.items() if rel != "self")}
+    envelope, headers = list_envelope(base_url, filters, paginator, page, data)
     return json_response(envelope, headers=headers)
 
 
@@ -734,24 +314,23 @@ def _paginated_response(api, request, base_url, queryset, serializer, kind):
 @session_oparl_endpoint
 def system_view(request, tenant_slug):
     tenant = _get_tenant(tenant_slug)
-    return json_response(serialize_system(TenantApi(tenant)))
+    return json_response(_mapping(tenant).system())
 
 
 @session_oparl_endpoint
 def bodies_view(request, tenant_slug):
-    tenant = _get_tenant(tenant_slug)
-    api = TenantApi(tenant)
-    body = serialize_body(api)
+    mapping = _mapping(_get_tenant(tenant_slug))
+    url = mapping.uris.bodies()
     return json_response(
         {
-            "data": [body],
+            "data": [mapping.body()],
             "pagination": {
                 "totalElements": 1,
-                "elementsPerPage": getattr(settings, "OPARL_API_PAGE_SIZE", 100),
+                "elementsPerPage": page_size(),
                 "currentPage": 1,
                 "totalPages": 1,
             },
-            "links": {"first": api.bodies_url(), "self": api.bodies_url(), "last": api.bodies_url()},
+            "links": {"first": url, "self": url, "last": url},
         }
     )
 
@@ -759,7 +338,7 @@ def bodies_view(request, tenant_slug):
 @session_oparl_endpoint
 def body_view(request, tenant_slug):
     tenant = _get_tenant(tenant_slug)
-    return json_response(serialize_body(TenantApi(tenant)))
+    return json_response(_mapping(tenant).body())
 
 
 @session_oparl_endpoint
@@ -769,35 +348,56 @@ def list_view(request, tenant_slug, segment):
     if spec is None:
         return error_response(404, f"Unbekannte Liste '{segment}'. Verfügbar: {', '.join(sorted(LIST_SPECS))}.")
     qs_fn, prepare, serializer, kind = spec
-    api = TenantApi(tenant)
+    mapping = _mapping(tenant)
     queryset = qs_fn(tenant)
     if prepare:
         queryset = prepare(queryset, tenant)
-    return _paginated_response(api, request, api.list_url(segment.lower()), queryset, serializer, kind)
+    return _paginated_response(mapping, request, mapping.uris.list(segment.lower()), queryset, serializer, kind)
 
 
 @session_oparl_endpoint
 def object_view(request, tenant_slug, kind, pk):
     tenant = _get_tenant(tenant_slug)
     kind = kind.lower()
+    mapping = _mapping(tenant)
+    if kind == "location":
+        return _location_response(mapping, pk)
     spec = OBJECT_SPECS.get(kind)
     if spec is None:
-        return error_response(404, f"Unbekannter Objekttyp '{kind}'. Verfügbar: {', '.join(sorted(OBJECT_SPECS))}.")
+        kinds = ", ".join(sorted([*OBJECT_SPECS, "location"]))
+        return error_response(404, f"Unbekannter Objekttyp '{kind}'. Verfügbar: {kinds}.")
     qs_fn, prepare, serializer = spec
-    api = TenantApi(tenant)
     queryset = qs_fn(tenant)
     if prepare:
         queryset = prepare(queryset, tenant)
     obj = queryset.filter(pk=pk).first()
     if obj is not None:
-        return json_response(serializer(api, obj))
+        return json_response(serializer(mapping, obj))
     # OParl 1.1 §2.8: einmal veröffentlichte, dann gelöschte/entöffentlichte
     # Objekte bleiben als Tombstone (HTTP 200) abrufbar. NÖ-Objekte, die nie
     # veröffentlicht waren, liefern 404 — sie existieren nach außen nicht.
     tombstone = SessionOParlTombstone.objects.filter(tenant=tenant, oparl_type=kind, object_id=pk).first()
     if tombstone is not None:
-        return json_response(serialize_tombstone(api, tombstone))
-    return error_response(404, f"{api.obj_url(kind, pk)} nicht gefunden.")
+        return json_response(_tombstone(mapping, tombstone))
+    return error_response(404, f"{mapping.uris.obj(kind, pk)} nicht gefunden.")
+
+
+def _location_response(mapping, pk):
+    """
+    Sitzungsort unter der Kennung seiner Sitzung (``SessionMapping.location``).
+
+    Nur für öffentliche Sitzungen. Hat die Sitzung keine Ortsangabe (mehr) oder ist sie gelöscht bzw.
+    nicht mehr öffentlich, bleibt die Adresse als gekürztes Objekt mit ``"deleted": true`` abrufbar
+    (OParl 1.1 §2.8) – ohne Inhalte. Sitzungen, die nie öffentlich waren, ergeben 404.
+    """
+    meeting = pub.visible_meetings(mapping.tenant).filter(pk=pk).first()
+    if meeting is not None:
+        gone = mapping.tombstone("location", pk, meeting.created_at, meeting.updated_at)
+        return json_response(mapping.location(meeting) or gone)
+    tombstone = SessionOParlTombstone.objects.filter(tenant=mapping.tenant, oparl_type="meeting", object_id=pk).first()
+    if tombstone is not None:
+        return json_response(mapping.tombstone("location", pk, tombstone.object_created_at, tombstone.deleted_at))
+    return error_response(404, f"{mapping.uris.obj('location', pk)} nicht gefunden.")
 
 
 @session_oparl_endpoint

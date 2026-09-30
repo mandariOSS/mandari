@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.resolution.implementation_changed:v1",
+  "title": "Umsetzungsstand geändert",
+  "description": "Der Umsetzungsstand eines Beschlusses (Beschlusskontrolle) hat sich geändert. Aggregat: AgendaItem. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agenda_item",
+    "status"
+  ],
+  "properties": {
+    "agenda_item": {
+      "description": "Tagesordnungspunkt mit dem Beschluss.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "description": "Umsetzungsstand: open, in_progress, done, deferred (zurückgestellt).",
+      "type": "string",
+      "enum": [
+        "open",
+        "in_progress",
+        "done",
+        "deferred"
+      ]
+    },
+    "previous_status": {
+      "description": "Umsetzungsstand vor der Änderung.",
+      "type": "string",
+      "enum": [
+        "open",
+        "in_progress",
+        "done",
+        "deferred"
+      ]
+    },
+    "paper": {
+      "description": "Vorlage des Beschlusses.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+      "status": "done",
+      "previous_status": "in_progress",
+      "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"
+    }
+  ]
+}

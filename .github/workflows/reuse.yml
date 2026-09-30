@@ -1,0 +1,52 @@
+# =============================================================================
+# mandari - REUSE-Lizenzprüfung
+# =============================================================================
+# Prüft mit `reuse lint`, dass jede Datei eine maschinenlesbare Lizenz- und
+# Urheberangabe hat (Dateikopf oder REUSE.toml) und jeder genannte Lizenztext
+# unter LICENSES/ liegt.
+#
+# Eigener Workflow, damit der REUSE-Badge in der README genau diesen Stand auf
+# `main` zeigt (Issue #690). Zuvor lief die Prüfung als informativer Schritt im
+# Job "Qualität"; ein Verstoß fiel dort nicht auf. Der Workflow gehört nicht zu
+# "CI-Ergebnis" und ist damit kein Pflicht-Check.
+# =============================================================================
+
+name: REUSE
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reuse-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  reuse:
+    name: REUSE-Lizenzprüfung
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      # Feste Version: Die Regeln der Prüfung ändern sich zwischen Versionen
+      - name: reuse lint
+        run: |
+          pip install reuse==6.2.0
+          reuse lint

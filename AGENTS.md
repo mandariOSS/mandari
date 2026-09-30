@@ -49,7 +49,7 @@ mandari/
 │   │       └── tasks/          # Aufgabenverwaltung
 │   ├── insight_core/           # OParl-Datenmodelle & Services
 │   │   └── services/           # Text-Extraktion, OCR, Suche
-│   ├── insight_sync/           # OParl-Synchronisation
+│   ├── insight_sync/           # Sync-Steuerung (Watchdog, Protokoll); der Sync läuft im Ingestor
 │   ├── insight_search/         # Elasticsearch-Integration
 │   ├── insight_ai/             # KI-Pipelines
 │   ├── templates/              # Django Templates
@@ -313,7 +313,7 @@ docker compose exec ingestor python -m src.main sync --all --concurrent 20
 Externe OParl-API (z.B. oparl.stadt-muenster.de)
     │
     ▼
-insight_sync (Synchronisation)
+Ingestor (ingestor/, eigener Container)
     │  - Paginierte Listen abrufen
     │  - Objekte in DB speichern
     │  - Verknüpfungen auflösen

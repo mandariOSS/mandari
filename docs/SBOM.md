@@ -7,7 +7,6 @@
 > ist geplant: TODO via [syft](https://github.com/anchore/syft) in CI.**
 >
 > Quellen: [`mandari/pyproject.toml`](../mandari/pyproject.toml),
-> [`mandari/requirements.txt`](../mandari/requirements.txt),
 > [`ingestor/pyproject.toml`](../ingestor/pyproject.toml),
 > [`shared/pyproject.toml`](../shared/pyproject.toml).
 > Siehe auch [DEPENDENCIES.md](../DEPENDENCIES.md) (Danksagungen).
@@ -25,7 +24,7 @@
 
 | Komponente | Version | Lizenz | Zweck |
 |---|---|---|---|
-| Django | ≥ 6.0 | BSD-3-Clause | Web-Framework (Backend, Templates, ORM, Background Tasks) |
+| Django | ≥ 6.1, < 6.2 | BSD-3-Clause | Web-Framework (Backend, Templates, ORM, Background Tasks) |
 | django-htmx | ≥ 1.19.0 | MIT | HTMX-Integration für Django |
 | django-unfold | ≥ 0.40.0 | MIT | Modernes Admin-Theme |
 | whitenoise | ≥ 6.7.0 | MIT | Static-File-Serving in Produktion |
@@ -40,7 +39,7 @@
 |---|---|---|---|
 | psycopg[binary] | ≥ 3.2.0 | LGPL-3.0 | PostgreSQL-Adapter |
 | dj-database-url | ≥ 2.2.0 | BSD-3-Clause | Datenbank-Konfiguration via URL |
-| sqlalchemy | ≥ 2.0.36 | MIT | DB-Zugriff für Ingestor-Integration (Sync-Daemon) |
+| sqlalchemy[asyncio] | ≥ 2.0.36, < 2.1 | MIT | DB-Zugriff für Ingestor-Integration (Sync-Daemon) |
 | asyncpg | ≥ 0.30.0 | Apache-2.0 | Asynchroner PostgreSQL-Treiber |
 | redis | ≥ 5.2.0 | MIT | Redis-Client (Cache, Sessions, Queues) |
 
@@ -150,6 +149,7 @@ Jede Quelldatei trägt einen `SPDX-License-Identifier`-Header; alles ohne Header
 Konfiguration, lokale Kopien von Fremdbibliotheken) ist in `REUSE.toml` zugeordnet. Die Lizenztexte
 liegen unter `LICENSES/`. Die Zuordnung: Quellcode AGPL-3.0-or-later, Dokumentation CC-BY-4.0,
 Konfiguration und Lockfiles CC0-1.0, Markenzeichen `LicenseRef-Mandari-Brand`, Fremdbibliotheken mit
-ihrer jeweiligen Lizenz. Prüfung lokal mit `pip install reuse && reuse lint`; im CI läuft die Prüfung
-im Job „Abhängigkeiten prüfen“ und wird ab 2027 blockierend. `reuse spdx` erzeugt daraus eine
+ihrer jeweiligen Lizenz. Prüfung lokal mit `pip install reuse && reuse lint`; in der CI läuft sie im
+Workflow „REUSE“ (`.github/workflows/reuse.yml`) bei jedem Pull Request und jedem Push auf `dev` und
+`main` und wird ab 2027 Pflicht-Check. `reuse spdx` erzeugt daraus eine
 SPDX-Stückliste der Lizenzen, ergänzend zur CycloneDX-SBOM.

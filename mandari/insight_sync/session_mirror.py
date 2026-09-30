@@ -23,7 +23,7 @@ die Session-OParl-API liefert per Konstruktion nur öffentliche Daten
 import json
 import logging
 import urllib.request
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from urllib.parse import quote
 
 from django.utils import timezone
@@ -58,12 +58,14 @@ MODEL_BY_TYPE_SUFFIX = {
 
 
 def _parse_dt(value):
+    """Zeitpunkt lesen; ein reines Datum (OParl ``File.date``) gilt wie im Ingestor als Mitternacht UTC."""
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _parse_date(value):
@@ -73,6 +75,32 @@ def _parse_date(value):
         return date.fromisoformat(value[:10])
     except ValueError:
         return None
+
+
+def _location_text(data):
+    """
+    Ort und Anschrift einer Sitzung als Text – gleiche Abbildung wie der Ingestor
+    (``ingestor/src/sync/processor.py``, ``process_meeting``).
+
+    Der Ort gehört zur Sitzung und steht im Bestand als Text an ihr, nicht als eigenes Location-Objekt;
+    so verschwindet er mit der Sitzung. Die Textfelder ``mandari:location*`` gelten, wo sie vorhanden
+    sind (abgekündigt); ohne sie ergibt das eingebettete Location-Objekt denselben Text: Gebäude vor
+    Raum, Anschrift mit Postleitzahl und Ort.
+    """
+    location = data.get("location")
+    if not isinstance(location, dict):
+        location = {}
+    locality = " ".join(part for part in (location.get("postalCode"), location.get("locality")) if part)
+    name = (
+        data.get("mandari:locationName")
+        or data.get("mandari:locationRoom")
+        or location.get("description")
+        or location.get("room")
+    )
+    address = data.get("mandari:locationAddress") or ", ".join(
+        part for part in (location.get("streetAddress"), locality) if part
+    )
+    return name or None, address or None
 
 
 def _default_fetch(url):
@@ -269,6 +297,7 @@ class SessionMirror:
         self.stats["files"] += 1
 
     def _upsert_meeting(self, body, data):
+        location_name, location_address = _location_text(data)
         meeting, _created = OParlMeeting.objects.update_or_create(
             external_id=data.get("id", ""),
             defaults={
@@ -278,9 +307,8 @@ class SessionMirror:
                 "cancelled": bool(data.get("cancelled", False)),
                 "start": _parse_dt(data.get("start")),
                 "end": _parse_dt(data.get("end")),
-                # Gleiche Abbildung wie der Ingestor (ingestor/src/sync/processor.py, process_meeting)
-                "location_name": data.get("mandari:locationName") or data.get("mandari:locationRoom") or None,
-                "location_address": data.get("mandari:locationAddress") or None,
+                "location_name": location_name,
+                "location_address": location_address,
                 **self._base_defaults(data),
             },
         )

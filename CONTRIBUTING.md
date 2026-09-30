@@ -22,8 +22,8 @@ zum Projekt passt.
 
 ## Entwicklungsumgebung
 
-Voraussetzungen: Python 3.12 oder neuer, Node.js 20, Docker (für PostgreSQL, Redis und
-Elasticsearch), [uv](https://github.com/astral-sh/uv).
+Voraussetzungen: Python 3.12 oder neuer, Node.js 22 oder neuer (CI und Image nutzen Node.js 26),
+Docker (für PostgreSQL, Redis und Elasticsearch), [uv](https://github.com/astral-sh/uv).
 
 ```bash
 git clone https://github.com/mandariOSS/mandari.git
@@ -34,7 +34,7 @@ docker compose up -d postgres redis elasticsearch
 
 cd mandari
 cp ../.env.example .env          # SECRET_KEY und ENCRYPTION_MASTER_KEY eintragen
-uv sync                          # Python-Abhängigkeiten
+uv sync --extra dev              # Python-Abhängigkeiten aus uv.lock, mit Test- und Lint-Werkzeugen
 npm ci && npm run build          # Frontend bauen
 
 uv run python manage.py migrate
@@ -66,6 +66,23 @@ COMPOSE_PROJECT_NAME=mandari-dev ./install.sh
 
 Der Projektname trennt diese Installation von anderen auf demselben Rechner.
 
+### Python-Abhängigkeiten ändern
+
+Die direkten Abhängigkeiten stehen in `pyproject.toml` (Django-Anwendung: `mandari/`, Ingestor:
+`ingestor/`), die gesperrten Versionen in der `uv.lock` daneben. Image, CI, pip-audit und SBOM
+lesen ausschließlich die Lock-Datei.
+
+```bash
+cd mandari                       # bzw. ingestor
+# Abhängigkeit in pyproject.toml eintragen oder Grenze ändern, dann:
+uv lock                          # nur das Nötige ändert sich, alles andere bleibt gesperrt
+uv lock --upgrade-package django # eine gesperrte Version gezielt anheben
+uv sync --extra dev              # lokale Umgebung nachziehen
+```
+
+`pyproject.toml` und `uv.lock` gehören in denselben Commit; die CI prüft mit `uv lock --check`,
+dass beide zusammenpassen. Dependabot pflegt beide Dateien selbst.
+
 ## Tests und Prüfungen
 
 Alle Prüfungen laufen auch in der CI und müssen grün sein.
@@ -88,7 +105,7 @@ erwartet und blockiert nichts.
 
 ```bash
 cd mandari
-uv run pytest                                    # rund 1.500 Tests, etwa 90 Sekunden
+uv run pytest                                    # über 5.000 Tests; die CI braucht parallel rund 8 Minuten
 uv run pytest apps/work/tasks -q                 # einzelne App
 ```
 
@@ -136,8 +153,19 @@ Am bequemsten übernimmt das pre-commit:
 pip install pre-commit && pre-commit install
 ```
 
-Die Coverage-Schwelle liegt bei 38 Prozent (Stand: 40 Prozent erreicht). Sie wird mit
-wachsender Testbasis angehoben, nie gesenkt.
+Die Coverage-Schwelle der CI liegt bei 38 Prozent; erreicht sind rund 87 Prozent (Stand 09/2026).
+Sie wird mit wachsender Testbasis angehoben, nie gesenkt.
+
+**Verweise in der Dokumentation** prüft der Job „Verweise (Link-Prüfung)“ mit
+[lychee](https://github.com/lycheeverse/lychee): bei jeder Änderung an einer Markdown-Datei die
+internen Verweise und Anker aller Markdown-Dateien, im Pull Request und im Wochenlauf zusätzlich die
+externen Verweise der Dateien des öffentlichen Auftritts (README, diese Datei, `SECURITY.md`,
+Issue- und PR-Vorlagen und weitere). Einstellungen und Ausnahmen stehen in `lychee.toml`. Lokal:
+
+```bash
+lychee --offline --include-fragments '**/*.md'   # interne Verweise und Anker, ohne Netz
+lychee README.md CONTRIBUTING.md SECURITY.md     # externe Verweise
+```
 
 ## Konventionen
 
@@ -204,7 +232,7 @@ SPDX-Kopf, damit das Repository [REUSE](https://reuse.software)-konform bleibt:
 ```
 
 Dateien ohne Kopf (Bilder, Daten) werden in `REUSE.toml` zugeordnet. Prüfen mit
-`reuse lint`.
+`reuse lint` (`pip install reuse`); in der CI läuft die Prüfung im Workflow „REUSE“.
 
 ## Fragen
 

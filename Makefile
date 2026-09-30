@@ -38,7 +38,7 @@ help: ## Show this help
 
 install: ## Install all dependencies
 	@echo "$(BLUE)Installing Python dependencies...$(NC)"
-	cd mandari && pip install -r requirements.txt
+	cd mandari && uv sync --extra dev
 	@echo "$(BLUE)Installing Node dependencies...$(NC)"
 	cd mandari && npm install
 	@echo "$(GREEN)Dependencies installed!$(NC)"

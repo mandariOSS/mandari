@@ -20,8 +20,8 @@ versionierte und automatisch geprüfte Verträge.
 
 - **Namen:** `<bereich>.<objekt>.<ereignis>`, Kleinbuchstaben, Ereignis in der Vergangenheitsform,
   z. B. `ris.paper.released`, `submission.status_changed`. Befehle im Imperativ, z. B.
-  `submission.submit`. Bereiche: `ris`, `submission`, `attendance`, `session`, `work`, `portal`,
-  `core`.
+  `submission.submit`. Bereiche: `ris`, `submission`, `attendance`, `invitation`, `session`, `work`,
+  `portal`, `core` (`invitation` nachgetragen, siehe unten).
 - **Öffentliche Sprache:** `ris.*` spricht das kanonische Modell
   ([Kanonisches Modell](20260929-kanonisches-modell.md)). `session.*`, `work.*` und `portal.*`
   sind intern und gelangen nie in öffentliche Schnittstellen.
@@ -89,6 +89,52 @@ In der CI, blockierend:
    Empfängertests verarbeiten die Beispiele (Vertragstests).
 5. `publish()`-Aufrufe liegen im Paket aus `x-owner`.
 6. Schemas der Klassen `personenbezogen` und `nichtoeffentlich` enthalten keine Freitextfelder.
+
+## Nachtrag zur Umsetzung (#517, #518)
+
+Die Umsetzung präzisiert drei Punkte. Die ersten beiden lassen die Entscheidung unverändert. Der
+dritte ist eine **Ausnahme von Regel 6** („keine Freitextfelder“): Für Ereignisse gilt die Regel
+ohne Einschränkung, für Befehle mit der unten beschriebenen, feldgenau festgelegten Ausnahme. Wer
+diesen Nachtrag annimmt, nimmt die Ausnahme an.
+
+- **Bereich `invitation`.** Die Bereichsliste oben nennt ihn nicht, der Startumfang der Befehle
+  ([A6](20260929-befehle-synchron.md)) braucht ihn für `invitation.acknowledge`. Er gehört zu den
+  erlaubten Bereichen.
+- **Eigentümer der `ris.*`-Verträge ist die Drehscheibe (`hub.ris`).** `ris.*` spricht das
+  kanonische Modell, und dieselben Typen entstehen aus zwei Quellen: aus Session für eigene
+  Mandanten und aus dem Ingestor für fremde RIS. Session veröffentlicht sie über die Abbildung in
+  `hub/ris/` ([A7](20260929-kanonisches-modell.md)), nicht mit eigenem `publish()`.
+  `submission.*`, `attendance.*`, `invitation.*` und `session.*` gehören `apps.session`, `work.*`
+  gehört `apps.work`, `core.*` dem jeweiligen Plattformmodul.
+- **Inhaltsfelder in Befehlen.** Ein Befehl bittet den Eigentümer, Daten zu speichern; manche davon
+  sind Inhalte (Antragstext, Grund einer Absage) und lassen sich nicht als Kennung ausdrücken. Solche
+  Felder tragen im Schema `"x-content": true` und sind vom Freitextverbot ausgenommen. Ausgenommen
+  ist nur die Zeichenkette selbst: Im Teilbaum eines Inhaltsfelds gelten dieselben Regeln zur
+  Offenheit wie außerhalb (kein Knoten ohne Typ, Objekte mit `additionalProperties: false`, Listen
+  mit `items`, keine Verweise), jede freie Zeichenkette braucht `maxLength`, jede Liste `maxItems`.
+  Ein Inhaltsfeld nimmt also nie beliebiges JSON an. Ereignisse haben nie Inhaltsfelder. Befehle
+  gehen nur an den Eigentümer; der Befehlsweg gibt ihren Inhalt weder in Logs noch in
+  Fehlermeldungen oder Ereignisse weiter, der Idempotenzspeicher hält nur einen Hash. Die Liste der
+  Inhaltsfelder und ihr Zuschnitt (jedes Unterfeld mit seiner Längengrenze) stehen als Test fest
+  (`hub/contracts/tests/test_schemas.py`); ein neues Feld, ein neues Unterfeld oder eine höhere
+  Grenze ist eine bewusste Entscheidung.
+
+Ein Muster (`pattern`) zählt nur als Kennung, wenn es vorn und hinten mit `^` und `$` verankert
+ist, keinen Leerraum zulässt und die Länge auf höchstens 255 Zeichen begrenzt (Quantoren mit
+Obergrenze oder `maxLength` am Feld). JSON Schema wendet `pattern` als Suche an; `^[A-Z]{2}` ließe
+sonst beliebigen Text nach zwei Großbuchstaben zu (`hub/contracts/patterns.py`). `\A`, `\Z` und
+Schalter wie `(?i)` kennt nur Python, nicht ECMA-262; Muster damit gelten als Freitext, damit die
+Schemas für fremde Prüfer dasselbe bedeuten.
+
+**Grenze dieser Regel:** „Ohne Leerraum“ schließt Sätze aus, nicht jedes einzelne Wort. Ein Muster
+wie `^\S{1,64}$` ließe einen Namen ohne Leerzeichen oder eine Mailadresse zu. Das Register kann
+nicht erkennen, was ein Muster fachlich bedeutet. Deshalb stehen die Muster der ausgelieferten
+Schemas als feste Liste im Test (derzeit vier: Feldname, Code, SHA-256, Eingangsnummer); ein neues
+Muster ist wie ein neues Inhaltsfeld eine bewusste Entscheidung im Review.
+
+Ein Ereignis, das `oeffentlich` sein darf, nennt keine Kennung eines nichtöffentlichen Objekts:
+`ris.paper.released` führt die Einreichung nicht, aus der die Vorlage entstand; diesen Bezug meldet
+`ris.paper.created` (nur `nichtoeffentlich`).
 
 ## Bezug
 
