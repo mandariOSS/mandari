@@ -377,6 +377,8 @@ def _apply(spec: TenantSpec, catalog: PresetKatalog, *, actor: str) -> Provision
             ags=spec.ags or None,
         )
         result.steps.append(f"Mandant „{tenant.name}“ ({tenant.slug}) angelegt.")
+        # Neue Mandanten starten gesperrt (Issue #319): Testdaten und Schulung bleiben intern
+        result.steps.append("OParl-Schnittstelle gesperrt, bis die Verwaltung sie in den Einstellungen freischaltet.")
     else:
         result.name = tenant.name
         result.steps.append(f"Mandant „{tenant.name}“ ({tenant.slug}) bestand bereits – Fehlendes wird ergänzt.")
@@ -616,7 +618,7 @@ def on_active_changed(tenant: SessionTenant) -> PortalChange:
     request = getattr(tenant, "_lifecycle_request", None)
     if tenant.is_active:
         portal = insight_service.PortalChange()
-        if tenant.insight_publish:
+        if tenant.insight_publish and tenant.oparl_public:
             insight_service.register_source(tenant)
             portal = insight_service.restore_source(tenant)
         elif tenant.insight_end_mode in SessionTenant.PORTAL_END_KEEPS_ENTRY:

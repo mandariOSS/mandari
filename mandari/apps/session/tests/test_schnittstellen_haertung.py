@@ -44,7 +44,9 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def tenant() -> SessionTenant:
-    return SessionTenant.objects.create(name="Stadt Schnittstelle", slug="schnittstelle")
+    return SessionTenant.objects.create(
+        name="Stadt Schnittstelle", slug="schnittstelle", oparl_public_since=timezone.now()
+    )
 
 
 @pytest.fixture
@@ -322,7 +324,7 @@ def test_zurueckgezogener_token_laesst_sich_im_admin_nicht_reaktivieren(tenant: 
 
 
 def test_formular_aenderung_wird_protokolliert_mandant_bleibt_fest(tenant: SessionTenant) -> None:
-    anderer = SessionTenant.objects.create(name="Andere Stadt", slug="andere-stadt")
+    anderer = SessionTenant.objects.create(name="Andere Stadt", slug="andere-stadt", oparl_public_since=timezone.now())
     token, _roh = SessionAPIToken.create_token(tenant=tenant, name="Fraktion A")
 
     antwort = _betrieb_client().post(

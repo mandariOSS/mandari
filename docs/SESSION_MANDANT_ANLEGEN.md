@@ -28,6 +28,11 @@ Ein Aufruf macht einen Mandanten arbeitsfähig:
 Körperschaftstyp und AGS erscheinen in der OParl-API des Mandanten als `classification` und
 `ags` des Body (ohne Angabe wie bisher `classification: "Kommune"`).
 
+Ein neuer Mandant startet mit **gesperrter OParl-Schnittstelle** (404): Testdaten und Schulung
+bleiben intern, bis die Verwaltung die Schnittstelle unter Einstellungen → OParl-Schnittstelle
+freischaltet (Issue #319, `docs/SESSION_OPARL_API.md`). Erst danach lässt sich im Bürgerportal
+veröffentlichen.
+
 ### Befehl
 
 ```bash

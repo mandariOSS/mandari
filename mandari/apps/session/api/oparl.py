@@ -4,7 +4,9 @@ Spec-konforme OParl-1.1-API je Session-Mandant (Issue #35).
 
 Nach dem Muster des Aggregators ``oparl_api/`` (Issue #17), aber auf den
 Session-Modellen: Jeder aktive SessionTenant erhält unter
-``/session/<slug>/api/oparl/`` einen vollwertigen OParl-System-Endpoint.
+``/session/<slug>/api/oparl/`` einen vollwertigen OParl-System-Endpoint – sobald
+die Verwaltung die Schnittstelle freigeschaltet hat (Issue #319,
+``SessionTenant.oparl_public_since``); vorher antwortet jeder Endpunkt mit 404.
 
 - **Auflösbare JSON-Objekt-Endpunkte** für alle Objekttypen (System, Body,
   Organization, Person, Membership, Meeting, AgendaItem, Paper, File,
@@ -20,7 +22,7 @@ Session-Modellen: Jeder aktive SessionTenant erhält unter
   nur mit öffentlichem Elternobjekt).
 - **Öffentliche Niederschrift** (Issue #318): ``Meeting.resultsProtocol`` verweist auf die beim
   Veröffentlichen erzeugte Datei (nur öffentlicher Teil, nur öffentliche Sitzungen). Personen ohne geschützte Daten —
-  verschlüsselte Felder (Telefon, Adresse, Bankdaten) werden nie gelesen.
+  verschlüsselte Felder (Telefon, Adresse, Bankdaten) werden nie gelesen, die E-Mail nur mit Einwilligung (Issue #319).
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
 
@@ -53,7 +55,7 @@ from oparl_api.utils import (
 
 
 class TenantNotFoundError(Exception):
-    """Mandant existiert nicht oder ist inaktiv (JSON-404)."""
+    """Mandant existiert nicht, ist inaktiv oder hat die Schnittstelle nicht freigeschaltet (JSON-404)."""
 
 
 # Query-Parameter -> ORM-Lookup (auf den Session-Zeitstempeln created_at/updated_at)
@@ -199,8 +201,9 @@ def serialize_organization(api, org):
 def serialize_person(api, person):
     """
     Person OHNE geschützte Daten: Verschlüsselte Felder (Telefon, Adresse,
-    Bankdaten) werden hier bewusst NIE gelesen. Die E-Mail ist laut
-    Datenmodell (SessionPerson) als öffentliches OParl-Feld vorgesehen.
+    Bankdaten) werden hier bewusst NIE gelesen. Die E-Mail erscheint nur mit
+    Kennzeichen „Kontaktdaten veröffentlichen“ (Einwilligung, Issue #319);
+    Datum und Nachweis der Einwilligung bleiben intern.
     """
     return _clean(
         {
@@ -212,7 +215,7 @@ def serialize_person(api, person):
             "givenName": person.given_name,
             "formOfAddress": person.form_of_address,
             "title": _as_list(person.title),
-            "email": _as_list(person.email),
+            "email": _as_list(person.published_email),
             # OParl 1.1 bettet Memberships in Person ein
             "membership": [serialize_membership(api, m) for m in person.memberships.all()],
             **_timestamps(person),
@@ -589,7 +592,8 @@ OBJECT_SPECS = {
 
 
 def _get_tenant(tenant_slug):
-    tenant = SessionTenant.objects.filter(slug=tenant_slug, is_active=True).first()
+    # Nicht freigeschaltet (Issue #319): nach außen wie ein unbekannter Mandant, ohne Hinweis auf die Existenz
+    tenant = SessionTenant.objects.filter(slug=tenant_slug, is_active=True, oparl_public_since__isnull=False).first()
     if tenant is None:
         raise TenantNotFoundError(tenant_slug)
     return tenant

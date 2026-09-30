@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 from django.core.cache import cache
 from django.core.management import call_command
+from django.utils import timezone
 
 from apps.session.models import SessionAuditLog, SessionTenant
 from apps.session.services import insight_service, portal_publication, tenant_provisioning
@@ -37,7 +38,9 @@ def _leerer_cache() -> Any:
 
 @pytest.fixture
 def welt() -> dict[str, Any]:
-    tenant = SessionTenant.objects.create(name="Bezirk Nord", slug="nord", insight_publish=True)
+    tenant = SessionTenant.objects.create(
+        name="Bezirk Nord", slug="nord", insight_publish=True, oparl_public_since=timezone.now()
+    )
     source = OParlSource.objects.get(sync_config__session_tenant="nord")
     basis = source.url
     body = OParlBody.objects.create(external_id=f"{basis}body/", source=source, name="Bezirk Nord", slug="bezirk-nord")

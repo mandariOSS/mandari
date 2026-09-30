@@ -126,12 +126,15 @@ def tenant_publication_pre_save(sender, instance, **kwargs):
     if instance.pk:
         old = (
             sender.objects.filter(pk=instance.pk)
-            .values_list("insight_publish", "is_active", "insight_end_mode")
+            .values_list("insight_publish", "is_active", "insight_end_mode", "oparl_public_since")
             .first()
         )
-    instance._insight_publish_old, instance._is_active_old, instance._insight_end_mode_old = (
-        old if old is not None else (None, None, None)
-    )
+    (
+        instance._insight_publish_old,
+        instance._is_active_old,
+        instance._insight_end_mode_old,
+        instance._oparl_public_since_old,
+    ) = old if old is not None else (None, None, None, None)
 
 
 def _field_saved(kwargs, name: str) -> bool:
@@ -148,7 +151,8 @@ def tenant_publication_post_save(sender, instance, created, **kwargs):
     Provisioning), wird seine OParl-API als Insight-Quelle registriert;
     beim Deaktivieren wird die Quelle inaktiv gesetzt. Die gewählte Möglichkeit
     zum Ende der Veröffentlichung (``insight_end_mode``, Issue #618) wirkt auf
-    demselben Weg.
+    demselben Weg, ebenso die Freischaltung der OParl-Schnittstelle (Issue #319):
+    Ohne sie registriert das Bürgerportal keine Quelle.
 
     Wird der Mandant selbst deaktiviert oder reaktiviert (Admin-Aktion, Änderungsformular, Befehl),
     nimmt der Lebenszyklus-Service seine Bürgerportal-Quelle zurück bzw. stellt sie wieder her
@@ -170,7 +174,10 @@ def tenant_publication_post_save(sender, instance, created, **kwargs):
     if created and not instance.insight_publish:
         return
     if not created and not (
-        _changed(instance, kwargs, "insight_publish") or _changed(instance, kwargs, "insight_end_mode")
+        _changed(instance, kwargs, "insight_publish")
+        or _changed(instance, kwargs, "insight_end_mode")
+        # Freischaltung bzw. Sperre der Schnittstelle wirkt nur auf veröffentlichende Mandanten
+        or (instance.insight_publish and _changed(instance, kwargs, "oparl_public_since"))
     ):
         return
     from apps.session.services import insight_service

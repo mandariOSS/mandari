@@ -388,10 +388,15 @@ class Command(BaseCommand):
         verwaltung = self._session_user(mandant_a, "verwaltung")
 
         self._profil_anwenden(mandant_a, profil)
+        # Das Bürgerportal liest die OParl-Schnittstelle: erst freischalten (Issue #319), dann veröffentlichen
+        if mandant_a.oparl_public_since is None:
+            mandant_a.oparl_public_since = timezone.now()
         mandant_a.insight_publish = True
         mandant_a.implementation_publish = True
         # Der Veröffentlichungs-Schalter registriert die OParl-Quelle (apps/session/signals.py)
-        cast(Any, mandant_a).save(update_fields=["insight_publish", "implementation_publish", "updated_at"])
+        cast(Any, mandant_a).save(
+            update_fields=["oparl_public_since", "insight_publish", "implementation_publish", "updated_at"]
+        )
 
         mandant_b = self._mandant_b(profil)
         zugaenge = self._leitstelle([mandant_a, mandant_b])

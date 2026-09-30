@@ -6,10 +6,36 @@ Jeder aktive Session-Mandant (Kommune im Verwaltungs-RIS) stellt unter
 https://<host>/session/<slug>/api/oparl/
 ```
 
-einen eigenen, **OParl-1.1-konformen System-Endpoint** bereit (Issue #35).
+einen eigenen, **OParl-1.1-konformen System-Endpoint** bereit (Issue #35),
+sobald die Verwaltung die Schnittstelle freigeschaltet hat (Issue #319, nächster Abschnitt).
 Die API folgt dem Muster des mandari-Aggregators (`docs/OPARL_API.md`,
 Issue #17): rein lesend, anonym, JSON, CORS offen, Rate-Limit
 (`OPARL_API_RATE_LIMIT`, Standard 120 Anfragen/Minute je IP).
+
+## Freischaltung der Schnittstelle (Issue #319)
+
+Offene Daten ab Werk sind gewollt – den Zeitpunkt bestimmt aber die Verwaltung. Ein neu angelegter
+Mandant (Einführung, Testdaten, Schulung, Umstieg aus einem Altsystem) ist zunächst **nicht**
+abrufbar:
+
+- Alle Endpunkte unter `…/api/oparl/` antworten mit **404** („Mandant nicht gefunden“) – nach außen
+  wie ein unbekannter Mandant, ohne Hinweis auf seine Existenz. Dasselbe gilt für anonyme Lesezugriffe
+  der Session-API (`/api/v1/session/<slug>/…` und die alten Pfade unter `…/api/session/…`);
+  angemeldete Nutzer und API-Token des Mandanten lesen weiter.
+- Das Bürgerportal registriert keine Quelle. „Im Bürgerportal veröffentlichen“ setzt die
+  Freischaltung voraus, weil das Bürgerportal genau diese Schnittstelle liest.
+
+**Freischalten:** Session → Einstellungen → Karte **OParl-Schnittstelle** → „OParl-Schnittstelle
+freischalten“ (Berechtigung `manage_settings`). Das Datum steht in
+`SessionTenant.oparl_public_since` und in den Einstellungen („Öffentlich seit …“), jede Änderung im
+Audit-Log des Mandanten (`publish`/`unpublish`, Objekt „OParl-Schnittstelle“). Die Freischaltung
+lässt sich zurücknehmen, solange der Mandant nicht im Bürgerportal veröffentlicht; wer dort
+veröffentlicht, beendet das zuerst (Abschnitt „Veröffentlichung beenden“). Im Django-Admin ist das
+Datum nur lesbar.
+
+**Bestand:** Mit dem Update wurden alle aktiven Mandanten und alle, die im Bürgerportal
+veröffentlichen, mit dem Datum ihrer Anlage freigeschaltet (Migration `session.0047`) – ihre
+Schnittstelle bleibt ohne Unterbrechung erreichbar.
 
 - **Spezifikation**: https://oparl.org/spezifikation/
 - **Implementierung**: `mandari/apps/session/api/oparl.py`,
@@ -27,7 +53,7 @@ markiert sind:
 | Paper | `is_public=True` |
 | File | `is_public=True` **und** übergeordnetes Objekt (Vorlage/Sitzung/TOP) öffentlich; die öffentliche Niederschrift nur, solange sie veröffentlicht ist |
 | Consultation | Vorlage öffentlich; Referenzen auf NÖ-Sitzungen/-TOPs werden ausgelassen |
-| Person | ohne geschützte Daten — verschlüsselte Felder (Telefon, Adresse, Bankdaten) werden nie gelesen |
+| Person | ohne geschützte Daten — verschlüsselte Felder (Telefon, Adresse, Bankdaten) werden nie gelesen; `email` nur mit Einwilligung (Kennzeichen „Kontaktdaten veröffentlichen“, siehe unten) |
 | Organization, Membership, LegislativeTerm | vollständig (keine Ö/NÖ-Unterteilung) |
 
 Nicht-öffentliche Objekte existieren nach außen nicht: Ihre
@@ -35,6 +61,40 @@ Objekt-Endpunkte liefern 404 (sofern sie nie veröffentlicht waren).
 Beweis-Suite: `python scripts/smoke_session_oparl.py` (Ö/NÖ-Beweis über
 die gesamte API-Oberfläche) sowie die pytest-Suite
 `mandari/apps/session/tests/test_security_matrix.py`.
+
+## Kontaktdaten nur mit Einwilligung (Issue #319)
+
+`Person.email` erscheint nur, wenn an der Person das Kennzeichen **„Kontaktdaten veröffentlichen“**
+gesetzt ist (Session → Personen → Bearbeiten → Kontakt → Veröffentlichung). Dazu gehören das
+**Datum** und ein **Nachweis der Einwilligung** (z. B. „Schriftliche Erklärung, abgelegt in der
+Mandatsakte“); ohne beides lässt sich das Kennzeichen nicht setzen. Datum und Nachweis bleiben
+intern und erscheinen nie in der Schnittstelle. Wer das Kennzeichen entfernt, entfernt auch Datum und
+Nachweis; die Änderung steht im Audit-Log. Telefon und Adresse werden nie veröffentlicht.
+
+Standard ist **nicht veröffentlichen**. Bei der Umstellung (Migration `session.0047`) wurden
+Ratsmitglieder mit E-Mail-Adresse übernommen – aktive Personen mit laufender Mitgliedschaft im Rat
+als Mitglied, Vorsitz oder Stellvertretung; Nachweis „Übernahme aus dem Bestand (Ratsmitglied,
+Adresse war bereits veröffentlicht)“. Bei allen anderen Personen (etwa sachkundige Bürgerinnen und
+Bürger, Beratende, Gäste, ehemalige Mitglieder) entfällt die Adresse. Ihr Änderungszeitpunkt wurde
+gesetzt, damit inkrementelle Abnehmer (`modified_since`) und der Bürgerportal-Spiegel die Person neu
+abrufen und die Adresse entfernen. Die Verwaltung sollte die übernommenen Einträge prüfen – etwa
+private Adressen von Ratsmitgliedern.
+
+### Baustein für das Verzeichnis der Verarbeitungstätigkeiten
+
+Verantwortlich ist die Kommune; mandari verarbeitet im Auftrag. Für ihr Verzeichnis nach Art. 30
+DSGVO kann sie die Veröffentlichung so beschreiben:
+
+| Angabe | Inhalt |
+|---|---|
+| Bezeichnung | Veröffentlichung von Ratsinformationen über die OParl-Schnittstelle und das Bürgerportal |
+| Zweck | Transparenz der Ratsarbeit; offene Daten nach dem OParl-Standard |
+| Rechtsgrundlage | Art. 6 Abs. 1 lit. e DSGVO i. V. m. dem Kommunalrecht des Landes (Öffentlichkeit der Sitzungen, Bekanntmachung); für die E-Mail-Adresse Art. 6 Abs. 1 lit. a DSGVO (Einwilligung), sofern keine eigene Grundlage für eine dienstliche Adresse besteht |
+| Betroffene | Mitglieder der Gremien, sachkundige Bürgerinnen und Bürger, Beratende, Antragstellende |
+| Daten | Name, Titel, Anrede, Mitgliedschaften und Funktionen; E-Mail-Adresse nur mit Kennzeichen „Kontaktdaten veröffentlichen“; öffentliche Sitzungen, Vorlagen, Beschlüsse und Anlagen |
+| Empfänger | Öffentlichkeit (anonymer Abruf), Bürgerportal, weitere OParl-Abnehmer |
+| Löschung | Die Schnittstelle zeigt den jeweils aktuellen Stand; entfernte Kontaktdaten verschwinden mit dem nächsten Abgleich aus dem Bürgerportal; im Übrigen nach dem Löschkonzept (`DSGVO_LOESCHKONZEPT.md`) |
+| Nachweis | Datum und Nachweis der Einwilligung je Person; Freischaltung der Schnittstelle mit Datum und Audit-Eintrag |
 
 ## Endpunkte
 
@@ -172,7 +232,9 @@ Ingestor konsumiert die Session-OParl-API als ganz normale OParl-Quelle.
 Der Mandant entscheidet, ab wann seine öffentlichen Daten ins Portal
 fließen: **Session → Einstellungen → Bürgerportal** (Berechtigung
 `manage_settings`; Feld `SessionTenant.insight_publish`, Umschalten wird
-im Audit-Log protokolliert).
+im Audit-Log protokolliert). Voraussetzung ist die freigeschaltete
+OParl-Schnittstelle (Issue #319, oben): Vorher bietet die Karte das Veröffentlichen
+nicht an, und kein Weg (Oberfläche, Befehl, Signal) registriert eine Quelle.
 
 Beim Aktivieren wird die OParl-API des Mandanten automatisch als
 `OParlSource` registriert (Signal-Hook, `sync_config.session_tenant` =
@@ -235,8 +297,10 @@ sofern gepflegt (sonst wie bisher `classification: "Kommune"`).
 ## Quelle per CLI registrieren
 
 ```bash
-# Registrieren (setzt insight_publish und legt die OParlSource an)
+# Registrieren (setzt insight_publish und legt die OParlSource an); setzt die freigeschaltete
+# OParl-Schnittstelle voraus – mit --oparl-freischalten wird sie zugleich freigeschaltet
 python manage.py session_insight_source --tenant musterstadt
+python manage.py session_insight_source --tenant musterstadt --oparl-freischalten
 
 # Alle veröffentlichten Mandanten (nach)registrieren, z. B. nach Umzug
 python manage.py session_insight_source --all
@@ -288,9 +352,10 @@ Portal ausgeblendet.
 ## Anleitung: Musterstadt-Mandant an Insight anbinden
 
 1. In Session als Admin des Mandanten anmelden:
-   `/session/musterstadt/settings/` → Karte **Bürgerportal** →
+   `/session/musterstadt/settings/` → Karte **OParl-Schnittstelle** →
+   „OParl-Schnittstelle freischalten“, dann Karte **Bürgerportal** →
    „Im Bürgerportal veröffentlichen“. (Alternativ:
-   `python manage.py session_insight_source --tenant musterstadt`.)
+   `python manage.py session_insight_source --tenant musterstadt --oparl-freischalten`.)
 2. Prüfen: Im Django-Admin unter *OParl-Quellen* existiert jetzt
    `Sitzungsdienst Stadt Musterstadt` mit der URL
    `<SITE_URL>/session/musterstadt/api/oparl/` (aktiv).

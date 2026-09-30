@@ -210,6 +210,9 @@
                             {{ person.email }}
                         </a>
                     </dd>
+                    <dd class="mt-1 text-xs text-gray-500 dark:text-gray-400" data-testid="kontakt-veroeffentlichung">
+                        {% if person.contact_publish %}Veröffentlicht – Einwilligung vom {{ person.contact_consent_date|date:"d.m.Y"|default:"–" }}{% if person.contact_consent_evidence %}, Nachweis: {{ person.contact_consent_evidence }}{% endif %}{% else %}Nicht veröffentlicht (keine Einwilligung hinterlegt){% endif %}
+                    </dd>
                 </div>
                 {% endif %}
                 {% with person_phone=person.get_phone_decrypted %}

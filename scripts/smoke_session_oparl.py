@@ -118,8 +118,10 @@ tenant = SessionTenant.objects.create(
     slug="musterstadt",
     short_name="Musterstadt",
     contact_email="ris@musterstadt.example",
+    # Freigeschaltete Schnittstelle (Issue #319); gesperrte Mandanten prüft Phase H
+    oparl_public_since=timezone.now(),
 )
-tenant_b = SessionTenant.objects.create(name="Stadt Fremdstadt", slug="fremdstadt")
+tenant_b = SessionTenant.objects.create(name="Stadt Fremdstadt", slug="fremdstadt", oparl_public_since=timezone.now())
 
 council = SessionOrganization.objects.create(tenant=tenant, name="Rat", organization_type="council")
 committee = SessionOrganization.objects.create(
@@ -131,7 +133,18 @@ term = SessionLegislativeTerm.objects.create(
 )
 
 person = SessionPerson.objects.create(
-    tenant=tenant, given_name="Anna", family_name="Beispiel", title="Dr.", email="anna@musterstadt.example"
+    tenant=tenant,
+    given_name="Anna",
+    family_name="Beispiel",
+    title="Dr.",
+    email="anna@musterstadt.example",
+    # Kontaktdaten nur mit Einwilligung (Issue #319)
+    contact_publish=True,
+    contact_consent_date=timezone.localdate(),
+    contact_consent_evidence="GEHEIMER-NACHWEIS Mandatsakte",
+)
+person_ohne = SessionPerson.objects.create(
+    tenant=tenant, given_name="Sara", family_name="Sachkundig", email="PRIVAT-sara@example.org"
 )
 person.set_phone_encrypted("GEHEIM-TELEFON-0123456")
 person.set_address_encrypted("GEHEIME-ADRESSE Hinterhof 1")
@@ -276,6 +289,9 @@ NON_PUBLIC_MARKERS = [
     "GEHEIM-TELEFON",
     "GEHEIME-ADRESSE",
     "DE99GEHEIMIBAN",
+    # Kontaktdaten nur mit Einwilligung, Nachweis bleibt intern (Issue #319)
+    "GEHEIMER-NACHWEIS",
+    "PRIVAT-sara",
     "FREMDGREMIUM-XYZ",
     "FREMD-SITZUNG-XYZ",
     "FREMD-VORLAGE-XYZ",
@@ -435,6 +451,8 @@ check("AgendaItem: consultation-Referenz", embedded_items and "consultation" in 
 status, person_obj = get_json(f"{BASE}person/{person.id}/")
 check("Person: Membership eingebettet", person_obj is not None and len(person_obj.get("membership", [])) == 1)
 check("Person: E-Mail als Liste", person_obj is not None and person_obj.get("email") == ["anna@musterstadt.example"])
+status, person_ohne_obj = get_json(f"{BASE}person/{person_ohne.id}/")
+check("Person ohne Einwilligung: keine E-Mail", person_ohne_obj is not None and "email" not in person_ohne_obj)
 status, membership_obj = get_json(f"{BASE}membership/{membership.id}/")
 check("Membership einzeln auflösbar", membership_obj is not None and membership_obj.get("role") == "Vorsitzende/r")
 
@@ -647,6 +665,17 @@ check(
     "Listen-Endpunkt liefert beide Ö-TOPs mit Abstimmung",
     "OEFFENTLICHER-TOP-SPIELPLATZ" in names_in_list and "GEHEIME-WAHL-TOP" in names_in_list,
 )
+
+print()
+print("=== Phase H: Freischaltung der Schnittstelle (Issue #319) ===")
+gesperrt = SessionTenant.objects.create(name="Stadt Einfuehrung", slug="einfuehrung")
+for pfad in ("", "body/", "meetings/", "people/"):
+    status, _ = get_json(f"/session/{gesperrt.slug}/api/oparl/{pfad}", expect=404)
+    check(f"Nicht freigeschaltet: {pfad or 'System'} -> 404", status == 404, f"status={status}")
+gesperrt.oparl_public_since = timezone.now()
+gesperrt.save(update_fields=["oparl_public_since", "updated_at"])
+status, _ = get_json(f"/session/{gesperrt.slug}/api/oparl/")
+check("Nach der Freischaltung -> 200", status == 200, f"status={status}")
 
 print(f"=== Ergebnis: {PASS} OK, {FAIL} FAIL ===")
 sys.exit(1 if FAIL else 0)

@@ -20,6 +20,7 @@ from django.core import mail
 from django.core.management import CommandError, call_command
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.common.tests.factories import UserFactory
 from apps.session.middleware import RESERVED_SLUGS
@@ -282,8 +283,10 @@ class TestService:
         assert set(tenant.roles.values_list("name", flat=True)) == STANDARDROLLEN
 
     def test_oparl_body_nennt_koerperschaftstyp_und_ags(self) -> None:
-        tenant = SessionTenant.objects.create(name="Bezirk Ost", slug="ost", body_type="bezirk", ags="02000000")
-        ohne = SessionTenant.objects.create(name="Alt", slug="alt-ohne")
+        tenant = SessionTenant.objects.create(
+            name="Bezirk Ost", slug="ost", body_type="bezirk", ags="02000000", oparl_public_since=timezone.now()
+        )
+        ohne = SessionTenant.objects.create(name="Alt", slug="alt-ohne", oparl_public_since=timezone.now())
 
         body = Client().get(f"/session/{tenant.slug}/api/oparl/body/").json()
         alt = Client().get(f"/session/{ohne.slug}/api/oparl/body/").json()

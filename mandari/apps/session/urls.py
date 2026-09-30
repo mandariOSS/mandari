@@ -547,6 +547,12 @@ urlpatterns = [
         views.InsightPublishView.as_view(),
         name="insight_publish",
     ),
+    # Freischaltung der OParl-Schnittstelle (Issue #319)
+    path(
+        "<slug:tenant_slug>/settings/oparl-schnittstelle/",
+        views.OParlAccessView.as_view(),
+        name="oparl_access",
+    ),
     path(
         "<slug:tenant_slug>/settings/buergerportal-beenden/",
         views.PortalPublicationEndView.as_view(),

@@ -63,7 +63,11 @@ def _ohne_elasticsearch(monkeypatch: pytest.MonkeyPatch) -> None:
 def welt() -> dict[str, Any]:
     """Veröffentlichender Mandant mit gespiegelter Kommune, veröffentlichtem Beschluss und einer fremden Kommune."""
     tenant = SessionTenant.objects.create(
-        name="Bezirk Nord", slug="nord", insight_publish=True, implementation_publish=True
+        name="Bezirk Nord",
+        slug="nord",
+        insight_publish=True,
+        implementation_publish=True,
+        oparl_public_since=timezone.now(),
     )
     source = OParlSource.objects.get(sync_config__session_tenant="nord")
     basis = source.url

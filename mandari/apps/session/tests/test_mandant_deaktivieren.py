@@ -49,7 +49,9 @@ CHANGELIST = "/admin/session/sessiontenant/"
 @pytest.fixture
 def welt() -> dict[str, Any]:
     """Veröffentlichender Mandant mit gespiegelter Kommune, wie sie der Ingestor anlegt."""
-    tenant = SessionTenant.objects.create(name="Bezirk Nord", slug="nord", insight_publish=True)
+    tenant = SessionTenant.objects.create(
+        name="Bezirk Nord", slug="nord", insight_publish=True, oparl_public_since=timezone.now()
+    )
     source = OParlSource.objects.get(sync_config__session_tenant="nord")
     basis = source.url
     body = OParlBody.objects.create(external_id=f"{basis}body/", source=source, name="Bezirk Nord", slug="bezirk-nord")

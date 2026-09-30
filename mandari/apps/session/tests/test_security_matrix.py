@@ -387,8 +387,12 @@ def _make_user(world: World, tenant: SessionTenant, name: str, perms: set[str], 
 
 
 def _build_world() -> World:
-    tenant_a = SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt")
-    tenant_b = SessionTenant.objects.create(name="Stadt Fremdstadt", slug="fremdstadt")
+    tenant_a = SessionTenant.objects.create(
+        name="Stadt Musterstadt", slug="musterstadt", oparl_public_since=timezone.now()
+    )
+    tenant_b = SessionTenant.objects.create(
+        name="Stadt Fremdstadt", slug="fremdstadt", oparl_public_since=timezone.now()
+    )
     now = timezone.now()
 
     # Tenant A: Daten mit Ö/NÖ-Trennung

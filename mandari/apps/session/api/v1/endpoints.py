@@ -54,6 +54,15 @@ def get_tenant(tenant_slug: str) -> SessionTenant:
     return tenant
 
 
+def require_reader(tenant: SessionTenant, principal: Principal, tenant_slug: str) -> None:
+    """
+    Anonyme lesen erst nach der Freischaltung der OParl-Schnittstelle (Issue #319) – vorher wie ein
+    unbekannter Mandant. Angemeldete Nutzer und API-Token des Mandanten lesen weiter.
+    """
+    if not principal.authenticated and not tenant.oparl_public:
+        raise Problem(404, f"Mandant „{tenant_slug}“ nicht gefunden.", kind="nicht-gefunden")
+
+
 def _page(qs: QuerySet[Any], limit: int, offset: int) -> tuple[list[Any], int]:
     limit = max(1, min(limit, MAX_LIMIT))
     offset = max(0, offset)
@@ -77,6 +86,7 @@ def _org(obj: Any) -> dict[str, Any] | None:
 @router.get("/{tenant_slug}/", response=TenantRoot, summary="Einstiegspunkt je Mandant")
 def tenant_root(request: HttpRequest, tenant_slug: str) -> dict[str, Any]:
     tenant = get_tenant(tenant_slug)
+    require_reader(tenant, resolve_principal(request, tenant), tenant_slug)
     base = request.build_absolute_uri
     return {
         "name": f"mandari Session-API – {tenant.name}",
@@ -102,6 +112,7 @@ def meetings(
     """Öffentliche Sitzungen für alle; nicht-öffentliche mit Recht ``view_non_public_meetings``."""
     tenant = get_tenant(tenant_slug)
     principal = resolve_principal(request, tenant)
+    require_reader(tenant, principal, tenant_slug)
     non_public = principal.has_permission("view_non_public_meetings")
     qs = SessionMeeting.objects.filter(tenant=tenant)
     if not non_public:
@@ -150,6 +161,7 @@ def papers(
     """
     tenant = get_tenant(tenant_slug)
     principal = resolve_principal(request, tenant)
+    require_reader(tenant, principal, tenant_slug)
     non_public = principal.has_permission("view_non_public_papers")
     qs: QuerySet[SessionPaper] = (
         SessionPaper.objects.filter(tenant=tenant) if non_public else cast(Any, visible_papers)(tenant)

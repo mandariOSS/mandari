@@ -211,6 +211,19 @@ print("=== Phase 2: Veröffentlichungs-Schalter ===")
 base = f"/session/{tenant.slug}"
 check("Vor Veröffentlichung: keine Quelle registriert", OParlSource.objects.count() == 0)
 
+# Neuer Mandant: OParl-Schnittstelle gesperrt, Bürgerportal erst nach der Freischaltung (Issue #319)
+check("Vor Freischaltung: OParl -> 404", Client().get(f"{base}/api/oparl/").status_code == 404)
+admin.post(f"{base}/settings/insight-publish/", {"publish": "1"})
+tenant.refresh_from_db()
+check(
+    "Vor Freischaltung: Veröffentlichen abgelehnt, keine Quelle",
+    not tenant.insight_publish and OParlSource.objects.count() == 0,
+)
+resp = admin.post(f"{base}/settings/oparl-schnittstelle/", {"public": "1"})
+tenant.refresh_from_db()
+check("OParl-Schnittstelle freigeschaltet", resp.status_code == 302 and tenant.oparl_public_since is not None)
+check("Nach Freischaltung: OParl -> 200", Client().get(f"{base}/api/oparl/").status_code == 200)
+
 resp = admin.post(f"{base}/settings/insight-publish/", {"publish": "1"})
 tenant.refresh_from_db()
 check("Schalter aktiviert -> Redirect", resp.status_code == 302 and tenant.insight_publish)

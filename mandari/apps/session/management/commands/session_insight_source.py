@@ -7,8 +7,10 @@ Normalfall: Die Registrierung geschieht automatisch, sobald der Mandant
 den Veröffentlichungs-Schalter aktiviert (Settings -> Bürgerportal).
 Dieser Befehl ist das CLI-Gegenstück für Betrieb/Provisioning:
 
-    # Quelle für einen Mandanten registrieren (setzt insight_publish)
+    # Quelle für einen Mandanten registrieren (setzt insight_publish); die OParl-Schnittstelle
+    # muss freigeschaltet sein (Issue #319) – oder mit --oparl-freischalten zugleich freischalten
     python manage.py session_insight_source --tenant musterstadt
+    python manage.py session_insight_source --tenant musterstadt --oparl-freischalten
 
     # Alle bereits veröffentlichten Mandanten (nach)registrieren
     python manage.py session_insight_source --all
@@ -45,6 +47,11 @@ class Command(BaseCommand):
             "--base-url",
             help="Basis-URL der Instanz (Standard: SITE_URL; die Schnittstelle vergibt IDs und Links aus SITE_URL)",
         )
+        parser.add_argument(
+            "--oparl-freischalten",
+            action="store_true",
+            help="OParl-Schnittstelle des Mandanten zugleich freischalten (Voraussetzung fürs Bürgerportal)",
+        )
 
     def handle(self, *args, **options):
         base_url = options.get("base_url")
@@ -55,6 +62,11 @@ class Command(BaseCommand):
                 self.stdout.write("Keine Mandanten mit aktiver Veröffentlichung gefunden.")
                 return
             for tenant in tenants:
+                if not tenant.oparl_public:
+                    self.stdout.write(
+                        self.style.WARNING(f"{tenant.slug}: OParl-Schnittstelle nicht freigeschaltet – übersprungen.")
+                    )
+                    continue
                 source, created = insight_service.register_source(tenant, base_url)
                 state = "registriert" if created else "aktualisiert"
                 self.stdout.write(self.style.SUCCESS(f"{tenant.slug}: Quelle {state} -> {source.url}"))
@@ -87,6 +99,17 @@ class Command(BaseCommand):
                 insight_service.deactivate_source(tenant, base_url)
             self.stdout.write(self.style.SUCCESS(f"{tenant.slug}: Veröffentlichung beendet, Quelle deaktiviert."))
             return
+
+        if not tenant.oparl_public:
+            if not options["oparl_freischalten"]:
+                raise CommandError(
+                    f"Die OParl-Schnittstelle von '{slug}' ist nicht freigeschaltet. "
+                    "Freischalten in den Einstellungen des Mandanten oder mit --oparl-freischalten."
+                )
+            from apps.session.services import oparl_access
+
+            oparl_access.release(tenant)
+            self.stdout.write(self.style.SUCCESS(f"{tenant.slug}: OParl-Schnittstelle freigeschaltet."))
 
         # Schalter setzen — das Signal registriert die Quelle (Standard-URL);
         # bei abweichender Basis-URL zusätzlich explizit registrieren.

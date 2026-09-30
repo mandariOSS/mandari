@@ -10,6 +10,7 @@ from django.contrib import messages
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
+from django.utils import timezone
 from django.views import View
 from django.views.generic import (
     CreateView,
@@ -33,6 +34,9 @@ class SessionPersonForm(forms.ModelForm):
     die generierten Verschlüsselungs-Accessoren gelesen/geschrieben
     (AES-256-GCM mit Tenant-Key) — niemals als Klartext-Modelfelder.
     Bankdaten sind nur für Berechtigte (manage_allowances) sichtbar.
+
+    Kontaktdaten veröffentlichen (Issue #319): Die E-Mail erscheint in der OParl-Schnittstelle nur mit
+    Kennzeichen, Datum und Nachweis der Einwilligung. Ohne Kennzeichen entfallen Datum und Nachweis.
     """
 
     phone = forms.CharField(label="Telefon", required=False, max_length=100)
@@ -49,6 +53,9 @@ class SessionPersonForm(forms.ModelForm):
             "given_name",
             "family_name",
             "email",
+            "contact_publish",
+            "contact_consent_date",
+            "contact_consent_evidence",
             "delivery_channel",
             "is_active",
             "start_date",
@@ -59,6 +66,9 @@ class SessionPersonForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         # Zustellweg (Issue #225): ohne Angabe bleibt es bei E-Mail (Importe, ältere Formulare)
         self.fields["delivery_channel"].required = False
+        # Datum als ISO-Text vorbelegen, damit das Datumsfeld des Browsers es anzeigt
+        if self.instance.pk and self.instance.contact_consent_date:
+            self.initial["contact_consent_date"] = self.instance.contact_consent_date.isoformat()
         self.show_bank_fields = show_bank_fields
         if not show_bank_fields:
             for field in ("bank_account_holder", "bank_iban", "bank_bic"):
@@ -75,8 +85,30 @@ class SessionPersonForm(forms.ModelForm):
     def clean_delivery_channel(self) -> str:
         return str(self.cleaned_data.get("delivery_channel") or "email")
 
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get("contact_publish"):
+            cleaned["contact_consent_date"] = None
+            cleaned["contact_consent_evidence"] = ""
+            return cleaned
+        if not cleaned.get("email") and "email" not in self.errors:
+            self.add_error("email", "Ohne E-Mail-Adresse gibt es nichts zu veröffentlichen.")
+        consent_date = cleaned.get("contact_consent_date")
+        if consent_date is None and "contact_consent_date" not in self.errors:
+            self.add_error("contact_consent_date", "Bitte das Datum der Einwilligung angeben.")
+        elif consent_date is not None and consent_date > timezone.localdate():
+            self.add_error("contact_consent_date", "Die Einwilligung kann nicht in der Zukunft liegen.")
+        evidence = (cleaned.get("contact_consent_evidence") or "").strip()
+        if not evidence:
+            self.add_error("contact_consent_evidence", "Bitte angeben, wo die Einwilligung nachgewiesen ist.")
+        cleaned["contact_consent_evidence"] = evidence
+        return cleaned
+
     def save(self, commit=True):
         person = super().save(commit=False)
+        if not person.contact_publish:
+            # Ohne Kennzeichen keine Einwilligungsangaben (auch wenn das Formular die Felder nicht mitschickt)
+            person.contact_consent_date, person.contact_consent_evidence = None, ""
         person.set_phone_encrypted(self.cleaned_data.get("phone", ""))
         person.set_address_encrypted(self.cleaned_data.get("address", ""))
         if self.show_bank_fields:

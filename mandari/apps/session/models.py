@@ -21,6 +21,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
@@ -274,6 +275,17 @@ class SessionTenant(models.Model):
     # Settings
     settings = models.JSONField(default=dict, blank=True, verbose_name="Einstellungen")
 
+    # Freischaltung der OParl-Schnittstelle (Issue #319): Leer heißt nicht freigeschaltet – die
+    # Schnittstelle unter /session/<slug>/api/oparl/ antwortet mit 404, das Bürgerportal registriert
+    # keine Quelle. Neue Mandanten starten gesperrt (Einführung, Testdaten, Umstieg); der Bestand
+    # wurde bei der Einführung des Schalters mit dem Datum der Anlage freigeschaltet.
+    oparl_public_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="OParl-Schnittstelle öffentlich seit",
+        help_text="Leer: Die OParl-Schnittstelle ist nicht freigeschaltet und antwortet mit 404",
+    )
+
     # Bürgerportal-Veröffentlichung (Issue #36): Erst wenn der Mandant den
     # Schalter aktiviert, wird seine OParl-API als Quelle im Insight-Ingestor
     # registriert und die öffentlichen Daten fließen ins Bürgerportal.
@@ -470,6 +482,18 @@ class SessionTenant(models.Model):
             self.slug = slugify(self.name)
         # Schlüsselspalten nie über ein allgemeines save() zurückschreiben (Schlüsselwechsel)
         super().save(*args, **exclude_key_fields_from_save(self, kwargs))
+
+    @property
+    def oparl_public(self) -> bool:
+        """Ist die OParl-Schnittstelle freigeschaltet? (Issue #319; Voraussetzung fürs Bürgerportal)."""
+        return self.oparl_public_since is not None
+
+    def clean(self) -> None:
+        super().clean()
+        if self.insight_publish and not self.oparl_public:
+            raise ValidationError(
+                "Im Bürgerportal veröffentlicht nur ein Mandant mit freigeschalteter OParl-Schnittstelle."
+            )
 
     @property
     def protocol_direct_publication(self) -> bool:
@@ -1356,8 +1380,30 @@ class SessionPerson(EncryptionMixin, models.Model):
     # Contact
     # E-Mail bleibt bewusst Klartext: Sie wird in der Personensuche gefiltert
     # (PersonListView, email__icontains) und über die öffentliche OParl-API
-    # veröffentlicht — verschlüsselte Felder sind nicht filterbar.
+    # veröffentlicht, sofern die Person eingewilligt hat — verschlüsselte Felder sind nicht filterbar.
     email = models.EmailField(blank=True, verbose_name="E-Mail")
+    # Kontaktdaten veröffentlichen (Issue #319): Die E-Mail erscheint in der OParl-Schnittstelle (und damit
+    # im Bürgerportal) nur mit Kennzeichen, Datum und Nachweis der Einwilligung. Telefon und Adresse werden
+    # nie veröffentlicht. DB-seitige Defaults, damit ein älteres Image weiter Personen anlegen kann.
+    contact_publish = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Kontaktdaten veröffentlichen",
+        help_text="E-Mail-Adresse in der OParl-Schnittstelle und im Bürgerportal zeigen",
+    )
+    contact_consent_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Einwilligung vom",
+    )
+    contact_consent_evidence = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Nachweis der Einwilligung",
+        help_text="z. B. „Schriftliche Erklärung, abgelegt in der Mandatsakte“",
+    )
     phone_encrypted = EncryptedTextField(verbose_name="Telefon (verschlüsselt)")
     address_encrypted = EncryptedTextField(verbose_name="Adresse (verschlüsselt)")
 
@@ -1404,6 +1450,11 @@ class SessionPerson(EncryptionMixin, models.Model):
         parts.append(self.given_name)
         parts.append(self.family_name)
         return " ".join(parts)
+
+    @property
+    def published_email(self) -> str:
+        """E-Mail für die öffentliche OParl-Schnittstelle – nur mit Einwilligung (Issue #319), sonst leer."""
+        return self.email if self.contact_publish else ""
 
 
 class SessionOrganizationMembership(models.Model):

@@ -49,6 +49,7 @@ _dj_settings.DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = 30
 
 from django.test import Client  # noqa: E402
 from django.test.utils import setup_test_environment  # noqa: E402
+from django.utils import timezone  # noqa: E402
 
 setup_test_environment()
 from _smoke_db import prepare_database  # noqa: E402
@@ -88,7 +89,8 @@ def check(name, condition, detail=""):
 # =============================================================================
 # Setup
 # =============================================================================
-tenant = SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt")
+# Freigeschaltete OParl-Schnittstelle (Issue #319): Phase „OParl“ liest den Body
+tenant = SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt", oparl_public_since=timezone.now())
 other_tenant = SessionTenant.objects.create(name="Stadt Anderswo", slug="anderswo")
 
 admin_user = User.objects.create_user(email="admin@example.org", password="pw-Smoke-Test-1!")

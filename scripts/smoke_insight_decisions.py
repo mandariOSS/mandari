@@ -86,7 +86,9 @@ source = OParlSource.objects.create(name="RIS", url="https://ris.example/oparl/s
 body = OParlBody.objects.create(
     external_id="https://ris.example/oparl/body/1", source=source, name="Stadt Planhausen", slug="planhausen"
 )
-tenant = SessionTenant.objects.create(name="Stadt Planhausen", slug="planhausen", oparl_body=body, insight_publish=True)
+tenant = SessionTenant.objects.create(
+    name="Stadt Planhausen", slug="planhausen", oparl_body=body, insight_publish=True, oparl_public_since=timezone.now()
+)
 role = SessionRole.objects.create(tenant=tenant, name="Administration", is_admin=True)
 clerk_user = User.objects.create_user(email="rat@planhausen.example", password="pw-Smoke-1!")
 clerk = SessionUser.objects.create(user=clerk_user, tenant=tenant)
