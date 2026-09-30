@@ -440,6 +440,7 @@ class OParlBodyAdmin(ModelAdmin):
         "name",
         "short_name",
         "display_name",
+        "slug",
         "has_logo",
         "has_geo_data",
         "has_osm_relation",
@@ -448,7 +449,7 @@ class OParlBodyAdmin(ModelAdmin):
         "source",
     ]
     list_filter = ["is_listed", GeoCoverageListFilter, "source", "classification", "deleted"]
-    search_fields = ["name", "short_name", "display_name"]
+    search_fields = ["name", "short_name", "display_name", "slug"]
     autocomplete_fields = ["territory_parent"]
     inlines = [GeoSuggestionInline]
     readonly_fields = [
@@ -458,6 +459,7 @@ class OParlBodyAdmin(ModelAdmin):
         "updated_at",
         "oparl_created",
         "oparl_modified",
+        "file_cache_dir",
     ]
     list_editable = ["display_name"]  # Direkt in der Liste bearbeitbar
 
@@ -465,8 +467,20 @@ class OParlBodyAdmin(ModelAdmin):
         (
             "Anzeige im Frontend",
             {
-                "fields": ("display_name", "is_listed", "description", "logo", "hero_image", "hero_image_credit"),
-                "description": "Diese Felder bestimmen, wie die Kommune im Frontend angezeigt wird.",
+                "fields": (
+                    "display_name",
+                    "slug",
+                    "is_listed",
+                    "description",
+                    "logo",
+                    "hero_image",
+                    "hero_image_credit",
+                ),
+                "description": (
+                    "Diese Felder bestimmen, wie die Kommune im Frontend angezeigt wird. Mit Slug hat die "
+                    "Kommune ein eigenes Bürgerportal unter /insight/k/<slug>/ und eine eigene Sitemap; "
+                    "gesammelt setzen: python manage.py set_body_slugs."
+                ),
             },
         ),
         (
@@ -511,7 +525,7 @@ class OParlBodyAdmin(ModelAdmin):
         (
             "Quelle",
             {
-                "fields": ("source", "external_id"),
+                "fields": ("source", "external_id", "file_cache_dir"),
             },
         ),
         (

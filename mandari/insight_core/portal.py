@@ -135,7 +135,6 @@ def _find_body(slug: str) -> OParlBody | None:
     if body is not None:
         return body
     from apps.session.models import SessionTenant
-    from apps.session.services.insight_service import session_sources
 
     # Vorübergehend abgeschaltet oder Archiv (Issue #618): Einstieg bleibt, die Seiten zeigen den Hinweis
     tenant = (
@@ -145,6 +144,14 @@ def _find_body(slug: str) -> OParlBody | None:
     )
     if tenant is None:
         return None
+    return tenant_body(tenant)
+
+
+def tenant_body(tenant: Any) -> OParlBody | None:
+    """Gelistete Kommune hinter einem Session-Mandanten: eigene OParl-Quelle, sonst die verknüpfte Kommune."""
+    from apps.session.services.insight_service import session_sources
+    from insight_core.models import OParlBody
+
     body = OParlBody.objects.listed().filter(source__in=session_sources(tenant)).order_by("created_at").first()
     if body is None and tenant.oparl_body_id:
         body = OParlBody.objects.listed().filter(pk=tenant.oparl_body_id).first()

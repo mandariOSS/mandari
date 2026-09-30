@@ -15,6 +15,16 @@ Je Kommune ein Verzeichnis (Slug, sonst aus dem Namen abgeleitet: `stadt-koeln`,
 `bundesstadt-bonn` …). Dadurch lässt sich pro Stadt eine eigene Storage Box unter genau diesem
 Pfad mounten – oder eine große Box für alle.
 
+Der Name wird je Kommune **einmal festgeschrieben** (Feld „Verzeichnis im Dokument-Cache“ im Admin,
+`OParlBody.file_cache_dir`): beim ersten Ablegen einer Datei, für den Bestand durch die Migration
+`insight_core.0039`. Ein später gesetzter Slug oder ein im RIS geänderter Kurzname verschiebt daher
+nichts – vorhandene Kopien (`OParlFile.local_path`, absolute Pfade) bleiben gültig, neue Dateien
+landen im selben Verzeichnis, gemountete Storage Boxen bleiben zuständig (Issue #373).
+
+`prune_file_cache --unlisted` räumt den Bestand ausgeblendeter Kommunen ab. Ein Verzeichnis bleibt
+stehen, sobald es auch eine gelistete Kommune nutzt – nach ihrem Verzeichnisnamen oder weil dort
+Dateien von ihr liegen.
+
 ## Speicherbedarf (Stand September 2026)
 
 | Kommune | Dateien | Ø Größe | Bestand | Zuwachs/Jahr |

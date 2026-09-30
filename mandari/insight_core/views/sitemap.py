@@ -5,7 +5,11 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
-from django.http import Http404, HttpResponse
+import uuid
+
+from django.db.models import Q
+from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
+from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from .. import publication
@@ -52,16 +56,21 @@ def robots_txt(request):
     return HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
 
 
+def _sitemap_key(body):
+    """Kennung der Body-Sitemap: Slug, für Kommunen ohne Slug die ID."""
+    return body.slug or str(body.id)
+
+
 @require_GET
 def sitemap_index(request):
-    """Sitemap-Index: listet die Body-Sitemaps aller Kommunen mit Slug."""
+    """Sitemap-Index: listet die Body-Sitemaps aller gelisteten Kommunen (Slug, sonst ID)."""
     site_url = _site_url()
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
     xml_parts.append('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
-    bodies = OParlBody.objects.listed().exclude(slug__isnull=True).exclude(slug="").order_by("slug")
+    bodies = OParlBody.objects.listed().only("id", "slug", "last_sync").order_by("name")
     for body in bodies:
         xml_parts.append("  <sitemap>")
-        xml_parts.append(f"    <loc>{site_url}/sitemap-insight-{body.slug}.xml</loc>")
+        xml_parts.append(f"    <loc>{site_url}/sitemap-insight-{_sitemap_key(body)}.xml</loc>")
         if body.last_sync:
             xml_parts.append(f"    <lastmod>{body.last_sync.strftime('%Y-%m-%dT%H:%M:%S+00:00')}</lastmod>")
         xml_parts.append("  </sitemap>")
@@ -83,15 +92,25 @@ def body_sitemap(request, body_slug):
 
     site_url = getattr(settings, "SITE_URL", "https://mandari.de")
 
-    try:
-        body = OParlBody.objects.listed().get(slug=body_slug)
-    except OParlBody.DoesNotExist:
+    body = OParlBody.objects.listed().filter(slug=body_slug).first()
+    body_id = None
+    if body is None:
+        # Kommunen ohne Slug stehen mit ihrer ID im Index; mit Slug gilt nur dessen Adresse
+        try:
+            body_id = uuid.UUID(body_slug)
+        except ValueError:
+            body_id = None
+        body = OParlBody.objects.listed().filter(pk=body_id).first() if body_id else None
+        if body is not None and body.slug:
+            return HttpResponsePermanentRedirect(reverse("insight_core:body_sitemap", kwargs={"body_slug": body.slug}))
+    if body is None:
         # Dauerhaft zurückgenommen (Issue #618): „nicht mehr verfügbar“ statt „gibt es nicht“
-        gone = OParlBody.objects.filter(slug=body_slug).values_list("id", flat=True).first()
+        kennung = (Q(slug=body_slug) | Q(pk=body_id)) if body_id else Q(slug=body_slug)
+        gone = OParlBody.objects.filter(kennung).values_list("id", flat=True).first()
         state = publication.body_state(gone)
         if state is not None and state.withdrawn:
             return HttpResponse("Sitemap nicht mehr verfügbar", status=410, content_type="text/plain; charset=utf-8")
-        raise Http404("Kommune nicht gefunden") from None
+        raise Http404("Kommune nicht gefunden")
 
     # Vorübergehend abgeschaltet (Issue #618): wie die Seiten 503 mit Retry-After, Suchmaschinen
     # behalten die Adressen. Archiv: unverändert, der Bestand bleibt lesbar.

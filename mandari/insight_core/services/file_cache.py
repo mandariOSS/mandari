@@ -12,6 +12,9 @@ Storage Box mounten lässt:
 
     <OPARL_FILES_ROOT>/<kommune>/<jahr>/<datei-id>.pdf
 
+``<kommune>`` wird je Kommune einmal festgeschrieben (``OParlBody.file_cache_dir``, siehe
+``body_dir_name``) und ändert sich danach nicht mehr – auch nicht mit einem neuen Slug.
+
 Ein Festplatten-Schutz (FILE_CACHE_MIN_FREE_GB) verhindert, dass der Cache das
 Systemlaufwerk vollschreibt.
 
@@ -107,14 +110,65 @@ def http_timeout():
 # =============================================================================
 
 
-def body_dir_name(body) -> str:
-    """Lesbarer Verzeichnisname je Kommune (Slug, sonst aus dem Namen abgeleitet)."""
+#: Längster Verzeichnisname, den Dateisysteme zulassen (NAME_MAX) – länger ließ sich nie etwas ablegen
+MAX_DIR_NAME = 255
+
+
+def derive_body_dir_name(slug, short_name, name, pk) -> str:
+    """
+    Bisherige Ableitung des Verzeichnisnamens: Slug, sonst Kurz- bzw. Langname (Umlaute umschrieben),
+    sonst die ID. Gilt nur, solange für die Kommune noch kein Name festgeschrieben ist.
+    """
     from django.utils.text import slugify
 
-    if body.slug:
-        return body.slug
-    base = (body.short_name or body.name or "").translate(_UMLAUTS)
-    return slugify(base) or str(body.id)
+    if slug:
+        return str(slug)
+    base = (short_name or name or "").translate(_UMLAUTS)
+    return slugify(base) or str(pk)
+
+
+def body_dir_name(body) -> str:
+    """
+    Verzeichnisname der Kommune im Cache: der festgeschriebene (``OParlBody.file_cache_dir``), sonst
+    wie bisher abgeleitet (Slug, Kurzname …).
+
+    Festgeschrieben wird der Name beim ersten Ablegen einer Datei (``pin_body_dir``), durch die
+    Migration für alle bestehenden Kommunen und vor jeder Änderung einer Kommune über Django
+    (``OParlBody.save``). Ein neuer Slug verschiebt daher nichts (Issue #373): bereits
+    abgelegte Dateien behalten ihren Pfad (``OParlFile.local_path``), neue landen daneben.
+    """
+    stored = getattr(body, "file_cache_dir", None)
+    if stored:
+        return str(stored)
+    return derive_body_dir_name(body.slug, body.short_name, body.name, body.id)
+
+
+def pin_body_dir(body) -> str:
+    """
+    Verzeichnisnamen der Kommune festschreiben (einmalig) und zurückgeben.
+
+    Maßgeblich ist der Stand in der Datenbank, nicht das Objekt im Speicher: Wer Slug oder Kurznamen
+    gerade ändert, soll den bisherigen Namen festschreiben. Ein bereits festgeschriebener Name wird
+    nie überschrieben (bedingtes UPDATE, auch bei gleichzeitigen Läufen). Ohne Datenbankzeile
+    (noch nicht gespeichert) wird nur abgeleitet.
+    """
+    from ..models import OParlBody
+
+    if body.file_cache_dir:
+        return str(body.file_cache_dir)
+    row = OParlBody.objects.filter(pk=body.pk).values("file_cache_dir", "slug", "short_name", "name").first()
+    if row is None:
+        return body_dir_name(body)
+    name = row["file_cache_dir"] or derive_body_dir_name(row["slug"], row["short_name"], row["name"], body.pk)
+    if not row["file_cache_dir"]:
+        if len(name) > MAX_DIR_NAME:
+            return name  # Solch ein Verzeichnis lässt sich nicht anlegen – nichts festschreiben
+        offen = Q(file_cache_dir__isnull=True) | Q(file_cache_dir="")
+        if not OParlBody.objects.filter(offen, pk=body.pk).update(file_cache_dir=name):
+            # Ein paralleler Lauf war schneller – dessen Namen übernehmen
+            name = OParlBody.objects.filter(pk=body.pk).values_list("file_cache_dir", flat=True).first() or name
+    body.file_cache_dir = name
+    return name
 
 
 def _extension(file_obj) -> str:
@@ -183,6 +237,7 @@ def _mark(file_obj, status: str, error: str = "") -> str:
 
 def store_bytes(file_obj, data: bytes, *, content_type: str | None = None) -> Path:
     """Datei atomar ablegen und Metadaten (Pfad, Größe, Hash, Status) setzen."""
+    pin_body_dir(file_obj.body)
     path = target_path(file_obj)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".part")
@@ -194,6 +249,7 @@ def store_bytes(file_obj, data: bytes, *, content_type: str | None = None) -> Pa
 
 def store_stream(file_obj, source: IO[bytes], *, content_type: str | None = None) -> Path:
     """Wie ``store_bytes``, aber aus einer Datei gelesen (ohne alles in den Speicher zu laden)."""
+    pin_body_dir(file_obj.body)
     path = target_path(file_obj)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".part")

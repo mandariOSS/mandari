@@ -9,6 +9,10 @@ zwischengespeichert“ zurück. Extrahierte Texte bleiben erhalten – Suche und
 betroffen. Wird eine Kommune später gelistet, lädt ``cache_files`` ihre Dokumente neu. Kommunen synthetischer
 Quellen (Domäne ``.invalid``, etwa die Demo) bleiben unangetastet – ihre Dateien lassen sich nie neu abrufen.
 
+Ein Verzeichnis bleibt stehen, sobald es auch eine gelistete Kommune nutzt – nach ihrem Verzeichnisnamen
+oder weil dort tatsächlich Dateien von ihr liegen (``OParlFile.local_path``). So löscht der Befehl nie
+Kopien gelisteter Kommunen, auch wenn Verzeichnisname und Ablage einmal auseinanderlaufen (Issue #373).
+
 Verwendung:
     python manage.py prune_file_cache --unlisted --dry-run   # nur anzeigen
     python manage.py prune_file_cache --unlisted
@@ -34,6 +38,28 @@ def _groesse(pfad: Path) -> int:
     return sum(p.stat().st_size for p in pfad.rglob("*") if p.is_file())
 
 
+def _verzeichnisse_gelisteter(root: Path) -> set[str]:
+    """Verzeichnisse im Cache, die gelistete Kommunen nutzen: festgeschriebene Namen und tatsächliche Ablage."""
+    from insight_core.models import OParlBody, OParlFile
+    from insight_core.services.file_cache import body_dir_name
+
+    namen = {body_dir_name(b) for b in OParlBody.objects.filter(is_listed=True)}
+    pfade = (
+        OParlFile.objects.filter(body__is_listed=True)
+        .exclude(local_path__isnull=True)
+        .exclude(local_path="")
+        .values_list("local_path", flat=True)
+    )
+    for pfad in pfade.iterator(chunk_size=5000):
+        try:
+            teile = Path(pfad or "").relative_to(root).parts
+        except ValueError:
+            continue  # außerhalb des Cache-Wurzelverzeichnisses
+        if len(teile) > 1:
+            namen.add(teile[0])
+    return namen
+
+
 class Command(BaseCommand):
     help = "Leert den Dokument-Cache ausgeblendeter Kommunen (Dateien und Datenbank-Status)"
 
@@ -50,7 +76,7 @@ class Command(BaseCommand):
         dry_run = options["dry_run"]
 
         # Ein Verzeichnis, das auch eine gelistete Kommune nutzt, bleibt unangetastet.
-        gelistete_verzeichnisse = {body_dir_name(b) for b in OParlBody.objects.filter(is_listed=True)}
+        gelistete_verzeichnisse = _verzeichnisse_gelisteter(cache_root())
         gesamt_bytes = gesamt_dateien = 0
         for body in OParlBody.objects.filter(is_listed=False).select_related("source").order_by("name"):
             if _nicht_abrufbar(body):
@@ -67,7 +93,7 @@ class Command(BaseCommand):
                 f"{body.name[:45]:<45} {anzahl:>7} Einträge  {belegt / 1024**3:6.2f} GB  {verzeichnis}"
                 + ("  (Verzeichnis geteilt – bleibt)" if geteilt else "")
             )
-            gesamt_bytes += belegt
+            gesamt_bytes += 0 if geteilt else belegt
             gesamt_dateien += anzahl
             if dry_run:
                 continue

@@ -162,6 +162,21 @@ https://<host>/insight/k/<slug>/
 Mandanten-Slug; er führt auf die Kommune ihrer eigenen OParl-Quelle (nach Veröffentlichung und
 erstem Abgleich).
 
+Kommunen aus fremden Ratsinformationssystemen bekommen ihren Slug im Admin (Feld „Slug“) oder
+gesammelt per Befehl – mit eindeutiger Zuordnung über die ID, idempotent:
+
+```bash
+python manage.py set_body_slugs                                  # gelistete Kommunen, IDs, Vorschlag
+python manage.py set_body_slugs <id>=muenster <id>=koeln --dry-run
+python manage.py set_body_slugs <id>=muenster <id>=koeln
+```
+
+Erlaubt sind Kleinbuchstaben, Ziffern und einzelne Bindestriche; `index` ist reserviert (Sitemap-Index),
+der Slug eines Session-Mandanten bleibt dessen Portal. Einen schon gesetzten Slug ersetzt der Befehl
+nur mit `--replace`, weil alte Links dann ins Leere führen. Das Verzeichnis der Kommune im
+Dokument-Cache ändert sich mit dem Slug nicht (siehe `docs/FILE_CACHE.md`). Der Sitemap-Index
+(`/sitemap-insight-index.xml`) führt jede gelistete Kommune, ohne Slug unter ihrer ID.
+
 Im Einstieg gilt:
 
 - **Name und Logo der Körperschaft** in Seitenleiste, Titel und Startseite. Name: Anzeigename der
