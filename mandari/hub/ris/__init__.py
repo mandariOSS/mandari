@@ -8,7 +8,8 @@ Das Modell folgt OParl 1.1; eigene Erweiterungen tragen einen Namensraum (``mand
 - ``hub.ris.canonical``: Bausteine des Modells – Typ-URLs, Datums- und Zeitformate, gekürzte Objekte
   für Gelöschtes, die Werteliste von ``organizationType``.
 - ``hub.ris.mapping``: Abbildungen der Quellen auf das Modell. ``mapping.session`` bildet die Objekte
-  von mandari Session ab; die Session-OParl-Schnittstelle gibt genau diese Abbildung aus.
+  von mandari Session ab, ``mapping.bestand`` die des RIS-Bestands; die offene Schnittstelle
+  (``hub.api``) gibt genau diese Abbildungen aus.
 - ``hub.ris.selectors``: Lese-Fassade mit fachlichen Abfragen. Fachmodule lesen Sitzungen,
   Tagesordnungspunkte, Vorlagen, Gremien, Personen und Dateien darüber statt über
   ``OParl*.objects``; ``scripts/check_ris_access_ratchet.py`` zählt die verbliebenen Direktzugriffe.

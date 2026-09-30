@@ -40,10 +40,10 @@ from apps.session.models import (
     SessionPerson,
     SessionTenant,
 )
+from hub.api.tests.konformitaet import pruefe
 from hub.ris.canonical import ORGANIZATION_TYPES
 from hub.ris.mapping import session as mapping
 from hub.ris.mapping.session import NotPublicError, SessionMapping, SessionSource, SessionUris
-from oparl_api.tests.konformitaet import pruefe
 
 SITE = "https://mandari.example"
 BASIS = f"{SITE}/session/musterstadt/api/oparl/"

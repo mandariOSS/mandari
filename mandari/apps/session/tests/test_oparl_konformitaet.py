@@ -6,7 +6,7 @@ Geprüft werden die Punkte, in denen die Ausgabe von der Spezifikation abwich: `
 den Werten der Spezifikation statt interner Schlüssel, ``File.date`` als Datum, ``license`` an System und
 Body, der Sitzungsort als Location-Objekt (die bisherigen ``mandari:location*``-Felder bleiben),
 ``legislativeTerm`` als Pflichtfeld und bedingte Anfragen (ETag/304). Dazu läuft die gesamte Ausgabe
-durch die Typprüfung in ``oparl_api/tests/konformitaet.py``.
+durch die Typprüfung in ``hub/api/tests/konformitaet.py``.
 
 Der Sitzungsort gehört zur Sitzung: Wird sie zurückgenommen, darf auch ein eigenes Location-Objekt im
 RIS-Bestand nicht über den Aggregator abrufbar bleiben (Abschnitt „Rücknahme des Sitzungsortes“).
@@ -41,9 +41,9 @@ from apps.session.models import (
 from apps.session.services import insight_service, oparl_access
 from apps.session.tests._niederschrift import client as angemeldet
 from apps.session.tests._niederschrift import nutzer
+from hub.api.tests.konformitaet import ORGANIZATION_TYPES, pruefe, pruefe_liste
 from insight_core.models import OParlBody, OParlFile, OParlLocation, OParlMeeting, OParlOrganization
 from insight_sync.session_mirror import SessionMirror
-from oparl_api.tests.konformitaet import ORGANIZATION_TYPES, pruefe, pruefe_liste
 
 pytestmark = pytest.mark.django_db
 

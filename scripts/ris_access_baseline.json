@@ -16,8 +16,6 @@
     "insight_ai/services/summarizer.py": 3,
     "insight_search/management/commands/reindex_elasticsearch.py": 1,
     "insight_sync/management/commands/sync_session_insight.py": 3,
-    "insight_sync/session_mirror.py": 18,
-    "oparl_api/serializers.py": 4,
-    "oparl_api/views.py": 10
+    "insight_sync/session_mirror.py": 18
   }
 }

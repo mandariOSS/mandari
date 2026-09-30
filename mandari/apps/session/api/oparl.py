@@ -2,23 +2,24 @@
 """
 Spec-konforme OParl-1.1-API je Session-Mandant (Issue #35).
 
-Nach dem Muster des Aggregators ``oparl_api/`` (Issue #17), aber auf den
+Die zweite Ausgabe der offenen Schnittstelle neben dem Aggregator (``hub.api``), auf den
 Session-Modellen: Jeder aktive SessionTenant erhält unter
 ``/session/<slug>/api/oparl/`` einen vollwertigen OParl-System-Endpoint – sobald
 die Verwaltung die Schnittstelle freigeschaltet hat (Issue #319,
 ``SessionTenant.oparl_public_since``); vorher antwortet jeder Endpunkt mit 404.
 
-Dieses Modul ist die Schnittstelle: Endpunkte, Sichtbarkeit, Blättern, gelöschte Objekte. Wie ein
-Session-Objekt als OParl-Objekt aussieht, legt allein ``hub.ris.mapping.session`` fest (die eine
-Abbildung der Session-Objekte auf das kanonische Modell); ``_mapping`` reicht ihr, was sie aus Session
-braucht.
+Dieses Modul legt fest, was eines Mandanten sichtbar ist und unter welchen Adressen: Endpunkte,
+Sichtbarkeit, gelöschte Objekte. Wie ein Session-Objekt als OParl-Objekt aussieht, legt allein
+``hub.ris.mapping.session`` fest (die eine Abbildung der Session-Objekte auf das kanonische Modell;
+``_mapping`` reicht ihr, was sie aus Session braucht). Wie daraus Antworten werden – Zeitfilter,
+Blättern, Listen-Hülle, ETag, Fehler –, steht in ``hub.api`` und gilt für beide Ausgaben gleich.
 
 - **Auflösbare JSON-Objekt-Endpunkte** für alle Objekttypen (System, Body,
   Organization, Person, Membership, Meeting, AgendaItem, Paper, File,
   Consultation, LegislativeTerm, Location) — IDs zeigen auf JSON, nie auf HTML.
 - **Sitzungsort** als eingebettetes Location-Objekt (``Meeting.location``); es gehört zur Sitzung und
   trägt deren Kennung. Die älteren Felder ``mandari:location*`` bleiben vorerst zusätzlich erhalten.
-- **Bedingte Anfragen**: jede Antwort trägt einen ``ETag``, ``If-None-Match`` ergibt 304 (oparl_api.utils).
+- **Bedingte Anfragen**: jede Antwort trägt einen ``ETag``, ``If-None-Match`` ergibt 304 (``hub.api.http``).
 - **Echte Pagination** (``links.next``, konfigurierbare Seitengröße über
   ``OPARL_API_PAGE_SIZE``) und ``modified_since``/``created_since``-Filter
   (Zeitzonen-Pflicht, naive Zeitstempel -> HTTP 400).
@@ -35,7 +36,6 @@ braucht.
 """
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.core.paginator import Paginator
 from django.db.models import Prefetch
 
 from apps.session import oparl_publication as pub
@@ -47,23 +47,16 @@ from apps.session.models import (
 )
 from apps.session.services import file_service, meeting_format_service
 from apps.session.services.insight_service import oparl_system_url
+from hub.api.http import endpoint, error_response, json_response
+from hub.api.serialization import Gone, MergedEntries, TimeFilters, list_response, single_page
 from hub.ris.mapping.session import SessionMapping, SessionSource
-from oparl_api.utils import (
-    error_response,
-    json_response,
-    list_envelope,
-    oparl_endpoint,
-    page_number,
-    page_size,
-    parse_client_datetime,
-)
 
 
 class TenantNotFoundError(Exception):
     """Mandant existiert nicht, ist inaktiv oder hat die Schnittstelle nicht freigeschaltet (JSON-404)."""
 
 
-# Query-Parameter -> ORM-Lookup (auf den Session-Zeitstempeln created_at/updated_at)
+# Zeitfilter -> Vergleich auf den Session-Zeitstempeln created_at/updated_at
 FILTER_LOOKUPS = {
     "created_since": "created_at__gte",
     "created_until": "created_at__lte",
@@ -71,7 +64,7 @@ FILTER_LOOKUPS = {
     "modified_until": "updated_at__lte",
 }
 
-# Tombstone-Lookups analog (deleted_at entspricht modified)
+# Dieselben Filter auf den Einträgen für Gelöschtes (deleted_at entspricht modified)
 TOMBSTONE_LOOKUPS = {
     "created_since": "object_created_at__gte",
     "created_until": "object_created_at__lte",
@@ -210,7 +203,7 @@ def _get_tenant(tenant_slug):
 
 
 def session_oparl_endpoint(view):
-    """oparl_endpoint + JSON-404 für unbekannte Mandanten."""
+    """``hub.api.http.endpoint`` + JSON-404 für unbekannte Mandanten."""
 
     def wrapper(request, *args, **kwargs):
         try:
@@ -220,45 +213,12 @@ def session_oparl_endpoint(view):
 
     wrapper.__name__ = view.__name__
     wrapper.__doc__ = view.__doc__
-    return oparl_endpoint(wrapper)
+    return endpoint(wrapper)
 
 
 # =============================================================================
-# Pagination (echte links.next, Tombstone-Merge bei modified_since)
+# Externe Listen (Gelöschtes nur in der inkrementellen Liste)
 # =============================================================================
-
-
-class _MergedEntries:
-    """
-    Objekte und Tombstones als eine nach ``(modified, Quelle, id)`` sortierte Folge für den Paginator –
-    ohne eine der Tabellen ganz zu laden.
-
-    Für eine Seite ``[start:stop]`` liest jede Quelle nur Zeitstempel und Kennung ihrer ersten ``stop``
-    Einträge (in derselben Sortierung wie hier), die Seite entsteht durch Zusammenführen; vollständig
-    geladen werden nur die Objekte der Seite – mit Select/Prefetch des Querysets.
-    """
-
-    def __init__(self, objects, tombstones):
-        self.objects = objects.order_by("updated_at", "pk")
-        self.tombstones = tombstones.order_by("deleted_at", "pk")
-
-    def count(self):
-        return self.objects.count() + self.tombstones.count()
-
-    def __len__(self):
-        return self.count()
-
-    def __getitem__(self, index):
-        if not isinstance(index, slice):
-            raise TypeError("Nur Ausschnitte (Seiten) werden unterstützt.")
-        start, stop = index.start or 0, index.stop
-        keys = [(stamp, 0, pk) for stamp, pk in self.objects.values_list("updated_at", "pk")[:stop]]
-        keys += [(stamp, 1, pk) for stamp, pk in self.tombstones.values_list("deleted_at", "pk")[:stop]]
-        keys.sort()
-        window = keys[start:stop]
-        objects = {obj.pk: obj for obj in self.objects.filter(pk__in=[pk for _, src, pk in window if src == 0])}
-        tombs = {t.pk: t for t in self.tombstones.filter(pk__in=[pk for _, src, pk in window if src == 1])}
-        return [("obj", objects[pk]) if src == 0 else ("tomb", tombs[pk]) for _, src, pk in window]
 
 
 def _tombstone(mapping, entry):
@@ -266,44 +226,28 @@ def _tombstone(mapping, entry):
     return mapping.tombstone(entry.oparl_type, entry.object_id, entry.object_created_at, entry.deleted_at)
 
 
-def _paginated_response(mapping, request, base_url, queryset, serializer, kind):
+def _list_response(mapping, request, base_url, queryset, serializer, kind):
     """
-    OParl-Listen-Envelope (data/pagination/links) mit Link-Header.
+    Externe Liste über ``hub.api.serialization`` ausgeben.
 
     Tombstones erscheinen NUR in Listen mit ``modified_since``-Filter —
     inkrementelle Clients bekommen Löschungen mit, Voll-Listen bleiben
     frei von Grabsteinen.
     """
-    filters = {name: request.GET[name] for name in FILTER_LOOKUPS if name in request.GET}
-    parsed = {name: parse_client_datetime(value, name) for name, value in filters.items()}
-    for name, value in parsed.items():
-        queryset = queryset.filter(**{FILTER_LOOKUPS[name]: value})
-    queryset = queryset.order_by("updated_at", "id")
-    number = page_number(request)
-
-    if "modified_since" in parsed:
+    filters = TimeFilters.from_request(request)
+    entries = filters.apply(queryset, FILTER_LOOKUPS).order_by("updated_at", "id")
+    if filters.incremental:
         # Inkrementelle Abfrage: Objekte + Tombstones nach modified sortiert
-        tomb_qs = SessionOParlTombstone.objects.filter(tenant=mapping.tenant, oparl_type=kind)
-        for name, value in parsed.items():
-            tomb_qs = tomb_qs.filter(**{TOMBSTONE_LOOKUPS[name]: value})
-        paginator = Paginator(_MergedEntries(queryset, tomb_qs), page_size())
-    else:
-        paginator = Paginator(queryset, page_size())
+        tombstones = SessionOParlTombstone.objects.filter(tenant=mapping.tenant, oparl_type=kind)
+        entries = MergedEntries(entries, filters.apply(tombstones, TOMBSTONE_LOOKUPS))
 
-    if number > paginator.num_pages:
-        return error_response(404, f"Seite {number} existiert nicht (letzte Seite: {paginator.num_pages}).")
-    page = paginator.page(number)
+    def render(page):
+        return [
+            _tombstone(mapping, entry.record) if isinstance(entry, Gone) else serializer(mapping, entry)
+            for entry in page
+        ]
 
-    data = []
-    for entry in page.object_list:
-        if isinstance(entry, tuple):
-            entry_type, obj = entry
-            data.append(_tombstone(mapping, obj) if entry_type == "tomb" else serializer(mapping, obj))
-        else:
-            data.append(serializer(mapping, entry))
-
-    envelope, headers = list_envelope(base_url, filters, paginator, page, data)
-    return json_response(envelope, headers=headers)
+    return list_response(request, base_url, entries, filters, render)
 
 
 # =============================================================================
@@ -320,19 +264,7 @@ def system_view(request, tenant_slug):
 @session_oparl_endpoint
 def bodies_view(request, tenant_slug):
     mapping = _mapping(_get_tenant(tenant_slug))
-    url = mapping.uris.bodies()
-    return json_response(
-        {
-            "data": [mapping.body()],
-            "pagination": {
-                "totalElements": 1,
-                "elementsPerPage": page_size(),
-                "currentPage": 1,
-                "totalPages": 1,
-            },
-            "links": {"first": url, "self": url, "last": url},
-        }
-    )
+    return json_response(single_page(mapping.uris.bodies(), [mapping.body()]))
 
 
 @session_oparl_endpoint
@@ -352,7 +284,7 @@ def list_view(request, tenant_slug, segment):
     queryset = qs_fn(tenant)
     if prepare:
         queryset = prepare(queryset, tenant)
-    return _paginated_response(mapping, request, mapping.uris.list(segment.lower()), queryset, serializer, kind)
+    return _list_response(mapping, request, mapping.uris.list(segment.lower()), queryset, serializer, kind)
 
 
 @session_oparl_endpoint

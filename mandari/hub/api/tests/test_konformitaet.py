@@ -17,6 +17,8 @@ import pytest
 from django.core.cache import cache
 from django.test import Client, override_settings
 
+from hub.api.tests.konformitaet import ORGANIZATION_TYPES, pruefe, pruefe_liste
+from hub.ris.mapping.bestand import organization_type
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -27,8 +29,6 @@ from insight_core.models import (
     OParlPaper,
     OParlSource,
 )
-from oparl_api.tests.konformitaet import ORGANIZATION_TYPES, pruefe, pruefe_liste
-from oparl_api.utils import organization_type
 
 pytestmark = pytest.mark.django_db
 

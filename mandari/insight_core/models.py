@@ -493,7 +493,7 @@ class OParlBody(SourceDeletionModel):
             pin_body_dir(self)
         super().save(*args, **kwargs)
 
-    def get_display_name(self):
+    def get_display_name(self) -> str:
         """Gibt den Anzeigenamen zurück (display_name > short_name > name)."""
         return self.display_name or self.short_name or self.name
 

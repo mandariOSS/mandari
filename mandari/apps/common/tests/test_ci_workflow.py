@@ -236,7 +236,7 @@ def test_reuse_workflow_prueft_blockierend() -> None:
             {"qualitaet", "python", "test", "smoke", "oparl", "codeql_python"},
         ),
         # OParl-Ausgaben: externer Validator gegen die Testinstanz
-        ("mandari/oparl_api/serializers.py", {"qualitaet", "python", "test", "smoke", "oparl", "codeql_python"}),
+        ("mandari/hub/api/serialization.py", {"qualitaet", "python", "test", "smoke", "oparl", "codeql_python"}),
         (
             "mandari/apps/session/api/oparl.py",
             {"qualitaet", "python", "test", "smoke", "oparl", "e2e", "codeql_python"},

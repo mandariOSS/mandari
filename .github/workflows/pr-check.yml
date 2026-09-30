@@ -156,7 +156,6 @@ jobs:
             # Beide OParl-Ausgaben samt allem, woraus sie ihre Objekte bauen (Modelle, Sichtbarkeit,
             # Demo-Daten der Testinstanz, Prüfskript)
             oparl:
-              - 'mandari/oparl_api/**'
               - 'mandari/hub/**'
               - 'mandari/apps/session/api/oparl.py'
               - 'mandari/apps/session/oparl_publication.py'
