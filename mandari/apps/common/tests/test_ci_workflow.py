@@ -204,7 +204,10 @@ def test_readme_badges_zeigen_einen_pruefbaren_stand() -> None:
     # Issue #690: Ein statischer Badge „REUSE konform“ verlinkte ins Leere und stimmte nicht.
     readme = (REPO / "README.md").read_text(encoding="utf-8")
     workflows = set(re.findall(r"actions/workflows?/(?:status/mandariOSS/mandari/)?([\w.-]+\.yml)", readme))
-    assert {"pr-check.yml", "reuse.yml"} <= workflows
+    assert "pr-check.yml" in workflows
+    # REUSE: Status des eigenen Workflows oder, nach der Anmeldung beim Dienst der FSFE, deren Live-Badge
+    live_badge = "https://api.reuse.software/badge/github.com/mandariOSS/mandari"
+    assert "reuse.yml" in workflows or live_badge in readme
     for name in workflows:
         assert (REPO / ".github" / "workflows" / name).is_file(), f"Badge zeigt auf fehlenden Workflow {name}"
     # Statische Badges dürfen keinen Zustand behaupten (nur die Lizenz ist eine feste Angabe)
