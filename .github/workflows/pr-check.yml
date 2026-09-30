@@ -30,6 +30,7 @@ on:
     branches:
       - dev
       - main
+      - ci/621-pfadfilter   # VORÜBERGEHEND für die Nachweis-Entwürfe, wird wieder entfernt
   # Wöchentlicher Volllauf auf dem Standardzweig: CodeQL auch ohne Änderung (neue Abfragen)
   # und pip-audit/npm audit gegen neu veröffentlichte Schwachstellen
   schedule:
