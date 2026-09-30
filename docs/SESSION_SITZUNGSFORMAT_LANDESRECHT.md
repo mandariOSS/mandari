@@ -52,7 +52,19 @@ Issue: #138 (Grundlage für #139 Teilnahmeart, #140 Cockpit, #141 Selbst-Abstimm
 
 Beim Bearbeiten einer gespeicherten Sitzung prüft das Formular nur, wenn sich Format, Begründung oder die
 beteiligten Gremien ändern; so bleibt eine Sitzung auch nach einem Wechsel des Landesprofils absag- und
-bearbeitbar.
+bearbeitbar; der Versand prüft das Format erneut (siehe unten).
+
+### Ladung, Tagesordnung und Öffentlichkeit
+
+- **Ladung und Ladungs-PDF** (auch Nachtrag, Sitzungsmappe, Abruf in mandari Work) nennen bei hybriden und
+  digitalen Sitzungen Format, Rechtsgrundlage (Norm i. V. m. örtlichem Nachweis bzw. Norm der Notlage) und
+  Begründung; den **Zugangsweg** nur in der vollständigen Fassung für Gremienmitglieder. Die öffentliche
+  Fassung und der Kalendereintrag (ICS) nennen nur das Format.
+- **Versand gesperrt**, solange das gespeicherte Format nach dem aktuellen Landesprofil nicht zulässig ist
+  (z. B. nach Wechsel des Landesprofils); die Detailseite der Sitzung zeigt den Grund.
+- **Öffentlichkeit:** Hinweis auf Übertragung bzw. geschützten Zugang mit Anmeldefrist (NRW: § 3 DigiSiVO)
+  in Ladungs-PDF, OParl-API (`mandari:meetingFormat`, `mandari:publicAccess`, siehe `SESSION_OPARL_API.md`)
+  und auf der Sitzungsseite im Bürgerportal.
 
 Wahlen, geheime Abstimmungen, konstituierende Sitzungen und Satzungsbeschlüsse betreffen einzelne
 Tagesordnungspunkte bzw. Teilnehmende. Das Landesprofil hält sie fest; durchgesetzt werden sie mit der

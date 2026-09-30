@@ -39,7 +39,7 @@ from apps.session.models import (
     SessionPerson,
     SessionTenant,
 )
-from apps.session.services import attendance_service, invitation_token, portal_link_service
+from apps.session.services import attendance_service, invitation_token, meeting_format_service, portal_link_service
 from apps.session.services.staff_recipients import StaffRecipients
 from apps.session.services.user_invitations import sender_for
 
@@ -144,6 +144,8 @@ def _mail_context(recipient: SessionInvitationRecipient) -> dict[str, Any]:
         "response_url": invitation_token.response_url(recipient),
         "portal_url": f"{_site_url()}/work/",
         "is_portal": recipient.channel == "portal",
+        # Sitzungsformat (Issue #138): Zugangsweg nur für Empfänger der vollständigen Ladung
+        "format_info": meeting_format_service.describe(meeting, for_members=recipient.includes_non_public),
     }
 
 

@@ -1,0 +1,12 @@
+{% comment %}Sitzungsformat und Übertragung für die Öffentlichkeit (mandari Session, Issue #138). Erwartet: broadcast.{% endcomment %}
+{% if broadcast %}
+<c-ui.card title="Teilnahme der Öffentlichkeit" data-testid="sitzungsformat">
+    {% if broadcast.label %}<p class="text-sm text-gray-700 dark:text-gray-300">{{ broadcast.label }}</p>{% endif %}
+    {% if broadcast.hint %}<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">{{ broadcast.hint }}</p>{% endif %}
+    {% if broadcast.url %}
+    <div class="mt-3">
+        <c-ui.button size="sm" icon="video" href="{{ broadcast.url }}" target="_blank" rel="noopener noreferrer">Zur Übertragung</c-ui.button>
+    </div>
+    {% endif %}
+</c-ui.card>
+{% endif %}

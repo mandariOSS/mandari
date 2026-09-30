@@ -28,7 +28,7 @@ from apps.session.models import (
     SessionInvitationRecipient,
     SessionMeeting,
 )
-from apps.session.services import agenda_service, joint_meeting_service
+from apps.session.services import agenda_service, joint_meeting_service, meeting_format_service
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +134,8 @@ def build_agenda_pdf(
         "include_non_public": include_non_public,
         "supplementary_only": supplementary_only,
         "title": "Nachtrags-Tagesordnung" if supplementary_only else "Einladung",
+        # Sitzungsformat (Issue #138): Zugangsweg nur in der vollständigen Fassung für Mitglieder
+        "format_info": meeting_format_service.describe(meeting, for_members=include_non_public),
         "generated_at": timezone.localtime(),
         "address_lines": [line for line in (tenant.address or "").splitlines() if line.strip()],
     }
@@ -160,10 +162,18 @@ def build_meeting_ics(meeting: SessionMeeting) -> bytes:
 
 
 def _meeting_description(meeting: SessionMeeting) -> str:
-    """Beschreibung für den Kalendereintrag; gemeinsame Sitzungen nennen alle Gremien (Issue #317)."""
+    """
+    Beschreibung für den Kalendereintrag; gemeinsame Sitzungen nennen alle Gremien (Issue #317).
+
+    Hybride und digitale Sitzungen nennen das Format (Issue #138), nie den Zugangsweg.
+    """
     if meeting.is_joint:
-        return f"Gemeinsame Sitzung der Gremien {meeting.organizations_label}"
-    return f"Sitzung des Gremiums {meeting.organization.name}"
+        text = f"Gemeinsame Sitzung der Gremien {meeting.organizations_label}"
+    else:
+        text = f"Sitzung des Gremiums {meeting.organization.name}"
+    if meeting.format != SessionMeeting.FORMAT_PRESENCE:
+        text = f"{text}. {meeting_format_service.describe(meeting).description}"
+    return text
 
 
 def send_invitations(

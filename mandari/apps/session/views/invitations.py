@@ -16,7 +16,7 @@ from django.views.generic import TemplateView
 
 from ..models import SessionMeeting
 from ..permissions import SessionViewMixin
-from ..services import invitation_service
+from ..services import invitation_service, meeting_format_service
 
 
 def _get_meeting(view, meeting_id, require_non_public_permission=True):
@@ -81,6 +81,20 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
 
         if dispatch_type == "supplementary" and meeting.invitation_sent_at is None:
             messages.error(request, "Eine Nachladung ist erst nach Versand der Erstladung möglich.")
+            return redirect(
+                "session:meeting_invitation",
+                tenant_slug=self.session_tenant.slug,
+                meeting_id=meeting.id,
+            )
+
+        # Sitzungsformat (Issue #138): keine Ladung zu einem Format, das das Landesprofil nicht (mehr) zulässt
+        format_check = meeting_format_service.check_meeting(meeting)
+        if not format_check.ok:
+            messages.error(
+                request,
+                "Das Sitzungsformat ist nach dem Landesprofil nicht zulässig – bitte die Sitzung anpassen. "
+                + " ".join(format_check.errors),
+            )
             return redirect(
                 "session:meeting_invitation",
                 tenant_slug=self.session_tenant.slug,

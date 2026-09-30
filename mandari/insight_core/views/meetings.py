@@ -6,6 +6,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import contextlib
+from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -281,6 +282,33 @@ def _protocol_file(meeting):
     return None
 
 
+#: Sitzungsformate aus der OParl-Erweiterung von mandari Session (Issue #138)
+BROADCAST_LABELS = {
+    "hybrid": "Hybride Sitzung: Einzelne Mitglieder sind per Bild-Ton-Übertragung zugeschaltet.",
+    "digital": "Digitale Sitzung: Die Mitglieder tagen per Videokonferenz.",
+}
+
+
+def _broadcast_info(meeting: Any) -> dict[str, str] | None:
+    """
+    Sitzungsformat und Hinweis für die Öffentlichkeit (Übertragung, Anmeldung), Issue #138.
+
+    Quelle ist die OParl-Erweiterung ``mandari:meetingFormat``/``mandari:publicAccess``. Die Daten stammen
+    von einer externen Quelle: nur erwartete Typen, eigene Texte für das Format, Links nur mit http(s).
+    """
+    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
+    access = raw.get("mandari:publicAccess")
+    access = access if isinstance(access, dict) else {}
+    url = access.get("url")
+    hint = access.get("hint")
+    info = {
+        "label": BROADCAST_LABELS.get(raw.get("mandari:meetingFormat"), ""),
+        "url": url[:500] if isinstance(url, str) and url.startswith(("https://", "http://")) else "",
+        "hint": hint[:1000] if isinstance(hint, str) else "",
+    }
+    return info if any(info.values()) else None
+
+
 class MeetingDetailView(DetailView):
     """Detailseite einer Sitzung."""
 
@@ -339,6 +367,7 @@ class MeetingDetailView(DetailView):
             item.roll_call = roll_call if isinstance(roll_call, list) and roll_call else None
         context["agenda_items"] = agenda_items
         context["protocol_file"] = _protocol_file(meeting)
+        context["broadcast"] = _broadcast_info(meeting)
 
         # Location Koordinaten für Karte (body kann fehlen bei verwaisten Meetings)
         try:

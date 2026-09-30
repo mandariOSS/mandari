@@ -101,6 +101,17 @@ gespiegelten `resultsProtocol` bzw. `verbatimProtocol` – auch bei fremden OPar
 oder nur summierte Abstimmungen liefern nie Einzelstimmen. Die Insight-OParl-API reicht beide Felder
 durch, die Insight-Sitzungsseite zeigt Summen und (aufklappbar) die namentlichen Stimmen.
 
+## Sitzungsformat und Übertragung (Erweiterung, Issue #138)
+
+Hybride und digitale Sitzungen sowie Sitzungen mit Übertragung tragen am `Meeting` zusätzlich
+`mandari:meetingFormat` (`presence`, `hybrid`, `digital`), `mandari:meetingFormatLabel` und
+`mandari:publicAccess` mit `url` (Livestream bzw. Anmeldeseite), `note`, `hint` (fertiger Hinweis
+für die Öffentlichkeit) sowie – bei digitalen Sitzungen mit geschütztem Zugang nach Landesrecht –
+`registrationRequired` und `registrationDays`. Präsenzsitzungen ohne Übertragung bleiben unverändert.
+Der Zugangsweg für zugeschaltete Mitglieder wird **nie** ausgeliefert (verschlüsselt, nur in der Ladung
+an die Mitglieder). Die Insight-Sitzungsseite zeigt daraus die Karte „Teilnahme der Öffentlichkeit“;
+Links nur mit `http(s)`. Rechtsgrundlagen je Land: `SESSION_SITZUNGSFORMAT_LANDESRECHT.md`.
+
 ## Beratungsfolge (Consultation)
 
 Die Beratungsfolge aus Issue #34 (`SessionConsultation`) wird spec-konform

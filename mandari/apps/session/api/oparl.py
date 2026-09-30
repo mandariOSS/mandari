@@ -39,7 +39,7 @@ from apps.session.models import (
     SessionOParlTombstone,
     SessionTenant,
 )
-from apps.session.services import file_service
+from apps.session.services import file_service, meeting_format_service
 from oparl_api.utils import (
     OParlBadRequestError,
     error_response,
@@ -288,8 +288,38 @@ def serialize_meeting(api, meeting):
                 part for part in (meeting.street_address, f"{meeting.postal_code} {meeting.locality}".strip()) if part
             )
             or None,
+            # Sitzungsformat (Issue #138): nie der Zugangsweg der Zugeschalteten
+            **_format_extension(meeting),
         }
     )
+
+
+def _format_extension(meeting):
+    """
+    Sitzungsformat und Hinweis für die Öffentlichkeit (Übertragung, Anmeldung) als mandari-Erweiterung.
+
+    Präsenzsitzungen ohne Übertragung bleiben unverändert. Der Zugangsweg für zugeschaltete Mitglieder
+    wird nie ausgeliefert.
+    """
+    if meeting.format == meeting.FORMAT_PRESENCE and not (meeting.public_access_url or meeting.public_access_note):
+        return {}
+    info = meeting_format_service.describe(meeting, checks=False)
+    public = _clean(
+        {
+            "url": info.public_url or None,
+            "note": info.public_note or None,
+            "hint": info.public_hint or None,
+            "registrationRequired": True if info.public_registration_required and info.format == "digital" else None,
+            "registrationDays": info.public_registration_days
+            if info.public_registration_required and info.format == "digital"
+            else None,
+        }
+    )
+    return {
+        "mandari:meetingFormat": info.format,
+        "mandari:meetingFormatLabel": info.label,
+        "mandari:publicAccess": public or None,
+    }
 
 
 def _vote_extension(item):
