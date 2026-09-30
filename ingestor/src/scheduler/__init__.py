@@ -13,15 +13,15 @@ from typing import Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from rich.console import Console
 from rich.panel import Panel
 
 from src.config import settings
 from src.observability import trigger_context
+from src.redaction import MaskingConsole
 from src.sync.orchestrator import SyncOrchestrator
 
 logger = logging.getLogger(__name__)
-console = Console()
+console = MaskingConsole()
 
 
 class SyncScheduler:

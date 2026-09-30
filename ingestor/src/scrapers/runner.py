@@ -19,11 +19,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from rich.console import Console
-
 from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED
 from src.config import settings
 from src.metrics import metrics
+from src.redaction import MaskingConsole
 from src.scrapers import get_adapter
 from src.scrapers.base import CrawlWindow, ScraperConfig
 from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError
@@ -32,7 +31,7 @@ if TYPE_CHECKING:
     from src.storage.models import OParlSource
     from src.sync.orchestrator import SyncOrchestrator, SyncResult
 
-console = Console()
+console = MaskingConsole()
 
 # Entity-Typen, für die auf Full-Crawls Verschwinde-Erkennung läuft.
 # Bewusst konservativ: nur Typen, deren Kandidatenmenge vollständig im

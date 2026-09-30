@@ -17,12 +17,12 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import httpx
-from rich.console import Console
 
 from src.config import settings
 from src.metrics import metrics
+from src.redaction import MaskingConsole
 
-console = Console()
+console = MaskingConsole()
 
 ROBOTS_CACHE_SECONDS = 24 * 3600
 

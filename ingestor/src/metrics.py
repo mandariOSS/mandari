@@ -28,9 +28,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
-from rich.console import Console
+from src.redaction import MaskingConsole
 
-console = Console()
+console = MaskingConsole()
 
 # Try to import prometheus_client, gracefully degrade if not available
 try:

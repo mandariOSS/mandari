@@ -21,14 +21,14 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
-from rich.console import Console
 
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
 from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message
 from src.config import settings
 from src.metrics import metrics
+from src.redaction import MaskingConsole
 
-console = Console()
+console = MaskingConsole()
 
 # Fehlerklassen für Sync-Log und Quellenstatus (Issue #123). Die Django-Seite
 # kennt dieselben Werte (insight_core.models.OParlSource.ERROR_KIND_*).
