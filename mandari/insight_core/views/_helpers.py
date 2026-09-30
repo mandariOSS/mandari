@@ -18,7 +18,22 @@ from ..portal import get_portal
 
 
 def get_active_body(request: HttpRequest) -> OParlBody | None:
-    """Holt die aktive Kommune aus der Session oder setzt einen Standard."""
+    """
+    Holt die aktive Kommune aus der Session oder setzt einen Standard.
+
+    Hat die gewählte Kommune die Veröffentlichung abgeschaltet bzw. zurückgenommen, endet die Seite
+    mit dem Hinweis (``publication.enforce_selected_body``, Issue #618) – auch wenn erst dieser
+    Rückfall sie gewählt hat.
+    """
+    body = _resolve_active_body(request)
+    if body is not None:
+        from ..publication import enforce_selected_body
+
+        enforce_selected_body(request, body.pk)
+    return body
+
+
+def _resolve_active_body(request: HttpRequest) -> OParlBody | None:
     # Bürgerportal einer Körperschaft (Issue #317): Die Kommune ist festgelegt
     portal = get_portal(request)
     if portal is not None:

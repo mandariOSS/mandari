@@ -38,8 +38,12 @@ def _parse_ids(raw: str) -> list[uuid.UUID]:
 
 
 def _visible(model):
-    """Einträge für die Merkliste: nie etwas, das mandari Session zurückgenommen hat."""
-    return model.objects.exclude(withdrawn_q())
+    """Einträge für die Merkliste: nie Zurückgenommenes, nichts aus vorübergehend abgeschalteten Kommunen."""
+    from ..publication import paused_body_ids
+
+    queryset = model.objects.exclude(withdrawn_q())
+    paused = paused_body_ids()
+    return queryset.exclude(body_id__in=paused) if paused else queryset
 
 
 # =============================================================================

@@ -1,0 +1,29 @@
+{% extends "base_insight.html" %}
+{% comment %}
+Hinweis statt Inhalt, wenn die Kommune die Veröffentlichung beendet hat (Issue #618): vorübergehend
+abgeschaltet (503) oder dauerhaft zurückgenommen (410). Zeigt bewusst keinen Inhalt der Kommune.
+{% endcomment %}
+{% block title %}{% if publication_state.paused %}Vorübergehend nicht verfügbar{% else %}Nicht mehr verfügbar{% endif %}{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-16 text-center" data-testid="veroeffentlichung-{{ publication_state.mode }}">
+    {% if publication_state.paused %}
+    <i data-lucide="circle-pause" class="mx-auto h-10 w-10 text-gray-400"></i>
+    <h1 class="mt-4 text-2xl font-bold text-gray-900 dark:text-white">Vorübergehend nicht verfügbar</h1>
+    <p class="mt-3 text-gray-600 dark:text-gray-300">
+        Die Kommune hat die Veröffentlichung ihrer Ratsinformationen im Bürgerportal
+        {% if publication_state.since %}am {{ publication_state.since|date:"d.m.Y" }}{% endif %}
+        vorübergehend unterbrochen, etwa für Wartungsarbeiten. Die Inhalte sind danach wieder hier zu finden.
+    </p>
+    {% else %}
+    <i data-lucide="eye-off" class="mx-auto h-10 w-10 text-gray-400"></i>
+    <h1 class="mt-4 text-2xl font-bold text-gray-900 dark:text-white">Nicht mehr verfügbar</h1>
+    <p class="mt-3 text-gray-600 dark:text-gray-300">
+        Die Kommune hat ihre Ratsinformationen {% if publication_state.since %}am {{ publication_state.since|date:"d.m.Y" }}{% endif %}
+        aus dem Bürgerportal zurückgenommen. Die Einträge erscheinen nicht mehr in Listen, Suche und Schnittstellen.
+    </p>
+    {% endif %}
+    {% if not insight_portal or insight_portal.can_leave %}
+    <a href="{% url 'insight_core:insight:clear_body' %}" class="mt-6 inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:underline">Andere Kommune wählen</a>
+    {% endif %}
+</div>
+{% endblock %}

@@ -179,6 +179,8 @@ MIDDLEWARE = [
     "apps.tenants.middleware.OrganizationMiddleware",
     # Session RIS tenant context + Audit-Log-Attribution (nur /session/-Pfade)
     "apps.session.middleware.SessionTenantMiddleware",
+    # Veröffentlichung im Bürgerportal beendet (Issue #618): Hinweis, 503 oder 410 je Kommune
+    "insight_core.publication.PublicationStateMiddleware",
 ]
 
 # Wartungsmodus (apps/common/maintenance.py, Issue #588): Der Schalter in den Systemeinstellungen

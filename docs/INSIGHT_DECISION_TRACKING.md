@@ -17,6 +17,12 @@ Sichtbar sind nur Beschlüsse, die alle Bedingungen erfüllen: Mandant aktiv und
 Sitzung und TOP öffentlich, Ergebnis „angenommen“, nicht abgesetzt, Beschluss freigegeben
 (`decision_tracking.is_publicly_visible`).
 
+Hat der Mandant die Veröffentlichung im Bürgerportal beendet (Issue #618, siehe
+`docs/SESSION_OPARL_API.md`), folgen die Beschlussseiten der gewählten Möglichkeit
+(`decision_tracking.visibility`): als Archiv lesbar mit Hinweis, aber ohne neue Abos und ohne
+E-Mails; vorübergehend abgeschaltet mit Hinweis (503); dauerhaft zurückgenommen „nicht mehr
+verfügbar“ (410).
+
 ## Insight
 
 - Liste `/insight/beschluesse/` (Navigation „Beschlüsse“): Kacheln je Status (Umsetzung steht an /

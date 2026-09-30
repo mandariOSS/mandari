@@ -124,8 +124,14 @@ def tenant_publication_pre_save(sender, instance, **kwargs):
     """Alten Veröffentlichungs- und Aktiv-Stand merken (Provisioning- und Deaktivierungs-Hook)."""
     old = None
     if instance.pk:
-        old = sender.objects.filter(pk=instance.pk).values_list("insight_publish", "is_active").first()
-    instance._insight_publish_old, instance._is_active_old = old if old is not None else (None, None)
+        old = (
+            sender.objects.filter(pk=instance.pk)
+            .values_list("insight_publish", "is_active", "insight_end_mode")
+            .first()
+        )
+    instance._insight_publish_old, instance._is_active_old, instance._insight_end_mode_old = (
+        old if old is not None else (None, None, None)
+    )
 
 
 def _field_saved(kwargs, name: str) -> bool:
@@ -140,7 +146,9 @@ def tenant_publication_post_save(sender, instance, created, **kwargs):
 
     Sobald ein Mandant insight_publish aktiviert (Settings-UI, Admin oder
     Provisioning), wird seine OParl-API als Insight-Quelle registriert;
-    beim Deaktivieren wird die Quelle inaktiv gesetzt.
+    beim Deaktivieren wird die Quelle inaktiv gesetzt. Die gewählte Möglichkeit
+    zum Ende der Veröffentlichung (``insight_end_mode``, Issue #618) wirkt auf
+    demselben Weg.
 
     Wird der Mandant selbst deaktiviert oder reaktiviert (Admin-Aktion, Änderungsformular, Befehl),
     nimmt der Lebenszyklus-Service seine Bürgerportal-Quelle zurück bzw. stellt sie wieder her
@@ -159,14 +167,22 @@ def tenant_publication_post_save(sender, instance, created, **kwargs):
 
         tenant_provisioning.on_active_changed(instance)
         return
-    old = getattr(instance, "_insight_publish_old", None)
     if created and not instance.insight_publish:
         return
-    if not created and (old == instance.insight_publish or not _field_saved(kwargs, "insight_publish")):
+    if not created and not (
+        _changed(instance, kwargs, "insight_publish") or _changed(instance, kwargs, "insight_end_mode")
+    ):
         return
     from apps.session.services import insight_service
 
-    insight_service.sync_publication_state(instance)
+    # Ergebnis für Aufrufer mit Audit (Veröffentlichung beenden, Issue #618)
+    instance._portal_change = insight_service.sync_publication_state(instance)
+
+
+def _changed(instance, kwargs, name: str) -> bool:
+    """Wurde das Feld mitgespeichert und hat es sich gegenüber dem gemerkten Stand geändert?"""
+    old = getattr(instance, f"_{name}_old", None)
+    return _field_saved(kwargs, name) and old != getattr(instance, name)
 
 
 pre_save.connect(

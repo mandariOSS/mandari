@@ -278,6 +278,7 @@ def messen(seiten: list[Seite], kontext: dict[str, Any]) -> dict[str, Messwert]:
     from django.test.utils import CaptureQueriesContext
 
     from apps.common.models import SiteSettings
+    from insight_core import publication
 
     ergebnis: dict[str, Messwert] = {}
     for seite in seiten:
@@ -292,6 +293,9 @@ def messen(seiten: list[Seite], kontext: dict[str, Any]) -> dict[str, Messwert]:
             # Die Systemeinstellungen (Wartungsmodus, #588) gelten für alle Seiten und liegen fünf Minuten
             # im Cache: keine Kosten der einzelnen Seite, deshalb vor der Messung geladen.
             SiteSettings.get_settings()
+            # Ebenso der Veröffentlichungsstand der Kommunen (Issue #618): eine Tabelle für alle
+            # Portalseiten, fünf Minuten im Cache.
+            publication.states()
             with CaptureQueriesContext(connection) as erfasst:
                 start = time.perf_counter()
                 antwort = client.get(url)

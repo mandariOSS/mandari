@@ -1,0 +1,77 @@
+{% comment %}
+Karte „Bürgerportal“ in den Einstellungen (Issues #36, #48, #618): Veröffentlichen, Beenden mit Auswahl
+(eigene Seite) und Beschluss-Tracking.
+{% endcomment %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" data-testid="karte-buergerportal">
+    <div class="flex items-center gap-4 mb-3">
+        <div class="w-12 h-12 rounded-xl bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center">
+            <i data-lucide="landmark" class="w-6 h-6 text-teal-600 dark:text-teal-400"></i>
+        </div>
+        <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">Bürgerportal</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Veröffentlichung im mandari-Insight-Portal</p>
+        </div>
+    </div>
+    <div class="mt-4 space-y-3 text-sm">
+        {% if session_tenant.insight_publish %}
+        <p class="inline-flex items-center gap-2 text-green-700 dark:text-green-400 font-medium">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            Veröffentlichung aktiv — öffentliche Daten fließen ins Bürgerportal.
+        </p>
+        {% elif session_tenant.insight_end_mode %}
+        <p class="inline-flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium">
+            <i data-lucide="circle-pause" class="w-4 h-4"></i>
+            Veröffentlichung beendet: {{ session_tenant.get_insight_end_mode_display }}.
+        </p>
+        {% else %}
+        <p class="inline-flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            <i data-lucide="circle-off" class="w-4 h-4"></i>
+            Veröffentlichung inaktiv — es fließen keine Daten ins Bürgerportal.
+        </p>
+        {% if portal_legacy_stock %}
+        <p class="text-xs text-amber-700 dark:text-amber-400" data-testid="altbestand-hinweis">
+            Bisher veröffentlichte Daten stehen weiter ohne Hinweis im Bürgerportal. Legen Sie fest, wie das
+            Bürgerportal mit diesem Bestand umgeht.
+        </p>
+        {% endif %}
+        {% endif %}
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            Übertragen werden ausschließlich als öffentlich markierte Inhalte
+            (Ö-Sitzungen, Ö-Vorlagen, Ö-Anlagen) über die OParl-Schnittstelle.
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+            {% if not session_tenant.insight_publish %}
+            <form method="post" action="{% url 'session:insight_publish' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="publish" value="1">
+                <c-ui.button type="submit" size="sm" icon="megaphone">{% if session_tenant.insight_end_mode %}Wieder veröffentlichen{% else %}Im Bürgerportal veröffentlichen{% endif %}</c-ui.button>
+            </form>
+            {% endif %}
+            {% if session_tenant.insight_publish or session_tenant.insight_end_mode or portal_legacy_stock %}
+            <c-ui.button variant="ghost" size="sm" icon="{% if session_tenant.insight_publish %}pause{% else %}settings-2{% endif %}" href="{% url 'session:portal_publication_end' tenant_slug=tenant_slug %}">
+                {% if session_tenant.insight_publish %}Veröffentlichung beenden …{% elif session_tenant.insight_end_mode %}Möglichkeit ändern …{% else %}Umgang mit dem bisherigen Bestand festlegen …{% endif %}
+            </c-ui.button>
+            {% endif %}
+        </div>
+        {% if session_tenant.insight_publish %}
+        <div class="pt-3 mt-2 border-t border-gray-200 dark:border-gray-700">
+            <p class="font-medium text-gray-900 dark:text-white">Beschluss-Tracking „Was wurde aus …?“</p>
+            {% if session_tenant.implementation_publish %}
+            <p class="inline-flex items-center gap-2 text-green-700 dark:text-green-400 text-xs mt-1"><i data-lucide="check-circle" class="w-4 h-4"></i> Umsetzungsstand angenommener öffentlicher Beschlüsse ist im Bürgerportal sichtbar.</p>
+            {% else %}
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Zeigt Bürgerinnen und Bürgern, was aus einem Beschluss geworden ist — mit Status-Zeitleiste und Ihrer öffentlichen Statusmeldung. Interne Erledigungsvermerke bleiben intern.</p>
+            {% endif %}
+            <form method="post" action="{% url 'session:implementation_publish' tenant_slug=tenant_slug %}" class="mt-2">
+                {% csrf_token %}
+                {% if session_tenant.implementation_publish %}
+                <input type="hidden" name="publish" value="0">
+                <button type="submit" class="text-xs font-medium text-red-700 dark:text-red-400 hover:underline">Beschluss-Tracking beenden</button>
+                {% else %}
+                <input type="hidden" name="publish" value="1">
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg">Umsetzungsstand veröffentlichen</button>
+                {% endif %}
+            </form>
+        </div>
+        {% endif %}
+    </div>
+</div>

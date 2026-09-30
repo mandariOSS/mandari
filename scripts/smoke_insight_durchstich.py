@@ -233,10 +233,18 @@ check(
     SessionAuditLog.objects.filter(tenant=tenant, model_name="SessionTenant", action="publish").exists(),
 )
 
-# Schalter aus -> Quelle inaktiv; wieder an -> aktiv
+# Beenden nur mit Auswahl (Issue #618): altes Formular ohne Auswahl ändert nichts
 admin.post(f"{base}/settings/insight-publish/", {"publish": "0"})
 source.refresh_from_db()
+check("Beenden ohne Auswahl -> Quelle bleibt aktiv", source.is_active)
+# Vorübergehend abschalten -> Quelle inaktiv mit Stand; wieder an -> aktiv
+admin.post(f"{base}/settings/buergerportal-beenden/", {"mode": "paused", "confirm": "1"})
+source.refresh_from_db()
 check("Schalter aus -> Quelle deaktiviert", not source.is_active)
+check(
+    "Vorübergehend abgeschaltet -> Stand an der Quelle",
+    (source.sync_config or {}).get("portal_state", {}).get("mode") == "paused",
+)
 admin.post(f"{base}/settings/insight-publish/", {"publish": "1"})
 source.refresh_from_db()
 check("Schalter an -> Quelle wieder aktiv", source.is_active)

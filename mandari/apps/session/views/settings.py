@@ -56,11 +56,14 @@ class SettingsView(SessionViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         from ..models import SessionTenant
+        from ..services import portal_publication
 
         context = super().get_context_data(**kwargs)
         context["reminder_config"] = self.session_tenant.reminder_config()
         context["rsvp_reason_choices"] = SessionTenant.RSVP_REASON_CHOICES
         context["rsvp_audience_choices"] = SessionTenant.RSVP_AUDIENCE_CHOICES
+        # Vor Issue #618 beendet: Bestand ohne Hinweis öffentlich, Auswahl anbieten
+        context["portal_legacy_stock"] = portal_publication.legacy_stock(self.session_tenant)
         return context
 
 
@@ -201,47 +204,102 @@ class ImplementationPublishView(SessionViewMixin, View):
 
 class InsightPublishView(SessionViewMixin, View):
     """
-    Veröffentlichungs-Schalter für das Bürgerportal (Issue #36).
+    Im Bürgerportal (wieder) veröffentlichen (Issue #36).
 
-    Der Mandant entscheidet, ab wann seine öffentlichen Daten über die
-    OParl-API ins Insight-Portal fließen. Das Umschalten registriert bzw.
-    deaktiviert die OParl-Quelle automatisch (Signal in signals.py) und
-    wird im Audit-Log protokolliert.
+    Der Mandant entscheidet, ab wann seine öffentlichen Daten über die OParl-API ins Bürgerportal
+    fließen. Das Einschalten registriert die OParl-Quelle (Signal in signals.py), hebt eine beim
+    Beenden gewählte Möglichkeit auf und wird im Audit-Log protokolliert. Beenden geht nur über
+    :class:`PortalPublicationEndView` mit Auswahl, was mit dem Bestand geschieht (Issue #618).
     """
 
     permission_required = "manage_settings"
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug):
-        from .. import audit
+        from ..services import portal_publication
 
-        publish = request.POST.get("publish") == "1"
         tenant = self.session_tenant
-        if tenant.insight_publish == publish:
+        if request.POST.get("publish") != "1":
+            # Alte Formulare ohne Auswahl: erst entscheiden, was mit dem Bestand geschieht
+            if tenant.insight_publish:
+                messages.info(request, "Bitte wählen Sie, was mit den bereits veröffentlichten Daten geschehen soll.")
+                return redirect("session:portal_publication_end", tenant_slug=tenant_slug)
             messages.info(request, "Der Veröffentlichungs-Status ist bereits gesetzt.")
             return redirect("session:settings", tenant_slug=tenant_slug)
 
-        old_value = tenant.insight_publish
-        tenant.insight_publish = publish
-        tenant.save(update_fields=["insight_publish", "updated_at"])
-
-        audit.log_event(
-            "publish" if publish else "update",
-            tenant,
-            tenant=tenant,
-            user=self.session_user,
-            request=request,
-            changes={"insight_publish": {"alt": old_value, "neu": publish}},
-        )
-
-        if publish:
+        change = portal_publication.resume_publication(tenant, user=self.session_user, request=request)
+        if change is None:
+            messages.info(request, "Der Veröffentlichungs-Status ist bereits gesetzt.")
+        elif change.entries:
+            messages.success(
+                request,
+                f"Veröffentlichung aktiviert — {change.entries} zurückgenommene Einträge sind wieder im "
+                "Bürgerportal; Änderungen folgen mit dem nächsten Sync-Zyklus.",
+            )
+        else:
             messages.success(
                 request,
                 "Veröffentlichung aktiviert — die öffentlichen Daten dieses Mandanten "
                 "erscheinen mit dem nächsten Sync-Zyklus im Bürgerportal.",
             )
+        return redirect("session:settings", tenant_slug=tenant_slug)
+
+
+class PortalPublicationEndView(SessionViewMixin, TemplateView):
+    """
+    Veröffentlichung im Bürgerportal beenden (Issue #618).
+
+    Schritt 1 (GET): drei Möglichkeiten mit Hilfetext. Schritt 2 (POST ohne ``confirm``):
+    Zusammenfassung der Folgen für die gewählte Möglichkeit und den heutigen Bestand. Erst die
+    Bestätigung (POST mit ``confirm=1``) beendet bzw. wechselt die Möglichkeit, mit Audit-Eintrag.
+    """
+
+    template_name = "session/settings/portal_publication.html"
+    permission_required = "manage_settings"
+    http_method_names = ["get", "post"]
+
+    def get_context_data(self, **kwargs):
+        from ..services import portal_publication
+
+        context = super().get_context_data(**kwargs)
+        tenant = self.session_tenant
+        context.update(
+            {
+                "options": portal_publication.OPTIONS,
+                "current": None if tenant.insight_publish else portal_publication.option(tenant.insight_end_mode),
+                "state_label": portal_publication.state_label(tenant),
+                "inventory": portal_publication.inventory(tenant),
+                "implementation_publish": tenant.implementation_publish,
+            }
+        )
+        return context
+
+    def post(self, request, tenant_slug):
+        from ..services import portal_publication
+
+        chosen = portal_publication.option(request.POST.get("mode"))
+        if chosen is None:
+            messages.error(request, "Bitte wählen Sie eine der drei Möglichkeiten.")
+            return redirect("session:portal_publication_end", tenant_slug=tenant_slug)
+        if request.POST.get("confirm") != "1":
+            context = self.get_context_data(chosen=chosen, step="confirm")
+            return self.render_to_response(context)
+        change = portal_publication.end_publication(
+            self.session_tenant, chosen.key, user=self.session_user, request=request
+        )
+        if change is None:
+            messages.info(request, f"„{chosen.title}“ ist bereits eingestellt.")
+        elif chosen.key == self.session_tenant.PORTAL_END_WITHDRAWN:
+            messages.success(
+                request,
+                f"Veröffentlichung dauerhaft zurückgenommen: {change.entries} Einträge sind nicht mehr im Bürgerportal.",
+            )
+        elif chosen.key == self.session_tenant.PORTAL_END_ARCHIVED:
+            messages.success(request, "Veröffentlichung beendet. Der Bestand bleibt als Archiv mit Hinweis lesbar.")
         else:
-            messages.success(request, "Veröffentlichung ins Bürgerportal wurde beendet.")
+            messages.success(
+                request, "Veröffentlichung vorübergehend abgeschaltet. Die Seiten im Bürgerportal zeigen einen Hinweis."
+            )
         return redirect("session:settings", tenant_slug=tenant_slug)
 
 

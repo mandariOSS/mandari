@@ -215,11 +215,11 @@ def chat_message(request):
         )
 
     # 6-7. Build RAG context and call AI
+    # Außerhalb des try: Eine abgeschaltete Kommune endet mit dem Hinweis statt als interner Fehler
+    body = get_active_body(request)
+    body_id = str(body.id) if body else None
     try:
         from insight_ai.services.chat_service import process_chat_message
-
-        body = get_active_body(request)
-        body_id = str(body.id) if body else None
 
         result = process_chat_message(
             message=message,

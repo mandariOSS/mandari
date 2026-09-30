@@ -157,6 +157,28 @@ class SessionTenant(models.Model):
         verbose_name="Im Bürgerportal veröffentlichen",
         help_text="Registriert die OParl-API dieses Mandanten als Quelle für das Insight-Bürgerportal",
     )
+    # Veröffentlichung beendet (Issue #618): Was mit dem gespiegelten Bestand geschieht, solange
+    # insight_publish aus ist. Leer ist der alte Stand (Quelle aus, Bestand ohne Hinweis sichtbar);
+    # DB-seitiger Default, damit ein älteres Image weiter Mandanten anlegen kann.
+    PORTAL_END_PAUSED = "paused"
+    PORTAL_END_ARCHIVED = "archived"
+    PORTAL_END_WITHDRAWN = "withdrawn"
+    PORTAL_END_CHOICES = [
+        (PORTAL_END_PAUSED, "Vorübergehend abgeschaltet"),
+        (PORTAL_END_ARCHIVED, "Als Archiv behalten"),
+        (PORTAL_END_WITHDRAWN, "Dauerhaft zurückgenommen"),
+    ]
+    #: Diese Möglichkeiten behalten Einstieg und Bestand im Bürgerportal (mit Hinweis)
+    PORTAL_END_KEEPS_ENTRY = (PORTAL_END_PAUSED, PORTAL_END_ARCHIVED)
+    insight_end_mode = models.CharField(
+        max_length=20,
+        choices=PORTAL_END_CHOICES,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Veröffentlichung im Bürgerportal beendet",
+        help_text="Wie das Bürgerportal den Bestand zeigt, solange nicht veröffentlicht wird",
+    )
     # Öffentliches Beschluss-Tracking (Issue #48): Opt-in der Verwaltung.
     implementation_publish = models.BooleanField(
         default=False,
