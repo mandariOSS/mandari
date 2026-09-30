@@ -75,6 +75,27 @@ BACKOFF_MIN_MINUTES_BY_KIND = {
     # robots.txt ändert sich selten: einmal täglich nachsehen genügt (Issue #116)
     ERROR_KIND_ROBOTS_BLOCKED: 24 * 60,
 }
+# Anzeigetexte der Fehlerklassen (Schonungsmeldung in sync_all, Status in list-sources)
+ERROR_KIND_LABELS = {
+    ERROR_KIND_UA_BLOCKED: "User-Agent gesperrt",
+    ERROR_KIND_SERVER_ERROR_SERIES: "5xx-Serie",
+    ERROR_KIND_ROBOTS_BLOCKED: "robots.txt sperrt",
+}
+
+
+def source_status_label(source: object, now: datetime | None = None) -> str:
+    """Kurzer Betriebsstatus einer Quelle: inaktiv, Schonung bis …, Fehler oder aktiv."""
+    if not getattr(source, "is_active", True):
+        return "inaktiv"
+    failures = getattr(source, "consecutive_failures", 0) or 0
+    attempts = f"{failures} Fehlversuch in Folge" if failures == 1 else f"{failures} Fehlversuche in Folge"
+    reason = ERROR_KIND_LABELS.get(getattr(source, "last_error_kind", None) or "", attempts)
+    until = source_backoff_until(source, now)
+    if until is not None:
+        return f"Schonung bis {until:%d.%m. %H:%M} UTC ({reason})"
+    if failures:
+        return f"Fehler ({reason})"
+    return "aktiv"
 
 
 def source_backoff_until(source, now: datetime | None = None) -> datetime | None:
@@ -1454,12 +1475,7 @@ class SyncOrchestrator:
             if until is None:
                 due.append(source)
             else:
-                kind_labels = {
-                    ERROR_KIND_UA_BLOCKED: "User-Agent gesperrt",
-                    ERROR_KIND_SERVER_ERROR_SERIES: "5xx-Serie",
-                    ERROR_KIND_ROBOTS_BLOCKED: "robots.txt sperrt",
-                }
-                reason = kind_labels.get(
+                reason = ERROR_KIND_LABELS.get(
                     getattr(source, "last_error_kind", None) or "",
                     f"{source.consecutive_failures} Fehlversuche in Folge",
                 )
