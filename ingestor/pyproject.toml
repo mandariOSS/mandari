@@ -13,7 +13,7 @@ dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.14.2",  # Security: Symlink-Lesen außerhalb secrets_dir
     # [asyncio] zieht greenlet explizit (ab SQLAlchemy 2.1 nicht mehr automatisch); 2.1 erst nach eigener Prüfung
-    "sqlalchemy[asyncio]>=2.0.36,<2.1",
+    "sqlalchemy[asyncio]>=2.0.36,<2.2",
     "asyncpg>=0.30.0",
     "redis>=5.2.0",
     "typer>=0.15.0",
