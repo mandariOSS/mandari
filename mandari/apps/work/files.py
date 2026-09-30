@@ -6,7 +6,7 @@ Anhänge von Aufgaben, Fraktionssitzungen, der Sitzungsvorbereitung, Support-Tic
 Briefköpfe gehören einer Organisation und oft nur einem Teil ihrer Mitglieder; Datenexporte
 nach Art. 15/20 DSGVO gehören genau einer Person. Sie gehen deshalb nie über den allgemeinen
 ``/media/``-Weg hinaus (``PROTECTED_PREFIXES`` stehen in ``PROTECTED_MEDIA_PREFIXES`` von
-``mandari/urls.py``), sondern nur über Download-Views, die Organisation, Sichtbarkeit und
+``mandari/media.py``), sondern nur über Download-Views, die Organisation, Sichtbarkeit und
 Rechte prüfen. Neue Dateien erhalten zufällige Namen; der Originalname steht im Modell und
 wird beim Download gesetzt.
 """
