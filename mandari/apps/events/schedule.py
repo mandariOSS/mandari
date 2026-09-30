@@ -56,6 +56,24 @@ _EPOCHE: Final = datetime(1970, 1, 1, tzinfo=UTC)
 _EINE_MINUTE: Final = timedelta(minutes=1)
 #: Obergrenze der Suche nach dem jüngsten Cron-Termin (Schritte); reicht für Jahre zurück
 _MAX_SCHRITTE: Final = 200_000
+#: So weit sucht ``Cron.latest`` höchstens zurück. Jeder mögliche Ausdruck hat darin einen Termin
+#: (Tag und Wochentag wiederholen sich spätestens nach 28 Jahren, der 29. Februar nach 8 Jahren).
+_SUCHFENSTER_JAHRE: Final = 60
+#: längster Monat (Februar mit Schalttag), um unmögliche Tage wie ``30 2`` zu erkennen
+_MONATSLAENGE: Final[Mapping[int, int]] = {
+    1: 31,
+    2: 29,
+    3: 31,
+    4: 30,
+    5: 31,
+    6: 30,
+    7: 31,
+    8: 31,
+    9: 30,
+    10: 31,
+    11: 30,
+    12: 31,
+}
 
 
 class Catchup(enum.StrEnum):
@@ -145,6 +163,14 @@ class Cron(Trigger):
         setzen(self, "weekdays", frozenset(w % 7 for w in _feld(wochentag, 0, 7, self.expression)))
         setzen(self, "days_restricted", not tag.startswith("*"))
         setzen(self, "weekdays_restricted", not wochentag.startswith("*"))
+        # Nur der Tag entscheidet (Wochentag ``*``): Es muss ihn in einem der Monate geben, sonst gibt es
+        # nie einen Termin (z. B. ``0 0 30 2 *``). In allen anderen Fällen passt jeder Monat irgendwann.
+        if (
+            self.days_restricted
+            and not self.weekdays_restricted
+            and not any(d <= _MONATSLAENGE[m] for m in self.months for d in self.days)
+        ):
+            raise ImproperlyConfigured(f"cron({self.expression!r}): Tag und Monat ergeben nie einen Termin")
         self._zone()  # unbekannte Zeitzone früh melden
 
     def _zone(self) -> ZoneInfo:
@@ -165,7 +191,11 @@ class Cron(Trigger):
         # Gesucht wird in Wanduhrzeit; ein Termin in der ausgelassenen Stunde liegt danach in UTC
         # hinter ``now`` und wird dann übersprungen, bis ``now`` ihn erreicht.
         wand = now.astimezone(zone).replace(second=0, microsecond=0, tzinfo=None)
+        # Untergrenze statt Suche bis ins Jahr 1 (dort ``OverflowError`` statt einer klaren Meldung)
+        untergrenze = wand.replace(year=max(wand.year - _SUCHFENSTER_JAHRE, 2), month=1, day=1, hour=0, minute=0)
         for _ in range(_MAX_SCHRITTE):
+            if wand < untergrenze:
+                break
             if wand.month not in self.months:
                 wand = wand.replace(day=1, hour=0, minute=0) - _EINE_MINUTE
             elif not self._tag_passt(wand):

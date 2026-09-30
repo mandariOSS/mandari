@@ -86,21 +86,26 @@ class Scheduler:
         if not self.ensure_lease():
             return []
         jetzt = now or timezone.now()
+        # Meist ist nichts fällig: alle Stände in einer Abfrage ohne Sperren lesen, im Zweifel in
+        # ``_plan`` unter Sperre genau prüfen
+        staende: dict[str, datetime] = dict(ScheduleState.objects.values_list("name", "last_slot"))
         angelegt: list[str] = []
         for eintrag in self.registry:
             try:
-                if self._plan(eintrag, jetzt):
+                if self._plan(eintrag, jetzt, staende.get(eintrag.name)):
                     angelegt.append(eintrag.name)
             except leases.LeaseLostError:
                 self.is_leader = False
                 logger.warning("Zeitpläne: Lease während des Durchlaufs verloren (%s)", self.holder)
                 break
+            except DatabaseError:
+                raise  # Verbindung neu aufbauen (``run``); betrifft alle Zeitpläne
+            except Exception:  # noqa: BLE001 – ein fehlerhafter Zeitplan darf die übrigen nicht aufhalten
+                logger.exception("Zeitplan %s: Planung gescheitert, die übrigen laufen weiter", eintrag.name)
         return angelegt
 
-    def _plan(self, eintrag: Schedule, jetzt: datetime) -> bool:
+    def _plan(self, eintrag: Schedule, jetzt: datetime, zuletzt: datetime | None) -> bool:
         termin = eintrag.trigger.latest(jetzt)
-        # Meist ist nichts fällig: ohne Transaktion und Sperren prüfen, im Zweifel unten genau
-        zuletzt = ScheduleState.objects.filter(name=eintrag.name).values_list("last_slot", flat=True).first()
         if zuletzt is not None and termin <= zuletzt:
             return False
         with transaction.atomic():

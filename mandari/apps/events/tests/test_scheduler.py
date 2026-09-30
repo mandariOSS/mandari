@@ -7,16 +7,17 @@ import threading
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
+from unittest import mock
 
 import pytest
 from django.core.management import CommandError, call_command
-from django.db import connection
+from django.db import OperationalError, connection
 from django.utils import timezone
 
 from apps.events import leases, schedule
 from apps.events.models import Lease, ScheduleState, TaskStatus
 from apps.events.models import Task as TaskRow
-from apps.events.schedule import Catchup, ScheduleRegistry, cron, every
+from apps.events.schedule import Catchup, Schedule, ScheduleRegistry, Trigger, cron, every
 from apps.events.scheduler import LEASE_NAME, Scheduler
 from apps.events.task_runner import run_pending
 from apps.events.tests import auftraege
@@ -163,6 +164,54 @@ def test_schluessel_verhindert_doppelten_auftrag_auch_ohne_stand(register: Sched
     ScheduleState.objects.update(last_slot=BEGINN - timedelta(hours=1))
     planer.tick(BEGINN + timedelta(minutes=9))
     assert TaskRow.objects.count() == 1
+
+
+class _Kaputt(Trigger):
+    """Terminregel, die bei jeder Berechnung scheitert."""
+
+    def latest(self, now: datetime) -> datetime:
+        raise OverflowError("date value out of range")
+
+    def describe(self) -> str:
+        return "kaputt"
+
+
+@pytest.mark.django_db
+def test_fehlerhafter_zeitplan_haelt_die_uebrigen_nicht_auf(register: ScheduleRegistry) -> None:
+    """Scheitert ein Zeitplan (Regel oder Einreihen), planen die übrigen weiter; der Prozess läuft weiter."""
+    # Namen vor "viertelstunde": Sie kommen im Durchlauf zuerst an die Reihe
+    register.add(Schedule(name="a-kaputte-regel", task=T.merken, trigger=_Kaputt()))
+    every(minutes=15, name="b-einreihen-scheitert", registry=register)(T.wichtig)
+    planer = _planer(register)
+    planer.tick(BEGINN)
+    einreihen = planer.backend.enqueue_once
+
+    def scheitert_fuer_wichtig(task: Any, *args: Any) -> Any:
+        if task.module_path == f"{PFAD}.wichtig":
+            raise TypeError("nicht einreihbar")
+        return einreihen(task, *args)
+
+    with mock.patch.object(planer.backend, "enqueue_once", side_effect=scheitert_fuer_wichtig):
+        assert planer.tick(BEGINN + timedelta(minutes=8)) == ["viertelstunde"]
+    assert planer.is_leader
+    zeile = TaskRow.objects.get()
+    assert "zeitplan:viertelstunde:" in (zeile.idempotency_key or "")
+    stand = ScheduleState.objects.get(name="b-einreihen-scheitert")
+    assert stand.last_slot == datetime(2026, 9, 30, 10, 0, tzinfo=UTC), "zurückgerollt, beim nächsten Mal erneut"
+
+    assert planer.tick(BEGINN + timedelta(minutes=9)) == ["b-einreihen-scheitert"]
+
+
+@pytest.mark.django_db
+def test_datenbankfehler_bricht_den_durchlauf_ab(register: ScheduleRegistry) -> None:
+    """Datenbankfehler gehen an ``run``, das die Verbindung neu aufbaut."""
+    planer = _planer(register)
+    planer.tick(BEGINN)
+    with (
+        mock.patch.object(Scheduler, "_plan", side_effect=OperationalError("Verbindung weg")),
+        pytest.raises(OperationalError),
+    ):
+        planer.tick(BEGINN + timedelta(minutes=8))
 
 
 @pytest.mark.django_db

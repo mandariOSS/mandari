@@ -97,6 +97,29 @@ def test_cron_monate_und_schaltjahr() -> None:
     assert Cron("15 6 1 1,7 *").latest(berlin(2026, 9, 30)) == berlin(2026, 7, 1, 6, 15)
 
 
+@pytest.mark.parametrize("ausdruck", ["0 0 30 2 *", "0 0 31 2,4,6,9,11 *", "0 0 30-31 2 *"])
+def test_cron_ohne_moeglichen_termin_wird_nicht_registriert(ausdruck: str) -> None:
+    """Sonst scheiterte erst der Scheduler daran, bei jedem Durchlauf."""
+    with pytest.raises(ImproperlyConfigured, match="nie einen Termin"):
+        Cron(ausdruck)
+    with pytest.raises(ImproperlyConfigured):
+        cron(ausdruck, registry=ScheduleRegistry())(T.merken)
+
+
+@pytest.mark.parametrize("ausdruck", ["0 0 31 2,3 *", "0 0 30 2 1", "0 0 29 2 *", "0 0 */30 2 *"])
+def test_cron_mit_seltenem_termin_ist_erlaubt(ausdruck: str) -> None:
+    """Einer der Monate hat den Tag, oder der Wochentag genügt (Tag oder Wochentag), oder ``*``-Schritte."""
+    assert Cron(ausdruck).latest(berlin(2026, 9, 30)) <= berlin(2026, 9, 30)
+
+
+def test_cron_suche_endet_mit_klarer_meldung() -> None:
+    """Die Suche läuft nicht bis ins Jahr 1 zurück (``OverflowError``), sondern meldet den Ausdruck."""
+    ausdruck = Cron("0 0 1 2 *")
+    object.__setattr__(ausdruck, "days", frozenset({30}))  # an der Prüfung vorbei unmöglich gemacht
+    with pytest.raises(ImproperlyConfigured, match="kein Termin"):
+        ausdruck.latest(berlin(2026, 9, 30))
+
+
 def test_cron_ausgelassene_stunde_der_sommerzeit() -> None:
     """29. März 2026: 02:00 → 03:00. Der Termin 02:30 läuft eine Stunde später (01:30 UTC)."""
     nachts = Cron("30 2 * * *")
