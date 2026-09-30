@@ -120,6 +120,8 @@ INSTALLED_APPS = [
     "apps.common",
     "apps.accounts",
     "apps.tenants",
+    # Ereignistechnik der Datendrehscheibe: Journal, Folgenummer, Abonnements, Aufträge (docs/adr/20260929-*)
+    "apps.events",
     "apps.provisioning",
     "apps.work",
     # Mandari Session RIS (OSS - AGPL-3.0-or-later)
