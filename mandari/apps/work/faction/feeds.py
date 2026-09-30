@@ -42,7 +42,7 @@ def build_personal_feed(user) -> bytes:
     Ort/Online-Kennzeichnung und ein Deep-Link in den Feed — keinerlei
     Tagesordnungs- oder Protokollinhalte.
     """
-    from insight_core.models import OParlMeeting
+    from hub.ris import selectors as ris
 
     from .models import FactionMeeting
 
@@ -100,17 +100,9 @@ def build_personal_feed(user) -> bytes:
         committee_ids.update(committee.pk for committee in membership.oparl_committees.all())
 
     if committee_ids:
-        ris_meetings = (
-            OParlMeeting.objects.filter(
-                organizations__in=committee_ids,
-                start__isnull=False,
-                start__gte=window_start,
-                start__lte=window_end,
-            )
-            .distinct()
-            .prefetch_related("organizations")
-            .order_by("start")
-        )
+        ris_meetings = ris.meetings_of_organizations(
+            committee_ids, starts_from=window_start, starts_until=window_end
+        ).prefetch_related("organizations")
         for meeting in ris_meetings:
             events.append(
                 {

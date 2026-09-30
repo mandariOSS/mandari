@@ -19,8 +19,10 @@ import uuid
 from datetime import date
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db.models import Q, QuerySet
+from django.db.models import QuerySet
 from django.urls import reverse
+
+from hub.ris import selectors as ris
 
 if TYPE_CHECKING:
     from apps.tenants.models import Membership, Organization
@@ -94,30 +96,19 @@ def search_documents(motion: Motion, membership: Membership, query: str) -> list
 
 def search_papers(organization: Organization, query: str) -> list[Any]:
     """Vorlagen aus dem RIS der eigenen Kommunen (Name oder Drucksachennummer)."""
-    from insight_core.models import OParlPaper
-
     query = query.strip()
     if len(query) < MIN_QUERY_LENGTH:
         return []
-    papers = (
-        OParlPaper.objects.filter(body__in=_bodies(organization))
-        .filter(Q(name__icontains=query) | Q(reference__icontains=query))
-        .order_by("-date")
-    )
-    return list(papers[:RESULT_LIMIT])
+    return list(ris.search_papers(_bodies(organization), query)[:RESULT_LIMIT])
 
 
 def search_meetings(organization: Organization, query: str) -> list[Any]:
     """Sitzungen aus dem RIS der eigenen Kommunen (Name oder Datum TT.MM.JJJJ)."""
-    from insight_core.models import OParlMeeting
-
     query = query.strip()
     if len(query) < MIN_QUERY_LENGTH:
         return []
-    meetings = OParlMeeting.objects.filter(body__in=_bodies(organization))
-    day = _parse_german_date(query)
-    meetings = meetings.filter(start__date=day) if day else meetings.filter(name__icontains=query)
-    return list(meetings.order_by("-start")[:RESULT_LIMIT])
+    found = ris.search_meetings(_bodies(organization), query, on=_parse_german_date(query))
+    return list(found[:RESULT_LIMIT])
 
 
 # =============================================================================
@@ -139,8 +130,6 @@ def _is_self_or_amendment(candidate: Motion, motion: Motion) -> bool:
 
 def set_parent(motion: Motion, membership: Membership, *, motion_id: str = "", paper_id: str = "") -> str | None:
     """Bezugsantrag setzen (Dokument oder RIS-Vorlage); ohne Angaben entfernen."""
-    from insight_core.models import OParlPaper
-
     if motion_id and paper_id:
         return BOTH_GIVEN
     parent: Motion | None = None
@@ -153,9 +142,7 @@ def set_parent(motion: Motion, membership: Membership, *, motion_id: str = "", p
         if _is_self_or_amendment(parent, motion):
             return CYCLE
     elif paper_id:
-        paper_pk = _uuid(paper_id)
-        if paper_pk is not None:
-            paper = OParlPaper.objects.filter(pk=paper_pk, body__in=_bodies(motion.organization)).first()
+        paper = ris.paper(_bodies(motion.organization), paper_id)
         if paper is None:
             return PAPER_NOT_FOUND
     motion.parent_motion = parent
@@ -166,13 +153,9 @@ def set_parent(motion: Motion, membership: Membership, *, motion_id: str = "", p
 
 def set_reference_meeting(motion: Motion, meeting_id: str = "") -> str | None:
     """Bezugssitzung setzen; ohne Angabe entfernen."""
-    from insight_core.models import OParlMeeting
-
     meeting = None
     if meeting_id:
-        meeting_pk = _uuid(meeting_id)
-        if meeting_pk is not None:
-            meeting = OParlMeeting.objects.filter(pk=meeting_pk, body__in=_bodies(motion.organization)).first()
+        meeting = ris.meeting(_bodies(motion.organization), meeting_id)
         if meeting is None:
             return MEETING_NOT_FOUND
     motion.related_meeting = meeting

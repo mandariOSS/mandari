@@ -5,7 +5,6 @@ import json
 import logging
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import models
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
@@ -515,13 +514,13 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         if not can_edit:
             return HttpResponse(status=403)
 
-        from insight_core.models import OParlPaper
+        from hub.ris import selectors as ris
 
         paper_id = request.POST.get("paper_id")
         if paper_id:
             bodies = self.organization.get_all_bodies()
             if bodies.exists():
-                paper = OParlPaper.objects.filter(id=paper_id, body__in=bodies).first()
+                paper = ris.paper(bodies, paper_id)
                 if paper:
                     item.related_papers.add(paper)
 
@@ -544,18 +543,13 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         if not query or len(query) < 2:
             return JsonResponse({"results": []})
 
-        from insight_core.models import OParlPaper
+        from hub.ris import selectors as ris
 
         bodies = self.organization.get_all_bodies()
         if not bodies.exists():
             return JsonResponse({"results": []})
 
-        papers = (
-            OParlPaper.objects.filter(body__in=bodies)
-            .filter(models.Q(name__icontains=query) | models.Q(reference__icontains=query))
-            .exclude(id__in=item.related_papers.values_list("id", flat=True))
-            .order_by("-date")[:15]
-        )
+        papers = ris.search_papers(bodies, query).exclude(id__in=item.related_papers.values_list("id", flat=True))[:15]
 
         results = [
             {
