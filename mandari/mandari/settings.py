@@ -122,6 +122,8 @@ INSTALLED_APPS = [
     "apps.tenants",
     # Ereignistechnik der Datendrehscheibe: Journal, Folgenummer, Abonnements, Aufträge (docs/adr/20260929-*)
     "apps.events",
+    # Datendrehscheibe: Vertragsregister für Ereignisse und Befehle, ohne Modelle (docs/adr/20260929-ereignisvertraege.md)
+    "hub.contracts",
     "apps.provisioning",
     "apps.work",
     # Mandari Session RIS (OSS - AGPL-3.0-or-later)

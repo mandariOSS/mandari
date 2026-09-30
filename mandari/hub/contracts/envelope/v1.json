@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:envelope:v1",
+  "title": "Ereignishülle",
+  "description": "Hülle jedes Ereignisses im Journal (docs/adr/20260929-ereignistechnik-postgres.md). Die Nutzlast prüft das Schema des Ereignistyps in der angegebenen Version. Die Hülle enthält nur Kennungen: keine Namen, Mailadressen oder Inhalte.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "type",
+    "version",
+    "aggregate_type",
+    "aggregate_id",
+    "tenant_ref",
+    "visibility",
+    "operation",
+    "occurred_at",
+    "correlation_id",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "description": "Eindeutige Kennung des Ereignisses; Empfänger erkennen damit Doppelzustellungen.",
+      "$ref": "#/$defs/uuid"
+    },
+    "type": {
+      "description": "Ereignistyp <bereich>.<objekt>.<ereignis>, z. B. ris.paper.released.",
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*){1,2}$"
+    },
+    "version": {
+      "description": "Schemaversion der Nutzlast (steht nie im Typnamen).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32767
+    },
+    "aggregate_type": {
+      "description": "Kanonischer Objekttyp, z. B. Paper.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[A-Z][A-Za-z0-9]*$"
+    },
+    "aggregate_id": {
+      "description": "Kanonische Kennung des Objekts.",
+      "$ref": "#/$defs/uuid"
+    },
+    "tenant_ref": {
+      "description": "Mandant: session:<uuid>, org:<uuid> oder source:<uuid>.",
+      "type": "string",
+      "pattern": "^(session|org|source):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "body_id": {
+      "description": "Kommune (kanonische Kennung), falls das Ereignis einer Kommune zugeordnet ist.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "visibility": {
+      "description": "Sichtbarkeit; der öffentliche Feed, das Bürgerportal und die Suche filtern auf oeffentlich.",
+      "enum": [
+        "oeffentlich",
+        "nichtoeffentlich",
+        "intern",
+        "personenbezogen"
+      ]
+    },
+    "operation": {
+      "description": "Operation im Änderungsfeed.",
+      "enum": [
+        "upsert",
+        "delete",
+        "redact"
+      ]
+    },
+    "occurred_at": {
+      "description": "Zeitpunkt des fachlichen Geschehens, mit Zeitzone (RFC 3339).",
+      "$ref": "#/$defs/timestamp"
+    },
+    "actor_ref": {
+      "description": "Auslöser als Kennung: user:<uuid> oder system:<auftrag>, nie ein Name.",
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(user:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|system:[a-z][a-z0-9_.-]{0,63})$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "correlation_id": {
+      "description": "Kennung des Gesamtvorgangs (Anfrage, Auftrag), über alle Folgeereignisse gleich.",
+      "$ref": "#/$defs/uuid"
+    },
+    "causation_id": {
+      "description": "event_id des auslösenden Ereignisses, falls es eines gibt.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "payload": {
+      "description": "Nutzlast nach dem Schema des Typs: nur Kennungen und Namen geänderter Felder.",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    }
+  },
+  "examples": [
+    {
+      "event_id": "0f4c6f8e-6a1b-4d8e-9c55-2f1a7b3c9d10",
+      "type": "ris.paper.released",
+      "version": 1,
+      "aggregate_type": "Paper",
+      "aggregate_id": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c",
+      "tenant_ref": "session:3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "body_id": "7e8f9a0b-1c2d-5e3f-8a4b-5c6d7e8f9a0b",
+      "visibility": "oeffentlich",
+      "operation": "upsert",
+      "occurred_at": "2026-09-30T10:15:00+02:00",
+      "actor_ref": "user:9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a",
+      "correlation_id": "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
+      "causation_id": null,
+      "payload": {
+        "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c",
+        "changed": [
+          "status"
+        ]
+      }
+    }
+  ]
+}
