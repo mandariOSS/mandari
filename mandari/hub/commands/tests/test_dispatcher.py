@@ -164,7 +164,7 @@ def test_bereich_trennt_mandanten_und_ausloeser() -> None:
 @pytest.mark.parametrize(
     ("schluessel", "gueltig"),
     [
-        (str(uuid.uuid4()), True),
+        ("8e03978e-40d5-43e8-bc93-6894a57f9324", True),
         ("a", True),
         ("x" * 255, True),
         ("", False),
@@ -182,7 +182,11 @@ def test_gueltige_idempotenzschluessel(schluessel: object, gueltig: bool) -> Non
 
 @pytest.mark.parametrize(
     "abweichung",
-    [{"tenant_ref": "session:keine-uuid"}, {"tenant_ref": "user:" + str(uuid.uuid4())}, {"actor_ref": "Erika"}],
+    [
+        {"tenant_ref": "session:keine-uuid"},
+        {"tenant_ref": "user:9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a"},
+        {"actor_ref": "Erika"},
+    ],
 )
 def test_befehl_braucht_kennungen_wie_die_ereignishuelle(abweichung: dict[str, str]) -> None:
     with pytest.raises(ValueError):
