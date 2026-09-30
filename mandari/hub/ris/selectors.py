@@ -33,6 +33,7 @@ from insight_core.models import (
     OParlBody,
     OParlConsultation,
     OParlFile,
+    OParlLocation,
     OParlMeeting,
     OParlMembership,
     OParlOrganization,
@@ -71,6 +72,16 @@ def meeting(bodies: Bodies, meeting_id: object) -> OParlMeeting | None:
     """Eine Sitzung der Kommunen; ``None``, wenn es sie dort nicht gibt."""
     pk = _uuid(meeting_id)
     return meetings(bodies).filter(pk=pk).first() if pk else None
+
+
+def meeting_by_id(meeting_id: object) -> OParlMeeting | None:
+    """
+    Eine Sitzung über alle Kommunen – für Ausgaben, die nicht auf Kommunen beschränkt sind (der
+    OParl-Aggregator). Auch eine in der Quelle gelöschte oder zurückgenommene Sitzung: Der Aufrufer
+    entscheidet, was er dafür ausgibt. ``None``, wenn es sie nicht gibt.
+    """
+    pk = _uuid(meeting_id)
+    return OParlMeeting.objects.filter(pk=pk).first() if pk else None
 
 
 def upcoming_meetings(bodies: Bodies, *, since: datetime | None = None) -> QuerySet[OParlMeeting]:
@@ -229,6 +240,16 @@ def memberships_of_person(person: OParlPerson, *, bodies: Bodies | None = None) 
     if bodies is not None:
         found = found.filter(organization__body__in=bodies)
     return found
+
+
+# =============================================================================
+# Orte
+# =============================================================================
+
+
+def locations(bodies: Bodies) -> QuerySet[OParlLocation]:
+    """Orte der Kommunen (eigene Location-Objekte der Quellen, nicht die Ortsangaben an Sitzungen)."""
+    return OParlLocation.objects.filter(body__in=bodies)
 
 
 # =============================================================================

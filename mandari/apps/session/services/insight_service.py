@@ -231,6 +231,19 @@ def _entry_querysets(body_ids: list[Any]) -> list[Any]:
     ]
 
 
+def _location_queryset(body_ids: list[Any]) -> Any:
+    """
+    Orte im Bestand der Kommunen – nur für die Rücknahme.
+
+    Session führt den Ort an der Sitzung; Spiegel und Ingestor schreiben ihn als Text an die Sitzung
+    und legen kein eigenes Objekt an. Steht trotzdem eines im Bestand (älterer Stand des Ingestors), wird
+    es mit zurückgenommen. ``restore_source`` holt es nicht zurück: Der Ort kommt mit der Sitzung wieder.
+    """
+    from hub.ris import selectors as ris
+
+    return ris.locations(body_ids)
+
+
 def retract_source(tenant: Any) -> PortalChange:
     """
     Bürgerportal-Quelle des Mandanten zurücknehmen (Deaktivieren, Issue #317); idempotent.
@@ -263,7 +276,8 @@ def retract_source(tenant: Any) -> PortalChange:
                 body.is_listed = False
                 body.save(update_fields=["is_listed", "updated_at"])
                 change.bodies += 1
-        for queryset in _entry_querysets([body.pk for body in bodies]):
+        body_ids = [body.pk for body in bodies]
+        for queryset in [*_entry_querysets(body_ids), _location_queryset(body_ids)]:
             for obj in queryset.filter(deleted=False).iterator(chunk_size=500):
                 obj.mark_deleted(when)
                 change.entries += 1

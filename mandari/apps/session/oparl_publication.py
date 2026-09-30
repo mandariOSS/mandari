@@ -194,6 +194,24 @@ def _write_tombstone(tenant_id, kind, object_id, object_created_at):
     )
     # Sofort aus dem Bürgerportal zurücknehmen – nicht erst beim nächsten Sync des Spiegels
     transaction.on_commit(lambda: retract_from_portal(tenant_id, kind, object_id))
+    if kind == "meeting":
+        _retract_location(tenant_id, object_id)
+
+
+def _retract_location(tenant_id, meeting_id):
+    """
+    Sitzungsort mit seiner Sitzung zurücknehmen.
+
+    Der Ort gehört zur Sitzung und trägt deren Kennung (``…/location/<Kennung der Sitzung>/``). Der
+    Spiegel führt ihn als Text an der Sitzung; hat ein Abgleich ihn zusätzlich als eigenes Objekt in den
+    Bestand geschrieben, bliebe er dort sonst nach der Rücknahme der Sitzung öffentlich abrufbar.
+    """
+    transaction.on_commit(lambda: retract_from_portal(tenant_id, "location", meeting_id))
+
+
+def _has_location(meeting) -> bool:
+    """Trägt die Sitzung eine Ortsangabe (dieselben Felder wie das Location-Objekt der Schnittstelle)?"""
+    return any((meeting.location, meeting.room, meeting.street_address, meeting.postal_code, meeting.locality))
 
 
 #: OParl-Art -> Insight-Modell des Spiegels
@@ -207,6 +225,8 @@ _INSIGHT_MODELS = {
     "file": "OParlFile",
     "consultation": "OParlConsultation",
     "legislativeterm": "OParlLegislativeTerm",
+    # kein eigenes Session-Objekt: der Ort einer Sitzung, unter deren Kennung (``_retract_location``)
+    "location": "OParlLocation",
 }
 
 
@@ -325,6 +345,9 @@ def tombstone_post_save(sender, instance, created, **kwargs):
     was_published = _is_published(old)
     is_published = _is_published(instance)
     if was_published == is_published:
+        # Weiter öffentliche Sitzung ohne Ortsangabe: Der Ort entfällt, die Sitzung bleibt
+        if is_published and sender is SessionMeeting and _has_location(old) and not _has_location(instance):
+            _retract_location(instance.tenant_id, instance.pk)
         return
 
     tenant_id = _resolve_tenant_id(instance)

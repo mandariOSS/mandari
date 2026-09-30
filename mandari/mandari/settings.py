@@ -556,6 +556,9 @@ OPARL_BASE_URL = os.environ.get("OPARL_BASE_URL", f"{SITE_URL}/oparl").rstrip("/
 OPARL_API_PAGE_SIZE = int(os.environ.get("OPARL_API_PAGE_SIZE", "100"))  # Objekte pro Listen-Seite
 OPARL_API_RATE_LIMIT = int(os.environ.get("OPARL_API_RATE_LIMIT", "120"))  # Requests pro Minute je IP (0 = aus)
 OPARL_API_CACHE_SECONDS = int(os.environ.get("OPARL_API_CACHE_SECONDS", "60"))  # Cache ungefilterter Listen
+# Lizenz-URL am System-Objekt des Aggregators (OParl 1.1 ``license``); leer = keine übergreifende Angabe,
+# es gilt die Lizenz der jeweiligen Kommune am Body
+OPARL_LICENSE_URL = os.environ.get("OPARL_LICENSE_URL", "").strip()
 
 # Sync-Einstellungen (alle 10 Minuten inkrementell, Full-Sync um 3 Uhr)
 SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))

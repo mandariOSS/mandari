@@ -10,7 +10,10 @@ die Verwaltung die Schnittstelle freigeschaltet hat (Issue #319,
 
 - **Auflösbare JSON-Objekt-Endpunkte** für alle Objekttypen (System, Body,
   Organization, Person, Membership, Meeting, AgendaItem, Paper, File,
-  Consultation, LegislativeTerm) — IDs zeigen auf JSON, nie auf HTML.
+  Consultation, LegislativeTerm, Location) — IDs zeigen auf JSON, nie auf HTML.
+- **Sitzungsort** als eingebettetes Location-Objekt (``Meeting.location``); es gehört zur Sitzung und
+  trägt deren Kennung. Die älteren Felder ``mandari:location*`` bleiben vorerst zusätzlich erhalten.
+- **Bedingte Anfragen**: jede Antwort trägt einen ``ETag``, ``If-None-Match`` ergibt 304 (oparl_api.utils).
 - **Echte Pagination** (``links.next``, konfigurierbare Seitengröße über
   ``OPARL_API_PAGE_SIZE``) und ``modified_since``/``created_since``-Filter
   (Zeitzonen-Pflicht, naive Zeitstempel -> HTTP 400).
@@ -43,10 +46,12 @@ from apps.session.models import (
 from apps.session.services import file_service, meeting_format_service
 from apps.session.services.insight_service import oparl_system_url
 from oparl_api.utils import (
+    SESSION_ORGANIZATION_TYPES,
     OParlBadRequestError,
     error_response,
     iso,
     iso_date,
+    iso_day,
     json_response,
     oparl_endpoint,
     parse_client_datetime,
@@ -137,6 +142,8 @@ def serialize_system(api):
             "id": api.system_url(),
             "type": schema_type("system"),
             "oparlVersion": "https://schema.oparl.org/1.1/",
+            # Lizenz der offenen Daten, sofern die Verwaltung eine festgelegt hat (Einstellungen)
+            "license": tenant.oparl_license or None,
             "body": api.bodies_url(),
             "name": f"Sitzungsdienst {tenant.name}",
             "contactEmail": tenant.contact_email,
@@ -152,7 +159,7 @@ def serialize_system(api):
 def serialize_body(api, tenant=None):
     tenant = tenant or api.tenant
     terms = [serialize_legislative_term(api, term) for term in tenant.legislative_terms.all()]
-    return _clean(
+    body = _clean(
         {
             "id": api.body_url(),
             "type": schema_type("body"),
@@ -160,6 +167,8 @@ def serialize_body(api, tenant=None):
             "name": tenant.name,
             "shortName": tenant.short_name,
             "website": tenant.website,
+            "license": tenant.oparl_license or None,
+            "licenseValidSince": iso(tenant.oparl_license_valid_since) if tenant.oparl_license else None,
             "contactEmail": tenant.contact_email,
             # Körperschaftstyp und AGS aus dem Anlegen des Mandanten (Issue #317); ohne Angabe wie bisher
             "classification": tenant.get_body_type_display() if tenant.body_type else "Kommune",
@@ -173,10 +182,12 @@ def serialize_body(api, tenant=None):
             "consultation": api.list_url("consultations"),
             "file": api.list_url("files"),
             "legislativeTermList": api.list_url("legislativeterms"),
-            "legislativeTerm": terms,
             **_timestamps(tenant),
         }
     )
+    # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)
+    body["legislativeTerm"] = terms
+    return body
 
 
 def serialize_organization(api, org):
@@ -187,7 +198,8 @@ def serialize_organization(api, org):
             "body": api.body_url(),
             "name": org.name,
             "shortName": org.short_name,
-            "organizationType": org.organization_type,
+            # OParl 1.1 kennt sieben Werte; die feinere Art (Ausschuss, Rat, Beirat …) steht in classification
+            "organizationType": SESSION_ORGANIZATION_TYPES.get(org.organization_type, "Sonstiges"),
             "classification": org.get_organization_type_display(),
             "startDate": iso_date(org.start_date),
             "endDate": iso_date(org.end_date),
@@ -282,6 +294,7 @@ def serialize_meeting(api, meeting):
             "cancelled": meeting.cancelled,
             "start": iso(meeting.start),
             "end": iso(meeting.end),
+            "location": serialize_location(api, meeting),
             # Gemeinsame Sitzung (Issue #317): federführendes Gremium zuerst, dann die weiteren Gremien
             "organization": [api.obj_url("organization", org_id) for org_id in meeting.participating_organization_ids],
             # Ergebnisprotokoll: öffentliche Fassung der Niederschrift (Issue #318)
@@ -290,6 +303,7 @@ def serialize_meeting(api, meeting):
             # OParl 1.1 bettet Tagesordnungspunkte in Meeting ein (nur Ö-Teil!)
             "agendaItem": [serialize_agenda_item(api, item) for item in items],
             **_timestamps(meeting),
+            # Abgekündigt: Der Ort steht als Location-Objekt in ``location`` (docs/SESSION_OPARL_API.md)
             "mandari:locationName": meeting.location or None,
             "mandari:locationRoom": meeting.room or None,
             "mandari:locationAddress": ", ".join(
@@ -298,6 +312,35 @@ def serialize_meeting(api, meeting):
             or None,
             # Sitzungsformat (Issue #138): nie der Zugangsweg der Zugeschalteten
             **_format_extension(meeting),
+        }
+    )
+
+
+def serialize_location(api, meeting):
+    """
+    Sitzungsort als OParl-Location (eingebettet in ``Meeting.location``), ``None`` ohne Ortsangabe.
+
+    Session führt den Ort an der Sitzung. Das Location-Objekt gehört deshalb zur Sitzung und trägt
+    deren Kennung (``…/location/<Kennung der Sitzung>/``); ausgeliefert wird es nur für öffentliche
+    Sitzungen.
+    """
+    fields = {
+        "description": meeting.location,
+        "room": meeting.room,
+        "streetAddress": meeting.street_address,
+        "postalCode": meeting.postal_code,
+        "locality": meeting.locality,
+    }
+    if not any(fields.values()):
+        return None
+    return _clean(
+        {
+            "id": api.obj_url("location", meeting.id),
+            "type": schema_type("location"),
+            **fields,
+            "bodies": [api.body_url()],
+            "meetings": [api.obj_url("meeting", meeting.id)],
+            **_timestamps(meeting),
         }
     )
 
@@ -472,7 +515,8 @@ def serialize_file(api, file_obj, include_text=False):
             # Der Typ, mit dem der Download ausgeliefert wird (aus der Endung, nicht aus dem Upload)
             "mimeType": file_service.mime_type_for_name(file_name),
             "size": file_obj.size,
-            "date": iso(file_obj.created_at),
+            # OParl 1.1: Datum (yyyy-mm-dd), kein Zeitpunkt
+            "date": iso_day(file_obj.created_at),
             "accessUrl": download,
             "downloadUrl": f"{download}?download=1",
             "text": (file_obj.text_content or None) if include_text else None,
@@ -780,11 +824,14 @@ def list_view(request, tenant_slug, segment):
 def object_view(request, tenant_slug, kind, pk):
     tenant = _get_tenant(tenant_slug)
     kind = kind.lower()
+    api = TenantApi(tenant)
+    if kind == "location":
+        return _location_response(api, pk)
     spec = OBJECT_SPECS.get(kind)
     if spec is None:
-        return error_response(404, f"Unbekannter Objekttyp '{kind}'. Verfügbar: {', '.join(sorted(OBJECT_SPECS))}.")
+        kinds = ", ".join(sorted([*OBJECT_SPECS, "location"]))
+        return error_response(404, f"Unbekannter Objekttyp '{kind}'. Verfügbar: {kinds}.")
     qs_fn, prepare, serializer = spec
-    api = TenantApi(tenant)
     queryset = qs_fn(tenant)
     if prepare:
         queryset = prepare(queryset, tenant)
@@ -798,6 +845,35 @@ def object_view(request, tenant_slug, kind, pk):
     if tombstone is not None:
         return json_response(serialize_tombstone(api, tombstone))
     return error_response(404, f"{api.obj_url(kind, pk)} nicht gefunden.")
+
+
+def _location_response(api, pk):
+    """
+    Sitzungsort unter der Kennung seiner Sitzung (``serialize_location``).
+
+    Nur für öffentliche Sitzungen. Hat die Sitzung keine Ortsangabe (mehr) oder ist sie gelöscht bzw.
+    nicht mehr öffentlich, bleibt die Adresse als gekürztes Objekt mit ``"deleted": true`` abrufbar
+    (OParl 1.1 §2.8) – ohne Inhalte. Sitzungen, die nie öffentlich waren, ergeben 404.
+    """
+    location_id = api.obj_url("location", pk)
+
+    def gone(created, modified):
+        # Felder und Reihenfolge wie bei jedem gekürzten Objekt (serialize_tombstone)
+        return {
+            "id": location_id,
+            "type": schema_type("location"),
+            "created": iso(created),
+            "modified": iso(modified),
+            "deleted": True,
+        }
+
+    meeting = pub.visible_meetings(api.tenant).filter(pk=pk).first()
+    if meeting is not None:
+        return json_response(serialize_location(api, meeting) or gone(meeting.created_at, meeting.updated_at))
+    tombstone = SessionOParlTombstone.objects.filter(tenant=api.tenant, oparl_type="meeting", object_id=pk).first()
+    if tombstone is not None:
+        return json_response(gone(tombstone.object_created_at, tombstone.deleted_at))
+    return error_response(404, f"{location_id} nicht gefunden.")
 
 
 @session_oparl_endpoint

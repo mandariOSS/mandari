@@ -31,6 +31,7 @@ from django.core.paginator import Paginator
 from django.db.models import Prefetch
 from django.db.models.functions import Coalesce
 
+from hub.ris import selectors as ris
 from insight_core import publication
 from insight_core.models import (
     OParlAgendaItem,
@@ -314,6 +315,25 @@ def body_sub_list(request, pk, segment):
     return _paginated_response(request, base_url, queryset, serializer, ctx_factory, kind)
 
 
+def _meeting_location_response(pk):
+    """
+    Sitzungsort ohne eigenes Location-Objekt der Quelle: ``…/location/<Kennung der Sitzung>``
+    (``serializers.serialize_meeting_location``). Entfällt die Ortsangabe oder die Sitzung, bleibt die
+    Adresse als gekürztes Objekt mit ``"deleted": true`` abrufbar (OParl 1.1 §2.8).
+    """
+    meeting = ris.meeting_by_id(pk)
+    if meeting is None:
+        return error_response(404, f"{obj_url('location', pk)} nicht gefunden.")
+    if not meeting.deleted and publication.states():
+        paused = _paused_response(meeting.body_id)
+        if paused is not None:
+            return paused
+    data = None if meeting.deleted else s.serialize_meeting_location(meeting)
+    if data is None:
+        data = s.serialize_tombstone(meeting, "location")
+    return json_response(data)
+
+
 @oparl_endpoint
 def object_view(request, kind, pk):
     kind = kind.lower()
@@ -327,6 +347,8 @@ def object_view(request, kind, pk):
     try:
         obj = queryset.get(pk=pk)
     except model.DoesNotExist:
+        if kind == "location":
+            return _meeting_location_response(pk)
         return error_response(404, f"{obj_url(kind, pk)} nicht gefunden.")
     if obj.deleted:
         # OParl 1.1 §2.8: gelöschte Objekte bleiben unter ihrer URL abrufbar —

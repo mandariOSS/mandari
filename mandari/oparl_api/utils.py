@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Hilfsfunktionen der OParl-API: URL-Bau, JSON-Antworten, Zeitstempel-Parsing,
-Rate-Limiting.
+Rate-Limiting, bedingte Anfragen (ETag/304) und die Wertelisten der Spezifikation.
 
 Alle Objekt-IDs der API werden aus ``settings.OPARL_BASE_URL`` gebaut
 (host-unabhängig, konfigurierbar per Umgebungsvariable ``OPARL_BASE_URL``).
 """
 
+import hashlib
 import json
 import time
 from datetime import UTC, datetime
@@ -16,6 +17,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.cache import get_conditional_response
 
 # Schema-Basis der OParl-1.1-Spezifikation
 SCHEMA_BASE = "https://schema.oparl.org/1.1"
@@ -35,6 +37,81 @@ TYPE_SCHEMA = {
     "location": "Location",
     "legislativeterm": "LegislativeTerm",
 }
+
+
+# OParl 1.1, Organization.organizationType: „Mögliche Werte sind …“ – genau diese sieben.
+ORGANIZATION_TYPES = (
+    "Gremium",
+    "Partei",
+    "Fraktion",
+    "Verwaltungsbereich",
+    "externes Gremium",
+    "Institution",
+    "Sonstiges",
+)
+
+# Schlüssel des Session-RIS (SessionOrganization.organization_type) -> Wert der Spezifikation.
+# Die feinere Einordnung (Ausschuss, Rat, Beirat …) steht weiterhin in ``classification``.
+SESSION_ORGANIZATION_TYPES = {
+    "committee": "Gremium",
+    "council": "Gremium",
+    "advisory": "Gremium",
+    "commission": "Gremium",
+    "faction": "Fraktion",
+    "department": "Verwaltungsbereich",
+    "other": "Sonstiges",
+}
+
+# Verbreitete Angaben fremder Quellen, die keiner der sieben Werte sind, aber eindeutig dazugehören.
+# Manche RIS ordnen nach dem Kommunalrecht: Hauptorgan (Rat, Kreistag) und Hilfsorgan (Ausschüsse,
+# Beiräte) sind Gremien; Amt, Dienststelle und Organisationseinheit gehören zur Verwaltung.
+_ORGANIZATION_TYPE_SYNONYMS = {
+    "ausschuss": "Gremium",
+    "ausschüsse": "Gremium",
+    "rat": "Gremium",
+    "beirat": "Gremium",
+    "beiräte": "Gremium",
+    "kommission": "Gremium",
+    "kommissionen": "Gremium",
+    "gremien": "Gremium",
+    "hauptorgan": "Gremium",
+    "hauptorgane": "Gremium",
+    "hilfsorgan": "Gremium",
+    "hilfsorgane": "Gremium",
+    "fraktionen": "Fraktion",
+    "parteien": "Partei",
+    "institutionen": "Institution",
+    "amt": "Verwaltungsbereich",
+    "ämter": "Verwaltungsbereich",
+    "fachbereich": "Verwaltungsbereich",
+    "fachbereiche": "Verwaltungsbereich",
+    "dezernat": "Verwaltungsbereich",
+    "dezernate": "Verwaltungsbereich",
+    "dienststelle": "Verwaltungsbereich",
+    "dienststellen": "Verwaltungsbereich",
+    "organisationseinheit": "Verwaltungsbereich",
+    "organisationseinheiten": "Verwaltungsbereich",
+    "verwaltung": "Verwaltungsbereich",
+}
+
+_ORGANIZATION_TYPE_LOOKUP = {
+    **_ORGANIZATION_TYPE_SYNONYMS,
+    **SESSION_ORGANIZATION_TYPES,
+    **{value.casefold(): value for value in ORGANIZATION_TYPES},
+}
+
+
+def organization_type(value: object) -> str | None:
+    """
+    ``organizationType`` als Wert der Spezifikation (oder ``None`` ohne Angabe).
+
+    Werte der Spezifikation bleiben (Schreibweise vereinheitlicht), Schlüssel des Session-RIS und
+    verbreitete Angaben fremder Quellen werden zugeordnet, alles andere gilt als „Sonstiges“.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return _ORGANIZATION_TYPE_LOOKUP.get(text.casefold(), "Sonstiges")
 
 
 class OParlBadRequestError(Exception):
@@ -102,6 +179,19 @@ def iso_date(d):
     return d.isoformat() if d else None
 
 
+def iso_day(dt):
+    """
+    Zeitpunkt -> Datum ``yyyy-mm-dd`` (None-sicher), für Felder vom Typ ``date`` wie ``File.date``.
+
+    Es gilt der Tag in der Zeitzone der Installation.
+    """
+    if dt is None:
+        return None
+    if timezone.is_naive(dt):
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(timezone.get_current_timezone()).date().isoformat()
+
+
 def parse_client_datetime(value, param):
     """Parst einen ISO-8601-Zeitstempel aus Query-Parametern.
 
@@ -131,13 +221,42 @@ def parse_client_datetime(value, param):
 
 
 def json_response(data, status=200, headers=None):
-    """JSON-Antwort mit offenem CORS (lesende, anonyme API)."""
-    payload = json.dumps(data, ensure_ascii=False)
+    """
+    JSON-Antwort mit offenem CORS (lesende, anonyme API).
+
+    Erfolgreiche Antworten tragen einen ``ETag`` über ihren Inhalt und ``Cache-Control: no-cache``:
+    Abnehmer dürfen die Antwort aufbewahren, fragen vor der Wiederverwendung aber mit
+    ``If-None-Match`` nach (``conditional``) – so wirkt eine Rücknahme sofort.
+    """
+    payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
     response = HttpResponse(payload, status=status, content_type="application/json; charset=utf-8")
     response["Access-Control-Allow-Origin"] = "*"
+    if status == 200:
+        response["ETag"] = f'"{hashlib.sha256(payload).hexdigest()[:32]}"'
+        response["Cache-Control"] = "no-cache"
+        # Browser-Clients anderer Herkunft dürfen ETag und Blätter-Links lesen
+        response["Access-Control-Expose-Headers"] = "ETag, Link"
     for key, value in (headers or {}).items():
         response[key] = value
     return response
+
+
+def conditional(request, response):
+    """
+    Bedingte Anfrage beantworten: ``304 Not Modified`` ohne Inhalt, wenn ``If-None-Match`` zum ``ETag``
+    der Antwort passt – sonst die Antwort unverändert.
+    """
+    etag = response.get("ETag")
+    if response.status_code != 200 or not etag:
+        return response
+    not_modified = get_conditional_response(request, etag=etag, response=response)
+    if not_modified is response:
+        return response
+    # Django übernimmt nur die Cache-Header; CORS und Blätter-Links gehören auch zur 304
+    for header in ("Access-Control-Allow-Origin", "Access-Control-Expose-Headers", "Link"):
+        if header in response:
+            not_modified[header] = response[header]
+    return not_modified
 
 
 def error_response(status, message):
@@ -174,7 +293,7 @@ def _rate_limited(request):
 
 
 def oparl_endpoint(view):
-    """Dekorator für alle OParl-Views: GET-only, Rate-Limit, 400-Handling, CORS."""
+    """Dekorator für alle OParl-Views: GET-only, Rate-Limit, 400-Handling, CORS, ETag/304."""
 
     @wraps(view)
     def wrapper(request, *args, **kwargs):
@@ -194,7 +313,7 @@ def oparl_endpoint(view):
                 "Bitte Anfragen drosseln — für inkrementelle Syncs modified_since verwenden.",
             )
         try:
-            return view(request, *args, **kwargs)
+            return conditional(request, view(request, *args, **kwargs))
         except OParlBadRequestError as exc:
             return error_response(400, exc.message)
 

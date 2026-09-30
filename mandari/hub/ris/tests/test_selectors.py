@@ -17,6 +17,7 @@ from insight_core.models import (
     OParlBody,
     OParlConsultation,
     OParlFile,
+    OParlLocation,
     OParlMeeting,
     OParlMembership,
     OParlOrganization,
@@ -155,6 +156,26 @@ def test_einzelne_sitzung(bestand: Bestand) -> None:
     assert ris.meeting(eigene, bestand.fremde_sitzung.pk) is None
     assert ris.meeting(eigene, "keine-kennung") is None
     assert ris.meeting(eigene, None) is None
+
+
+def test_sitzung_ueber_alle_kommunen(bestand: Bestand) -> None:
+    """Für den OParl-Aggregator: ohne Beschränkung auf Kommunen, auch Zurückgenommenes."""
+    assert ris.meeting_by_id(bestand.kommend.pk) == bestand.kommend
+    assert ris.meeting_by_id(str(bestand.fremde_sitzung.pk)) == bestand.fremde_sitzung
+    bestand.vergangen.mark_deleted()
+    gefunden = ris.meeting_by_id(bestand.vergangen.pk)
+    assert gefunden is not None and gefunden.deleted is True
+    assert ris.meeting_by_id(uuid.uuid4()) is None
+    assert ris.meeting_by_id("keine-kennung") is None
+
+
+def test_orte_nur_der_eigenen_kommunen(bestand: Bestand) -> None:
+    ort = OParlLocation.objects.create(external_id=_kennung("locations"), body=bestand.body, description="Rathaus")
+    OParlLocation.objects.create(external_id=_kennung("locations"), body=bestand.fremd, description="Kreishaus")
+
+    assert list(ris.locations([bestand.body])) == [ort]
+    assert list(ris.locations([bestand.body.pk])) == [ort]
+    assert ris.locations([bestand.body, bestand.fremd]).count() == 2
 
 
 def test_kommende_sitzungen(bestand: Bestand, jetzt: datetime) -> None:

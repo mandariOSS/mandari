@@ -117,7 +117,7 @@ DSGVO kann sie die Veröffentlichung so beschreiben:
 | `GET …/api/oparl/file/<uuid>/download/` | Anonymer Datei-Abruf (nur öffentlich sichtbare Anlagen; `?download=1` für Attachment) |
 
 Objekttypen für `<typ>`: `organization`, `person`, `membership`, `meeting`,
-`agendaitem`, `paper`, `consultation`, `file`, `legislativeterm`.
+`agendaitem`, `paper`, `consultation`, `file`, `legislativeterm`, `location`.
 
 `Paper.mainFile` ist die älteste öffentliche Anlage der Vorlage, alle
 weiteren erscheinen unter `auxiliaryFile`.
@@ -134,6 +134,83 @@ Sachverhalt und Beschlussvorschlag der Vorlage sind nicht Teil der OParl-Ausgabe
 Offen: Änderungen an Betreff oder öffentlichen Anlagen nach der Freigabe erscheinen
 sofort – eine Ausgabe, die bis zu einer erneuten Freigabe den freigegebenen Stand
 zeigt, ist nicht umgesetzt.
+
+## Konformität zu OParl 1.1
+
+Die Ausgabe hält sich an die Feldtypen und Wertelisten der Spezifikation. Ein externer Validator
+prüft das in der CI gegen eine Instanz mit Demo-Daten (Abschnitt „Prüfung“ in `OPARL_API.md`).
+
+| Eigenschaft | Ausgabe |
+|---|---|
+| `Organization.organizationType` | einer der sieben Werte der Spezifikation (Tabelle unten); die feinere Art steht in `classification` |
+| `File.date` | Datum `yyyy-mm-dd` (Tag der Ablage in der Zeitzone der Installation); der Zeitpunkt steht in `created` |
+| `System.license`, `Body.license` | URL der Lizenz, die die Verwaltung festgelegt hat; `Body.licenseValidSince` nennt, seit wann sie gilt. Ohne Festlegung entfallen die Felder |
+| `Meeting.location` | eingebettetes Location-Objekt (Abschnitt „Sitzungsort“) |
+| `Body.legislativeTerm` | immer vorhanden (Pflichtfeld), ohne Wahlperiode als leere Liste |
+| IDs und Links | aus `SITE_URL`, unabhängig vom Host der Anfrage (Abschnitt „Betrieb“) |
+| Bedingte Anfragen | `ETag` an jeder Antwort, `If-None-Match` ergibt `304` (Abschnitt „Bedingte Anfragen“) |
+
+| Art des Gremiums in Session | `organizationType` | `classification` |
+|---|---|---|
+| Ausschuss | `Gremium` | `Ausschuss` |
+| Rat | `Gremium` | `Rat` |
+| Beirat | `Gremium` | `Beirat` |
+| Kommission | `Gremium` | `Kommission` |
+| Fraktion | `Fraktion` | `Fraktion` |
+| Amt/Fachbereich | `Verwaltungsbereich` | `Amt/Fachbereich` |
+| Sonstiges | `Sonstiges` | `Sonstiges` |
+
+### Lizenz der offenen Daten
+
+**Session → Einstellungen → Karte „OParl-Schnittstelle“ → „Lizenz der offenen Daten“** (Berechtigung
+`manage_settings`). Zur Auswahl stehen die Datenlizenz Deutschland (Zero 2.0 und Namensnennung 2.0)
+sowie Creative Commons (CC0 1.0 und CC BY 4.0); „Keine Angabe“ entfernt die Lizenz aus der Ausgabe.
+Die Wahl steht in `SessionTenant.oparl_license`, der Zeitpunkt in `oparl_license_valid_since`, jede
+Änderung im Audit-Log. Welche Lizenz passt, entscheidet die Kommune; mandari gibt keine vor.
+
+### Sitzungsort (`Meeting.location`)
+
+Der Ort einer Sitzung ist ein eingebettetes Location-Objekt mit `description` (Ort, z. B. „Rathaus“),
+`room`, `streetAddress`, `postalCode` und `locality`, dazu `bodies` und `meetings`. Session führt den
+Ort an der Sitzung; das Objekt trägt deshalb die Kennung der Sitzung und ist unter
+`…/api/oparl/location/<Kennung der Sitzung>/` abrufbar – nur für öffentliche Sitzungen. Entfällt die
+Ortsangabe oder ist die Sitzung gelöscht bzw. nicht mehr öffentlich, liefert die Adresse ein gekürztes
+Objekt mit `"deleted": true`; Sitzungen, die nie öffentlich waren, ergeben 404.
+
+Die bisherigen Felder `mandari:locationName`, `mandari:locationRoom` und `mandari:locationAddress`
+bleiben zusätzlich erhalten. Sie sind **abgekündigt** und entfallen frühestens am 01.10.2027
+(`RELEASE_POLITIK.md`, zwölf Monate). Das Bürgerportal liest sie bis dahin weiter; seine Ortsangabe
+bleibt unverändert.
+
+Im RIS-Bestand des Bürgerportals steht der Ort als Text an der Sitzung (Gebäude vor Raum, Anschrift
+mit Postleitzahl und Ort) – Spiegel und Ingestor legen dafür kein eigenes Location-Objekt an, weil der
+Ort nur zu dieser einen Sitzung gehört. Er verschwindet deshalb mit ihr: Wird die Sitzung gelöscht
+oder nichtöffentlich, ist auch der Ort im Bürgerportal und im Aggregator (`/oparl/v1/`) sofort nicht
+mehr abrufbar. Ein Location-Objekt, das ein älterer Stand des Ingestors unter der Kennung des Ortes
+angelegt hat, wird dabei mit zurückgenommen; der Ingestor markiert es außerdem beim nächsten Abgleich
+der Sitzung. Der Aggregator bildet den Ort aus dem Text (`…/v1/location/<Kennung der Sitzung>`).
+
+### Bedingte Anfragen (ETag, 304)
+
+Jede erfolgreiche JSON-Antwort trägt einen `ETag` über ihren Inhalt und `Cache-Control: no-cache`.
+Wer die Antwort aufbewahrt, fragt mit `If-None-Match: <ETag>` nach und erhält `304 Not Modified`
+ohne Inhalt, solange sich nichts geändert hat. Geprüft wird bei jeder Anfrage neu: Eine Rücknahme
+(Sitzung nicht mehr öffentlich, Schnittstelle gesperrt) wirkt sofort, auch bei passendem `ETag`.
+Der `ETag` hängt am Inhalt, nicht an einem Zeitstempel; er ändert sich genau dann, wenn sich die
+Antwort ändert.
+
+### Hinweise für bestehende Abnehmer
+
+Adressen und IDs bleiben unverändert. Geändert haben sich Werte zweier Felder:
+
+- `organizationType` nannte bisher den internen Schlüssel (`committee`, `council`, `faction`,
+  `advisory`, `commission`, `department`, `other`). Wer danach filtert, stellt auf die Werte der
+  Tabelle oben um oder nutzt `classification`.
+- `File.date` war ein Zeitpunkt (`2026-09-30T08:15:00+00:00`) und ist jetzt ein Datum (`2026-09-30`).
+  Wer den Zeitpunkt braucht, liest `created`.
+
+Neu hinzugekommen sind `Meeting.location`, `license`, `licenseValidSince` und der Objekttyp
+`location`; Abnehmer, die unbekannte Felder ignorieren, brauchen nichts zu tun.
 
 ## Öffentliche Niederschrift (`resultsProtocol`, Issue #318)
 
