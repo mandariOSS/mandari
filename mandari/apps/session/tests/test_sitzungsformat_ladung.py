@@ -209,7 +209,7 @@ def test_gaeste_erhalten_format_aber_keinen_zugangsweg(welt: Welt, monkeypatch: 
     nachricht = next(m for m in mail.outbox if m.to == ["gast@example.org"])
     assert "Hybride Sitzung" in nachricht.body
     assert rueckmeldelink in nachricht.body
-    assert not _nennt_zugangsweg(nachricht.body)
+    assert not _nennt_zugangsweg(str(nachricht.body))
     anhang = next(inhalt for name, inhalt, _typ in nachricht.attachments if name.endswith(".pdf"))
     assert not _nennt_zugangsweg(_pdf_text(anhang))
 
