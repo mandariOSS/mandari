@@ -76,7 +76,8 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
         )
         # E-Mail-Weg (#580): nur ohne nutzbare Session-Verbindung und mit gepflegten Kontakten
         contacts = email_submission.contacts_for(self.organization)
-        email_allowed, email_block_reason = email_submission.can_submit_by_email(motion, self.membership)
+        # Dieselben Regeln wie beim Session-Weg (can_submit berücksichtigt Einreichungen per E-Mail)
+        email_allowed, email_block_reason = allowed, block_reason
         context.update(
             {
                 "email_submission": email_submission.latest_submission(motion),
@@ -104,7 +105,8 @@ class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
 
     def _post_email(self, request, motion):
         email_form = {
-            "subject": (request.POST.get("subject") or "").strip()[:300],
+            # Ohne Zeilenumbrüche: ein Betreff ist eine Kopfzeile der Mail
+            "subject": " ".join((request.POST.get("subject") or "").split())[:300],
             "message": (request.POST.get("message") or "").strip()[:5000],
             "contact_ids": request.POST.getlist("contacts"),
         }

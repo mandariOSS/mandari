@@ -14,6 +14,13 @@ Organisationseinstellungen gepflegten Verwaltungskontakte:
   (signiert, an Empfänger gebunden, ohne Anmeldung; erst ein Klick bestätigt),
 - festgehalten wird, wer wann an wen eingereicht hat (``MotionEmailSubmission``); der Status des
   Dokuments wechselt über die definierten Übergänge auf „Eingereicht“.
+
+Ablauf ohne offene Transaktion während des Versands: Die Einreichung wird unter Zeilensperre des
+Dokuments angelegt und sofort festgeschrieben (je Dokument höchstens eine, auch per Datenbank-
+Constraint) – ein zweiter Aufruf, etwa per Doppelklick, sieht sie und versendet nichts. Danach geht
+die Mail an jede Empfängerin, jeden Empfänger einzeln; die Zustellung wird je Empfänger vermerkt.
+Kommt keine Mail an, wird die Einreichung wieder gelöscht. Ein abgebrochener Versuch ohne
+zugestellte Mail (etwa nach einem Neustart) gilt nach ``SENDING_TIMEOUT`` als verworfen.
 """
 
 from __future__ import annotations
@@ -49,9 +56,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Obergrenze für alle Anhänge einer Mail zusammen – viele Postfächer nehmen nicht mehr an
-EMAIL_ATTACHMENTS_MAX_BYTES = 20 * MB
+#: Obergrenze für alle Anhänge einer Mail zusammen (Rohgröße). Base64 macht die Mail etwa 4/3 so groß:
+#: 15 MB werden rund 20 MB – unter der verbreiteten Grenze von 25 MB je Mail.
+EMAIL_ATTACHMENTS_MAX_BYTES = 15 * MB
 PDF_MIME = "application/pdf"
+
+#: So lange gilt ein begonnener Versand ohne zugestellte Mail als laufend, danach als abgebrochen
+SENDING_TIMEOUT = timedelta(minutes=15)
+ALREADY_SUBMITTED = "Dieses Dokument wurde bereits per E-Mail eingereicht."
+SENDING = "Die Einreichung per E-Mail wird gerade versendet. Bitte die Seite in einem Moment neu laden."
+SEND_FAILED = (
+    "Die E-Mail konnte nicht versendet werden. Bitte die E-Mail-Einstellungen der Organisation "
+    "prüfen oder es später erneut versuchen."
+)
 
 SALT = "mandari.work.einreichung.eingang"
 MAX_AGE = timedelta(days=365)
@@ -73,14 +90,32 @@ def contacts_for(organization: Any) -> list[AdministrationContact]:
     return list(AdministrationContact.objects.filter(organization=organization))
 
 
+def _delivered_submission_ids() -> Any:
+    return MotionEmailRecipient.objects.filter(delivered=True).values("submission_id")
+
+
 def latest_submission(motion: Motion) -> MotionEmailSubmission | None:
-    return motion.email_submissions.prefetch_related("recipients").first()
+    """Einreichung per E-Mail, die mindestens eine Empfängerin, einen Empfänger erreicht hat."""
+    return motion.email_submissions.filter(pk__in=_delivered_submission_ids()).prefetch_related("recipients").first()
+
+
+def submission_block_reason(motion: Motion) -> str:
+    """
+    Warum das Dokument nicht (erneut) eingereicht werden kann – per E-Mail oder über Session.
+
+    Leer, wenn keine Einreichung per E-Mail erfolgt ist oder gerade läuft. Ein abgebrochener
+    Versuch ohne zugestellte Mail sperrt nach ``SENDING_TIMEOUT`` nicht mehr.
+    """
+    submissions = MotionEmailSubmission.objects.filter(motion_id=motion.pk)
+    if submissions.filter(pk__in=_delivered_submission_ids()).exists():
+        return ALREADY_SUBMITTED
+    if submissions.filter(sent_at__gte=timezone.now() - SENDING_TIMEOUT).exists():
+        return SENDING
+    return ""
 
 
 def can_submit_by_email(motion: Motion, membership: Membership) -> tuple[bool, str]:
     """Darf dieses Dokument jetzt per E-Mail eingereicht werden? (Regeln wie beim Session-Weg)."""
-    if motion.email_submissions.exists():
-        return False, "Dieses Dokument wurde bereits per E-Mail eingereicht."
     return can_submit(motion, membership)
 
 
@@ -185,6 +220,75 @@ def _send_to(
         return False
 
 
+def _check_submittable(motion: Motion, membership: Membership) -> None:
+    """Einreichen erlaubt und Statuswechsel möglich? Sonst ``SubmissionError`` (feste Texte)."""
+    from .administration_feedback import SUBMISSION_VIA
+
+    allowed, reason = can_submit_by_email(motion, membership)
+    if not allowed:
+        raise SubmissionError(reason)
+    # Vor dem Versand prüfen, ob der Statuswechsel möglich ist – versendete Mails lassen sich nicht zurückholen
+    if motion.status != "submitted" and motion.transition_path("submitted", via=SUBMISSION_VIA) is None:
+        raise SubmissionError(f"Im Status „{motion.get_status_display()}“ kann nicht eingereicht werden.")
+
+
+def _claim(
+    motion: Motion,
+    membership: Membership,
+    contacts: list[AdministrationContact],
+    subject: str,
+    attachment_names: list[str],
+) -> tuple[MotionEmailSubmission, list[MotionEmailRecipient]]:
+    """
+    Einreichung unter Zeilensperre des Dokuments anlegen und sofort festschreiben.
+
+    Parallele Aufrufe (Doppelklick, zwei Personen) warten auf die Sperre und sehen danach die
+    laufende Einreichung – nur einer versendet. Abgebrochene Versuche ohne zugestellte Mail
+    werden dabei verworfen.
+    """
+    user = membership.user
+    with transaction.atomic():
+        locked = Motion.objects.select_for_update().get(pk=motion.pk)
+        _check_submittable(locked, membership)
+        # Nichts blockiert mehr: vorhandene Versuche sind abgebrochen und ohne zugestellte Mail
+        locked.email_submissions.exclude(pk__in=_delivered_submission_ids()).delete()
+        submission = MotionEmailSubmission.objects.create(
+            motion=locked,
+            submitted_by=membership,
+            submitted_by_name=(user.get_full_name() or user.email)[:255],
+            submitted_by_email=user.email or "",
+            subject=subject,
+            attachment_names=attachment_names,
+        )
+        recipients = [
+            MotionEmailRecipient.objects.create(submission=submission, label=c.label, email=c.email) for c in contacts
+        ]
+    return submission, recipients
+
+
+def _complete(motion: Motion, submission: MotionEmailSubmission) -> None:
+    """Nach dem Versand: Status „Eingereicht“ und Ereignis. Die Mails sind da schon unterwegs."""
+    from .administration_feedback import SUBMISSION_VIA
+
+    with transaction.atomic():
+        locked = Motion.objects.select_for_update().get(pk=motion.pk)
+        try:
+            with transaction.atomic():
+                if locked.status == "submitted":
+                    locked.submitted_at = timezone.now()
+                    locked.save(update_fields=["submitted_at", "updated_at"])
+                else:
+                    locked.advance_to("submitted", via=SUBMISSION_VIA)
+        except StatusTransitionError:
+            # Nur möglich, wenn sich der Status während des Versands geändert hat. Die Einreichung
+            # bleibt festgehalten – die Mails lassen sich nicht zurückholen.
+            logger.warning("Einreichung %s per E-Mail versendet, Statuswechsel nicht möglich", submission.pk)
+        MotionAdministrationEvent.objects.get_or_create(
+            motion=locked, key=f"email:{submission.pk}:submitted", defaults={"kind": "submitted"}
+        )
+    motion.refresh_from_db(fields=["status", "submitted_at", "updated_at"])
+
+
 def submit_by_email(
     motion: Motion,
     membership: Membership,
@@ -198,59 +302,35 @@ def submit_by_email(
 
     Scheitert der Versand an alle Empfänger, bleibt nichts gespeichert (``SubmissionError``).
     Scheitert er nur an einzelne, ist die Einreichung erfolgt; die Empfänger sind als nicht
-    versendet markiert.
+    versendet markiert. Während des Versands ist keine Transaktion offen.
     """
-    from .administration_feedback import SUBMISSION_VIA
-
-    allowed, reason = can_submit_by_email(motion, membership)
-    if not allowed:
-        raise SubmissionError(reason)
-    # Vor dem Versand prüfen, ob der Statuswechsel möglich ist – versendete Mails lassen sich nicht zurückholen
-    if motion.status != "submitted" and motion.transition_path("submitted", via=SUBMISSION_VIA) is None:
-        raise SubmissionError(f"Im Status „{motion.get_status_display()}“ kann nicht eingereicht werden.")
+    _check_submittable(motion, membership)
     wanted = {str(value) for value in contact_ids}
     contacts = [c for c in contacts_for(motion.organization) if str(c.pk) in wanted]
     if not contacts:
         raise SubmissionError("Bitte mindestens einen Verwaltungskontakt als Empfänger auswählen.")
-    subject = (subject or "").strip()[:300] or f"Antrag: {motion.title}"[:300]
+    # Zeilenumbrüche im Betreff wären ein ungültiger Mail-Header: zu Leerzeichen zusammenfassen
+    subject = " ".join((subject or "").split())[:300] or " ".join(f"Antrag: {motion.title}".split())[:300]
 
+    # PDF und Anhänge vor dem Anlegen: Größe und Lesbarkeit stehen fest, bevor etwas gespeichert wird
     attachments = _read_attachments(motion)
-    user = membership.user
+    submission, recipients = _claim(
+        motion, membership, contacts, subject, [name for name, _content, _mime in attachments]
+    )
 
-    with transaction.atomic():
-        submission = MotionEmailSubmission.objects.create(
-            motion=motion,
-            submitted_by=membership,
-            submitted_by_name=(user.get_full_name() or user.email)[:255],
-            submitted_by_email=user.email or "",
-            subject=subject,
-            attachment_names=[name for name, _content, _mime in attachments],
-        )
-        recipients = [
-            MotionEmailRecipient.objects.create(submission=submission, label=c.label, email=c.email) for c in contacts
-        ]
+    try:
         for recipient in recipients:
-            recipient.delivered = _send_to(motion, submission, recipient, message.strip(), attachments)
-            recipient.save(update_fields=["delivered"])
+            if _send_to(motion, submission, recipient, message.strip(), attachments):
+                MotionEmailRecipient.objects.filter(pk=recipient.pk).update(delivered=True)
+                recipient.delivered = True
+    finally:
+        # Ohne zugestellte Mail bleibt nichts zurück – auch wenn der Versand unerwartet abbricht
         if not any(r.delivered for r in recipients):
-            raise SubmissionError(
-                "Die E-Mail konnte nicht versendet werden. Bitte die E-Mail-Einstellungen der Organisation "
-                "prüfen oder es später erneut versuchen."
-            )
+            submission.delete()
+    if not any(r.delivered for r in recipients):
+        raise SubmissionError(SEND_FAILED)
 
-        if motion.status == "submitted":
-            motion.submitted_at = timezone.now()
-            motion.save(update_fields=["submitted_at", "updated_at"])
-        else:
-            try:
-                motion.advance_to("submitted", via=SUBMISSION_VIA)
-            except StatusTransitionError as exc:
-                raise SubmissionError(
-                    f"Im Status „{motion.get_status_display()}“ kann nicht eingereicht werden."
-                ) from exc
-        MotionAdministrationEvent.objects.get_or_create(
-            motion=motion, key=f"email:{submission.pk}:submitted", defaults={"kind": "submitted"}
-        )
+    _complete(motion, submission)
     submission_id, membership_id = submission.pk, membership.pk
     transaction.on_commit(lambda: send_receipt(submission_id, membership_id), robust=True)
     return submission

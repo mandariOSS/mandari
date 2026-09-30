@@ -2036,6 +2036,10 @@ class MotionEmailSubmission(models.Model):
         verbose_name = "Einreichung per E-Mail"
         verbose_name_plural = "Einreichungen per E-Mail"
         ordering = ["-sent_at"]
+        constraints = [
+            # Je Dokument höchstens eine Einreichung per E-Mail – auch bei parallelen Anfragen
+            models.UniqueConstraint(fields=["motion"], name="work_email_submission_one_per_motion"),
+        ]
 
     def __str__(self):
         return f"{self.subject} ({self.sent_at:%d.%m.%Y})"

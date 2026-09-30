@@ -125,3 +125,24 @@ def test_data_action_clear_target(page: Any, live_server: Any) -> None:
     )
     page.click("#x")
     expect(page.locator("#inhalt")).to_have_count(0)
+
+
+def test_data_submit_once_sendet_bei_doppelklick_nur_einmal(page: Any, live_server: Any) -> None:
+    # Ziel ist ein iframe: Die Seite bleibt stehen wie bei einem langsamen Versand
+    _seite_mit_fragment(
+        page,
+        live_server,
+        '<iframe name="ziel" title="Ziel"></iframe>'
+        '<form id="f" method="get" action="/accounts/login/" target="ziel" data-submit-once>'
+        '<input type="hidden" name="einmal" value="1"><button id="b" type="submit">Einreichen</button></form>',
+    )
+    # Nach dem delegierten Listener an document: zählt nur Absendungen, die nicht verhindert wurden
+    page.evaluate(
+        "() => { window.abgesendet = 0;"
+        " window.addEventListener('submit', (e) => { if (!e.defaultPrevented) window.abgesendet += 1 }) }"
+    )
+    page.evaluate("() => { const b = document.getElementById('b'); b.click(); b.click() }")
+    expect(page.locator("#b")).to_be_disabled()
+    # Auch ein weiteres Absenden per Skript geht nicht durch
+    page.evaluate("() => document.getElementById('f').requestSubmit()")
+    assert page.evaluate("() => window.abgesendet") == 1

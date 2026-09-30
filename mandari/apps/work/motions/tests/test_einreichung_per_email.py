@@ -301,3 +301,138 @@ def test_ungueltige_und_ersetzte_links(
     assert antwort.status_code == 404 and "Link ungültig" in antwort.content.decode()
     empfaenger.refresh_from_db()
     assert empfaenger.confirmed_at is None
+
+
+# =============================================================================
+# Nebenläufigkeit, Versand ohne offene Transaktion, Randfälle
+# =============================================================================
+
+
+def test_je_dokument_hoechstens_eine_einreichung_in_der_datenbank(antrag: Motion, autorin: Any) -> None:
+    from django.db import IntegrityError, transaction
+
+    MotionEmailSubmission.objects.create(motion=antrag, submitted_by=autorin, submitted_by_name="A", subject="Eins")
+    with pytest.raises(IntegrityError), transaction.atomic():
+        MotionEmailSubmission.objects.create(motion=antrag, submitted_by=autorin, submitted_by_name="A", subject="Zwei")
+
+
+def test_zweiter_aufruf_waehrend_des_versands_versendet_nichts(
+    antrag: Motion, autorin: Any, kontakte: list[Any]
+) -> None:
+    """Doppelklick oder zwei Personen: Der zweite Aufruf sieht die laufende Einreichung."""
+    from apps.common import org_email
+
+    echt = org_email.send_org_email
+    zweiter: list[str] = []
+
+    def mit_zweitem_aufruf(organization: Any, **kwargs: Any) -> bool:
+        if not zweiter:
+            try:
+                email_submission.submit_by_email(
+                    Motion.objects.get(pk=antrag.pk),
+                    autorin,
+                    contact_ids=[str(k.pk) for k in kontakte],
+                    subject="Doppelt",
+                    message="",
+                )
+                zweiter.append("versendet")
+            except ris_submission.SubmissionError as exc:
+                zweiter.append(str(exc))
+        return bool(echt(organization, **kwargs))
+
+    with mock.patch("apps.common.org_email.send_org_email", side_effect=mit_zweitem_aufruf):
+        email_submission.submit_by_email(
+            antrag, autorin, contact_ids=[str(k.pk) for k in kontakte], subject="Antrag", message=""
+        )
+    assert zweiter == [email_submission.SENDING]
+    assert len([m for m in mail.outbox if m.to[0].endswith("stadt.example")]) == 2
+    assert MotionEmailSubmission.objects.filter(motion=antrag).count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_versand_laeuft_ohne_offene_transaktion(antrag: Motion, autorin: Any, kontakte: list[Any]) -> None:
+    from django.db import connection
+
+    from apps.common import org_email
+
+    echt = org_email.send_org_email
+    in_transaktion: list[bool] = []
+
+    def beobachten(organization: Any, **kwargs: Any) -> bool:
+        in_transaktion.append(connection.in_atomic_block)
+        return bool(echt(organization, **kwargs))
+
+    with mock.patch("apps.common.org_email.send_org_email", side_effect=beobachten):
+        email_submission.submit_by_email(
+            antrag, autorin, contact_ids=[str(k.pk) for k in kontakte], subject="Antrag", message=""
+        )
+    assert in_transaktion == [False, False]
+    antrag.refresh_from_db()
+    assert antrag.status == "submitted"
+
+
+def test_abgebrochener_versuch_sperrt_nur_voruebergehend(antrag: Motion, autorin: Any, kontakte: list[Any]) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    haengend = MotionEmailSubmission.objects.create(
+        motion=antrag, submitted_by=autorin, submitted_by_name="A", subject="Abgebrochen"
+    )
+    MotionEmailRecipient.objects.create(submission=haengend, label="Ratsbüro", email="ratsbuero@stadt.example")
+    # Gerade begonnen: gilt als laufend, niemand versendet parallel
+    with pytest.raises(ris_submission.SubmissionError, match="gerade versendet"):
+        email_submission.submit_by_email(antrag, autorin, contact_ids=[str(kontakte[0].pk)], subject="X", message="")
+    assert not mail.outbox
+
+    # Nach Ablauf der Frist ohne zugestellte Mail: verworfen, neue Einreichung möglich
+    MotionEmailSubmission.objects.filter(pk=haengend.pk).update(
+        sent_at=timezone.now() - email_submission.SENDING_TIMEOUT - timedelta(minutes=1)
+    )
+    assert email_submission.latest_submission(antrag) is None
+    email_submission.submit_by_email(antrag, autorin, contact_ids=[str(kontakte[0].pk)], subject="Neu", message="")
+    (einreichung,) = MotionEmailSubmission.objects.filter(motion=antrag)
+    assert einreichung.subject == "Neu" and einreichung.pk != haengend.pk
+
+
+def test_betreff_mit_zeilenumbruch_wird_zu_einer_zeile(
+    org: Any, antrag: Motion, autorin: Any, kontakte: list[Any], client_for: Any
+) -> None:
+    antwort = _einreichen(
+        client_for(autorin.user), org, antrag, kontakte[:1], subject="Antrag Radweg\r\nBcc: fremd@example.org"
+    )
+    assert antwort.status_code == 302
+    (nachricht,) = [m for m in mail.outbox if m.to == ["ratsbuero@stadt.example"]]
+    assert nachricht.subject == "Antrag Radweg Bcc: fremd@example.org"
+    assert nachricht.bcc == []
+    assert MotionEmailSubmission.objects.get(motion=antrag).subject == "Antrag Radweg Bcc: fremd@example.org"
+
+
+def test_session_weg_nach_einreichung_per_email_gesperrt(
+    org: Any, antrag: Motion, autorin: Any, kontakte: list[Any], client_for: Any
+) -> None:
+    from apps.session.models import SessionApplication
+
+    _einreichen(client_for(autorin.user), org, antrag, kontakte)
+    assert MotionEmailSubmission.objects.filter(motion=antrag).exists()
+
+    # Später eingerichtete Session-Verbindung: ein POST ohne channel=email reicht nicht erneut ein
+    tenant = SessionTenant.objects.create(name="Stadt Musterstadt", slug="musterstadt")
+    _token, raw = SessionAPIToken.create_token(tenant, "Fraktion Test", can_submit_applications=True)
+    ris_submission.connect_with_token(org, raw, autorin)
+    antwort = client_for(autorin.user).post(
+        _url(org, antrag), {**ris_submission.build_prefill(antrag), "application_type": "motion", "confirm": "on"}
+    )
+    assert antwort.status_code == 200
+    texte = [str(m) for m in get_messages(antwort.wsgi_request)]
+    assert any("bereits per E-Mail eingereicht" in t for t in texte), texte
+    assert not SessionApplication.objects.filter(tenant=tenant).exists()
+    antrag.refresh_from_db()
+    assert antrag.session_application is None
+
+
+def test_groessengrenze_beruecksichtigt_base64() -> None:
+    """Base64 macht Anhänge etwa 4/3 so groß; die Mail muss unter der verbreiteten 25-MB-Grenze bleiben."""
+    from apps.common.uploads import MB
+
+    assert email_submission.EMAIL_ATTACHMENTS_MAX_BYTES * 4 / 3 <= 21 * MB

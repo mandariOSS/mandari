@@ -220,9 +220,15 @@ def connect_with_token(organization, raw_token: str, membership):
 
 
 def can_submit(motion, membership) -> tuple[bool, str]:
-    """Darf dieses Dokument jetzt eingereicht werden?"""
+    """Darf dieses Dokument jetzt eingereicht werden? (Session-Weg und E-Mail-Weg, Issue #580)"""
+    # Spät importiert: email_submission importiert dieses Modul
+    from .email_submission import submission_block_reason
+
     if motion.session_application_id:
         return False, "Dieses Dokument wurde bereits eingereicht."
+    email_reason = submission_block_reason(motion)
+    if email_reason:
+        return False, email_reason
     if not motion.is_submittable:
         return False, "Dieser Dokumenttyp ist nicht zum Einreichen vorgesehen."
     if motion.status in NOT_SUBMITTABLE_STATUSES:

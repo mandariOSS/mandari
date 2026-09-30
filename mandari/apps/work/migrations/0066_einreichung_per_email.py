@@ -77,6 +77,12 @@ class Migration(migrations.Migration):
                 "verbose_name": "Einreichung per E-Mail",
                 "verbose_name_plural": "Einreichungen per E-Mail",
                 "ordering": ["-sent_at"],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("motion",),
+                        name="work_email_submission_one_per_motion",
+                    )
+                ],
             },
         ),
         migrations.CreateModel(
