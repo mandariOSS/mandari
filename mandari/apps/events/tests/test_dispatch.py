@@ -10,6 +10,7 @@ prüft ``test_dispatch_nebenlaeufig.py`` gegen PostgreSQL.
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from collections.abc import Callable
 from datetime import timedelta
@@ -22,7 +23,7 @@ from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connection
+from django.db import DEFAULT_DB_ALIAS, connection, connections
 from django.utils import timezone
 from prometheus_client import REGISTRY
 
@@ -39,7 +40,7 @@ from apps.events.dispatch import (
 )
 from apps.events.models import Event, ParkedEvent, ParkedState, Subscription, SubscriptionState
 from apps.events.registry import Subscriber, type_matches
-from apps.events.tests.hilfen import Sicht, nummeriert
+from apps.events.tests.hilfen import Sicht, nummeriert, nur_postgres
 
 NAME = "test.abo"
 
@@ -573,6 +574,42 @@ def test_geparktes_ereignis_ohne_journaleintrag_haelt_die_kette_nicht_auf(
     assert _geparkt() == {}
 
 
+@pytest.mark.django_db
+def test_extern_kopf_waehrend_der_zustellung_verworfen_die_kette_bleibt_zustellbar(
+    leeres_register: dict[str, Subscriber],
+) -> None:
+    """Ein externer Lauf liest die geparkten Objekte ohne Sperre; ein Verwerfen dazwischen darf keine Kette verwaisen."""
+    a, b = uuid.uuid4(), uuid.uuid4()
+    zugestellt: list[int] = []
+    eingriff: list[int] = []
+
+    def handler(events: list[Event], delivery: Delivery) -> None:
+        # Während der Batch läuft, verwirft jemand im Betrieb das tote erste Ereignis von a
+        while eingriff:
+            assert discard_parked(eingriff.pop())
+        zugestellt.extend(_nr(ereignis) for ereignis in events)
+
+    spec = _abo(handler, transactional=False)
+    a1 = nummeriert(aggregate_id=a)
+    Subscription.objects.create(name=NAME, cursor_seq=_nr(a1))
+    tot = ParkedEvent.objects.create(
+        subscription=NAME,
+        event_seq=_nr(a1),
+        aggregate_id=a,
+        state=ParkedState.TOT,
+        attempts=MAX_ATTEMPTS,
+        error_code="builtins.RuntimeError",
+    )
+    b1 = nummeriert(aggregate_id=b)
+    a2 = nummeriert(aggregate_id=a)
+    eingriff.append(tot.pk)
+
+    _alles(spec)
+
+    assert zugestellt == _seqs(b1, a2), "a2 rückt nach, statt ohne erstes Ereignis liegen zu bleiben"
+    assert _geparkt() == {}
+
+
 # --- Leases, Metriken, Dienstgüte ----------------------------------------------------------------
 
 
@@ -591,6 +628,45 @@ def test_nur_der_inhaber_der_lease_stellt_zu(leeres_register: dict[str, Subscrib
     assert schleife.drain() == 1
     schleife.release()
     assert leases.acquire(spec.lease_name, "noch-einer"), "freigegeben"
+
+
+class _WeckerMitBlick:
+    """Wecksignal, das beim Warten festhält, ob der wartende Faden eine Datenbankverbindung belegt."""
+
+    def __init__(self, stop: threading.Event) -> None:
+        self.stop = stop
+        self.verbindung_offen: list[bool] = []
+
+    def wait(self, timeout: float | None = None) -> bool:
+        self.verbindung_offen.append(connections[DEFAULT_DB_ALIAS].connection is not None)
+        self.stop.set()
+        return True
+
+    def clear(self) -> None:
+        pass
+
+
+@pytest.mark.django_db(transaction=True)
+def test_dauerbetrieb_gibt_die_verbindung_vor_dem_warten_zurueck(
+    leeres_register: dict[str, Subscriber], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    nur_postgres()  # Die SQLite-Testdatenbank liegt im Speicher; Django schließt deren Verbindung nie
+    # Wie mit Verbindungspool (dort ist CONN_MAX_AGE immer 0): nach der Arbeit geht die Verbindung zurück
+    monkeypatch.setitem(connection.settings_dict, "CONN_MAX_AGE", 0)
+    protokoll = Protokoll()
+    spec = _abo(protokoll)
+    nummeriert()
+    stop = threading.Event()
+    wecker = _WeckerMitBlick(stop)
+    schleife = SubscriptionLoop(spec)
+
+    faden = threading.Thread(target=schleife.run, args=(stop, wecker, 0.01))
+    faden.start()
+    faden.join(timeout=30)
+
+    assert not faden.is_alive()
+    assert len(protokoll.zugestellt) == 1, "die Runde hat die Datenbank benutzt"
+    assert wecker.verbindung_offen == [False], "beim Warten belegt der Faden keine Verbindung"
 
 
 @pytest.mark.django_db

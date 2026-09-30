@@ -132,7 +132,10 @@ Umgesetzt in `apps/events/registry.py` (`@subscriber`) und `apps/events/dispatch
   gleichzeitige Zusteller warten aufeinander, der Effekt tritt genau einmal ein. Weil diese
   Transaktion eine Transaktionskennung hält, hält sie den Sequenzierer für ihre Dauer auf; Handler
   von Sichten müssen kurz sein. Bei `False` läuft der Handler außerhalb einer Transaktion, und der
-  Cursor wird nur festgeschrieben, wenn er unter Zeilensperre noch derselbe ist.
+  Cursor wird nur festgeschrieben, wenn er unter Zeilensperre noch derselbe ist. Welche Objekte
+  geparkt sind, liest ein solcher Lauf ohne Sperre; wurde das erste Ereignis einer Kette
+  inzwischen zugestellt oder verworfen, rückt beim Festschreiben das nächste nach, sonst bliebe
+  die Kette ohne Kopf liegen.
 - **Ziel nicht erreichbar:** Wirft der Handler `TargetUnavailableError`, wird nichts geparkt und
   kein Versuch gezählt; die Schleife pausiert mit wachsender Wartezeit (5 s bis 5 min) und stellt
   denselben Batch erneut zu. Sonst würde ein Ausfall etwa des Suchindex jedes Objekt parken und
@@ -151,6 +154,9 @@ Umgesetzt in `apps/events/registry.py` (`@subscriber`) und `apps/events/dispatch
 - **Eine Leader-Lease je Abonnement** (`dispatch:<name>`) statt einer für die ganze Zustellung:
   Mehrere Worker teilen sich die Abonnements, nach Warteschlange wählbar
   (`events_dispatch --queues`). Für die Korrektheit sorgen Zeilensperre und Vergleich.
+- **Datenbankverbindungen:** Im Dauerbetrieb läuft je Abonnement ein Faden. Er gibt seine
+  Verbindung vor jedem Warten zurück (mit Verbindungspool an den Pool), die Zahl belegter
+  Verbindungen hängt also an der gleichzeitigen Arbeit, nicht an der Zahl der Abonnements.
 - **Alarm bei toten Ereignissen:** Fehlerprotokoll, `mandari_events_dead_total` und
   `mandari_events_parked{state="tot"}`, dazu sofort die Alarmmail der Dienstgüteprüfung
   (`check_service_levels`, höchstens eine je Abonnement und Tag).

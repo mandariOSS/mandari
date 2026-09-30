@@ -31,7 +31,9 @@ das erste zugestellt oder verworfen, rückt das nächste nach und wird sofort zu
   schreibt eine kurze Transaktion Parken und Cursor fest, aber nur, wenn der Cursor unter
   Zeilensperre noch derselbe ist. Sonst hat ein anderer Prozess denselben Batch schon
   abgeschlossen; dieser Lauf verwirft sein Ergebnis, und die doppelte Zustellung fängt die
-  Idempotenz des Handlers ab.
+  Idempotenz des Handlers ab. Weil die geparkten Objekte vor dem Handler ohne Sperre gelesen
+  werden, prüft das Festschreiben die Ketten der mitgeparkten Objekte: Fehlt ihnen inzwischen das
+  erste Ereignis (zugestellt oder verworfen), rückt das nächste sofort nach.
 
 Eine Leader-Lease je Abonnement (``dispatch:<name>``) sorgt dafür, dass normalerweise genau ein
 Prozess ein Abonnement bedient; mehrere Worker teilen sich so die Abonnements. Für die Korrektheit
@@ -306,9 +308,13 @@ def _strom_abschliessen(spec: Subscriber, stand: _Stand, ausgang: _Ausgang, curs
     ]
     # Nach einem Zurücksetzen des Cursors (Nachspielen) kann ein Ereignis schon geparkt sein
     ParkedEvent.objects.bulk_create(zeilen, ignore_conflicts=True)
+    # Externe Handler: Welche Objekte geparkt sind, wurde vor dem Handler ohne Sperre gelesen. Ist das
+    # erste Ereignis einer Kette seitdem zugestellt oder verworfen worden, hätten die eben mitgeparkten
+    # Ereignisse keinen Kopf mehr und würden nie fällig. Unter der Sperre rückt deshalb nach, wo nötig.
+    nachgerueckt = _nachruecken(spec.name, {ereignis.aggregate_id for ereignis in ausgang.blockiert})
     _cursor_setzen(spec.name, cursor)
     transaction.on_commit(functools.partial(_zaehlen, spec.name, len(ausgang.zugestellt), len(ausgang.gescheitert)))
-    return RunResult(delivered=len(ausgang.zugestellt), parked=len(zeilen), more=mehr)
+    return RunResult(delivered=len(ausgang.zugestellt), parked=len(zeilen), more=mehr or nachgerueckt > 0)
 
 
 def _fortlaufend(spec: Subscriber) -> RunResult:
@@ -617,7 +623,7 @@ class SubscriptionLoop:
         """Dauerbetrieb bis ``stop``; ein laufender Batch wird noch festgeschrieben, dann die Lease freigegeben."""
         try:
             while not stop.is_set():
-                close_old_connections()
+                close_old_connections()  # eine im Warten veraltete Verbindung nicht weiterverwenden
                 try:
                     self.drain(stop)
                 except DatabaseError:
@@ -627,6 +633,9 @@ class SubscriptionLoop:
                 except Exception:  # noqa: BLE001 – die Schleife darf nicht sterben; Pause gegen Endlosfehler
                     self._aussetzen()
                     logger.exception("Zustellung %s: unerwarteter Fehler, Pause %.0f s", self.spec.name, self._pause)
+                # Verbindung vor dem Warten zurückgeben (mit Verbindungspool: an den Pool). So hängt die Zahl
+                # belegter Verbindungen an der gleichzeitigen Arbeit, nicht an der Zahl der Abonnements.
+                close_old_connections()
                 if wake is None:
                     stop.wait(interval)
                 else:
