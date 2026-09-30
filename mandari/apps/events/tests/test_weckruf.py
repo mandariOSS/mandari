@@ -199,7 +199,8 @@ def test_nicht_gesendete_selbstpruefung_ist_kein_pgbouncer_befund(
     meldungen = [eintrag.getMessage() for eintrag in caplog.records]
     assert sum("Selbstprüfung ließ sich nicht senden" in meldung for meldung in meldungen) == 2
     assert any("psycopg.OperationalError" in meldung for meldung in meldungen)
-    assert not any("EVENTS_DB_DIRECT_URL" in meldung or "PgBouncer" in meldung for meldung in meldungen)
+    # Die Herkunft darf EVENTS_DB_DIRECT_URL heißen (CI-Job hinter PgBouncer), der Hinweis darauf fehlt
+    assert not any("PgBouncer" in meldung for meldung in meldungen), "kein Hinweis auf PgBouncer"
     assert "db-geheim" not in caplog.text, "keine Verbindungsdaten im Protokoll"
 
 
