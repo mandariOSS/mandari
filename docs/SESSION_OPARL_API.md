@@ -124,6 +124,7 @@ DSGVO kann sie die Veröffentlichung so beschreiben:
 | `GET …/api/oparl/memberships/`, `…/agendaitems/`, `…/consultations/`, `…/files/`, `…/legislativeterms/` | weitere externe Listen (OParl 1.1 Body-Listen) |
 | `GET …/api/oparl/<typ>/<uuid>/` | Objekt-Endpunkte aller Typen |
 | `GET …/api/oparl/file/<uuid>/download/` | Anonymer Datei-Abruf (nur öffentlich sichtbare Anlagen; `?download=1` für Attachment) |
+| `GET …/api/oparl/body/changes/` | Änderungsfeed (kompatible Erweiterung, nur wenn eingeschaltet; Abschnitt „Änderungsfeed“) |
 
 Objekttypen für `<typ>`: `organization`, `person`, `membership`, `meeting`,
 `agendaitem`, `paper`, `consultation`, `file`, `legislativeterm`, `location`.
@@ -309,6 +310,26 @@ OParl 1.1 §2.8, Muster wie beim Aggregator: Objekte, die einmal
 - Ö→NÖ-Wechsel kaskadieren: Eine entöffentlichte Sitzung hinterlässt
   auch Tombstones für ihre öffentlichen TOPs und Anlagen; eine
   entöffentlichte Vorlage für ihre Anlagen und Beratungsstationen.
+
+## Änderungsfeed (kompatible Erweiterung von OParl 1.1)
+
+Ist der Änderungsfeed in der Installation eingeschaltet (`OPARL_CHANGES_ENABLED`, siehe
+`OPARL_API.md`, Abschnitte „Änderungsfeed“ und „Betrieb“), bietet jeder freigeschaltete Mandant ihn
+unter `…/api/oparl/body/changes/` an; der Body nennt die Adresse in `mandari:changes`. Format, Cursor,
+Aufbewahrung und `410` sind dieselben wie beim Aggregator – beide Ausgaben nutzen dieselbe
+Serialisierung (`mandari/hub/api/changes.py`).
+
+- **Kommune im Journal:** die kanonische Kennung des Body, `uuid5` über `…/api/oparl/body/`.
+  Ereignisse nennen Objekte ebenfalls mit ihrer kanonischen Kennung (`uuid5` über die Adresse des
+  Objekts, ADR `docs/adr/20260929-kanonisches-modell.md`).
+- **Adressen nur für Öffentliches:** Der Feed nennt die Adresse eines Objekts (`id`) nur, wenn es
+  öffentlich ist (Tabelle „Sicherheitsgarantie“) oder es war und einen Eintrag für Gelöschtes
+  hinterlassen hat (`SessionOParlTombstone`). Was nie öffentlich war, erscheint nicht – auch nicht,
+  wenn ein Ereignis es fälschlich als öffentlich meldet –, und die Antwort des Feeds bleibt dann
+  dieselbe.
+- **Rücknahmen:** Wird ein Objekt gelöscht oder nichtöffentlich, erscheint es als `delete` mit Grund;
+  unter seiner Adresse steht das gekürzte Objekt. Dafür muss der Eintrag für Gelöschtes bestehen
+  bleiben; er enthält nur Typ, Kennung und Zeitpunkte.
 
 ## Konsumenten
 

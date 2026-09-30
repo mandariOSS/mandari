@@ -150,6 +150,14 @@ class BestandUris:
         """Externe Objektliste einer Kommune."""
         return f"{self.base}/v1/body/{body_id}/{segment}"
 
+    def changes(self, body_id: Any) -> str:
+        """Änderungsfeed einer Kommune (kompatible Erweiterung von OParl 1.1)."""
+        return self.list(body_id, "changes")
+
+    def snapshot(self, body_id: Any) -> str:
+        """Snapshot einer Kommune: Einstieg in den Änderungsfeed."""
+        return self.list(body_id, "snapshot")
+
     def web(self, path: str) -> str:
         """Seite im Bürgerportal."""
         return f"{self.site}/insight/{path}"
@@ -329,9 +337,11 @@ def _file_day(file_obj: OParlFile) -> str | None:
 class BestandMapping:
     """Abbildung der Objekte des RIS-Bestands; je Objekttyp eine Methode, Ergebnis ist ein OParl-Objekt."""
 
-    def __init__(self, base: str, site: str, *, license_url: str = "") -> None:
+    def __init__(self, base: str, site: str, *, license_url: str = "", changes: bool = False) -> None:
         self.uris = BestandUris(base, site)
         self.license_url = license_url
+        #: Die Ausgabe bietet den Änderungsfeed an; der Body nennt dann dessen Adresse
+        self.changes = changes
 
     # -- System, Körperschaft, Wahlperiode -------------------------------------------------------
 
@@ -384,6 +394,7 @@ class BestandMapping:
                 "mandari:displayName": body.get_display_name(),
                 # Abgekündigt: dieselbe URL steht im Standardfeld ``locationList``
                 "mandari:locationList": self.uris.list(body.id, "locations"),
+                "mandari:changes": self.uris.changes(body.id) if self.changes else None,
             }
         )
         # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)

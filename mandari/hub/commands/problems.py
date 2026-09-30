@@ -25,6 +25,7 @@ TITLES: Final[dict[int, str]] = {
     404: "Nicht gefunden",
     405: "Methode nicht erlaubt",
     409: "Konflikt",
+    410: "Nicht mehr verfügbar",
     413: "Anfrage zu groß",
     415: "Nicht unterstütztes Format",
     422: "Validierung fehlgeschlagen",

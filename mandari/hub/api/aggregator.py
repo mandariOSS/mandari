@@ -13,6 +13,7 @@ Endpunkte (alle rein lesend, anonym, JSON, CORS offen):
 - ``/oparl/v1/body/<uuid>/meetings``
 - ``/oparl/v1/body/<uuid>/papers``
 - ``/oparl/v1/body/<uuid>/locations``
+- ``/oparl/v1/body/<uuid>/changes``               Änderungsfeed (wenn eingeschaltet, ``hub.api.changes``)
 - ``/oparl/v1/<typ>/<uuid>``                      Objekt-Endpunkte aller Typen
 
 Dieses Modul wählt aus, was sichtbar ist (Kommune, Veröffentlichungsstand, Gelöschtes), und reicht es
@@ -29,7 +30,7 @@ weiter: Wie ein Objekt aussieht, legt ``hub.ris.mapping.bestand`` fest, wie eine
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -39,6 +40,7 @@ from django.db.models import Model, QuerySet
 from django.db.models.functions import Coalesce
 from django.http import HttpRequest, HttpResponse
 
+from hub.api import changes
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import TimeFilters, list_cache_key, list_response, page_number
 from hub.ris import selectors as ris
@@ -130,6 +132,7 @@ def mapping() -> BestandMapping:
         settings.OPARL_BASE_URL,
         settings.SITE_URL,
         license_url=getattr(settings, "OPARL_LICENSE_URL", ""),
+        changes=changes.enabled(),
     )
 
 
@@ -218,11 +221,15 @@ def bodies_view(request: HttpRequest) -> HttpResponse:
     return _list_response(request, mapping().uris.bodies(), queryset, _BODY)
 
 
+def _unknown_list(segment: str) -> HttpResponse:
+    return error_response(404, f"Unbekannte Liste '{segment}'. Verfügbar: {', '.join(sorted(BODY_LISTS))}.")
+
+
 @endpoint
 def body_sub_list(request: HttpRequest, pk: uuid.UUID, segment: str) -> HttpResponse:
     spec = BODY_LISTS.get(segment)
     if spec is None:
-        return error_response(404, f"Unbekannte Liste '{segment}'. Verfügbar: {', '.join(sorted(BODY_LISTS))}.")
+        return _unknown_list(segment)
     base_url = mapping().uris.list(pk, segment)
     paused = _paused_response(pk)
     if paused is not None:
@@ -240,6 +247,47 @@ def body_sub_list(request: HttpRequest, pk: uuid.UUID, segment: str) -> HttpResp
         return error_response(404, "Kommune (Body) nicht gefunden.")
 
     return _list_response(request, base_url, queryset, spec)
+
+
+def _existing(kind: str, ids: Collection[uuid.UUID]) -> set[uuid.UUID]:
+    """
+    Kennungen, unter denen der Bestand ein Objekt des Typs ausliefert – auch Gelöschtes, das als
+    gekürztes Objekt abrufbar bleibt. Ein Ort ohne eigenes Objekt der Quelle trägt die Kennung seiner
+    Sitzung (``_meeting_location_response``).
+    """
+    spec = OBJECT_TYPES.get(kind)
+    if spec is None or not ids:
+        return set()
+    found: set[uuid.UUID] = set(spec.model._default_manager.filter(pk__in=ids).values_list("pk", flat=True))
+    if kind == "location" and len(found) < len(ids):
+        rest = [object_id for object_id in ids if object_id not in found]
+        found.update(OParlMeeting.objects.filter(pk__in=rest).values_list("pk", flat=True))
+    return found
+
+
+def _feed(output: BestandMapping, pk: uuid.UUID) -> changes.Feed:
+    uris = output.uris
+
+    def addresses(kind: str, ids: Collection[uuid.UUID]) -> dict[uuid.UUID, str]:
+        # Die Kennung im Ereignis ist die des Bestands, und der Bestand enthält nur Öffentliches. Gibt es
+        # das Objekt nicht (noch nicht übernommen oder fälschlich als öffentlich gemeldet), gibt es keinen
+        # Eintrag – wie bei der Session-Schnittstelle
+        return {object_id: uris.obj(kind, object_id) for object_id in _existing(kind, ids)}
+
+    return changes.Feed(body_id=pk, url=uris.changes(pk), snapshot_url=uris.snapshot(pk), addresses=addresses)
+
+
+@endpoint
+def body_changes(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
+    """Änderungsfeed einer Kommune (``hub.api.changes``); ausgeschaltet gibt es die Adresse nicht."""
+    if not changes.enabled():
+        return _unknown_list("changes")
+    paused = _paused_response(pk)
+    if paused is not None:
+        return paused
+    if not OParlBody.objects.filter(pk=pk).exists():
+        return error_response(404, "Kommune (Body) nicht gefunden.")
+    return changes.changes_response(request, _feed(mapping(), pk))
 
 
 def _meeting_location_response(output: BestandMapping, pk: uuid.UUID) -> HttpResponse:

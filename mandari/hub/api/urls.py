@@ -20,6 +20,7 @@ ROUTES = [
     ("v1/system", aggregator.system_view, {}, "system"),
     ("v1/bodies", aggregator.bodies_view, {}, "bodies"),
     ("v1/body/<uuid:pk>", aggregator.object_view, {"kind": "body"}, "body"),
+    ("v1/body/<uuid:pk>/changes", aggregator.body_changes, {}, "body_changes"),
     ("v1/body/<uuid:pk>/<str:segment>", aggregator.body_sub_list, {}, "body_list"),
     ("v1/<str:kind>/<uuid:pk>", aggregator.object_view, {}, "object"),
 ]

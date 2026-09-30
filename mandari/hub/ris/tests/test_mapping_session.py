@@ -84,6 +84,8 @@ def test_uris_sind_die_adressen_der_schnittstelle() -> None:
     assert uris.list("meetings") == f"{BASIS}meetings/"
     assert uris.obj("meeting", 7) == f"{BASIS}meeting/7/"
     assert uris.file_download(7) == f"{BASIS}file/7/download/"
+    assert uris.changes() == f"{BASIS}body/changes/"
+    assert uris.snapshot() == f"{BASIS}body/snapshot/"
     # Eine Basis ohne abschließenden Schrägstrich ergibt dieselben URIs
     assert SessionUris(BASIS.rstrip("/")).obj("paper", 1) == f"{BASIS}paper/1/"
 

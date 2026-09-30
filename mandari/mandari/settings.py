@@ -567,6 +567,15 @@ OPARL_API_CACHE_SECONDS = int(os.environ.get("OPARL_API_CACHE_SECONDS", "60"))  
 # Lizenz-URL am System-Objekt des Aggregators (OParl 1.1 ``license``); leer = keine übergreifende Angabe,
 # es gilt die Lizenz der jeweiligen Kommune am Body
 OPARL_LICENSE_URL = os.environ.get("OPARL_LICENSE_URL", "").strip()
+# Änderungsfeed je Kommune (…/changes, docs/adr/20260929-aenderungsfeed-format.md). Standard aus: Ohne laufende
+# Erzeuger der Ereignisse wäre der Feed leer und täuschte Abnehmern vor, es habe sich nichts geändert.
+OPARL_CHANGES_ENABLED = os.environ.get("OPARL_CHANGES_ENABLED", "false").lower() in ("1", "true", "yes")
+# Gültigkeit eines Cursors in Tagen; zugesagt sind mindestens 30. So lange muss das Journal seine Zeilen behalten.
+OPARL_CHANGES_RETENTION_DAYS = int(os.environ.get("OPARL_CHANGES_RETENTION_DAYS", "90"))
+if OPARL_CHANGES_RETENTION_DAYS < 30:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("OPARL_CHANGES_RETENTION_DAYS muss mindestens 30 sein (Zusage des Änderungsfeeds).")
 
 # Sync-Einstellungen (alle 10 Minuten inkrementell, Full-Sync um 3 Uhr)
 SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))

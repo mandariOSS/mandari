@@ -32,11 +32,16 @@ Blättern, Listen-Hülle, ETag, Fehler –, steht in ``hub.api`` und gilt für b
 - **Öffentliche Niederschrift** (Issue #318): ``Meeting.resultsProtocol`` verweist auf die beim
   Veröffentlichen erzeugte Datei (nur öffentlicher Teil, nur öffentliche Sitzungen). Personen ohne geschützte Daten —
   verschlüsselte Felder (Telefon, Adresse, Bankdaten) werden nie gelesen, die E-Mail nur mit Einwilligung (Issue #319).
+- **Änderungsfeed** (``…/api/oparl/body/changes/``, wenn in der Installation eingeschaltet): dieselbe
+  Ausgabe wie beim Aggregator (``hub.api.changes``). Einträge gibt es nur für Objekte, die öffentlich
+  sind oder es waren (``_addresses``).
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Prefetch
+from django.http import Http404
+from mandari_oparl.ids import canonical_id
 
 from apps.session import oparl_publication as pub
 from apps.session.models import (
@@ -47,6 +52,7 @@ from apps.session.models import (
 )
 from apps.session.services import file_service, meeting_format_service
 from apps.session.services.insight_service import oparl_system_url
+from hub.api import changes
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import Gone, MergedEntries, TimeFilters, list_response, single_page
 from hub.ris.mapping.session import SessionMapping, SessionSource
@@ -107,7 +113,7 @@ def _mapping(tenant):
     (``SITE_URL``), nicht der Host der Anfrage: Die IDs sind die kanonischen URIs der Session-Objekte,
     aus denen der RIS-Bestand seine Kennungen ableitet (ADR docs/adr/20260929-kanonisches-modell.md).
     """
-    return SessionMapping(tenant, oparl_system_url(tenant), SOURCE)
+    return SessionMapping(tenant, oparl_system_url(tenant), SOURCE, changes=changes.enabled())
 
 
 # =============================================================================
@@ -330,6 +336,89 @@ def _location_response(mapping, pk):
     if tombstone is not None:
         return json_response(mapping.tombstone("location", pk, tombstone.object_created_at, tombstone.deleted_at))
     return error_response(404, f"{mapping.uris.obj('location', pk)} nicht gefunden.")
+
+
+# =============================================================================
+# Änderungsfeed
+# =============================================================================
+
+#: So viele Kennungen liest die Suche nach Adressen je Schritt
+_ADDRESS_CHUNK = 2000
+
+
+def _addresses(mapping):
+    """
+    Adressen der Objekte eines Mandanten für den Änderungsfeed (``hub.api.changes.Feed.addresses``).
+
+    Ereignisse nennen die kanonische Kennung eines Objekts: ``uuid5`` über seine Adresse in dieser
+    Schnittstelle (ADR docs/adr/20260929-kanonisches-modell.md). Die Adresse enthält die Kennung des
+    Session-Objekts und lässt sich aus der kanonischen Kennung nicht zurückrechnen. Gesucht wird deshalb
+    unter den Objekten, die öffentlich sind (``visible_*``) oder es waren (``SessionOParlTombstone``) –
+    zuletzt Geändertes zuerst, denn davon handeln die jüngsten Ereignisse.
+
+    Was nie öffentlich war, hat hier keine Adresse und bekommt im Feed keinen Eintrag, auch wenn ein
+    Ereignis es fälschlich als öffentlich meldet.
+
+    Eine Anfrage fragt mehrmals (je gelesenem Abschnitt des Journals). Die Suche setzt deshalb dort fort,
+    wo sie zuletzt aufgehört hat, und merkt sich die gesehenen Kennungen: Jeder Typ wird je Anfrage
+    höchstens einmal durchlaufen, auch wenn Kennungen unauffindbar sind.
+    """
+    tenant = mapping.tenant
+    #: je Typ: gesehene kanonische Kennungen -> Kennung des Session-Objekts, und die offene Suche
+    seen = {}
+    searches = {}
+
+    def candidates(kind):
+        """Kennungen öffentlicher und ehemals öffentlicher Objekte eines Typs, jüngste zuerst."""
+        # Der Ort gehört zur Sitzung und trägt deren Kennung
+        source = "meeting" if kind == "location" else kind
+        spec = OBJECT_SPECS.get(source)
+        if spec is None:
+            return
+        yield from spec[0](tenant).order_by("-updated_at").values_list("pk", flat=True).iterator(_ADDRESS_CHUNK)
+        tombstones = SessionOParlTombstone.objects.filter(tenant=tenant, oparl_type=source)
+        yield from tombstones.order_by("-deleted_at").values_list("object_id", flat=True).iterator(_ADDRESS_CHUNK)
+
+    def addresses(kind, ids):
+        wanted = set(ids)
+        if kind == "body":
+            url = mapping.uris.body()
+            return {canonical_id(url): url} if canonical_id(url) in wanted else {}
+        known = seen.setdefault(kind, {})
+        found = {key: mapping.uris.obj(kind, known[key]) for key in wanted if key in known}
+        wanted -= found.keys()
+        if not wanted:
+            return found
+        search = searches.get(kind)
+        if search is None:
+            search = searches[kind] = candidates(kind)
+        for pk in search:
+            key = canonical_id(mapping.uris.obj(kind, pk))
+            known.setdefault(key, pk)
+            if key in wanted:
+                found[key] = mapping.uris.obj(kind, pk)
+                wanted.discard(key)
+                if not wanted:
+                    break
+        return found
+
+    return addresses
+
+
+@session_oparl_endpoint
+def changes_view(request, tenant_slug):
+    """Änderungsfeed des Mandanten (``hub.api.changes``); ausgeschaltet gibt es die Adresse nicht."""
+    if not changes.enabled():
+        raise Http404("Diese Adresse gibt es nicht.")
+    mapping = _mapping(_get_tenant(tenant_slug))
+    feed = changes.Feed(
+        # Kommune im Journal: die kanonische Kennung des Body dieser Schnittstelle
+        body_id=canonical_id(mapping.uris.body()),
+        url=mapping.uris.changes(),
+        snapshot_url=mapping.uris.snapshot(),
+        addresses=_addresses(mapping),
+    )
+    return changes.changes_response(request, feed)
 
 
 @session_oparl_endpoint

@@ -99,6 +99,58 @@ Delta-Dateien von Lokaal Beslist in Flandern.
 - Offene Konformitätstests für das Profil laufen gegen die eigenen Implementierungen und gegen
   mindestens eine fremde; der OParl-Validator läuft weiter für den Kern.
 
+## Nachtrag zur Umsetzung (#562)
+
+- **Antwort:** `data` (Einträge), `cursor` (Stand für die nächste Anfrage) und `links` mit `self`,
+  `next` (fertige Adresse der nächsten Anfrage, immer vorhanden) und `snapshot`. `limit` ist
+  höchstens 1000, Vorgabe 100.
+- **Cursor:** mit einem Schlüssel der Installation verschlüsselt (AES-SIV) und an die Kommune
+  gebunden. Er enthält die Folgenummer und den Tag seiner Ausgabe. Abnehmer sehen weder Folgenummern
+  noch Lücken zwischen ihnen.
+- **Aufbewahrung als Gültigkeit des Cursors:** „Ein älterer Cursor“ heißt: vor mehr als
+  `OPARL_CHANGES_RETENTION_DAYS` Tagen ausgegeben (Vorgabe 90, mindestens 30). Jede Antwort, auch eine
+  leere, gibt einen frischen Cursor aus. Damit hängt die Gültigkeit nicht davon ab, wann das Journal
+  aufräumt: Was nach der Ausgabe eines gültigen Cursors geschah, ist jünger als die Aufbewahrung und
+  noch vorhanden, solange das Journal mindestens so lange aufbewahrt. Ein Sicherheitsnetz antwortet
+  mit `410`, wenn Zeilen gelöscht wurden, die nach der Ausgabe erfasst worden sein können.
+- **Aufräumen ausdrücklich festgehalten:** Wer Zeilen des Journals löscht, hält in derselben
+  Transaktion fest, bis zu welcher Folgenummer und vor welchem Erfassungszeitpunkt
+  (`apps.events.pruning`, Tabelle `events_pruning`). Der Feed schließt nicht aus Lücken der
+  Folgenummern auf ein Aufräumen: Der Sequenzierer darf Nummern verwerfen (`nextval()` ist nicht
+  transaktional), das Journal kann also mit einer Lücke beginnen, ohne dass etwas fehlt. Zeilen, die
+  ohne diesen Eintrag gelöscht werden, erkennt das Sicherheitsnetz nicht.
+- **Ohne Cursor** liest ein Abnehmer von vorn, solange nie aufgeräumt wurde; sonst `410` mit dem
+  Verweis auf den Snapshot.
+- **Nichtöffentliches ist nicht mittelbar erkennbar:** Nichtöffentliche Ereignisse liest der Feed
+  nicht. Der Cursor einer Antwort rückt nur mit ausgegebenen Einträgen vor, nicht mit übersprungenen
+  öffentlichen Ereignissen ohne Adresse. Antwort und `ETag` ändern sich deshalb nicht, wenn
+  Nichtöffentliches geschieht; der Ausgabetag ändert sie einmal am Tag.
+- **Kein Stillstand hinter übersprungenen Ereignissen:** Eine Anfrage liest höchstens
+  `max(limit × 10, 1000)` Ereignisse. Ist das erschöpft, bevor die Seite voll ist, rückt der Cursor bis
+  zum zuletzt gelesenen Ereignis vor; sonst bliebe ein Abnehmer hinter einem solchen Block (etwa den
+  Rücknahmen aller Abstimmungen einer Kommune) für immer stehen. Das verrät nur, dass viele als
+  öffentlich gemeldete Ereignisse ohne Adresse geschehen sind. Eine leere Seite kann in diesem Fall
+  einen vorgerückten Cursor tragen; der nächste Abruf setzt dort fort.
+- **Operation nach Vertrag:** `ris.object.depublished` ergibt immer `delete`, beim Grund
+  `datenschutz` `redact` – auch wenn die Hülle eine andere Operation trägt. Ein `delete` trägt immer
+  einen Grund; nennt ein Ereignis mit der Operation `delete` keinen gültigen, gilt `quelle_geloescht`.
+- **Objekte mit eigener Adresse:** Einträge nennen Objekte, die die Ausgabe unter einer Adresse
+  ausliefert (OParl-1.1-Typen). Ein Ereignis zu einem Typ ohne eigene Adresse (derzeit `Voting`)
+  erscheint als `upsert` des Objekts, das ihn ausgibt (des Tagesordnungspunkts aus der Nutzlast).
+  Die Rücknahme einer Abstimmung nennt im Vertrag keinen Tagesordnungspunkt und ergibt keinen Eintrag
+  (Einschränkung in `docs/OPARL_API.md`; Folgearbeit: Tagesordnungspunkt im Vertrag oder zusätzlich
+  `ris.agendaitem.changed` vom Erzeuger).
+- **Nur ausgelieferte Objekte, in beiden Ausgaben:** Der Aggregator nennt nur Kennungen, die sein
+  Bestand kennt (auch Gelöschtes, das als gekürztes Objekt abrufbar bleibt).
+- **Session-Mandanten:** Die Adresse eines Objekts enthält die Kennung des Session-Objekts und lässt
+  sich aus der kanonischen Kennung nicht zurückrechnen. Die Schnittstelle sucht sie unter den
+  Objekten, die öffentlich sind oder es waren; was nie öffentlich war, hat keine Adresse und bekommt
+  keinen Eintrag.
+- **Schalter:** `OPARL_CHANGES_ENABLED` je Installation, Vorgabe aus, bis die Erzeuger laufen.
+- **Abweichung:** Der Feed liest das Journal unmittelbar (Index je Kommune) statt über ein eigenes
+  Abonnement `feed` mit Tabelle. Die Reihenfolge garantiert der Sequenzierer; eine zweite Tabelle
+  bräuchte eigene Folgenummern und ein eigenes Aufräumen.
+
 ## Bezug
 
 - [A3 Sequenzierer](20260929-sequenzierer.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),
