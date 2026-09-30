@@ -120,7 +120,9 @@ def test_einzelne_quelle(bestand: dict[str, Any]) -> None:
     assert {quelle for quelle, _ in report.counts} == {bestand["fremd"]}
 
 
-@pytest.mark.parametrize("quelle", ["https://unbekannt.example/system", str(uuid.uuid4()), "keine-uuid"])
+@pytest.mark.parametrize(
+    "quelle", ["https://unbekannt.example/system", "00000000-0000-4000-8000-000000000000", "keine-uuid"]
+)
 def test_unbekannte_quelle(db: Any, quelle: str) -> None:
     with pytest.raises(CommandError, match="Quelle nicht gefunden"):
         call_command("check_ris_ids", "--source", quelle, stdout=StringIO())
