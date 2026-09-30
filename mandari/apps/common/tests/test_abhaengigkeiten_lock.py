@@ -21,6 +21,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import Version
@@ -28,6 +29,7 @@ from packaging.version import Version
 REPO = Path(__file__).resolve().parents[4]
 PYPROJECT = REPO / "mandari" / "pyproject.toml"
 UV_LOCK = REPO / "mandari" / "uv.lock"
+DEPENDABOT = REPO / ".github" / "dependabot.yml"
 EXPORT = REPO / "scripts" / "export_requirements.sh"
 VERSIONSPRUEFUNG = REPO / "scripts" / "check_version_consistency.py"
 
@@ -47,6 +49,55 @@ def _gesperrt() -> dict[str, set[str]]:
         if "version" in paket:
             versionen.setdefault(canonicalize_name(paket["name"]), set()).add(paket["version"])
     return versionen
+
+
+def _alle_anforderungen() -> list[Requirement]:
+    """Direkte Abhängigkeiten samt der Extras (Entwicklungswerkzeuge) – alles, was Dependabot in pyproject.toml liest."""
+    projekt = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    eintraege = list(projekt["dependencies"])
+    for extra in projekt.get("optional-dependencies", {}).values():
+        eintraege.extend(extra)
+    return [Requirement(eintrag) for eintrag in eintraege]
+
+
+UPDATE_ARTEN = ("major", "minor", "patch")
+
+
+def _ueberschreitende_update_arten(anforderung: Requirement) -> set[str]:
+    """
+    Update-Arten, die die Grenze der Anforderung überschreiten: ``<9`` → major, ``<6.2`` → major und minor,
+    feste Version → alle. Ohne Obergrenze: keine.
+    """
+    arten: set[str] = set()
+    for grenze in anforderung.specifier:
+        if grenze.operator in ("==", "==="):
+            return set(UPDATE_ARTEN)
+        if grenze.operator in ("<", "<="):
+            stellen = Version(grenze.version).release
+        elif grenze.operator == "~=":
+            # ~=1.4.2 heißt <1.5, ~=1.4 heißt <2
+            stellen = Version(grenze.version).release[:-1]
+        else:
+            continue
+        while len(stellen) > 1 and stellen[-1] == 0:
+            stellen = stellen[:-1]
+        arten.update(UPDATE_ARTEN[: len(stellen)])
+    return arten
+
+
+def _bei_dependabot_gesperrt() -> dict[str, set[str]]:
+    """``ignore`` des uv-Eintrags für /mandari: Paket → Update-Arten, die Dependabot nicht vorschlägt."""
+    eintraege = yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))["updates"]
+    (eintrag,) = [e for e in eintraege if e["package-ecosystem"] == "uv" and e.get("directory") == "/mandari"]
+    gesperrt: dict[str, set[str]] = {}
+    for regel in eintrag.get("ignore", []):
+        assert "versions" not in regel, "Versionsbereiche unter ignore wertet dieser Test nicht aus"
+        # Ohne update-types gilt die Regel für jede neue Version
+        arten = {art.removeprefix("version-update:semver-") for art in regel.get("update-types", [])} or set(
+            UPDATE_ARTEN
+        )
+        gesperrt.setdefault(canonicalize_name(regel["dependency-name"]), set()).update(arten)
+    return gesperrt
 
 
 def test_alte_requirements_dateien_sind_weg() -> None:
@@ -69,6 +120,74 @@ def test_jede_direkte_abhaengigkeit_ist_gesperrt_und_erfuellt_ihre_grenze() -> N
                 f"{anforderung.name}: uv.lock hat {sorted(versionen)}, verlangt ist {anforderung.specifier}"
             )
     assert not probleme, "uv.lock passt nicht zu pyproject.toml (`uv lock` im Ordner mandari):\n" + "\n".join(probleme)
+
+
+def test_jede_obergrenze_steht_bei_dependabot_unter_ignore() -> None:
+    """
+    Dependabot weitet Obergrenzen im PR auf, statt sie zu beachten (``<9`` wurde im Gruppen-PR zu ``<10``,
+    ``<2.1`` zu ``<2.2``). Eine Grenze in pyproject.toml hält deshalb nur, wenn die passende Update-Art für
+    das Paket unter ``ignore`` steht – sonst nimmt die nächste Gruppe z. B. Django 6.2 als Minor-Update mit.
+    Umgekehrt bliebe ein ``ignore`` ohne Grenze unbemerkt stehen und das Paket bekäme keine Updates mehr.
+    """
+    gesperrt = _bei_dependabot_gesperrt()
+    noetig: dict[str, set[str]] = {}
+    for anforderung in _alle_anforderungen():
+        arten = _ueberschreitende_update_arten(anforderung)
+        if arten:
+            noetig.setdefault(canonicalize_name(anforderung.name), set()).update(arten)
+
+    fehlt = {name: sorted(arten - gesperrt.get(name, set())) for name, arten in noetig.items()}
+    fehlt = {name: arten for name, arten in fehlt.items() if arten}
+    assert not fehlt, (
+        "Obergrenze oder feste Version in mandari/pyproject.toml ohne passenden Eintrag unter `ignore` "
+        f"(uv, /mandari) in .github/dependabot.yml – Paket: fehlende Update-Arten: {fehlt}"
+    )
+    zu_viel = {name: sorted(arten - noetig.get(name, set())) for name, arten in gesperrt.items()}
+    zu_viel = {name: arten for name, arten in zu_viel.items() if arten}
+    assert not zu_viel, (
+        "`ignore` in .github/dependabot.yml sperrt mehr, als mandari/pyproject.toml begrenzt – "
+        f"Grenze dort eintragen oder den Eintrag entfernen: {zu_viel}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("anforderung", "erwartet"),
+    [
+        ("paket>=1.0", set()),
+        ("paket>=8.12.0,<9", {"major"}),
+        ("paket>=6.1,<6.2", {"major", "minor"}),
+        ("paket>=2.0.36,<2.1.0", {"major", "minor"}),
+        ("paket<=1.4.2", {"major", "minor", "patch"}),
+        ("paket~=1.4", {"major"}),
+        ("paket~=1.4.2", {"major", "minor"}),
+        ("paket==0.14.6", {"major", "minor", "patch"}),
+    ],
+)
+def test_update_arten_die_eine_grenze_ueberschreiten(anforderung: str, erwartet: set[str]) -> None:
+    assert _ueberschreitende_update_arten(Requirement(anforderung)) == erwartet
+
+
+def test_sqlalchemy_bringt_greenlet_ueber_das_extra_mit() -> None:
+    """
+    Das Image führt den Ingestor-Code aus /ingestor selbst aus (Abgleich aus dem Admin, ``sync_daemon``).
+    Ab SQLAlchemy 2.1 kommt greenlet nur noch über das Extra ``[asyncio]``; ohne greenlet scheitert der
+    Abgleich. Die Django-Tests ersetzen den Orchestrator und merkten das nicht.
+    """
+    (anforderung,) = [a for a in _direkte() if canonicalize_name(a.name) == "sqlalchemy"]
+    assert "asyncio" in anforderung.extras, "sqlalchemy ohne [asyncio]: greenlet fiele mit SQLAlchemy 2.1 weg"
+
+    pakete = tomllib.loads(UV_LOCK.read_text(encoding="utf-8"))["package"]
+    (projekt,) = [paket for paket in pakete if paket["name"] == "mandari"]
+    (eintrag,) = [a for a in projekt["dependencies"] if a["name"] == "sqlalchemy"]
+    assert "asyncio" in eintrag.get("extra", []), "uv.lock folgt dem Extra nicht – `uv lock` im Ordner mandari"
+    (sqlalchemy,) = [paket for paket in pakete if paket["name"] == "sqlalchemy"]
+    assert {"name": "greenlet"} in sqlalchemy["optional-dependencies"]["asyncio"]
+    assert "greenlet" in _gesperrt()
+
+
+def test_greenlet_ist_installiert_und_die_asyncio_erweiterung_laedt() -> None:
+    import greenlet  # noqa: F401
+    import sqlalchemy.ext.asyncio  # noqa: F401
 
 
 def test_kein_pymupdf_in_den_abhaengigkeiten() -> None:
@@ -145,4 +264,5 @@ def test_export_liefert_nur_laufzeitpakete_mit_fester_version(tmp_path: Path) ->
     erwartet = {canonicalize_name(a.name) for a in _direkte()} - LOKAL
     assert erwartet <= namen, f"fehlen im Export: {sorted(erwartet - namen)}"
     assert not namen & LOKAL, "das lokale Paket aus ../shared gehört nicht in den Export"
+    assert "greenlet" in namen, "greenlet fehlt im Export – der eingebaute Abgleich braucht es"
     assert not namen & {"pytest", "mypy", "ruff", "djlint"}, "Entwicklungswerkzeuge gehören nicht ins Image"

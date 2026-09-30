@@ -16,7 +16,8 @@ dependencies = [
     # Gemeinsame OParl-Typen (lokales Paket ../shared, siehe [tool.uv.sources])
     "mandari-oparl",
 
-    # Django 6.1
+    # Django 6.1. Die nächste Feature-Version wird von Hand gehoben (zusammen mit django-stubs); Dependabot
+    # liefert hier nur Patch-Versionen, siehe `ignore` in .github/dependabot.yml.
     "django>=6.1,<6.2",
     "django-htmx>=1.19.0",
     "django-cotton>=2.7.2",
@@ -30,7 +31,11 @@ dependencies = [
     "dj-database-url>=2.2.0",
 
     # Ingestor integration (needed for Django sync daemon)
-    "sqlalchemy>=2.0.36",
+    # Das Image führt den Ingestor-Code aus /ingestor selbst aus (Abgleich aus dem Admin, manage.py sync_daemon).
+    # [asyncio] zieht greenlet ausdrücklich: Ab SQLAlchemy 2.1 kommt es nicht mehr von selbst mit, und ohne
+    # greenlet scheitert der Abgleich. Obergrenze: Die Nebenversion folgt dem Ingestor und wird von Hand gehoben
+    # (Dependabot: `ignore`), nachdem sie dort geprüft ist.
+    "sqlalchemy[asyncio]>=2.0.36,<2.1",
     "asyncpg>=0.30.0",
     "pydantic-settings>=2.6.0",
     "rich>=13.9.0",

@@ -20,7 +20,9 @@
 # einem eigenen PR (Dependabot ordnet ein Paket der ersten passenden Gruppe zu). Major-Sprünge
 # kommen einzeln, damit einer, der Nacharbeit braucht, die übrigen nicht aufhält.
 # Obergrenzen in pyproject.toml schützen nicht: Dependabot weitet sie im PR auf. Was bewusst
-# nicht steigen soll, steht deshalb unter `ignore`.
+# nicht steigen soll, steht deshalb unter `ignore` – für /mandari hält ein Test beides zusammen
+# (apps/common/tests/test_abhaengigkeiten_lock.py): Jede Obergrenze und jede feste Version in
+# mandari/pyproject.toml braucht dort einen passenden Eintrag.
 version: 2
 updates:
   - package-ecosystem: uv
@@ -41,6 +43,14 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
     ignore:
+      # Django-Feature-Versionen (6.1 → 6.2) werden von Hand gehoben, zusammen mit django-stubs und
+      # nach Durchsicht der Release Notes. Patch-Versionen kommen weiter über die Gruppe `django`.
+      - dependency-name: django
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # SQLAlchemy läuft im Django-Image mit dem Code des Ingestors (eingebauter Abgleich); die
+      # Nebenversion folgt dem Ingestor, wo sie vor der Übernahme gegen eine Datenbank verglichen wird.
+      - dependency-name: sqlalchemy
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # Die Hauptversion des Clients muss zur Hauptversion des Servers passen
       # (docker-compose.yml liefert Elasticsearch 8.x aus); Wechsel nur zusammen mit dem Server.
       - dependency-name: elasticsearch
