@@ -57,8 +57,11 @@ COPY ingestor/src/ src/
 # Build-Pruefung: Abhaengigkeiten vollstaendig und jedes Modul unter src/ importierbar
 # (ohne Datenbank und Netz; kein Modul baut beim Import eine Verbindung auf).
 # Ein fehlendes Paket laesst so den Build scheitern statt den Start in Produktion.
+# greenlet ausdruecklich: Es kommt ab SQLAlchemy 2.1 nur noch ueber das Extra [asyncio]. Unter 2.0 liess sich
+# sqlalchemy.ext.asyncio auch ohne greenlet importieren und scheiterte erst beim ersten Datenbankzugriff;
+# die eigene Zeile haelt die Pruefung von der SQLAlchemy-Version unabhaengig.
 RUN python -m pip check \
-    && python -B -c "import importlib, pkgutil, src; import sqlalchemy.ext.asyncio; \
+    && python -B -c "import importlib, pkgutil, src; import greenlet, sqlalchemy.ext.asyncio; \
 [importlib.import_module(m.name) for m in pkgutil.walk_packages(src.__path__, 'src.') if not m.name.endswith('__main__')]"
 
 # Create data directory and non-root user
