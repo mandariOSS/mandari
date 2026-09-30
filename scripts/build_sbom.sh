@@ -4,7 +4,7 @@
 #   sh scripts/build_sbom.sh [ausgabeverzeichnis]      # Standard: sbom/
 #
 # Erzeugt:
-#   sbom-mandari-python.cdx.json    Django-Anwendung aus mandari/requirements.lock
+#   sbom-mandari-python.cdx.json    Django-Anwendung aus mandari/uv.lock (ueber uv export)
 #   sbom-ingestor-python.cdx.json   Ingestor aus ingestor/uv.lock (ueber uv export)
 #   sbom-mandari-npm.cdx.json       Frontend aus mandari/package-lock.json (ohne dev)
 #
@@ -22,13 +22,14 @@ VERSION=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$WURZEL/mandari/pyproject.toml
 
 echo "SBOM fuer mandari $VERSION -> $AUS"
 
-echo "1/3 Django-Anwendung (requirements.lock)"
-python -m cyclonedx_py requirements "$WURZEL/mandari/requirements.lock" \
+echo "1/3 Django-Anwendung (uv.lock -> requirements)"
+TMP=$(mktemp)
+sh "$WURZEL/scripts/export_requirements.sh" "$TMP"
+python -m cyclonedx_py requirements "$TMP" \
   --pyproject "$WURZEL/mandari/pyproject.toml" --mc-type application \
   --output-format JSON --output-file "$AUS/sbom-mandari-python.cdx.json"
 
 echo "2/3 Ingestor (uv.lock -> requirements)"
-TMP=$(mktemp)
 ( cd "$WURZEL/ingestor" && uv export --frozen --no-hashes --no-dev --no-emit-project -q -o "$TMP" )
 python -m cyclonedx_py requirements "$TMP" \
   --pyproject "$WURZEL/ingestor/pyproject.toml" --mc-type application \

@@ -2,6 +2,9 @@
 # Build context: repo root (not ./mandari)
 # Multi-stage build: build-deps bleiben nicht im finalen Image
 
+# uv mit fester Version (Dependabot hebt sie wie die Python-Basis), nur für den Export aus uv.lock
+FROM ghcr.io/astral-sh/uv:0.12.21 AS uv
+
 # =============================================================================
 # Stage 1: Python dependencies bauen
 # =============================================================================
@@ -16,14 +19,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Shared package
-COPY shared/ /tmp/shared/
-RUN pip install --no-cache-dir --prefix=/install /tmp/shared/
+# uv nur im Builder, nicht im fertigen Image
+COPY --from=uv /uv /bin/uv
 
 # Python dependencies
-# Reproduzierbarer Build aus dem Lockfile (uv pip compile requirements.txt -o requirements.lock)
-COPY mandari/requirements.lock /tmp/
-RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.lock
+# Reproduzierbarer Build aus mandari/uv.lock (wie das Ingestor-Image). Verzeichnisse wie im Repo, damit der
+# Pfad ../shared aus [tool.uv.sources] aufgeht.
+# --locked: Build bricht ab, wenn uv.lock nicht mehr zu pyproject.toml passt (dann `uv lock` im Ordner mandari).
+# Export mit Hashes, pip prüft sie bei der Installation (--require-hashes).
+COPY shared/pyproject.toml /build/shared/pyproject.toml
+COPY mandari/pyproject.toml mandari/uv.lock /build/mandari/
+WORKDIR /build/mandari
+RUN uv export --quiet --locked --no-dev --no-emit-project --no-emit-package mandari-oparl \
+        --format requirements.txt -o /tmp/requirements.lock \
+    && pip install --no-cache-dir --prefix=/install --require-hashes -r /tmp/requirements.lock
+
+# Shared package ohne eigene Abhängigkeitsauflösung (pydantic kommt aus der Lock-Datei)
+COPY shared/ /tmp/shared/
+RUN pip install --no-cache-dir --prefix=/install --no-deps /tmp/shared/
 
 # =============================================================================
 # Stage 2: Frontend assets bauen

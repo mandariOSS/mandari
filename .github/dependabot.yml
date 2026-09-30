@@ -10,19 +10,20 @@
 # verschiedene Wochentage. Sicherheitsupdates kommen weiterhin sofort, aber
 # ebenfalls je Ökosystem gebündelt.
 #
-# pip (/mandari): requirements.txt nennt nur Untergrenzen (>=). Für solche
-# Einträge kennt Dependabot keine installierte Version und kann den Update-Typ
-# (major/minor/patch) nicht bestimmen; eine Gruppe mit `update-types` lehnt sie
-# ab, und jede Abhängigkeit kam als eigener PR (28.09.2026: zwölf Einzel-PRs).
-# Die pip-Gruppen haben deshalb keine `update-types`. Django, Wagtail und ihre
-# Erweiterungen (django-*, wagtail-*) kommen in einem eigenen PR; Dependabot
-# ordnet ein Paket der ersten passenden Gruppe zu. Ein Major-Sprung, der
-# Nacharbeit braucht, hält so nicht alle übrigen Updates der Woche auf.
-# requirements.lock aktualisiert Dependabot nicht; im PR neu erzeugen:
-#   cd mandari && uv pip compile requirements.txt -o requirements.lock --python-version 3.12
+# Python (/mandari und /ingestor): Ökosystem `uv`. Die direkten Abhängigkeiten stehen in
+# pyproject.toml, die gesperrten Versionen in uv.lock; Dependabot pflegt beide Dateien im
+# selben PR. Image und CI installieren ausschließlich aus uv.lock, ein Dependabot-PR prüft
+# also genau das, was er ändert (Issue #682). Vorher hob Dependabot für /mandari nur die
+# Untergrenzen in requirements.txt an, das Lockfile blieb alt und jeder PR scheiterte am
+# Lockfile-Gate.
+# Minor- und Patch-Updates kommen gebündelt, Django und seine Erweiterungen (django-*) in
+# einem eigenen PR (Dependabot ordnet ein Paket der ersten passenden Gruppe zu). Major-Sprünge
+# kommen einzeln, damit einer, der Nacharbeit braucht, die übrigen nicht aufhält.
+# Obergrenzen in pyproject.toml schützen nicht: Dependabot weitet sie im PR auf. Was bewusst
+# nicht steigen soll, steht deshalb unter `ignore`.
 version: 2
 updates:
-  - package-ecosystem: pip
+  - package-ecosystem: uv
     target-branch: dev
     directory: /mandari
     schedule:
@@ -32,12 +33,26 @@ updates:
       timezone: Europe/Berlin
     groups:
       django:
-        patterns: ["django*", "wagtail*"]
-      python:
-        patterns: ["*"]
+        patterns: ["django*"]
+        update-types: [minor, patch]
+      python-minor-und-patch:
+        update-types: [minor, patch]
       python-sicherheit:
         applies-to: security-updates
         patterns: ["*"]
+    ignore:
+      # Die Hauptversion des Clients muss zur Hauptversion des Servers passen
+      # (docker-compose.yml liefert Elasticsearch 8.x aus); Wechsel nur zusammen mit dem Server.
+      - dependency-name: elasticsearch
+        update-types: ["version-update:semver-major"]
+      # Werkzeuge mit fester Version: Dieselbe Version steht in pr-check.yml und teils in
+      # .pre-commit-config.yaml. Ein PR, der nur pyproject.toml anhebt, ließe die Stellen
+      # auseinanderlaufen; diese Versionen werden an allen Stellen zusammen von Hand gehoben.
+      - dependency-name: ruff
+      - dependency-name: mypy
+      - dependency-name: django-stubs
+      - dependency-name: djlint
+      - dependency-name: import-linter
     labels: [dependencies]
   - package-ecosystem: uv
     target-branch: dev

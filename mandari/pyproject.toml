@@ -4,20 +4,29 @@ version = "0.11.0"
 description = "Mandari Insight - Kommunalpolitische Transparenz"
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }
-requires-python = ">=3.12"
+# Obergrenze = neueste Python-Version, mit der Image und CI laufen. uv sperrt für den ganzen Bereich; ohne Grenze
+# müsste jede gesperrte Version schon Wheels für künftige Python-Versionen haben. Beim Wechsel des Basis-Images
+# anheben und `uv lock` ausführen.
+requires-python = ">=3.12,<3.15"
 authors = [{ name = "Mandari Contributors" }]
 
+# Einzige Quelle der direkten Abhängigkeiten; die gesperrten Versionen stehen in uv.lock (Image, CI, pip-audit
+# und SBOM lesen sie von dort). Nach jeder Änderung hier: `uv lock` in diesem Verzeichnis.
 dependencies = [
-    # Shared OParl types
+    # Gemeinsame OParl-Typen (lokales Paket ../shared, siehe [tool.uv.sources])
     "mandari-oparl",
 
-    # Django 6.0 (released Dec 2025)
-    "django>=6.0",
+    # Django 6.1
+    "django>=6.1,<6.2",
     "django-htmx>=1.19.0",
+    "django-cotton>=2.7.2",
+    "django-vite>=3.2.0",
+    "django-ninja>=1.7.1",
+    "django-unfold>=0.40.0",
     "whitenoise>=6.7.0",
 
     # Database
-    "psycopg[binary]>=3.2.0",
+    "psycopg[binary,pool]>=3.2.0",  # pool: Verbindungspool statt langlebiger Verbindungen (#257)
     "dj-database-url>=2.2.0",
 
     # Ingestor integration (needed for Django sync daemon)
@@ -31,24 +40,71 @@ dependencies = [
 
     # Environment
     "python-dotenv>=1.0.0",
+    # Zeitzonendaten unabhängig vom Betriebssystem des Images (Django verlangt das Paket nur unter Windows)
+    "tzdata>=2026.1",
 
-    # Search
+    # Search: Client-Hauptversion = Server-Hauptversion (docker-compose.yml), deshalb die Obergrenze
     "elasticsearch>=8.12.0,<9",
 
     # AI / HTTP
     "httpx>=0.28.0",
-    "pyyaml>=6.0.2",
-
-    # Django 6.0 has built-in background tasks - no Celery needed!
 
     # Utilities
-    "pillow>=10.0.0",  # For ImageField (logos)
+    "pillow>=10.3.0",  # Security: fixes heap buffer overflow, DoS, eval injection
+    "cryptography>=50.0.1",
+    # Sicherheitsschlüssel/Passkeys (WebAuthn/FIDO2)
+    "webauthn>=3.0.1",
+
+    # E-Mail: CSS-Inliner (Rust-Wheel, keine Systemabhängigkeiten) und Text-Alternative (Issue #175)
+    "css-inline>=0.21.3",
+    "html2text>=2025.4.15",
+
+    # Document extraction (OCR)
+    # Note: PyPDF2 is deprecated, using pypdf instead
+    "pypdf>=6.19.0",  # Security: fixes resource exhaustion, data amplification, infinite loop
+    "pytesseract>=0.3.13",
+    "pdf2image>=1.17.0",
+    # Seitenanalyse von PDFs (Karten und Pläne, #599): PDFium, Apache-2.0/BSD-3-Clause – bewusst nicht PyMuPDF
+    # (AGPL), siehe docs/adr/20260930-pdf-seitenanalyse-bibliothek.md
+    "pypdfium2>=5.13.0",
+
+    # PDF generation
+    "xhtml2pdf>=0.2.21",  # Security: fixes ReDoS vulnerability
+    "defusedxml>=0.7.1",  # Security: sicheres XML-Parsing (Task-Import)
+    "reportlab>=5.0.1",
+    "segno>=1.6.6",  # QR-Codes (reines Python, Teilnahmenachweis-Verifikation)
+
+    # DOCX generation
+    "python-docx>=1.2.0",
+
+    # Real-time collaboration (WebSocket)
+    "channels>=4.3.2",
+    "channels-redis>=4.3.0",
+    "daphne>=4.2.3",
 
     # Zero-Downtime Migrations
     "django-safemigrate>=4.3",
 
-    # Verträge der Datendrehscheibe (hub/contracts): JSON Schema 2020-12
+    # Verträge der Datendrehscheibe: JSON Schema 2020-12 für Ereignisse und Befehle (hub/contracts, #517)
     "jsonschema>=4.25.0",
+
+    # Transitive dependencies pinned for security
+    "urllib3>=2.8.0",  # Security: fixes open redirect, info disclosure
+    "requests>=2.34.2",  # Security: fixes control flow, sensitive data issues
+    "anyio>=4.15.1",  # Security: fixes race condition
+    "zipp>=4.1.0",  # Security: fixes infinite loop
+
+    # OpenTelemetry (aktiv nur mit OTEL_EXPORTER_OTLP_ENDPOINT, siehe apps/common/observability.py)
+    "opentelemetry-sdk>=1.45.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.0",
+    "opentelemetry-instrumentation-django>=0.66b0",
+    "opentelemetry-instrumentation-psycopg>=0.66b0",
+    "opentelemetry-instrumentation-redis>=0.66b0",
+    "opentelemetry-instrumentation-requests>=0.66b0",
+    "opentelemetry-instrumentation-httpx>=0.66b0",
+    # Anwendungsmetriken unter /metrics/ (apps/common/metrics.py, Issue #231)
+    "prometheus-client>=0.26.0",
+    "pyyaml>=6.0.2",  # Prüfung der Compose-Rollenprofile (scripts/check_compose_roles.py, #55)
 ]
 
 [project.optional-dependencies]
@@ -58,7 +114,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "factory-boy>=3.3.0",
     "pytest-playwright>=0.7.0",  # E2E (tests_e2e/), Browser: playwright install chromium
-    "ruff>=0.8.0",
+    "ruff==0.14.6",  # wie CI und pre-commit (Format weicht zwischen Versionen ab)
     "import-linter==2.15",  # Schichtregeln: lint-imports, wie CI (Verträge unten in [tool.importlinter])
     "mypy==2.3.1",  # wie CI: Ergebnisse unterscheiden sich zwischen mypy-Versionen
     "django-stubs[compatible-mypy]==6.1.1",
@@ -66,9 +122,16 @@ dev = [
     "djlint==1.46.2",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.uv]
+# Anwendung, kein installierbares Paket: uv sperrt und installiert nur die Abhängigkeiten.
+package = false
+# Betrieb und Entwicklung laufen auf CPython; ohne diese Einschränkung sperrt uv zusätzlich PyPy-Varianten
+# (eigene autobahn-/cbor2-Zweige), die niemand installiert.
+environments = ["platform_python_implementation == 'CPython'"]
+
+[tool.uv.sources]
+# Lokales Shared-Paket (OParl-Typen) — nur für uv lock/sync; Image und CI installieren ../shared direkt
+mandari-oparl = { path = "../shared", editable = true }
 
 [tool.ruff]
 line-length = 120

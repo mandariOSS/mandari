@@ -7,7 +7,6 @@
 > ist geplant: TODO via [syft](https://github.com/anchore/syft) in CI.**
 >
 > Quellen: [`mandari/pyproject.toml`](../mandari/pyproject.toml),
-> [`mandari/requirements.txt`](../mandari/requirements.txt),
 > [`ingestor/pyproject.toml`](../ingestor/pyproject.toml),
 > [`shared/pyproject.toml`](../shared/pyproject.toml).
 > Siehe auch [DEPENDENCIES.md](../DEPENDENCIES.md) (Danksagungen).

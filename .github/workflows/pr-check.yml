@@ -87,8 +87,8 @@ jobs:
               - '.github/**'
               - 'pyproject.toml'
               - 'mandari/pyproject.toml'
-              - 'mandari/requirements.txt'
-              - 'mandari/requirements.lock'
+              - 'mandari/uv.lock'
+              - 'scripts/export_requirements.sh'
               - 'mandari/package.json'
               - 'mandari/package-lock.json'
               - 'shared/pyproject.toml'
@@ -213,7 +213,7 @@ jobs:
               - 'shared/**'
               - '!**/*.md'
             audit:
-              - 'scripts/check_requirements_lock.py'
+              - 'scripts/export_requirements.sh'
             docker:
               - 'mandari/Dockerfile'
               - 'ingestor/Dockerfile'
@@ -314,6 +314,7 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
 
       # --- Lint und schnelle Prüfskripte (immer, wenige Sekunden) ---------------
       - name: Install linters
@@ -387,12 +388,16 @@ jobs:
           cd mandari && djlint templates --lint
 
       # --- Python: Typprüfung und Schema-Contract ---------------------------------
+      - name: uv (Export aus mandari/uv.lock)
+        if: ${{ !cancelled() && (needs.changes.outputs.python == 'true' || needs.changes.outputs.vertrag == 'true') }}
+        uses: astral-sh/setup-uv@v7
       - name: Python-Abhängigkeiten (Django, mypy, SQLAlchemy)
         id: pydeps
         if: ${{ !cancelled() && (needs.changes.outputs.python == 'true' || needs.changes.outputs.vertrag == 'true') }}
         run: |
-          pip install shared/
-          pip install -r mandari/requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           # Versionen wie in pyproject [dev] – mypy-Ergebnisse unterscheiden sich zwischen Versionen
           pip install "mypy==2.3.1" "django-stubs[compatible-mypy]==6.1.1" "sqlalchemy>=2.0"
           # Test-Abhängigkeiten, damit Fixtures/Decorator in Testmodulen typisiert sind (sonst "untyped decorator")
@@ -554,12 +559,14 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
 
+      - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
-          pip install shared/
-          cd mandari
-          pip install -r requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           pip install pytest pytest-django pytest-cov pytest-xdist factory-boy
           pip install "sqlalchemy>=2.0"  # Schema-Contract gegen die Ingestor-Modelle
 
@@ -676,12 +683,14 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
 
+      - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
-          pip install shared/
-          cd mandari
-          pip install -r requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           pip install pytest pytest-django factory-boy
 
       - name: PgBouncer erreichbar
@@ -731,12 +740,14 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
 
+      - uses: astral-sh/setup-uv@v7
       - name: Install dependencies
         run: |
-          pip install shared/
-          cd mandari
-          pip install -r requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           pip install pytest pytest-django factory-boy
 
       - uses: actions/setup-node@v7
@@ -926,15 +937,18 @@ jobs:
           node-version: '26'
           cache: npm
           cache-dependency-path: mandari/package-lock.json
+      # Installiert wird überall aus den Lock-Dateien. Passt eine nicht mehr zu ihrer pyproject.toml,
+      # würde eine geänderte Abhängigkeit nichts am Laufenden ändern (Issue #241, #682). Die Prüfung
+      # hebt keine Version an: Sie bestätigt nur, dass die gesperrten Versionen die Angaben erfüllen.
+      - name: uv.lock passt zu pyproject.toml (Django-Anwendung und Ingestor)
+        run: |
+          (cd mandari && uv lock --check)
+          (cd ingestor && uv lock --check)
       - name: pip-audit Django-Anwendung (blockierend bei bekannten Schwachstellen)
         run: |
-          pip install pip-audit packaging
-          pip-audit -r mandari/requirements.lock --no-deps --progress-spinner off
-      # Installiert wird ueberall requirements.lock. Eine angehobene Grenze in
-      # requirements.txt ohne neu erzeugtes Lockfile aendert nichts am Laufenden
-      # und laesst beide Dateien auseinanderlaufen (Issue #241).
-      - name: requirements.lock passt zu requirements.txt
-        run: python scripts/check_requirements_lock.py
+          pip install pip-audit
+          sh scripts/export_requirements.sh /tmp/mandari-requirements.txt
+          pip-audit -r /tmp/mandari-requirements.txt --no-deps --progress-spinner off
       - name: pip-audit Ingestor (blockierend bei bekannten Schwachstellen)
         run: |
           cd ingestor
@@ -976,6 +990,7 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
       - uses: actions/setup-node@v7
         with:
           node-version: '26'
@@ -983,11 +998,12 @@ jobs:
           cache-dependency-path: mandari/package-lock.json
       - name: Frontend-Assets bauen
         run: cd mandari && npm ci --ignore-scripts && npm run build
+      - uses: astral-sh/setup-uv@v7
       - name: Python-Abhängigkeiten
         run: |
-          pip install shared/
-          cd mandari
-          pip install -r requirements.lock
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
           pip install pytest pytest-django factory-boy pytest-playwright
           python -m playwright install --with-deps chromium
       - name: E2E-Tests (Kernpfade, axe-core)

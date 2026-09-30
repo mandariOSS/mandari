@@ -42,7 +42,8 @@ mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **segno** | QR-Code-Erzeugung (reines Python) | BSD-3-Clause | [GitHub](https://github.com/heuer/segno) |
 | **jsonschema** | Prüfung der Verträge für Ereignisse und Befehle (JSON Schema 2020-12) | MIT | [GitHub](https://github.com/python-jsonschema/jsonschema) |
 
-Vollständige Liste: [mandari/requirements.txt](mandari/requirements.txt)
+Vollständige Liste: [mandari/pyproject.toml](mandari/pyproject.toml) (direkte Abhängigkeiten), gesperrte
+Versionen in [mandari/uv.lock](mandari/uv.lock)
 
 ## Infrastruktur
 
