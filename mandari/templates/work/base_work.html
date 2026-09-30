@@ -31,7 +31,7 @@
     <!-- Real-time Notifications -->
     <script src="{% static 'js/notifications.js' %}"></script>
 
-    <style>
+    <style nonce="{{ csp_nonce }}">
         [x-cloak] { display: none !important; }
         .item-list a, .item-list a:visited { color: inherit; }
         /* Konsistente Tap-Highlights: eigene hover/active-Zustände statt grauem Standard-Blitz */

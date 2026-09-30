@@ -37,3 +37,4 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `WORK_REGISTRATION.md` | [Work → Registrierung und Zugangs-Mails](https://docs.mandari.de/work/registrierung/) (Seite folgt) |
 | `DSGVO_TOM.md`, `DSGVO_LOESCHKONZEPT.md`, `DSGVO_AVV_MUSTER.md` | [Datenschutz](https://docs.mandari.de/datenschutz/) |
 | `SBOM.md` | [Entwicklung → Abhängigkeiten](https://docs.mandari.de/entwicklung/sbom/) |
+| `CSP.md` | – (Content-Security-Policy: Stand, Muster ohne Inline-Code, Bewertung Alpine-CSP-Build; Entwicklung) |

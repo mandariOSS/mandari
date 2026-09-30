@@ -160,13 +160,12 @@ class RoleListView(SessionViewMixin, TemplateView):
                 for field_name, _label in entries
                 if getattr(edit_role, field_name)
             ]
-        import json
-
         context.update(
             {
                 "roles": roles,
                 "edit_role": edit_role,
-                "edit_role_permissions": json.dumps(edit_role_permissions),
+                # Serverseitig angekreuzt (vorher Inline-Skript mit JSON-Liste, #172)
+                "edit_role_permissions": set(edit_role_permissions),
                 "permission_groups": permission_fields(),
                 "grants_everything": is_admin_user(self.session_user),
             }

@@ -106,7 +106,7 @@
                             <option value="done" {% if form.status.value == 'done' %}selected{% endif %}>Erledigt</option>
                         </select>
                     </div>
-                    <div x-data="assignmentHandler()">
+                    <div x-data="assignmentHandler" data-current-member="{{ membership.id }}">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Zugewiesen an</label>
                         <select name="assigned_to" x-model="selectedAssignee" @change="checkAssignment"
                                 class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
@@ -250,41 +250,3 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script nonce="{{ csp_nonce }}">
-function assignmentHandler() {
-    return {
-        selectedAssignee: '{{ form.assigned_to.value|default:"" }}',
-        previousAssignee: '{{ form.assigned_to.value|default:"" }}',
-        showConfirmModal: false,
-        assigneeName: '',
-        currentMemberId: '{{ membership.id }}',
-
-        checkAssignment() {
-            // If assigned to self (empty) or same person, no confirmation needed
-            if (!this.selectedAssignee || this.selectedAssignee === this.currentMemberId) {
-                this.previousAssignee = this.selectedAssignee;
-                return;
-            }
-
-            // Get the selected option's name
-            const select = this.$el.querySelector('select[name="assigned_to"]');
-            const selectedOption = select.options[select.selectedIndex];
-            this.assigneeName = selectedOption.dataset.name || selectedOption.text;
-
-            this.showConfirmModal = true;
-        },
-
-        confirmAssignment() {
-            this.previousAssignee = this.selectedAssignee;
-            this.showConfirmModal = false;
-        },
-
-        cancelAssignment() {
-            this.selectedAssignee = this.previousAssignee;
-            this.showConfirmModal = false;
-        }
-    }
-}
-</script>
-{% endblock %}

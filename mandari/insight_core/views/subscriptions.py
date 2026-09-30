@@ -6,6 +6,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import logging
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -34,6 +35,21 @@ def _require_subscriptions() -> None:
     """
     if not getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False):
         raise Http404("Benachrichtigungen sind abgeschaltet.")
+
+
+def _coordinate(value: str, limit: int) -> Decimal | None:
+    """Koordinate aus dem Formular: Dezimalkomma erlaubt, Unlesbares oder außerhalb ±limit ergibt None.
+
+    Ohne diese Prüfung landete ein lokalisierter Wert ("51,96") direkt im DecimalField und das
+    Speichern scheiterte mit einem Serverfehler.
+    """
+    try:
+        number = Decimal(value.strip().replace(",", "."))
+    except (InvalidOperation, ValueError):
+        return None
+    if not number.is_finite() or abs(number) > limit:
+        return None
+    return number
 
 
 class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
@@ -90,15 +106,15 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
 
         # Abo-Typen aus Feldinhalt ableiten (kein Checkbox mehr)
         neighborhood_name = request.POST.get("neighborhood_name", "").strip()
-        neighborhood_lat = request.POST.get("neighborhood_lat", "").strip()
-        neighborhood_lon = request.POST.get("neighborhood_lon", "").strip()
+        neighborhood_lat = _coordinate(request.POST.get("neighborhood_lat", ""), 90)
+        neighborhood_lon = _coordinate(request.POST.get("neighborhood_lon", ""), 180)
         keyword = request.POST.get("keyword", "").strip()
         digest_frequency = request.POST.get("digest_frequency", "weekly")
 
         if digest_frequency not in ("weekly", "biweekly"):
             digest_frequency = "weekly"
 
-        neighborhood_active = bool(neighborhood_lat and neighborhood_lon)
+        neighborhood_active = neighborhood_lat is not None and neighborhood_lon is not None
         keyword_active = bool(keyword)
 
         if not neighborhood_active and not keyword_active:
@@ -131,8 +147,8 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
         # Abo-Daten aktualisieren
         subscriber.neighborhood_active = neighborhood_active
         if neighborhood_active:
-            subscriber.neighborhood_lat = neighborhood_lat or None
-            subscriber.neighborhood_lon = neighborhood_lon or None
+            subscriber.neighborhood_lat = neighborhood_lat
+            subscriber.neighborhood_lon = neighborhood_lon
             subscriber.neighborhood_name = neighborhood_name or None
             try:
                 subscriber.neighborhood_radius = int(request.POST.get("neighborhood_radius", "500"))
@@ -246,14 +262,14 @@ def manage_subscription(request, token):
     if request.method == "POST":
         # Abo-Typen aus Feldinhalt ableiten (kein Checkbox mehr)
         neighborhood_name = request.POST.get("neighborhood_name", "").strip()
-        neighborhood_lat = request.POST.get("neighborhood_lat", "").strip()
-        neighborhood_lon = request.POST.get("neighborhood_lon", "").strip()
+        neighborhood_lat = _coordinate(request.POST.get("neighborhood_lat", ""), 90)
+        neighborhood_lon = _coordinate(request.POST.get("neighborhood_lon", ""), 180)
         keyword = request.POST.get("keyword", "").strip()
 
-        subscriber.neighborhood_active = bool(neighborhood_lat and neighborhood_lon)
+        subscriber.neighborhood_active = neighborhood_lat is not None and neighborhood_lon is not None
         if subscriber.neighborhood_active:
-            subscriber.neighborhood_lat = neighborhood_lat or None
-            subscriber.neighborhood_lon = neighborhood_lon or None
+            subscriber.neighborhood_lat = neighborhood_lat
+            subscriber.neighborhood_lon = neighborhood_lon
             subscriber.neighborhood_name = neighborhood_name or None
             try:
                 subscriber.neighborhood_radius = int(request.POST.get("neighborhood_radius", "500"))

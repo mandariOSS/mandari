@@ -109,7 +109,7 @@
                         {% for field_name, label in entries %}
                         <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                             <input type="checkbox" name="{{ field_name }}" value="1"
-                                   data-perm="{{ field_name }}"
+                                   data-perm="{{ field_name }}"{% if field_name in edit_role_permissions %} checked{% endif %}
                                    class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                             {{ label }}
                         </label>
@@ -126,16 +126,4 @@
     </div>
 </div>
 
-{% if edit_role %}
-<script nonce="{{ csp_nonce }}">
-// Bestehende Rechte der bearbeiteten Rolle in der Matrix ankreuzen
-(function () {
-    var granted = {{ edit_role_permissions|default:"[]"|safe }};
-    granted.forEach(function (name) {
-        var box = document.querySelector('input[data-perm="' + name + '"]');
-        if (box) box.checked = true;
-    });
-})();
-</script>
-{% endif %}
 {% endblock %}

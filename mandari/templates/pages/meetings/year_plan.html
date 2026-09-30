@@ -2,16 +2,6 @@
 
 {% block title %}Sitzungsplan {{ year }}{% endblock %}
 
-{% block extra_head %}
-<style>
-    @media print {
-        .no-print { display: none !important; }
-        .year-plan-table { font-size: 10px; }
-        body { background: white; }
-    }
-</style>
-{% endblock %}
-
 {% block content %}
 <div>
     <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">

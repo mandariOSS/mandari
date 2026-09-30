@@ -90,7 +90,10 @@
 
         <!-- Feedback Section -->
         <div class="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
-             x-data="feedbackWidget()">
+             x-data="feedbackWidget"
+             data-url="{% url 'work:kb_article_feedback' org_slug=organization.slug article_id=article.id %}"
+             data-submitted="{% if user_feedback %}true{% else %}false{% endif %}"
+             data-selected="{% if user_feedback %}{{ user_feedback.is_helpful|yesno:'true,false' }}{% endif %}">
             <div class="text-center" x-show="!submitted">
                 <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">War dieser Artikel hilfreich?</h3>
                 <div class="flex items-center justify-center gap-3">
@@ -194,36 +197,4 @@
     </div>
 </div>
 
-<script nonce="{{ csp_nonce }}">
-function feedbackWidget() {
-    return {
-        submitted: {% if user_feedback %}true{% else %}false{% endif %},
-        selected: {% if user_feedback %}{{ user_feedback.is_helpful|yesno:"true,false" }}{% else %}null{% endif %},
-
-        async submitFeedback(isHelpful) {
-            this.selected = isHelpful;
-
-            const formData = new FormData();
-            formData.append('is_helpful', isHelpful ? 'true' : 'false');
-            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
-
-            try {
-                const response = await fetch('{% url "work:kb_article_feedback" org_slug=organization.slug article_id=article.id %}', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-
-                if (response.ok) {
-                    this.submitted = true;
-                }
-            } catch (error) {
-                console.error('Feedback error:', error);
-            }
-        }
-    }
-}
-</script>
 {% endblock %}

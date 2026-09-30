@@ -3,7 +3,10 @@
 {% block title %}Benachrichtigungen{% endblock %}
 
 {% block content %}
-<div x-data="subscribeApp()" class="max-w-2xl mx-auto">
+<div x-data="neighborhoodSubscription" class="max-w-2xl mx-auto"
+     data-autocomplete-url="{% url 'insight_core:insight:neighborhood_autocomplete' %}"
+     data-name="{{ prefill_name }}" data-lat="{{ prefill_lat }}" data-lon="{{ prefill_lon }}"
+     data-keyword="{{ prefill_keyword }}">
     <!-- Header -->
     <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Benachrichtigungen</h1>
@@ -146,44 +149,3 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script nonce="{{ csp_nonce }}">
-function subscribeApp() {
-    return {
-        neighborhoodName: '{{ prefill_name|escapejs }}',
-        neighborhoodLat: '{{ prefill_lat|escapejs }}',
-        neighborhoodLon: '{{ prefill_lon|escapejs }}',
-        neighborhoodRadius: 500,
-        keyword: '{{ prefill_keyword|escapejs }}',
-        suggestions: [],
-
-        async fetchSuggestions() {
-            if (this.neighborhoodName.length < 2) {
-                this.suggestions = [];
-                return;
-            }
-            try {
-                const resp = await fetch(`/insight/nachbarschaft/autocomplete/?q=${encodeURIComponent(this.neighborhoodName)}`);
-                this.suggestions = await resp.json();
-            } catch (e) {
-                this.suggestions = [];
-            }
-        },
-
-        selectSuggestion(s) {
-            this.neighborhoodName = s.name;
-            this.neighborhoodLat = s.lat;
-            this.neighborhoodLon = s.lon;
-            this.suggestions = [];
-        },
-
-        clearNeighborhood() {
-            this.neighborhoodName = '';
-            this.neighborhoodLat = '';
-            this.neighborhoodLon = '';
-            this.suggestions = [];
-        }
-    }
-}
-</script>
-{% endblock %}

@@ -41,3 +41,24 @@ import { factionTitlePreview } from '../alpine/faction-title-preview'
 Alpine.data('agendaItemPanel', agendaItemPanel)
 Alpine.data('factionDetail', factionDetail)
 Alpine.data('factionTitlePreview', factionTitlePreview)
+
+// ---- Ausgelagerte Inline-Skripte (#172, CSP ohne unsafe-inline) ----------------------------
+import { letterheadForm } from '../alpine/letterhead-form'
+import { createMotion } from '../alpine/motion-create'
+import { colorPicker, logoPreview, partyManager, permissionsManager } from '../alpine/organization-settings'
+import { changeRequestForm, dataExport } from '../alpine/profile'
+import { feedbackWidget, kbSuggestions, ticketForm } from '../alpine/support'
+import { assignmentHandler } from '../alpine/task-assignment'
+
+Alpine.data('colorPicker', colorPicker)
+Alpine.data('logoPreview', logoPreview)
+Alpine.data('permissionsManager', permissionsManager)
+Alpine.data('partyManager', partyManager)
+Alpine.data('letterheadForm', letterheadForm)
+Alpine.data('createMotion', createMotion)
+Alpine.data('changeRequestForm', changeRequestForm)
+Alpine.data('dataExport', dataExport)
+Alpine.data('ticketForm', ticketForm)
+Alpine.data('kbSuggestions', kbSuggestions)
+Alpine.data('feedbackWidget', feedbackWidget)
+Alpine.data('assignmentHandler', assignmentHandler)

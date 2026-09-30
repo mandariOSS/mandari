@@ -48,7 +48,7 @@
         </div>
 
         <!-- Deputy For -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 25ms">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-25">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Meine Stellvertretungen</h4>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Wo ich aktuell als Stellvertreter eingetragen bin</p>
@@ -81,7 +81,7 @@
     <!-- Right Column: Create & List -->
     <div class="lg:col-span-2 space-y-6">
         <!-- Create Absence -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 25ms">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-25">
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="create_absence">
@@ -152,7 +152,7 @@
 
         <!-- Current & Future Absences -->
         {% if active_absences %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-50">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Geplante & Aktuelle Abwesenheiten</h4>
             </div>
@@ -201,7 +201,7 @@
 
         <!-- Past Absences -->
         {% if past_absences %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 75ms">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-75">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Vergangene Abwesenheiten</h4>
             </div>

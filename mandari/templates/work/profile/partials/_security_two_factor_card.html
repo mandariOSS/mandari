@@ -2,7 +2,7 @@
 Karte „Zwei-Faktor-Authentifizierung“ (Status, Backup-Codes, Deaktivieren bzw. Einrichten).
 Alpine-Scope: securitySettings (setup2fa, showBackupCodesModal, showDisable2faModal). Kontext: is_2fa_enabled, two_factor_required
 {% endcomment %}
-<c-ui.card title="Zwei-Faktor-Authentifizierung" subtitle="Zusätzliche Sicherheitsebene für Ihr Konto" class="fade-up" style="animation-delay: 50ms">
+<c-ui.card title="Zwei-Faktor-Authentifizierung" subtitle="Zusätzliche Sicherheitsebene für Ihr Konto" class="fade-up fade-delay-50">
     <c-slot name="actions">
         {% if is_2fa_enabled %}
         <c-ui.badge color="green" icon="shield-check">Aktiv</c-ui.badge>

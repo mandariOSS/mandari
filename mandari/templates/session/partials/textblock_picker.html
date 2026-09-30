@@ -7,6 +7,7 @@ Kontext:
 - tb_target: optionale ID der Ziel-Textarea (sonst zuletzt fokussierte)
 
 Platzhalter: {gremium}, {datum}, {sitzung}, {vorlage} (aus #id_reference).
+Verhalten: frontend/js/form-behaviors.ts (delegierter Listener, kein Inline-Skript, #172).
 {% endcomment %}
 {% if text_blocks %}
 <div class="flex items-center gap-2 flex-wrap"
@@ -25,54 +26,4 @@ Platzhalter: {gremium}, {datum}, {sitzung}, {vorlage} (aus #id_reference).
         Einfügen
     </button>
 </div>
-<script nonce="{{ csp_nonce }}">
-(function () {
-    // Zuletzt fokussierte Textarea merken (für Formulare mit mehreren Feldern)
-    if (!window.__tbFocusTracked) {
-        window.__tbFocusTracked = true;
-        document.addEventListener('focusin', function (event) {
-            if (event.target.tagName === 'TEXTAREA') {
-                window.__tbLastTextarea = event.target;
-            }
-        });
-    }
-    var pickers = document.querySelectorAll('[data-textblock-picker]:not([data-tb-ready])');
-    pickers.forEach(function (picker) {
-        picker.setAttribute('data-tb-ready', '1');
-        picker.querySelector('.tb-insert').addEventListener('click', function () {
-            var select = picker.querySelector('.tb-select');
-            var text = select.value;
-            if (!text) return;
-
-            // Platzhalter ersetzen
-            var today = new Date().toLocaleDateString('de-DE');
-            var refInput = document.getElementById('id_reference');
-            text = text
-                .replaceAll('{datum}', today)
-                .replaceAll('{gremium}', picker.dataset.tbGremium || '')
-                .replaceAll('{sitzung}', picker.dataset.tbSitzung || '')
-                .replaceAll('{vorlage}', refInput ? refInput.value : '');
-
-            var target = picker.dataset.tbTarget
-                ? document.getElementById(picker.dataset.tbTarget)
-                : window.__tbLastTextarea;
-            if (!target && picker.dataset.tbTarget === '') {
-                // Fallback: erste Textarea der Seite
-                target = document.querySelector('textarea');
-            }
-            if (!target) return;
-
-            var start = target.selectionStart ?? target.value.length;
-            var end = target.selectionEnd ?? target.value.length;
-            var prefix = target.value.slice(0, start);
-            var sep = prefix && !prefix.endsWith('\n') && !prefix.endsWith(' ') ? ' ' : '';
-            target.value = prefix + sep + text + target.value.slice(end);
-            target.focus();
-            var pos = (prefix + sep + text).length;
-            target.setSelectionRange(pos, pos);
-            select.value = '';
-        });
-    });
-})();
-</script>
 {% endif %}

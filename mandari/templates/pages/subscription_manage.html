@@ -1,9 +1,17 @@
 {% extends "base_insight.html" %}
+{% load l10n %}
 
 {% block title %}Abo verwalten{% endblock %}
 
 {% block content %}
-<div x-data="manageApp()" class="max-w-2xl mx-auto">
+{# Koordinaten ohne Lokalisierung: "51,96" käme als ungültige Dezimalzahl zurück #}
+<div x-data="neighborhoodSubscription" class="max-w-2xl mx-auto"
+     data-autocomplete-url="{% url 'insight_core:insight:neighborhood_autocomplete' %}"
+     data-name="{{ subscriber.neighborhood_name|default:'' }}"
+     data-lat="{{ subscriber.neighborhood_lat|default:''|unlocalize }}"
+     data-lon="{{ subscriber.neighborhood_lon|default:''|unlocalize }}"
+     data-radius="{{ subscriber.neighborhood_radius|default:500|unlocalize }}"
+     data-keyword="{{ subscriber.keyword|default:'' }}">
     <!-- Header -->
     <div class="mb-8">
         <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Abo verwalten</h1>
@@ -102,44 +110,3 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script nonce="{{ csp_nonce }}">
-function manageApp() {
-    return {
-        neighborhoodName: '{{ subscriber.neighborhood_name|default:""|escapejs }}',
-        neighborhoodLat: '{{ subscriber.neighborhood_lat|default:"" }}',
-        neighborhoodLon: '{{ subscriber.neighborhood_lon|default:"" }}',
-        neighborhoodRadius: {{ subscriber.neighborhood_radius|default:"500" }},
-        keyword: '{{ subscriber.keyword|default:""|escapejs }}',
-        suggestions: [],
-
-        async fetchSuggestions() {
-            if (this.neighborhoodName.length < 2) {
-                this.suggestions = [];
-                return;
-            }
-            try {
-                const resp = await fetch(`/insight/nachbarschaft/autocomplete/?q=${encodeURIComponent(this.neighborhoodName)}`);
-                this.suggestions = await resp.json();
-            } catch (e) {
-                this.suggestions = [];
-            }
-        },
-
-        selectSuggestion(s) {
-            this.neighborhoodName = s.name;
-            this.neighborhoodLat = s.lat;
-            this.neighborhoodLon = s.lon;
-            this.suggestions = [];
-        },
-
-        clearNeighborhood() {
-            this.neighborhoodName = '';
-            this.neighborhoodLat = '';
-            this.neighborhoodLon = '';
-            this.suggestions = [];
-        }
-    }
-}
-</script>
-{% endblock %}

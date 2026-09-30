@@ -1,7 +1,7 @@
 {% comment %} Eigene Styles für Betriebsmonitor/Dashboard-Panel: Unfold liefert nur die Tailwind-Klassen
    seiner eigenen Templates aus (keine amber-Farben, keine dark:-Varianten, keine xl:-Raster),
    deshalb hier ein kleiner, geschlossener Satz Klassen mit Dark-Mode über html.dark. {% endcomment %}
-<style>
+<style nonce="{{ csp_nonce }}">
   .mon-grid { display: grid; gap: 1rem; grid-template-columns: repeat(1, minmax(0, 1fr)); }
   @media (min-width: 768px) { .mon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (min-width: 1280px) { .mon-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

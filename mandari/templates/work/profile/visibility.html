@@ -33,7 +33,7 @@
     </div>
 
     <!-- Visibility Settings -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-50">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="eye" class="w-4 h-4 text-gray-400"></i>
@@ -73,7 +73,7 @@
     </div>
 
     <!-- Contact Preferences -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 100ms">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-100">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="message-circle" class="w-4 h-4 text-gray-400"></i>
@@ -88,23 +88,20 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bevorzugter Kontaktweg</label>
                 <div class="flex flex-wrap gap-3">
-                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors
-                        {% if preferred_contact == 'email' %}border-primary-500 bg-primary-50 dark:bg-primary-900/20{% else %}border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30{% endif %}">
-                        <input type="radio" name="preferred_contact" value="email" class="sr-only" {% if preferred_contact == 'email' %}checked{% endif %}>
-                        <i data-lucide="mail" class="w-4 h-4 {% if preferred_contact == 'email' %}text-primary-600 dark:text-primary-400{% else %}text-gray-400{% endif %}"></i>
-                        <span class="text-sm {% if preferred_contact == 'email' %}text-primary-700 dark:text-primary-300 font-medium{% else %}text-gray-600 dark:text-gray-400{% endif %}">E-Mail</span>
+                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors border-gray-200 dark:border-gray-700 [&:not(:has(:checked)):hover]:bg-gray-50 dark:[&:not(:has(:checked)):hover]:bg-gray-700/30 has-[:checked]:border-primary-500 dark:has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                        <input type="radio" name="preferred_contact" value="email" class="peer sr-only" {% if preferred_contact == 'email' %}checked{% endif %}>
+                        <i data-lucide="mail" class="w-4 h-4 text-gray-400 peer-checked:text-primary-600 dark:peer-checked:text-primary-400"></i>
+                        <span class="text-sm text-gray-600 dark:text-gray-400 peer-checked:text-primary-700 dark:peer-checked:text-primary-300 peer-checked:font-medium">E-Mail</span>
                     </label>
-                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors
-                        {% if preferred_contact == 'phone' %}border-primary-500 bg-primary-50 dark:bg-primary-900/20{% else %}border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30{% endif %}">
-                        <input type="radio" name="preferred_contact" value="phone" class="sr-only" {% if preferred_contact == 'phone' %}checked{% endif %}>
-                        <i data-lucide="phone" class="w-4 h-4 {% if preferred_contact == 'phone' %}text-primary-600 dark:text-primary-400{% else %}text-gray-400{% endif %}"></i>
-                        <span class="text-sm {% if preferred_contact == 'phone' %}text-primary-700 dark:text-primary-300 font-medium{% else %}text-gray-600 dark:text-gray-400{% endif %}">Telefon</span>
+                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors border-gray-200 dark:border-gray-700 [&:not(:has(:checked)):hover]:bg-gray-50 dark:[&:not(:has(:checked)):hover]:bg-gray-700/30 has-[:checked]:border-primary-500 dark:has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                        <input type="radio" name="preferred_contact" value="phone" class="peer sr-only" {% if preferred_contact == 'phone' %}checked{% endif %}>
+                        <i data-lucide="phone" class="w-4 h-4 text-gray-400 peer-checked:text-primary-600 dark:peer-checked:text-primary-400"></i>
+                        <span class="text-sm text-gray-600 dark:text-gray-400 peer-checked:text-primary-700 dark:peer-checked:text-primary-300 peer-checked:font-medium">Telefon</span>
                     </label>
-                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors
-                        {% if preferred_contact == 'signal' %}border-primary-500 bg-primary-50 dark:bg-primary-900/20{% else %}border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30{% endif %}">
-                        <input type="radio" name="preferred_contact" value="signal" class="sr-only" {% if preferred_contact == 'signal' %}checked{% endif %}>
-                        <i data-lucide="message-square" class="w-4 h-4 {% if preferred_contact == 'signal' %}text-primary-600 dark:text-primary-400{% else %}text-gray-400{% endif %}"></i>
-                        <span class="text-sm {% if preferred_contact == 'signal' %}text-primary-700 dark:text-primary-300 font-medium{% else %}text-gray-600 dark:text-gray-400{% endif %}">Signal</span>
+                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors border-gray-200 dark:border-gray-700 [&:not(:has(:checked)):hover]:bg-gray-50 dark:[&:not(:has(:checked)):hover]:bg-gray-700/30 has-[:checked]:border-primary-500 dark:has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                        <input type="radio" name="preferred_contact" value="signal" class="peer sr-only" {% if preferred_contact == 'signal' %}checked{% endif %}>
+                        <i data-lucide="message-square" class="w-4 h-4 text-gray-400 peer-checked:text-primary-600 dark:peer-checked:text-primary-400"></i>
+                        <span class="text-sm text-gray-600 dark:text-gray-400 peer-checked:text-primary-700 dark:peer-checked:text-primary-300 peer-checked:font-medium">Signal</span>
                     </label>
                 </div>
             </div>
@@ -123,7 +120,7 @@
 
     <!-- OParl Person Link -->
     {% if oparl_person %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 150ms">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-150">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="link" class="w-4 h-4 text-gray-400"></i>
@@ -154,32 +151,3 @@
 </form>
 {% endblock %}
 
-{% block extra_scripts %}
-<script nonce="{{ csp_nonce }}">
-// Radio button visual toggle
-document.querySelectorAll('input[name="preferred_contact"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-        document.querySelectorAll('input[name="preferred_contact"]').forEach(r => {
-            const label = r.closest('label');
-            const icon = label.querySelector('i');
-            const text = label.querySelector('span');
-            if (r.checked) {
-                label.classList.add('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
-                label.classList.remove('border-gray-200', 'dark:border-gray-700');
-                icon.classList.add('text-primary-600', 'dark:text-primary-400');
-                icon.classList.remove('text-gray-400');
-                text.classList.add('text-primary-700', 'dark:text-primary-300', 'font-medium');
-                text.classList.remove('text-gray-600', 'dark:text-gray-400');
-            } else {
-                label.classList.remove('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
-                label.classList.add('border-gray-200', 'dark:border-gray-700');
-                icon.classList.remove('text-primary-600', 'dark:text-primary-400');
-                icon.classList.add('text-gray-400');
-                text.classList.remove('text-primary-700', 'dark:text-primary-300', 'font-medium');
-                text.classList.add('text-gray-600', 'dark:text-gray-400');
-            }
-        });
-    });
-});
-</script>
-{% endblock %}

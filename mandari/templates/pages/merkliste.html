@@ -3,7 +3,7 @@
 {% block title %}Merkliste{% endblock %}
 
 {% block content %}
-<div x-data="merklisteController()">
+<div x-data="merklisteController" data-entities-url="{% url 'insight_core:insight:bookmark_entities' %}">
     <div class="mb-6">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Merkliste</h1>
         <p class="text-gray-500 dark:text-gray-400 mt-1">Deine gespeicherten Vorgänge, Sitzungen, Gremien und Personen.</p>
@@ -154,25 +154,3 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script nonce="{{ csp_nonce }}">
-function merklisteController() {
-    return {
-        _loadedTypes: {},
-        loadEntities(type, container) {
-            if (!container) return;
-            const ids = Alpine.store('bookmarks')._data[type];
-            if (!ids || ids.length === 0) { container.innerHTML = ''; return; }
-            const key = type + ':' + ids.sort().join(',');
-            if (this._loadedTypes[type] === key) return;
-            this._loadedTypes[type] = key;
-            fetch('/insight/merkliste/api/entities/?type=' + type + '&ids=' + ids.join(','))
-                .then(r => r.text())
-                .then(html => {
-                    container.innerHTML = html;
-                });
-        }
-    };
-}
-</script>
-{% endblock %}

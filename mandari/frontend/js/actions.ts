@@ -12,8 +12,10 @@
  * - `data-filter-param="status"` auf Select: bei Änderung den Query-Parameter setzen.
  * - `data-href="URL"` auf Zeilen/Karten: Klick navigiert, außer auf innere Links,
  *   Buttons oder Formularfelder.
- * - `data-action="reload|back|print|select|click-target|clear-target|share"` auf Buttons
- *   (`data-target` als Selektor für click-/clear-target, `data-share-title` für share).
+ * - `data-action="reload|back|print|select|click-target|clear-target|share|confirm-submit"` auf Buttons
+ *   (`data-target` als Selektor für click-/clear-target und confirm-submit, `data-share-title` für share).
+ *   `confirm-submit` fragt mit dem Bestätigungsdialog (`data-confirm-title`, `data-confirm-message`,
+ *   `data-confirm-text`, `data-confirm-variant`) und sendet dann das Formular `data-target` ab.
  * - `data-post="URL"` auf Buttons: bestätigter POST per fetch (`data-confirm-title`,
  *   `data-confirm-message`, `data-confirm-text`, `data-confirm-variant`), danach Neuladen.
  * - `data-submit-to="/pfad/{feld}/"` auf GET-Formularen: Ziel aus Feldwerten bauen; ein
@@ -66,6 +68,17 @@ async function post(el: HTMLElement): Promise<void> {
   }
 }
 
+/** Bestätigungsdialog (`data-confirm-*`), danach das Zielformular absenden. */
+async function confirmSubmit(el: HTMLElement, form: HTMLFormElement): Promise<void> {
+  const ok = await confirmAction({
+    title: el.dataset.confirmTitle ?? 'Bestätigen',
+    message: el.dataset.confirmMessage ?? '',
+    confirmText: el.dataset.confirmText ?? 'OK',
+    variant: (el.dataset.confirmVariant as ConfirmVariant | undefined) ?? 'danger',
+  })
+  if (ok) form.submit()
+}
+
 function runAction(el: HTMLElement, event: Event): void {
   const target = el.dataset.target
   switch (el.dataset.action) {
@@ -93,6 +106,11 @@ function runAction(el: HTMLElement, event: Event): void {
       const daten = { title: el.dataset.shareTitle ?? document.title, url: window.location.href }
       if (typeof navigator.share === 'function') void navigator.share(daten)
       else void navigator.clipboard?.writeText(daten.url)
+      break
+    }
+    case 'confirm-submit': {
+      const form = target ? document.querySelector(target) : null
+      if (form instanceof HTMLFormElement) void confirmSubmit(el, form)
       break
     }
     default:

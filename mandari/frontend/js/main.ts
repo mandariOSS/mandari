@@ -9,9 +9,11 @@
 import collapse from '@alpinejs/collapse'
 import focus from '@alpinejs/focus'
 import Alpine from 'alpinejs'
+import { bodySelectApp, merklisteController, neighborhoodSubscription, questionForm } from '../alpine/insight'
 import { installActions } from './actions'
 import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
 import { showToast, toastManager } from './alpine/toast'
+import { installFormBehaviors } from './form-behaviors'
 import { setupHtmx } from './htmx-setup'
 import { installIconObserver, renderIcons } from './icons'
 import { initPaperMap } from './paper-map'
@@ -22,6 +24,8 @@ setupHtmx()
 
 // ---- Deklarative Aktionen (data-confirm, data-href, … statt Inline-Handlern, #172) ----
 installActions()
+// Formularhelfer (URL-Kürzel, abhängige Auswahl, Textbausteine, Fehlerbericht) statt Inline-Skripten
+installFormBehaviors()
 
 // ---- Globals für Templates ----------------------------------------------------
 window.Alpine = Alpine
@@ -37,6 +41,11 @@ Alpine.data('toastManager', toastManager)
 Alpine.data('confirmDialog', confirmDialog)
 
 if (document.documentElement.dataset.portal === 'insight') {
+  // Seitenkomponenten des Insight-Portals (vorher Inline-Skripte, #172)
+  Alpine.data('bodySelectApp', bodySelectApp)
+  Alpine.data('merklisteController', merklisteController)
+  Alpine.data('questionForm', questionForm)
+  Alpine.data('neighborhoodSubscription', neighborhoodSubscription)
   registerBookmarksStore(Alpine)
   // Vorgangsseite: Orte und amtliche Umringe (Leaflet als Vendor-Skript, läuft vor diesem Modul)
   initPaperMap()

@@ -5,28 +5,8 @@
 
 {% block meta_description %}W&auml;hle deine Kommune und entdecke Sitzungen, Vorg&auml;nge, Gremien und die Menschen hinter den Entscheidungen &ndash; transparent und verst&auml;ndlich.{% endblock %}
 
-{% block extra_head %}
-<style>
-    /* Ruhiger indigo Glow hinter dem Hero */
-    .select-hero-glow {
-        position: absolute;
-        inset: -120px 0 auto 0;
-        height: 380px;
-        pointer-events: none;
-        background:
-            radial-gradient(420px 220px at 50% 20%, rgba(79, 70, 229, .10), transparent 70%),
-            radial-gradient(680px 300px at 50% 0%, rgba(79, 70, 229, .05), transparent 75%);
-    }
-    .dark .select-hero-glow {
-        background:
-            radial-gradient(420px 220px at 50% 20%, rgba(129, 140, 248, .12), transparent 70%),
-            radial-gradient(680px 300px at 50% 0%, rgba(129, 140, 248, .06), transparent 75%);
-    }
-</style>
-{% endblock %}
-
 {% block content %}
-<div class="relative" x-data="bodySelectApp()">
+<div class="relative" x-data="bodySelectApp">
     <div class="select-hero-glow" aria-hidden="true"></div>
 
     {# ------------------------------------------------------------------ #}
@@ -197,35 +177,3 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script nonce="{{ csp_nonce }}">
-function bodySelectApp() {
-    return {
-        q: '',
-        visibleCount: {{ select_bodies|length|default:0 }},
-
-        init() {
-            this.$watch('q', () => this.updateCount());
-        },
-
-        norm(s) {
-            return (s || '').toLowerCase().trim();
-        },
-
-        matches(haystack) {
-            const q = this.norm(this.q);
-            if (!q) return true;
-            return q.split(/\s+/).every(term => haystack.includes(term));
-        },
-
-        updateCount() {
-            if (!this.$refs.grid) { this.visibleCount = 0; return; }
-            const cards = this.$refs.grid.querySelectorAll('[data-search]');
-            let n = 0;
-            cards.forEach(el => { if (this.matches(el.dataset.search)) n++; });
-            this.visibleCount = n;
-        },
-    }
-}
-</script>
-{% endblock %}

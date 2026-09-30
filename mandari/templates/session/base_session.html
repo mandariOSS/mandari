@@ -25,7 +25,7 @@
     {% load django_vite %}{% vite_hmr_client %}
     {% vite_asset 'frontend/js/main.ts' %}
 
-    <style>
+    <style nonce="{{ csp_nonce }}">
         [x-cloak] { display: none !important; }
         a, button, [role="button"], input, select, textarea, label, summary {
             -webkit-tap-highlight-color: transparent;

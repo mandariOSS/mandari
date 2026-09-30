@@ -2,7 +2,7 @@
 Karte „Aktive Sitzungen“ mit Beenden einzelner bzw. aller anderen Sitzungen (Bestätigung per confirmAction).
 Kontext: sessions (mit is_current)
 {% endcomment %}
-<c-ui.card title="Aktive Sitzungen" subtitle="Geräte, auf denen Sie angemeldet sind" padding="none" class="fade-up" style="animation-delay: 75ms">
+<c-ui.card title="Aktive Sitzungen" subtitle="Geräte, auf denen Sie angemeldet sind" padding="none" class="fade-up fade-delay-75">
     {% if sessions|length > 1 %}
     <c-slot name="actions">
         <form method="post" x-data

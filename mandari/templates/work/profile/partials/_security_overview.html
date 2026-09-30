@@ -45,7 +45,7 @@ Kontext: is_2fa_enabled, request.user, sessions
         </div>
     </c-ui.card>
 
-    <c-ui.card title="Sicherheitstipps" padding="none" class="fade-up" style="animation-delay: 50ms">
+    <c-ui.card title="Sicherheitstipps" padding="none" class="fade-up fade-delay-50">
         <div class="px-6 py-4 space-y-3">
             {% if not is_2fa_enabled %}
             <div class="flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg">
