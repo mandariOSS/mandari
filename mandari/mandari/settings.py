@@ -924,11 +924,6 @@ UNFOLD = {
                         "link": reverse_lazy("admin:work_supportticket_changelist"),
                         "badge": "apps.work.admin.support_ticket_badge",
                     },
-                    {
-                        "title": _("Knowledge Base"),
-                        "icon": "menu_book",
-                        "link": reverse_lazy("admin:work_knowledgebasearticle_changelist"),
-                    },
                 ],
             },
             {

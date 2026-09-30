@@ -47,7 +47,7 @@ import { letterheadForm } from '../alpine/letterhead-form'
 import { createMotion } from '../alpine/motion-create'
 import { colorPicker, logoPreview, partyManager, permissionsManager } from '../alpine/organization-settings'
 import { changeRequestForm, dataExport } from '../alpine/profile'
-import { feedbackWidget, kbSuggestions, ticketForm } from '../alpine/support'
+import { ticketForm } from '../alpine/support'
 import { assignmentHandler } from '../alpine/task-assignment'
 
 Alpine.data('colorPicker', colorPicker)
@@ -59,6 +59,4 @@ Alpine.data('createMotion', createMotion)
 Alpine.data('changeRequestForm', changeRequestForm)
 Alpine.data('dataExport', dataExport)
 Alpine.data('ticketForm', ticketForm)
-Alpine.data('kbSuggestions', kbSuggestions)
-Alpine.data('feedbackWidget', feedbackWidget)
 Alpine.data('assignmentHandler', assignmentHandler)

@@ -14,6 +14,7 @@ from django.contrib import messages
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
+from apps.common.hilfe import docs_url
 from apps.common.mixins import WorkViewMixin
 from apps.work.faction.models import FactionPublicApiAccess
 
@@ -41,7 +42,7 @@ class OrganizationApiSettingsView(WorkViewMixin, TemplateView):
                 "api_base_url": api_base_url,
                 "api_meetings_url": f"{api_base_url}sitzungen/",
                 "api_openapi_url": f"{site_url}/api/public/v1/openapi.json",
-                "docs_url": "https://mandari.de/docs/fraktions-api/",
+                "docs_url": docs_url("fraktions_api"),
             }
         )
         return context

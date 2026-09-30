@@ -6,9 +6,9 @@ Die Seiten hatten ihr JavaScript als `<script>` im Template. Es lebt jetzt als A
 (`Alpine.data`, frontend/alpine/) bzw. als deklaratives Verhalten (frontend/js/), Startwerte
 kommen per `json_script` oder Datenattribut. Geprüft wird je Seite: Komponente initialisiert,
 keine JavaScript-Ausnahme, keine Alpine-Fehler, keine Serverfehler – und die typische
-Bedienung. Drei Fälle waren vorher defekt und sind hier Regressionstests:
+Bedienung. Zwei Fälle waren vorher defekt und sind hier Regressionstests (die ebenfalls defekten
+Artikelvorschläge beim neuen Support-Ticket entfielen mit der Wissensdatenbank, #589):
 
-- Artikelvorschläge beim neuen Support-Ticket erschienen nie (Kopplung über Alpine-2-API `__x`).
 - Kontaktweg im Profil: Umschalten warf eine Ausnahme (Icons sind nach dem Rendern `<svg>`, das
   Skript suchte `<i>`); die Markierung blieb beim alten Eintrag.
 - Rollen-Rechte: „Alle“ einer Kategorie reagierte nicht auf einzelne Häkchen (keine reaktive
@@ -20,7 +20,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import pytest
 from django.utils import timezone
 from playwright.sync_api import expect
 
@@ -28,7 +27,6 @@ from apps.common.permissions import get_permissions_by_category
 from apps.common.tests.factories import RoleFactory
 from apps.work.motions.models import MotionTemplate, MotionType
 from apps.work.organization.models import DataExport
-from apps.work.support.models import ArticleFeedback, KnowledgeBaseArticle, KnowledgeBaseCategory
 from tests_e2e.conftest import ADMIN_PASSWORD, BrowserProblems, component_state, wait_for_component
 
 PRIMARY_500 = "rgb(99, 102, 241)"
@@ -222,30 +220,10 @@ class TestProfil:
 
 
 class TestSupportUndAufgaben:
-    @pytest.fixture
-    def artikel(self) -> KnowledgeBaseArticle:
-        kategorie = KnowledgeBaseCategory.objects.create(name="Konto", slug="konto")
-        return KnowledgeBaseArticle.objects.create(
-            category=kategorie,
-            title="Passwort zurücksetzen",
-            slug="passwort-zuruecksetzen",
-            excerpt="So setzen Sie Ihr Passwort zurück.",
-            content="Schritt für Schritt …",
-            is_published=True,
-        )
-
-    def test_ticket_artikelvorschlaege_und_anhaenge(
-        self, page: Any, goto: Any, login: Any, admin: Any, artikel: KnowledgeBaseArticle, problems: BrowserProblems
-    ) -> None:
+    def test_ticket_anhaenge(self, page: Any, goto: Any, login: Any, admin: Any, problems: BrowserProblems) -> None:
         slug = _anmelden(login, admin)
         goto(f"/work/{slug}/support/create/")
         wait_for_component(page, "ticketForm")
-        wait_for_component(page, "kbSuggestions")
-
-        page.fill("#subject", "Passwort")
-        vorschlaege = page.get_by_test_id("kb-vorschlaege")
-        expect(vorschlaege).to_be_visible()
-        expect(vorschlaege).to_contain_text("Passwort zurücksetzen")
 
         page.set_input_files(
             "#attachments", files=[{"name": "notiz.txt", "mimeType": "text/plain", "buffer": b"hallo"}]
@@ -254,17 +232,6 @@ class TestSupportUndAufgaben:
         expect(page.get_by_text("5 B", exact=True)).to_be_visible()
         assert page.locator("#attachments").evaluate("(el) => el.files.length") == 1
         problems.assert_clean("Neues Ticket")
-
-    def test_artikel_bewerten(
-        self, page: Any, goto: Any, login: Any, admin: Any, artikel: KnowledgeBaseArticle, problems: BrowserProblems
-    ) -> None:
-        slug = _anmelden(login, admin)
-        goto(f"/work/{slug}/support/kb/konto/{artikel.slug}/")
-        wait_for_component(page, "feedbackWidget")
-        page.get_by_role("button", name="Ja").click()
-        expect(page.get_by_text("Vielen Dank für Ihr Feedback!")).to_be_visible()
-        assert ArticleFeedback.objects.filter(article=artikel, is_helpful=True).count() == 1
-        problems.assert_clean("Hilfe-Artikel")
 
     def test_aufgabe_zuweisen_mit_rueckfrage(
         self, page: Any, goto: Any, login: Any, admin: Any, make_member: Any, problems: BrowserProblems

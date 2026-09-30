@@ -8,6 +8,7 @@
 {% endblock %}
 
 {% block header_actions %}
+<c-ui.help-link topic="dokumente" class="mr-2" />
 <c-ui.button variant="secondary" href="{% url 'work:document_trash' org_slug=organization.slug %}" icon="trash-2">Papierkorb</c-ui.button>
 <c-ui.button variant="secondary" href="{% url 'work:document_import' org_slug=organization.slug %}" icon="upload">PDF importieren</c-ui.button>
 <c-ui.button href="{% url 'work:document_create' org_slug=organization.slug %}{% if current_folder %}?ordner={{ current_folder.id }}{% endif %}" icon="plus" class="shadow-sm">Neues Dokument</c-ui.button>

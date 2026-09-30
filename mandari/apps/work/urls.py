@@ -762,31 +762,21 @@ urlpatterns = [
         support_views.SupportAttachmentDownloadView.as_view(),
         name="support_attachment_download",
     ),
-    # Knowledge Base
+    # Frühere Wissensdatenbank: Adressen leiten in die Anwenderdokumentation (Issue #589)
     path(
         "<slug:org_slug>/support/kb/",
-        support_views.KnowledgeBaseView.as_view(),
+        support_views.KnowledgeBaseRedirectView.as_view(),
         name="knowledge_base",
     ),
     path(
-        "<slug:org_slug>/support/kb/search/",
-        support_views.ArticleSearchAPIView.as_view(),
-        name="kb_search",
-    ),
-    path(
         "<slug:org_slug>/support/kb/<slug:category_slug>/",
-        support_views.KnowledgeBaseCategoryView.as_view(),
+        support_views.KnowledgeBaseRedirectView.as_view(),
         name="kb_category",
     ),
     path(
         "<slug:org_slug>/support/kb/<slug:category_slug>/<slug:article_slug>/",
-        support_views.KnowledgeBaseArticleView.as_view(),
+        support_views.KnowledgeBaseRedirectView.as_view(),
         name="kb_article",
-    ),
-    path(
-        "<slug:org_slug>/support/kb/article/<uuid:article_id>/feedback/",
-        support_views.ArticleFeedbackView.as_view(),
-        name="kb_article_feedback",
     ),
     # Notifications
     path(
