@@ -10,6 +10,10 @@ Befehl, Quittung und Ergebnis eines Handlers (``docs/adr/20260929-befehle-synchr
 
 Quittungen enthalten nur Kennungen, Codes und Zeitpunkte, nie Inhalte; sie werden gespeichert und bei
 einer Wiederholung mit demselben Schlüssel unverändert zurückgegeben.
+
+Der Inhalt eines Befehls ist höchstens ``MAX_DEPTH`` Ebenen tief verschachtelt. Kopieren, Prüfen und
+kanonisches JSON arbeiten rekursiv; ein tiefer verschachtelter Inhalt endete sonst je nach Plattform
+als ``RecursionError`` an wechselnden Stellen.
 """
 
 from __future__ import annotations
@@ -29,6 +33,26 @@ _ENVELOPE_PROPERTIES = envelope_schema()["properties"]
 TENANT_REF_RE: Final = re.compile(_ENVELOPE_PROPERTIES["tenant_ref"]["pattern"])
 ACTOR_REF_RE: Final = re.compile(_ENVELOPE_PROPERTIES["actor_ref"]["anyOf"][0]["pattern"])
 MAX_REFERENCE_LENGTH: Final = 200
+#: Größte Verschachtelungstiefe des Inhalts (Objekte und Listen); Verträge sind weit flacher.
+MAX_DEPTH: Final = 64
+TOO_DEEP: Final = f"Der Inhalt ist zu tief verschachtelt (höchstens {MAX_DEPTH} Ebenen)."
+
+
+def exceeds_depth(value: object, limit: int = MAX_DEPTH) -> bool:
+    """Ist ``value`` tiefer als ``limit`` Ebenen verschachtelt? Ohne Rekursion, bricht früh ab."""
+    pending: list[tuple[object, int]] = [(value, 1)]
+    while pending:
+        node, depth = pending.pop()
+        if isinstance(node, Mapping):
+            children: list[object] = list(node.values())
+        elif isinstance(node, list | tuple):
+            children = list(node)
+        else:
+            continue
+        if depth > limit:
+            return True
+        pending.extend((child, depth + 1) for child in children)
+    return False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -48,6 +72,8 @@ class Command:
             raise ValueError("tenant_ref muss session:<uuid>, org:<uuid> oder source:<uuid> sein")
         if self.actor_ref is not None and not ACTOR_REF_RE.fullmatch(self.actor_ref):
             raise ValueError("actor_ref muss user:<uuid> oder system:<auftrag> sein")
+        if exceeds_depth(self.body):
+            raise ValueError(TOO_DEEP)
         object.__setattr__(self, "body", copy.deepcopy(dict(self.body)))
 
 

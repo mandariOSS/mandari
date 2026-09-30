@@ -142,6 +142,10 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
   rechnen, lehnt der Befehlsweg Inhalte ohne eindeutige kanonische Darstellung mit 422 ab:
   Ganzzahlen außerhalb von ±(2^53 − 1) (RFC 8785 rechnet mit Doubles; große Zahlen gehören als
   Zeichenkette in den Inhalt) und Zeichenketten mit einem einzelnen Surrogat.
+- **Verschachtelung:** Der Inhalt eines Befehls ist höchstens 64 Ebenen tief (Objekte und Listen).
+  Tiefere Inhalte lehnt der HTTP-Weg mit 400 ab, `Command` mit `ValueError`. Kopieren, Prüfen und
+  kanonisches JSON arbeiten rekursiv; ohne feste Grenze hinge es von Plattform und Python-Version
+  ab, an welcher Stelle ein tiefer Inhalt scheitert.
 - **Hashes sind keine Anonymisierung (offen, vor #540 ff. zu entscheiden).** Inhalts-Hash und Hash
   der Anfrage sind ungesalzene SHA-256-Werte und liegen bis zum Ablauf der Frist im
   Idempotenzspeicher. Bei `submission.submit` ist das gewollt: Der Hash ist der Nachweis für

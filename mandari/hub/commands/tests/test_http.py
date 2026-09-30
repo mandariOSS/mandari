@@ -24,6 +24,7 @@ from hub.commands.tests.hilfen import (
     json_body,
     register_mit_testvertraegen,
 )
+from hub.commands.types import MAX_DEPTH, TOO_DEEP
 
 pytestmark = [pytest.mark.django_db, pytest.mark.urls("hub.commands.tests.urls")]
 
@@ -140,15 +141,32 @@ def test_einzelnes_surrogat_im_json_ergibt_422(dispatcher: Dispatcher) -> None:
     assert BEFEHLE == []
 
 
-def test_zu_tief_verschachteltes_json_ergibt_400(dispatcher: Dispatcher) -> None:
-    tief = "[" * 100_000 + "]" * 100_000
-    response = Client().post(
+def _verschachtelt(ebenen: int) -> Any:
+    """Anfrage, deren Inhalt ``ebenen`` tief verschachtelt ist (das Objekt selbst ist die erste Ebene)."""
+    listen = ebenen - 1
+    return Client().post(
         URL,
-        data='{"title": ' + tief + "}",
+        data='{"document": "' + json_body()["document"] + '", "title": ' + "[" * listen + "]" * listen + "}",
         content_type="application/json",
         headers={"Authorization": f"Bearer {TOKEN}", "Idempotency-Key": "k"},
     )
-    _problem(response, 400, "ungueltiges-json")
+
+
+@pytest.mark.parametrize("ebenen", [65, 1_500, 100_000])
+def test_zu_tief_verschachteltes_json_ergibt_400(dispatcher: Dispatcher, ebenen: int) -> None:
+    """
+    Feste Grenze statt ``RecursionError``: Je nach Plattform liest der JSON-Leser 100 000 Ebenen noch
+    (dann scheiterte erst das Kopieren des Inhalts) oder gibt selbst auf. Beides ergibt dasselbe 400.
+    """
+    daten = _problem(_verschachtelt(ebenen), 400, "ungueltiges-json")
+    assert daten["detail"] == TOO_DEEP
+    assert BEFEHLE == []
+
+
+def test_verschachtelung_bis_zur_grenze_wird_geprueft(dispatcher: Dispatcher) -> None:
+    """64 Ebenen sind erlaubt; der Inhalt scheitert dann wie jeder andere am Vertrag (Titel ist keine Liste)."""
+    daten = _problem(_verschachtelt(MAX_DEPTH), 422, "validierung")
+    assert daten["errors"] == [{"pointer": "/title", "detail": "verletzt „type“"}]
 
 
 def test_anderes_format_415(dispatcher: Dispatcher) -> None:

@@ -19,6 +19,7 @@ from apps.events.models import IdempotencyKey
 from hub.commands import Command, CommandError, Dispatcher, HandlerResult, Receipt, command_handler, get_dispatcher
 from hub.commands.dispatcher import call_sites, error_types, scope, valid_idempotency_key
 from hub.commands.tests.hilfen import ACTOR, TENANT, json_body, protokolltext, register_mit_testvertraegen
+from hub.commands.types import MAX_DEPTH, exceeds_depth
 
 GEHEIM = "Erika Mustermann, Musterweg 1"
 
@@ -302,6 +303,31 @@ def test_gueltige_idempotenzschluessel(schluessel: object, gueltig: bool) -> Non
 def test_befehl_braucht_kennungen_wie_die_ereignishuelle(abweichung: dict[str, str]) -> None:
     with pytest.raises(ValueError):
         _befehl(**abweichung)
+
+
+@pytest.mark.parametrize(
+    ("ebenen", "zu_tief"),
+    [(1, False), (2, False), (MAX_DEPTH, False), (MAX_DEPTH + 1, True), (5_000, True)],
+)
+def test_inhalt_ist_hoechstens_64_ebenen_tief(ebenen: int, zu_tief: bool) -> None:
+    inhalt: Any = "blatt"
+    for nummer in range(ebenen - 1):
+        inhalt = [inhalt] if nummer % 2 else {"k": inhalt}
+    inhalt = {"title": inhalt}
+    assert exceeds_depth(inhalt) is zu_tief
+    if zu_tief:
+        with pytest.raises(ValueError, match="zu tief verschachtelt"):
+            _befehl(body=inhalt)
+    else:
+        assert _befehl(body=inhalt).body == inhalt
+
+
+def test_tiefe_zaehlt_den_tiefsten_zweig() -> None:
+    flach = {"a": [1, 2, {"b": "x"}], "c": {"d": {"e": [True, None]}}}
+    assert not exceeds_depth(flach, 4)
+    assert exceeds_depth(flach, 3)
+    assert not exceeds_depth("kein Behälter", 0)
+    assert exceeds_depth({}, 0)
 
 
 def test_befehl_kopiert_seinen_inhalt() -> None:

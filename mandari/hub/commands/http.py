@@ -7,7 +7,7 @@ HTTP-Weg für Befehle: ``POST …/<befehl>/v<version>`` (``docs/adr/20260929-bef
   gültige Anmeldung 401, ohne Berechtigung 403. Mandant und Auslöser stammen immer aus der Anmeldung;
   ein abweichender Header ``Mandari-Tenant`` ergibt 403.
 - Pflicht-Header ``Idempotency-Key`` (IETF-Entwurf, als String mit oder ohne Anführungszeichen),
-  sonst 400. Inhalt als JSON-Objekt.
+  sonst 400. Inhalt als JSON-Objekt, höchstens 64 Ebenen tief verschachtelt (sonst 400).
 - Erfolg: ``201`` mit der Quittung als JSON, bei Wiederholung dieselbe. Fehler:
   ``application/problem+json`` nach RFC 9457, gleich den Problemen des ``InProcessClient``.
 
@@ -35,7 +35,7 @@ from apps.common.observability import current_request_id
 
 from .dispatcher import KEY_MISSING, Dispatcher, get_dispatcher
 from .problems import CommandError, Problem
-from .types import ACTOR_REF_RE, TENANT_REF_RE, Command
+from .types import ACTOR_REF_RE, TENANT_REF_RE, TOO_DEEP, Command, exceeds_depth
 
 logger = logging.getLogger("hub.commands")
 
@@ -148,11 +148,15 @@ def _json_object(request: HttpRequest) -> dict[str, Any]:
         data = json.loads(request.body or b"null")
     except RequestDataTooBig:
         raise CommandError.of(413, "anfrage-zu-gross", "Der Inhalt ist zu groß.") from None
-    except (ValueError, UnicodeDecodeError, RecursionError):
-        # RecursionError: zu tief verschachtelt
+    except RecursionError:
+        # Ab welcher Tiefe der JSON-Leser aufgibt, hängt von Plattform und Python-Version ab.
+        raise CommandError.of(400, "ungueltiges-json", TOO_DEEP) from None
+    except (ValueError, UnicodeDecodeError):
         raise CommandError.of(400, "ungueltiges-json", "Der Inhalt ist kein gültiges JSON.") from None
     if not isinstance(data, dict):
         raise CommandError.of(400, "ungueltiges-json", "Der Inhalt muss ein JSON-Objekt sein.")
+    if exceeds_depth(data):
+        raise CommandError.of(400, "ungueltiges-json", TOO_DEEP)
     return data
 
 
