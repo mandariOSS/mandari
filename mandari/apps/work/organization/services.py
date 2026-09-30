@@ -233,9 +233,12 @@ def invite_member(organization: Organization, inviter: User, email: str, role_id
         if existing_membership:
             if existing_membership.is_active:
                 raise ServiceError(f"{email} ist bereits Mitglied dieser Organisation.", message_levels.WARNING)
+            variant = _access_variant(existing_membership)
             _restore_membership(organization, existing_membership, actor)
-            emails.send_access_granted(existing_membership, "reactivated")
-            return f"{email} wurde reaktiviert und per E-Mail informiert."
+            erledigt = "freigeschaltet" if variant == "approved" else "reaktiviert"
+            if _announce_access(existing_membership, variant, actor):
+                return f"{email} wurde {erledigt} und per E-Mail informiert."
+            return f"{email} wurde {erledigt}, die E-Mail konnte aber nicht versendet werden."
 
     if selectors.find_pending_invitation(organization, email):
         raise ServiceError(f"Eine Einladung für {email} ist bereits ausstehend.", message_levels.WARNING)
@@ -591,6 +594,17 @@ def _ensure_may_remove(organization: Organization, member: Membership, actor_use
         raise ServiceError("Administratoren können nur von Administratoren deaktiviert oder entfernt werden.")
 
 
+def _discard_open_invitations(organization: Organization, user: User) -> None:
+    """
+    Offene Einladungen an die Person und von ihr verfallen, sobald sie die Organisation verlässt –
+    einheitlich beim Deaktivieren, Entfernen und bei der Löschung durch die Person selbst.
+    """
+    UserInvitation.objects.filter(organization=organization, accepted_at__isnull=True).filter(
+        Q(email__iexact=user.email) | Q(invited_by=user)
+    ).delete()
+
+
+@transaction.atomic
 def deactivate_member(organization: Organization, member: Membership, actor_user: User) -> None:
     """Mitglied deaktivieren (Soft-Delete); Eigentümer und man selbst sind ausgenommen."""
     if member.user == organization.owner:
@@ -600,10 +614,7 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
     _ensure_may_remove(organization, member, actor_user)
     member.is_active = False
     member.save()
-    # Offene Einladungen an die Person und von ihr verfallen
-    UserInvitation.objects.filter(organization=organization, accepted_at__isnull=True).filter(
-        Q(email__iexact=member.user.email) | Q(invited_by=member.user)
-    ).delete()
+    _discard_open_invitations(organization, member.user)
 
 
 def _restore_membership(organization: Organization, member: Membership, actor: Membership | None) -> None:
@@ -620,13 +631,32 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     member.save()
 
 
-def reactivate_member(organization: Organization, member: Membership, actor: Membership) -> bool:
-    """Mitglied reaktivieren (:func:`_restore_membership`) und per E-Mail informieren; liefert, ob die Mail rausging."""
-    variant: emails.AccessVariant = "approved" if member.registration_requested_at else "reactivated"
-    _restore_membership(organization, member, actor)
+def _access_variant(member: Membership) -> emails.AccessVariant:
+    """Wird eine offene Registrierungsanfrage freigeschaltet oder eine deaktivierte Mitgliedschaft reaktiviert?"""
+    return "approved" if member.registration_requested_at else "reactivated"
+
+
+def _announce_access(member: Membership, variant: emails.AccessVariant, actor: Membership | None) -> bool:
+    """
+    Benachrichtigen, dass ein Zugang (wieder) aktiv ist – einziger Weg für Freischalten, Reaktivieren
+    und „Mitglied einladen“, damit dasselbe Ereignis überall dieselben Nachrichten auslöst.
+
+    Die Person erhält die Zugangs-Mail. Ist sie neu dabei (freigeschaltete Anfrage), erfahren es
+    auch die übrigen Freigebenden in der App. Liefert, ob die Mail rausging.
+    """
+    if variant == "approved":
+        _hub().notify_member_joined(member.organization, member, inviter=actor)
     return emails.send_access_granted(member, variant)
 
 
+def reactivate_member(organization: Organization, member: Membership, actor: Membership) -> bool:
+    """Mitglied reaktivieren (:func:`_restore_membership`) und benachrichtigen; liefert, ob die Mail rausging."""
+    variant = _access_variant(member)
+    _restore_membership(organization, member, actor)
+    return _announce_access(member, variant, actor)
+
+
+@transaction.atomic
 def remove_member(organization: Organization, member: Membership, actor_user: User) -> str:
     """
     Mitglied endgültig entfernen; liefert den Anzeigenamen für die Meldung.
@@ -641,7 +671,9 @@ def remove_member(organization: Organization, member: Membership, actor_user: Us
         raise ServiceError("Sie können sich nicht selbst entfernen.")
     _ensure_may_remove(organization, member, actor_user)
     name = display_name(member.user)
+    user = member.user
     member.delete()
+    _discard_open_invitations(organization, user)
     return name
 
 
@@ -785,12 +817,14 @@ def announce_self_registration(membership: Membership) -> None:
 
 
 def approve_registration(membership: Membership, actor: Membership | None = None) -> bool:
-    """Offene Registrierungsanfrage freischalten und die Person informieren; liefert, ob die Mail rausging."""
+    """
+    Offene Registrierungsanfrage freischalten und benachrichtigen (:func:`_announce_access`, wie beim
+    Reaktivieren); liefert, ob die Mail rausging.
+    """
     membership.is_active = True
     membership.registration_requested_at = None
     membership.save(update_fields=["is_active", "registration_requested_at", "updated_at"])
-    _hub().notify_member_joined(membership.organization, membership, inviter=actor)
-    return emails.send_access_granted(membership, "approved")
+    return _announce_access(membership, "approved", actor)
 
 
 def reject_registration(membership: Membership, reason: str = "") -> tuple[str, bool]:
@@ -1341,8 +1375,13 @@ def start_data_export(organization: Organization, membership: Membership, export
     return export
 
 
+@transaction.atomic
 def request_account_deletion(organization: Organization, membership: Membership, password: str) -> None:
-    """Mitgliedschaft deaktivieren (Soft-Delete) nach Passwortprüfung; Eigentümer müssen zuvor übertragen."""
+    """
+    Mitgliedschaft deaktivieren (Soft-Delete) nach Passwortprüfung; Eigentümer müssen zuvor übertragen.
+
+    Offene Einladungen an die Person und von ihr verfallen wie beim Deaktivieren durch die Verwaltung.
+    """
     user = membership.user
     if organization.owner == user:
         raise ServiceError(
@@ -1352,6 +1391,7 @@ def request_account_deletion(organization: Organization, membership: Membership,
         raise ServiceError("Falsches Passwort.")
     membership.is_active = False
     membership.save()
+    _discard_open_invitations(organization, user)
 
 
 def delete_export(export: DataExport) -> None:
