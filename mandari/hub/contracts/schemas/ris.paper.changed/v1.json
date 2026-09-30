@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.paper.changed:v1",
+  "title": "Vorlage geändert",
+  "description": "Eine Vorlage wurde geändert: Inhalt, Fassung oder Kennzeichen. Aggregat: Paper. changed nennt die geänderten Felder. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": [
+    "oeffentlich",
+    "nichtoeffentlich"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "paper",
+    "changed"
+  ],
+  "properties": {
+    "paper": {
+      "description": "Kanonische Kennung der Vorlage.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "changed": {
+      "description": "Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. name, paperType).",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    }
+  },
+  "examples": [
+    {
+      "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c",
+      "changed": [
+        "name",
+        "paperType"
+      ]
+    }
+  ]
+}

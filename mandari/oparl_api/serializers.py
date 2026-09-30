@@ -29,6 +29,11 @@ Bekannte Einschränkungen (v1, siehe docs/OPARL_API.md):
   statt Original-URLs durchzureichen.
 """
 
+from datetime import date
+
+from django.conf import settings
+
+from hub.ris.canonical import as_list, clean, iso, iso_date, iso_day, schema_type, tombstone
 from insight_core.models import (
     OParlAgendaItem,
     OParlConsultation,
@@ -36,21 +41,7 @@ from insight_core.models import (
     OParlMeeting,
 )
 
-from .utils import body_list_url, iso, iso_date, obj_url, schema_type, site_url, sub_list_url, system_url
-
-
-def _clean(data):
-    """Entfernt leere optionale Felder (None, leere Listen/Strings)."""
-    return {k: v for k, v in data.items() if v is not None and v != [] and v != ""}
-
-
-def _as_list(value):
-    """Hüllt Skalar-Werte in eine Liste (OParl erwartet z. B. email/phone als Array)."""
-    if value is None or value == "":
-        return None
-    if isinstance(value, list):
-        return value
-    return [value]
+from .utils import body_list_url, obj_url, organization_type, site_url, sub_list_url, system_url
 
 
 def _timestamps(obj):
@@ -69,6 +60,24 @@ def _location_ext(raw_json):
     if isinstance(location, str):
         return location
     return None
+
+
+def _file_day(file_obj):
+    """
+    ``File.date`` als Datum ``yyyy-mm-dd``: der Tag, den die Quelle nennt.
+
+    Nennt die Quelle ein reines Datum, gilt es unverändert. Nennt sie einen Zeitpunkt (oder fehlen die
+    Rohdaten), gilt der Tag des gespeicherten Zeitpunkts in der Zeitzone der Installation: Mitternacht
+    UTC – so speichert der Ingestor ein reines Datum – bleibt dort derselbe Tag, und ein Zeitpunkt mit
+    lokalem Versatz (``2026-03-05T00:00:00+01:00``) rutscht nicht auf den Vortag.
+    """
+    stated = (file_obj.raw_json or {}).get("date")
+    if isinstance(stated, str) and len(stated) == 10:
+        try:
+            return date.fromisoformat(stated).isoformat()
+        except ValueError:
+            pass
+    return iso_day(file_obj.file_date)
 
 
 def _file_ext(ref):
@@ -174,21 +183,23 @@ def serialize_tombstone(obj, kind):
     Pflichtfelder: id, type, created, modified, deleted — alle weiteren
     Attribute entfallen. ``modified`` entspricht dem Löschzeitpunkt.
     """
-    return {
-        "id": obj_url(kind, obj.id),
-        "type": schema_type(kind),
-        "created": iso(obj.oparl_created or obj.created_at),
-        "modified": iso(obj.oparl_modified or obj.deleted_at or obj.updated_at),
-        "deleted": True,
-    }
+    return tombstone(
+        obj_url(kind, obj.id),
+        kind,
+        obj.oparl_created or obj.created_at,
+        obj.oparl_modified or obj.deleted_at or obj.updated_at,
+    )
 
 
 def serialize_system():
-    return _clean(
+    return clean(
         {
             "id": system_url(),
             "type": schema_type("system"),
             "oparlVersion": "https://schema.oparl.org/1.1/",
+            # Übergreifende Lizenz nur, wenn der Betreiber eine festlegt (OPARL_LICENSE_URL); sonst gilt
+            # die Angabe der jeweiligen Kommune am Body
+            "license": getattr(settings, "OPARL_LICENSE_URL", "") or None,
             "body": body_list_url(),
             "name": "mandari — aggregierte Ratsinformationen",
             "contactEmail": "hello@mandari.de",
@@ -201,7 +212,7 @@ def serialize_system():
 
 def serialize_body(body, ctx=None):
     raw = body.raw_json or {}
-    return _clean(
+    data = clean(
         {
             "id": obj_url("body", body.id),
             "type": schema_type("body"),
@@ -222,27 +233,32 @@ def serialize_body(body, ctx=None):
             "person": sub_list_url(body.id, "people"),
             "meeting": sub_list_url(body.id, "meetings"),
             "paper": sub_list_url(body.id, "papers"),
-            "legislativeTerm": [serialize_legislative_term(term) for term in body.legislative_terms.all()],
+            "locationList": sub_list_url(body.id, "locations"),
             "web": f"{site_url()}/insight/",
             **_timestamps(body),
             "mandari:originalId": body.external_id,
             "mandari:slug": body.slug,
             "mandari:displayName": body.get_display_name(),
+            # Abgekündigt: dieselbe URL steht im Standardfeld ``locationList``
             "mandari:locationList": sub_list_url(body.id, "locations"),
         }
     )
+    # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)
+    data["legislativeTerm"] = [serialize_legislative_term(term) for term in body.legislative_terms.all()]
+    return data
 
 
 def serialize_organization(organization, ctx=None):
     raw = organization.raw_json or {}
-    return _clean(
+    kind = organization_type(organization.organization_type)
+    return clean(
         {
             "id": obj_url("organization", organization.id),
             "type": schema_type("organization"),
             "body": obj_url("body", organization.body_id),
             "name": organization.name,
             "shortName": organization.short_name,
-            "organizationType": organization.organization_type,
+            "organizationType": kind,
             "classification": organization.classification,
             "post": raw.get("post"),
             "startDate": iso_date(organization.start_date),
@@ -252,13 +268,17 @@ def serialize_organization(organization, ctx=None):
             "web": f"{site_url()}/insight/gremien/{organization.id}/",
             **_timestamps(organization),
             "mandari:originalId": organization.external_id,
+            # Angabe der Quelle, wenn sie keiner der Werte der Spezifikation ist
+            "mandari:originalOrganizationType": organization.organization_type
+            if organization.organization_type != kind
+            else None,
         }
     )
 
 
 def serialize_person(person, ctx=None):
     raw = person.raw_json or {}
-    return _clean(
+    return clean(
         {
             "id": obj_url("person", person.id),
             "type": schema_type("person"),
@@ -268,11 +288,11 @@ def serialize_person(person, ctx=None):
             "givenName": person.given_name,
             "formOfAddress": raw.get("formOfAddress"),
             "affix": raw.get("affix"),
-            "title": _as_list(raw.get("title") or person.title),
+            "title": as_list(raw.get("title") or person.title),
             "gender": person.gender,
-            "email": _as_list(raw.get("email") or person.email),
-            "phone": _as_list(raw.get("phone") or person.phone),
-            "status": _as_list(raw.get("status")),
+            "email": as_list(raw.get("email") or person.email),
+            "phone": as_list(raw.get("phone") or person.phone),
+            "status": as_list(raw.get("status")),
             "life": raw.get("life"),
             "lifeSource": raw.get("lifeSource"),
             # OParl 1.1 bettet Memberships in Person ein
@@ -285,7 +305,7 @@ def serialize_person(person, ctx=None):
 
 
 def serialize_membership(membership, ctx=None):
-    return _clean(
+    return clean(
         {
             "id": obj_url("membership", membership.id),
             "type": schema_type("membership"),
@@ -313,8 +333,9 @@ def serialize_meeting(meeting, ctx):
     auxiliary = [f for f in files if f.pk not in special]
 
     location = ctx.location_by_ext.get(_location_ext(raw))
+    location_data = serialize_location(location) if location else serialize_meeting_location(meeting)
 
-    return _clean(
+    return clean(
         {
             "id": obj_url("meeting", meeting.id),
             "type": schema_type("meeting"),
@@ -323,7 +344,7 @@ def serialize_meeting(meeting, ctx):
             "cancelled": meeting.cancelled,
             "start": iso(meeting.start),
             "end": iso(meeting.end),
-            "location": serialize_location(location) if location else None,
+            "location": location_data,
             "organization": [obj_url("organization", org.id) for org in meeting.organizations.all()],
             "invitation": serialize_file(invitation) if invitation else None,
             "resultsProtocol": serialize_file(results_protocol) if results_protocol else None,
@@ -334,6 +355,7 @@ def serialize_meeting(meeting, ctx):
             "web": f"{site_url()}/insight/termine/{meeting.id}/",
             **_timestamps(meeting),
             "mandari:originalId": meeting.external_id,
+            # Abgekündigt: Der Ort steht als Location-Objekt in ``location``
             "mandari:locationName": meeting.location_name if not location else None,
             "mandari:locationAddress": meeting.location_address if not location else None,
         }
@@ -343,7 +365,7 @@ def serialize_meeting(meeting, ctx):
 def serialize_agenda_item(item, ctx):
     consultation_ids = ctx.consultations_by_agenda_ext.get(item.external_id, [])
     raw = item.raw_json or {}
-    return _clean(
+    return clean(
         {
             "id": obj_url("agendaitem", item.id),
             "type": schema_type("agendaitem"),
@@ -372,7 +394,7 @@ def serialize_paper(paper, ctx):
     main_file = files_by_ext.get(_file_ext(raw.get("mainFile")))
     auxiliary = [f for f in files if main_file is None or f.pk != main_file.pk]
 
-    return _clean(
+    return clean(
         {
             "id": obj_url("paper", paper.id),
             "type": schema_type("paper"),
@@ -396,7 +418,7 @@ def serialize_paper(paper, ctx):
 def serialize_consultation(consultation, ctx):
     meeting_id = ctx.meeting_by_ext.get(consultation.meeting_external_id)
     agenda_item_id = ctx.agenda_item_by_ext.get(consultation.agenda_item_external_id)
-    return _clean(
+    return clean(
         {
             "id": obj_url("consultation", consultation.id),
             "type": schema_type("consultation"),
@@ -413,7 +435,7 @@ def serialize_consultation(consultation, ctx):
 
 def serialize_file(file_obj, ctx=None, include_text=False):
     proxy_url = f"{site_url()}/insight/dokumente/{file_obj.id}/preview/"
-    return _clean(
+    return clean(
         {
             "id": obj_url("file", file_obj.id),
             "type": schema_type("file"),
@@ -421,7 +443,8 @@ def serialize_file(file_obj, ctx=None, include_text=False):
             "fileName": file_obj.file_name,
             "mimeType": file_obj.mime_type,
             "size": file_obj.size,
-            "date": iso(file_obj.file_date),
+            # OParl 1.1: Datum (yyyy-mm-dd), kein Zeitpunkt
+            "date": _file_day(file_obj),
             # Dateien werden über unseren Proxy ausgeliefert (DSGVO-konform,
             # stabil auch wenn der Quellserver offline ist)
             "accessUrl": proxy_url,
@@ -439,7 +462,7 @@ def serialize_file(file_obj, ctx=None, include_text=False):
 
 
 def serialize_location(location, ctx=None):
-    return _clean(
+    return clean(
         {
             "id": obj_url("location", location.id),
             "type": schema_type("location"),
@@ -456,8 +479,30 @@ def serialize_location(location, ctx=None):
     )
 
 
+def serialize_meeting_location(meeting, ctx=None):
+    """
+    Sitzungsort als Location-Objekt, wenn die Quelle nur Text geliefert hat (kein eigenes Location-Objekt).
+
+    Das Objekt gehört zur Sitzung und trägt deren Kennung: ``…/location/<Kennung der Sitzung>``.
+    ``None`` ohne Ortsangabe.
+    """
+    parts = [part for part in (meeting.location_name, meeting.location_address) if part]
+    if not parts:
+        return None
+    return clean(
+        {
+            "id": obj_url("location", meeting.id),
+            "type": schema_type("location"),
+            "description": ", ".join(parts),
+            "bodies": [obj_url("body", meeting.body_id)] if meeting.body_id else None,
+            "meetings": [obj_url("meeting", meeting.id)],
+            **_timestamps(meeting),
+        }
+    )
+
+
 def serialize_legislative_term(term, ctx=None):
-    return _clean(
+    return clean(
         {
             "id": obj_url("legislativeterm", term.id),
             "type": schema_type("legislativeterm"),

@@ -11,6 +11,8 @@ Tabellen der Ereignistechnik (``docs/adr/20260929-ereignistechnik-postgres.md``)
 - ``Lease`` (``events_lease``): Leader-Rollen (Sequenzierer, Zeitpläne) ohne sitzungsgebundene
   Sperren, damit ein Verbindungspooler im Transaktionsmodus möglich bleibt.
 - ``ScheduleState`` (``events_schedule``): zuletzt geplanter Termin je Zeitplan.
+- ``IdempotencyKey`` (``events_idempotency``): Idempotenzschlüssel mit Hash der Anfrage und
+  gespeicherter Antwort, z. B. für Befehle (``apps.events.idempotency``).
 
 Spaltenstandards liegen in der Datenbank (``db_default``), weil auch der Ingestor ohne Django in
 das Journal schreibt. Auf PostgreSQL kommen die Sequenz ``events_seq`` und der Weckruf-Trigger
@@ -267,3 +269,33 @@ class ScheduleState(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.last_slot:%Y-%m-%d %H:%M})"
+
+
+class IdempotencyKey(models.Model):
+    """
+    Idempotenzschlüssel mit Hash der Anfrage und gespeicherter Antwort (``apps.events.idempotency``).
+
+    Befehle (``docs/adr/20260929-befehle-synchron.md``) belegen den Schlüssel in derselben Transaktion,
+    in der der Eigentümer die Fachdaten schreibt. Eine Wiederholung mit gleichem Schlüssel und gleicher
+    Anfrage erhält die gespeicherte Antwort. ``response`` enthält nur Kennungen und Codes, nie Inhalte.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    scope = models.TextField("Bereich", help_text="Mandant und Auslöser, z. B. session:<uuid> user:<uuid>")
+    key = models.TextField("Schlüssel")
+    label = models.TextField(
+        "Art", blank=True, default="", help_text="z. B. Name des Befehls, für Betrieb und Auswertung"
+    )
+    request_hash = models.CharField("Hash der Anfrage", max_length=64)
+    response = models.JSONField("Antwort", default=dict, help_text="nur Kennungen und Codes, nie Inhalte")
+    created_at = models.DateTimeField("angelegt am", db_default=Now(), editable=False)
+
+    class Meta:
+        db_table = "events_idempotency"
+        verbose_name = "Idempotenzschlüssel"
+        verbose_name_plural = "Idempotenzschlüssel"
+        constraints = [models.UniqueConstraint(fields=["scope", "key"], name="events_idempotency_scope_key")]
+        indexes = [models.Index(fields=["created_at"], name="events_idempotency_created")]
+
+    def __str__(self) -> str:
+        return f"{self.label or 'Idempotenzschlüssel'} ({self.scope})"

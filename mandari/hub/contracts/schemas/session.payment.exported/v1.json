@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:session.payment.exported:v1",
+  "title": "Zahlungsdatei erzeugt",
+  "description": "Für genehmigte Positionen wurde eine Zahlungsdatei (SEPA) erzeugt. Aggregat: Export. Beträge, Namen und Bankdaten stehen nie im Ereignis.",
+  "x-kind": "event",
+  "x-owner": "apps.session",
+  "x-visibility": "personenbezogen",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reference",
+    "kind",
+    "allowances"
+  ],
+  "properties": {
+    "reference": {
+      "description": "Export-Referenz, z. B. SG-2026-0003.",
+      "type": "string",
+      "pattern": "^SG-[0-9]{4}-[0-9]{4,6}$"
+    },
+    "kind": {
+      "description": "sitzungsgeld oder pauschale.",
+      "type": "string",
+      "enum": [
+        "sitzungsgeld",
+        "pauschale"
+      ]
+    },
+    "allowances": {
+      "description": "Exportierte Abrechnungspositionen.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "uniqueItems": true,
+      "maxItems": 10000
+    }
+  },
+  "examples": [
+    {
+      "reference": "SG-2026-0003",
+      "kind": "sitzungsgeld",
+      "allowances": [
+        "a9b8c7d6-e5f4-4a3b-9c2d-1e0f9a8b7c6d",
+        "b0c9d8e7-f6a5-4b4c-8d3e-2f1a0b9c8d7e"
+      ]
+    }
+  ]
+}

@@ -23,14 +23,13 @@ Performance:
 - Leichtes Rate-Limit je IP (Standard 120 req/min) gegen Scraper-Exzesse.
 """
 
-from urllib.parse import urlencode
-
 from django.conf import settings
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Prefetch
 from django.db.models.functions import Coalesce
 
+from hub.ris import selectors as ris
 from insight_core import publication
 from insight_core.models import (
     OParlAgendaItem,
@@ -48,13 +47,15 @@ from insight_core.models import (
 
 from . import serializers as s
 from .utils import (
-    OParlBadRequestError,
     api_base,
     body_list_url,
     error_response,
     json_response,
+    list_envelope,
     obj_url,
     oparl_endpoint,
+    page_number,
+    page_size,
     parse_client_datetime,
     sub_list_url,
     system_url,
@@ -168,17 +169,6 @@ OBJECT_TYPES = {
 # =============================================================================
 
 
-def _page_number(request):
-    raw = request.GET.get("page", "1")
-    try:
-        number = int(raw)
-    except ValueError:
-        raise OParlBadRequestError(f"Parameter 'page': '{raw}' ist keine gültige Seitennummer.") from None
-    if number < 1:
-        raise OParlBadRequestError("Parameter 'page': Seitennummern beginnen bei 1.")
-    return number
-
-
 def _paginated_response(request, base_url, queryset, serializer, ctx_factory, kind):
     """Baut den OParl-Listen-Envelope (data/pagination/links) mit Link-Header.
 
@@ -192,51 +182,24 @@ def _paginated_response(request, base_url, queryset, serializer, ctx_factory, ki
         queryset = queryset.filter(**{FILTER_LOOKUPS[name]: parse_client_datetime(value, name)})
     if "modified_since" not in filters:
         queryset = queryset.filter(deleted=False)
-    page_number = _page_number(request)
+    number = page_number(request)
 
     # Ungefilterte Listen-Seiten 60 s cachen (inkl. Link-Header)
     cache_seconds = getattr(settings, "OPARL_API_CACHE_SECONDS", 60)
-    cache_key = f"oparl_api:list:{base_url}:p{page_number}" if not filters and cache_seconds else None
+    cache_key = f"oparl_api:list:{base_url}:p{number}" if not filters and cache_seconds else None
     if cache_key:
         cached = cache.get(cache_key)
         if cached is not None:
             return json_response(cached["envelope"], headers=cached["headers"])
 
-    page_size = getattr(settings, "OPARL_API_PAGE_SIZE", 100)
-    paginator = Paginator(queryset, page_size)
-    if page_number > paginator.num_pages:
-        return error_response(404, f"Seite {page_number} existiert nicht (letzte Seite: {paginator.num_pages}).")
-    page = paginator.page(page_number)
+    paginator = Paginator(queryset, page_size())
+    if number > paginator.num_pages:
+        return error_response(404, f"Seite {number} existiert nicht (letzte Seite: {paginator.num_pages}).")
+    page = paginator.page(number)
     objects = list(page.object_list)
     ctx = ctx_factory([obj for obj in objects if not obj.deleted])
     data = [s.serialize_tombstone(obj, kind) if obj.deleted else serializer(obj, ctx) for obj in objects]
-
-    def page_link(number):
-        params = dict(filters)
-        if number > 1:
-            params["page"] = number
-        return f"{base_url}?{urlencode(params)}" if params else base_url
-
-    links = {"first": page_link(1), "self": page_link(page_number)}
-    if page.has_previous():
-        links["prev"] = page_link(page_number - 1)
-    if page.has_next():
-        links["next"] = page_link(page_number + 1)
-    links["last"] = page_link(paginator.num_pages)
-
-    envelope = {
-        "data": data,
-        "pagination": {
-            "totalElements": paginator.count,
-            "elementsPerPage": page_size,
-            "currentPage": page_number,
-            "totalPages": paginator.num_pages,
-        },
-        "links": links,
-    }
-    headers = {
-        "Link": ", ".join(f'<{url}>; rel="{rel}"' for rel, url in links.items() if rel != "self"),
-    }
+    envelope, headers = list_envelope(base_url, filters, paginator, page, data)
     if cache_key:
         cache.set(cache_key, {"envelope": envelope, "headers": headers}, cache_seconds)
     return json_response(envelope, headers=headers)
@@ -307,11 +270,30 @@ def body_sub_list(request, pk, segment):
     # Body-Existenz nur auf dem ungecachten Pfad prüfen
     has_filters = any(name in request.GET for name in FILTER_LOOKUPS)
     cache_seconds = getattr(settings, "OPARL_API_CACHE_SECONDS", 60)
-    cached_path = not has_filters and cache_seconds and cache.get(f"oparl_api:list:{base_url}:p{_page_number(request)}")
+    cached_path = not has_filters and cache_seconds and cache.get(f"oparl_api:list:{base_url}:p{page_number(request)}")
     if not cached_path and not OParlBody.objects.filter(pk=pk).exists():
         return error_response(404, "Kommune (Body) nicht gefunden.")
 
     return _paginated_response(request, base_url, queryset, serializer, ctx_factory, kind)
+
+
+def _meeting_location_response(pk):
+    """
+    Sitzungsort ohne eigenes Location-Objekt der Quelle: ``…/location/<Kennung der Sitzung>``
+    (``serializers.serialize_meeting_location``). Entfällt die Ortsangabe oder die Sitzung, bleibt die
+    Adresse als gekürztes Objekt mit ``"deleted": true`` abrufbar (OParl 1.1 §2.8).
+    """
+    meeting = ris.meeting_by_id(pk)
+    if meeting is None:
+        return error_response(404, f"{obj_url('location', pk)} nicht gefunden.")
+    if not meeting.deleted and publication.states():
+        paused = _paused_response(meeting.body_id)
+        if paused is not None:
+            return paused
+    data = None if meeting.deleted else s.serialize_meeting_location(meeting)
+    if data is None:
+        data = s.serialize_tombstone(meeting, "location")
+    return json_response(data)
 
 
 @oparl_endpoint
@@ -327,6 +309,8 @@ def object_view(request, kind, pk):
     try:
         obj = queryset.get(pk=pk)
     except model.DoesNotExist:
+        if kind == "location":
+            return _meeting_location_response(pk)
         return error_response(404, f"{obj_url(kind, pk)} nicht gefunden.")
     if obj.deleted:
         # OParl 1.1 §2.8: gelöschte Objekte bleiben unter ihrer URL abrufbar —

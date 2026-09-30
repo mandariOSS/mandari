@@ -554,6 +554,11 @@ urlpatterns = [
         name="oparl_access",
     ),
     path(
+        "<slug:tenant_slug>/settings/oparl-lizenz/",
+        views.OParlLicenseView.as_view(),
+        name="oparl_license",
+    ),
+    path(
         "<slug:tenant_slug>/settings/buergerportal-beenden/",
         views.PortalPublicationEndView.as_view(),
         name="portal_publication_end",

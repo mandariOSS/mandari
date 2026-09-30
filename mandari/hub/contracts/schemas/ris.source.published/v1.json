@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.source.published:v1",
+  "title": "Kommune im Bürgerportal veröffentlicht",
+  "description": "Eine Kommune wurde im Bürgerportal veröffentlicht oder ihre Veröffentlichung beendet. Aggregat: Body. end_mode sagt bei beendeter Veröffentlichung, was mit dem Bestand geschieht.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "body",
+    "published"
+  ],
+  "properties": {
+    "body": {
+      "description": "Kanonische Kennung der Kommune.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "published": {
+      "description": "true: veröffentlicht, false: Veröffentlichung beendet.",
+      "type": "boolean"
+    },
+    "end_mode": {
+      "description": "Bei beendeter Veröffentlichung: paused (vorübergehend), archived (als Archiv), withdrawn (dauerhaft zurückgenommen).",
+      "type": "string",
+      "enum": [
+        "paused",
+        "archived",
+        "withdrawn"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "body": "4d5e6f70-8192-5a3b-8c4d-5e6f708192a3",
+      "published": true
+    },
+    {
+      "body": "4d5e6f70-8192-5a3b-8c4d-5e6f708192a3",
+      "published": false,
+      "end_mode": "archived"
+    }
+  ]
+}

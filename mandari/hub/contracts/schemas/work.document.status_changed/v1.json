@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:work.document.status_changed:v1",
+  "title": "Dokumentstatus in Work geändert",
+  "description": "Der Status eines Dokuments (Antrag, Anfrage …) in Work hat sich geändert. Aggregat: Document.",
+  "x-kind": "event",
+  "x-owner": "apps.work",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "document",
+    "organization",
+    "status"
+  ],
+  "properties": {
+    "document": {
+      "description": "Kennung des Dokuments.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "organization": {
+      "description": "Organisation, der das Dokument gehört.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "description": "Neuer Status.",
+      "type": "string",
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "submitted",
+        "completed",
+        "rejected",
+        "archived",
+        "deleted",
+        "internal_review",
+        "external_review",
+        "at_admin",
+        "on_agenda",
+        "adopted",
+        "withdrawn"
+      ]
+    },
+    "previous_status": {
+      "description": "Status vor der Änderung.",
+      "type": "string",
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "submitted",
+        "completed",
+        "rejected",
+        "archived",
+        "deleted",
+        "internal_review",
+        "external_review",
+        "at_admin",
+        "on_agenda",
+        "adopted",
+        "withdrawn"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "document": "0f9e8d7c-6b5a-4938-a7b6-c5d4e3f2a1b0",
+      "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "status": "at_admin",
+      "previous_status": "submitted"
+    }
+  ]
+}

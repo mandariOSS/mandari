@@ -40,13 +40,10 @@ Mandari Insight ist eine Open-Source-Plattform für die Darstellung und Analyse 
 # Repository klonen
 cd mandari
 
-# Virtual Environment erstellen
-python -m venv .venv
+# Virtuelle Umgebung (.venv) mit den gesperrten Versionen aus uv.lock, samt Entwicklungswerkzeugen
+uv sync --extra dev
 source .venv/bin/activate  # Linux/macOS
 .venv\Scripts\activate     # Windows
-
-# Dependencies installieren
-pip install -e ".[dev]"
 
 # .env Datei erstellen
 cp ../.env.example ../.env

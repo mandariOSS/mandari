@@ -5,7 +5,7 @@ CI-Gate: Schema-Contract zwischen Django-Modellen und den SQLAlchemy-Tabellen de
     python scripts/check_schema_contract.py            # Exit 1 bei Fehlern
     python scripts/check_schema_contract.py --strict   # auch Warnungen sind Fehler
 
-Braucht die Django-Abhängigkeiten (mandari/requirements.lock) und ``sqlalchemy``; der Ingestor
+Braucht die Django-Abhängigkeiten (mandari/uv.lock) und ``sqlalchemy``; der Ingestor
 selbst muss nicht installiert sein, nur sein Quellbaum (``ingestor/``).
 Prüft außerdem, dass der Ingestor nur in die Elasticsearch-Indizes schreibt, die Django anlegt,
 und selbst keine Mappings definiert (Issue #215).

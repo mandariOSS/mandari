@@ -26,7 +26,7 @@ def ereignis_schema(name: str = "ris.paper.released", version: int = 1, /, **abw
         "required": ["paper", "changed"],
         "properties": {
             "paper": {"type": "string", "format": "uuid"},
-            "changed": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}},
+            "changed": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"}},
         },
         "examples": [{"paper": PAPER_ID, "changed": ["status"]}],
     }

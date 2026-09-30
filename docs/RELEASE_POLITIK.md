@@ -21,7 +21,9 @@ mandari folgt **Semantic Versioning 2.0** (`MAJOR.MINOR.PATCH`):
 
 Die Version steht an genau einer Stelle je Sprache (`mandari/pyproject.toml`,
 `mandari/package.json`) und wird von `scripts/check_version_consistency.py` gegen
-den Git-Tag geprüft. Container-Images tragen die Version als Tag (`v0.10.0`),
+den Git-Tag geprüft. `mandari/uv.lock` führt die Version des Projekts mit; nach dem
+Anheben in `pyproject.toml` deshalb `uv lock` im Ordner `mandari` ausführen (das
+Skript prüft auch das). Container-Images tragen die Version als Tag (`v0.10.0`),
 zusätzlich `latest` für das jüngste Release und `dev-<commit>` für Entwicklungsstände.
 Entwicklungsstände sind keine Releases und tragen keine Zusage.
 
