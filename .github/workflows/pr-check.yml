@@ -787,9 +787,10 @@ jobs:
   # Default-Setup abschalten, dann die Variable setzen. Kategorien wie beim Default-Setup
   # (/language:<sprache>), damit bestehende Meldungen weitergeführt werden.
   codeql:
-    # GitHub hängt die Sprache aus der Matrix selbst an ("CodeQL (python)"); ein Ausdruck im Namen
-    # bliebe beim übersprungenen Job unaufgelöst im Namen stehen.
-    name: CodeQL
+    # GitHub hängt die Sprache aus der Matrix selbst an ("CodeQL-Analyse (python)"); ein Ausdruck im
+    # Namen bliebe beim übersprungenen Job unaufgelöst stehen. Nicht "CodeQL" allein: So heißt schon
+    # der Ergebnis-Check von Code Scanning.
+    name: CodeQL-Analyse
     needs: changes
     if: needs.changes.outputs.codeql != '[]' && needs.changes.outputs.codeql != ''
     runs-on: ubuntu-latest
