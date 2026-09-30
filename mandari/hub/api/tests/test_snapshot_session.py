@@ -121,6 +121,7 @@ def test_snapshot_enthaelt_den_oeffentlichen_stand_des_mandanten(welt: dict[str,
     assert zeilen[1] == _json(f"{BASIS}body/")
     assert {objekt["id"]: objekt for objekt in zeilen[1:]} == _listen()
     assert len(zeilen) == 1 + 1 + 1 + 1 + 1 + 1  # Kopfzeile, Body, Gremium, Person, Sitzung, Vorlage
+    assert zeilen[0]["objects"] == len(zeilen) - 1
     for objekt in zeilen[1:]:
         assert pruefe(objekt, objekt["type"].rsplit("/", 1)[1]) == []
     # Tagesordnung und Mitgliedschaften stehen eingebettet, wie in den Listen

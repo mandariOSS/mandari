@@ -199,6 +199,8 @@ def snapshot_pruefung(body: dict[str, Any], adresse: str | None) -> list[str]:
     if not zeilen or "snapshot_cursor" not in zeilen[0]:
         return [f"Snapshot {adresse}: Die erste Zeile nennt keinen snapshot_cursor."]
     probleme = []
+    if zeilen[0].get("objects") != len(zeilen) - 1:
+        probleme.append(f"Snapshot {adresse}: Die erste Zeile nennt nicht die Zahl der folgenden Zeilen (objects).")
     if len(zeilen) < 2 or zeilen[1].get("id") != body.get("id"):
         probleme.append(f"Snapshot {adresse}: Nach der ersten Zeile folgt nicht der Body.")
     for objekt in zeilen[1:]:

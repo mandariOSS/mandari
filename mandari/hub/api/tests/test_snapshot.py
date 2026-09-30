@@ -147,7 +147,9 @@ def test_snapshot_ist_ndjson_mit_dem_cursor_in_der_ersten_zeile(welt: dict[str, 
     assert antwort["Access-Control-Allow-Origin"] == "*"
     assert "Snapshot-Cursor" in antwort["Access-Control-Expose-Headers"]
     kopf = zeilen[0]
-    assert set(kopf) == {"snapshot_cursor", "body", "changes", "created"}
+    assert set(kopf) == {"snapshot_cursor", "body", "changes", "created", "objects"}
+    # Wie viele Zeilen folgen: Ein abgebrochener Abruf fällt auch ohne Content-Length auf (Kompression)
+    assert kopf["objects"] == len(zeilen) - 1 > 1
     assert kopf["snapshot_cursor"] == antwort["Snapshot-Cursor"]
     assert kopf["body"] == f"{API}/body/{welt['body'].pk}"
     assert kopf["changes"] == f"{API}/body/{welt['body'].pk}/changes?after={kopf['snapshot_cursor']}"
@@ -393,13 +395,18 @@ def test_head_nennt_den_cursor_ohne_den_bestand_zu_lesen(welt: dict[str, Any], m
     assert antwort["Content-Type"] == "application/x-ndjson; charset=utf-8"
 
 
+def _von(adresse: str) -> Client:
+    """Ein Abnehmer mit eigener Client-Adresse."""
+    return Client(REMOTE_ADDR=adresse)
+
+
 def test_nur_wenige_snapshots_entstehen_gleichzeitig(welt: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     lesen = snapshot.objects
     waehrenddessen: list[Any] = []
 
     def lesen_und_zweite_anfrage(abzug: snapshot.Snapshot) -> Iterator[dict[str, Any]]:
         # Während dieser Snapshot entsteht, fragt ein zweiter Abnehmer an
-        waehrenddessen.append(Client().get(_pfad(welt)))
+        waehrenddessen.append(_von("192.0.2.2").get(_pfad(welt)))
         yield from lesen(abzug)
 
     with override_settings(OPARL_SNAPSHOT_PARALLEL=1):
@@ -413,7 +420,49 @@ def test_nur_wenige_snapshots_entstehen_gleichzeitig(welt: dict[str, Any], monke
         assert abgewiesen["Retry-After"] == "30" and abgewiesen["Cache-Control"] == "no-store"
         assert "error" in abgewiesen.json()
         # Danach ist der Platz wieder frei
-        assert Client().get(_pfad(welt)).status_code == 200
+        assert _von("192.0.2.2").get(_pfad(welt)).status_code == 200
+
+
+def test_je_client_adresse_entsteht_hoechstens_ein_snapshot(
+    welt: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ein Client belegt nicht alle Plätze – auch nicht mit Abrufen, die er gleich wieder abbricht."""
+    lesen = snapshot.objects
+    waehrenddessen: dict[str, Any] = {}
+
+    def lesen_und_weitere_anfragen(abzug: snapshot.Snapshot) -> Iterator[dict[str, Any]]:
+        waehrenddessen["selbst"] = Client().get(_pfad(welt))
+        waehrenddessen["andere"] = _von("192.0.2.3").get(_pfad(welt))
+        yield from lesen(abzug)
+
+    monkeypatch.setattr(snapshot, "objects", lesen_und_weitere_anfragen)
+    erste, _ = _laden(_pfad(welt))
+    monkeypatch.setattr(snapshot, "objects", lesen)
+
+    assert erste.status_code == 200
+    assert waehrenddessen["selbst"].status_code == 429
+    assert waehrenddessen["selbst"]["Retry-After"] == "30" and "error" in waehrenddessen["selbst"].json()
+    # Ein anderer Abnehmer bekommt den zweiten Platz
+    assert waehrenddessen["andere"].status_code == 200
+    assert Client().get(_pfad(welt)).status_code == 200
+
+
+def test_verfallener_platz_gibt_nicht_den_eines_anderen_frei(welt: dict[str, Any]) -> None:
+    """Dauert ein Aufbau länger als die Gültigkeit seines Platzes, räumt er am Ende nur, was noch seins ist."""
+    with override_settings(OPARL_SNAPSHOT_PARALLEL=1):
+        langsam = snapshot._acquire("192.0.2.4")
+        assert isinstance(langsam, snapshot._Slots)
+        # Der Platz ist verfallen und neu vergeben
+        cache.delete_many(list(langsam.keys))
+        neu = snapshot._acquire("192.0.2.5")
+        assert isinstance(neu, snapshot._Slots)
+
+        snapshot._release(langsam)
+
+        assert [cache.get(schluessel) for schluessel in neu.keys] == [neu.token, neu.token]
+        assert _von("192.0.2.6").get(_pfad(welt)).status_code == 503
+        snapshot._release(neu)
+        assert _von("192.0.2.6").get(_pfad(welt)).status_code == 200
 
 
 def test_platz_wird_auch_nach_einem_fehler_frei(welt: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -463,7 +512,9 @@ def test_unter_asgi_wird_in_bloecken_uebertragen(welt: dict[str, Any], monkeypat
         return [block async for block in cast(Any, antwort).streaming_content]
 
     bloecke = async_to_sync(sammeln)()
-    assert len(bloecke) > 3 and all(len(block) <= 64 for block in bloecke)
+    # Die erste Zeile entsteht nach dem Bestand (sie nennt die Zahl der Objekte) und geht als eigener Block voraus
+    assert bloecke[0].endswith(b"\n") and b"snapshot_cursor" in bloecke[0]
+    assert len(bloecke) > 3 and all(len(block) <= 64 for block in bloecke[1:])
     zeilen = [json.loads(zeile) for zeile in b"".join(bloecke).decode("utf-8").splitlines()]
     assert zeilen[1:] == erwartet[1:]
     assert antwort["Content-Length"] == str(sum(len(block) for block in bloecke))
