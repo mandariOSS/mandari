@@ -62,6 +62,7 @@ jobs:
       templates: ${{ steps.ergebnis.outputs.templates }}
       frontend: ${{ steps.ergebnis.outputs.frontend }}
       test: ${{ steps.ergebnis.outputs.test }}
+      ereignisse: ${{ steps.ergebnis.outputs.ereignisse }}
       smoke: ${{ steps.ergebnis.outputs.smoke }}
       e2e: ${{ steps.ergebnis.outputs.e2e }}
       ingestor: ${{ steps.ergebnis.outputs.ingestor }}
@@ -122,6 +123,10 @@ jobs:
               - '!**/Dockerfile'
               - '!.dockerignore'
               - '!mandari/docker-entrypoint.sh'
+            ereignisse:
+              - 'mandari/apps/events/**'
+              - 'mandari/apps/common/metrics.py'
+              - 'mandari/mandari/settings*.py'
             smoke:
               - 'mandari/**'
               - 'shared/**'
@@ -238,7 +243,7 @@ jobs:
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           ergebnis() { if [ "$alle" = "true" ]; then echo true; else wert "$1"; fi; }
-          for bereich in qualitaet python vertrag templates frontend test smoke e2e ingestor audit docker; do
+          for bereich in qualitaet python vertrag templates frontend test ereignisse smoke e2e ingestor audit docker; do
             e=$(ergebnis "$bereich")
             echo "$bereich=$e" >> "$GITHUB_OUTPUT"
             echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
@@ -540,6 +545,99 @@ jobs:
           # Parallel auf allen Kernen (pytest-xdist; je Worker eine eigene Test-Datenbank), Tests einer
           # Datei bleiben auf einem Worker. --durations zeigt die langsamsten Tests für gezielte Arbeit.
           pytest -n auto --dist loadfile -q -rfE --durations=25 --cov=apps --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38 --ignore=tests_e2e
+
+  # ===========================================================================
+  # Ereignistechnik hinter PgBouncer (Transaktionsmodus), Issue #505
+  # ===========================================================================
+  # Die Anwendung spricht die Datenbank über PgBouncer an, der Weckruf per LISTEN geht über die
+  # Direktverbindung EVENTS_DB_DIRECT_URL. Läuft ohne pytest-xdist: Die Latenzmessung
+  # Commit → Sicht braucht einen Cluster ohne offene Transaktionen anderer Testprozesse.
+  # --reuse-db: Die Testdatenbank wird über PgBouncer angelegt; PgBouncer hält danach
+  # Serververbindungen offen, ein DROP DATABASE am Ende scheiterte daran.
+  events-pgbouncer:
+    name: Ereignistechnik hinter PgBouncer
+    needs: changes
+    if: needs.changes.outputs.ereignisse == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --tmpfs /var/lib/postgresql/data:rw
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      # wie deploy/roles/data.yml (Profil pgbouncer)
+      pgbouncer:
+        image: edoburu/pgbouncer:v1.23.1-p1
+        env:
+          DB_HOST: postgres
+          DB_PORT: '5432'
+          DB_USER: test
+          DB_PASSWORD: test
+          DB_NAME: '*'
+          AUTH_TYPE: scram-sha-256
+          POOL_MODE: transaction
+          MAX_CLIENT_CONN: '200'
+          DEFAULT_POOL_SIZE: '20'
+        ports:
+          - 6432:5432
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2-dev libpango1.0-dev libffi-dev shared-mime-info pkg-config
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install shared/
+          cd mandari
+          pip install -r requirements.lock
+          pip install pytest pytest-django factory-boy
+
+      - name: PgBouncer erreichbar
+        run: |
+          python - <<'EOF'
+          import time
+          import psycopg
+          for _ in range(30):
+              try:
+                  psycopg.connect("postgresql://test:test@localhost:6432/test", connect_timeout=3).close()
+                  break
+              except psycopg.OperationalError:
+                  time.sleep(2)
+          else:
+              raise SystemExit("PgBouncer nicht erreichbar")
+          EOF
+
+      - name: apps/events über PgBouncer, Weckruf über die Direktverbindung
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:6432/test
+          EVENTS_DB_DIRECT_URL: postgresql://test:test@localhost:5432/test
+          EVENTS_TEST_PGBOUNCER: '1'
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+          DEBUG: 'false'
+        run: cd mandari && pytest apps/events -q -rfEs --reuse-db -p no:cacheprovider
 
   # ===========================================================================
   # Smoke-Tests: eigener Job, läuft parallel zu pytest
@@ -858,6 +956,7 @@ jobs:
       - changes
       - qualitaet
       - test
+      - events-pgbouncer
       - smoke
       - e2e
       - ingestor-tests

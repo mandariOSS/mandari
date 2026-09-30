@@ -340,6 +340,13 @@ if DB_POOL_ENABLED and DATABASES["default"]["ENGINE"].endswith("postgresql"):
         "max_lifetime": float(os.environ.get("DB_POOL_MAX_LIFETIME", "1800")),
     }
 
+# Ereignistechnik (apps.events, Issue #505): Direktverbindung zu PostgreSQL für den Weckruf per
+# LISTEN. Nötig, wenn DATABASE_URL auf PgBouncer im Transaktionsmodus zeigt; dort kommen
+# Meldungen nicht an. Leer: die Verbindungsdaten von DATABASE_URL (genügt ohne Pooler). Ohne
+# funktionierenden Weckruf fragen Sequenzierer und Zustellung nur regelmäßig ab (höchstens
+# wenige Sekunden später).
+EVENTS_DB_DIRECT_URL = os.environ.get("EVENTS_DB_DIRECT_URL", "")
+
 
 # Cache - use Redis if available, fallback to local memory
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

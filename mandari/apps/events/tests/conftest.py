@@ -8,9 +8,25 @@ from typing import Any
 
 import psycopg
 import pytest
+from django.db import connection
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from apps.events import registry
 from apps.events.tests.hilfen import Sicht, direktverbindung, nur_postgres
+
+
+@pytest.fixture(autouse=True)
+def direktverbindung_zur_testdatenbank(settings: Any) -> None:
+    """``EVENTS_DB_DIRECT_URL`` nennt die Datenbank der Installation; Tests laufen in der Testdatenbank.
+
+    In der CI läuft ``apps/events`` zusätzlich hinter PgBouncer (``DATABASE_URL`` über den Pooler,
+    ``EVENTS_DB_DIRECT_URL`` direkt); Direktverbindungen der Tests gehen dann ebenfalls vorbei.
+    """
+    url = getattr(settings, "EVENTS_DB_DIRECT_URL", "")
+    if url and connection.vendor == "postgresql":
+        teile = conninfo_to_dict(url)
+        teile["dbname"] = connection.settings_dict["NAME"]
+        settings.EVENTS_DB_DIRECT_URL = make_conninfo("", **teile)
 
 
 @pytest.fixture

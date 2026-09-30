@@ -163,15 +163,18 @@ class Sequencer:
             leases.release(LEASE_NAME, self.holder)
             self.is_leader = False
 
-    def run(self, stop: threading.Event, interval: float = POLL_INTERVAL) -> None:
+    def run(self, stop: threading.Event, interval: float = POLL_INTERVAL, wake: threading.Event | None = None) -> None:
         """Dauerbetrieb bis ``stop`` gesetzt ist; ein laufender Lauf wird noch festgeschrieben.
 
         Fällt die Datenbank kurz aus, wird der Fehler protokolliert und nach ``interval`` erneut
-        versucht. Beim Ende wird die Lease freigegeben.
+        versucht. ``wake`` (Weckruf nach neuen Journalzeilen, ``apps.events.wakeup``) beendet die
+        Wartezeit vorzeitig. Beim Ende wird die Lease freigegeben.
         """
         require_postgresql()
         try:
             while not stop.is_set():
+                if wake is not None:
+                    wake.clear()  # vor dem Lauf, damit eine Meldung währenddessen nicht verloren geht
                 close_old_connections()
                 try:
                     self.drain()
@@ -179,7 +182,7 @@ class Sequencer:
                     logger.warning("Sequenzierer: Datenbankfehler, neuer Versuch folgt", exc_info=True)
                     self.is_leader = False
                     connection.close()
-                stop.wait(interval)
+                (stop if wake is None else wake).wait(interval)
         finally:
             try:
                 self.release()

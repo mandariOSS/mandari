@@ -20,6 +20,8 @@ Metriken der Ereignistechnik im Prometheus-Format (Registrierung in ``EventsConf
 - ``mandari_events_delivered_total{subscription}``: zugestellte Ereignisse je Abonnement.
 - ``mandari_events_delivery_failures_total{subscription}``: gescheiterte Zustellversuche.
 - ``mandari_events_dead_total{subscription}``: nach allen Versuchen aufgegebene Ereignisse.
+- ``mandari_events_listener_up``: 1, solange der Weckruf per ``LISTEN`` ankommt (Selbstprüfung),
+  sonst 0; dann tragen die Abfragen allein. Nur im Prozess des Sequenzierers bzw. der Zustellung.
 - ``mandari_events_parked{subscription,state}``: geparkte Ereignisse je Zustand (``wiederholen``,
   ``blockiert``, ``tot``), beim Abruf aus ``events_parked`` gezählt. Alarm bei ``tot`` > 0.
 
@@ -182,6 +184,28 @@ class ParkedCollector(MisstErstBeimAbruf):
         yield familie
 
 
+class ListenerCollector(MisstErstBeimAbruf):
+    """``mandari_events_listener_up``, nur in Prozessen mit Listener (sonst hieße 0 fälschlich „gestört“)."""
+
+    def __init__(self) -> None:
+        self.wert: float | None = None
+
+    def set(self, gesund: bool) -> None:
+        self.wert = 1.0 if gesund else 0.0
+
+    def collect(self) -> Iterator[Metric]:
+        if self.wert is None:
+            return
+        yield GaugeMetricFamily(
+            "mandari_events_listener_up",
+            "Weckruf per LISTEN kommt an (1) oder es tragen nur die Abfragen (0)",
+            value=self.wert,
+        )
+
+
+LISTENER_UP = ListenerCollector()
+
+
 def register() -> None:
     # ValueError: bereits registriert (z. B. erneutes ready() in Tests)
     for sammler in _COLLECTORS:
@@ -190,4 +214,4 @@ def register() -> None:
 
 
 _COLLECTOR = SequencerCollector()
-_COLLECTORS = (_COLLECTOR, ParkedCollector())
+_COLLECTORS = (_COLLECTOR, ParkedCollector(), LISTENER_UP)

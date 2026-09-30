@@ -125,6 +125,16 @@ kollidiert. Im Transaktionsmodus sind sitzungsgebundene Funktionen (z. B. `SET` 
 `worker.yml` **direkt** mit PostgreSQL (Port 5432); `DATA_PG_PORT` gilt für Anwendung,
 Website und Orchestrator.
 
+Auch `LISTEN` funktioniert im Transaktionsmodus nicht: Die Meldungen landen bei einer fremden
+Serververbindung. Die Ereignistechnik (Sequenzierer und Zustellung, `apps/events`) hört deshalb
+auf einer eigenen Direktverbindung, sobald `EVENTS_DB_DIRECT_URL` gesetzt ist, etwa
+`postgresql://mandari:…@<DATA_HOST>:5432/mandari`. Alles andere – auch die Leader-Leases – läuft
+weiter über `DATABASE_URL`: Leases sind Tabellenzeilen, die innerhalb einer Transaktion geprüft
+werden, sitzungsgebundene Sperren gibt es dort nicht. Fehlt die Einstellung hinter PgBouncer,
+erkennt der Listener das an seiner Selbstprüfung, protokolliert eine Warnung
+(`mandari_events_listener_up` = 0), und Sequenzierer und Zustellung fragen nur regelmäßig ab;
+Ereignisse kommen dann bis zu etwa drei Sekunden später an.
+
 ## Grenzen
 
 - Kein automatisches Failover: Fällt der Datenserver aus, stehen alle Rollen. Backups

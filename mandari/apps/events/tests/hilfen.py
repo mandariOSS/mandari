@@ -27,16 +27,14 @@ def nur_postgres() -> None:
 
 
 def direktverbindung(*, autocommit: bool = True) -> psycopg.Connection[Any]:
-    """Eigene Verbindung zur Testdatenbank an Django vorbei, z. B. für ``LISTEN`` oder parallele Transaktionen."""
-    einstellungen = connection.settings_dict
-    parameter = {
-        "dbname": einstellungen["NAME"],
-        "user": einstellungen.get("USER"),
-        "password": einstellungen.get("PASSWORD"),
-        "host": einstellungen.get("HOST"),
-        "port": einstellungen.get("PORT"),
-    }
-    return psycopg.connect(autocommit=autocommit, **{k: v for k, v in parameter.items() if v})
+    """Eigene Verbindung zur Testdatenbank an Django vorbei, z. B. für ``LISTEN`` oder parallele Transaktionen.
+
+    Hinter PgBouncer (``EVENTS_DB_DIRECT_URL`` gesetzt) auch am Pooler vorbei: ``LISTEN`` und die
+    Prozessnummer (``info.backend_pid``) gelten nur auf einer Direktverbindung.
+    """
+    from apps.events.wakeup import listen_conninfo
+
+    return psycopg.connect(listen_conninfo(), autocommit=autocommit)
 
 
 def ereignis_daten(**abweichend: Any) -> dict[str, Any]:

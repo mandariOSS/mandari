@@ -76,7 +76,7 @@ BACKOFF: tuple[timedelta, ...] = (
     timedelta(hours=3),
     timedelta(hours=6),
 )
-#: Abfrageabstand im Dauerbetrieb (Sekunden); der Weckruf per LISTEN folgt mit #505
+#: Abfrageabstand im Dauerbetrieb (Sekunden); dazwischen weckt der Weckruf per LISTEN (``apps.events.wakeup``)
 POLL_INTERVAL = 2.0
 #: Pause, wenn ein Ziel nicht erreichbar ist oder ein Lauf unerwartet scheitert: wächst bis zur Obergrenze
 PAUSE_MIN = 5.0
@@ -620,9 +620,15 @@ class SubscriptionLoop:
             self.is_leader = False
 
     def run(self, stop: threading.Event, wake: threading.Event | None = None, interval: float = POLL_INTERVAL) -> None:
-        """Dauerbetrieb bis ``stop``; ein laufender Batch wird noch festgeschrieben, dann die Lease freigegeben."""
+        """Dauerbetrieb bis ``stop``; ein laufender Batch wird noch festgeschrieben, dann die Lease freigegeben.
+
+        ``wake`` (vom Weckruf, ``apps.events.wakeup``) beendet die Wartezeit vorzeitig. Es wird vor dem
+        Zustellen zurückgesetzt, damit eine Meldung während des Zustellens nicht verloren geht.
+        """
         try:
             while not stop.is_set():
+                if wake is not None:
+                    wake.clear()
                 close_old_connections()  # eine im Warten veraltete Verbindung nicht weiterverwenden
                 try:
                     self.drain(stop)
@@ -636,11 +642,7 @@ class SubscriptionLoop:
                 # Verbindung vor dem Warten zurückgeben (mit Verbindungspool: an den Pool). So hängt die Zahl
                 # belegter Verbindungen an der gleichzeitigen Arbeit, nicht an der Zahl der Abonnements.
                 close_old_connections()
-                if wake is None:
-                    stop.wait(interval)
-                else:
-                    wake.wait(interval)
-                    wake.clear()
+                (stop if wake is None else wake).wait(interval)
         finally:
             try:
                 self.release()
@@ -678,7 +680,10 @@ class Dispatcher:
             ereignis.set()
 
     def run(self, stop: threading.Event, interval: float = POLL_INTERVAL) -> None:
-        """Dauerbetrieb bis ``stop``: je Abonnement ein Faden, danach werden alle Leases freigegeben."""
+        """Dauerbetrieb bis ``stop``: je Abonnement ein Faden, danach werden alle Leases freigegeben.
+
+        Den Weckruf verbindet der Aufrufer: ``start_listener({SEQUENCED_CHANNEL: [dispatcher.wake]}, stop)``.
+        """
         faeden = [
             threading.Thread(
                 target=loop.run, args=(stop, wake, interval), name=f"events-dispatch-{loop.spec.name}", daemon=True
