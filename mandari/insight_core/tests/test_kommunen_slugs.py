@@ -8,6 +8,7 @@ Body-Sitemap im Sitemap-Index. Der Sitemap-Index führt jede gelistete Kommune, 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db.models.fields.files import FieldFile
 from django.test import Client
 from django.urls import reverse
 
@@ -25,6 +27,7 @@ from apps.session.models import SessionTenant
 from insight_core.models import OParlBody, OParlSource
 
 pytestmark = pytest.mark.django_db
+CaptureCallbacks = Callable[..., Any]
 
 
 @pytest.fixture(autouse=True)
@@ -63,6 +66,14 @@ def _slugs(*angaben: str, **optionen: Any) -> str:
     out = StringIO()
     call_command("set_body_slugs", *angaben, stdout=out, **optionen)
     return out.getvalue()
+
+
+def _portal_cache_fuellen(slug: str, body: OParlBody) -> Client:
+    """Einstieg einmal aufrufen: Das Portal merkt sich die Zuordnung Slug → Kommune für fünf Minuten."""
+    client = Client()
+    assert client.get(f"/insight/k/{slug}/").status_code == 200
+    assert cache.get(f"insight_portal_slug:{slug}") == str(body.pk)
+    return client
 
 
 class TestBefehl:
@@ -154,10 +165,43 @@ class TestBefehl:
         assert muenster.slug == "muenster"
         assert Client().get("/insight/k/ms/").status_code == 404
 
+    def test_ersetzen_leert_den_portal_cache(
+        self, muenster: OParlBody, django_capture_on_commit_callbacks: CaptureCallbacks
+    ) -> None:
+        _slugs(f"{muenster.pk}=ms")
+        client = _portal_cache_fuellen("ms", muenster)
+
+        with django_capture_on_commit_callbacks(execute=True):
+            _slugs(f"{muenster.pk}=muenster", replace=True)
+
+        assert client.get("/insight/k/ms/").status_code == 404, "alter Slug führt nicht mehr zur Kommune"
+        assert client.get("/insight/k/muenster/").status_code == 200
+
     def test_slug_eines_session_mandanten_bleibt_dessen_portal(self, muenster: OParlBody) -> None:
         SessionTenant.objects.create(name="Bezirk Ost", slug="ost", insight_publish=True)
         with pytest.raises(CommandError, match="Session-Mandanten"):
             _slugs(f"{muenster.pk}=ost")
+
+    def test_slug_des_mandanten_der_kommune_ist_erlaubt(self, muenster: OParlBody) -> None:
+        # Der Mandant führt ohnehin auf diese Kommune: Beide Wege enden am selben Portal
+        SessionTenant.objects.create(name="Stadt Münster", slug="stadt-muenster", oparl_body=muenster)
+
+        _slugs(f"{muenster.pk}=stadt-muenster")
+
+        muenster.refresh_from_db()
+        assert muenster.slug == "stadt-muenster"
+
+    def test_hinweis_wenn_slug_vom_cache_verzeichnis_abweicht(self, muenster: OParlBody) -> None:
+        darmstadt = _kommune("Wissenschaftsstadt Darmstadt", display_name="Darmstadt")
+
+        uebersicht = _slugs()
+        assert "Darmstadt: Vorschlag darmstadt, Cache-Verzeichnis wissenschaftsstadt-darmstadt" in uebersicht
+        assert "Münster: Vorschlag" not in uebersicht, "Vorschlag gleich Cache-Verzeichnis"
+
+        ausgabe = _slugs(f"{muenster.pk}=muenster", f"{darmstadt.pk}=darmstadt", dry_run=True)
+        zeilen = {zeile.split("(")[0].strip(): zeile for zeile in ausgabe.splitlines() if "würde setzen" in zeile}
+        assert "weicht vom Cache-Verzeichnis ab" in zeilen["Darmstadt"]
+        assert "weicht vom Cache-Verzeichnis ab" not in zeilen["Münster"]
 
 
 class TestSitemapIndex:
@@ -187,13 +231,38 @@ class TestSitemapIndex:
         assert client.get("/sitemap-insight-gibt-es-nicht.xml").status_code == 404
 
 
+@pytest.fixture
+def admin_client_kommunen() -> Client:
+    nutzer = get_user_model()(email="admin@example.org", is_staff=True, is_superuser=True, is_active=True)
+    nutzer.set_password("geheim-123")
+    nutzer.save()
+    client = Client()
+    client.force_login(nutzer)
+    return client
+
+
+def _admin_speichern(client: Client, body: OParlBody, **aenderungen: Any) -> Any:
+    """Änderungsformular der Kommune im Admin abschicken: alle Felder wie angezeigt, dazu die Änderungen."""
+    url = reverse("admin:insight_core_oparlbody_change", args=[body.pk])
+    seite = client.get(url)
+    formular = seite.context["adminform"].form
+    daten: dict[str, Any] = {"_save": "Speichern"}
+    for name in formular.fields:
+        wert = formular[name].value()
+        if wert is None or wert is False or isinstance(wert, FieldFile):  # Dateien bleiben ohne Upload erhalten
+            continue
+        daten[name] = "on" if wert is True else wert
+    for inline in seite.context["inline_admin_formsets"]:
+        verwaltung = inline.formset.management_form
+        daten.update({verwaltung[name].html_name: verwaltung[name].value() for name in verwaltung.fields})
+    return client.post(url, {**daten, **aenderungen})
+
+
 class TestAdmin:
-    def test_aenderungsseite_zeigt_slug_und_cache_verzeichnis(self, muenster: OParlBody) -> None:
-        nutzer = get_user_model()(email="admin@example.org", is_staff=True, is_superuser=True, is_active=True)
-        nutzer.set_password("geheim-123")
-        nutzer.save()
-        client = Client()
-        client.force_login(nutzer)
+    def test_aenderungsseite_zeigt_slug_und_cache_verzeichnis(
+        self, admin_client_kommunen: Client, muenster: OParlBody
+    ) -> None:
+        client = admin_client_kommunen
         OParlBody.objects.filter(pk=muenster.pk).update(file_cache_dir="muenster")
 
         seite = client.get(reverse("admin:insight_core_oparlbody_change", args=[muenster.pk])).content.decode()
@@ -207,3 +276,46 @@ class TestAdmin:
         with pytest.raises(ValidationError) as fehler:
             muenster.full_clean()
         assert "slug" in fehler.value.message_dict
+
+    def test_slug_eines_session_mandanten_scheitert_am_feld_slug(
+        self, admin_client_kommunen: Client, muenster: OParlBody
+    ) -> None:
+        # Mandanten-Slugs entstehen automatisch aus dem Namen (slugify)
+        SessionTenant.objects.create(name="Stadt Musterstadt", insight_publish=True)
+
+        antwort = _admin_speichern(admin_client_kommunen, muenster, slug="stadt-musterstadt")
+
+        assert antwort.status_code == 200
+        fehler = antwort.context["adminform"].form.errors
+        assert list(fehler) == ["slug"]
+        assert "Session-Mandanten „Stadt Musterstadt“" in fehler["slug"][0]
+        muenster.refresh_from_db()
+        assert muenster.slug is None
+
+    def test_slug_im_admin_aendern_leert_den_portal_cache(
+        self, admin_client_kommunen: Client, muenster: OParlBody, django_capture_on_commit_callbacks: CaptureCallbacks
+    ) -> None:
+        assert _admin_speichern(admin_client_kommunen, muenster, slug="ms").status_code == 302
+        client = _portal_cache_fuellen("ms", muenster)
+
+        with django_capture_on_commit_callbacks(execute=True):
+            antwort = _admin_speichern(admin_client_kommunen, muenster, slug="muenster")
+
+        assert antwort.status_code == 302
+        muenster.refresh_from_db()
+        assert (muenster.slug, muenster.file_cache_dir) == ("muenster", "muenster")
+        assert client.get("/insight/k/ms/").status_code == 404, "alter Slug führt nicht mehr zur Kommune"
+        assert client.get("/insight/k/muenster/").status_code == 200
+
+    def test_bestehender_konflikt_blockiert_andere_aenderungen_nicht(
+        self, admin_client_kommunen: Client, muenster: OParlBody
+    ) -> None:
+        # Mandant erst nach dem Slug der Kommune angelegt: Die Kommune bleibt bearbeitbar
+        OParlBody.objects.filter(pk=muenster.pk).update(slug="ost")
+        SessionTenant.objects.create(name="Bezirk Ost", slug="ost", insight_publish=True)
+
+        antwort = _admin_speichern(admin_client_kommunen, muenster, description="Neue Beschreibung")
+
+        assert antwort.status_code == 302
+        muenster.refresh_from_db()
+        assert muenster.description == "Neue Beschreibung" and muenster.slug == "ost"

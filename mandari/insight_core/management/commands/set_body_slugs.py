@@ -16,7 +16,8 @@ Angaben werden vorab geprüft; ist eine fehlerhaft, ändert der Befehl nichts.
 
 Der Dokument-Cache bleibt, wo er ist: Vor dem neuen Slug wird das bisherige Cache-Verzeichnis der
 Kommune festgeschrieben (``OParlBody.file_cache_dir``). Kein Dokument wird verschoben, neu geladen
-oder gelöscht.
+oder gelöscht. Wo es als Adresse passt, wählt man den Slug gleich dem Cache-Verzeichnis: Dann legt
+auch ein älteres Image, das das Verzeichnis noch aus dem Slug ableitet, keine zweite Ablage an.
 """
 
 from __future__ import annotations
@@ -25,13 +26,13 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import transaction
 from django.utils.text import slugify
 
 from insight_core.models import OParlBody, validate_body_slug
+from insight_core.portal import forget_slugs, tenant_slug_conflict
 from insight_core.services import file_cache
 
 _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue"})
@@ -95,17 +96,31 @@ class Command(BaseCommand):
             self.stdout.write("Keine gelisteten Kommunen.")
             return
         vorschlaege: list[str] = []
+        abweichend: list[str] = []
         for body in bodies:
-            cache_dir = body.file_cache_dir or f"{file_cache.body_dir_name(body)} (noch nicht festgeschrieben)"
+            verzeichnis = body.file_cache_dir or file_cache.body_dir_name(body)
+            cache_dir = verzeichnis if body.file_cache_dir else f"{verzeichnis} (noch nicht festgeschrieben)"
             self.stdout.write(
                 f"{body.id}  {anzeigename(body)[:40]:<40}  Slug: {body.slug or '–':<25}  Cache-Verzeichnis: {cache_dir}"
             )
             if not body.slug and vorschlag(body):
                 vorschlaege.append(f"{body.id}={vorschlag(body)}")
+                if vorschlag(body) != verzeichnis:
+                    abweichend.append(
+                        f"{anzeigename(body)}: Vorschlag {vorschlag(body)}, Cache-Verzeichnis {verzeichnis}"
+                    )
         if vorschlaege:
             self.stdout.write("")
             self.stdout.write("Vorschlag für Kommunen ohne Slug – vor dem Ausführen prüfen, dann erst mit --dry-run:")
             self.stdout.write("  python manage.py set_body_slugs " + " ".join(vorschlaege) + " --dry-run")
+        if abweichend:
+            self.stdout.write("")
+            self.stdout.write(
+                "Wo es als Adresse passt, den Slug gleich dem Cache-Verzeichnis wählen – dann bleibt auch ein "
+                "Rückfall auf ein älteres Image ohne zweite Ablage. Abweichend:"
+            )
+            for zeile in abweichend:
+                self.stdout.write(f"  {zeile}")
 
     # ------------------------------------------------------------------
     # Prüfen und Setzen
@@ -148,19 +163,13 @@ class Command(BaseCommand):
         return list({z.body.pk: z for z in zuordnungen}.values())
 
     def _konflikte(self, body: OParlBody, slug: str, *, ersetzen: bool) -> list[str]:
-        from apps.session.models import SessionTenant
-        from insight_core.portal import tenant_body
-
         name = f"„{anzeigename(body)}“"
         fehler: list[str] = []
         andere = OParlBody.objects.filter(slug=slug).exclude(pk=body.pk).first()
         if andere is not None:
             fehler.append(f"{name}: Slug „{slug}“ hat schon „{anzeigename(andere)}“ ({andere.pk}).")
-        mandant = SessionTenant.objects.filter(slug=slug).first()
-        if mandant is not None:
-            kommune = tenant_body(mandant)
-            if kommune is None or kommune.pk != body.pk:
-                fehler.append(f"{name}: „{slug}“ ist der Slug eines Session-Mandanten und führt zu dessen Portal.")
+        if tenant_slug_conflict(slug, body.pk) is not None:
+            fehler.append(f"{name}: „{slug}“ ist der Slug eines Session-Mandanten und führt zu dessen Portal.")
         if body.slug and body.slug != slug and not ersetzen:
             fehler.append(f"{name} hat schon den Slug „{body.slug}“ – nur mit --replace ändern (alte Links brechen).")
         return fehler
@@ -174,6 +183,8 @@ class Command(BaseCommand):
         verb = "würde setzen" if dry_run else "gesetzt"
         cache_dir = body.file_cache_dir or file_cache.body_dir_name(body)
         hinweis = "" if body.is_listed else "  (nicht gelistet: Portal und Sitemap erst nach dem Listen)"
+        if z.slug != cache_dir:
+            hinweis += "  (Slug weicht vom Cache-Verzeichnis ab, siehe Rückfall in docs/FILE_CACHE.md)"
         self.stdout.write(
             f"{name}  {verb}: {body.slug or '–'} → {z.slug}  (Cache-Verzeichnis bleibt: {cache_dir}){hinweis}"
         )
@@ -184,5 +195,5 @@ class Command(BaseCommand):
         alt = body.slug
         body.slug = z.slug
         body.save(update_fields=["slug", "updated_at"])
-        transaction.on_commit(lambda: cache.delete_many([f"insight_portal_slug:{s}" for s in (alt, z.slug) if s]))
+        forget_slugs(alt, z.slug)
         return 1

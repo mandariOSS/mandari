@@ -25,6 +25,13 @@ landen im selben Verzeichnis, gemountete Storage Boxen bleiben zuständig (Issue
 stehen, sobald es auch eine gelistete Kommune nutzt – nach ihrem Verzeichnisnamen oder weil dort
 Dateien von ihr liegen.
 
+**Rückfall auf ein älteres Image:** Images vor `insight_core.0039` kennen den festgeschriebenen Namen
+nicht und leiten das Verzeichnis wieder aus Slug bzw. Kurznamen ab. Weicht der Slug einer Kommune vom
+Cache-Verzeichnis ab, landen neue Downloads dann in einem zweiten Verzeichnis (vorhandene Kopien bleiben
+über `local_path` gültig), und `prune_file_cache --unlisted` darf mit einem solchen Image nicht laufen.
+Deshalb den Slug, wo er als Adresse passt, gleich dem Cache-Verzeichnis wählen – `set_body_slugs` zeigt
+Abweichungen an.
+
 ## Speicherbedarf (Stand September 2026)
 
 | Kommune | Dateien | Ø Größe | Bestand | Zuwachs/Jahr |

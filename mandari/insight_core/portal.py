@@ -32,6 +32,7 @@ from django.conf import settings
 from django.core import checks
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, HttpResponseRedirect
 from django.http.request import split_domain_port, validate_host
@@ -116,7 +117,7 @@ def resolve_body(slug: str) -> OParlBody | None:
     """
     from insight_core.models import OParlBody
 
-    schluessel = f"insight_portal_slug:{slug}"
+    schluessel = _slug_cache_key(slug)
     bekannt = cache.get(schluessel)
     if bekannt:
         body = cast("OParlBody | None", OParlBody.objects.listed().filter(pk=bekannt).first())
@@ -126,6 +127,22 @@ def resolve_body(slug: str) -> OParlBody | None:
     if body is not None:
         cache.set(schluessel, str(body.pk), BRANDING_CACHE_SECONDS)
     return body
+
+
+def _slug_cache_key(slug: str) -> str:
+    return f"insight_portal_slug:{slug}"
+
+
+def forget_slugs(*slugs: str | None) -> None:
+    """
+    Zwischengespeicherte Zuordnung Slug → Kommune nach dem Commit verwerfen (Issue #373).
+
+    Aufrufen, wenn sich der Slug einer Kommune ändert – mit altem und neuem Slug. Sonst führt der alte
+    Slug bis zu ``BRANDING_CACHE_SECONDS`` weiter auf die Kommune.
+    """
+    keys = sorted({_slug_cache_key(slug) for slug in slugs if slug})
+    if keys:
+        transaction.on_commit(lambda: cache.delete_many(keys))
 
 
 def _find_body(slug: str) -> OParlBody | None:
@@ -156,6 +173,23 @@ def tenant_body(tenant: Any) -> OParlBody | None:
     if body is None and tenant.oparl_body_id:
         body = OParlBody.objects.listed().filter(pk=tenant.oparl_body_id).first()
     return cast("OParlBody | None", body)
+
+
+def tenant_slug_conflict(slug: str, body_pk: Any) -> Any | None:
+    """
+    Session-Mandant, dessen Einstieg ``/insight/k/<slug>/`` verdeckt würde, trüge die Kommune ``body_pk``
+    diesen Slug – ``_find_body`` sucht zuerst die Kommune. Kein Konflikt, wenn der Mandant ohnehin auf
+    diese Kommune führt. Gemeinsame Prüfung für Admin und ``set_body_slugs`` (Issue #373).
+    """
+    from apps.session.models import SessionTenant
+
+    tenant = SessionTenant.objects.filter(slug=slug).first()
+    if tenant is None:
+        return None
+    body = tenant_body(tenant)
+    if body is not None and body.pk == body_pk:
+        return None
+    return tenant
 
 
 def withdrawn_state(slug: str) -> BodyState | None:
