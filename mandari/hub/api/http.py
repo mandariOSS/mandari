@@ -124,7 +124,8 @@ def error_response(status: int, message: str) -> HttpResponse:
 # =============================================================================
 
 
-def _client_ip(request: HttpRequest) -> str:
+def client_ip(request: HttpRequest) -> str:
+    """Adresse des Clients (erster Eintrag von ``X-Forwarded-For``, sonst ``REMOTE_ADDR``)."""
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
     if forwarded:
         return str(forwarded).split(",")[0].strip()
@@ -142,7 +143,7 @@ def _rate_limited(request: HttpRequest) -> bool:
     if not limit:
         return False
     window = int(time.time() // 60)
-    key = f"oparl_api:rl:{_client_ip(request)}:{window}"
+    key = f"oparl_api:rl:{client_ip(request)}:{window}"
     try:
         count = cache.incr(key)
     except ValueError:

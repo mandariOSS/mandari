@@ -953,6 +953,11 @@ urlpatterns = [
         name="oparl_changes",
     ),
     path(
+        "<slug:tenant_slug>/api/oparl/body/snapshot/",
+        oparl_api_views.snapshot_view,
+        name="oparl_snapshot",
+    ),
+    path(
         "<slug:tenant_slug>/api/oparl/file/<uuid:pk>/download/",
         oparl_api_views.file_download_view,
         name="oparl_file_download",

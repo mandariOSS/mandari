@@ -37,6 +37,7 @@ curl https://mandari.de/oparl/v1/system
 | `GET /oparl/v1/body/<uuid>/papers` | Vorlagen/Drucksachen der Kommune (paginiert, filterbar) |
 | `GET /oparl/v1/body/<uuid>/locations` | Orte der Kommune (Vendor-Erweiterung, paginiert) |
 | `GET /oparl/v1/body/<uuid>/changes` | Änderungsfeed der Kommune (kompatible Erweiterung, nur wenn eingeschaltet; Abschnitt „Änderungsfeed“) |
+| `GET /oparl/v1/body/<uuid>/snapshot` | Snapshot der Kommune mit Cursor-Übergabe (NDJSON, Einstieg in den Änderungsfeed) |
 | `GET /oparl/v1/<typ>/<uuid>` | Objekt-Endpunkte aller Typen (siehe unten) |
 
 Objekttypen für `<typ>`: `body`, `organization`, `person`, `membership`, `meeting`,
@@ -208,7 +209,7 @@ was sich seit dem letzten Abruf geändert hat – einschließlich Löschungen un
 
 **Einschalten:** Der Feed ist je Installation abgeschaltet, bis die Erzeuger der Ereignisse laufen
 (`OPARL_CHANGES_ENABLED`, Abschnitt „Betrieb“). Eingeschaltet nennt jeder Body die Adresse seines
-Feeds in `mandari:changes`.
+Feeds in `mandari:changes` und die seines Snapshots in `mandari:snapshot`.
 
 ```bash
 curl "https://mandari.de/oparl/v1/body/<uuid>/changes?limit=100"
@@ -317,6 +318,46 @@ Schreibweise mit Schrägstrich am Ende leitet weiter.
   und `id` eines bekannten liefert kurz noch den alten Stand. Die Übernahme erscheint verlässlich erst,
   wenn der Abgleich sie mit einem eigenen Ereignis meldet (in Arbeit).
 
+### Snapshot: Einstieg mit Cursor-Übergabe
+
+Der Snapshot liefert den Gesamtstand einer Kommune und den Cursor, ab dem der Feed fortsetzt. Er ist
+der Einstieg für neue Abnehmer und der Wiedereinstieg nach einem abgelaufenen Cursor. Der Body nennt
+seine Adresse in `mandari:snapshot`.
+
+```bash
+curl --compressed "https://mandari.de/oparl/v1/body/<uuid>/snapshot" -o musterstadt.ndjson
+```
+
+Die Antwort ist NDJSON (`application/x-ndjson`): je Zeile ein JSON-Objekt.
+
+```
+{"snapshot_cursor":"k9Qa…","body":"https://mandari.de/oparl/v1/body/<uuid>","changes":"https://mandari.de/oparl/v1/body/<uuid>/changes?after=k9Qa…","created":"2026-09-30T08:20:00+00:00","objects":1843}
+{"id":"https://mandari.de/oparl/v1/body/<uuid>","type":"https://schema.oparl.org/1.1/Body",…}
+{"id":"https://mandari.de/oparl/v1/organization/<uuid>","type":"https://schema.oparl.org/1.1/Organization",…}
+…
+```
+
+- **Erste Zeile:** `snapshot_cursor`, die Adresse des Body, die fertige Adresse für den Feed
+  (`changes`), der Zeitpunkt des Cursors und die Zahl der folgenden Zeilen (`objects`). Der Cursor
+  steht auch in der Kopfzeile `Snapshot-Cursor` (mit `HEAD` ohne den Inhalt abrufbar).
+- **Vollständigkeit prüfen:** Folgen weniger Zeilen, als `objects` nennt, ist der Abruf abgebrochen –
+  dann den Snapshot neu laden. Das gilt unabhängig von der Übertragung; `Content-Length` fehlt, wenn ein
+  Proxy komprimiert.
+- **Weitere Zeilen:** der Body und alle Objekte der externen Listen der Kommune (Gremien, Personen,
+  Sitzungen, Vorlagen, Orte) – genau so, wie die Listen sie ausgeben, also mit denselben Einbettungen
+  (Mitgliedschaften in Personen, Tagesordnungspunkte und Dateien in Sitzungen, Beratungen und Dateien
+  in Vorlagen). Jedes Objekt steht einmal darin; Gelöschtes fehlt.
+- **Übergabe ohne Verlust:** Der Cursor wird festgehalten, bevor das erste Objekt gelesen wird. Was
+  sich währenddessen oder danach ändert, steht im Feed hinter dem Cursor. Ein Objekt kann deshalb nach
+  dem Snapshot noch einmal als `upsert` erscheinen – idempotent verarbeiten.
+- **Wiedereinstieg:** Wer nach `410` neu einsteigt, ersetzt seinen Stand durch den Snapshot: Was darin
+  nicht mehr vorkommt, ist entfernt.
+- **HTTP:** `Cache-Control: no-store`, kein `ETag`; `Content-Length` nur bei unkomprimierter
+  Übertragung. Der Snapshot entsteht vollständig, bevor die Übertragung beginnt; bei großen Kommunen
+  kann die Antwort deshalb auf sich warten lassen (Zeitlimit des Abnehmers großzügig wählen). Je
+  Client-Adresse entsteht höchstens ein Snapshot zugleich (sonst `429` mit `Retry-After`); entstehen
+  insgesamt gerade zu viele, antwortet die Schnittstelle mit `503` und `Retry-After`.
+
 ## Dateien (File)
 
 `accessUrl` und `downloadUrl` zeigen auf den mandari-Datei-Proxy
@@ -337,6 +378,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `mandari:slug`, `mandari:displayName` | Body | URL-Slug / Anzeigename der Kommune |
 | `mandari:locationList` | Body | abgekündigt: URL der Orte-Liste, jetzt im Standardfeld `locationList` |
 | `mandari:changes` | Body | Adresse des Änderungsfeeds der Kommune (nur wenn eingeschaltet) |
+| `mandari:snapshot` | Body | Adresse des Snapshots der Kommune (nur wenn der Änderungsfeed eingeschaltet ist) |
 | `mandari:originalOrganizationType` | Organization | Angabe der Quelle, wenn sie keiner der Werte der Spezifikation ist |
 | `mandari:summary` | Paper | KI-generierte Zusammenfassung (falls vorhanden) |
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
@@ -374,6 +416,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `OPARL_LICENSE_URL` | leer | URL der Lizenz am System-Objekt (`license`); leer = keine übergreifende Angabe |
 | `OPARL_CHANGES_ENABLED` | `false` | Änderungsfeed je Kommune einschalten (Aggregator und Session-Schnittstelle) |
 | `OPARL_CHANGES_RETENTION_DAYS` | `90` | Gültigkeit eines Cursors des Änderungsfeeds in Tagen (mindestens 30) |
+| `OPARL_SNAPSHOT_PARALLEL` | `2` | Snapshots, die gleichzeitig entstehen dürfen; weitere Anfragen erhalten `503` mit `Retry-After`. Je Client-Adresse höchstens einer (`429`) |
 
 **Änderungsfeed einschalten:** Der Feed liest die öffentlichen Ereignisse `ris.*` aus dem Journal der
 Ereignistechnik. Er gehört erst eingeschaltet (`OPARL_CHANGES_ENABLED=true`), wenn in der Installation
@@ -386,6 +429,16 @@ Zeilen fehlen können. Der Schlüssel der Cursor ist aus `SECRET_KEY` abgeleitet
 Schlüssels sind ausgegebene Cursor ungültig (`410`), und Abnehmer steigen über den Snapshot wieder ein; Schlüssel in
 Djangos `SECRET_KEY_FALLBACKS` gelten weiter.
 
+**Snapshot im Betrieb:** Ein Snapshot liest den ganzen öffentlichen Bestand einer Kommune. Er wird in
+eine temporäre Datei geschrieben (Platz im temporären Verzeichnis des Containers: bei großen Kommunen
+einige hundert Megabyte) und danach in Blöcken übertragen; die Datenbank liest nur die Anfrage selbst,
+ein langsamer Abnehmer hält keine Verbindung fest. `OPARL_SNAPSHOT_PARALLEL` begrenzt, wie viele
+gleichzeitig entstehen (über den gemeinsamen Cache der Installation), und je Client-Adresse entsteht
+höchstens einer: Ein einzelner Abnehmer belegt nicht alle Plätze, auch nicht mit abgebrochenen Abrufen,
+deren Aufbau noch läuft. Bis die Datei fertig ist, fließt kein Byte zum Abnehmer. Vor dem Einschalten
+Bauzeit und Größe für die größte Kommune der Installation messen und das Leerlauf-Zeitlimit
+vorgeschalteter Proxys und Ingress-Komponenten darauf abstimmen.
+
 **Eine Serialisierung für beide Ausgaben:** Aggregator und Session-Schnittstelle
 (`SESSION_OPARL_API.md`) gehen denselben Weg – Abbildung auf das kanonische Modell, dann Ausgabe
 (ADR `docs/adr/20260929-kanonisches-modell.md`):
@@ -397,6 +450,7 @@ Djangos `SECRET_KEY_FALLBACKS` gelten weiter.
 | Bausteine des Modells (Typ-URLs, Datum und Zeit, gekürzte Objekte, `organizationType`) | `mandari/hub/ris/canonical.py` | dieselben |
 | Serialisierung: Zeitfilter, Blättern, Listen-Hülle, Gelöschtes in inkrementellen Listen | `mandari/hub/api/serialization.py` | dieselbe |
 | Änderungsfeed | `mandari/hub/api/changes.py` | derselbe |
+| Snapshot | `mandari/hub/api/snapshot.py` | derselbe |
 | HTTP-Hülle: JSON, `ETag`/`304`, Fehler, CORS, Rate-Limit | `mandari/hub/api/http.py` | dieselbe |
 
 Wer ein Feld ergänzt oder ändert, tut das in der Abbildung der Quelle; wer das Verhalten von Listen,

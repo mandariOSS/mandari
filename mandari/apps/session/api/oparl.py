@@ -35,6 +35,8 @@ Blättern, Listen-Hülle, ETag, Fehler –, steht in ``hub.api`` und gilt für b
 - **Änderungsfeed** (``…/api/oparl/body/changes/``, wenn in der Installation eingeschaltet): dieselbe
   Ausgabe wie beim Aggregator (``hub.api.changes``). Einträge gibt es nur für Objekte, die öffentlich
   sind oder es waren (``_addresses``).
+- **Snapshot** (``…/api/oparl/body/snapshot/``): Gesamtstand als NDJSON mit dem Cursor, ab dem der Feed
+  fortsetzt (``hub.api.snapshot``) – dieselben Objekte wie die Listen.
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
 
@@ -52,7 +54,7 @@ from apps.session.models import (
 )
 from apps.session.services import file_service, meeting_format_service
 from apps.session.services.insight_service import oparl_system_url
-from hub.api import changes
+from hub.api import changes, snapshot
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import Gone, MergedEntries, TimeFilters, list_response, single_page
 from hub.ris.mapping.session import SessionMapping, SessionSource
@@ -405,9 +407,8 @@ def _addresses(mapping):
     return addresses
 
 
-@session_oparl_endpoint
-def changes_view(request, tenant_slug):
-    """Änderungsfeed des Mandanten (``hub.api.changes``); ausgeschaltet gibt es die Adresse nicht."""
+def _feed(tenant_slug):
+    """Feed des Mandanten samt Abbildung; ausgeschaltet gibt es die Adressen nicht."""
     if not changes.enabled():
         raise Http404("Diese Adresse gibt es nicht.")
     mapping = _mapping(_get_tenant(tenant_slug))
@@ -418,7 +419,36 @@ def changes_view(request, tenant_slug):
         snapshot_url=mapping.uris.snapshot(),
         addresses=_addresses(mapping),
     )
+    return mapping, feed
+
+
+@session_oparl_endpoint
+def changes_view(request, tenant_slug):
+    """Änderungsfeed des Mandanten (``hub.api.changes``)."""
+    _, feed = _feed(tenant_slug)
     return changes.changes_response(request, feed)
+
+
+#: Objektarten des Snapshots: die Listen, deren Objekte alle übrigen einbetten (Mitgliedschaften in
+#: Personen, Tagesordnungspunkte und Anlagen in Sitzungen, Beratungen und Anlagen in Vorlagen)
+SNAPSHOT_SEGMENTS = ("organizations", "people", "meetings", "papers")
+
+
+@session_oparl_endpoint
+def snapshot_view(request, tenant_slug):
+    """Snapshot des Mandanten mit Cursor-Übergabe (``hub.api.snapshot``): dieselben Objekte wie die Listen."""
+    mapping, feed = _feed(tenant_slug)
+    tenant = mapping.tenant
+
+    def section(segment):
+        qs_fn, prepare, serializer, _ = LIST_SPECS[segment]
+        queryset = qs_fn(tenant)
+        if prepare:
+            queryset = prepare(queryset, tenant)
+        return snapshot.Section(queryset=queryset, render=lambda page: [serializer(mapping, obj) for obj in page])
+
+    sections = [section(segment) for segment in SNAPSHOT_SEGMENTS]
+    return snapshot.snapshot_response(request, snapshot.Snapshot(feed, mapping.body, sections))
 
 
 @session_oparl_endpoint

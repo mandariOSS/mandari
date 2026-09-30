@@ -14,6 +14,7 @@ Endpunkte (alle rein lesend, anonym, JSON, CORS offen):
 - ``/oparl/v1/body/<uuid>/papers``
 - ``/oparl/v1/body/<uuid>/locations``
 - ``/oparl/v1/body/<uuid>/changes``               Änderungsfeed (wenn eingeschaltet, ``hub.api.changes``)
+- ``/oparl/v1/body/<uuid>/snapshot``              Snapshot mit Cursor-Übergabe (``hub.api.snapshot``)
 - ``/oparl/v1/<typ>/<uuid>``                      Objekt-Endpunkte aller Typen
 
 Dieses Modul wählt aus, was sichtbar ist (Kommune, Veröffentlichungsstand, Gelöschtes), und reicht es
@@ -39,8 +40,9 @@ from django.core.cache import cache
 from django.db.models import Model, QuerySet
 from django.db.models.functions import Coalesce
 from django.http import HttpRequest, HttpResponse
+from django.http.response import HttpResponseBase
 
-from hub.api import changes
+from hub.api import changes, snapshot
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import TimeFilters, list_cache_key, list_response, page_number
 from hub.ris import selectors as ris
@@ -277,17 +279,51 @@ def _feed(output: BestandMapping, pk: uuid.UUID) -> changes.Feed:
     return changes.Feed(body_id=pk, url=uris.changes(pk), snapshot_url=uris.snapshot(pk), addresses=addresses)
 
 
-@endpoint
-def body_changes(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
-    """Änderungsfeed einer Kommune (``hub.api.changes``); ausgeschaltet gibt es die Adresse nicht."""
+def _feed_unavailable(pk: uuid.UUID, segment: str) -> HttpResponse | None:
+    """Warum Feed oder Snapshot einer Kommune nicht geliefert werden (sonst ``None``)."""
     if not changes.enabled():
-        return _unknown_list("changes")
+        # Ausgeschaltet gibt es die Adresse nicht
+        return _unknown_list(segment)
     paused = _paused_response(pk)
     if paused is not None:
         return paused
     if not OParlBody.objects.filter(pk=pk).exists():
         return error_response(404, "Kommune (Body) nicht gefunden.")
+    return None
+
+
+@endpoint
+def body_changes(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
+    """Änderungsfeed einer Kommune (``hub.api.changes``)."""
+    unavailable = _feed_unavailable(pk, "changes")
+    if unavailable is not None:
+        return unavailable
     return changes.changes_response(request, _feed(mapping(), pk))
+
+
+def _section(output: BestandMapping, spec: Spec, pk: uuid.UUID) -> snapshot.Section:
+    def render(objects: list[Any]) -> list[Objekt]:
+        ctx = spec.context(objects)
+        return [spec.render(output, obj, ctx) for obj in objects]
+
+    return snapshot.Section(queryset=spec.queryset(body_id=pk, deleted=False), render=render)
+
+
+@endpoint
+def body_snapshot(request: HttpRequest, pk: uuid.UUID) -> HttpResponseBase:
+    """Snapshot einer Kommune mit Cursor-Übergabe (``hub.api.snapshot``): dieselben Objekte wie die Listen."""
+    unavailable = _feed_unavailable(pk, "snapshot")
+    if unavailable is not None:
+        return unavailable
+    output = mapping()
+
+    def body() -> Objekt:
+        obj = _BODY.queryset(pk=pk).get()
+        # Eine zurückgenommene Kommune steht auch im Snapshot nur als gekürztes Objekt
+        return output.tombstone("body", obj) if obj.deleted else output.body(obj)
+
+    sections = [_section(output, spec, pk) for spec in BODY_LISTS.values()]
+    return snapshot.snapshot_response(request, snapshot.Snapshot(_feed(output, pk), body, sections))
 
 
 def _meeting_location_response(output: BestandMapping, pk: uuid.UUID) -> HttpResponse:

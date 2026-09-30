@@ -125,6 +125,7 @@ DSGVO kann sie die Veröffentlichung so beschreiben:
 | `GET …/api/oparl/<typ>/<uuid>/` | Objekt-Endpunkte aller Typen |
 | `GET …/api/oparl/file/<uuid>/download/` | Anonymer Datei-Abruf (nur öffentlich sichtbare Anlagen; `?download=1` für Attachment) |
 | `GET …/api/oparl/body/changes/` | Änderungsfeed (kompatible Erweiterung, nur wenn eingeschaltet; Abschnitt „Änderungsfeed“) |
+| `GET …/api/oparl/body/snapshot/` | Snapshot mit Cursor-Übergabe (NDJSON, Einstieg in den Änderungsfeed) |
 
 Objekttypen für `<typ>`: `organization`, `person`, `membership`, `meeting`,
 `agendaitem`, `paper`, `consultation`, `file`, `legislativeterm`, `location`.
@@ -330,6 +331,11 @@ Serialisierung (`mandari/hub/api/changes.py`).
 - **Rücknahmen:** Wird ein Objekt gelöscht oder nichtöffentlich, erscheint es als `delete` mit Grund;
   unter seiner Adresse steht das gekürzte Objekt. Dafür muss der Eintrag für Gelöschtes bestehen
   bleiben; er enthält nur Typ, Kennung und Zeitpunkte.
+- **Snapshot:** `…/api/oparl/body/snapshot/` (am Body in `mandari:snapshot`) liefert den öffentlichen
+  Gesamtstand als NDJSON mit dem Cursor, ab dem der Feed fortsetzt: den Body und die Objekte der Listen
+  `organizations`, `people`, `meetings` und `papers` mit ihren Einbettungen (Mitgliedschaften,
+  Tagesordnungspunkte des öffentlichen Teils, öffentliche Anlagen, Beratungen). Form und Übergabe wie
+  beim Aggregator (`OPARL_API.md`, Abschnitt „Snapshot“).
 
 ## Konsumenten
 

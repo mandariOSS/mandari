@@ -572,6 +572,8 @@ OPARL_LICENSE_URL = os.environ.get("OPARL_LICENSE_URL", "").strip()
 OPARL_CHANGES_ENABLED = os.environ.get("OPARL_CHANGES_ENABLED", "false").lower() in ("1", "true", "yes")
 # Gültigkeit eines Cursors in Tagen; zugesagt sind mindestens 30. So lange muss das Journal seine Zeilen behalten.
 OPARL_CHANGES_RETENTION_DAYS = int(os.environ.get("OPARL_CHANGES_RETENTION_DAYS", "90"))
+# Snapshots (…/snapshot), die gleichzeitig entstehen dürfen; weitere Anfragen erhalten 503 mit Retry-After
+OPARL_SNAPSHOT_PARALLEL = int(os.environ.get("OPARL_SNAPSHOT_PARALLEL", "2"))
 if OPARL_CHANGES_RETENTION_DAYS < 30:
     from django.core.exceptions import ImproperlyConfigured
 

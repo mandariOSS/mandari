@@ -152,9 +152,10 @@ def test_body_nennt_den_aenderungsfeed_nur_wenn_die_ausgabe_ihn_anbietet(welt: d
     ohne = _abbildung().body(welt["body"])
     mit = BestandMapping(f"{SITE}/oparl", SITE, changes=True).body(welt["body"])
 
-    assert "mandari:changes" not in ohne
+    assert "mandari:changes" not in ohne and "mandari:snapshot" not in ohne
     assert mit["mandari:changes"] == f"{API}/body/{welt['body'].pk}/changes"
-    assert {name: wert for name, wert in mit.items() if name != "mandari:changes"} == ohne
+    assert mit["mandari:snapshot"] == f"{API}/body/{welt['body'].pk}/snapshot"
+    assert {name: wert for name, wert in mit.items() if name not in ("mandari:changes", "mandari:snapshot")} == ohne
     assert pruefe(mit, "Body") == []
 
 

@@ -143,7 +143,7 @@ class SessionMapping:
         self.tenant = tenant
         self.uris = SessionUris(base)
         self.source = source
-        #: Die Ausgabe bietet den Änderungsfeed an; der Body nennt dann dessen Adresse
+        #: Die Ausgabe bietet Änderungsfeed und Snapshot an; der Body nennt dann deren Adressen
         self.changes = changes
 
     # -- System, Körperschaft, Wahlperiode -------------------------------------------------------
@@ -195,6 +195,7 @@ class SessionMapping:
                 "legislativeTermList": self.uris.list("legislativeterms"),
                 **_timestamps(tenant),
                 "mandari:changes": self.uris.changes() if self.changes else None,
+                "mandari:snapshot": self.uris.snapshot() if self.changes else None,
             }
         )
         # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)

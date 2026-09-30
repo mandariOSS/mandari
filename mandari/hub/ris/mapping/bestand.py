@@ -340,7 +340,7 @@ class BestandMapping:
     def __init__(self, base: str, site: str, *, license_url: str = "", changes: bool = False) -> None:
         self.uris = BestandUris(base, site)
         self.license_url = license_url
-        #: Die Ausgabe bietet den Änderungsfeed an; der Body nennt dann dessen Adresse
+        #: Die Ausgabe bietet Änderungsfeed und Snapshot an; der Body nennt dann deren Adressen
         self.changes = changes
 
     # -- System, Körperschaft, Wahlperiode -------------------------------------------------------
@@ -395,6 +395,7 @@ class BestandMapping:
                 # Abgekündigt: dieselbe URL steht im Standardfeld ``locationList``
                 "mandari:locationList": self.uris.list(body.id, "locations"),
                 "mandari:changes": self.uris.changes(body.id) if self.changes else None,
+                "mandari:snapshot": self.uris.snapshot(body.id) if self.changes else None,
             }
         )
         # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)
