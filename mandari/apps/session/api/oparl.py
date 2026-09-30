@@ -30,7 +30,6 @@ from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.paginator import Paginator
 from django.db.models import Prefetch
-from django.urls import reverse
 
 from apps.session import oparl_publication as pub
 from apps.session.models import (
@@ -40,6 +39,7 @@ from apps.session.models import (
     SessionTenant,
 )
 from apps.session.services import file_service, meeting_format_service
+from apps.session.services.insight_service import oparl_system_url
 from oparl_api.utils import (
     OParlBadRequestError,
     error_response,
@@ -87,13 +87,18 @@ def _as_list(value):
 
 
 class TenantApi:
-    """URL-Bau je Mandant — alle IDs zeigen auf diese API (JSON), nie auf HTML."""
+    """
+    URL-Bau je Mandant — alle IDs zeigen auf diese API (JSON), nie auf HTML.
 
-    def __init__(self, request, tenant):
-        self.request = request
+    Basis ist die öffentliche Adresse der Installation (``SITE_URL``), nicht der Host der Anfrage:
+    Die IDs sind die kanonischen URIs der Session-Objekte, aus denen der RIS-Bestand seine Kennungen
+    ableitet (ADR docs/adr/20260929-kanonisches-modell.md). Über jeden Host liefert die Schnittstelle
+    dieselben IDs und Links.
+    """
+
+    def __init__(self, tenant):
         self.tenant = tenant
-        path = reverse("session:oparl_system", kwargs={"tenant_slug": tenant.slug})
-        self.base = request.build_absolute_uri(path)  # endet mit "/"
+        self.base = oparl_system_url(tenant)  # endet mit "/"
 
     def system_url(self):
         return self.base
@@ -725,13 +730,13 @@ def _paginated_response(api, request, base_url, queryset, serializer, kind):
 @session_oparl_endpoint
 def system_view(request, tenant_slug):
     tenant = _get_tenant(tenant_slug)
-    return json_response(serialize_system(TenantApi(request, tenant)))
+    return json_response(serialize_system(TenantApi(tenant)))
 
 
 @session_oparl_endpoint
 def bodies_view(request, tenant_slug):
     tenant = _get_tenant(tenant_slug)
-    api = TenantApi(request, tenant)
+    api = TenantApi(tenant)
     body = serialize_body(api)
     return json_response(
         {
@@ -750,7 +755,7 @@ def bodies_view(request, tenant_slug):
 @session_oparl_endpoint
 def body_view(request, tenant_slug):
     tenant = _get_tenant(tenant_slug)
-    return json_response(serialize_body(TenantApi(request, tenant)))
+    return json_response(serialize_body(TenantApi(tenant)))
 
 
 @session_oparl_endpoint
@@ -760,7 +765,7 @@ def list_view(request, tenant_slug, segment):
     if spec is None:
         return error_response(404, f"Unbekannte Liste '{segment}'. Verfügbar: {', '.join(sorted(LIST_SPECS))}.")
     qs_fn, prepare, serializer, kind = spec
-    api = TenantApi(request, tenant)
+    api = TenantApi(tenant)
     queryset = qs_fn(tenant)
     if prepare:
         queryset = prepare(queryset, tenant)
@@ -775,7 +780,7 @@ def object_view(request, tenant_slug, kind, pk):
     if spec is None:
         return error_response(404, f"Unbekannter Objekttyp '{kind}'. Verfügbar: {', '.join(sorted(OBJECT_SPECS))}.")
     qs_fn, prepare, serializer = spec
-    api = TenantApi(request, tenant)
+    api = TenantApi(tenant)
     queryset = qs_fn(tenant)
     if prepare:
         queryset = prepare(queryset, tenant)

@@ -44,7 +44,12 @@ logger = logging.getLogger(__name__)
 
 
 def oparl_system_url(tenant, base_url: str | None = None) -> str:
-    """Absolute System-URL der Mandanten-OParl-API (Einstiegspunkt für den Ingestor)."""
+    """
+    Absolute System-URL der Mandanten-OParl-API (Einstiegspunkt für den Ingestor).
+
+    Ohne ``base_url`` ist das die öffentliche Adresse aus ``SITE_URL`` und zugleich die Basis aller IDs,
+    die die Schnittstelle vergibt (``apps.session.api.oparl.TenantApi``), unabhängig vom Host der Anfrage.
+    """
     base = (base_url or getattr(django_settings, "SITE_URL", "http://localhost:8000")).rstrip("/")
     path = reverse("session:oparl_system", kwargs={"tenant_slug": tenant.slug})
     return f"{base}{path}"
