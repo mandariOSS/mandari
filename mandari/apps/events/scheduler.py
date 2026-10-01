@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -46,7 +47,7 @@ POLL_INTERVAL = 5.0
 
 @dataclass
 class Scheduler:
-    """Leader-Rolle Zeitpläne für einen Prozess (Befehl ``events_scheduler``, später ``events_worker``)."""
+    """Leader-Rolle Zeitpläne für einen Prozess (Befehle ``events_scheduler`` und ``events_worker``)."""
 
     registry: ScheduleRegistry = field(default_factory=lambda: standard_register)
     holder: str = field(default_factory=leases.new_holder_id)
@@ -135,14 +136,18 @@ class Scheduler:
             stand.save(update_fields=["last_slot", "last_task_id", "updated_at"])
         return faellig
 
-    def run(self, stop: threading.Event, interval: float = POLL_INTERVAL) -> None:
+    def run(
+        self, stop: threading.Event, interval: float = POLL_INTERVAL, beat: Callable[[], None] | None = None
+    ) -> None:
         """Dauerbetrieb bis ``stop`` gesetzt ist; gibt am Ende die Lease frei.
 
         Fällt die Datenbank kurz aus, wird der Fehler protokolliert und nach ``interval`` erneut
-        versucht.
+        versucht. ``beat`` meldet jeden Durchlauf als Lebenszeichen (``events_worker``).
         """
         try:
             while not stop.is_set():
+                if beat is not None:
+                    beat()
                 close_old_connections()
                 try:
                     self.tick()

@@ -7,8 +7,8 @@ Abonnements registrieren die Apps per ``@subscriber`` in ihrem Modul ``subscribe
 weitere warten und übernehmen spätestens 30 s nach dem Ausfall des Inhabers. SIGTERM und SIGINT
 beenden den Dauerbetrieb nach dem laufenden Batch, dessen Cursor noch festgeschrieben wird. Neue
 Folgenummern wecken die Zustellung per ``LISTEN`` (``apps.events.wakeup``,
-``EVENTS_DB_DIRECT_URL``); dazu fragt sie alle 2 s ab. Später übernimmt ``events_worker`` diese
-Rolle; der Befehl bleibt für Betrieb und Fehlersuche.
+``EVENTS_DB_DIRECT_URL``); dazu fragt sie alle 2 s ab. Im Betrieb übernimmt ``events_worker`` diese
+Rolle (``--roles dispatch``); der Befehl bleibt für Betrieb und Fehlersuche.
 
     manage.py events_dispatch                          # Dauerbetrieb, alle Abonnements
     manage.py events_dispatch --once                   # einmal alles Fällige zustellen, dann Ende

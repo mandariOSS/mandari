@@ -147,22 +147,24 @@ das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 | `mandari_pdf_documents_total`, `mandari_pdf_generation_seconds` | `result` | PDF-Erzeugung an der zentralen Stelle `apps.common.pdf.html_to_pdf` |
 | `mandari_transcription_jobs` | `status` | wartende und laufende Transkriptionsaufträge |
 | `mandari_events_sequencer_blocked_seconds` | – | Ereignistechnik: wie lange eine offene Transaktion den Sequenzierer schon aufhält, auch aus einer anderen Datenbank desselben PostgreSQL-Clusters; 0 = nichts aufgehalten. Alarm ab 300 s (`apps/events/metrics.py`, beim Abruf aus der Datenbank gemessen) |
-| `mandari_events_sequencer_lag_seconds` | – | Rückstand des Sequenzierers: Alter (ab Erfassung) des ältesten Ereignisses, das eine Folgenummer bekommen könnte, aber noch keine hat; 0 = kein Rückstand. Wächst, wenn kein Sequenzierer läuft oder er hängt – das zeigt `…_blocked_seconds` nicht. Direkt nach dem Commit einer langen Transaktion kurz hoch, Alarme deshalb mit Mindestdauer. Solange kein Dienst den Sequenzierer startet (#508), wächst der Wert, sobald Ereignisse geschrieben werden |
+| `mandari_events_sequencer_lag_seconds` | – | Rückstand des Sequenzierers: Alter (ab Erfassung) des ältesten Ereignisses, das eine Folgenummer bekommen könnte, aber noch keine hat; 0 = kein Rückstand. Wächst, wenn kein Sequenzierer läuft oder er hängt – das zeigt `…_blocked_seconds` nicht. Direkt nach dem Commit einer langen Transaktion kurz hoch, Alarme deshalb mit Mindestdauer. Läuft kein Worker mit der Rolle `sequencer` (`manage.py events_worker`), wächst der Wert, sobald Ereignisse geschrieben werden |
 | `mandari_events_oldest_transaction_seconds` | – | Alter der ältesten offenen Transaktion mit Transaktionskennung im Cluster, soweit die Datenbankrolle sie sehen darf |
-| `mandari_events_sequenced_total` | – | vergebene Folgenummern; nur im Prozess des Sequenzierers (`manage.py events_sequencer`) |
+| `mandari_events_sequenced_total` | – | vergebene Folgenummern; nur im Prozess des Sequenzierers (`events_worker` bzw. `events_sequencer`) |
 | `mandari_events_published_total` | `type` | veröffentlichte Ereignisse je Typ, gezählt beim Vergeben der Folgenummer. So zählt jedes festgeschriebene Ereignis genau einmal, auch die des Ingestors (dessen eigene Zählung: `mandari_ingestor_events_published_total`). Die Summe über alle Typen entspricht `…_sequenced_total`; nur im Prozess des Sequenzierers |
-| `mandari_events_listener_up` | – | 1, solange der Weckruf per `LISTEN` ankommt (Selbstprüfung alle 30 s), 0 bei Rückfall auf reine Abfrage, etwa hinter PgBouncer ohne `EVENTS_DB_DIRECT_URL`; nur in Prozessen mit Weckruf (`events_sequencer`, `events_dispatch`) |
+| `mandari_events_listener_up` | – | 1, solange der Weckruf per `LISTEN` ankommt (Selbstprüfung alle 30 s), 0 bei Rückfall auf reine Abfrage, etwa hinter PgBouncer ohne `EVENTS_DB_DIRECT_URL`; nur in Prozessen mit Weckruf (`events_worker` mit `sequencer` oder `dispatch`, `events_sequencer`, `events_dispatch`) |
 | `mandari_events_parked` | `subscription`, `state` (`wiederholen`, `blockiert`, `tot`) | geparkte Ereignisse der Zustellung je Abonnement, beim Abruf aus `events_parked` gezählt. `tot` = nach acht Versuchen aufgegeben; Alarm bei `tot` > 0. `blockiert` = Folgeereignisse eines Objekts, das auf ein geparktes Ereignis wartet |
 | `mandari_events_lag_seconds` | `subscription` | Rückstand eines Abonnements: Alter (ab Erfassung) des ältesten nummerierten Ereignisses hinter seinem Cursor, das es zugestellt bekommt; 0 = aktuell. Nur für Abonnements, die im Code registriert sind (eine Zeile ohne Handler bekommt nie wieder etwas zugestellt). Beim Abruf aus der Datenbank gemessen (`apps/events/metrics.py`); Alarm ab 300 s, außer das Abonnement ist pausiert |
 | `mandari_events_subscription_paused` | `subscription` | 1, solange ein Abonnement pausiert ist (Admin-Seite „Ereignistechnik → Abonnements“); sein Rückstand wächst dann bewusst |
-| `mandari_events_delivered_total`, `mandari_events_delivery_failures_total`, `mandari_events_dead_total` | `subscription` | zugestellte Ereignisse, gescheiterte Zustellversuche und tot gewordene Ereignisse; nur im Prozess der Zustellung (`manage.py events_dispatch`) |
-| `mandari_tasks_queued` | `queue` | Aufträge (`events_task`, Backend `JournalBackend`): fällige wartende Aufträge je Warteschlange, also der Rückstand des Runners `manage.py events_tasks` (`apps/events/task_metrics.py`, beim Abruf aus der Datenbank gemessen) |
+| `mandari_events_delivered_total`, `mandari_events_delivery_failures_total`, `mandari_events_dead_total` | `subscription` | zugestellte Ereignisse, gescheiterte Zustellversuche und tot gewordene Ereignisse; nur im Prozess der Zustellung (`events_worker` bzw. `events_dispatch`) |
+| `mandari_tasks_queued` | `queue` | Aufträge (`events_task`, Backend `JournalBackend`): fällige wartende Aufträge je Warteschlange, also der Rückstand des Runners (`events_worker` mit der Rolle `tasks` bzw. `events_tasks`; `apps/events/task_metrics.py`, beim Abruf aus der Datenbank gemessen) |
 | `mandari_tasks_oldest_queued_seconds` | `queue` | wie lange der älteste fällige Auftrag schon wartet; wächst, wenn kein Runner läuft |
 | `mandari_tasks_running` | `queue` | laufende Aufträge |
 | `mandari_tasks_dead` | `queue` | tote (alle Versuche gescheitert) und endgültig fehlgeschlagene Aufträge, die in den letzten 24 Stunden beendet wurden; Alarm bei mehr als null (erlischt nach einem Tag von selbst), die Ursache steht im Protokoll des Runners |
 | `mandari_tasks_duration_seconds` | `queue` | Laufzeit je Auftragsversuch; nur im Prozess des Runners |
 | `mandari_tasks_failed_total` | `queue`, `grund` | gescheiterte Versuche: `fehler` (wird wiederholt), `endgueltig`, `zeitgrenze`, `sperre_abgelaufen` (Runner abgestürzt); nur im Prozess des Runners |
 | `mandari_worker_rss_bytes` | `role` | belegter Arbeitsspeicher des Runners (`role="tasks"`); oberhalb von `TASKS_MAX_MEMORY_MB` startet er neu; nur im Prozess des Runners |
+| `mandari_worker_role_up` | `role` | 1, solange die Rolle im Worker arbeitet (Faden lebt und hat sich innerhalb von `--stale-after`, Standard 300 s, gemeldet), sonst 0; nur im Worker (`manage.py events_worker`) |
+| `mandari_worker_role_beat_age_seconds` | `role` | Sekunden seit dem letzten Lebenszeichen der Rolle, bei `dispatch` das älteste ihrer Abonnements; nur im Worker |
 
 `view` ist der URL-Name samt Namensraum (z. B. `session:meeting_detail`), nie der konkrete
 Pfad – sonst würde jede ID ein neues Label erzeugen. Nicht auflösbare Pfade laufen unter
@@ -175,6 +177,27 @@ Endpunkt soll von außen nicht einmal bestätigt werden. Die Absenderadresse kom
 `X-Forwarded-For`, das Caddy vor der Anwendung durch die echte Adresse ersetzt; ein anderer
 Reverse-Proxy muss das genauso tun, sonst darf `METRICS_ALLOWED_NETWORKS` nur das Proxy-Netz
 enthalten und Prometheus nutzt das Token.
+
+**Worker:** `manage.py events_worker` liefert die Metriken seines Prozesses (Runner, Zustellung,
+Sequenzierer, Rollen) auf einem eigenen Port, Standard 9091 (`--metrics-port`), unter `/metrics`
+mit denselben Zugriffsregeln, und unter `/health` (ohne Zugriffsbeschränkung, nur Rollen und
+Zustand) 200 bzw. 503, wenn eine Rolle hängt. Vorschläge für Alarme:
+
+```promql
+# Rolle ausgefallen oder hängt (Heartbeat des Workers fehlt)
+min by (role) (mandari_worker_role_up) == 0
+absent(mandari_worker_role_up{role="tasks"})
+# Aufträge scheitern an der Zeitgrenze oder ihr Runner ist abgestürzt
+increase(mandari_tasks_failed_total{grund=~"zeitgrenze|sperre_abgelaufen"}[1h]) > 0
+# Tote Aufträge bzw. Ereignisse, Rückstand
+max by (queue) (mandari_tasks_dead) > 0
+max by (queue) (mandari_tasks_oldest_queued_seconds) > 300
+```
+
+Die Werte, die beim Abruf aus der Datenbank gemessen werden (`mandari_tasks_queued`,
+`mandari_events_parked`, `mandari_events_lag_seconds`, …), liefern Anwendung und Worker
+gleichermaßen; Alarme fassen sie deshalb mit `max by (…)` zusammen, wie die Regeln in
+`deploy/monitoring/prometheus-alerts.example.yml`.
 
 Beispiel-Scrape-Konfiguration: `deploy/monitoring/prometheus-scrape.example.yml`;
 Grafana-Vorlage (p95-Latenz je View, Fehlerquote, Pool-Belegung, Cache-Trefferquote):

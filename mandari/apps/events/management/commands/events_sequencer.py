@@ -5,8 +5,8 @@ Sequenzierer als eigener Prozess: vergibt Folgenummern an festgeschriebene Ereig
 Genau ein Prozess arbeitet (Lease ``sequencer``); weitere warten und übernehmen spätestens 30 s
 nach dem Ausfall des Inhabers. SIGTERM und SIGINT beenden den Dauerbetrieb nach dem laufenden
 Lauf und geben die Lease frei. Neue Journalzeilen wecken ihn per ``LISTEN`` (``apps.events.wakeup``,
-``EVENTS_DB_DIRECT_URL``); dazu fragt er jede Sekunde ab. Später übernimmt ``events_worker`` diese Rolle; der Befehl bleibt
-für Betrieb und Fehlersuche.
+``EVENTS_DB_DIRECT_URL``); dazu fragt er jede Sekunde ab. Im Betrieb übernimmt ``events_worker``
+diese Rolle (``--roles sequencer``); der Befehl bleibt für Betrieb und Fehlersuche.
 
     manage.py events_sequencer            # Dauerbetrieb
     manage.py events_sequencer --once     # einmal alles Vergebbare nummerieren, dann Ende

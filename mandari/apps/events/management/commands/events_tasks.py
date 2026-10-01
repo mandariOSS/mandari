@@ -15,7 +15,8 @@ Signal gibt laufende Aufträge sofort frei und beendet.
     manage.py events_tasks --queues ocr --max-memory-mb 900  # eigener Container für Texterkennung
     manage.py events_tasks --burst                           # Fälliges abarbeiten, dann Ende
 
-Später übernimmt ``events_worker`` diese Rolle; der Befehl bleibt für Betrieb und Fehlersuche.
+Im Betrieb übernimmt ``events_worker`` diese Rolle (``--roles tasks``); der Befehl bleibt für
+Betrieb und Fehlersuche.
 """
 
 from __future__ import annotations
@@ -23,22 +24,19 @@ from __future__ import annotations
 import logging
 import os
 import signal
-import sys
 import threading
 from pathlib import Path
 from types import FrameType
-from typing import Any, NoReturn
+from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from django.db import connections
 
-from apps.events.task_runner import POLL_INTERVAL, StopReason, TaskRunner, ensure_pool_capacity
+from apps.events.management.commands._optionen import liste, nicht_negativ, parallelitaet
+from apps.events.task_runner import POLL_INTERVAL, TaskRunner, ensure_pool_capacity
 from apps.events.tasks_backend import journal_options
+from apps.events.worker import EXIT_RESTART, replace_process
 
 logger = logging.getLogger(__name__)
-
-#: Exit-Code „bitte neu starten“ (EX_TEMPFAIL), wenn der Prozess sich nicht selbst ersetzt
-EXIT_RESTART = 75
 
 
 class Command(BaseCommand):
@@ -69,14 +67,12 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         config, alle = journal_options(options["backend"])
-        queues = _liste(options["queues"]) or list(alle)
+        queues = liste(options["queues"]) or list(alle)
         fremd = sorted(set(queues) - set(alle))
         if fremd:
             raise CommandError(f"Unbekannte Warteschlangen: {', '.join(fremd)} (bekannt: {', '.join(alle)})")
-        parallel = _parallelitaet(options["concurrency"], queues)
-        for name, wert in (("--max-tasks", options["max_tasks"]), ("--max-memory-mb", options["max_memory_mb"])):
-            if wert is not None and wert < 0:
-                raise CommandError(f"{name} darf nicht negativ sein.")
+        parallel = parallelitaet(options["concurrency"], queues)
+        nicht_negativ(max_tasks=options["max_tasks"], max_memory_mb=options["max_memory_mb"])
 
         runner = TaskRunner(
             config,
@@ -116,30 +112,5 @@ class Command(BaseCommand):
         if grund.restart and not options["burst"]:
             if options["no_restart"] or os.name != "posix":
                 raise SystemExit(EXIT_RESTART)
-            _neu_starten(grund)
-
-
-def _liste(wert: str | None) -> list[str]:
-    return [teil.strip() for teil in (wert or "").split(",") if teil.strip()]
-
-
-def _parallelitaet(angaben: list[str], queues: list[str]) -> dict[str, int]:
-    ergebnis: dict[str, int] = {}
-    for angabe in angaben:
-        name, _, zahl = angabe.partition("=")
-        name = name.strip()
-        if name not in queues or not zahl.strip().isdigit():
-            raise CommandError(f"--concurrency erwartet WARTESCHLANGE=N mit einer gewählten Warteschlange: {angabe}")
-        ergebnis[name] = int(zahl)
-    return ergebnis
-
-
-def _neu_starten(grund: StopReason) -> NoReturn:
-    """Ersetzt den Prozess durch denselben Befehl: gibt Speicher frei und beendet hängende Threads."""
-    logger.info("Aufträge: Runner startet neu (%s)", grund)
-    connections.close_all()
-    for strom in (sys.stdout, sys.stderr):
-        strom.flush()
-    for handler in logging.getLogger().handlers:
-        handler.flush()
-    os.execv(sys.executable, [sys.executable, *sys.orig_argv[1:]])
+            logger.info("Aufträge: Runner startet neu (%s)", grund)
+            replace_process()

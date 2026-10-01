@@ -273,13 +273,17 @@ def metrics_networks() -> tuple[IPNetwork, ...]:
     return _parse_networks(tuple(getattr(settings, "METRICS_ALLOWED_NETWORKS", ()) or ()))
 
 
+def access_allowed_from(ip: str, authorization: str) -> bool:
+    """Wie ``access_allowed``, für Server ohne Django-Anfrage (Worker): Absender und Header ``Authorization``."""
+    token = str(getattr(settings, "METRICS_TOKEN", "") or "")
+    if token and authorization.startswith("Bearer ") and secrets.compare_digest(authorization[7:].strip(), token):
+        return True
+    return ip_in_networks(ip, metrics_networks())
+
+
 def access_allowed(request: HttpRequest) -> bool:
     """Bearer-Token (``METRICS_TOKEN``) oder Absender aus ``METRICS_ALLOWED_NETWORKS``."""
-    token = str(getattr(settings, "METRICS_TOKEN", "") or "")
-    auth = request.headers.get("Authorization", "")
-    if token and auth.startswith("Bearer ") and secrets.compare_digest(auth[7:].strip(), token):
-        return True
-    return ip_in_networks(client_ip(request), metrics_networks())
+    return access_allowed_from(client_ip(request), request.headers.get("Authorization", ""))
 
 
 @never_cache

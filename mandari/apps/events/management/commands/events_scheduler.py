@@ -4,8 +4,9 @@ Zeitpläne als eigener Prozess: legt für fällige Termine Aufträge an (``apps.
 
 Genau ein Prozess plant (Lease ``scheduler``); weitere warten und übernehmen spätestens 30 s nach
 dem Ausfall des Inhabers. Ausgeführt werden die Aufträge vom Runner (``events_tasks``). SIGTERM
-und SIGINT beenden den Dauerbetrieb nach dem laufenden Durchlauf und geben die Lease frei. Später
-übernimmt ``events_worker`` diese Rolle; der Befehl bleibt für Betrieb und Fehlersuche.
+und SIGINT beenden den Dauerbetrieb nach dem laufenden Durchlauf und geben die Lease frei. Im Betrieb
+übernimmt ``events_worker`` diese Rolle (``--roles scheduler``); der Befehl bleibt für Betrieb und
+Fehlersuche.
 
     manage.py events_scheduler            # Dauerbetrieb
     manage.py events_scheduler --once     # einmal fällige Termine anlegen, dann Ende
