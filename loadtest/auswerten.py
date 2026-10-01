@@ -8,15 +8,21 @@ Auswertung eines Locust-Laufs (Issue #228): Bericht mit Kennzahlen und Performan
         [--nutzer 20 --anlauf 5 --dauer 3m --prozesse 1 --umgebung "…"]
 
 ``parameter`` gibt die Laufparameter eines Profils aus ``budgets.json`` als ``schluessel=wert`` aus
-(für ``$GITHUB_OUTPUT``): Nutzer, Anlauf je Sekunde, Laufzeit, Zahl der Anwendungsprozesse und die
-Startargumente für PostgreSQL (``postgres=-c shared_buffers=… -c …``). ``bericht`` liest die Ergebnisse eines Laufs, schreibt den Bericht als
+(für ``$GITHUB_OUTPUT``): Nutzer, Anlauf je Sekunde, Laufzeit, Zahl der Anwendungsprozesse, die
+Startargumente für PostgreSQL (``postgres=-c shared_buffers=… -c …``) und – mit ``--stufen`` – die
+Stufen der Kapazitätsmessung. ``bericht`` liest die Ergebnisse eines Laufs, schreibt den Bericht als
 Markdown und endet mit Status 1, wenn ein Budget verletzt ist.
+
+Kapazitätsmessung (Stufenlast, ``LOADTEST_STUFEN``): Die Nutzerzahl steigt stufenweise; der Bericht
+nennt je Stufe Durchsatz, p95, Fehlerquote und CPU und die höchste Stufe innerhalb der Zielwerte
+(``KAPAZITAET_P95_MS``, ``KAPAZITAET_FEHLER_PROZENT``). Die Budgets gelten dabei nicht – die Messung
+überschreitet die Grenze absichtlich.
 
 Eingaben, alle mit demselben Präfix (``--ergebnisse``):
 
 - ``<präfix>_stats.csv`` (Locust ``--csv``): je Endpunkt Anfragen, Fehler, Perzentile, Durchsatz
-- ``<präfix>_szenarien.json`` (``locustfile.py``): Perzentile je Szenario aus allen Einzelwerten und
-  die Antworten bedingter Anfragen (ETag, ``304 Not Modified``)
+- ``<präfix>_szenarien.json`` (``locustfile.py``): Perzentile je Szenario aus allen Einzelwerten,
+  die Antworten bedingter Anfragen (ETag, ``304 Not Modified``) und bei Stufenlast die Stufen
 - ``<präfix>_ressourcen.csv`` (``ressourcen.py``, optional): CPU und Speicher je Komponente
 
 Budgets je Profil (``budgets.json``):
@@ -52,6 +58,25 @@ MINDESTANFRAGEN_ENDPUNKT = 20
 RESERVE_HINWEIS = 1 / 3
 #: Laufparameter, die ``parameter`` ausgibt (Reihenfolge der Ausgabe)
 LAUFPARAMETER = ("nutzer", "anlauf", "dauer", "prozesse")
+#: Stufenlast: Sekunden nach jedem Stufenwechsel, die nicht in die Kennzahlen der Stufe eingehen
+EINSCHWINGEN_S = 20
+#: Zielwerte, bis zu denen eine Stufe als „getragen“ gilt (Kapazität im Bericht)
+KAPAZITAET_P95_MS = 1000
+KAPAZITAET_FEHLER_PROZENT = 1.0
+#: Obergrenzen der Stufenlast (Eingaben des manuellen Starts)
+STUFEN_MAX = 12
+STUFEN_NUTZER_MAX = 2000
+
+
+def stufen_lesen(text: str) -> list[int]:
+    """``"25,50,100"`` als Stufen der Kapazitätsmessung; leer = keine Stufenlast. Ungültiges bricht ab."""
+    teile = [teil.strip() for teil in text.split(",") if teil.strip()]
+    if not all(teil.isdigit() for teil in teile):
+        raise SystemExit("Stufen als Nutzerzahlen mit Komma angeben, z. B. 25,50,100")
+    stufen = [int(teil) for teil in teile]
+    if len(stufen) > STUFEN_MAX or any(not 0 < nutzer <= STUFEN_NUTZER_MAX for nutzer in stufen):
+        raise SystemExit(f"Höchstens {STUFEN_MAX} Stufen mit je 1 bis {STUFEN_NUTZER_MAX} Nutzern")
+    return stufen
 
 
 # =============================================================================
@@ -127,6 +152,29 @@ class Bewertung:
         return not self.verletzungen
 
 
+@dataclass(frozen=True)
+class Stufe:
+    """Eine Stufe der Kapazitätsmessung (ohne Einschwingzeit)."""
+
+    nutzer: int
+    anfragen: int
+    fehler: int
+    median_ms: float
+    p95_ms: float
+    anfragen_pro_s: float
+    cpu_anwendung: float | None = None
+    cpu_datenbank: float | None = None
+
+    @property
+    def fehlerquote(self) -> float:
+        return 100 * self.fehler / self.anfragen if self.anfragen else 0.0
+
+    @property
+    def getragen(self) -> bool:
+        """Innerhalb der Zielwerte (p95 und Fehlerquote) und überhaupt gemessen."""
+        return self.anfragen > 0 and self.p95_ms <= KAPAZITAET_P95_MS and self.fehlerquote <= KAPAZITAET_FEHLER_PROZENT
+
+
 @dataclass
 class Lauf:
     """Rahmen eines Laufs für den Bericht."""
@@ -138,6 +186,7 @@ class Lauf:
     prozesse: str = ""
     umgebung: str = ""
     bedingt: dict[str, dict[str, int]] = field(default_factory=dict)
+    stufen: list[Stufe] = field(default_factory=list)
 
 
 # =============================================================================
@@ -206,6 +255,58 @@ def ressourcen_zusammenfassen(zeilen: Iterable[Mapping[str, str]]) -> list[Resso
     ]
 
 
+def stufen_einlesen(daten: Mapping[str, Any], ressourcen: Iterable[Mapping[str, str]] = ()) -> list[Stufe]:
+    """
+    Stufen aus ``_szenarien.json`` (Schlüssel ``stufen``), dazu die mittlere CPU je Stufe aus der
+    Messreihe von ``ressourcen.py`` (Zeitachse ab Beginn der Messung, ohne Einschwingzeit).
+    """
+    stufen: Mapping[str, Any] = daten.get("stufen") or {}
+    liste: list[Mapping[str, Any]] = stufen.get("liste", [])
+    if not liste:
+        return []
+    dauer = float(stufen.get("dauer_s", 0)) or 1.0
+    einschwingen = float(stufen.get("einschwingen_s", 0))
+    cpu: dict[tuple[int, str], list[float]] = {}
+    for zeile in ressourcen:
+        if zeile.get("messgroesse") != "cpu_prozent":
+            continue
+        try:
+            zeit, wert = float(zeile["zeit_s"]), float(zeile["wert"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        index = int(zeit // dauer)
+        if zeit - index * dauer >= einschwingen:
+            cpu.setdefault((index, zeile.get("komponente", "")), []).append(wert)
+
+    def mittel(index: int, komponente: str) -> float | None:
+        werte = cpu.get((index, komponente))
+        return sum(werte) / len(werte) if werte else None
+
+    return [
+        Stufe(
+            nutzer=int(eintrag["nutzer"]),
+            anfragen=int(eintrag.get("anfragen", 0)),
+            fehler=int(eintrag.get("fehler", 0)),
+            median_ms=float(eintrag.get("p50_ms", 0.0)),
+            p95_ms=float(eintrag.get("p95_ms", 0.0)),
+            anfragen_pro_s=float(eintrag.get("anfragen_pro_s", 0.0)),
+            cpu_anwendung=mittel(index, "anwendung"),
+            cpu_datenbank=mittel(index, "postgres"),
+        )
+        for index, eintrag in enumerate(liste)
+    ]
+
+
+def kapazitaet(stufen: Sequence[Stufe]) -> Stufe | None:
+    """Höchste Stufe, bis zu der alle Stufen innerhalb der Zielwerte bleiben (None: schon die erste nicht)."""
+    getragen: Stufe | None = None
+    for stufe in stufen:
+        if not stufe.getragen:
+            break
+        getragen = stufe
+    return getragen
+
+
 def _csv_lesen(pfad: Path) -> list[dict[str, str]]:
     with pfad.open(encoding="utf-8", newline="") as datei:
         return list(csv.DictReader(datei))
@@ -268,6 +369,16 @@ def bewerten(
     return Bewertung(verletzungen, hinweise)
 
 
+def bewerten_kapazitaet(gesamt: Messung | None, stufen: Sequence[Stufe]) -> Bewertung:
+    """
+    Kapazitätsmessung: Sie sucht die Grenze und überschreitet sie absichtlich – die Budgets gelten
+    hier nicht. Verletzt ist nur ein Lauf, der nichts gemessen hat.
+    """
+    if gesamt is None or gesamt.anfragen == 0 or not any(stufe.anfragen for stufe in stufen):
+        return Bewertung(["Keine Anfragen gemessen – der Lauf hat nichts geprüft"], [])
+    return Bewertung([], ["Kapazitätsmessung (Stufenlast): Budgets nicht bewertet"])
+
+
 # =============================================================================
 # Bericht
 # =============================================================================
@@ -296,14 +407,20 @@ def bericht(
     szenario_budget: Mapping[str, int] = budget.get("szenarien_p95_ms", {})
     endpunkt_budget: Mapping[str, int] = budget.get("endpunkte_p95_ms", {})
     fehler_max = float(budget.get("fehlerquote_max_prozent", 1.0))
+    if lauf.stufen:
+        ergebnis = "Kapazitätsmessung" if bewertung.bestanden else "KEINE MESSUNG"
+    else:
+        ergebnis = "Budgets eingehalten" if bewertung.bestanden else "BUDGET VERLETZT"
     zeilen = [
-        f"## Lasttest „{lauf.profil}“: {'Budgets eingehalten' if bewertung.bestanden else 'BUDGET VERLETZT'}",
+        f"## Lasttest „{lauf.profil}“: {ergebnis}",
         "",
         "| Kennzahl | Wert |",
         "|---|---|",
         f"| Profil (Mengengerüst) | {lauf.profil} |",
     ]
-    if lauf.nutzer:
+    if lauf.stufen:
+        zeilen.append(f"| Stufen (gleichzeitige Nutzer) | {', '.join(str(s.nutzer) for s in lauf.stufen)} |")
+    elif lauf.nutzer:
         zeilen.append(
             f"| Gleichzeitige Nutzer, Anlauf je Sekunde, Laufzeit | {lauf.nutzer}, {lauf.anlauf}, {lauf.dauer} |"
         )
@@ -317,6 +434,36 @@ def bericht(
             f"| Durchsatz | {_de(gesamt.anfragen_pro_s, 1)} Anfragen/s |",
             f"| Fehlerquote | {_de(gesamt.fehlerquote, 2)} % (Budget {_de(fehler_max, 1)} %) |",
             f"| Median / p95 / p99 gesamt | {_ms(gesamt.median_ms)} / {_ms(gesamt.p95_ms)} / {_ms(gesamt.p99_ms)} ms |",
+        ]
+
+    if lauf.stufen:
+        grenze = kapazitaet(lauf.stufen)
+        zeilen += [
+            "",
+            "### Stufenlast (Kapazität)",
+            "",
+            f"Je Stufe ohne die ersten {EINSCHWINGEN_S} s nach dem Wechsel. Getragen heißt: p95 bis "
+            f"{_de(KAPAZITAET_P95_MS)} ms und Fehlerquote bis {_de(KAPAZITAET_FEHLER_PROZENT, 1)} %. "
+            "CPU in Prozent eines Kerns.",
+            "",
+            "| Nutzer | Anfragen/s | Fehlerquote | Median | p95 | CPU Anwendung | CPU Datenbank | getragen |",
+            "|---:|---:|---:|---:|---:|---:|---:|---|",
+        ]
+        for s in lauf.stufen:
+            cpu_a = _de(s.cpu_anwendung) + " %" if s.cpu_anwendung is not None else "–"
+            cpu_d = _de(s.cpu_datenbank) + " %" if s.cpu_datenbank is not None else "–"
+            zeilen.append(
+                f"| {s.nutzer} | {_de(s.anfragen_pro_s, 1)} | {_de(s.fehlerquote, 2)} % | {_ms(s.median_ms)} "
+                f"| {_ms(s.p95_ms)} | {cpu_a} | {cpu_d} | {'ja' if s.getragen else 'nein'} |"
+            )
+        zeilen += [
+            "",
+            (
+                f"Kapazität: **{grenze.nutzer} gleichzeitige Nutzer** bei {_de(grenze.anfragen_pro_s, 1)} Anfragen/s "
+                f"(p95 {_ms(grenze.p95_ms)} ms)."
+                if grenze
+                else "Kapazität: Schon die erste Stufe liegt außerhalb der Zielwerte."
+            ),
         ]
 
     zeilen += [
@@ -383,6 +530,8 @@ def bericht(
     if bewertung.verletzungen:
         zeilen.append("Budget verletzt:")
         zeilen += [f"- {v}" for v in bewertung.verletzungen]
+    elif lauf.stufen:
+        zeilen.append("Kapazitätsmessung ohne Budgetprüfung.")
     else:
         zeilen.append("Alle Budgets eingehalten.")
     if bewertung.hinweise:
@@ -428,6 +577,17 @@ def laufparameter(budget: Mapping[str, Any], ueberschreibungen: Mapping[str, str
         if not all(z.isalnum() or z in "_." for z in f"{name}{wert}"):
             raise SystemExit(f"Ungültige PostgreSQL-Einstellung: {name}={wert}")
     ergebnis["postgres"] = " ".join(f"-c {name}={wert}" for name, wert in postgres.items())
+    # Stufenlast (Kapazitätsmessung): Nutzerzahl je Stufe statt fester Zahl, Laufzeit aus den Stufen
+    stufen = stufen_lesen(str(ueberschreibungen.get("stufen") or ""))
+    stufendauer = str(ueberschreibungen.get("stufendauer") or "120").strip()
+    if not stufendauer.isdigit() or not 2 * EINSCHWINGEN_S <= int(stufendauer) <= 1800:
+        raise SystemExit(f"stufendauer in Sekunden angeben, {2 * EINSCHWINGEN_S} bis 1800")
+    ergebnis["stufen"] = ",".join(str(nutzer) for nutzer in stufen)
+    ergebnis["stufendauer"] = stufendauer
+    if stufen:
+        ergebnis["nutzer"] = str(max(stufen))
+        # Puffer: Locust beendet über die Stufen, die Laufzeit ist nur die harte Obergrenze
+        ergebnis["dauer"] = f"{len(stufen) * int(stufendauer) + 30}s"
     return ergebnis
 
 
@@ -445,6 +605,8 @@ def main(argv: list[str]) -> int:
     p_param.add_argument("--budgets", type=Path, default=BUDGETS)
     for schluessel in LAUFPARAMETER:
         p_param.add_argument(f"--{schluessel}", default="")
+    p_param.add_argument("--stufen", default="", help="Stufenlast, z. B. 25,50,100 (leer: feste Nutzerzahl)")
+    p_param.add_argument("--stufendauer", default="", help="Sekunden je Stufe (Vorgabe 120)")
 
     p_bericht = befehle.add_parser("bericht", help="Bericht schreiben und Budgets prüfen")
     p_bericht.add_argument("--profil", required=True)
@@ -459,7 +621,7 @@ def main(argv: list[str]) -> int:
     budget = profil_budget(budgets_lesen(args.budgets), args.profil)
 
     if args.befehl == "parameter":
-        werte = laufparameter(budget, {s: getattr(args, s) for s in LAUFPARAMETER})
+        werte = laufparameter(budget, {s: getattr(args, s) for s in (*LAUFPARAMETER, "stufen", "stufendauer")})
         for schluessel, wert in werte.items():
             print(f"{schluessel}={wert}")
         return 0
@@ -476,7 +638,9 @@ def main(argv: list[str]) -> int:
     )
     szenarien = szenarien_einlesen(szenario_daten)
     ressourcen_datei = Path(f"{praefix}_ressourcen.csv")
-    ressourcen = ressourcen_zusammenfassen(_csv_lesen(ressourcen_datei)) if ressourcen_datei.exists() else []
+    messreihe = _csv_lesen(ressourcen_datei) if ressourcen_datei.exists() else []
+    ressourcen = ressourcen_zusammenfassen(messreihe)
+    stufen = stufen_einlesen(szenario_daten, messreihe)
 
     lauf = Lauf(
         profil=args.profil,
@@ -486,8 +650,9 @@ def main(argv: list[str]) -> int:
         prozesse=args.prozesse,
         umgebung=args.umgebung,
         bedingt=szenario_daten.get("bedingt", {}),
+        stufen=stufen,
     )
-    bewertung = bewerten(gesamt, endpunkte, szenarien, budget)
+    bewertung = bewerten_kapazitaet(gesamt, stufen) if stufen else bewerten(gesamt, endpunkte, szenarien, budget)
     text = bericht(lauf, gesamt, endpunkte, szenarien, ressourcen, bewertung, budget)
     print(text)
     if args.bericht:

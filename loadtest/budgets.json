@@ -41,7 +41,7 @@
     "mittel": {
       "lauf": {
         "nutzer": 100,
-        "anlauf": 10,
+        "anlauf": 2,
         "dauer": "5m",
         "prozesse": 2,
         "postgres": {
@@ -61,7 +61,7 @@
     "gross": {
       "lauf": {
         "nutzer": 400,
-        "anlauf": 20,
+        "anlauf": 2,
         "dauer": "10m",
         "prozesse": 4,
         "postgres": {

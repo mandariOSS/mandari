@@ -15,20 +15,22 @@ Szenarien (Gewichtung in Klammern):
 - ``OParlAbnehmer`` (1): offene Schnittstelle — Listen beider Ausgaben (Aggregator und
   Session-Schnittstelle) seitenweise lesen, Einzelobjekte abrufen und Listen mit ``If-None-Match``
   erneut abfragen (``304 Not Modified``, wenn sich nichts geändert hat)
-- ``LiveAbstimmung`` (1): laufende Ratssitzung — Abstimmungsseite aufrufen und Einzelstimmen
-  aller Anwesenden erfassen (das ist der HTTP-Anteil der digitalen Abstimmung; eine
-  WebSocket-Verteilung an Endgeräte gibt es im Sitzungsdienst nicht)
+- ``LiveAbstimmung`` (genau ein Nutzer): Protokollführung der laufenden Ratssitzung —
+  Abstimmungsseite aufrufen und Einzelstimmen aller Anwesenden erfassen (das ist der HTTP-Anteil
+  der digitalen Abstimmung; eine WebSocket-Verteilung an Endgeräte gibt es im Sitzungsdienst nicht)
 - ``Sitzungsgeldlauf`` (genau ein Nutzer): Abrechnungslauf des Sitzungsgelds, Monat für Monat
   rückwärts durch die Historie, während die übrigen Szenarien laufen
 
 Kennzahlen: Locust schreibt je Endpunkt Anfragen, Fehler, Perzentile und Durchsatz nach
 ``<--csv>_stats.csv``. Dieses Modul schreibt zusätzlich ``<--csv>_szenarien.json`` mit den
-Perzentilen je Szenario aus allen Einzelwerten und den Antworten der bedingten Anfragen;
-``loadtest/auswerten.py`` macht daraus den Bericht und prüft die Budgets.
+Perzentilen je Szenario aus allen Einzelwerten, den Antworten der bedingten Anfragen und – bei
+Stufenlast – den Kennzahlen je Stufe; ``loadtest/auswerten.py`` macht daraus den Bericht und prüft
+die Budgets.
 
 Umgebungsvariablen: ``LOADTEST_PROFILE`` (klein|mittel|gross), ``LOADTEST_PASSWORD``,
 ``LOADTEST_BODY_ID`` (Kommune im Portal, sonst über ``/insight/k/<slug>/``),
-``LOADTEST_TLS_PRUEFEN=0`` (Zertifikat nicht prüfen, z. B. Caddy mit ``tls internal`` in der CI).
+``LOADTEST_TLS_PRUEFEN=0`` (Zertifikat nicht prüfen, z. B. Caddy mit ``tls internal`` in der CI),
+``LOADTEST_STUFEN``/``LOADTEST_STUFENDAUER`` (Stufenlast zur Kapazitätsmessung statt fester Nutzerzahl).
 """
 
 from __future__ import annotations
@@ -46,8 +48,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import urllib3
-from auswerten import szenario_kennzahlen
-from locust import HttpUser, between, events, task
+from auswerten import EINSCHWINGEN_S, stufen_lesen, szenario_kennzahlen
+from locust import HttpUser, LoadTestShape, between, events, task
 
 PROFIL = os.environ.get("LOADTEST_PROFILE", "klein")
 PASSWORT = os.environ.get("LOADTEST_PASSWORD", "Lasttest-2026!")
@@ -67,6 +69,12 @@ OPARL_LISTEN = ("papers", "meetings", "organizations", "people")
 MONATE_HISTORIE = 24
 #: Namenszusatz bedingter Anfragen (If-None-Match) in der Statistik
 BEDINGT = " [bedingt]"
+#: Stufenlast zur Kapazitätsmessung, z. B. ``LOADTEST_STUFEN=25,50,100``: je Stufe so viele Nutzer für
+#: ``LOADTEST_STUFENDAUER`` Sekunden (Klasse ``Stufenlast`` unten); leer = Nutzerzahl von der Kommandozeile
+STUFEN = stufen_lesen(os.environ.get("LOADTEST_STUFEN", ""))
+STUFENDAUER = int(os.environ.get("LOADTEST_STUFENDAUER", "120"))
+#: Anlauf je Sekunde beim Wechsel auf die nächste Stufe
+STUFEN_ANLAUF = 5
 
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _zaehler_sachbearbeitung = itertools.count()
@@ -108,15 +116,28 @@ def _monat(heute: date, zurueck: int) -> tuple[date, date]:
 _zeiten: dict[str, list[float]] = defaultdict(list)
 _fehler: Counter[str] = Counter()
 _bedingt: dict[str, Counter[str]] = defaultdict(Counter)
+#: Stufenlast: Zeiten und Fehler je Stufe (ohne die Einschwingzeit nach jedem Wechsel)
+_stufen_zeiten: dict[str, list[float]] = defaultdict(list)
+_stufen_fehler: Counter[str] = Counter()
 _beginn = [time.monotonic()]
 
 
 @events.test_start.add_listener
 def _messung_starten(**_kwargs: Any) -> None:
-    _zeiten.clear()
-    _fehler.clear()
-    _bedingt.clear()
+    for sammlung in (_zeiten, _fehler, _bedingt, _stufen_zeiten, _stufen_fehler):
+        sammlung.clear()
     _beginn[0] = time.monotonic()
+
+
+def _stufe() -> str | None:
+    """Laufende Stufe der Stufenlast als Schlüssel – oder None (keine Stufenlast, Einschwingzeit)."""
+    if not STUFEN:
+        return None
+    seit_beginn = time.monotonic() - _beginn[0]
+    index = int(seit_beginn // STUFENDAUER)
+    if index >= len(STUFEN) or seit_beginn - index * STUFENDAUER < EINSCHWINGEN_S:
+        return None
+    return str(index)
 
 
 @events.request.add_listener
@@ -136,6 +157,11 @@ def _messen(
         _bedingt[name]["anfragen"] += 1
         if getattr(response, "status_code", None) == 304:
             _bedingt[name]["nicht_geaendert"] += 1
+    stufe = _stufe()
+    if stufe is not None:
+        _stufen_zeiten[stufe].append(float(response_time))
+        if exception is not None:
+            _stufen_fehler[stufe] += 1
 
 
 @events.test_stop.add_listener
@@ -150,7 +176,31 @@ def _messung_schreiben(environment: Any, **_kwargs: Any) -> None:
         "szenarien": szenario_kennzahlen(_zeiten, _fehler, dauer),
         "bedingt": {name: dict(werte) for name, werte in sorted(_bedingt.items())},
     }
+    if STUFEN:
+        messdauer = STUFENDAUER - EINSCHWINGEN_S
+        kennzahlen = szenario_kennzahlen(_stufen_zeiten, _stufen_fehler, messdauer)
+        daten["stufen"] = {
+            "dauer_s": STUFENDAUER,
+            "einschwingen_s": EINSCHWINGEN_S,
+            "liste": [{"nutzer": nutzer, **kennzahlen.get(str(i), {})} for i, nutzer in enumerate(STUFEN)],
+        }
     Path(f"{praefix}_szenarien.json").write_text(json.dumps(daten, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+if STUFEN:
+
+    class Stufenlast(LoadTestShape):
+        """
+        Kapazitätsmessung: Nutzerzahl stufenweise erhöhen (``LOADTEST_STUFEN``), jede Stufe
+        ``LOADTEST_STUFENDAUER`` Sekunden. Der Bericht nennt je Stufe Durchsatz, p95, Fehlerquote und
+        CPU – und die höchste Stufe, die das System noch innerhalb der Zielwerte trägt.
+        """
+
+        def tick(self) -> tuple[int, float] | None:
+            index = int(self.get_run_time() // STUFENDAUER)
+            if index >= len(STUFEN):
+                return None
+            return STUFEN[index], STUFEN_ANLAUF
 
 
 # =============================================================================
@@ -189,8 +239,10 @@ class _Mandari(HttpUser):
             catch_response=True,
         ) as ergebnis:
             # Ohne Anmeldung landen alle weiteren Aufrufe auf der Anmeldeseite und messen das Falsche
-            if "/accounts/login/" in (ergebnis.url or ""):
-                ergebnis.failure(f"Anmeldung von {email} gescheitert (2FA-Pflicht, Passwort, Cookies über HTTPS?)")
+            if ergebnis.status_code >= 400:
+                ergebnis.failure(f"Anmeldung: HTTP {ergebnis.status_code}")
+            elif "/accounts/login/" in (ergebnis.url or ""):
+                ergebnis.failure("Anmeldung abgewiesen (2FA-Pflicht, Passwort, Cookies über HTTPS?)")
 
     def kommune_waehlen(self) -> None:
         if BODY_ID:
@@ -414,9 +466,16 @@ class OParlAbnehmer(_Mandari):
 
 
 class LiveAbstimmung(_Mandari):
-    """Protokollführung in der laufenden Ratssitzung: Einzelstimmen erfassen."""
+    """
+    Protokollführung in der laufenden Ratssitzung: Einzelstimmen erfassen.
 
-    weight = 1
+    Genau ein Nutzer (``fixed_count``): Eine Sitzung hat eine Protokollführung, die die Stimmen aller
+    Anwesenden erfasst – bei der Großstadt 90 je Abstimmung. Mit Gewichtung erfassten bei 400 Nutzern
+    über 30 Protokollführungen gleichzeitig dieselben Tagesordnungspunkte; das misst Sperrkonflikte, die
+    es im Betrieb nicht gibt.
+    """
+
+    fixed_count = 1
     szenario = "Live-Abstimmung"
     wait_time = between(5, 15)
     tops: list[str]

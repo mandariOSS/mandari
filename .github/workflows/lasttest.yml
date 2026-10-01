@@ -46,6 +46,18 @@ on:
         description: 'Laufzeit im Locust-Format, z. B. 3m oder 15m (leer = laut loadtest/budgets.json)'
         required: false
         default: ''
+      prozesse:
+        description: 'Anwendungsprozesse (leer = laut loadtest/budgets.json)'
+        required: false
+        default: ''
+      stufen:
+        description: 'Kapazitätsmessung: Nutzer je Stufe, z. B. 25,50,100,150 (leer = feste Nutzerzahl, Budget-Gate)'
+        required: false
+        default: ''
+      stufendauer:
+        description: 'Sekunden je Stufe der Kapazitätsmessung'
+        required: false
+        default: '120'
   pull_request:
     branches:
       - dev
@@ -68,17 +80,34 @@ defaults:
 
 jobs:
   lasttest:
-    name: Lasttest (${{ matrix.profil }})
+    name: Lasttest (${{ matrix.profil }}${{ matrix.stufen && ', Kapazität' || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        profil: [klein, mittel, gross]
+        include:
+          - profil: klein
+            stufen: ''
+            prozesse: ''
+          - profil: gross
+            stufen: ''
+            prozesse: ''
+          - profil: gross
+            stufen: '25,50,75,100,150,200'
+            prozesse: ''
+          - profil: klein
+            stufen: '10,20,30,40,60,80'
+            prozesse: '1'
     env:
       PROFIL: ${{ matrix.profil }}
       EINGABE_NUTZER: ${{ inputs.nutzer }}
       EINGABE_DAUER: ${{ inputs.dauer }}
+      EINGABE_PROZESSE: ${{ matrix.prozesse }}
+      EINGABE_STUFEN: ${{ matrix.stufen }}
+      EINGABE_STUFENDAUER: ${{ inputs.stufendauer }}
+      # Ergebnisse je Lauf unterscheidbar (Artefakt): Profil und ggf. Kapazitätsmessung
+      LAUF_NAME: ${{ matrix.profil }}${{ matrix.stufen && '-kapazitaet' || '' }}
       ERGEBNISSE: loadtest/results
       SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
       DEBUG: 'false'
@@ -106,7 +135,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 loadtest/auswerten.py parameter --profil "$PROFIL" \
-            --nutzer "$EINGABE_NUTZER" --dauer "$EINGABE_DAUER" | tee -a "$GITHUB_OUTPUT"
+            --nutzer "$EINGABE_NUTZER" --dauer "$EINGABE_DAUER" --prozesse "$EINGABE_PROZESSE" \
+            --stufen "$EINGABE_STUFEN" --stufendauer "$EINGABE_STUFENDAUER" | tee -a "$GITHUB_OUTPUT"
           key=$(python3 -c 'import base64,secrets;print(base64.b64encode(secrets.token_bytes(32)).decode())')
           echo "::add-mask::$key"
           echo "ENCRYPTION_MASTER_KEY=$key" >> "$GITHUB_ENV"
@@ -234,9 +264,12 @@ jobs:
           LOADTEST_PROFILE: ${{ env.PROFIL }}
           # Caddy beglaubigt localhost mit eigener Zertifizierungsstelle (tls internal)
           LOADTEST_TLS_PRUEFEN: '0'
+          # Kapazitätsmessung: Stufen statt fester Nutzerzahl (Klasse Stufenlast in locustfile.py)
+          LOADTEST_STUFEN: ${{ steps.lauf.outputs.stufen }}
+          LOADTEST_STUFENDAUER: ${{ steps.lauf.outputs.stufendauer }}
         run: |
           set -euo pipefail
-          python loadtest/ressourcen.py --ausgabe "$ERGEBNISSE/${PROFIL}_ressourcen.csv" \
+          python loadtest/ressourcen.py --ausgabe "$ERGEBNISSE/${LAUF_NAME}_ressourcen.csv" \
             --prozess anwendung=mandari.asgi:application --prozess lastgeber=loadtest/locustfile.py \
             --container postgres=lasttest-postgres --container redis=lasttest-redis \
             --container elasticsearch=lasttest-elasticsearch --container caddy=lasttest-caddy \
@@ -244,7 +277,7 @@ jobs:
           messung=$!
           /tmp/locust/bin/locust -f loadtest/locustfile.py --headless --host https://localhost:8443 \
             -u "$NUTZER" -r "$ANLAUF" -t "$DAUER" --exit-code-on-error 0 --only-summary \
-            --csv "$ERGEBNISSE/$PROFIL" --html "$ERGEBNISSE/$PROFIL.html"
+            --csv "$ERGEBNISSE/$LAUF_NAME" --html "$ERGEBNISSE/$LAUF_NAME.html"
           kill -TERM "$messung"
           wait "$messung" || true
 
@@ -257,12 +290,12 @@ jobs:
         run: |
           set -uo pipefail
           umgebung="GitHub-Läufer ubuntu-latest, $(nproc) vCPU, $(free -m | awk '/^Mem:/{printf "%.0f", $2/1024}') GB RAM; Anwendung, Datenbank, Suche und Lastgeber auf demselben Rechner"
-          python loadtest/auswerten.py bericht --profil "$PROFIL" --ergebnisse "$ERGEBNISSE/$PROFIL" \
+          python loadtest/auswerten.py bericht --profil "$PROFIL" --ergebnisse "$ERGEBNISSE/$LAUF_NAME" \
             --nutzer "$NUTZER" --anlauf "$ANLAUF" --dauer "$DAUER" --prozesse "$PROZESSE" \
-            --umgebung "$umgebung" --bericht "$ERGEBNISSE/$PROFIL-bericht.md" > /dev/null
+            --umgebung "$umgebung" --bericht "$ERGEBNISSE/$LAUF_NAME-bericht.md" > /dev/null
           status=$?
-          cat "$ERGEBNISSE/$PROFIL-bericht.md" >> "$GITHUB_STEP_SUMMARY"
-          cat "$ERGEBNISSE/$PROFIL-bericht.md"
+          cat "$ERGEBNISSE/$LAUF_NAME-bericht.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "$ERGEBNISSE/$LAUF_NAME-bericht.md"
           exit $status
 
       - name: Fehler der Anwendung (Protokoll)
@@ -280,6 +313,6 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: lasttest-${{ env.PROFIL }}
+          name: lasttest-${{ env.LAUF_NAME }}
           path: loadtest/results/
           retention-days: 30

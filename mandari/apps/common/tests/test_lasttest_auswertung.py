@@ -264,6 +264,8 @@ def test_laufparameter_mit_vorgaben_und_ueberschreibungen(auswerten: ModuleType)
         "dauer": "3m",
         "prozesse": "1",
         "postgres": "-c work_mem=8MB",
+        "stufen": "",
+        "stufendauer": "120",
     }
     assert auswerten.laufparameter(budget, {"nutzer": "50", "dauer": "15m"})["nutzer"] == "50"
     assert auswerten.laufparameter(budget, {"nutzer": "", "dauer": None})["dauer"] == "3m"
@@ -271,7 +273,17 @@ def test_laufparameter_mit_vorgaben_und_ueberschreibungen(auswerten: ModuleType)
 
 @pytest.mark.parametrize(
     "ueberschreibung",
-    [{"nutzer": "20; rm -rf /"}, {"dauer": "3 Minuten"}, {"dauer": "$(id)"}, {"nutzer": "-1"}],
+    [
+        {"nutzer": "20; rm -rf /"},
+        {"dauer": "3 Minuten"},
+        {"dauer": "$(id)"},
+        {"nutzer": "-1"},
+        {"stufen": "25,50;id"},
+        {"stufen": "0,50"},
+        {"stufen": ",".join(["10"] * 13)},
+        {"stufen": "25", "stufendauer": "10"},
+        {"stufen": "25", "stufendauer": "2m"},
+    ],
 )
 def test_ungueltige_eingaben_des_manuellen_starts(auswerten: ModuleType, ueberschreibung: dict[str, str]) -> None:
     budget = {"lauf": {"nutzer": 20, "anlauf": 5, "dauer": "3m", "prozesse": 1}}
@@ -346,3 +358,90 @@ def test_ressourcen_zusammenfassen(auswerten: ModuleType) -> None:
         ("anwendung", "speicher_mb", 300.0, 300.0),
         ("postgres", "verbindungen", 8.0, 12.0),
     ]
+
+
+# =============================================================================
+# Stufenlast (Kapazitätsmessung)
+# =============================================================================
+
+
+def test_stufenlast_bestimmt_nutzer_und_laufzeit(auswerten: ModuleType) -> None:
+    budget = {"lauf": {"nutzer": 400, "anlauf": 2, "dauer": "10m", "prozesse": 4}}
+    werte = auswerten.laufparameter(budget, {"stufen": " 25, 50,100 ", "stufendauer": "90"})
+
+    assert werte["stufen"] == "25,50,100"
+    assert werte["nutzer"] == "100"
+    assert werte["dauer"] == "300s"
+    assert auswerten.stufen_lesen("") == []
+
+
+def _stufe(modul: ModuleType, nutzer: int, *, p95: float, fehler: int = 0) -> object:
+    return modul.Stufe(nutzer=nutzer, anfragen=1000, fehler=fehler, median_ms=p95 / 3, p95_ms=p95, anfragen_pro_s=10.0)
+
+
+def test_kapazitaet_ist_die_letzte_getragene_stufe_vor_der_ersten_ueberlast(auswerten: ModuleType) -> None:
+    stufen = [
+        _stufe(auswerten, 25, p95=300),
+        _stufe(auswerten, 50, p95=700),
+        _stufe(auswerten, 100, p95=1800),
+        # Eine spätere Stufe innerhalb der Zielwerte (Zufall, Cache) hebt die Grenze nicht an
+        _stufe(auswerten, 150, p95=900),
+    ]
+    assert auswerten.kapazitaet(stufen).nutzer == 50
+    assert auswerten.kapazitaet([_stufe(auswerten, 25, p95=300, fehler=20)]) is None
+    assert auswerten.kapazitaet([]) is None
+
+
+def test_stufen_mit_cpu_je_stufe_ohne_einschwingzeit(auswerten: ModuleType) -> None:
+    daten = {
+        "stufen": {
+            "dauer_s": 100,
+            "einschwingen_s": 20,
+            "liste": [
+                {"nutzer": 25, "anfragen": 900, "fehler": 0, "p50_ms": 80, "p95_ms": 300, "anfragen_pro_s": 11.2},
+                {"nutzer": 50, "anfragen": 0},
+            ],
+        }
+    }
+    messreihe = [
+        {"zeit_s": "10", "komponente": "anwendung", "messgroesse": "cpu_prozent", "wert": "400"},  # Einschwingen
+        {"zeit_s": "50", "komponente": "anwendung", "messgroesse": "cpu_prozent", "wert": "100"},
+        {"zeit_s": "90", "komponente": "anwendung", "messgroesse": "cpu_prozent", "wert": "140"},
+        {"zeit_s": "90", "komponente": "postgres", "messgroesse": "cpu_prozent", "wert": "30"},
+        {"zeit_s": "90", "komponente": "anwendung", "messgroesse": "speicher_mb", "wert": "900"},
+    ]
+
+    stufen = auswerten.stufen_einlesen(daten, messreihe)
+
+    assert [s.nutzer for s in stufen] == [25, 50]
+    assert stufen[0].cpu_anwendung == 120
+    assert stufen[0].cpu_datenbank == 30
+    assert stufen[1].cpu_anwendung is None
+    assert not stufen[1].getragen  # nichts gemessen
+    assert auswerten.stufen_einlesen({}) == []
+
+
+def test_bericht_der_kapazitaetsmessung(auswerten: ModuleType, tmp_path: Path) -> None:
+    praefix = tmp_path / "gross"
+    _ergebnisse_schreiben(praefix, p95_portal=5000)  # weit über jedem Budget: gilt hier nicht
+    daten = json.loads(Path(f"{praefix}_szenarien.json").read_text(encoding="utf-8"))
+    daten["stufen"] = {
+        "dauer_s": 120,
+        "einschwingen_s": 20,
+        "liste": [
+            {"nutzer": 50, "anfragen": 2000, "fehler": 0, "p50_ms": 90, "p95_ms": 400, "anfragen_pro_s": 20.0},
+            {"nutzer": 100, "anfragen": 3000, "fehler": 90, "p50_ms": 900, "p95_ms": 2400, "anfragen_pro_s": 30.0},
+        ],
+    }
+    Path(f"{praefix}_szenarien.json").write_text(json.dumps(daten), encoding="utf-8")
+    bericht = tmp_path / "bericht.md"
+
+    assert (
+        auswerten.main(["bericht", "--profil", "gross", "--ergebnisse", str(praefix), "--bericht", str(bericht)]) == 0
+    )
+    text = bericht.read_text(encoding="utf-8")
+    assert "Lasttest „gross“: Kapazitätsmessung" in text
+    assert "| Stufen (gleichzeitige Nutzer) | 50, 100 |" in text
+    assert "| 100 | 30,0 | 3,00 % | 900 | 2.400 |" in text
+    assert "Kapazität: **50 gleichzeitige Nutzer** bei 20,0 Anfragen/s (p95 400 ms)." in text
+    assert "Kapazitätsmessung ohne Budgetprüfung." in text
