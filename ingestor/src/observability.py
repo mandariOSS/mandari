@@ -8,7 +8,9 @@ Gegenstück zu ``apps/common/observability.py`` im Django-Projekt:
   hängt ``request_id``/``trace_id``/``span_id`` an jeden Log-Record.
 - ``setup_opentelemetry()`` aktiviert Tracing (httpx, asyncpg, SQLAlchemy), sobald
   ``OTEL_EXPORTER_OTLP_ENDPOINT`` gesetzt ist; Dienstname ``OTEL_SERVICE_NAME`` (Standard
-  ``mandari-ingestor``).
+  ``mandari-ingestor``). Es läuft erst im CLI-Callback, nach dem Import der Module: Spans je Anweisung liefert
+  die SQLAlchemy-Instrumentierung deshalb nur für Engines aus ``src.storage.engine.engine_erzeugen()``
+  (Issue #699). Jede Anweisung erscheint dann zweimal – als SQLAlchemy- und als asyncpg-Span.
 - ``trigger_context()`` übernimmt ``request_id``/``trace_id``/``span_id`` aus dem Redis-Trigger des
   Django-Admins, sodass ein ausgelöster Sync denselben ``trace_id`` trägt wie die Anfrage.
 """

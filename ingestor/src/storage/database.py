@@ -27,12 +27,13 @@ from mandari_oparl import (
 )
 from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.storage import events, ris_events
+from src.storage.engine import engine_erzeugen
 from src.storage.models import (
     OParlAgendaItem,
     OParlBody,
@@ -202,7 +203,8 @@ class DatabaseStorage:
         # Ereignistechnik: Änderungen am RIS-Bestand als ris.*-Ereignisse melden, in derselben
         # Transaktion wie die Datenänderung (src/storage/events.py, src/storage/ris_events.py).
         self.events_enabled = settings.events_enabled if events_enabled is None else events_enabled
-        self._engine = create_async_engine(
+        # Über engine_erzeugen(), damit die SQLAlchemy-Instrumentierung auch hier Spans je Anweisung liefert
+        self._engine = engine_erzeugen(
             self.database_url,
             echo=False,
             pool_size=10,
