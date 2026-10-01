@@ -314,6 +314,27 @@ bleibt; präzisiert wurde:
   das ein Konfigurationsfehler; die Prüfung bleibt nie still aus.
 - **Folgenummer:** `publish()` vergibt keine; das zurückgegebene Ereignis hat `seq = None`.
 
+## Nachtrag zur Überwachung (#510)
+
+- **Rückstand je Abonnement** (`mandari_events_lag_seconds{subscription}`): das Alter ab Erfassung
+  des ältesten nummerierten Ereignisses hinter dem Cursor, das zu den Typmustern des Abonnements
+  passt. Beim Abruf von `/metrics/` aus der Datenbank gemessen, nur für Abonnements, die im Code
+  registriert sind; eine Zeile ohne Handler würde sonst dauerhaft alarmieren.
+  `mandari_events_subscription_paused` nimmt pausierte Abonnements vom Alarm aus.
+- **Veröffentlichte Ereignisse** (`mandari_events_published_total{type}`) zählt der Sequenzierer beim
+  Vergeben der Folgenummer. Nur er sieht jedes festgeschriebene Ereignis genau einmal, auch die des
+  Ingestors. `publish()` könnte nur die eigenen zählen; eine Zählung über das ganze Journal bei jedem
+  Abruf wäre bei wachsendem Journal zu teuer und bei mehreren Webprozessen mehrfach.
+- **Admin-Seite** (`apps/events/admin.py`) nur für Superuser, mit Eingriffen über die Funktionen der
+  Zustellung (`set_state`, `retry_parked`, `discard_parked`). Jeder Eingriff steht in derselben
+  Transaktion im Sicherheitsprotokoll (`SecurityAuditLog`, Ereignis `betrieb`). Geparkte Ereignisse
+  erscheinen als Ketten je Objekt (Kopf mit Zahl der Folgeereignisse).
+- **Alarmregeln** als Prometheus-Regeln (`deploy/monitoring/prometheus-alerts.example.yml`,
+  `docs/MONITORING.md`): Rückstand über fünf Minuten, tote Ereignisse, Sequenzierer-Stau über fünf
+  Minuten, dazu Hinweise auf viele blockierte Ereignisse und einen gestörten Weckruf.
+- **Offen:** Nachspielen eines Abonnements ab einer Folgenummer und die Push-Prüfung „Worker lebt“
+  (Heartbeat und `/metrics` im Worker-Prozess, #508).
+
 ## Bezug
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A3 Sequenzierer](20260929-sequenzierer.md),

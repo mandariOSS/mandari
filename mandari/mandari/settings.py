@@ -1078,6 +1078,32 @@ UNFOLD = {
                 # - Sicherheitsbenachrichtigungen → Work Portal
             },
             {
+                # Ereignistechnik (Issue #510): nur für Administratoren, Eingriffe im Sicherheitsprotokoll
+                "title": _("Ereignistechnik"),
+                "separator": True,
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": _("Abonnements"),
+                        "icon": "sync_alt",
+                        "link": reverse_lazy("admin:events_subscription_changelist"),
+                        "permission": "apps.events.admin.nur_administratoren",
+                    },
+                    {
+                        "title": _("Geparkte Ereignisse"),
+                        "icon": "pending_actions",
+                        "link": reverse_lazy("admin:events_parkedevent_changelist"),
+                        "permission": "apps.events.admin.nur_administratoren",
+                    },
+                    {
+                        "title": _("Aufträge"),
+                        "icon": "task",
+                        "link": reverse_lazy("admin:events_task_changelist"),
+                        "permission": "apps.events.admin.nur_administratoren",
+                    },
+                ],
+            },
+            {
                 "title": _("System"),
                 "separator": True,
                 "collapsible": False,

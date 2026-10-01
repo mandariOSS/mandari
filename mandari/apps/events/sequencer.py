@@ -43,12 +43,13 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 
 from django.db import DatabaseError, close_old_connections, connection, transaction
 
 from . import leases
-from .metrics import SEQUENCED
+from .metrics import PUBLISHED, SEQUENCED
 from .models import SEQUENCE_NAME
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ _FREIE_ZEILEN = """
         SELECT pg_snapshot_xmin(s.snap) AS xmin, pg_snapshot_xmax(s.snap) AS xmax
           FROM pg_current_snapshot() AS s(snap)
     )
-    SELECT e.id
+    SELECT e.id, e.type
       FROM events_event e, grenze g
      WHERE e.seq IS NULL
        AND (e.xid < g.xmin OR e.xid >= g.xmax)
@@ -107,7 +108,8 @@ def assign_batch(holder: str, batch_size: int = BATCH_SIZE) -> int:
     require_postgresql()
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(_FREIE_ZEILEN, [batch_size])
-        ids = [zeile[0] for zeile in cursor.fetchall()]
+        zeilen = cursor.fetchall()
+        ids = [zeile[0] for zeile in zeilen]
         if not ids:
             return 0
         leases.fence(LEASE_NAME, holder)
@@ -116,6 +118,8 @@ def assign_batch(holder: str, batch_size: int = BATCH_SIZE) -> int:
         cursor.execute(_NUMMERN_SETZEN, [ids, nummern])
         cursor.execute("SELECT pg_notify(%s, '')", [SEQUENCED_CHANNEL])
     SEQUENCED.inc(len(ids))
+    for typ, anzahl in Counter(zeile[1] for zeile in zeilen).items():
+        PUBLISHED.labels(type=typ).inc(anzahl)
     return len(ids)
 
 
