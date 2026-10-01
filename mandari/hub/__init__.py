@@ -10,6 +10,8 @@ Drehscheibe darf die Plattform (``apps.events``, ``apps.common``, ``apps.account
 
 Unterpakete:
 
+- ``hub.adapters``: Adapter zu Fremdsystemen (Rahmen: ``docs/adr/20260929-adapter-rahmen.md``), zuerst der
+  Katalog der offenen Daten nach DCAT-AP.de für Datenportale (``hub.adapters.dcat``)
 - ``hub.api``: offene Schnittstelle (OParl 1.1 mit kompatiblen Erweiterungen) – der Aggregator über den
   RIS-Bestand und die eine Serialisierung, die auch die Schnittstelle der Session-Mandanten ausgibt
 - ``hub.commands``: Befehle an den Eigentümer der Daten (Dispatcher, Quittung, Idempotenz, Clients)

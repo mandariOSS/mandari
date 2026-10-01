@@ -607,6 +607,20 @@ if OPARL_CHANGES_RETENTION_DAYS < 30:
 
     raise ImproperlyConfigured("OPARL_CHANGES_RETENTION_DAYS muss mindestens 30 sein (Zusage des Änderungsfeeds).")
 
+# Katalog der offenen Ratsinformationen nach DCAT-AP.de 3.0 (Issue #104, docs/DCAT_KATALOG.md): alle gelisteten
+# Kommunen unter /data/dcat/catalog, je Kommune unter /data/dcat/body/<uuid>/catalog (.ttl, .rdf, .jsonld).
+# Standard aus: Herausgeber und Kontakt müssen stimmen, bevor ein Datenportal den Katalog einsammelt.
+DCAT_ENABLED = os.environ.get("DCAT_ENABLED", "false").lower() in ("1", "true", "yes")
+# Herausgeber der Datensätze des Aggregators (der Betreiber, keine Person) und seine Webseite
+DCAT_PUBLISHER_NAME = os.environ.get("DCAT_PUBLISHER_NAME", "mandari").strip()
+DCAT_PUBLISHER_URL = os.environ.get("DCAT_PUBLISHER_URL", SITE_URL).strip()
+# Kontaktadresse im Katalog: ein Funktionspostfach, keine persönliche Adresse; leer = nur die Webseite
+DCAT_CONTACT_EMAIL = os.environ.get("DCAT_CONTACT_EMAIL", "").strip()
+# Kennung des Betreibers bei GovData (http://dcat-ap.de/def/contributors/…), vergeben bei der Anmeldung dort
+DCAT_CONTRIBUTOR_ID = os.environ.get("DCAT_CONTRIBUTOR_ID", "").strip()
+# Fertige Kataloge im Cache (Sekunden, 0 = aus); ein neuer Veröffentlichungsstand gilt sofort
+DCAT_CACHE_SECONDS = int(os.environ.get("DCAT_CACHE_SECONDS", "300"))
+
 # Sync-Einstellungen (alle 10 Minuten inkrementell, Full-Sync um 3 Uhr)
 SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))
 SYNC_FULL_HOUR = int(os.environ.get("SYNC_FULL_HOUR", "3"))

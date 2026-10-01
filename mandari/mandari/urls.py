@@ -84,6 +84,8 @@ urlpatterns = [
     path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),
     # Offene Schnittstelle der Drehscheibe: Aggregator über den RIS-Bestand aller Kommunen (OParl 1.1)
     path("oparl/", include("hub.api.urls", namespace="oparl_api")),
+    # Katalog der offenen Ratsinformationen nach DCAT-AP.de für Datenportale (Issue #104)
+    path("data/dcat/", include("hub.adapters.dcat.urls", namespace="dcat")),
     # Authentication (login, logout, password reset)
     path("accounts/", include("apps.accounts.urls", namespace="accounts")),
     # Session RIS (administrative portal)
