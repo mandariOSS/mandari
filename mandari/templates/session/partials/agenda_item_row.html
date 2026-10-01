@@ -1,6 +1,6 @@
 {% comment %}
 Eine TOP-Zeile der Tagesordnung (Issue #26).
-Kontext: item, tenant_slug, agenda_can_edit, is_sub (optional)
+Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Niederschrift), is_sub (optional)
 {% endcomment %}
 <div class="px-6 py-4 {% if is_sub %}pl-14 bg-gray-50/50 dark:bg-gray-900/20{% endif %}"
      {% if agenda_can_edit and not is_sub %}draggable="true" data-agenda-item="{{ item.id }}"{% endif %}>
@@ -114,6 +114,12 @@ Kontext: item, tenant_slug, agenda_can_edit, is_sub (optional)
                 </button>
             </form>
         </div>
+        {% elif agenda_can_retract and item.is_public %}
+        <!-- Genehmigte Niederschrift: nur noch Rücknahme auf nichtöffentlich -->
+        <a href="{% url 'session:agenda_item_edit' tenant_slug=tenant_slug item_id=item.id %}"
+           class="p-1 flex-shrink-0 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded" title="Auf nichtöffentlich setzen">
+            <i data-lucide="eye-off" class="w-4 h-4"></i>
+        </a>
         {% endif %}
     </div>
 </div>

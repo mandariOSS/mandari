@@ -17,12 +17,12 @@ Zentrale Logik für:
 import logging
 from typing import Any, cast
 
-from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from apps.common.params import uuid_param
 from apps.common.pdf import html_to_pdf
 from apps.session import audit
 from apps.session.models import (
@@ -136,12 +136,10 @@ def approval_candidates(meeting: SessionMeeting, *, include_non_public: bool):
 
 
 def _select_approval_item(meeting: SessionMeeting, raw: str, *, include_non_public: bool) -> SessionAgendaItem | None:
-    if not raw:
+    item_id = uuid_param(raw)
+    if item_id is None:
         return None
-    try:
-        return approval_candidates(meeting, include_non_public=include_non_public).filter(pk=raw).first()
-    except (ValueError, ValidationError):
-        return None
+    return approval_candidates(meeting, include_non_public=include_non_public).filter(pk=item_id).first()
 
 
 def perform_action(
@@ -222,7 +220,8 @@ def perform_action(
             protocol.approval_agenda_item = item
             protocol.approval_meeting = item.meeting
         else:
-            approval_meeting_id = str(data.get("approval_meeting", ""))
+            # Nicht lesbare Kennung: keine Folgesitzung (der Filter selbst wirft sonst schon beim Aufbau)
+            approval_meeting_id = uuid_param(data.get("approval_meeting"))
             if approval_meeting_id:
                 candidates = SessionMeeting.objects.filter(
                     pk=approval_meeting_id, tenant_id=meeting.tenant_id, organization_id=meeting.organization_id
@@ -230,10 +229,7 @@ def perform_action(
                 # Nichtöffentliche Folgesitzungen nur mit NÖ-Sichtrecht (wie die Auswahl der TOPs)
                 if not include_non_public:
                     candidates = candidates.filter(is_public=True)
-                try:
-                    protocol.approval_meeting = candidates.first()
-                except (ValueError, ValidationError):
-                    protocol.approval_meeting = None
+                protocol.approval_meeting = candidates.first()
         note = str(data.get("approval_note", "")).strip()[:500]
         if note:
             protocol.approval_note = note

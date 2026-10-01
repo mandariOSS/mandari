@@ -74,8 +74,8 @@
             <p x-show="method === 'secret'" x-cloak class="text-xs text-amber-700 dark:text-amber-400" data-testid="hinweis-geheim">{{ secret_hint }}</p>
             {% endif %}
 
-            <!-- Geheime Abstimmung: nur Summen -->
-            <div x-show="method === 'secret'" x-cloak class="grid grid-cols-3 gap-3">
+            <!-- Geheime Abstimmung und „Nur Summen“: Summen von Hand -->
+            <div x-show="method === 'secret' || method === 'summary'" x-cloak class="grid grid-cols-3 gap-3">
                 <div>
                     <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ja</label>
                     <input type="number" name="votes_yes" value="{{ item.votes_yes }}" min="0"
@@ -169,7 +169,7 @@
         <c-ui.card title="Beratend und Gäste" subtitle="Werden ausgewiesen, zählen aber nicht mit." data-testid="ohne-stimmrecht">
             <ul class="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                 {% for attendance in advisory %}
-                <li>{{ attendance.person.display_name }} <span class="text-xs text-gray-500 dark:text-gray-400">({{ attendance.get_role_display }}{% if not attendance.has_voting_rights %}, ohne Stimmrecht{% endif %})</span></li>
+                <li>{{ attendance.person.display_name }} <span class="text-xs text-gray-500 dark:text-gray-400">({{ attendance.get_role_display }}{% if not attendance.has_voting_rights %}, ohne Stimmrecht{% elif attendance in standby %}, Stellvertretung ohne freien Sitz{% endif %})</span></li>
                 {% endfor %}
             </ul>
             {% if stray_votes %}

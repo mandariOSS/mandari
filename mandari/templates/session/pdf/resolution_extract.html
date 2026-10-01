@@ -49,7 +49,7 @@ Auszugs- und Ausfertigungsvermerk. NÖ-Beschlusstexte nur intern.{% endcomment %
     {% endif %}
     {% if item.excluded_persons %}
     <p>
-        <strong>Mitwirkungsverbot (§ 31 GO):</strong>
+        <strong>Mitwirkungsverbot wegen Befangenheit:</strong>
         {% for person in item.excluded_persons %}{{ person.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
         — an Beratung und Abstimmung nicht beteiligt.
     </p>

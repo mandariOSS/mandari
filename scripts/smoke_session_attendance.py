@@ -180,12 +180,13 @@ check("Nachziehen: Gesamtzahl 6", SessionAttendance.objects.filter(meeting=meeti
 print()
 print("=== Phase B: Schnellerfassung und Quorum ===")
 
-# Stimmberechtigt: chair, m1, m2, sub, new = 5 -> Quorum 3
+# Sitze: chair, m1, m2, new = 4 -> Quorum 3. Die Vertreterin hat keinen eigenen Sitz; sie zählt nur, wenn sie
+# für das nicht anwesende Mitglied m2 nachrückt.
 resp = client.get(f"{base}/meetings/{meeting.id}/")
 html = resp.content.decode("utf-8")
 check("Quorum-Anzeige vorhanden", "beschlussfähig" in html.lower())
 check("Anfangs nicht beschlussfähig (nur 1 anwesend)", "Nicht beschlussfähig" in html)
-check("Quorum-Zahlen korrekt (1/5, nötig 3)", "(1/5 stimmberechtigt anwesend, nötig: 3)" in html)
+check("Quorum-Zahlen korrekt (1/4, nötig 3)", "(1/4 stimmberechtigt anwesend, nötig: 3)" in html)
 
 # Zwei weitere anwesend melden (eine davon verspätet — zählt als anwesend)
 att_chair = SessionAttendance.objects.get(meeting=meeting, person=p_chair)
@@ -205,7 +206,7 @@ check("Zeiten erfasst", str(att_sub.arrival_time) == "17:15:00", f"got {att_sub.
 
 resp = client.get(f"{base}/meetings/{meeting.id}/")
 html = resp.content.decode("utf-8")
-check("Jetzt beschlussfähig (3/5)", "Beschlussfähig" in html and "Nicht beschlussfähig" not in html)
+check("Jetzt beschlussfähig (3/4, Vertreterin für m2)", "Beschlussfähig" in html and "Nicht beschlussfähig" not in html)
 
 # Beratendes Mitglied anwesend -> zählt NICHT fürs Quorum
 att_adv = SessionAttendance.objects.get(meeting=meeting, person=p_advisor)
@@ -214,7 +215,7 @@ client.post(
     {"status": "present", "arrival_time": "", "departure_time": "", "notes": ""},
 )
 resp = client.get(f"{base}/meetings/{meeting.id}/")
-check("Nicht-Stimmberechtigte zählen nicht", "(3/5 stimmberechtigt anwesend" in resp.content.decode("utf-8"))
+check("Nicht-Stimmberechtigte zählen nicht", "(3/4 stimmberechtigt anwesend" in resp.content.decode("utf-8"))
 
 # =============================================================================
 # Phase C: Gäste manuell ergänzen / entfernen
@@ -239,7 +240,7 @@ check(
 )
 
 resp = client.get(f"{base}/meetings/{meeting.id}/")
-check("Gast zählt nicht fürs Quorum", "(3/5 stimmberechtigt anwesend" in resp.content.decode("utf-8"))
+check("Gast zählt nicht fürs Quorum", "(3/4 stimmberechtigt anwesend" in resp.content.decode("utf-8"))
 
 resp = client.post(f"{base}/attendance/{guest_att.id}/delete/")
 check("Gast wieder entfernt", not SessionAttendance.objects.filter(pk=guest_att.pk).exists())

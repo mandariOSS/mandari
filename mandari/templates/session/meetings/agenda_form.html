@@ -32,6 +32,9 @@
 
         <form method="post" class="p-6 space-y-6">
             {% csrf_token %}
+            {% if protocol_locked %}
+            <c-ui.alert variant="info" icon="lock" data-testid="top-gesperrt">Die Niederschrift dieser Sitzung ist genehmigt. Sie können den TOP nur noch auf nichtöffentlich setzen; Betreff, Vorlage und Zuordnung bleiben unverändert.</c-ui.alert>
+            {% endif %}
 
             <!-- Betreff -->
             <div>

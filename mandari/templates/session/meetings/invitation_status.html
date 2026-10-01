@@ -134,7 +134,7 @@ und Serienbrief. Absagegründe sind nur hier (Sitzungsdienst) sichtbar.
                                 <form method="post" action="{% url 'session:meeting_response_entry' tenant_slug=tenant_slug meeting_id=meeting.id person_id=status.person.id %}" class="mt-2 space-y-2 min-w-[14rem]">
                                     {% csrf_token %}
                                     <label for="reason-{{ status.person.id }}" class="block font-medium text-gray-700 dark:text-gray-300">Grund (bei Absage)</label>
-                                    <textarea id="reason-{{ status.person.id }}" name="reason" rows="2" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-xs"></textarea>
+                                    <textarea id="reason-{{ status.person.id }}" name="reason" rows="2" class="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"></textarea>
                                     <label for="substitute-{{ status.person.id }}" class="flex items-center gap-2 min-h-[24px] text-gray-600 dark:text-gray-400">
                                         <input type="checkbox" id="substitute-{{ status.person.id }}" name="substitute" value="1" class="rounded border-gray-300 text-primary-600">
                                         Vertretung erbeten

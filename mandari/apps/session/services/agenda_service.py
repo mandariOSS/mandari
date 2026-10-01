@@ -15,6 +15,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.session.models import SessionAgendaItem, SessionMeeting
+from apps.session.services import protocol_lock
 
 
 def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:
@@ -112,7 +113,11 @@ def insertion_order(meeting: SessionMeeting, *, is_public: bool, parent_id: Any 
     Ende-TOPs und alles danach um eins auf; der neue TOP erhält den Platz des ersten von ihnen.
     Ohne Ende-TOPs am Schluss – und für Unterpunkte, die nur unter ihren Geschwistern sortiert
     werden – kommt er ans Ende. Die Nummern vergibt anschließend :func:`renumber_agenda`.
+
+    Raises:
+        protocol_lock.ProtocolLockedError: Niederschrift genehmigt – keine neuen TOPs (vor dem Aufrücken)
     """
+    protocol_lock.ensure_unlocked(meeting.pk, protocol_lock.MESSAGE_AGENDA)
     items = list(
         meeting.agenda_items.order_by("order", "created_at").values("order", "parent_id", "is_public", "is_end_item")
     )
@@ -146,7 +151,12 @@ def renumber_agenda(meeting: SessionMeeting) -> None:
     Die Nummern-/Reihenfolge-Updates laufen als bulk_update und erzeugen
     bewusst keine Audit-Einträge — protokolliert wird die auslösende
     Aktion (Verschieben, Ö/NÖ-Wechsel, Anlegen, Löschen) selbst.
+
+    Nach der Genehmigung der Niederschrift bleiben die Nummern, wie sie in der Niederschrift stehen
+    (``protocol_lock``) – auch wenn ein TOP danach auf nichtöffentlich gesetzt wird.
     """
+    if protocol_lock.is_locked(meeting.pk) and not protocol_lock.is_permitted(meeting.pk):
+        return
     items = list(meeting.agenda_items.order_by("order", "created_at"))
 
     children: dict = {}
@@ -260,6 +270,7 @@ def apply_order(meeting: SessionMeeting, ordered_ids: list) -> None:
             item.order = order_counter
             changed.append(item)
     if changed:
+        protocol_lock.ensure_unlocked(meeting.pk, protocol_lock.MESSAGE_AGENDA)
         SessionAgendaItem.objects.bulk_update(changed, ["order"])
     renumber_agenda(meeting)
 
@@ -292,6 +303,7 @@ def move_item(item: SessionAgendaItem, direction: str) -> bool:
         return False
 
     other = siblings[target_idx]
+    protocol_lock.ensure_unlocked(item.meeting_id, protocol_lock.MESSAGE_AGENDA)
     item.order, other.order = other.order, item.order
     SessionAgendaItem.objects.bulk_update([item, other], ["order"])
     renumber_agenda(item.meeting)

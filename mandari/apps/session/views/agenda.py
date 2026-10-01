@@ -6,6 +6,9 @@ Vollständiges TOP-Management: Anlegen, Bearbeiten, Absetzen (dokumentiert
 statt gelöscht), Löschen, Umsortieren (Drag-and-drop + Auf/Ab) mit
 automatischer Ö/NÖ-getrennter Neu-Nummerierung, Unterpunkten (5.1, 5.2)
 und Nachtrags-Kennzeichnung nach Ladungsversand.
+
+Nach der Genehmigung der Niederschrift sind Tagesordnung und Anwesenheit gesperrt
+(``protocol_lock``); die Views melden das vorab, statt in die Sperre des Modells zu laufen.
 """
 
 from django.contrib import messages
@@ -26,7 +29,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
-from ..services import agenda_service, participation_service
+from ..services import agenda_service, participation_service, protocol_lock
 from ..visibility import meeting_q
 from .attendance import SessionAttendanceForm
 
@@ -74,6 +77,19 @@ def _meeting_redirect(view, meeting):
     )
 
 
+def _locked(view, meeting_id, message=protocol_lock.MESSAGE_AGENDA):
+    """
+    Genehmigte Niederschrift: Hinweis auf der Sitzungsseite statt Änderung (bzw. statt einer 403-Seite
+    aus der Sperre im Modell). Gibt die Antwort zurück oder ``None``, wenn die Sitzung offen ist.
+    """
+    if not protocol_lock.is_locked(meeting_id):
+        return None
+    messages.error(view.request, message)
+    if view.is_htmx:
+        return HttpResponse(status=204, headers={"HX-Refresh": "true"})
+    return redirect("session:meeting_detail", tenant_slug=view.session_tenant.slug, meeting_id=meeting_id)
+
+
 # =============================================================================
 # AGENDA ITEMS
 # =============================================================================
@@ -97,6 +113,9 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
 
     def form_valid(self, form):
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
+        gesperrt = _locked(self, meeting.pk)
+        if gesperrt:
+            return gesperrt
         for feld, meldung in agenda_service.visibility_errors(form.instance).items():
             form.add_error(feld, meldung)
         if form.errors:
@@ -151,6 +170,12 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
             )
         return response
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Genehmigte Niederschrift: nur noch Rücknahme auf nichtöffentlich (protocol_lock.is_retraction)
+        context["protocol_locked"] = protocol_lock.is_locked(self.object.meeting_id)
+        return context
+
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         form.fields["paper"].queryset = _papers(self)
@@ -171,14 +196,17 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
             form.add_error(feld, meldung)
         if form.errors:
             return self.form_invalid(form)
-        # Wechsel Ö <-> NÖ: TOP am Ende des Zielteils einreihen
-        if "is_public" in form.changed_data:
-            from django.db.models import Max
-
-            max_order = (
-                form.instance.meeting.agenda_items.exclude(pk=form.instance.pk).aggregate(m=Max("order"))["m"] or 0
+        # Genehmigte Niederschrift: Nur die Rücknahme auf nichtöffentlich bleibt möglich, Nummer und Platz bleiben
+        locked = protocol_lock.is_locked(form.instance.meeting_id)
+        if locked and not (form.changed_data == ["is_public"] and not form.instance.is_public):
+            messages.error(self.request, protocol_lock.MESSAGE_RETRACT_ONLY)
+            return redirect(self.get_success_url())
+        # Wechsel Ö <-> NÖ: im Zielteil hinter den regulären TOPs einreihen, aber vor den Ende-TOPs
+        # („Verschiedenes“) – wie ein neu ergänzter TOP
+        if "is_public" in form.changed_data and not locked:
+            form.instance.order = agenda_service.insertion_order(
+                form.instance.meeting, is_public=form.instance.is_public, parent_id=form.instance.parent_id
             )
-            form.instance.order = max_order + 1
         response = super().form_valid(form)
         if "is_public" in form.changed_data:
             agenda_service.cascade_visibility(self.object)
@@ -204,6 +232,9 @@ class AgendaItemWithdrawView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, item_id):
         item = _get_item(self, item_id)
+        gesperrt = _locked(self, item.meeting_id)
+        if gesperrt:
+            return gesperrt
         if request.POST.get("restore") == "1":
             item.is_withdrawn = False
             item.withdrawn_reason = ""
@@ -225,6 +256,9 @@ class AgendaItemDeleteView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, item_id):
         item = _get_item(self, item_id)
+        gesperrt = _locked(self, item.meeting_id, protocol_lock.MESSAGE_DELETE_ITEM)
+        if gesperrt:
+            return gesperrt
         meeting = item.meeting
         name = f"TOP {item.number} „{item.name}“"
         item.delete()  # Audit: delete-Eintrag über Signal (auch für Unterpunkte via CASCADE)
@@ -241,6 +275,9 @@ class AgendaItemMoveView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, item_id):
         item = _get_item(self, item_id)
+        gesperrt = _locked(self, item.meeting_id)
+        if gesperrt:
+            return gesperrt
         direction = request.POST.get("direction")
         if direction not in ("up", "down"):
             messages.error(request, "Ungültige Richtung.")
@@ -257,6 +294,11 @@ class AgendaReorderView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, meeting_id):
         meeting = _get_meeting(self, meeting_id)
+        if protocol_lock.is_locked(meeting.pk):
+            messages.error(request, protocol_lock.MESSAGE_AGENDA)
+            if self.is_htmx or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"ok": False, "message": protocol_lock.MESSAGE_AGENDA}, status=409)
+            return _meeting_redirect(self, meeting)
         raw = request.POST.get("order", "")
         ordered_ids = [part.strip() for part in raw.split(",") if part.strip()]
         agenda_service.apply_order(meeting, ordered_ids)
@@ -301,13 +343,27 @@ class AttendanceUpdateView(SessionViewMixin, UpdateView):
     def form_invalid(self, form):
         return self.render_to_response(self._row_context(self.object, form))
 
+    def post(self, request, *args, **kwargs):
+        gesperrt = _locked(self, self.get_object().meeting_id, protocol_lock.MESSAGE_ATTENDANCE)
+        return gesperrt or super().post(request, *args, **kwargs)
+
     def form_valid(self, form):
         attendance = form.save(commit=False)
         # Zu-/Absage durch den Sitzungsdienst: Zeitstempel und Herkunft der Rückmeldung (Issue #225)
         if "status" in form.changed_data and attendance.status in ("confirmed", "declined"):
             attendance.responded_at = timezone.now()
             attendance.response_source = "staff"
+        # Zusage nach einer Absage mit Vertretungswunsch: wie bei der Rückmeldung über den Link entfällt der
+        # Wunsch samt Grund, und eine bereits angefragte Stellvertretung wird entlastet
+        confirmed = "status" in form.changed_data and attendance.status == "confirmed"
+        if confirmed:
+            attendance.substitute_requested = False
+            attendance.set_response_reason_encrypted("")
         attendance.save()
+        if confirmed and attendance.substitutes_notified_at is not None:
+            from ..services import invitation_response_service
+
+            invitation_response_service.withdraw_substitution(attendance)
         self.object = attendance
 
         if self.is_htmx:

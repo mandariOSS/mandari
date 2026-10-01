@@ -5,10 +5,15 @@ Sperre der Niederschrift nach der Genehmigung (Issue #318).
 Mit der Genehmigung (bzw. der direkten Veröffentlichung, wenn der Mandant keinen
 Genehmigungsschritt vorsieht) sind Ergebnis, Stimmen (Zähler und namentliche Stimmen),
 Beschluss- und Protokolltexte aller TOPs der Sitzung sowie der allgemeine Teil der Niederschrift
-schreibgeschützt. Die Sperre sitzt im Modell (``save``/``delete`` von TOP, Einzelstimme,
+schreibgeschützt. Ebenso die Tagesordnung selbst (Betreff, Ö/NÖ, Nummer, Reihenfolge, Unterpunkte,
+keine neuen TOPs) und die Anwesenheit (Grundlage von Teilnehmerverzeichnis und Stimmberechtigung).
+Einzige Ausnahme: Ein öffentlicher TOP lässt sich weiter auf nichtöffentlich setzen (Rücknahme aus der
+Veröffentlichung, etwa zum Schutz personenbezogener Daten); die Nummern bleiben dabei, wie sie sind.
+Die Sperre sitzt im Modell (``save``/``delete`` von TOP, Einzelstimme, Anwesenheit, Störungsvermerk,
 Beratungsstation, Niederschrift und Sitzung), in ``pre_delete``-Signalen für Sitzung und Vorlage
-(Kaskaden und ``QuerySet.delete()``, Issue #427) und im Abstimmungs-Service (Sammelschreibzugriffe),
-nicht in der Oberfläche: Views, Admin, Signale und Befehle laufen alle hier durch.
+(Kaskaden und ``QuerySet.delete()``, Issue #427) und in den Services mit Sammelschreibzugriffen
+(Abstimmung, Nummerierung der Tagesordnung), nicht in der Oberfläche: Views, Admin, Signale und
+Befehle laufen alle hier durch.
 
 Geändert werden darf danach nur innerhalb von :func:`permit` – das nutzen die Berichtigung
 (``protocol_correction_service``) und die fristgerechte Löschung nichtöffentlicher Inhalte
@@ -33,6 +38,8 @@ if TYPE_CHECKING:
 
     from apps.session.models import (
         SessionAgendaItem,
+        SessionAttendance,
+        SessionAttendanceDisruption,
         SessionConsultation,
         SessionMeeting,
         SessionProtocol,
@@ -42,9 +49,13 @@ if TYPE_CHECKING:
 #: Status, ab denen die Niederschrift gesperrt ist
 LOCKED_STATUSES = ("approved", "published")
 
+#: Tagesordnung selbst: Betreff, Ö/NÖ, Nummer, Reihenfolge, Unterpunkt und Nachtrag stehen so in
+#: Niederschrift, Beschlussauszügen und Bürgerportal
+AGENDA_STRUCTURE_FIELDS = ("name", "number", "order", "is_public", "parent", "is_supplementary")
 #: Felder eines TOP, die mit der Genehmigung gesperrt sind (verschlüsselte zuletzt: Sie werden
 #: nur entschlüsselt, wenn sonst nichts geändert ist)
 AGENDA_ITEM_LOCKED_FIELDS = (
+    *AGENDA_STRUCTURE_FIELDS,
     "vote_result",
     "votes_yes",
     "votes_no",
@@ -67,6 +78,19 @@ AGENDA_ITEM_LOCKED_FIELDS = (
 PROTOCOL_LOCKED_FIELDS = ("content", "chair_name", "recorder_name", "show_timings", "content_encrypted")
 #: Felder einer Beratungsstation, die am gesperrten TOP hängen
 CONSULTATION_LOCKED_FIELDS = ("result", "agenda_item")
+#: Felder eines Störungsvermerks im Teilnehmerverzeichnis; der interne Vermerk bleibt frei (Anonymisierung)
+DISRUPTION_LOCKED_FIELDS = ("attendance", "started_at", "ended_at", "cause")
+#: Felder einer Anwesenheitszeile, die das Teilnehmerverzeichnis und die Stimmberechtigung tragen.
+#: Rückmeldung und Notizen bleiben frei (fristgerechte Löschung des Absagegrunds).
+ATTENDANCE_LOCKED_FIELDS = (
+    "person",
+    "status",
+    "participation_mode",
+    "arrival_time",
+    "departure_time",
+    "role",
+    "has_voting_rights",
+)
 
 MESSAGE = (
     "Die Niederschrift dieser Sitzung ist genehmigt. Ergebnis, Stimmen und Texte lassen sich nur noch "
@@ -75,6 +99,12 @@ MESSAGE = (
 MESSAGE_DELETE_ITEM = (
     "Die Niederschrift dieser Sitzung ist genehmigt. Tagesordnungspunkte lassen sich nicht mehr löschen."
 )
+MESSAGE_AGENDA = "Die Niederschrift dieser Sitzung ist genehmigt. Die Tagesordnung lässt sich nicht mehr ändern."
+MESSAGE_RETRACT_ONLY = (
+    "Die Niederschrift dieser Sitzung ist genehmigt. Ein TOP lässt sich nur noch auf nichtöffentlich setzen; "
+    "Betreff, Vorlage und Zuordnung bleiben unverändert."
+)
+MESSAGE_ATTENDANCE = "Die Niederschrift dieser Sitzung ist genehmigt. Die Anwesenheit lässt sich nicht mehr ändern."
 MESSAGE_DELETE_MEETING = "Die Niederschrift dieser Sitzung ist genehmigt. Die Sitzung lässt sich nicht mehr löschen."
 MESSAGE_DELETE_PAPER = (
     "Die Vorlage steht auf der Tagesordnung einer Sitzung mit genehmigter Niederschrift und lässt sich nicht löschen."
@@ -199,21 +229,75 @@ def guard_agenda_item(item: SessionAgendaItem, update_fields: Iterable[str] | No
     if not fields or meeting_id is None or is_permitted(meeting_id):
         return
     if item._state.adding:
-        # Neuer TOP mit Ergebnis oder Texten in einer genehmigten Niederschrift: keine Hintertür
+        # Neuer TOP in einer genehmigten Niederschrift: keine Hintertür für Tagesordnung, Ergebnis oder Texte
         if any(_differs_from_default(item, name) for name in fields) and is_locked(meeting_id):
-            raise ProtocolLockedError()
+            raise ProtocolLockedError(MESSAGE_AGENDA)
         return
     if not is_locked(meeting_id):
         return
     old = SessionAgendaItem.objects.select_related("meeting__tenant").filter(pk=item.pk).first()
-    if old is not None and _changed(old, item, fields):
-        raise ProtocolLockedError()
+    changed = _changed(old, item, fields) if old is not None else []
+    if not changed or (old is not None and is_retraction(old, item, changed)):
+        return
+    structure_only = set(changed) <= set(AGENDA_STRUCTURE_FIELDS)
+    raise ProtocolLockedError(MESSAGE_AGENDA if structure_only else MESSAGE)
+
+
+def is_retraction(old: Any, new: Any, changed: Iterable[str]) -> bool:
+    """Nur Ö -> NÖ: Rücknahme aus der Veröffentlichung, auch nach der Genehmigung erlaubt (Schutz geht vor)."""
+    return list(changed) == ["is_public"] and bool(old.is_public) and not new.is_public
 
 
 def guard_agenda_item_delete(item: SessionAgendaItem) -> None:
     """``SessionAgendaItem.delete``: kein Löschen von TOPs einer genehmigten Niederschrift."""
     if item.meeting_id is not None and not is_permitted(item.meeting_id) and is_locked(item.meeting_id):
         raise ProtocolLockedError(MESSAGE_DELETE_ITEM)
+
+
+def guard_attendance(attendance: SessionAttendance, update_fields: Iterable[str] | None) -> None:
+    """``SessionAttendance.save``: keine neuen oder geänderten Zeilen in einer genehmigten Niederschrift."""
+    from apps.session.models import SessionAttendance
+
+    fields = _selected(ATTENDANCE_LOCKED_FIELDS, update_fields)
+    meeting_id = attendance.meeting_id
+    if not fields or meeting_id is None or is_permitted(meeting_id) or not is_locked(meeting_id):
+        return
+    if attendance._state.adding:
+        raise ProtocolLockedError(MESSAGE_ATTENDANCE)
+    old = SessionAttendance.objects.filter(pk=attendance.pk).first()
+    if old is None or _changed(old, attendance, fields):
+        raise ProtocolLockedError(MESSAGE_ATTENDANCE)
+
+
+def guard_attendance_delete(attendance: SessionAttendance) -> None:
+    """``SessionAttendance.delete``: Zeilen einer genehmigten Niederschrift bleiben erhalten."""
+    if (
+        attendance.meeting_id is not None
+        and not is_permitted(attendance.meeting_id)
+        and is_locked(attendance.meeting_id)
+    ):
+        raise ProtocolLockedError(MESSAGE_ATTENDANCE)
+
+
+def guard_disruption(
+    disruption: SessionAttendanceDisruption, update_fields: Iterable[str] | None = None, *, deleting: bool = False
+) -> None:
+    """``SessionAttendanceDisruption.save``/``delete``: Störungsvermerke stehen im Teilnehmerverzeichnis."""
+    from apps.session.models import SessionAttendance, SessionAttendanceDisruption
+
+    fields = _selected(DISRUPTION_LOCKED_FIELDS, update_fields)
+    if not deleting and not fields:
+        return
+    meeting_id = (
+        SessionAttendance.objects.filter(pk=disruption.attendance_id).values_list("meeting_id", flat=True).first()
+    )
+    if meeting_id is None or is_permitted(meeting_id) or not is_locked(meeting_id):
+        return
+    if deleting or disruption._state.adding:
+        raise ProtocolLockedError(MESSAGE_ATTENDANCE)
+    old = SessionAttendanceDisruption.objects.filter(pk=disruption.pk).first()
+    if old is None or _changed(old, disruption, fields):
+        raise ProtocolLockedError(MESSAGE_ATTENDANCE)
 
 
 def guard_meeting_delete(meeting: SessionMeeting) -> None:

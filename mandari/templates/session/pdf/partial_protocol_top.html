@@ -20,7 +20,7 @@
         {% for vote in item.roll_call_votes %}{{ vote.person.display_name }} ({{ vote.get_vote_display }}){% if not forloop.last %}, {% endif %}{% endfor %}</span>
         {% endif %}
         {% if item.excluded_persons %}
-        <br><span class="muted">Mitwirkungsverbot (§ 31 GO):
+        <br><span class="muted">Mitwirkungsverbot wegen Befangenheit:
         {% for person in item.excluded_persons %}{{ person.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
         — an Beratung und Abstimmung nicht beteiligt.</span>
         {% endif %}

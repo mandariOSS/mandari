@@ -15,8 +15,9 @@ Pflicht ist nur die Ladung; ob und wie an Rückmeldungen erinnert wird, stellt j
 
 Wer erinnert wird, bestimmt :func:`targets` für beide Wege gleich; :func:`send` versendet: mit
 persönlichem Rückmeldelink aus dem jüngsten Versand im gemeinsamen Mail-Layout, ohne Versand an die
-Person (nur Anwesenheitsliste) als Textmail mit Verweis auf den Sitzungsdienst. Personen mit
-Zustellweg Brief und ohne E-Mail-Adresse erhalten keine Mail.
+Person (nur Anwesenheitsliste) als Textmail des Mandanten mit Verweis auf den Sitzungsdienst. Personen mit
+Zustellweg Brief und ohne E-Mail-Adresse erhalten keine Mail. Erinnert wird erst nach der Ladung und nur,
+solange Rückmeldungen möglich sind (nicht abgesagt, noch nicht begonnen).
 """
 
 from __future__ import annotations
@@ -26,7 +27,6 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from django.conf import settings
 from django.utils import timezone
 
 from apps.common.email import send_email
@@ -37,6 +37,7 @@ from apps.session.models import (
     SessionPerson,
     SessionTenant,
 )
+from apps.session.services.user_invitations import sender_for
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +90,13 @@ def targets(meeting: SessionMeeting, config: dict[str, Any] | None = None) -> li
     fehlt oder „eingeladen“ ist; eine Empfangsbestätigung fehlt, solange ein zugestellter Mail- oder
     Portal-Versand unbestätigt ist.
     """
-    from apps.session.services.invitation_response_service import MAIL_CHANNELS
+    from apps.session.services.invitation_response_service import MAIL_CHANNELS, is_open_for_responses
 
     config = config or meeting.tenant.reminder_config()
     if not config["rsvp_enabled"]:
+        return []
+    # Erinnert wird an die Ladung: vor ihrem Versand gibt es nichts zu erinnern, nach einer Absage nichts mehr
+    if meeting.invitation_sent_at is None or not is_open_for_responses(meeting):
         return []
     rows: dict[Any, list[SessionInvitationRecipient]] = {}
     persons: dict[Any, SessionPerson] = {}
@@ -175,21 +179,21 @@ def send(target: Target, meeting: SessionMeeting) -> bool:
                 missing_response=target.missing_response,
             )
             return True
-        # Ohne Versand an die Person (nur Anwesenheitsliste): Verweis auf den Sitzungsdienst
+        # Ohne Versand an die Person (nur Anwesenheitsliste): Verweis auf den Sitzungsdienst. Kein Link in die
+        # Verwaltungsoberfläche – Mitglieder haben dort in der Regel kein Konto; Absender ist der Mandant.
         start_local = timezone.localtime(meeting.start)
-        base = f"{settings.SITE_URL.rstrip('/')}/session/{tenant.slug}"
         body = (
             f"Guten Tag {target.person.display_name},\n\n"
             f"für die Sitzung „{meeting.name}“ ({meeting.organization.name}) am "
             f"{start_local.strftime('%d.%m.%Y um %H:%M Uhr')} liegt noch keine "
-            "Zu- oder Absage von Ihnen vor. Bitte melden Sie sich beim Sitzungsdienst zurück.\n\n"
-            f"Zur Sitzung: {base}/meetings/{meeting.id}/\n"
+            "Zu- oder Absage von Ihnen vor. Bitte melden Sie sich beim Sitzungsdienst zurück.\n"
         )
         return bool(
             send_email(
                 subject=f"[{tenant.name}] Bitte Rückmeldung: {meeting.name} am {start_local.strftime('%d.%m.%Y')}",
                 body=body,
                 to=[target.email],
+                from_email=sender_for(tenant.name),
                 fail_silently=True,
             )
         )

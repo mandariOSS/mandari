@@ -33,6 +33,35 @@ from apps.session.services import agenda_service, joint_meeting_service, meeting
 logger = logging.getLogger(__name__)
 
 
+class InvitationError(ValueError):
+    """Versand nicht möglich; die Meldung ist für die Oberfläche formuliert."""
+
+    def __init__(self, user_message: str) -> None:
+        super().__init__(user_message)
+        #: fester, für Nutzer formulierter Text – nur diesen in Antworten ausgeben
+        self.user_message = user_message
+
+
+def dispatch_blocker(meeting: SessionMeeting, dispatch_type: str) -> str:
+    """
+    Grund, warum dieser Versand nicht möglich ist (leer: möglich).
+
+    Keine Ladung zu einer abgesagten Sitzung (Häkchen oder Status) und keine Nachladung ohne Erstladung
+    oder ohne Nachtrags-TOPs – sonst gingen Einladungen bzw. eine leere Nachtrags-Tagesordnung hinaus.
+    """
+    if meeting.is_cancelled:
+        return "Die Sitzung ist abgesagt. Ladungen lassen sich nicht mehr versenden."
+    if dispatch_type == "supplementary":
+        if meeting.invitation_sent_at is None:
+            return "Eine Nachladung ist erst nach Versand der Erstladung möglich."
+        if not meeting.agenda_items.filter(is_supplementary=True).exists():
+            return (
+                "Es gibt keine Nachtrags-TOPs. Eine Nachladung ist erst möglich, wenn nach der Ladung "
+                "Tagesordnungspunkte ergänzt wurden."
+            )
+    return ""
+
+
 def get_recipients(meeting: SessionMeeting) -> list[dict]:
     """
     Empfängerkreis aus der aktuellen Gremienbesetzung ermitteln.
@@ -206,11 +235,17 @@ def send_invitations(
 
     Returns:
         der angelegte SessionInvitationDispatch
+
+    Raises:
+        InvitationError: Versand nicht möglich (:func:`dispatch_blocker`)
     """
     from apps.session.services import invitation_response_service
 
     if dispatch_type not in ("invitation", "supplementary"):
         raise ValueError(f"Unbekannte Versandart: {dispatch_type}")
+    blocker = dispatch_blocker(meeting, dispatch_type)
+    if blocker:
+        raise InvitationError(blocker)
 
     supplementary = dispatch_type == "supplementary"
     subject = subject.strip() or _default_subject(meeting, supplementary)

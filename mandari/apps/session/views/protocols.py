@@ -273,9 +273,12 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
             if vote in _VOTE_RESULTS:
                 item.vote_result = vote
             counts = {field: getattr(item, field) for field in _COUNT_FIELDS}
-            for field in _COUNT_FIELDS:
-                raw = str(voting_service.form_value(data, f"{field}_{prefix}", "") or "")
-                if raw.isdigit():
+            # Offene und namentliche Abstimmung: Die Summen ergeben sich aus den Einzelstimmen und ändern sich nur
+            # über die Abstimmungsseite – sonst widersprächen Summen und namentliche Stimmen einander
+            editable = () if item.voting_method in voting_service.INDIVIDUAL_METHODS else _COUNT_FIELDS
+            for field in editable:
+                raw = str(voting_service.form_value(data, f"{field}_{prefix}", "") or "").strip()
+                if raw.isascii() and raw.isdigit():  # „²“ ist für isdigit() eine Ziffer, für int() nicht
                     counts[field] = min(int(raw), 9999)
             if any(counts[field] != getattr(item, field) for field in _COUNT_FIELDS):
                 check = voting_service.check_counts(

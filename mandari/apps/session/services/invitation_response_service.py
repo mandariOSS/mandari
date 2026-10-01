@@ -257,7 +257,7 @@ def record_response(
 
     result = ResponseResult(attendance)
     if withdraw:
-        _withdraw_substitution(attendance)
+        withdraw_substitution(attendance)
     if wants_substitute:
         result.substitutes = notify_substitutes(attendance)
     return result
@@ -443,7 +443,7 @@ def _notify_staff_without_substitute(attendance: SessionAttendance, outcome: Sub
     return sent
 
 
-def _withdraw_substitution(attendance: SessionAttendance) -> int:
+def withdraw_substitution(attendance: SessionAttendance) -> int:
     """Benachrichtigte Stellvertretungen entlasten, wenn die Person doch teilnimmt (bzw. keine Vertretung mehr braucht)."""
     meeting = attendance.meeting
     rows = list(

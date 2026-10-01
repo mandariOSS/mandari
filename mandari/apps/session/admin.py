@@ -593,11 +593,12 @@ class SessionAgendaItemInline(TabularInline):
     extra = 1
     fields = ["number", "name", "is_public", "paper", "order"]
 
-    # Genehmigte Niederschrift (Issue #318): Vorlagenzuordnung fest, keine neuen oder gelöschten TOPs.
-    # Das Modell setzt die Sperre ohnehin durch; der Admin bietet sie gar nicht erst an.
+    # Genehmigte Niederschrift (Issue #318): Tagesordnung und Vorlagenzuordnung fest, keine neuen oder gelöschten
+    # TOPs; offen bleibt nur die Rücknahme auf nichtöffentlich. Das Modell setzt die Sperre ohnehin durch; der
+    # Admin bietet sie gar nicht erst an.
     def get_readonly_fields(self, request, obj=None):
         if obj is not None and _locked(obj.pk):
-            return ["paper"]
+            return ["number", "name", "paper", "order"]
         return super().get_readonly_fields(request, obj)
 
     def has_delete_permission(self, request, obj=None):

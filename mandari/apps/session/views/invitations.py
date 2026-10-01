@@ -63,6 +63,7 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
                     "recipients"
                 ),
                 "supplementary_count": supplementary_count,
+                "dispatch_blocker": invitation_service.dispatch_blocker(meeting, "invitation"),
                 "default_subject": invitation_service._default_subject(meeting, supplementary=False),
             }
         )
@@ -79,8 +80,10 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
                 meeting_id=meeting.id,
             )
 
-        if dispatch_type == "supplementary" and meeting.invitation_sent_at is None:
-            messages.error(request, "Eine Nachladung ist erst nach Versand der Erstladung möglich.")
+        # Abgesagte Sitzung, Nachladung ohne Erstladung oder ohne Nachtrags-TOPs
+        blocker = invitation_service.dispatch_blocker(meeting, dispatch_type)
+        if blocker:
+            messages.error(request, blocker)
             return redirect(
                 "session:meeting_invitation",
                 tenant_slug=self.session_tenant.slug,

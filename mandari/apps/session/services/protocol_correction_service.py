@@ -183,7 +183,8 @@ def _parse(spec: FieldSpec, raw: Any) -> Any:
     text = str(raw if raw is not None else "").replace("\r\n", "\n")
     if spec.kind == "count":
         text = text.strip()
-        if not text.isdigit() or int(text) > COUNT_MAX:
+        # isascii: „²“ gilt für isdigit() als Ziffer, int() lehnt es ab
+        if not (text.isascii() and text.isdigit()) or int(text) > COUNT_MAX:
             raise CorrectionError(f"{spec.label}: bitte eine Zahl zwischen 0 und {COUNT_MAX} angeben.")
         return int(text)
     if spec.kind == "choice":

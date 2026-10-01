@@ -19,7 +19,7 @@ from apps.common.params import uuid_param
 
 from ..models import SessionAttendance, SessionAttendanceDisruption, SessionMeeting, SessionPerson
 from ..permissions import SessionViewMixin
-from ..services import attendance_service, participation_service
+from ..services import attendance_service, participation_service, protocol_lock
 from ..visibility import meeting_q
 
 #: Meldung, wenn in einer Präsenzsitzung jemand zugeschaltet werden soll (Issue #139)
@@ -69,6 +69,14 @@ def _meeting_redirect(view, meeting):
     )
 
 
+def _locked(view, meeting):
+    """Genehmigte Niederschrift: Die Anwesenheit ist gesperrt – Hinweis statt Änderung (``None``: offen)."""
+    if not protocol_lock.is_locked(meeting.pk):
+        return None
+    messages.error(view.request, protocol_lock.MESSAGE_ATTENDANCE)
+    return _done(view, meeting)
+
+
 class AttendanceGenerateView(SessionViewMixin, View):
     """Anwesenheitsliste aus der aktuellen Gremienbesetzung vorbefüllen."""
 
@@ -77,11 +85,21 @@ class AttendanceGenerateView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, meeting_id):
         meeting = _get_meeting(self, meeting_id)
+        gesperrt = _locked(self, meeting)
+        if gesperrt:
+            return gesperrt
         created = attendance_service.generate_attendance(meeting)
         if created:
             messages.success(
                 request,
                 f"Anwesenheitsliste erzeugt: {created} Person(en) aus der Besetzung übernommen.",
+            )
+        elif not attendance_service.active_memberships(meeting).exists():
+            # Ohne Besetzung zum Sitzungsdatum gibt es nichts zu übernehmen – nicht „vollständig“ melden
+            messages.warning(
+                request,
+                f"{meeting.organizations_label} hat zum Sitzungsdatum keine Besetzung. Bitte tragen Sie die "
+                "Mitglieder unter „Gremien“ ein oder ergänzen Sie die Anwesenden einzeln.",
             )
         else:
             messages.info(request, "Anwesenheitsliste ist bereits vollständig — keine neuen Einträge.")
@@ -98,10 +116,18 @@ class AttendanceAddView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, meeting_id):
         meeting = _get_meeting(self, meeting_id)
+        gesperrt = _locked(self, meeting)
+        if gesperrt:
+            return gesperrt
 
+        # Keine oder keine lesbare Auswahl: Hinweis statt Serverfehler
+        person_id = uuid_param(request.POST.get("person"))
+        if person_id is None:
+            messages.error(request, "Bitte wählen Sie eine Person aus.")
+            return _meeting_redirect(self, meeting)
         person = get_object_or_404(
             SessionPerson,
-            pk=request.POST.get("person"),
+            pk=person_id,
             tenant=self.session_tenant,
             is_active=True,
         )
@@ -144,6 +170,9 @@ class AttendanceDeleteView(SessionViewMixin, View):
             meeting__tenant=self.session_tenant,
         )
         meeting = attendance.meeting
+        gesperrt = _locked(self, meeting)
+        if gesperrt:
+            return gesperrt
         name = attendance.person.display_name
         attendance.delete()
         messages.success(request, f"{name} wurde von der Anwesenheitsliste entfernt.")
@@ -214,6 +243,9 @@ class AttendanceDisruptionAddView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, meeting_id):
         meeting = _get_meeting(self, meeting_id)
+        gesperrt = _locked(self, meeting)
+        if gesperrt:
+            return gesperrt
         attendance = _attendance_for(meeting, request.POST.get("attendance"))
         if not attendance.is_remote:
             messages.error(request, "Störungen lassen sich nur für zugeschaltete Personen vermerken.")
@@ -262,6 +294,9 @@ class AttendanceDisruptionUpdateView(SessionViewMixin, View):
             attendance__meeting__tenant=self.session_tenant,
         )
         meeting = disruption.attendance.meeting
+        gesperrt = _locked(self, meeting)
+        if gesperrt:
+            return gesperrt
         name = disruption.attendance.person.display_name
         action = request.POST.get("action", "")
         if action == "delete":

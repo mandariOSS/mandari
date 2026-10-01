@@ -10,8 +10,12 @@ Zentrale Logik für:
 - Beschlussfähigkeits-Berechnung (Quorum: mehr als die Hälfte der
   stimmberechtigten Mitglieder anwesend). Zugeschaltete zählen mit, außer während einer Störung und
   bei Abstimmungen, von denen das Landesprofil sie ausschließt (Issue #139, participation_service).
+- Sitze und Stellvertretungen (:func:`seat_split`): Grundgesamtheit sind die Sitze der Mitglieder.
+  Eine Stellvertretung (Mitgliedschaft mit „Vertretung für“) zählt nur, wenn sie für eine nicht
+  anwesende Person nachrückt – je vertretener Person höchstens eine.
 """
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from django.db.models import QuerySet
@@ -36,6 +40,79 @@ PRESENT_STATUSES = ("present", "joined_late")
 def active_memberships(meeting: SessionMeeting) -> QuerySet[SessionOrganizationMembership]:
     """Aktive Mitgliedschaften der Besetzung zum Sitzungsdatum – aller beteiligten Gremien (Issue #317)."""
     return joint_meeting_service.active_memberships(meeting)
+
+
+@dataclass(frozen=True)
+class Roster:
+    """Besetzung zum Sitzungsdatum aus Sicht der Stimmen: Mitglieder mit Stimmrecht und Stellvertretungen."""
+
+    #: Personen mit Stimmrecht in einem beteiligten Gremium (ohne reine Stellvertretungen)
+    voting_members: frozenset[Any] = frozenset()
+    #: Stellvertretung -> vertretene Personen; nur wer in keinem beteiligten Gremium selbst Mitglied ist
+    substitutes: dict[Any, frozenset[Any]] = field(default_factory=dict)
+
+
+def roster(meeting: SessionMeeting) -> Roster:
+    """Besetzung für Beschlussfähigkeit und Stimmrecht – eine Abfrage."""
+    rows = list(active_memberships(meeting).values_list("person_id", "substitute_for_id", "has_voting_rights"))
+    own = {person for person, principal, _voting in rows if principal is None}
+    substitutes: dict[Any, set[Any]] = {}
+    for person, principal, _voting in rows:
+        if principal is not None and person not in own and principal != person:
+            substitutes.setdefault(person, set()).add(principal)
+    return Roster(
+        voting_members=frozenset(person for person, _principal, voting in rows if voting and person not in substitutes),
+        substitutes={person: frozenset(principals) for person, principals in substitutes.items()},
+    )
+
+
+@dataclass
+class SeatSplit:
+    """Stimmberechtigte Zeilen der Anwesenheitsliste, aufgeteilt nach Sitzen."""
+
+    #: Mitglieder mit Stimmrecht: je Zeile ein Sitz (Grundgesamtheit der Beschlussfähigkeit)
+    members: list[Any] = field(default_factory=list)
+    #: Stellvertretungen, die für eine nicht anwesende Person nachrücken (zählen und stimmen an deren Stelle)
+    stepping_in: list[Any] = field(default_factory=list)
+    #: übrige Stellvertretungen: kein freier Sitz, zählen nicht und stimmen nicht ab
+    standby: list[Any] = field(default_factory=list)
+    #: Personen-IDs der Mitglieder, die nicht anwesend sind (vor dem Nachrücken)
+    vacant: frozenset[Any] = frozenset()
+
+
+def seat_split(
+    voting: list[Any], substitutes: dict[Any, frozenset[Any]], *, active_statuses: tuple[str, ...]
+) -> SeatSplit:
+    """
+    Stimmberechtigte Zeilen nach Sitzen aufteilen.
+
+    Mitglieder halten je einen Sitz. Eine Stellvertretung rückt nach, wenn sie selbst anwesend ist
+    (``active_statuses``) und eine von ihr vertretene Person nicht anwesend ist (``PRESENT_STATUSES``);
+    jede vertretene Person wird höchstens einmal vertreten. Die Reihenfolge der Zeilen entscheidet,
+    wer zuerst nachrückt.
+    """
+    members = [a for a in voting if a.person_id not in substitutes]
+    vacant = frozenset(a.person_id for a in members if a.status not in PRESENT_STATUSES)
+    free = set(vacant)
+    split = SeatSplit(members=members, vacant=vacant)
+    for attendance in voting:
+        principals = substitutes.get(attendance.person_id)
+        if principals is None:
+            continue
+        open_seats = sorted((principal for principal in principals if principal in free), key=str)
+        if attendance.status in active_statuses and open_seats:
+            free.discard(open_seats[0])
+            split.stepping_in.append(attendance)
+        else:
+            split.standby.append(attendance)
+    return split
+
+
+def voting_rows(attendances: list[Any]) -> list[Any]:
+    """Zeilen mit Stimmrecht – ohne Gäste und Protokollführung, die nie abstimmen."""
+    from apps.session.services.voting_service import NON_VOTING_ROLES
+
+    return [a for a in attendances if a.has_voting_rights and a.role not in NON_VOTING_ROLES]
 
 
 def generate_attendance(meeting: SessionMeeting) -> int:
@@ -105,13 +182,21 @@ def ensure_attendance(meeting: SessionMeeting, person: SessionPerson) -> Session
     return attendance
 
 
-def quorum_status(meeting: SessionMeeting, item: Any = None, *, attendances: list[Any] | None = None) -> dict[str, Any]:
+def quorum_status(
+    meeting: SessionMeeting,
+    item: Any = None,
+    *,
+    attendances: list[Any] | None = None,
+    substitutes: dict[Any, frozenset[Any]] | None = None,
+) -> dict[str, Any]:
     """
     Beschlussfähigkeit (Quorum) live berechnen.
 
-    Grundlage: alle Anwesenheitszeilen mit Stimmrecht (ohne Gäste und Protokollführung, wie bei der
-    Stimmabgabe); anwesend zählt present/joined_late. Beschlussfähig ab mehr als der Hälfte —
-    Berechnung über den gemeinsamen Baustein apps/common/quorum.py
+    Grundlage: die Sitze, also die Anwesenheitszeilen der Mitglieder mit Stimmrecht (ohne Gäste und
+    Protokollführung, wie bei der Stimmabgabe); anwesend zählt present/joined_late. Stellvertretungen
+    erhöhen die Zahl der Sitze nicht; anwesend zählen sie nur, wenn sie für ein nicht anwesendes Mitglied
+    nachrücken (:func:`seat_split`, ``substitutes`` aus :func:`roster`, sonst nachgeladen). Beschlussfähig
+    ab mehr als der Hälfte — Berechnung über den gemeinsamen Baustein apps/common/quorum.py
     (Issue #69, generalisiert aus dieser Session-Implementierung).
 
     Teilnahmeart (Issue #139): Zugeschaltete zählen wie Anwesende im Raum, außer während einer
@@ -133,15 +218,16 @@ def quorum_status(meeting: SessionMeeting, item: Any = None, *, attendances: lis
         attendances = list(
             participation_service.with_disruptions(meeting.attendances.select_related("person"), meeting)
         )
-    from apps.session.services.voting_service import NON_VOTING_ROLES
+    if substitutes is None:
+        substitutes = roster(meeting).substitutes if attendances else {}
 
     rule = participation_service.remote_vote_rule(meeting, item) if item is not None else None
     # Gäste und Protokollführung stimmen nie ab – auch mit gesetztem Stimmrecht nicht (wie voting_service)
-    voting = [a for a in attendances if a.has_voting_rights and a.role not in NON_VOTING_ROLES]
+    split = seat_split(voting_rows(attendances), substitutes, active_statuses=PRESENT_STATUSES)
     present: list[Any] = []
     disrupted: list[str] = []
     excluded: list[str] = []
-    for attendance in voting:
+    for attendance in split.members + split.stepping_in:
         if attendance.status not in PRESENT_STATUSES:
             continue
         if participation_service.is_disrupted(attendance):
@@ -151,7 +237,7 @@ def quorum_status(meeting: SessionMeeting, item: Any = None, *, attendances: lis
         else:
             present.append(attendance)
     status = common_quorum_status(
-        voting_total=len(voting),
+        voting_total=len(split.members),
         voting_present=len(present),
         has_list=bool(attendances),
     )

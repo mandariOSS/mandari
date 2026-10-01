@@ -20,6 +20,7 @@ from django.utils import timezone
 
 from apps.common.tests.factories import UserFactory
 from apps.session.models import (
+    SessionAgendaItem,
     SessionAttendance,
     SessionAuditLog,
     SessionInvitationRecipient,
@@ -207,8 +208,11 @@ class TestAbschalten:
         assert _knopf(welt) == set()
         assert _lauf(welt) == set()
         assert not SessionAuditLog.objects.filter(changes__has_key="erinnerung_ladung").exists()
-        # Die Ladung selbst bleibt: Nachladung geht weiter raus
+        # Die Ladung selbst bleibt: Nachladung geht weiter raus (mit einem Nachtrags-TOP)
         mail.outbox = []
+        SessionAgendaItem.objects.create(
+            meeting=welt.meeting, number="9", order=9, name="Nachtrag", is_supplementary=True
+        )
         invitation_service.send_invitations(welt.meeting, sent_by=None, dispatch_type="supplementary")
         assert mail.outbox
 
