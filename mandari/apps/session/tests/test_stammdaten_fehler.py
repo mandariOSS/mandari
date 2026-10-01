@@ -188,8 +188,8 @@ class TestPeriodenwechsel:
 
     def test_ungueltige_kennung_beim_speichern(self, tenant: SessionTenant, admin: Client) -> None:
         response = admin.post(_url(tenant, "/settings/terms/save/"), {"name": "X", "term_id": "abc"})
-        assert response.status_code == 302
-        assert any("nicht gefunden" in m for m in _meldungen(response))
+        assert response.status_code == 404
+        assert not SessionLegislativeTerm.objects.filter(name="X").exists()
 
 
 # ---------------------------------------------------------------------------

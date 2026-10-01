@@ -113,11 +113,8 @@ class TermSaveView(SessionViewMixin, View):
         term_id = request.POST.get("term_id")
         term = None
         if term_id:
-            # Ungültige Kennung: Meldung statt Serverfehler
-            term = SessionLegislativeTerm.objects.filter(pk=uuid_param(term_id), tenant=self.session_tenant).first()
-            if term is None:
-                messages.error(request, "Die Wahlperiode wurde nicht gefunden.")
-                return redirect("session:terms", tenant_slug=tenant_slug)
+            # Fremde oder ungültige Kennung: 404 statt Serverfehler
+            term = get_object_or_404(SessionLegislativeTerm, pk=uuid_param(term_id), tenant=self.session_tenant)
 
         # Perioden dürfen sich nicht überschneiden, sonst ist „aktuelle Periode“ bzw. die Periode eines
         # Datums (Sitzungen, Besetzungen, Platzhalter {wp}) nicht eindeutig

@@ -23,6 +23,7 @@ import os
 import secrets
 import sys
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
 # --- Umgebung VOR django.setup() konfigurieren -------------------------------
@@ -291,22 +292,25 @@ check("Rolle sachkundige/r Bürger/in setzbar", membership.role == "expert_citiz
 check("Vertreterregelung gespeichert", membership.substitute_for_id == person2.id)
 check("Stimmrecht entziehbar", not membership.has_voting_rights)
 
-# Nachrücker-Flow: person scheidet aus, person2 rückt nach
+# Nachrücker-Flow: person scheidet aus, person2 rückt nach. Die Besetzung beginnt heute; der Wechsel
+# liegt danach, die ausscheidende Person gehört dem Gremium bis zum Vortag an (kein doppelter Sitz).
+wechsel = membership.start_date + timedelta(days=30)
 resp = admin.post(
     f"{base}/memberships/{membership.id}/succession/",
-    {"successor": str(person2.id), "change_date": "2026-07-01"},
+    {"successor": str(person2.id), "change_date": wechsel.isoformat()},
 )
 check("Nachrücker-Flow -> Redirect", resp.status_code == 302, f"got {resp.status_code}")
 membership.refresh_from_db()
-check("Alte Mitgliedschaft beendet", str(membership.end_date) == "2026-07-01")
+check("Alte Mitgliedschaft endet am Vortag", membership.end_date == wechsel - timedelta(days=1))
 new_membership = SessionOrganizationMembership.objects.get(organization=org, person=person2, end_date__isnull=True)
 check("Nachfolger übernimmt Funktion", new_membership.role == "expert_citizen")
-check("Nachfolger-Start = Wechseldatum", str(new_membership.start_date) == "2026-07-01")
+check("Nachfolger-Start = Wechseldatum", new_membership.start_date == wechsel)
 
 # Beenden
-resp = admin.post(f"{base}/memberships/{new_membership.id}/end/", {"end_date": "2026-12-31"})
+ende = wechsel + timedelta(days=90)
+resp = admin.post(f"{base}/memberships/{new_membership.id}/end/", {"end_date": ende.isoformat()})
 new_membership.refresh_from_db()
-check("Mitgliedschaft beendbar", str(new_membership.end_date) == "2026-12-31")
+check("Mitgliedschaft beendbar", new_membership.end_date == ende)
 
 # Ohne Berechtigung
 resp = viewer.post(
