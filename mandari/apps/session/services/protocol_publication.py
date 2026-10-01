@@ -99,7 +99,9 @@ def _item_lines(item: SessionAgendaItem, *, timings: bool = True) -> list[str]:
     excluded = [v.person.display_name for v in votes if v.vote == "excluded"]
     if excluded:
         lines.append(
-            "Mitwirkungsverbot (§ 31 GO): " + ", ".join(excluded) + " – an Beratung und Abstimmung nicht beteiligt."
+            "Mitwirkungsverbot wegen Befangenheit: "
+            + ", ".join(excluded)
+            + " – an Beratung und Abstimmung nicht beteiligt."
         )
     return [line for line in lines if line]
 

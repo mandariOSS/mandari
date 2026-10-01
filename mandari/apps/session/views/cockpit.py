@@ -49,15 +49,17 @@ class _CockpitMixin(SessionViewMixin):
             queryset.select_related("organization", "tenant__state_profile"), pk=self.kwargs["meeting_id"]
         )
 
-    def state_context(self, meeting: SessionMeeting) -> dict[str, Any]:
+    def state_context(self, meeting: SessionMeeting, *, version: str | None = None) -> dict[str, Any]:
         return {
             "meeting": meeting,
-            "state": cockpit_service.build_state(meeting, self.session_permissions),
+            "state": cockpit_service.build_state(meeting, self.session_permissions, version=version),
             "tenant_slug": self.tenant.slug,
         }
 
-    def render_state(self, meeting: SessionMeeting, *, toast: dict[str, str] | None = None) -> HttpResponse:
-        response = TemplateResponse(self.request, STATE_TEMPLATE, self.state_context(meeting))
+    def render_state(
+        self, meeting: SessionMeeting, *, toast: dict[str, str] | None = None, version: str | None = None
+    ) -> HttpResponse:
+        response = TemplateResponse(self.request, STATE_TEMPLATE, self.state_context(meeting, version=version))
         if toast:
             response["HX-Trigger"] = json.dumps({"showToast": toast})
         return response
@@ -93,9 +95,11 @@ class MeetingCockpitStateView(_CockpitMixin, View):
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
         meeting = self.get_meeting()
-        if request.GET.get("v") == cockpit_service.state_version(meeting):
+        # Merkmal einmal bestimmen: für den Vergleich mit ?v= und als Merkmal des neuen Stands
+        version = cockpit_service.state_version(meeting)
+        if request.GET.get("v") == version:
             return HttpResponse(status=204)
-        return self.render_state(meeting)
+        return self.render_state(meeting, version=version)
 
 
 class MeetingCockpitActionView(_CockpitMixin, View):

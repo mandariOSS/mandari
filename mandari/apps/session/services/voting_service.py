@@ -110,6 +110,10 @@ class Eligibility:
     unreachable: list[SessionAttendance] = field(default_factory=list)
     #: zugeschaltet und nach dem Landesprofil von dieser Abstimmung ausgeschlossen (Issue #139)
     remote_excluded: list[SessionAttendance] = field(default_factory=list)
+    #: Stellvertretungen, deren vertretene Person anwesend ist: anwesend ohne Stimme, nicht mitgezählt
+    standby: list[SessionAttendance] = field(default_factory=list)
+    #: Stellvertretung -> vertretene Personen (für die Beschlussfähigkeit ohne erneutes Laden)
+    substitutes: dict[Any, frozenset[Any]] = field(default_factory=dict)
     #: Regel des Landesprofils für Zugeschaltete bei dieser Abstimmung (nur mit TOP)
     remote_rule: Any = None
     #: alle Zeilen der Anwesenheitsliste (für die Beschlussfähigkeit ohne erneutes Laden)
@@ -147,6 +151,10 @@ def eligibility(
     mehr nur „eingeladen“ oder „zugesagt“ ist. Nur dann ist die Zahl der Stimmberechtigten eine
     verlässliche Obergrenze für die Stimmenzahlen.
 
+    Stellvertretungen (``attendance_service.seat_split``) stimmen nur ab, wenn sie für ein nicht
+    anwesendes Mitglied nachrücken; sonst sind sie anwesend ohne Stimme (``standby``). Für die
+    Vollständigkeit zählen sie nur, solange eine von ihnen vertretene Person nicht anwesend ist.
+
     Teilnahmeart (Issue #139): Zugeschaltete mit andauernder Störung stimmen nicht ab
     (``unreachable``). Mit TOP (``item``, Abstimmungsart und Wahl ggf. aus dem Formular) gilt die Regel
     des Landesprofils für Wahlen und geheime Abstimmungen (``remote_excluded``).
@@ -164,8 +172,23 @@ def eligibility(
         else None
     )
     result = Eligibility(has_list=bool(attendances), remote_rule=rule, attendances=attendances)
+    if not attendances:
+        return result
+    roster = attendance_service.roster(meeting)
+    result.substitutes = roster.substitutes
+    split = attendance_service.seat_split(
+        attendance_service.voting_rows(attendances), roster.substitutes, active_statuses=VOTING_PRESENT_STATUSES
+    )
+    standby = {attendance.pk for attendance in split.standby}
     for attendance in attendances:
-        if can_vote(attendance) and participation_service.is_disrupted(attendance):
+        if attendance.pk in standby:
+            # Stellvertretung ohne freien Sitz: anwesend ohne Stimme bzw. übrige Zeile
+            if attendance.status in VOTING_PRESENT_STATUSES:
+                result.standby.append(attendance)
+                result.advisory.append(attendance)
+            else:
+                result.others.append(attendance)
+        elif can_vote(attendance) and participation_service.is_disrupted(attendance):
             result.unreachable.append(attendance)
         elif can_vote(attendance) and rule is not None and rule.excluded and attendance.is_remote:
             result.remote_excluded.append(attendance)
@@ -175,16 +198,13 @@ def eligibility(
             result.advisory.append(attendance)
         else:
             result.others.append(attendance)
-    if not attendances:
-        return result
-    undecided = any(
-        a.has_voting_rights and a.role not in NON_VOTING_ROLES and a.status in UNDECIDED_STATUSES for a in attendances
+    # Offen ist eine Rückmeldung, solange ein Mitglied noch nicht erfasst ist – bei Stellvertretungen nur,
+    # solange eine von ihnen vertretene Person nicht anwesend ist (sonst kommt es auf sie nicht an)
+    undecided = any(a.status in UNDECIDED_STATUSES for a in split.members) or any(
+        a.status in UNDECIDED_STATUSES and roster.substitutes[a.person_id] & split.vacant
+        for a in split.stepping_in + split.standby
     )
-    members = set(
-        attendance_service.active_memberships(meeting)
-        .filter(has_voting_rights=True)
-        .values_list("person_id", flat=True)
-    )
+    members = set(roster.voting_members)
     listed = {a.person_id for a in attendances}
     result.complete = bool(members) and not undecided and members <= listed
     return result
@@ -334,7 +354,9 @@ def capture_votes(
         if aendern:
             SessionVote.objects.bulk_update(aendern, ["vote", "recorded_by", "updated_at"])
 
-        if not secret:
+        # Summen aus Einzelstimmen nur bei offener und namentlicher Abstimmung; bei „Nur Summen“ und geheimer
+        # Abstimmung sind die erfassten Summen maßgeblich und werden nicht überschrieben
+        if agenda_item.voting_method in INDIVIDUAL_METHODS:
             recompute_sums(agenda_item)
     result = tally(agenda_item)
     # Einzelne Stimmänderungen für den direkten Protokolleintrag „Stimmabgabe erfasst“ (Issue #221)
@@ -346,12 +368,14 @@ def rights_message(assessed: Eligibility, persons: list[Any]) -> str:
     """Meldung für Stimmen von Personen, die bei dieser Abstimmung nicht abstimmen (feste Sätze, Namen)."""
     ausgeschlossen = {a.person_id for a in assessed.remote_excluded}
     gestoert = {a.person_id for a in assessed.unreachable}
+    bereit = {a.person_id for a in assessed.standby}
     saetze = ["Stimmen werden nur von stimmberechtigten Anwesenden erfasst."]
     gruppen = (
         ([p for p in persons if p.pk in ausgeschlossen], assessed.remote_rule.message if assessed.remote_rule else ""),
         ([p for p in persons if p.pk in gestoert], "Wegen einer Störung nicht erreichbar:"),
+        ([p for p in persons if p.pk in bereit], "Stellvertretung, deren vertretenes Mitglied selbst anwesend ist:"),
         (
-            [p for p in persons if p.pk not in ausgeschlossen and p.pk not in gestoert],
+            [p for p in persons if p.pk not in ausgeschlossen | gestoert | bereit],
             "Ohne Stimmrecht oder laut Anwesenheitsliste nicht anwesend:",
         ),
     )
@@ -390,12 +414,13 @@ def tally(agenda_item: SessionAgendaItem, votes: list[SessionVote] | None = None
 
 
 def voting_members(circular: SessionCircularResolution):
-    """Aktive stimmberechtigte Besetzung des Gremiums."""
+    """Aktive stimmberechtigte Besetzung des Gremiums – ohne Stellvertretungen, die keinen eigenen Sitz haben."""
     today = timezone.localdate()
     return (
         SessionOrganizationMembership.objects.filter(
             organization=circular.organization,
             has_voting_rights=True,
+            substitute_for__isnull=True,
         )
         .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
         .filter(Q(start_date__isnull=True) | Q(start_date__lte=today))

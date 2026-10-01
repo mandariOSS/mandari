@@ -268,10 +268,14 @@ def state_version(meeting: SessionMeeting) -> str:
     return hashlib.sha256(repr(row).encode("utf-8")).hexdigest()[:20]
 
 
-def build_state(meeting: SessionMeeting, permissions: Collection[str]) -> CockpitState:
-    """Stand für die Ansicht – nichtöffentliche TOPs nur mit dem NÖ-Recht."""
+def build_state(meeting: SessionMeeting, permissions: Collection[str], *, version: str | None = None) -> CockpitState:
+    """
+    Stand für die Ansicht – nichtöffentliche TOPs nur mit dem NÖ-Recht. ``version``: soeben bestimmtes Merkmal
+    (Abruf des Stands), sonst wird es hier bestimmt.
+    """
     # Merkmal vor den Daten: Ändert sich danach etwas, weicht es ab und die Ansicht lädt erneut
-    version = state_version(meeting)
+    if version is None:
+        version = state_version(meeting)
     all_items = _all_items(meeting)
     items = _visible_items(meeting, all_items, permissions)
     visible_ids = {item.pk for item in items}
@@ -299,10 +303,14 @@ def build_state(meeting: SessionMeeting, permissions: Collection[str]) -> Cockpi
             disruptions.extend((attendance, d) for d in participation_service.disruptions(attendance))
     disruptions.sort(key=lambda pair: (not pair[1].ongoing, -_minutes(pair[1].started_at)))
 
-    quorum = attendance_service.quorum_status(meeting, attendances=attendances)
+    # Stellvertretungen einmal laden, für die Beschlussfähigkeit der Sitzung und des TOP
+    substitutes = attendance_service.roster(meeting).substitutes if attendances else {}
+    quorum = attendance_service.quorum_status(meeting, attendances=attendances, substitutes=substitutes)
     focus = vote_item or current
     item_quorum = (
-        attendance_service.quorum_status(meeting, focus, attendances=attendances) if focus is not None else None
+        attendance_service.quorum_status(meeting, focus, attendances=attendances, substitutes=substitutes)
+        if focus is not None
+        else None
     )
     return CockpitState(
         meeting=meeting,

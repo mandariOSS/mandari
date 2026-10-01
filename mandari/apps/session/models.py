@@ -17,6 +17,7 @@ Security:
 """
 
 import uuid
+from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
 
@@ -1730,17 +1731,84 @@ class SessionMeeting(EncryptionMixin, models.Model):
     def __str__(self):
         return f"{self.organization.name}: {self.name}"
 
+    def clean(self) -> None:
+        """
+        Das Ende liegt nach dem Beginn – sonst rechnen ICS-Export und Kollisionsprüfung der Jahresplanung mit
+        einem leeren Zeitfenster. Hier statt im Formular, damit Sitzungsformular und Admin gleich prüfen.
+        """
+        super().clean()
+        if self.start and self.end and self.end <= self.start:
+            raise ValidationError({"end": "Das Ende muss nach dem Beginn der Sitzung liegen."})
+
     def save(self, *args: Any, **kwargs: Any) -> None:
         """
         Neue Sitzungen ohne Wahlperiode bekommen sie aus dem Sitzungsdatum (Issue #39).
 
         Hier statt im Anlageformular, damit jeder Anlageweg sie setzt – Serienplanung, Demo- und Lastdaten,
         Schnittstellen. Archiv, Sitzungsliste und Suche zählen Sitzungen über diese Zuordnung.
+
+        Absage: Häkchen ``cancelled`` und Status ``cancelled`` beschreiben denselben Sachverhalt und werden
+        abgeglichen – sagt eines von beiden ab, ist die Sitzung abgesagt. Kalender, Abo-Feed, Dashboard und
+        Erinnerungen prüfen das Häkchen, Statusfilter und Rückmeldelink den Status.
         """
         if self._state.adding and self.legislative_term_id is None and self.tenant_id and hasattr(self.start, "date"):
             start = timezone.localtime(self.start) if timezone.is_aware(self.start) else self.start
             self.legislative_term = SessionLegislativeTerm.for_date(self.tenant, start.date())
+        self.sync_cancellation()
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and {"cancelled", "meeting_state"} & set(update_fields):
+            kwargs["update_fields"] = {*update_fields, "cancelled", "meeting_state"}
         super().save(*args, **kwargs)
+
+    def sync_cancellation(self) -> None:
+        """Häkchen und Status der Absage angleichen (abgesagt gewinnt)."""
+        if self.meeting_state == "cancelled":
+            self.cancelled = True
+        elif self.cancelled:
+            self.meeting_state = "cancelled"
+
+    def align_cancellation_input(self, cleaned: dict[str, Any], changed: Iterable[str]) -> None:
+        """
+        Formulare mit Status und Häkchen (Sitzungsformular, Admin): Wer nur eines von beiden ändert, ändert das
+        andere mit – auch die Rücknahme der Absage (wieder „Geplant“ bzw. „Einladung versandt“). Ändern sich
+        beide widersprüchlich, gilt die Absage wie in :meth:`sync_cancellation`. ``self`` ist der bisherige Stand.
+        """
+        state, cancelled = cleaned.get("meeting_state"), bool(cleaned.get("cancelled"))
+        changed = set(changed)
+        if "meeting_state" in changed and "cancelled" not in changed:
+            cleaned["cancelled"] = state == "cancelled"
+        elif "cancelled" in changed and "meeting_state" not in changed:
+            if cancelled:
+                cleaned["meeting_state"] = "cancelled"
+            elif state == "cancelled":
+                cleaned["meeting_state"] = "invitation_sent" if self.invitation_sent_at else "scheduled"
+        elif cancelled or state == "cancelled":
+            cleaned["cancelled"], cleaned["meeting_state"] = True, "cancelled"
+
+    @property
+    def is_cancelled(self) -> bool:
+        return bool(self.cancelled) or self.meeting_state == "cancelled"
+
+    def assign_legislative_term(self) -> None:
+        """
+        Wahlperiode nachführen, wenn eine Sitzung verschoben wird (Issue #39): Liegt das neue Datum außerhalb
+        der bisherigen Periode, gilt die Periode, die es enthält. Ohne passende Periode bleibt eine gesetzte
+        Periode stehen; fehlt sie, gilt der Rückfall von :meth:`SessionLegislativeTerm.for_date`. Neue Sitzungen
+        erhalten die Periode in :meth:`save`.
+        """
+        if not hasattr(self.start, "date") or self.tenant_id is None:
+            return
+        start = timezone.localtime(self.start) if timezone.is_aware(self.start) else self.start
+        day = start.date()
+        current = self.legislative_term if self.legislative_term_id else None
+        if current is not None and current.contains(day):
+            return
+        terms = list(SessionLegislativeTerm.objects.filter(tenant_id=self.tenant_id))
+        match = next((term for term in terms if term.contains(day)), None)
+        if match is not None:
+            self.legislative_term = match
+        elif current is None and terms:
+            self.legislative_term = SessionLegislativeTerm.for_date(self.tenant, day)
 
     def delete(self, *args: Any, **kwargs: Any) -> Any:
         """Sitzungen mit genehmigter Niederschrift bleiben erhalten (Issue #318)."""
@@ -3555,6 +3623,20 @@ class SessionAttendance(EncryptionMixin, models.Model):
     def __str__(self):
         return f"{self.person} - {self.meeting}: {self.status}"
 
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Nach der Genehmigung der Niederschrift ist die Anwesenheit gesperrt (Teilnehmerverzeichnis)."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_attendance(self, kwargs.get("update_fields"))
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> Any:
+        """Zeilen einer Sitzung mit genehmigter Niederschrift lassen sich nicht entfernen."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_attendance_delete(self)
+        return super().delete(*args, **kwargs)
+
     @property
     def is_remote(self) -> bool:
         """Per Bild-Ton-Übertragung zugeschaltet? (Issue #139)."""
@@ -3609,6 +3691,19 @@ class SessionAttendanceDisruption(models.Model):
 
     def __str__(self):
         return f"{self.attendance.person}: {self.get_cause_display()} ab {self.started_at:%H:%M}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Störungsvermerke einer genehmigten Niederschrift sind gesperrt (Teilnehmerverzeichnis)."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_disruption(self, kwargs.get("update_fields"))
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> Any:
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_disruption(self, deleting=True)
+        return super().delete(*args, **kwargs)
 
     @property
     def meeting_id(self):

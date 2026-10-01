@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from apps.common.tests.factories import MembershipFactory, OrganizationFactory, RoleFactory, UserFactory
 from apps.session.models import (
+    SessionAgendaItem,
     SessionAPIToken,
     SessionAttendance,
     SessionInvitationRecipient,
@@ -150,6 +151,10 @@ def test_fremde_ladungen_bleiben_unsichtbar(portal: Portal) -> None:
         tenant=portal.tenant, given_name="Otto", family_name="Other", email="other@example.org"
     )
     SessionOrganizationMembership.objects.create(organization=portal.meeting.organization, person=other)
+    # Nachladung nur mit Nachtrags-TOP
+    SessionAgendaItem.objects.create(
+        meeting=portal.meeting, number="9", order=9, name="Nachtrag", is_supplementary=True
+    )
     dispatch = invitation_service.send_invitations(portal.meeting, sent_by=None, dispatch_type="supplementary")
     fremd = SessionInvitationRecipient.objects.get(dispatch=dispatch, person=other)
 

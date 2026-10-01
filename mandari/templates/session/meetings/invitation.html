@@ -43,13 +43,16 @@
                 <i data-lucide="send" class="w-5 h-5 text-blue-500"></i>
                 {% if meeting.invitation_sent_at %}Nachladung / erneuter Versand{% else %}Ladung versenden{% endif %}
             </h2>
+            {% if dispatch_blocker %}
+            <c-ui.alert variant="info" icon="ban" data-testid="ladung-gesperrt">{{ dispatch_blocker }}</c-ui.alert>
+            {% else %}
             <form method="post" class="space-y-4">
                 {% csrf_token %}
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Versandart</label>
-                    <select name="dispatch_type" class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+                    <select name="dispatch_type" class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                         <option value="invitation">Ladung (Einladung mit Tagesordnung)</option>
-                        {% if meeting.invitation_sent_at %}
+                        {% if meeting.invitation_sent_at and supplementary_count %}
                         <option value="supplementary">Nachladung (Nachtrags-Tagesordnung{% if supplementary_count %}, {{ supplementary_count }} Nachtrags-TOP{{ supplementary_count|pluralize:"s" }}{% endif %})</option>
                         {% endif %}
                     </select>
@@ -57,12 +60,12 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Betreff</label>
                     <input type="text" name="subject" value="{{ default_subject }}"
-                           class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Anschreiben (optional)</label>
                     <textarea name="message" rows="4" placeholder="Zusätzlicher Text für die Einladungs-E-Mail …"
-                              class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">{{ meeting.invitation_text }}</textarea>
+                              class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{ meeting.invitation_text }}</textarea>
                 </div>
                 <div class="flex items-center justify-between">
                     <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -77,6 +80,7 @@
                     </button>
                 </div>
             </form>
+            {% endif %}
         </div>
 
         <!-- Versandhistorie -->

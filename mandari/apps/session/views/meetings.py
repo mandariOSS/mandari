@@ -118,6 +118,7 @@ class MeetingForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        # Ende nach Beginn prüft das Modell (SessionMeeting.clean) – für dieses Formular wie für den Admin
         lead = cleaned.get("organization")
         relevant = self.instance._state.adding or bool(FORMAT_RELEVANT_FIELDS.intersection(self.changed_data))
         if lead is not None and relevant:
@@ -145,10 +146,20 @@ class MeetingForm(forms.ModelForm):
 
 
 class MeetingUpdateForm(MeetingForm):
-    """Bearbeiten: zusätzlich Status und Absage."""
+    """
+    Bearbeiten: zusätzlich Status und Absage.
+
+    Status „Abgesagt“ und das Häkchen „Sitzung absagen“ beschreiben dasselbe: Wer nur eines von beiden ändert,
+    ändert das andere mit (``SessionMeeting.align_cancellation_input``, wie im Admin).
+    """
 
     class Meta(MeetingForm.Meta):
         fields = [*MEETING_FORM_FIELDS, "meeting_state", "cancelled", "cancellation_reason"]
+
+    def clean(self):
+        cleaned = super().clean()
+        self.instance.align_cancellation_input(cleaned, self.changed_data)
+        return cleaned
 
 
 class MeetingFormMixin:
@@ -263,8 +274,11 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         # Ö/NÖ: Nichtöffentliche Sitzungen nur für Berechtigte
         if not self.has_permission("view_non_public_meetings"):
             qs = qs.filter(is_public=True)
-        # Gemeinsame Sitzung (Issue #317): weitere Gremien nur laden, wenn es welche gibt
-        return SessionMeeting.with_joint_flag(qs.select_related("organization", "created_by__user"))
+        # Gemeinsame Sitzung (Issue #317): weitere Gremien nur laden, wenn es welche gibt. Mandant und Niederschrift
+        # gleich mit: Teilnahmeart und Landesprofil lesen den Mandanten, Sperre und Seitenleiste die Niederschrift
+        return SessionMeeting.with_joint_flag(
+            qs.select_related("organization", "tenant", "protocol", "created_by__user")
+        )
 
     def get_context_data(self, **kwargs):
         from ..services import agenda_service
@@ -277,7 +291,11 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         agenda = agenda_service.grouped_agenda(meeting, include_non_public=can_view_np)
         context["agenda_public"] = agenda["public"]
         context["agenda_non_public"] = agenda["non_public"]
-        context["agenda_can_edit"] = self.has_permission("edit_meetings")
+        # Genehmigte Niederschrift: Tagesordnung und Anwesenheit sind gesperrt – keine Bearbeitungsknöpfe
+        protocol = getattr(meeting, "protocol", None)
+        context["protocol_locked"] = protocol is not None and protocol.is_locked
+        context["agenda_can_edit"] = self.has_permission("edit_meetings") and not context["protocol_locked"]
+        context["agenda_can_retract"] = self.has_permission("edit_meetings") and context["protocol_locked"]
 
         # Lesezugriff auf Nichtöffentliches protokollieren (Issue #221): nur Objekt, nie Inhalt
         if not meeting.is_public or agenda["non_public"]:
@@ -323,7 +341,7 @@ class MeetingDetailView(SessionViewMixin, DetailView):
 
         # Teilnahmeart, Störungen und Hinweise des Landesprofils (Issue #139)
         context.update(attendance_service.attendance_panel(meeting))
-        context["attendance_can_manage"] = self.has_permission("manage_attendance")
+        context["attendance_can_manage"] = self.has_permission("manage_attendance") and not context["protocol_locked"]
         context["disruption_causes"] = SessionAttendanceDisruption.CAUSE_CHOICES
         if context["attendance_can_manage"]:
             present_ids = meeting.attendances.values_list("person_id", flat=True)
@@ -348,7 +366,7 @@ class MeetingDetailView(SessionViewMixin, DetailView):
             )
 
         # Protocol
-        context["protocol"] = getattr(meeting, "protocol", None)
+        context["protocol"] = protocol
 
         # Sitzungsmappe (Issue #218): abrufbare Fassungen – reine Rechteprüfung, Stand lädt per HTMX nach
         from ..services.meeting_package_plan import variants_for
@@ -417,6 +435,9 @@ class MeetingUpdateView(MeetingFormMixin, SessionViewMixin, UpdateView):
     def form_valid(self, form):
         if not _joint_valid(form):
             return self.form_invalid(form)
+        # Verschoben: Wahlperiode nachführen, wenn das neue Datum außerhalb der bisherigen liegt (Issue #39)
+        if "start" in form.changed_data:
+            form.instance.assign_legislative_term()
         messages.success(self.request, "Sitzung wurde aktualisiert.")
         _format_warnings(self.request, form)
         return super().form_valid(form)

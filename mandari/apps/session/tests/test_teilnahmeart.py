@@ -80,7 +80,7 @@ def _seite(w: Welt, c: Any) -> str:
 
 
 def test_anwesenheitsliste_zeigt_zuschaltung_und_stoerung() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     zeile = _zuschalten(w, von=time(18, 3), bis=time(19, 10))
     SessionAttendanceDisruption.objects.create(
         attendance=zeile, started_at=time(18, 40), ended_at=time(18, 44), note="INTERNER-VERMERK"
@@ -99,14 +99,14 @@ def test_anwesenheitsliste_zeigt_zuschaltung_und_stoerung() -> None:
 
 
 def test_praesenzsitzung_ohne_teilnahmeart() -> None:
-    w = welt()
+    w = welt(status="review")
     seite = _seite(w, _verwaltung(w))
     assert 'name="participation_mode"' not in seite
     assert "vor Ort" not in seite
 
 
 def test_niederschrift_und_pdf_nennen_teilnahmeart_je_person() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     zeile = _zuschalten(w, von=time(18, 3), bis=time(19, 10))
     SessionAttendanceDisruption.objects.create(
         attendance=zeile,
@@ -132,7 +132,7 @@ def test_niederschrift_und_pdf_nennen_teilnahmeart_je_person() -> None:
 
 
 def test_verspaetet_und_vorzeitig_getrennt() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     spaet = _zuschalten(w, "Amsel", von=time(18, 20))
     spaet.status = "joined_late"
     spaet.save()
@@ -153,7 +153,7 @@ def test_verspaetet_und_vorzeitig_getrennt() -> None:
 
 
 def test_stoerung_nimmt_zugeschaltete_aus_dem_quorum_und_ende_bringt_sie_zurueck() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     zeile = _zuschalten(w)
     verwaltung = _verwaltung(w)
     # Vier Stimmberechtigte (Fink entschuldigt; Gast Esche zählt nie): nötig 3, anwesend 3, davon 1 zugeschaltet
@@ -183,7 +183,7 @@ def test_stoerung_nimmt_zugeschaltete_aus_dem_quorum_und_ende_bringt_sie_zurueck
 
 
 def test_stoerung_zu_einem_zeitpunkt() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     zeile = _zuschalten(w)
     SessionAttendanceDisruption.objects.create(attendance=zeile, started_at=time(18, 40), ended_at=time(18, 44))
     zeile = SessionAttendance.objects.prefetch_related("disruptions").get(pk=zeile.pk)
@@ -193,7 +193,7 @@ def test_stoerung_zu_einem_zeitpunkt() -> None:
 
 
 def test_stoerung_ende_vor_beginn_und_unlesbare_uhrzeit_abgelehnt() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     zeile = _zuschalten(w)
     verwaltung = _verwaltung(w)
     url = f"{base(w)}/meetings/{w.sitzung.pk}/disruptions/add/"
@@ -214,7 +214,7 @@ def test_stoerung_ende_vor_beginn_und_unlesbare_uhrzeit_abgelehnt() -> None:
 
 
 def test_stoerung_korrigieren_behaelt_bei_fehler_den_stand() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     zeile = _zuschalten(w)
     stoerung = SessionAttendanceDisruption.objects.create(
         attendance=zeile, started_at=time(18, 40), ended_at=time(18, 44)
@@ -243,7 +243,7 @@ def test_stoerung_korrigieren_behaelt_bei_fehler_den_stand() -> None:
 
 
 def test_jetzt_beenden_nach_mitternacht() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     # Laufende Sitzung seit gestern Abend, noch ohne Ende: „Jetzt beenden“ nach Mitternacht ist echt
     SessionMeeting.objects.filter(pk=w.sitzung.pk).update(start=timezone.now() - timedelta(days=1), end=None)
     w.sitzung.refresh_from_db()
@@ -254,7 +254,7 @@ def test_jetzt_beenden_nach_mitternacht() -> None:
 
 
 def test_stoerung_nur_fuer_zugeschaltete() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     zeile = _zeile(w, "Amsel")
     antwort = _verwaltung(w).post(
         f"{base(w)}/meetings/{w.sitzung.pk}/disruptions/add/", {"attendance": str(zeile.pk)}, follow=True
@@ -264,8 +264,8 @@ def test_stoerung_nur_fuer_zugeschaltete() -> None:
 
 
 def test_stoerung_fremder_sitzung_nicht_erreichbar() -> None:
-    w = _hybrid(welt())
-    fremd = _hybrid(welt("sued"))
+    w = _hybrid(welt(status="review"))
+    fremd = _hybrid(welt("sued", status="review"))
     zeile = _zuschalten(fremd)
     antwort = _verwaltung(w).post(f"{base(w)}/meetings/{w.sitzung.pk}/disruptions/add/", {"attendance": str(zeile.pk)})
     assert antwort.status_code == 404
@@ -278,7 +278,7 @@ def test_stoerung_fremder_sitzung_nicht_erreichbar() -> None:
 
 
 def test_zuschaltung_nur_in_hybrider_oder_digitaler_sitzung() -> None:
-    w = welt()
+    w = welt(status="review")
     zeile = _zeile(w, "Buche")
     verwaltung = _verwaltung(w)
     daten = {"status": "present", "participation_mode": "remote", "arrival_time": "", "departure_time": "", "notes": ""}
@@ -296,7 +296,7 @@ def test_zuschaltung_nur_in_hybrider_oder_digitaler_sitzung() -> None:
 
 
 def test_zugeschaltete_in_praesenzsitzung_zaehlen_und_lassen_sich_korrigieren() -> None:
-    w = welt()  # Präsenzsitzung
+    w = welt(status="review")  # Präsenzsitzung
     zeile = _zeile(w, "Buche")
     # Überholte Teilnahmeart, etwa nach einer Änderung des Sitzungsformats
     SessionAttendance.objects.filter(pk=zeile.pk).update(participation_mode=SessionAttendance.PARTICIPATION_REMOTE)
@@ -326,7 +326,7 @@ def test_zugeschaltete_in_praesenzsitzung_zaehlen_und_lassen_sich_korrigieren() 
 
 
 def test_schnellerfassung_ohne_teilnahmeart_laesst_sie_unveraendert() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     zeile = _zuschalten(w)
     daten = {"status": "present", "arrival_time": "18:05", "departure_time": "", "notes": ""}
     _verwaltung(w).post(f"{base(w)}/attendance/{zeile.pk}/update/", daten, HTTP_HX_REQUEST="true")
@@ -335,7 +335,7 @@ def test_schnellerfassung_ohne_teilnahmeart_laesst_sie_unveraendert() -> None:
 
 
 def test_digitale_sitzung_erzeugt_zugeschaltete() -> None:
-    w = welt()
+    w = welt(status="review")
     SessionMeeting.objects.filter(pk=w.sitzung.pk).update(format=SessionMeeting.FORMAT_DIGITAL)
     w.sitzung.refresh_from_db()
     w.sitzung.attendances.all().delete()
@@ -345,7 +345,7 @@ def test_digitale_sitzung_erzeugt_zugeschaltete() -> None:
 
 
 def test_zugeschalteter_vorsitz_ergibt_hinweis() -> None:
-    w = _hybrid(welt(), "NI")
+    w = _hybrid(welt(status="review"), "NI")
     zeile = _zuschalten(w)
     zeile.role = "chair"
     zeile.save()
@@ -366,7 +366,7 @@ def _offener_top(w: Welt) -> SessionAgendaItem:
 
 
 def test_geheime_abstimmung_ohne_zugeschaltete_wo_das_landesprofil_es_ausschliesst() -> None:
-    w = _hybrid(welt(), "NI")
+    w = _hybrid(welt(status="review"), "NI")
     _zuschalten(w)
     top = _offener_top(w)
     top.voting_method = "secret"
@@ -409,7 +409,8 @@ def test_wahl_ohne_zugeschaltete_und_stimme_wird_abgelehnt() -> None:
 
 def test_wahl_nach_genehmigung_gesperrt() -> None:
     w = _hybrid(welt(), "NI")  # genehmigte Niederschrift
-    top = _offener_top(w)
+    with protocol_lock.permit(w.sitzung.pk):  # Stand vor der Genehmigung
+        top = _offener_top(w)
     top.is_election = True
     with pytest.raises(protocol_lock.ProtocolLockedError):
         top.save()
@@ -436,7 +437,7 @@ def test_wahl_nach_genehmigung_gesperrt() -> None:
 
 
 def test_gast_zaehlt_nicht_zur_beschlussfaehigkeit() -> None:
-    w = welt()
+    w = welt(status="review")
     gast = _zeile(w, "Esche")
     assert gast.role == "guest" and gast.has_voting_rights  # Stimmrecht-Häkchen gesetzt, Funktion Gast
     status = attendance_service.quorum_status(w.sitzung)
@@ -444,7 +445,7 @@ def test_gast_zaehlt_nicht_zur_beschlussfaehigkeit() -> None:
 
 
 def test_bedingte_regel_ergibt_nur_hinweis() -> None:
-    w = _hybrid(welt(), "NW")
+    w = _hybrid(welt(status="review"), "NW")
     zeile = _zuschalten(w)
     top = _offener_top(w)
     top.voting_method = "secret"
@@ -471,7 +472,7 @@ def test_stimme_waehrend_stoerung_abgelehnt() -> None:
 
 
 def test_auskunft_und_anonymisierung_der_stoerungsvermerke() -> None:
-    w = _hybrid(welt())
+    w = _hybrid(welt(status="review"))
     zeile = _zuschalten(w)
     SessionAttendanceDisruption.objects.create(
         attendance=zeile, started_at=time(18, 40), ended_at=time(18, 44), note="PERSOENLICHER-VERMERK"

@@ -113,16 +113,18 @@ class TestSperre:
         cast(Any, item).set_protocol_note_encrypted("GEHEIMVERSCHL Wortbeitrag")
         item.save()  # gleicher Klartext, neuer Schlüsseltext: keine Änderung
 
-    def test_beschlusskontrolle_nummer_und_betreff_bleiben_frei(self) -> None:
+    def test_beschlusskontrolle_und_beschlussnummer_bleiben_frei_betreff_nicht(self) -> None:
         w = welt()
         item = _frisch(w.top)
         item.implementation_status = "done"
         item.save(update_fields=["implementation_status", "updated_at"])
         assert resolution_service.assign_resolution_number(_frisch(w.top)) is True
+        assert _frisch(w.top).resolution_number.startswith("B/")
+        # Der Betreff steht so in Niederschrift, Beschlussauszug und Bürgerportal
         item = _frisch(w.top)
         item.name = "Radweg Hauptstraße (Nordabschnitt)"
-        item.save()
-        assert _frisch(w.top).resolution_number.startswith("B/")
+        with pytest.raises(ProtocolLockedError):
+            item.save()
 
     def test_entwurf_ist_nicht_gesperrt(self) -> None:
         w = welt(status="review")
@@ -135,7 +137,9 @@ class TestSperre:
         w = welt()
         with pytest.raises(ProtocolLockedError):
             SessionAgendaItem.objects.create(meeting=w.sitzung, name="Nachgeschoben", vote_result="approved")
-        SessionAgendaItem.objects.create(meeting=w.sitzung, name="Ohne Ergebnis")
+        # Auch ohne Ergebnis: Die Tagesordnung ist mit der Genehmigung abgeschlossen
+        with pytest.raises(ProtocolLockedError):
+            SessionAgendaItem.objects.create(meeting=w.sitzung, name="Ohne Ergebnis")
         with pytest.raises(ProtocolLockedError):
             _frisch(w.top).delete()
         with pytest.raises(ProtocolLockedError):
@@ -246,8 +250,11 @@ class TestSchreibwege:
     def test_top_loeschen_und_absetzen_verboten(self) -> None:
         w = welt()
         c = client(w.genehmiger)
-        assert c.post(f"{base(w)}/agenda/{w.top.pk}/delete/").status_code == 403
-        assert c.post(f"{base(w)}/agenda/{w.top.pk}/withdraw/", {"reason": "x"}).status_code == 403
+        # Hinweis auf der Sitzungsseite statt einer 403-Seite
+        for pfad, daten in (("delete/", {}), ("withdraw/", {"reason": "x"})):
+            antwort = c.post(f"{base(w)}/agenda/{w.top.pk}/{pfad}", daten, follow=True)
+            assert antwort.redirect_chain[-1][0].endswith(f"/meetings/{w.sitzung.pk}/")
+            assert "Die Niederschrift dieser Sitzung ist genehmigt." in antwort.content.decode()
         assert _frisch(w.top).is_withdrawn is False
 
     def test_admin_bietet_gesperrtes_nicht_an_und_modell_haelt_stand(self) -> None:

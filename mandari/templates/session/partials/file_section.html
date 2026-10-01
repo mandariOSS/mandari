@@ -22,20 +22,21 @@ Erwarteter Kontext:
     {% if files %}
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for file in files %}
-        <div class="px-6 py-3 flex items-center gap-3" x-data="{ editing: false }">
+        <div class="px-6 py-3 flex items-center gap-2" x-data="{ editing: false }">
             <i data-lucide="file" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
             <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ file.name }}</p>
-                <p class="text-xs text-gray-500 flex items-center gap-2">
-                    {{ file.size_human }}
+                <!-- Metazeile bricht in der schmalen Seitenleiste um, statt über die Aktionen zu laufen -->
+                <p class="text-xs text-gray-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span class="whitespace-nowrap">{{ file.size_human }}</span>
                     {% if file.version > 1 %}
                     <a href="{% url 'session:file_versions' tenant_slug=tenant_slug file_id=file.id %}"
-                       class="hover:underline" title="Frühere Fassungen dieser Anlage">· Version {{ file.version }} (Verlauf)</a>
+                       class="hover:underline whitespace-nowrap" title="Frühere Fassungen dieser Anlage">· Version {{ file.version }} (Verlauf)</a>
                     {% endif %}
                     {% if file.is_public %}
-                    <span class="inline-flex px-1.5 py-0.5 rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">Öffentlich</span>
+                    <span class="inline-flex px-1.5 py-0.5 rounded-full whitespace-nowrap bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">Öffentlich</span>
                     {% else %}
-                    <span class="inline-flex px-1.5 py-0.5 rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">Nichtöffentlich</span>
+                    <span class="inline-flex px-1.5 py-0.5 rounded-full whitespace-nowrap bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">Nichtöffentlich</span>
                     {% endif %}
                 </p>
             </div>

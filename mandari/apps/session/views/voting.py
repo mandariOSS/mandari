@@ -94,12 +94,15 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                 "meeting": item.meeting,
                 "attendances": assessed.voting,
                 "advisory": assessed.advisory,
+                "standby": assessed.standby,
                 "unreachable": assessed.unreachable,
                 "remote_excluded": assessed.remote_excluded,
                 "remote_rule": assessed.remote_rule,
                 "secret_hint": secret_rule.message if secret_rule else "",
                 "election_hint": election_rule.message if election_rule else "",
-                "item_quorum": attendance_service.quorum_status(item.meeting, item, attendances=assessed.attendances),
+                "item_quorum": attendance_service.quorum_status(
+                    item.meeting, item, attendances=assessed.attendances, substitutes=assessed.substitutes
+                ),
                 "stray_votes": [a for a in assessed.advisory + assessed.others + not_voting if a.current_vote],
                 "attendance_complete": assessed.complete,
                 "locked": protocol is not None and protocol.is_locked,
@@ -143,9 +146,9 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
             key = f"vote_{attendance.person_id}"
             if key in data:
                 votes_by_person[attendance.person] = data.get(key, "")
-        if method == "secret":
-            # Geheim: Summen manuell, keine Einzelstimmen – höchstens so viele wie stimmberechtigt anwesend,
-            # abzüglich der Befangenen nach dieser Erfassung
+        if method not in voting_service.INDIVIDUAL_METHODS:
+            # Geheim und „Nur Summen“: Summen manuell, keine Einzelstimmen – höchstens so viele wie stimmberechtigt
+            # anwesend, abzüglich der Befangenen nach dieser Erfassung. Fehlt ein Feld, bleibt der gespeicherte Wert.
             counts = {}
             for field in voting_service.COUNT_FIELDS:
                 counts[field] = getattr(item, field)

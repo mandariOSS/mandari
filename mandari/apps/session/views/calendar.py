@@ -19,6 +19,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.formatting import MONTH_NAMES, WEEKDAY_CHOICES
+from apps.common.params import int_param
 
 from .. import audit
 from ..models import SessionMeeting, SessionOrganization
@@ -35,13 +36,11 @@ class MeetingCalendarView(SessionViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         today = timezone.localdate()
-        try:
-            year = int(self.request.GET.get("year", today.year))
-            month = int(self.request.GET.get("month", today.month))
-            date(year, month, 1)
-        except (TypeError, ValueError):
+        # Erst begrenzen, dann rechnen: sehr große Zahlen liefen sonst in einen OverflowError
+        year = int_param(self.request.GET.get("year"), today.year, minimum=2000, maximum=2100)
+        month = int_param(self.request.GET.get("month"), today.month)
+        if not 1 <= month <= 12:
             year, month = today.year, today.month
-        year = max(2000, min(2100, year))
 
         include_np = self.has_permission("view_non_public_meetings")
         weeks, count = calendar_service.month_grid(self.session_tenant, year, month, include_non_public=include_np)
@@ -185,6 +184,7 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
 
         created = 0
         for entry in entries:
+            # Wahlperiode wie bei der Einzelanlage aus dem Sitzungsdatum (SessionMeeting.save, Issue #39)
             meeting = SessionMeeting.objects.create(
                 tenant=self.session_tenant,
                 name=form["name"],
@@ -194,6 +194,7 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
                 room=form["room"],
                 is_public=form["is_public"],
                 meeting_state="draft",
+                created_by=self.session_user,
             )
             # Standard-TOPs des Gremiums automatisch übernehmen (Issue #85)
             textblock_service.apply_standard_items(meeting)
