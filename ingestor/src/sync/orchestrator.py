@@ -27,6 +27,7 @@ from mandari_oparl import (
     ProcessedOrganization,
     ProcessedPaper,
     ProcessedPerson,
+    source_id_base,
 )
 from rich.progress import (
     BarColumn,
@@ -174,7 +175,9 @@ class SyncOrchestrator:
         from src.config import settings
 
         self.storage = DatabaseStorage(database_url)
-        self.processor = OParlProcessor()
+        # Prozessor (Kennungen der Objekte) und Speicher (Verweise in Ereignissen) rechnen mit denselben
+        # festgeschriebenen Basen umgezogener Quellen (Issue #733, ``_register_id_base``)
+        self.processor = OParlProcessor(self.storage.id_bases)
         self.max_concurrent = max_concurrent or settings.oparl_max_concurrent
         # Track if we're in parallel mode (disables Rich Progress to avoid conflicts)
         self._parallel_mode = False
@@ -227,6 +230,18 @@ class SyncOrchestrator:
 
         console.print(f"[green]Registered source: {source_name} (ID: {source_id})[/green]")
         return source_id
+
+    def _register_id_base(self, url: str, source_row: Any) -> None:
+        """
+        Festgeschriebene Basis der Kennungen einer Quelle übernehmen (``sync_config["id_base"]``, Issue #733).
+
+        Ist eine Quelle umgezogen (eigene Installation auf neuer Domain), behalten ihre Objekte die Kennungen
+        ihrer bisherigen Adressen: Für Adressen unter ``url`` rechnet der Ingestor auf der festgeschriebenen
+        Basis (``mandari_oparl.ids.canonical_uri``). Ohne Eintrag sind die Adressen kanonisch.
+        """
+        base = source_id_base(getattr(source_row, "sync_config", None))
+        if self.storage.id_bases.add(url, base):
+            self.processor.clear_id_cache()
 
     # ========== URL Auto-Detection ==========
 
@@ -368,6 +383,7 @@ class SyncOrchestrator:
         # "bridge:*"-Quellen (z. B. oparl-bridge vor ALLRIS) sind normale
         # OParl-Quellen und nehmen den Standardpfad.
         source_row = await self.storage.get_source_by_url(url)
+        self._register_id_base(url, source_row)
         if source_row is not None and isinstance(source_row.sync_config, dict):
             source_type = str(source_row.sync_config.get("source_type") or "oparl")
             if source_type.startswith("scraper:"):
@@ -579,6 +595,7 @@ class SyncOrchestrator:
         await self._seed_modified_since_cache()
         capability_snapshot = OParlClient.get_modified_since_unsupported()
         source_row = await self.storage.get_source_by_url(url)
+        self._register_id_base(url, source_row)
 
         client: OParlClient | None = None
         try:

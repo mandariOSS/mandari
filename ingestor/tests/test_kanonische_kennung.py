@@ -8,12 +8,22 @@ müssen für gleiche URIs dieselbe Kennung vergeben.
 
 import json
 from importlib import resources
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from mandari_oparl import NS_MANDARI_RIS, canonical_id, generate_uuid
+from mandari_oparl import (
+    NS_MANDARI_RIS,
+    SOURCE_ID_BASE_KEY,
+    IdBases,
+    canonical_id,
+    canonical_uri,
+    generate_uuid,
+    source_id_base,
+)
 
+from src.sync.orchestrator import SyncOrchestrator
 from src.sync.processor import OParlProcessor, ProcessedAgendaItem, ProcessedFile, ProcessedLocation
 
 URL_NAMENSRAUM = UUID("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
@@ -79,3 +89,83 @@ def test_eingebettete_objekte_tragen_die_kanonische_kennung() -> None:
     assert eingebettet[ProcessedAgendaItem].id == canonical_id(f"{basis}/agendaitem/3")
     assert eingebettet[ProcessedFile].id == canonical_id(f"{basis}/file/9")
     assert eingebettet[ProcessedLocation].id == canonical_id(f"{basis}/location/7")
+
+
+# --- Umgezogene Quellen (Issue #733) ------------------------------------------------------------------------
+
+UMZUEGE = _testvektoren()["umzuege"]
+ALT = "https://mandari.example/session/musterstadt/api/oparl/"
+NEU = "https://neu.example/session/musterstadt/api/oparl/"
+
+
+@pytest.mark.parametrize("vektor", UMZUEGE, ids=[f"{v['uri'][-30:]}|{v['basis'][-12:]}" for v in UMZUEGE])
+def test_umzug_aendert_keine_kennung(vektor: dict[str, str]) -> None:
+    """Dieselben Vektoren prüft Django: Adresse unter der neuen Domain, Kennung der festgeschriebenen Basis."""
+    erwartet = UUID(vektor["kennung"])
+    assert canonical_uri(vektor["uri"], vektor["adresse"], vektor["basis"]) == vektor["kanonisch"]
+    assert canonical_id(vektor["kanonisch"]) == erwartet
+    basen = IdBases({vektor["adresse"]: vektor["basis"]})
+    assert basen.id(vektor["uri"]) == erwartet
+    assert OParlProcessor(basen).generate_uuid(vektor["uri"]) == erwartet
+
+
+def test_umgezogene_quelle_behaelt_kennungen_auch_eingebettet() -> None:
+    """Objekt und eingebettete Objekte tragen nach dem Umzug die Kennungen von vorher; die Adresse ist neu."""
+    vorher = OParlProcessor().process(
+        {"id": f"{ALT}paper/1/", "type": f"{TYP}Paper", "mainFile": {"id": f"{ALT}file/2/", "type": f"{TYP}File"}}
+    )
+    nachher = OParlProcessor(IdBases({NEU: ALT})).process(
+        {"id": f"{NEU}paper/1/", "type": f"{TYP}Paper", "mainFile": {"id": f"{NEU}file/2/", "type": f"{TYP}File"}}
+    )
+    assert vorher is not None and nachher is not None
+    assert nachher.id == vorher.id == canonical_id(f"{ALT}paper/1/")
+    assert nachher.external_id == f"{NEU}paper/1/"
+    assert [e.id for e in nachher.nested_entities] == [e.id for e in vorher.nested_entities]
+    assert [e.external_id for e in nachher.nested_entities] == [f"{NEU}file/2/"]
+
+
+def test_basen_der_kennungen() -> None:
+    basen = IdBases()
+    assert not basen
+    assert basen.add("https://neu.example/a/", "https://alt.example/a/") is True
+    assert basen
+    # Gleich nach Ergänzung des Schrägstrichs: keine Änderung
+    assert basen.add("https://neu.example/a", "https://alt.example/a") is False
+    assert basen.uri("https://neu.example/a/x/") == "https://alt.example/a/x/"
+    # Präfixgrenze: /ab/ liegt nicht unter /a/
+    assert basen.uri("https://neu.example/ab/x/") == "https://neu.example/ab/x/"
+    # Verschachtelte Präfixe: der längste gilt
+    basen.add("https://neu.example/a/b/", "https://dritte.example/")
+    assert basen.uri("https://neu.example/a/b/c/") == "https://dritte.example/c/"
+    assert basen.uri("https://neu.example/a/c/") == "https://alt.example/a/c/"
+    # Adresse gleich Basis bzw. ohne Basis: Eintrag entfällt
+    assert basen.add("https://neu.example/a/", "https://neu.example/a/") is True
+    assert basen.add("https://neu.example/a/b/", "") is True
+    assert not basen
+    assert basen.add("", "https://alt.example/") is False
+
+
+def test_basis_aus_der_konfiguration_der_quelle() -> None:
+    assert SOURCE_ID_BASE_KEY == "id_base"
+    assert source_id_base({"session_tenant": "x", "id_base": ALT}) == ALT
+    assert source_id_base({"id_base": 5}) == ""
+    assert source_id_base({}) == ""
+    assert source_id_base(None) == ""
+
+
+def test_orchestrator_uebernimmt_die_basis_der_quelle() -> None:
+    """Je Quelle gilt ``sync_config["id_base"]``; ein Wechsel verwirft zwischengespeicherte Kennungen."""
+    orchestrator = SyncOrchestrator.__new__(SyncOrchestrator)
+    orchestrator.storage = cast(Any, SimpleNamespace(id_bases=IdBases()))
+    orchestrator.processor = OParlProcessor(orchestrator.storage.id_bases)
+    adresse = f"{NEU}paper/1/"
+    assert orchestrator.processor.generate_uuid(adresse) == canonical_id(adresse)
+
+    orchestrator._register_id_base(NEU, SimpleNamespace(sync_config={"session_tenant": "x", "id_base": ALT}))
+    assert orchestrator.processor.generate_uuid(adresse) == canonical_id(f"{ALT}paper/1/")
+
+    # Ohne Eintrag (oder ohne Quelle) sind die Adressen wieder kanonisch
+    orchestrator._register_id_base(NEU, SimpleNamespace(sync_config={}))
+    assert orchestrator.processor.generate_uuid(adresse) == canonical_id(adresse)
+    orchestrator._register_id_base(NEU, None)
+    assert not orchestrator.storage.id_bases

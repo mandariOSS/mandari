@@ -2,11 +2,12 @@
 """
 Management Command: kanonische Kennungen im RIS-Bestand prüfen (nur lesend).
 
-Zählt je Quelle und Entität, wo ``id`` von ``uuid5(NS_MANDARI_RIS, external_id)`` abweicht, wo Objekte
+Zählt je Quelle und Entität, wo ``id`` von der kanonischen Kennung der ``external_id`` abweicht, wo Objekte
 aus mandari Session nicht unter der öffentlichen OParl-Adresse (``SITE_URL``) liegen, wo die URI fehlt
 und wo die kanonische Kennung schon an ein anderes Objekt vergeben ist (ADR
-``docs/adr/20260929-kanonisches-modell.md``). Der Befehl ändert nichts; ``--dry-run`` ist nur der
-Deutlichkeit halber vorhanden.
+``docs/adr/20260929-kanonisches-modell.md``). Meldet außerdem, wenn die festgeschriebene Basis der
+Kennungen nicht ``SITE_URL`` ist oder eine Session-Quelle ihre Kennungen auf einer anderen Basis bildet
+(Issue #733). Der Befehl ändert nichts; ``--dry-run`` ist nur der Deutlichkeit halber vorhanden.
 
 Verwendung:
     python manage.py check_ris_ids --dry-run
@@ -17,7 +18,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from insight_core.services.ris_ids import ENTITIES, NO_SOURCE, Count, Report, SourceInfo, check_ris_ids
@@ -40,7 +40,7 @@ class Command(BaseCommand):
             raise CommandError("Quelle nicht gefunden (UUID oder URL angeben).") from exc
 
         self.stdout.write("Prüfung der kanonischen RIS-Kennungen (nur lesend, keine Änderungen)")
-        self.stdout.write(f"Öffentliche Adresse für Session-Objekte (SITE_URL): {settings.SITE_URL}")
+        self._write_bases(report)
         for key in [*report.sources, NO_SOURCE]:
             self._write_source(report, key)
 
@@ -50,6 +50,17 @@ class Command(BaseCommand):
         for entity, count in sorted(report.totals_by_entity().items(), key=lambda item: _order(item[0])):
             self._write_line(entity, count)
         self._write_result(report.total())
+        self._write_base_result(report)
+
+    def _write_bases(self, report: Report) -> None:
+        self.stdout.write(f"Öffentliche Adresse für Session-Objekte (SITE_URL): {report.site_url}")
+        if report.identifier_base is None:
+            self.stdout.write(
+                "Basis der Kennungen: noch nicht festgelegt (wird beim ersten Bedarf aus SITE_URL übernommen)"
+            )
+            return
+        line = f"Basis der Kennungen (festgeschrieben): {report.identifier_base}"
+        self.stdout.write(self.style.WARNING(line) if report.base_deviates else line)
 
     def _write_source(self, report: Report, key: str) -> None:
         rows = [(e.name, report.counts[(key, e.name)]) for e in ENTITIES if (key, e.name) in report.counts]
@@ -61,6 +72,10 @@ class Command(BaseCommand):
         if info is not None and info.session_base and info.url != info.session_base:
             self.stdout.write(
                 self.style.WARNING(f"  Quelle registriert unter {info.url}, erwartet {info.session_base}")
+            )
+        if info is not None and info.id_base_deviates:
+            self.stdout.write(
+                self.style.WARNING(f"  Basis der Kennungen {info.id_base}, erwartet {info.expected_id_base}")
             )
         self.stdout.write(HEADER)
         for entity, count in rows:
@@ -93,8 +108,29 @@ class Command(BaseCommand):
         if total.uri_deviations:
             self.stdout.write(
                 "Session-Objekte außerhalb der öffentlichen Adresse: Die Session-OParl-Schnittstelle vergibt URIs "
-                "auf Basis von SITE_URL. Ein Abgleich legt diese Objekte sonst unter der neuen URI erneut an."
+                "auf Basis von SITE_URL. Nach einem Domainwechsel die Adressen umziehen "
+                "(docs/SESSION_OPARL_API.md, Abschnitt „Domainwechsel“)."
             )
+
+    def _write_base_result(self, report: Report) -> None:
+        deviating = [info for info in report.sources.values() if info.id_base_deviates]
+        if report.base_deviates:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Die Basis der Kennungen ({report.identifier_base}) ist nicht SITE_URL ({report.site_url}). "
+                    "Adressen folgen SITE_URL, Kennungen der festgeschriebenen Basis. Nach einem Domainwechsel ist "
+                    "das gewollt; sonst SITE_URL prüfen."
+                )
+            )
+        if deviating:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"{len(deviating)} Session-Quelle(n) bilden ihre Kennungen auf einer anderen Basis als die "
+                    "Session-Schnittstelle; der Änderungsfeed fände ihre Objekte nicht."
+                )
+            )
+        if not report.base_deviates and not deviating:
+            self.stdout.write(self.style.SUCCESS("Basis der Kennungen: ohne Abweichung."))
 
 
 def _order(entity: str) -> int:

@@ -11,6 +11,7 @@ from uuid import UUID
 
 from mandari_oparl import (
     OPARL_TYPE_MAP,
+    IdBases,
     OParlType,
     ProcessedAgendaItem,
     ProcessedBody,
@@ -24,7 +25,6 @@ from mandari_oparl import (
     ProcessedOrganization,
     ProcessedPaper,
     ProcessedPerson,
-    canonical_id,
     parse_date,
     parse_datetime,
 )
@@ -60,22 +60,29 @@ class OParlProcessor:
     - UUID generation from external IDs
     """
 
-    def __init__(self) -> None:
+    def __init__(self, id_bases: IdBases | None = None) -> None:
         self._id_cache: dict[str, UUID] = {}
+        #: Festgeschriebene Basen der Kennungen umgezogener Quellen (Issue #733), vom Orchestrator gepflegt
+        self.id_bases = id_bases if id_bases is not None else IdBases()
 
     def generate_uuid(self, external_id: str) -> UUID:
         """
-        Kanonische Kennung aus der externen ID (``mandari_oparl.ids.canonical_id``).
+        Kanonische Kennung aus der externen ID (``mandari_oparl.ids``).
 
-        Dieselbe Funktion nutzt Django für neue RIS-Objekte (ADR 20260929-kanonisches-modell).
-        Ergebnisse werden zwischengespeichert.
+        Ohne Umzug der Quelle ist das ``canonical_id(external_id)``; bei umgezogenen Quellen die Kennung
+        der Adresse auf der festgeschriebenen Basis (``id_bases``, Issue #733). Dieselben Funktionen nutzt
+        Django für neue RIS-Objekte (ADR 20260929-kanonisches-modell). Ergebnisse werden zwischengespeichert.
         """
         if external_id in self._id_cache:
             return self._id_cache[external_id]
 
-        uuid = canonical_id(external_id)
+        uuid = self.id_bases.id(external_id)
         self._id_cache[external_id] = uuid
         return uuid
+
+    def clear_id_cache(self) -> None:
+        """Zwischengespeicherte Kennungen verwerfen (nach einer Änderung von ``id_bases``)."""
+        self._id_cache.clear()
 
     def parse_datetime(self, value: str | None):
         """Parse OParl datetime string to datetime object."""

@@ -505,3 +505,33 @@ class AuditChainHead(models.Model):
 
     def __str__(self) -> str:
         return f"{self.scope} (Nr. {self.last_seq})"
+
+
+class IdentifierBase(models.Model):
+    """
+    Basisadresse der dauerhaften Kennungen dieser Installation (Issue #733).
+
+    Aus ihr bilden sich die kanonischen Kennungen eigener Objekte: Ein Objekt eines Session-Mandanten
+    trägt ``uuid5`` über seine OParl-URL auf dieser Basis (``shared/mandari_oparl/ids.py``, ADR
+    ``docs/adr/20260929-kanonisches-modell.md``). Die Basis wird einmal festgelegt – mit der Migration
+    common/0009 aus dem damaligen ``SITE_URL``, auf einer neuen Installation beim ersten Bedarf – und
+    ändert sich danach nicht mehr, auch nicht mit ``SITE_URL``. Ausgegebene Adressen folgen weiter
+    ``SITE_URL``; ein Domainwechsel ändert so keine Kennung.
+
+    Genau eine Zeile (pk=1), bewusst ohne Verwaltungsoberfläche. Lesen über
+    ``apps.common.identifiers.identifier_base``.
+    """
+
+    url = models.CharField(
+        max_length=500,
+        verbose_name="Basisadresse",
+        help_text="Ohne abschließenden Schrägstrich, z. B. https://mandari.de",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Festgelegt am")
+
+    class Meta:
+        verbose_name = "Basisadresse der Kennungen"
+        verbose_name_plural = "Basisadresse der Kennungen"
+
+    def __str__(self) -> str:
+        return self.url

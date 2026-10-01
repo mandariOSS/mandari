@@ -12,6 +12,7 @@ from django.core.management import CommandError, call_command
 from django.test import override_settings
 from mandari_oparl.ids import canonical_id
 
+from apps.common.models import IdentifierBase
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -132,3 +133,81 @@ def test_leerer_bestand(db: Any) -> None:
     out = StringIO()
     call_command("check_ris_ids", stdout=out)
     assert "Ergebnis: 0 Objekte" in out.getvalue()
+
+
+# --- Basis der Kennungen (Issue #733) ---------------------------------------------------------------------------
+
+
+@override_settings(SITE_URL=SITE)
+def test_basis_wie_site_url_ohne_abweichung(bestand: dict[str, Any]) -> None:
+    IdentifierBase.objects.update_or_create(pk=1, defaults={"url": SITE})
+    report = check_ris_ids()
+    session = report.sources[bestand["session"]]
+
+    assert (report.identifier_base, report.site_url, report.base_deviates) == (SITE, SITE, False)
+    assert (session.id_base, session.expected_id_base, session.id_base_deviates) == (SESSION, SESSION, False)
+    assert report.sources[bestand["fremd"]].expected_id_base is None
+
+    out = StringIO()
+    call_command("check_ris_ids", "--dry-run", stdout=out)
+    assert f"Basis der Kennungen (festgeschrieben): {SITE}" in out.getvalue()
+    assert "Basis der Kennungen: ohne Abweichung." in out.getvalue()
+
+
+@override_settings(SITE_URL="https://neu.example")
+def test_meldet_basis_abweichend_von_site_url(bestand: dict[str, Any]) -> None:
+    """Nach einem Domainwechsel gewollt, sonst ein Hinweis auf eine falsche SITE_URL."""
+    IdentifierBase.objects.update_or_create(pk=1, defaults={"url": SITE})
+    report = check_ris_ids()
+    assert report.base_deviates
+    # Die Kennungen der Session-Quelle bilden sich weiter auf der festgeschriebenen Basis
+    assert not report.sources[bestand["session"]].id_base_deviates
+
+    out = StringIO()
+    call_command("check_ris_ids", "--dry-run", stdout=out)
+    assert f"Die Basis der Kennungen ({SITE}) ist nicht SITE_URL (https://neu.example)" in out.getvalue()
+
+
+@override_settings(SITE_URL=SITE)
+def test_meldet_session_quelle_auf_anderer_basis(bestand: dict[str, Any]) -> None:
+    IdentifierBase.objects.update_or_create(pk=1, defaults={"url": "https://anders.example"})
+    report = check_ris_ids()
+    session = report.sources[bestand["session"]]
+    assert session.id_base_deviates
+    assert session.expected_id_base == "https://anders.example/session/nord/api/oparl/"
+
+    out = StringIO()
+    call_command("check_ris_ids", "--dry-run", stdout=out)
+    ausgabe = out.getvalue()
+    assert f"Basis der Kennungen {SESSION}, erwartet https://anders.example/session/nord/api/oparl/" in ausgabe
+    assert "1 Session-Quelle(n) bilden ihre Kennungen auf einer anderen Basis" in ausgabe
+
+
+@override_settings(SITE_URL=SITE)
+def test_ohne_festgelegte_basis_legt_die_pruefung_keine_an(bestand: dict[str, Any]) -> None:
+    IdentifierBase.objects.all().delete()
+    out = StringIO()
+    call_command("check_ris_ids", "--dry-run", stdout=out)
+    assert "Basis der Kennungen: noch nicht festgelegt" in out.getvalue()
+    assert not IdentifierBase.objects.exists()
+    # Erwartet wird, was beim ersten Bedarf gälte: SITE_URL
+    assert check_ris_ids().sources[bestand["session"]].expected_id_base == SESSION
+
+
+@override_settings(SITE_URL="https://neu.example")
+def test_umgezogene_quelle_ohne_abweichung(db: Any) -> None:
+    """Adressen unter der neuen Domain, Kennungen auf der festgeschriebenen Basis: kanonisch."""
+    IdentifierBase.objects.update_or_create(pk=1, defaults={"url": SITE})
+    neu = "https://neu.example/session/nord/api/oparl/"
+    source = OParlSource.objects.create(
+        name="Sitzungsdienst Nord", url=neu, sync_config={"session_tenant": "nord", "id_base": SESSION}
+    )
+    body = OParlBody.objects.create(
+        id=canonical_id(f"{SESSION}body/"), external_id=f"{neu}body/", source=source, name="Nord", slug="nord"
+    )
+    OParlMeeting.objects.create(id=canonical_id(f"{SESSION}meeting/1/"), external_id=f"{neu}meeting/1/", body=body)
+    # Ohne festgeschriebene Basis in der Quelle wäre die Kennung abweichend
+    OParlMeeting.objects.create(external_id=f"{neu}meeting/2/", body=body)
+
+    total = check_ris_ids().total()
+    assert (total.objects, total.id_deviations, total.uri_deviations) == (3, 1, 0)

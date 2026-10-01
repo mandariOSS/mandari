@@ -13,6 +13,7 @@ from typing import Any, Final
 from uuid import UUID
 
 from mandari_oparl import (
+    IdBases,
     ProcessedAgendaItem,
     ProcessedBody,
     ProcessedConsultation,
@@ -216,6 +217,11 @@ class DatabaseStorage:
             class_=AsyncSession,
             expire_on_commit=False,
         )
+
+        # Festgeschriebene Basen der Kennungen umgezogener Quellen (Issue #733): Verweise in Ereignissen
+        # tragen dieselben Kennungen wie die Objekte. Der Orchestrator trägt sie je Quelle ein und teilt sie
+        # mit dem Prozessor.
+        self.id_bases = IdBases()
 
         # Cache for body UUIDs (external_id -> UUID)
         self._body_uuid_cache: dict[str, UUID] = {}
@@ -1029,7 +1035,11 @@ class DatabaseStorage:
             )
             if emit:
                 drafts = ris_events.meeting_events(
-                    meeting_id, meeting.raw_json or {}, prior, organizations_changed=organizations_changed
+                    meeting_id,
+                    meeting.raw_json or {},
+                    prior,
+                    organizations_changed=organizations_changed,
+                    ids=self.id_bases,
                 )
                 await self._emit(session, body_id, drafts, meeting.oparl_modified)
             await session.commit()
@@ -1543,7 +1553,7 @@ class DatabaseStorage:
             file_id = result.scalar_one()
             if emit:
                 drafts = ris_events.file_events(
-                    file_id, file.raw_json or {}, prior, paper_id=paper_id, meeting_id=meeting_id
+                    file_id, file.raw_json or {}, prior, paper_id=paper_id, meeting_id=meeting_id, ids=self.id_bases
                 )
                 await self._emit(session, body_id, drafts, file.oparl_modified)
             await session.commit()
@@ -1658,6 +1668,7 @@ class DatabaseStorage:
                     prior,
                     paper_id=paper_id,
                     paper_external_id=consultation.paper_external_id,
+                    ids=self.id_bases,
                 )
                 await self._emit(session, body_id, drafts, consultation.oparl_modified)
             await session.commit()

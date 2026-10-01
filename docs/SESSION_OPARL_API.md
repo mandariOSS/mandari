@@ -162,7 +162,7 @@ prüft das in der CI gegen eine Instanz mit Demo-Daten (Abschnitt „Prüfung“
 | `System.license`, `Body.license` | URL der Lizenz, die die Verwaltung festgelegt hat; `Body.licenseValidSince` nennt, seit wann sie gilt. Ohne Festlegung entfallen die Felder |
 | `Meeting.location` | eingebettetes Location-Objekt (Abschnitt „Sitzungsort“) |
 | `Body.legislativeTerm` | immer vorhanden (Pflichtfeld), ohne Wahlperiode als leere Liste |
-| IDs und Links | aus `SITE_URL`, unabhängig vom Host der Anfrage (Abschnitt „Betrieb“) |
+| IDs und Links | aus `SITE_URL`, unabhängig vom Host der Anfrage; Kennungen aus der festgeschriebenen Basis (Abschnitt „Betrieb“) |
 | Bedingte Anfragen | `ETag` an jeder Antwort, `If-None-Match` ergibt `304` (Abschnitt „Bedingte Anfragen“) |
 
 | Art des Gremiums in Session | `organizationType` | `classification` |
@@ -445,7 +445,8 @@ python manage.py session_insight_source --tenant musterstadt --base-url http://l
 
 Die Schnittstelle vergibt ihre IDs und Links immer aus `SITE_URL`. Eine abweichende Basis-URL
 taugt deshalb nur, wenn sie dieselbe Adresse wie `SITE_URL` hat (etwa eine lokale Instanz mit
-`SITE_URL=http://localhost:8000`).
+`SITE_URL=http://localhost:8000`). Nach einem Domainwechsel nicht neu registrieren, sondern umziehen
+(Abschnitt „Domainwechsel“).
 
 ## Sync-Wege
 
@@ -505,11 +506,45 @@ Insight-Datenbestand): `python scripts/smoke_insight_durchstich.py`.
 
 IDs, Listen- und Blätter-Links der API bauen auf der öffentlichen Adresse der Installation auf
 (`SITE_URL`), nicht auf dem Host der Anfrage. Die API antwortet unter jedem konfigurierten Host
-(`ALLOWED_HOSTS`), liefert aber überall dieselben IDs. Diese IDs sind die kanonischen URIs der
-Session-Objekte; aus ihnen leitet der RIS-Bestand seine Kennungen ab
-(`uuid5`, ADR `docs/adr/20260929-kanonisches-modell.md`). Ändert sich `SITE_URL`, ändern sich
-auch die IDs; der nächste Abgleich legt die Objekte im Bürgerportal dann unter neuen Kennungen an.
-Vorher mit `python manage.py check_ris_ids --dry-run` prüfen und die Umstellung planen.
+(`ALLOWED_HOSTS`), liefert aber überall dieselben IDs.
+
+**Adressen und Kennungen.** Die IDs der API sind die Adressen der Session-Objekte; sie folgen
+`SITE_URL`. Die kanonischen Kennungen, unter denen RIS-Bestand, Bürgerportal, Änderungsfeed und
+Ereignisse die Objekte führen (`uuid5`, ADR `docs/adr/20260929-kanonisches-modell.md`), bilden sich
+aus denselben Adressen auf der **Basisadresse der Kennungen**. Diese Basis wird einmal je Installation
+festgelegt: beim Update auf diese Version aus dem damaligen `SITE_URL` (Migration `common/0009`), auf
+einer neuen Installation beim ersten Bedarf. Danach ändert sie sich nicht mehr, auch nicht mit
+`SITE_URL`. Solange beide gleich sind, ist die kanonische URI eines Objekts seine Adresse. Jede
+Bürgerportal-Quelle eines Mandanten trägt ihre Basis zusätzlich in `sync_config["id_base"]`; daraus
+rechnen Ingestor und Spiegel (`shared/mandari_oparl/ids.py`).
+
+`python manage.py check_ris_ids --dry-run` zeigt die festgeschriebene Basis neben `SITE_URL` und meldet,
+wenn beide voneinander abweichen oder eine Quelle ihre Kennungen auf einer anderen Basis bildet.
+
+### Domainwechsel
+
+Zieht die Installation auf eine neue Domain um, bleiben alle Kennungen erhalten; nur die Adressen
+ändern sich. Ablauf:
+
+1. Ingestor bzw. Worker anhalten, damit kein Abgleich zwischen den Schritten läuft.
+2. `SITE_URL` (bzw. `DOMAIN`) auf die neue Adresse setzen und die Anwendung neu starten. Die API gibt
+   ab jetzt die neuen Adressen aus, Änderungsfeed und Snapshot nennen dieselben Kennungen wie vorher.
+3. Die Adressen im Bestand des Bürgerportals umziehen – erst die Vorschau, dann mit `--yes`:
+
+   ```bash
+   python manage.py move_session_sources          # Vorschau, ändert nichts
+   python manage.py move_session_sources --yes    # umziehen
+   ```
+
+   Der Befehl setzt die URL jeder Session-Quelle auf ihre Adresse unter `SITE_URL` und schreibt
+   Adressen, Verweise, Links und Rohdaten ihrer Objekte um. Die Kennungen bleiben; die bisherige Basis
+   steht danach in `sync_config["id_base"]` der Quelle. Eine nach dem Wechsel automatisch angelegte,
+   leere Quelle unter der neuen Adresse geht dabei auf. Stehen unter der neuen Adresse schon Objekte,
+   bricht der Befehl ohne Änderung ab.
+4. Ingestor bzw. Worker wieder starten. Der nächste Abgleich aktualisiert die Objekte, statt sie neu
+   anzulegen.
+5. `python manage.py check_ris_ids --dry-run`: keine abweichenden Kennungen und URIs. Der Hinweis, dass
+   die Basis der Kennungen nicht `SITE_URL` ist, ist nach einem Domainwechsel gewollt.
 
 Smoke-Tests: `python scripts/smoke_session_oparl.py` (Spec-Struktur,
 Pagination, Filter, Tombstones, Ö/NÖ-Beweis) und

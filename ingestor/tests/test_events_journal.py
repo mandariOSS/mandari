@@ -914,3 +914,60 @@ async def test_upsert_wartet_nicht_auf_offene_einfuegungen_mit_bezug_auf_das_obj
         await offen.rollback()
 
     assert [e["type"] for e in await bestand.ereignisse()] == ["ris.meeting.scheduled", "ris.meeting.changed"]
+
+
+# --- Umgezogene Quelle (Issue #733) ------------------------------------------------------------------------------
+
+
+async def test_umgezogene_quelle_behaelt_kennungen_und_verweise(bestand: Bestand) -> None:
+    """
+    Nach einem Umzug (neue Adressen im Bestand, Basis der Kennungen festgeschrieben) aktualisiert der Abgleich
+    die Objekte, statt sie neu anzulegen; Ereignisse nennen die Kennungen von vorher.
+    """
+    alt, neu = f"{BASE}/", "https://neu.example.org/oparl/"
+    sitzung = await bestand.meeting()
+    vorlage = await bestand.paper()
+    # Umzug der Adressen wie ``manage.py move_session_sources`` (Kennungen bleiben)
+    async with bestand.storage.get_session() as session:
+        for tabelle in ("oparl_bodies", "oparl_meetings", "oparl_papers"):
+            await session.execute(
+                text(
+                    f"UPDATE {tabelle}"
+                    " SET external_id = CAST(:neu AS text) || substr(external_id, CAST(:ab AS integer))"
+                    " WHERE starts_with(external_id, CAST(:alt AS text))"
+                ),
+                {"neu": neu, "ab": len(alt) + 1, "alt": alt},
+            )
+        await session.commit()
+    bestand.storage.id_bases.add(neu, alt)
+    prozessor = OParlProcessor(bestand.storage.id_bases)
+
+    beratung = {
+        "id": f"{neu}consultation/1",
+        "type": "https://schema.oparl.org/1.1/Consultation",
+        "meeting": f"{neu}meeting/1",
+        "agendaItem": f"{neu}agendaitem/1",
+    }
+    daten = {
+        "id": f"{neu}paper/1",
+        "type": "https://schema.oparl.org/1.1/Paper",
+        "name": "Mehr Bänke im Park",
+        "paperType": "Antrag",
+        "modified": "2026-09-01T10:00:00+02:00",
+        "consultation": [beratung],
+    }
+    assert (
+        await bestand.storage.upsert_paper(prozessor.process_paper(daten, f"{neu}body/1"), bestand.body_id) == vorlage
+    )
+
+    assert await bestand.wert("SELECT count(*) FROM oparl_papers") == 1
+    assert await bestand.wert("SELECT external_id FROM oparl_papers") == f"{neu}paper/1"
+    ereignis = next(e for e in await bestand.ereignisse() if e["type"] == "ris.consultation.changed")
+    assert ereignis["aggregate_id"] == canonical_id(CONSULTATION)
+    assert ereignis["payload"] == {
+        "consultation": str(canonical_id(CONSULTATION)),
+        "paper": str(vorlage),
+        "change": "added",
+        "meeting": str(sitzung),
+        "agenda_item": str(canonical_id(ITEM)),
+    }

@@ -118,6 +118,8 @@ class SessionMirror:
     def __init__(self, source, fetch=None):
         self.source = source
         self.fetch = fetch or _default_fetch
+        #: Kanonische Kennungen wie im Ingestor (festgeschriebene Basis der Quelle, Issue #733)
+        self.ids = source.id_bases()
         self.stats = {
             "bodies": 0,
             "organizations": 0,
@@ -150,6 +152,18 @@ class SessionMirror:
     # Upserts
     # ------------------------------------------------------------------
 
+    def _upsert_args(self, data, defaults):
+        """
+        ``defaults`` und ``create_defaults`` für ``update_or_create`` mit der Adresse als Schlüssel.
+
+        Ein neues Objekt trägt die kanonische Kennung seiner Adresse auf der festgeschriebenen Basis der
+        Quelle, wie im Ingestor (Issue #733). Ohne Umzug der Quelle ist das die Kennung der Adresse selbst.
+        """
+        external_id = data.get("id", "")
+        if not external_id:
+            return {"defaults": defaults}
+        return {"defaults": defaults, "create_defaults": {**defaults, "id": self.ids.id(external_id)}}
+
     def _base_defaults(self, data):
         return {
             "oparl_created": _parse_dt(data.get("created")),
@@ -176,19 +190,22 @@ class SessionMirror:
     def _upsert_body(self, data):
         body, _created = OParlBody.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "source": self.source,
-                "name": data.get("name") or "Unbekannt",
-                "short_name": data.get("shortName"),
-                "website": data.get("website"),
-                "classification": data.get("classification"),
-                "organization_list_url": data.get("organization"),
-                "person_list_url": data.get("person"),
-                "meeting_list_url": data.get("meeting"),
-                "paper_list_url": data.get("paper"),
-                "membership_list_url": data.get("membership"),
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "source": self.source,
+                    "name": data.get("name") or "Unbekannt",
+                    "short_name": data.get("shortName"),
+                    "website": data.get("website"),
+                    "classification": data.get("classification"),
+                    "organization_list_url": data.get("organization"),
+                    "person_list_url": data.get("person"),
+                    "meeting_list_url": data.get("meeting"),
+                    "paper_list_url": data.get("paper"),
+                    "membership_list_url": data.get("membership"),
+                    **self._base_defaults(data),
+                },
+            ),
         )
         if not body.slug:
             from django.utils.text import slugify
@@ -206,30 +223,36 @@ class SessionMirror:
     def _upsert_legislative_term(self, body, data):
         OParlLegislativeTerm.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "body": body,
-                "name": data.get("name"),
-                "start_date": _parse_date(data.get("startDate")),
-                "end_date": _parse_date(data.get("endDate")),
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "body": body,
+                    "name": data.get("name"),
+                    "start_date": _parse_date(data.get("startDate")),
+                    "end_date": _parse_date(data.get("endDate")),
+                    **self._base_defaults(data),
+                },
+            ),
         )
         self.stats["legislative_terms"] += 1
 
     def _upsert_organization(self, body, data):
         OParlOrganization.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "body": body,
-                "name": data.get("name"),
-                "short_name": data.get("shortName"),
-                "organization_type": data.get("organizationType"),
-                "classification": data.get("classification"),
-                "start_date": _parse_date(data.get("startDate")),
-                "end_date": _parse_date(data.get("endDate")),
-                "website": data.get("website"),
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "body": body,
+                    "name": data.get("name"),
+                    "short_name": data.get("shortName"),
+                    "organization_type": data.get("organizationType"),
+                    "classification": data.get("classification"),
+                    "start_date": _parse_date(data.get("startDate")),
+                    "end_date": _parse_date(data.get("endDate")),
+                    "website": data.get("website"),
+                    **self._base_defaults(data),
+                },
+            ),
         )
         self.stats["organizations"] += 1
 
@@ -242,15 +265,18 @@ class SessionMirror:
             email = email[0] if email else None
         person, _created = OParlPerson.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "body": body,
-                "name": data.get("name"),
-                "family_name": data.get("familyName"),
-                "given_name": data.get("givenName"),
-                "title": title,
-                "email": email,
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "body": body,
+                    "name": data.get("name"),
+                    "family_name": data.get("familyName"),
+                    "given_name": data.get("givenName"),
+                    "title": title,
+                    "email": email,
+                    **self._base_defaults(data),
+                },
+            ),
         )
         self.stats["persons"] += 1
         for membership in data.get("membership", []) or []:
@@ -265,34 +291,40 @@ class SessionMirror:
             return
         OParlMembership.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "person": person,
-                "organization": organization,
-                "role": data.get("role"),
-                "voting_right": bool(data.get("votingRight", True)),
-                "start_date": _parse_date(data.get("startDate")),
-                "end_date": _parse_date(data.get("endDate")),
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "person": person,
+                    "organization": organization,
+                    "role": data.get("role"),
+                    "voting_right": bool(data.get("votingRight", True)),
+                    "start_date": _parse_date(data.get("startDate")),
+                    "end_date": _parse_date(data.get("endDate")),
+                    **self._base_defaults(data),
+                },
+            ),
         )
         self.stats["memberships"] += 1
 
     def _upsert_file(self, body, data, paper=None, meeting=None):
         OParlFile.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "body": body,
-                "paper": paper,
-                "meeting": meeting,
-                "name": data.get("name"),
-                "file_name": data.get("fileName"),
-                "mime_type": data.get("mimeType"),
-                "size": data.get("size"),
-                "access_url": data.get("accessUrl"),
-                "download_url": data.get("downloadUrl"),
-                "file_date": _parse_dt(data.get("date")),
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "body": body,
+                    "paper": paper,
+                    "meeting": meeting,
+                    "name": data.get("name"),
+                    "file_name": data.get("fileName"),
+                    "mime_type": data.get("mimeType"),
+                    "size": data.get("size"),
+                    "access_url": data.get("accessUrl"),
+                    "download_url": data.get("downloadUrl"),
+                    "file_date": _parse_dt(data.get("date")),
+                    **self._base_defaults(data),
+                },
+            ),
         )
         self.stats["files"] += 1
 
@@ -300,17 +332,20 @@ class SessionMirror:
         location_name, location_address = _location_text(data)
         meeting, _created = OParlMeeting.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "body": body,
-                "name": data.get("name"),
-                "meeting_state": data.get("meetingState"),
-                "cancelled": bool(data.get("cancelled", False)),
-                "start": _parse_dt(data.get("start")),
-                "end": _parse_dt(data.get("end")),
-                "location_name": location_name,
-                "location_address": location_address,
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "body": body,
+                    "name": data.get("name"),
+                    "meeting_state": data.get("meetingState"),
+                    "cancelled": bool(data.get("cancelled", False)),
+                    "start": _parse_dt(data.get("start")),
+                    "end": _parse_dt(data.get("end")),
+                    "location_name": location_name,
+                    "location_address": location_address,
+                    **self._base_defaults(data),
+                },
+            ),
         )
         org_refs = [ref for ref in data.get("organization", []) if isinstance(ref, str)]
         if org_refs:
@@ -332,30 +367,36 @@ class SessionMirror:
     def _upsert_agenda_item(self, meeting, data):
         OParlAgendaItem.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "meeting": meeting,
-                "number": data.get("number"),
-                "order": data.get("order"),
-                "name": data.get("name"),
-                "public": bool(data.get("public", True)),
-                "result": data.get("result"),
-                "resolution_text": data.get("resolutionText"),
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "meeting": meeting,
+                    "number": data.get("number"),
+                    "order": data.get("order"),
+                    "name": data.get("name"),
+                    "public": bool(data.get("public", True)),
+                    "result": data.get("result"),
+                    "resolution_text": data.get("resolutionText"),
+                    **self._base_defaults(data),
+                },
+            ),
         )
         self.stats["agenda_items"] += 1
 
     def _upsert_paper(self, body, data):
         paper, _created = OParlPaper.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "body": body,
-                "name": data.get("name"),
-                "reference": data.get("reference"),
-                "paper_type": data.get("paperType"),
-                "date": _parse_date(data.get("date")),
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "body": body,
+                    "name": data.get("name"),
+                    "reference": data.get("reference"),
+                    "paper_type": data.get("paperType"),
+                    "date": _parse_date(data.get("date")),
+                    **self._base_defaults(data),
+                },
+            ),
         )
         main_file = data.get("mainFile")
         if isinstance(main_file, dict):
@@ -374,16 +415,19 @@ class SessionMirror:
         item_ref = data.get("agendaItem")
         OParlConsultation.objects.update_or_create(
             external_id=data.get("id", ""),
-            defaults={
-                "body": body,
-                "paper": paper,
-                "paper_external_id": data.get("paper"),
-                "meeting_external_id": meeting_ref if isinstance(meeting_ref, str) else None,
-                "agenda_item_external_id": item_ref if isinstance(item_ref, str) else None,
-                "role": data.get("role"),
-                "authoritative": bool(data.get("authoritative", False)),
-                **self._base_defaults(data),
-            },
+            **self._upsert_args(
+                data,
+                {
+                    "body": body,
+                    "paper": paper,
+                    "paper_external_id": data.get("paper"),
+                    "meeting_external_id": meeting_ref if isinstance(meeting_ref, str) else None,
+                    "agenda_item_external_id": item_ref if isinstance(item_ref, str) else None,
+                    "role": data.get("role"),
+                    "authoritative": bool(data.get("authoritative", False)),
+                    **self._base_defaults(data),
+                },
+            ),
         )
         self.stats["consultations"] += 1
 

@@ -7,12 +7,18 @@ Kanonisch ist ``id == uuid5(NS_MANDARI_RIS, external_id)`` (``shared/mandari_opa
 Django; ältere Objekte aus Django tragen noch zufällige Kennungen. Die Prüfung zählt je Quelle und
 Entität:
 
-- **Kennung abweichend:** ``id`` ist nicht die kanonische Kennung der ``external_id``.
+- **Kennung abweichend:** ``id`` ist nicht die kanonische Kennung der ``external_id``. Hat die Quelle eine
+  festgeschriebene Basis der Kennungen (``sync_config["id_base"]``, nach einem Umzug), gilt die Kennung der
+  Adresse auf dieser Basis (``OParlSource.id_bases``, wie Ingestor und Spiegel).
 - **URI abweichend** (nur Quellen aus mandari Session): ``external_id`` liegt nicht unter der
   öffentlichen OParl-Adresse der Installation (``SITE_URL``), sondern z. B. unter einem anderen Host.
 - **Ohne URI:** leere ``external_id``; eine kanonische Kennung ist nicht bestimmbar.
 - **Kollision:** Die kanonische Kennung eines abweichenden Objekts ist bereits an ein anderes Objekt
   derselben Tabelle vergeben; eine Umschlüsselung wäre dort nicht ohne Weiteres möglich.
+
+Daneben vergleicht die Prüfung die festgeschriebene Basis der Kennungen der Installation
+(``apps.common.identifiers``, Issue #733) mit ``SITE_URL`` und je Session-Quelle die Basis ihrer Kennungen
+mit der erwarteten.
 
 Die Prüfung schreibt nichts. Sie liest den Bestand seitenweise nach Primärschlüssel, damit auch große
 Tabellen mit wenig Speicher auskommen.
@@ -25,12 +31,12 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from django.conf import settings
 from django.db.models import F, Model, QuerySet
 from django.db.models.functions import Coalesce
 from django.urls import NoReverseMatch, reverse
-from mandari_oparl.ids import canonical_id
+from mandari_oparl.ids import IdBases, canonical_id, source_id_base
 
+from apps.common.identifiers import site_url, stored_identifier_base
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -96,13 +102,25 @@ class Count:
 
 @dataclass(frozen=True)
 class SourceInfo:
-    """Quelle im Bericht; ``session_base`` nur für Quellen aus mandari Session."""
+    """Quelle im Bericht; ``session_base`` und ``expected_id_base`` nur für Quellen aus mandari Session."""
 
     key: str
     name: str
     url: str
     session_tenant: str | None = None
+    #: Erwartete Adresse: Schnittstelle des Mandanten auf ``SITE_URL``
     session_base: str | None = None
+    #: Basis der Kennungen der Quelle: ``sync_config["id_base"]``, ohne Eintrag ihre Adresse
+    id_base: str = ""
+    #: Erwartete Basis der Kennungen: Schnittstelle des Mandanten auf der festgeschriebenen Basis
+    expected_id_base: str | None = None
+    #: Kanonische Kennungen der Objekte dieser Quelle
+    ids: IdBases = field(default_factory=IdBases, compare=False)
+
+    @property
+    def id_base_deviates(self) -> bool:
+        """Die Quelle bildet ihre Kennungen auf einer anderen Basis als die Session-Schnittstelle."""
+        return self.expected_id_base is not None and self.id_base != self.expected_id_base
 
 
 @dataclass
@@ -111,6 +129,14 @@ class Report:
 
     sources: dict[str, SourceInfo] = field(default_factory=dict)
     counts: dict[tuple[str, str], Count] = field(default_factory=dict)
+    #: Festgeschriebene Basis der Kennungen (``None``: noch keine) und aktuelle öffentliche Adresse
+    identifier_base: str | None = None
+    site_url: str = ""
+
+    @property
+    def base_deviates(self) -> bool:
+        """Die festgeschriebene Basis der Kennungen ist nicht ``SITE_URL`` (gewollt nur nach einem Domainwechsel)."""
+        return self.identifier_base is not None and self.identifier_base != self.site_url
 
     def count(self, source_key: str, entity: str) -> Count:
         return self.counts.setdefault((source_key, entity), Count())
@@ -132,25 +158,34 @@ class Report:
 NO_SOURCE = "-"
 
 
-def session_oparl_base(tenant_slug: str) -> str | None:
+def session_oparl_base(tenant_slug: str, base: str | None = None) -> str | None:
     """
-    Öffentliche OParl-Adresse eines Session-Mandanten auf Basis von ``SITE_URL`` (endet mit ``/``).
+    OParl-Adresse eines Session-Mandanten auf Basis von ``SITE_URL`` bzw. ``base`` (endet mit ``/``).
 
-    Entspricht ``apps.session.services.insight_service.oparl_system_url`` ohne dessen Import: Der
-    RIS-Bestand hängt nicht von einem Fachmodul ab (ADR 20260929-schichtenmodell).
+    Entspricht ``apps.session.services.insight_service.oparl_system_url`` (mit ``base``:
+    ``oparl_id_base``) ohne dessen Import: Der RIS-Bestand hängt nicht von einem Fachmodul ab (ADR
+    20260929-schichtenmodell).
     """
     try:
         path = reverse("session:oparl_system", kwargs={"tenant_slug": tenant_slug})
     except NoReverseMatch:
         return None
-    return f"{str(settings.SITE_URL).rstrip('/')}{path}"
+    return f"{(base or site_url()).rstrip('/')}{path}"
 
 
-def _source_info(source: OParlSource) -> SourceInfo:
+def _source_info(source: OParlSource, identifier_base: str) -> SourceInfo:
     config = source.sync_config if isinstance(source.sync_config, dict) else {}
-    tenant = config.get("session_tenant") or None
-    base = session_oparl_base(str(tenant)) if tenant else None
-    return SourceInfo(str(source.pk), source.name, source.url, str(tenant) if tenant else None, base)
+    tenant = str(config.get("session_tenant") or "") or None
+    return SourceInfo(
+        key=str(source.pk),
+        name=source.name,
+        url=source.url,
+        session_tenant=tenant,
+        session_base=session_oparl_base(tenant) if tenant else None,
+        id_base=source_id_base(config) or source.url,
+        expected_id_base=session_oparl_base(tenant, identifier_base) if tenant else None,
+        ids=source.id_bases(),
+    )
 
 
 def _pages(queryset: QuerySet[Any, Any], fields: list[str]) -> Iterator[list[dict[str, Any]]]:
@@ -204,7 +239,7 @@ def _check_entity(
                 count.uri_deviations += 1
                 if len(count.examples) < examples:
                     count.examples.append(f"URI: {external_id}")
-            expected = canonical_id(external_id)
+            expected = info.ids.id(external_id) if info is not None else canonical_id(external_id)
             if row["pk"] != expected:
                 count.id_deviations += 1
                 deviating[expected] = source_key
@@ -222,7 +257,9 @@ def check_ris_ids(only_source: str | None = None, examples: int = 0) -> Report:
 
     Liest nur. Liefert einen Bericht je Quelle und Entität.
     """
-    report = Report()
+    report = Report(identifier_base=stored_identifier_base(), site_url=site_url())
+    # Ohne festgeschriebene Basis gilt beim ersten Bedarf SITE_URL (apps.common.identifiers)
+    identifier_base = report.identifier_base or report.site_url
     sources = OParlSource.objects.all()
     if only_source and "://" in only_source:
         sources = sources.filter(url=only_source)
@@ -232,7 +269,7 @@ def check_ris_ids(only_source: str | None = None, examples: int = 0) -> Report:
         except ValueError:
             raise LookupError("Quelle nicht gefunden.") from None
     for source in sources:
-        report.sources[str(source.pk)] = _source_info(source)
+        report.sources[str(source.pk)] = _source_info(source, identifier_base)
     if only_source and not report.sources:
         raise LookupError("Quelle nicht gefunden.")
     selected = next(iter(report.sources)) if only_source else None

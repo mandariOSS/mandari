@@ -2,23 +2,30 @@
 """
 Host-unabhängige IDs der Session-OParl-API (ADR docs/adr/20260929-kanonisches-modell.md).
 
-Die IDs sind die kanonischen URIs der Session-Objekte und bauen auf ``SITE_URL`` auf, nicht auf dem
-Host der Anfrage. Sonst hinge die Kennung eines Objekts im RIS-Bestand davon ab, über welchen Host
-der Abgleich lief, und derselbe Beschluss stünde doppelt im Bürgerportal.
+Die IDs sind die Adressen der Session-Objekte und bauen auf ``SITE_URL`` auf, nicht auf dem Host der
+Anfrage. Sonst hinge die Kennung eines Objekts im RIS-Bestand davon ab, über welchen Host der Abgleich
+lief, und derselbe Beschluss stünde doppelt im Bürgerportal. Die kanonischen Kennungen bilden sich aus
+denselben Adressen auf der festgeschriebenen Basis der Installation: Ein Domainwechsel ändert die
+Adressen, nicht die Kennungen (Issue #733).
 """
 
 from __future__ import annotations
 
+from io import StringIO
 from typing import Any, cast
 from urllib.parse import urlsplit
 
 import pytest
+from django.core.management import call_command
 from django.test import Client, override_settings
 from django.utils import timezone
 
+from apps.common.models import IdentifierBase
+from apps.session.api import oparl as schnittstelle
 from apps.session.models import SessionPaper, SessionTenant
 from apps.session.services import insight_service
-from insight_core.models import OParlPaper
+from insight_core.models import OParlPaper, OParlSource
+from insight_core.services.ris_ids import check_ris_ids
 from insight_sync.session_mirror import SessionMirror
 
 pytestmark = pytest.mark.django_db
@@ -106,3 +113,90 @@ def test_abgleich_ueber_verschiedene_hosts_legt_nichts_doppelt_an(tenant: Sessio
     assert all(
         external_id.startswith(f"{BASIS}paper/") for external_id in vorlagen.values_list("external_id", flat=True)
     )
+
+
+# =============================================================================
+# Domainwechsel: Adressen folgen SITE_URL, Kennungen der festgeschriebenen Basis (Issue #733)
+# =============================================================================
+
+NEU = "https://neu.example"
+NEU_BASIS = f"{NEU}/session/musterstadt/api/oparl/"
+
+
+@pytest.fixture
+def basis_festgeschrieben() -> None:
+    """Installation, deren Kennungen auf SITE gebildet sind (wie in Produktion: Basis = heutige SITE_URL)."""
+    IdentifierBase.objects.update_or_create(pk=1, defaults={"url": SITE})
+
+
+def _kennungen(source: OParlSource) -> dict[str, Any]:
+    """Kennung je Session-Objekt (Pfad nach der Basis der Schnittstelle) im Bürgerportal-Spiegel."""
+    zeilen = OParlPaper.objects.filter(body__source=source).values_list("external_id", "id")
+    return {external_id.split("/api/oparl/", 1)[1]: kennung for external_id, kennung in zeilen}
+
+
+def _feed_kennungen(tenant: SessionTenant) -> dict[str, Any]:
+    """Kennungen, unter denen der Änderungsfeed die Objekte des Mandanten führt."""
+    modul = cast(Any, schnittstelle)  # die Schnittstelle des Fachmoduls ist nicht typisiert
+    mapping, feed = modul._feed(tenant.slug)
+    vorlagen = {
+        f"paper/{pk}/": mapping.uris.canonical_id(mapping.uris.obj("paper", pk))
+        for pk in SessionPaper.objects.filter(tenant=tenant).values_list("pk", flat=True)
+    }
+    return {"body/": feed.body_id, **vorlagen}
+
+
+@override_settings(OPARL_CHANGES_ENABLED=True)
+def test_aenderung_von_site_url_aendert_keine_kennung(tenant: SessionTenant, basis_festgeschrieben: None) -> None:
+    """Schnittstelle, Änderungsfeed, Bürgerportal-Spiegel und Prüfbefehl: gleiche Kennungen vor und nach dem Wechsel."""
+    with override_settings(SITE_URL=SITE):
+        source, _ = insight_service.register_source(tenant)
+        cast(Any, SessionMirror)(source, fetch=_abruf("testserver", False)).sync(full=True)
+        vorher = _kennungen(source)
+        feed_vorher = _feed_kennungen(tenant)
+    assert len(vorher) == 3
+    assert {pfad: feed_vorher[pfad] for pfad in vorher} == vorher
+
+    with override_settings(SITE_URL=NEU):
+        # Adressen folgen der neuen Domain …
+        assert _abruf("testserver", False)(NEU_BASIS)["id"] == NEU_BASIS
+        # … Kennungen der festgeschriebenen Basis
+        assert _feed_kennungen(tenant) == feed_vorher
+
+        # Bestand umziehen (docs/SESSION_OPARL_API.md, „Domainwechsel“), dann wie gewohnt abgleichen
+        call_command("move_session_sources", "--yes", stdout=StringIO())
+        source.refresh_from_db()
+        assert source.url == NEU_BASIS
+        assert insight_service.register_source(tenant) == (source, False)
+        cast(Any, SessionMirror)(source, fetch=_abruf("testserver", False)).sync(full=True)
+
+        assert _kennungen(source) == vorher
+        assert OParlPaper.objects.count() == 3
+        assert all(
+            adresse.startswith(NEU_BASIS) for adresse in OParlPaper.objects.values_list("external_id", flat=True)
+        )
+        bericht = check_ris_ids()
+        gesamt = bericht.total()
+        assert (gesamt.id_deviations, gesamt.uri_deviations, gesamt.collisions) == (0, 0, 0)
+        assert bericht.base_deviates
+        assert not any(info.id_base_deviates for info in bericht.sources.values())
+
+
+def test_neue_quelle_traegt_die_basis_der_kennungen(tenant: SessionTenant, basis_festgeschrieben: None) -> None:
+    """Ingestor und Spiegel lesen die Basis aus der Quelle; eine einmal eingetragene Basis bleibt."""
+    with override_settings(SITE_URL=SITE):
+        source, angelegt = insight_service.register_source(tenant)
+        assert angelegt
+        assert source.sync_config["id_base"] == BASIS
+        # Ältere Quelle ohne Eintrag: wird nachgetragen
+        source.sync_config = {"source_type": "oparl", "session_tenant": "musterstadt"}
+        source.save(update_fields=["sync_config"])
+        insight_service.register_source(tenant)
+        source.refresh_from_db()
+        assert source.sync_config["id_base"] == BASIS
+        # Vorhandener Eintrag: bleibt
+        source.sync_config = {**source.sync_config, "id_base": "https://alt.example/session/musterstadt/api/oparl/"}
+        source.save(update_fields=["sync_config"])
+        insight_service.register_source(tenant)
+        source.refresh_from_db()
+        assert source.sync_config["id_base"] == "https://alt.example/session/musterstadt/api/oparl/"

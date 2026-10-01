@@ -40,10 +40,11 @@ Blättern, Listen-Hülle, ETag, Fehler –, steht in ``hub.api`` und gilt für b
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
 
+from functools import partial
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Prefetch
 from django.http import Http404
-from mandari_oparl.ids import canonical_id
 
 from apps.session import oparl_publication as pub
 from apps.session.models import (
@@ -53,7 +54,7 @@ from apps.session.models import (
     SessionTenant,
 )
 from apps.session.services import file_service, meeting_format_service
-from apps.session.services.insight_service import oparl_system_url
+from apps.session.services.insight_service import oparl_id_base, oparl_system_url
 from hub.api import changes, snapshot
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import Gone, MergedEntries, TimeFilters, list_response, single_page
@@ -112,10 +113,14 @@ SOURCE = SessionSource(
 def _mapping(tenant):
     """
     Abbildung für einen Mandanten. Basis aller IDs ist die öffentliche Adresse der Installation
-    (``SITE_URL``), nicht der Host der Anfrage: Die IDs sind die kanonischen URIs der Session-Objekte,
-    aus denen der RIS-Bestand seine Kennungen ableitet (ADR docs/adr/20260929-kanonisches-modell.md).
+    (``SITE_URL``), nicht der Host der Anfrage. Die kanonischen Kennungen, aus denen RIS-Bestand und
+    Änderungsfeed ihre Objekt-Kennungen beziehen, bilden sich aus denselben Adressen auf der festgeschriebenen
+    Basis der Installation (Issue #733, ADR docs/adr/20260929-kanonisches-modell.md); die Basis liest die
+    Abbildung erst, wenn sie Kennungen braucht (Änderungsfeed, Snapshot).
     """
-    return SessionMapping(tenant, oparl_system_url(tenant), SOURCE, changes=changes.enabled())
+    return SessionMapping(
+        tenant, oparl_system_url(tenant), SOURCE, changes=changes.enabled(), id_base=partial(oparl_id_base, tenant)
+    )
 
 
 # =============================================================================
@@ -353,7 +358,8 @@ def _addresses(mapping):
     Adressen der Objekte eines Mandanten für den Änderungsfeed (``hub.api.changes.Feed.addresses``).
 
     Ereignisse nennen die kanonische Kennung eines Objekts: ``uuid5`` über seine Adresse in dieser
-    Schnittstelle (ADR docs/adr/20260929-kanonisches-modell.md). Die Adresse enthält die Kennung des
+    Schnittstelle auf der festgeschriebenen Basis der Installation (``SessionUris.canonical_id``, ADR
+    docs/adr/20260929-kanonisches-modell.md). Die Adresse enthält die Kennung des
     Session-Objekts und lässt sich aus der kanonischen Kennung nicht zurückrechnen. Gesucht wird deshalb
     unter den Objekten, die öffentlich sind (``visible_*``) oder es waren (``SessionOParlTombstone``) –
     zuletzt Geändertes zuerst, denn davon handeln die jüngsten Ereignisse.
@@ -385,7 +391,8 @@ def _addresses(mapping):
         wanted = set(ids)
         if kind == "body":
             url = mapping.uris.body()
-            return {canonical_id(url): url} if canonical_id(url) in wanted else {}
+            key = mapping.uris.canonical_id(url)
+            return {key: url} if key in wanted else {}
         known = seen.setdefault(kind, {})
         found = {key: mapping.uris.obj(kind, known[key]) for key in wanted if key in known}
         wanted -= found.keys()
@@ -395,7 +402,7 @@ def _addresses(mapping):
         if search is None:
             search = searches[kind] = candidates(kind)
         for pk in search:
-            key = canonical_id(mapping.uris.obj(kind, pk))
+            key = mapping.uris.canonical_id(mapping.uris.obj(kind, pk))
             known.setdefault(key, pk)
             if key in wanted:
                 found[key] = mapping.uris.obj(kind, pk)
@@ -414,7 +421,7 @@ def _feed(tenant_slug):
     mapping = _mapping(_get_tenant(tenant_slug))
     feed = changes.Feed(
         # Kommune im Journal: die kanonische Kennung des Body dieser Schnittstelle
-        body_id=canonical_id(mapping.uris.body()),
+        body_id=mapping.uris.canonical_id(mapping.uris.body()),
         url=mapping.uris.changes(),
         snapshot_url=mapping.uris.snapshot(),
         addresses=_addresses(mapping),

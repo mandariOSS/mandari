@@ -13,7 +13,7 @@ from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
-from mandari_oparl.ids import canonical_id
+from mandari_oparl.ids import IdBases, canonical_id, source_id_base
 
 from apps.common.formatting import human_size
 from apps.common.tokens import HashedTokenMixin, unusable_token_hash
@@ -249,6 +249,16 @@ class OParlSource(models.Model):
     @property
     def is_scraper_source(self) -> bool:
         return self.source_type.startswith("scraper:")
+
+    def id_bases(self) -> IdBases:
+        """
+        Kanonische Kennungen der Objekte dieser Quelle (Issue #733).
+
+        Steht in ``sync_config["id_base"]`` eine festgeschriebene Basis, bilden sich die Kennungen aller
+        Adressen unter ``url`` auf dieser Basis – nach einem Umzug der Quelle bleiben sie so erhalten. Ohne
+        Eintrag sind die Adressen kanonisch. Ingestor und Spiegel rechnen ebenso (``mandari_oparl.ids``).
+        """
+        return IdBases({self.url: source_id_base(self.sync_config)})
 
 
 class OParlBodyQuerySet(models.QuerySet):

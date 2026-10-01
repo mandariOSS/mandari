@@ -26,6 +26,7 @@ from django.db import connection
 from django.test import Client, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
+from mandari_oparl.ids import canonical_id
 
 from apps.session.api import oparl as schnittstelle
 from apps.session.models import (
@@ -88,6 +89,25 @@ def test_uris_sind_die_adressen_der_schnittstelle() -> None:
     assert uris.snapshot() == f"{BASIS}body/snapshot/"
     # Eine Basis ohne abschließenden Schrägstrich ergibt dieselben URIs
     assert SessionUris(BASIS.rstrip("/")).obj("paper", 1) == f"{BASIS}paper/1/"
+
+
+def test_kennungen_auf_der_festgeschriebenen_basis() -> None:
+    """Issue #733: Adressen aus der aktuellen Adresse, Kennungen aus der Basis – diese erst bei Bedarf gelesen."""
+    neu = "https://neu.example/session/musterstadt/api/oparl/"
+    gelesen: list[str] = []
+
+    def basis() -> str:
+        gelesen.append(BASIS)
+        return BASIS.rstrip("/")
+
+    uris = SessionUris(neu, basis)
+    assert uris.obj("paper", 1) == f"{neu}paper/1/"
+    assert gelesen == []
+    assert uris.canonical_id(uris.obj("paper", 1)) == canonical_id(f"{BASIS}paper/1/")
+    assert uris.canonical_id(uris.body()) == canonical_id(f"{BASIS}body/")
+    assert gelesen == [BASIS]
+    # Ohne Basis sind die Adressen kanonisch
+    assert SessionUris(neu).canonical_id(f"{neu}paper/1/") == canonical_id(f"{neu}paper/1/")
 
 
 def test_gremium() -> None:

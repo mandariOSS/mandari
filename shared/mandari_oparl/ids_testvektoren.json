@@ -42,5 +42,50 @@
       "uri": "https://mandari.example/session/musterstadt/api/oparl/paper/0f2a3c4d-5e6f-4a1b-8c9d-0e1f2a3b4c5d/",
       "kennung": "1670af2a-e497-5ec3-9d0d-73ae5cdbc775"
     }
+  ],
+  "umzug_beschreibung": "Umgezogene Quellen: Liegt die Adresse unter 'adresse', tritt 'basis' (die festgeschriebene Basis der Kennungen) an deren Stelle (canonical_uri). Die Kennung ist die der kanonischen URI und damit dieselbe wie vor dem Umzug. Werte nie ändern.",
+  "umzuege": [
+    {
+      "uri": "https://neu.example/session/musterstadt/api/oparl/paper/0f2a3c4d-5e6f-4a1b-8c9d-0e1f2a3b4c5d/",
+      "adresse": "https://neu.example/session/musterstadt/api/oparl/",
+      "basis": "https://mandari.example/session/musterstadt/api/oparl/",
+      "kanonisch": "https://mandari.example/session/musterstadt/api/oparl/paper/0f2a3c4d-5e6f-4a1b-8c9d-0e1f2a3b4c5d/",
+      "kennung": "1670af2a-e497-5ec3-9d0d-73ae5cdbc775"
+    },
+    {
+      "uri": "https://neu.example/session/musterstadt/api/oparl/body/",
+      "adresse": "https://neu.example",
+      "basis": "https://mandari.example",
+      "kanonisch": "https://mandari.example/session/musterstadt/api/oparl/body/",
+      "kennung": "46b2c66f-72b7-53c1-ab1d-46599fc7db7a"
+    },
+    {
+      "uri": "https://neu.example.org/session/musterstadt/api/oparl/body/",
+      "adresse": "https://neu.example",
+      "basis": "https://mandari.example",
+      "kanonisch": "https://neu.example.org/session/musterstadt/api/oparl/body/",
+      "kennung": "eccf2013-3682-52bc-a515-9409e1f40b9a"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/v1/paper/1",
+      "adresse": "https://neu.example/session/musterstadt/api/oparl/",
+      "basis": "https://mandari.example/session/musterstadt/api/oparl/",
+      "kanonisch": "https://ris.beispiel.example/oparl/v1/paper/1",
+      "kennung": "7c33ca64-e53a-5896-9f3c-6d9cec01f8c9"
+    },
+    {
+      "uri": "https://mandari.example/session/nord/api/oparl/body/",
+      "adresse": "https://mandari.example/",
+      "basis": "https://mandari.example",
+      "kanonisch": "https://mandari.example/session/nord/api/oparl/body/",
+      "kennung": "c8a51b6b-f947-5275-9036-42650a2d81f1"
+    },
+    {
+      "uri": "https://neu.example/session/musterstadt/api/oparl/paper/0f2a3c4d-5e6f-4a1b-8c9d-0e1f2a3b4c5d/",
+      "adresse": "https://neu.example/session/musterstadt/api/oparl/",
+      "basis": "",
+      "kanonisch": "https://neu.example/session/musterstadt/api/oparl/paper/0f2a3c4d-5e6f-4a1b-8c9d-0e1f2a3b4c5d/",
+      "kennung": "fa8d01f0-969d-5c32-81c9-1c317b8726a2"
+    }
   ]
 }
