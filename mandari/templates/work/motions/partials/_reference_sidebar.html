@@ -2,6 +2,8 @@
 Bezug im Dokument-Editor (Issue #586): Bezugsantrag (Dokument der Organisation oder RIS-Vorlage),
 Bezugssitzung (RIS) und Änderungsanträge zu diesem Dokument. Gesetzt wird über document_meta,
 gesucht über document_reference_search. Kontext: motion, bezug, can_edit, membership, organization
+Issue #735: bezug.visibility_suggestion öffnet den Teilen-Dialog mit der Sichtbarkeit des Bezugsantrags
+(documentEditor.suggestVisibility); bezug.amendment_create_url legt einen Änderungsantrag zu diesem Dokument an.
 {% endcomment %}
 {% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id as meta_url %}
 {% url 'work:document_reference_search' org_slug=organization.slug motion_id=motion.id as search_url %}
@@ -29,6 +31,15 @@ gesucht über document_reference_search. Kontext: motion, bezug, can_edit, membe
     </div>
     {% else %}
     <p class="text-sm text-gray-500">–</p>
+    {% endif %}
+    {% if bezug.visibility_suggestion %}
+    {# Vorschlag (Issue #735): Sichtbarkeit des Bezugsantrags, übernommen erst im Teilen-Dialog #}
+    <div class="mt-2 p-2 rounded-lg bg-primary-50/50 dark:bg-primary-900/10 text-xs text-gray-600 dark:text-gray-300" data-testid="bezug-sichtbarkeit-vorschlag">
+        <p>Bezugsantrag: <strong>{{ bezug.visibility_suggestion.label }}</strong>, dieses Dokument: {{ bezug.visibility_suggestion.current }}.
+            Änderungsanträge haben eigene Rechte; Freigaben werden nicht übernommen.</p>
+        <c-ui.text-button icon="share-2" class="mt-1" data-visibility="{{ bezug.visibility_suggestion.value }}"
+                          @click="suggestVisibility($el.dataset.visibility)">Sichtbarkeit übernehmen …</c-ui.text-button>
+    </div>
     {% endif %}
     {% if can_edit and not membership.is_guest %}
     <input type="search" name="q" placeholder="Dokument oder RIS-Vorlage suchen …" autocomplete="off"
@@ -73,5 +84,12 @@ gesucht über document_reference_search. Kontext: motion, bezug, can_edit, membe
         </li>
         {% endfor %}
     </ul>
+    {% endif %}
+    {% if bezug.amendment_create_url %}
+    <a href="{{ bezug.amendment_create_url }}" data-testid="aenderungsantrag-anlegen"
+       class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
+        <i data-lucide="file-plus" class="w-3 h-3" aria-hidden="true"></i>
+        Änderungsantrag anlegen
+    </a>
     {% endif %}
 </div>

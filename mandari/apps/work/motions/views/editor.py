@@ -121,6 +121,9 @@ class MotionCreateView(WorkViewMixin, TemplateView):
         folder_param = self.request.GET.get("ordner")
         context["current_folder"] = _get_org_folder_or_404(self.organization, folder_param) if folder_param else None
 
+        # Änderungsantrag (?bezug=<id>): Bezugsantrag und vorgeschlagene Sichtbarkeit (Issue #735)
+        context |= references.new_document_context(self.organization, self.membership, self.request.GET)
+
         return context
 
     def post(self, request, *args, **kwargs):
@@ -140,6 +143,12 @@ class MotionCreateView(WorkViewMixin, TemplateView):
             status="draft",
             responsible=self.membership,  # Standard: Federführung = Autor
         )
+
+        # Bezugsantrag und Sichtbarkeit (Issue #735): nur sichtbare Bezugsanträge, Sichtbarkeit nur mit Freigaberecht
+        error = references.apply_to_new_document(motion, self.membership, request.POST)
+        if error:
+            messages.error(request, error)
+            return self.render_to_response(self.get_context_data(**kwargs))
 
         # Ordner-Ablage: Dokument im aktuell gewählten Ordner anlegen
         folder_id = request.POST.get("folder", "").strip()
