@@ -36,6 +36,13 @@ OUTSIDE_SCOPE = (
 )
 
 
+def roles_within_scope(session_user, roles) -> bool:
+    """Darf diese Person alle genannten Rollen zuweisen bzw. entziehen? (keine Rechteausweitung)"""
+    grantable = grantable_permissions(session_user)
+    admin = is_admin_user(session_user)
+    return all(role_within_scope(role, grantable, admin=admin) for role in roles)
+
+
 def _invitation_changes(invitation, **extra) -> dict:
     """Protokollangaben einer Einladung: Adresse, Rollen, einladende Person, Gültigkeit."""
     inviter = invitation.invited_by if invitation.invited_by_id else None
@@ -60,13 +67,6 @@ def _log_invitation(request, session_user, action: str, invitation, **extra) -> 
         request=request,
         changes=_invitation_changes(invitation, **extra),
     )
-
-
-def roles_within_scope(session_user, roles) -> bool:
-    """Darf diese Person alle genannten Rollen zuweisen bzw. entziehen? (keine Rechteausweitung)"""
-    grantable = grantable_permissions(session_user)
-    admin = is_admin_user(session_user)
-    return all(role_within_scope(role, grantable, admin=admin) for role in roles)
 
 
 # =============================================================================
