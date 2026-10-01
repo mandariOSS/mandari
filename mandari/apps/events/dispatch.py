@@ -50,6 +50,7 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -638,14 +639,23 @@ class SubscriptionLoop:
             leases.release(self.spec.lease_name, self.holder)
             self.is_leader = False
 
-    def run(self, stop: threading.Event, wake: threading.Event | None = None, interval: float = POLL_INTERVAL) -> None:
+    def run(
+        self,
+        stop: threading.Event,
+        wake: threading.Event | None = None,
+        interval: float = POLL_INTERVAL,
+        beat: Callable[[], None] | None = None,
+    ) -> None:
         """Dauerbetrieb bis ``stop``; ein laufender Batch wird noch festgeschrieben, dann die Lease freigegeben.
 
         ``wake`` (vom Weckruf, ``apps.events.wakeup``) beendet die Wartezeit vorzeitig. Es wird vor dem
         Zustellen zurückgesetzt, damit eine Meldung während des Zustellens nicht verloren geht.
+        ``beat`` meldet jeden Durchlauf als Lebenszeichen (``events_worker``).
         """
         try:
             while not stop.is_set():
+                if beat is not None:
+                    beat()
                 if wake is not None:
                     wake.clear()
                 close_old_connections()  # eine im Warten veraltete Verbindung nicht weiterverwenden
@@ -698,14 +708,22 @@ class Dispatcher:
         for ereignis in self._wake:
             ereignis.set()
 
-    def run(self, stop: threading.Event, interval: float = POLL_INTERVAL) -> None:
+    def run(
+        self, stop: threading.Event, interval: float = POLL_INTERVAL, beat: Callable[[str], None] | None = None
+    ) -> None:
         """Dauerbetrieb bis ``stop``: je Abonnement ein Faden, danach werden alle Leases freigegeben.
 
         Den Weckruf verbindet der Aufrufer: ``start_listener({SEQUENCED_CHANNEL: [dispatcher.wake]}, stop)``.
+        ``beat`` bekommt je Durchlauf eines Fadens dessen Lease-Namen (``dispatch:<name>``) als
+        Lebenszeichen (``events_worker``).
         """
         faeden = [
             threading.Thread(
-                target=loop.run, args=(stop, wake, interval), name=f"events-dispatch-{loop.spec.name}", daemon=True
+                target=loop.run,
+                args=(stop, wake, interval),
+                kwargs={"beat": functools.partial(beat, loop.spec.lease_name) if beat is not None else None},
+                name=f"events-dispatch-{loop.spec.name}",
+                daemon=True,
             )
             for loop, wake in zip(self.loops, self._wake, strict=True)
         ]

@@ -266,9 +266,9 @@ def test_sequenzierer_wird_von_neuen_journalzeilen_geweckt(
     laeufe: list[float] = []
     echter_lauf = Sequencer.drain
 
-    def mitschreiben(self: Sequencer) -> int:
+    def mitschreiben(self: Sequencer, stop: threading.Event | None = None) -> int:
         laeufe.append(time.monotonic())
-        return echter_lauf(self)
+        return echter_lauf(self, stop)
 
     monkeypatch.setattr(Sequencer, "drain", mitschreiben)
     wecker = threading.Event()

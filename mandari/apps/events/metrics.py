@@ -34,6 +34,10 @@ Metriken der Ereignistechnik im Prometheus-Format (Registrierung in ``EventsConf
   eine Zeile ohne Handler bekommt nie wieder etwas zugestellt und würde sonst dauerhaft alarmieren.
   Ein pausiertes Abonnement wächst bewusst; Alarm bei mehr als fünf Minuten, außer es ist pausiert.
 - ``mandari_events_subscription_paused{subscription}``: 1, solange ein Abonnement pausiert ist.
+- ``mandari_worker_role_up{role}``: 1, solange die Rolle im Worker arbeitet (Faden lebt und hat sich
+  innerhalb der Frist gemeldet), sonst 0. Nur im Prozess von ``manage.py events_worker``.
+- ``mandari_worker_role_beat_age_seconds{role}``: Sekunden seit dem letzten Lebenszeichen der Rolle
+  (bei der Zustellung das älteste ihrer Abonnements). Nur im Worker.
 
 Die Werte werden erst beim Abruf gemessen, damit das Registrieren keine Datenbankverbindung
 belegt (siehe ``apps.common.metrics``, Issue #344). Die Werte zum Sequenzierer gibt es nur mit
@@ -44,7 +48,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -293,6 +297,48 @@ class ListenerCollector(MisstErstBeimAbruf):
 LISTENER_UP = ListenerCollector()
 
 
+class RoleState(NamedTuple):
+    """Zustand einer Rolle im Worker (``apps.events.worker``)."""
+
+    #: Faden lebt und hat sich innerhalb der Frist gemeldet
+    up: bool
+    #: Sekunden seit dem letzten Lebenszeichen (``None``: noch keins)
+    beat_age: float | None
+
+
+class WorkerCollector(MisstErstBeimAbruf):
+    """Zustand der Rollen, nur im Prozess eines Workers (sonst hieße 0 fälschlich „ausgefallen“)."""
+
+    def __init__(self) -> None:
+        self.quelle: Callable[[], Mapping[str, RoleState]] | None = None
+
+    def provide(self, quelle: Callable[[], Mapping[str, RoleState]] | None) -> None:
+        self.quelle = quelle
+
+    def collect(self) -> Iterator[Metric]:
+        quelle = self.quelle
+        if quelle is None:
+            return
+        zustaende = quelle()
+        aktiv = GaugeMetricFamily(
+            "mandari_worker_role_up",
+            "Rolle arbeitet im Worker (1) oder ist ausgefallen bzw. hängt (0)",
+            labels=["role"],
+        )
+        alter = GaugeMetricFamily(
+            "mandari_worker_role_beat_age_seconds", "Sekunden seit dem letzten Lebenszeichen der Rolle", labels=["role"]
+        )
+        for rolle, zustand in sorted(zustaende.items()):
+            aktiv.add_metric([rolle], 1.0 if zustand.up else 0.0)
+            if zustand.beat_age is not None:
+                alter.add_metric([rolle], zustand.beat_age)
+        yield aktiv
+        yield alter
+
+
+WORKER_ROLES = WorkerCollector()
+
+
 def register() -> None:
     # ValueError: bereits registriert (z. B. erneutes ready() in Tests)
     for sammler in _COLLECTORS:
@@ -301,4 +347,4 @@ def register() -> None:
 
 
 _COLLECTOR = SequencerCollector()
-_COLLECTORS = (_COLLECTOR, ParkedCollector(), SubscriptionCollector(), LISTENER_UP)
+_COLLECTORS = (_COLLECTOR, ParkedCollector(), SubscriptionCollector(), LISTENER_UP, WORKER_ROLES)

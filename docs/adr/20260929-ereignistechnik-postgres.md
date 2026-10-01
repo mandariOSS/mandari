@@ -332,8 +332,33 @@ bleibt; präzisiert wurde:
 - **Alarmregeln** als Prometheus-Regeln (`deploy/monitoring/prometheus-alerts.example.yml`,
   `docs/MONITORING.md`): Rückstand über fünf Minuten, tote Ereignisse, Sequenzierer-Stau über fünf
   Minuten, dazu Hinweise auf viele blockierte Ereignisse und einen gestörten Weckruf.
-- **Offen:** Nachspielen eines Abonnements ab einer Folgenummer und die Push-Prüfung „Worker lebt“
-  (Heartbeat und `/metrics` im Worker-Prozess, #508).
+- **Offen:** Nachspielen eines Abonnements ab einer Folgenummer und die Push-Prüfung „Worker lebt“.
+  Heartbeat und `/metrics` im Worker-Prozess bringt der folgende Nachtrag (#508).
+
+## Nachtrag zur Umsetzung des Workers (#508)
+
+Umgesetzt in `apps/events/worker.py`, Befehl `manage.py events_worker`. Die Entscheidung bleibt;
+präzisiert wurde:
+
+- **Rollen als Fäden:** Jede Rolle (`sequencer`, `dispatch`, `tasks`, `scheduler`) läuft mit
+  derselben Schleife wie im Einzelbefehl in einem eigenen Faden und erneuert ihre Lease selbst.
+  Ein Listener je Prozess weckt Sequenzierer und Zustellung. `--roles` und `--queues` wählen aus;
+  `--queues` gilt für Aufträge und Abonnements. Die Einzelbefehle bleiben für die Fehlersuche.
+- **Neustart des Runners ohne Stillstand:** Will der Runner neu starten (Zahl der Aufträge,
+  Speichergrenze, Zeitgrenze), wartet er auf seine laufenden Aufträge, während Zeitpläne,
+  Sequenzierer und Zustellung in ihren Fäden weiterarbeiten. Erst danach endet der Prozess wie bei
+  SIGTERM und ersetzt sich per `exec`; die Leases sind dann frei.
+- **SIGTERM:** Der laufende Batch wird festgeschrieben, bei der Zustellung samt Cursor; laufende
+  Aufträge dürfen bis `--shutdown-timeout` (20 s) zu Ende laufen und werden danach freigegeben.
+- **Heartbeat:** Jede Schleife meldet jeden Durchlauf. Nur wenn jede Rolle lebt und sich innerhalb
+  von `--stale-after` (300 s) gemeldet hat, erneuert der Worker die Heartbeat-Datei und seine Zeile
+  in `events_worker` (`apps/events/presence.py`); sonst veralten beide, und `/health` antwortet
+  503. Die Frist ist großzügig, weil ein Neustart einen langen Batch nur wiederholen würde.
+- **Metriken** liefert der Worker auf einem eigenen Port (`/metrics`, Standard 9091) mit denselben
+  Zugriffsregeln wie die Anwendung, dazu `mandari_worker_role_up{role}`.
+- **Verbindungsbudget:** Fäden der Rollen, Ausführungsplätze des Runners, Selbstprüfung des
+  Listeners, `/metrics` und Hauptfaden plus Reserve; der Worker vergrößert seinen Pool darauf
+  (`DEPLOYMENT.md`, Abschnitt Datenbankverbindungen).
 
 ## Bezug
 

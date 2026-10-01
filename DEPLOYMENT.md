@@ -330,6 +330,55 @@ Compose-Rollenprofile unter `deploy/roles/`, gewählt über `COMPOSE_FILE` in de
 zeitgesteuerte Jobs sind gegen Doppelläufe gesperrt. Anleitung, Voraussetzungen (privates
 Netz, gemeinsame Ablagen) und Nachweis: `docs/MEHR_SERVER_BETRIEB.md` (Issue #55).
 
+## ⚙️ Worker: Ereignisse, Aufträge und Zeitpläne
+
+`manage.py events_worker` führt Sequenzierer, Zustellung, Aufträge und Zeitpläne in einem Prozess
+aus (Grundlagen: `docs/adr/20260929-ereignistechnik-postgres.md`,
+`docs/adr/20260929-auftraege-und-zeitplaene.md`). Jede Rolle läuft in einem eigenen Faden;
+Leader-Rollen (Sequenzierer, Zeitpläne, je Abonnement die Zustellung) halten eine Lease in
+`events_lease`, die nach 30 s ohne Erneuerung abläuft. Mehrere Worker teilen sich so die Arbeit
+ohne Doppelläufe.
+
+```bash
+python manage.py events_worker                                    # alle Rollen, alle Warteschlangen
+python manage.py events_worker --queues default,mail,index,ai,adapter
+python manage.py events_worker --roles tasks --queues ocr --max-memory-mb 900   # zweiter Worker
+python manage.py events_worker --heartbeat-file /tmp/mandari-worker.heartbeat
+```
+
+| Option | Bedeutung |
+|---|---|
+| `--roles` | `sequencer`, `dispatch`, `tasks`, `scheduler` (Standard: alle; ohne PostgreSQL entfällt `sequencer`). Hätte eine ausdrücklich gewählte Rolle nichts zu tun (`dispatch` ohne passendes Abonnement, `tasks` ohne Warteschlange mit Parallelität), bricht der Start mit Fehler ab |
+| `--queues` | Warteschlangen für Aufträge und Abonnements (Standard: alle) |
+| `--subscription`, `--concurrency`, `--max-tasks`, `--max-memory-mb` | wie bei `events_dispatch` und `events_tasks` |
+| `--heartbeat-file` | wird alle 5 s erneuert, solange **jede** Rolle arbeitet; Healthcheck: Änderungszeit jünger als 60 s |
+| `--metrics-port`, `--metrics-addr` | `/metrics` und `/health` des Workers, Standard `0.0.0.0:9091`; `0` schaltet ab |
+| `--stale-after` | ohne Lebenszeichen so lange gilt eine Rolle als hängend (Standard 300 s) |
+| `--shutdown-timeout` | beim Beenden so lange auf laufende Aufträge warten (Standard 20 s) |
+| `--no-restart` | statt eines Neustarts per `exec` mit Exit-Code 75 enden |
+
+- **Beenden (SIGTERM/SIGINT):** Sequenzierer und Zustellung schreiben ihren laufenden Batch fest,
+  die Zustellung samt Cursor; laufende Aufträge dürfen bis `--shutdown-timeout` zu Ende laufen,
+  danach werden sie freigegeben und von einem anderen Runner erneut ausgeführt; alle Leases werden
+  freigegeben. Ein zweites Signal gibt laufende Aufträge sofort frei. Danach haben alle Rollen
+  zusammen noch 5 s, um zu enden; der Worker endet also spätestens nach `--shutdown-timeout` + 5 s,
+  auch wenn mehrere Rollen hängen. Die Frist bis SIGKILL (`stop_grace_period` bzw.
+  `terminationGracePeriodSeconds`) sollte darüber liegen, etwa 30 s.
+- **Neustart:** Nach `TASKS_MAX_TASKS_PER_PROCESS` Aufträgen, oberhalb von `TASKS_MAX_MEMORY_MB`
+  oder nach einer Zeitüberschreitung nimmt der Runner nichts Neues mehr an und wartet auf seine
+  laufenden Aufträge; die anderen Rollen arbeiten währenddessen weiter. Danach ersetzt sich der
+  Prozess per `exec` (gleiche Prozessnummer, kein Container-Neustart).
+- **Ausfall:** Endet eine Rolle unerwartet, beendet sich der Worker mit Exit-Code 1; die
+  Neustartregel des Containers startet ihn neu.
+- **Lebenszeichen:** Hängt eine Rolle länger als `--stale-after`, erneuert der Worker weder die
+  Heartbeat-Datei noch seinen Eintrag in `events_worker`; `/health` antwortet dann 503.
+- **Speicher:** `TASKS_MAX_MEMORY_MB` (Standard 400) unter das Speicherlimit des Containers legen.
+  Texterkennung und KI (`ocr`, `ai`) laufen besser in einem eigenen Worker: Jeder Neustart des
+  Runners wartet auf den längsten laufenden Auftrag seines Prozesses.
+
+Die Einzelbefehle `events_sequencer`, `events_dispatch`, `events_tasks` und `events_scheduler`
+bleiben für Fehlersuche und Handbetrieb (`--once`, `--list`, geparkte Ereignisse).
+
 ## ⏰ Geplante Aufgaben (Cron)
 
 Die Anwendung bringt keinen eigenen Scheduler mit. Wiederkehrende Management-Commands
@@ -425,16 +474,40 @@ Obergrenze der Datenbank.
 |---|---|---|
 | mandari (Daphne, 1 Prozess) | **10** | `DB_POOL_MAX`; höchstens `DB_POOL_MAX_WAITING` Anfragen warten, der Rest bekommt 503 |
 | Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
+| Worker (`events_worker`, alle Rollen) | 21 | Pool 20 bei den Standard-Warteschlangen ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
 | OCR-Worker | 30 | gleiches Image wie der Ingestor |
 | Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
 | Kundenportal | 10 | eigener Container, eigene Datenbank |
 | Sicherung (`pg_dump`) | 2 | nur während des Laufs |
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
-| **Summe** | **95** | |
+| **Summe** | **116** | |
 | **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb (Vorgabe der `docker-compose.yml`: 100) |
 
-Reserve: rund 100 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
+Reserve: rund 85 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
 **und** prüft die Summe.
+
+### Worker
+
+Der Worker (`manage.py events_worker`) braucht so viele Verbindungen, wie seine Fäden gleichzeitig
+arbeiten können. Er vergrößert seinen Pool beim Start selbst auf diese Zahl (ein höheres
+`DB_POOL_MAX` bleibt) und nennt sie in seiner Startzeile („bis zu … Datenbankverbindungen“):
+
+| Teil | Verbindungen |
+|---|---|
+| Hauptfaden (Lebenszeichen in `events_worker`) und Reserve | 1 + 2 |
+| Rolle `sequencer` | 1 |
+| Rolle `dispatch` | 1 je Abonnement |
+| Rolle `tasks` | 1 (Koordinator) + Summe der Parallelität der gewählten Warteschlangen (Standard: `default` 4, `mail` 2, `index` 2, `ocr` 1, `ai` 1, `adapter` 2, zusammen 12) |
+| Rolle `scheduler` | 1 |
+| Selbstprüfung des Weckrufs (mit `sequencer` oder `dispatch`) | 1 |
+| Abruf von `/metrics` (außer mit `--metrics-port 0`) | 1 |
+| Lauschverbindung des Weckrufs, am Pool vorbei | +1 in der Datenbank |
+
+Mit allen Rollen und Standard-Warteschlangen ohne Abonnements sind das 20 aus dem Pool und 21 in
+der Datenbank; jedes Abonnement kommt mit einer hinzu. Ein zweiter Worker nur für die
+Texterkennung (`--roles tasks --queues ocr`) braucht 6. Hinter PgBouncer zählt der Pool des
+Workers gegen dessen `default_pool_size`, die Lauschverbindung geht über `EVENTS_DB_DIRECT_URL`
+direkt zur Datenbank.
 
 ### Einstellungen der Anwendung
 

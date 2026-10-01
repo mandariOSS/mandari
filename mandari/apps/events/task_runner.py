@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Runner für Aufträge aus ``events_task`` (Befehl ``events_tasks``; später Rolle ``tasks`` in
+Runner für Aufträge aus ``events_task`` (Befehl ``events_tasks`` und Rolle ``tasks`` in
 ``events_worker``). Grundlage: ``docs/adr/20260929-auftraege-und-zeitplaene.md``.
 
 Aufbau: ein Koordinator (der aufrufende Thread) und je Warteschlange so viele Ausführungs-Threads,
@@ -469,6 +469,7 @@ class TaskRunner:
         max_memory_mb: int | None = None,
         burst: bool = False,
         heartbeat_file: Path | None = None,
+        on_beat: Callable[[], None] | None = None,
         lock_ttl: timedelta = LOCK_TTL,
         renew_interval: float = RENEW_INTERVAL,
         maintenance_interval: float = MAINTENANCE_INTERVAL,
@@ -488,6 +489,8 @@ class TaskRunner:
         self.max_memory_bytes = max(0, grenze_mb) * 1024 * 1024
         self.burst = burst
         self.heartbeat_file = heartbeat_file
+        #: Lebenszeichen je Runde des Koordinators (``events_worker``)
+        self.on_beat = on_beat
         self.lock_ttl = lock_ttl
         self.renew_interval = renew_interval
         self.maintenance_interval = maintenance_interval
@@ -710,6 +713,8 @@ class TaskRunner:
                     release(slot.current)
 
     def _heartbeat(self) -> None:
+        if self.on_beat is not None:
+            self.on_beat()
         if self.heartbeat_file is None:
             return
         try:

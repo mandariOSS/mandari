@@ -44,6 +44,7 @@ import logging
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from django.db import DatabaseError, close_old_connections, connection, transaction
@@ -125,7 +126,7 @@ def assign_batch(holder: str, batch_size: int = BATCH_SIZE) -> int:
 
 @dataclass
 class Sequencer:
-    """Leader-Rolle Sequenzierer für einen Prozess (Befehl ``events_sequencer``, später ``events_worker``)."""
+    """Leader-Rolle Sequenzierer für einen Prozess (Befehle ``events_sequencer`` und ``events_worker``)."""
 
     holder: str = field(default_factory=leases.new_holder_id)
     batch_size: int = BATCH_SIZE
@@ -147,10 +148,13 @@ class Sequencer:
             logger.warning("Sequenzierer: Lease an einen anderen Prozess verloren (%s)", self.holder)
         return self.is_leader
 
-    def drain(self) -> int:
-        """Vergibt Nummern, bis kein vergebbares Ereignis mehr übrig ist; gibt die Summe zurück."""
+    def drain(self, stop: threading.Event | None = None) -> int:
+        """Vergibt Nummern, bis kein vergebbares Ereignis mehr übrig ist; gibt die Summe zurück.
+
+        Mit ``stop`` endet ein langer Rückstand nach dem laufenden Batch (Beenden des Workers).
+        """
         gesamt = 0
-        while self.ensure_lease():
+        while (stop is None or not stop.is_set()) and self.ensure_lease():
             try:
                 anzahl = assign_batch(self.holder, self.batch_size)
             except leases.LeaseLostError:
@@ -167,21 +171,30 @@ class Sequencer:
             leases.release(LEASE_NAME, self.holder)
             self.is_leader = False
 
-    def run(self, stop: threading.Event, interval: float = POLL_INTERVAL, wake: threading.Event | None = None) -> None:
+    def run(
+        self,
+        stop: threading.Event,
+        interval: float = POLL_INTERVAL,
+        wake: threading.Event | None = None,
+        beat: Callable[[], None] | None = None,
+    ) -> None:
         """Dauerbetrieb bis ``stop`` gesetzt ist; ein laufender Lauf wird noch festgeschrieben.
 
         Fällt die Datenbank kurz aus, wird der Fehler protokolliert und nach ``interval`` erneut
         versucht. ``wake`` (Weckruf nach neuen Journalzeilen, ``apps.events.wakeup``) beendet die
-        Wartezeit vorzeitig. Beim Ende wird die Lease freigegeben.
+        Wartezeit vorzeitig. ``beat`` meldet jeden Durchlauf als Lebenszeichen (``events_worker``).
+        Beim Ende wird die Lease freigegeben.
         """
         require_postgresql()
         try:
             while not stop.is_set():
+                if beat is not None:
+                    beat()
                 if wake is not None:
                     wake.clear()  # vor dem Lauf, damit eine Meldung währenddessen nicht verloren geht
                 close_old_connections()
                 try:
-                    self.drain()
+                    self.drain(stop)
                 except DatabaseError:
                     logger.warning("Sequenzierer: Datenbankfehler, neuer Versuch folgt", exc_info=True)
                     self.is_leader = False

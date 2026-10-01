@@ -15,6 +15,8 @@ Tabellen der Ereignistechnik (``docs/adr/20260929-ereignistechnik-postgres.md``)
   gespeicherter Antwort, z. B. für Befehle (``apps.events.idempotency``).
 - ``JournalPruning`` (``events_pruning``): wie weit Zeilen des Journals gelöscht wurden
   (``apps.events.pruning``).
+- ``WorkerProcess`` (``events_worker``): Lebenszeichen laufender Worker-Prozesse
+  (``apps.events.presence``).
 
 Spaltenstandards liegen in der Datenbank (``db_default``), weil auch der Ingestor ohne Django in
 das Journal schreibt. Auf PostgreSQL kommen die Sequenz ``events_seq`` und der Weckruf-Trigger
@@ -339,3 +341,27 @@ class JournalPruning(models.Model):
 
     def __str__(self) -> str:
         return f"bis Folgenummer {self.through_seq}"
+
+
+class WorkerProcess(models.Model):
+    """
+    Lebenszeichen eines Worker-Prozesses (``manage.py events_worker``, ``apps.events.presence``).
+
+    Der Worker erneuert seine Zeile alle paar Sekunden, solange alle seine Rollen arbeiten, und
+    löscht sie beim Beenden. Health und Admin erkennen daran, ob ein Worker läuft und welche Rollen
+    er bedient. Zeitpunkte setzt die Datenbank (``Now()``), nicht die Uhr des Prozesses.
+    """
+
+    holder = models.TextField("Prozess", primary_key=True, help_text="Rechnername, Prozessnummer, Zufallsanteil")
+    roles = models.JSONField("Rollen", default=list)
+    queues = models.JSONField("Warteschlangen", default=list, help_text="leer = alle")
+    started_at = models.DateTimeField("gestartet am", db_default=Now(), editable=False)
+    seen_at = models.DateTimeField("zuletzt gemeldet", db_default=Now())
+
+    class Meta:
+        db_table = "events_worker"
+        verbose_name = "Worker-Prozess"
+        verbose_name_plural = "Worker-Prozesse"
+
+    def __str__(self) -> str:
+        return f"{self.holder} ({', '.join(self.roles)})"
