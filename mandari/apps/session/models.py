@@ -641,6 +641,12 @@ class SessionRole(models.Model):
 
     # Attendance & Allowances
     can_manage_attendance = models.BooleanField(default=False, verbose_name="Anwesenheit verwalten")
+    # Sitzungscockpit (Issue #140): Sitzungsleitung und Protokollführung steuern die laufende Sitzung
+    # (TOP aufrufen, Anwesenheitswechsel, Störungen, Abstimmung öffnen und schließen). Ohne das Recht
+    # zeigt das Cockpit nur die Mitlese-Ansicht. DB-Default für den Rückfall per Image.
+    can_conduct_meetings = models.BooleanField(
+        default=False, db_default=False, verbose_name="Sitzungen leiten (Cockpit)"
+    )
     can_manage_allowances = models.BooleanField(default=False, verbose_name="Sitzungsgelder verwalten")
 
     # Administration
@@ -751,6 +757,7 @@ class SessionRole(models.Model):
             "can_create_protocols": True,
             "can_edit_protocols": True,
             "can_manage_attendance": True,
+            "can_conduct_meetings": True,
         },
         "recorder": {
             "name": "Protokollant",
@@ -765,6 +772,7 @@ class SessionRole(models.Model):
             "can_create_protocols": True,
             "can_edit_protocols": True,
             "can_manage_attendance": True,
+            "can_conduct_meetings": True,
         },
         "viewer": {
             "name": "Lesezugriff",
@@ -2173,9 +2181,14 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
         verbose_name="Umsetzung aktualisiert von",
     )
 
-    # Timing
+    # Timing: Aufruf und Ende des TOP in der Sitzung; das Sitzungscockpit (Issue #140) füllt beides live
     start_time = models.TimeField(blank=True, null=True, verbose_name="Beginn")
     end_time = models.TimeField(blank=True, null=True, verbose_name="Ende")
+
+    # Abstimmung im Sitzungscockpit (Issue #140): geöffnet und geschlossen von der Sitzungsleitung. Das Ergebnis
+    # steht wie bisher in vote_result und den Summen bzw. Einzelstimmen; die Zeitpunkte dokumentieren den Ablauf.
+    vote_opened_at = models.DateTimeField(blank=True, null=True, verbose_name="Abstimmung geöffnet")
+    vote_closed_at = models.DateTimeField(blank=True, null=True, verbose_name="Abstimmung geschlossen")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -2206,6 +2219,11 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     def get_encryption_organization(self):
         """Return tenant for encryption."""
         return self.meeting.tenant
+
+    @property
+    def vote_open(self) -> bool:
+        """Läuft im Sitzungscockpit gerade eine Abstimmung zu diesem TOP? (Issue #140)."""
+        return self.vote_opened_at is not None and self.vote_closed_at is None
 
     @property
     def implementation_overdue(self) -> bool:

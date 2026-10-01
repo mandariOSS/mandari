@@ -32,7 +32,7 @@ from ..models import (
     SessionVote,
 )
 from ..permissions import SessionViewMixin
-from ..services import attendance_service, participation_service, protocol_lock, voting_service
+from ..services import attendance_service, cockpit_service, participation_service, protocol_lock, voting_service
 from ..visibility import meeting_q, paper_visible
 from .nexturl import safe_next_url
 
@@ -194,6 +194,9 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
             f"Abstimmung zu TOP {item.number} erfasst "
             f"(Ja {item.votes_yes} / Nein {item.votes_no} / Enthaltung {item.votes_abstain}).",
         )
+        # Offene Cockpit-Ansichten der Sitzung holen den neuen Zwischenstand ab (Issue #140)
+        meeting_id = item.meeting_id
+        transaction.on_commit(lambda: cockpit_service.notify(meeting_id))
         next_url = safe_next_url(request, self.session_tenant.slug)
         if next_url:
             return redirect(next_url)

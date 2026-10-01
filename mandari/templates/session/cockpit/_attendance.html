@@ -1,0 +1,46 @@
+{% comment %}
+Anwesenheit im Cockpit (Issue #140): Status und Teilnahmevermerk je Person, Anwesenheitswechsel für Steuernde
+(anwesend, kommt, geht, zurück, abwesend – mit Uhrzeit). Die Liste selbst entsteht auf der Sitzungsseite.
+{% endcomment %}
+<c-ui.card title="Anwesenheit" padding="none" data-testid="cockpit-anwesenheit">
+    {% if state.attendances %}
+    <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+        {% for person_row in state.attendances %}
+        <li class="px-4 py-2.5 text-sm" data-testid="cockpit-person" data-person="{{ person_row.person.family_name }}" data-status="{{ person_row.status }}">
+            <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white flex items-center gap-1.5">
+                        {% if person_row.is_remote %}<i data-lucide="video" class="w-3.5 h-3.5 text-blue-500" aria-hidden="true"></i><span class="sr-only">zugeschaltet:</span>{% endif %}
+                        {% if person_row.disrupted %}<i data-lucide="wifi-off" class="w-3.5 h-3.5 text-amber-500" aria-hidden="true"></i><span class="sr-only">Störung:</span>{% endif %}
+                        <span class="truncate">{{ person_row.person.display_name }}</span>
+                    </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ person_row.get_status_display }} · {{ person_row.get_role_display }}{% if not person_row.has_voting_rights %} · beratend{% endif %}
+                        {% if person_row.participation_note %}<br>{{ person_row.participation_note }}{% endif %}
+                    </p>
+                </div>
+                {% if state.can_control and not state.locked and not meeting.cancelled %}
+                <div class="flex flex-wrap justify-end gap-1 flex-none">
+                    {% if person_row.status == "present" or person_row.status == "joined_late" %}
+                    {% include "session/cockpit/_action.html" with aktion="anwesenheit" wechsel="geht" ziel_person=person_row.id label="Geht" aria=person_row.person.display_name|add:" geht" testid="geht" %}
+                    {% elif person_row.status == "left_early" %}
+                    {% include "session/cockpit/_action.html" with aktion="anwesenheit" wechsel="zurueck" ziel_person=person_row.id label="Zurück" aria=person_row.person.display_name|add:" ist zurück" testid="zurueck" %}
+                    {% else %}
+                    {% include "session/cockpit/_action.html" with aktion="anwesenheit" wechsel="anwesend" ziel_person=person_row.id label="Anwesend" aria=person_row.person.display_name|add:" ist anwesend" testid="anwesend" %}
+                    {% if state.running %}
+                    {% include "session/cockpit/_action.html" with aktion="anwesenheit" wechsel="kommt" ziel_person=person_row.id label="Kommt" aria=person_row.person.display_name|add:" kommt jetzt" testid="kommt" %}
+                    {% endif %}
+                    {% if person_row.status != "absent" and person_row.status != "excused" %}
+                    {% include "session/cockpit/_action.html" with aktion="anwesenheit" wechsel="abwesend" ziel_person=person_row.id label="Abwesend" aria=person_row.person.display_name|add:" ist abwesend" variant="ghost" testid="abwesend" %}
+                    {% endif %}
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <c-ui.empty-state icon="users" title="Keine Anwesenheitsliste">Die Liste entsteht auf der Sitzungsseite aus der Besetzung.</c-ui.empty-state>
+    {% endif %}
+</c-ui.card>

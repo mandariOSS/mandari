@@ -73,6 +73,10 @@ def _item_lines(item: SessionAgendaItem) -> list[str]:
     if item.is_withdrawn:
         head += " (abgesetzt" + (f": {item.withdrawn_reason}" if item.withdrawn_reason else "") + ")"
     lines = [head]
+    # Zeiten aus dem Sitzungscockpit (Issue #140)
+    if item.start_time:
+        ende = f"–{item.end_time:%H:%M}" if item.end_time else ""
+        lines.append(f"Behandelt {item.start_time:%H:%M}{ende} Uhr")
     if item.paper is not None and _paper_visible(item):
         lines.append(f"Vorlage: {item.paper.reference}")
     if item.protocol_note:
@@ -119,6 +123,12 @@ def public_text(protocol: SessionProtocol) -> str:
         f"Gremium: {meeting.organization.name}",
         f"Termin: {termin}",
     ]
+    # Tatsächlicher Verlauf aus dem Sitzungscockpit (Issue #140)
+    if meeting.actual_start:
+        verlauf = f"Verlauf: eröffnet {timezone.localtime(meeting.actual_start):%H:%M} Uhr"
+        if meeting.actual_end:
+            verlauf += f", geschlossen {timezone.localtime(meeting.actual_end):%H:%M} Uhr"
+        lines.append(verlauf)
     if meeting.location:
         lines.append(f"Ort: {meeting.location}" + (f", {meeting.room}" if meeting.room else ""))
 

@@ -10,6 +10,7 @@ import collapse from '@alpinejs/collapse'
 import focus from '@alpinejs/focus'
 import Alpine from 'alpinejs'
 import { bodySelectApp, merklisteController, neighborhoodSubscription, questionForm } from '../alpine/insight'
+import { meetingCockpit } from '../alpine/meeting-cockpit'
 import { installActions } from './actions'
 import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
 import { showToast, toastManager } from './alpine/toast'
@@ -39,6 +40,8 @@ Alpine.plugin(focus)
 
 Alpine.data('toastManager', toastManager)
 Alpine.data('confirmDialog', confirmDialog)
+// Session RIS: Sitzungscockpit (Issue #140) – das Session-Layout lädt nur dieses Bundle
+Alpine.data('meetingCockpit', meetingCockpit)
 
 if (document.documentElement.dataset.portal === 'insight') {
   // Seitenkomponenten des Insight-Portals (vorher Inline-Skripte, #172)

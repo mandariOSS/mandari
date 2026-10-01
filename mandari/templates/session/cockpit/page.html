@@ -1,0 +1,44 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Sitzungscockpit (Issue #140): Steuerung für Sitzungsleitung und Protokollführung, sonst Mitlese-Ansicht.
+Der Stand (#cockpit-stand) kommt als Fragment nach; die Alpine-Komponente meetingCockpit lädt ihn nach
+jedem Hinweis über den WebSocket bzw. im Polling-Rückfall alle zwei Sekunden neu.
+{% endcomment %}
+
+{% block page_title %}Cockpit: {{ meeting.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm" aria-label="Brotkrümel">
+    <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Sitzungen</a>
+    <span class="text-gray-400" aria-hidden="true">/</span>
+    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 truncate max-w-[200px]">{{ meeting.name }}</a>
+    <span class="text-gray-400" aria-hidden="true">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Cockpit</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div x-data="meetingCockpit"
+     data-ws-path="/ws/session/{{ tenant_slug }}/cockpit/{{ meeting.id }}/"
+     class="space-y-6" data-testid="cockpit">
+    <c-layout.page-header :title="meeting.name">
+        <c-slot name="subtitle">
+            {{ meeting.organizations_label }} · {{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr
+            {% if meeting.location %} · {{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}{% endif %}
+        </c-slot>
+        <span class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400" role="status" data-testid="verbindung">
+            <span class="w-2 h-2 rounded-full" :class="live === 'ws' ? 'bg-green-500' : 'bg-amber-500'" aria-hidden="true"></span>
+            <span x-text="live === 'ws' ? 'Live verbunden' : 'Aktualisierung alle 2 Sekunden'">Aktualisierung alle 2 Sekunden</span>
+        </span>
+        <c-ui.button href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="arrow-left">Zur Sitzung</c-ui.button>
+    </c-layout.page-header>
+
+    {% if not state.can_control %}
+    <c-ui.alert variant="info" icon="eye" data-testid="mitlesen">
+        Mitlese-Ansicht: Sie sehen den Stand der Sitzung live. Steuern dürfen nur Sitzungsleitung und Protokollführung.
+    </c-ui.alert>
+    {% endif %}
+
+    {% include "session/cockpit/_stand.html" %}
+</div>
+{% endblock %}

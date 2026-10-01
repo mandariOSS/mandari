@@ -1,0 +1,86 @@
+{% comment %}
+Abstimmung zum aufgerufenen TOP (Issue #140). Erwartet: top (state.current), state. Summen bzw. Einzelstimmen
+fließen in die vorhandene Abstimmungserfassung (voting_service); der Zwischenstand ist nur für Steuernde sichtbar.
+{% endcomment %}
+{% url 'session:meeting_cockpit_action' tenant_slug=tenant_slug meeting_id=meeting.id as action_url %}
+<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3" data-testid="cockpit-abstimmung">
+    {% if state.vote_item %}
+    {% with vote=state.vote_item %}
+    <p class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden="true"></span>
+        Abstimmung läuft seit {{ vote.vote_opened_at|time:"H:i" }} Uhr ({{ vote.get_voting_method_display }})
+    </p>
+    {% if state.item_quorum %}
+    <p class="text-sm text-gray-600 dark:text-gray-300">Stimmberechtigt anwesend: {{ state.item_quorum.voting_present }}</p>
+    {% endif %}
+    {% if state.can_control and not state.locked %}
+    <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML" class="space-y-3">
+        {% csrf_token %}
+        <input type="hidden" name="aktion" value="abstimmung_schliessen">
+        <input type="hidden" name="item" value="{{ vote.id }}">
+        {% if vote.voting_method == "open" or vote.voting_method == "roll_call" %}
+        <p class="text-sm text-gray-600 dark:text-gray-300">
+            Erfasste Einzelstimmen: Ja {{ vote.votes_yes }} · Nein {{ vote.votes_no }} · Enthaltung {{ vote.votes_abstain }}
+            {% if state.can_capture_votes %}
+            {% url 'session:meeting_cockpit' tenant_slug=tenant_slug meeting_id=meeting.id as cockpit_url %}
+            – <a href="{% url 'session:voting_capture' tenant_slug=tenant_slug item_id=vote.id %}?next={{ cockpit_url|urlencode }}"
+                 class="text-primary-600 dark:text-primary-400 hover:underline">Einzelstimmen erfassen</a>
+            {% endif %}
+        </p>
+        {% else %}
+        <div class="grid grid-cols-3 gap-2">
+            <label class="text-sm text-gray-700 dark:text-gray-300">Ja
+                <input type="number" name="votes_yes" min="0" max="9999" value="0" required data-testid="stimmen-ja"
+                       class="mt-1 w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </label>
+            <label class="text-sm text-gray-700 dark:text-gray-300">Nein
+                <input type="number" name="votes_no" min="0" max="9999" value="0" required data-testid="stimmen-nein"
+                       class="mt-1 w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </label>
+            <label class="text-sm text-gray-700 dark:text-gray-300">Enthaltung
+                <input type="number" name="votes_abstain" min="0" max="9999" value="0" required data-testid="stimmen-enthaltung"
+                       class="mt-1 w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </label>
+        </div>
+        {% endif %}
+        <fieldset class="flex flex-wrap items-center gap-4 text-sm text-gray-700 dark:text-gray-300">
+            <legend class="sr-only">Ergebnis</legend>
+            <label class="inline-flex items-center gap-2"><input type="radio" name="vote_result" value="approved" required> Angenommen</label>
+            <label class="inline-flex items-center gap-2"><input type="radio" name="vote_result" value="rejected"> Abgelehnt</label>
+        </fieldset>
+        <div class="flex flex-wrap gap-2">
+            <c-ui.button type="submit" size="sm" icon="gavel" data-testid="abstimmung_schliessen">Abstimmung schließen</c-ui.button>
+        </div>
+    </form>
+    {% include "session/cockpit/_action.html" with aktion="abstimmung_abbrechen" ziel_top=vote.id label="Abstimmung abbrechen" icon="x" variant="ghost" %}
+    {% endif %}
+    {% endwith %}
+    {% elif state.vote_hidden %}
+    <p class="text-sm text-gray-600 dark:text-gray-300">Im nichtöffentlichen Teil läuft eine Abstimmung.</p>
+    {% elif top.vote_result != "pending" %}
+    <p class="text-sm text-gray-900 dark:text-white" data-testid="abstimmungsergebnis">
+        Ergebnis: <strong>{{ top.get_vote_result_display }}</strong>
+        (Ja {{ top.votes_yes }}, Nein {{ top.votes_no }}, Enthaltung {{ top.votes_abstain }})
+    </p>
+    {% elif state.can_control and not state.locked %}
+    <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML"
+          class="flex flex-wrap items-end gap-3">
+        {% csrf_token %}
+        <input type="hidden" name="aktion" value="abstimmung_oeffnen">
+        <input type="hidden" name="item" value="{{ top.id }}">
+        <label class="text-sm text-gray-700 dark:text-gray-300">Abstimmungsart
+            <select name="voting_method" class="mt-1 block px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                {% for value, label in state.voting_methods %}
+                <option value="{{ value }}" {% if top.voting_method == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input type="checkbox" name="is_election" value="1" {% if top.is_election %}checked{% endif %}> Wahl
+        </label>
+        <c-ui.button type="submit" size="sm" icon="vote" data-testid="abstimmung_oeffnen">Abstimmung öffnen</c-ui.button>
+    </form>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">Keine Abstimmung offen.</p>
+    {% endif %}
+</div>

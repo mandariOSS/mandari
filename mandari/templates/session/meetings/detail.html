@@ -61,6 +61,7 @@
                     Bearbeiten
                 </a>
                 {% endif %}
+                <c-ui.button href="{% url 'session:meeting_cockpit' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="ghost" size="sm" icon="monitor-play" data-testid="cockpit-link">{% if "conduct_meetings" in permission_checker.permissions %}Cockpit{% else %}Live-Ansicht{% endif %}</c-ui.button>
             </div>
 
             <!-- Quick Info -->

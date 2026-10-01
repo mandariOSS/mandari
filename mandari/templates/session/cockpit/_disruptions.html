@@ -1,0 +1,62 @@
+{% comment %}
+Störungsprotokoll im Cockpit (Issue #140, Störungen aus #139): Störung Zugeschalteter ab jetzt vermerken – mit
+Ursache und internem Vermerk, z. B. „telefonisch gemeldet“, wenn die Person über einen zweiten Weg Bescheid gibt –
+und jetzt beenden. Der Vermerk bleibt intern und erscheint nur Steuernden.
+{% endcomment %}
+{% url 'session:meeting_cockpit_action' tenant_slug=tenant_slug meeting_id=meeting.id as action_url %}
+<c-ui.card title="Störungsprotokoll" data-testid="cockpit-stoerungen">
+    <div class="space-y-3 text-sm">
+        {% if state.can_control and not state.locked and not meeting.cancelled %}
+        <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML" class="space-y-2">
+            {% csrf_token %}
+            <input type="hidden" name="aktion" value="stoerung_beginn">
+            <label class="block text-gray-700 dark:text-gray-300">Zugeschaltete Person
+                <select name="attendance" required class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Bitte wählen</option>
+                    {% for person_row in state.attendances %}
+                    {% if person_row.is_remote and not person_row.disrupted %}
+                    <option value="{{ person_row.id }}">{{ person_row.person.display_name }}</option>
+                    {% endif %}
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="block text-gray-700 dark:text-gray-300">Ursache
+                <select name="cause" class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% for value, label in state.disruption_causes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="block text-gray-700 dark:text-gray-300">Vermerk (intern)
+                <input type="text" name="note" maxlength="255" placeholder="z. B. telefonisch gemeldet"
+                       class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400">
+            </label>
+            <c-ui.button type="submit" size="sm" variant="secondary" icon="wifi-off" data-testid="stoerung_beginn">Störung ab jetzt vermerken</c-ui.button>
+        </form>
+        {% endif %}
+
+        {% if state.disruptions %}
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700 border-t border-gray-100 dark:border-gray-700">
+            {% for person_row, disruption in state.disruptions %}
+            <li class="py-2 flex items-start justify-between gap-2" data-testid="cockpit-stoerung">
+                <div class="min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white">{{ person_row.person.display_name }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ disruption.get_cause_display }} ·
+                        {% if disruption.ongoing %}seit {{ disruption.started_at|time:"H:i" }} Uhr{% else %}{{ disruption.started_at|time:"H:i" }}–{{ disruption.ended_at|time:"H:i" }} Uhr ({{ disruption.duration_minutes }} Min.){% endif %}
+                        {% if state.can_control and disruption.note %}<br>Vermerk: {{ disruption.note }}{% endif %}
+                    </p>
+                </div>
+                {% if disruption.ongoing %}
+                {% if state.can_control and not state.locked and not meeting.cancelled %}
+                {% include "session/cockpit/_action.html" with aktion="stoerung_ende" ziel_stoerung=disruption.id label="Beenden" aria="Störung bei "|add:person_row.person.display_name|add:" beenden" icon="wifi" %}
+                {% else %}
+                <c-ui.badge color="amber">dauert an</c-ui.badge>
+                {% endif %}
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-gray-500 dark:text-gray-400">Keine Störungen vermerkt.</p>
+        {% endif %}
+    </div>
+</c-ui.card>

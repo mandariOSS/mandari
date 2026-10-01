@@ -1,0 +1,49 @@
+{% comment %}Aufgerufener TOP im Cockpit (Issue #140): Zeiten, Beenden, nächster TOP, Abstimmung.{% endcomment %}
+<c-ui.card title="Aktueller Tagesordnungspunkt" data-testid="cockpit-aktuell">
+    {% if state.current %}
+    {% with top=state.current %}
+    <div class="space-y-4">
+        <div>
+            <p class="text-2xl font-bold text-gray-900 dark:text-white" data-testid="aktueller-top">
+                TOP {{ top.number }}: {{ top.name }}
+            </p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-2">
+                <span>Aufgerufen um {{ top.start_time|time:"H:i" }} Uhr</span>
+                {% if not top.is_public %}<c-ui.badge color="red" icon="lock">Nichtöffentlich</c-ui.badge>{% endif %}
+                {% if top.is_election %}<c-ui.badge color="blue" icon="vote">Wahl</c-ui.badge>{% endif %}
+            </p>
+        </div>
+        {% if state.item_quorum.remote_rule.message %}
+        <c-ui.alert variant="warning" icon="video-off">{{ state.item_quorum.remote_rule.message }}</c-ui.alert>
+        {% endif %}
+        {% include "session/cockpit/_vote.html" %}
+        {% if state.can_control and not state.locked and not meeting.cancelled %}
+        <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+            {% include "session/cockpit/_action.html" with aktion="top_beenden" ziel_top=top.id label="TOP beenden" icon="square" %}
+            {% if state.next_item %}
+            {% include "session/cockpit/_action.html" with aktion="naechster_top" label="Weiter mit TOP "|add:state.next_item.number icon="skip-forward" variant="primary" %}
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endwith %}
+    {% elif state.current_hidden %}
+    <p class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2" data-testid="aktueller-top">
+        <i data-lucide="lock" class="w-5 h-5 text-red-500" aria-hidden="true"></i>
+        Nichtöffentlicher Teil
+    </p>
+    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Der aufgerufene Tagesordnungspunkt ist nur für Berechtigte sichtbar.</p>
+    {% else %}
+    <p class="text-lg font-semibold text-gray-900 dark:text-white" data-testid="aktueller-top">Kein Tagesordnungspunkt aufgerufen</p>
+    {% if state.next_item %}
+    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Als Nächstes: TOP {{ state.next_item.number }}: {{ state.next_item.name }}</p>
+    {% if state.can_control and not state.locked and not meeting.cancelled and not state.completed %}
+    <div class="mt-4">
+        {% include "session/cockpit/_action.html" with aktion="naechster_top" label="TOP "|add:state.next_item.number|add:" aufrufen" icon="play" variant="primary" %}
+    </div>
+    {% endif %}
+    {% elif state.items %}
+    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Alle Tagesordnungspunkte sind behandelt.</p>
+    {% endif %}
+    {% endif %}
+</c-ui.card>

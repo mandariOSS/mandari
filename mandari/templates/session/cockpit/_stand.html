@@ -1,0 +1,19 @@
+{% comment %}
+Stand des Sitzungscockpits (Issue #140) – HTMX-Fragment, nachgeladen über „cockpit:refresh“ (meetingCockpit).
+Erwartet: meeting, state, tenant_slug. ?v= trägt das Merkmal des Stands: Unverändert antwortet der Server mit 204.
+{% endcomment %}
+<div id="cockpit-stand"
+     hx-get="{% url 'session:meeting_cockpit_state' tenant_slug=tenant_slug meeting_id=meeting.id %}?v={{ state.version }}"
+     hx-trigger="cockpit:refresh" hx-swap="outerHTML"
+     data-version="{{ state.version }}" data-testid="cockpit-stand"
+     class="grid lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+        {% include "session/cockpit/_top.html" %}
+        {% include "session/cockpit/_agenda.html" %}
+    </div>
+    <div class="space-y-6">
+        {% include "session/cockpit/_meeting.html" %}
+        {% include "session/cockpit/_attendance.html" %}
+        {% if state.remote_allowed %}{% include "session/cockpit/_disruptions.html" %}{% endif %}
+    </div>
+</div>

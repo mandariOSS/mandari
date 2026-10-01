@@ -52,6 +52,9 @@ AGENDA_ITEM_LOCKED_FIELDS = (
     "voting_method",
     # Wahl (Issue #139): bestimmt Stimmrecht Zugeschalteter und Beschlussfähigkeit für den TOP
     "is_election",
+    # Zeiten aus dem Sitzungscockpit (Issue #140): stehen in der Niederschrift
+    "start_time",
+    "end_time",
     "resolution_text",
     "protocol_note",
     "is_withdrawn",
