@@ -429,45 +429,46 @@ class TestBesetzungen:
         )
         assert list(laufend_am_wechsel) == [neu]
 
-    def test_nachruecken_nach_erfasstem_ausscheiden(
-        self, tenant: SessionTenant, admin: Client, gremium: SessionOrganization
+    @pytest.mark.parametrize(
+        ("ende_geht", "ende_neu"),
+        [
+            # Ausscheiden schon erfasst, Wechsel am Folgetag (Ende = Wechseltag - 1): Das Ende war der
+            # Austritt, kein geplantes Ende des Sitzes – die nachrückende Besetzung ist offen.
+            pytest.param(date(2026, 12, 31), None, id="ende-am-vortag-des-wechsels"),
+            # Geplantes Ende am Wechseltag oder danach (z. B. Ende der Wahlperiode) übernimmt die
+            # nachrückende Person; die ausscheidende endet am Vortag.
+            pytest.param(date(2027, 1, 1), date(2027, 1, 1), id="ende-am-wechseltag"),
+            pytest.param(date(2031, 10, 31), date(2031, 10, 31), id="ende-nach-dem-wechsel"),
+            pytest.param(None, None, id="ohne-ende"),
+        ],
+    )
+    def test_nachruecken_nie_ende_vor_beginn(
+        self,
+        tenant: SessionTenant,
+        admin: Client,
+        gremium: SessionOrganization,
+        ende_geht: date | None,
+        ende_neu: date | None,
     ) -> None:
-        geht = _besetzung(
-            gremium, _person(tenant, "G", "Geht"), start_date=date(2024, 7, 1), end_date=date(2026, 12, 31)
-        )
+        geht = _besetzung(gremium, _person(tenant, "G", "Geht"), start_date=date(2024, 7, 1), end_date=ende_geht)
         kommt = _person(tenant, "K", "Kommt")
         response = admin.post(
             _url(tenant, f"/memberships/{geht.pk}/succession/"),
             {"successor": str(kommt.pk), "change_date": "2027-01-01"},
         )
         assert response.status_code == 302
+        assert not any("vor dem Beginn" in m or "endete bereits" in m for m in _meldungen(response))
         geht.refresh_from_db()
         neu = SessionOrganizationMembership.objects.get(organization=gremium, person=kommt)
         assert geht.end_date == date(2026, 12, 31)
-        assert neu.start_date == date(2027, 1, 1)
-        # Das Ende der ausscheidenden Person war der Austritt, kein geplantes Ende des Sitzes
-        assert neu.end_date is None
-        assert list(
-            SessionOrganizationMembership.objects.filter(organization=gremium).filter(
-                membership_service.running_q(date(2027, 1, 1))
-            )
-        ) == [neu]
-
-    def test_nachruecken_uebernimmt_geplantes_ende(
-        self, tenant: SessionTenant, admin: Client, gremium: SessionOrganization
-    ) -> None:
-        geht = _besetzung(
-            gremium, _person(tenant, "G", "Geht"), start_date=date(2024, 7, 1), end_date=date(2031, 10, 31)
-        )
-        kommt = _person(tenant, "K", "Kommt")
-        admin.post(
-            _url(tenant, f"/memberships/{geht.pk}/succession/"),
-            {"successor": str(kommt.pk), "change_date": "2027-01-01"},
-        )
-        geht.refresh_from_db()
-        neu = SessionOrganizationMembership.objects.get(organization=gremium, person=kommt)
-        assert geht.end_date == date(2026, 12, 31)
-        assert (neu.start_date, neu.end_date) == (date(2027, 1, 1), date(2031, 10, 31))
+        assert (neu.start_date, neu.end_date) == (date(2027, 1, 1), ende_neu)
+        # Keine Besetzung endet vor ihrem Beginn; am Vortag sitzt die ausscheidende, am Wechseltag nur
+        # die nachrückende Person.
+        for besetzung in SessionOrganizationMembership.objects.filter(organization=gremium):
+            assert membership_service.period_error(besetzung.start_date, besetzung.end_date) == ""
+        laufend = SessionOrganizationMembership.objects.filter(organization=gremium)
+        assert list(laufend.filter(membership_service.running_q(date(2026, 12, 31)))) == [geht]
+        assert list(laufend.filter(membership_service.running_q(date(2027, 1, 1)))) == [neu]
 
     def test_nachruecken_nach_frueherem_ausscheiden_wird_abgelehnt(
         self, tenant: SessionTenant, admin: Client, gremium: SessionOrganization
