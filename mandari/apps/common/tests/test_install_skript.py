@@ -24,6 +24,18 @@ WURZEL = Path(__file__).resolve().parents[4]
 SKRIPT = WURZEL / "install.sh"
 RELEASE_WORKFLOW = WURZEL / ".github" / "workflows" / "release.yml"
 ENV_BEISPIEL = WURZEL / ".env.example"
+CHANGELOG = WURZEL / "CHANGELOG.md"
+# Dateien, die Selbstbetreibern Image-Tags anbieten (Installer, Update, Kubernetes, Anleitungen)
+ANGEBOTENE_TAGS_IN = (
+    SKRIPT,
+    WURZEL / "update.sh",
+    WURZEL / "install-k8s.sh",
+    ENV_BEISPIEL,
+    WURZEL / "DEPLOYMENT.md",
+    WURZEL / "README.md",
+    WURZEL / "deploy" / "kubernetes" / "README.md",
+    *sorted((WURZEL / "deploy" / "kubernetes" / "helm" / "mandari").glob("values*.yaml")),
+)
 
 FAKE_DOCKER = """#!/usr/bin/env bash
 echo "$*" >> "$DOCKER_LOG"
@@ -60,7 +72,7 @@ class Lauf:
     arbeit: Path
 
 
-def _lauf(tmp_path: Path, *args: str, fehlt: str = "", env_datei: str | None = None) -> Lauf:
+def _lauf(tmp_path: Path, *args: str, fehlt: str = "", env_datei: str | None = None, eingabe: str = "") -> Lauf:
     if BASH is None:
         pytest.skip("bash nicht vorhanden")
     arbeit = tmp_path / "mandari"
@@ -83,18 +95,16 @@ def _lauf(tmp_path: Path, *args: str, fehlt: str = "", env_datei: str | None = N
         [BASH, "install.sh", *args],
         cwd=arbeit,
         env=env,
-        stdin=subprocess.DEVNULL,
+        # Antworten auf Rückfragen; leer = sofort Dateiende. Als Bytes, damit "\n" nicht zu "\r\n" wird (Windows).
+        input=eingabe.encode(),
         capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
         timeout=120,
         check=False,
     )
     return Lauf(
         rc=ergebnis.returncode,
         aufrufe=log.read_text(encoding="utf-8").splitlines(),
-        ausgabe=ergebnis.stdout + ergebnis.stderr,
+        ausgabe=(ergebnis.stdout + ergebnis.stderr).decode("utf-8", errors="replace"),
         arbeit=arbeit,
     )
 
@@ -128,6 +138,35 @@ def test_neuinstallation_loescht_nichts_wenn_das_tag_fehlt(tmp_path: Path) -> No
     assert (lauf.arbeit / ".env").read_text(encoding="utf-8") == "IMAGE_TAG=v0.11.0\n"
     assert not list(lauf.arbeit.glob(".env.vor-neuinstallation-*"))
     assert not any("compose down" in z for z in lauf.aufrufe), lauf.aufrufe
+
+
+def test_interaktive_neuinstallation_klaert_die_version_vor_dem_loeschen(tmp_path: Path) -> None:
+    """Interaktiv ohne ``--tag``: Nach „Neu installieren“ kommt erst die Kanalwahl samt Prüfung, dann ``down -v``."""
+    lauf = _lauf(
+        tmp_path,
+        fehlt="ghcr.io/mandarioss/website:latest",
+        env_datei="IMAGE_TAG=latest\n",
+        eingabe="1\n1\n",  # 1) Neu installieren, 1) latest
+    )
+
+    assert lauf.rc == 1, lauf.ausgabe
+    assert "Release-Kanal wählen" in lauf.ausgabe, lauf.ausgabe
+    assert "website" in lauf.ausgabe and "fehlt" in lauf.ausgabe, lauf.ausgabe
+    assert (lauf.arbeit / ".env").read_text(encoding="utf-8") == "IMAGE_TAG=latest\n"
+    assert not list(lauf.arbeit.glob(".env.vor-neuinstallation-*"))
+    assert not any(z.startswith(("compose down", "volume rm")) for z in lauf.aufrufe), lauf.aufrufe
+
+
+def test_interaktive_neuinstallation_mit_vorhandener_version_raeumt_erst_danach_ab(tmp_path: Path) -> None:
+    """Gegenprobe: Gibt es die gewählte Version, wird die alte Installation wie bisher entfernt – nach der Prüfung."""
+    lauf = _lauf(tmp_path, env_datei="IMAGE_TAG=latest\n", eingabe="1\n2\n")  # 1) Neu installieren, 2) dev
+
+    aufrufe = lauf.aufrufe
+    pruefung = aufrufe.index("manifest inspect ghcr.io/mandarioss/website:dev")
+    abbau = next(i for i, z in enumerate(aufrufe) if z.startswith("compose down -v"))
+    assert pruefung < abbau, aufrufe
+    assert lauf.ausgabe.count("Release-Kanal wählen") == 1, "nach der Neuinstallations-Frage nicht erneut fragen"
+    assert list(lauf.arbeit.glob(".env.vor-neuinstallation-*"))
 
 
 def test_vorhandenes_tag_wird_geprueft_und_der_installer_laeuft_weiter(tmp_path: Path) -> None:
@@ -167,6 +206,25 @@ def test_website_bekommt_im_release_workflow_dieselben_tags() -> None:
 
 
 def test_kein_angebot_eines_nicht_existierenden_kanals_beta() -> None:
-    for datei in (SKRIPT, ENV_BEISPIEL, WURZEL / "update.sh", WURZEL / "DEPLOYMENT.md"):
+    for datei in ANGEBOTENE_TAGS_IN:
         text = datei.read_text(encoding="utf-8")
         assert not re.search(r"\bbeta\b", text, flags=re.IGNORECASE), datei.name
+
+
+def _veroeffentlichte_versionen() -> set[str]:
+    """Versionen mit Datum im CHANGELOG (``## [0.11.0] – 2026-09-27``); ``[Unreleased]`` zählt nicht."""
+    text = CHANGELOG.read_text(encoding="utf-8")
+    return set(re.findall(r"^## \[(\d+\.\d+\.\d+[^\]]*)\]\s+[–-]\s+\d{4}-\d{2}-\d{2}", text, flags=re.MULTILINE))
+
+
+def test_beispielversionen_sind_veroeffentlicht() -> None:
+    """Beispiele wie ``--tag v1.2.3`` oder ``image.tag=v0.12.0`` zeigten auf Tags, die es nicht gibt."""
+    veroeffentlicht = _veroeffentlichte_versionen()
+    assert "0.11.0" in veroeffentlicht, veroeffentlicht
+    erfundene = sorted(
+        f"{datei.relative_to(WURZEL).as_posix()}: v{version}"
+        for datei in ANGEBOTENE_TAGS_IN
+        for version in re.findall(r"\bv(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\b", datei.read_text(encoding="utf-8"))
+        if version not in veroeffentlicht
+    )
+    assert not erfundene, f"Beispiel-Tag ohne Release (siehe CHANGELOG.md): {erfundene}"

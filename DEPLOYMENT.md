@@ -18,6 +18,10 @@ jeweils dieselben Tags (Kopie des aktuellen Website-Stands), denn `docker-compos
 ziehen alle drei Images mit **einem** `IMAGE_TAG`. Danach prüft er ohne Anmeldung, dass jedes Tag für alle
 drei Images abrufbar ist (`scripts/check_image_tags.py`, auch von Hand nutzbar:
 `python scripts/check_image_tags.py v0.11.0 latest dev`).
+Commit-Tags im Paket `website` haben zwei Quellen: `dev-<commit>`/`main-<commit>` aus diesem Workflow nennen einen
+mandari-Commit, die gleichnamigen Tags aus dem Website-Repository einen Website-Commit. Welcher Website-Stand in
+einem Image steckt, zeigt das Label `org.opencontainers.image.revision`. Beweglich sind nur `latest` und `dev`;
+ein anderes Tag, das es schon mit anderem Inhalt gibt, überschreibt der Workflow nicht (Warnung im Lauf).
 
 Ein Push deployt nichts; umgeschaltet wird auf dem Server mit `update.sh` oder `deploy/scripts/deploy.sh`.
 `install.sh --tag …` und `update.sh --tag …` prüfen vorab, ob es das Tag für alle drei Images gibt, und
@@ -78,10 +82,10 @@ das vorherige Image zurück** und meldet das per Mail. Jeder Lauf schreibt eine 
 ```bash
 # Umgebung einmalig in einer Datei ablegen (Dienstnamen, Compose-Dateien, Empfänger)
 set -a; . /opt/mandari/deploy.env; set +a
-sh deploy/scripts/deploy.sh plan   v0.12.0   # Images ziehen, migrate --plan, check
-sh deploy/scripts/deploy.sh apply  v0.12.0   # Sicherung, Migration, Umschalten, Prüfung, ggf. Rückfall
+sh deploy/scripts/deploy.sh plan   v0.11.0   # Images ziehen, migrate --plan, check
+sh deploy/scripts/deploy.sh apply  v0.11.0   # Sicherung, Migration, Umschalten, Prüfung, ggf. Rückfall
 sh deploy/scripts/deploy.sh verify           # nur die Prüfungen (Seiten + Worker) gegen den laufenden Stand
-sh deploy/scripts/deploy.sh rollback v0.11.0 # von Hand zurück
+sh deploy/scripts/deploy.sh rollback <tag>   # von Hand zurück auf ein früheres Tag
 ```
 
 Alle Parameter (`MANDARI_DIR`, `COMPOSE_FILES`, `APP_SERVICE`, `WORKER_SERVICES`,

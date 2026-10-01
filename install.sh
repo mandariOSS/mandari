@@ -194,6 +194,33 @@ check_image_tag() {
     IMAGE_TAG_GEPRUEFT="$tag"
 }
 
+# Interaktiv ohne --tag: Release-Kanal abfragen
+choose_image_tag() {
+    echo ""
+    echo -e "  ${CYAN}Release-Kanal wählen:${NC}"
+    echo "    1) latest  — neuester stabiler Stand (empfohlen für Produktion)"
+    echo "    2) dev     — Entwicklungsstand aus dem Zweig dev (instabil, nicht für Produktion)"
+    echo ""
+    echo "  Eine bestimmte Version (z. B. v0.11.0) mit: ./install.sh --tag v0.11.0"
+    echo ""
+    read -p "  Auswahl [1]: " channel_choice
+    case "${channel_choice:-1}" in
+        2) IMAGE_TAG="dev" ;;
+        *) IMAGE_TAG="latest" ;;
+    esac
+}
+
+# Version festlegen (interaktiv ggf. per Kanalwahl) und prüfen, falls noch nicht geschehen.
+# Läuft spätestens vor dem ersten Schreiben und vor jedem Löschen von Containern oder Volumes.
+ensure_image_tag() {
+    if [ -z "$IMAGE_TAG" ]; then
+        choose_image_tag
+    fi
+    if [ "$IMAGE_TAG_GEPRUEFT" != "$IMAGE_TAG" ]; then
+        check_image_tag "$IMAGE_TAG"
+    fi
+}
+
 # =============================================================================
 # Prerequisites Check
 # =============================================================================
@@ -298,6 +325,8 @@ check_prerequisites() {
         fi
         read -r -p "  Auswahl [2]: " volume_choice
         if [ "$volume_choice" = "1" ]; then
+            # Erst die Version klären: Gibt es sie nicht, bleibt das Volume erhalten
+            ensure_image_tag
             log "Entferne alte Volumes..."
             docker compose down -v --remove-orphans 2>/dev/null || true
             docker volume rm "${COMPOSE_PROJECT_NAME}_postgres_data" 2>/dev/null || true
@@ -333,6 +362,8 @@ check_prerequisites() {
                 log "Zum Updaten: ./update.sh"
                 exit 0
             fi
+            # Erst die Version klären: Gibt es sie nicht, bleibt die bestehende Installation erhalten
+            ensure_image_tag
         fi
 
         # Bisherige Konfiguration aufheben: Sie enthält den alten ENCRYPTION_MASTER_KEY, ohne
@@ -1031,27 +1062,10 @@ main() {
         log "Running in unattended mode"
     else
         configure_interactively
-
-        # Image tag selection (if not set via --tag)
-        if [ -z "$IMAGE_TAG" ]; then
-            echo ""
-            echo -e "  ${CYAN}Release-Kanal wählen:${NC}"
-            echo "    1) latest  — neuester stabiler Stand (empfohlen für Produktion)"
-            echo "    2) dev     — Entwicklungsstand aus dem Zweig dev (instabil, nicht für Produktion)"
-            echo ""
-            echo "  Eine bestimmte Version (z. B. v0.11.0) mit: ./install.sh --tag v0.11.0"
-            echo ""
-            read -p "  Auswahl [1]: " channel_choice
-            case "${channel_choice:-1}" in
-                2) IMAGE_TAG="dev" ;;
-                *) IMAGE_TAG="latest" ;;
-            esac
-        fi
     fi
 
-    if [ "$IMAGE_TAG_GEPRUEFT" != "$IMAGE_TAG" ]; then
-        check_image_tag "$IMAGE_TAG"
-    fi
+    # Kanalwahl (interaktiv ohne --tag), sofern nicht schon vor einer Neuinstallation geschehen
+    ensure_image_tag
 
     log "Image-Tag: $IMAGE_TAG"
     generate_secrets

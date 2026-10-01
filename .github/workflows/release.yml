@@ -16,6 +16,13 @@
 #   release → :<version>, :latest
 #   manual  → :<input>
 # Einen Kanal "beta" gibt es nicht.
+#
+# Commit-Tags (dev-<sha>, main-<sha>, <sha>) nennen hier einen mandari-Commit. Im Paket website
+# schreibt mandariOSS/marketing-website eigene Commit-Tags mit Website-Commits (main-<sha>,
+# dev-<sha>); welcher Website-Stand in einem Image steckt, zeigt dort das Label
+# org.opencontainers.image.revision. Beweglich sind nur latest und dev: Jedes andere Website-Tag,
+# das es schon mit anderem Inhalt gibt (gleiche Kurzkennung in beiden Repositorys, von Hand
+# nachgetragenes Release-Tag, erneuter Lauf), bleibt unverändert; der Lauf meldet eine Warnung.
 # =============================================================================
 
 name: Release
@@ -206,18 +213,36 @@ jobs:
       # mandari und ingestor, damit ein IMAGE_TAG für alle drei Images reicht: Release-Versionen, latest,
       # dev und die Commit-Tags. Kopie des Manifests, kein Neubau. Das Paket website ist mit diesem
       # Repository verknüpft; GITHUB_TOKEN darf deshalb dort schreiben (Issue #698).
+      # Nur latest und dev werden überschrieben, alle anderen Tags nur angelegt (siehe Kopf der Datei).
+      # Scheitert dieser Schritt, laufen SBOM, Sichtbarkeit und die Prüfung am Ende trotzdem.
       - name: Website-Image mit denselben Tags versehen
+        id: website
         env:
           WEBSITE_SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:main
           WEBSITE_TAGS: ${{ steps.tags.outputs.website_tags }}
         run: |
           set -eu
+          echo "Quelle: $WEBSITE_SOURCE"
+          quelle=$(docker buildx imagetools inspect --raw "$WEBSITE_SOURCE")
           args=""
           for ziel in $(echo "$WEBSITE_TAGS" | tr ',' ' '); do
+            case "${ziel##*:}" in
+              latest|dev) ;;
+              *)
+                # Unveränderliches Tag: vorhanden und anderer Inhalt → stehen lassen
+                vorhanden=$(docker buildx imagetools inspect --raw "$ziel" 2>/dev/null || true)
+                if [ -n "$vorhanden" ] && [ "$vorhanden" != "$quelle" ]; then
+                  echo "::warning title=Website-Tag nicht überschrieben::$ziel gibt es schon mit anderem Inhalt (Commit-Tag aus mandariOSS/marketing-website oder früherer Lauf); es bleibt unverändert."
+                  continue
+                fi
+                ;;
+            esac
             args="$args --tag $ziel"
           done
-          echo "Quelle: $WEBSITE_SOURCE"
-          docker buildx imagetools inspect "$WEBSITE_SOURCE" | head -3
+          if [ -z "$args" ]; then
+            echo "Keine Website-Tags zu setzen."
+            exit 0
+          fi
           # shellcheck disable=SC2086  # Tag-Liste bewusst aufgeteilt
           docker buildx imagetools create $args "$WEBSITE_SOURCE"
 
@@ -225,6 +250,7 @@ jobs:
       # Make packages public (required for unauthenticated pulls)
       # =====================================================================
       - name: SBOM (CycloneDX) für Quellcode und Abhängigkeiten erzeugen
+        if: ${{ !cancelled() && steps.tags.outcome == 'success' }}
         uses: anchore/sbom-action@v0
         with:
           path: .
@@ -236,6 +262,7 @@ jobs:
           upload-release-assets: false
 
       - name: Make container packages public
+        if: ${{ !cancelled() && steps.tags.outcome == 'success' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -251,5 +278,9 @@ jobs:
 
       # Installer, update.sh, Helm-Chart und Dokumentation bieten diese Tags an: Jedes muss für alle drei
       # Images ohne Anmeldung abrufbar sein, sonst scheitert "./install.sh --tag …" (Issue #698).
+      # Läuft auch, wenn ein Schritt davor gescheitert ist: Dann zeigt die Liste, welche Tags fehlen.
       - name: Alle Images für jedes Tag dieses Laufs anonym abrufbar
-        run: python3 scripts/check_image_tags.py "${{ steps.tags.outputs.run_tags }}"
+        if: ${{ !cancelled() && steps.tags.outcome == 'success' }}
+        env:
+          RUN_TAGS: ${{ steps.tags.outputs.run_tags }}
+        run: python3 scripts/check_image_tags.py "$RUN_TAGS"
