@@ -23,6 +23,16 @@ weil das Bürgerportal genau diese Schnittstelle liest. Dazu die Lizenz der offe
             Abrufbar unter <a href="{% url 'session:oparl_system' tenant_slug=tenant_slug %}" class="text-primary-600 dark:text-primary-400 hover:underline" target="_blank" rel="noopener">/session/{{ tenant_slug }}/api/oparl/</a>.
             Ausgeliefert werden nur öffentliche Inhalte, E-Mail-Adressen nur von Personen mit Einwilligung.
         </p>
+        {% if dcat_enabled %}
+        <p class="text-xs text-gray-500 dark:text-gray-400" data-testid="oparl-datenkatalog">
+            {% if session_tenant.oparl_license %}
+            Datenkatalog für Datenportale wie GovData (DCAT-AP.de):
+            <a href="{% url 'session:dcat_catalog_format' tenant_slug=tenant_slug endung='ttl' %}" class="text-primary-600 dark:text-primary-400 hover:underline" target="_blank" rel="noopener">/session/{{ tenant_slug }}/api/dcat/catalog.ttl</a>.
+            {% else %}
+            Ohne Lizenz gibt es keinen Datenkatalog für Datenportale wie GovData. Wählen Sie unten eine Lizenz.
+            {% endif %}
+        </p>
+        {% endif %}
         {% if session_tenant.insight_publish %}
         <p class="text-xs text-gray-500 dark:text-gray-400">Solange das Bürgerportal veröffentlicht, bleibt die Schnittstelle freigeschaltet.</p>
         {% else %}

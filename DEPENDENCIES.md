@@ -66,7 +66,8 @@ mandari implementiert den deutschen **OParl-Standard** für offene Ratsinformati
 ### DCAT-AP.de 3.0
 
 Den Katalog der offenen Ratsinformationen für Datenportale beschreibt mandari nach **DCAT-AP.de**, dem deutschen
-Anwendungsprofil von DCAT-AP für Metadaten offener Verwaltungsdaten.
+Anwendungsprofil von DCAT-AP für Metadaten offener Verwaltungsdaten. Die CI prüft ihn mit
+[pySHACL](https://github.com/RDFLib/pySHACL) (Apache 2.0) gegen die SHACL-Regeln von DCAT-AP 3.0 und DCAT-AP.de 3.0.
 
 - Website: [dcat-ap.de](https://www.dcat-ap.de/)
 - Spezifikation: [DCAT-AP.de 3.0](https://www.dcat-ap.de/def/dcatde/3.0/spec/)

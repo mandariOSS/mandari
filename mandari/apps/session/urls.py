@@ -8,6 +8,7 @@ All URLs are prefixed with /session/<tenant_slug>/
 from django.urls import path
 
 from . import views
+from .api import dcat as dcat_views
 from .api import oparl as oparl_api_views
 from .api import views as api_views
 from .views import approvals as approval_views
@@ -999,6 +1000,9 @@ urlpatterns = [
         oparl_api_views.object_view,
         name="oparl_object",
     ),
+    # Katalog nach DCAT-AP.de für Datenportale (Issue #104): ohne Endung per Inhaltsaushandlung
+    path("<slug:tenant_slug>/api/dcat/catalog", dcat_views.catalog_view, name="dcat_catalog"),
+    path("<slug:tenant_slug>/api/dcat/catalog.<str:endung>", dcat_views.catalog_view, name="dcat_catalog_format"),
     # Session API (extended, authenticated)
     path(
         "<slug:tenant_slug>/api/session/meetings/",

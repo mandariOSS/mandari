@@ -12,6 +12,9 @@ Die API folgt dem Muster des mandari-Aggregators (`docs/OPARL_API.md`,
 Issue #17): rein lesend, anonym, JSON, CORS offen, Rate-Limit
 (`OPARL_API_RATE_LIMIT`, Standard 120 Anfragen/Minute je IP).
 
+Für Datenportale wie GovData beschreibt ein Katalog nach DCAT-AP.de unter `…/api/dcat/catalog` die
+offenen Daten des Mandanten und verweist auf diese Schnittstelle ([DCAT_KATALOG.md](DCAT_KATALOG.md)).
+
 ## Freischaltung der Schnittstelle (Issue #319)
 
 Offene Daten ab Werk sind gewollt – den Zeitpunkt bestimmt aber die Verwaltung. Ein neu angelegter
