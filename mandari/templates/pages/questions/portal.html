@@ -9,18 +9,28 @@
         <div>
             <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Ratsfragen</h1>
             <p class="text-gray-600 dark:text-gray-400 max-w-2xl">
+                {% if insight_questions_enabled %}
                 Stellen Sie den gewählten Mandatsträger:innen {% if active_body %}der {{ active_body.get_display_name }}{% endif %}
                 öffentlich Fragen – jede Frage und jede Antwort ist für alle sichtbar. So entsteht ein
                 nachvollziehbarer Dialog zwischen Bürger:innen und Politik.
+                {% else %}
+                Öffentliche Fragen an die gewählten Mandatsträger:innen {% if active_body %}der {{ active_body.get_display_name }}{% endif %}
+                und ihre Antworten.
+                {% endif %}
             </p>
         </div>
+        {% if insight_questions_enabled %}
         <a href="{% url 'insight_core:insight:question_start' %}"
            class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-primary-600 text-white hover:bg-primary-700 transition-colors flex-shrink-0">
             <i data-lucide="message-circle-question" class="w-4 h-4"></i>
             Frage stellen
         </a>
+        {% endif %}
     </div>
 
+    {% if not insight_questions_enabled %}
+    {% include "components/questions_paused_notice.html" with extra_class="mb-6" %}
+    {% else %}
     {# ── Statistik ── #}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
@@ -42,6 +52,7 @@
             </p>
         </div>
     </div>
+    {% endif %}
 
     <div class="lg:grid lg:grid-cols-[1fr_320px] lg:gap-8">
         <div>
@@ -66,12 +77,12 @@
                         <option value="{{ value }}" {% if filter_topic == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
-                    {% if faction_ranking %}
+                    {% if faction_options %}
                     <select name="fraktion" class="px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white">
                         <option value="">Alle Fraktionen</option>
-                        {% for row in faction_ranking %}{% if row.organization %}
+                        {% for row in faction_options %}
                         <option value="{{ row.organization.id }}" {% if filter_faction == row.organization.id|stringformat:"s" %}selected{% endif %}>{{ row.name }}</option>
-                        {% endif %}{% endfor %}
+                        {% endfor %}
                     </select>
                     {% endif %}
                     <select name="sort" class="px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white" data-autosubmit>
@@ -118,7 +129,9 @@
                 <i data-lucide="message-circle-question" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
                 {% if has_filters %}
                 <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">Keine Fragen für diese Filter</p>
-                <p class="text-sm text-gray-500 dark:text-gray-400">Setzen Sie die Filter zurück oder stellen Sie selbst eine Frage.</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Setzen Sie die Filter zurück{% if insight_questions_enabled %} oder stellen Sie selbst eine Frage{% endif %}.</p>
+                {% elif not insight_questions_enabled %}
+                <p class="font-medium text-gray-700 dark:text-gray-300">Noch keine öffentlichen Fragen</p>
                 {% else %}
                 <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">Noch keine öffentlichen Fragen</p>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Seien Sie die erste Person, die den Mandatsträger:innen eine Frage stellt.</p>
@@ -130,6 +143,7 @@
 
         {# ── Sidebar ── #}
         <aside class="mt-8 lg:mt-0 space-y-4">
+            {% if insight_questions_enabled %}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
                 <h2 class="font-semibold text-gray-900 dark:text-white mb-3">So funktioniert's</h2>
                 <ol class="space-y-2.5 text-sm text-gray-600 dark:text-gray-300">
@@ -139,6 +153,7 @@
                 </ol>
                 <p class="mt-3 text-xs text-gray-400 dark:text-gray-500">Sachlich, konkret, respektvoll – Fragen mit Beleidigungen oder Werbung werden nicht freigeschaltet.</p>
             </div>
+            {% endif %}
 
             {% if faction_ranking %}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
@@ -184,7 +199,7 @@
                         {% include "components/person_avatar.html" with person=p size="sm" %}
                         <div class="min-w-0 flex-1">
                             <a href="?person={{ p.id }}" class="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary-600 truncate block">{{ p.display_name }}</a>
-                            <p class="text-xs text-gray-500 dark:text-gray-400">{{ p.answered_count }} von {{ p.question_count }} beantwortet</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">{% if insight_questions_enabled %}{{ p.answered_count }} von {{ p.question_count }} beantwortet{% else %}{{ p.question_count }} Frage{{ p.question_count|pluralize:"n" }}{% endif %}</p>
                         </div>
                     </li>
                     {% endfor %}

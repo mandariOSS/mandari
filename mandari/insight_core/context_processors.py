@@ -26,6 +26,8 @@ def navigation_context(request):
         "marketing_url": marketing_url,
         # Abos zu Themen und Orten (INSIGHT_SUBSCRIPTIONS_ENABLED): ausgeschaltet keine Links darauf
         "insight_subscriptions_enabled": bool(getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False)),
+        # Ratsfragen (INSIGHT_QUESTIONS_ENABLED, Issue #734): pausiert lesbar, ohne Stellen und Antwortquoten
+        "insight_questions_enabled": bool(getattr(settings, "INSIGHT_QUESTIONS_ENABLED", False)),
     }
 
 
@@ -86,7 +88,7 @@ def active_body(request):
     # Archiv (Issue #618): Die Kommune veröffentlicht nicht mehr, der Bestand bleibt lesbar. Maßgeblich
     # ist die Kommune der Seite (Middleware), sonst die gewählte. Detailseiten haben eine eigene
     # Kommune: Ohne deren Stand gilt nicht der Stand der gewählten Kommune.
-    from .publication import body_state
+    from .publication import BODY_PAGES, PORTAL_NAMESPACE, body_state
 
     publication_state = getattr(request, "insight_publication_state", None)
     match = getattr(request, "resolver_match", None)
@@ -100,9 +102,20 @@ def active_body(request):
             publication_state = None
     archive = publication_state if publication_state is not None and publication_state.archived else None
 
-    # Datenstand-Hinweis: Quelle der Kommune seit der kritischen Schwelle nicht synchronisiert
+    # Hinweis der Kommune (Issue #734, im Admin gepflegt), z. B. „Die Stadt stellt ihre Daten nicht mehr
+    # bereit“: auf Einstieg und Listen der gewählten Kommune (BODY_PAGES, dazu der eigene Einstieg
+    # /insight/k/<slug>/). Detailseiten haben eine eigene Kommune und zeigen ihn nicht.
+    notice = (body.portal_notice or "").strip() if body is not None else ""
+    body_page = (
+        match is not None
+        and match.namespace == PORTAL_NAMESPACE
+        and (match.url_name in BODY_PAGES or match.url_name == "portal_entry")
+    )
+
+    # Datenstand-Hinweis: Quelle der Kommune seit der kritischen Schwelle nicht synchronisiert. Mit eigenem
+    # Hinweis der Kommune entfällt er – der nennt den Grund, „nicht erreichbar“ träfe dann nicht zu.
     stale_days = None
-    if body and body.last_sync and archive is None:
+    if body and body.last_sync and archive is None and not notice:
         from datetime import timedelta
 
         from django.utils import timezone
@@ -119,5 +132,6 @@ def active_body(request):
         "upcoming_meeting_count": upcoming_count,
         "active_body_stale_days": stale_days,
         "active_body_archive": archive,
+        "active_body_notice": notice if body_page else "",
         "insight_portal": portal,
     }

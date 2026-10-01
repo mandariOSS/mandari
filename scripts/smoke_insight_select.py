@@ -53,8 +53,10 @@ from django.test import Client, override_settings  # noqa: E402
 from django.test.utils import CaptureQueriesContext, setup_test_environment  # noqa: E402
 
 setup_test_environment()
-# Abos sind standardmäßig abgeschaltet; der Smoke prüft die Seiten eingeschaltet
-_overrides = override_settings(MEDIA_ROOT=str(_media_root), INSIGHT_SUBSCRIPTIONS_ENABLED=True)
+# Abos und Ratsfragen sind standardmäßig abgeschaltet bzw. pausiert; der Smoke prüft die Seiten eingeschaltet
+_overrides = override_settings(
+    MEDIA_ROOT=str(_media_root), INSIGHT_SUBSCRIPTIONS_ENABLED=True, INSIGHT_QUESTIONS_ENABLED=True
+)
 _overrides.enable()
 from _smoke_db import prepare_database  # noqa: E402
 

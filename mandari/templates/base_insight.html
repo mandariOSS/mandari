@@ -236,6 +236,9 @@
                     </div>
                 </div>
                 {% endif %}
+                {% if active_body_notice %}
+                <c-ui.alert variant="warning" icon="info" class="mb-5" data-testid="kommune-hinweis">{{ active_body_notice|linebreaksbr }}</c-ui.alert>
+                {% endif %}
                 {% block content %}{% endblock %}
             </div>
 

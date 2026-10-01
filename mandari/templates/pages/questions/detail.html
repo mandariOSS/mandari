@@ -15,6 +15,10 @@
         </ol>
     </nav>
 
+    {% if not insight_questions_enabled %}
+    {% include "components/questions_paused_notice.html" with extra_class="mb-6" %}
+    {% endif %}
+
     <div class="lg:grid lg:grid-cols-[1fr_320px] lg:gap-8">
         <div class="space-y-4">
             {# ── Frage ── #}
@@ -25,6 +29,8 @@
                     </a>
                     {% if question.is_answered %}
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"><i data-lucide="check" class="w-3 h-3"></i> Beantwortet</span>
+                    {% elif not insight_questions_enabled %}
+                    <c-ui.badge icon="circle-pause">Ohne Antwort</c-ui.badge>
                     {% else %}
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium {% if question.days_open > 14 %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400{% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400{% endif %}"><i data-lucide="clock" class="w-3 h-3"></i> Offen seit {{ question.days_open }} Tag{{ question.days_open|pluralize:"en" }}</span>
                     {% endif %}
@@ -57,7 +63,11 @@
                 <i data-lucide="clock" class="w-8 h-8 mx-auto text-gray-300 dark:text-gray-600 mb-2"></i>
                 <p class="font-medium text-gray-700 dark:text-gray-300">Noch keine Antwort</p>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    {% if insight_questions_enabled %}
                     {{ person.display_name }} wurde per E-Mail über diese Frage informiert und erhält bei ausbleibender Antwort automatische Erinnerungen.
+                    {% else %}
+                    Während der Pause werden keine Fragen zugestellt und keine Erinnerungen versendet.
+                    {% endif %}
                 </p>
             </section>
             {% endif %}
@@ -90,6 +100,7 @@
                         {% if faction %}<p class="text-xs text-primary-700 dark:text-primary-300 truncate">{{ faction.short_name|default:faction.name }}</p>{% endif %}
                     </div>
                 </div>
+                {% if answer_stats %}
                 <div class="mt-4">
                     <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                         <span>{{ answer_stats.answered }} von {{ answer_stats.total }} Frage{{ answer_stats.total|pluralize:"n" }} beantwortet</span>
@@ -102,6 +113,7 @@
                     <p class="text-xs text-gray-400 dark:text-gray-500 mt-1.5">Antwortet im Schnitt nach {{ answer_stats.avg_response_days }} Tagen</p>
                     {% endif %}
                 </div>
+                {% endif %}
                 {% if can_ask %}
                 <a href="{% url 'insight_core:insight:ask_question' person.id %}"
                    class="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors">

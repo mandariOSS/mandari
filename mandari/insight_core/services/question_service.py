@@ -6,6 +6,10 @@ Service für öffentliche Ratsfragen (Abgeordnetenwatch-Stil).
 - Fraktionszuordnung und Antwortquoten (Person, Kommune, Fraktion)
 - Moderations-Workflow (Freischalten, Ablehnen, Antwort freischalten)
 - E-Mail-Versand (Verifizierung, Benachrichtigungen, Moderation, Erinnerungen)
+
+Pausiert (``INSIGHT_QUESTIONS_ENABLED``, Standard aus, Issue #734) sind die Ratsfragen eingefroren:
+Freischalten und Erinnern ändern nichts, keine Funktion hier verschickt eine Mail. Die Seiten zeigen
+die bisherigen Fragen ohne Antwortquoten (``views/questions.py``).
 """
 
 import logging
@@ -54,6 +58,19 @@ NON_MANDATE_ROLE_HINTS = [
 
 def _site_url() -> str:
     return getattr(settings, "SITE_URL", "http://localhost:8000")
+
+
+def questions_enabled() -> bool:
+    """Ratsfragen eingeschaltet? Standard aus: pausiert und eingefroren (Issue #734)."""
+    return bool(getattr(settings, "INSIGHT_QUESTIONS_ENABLED", False))
+
+
+def _paused(action: str) -> bool:
+    """Pausiert: ``action`` unterbleibt (mit Protokollzeile), Rückgabe ``True``."""
+    if questions_enabled():
+        return False
+    logger.info("Ratsfragen sind pausiert (INSIGHT_QUESTIONS_ENABLED) – %s unterbleibt.", action)
+    return True
 
 
 # =============================================================================
@@ -272,7 +289,7 @@ def get_top_recipients(body, limit: int = 5):
 
 def publish_question(question, user=None) -> bool:
     """Frage freischalten: veröffentlicht, Ratsmitglied + Fragesteller:in informieren."""
-    if question.status != "pending":
+    if question.status != "pending" or _paused("Freischalten einer Frage"):
         return False
     now = timezone.now()
     question.status = "published"
@@ -299,7 +316,7 @@ def reject_question(question, user=None, reason: str = "") -> bool:
 
 def publish_answer(question) -> bool:
     """Antwort freischalten und Fragesteller:in informieren."""
-    if question.answer_status != "pending":
+    if question.answer_status != "pending" or _paused("Freischalten einer Antwort"):
         return False
     question.answer_status = "published"
     question.save(update_fields=["answer_status", "updated_at"])
@@ -336,6 +353,8 @@ def send_verification_email(question) -> bool:
     """
     from apps.common.email import send_template_email
 
+    if _paused("Bestätigungsmail"):
+        return False
     site_url = _site_url()
     verify_url = f"{site_url}/insight/fragen/verifizieren/{question.token_for_link()}/"
 
@@ -352,6 +371,8 @@ def send_question_notification_to_recipient(question) -> bool:
     """Benachrichtigt Ratsmitglied über freigeschaltete Frage."""
     from apps.common.email import send_template_email
 
+    if _paused("Mail an das Ratsmitglied"):
+        return False
     if not question.recipient.email:
         logger.warning(f"Ratsmitglied {question.recipient} hat keine E-Mail-Adresse.")
         return False
@@ -375,6 +396,8 @@ def send_question_published_to_questioner(question) -> bool:
     """Fragesteller:in: Frage ist jetzt öffentlich (mit Link)."""
     from apps.common.email import send_template_email
 
+    if _paused("Mail an die Fragesteller:in"):
+        return False
     site_url = _site_url()
     return send_template_email(
         subject=f"Ihre Frage an {question.recipient.display_name} ist jetzt öffentlich",
@@ -393,6 +416,8 @@ def send_answer_notification_to_questioner(question) -> bool:
     """Benachrichtigt Fragesteller:in über veröffentlichte Antwort."""
     from apps.common.email import send_template_email
 
+    if _paused("Mail über die Antwort"):
+        return False
     site_url = _site_url()
     return send_template_email(
         subject=f"{question.recipient.display_name} hat Ihre Frage beantwortet",
@@ -411,6 +436,8 @@ def send_answer_reminder(question) -> bool:
     """Sendet Erinnerung an Ratsmitglied."""
     from apps.common.email import send_template_email
 
+    if _paused("Erinnerung"):
+        return False
     if not question.recipient.email:
         return False
 
@@ -432,6 +459,8 @@ def send_moderation_notification(question, kind: str = "question") -> bool:
     """Moderator:innen: neue Frage bzw. neue Antwort wartet auf Freigabe."""
     from apps.common.email import send_template_email
 
+    if _paused("Moderations-Hinweis"):
+        return False
     recipients = get_moderator_emails()
     if not recipients:
         logger.info("Keine Moderations-Empfänger konfiguriert — Hinweis-E-Mail entfällt.")
@@ -459,9 +488,12 @@ def send_moderation_notification(question, kind: str = "question") -> bool:
 def send_due_reminders(days: int = 14, repeat_days: int = 14, dry_run: bool = False) -> int:
     """
     Erinnert Ratsmitglieder an offene Fragen: erstmals ``days`` Tage nach
-    Veröffentlichung, danach alle ``repeat_days`` Tage. Liefert die Anzahl.
+    Veröffentlichung, danach alle ``repeat_days`` Tage. Liefert die Anzahl; pausiert immer 0.
     """
     from ..models import PublicQuestion
+
+    if _paused("Erinnerungslauf"):
+        return 0
 
     now = timezone.now()
     due = (

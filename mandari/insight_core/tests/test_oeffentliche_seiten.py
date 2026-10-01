@@ -259,9 +259,10 @@ class TestLinksAusEmails:
         beschluss_abo.refresh_from_db()
         assert beschluss_abo.unsubscribed_at is not None
 
-    def test_frage_verifizieren_erst_nach_klick(self, welt: dict[str, Any]) -> None:
+    def test_frage_verifizieren_erst_nach_klick(self, welt: dict[str, Any], settings: Any) -> None:
         from insight_core.models import PublicQuestion
 
+        settings.INSIGHT_QUESTIONS_ENABLED = True  # Ratsfragen sind standardmäßig pausiert (#734)
         frage = PublicQuestion.objects.create(
             body=welt["body"],
             recipient=welt["schulz"],

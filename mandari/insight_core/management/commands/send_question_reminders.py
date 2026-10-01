@@ -4,7 +4,9 @@ Management Command: Ratsmitglieder an offene Ratsfragen erinnern.
 
 Cronjob (täglich):
     python manage.py send_question_reminders
-Erste Erinnerung nach 14 Tagen ohne Antwort, danach alle 14 Tage.
+Erste Erinnerung nach 14 Tagen ohne Antwort, danach alle 14 Tage. Solange die Ratsfragen pausiert
+sind (``INSIGHT_QUESTIONS_ENABLED``, Standard aus, Issue #734), endet der Befehl mit einem Hinweis und
+ohne Wirkung; der Cron-Eintrag kann bleiben.
 """
 
 from django.core.management.base import BaseCommand
@@ -23,7 +25,15 @@ class Command(EinmaligMixin, BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Nur zählen, nicht senden")
 
     def handle(self, *args, **options):
-        from insight_core.services.question_service import send_due_reminders
+        from insight_core.services.question_service import questions_enabled, send_due_reminders
+
+        if not questions_enabled():
+            self.stdout.write(
+                self.style.WARNING(
+                    "Ratsfragen sind pausiert (INSIGHT_QUESTIONS_ENABLED=False) – keine Erinnerungen versendet."
+                )
+            )
+            return
 
         count = send_due_reminders(days=options["days"], repeat_days=options["repeat"], dry_run=options["dry_run"])
         verb = "fällig" if options["dry_run"] else "gesendet"

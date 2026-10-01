@@ -13,7 +13,11 @@ OParl-Quelle, die ab Februar 2026 nur noch HTTP 403 lieferte, ohne dass es jeman
 - **OParl-Quellen-Liste**: Spalte „Gesundheit“, Filter nach Status, Felder *Letzter Fehler*,
   *Fehlversuche in Folge*, *Alarm gesendet am*.
 - **Insight-Portal**: Ist die Quelle einer Kommune länger als die kritische Schwelle nicht
-  synchronisiert, sehen Besucher:innen einen Hinweis „Datenstand: TT.MM.JJJJ“.
+  synchronisiert, sehen Besucher:innen einen Hinweis „Datenstand: TT.MM.JJJJ“. Kennt der Betrieb den
+  Grund – etwa weil die Kommune ihre OParl-Schnittstelle abgeschaltet hat –, trägt er ihn im Admin
+  unter *Kommunen → Anzeige im Frontend → Hinweis im Bürgerportal* ein. Der Text erscheint auf
+  Einstieg und Listenseiten der Kommune und ersetzt den automatischen Datenstand-Hinweis;
+  leer heißt kein Hinweis.
 
 ## Bewertung einer Quelle
 

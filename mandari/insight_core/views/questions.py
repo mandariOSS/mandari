@@ -6,6 +6,10 @@
 - Detailseite je Frage (teilbar, SEO)
 - Einstieg „Frage stellen“ mit Auswahl der Mandatsträger:in
 - Formular, E-Mail-Verifizierung, Antwort per Token-Link
+
+Pausiert (``INSIGHT_QUESTIONS_ENABLED``, Standard aus, Issue #734): Portal und Detailseiten bleiben
+lesbar – mit Hinweis und ohne Antwortquoten je Person und Fraktion. Stellen, Bestätigen und Antworten
+antworten mit 404.
 """
 
 from django.db.models import Count, Q
@@ -24,6 +28,15 @@ SORT_OPTIONS = [
     ("offen", "Am längsten offen"),
     ("beantwortet", "Zuletzt beantwortet"),
 ]
+
+
+class QuestionsEnabledRequiredMixin:
+    """Ratsfragen pausiert (``INSIGHT_QUESTIONS_ENABLED``, Standard aus): Die Seite antwortet mit 404."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if not question_service.questions_enabled():
+            raise Http404("Ratsfragen sind pausiert.")
+        return super().dispatch(request, *args, **kwargs)
 
 
 def _filter_querystring(request, drop=("page",)) -> str:
@@ -99,12 +112,15 @@ class QuestionPortalView(ActiveBodyRequiredMixin, ListView):
         for q in questions:
             q.recipient_faction = faction_map.get(q.recipient_id)
 
+        enabled = question_service.questions_enabled()
         ranking = question_service.get_faction_ranking(body) if body else []
         context.update(
             {
                 "questions": questions,
                 "stats": question_service.get_body_stats(body) if body else {},
-                "faction_ranking": ranking,
+                # Pausiert keine Antwortquote je Fraktion; die Fraktionen bleiben als Filter
+                "faction_ranking": ranking if enabled else [],
+                "faction_options": [row for row in ranking if row["organization"]],
                 "topic_counts": question_service.get_topic_counts(body) if body else [],
                 "topic_choices": PublicQuestion.TOPIC_CHOICES,
                 "sort_options": SORT_OPTIONS,
@@ -151,6 +167,7 @@ class QuestionDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         question = self.object
         person = question.recipient
+        enabled = question_service.questions_enabled()
         related = (
             PublicQuestion.objects.filter(recipient=person, status="published")
             .exclude(id=question.id)
@@ -161,9 +178,10 @@ class QuestionDetailView(DetailView):
                 "person": person,
                 "faction": question_service.get_faction(person),
                 "council_role": question_service.get_council_role(person),
-                "answer_stats": question_service.get_answer_stats(person),
+                # Pausiert eingefroren: keine Antwortquote, keine weitere Frage
+                "answer_stats": question_service.get_answer_stats(person) if enabled else None,
                 "related_questions": related,
-                "can_ask": question_service.is_mandate_holder(person),
+                "can_ask": enabled and question_service.is_mandate_holder(person),
             }
         )
 
@@ -173,7 +191,7 @@ class QuestionDetailView(DetailView):
         return context
 
 
-class AskQuestionStartView(ActiveBodyRequiredMixin, TemplateView):
+class AskQuestionStartView(QuestionsEnabledRequiredMixin, ActiveBodyRequiredMixin, TemplateView):
     """Einstieg: Mandatsträger:in auswählen, an die eine Frage gehen soll."""
 
     template_name = "pages/questions/start.html"
@@ -219,7 +237,7 @@ class AskQuestionStartView(ActiveBodyRequiredMixin, TemplateView):
         return context
 
 
-class AskQuestionView(FormView):
+class AskQuestionView(QuestionsEnabledRequiredMixin, FormView):
     """Formular zum Stellen einer öffentlichen Frage an ein Ratsmitglied."""
 
     template_name = "pages/persons/ask_question.html"
@@ -280,7 +298,7 @@ class AskQuestionView(FormView):
         return redirect("insight_core:insight:question_submitted")
 
 
-class VerifyQuestionView(View):
+class VerifyQuestionView(QuestionsEnabledRequiredMixin, View):
     """E-Mail-Verifizierung einer eingereichten Frage (GET zeigt die Bestätigungsseite, POST bestätigt)."""
 
     @staticmethod
@@ -307,7 +325,7 @@ class VerifyQuestionView(View):
         return render(request, "pages/questions/verified.html", {"question": question})
 
 
-class AnswerQuestionView(FormView):
+class AnswerQuestionView(QuestionsEnabledRequiredMixin, FormView):
     """Antwort-Formular für Ratsmitglieder (Token-basiert, kein Login nötig)."""
 
     template_name = "pages/questions/answer_form.html"
@@ -340,7 +358,7 @@ class AnswerQuestionView(FormView):
         return render(self.request, "pages/questions/answer_submitted.html", {"question": self.question})
 
 
-class QuestionSubmittedView(TemplateView):
+class QuestionSubmittedView(QuestionsEnabledRequiredMixin, TemplateView):
     """Bestätigungsseite nach Absenden einer Frage."""
 
     template_name = "pages/questions/submitted.html"

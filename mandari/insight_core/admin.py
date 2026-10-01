@@ -498,6 +498,7 @@ class OParlBodyAdmin(ModelAdmin):
                     "slug",
                     "is_listed",
                     "description",
+                    "portal_notice",
                     "logo",
                     "hero_image",
                     "hero_image_credit",
@@ -505,7 +506,8 @@ class OParlBodyAdmin(ModelAdmin):
                 "description": (
                     "Diese Felder bestimmen, wie die Kommune im Frontend angezeigt wird. Mit Slug hat die "
                     "Kommune ein eigenes Bürgerportal unter /insight/k/<slug>/ und eine eigene Sitemap; "
-                    "gesammelt setzen: python manage.py set_body_slugs."
+                    "gesammelt setzen: python manage.py set_body_slugs. Der Hinweis im Bürgerportal erscheint "
+                    "auf Einstieg und Listenseiten der Kommune."
                 ),
             },
         ),
@@ -1364,10 +1366,24 @@ class PublicQuestionAdmin(ModelAdmin):
         }
         return status_text(colors.get(obj.answer_status, "#64748b"), obj.get_answer_status_display())
 
+    def _questions_paused(self, request) -> bool:
+        """Pausiert (INSIGHT_QUESTIONS_ENABLED, Issue #734): eingefroren – nichts freischalten, keine Mails."""
+        from .services.question_service import questions_enabled
+
+        if questions_enabled():
+            return False
+        messages.warning(
+            request,
+            "Ratsfragen sind pausiert (INSIGHT_QUESTIONS_ENABLED) – nichts freigeschaltet, keine E-Mails versendet.",
+        )
+        return True
+
     @admin.action(description="Fragen freischalten")
     def approve_questions(self, request, queryset):
         from .services.question_service import publish_question
 
+        if self._questions_paused(request):
+            return
         count = sum(1 for q in queryset.filter(status="pending") if publish_question(q, request.user))
         messages.success(
             request, f"{count} Frage(n) freigeschaltet – Ratsmitglied und Fragesteller:in wurden informiert."
@@ -1384,6 +1400,8 @@ class PublicQuestionAdmin(ModelAdmin):
     def approve_answers(self, request, queryset):
         from .services.question_service import publish_answer
 
+        if self._questions_paused(request):
+            return
         count = sum(1 for q in queryset.filter(answer_status="pending") if publish_answer(q))
         messages.success(request, f"{count} Antwort(en) freigeschaltet.")
 
@@ -1391,6 +1409,8 @@ class PublicQuestionAdmin(ModelAdmin):
     def send_reminders(self, request, queryset):
         from .services.question_service import send_answer_reminder
 
+        if self._questions_paused(request):
+            return
         count = 0
         for q in queryset.filter(status="published", answer_status="none"):
             if send_answer_reminder(q):

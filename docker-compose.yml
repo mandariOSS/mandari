@@ -60,6 +60,8 @@ x-app-environment: &app-environment
   INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
   # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus
   INSIGHT_SUBSCRIPTIONS_ENABLED: ${INSIGHT_SUBSCRIPTIONS_ENABLED:-false}
+  # Ratsfragen im Bürgerportal (siehe .env.example), Standard aus (pausiert)
+  INSIGHT_QUESTIONS_ENABLED: ${INSIGHT_QUESTIONS_ENABLED:-false}
   # Aufträge, Ereignisse und Worker (siehe .env.example und DEPLOYMENT.md, „Worker“)
   TASKS_BACKEND: ${TASKS_BACKEND:-immediate}
   TASKS_MAX_TASKS_PER_PROCESS: ${TASKS_MAX_TASKS_PER_PROCESS:-1000}
