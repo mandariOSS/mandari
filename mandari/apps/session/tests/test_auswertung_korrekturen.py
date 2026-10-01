@@ -648,7 +648,8 @@ def test_leitstelle_zeigt_verstrichene_pruefungsfrist_als_ueberfaellig(kasse: Ka
 def test_api_uebersicht_nennt_oparl_erst_nach_freischaltung(kasse: Kasse, pfad: str) -> None:
     from apps.session.services import oparl_access
 
-    mitglied = client(konto(kasse.tenant, "mitglied", "view_dashboard", "view_meetings"))
+    # Vor der Freischaltung liest die Schnittstelle nur, wer „API-Zugang“ hat (#723)
+    mitglied = client(konto(kasse.tenant, "mitglied", "view_dashboard", "view_meetings", "access_api"))
     assert mitglied.get(pfad.format(slug=kasse.tenant.slug)).json()["oparl"] is None
 
     oparl_access.release(kasse.tenant)
