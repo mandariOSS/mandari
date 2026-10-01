@@ -97,7 +97,10 @@ def tenant_root(request: HttpRequest, tenant_slug: str) -> dict[str, Any]:
         "name": f"mandari Session-API – {tenant.name}",
         "version": "1",
         "tenant": tenant.slug,
-        "oparl": base(reverse("session:oparl_system", kwargs={"tenant_slug": tenant.slug})),
+        # Die OParl-Schnittstelle antwortet erst nach der Freischaltung (Issue #319) – vorher kein Link
+        "oparl": base(reverse("session:oparl_system", kwargs={"tenant_slug": tenant.slug}))
+        if tenant.oparl_public
+        else None,
         "meetings": base(reverse("session_api_v1:meetings", kwargs={"tenant_slug": tenant.slug})),
         "papers": base(reverse("session_api_v1:papers", kwargs={"tenant_slug": tenant.slug})),
         "applications": base(reverse("session_api_v1:applications", kwargs={"tenant_slug": tenant.slug})),

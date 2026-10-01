@@ -19,6 +19,7 @@ from .agenda import (
 )
 from .allowances import (
     AllowanceApproveView,
+    AllowanceCancelView,
     AllowanceCsvExportView,
     AllowanceDebtorSaveView,
     AllowanceGenerateView,
@@ -113,6 +114,7 @@ from .monthly_allowances import (
     MonthlyApproveView,
     MonthlyAssignmentDeleteView,
     MonthlyAssignmentSaveView,
+    MonthlyCancelView,
     MonthlyCsvExportView,
     MonthlyGenerateView,
     MonthlyRateDeleteView,
@@ -243,6 +245,7 @@ __all__ = [
     "MonthlyApproveView",
     "MonthlyAssignmentDeleteView",
     "MonthlyAssignmentSaveView",
+    "MonthlyCancelView",
     "MonthlyCsvExportView",
     "MonthlyGenerateView",
     "MonthlyRateDeleteView",
@@ -271,6 +274,7 @@ __all__ = [
     "YearPlanPdfView",
     "AgendaItemCreateView",
     "AllowanceApproveView",
+    "AllowanceCancelView",
     "AllowanceCsvExportView",
     "AllowanceDebtorSaveView",
     "AllowanceGenerateView",

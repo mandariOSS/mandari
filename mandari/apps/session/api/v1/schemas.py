@@ -179,7 +179,10 @@ class TenantRoot(Schema):
     name: str
     version: str
     tenant: str
-    oparl: str = Field(description="OParl-1.1-System-Endpunkt (öffentlich, anonym)")
+    oparl: str | None = Field(
+        description="OParl-1.1-System-Endpunkt (öffentlich, anonym); null, solange die Schnittstelle nicht "
+        "freigeschaltet ist"
+    )
     meetings: str
     papers: str
     applications: str

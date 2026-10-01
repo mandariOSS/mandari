@@ -96,7 +96,10 @@ class APIRootView(OParlMixin, View):
             {
                 "name": f"Session API - {tenant.name}",
                 "version": "1.0",
-                "oparl": build_url(request, "session:oparl_system", tenant_slug=tenant_slug),
+                # Die OParl-Schnittstelle antwortet erst nach der Freischaltung (Issue #319) – vorher kein Link
+                "oparl": build_url(request, "session:oparl_system", tenant_slug=tenant_slug)
+                if tenant.oparl_public
+                else None,
                 # Session-API v1 (django-ninja, OpenAPI) – Nachfolger der Pfade unter "session"
                 "v1": build_url(request, "session_api_v1:tenant_root", tenant_slug=tenant_slug),
                 "openapi": build_url(request, "session_api_v1:openapi-json"),

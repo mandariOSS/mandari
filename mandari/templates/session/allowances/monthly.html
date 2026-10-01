@@ -44,8 +44,8 @@
         </div>
         <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
             {% for rate in rates %}
-            <div class="px-6 py-3 flex items-center justify-between gap-3 flex-wrap {% if not rate.is_active %}opacity-50{% endif %}">
-                <div class="min-w-0">
+            <div class="px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
+                <div class="min-w-0 {% if not rate.is_active %}opacity-50{% endif %}">
                     <p class="text-sm font-medium text-gray-900 dark:text-white">
                         {{ rate.name }} — {{ rate.amount }} €/Monat
                         {% if not rate.is_active %}<span class="text-xs text-gray-400">(inaktiv)</span>{% endif %}
@@ -60,11 +60,28 @@
                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                     </button>
                 </form>
+                <details class="w-full">
+                    <summary class="cursor-pointer text-xs text-primary-600 dark:text-primary-400">Bearbeiten (Betrag anpassen, deaktivieren)</summary>
+                    <form method="post" action="{% url 'session:monthly_rate_save' tenant_slug=tenant_slug %}" class="mt-2 flex flex-wrap items-end gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="rate_id" value="{{ rate.id }}">
+                        <input type="text" name="name" value="{{ rate.name }}" required maxlength="200" aria-label="Bezeichnung"
+                               class="flex-1 min-w-[200px] px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        <input type="text" name="amount" value="{{ rate.amount }}" required inputmode="decimal" aria-label="Betrag €/Monat"
+                               class="w-28 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        <input type="text" name="legal_basis" value="{{ rate.legal_basis }}" maxlength="200" aria-label="Rechtsgrundlage"
+                               class="min-w-[180px] px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300">
+                            <input type="checkbox" name="is_active" value="1" {% if rate.is_active %}checked{% endif %}> Aktiv
+                        </label>
+                        <c-ui.button type="submit" size="sm" variant="secondary" icon="save">Speichern</c-ui.button>
+                    </form>
+                </details>
             </div>
             {% empty %}
             <p class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                Noch keine Pauschalen — lege z. B. „Aufwandsentschädigung (Teilpauschale)" und
-                „Zulage Fraktionsvorsitz" mit den Sätzen eurer Hauptsatzung an.
+                Noch keine Pauschalen — legen Sie z. B. „Aufwandsentschädigung (Teilpauschale)“ und
+                „Zulage Fraktionsvorsitz“ mit den Sätzen Ihrer Hauptsatzung an.
             </p>
             {% endfor %}
         </div>
@@ -222,6 +239,7 @@
                         <th class="px-4 py-2 text-right">Betrag</th>
                         <th class="px-4 py-2 text-left">Status</th>
                         <th class="px-4 py-2 text-left">Export</th>
+                        <th class="px-4 py-2"><span class="sr-only">Aktion</span></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
@@ -240,9 +258,20 @@
                             </span>
                         </td>
                         <td class="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">{{ allowance.export_reference|default:"–" }}</td>
+                        <td class="px-4 py-2 text-right">
+                            {% if allowance.status in open_statuses and not allowance.export_reference %}
+                            <form method="post" action="{% url 'session:monthly_cancel' tenant_slug=tenant_slug %}" data-confirm="Posten stornieren? Er wird nicht ausgezahlt.">
+                                {% csrf_token %}
+                                <input type="hidden" name="allowance_id" value="{{ allowance.id }}">
+                                <input type="hidden" name="year" value="{{ period.year }}">
+                                <input type="hidden" name="month" value="{{ period.month }}">
+                                <button type="submit" class="text-xs text-gray-500 hover:text-red-600 dark:text-gray-400">Stornieren</button>
+                            </form>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <tr><td colspan="6" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                         Noch keine Posten für {{ period|date:"F Y" }} — Monatslauf erzeugen.
                     </td></tr>
                     {% endfor %}

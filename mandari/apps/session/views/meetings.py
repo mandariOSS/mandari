@@ -201,9 +201,18 @@ class MeetingListView(SessionViewMixin, ListView):
         # Perioden-Filter (Issue #39)
         term_id = self.request.GET.get("term")
         if term_id:
-            # Ungültige Kennung: kein Treffer statt Serverfehler
+            from ..models import SessionLegislativeTerm
+            from .terms import meeting_term_filter
+
+            # Ungültige oder fremde Kennung: kein Treffer statt Serverfehler
             term_uuid = uuid_param(term_id)
-            qs = qs.filter(legislative_term_id=term_uuid) if term_uuid else qs.none()
+            term = (
+                SessionLegislativeTerm.objects.filter(tenant=self.session_tenant, pk=term_uuid).first()
+                if term_uuid
+                else None
+            )
+            # Sitzungen ohne zugeordnete Wahlperiode zählen über ihr Datum (wie im Archiv)
+            qs = qs.filter(meeting_term_filter(term)) if term else qs.none()
 
         # Filter by date range (ungültige Datumsangaben werden ignoriert)
         date_from = date_param(self.request.GET.get("from"))
@@ -362,14 +371,7 @@ class MeetingCreateView(MeetingFormMixin, SessionViewMixin, CreateView):
             return self.form_invalid(form)
         form.instance.tenant = self.session_tenant
         form.instance.created_by = self.session_user
-
-        # Wahlperiode automatisch aus dem Sitzungsdatum ableiten (Issue #39)
-        if form.instance.legislative_term_id is None and form.instance.start:
-            from ..models import SessionLegislativeTerm
-
-            form.instance.legislative_term = SessionLegislativeTerm.for_date(
-                self.session_tenant, form.instance.start.date()
-            )
+        # Die Wahlperiode leitet SessionMeeting.save() aus dem Sitzungsdatum ab (Issue #39) – für jeden Anlageweg
 
         messages.success(self.request, "Sitzung wurde erstellt.")
         _format_warnings(self.request, form)

@@ -1730,6 +1730,18 @@ class SessionMeeting(EncryptionMixin, models.Model):
     def __str__(self):
         return f"{self.organization.name}: {self.name}"
 
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Neue Sitzungen ohne Wahlperiode bekommen sie aus dem Sitzungsdatum (Issue #39).
+
+        Hier statt im Anlageformular, damit jeder Anlageweg sie setzt – Serienplanung, Demo- und Lastdaten,
+        Schnittstellen. Archiv, Sitzungsliste und Suche zählen Sitzungen über diese Zuordnung.
+        """
+        if self._state.adding and self.legislative_term_id is None and self.tenant_id and hasattr(self.start, "date"):
+            start = timezone.localtime(self.start) if timezone.is_aware(self.start) else self.start
+            self.legislative_term = SessionLegislativeTerm.for_date(self.tenant, start.date())
+        super().save(*args, **kwargs)
+
     def delete(self, *args: Any, **kwargs: Any) -> Any:
         """Sitzungen mit genehmigter Niederschrift bleiben erhalten (Issue #318)."""
         from apps.session.services import protocol_lock

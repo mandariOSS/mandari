@@ -508,6 +508,11 @@ urlpatterns = [
         name="allowance_approve",
     ),
     path(
+        "<slug:tenant_slug>/allowances/<uuid:allowance_id>/cancel/",
+        views.AllowanceCancelView.as_view(),
+        name="allowance_cancel",
+    ),
+    path(
         "<slug:tenant_slug>/allowances/export.csv",
         views.AllowanceCsvExportView.as_view(),
         name="allowance_export_csv",
@@ -682,6 +687,11 @@ urlpatterns = [
         "<slug:tenant_slug>/allowances/monthly/approve/",
         views.MonthlyApproveView.as_view(),
         name="monthly_approve",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/monthly/cancel/",
+        views.MonthlyCancelView.as_view(),
+        name="monthly_cancel",
     ),
     path(
         "<slug:tenant_slug>/allowances/monthly/export/csv/",

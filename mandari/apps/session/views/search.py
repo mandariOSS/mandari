@@ -26,6 +26,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import joint_meeting_service
+from .terms import meeting_term_filter, term_date_filter
 
 RESULT_LIMIT = 25
 
@@ -72,7 +73,7 @@ class SessionSearchView(SessionViewMixin, TemplateView):
         if filters["year"]:
             qs = qs.filter(start__year=filters["year"])
         if filters["term"]:
-            qs = qs.filter(legislative_term=filters["term"])
+            qs = qs.filter(meeting_term_filter(filters["term"]))
         return qs
 
     def get_context_data(self, **kwargs):
@@ -105,6 +106,9 @@ class SessionSearchView(SessionViewMixin, TemplateView):
                     papers = papers.filter(
                         Q(date__year=filters["year"]) | Q(date__isnull=True, created_at__year=filters["year"])
                     )
+                if filters["term"]:
+                    # Wie die Vorlagenliste (?term=): Vorlagendatum im Zeitraum der Wahlperiode
+                    papers = papers.filter(term_date_filter(filters["term"]))
                 results["papers"] = list(
                     papers.select_related("main_organization").order_by("-created_at")[:RESULT_LIMIT]
                 )
@@ -159,6 +163,9 @@ class SessionSearchView(SessionViewMixin, TemplateView):
                     ).distinct()
                 if filters["year"]:
                     files = files.filter(created_at__year=filters["year"])
+                if filters["term"]:
+                    # Wie der Jahresfilter: Zeitpunkt des Hochladens
+                    files = files.filter(term_date_filter(filters["term"], "created_at__date"))
                 results["files"] = list(
                     files.select_related("paper", "meeting", "agenda_item__meeting", "application").order_by(
                         "-created_at"
@@ -170,8 +177,13 @@ class SessionSearchView(SessionViewMixin, TemplateView):
                 applications = SessionApplication.objects.filter(tenant=self.session_tenant).filter(
                     Q(title__icontains=query) | Q(reference__icontains=query) | Q(submitter_name__icontains=query)
                 )
+                if filters["organization"]:
+                    # Gremienfilter: das Zielgremium des Antrags
+                    applications = applications.filter(target_organization=filters["organization"])
                 if filters["year"]:
                     applications = applications.filter(submitted_at__year=filters["year"])
+                if filters["term"]:
+                    applications = applications.filter(term_date_filter(filters["term"], "submitted_at__date"))
                 results["applications"] = list(applications.order_by("-submitted_at")[:RESULT_LIMIT])
 
             total = sum(len(v) for v in results.values())

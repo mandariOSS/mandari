@@ -14,7 +14,7 @@ from apps.common import csv_safety
 from .. import audit
 from ..models import SessionOrganization
 from ..permissions import SessionViewMixin
-from ..services import report_service
+from ..services import allowance_service, report_service
 
 
 def _parse_year(request):
@@ -94,9 +94,12 @@ class ReportCsvExportView(SessionViewMixin, View):
             response["Content-Disposition"] = f'attachment; filename="sitzungsgeld-{year}.csv"'
             writer.writerow(["Person", "Sitzungsgelder (Anzahl)", "Pauschalen", "Summe", "Davon ausgezahlt"])
             rows, totals = report_service.allowance_stats(tenant, year)
-            for row in rows:
-                writer.writerow([row["name"], row["count"], row["monthly"], row["amount"], row["paid"]])
-            writer.writerow(["Gesamt", totals["count"], totals["monthly"], totals["amount"], totals["paid"]])
+            # Beträge wie in den übrigen Sitzungsgeld-Exporten: zwei Nachkommastellen, Dezimalkomma
+            amount = allowance_service.csv_amount
+            for row in [*rows, {**totals, "name": "Gesamt"}]:
+                writer.writerow(
+                    [row["name"], row["count"], amount(row["monthly"]), amount(row["amount"]), amount(row["paid"])]
+                )
         else:
             export_type = "attendance"
             organization = _parse_organization(self, request)
