@@ -26,7 +26,9 @@ alle 5 s die Heartbeat-Datei (Healthcheck des Containers) und seinen Eintrag in 
 laufenden Batch fest, die Zustellung samt Cursor; der Runner nimmt nichts Neues mehr an und lässt
 laufende Aufträge zu Ende laufen; alle geben ihre Leases frei. Was nach ``shutdown_timeout`` noch
 läuft, gibt der Runner sofort frei (wie nach einem zweiten Signal), ohne den Versuch zu zählen; ein
-anderer Runner holt diese Aufträge gleich wieder.
+anderer Runner holt diese Aufträge gleich wieder. Danach haben alle Fäden zusammen noch
+``force_grace`` Zeit; so bleibt das Beenden auch bei mehreren hängenden Rollen unter der Frist bis
+SIGKILL, und Abmeldung und Lease-Freigabe des Hauptfadens finden noch statt.
 
 **Neustart:** Will der Runner neu starten (Zahl der Aufträge, Speichergrenze, Zeitgrenze), nimmt er
 nichts Neues mehr an und wartet auf seine laufenden Aufträge. Die übrigen Rollen arbeiten
@@ -96,7 +98,8 @@ STALE_AFTER: Final = 300.0
 #: So lange warten laufende Aufträge beim Beenden, bevor sie freigegeben werden (Sekunden). Unter
 #: der Frist von Docker bzw. Kubernetes bis SIGKILL (``stop_grace_period``, 30 s).
 SHUTDOWN_TIMEOUT: Final = 20.0
-#: Danach noch so lange auf die Fäden warten (Sekunden)
+#: Danach noch so lange auf alle Fäden zusammen warten (Sekunden). ``SHUTDOWN_TIMEOUT + FORCE_GRACE``
+#: bleibt unter der Frist bis SIGKILL, auch wenn mehrere Rollen hängen.
 FORCE_GRACE: Final = 5.0
 #: Verbindungen über das Budget hinaus (Kurzzeitiges, Aufräumen)
 POOL_RESERVE: Final = 2
@@ -199,6 +202,7 @@ class Worker:
         metrics_port: int | None = None,
         stale_after: float = STALE_AFTER,
         shutdown_timeout: float = SHUTDOWN_TIMEOUT,
+        force_grace: float = FORCE_GRACE,
         heartbeat_interval: float = HEARTBEAT_INTERVAL,
         supervise_interval: float = SUPERVISE_INTERVAL,
         sequencer_interval: float = SEQUENCER_INTERVAL,
@@ -226,6 +230,7 @@ class Worker:
         self.metrics_port = metrics_port
         self.stale_after = stale_after
         self.shutdown_timeout = shutdown_timeout
+        self.force_grace = force_grace
         self.heartbeat_interval = heartbeat_interval
         self.supervise_interval = supervise_interval
         self._clock = clock
@@ -262,9 +267,15 @@ class Worker:
         return zustaende
 
     def health(self) -> tuple[bool, dict[str, Any]]:
-        """Für ``/health``: gesund, wenn jede Rolle arbeitet; nennt nur Rollen und ihren Zustand."""
+        """Für ``/health``: gesund, wenn jede Rolle arbeitet; nennt nur Rollen und ihren Zustand.
+
+        Dieselbe Regel wie für Heartbeat-Datei und Anmeldung (``_lebenszeichen``): Ohne Rollenfaden
+        (etwa ``dispatch`` ohne passendes Abonnement) hängt nichts, ``/health`` meldet dann wie die
+        Datei „gesund“. Sonst startete eine Liveness-Probe den Worker endlos neu, während der
+        Healthcheck über die Datei ihn für gesund hält.
+        """
         zustaende = self.role_states()
-        gesund = bool(zustaende) and all(zustand.up for zustand in zustaende.values())
+        gesund = all(zustand.up for zustand in zustaende.values())
         return gesund, {"roles": {name: {"ok": zustand.up} for name, zustand in zustaende.items()}}
 
     # -- Lebenszyklus -------------------------------------------------------------------------
@@ -405,10 +416,13 @@ class Worker:
             )
             force.set()
             self.runner.wake()
+        # Eine gemeinsame Restfrist für alle Fäden, nicht je Faden: Hängen mehrere Rollen, bliebe das
+        # Beenden sonst nicht unter der Frist bis SIGKILL.
+        ende = max(frist, self._clock()) + self.force_grace
         for rolle in self._rollen:
             if rolle.faden is None:
                 continue
-            rolle.faden.join(FORCE_GRACE)
+            rolle.faden.join(max(0.0, ende - self._clock()))
             if rolle.faden.is_alive():
                 logger.error("Worker: Rolle %s endet nicht; der Prozess wird trotzdem beendet", rolle.name)
 

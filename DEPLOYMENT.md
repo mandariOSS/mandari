@@ -348,7 +348,7 @@ python manage.py events_worker --heartbeat-file /tmp/mandari-worker.heartbeat
 
 | Option | Bedeutung |
 |---|---|
-| `--roles` | `sequencer`, `dispatch`, `tasks`, `scheduler` (Standard: alle; ohne PostgreSQL entfällt `sequencer`) |
+| `--roles` | `sequencer`, `dispatch`, `tasks`, `scheduler` (Standard: alle; ohne PostgreSQL entfällt `sequencer`). Hätte eine ausdrücklich gewählte Rolle nichts zu tun (`dispatch` ohne passendes Abonnement, `tasks` ohne Warteschlange mit Parallelität), bricht der Start mit Fehler ab |
 | `--queues` | Warteschlangen für Aufträge und Abonnements (Standard: alle) |
 | `--subscription`, `--concurrency`, `--max-tasks`, `--max-memory-mb` | wie bei `events_dispatch` und `events_tasks` |
 | `--heartbeat-file` | wird alle 5 s erneuert, solange **jede** Rolle arbeitet; Healthcheck: Änderungszeit jünger als 60 s |
@@ -360,8 +360,10 @@ python manage.py events_worker --heartbeat-file /tmp/mandari-worker.heartbeat
 - **Beenden (SIGTERM/SIGINT):** Sequenzierer und Zustellung schreiben ihren laufenden Batch fest,
   die Zustellung samt Cursor; laufende Aufträge dürfen bis `--shutdown-timeout` zu Ende laufen,
   danach werden sie freigegeben und von einem anderen Runner erneut ausgeführt; alle Leases werden
-  freigegeben. Ein zweites Signal gibt laufende Aufträge sofort frei. Die Frist bis SIGKILL
-  (`stop_grace_period` bzw. `terminationGracePeriodSeconds`) sollte darüber liegen, etwa 30 s.
+  freigegeben. Ein zweites Signal gibt laufende Aufträge sofort frei. Danach haben alle Rollen
+  zusammen noch 5 s, um zu enden; der Worker endet also spätestens nach `--shutdown-timeout` + 5 s,
+  auch wenn mehrere Rollen hängen. Die Frist bis SIGKILL (`stop_grace_period` bzw.
+  `terminationGracePeriodSeconds`) sollte darüber liegen, etwa 30 s.
 - **Neustart:** Nach `TASKS_MAX_TASKS_PER_PROCESS` Aufträgen, oberhalb von `TASKS_MAX_MEMORY_MB`
   oder nach einer Zeitüberschreitung nimmt der Runner nichts Neues mehr an und wartet auf seine
   laufenden Aufträge; die anderen Rollen arbeiten währenddessen weiter. Danach ersetzt sich der

@@ -137,6 +137,9 @@ class Command(BaseCommand):
         if fremd:
             raise CommandError(f"Unbekannte Warteschlangen: {', '.join(fremd)} (bekannt: {', '.join(sorted(bekannt))})")
         auswahl = self._abonnements(abonnements, options["subscriptions"], gewaehlt, rollen)
+        if explizit and ROLE_DISPATCH in rollen and not auswahl:
+            # Wie bei tasks ohne Parallelität: Die Rolle hätte keinen Faden, der Worker liefe ohne Arbeit
+            raise CommandError("Rolle dispatch: kein registriertes Abonnement passt zu --queues bzw. --subscription.")
 
         runner: TaskRunner | None = None
         if ROLE_TASKS in rollen:

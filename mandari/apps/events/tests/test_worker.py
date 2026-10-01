@@ -266,6 +266,51 @@ def test_beenden_gibt_laufende_auftraege_nach_der_frist_frei() -> None:
     assert 0.2 <= time.monotonic() - beginn < 5.0
 
 
+class Klemmt:
+    """Ersatzrolle, die weder auf ``stop`` noch auf ``force`` reagiert, bis ``los`` gesetzt ist."""
+
+    def __init__(self, los: threading.Event) -> None:
+        self.los = los
+        self.on_beat: Callable[[], None] | None = None
+
+    def wake(self) -> None:
+        pass
+
+    def run(self, stop: threading.Event, *args: Any, **kwargs: Any) -> StopReason:
+        self.los.wait(30)
+        return StopReason.STOP
+
+
+@pytest.mark.django_db
+def test_beenden_wartet_auf_haengende_rollen_nur_eine_gemeinsame_restfrist() -> None:
+    """Drei hängende Rollen: nach der Frist für Aufträge zusammen nur noch ``force_grace``, nicht je Faden."""
+    los = threading.Event()
+    worker = _worker(
+        sequencer=Klemmt(los),
+        runner=Klemmt(los),
+        scheduler=Klemmt(los),
+        shutdown_timeout=0.2,
+        force_grace=1.0,
+    )
+    stop = threading.Event()
+    stop.set()
+    beginn = time.monotonic()
+    try:
+        with mock.patch.object(presence, "withdraw") as abgemeldet:
+            assert worker.run(stop) == ExitReason.STOP
+        dauer = time.monotonic() - beginn
+    finally:
+        los.set()
+    assert 1.2 <= dauer < 2.5, f"gemeinsame Restfrist statt 1 s je Faden (gebraucht: {dauer:.2f} s)"
+    abgemeldet.assert_called_once_with(worker.holder)
+
+
+def test_ohne_rollenfaden_meldet_health_wie_die_heartbeat_datei_gesund() -> None:
+    """Ohne Rollenfaden erneuert der Worker die Datei weiter; ``/health`` darf dann nicht 503 melden."""
+    worker = _worker(roles=["dispatch"])
+    assert worker.health() == (True, {"roles": {}})
+
+
 @pytest.mark.django_db
 def test_zweites_signal_gibt_sofort_frei() -> None:
     runner = Runner(zaeh=True)
@@ -405,6 +450,7 @@ def test_anmeldung_erneuern_abmelden_und_aufraeumen() -> None:
         (["--roles", "tasks", "--queues", "ocr", "--concurrency", "ocr=0"], "keine Warteschlange"),
         (["--roles", "scheduler", "--subscription", "test.x"], "--subscription gilt nur für die Rolle dispatch"),
         (["--roles", "dispatch", "--subscription", "test.x"], "Nicht registriert: test.x"),
+        (["--roles", "dispatch"], "Rolle dispatch: kein registriertes Abonnement"),
         (["--max-tasks", "-1"], "--max-tasks darf nicht negativ sein"),
     ],
 )
