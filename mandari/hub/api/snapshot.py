@@ -220,7 +220,7 @@ def snapshot_response(request: HttpRequest, snapshot: Snapshot) -> HttpResponseB
     """
     feed = snapshot.feed
     # Vor dem Lesen: Stand des Feeds festhalten. Alles, was sich ab jetzt ändert, steht dahinter.
-    cursor = changes.encode_cursor(feed.body_id, changes.head(feed.body_id), changes.today())
+    cursor = changes.encode_cursor(feed.body_id, changes.head(feed.body_id), changes.today(), feed.epoch)
     created = datetime.now(UTC)
 
     if request.method == "HEAD":

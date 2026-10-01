@@ -208,8 +208,25 @@ was sich seit dem letzten Abruf geändert hat – einschließlich Löschungen un
 `modified_since` bleibt erhalten.
 
 **Einschalten:** Der Feed ist je Installation abgeschaltet, bis die Erzeuger der Ereignisse laufen
-(`OPARL_CHANGES_ENABLED`, Abschnitt „Betrieb“). Eingeschaltet nennt jeder Body die Adresse seines
-Feeds in `mandari:changes` und die seines Snapshots in `mandari:snapshot`.
+(`OPARL_CHANGES_ENABLED`, Abschnitt „Betrieb“). Eingeschaltet nennt jeder Body einer gelisteten
+Kommune die Adresse seines Feeds in `mandari:changes` und die seines Snapshots in `mandari:snapshot`.
+
+**Welche Kommunen:** Feed und Snapshot gibt es nur für Kommunen, die das Bürgerportal veröffentlicht
+und in `/oparl/v1/bodies` listet. Es gelten dieselben Stände wie für die Seiten des Bürgerportals:
+
+| Stand der Kommune | Feed und Snapshot | Cursor danach |
+|---|---|---|
+| veröffentlicht, gelistet (auch „Archiv“) | werden geliefert | – |
+| nicht gelistet (etwa die Demo-Kommune) | `404` wie bei ausgeschaltetem Feed; der Body nennt die Adressen nicht | bleibt gültig, wenn sie wieder gelistet wird |
+| vorübergehend abgeschaltet | `503` mit `Retry-After` | bleibt gültig: Es wird nichts gelöscht, Änderungen aus der Zwischenzeit folgen hinter dem Cursor |
+| dauerhaft zurückgenommen | `410` (`application/problem+json`, Typ `…/kommune-zurueckgenommen`, ohne Snapshot): ihre Einträge gelten als gelöscht | gilt nicht mehr: nach der Wiederveröffentlichung `410` mit Verweis auf den Snapshot |
+
+Rücknahme und Wiederherstellung einer ganzen Kommune ändern den Bestand, ohne dass der Feed sie
+nachzeichnen kann. Wer auf das `410` hin seine Kopie gelöscht hat, bekäme die wiederhergestellten
+Einträge mit seinem alten Cursor nicht zurück; deshalb beginnt danach jeder Abnehmer über den Snapshot
+neu. Das gilt auch, wenn ein Session-Mandant deaktiviert und wieder aktiviert wird. Die Absagen sind
+feste Antworten ohne `ETag`: Sie verraten nichts darüber, ob oder wann sich in der Kommune etwas
+ändert.
 
 ```bash
 curl "https://mandari.de/oparl/v1/body/<uuid>/changes?limit=100"
@@ -299,8 +316,9 @@ Seite zu füllen, rückt der Cursor bis zum zuletzt gelesenen vor. Daran ist nur
 öffentlich gemeldete Ereignisse ohne Adresse geschehen sind.
 
 **HTTP:** wie die übrige Schnittstelle – `ETag` und `304` für unveränderte Seiten, Rate-Limit mit
-`429` und `Retry-After`, `503` mit `Retry-After` bei vorübergehend abgeschalteter Kommune. Die
-Schreibweise mit Schrägstrich am Ende leitet weiter.
+`429` und `Retry-After`, `503` mit `Retry-After` bei vorübergehend abgeschalteter Kommune, `410` bei
+dauerhaft zurückgenommener (Abschnitt „Welche Kommunen“). Die Schreibweise mit Schrägstrich am Ende
+leitet weiter.
 
 **Einschränkungen:**
 
@@ -377,8 +395,8 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `mandari:originalId` | alle | Original-URL des Objekts im kommunalen Quellsystem |
 | `mandari:slug`, `mandari:displayName` | Body | URL-Slug / Anzeigename der Kommune |
 | `mandari:locationList` | Body | abgekündigt: URL der Orte-Liste, jetzt im Standardfeld `locationList` |
-| `mandari:changes` | Body | Adresse des Änderungsfeeds der Kommune (nur wenn eingeschaltet) |
-| `mandari:snapshot` | Body | Adresse des Snapshots der Kommune (nur wenn der Änderungsfeed eingeschaltet ist) |
+| `mandari:changes` | Body | Adresse des Änderungsfeeds der Kommune (nur wenn eingeschaltet und die Kommune gelistet ist) |
+| `mandari:snapshot` | Body | Adresse des Snapshots der Kommune (nur wenn der Änderungsfeed eingeschaltet und die Kommune gelistet ist) |
 | `mandari:originalOrganizationType` | Organization | Angabe der Quelle, wenn sie keiner der Werte der Spezifikation ist |
 | `mandari:summary` | Paper | KI-generierte Zusammenfassung (falls vorhanden) |
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |

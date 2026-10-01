@@ -47,6 +47,13 @@ nach der Ausgabe eines gültigen Cursors geschah, ist dann noch vorhanden. Ob Ze
 hält das Aufräumen ausdrücklich fest (``apps.events.pruning``); aus Lücken in den Folgenummern lässt es
 sich nicht schließen, denn der Sequenzierer darf Nummern verwerfen.
 
+**Abschnitte des Bestands:** Ändert sich der Bestand einer Kommune am Journal vorbei – das Bürgerportal
+nimmt sie dauerhaft zurück und stellt sie später wieder her –, kann der Feed das nicht nachzeichnen.
+Die Ausgabe beginnt dann einen neuen Abschnitt (``Feed.epoch``); er geht in die Verschlüsselung des
+Cursors ein, ein Cursor aus einem früheren Abschnitt ergibt ``410`` mit dem Verweis auf den Snapshot.
+Ob und wann eine Kommune Feed und Snapshot anbietet, legt die Ausgabe fest (beim Aggregator: nur
+veröffentlichte und gelistete Kommunen, ``hub.api.aggregator``).
+
 **Schalter:** ``OPARL_CHANGES_ENABLED`` (Standard aus). Solange die Erzeuger der Ereignisse einer
 Installation nicht laufen, wäre der Feed leer und würde Abnehmern vortäuschen, es habe sich nichts
 geändert.
@@ -127,12 +134,16 @@ class Feed:
     - ``body_id``: kanonische Kennung der Kommune, wie sie die Ereignisse im Journal tragen
     - ``url``: Adresse des Feeds, ``snapshot_url``: Adresse des Snapshots (Einstieg und Wiedereinstieg)
     - ``addresses``: Adressen der Objekte dieser Ausgabe
+    - ``epoch``: Abschnitt des Bestands, für den Cursor gelten. Ändert sich der Bestand am Journal
+      vorbei (Rücknahme einer ganzen Kommune), wechselt die Ausgabe den Abschnitt; Cursor aus einem
+      früheren gelten dann als abgelaufen (``410`` mit Verweis auf den Snapshot). Leer: der erste.
     """
 
     body_id: uuid.UUID
     url: str
     snapshot_url: str
     addresses: Addresses
+    epoch: str = ""
 
 
 # =============================================================================
@@ -189,24 +200,26 @@ def _cipher(secret: str) -> AESSIV:
     return AESSIV(key)
 
 
-def _associated(body_id: uuid.UUID) -> list[bytes]:
-    # Ein Cursor gilt nur für die Kommune, für die er ausgegeben wurde
-    return [b"changes", body_id.bytes]
+def _associated(body_id: uuid.UUID, epoch: str) -> list[bytes]:
+    # Ein Cursor gilt nur für die Kommune und den Abschnitt ihres Bestands, für die er ausgegeben wurde.
+    # Der erste Abschnitt hat keine eigene Angabe: Cursor aus der Zeit vor den Abschnitten gelten weiter.
+    return [b"changes", body_id.bytes, *([epoch.encode("utf-8")] if epoch else [])]
 
 
-def encode_cursor(body_id: uuid.UUID, seq: int, day: date) -> str:
+def encode_cursor(body_id: uuid.UUID, seq: int, day: date, epoch: str = "") -> str:
     """
     Opaker Cursor. Gleiche Eingaben ergeben denselben Cursor (stabile Antworten und ``ETag``); ohne den
     Schlüssel der Installation lässt er weder Folgenummer noch Tag erkennen.
     """
-    token = _cipher(settings.SECRET_KEY).encrypt(_LAYOUT.pack(seq, day.toordinal()), _associated(body_id))
+    token = _cipher(settings.SECRET_KEY).encrypt(_LAYOUT.pack(seq, day.toordinal()), _associated(body_id, epoch))
     return base64.urlsafe_b64encode(token).rstrip(b"=").decode("ascii")
 
 
-def decode_cursor(body_id: uuid.UUID, token: str) -> Cursor:
+def decode_cursor(body_id: uuid.UUID, token: str, epoch: str = "") -> Cursor:
     """
     Cursor lesen. ``BadRequestError``, wenn ``token`` keiner ist; ``CursorExpiredError``, wenn er nicht
-    von dieser Installation für diese Kommune ausgegeben wurde (etwa nach einem Schlüsselwechsel).
+    von dieser Installation für diese Kommune und diesen Abschnitt ihres Bestands (``Feed.epoch``)
+    ausgegeben wurde (etwa nach einem Schlüsselwechsel oder einer Rücknahme der Kommune).
     """
     if not _TOKEN.fullmatch(token):
         raise BadRequestError("Parameter 'after': kein gültiger Cursor. Cursor stammen aus einer Antwort des Feeds.")
@@ -218,7 +231,7 @@ def decode_cursor(body_id: uuid.UUID, token: str) -> Cursor:
         ) from None
     for secret in (settings.SECRET_KEY, *getattr(settings, "SECRET_KEY_FALLBACKS", ())):
         try:
-            seq, ordinal = _LAYOUT.unpack(_cipher(secret).decrypt(raw, _associated(body_id)))
+            seq, ordinal = _LAYOUT.unpack(_cipher(secret).decrypt(raw, _associated(body_id, epoch)))
             return Cursor(seq=seq, day=date.fromordinal(ordinal))
         except (InvalidTag, struct.error, ValueError, OverflowError):
             continue
@@ -337,7 +350,7 @@ def _read(feed: Feed, after: int, limit: int, day: date) -> tuple[list[Objekt], 
                 continue
             operation, reason = _operation(event)
             entry: Objekt = {
-                "cursor": encode_cursor(feed.body_id, event.seq, day),
+                "cursor": encode_cursor(feed.body_id, event.seq, day, feed.epoch),
                 "operation": operation,
                 "type": schema_type(kind),
                 "id": address,
@@ -399,12 +412,35 @@ def expired_response(request: HttpRequest, feed: Feed) -> HttpResponse:
         status=410,
         kind="cursor-abgelaufen",
         detail=(
-            "Der Cursor ist nicht mehr gültig: Er ist älter als die Aufbewahrung des Änderungsfeeds oder stammt "
-            "nicht aus diesem Feed. Bitte den Snapshot abrufen und mit dessen Cursor fortsetzen."
+            "Der Cursor ist nicht mehr gültig: Er ist älter als die Aufbewahrung des Änderungsfeeds, stammt "
+            "nicht aus diesem Feed oder ist älter als eine Rücknahme der Kommune. Bitte den Snapshot abrufen "
+            "und mit dessen Cursor fortsetzen."
         ),
         extensions={"snapshot": feed.snapshot_url},
     )
-    response = json_response(problem.to_dict(instance=request.path), status=410)
+    return _problem_response(request, problem)
+
+
+def withdrawn_response(request: HttpRequest) -> HttpResponse:
+    """
+    ``410 Gone`` für Feed und Snapshot einer Kommune, die ihre Veröffentlichung dauerhaft zurückgenommen
+    hat – ohne Verweis auf den Snapshot, denn den gibt es dann auch nicht. Eine feste Antwort: Sie verrät
+    nichts über das Journal der Kommune.
+    """
+    problem = Problem(
+        status=410,
+        kind="kommune-zurueckgenommen",
+        detail=(
+            "Die Kommune hat die Veröffentlichung dauerhaft zurückgenommen; ihre Einträge gelten als gelöscht. "
+            "Ein vorhandener Cursor gilt nicht mehr. Wird die Kommune wieder veröffentlicht, beginnt der "
+            "Abgleich mit dem Snapshot."
+        ),
+    )
+    return _problem_response(request, problem)
+
+
+def _problem_response(request: HttpRequest, problem: Problem) -> HttpResponse:
+    response = json_response(problem.to_dict(instance=request.path), status=problem.status)
     response["Content-Type"] = "application/problem+json; charset=utf-8"
     response["Cache-Control"] = "no-store"
     return response
@@ -424,7 +460,7 @@ def changes_response(request: HttpRequest, feed: Feed) -> HttpResponse:
     token = request.GET.get("after")
     if token:
         try:
-            cursor = decode_cursor(feed.body_id, token)
+            cursor = decode_cursor(feed.body_id, token, feed.epoch)
         except CursorExpiredError:
             return expired_response(request, feed)
         if (day - cursor.day).days > days or _missing_since(cursor):
@@ -437,7 +473,7 @@ def changes_response(request: HttpRequest, feed: Feed) -> HttpResponse:
         after = 0
 
     entries, last = _read(feed, after, limit, day)
-    position = encode_cursor(feed.body_id, last, day)
+    position = encode_cursor(feed.body_id, last, day, feed.epoch)
     return json_response(
         {
             "data": entries,

@@ -365,6 +365,8 @@ class BestandMapping:
 
     def body(self, body: OParlBody, ctx: RefContext | None = None) -> Objekt:
         raw = body.raw_json or {}
+        # Feed und Snapshot gibt es nur für gelistete Kommunen (``hub.api.aggregator``)
+        offers_feed = self.changes and body.is_listed
         data = clean(
             {
                 "id": self.uris.obj("body", body.id),
@@ -394,8 +396,8 @@ class BestandMapping:
                 "mandari:displayName": body.get_display_name(),
                 # Abgekündigt: dieselbe URL steht im Standardfeld ``locationList``
                 "mandari:locationList": self.uris.list(body.id, "locations"),
-                "mandari:changes": self.uris.changes(body.id) if self.changes else None,
-                "mandari:snapshot": self.uris.snapshot(body.id) if self.changes else None,
+                "mandari:changes": self.uris.changes(body.id) if offers_feed else None,
+                "mandari:snapshot": self.uris.snapshot(body.id) if offers_feed else None,
             }
         )
         # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)

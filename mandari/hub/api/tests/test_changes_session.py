@@ -11,6 +11,7 @@ nicht erkennbar – selbst wenn ein Ereignis es fälschlich als öffentlich meld
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date
 from typing import Any, cast
@@ -128,6 +129,78 @@ def test_nicht_freigeschalteter_mandant_hat_keinen_feed(welt: dict[str, Any]) ->
 
     assert Client().get(PFAD).status_code == 404
     assert Client().get("/session/gibt-es-nicht/api/oparl/body/changes/").status_code == 404
+
+
+# =============================================================================
+# Freischaltung und Veröffentlichungsstand (Issue #707)
+# =============================================================================
+
+SNAPSHOT = "/session/musterstadt/api/oparl/body/snapshot/"
+
+
+def _absagen(stand: str) -> list[tuple[int, bytes, Any]]:
+    """Status, Inhalt (ohne die Nonce einer HTML-Fehlerseite) und Antwort von Feed und Snapshot."""
+    client = Client()
+    antworten = [client.get(PFAD), client.get(PFAD, {"after": stand}), client.get(SNAPSHOT), client.head(SNAPSHOT)]
+    return [(a.status_code, re.sub(rb'nonce="[^"]*"', b"", a.content), a) for a in antworten]
+
+
+@pytest.mark.parametrize("sperre", [{"oparl_public_since": None}, {"is_active": False}])
+def test_ohne_freischaltung_verraten_feed_und_snapshot_nichts(welt: dict[str, Any], sperre: dict[str, Any]) -> None:
+    """
+    Nicht freigeschaltet oder deaktiviert (Issue #319): Feed und Snapshot gibt es nicht, und die Absage
+    bleibt gleich, was im Journal der Kommune auch geschieht.
+    """
+    vorlage = _kennung("paper", welt["paper"].pk)
+    ereignis("ris.paper.released", welt["body"], vorlage, mandant=MANDANT)
+    stand = _feed()["cursor"]
+    SessionTenant.objects.filter(pk=welt["tenant"].pk).update(**sperre)
+
+    vorher = _absagen(stand)
+    ereignis("ris.paper.changed", welt["body"], vorlage, mandant=MANDANT)
+    nachher = _absagen(stand)
+
+    for (status_a, inhalt_a, _), (status_b, inhalt_b, antwort) in zip(vorher, nachher, strict=True):
+        assert status_a == status_b == 404
+        assert inhalt_b == inhalt_a
+        assert "ETag" not in antwort and "Snapshot-Cursor" not in antwort
+    assert nachher[0][1] == nachher[1][1]
+
+
+def test_nach_erneuter_freischaltung_gilt_der_cursor_weiter(welt: dict[str, Any]) -> None:
+    """
+    Die Freischaltung ändert weder Daten noch ihre Sichtbarkeit; was in der Zwischenzeit geschah, steht
+    im Journal. Der Cursor gilt deshalb weiter (innerhalb der Aufbewahrung).
+    """
+    stand = _feed()["cursor"]
+    SessionTenant.objects.filter(pk=welt["tenant"].pk).update(oparl_public_since=None)
+    ereignis("ris.paper.released", welt["body"], _kennung("paper", welt["paper"].pk), mandant=MANDANT)
+    SessionTenant.objects.filter(pk=welt["tenant"].pk).update(oparl_public_since=timezone.now())
+
+    assert [eintrag["id"] for eintrag in _feed(after=stand)["data"]] == [_adresse("paper", welt["paper"].pk)]
+
+
+@pytest.mark.parametrize(
+    "ende",
+    [SessionTenant.PORTAL_END_PAUSED, SessionTenant.PORTAL_END_ARCHIVED, SessionTenant.PORTAL_END_WITHDRAWN],
+)
+def test_ende_der_veroeffentlichung_im_buergerportal_beruehrt_die_eigene_schnittstelle_nicht(
+    welt: dict[str, Any], ende: str
+) -> None:
+    """
+    Wie die Einstellungen zusagen (Issue #618): Das Ende der Veröffentlichung im Bürgerportal betrifft
+    dessen Spiegel, nicht die eigene Schnittstelle des Mandanten – auch nicht ihren Feed und ihre Cursor.
+    """
+    from apps.session.services import portal_publication
+
+    ereignis("ris.paper.released", welt["body"], _kennung("paper", welt["paper"].pk), mandant=MANDANT)
+    stand = _feed()["cursor"]
+
+    portal_publication.end_publication(SessionTenant.objects.get(pk=welt["tenant"].pk), ende)
+    ereignis("ris.paper.changed", welt["body"], _kennung("paper", welt["paper"].pk), mandant=MANDANT)
+
+    assert [eintrag["id"] for eintrag in _feed(after=stand)["data"]] == [_adresse("paper", welt["paper"].pk)]
+    assert Client().head(SNAPSHOT).status_code == 200
 
 
 # =============================================================================
