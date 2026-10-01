@@ -763,7 +763,7 @@ class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
     pk_url_kwarg = "paper_id"
     permission_required = "edit_papers"
 
-    #: Inhaltliche Felder – ab der Freigabe festgeschrieben (paper_version_service.CONTENT_LOCKED_STATUSES)
+    #: Inhaltliche Felder – ab der Vorlage zur Freigabe festgeschrieben (paper_version_service.CONTENT_LOCKED_STATUSES)
     CONTENT_FIELDS = (
         "name",
         "paper_type",
@@ -807,7 +807,7 @@ class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
         return self._prepare_numbering(form)
 
     def form_valid(self, form):
-        # Nach der Freigabe: Inhalt festgeschrieben – Änderungen nur als Neufassung oder nach Rücknahme
+        # Ab der Vorlage zur Freigabe: Inhalt festgeschrieben – Änderungen im Entwurf, als Neufassung oder nach Rücknahme
         if self.content_locked and set(form.changed_data) & set(self.CONTENT_FIELDS):
             form.add_error(None, paper_version_service.CONTENT_LOCKED_MESSAGE)
             return self.form_invalid(form)

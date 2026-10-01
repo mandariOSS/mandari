@@ -174,15 +174,18 @@ class TestVorlagenfreigabe:
         autorin = _nutzer(tenant, "autorin", "approve_papers")
         bearbeiter = _nutzer(tenant, "bearbeiter", "approve_papers", "edit_papers")
         dritte = _nutzer(tenant, "dritte", "approve_papers")
-        paper = _vorlage(tenant, autorin)
+        # Inhaltlich bearbeitet wird im Entwurf – in der Prüfung ist der Inhalt festgeschrieben
+        paper = _vorlage(tenant, autorin, status="draft")
 
         response = _client(bearbeiter).post(
             f"/session/{tenant.slug}/papers/{paper.id}/edit/",
-            {"name": "Vorlage Spielplatz (neu)", "paper_type": "proposal", "status": "review", "main_text": "neu"},
+            {"name": "Vorlage Spielplatz (neu)", "paper_type": "proposal", "status": "draft", "main_text": "neu"},
         )
         assert response.status_code == 302
         paper.refresh_from_db()
         assert paper.content_edited_by == bearbeiter
+        paper.status = "review"
+        paper.save()
 
         with pytest.raises(ApprovalError, match="zuletzt inhaltlich bearbeitet"):
             four_eyes_service.authorize(PROCESS_PAPER, paper, bearbeiter)
