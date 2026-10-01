@@ -582,6 +582,17 @@ class TestRollenUndEinstellungen:
         dashboard = client.get(_url(tenant, "/dashboard/")).content.decode()
         assert f'href="{_url(tenant, "/settings/")}"' in dashboard
 
+    def test_api_link_nur_wenn_die_schnittstelle_erreichbar_ist(self, tenant: SessionTenant) -> None:
+        link = f'href="{_url(tenant, "/api/")}"'
+        ohne = _client(_nutzer(tenant, "ohne", "view_dashboard", "manage_settings"))
+        mit = _client(_nutzer(tenant, "mit", "view_dashboard", "manage_settings", "access_api"))
+        # Vor der Freischaltung antwortet die Schnittstelle nur Personen mit „API-Zugang“
+        assert link not in ohne.get(_url(tenant, "/settings/")).content.decode()
+        assert link in mit.get(_url(tenant, "/settings/")).content.decode()
+        tenant.oparl_public_since = timezone.now()
+        tenant.save()
+        assert link in ohne.get(_url(tenant, "/settings/")).content.decode()
+
     def test_kontrollrolle_sieht_keine_stammdaten_links(self, tenant: SessionTenant) -> None:
         client = _client(_nutzer(tenant, "datenschutz", "view_dashboard", "view_audit_log", "export_audit_log"))
         seite = client.get(_url(tenant, "/dashboard/")).content.decode()

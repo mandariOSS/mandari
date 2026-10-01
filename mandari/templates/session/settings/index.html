@@ -120,6 +120,7 @@
                     <p class="text-sm text-gray-500 dark:text-gray-400">OParl- und Session-API</p>
                 </div>
             </div>
+            {% if session_tenant.oparl_public or "access_api" in permission_checker.permissions %}
             <div class="mt-4 space-y-2">
                 <a href="{% url 'session:api_root' tenant_slug=tenant_slug %}" target="_blank"
                    class="inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
@@ -127,6 +128,7 @@
                     API-Dokumentation
                 </a>
             </div>
+            {% endif %}
         </div>
 
         <!-- Bürgerportal (Issues #36, #618) -->
