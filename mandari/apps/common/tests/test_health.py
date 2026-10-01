@@ -7,7 +7,7 @@ optionale Prüfungen werden gemeldet, ohne die Antwort rot zu machen.
 
 from __future__ import annotations
 
-import time
+import threading
 from typing import Any
 
 import pytest
@@ -92,21 +92,42 @@ def test_optionale_pruefung_macht_nicht_rot(client: Client, monkeypatch: pytest.
     }
 
 
+#: Sicherheitsnetz: So lange hängt die Prüfung höchstens, falls der Test vor der Freigabe abbricht
+HAENGT_HOECHSTENS = 60.0
+
+
 def test_haengende_pruefung_laeuft_ins_zeitlimit(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Die Antwort kommt, während die hängende Prüfung noch blockiert ist – ohne Messung der Wanduhr.
+
+    Die Prüfung hängt, bis der Test sie nach der Antwort freigibt. Wartete die Antwort auf sie, wäre die Prüfung
+    vorher fertig geworden (frühestens nach ``HAENGT_HOECHSTENS``). So hängt das Ergebnis weder von der Last des
+    Rechners noch von der Dauer des Middleware-Stacks ab; das Zeitlimit ist nur kurz, damit der Test schnell bleibt.
+    """
+    freigabe = threading.Event()
+    beendet = threading.Event()
+
     def haengt() -> str:
-        time.sleep(health.CHECK_TIMEOUT + 1)
+        freigabe.wait(HAENGT_HOECHSTENS)
+        beendet.set()
         return "zu spät"
 
     checks: dict[str, Any] = {n: (lambda: "ok") for n in health.CHECKS}
     checks["database"] = haengt
     monkeypatch.setattr(health, "CHECKS", checks)
+    monkeypatch.setattr(health, "CHECK_TIMEOUT", 0.2)
 
-    start = time.monotonic()
-    response = client.get("/health/ready/")
+    try:
+        response = client.get("/health/ready/")
+        antwort_vor_ende_der_pruefung = not beendet.is_set()
+    finally:
+        freigabe.set()  # den Prüf-Thread nicht bis zum Sicherheitsnetz hängen lassen
 
+    assert antwort_vor_ende_der_pruefung, "Antwort wartet nicht auf die hängende Prüfung"
     assert response.status_code == 503
-    assert "Zeitlimit" in response.json()["checks"]["database"]["detail"]
-    assert time.monotonic() - start < health.CHECK_TIMEOUT + 1, "Antwort wartet nicht auf die hängende Prüfung"
+    datenbank = response.json()["checks"]["database"]
+    assert datenbank["ok"] is False
+    assert datenbank["detail"] == "Zeitlimit 0.2 s überschritten"
 
 
 @pytest.mark.django_db
