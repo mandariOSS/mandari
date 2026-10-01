@@ -53,7 +53,8 @@ OPEN_STATUSES = ("pending", "approved")
 
 #: Vermerk an Positionen, die der Abrechnungslauf storniert, weil ihre Grundlage entfallen ist (Sitzung
 #: abgesagt, Anwesenheit korrigiert). Nur solche Positionen leben wieder auf, wenn die Grundlage zurückkehrt;
-#: von Hand stornierte bleiben storniert.
+#: von Hand stornierte bleiben storniert. Der Text ist zugleich das Erkennungsmerkmal (``notes=AUTO_CANCEL_NOTE``)
+#: und muss deshalb unverändert bleiben – sonst leben bereits automatisch stornierte Positionen nicht mehr auf.
 AUTO_CANCEL_NOTE = "Automatisch storniert: Sitzung abgesagt oder Anwesenheit nicht mehr anrechenbar."
 MANUAL_CANCEL_NOTE = "Von Hand storniert."
 
@@ -284,13 +285,23 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
         if revived is not None:
             # Grundlage wieder da: neu festsetzen, die Genehmigung gilt nicht mehr (Vier-Augen-Prinzip)
             revived.amount = amount
+            revived.currency = org.allowance_currency or "EUR"
             revived.status = "pending"
             revived.created_by = created_by
             revived.approved_by = None
             revived.approved_at = None
             revived.notes = ""
             revived.save(
-                update_fields=["amount", "status", "created_by", "approved_by", "approved_at", "notes", "updated_at"]
+                update_fields=[
+                    "amount",
+                    "currency",
+                    "status",
+                    "created_by",
+                    "approved_by",
+                    "approved_at",
+                    "notes",
+                    "updated_at",
+                ]
             )
             stats["reactivated"] += 1
         else:

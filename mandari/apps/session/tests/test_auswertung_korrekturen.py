@@ -191,6 +191,44 @@ def test_abrechnungslauf_storniert_und_nimmt_wieder_auf(kasse: Kasse) -> None:
     assert SessionAllowance.objects.count() == 1
 
 
+def test_wiederaufnahme_uebernimmt_die_waehrung_des_gremiums(kasse: Kasse) -> None:
+    anwesenheit = kasse.anwesend(kasse.sitzung(), "Amsel")
+    allowance_service.generate_allowances(kasse.tenant, kasse.tag, kasse.tag, created_by=kasse.kaemmerei)
+    anwesenheit.status = "absent"
+    anwesenheit.save()
+    allowance_service.generate_allowances(kasse.tenant, kasse.tag, kasse.tag, created_by=kasse.kaemmerei)
+
+    kasse.rat.allowance_currency = "CHF"
+    kasse.rat.save()
+    anwesenheit.status = "present"
+    anwesenheit.save()
+    stats = allowance_service.generate_allowances(kasse.tenant, kasse.tag, kasse.tag, created_by=kasse.kaemmerei)
+
+    position = SessionAllowance.objects.get(attendance=anwesenheit)
+    assert stats["reactivated"] == 1
+    assert position.status == "pending" and position.currency == "CHF"
+
+
+def test_csv_finanzverfahren_ohne_positionen_ohne_grundlage(kasse: Kasse) -> None:
+    sitzung = kasse.sitzung()
+    korrigiert = kasse.anwesend(sitzung, "Amsel")
+    kasse.anwesend(sitzung, "Buchfink")
+    kaemmerei = client(kasse.kaemmerei)
+    kaemmerei.post(f"{kasse.base}/generate/", kasse.zeitraum)
+    client(kasse.pruefer).post(f"{kasse.base}/approve/", kasse.zeitraum)
+    assert set(SessionAllowance.objects.values_list("status", flat=True)) == {"approved"}
+
+    # Anwesenheit nach der Genehmigung korrigiert: Die Datei fürs Finanzverfahren enthält die Position nicht mehr
+    korrigiert.status = "absent"
+    korrigiert.save()
+    for abfrage in (kasse.zeitraum, {**kasse.zeitraum, "status": "approved"}):
+        datei = kaemmerei.get(f"{kasse.base}/export.csv", abfrage).content.decode("utf-8-sig")
+        assert "Amsel" not in datei and "Buchfink" in datei
+
+    # Der Abruf der Datei storniert nichts; das bleibt Lauf, Genehmigung und SEPA-Export vorbehalten
+    assert SessionAllowance.objects.get(attendance=korrigiert).status == "approved"
+
+
 def test_von_hand_stornieren_und_es_bleibt_dabei(kasse: Kasse) -> None:
     anwesenheit = kasse.anwesend(kasse.sitzung(), "Amsel")
     kaemmerei = client(kasse.kaemmerei)

@@ -467,7 +467,14 @@ class AllowanceCsvExportView(SessionViewMixin, View):
         if not status:
             # Stornierte Positionen gehören nicht in die Datei fürs Finanzverfahren (nur auf ausdrücklichen Filter)
             selection = selection.exclude(status="cancelled")
-        allowances = list(selection)
+        # Offene Positionen ohne Grundlage (Sitzung abgesagt, Anwesenheit korrigiert) nicht ausgeben: Wer über das
+        # Finanzverfahren statt per SEPA auszahlt, überwiese sie sonst. Gleiche Regel wie Lauf, Genehmigung und
+        # SEPA-Export; storniert wird auf GET nicht, das erledigt der nächste Lauf bzw. die Genehmigung.
+        allowances = [
+            allowance
+            for allowance in selection
+            if allowance.status not in allowance_service.OPEN_STATUSES or allowance_service.has_basis(allowance)
+        ]
         csv_text = allowance_service.build_export_csv(allowances)
 
         audit.log_event(
