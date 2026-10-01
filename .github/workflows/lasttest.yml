@@ -217,12 +217,13 @@ jobs:
               sleep 1
             done
           done
+          # Anmeldeseite über Caddy: TLS, Weiterleitung und Anwendung in einem Aufruf
           for i in $(seq 1 30); do
-            code=$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8443/insight/ || true)
+            code=$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8443/accounts/login/ || true)
             [ "$code" = "200" ] && break
             sleep 1
           done
-          echo "Startseite über Caddy: HTTP $code"
+          echo "Anmeldeseite über Caddy: HTTP $code"
           test "$code" = "200"
 
       - name: Lasttest (Locust)
