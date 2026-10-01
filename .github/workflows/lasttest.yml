@@ -11,8 +11,11 @@
 #
 # Schont die CI-Kapazität: läuft NICHT bei jedem Pull Request, sondern
 #   - wöchentlich (Profil klein, Budget-Gate),
-#   - von Hand (workflow_dispatch; Profil wählbar, "gross" ist der Lauf Großstadt),
+#   - von Hand (workflow_dispatch; Profil wählbar, "gross" ist der Lauf Großstadt;
+#     mit "stufen" eine Kapazitätsmessung mit stufenweise steigender Nutzerzahl),
 #   - bei Pull Requests, die loadtest/, diesen Workflow oder den Datengenerator ändern.
+# Auf dem Läufer (4 vCPU für Anwendung, Datenbank, Suche und Lastgeber zusammen)
+# ist das Profil gross überlastet; Ergebnisse und Einordnung in docs/LASTTESTS.md.
 # Die Abfrage-Budgets der Kernseiten (scripts/check_performance_budgets.py) prüft
 # dagegen jeder Pull Request im Job "Smoke-Tests" der CI: wenige Sekunden, kein
 # eigener Läufer.
@@ -80,34 +83,19 @@ defaults:
 
 jobs:
   lasttest:
-    name: Lasttest (${{ matrix.profil }}${{ matrix.stufen && ', Kapazität' || '' }})
+    name: Lasttest (${{ inputs.profil || 'klein' }}${{ inputs.stufen && ', Kapazität' || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - profil: klein
-            stufen: ''
-            prozesse: ''
-          - profil: gross
-            stufen: ''
-            prozesse: ''
-          - profil: gross
-            stufen: '25,50,75,100,150,200'
-            prozesse: ''
-          - profil: klein
-            stufen: '10,20,30,40,60,80'
-            prozesse: '1'
     env:
-      PROFIL: ${{ matrix.profil }}
+      # Zeitplan und Pull Requests: Profil klein mit Budget-Gate
+      PROFIL: ${{ inputs.profil || 'klein' }}
       EINGABE_NUTZER: ${{ inputs.nutzer }}
       EINGABE_DAUER: ${{ inputs.dauer }}
-      EINGABE_PROZESSE: ${{ matrix.prozesse }}
-      EINGABE_STUFEN: ${{ matrix.stufen }}
+      EINGABE_PROZESSE: ${{ inputs.prozesse }}
+      EINGABE_STUFEN: ${{ inputs.stufen }}
       EINGABE_STUFENDAUER: ${{ inputs.stufendauer }}
       # Ergebnisse je Lauf unterscheidbar (Artefakt): Profil und ggf. Kapazitätsmessung
-      LAUF_NAME: ${{ matrix.profil }}${{ matrix.stufen && '-kapazitaet' || '' }}
+      LAUF_NAME: ${{ inputs.profil || 'klein' }}${{ inputs.stufen && '-kapazitaet' || '' }}
       ERGEBNISSE: loadtest/results
       SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
       DEBUG: 'false'

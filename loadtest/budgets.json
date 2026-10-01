@@ -1,5 +1,5 @@
 {
-  "beschreibung": "Laufparameter und Performance-Budgets je Mengengerüst (Issue #228, docs/LASTTESTS.md). p95 in Millisekunden. Budgets dürfen nur sinken. Gemessen auf einem GitHub-Läufer (4 vCPU, 16 GB), Workflow .github/workflows/lasttest.yml.",
+  "beschreibung": "Laufparameter und Performance-Budgets je Mengengerüst (Issue #228, docs/LASTTESTS.md). p95 in Millisekunden. Budgets dürfen nur sinken; neue Budgets etwa das 2,5-Fache des p95 aus Läufen in der CI (GitHub-Läufer, 4 vCPU, 16 GB), Workflow .github/workflows/lasttest.yml. Profile ohne p95-Budgets prüfen nur die Fehlerquote.",
   "profile": {
     "klein": {
       "lauf": {
@@ -19,23 +19,23 @@
       },
       "fehlerquote_max_prozent": 1.0,
       "szenarien_p95_ms": {
-        "Portal": 1000,
-        "Sitzungsdienst": 1500,
-        "Fraktion": 1500,
-        "OParl": 1500,
-        "Live-Abstimmung": 4000,
-        "Sitzungsgeldlauf": 10000
+        "Portal": 900,
+        "Sitzungsdienst": 900,
+        "Fraktion": 1000,
+        "OParl": 800,
+        "Live-Abstimmung": 2100,
+        "Sitzungsgeldlauf": 6500
       },
       "endpunkte_p95_ms": {
-        "/insight/": 800,
-        "/insight/termine/": 800,
-        "/insight/vorgaenge/": 800,
-        "/insight/suche/partials/results/": 1000,
-        "/session/meetings/": 1000,
-        "/session/meetings/<id>/": 1200,
-        "/session/papers/": 1000,
-        "/work/": 1200,
-        "/work/documents/": 1200
+        "/insight/": 400,
+        "/insight/termine/": 600,
+        "/insight/vorgaenge/": 600,
+        "/insight/suche/partials/results/": 1800,
+        "/session/meetings/": 800,
+        "/session/meetings/<id>/": 700,
+        "/session/papers/": 800,
+        "/work/": 700,
+        "/work/documents/": 1000
       }
     },
     "mittel": {

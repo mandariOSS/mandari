@@ -25,11 +25,28 @@ Locust laufen und prüft die Budgets. Er läuft
 
 - wöchentlich mit dem Profil `klein` (Budget-Gate),
 - von Hand: *Actions → Lasttest → Run workflow*, Profil `klein`, `mittel` oder
-  `gross` (der Lauf „Großstadt“), Nutzerzahl und Laufzeit optional,
+  `gross` (der Lauf „Großstadt“), Nutzerzahl, Laufzeit und Zahl der
+  Anwendungsprozesse optional; mit **Stufen** (z. B. `25,50,75,100,150,200`)
+  eine Kapazitätsmessung statt fester Nutzerzahl,
 - in Pull Requests, die `loadtest/`, den Workflow oder den Datengenerator ändern.
 
 Ergebnis: Bericht in der Zusammenfassung des Laufs, Rohdaten (CSV, HTML-Bericht
-von Locust, Ressourcen, Protokolle der Anwendung) als Artefakt `lasttest-<profil>`.
+von Locust, Ressourcen, Protokolle der Anwendung) als Artefakt `lasttest-<profil>`
+bzw. `lasttest-<profil>-kapazitaet`. Der Läufer hat 4 vCPU für alles zusammen; das
+Profil `gross` mit 400 Nutzern überlastet ihn (Einordnung in `docs/LASTTESTS.md`).
+
+## Kapazitätsmessung (Stufenlast)
+
+`LOADTEST_STUFEN=25,50,100` (und optional `LOADTEST_STUFENDAUER`, Vorgabe 120 s)
+ersetzt die feste Nutzerzahl durch Stufen; `-u`/`-r` sind dann wirkungslos. Der
+Bericht nennt je Stufe Durchsatz, p95, Fehlerquote und CPU (ohne die ersten 20 s
+nach jedem Wechsel) und die höchste Stufe mit p95 bis 1 s und höchstens 1 %
+Fehlern. Budgets gelten dabei nicht — die Messung überschreitet die Grenze absichtlich.
+
+```bash
+LOADTEST_PROFILE=gross LOADTEST_STUFEN=25,50,75,100 locust -f loadtest/locustfile.py --headless        --host http://127.0.0.1:8000 --csv loadtest/results/gross-kapazitaet
+python loadtest/auswerten.py bericht --profil gross --ergebnisse loadtest/results/gross-kapazitaet
+```
 
 ## Lokal gegen den Entwicklungsserver
 
@@ -109,9 +126,10 @@ endet es mit Status 1, wenn ein Budget verletzt ist.
 ## Szenarien
 
 Siehe Modul-Dokumentation in `locustfile.py`. Die Gewichte (Portal 5, Sitzungsdienst 3,
-Fraktion 2, OParl 1, Live-Abstimmung 1) bilden eine Ratssitzung mit Publikum nach:
-viele Lesezugriffe, wenige Schreibvorgänge. Der Sitzungsgeldlauf ist genau ein
-Nutzer, der nebenher Monat für Monat abrechnet.
+Fraktion 2, OParl 1) bilden eine Ratssitzung mit Publikum nach: viele Lesezugriffe,
+wenige Schreibvorgänge. Live-Abstimmung (die Protokollführung der laufenden
+Ratssitzung) und Sitzungsgeldlauf sind je genau ein Nutzer, unabhängig von der
+Nutzerzahl.
 
 Nicht abgebildet: die Synchronisation durch den Ingestor (kein Nutzerzugriff über
 HTTP; Messungen in `docs/LASTTESTS.md` verweisen auf die Betriebsdaten).

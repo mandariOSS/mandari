@@ -282,6 +282,16 @@ SELECT pg_reload_conf();`
 
 Größenempfehlungen je Größenklasse (klein, mittel, groß) mit Mengengerüst,
 Verbindungsbudget und den Ergebnissen der Lasttests: [docs/LASTTESTS.md](docs/LASTTESTS.md).
+Kurzfassung (Rechenweg und Annahmen dort, Abschnitt 6):
+
+| Klasse | Gleichzeitige Nutzer | vCPU | RAM | Anwendungsprozesse | PostgreSQL `mem_limit` |
+|---|---:|---:|---:|---:|---:|
+| klein (rund 20.000 Einwohner) | 20 | 2 | 8 GB | 1 | 1 GB |
+| mittel (rund 100.000 Einwohner) | 100 | 4 | 16 GB | 2 | 4 GB |
+| groß (500.000+ Einwohner, Bezirksvertretungen) | 400 | 12 | 32 GB | 8 | 8 GB |
+
+Die mitgelieferte `docker-compose.yml` startet genau einen Anwendungsprozess; er trägt
+rund 15 Anfragen je Sekunde. Mehrere Prozesse für „mittel“ und „groß“: Issue #718.
 
 ### Für größere Installationen
 
