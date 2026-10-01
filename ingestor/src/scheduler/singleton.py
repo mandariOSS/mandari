@@ -19,7 +19,9 @@ import socket
 from collections.abc import Callable
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+
+from src.storage.engine import engine_erzeugen
 
 SPERRNAME = "mandari-ingestor-daemon"
 INHABER_TABELLE = "ingestor_daemon_inhaber"
@@ -47,7 +49,7 @@ class Fuehrung:
             self.erhalten = True
             return True
         if self._engine is None:
-            self._engine = create_async_engine(self.database_url, pool_size=1, max_overflow=0)
+            self._engine = engine_erzeugen(self.database_url, pool_size=1, max_overflow=0)
         if self._conn is None:
             self._conn = await self._engine.connect()
         ergebnis = await self._conn.execute(text("SELECT pg_try_advisory_lock(hashtext(:name))"), {"name": self.name})

@@ -73,7 +73,7 @@ class _Engine:
 @pytest.mark.asyncio
 async def test_zweite_instanz_wartet_und_uebernimmt(monkeypatch: pytest.MonkeyPatch) -> None:
     conn = _Verbindung(frei_ab=2)
-    monkeypatch.setattr(sg, "create_async_engine", lambda *a, **k: _Engine(conn))
+    monkeypatch.setattr(sg, "engine_erzeugen", lambda *a, **k: _Engine(conn))
     f = sg.Fuehrung("postgresql+asyncpg://u:p@h/db", wartezeit=0)
     gemeldet: list[str] = []
 
