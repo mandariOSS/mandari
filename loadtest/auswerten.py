@@ -63,20 +63,50 @@ EINSCHWINGEN_S = 20
 #: Zielwerte, bis zu denen eine Stufe als „getragen“ gilt (Kapazität im Bericht)
 KAPAZITAET_P95_MS = 1000
 KAPAZITAET_FEHLER_PROZENT = 1.0
-#: Obergrenzen der Stufenlast (Eingaben des manuellen Starts)
+#: Obergrenzen der Eingaben des manuellen Starts: Ein Tippfehler (``prozesse=100``) bricht ab, statt den
+#: Läufer bis zum Timeout des Workflows (90 Minuten) zu belegen
+NUTZER_MAX = 2000
+PROZESSE_MAX = 16
+ANLAUF_MAX = 100
+#: Lastphase höchstens eine Stunde; Aufbau und Datengenerator brauchen bei ``gross`` rund zehn Minuten
+DAUER_MAX_S = 3600
 STUFEN_MAX = 12
-STUFEN_NUTZER_MAX = 2000
+#: Einheiten der Laufzeit im Format von Locust (``-t``)
+DAUER_EINHEITEN = {"s": 1, "m": 60, "h": 3600}
 
 
 def stufen_lesen(text: str) -> list[int]:
     """``"25,50,100"`` als Stufen der Kapazitätsmessung; leer = keine Stufenlast. Ungültiges bricht ab."""
     teile = [teil.strip() for teil in text.split(",") if teil.strip()]
-    if not all(teil.isdigit() for teil in teile):
+    if not all(_ziffern(teil) for teil in teile):
         raise SystemExit("Stufen als Nutzerzahlen mit Komma angeben, z. B. 25,50,100")
     stufen = [int(teil) for teil in teile]
-    if len(stufen) > STUFEN_MAX or any(not 0 < nutzer <= STUFEN_NUTZER_MAX for nutzer in stufen):
-        raise SystemExit(f"Höchstens {STUFEN_MAX} Stufen mit je 1 bis {STUFEN_NUTZER_MAX} Nutzern")
+    if len(stufen) > STUFEN_MAX or any(not 0 < nutzer <= NUTZER_MAX for nutzer in stufen):
+        raise SystemExit(f"Höchstens {STUFEN_MAX} Stufen mit je 1 bis {NUTZER_MAX} Nutzern")
     return stufen
+
+
+def _ziffern(text: str) -> bool:
+    """Nur die Ziffern 0–9 (``str.isdigit`` ließe auch „²“ zu, das ``int`` dann ablehnt)."""
+    return text.isascii() and text.isdigit()
+
+
+def _ganzzahl(name: str, wert: str, hoechstens: int) -> int:
+    """Ganze Zahl von 1 bis ``hoechstens``; sonst Abbruch mit fester Meldung."""
+    if not _ziffern(wert) or not 0 < int(wert) <= hoechstens:
+        raise SystemExit(f"{name} als ganze Zahl von 1 bis {hoechstens} angeben")
+    return int(wert)
+
+
+def dauer_sekunden(text: str) -> int:
+    """Laufzeit im Format von Locust (``180s``, ``3m``, ``1h``) in Sekunden; Ungültiges bricht ab."""
+    zahl, einheit = text[:-1], text[-1:]
+    if not _ziffern(zahl) or einheit not in DAUER_EINHEITEN:
+        raise SystemExit("dauer im Format von Locust angeben, z. B. 180s, 3m oder 1h")
+    sekunden = int(zahl) * DAUER_EINHEITEN[einheit]
+    if not 0 < sekunden <= DAUER_MAX_S:
+        raise SystemExit(f"dauer zwischen 1 s und {DAUER_MAX_S // 60} Minuten angeben")
+    return sekunden
 
 
 # =============================================================================
@@ -339,11 +369,11 @@ def bewerten(
             f"Budget {fehler_max:g} %"
         )
 
-    for szenario in szenarien:
-        if szenario.anfragen and szenario.fehlerquote > fehler_max:
+    for messung in szenarien:
+        if messung.anfragen and messung.fehlerquote > fehler_max:
             verletzungen.append(
-                f"Szenario {szenario.name}: Fehlerquote {szenario.fehlerquote:.2f} % "
-                f"({szenario.fehler} von {szenario.anfragen}), Budget {fehler_max:g} %"
+                f"Szenario {messung.name}: Fehlerquote {messung.fehlerquote:.2f} % "
+                f"({messung.fehler} von {messung.anfragen}), Budget {fehler_max:g} %"
             )
 
     for name, grenze in budget.get("szenarien_p95_ms", {}).items():
@@ -437,7 +467,7 @@ def bericht(
         ]
 
     if lauf.stufen:
-        grenze = kapazitaet(lauf.stufen)
+        getragen_bis = kapazitaet(lauf.stufen)
         zeilen += [
             "",
             "### Stufenlast (Kapazität)",
@@ -449,19 +479,20 @@ def bericht(
             "| Nutzer | Anfragen/s | Fehlerquote | Median | p95 | CPU Anwendung | CPU Datenbank | getragen |",
             "|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
-        for s in lauf.stufen:
-            cpu_a = _de(s.cpu_anwendung) + " %" if s.cpu_anwendung is not None else "–"
-            cpu_d = _de(s.cpu_datenbank) + " %" if s.cpu_datenbank is not None else "–"
+        for stufe in lauf.stufen:
+            cpu_a = _de(stufe.cpu_anwendung) + " %" if stufe.cpu_anwendung is not None else "–"
+            cpu_d = _de(stufe.cpu_datenbank) + " %" if stufe.cpu_datenbank is not None else "–"
             zeilen.append(
-                f"| {s.nutzer} | {_de(s.anfragen_pro_s, 1)} | {_de(s.fehlerquote, 2)} % | {_ms(s.median_ms)} "
-                f"| {_ms(s.p95_ms)} | {cpu_a} | {cpu_d} | {'ja' if s.getragen else 'nein'} |"
+                f"| {stufe.nutzer} | {_de(stufe.anfragen_pro_s, 1)} | {_de(stufe.fehlerquote, 2)} % "
+                f"| {_ms(stufe.median_ms)} | {_ms(stufe.p95_ms)} | {cpu_a} | {cpu_d} "
+                f"| {'ja' if stufe.getragen else 'nein'} |"
             )
         zeilen += [
             "",
             (
-                f"Kapazität: **{grenze.nutzer} gleichzeitige Nutzer** bei {_de(grenze.anfragen_pro_s, 1)} Anfragen/s "
-                f"(p95 {_ms(grenze.p95_ms)} ms)."
-                if grenze
+                f"Kapazität: **{getragen_bis.nutzer} gleichzeitige Nutzer** bei "
+                f"{_de(getragen_bis.anfragen_pro_s, 1)} Anfragen/s (p95 {_ms(getragen_bis.p95_ms)} ms)."
+                if getragen_bis
                 else "Kapazität: Schon die erste Stufe liegt außerhalb der Zielwerte."
             ),
         ]
@@ -567,10 +598,9 @@ def laufparameter(budget: Mapping[str, Any], ueberschreibungen: Mapping[str, str
         if wert is None or str(wert).strip() == "":
             raise SystemExit(f"Laufparameter „{schluessel}“ fehlt")
         ergebnis[schluessel] = str(wert).strip()
-    if not ergebnis["nutzer"].isdigit() or not ergebnis["prozesse"].isdigit() or not ergebnis["anlauf"].isdigit():
-        raise SystemExit("nutzer, anlauf und prozesse müssen ganze Zahlen sein")
-    if not ergebnis["dauer"][:-1].isdigit() or ergebnis["dauer"][-1] not in "smh":
-        raise SystemExit("dauer im Format von Locust angeben, z. B. 180s, 3m oder 1h")
+    for schluessel, hoechstens in (("nutzer", NUTZER_MAX), ("anlauf", ANLAUF_MAX), ("prozesse", PROZESSE_MAX)):
+        ergebnis[schluessel] = str(_ganzzahl(schluessel, ergebnis[schluessel], hoechstens))
+    dauer_sekunden(ergebnis["dauer"])
     # Einstellungen der Datenbank wie in der Größenempfehlung (docs/LASTTESTS.md), als Startargumente
     postgres: Mapping[str, Any] = lauf.get("postgres", {})
     for name, wert in postgres.items():
@@ -580,8 +610,10 @@ def laufparameter(budget: Mapping[str, Any], ueberschreibungen: Mapping[str, str
     # Stufenlast (Kapazitätsmessung): Nutzerzahl je Stufe statt fester Zahl, Laufzeit aus den Stufen
     stufen = stufen_lesen(str(ueberschreibungen.get("stufen") or ""))
     stufendauer = str(ueberschreibungen.get("stufendauer") or "120").strip()
-    if not stufendauer.isdigit() or not 2 * EINSCHWINGEN_S <= int(stufendauer) <= 1800:
+    if not _ziffern(stufendauer) or not 2 * EINSCHWINGEN_S <= int(stufendauer) <= 1800:
         raise SystemExit(f"stufendauer in Sekunden angeben, {2 * EINSCHWINGEN_S} bis 1800")
+    if len(stufen) * int(stufendauer) > DAUER_MAX_S:
+        raise SystemExit(f"Stufen × stufendauer höchstens {DAUER_MAX_S} Sekunden")
     ergebnis["stufen"] = ",".join(str(nutzer) for nutzer in stufen)
     ergebnis["stufendauer"] = stufendauer
     if stufen:

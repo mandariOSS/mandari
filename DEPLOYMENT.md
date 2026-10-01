@@ -291,7 +291,9 @@ Kurzfassung (Rechenweg und Annahmen dort, Abschnitt 6):
 | groß (500.000+ Einwohner, Bezirksvertretungen) | 400 | 12 | 32 GB | 8 | 8 GB |
 
 Die mitgelieferte `docker-compose.yml` startet genau einen Anwendungsprozess; er trägt
-rund 15 Anfragen je Sekunde. Mehrere Prozesse für „mittel“ und „groß“: Issue #718.
+rund 15 Anfragen je Sekunde (gemessen mit dem Bestand „klein“; beim Bestand „groß“ kostet
+jede Anfrage doppelt so viel Rechenzeit, ein Prozess trägt dort also etwa die Hälfte, siehe
+docs/LASTTESTS.md, Abschnitt 5.3). Mehrere Prozesse für „mittel“ und „groß“: Issue #718.
 
 ### Für größere Installationen
 

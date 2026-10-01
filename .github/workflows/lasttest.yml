@@ -10,10 +10,18 @@
 # Bericht in der Zusammenfassung des Laufs, Rohdaten als Artefakt.
 #
 # Schont die CI-Kapazität: läuft NICHT bei jedem Pull Request, sondern
-#   - wöchentlich (Profil klein, Budget-Gate),
+#   - werktags auf dev (Profil klein, Budget-Gate): Pull Requests gehen nach dev; eine
+#     Zeit-Regression fällt so am Tag nach dem Merge auf, nicht erst auf main,
 #   - von Hand (workflow_dispatch; Profil wählbar, "gross" ist der Lauf Großstadt;
-#     mit "stufen" eine Kapazitätsmessung mit stufenweise steigender Nutzerzahl),
-#   - bei Pull Requests, die loadtest/, diesen Workflow oder den Datengenerator ändern.
+#     mit "stufen" eine Kapazitätsmessung mit stufenweise steigender Nutzerzahl).
+#     Auf einem Branch gestartet (gh workflow run lasttest.yml --ref <branch>) ist das
+#     der Lasttest vor dem Merge für Pull Requests, die eine Kernseite umbauen,
+#   - bei Pull Requests, die loadtest/, diesen Workflow, den Datengenerator oder den Code
+#     der Szenarien ändern, die das Abfrage-Budget nicht abdeckt: OParl-Ausgaben,
+#     Live-Abstimmung, Sitzungsgeldlauf (Liste unter pull_request.paths).
+# Views und Templates der übrigen Kernseiten lösen ihn nicht aus (rund zwei Drittel aller
+# Pull Requests). Für sie prüft jeder Pull Request die Abfragen hart (unten) und der
+# werktägliche Lauf auf dev die Zeit; Abdeckung im Einzelnen in docs/LASTTESTS.md 4.2.
 # Auf dem Läufer (4 vCPU für Anwendung, Datenbank, Suche und Lastgeber zusammen)
 # ist das Profil gross überlastet; Ergebnisse und Einordnung in docs/LASTTESTS.md.
 # Die Abfrage-Budgets der Kernseiten (scripts/check_performance_budgets.py) prüft
@@ -29,8 +37,8 @@ name: Lasttest
 
 on:
   schedule:
-    # dienstags 03:17 UTC (die CI hat ihren Wochenlauf montags)
-    - cron: '17 3 * * 2'
+    # werktags 03:17 UTC; prüft dev, nicht den Standardzweig (siehe Checkout)
+    - cron: '17 3 * * 1-5'
   workflow_dispatch:
     inputs:
       profil:
@@ -65,10 +73,20 @@ on:
     branches:
       - dev
       - main
+    # Der Lasttest selbst und der Code der Szenarien, deren Zeit kein anderes Gate prüft:
+    # OParl (beide Ausgaben, ETag), Live-Abstimmung, Sitzungsgeldlauf. Ein Test hält fest,
+    # dass jeder Eintrag existiert (apps/common/tests/test_lasttest_auswertung.py).
     paths:
       - 'loadtest/**'
       - '.github/workflows/lasttest.yml'
       - 'mandari/apps/session/management/commands/generate_load_data.py'
+      - 'mandari/hub/api/**'
+      - 'mandari/apps/session/api/oparl.py'
+      - 'mandari/apps/session/views/voting.py'
+      - 'mandari/apps/session/services/voting_service.py'
+      - 'mandari/apps/session/views/allowances.py'
+      - 'mandari/apps/session/services/allowance_service.py'
+      - '!mandari/**/tests/**'
 
 permissions:
   contents: read
@@ -115,8 +133,13 @@ jobs:
       LOG_LEVEL: WARNING
 
     steps:
+      # Der Zeitplan startet auf dem Standardzweig (main); geprüft wird der Integrationszweig dev,
+      # in den die Pull Requests gehen. Die Workflow-Datei selbst kommt dabei immer von main.
+      # Sonst (leer): der Stand, der den Lauf ausgelöst hat (Pull Request, Branch des Handstarts).
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
 
       - name: Laufparameter aus loadtest/budgets.json
         id: lauf
@@ -277,7 +300,7 @@ jobs:
           PROZESSE: ${{ steps.lauf.outputs.prozesse }}
         run: |
           set -uo pipefail
-          umgebung="GitHub-Läufer ubuntu-latest, $(nproc) vCPU, $(free -m | awk '/^Mem:/{printf "%.0f", $2/1024}') GB RAM; Anwendung, Datenbank, Suche und Lastgeber auf demselben Rechner"
+          umgebung="GitHub-Läufer ubuntu-latest, $(nproc) vCPU, $(free -m | awk '/^Mem:/{printf "%.0f", $2/1024}') GB RAM; Anwendung, Datenbank, Suche und Lastgeber auf demselben Rechner; Stand $(git rev-parse --short HEAD)"
           python loadtest/auswerten.py bericht --profil "$PROFIL" --ergebnisse "$ERGEBNISSE/$LAUF_NAME" \
             --nutzer "$NUTZER" --anlauf "$ANLAUF" --dauer "$DAUER" --prozesse "$PROZESSE" \
             --umgebung "$umgebung" --bericht "$ERGEBNISSE/$LAUF_NAME-bericht.md" > /dev/null

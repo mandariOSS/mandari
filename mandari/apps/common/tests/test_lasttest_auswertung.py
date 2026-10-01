@@ -6,6 +6,8 @@ Geprüft wird, was der Workflow „Lasttest“ daraus macht: Perzentile je Szena
 Locust-CSV, die Bewertung gegen die Budgets (Fehlerquote gesamt und je Szenario, p95, kaputte
 Szenarien), der Bericht, die Laufparameter aus ``loadtest/budgets.json`` samt Prüfung der Eingaben
 und dass die Budgetdatei nur Szenarien und Endpunkte nennt, die ``loadtest/locustfile.py`` misst.
+Dazu die Verdrahtung des Workflows, die in keinem Lauf auffiele: Der Zeitplan prüft den
+Integrationszweig ``dev``, und der Pfadfilter nennt nur vorhandene Dateien.
 
 Die Module brauchen kein Django und keine Datenbank; der Workflow führt diese Datei vor dem Lauf aus.
 """
@@ -19,10 +21,14 @@ import re
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
+import yaml
 
-LOADTEST = Path(__file__).resolve().parents[4] / "loadtest"
+REPO = Path(__file__).resolve().parents[4]
+LOADTEST = REPO / "loadtest"
+WORKFLOW = REPO / ".github" / "workflows" / "lasttest.yml"
 
 
 def _laden(name: str) -> ModuleType:
@@ -283,12 +289,36 @@ def test_laufparameter_mit_vorgaben_und_ueberschreibungen(auswerten: ModuleType)
         {"stufen": ",".join(["10"] * 13)},
         {"stufen": "25", "stufendauer": "10"},
         {"stufen": "25", "stufendauer": "2m"},
+        # Tippfehler, die den Läufer sonst bis zum Timeout belegen
+        {"nutzer": "20000"},
+        {"nutzer": "0"},
+        {"prozesse": "100"},
+        {"prozesse": "0"},
+        {"dauer": "61m"},
+        {"dauer": "2h"},
+        {"dauer": "0s"},
+        {"stufen": "25,50,100", "stufendauer": "1800"},
+        # Ziffern außerhalb von 0–9 (str.isdigit ließe sie zu)
+        {"nutzer": "²"},
+        {"dauer": "³m"},
+        {"stufen": "25,⁵0"},
     ],
 )
 def test_ungueltige_eingaben_des_manuellen_starts(auswerten: ModuleType, ueberschreibung: dict[str, str]) -> None:
     budget = {"lauf": {"nutzer": 20, "anlauf": 5, "dauer": "3m", "prozesse": 1}}
     with pytest.raises(SystemExit):
         auswerten.laufparameter(budget, ueberschreibung)
+
+
+def test_obergrenzen_des_manuellen_starts_sind_erlaubt(auswerten: ModuleType) -> None:
+    budget = {"lauf": {"nutzer": 20, "anlauf": 5, "dauer": "3m", "prozesse": 1}}
+    werte = auswerten.laufparameter(
+        budget, {"nutzer": str(auswerten.NUTZER_MAX), "prozesse": str(auswerten.PROZESSE_MAX), "dauer": "1h"}
+    )
+
+    assert (werte["nutzer"], werte["prozesse"], werte["dauer"]) == ("2000", "16", "1h")
+    assert auswerten.dauer_sekunden("60m") == auswerten.DAUER_MAX_S == 3600
+    assert auswerten.laufparameter(budget, {"stufen": "10,20,30", "stufendauer": "1200"})["stufen"] == "10,20,30"
 
 
 def test_ungueltige_postgres_einstellung(auswerten: ModuleType) -> None:
@@ -445,3 +475,54 @@ def test_bericht_der_kapazitaetsmessung(auswerten: ModuleType, tmp_path: Path) -
     assert "| 100 | 30,0 | 3,00 % | 900 | 2.400 |" in text
     assert "Kapazität: **50 gleichzeitige Nutzer** bei 20,0 Anfragen/s (p95 400 ms)." in text
     assert "Kapazitätsmessung ohne Budgetprüfung." in text
+
+
+# =============================================================================
+# Workflow „Lasttest“
+# =============================================================================
+
+
+def _workflow() -> dict[Any, Any]:
+    daten: dict[Any, Any] = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    return daten
+
+
+def _ausloeser() -> dict[str, Any]:
+    daten = _workflow()
+    # YAML 1.1 liest den Schlüssel „on“ als True
+    ausloeser: dict[str, Any] = daten["on"] if "on" in daten else daten[True]
+    return ausloeser
+
+
+def test_zeitplan_prueft_den_integrationszweig() -> None:
+    """Der Zeitplan startet auf dem Standardzweig main; Pull Requests gehen aber nach dev.
+
+    Ohne ``ref`` fiele eine Zeit-Regression erst auf, wenn sie schon auf main liegt.
+    """
+    assert _ausloeser()["schedule"]
+    schritte = _workflow()["jobs"]["lasttest"]["steps"]
+    checkout = [schritt for schritt in schritte if str(schritt.get("uses", "")).startswith("actions/checkout@")]
+    assert len(checkout) == 1
+    ref = str(checkout[0].get("with", {}).get("ref", ""))
+    assert "github.event_name == 'schedule' && 'dev'" in ref, ref
+    # Alle übrigen Auslöser prüfen ihren eigenen Stand (Pull Request, Branch des manuellen Starts)
+    assert ref.replace(" ", "").endswith("||''}}"), ref
+
+
+def test_pfadfilter_nennt_vorhandene_dateien() -> None:
+    """Eine umbenannte Datei fiele sonst still aus dem Filter, und der Lasttest liefe nicht mehr."""
+    pfade: list[str] = _ausloeser()["pull_request"]["paths"]
+    einschluesse = [muster for muster in pfade if not muster.startswith("!")]
+    # GitHub wertet der Reihe nach aus: Ein Ausschluss wirkt nur nach den Einschlüssen
+    assert pfade[: len(einschluesse)] == einschluesse
+    for muster in einschluesse:
+        fester_teil = muster.split("*", 1)[0]
+        assert (REPO / fester_teil).exists(), f"{muster}: {fester_teil} gibt es nicht"
+    # Code der Szenarien, deren Zeit kein anderes Gate prüft (docs/LASTTESTS.md 4.2)
+    assert {
+        "loadtest/**",
+        "mandari/hub/api/**",
+        "mandari/apps/session/api/oparl.py",
+        "mandari/apps/session/services/voting_service.py",
+        "mandari/apps/session/services/allowance_service.py",
+    } <= set(einschluesse)

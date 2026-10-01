@@ -13,7 +13,7 @@ Bausteine:
 | Datengenerator nach Mengengerüst | `manage.py generate_load_data --profile klein\|mittel\|gross` |
 | Lastszenarien (Locust) | `loadtest/locustfile.py`, Befehle in `loadtest/README.md` |
 | Bericht und Zeit-Budgets | `loadtest/auswerten.py`, Budgets und Laufparameter in `loadtest/budgets.json` |
-| Lasttest in der CI | Workflow `Lasttest` (`.github/workflows/lasttest.yml`): wöchentlich, von Hand, Pfadfilter |
+| Lasttest in der CI | Workflow `Lasttest` (`.github/workflows/lasttest.yml`): werktags auf `dev`, von Hand, Pfadfilter |
 | Abfrage-Budgets der Kernseiten | `scripts/check_performance_budgets.py`, Budgets in `scripts/performance_budgets.json` (jeder Pull Request) |
 
 ## 1. Referenz-Mengengerüste
@@ -132,18 +132,35 @@ Kernseiten mit dem Django-Test-Client gegen die Daten des Profils `klein`
 Die Zahlen sind mit Paginierung konstant; ein N+1-Zugriff würde hier sofort
 als Sprung sichtbar.
 
-### 4.2 Lasttest mit Zeit-Budgets (wöchentlich, von Hand, Pfadfilter)
+### 4.2 Lasttest mit Zeit-Budgets (werktags auf `dev`, von Hand, Pfadfilter)
 
 Der Workflow `Lasttest` startet die Anwendung wie im Betrieb — Daphne hinter
 Caddy (TLS, Kompression), PostgreSQL mit den Einstellungen der Größenklasse,
-Redis, Elasticsearch —, erzeugt die Daten und lässt die Szenarien laufen. Er
-läuft wöchentlich mit dem Profil `klein`, von Hand mit jedem Profil (auch als
-Kapazitätsmessung) und in Pull Requests, die `loadtest/`, den Workflow oder
-den Datengenerator ändern. Der Lauf scheitert, wenn
+Redis, Elasticsearch —, erzeugt die Daten und lässt die Szenarien laufen
+(Profil `klein`: rund sieben Minuten). Der Lauf scheitert, wenn
 
 - die Fehlerquote gesamt oder in einem Szenario über 1 % liegt,
 - das p95 eines Szenarios oder einer Kernseite sein Budget überschreitet,
 - ein Szenario mit Budget nichts gemessen hat (Anmeldung gescheitert, Adresse geändert).
+
+Wann er läuft und wann eine Zeit-Regression damit auffällt:
+
+| Auslöser | Profil | Geprüfter Stand | Regression fällt auf |
+|---|---|---|---|
+| Zeitplan, werktags | `klein` | Zweig `dev`, in den die Pull Requests gehen | am Werktag nach dem Merge |
+| Pull Request, der `loadtest/`, den Workflow, den Datengenerator oder den Code der Szenarien OParl (`mandari/hub/api/`, Session-Schnittstelle), Live-Abstimmung oder Sitzungsgeldlauf (je View und Service) ändert | `klein` | der Pull Request | vor dem Merge |
+| von Hand, auch auf einem Branch (`gh workflow run lasttest.yml --ref <branch>`) | wählbar | der gewählte Branch | vor dem Merge, wenn jemand ihn startet |
+
+Bewusst **nicht** im Pfadfilter: Views und Templates der übrigen Kernseiten
+(Insight-Listen und Suche, Sitzungsdienst, Fraktion). Sie ändern sich in rund
+zwei Dritteln aller Pull Requests; ein Lasttest dort belegte bei jedem einen
+weiteren Läufer, und Läufer sind der Engpass paralleler Arbeit. Für diese
+Seiten gilt vor dem Merge das Abfrage-Budget (4.1) als harte Prüfung — ein
+N+1-Zugriff, die häufigste Ursache einer langsamen Liste, fällt dort sofort
+auf —, die Zeit prüft der Lauf auf `dev` am nächsten Werktag. Wer eine
+Kernseite grundlegend umbaut, startet den Lasttest vor dem Merge von Hand auf
+seinem Branch. Der Pfadfilter nennt nur Dateien, die es gibt; das prüft ein
+Test (`apps/common/tests/test_lasttest_auswertung.py`).
 
 Budgets des Profils `klein` (p95 in ms, rund das 2,5-Fache von zwei
 Referenzläufen; dürfen nur sinken):
@@ -289,7 +306,7 @@ Nutzungszahlen hat, rechnet mit derselben Formel nach.
 |---|---|---|---|---|
 | vCPU (gesamt) | 2 | 4 | 12 | Rechenweg oben; dazu Suche, Cache, System. groß bisher 8 (abgeleitet), jetzt aus der Messung |
 | RAM (gesamt) | 8 GB | 16 GB | 32 GB | Summe der Dienstgrenzen unten |
-| Anwendungsprozesse (Daphne) | 1 | 2 | 8 | ein Prozess trägt rund 15 Anfragen/s (gemessen, 5.2) und nutzt bis 1,5 Kerne. Docker Compose startet heute genau einen Prozess (#718); mehrere über das Helm-Chart (`app.replicas`) |
+| Anwendungsprozesse (Daphne) | 1 | 2 | 8 | ein Prozess trägt rund 15 Anfragen/s beim Bestand `klein` (gemessen, 5.2), beim Bestand `gross` etwa die Hälfte (doppelte Kosten je Anfrage, 5.3), und nutzt bis 1,5 Kerne. Docker Compose startet heute genau einen Prozess (#718); mehrere über das Helm-Chart (`app.replicas`) |
 | RAM je Anwendungsprozess | 1 GB | 1 GB | 1 GB | gemessen 300 bis 480 MB je Prozess unter Last; Limit in `docker-compose.yml` |
 | PostgreSQL `mem_limit` | 1 GB | 4 GB | 8 GB | Bestand: 0,1 / 0,5 / 2 GB je Mandant und Jahr, Index soll in den Cache passen |
 | `shared_buffers` / `effective_cache_size` | 256 MB / 768 MB | 1 GB / 3 GB | 2 GB / 6 GB | Faustregel ein Viertel / drei Viertel (`DEPLOYMENT.md`); so auch im Lasttest |

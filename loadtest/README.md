@@ -23,12 +23,21 @@ auf einem GitHub-Läufer auf (Daphne hinter Caddy, PostgreSQL mit den
 Einstellungen der Größenklasse, Redis, Elasticsearch), erzeugt die Daten, lässt
 Locust laufen und prüft die Budgets. Er läuft
 
-- wöchentlich mit dem Profil `klein` (Budget-Gate),
+- werktags auf `dev` mit dem Profil `klein` (Budget-Gate),
 - von Hand: *Actions → Lasttest → Run workflow*, Profil `klein`, `mittel` oder
   `gross` (der Lauf „Großstadt“), Nutzerzahl, Laufzeit und Zahl der
-  Anwendungsprozesse optional; mit **Stufen** (z. B. `25,50,75,100,150,200`)
-  eine Kapazitätsmessung statt fester Nutzerzahl,
-- in Pull Requests, die `loadtest/`, den Workflow oder den Datengenerator ändern.
+  Anwendungsprozesse optional (höchstens 2.000 Nutzer, 16 Prozesse, 60 Minuten);
+  mit **Stufen** (z. B. `25,50,75,100,150,200`) eine Kapazitätsmessung statt
+  fester Nutzerzahl,
+- in Pull Requests, die `loadtest/`, den Workflow, den Datengenerator oder den
+  Code der Szenarien OParl, Live-Abstimmung und Sitzungsgeldlauf ändern (Liste
+  unter `pull_request.paths` im Workflow).
+
+Ein Pull Request, der eine andere Kernseite umbaut (etwa eine Liste in Insight
+oder im Sitzungsdienst), löst den Lasttest nicht aus. Vor dem Merge von Hand auf
+seinem Branch starten: `gh workflow run lasttest.yml --ref <branch>` (ohne
+weitere Eingaben: Profil `klein` mit Budget-Gate). Abdeckung im Einzelnen:
+`docs/LASTTESTS.md`, Abschnitt 4.2.
 
 Ergebnis: Bericht in der Zusammenfassung des Laufs, Rohdaten (CSV, HTML-Bericht
 von Locust, Ressourcen, Protokolle der Anwendung) als Artefakt `lasttest-<profil>`
@@ -152,8 +161,11 @@ Nachweis auf Zielhardware:
    Ressourcen laut Größenklasse „groß“ in `docs/LASTTESTS.md`.
 2. Im Anwendungs-Container: `python manage.py generate_load_data --profile gross --ich-weiss-was-ich-tue`
    (leere Datenbank, kein Produktionsbestand; der Lauf dauert einige Minuten).
-3. Lastgeber auf einem anderen Rechner im selben Netz:
-   `LOADTEST_PROFILE=gross locust -f loadtest/locustfile.py --headless --host https://<host> -u 400 -r 20 -t 15m --csv loadtest/results/gross --html loadtest/results/gross.html`
+3. Lastgeber auf einem anderen Rechner im selben Netz, Laufparameter aus `budgets.json`
+   (`python loadtest/auswerten.py parameter --profil gross`: 400 Nutzer, Anlauf 2/s).
+   Den Anlauf nicht erhöhen: Anmeldewellen sind der teuerste Vorgang und leeren den Pool
+   (`docs/LASTTESTS.md`, Abschnitt 5.5); der Lauf mäße sonst vor allem die Anmeldung.
+   `LOADTEST_PROFILE=gross locust -f loadtest/locustfile.py --headless --host https://<host> -u 400 -r 2 -t 15m --csv loadtest/results/gross --html loadtest/results/gross.html`
 4. Während des Laufs `docker stats` und `pg_stat_activity` mitschreiben (Verbindungsbudget, siehe `DEPLOYMENT.md`).
 5. `python loadtest/auswerten.py bericht --profil gross --ergebnisse loadtest/results/gross --umgebung "<Hardware>"`
    und das Ergebnis in `docs/LASTTESTS.md` eintragen.
