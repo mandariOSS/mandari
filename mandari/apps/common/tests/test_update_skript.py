@@ -6,6 +6,8 @@ Protokoll-Orchestrator wechselt danach auf das neue Image (Issue #479).
 Das Skript läuft gegen ein nachgebautes ``docker`` (protokolliert nur die Aufrufe), damit die CI
 die Reihenfolge ohne Docker prüft: erst Worker anhalten, dann migrieren, Worker erst nach den
 Post-Deploy-Migrationen mit neuem Image starten – und bei Abbruch trotzdem wieder starten.
+
+Außerdem (Issue #698): Fehlt für die Zielversion ein Image, bricht das Skript ab, bevor es etwas verändert.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -29,11 +32,24 @@ case "$1" in
       *Config.Image*) echo "ghcr.io/mandarioss/mandari:alt" ;;
     esac
     ;;
+  manifest)
+    # FAKE_FEHLT: Images, die es in der Registry nicht gibt (durch Leerzeichen getrennt)
+    case " ${FAKE_FEHLT:-} " in
+      *" $3 "*) echo "manifest unknown" >&2; exit 1 ;;
+    esac
+    ;;
   compose)
     if [ "$2" = config ] && [ "$3" = --services ]; then
       printf '%s\\n' ${FAKE_SERVICES:-postgres redis elasticsearch mandari minutes-orchestrator website ingestor caddy}
       if [ -n "${FAKE_WEITERE_DIENSTE:-}" ]; then seq -f 'dienst-%g' 1 "$FAKE_WEITERE_DIENSTE"; fi
     fi
+    if [ "$2" = config ] && [ "$3" = --images ]; then
+      # Wie Compose: Infrastruktur-Images, Anwendungs-Images mit IMAGE_TAG (mandari zweimal: Orchestrator)
+      printf '%s\\n' postgres:16-alpine "ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}" \\
+        "ghcr.io/mandarioss/website:${IMAGE_TAG:-latest}" "ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}" \\
+        "ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}"
+    fi
+    if [ "$2" = pull ] && [ -n "${FAKE_PULL_SCHEITERT:-}" ]; then exit 1; fi
     ;;
 esac
 exit 0
@@ -52,9 +68,22 @@ BASH = _bash()
 pytestmark = pytest.mark.skipif(BASH is None, reason="bash nicht vorhanden")
 
 
+@dataclass
+class Lauf:
+    rc: int
+    aufrufe: list[str]
+    ausgabe: str
+    env: str
+
+
 def _lauf(
     tmp_path: Path, *, env_zusatz: dict[str, str] | None = None, args: tuple[str, ...] = ()
 ) -> tuple[int, list[str]]:
+    lauf = _lauf_voll(tmp_path, env_zusatz=env_zusatz, args=args)
+    return lauf.rc, lauf.aufrufe
+
+
+def _lauf_voll(tmp_path: Path, *, env_zusatz: dict[str, str] | None = None, args: tuple[str, ...] = ()) -> Lauf:
     arbeit = tmp_path / "mandari"
     arbeit.mkdir()
     # LF erzwingen (Checkout unter Windows kann CRLF liefern)
@@ -69,7 +98,7 @@ def _lauf(
     log = tmp_path / "docker.log"
     log.touch()
 
-    env = {k: v for k, v in os.environ.items() if k not in {"WORKER_SERVICES", "COMPOSE_PROJECT_NAME"}}
+    env = {k: v for k, v in os.environ.items() if k not in {"WORKER_SERVICES", "COMPOSE_PROJECT_NAME", "IMAGE_TAG"}}
     env.update({"PATH": f"{bin_dir}{os.pathsep}{env['PATH']}", "DOCKER_LOG": str(log), **(env_zusatz or {})})
     assert BASH is not None
     ergebnis = subprocess.run(  # noqa: S603 — fester Aufruf im Test
@@ -83,7 +112,12 @@ def _lauf(
         timeout=120,
         check=False,
     )
-    return ergebnis.returncode, log.read_text(encoding="utf-8").splitlines()
+    return Lauf(
+        rc=ergebnis.returncode,
+        aufrufe=log.read_text(encoding="utf-8").splitlines(),
+        ausgabe=ergebnis.stdout + ergebnis.stderr,
+        env=(arbeit / ".env").read_text(encoding="utf-8"),
+    )
 
 
 def _index(zeilen: list[str], teil: str) -> int:
@@ -178,3 +212,43 @@ def test_rueckfall_setzt_auch_den_orchestrator_zurueck(tmp_path: Path) -> None:
 
     assert rc == 0, "\n".join(aufrufe)
     assert any("compose up -d --no-deps ingestor minutes-orchestrator" in z for z in aufrufe), "\n".join(aufrufe)
+
+
+def test_images_der_zielversion_werden_vor_dem_herunterladen_geprueft(tmp_path: Path) -> None:
+    rc, aufrufe = _lauf(tmp_path)
+
+    assert rc == 0, "\n".join(aufrufe)
+    for image in ("mandari", "ingestor", "website"):
+        assert _index(aufrufe, f"manifest inspect ghcr.io/mandarioss/{image}:v1.1.0") < _index(aufrufe, "compose pull")
+    assert not any("postgres:16-alpine" in z for z in aufrufe), "nur Anwendungs-Images mit dem Ziel-Tag"
+
+
+def test_fehlendes_image_bricht_ab_bevor_etwas_veraendert_wird(tmp_path: Path) -> None:
+    """Früher stand die neue Version schon in der .env, wenn ``docker compose pull`` am fehlenden Image scheiterte."""
+    lauf = _lauf_voll(tmp_path, env_zusatz={"FAKE_FEHLT": "ghcr.io/mandarioss/website:v1.1.0"})
+
+    assert lauf.rc != 0
+    assert "IMAGE_TAG=v1.0.0" in lauf.env, "die .env bleibt unverändert"
+    assert "website:v1.1.0" in lauf.ausgabe and "fehlt" in lauf.ausgabe, lauf.ausgabe
+    assert "v0.11.0" in lauf.ausgabe and "/releases" in lauf.ausgabe, "die Meldung nennt gültige Werte"
+    assert "nichts verändert" in lauf.ausgabe, lauf.ausgabe
+    assert not any(teil in z for z in lauf.aufrufe for teil in ("compose pull", "compose stop", "safemigrate"))
+
+
+def test_dry_run_meldet_fehlendes_image(tmp_path: Path) -> None:
+    lauf = _lauf_voll(
+        tmp_path, env_zusatz={"FAKE_FEHLT": "ghcr.io/mandarioss/website:v1.1.0"}, args=("--dry-run", "--tag", "v1.1.0")
+    )
+
+    assert lauf.rc != 0
+    assert "website:v1.1.0" in lauf.ausgabe and "fehlt" in lauf.ausgabe, lauf.ausgabe
+    assert "IMAGE_TAG=v1.0.0" in lauf.env
+
+
+def test_scheitert_das_herunterladen_kommt_die_alte_env_zurueck(tmp_path: Path) -> None:
+    lauf = _lauf_voll(tmp_path, env_zusatz={"FAKE_PULL_SCHEITERT": "1"})
+
+    assert lauf.rc != 0
+    assert "IMAGE_TAG=v1.0.0" in lauf.env, lauf.env
+    assert "nichts umgeschaltet" in lauf.ausgabe, lauf.ausgabe
+    assert not any(teil in z for z in lauf.aufrufe for teil in ("compose stop", "safemigrate"))

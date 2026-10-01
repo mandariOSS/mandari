@@ -9,7 +9,7 @@
 #   ./install-k8s.sh --domain ris.example.de --namespace mandari
 #   ./install-k8s.sh --dry-run                # nur anzeigen, nichts ändern
 #   ./install-k8s.sh --minimal                # kleiner Cluster (ohne Elasticsearch)
-#   ./install-k8s.sh --tag v1.2.3             # feste Version
+#   ./install-k8s.sh --tag v0.11.0            # feste Version (https://github.com/mandariOSS/mandari/releases)
 #   ./install-k8s.sh --uninstall              # entfernen (Daten bleiben)
 #
 # Voraussetzungen: kubectl mit Zugriff auf den Cluster. Helm wird bei Bedarf

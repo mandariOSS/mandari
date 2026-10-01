@@ -10,9 +10,18 @@
 | `install-k8s.sh` bzw. Helm | Kubernetes, siehe [`deploy/kubernetes/README.md`](deploy/kubernetes/README.md) |
 
 Die Images baut `.github/workflows/release.yml` und legt sie in der GitHub Container Registry ab
-(`ghcr.io/mandarioss/mandari`, `ghcr.io/mandarioss/ingestor`): `dev` → `:dev`, `main` → `:latest`,
-ein Release → `:<version>` und `:latest`. Ein Push deployt nichts; umgeschaltet wird auf dem Server
-mit `update.sh` oder `deploy/scripts/deploy.sh`.
+(`ghcr.io/mandarioss/mandari`, `ghcr.io/mandarioss/ingestor`): `dev` → `:dev` und `:dev-<commit>`,
+`main` → `:latest` und `:main-<commit>`, ein Release → `:<version>` (z. B. `:v0.11.0`) und `:latest`.
+Die Website (`ghcr.io/mandarioss/website`) entsteht im Repository
+[mandariOSS/marketing-website](https://github.com/mandariOSS/marketing-website); derselbe Workflow gibt ihr
+jeweils dieselben Tags (Kopie des aktuellen Website-Stands), denn `docker-compose.yml` und das Helm-Chart
+ziehen alle drei Images mit **einem** `IMAGE_TAG`. Danach prüft er ohne Anmeldung, dass jedes Tag für alle
+drei Images abrufbar ist (`scripts/check_image_tags.py`, auch von Hand nutzbar:
+`python scripts/check_image_tags.py v0.11.0 latest dev`).
+
+Ein Push deployt nichts; umgeschaltet wird auf dem Server mit `update.sh` oder `deploy/scripts/deploy.sh`.
+`install.sh --tag …` und `update.sh --tag …` prüfen vorab, ob es das Tag für alle drei Images gibt, und
+brechen sonst mit einer Meldung ab, bevor sie etwas verändern.
 
 ### Installation ohne Rückfragen
 
@@ -46,7 +55,8 @@ Interaktiv (`./install.sh` ohne `--unattended`) fragt der Installer wie bisher n
 
 ```bash
 ./update.sh                # auf latest
-./update.sh --tag v1.3.0   # bestimmte Version
+./update.sh --tag v0.11.0  # bestimmte Version (https://github.com/mandariOSS/mandari/releases)
+./update.sh --tag dev      # Entwicklungsstand (instabil)
 ./update.sh --dry-run      # nur prüfen, nichts ändern
 ./update.sh --rollback     # auf die vorherige Version zurück
 ```

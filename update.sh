@@ -11,8 +11,9 @@
 #
 # Usage:
 #   ./update.sh                # Update auf latest
-#   ./update.sh --tag v1.3.0   # Bestimmte Version
-#   ./update.sh v1.3.0         # Bestimmte Version (Rückwärtskompatibilität)
+#   ./update.sh --tag v0.11.0  # Bestimmte Version (https://github.com/mandariOSS/mandari/releases)
+#   ./update.sh --tag dev      # Entwicklungsstand (Zweig dev, instabil)
+#   ./update.sh v0.11.0        # Bestimmte Version (Rückwärtskompatibilität)
 #   ./update.sh --no-backup    # Backup überspringen
 #   ./update.sh --no-cleanup   # Image-Cleanup überspringen
 #   ./update.sh --rollback     # Auf vorherige Version zurück
@@ -40,6 +41,10 @@ WORKER_SERVICES_DEFAULT="ingestor minutes-orchestrator"
 # (Issue #479) – auch wenn ein eigenes WORKER_SERVICES sie nicht nennt; dann laufen sie während
 # der Migrationen weiter. Nicht definierte Dienste werden übersprungen.
 APP_IMAGE_SERVICES="minutes-orchestrator"
+
+# Anwendungs-Images mit IMAGE_TAG; nur falls "docker compose config --images" nichts liefert
+APP_IMAGES_DEFAULT="ghcr.io/mandarioss/mandari ghcr.io/mandarioss/ingestor ghcr.io/mandarioss/website"
+RELEASES_URL="https://github.com/mandariOSS/mandari/releases"
 
 # =============================================================================
 # Configuration
@@ -194,6 +199,70 @@ swap_container() {
         return 0
     else
         printf "\b${RED}✗ FAILED${NC}\n"
+        return 1
+    fi
+}
+
+# Gibt es das Image? 0 = vorhanden, 1 = fehlt, 2 = nicht prüfbar (Registry nicht erreichbar o. Ä.).
+# "docker manifest inspect" lädt nichts herunter; ältere Docker-Versionen ohne den Befehl entscheiden
+# per "docker pull".
+image_status() {
+    local ref="$1" ausgabe
+    if ausgabe=$(docker manifest inspect "$ref" 2>&1); then
+        return 0
+    fi
+    # Here-String statt Pipe: grep -q beendet früh, unter pipefail zählte sonst der Abbruch von printf (#695)
+    if grep -qiE 'no such manifest|manifest unknown|manifest .*not found' <<< "$ausgabe"; then
+        return 1
+    fi
+    if docker pull -q "$ref" >> "$UPDATE_LOG" 2>&1; then
+        return 0
+    fi
+    if grep -qiE 'not found|manifest unknown' <<< "$ausgabe"; then
+        return 1
+    fi
+    return 2
+}
+
+# Anwendungs-Images dieser Installation für das Tag $1 (aus der Compose-Konfiguration, eine Zeile je Image)
+app_images() {
+    local tag="$1" images
+    images=$(IMAGE_TAG="$tag" docker compose config --images 2>/dev/null \
+        | awk -v t=":$tag" 'length($0) > length(t) && substr($0, length($0) - length(t) + 1) == t' | sort -u || true)
+    if [ -z "$images" ]; then
+        images=$(for image in $APP_IMAGES_DEFAULT; do echo "$image:$tag"; done)
+    fi
+    echo "$images"
+}
+
+# Gibt es für die Zielversion alle Anwendungs-Images? Vor jeder Änderung prüfen (Issue #698): Sonst brach
+# "docker compose pull" erst ab, nachdem die .env schon die neue Version nannte.
+check_image_tag() {
+    local tag="$1" ref rc fehlend="" unklar=""
+    log "Images für Version „$tag“ prüfen..."
+    for ref in $(app_images "$tag"); do
+        rc=0
+        image_status "$ref" || rc=$?
+        case $rc in
+            0) printf "  %-40s ${GREEN}✓${NC}\n" "${ref##*/}" ;;
+            1) printf "  %-40s ${RED}fehlt${NC}\n" "${ref##*/}"; fehlend="$fehlend ${ref##*/}" ;;
+            *) printf "  %-40s ${YELLOW}nicht abrufbar${NC}\n" "${ref##*/}"; unklar="$unklar ${ref##*/}" ;;
+        esac
+    done
+    if [ -n "$fehlend" ]; then
+        echo ""
+        warn "Für die Version „$tag“ gibt es nicht alle Images (fehlt:$fehlend)."
+        echo "  Mögliche Werte für --tag:"
+        echo "    latest     neuester stabiler Stand (Vorgabe)"
+        echo "    dev        Entwicklungsstand (Zweig dev, instabil, nicht für den Produktivbetrieb)"
+        echo "    v0.11.0    eine veröffentlichte Version mit führendem „v“, siehe $RELEASES_URL"
+        return 1
+    fi
+    if [ -n "$unklar" ]; then
+        echo ""
+        warn "Die Images für „$tag“ sind nicht abrufbar ($unklar)."
+        echo "  Ist ghcr.io von diesem Server erreichbar? Test: docker pull ghcr.io/mandarioss/mandari:$tag"
+        echo "  Details: cat $UPDATE_LOG"
         return 1
     fi
 }
@@ -416,7 +485,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --tag)
             if [ -z "${2:-}" ]; then
-                error "--tag benötigt einen Wert (z.B. --tag v1.3.0)"
+                error "--tag benötigt einen Wert (z.B. --tag v0.11.0)"
             fi
             TARGET_VERSION="$2"
             shift 2
@@ -445,7 +514,8 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --tag VERSION   Zielversion (z.B. v1.3.0, dev, latest)"
+            echo "  --tag VERSION   Zielversion: latest (Vorgabe), dev oder eine Release-Version wie v0.11.0"
+            echo "                  ($RELEASES_URL)"
             echo "  --no-backup     Backup überspringen"
             echo "  --no-cleanup    Image-Cleanup überspringen"
             echo "  --dry-run       Nur prüfen, nichts ändern"
@@ -485,6 +555,8 @@ echo "=== Mandari Update $(date) ===" > "$UPDATE_LOG"
 # Aktuelle Version merken (sicheres Parsing, kein source)
 CURRENT_VERSION=$(get_env_var IMAGE_TAG latest)
 info "Aktuelle Version: ${CYAN}$CURRENT_VERSION${NC}"
+# Ohne --tag aktualisiert das Skript auf latest
+ZIEL_VERSION="${TARGET_VERSION:-latest}"
 
 # =============================================================================
 # Rollback Mode
@@ -545,11 +617,24 @@ if [ "$DRY_RUN" = true ]; then
     info "Nach den Migrationen auf das neue Image: ${CYAN}${dry_run_app_services:-keine}${NC}"
 
     echo ""
+    dry_run_images=true
+    check_image_tag "$ZIEL_VERSION" || dry_run_images=false
+
+    echo ""
     verify_installation
 
+    if [ "$dry_run_images" = false ]; then
+        error "Dry-Run: Für „$ZIEL_VERSION“ fehlen Images – ein Update würde abbrechen. Keine Änderungen vorgenommen."
+    fi
     log "Dry-Run abgeschlossen. Keine Änderungen vorgenommen."
     exit 0
 fi
+
+# =============================================================================
+# Zielversion vorhanden? (vor Backup und vor jeder Änderung)
+# =============================================================================
+check_image_tag "$ZIEL_VERSION" || error "Update abgebrochen. Es wurde nichts verändert."
+echo ""
 
 # =============================================================================
 # Backup
@@ -608,7 +693,11 @@ fi
 # =============================================================================
 echo ""
 log "Phase 1: Images"
-run_step "Neue Images herunterladen" docker compose pull -q
+if ! run_step "Neue Images herunterladen" docker compose pull -q; then
+    # Noch ist nichts umgeschaltet und kein Worker angehalten: Konfiguration zurück, dann abbrechen
+    cp .env.pre-update .env
+    error "Die Images für „$ZIEL_VERSION“ ließen sich nicht vollständig herunterladen. .env zurückgesetzt, nichts umgeschaltet. Details: cat $UPDATE_LOG"
+fi
 
 # =============================================================================
 # Phase 2: Pre-Deploy Migrationen

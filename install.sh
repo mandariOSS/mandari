@@ -6,9 +6,8 @@
 #
 # Usage:
 #   ./install.sh                    # Interactive mode (latest)
-#   ./install.sh --tag dev          # Install dev version
-#   ./install.sh --tag beta         # Install beta version
-#   ./install.sh --tag v1.0.0       # Install specific version
+#   ./install.sh --tag v0.11.0      # Install a released version (https://github.com/mandariOSS/mandari/releases)
+#   ./install.sh --tag dev          # Install the development state (branch dev, unstable)
 #   ./install.sh --unattended       # Use defaults or environment variables
 #                                   # (aborts if an installation already exists)
 #   ./install.sh --unattended --reinstall-destroy-data
@@ -36,6 +35,10 @@ REDIS_CONTAINER="${COMPOSE_PROJECT_NAME}-redis"
 SEARCH_CONTAINER="${COMPOSE_PROJECT_NAME}-elasticsearch"
 WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
 PROXY_CONTAINER="${COMPOSE_PROJECT_NAME}-caddy"
+
+# Anwendungs-Images (siehe docker-compose.yml): Alle drei laufen mit demselben IMAGE_TAG
+APP_IMAGES="ghcr.io/mandarioss/mandari ghcr.io/mandarioss/ingestor ghcr.io/mandarioss/website"
+RELEASES_URL="https://github.com/mandariOSS/mandari/releases"
 
 # Colors for output
 RED='\033[0;31m'
@@ -139,6 +142,59 @@ EOF
 }
 
 # =============================================================================
+# Image-Tag prüfen (Issue #698)
+# =============================================================================
+# Gibt es das Image? 0 = vorhanden, 1 = fehlt, 2 = nicht prüfbar (Registry nicht erreichbar o. Ä.).
+# "docker manifest inspect" lädt nichts herunter; ältere Docker-Versionen ohne den Befehl entscheiden
+# per "docker pull".
+image_status() {
+    local ref="$1" ausgabe
+    if ausgabe=$(docker manifest inspect "$ref" 2>&1); then
+        return 0
+    fi
+    # Here-String statt Pipe: grep -q beendet früh, unter pipefail zählte sonst der Abbruch von printf (#695)
+    if grep -qiE 'no such manifest|manifest unknown|manifest .*not found' <<< "$ausgabe"; then
+        return 1
+    fi
+    if docker pull -q "$ref" >/dev/null 2>&1; then
+        return 0
+    fi
+    if grep -qiE 'not found|manifest unknown' <<< "$ausgabe"; then
+        return 1
+    fi
+    return 2
+}
+
+# Bricht mit verständlicher Meldung ab, wenn für das Tag nicht alle Anwendungs-Images abrufbar sind –
+# bevor irgendetwas angelegt, überschrieben oder gelöscht wird.
+check_image_tag() {
+    local tag="$1" image rc fehlend="" unklar=""
+    log "Images für Version „$tag“ prüfen..."
+    for image in $APP_IMAGES; do
+        rc=0
+        image_status "$image:$tag" || rc=$?
+        case $rc in
+            0) printf "  %-40s ${GREEN}✓${NC}\n" "${image##*/}:$tag" ;;
+            1) printf "  %-40s ${RED}fehlt${NC}\n" "${image##*/}:$tag"; fehlend="$fehlend ${image##*/}" ;;
+            *) printf "  %-40s ${YELLOW}nicht abrufbar${NC}\n" "${image##*/}:$tag"; unklar="$unklar ${image##*/}" ;;
+        esac
+    done
+    if [ -n "$fehlend" ]; then
+        error "Für die Version „$tag“ gibt es nicht alle Images (fehlt:$fehlend). Es wurde nichts verändert.
+
+  Mögliche Werte für --tag:
+    latest     neuester stabiler Stand (Vorgabe)
+    dev        Entwicklungsstand (Zweig dev, instabil, nicht für den Produktivbetrieb)
+    v0.11.0    eine veröffentlichte Version mit führendem „v“, siehe $RELEASES_URL"
+    fi
+    if [ -n "$unklar" ]; then
+        error "Die Images für „$tag“ sind nicht abrufbar ($unklar). Es wurde nichts verändert.
+  Ist ghcr.io von diesem Server erreichbar? Test: docker pull ghcr.io/mandarioss/mandari:$tag"
+    fi
+    IMAGE_TAG_GEPRUEFT="$tag"
+}
+
+# =============================================================================
 # Prerequisites Check
 # =============================================================================
 check_prerequisites() {
@@ -204,6 +260,11 @@ check_prerequisites() {
     local docker_version
     docker_version=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "unknown")
     log "Docker version: $docker_version"
+
+    # Version schon bekannt (--tag oder unbeaufsichtigt): vor jeder Änderung prüfen, ob es sie gibt
+    if [ -n "$IMAGE_TAG" ]; then
+        check_image_tag "$IMAGE_TAG"
+    fi
 
     # Läuft dieses Compose-Projekt bereits aus einem ANDEREN Verzeichnis? Container- und
     # Volume-Namen sind projektweit eindeutig; zwei Installationen würden sich sonst
@@ -888,7 +949,13 @@ show_usage() {
 Verwendung: ./install.sh [OPTIONEN]
 
 Optionen:
-  --tag TAG                  Image-Version: latest (Vorgabe), beta, dev oder z. B. v1.0.0
+  --tag TAG                  Image-Version für mandari, ingestor und website:
+                               latest   neuester stabiler Stand (Vorgabe)
+                               dev      Entwicklungsstand (Zweig dev, instabil)
+                               v0.11.0  eine veröffentlichte Version, siehe
+                                        https://github.com/mandariOSS/mandari/releases
+                             Gibt es das Tag nicht für alle drei Images, bricht der Installer ab,
+                             bevor er etwas verändert.
   --unattended               Ohne Rückfragen; Werte aus Umgebungsvariablen (DOMAIN, ACME_EMAIL,
                              ADMIN_EMAIL, ADMIN_PASSWORD, TZ, ...). Bricht mit Exit-Code 1 ab,
                              wenn in diesem Verzeichnis bereits eine Installation liegt.
@@ -906,6 +973,7 @@ main() {
     UNATTENDED=false
     REINSTALL_DESTROY_DATA=false
     IMAGE_TAG=""
+    IMAGE_TAG_GEPRUEFT=""
 
     # Parse arguments
     while [ $# -gt 0 ]; do
@@ -940,6 +1008,11 @@ main() {
         esac
     done
 
+    # Unbeaufsichtigt steht die Version vor der Prüfung der Voraussetzungen fest (dort wird sie geprüft)
+    if [ "$UNATTENDED" = "true" ]; then
+        IMAGE_TAG="${IMAGE_TAG:-latest}"
+    fi
+
     show_banner
     check_prerequisites
 
@@ -963,18 +1036,21 @@ main() {
         if [ -z "$IMAGE_TAG" ]; then
             echo ""
             echo -e "  ${CYAN}Release-Kanal wählen:${NC}"
-            echo "    1) latest  — Stabile Version (empfohlen für Produktion)"
-            echo "    2) beta    — Beta-Version (für Tests)"
-            echo "    3) dev     — Entwicklungsversion (instabil)"
+            echo "    1) latest  — neuester stabiler Stand (empfohlen für Produktion)"
+            echo "    2) dev     — Entwicklungsstand aus dem Zweig dev (instabil, nicht für Produktion)"
+            echo ""
+            echo "  Eine bestimmte Version (z. B. v0.11.0) mit: ./install.sh --tag v0.11.0"
             echo ""
             read -p "  Auswahl [1]: " channel_choice
             case "${channel_choice:-1}" in
-                1) IMAGE_TAG="latest" ;;
-                2) IMAGE_TAG="beta" ;;
-                3) IMAGE_TAG="dev" ;;
+                2) IMAGE_TAG="dev" ;;
                 *) IMAGE_TAG="latest" ;;
             esac
         fi
+    fi
+
+    if [ "$IMAGE_TAG_GEPRUEFT" != "$IMAGE_TAG" ]; then
+        check_image_tag "$IMAGE_TAG"
     fi
 
     log "Image-Tag: $IMAGE_TAG"
