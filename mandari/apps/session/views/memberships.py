@@ -190,7 +190,7 @@ class MembershipSuccessionView(SessionViewMixin, View):
 
     Die ausscheidende Person ist bis zum Vortag Mitglied, die nachrückende ab dem gewählten Tag – so hat
     das Gremium an keinem Tag einen Sitz doppelt (Ladung, Anwesenheit, Beschlussfähigkeit). Beides gilt
-    nur zusammen (eine Transaktion).
+    nur zusammen (eine Transaktion). Ist das Ausscheiden zum Vortag schon erfasst, bleibt es unverändert.
     """
 
     permission_required = "manage_organizations"
@@ -222,16 +222,23 @@ class MembershipSuccessionView(SessionViewMixin, View):
                 f"Die Mitgliedschaft endete bereits am {membership.end_date:%d.%m.%Y}; bitte die Person direkt aufnehmen.",
             )
             return _org_redirect(self, organization)
-        error = membership_service.overlap_error(organization, successor, change_date, membership.end_date)
+        # Ausscheiden schon erfasst (Ende genau am Vortag des Wechsels): Das Ende war der Austritt, kein
+        # geplantes Periodenende – die nachrückende Person erhält daher kein Ende. Sonst übernimmt sie ein
+        # geplantes Ende (z. B. das Ende der Wahlperiode), das dann nie vor dem Wechsel liegt.
+        already_ended = membership.end_date == last_day
+        successor_end = None if already_ended else membership.end_date
+        error = membership_service.period_error(change_date, successor_end) or membership_service.overlap_error(
+            organization, successor, change_date, successor_end
+        )
         if error:
             messages.error(request, error)
             return _org_redirect(self, organization)
 
         with transaction.atomic():
-            planned_end = membership.end_date
             # 1) Ausscheiden dokumentieren: letzter Tag ist der Vortag des Wechsels
-            membership.end_date = last_day
-            membership.save()
+            if not already_ended:
+                membership.end_date = last_day
+                membership.save()
 
             # 2) Nachfolger mit gleicher Funktion/gleichem Stimmrecht anlegen
             SessionOrganizationMembership.objects.create(
@@ -240,7 +247,7 @@ class MembershipSuccessionView(SessionViewMixin, View):
                 role=membership.role,
                 has_voting_rights=membership.has_voting_rights,
                 start_date=change_date,
-                end_date=planned_end,
+                end_date=successor_end,
                 # Wahlperiode aus dem Stichtag ableiten (Issue #39)
                 legislative_term=membership_service.term_for(self.session_tenant, change_date),
             )

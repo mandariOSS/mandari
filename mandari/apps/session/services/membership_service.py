@@ -15,7 +15,8 @@ Besetzungen, deren Zeiträume sich überschneiden. Damit kann auch die Datenbank
 **Periodenwechsel** (:func:`change_term`): Alles in einer Transaktion. Besetzungen, die vor dem
 Stichtag beginnen und über ihn hinaus laufen, enden am Vortag; im Modus „übernehmen“ beginnt am
 Stichtag eine gleiche Besetzung in der neuen Periode (nur für aktive Personen). Besetzungen, die erst am oder nach dem Stichtag
-beginnen, gehören bereits zur neuen Periode und bleiben unverändert.
+beginnen, gehören bereits zur neuen Periode und bleiben unverändert; beginnen sie erst nach dem Ende der
+neuen Periode, behalten sie ihre bisherige Periode.
 """
 
 from __future__ import annotations
@@ -169,9 +170,13 @@ def change_term(
         memberships = SessionOrganizationMembership.objects.filter(organization__tenant=tenant).select_related(
             "organization", "person"
         )
-        # Beginnen am oder nach dem Stichtag: gehören schon zur neuen Periode
+        # Beginnen am oder nach dem Stichtag (und vor dem Ende der neuen Periode): gehören schon zur neuen
+        # Periode. Besetzungen nach deren Ende gehören zu einer späteren Periode und bleiben unverändert.
+        starts_in_new = Q(start_date__gte=start_date)
+        if end_date is not None:
+            starts_in_new &= Q(start_date__lte=end_date)
         already_new = 0
-        for membership in memberships.filter(start_date__gte=start_date).exclude(legislative_term=new_term):
+        for membership in memberships.filter(starts_in_new).exclude(legislative_term=new_term):
             membership.legislative_term = new_term
             membership.save(update_fields=["legislative_term", "updated_at"])
             already_new += 1

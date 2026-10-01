@@ -186,6 +186,24 @@ class TestPeriodenwechsel:
         assert not SessionLegislativeTerm.objects.filter(name="Überlappend").exists()
         assert cast(Any, SessionLegislativeTerm).for_date(tenant, date(2026, 10, 1)) == periode
 
+    def test_besetzung_nach_dem_ende_der_neuen_periode_behaelt_ihre_periode(
+        self, tenant: SessionTenant, gremium: SessionOrganization, periode: SessionLegislativeTerm
+    ) -> None:
+        spaeter = SessionLegislativeTerm.objects.create(tenant=tenant, name="WP 24", start_date=date(2031, 11, 1))
+        in_neuer = _besetzung(gremium, _person(tenant, "N", "Neu"), start_date=date(2027, 1, 1))
+        danach = _besetzung(
+            gremium, _person(tenant, "D", "Danach"), start_date=date(2032, 1, 1), legislative_term=spaeter
+        )
+        assert membership_service.term_change_error(tenant, date(2026, 11, 1), date(2031, 10, 31)) == ""
+        wechsel = membership_service.change_term(
+            tenant, name="WP 23", number=23, start_date=date(2026, 11, 1), end_date=date(2031, 10, 31), mode="carry"
+        )
+        in_neuer.refresh_from_db()
+        danach.refresh_from_db()
+        assert in_neuer.legislative_term == wechsel.new_term
+        assert danach.legislative_term == spaeter
+        assert wechsel.already_new == 1
+
     def test_ungueltige_kennung_beim_speichern(self, tenant: SessionTenant, admin: Client) -> None:
         response = admin.post(_url(tenant, "/settings/terms/save/"), {"name": "X", "term_id": "abc"})
         assert response.status_code == 404
@@ -234,6 +252,25 @@ class TestGremien:
         assert list(response.context["upcoming_memberships"]) == [kuenftig]
         liste = admin.get(_url(tenant, "/organizations/"))
         assert [o.member_count for o in liste.context["organizations"]] == [1]
+
+    def test_historie_vor_offenen_besetzungen_und_kuenftige_nur_einmal(
+        self, tenant: SessionTenant, admin: Client, gremium: SessionOrganization
+    ) -> None:
+        inaktiv_offen = _besetzung(
+            gremium, _person(tenant, "I", "Inaktiv", is_active=False), start_date=date(2024, 7, 1)
+        )
+        aelter = _besetzung(
+            gremium, _person(tenant, "A", "Älter"), start_date=date(2020, 1, 1), end_date=date(2022, 12, 31)
+        )
+        juenger = _besetzung(
+            gremium, _person(tenant, "J", "Jünger"), start_date=date(2023, 1, 1), end_date=date(2024, 6, 30)
+        )
+        inaktiv_kuenftig = _besetzung(
+            gremium, _person(tenant, "K", "Künftig", is_active=False), start_date=HEUTE + timedelta(days=30)
+        )
+        response = admin.get(_url(tenant, f"/organizations/{gremium.pk}/"))
+        assert list(response.context["ended_memberships"]) == [juenger, aelter, inaktiv_offen]
+        assert list(response.context["upcoming_memberships"]) == [inaktiv_kuenftig]
 
     def test_keine_zweite_laufende_besetzung_bei_kuenftigem_ende(
         self, tenant: SessionTenant, admin: Client, gremium: SessionOrganization
@@ -391,6 +428,62 @@ class TestBesetzungen:
             membership_service.running_q(date(2026, 1, 1))
         )
         assert list(laufend_am_wechsel) == [neu]
+
+    def test_nachruecken_nach_erfasstem_ausscheiden(
+        self, tenant: SessionTenant, admin: Client, gremium: SessionOrganization
+    ) -> None:
+        geht = _besetzung(
+            gremium, _person(tenant, "G", "Geht"), start_date=date(2024, 7, 1), end_date=date(2026, 12, 31)
+        )
+        kommt = _person(tenant, "K", "Kommt")
+        response = admin.post(
+            _url(tenant, f"/memberships/{geht.pk}/succession/"),
+            {"successor": str(kommt.pk), "change_date": "2027-01-01"},
+        )
+        assert response.status_code == 302
+        geht.refresh_from_db()
+        neu = SessionOrganizationMembership.objects.get(organization=gremium, person=kommt)
+        assert geht.end_date == date(2026, 12, 31)
+        assert neu.start_date == date(2027, 1, 1)
+        # Das Ende der ausscheidenden Person war der Austritt, kein geplantes Ende des Sitzes
+        assert neu.end_date is None
+        assert list(
+            SessionOrganizationMembership.objects.filter(organization=gremium).filter(
+                membership_service.running_q(date(2027, 1, 1))
+            )
+        ) == [neu]
+
+    def test_nachruecken_uebernimmt_geplantes_ende(
+        self, tenant: SessionTenant, admin: Client, gremium: SessionOrganization
+    ) -> None:
+        geht = _besetzung(
+            gremium, _person(tenant, "G", "Geht"), start_date=date(2024, 7, 1), end_date=date(2031, 10, 31)
+        )
+        kommt = _person(tenant, "K", "Kommt")
+        admin.post(
+            _url(tenant, f"/memberships/{geht.pk}/succession/"),
+            {"successor": str(kommt.pk), "change_date": "2027-01-01"},
+        )
+        geht.refresh_from_db()
+        neu = SessionOrganizationMembership.objects.get(organization=gremium, person=kommt)
+        assert geht.end_date == date(2026, 12, 31)
+        assert (neu.start_date, neu.end_date) == (date(2027, 1, 1), date(2031, 10, 31))
+
+    def test_nachruecken_nach_frueherem_ausscheiden_wird_abgelehnt(
+        self, tenant: SessionTenant, admin: Client, gremium: SessionOrganization
+    ) -> None:
+        geht = _besetzung(
+            gremium, _person(tenant, "G", "Geht"), start_date=date(2024, 7, 1), end_date=date(2026, 12, 30)
+        )
+        kommt = _person(tenant, "K", "Kommt")
+        response = admin.post(
+            _url(tenant, f"/memberships/{geht.pk}/succession/"),
+            {"successor": str(kommt.pk), "change_date": "2027-01-01"},
+        )
+        assert any("endete bereits" in m for m in _meldungen(response))
+        geht.refresh_from_db()
+        assert geht.end_date == date(2026, 12, 30)
+        assert not SessionOrganizationMembership.objects.filter(person=kommt).exists()
 
     def test_nachruecken_vor_beginn_wird_abgelehnt(
         self, tenant: SessionTenant, admin: Client, gremium: SessionOrganization

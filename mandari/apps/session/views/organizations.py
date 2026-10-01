@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from django import forms
 from django.contrib import messages
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import Count, Exists, F, OuterRef, Q
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -127,11 +127,14 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
             org.memberships.select_related("person").filter(start_date__gt=today).order_by("start_date")
         )
 
-        # Beendete Mitgliedschaften (Historie) und offene Besetzungen deaktivierter Personen
+        # Beendete Mitgliedschaften (Historie) und offene Besetzungen deaktivierter Personen; künftige
+        # Besetzungen stehen nur oben unter „Künftige Besetzung“. Offene Einträge zuletzt, damit sie die
+        # Historie nicht aus den zehn angezeigten Einträgen verdrängen.
         context["ended_memberships"] = (
             org.memberships.select_related("person")
             .filter(Q(end_date__lt=today) | Q(person__is_active=False, end_date__isnull=True))
-            .order_by("-end_date")[:10]
+            .exclude(start_date__gt=today)
+            .order_by(F("end_date").desc(nulls_last=True), "person__family_name")[:10]
         )
 
         # Recent meetings – nichtöffentliche nur mit NÖ-Sichtrecht
