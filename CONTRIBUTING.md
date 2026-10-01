@@ -234,6 +234,31 @@ SPDX-Kopf, damit das Repository [REUSE](https://reuse.software)-konform bleibt:
 Dateien ohne Kopf (Bilder, Daten) werden in `REUSE.toml` zugeordnet. Prüfen mit
 `reuse lint` (`pip install reuse`); in der CI läuft die Prüfung im Workflow „REUSE“.
 
+### Urheberangaben
+
+Urheber von mandari ist Sven Konopka. Die Urheberangabe steht an einer Stelle, in `REUSE.toml`, und
+gilt von dort für jede Datei des Projekts; ausgenommen sind nur die dort eigens zugeordneten
+Fremdbibliotheken. Dateiköpfe tragen deshalb nur die Lizenzkennung. Abweichende Sammelangaben
+(etwa „Copyright (C) … Contributors“) gehören weder in Dateiköpfe noch in Paketmetadaten wie
+`pyproject.toml`; ein Test in `apps/common/tests/test_lizenzangaben.py` prüft das.
+
+Beitragende, deren Beiträge übernommen werden, nennen wir künftig zusätzlich zur zentralen Angabe,
+nicht an ihrer Stelle:
+
+- im Kopf jeder Datei, die sie wesentlich mitgestaltet haben, mit einer eigenen Zeile über der
+  Lizenzkennung. REUSE führt diese Zeile mit der Angabe aus `REUSE.toml` zusammen.
+
+  ```python
+  # SPDX-FileCopyrightText: 2027 Erika Mustermann
+  # SPDX-License-Identifier: AGPL-3.0-or-later
+  ```
+
+- über die Commits in der Liste der
+  [Mitwirkenden](https://github.com/mandariOSS/mandari/graphs/contributors), auf die auch die
+  README verweist.
+
+Bitte keine Zeile für reine Formatierungen, Umbenennungen oder automatisch erzeugte Änderungen.
+
 ## Fragen
 
 [Diskussionen](https://github.com/mandariOSS/mandari/discussions) für alles Allgemeine,

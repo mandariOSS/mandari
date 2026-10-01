@@ -8,7 +8,7 @@ license = { text = "AGPL-3.0-or-later" }
 # müsste jede gesperrte Version schon Wheels für künftige Python-Versionen haben. Beim Wechsel des Basis-Images
 # anheben und `uv lock` ausführen.
 requires-python = ">=3.12,<3.15"
-authors = [{ name = "Mandari Contributors" }]
+authors = [{ name = "Sven Konopka" }]
 
 # Einzige Quelle der direkten Abhängigkeiten; die gesperrten Versionen stehen in uv.lock (Image, CI, pip-audit
 # und SBOM lesen sie von dort). Nach jeder Änderung hier: `uv lock` in diesem Verzeichnis.

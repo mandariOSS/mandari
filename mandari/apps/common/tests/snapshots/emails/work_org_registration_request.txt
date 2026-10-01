@@ -17,4 +17,4 @@ Freischalten oder ablehnen kannst du in der Mitgliederverwaltung. Die Person wir
 
 Du erhältst diese E-Mail, weil du in Fraktion Test Mitglieder einladen darfst.
 
-© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

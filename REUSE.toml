@@ -6,21 +6,21 @@
 
 version = 1
 SPDX-PackageName = "mandari"
-SPDX-PackageSupplier = "mandari Contributors"
+SPDX-PackageSupplier = "Sven Konopka"
 SPDX-PackageDownloadLocation = "https://github.com/mandariOSS/mandari"
 
 # --- Grundregel: alles, was keinen eigenen Header hat, ist AGPL-3.0-or-later ---
 [[annotations]]
 path = "**"
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
+SPDX-FileCopyrightText = "2025-2026 Sven Konopka"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 # --- Dokumentation ---
 [[annotations]]
 path = ["docs/**", "**/*.md", "**/*.rst"]
 precedence = "override"
-SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
+SPDX-FileCopyrightText = "2025-2026 Sven Konopka"
 SPDX-License-Identifier = "CC-BY-4.0"
 
 # --- Konfiguration, Lockfiles, Metadaten, CI ---
@@ -48,8 +48,16 @@ path = [
   "**/package-lock.json",
 ]
 precedence = "override"
-SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
+SPDX-FileCopyrightText = "2025-2026 Sven Konopka"
 SPDX-License-Identifier = "CC0-1.0"
+
+# --- Erzeugte Testdaten: gerenderte E-Mails ---
+# Der sichtbare Urheberhinweis in der Fußzeile der E-Mails ist Inhalt, keine eigene Angabe der Datei.
+[[annotations]]
+path = "mandari/apps/common/tests/snapshots/**/*.html"
+precedence = "override"
+SPDX-FileCopyrightText = "2025-2026 Sven Konopka"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 # --- Marke: nur Kennzeichen (Logo, Wortmarke, Favicons, App-Icons), keine freie Lizenz ---
 # Übrige Grafiken (z. B. mandari/static/images/og-default.png) fallen unter die Grundregel oben.
@@ -61,7 +69,7 @@ path = [
   "docs/assets/logo*.svg",
 ]
 precedence = "override"
-SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
+SPDX-FileCopyrightText = "2025-2026 Sven Konopka"
 SPDX-License-Identifier = "LicenseRef-Mandari-Brand"
 
 # --- Fremdbibliotheken (lokale Kopien, DSGVO-konform ohne CDN) ---

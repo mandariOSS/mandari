@@ -22,4 +22,4 @@ Mandari - Kommunalpolitische Transparenz · <https://mandari.example>
 
 Diese E-Mail wurde automatisch versendet.
 
-© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

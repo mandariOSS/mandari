@@ -18,4 +18,4 @@ Sie erhalten diese E-Mail, weil Sie diesen Beschluss abonniert haben.
 
 [Benachrichtigungen zu diesem Beschluss beenden](https://mandari.example/insight/beschluesse/abo/abmelden/00000000-0000-0000-0000-000000000203/)
 
-© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

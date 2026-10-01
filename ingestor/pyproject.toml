@@ -5,7 +5,7 @@ description = "Mandari OParl Ingestor - Sync service for OParl data"
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.12"
-authors = [{ name = "Mandari Contributors" }]
+authors = [{ name = "Sven Konopka" }]
 
 dependencies = [
     "mandari-oparl",
