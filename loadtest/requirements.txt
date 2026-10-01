@@ -1,3 +1,4 @@
 # Lasttests (Issue #228) — bewusst getrennt von mandari/pyproject.toml:
 # Locust läuft auf dem Lastgeber, nicht in der Anwendung.
-locust>=2.32,<3
+# Feste Version für vergleichbare Läufe (Workflow .github/workflows/lasttest.yml); von Hand heben.
+locust==2.46.6

@@ -1,0 +1,329 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# =============================================================================
+# Lasttest nach Mengengerüst mit Performance-Budgets (Issue #228)
+# =============================================================================
+# Startet die Anwendung wie im Betrieb – Daphne hinter Caddy (TLS, Kompression),
+# PostgreSQL mit den Einstellungen der Größenklasse, Redis, Elasticsearch –,
+# erzeugt die synthetischen Daten des Mengengerüsts (manage.py generate_load_data),
+# lässt die Locust-Szenarien laufen (loadtest/locustfile.py) und prüft p95 je
+# Szenario und Endpunkt sowie die Fehlerquote gegen loadtest/budgets.json.
+# Bericht in der Zusammenfassung des Laufs, Rohdaten als Artefakt.
+#
+# Schont die CI-Kapazität: läuft NICHT bei jedem Pull Request, sondern
+#   - werktags auf dev (Profil klein, Budget-Gate): Pull Requests gehen nach dev; eine
+#     Zeit-Regression fällt so am Tag nach dem Merge auf, nicht erst auf main,
+#   - von Hand (workflow_dispatch; Profil wählbar, "gross" ist der Lauf Großstadt;
+#     mit "stufen" eine Kapazitätsmessung mit stufenweise steigender Nutzerzahl).
+#     Auf einem Branch gestartet (gh workflow run lasttest.yml --ref <branch>) ist das
+#     der Lasttest vor dem Merge für Pull Requests, die eine Kernseite umbauen,
+#   - bei Pull Requests, die loadtest/, diesen Workflow, den Datengenerator oder den Code
+#     der Szenarien ändern, die das Abfrage-Budget nicht abdeckt: OParl-Ausgaben,
+#     Live-Abstimmung, Sitzungsgeldlauf (Liste unter pull_request.paths).
+# Views und Templates der übrigen Kernseiten lösen ihn nicht aus (rund zwei Drittel aller
+# Pull Requests). Für sie prüft jeder Pull Request die Abfragen hart (unten) und der
+# werktägliche Lauf auf dev die Zeit; Abdeckung im Einzelnen in docs/LASTTESTS.md 4.2.
+# Auf dem Läufer (4 vCPU für Anwendung, Datenbank, Suche und Lastgeber zusammen)
+# ist das Profil gross überlastet; Ergebnisse und Einordnung in docs/LASTTESTS.md.
+# Die Abfrage-Budgets der Kernseiten (scripts/check_performance_budgets.py) prüft
+# dagegen jeder Pull Request im Job "Smoke-Tests" der CI: wenige Sekunden, kein
+# eigener Läufer.
+#
+# Last nur gegen die im Lauf gestartete Instanz auf localhost, nie gegen andere
+# Systeme. Eingaben des manuellen Starts gehen nur über Umgebungsvariablen in die
+# Skripte und werden von loadtest/auswerten.py geprüft.
+# =============================================================================
+
+name: Lasttest
+
+on:
+  schedule:
+    # werktags 03:17 UTC; prüft dev, nicht den Standardzweig (siehe Checkout)
+    - cron: '17 3 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      profil:
+        description: 'Mengengerüst (gross = Lauf Großstadt)'
+        type: choice
+        options:
+          - klein
+          - mittel
+          - gross
+        default: klein
+      nutzer:
+        description: 'Gleichzeitige Nutzer (leer = laut loadtest/budgets.json)'
+        required: false
+        default: ''
+      dauer:
+        description: 'Laufzeit im Locust-Format, z. B. 3m oder 15m (leer = laut loadtest/budgets.json)'
+        required: false
+        default: ''
+      prozesse:
+        description: 'Anwendungsprozesse (leer = laut loadtest/budgets.json)'
+        required: false
+        default: ''
+      stufen:
+        description: 'Kapazitätsmessung: Nutzer je Stufe, z. B. 25,50,100,150 (leer = feste Nutzerzahl, Budget-Gate)'
+        required: false
+        default: ''
+      stufendauer:
+        description: 'Sekunden je Stufe der Kapazitätsmessung'
+        required: false
+        default: '120'
+  pull_request:
+    branches:
+      - dev
+      - main
+    # Der Lasttest selbst und der Code der Szenarien, deren Zeit kein anderes Gate prüft:
+    # OParl (beide Ausgaben, ETag), Live-Abstimmung, Sitzungsgeldlauf. Ein Test hält fest,
+    # dass jeder Eintrag existiert (apps/common/tests/test_lasttest_auswertung.py).
+    paths:
+      - 'loadtest/**'
+      - '.github/workflows/lasttest.yml'
+      - 'mandari/apps/session/management/commands/generate_load_data.py'
+      - 'mandari/hub/api/**'
+      - 'mandari/apps/session/api/oparl.py'
+      - 'mandari/apps/session/views/voting.py'
+      - 'mandari/apps/session/services/voting_service.py'
+      - 'mandari/apps/session/views/allowances.py'
+      - 'mandari/apps/session/services/allowance_service.py'
+      - '!mandari/**/tests/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lasttest-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lasttest:
+    name: Lasttest (${{ inputs.profil || 'klein' }}${{ inputs.stufen && ', Kapazität' || '' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Zeitplan und Pull Requests: Profil klein mit Budget-Gate
+      PROFIL: ${{ inputs.profil || 'klein' }}
+      EINGABE_NUTZER: ${{ inputs.nutzer }}
+      EINGABE_DAUER: ${{ inputs.dauer }}
+      EINGABE_PROZESSE: ${{ inputs.prozesse }}
+      EINGABE_STUFEN: ${{ inputs.stufen }}
+      EINGABE_STUFENDAUER: ${{ inputs.stufendauer }}
+      # Ergebnisse je Lauf unterscheidbar (Artefakt): Profil und ggf. Kapazitätsmessung
+      LAUF_NAME: ${{ inputs.profil || 'klein' }}${{ inputs.stufen && '-kapazitaet' || '' }}
+      ERGEBNISSE: loadtest/results
+      SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+      DEBUG: 'false'
+      DATABASE_URL: postgresql://lasttest:lasttest@127.0.0.1:5432/lasttest
+      REDIS_URL: redis://127.0.0.1:6379
+      ELASTICSEARCH_URL: http://127.0.0.1:9200
+      # Der Generator schreibt gesammelt; der Index entsteht danach in einem Zug (reindex_elasticsearch)
+      ELASTICSEARCH_AUTO_INDEX: 'False'
+      SITE_URL: https://localhost:8443
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      # Die Konten des Generators melden sich per Passwort an (loadtest/README.md)
+      TWO_FACTOR_ENFORCEMENT: 'false'
+      # Alle simulierten Abnehmer der Schnittstelle kommen von einer Adresse
+      OPARL_API_RATE_LIMIT: '0'
+      MANDARI_SYNC_WATCHDOG: '0'
+      EMAIL_BACKEND: django.core.mail.backends.dummy.EmailBackend
+      LOG_LEVEL: WARNING
+
+    steps:
+      # Der Zeitplan startet auf dem Standardzweig (main); geprüft wird der Integrationszweig dev,
+      # in den die Pull Requests gehen. Die Workflow-Datei selbst kommt dabei immer von main.
+      # Sonst (leer): der Stand, der den Lauf ausgelöst hat (Pull Request, Branch des Handstarts).
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+
+      - name: Laufparameter aus loadtest/budgets.json
+        id: lauf
+        run: |
+          set -euo pipefail
+          python3 loadtest/auswerten.py parameter --profil "$PROFIL" \
+            --nutzer "$EINGABE_NUTZER" --dauer "$EINGABE_DAUER" --prozesse "$EINGABE_PROZESSE" \
+            --stufen "$EINGABE_STUFEN" --stufendauer "$EINGABE_STUFENDAUER" | tee -a "$GITHUB_OUTPUT"
+          key=$(python3 -c 'import base64,secrets;print(base64.b64encode(secrets.token_bytes(32)).decode())')
+          echo "::add-mask::$key"
+          echo "ENCRYPTION_MASTER_KEY=$key" >> "$GITHUB_ENV"
+          mkdir -p "$ERGEBNISSE"
+
+      # Datenbank, Cache und Suche wie in docker-compose.yml (gleiche Images), PostgreSQL mit den
+      # Einstellungen der Größenklasse; alle im Netz des Läufers, damit Caddy und Daphne sie erreichen
+      - name: PostgreSQL, Redis und Elasticsearch starten
+        env:
+          POSTGRES_PARAMETER: ${{ steps.lauf.outputs.postgres }}
+        run: |
+          set -euo pipefail
+          sudo sysctl -w vm.max_map_count=262144
+          # shellcheck disable=SC2086 # POSTGRES_PARAMETER sind mehrere Argumente (geprüft in auswerten.py)
+          docker run -d --name lasttest-postgres --network host \
+            -e POSTGRES_USER=lasttest -e POSTGRES_PASSWORD=lasttest -e POSTGRES_DB=lasttest \
+            postgres:16-alpine postgres $POSTGRES_PARAMETER
+          docker run -d --name lasttest-redis --network host \
+            redis:7-alpine redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+          docker run -d --name lasttest-elasticsearch --network host \
+            -e discovery.type=single-node -e xpack.security.enabled=false -e xpack.ml.enabled=false \
+            -e ES_JAVA_OPTS="-Xms1g -Xmx1g" \
+            docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2-dev libpango1.0-dev libffi-dev shared-mime-info pkg-config poppler-utils
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
+
+      - uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: |
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
+          pip install pytest pytest-django factory-boy
+          # Locust in einer eigenen Umgebung: seine Abhängigkeiten gehören nicht zur Anwendung
+          uv venv /tmp/locust --python 3.12
+          uv pip install --python /tmp/locust/bin/python -r loadtest/requirements.txt
+
+      - name: Auswertung prüfen (Unit-Tests ohne Datenbank)
+        run: cd mandari && pytest apps/common/tests/test_lasttest_auswertung.py -q -p no:cacheprovider
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: mandari/package-lock.json
+      - name: Frontend-Assets bauen und statische Dateien sammeln
+        run: |
+          cd mandari && npm ci --ignore-scripts && npx vite build
+          python manage.py collectstatic --noinput -v 0
+
+      - name: Datenbank und Suchindex vorbereiten
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            docker exec lasttest-postgres pg_isready -U lasttest -d lasttest >/dev/null 2>&1 && break
+            sleep 2
+          done
+          cd mandari
+          python manage.py migrate --noinput -v 0
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:9200/_cluster/health >/dev/null && break
+            sleep 2
+          done
+          python manage.py setup_elasticsearch
+
+      - name: Daten des Mengengerüsts erzeugen
+        run: |
+          set -euo pipefail
+          cd mandari
+          beginn=$(date +%s)
+          # Leere Datenbank des Läufers, kein Produktionsbestand: DEBUG ist aus, deshalb der Schalter
+          python manage.py generate_load_data --profile "$PROFIL" --ich-weiss-was-ich-tue | tee "../$ERGEBNISSE/generator.txt"
+          echo "Datengenerator: $(( $(date +%s) - beginn )) s" | tee -a "../$ERGEBNISSE/generator.txt"
+          beginn=$(date +%s)
+          python manage.py reindex_elasticsearch
+          echo "Suchindex: $(( $(date +%s) - beginn )) s" | tee -a "../$ERGEBNISSE/generator.txt"
+
+      - name: Anwendung starten (Daphne hinter Caddy)
+        env:
+          PROZESSE: ${{ steps.lauf.outputs.prozesse }}
+        run: |
+          set -euo pipefail
+          upstreams=""
+          cd mandari
+          for i in $(seq 1 "$PROZESSE"); do
+            port=$((8000 + i))
+            nohup daphne --bind 127.0.0.1 --port "$port" --proxy-headers mandari.asgi:application \
+              > "../$ERGEBNISSE/daphne-$i.log" 2>&1 &
+            upstreams="$upstreams 127.0.0.1:$port"
+          done
+          cd ..
+          sed "s/LASTTEST_UPSTREAMS/${upstreams# }/" loadtest/Caddyfile > "$RUNNER_TEMP/Caddyfile"
+          docker run -d --name lasttest-caddy --network host \
+            -v "$RUNNER_TEMP/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine
+          for port in $upstreams; do
+            for i in $(seq 1 60); do
+              curl -sf "http://$port/health/" >/dev/null && break
+              sleep 1
+            done
+          done
+          # Anmeldeseite über Caddy: TLS, Weiterleitung und Anwendung in einem Aufruf
+          for i in $(seq 1 30); do
+            code=$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8443/accounts/login/ || true)
+            [ "$code" = "200" ] && break
+            sleep 1
+          done
+          echo "Anmeldeseite über Caddy: HTTP $code"
+          test "$code" = "200"
+
+      - name: Lasttest (Locust)
+        env:
+          NUTZER: ${{ steps.lauf.outputs.nutzer }}
+          ANLAUF: ${{ steps.lauf.outputs.anlauf }}
+          DAUER: ${{ steps.lauf.outputs.dauer }}
+          LOADTEST_PROFILE: ${{ env.PROFIL }}
+          # Caddy beglaubigt localhost mit eigener Zertifizierungsstelle (tls internal)
+          LOADTEST_TLS_PRUEFEN: '0'
+          # Kapazitätsmessung: Stufen statt fester Nutzerzahl (Klasse Stufenlast in locustfile.py)
+          LOADTEST_STUFEN: ${{ steps.lauf.outputs.stufen }}
+          LOADTEST_STUFENDAUER: ${{ steps.lauf.outputs.stufendauer }}
+        run: |
+          set -euo pipefail
+          python loadtest/ressourcen.py --ausgabe "$ERGEBNISSE/${LAUF_NAME}_ressourcen.csv" \
+            --prozess anwendung=mandari.asgi:application --prozess lastgeber=loadtest/locustfile.py \
+            --container postgres=lasttest-postgres --container redis=lasttest-redis \
+            --container elasticsearch=lasttest-elasticsearch --container caddy=lasttest-caddy \
+            --postgres lasttest-postgres:lasttest:lasttest &
+          messung=$!
+          /tmp/locust/bin/locust -f loadtest/locustfile.py --headless --host https://localhost:8443 \
+            -u "$NUTZER" -r "$ANLAUF" -t "$DAUER" --exit-code-on-error 0 --only-summary \
+            --csv "$ERGEBNISSE/$LAUF_NAME" --html "$ERGEBNISSE/$LAUF_NAME.html"
+          kill -TERM "$messung"
+          wait "$messung" || true
+
+      - name: Bericht und Budgets
+        env:
+          NUTZER: ${{ steps.lauf.outputs.nutzer }}
+          ANLAUF: ${{ steps.lauf.outputs.anlauf }}
+          DAUER: ${{ steps.lauf.outputs.dauer }}
+          PROZESSE: ${{ steps.lauf.outputs.prozesse }}
+        run: |
+          set -uo pipefail
+          umgebung="GitHub-Läufer ubuntu-latest, $(nproc) vCPU, $(free -m | awk '/^Mem:/{printf "%.0f", $2/1024}') GB RAM; Anwendung, Datenbank, Suche und Lastgeber auf demselben Rechner; Stand $(git rev-parse --short HEAD)"
+          python loadtest/auswerten.py bericht --profil "$PROFIL" --ergebnisse "$ERGEBNISSE/$LAUF_NAME" \
+            --nutzer "$NUTZER" --anlauf "$ANLAUF" --dauer "$DAUER" --prozesse "$PROZESSE" \
+            --umgebung "$umgebung" --bericht "$ERGEBNISSE/$LAUF_NAME-bericht.md" > /dev/null
+          status=$?
+          cat "$ERGEBNISSE/$LAUF_NAME-bericht.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "$ERGEBNISSE/$LAUF_NAME-bericht.md"
+          exit $status
+
+      - name: Fehler der Anwendung (Protokoll)
+        if: ${{ !cancelled() }}
+        run: |
+          for f in "$ERGEBNISSE"/daphne-*.log; do
+            [ -f "$f" ] || continue
+            echo "::group::$f (letzte 80 Zeilen)"
+            tail -n 80 "$f"
+            echo "::endgroup::"
+          done
+          docker logs --tail 40 lasttest-caddy 2>&1 || true
+
+      - name: Ergebnisse als Artefakt
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lasttest-${{ env.LAUF_NAME }}
+          path: loadtest/results/
+          retention-days: 30

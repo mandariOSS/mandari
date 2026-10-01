@@ -1,0 +1,82 @@
+{
+  "beschreibung": "Laufparameter und Performance-Budgets je Mengengerüst (Issue #228, docs/LASTTESTS.md). p95 in Millisekunden. Budgets dürfen nur sinken; neue Budgets etwa das 2,5-Fache des p95 aus Läufen in der CI (GitHub-Läufer, 4 vCPU, 16 GB), Workflow .github/workflows/lasttest.yml. Profile ohne p95-Budgets prüfen nur die Fehlerquote.",
+  "profile": {
+    "klein": {
+      "lauf": {
+        "nutzer": 20,
+        "anlauf": 5,
+        "dauer": "3m",
+        "prozesse": 1,
+        "postgres": {
+          "shared_buffers": "256MB",
+          "effective_cache_size": "768MB",
+          "work_mem": "8MB",
+          "max_connections": "100",
+          "maintenance_work_mem": "128MB",
+          "random_page_cost": "1.1",
+          "effective_io_concurrency": "200"
+        }
+      },
+      "fehlerquote_max_prozent": 1.0,
+      "szenarien_p95_ms": {
+        "Portal": 900,
+        "Sitzungsdienst": 900,
+        "Fraktion": 1000,
+        "OParl": 800,
+        "Live-Abstimmung": 2100,
+        "Sitzungsgeldlauf": 6500
+      },
+      "endpunkte_p95_ms": {
+        "/insight/": 400,
+        "/insight/termine/": 600,
+        "/insight/vorgaenge/": 600,
+        "/insight/suche/partials/results/": 1800,
+        "/session/meetings/": 800,
+        "/session/meetings/<id>/": 700,
+        "/session/papers/": 800,
+        "/work/": 700,
+        "/work/documents/": 1000
+      }
+    },
+    "mittel": {
+      "lauf": {
+        "nutzer": 100,
+        "anlauf": 2,
+        "dauer": "5m",
+        "prozesse": 2,
+        "postgres": {
+          "shared_buffers": "1GB",
+          "effective_cache_size": "3GB",
+          "work_mem": "8MB",
+          "max_connections": "200",
+          "maintenance_work_mem": "128MB",
+          "random_page_cost": "1.1",
+          "effective_io_concurrency": "200"
+        }
+      },
+      "fehlerquote_max_prozent": 1.0,
+      "szenarien_p95_ms": {},
+      "endpunkte_p95_ms": {}
+    },
+    "gross": {
+      "lauf": {
+        "nutzer": 400,
+        "anlauf": 2,
+        "dauer": "10m",
+        "prozesse": 4,
+        "postgres": {
+          "shared_buffers": "2GB",
+          "effective_cache_size": "6GB",
+          "work_mem": "16MB",
+          "max_connections": "300",
+          "maintenance_work_mem": "128MB",
+          "random_page_cost": "1.1",
+          "effective_io_concurrency": "200"
+        }
+      },
+      "fehlerquote_max_prozent": 1.0,
+      "szenarien_p95_ms": {},
+      "endpunkte_p95_ms": {}
+    }
+  }
+}

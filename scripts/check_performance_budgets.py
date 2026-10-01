@@ -212,6 +212,31 @@ def _seiten() -> list[Seite]:
             lambda k: f"/session/leitstelle/{LEITSTELLE_SLUG}/",
             sachbearbeitung,
         ),
+        # Offene Schnittstelle: Listen sind der teuerste Weg der Abnehmer (Aggregatoren holen alles seitenweise)
+        Seite(
+            "oparl_vorgaenge",
+            "OParl (Aggregator): Vorgangsliste einer Kommune, erste Seite",
+            lambda k: f"/oparl/v1/body/{k['body_id']}/papers",
+            None,
+        ),
+        Seite(
+            "oparl_sitzungen",
+            "OParl (Aggregator): Sitzungsliste einer Kommune, erste Seite",
+            lambda k: f"/oparl/v1/body/{k['body_id']}/meetings",
+            None,
+        ),
+        Seite(
+            "oparl_session_vorgaenge",
+            "OParl (Session-Schnittstelle): Vorgangsliste eines Mandanten, erste Seite",
+            lambda k: f"/session/{SESSION_SLUG}/api/oparl/papers/",
+            None,
+        ),
+        Seite(
+            "oparl_session_sitzungen",
+            "OParl (Session-Schnittstelle): Sitzungsliste eines Mandanten, erste Seite",
+            lambda k: f"/session/{SESSION_SLUG}/api/oparl/meetings/",
+            None,
+        ),
         Seite("work_dashboard", "Work: Dashboard", lambda k: f"/work/{ORG_SLUG}/", fraktion),
         Seite("work_dokumentliste", "Work: Dokumentliste", lambda k: f"/work/{ORG_SLUG}/documents/", fraktion),
         Seite(
