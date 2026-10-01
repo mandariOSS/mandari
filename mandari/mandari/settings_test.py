@@ -52,11 +52,19 @@ DJANGO_VITE = {"default": {**DJANGO_VITE["default"], "dev_mode": os.environ.get(
 # In-Memory-Testdatenbank teilen sich alle Server-Threads eine SQLite-Verbindung und scheitern mit
 # "database table is locked" – Serverfehler im Test wären dann Umgebungsartefakte. Als Datei mit
 # Lock-Timeout warten parallele Schreiber; die Tests laufen dafür transaktional (tests_e2e/conftest.py).
+#
+# Transaktionen beginnen sofort mit der Schreibsperre (BEGIN IMMEDIATE, Issue #730): SQLite kennt keine
+# Zeilensperre (select_for_update entfällt), eine Transaktion beginnt sonst lesend. Will sie danach schreiben,
+# während eine andere Verbindung schon schreibt (etwa last_access beim Polling-Abruf), meldet SQLite sofort
+# "database is locked" – beim Hochstufen einer Lesetransaktion greift das Lock-Timeout nicht (Deadlock-Schutz).
+# Mit IMMEDIATE wartet die Transaktion schon bei BEGIN auf die Sperre; Schreiber laufen nacheinander.
 if os.environ.get("MANDARI_E2E") == "1" and DATABASES["default"]["ENGINE"].endswith("sqlite3"):  # noqa: F405
     DATABASES["default"]["TEST"] = {  # noqa: F405
         "NAME": str(Path(tempfile.mkdtemp(prefix="mandari_e2e_")) / "e2e.sqlite3"),
     }
-    DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = 30  # noqa: F405
+    DATABASES["default"].setdefault("OPTIONS", {}).update(  # noqa: F405
+        {"timeout": 30, "transaction_mode": "IMMEDIATE"}
+    )
 
 # Komponentenvorschau /dev/ui/ auch ohne DEBUG (Rendering- und E2E-Tests)
 UI_KIT_PREVIEW = True
