@@ -273,6 +273,9 @@ class Command(BaseCommand):
         p = self.profil
 
         body = self._insight_kommune(art, stadtname)
+        if nummer == 0:
+            # Kommune des Hauptmandanten: Einstieg der Lastszenarien (Ausgabe am Ende)
+            self.haupt_body_id = body.pk
         tenant = self._session_mandant(art, stadtname, body)
         gremien = self._gremien(tenant, body, anteil)
         personen = self._personen(tenant, body, _skaliert(p.personen, anteil))
@@ -848,13 +851,11 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------
 
     def _zusammenfassung(self) -> None:
-        from insight_core.models import OParlBody
-
         self.stdout.write(self.style.SUCCESS(f"\nLasttest-Daten „{self.profil_name}“ angelegt:"))
         for schluessel, wert in sorted(self.zaehler.items()):
             self.stdout.write(f"  - {schluessel}: {wert}")
         haupt = self._kennung("stadt")
-        body_id = OParlBody.objects.filter(slug=haupt).values_list("pk", flat=True).first()
+        body_id = self.haupt_body_id
         self.stdout.write("\nEinstiegspunkte (Passwort aller Konten: siehe PASSWORT in diesem Kommando):")
         self.stdout.write(f"  Insight:  /insight/k/{haupt}/  (Kommune „{haupt}“)")
         self.stdout.write(f"  Session:  /session/{haupt}/  ({self._kennung('stadt-sachbearbeitung-1')}@{DOMAENE})")
