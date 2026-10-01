@@ -97,7 +97,7 @@ ROLLEN: dict[str, set[str] | str | None] = {
 #: scheitern schon an der Rechteprüfung – für sie genügt je Route ein Aufruf (Laufzeit).
 VOLLSTAENDIG = {"admin", "sachbearbeitung", "freigabe", "lesezugriff", "einstellungen"}
 
-#: Unsinnige Werte für Filter in der Adresszeile
+#: Unsinnige Werte für Filter in der Adresszeile – alle zugleich …
 FUZZ_GET = {
     "year": "0",
     "organization": "kaputt",
@@ -111,6 +111,27 @@ FUZZ_GET = {
     "a": "x",
     "b": "-1",
 }
+#: … und einzeln: Ein Filter, der schon leer macht (``organization=kaputt``), verdeckt sonst die übrigen
+FUZZ_GET_EINZELN = [
+    ("year", "0"),
+    ("year", "99999999999"),
+    ("year", "abc"),
+    ("organization", "kaputt"),
+    ("status", "kaputt"),
+    ("result", "kaputt"),
+    ("type", "kaputt"),
+    ("term", "kaputt"),
+    ("page", "kaputt"),
+    ("page", "0"),
+    ("page", "99999999999"),
+    ("overdue", "1"),
+    ("q", "%"),
+    ("a", "x"),
+    ("a", "99999999999"),
+    ("b", "-1"),
+]
+#: Rollen, für die jeder Filter einzeln geprüft wird (Laufzeit)
+EINZELN = {"admin", "lesezugriff"}
 #: Unsinnige Angaben für Formulare
 FUZZ_POST = {
     "organization": "kaputt",
@@ -399,7 +420,7 @@ def test_seitenlauf_ohne_serverfehler(welt: Welt, rolle: str) -> None:
     log = _Fehlerlog()
     logging.getLogger().addHandler(log)
 
-    def aufruf(methode: str, url: str, daten: dict[str, str] | None = None, kopf: dict[str, str] | None = None) -> None:
+    def aufruf(methode: str, url: str, daten: dict[str, str] | None = None, kopf: dict[str, str] | None = None) -> int:
         try:
             with transaction.atomic():
                 if methode == "GET":
@@ -409,9 +430,10 @@ def test_seitenlauf_ohne_serverfehler(welt: Welt, rolle: str) -> None:
                 transaction.set_rollback(True)
         except Exception as exc:  # Ausnahme der Anwendung – im Bericht sammeln statt abzubrechen
             befunde.append(f"{methode} {url} {daten or ''}: {type(exc).__name__}: {exc}"[:500])
-            return
+            return 500
         if antwort.status_code >= 500:
             befunde.append(f"{methode} {url} {daten or ''}: HTTP {antwort.status_code}")
+        return int(antwort.status_code)
 
     voll = rolle in VOLLSTAENDIG
     try:
@@ -422,7 +444,9 @@ def test_seitenlauf_ohne_serverfehler(welt: Welt, rolle: str) -> None:
                 aufruf("POST", url)
                 if not voll:
                     continue
-                aufruf("GET", url, FUZZ_GET)
+                if aufruf("GET", url, FUZZ_GET) == 200 and rolle in EINZELN:
+                    for schluessel, wert in FUZZ_GET_EINZELN:
+                        aufruf("GET", url, {schluessel: wert})
                 if rolle == "admin":
                     aufruf("GET", url, kopf={"HX-Request": "true"})
             if not voll:

@@ -605,6 +605,15 @@ def test_beschlussregister_rechnet_in_ortszeit(welt: Any, beschluesse: Any) -> N
     assert [(z[2], z[5]) for z in zeilen] == [("Erledigt", "01.01.2026")]
 
 
+@pytest.mark.parametrize("jahr", ["0", "99999999999", "²", "abc"])
+def test_ungueltiges_jahr_ohne_serverfehler(welt: Any, beschluesse: Any, jahr: str) -> None:
+    client = _client(welt.admin)
+    seite = client.get(f"/session/{welt.tenant.slug}/resolutions/", {"year": jahr})
+    assert seite.status_code == 200
+    assert len(seite.context["items"]) == 2  # ungültiges Jahr filtert nicht
+    assert client.get(f"/session/{welt.tenant.slug}/resolutions/export.csv", {"year": jahr}).status_code == 200
+
+
 def test_jahresauswahl_bleibt_beim_filtern_vollstaendig(welt: Any, beschluesse: Any) -> None:
     client = _client(welt.admin)
     for abfrage in ("?year=2026", "?status=done", "?overdue=1"):

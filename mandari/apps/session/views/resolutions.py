@@ -65,16 +65,23 @@ def _overdue_q():
     )
 
 
+def _jahr(raw):
+    """Jahr aus dem Filter (1–9999); sonst None – ``year=0`` oder Riesenzahlen sprengen den Datumsbereich."""
+    if raw and raw.isascii() and raw.isdigit() and len(raw) <= 4 and int(raw) >= 1:
+        return int(raw)
+    return None
+
+
 def _filter_basis(qs, params):
     """Gremium, Jahr und Ergebnis – darüber zählt auch die Ampel der Beschlusskontrolle."""
     org_id = params.get("organization")
     if org_id:
         org_uuid = uuid_param(org_id)  # ungültig: kein Treffer statt Serverfehler
         qs = qs.filter(meeting__organization_id=org_uuid) if org_uuid else qs.none()
-    year = params.get("year")
-    if year and year.isdigit():
+    year = _jahr(params.get("year"))
+    if year is not None:
         # Ortszeit: Eine Sitzung am 1. Januar um 0:30 Uhr gehört zum neuen Jahr
-        qs = qs.filter(meeting__start__year=int(year))
+        qs = qs.filter(meeting__start__year=year)
     result = params.get("result")
     if result in resolution_service.DECIDED_RESULTS:
         qs = qs.filter(vote_result=result)
