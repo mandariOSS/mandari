@@ -15,7 +15,7 @@
                 </a>
                 {% endif %}
             </div>
-            {% if item.start_time %}
+            {% if protocol.show_timings and item.start_time %}
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1" data-testid="top-behandelt">Behandelt {{ item.start_time|time:"H:i" }}{% if item.end_time %}–{{ item.end_time|time:"H:i" }}{% endif %} Uhr</p>
             {% endif %}
             {% if item.vote_result != "pending" %}

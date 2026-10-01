@@ -17,6 +17,7 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -28,6 +29,7 @@ from ..models import SessionAgendaItem, SessionMeeting, SessionProtocolCorrectio
 from ..permissions import SessionViewMixin
 from ..services import (
     agenda_service,
+    cockpit_service,
     four_eyes_service,
     protocol_correction_service,
     protocol_lock,
@@ -36,7 +38,16 @@ from ..services import (
 )
 
 _VOTE_RESULTS = {choice[0] for choice in SessionAgendaItem._meta.get_field("vote_result").choices}
-_COUNT_FIELDS = ("votes_yes", "votes_no", "votes_abstain")
+_COUNT_FIELDS = voting_service.COUNT_FIELDS
+#: Felder, die die Niederschrift an einem TOP speichert – nie Zeiten oder Abstimmungszeitpunkte des Cockpits
+_ITEM_FIELDS = (
+    "protocol_note",
+    "resolution_text",
+    "vote_result",
+    *_COUNT_FIELDS,
+    "protocol_note_encrypted",
+    "updated_at",
+)
 #: Farbe des Status-Badges
 STATUS_TONES = {"draft": "gray", "review": "amber", "approved": "blue", "published": "green"}
 
@@ -228,7 +239,25 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
             protocol.set_content_encrypted(request.POST.get("content_np", ""))
         protocol.save()
 
-        # TOP-weise Protokolltexte + Beschlussergebnisse
+        # TOP-weise Protokolltexte + Beschlussergebnisse. Die Niederschrift wird oft parallel zur Sitzung
+        # geschrieben: Sperre auf der Sitzung wie im Cockpit, TOPs erst unter der Sperre laden, Ergebnis und
+        # Summen nur übernehmen, wenn sie hier geändert wurden, Zeiten des Cockpits nie mitspeichern (Issue #140)
+        with transaction.atomic():
+            cockpit_service.lock_meeting(meeting.pk)
+            self._save_items(request, meeting, can_view_np)
+
+        messages.success(request, "Protokoll wurde gespeichert.")
+        if request.POST.get("continue") == "1":
+            return redirect(
+                "session:meeting_protocol_edit",
+                tenant_slug=self.session_tenant.slug,
+                meeting_id=meeting.id,
+            )
+        return _protocol_redirect(self, meeting)
+
+    def _save_items(self, request, meeting, can_view_np):
+        """Protokolltexte und Beschlussergebnisse je TOP (unter der Sperre der Sitzung)."""
+        data = request.POST
         items = meeting.agenda_items.all()
         if not can_view_np:
             items = items.filter(is_public=True)
@@ -236,16 +265,16 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
         assessed = voting_service.eligibility(meeting)
         for item in items:
             prefix = str(item.pk)
-            if f"protocol_note_{prefix}" not in request.POST:
+            if f"protocol_note_{prefix}" not in data:
                 continue
-            item.protocol_note = request.POST.get(f"protocol_note_{prefix}", "")
-            item.resolution_text = request.POST.get(f"resolution_text_{prefix}", item.resolution_text)
-            vote = request.POST.get(f"vote_result_{prefix}", item.vote_result)
+            item.protocol_note = data.get(f"protocol_note_{prefix}", "")
+            item.resolution_text = data.get(f"resolution_text_{prefix}", item.resolution_text)
+            vote = voting_service.form_value(data, f"vote_result_{prefix}", item.vote_result)
             if vote in _VOTE_RESULTS:
                 item.vote_result = vote
             counts = {field: getattr(item, field) for field in _COUNT_FIELDS}
             for field in _COUNT_FIELDS:
-                raw = request.POST.get(f"{field}_{prefix}", "")
+                raw = str(voting_service.form_value(data, f"{field}_{prefix}", "") or "")
                 if raw.isdigit():
                     counts[field] = min(int(raw), 9999)
             if any(counts[field] != getattr(item, field) for field in _COUNT_FIELDS):
@@ -258,19 +287,10 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
                     for field, value in counts.items():
                         setattr(item, field, value)
             if can_view_np:
-                np_note = request.POST.get(f"protocol_note_np_{prefix}", None)
+                np_note = data.get(f"protocol_note_np_{prefix}", None)
                 if np_note is not None:
                     item.set_protocol_note_encrypted(np_note)
-            item.save()
-
-        messages.success(request, "Protokoll wurde gespeichert.")
-        if request.POST.get("continue") == "1":
-            return redirect(
-                "session:meeting_protocol_edit",
-                tenant_slug=self.session_tenant.slug,
-                meeting_id=meeting.id,
-            )
-        return _protocol_redirect(self, meeting)
+            item.save(update_fields=_ITEM_FIELDS)
 
 
 class ProtocolWorkflowView(SessionViewMixin, View):

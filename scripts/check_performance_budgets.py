@@ -57,6 +57,8 @@ class Messwert:
     abfragen: int
     ms: float
     status: int
+    #: erwarteter Status: 200, beim Polling ohne Änderung 204 (Sitzungscockpit, Issue #140)
+    erwartet: int = 200
 
 
 @dataclass(frozen=True)
@@ -72,8 +74,8 @@ def bewerten(messungen: dict[str, Messwert], budgets: dict[str, dict[str, Any]])
     warnungen: list[str] = []
     verbesserungen: list[str] = []
     for name, wert in messungen.items():
-        if wert.status != 200:
-            verletzungen.append(f"{name}: HTTP {wert.status} statt 200")
+        if wert.status != wert.erwartet:
+            verletzungen.append(f"{name}: HTTP {wert.status} statt {wert.erwartet}")
             continue
         budget = budgets.get(name)
         if budget is None:
@@ -158,6 +160,7 @@ class Seite:
     beschreibung: str
     url: Callable[[dict[str, Any]], str]
     konto: str | None  # E-Mail des angemeldeten Kontos, None = anonym
+    erwartet: int = 200
 
 
 def _seiten() -> list[Seite]:
@@ -205,6 +208,21 @@ def _seiten() -> list[Seite]:
             "Session: Abstimmungserfassung der laufenden Sitzung",
             lambda k: f"/session/{SESSION_SLUG}/agenda/{k['live_item_id']}/voting/",
             sachbearbeitung,
+        ),
+        # Sitzungscockpit (Issue #140): der häufigste Abruf – jede offene Ansicht alle zwei Sekunden im
+        # Polling-Rückfall, alle zugleich nach jeder Aktion. Mit Änderung der volle Stand, ohne 204.
+        Seite(
+            "session_cockpit_stand",
+            "Session: Stand des Sitzungscockpits der laufenden Sitzung (HTMX-Fragment)",
+            lambda k: f"/session/{SESSION_SLUG}/meetings/{k['live_meeting_id']}/cockpit/stand/",
+            sachbearbeitung,
+        ),
+        Seite(
+            "session_cockpit_stand_204",
+            "Session: Stand des Sitzungscockpits unverändert (Polling, 204 ohne Inhalt)",
+            lambda k: f"/session/{SESSION_SLUG}/meetings/{k['live_meeting_id']}/cockpit/stand/?v={k['live_version']}",
+            sachbearbeitung,
+            erwartet=204,
         ),
         Seite(
             "session_leitstelle",
@@ -262,12 +280,15 @@ def _leitstelle_anlegen() -> None:
 
 def _kontext() -> dict[str, Any]:
     from apps.session.models import SessionAgendaItem, SessionMeeting
+    from apps.session.services import cockpit_service
     from apps.work.models import Motion
     from insight_core.models import OParlBody
 
     _leitstelle_anlegen()
     live = SessionMeeting.objects.get(tenant__slug=SESSION_SLUG, meeting_state="in_progress")
     return {
+        "live_meeting_id": live.id,
+        "live_version": cockpit_service.state_version(live),
         "body_id": OParlBody.objects.get(slug=SESSION_SLUG).id,
         "meeting_id": SessionMeeting.objects.filter(tenant__slug=SESSION_SLUG, meeting_state="completed")
         .order_by("-start")
@@ -328,7 +349,7 @@ def messen(seiten: list[Seite], kontext: dict[str, Any]) -> dict[str, Messwert]:
             status = antwort.status_code
             abfragen = len(erfasst)
             beste_ms = min(beste_ms, dauer)
-        ergebnis[seite.name] = Messwert(abfragen=abfragen, ms=beste_ms, status=status)
+        ergebnis[seite.name] = Messwert(abfragen=abfragen, ms=beste_ms, status=status, erwartet=seite.erwartet)
     return ergebnis
 
 
@@ -355,13 +376,13 @@ def main(argv: list[str]) -> int:
         budget = budgets.get(name, {})
         print(
             f"{name:<28}{wert.abfragen:>9}{budget.get('abfragen', '-'):>8}{wert.ms:>8.0f}{budget.get('ms', '-'):>8}"
-            f"  {'' if wert.status == 200 else f'HTTP {wert.status}'}"
+            f"  {'' if wert.status == wert.erwartet else f'HTTP {wert.status}'}"
         )
 
     if "--update" in argv or not BUDGETS.exists():
-        fehler = [n for n, m in messungen.items() if m.status != 200]
+        fehler = [n for n, m in messungen.items() if m.status != m.erwartet]
         if fehler:
-            print(f"\nNicht geschrieben, Seiten antworten nicht mit 200: {', '.join(fehler)}")
+            print(f"\nNicht geschrieben, Seiten antworten nicht wie erwartet: {', '.join(fehler)}")
             return 1
         neu = budgets_nachziehen(messungen, budgets, beschreibungen)
         BUDGETS.write_text(json.dumps(neu, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

@@ -139,11 +139,15 @@ def meeting_for_viewer(user: Any, tenant_slug: str, meeting_id: str) -> Any:
     Sitzung, deren Cockpit die Person mitlesen darf – sonst ``None`` (WebSocket-Anmeldung).
 
     Dieselben Regeln wie die Seite: aktiver Mandant, aktives Konto im Mandanten, Sichtrecht für Sitzungen,
-    nichtöffentliche Sitzungen nur mit dem NÖ-Recht.
+    nichtöffentliche Sitzungen nur mit dem NÖ-Recht. Eine ID, die keine UUID ist, findet keine Sitzung.
     """
+    from apps.common.params import uuid_param
     from apps.session.permissions import SessionPermissionChecker
 
     if not getattr(user, "is_authenticated", False):
+        return None
+    meeting_uuid = uuid_param(meeting_id)
+    if meeting_uuid is None:
         return None
     session_user = (
         SessionUser.objects.filter(user=user, tenant__slug=tenant_slug, tenant__is_active=True, is_active=True)
@@ -157,7 +161,7 @@ def meeting_for_viewer(user: Any, tenant_slug: str, meeting_id: str) -> Any:
         return None
     return (
         SessionMeeting.objects.visible_to(permissions)
-        .filter(pk=meeting_id, tenant_id=session_user.tenant_id)
+        .filter(pk=meeting_uuid, tenant_id=session_user.tenant_id)
         .values_list("pk", flat=True)
         .first()
     )
@@ -371,10 +375,33 @@ def _open_vote_item(meeting: SessionMeeting) -> SessionAgendaItem | None:
     )
 
 
-def _ensure_no_open_vote(meeting: SessionMeeting) -> None:
+def _hidden(item: SessionAgendaItem, permissions: Collection[str]) -> bool:
+    """Nichtöffentlicher TOP, den die Person ohne NÖ-Recht nicht sieht."""
+    return not item.is_public and NON_PUBLIC_MEETINGS not in permissions
+
+
+def _ensure_no_open_vote(meeting: SessionMeeting, permissions: Collection[str]) -> None:
     open_item = _open_vote_item(meeting)
-    if open_item is not None:
-        raise CockpitError(f"Bitte zuerst die Abstimmung zu TOP {open_item.number} schließen.")
+    if open_item is None:
+        return
+    if _hidden(open_item, permissions):
+        # Ohne NÖ-Recht keine Nummer und kein Name aus dem nichtöffentlichen Teil
+        raise CockpitError("Bitte zuerst die Abstimmung im nichtöffentlichen Teil schließen.")
+    raise CockpitError(f"Bitte zuerst die Abstimmung zu TOP {open_item.number} schließen.")
+
+
+def _ensure_running_visible(meeting: SessionMeeting, permissions: Collection[str]) -> None:
+    """
+    Ohne NÖ-Recht kein Eingriff in den nichtöffentlichen Teil: Ein dort aufgerufener TOP endet nicht durch den
+    Aufruf eines anderen TOP oder das Schließen der Sitzung, sondern nur durch jemanden, der ihn sieht.
+    """
+    if NON_PUBLIC_MEETINGS in permissions:
+        return
+    if _running(meeting).filter(is_public=False).exists():
+        raise CockpitError(
+            "Im nichtöffentlichen Teil ist ein Tagesordnungspunkt aufgerufen. Beenden kann ihn nur, "
+            "wer den nichtöffentlichen Teil sehen darf."
+        )
 
 
 def _start(meeting: SessionMeeting) -> None:
@@ -385,10 +412,14 @@ def _start(meeting: SessionMeeting) -> None:
     meeting.save(update_fields=["actual_start", "actual_end", "meeting_state", "updated_at"])
 
 
+def _running(meeting: SessionMeeting) -> Any:
+    return meeting.agenda_items.filter(start_time__isnull=False, end_time__isnull=True, is_withdrawn=False)
+
+
 def _end_running(meeting: SessionMeeting, moment: time, *, keep: Any = None) -> list[SessionAgendaItem]:
     """Laufende TOPs beenden (einzeln gespeichert: Audit-Log je TOP)."""
     ended = []
-    running = meeting.agenda_items.filter(start_time__isnull=False, end_time__isnull=True, is_withdrawn=False)
+    running = _running(meeting)
     for item in running.exclude(pk=keep) if keep is not None else running:
         item.end_time = moment
         item.save(update_fields=["end_time", "updated_at"])
@@ -407,10 +438,13 @@ def open_meeting(meeting: SessionMeeting, data: Mapping[str, Any], **_: Any) -> 
     return Outcome(f"Sitzung um {started:%H:%M} Uhr eröffnet.")
 
 
-def close_meeting(meeting: SessionMeeting, data: Mapping[str, Any], **_: Any) -> Outcome:
+def close_meeting(
+    meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: Collection[str], **_: Any
+) -> Outcome:
     if meeting.meeting_state != RUNNING:
         raise CockpitError("Die Sitzung ist nicht eröffnet.")
-    _ensure_no_open_vote(meeting)
+    _ensure_no_open_vote(meeting, permissions)
+    _ensure_running_visible(meeting, permissions)
     moment = _now()
     _end_running(meeting, moment)
     # Andauernde Störungen enden mit der Sitzung – sonst stünde in der Niederschrift „Störung ab …“ ohne Ende
@@ -427,17 +461,18 @@ def close_meeting(meeting: SessionMeeting, data: Mapping[str, Any], **_: Any) ->
 
 def call_item(meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: Collection[str], **_: Any) -> Outcome:
     item = _item(meeting, data.get("item"), permissions)
-    return _call(meeting, item)
+    return _call(meeting, item, permissions)
 
 
-def _call(meeting: SessionMeeting, item: SessionAgendaItem) -> Outcome:
+def _call(meeting: SessionMeeting, item: SessionAgendaItem, permissions: Collection[str]) -> Outcome:
     if item.is_withdrawn:
         raise CockpitError(f"TOP {item.number} ist abgesetzt.")
     if meeting.meeting_state == COMPLETED:
         raise CockpitError("Die Sitzung ist geschlossen. Zum Fortsetzen bitte erneut eröffnen.")
     if _is_running(item):
         raise CockpitError(f"TOP {item.number} ist bereits aufgerufen.")
-    _ensure_no_open_vote(meeting)
+    _ensure_no_open_vote(meeting, permissions)
+    _ensure_running_visible(meeting, permissions)
     opened = meeting.meeting_state != RUNNING
     if opened:
         _start(meeting)
@@ -459,7 +494,7 @@ def next_item(meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: 
     following = _next_item(items, current)
     if following is None:
         raise CockpitError("Es gibt keinen weiteren offenen Tagesordnungspunkt.")
-    return _call(meeting, following)
+    return _call(meeting, following, permissions)
 
 
 def end_item(meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: Collection[str], **_: Any) -> Outcome:
@@ -475,10 +510,6 @@ def end_item(meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: C
 
 
 # --- Anwesenheit ---------------------------------------------------------------
-
-
-def _append_note(attendance: SessionAttendance, text: str) -> None:
-    attendance.notes = f"{attendance.notes}; {text}" if attendance.notes else text
 
 
 def change_attendance(meeting: SessionMeeting, data: Mapping[str, Any], **_: Any) -> Outcome:
@@ -511,10 +542,11 @@ def change_attendance(meeting: SessionMeeting, data: Mapping[str, Any], **_: Any
     elif change == "zurueck":
         if attendance.status != "left_early":
             raise CockpitError(f"{name} hat die Sitzung nicht verlassen.")
-        # Die Anwesenheit kennt einen Abgang; die Unterbrechung bleibt als Notiz und im Audit-Log
+        # Die Anwesenheit kennt nur einen Abgang: Die Unterbrechung wird als Zeitraum vermerkt und steht
+        # damit im Teilnahmevermerk der Niederschrift („abwesend 18:30–18:50 Uhr“), auch bei mehreren Wechseln
         if attendance.departure_time is not None:
-            _append_note(attendance, f"abwesend {attendance.departure_time:%H:%M}–{moment:%H:%M} Uhr")
-            fields.append("notes")
+            participation_service.add_interruption(attendance, attendance.departure_time, moment)
+            fields.append("interruptions")
         attendance.status = "joined_late" if attendance.arrival_time else "present"
         attendance.departure_time = None
         fields.append("departure_time")
@@ -590,7 +622,7 @@ def open_vote(meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: 
     item = _item(meeting, data.get("item"), permissions)
     if not _is_running(item):
         raise CockpitError("Abgestimmt wird über den aufgerufenen Tagesordnungspunkt.")
-    _ensure_no_open_vote(meeting)
+    _ensure_no_open_vote(meeting, permissions)
     if item.vote_result != "pending":
         raise CockpitError(
             f"Für TOP {item.number} ist bereits ein Ergebnis festgestellt ({item.get_vote_result_display()}). "
@@ -646,6 +678,9 @@ def close_vote(
         voting_service.recompute_sums(item)
     else:
         yes, no, abstain = _count(data, "votes_yes"), _count(data, "votes_no"), _count(data, "votes_abstain")
+        if yes + no + abstain == 0:
+            # Ohne eine einzige Stimme gibt es kein Ergebnis – meist sind die Zahlen nicht angekommen
+            raise CockpitError("Bitte die Stimmen eintragen: Ohne Ja, Nein oder Enthaltung gibt es kein Ergebnis.")
         check = voting_service.check_counts(item, yes, no, abstain)
         if check.hard:
             raise CockpitError(check.message)
@@ -730,9 +765,25 @@ def perform(
                 "Die Niederschrift dieser Sitzung ist genehmigt. Das Cockpit zeigt den Stand nur noch an."
             )
         outcome = handler(locked, data, permissions=permissions, session_user=session_user, tenant=locked.tenant)
-        meeting_id = locked.pk
-        transaction.on_commit(lambda: notify(meeting_id))
+        # Die Signale der gespeicherten Objekte melden die Änderung ebenfalls; je Transaktion geht ein Hinweis
+        notify_on_commit(locked.pk)
     return outcome
+
+
+def lock_meeting(meeting_id: Any) -> None:
+    """
+    Zeilensperre auf der Sitzung bis zum Ende der Transaktion – dieselbe wie bei jeder Cockpit-Aktion.
+
+    Abstimmungserfassung und Niederschrift nehmen sie vor dem Schreiben eines TOP: So laufen sie nacheinander
+    mit dem Cockpit und überschreiben nie einen Stand, den es gerade gesetzt hat (Ergebnis, Zeitpunkte).
+    Nur die Sitzungszeile, nicht verbundene Zeilen (``of=("self",)``).
+    """
+    list(SessionMeeting.objects.select_for_update(of=("self",)).filter(pk=meeting_id).only("pk"))
+
+
+# =============================================================================
+# Hinweis an offene Ansichten
+# =============================================================================
 
 
 def notify(meeting_id: Any) -> None:
@@ -740,3 +791,58 @@ def notify(meeting_id: Any) -> None:
     from apps.session.consumers import broadcast_cockpit
 
     broadcast_cockpit(meeting_id)
+
+
+#: Ablage der Sammlung an der Datenbankverbindung
+_BATCH_KEY = "_cockpit_batch"
+
+
+@dataclass
+class _Batch:
+    """Sitzungen, deren Ansichten nach dem Commit der laufenden Transaktion einen Hinweis bekommen."""
+
+    hooks: Any
+    index: int
+    meeting_ids: set[Any] = field(default_factory=set)
+    callback: Callable[[], None] | None = None
+
+    def send(self) -> None:
+        for meeting_id in sorted(self.meeting_ids, key=str):
+            notify(meeting_id)
+
+    def pending(self, hooks: Any) -> bool:
+        """
+        Steht der Hinweis dieser Sammlung noch aus? Django legt die Liste der Commit-Aufrufe nach Commit,
+        Rollback und Rücknahme eines Savepoints neu an; zusätzlich muss der Aufruf noch an seiner Stelle
+        stehen. Im Zweifel nein – dann entsteht eine neue Sammlung (schlimmstenfalls ein Hinweis doppelt,
+        nie einer zu wenig).
+        """
+        try:
+            return hooks is self.hooks and hooks[self.index][1] is self.callback
+        except (IndexError, KeyError, TypeError):
+            return False
+
+
+def notify_on_commit(meeting_id: Any) -> None:
+    """
+    Offene Ansichten nach dem Commit benachrichtigen – ein Hinweis je Sitzung und Transaktion.
+
+    Aufgerufen von den Modell-Signalen (Sitzung, TOP, Anwesenheit, Störung, Niederschrift), damit jede
+    Änderung ankommt, egal über welchen Weg (Cockpit, Sitzungsseite, Abstimmungserfassung, Admin). Mehrere
+    Änderungen in einer Transaktion ergeben einen Hinweis; ohne Transaktion geht er sofort hinaus.
+    """
+    if meeting_id is None:
+        return
+    connection = transaction.get_connection()
+    if not connection.in_atomic_block:
+        notify(meeting_id)
+        return
+    state = vars(connection)  # je Thread eine Verbindung: die Sammlung gehört zu ihrer Transaktion
+    hooks = state.get("run_on_commit")
+    batch: _Batch | None = state.get(_BATCH_KEY)
+    if batch is None or not batch.pending(hooks):
+        batch = _Batch(hooks=hooks, index=len(hooks) if isinstance(hooks, list) else -1)
+        batch.callback = batch.send
+        transaction.on_commit(batch.callback)
+        state[_BATCH_KEY] = batch
+    batch.meeting_ids.add(meeting_id)

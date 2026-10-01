@@ -3238,6 +3238,11 @@ class SessionProtocol(EncryptionMixin, models.Model):
     chair_name = models.CharField(max_length=255, blank=True, verbose_name="Vorsitz (Unterschrift)")
     recorder_name = models.CharField(max_length=255, blank=True, verbose_name="Protokollführung (Unterschrift)")
 
+    # Verlauf (eröffnet, geschlossen) und Behandlungszeiten der TOPs aus dem Sitzungscockpit (Issue #140)
+    # ausweisen. Neue Niederschriften ja; bei der Einführung bereits genehmigte bzw. veröffentlichte nicht,
+    # damit sich ihr Inhalt nicht nachträglich ändert (Migration 0050, DB-Default für ältere Stände).
+    show_timings = models.BooleanField(default=True, db_default=False, verbose_name="Verlauf und TOP-Zeiten ausweisen")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -3468,6 +3473,12 @@ class SessionAttendance(EncryptionMixin, models.Model):
     # Timing
     arrival_time = models.TimeField(blank=True, null=True, verbose_name="Ankunft")
     departure_time = models.TimeField(blank=True, null=True, verbose_name="Abgang")
+    # Unterbrechungen (Issue #140): gegangen und zurückgekommen, je Zeitraum {"left": "18:30", "returned": "18:50"}.
+    # Das Sitzungscockpit schreibt sie beim Wechsel „zurück“; die Niederschrift weist sie aus
+    # (participation_service.participation_note). NULL: Zeile aus einem älteren Stand, gleichbedeutend mit leer.
+    interruptions = models.JSONField(
+        default=list, blank=True, null=True, verbose_name="Unterbrechungen der Anwesenheit"
+    )
 
     # Notes
     notes = models.TextField(blank=True, verbose_name="Notizen")

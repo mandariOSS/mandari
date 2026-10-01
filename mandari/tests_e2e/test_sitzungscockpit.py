@@ -170,3 +170,55 @@ def test_polling_rueckfall_ohne_websocket(asgi_server: Any, cockpit: Cockpit, zw
 
     leitung.get_by_test_id("aufrufen-1").click()
     expect(leser.get_by_test_id("aktueller-top")).to_contain_text("TOP 1: Eröffnung", timeout=5000)
+
+
+def test_eingaben_ueberstehen_das_nachladen(asgi_server: Any, cockpit: Cockpit, zwei_browser: tuple[Any, Any]) -> None:
+    """
+    Stimmenzahlen und Ergebnis gehen nicht verloren: weder wenn der Stand nach einer Änderung aus dem zweiten
+    Browser nachlädt (Fokus auf dem Optionsfeld), noch wenn der Server die Aktion abweist.
+    """
+    from apps.session.models import SessionOrganizationMembership
+
+    # Besetzung bekannt, Anwesenheit vollständig: zu viele Stimmen sind ein harter Fehler
+    for anwesenheit in SessionAttendance.objects.filter(meeting=cockpit.meeting).select_related("person"):
+        SessionOrganizationMembership.objects.create(
+            organization=cockpit.meeting.organization, person=anwesenheit.person
+        )
+    protokoll = _konto(cockpit.tenant, "protokoll@example.org", can_conduct_meetings=True)
+    leitung, zweite = zwei_browser
+    fehler = _fehler_sammeln(leitung) + _fehler_sammeln(zweite)
+    url = cockpit.url(asgi_server)
+    _oeffnen(leitung, asgi_server, cockpit.leitung, url)
+    _oeffnen(zweite, asgi_server, protokoll, url)
+
+    leitung.get_by_test_id("aufrufen-2").click()
+    expect(leitung.get_by_test_id("abstimmung_oeffnen")).to_be_visible()
+    leitung.get_by_test_id("abstimmung_oeffnen").click()
+    leitung.get_by_test_id("stimmen-ja").fill("2")
+    leitung.get_by_test_id("stimmen-nein").fill("1")
+    leitung.get_by_test_id("ergebnis-angenommen").check()
+    expect(leitung.get_by_test_id("ergebnis-angenommen")).to_be_focused()
+
+    # Die Protokollführung erfasst einen Anwesenheitswechsel: Der Stand der Leitung lädt nach …
+    zweite.locator('[data-person="Carl"]').get_by_test_id("geht").click()
+    carl = leitung.locator('[data-testid="cockpit-person"][data-person="Carl"]')
+    expect(carl).to_have_attribute("data-status", "left_early", timeout=ZWEI_SEKUNDEN)
+    # … und die Eingaben stehen noch, der Fokus auch (feste ids)
+    expect(leitung.get_by_test_id("ergebnis-angenommen")).to_be_focused()
+    expect(leitung.get_by_test_id("stimmen-ja")).to_have_value("2")
+    expect(leitung.get_by_test_id("stimmen-nein")).to_have_value("1")
+    expect(leitung.get_by_test_id("ergebnis-angenommen")).to_be_checked()
+
+    # Abgewiesen (mehr Stimmen als Stimmberechtigte): Meldung, Eingaben bleiben zum Korrigieren stehen
+    leitung.get_by_test_id("stimmen-ja").fill("7")
+    leitung.get_by_test_id("abstimmung_schliessen").click()
+    expect(leitung.locator('[x-data="toastManager"]').get_by_text("übersteigen")).to_have_count(1)
+    expect(leitung.get_by_test_id("stimmen-ja")).to_have_value("7")
+    expect(leitung.get_by_test_id("ergebnis-angenommen")).to_be_checked()
+
+    leitung.get_by_test_id("stimmen-ja").fill("2")
+    leitung.get_by_test_id("abstimmung_schliessen").click()
+    expect(leitung.get_by_test_id("abstimmungsergebnis")).to_contain_text("Ja 2, Nein 1")
+    top = SessionAgendaItem.objects.get(meeting=cockpit.meeting, number="2")
+    assert (top.vote_result, top.votes_yes, top.votes_no) == ("approved", 2, 1)
+    assert not fehler, "\n".join(fehler)

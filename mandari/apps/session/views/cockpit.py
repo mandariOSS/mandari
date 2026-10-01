@@ -6,7 +6,8 @@ Sitzungscockpit (Issue #140): Live-Ansicht der laufenden Sitzung.
 - ``MeetingCockpitStateView``: Stand als HTMX-Fragment; unverändert (``?v=`` gleich ``state_version``) ohne
   Inhalt (204), damit Polling und Hinweise über den WebSocket nichts rendern, solange nichts passiert
 - ``MeetingCockpitActionView``: alle Aktionen (POST ``aktion``); antwortet mit dem neuen Stand und einer
-  Meldung (Toast), ohne JavaScript mit Weiterleitung
+  Meldung (Toast), eine abgewiesene Aktion nur mit der Meldung (Eingaben bleiben stehen), ohne JavaScript
+  mit Weiterleitung
 
 Regeln, Audit und Benachrichtigung: ``services.cockpit_service``.
 """
@@ -116,6 +117,15 @@ class MeetingCockpitActionView(_CockpitMixin, View):
             text, level = outcome.message, outcome.level
         except cockpit_service.CockpitError as exc:
             text, level = exc.user_message, "error"
+            if self.is_htmx:
+                # Abgewiesen: Stand nicht austauschen, damit Eingaben (Stimmen, Vermerk) stehen bleiben;
+                # die Ansicht holt den aktuellen Stand selbst nach (meetingCockpit, „cockpit:nachladen“)
+                response = HttpResponse(status=200)
+                response["HX-Reswap"] = "none"
+                response["HX-Trigger"] = json.dumps(
+                    {"showToast": {"message": text, "type": level}, "cockpit:nachladen": True}
+                )
+                return response
         if self.is_htmx:
             meeting.refresh_from_db()
             return self.render_state(meeting, toast={"message": text, "type": level})

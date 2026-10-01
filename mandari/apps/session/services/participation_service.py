@@ -16,8 +16,9 @@ sehen und hören und gesehen und gehört werden. Die Anwesenheit hält dafür fe
   Sitzungsleitung im Raum sein (``chair_present``), weist die Anwesenheit auf einen zugeschalteten
   Vorsitz hin.
 
-Niederschrift, Teilnehmerverzeichnis und Protokoll-PDF nennen die Teilnahmeart je Person mit Zeiten und
-Störungen (``participation_note``); der freie Vermerk einer Störung bleibt intern.
+Niederschrift, Teilnehmerverzeichnis und Protokoll-PDF nennen die Teilnahmeart je Person mit Zeiten,
+Unterbrechungen (gegangen und zurückgekommen, Issue #140) und Störungen (``participation_note``); der freie
+Vermerk einer Störung bleibt intern.
 """
 
 from __future__ import annotations
@@ -228,24 +229,64 @@ def _presence_note(attendance: Any) -> str:
     return ""
 
 
+# =============================================================================
+# Unterbrechungen der Anwesenheit (Issue #140): gegangen und zurückgekommen
+# =============================================================================
+
+
+def _clock(raw: Any) -> time | None:
+    """„18:30“ → Uhrzeit; alles andere (Fremdbestand, Tippfehler im Admin) → ``None``."""
+    try:
+        return time.fromisoformat(str(raw))
+    except ValueError:
+        return None
+
+
+def interruptions(attendance: Any) -> list[tuple[time, time]]:
+    """Unterbrechungen der Anwesenheit als (gegangen, zurück), in der Reihenfolge der Erfassung."""
+    periods = []
+    for entry in getattr(attendance, "interruptions", None) or []:
+        if not isinstance(entry, dict):
+            continue
+        left, returned = _clock(entry.get("left")), _clock(entry.get("returned"))
+        if left is not None and returned is not None:
+            periods.append((left, returned))
+    return periods
+
+
+def add_interruption(attendance: Any, left: time, returned: time) -> None:
+    """Unterbrechung vermerken (Speichern übernimmt der Aufrufer, Feld ``interruptions``)."""
+    entries = [entry for entry in (attendance.interruptions or []) if isinstance(entry, dict)]
+    entries.append({"left": f"{left:%H:%M}", "returned": f"{returned:%H:%M}"})
+    attendance.interruptions = entries
+
+
+def interruption_labels(attendance: Any) -> list[str]:
+    """„abwesend 18:30–18:50 Uhr“ je Unterbrechung; bei Zugeschalteten „getrennt …“."""
+    word = "getrennt" if attendance.is_remote else "abwesend"
+    return [f"{word} {left:%H:%M}–{returned:%H:%M} Uhr" for left, returned in interruptions(attendance)]
+
+
 def participation_note(attendance: Any, *, show_mode: bool = False) -> str:
     """
     Vermerk zur Teilnahme: „zugeschaltet 18:03–19:10 Uhr; Störung 18:40–18:44 Uhr (Verbindung abgebrochen)“.
 
-    Zugeschaltete: Zuschaltung und Trennung (Ankunft und Abgang), verspätet bzw. vorzeitig getrennt und
-    jede Störung mit Zeiten und Ursache. Vor Ort: verspätet bzw. vorzeitig gegangen; mit ``show_mode``
-    (hybride und digitale Sitzungen) zusätzlich „vor Ort“, damit die Teilnahmeart je Person erkennbar ist.
+    Zugeschaltete: Zuschaltung und Trennung (Ankunft und Abgang), verspätet bzw. vorzeitig getrennt,
+    Unterbrechungen und jede Störung mit Zeiten und Ursache. Vor Ort: verspätet bzw. vorzeitig gegangen und
+    Unterbrechungen („abwesend 18:30–18:50 Uhr“, Issue #140); mit ``show_mode`` (hybride und digitale
+    Sitzungen) zusätzlich „vor Ort“, damit die Teilnahmeart je Person erkennbar ist.
     """
+    away = interruption_labels(attendance)
     if attendance.is_remote:
         text = "verspätet zugeschaltet" if attendance.status == "joined_late" else "zugeschaltet"
         text += _span(attendance.arrival_time, attendance.departure_time)
         if attendance.status == "left_early":
             text += ", vorzeitig getrennt"
-        return "; ".join([text, *(disruption_label(d) for d in disruptions(attendance))])
+        return "; ".join([text, *away, *(disruption_label(d) for d in disruptions(attendance))])
     note = _presence_note(attendance)
     if show_mode:
-        return f"vor Ort, {note}" if note else "vor Ort"
-    return note
+        note = f"vor Ort, {note}" if note else "vor Ort"
+    return "; ".join(part for part in (note, *away) if part)
 
 
 def show_mode(meeting: Any, attendances: list[Any]) -> bool:

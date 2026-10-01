@@ -7,11 +7,12 @@ und jetzt beenden. Der Vermerk bleibt intern und erscheint nur Steuernden.
 <c-ui.card title="Störungsprotokoll" data-testid="cockpit-stoerungen">
     <div class="space-y-3 text-sm">
         {% if state.can_control and not state.locked and not meeting.cancelled %}
-        <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML" class="space-y-2">
+        <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML" class="space-y-2"
+              data-cockpit-form="stoerung">
             {% csrf_token %}
             <input type="hidden" name="aktion" value="stoerung_beginn">
             <label class="block text-gray-700 dark:text-gray-300">Zugeschaltete Person
-                <select name="attendance" required class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <select name="attendance" id="stoerung-person" required class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                     <option value="">Bitte wählen</option>
                     {% for person_row in state.attendances %}
                     {% if person_row.is_remote and not person_row.disrupted %}
@@ -21,12 +22,12 @@ und jetzt beenden. Der Vermerk bleibt intern und erscheint nur Steuernden.
                 </select>
             </label>
             <label class="block text-gray-700 dark:text-gray-300">Ursache
-                <select name="cause" class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <select name="cause" id="stoerung-ursache" class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                     {% for value, label in state.disruption_causes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                 </select>
             </label>
             <label class="block text-gray-700 dark:text-gray-300">Vermerk (intern)
-                <input type="text" name="note" maxlength="255" placeholder="z. B. telefonisch gemeldet"
+                <input type="text" name="note" id="stoerung-vermerk" maxlength="255" placeholder="z. B. telefonisch gemeldet"
                        class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400">
             </label>
             <c-ui.button type="submit" size="sm" variant="secondary" icon="wifi-off" data-testid="stoerung_beginn">Störung ab jetzt vermerken</c-ui.button>

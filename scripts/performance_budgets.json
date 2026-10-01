@@ -49,6 +49,16 @@
     "abfragen": 22,
     "ms": 500
   },
+  "session_cockpit_stand": {
+    "beschreibung": "Session: Stand des Sitzungscockpits der laufenden Sitzung (HTMX-Fragment)",
+    "abfragen": 21,
+    "ms": 500
+  },
+  "session_cockpit_stand_204": {
+    "beschreibung": "Session: Stand des Sitzungscockpits unverändert (Polling, 204 ohne Inhalt)",
+    "abfragen": 14,
+    "ms": 500
+  },
   "session_leitstelle": {
     "beschreibung": "Session: Leitstellen-Übersicht einer Mandantengruppe",
     "abfragen": 22,

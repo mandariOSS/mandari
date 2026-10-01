@@ -1,6 +1,7 @@
 {% comment %}
 Abstimmung zum aufgerufenen TOP (Issue #140). Erwartet: top (state.current), state. Summen bzw. Einzelstimmen
 fließen in die vorhandene Abstimmungserfassung (voting_service); der Zwischenstand ist nur für Steuernde sichtbar.
+data-cockpit-form und feste ids: Eingaben und Fokus überstehen das Nachladen des Stands (meetingCockpit).
 {% endcomment %}
 {% url 'session:meeting_cockpit_action' tenant_slug=tenant_slug meeting_id=meeting.id as action_url %}
 <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3" data-testid="cockpit-abstimmung">
@@ -14,7 +15,8 @@ fließen in die vorhandene Abstimmungserfassung (voting_service); der Zwischenst
     <p class="text-sm text-gray-600 dark:text-gray-300">Stimmberechtigt anwesend: {{ state.item_quorum.voting_present }}</p>
     {% endif %}
     {% if state.can_control and not state.locked %}
-    <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML" class="space-y-3">
+    <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML" class="space-y-3"
+          data-cockpit-form="abstimmung-{{ vote.id }}">
         {% csrf_token %}
         <input type="hidden" name="aktion" value="abstimmung_schliessen">
         <input type="hidden" name="item" value="{{ vote.id }}">
@@ -30,23 +32,23 @@ fließen in die vorhandene Abstimmungserfassung (voting_service); der Zwischenst
         {% else %}
         <div class="grid grid-cols-3 gap-2">
             <label class="text-sm text-gray-700 dark:text-gray-300">Ja
-                <input type="number" name="votes_yes" min="0" max="9999" value="0" required data-testid="stimmen-ja"
+                <input type="number" name="votes_yes" id="stimmen-ja-{{ vote.id }}" min="0" max="9999" value="0" required data-testid="stimmen-ja"
                        class="mt-1 w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
             </label>
             <label class="text-sm text-gray-700 dark:text-gray-300">Nein
-                <input type="number" name="votes_no" min="0" max="9999" value="0" required data-testid="stimmen-nein"
+                <input type="number" name="votes_no" id="stimmen-nein-{{ vote.id }}" min="0" max="9999" value="0" required data-testid="stimmen-nein"
                        class="mt-1 w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
             </label>
             <label class="text-sm text-gray-700 dark:text-gray-300">Enthaltung
-                <input type="number" name="votes_abstain" min="0" max="9999" value="0" required data-testid="stimmen-enthaltung"
+                <input type="number" name="votes_abstain" id="stimmen-enthaltung-{{ vote.id }}" min="0" max="9999" value="0" required data-testid="stimmen-enthaltung"
                        class="mt-1 w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
             </label>
         </div>
         {% endif %}
         <fieldset class="flex flex-wrap items-center gap-4 text-sm text-gray-700 dark:text-gray-300">
             <legend class="sr-only">Ergebnis</legend>
-            <label class="inline-flex items-center gap-2"><input type="radio" name="vote_result" value="approved" required> Angenommen</label>
-            <label class="inline-flex items-center gap-2"><input type="radio" name="vote_result" value="rejected"> Abgelehnt</label>
+            <label class="inline-flex items-center gap-2"><input type="radio" name="vote_result" value="approved" id="ergebnis-angenommen-{{ vote.id }}" required data-testid="ergebnis-angenommen"> Angenommen</label>
+            <label class="inline-flex items-center gap-2"><input type="radio" name="vote_result" value="rejected" id="ergebnis-abgelehnt-{{ vote.id }}" data-testid="ergebnis-abgelehnt"> Abgelehnt</label>
         </fieldset>
         <div class="flex flex-wrap gap-2">
             <c-ui.button type="submit" size="sm" icon="gavel" data-testid="abstimmung_schliessen">Abstimmung schließen</c-ui.button>
@@ -64,19 +66,19 @@ fließen in die vorhandene Abstimmungserfassung (voting_service); der Zwischenst
     </p>
     {% elif state.can_control and not state.locked %}
     <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML"
-          class="flex flex-wrap items-end gap-3">
+          class="flex flex-wrap items-end gap-3" data-cockpit-form="abstimmung-oeffnen-{{ top.id }}">
         {% csrf_token %}
         <input type="hidden" name="aktion" value="abstimmung_oeffnen">
         <input type="hidden" name="item" value="{{ top.id }}">
         <label class="text-sm text-gray-700 dark:text-gray-300">Abstimmungsart
-            <select name="voting_method" class="mt-1 block px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            <select name="voting_method" id="abstimmungsart-{{ top.id }}" class="mt-1 block px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                 {% for value, label in state.voting_methods %}
                 <option value="{{ value }}" {% if top.voting_method == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
         </label>
         <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            <input type="checkbox" name="is_election" value="1" {% if top.is_election %}checked{% endif %}> Wahl
+            <input type="checkbox" name="is_election" id="wahl-{{ top.id }}" value="1" {% if top.is_election %}checked{% endif %}> Wahl
         </label>
         <c-ui.button type="submit" size="sm" icon="vote" data-testid="abstimmung_oeffnen">Abstimmung öffnen</c-ui.button>
     </form>

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from datetime import time
 from typing import Any
@@ -283,6 +284,36 @@ def test_nichtoeffentliche_sitzung_ohne_noe_recht_404() -> None:
     assert _post(client(steuern_ohne_noe), s, "sitzung_eroeffnen").status_code == 404
 
 
+def test_ohne_noe_recht_kein_eingriff_in_den_nichtoeffentlichen_teil(s: Sitzung, uhr: list[time]) -> None:
+    """Wer den NÖ-Teil nicht sieht, beendet dort nichts – weder per Aufruf noch per Schließen."""
+    steuern_ohne_noe = {"view_meetings", "conduct_meetings"}
+
+    def ohne_noe(aktion: str, **daten: Any) -> cockpit_service.Outcome:
+        s.meeting.refresh_from_db()
+        felder = {key: str(value) for key, value in daten.items()}
+        return cockpit_service.perform(s.meeting, aktion, felder, permissions=steuern_ohne_noe)
+
+    _tun(s, "top_aufrufen", item=s.tops["N1"].pk)
+    for aktion, daten in (
+        ("top_aufrufen", {"item": s.tops["1"].pk}),
+        ("naechster_top", {}),
+        ("sitzung_schliessen", {}),
+    ):
+        with pytest.raises(CockpitError, match="nichtöffentlichen Teil"):
+            ohne_noe(aktion, **daten)
+    noe = s.top("N1")
+    assert noe.start_time == time(18, 0) and noe.end_time is None
+
+    # Offene Abstimmung im NÖ-Teil: Hinweis ohne Nummer des TOP
+    _tun(s, "abstimmung_oeffnen", item=s.tops["N1"].pk)
+    with pytest.raises(CockpitError) as fehler:
+        ohne_noe("sitzung_schliessen")
+    assert "N1" not in fehler.value.user_message and "nichtöffentlichen Teil" in fehler.value.user_message
+    # Mit NÖ-Recht nennt die Meldung den TOP
+    with pytest.raises(CockpitError, match="TOP N1"):
+        _tun(s, "sitzung_schliessen")
+
+
 # =============================================================================
 # Anwesenheit und Beschlussfähigkeit
 # =============================================================================
@@ -309,13 +340,62 @@ def test_anwesenheitswechsel_und_beschlussfaehigkeit(s: Sitzung, uhr: list[time]
     _tun(s, "anwesenheit", attendance=buche.pk, wechsel="zurueck")
     buche = s.zeile("Buche")
     assert buche.status == "present" and buche.departure_time is None
-    assert "abwesend 18:30–18:50 Uhr" in buche.notes
+    assert buche.interruptions == [{"left": "18:30", "returned": "18:50"}]
     assert cockpit_service.build_state(s.meeting, LEITUNG_RECHTE).quorum["voting_present"] == 3
 
     with pytest.raises(CockpitError, match="bereits als anwesend"):
         _tun(s, "anwesenheit", attendance=buche.pk, wechsel="anwesend")
     with pytest.raises(CockpitError, match="geht"):
         _tun(s, "anwesenheit", attendance=buche.pk, wechsel="abwesend")
+
+
+def test_unterbrechungen_stehen_in_der_niederschrift(s: Sitzung, uhr: list[time]) -> None:
+    """Gegangen und zurück – auch mehrfach – steht im Teilnahmevermerk: Ansicht, PDF, öffentliche Fassung."""
+    from apps.session.services import protocol_publication, protocol_service
+    from apps.session.tests._niederschrift import pdf_text
+
+    _anwesend(s, "Amsel", "Buche", "Carl")
+    _tun(s, "sitzung_eroeffnen")
+    buche = s.zeile("Buche").pk
+    for weg, zurueck in ((time(18, 30), time(18, 50)), (time(19, 10), time(19, 15))):
+        uhr[0] = weg
+        _tun(s, "anwesenheit", attendance=buche, wechsel="geht")
+        uhr[0] = zurueck
+        _tun(s, "anwesenheit", attendance=buche, wechsel="zurueck")
+    uhr[0] = time(19, 40)
+    _tun(s, "anwesenheit", attendance=buche, wechsel="geht")
+    _tun(s, "sitzung_schliessen")
+    vermerk = "abwesend 18:30–18:50 Uhr; abwesend 19:10–19:15 Uhr"
+
+    zeile: Any = cockpit_service.build_state(s.meeting, LEITUNG_RECHTE).attendances[1]
+    assert vermerk in zeile.participation_note
+    protokoll = SessionProtocol.objects.create(meeting=s.meeting, status="draft")
+    oeffentlich = protocol_publication.public_text(protokoll)
+    assert f"vorzeitig gegangen, bis 19:40 Uhr; {vermerk}" in oeffentlich
+    # Zeilenumbrüche des PDF fallen beim Vergleich weg
+    pdf = "".join(pdf_text(protocol_service.build_protocol_pdf(protokoll, internal=False)).split())
+    assert "".join(vermerk.split()) in pdf
+    leser = nutzer(s.tenant, "vermerk-leser", "view_meetings", "view_protocols")
+    seite = client(leser).get(f"/session/{s.tenant.slug}/meetings/{s.meeting.pk}/protocol/").content.decode()
+    assert vermerk in seite
+
+
+def test_unterbrechung_zugeschalteter_heisst_getrennt(s: Sitzung, uhr: list[time]) -> None:
+    from apps.session.services import participation_service
+
+    _hybrid(s)
+    carl = s.zeile("Carl").pk
+    uhr[0] = time(18, 5)
+    _tun(s, "anwesenheit", attendance=carl, wechsel="geht")
+    uhr[0] = time(18, 25)
+    _tun(s, "anwesenheit", attendance=carl, wechsel="zurueck")
+    zeile = s.zeile("Carl")
+    assert participation_service.participation_note(zeile) == "zugeschaltet; getrennt 18:05–18:25 Uhr"
+    # Bestand ohne Feld (älteres Image) bzw. unbrauchbare Einträge: kein Vermerk, kein Fehler
+    zeile.interruptions = None
+    assert participation_service.interruptions(zeile) == []
+    zeile.interruptions = [{"left": "kaputt"}, "18:00", {"left": "18:00", "returned": "18:10"}]
+    assert participation_service.interruption_labels(zeile) == ["getrennt 18:00–18:10 Uhr"]
 
 
 def test_fremde_anwesenheitszeile_wird_nicht_gefunden(s: Sitzung) -> None:
@@ -429,6 +509,17 @@ def test_zu_viele_stimmen_werden_abgewiesen(s: Sitzung) -> None:
     assert s.top("2").vote_open and s.top("2").vote_result == "pending"
 
 
+def test_ergebnis_ohne_stimmen_wird_abgewiesen(s: Sitzung) -> None:
+    """Kamen die Zahlen nicht an (0/0/0), stellt das Cockpit kein Ergebnis fest."""
+    _anwesend(s, "Amsel", "Buche", "Carl")
+    _tun(s, "top_aufrufen", item=s.tops["2"].pk)
+    _tun(s, "abstimmung_oeffnen", item=s.tops["2"].pk, voting_method="summary")
+    with pytest.raises(CockpitError, match="Stimmen eintragen"):
+        _tun(s, "abstimmung_schliessen", item=s.tops["2"].pk, votes_yes=0, votes_no=0, vote_result="approved")
+    top = s.top("2")
+    assert top.vote_open and top.vote_result == "pending"
+
+
 def test_einzelstimmen_bestimmen_die_summen(s: Sitzung) -> None:
     from apps.session.models import SessionVote
 
@@ -453,6 +544,115 @@ def test_abstimmung_abbrechen(s: Sitzung) -> None:
 
 
 # =============================================================================
+# Abstimmungserfassung und Niederschrift neben dem Cockpit
+# =============================================================================
+
+
+def _formular_stand(html: str) -> dict[str, str]:
+    """Versteckte Felder „geladen_…“ einer Seite: der Stand beim Laden."""
+    return dict(re.findall(r'name="(geladen_[^"]+)" value="([^"]*)"', html))
+
+
+def test_erfassung_mit_altem_formular_behaelt_das_cockpit_ergebnis(s: Sitzung, uhr: list[time]) -> None:
+    """Leitung schließt im Cockpit, die Protokollführung speichert danach eine Korrektur: Das Ergebnis bleibt."""
+    _anwesend(s, "Amsel", "Buche", "Carl")
+    zwei = s.tops["2"].pk
+    _tun(s, "top_aufrufen", item=zwei)
+    _tun(s, "abstimmung_oeffnen", item=zwei, voting_method="open")
+    vorher = s.top("2")
+    c = client(s.leitung)
+    url = f"/session/{s.tenant.slug}/agenda/{zwei}/voting/"
+    stimme = {name: f"vote_{p.pk}" for name, p in s.personen.items()}
+
+    erste = {"voting_method": "open", "vote_result": "pending", stimme["Amsel"]: "yes", stimme["Buche"]: "yes"}
+    c.post(url, {**_formular_stand(c.get(url).content.decode()), **erste, stimme["Carl"]: ""})
+    stand = _formular_stand(c.get(url).content.decode())
+    assert stand["geladen_vote_result"] == "pending" and stand["geladen_voting_method"] == "open"
+
+    # Inzwischen stellt die Sitzungsleitung das Ergebnis im Cockpit fest
+    _tun(s, "abstimmung_schliessen", item=zwei, vote_result="approved")
+    geschlossen = s.top("2").vote_closed_at
+    assert geschlossen is not None
+
+    # Korrektur mit dem Formular vom Laden: Ergebnis-Auswahl unverändert „ausstehend“
+    antwort = c.post(url, {**stand, **erste, stimme["Carl"]: "no"})
+    assert antwort.status_code == 302
+    top = s.top("2")
+    assert (top.vote_result, top.votes_yes, top.votes_no) == ("approved", 2, 1)
+    assert (top.start_time, top.vote_opened_at, top.vote_closed_at) == (
+        vorher.start_time,
+        vorher.vote_opened_at,
+        geschlossen,
+    )
+    with pytest.raises(CockpitError, match="bereits ein Ergebnis"):
+        _tun(s, "abstimmung_oeffnen", item=zwei)
+
+    # Was die Protokollführung selbst ändert, gilt
+    c.post(url, {**_formular_stand(c.get(url).content.decode()), "voting_method": "open", "vote_result": "rejected"})
+    assert s.top("2").vote_result == "rejected"
+
+
+def test_niederschrift_mit_altem_formular_behaelt_das_cockpit_ergebnis(s: Sitzung, uhr: list[time]) -> None:
+    """Die Niederschrift ist offen, während die Leitung abstimmen lässt: Ergebnis und Summen bleiben."""
+    _anwesend(s, "Amsel", "Buche", "Carl")
+    SessionProtocol.objects.create(meeting=s.meeting, status="draft")
+    c = client(s.leitung)
+    url = f"/session/{s.tenant.slug}/meetings/{s.meeting.pk}/protocol/edit/"
+    seite = c.get(url)
+    assert seite.status_code == 200
+    stand = _formular_stand(seite.content.decode())
+    zwei = s.tops["2"].pk
+    assert stand[f"geladen_vote_result_{zwei}"] == "pending" and stand[f"geladen_votes_yes_{zwei}"] == "0"
+
+    _tun(s, "top_aufrufen", item=zwei)
+    _tun(s, "abstimmung_oeffnen", item=zwei, voting_method="summary")
+    _tun(s, "abstimmung_schliessen", item=zwei, votes_yes=2, votes_no=1, votes_abstain=0, vote_result="approved")
+
+    daten = {
+        **stand,
+        "content": "",
+        f"protocol_note_{zwei}": "Wortbeiträge",
+        f"resolution_text_{zwei}": "",
+        f"vote_result_{zwei}": "pending",
+        f"votes_yes_{zwei}": "0",
+        f"votes_no_{zwei}": "0",
+        f"votes_abstain_{zwei}": "0",
+    }
+    assert c.post(url, daten).status_code == 302
+    top = s.top("2")
+    assert (top.vote_result, top.votes_yes, top.votes_no, top.protocol_note) == ("approved", 2, 1, "Wortbeiträge")
+    assert top.start_time == time(18, 0) and top.vote_closed_at is not None
+
+    # Eigene Änderungen gelten weiterhin
+    daten.update(_formular_stand(c.get(url).content.decode()))
+    daten.update({f"vote_result_{zwei}": "approved", f"votes_no_{zwei}": "0", f"votes_abstain_{zwei}": "1"})
+    daten[f"votes_yes_{zwei}"] = "2"
+    c.post(url, daten)
+    top = s.top("2")
+    assert (top.vote_result, top.votes_yes, top.votes_no, top.votes_abstain) == ("approved", 2, 0, 1)
+
+
+def test_erfassung_und_niederschrift_nehmen_die_sperre_der_sitzung(s: Sitzung, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wie jede Cockpit-Aktion sperren beide die Sitzungszeile, bevor sie einen TOP schreiben."""
+    from django.db import connection
+
+    gesperrt: list[Any] = []
+    original = cockpit_service.lock_meeting
+
+    def sperre(meeting_id: Any) -> None:
+        assert connection.in_atomic_block
+        gesperrt.append(meeting_id)
+        original(meeting_id)
+
+    monkeypatch.setattr(cockpit_service, "lock_meeting", sperre)
+    SessionProtocol.objects.create(meeting=s.meeting, status="draft")
+    c = client(s.leitung)
+    c.post(f"/session/{s.tenant.slug}/agenda/{s.tops['1'].pk}/voting/", {"voting_method": "summary"})
+    c.post(f"/session/{s.tenant.slug}/meetings/{s.meeting.pk}/protocol/edit/", {"content": ""})
+    assert gesperrt == [s.meeting.pk, s.meeting.pk]
+
+
+# =============================================================================
 # Ansicht, Polling, Audit
 # =============================================================================
 
@@ -466,8 +666,11 @@ def test_aktion_per_htmx_liefert_den_neuen_stand(s: Sitzung, uhr: list[time]) ->
     toast = json.loads(antwort["HX-Trigger"])["showToast"]
     assert toast["type"] == "success" and "TOP 1 aufgerufen" in toast["message"]
 
+    # Abgewiesen: nur die Meldung, der Stand bleibt (Eingaben gehen nicht verloren), die Ansicht lädt nach
     fehler = _post(c, s, "top_aufrufen", item=s.tops["1"].pk)
-    assert json.loads(fehler["HX-Trigger"])["showToast"]["type"] == "error"
+    ausloeser = json.loads(fehler["HX-Trigger"])
+    assert ausloeser["showToast"]["type"] == "error" and "cockpit:nachladen" in ausloeser
+    assert fehler["HX-Reswap"] == "none" and fehler.content == b""
 
     ohne_js = _post(c, s, "top_beenden", htmx=False, item=s.tops["1"].pk)
     assert ohne_js.status_code == 302 and ohne_js["Location"].endswith("/cockpit/")
@@ -484,6 +687,36 @@ def test_polling_antwortet_ohne_inhalt_solange_nichts_passiert(s: Sitzung) -> No
     _tun(s, "top_aufrufen", item=s.tops["1"].pk)
     neu = c.get(f"{s.url}stand/", {"v": version})
     assert neu.status_code == 200 and "TOP 1: Eröffnung" in neu.content.decode()
+
+
+#: Obergrenze für einen Abruf des Stands (Polling alle zwei Sekunden je offener Ansicht)
+STAND_ABFRAGEN = 20
+
+
+def _abfragen_stand(s: Sitzung) -> int:
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    c = client(s.leser)
+    c.get(f"{s.url}stand/")  # Aufwärmen
+    with CaptureQueriesContext(connection) as erfasst:
+        assert c.get(f"{s.url}stand/").status_code == 200
+    return len(erfasst)
+
+
+def test_stand_abfragen_unabhaengig_von_tops_und_anwesenden(uhr: list[time]) -> None:
+    """Der häufigste Abruf des Cockpits wächst nicht mit Tagesordnung und Anwesenheitsliste."""
+    klein, gross = _sitzung("klein"), _sitzung("gross")
+    for nummer in range(4, 31):
+        SessionAgendaItem.objects.create(
+            meeting=gross.meeting, number=str(nummer), name=f"Punkt {nummer}", order=nummer
+        )
+        neu = person(gross.tenant, f"Person {nummer:02d}")
+        SessionAttendance.objects.create(meeting=gross.meeting, person=neu, status="present")
+    for sitzung in (klein, gross):
+        _tun(sitzung, "top_aufrufen", item=sitzung.tops["1"].pk)
+    wenige = _abfragen_stand(klein)
+    assert _abfragen_stand(gross) == wenige <= STAND_ABFRAGEN
 
 
 def test_jeder_schritt_steht_im_audit_log(s: Sitzung, uhr: list[time]) -> None:
@@ -519,11 +752,12 @@ def test_standardrollen_steuern_das_cockpit() -> None:
 # =============================================================================
 
 
-async def _verbinden(user: Any, s: Sitzung) -> WebsocketCommunicator:
-    pfad = f"/ws/session/{s.tenant.slug}/cockpit/{s.meeting.pk}/"
+async def _verbinden(user: Any, s: Sitzung, meeting_id: str | None = None) -> WebsocketCommunicator:
+    sitzung = meeting_id if meeting_id is not None else str(s.meeting.pk)
+    pfad = f"/ws/session/{s.tenant.slug}/cockpit/{sitzung}/"
     communicator = WebsocketCommunicator(CockpitConsumer.as_asgi(), pfad)
     communicator.scope["user"] = user
-    communicator.scope["url_route"] = {"kwargs": {"tenant_slug": s.tenant.slug, "meeting_id": str(s.meeting.pk)}}
+    communicator.scope["url_route"] = {"kwargs": {"tenant_slug": s.tenant.slug, "meeting_id": sitzung}}
     return communicator
 
 
@@ -552,8 +786,8 @@ def test_socket_nur_mit_sichtrecht() -> None:
     ohne_noe = nutzer(s.tenant, "ohne-noe", "view_meetings")
     fremd = _sitzung("fremd").leitung
 
-    async def code(user: Any) -> Any:
-        communicator = await _verbinden(user, s)
+    async def code(user: Any, meeting_id: str | None = None) -> Any:
+        communicator = await _verbinden(user, s, meeting_id)
         verbunden, schliesscode = await communicator.connect()
         await communicator.disconnect()
         return None if verbunden else schliesscode
@@ -564,9 +798,54 @@ def test_socket_nur_mit_sichtrecht() -> None:
             await code(ohne_noe.user),
             await code(fremd.user),
             await code(s.leitung.user),
+            # Die Route lässt Hex-Ziffern und Bindestriche zu; keine UUID findet keine Sitzung
+            await code(s.leitung.user, "abc"),
+            await code(s.leitung.user, "--"),
         ]
 
-    assert asyncio.run(lauf()) == [4401, 4403, 4403, None]
+    assert asyncio.run(lauf()) == [4401, 4403, 4403, None, 4403, 4403]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_aenderungen_ausserhalb_des_cockpits_benachrichtigen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sitzungsseite, Abstimmungserfassung, Admin: Jede gespeicherte Änderung erreicht offene Ansichten."""
+    import contextlib
+
+    from django.db import transaction
+
+    s = _sitzung("signale")
+    gemeldet: list[Any] = []
+    monkeypatch.setattr(cockpit_service, "notify", gemeldet.append)
+
+    # Mehrere Änderungen in einer Transaktion: ein Hinweis, erst nach dem Commit
+    with transaction.atomic():
+        zeile = s.zeile("Amsel")
+        zeile.status = "present"
+        zeile.save()
+        top = s.top("3")
+        top.is_withdrawn = True
+        top.save()
+        assert gemeldet == []
+    assert gemeldet == [s.meeting.pk]
+
+    # Zurückgerollt: kein Hinweis; die nächste Transaktion meldet wieder (auch nach einem Savepoint-Rollback)
+    gemeldet.clear()
+    with contextlib.suppress(RuntimeError), transaction.atomic():
+        top.save()
+        raise RuntimeError
+    assert gemeldet == []
+    with transaction.atomic():
+        with contextlib.suppress(RuntimeError), transaction.atomic():
+            top.save()
+            raise RuntimeError
+        zeile.save()
+    assert gemeldet == [s.meeting.pk]
+
+    # Ohne Transaktion sofort; Löschen einer Störung meldet ebenfalls
+    gemeldet.clear()
+    stoerung = SessionAttendanceDisruption.objects.create(attendance=zeile, started_at=time(18, 0))
+    stoerung.delete()
+    assert gemeldet == [s.meeting.pk, s.meeting.pk]
 
 
 def test_benachrichtigung_scheitert_nie_an_der_aktion(s: Sitzung, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -603,6 +882,13 @@ def test_migration_berechtigt_protokollfuehrung_im_bestand() -> None:
         Role.objects.create(tenant=tenant, name="Protokoll", can_manage_attendance=True, can_edit_protocols=True)
         Role.objects.create(tenant=tenant, name="Nur Anwesenheit", can_manage_attendance=True)
         Role.objects.create(tenant=tenant, name="Nur Protokoll", can_edit_protocols=True)
+        Organization = alt.get_model("session", "SessionOrganization")
+        Meeting = alt.get_model("session", "SessionMeeting")
+        Protocol = alt.get_model("session", "SessionProtocol")
+        gremium = Organization.objects.create(tenant=tenant, name="Rat")
+        for status in ("draft", "review", "approved", "published"):
+            sitzung = Meeting.objects.create(tenant=tenant, organization=gremium, name=status, start=timezone.now())
+            Protocol.objects.create(meeting=sitzung, status=status)
 
         executor = MigrationExecutor(connection)
         executor.migrate([NACHHER])
@@ -610,6 +896,10 @@ def test_migration_berechtigt_protokollfuehrung_im_bestand() -> None:
         Role = neu.get_model("session", "SessionRole")
         rechte = dict(Role.objects.filter(tenant__slug="bestand").values_list("name", "can_conduct_meetings"))
         assert rechte == {"Protokoll": True, "Nur Anwesenheit": False, "Nur Protokoll": False}
+        # Offene Niederschriften weisen den Verlauf aus, genehmigte bleiben, wie sie genehmigt wurden
+        Protocol = neu.get_model("session", "SessionProtocol")
+        verlauf = dict(Protocol.objects.filter(meeting__tenant__slug="bestand").values_list("status", "show_timings"))
+        assert verlauf == {"draft": True, "review": True, "approved": False, "published": False}
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
@@ -647,3 +937,29 @@ def test_niederschrift_nennt_verlauf_und_top_zeiten(s: Sitzung, uhr: list[time])
     top.start_time = time(17, 0)
     with pytest.raises(protocol_lock.ProtocolLockedError):
         top.save()
+
+
+def test_bei_einfuehrung_genehmigte_niederschrift_bleibt_ohne_verlauf(s: Sitzung, uhr: list[time]) -> None:
+    """Genehmigte Niederschriften aus dem Bestand ändern ihren Inhalt nicht nachträglich."""
+    from apps.session.services import protocol_lock, protocol_publication, protocol_service
+    from apps.session.tests._niederschrift import pdf_text
+
+    _tun(s, "top_aufrufen", item=s.tops["1"].pk)
+    _tun(s, "sitzung_schliessen")
+    protokoll = SessionProtocol.objects.create(meeting=s.meeting, status="draft")
+    assert protokoll.show_timings is True
+    # Stand nach der Migration: genehmigt, ohne Verlauf
+    SessionProtocol.objects.filter(pk=protokoll.pk).update(status="approved", show_timings=False)
+    protokoll.refresh_from_db()
+
+    assert "Verlauf:" not in protocol_publication.public_text(protokoll)
+    assert "Behandelt" not in protocol_publication.public_text(protokoll)
+    pdf = pdf_text(protocol_service.build_protocol_pdf(protokoll, internal=True))
+    assert "Verlauf" not in pdf and "Behandelt" not in pdf
+    leser = nutzer(s.tenant, "bestand-leser", "view_meetings", "view_protocols")
+    seite = client(leser).get(f"/session/{s.tenant.slug}/meetings/{s.meeting.pk}/protocol/").content.decode()
+    assert "Behandelt" not in seite
+    # Der Schalter gehört zum gesperrten Inhalt
+    protokoll.show_timings = True
+    with pytest.raises(protocol_lock.ProtocolLockedError):
+        protokoll.save()

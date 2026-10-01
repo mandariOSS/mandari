@@ -59,6 +59,15 @@ def test_fehlerseite_und_fehlendes_budget_fallen_durch(gate: ModuleType) -> None
     assert any(zeile.startswith("unbekannt: kein Budget") for zeile in ergebnis.verletzungen)
 
 
+def test_erwarteter_status_204_ist_keine_fehlerseite(gate: ModuleType) -> None:
+    """Polling ohne Änderung (Sitzungscockpit) antwortet mit 204 – das ist der gemessene Normalfall."""
+    budgets = {**BUDGETS, "stand": {"beschreibung": "Stand", "abfragen": 5, "ms": 500}}
+    ohne_aenderung = {"stand": gate.Messwert(abfragen=5, ms=5, status=204, erwartet=204)}
+    assert not gate.bewerten(ohne_aenderung, budgets).verletzungen
+    voller_stand = {"stand": gate.Messwert(abfragen=5, ms=5, status=200, erwartet=204)}
+    assert gate.bewerten(voller_stand, budgets).verletzungen == ["stand: HTTP 200 statt 204"]
+
+
 def test_weniger_abfragen_sind_ein_hinweis(gate: ModuleType) -> None:
     messungen = {"liste": gate.Messwert(abfragen=15, ms=100, status=200)}
     ergebnis = gate.bewerten(messungen, BUDGETS)

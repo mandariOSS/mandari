@@ -113,17 +113,27 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
 
     def post(self, request, tenant_slug, item_id):
         item = _get_item(self, item_id)
-        back = redirect("session:voting_capture", tenant_slug=tenant_slug, item_id=item.id)
+        with transaction.atomic():
+            # Sperre auf der Sitzung wie bei jeder Cockpit-Aktion (Issue #140): Erfassung und Cockpit schreiben
+            # nacheinander, der TOP wird erst unter der Sperre geladen
+            cockpit_service.lock_meeting(item.meeting_id)
+            return self._capture(request, _get_item(self, item_id))
 
-        method = request.POST.get("voting_method", item.voting_method)
+    def _capture(self, request, item):
+        back = redirect("session:voting_capture", tenant_slug=self.session_tenant.slug, item_id=item.id)
+        data = request.POST
+
+        # Art, Wahl und Ergebnis nur übernehmen, wenn sie hier geändert wurden – sonst gilt der aktuelle Stand,
+        # etwa ein inzwischen im Sitzungscockpit festgestelltes Ergebnis (Issue #140)
+        method = voting_service.form_value(data, "voting_method", item.voting_method)
         if method not in {value for value, _ in SessionAgendaItem.VOTING_METHOD_CHOICES}:
             method = item.voting_method
         item.voting_method = method
         # Wahl (Issue #139): Das Landesprofil kann Zugeschaltete ausschließen
-        item.is_election = bool(request.POST.get("is_election"))
+        item.is_election = voting_service.form_flag(data, "is_election", item.is_election)
 
         # Ergebnis (optional mitpflegen)
-        result = request.POST.get("vote_result", "")
+        result = voting_service.form_value(data, "vote_result", item.vote_result)
         if result in {value for value, _ in item._meta.get_field("vote_result").choices}:
             item.vote_result = result
 
@@ -131,16 +141,18 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         votes_by_person = {}
         for attendance in item.meeting.attendances.select_related("person"):
             key = f"vote_{attendance.person_id}"
-            if key in request.POST:
-                votes_by_person[attendance.person] = request.POST.get(key, "")
+            if key in data:
+                votes_by_person[attendance.person] = data.get(key, "")
         if method == "secret":
             # Geheim: Summen manuell, keine Einzelstimmen – höchstens so viele wie stimmberechtigt anwesend,
             # abzüglich der Befangenen nach dieser Erfassung
             counts = {}
-            for field in ("votes_yes", "votes_no", "votes_abstain"):
+            for field in voting_service.COUNT_FIELDS:
                 counts[field] = getattr(item, field)
-                with contextlib.suppress(TypeError, ValueError):
-                    counts[field] = max(0, min(9999, int(request.POST.get(field, 0))))
+                raw = voting_service.form_value(data, field, None)
+                if raw is not None:
+                    with contextlib.suppress(TypeError, ValueError):
+                        counts[field] = max(0, min(9999, int(raw)))
             final = {v.person_id: v.vote for v in item.votes.all()}
             final.update({person.pk: value for person, value in votes_by_person.items()})
             excluded = sum(1 for pk, value in final.items() if value == "excluded" and pk in assessed.voting_person_ids)
@@ -160,10 +172,11 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
             for field, value in counts.items():
                 setattr(item, field, value)
 
-        # Sperre und Stimmrecht (Issue #318): alles oder nichts
+        # Sperre und Stimmrecht (Issue #318): alles oder nichts. Nur die Felder der Erfassung speichern –
+        # Zeiten und Abstimmungszeitpunkte gehören dem Cockpit (Issue #140)
         try:
             with transaction.atomic():
-                item.save()
+                item.save(update_fields=voting_service.CAPTURE_FIELDS)
                 tally = voting_service.capture_votes(
                     item, votes_by_person, recorded_by=self.session_user, assessed=assessed
                 )
@@ -194,9 +207,7 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
             f"Abstimmung zu TOP {item.number} erfasst "
             f"(Ja {item.votes_yes} / Nein {item.votes_no} / Enthaltung {item.votes_abstain}).",
         )
-        # Offene Cockpit-Ansichten der Sitzung holen den neuen Zwischenstand ab (Issue #140)
-        meeting_id = item.meeting_id
-        transaction.on_commit(lambda: cockpit_service.notify(meeting_id))
+        # Offene Cockpit-Ansichten holen den neuen Stand nach dem Commit ab (Signal des TOP, Issue #140)
         next_url = safe_next_url(request, self.session_tenant.slug)
         if next_url:
             return redirect(next_url)
