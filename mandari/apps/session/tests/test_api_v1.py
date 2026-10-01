@@ -113,7 +113,9 @@ class TestVisibility:
         assert "main_text" not in papers["data"][0] or papers["data"][0]["main_text"] is None
 
     def test_session_user_with_permission_sees_non_public(self, tenant: SessionTenant) -> None:
-        client = make_session_client(tenant, can_view_non_public_meetings=True, can_view_non_public_papers=True)
+        client = make_session_client(
+            tenant, can_view_non_public_meetings=True, can_view_non_public_papers=True, can_access_api=True
+        )
         meetings = client.get(f"{BASE}/{tenant.slug}/meetings/").json()
         assert names(meetings) == {"OEFFENTLICH", "GEHEIM"}
         assert meetings["meta"]["authenticated"] is True
@@ -177,9 +179,13 @@ class TestApplications:
         anonymous = client.get(f"{BASE}/{tenant.slug}/applications/")
         assert anonymous.status_code == 401
         assert anonymous.json()["type"].endswith("/nicht-authentifiziert")
-        forbidden = make_session_client(tenant, can_view_applications=False).get(f"{BASE}/{tenant.slug}/applications/")
+        forbidden = make_session_client(tenant, can_view_applications=False, can_access_api=True).get(
+            f"{BASE}/{tenant.slug}/applications/"
+        )
         assert forbidden.status_code == 403
-        allowed = make_session_client(tenant, can_view_applications=True).get(f"{BASE}/{tenant.slug}/applications/")
+        allowed = make_session_client(tenant, can_view_applications=True, can_access_api=True).get(
+            f"{BASE}/{tenant.slug}/applications/"
+        )
         assert allowed.status_code == 200
         assert allowed.json()["meta"]["total"] == 0
 

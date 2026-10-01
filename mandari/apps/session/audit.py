@@ -193,13 +193,21 @@ def log_event(
 
 
 def log_role_assignment(
-    session_user: Any, old_roles: Any, new_roles: Any, *, request: Any = None, user: Any = None, reason: str = ""
+    session_user: Any,
+    old_roles: Any,
+    new_roles: Any,
+    *,
+    request: Any = None,
+    user: Any = None,
+    reason: str = "",
+    extra: Any = None,
 ) -> Any:
     """
     Rollenzuweisung eines Nutzers protokollieren (Issue #221): hinzugefügte und entzogene Rollen.
 
     Die M2M-Zuordnung löst kein ``post_save`` aus; ohne diesen direkten Eintrag bliebe eine
-    Rechteausweitung unsichtbar. Ohne Unterschied entsteht kein Eintrag.
+    Rechteausweitung unsichtbar. Ohne Unterschied entsteht kein Eintrag. ``extra`` ergänzt
+    weitere Angaben, z. B. die einladende Person bei einer angenommenen Einladung.
     """
     old = {role.pk: role.name for role in old_roles}
     new = {role.pk: role.name for role in new_roles}
@@ -207,9 +215,11 @@ def log_role_assignment(
     removed = sorted(old[pk] for pk in old.keys() - new.keys())
     if not added and not removed:
         return None
-    changes = {"hinzugefuegt": added, "entzogen": removed}
+    changes: dict[str, Any] = {"hinzugefuegt": added, "entzogen": removed}
     if reason:
         changes["anlass"] = reason
+    if extra:
+        changes.update(extra)
     return log_event(
         "roles_changed", session_user, tenant=session_user.tenant, user=user, request=request, changes=changes
     )

@@ -38,7 +38,8 @@ Dabei gelten vier Grundsätze:
 | Stimmabgaben | Erfassung der Einzelstimmen je TOP mit alter und neuer Stimme je Person; Rückläufe bei Umlaufbeschlüssen; Feststellung des Ergebnisses | Stimmabgabe erfasst, Abstimmungsergebnis festgestellt |
 | Mitzeichnungen | Entscheidung je Station (mitgezeichnet oder zurückgewiesen, mit Kommentar) | Mitzeichnung entschieden |
 | Entschädigungen | Jeder Posten eines Sitzungsgelds und jeder Monatspauschale einzeln: festgesetzt, genehmigt, ausgezahlt, storniert | Entschädigung festgesetzt/genehmigt/ausgezahlt/storniert |
-| Rollen und Rechte | Zuweisen und Entziehen von Rollen; Anlegen und Ändern einer Rolle mit erteilten und entzogenen Rechten | Rollen geändert, Rechte geändert |
+| Rollen und Rechte | Zuweisen und Entziehen von Rollen; Anlegen und Ändern einer Rolle mit erteilten und entzogenen Rechten; Rollen aus einer angenommenen Einladung mit der einladenden Person als Vergebende | Rollen geändert, Rechte geändert |
+| Einladungen und Zugänge | Einladen (Adresse, Rollen, Gültigkeit), erneut Senden, Zurückziehen, Annahme; Einreichungs-Zugänge anlegen (Name, Rechte, Ablauf – nie das Token) und zurückziehen | Erstellt, Geändert, Gelöscht |
 | Lesezugriffe | Ansicht nichtöffentlicher Sitzungen, TOPs, Vorlagen (auch früherer Fassungen) und Niederschriften; Abruf von Dokumenten mit nichtöffentlichem Inhalt | Angesehen, Heruntergeladen |
 | Downloads | Jeder Download einer Anlage, einer früheren Fassung und einer Sitzungsmappe; nichtöffentliche sind gekennzeichnet | Heruntergeladen |
 | Anmeldungen | Anmeldung, Abmeldung, fehlgeschlagene Anmeldung (falsches Passwort, falscher zweiter Faktor) | Anmeldung, Abmeldung, Anmeldung fehlgeschlagen |

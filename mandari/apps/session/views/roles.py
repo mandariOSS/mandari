@@ -11,7 +11,7 @@ Verwaltung frei kombinieren kann.
 Schutzmechanismen:
 - Die letzte Admin-Rolle mit aktiven Nutzern kann weder gelöscht noch
   entmachtet werden (sonst sperrt sich der Mandant aus).
-- Rollen mit zugewiesenen Nutzern können nicht gelöscht werden.
+- Rollen mit zugewiesenen Nutzern und Standardrollen (``is_system_role``) können nicht gelöscht werden.
 - Keine Rechteausweitung: Wer nicht Administrator ist, vergibt und entzieht nur
   Rechte aus den eigenen Rollen (``permissions.grantable_permissions``). Die
   Administrator-Rolle und die Kontrollrechte ändern nur Administratoren.
@@ -25,7 +25,13 @@ from django.views.generic import TemplateView
 
 from .. import audit
 from ..models import SessionRole, SessionUser
-from ..permissions import SessionViewMixin, grantable_permissions, is_admin_user
+from ..permissions import (
+    HIDDEN_ROLE_FLAGS,
+    SessionViewMixin,
+    grantable_permissions,
+    is_admin_user,
+    role_within_scope,
+)
 
 # Gruppierung der Rechte für die Matrix; unbekannte can_*-Felder landen
 # automatisch unter „Sonstiges" (zukunftssicher bei neuen Rechten).
@@ -91,16 +97,20 @@ PERMISSION_GROUPS = [
         "Zugänge",
         [
             "can_view_dashboard",
+            # Session-API mit der eigenen Anmeldung (api/v1/auth.py)
             "can_access_api",
-            "can_access_oparl_api",
         ],
     ),
 ]
 
 
 def permission_fields():
-    """Alle can_*-Felder der Rolle mit Label, gruppiert für die Matrix."""
-    fields = {f.name: f.verbose_name for f in SessionRole._meta.get_fields() if f.name.startswith("can_")}
+    """Alle wirksamen can_*-Felder der Rolle mit Label, gruppiert für die Matrix."""
+    fields = {
+        f.name: f.verbose_name
+        for f in SessionRole._meta.get_fields()
+        if f.name.startswith("can_") and f.name not in HIDDEN_ROLE_FLAGS
+    }
     grouped = []
     seen = set()
     for group_name, names in PERMISSION_GROUPS:
@@ -270,6 +280,20 @@ class RoleDeleteView(SessionViewMixin, View):
         role = _get_role(self, request.POST.get("role_id"))
         if role is None:
             messages.error(request, "Rolle nicht gefunden.")
+            return redirect("session:settings_roles", tenant_slug=tenant_slug)
+
+        if role.is_system_role:
+            messages.error(request, f"„{role.name}“ ist eine Standardrolle und kann nicht gelöscht werden.")
+            return redirect("session:settings_roles", tenant_slug=tenant_slug)
+
+        # Wie beim Bearbeiten: Rollen mit Rechten außerhalb des eigenen Umfangs löscht nur ein Administrator
+        actor_admin = is_admin_user(self.session_user)
+        if not role_within_scope(role, grantable_permissions(self.session_user), admin=actor_admin):
+            messages.error(
+                request,
+                "Rollen mit Rechten, die Sie selbst nicht haben – darunter Administrator-Rollen und die "
+                "Kontrollrechte –, löscht nur ein Administrator.",
+            )
             return redirect("session:settings_roles", tenant_slug=tenant_slug)
 
         if _is_last_admin_role(self, role):
