@@ -131,6 +131,29 @@ def chain_status(tenant: SessionTenant) -> dict[str, Any]:
     return info
 
 
+#: Zeitraum der Dashboard-Kennzahl „Einträge seit …“ in Kalendertagen (einschließlich heute)
+DASHBOARD_DAYS = 7
+
+
+def dashboard_summary(tenant: SessionTenant, *, with_verify: bool) -> dict[str, Any]:
+    """
+    Kurzstand des Protokolls für das Dashboard (Kontrollrollen Revision und Datenschutz, Issue #708).
+
+    Nur Zahlen und Zeitpunkte, keine Inhalte einzelner Einträge – deshalb ohne Leseprotokoll wie bei der
+    Einsicht. Die letzte Kettenprüfung nur mit ``with_verify`` (Recht ``export_audit_log``), wie in der
+    Protokollansicht.
+    """
+    since = timezone.localdate() - dt.timedelta(days=DASHBOARD_DAYS - 1)
+    entries = SessionAuditLog.objects.filter(tenant=tenant).order_by("-created_at")
+    return {
+        "since": since,
+        "recent": period_queryset(tenant, since, None).count(),
+        "last_at": entries.values_list("created_at", flat=True).first(),
+        "with_verify": with_verify,
+        "last_verify": entries.filter(action="audit_verify").first() if with_verify else None,
+    }
+
+
 # =============================================================================
 # Archivierung vor der fristgerechten Löschung
 # =============================================================================

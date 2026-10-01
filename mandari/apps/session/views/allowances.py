@@ -436,7 +436,7 @@ class AllowanceCancelView(SessionViewMixin, View):
             messages.success(
                 request,
                 f"Position für {allowance.attendance.person.display_name} "
-                f"({allowance.attendance.meeting.start:%d.%m.%Y}) storniert.",
+                f"({timezone.localtime(allowance.attendance.meeting.start):%d.%m.%Y}) storniert.",
             )
         else:
             messages.error(

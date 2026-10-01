@@ -5,8 +5,6 @@ Session views.
 Provides views for the Session RIS administration interface.
 """
 
-import re
-
 from django import forms
 from django.contrib import messages
 from django.db.models import Q
@@ -25,18 +23,8 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..services import allowance_service
 from ..visibility import meeting_q
-
-_IBAN_RE = re.compile(r"^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$")
-
-
-def iban_is_valid(iban: str) -> bool:
-    """IBAN ohne Leerzeichen: Länderkennung, Prüfziffer und Kontokennung, Prüfsumme mod 97 = 1 (ISO 13616)."""
-    if not _IBAN_RE.match(iban):
-        return False
-    rearranged = iban[4:] + iban[:4]
-    digits = "".join(str(int(char, 36)) for char in rearranged)
-    return int(digits) % 97 == 1
 
 
 class SessionPersonForm(forms.ModelForm):
@@ -56,7 +44,7 @@ class SessionPersonForm(forms.ModelForm):
     address = forms.CharField(label="Adresse", required=False, widget=forms.Textarea(attrs={"rows": 2}))
     bank_account_holder = forms.CharField(label="Kontoinhaber/in", required=False, max_length=200)
     bank_iban = forms.CharField(label="IBAN", required=False, max_length=42)
-    bank_bic = forms.CharField(label="BIC", required=False, max_length=11)
+    bank_bic = forms.CharField(label="BIC", required=False, max_length=15)  # mit Leerzeichen, gespeichert ohne
 
     class Meta:
         model = SessionPerson
@@ -99,11 +87,20 @@ class SessionPersonForm(forms.ModelForm):
         return str(self.cleaned_data.get("delivery_channel") or "email")
 
     def clean_bank_iban(self) -> str:
-        # Die IBAN geht ungeprüft in die SEPA-Datei: Format und Prüfziffer (ISO 13616, mod 97) prüfen
-        iban = "".join(str(self.cleaned_data.get("bank_iban") or "").split()).upper()
-        if iban and not iban_is_valid(iban):
-            raise forms.ValidationError("Bitte eine gültige IBAN angeben (Prüfziffer stimmt nicht).")
+        # IBAN und BIC gehen in die SEPA-Datei: dieselbe Prüfung wie beim Auftraggeberkonto (allowance_service)
+        iban = allowance_service.normalize_account_code(self.cleaned_data.get("bank_iban"))
+        problem = allowance_service.iban_problem(iban) if iban else ""
+        if problem:
+            raise forms.ValidationError(f"Die IBAN ist ungültig: {problem}.")
         return iban
+
+    def clean_bank_bic(self) -> str:
+        bic = allowance_service.normalize_account_code(self.cleaned_data.get("bank_bic"))
+        if bic and not allowance_service.valid_bic(bic):
+            raise forms.ValidationError(
+                "Die BIC ist ungültig: 8 oder 11 Zeichen, z. B. COBADEFFXXX. Ohne BIC das Feld bitte leer lassen."
+            )
+        return bic
 
     def clean(self):
         cleaned = super().clean()

@@ -14,6 +14,8 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.views.generic import TemplateView
 
+from apps.common.params import text_param
+
 from ..models import (
     SessionAgendaItem,
     SessionApplication,
@@ -78,7 +80,7 @@ class SessionSearchView(SessionViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        query = self.request.GET.get("q", "").strip()
+        query = text_param(self.request.GET.get("q"))
         filters = self._filters()
 
         results = {}

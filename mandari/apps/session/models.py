@@ -2920,8 +2920,8 @@ class SessionApplication(EncryptionMixin, models.Model):
         super().save(*args, **kwargs)
 
     def _next_reference(self) -> str:
-        """Nächste freie Eingangsnummer für Tenant + Jahr (numerisch ermittelt)."""
-        year = timezone.now().year
+        """Nächste freie Eingangsnummer für Tenant + Jahr (numerisch ermittelt, Jahr in Ortszeit)."""
+        year = timezone.localdate().year
         prefix = f"A/{year}/"
         max_num = 0
         refs = SessionApplication.objects.filter(

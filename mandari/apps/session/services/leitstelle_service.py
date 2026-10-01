@@ -43,6 +43,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.common.encryption import EncryptedTextField
+from apps.common.params import text_param
 from apps.session import audit
 from apps.session.models import (
     SessionAgendaItem,
@@ -501,8 +502,8 @@ class SearchResult:
 
 
 def normalize_query(raw: str) -> str:
-    """Suchbegriff bereinigen; zu kurz ergibt eine leere Zeichenkette (keine Suche)."""
-    query = " ".join(str(raw or "").split())[:SEARCH_MAX_LENGTH]
+    """Suchbegriff bereinigen (Leerraum, Nullbytes – PostgreSQL lehnt sie ab); zu kurz ergibt keine Suche."""
+    query = " ".join(text_param(raw).split())[:SEARCH_MAX_LENGTH]
     return query if len(query) >= SEARCH_MIN_LENGTH else ""
 
 

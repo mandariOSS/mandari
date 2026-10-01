@@ -16,6 +16,8 @@ from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase
 from django.utils import timezone
 from django.views.generic import TemplateView
 
+from apps.common.params import text_param
+
 from ..models import SessionTenantGroupMembership
 from ..permissions import user_leitstellen
 from ..services import leitstelle_service
@@ -87,7 +89,7 @@ class LeitstelleSearchView(LeitstelleMixin, TemplateView):
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
-        raw = self.request.GET.get("q", "")
+        raw = text_param(self.request.GET.get("q"))  # ohne Nullbytes, auch in der Anzeige
         query = leitstelle_service.normalize_query(raw)
         result = leitstelle_service.search(self.membership, self.request.user, query)
         if query:

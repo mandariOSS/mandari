@@ -159,7 +159,7 @@ def run_privacy_purge(
     from apps.session.models import SessionMeeting, SessionPerson, SessionProtocol
 
     now = now or timezone.now()
-    today = now.date()
+    today = timezone.localdate(now)  # Kalendertag in Ortszeit, nicht in UTC
     settings = get_privacy_settings(tenant)
     stats = {
         "persons_anonymized": 0,

@@ -94,7 +94,7 @@
                         Beginn *
                     </label>
                     <input type="datetime-local" name="start" id="id_start"
-                           value="{{ form.start.value|date:'Y-m-d\TH:i'|default:'' }}"
+                           value="{{ form.start.value|date:'Y-m-d\TH:i'|default:form.start.value|default:'' }}"
                            required
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                     {% if form.start.errors %}
@@ -106,7 +106,7 @@
                         Ende
                     </label>
                     <input type="datetime-local" name="end" id="id_end"
-                           value="{{ form.end.value|date:'Y-m-d\TH:i'|default:'' }}"
+                           value="{{ form.end.value|date:'Y-m-d\TH:i'|default:form.end.value|default:'' }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                     {% if form.end.errors %}
                     <p class="mt-1 text-sm text-red-600">{{ form.end.errors.0 }}</p>

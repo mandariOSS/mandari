@@ -1,0 +1,46 @@
+{# Dashboard für Rollen ohne Fachkacheln, z. B. Revision und Datenschutz (Issue #708): Protokollstand und Wegweiser #}
+{% if audit_summary %}
+<c-ui.card title="Protokollkontrolle" subtitle="Revisionssicheres Protokoll dieses Mandanten – jede Einsicht wird selbst protokolliert." class="mb-6 fade-up" data-testid="dashboard-protokollkontrolle">
+    {% if without_content_tiles %}
+    <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">
+        Ihre Rolle umfasst keine Sitzungen, Vorlagen oder Anträge (Funktionstrennung). Deshalb zeigt das Dashboard hier nur den Stand des Protokolls.
+    </p>
+    {% endif %}
+    <div class="grid sm:grid-cols-3 gap-4 mb-4">
+        <c-ui.kpi-tile label="Einträge seit {{ audit_summary.since|date:'d.m.Y' }}" value="{{ audit_summary.recent }}" />
+        <c-ui.kpi-tile label="Letzter Eintrag" value="{{ audit_summary.last_at|date:'d.m.Y H:i'|default:'–' }}" tone="muted" />
+        {% if audit_summary.with_verify %}
+        {% if audit_summary.last_verify %}
+        <c-ui.kpi-tile label="Letzte Kettenprüfung am {{ audit_summary.last_verify.created_at|date:'d.m.Y' }}" value="{% if audit_summary.last_verify.changes.intakt %}intakt{% else %}Befund{% endif %}" tone="{% if audit_summary.last_verify.changes.intakt %}green{% else %}red{% endif %}" />
+        {% else %}
+        <c-ui.kpi-tile label="Letzte Kettenprüfung" value="noch keine" tone="amber" />
+        {% endif %}
+        {% endif %}
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <c-ui.button href="{% url 'session:audit_log' tenant_slug=tenant_slug %}" size="sm" icon="shield-check">Audit-Log öffnen</c-ui.button>
+        <c-ui.button href="{% url 'session:audit_log' tenant_slug=tenant_slug %}?from={{ audit_summary.since|date:'Y-m-d' }}" variant="secondary" size="sm" icon="filter">Einträge seit {{ audit_summary.since|date:'d.m.' }}</c-ui.button>
+        {% if audit_summary.with_verify %}
+        <c-ui.button href="{% url 'session:audit_log' tenant_slug=tenant_slug %}#kontrolle" variant="secondary" size="sm" icon="download">Export und Kettenprüfung</c-ui.button>
+        {% endif %}
+    </div>
+</c-ui.card>
+{% endif %}
+
+{% if without_content_tiles %}
+{% if role_areas %}
+<c-ui.card title="Ihre Bereiche" subtitle="Diese Bereiche gehören zu Ihrer Rolle." class="mb-6 fade-up" data-testid="dashboard-bereiche">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for area in role_areas %}
+        <c-ui.link-tile href="{{ area.url }}" icon="{{ area.icon }}" title="{{ area.label }}" tone="bg-primary-100 dark:bg-primary-900/50 text-primary-600 dark:text-primary-400">{{ area.text }}</c-ui.link-tile>
+        {% endfor %}
+    </div>
+</c-ui.card>
+{% elif not audit_summary %}
+<c-ui.card class="mb-6 fade-up" data-testid="dashboard-bereiche">
+    <c-ui.empty-state icon="layout-dashboard" title="Noch keine Bereiche">
+        Ihrer Rolle sind keine Sitzungen, Vorlagen, Anträge oder Verwaltungsbereiche zugeordnet. Bitte wenden Sie sich an die Benutzerverwaltung Ihrer Kommune.
+    </c-ui.empty-state>
+</c-ui.card>
+{% endif %}
+{% endif %}

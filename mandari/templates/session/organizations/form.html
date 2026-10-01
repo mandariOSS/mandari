@@ -116,7 +116,7 @@
                     <div>
                         <label for="id_default_meeting_start_time" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Standard-Beginn</label>
                         <input type="time" name="default_meeting_start_time" id="id_default_meeting_start_time"
-                               value="{{ form.default_meeting_start_time.value|time:'H:i'|default:'' }}"
+                               value="{{ form.default_meeting_start_time.value|time:'H:i'|default:form.default_meeting_start_time.value|default:'' }}"
                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                     </div>
                 </div>
@@ -129,18 +129,18 @@
                 </div>
             </div>
 
-            <!-- Zeitraum / Status -->
+            <!-- Zeitraum / Status – Datum als ISO-Text: Datum beim Bearbeiten, Eingabe nach einem Fehler -->
             <div>
                 <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Zeitraum &amp; Status</h2>
                 <div class="grid sm:grid-cols-3 gap-4 items-end">
                     <div>
                         <label for="id_start_date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beginn</label>
-                        <input type="date" name="start_date" id="id_start_date" value="{{ form.start_date.value|date:'Y-m-d'|default:'' }}"
+                        <input type="date" name="start_date" id="id_start_date" value="{{ form.start_date.value|default:''|stringformat:'s' }}"
                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                     </div>
                     <div>
                         <label for="id_end_date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ende</label>
-                        <input type="date" name="end_date" id="id_end_date" value="{{ form.end_date.value|date:'Y-m-d'|default:'' }}"
+                        <input type="date" name="end_date" id="id_end_date" value="{{ form.end_date.value|default:''|stringformat:'s' }}"
                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                         {% if form.end_date.errors %}<p class="mt-1 text-sm text-red-600">{{ form.end_date.errors.0 }}</p>{% endif %}
                     </div>
