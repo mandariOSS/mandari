@@ -59,18 +59,21 @@ Entry = SessionPaperVersionFile
 #: Vorlage über eine Neufassung (Unternummer) oder nach Zurückweisung wieder im Entwurf.
 RESTORE_STATUSES = frozenset({"draft"})
 
-#: Ab der Freigabe ist der Inhalt einer Vorlage (Texte, Angaben, Anlagen) festgeschrieben – sonst ließe
-#: sich das Vier-Augen-Prinzip nachträglich umgehen. Änderungen entstehen als Neufassung (Unternummer)
-#: oder nach Zurückziehen und erneutem Freigabelauf.
-CONTENT_LOCKED_STATUSES = frozenset({"approved", "scheduled", "completed", "withdrawn"})
+#: Ab der Vorlage zur Freigabe ist der Inhalt einer Vorlage (Texte, Angaben, Anlagen) festgeschrieben:
+#: Mitzeichnung und Freigabe beziehen sich auf genau den vorgelegten Stand. In der Prüfung entsteht eine
+#: Änderung nach der Zurückweisung im Entwurf (erneutes Vorlegen baut die Mitzeichnungskette neu auf),
+#: nach der Freigabe als Neufassung (Unternummer) oder nach Zurückziehen und erneutem Freigabelauf.
+CONTENT_LOCKED_STATUSES = frozenset({"review", "approved", "scheduled", "completed", "withdrawn"})
 CONTENT_LOCKED_MESSAGE = (
-    "Nach der Freigabe lassen sich Inhalt und Anlagen der Vorlage nicht mehr ändern. Bitte eine Neufassung "
-    "(Unternummer) anlegen oder die Vorlage zurückziehen und erneut zur Freigabe vorlegen."
+    "Ab der Vorlage zur Freigabe lassen sich Inhalt und Anlagen der Vorlage nicht mehr ändern – Mitzeichnung "
+    "und Freigabe beziehen sich auf diesen Stand. In der Prüfung die Vorlage bitte zurückweisen lassen und im "
+    "Entwurf ändern; nach der Freigabe eine Neufassung (Unternummer) anlegen oder die Vorlage zurückziehen und "
+    "erneut zur Freigabe vorlegen."
 )
 
 
 def content_locked(paper: SessionPaper | None) -> bool:
-    """Ist der Inhalt der Vorlage festgeschrieben (freigegeben, terminiert, abgeschlossen, zurückgezogen)?"""
+    """Ist der Inhalt der Vorlage festgeschrieben (in Prüfung, freigegeben, terminiert, abgeschlossen, zurückgezogen)?"""
     return paper is not None and paper.status in CONTENT_LOCKED_STATUSES
 
 
