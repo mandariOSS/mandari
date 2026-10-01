@@ -6,7 +6,7 @@ Je Befund ein Test, der ohne die Korrektur scheitert:
 - Beschlussfähigkeit: Stellvertretungen zählen nur, wenn sie für ein nicht anwesendes Mitglied nachrücken
 - „Nur Summen“: Die Abstimmungsseite überschreibt erfasste Summen nicht mit 0
 - Niederschrift: Summen offener und namentlicher Abstimmungen ergeben sich aus den Einzelstimmen
-- Sperre nach Genehmigung: Tagesordnung und Anwesenheit; Hinweis statt 403-Seite
+- Sperre nach Genehmigung: Tagesordnung und Anwesenheit; Hinweis statt 403-Seite; Nummernvergabe bleibt möglich
 - Ladung: keine Ladung zu abgesagten Sitzungen, keine Nachladung ohne Nachtrags-TOPs
 - Absage: Status und Häkchen bleiben abgeglichen (Formular, Modell, Bestand)
 - Sitzungsformular: Ende nach Beginn, Gremium vorausgewählt, Wahlperiode bei Planung und Verschiebung
@@ -39,8 +39,10 @@ from apps.session.models import (
     SessionInvitationRecipient,
     SessionLegislativeTerm,
     SessionMeeting,
+    SessionNumberRange,
     SessionOrganization,
     SessionOrganizationMembership,
+    SessionPaper,
     SessionPerson,
     SessionProtocol,
     SessionRole,
@@ -172,8 +174,12 @@ def test_stellvertretung_ohne_freien_sitz_stimmt_nicht_ab(welt: Welt) -> None:
         _status(welt.sitzung, person, "present")
     top = SessionAgendaItem.objects.create(meeting=welt.sitzung, number="1", order=1, name="Radweg")
 
-    with pytest.raises(voting_service.VotingRightsError):
+    with pytest.raises(voting_service.VotingRightsError) as fehler:
         voting_service.capture_votes(top, {vertretungen[0]: "yes"}, recorded_by=welt.admin)
+    # Sachlich richtig benannt: anwesend, aber das vertretene Mitglied ist selbst da
+    meldung = str(fehler.value)
+    assert "Stellvertretung, deren vertretenes Mitglied selbst anwesend ist:" in meldung
+    assert "nicht anwesend" not in meldung
     check = voting_service.check_counts(top, 4, 0, 0)
     assert check.exceeded and check.hard, "Mehr Stimmen als Sitze bei vollständiger Anwesenheit"
 
@@ -352,6 +358,63 @@ def test_ruecknahme_auf_nichtoeffentlich_bleibt_moeglich(welt: Welt, gesperrt: d
         zwei.save()
 
 
+def test_nummernvergabe_nach_genehmigter_niederschrift(welt: Welt) -> None:
+    """
+    Die Vorlage bekommt ihre Nummer erst bei der Freigabe, ein TOP mit ihr steht schon in einer genehmigten
+    Niederschrift: Die Freigabe gelingt, der TOP behält den genehmigten Betreff; offene Sitzungen ziehen nach.
+    """
+    SessionNumberRange.objects.filter(tenant=welt.tenant).update(assign_on="release")
+    vorlage = SessionPaper.objects.create(tenant=welt.tenant, name="Radweg", is_public=True)
+    genehmigt = SessionAgendaItem.objects.create(
+        meeting=welt.sitzung, number="1", order=1, name="Radweg", paper=vorlage
+    )
+    _genehmigen(welt.sitzung)
+    offen_sitzung = SessionMeeting.objects.create(
+        tenant=welt.tenant, name="Rat", organization=welt.gremium, start=welt.sitzung.start + timedelta(days=7)
+    )
+    offen = SessionAgendaItem.objects.create(meeting=offen_sitzung, number="1", order=1, name="Radweg", paper=vorlage)
+
+    vorlage.status = "approved"
+    vorlage.save()  # scheiterte an der Sperre der genehmigten Niederschrift
+
+    vorlage.refresh_from_db()
+    assert vorlage.reference
+    genehmigt.refresh_from_db()
+    offen.refresh_from_db()
+    assert genehmigt.name == "Radweg"
+    assert offen.name == f"{vorlage.reference}: Radweg"
+
+
+def test_unterpunkt_eines_oeffentlichen_tops_bietet_keine_ruecknahme(welt: Welt) -> None:
+    """Unterpunkte folgen ihrem TOP; einzeln auf nichtöffentlich setzen ließe die Prüfung der Sichtbarkeit nicht zu."""
+    top = SessionAgendaItem.objects.create(meeting=welt.sitzung, number="1", order=1, name="Radweg")
+    unter = SessionAgendaItem.objects.create(
+        meeting=welt.sitzung, number="1.1", order=2, name="Abschnitt Nord", parent=top
+    )
+    _genehmigen(welt.sitzung)
+
+    seite = welt.client.get(welt.url(f"/meetings/{welt.sitzung.pk}/")).content.decode()
+
+    assert f"/agenda/{top.pk}/edit/" in seite
+    assert f"/agenda/{unter.pk}/edit/" not in seite
+
+
+def test_terminieren_in_gesperrte_sitzung_meldet_die_sperre(welt: Welt) -> None:
+    from apps.session.models import SessionConsultation
+
+    vorlage = SessionPaper.objects.create(tenant=welt.tenant, reference="V/1", name="Radweg", status="approved")
+    station = SessionConsultation.objects.create(
+        paper=vorlage, organization=welt.gremium, meeting=welt.sitzung, order=1
+    )
+    _genehmigen(welt.sitzung)
+
+    antwort = welt.client.post(welt.url(f"/consultations/{station.pk}/schedule/"))
+
+    assert antwort.status_code == 302
+    assert protocol_lock.MESSAGE_AGENDA in _meldungen(antwort)
+    assert not welt.sitzung.agenda_items.exists()
+
+
 # =============================================================================
 # Tagesordnung: Ö/NÖ-Wechsel vor die Ende-TOPs
 # =============================================================================
@@ -472,6 +535,58 @@ def test_modell_gleicht_absage_ab(welt: Welt) -> None:
     welt.sitzung.save(update_fields=["cancelled"])
     welt.sitzung.refresh_from_db()
     assert welt.sitzung.meeting_state == "cancelled"
+
+
+def _admin_formular(welt: Welt, **daten: Any) -> Any:
+    from django.forms import modelform_factory
+
+    from apps.session.admin import SessionMeetingAdminForm
+
+    formular_klasse = modelform_factory(
+        SessionMeeting, form=SessionMeetingAdminForm, fields=["meeting_state", "cancelled", "cancellation_reason"]
+    )
+    formular = formular_klasse({"cancellation_reason": "", **daten}, instance=welt.sitzung)
+    assert formular.is_valid(), formular.errors
+    return formular.save()
+
+
+def test_admin_nimmt_die_absage_ueber_das_haekchen_zurueck(welt: Welt) -> None:
+    welt.sitzung.cancelled = True
+    welt.sitzung.save()
+
+    # Häkchen abgewählt, Status unverändert „Abgesagt“: wie im Sitzungsformular zurückgenommen
+    sitzung = _admin_formular(welt, meeting_state="cancelled")
+
+    sitzung.refresh_from_db()
+    assert (sitzung.cancelled, sitzung.meeting_state) == (False, "scheduled")
+
+
+def test_admin_aktion_abgeschlossen_ueberspringt_abgesagte(welt: Welt) -> None:
+    from django.contrib import admin
+    from django.contrib.messages.storage.fallback import FallbackStorage
+    from django.contrib.sessions.backends.db import SessionStore
+    from django.test import RequestFactory
+
+    from apps.session.admin import SessionMeetingAdmin
+
+    abgesagt = SessionMeeting.objects.create(
+        tenant=welt.tenant, name="Abgesagt", organization=welt.gremium, start=welt.sitzung.start, cancelled=True
+    )
+    request = RequestFactory().post("/admin/")
+    request.session = SessionStore()
+    request._messages = FallbackStorage(request)  # type: ignore[attr-defined]
+
+    SessionMeetingAdmin(SessionMeeting, admin.site).mark_completed(
+        request, SessionMeeting.objects.filter(tenant=welt.tenant)
+    )
+
+    meldungen = [str(m) for m in get_messages(request)]
+    assert "1 Sitzung(en) als abgeschlossen markiert." in meldungen
+    assert any("1 abgesagte Sitzung(en) übersprungen" in m for m in meldungen)
+    abgesagt.refresh_from_db()
+    welt.sitzung.refresh_from_db()
+    assert (abgesagt.cancelled, abgesagt.meeting_state) == (True, "cancelled")
+    assert welt.sitzung.meeting_state == "completed"
 
 
 def test_sitzungsende_vor_beginn_wird_abgelehnt(welt: Welt) -> None:

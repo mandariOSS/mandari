@@ -114,8 +114,8 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
                 </button>
             </form>
         </div>
-        {% elif agenda_can_retract and item.is_public %}
-        <!-- Genehmigte Niederschrift: nur noch Rücknahme auf nichtöffentlich -->
+        {% elif agenda_can_retract and item.is_public and not item.parent_id %}
+        <!-- Genehmigte Niederschrift: nur noch Rücknahme auf nichtöffentlich (Unterpunkte folgen ihrem TOP) -->
         <a href="{% url 'session:agenda_item_edit' tenant_slug=tenant_slug item_id=item.id %}"
            class="p-1 flex-shrink-0 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded" title="Auf nichtöffentlich setzen">
             <i data-lucide="eye-off" class="w-4 h-4"></i>

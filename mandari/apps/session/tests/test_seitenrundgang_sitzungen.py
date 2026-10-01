@@ -132,10 +132,7 @@ def _baue() -> Rundgang:
 
     def sitzung(name: str, tage: int, **extra: Any) -> SessionMeeting:
         start = (jetzt + timedelta(days=tage)).replace(hour=17, minute=0, second=0, microsecond=0)
-        meeting = SessionMeeting(tenant=tenant, name=name, organization=gremium, start=start, **extra)
-        meeting.assign_legislative_term()
-        meeting.save()
-        return meeting
+        return SessionMeeting.objects.create(tenant=tenant, name=name, organization=gremium, start=start, **extra)
 
     # Kommende Sitzung: hybride Sitzung mit Tagesordnung, Ladung, Rückmeldung, Vertretung, Nachtrag, Störung
     kommend = sitzung("Kommende Sitzung", 14, meeting_state="scheduled")

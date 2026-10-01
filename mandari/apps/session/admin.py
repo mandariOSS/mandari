@@ -14,7 +14,8 @@ from accessing personal information.
 
 from django import forms
 from django.contrib import admin, messages
-from django.db import transaction
+from django.db import models, transaction
+from django.http import HttpRequest
 from django.shortcuts import get_object_or_404, redirect
 from django.template.response import TemplateResponse
 from django.urls import reverse
@@ -616,6 +617,20 @@ class SessionAgendaItemInline(TabularInline):
 # This protects personal data (who attended which meetings)
 
 
+class SessionMeetingAdminForm(forms.ModelForm):
+    """Status „Abgesagt“ und Häkchen gleichen sich wie im Sitzungsformular ab – auch die Rücknahme der Absage."""
+
+    class Meta:
+        model = SessionMeeting
+        fields = "__all__"
+
+    def clean(self):
+        cleaned = super().clean()
+        if {"meeting_state", "cancelled"} <= set(self.fields):
+            self.instance.align_cancellation_input(cleaned, self.changed_data)
+        return cleaned
+
+
 @admin.register(SessionMeeting)
 class SessionMeetingAdmin(ModelAdmin):
     """
@@ -636,6 +651,7 @@ class SessionMeetingAdmin(ModelAdmin):
     ]
     list_filter = ["tenant", "organization", "meeting_state", "is_public", "cancelled"]
     search_fields = ["name", "organization__name"]
+    form = SessionMeetingAdminForm
     date_hierarchy = "start"
     inlines = [SessionAgendaItemInline]  # Attendance inline removed for privacy
     # Sitzungsformat (Issue #138) nur lesend: die Prüfung gegen das Landesprofil läuft im Session-Portal
@@ -746,9 +762,17 @@ class SessionMeetingAdmin(ModelAdmin):
         messages.success(request, f"{count} Sitzung(en) als geplant markiert.")
 
     @admin.action(description="Als abgeschlossen markieren")
-    def mark_completed(self, request, queryset):
-        count = _save_each(queryset, meeting_state="completed")
+    def mark_completed(self, request: HttpRequest, queryset: models.QuerySet[SessionMeeting]) -> None:
+        # Abgesagte Sitzungen bleiben abgesagt (abgesagt gewinnt im Modell) – nicht als Erfolg zählen
+        abgesagt = queryset.filter(models.Q(cancelled=True) | models.Q(meeting_state="cancelled"))
+        skipped = abgesagt.count()
+        count = _save_each(queryset.exclude(pk__in=abgesagt.values("pk")), meeting_state="completed")
         messages.success(request, f"{count} Sitzung(en) als abgeschlossen markiert.")
+        if skipped:
+            messages.warning(
+                request,
+                f"{skipped} abgesagte Sitzung(en) übersprungen – zuerst die Absage zurücknehmen.",
+            )
 
     @admin.action(description="Absagen")
     def cancel_meetings(self, request, queryset):

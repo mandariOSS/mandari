@@ -72,6 +72,8 @@ def sync_paper_item_names(paper: Any) -> int:
     Nummer nachziehen: TOPs, die vor der Vergabe aus der Beratungsfolge der Vorlage entstanden sind,
     tragen danach „Nummer: Titel“. Nur Betreffe, die noch genau dem Titel entsprechen (bzw. dem
     früheren „: Titel“ ohne Nummer), werden angepasst – von Hand geänderte bleiben unberührt.
+    TOPs aus Sitzungen mit genehmigter Niederschrift behalten den genehmigten Betreff
+    (``protocol_lock``); sonst scheiterte die Freigabe der Vorlage an der Sperre.
 
     Returns:
         Anzahl der angepassten TOPs.
@@ -81,8 +83,13 @@ def sync_paper_item_names(paper: Any) -> int:
     name = paper_item_name(paper)
     ohne_nummer = {str(paper.name)[:500], f": {paper.name}"[:500]}
     anzahl = 0
+    items = (
+        SessionAgendaItem.objects.filter(paper=paper, name__in=ohne_nummer)
+        .exclude(name=name)
+        .exclude(meeting__protocol__status__in=protocol_lock.LOCKED_STATUSES)
+    )
     # Einzeln gespeichert: Audit-Eintrag je TOP wie bei jeder anderen Änderung des Betreffs
-    for item in SessionAgendaItem.objects.filter(paper=paper, name__in=ohne_nummer).exclude(name=name):
+    for item in items:
         item.name = name
         item.save(update_fields=["name", "updated_at"])
         anzahl += 1

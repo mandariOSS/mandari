@@ -31,7 +31,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
-from ..services import agenda_service
+from ..services import agenda_service, protocol_lock
 from ..visibility import agenda_item_q, meeting_q, meeting_visible, optional, paper_q
 
 ROLE_VALUES = {value for value, _ in SessionConsultation.ROLE_CHOICES}
@@ -252,6 +252,10 @@ def schedule_consultation(view, request, consultation):
             )
             return False
         consultation.meeting = meeting
+    if protocol_lock.is_locked(meeting.pk):
+        # Genehmigte Niederschrift: keine neuen TOPs – Hinweis statt einer 403-Seite aus der Sperre im Modell
+        messages.error(request, protocol_lock.MESSAGE_AGENDA)
+        return False
 
     # TOP, Verknüpfung und Status in einer Transaktion: Nachgelagerte Empfänger (Rückmeldung an die
     # einreichende Fraktion, Issue #316) sehen nie einen TOP ohne seine Beratungsstation.

@@ -17,6 +17,7 @@ Security:
 """
 
 import uuid
+from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
 
@@ -1765,6 +1766,24 @@ class SessionMeeting(EncryptionMixin, models.Model):
             self.cancelled = True
         elif self.cancelled:
             self.meeting_state = "cancelled"
+
+    def align_cancellation_input(self, cleaned: dict[str, Any], changed: Iterable[str]) -> None:
+        """
+        Formulare mit Status und Häkchen (Sitzungsformular, Admin): Wer nur eines von beiden ändert, ändert das
+        andere mit – auch die Rücknahme der Absage (wieder „Geplant“ bzw. „Einladung versandt“). Ändern sich
+        beide widersprüchlich, gilt die Absage wie in :meth:`sync_cancellation`. ``self`` ist der bisherige Stand.
+        """
+        state, cancelled = cleaned.get("meeting_state"), bool(cleaned.get("cancelled"))
+        changed = set(changed)
+        if "meeting_state" in changed and "cancelled" not in changed:
+            cleaned["cancelled"] = state == "cancelled"
+        elif "cancelled" in changed and "meeting_state" not in changed:
+            if cancelled:
+                cleaned["meeting_state"] = "cancelled"
+            elif state == "cancelled":
+                cleaned["meeting_state"] = "invitation_sent" if self.invitation_sent_at else "scheduled"
+        elif cancelled or state == "cancelled":
+            cleaned["cancelled"], cleaned["meeting_state"] = True, "cancelled"
 
     @property
     def is_cancelled(self) -> bool:

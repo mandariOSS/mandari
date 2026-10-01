@@ -150,8 +150,7 @@ class MeetingUpdateForm(MeetingForm):
     Bearbeiten: zusätzlich Status und Absage.
 
     Status „Abgesagt“ und das Häkchen „Sitzung absagen“ beschreiben dasselbe: Wer nur eines von beiden ändert,
-    ändert das andere mit (Absage zurückgenommen: wieder „Geplant“ bzw. „Einladung versandt“). Ändern sich beide
-    widersprüchlich, gilt die Absage – wie im Modell (``SessionMeeting.sync_cancellation``).
+    ändert das andere mit (``SessionMeeting.align_cancellation_input``, wie im Admin).
     """
 
     class Meta(MeetingForm.Meta):
@@ -159,17 +158,7 @@ class MeetingUpdateForm(MeetingForm):
 
     def clean(self):
         cleaned = super().clean()
-        state, cancelled = cleaned.get("meeting_state"), bool(cleaned.get("cancelled"))
-        changed = set(self.changed_data)
-        if "meeting_state" in changed and "cancelled" not in changed:
-            cleaned["cancelled"] = state == "cancelled"
-        elif "cancelled" in changed and "meeting_state" not in changed:
-            if cancelled:
-                cleaned["meeting_state"] = "cancelled"
-            elif state == "cancelled":
-                cleaned["meeting_state"] = "invitation_sent" if self.instance.invitation_sent_at else "scheduled"
-        elif cancelled or state == "cancelled":
-            cleaned["cancelled"], cleaned["meeting_state"] = True, "cancelled"
+        self.instance.align_cancellation_input(cleaned, self.changed_data)
         return cleaned
 
 

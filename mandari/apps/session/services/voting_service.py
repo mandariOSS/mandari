@@ -368,12 +368,14 @@ def rights_message(assessed: Eligibility, persons: list[Any]) -> str:
     """Meldung für Stimmen von Personen, die bei dieser Abstimmung nicht abstimmen (feste Sätze, Namen)."""
     ausgeschlossen = {a.person_id for a in assessed.remote_excluded}
     gestoert = {a.person_id for a in assessed.unreachable}
+    bereit = {a.person_id for a in assessed.standby}
     saetze = ["Stimmen werden nur von stimmberechtigten Anwesenden erfasst."]
     gruppen = (
         ([p for p in persons if p.pk in ausgeschlossen], assessed.remote_rule.message if assessed.remote_rule else ""),
         ([p for p in persons if p.pk in gestoert], "Wegen einer Störung nicht erreichbar:"),
+        ([p for p in persons if p.pk in bereit], "Stellvertretung, deren vertretenes Mitglied selbst anwesend ist:"),
         (
-            [p for p in persons if p.pk not in ausgeschlossen and p.pk not in gestoert],
+            [p for p in persons if p.pk not in ausgeschlossen | gestoert | bereit],
             "Ohne Stimmrecht oder laut Anwesenheitsliste nicht anwesend:",
         ),
     )
