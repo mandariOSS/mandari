@@ -71,6 +71,7 @@
                                 <option value="{{ org.id }}" {% if form.parent.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
                                 {% endfor %}
                             </select>
+                            {% if form.parent.errors %}<p class="mt-1 text-sm text-red-600">{{ form.parent.errors.0 }}</p>{% endif %}
                         </div>
                     </div>
                     <c-form.select :field="form.committee_kind" label="Gesetzliche Ausschussart"
@@ -124,6 +125,7 @@
                     <input type="number" step="0.01" min="0" name="allowance_amount" id="id_allowance_amount"
                            value="{{ form.allowance_amount.value|default:'0.00' }}"
                            class="w-full sm:w-48 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% if form.allowance_amount.errors %}<p class="mt-1 text-sm text-red-600">{{ form.allowance_amount.errors.0 }}</p>{% endif %}
                 </div>
             </div>
 
@@ -140,6 +142,7 @@
                         <label for="id_end_date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ende</label>
                         <input type="date" name="end_date" id="id_end_date" value="{{ form.end_date.value|date:'Y-m-d'|default:'' }}"
                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% if form.end_date.errors %}<p class="mt-1 text-sm text-red-600">{{ form.end_date.errors.0 }}</p>{% endif %}
                     </div>
                     <div class="flex items-center gap-3 pb-2">
                         <input type="checkbox" name="is_active" id="id_is_active"

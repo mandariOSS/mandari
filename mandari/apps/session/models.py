@@ -2911,17 +2911,24 @@ class SessionLegislativeTerm(models.Model):
             return False
         return bool(self.start_date or self.end_date)
 
+    def overlaps(self, start, end) -> bool:
+        """Überschneidet sich die Periode mit dem Zeitraum [start, end]? Offene Grenzen gelten als unbegrenzt."""
+        if self.end_date is not None and start is not None and self.end_date < start:
+            return False
+        return not (self.start_date is not None and end is not None and end < self.start_date)
+
     @property
     def is_current(self) -> bool:
         """Umfasst die Periode das heutige Datum?"""
         return self.contains(timezone.localdate())
 
     @classmethod
-    def for_date(cls, tenant, date):
+    def for_date(cls, tenant, date, *, fallback=True):
         """
         Passende Wahlperiode eines Mandanten zu einem Datum (Issue #39).
 
-        Fallback: aktuelle Periode (enthält heute), sonst die jüngste.
+        Fallback: aktuelle Periode (enthält heute), sonst die jüngste. Ohne ``fallback`` nur die
+        Periode, die das Datum enthält, sonst None (Besetzungen außerhalb jeder Periode).
         Gibt None zurück, wenn der Mandant keine Perioden pflegt.
         """
         terms = list(cls.objects.filter(tenant=tenant))
@@ -2931,7 +2938,7 @@ class SessionLegislativeTerm(models.Model):
             for term in terms:
                 if term.contains(date):
                     return term
-        return cls.current_for(tenant)
+        return cls.current_for(tenant) if fallback else None
 
     @classmethod
     def current_for(cls, tenant):

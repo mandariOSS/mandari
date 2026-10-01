@@ -19,6 +19,8 @@ from django.views.generic import (
     TemplateView,
 )
 
+from apps.common.params import uuid_param
+
 from ..models import (
     SessionInvitation,
     SessionRole,
@@ -34,6 +36,19 @@ OUTSIDE_SCOPE = (
     "Rollen mit Rechten, die Sie selbst nicht haben – darunter die Administrator-Rolle und die "
     "Kontrollrechte –, weist nur ein Administrator zu oder entzieht sie."
 )
+
+
+#: Meldung bei unbekannter oder ungültiger Rollenkennung im Formular
+UNKNOWN_ROLE = "Mindestens eine der gewählten Rollen gibt es in diesem Mandanten nicht. Bitte erneut auswählen."
+
+
+def tenant_roles(tenant, raw_ids) -> list | None:
+    """Rollen des Mandanten zu den Kennungen aus dem Formular; eine ungültige oder fremde Kennung ergibt None."""
+    role_ids = {uuid_param(raw) for raw in raw_ids if raw}
+    if None in role_ids:
+        return None
+    roles = list(SessionRole.objects.filter(id__in=role_ids, tenant=tenant))
+    return roles if len(roles) == len(role_ids) else None
 
 
 def roles_within_scope(session_user, roles) -> bool:
@@ -75,16 +90,25 @@ def _log_invitation(request, session_user, action: str, invitation, **extra) -> 
 
 
 class SettingsView(SessionViewMixin, TemplateView):
-    """Tenant settings view."""
+    """
+    Einstellungsübersicht.
+
+    Auch mit dem Recht „Benutzer verwalten“ allein erreichbar: Von hier führen die Kacheln zu Benutzern,
+    Rollen und Vertretungen, und deren Brotkrumen verlinken hierher. Die Bereiche für Einstellungen
+    zeigt die Seite nur mit „Einstellungen verwalten“.
+    """
 
     template_name = "session/settings/index.html"
-    permission_required = "manage_settings"
+    permission_required = ["manage_settings", "manage_users"]
+    permission_require_all = False
 
     def get_context_data(self, **kwargs):
         from ..models import SessionTenant
         from ..services import oparl_access, portal_publication
 
         context = super().get_context_data(**kwargs)
+        if not self.has_permission("manage_settings"):
+            return context
         context["reminder_config"] = self.session_tenant.reminder_config()
         context["rsvp_reason_choices"] = SessionTenant.RSVP_REASON_CHOICES
         context["rsvp_audience_choices"] = SessionTenant.RSVP_AUDIENCE_CHOICES
@@ -433,13 +457,15 @@ class UserInviteView(SessionViewMixin, TemplateView):
 
     def post(self, request, *args, **kwargs):
         email = request.POST.get("email", "").strip().lower()
-        role_ids = request.POST.getlist("roles")
 
         if not email or "@" not in email:
             messages.error(request, "Bitte eine gültige E-Mail-Adresse angeben.")
             return redirect("session:user_invite", tenant_slug=self.session_tenant.slug)
 
-        roles = list(SessionRole.objects.filter(id__in=role_ids, tenant=self.session_tenant))
+        roles = tenant_roles(self.session_tenant, request.POST.getlist("roles"))
+        if roles is None:
+            messages.error(request, UNKNOWN_ROLE)
+            return redirect("session:user_invite", tenant_slug=self.session_tenant.slug)
         if not roles_within_scope(self.session_user, roles):
             messages.error(request, OUTSIDE_SCOPE)
             return redirect("session:user_invite", tenant_slug=self.session_tenant.slug)
@@ -488,8 +514,10 @@ class UserRolesUpdateView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, session_user_id):
         target = get_object_or_404(SessionUser, pk=session_user_id, tenant=self.session_tenant)
-        role_ids = request.POST.getlist("roles")
-        roles = list(SessionRole.objects.filter(id__in=role_ids, tenant=self.session_tenant))
+        roles = tenant_roles(self.session_tenant, request.POST.getlist("roles"))
+        if roles is None:
+            messages.error(request, UNKNOWN_ROLE)
+            return redirect("session:users", tenant_slug=tenant_slug)
 
         # Keine Rechteausweitung: Jede hinzugefügte oder entzogene Rolle muss im eigenen Umfang liegen
         if not roles_within_scope(self.session_user, set(target.roles.all()) ^ set(roles)):
@@ -657,7 +685,8 @@ class InvitationAcceptView(View):
                 user.email_verified = True
                 user.save(update_fields=["email_verified"])
         else:
-            existing = User.objects.filter(email=invitation.email).first()
+            # Groß-/Kleinschreibung zählt nicht (wie beim Einladen): kein zweites Konto für dieselbe Adresse
+            existing = User.objects.filter(email__iexact=invitation.email).first()
             if existing:
                 messages.info(request, "Für diese E-Mail existiert bereits ein Konto. Bitte zuerst anmelden.")
                 return redirect("session:invitation_accept", token=token)

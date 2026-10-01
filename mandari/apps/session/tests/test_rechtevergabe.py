@@ -150,7 +150,8 @@ def test_keine_selbstzuweisung_der_admin_rolle(tenant: SessionTenant, verwaltung
         {"roles": [str(r.id) for r in eigene] + [str(admin_rolle.id)]},
     )
     assert not _frisch(verwaltung).is_admin()
-    assert _client(verwaltung).get(f"/session/{tenant.slug}/settings/").status_code == 403
+    # Kein Administrator: Einstellungen (hier die Wahlperioden) bleiben verschlossen
+    assert _client(verwaltung).get(f"/session/{tenant.slug}/settings/terms/").status_code == 403
 
 
 def test_keine_zuweisung_von_rollen_mit_fremden_rechten(tenant: SessionTenant, verwaltung: SessionUser) -> None:

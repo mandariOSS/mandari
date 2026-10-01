@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Kleinsthelfer für Datum, Dateigröße und Personennamen, die vorher mehrfach kopiert waren.
+Kleinsthelfer für Datum, Geldbeträge, Dateigröße und Personennamen, die vorher mehrfach kopiert waren.
 
 Die Namen sind fest deutsch und bewusst nicht aus ``django.utils.dates`` übersetzt: Viele Aufrufer
 laufen in Hintergrundaufgaben oder Befehlen, und die Ausgabe soll unabhängig von der aktiven Sprache
 dieselbe bleiben.
 """
 
+import re
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 #: Monatsnamen, Index = Monatsnummer (Index 0 bleibt leer)
@@ -50,6 +52,35 @@ def parse_iso_date(value: str | None) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+#: Betrag mit deutscher Tausendergruppierung („1.234,56“) bzw. ohne („1234,56“, „1234.56“)
+_MONEY_GROUPED = re.compile(r"^[1-9]\d{0,2}(?:\.\d{3})+(?:,\d{1,2})?$")
+_MONEY_PLAIN = re.compile(r"^\d+(?:[.,]\d{1,2})?$")
+
+
+def parse_money(value: Any) -> Decimal | None:
+    """
+    Geldbetrag aus einer Formulareingabe mit höchstens zwei Nachkommastellen; sonst ``None``.
+
+    Deutsch mit Tausenderpunkt („1.000“, „1.000,50“) wie im Platzhalter „300,00“, dazu „300.50“.
+    Mehr als zwei Nachkommastellen, Exponenten („1e3“) und Vorzeichen gelten als ungültig – nichts wird
+    stillschweigend gerundet.
+    """
+    text = "".join(str(value or "").replace("€", "").split())
+    if _MONEY_GROUPED.match(text):
+        text = text.replace(".", "").replace(",", ".")
+    elif _MONEY_PLAIN.match(text):
+        text = text.replace(",", ".")
+    else:
+        return None
+    return Decimal(text).quantize(Decimal("0.01"))
+
+
+def format_money(amount: Decimal) -> str:
+    """Betrag deutsch mit zwei Nachkommastellen und Euro-Zeichen, z. B. „1.000,50 €“."""
+    text = f"{amount:,.2f}".replace(",", " ").replace(".", ",").replace(" ", ".")
+    return f"{text} €"
 
 
 def human_size(size: float, *, whole_bytes: bool = False) -> str:

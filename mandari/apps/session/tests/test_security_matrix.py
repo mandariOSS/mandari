@@ -177,6 +177,12 @@ GET_MATRIX: list[tuple[str, frozenset[str]]] = [
     ("/settings/terms/", frozenset({"manage_settings"})),
 ]
 
+# Seiten, die alternativ mit weiteren Rechten erreichbar sind (Pfad → weitere Rechtesätze)
+GET_ALTERNATIVES: dict[str, list[frozenset[str]]] = {
+    # Einstellungsübersicht auch für die Benutzerverwaltung (Kacheln Benutzer, Rollen, Vertretungen)
+    "/settings/": [frozenset({"manage_users"})],
+}
+
 # (Pfad-Vorlage, POST-Daten) — Mutationen, die ohne Berechtigung 403 liefern und nichts verändern dürfen
 MUTATIONS: list[tuple[str, dict[str, str]]] = [
     ("/meetings/create/", {"name": "M", "organization": "{org_a}", "start": "2026-08-01T10:00"}),
@@ -582,7 +588,8 @@ def _counts() -> tuple[int, ...]:
 @pytest.mark.parametrize("role", ROLES)
 def test_get_permission_matrix(world: World, role: str, path: str, required: frozenset[str]) -> None:
     url = world.url(path)
-    expected = 200 if required <= ROLE_PERMS[role] else 403
+    alternatives = [required, *GET_ALTERNATIVES.get(path, [])]
+    expected = 200 if any(rights <= ROLE_PERMS[role] for rights in alternatives) else 403
     status = world.clients[role].get(url).status_code
     assert status == expected, f"Rolle {role}: GET {url} erwartet {expected}, erhalten {status}"
 

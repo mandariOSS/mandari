@@ -5,6 +5,8 @@ Session views.
 Provides views for the Session RIS administration interface.
 """
 
+import re
+
 from django import forms
 from django.contrib import messages
 from django.db.models import Q
@@ -24,6 +26,17 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..visibility import meeting_q
+
+_IBAN_RE = re.compile(r"^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$")
+
+
+def iban_is_valid(iban: str) -> bool:
+    """IBAN ohne Leerzeichen: Länderkennung, Prüfziffer und Kontokennung, Prüfsumme mod 97 = 1 (ISO 13616)."""
+    if not _IBAN_RE.match(iban):
+        return False
+    rearranged = iban[4:] + iban[:4]
+    digits = "".join(str(int(char, 36)) for char in rearranged)
+    return int(digits) % 97 == 1
 
 
 class SessionPersonForm(forms.ModelForm):
@@ -85,8 +98,18 @@ class SessionPersonForm(forms.ModelForm):
     def clean_delivery_channel(self) -> str:
         return str(self.cleaned_data.get("delivery_channel") or "email")
 
+    def clean_bank_iban(self) -> str:
+        # Die IBAN geht ungeprüft in die SEPA-Datei: Format und Prüfziffer (ISO 13616, mod 97) prüfen
+        iban = "".join(str(self.cleaned_data.get("bank_iban") or "").split()).upper()
+        if iban and not iban_is_valid(iban):
+            raise forms.ValidationError("Bitte eine gültige IBAN angeben (Prüfziffer stimmt nicht).")
+        return iban
+
     def clean(self):
         cleaned = super().clean()
+        start, end = cleaned.get("start_date"), cleaned.get("end_date")
+        if start is not None and end is not None and end < start:
+            self.add_error("end_date", "Das Mandatsende liegt vor dem Mandatsbeginn.")
         if not cleaned.get("contact_publish"):
             cleaned["contact_consent_date"] = None
             cleaned["contact_consent_evidence"] = ""
@@ -113,7 +136,7 @@ class SessionPersonForm(forms.ModelForm):
         person.set_address_encrypted(self.cleaned_data.get("address", ""))
         if self.show_bank_fields:
             person.set_bank_account_holder_encrypted(self.cleaned_data.get("bank_account_holder", ""))
-            person.set_bank_iban_encrypted(self.cleaned_data.get("bank_iban", "").replace(" ", ""))
+            person.set_bank_iban_encrypted(self.cleaned_data.get("bank_iban", ""))
             person.set_bank_bic_encrypted(self.cleaned_data.get("bank_bic", ""))
         if commit:
             person.save()
@@ -142,12 +165,10 @@ class PersonListView(SessionViewMixin, ListView):
         if self.request.GET.get("active") != "0":
             qs = qs.filter(is_active=True)
 
-        # Search
-        search = self.request.GET.get("q")
-        if search:
-            qs = qs.filter(
-                Q(given_name__icontains=search) | Q(family_name__icontains=search) | Q(email__icontains=search)
-            )
+        # Suche wortweise: „Anna Amberg“ und „Amberg, Anna“ finden dieselbe Person – jedes Wort muss in
+        # Vorname, Nachname oder E-Mail vorkommen
+        for word in (self.request.GET.get("q") or "").replace(",", " ").split():
+            qs = qs.filter(Q(given_name__icontains=word) | Q(family_name__icontains=word) | Q(email__icontains=word))
 
         return qs
 

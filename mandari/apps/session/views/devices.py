@@ -10,7 +10,7 @@ Alle Views erfordern die Berechtigung ``manage_devices``.
 """
 
 import logging
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.common.formatting import format_money, parse_money
 from apps.common.pdf import html_to_pdf
 
 from .. import audit
@@ -35,6 +36,10 @@ from ..permissions import SessionViewMixin
 logger = logging.getLogger(__name__)
 
 _BOM = "﻿"
+
+#: Spanne eines Endgeräte-Zuschusses (einmalig je Mandatsträger)
+GRANT_MIN = Decimal("0.01")
+GRANT_MAX = Decimal("99999.00")
 
 
 def _get_person(view, raw_id):
@@ -110,7 +115,12 @@ class DeviceSaveView(SessionViewMixin, View):
 
 
 class DeviceActionView(SessionViewMixin, View):
-    """Statuswechsel eines Geräts: ausgeben, zurücknehmen, Defekt, Ausmusterung."""
+    """
+    Statuswechsel eines Geräts: ausgeben, zurücknehmen, Defekt, wieder einsatzbereit, Ausmusterung.
+
+    Erlaubt sind nur diese Übergänge: Bestand → ausgegeben → Bestand; Bestand oder ausgegeben → defekt
+    → Bestand („wieder einsatzbereit“); alles außer ausgemustert → ausgemustert (endgültig).
+    """
 
     permission_required = "manage_devices"
     http_method_names = ["post"]
@@ -142,13 +152,29 @@ class DeviceActionView(SessionViewMixin, View):
             log_action = "returned"
             messages.success(request, f"{device.label} zurückgenommen.")
         elif action == "defect":
+            if device.status not in ("in_stock", "issued"):
+                messages.error(request, "Als defekt erfassen lassen sich nur Geräte im Bestand und ausgegebene Geräte.")
+                return redirect("session:devices", tenant_slug=tenant_slug)
             person = device.issued_to
             device.status = "defect"
             device.issued_to = None
             device.issued_at = None
             log_action = "defect"
             messages.success(request, f"{device.label} als defekt erfasst.")
+        elif action == "repair":
+            # Instand gesetzt: zurück in den Bestand, danach wieder ausgebbar
+            if device.status != "defect":
+                messages.error(request, "Nur defekte Geräte können wieder in den Bestand übernommen werden.")
+                return redirect("session:devices", tenant_slug=tenant_slug)
+            person = None
+            device.status = "in_stock"
+            log_action = "note"
+            note = f"Wieder einsatzbereit, zurück im Bestand. {note}".strip()
+            messages.success(request, f"{device.label} ist wieder im Bestand.")
         elif action == "retire":
+            if device.status == "retired":
+                messages.error(request, f"{device.label} ist bereits ausgemustert.")
+                return redirect("session:devices", tenant_slug=tenant_slug)
             person = device.issued_to
             device.status = "retired"
             device.issued_to = None
@@ -221,13 +247,16 @@ class DeviceGrantSaveView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug):
         person = _get_person(self, request.POST.get("person"))
-        try:
-            amount = Decimal(request.POST.get("amount", "").replace(",", "."))
-            assert Decimal("0") < amount <= Decimal("99999")
-        except (InvalidOperation, AssertionError, AttributeError):
+        # Deutsche Schreibweise („1.000,50“), höchstens zwei Nachkommastellen, nichts wird gerundet
+        amount = parse_money(request.POST.get("amount"))
+        if amount is not None and not (GRANT_MIN <= amount <= GRANT_MAX):
             amount = None
         if person is None or amount is None:
-            messages.error(request, "Bitte Person und gültigen Betrag angeben.")
+            messages.error(
+                request,
+                f"Bitte Person und einen Betrag zwischen {format_money(GRANT_MIN)} und {format_money(GRANT_MAX)} "
+                "mit höchstens zwei Nachkommastellen angeben.",
+            )
             return redirect("session:devices", tenant_slug=tenant_slug)
 
         if (
@@ -254,9 +283,9 @@ class DeviceGrantSaveView(SessionViewMixin, View):
             tenant=self.session_tenant,
             user=self.session_user,
             request=request,
-            changes={"person": person.display_name, "betrag": str(amount)},
+            changes={"person": person.display_name, "betrag": f"{amount:.2f}"},
         )
-        messages.success(request, f"Zuschuss über {amount} € für {person.display_name} erfasst.")
+        messages.success(request, f"Zuschuss über {format_money(amount)} für {person.display_name} erfasst.")
         return redirect("session:devices", tenant_slug=tenant_slug)
 
 

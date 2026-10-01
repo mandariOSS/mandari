@@ -28,7 +28,9 @@
 </a>
 {% endfor %}
 
+{% if "view_meetings" in permission_checker.permissions or "view_papers" in permission_checker.permissions or "view_applications" in permission_checker.permissions or "approve_papers" in permission_checker.permissions %}
 <div class="session-nav-section"><span class="nav-label">Sitzungsdienst</span></div>
+{% endif %}
 
 <!-- Sitzungen -->
 {% if "view_meetings" in permission_checker.permissions %}
@@ -125,6 +127,8 @@
 </a>
 {% endif %}
 
+<!-- Stammdaten: dieselbe Voraussetzung wie die Seiten (Sitzungen anzeigen); Kontrollrollen sehen sie nicht -->
+{% if "view_meetings" in permission_checker.permissions %}
 <div class="session-nav-section"><span class="nav-label">Stammdaten</span></div>
 
 <!-- Gremien -->
@@ -142,8 +146,9 @@
     <i data-lucide="user"></i>
     <span class="nav-label">Personen</span>
 </a>
+{% endif %}
 
-{% if "manage_allowances" in permission_checker.permissions or "view_audit_log" in permission_checker.permissions or "manage_settings" in permission_checker.permissions or "view_meetings" in permission_checker.permissions %}
+{% if "manage_allowances" in permission_checker.permissions or "manage_devices" in permission_checker.permissions or "view_audit_log" in permission_checker.permissions or "manage_settings" in permission_checker.permissions or "manage_users" in permission_checker.permissions or "view_meetings" in permission_checker.permissions %}
 <div class="session-nav-section"><span class="nav-label">Verwaltung</span></div>
 {% endif %}
 
@@ -187,8 +192,8 @@
 </a>
 {% endif %}
 
-{% if "manage_settings" in permission_checker.permissions %}
-<!-- Einstellungen -->
+{% if "manage_settings" in permission_checker.permissions or "manage_users" in permission_checker.permissions %}
+<!-- Einstellungen (mit „Benutzer verwalten“ allein: Benutzer, Rollen und Vertretungen) -->
 <a href="{% url 'session:settings' tenant_slug=tenant_slug %}"
    class="session-nav-item {% if 'settings' in current_url or 'users' in current_url %}active{% endif %}"
    :title="sidebarCollapsed ? 'Einstellungen' : ''">
