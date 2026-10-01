@@ -40,6 +40,8 @@ Blättern, Listen-Hülle, ETag, Fehler –, steht in ``hub.api`` und gilt für b
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
 
+from functools import partial
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Prefetch
 from django.http import Http404
@@ -113,10 +115,11 @@ def _mapping(tenant):
     Abbildung für einen Mandanten. Basis aller IDs ist die öffentliche Adresse der Installation
     (``SITE_URL``), nicht der Host der Anfrage. Die kanonischen Kennungen, aus denen RIS-Bestand und
     Änderungsfeed ihre Objekt-Kennungen beziehen, bilden sich aus denselben Adressen auf der festgeschriebenen
-    Basis der Installation (Issue #733, ADR docs/adr/20260929-kanonisches-modell.md).
+    Basis der Installation (Issue #733, ADR docs/adr/20260929-kanonisches-modell.md); die Basis liest die
+    Abbildung erst, wenn sie Kennungen braucht (Änderungsfeed, Snapshot).
     """
     return SessionMapping(
-        tenant, oparl_system_url(tenant), SOURCE, changes=changes.enabled(), id_base=oparl_id_base(tenant)
+        tenant, oparl_system_url(tenant), SOURCE, changes=changes.enabled(), id_base=partial(oparl_id_base, tenant)
     )
 
 

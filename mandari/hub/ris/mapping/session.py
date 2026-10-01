@@ -37,6 +37,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from functools import cached_property
 from typing import Any, Final
 from uuid import UUID
 
@@ -107,12 +108,21 @@ class SessionUris:
     ``id_base`` ist dieselbe Schnittstelle auf der festgeschriebenen Basis der Kennungen (Issue #733,
     ``apps.common.identifiers``); ohne Angabe gleich ``base``. Die kanonische Kennung eines Objekts ist
     ``uuid5`` über seine Adresse auf dieser Basis (``canonical_id``, ADR
-    ``docs/adr/20260929-kanonisches-modell.md``): Adressen folgen der Domain, Kennungen nicht.
+    ``docs/adr/20260929-kanonisches-modell.md``): Adressen folgen der Domain, Kennungen nicht. Als Funktion
+    übergeben, wird ``id_base`` erst beim ersten Bedarf ermittelt – Listen und Objekte brauchen sie nicht.
     """
 
-    def __init__(self, base: str, id_base: str | None = None) -> None:
+    def __init__(self, base: str, id_base: str | Callable[[], str] | None = None) -> None:
         self.base = base if base.endswith("/") else f"{base}/"
-        self.id_base = (id_base if id_base.endswith("/") else f"{id_base}/") if id_base else self.base
+        self._id_base = id_base
+
+    @cached_property
+    def id_base(self) -> str:
+        """Schnittstelle auf der festgeschriebenen Basis der Kennungen, endet mit ``/``."""
+        value = self._id_base() if callable(self._id_base) else self._id_base
+        if not value:
+            return self.base
+        return value if value.endswith("/") else f"{value}/"
 
     def canonical_id(self, uri: str) -> UUID:
         """Kanonische Kennung des Objekts unter der Adresse ``uri`` dieser Schnittstelle."""
@@ -153,7 +163,13 @@ class SessionMapping:
     """Abbildung der Objekte eines Mandanten; je Objekttyp eine Methode, Ergebnis ist ein OParl-Objekt."""
 
     def __init__(
-        self, tenant: Any, base: str, source: SessionSource, *, changes: bool = False, id_base: str | None = None
+        self,
+        tenant: Any,
+        base: str,
+        source: SessionSource,
+        *,
+        changes: bool = False,
+        id_base: str | Callable[[], str] | None = None,
     ) -> None:
         self.tenant = tenant
         #: Adressen aus ``base``, kanonische Kennungen aus ``id_base`` (``SessionUris``)
