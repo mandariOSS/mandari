@@ -39,6 +39,7 @@ PERMISSION_GROUPS = [
             "can_delete_meetings",
             "can_view_non_public_meetings",
             "can_manage_attendance",
+            "can_conduct_meetings",
         ],
     ),
     (

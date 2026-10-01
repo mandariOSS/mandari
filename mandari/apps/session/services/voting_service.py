@@ -49,6 +49,44 @@ UNDECIDED_STATUSES = ("invited", "confirmed")
 NON_VOTING_ROLES = ("guest", "recorder")
 
 
+#: Summen einer Abstimmung
+COUNT_FIELDS = ("votes_yes", "votes_no", "votes_abstain")
+#: Felder, die die Abstimmungserfassung an einem TOP speichert – nie Zeiten oder Zeitpunkte des
+#: Sitzungscockpits (``start_time``, ``vote_opened_at`` …, Issue #140)
+CAPTURE_FIELDS = ("voting_method", "is_election", "vote_result", *COUNT_FIELDS, "updated_at")
+
+#: Präfix der versteckten Formularfelder mit dem Stand beim Laden (``geladen_vote_result`` usw.)
+LOADED_PREFIX = "geladen_"
+
+
+def form_value(data: Any, name: str, current: Any) -> Any:
+    """
+    Wert eines Abstimmungsfelds aus einem Formular, das neben dem Sitzungscockpit offen sein kann (Issue #140).
+
+    Abstimmungserfassung und Niederschrift schicken Ergebnis, Art und Summen immer mit – mit dem Stand beim
+    Laden der Seite. Übernommen wird der eingegebene Wert nur, wenn die Person ihn gegenüber diesem Stand
+    (verstecktes Feld ``geladen_<name>``) geändert hat; sonst bleibt der aktuelle Wert, etwa ein Ergebnis,
+    das die Sitzungsleitung inzwischen im Cockpit festgestellt hat. Fehlt das Feld im Formular, bleibt der
+    aktuelle Wert; Formulare ohne Ladestand (vor dem Update geöffnet) übernehmen den Wert wie bisher.
+    """
+    if name not in data:
+        return current
+    submitted = data.get(name)
+    loaded = f"{LOADED_PREFIX}{name}"
+    if loaded in data and submitted == data.get(loaded):
+        return current
+    return submitted
+
+
+def form_flag(data: Any, name: str, current: bool) -> bool:
+    """Wie :func:`form_value` für ein Kontrollkästchen (nicht angehakt = nicht im Formular)."""
+    submitted = bool(data.get(name))
+    loaded = f"{LOADED_PREFIX}{name}"
+    if loaded in data and submitted == bool(data.get(loaded)):
+        return current
+    return submitted
+
+
 class VotingRightsError(ValueError):
     """Stimme einer Person ohne Stimmrecht oder ohne Anwesenheit; Meldung für die Oberfläche."""
 

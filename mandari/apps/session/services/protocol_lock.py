@@ -52,6 +52,9 @@ AGENDA_ITEM_LOCKED_FIELDS = (
     "voting_method",
     # Wahl (Issue #139): bestimmt Stimmrecht Zugeschalteter und Beschlussfähigkeit für den TOP
     "is_election",
+    # Zeiten aus dem Sitzungscockpit (Issue #140): stehen in der Niederschrift
+    "start_time",
+    "end_time",
     "resolution_text",
     "protocol_note",
     "is_withdrawn",
@@ -60,8 +63,8 @@ AGENDA_ITEM_LOCKED_FIELDS = (
     "resolution_text_encrypted",
     "protocol_note_encrypted",
 )
-#: Gesperrte Felder der Niederschrift selbst
-PROTOCOL_LOCKED_FIELDS = ("content", "chair_name", "recorder_name", "content_encrypted")
+#: Gesperrte Felder der Niederschrift selbst (``show_timings``: Verlauf und TOP-Zeiten, Issue #140)
+PROTOCOL_LOCKED_FIELDS = ("content", "chair_name", "recorder_name", "show_timings", "content_encrypted")
 #: Felder einer Beratungsstation, die am gesperrten TOP hängen
 CONSULTATION_LOCKED_FIELDS = ("result", "agenda_item")
 

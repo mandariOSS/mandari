@@ -1,0 +1,41 @@
+{% comment %}Tagesordnung im Cockpit (Issue #140): Status und Zeiten je TOP, Aufrufen für Steuernde.{% endcomment %}
+<c-ui.card title="Tagesordnung" padding="none" data-testid="cockpit-tagesordnung">
+    {% if state.items %}
+    <ol class="divide-y divide-gray-100 dark:divide-gray-700">
+        {% for entry in state.items %}
+        <li class="px-6 py-3 flex flex-wrap items-center gap-3 {% if entry.cockpit_status == 'running' %}bg-primary-50 dark:bg-primary-900/20{% endif %}"
+            data-testid="cockpit-top" data-top="{{ entry.number }}" data-status="{{ entry.cockpit_status }}">
+            <span class="w-12 flex-none font-mono text-sm text-gray-500 dark:text-gray-400 {% if entry.parent_id %}pl-3{% endif %}">{{ entry.number }}</span>
+            <span class="flex-1 min-w-0 text-sm text-gray-900 dark:text-white {% if entry.is_withdrawn %}line-through text-gray-400{% endif %}">
+                {{ entry.name }}
+                {% if not entry.is_public %}<c-ui.badge color="red" icon="lock" class="ml-1">NÖ</c-ui.badge>{% endif %}
+            </span>
+            <span class="text-xs font-mono text-gray-500 dark:text-gray-400" data-testid="top-zeiten">
+                {% if entry.start_time %}{{ entry.start_time|time:"H:i" }}–{% if entry.end_time %}{{ entry.end_time|time:"H:i" }}{% endif %}{% endif %}
+            </span>
+            {% if entry.cockpit_status == "running" %}
+            <c-ui.badge color="green" icon="radio">läuft</c-ui.badge>
+            {% elif entry.cockpit_status == "done" %}
+            <c-ui.badge color="gray" icon="check">behandelt</c-ui.badge>
+            {% elif entry.cockpit_status == "withdrawn" %}
+            <c-ui.badge color="amber">abgesetzt</c-ui.badge>
+            {% endif %}
+            {% if entry.vote_result == "approved" %}
+            <c-ui.badge color="green">{{ entry.get_vote_result_display }}</c-ui.badge>
+            {% elif entry.vote_result == "rejected" %}
+            <c-ui.badge color="red">{{ entry.get_vote_result_display }}</c-ui.badge>
+            {% elif entry.vote_result != "pending" %}
+            <c-ui.badge color="blue">{{ entry.get_vote_result_display }}</c-ui.badge>
+            {% endif %}
+            {% if state.can_control and not state.locked and not meeting.cancelled and not state.completed %}
+            {% if entry.cockpit_status == "open" or entry.cockpit_status == "done" %}
+            {% include "session/cockpit/_action.html" with aktion="top_aufrufen" ziel_top=entry.id label="Aufrufen" aria="TOP "|add:entry.number|add:" aufrufen" icon="play" testid="aufrufen-"|add:entry.number %}
+            {% endif %}
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <c-ui.empty-state icon="list" title="Keine Tagesordnungspunkte">Die Tagesordnung wird auf der Sitzungsseite angelegt.</c-ui.empty-state>
+    {% endif %}
+</c-ui.card>

@@ -435,6 +435,7 @@ class SessionRoleAdmin(ModelAdmin):
             {
                 "fields": (
                     "can_manage_attendance",
+                    "can_conduct_meetings",
                     "can_manage_allowances",
                 ),
             },

@@ -102,6 +102,8 @@ ALL_PERMISSIONS = frozenset(
         "edit_protocols",
         "approve_protocols",
         "manage_attendance",
+        # Sitzungscockpit (Issue #140)
+        "conduct_meetings",
         "manage_allowances",
         "manage_devices",
         "manage_users",

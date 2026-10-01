@@ -11,6 +11,7 @@ from . import views
 from .api import oparl as oparl_api_views
 from .api import views as api_views
 from .views import approvals as approval_views
+from .views import cockpit as cockpit_views
 from .views import invitation_responses as invitation_response_views
 from .views import leitstelle as leitstelle_views
 
@@ -81,6 +82,22 @@ urlpatterns = [
         "<slug:tenant_slug>/meetings/<uuid:meeting_id>/sitzung.ics",
         views.MeetingIcsView.as_view(),
         name="meeting_ics",
+    ),
+    # Sitzungscockpit (Issue #140): Steuerung bzw. Mitlese-Ansicht, Stand als Fragment, Aktionen
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/cockpit/",
+        cockpit_views.MeetingCockpitView.as_view(),
+        name="meeting_cockpit",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/cockpit/stand/",
+        cockpit_views.MeetingCockpitStateView.as_view(),
+        name="meeting_cockpit_state",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/cockpit/aktion/",
+        cockpit_views.MeetingCockpitActionView.as_view(),
+        name="meeting_cockpit_action",
     ),
     # Niederschrift (Issue #31)
     path(

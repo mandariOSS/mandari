@@ -27,6 +27,13 @@
     <form method="post" class="space-y-6">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
+        {# Stand beim Laden: Unverändertes überschreibt nicht, was das Sitzungscockpit inzwischen festgestellt hat #}
+        <input type="hidden" name="geladen_voting_method" value="{{ item.voting_method }}">
+        <input type="hidden" name="geladen_vote_result" value="{{ item.vote_result }}">
+        <input type="hidden" name="geladen_is_election" value="{% if item.is_election %}1{% endif %}">
+        <input type="hidden" name="geladen_votes_yes" value="{{ item.votes_yes }}">
+        <input type="hidden" name="geladen_votes_no" value="{{ item.votes_no }}">
+        <input type="hidden" name="geladen_votes_abstain" value="{{ item.votes_abstain }}">
         {% for attendance in stray_votes %}
         <input type="hidden" name="vote_{{ attendance.person_id }}" value="">
         {% endfor %}

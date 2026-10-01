@@ -1,0 +1,57 @@
+{% comment %}Sitzung und Beschlussfähigkeit im Cockpit (Issue #140): Status, Beginn/Ende, Quorum live, Eröffnen/Schließen.{% endcomment %}
+<c-ui.card title="Sitzung" data-testid="cockpit-sitzung">
+    <div class="space-y-4 text-sm">
+        <div class="flex items-center justify-between gap-2">
+            {% if state.running %}
+            <c-ui.badge color="green" icon="radio" class="whitespace-nowrap" data-testid="sitzungsstatus">Sitzung läuft</c-ui.badge>
+            {% elif state.completed %}
+            <c-ui.badge color="gray" icon="flag" class="whitespace-nowrap" data-testid="sitzungsstatus">Sitzung geschlossen</c-ui.badge>
+            {% else %}
+            <c-ui.badge color="blue" icon="clock" class="whitespace-nowrap" data-testid="sitzungsstatus">Noch nicht eröffnet</c-ui.badge>
+            {% endif %}
+            <span class="text-gray-500 dark:text-gray-400">{{ state.done_count }} von {{ state.items|length }} TOPs behandelt</span>
+        </div>
+        <dl class="grid grid-cols-2 gap-2">
+            <div>
+                <dt class="text-gray-500 dark:text-gray-400">Eröffnet</dt>
+                <dd class="font-medium text-gray-900 dark:text-white">{% if meeting.actual_start %}{{ meeting.actual_start|date:"H:i" }} Uhr{% else %}–{% endif %}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500 dark:text-gray-400">Geschlossen</dt>
+                <dd class="font-medium text-gray-900 dark:text-white">{% if meeting.actual_end %}{{ meeting.actual_end|date:"H:i" }} Uhr{% else %}–{% endif %}</dd>
+            </div>
+        </dl>
+
+        {% if state.quorum.has_list %}
+        <div class="rounded-lg p-3 {% if state.quorum.met %}bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300{% else %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400{% endif %}"
+             data-testid="cockpit-quorum">
+            <p class="font-semibold flex items-center gap-2">
+                <i data-lucide="{% if state.quorum.met %}check-circle{% else %}alert-triangle{% endif %}" class="w-4 h-4" aria-hidden="true"></i>
+                {% if state.quorum.met %}Beschlussfähig{% else %}Nicht beschlussfähig{% endif %}
+            </p>
+            <p class="mt-1">
+                {{ state.quorum.voting_present }} von {{ state.quorum.voting_total }} Stimmberechtigten anwesend{% if state.quorum.remote_present %}, davon {{ state.quorum.remote_present }} zugeschaltet{% endif %} – nötig: {{ state.quorum.required }}
+            </p>
+            {% if state.quorum.disrupted %}<p class="mt-1">Wegen einer Störung nicht mitgezählt: {{ state.quorum.disrupted|join:", " }}</p>{% endif %}
+        </div>
+        {% else %}
+        <c-ui.alert variant="warning" icon="users">Noch keine Anwesenheitsliste – bitte auf der Sitzungsseite aus der Besetzung erzeugen.</c-ui.alert>
+        {% endif %}
+
+        {% if state.locked %}
+        <c-ui.alert variant="info" icon="lock">Die Niederschrift ist genehmigt. Das Cockpit zeigt den Stand nur noch an.</c-ui.alert>
+        {% elif meeting.cancelled %}
+        <c-ui.alert variant="warning" icon="calendar-x">Die Sitzung ist abgesagt.</c-ui.alert>
+        {% elif state.can_control %}
+        <div class="flex flex-wrap gap-2">
+            {% if state.running %}
+            {% include "session/cockpit/_action.html" with aktion="sitzung_schliessen" label="Sitzung schließen" icon="flag" variant="danger" confirm="Sitzung jetzt schließen? Der laufende TOP und andauernde Störungen enden mit der aktuellen Uhrzeit." %}
+            {% elif state.completed %}
+            {% include "session/cockpit/_action.html" with aktion="sitzung_eroeffnen" label="Sitzung fortsetzen" icon="play" %}
+            {% else %}
+            {% include "session/cockpit/_action.html" with aktion="sitzung_eroeffnen" label="Sitzung eröffnen" icon="play" variant="primary" %}
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</c-ui.card>

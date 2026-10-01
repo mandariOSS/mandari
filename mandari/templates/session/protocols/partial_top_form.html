@@ -16,6 +16,11 @@ Erwartet: item, vote_choices, can_view_np.{% endcomment %}
             <i data-lucide="vote" class="w-3.5 h-3.5"></i> Abstimmung erfassen
         </a>
     </div>
+    {# Stand beim Laden: Unverändertes überschreibt nicht, was das Sitzungscockpit inzwischen festgestellt hat #}
+    <input type="hidden" name="geladen_vote_result_{{ item.pk }}" value="{{ item.vote_result }}">
+    <input type="hidden" name="geladen_votes_yes_{{ item.pk }}" value="{{ item.votes_yes }}">
+    <input type="hidden" name="geladen_votes_no_{{ item.pk }}" value="{{ item.votes_no }}">
+    <input type="hidden" name="geladen_votes_abstain_{{ item.pk }}" value="{{ item.votes_abstain }}">
     <div class="grid sm:grid-cols-4 gap-3">
         <div>
             <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ergebnis</label>

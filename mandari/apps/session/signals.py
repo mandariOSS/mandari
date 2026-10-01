@@ -37,7 +37,13 @@ from apps.session.models import (
     SessionTenantGroupTenant,
     SessionUser,
 )
-from apps.session.services import four_eyes_service, joint_meeting_service, leitstelle_service, protocol_lock
+from apps.session.services import (
+    cockpit_service,
+    four_eyes_service,
+    joint_meeting_service,
+    leitstelle_service,
+    protocol_lock,
+)
 
 # Zentrale Models, deren Änderungen revisionssicher protokolliert werden
 AUDITED_MODELS = [
@@ -286,7 +292,16 @@ PUBLIC_PROTOCOL_FIELDS = {
         "votes_abstain",
     ),
     SessionMeeting: ("is_public", "name", "start", "end", "location", "room", "organization_id"),
-    SessionAttendance: ("status", "role", "person_id", "arrival_time", "departure_time", "participation_mode"),
+    SessionAttendance: (
+        "status",
+        "role",
+        "person_id",
+        "arrival_time",
+        "departure_time",
+        "participation_mode",
+        # Unterbrechungen aus dem Sitzungscockpit (Issue #140) stehen im Teilnahmevermerk
+        "interruptions",
+    ),
     SessionAttendanceDisruption: ("attendance_id", "started_at", "ended_at", "cause"),
     SessionProtocol: ("status", "content", "chair_name", "recorder_name", "approval_note"),
 }
@@ -517,3 +532,39 @@ m2m_changed.connect(
     sender=SessionMeeting.joint_organizations.through,
     dispatch_uid="session_joint_organizations_changed",
 )
+
+
+# =============================================================================
+# Sitzungscockpit (Issue #140): offene Ansichten nach jeder Änderung benachrichtigen
+# =============================================================================
+#
+# Nicht nur Cockpit-Aktionen ändern den Stand: Anwesenheit, Tagesordnung und Absetzung lassen sich auch auf
+# der Sitzungsseite pflegen, Stimmen in der Abstimmungserfassung, die Niederschrift wird genehmigt. Die
+# Signale melden jede gespeicherte Änderung; ``notify_on_commit`` bündelt sie zu einem Hinweis je Sitzung
+# und Transaktion. Über den Socket geht nur „Stand geändert“, nie Inhalt.
+
+
+def cockpit_post_save(sender, instance, **kwargs):
+    """Sitzung, TOP, Anwesenheit, Störung oder Niederschrift gespeichert: Hinweis nach dem Commit."""
+    if kwargs.get("raw"):
+        return
+    cockpit_service.notify_on_commit(_public_protocol_meeting_id(instance))
+
+
+def cockpit_post_delete(sender, instance, **kwargs):
+    """TOP, Anwesenheitszeile oder Störung gelöscht: Hinweis nach dem Commit."""
+    from django.core.exceptions import ObjectDoesNotExist
+
+    try:
+        meeting_id = instance.meeting_id
+    except ObjectDoesNotExist:  # Störung mit ihrer Anwesenheitszeile gelöscht
+        return
+    cockpit_service.notify_on_commit(meeting_id)
+
+
+for _model in (SessionMeeting, SessionAgendaItem, SessionAttendance, SessionAttendanceDisruption, SessionProtocol):
+    post_save.connect(cockpit_post_save, sender=_model, dispatch_uid=f"session_cockpit_{_model.__name__}_post_save")
+for _model in (SessionAgendaItem, SessionAttendance, SessionAttendanceDisruption):
+    post_delete.connect(
+        cockpit_post_delete, sender=_model, dispatch_uid=f"session_cockpit_{_model.__name__}_post_delete"
+    )

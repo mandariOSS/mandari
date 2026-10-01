@@ -115,6 +115,9 @@ GET_MATRIX: list[tuple[str, frozenset[str]]] = [
     ("/meetings/{meeting_pub}/invitation/", frozenset({"edit_meetings"})),
     ("/meetings/{meeting_pub}/agenda.pdf", frozenset({"view_meetings"})),
     ("/meetings/{meeting_pub}/sitzung.ics", frozenset({"view_meetings"})),
+    # Sitzungscockpit (Issue #140): Mitlese-Ansicht mit dem Sichtrecht, Steuern nur mit conduct_meetings
+    ("/meetings/{meeting_pub}/cockpit/", frozenset({"view_meetings"})),
+    ("/meetings/{meeting_pub}/cockpit/stand/", frozenset({"view_meetings"})),
     ("/meetings/{meeting_pub}/protocol/", frozenset({"view_protocols"})),
     ("/meetings/{meeting_pub}/protocol/edit/", frozenset({"edit_protocols"})),
     ("/meetings/{meeting_pub}/niederschrift.pdf", frozenset({"view_protocols"})),
@@ -183,6 +186,7 @@ MUTATIONS: list[tuple[str, dict[str, str]]] = [
     ("/papers/{paper_pub}/workflow/approve/", {}),
     ("/meetings/{meeting_pub}/agenda/add/", {"name": "T"}),
     ("/meetings/{meeting_pub}/attendance/generate/", {}),
+    ("/meetings/{meeting_pub}/cockpit/aktion/", {"aktion": "sitzung_eroeffnen"}),
     ("/meetings/{meeting_pub}/attendance/add/", {"person": "{person_a}"}),
     ("/meetings/{meeting_pub}/protocol/create/", {}),
     ("/meetings/{meeting_pub}/protocol/submit/", {}),

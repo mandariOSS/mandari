@@ -65,14 +65,18 @@ def _paper_visible(item: SessionAgendaItem) -> bool:
     return paper is not None and bool(paper.is_public) and paper.status not in UNVEROEFFENTLICHT
 
 
-def _item_lines(item: SessionAgendaItem) -> list[str]:
-    """Ein öffentlicher TOP: ausschließlich unverschlüsselte Felder."""
+def _item_lines(item: SessionAgendaItem, *, timings: bool = True) -> list[str]:
+    """Ein öffentlicher TOP: ausschließlich unverschlüsselte Felder (``timings``: Behandlungszeiten ausweisen)."""
     head = f"TOP {item.number}: {item.name}"
     if item.is_supplementary:
         head += " (Nachtrag)"
     if item.is_withdrawn:
         head += " (abgesetzt" + (f": {item.withdrawn_reason}" if item.withdrawn_reason else "") + ")"
     lines = [head]
+    # Zeiten aus dem Sitzungscockpit (Issue #140)
+    if timings and item.start_time:
+        ende = f"–{item.end_time:%H:%M}" if item.end_time else ""
+        lines.append(f"Behandelt {item.start_time:%H:%M}{ende} Uhr")
     if item.paper is not None and _paper_visible(item):
         lines.append(f"Vorlage: {item.paper.reference}")
     if item.protocol_note:
@@ -119,6 +123,14 @@ def public_text(protocol: SessionProtocol) -> str:
         f"Gremium: {meeting.organization.name}",
         f"Termin: {termin}",
     ]
+    # Tatsächlicher Verlauf aus dem Sitzungscockpit (Issue #140) – nicht bei Niederschriften, die bei der
+    # Einführung schon genehmigt waren: Ihr Inhalt bleibt, wie er genehmigt wurde
+    timings = protocol.show_timings
+    if timings and meeting.actual_start:
+        verlauf = f"Verlauf: eröffnet {timezone.localtime(meeting.actual_start):%H:%M} Uhr"
+        if meeting.actual_end:
+            verlauf += f", geschlossen {timezone.localtime(meeting.actual_end):%H:%M} Uhr"
+        lines.append(verlauf)
     if meeting.location:
         lines.append(f"Ort: {meeting.location}" + (f", {meeting.room}" if meeting.room else ""))
 
@@ -139,9 +151,9 @@ def public_text(protocol: SessionProtocol) -> str:
     agenda = agenda_service.grouped_agenda(meeting, include_non_public=False)
     lines += ["", "Verhandlung der Tagesordnung (öffentlicher Teil)"]
     for item in agenda["public"]:
-        lines += ["", *_item_lines(item)]
+        lines += ["", *_item_lines(item, timings=timings)]
         for sub in item.children_list:
-            lines += ["", *_item_lines(sub)]
+            lines += ["", *_item_lines(sub, timings=timings)]
 
     notes = protocol_service.correction_notes(
         protocol, internal=False, visible_item_ids=protocol_service.public_item_ids(agenda)

@@ -1,0 +1,16 @@
+{% comment %}
+Eine Aktion des Sitzungscockpits als kleines Formular (Issue #140). Erwartet: meeting, tenant_slug, aktion, label;
+optional ziel_top, ziel_person (Anwesenheit), wechsel, ziel_stoerung, icon, variant, confirm, testid.
+Ohne JavaScript ein normales POST mit Weiterleitung zurück ins Cockpit.
+{% endcomment %}
+{% url 'session:meeting_cockpit_action' tenant_slug=tenant_slug meeting_id=meeting.id as action_url %}
+<form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML"
+      {% if confirm %}hx-confirm="{{ confirm }}"{% endif %} class="inline-flex">
+    {% csrf_token %}
+    <input type="hidden" name="aktion" value="{{ aktion }}">
+    {% if ziel_top %}<input type="hidden" name="item" value="{{ ziel_top }}">{% endif %}
+    {% if ziel_person %}<input type="hidden" name="attendance" value="{{ ziel_person }}">{% endif %}
+    {% if wechsel %}<input type="hidden" name="wechsel" value="{{ wechsel }}">{% endif %}
+    {% if ziel_stoerung %}<input type="hidden" name="disruption" value="{{ ziel_stoerung }}">{% endif %}
+    <c-ui.button type="submit" size="sm" variant="{{ variant|default:'secondary' }}" icon="{{ icon|default:'' }}" data-testid="{{ testid|default:aktion }}" aria-label="{{ aria|default:label }}">{{ label }}</c-ui.button>
+</form>

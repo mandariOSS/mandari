@@ -13,7 +13,7 @@
 
 import htmx from 'htmx.org'
 import { confirmAction } from './alpine/confirm-dialog'
-import { showToast, type ToastType } from './alpine/toast'
+import { showToast } from './alpine/toast'
 import { csrfToken } from './csrf'
 
 export { csrfToken }
@@ -34,12 +34,6 @@ function focusSwapped(target: EventTarget | null): void {
   if (!(target instanceof Element)) return
   const el = target.matches('[autofocus]') ? target : target.querySelector<HTMLElement>('[autofocus]')
   if (el instanceof HTMLElement && document.activeElement !== el) el.focus({ preventScroll: true })
-}
-
-interface ToastDetail {
-  message?: string
-  type?: ToastType
-  value?: { message?: string; type?: ToastType }
 }
 
 interface RequestDetail {
@@ -117,12 +111,10 @@ export function setupHtmx(): void {
     announce('Inhalt wurde aktualisiert')
   })
 
-  // Server kann Toasts auslösen: HX-Trigger: {"showToast": {"message": "...", "type": "success"}}
-  document.body.addEventListener('showToast', (event) => {
-    const detail = (event as CustomEvent<ToastDetail>).detail ?? {}
-    const payload = detail.value ?? detail
-    if (payload.message) showToast(payload.message, payload.type ?? 'info')
-  })
+  // Server kann Toasts auslösen: HX-Trigger: {"showToast": {"message": "...", "type": "success"}}.
+  // htmx löst zu jedem Ereignis zusätzlich die Kebab-Schreibweise aus („show-toast“, Detail = das Objekt) –
+  // genau darauf hört der Toast-Container (partials/toasts.html). Ein eigener Listener für „showToast“
+  // zeigte jede Meldung doppelt an (Sitzungscockpit, Issue #140).
 
   // Netzwerk- und Serverfehler sichtbar machen statt still zu scheitern
   document.body.addEventListener('htmx:responseError', (event) => {
