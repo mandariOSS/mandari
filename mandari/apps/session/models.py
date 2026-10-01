@@ -2635,11 +2635,18 @@ class SessionPaper(EncryptionMixin, models.Model):
         from .services import numbering_service
 
         with transaction.atomic():
-            if numbering_service.assign_if_due(self):
+            bestand = not self._state.adding
+            vergeben = numbering_service.assign_if_due(self)
+            if vergeben:
                 update_fields = kwargs.get("update_fields")
                 if update_fields is not None:
                     kwargs["update_fields"] = {*update_fields, "reference", "reference_assigned_at", "sub_number"}
             super().save(*args, **kwargs)
+            if vergeben and bestand:
+                from .services import agenda_service
+
+                # TOPs, die vor der Vergabe aus der Beratungsfolge entstanden sind, tragen jetzt die Nummer
+                agenda_service.sync_paper_item_names(self)
 
     def get_encryption_organization(self):
         """Return tenant for encryption."""

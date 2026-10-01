@@ -130,7 +130,7 @@
                                 class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                             <option value="">Kein Gremium</option>
                             {% for org in form.main_organization.field.queryset %}
-                            <option value="{{ org.id }}" {% if form.main_organization.value == org.id|stringformat:"s" %}selected{% endif %}>
+                            <option value="{{ org.id }}" {% if form.main_organization.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>
                                 {{ org.name }}
                             </option>
                             {% endfor %}
@@ -147,7 +147,7 @@
                                 class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                             <option value="">Kein Amt</option>
                             {% for dep in form.lead_department.field.queryset %}
-                            <option value="{{ dep.id }}" {% if form.lead_department.value == dep.id|stringformat:"s" %}selected{% endif %}>
+                            <option value="{{ dep.id }}" {% if form.lead_department.value|stringformat:"s" == dep.id|stringformat:"s" %}selected{% endif %}>
                                 {{ dep.name }}
                             </option>
                             {% endfor %}
@@ -186,7 +186,7 @@
                                     class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                                 <option value="">Keine</option>
                                 {% for org in form.originator_organization.field.queryset %}
-                                <option value="{{ org.id }}" {% if form.originator_organization.value == org.id|stringformat:"s" %}selected{% endif %}>
+                                <option value="{{ org.id }}" {% if form.originator_organization.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>
                                     {{ org.name }}
                                 </option>
                                 {% endfor %}
@@ -202,7 +202,7 @@
                                     class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                                 <option value="">Keine</option>
                                 {% for person in form.originator_person.field.queryset %}
-                                <option value="{{ person.id }}" {% if form.originator_person.value == person.id|stringformat:"s" %}selected{% endif %}>
+                                <option value="{{ person.id }}" {% if form.originator_person.value|stringformat:"s" == person.id|stringformat:"s" %}selected{% endif %}>
                                     {{ person.display_name }}
                                 </option>
                                 {% endfor %}
@@ -223,7 +223,7 @@
                             Datum
                         </label>
                         <input type="date" name="date" id="id_date"
-                               value="{{ form.date.value|date:'Y-m-d'|default:'' }}"
+                               value="{{ form.date.value|default:''|stringformat:'s' }}"
                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                     </div>
 
@@ -233,7 +233,7 @@
                             Frist
                         </label>
                         <input type="date" name="deadline" id="id_deadline"
-                               value="{{ form.deadline.value|date:'Y-m-d'|default:'' }}"
+                               value="{{ form.deadline.value|default:''|stringformat:'s' }}"
                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                     </div>
                 </div>

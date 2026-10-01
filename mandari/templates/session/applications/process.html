@@ -90,7 +90,7 @@
                 <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Status-Verlauf</h3>
                 <div class="flex items-center gap-1 overflow-x-auto">
                     {% with current_status=object.status %}
-                    {% for value, label in form.status.field.choices %}
+                    {% for value, label in status_steps %}
                     <div class="flex items-center gap-1 flex-shrink-0">
                         <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
                             {% if value == current_status %}bg-primary-600 text-white
@@ -123,7 +123,7 @@
                         class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                     <option value="">Kein Gremium zugewiesen</option>
                     {% for org in form.target_organization.field.queryset %}
-                    <option value="{{ org.id }}" {% if form.target_organization.value == org.id|stringformat:"s" %}selected{% endif %}>
+                    <option value="{{ org.id }}" {% if form.target_organization.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>
                         {{ org.name }}
                     </option>
                     {% endfor %}

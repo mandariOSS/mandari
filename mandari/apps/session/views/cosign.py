@@ -25,6 +25,7 @@ from ..models import (
 from ..permissions import SessionViewMixin
 from ..services import cosign_service, delegation_service
 from .nexturl import safe_next_url
+from .papers import notify_creator_rejected
 
 
 class CosignatureActionView(SessionViewMixin, View):
@@ -80,7 +81,7 @@ class CosignatureActionView(SessionViewMixin, View):
                 cosignature.save()
                 messages.success(
                     request,
-                    f"Mitzeichnung {cosignature.department.name} für {paper.reference} erteilt{vermerk}.",
+                    f"Mitzeichnung {cosignature.department.name} für {paper.display_reference} erteilt{vermerk}.",
                 )
             else:
                 cosignature.status = "rejected"
@@ -91,10 +92,12 @@ class CosignatureActionView(SessionViewMixin, View):
                 paper.approved_at = None
                 paper.approved_on_behalf_of = None
                 paper.save()
+                # Wie die Zurückweisung im Freigabelauf: Die Sachbearbeitung erfährt es per E-Mail
+                notify_creator_rejected(self.session_tenant, paper, comment, stelle=cosignature.department.name)
                 messages.success(
                     request,
                     f"Mitzeichnung {cosignature.department.name} zurückgewiesen{vermerk} — "
-                    f"{paper.reference} ist wieder im Entwurf.",
+                    f"{paper.display_reference} ist wieder im Entwurf.",
                 )
 
             # Direkter Eintrag je Mitzeichnung (Issue #221), am Objekt der Vorlage
@@ -163,6 +166,9 @@ class CosignSettingsView(SessionViewMixin, TemplateView):
                 .select_related("user")
                 .prefetch_related("departments")
                 .order_by("user__email"),
+                # Amts-Zuordnungen ändert die Benutzerverwaltung (DepartmentAssignmentView) – ohne das Recht
+                # nur lesend, statt Knöpfe anzubieten, die mit 403 enden
+                "can_assign_departments": self.has_permission("manage_users"),
             }
         )
         return context

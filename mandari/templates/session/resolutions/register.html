@@ -77,7 +77,7 @@
     <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
         <i data-lucide="filter" class="w-4 h-4"></i> Filtern
     </button>
-    <a href="{% url 'session:resolutions_export_csv' tenant_slug=tenant_slug %}?organization={{ filter_organization }}&year={{ filter_year }}&result={{ filter_result }}"
+    <a href="{% url 'session:resolutions_export_csv' tenant_slug=tenant_slug %}{% if export_query %}?{{ export_query }}{% endif %}"
        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors ml-auto">
         <i data-lucide="download" class="w-4 h-4"></i> CSV-Export
     </a>

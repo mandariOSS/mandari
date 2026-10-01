@@ -12,6 +12,7 @@ Views für:
 """
 
 from datetime import date
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.db.models import Q
@@ -47,6 +48,54 @@ def _get_item(view, item_id):
     return get_object_or_404(qs, pk=item_id)
 
 
+#: Filter des Beschlussregisters – der CSV-Export übernimmt alle
+REGISTER_FILTERS = ("organization", "year", "result", "status", "overdue")
+IMPLEMENTATION_VALUES = frozenset(value for value, _ in SessionAgendaItem.IMPLEMENTATION_CHOICES)
+
+
+def _decided_items(view):
+    """Gefasste Beschlüsse, die diese Person sehen darf (ungefiltert)."""
+    include_np = view.has_permission("view_non_public_meetings")
+    return resolution_service.decided_items(view.session_tenant, include_non_public=include_np)
+
+
+def _overdue_q():
+    return Q(vote_result="approved", implementation_deadline__lt=timezone.localdate()) & ~Q(
+        implementation_status="done"
+    )
+
+
+def _filter_basis(qs, params):
+    """Gremium, Jahr und Ergebnis – darüber zählt auch die Ampel der Beschlusskontrolle."""
+    org_id = params.get("organization")
+    if org_id:
+        org_uuid = uuid_param(org_id)  # ungültig: kein Treffer statt Serverfehler
+        qs = qs.filter(meeting__organization_id=org_uuid) if org_uuid else qs.none()
+    year = params.get("year")
+    if year and year.isdigit():
+        # Ortszeit: Eine Sitzung am 1. Januar um 0:30 Uhr gehört zum neuen Jahr
+        qs = qs.filter(meeting__start__year=int(year))
+    result = params.get("result")
+    if result in resolution_service.DECIDED_RESULTS:
+        qs = qs.filter(vote_result=result)
+    return qs
+
+
+def _filter_umsetzung(qs, params):
+    """Umsetzungsstand und „nur überfällige“ (Beschlusskontrolle, Issue #37)."""
+    impl_status = params.get("status")
+    if impl_status in IMPLEMENTATION_VALUES:
+        qs = qs.filter(vote_result="approved", implementation_status=impl_status)
+    if params.get("overdue") == "1":
+        qs = qs.filter(_overdue_q())
+    return qs
+
+
+def _register_years(qs):
+    """Jahre mit Beschlüssen (Ortszeit, neueste zuerst) – unabhängig von den gesetzten Filtern."""
+    return [moment.year for moment in qs.datetimes("meeting__start", "year", order="DESC")]
+
+
 class ResolutionRegisterView(SessionViewMixin, TemplateView):
     """Beschlussregister: alle gefassten Beschlüsse mit Nummer und Filtern."""
 
@@ -55,25 +104,11 @@ class ResolutionRegisterView(SessionViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        include_np = self.has_permission("view_non_public_meetings")
-        qs = resolution_service.decided_items(self.session_tenant, include_non_public=include_np)
-
-        org_id = self.request.GET.get("organization")
-        if org_id:
-            org_uuid = uuid_param(org_id)  # ungültig: kein Treffer statt Serverfehler
-            qs = qs.filter(meeting__organization_id=org_uuid) if org_uuid else qs.none()
-        year = self.request.GET.get("year")
-        if year and year.isdigit():
-            qs = qs.filter(meeting__start__year=int(year))
-        result = self.request.GET.get("result")
-        if result in resolution_service.DECIDED_RESULTS:
-            qs = qs.filter(vote_result=result)
+        params = self.request.GET
+        alle = _decided_items(self)
+        qs = _filter_basis(alle, params)
 
         today = timezone.localdate()
-        overdue_q = Q(
-            vote_result="approved",
-            implementation_deadline__lt=today,
-        ) & ~Q(implementation_status="done")
 
         # Beschlusskontrolle: Ampel-Zahlen über den Gremium-/Jahresfilter
         # hinweg (nur angenommene Beschlüsse haben einen Umsetzungsstand).
@@ -83,30 +118,28 @@ class ResolutionRegisterView(SessionViewMixin, TemplateView):
             "in_progress": approved.filter(implementation_status="in_progress").count(),
             "done": approved.filter(implementation_status="done").count(),
             "deferred": approved.filter(implementation_status="deferred").count(),
-            "overdue": qs.filter(overdue_q).count(),
+            "overdue": qs.filter(_overdue_q()).count(),
         }
 
-        valid_statuses = {value for value, _ in SessionAgendaItem.IMPLEMENTATION_CHOICES}
-        impl_status = self.request.GET.get("status")
-        if impl_status in valid_statuses:
-            qs = qs.filter(vote_result="approved", implementation_status=impl_status)
-        overdue = self.request.GET.get("overdue") == "1"
-        if overdue:
-            qs = qs.filter(overdue_q)
+        qs = _filter_umsetzung(qs, params)
+        impl_status = params.get("status")
+        overdue = params.get("overdue") == "1"
+        org_id = params.get("organization")
+        year = params.get("year")
+        result = params.get("result")
 
         items = list(qs.prefetch_related("forwardings")[:300])
 
-        years = sorted(
-            {ms.year for ms in qs.values_list("meeting__start", flat=True) if ms},
-            reverse=True,
-        )
         context.update(
             {
                 "items": items,
                 "organizations": SessionOrganization.objects.filter(
                     tenant=self.session_tenant, is_active=True
                 ).order_by("name"),
-                "years": years,
+                # Alle Jahre, nicht nur die gefilterten – sonst ließe sich das Jahr nicht mehr wechseln
+                "years": _register_years(alle),
+                # Der Export liefert, was die Seite zeigt
+                "export_query": urlencode({key: params[key] for key in REGISTER_FILTERS if params.get(key)}),
                 "result_choices": [
                     (value, label)
                     for value, label in SessionAgendaItem._meta.get_field("vote_result").choices
@@ -374,19 +407,8 @@ class ResolutionCsvExportView(SessionViewMixin, View):
     http_method_names = ["get"]
 
     def get(self, request, tenant_slug):
-        include_np = self.has_permission("view_non_public_meetings")
-        qs = resolution_service.decided_items(self.session_tenant, include_non_public=include_np)
-
-        org_id = request.GET.get("organization")
-        if org_id:
-            org_uuid = uuid_param(org_id)  # ungültig: kein Treffer statt Serverfehler
-            qs = qs.filter(meeting__organization_id=org_uuid) if org_uuid else qs.none()
-        year = request.GET.get("year")
-        if year and year.isdigit():
-            qs = qs.filter(meeting__start__year=int(year))
-        result = request.GET.get("result")
-        if result in resolution_service.DECIDED_RESULTS:
-            qs = qs.filter(vote_result=result)
+        # Dieselben Filter wie das Register, einschließlich Umsetzungsstand und „nur überfällige“
+        qs = _filter_umsetzung(_filter_basis(_decided_items(self), request.GET), request.GET)
 
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="beschlussregister.csv"'
@@ -422,7 +444,7 @@ class ResolutionCsvExportView(SessionViewMixin, View):
                     item.name,
                     item.meeting.organization.name if item.meeting.organization else "",
                     item.meeting.name,
-                    item.meeting.start.strftime("%d.%m.%Y") if item.meeting.start else "",
+                    timezone.localtime(item.meeting.start).strftime("%d.%m.%Y") if item.meeting.start else "",
                     item.get_vote_result_display(),
                     item.votes_yes,
                     item.votes_no,
