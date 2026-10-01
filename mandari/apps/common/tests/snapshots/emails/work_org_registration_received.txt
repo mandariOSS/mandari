@@ -14,4 +14,4 @@ Fragen zur Freischaltung beantwortet Fraktion Test.
 
 Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
 
-© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

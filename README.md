@@ -219,6 +219,10 @@ Jede Datei hat eine maschinenlesbare Lizenz- und Urheberangabe – im Dateikopf 
 [`REUSE.toml`](REUSE.toml) –, die Lizenztexte liegen unter `LICENSES/`. `reuse lint` prüft das bei
 jeder Änderung (Workflow „REUSE“).
 
+Urheber von mandari ist Sven Konopka. Die Angabe steht zentral in `REUSE.toml` und gilt für jede
+Datei des Projekts; ausgenommen sind nur die dort eigens zugeordneten Fremdbibliotheken. Wie
+Beitragende genannt werden, steht in [CONTRIBUTING.md](CONTRIBUTING.md#urheberangaben).
+
 Die Wortmarke „mandari“ und das Logo sind davon ausgenommen (`LicenseRef-Mandari-Brand`).
 Wer eine eigene Installation unter eigenem Namen betreibt, ersetzt die Dateien unter
 `mandari/static/brand/`.
@@ -231,5 +235,5 @@ Wer eine eigene Installation unter eigenem Namen betreibt, ersetzt die Dateien u
 ---
 
 <p align="center">
-  <sub>Copyright 2025–2026 Sven Konopka and contributors. Lizenziert unter <a href="LICENSE">AGPL-3.0-or-later</a>.</sub>
+  <sub>Copyright 2025–2026 Sven Konopka. Lizenziert unter <a href="LICENSE">AGPL-3.0-or-later</a>.</sub>
 </p>

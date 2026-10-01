@@ -16,4 +16,4 @@ Falls Sie das nicht angefordert haben, ignorieren Sie diese E-Mail einfach. Ohne
 
 [Beschluss ansehen](https://mandari.example/insight/beschluesse/00000000-0000-0000-0000-000000000201/) · [mandari Insight](https://mandari.example/insight/)
 
-© mandari — Open Source unter AGPL-3.0-or-later · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

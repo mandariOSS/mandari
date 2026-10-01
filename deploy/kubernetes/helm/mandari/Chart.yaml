@@ -3,7 +3,7 @@ name: mandari
 description: mandari – Open-Source-Plattform für kommunalpolitische Transparenz (Bürgerportal, Fraktions-Arbeitsbereich, Verwaltungs-RIS)
 type: application
 # Version des Charts (bei Chart-Änderungen erhöhen)
-version: 1.0.0
+version: 1.0.1
 # Version der Anwendung; entspricht dem Standard-Image-Tag in values.yaml
 appVersion: "latest"
 home: https://mandari.de
@@ -16,7 +16,7 @@ keywords:
   - kommune
   - django
 maintainers:
-  - name: mandari Contributors
+  - name: Sven Konopka
     url: https://github.com/mandariOSS
 annotations:
   category: Government
