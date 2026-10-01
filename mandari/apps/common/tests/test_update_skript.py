@@ -252,3 +252,45 @@ def test_scheitert_das_herunterladen_kommt_die_alte_env_zurueck(tmp_path: Path) 
     assert "IMAGE_TAG=v1.0.0" in lauf.env, lauf.env
     assert "nichts umgeschaltet" in lauf.ausgabe, lauf.ausgabe
     assert not any(teil in z for z in lauf.aufrufe for teil in ("compose stop", "safemigrate"))
+
+
+MIT_WORKER = "postgres redis elasticsearch mandari minutes-orchestrator website ingestor caddy worker"
+
+
+def test_worker_steht_waehrend_der_migrationen_und_startet_vor_der_anwendung(tmp_path: Path) -> None:
+    """Issue #509: Migration → Worker → Web; der Worker steht wie die übrigen während der Migrationen."""
+    rc, aufrufe = _lauf(tmp_path, env_zusatz={"FAKE_SERVICES": MIT_WORKER})
+
+    assert rc == 0, "\n".join(aufrufe)
+    angehalten = _index(aufrufe, "compose stop ingestor minutes-orchestrator worker")
+    migration = _index(aufrufe, "manage.py safemigrate")
+    worker = _index(aufrufe, "compose up -d --no-deps worker")
+    anwendung = _index(aufrufe, "compose up -d --no-deps mandari")
+    assert angehalten < migration < worker < anwendung
+    assert any("inspect" in z and "mandari-worker" in z for z in aufrufe), "Verifikation prüft den Worker"
+
+
+def test_ohne_worker_dienst_kein_vorstart(tmp_path: Path) -> None:
+    rc, aufrufe = _lauf(tmp_path)
+
+    assert rc == 0, "\n".join(aufrufe)
+    assert not any("worker" in z.split() for z in aufrufe if "compose" in z)
+    assert not any("mandari-worker" in z for z in aufrufe)
+
+
+def test_abbruch_setzt_den_vorgestarteten_worker_mit_zurueck(tmp_path: Path) -> None:
+    """Scheitert das Umschalten, startet der trap den Worker mit der zurückgesetzten .env neu."""
+    rc, aufrufe = _lauf(tmp_path, env_zusatz={"FAKE_SERVICES": MIT_WORKER, "FAKE_UNHEALTHY": "1"})
+
+    assert rc != 0
+    vorstart = _index(aufrufe, "compose up -d --no-deps worker")
+    neustarts = [i for i, z in enumerate(aufrufe) if "compose up -d --no-deps" in z and z.endswith(" worker")]
+    assert neustarts[-1] > vorstart, "\n".join(aufrufe)
+    assert "ingestor minutes-orchestrator worker" in aufrufe[neustarts[-1]]
+
+
+def test_rueckfall_setzt_auch_den_worker_zurueck(tmp_path: Path) -> None:
+    rc, aufrufe = _lauf(tmp_path, args=("--rollback",), env_zusatz={"FAKE_SERVICES": MIT_WORKER})
+
+    assert rc == 0, "\n".join(aufrufe)
+    assert any("compose up -d --no-deps ingestor minutes-orchestrator worker" in z for z in aufrufe)

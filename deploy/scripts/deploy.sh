@@ -11,8 +11,9 @@
 #   MANDARI_DIR      Installationsverzeichnis mit .env und Compose-Dateien   (Standard /opt/mandari)
 #   COMPOSE_FILES    Compose-Dateien, durch Leerzeichen getrennt              (Standard docker-compose.yml)
 #   APP_SERVICE      Dienst der Django-Anwendung                              (Standard mandari)
-#   WORKER_SERVICES  Dienste, die waehrend der Migration stehen sollen und     (Standard ingestor)
-#                    nach dem Umschalten geprueft werden
+#   WORKER_SERVICES  Dienste, die waehrend der Migration stehen sollen, nach   (Standard: worker,
+#                    der Migration VOR der Anwendung starten und nach dem      falls definiert,
+#                    Umschalten geprueft werden (Migration -> Worker -> Web)   und ingestor)
 #   WORKER_CHECK_SECONDS  so lange nach dem Start keine Worker-Beendigung      (Standard 60, 0 = aus)
 #                    mit Exit-Code ungleich 0; Exit 0 ist planmaessig (Worker enden nach
 #                    jedem Durchlauf und werden neu gestartet)
@@ -33,7 +34,7 @@ NEW_TAG="${2:-}"
 MANDARI_DIR="${MANDARI_DIR:-/opt/mandari}"
 COMPOSE_FILES="${COMPOSE_FILES:-docker-compose.yml}"
 APP_SERVICE="${APP_SERVICE:-mandari}"
-WORKER_SERVICES="${WORKER_SERVICES:-ingestor}"
+WORKER_SERVICES="${WORKER_SERVICES:-}"
 WORKER_CHECK_SECONDS="${WORKER_CHECK_SECONDS:-60}"
 DB_SERVICE="${DB_SERVICE:-postgres}"
 BACKUP_DIR="${BACKUP_DIR:-$MANDARI_DIR/backups}"
@@ -46,6 +47,16 @@ VERIFY_PY="$HIER/verify_deploy.py"
 cd "$MANDARI_DIR"
 DC="docker compose"
 for f in $COMPOSE_FILES; do DC="$DC -f $f"; done
+if [ -z "$WORKER_SERVICES" ]; then
+  # Vorgabe: der Worker fuer Ereignisse und Auftraege (manage.py events_worker), falls die
+  # Compose-Datei ihn kennt, und der Ingestor. Aeltere, handgepflegte Dateien ohne Dienst worker
+  # laufen so unveraendert weiter.
+  if $DC config --services < /dev/null 2>/dev/null | grep -x worker > /dev/null; then
+    WORKER_SERVICES="worker ingestor"
+  else
+    WORKER_SERVICES="ingestor"
+  fi
+fi
 OLD_TAG=$(grep -E '^IMAGE_TAG=' .env | cut -d= -f2)
 [ -n "$OLD_TAG" ] || { echo "FEHLER: IMAGE_TAG fehlt in .env"; exit 1; }
 REGISTRY=$(grep -E '^IMAGE_REGISTRY=' .env | cut -d= -f2)
@@ -197,11 +208,13 @@ warte_auf_live() {
 }
 
 switch_to() {
+  # Reihenfolge Migration -> Worker -> Web: Die Worker laufen schon mit dem Stand $1, wenn die
+  # Anwendung umschaltet; Auftraege und Ereignisse der neuen Webprozesse bleiben nicht liegen.
   tag="$1"
   sed "s/^IMAGE_TAG=.*/IMAGE_TAG=$tag/" .env > .env.neu && cat .env.neu > .env && rm -f .env.neu
-  $DC up -d --no-deps --wait "$APP_SERVICE" < /dev/null
   # shellcheck disable=SC2086
   $DC up -d --no-deps $WORKER_SERVICES < /dev/null
+  $DC up -d --no-deps --wait "$APP_SERVICE" < /dev/null
 }
 
 protokoll() {

@@ -89,6 +89,28 @@ ingestor:
     limits:
       memory: 1Gi
 
+# Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker), gleiches Image
+# und dieselbe Umgebung wie die Anwendung (inkl. app.extraEnv). Mehrere Repliken sind möglich.
+worker:
+  enabled: true
+  replicas: 1
+  # /metrics (Prometheus) und /health (Probes) des Workers
+  metricsPort: 9091
+  # Speichergrenze des Runners in MB; unter dem Speicherlimit halten (TASKS_MAX_MEMORY_MB)
+  maxMemoryMb: 400
+  # Zusätzliche Argumente, z. B. ["--queues", "default,mail,index,ai,adapter"]
+  extraArgs: []
+  # Nur für den Worker, z. B. EVENTS_DB_DIRECT_URL hinter PgBouncer
+  extraEnv: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  nodeSelector: {}
+  tolerations: []
+
 # -----------------------------------------------------------------------------
 # Datenhaltung
 # -----------------------------------------------------------------------------

@@ -284,7 +284,8 @@ verify_installation() {
         "${COMPOSE_PROJECT_NAME}:Mandari" \
         "${COMPOSE_PROJECT_NAME}-website:Website" \
         "${COMPOSE_PROJECT_NAME}-caddy:Caddy" \
-        "${COMPOSE_PROJECT_NAME}-ingestor:Ingestor"; do
+        "${COMPOSE_PROJECT_NAME}-ingestor:Ingestor" \
+        "${COMPOSE_PROJECT_NAME}-worker:Worker"; do
         container="${entry%%:*}"
         label="${entry#*:}"
         local status

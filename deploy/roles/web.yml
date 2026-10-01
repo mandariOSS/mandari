@@ -21,6 +21,8 @@ services:
     profiles: ["aus"]
   ingestor:
     profiles: ["aus"]
+  worker:
+    profiles: ["aus"]
 
   mandari:
     environment:

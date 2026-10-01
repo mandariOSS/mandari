@@ -11,7 +11,7 @@ Server verteilen. Dafür gibt es drei Rollenprofile als Compose-Overrides unter 
 |----------|------------------------------------------------|---------------------------|
 | `data`   | PostgreSQL, Redis, Elasticsearch, optional PgBouncer | `deploy/roles/data.yml`   |
 | `web`    | Caddy, Anwendung (`mandari`), Website          | `deploy/roles/web.yml`    |
-| `worker` | Ingestor (Quellen-Sync), Protokoll-Orchestrator | `deploy/roles/worker.yml` |
+| `worker` | Ingestor (Quellen-Sync), Protokoll-Orchestrator, Worker für Ereignisse, Aufträge und Zeitpläne (`worker`) | `deploy/roles/worker.yml` |
 
 Die Basisdatei bleibt unverändert und profilfrei; die Rollen-Dateien schalten die jeweils
 fremden Dienste über ein nie aktiviertes Profil `aus` ab und biegen die Verbindungs-URLs
@@ -128,7 +128,8 @@ Website und Orchestrator.
 Auch `LISTEN` funktioniert im Transaktionsmodus nicht: Die Meldungen landen bei einer fremden
 Serververbindung. Die Ereignistechnik (Sequenzierer und Zustellung, `apps/events`) hört deshalb
 auf einer eigenen Direktverbindung, sobald `EVENTS_DB_DIRECT_URL` gesetzt ist, etwa
-`postgresql://mandari:…@<DATA_HOST>:5432/mandari`. Alles andere – auch die Leader-Leases – läuft
+`postgresql://mandari:…@<DATA_HOST>:5432/mandari`; für den Dienst `worker` setzt `worker.yml` sie
+selbst. Alles andere – auch die Leader-Leases – läuft
 weiter über `DATABASE_URL`: Leases sind Tabellenzeilen, die innerhalb einer Transaktion geprüft
 werden, sitzungsgebundene Sperren gibt es dort nicht. Fehlt die Einstellung hinter PgBouncer,
 erkennt der Listener das an seiner Selbstprüfung, protokolliert eine Warnung

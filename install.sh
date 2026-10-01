@@ -35,6 +35,7 @@ REDIS_CONTAINER="${COMPOSE_PROJECT_NAME}-redis"
 SEARCH_CONTAINER="${COMPOSE_PROJECT_NAME}-elasticsearch"
 WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
 PROXY_CONTAINER="${COMPOSE_PROJECT_NAME}-caddy"
+WORKER_CONTAINER="${COMPOSE_PROJECT_NAME}-worker"
 
 # Anwendungs-Images (siehe docker-compose.yml): Alle drei laufen mit demselben IMAGE_TAG
 APP_IMAGES="ghcr.io/mandarioss/mandari ghcr.io/mandarioss/ingestor ghcr.io/mandarioss/website"
@@ -608,7 +609,8 @@ setup_cron_backup() {
 # Django migrations run, we get "DuplicateTable" errors. So we must:
 #   1. Start infrastructure (postgres, redis, elasticsearch)
 #   2. Start mandari (Django) and run migrations
-#   3. THEN start ingestor and caddy
+#   3. Start the worker (events, tasks, schedules) – it needs the migrated schema
+#   4. THEN start ingestor and caddy
 # =============================================================================
 start_services() {
     mkdir -p "$SCRIPT_DIR/logs"
@@ -639,6 +641,13 @@ start_services() {
 
     run_migrations
     configure_oparl_sources
+
+    # --- Phase 2b: Worker für Ereignisse, Aufträge und Zeitpläne (nach den Migrationen) ---
+    log "Starte Worker..."
+    docker compose up -d worker >> "$INSTALL_LOG" 2>&1
+
+    printf "  %-30s " "Worker"
+    if wait_for_healthy "$WORKER_CONTAINER" 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     # --- Phase 3: Website (Wagtail) ---
     log "Starte Website..."
@@ -863,7 +872,7 @@ verify_installation() {
     local all_ok=true
 
     # Check each container
-    for container in mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor; do
+    for container in mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor mandari-worker; do
         local status
         local health
         status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
@@ -878,6 +887,7 @@ verify_installation() {
             mandari-website)    label="Website" ;;
             mandari-caddy)      label="Caddy" ;;
             mandari-ingestor)   label="Ingestor" ;;
+            mandari-worker)     label="Worker" ;;
         esac
 
         printf "  %-14s " "$label"

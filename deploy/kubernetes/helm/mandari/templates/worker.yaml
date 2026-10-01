@@ -1,0 +1,120 @@
+{{- if .Values.worker.enabled }}
+{{- /*
+Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker, Issue #509):
+gleiches Image und dieselbe Umgebung wie die Anwendung. Mehrere Repliken teilen sich die
+Arbeit (Leader-Leases in events_lease, Aufträge per SKIP LOCKED). Der Migrations-Job läuft
+vor jedem Upgrade (pre-upgrade); Worker und Anwendung rollen danach gemeinsam aus.
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mandari.fullname" . }}-worker
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mandari.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "mandari.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.worker.metricsPort | quote }}
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: {{ include "mandari.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: worker
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/mandari:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - python
+            - manage.py
+            - events_worker
+            - --heartbeat-file
+            - /tmp/mandari-worker.heartbeat
+            - --metrics-port
+            - {{ .Values.worker.metricsPort | quote }}
+            {{- range .Values.worker.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "mandari.commonEnv" . | nindent 12 }}
+            {{- if .Values.tracing.otlpEndpoint }}
+            - name: OTEL_SERVICE_NAME
+              value: mandari-worker
+            {{- end }}
+            # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
+            - name: TASKS_MAX_MEMORY_MB
+              value: {{ .Values.worker.maxMemoryMb | quote }}
+            {{- range $key, $value := .Values.app.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- range $key, $value := .Values.worker.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.app.extraEnvFromSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.app.extraEnvFromSecret }}
+          {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.worker.metricsPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: media
+              mountPath: /app/media
+            - name: files
+              mountPath: /app/files
+          startupProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 60
+          # /health antwortet 503, sobald eine Rolle länger als --stale-after (300 s) hängt
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: {{ include "mandari.fullname" . }}-media
+        - name: files
+          persistentVolumeClaim:
+            claimName: {{ include "mandari.fullname" . }}-files
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

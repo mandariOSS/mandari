@@ -95,15 +95,20 @@ Migrationen müssen abwärtskompatibel sein: Der Rückfall rollt Code zurück, k
 Migrationen (`django-safemigrate` spielt nur verträgliche Migrationen vor dem Umschalten ein).
 Das interaktive `update.sh` für Selbst-Hoster nutzt dieselbe Anwendungsprüfung und rollt
 bei Fehlschlag ebenfalls zurück. Wie `deploy.sh` hält es die Worker (`WORKER_SERVICES`,
-Standard `ingestor minutes-orchestrator`) während aller Migrationen an und startet sie erst danach
-mit dem neuen Image – auch bei Abbruch oder Rückfall werden sie wieder gestartet. Der
+Standard `ingestor minutes-orchestrator worker`) während aller Migrationen an und startet sie erst danach
+mit dem neuen Image – auch bei Abbruch oder Rückfall werden sie wieder gestartet. Der Worker für
+Ereignisse und Aufträge (`worker`) startet schon nach den Migrationen vor dem Umschalten der
+Anwendung (**Reihenfolge Migration → Worker → Web**), damit Aufträge der neuen Webprozesse sofort
+abgearbeitet werden. Der
 Protokoll-Orchestrator (`minutes-orchestrator`) nutzt das Anwendungs-Image und wechselt nach den
 Migrationen immer mit, auch wenn ein eigenes `WORKER_SERVICES` ihn nicht nennt; `--rollback`
 setzt ihn ebenfalls zurück. Dienste, die die Compose-Datei nicht kennt, überspringt das Skript.
 
 Für `deploy.sh` gehört der Orchestrator ebenfalls in `WORKER_SERVICES`
-(z. B. `WORKER_SERVICES="ingestor minutes-orchestrator"`); sonst läuft er nach dem Deploy mit dem
-alten Image weiter.
+(z. B. `WORKER_SERVICES="worker ingestor minutes-orchestrator"`); sonst läuft er nach dem Deploy mit dem
+alten Image weiter. Ohne Angabe nimmt `deploy.sh` den Dienst `worker` (falls die Compose-Datei ihn
+kennt) und den Ingestor. Es startet alle `WORKER_SERVICES` nach der Migration **vor** der Anwendung
+(Migration → Worker → Web) und prüft sie danach wie bisher.
 
 ---
 
@@ -379,6 +384,34 @@ python manage.py events_worker --heartbeat-file /tmp/mandari-worker.heartbeat
 Die Einzelbefehle `events_sequencer`, `events_dispatch`, `events_tasks` und `events_scheduler`
 bleiben für Fehlersuche und Handbetrieb (`--once`, `--list`, geparkte Ereignisse).
 
+### Betrieb als Dienst `worker`
+
+Jede Installationsart bringt den Worker als eigenen Dienst aus dem Anwendungs-Image mit, mit
+Speicherlimit 512 MB und derselben Umgebung wie die Anwendung:
+
+| Installation | Wo | Lebenszeichen |
+|---|---|---|
+| Ein Server (Compose) | Dienst `worker` in `docker-compose.yml` | Healthcheck über die Heartbeat-Datei (jünger als 60 s); `restart-unhealthy.sh` startet ihn neu (Label `mandari.autoheal`) |
+| Mehrere Server | Rolle `worker` (`deploy/roles/worker.yml`), mit `EVENTS_DB_DIRECT_URL` direkt zu PostgreSQL | wie oben |
+| Kubernetes (Helm) | `templates/worker.yaml`, Werte unter `worker.*` | Start- und Liveness-Probe auf `/health` (Port 9091) |
+
+`install.sh` startet ihn nach den Migrationen; `update.sh` und `deploy/scripts/deploy.sh` halten
+ihn während der Migrationen an und starten ihn danach vor der Anwendung (Migration → Worker →
+Web). Mit Helm läuft der Migrations-Job vor jedem Upgrade; Worker und Anwendung rollen danach
+gemeinsam aus.
+
+**Wann meldet die Anwendung sein Fehlen?** Nur wenn die Installation ihn braucht: Dann melden
+`/health/` und `/health/ready/` `"degraded"` (Antwort bleibt 200, die Anwendung bleibt in Betrieb),
+und Admin-Startseite und Betriebsmonitor zeigen den Hinweis „Worker“. Gebraucht wird er mit `TASKS_BACKEND=journal`
+(Rolle `tasks`), mit `INGESTOR_EVENTS_ENABLED=true` (Rolle `sequencer`) oder mit
+`EVENTS_WORKER_REQUIRED=true` (alle Rollen); `EVENTS_WORKER_REQUIRED=false` schaltet die Meldung ab.
+Als laufend gilt ein Worker, dessen Rollen alle arbeiten und der sich in der letzten Minute in
+`events_worker` gemeldet hat.
+
+**Umschalten der Aufträge** auf den Worker: erst prüfen, dass er läuft (`docker compose ps worker`,
+Admin-Hinweis), dann `TASKS_BACKEND=journal` in der `.env` setzen und Anwendung und Worker neu
+starten.
+
 ## ⏰ Geplante Aufgaben (Cron)
 
 Die Anwendung bringt keinen eigenen Scheduler mit. Wiederkehrende Management-Commands
@@ -474,7 +507,7 @@ Obergrenze der Datenbank.
 |---|---|---|
 | mandari (Daphne, 1 Prozess) | **10** | `DB_POOL_MAX`; höchstens `DB_POOL_MAX_WAITING` Anfragen warten, der Rest bekommt 503 |
 | Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
-| Worker (`events_worker`, alle Rollen) | 21 | Pool 20 bei den Standard-Warteschlangen ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
+| Worker (Dienst `worker`, `events_worker` mit allen Rollen) | 21 | Pool 20 bei den Standard-Warteschlangen ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
 | OCR-Worker | 30 | gleiches Image wie der Ingestor |
 | Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
 | Kundenportal | 10 | eigener Container, eigene Datenbank |
@@ -646,9 +679,9 @@ docker compose logs -f mandari   # Live-Logs der Anwendung
 
 | Endpoint | Beschreibung |
 |----------|--------------|
-| `/health/` | Datenbankprüfung für bestehende Healthchecks (Compose, Statusseite) |
+| `/health/` | Datenbankprüfung für bestehende Healthchecks (Compose, Statusseite); Feld `worker` |
 | `/health/live/` | Liveness: Prozess antwortet, Datenbank-Pool nicht festgefahren |
-| `/health/ready/` | Readiness: Datenbank, Cache, Elasticsearch und Medienspeicher |
+| `/health/ready/` | Readiness: Datenbank, Cache, Elasticsearch und Medienspeicher; `worker` nur als Hinweis (`degraded`) |
 
 ### Metriken (optional)
 

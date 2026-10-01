@@ -38,6 +38,9 @@ case "$1" in
       exec)
         [ "$3" = postgres ] && echo DUMP
         ;;
+      config)
+        [ "$2" = --services ] && printf '%s\\n' ${FAKE_SERVICES:-mandari ingestor postgres}
+        ;;
     esac
     ;;
   exec)
@@ -202,3 +205,35 @@ def test_workerpruefung_abschaltbar(tmp_path: Path) -> None:
     assert rc == 0, ausgabe
     assert _tag(arbeit) == "dev-neu"
     assert not any(z.startswith(("events", "inspect")) for z in aufrufe)
+
+
+def _index(aufrufe: list[str], teil: str) -> int:
+    treffer = [i for i, zeile in enumerate(aufrufe) if teil in zeile]
+    assert treffer, f"Aufruf fehlt: {teil}\n" + "\n".join(aufrufe)
+    return treffer[0]
+
+
+def test_worker_starten_nach_der_migration_vor_der_anwendung(tmp_path: Path) -> None:
+    """Issue #509: Reihenfolge Migration → Worker → Web."""
+    rc, ausgabe, aufrufe, _ = _lauf(tmp_path, "apply", "dev-neu", WORKER_SERVICES="worker ingestor")
+
+    assert rc == 0, ausgabe
+    angehalten = _index(aufrufe, "stop worker ingestor")
+    migration = _index(aufrufe, "safemigrate")
+    worker = _index(aufrufe, "up -d --no-deps worker ingestor")
+    anwendung = _index(aufrufe, "up -d --no-deps --wait mandari")
+    assert angehalten < migration < worker < anwendung
+
+
+def test_vorgabe_nimmt_den_worker_nur_wenn_die_compose_datei_ihn_kennt(tmp_path: Path) -> None:
+    rc, ausgabe, aufrufe, _ = _lauf(
+        tmp_path, "apply", "dev-neu", WORKER_SERVICES="", FAKE_SERVICES="postgres mandari worker ingestor"
+    )
+    assert rc == 0, ausgabe
+    assert any(z.endswith("stop worker ingestor") for z in aufrufe), "\n".join(aufrufe)
+
+    (tmp_path / "alt").mkdir()
+    rc, ausgabe, aufrufe, _ = _lauf(tmp_path / "alt", "apply", "dev-neu", WORKER_SERVICES="")
+    assert rc == 0, ausgabe
+    assert any(z.endswith("stop ingestor") for z in aufrufe), "ältere Compose-Datei ohne Dienst worker"
+    assert not any("worker" in z.split() for z in aufrufe)

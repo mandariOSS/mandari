@@ -71,6 +71,10 @@ Die Manifeste sind aus dem Chart erzeugt. Für Updates ist Helm deutlich bequeme
 | `elasticsearch.enabled` | `true` | Aus: Suche läuft über die Datenbank, spart etwa 2 GB Arbeitsspeicher |
 | `website.enabled` | `false` | Marketing-Website (Wagtail) mitinstallieren |
 | `ingestor.syncInterval` | `15` | Minuten zwischen zwei OParl-Synchronisationen |
+| `worker.enabled` | `true` | Worker für Ereignisse, Aufträge und Zeitpläne (`manage.py events_worker`), gleiches Image und dieselbe Umgebung wie die Anwendung |
+| `worker.replicas` | `1` | Mehrere Worker teilen sich die Arbeit (Leader-Leases, Aufträge per `SKIP LOCKED`) |
+| `worker.maxMemoryMb` | `400` | Speichergrenze des Runners (`TASKS_MAX_MEMORY_MB`), unter `worker.resources.limits.memory` (512Mi) halten |
+| `worker.extraArgs`, `worker.extraEnv` | – | z. B. `["--queues", "default,mail,index,ai,adapter"]` bzw. `EVENTS_DB_DIRECT_URL` hinter PgBouncer |
 | `persistence.files.size` | `50Gi` | Heruntergeladene RIS-Dokumente – wächst mit der Zahl der Kommunen |
 | `secrets.existingSecret` | `""` | Eigenes Secret statt erzeugter Schlüssel |
 | `adminUser.email` / `.password` | `""` | Legt beim ersten Lauf ein Administrationskonto an |
@@ -154,6 +158,7 @@ kubectl -n mandari cp mandari-<pod>:/app/media ./media-backup
 ```bash
 kubectl -n mandari logs -f deploy/mandari
 kubectl -n mandari logs -f deploy/mandari-ingestor
+kubectl -n mandari logs -f deploy/mandari-worker
 kubectl -n mandari logs job/mandari-migrate
 ```
 

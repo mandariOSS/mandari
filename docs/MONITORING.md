@@ -112,6 +112,12 @@ Prüfungen, die für eine Installation nicht kritisch sind, lassen sich mit
 `HEALTH_READY_OPTIONAL=elasticsearch` (kommagetrennt) als optional erklären: Sie werden
 weiter gemeldet (`"status": "degraded"`), die Antwort bleibt 200.
 
+Die Prüfung `worker` ist immer optional: Braucht die Installation einen Worker
+(`TASKS_BACKEND=journal`, `INGESTOR_EVENTS_ENABLED=true` oder `EVENTS_WORKER_REQUIRED=true`) und
+bedient keiner die nötigen Rollen, melden `/health/ready/` und `/health/` (Feld `worker`)
+`"degraded"`; Admin-Startseite und Betriebsmonitor zeigen einen Hinweis. Ohne Bedarf steht dort
+„nicht erforderlich“, und nichts wird gemeldet (DEPLOYMENT.md, „Worker“).
+
 Das Helm-Chart nutzt `live` für Startup- und Liveness-Probe und `ready` für die
 Readiness-Probe. Die Statusseite (Gatus) kann `/health/ready/` als Bedingung nehmen.
 

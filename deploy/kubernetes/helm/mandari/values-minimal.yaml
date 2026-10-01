@@ -33,6 +33,14 @@ ingestor:
     limits:
       memory: 768Mi
 
+worker:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+
 postgres:
   storage:
     size: 10Gi

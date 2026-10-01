@@ -73,6 +73,18 @@ ingestor:
     limits:
       memory: 2Gi
 
+# Zwei Worker teilen sich die Arbeit (Leader-Leases, Aufträge per SKIP LOCKED). Texterkennung
+# und KI lassen sich in ein zweites Release mit worker.extraArgs ["--roles", "tasks",
+# "--queues", "ocr,ai"] und eigenem Speicherlimit auslagern (DEPLOYMENT.md, „Worker“).
+worker:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      memory: 512Mi
+
 persistence:
   # Ohne ReadWriteMany bleibt app.replicas bei 1.
   accessMode: ReadWriteMany

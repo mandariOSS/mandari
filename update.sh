@@ -5,7 +5,8 @@
 # Updates Mandari ohne Ausfallzeit:
 #   1. Images vorziehen (alter Container läuft weiter)
 #   2. Worker (Ingestor) anhalten, Migrationen via temporären Container (vor dem Swap)
-#   3. Container einzeln tauschen (Caddy puffert Requests)
+#   3. Worker für Ereignisse und Aufträge mit neuem Image, dann Container einzeln tauschen
+#      (Reihenfolge Migration → Worker → Web; Caddy puffert Requests)
 #   4. Health-Check + automatisches Rollback bei Fehler
 #   5. Nach den Post-Deploy-Migrationen Worker und Protokoll-Orchestrator mit neuem Image starten
 #
@@ -35,12 +36,18 @@ WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
 # weiter, bräche ein Durchlauf ab. Überschreibbar per Umgebung oder .env, z. B.
 # WORKER_SERVICES="ingestor minutes-orchestrator ocr-worker". Dienste, die Compose nicht kennt,
 # werden übersprungen (bei der Vorgabe ohne Hinweis).
-WORKER_SERVICES_DEFAULT="ingestor minutes-orchestrator"
+WORKER_SERVICES_DEFAULT="ingestor minutes-orchestrator worker"
 
 # Dienste mit dem Anwendungs-Image, die nach den Migrationen immer auf das neue Image wechseln
 # (Issue #479) – auch wenn ein eigenes WORKER_SERVICES sie nicht nennt; dann laufen sie während
 # der Migrationen weiter. Nicht definierte Dienste werden übersprungen.
-APP_IMAGE_SERVICES="minutes-orchestrator"
+APP_IMAGE_SERVICES="minutes-orchestrator worker"
+
+# Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker, Issue #509): stehen wie
+# die übrigen Worker während der Migrationen, starten aber VOR dem Umschalten der Anwendung
+# (Reihenfolge Migration → Worker → Web). So arbeitet der neue Stand Aufträge und Ereignisse der
+# neuen Webprozesse von Anfang an ab. Nicht definierte Dienste werden übersprungen.
+EARLY_WORKER_SERVICES="worker"
 
 # Anwendungs-Images mit IMAGE_TAG; nur falls "docker compose config --images" nichts liefert
 APP_IMAGES_DEFAULT="ghcr.io/mandarioss/mandari ghcr.io/mandarioss/ingestor ghcr.io/mandarioss/website"
@@ -354,11 +361,37 @@ start_workers() {
     fi
 }
 
+# Vor der Anwendung gestartete Worker (EARLY_WORKER_SERVICES)
+EARLY_STARTED=""
+
+# Migration → Worker → Web: die Worker aus EARLY_WORKER_SERVICES mit dem neuen Image starten, bevor
+# die Anwendung umschaltet. Sie bleiben in STOPPED_WORKERS: Bricht das Update ab, startet der trap
+# sie mit der dann gültigen (zurückgesetzten) .env neu, sonst ist der Start in Phase 5 wirkungslos.
+start_early_workers() {
+    local svc container
+    for svc in $(defined_services "$EARLY_WORKER_SERVICES"); do
+        container="${COMPOSE_PROJECT_NAME}-${svc}"
+        EARLY_STARTED="$EARLY_STARTED $svc"
+        if ! docker compose up -d --no-deps "$svc" >> "$UPDATE_LOG" 2>&1; then
+            printf "  %-30s ${RED}✗${NC}\n" "$svc"
+            warn "$svc nicht gestartet — von Hand: docker compose up -d --no-deps $svc"
+            continue
+        fi
+        printf "  %-30s " "$svc"
+        if wait_for_healthy "$container" 45; then
+            printf "\b${GREEN}✓ healthy${NC}\n"
+        else
+            printf "\b${YELLOW}⚠ ohne Lebenszeichen${NC}\n"
+            warn "$svc meldet kein Lebenszeichen — prüfe: docker logs $container"
+        fi
+    done
+}
+
 # APP_IMAGE_SERVICES, die nicht schon als Worker gestartet wurden, auf das neue Image bringen
 update_app_image_services() {
     local svc
     for svc in $(defined_services "$APP_IMAGE_SERVICES"); do
-        case " $STARTED_WORKERS " in
+        case " $STARTED_WORKERS $EARLY_STARTED " in
             *" $svc "*) continue ;;
         esac
         if docker compose up -d --no-deps "$svc" >> "$UPDATE_LOG" 2>&1; then
@@ -388,7 +421,13 @@ verify_installation() {
 
     local all_ok=true
 
-    for container in mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor; do
+    local containers="mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor"
+    # Den Worker nur prüfen, wenn die Installation ihn definiert (ältere Compose-Dateien ohne ihn)
+    if [ -n "$(defined_services worker)" ]; then
+        containers="$containers mandari-worker"
+    fi
+
+    for container in $containers; do
         local status
         local health
         status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
@@ -403,6 +442,7 @@ verify_installation() {
             mandari-website)     label="Website" ;;
             mandari-caddy)       label="Caddy" ;;
             mandari-ingestor)    label="Ingestor" ;;
+            mandari-worker)      label="Worker" ;;
         esac
 
         printf "  %-14s " "$label"
@@ -613,6 +653,8 @@ if [ "$DRY_RUN" = true ]; then
 
     dry_run_workers=$(resolve_workers)
     info "Während der Migrationen angehalten: ${CYAN}${dry_run_workers:-keine}${NC}"
+    dry_run_early=$(defined_services "$EARLY_WORKER_SERVICES")
+    info "Nach den Migrationen vor der Anwendung gestartet: ${CYAN}${dry_run_early:-keine}${NC}"
     dry_run_app_services=$(defined_services "$APP_IMAGE_SERVICES")
     info "Nach den Migrationen auf das neue Image: ${CYAN}${dry_run_app_services:-keine}${NC}"
 
@@ -724,6 +766,9 @@ run_step "Website-Migrationen" docker compose run --rm --no-deps \
 echo ""
 log "Phase 3: Container tauschen"
 info "  (Caddy puffert Requests während des Swaps)"
+
+# Migration → Worker → Web (Issue #509)
+start_early_workers
 
 # Mandari (Django Backend)
 if ! swap_container mandari mandari 45; then
