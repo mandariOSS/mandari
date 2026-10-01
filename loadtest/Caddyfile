@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# =============================================================================
+# Vorgeschalteter Webserver für Lasttests (Issue #228)
+# =============================================================================
+# Wie im Betrieb (Caddyfile im Wurzelverzeichnis): TLS endet in Caddy, Caddy
+# komprimiert und reicht an die Anwendung weiter (X-Forwarded-Proto: https).
+# Nur so setzt Django die Cookies wie in Produktion (__Host-, Secure) und prüft
+# CSRF wie dort. Unterschiede: nur localhost mit eigener Zertifizierungsstelle
+# von Caddy (tls internal) und mehrere Anwendungsprozesse statt einem Container.
+#
+# LASTTEST_UPSTREAMS ersetzt der Workflow (.github/workflows/lasttest.yml) durch
+# die Adressen der Daphne-Prozesse, z. B. "127.0.0.1:8001 127.0.0.1:8002".
+# =============================================================================
+
+{
+	admin off
+	skip_install_trust
+	auto_https disable_redirects
+}
+
+https://localhost:8443 {
+	tls internal
+	encode gzip zstd
+
+	reverse_proxy LASTTEST_UPSTREAMS {
+		# Eine lange Anfrage (Sitzungsmappe, Abrechnungslauf) soll die übrigen nicht hinter sich stauen
+		lb_policy least_conn
+	}
+}

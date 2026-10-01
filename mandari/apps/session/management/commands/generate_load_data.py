@@ -7,7 +7,9 @@ Die Mengengerüste ``klein``, ``mittel`` und ``gross`` stehen in
 
 - Session (Verwaltungs-RIS): Mandanten mit Gremien, Personen, Besetzungen,
   Sitzungen über zwei Jahre, Tagesordnungen, Vorlagen, Dateien, Anwesenheiten
-  und Einzelstimmen; dazu eine laufende Ratssitzung mit offener Abstimmung.
+  und Einzelstimmen; dazu eine laufende Ratssitzung mit offener Abstimmung,
+  ein Standard-Sitzungsgeld je Gremium (Abrechnungslauf) und die freigeschaltete
+  OParl-Schnittstelle je Mandant.
 - Work (Fraktionen): eine Organisation je Mandant mit Mitgliedern und Anträgen.
 - Insight (Bürgerportal): eine Kommune mit denselben Gremien, Personen,
   Sitzungen, Vorlagen und Dateien — ohne Ingestor, direkt in den Tabellen.
@@ -33,6 +35,7 @@ import random
 from dataclasses import dataclass
 from datetime import date, timedelta
 from datetime import time as dt_time
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 
@@ -53,6 +56,8 @@ NEBENMANDANT_ANTEIL = 0.1
 #: Historie in Jahren; die Mengengerüste nennen Werte je Jahr.
 JAHRE = 2
 BULK = 500
+#: Standard-Sitzungsgeld je Gremium (erfunden, nur damit der Abrechnungslauf Positionen erzeugt)
+SITZUNGSGELD = Decimal("25.00")
 
 
 @dataclass(frozen=True)
@@ -328,6 +333,9 @@ class Command(BaseCommand):
             description="Synthetischer Lasttest-Mandant (Issue #228).",
             oparl_body=body,
             is_active=True,
+            # OParl-Schnittstelle freigeschaltet (Issue #319): Ziel des Locust-Szenarios „OParl-Abnehmer“.
+            # Ohne insight_publish registriert das Bürgerportal dafür keine zweite Quelle.
+            oparl_public_since=self.jetzt,
         )
         # Dieselben Standardrollen wie beim Anlegen eines Mandanten (Issue #317)
         cast(Any, SessionRole).ensure_default_roles(tenant)
@@ -369,6 +377,9 @@ class Command(BaseCommand):
                     oparl_organization=oparl_org,
                     default_meeting_location="Rathaus Lastheim",
                     default_meeting_start_time=dt_time(17, 0),
+                    # Standard-Sitzungsgeld: Ohne Betrag erzeugt der Abrechnungslauf (Locust-Szenario
+                    # „Sitzungsgeldlauf“) keine Positionen. Der Betrag ist erfunden.
+                    allowance_amount=SITZUNGSGELD,
                     is_active=True,
                 )
             )
@@ -837,13 +848,19 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------
 
     def _zusammenfassung(self) -> None:
+        from insight_core.models import OParlBody
+
         self.stdout.write(self.style.SUCCESS(f"\nLasttest-Daten „{self.profil_name}“ angelegt:"))
         for schluessel, wert in sorted(self.zaehler.items()):
             self.stdout.write(f"  - {schluessel}: {wert}")
         haupt = self._kennung("stadt")
+        body_id = OParlBody.objects.filter(slug=haupt).values_list("pk", flat=True).first()
         self.stdout.write("\nEinstiegspunkte (Passwort aller Konten: siehe PASSWORT in diesem Kommando):")
-        self.stdout.write(f"  Insight:  /insight/  (Kommune „{haupt}“)")
+        self.stdout.write(f"  Insight:  /insight/k/{haupt}/  (Kommune „{haupt}“)")
         self.stdout.write(f"  Session:  /session/{haupt}/  ({self._kennung('stadt-sachbearbeitung-1')}@{DOMAENE})")
         self.stdout.write(f"  Work:     /work/{haupt}-fraktion/  ({self._kennung('stadt-fraktion-1')}@{DOMAENE})")
+        self.stdout.write(f"  OParl:    /oparl/v1/body/{body_id}  und  /session/{haupt}/api/oparl/")
         medien = Path(settings.MEDIA_ROOT)
         self.stdout.write(f"\nDateien liegen unter {medien / 'session' / 'files'}; --reset entfernt sie wieder.")
+        # Für Locust (loadtest/README.md), maschinenlesbar in einer eigenen Zeile
+        self.stdout.write(f"LOADTEST_BODY_ID={body_id}")

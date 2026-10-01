@@ -54,6 +54,26 @@
     "abfragen": 22,
     "ms": 500
   },
+  "oparl_vorgaenge": {
+    "beschreibung": "OParl (Aggregator): Vorgangsliste einer Kommune, erste Seite",
+    "abfragen": 11,
+    "ms": 500
+  },
+  "oparl_sitzungen": {
+    "beschreibung": "OParl (Aggregator): Sitzungsliste einer Kommune, erste Seite",
+    "abfragen": 11,
+    "ms": 500
+  },
+  "oparl_session_vorgaenge": {
+    "beschreibung": "OParl (Session-Schnittstelle): Vorgangsliste eines Mandanten, erste Seite",
+    "abfragen": 10,
+    "ms": 500
+  },
+  "oparl_session_sitzungen": {
+    "beschreibung": "OParl (Session-Schnittstelle): Sitzungsliste eines Mandanten, erste Seite",
+    "abfragen": 14,
+    "ms": 1400
+  },
   "work_dashboard": {
     "beschreibung": "Work: Dashboard",
     "abfragen": 33,
