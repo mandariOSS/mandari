@@ -10,12 +10,19 @@ Bezug eines Dokuments: Bezugsantrag und Bezugssitzung (Issue #586).
 
 RIS-Vorlagen und -Sitzungen stammen nur aus den Kommunen der Organisation (``get_all_bodies``). Wer ein
 Dokument ansieht, erfährt den Titel eines Bezugsdokuments nur, wenn er dieses Dokument auch sehen darf.
+
+**Sichtbarkeit eines Änderungsantrags** (Issue #735): Änderungsanträge behalten eigene Rechte. Beim Anlegen
+(``?bezug=<id>``) und nach dem Setzen des Bezugsantrags wird nur die *Sichtbarkeit* des Bezugsantrags
+vorgeschlagen – wenn die Person ihn sehen darf; RIS-Vorlagen ergeben keinen Vorschlag. Übernehmen kann ihn nur,
+wer die Sichtbarkeit des Änderungsantrags ändern darf (``Motion.can_share``). Freigaben, Federführung und
+Mitarbeit des Bezugsantrags werden nie übernommen.
 """
 
 from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any, cast
 
@@ -42,6 +49,13 @@ CYCLE = "Ein Dokument kann sich nicht auf sich selbst oder einen eigenen Änderu
 PAPER_NOT_FOUND = "Vorlage nicht gefunden."
 MEETING_NOT_FOUND = "Sitzung nicht gefunden."
 
+#: Sichtbarkeiten eines Dokuments mit den Beschriftungen des Teilen-Dialogs (Reihenfolge wie dort)
+VISIBILITY_LABELS = {
+    "private": "Privat",
+    "shared": "Mit bestimmten Personen",
+    "organization": "Gesamte Organisation",
+}
+
 _GERMAN_DATE = re.compile(r"^\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*$")
 
 
@@ -53,6 +67,14 @@ def _visible(membership: Membership) -> Any:
     from .models import Motion
 
     return cast(Any, Motion).visible_to(membership)
+
+
+def _visible_document(membership: Membership, raw_id: str) -> Motion | None:
+    """Dokument der Organisation, das die Person sehen darf und das nicht im Papierkorb liegt."""
+    pk = _uuid(raw_id) if raw_id else None
+    if pk is None:
+        return None
+    return cast("Motion | None", _visible(membership).filter(pk=pk).exclude(status="deleted").first())
 
 
 def _uuid(raw: str) -> uuid.UUID | None:
@@ -135,8 +157,7 @@ def set_parent(motion: Motion, membership: Membership, *, motion_id: str = "", p
     parent: Motion | None = None
     paper = None
     if motion_id:
-        parent_pk = _uuid(motion_id)
-        parent = _visible(membership).filter(pk=parent_pk).exclude(status="deleted").first() if parent_pk else None
+        parent = _visible_document(membership, motion_id)
         if parent is None:
             return DOCUMENT_NOT_FOUND
         if _is_self_or_amendment(parent, motion):
@@ -164,6 +185,94 @@ def set_reference_meeting(motion: Motion, meeting_id: str = "") -> str | None:
 
 
 # =============================================================================
+# Sichtbarkeit eines Änderungsantrags (Issue #735)
+# =============================================================================
+
+
+def suggested_visibility(parent: Motion | None, membership: Membership) -> str | None:
+    """
+    Sichtbarkeit des Bezugsantrags als Vorschlag für einen Änderungsantrag oder ``None``.
+
+    Nur ein Dokument der Organisation, das die Person sehen darf (``Motion.can_access``) und das nicht im
+    Papierkorb liegt. Eine RIS-Vorlage als Bezug hat keine Sichtbarkeit in der Organisation: kein Vorschlag.
+    """
+    if parent is None or parent.status == "deleted" or not parent.can_access(membership):
+        return None
+    return parent.visibility if parent.visibility in VISIBILITY_LABELS else None
+
+
+def visibility_suggestion(motion: Motion, membership: Membership) -> dict[str, str] | None:
+    """
+    Vorschlag in der Details-Seitenleiste: die Sichtbarkeit des Bezugsantrags, wenn sie abweicht.
+
+    Nur für Personen, die die Sichtbarkeit dieses Dokuments ändern dürfen (``Motion.can_share``). Übernommen
+    wird erst im Teilen-Dialog – die Person bestätigt oder wählt etwas anderes.
+    """
+    if not motion.parent_motion_id:
+        return None
+    suggested = suggested_visibility(motion.parent_motion, membership)
+    if suggested is None or suggested == motion.visibility or not motion.can_share(membership):
+        return None
+    return {
+        "value": suggested,
+        "label": VISIBILITY_LABELS[suggested],
+        "current": VISIBILITY_LABELS.get(motion.visibility, motion.visibility),
+    }
+
+
+def new_document_context(
+    organization: Organization, membership: Membership, query: Mapping[str, Any]
+) -> dict[str, Any]:
+    """
+    Anlegen eines Änderungsantrags (``?bezug=<id>`` aus „Änderungsantrag anlegen“): Bezugsantrag und Sichtbarkeit.
+
+    Ein Bezugsantrag, den die Person nicht sehen darf, ergibt weder Bezug noch Hinweis (auch nicht seinen Titel).
+    Die Sichtbarkeit des Bezugsantrags ist vorausgewählt; wählen darf sie nur, wer die Sichtbarkeit eines eigenen
+    Dokuments ändern darf (``Motion.can_share`` am neuen Dokument) – sonst bleibt der Standard „privat“.
+    """
+    from .models import Motion
+
+    parent = _visible_document(membership, str(query.get("bezug") or "").strip())
+    own_new_document = cast(Any, Motion)(organization=organization, author=membership)
+    return {
+        "bezug_parent": parent,
+        "visibility_choices": list(VISIBILITY_LABELS.items()),
+        "suggested_visibility": suggested_visibility(parent, membership) or "private",
+        "can_choose_visibility": parent is not None and own_new_document.can_share(membership),
+    }
+
+
+def apply_to_new_document(motion: Motion, membership: Membership, data: Mapping[str, Any]) -> str | None:
+    """
+    Bezugsantrag und Sichtbarkeit aus dem Anlegen-Formular übernehmen (vor dem ersten Speichern).
+
+    - ``parent_motion``: nur ein Dokument, das die Person sehen darf; sonst eine feste Meldung und das Dokument
+      wird nicht angelegt.
+    - ``visibility``: nur mit dem Recht, die Sichtbarkeit des neuen Dokuments zu ändern (``Motion.can_share``);
+      sonst bleibt der Standard „privat“. Freigaben, Federführung und Mitarbeit des Bezugsantrags werden nie
+      übernommen – Änderungsanträge haben eigene Rechte.
+    """
+    raw_parent = str(data.get("parent_motion") or "").strip()
+    if raw_parent:
+        parent = _visible_document(membership, raw_parent)
+        if parent is None:
+            return DOCUMENT_NOT_FOUND
+        motion.parent_motion = parent
+    visibility = str(data.get("visibility") or "")
+    if visibility in VISIBILITY_LABELS and motion.can_share(membership):
+        motion.visibility = visibility
+    return None
+
+
+def _amendment_create_url(motion: Motion, membership: Membership, slug: str) -> str:
+    """„Änderungsantrag anlegen“: für Mitglieder mit ``motions.create``, nicht für Dokumente im Papierkorb."""
+    member: Any = membership
+    if getattr(member, "is_guest", False) or motion.status == "deleted" or not member.has_permission("motions.create"):
+        return ""
+    return f"{reverse('work:document_create', kwargs={'org_slug': slug})}?bezug={motion.pk}"
+
+
+# =============================================================================
 # Anzeige
 # =============================================================================
 
@@ -186,7 +295,8 @@ def visible_amendments(motion: Motion, membership: Membership) -> QuerySet[Motio
 
 def reference_context(motion: Motion, membership: Membership, organization: Organization) -> dict[str, Any]:
     """
-    Bezug für die Anzeige: Bezugsantrag, Bezugssitzung und sichtbare Änderungsanträge.
+    Bezug für die Anzeige: Bezugsantrag, Bezugssitzung, sichtbare Änderungsanträge, Vorschlag zur Sichtbarkeit
+    (``visibility_suggestion``) und Verweis „Änderungsantrag anlegen“ (``amendment_create_url``).
 
     Den Titel eines Bezugsdokuments zeigt die Anzeige nur, wenn die Person es sehen darf, sonst
     „Dokument ohne Freigabe“ ohne Verweis.
@@ -207,4 +317,10 @@ def reference_context(motion: Motion, membership: Membership, organization: Orga
     if motion.related_meeting_id and motion.related_meeting is not None:
         url = reverse("work:ris_meeting_detail", kwargs={"org_slug": slug, "meeting_id": motion.related_meeting_id})
         meeting = {"label": meeting_label(motion.related_meeting), "url": url}
-    return {"parent": parent, "meeting": meeting, "amendments": list(visible_amendments(motion, membership))}
+    return {
+        "parent": parent,
+        "meeting": meeting,
+        "amendments": list(visible_amendments(motion, membership)),
+        "visibility_suggestion": visibility_suggestion(motion, membership),
+        "amendment_create_url": _amendment_create_url(motion, membership, slug),
+    }

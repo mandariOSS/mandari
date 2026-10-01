@@ -608,6 +608,18 @@ export const documentEditor = defineComponent(() => {
     closeShareModal(): void {
       this.showShareModal = false
       this.addUserEmail = ''
+      // Abgebrochen: wieder die gespeicherte Sichtbarkeit (auch nach einem Vorschlag)
+      this.shareVisibility = config.visibility
+    },
+
+    /**
+     * Vorschlag aus dem Bezug (Issue #735): Teilen-Dialog mit der Sichtbarkeit des Bezugsantrags
+     * vorausgewählt öffnen. Gespeichert wird erst mit „Speichern“ im Dialog.
+     */
+    suggestVisibility(visibility: string | undefined): void {
+      if (visibility !== 'private' && visibility !== 'shared' && visibility !== 'organization') return
+      this.shareVisibility = visibility
+      this.showShareModal = true
     },
 
     scrollToCommentInContent(commentId: string): void {

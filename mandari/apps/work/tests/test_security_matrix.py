@@ -348,8 +348,15 @@ CASES: list[Case] = [
     # --- Dokumente ---
     Case(
         "document_create",
-        data={"title": "Neues Dokument", "summary": "Kurzfassung", "folder": "{folder}"},
-        foreign={"ordner": {"folder": "{a_folder}"}},
+        data={
+            "title": "Neues Dokument",
+            "summary": "Kurzfassung",
+            "folder": "{folder}",
+            # Änderungsantrag mit vorgeschlagener Sichtbarkeit (Issue #735)
+            "parent_motion": "{motion}",
+            "visibility": "organization",
+        },
+        foreign={"ordner": {"folder": "{a_folder}"}, "bezugsantrag": {"parent_motion": "{a_motion}"}},
     ),
     Case("document_import", data={"visibility": "private"}, files={"import_files": "antrag.docx"}),
     Case(

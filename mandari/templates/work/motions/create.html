@@ -34,6 +34,37 @@
             </div>
         </div>
 
+        {% if bezug_parent %}
+        <!-- Änderungsantrag (Issue #735): Bezugsantrag und vorgeschlagene Sichtbarkeit, eigene Rechte -->
+        <input type="hidden" name="parent_motion" value="{{ bezug_parent.id }}">
+        <c-ui.card title="Änderungsantrag" class="fade-up" data-testid="aenderungsantrag-bezug">
+            <p class="text-sm text-gray-700 dark:text-gray-300 mb-4">Zu „{{ bezug_parent.title }}“</p>
+            {% if can_choose_visibility %}
+            <fieldset>
+                <legend class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sichtbarkeit</legend>
+                <div class="space-y-2">
+                    {% for value, label in visibility_choices %}
+                    <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                        <input type="radio" name="visibility" value="{{ value }}" {% if value == suggested_visibility %}checked{% endif %}
+                               class="text-primary-600 focus:ring-primary-500">
+                        {{ label }}{% if value == suggested_visibility %} <span class="text-xs text-gray-500">(wie der Bezugsantrag)</span>{% endif %}
+                    </label>
+                    {% endfor %}
+                </div>
+                <p class="mt-2 text-xs text-gray-500">
+                    Vorgeschlagen ist die Sichtbarkeit des Bezugsantrags; Sie können sie ändern. Änderungsanträge haben eigene
+                    Rechte: Freigaben, Federführung und Mitarbeit des Bezugsantrags werden nicht übernommen.
+                </p>
+            </fieldset>
+            {% else %}
+            <p class="text-xs text-gray-500">
+                Das Dokument wird privat angelegt. Änderungsanträge haben eigene Rechte: Freigaben, Federführung und
+                Mitarbeit des Bezugsantrags werden nicht übernommen.
+            </p>
+            {% endif %}
+        </c-ui.card>
+        {% endif %}
+
         <!-- Document Type Selection -->
         <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Dokumenttyp</h3>
