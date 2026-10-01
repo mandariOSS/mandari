@@ -25,7 +25,8 @@ def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:
       einem öffentlichen TOP verriete sich über Nummer und Einladung, ein öffentlicher unter einem
       nicht-öffentlichen den ganzen NÖ-TOP.
     - Eine nicht-öffentliche Vorlage steht nie auf einem öffentlichen TOP (sonst erschiene ihr
-      Betreff in Tagesordnung, Einladung und Bürgerportal).
+      Betreff in Tagesordnung, Einladung und Bürgerportal). Das gilt auch für die Unterpunkte eines
+      TOP, der öffentlich wird: Sie folgen ihm (:func:`cascade_visibility`).
     """
     errors: dict[str, str] = {}
     parent = item.parent
@@ -38,6 +39,19 @@ def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:
             f"Die Vorlage {paper.display_reference} ist nicht-öffentlich und kann nur auf einem "
             "nicht-öffentlichen TOP beraten werden."
         )
+    if item.is_public and item.pk is not None:
+        # Unterpunkte mit nichtöffentlicher Vorlage: Nummer nennen, die Vorlage nicht (eigenes Sichtrecht)
+        nummern = list(
+            item.sub_items.filter(paper__isnull=False, paper__is_public=False)
+            .order_by("order")
+            .values_list("number", flat=True)
+        )
+        if nummern:
+            errors.setdefault(
+                "is_public",
+                f"Unterpunkt {', '.join(nummern)} berät eine nicht-öffentliche Vorlage – der TOP kann deshalb "
+                "nicht öffentlich werden.",
+            )
     return errors
 
 
@@ -75,7 +89,12 @@ def sync_paper_item_names(paper: Any) -> int:
 
 
 def cascade_visibility(item: SessionAgendaItem) -> int:
-    """Unterpunkte folgen der Öffentlichkeit ihres TOPs (einzeln gespeichert: Audit + Rücknahme)."""
+    """
+    Unterpunkte folgen der Öffentlichkeit ihres TOPs (einzeln gespeichert: Audit + Rücknahme).
+
+    Vorher prüft :func:`visibility_errors` den TOP samt Unterpunkten; ein öffentlich werdender TOP mit
+    nichtöffentlicher Vorlage an einem Unterpunkt wird dort abgelehnt.
+    """
     anzahl = 0
     for child in item.sub_items.exclude(is_public=item.is_public):
         child.is_public = item.is_public
