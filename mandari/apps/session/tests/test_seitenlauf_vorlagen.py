@@ -130,8 +130,8 @@ FUZZ_GET_EINZELN = [
     ("a", "99999999999"),
     ("b", "-1"),
 ]
-#: Rollen, für die jeder Filter einzeln geprüft wird (Laufzeit)
-EINZELN = {"admin", "lesezugriff"}
+#: Rollen, für die jeder Filter einzeln geprüft wird (Laufzeit; die Filter hängen nicht an der Rolle)
+EINZELN = {"admin"}
 #: Unsinnige Angaben für Formulare
 FUZZ_POST = {
     "organization": "kaputt",
