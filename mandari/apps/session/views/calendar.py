@@ -143,7 +143,8 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
             "name": request.POST.get("name", "").strip()[:500] or f"Sitzung: {org.name}",
             "location": request.POST.get("location", "").strip()[:500] or org.default_meeting_location,
             "room": request.POST.get("room", "").strip()[:100],
-            "is_public": request.POST.get("is_public", "1") == "1",
+            # Ein nicht angehaktes Häkchen wird nicht übertragen: fehlt das Feld, ist die Sitzung nichtöffentlich
+            "is_public": request.POST.get("is_public") == "1",
         }
 
     def post(self, request, tenant_slug):

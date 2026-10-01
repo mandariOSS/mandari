@@ -285,7 +285,8 @@ class CircularCreateView(SessionViewMixin, View):
                 messages.error(request, "Die gewählte Vorlage wurde nicht gefunden.")
                 return redirect("session:circulars", tenant_slug=tenant_slug)
 
-        is_public = request.POST.get("is_public", "1") == "1"
+        # Ein nicht angehaktes Häkchen wird nicht übertragen: fehlt das Feld, ist der Umlauf nichtöffentlich
+        is_public = request.POST.get("is_public") == "1"
         # Die Nummer der Vorlage stünde sonst für alle mit Sitzungsrecht am öffentlichen Umlauf
         if is_public and paper is not None and not paper.is_public:
             messages.error(request, "Ein Umlauf zu einer nichtöffentlichen Vorlage muss selbst nichtöffentlich sein.")

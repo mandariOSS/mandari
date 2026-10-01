@@ -88,11 +88,11 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
     permission_required = "edit_meetings"
 
     def get_form(self, form_class=None):
+        # Sitzung des Mandanten mit Sichtrecht – schon für das Formular, nicht erst beim Speichern
+        meeting = _get_meeting(self, self.kwargs["meeting_id"])
         form = super().get_form(form_class)
         form.fields["paper"].queryset = _papers(self)
-        form.fields["parent"].queryset = (
-            _items(self).filter(meeting_id=self.kwargs["meeting_id"], parent__isnull=True).order_by("order")
-        )
+        form.fields["parent"].queryset = _items(self).filter(meeting=meeting, parent__isnull=True).order_by("order")
         return form
 
     def form_valid(self, form):
