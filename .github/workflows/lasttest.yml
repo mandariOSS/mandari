@@ -68,11 +68,15 @@ defaults:
 
 jobs:
   lasttest:
-    name: Lasttest (${{ inputs.profil || 'klein' }})
+    name: Lasttest (${{ matrix.profil }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        profil: [klein, mittel, gross]
     env:
-      PROFIL: ${{ inputs.profil || 'klein' }}
+      PROFIL: ${{ matrix.profil }}
       EINGABE_NUTZER: ${{ inputs.nutzer }}
       EINGABE_DAUER: ${{ inputs.dauer }}
       ERGEBNISSE: loadtest/results
