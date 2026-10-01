@@ -169,8 +169,10 @@ _DEBTOR_AUDIT_FIELDS = {
 
 
 def _masked_iban(value: str) -> str:
-    """IBAN im Protokoll nur mit Länderkennung und den letzten vier Stellen."""
-    return f"{value[:2]} … {value[-4:]}" if len(value) > 6 else ("…" if value else "")
+    """IBAN im Protokoll gekürzt: Länderkennung mit Prüfziffern und die letzten vier Stellen."""
+    if not value:
+        return ""
+    return f"{value[:4]} … {value[-4:]}" if len(value) > 8 else "…"
 
 
 def _log_debtor_change(view, request, before: dict, after: dict) -> None:
@@ -182,6 +184,9 @@ def _log_debtor_change(view, request, before: dict, after: dict) -> None:
             continue
         if key == "debtor_iban":
             old, new = _masked_iban(old), _masked_iban(new)
+            if old == new:
+                # Geändert hat sich nur der gekürzte Mittelteil: im Protokoll trotzdem erkennbar machen
+                new = f"{new} (geändert)"
         changes[label] = {"alt": old, "neu": new}
     if changes:
         audit.log_event(
