@@ -1730,6 +1730,15 @@ class SessionMeeting(EncryptionMixin, models.Model):
     def __str__(self):
         return f"{self.organization.name}: {self.name}"
 
+    def clean(self) -> None:
+        """
+        Das Ende liegt nach dem Beginn – sonst rechnen ICS-Export und Kollisionsprüfung der Jahresplanung mit
+        einem leeren Zeitfenster. Hier statt im Formular, damit Sitzungsformular und Admin gleich prüfen.
+        """
+        super().clean()
+        if self.start and self.end and self.end <= self.start:
+            raise ValidationError({"end": "Das Ende muss nach dem Beginn der Sitzung liegen."})
+
     def save(self, *args: Any, **kwargs: Any) -> None:
         """
         Neue Sitzungen ohne Wahlperiode bekommen sie aus dem Sitzungsdatum (Issue #39).

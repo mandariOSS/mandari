@@ -483,6 +483,20 @@ def test_sitzungsende_vor_beginn_wird_abgelehnt(welt: Welt) -> None:
     assert welt.sitzung.end is None
 
 
+def test_ende_vor_beginn_gilt_auch_ausserhalb_des_sitzungsformulars(welt: Welt) -> None:
+    """Der Admin und jedes andere ModelForm prüfen über ``SessionMeeting.clean`` – nicht nur das Sitzungsformular."""
+    from django.forms import modelform_factory
+
+    formular_klasse = modelform_factory(SessionMeeting, fields=["start", "end"])
+    beginn = timezone.localtime(welt.sitzung.start)
+    formular = formular_klasse(
+        {"start": beginn.strftime("%Y-%m-%d %H:%M"), "end": (beginn - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M")},
+        instance=welt.sitzung,
+    )
+    assert not formular.is_valid()
+    assert "Das Ende muss nach dem Beginn" in str(formular.errors.get("end"))
+
+
 def test_gremium_ist_beim_bearbeiten_vorausgewaehlt(welt: Welt) -> None:
     seite = welt.client.get(welt.url(f"/meetings/{welt.sitzung.pk}/edit/")).content.decode()
     assert re.search(rf'<option value="{welt.gremium.pk}"\s+selected>', seite)

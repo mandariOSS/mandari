@@ -118,9 +118,7 @@ class MeetingForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        start, end = cleaned.get("start"), cleaned.get("end")
-        if start and end and end <= start:
-            self.add_error("end", "Das Ende muss nach dem Beginn der Sitzung liegen.")
+        # Ende nach Beginn prüft das Modell (SessionMeeting.clean) – für dieses Formular wie für den Admin
         lead = cleaned.get("organization")
         relevant = self.instance._state.adding or bool(FORMAT_RELEVANT_FIELDS.intersection(self.changed_data))
         if lead is not None and relevant:
