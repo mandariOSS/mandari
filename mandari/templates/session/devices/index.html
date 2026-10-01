@@ -86,6 +86,11 @@
                             {% csrf_token %}
                             <button type="submit" class="px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">Zurücknehmen</button>
                         </form>
+                        {% elif device.status == 'defect' %}
+                        <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='repair' %}">
+                            {% csrf_token %}
+                            <button type="submit" class="px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">Wieder einsatzbereit</button>
+                        </form>
                         {% endif %}
                         {% if device.status == 'in_stock' or device.status == 'issued' %}
                         <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='defect' %}">

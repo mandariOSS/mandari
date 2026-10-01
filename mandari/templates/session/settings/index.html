@@ -130,7 +130,9 @@
         </div>
 
         <!-- Bürgerportal (Issues #36, #618) -->
+        {% if "manage_settings" in permission_checker.permissions %}
         {% include "session/settings/_buergerportal.html" %}
+        {% endif %}
 
         <!-- Anmeldesicherheit: Zwei-Faktor-Pflicht -->
         {% if "manage_settings" in permission_checker.permissions %}

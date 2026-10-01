@@ -22,7 +22,6 @@ docs/DSGVO_TOM.md.
 
 import contextlib
 import logging
-from datetime import timedelta
 from typing import Any
 
 from django.utils import timezone
@@ -53,6 +52,19 @@ def get_privacy_settings(tenant) -> dict:
     result["notice"] = str(stored.get("notice", "") or "")
     result["read_logging"] = bool(stored.get("read_logging", True))
     return result
+
+
+def years_before(moment: Any, years: int) -> Any:
+    """
+    Derselbe Kalendertag ``years`` Jahre früher (Datum oder Zeitpunkt); der 29. Februar wird zum 28.
+
+    Fristen in Jahren laufen nach dem Kalender ab, nicht nach 365 Tagen je Jahr – sonst endeten sie
+    je übersprungenem Schalttag einen Tag zu früh.
+    """
+    try:
+        return moment.replace(year=moment.year - years)
+    except ValueError:  # 29. Februar, im Zieljahr kein Schaltjahr
+        return moment.replace(year=moment.year - years, day=28)
 
 
 # =============================================================================
@@ -159,7 +171,7 @@ def run_privacy_purge(
 
     # 1) Ausgeschiedene Mandatsträger: Kontakt-/Bankdaten nach Frist
     if settings["persons_years"] > 0:
-        cutoff = today - timedelta(days=365 * settings["persons_years"])
+        cutoff = years_before(today, settings["persons_years"])
         persons = SessionPerson.objects.filter(
             tenant=tenant, is_active=False, end_date__isnull=False, end_date__lte=cutoff
         )
@@ -194,7 +206,7 @@ def run_privacy_purge(
 
     # 2) Nicht-öffentliche Inhalte: NÖ-Protokollteil + interne Notizen
     if settings["np_content_years"] > 0:
-        cutoff_dt = now - timedelta(days=365 * settings["np_content_years"])
+        cutoff_dt = years_before(now, settings["np_content_years"])
         meetings = SessionMeeting.objects.filter(tenant=tenant, start__lte=cutoff_dt)
         for meeting in meetings:
             cleared = []
@@ -239,7 +251,7 @@ def run_privacy_purge(
     if settings["audit_years"] > 0:
         from apps.session.services import audit_log_service
 
-        cutoff_dt = now - timedelta(days=365 * settings["audit_years"])
+        cutoff_dt = years_before(now, settings["audit_years"])
         if dry_run:
             stats["audit_deleted"] = audit_log_service.count_expired(tenant, cutoff_dt)
         else:
@@ -343,8 +355,9 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
             "von": m.start_date.isoformat() if m.start_date else None,
             "bis": m.end_date.isoformat() if m.end_date else None,
             "wahlperiode": m.legislative_term.name if m.legislative_term else None,
+            "vertretung_fuer": m.substitute_for.display_name if m.substitute_for else None,
         }
-        for m in person.memberships.select_related("organization", "legislative_term")
+        for m in person.memberships.select_related("organization", "legislative_term", "substitute_for")
     ]
 
     data["anwesenheiten"] = [
@@ -409,4 +422,109 @@ def subject_access_export(tenant, person, *, include_bank=False) -> dict:
         for paper in SessionPaper.objects.filter(tenant=tenant, originator_person=person)
     ]
 
+    data.update(_allowance_and_device_sections(person))
+    data.update(_vote_sections(person))
     return data
+
+
+def _iso(value: Any) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _allowance_and_device_sections(person: Any) -> dict[str, Any]:
+    """Monatspauschalen, Endgeräte-Zuschüsse und Endgeräte der Person (Art. 15 DSGVO)."""
+    return {
+        "monatspauschalen_zuordnungen": [
+            {
+                "pauschale": assignment.rate.name,
+                "betrag_monat": str(assignment.rate.amount),
+                "rechtsgrundlage": assignment.rate.legal_basis,
+                "von": _iso(assignment.start_date),
+                "bis": _iso(assignment.end_date),
+            }
+            for assignment in person.monthly_rates.select_related("rate").order_by("start_date")
+        ],
+        "monatspauschalen": [
+            {
+                "pauschale": allowance.rate.name,
+                "monat": allowance.period.strftime("%Y-%m"),
+                "betrag": str(allowance.amount),
+                "status": allowance.get_status_display(),
+                "export_referenz": allowance.export_reference,
+            }
+            for allowance in person.monthly_allowances.select_related("rate").order_by("period")
+        ],
+        "endgeraete_zuschuesse": [
+            {
+                "betrag": str(grant.amount),
+                "status": grant.get_status_display(),
+                "vermerk": grant.note,
+                "erfasst_am": _iso(grant.created_at),
+                "genehmigt_am": _iso(grant.approved_at),
+                "ausgezahlt_am": _iso(grant.paid_at),
+            }
+            for grant in person.device_grants.order_by("created_at")
+        ],
+        "endgeraete_ausgegeben": [
+            {
+                "geraet": device.label,
+                "inventarnummer": device.inventory_number,
+                "seriennummer": device.serial_number,
+                "ausgegeben_am": _iso(device.issued_at),
+            }
+            for device in person.devices.order_by("label")
+        ],
+        "endgeraete_historie": [
+            {
+                "geraet": log.device.label,
+                "aktion": log.get_action_display(),
+                "vermerk": log.note,
+                "zeitpunkt": _iso(log.created_at),
+            }
+            for log in person.device_logs.select_related("device").order_by("created_at")
+        ],
+    }
+
+
+def _vote_sections(person: Any) -> dict[str, Any]:
+    """
+    Namentliche Stimmen, Umlauf-Rückläufe und Vertretungen der Person (Art. 15 DSGVO).
+
+    Die Auskunft erstellt die Verwaltung mit dem Einstellungsrecht, nicht zwingend mit dem Recht auf
+    Nichtöffentliches: Betreffe nichtöffentlicher Tagesordnungspunkte und Umlaufbeschlüsse erscheinen
+    deshalb nur als „nichtöffentlich“, die eigene Stimme und das Datum vollständig.
+    """
+    return {
+        "stimmabgaben": [
+            {
+                "sitzung": vote.agenda_item.meeting.name,
+                "datum": timezone.localtime(vote.agenda_item.meeting.start).date().isoformat(),
+                "top": vote.agenda_item.number,
+                "betreff": vote.agenda_item.name if vote.agenda_item.is_public else "nichtöffentlich",
+                "stimme": vote.get_vote_display(),
+            }
+            for vote in person.votes.select_related("agenda_item__meeting").order_by("agenda_item__meeting__start")
+        ],
+        "umlaufbeschluesse": [
+            {
+                "umlauf": vote.circular.reference,
+                "betreff": vote.circular.title if vote.circular.is_public else "nichtöffentlich",
+                "stimme": vote.get_vote_display(),
+                "eingegangen_am": _iso(vote.received_at),
+            }
+            for vote in person.circular_votes.select_related("circular").order_by("received_at")
+        ],
+        "vertretungen_in_ladungen": [
+            {
+                "sitzung": receipt.dispatch.meeting.name,
+                "vertretung_fuer": receipt.substitute_for.display_name,
+            }
+            for receipt in person.invitation_receipts.filter(substitute_for__isnull=False).select_related(
+                "dispatch__meeting", "substitute_for"
+            )
+        ],
+        "vertreten_durch_in_ladungen": [
+            {"sitzung": receipt.dispatch.meeting.name, "vertretung": receipt.name}
+            for receipt in person.substitution_requests.select_related("dispatch__meeting")
+        ],
+    }

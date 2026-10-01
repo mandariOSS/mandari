@@ -107,7 +107,7 @@
     <ul class="flex items-center gap-1">
         {% if page_obj.has_previous %}
         <li>
-            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.active %}active={{ request.GET.active }}&{% endif %}page={{ page_obj.previous_page_number }}"
+            <a href="{% querystring page=page_obj.previous_page_number %}"
                class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                 <i data-lucide="chevron-left" class="w-5 h-5"></i>
             </a>
@@ -121,7 +121,7 @@
             </li>
             {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
             <li>
-                <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.active %}active={{ request.GET.active }}&{% endif %}page={{ num }}"
+                <a href="{% querystring page=num %}"
                    class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                     {{ num }}
                 </a>
@@ -131,7 +131,7 @@
 
         {% if page_obj.has_next %}
         <li>
-            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.active %}active={{ request.GET.active }}&{% endif %}page={{ page_obj.next_page_number }}"
+            <a href="{% querystring page=page_obj.next_page_number %}"
                class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                 <i data-lucide="chevron-right" class="w-5 h-5"></i>
             </a>

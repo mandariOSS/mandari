@@ -18,6 +18,7 @@ import logging
 from django.contrib import messages
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
+from django.utils.http import content_disposition_header
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -130,8 +131,9 @@ class PersonDataExportView(SessionViewMixin, View):
         )
 
         response = JsonResponse(data, json_dumps_params={"ensure_ascii": False, "indent": 2})
-        response["Content-Disposition"] = (
-            f'attachment; filename="auskunft-{person.family_name.lower()}-{person.given_name.lower()}.json"'
+        # Namen außerhalb von Latin-1 („Łukasiewicz“) und Anführungszeichen: RFC 6266 mit filename*
+        response["Content-Disposition"] = content_disposition_header(
+            True, f"auskunft-{person.family_name.lower()}-{person.given_name.lower()}.json"
         )
         return response
 

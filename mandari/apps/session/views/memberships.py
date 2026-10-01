@@ -7,22 +7,30 @@ sachkundige/r Bürger/in, …), Stimmrecht, Vertreterregelung und Zeitraum —
 inklusive Nachrücker-Flow (Mitgliedschaft beenden + Nachfolger anlegen
 in einem Schritt). Alle Änderungen werden über die Audit-Signale
 protokolliert.
+
+Plausibilität (``membership_service``): Das Ende liegt nie vor dem Beginn, eine Person hat in einem
+Gremium keine zwei Besetzungen mit überschneidendem Zeitraum, und die Wahlperiode folgt dem Beginn.
+Ungültige Eingaben ergeben eine Meldung, nie einen Serverfehler oder einen halben Stand.
 """
 
+from datetime import timedelta
+
 from django.contrib import messages
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
 
 from apps.common.formatting import parse_iso_date
+from apps.common.params import uuid_param
 
 from ..models import (
-    SessionLegislativeTerm,
     SessionOrganization,
     SessionOrganizationMembership,
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..services import membership_service
 
 # =============================================================================
 # HELPERS
@@ -45,36 +53,17 @@ def _org_redirect(view, organization):
     )
 
 
-def _membership_from_post(view, request, organization) -> SessionOrganizationMembership | None:
-    """Mitgliedschafts-Felder aus dem POST lesen (tenant-sicher)."""
-    person = get_object_or_404(
-        SessionPerson,
-        pk=request.POST.get("person"),
-        tenant=view.session_tenant,
-    )
-    substitute_for = None
-    if request.POST.get("substitute_for"):
-        substitute_for = get_object_or_404(
-            SessionPerson,
-            pk=request.POST["substitute_for"],
-            tenant=view.session_tenant,
-        )
-    role = request.POST.get("role", "member")
+def _tenant_person(view, raw_id) -> SessionPerson | None:
+    """Person des Mandanten zu einer Kennung aus dem Formular; ungültig oder fremd ergibt None."""
+    person_id = uuid_param(raw_id)
+    if person_id is None:
+        return None
+    return SessionPerson.objects.filter(pk=person_id, tenant=view.session_tenant).first()
+
+
+def _valid_role(raw_role, default: str) -> str:
     valid_roles = {c[0] for c in SessionOrganizationMembership._meta.get_field("role").choices}
-    if role not in valid_roles:
-        role = "member"
-    start_date = parse_iso_date(request.POST.get("start_date")) or timezone.now().date()
-    return SessionOrganizationMembership(
-        organization=organization,
-        person=person,
-        role=role,
-        has_voting_rights=request.POST.get("has_voting_rights") == "on",
-        substitute_for=substitute_for,
-        start_date=start_date,
-        end_date=parse_iso_date(request.POST.get("end_date")),
-        # Wahlperiode automatisch aus dem Beginn ableiten (Issue #39)
-        legislative_term=SessionLegislativeTerm.for_date(view.session_tenant, start_date),
-    )
+    return raw_role if raw_role in valid_roles else default
 
 
 # =============================================================================
@@ -90,21 +79,40 @@ class MembershipCreateView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, organization_id):
         organization = get_object_or_404(SessionOrganization, pk=organization_id, tenant=self.session_tenant)
-        membership = _membership_from_post(self, request, organization)
+        person = _tenant_person(self, request.POST.get("person"))
+        if person is None:
+            messages.error(request, "Bitte eine Person auswählen.")
+            return _org_redirect(self, organization)
+        substitute_for = None
+        if request.POST.get("substitute_for"):
+            substitute_for = _tenant_person(self, request.POST["substitute_for"])
+            if substitute_for is None:
+                messages.error(request, "Die vertretene Person wurde nicht gefunden.")
+                return _org_redirect(self, organization)
 
-        exists = SessionOrganizationMembership.objects.filter(
-            organization=organization,
-            person=membership.person,
-            end_date__isnull=True,
-        ).exists()
-        if exists:
-            messages.error(request, f"{membership.person.display_name} ist bereits aktives Mitglied dieses Gremiums.")
+        start_date = parse_iso_date(request.POST.get("start_date")) or timezone.localdate()
+        end_date = parse_iso_date(request.POST.get("end_date"))
+        error = membership_service.period_error(start_date, end_date) or membership_service.overlap_error(
+            organization, person, start_date, end_date
+        )
+        if error:
+            messages.error(request, error)
             return _org_redirect(self, organization)
 
-        membership.save()
+        membership = SessionOrganizationMembership.objects.create(
+            organization=organization,
+            person=person,
+            role=_valid_role(request.POST.get("role", "member"), "member"),
+            has_voting_rights=request.POST.get("has_voting_rights") == "on",
+            substitute_for=substitute_for,
+            start_date=start_date,
+            end_date=end_date,
+            # Wahlperiode aus dem Beginn ableiten (Issue #39) – außerhalb jeder Periode keine
+            legislative_term=membership_service.term_for(self.session_tenant, start_date),
+        )
         messages.success(
             request,
-            f"{membership.person.display_name} wurde als {membership.get_role_display()} aufgenommen.",
+            f"{person.display_name} wurde als {membership.get_role_display()} aufgenommen.",
         )
         return _org_redirect(self, organization)
 
@@ -117,39 +125,57 @@ class MembershipUpdateView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug, membership_id):
         membership = _get_membership(self, membership_id)
+        organization = membership.organization
 
-        role = request.POST.get("role", membership.role)
-        valid_roles = {c[0] for c in SessionOrganizationMembership._meta.get_field("role").choices}
-        if role in valid_roles:
-            membership.role = role
-        membership.has_voting_rights = request.POST.get("has_voting_rights") == "on"
+        start_date = membership.start_date
         if "start_date" in request.POST:
-            membership.start_date = parse_iso_date(request.POST.get("start_date")) or membership.start_date
+            start_date = parse_iso_date(request.POST.get("start_date")) or membership.start_date
+        end_date = membership.end_date
         if "end_date" in request.POST:
-            membership.end_date = parse_iso_date(request.POST.get("end_date"))
+            end_date = parse_iso_date(request.POST.get("end_date"))
+        error = membership_service.period_error(start_date, end_date) or membership_service.overlap_error(
+            organization, membership.person, start_date, end_date, exclude_pk=membership.pk
+        )
+        if error:
+            messages.error(request, error)
+            return _org_redirect(self, organization)
+
         if "substitute_for" in request.POST:
             if request.POST["substitute_for"]:
-                membership.substitute_for = get_object_or_404(
-                    SessionPerson,
-                    pk=request.POST["substitute_for"],
-                    tenant=self.session_tenant,
-                )
+                substitute_for = _tenant_person(self, request.POST["substitute_for"])
+                if substitute_for is None:
+                    messages.error(request, "Die vertretene Person wurde nicht gefunden.")
+                    return _org_redirect(self, organization)
+                membership.substitute_for = substitute_for
             else:
                 membership.substitute_for = None
+
+        membership.role = _valid_role(request.POST.get("role", membership.role), membership.role)
+        membership.has_voting_rights = request.POST.get("has_voting_rights") == "on"
+        if start_date != membership.start_date:
+            # Wahlperiode folgt dem Beginn (Issue #39)
+            membership.legislative_term = membership_service.term_for(self.session_tenant, start_date)
+        membership.start_date = start_date
+        membership.end_date = end_date
         membership.save()
         messages.success(request, f"Besetzung von {membership.person.display_name} wurde aktualisiert.")
-        return _org_redirect(self, membership.organization)
+        return _org_redirect(self, organization)
 
 
 class MembershipEndView(SessionViewMixin, View):
-    """Mitgliedschaft beenden (Ausscheiden)."""
+    """Mitgliedschaft beenden (Ausscheiden); das Ende ist der letzte Tag der Mitgliedschaft."""
 
     permission_required = "manage_organizations"
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug, membership_id):
         membership = _get_membership(self, membership_id)
-        membership.end_date = parse_iso_date(request.POST.get("end_date")) or timezone.now().date()
+        end_date = parse_iso_date(request.POST.get("end_date")) or timezone.localdate()
+        error = membership_service.period_error(membership.start_date, end_date)
+        if error:
+            messages.error(request, error)
+            return _org_redirect(self, membership.organization)
+        membership.end_date = end_date
         membership.save()
         messages.success(
             request,
@@ -161,6 +187,10 @@ class MembershipEndView(SessionViewMixin, View):
 class MembershipSuccessionView(SessionViewMixin, View):
     """
     Nachrücker-Flow: Mitgliedschaft beenden + Nachfolger anlegen in einem Schritt.
+
+    Die ausscheidende Person ist bis zum Vortag Mitglied, die nachrückende ab dem gewählten Tag – so hat
+    das Gremium an keinem Tag einen Sitz doppelt (Ladung, Anwesenheit, Beschlussfähigkeit). Beides gilt
+    nur zusammen (eine Transaktion).
     """
 
     permission_required = "manage_organizations"
@@ -170,34 +200,54 @@ class MembershipSuccessionView(SessionViewMixin, View):
         membership = _get_membership(self, membership_id)
         organization = membership.organization
 
-        successor = get_object_or_404(
-            SessionPerson,
-            pk=request.POST.get("successor"),
-            tenant=self.session_tenant,
-        )
+        successor = _tenant_person(self, request.POST.get("successor"))
+        if successor is None:
+            messages.error(request, "Bitte die nachrückende Person auswählen.")
+            return _org_redirect(self, organization)
         if successor.pk == membership.person_id:
             messages.error(request, "Nachrücker/in darf nicht die ausscheidende Person sein.")
             return _org_redirect(self, organization)
 
-        change_date = parse_iso_date(request.POST.get("change_date")) or timezone.now().date()
+        change_date = parse_iso_date(request.POST.get("change_date")) or timezone.localdate()
+        last_day = change_date - timedelta(days=1)
+        if membership.start_date is not None and last_day < membership.start_date:
+            messages.error(
+                request,
+                f"Der Wechsel muss nach dem Beginn der Mitgliedschaft ({membership.start_date:%d.%m.%Y}) liegen.",
+            )
+            return _org_redirect(self, organization)
+        if membership.end_date is not None and membership.end_date < last_day:
+            messages.error(
+                request,
+                f"Die Mitgliedschaft endete bereits am {membership.end_date:%d.%m.%Y}; bitte die Person direkt aufnehmen.",
+            )
+            return _org_redirect(self, organization)
+        error = membership_service.overlap_error(organization, successor, change_date, membership.end_date)
+        if error:
+            messages.error(request, error)
+            return _org_redirect(self, organization)
 
-        # 1) Ausscheiden dokumentieren
-        membership.end_date = change_date
-        membership.save()
+        with transaction.atomic():
+            planned_end = membership.end_date
+            # 1) Ausscheiden dokumentieren: letzter Tag ist der Vortag des Wechsels
+            membership.end_date = last_day
+            membership.save()
 
-        # 2) Nachfolger mit gleicher Funktion/gleichem Stimmrecht anlegen
-        SessionOrganizationMembership.objects.create(
-            organization=organization,
-            person=successor,
-            role=membership.role,
-            has_voting_rights=membership.has_voting_rights,
-            start_date=change_date,
-            # Wahlperiode aus dem Stichtag ableiten (Issue #39)
-            legislative_term=SessionLegislativeTerm.for_date(self.session_tenant, change_date),
-        )
+            # 2) Nachfolger mit gleicher Funktion/gleichem Stimmrecht anlegen
+            SessionOrganizationMembership.objects.create(
+                organization=organization,
+                person=successor,
+                role=membership.role,
+                has_voting_rights=membership.has_voting_rights,
+                start_date=change_date,
+                end_date=planned_end,
+                # Wahlperiode aus dem Stichtag ableiten (Issue #39)
+                legislative_term=membership_service.term_for(self.session_tenant, change_date),
+            )
 
         messages.success(
             request,
-            f"{successor.display_name} rückt zum {change_date:%d.%m.%Y} für {membership.person.display_name} nach.",
+            f"{successor.display_name} rückt zum {change_date:%d.%m.%Y} für {membership.person.display_name} nach "
+            f"({membership.person.display_name} gehört dem Gremium bis {last_day:%d.%m.%Y} an).",
         )
         return _org_redirect(self, organization)

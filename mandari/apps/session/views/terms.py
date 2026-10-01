@@ -24,7 +24,9 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.formatting import parse_iso_date
+from apps.common.params import uuid_param
 
+from .. import audit
 from ..models import (
     SessionLegislativeTerm,
     SessionMeeting,
@@ -32,6 +34,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
+from ..services import membership_service
 
 # =============================================================================
 # HELPERS
@@ -79,10 +82,13 @@ class TermListView(SessionViewMixin, TemplateView):
         current = SessionLegislativeTerm.current_for(self.session_tenant)
         context["terms"] = terms
         context["current_term"] = current
-        context["active_membership_count"] = SessionOrganizationMembership.objects.filter(
-            organization__tenant=self.session_tenant, end_date__isnull=True
-        ).count()
-        context["today"] = timezone.localdate()
+        today = timezone.localdate()
+        context["active_membership_count"] = (
+            SessionOrganizationMembership.objects.filter(organization__tenant=self.session_tenant)
+            .filter(membership_service.active_q(today))
+            .count()
+        )
+        context["today"] = today
         return context
 
 
@@ -105,8 +111,24 @@ class TermSaveView(SessionViewMixin, View):
             return redirect("session:terms", tenant_slug=tenant_slug)
 
         term_id = request.POST.get("term_id")
+        term = None
         if term_id:
-            term = get_object_or_404(SessionLegislativeTerm, pk=term_id, tenant=self.session_tenant)
+            # Ungültige Kennung: Meldung statt Serverfehler
+            term = SessionLegislativeTerm.objects.filter(pk=uuid_param(term_id), tenant=self.session_tenant).first()
+            if term is None:
+                messages.error(request, "Die Wahlperiode wurde nicht gefunden.")
+                return redirect("session:terms", tenant_slug=tenant_slug)
+
+        # Perioden dürfen sich nicht überschneiden, sonst ist „aktuelle Periode“ bzw. die Periode eines
+        # Datums (Sitzungen, Besetzungen, Platzhalter {wp}) nicht eindeutig
+        conflict = membership_service.term_overlap(
+            self.session_tenant, start_date, end_date, exclude_pk=term.pk if term else None
+        )
+        if conflict is not None and (start_date or end_date):
+            messages.error(request, f"Der Zeitraum überschneidet sich mit der Wahlperiode „{conflict.name}“.")
+            return redirect("session:terms", tenant_slug=tenant_slug)
+
+        if term is not None:
             term.name = name
             term.start_date = start_date
             term.end_date = end_date
@@ -165,8 +187,6 @@ class TermChangeView(SessionViewMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug):
-        from .. import audit
-
         name = (request.POST.get("name") or "").strip()
         start_date = parse_iso_date(request.POST.get("start_date"))
         if not name or start_date is None:
@@ -177,50 +197,26 @@ class TermChangeView(SessionViewMixin, View):
             messages.error(request, "Der Beginn der Wahlperiode liegt nach ihrem Ende.")
             return redirect("session:terms", tenant_slug=tenant_slug)
 
-        mode = request.POST.get("mode", "carry")
-        if mode not in ("carry", "fresh"):
-            mode = "carry"
+        mode = request.POST.get("mode", membership_service.MODE_CARRY)
+        if mode not in (membership_service.MODE_CARRY, membership_service.MODE_FRESH):
+            mode = membership_service.MODE_CARRY
 
-        old_term = SessionLegislativeTerm.current_for(self.session_tenant)
-        previous_day = start_date - timedelta(days=1)
-
-        # Alte Periode sauber abschließen (Enddatum setzen, falls offen)
-        if old_term is not None and old_term.end_date is None:
-            old_term.end_date = previous_day
-            old_term.save(update_fields=["end_date", "updated_at"])
-
-        new_term = SessionLegislativeTerm.objects.create(
-            number=_parse_number(request.POST.get("number")),
-            tenant=self.session_tenant,
+        error = membership_service.term_change_error(self.session_tenant, start_date, end_date)
+        if error:
+            messages.error(request, error)
+            return redirect("session:terms", tenant_slug=tenant_slug)
+        # Eine Transaktion: Ein Fehler hinterlässt keine halb gewechselte Periode
+        change = membership_service.change_term(
+            self.session_tenant,
             name=name,
+            number=_parse_number(request.POST.get("number")),
             start_date=start_date,
             end_date=end_date,
+            mode=mode,
         )
 
-        # Laufende Besetzungen zum Stichtag beenden — Alt-Daten bleiben
-        # unter der alten Periode auffindbar
-        active_memberships = list(
-            SessionOrganizationMembership.objects.filter(
-                organization__tenant=self.session_tenant, end_date__isnull=True
-            ).select_related("organization", "person")
-        )
-        carried = 0
-        for membership in active_memberships:
-            membership.end_date = previous_day
-            if membership.legislative_term_id is None and old_term is not None:
-                membership.legislative_term = old_term
-            membership.save()
-            if mode == "carry":
-                SessionOrganizationMembership.objects.create(
-                    organization=membership.organization,
-                    person=membership.person,
-                    role=membership.role,
-                    has_voting_rights=membership.has_voting_rights,
-                    start_date=start_date,
-                    legislative_term=new_term,
-                )
-                carried += 1
-
+        old_term, new_term = change.old_term, change.new_term
+        previous_day = start_date - timedelta(days=1)
         audit.log_event(
             "update",
             new_term,
@@ -231,23 +227,24 @@ class TermChangeView(SessionViewMixin, View):
                 "periodenwechsel": {
                     "alte_periode": old_term.name if old_term else None,
                     "neue_periode": new_term.name,
-                    "modus": "Besetzungen übernommen" if mode == "carry" else "Neu besetzen",
-                    "beendete_besetzungen": len(active_memberships),
-                    "uebernommene_besetzungen": carried,
+                    "modus": "Besetzungen übernommen" if mode == membership_service.MODE_CARRY else "Neu besetzen",
+                    "beendete_besetzungen": change.ended,
+                    "uebernommene_besetzungen": change.carried,
+                    "bereits_neue_besetzungen": change.already_new,
                 }
             },
         )
 
-        if mode == "carry":
+        if mode == membership_service.MODE_CARRY:
             messages.success(
                 request,
-                f"Wahlperiode „{new_term.name}“ angelegt — {carried} Besetzung(en) übernommen, "
-                f"{len(active_memberships)} Alt-Besetzung(en) zum {previous_day:%d.%m.%Y} beendet.",
+                f"Wahlperiode „{new_term.name}“ angelegt — {change.carried} Besetzung(en) übernommen, "
+                f"{change.ended} Alt-Besetzung(en) zum {previous_day:%d.%m.%Y} beendet.",
             )
         else:
             messages.success(
                 request,
-                f"Wahlperiode „{new_term.name}“ angelegt — {len(active_memberships)} Besetzung(en) "
+                f"Wahlperiode „{new_term.name}“ angelegt — {change.ended} Besetzung(en) "
                 f"zum {previous_day:%d.%m.%Y} beendet. Die Gremien können jetzt neu besetzt werden.",
             )
         return redirect("session:terms", tenant_slug=tenant_slug)

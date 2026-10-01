@@ -198,10 +198,15 @@ class RoleSaveView(SessionViewMixin, View):
 
         role = _get_role(self, request.POST.get("role_id"))
         creating = role is None
+        # Rollennamen sind je Mandant eindeutig – beim Anlegen wie beim Umbenennen
+        if (
+            SessionRole.objects.filter(tenant=self.session_tenant, name=name)
+            .exclude(pk=getattr(role, "pk", None))
+            .exists()
+        ):
+            messages.error(request, f"Eine Rolle „{name}“ existiert bereits.")
+            return redirect("session:settings_roles", tenant_slug=tenant_slug)
         if creating:
-            if SessionRole.objects.filter(tenant=self.session_tenant, name=name).exists():
-                messages.error(request, f"Eine Rolle „{name}“ existiert bereits.")
-                return redirect("session:settings_roles", tenant_slug=tenant_slug)
             role = SessionRole(tenant=self.session_tenant)
 
         wants_admin = request.POST.get("is_admin") == "1"
