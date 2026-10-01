@@ -13,10 +13,31 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.session import audit
 from apps.session.models import SessionAPIToken, SessionApplication
 from apps.session.permissions import SessionViewMixin
 
 SESSION_KEY_NEW_TOKEN = "session_api_token_once"
+
+
+def _log_token(request, session_user, action: str, token, **extra) -> None:
+    """Anlegen und Zurückziehen eines Zugangs im Audit-Log (Name und Rechte, nie das Token selbst)."""
+    audit.log_event(
+        action,
+        token,
+        tenant=token.tenant,
+        user=session_user,
+        request=request,
+        object_repr=f"Einreichungs-Zugang „{token.name}“",
+        changes={
+            "zugang": token.name,
+            "einreichen": token.can_submit_applications,
+            "sitzungen_lesen": token.can_read_meetings,
+            "vorlagen_lesen": token.can_read_papers,
+            "gueltig_bis": token.expires_at.isoformat() if token.expires_at else None,
+            **extra,
+        },
+    )
 
 
 class APITokenListView(SessionViewMixin, TemplateView):
@@ -69,7 +90,7 @@ class APITokenCreateView(SessionViewMixin, View):
                 messages.error(request, "Das Ablaufdatum ist ungültig.")
                 return redirect("session:settings_api_tokens", tenant_slug=self.session_tenant.slug)
 
-        _token, raw = SessionAPIToken.create_token(
+        token, raw = SessionAPIToken.create_token(
             tenant=self.session_tenant,
             name=name,
             description=(request.POST.get("description") or "").strip(),
@@ -79,6 +100,7 @@ class APITokenCreateView(SessionViewMixin, View):
             expires_at=expires_at,
             created_by=self.session_user,
         )
+        _log_token(request, self.session_user, "create", token)
         request.session[SESSION_KEY_NEW_TOKEN] = {"name": name, "token": raw}
         messages.success(request, f"Einreichungs-Zugang „{name}“ erstellt. Der Token wird nur jetzt angezeigt.")
         return redirect("session:settings_api_tokens", tenant_slug=self.session_tenant.slug)
@@ -89,8 +111,10 @@ class APITokenRevokeView(SessionViewMixin, View):
 
     def post(self, request, *args, **kwargs):
         token = get_object_or_404(SessionAPIToken, id=kwargs["token_id"], tenant=self.session_tenant)
-        token.is_active = False
-        token.save(update_fields=["is_active", "updated_at"])
+        if token.is_active:
+            token.is_active = False
+            token.save(update_fields=["is_active", "updated_at"])
+            _log_token(request, self.session_user, "update", token, zurueckgezogen=True)
         messages.success(
             request, f"Zugang „{token.name}“ wurde zurückgezogen. Einreichungen damit sind nicht mehr möglich."
         )

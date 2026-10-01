@@ -37,8 +37,18 @@ auf `…/applications/submit/` enthält die URL unter `feedback`.
   („Öffentliche Sitzungen/Vorlagen lesen“) und `can_submit_applications`; optional IP-Beschränkung und
   Ratenlimit je Minute (429 mit `Retry-After`). Ein Token liest nur öffentliche Daten – nichtöffentliche
   Sitzungen, Vorlagen, Texte und interne Notizen liefert die API nie an ein Token, unabhängig von den Flags.
-- **Sitzung**: angemeldete Nutzer des Session-RIS mit ihren Rollenrechten (nur GET).
+- **Sitzung**: angemeldete Nutzer des Session-RIS mit dem Recht „API-Zugang“ (`access_api`) und ihren
+  übrigen Rollenrechten (nur GET). Ohne „API-Zugang“ gilt eine angemeldete Person wie ein anonymer Aufruf;
+  das gilt auch für die abgekündigten Pfade.
 - Ohne beides: anonym, nur öffentliche Daten.
+
+Vor der Freischaltung der OParl-Schnittstelle (Einstellungen) antwortet der Mandant anonymen Aufrufern
+mit 404. Sitzungen bzw. Vorlagen lesen dann nur API-Token mit `can_read_meetings` bzw. `can_read_papers`
+und Personen mit „API-Zugang“ und dem Recht „Sitzungen anzeigen“ bzw. „Vorlagen anzeigen“; sonst 403.
+Nach der Freischaltung sind öffentliche Daten für alle frei.
+
+Das Häkchen „OParl-API-Zugang“ steht nicht mehr in der Rechte-Matrix: Die OParl-Schnittstelle ist
+öffentlich und anonym, ein Recht darauf hatte keine Wirkung.
 
 ## Fehlerformat (RFC 9457)
 

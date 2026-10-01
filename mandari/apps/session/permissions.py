@@ -110,9 +110,13 @@ ALL_PERMISSIONS = frozenset(
         "manage_organizations",
         "manage_settings",
         "access_api",
-        "access_oparl_api",
     }
 )
+
+#: Häkchen der Rolle ohne Wirkung, deshalb weder in der Rechte-Matrix noch beim Rechteumfang gezählt:
+#: Die OParl-Schnittstelle ist öffentlich und anonym (nur freigegebene Mandanten, nur Öffentliches) –
+#: ein Recht darauf kann nichts erlauben oder verwehren. Das Feld bleibt für ältere Images bestehen.
+HIDDEN_ROLE_FLAGS = frozenset({"can_access_oparl_api"})
 
 
 def role_permissions(session_user: Any) -> set[str]:
@@ -165,7 +169,7 @@ def role_flags(role: Any) -> set[str]:
     return {
         field.name[4:]
         for field in role._meta.concrete_fields
-        if field.name.startswith("can_") and getattr(role, field.name)
+        if field.name.startswith("can_") and field.name not in HIDDEN_ROLE_FLAGS and getattr(role, field.name)
     }
 
 

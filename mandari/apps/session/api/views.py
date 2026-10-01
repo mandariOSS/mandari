@@ -55,16 +55,20 @@ class OParlMixin:
         except SessionTenant.DoesNotExist:
             raise Http404("Mandant nicht gefunden") from None
 
-    def require_reader(self, request, tenant: SessionTenant) -> None:
-        """Anonyme lesen erst nach der Freischaltung der OParl-Schnittstelle (Issue #319), vorher 404."""
+    def require_reader(self, request, tenant: SessionTenant, area: str | None = None) -> None:
+        """
+        Anonyme lesen erst nach der Freischaltung der OParl-Schnittstelle (Issue #319), vorher 404.
+
+        Vorher nur Personen mit „API-Zugang“ und – je Bereich – dem Sichtrecht (wie die Session-API v1).
+        """
         if tenant.oparl_public:
             return
-        from apps.session.models import SessionUser
+        from apps.session.api.v1.auth import READ_RIGHTS, api_session_user
 
-        user = request.user
-        if not (
-            user.is_authenticated and SessionUser.objects.filter(user=user, tenant=tenant, is_active=True).exists()
-        ):
+        session_user = api_session_user(request, tenant)
+        if session_user is None:
+            raise Http404("Mandant nicht gefunden")
+        if area is not None and not SessionPermissionChecker(session_user).has_permission(READ_RIGHTS[area][0]):
             raise Http404("Mandant nicht gefunden")
 
     def json_response(self, data: Any, status: int = 200) -> JsonResponse:
@@ -149,20 +153,10 @@ class SessionAPIMixin(OParlMixin):
         return super().get_tenant(tenant_slug)
 
     def get_session_user(self, request, tenant: SessionTenant):
-        """Get session user for authenticated requests."""
-        from apps.session.models import SessionUser
+        """Angemeldete Person mit „API-Zugang“ (sonst wie ein anonymer Aufruf), wie in der Session-API v1."""
+        from apps.session.api.v1.auth import api_session_user
 
-        if not request.user.is_authenticated:
-            return None
-
-        try:
-            return SessionUser.objects.get(
-                user=request.user,
-                tenant=tenant,
-                is_active=True,
-            )
-        except SessionUser.DoesNotExist:
-            return None
+        return api_session_user(request, tenant)
 
     def check_permission(self, session_user, permission: str) -> bool:
         """Check if user has permission."""
@@ -179,8 +173,7 @@ class SessionMeetingListAPIView(SessionAPIMixin, View):
     def get(self, request, tenant_slug: str):
         tenant = self.get_tenant(tenant_slug)
         session_user = self.get_session_user(request, tenant)
-        if session_user is None:
-            self.require_reader(request, tenant)
+        self.require_reader(request, tenant, "meetings")
 
         # Determine what meetings to show
         if session_user and self.check_permission(session_user, "view_non_public_meetings"):
@@ -238,8 +231,7 @@ class SessionPaperListAPIView(SessionAPIMixin, View):
     def get(self, request, tenant_slug: str):
         tenant = self.get_tenant(tenant_slug)
         session_user = self.get_session_user(request, tenant)
-        if session_user is None:
-            self.require_reader(request, tenant)
+        self.require_reader(request, tenant, "papers")
 
         # Ohne NÖ-Leserecht gilt die Veröffentlichungsregel der OParl-Schnittstelle:
         # öffentlich UND freigegeben (Entwürfe und Vorlagen in Prüfung sind Verwaltungsinterna).

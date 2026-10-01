@@ -54,13 +54,18 @@ def get_tenant(tenant_slug: str) -> SessionTenant:
     return tenant
 
 
-def require_reader(tenant: SessionTenant, principal: Principal, tenant_slug: str) -> None:
+def require_reader(tenant: SessionTenant, principal: Principal, tenant_slug: str, area: str | None = None) -> None:
     """
     Anonyme lesen erst nach der Freischaltung der OParl-Schnittstelle (Issue #319) – vorher wie ein
-    unbekannter Mandant. Angemeldete Nutzer und API-Token des Mandanten lesen weiter.
+    unbekannter Mandant. Vorher lesen einen Bereich nur API-Token mit dessen Lese-Flag und angemeldete
+    Personen mit „API-Zugang“ und dem Sichtrecht des Bereichs (``auth.READ_RIGHTS``).
     """
-    if not principal.authenticated and not tenant.oparl_public:
+    if tenant.oparl_public:
+        return
+    if not principal.authenticated:
         raise Problem(404, f"Mandant „{tenant_slug}“ nicht gefunden.", kind="nicht-gefunden")
+    if area is not None and not principal.can_read(area):
+        raise Problem(403, "Für diesen Bereich fehlt das Leserecht.", kind="keine-berechtigung")
 
 
 def _page(qs: QuerySet[Any], limit: int, offset: int) -> tuple[list[Any], int]:
@@ -112,7 +117,7 @@ def meetings(
     """Öffentliche Sitzungen für alle; nicht-öffentliche mit Recht ``view_non_public_meetings``."""
     tenant = get_tenant(tenant_slug)
     principal = resolve_principal(request, tenant)
-    require_reader(tenant, principal, tenant_slug)
+    require_reader(tenant, principal, tenant_slug, "meetings")
     non_public = principal.has_permission("view_non_public_meetings")
     qs = SessionMeeting.objects.filter(tenant=tenant)
     if not non_public:
@@ -161,7 +166,7 @@ def papers(
     """
     tenant = get_tenant(tenant_slug)
     principal = resolve_principal(request, tenant)
-    require_reader(tenant, principal, tenant_slug)
+    require_reader(tenant, principal, tenant_slug, "papers")
     non_public = principal.has_permission("view_non_public_papers")
     qs: QuerySet[SessionPaper] = (
         SessionPaper.objects.filter(tenant=tenant) if non_public else cast(Any, visible_papers)(tenant)

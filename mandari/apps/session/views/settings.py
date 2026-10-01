@@ -36,6 +36,32 @@ OUTSIDE_SCOPE = (
 )
 
 
+def _invitation_changes(invitation, **extra) -> dict:
+    """Protokollangaben einer Einladung: Adresse, Rollen, einladende Person, Gültigkeit."""
+    inviter = invitation.invited_by if invitation.invited_by_id else None
+    return {
+        "einladung": invitation.email,
+        "rollen": sorted(role.name for role in invitation.roles.all()),
+        "eingeladen_von": inviter.user.email if inviter is not None else None,
+        "gueltig_bis": invitation.expires_at.isoformat() if invitation.expires_at else None,
+        **extra,
+    }
+
+
+def _log_invitation(request, session_user, action: str, invitation, **extra) -> None:
+    """Einladen, erneut Senden und Zurückziehen im Audit-Log festhalten (wer, an wen, mit welchen Rollen)."""
+    from .. import audit
+
+    audit.log_event(
+        action,
+        invitation,
+        tenant=invitation.tenant,
+        user=session_user,
+        request=request,
+        changes=_invitation_changes(invitation, **extra),
+    )
+
+
 def roles_within_scope(session_user, roles) -> bool:
     """Darf diese Person alle genannten Rollen zuweisen bzw. entziehen? (keine Rechteausweitung)"""
     grantable = grantable_permissions(session_user)
@@ -444,6 +470,7 @@ class UserInviteView(SessionViewMixin, TemplateView):
             invited_by=self.session_user,
             roles=roles,
         )
+        _log_invitation(request, self.session_user, "create", invitation, angelegt=True)
         self._send_invitation_email(invitation)
         messages.success(request, f"Einladung an {email} wurde versendet.")
         return redirect("session:users", tenant_slug=self.session_tenant.slug)
@@ -530,7 +557,12 @@ class UserDeactivateView(SessionViewMixin, View):
 
 
 class InvitationResendView(SessionViewMixin, View):
-    """Offene Einladung erneut senden; die Gültigkeit läuft ab jetzt neu (#239)."""
+    """
+    Offene Einladung erneut senden; die Gültigkeit läuft ab jetzt neu (#239).
+
+    Nur noch gültige Einladungen (die Benutzerliste zeigt abgelaufene nicht mehr; dafür gibt es eine
+    neue Einladung) und nur im eigenen Rechteumfang – wie beim Einladen selbst.
+    """
 
     permission_required = "manage_users"
     http_method_names = ["post"]
@@ -542,7 +574,14 @@ class InvitationResendView(SessionViewMixin, View):
             tenant=self.session_tenant,
             accepted_at__isnull=True,
         )
+        if not invitation.is_valid:
+            messages.error(request, f"Die Einladung an {invitation.email} ist abgelaufen. Bitte neu einladen.")
+            return redirect("session:users", tenant_slug=self.session_tenant.slug)
+        if not roles_within_scope(self.session_user, invitation.roles.all()):
+            messages.error(request, OUTSIDE_SCOPE)
+            return redirect("session:users", tenant_slug=self.session_tenant.slug)
         if resend_user_invitation(invitation):
+            _log_invitation(request, self.session_user, "update", invitation, erneut_gesendet=True)
             messages.success(request, f"Einladung an {invitation.email} wurde erneut versendet.")
         else:
             messages.error(request, f"Die Einladung an {invitation.email} konnte nicht versendet werden.")
@@ -563,6 +602,7 @@ class InvitationCancelView(SessionViewMixin, View):
             accepted_at__isnull=True,
         )
         email = invitation.email
+        _log_invitation(request, self.session_user, "delete", invitation, zurueckgezogen=True)
         invitation.delete()
         messages.success(request, f"Einladung an {email} wurde zurückgezogen.")
         return redirect("session:users", tenant_slug=tenant_slug)
@@ -656,14 +696,24 @@ class InvitationAcceptView(View):
         old_roles = [] if created else list(session_user.roles.all())
         new_roles = list(invitation.roles.all())
         session_user.roles.set(new_roles)
-        # Rollen aus der Einladung (Issue #221); vergeben hat sie die einladende Person
+        # Annahme durch die eingeladene Person; die Rollen vergeben hat die einladende Person (Issue #221)
+        inviter = invitation.invited_by if invitation.invited_by_id else None
+        audit.log_event(
+            "update",
+            invitation,
+            tenant=invitation.tenant,
+            user=session_user,
+            request=request,
+            changes=_invitation_changes(invitation, angenommen=True),
+        )
         audit.log_role_assignment(
             session_user,
             old_roles,
             new_roles,
             request=request,
-            user=session_user,
+            user=inviter if inviter is not None and inviter.tenant_id == invitation.tenant_id else None,
             reason="Einladung angenommen",
+            extra={"eingeladen_von": inviter.user.email if inviter is not None else None},
         )
 
         invitation.accepted_at = timezone.now()

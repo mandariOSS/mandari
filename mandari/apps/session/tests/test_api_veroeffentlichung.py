@@ -87,7 +87,7 @@ def test_token_ohne_leserecht_nur_freigegebene(client: Client, tenant: SessionTe
 
 @pytest.mark.parametrize("pfad", [V1, ALT])
 def test_mit_noe_recht_weiterhin_alle(tenant: SessionTenant, pfad: str) -> None:
-    client = _client_mit_rolle(tenant, can_view_papers=True, can_view_non_public_papers=True)
+    client = _client_mit_rolle(tenant, can_view_papers=True, can_view_non_public_papers=True, can_access_api=True)
     assert _namen(client.get(pfad.format(slug=tenant.slug))) == {"VORLAGE-DRAFT", "VORLAGE-REVIEW", "VORLAGE-APPROVED"}
 
 

@@ -121,8 +121,8 @@ class TestFreischaltung:
         for pfad in pfade:
             assert client.get(pfad).status_code == 404, pfad
 
-        # Angemeldete Nutzer und API-Token des Mandanten lesen weiter
-        leser = angemeldet(nutzer(tenant, "leser", "view_meetings", "view_papers"))
+        # Angemeldete Nutzer mit API-Zugang und Sichtrecht sowie API-Token des Mandanten lesen weiter
+        leser = angemeldet(nutzer(tenant, "leser", "view_meetings", "view_papers", "access_api"))
         for pfad in pfade:
             assert leser.get(pfad).status_code == 200, pfad
         _token, roh = SessionAPIToken.create_token(tenant, "Integration")
