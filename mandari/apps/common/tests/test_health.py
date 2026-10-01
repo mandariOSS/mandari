@@ -15,6 +15,7 @@ from django.test import Client
 
 from apps.common import health
 from apps.events import presence
+from apps.events.models import WorkerProcess
 
 # Die Anfragen laufen durch den vollständigen Middleware-Stack; dessen Verbindungs-Aufräumen darf die DB
 # berühren. Ohne Freigabe hingen die Tests von der Reihenfolge ab (unter pytest-xdist rot).
@@ -139,7 +140,7 @@ def test_ohne_bedarf_meldet_der_fehlende_worker_nichts(client: Client, nur_worke
 
     assert daten["status"] == "ok"
     assert daten["checks"]["worker"]["ok"] is True
-    assert daten["checks"]["worker"]["detail"] == "nicht erforderlich (0 Worker)"
+    assert daten["checks"]["worker"]["detail"] == "nicht erforderlich"
     assert client.get("/health/").json() == {"status": "ok", "database": "ok", "worker": "nicht_erforderlich"}
 
 
@@ -156,6 +157,31 @@ def test_fehlender_worker_bei_bedarf_ist_degraded_aber_nicht_rot(client: Client,
     alt = client.get("/health/")
     assert alt.status_code == 200
     assert alt.json() == {"status": "degraded", "database": "ok", "worker": "fehlt"}
+
+
+def test_ohne_bedarf_fragt_die_worker_pruefung_die_datenbank_nicht(nur_worker_echt: Any) -> None:
+    """``/health/`` wird oft abgerufen; ohne Bedarf an einem Worker kostet die Prüfung keine Abfrage."""
+
+    def keine_abfrage(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("ohne Bedarf keine Abfrage von events_worker")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(presence, "live_workers", keine_abfrage)
+        assert health.worker_finding() == health.Finding(True, "nicht erforderlich")
+        assert health.worker_state() == "nicht_erforderlich"
+
+
+def test_worker_meldung_nennt_fehlende_warteschlangen() -> None:
+    """Fällt der Worker für Texterkennung und KI aus, nennt die Meldung genau diese Warteschlangen."""
+    hauptworker = WorkerProcess(
+        holder="w1", roles=["sequencer", "dispatch", "tasks", "scheduler"], queues=["default", "mail", "index"]
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(presence, "required_roles", lambda: frozenset({"tasks", "scheduler"}))
+        patch.setattr(presence, "required_queues", lambda: frozenset({"default", "mail", "index", "ocr", "ai"}))
+        patch.setattr(presence, "live_workers", lambda ttl=presence.PRESENCE_TTL: [hauptworker])
+        assert health.worker_finding() == health.Finding(False, "kein Worker für tasks (Warteschlangen ai, ocr)")
+        assert health.worker_state() == "fehlt"
 
 
 def test_worker_meldung_nennt_fehlende_rollen() -> None:
@@ -179,8 +205,9 @@ def test_laufender_worker_erfuellt_den_bedarf(client: Client, nur_worker_echt: A
 
 
 def test_worker_zustand_ohne_tabelle_ist_unbekannt(monkeypatch: pytest.MonkeyPatch) -> None:
-    def kaputt(ttl: Any = None) -> Any:
+    def kaputt(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("Tabelle fehlt")
 
+    monkeypatch.setattr(presence, "required_roles", lambda: frozenset({"tasks"}))
     monkeypatch.setattr(presence, "worker_status", kaputt)
     assert health.worker_state() == "unbekannt"

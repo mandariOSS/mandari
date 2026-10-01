@@ -393,8 +393,8 @@ def _worker_check() -> dict[str, object]:
     except Exception as exc:  # noqa: BLE001 – z. B. Migration noch nicht eingespielt
         return _check("Worker", "warning", f"Status nicht ermittelbar ({type(exc).__name__})")
     rollen = ", ".join(sorted(stand.roles)) or "keine"
-    if stand.missing:
-        fehlend = ", ".join(sorted(stand.missing))
+    if stand.degraded:
+        fehlend = stand.missing_summary()
         return _check(
             "Worker",
             "critical",

@@ -237,3 +237,17 @@ def test_vorgabe_nimmt_den_worker_nur_wenn_die_compose_datei_ihn_kennt(tmp_path:
     assert rc == 0, ausgabe
     assert any(z.endswith("stop ingestor") for z in aufrufe), "ältere Compose-Datei ohne Dienst worker"
     assert not any("worker" in z.split() for z in aufrufe)
+
+
+def test_vorgabe_nimmt_auch_den_worker_fuer_texterkennung(tmp_path: Path) -> None:
+    """worker-heavy (Warteschlangen ocr, ai) steht wie worker während der Migration und startet vor der Anwendung."""
+    rc, ausgabe, aufrufe, _ = _lauf(
+        tmp_path, "apply", "dev-neu", WORKER_SERVICES="", FAKE_SERVICES="postgres mandari worker worker-heavy ingestor"
+    )
+
+    assert rc == 0, ausgabe
+    angehalten = _index(aufrufe, "stop worker worker-heavy ingestor")
+    migration = _index(aufrufe, "safemigrate")
+    worker = _index(aufrufe, "up -d --no-deps worker worker-heavy ingestor")
+    anwendung = _index(aufrufe, "up -d --no-deps --wait mandari")
+    assert angehalten < migration < worker < anwendung

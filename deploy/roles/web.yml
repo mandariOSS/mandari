@@ -23,6 +23,8 @@ services:
     profiles: ["aus"]
   worker:
     profiles: ["aus"]
+  worker-heavy:
+    profiles: ["aus"]
 
   mandari:
     environment:

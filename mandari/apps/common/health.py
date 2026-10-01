@@ -108,14 +108,18 @@ def check_storage() -> str:
 
 
 def worker_finding() -> Finding:
-    """Läuft ein Worker für alle Rollen, die die Installation braucht? Ohne Bedarf immer in Ordnung."""
-    from apps.events.presence import worker_status
+    """Läuft ein Worker für alle Rollen, die die Installation braucht? Ohne Bedarf immer in Ordnung.
 
-    status = worker_status()
-    if not status.required:
-        return Finding(True, f"nicht erforderlich ({len(status.workers)} Worker)")
-    if status.missing:
-        return Finding(False, f"kein Worker für {', '.join(sorted(status.missing))}")
+    Ohne Bedarf fragt die Prüfung die Datenbank gar nicht erst (``/health/`` wird häufig abgerufen).
+    """
+    from apps.events.presence import required_roles, worker_status
+
+    bedarf = required_roles()
+    if not bedarf:
+        return Finding(True, "nicht erforderlich")
+    status = worker_status(required=bedarf)
+    if status.degraded:
+        return Finding(False, f"kein Worker für {status.missing_summary()}")
     return Finding(True, f"{len(status.workers)} Worker")
 
 
@@ -127,15 +131,16 @@ def check_worker() -> Finding:
 def worker_state() -> str:
     """Für ``/health/``: ``ok``, ``fehlt``, ``nicht_erforderlich`` oder ``unbekannt`` (Tabelle fehlt, Datenbank weg)."""
     try:
-        from apps.events.presence import worker_status
+        from apps.events.presence import required_roles, worker_status
 
-        status = worker_status()
+        bedarf = required_roles()
+        if not bedarf:
+            return "nicht_erforderlich"  # ohne Datenbankabfrage
+        status = worker_status(required=bedarf)
     except Exception:  # noqa: BLE001 – der alte Endpunkt meldet nur, er bricht nicht ab
         logger.debug("Worker-Zustand nicht ermittelbar", exc_info=True)
         return "unbekannt"
-    if not status.required:
-        return "nicht_erforderlich"
-    return "fehlt" if status.missing else "ok"
+    return "fehlt" if status.degraded else "ok"
 
 
 CHECKS: dict[str, Callable[[], str | Finding]] = {

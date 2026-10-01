@@ -35,6 +35,10 @@ scrape_configs:
       - targets: ["mandari-worker:9091"]
         labels:
           service: mandari-worker
+      # Texterkennung und KI (Dienst worker-heavy)
+      - targets: ["mandari-worker-heavy:9091"]
+        labels:
+          service: mandari-worker-heavy
 
   # Ingestor (Port laut ingestor/README, METRICS_PORT)
   - job_name: mandari-ingestor

@@ -476,6 +476,8 @@ spec:
             - /tmp/mandari-worker.heartbeat
             - --metrics-port
             - "9091"
+            - "--queues"
+            - "default,mail,index,adapter"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -561,6 +563,160 @@ spec:
             requests:
               cpu: 100m
               memory: 256Mi
+      # Die Volumes media und files teilt der Worker mit Anwendung und Ingestor. Mit
+      # persistence.accessMode ReadWriteOnce müssen alle diese Pods auf demselben Knoten laufen
+      # (worker.affinity, z. B. podAffinity zur Anwendung); mehrere Knoten oder Repliken auf
+      # verschiedenen Knoten brauchen ReadWriteMany.
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: mandari-media
+        - name: files
+          persistentVolumeClaim:
+            claimName: mandari-files
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mandari-worker-heavy
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: worker-heavy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mandari
+      app.kubernetes.io/instance: mandari
+      app.kubernetes.io/component: worker-heavy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mandari
+        app.kubernetes.io/instance: mandari
+        app.kubernetes.io/component: worker-heavy
+      annotations:
+        checksum/secret: a4082f145ad9a5a7e5fa32bf35a2d925b80d242d84f48d651bea09056bc0c42e
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: mandari
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: worker
+          image: "ghcr.io/mandarioss/mandari:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - manage.py
+            - events_worker
+            - --heartbeat-file
+            - /tmp/mandari-worker.heartbeat
+            - --metrics-port
+            - "9091"
+            - "--roles"
+            - "tasks"
+            - "--queues"
+            - "ocr,ai"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            # Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+            - name: ENCRYPTION_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key-previous
+                  optional: true
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+            # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
+            - name: TASKS_MAX_MEMORY_MB
+              value: "800"
+          ports:
+            - name: metrics
+              containerPort: 9091
+              protocol: TCP
+          volumeMounts:
+            - name: media
+              mountPath: /app/media
+            - name: files
+              mountPath: /app/files
+          startupProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 60
+          # /health antwortet 503, sobald eine Rolle länger als --stale-after (300 s) hängt
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      # Die Volumes media und files teilt der Worker mit Anwendung und Ingestor. Mit
+      # persistence.accessMode ReadWriteOnce müssen alle diese Pods auf demselben Knoten laufen
+      # (worker.affinity, z. B. podAffinity zur Anwendung); mehrere Knoten oder Repliken auf
+      # verschiedenen Knoten brauchen ReadWriteMany.
       volumes:
         - name: media
           persistentVolumeClaim:

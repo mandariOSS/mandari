@@ -51,3 +51,11 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
       ELASTICSEARCH_URL: http://${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:9200
     depends_on: !reset []
+
+  # Nur Aufträge aus ocr und ai: ohne Weckruf, also ohne Direktverbindung
+  worker-heavy:
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:${DATA_PG_PORT:-5432}/${POSTGRES_DB:-mandari}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
+      ELASTICSEARCH_URL: http://${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:9200
+    depends_on: !reset []

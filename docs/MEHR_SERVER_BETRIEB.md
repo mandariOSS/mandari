@@ -11,7 +11,7 @@ Server verteilen. Dafür gibt es drei Rollenprofile als Compose-Overrides unter 
 |----------|------------------------------------------------|---------------------------|
 | `data`   | PostgreSQL, Redis, Elasticsearch, optional PgBouncer | `deploy/roles/data.yml`   |
 | `web`    | Caddy, Anwendung (`mandari`), Website          | `deploy/roles/web.yml`    |
-| `worker` | Ingestor (Quellen-Sync), Protokoll-Orchestrator, Worker für Ereignisse, Aufträge und Zeitpläne (`worker`) | `deploy/roles/worker.yml` |
+| `worker` | Ingestor (Quellen-Sync), Protokoll-Orchestrator, Worker für Ereignisse, Aufträge und Zeitpläne (`worker`, `worker-heavy`) | `deploy/roles/worker.yml` |
 
 Die Basisdatei bleibt unverändert und profilfrei; die Rollen-Dateien schalten die jeweils
 fremden Dienste über ein nie aktiviertes Profil `aus` ab und biegen die Verbindungs-URLs

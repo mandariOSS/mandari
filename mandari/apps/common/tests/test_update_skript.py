@@ -270,6 +270,22 @@ def test_worker_steht_waehrend_der_migrationen_und_startet_vor_der_anwendung(tmp
     assert any("inspect" in z and "mandari-worker" in z for z in aufrufe), "Verifikation prüft den Worker"
 
 
+MIT_HEAVY = f"{MIT_WORKER} worker-heavy"
+
+
+def test_worker_fuer_texterkennung_wie_der_worker(tmp_path: Path) -> None:
+    """worker-heavy steht während der Migrationen, startet vor der Anwendung und wird geprüft."""
+    rc, aufrufe = _lauf(tmp_path, env_zusatz={"FAKE_SERVICES": MIT_HEAVY})
+
+    assert rc == 0, "\n".join(aufrufe)
+    angehalten = _index(aufrufe, "compose stop ingestor minutes-orchestrator worker worker-heavy")
+    migration = _index(aufrufe, "manage.py safemigrate")
+    ocr = _index(aufrufe, "compose up -d --no-deps worker-heavy")
+    anwendung = _index(aufrufe, "compose up -d --no-deps mandari")
+    assert angehalten < migration < ocr < anwendung
+    assert any("inspect" in z and "mandari-worker-heavy" in z for z in aufrufe), "Verifikation prüft ihn"
+
+
 def test_ohne_worker_dienst_kein_vorstart(tmp_path: Path) -> None:
     rc, aufrufe = _lauf(tmp_path)
 

@@ -114,9 +114,10 @@ weiter gemeldet (`"status": "degraded"`), die Antwort bleibt 200.
 
 Die Prüfung `worker` ist immer optional: Braucht die Installation einen Worker
 (`TASKS_BACKEND=journal`, `INGESTOR_EVENTS_ENABLED=true` oder `EVENTS_WORKER_REQUIRED=true`) und
-bedient keiner die nötigen Rollen, melden `/health/ready/` und `/health/` (Feld `worker`)
-`"degraded"`; Admin-Startseite und Betriebsmonitor zeigen einen Hinweis. Ohne Bedarf steht dort
-„nicht erforderlich“, und nichts wird gemeldet (DEPLOYMENT.md, „Worker“).
+bedient keiner die nötigen Rollen – mit `tasks` jede Warteschlange –, melden `/health/ready/` und
+`/health/` (Feld `worker`) `"degraded"`; Admin-Startseite und Betriebsmonitor zeigen einen
+Hinweis. Ohne Bedarf steht dort „nicht erforderlich“, nichts wird gemeldet, und die Prüfung fragt
+die Datenbank nicht (DEPLOYMENT.md, „Worker“).
 
 Das Helm-Chart nutzt `live` für Startup- und Liveness-Probe und `ready` für die
 Readiness-Probe. Die Statusseite (Gatus) kann `/health/ready/` als Bedingung nehmen.

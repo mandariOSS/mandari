@@ -12,6 +12,7 @@ import pytest
 from django.test import Client
 
 from apps.events import presence
+from apps.events.tests.auftraege import journal_einstellungen
 from insight_core.services.source_health import collect_system_health
 
 
@@ -39,6 +40,17 @@ def test_fehlender_worker_bei_bedarf_ist_kritisch(ohne_bedarf: Any) -> None:
 
     assert check["status"] == "critical"
     assert check["detail"].startswith("Kein Worker für sequencer")
+
+
+@pytest.mark.django_db
+def test_fehlender_worker_fuer_texterkennung_ist_kritisch(ohne_bedarf: Any) -> None:
+    ohne_bedarf.TASKS = journal_einstellungen()
+    presence.announce("haupt", sorted(presence.ALL_ROLES), ["default", "mail", "index", "adapter"])
+
+    check = _worker(collect_system_health())
+
+    assert check["status"] == "critical"
+    assert check["detail"].startswith("Kein Worker für tasks (Warteschlangen ai, ocr)")
 
 
 @pytest.mark.django_db

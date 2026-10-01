@@ -40,6 +40,10 @@ worker:
       memory: 192Mi
     limits:
       memory: 512Mi
+  # Ein Worker für alle Warteschlangen spart einen Pod. Nachteil: Ein Neustart des Runners
+  # wartet auf laufende Texterkennung (bis 30 min), Mails solange auch.
+  heavy:
+    enabled: false
 
 postgres:
   storage:

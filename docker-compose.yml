@@ -257,16 +257,26 @@ services:
 
   # ===========================================================================
   # Worker: Ereignisse, Aufträge und Zeitpläne (manage.py events_worker)
-  # Gleiches Image und dieselbe Umgebung wie die Anwendung. Startet nach den
+  # Gleiches Image und dieselbe Umgebung wie die Anwendung. Starten nach den
   # Migrationen und vor der Anwendung (update.sh, deploy/scripts/deploy.sh).
   # /metrics und /health auf Port 9091 nur im internen Netz (nicht veröffentlicht).
-  # Einzelheiten: DEPLOYMENT.md, „Worker“.
+  # Zwei Dienste: worker (alle Rollen, alle Warteschlangen außer ocr und ai) und
+  # worker-heavy (nur Aufträge aus ocr und ai). Jeder Neustart eines Runners wartet
+  # auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails
+  # und Suche nicht auf die Texterkennung. Einzelheiten: DEPLOYMENT.md, „Worker“.
   # ===========================================================================
-  worker:
+  worker: &worker-dienst
     image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}-worker
     restart: unless-stopped
-    command: ["python", "manage.py", "events_worker", "--heartbeat-file", "/tmp/mandari-worker.heartbeat"]
+    command:
+      - python
+      - manage.py
+      - events_worker
+      - --queues
+      - default,mail,index,adapter
+      - --heartbeat-file
+      - /tmp/mandari-worker.heartbeat
     labels:
       # deploy/scripts/restart-unhealthy.sh startet ihn neu, wenn eine Rolle hängt
       mandari.autoheal: "true"
@@ -299,6 +309,26 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+
+  # Texterkennung und KI (Warteschlangen ocr, ai): eigener Runner mit mehr Speicher,
+  # sonst wie worker (Umgebung, Volumes, Healthcheck über die Heartbeat-Datei)
+  worker-heavy:
+    <<: *worker-dienst
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-worker-heavy
+    command:
+      - python
+      - manage.py
+      - events_worker
+      - --roles
+      - tasks
+      - --queues
+      - ocr,ai
+      - --max-memory-mb
+      - "800"
+      - --heartbeat-file
+      - /tmp/mandari-worker.heartbeat
+    # Der Runner startet oberhalb von 800 MB (--max-memory-mb) neu, bevor das Limit greift
+    mem_limit: 1g
 
   # ===========================================================================
   # Protokollierung: Orchestrator der GPU-Rechenknoten (centron)

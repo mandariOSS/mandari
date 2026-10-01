@@ -36,18 +36,19 @@ WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
 # weiter, bräche ein Durchlauf ab. Überschreibbar per Umgebung oder .env, z. B.
 # WORKER_SERVICES="ingestor minutes-orchestrator ocr-worker". Dienste, die Compose nicht kennt,
 # werden übersprungen (bei der Vorgabe ohne Hinweis).
-WORKER_SERVICES_DEFAULT="ingestor minutes-orchestrator worker"
+WORKER_SERVICES_DEFAULT="ingestor minutes-orchestrator worker worker-heavy"
 
 # Dienste mit dem Anwendungs-Image, die nach den Migrationen immer auf das neue Image wechseln
 # (Issue #479) – auch wenn ein eigenes WORKER_SERVICES sie nicht nennt; dann laufen sie während
 # der Migrationen weiter. Nicht definierte Dienste werden übersprungen.
-APP_IMAGE_SERVICES="minutes-orchestrator worker"
+APP_IMAGE_SERVICES="minutes-orchestrator worker worker-heavy"
 
 # Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker, Issue #509): stehen wie
 # die übrigen Worker während der Migrationen, starten aber VOR dem Umschalten der Anwendung
 # (Reihenfolge Migration → Worker → Web). So arbeitet der neue Stand Aufträge und Ereignisse der
-# neuen Webprozesse von Anfang an ab. Nicht definierte Dienste werden übersprungen.
-EARLY_WORKER_SERVICES="worker"
+# neuen Webprozesse von Anfang an ab. worker-heavy bedient nur ocr und ai (docker-compose.yml).
+# Nicht definierte Dienste werden übersprungen.
+EARLY_WORKER_SERVICES="worker worker-heavy"
 
 # Anwendungs-Images mit IMAGE_TAG; nur falls "docker compose config --images" nichts liefert
 APP_IMAGES_DEFAULT="ghcr.io/mandarioss/mandari ghcr.io/mandarioss/ingestor ghcr.io/mandarioss/website"
@@ -422,10 +423,11 @@ verify_installation() {
     local all_ok=true
 
     local containers="mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor"
-    # Den Worker nur prüfen, wenn die Installation ihn definiert (ältere Compose-Dateien ohne ihn)
-    if [ -n "$(defined_services worker)" ]; then
-        containers="$containers mandari-worker"
-    fi
+    # Die Worker nur prüfen, wenn die Installation sie definiert (ältere Compose-Dateien ohne sie)
+    local svc
+    for svc in $(defined_services "worker worker-heavy"); do
+        containers="$containers mandari-$svc"
+    done
 
     for container in $containers; do
         local status
@@ -443,6 +445,7 @@ verify_installation() {
             mandari-caddy)       label="Caddy" ;;
             mandari-ingestor)    label="Ingestor" ;;
             mandari-worker)      label="Worker" ;;
+            mandari-worker-heavy) label="Worker OCR/KI" ;;
         esac
 
         printf "  %-14s " "$label"

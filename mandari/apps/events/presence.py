@@ -15,9 +15,15 @@ auf mehreren Rechnern mit Uhrenversatz würden sonst fälschlich als ausgefallen
 **Braucht die Installation einen Worker?** (``required_roles``, Issue #509) Nur dann melden Health
 und Admin sein Fehlen; sonst stünde jede bestehende Installation ohne Worker sofort auf
 „degraded“. ``EVENTS_WORKER_REQUIRED=true`` verlangt alle Rollen, ``false`` keine. Ohne Angabe
-gilt: Laufen Aufträge über das Journal (``TASKS_BACKEND=journal``), braucht es die Rolle ``tasks``,
-sonst blieben sie liegen; schreibt der Ingestor Ereignisse (``INGESTOR_EVENTS_ENABLED``), die Rolle
-``sequencer``, sonst bekämen sie keine Folgenummer.
+gilt: Laufen Aufträge über das Journal (``TASKS_BACKEND=journal``), braucht es die Rollen ``tasks``
+und ``scheduler``, sonst blieben Aufträge liegen bzw. wiederkehrende (etwa das tägliche Aufräumen
+der Idempotenzschlüssel) entstünden gar nicht; schreibt der Ingestor Ereignisse
+(``INGESTOR_EVENTS_ENABLED``), die Rolle ``sequencer``, sonst bekämen sie keine Folgenummer.
+
+**Abdeckung je Warteschlange:** Ist ``tasks`` nötig, müssen die lebenden Worker mit dieser Rolle
+zusammen jede Warteschlange des Backends bedienen (``required_queues``; ausgenommen Warteschlangen
+mit Parallelität 0). Laufen Texterkennung und KI in einem eigenen Worker (``--queues ocr,ai``) und
+fällt der aus, meldet die Prüfung genau diese Warteschlangen.
 """
 
 from __future__ import annotations
@@ -91,10 +97,22 @@ def required_roles() -> frozenset[str]:
     rollen: set[str] = set()
     backend = str(dict(getattr(settings, "TASKS", {}).get("default", {})).get("BACKEND", ""))
     if backend == _JOURNAL_BACKEND:
-        rollen.add("tasks")
+        # Runner für die Aufträge, Zeitpläne für die wiederkehrenden unter ihnen
+        rollen |= {"tasks", "scheduler"}
     if getattr(settings, "INGESTOR_EVENTS_ENABLED", False):
         rollen.add("sequencer")
     return frozenset(rollen)
+
+
+def required_queues() -> frozenset[str]:
+    """Warteschlangen, die die Worker mit der Rolle ``tasks`` zusammen bedienen müssen.
+
+    Alle Warteschlangen des Backends außer denen mit Parallelität 0 (bewusst abgeschaltet).
+    """
+    from .tasks_backend import journal_options
+
+    optionen, queues = journal_options()
+    return frozenset(queue for queue in queues if optionen.concurrency.get(queue, 1) > 0)
 
 
 @dataclass(frozen=True)
@@ -103,6 +121,8 @@ class WorkerStatus:
 
     required: frozenset[str]
     workers: tuple[WorkerProcess, ...]
+    #: Warteschlangen, die die Rolle ``tasks`` abdecken muss (nur, wenn ``tasks`` nötig ist)
+    queues: frozenset[str] = frozenset()
 
     @property
     def roles(self) -> frozenset[str]:
@@ -114,10 +134,40 @@ class WorkerStatus:
         return self.required - self.roles
 
     @property
+    def missing_queues(self) -> frozenset[str]:
+        """Nötige Warteschlangen, die kein lebender Worker mit der Rolle ``tasks`` bedient.
+
+        Leer, wenn ``tasks`` nicht nötig ist oder ganz fehlt (das meldet schon ``missing``). Ein
+        Worker ohne ``--queues`` bedient alle.
+        """
+        if "tasks" not in self.required or "tasks" in self.missing:
+            return frozenset()
+        bedient: set[str] = set()
+        for worker in self.workers:
+            if "tasks" not in worker.roles:
+                continue
+            if not worker.queues:
+                return frozenset()
+            bedient.update(worker.queues)
+        return self.queues - bedient
+
+    @property
     def degraded(self) -> bool:
-        return bool(self.missing)
+        return bool(self.missing or self.missing_queues)
+
+    def missing_summary(self) -> str:
+        """Was fehlt, als fester Text für Health und Admin, z. B. ``tasks (Warteschlangen ai, ocr)``."""
+        teile = sorted(self.missing)
+        if self.missing_queues:
+            teile.append(f"tasks (Warteschlangen {', '.join(sorted(self.missing_queues))})")
+        return ", ".join(teile)
 
 
-def worker_status(ttl: timedelta = PRESENCE_TTL) -> WorkerStatus:
-    """Stand für Health und Admin: nötige Rollen und lebende Worker."""
-    return WorkerStatus(required=required_roles(), workers=tuple(live_workers(ttl)))
+def worker_status(ttl: timedelta = PRESENCE_TTL, required: frozenset[str] | None = None) -> WorkerStatus:
+    """Stand für Health und Admin: nötige Rollen und Warteschlangen, lebende Worker.
+
+    ``required`` übernimmt einen schon ermittelten Bedarf (``required_roles``).
+    """
+    rollen = required_roles() if required is None else required
+    queues = required_queues() if "tasks" in rollen else frozenset()
+    return WorkerStatus(required=rollen, workers=tuple(live_workers(ttl)), queues=queues)

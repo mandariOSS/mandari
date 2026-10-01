@@ -11,9 +11,10 @@
 #   MANDARI_DIR      Installationsverzeichnis mit .env und Compose-Dateien   (Standard /opt/mandari)
 #   COMPOSE_FILES    Compose-Dateien, durch Leerzeichen getrennt              (Standard docker-compose.yml)
 #   APP_SERVICE      Dienst der Django-Anwendung                              (Standard mandari)
-#   WORKER_SERVICES  Dienste, die waehrend der Migration stehen sollen, nach   (Standard: worker,
-#                    der Migration VOR der Anwendung starten und nach dem      falls definiert,
-#                    Umschalten geprueft werden (Migration -> Worker -> Web)   und ingestor)
+#   WORKER_SERVICES  Dienste, die waehrend der Migration stehen sollen, nach   (Standard: worker
+#                    der Migration VOR der Anwendung starten und nach dem      und worker-heavy,
+#                    Umschalten geprueft werden (Migration -> Worker -> Web)   falls definiert,
+#                                                                              und ingestor)
 #   WORKER_CHECK_SECONDS  so lange nach dem Start keine Worker-Beendigung      (Standard 60, 0 = aus)
 #                    mit Exit-Code ungleich 0; Exit 0 ist planmaessig (Worker enden nach
 #                    jedem Durchlauf und werden neu gestartet)
@@ -48,14 +49,17 @@ cd "$MANDARI_DIR"
 DC="docker compose"
 for f in $COMPOSE_FILES; do DC="$DC -f $f"; done
 if [ -z "$WORKER_SERVICES" ]; then
-  # Vorgabe: der Worker fuer Ereignisse und Auftraege (manage.py events_worker), falls die
-  # Compose-Datei ihn kennt, und der Ingestor. Aeltere, handgepflegte Dateien ohne Dienst worker
-  # laufen so unveraendert weiter.
-  if $DC config --services < /dev/null 2>/dev/null | grep -x worker > /dev/null; then
-    WORKER_SERVICES="worker ingestor"
-  else
-    WORKER_SERVICES="ingestor"
-  fi
+  # Vorgabe: die Worker fuer Ereignisse und Auftraege (manage.py events_worker: worker, worker-heavy),
+  # soweit die Compose-Datei sie kennt, und der Ingestor. Aeltere, handgepflegte Dateien ohne diese
+  # Dienste laufen so unveraendert weiter.
+  DIENSTE=$($DC config --services < /dev/null 2>/dev/null || true)
+  for svc in worker worker-heavy; do
+    if printf '%s\n' "$DIENSTE" | grep -x "$svc" > /dev/null; then
+      WORKER_SERVICES="$WORKER_SERVICES $svc"
+    fi
+  done
+  WORKER_SERVICES="${WORKER_SERVICES# } ingestor"
+  WORKER_SERVICES="${WORKER_SERVICES# }"
 fi
 OLD_TAG=$(grep -E '^IMAGE_TAG=' .env | cut -d= -f2)
 [ -n "$OLD_TAG" ] || { echo "FEHLER: IMAGE_TAG fehlt in .env"; exit 1; }

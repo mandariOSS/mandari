@@ -1,47 +1,57 @@
-{{- if .Values.worker.enabled }}
 {{- /*
 Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker, Issue #509):
 gleiches Image und dieselbe Umgebung wie die Anwendung. Mehrere Repliken teilen sich die
 Arbeit (Leader-Leases in events_lease, Aufträge per SKIP LOCKED). Der Migrations-Job läuft
 vor jedem Upgrade (pre-upgrade); Worker und Anwendung rollen danach gemeinsam aus.
+
+Zwei Deployments: <name>-worker (alle Rollen; mit worker.heavy.enabled ohne die Warteschlangen
+ocr und ai) und <name>-worker-heavy (nur Aufträge aus ocr und ai). Jeder Neustart eines Runners
+wartet auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails und
+Suche nicht auf die Texterkennung.
+
+Parameter von "mandari.workerDeployment": root (Kontext des Charts), name (Namensteil und
+Komponente), replicas, maxMemoryMb, resources, args (zusätzliche Argumente).
 */ -}}
+{{- define "mandari.workerDeployment" -}}
+{{- $root := .root -}}
+{{- $w := $root.Values.worker -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "mandari.fullname" . }}-worker
+  name: {{ include "mandari.fullname" $root }}-{{ .name }}
   labels:
-    {{- include "mandari.labels" . | nindent 4 }}
-    app.kubernetes.io/component: worker
+    {{- include "mandari.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ .name }}
 spec:
-  replicas: {{ .Values.worker.replicas }}
+  replicas: {{ .replicas }}
   selector:
     matchLabels:
-      {{- include "mandari.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: worker
+      {{- include "mandari.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ .name }}
   template:
     metadata:
       labels:
-        {{- include "mandari.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: worker
+        {{- include "mandari.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ .name }}
       annotations:
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $root.Template.BasePath "/secret.yaml") $root | sha256sum }}
         prometheus.io/scrape: "true"
-        prometheus.io/port: {{ .Values.worker.metricsPort | quote }}
+        prometheus.io/port: {{ $w.metricsPort | quote }}
         prometheus.io/path: /metrics
     spec:
-      serviceAccountName: {{ include "mandari.serviceAccountName" . }}
-      {{- with .Values.image.pullSecrets }}
+      serviceAccountName: {{ include "mandari.serviceAccountName" $root }}
+      {{- with $root.Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
       # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
       terminationGracePeriodSeconds: 30
       containers:
         - name: worker
-          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/mandari:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ $root.Values.image.registry }}/{{ $root.Values.image.repository }}/mandari:{{ $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
           command:
             - python
             - manage.py
@@ -49,37 +59,37 @@ spec:
             - --heartbeat-file
             - /tmp/mandari-worker.heartbeat
             - --metrics-port
-            - {{ .Values.worker.metricsPort | quote }}
-            {{- range .Values.worker.extraArgs }}
+            - {{ $w.metricsPort | quote }}
+            {{- range .args }}
             - {{ . | quote }}
             {{- end }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml $root.Values.securityContext | nindent 12 }}
           env:
-            {{- include "mandari.commonEnv" . | nindent 12 }}
-            {{- if .Values.tracing.otlpEndpoint }}
+            {{- include "mandari.commonEnv" $root | nindent 12 }}
+            {{- if $root.Values.tracing.otlpEndpoint }}
             - name: OTEL_SERVICE_NAME
-              value: mandari-worker
+              value: mandari-{{ .name }}
             {{- end }}
             # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
             - name: TASKS_MAX_MEMORY_MB
-              value: {{ .Values.worker.maxMemoryMb | quote }}
-            {{- range $key, $value := .Values.app.extraEnv }}
+              value: {{ .maxMemoryMb | quote }}
+            {{- range $key, $value := $root.Values.app.extraEnv }}
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-            {{- range $key, $value := .Values.worker.extraEnv }}
+            {{- range $key, $value := $w.extraEnv }}
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-          {{- if .Values.app.extraEnvFromSecret }}
+          {{- if $root.Values.app.extraEnvFromSecret }}
           envFrom:
             - secretRef:
-                name: {{ .Values.app.extraEnvFromSecret }}
+                name: {{ $root.Values.app.extraEnvFromSecret }}
           {{- end }}
           ports:
             - name: metrics
-              containerPort: {{ .Values.worker.metricsPort }}
+              containerPort: {{ $w.metricsPort }}
               protocol: TCP
           volumeMounts:
             - name: media
@@ -101,20 +111,42 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.worker.resources | nindent 12 }}
+            {{- toYaml .resources | nindent 12 }}
+      # Die Volumes media und files teilt der Worker mit Anwendung und Ingestor. Mit
+      # persistence.accessMode ReadWriteOnce müssen alle diese Pods auf demselben Knoten laufen
+      # (worker.affinity, z. B. podAffinity zur Anwendung); mehrere Knoten oder Repliken auf
+      # verschiedenen Knoten brauchen ReadWriteMany.
       volumes:
         - name: media
           persistentVolumeClaim:
-            claimName: {{ include "mandari.fullname" . }}-media
+            claimName: {{ include "mandari.fullname" $root }}-media
         - name: files
           persistentVolumeClaim:
-            claimName: {{ include "mandari.fullname" . }}-files
-      {{- with .Values.worker.nodeSelector }}
+            claimName: {{ include "mandari.fullname" $root }}-files
+      {{- with $w.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.worker.tolerations }}
+      {{- with $w.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with $w.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end -}}
+
+{{- if .Values.worker.enabled }}
+{{- $heavy := .Values.worker.heavy }}
+{{- $args := list }}
+{{- if and $heavy.enabled .Values.worker.queues }}
+{{- $args = list "--queues" .Values.worker.queues }}
+{{- end }}
+{{- $args = concat $args .Values.worker.extraArgs }}
+{{ include "mandari.workerDeployment" (dict "root" . "name" "worker" "replicas" .Values.worker.replicas "maxMemoryMb" .Values.worker.maxMemoryMb "resources" .Values.worker.resources "args" $args) }}
+{{- if $heavy.enabled }}
+---
+{{ include "mandari.workerDeployment" (dict "root" . "name" "worker-heavy" "replicas" $heavy.replicas "maxMemoryMb" $heavy.maxMemoryMb "resources" $heavy.resources "args" (concat (list "--roles" "tasks" "--queues" $heavy.queues) $heavy.extraArgs)) }}
+{{- end }}
 {{- end }}
