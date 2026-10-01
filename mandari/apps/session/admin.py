@@ -1039,7 +1039,7 @@ class SessionApplicationAdmin(ModelAdmin):
         except (ConversionError, NumberingError):
             messages.error(
                 request,
-                "Umwandlung nicht möglich – bitte Zielgremium und Nummernkreis im Sitzungsdienst prüfen.",
+                "Umwandlung nicht möglich – bitte Status des Antrags, Zielgremium und Nummernkreis prüfen.",
             )
             return back
         if created:

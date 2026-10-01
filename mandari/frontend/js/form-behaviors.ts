@@ -7,7 +7,8 @@
  * - `data-slug-target="<id>"` am Namensfeld: füllt das Feld `<id>` mit einem URL-Kürzel,
  *   solange dort niemand selbst getippt hat (`templates/work/motions/settings/type_form.html`).
  * - `data-filter-options="<Selektor>"` und `data-filter-attr="org"` an einer Auswahl: blendet
- *   im Ziel-Select alle Optionen aus, deren `data-org` nicht zum gewählten Wert passt
+ *   im Ziel-Select alle Optionen aus, deren `data-org` den gewählten Wert nicht enthält – mehrere
+ *   Werte durch Leerzeichen getrennt, z. B. alle Gremien einer gemeinsamen Sitzung
  *   (`templates/session/papers/consultation_section.html`).
  * - `[data-textblock-picker]` mit `.tb-select` und `.tb-insert`: fügt einen Textbaustein in die
  *   Ziel-Textarea (`data-tb-target`) bzw. die zuletzt fokussierte Textarea ein, Platzhalter
@@ -79,7 +80,8 @@ export function filterOptions(source: HTMLSelectElement): void {
   const value = source.value
   for (const option of Array.from(target.options)) {
     if (!option.value) continue
-    const visible = !value || option.getAttribute(`data-${attr}`) === value
+    const values = (option.getAttribute(`data-${attr}`) ?? '').split(/\s+/)
+    const visible = !value || values.includes(value)
     option.hidden = !visible
     if (!visible && option.selected) target.value = ''
   }

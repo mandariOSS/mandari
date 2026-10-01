@@ -41,6 +41,39 @@ def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:
     return errors
 
 
+def paper_item_name(paper: Any) -> str:
+    """
+    Betreff eines TOP, der aus der Beratungsfolge einer Vorlage entsteht: „Nummer: Titel“.
+
+    Vor der Nummernvergabe (Nummernkreis „bei der Freigabe“) nur der Titel – die Nummer ergänzt
+    :func:`sync_paper_item_names`, sobald sie vergeben ist.
+    """
+    name = f"{paper.reference}: {paper.name}" if paper.reference else paper.name
+    return str(name)[:500]
+
+
+def sync_paper_item_names(paper: Any) -> int:
+    """
+    Nummer nachziehen: TOPs, die vor der Vergabe aus der Beratungsfolge der Vorlage entstanden sind,
+    tragen danach „Nummer: Titel“. Nur Betreffe, die noch genau dem Titel entsprechen (bzw. dem
+    früheren „: Titel“ ohne Nummer), werden angepasst – von Hand geänderte bleiben unberührt.
+
+    Returns:
+        Anzahl der angepassten TOPs.
+    """
+    if not paper.reference or not paper.pk:
+        return 0
+    name = paper_item_name(paper)
+    ohne_nummer = {str(paper.name)[:500], f": {paper.name}"[:500]}
+    anzahl = 0
+    # Einzeln gespeichert: Audit-Eintrag je TOP wie bei jeder anderen Änderung des Betreffs
+    for item in SessionAgendaItem.objects.filter(paper=paper, name__in=ohne_nummer).exclude(name=name):
+        item.name = name
+        item.save(update_fields=["name", "updated_at"])
+        anzahl += 1
+    return anzahl
+
+
 def cascade_visibility(item: SessionAgendaItem) -> int:
     """Unterpunkte folgen der Öffentlichkeit ihres TOPs (einzeln gespeichert: Audit + Rücknahme)."""
     anzahl = 0

@@ -61,6 +61,49 @@ def _deputy_emails(people, paper):
     return emails
 
 
+def _absolute_url(path):
+    from django.conf import settings as django_settings
+
+    base_url = getattr(django_settings, "SITE_URL", "https://mandari.de").rstrip("/")
+    return f"{base_url}{path}"
+
+
+def notify_creator_rejected(tenant, paper, comment, *, stelle=""):
+    """
+    Zurückweisung an die erstellende Person melden, ihre Vertretung in Kopie (Issue #33, #222).
+
+    Gilt für die Zurückweisung im Freigabelauf und für die einer Mitzeichnungsstation (``stelle``:
+    zurückweisendes Amt) – in beiden Fällen ist die Vorlage danach wieder im Entwurf.
+    """
+    from apps.common.email import send_email
+
+    creator = paper.created_by
+    recipients = sorted(
+        ({creator.user.email} if creator and creator.user.email else set())
+        | (_deputy_emails([creator], paper) if creator else set())
+    )
+    if not recipients:
+        return
+    detail_path = reverse("session:paper_detail", kwargs={"tenant_slug": tenant.slug, "paper_id": paper.id})
+    wo = f"in der Mitzeichnung ({stelle})" if stelle else "in der Prüfung"
+    body = (
+        f"Guten Tag,\n\n"
+        f"die Vorlage {paper.display_reference} „{paper.name}“ wurde {wo} zurückgewiesen.\n\n"
+        + (f"Anmerkung: {comment}\n\n" if comment else "")
+        + f"Zur Vorlage: {_absolute_url(detail_path)}\n\n"
+        f"Mit freundlichen Grüßen\n{tenant.name}"
+    )
+    try:
+        send_email(
+            subject=f"Vorlage zurückgewiesen: {paper.display_reference}",
+            body=body,
+            to=recipients,
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception("Zurückweisungs-Benachrichtigung für %s konnte nicht versendet werden.", paper.pk)
+
+
 # =============================================================================
 # PAPERS
 # =============================================================================
@@ -283,6 +326,10 @@ class PaperDetailView(SessionViewMixin, DetailView):
             files = files.filter(is_public=True)
         context["files"] = list(files)
         context["file_can_edit"] = self.has_permission("edit_papers")
+        # Festgeschriebener Inhalt: nur noch Ö/NÖ umstellbar – Hochladen, Ersetzen und Löschen lehnen die
+        # Datei-Views ab und werden deshalb gar nicht erst angeboten
+        context["file_content_locked"] = paper_version_service.content_locked(paper)
+        context["file_content_locked_message"] = paper_version_service.CONTENT_LOCKED_MESSAGE
 
         # Beratungshistorie: TOPs, auf denen die Vorlage stand – NÖ-TOPs und TOPs in NÖ-Sitzungen
         # nur mit NÖ-Sichtrecht (sonst erschienen Betreff, Sitzung und Ergebnis)
@@ -674,7 +721,7 @@ class PaperWorkflowView(SessionViewMixin, View):
         body = (
             f"Guten Tag,\n\n"
             f"die Vorlage {paper.display_reference} „{paper.name}“ wurde zur Freigabe vorgelegt.\n\n"
-            f"Zur Vorlage: {self._absolute_url(detail_path)}\n\n"
+            f"Zur Vorlage: {_absolute_url(detail_path)}\n\n"
             f"Mit freundlichen Grüßen\n{self.session_tenant.name}"
         )
         try:
@@ -688,43 +735,7 @@ class PaperWorkflowView(SessionViewMixin, View):
             logger.exception("Freigabe-Benachrichtigung für %s konnte nicht versendet werden.", paper.pk)
 
     def _notify_creator(self, paper, comment):
-        from apps.common.email import send_email
-
-        creator = paper.created_by
-        # Vertretung der erstellenden Person erhält die Zurückweisung in Kopie (Issue #222)
-        recipients = sorted(
-            ({creator.user.email} if creator and creator.user.email else set())
-            | (_deputy_emails([creator], paper) if creator else set())
-        )
-        if not recipients:
-            return
-        detail_path = reverse(
-            "session:paper_detail",
-            kwargs={"tenant_slug": self.session_tenant.slug, "paper_id": paper.id},
-        )
-        body = (
-            f"Guten Tag,\n\n"
-            f"die Vorlage {paper.display_reference} „{paper.name}“ wurde in der Prüfung zurückgewiesen.\n\n"
-            + (f"Anmerkung: {comment}\n\n" if comment else "")
-            + f"Zur Vorlage: {self._absolute_url(detail_path)}\n\n"
-            f"Mit freundlichen Grüßen\n{self.session_tenant.name}"
-        )
-        try:
-            send_email(
-                subject=f"Vorlage zurückgewiesen: {paper.display_reference}",
-                body=body,
-                to=recipients,
-                fail_silently=False,
-            )
-        except Exception:
-            logger.exception("Zurückweisungs-Benachrichtigung für %s konnte nicht versendet werden.", paper.pk)
-
-    @staticmethod
-    def _absolute_url(path):
-        from django.conf import settings as django_settings
-
-        base_url = getattr(django_settings, "SITE_URL", "https://mandari.de").rstrip("/")
-        return f"{base_url}{path}"
+        notify_creator_rejected(self.session_tenant, paper, comment)
 
 
 class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
@@ -815,6 +826,12 @@ class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
                     "Bitte zuerst diese TOPs auf nicht-öffentlich stellen.",
                 )
                 return self.form_invalid(form)
+        # Zurück in den Entwurf (nach der Rücknahme): Der Freigabevermerk gehört zum alten Stand – wie bei der
+        # Zurückweisung im Freigabelauf; eine erneute Freigabe setzt ihn wieder
+        if "status" in form.changed_data and form.instance.status == "draft":
+            form.instance.approved_by = None
+            form.instance.approved_at = None
+            form.instance.approved_on_behalf_of = None
         return self._save_with_numbering(form, "Vorlage wurde aktualisiert.")
 
     def get_success_url(self):

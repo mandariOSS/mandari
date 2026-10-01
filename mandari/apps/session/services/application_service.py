@@ -27,6 +27,15 @@ logger = logging.getLogger(__name__)
 #: Antragsart → Vorlagenart (bestimmt den Nummernkreis, z. B. „AN/…“ für Anträge der Politik)
 PAPER_TYPE_FOR_APPLICATION = {"inquiry": "inquiry", "amendment": "amendment", "resolution": "resolution"}
 
+#: Status, den nur die Umwandlung setzt – nie von Hand
+CONVERTED = "converted"
+#: Status, aus denen sich ein Antrag umwandeln lässt (nicht abgelehnt, nicht zurückgezogen)
+CONVERTIBLE_STATUSES = frozenset({"submitted", "received", "in_review", "accepted"})
+#: Angaben im Feld „Finanzielle Auswirkungen“, die „keine“ bedeuten
+NO_FINANCIAL_IMPACT = frozenset(
+    {"keine", "nein", "-", "–", "—", "0", "entfällt", "keine kosten", "keine finanziellen auswirkungen"}
+)
+
 
 class ConversionError(ValueError):
     """Umwandlung in eine Vorlage nicht möglich (Text ist für Nutzer:innen gedacht)."""
@@ -34,6 +43,39 @@ class ConversionError(ValueError):
 
 def default_paper_type(application: SessionApplication) -> str:
     return PAPER_TYPE_FOR_APPLICATION.get(application.application_type, "motion")
+
+
+def conversion_blocker(application: SessionApplication) -> str | None:
+    """Grund, warum sich der Antrag nicht in eine Vorlage umwandeln lässt; None, wenn es geht."""
+    if application.status in CONVERTIBLE_STATUSES:
+        return None
+    return f"Ein Antrag im Status „{application.get_status_display()}“ wird nicht in eine Vorlage umgewandelt."
+
+
+def manual_statuses(application: SessionApplication) -> set[str]:
+    """
+    Status, die die Antragsbearbeitung von Hand setzen darf.
+
+    „In Vorlage umgewandelt“ setzt nur die Umwandlung. Solange die Vorlage dazu besteht, bleibt ein
+    umgewandelter Antrag dabei – sonst stünde der Antrag wieder zur Umwandlung, obwohl es die Vorlage gibt.
+    """
+    if application.status == CONVERTED and application.created_papers.exists():
+        return {CONVERTED}
+    alle = {value for value, _ in SessionApplication._meta.get_field("status").flatchoices}
+    return (alle - {CONVERTED}) | {application.status}
+
+
+def financial_impact(application: SessionApplication) -> tuple[bool | None, str]:
+    """
+    Angabe „Finanzielle Auswirkungen“ für die Vorlage: (Ja/Nein/keine Angabe, Text).
+
+    Der Antrag hat dafür nur ein Freitextfeld. Leer heißt „keine Angabe“, eindeutige Verneinungen
+    wie „keine“ heißen „Nein“, alles andere „Ja“ – der Text kommt in jedem Fall mit.
+    """
+    text = (application.financial_impact or "").strip()
+    if not text:
+        return None, ""
+    return text.lower().rstrip(".!").strip() not in NO_FINANCIAL_IMPACT, text
 
 
 def convert_to_paper(
@@ -56,13 +98,17 @@ def convert_to_paper(
         (Vorlage, neu angelegt?) – ein bereits umgewandelter Antrag liefert seine Vorlage zurück.
 
     Raises:
-        ConversionError: Federführendes Gremium gehört nicht zum Mandanten.
+        ConversionError: Antrag ist abgelehnt oder zurückgezogen, oder das federführende Gremium gehört
+            nicht zum Mandanten.
         NumberingError: Der Nummernkreis kann keine Nummer vergeben.
     """
     tenant = application.tenant
     existing = SessionPaper.objects.filter(tenant=tenant, source_application=application).first()
     if existing is not None:
         return existing, False
+    blocker = conversion_blocker(application)
+    if blocker:
+        raise ConversionError(blocker)
 
     valid_types = {value for value, _ in SessionPaper._meta.get_field("paper_type").flatchoices}
     if paper_type not in valid_types:
@@ -77,6 +123,7 @@ def convert_to_paper(
         if main_organization is None:
             raise ConversionError("Das gewählte federführende Gremium wurde nicht gefunden.")
 
+    has_financial_impact, financial_impact_note = financial_impact(application)
     with transaction.atomic():
         paper = SessionPaper.objects.create(
             tenant=tenant,
@@ -84,6 +131,8 @@ def convert_to_paper(
             paper_type=paper_type,
             main_text=application.justification,
             resolution_text=application.resolution_proposal,
+            has_financial_impact=has_financial_impact,
+            financial_impact_note=financial_impact_note,
             is_public=True,
             date=timezone.localdate(),
             main_organization=main_organization,

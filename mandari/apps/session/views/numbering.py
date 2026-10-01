@@ -20,6 +20,8 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.common.params import uuid_param
+
 from .. import audit
 from ..models import SessionNumberRange, SessionPaper, SessionTenant
 from ..permissions import SessionViewMixin
@@ -87,13 +89,13 @@ class NumberingSaveView(SessionViewMixin, View):
         self.tenant.reference_label = label
         messages.success(request, f"Bezeichnung gespeichert: {label}.")
 
+    def _get_range(self, raw_id: str | None) -> SessionNumberRange:
+        """Kreis des eigenen Mandanten; ungültige Kennung wie unbekannte: 404 statt Serverfehler."""
+        return get_object_or_404(SessionNumberRange, pk=uuid_param(raw_id), tenant=self.session_tenant)
+
     def _range(self, request: HttpRequest) -> None:
         rng_id = request.POST.get("range_id")
-        rng = (
-            get_object_or_404(SessionNumberRange, pk=rng_id, tenant=self.session_tenant)
-            if rng_id
-            else SessionNumberRange(tenant=self.session_tenant)
-        )
+        rng = self._get_range(rng_id) if rng_id else SessionNumberRange(tenant=self.session_tenant)
         pattern = (request.POST.get("pattern") or "").strip()
         reset = request.POST.get("reset", "yearly")
         sub_pattern = (request.POST.get("sub_pattern") or "{parent}.{sub}").strip()
@@ -145,7 +147,7 @@ class NumberingSaveView(SessionViewMixin, View):
         messages.success(request, f"Preset „{numbering_service.PRESETS[key].label}“ übernommen.")
 
     def _next(self, request: HttpRequest) -> None:
-        rng = get_object_or_404(SessionNumberRange, pk=request.POST.get("range_id"), tenant=self.session_tenant)
+        rng = self._get_range(request.POST.get("range_id"))
         try:
             naechste = int(request.POST.get("next_number") or 0)
             numbering_service.set_next_number(rng, naechste)

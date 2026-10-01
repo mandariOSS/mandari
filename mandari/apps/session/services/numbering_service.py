@@ -115,7 +115,13 @@ def _wahlperiode(tenant: SessionTenant, stichtag: date) -> int:
     return int(term.number)
 
 
-def _werte(number_range: SessionNumberRange, paper: SessionPaper | None, stichtag: date) -> dict[str, Any]:
+def _werte(
+    number_range: SessionNumberRange, paper: SessionPaper | None, stichtag: date, *, vorschau: bool = False
+) -> dict[str, Any]:
+    """
+    Werte der Platzhalter am Stichtag. ``vorschau``: ohne federführendes Gremium mit Kurzname steht
+    „GREMIUM“ für {gremium} – die Vorschau zeigt dann das Schema statt eines Fehlers.
+    """
     muster = number_range.pattern
     werte: dict[str, Any] = {
         "jahr": stichtag.year,
@@ -127,6 +133,8 @@ def _werte(number_range: SessionNumberRange, paper: SessionPaper | None, stichta
     if "{gremium" in muster:
         gremium = getattr(paper, "main_organization", None) if paper is not None else None
         kurz = (gremium.short_name or "").strip() if gremium else ""
+        if not kurz and vorschau:
+            kurz = "GREMIUM"
         if not kurz:
             raise NumberingError("Das Muster enthält {gremium}: Bitte ein federführendes Gremium mit Kurzname wählen.")
         werte["gremium"] = kurz
@@ -248,11 +256,9 @@ def preview(number_range: SessionNumberRange, paper: SessionPaper | None = None)
     from apps.session.models import SessionNumberCounter
 
     try:
-        werte = _werte(number_range, paper, timezone.localdate())
+        werte = _werte(number_range, paper, timezone.localdate(), vorschau=True)
     except NumberingError as exc:
         return f"– ({exc})"
-    if "gremium" in (m.group(1) for m in TOKEN_RE.finditer(number_range.pattern)) and "gremium" not in werte:
-        werte["gremium"] = "GREMIUM"
     scope = _scope(number_range, werte)
     stand = (
         SessionNumberCounter.objects.filter(number_range=number_range, scope=scope)

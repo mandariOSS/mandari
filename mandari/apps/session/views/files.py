@@ -29,6 +29,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic.base import ContextMixin
 
+from apps.common.params import uuid_param
+
 from .. import audit
 from ..models import (
     SessionAgendaItem,
@@ -68,7 +70,8 @@ def _resolve_target(view, target_type: str, target_id):
         qs = SessionMeeting.objects.filter(tenant=view.session_tenant)
     else:
         qs = SessionAgendaItem.objects.filter(meeting__tenant=view.session_tenant)
-    return get_object_or_404(qs.visible_to(view.session_permissions), pk=target_id)
+    # Ungültige Kennung wie unbekannte: 404 statt Serverfehler
+    return get_object_or_404(qs.visible_to(view.session_permissions), pk=uuid_param(target_id))
 
 
 def _edit_permission(session_file: SessionFile) -> str:

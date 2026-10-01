@@ -28,7 +28,7 @@
                 <div class="min-w-0">
                     <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=cosign.paper.id %}"
                        class="text-sm font-medium text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400">
-                        {{ cosign.paper.reference }}: {{ cosign.paper.name }}
+                        {{ cosign.paper.display_reference }}: {{ cosign.paper.name }}
                     </a>
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                         Station {{ cosign.order }}: {{ cosign.department.name }}

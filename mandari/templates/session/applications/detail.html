@@ -60,7 +60,7 @@
                         <i data-lucide="edit" class="w-4 h-4"></i>
                         Bearbeiten
                     </a>
-                    {% if application.status != 'converted' and application.status != 'withdrawn' %}
+                    {% if can_convert %}
                     {% if "create_papers" in permission_checker.permissions %}
                     <a href="{% url 'session:application_convert' tenant_slug=tenant_slug application_id=application.id %}"
                        class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">

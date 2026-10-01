@@ -385,11 +385,15 @@
                 <i data-lucide="file-input" class="w-5 h-5 text-blue-500"></i>
                 Erstellt aus Antrag
             </h3>
+            {% if "view_applications" in permission_checker.permissions %}
             <a href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=paper.source_application.id %}"
                class="inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
                 <span class="font-mono">{{ paper.source_application.reference }}</span>
                 {{ paper.source_application.title|truncatechars:40 }}
             </a>
+            {% else %}
+            <p class="text-sm text-gray-700 dark:text-gray-300"><span class="font-mono">{{ paper.source_application.reference }}</span></p>
+            {% endif %}
         </div>
         {% endif %}
     </div>

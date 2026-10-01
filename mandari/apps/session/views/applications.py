@@ -23,7 +23,13 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
-from ..services.application_service import ConversionError, convert_to_paper, default_paper_type
+from ..services.application_service import (
+    ConversionError,
+    conversion_blocker,
+    convert_to_paper,
+    default_paper_type,
+    manual_statuses,
+)
 
 # =============================================================================
 # APPLICATIONS
@@ -100,6 +106,8 @@ class ApplicationDetailView(SessionViewMixin, DetailView):
             for f in self.object.files.select_related("paper").order_by("created_at")
             if file_service.file_visible(self.session_permissions, f)
         ]
+        # Abgelehnte, zurückgezogene und umgewandelte Anträge werden nicht (erneut) umgewandelt
+        context["can_convert"] = conversion_blocker(self.object) is None
         return context
 
 
@@ -121,7 +129,18 @@ class ApplicationProcessView(SessionViewMixin, UpdateView):
         form.fields["target_organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         )
+        # „In Vorlage umgewandelt“ setzt nur die Umwandlung; die Auswahl begrenzt zugleich, was das
+        # Formular annimmt (ChoiceField prüft gegen choices)
+        erlaubt = manual_statuses(form.instance)
+        feld = form.fields["status"]
+        feld.choices = [(wert, text) for wert, text in feld.choices if wert in erlaubt]
         return form
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Status-Verlauf: alle Stufen, auch die nicht von Hand wählbaren
+        context["status_steps"] = SessionApplication._meta.get_field("status").choices
+        return context
 
     def form_valid(self, form):
         # Set received info if marking as received
@@ -148,13 +167,30 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
     permission_required = ["process_applications", "create_papers"]
     permission_require_all = True
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        application = get_object_or_404(
+    def get(self, request, *args, **kwargs):
+        application = self._application()
+        blocker = conversion_blocker(application)
+        if blocker:
+            # Umgewandelt: zur Vorlage; abgelehnt oder zurückgezogen: zurück mit Hinweis
+            paper = SessionPaper.objects.filter(tenant=self.session_tenant, source_application=application).first()
+            if paper is not None:
+                return redirect("session:paper_detail", tenant_slug=self.session_tenant.slug, paper_id=paper.id)
+            messages.error(request, f"Umwandlung nicht möglich: {blocker}")
+            return redirect(
+                "session:application_detail", tenant_slug=self.session_tenant.slug, application_id=application.id
+            )
+        return super().get(request, *args, **kwargs)
+
+    def _application(self):
+        return get_object_or_404(
             SessionApplication,
             pk=self.kwargs["application_id"],
             tenant=self.session_tenant,
         )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        application = self._application()
         context["application"] = application
         context["organizations"] = SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)
         context["paper_types"] = SessionPaper._meta.get_field("paper_type").choices
@@ -162,11 +198,7 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
         return context
 
     def post(self, request, *args, **kwargs):
-        application = get_object_or_404(
-            SessionApplication,
-            pk=self.kwargs["application_id"],
-            tenant=self.session_tenant,
-        )
+        application = self._application()
 
         # Ein Weg für Portal und Admin (Issue #316): Nummer aus dem Nummernkreis (Issue #150),
         # Statuswechsel per Einzel-Speichern, damit die Rückmeldung an die Fraktion läuft.

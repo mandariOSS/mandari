@@ -18,7 +18,10 @@ automatisch vom TOP zurück (Issues #31/#32).
 from django.contrib import messages
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect
+from django.utils import timezone
 from django.views import View
+
+from apps.common.params import uuid_param
 
 from ..models import (
     SessionAgendaItem,
@@ -74,9 +77,12 @@ class ConsultationBaseView(SessionViewMixin, View):
         """
         if not raw_meeting_id:
             return None, None
+        meeting_id = uuid_param(raw_meeting_id)  # ungültige Kennung: „nicht gefunden“ statt Serverfehler
+        if meeting_id is None:
+            return None, "Die gewählte Sitzung wurde nicht gefunden."
         # Nichtöffentliche Sitzungen nur mit NÖ-Sichtrecht – sonst „nicht gefunden“
         meeting = (
-            SessionMeeting.objects.filter(pk=raw_meeting_id, tenant=self.session_tenant)
+            SessionMeeting.objects.filter(pk=meeting_id, tenant=self.session_tenant)
             .visible_to(self.session_permissions)
             .first()
         )
@@ -96,10 +102,12 @@ class ConsultationCreateView(ConsultationBaseView):
     def post(self, request, tenant_slug, paper_id):
         paper = self.get_paper(paper_id)
 
-        organization = SessionOrganization.objects.filter(
-            pk=request.POST.get("organization") or None,
-            tenant=self.session_tenant,
-        ).first()
+        organization_id = uuid_param(request.POST.get("organization"))
+        organization = (
+            SessionOrganization.objects.filter(pk=organization_id, tenant=self.session_tenant).first()
+            if organization_id
+            else None
+        )
         if organization is None:
             messages.error(request, "Bitte ein Gremium für die Beratungsstation wählen.")
             return self.redirect_to_paper(paper)
@@ -251,7 +259,8 @@ def schedule_consultation(view, request, consultation):
         item = SessionAgendaItem.objects.create(
             meeting=meeting,
             number="?",  # wird durch renumber_agenda gesetzt
-            name=f"{paper.reference}: {paper.name}"[:500],
+            # Vor der Nummernvergabe nur der Titel; die Nummer zieht SessionPaper.save nach
+            name=agenda_service.paper_item_name(paper),
             order=agenda_service.insertion_order(meeting, is_public=paper.is_public),  # vor den Ende-TOPs
             is_public=paper.is_public,
             is_supplementary=bool(meeting.invitation_sent_at or meeting.meeting_state == "invitation_sent"),
@@ -271,7 +280,7 @@ def schedule_consultation(view, request, consultation):
     messages.success(
         request,
         f"TOP {item.number} für {consultation.organization.name} "
-        f"({meeting.start:%d.%m.%Y}) wurde aus der Beratungsfolge angelegt.",
+        f"({timezone.localtime(meeting.start):%d.%m.%Y}) wurde aus der Beratungsfolge angelegt.",
     )
     return True
 

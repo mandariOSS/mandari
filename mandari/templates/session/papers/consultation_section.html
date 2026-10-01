@@ -192,7 +192,7 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                     class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white max-w-[260px]">
                 <option value="">— Zielsitzung (optional) —</option>
                 {% for meeting in consultation_meetings %}
-                <option value="{{ meeting.id }}" data-org="{{ meeting.organization_id }}">
+                <option value="{{ meeting.id }}" data-org="{{ meeting.participating_organization_ids|join:' ' }}">
                     {{ meeting.start|date:"d.m.Y" }} — {{ meeting.name|truncatechars:40 }}
                 </option>
                 {% endfor %}
