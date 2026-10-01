@@ -160,6 +160,24 @@ def test_nummern_nach_commit_in_schreibreihenfolge_und_weckruf(pg_verbindungen: 
 
 
 @pytest.mark.django_db(transaction=True)
+def test_veroeffentlichte_ereignisse_werden_je_typ_gezaehlt() -> None:
+    """``mandari_events_published_total{type}``: jedes festgeschriebene Ereignis genau einmal, beim Vergeben."""
+    nur_postgres()
+    typ, anderer = (f"test.zaehlung{uuid.uuid4().hex[:8]}.geaendert" for _ in range(2))
+    vorher = REGISTRY.get_sample_value("mandari_events_published_total", {"type": typ}) or 0.0
+    with transaction.atomic():
+        ereignisse = [ereignis_anlegen(type=typ).event_id for _ in range(3)]
+        ereignisse.append(ereignis_anlegen(type=anderer).event_id)
+    sequencer = Sequencer()
+
+    _bis_alle_nummeriert(sequencer, ereignisse)
+    sequencer.drain()
+
+    assert REGISTRY.get_sample_value("mandari_events_published_total", {"type": typ}) == vorher + 3
+    assert REGISTRY.get_sample_value("mandari_events_published_total", {"type": anderer}) == 1.0
+
+
+@pytest.mark.django_db(transaction=True)
 def test_offene_aeltere_transaktion_haelt_zurueck_und_kommt_danach_zuerst(pg_verbindungen: Verbindungen) -> None:
     nur_postgres()
     langlaeufer = pg_verbindungen(autocommit=False)

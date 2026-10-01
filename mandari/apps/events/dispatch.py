@@ -492,12 +492,31 @@ def deliver_batch(spec: Subscriber) -> RunResult:
     return _wiederholen(spec) + _fortlaufend(spec)
 
 
-# --- Eingriffe (Betrieb, später Admin-Seite) -----------------------------------------------------
+# --- Eingriffe (Betrieb und Admin-Seite ``apps.events.admin``) ------------------------------------
 
 
 def _mit_sperre_des_abonnements(name: str) -> None:
     """Sperrt die Zeile des Abonnements; Eingriffe warten so auf einen laufenden Zustellungslauf."""
     list(Subscription.objects.select_for_update().filter(name=name).values_list("name", flat=True))
+
+
+def set_state(name: str, state: str) -> str | None:
+    """Setzt den Zustand eines Abonnements (pausieren, fortsetzen, Schattenbetrieb); gibt den vorigen zurück.
+
+    ``None``, wenn es das Abonnement nicht gibt. Unter der Zeilensperre: Ein laufender Lauf wird noch
+    mit dem alten Zustand festgeschrieben, der nächste liest den neuen. Pausiert stellt die Zustellung
+    nichts zu, auch keine geparkten Ereignisse; der Cursor bleibt stehen.
+    """
+    if state not in SubscriptionState.values:
+        raise ValueError(f"Unbekannter Zustand eines Abonnements: {state}")
+    with transaction.atomic():
+        vorher = Subscription.objects.select_for_update().filter(name=name).values_list("state", flat=True).first()
+        if vorher is None:
+            return None
+        if vorher != state:
+            Subscription.objects.filter(name=name).update(state=state, updated_at=Now())
+            logger.warning("Abonnement %s: Zustand %s -> %s", name, vorher, state)
+    return str(vorher)
 
 
 def discard_parked(parked_id: int) -> bool:

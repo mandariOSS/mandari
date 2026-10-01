@@ -98,6 +98,28 @@ def record(event: str, request: Any, *, user: Any = None, identifier: str = "", 
         logger.exception("Anmeldeereignis %s konnte nicht protokolliert werden", event)
 
 
+def record_operation(request: Any, action: str, **details: Any) -> None:
+    """
+    Eingriff der Plattform-Administration in den Betrieb im Sicherheitsprotokoll festhalten (Ereignis
+    ``betrieb``): wer (Konto), von wo, welche Aktion, an welchen Kennungen.
+
+    ``details`` enthält nur Kennungen und Codes, nie Inhalte. Anders als bei Anmeldungen scheitert der
+    Eingriff, wenn das Protokoll nicht geschrieben werden kann: Der Aufrufer schreibt beides in einer
+    Transaktion.
+    """
+    from apps.accounts.models import SecurityAuditLog
+
+    ip_address, user_agent = audit_core.get_client_meta(request)
+    user = getattr(request, "user", None)
+    SecurityAuditLog.objects.create(
+        event="betrieb",
+        user_ref=getattr(user, "pk", None),
+        ip_address=ip_address,
+        user_agent=user_agent[:300],
+        details={"aktion": action, **details},
+    )
+
+
 def log_second_factor_failed(request: Any, user: Any) -> None:
     """Falscher Code im zweiten Anmeldeschritt (Passwort war richtig)."""
     record("login_failed", request, user=user, reason=REASON_SECOND_FACTOR)

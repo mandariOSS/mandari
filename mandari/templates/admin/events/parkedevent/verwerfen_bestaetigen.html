@@ -1,0 +1,54 @@
+{% extends "admin/base_site.html" %}
+{% load i18n l10n unfold %}
+
+{% comment %}
+Bestätigung vor dem Verwerfen geparkter Ereignisse (apps/events/admin.py, Aktion „verwerfen“). Erst das
+abgeschickte Formular (POST mit post=ja) verwirft; jeder Eingriff steht im Sicherheitsprotokoll.
+{% endcomment %}
+
+{% block breadcrumbs %}
+    <div class="px-4">
+        <div class="container mb-6 mx-auto -my-3 lg:mb-12">
+            <ul class="flex flex-wrap">
+                {% url "admin:index" as index_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=index_url name=_("Home") %}
+                {% url "admin:events_parkedevent_changelist" as changelist_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=changelist_url name=opts.verbose_name_plural|capfirst %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link="" name=title %}
+            </ul>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div class="flex flex-col gap-6 max-w-4xl">
+        <p>
+            Verworfene Ereignisse werden dem Abonnement nie zugestellt. Danach rückt jeweils das nächste geparkte Ereignis
+            desselben Objekts nach und wird sofort zugestellt. Der Eingriff wird mit Ihrem Admin-Konto im
+            Sicherheitsprotokoll festgehalten.
+        </p>
+
+        {% component "unfold/components/card.html" with title="Diese Ereignisse verwerfen" %}
+            <ul class="leading-relaxed mb-4">
+                {% for geparkt in queryset %}
+                    <li>
+                        {{ geparkt.subscription }}, Folgenummer {{ geparkt.event_seq|unlocalize }}: {{ geparkt.get_state_display }},
+                        Objekt {{ geparkt.aggregate_id }}{% if geparkt.error_code %}, {{ geparkt.error_code }}{% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+            <form method="post" novalidate>
+                {% csrf_token %}
+                {% for geparkt in queryset %}
+                    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ geparkt.pk|unlocalize }}">
+                {% endfor %}
+                <input type="hidden" name="action" value="verwerfen">
+                <input type="hidden" name="post" value="ja">
+                <div class="flex gap-4 items-center">
+                    {% component "unfold/components/button.html" with submit=1 %}Verwerfen{% endcomponent %}
+                    <a href="{% url 'admin:events_parkedevent_changelist' %}">Abbrechen</a>
+                </div>
+            </form>
+        {% endcomponent %}
+    </div>
+{% endblock %}

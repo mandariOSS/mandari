@@ -150,8 +150,11 @@ das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 | `mandari_events_sequencer_lag_seconds` | – | Rückstand des Sequenzierers: Alter (ab Erfassung) des ältesten Ereignisses, das eine Folgenummer bekommen könnte, aber noch keine hat; 0 = kein Rückstand. Wächst, wenn kein Sequenzierer läuft oder er hängt – das zeigt `…_blocked_seconds` nicht. Direkt nach dem Commit einer langen Transaktion kurz hoch, Alarme deshalb mit Mindestdauer. Solange kein Dienst den Sequenzierer startet (#508), wächst der Wert, sobald Ereignisse geschrieben werden |
 | `mandari_events_oldest_transaction_seconds` | – | Alter der ältesten offenen Transaktion mit Transaktionskennung im Cluster, soweit die Datenbankrolle sie sehen darf |
 | `mandari_events_sequenced_total` | – | vergebene Folgenummern; nur im Prozess des Sequenzierers (`manage.py events_sequencer`) |
+| `mandari_events_published_total` | `type` | veröffentlichte Ereignisse je Typ, gezählt beim Vergeben der Folgenummer. So zählt jedes festgeschriebene Ereignis genau einmal, auch die des Ingestors (dessen eigene Zählung: `mandari_ingestor_events_published_total`). Die Summe über alle Typen entspricht `…_sequenced_total`; nur im Prozess des Sequenzierers |
 | `mandari_events_listener_up` | – | 1, solange der Weckruf per `LISTEN` ankommt (Selbstprüfung alle 30 s), 0 bei Rückfall auf reine Abfrage, etwa hinter PgBouncer ohne `EVENTS_DB_DIRECT_URL`; nur in Prozessen mit Weckruf (`events_sequencer`, `events_dispatch`) |
 | `mandari_events_parked` | `subscription`, `state` (`wiederholen`, `blockiert`, `tot`) | geparkte Ereignisse der Zustellung je Abonnement, beim Abruf aus `events_parked` gezählt. `tot` = nach acht Versuchen aufgegeben; Alarm bei `tot` > 0. `blockiert` = Folgeereignisse eines Objekts, das auf ein geparktes Ereignis wartet |
+| `mandari_events_lag_seconds` | `subscription` | Rückstand eines Abonnements: Alter (ab Erfassung) des ältesten nummerierten Ereignisses hinter seinem Cursor, das es zugestellt bekommt; 0 = aktuell. Nur für Abonnements, die im Code registriert sind (eine Zeile ohne Handler bekommt nie wieder etwas zugestellt). Beim Abruf aus der Datenbank gemessen (`apps/events/metrics.py`); Alarm ab 300 s, außer das Abonnement ist pausiert |
+| `mandari_events_subscription_paused` | `subscription` | 1, solange ein Abonnement pausiert ist (Admin-Seite „Ereignistechnik → Abonnements“); sein Rückstand wächst dann bewusst |
 | `mandari_events_delivered_total`, `mandari_events_delivery_failures_total`, `mandari_events_dead_total` | `subscription` | zugestellte Ereignisse, gescheiterte Zustellversuche und tot gewordene Ereignisse; nur im Prozess der Zustellung (`manage.py events_dispatch`) |
 | `mandari_tasks_queued` | `queue` | Aufträge (`events_task`, Backend `JournalBackend`): fällige wartende Aufträge je Warteschlange, also der Rückstand des Runners `manage.py events_tasks` (`apps/events/task_metrics.py`, beim Abruf aus der Datenbank gemessen) |
 | `mandari_tasks_oldest_queued_seconds` | `queue` | wie lange der älteste fällige Auftrag schon wartet; wächst, wenn kein Runner läuft |
@@ -183,6 +186,44 @@ und Kommune (`source` wie bei `mandari_ingestor_entities_synced_total`), sobald
 Wert einer Kommune nach Vollabgleichen ohne Änderung hoch, liefert ihre Quelle eingebettete und
 einzeln abgerufene Objekte unterschiedlich; `sync_config["events_enabled"] = false` an der Quelle
 nimmt nur sie von den Ereignissen aus.
+
+### Alarmregeln (Prometheus)
+
+Fertige Regeln: `deploy/monitoring/prometheus-alerts.example.yml` (in Prometheus per `rule_files`
+einbinden, Empfänger über Alertmanager). Schwellen und Begründung:
+
+| Alarm | Ausdruck (gekürzt) | Dauer | Bedeutung, erster Schritt |
+|---|---|---|---|
+| Rückstand eines Abonnements | `mandari_events_lag_seconds > 300 unless on (subscription) mandari_events_subscription_paused == 1` | 5 min | Die Zustellung läuft nicht oder kommt nicht nach. Admin-Seite „Abonnements“, Protokoll von `events_dispatch` |
+| Tote Ereignisse | `mandari_events_parked{state="tot"} > 0` | sofort | Ein Ereignis wurde nach acht Versuchen aufgegeben; seine Folgeereignisse warten. Admin-Seite „Geparkte Ereignisse“: Ursache beheben, dann erneut versuchen oder verwerfen. Die Mail über `check_service_levels` geht zusätzlich |
+| Viele blockierte Ereignisse | `mandari_events_parked{state="blockiert"} > 1000` | 15 min | Hinter einem geparkten Ereignis eines häufig geänderten Objekts stauen sich Folgeereignisse (ohne Obergrenze, die Reihenfolge je Objekt bleibt erhalten). Hinweis, kein Notfall |
+| Sequenzierer aufgehalten | `mandari_events_sequencer_blocked_seconds > 300` | 5 min | Eine lange offene Transaktion (auch einer anderen Datenbank im Cluster) hält die Vergabe auf. `pg_stat_activity` nach der ältesten Transaktion durchsehen |
+| Sequenzierer im Rückstand | `mandari_events_sequencer_lag_seconds > 300` | 5 min | Kein Sequenzierer läuft oder er hängt; ohne Folgenummer stellt niemand zu |
+| Tote Aufträge | `mandari_tasks_dead > 0` | sofort | Ein Auftrag ist endgültig gescheitert; Ursache im Protokoll des Runners |
+| Auftragsrückstand | `mandari_tasks_oldest_queued_seconds > 900` | 10 min | Kein Runner bedient die Warteschlange oder sie kommt nicht nach |
+| Weckruf gestört | `mandari_events_listener_up == 0` | 15 min | Nur Hinweis: Die Abfrage alle paar Sekunden trägt weiter, die Zustellung ist nur langsamer |
+
+Die Dauer fängt kurze Spitzen ab: Direkt nach dem Commit einer langen Transaktion sind Rückstand und
+Sequenzierer-Rückstand kurz hoch, ohne dass etwas klemmt. Die Werte der Ereignistechnik misst jeder
+Webprozess beim Abruf aus der Datenbank; bei mehreren Instanzen in Abfragen `max` statt `sum` nehmen.
+
+### Admin-Seite „Ereignistechnik“
+
+Nur für Administratoren (Superuser); Eingriffe stehen im Sicherheitsprotokoll (Ereignis „Eingriff in
+den Betrieb“, mit Konto, Adresse, Aktion und Kennungen, ohne Inhalte):
+
+- **Abonnements:** Zustand, Warteschlange, Cursor, Rückstand (wie `mandari_events_lag_seconds`, rot ab
+  300 s) und geparkte Ereignisse je Zustand. Aktionen: Pausieren (nichts mehr zustellen, der Cursor
+  bleibt stehen), Fortsetzen (aktiv) und Fortsetzen im Schattenbetrieb – beide nur für pausierte.
+- **Geparkte Ereignisse:** standardmäßig der Kopf jeder Kette je Objekt (wiederholen oder tot) mit der
+  Zahl seiner Folgeereignisse; „Alle Ereignisse“ bzw. der Filter nach Zustand zeigt auch die
+  blockierten. Aktionen: Erneut versuchen (nur das erste Ereignis eines Objekts, mit allen Versuchen) und
+  Verwerfen (mit Bestätigung; das nächste Ereignis desselben Objekts rückt nach und wird sofort
+  zugestellt).
+- **Aufträge:** nur lesend, Filter nach Status und Warteschlange.
+
+Dieselben Eingriffe gibt es auf der Kommandozeile (`manage.py events_dispatch --list`,
+`--retry-parked`, `--discard-parked`); dort ohne Eintrag im Sicherheitsprotokoll.
 
 ## Service-Level-Alarme
 

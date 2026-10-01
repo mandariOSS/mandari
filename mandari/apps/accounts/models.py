@@ -354,7 +354,9 @@ class SecurityAuditLog(models.Model):
     Nimmt Anmeldungen, Abmeldungen und fehlgeschlagene Anmeldungen von Konten auf, die keinem
     Session-Mandanten zugeordnet sind (Work-Portal, Bürgerportal, Plattform-Administration),
     sowie Fehlversuche mit unbekannter Kennung. Ereignisse von Session-Nutzern stehen im
-    Protokoll ihres Mandanten (``SessionAuditLog``).
+    Protokoll ihres Mandanten (``SessionAuditLog``). Dazu kommen Eingriffe der
+    Plattform-Administration in den Betrieb (``betrieb``, etwa ein Abonnement der Ereignistechnik
+    pausieren oder ein geparktes Ereignis verwerfen) mit Aktion und Kennungen in ``details``.
 
     Datensparsam: kein Passwort, keine eingegebene Kennung im Klartext. Für Fehlversuche mit
     unbekannter Kennung steht nur ein geheimer, schlüsselgebundener Hash (HMAC-SHA-256) darin –
@@ -369,6 +371,7 @@ class SecurityAuditLog(models.Model):
         ("login", "Anmeldung"),
         ("logout", "Abmeldung"),
         ("login_failed", "Anmeldung fehlgeschlagen"),
+        ("betrieb", "Eingriff in den Betrieb"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -1,0 +1,93 @@
+# Beispiel: Prometheus-Alarmregeln für die Ereignistechnik (Issue #510, docs/MONITORING.md)
+#
+# Einbinden in prometheus.yml:
+#   rule_files:
+#     - /etc/prometheus/mandari-alerts.yml
+# Empfänger und Wiederholung regelt der Alertmanager. Die Werte der Ereignistechnik misst jeder
+# Webprozess beim Abruf aus der Datenbank; bei mehreren Instanzen deshalb max statt sum.
+
+groups:
+  - name: mandari-ereignistechnik
+    rules:
+      - alert: MandariAbonnementImRueckstand
+        expr: |
+          max by (subscription) (mandari_events_lag_seconds) > 300
+            unless on (subscription) max by (subscription) (mandari_events_subscription_paused) == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Abonnement {{ $labels.subscription }} liegt mehr als 5 Minuten zurück"
+          description: >-
+            Die Zustellung läuft nicht oder kommt nicht nach. Admin-Seite „Ereignistechnik → Abonnements“
+            und das Protokoll von events_dispatch prüfen.
+
+      - alert: MandariToteEreignisse
+        expr: max by (subscription) (mandari_events_parked{state="tot"}) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tote Ereignisse im Abonnement {{ $labels.subscription }}"
+          description: >-
+            Ein Ereignis wurde nach allen Versuchen aufgegeben; Folgeereignisse desselben Objekts warten.
+            Admin-Seite „Ereignistechnik → Geparkte Ereignisse“: Ursache beheben, dann erneut versuchen
+            oder verwerfen.
+
+      - alert: MandariVieleBlockierteEreignisse
+        expr: max by (subscription) (mandari_events_parked{state="blockiert"}) > 1000
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "Viele blockierte Ereignisse im Abonnement {{ $labels.subscription }}"
+          description: >-
+            Hinter einem geparkten Ereignis stauen sich Folgeereignisse desselben Objekts. Das erste
+            Ereignis der Kette erneut versuchen oder verwerfen.
+
+      - alert: MandariSequenziererAufgehalten
+        expr: max(mandari_events_sequencer_blocked_seconds) > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Eine offene Transaktion hält den Sequenzierer seit mehr als 5 Minuten auf"
+          description: >-
+            Die älteste offene Transaktion im Datenbank-Cluster (pg_stat_activity, auch andere Datenbanken)
+            beenden oder abwarten; bis dahin bekommt kein neues Ereignis eine Folgenummer.
+
+      - alert: MandariSequenziererImRueckstand
+        expr: max(mandari_events_sequencer_lag_seconds) > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ereignisse warten seit mehr als 5 Minuten auf eine Folgenummer"
+          description: Kein Sequenzierer läuft oder er hängt; ohne Folgenummer stellt niemand zu.
+
+      - alert: MandariToteAuftraege
+        expr: max by (queue) (mandari_tasks_dead) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Endgültig gescheiterte Aufträge in der Warteschlange {{ $labels.queue }}"
+          description: Ursache im Protokoll des Runners (events_tasks); der Wert erlischt nach 24 Stunden.
+
+      - alert: MandariAuftragsrueckstand
+        expr: max by (queue) (mandari_tasks_oldest_queued_seconds) > 900
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Aufträge in {{ $labels.queue }} warten seit mehr als 15 Minuten"
+          description: Kein Runner bedient die Warteschlange oder sie kommt nicht nach.
+
+      - alert: MandariWeckrufGestoert
+        expr: max(mandari_events_listener_up) == 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "Weckruf per LISTEN kommt nicht an"
+          description: >-
+            Nur Hinweis: Die Abfrage trägt weiter, die Zustellung ist langsamer. Hinter PgBouncer
+            EVENTS_DB_DIRECT_URL prüfen.

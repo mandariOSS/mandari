@@ -3,6 +3,10 @@
 Metriken der Ereignistechnik im Prometheus-Format (Registrierung in ``EventsConfig.ready``).
 
 - ``mandari_events_sequenced_total``: vergebene Folgenummern dieses Prozesses.
+- ``mandari_events_published_total{type}``: veröffentlichte Ereignisse je Typ, gezählt beim Vergeben
+  der Folgenummer. Der Sequenzierer sieht jedes festgeschriebene Ereignis genau einmal – auch die,
+  die der Ingestor am Django-Prozess vorbei schreibt; ``publish()`` könnte nur seine eigenen zählen.
+  Nur im Prozess des Sequenzierers (wie ``…_sequenced_total``), die Summe über alle Typen ist dieselbe.
 - ``mandari_events_sequencer_blocked_seconds``: Wie lange eine offene Transaktion den
   Sequenzierer schon aufhält. 0, solange jedes festgeschriebene Ereignis eine Nummer bekommen
   kann. Sonst das Alter der Transaktion, die die Grenze ``pg_snapshot_xmin`` hält (auch in einer
@@ -24,6 +28,12 @@ Metriken der Ereignistechnik im Prometheus-Format (Registrierung in ``EventsConf
   sonst 0; dann tragen die Abfragen allein. Nur im Prozess des Sequenzierers bzw. der Zustellung.
 - ``mandari_events_parked{subscription,state}``: geparkte Ereignisse je Zustand (``wiederholen``,
   ``blockiert``, ``tot``), beim Abruf aus ``events_parked`` gezählt. Alarm bei ``tot`` > 0.
+- ``mandari_events_lag_seconds{subscription}``: Rückstand eines Abonnements, gemessen ab Erfassung
+  des ältesten nummerierten Ereignisses hinter seinem Cursor, das es zugestellt bekommt (Typmuster
+  aus ``apps.events.registry``); 0 = aktuell. Nur für Abonnements, die im Code registriert sind –
+  eine Zeile ohne Handler bekommt nie wieder etwas zugestellt und würde sonst dauerhaft alarmieren.
+  Ein pausiertes Abonnement wächst bewusst; Alarm bei mehr als fünf Minuten, außer es ist pausiert.
+- ``mandari_events_subscription_paused{subscription}``: 1, solange ein Abonnement pausiert ist.
 
 Die Werte werden erst beim Abruf gemessen, damit das Registrieren keine Datenbankverbindung
 belegt (siehe ``apps.common.metrics``, Issue #344). Die Werte zum Sequenzierer gibt es nur mit
@@ -35,7 +45,8 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import Iterator
-from typing import NamedTuple
+from datetime import datetime
+from typing import TYPE_CHECKING, NamedTuple
 
 from django.db import connection
 from prometheus_client import REGISTRY, Counter
@@ -43,9 +54,15 @@ from prometheus_client.core import GaugeMetricFamily, Metric
 
 from apps.common.metrics import MisstErstBeimAbruf
 
+if TYPE_CHECKING:
+    from .registry import Subscriber
+
 logger = logging.getLogger(__name__)
 
 SEQUENCED = Counter("mandari_events_sequenced_total", "Vom Sequenzierer vergebene Folgenummern")
+PUBLISHED = Counter(
+    "mandari_events_published_total", "Veröffentlichte Ereignisse je Typ (beim Vergeben der Folgenummer)", ["type"]
+)
 DELIVERED = Counter("mandari_events_delivered_total", "Zugestellte Ereignisse je Abonnement", ["subscription"])
 DELIVERY_FAILURES = Counter(
     "mandari_events_delivery_failures_total", "Gescheiterte Zustellversuche je Abonnement", ["subscription"]
@@ -184,6 +201,76 @@ class ParkedCollector(MisstErstBeimAbruf):
         yield familie
 
 
+class SubscriptionLag(NamedTuple):
+    """Stand eines Abonnements für Metriken und Admin-Seite."""
+
+    name: str
+    state: str
+    cursor: int
+    #: Alter des ältesten nummerierten, noch nicht zugestellten Ereignisses (0 = aktuell); ``None``,
+    #: wenn das Abonnement nicht registriert ist (dann weiß niemand, welche Typen es bekommt)
+    lag_seconds: float | None
+
+
+def lag_seconds(spec: Subscriber, cursor: int, now: datetime) -> float:
+    """
+    Rückstand eines Abonnements: Alter (ab Erfassung) des ältesten nummerierten Ereignisses hinter dem
+    Cursor, das zu seinen Typmustern passt; 0, wenn es keines gibt. ``now`` ist die Datenbankzeit.
+    """
+    from .models import Event
+
+    aeltestes = (
+        Event.objects.filter(seq__gt=cursor)
+        .filter(spec.type_filter())
+        .order_by("seq")
+        .values_list("recorded_at", flat=True)
+        .first()
+    )
+    return max((now - aeltestes).total_seconds(), 0.0) if aeltestes is not None else 0.0
+
+
+def subscription_lags() -> list[SubscriptionLag]:
+    """Rückstand je Abonnement in der Datenbank, nach Namen sortiert (``mandari_events_lag_seconds``)."""
+    from django.db.models.functions import Now
+
+    from .models import Subscription
+    from .registry import load_subscribers
+
+    registriert = {spec.name: spec for spec in load_subscribers()}
+    ergebnis = []
+    for name, zustand, cursor, jetzt in (
+        Subscription.objects.annotate(jetzt=Now()).order_by("name").values_list("name", "state", "cursor_seq", "jetzt")
+    ):
+        spec = registriert.get(name)
+        rueckstand = lag_seconds(spec, cursor, jetzt) if spec is not None else None
+        ergebnis.append(SubscriptionLag(name, zustand, cursor, rueckstand))
+    return ergebnis
+
+
+class SubscriptionCollector(MisstErstBeimAbruf):
+    def collect(self) -> Iterator[Metric]:
+        from .models import SubscriptionState
+
+        try:
+            werte = subscription_lags()
+        except Exception:  # noqa: BLE001 – ein Sammler darf den Abruf nie abbrechen (z. B. Migration ausstehend)
+            logger.debug("Rückstand der Abonnements nicht messbar", exc_info=True)
+            return
+        rueckstand = GaugeMetricFamily(
+            "mandari_events_lag_seconds",
+            "Alter des ältesten noch nicht zugestellten Ereignisses je Abonnement (0 = aktuell)",
+            labels=["subscription"],
+        )
+        pausiert = GaugeMetricFamily(
+            "mandari_events_subscription_paused", "Abonnement pausiert (1) oder nicht (0)", labels=["subscription"]
+        )
+        for stand in werte:
+            if stand.lag_seconds is not None:
+                rueckstand.add_metric([stand.name], stand.lag_seconds)
+            pausiert.add_metric([stand.name], 1.0 if stand.state == SubscriptionState.PAUSIERT else 0.0)
+        yield from (rueckstand, pausiert)
+
+
 class ListenerCollector(MisstErstBeimAbruf):
     """``mandari_events_listener_up``, nur in Prozessen mit Listener (sonst hieße 0 fälschlich „gestört“)."""
 
@@ -214,4 +301,4 @@ def register() -> None:
 
 
 _COLLECTOR = SequencerCollector()
-_COLLECTORS = (_COLLECTOR, ParkedCollector(), LISTENER_UP)
+_COLLECTORS = (_COLLECTOR, ParkedCollector(), SubscriptionCollector(), LISTENER_UP)
