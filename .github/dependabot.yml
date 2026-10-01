@@ -63,6 +63,8 @@ updates:
       - dependency-name: django-stubs
       - dependency-name: djlint
       - dependency-name: import-linter
+      # SHACL-Prüfung der Datenkataloge (scripts/dcat_shacl.py): Version auch im Schritt von pr-check.yml
+      - dependency-name: pyshacl
     labels: [dependencies]
   - package-ecosystem: uv
     target-branch: dev
