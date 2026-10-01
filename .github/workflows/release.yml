@@ -3,16 +3,26 @@
 # =============================================================================
 # Builds and publishes Docker images to GitHub Container Registry (ghcr.io)
 #
-# NOTE: The marketing website (ghcr.io/mandarioss/website) is built from a
-# separate repository (../marketing-website) and has its own release workflow.
-# This workflow only builds the mandari and ingestor images.
+# Gebaut werden mandari und ingestor. Die Website (ghcr.io/mandarioss/website)
+# entsteht im Repository mandariOSS/marketing-website (Tag :main bei jedem Push
+# auf dessen main). docker-compose.yml und das Helm-Chart ziehen alle drei Images
+# mit EINEM Tag (IMAGE_TAG bzw. image.tag); deshalb bekommt die Website hier
+# dieselben Tags wie mandari und ingestor, als Kopie des aktuellen Stands
+# website:main ohne Neubau (Issue #698).
 #
-# Branch → Tag mapping:
-#   dev    → :dev, :dev-<sha>
-#   beta   → :beta, :beta-<sha>
-#   main   → :latest, :<sha>
+# Zweig/Ereignis → Tags (für alle drei Images):
+#   dev     → :dev, :dev-<sha>
+#   main    → :latest, :main-<sha>, :<sha>
 #   release → :<version>, :latest
-#   manual → :<input>
+#   manual  → :<input>
+# Einen Kanal "beta" gibt es nicht.
+#
+# Commit-Tags (dev-<sha>, main-<sha>, <sha>) nennen hier einen mandari-Commit. Im Paket website
+# schreibt mandariOSS/marketing-website eigene Commit-Tags mit Website-Commits (main-<sha>,
+# dev-<sha>); welcher Website-Stand in einem Image steckt, zeigt dort das Label
+# org.opencontainers.image.revision. Beweglich sind nur latest und dev: Jedes andere Website-Tag,
+# das es schon mit anderem Inhalt gibt (gleiche Kurzkennung in beiden Repositorys, von Hand
+# nachgetragenes Release-Tag, erneuter Lauf), bleibt unverändert; der Lauf meldet eine Warnung.
 # =============================================================================
 
 name: Release
@@ -22,7 +32,6 @@ on:
     branches:
       - main
       - dev
-      - beta
   release:
     types: [published]
   workflow_dispatch:
@@ -114,14 +123,9 @@ jobs:
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${TAG}"
 
           elif [ "$BRANCH" == "main" ]; then
-            # main: latest + sha
-            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${SHORT_SHA}"
-            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${SHORT_SHA}"
-
-          elif [ "$BRANCH" == "beta" ]; then
-            # beta: beta + beta-sha
-            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:beta,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:beta-${SHORT_SHA}"
-            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:beta,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:beta-${SHORT_SHA}"
+            # main: latest + main-sha (wie dev-sha) + sha (bisheriges Format, bleibt für bestehende Installationen)
+            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:main-${SHORT_SHA},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${SHORT_SHA}"
+            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:main-${SHORT_SHA},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${SHORT_SHA}"
 
           elif [ "$BRANCH" == "dev" ]; then
             # dev: dev + dev-sha
@@ -134,8 +138,15 @@ jobs:
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${SHORT_SHA}"
           fi
 
+          # Die Website bekommt dieselben Tags wie mandari (Schritt "Website-Image mit denselben Tags")
+          WEBSITE_TAGS=$(echo "$MANDARI_TAGS" | sed "s#/${{ env.IMAGE_OWNER }}/mandari:#/${{ env.IMAGE_OWNER }}/website:#g")
+          # Nur die Tags (ohne Registry/Image) für die Prüfung am Ende
+          RUN_TAGS=$(echo "$MANDARI_TAGS" | sed 's#[^,]*:##g')
+
           echo "mandari_tags=$MANDARI_TAGS" >> $GITHUB_OUTPUT
           echo "ingestor_tags=$INGESTOR_TAGS" >> $GITHUB_OUTPUT
+          echo "website_tags=$WEBSITE_TAGS" >> $GITHUB_OUTPUT
+          echo "run_tags=$RUN_TAGS" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
           # Scan-Tag: erstes Tag aus der komma-separierten Liste (für Trivy)
@@ -146,6 +157,7 @@ jobs:
           echo "Scan tag: $SCAN_TAG"
           echo "Mandari tags: $MANDARI_TAGS"
           echo "Ingestor tags: $INGESTOR_TAGS"
+          echo "Website tags: $WEBSITE_TAGS"
 
       # =====================================================================
       # Build, scan, and push all images
@@ -197,13 +209,48 @@ jobs:
           exit-code: '0'
           format: 'table'
 
-      # NOTE: The website image is built from the separate marketing-website
-      # repository and has its own release workflow. See ../marketing-website/.
+      # Die Website baut mandariOSS/marketing-website (Tag :main). Hier bekommt sie dieselben Tags wie
+      # mandari und ingestor, damit ein IMAGE_TAG für alle drei Images reicht: Release-Versionen, latest,
+      # dev und die Commit-Tags. Kopie des Manifests, kein Neubau. Das Paket website ist mit diesem
+      # Repository verknüpft; GITHUB_TOKEN darf deshalb dort schreiben (Issue #698).
+      # Nur latest und dev werden überschrieben, alle anderen Tags nur angelegt (siehe Kopf der Datei).
+      # Scheitert dieser Schritt, laufen SBOM, Sichtbarkeit und die Prüfung am Ende trotzdem.
+      - name: Website-Image mit denselben Tags versehen
+        id: website
+        env:
+          WEBSITE_SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:main
+          WEBSITE_TAGS: ${{ steps.tags.outputs.website_tags }}
+        run: |
+          set -eu
+          echo "Quelle: $WEBSITE_SOURCE"
+          quelle=$(docker buildx imagetools inspect --raw "$WEBSITE_SOURCE")
+          args=""
+          for ziel in $(echo "$WEBSITE_TAGS" | tr ',' ' '); do
+            case "${ziel##*:}" in
+              latest|dev) ;;
+              *)
+                # Unveränderliches Tag: vorhanden und anderer Inhalt → stehen lassen
+                vorhanden=$(docker buildx imagetools inspect --raw "$ziel" 2>/dev/null || true)
+                if [ -n "$vorhanden" ] && [ "$vorhanden" != "$quelle" ]; then
+                  echo "::warning title=Website-Tag nicht überschrieben::$ziel gibt es schon mit anderem Inhalt (Commit-Tag aus mandariOSS/marketing-website oder früherer Lauf); es bleibt unverändert."
+                  continue
+                fi
+                ;;
+            esac
+            args="$args --tag $ziel"
+          done
+          if [ -z "$args" ]; then
+            echo "Keine Website-Tags zu setzen."
+            exit 0
+          fi
+          # shellcheck disable=SC2086  # Tag-Liste bewusst aufgeteilt
+          docker buildx imagetools create $args "$WEBSITE_SOURCE"
 
       # =====================================================================
       # Make packages public (required for unauthenticated pulls)
       # =====================================================================
       - name: SBOM (CycloneDX) für Quellcode und Abhängigkeiten erzeugen
+        if: ${{ !cancelled() && steps.tags.outcome == 'success' }}
         uses: anchore/sbom-action@v0
         with:
           path: .
@@ -215,6 +262,7 @@ jobs:
           upload-release-assets: false
 
       - name: Make container packages public
+        if: ${{ !cancelled() && steps.tags.outcome == 'success' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -227,3 +275,12 @@ jobs:
               -f visibility=public \
               2>/dev/null && echo "✓ ${pkg} → public" || echo "⚠ ${pkg}: visibility unchanged (may need org admin token)"
           done
+
+      # Installer, update.sh, Helm-Chart und Dokumentation bieten diese Tags an: Jedes muss für alle drei
+      # Images ohne Anmeldung abrufbar sein, sonst scheitert "./install.sh --tag …" (Issue #698).
+      # Läuft auch, wenn ein Schritt davor gescheitert ist: Dann zeigt die Liste, welche Tags fehlen.
+      - name: Alle Images für jedes Tag dieses Laufs anonym abrufbar
+        if: ${{ !cancelled() && steps.tags.outcome == 'success' }}
+        env:
+          RUN_TAGS: ${{ steps.tags.outputs.run_tags }}
+        run: python3 scripts/check_image_tags.py "$RUN_TAGS"

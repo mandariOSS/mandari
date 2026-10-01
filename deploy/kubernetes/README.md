@@ -126,11 +126,13 @@ helm upgrade --install mandari deploy/kubernetes/helm/mandari -n mandari \
 
 ## Betrieb
 
-**Aktualisieren.** Migrationen laufen automatisch als Job, bevor die neuen Pods starten:
+**Aktualisieren.** Migrationen laufen automatisch als Job, bevor die neuen Pods starten.
+`image.tag` gilt für alle drei Images (mandari, ingestor, website): eine veröffentlichte Version
+(siehe https://github.com/mandariOSS/mandari/releases), `latest` oder `dev`.
 
 ```bash
 helm upgrade mandari deploy/kubernetes/helm/mandari -n mandari \
-  --reuse-values --set image.tag=v1.2.3 --wait
+  --reuse-values --set image.tag=v0.11.0 --wait
 ```
 
 **Datenbank sichern.**
