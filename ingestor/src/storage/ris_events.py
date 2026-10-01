@@ -43,7 +43,9 @@ Regeln:
   nicht genannt.
 - **Kennungen.** Das Objekt selbst trägt die Kennung seiner Zeile im RIS-Bestand; der Ingestor
   vergibt sie als kanonische Kennung (``mandari_oparl.ids.canonical_id``). Bezüge auf andere
-  Objekte, die nur als URL vorliegen, werden mit derselben Funktion gebildet.
+  Objekte, die nur als URL vorliegen, werden mit derselben Funktion gebildet – bei umgezogenen
+  Quellen auf der festgeschriebenen Basis ihrer Kennungen (``ids``, ``mandari_oparl.ids.IdBases``,
+  Issue #733), wie die Kennungen der Objekte selbst.
 - **Sichtbarkeit.** Was der Ingestor liest, hat die Quelle veröffentlicht: ``oeffentlich``.
   Ausnahme sind Tagesordnungspunkte, die die Quelle als nichtöffentlich kennzeichnet
   (``public: false``): Ihre Ereignisse sind ``nichtoeffentlich``. Wird ein bisher öffentlicher Punkt
@@ -64,7 +66,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 from uuid import UUID
 
-from mandari_oparl.ids import canonical_id
+from mandari_oparl.ids import IdBases, canonical_id
 
 #: Schemaversion aller Ereignisse dieses Moduls.
 VERSION: Final = 1
@@ -185,28 +187,32 @@ def field_names(keys: Iterable[str]) -> list[str]:
     return names[:MAX_CHANGED]
 
 
-def reference(value: Any) -> str | None:
-    """Kanonische Kennung zu einem Verweis: URL oder eingebettetes Objekt mit ``id``."""
+def reference(value: Any, ids: IdBases | None = None) -> str | None:
+    """
+    Kanonische Kennung zu einem Verweis: URL oder eingebettetes Objekt mit ``id``.
+
+    ``ids``: festgeschriebene Basen umgezogener Quellen (Issue #733); ohne Angabe ist die URL kanonisch.
+    """
     if isinstance(value, Mapping):
         value = value.get("id")
     if isinstance(value, str) and value:
-        return str(canonical_id(value))
+        return str(ids.id(value) if ids else canonical_id(value))
     return None
 
 
-def references(value: Any) -> list[str]:
+def references(value: Any, ids: IdBases | None = None) -> list[str]:
     """Kanonische Kennungen zu einem Verweis oder einer Liste von Verweisen, ohne Doppelte."""
     items = value if isinstance(value, list | tuple) else [value]
     found: list[str] = []
     for item in items:
-        ref = reference(item)
+        ref = reference(item, ids)
         if ref is not None and ref not in found:
             found.append(ref)
     return found
 
 
-def _first_reference(value: Any) -> str | None:
-    refs = references(value)
+def _first_reference(value: Any, ids: IdBases | None = None) -> str | None:
+    refs = references(value, ids)
     return refs[0] if refs else None
 
 
@@ -214,7 +220,12 @@ def _first_reference(value: Any) -> str | None:
 
 
 def meeting_events(
-    meeting_id: UUID, raw: Mapping[str, Any], prior: Prior | None, *, organizations_changed: bool = False
+    meeting_id: UUID,
+    raw: Mapping[str, Any],
+    prior: Prior | None,
+    *,
+    organizations_changed: bool = False,
+    ids: IdBases | None = None,
 ) -> list[Draft]:
     """
     ``ris.meeting.scheduled`` für eine neu erkannte, ``ris.meeting.changed`` für eine geänderte Sitzung.
@@ -224,7 +235,7 @@ def meeting_events(
     dasselbe Objekt liefert.
     """
     payload: dict[str, Any] = {"meeting": str(meeting_id)}
-    organizations = references(raw.get("organization"))
+    organizations = references(raw.get("organization"), ids)
     if prior is None or prior.deleted:
         if 0 < len(organizations) <= MAX_ORGANIZATIONS:
             payload["organizations"] = organizations
@@ -301,9 +312,10 @@ def consultation_events(
     *,
     paper_id: UUID | None = None,
     paper_external_id: str | None = None,
+    ids: IdBases | None = None,
 ) -> list[Draft]:
     """``ris.consultation.changed``; ohne bekannte Vorlage lässt sich die Beratung nicht melden."""
-    paper = str(paper_id) if paper_id is not None else reference(paper_external_id or raw.get("paper"))
+    paper = str(paper_id) if paper_id is not None else reference(paper_external_id or raw.get("paper"), ids)
     if paper is None:
         return []
     payload: dict[str, Any] = {"consultation": str(consultation_id), "paper": paper}
@@ -323,7 +335,7 @@ def consultation_events(
         ("meeting", raw.get("meeting")),
         ("agenda_item", raw.get("agendaItem")),
     ):
-        ref = _first_reference(value)
+        ref = _first_reference(value, ids)
         if ref is not None:
             payload[name] = ref
     return [Draft("ris.consultation.changed", "Consultation", consultation_id, payload)]
@@ -336,6 +348,7 @@ def file_events(
     *,
     paper_id: UUID | None = None,
     meeting_id: UUID | None = None,
+    ids: IdBases | None = None,
 ) -> list[Draft]:
     """
     ``ris.file.changed``: ``added``, ``replaced`` (neue Fassung) oder ``renamed``.
@@ -362,9 +375,9 @@ def file_events(
         else:
             # Übrige Angaben (z. B. Lizenz) kennt der Vertrag nicht als Änderung der Datei.
             return []
-    paper = str(paper_id) if paper_id is not None else _first_reference(raw.get("paper"))
-    meeting = str(meeting_id) if meeting_id is not None else _first_reference(raw.get("meeting"))
-    agenda_item = _first_reference(raw.get("agendaItem"))
+    paper = str(paper_id) if paper_id is not None else _first_reference(raw.get("paper"), ids)
+    meeting = str(meeting_id) if meeting_id is not None else _first_reference(raw.get("meeting"), ids)
+    agenda_item = _first_reference(raw.get("agendaItem"), ids)
     for name, ref in (("paper", paper), ("meeting", meeting), ("agenda_item", agenda_item)):
         if ref is not None:
             payload[name] = ref

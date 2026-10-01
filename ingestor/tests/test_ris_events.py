@@ -13,7 +13,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from mandari_oparl.ids import canonical_id
+from mandari_oparl.ids import IdBases, canonical_id
 
 from src.scrapers.base import VOLATILE_HASH_FIELDS
 from src.storage import ris_events
@@ -479,3 +479,38 @@ def test_bezug_aus_url_oder_eingebettetem_objekt() -> None:
     assert ris_events.reference("") is None
     assert ris_events.reference({"name": "ohne Kennung"}) is None
     assert ris_events.references([ORG, {"id": ORG}, None, ""]) == [str(cid(ORG))]
+
+
+def test_verweise_umgezogener_quellen_tragen_die_kennungen_der_basis() -> None:
+    """Issue #733: Verweise unter der neuen Adresse nennen dieselben Kennungen wie die Objekte selbst."""
+    neu = "https://neu.example.org/oparl/"
+    ids = IdBases({neu: f"{BASE}/"})
+
+    def umgezogen(url: str) -> str:
+        return url.replace(f"{BASE}/", neu)
+
+    assert ris_events.reference(umgezogen(ORG), ids) == str(cid(ORG))
+    assert ris_events.reference(umgezogen(ORG)) == str(cid(umgezogen(ORG)))
+
+    (sitzung,) = ris_events.meeting_events(cid(MEETING), meeting(organization=[umgezogen(ORG)]), None, ids=ids)
+    assert sitzung.payload["organizations"] == [str(cid(ORG))]
+
+    beratung = {"paper": umgezogen(PAPER), "meeting": umgezogen(MEETING), "agendaItem": umgezogen(ITEM)}
+    (ereignis,) = ris_events.consultation_events(cid(CONSULTATION), beratung, None, ids=ids)
+    assert ereignis.payload == {
+        "consultation": str(cid(CONSULTATION)),
+        "paper": str(cid(PAPER)),
+        "change": "added",
+        "meeting": str(cid(MEETING)),
+        "agenda_item": str(cid(ITEM)),
+    }
+
+    datei = {"paper": [umgezogen(PAPER)], "meeting": [umgezogen(MEETING)], "agendaItem": [umgezogen(ITEM)]}
+    (anlage,) = ris_events.file_events(cid(FILE), datei, None, ids=ids)
+    assert anlage.payload == {
+        "file": str(cid(FILE)),
+        "change": "added",
+        "paper": str(cid(PAPER)),
+        "meeting": str(cid(MEETING)),
+        "agenda_item": str(cid(ITEM)),
+    }

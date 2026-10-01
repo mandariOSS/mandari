@@ -52,6 +52,16 @@ optionalen Feldern überladen wird.
   einer Frist und nur ohne bestehende Verweise ([Fremdschlüssel](20260929-fremdschluessel-ris-bestand.md)).
 - Die Tabellen `oparl_*` und das Label `insight_core` bleiben ([Portal-Modul](20260929-portal-modul.md)).
 
+## Nachtrag: Basis der Kennungen festgeschrieben (#733)
+
+Die konfigurierte Adresse der Installation wird für die Kennungen einmal festgehalten
+(`apps.common.models.IdentifierBase`, beim Update aus dem damaligen `SITE_URL`) und ändert sich danach
+nicht mehr. Ausgegebene Adressen folgen weiter `SITE_URL`; die kanonische URI eines Session-Objekts ist
+seine Adresse auf der festgeschriebenen Basis (`canonical_uri` in `shared/mandari_oparl/ids.py`).
+Zieht eine Quelle um, hält `sync_config["id_base"]` die bisherige Basis fest; Ingestor und Django
+rechnen damit gleich (gemeinsame Testvektoren `umzuege`). Der Umzug der Adressen im Bestand ist ein
+eigener Befehl (`move_session_sources`). Die Entscheidung selbst bleibt unverändert.
+
 ## Alternativen
 
 - **Interne Session-Modelle als gemeinsames Modell.** Bindet Work, Portal und App an Session;

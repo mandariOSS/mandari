@@ -24,6 +24,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from mandari_oparl.ids import canonical_id
 
+from apps.common.models import IdentifierBase
 from apps.events.models import Event
 from apps.session.models import (
     SessionMeeting,
@@ -53,6 +54,8 @@ def _heute(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def welt() -> Any:
     cache.clear()
+    # Installation, deren Kennungen auf SITE gebildet sind (Basis festgeschrieben, Issue #733)
+    IdentifierBase.objects.update_or_create(pk=1, defaults={"url": SITE})
     with override_settings(SITE_URL=SITE, OPARL_API_RATE_LIMIT=0, OPARL_CHANGES_ENABLED=True):
         tenant = SessionTenant.objects.create(
             name="Stadt Musterstadt", slug="musterstadt", oparl_public_since=timezone.now()

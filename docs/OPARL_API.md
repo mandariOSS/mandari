@@ -478,13 +478,16 @@ Filtern oder Fehlern ändert, in `hub/api` – es gilt dann für beide Ausgaben.
 **Kanonische Kennungen** (ADR `docs/adr/20260929-kanonisches-modell.md`): Jedes Objekt des
 RIS-Bestands trägt die Kennung `uuid5(NS_MANDARI_RIS, URI)` aus `shared/mandari_oparl/ids.py`.
 Die URI ist bei Fremd-RIS die `id` der Quelle, bei Session-Mandanten die öffentliche OParl-URL auf
-Basis von `SITE_URL`. Der Namensraum ist der URL-Namensraum aus RFC 9562 und ändert sich nie.
+der einmal festgeschriebenen Basisadresse der Installation (anfangs gleich `SITE_URL`; ein
+Domainwechsel ändert keine Kennung, siehe `docs/SESSION_OPARL_API.md`, „Domainwechsel“). Der
+Namensraum ist der URL-Namensraum aus RFC 9562 und ändert sich nie.
 Ingestor und Django vergeben neue Kennungen mit derselben Funktion; beide Testsuiten prüfen die
 gemeinsamen Testvektoren (`shared/mandari_oparl/ids_testvektoren.json`). Bestehende Kennungen bleiben
 unverändert. Abweichungen im Bestand zählt ein lesender Befehl:
 
 ```bash
-# je Quelle und Entität: abweichende Kennung, abweichende URI (Session), ohne URI, Kollisionen
+# je Quelle und Entität: abweichende Kennung, abweichende URI (Session), ohne URI, Kollisionen;
+# dazu die festgeschriebene Basis der Kennungen im Vergleich zu SITE_URL
 python manage.py check_ris_ids --dry-run
 python manage.py check_ris_ids --dry-run --source <UUID oder URL der Quelle> --examples 5
 ```

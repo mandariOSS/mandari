@@ -41,6 +41,9 @@ from django.conf import settings as django_settings
 from django.db.models import Max, Q
 from django.urls import reverse
 from django.utils import timezone
+from mandari_oparl.ids import SOURCE_ID_BASE_KEY
+
+from apps.common.identifiers import identifier_base
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,18 @@ def oparl_system_url(tenant, base_url: str | None = None) -> str:
     base = (base_url or getattr(django_settings, "SITE_URL", "http://localhost:8000")).rstrip("/")
     path = reverse("session:oparl_system", kwargs={"tenant_slug": tenant.slug})
     return f"{base}{path}"
+
+
+def oparl_id_base(tenant) -> str:
+    """
+    System-URL der Mandanten-OParl-API auf der festgeschriebenen Basis der Kennungen (Issue #733).
+
+    Aus ihr bilden sich die kanonischen Kennungen der Objekte des Mandanten (``SessionUris.canonical_id``),
+    unabhängig von ``SITE_URL``: Nach einem Domainwechsel folgen die Adressen der neuen Domain, die
+    Kennungen bleiben. Solange ``SITE_URL`` die festgeschriebene Basis ist, gleicht sie ``oparl_system_url``.
+    """
+    path = reverse("session:oparl_system", kwargs={"tenant_slug": tenant.slug})
+    return f"{identifier_base()}{path}"
 
 
 def register_source(tenant, base_url: str | None = None):
@@ -74,6 +89,7 @@ def register_source(tenant, base_url: str | None = None):
             "sync_config": {
                 "source_type": OParlSource.SOURCE_TYPE_OPARL,
                 "session_tenant": tenant.slug,
+                SOURCE_ID_BASE_KEY: oparl_id_base(tenant),
             },
         },
     )
@@ -85,6 +101,12 @@ def register_source(tenant, base_url: str | None = None):
     if sync_config.get("session_tenant") != tenant.slug:
         sync_config["session_tenant"] = tenant.slug
         sync_config.setdefault("source_type", OParlSource.SOURCE_TYPE_OPARL)
+        source.sync_config = sync_config
+        changed = True
+    if not sync_config.get(SOURCE_ID_BASE_KEY):
+        # Basis der Kennungen für Ingestor und Spiegel (Issue #733), bei älteren Quellen nachgetragen. Einmal
+        # gesetzt, bleibt sie: Die Kennungen des Bestands dieser Quelle sind daraus gebildet.
+        sync_config[SOURCE_ID_BASE_KEY] = oparl_id_base(tenant)
         source.sync_config = sync_config
         changed = True
     if changed and not created:

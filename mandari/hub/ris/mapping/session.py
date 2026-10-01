@@ -18,8 +18,10 @@ Grundsätze:
   nichtöffentliche Sitzung (samt Ort), ein nichtöffentlicher Tagesordnungspunkt, eine nicht
   veröffentlichte Vorlage oder Beratung und eine Datei ohne öffentliches Bezugsobjekt werden nicht
   abgebildet – die Methode bricht mit ``NotPublicError`` ab, statt Inhalte auszugeben.
-- **Kennungen** sind die kanonischen URIs der Objekte: die öffentliche Adresse des Mandanten
-  (``SessionUris``), unabhängig vom Host einer Anfrage.
+- **IDs** (OParl-``id``) sind die öffentlichen Adressen der Objekte (``SessionUris``): aus der Adresse der
+  Installation (``SITE_URL``), unabhängig vom Host einer Anfrage. Die kanonische Kennung eines Objekts im
+  RIS-Bestand bildet sich aus derselben Adresse auf der festgeschriebenen Basis der Installation
+  (``SessionUris.canonical_id``); ein Domainwechsel ändert die Adressen, nicht die Kennungen (Issue #733).
 - **Keine Abhängigkeit zum Fachmodul.** Die Drehscheibe importiert Session nicht. Was die Abbildung
   von dort braucht – die Veröffentlichungsregel, Anzeigename und Typ einer Datei, das Sitzungsformat,
   die öffentliche Fassung der Niederschrift –, reicht der Aufrufer als ``SessionSource`` herein.
@@ -36,8 +38,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final
+from uuid import UUID
 
 from django.core.exceptions import ObjectDoesNotExist
+from mandari_oparl.ids import canonical_id, canonical_uri
 
 from hub.ris.canonical import Objekt, as_list, clean, iso, iso_date, iso_day, schema_type, tombstone
 
@@ -95,15 +99,24 @@ class SessionSource:
 
 class SessionUris:
     """
-    Kanonische URIs der Objekte eines Mandanten.
+    Adressen und kanonische Kennungen der Objekte eines Mandanten.
 
     ``base`` ist die öffentliche Adresse seiner OParl-Schnittstelle und endet mit ``/``. Sie baut auf
-    der Adresse der Installation auf, nicht auf dem Host einer Anfrage: Aus diesen URIs leitet der
-    RIS-Bestand seine Kennungen ab (``docs/adr/20260929-kanonisches-modell.md``).
+    der aktuellen Adresse der Installation auf (``SITE_URL``), nicht auf dem Host einer Anfrage.
+
+    ``id_base`` ist dieselbe Schnittstelle auf der festgeschriebenen Basis der Kennungen (Issue #733,
+    ``apps.common.identifiers``); ohne Angabe gleich ``base``. Die kanonische Kennung eines Objekts ist
+    ``uuid5`` über seine Adresse auf dieser Basis (``canonical_id``, ADR
+    ``docs/adr/20260929-kanonisches-modell.md``): Adressen folgen der Domain, Kennungen nicht.
     """
 
-    def __init__(self, base: str) -> None:
+    def __init__(self, base: str, id_base: str | None = None) -> None:
         self.base = base if base.endswith("/") else f"{base}/"
+        self.id_base = (id_base if id_base.endswith("/") else f"{id_base}/") if id_base else self.base
+
+    def canonical_id(self, uri: str) -> UUID:
+        """Kanonische Kennung des Objekts unter der Adresse ``uri`` dieser Schnittstelle."""
+        return canonical_id(canonical_uri(uri, self.base, self.id_base))
 
     def system(self) -> str:
         return self.base
@@ -139,9 +152,12 @@ def _timestamps(obj: Any) -> Objekt:
 class SessionMapping:
     """Abbildung der Objekte eines Mandanten; je Objekttyp eine Methode, Ergebnis ist ein OParl-Objekt."""
 
-    def __init__(self, tenant: Any, base: str, source: SessionSource, *, changes: bool = False) -> None:
+    def __init__(
+        self, tenant: Any, base: str, source: SessionSource, *, changes: bool = False, id_base: str | None = None
+    ) -> None:
         self.tenant = tenant
-        self.uris = SessionUris(base)
+        #: Adressen aus ``base``, kanonische Kennungen aus ``id_base`` (``SessionUris``)
+        self.uris = SessionUris(base, id_base)
         self.source = source
         #: Die Ausgabe bietet Änderungsfeed und Snapshot an; der Body nennt dann deren Adressen
         self.changes = changes

@@ -15,7 +15,7 @@ from importlib import resources
 from typing import Any, cast
 
 import pytest
-from mandari_oparl.ids import NS_MANDARI_RIS, canonical_id
+from mandari_oparl.ids import NS_MANDARI_RIS, IdBases, canonical_id, canonical_uri
 
 from insight_core.models import (
     OParlBody,
@@ -38,6 +38,7 @@ def _testvektoren() -> dict[str, Any]:
 
 VEKTOREN = _testvektoren()["vektoren"]
 IDS = [v["uri"][-40:] for v in VEKTOREN]
+UMZUEGE = _testvektoren()["umzuege"]
 
 
 @pytest.fixture
@@ -138,6 +139,39 @@ def test_session_spiegel_vergibt_kanonische_kennungen() -> None:
 
     assert body.id == canonical_id(f"{basis}body/")
     assert OParlMeeting.objects.get(external_id=f"{basis}meeting/1/").id == canonical_id(f"{basis}meeting/1/")
+
+
+# --- Umgezogene Quellen (Issue #733) ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("vektor", UMZUEGE, ids=[f"{v['uri'][-30:]}|{v['basis'][-12:]}" for v in UMZUEGE])
+def test_umzug_aendert_keine_kennung(vektor: dict[str, str]) -> None:
+    """Dieselben Vektoren prüft der Ingestor: Adresse unter der neuen Domain, Kennung der festgeschriebenen Basis."""
+    erwartet = uuid.UUID(vektor["kennung"])
+    assert canonical_uri(vektor["uri"], vektor["adresse"], vektor["basis"]) == vektor["kanonisch"]
+    assert canonical_id(vektor["kanonisch"]) == erwartet
+    assert IdBases({vektor["adresse"]: vektor["basis"]}).id(vektor["uri"]) == erwartet
+
+
+def test_session_spiegel_einer_umgezogenen_quelle_behaelt_die_kennungen() -> None:
+    """Steht in der Quelle eine festgeschriebene Basis, legt der Spiegel neue Objekte mit deren Kennungen an."""
+    alt = "https://mandari.example/session/nord/api/oparl/"
+    neu = "https://neu.example/session/nord/api/oparl/"
+    source = OParlSource.objects.create(name="Nord (Session)", url=neu, sync_config={"id_base": alt})
+    mirror = cast(Any, SessionMirror)(source, fetch=lambda url: {})
+    body = mirror._upsert_body({"id": f"{neu}body/", "name": "Nord"})
+    mirror._upsert_meeting(body, {"id": f"{neu}meeting/1/", "name": "Rat"})
+    # Erneuter Abgleich: dasselbe Objekt, keine neue Kennung
+    mirror._upsert_meeting(body, {"id": f"{neu}meeting/1/", "name": "Rat (geändert)"})
+
+    assert body.id == canonical_id(f"{alt}body/")
+    assert body.external_id == f"{neu}body/"
+    sitzung = OParlMeeting.objects.get()
+    assert (sitzung.id, sitzung.external_id, sitzung.name) == (
+        canonical_id(f"{alt}meeting/1/"),
+        f"{neu}meeting/1/",
+        "Rat (geändert)",
+    )
 
 
 pytestmark = pytest.mark.django_db
