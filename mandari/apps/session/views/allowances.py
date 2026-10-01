@@ -160,6 +160,45 @@ class AllowanceRateDeleteView(SessionViewMixin, View):
         return redirect("session:allowances", tenant_slug=tenant_slug)
 
 
+#: Felder des Auftraggeberkontos und ihre Namen im Protokoll
+_DEBTOR_AUDIT_FIELDS = {
+    "debtor_name": "auftraggeberkonto_inhaber",
+    "debtor_iban": "auftraggeberkonto_iban",
+    "debtor_bic": "auftraggeberkonto_bic",
+}
+
+
+def _masked_iban(value: str) -> str:
+    """IBAN im Protokoll gekürzt: Länderkennung mit Prüfziffern und die letzten vier Stellen."""
+    if not value:
+        return ""
+    return f"{value[:4]} … {value[-4:]}" if len(value) > 8 else "…"
+
+
+def _log_debtor_change(view, request, before: dict, after: dict) -> None:
+    """Änderung des Auftraggeberkontos im Protokoll des Mandanten vermerken (nur geänderte Felder)."""
+    changes = {}
+    for key, label in _DEBTOR_AUDIT_FIELDS.items():
+        old, new = before.get(key) or "", after.get(key) or ""
+        if old == new:
+            continue
+        if key == "debtor_iban":
+            old, new = _masked_iban(old), _masked_iban(new)
+            if old == new:
+                # Geändert hat sich nur der gekürzte Mittelteil: im Protokoll trotzdem erkennbar machen
+                new = f"{new} (geändert)"
+        changes[label] = {"alt": old, "neu": new}
+    if changes:
+        audit.log_event(
+            "update",
+            view.session_tenant,
+            tenant=view.session_tenant,
+            user=view.session_user,
+            request=request,
+            changes=changes,
+        )
+
+
 class AllowanceDebtorSaveView(SessionViewMixin, View):
     """SEPA-Auftraggeberkonto der Kommune speichern (Mandanten-Einstellungen)."""
 
@@ -169,6 +208,7 @@ class AllowanceDebtorSaveView(SessionViewMixin, View):
     def post(self, request, tenant_slug):
         tenant = self.session_tenant
         settings = tenant.settings or {}
+        before = dict(settings.get("allowances", {}))
         settings.setdefault("allowances", {})
         settings["allowances"].update(
             {
@@ -179,6 +219,7 @@ class AllowanceDebtorSaveView(SessionViewMixin, View):
         )
         tenant.settings = settings
         tenant.save(update_fields=["settings", "updated_at"])
+        _log_debtor_change(self, request, before, settings["allowances"])
         messages.success(request, "Auftraggeberkonto für den SEPA-Export gespeichert.")
         return redirect("session:allowances", tenant_slug=tenant_slug)
 
