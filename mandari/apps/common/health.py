@@ -17,6 +17,11 @@ Getrennte Gesundheitsprüfungen (Issue #231, Teil 1).
 Über ``HEALTH_READY_OPTIONAL`` (kommagetrennt, z. B. ``elasticsearch``) lassen sich
 Prüfungen als optional erklären: Sie werden weiter gemeldet, machen die Antwort aber nicht
 zu 503. Das ist für Installationen ohne Bürgerportal gedacht, deren Suche nicht kritisch ist.
+
+Der **Worker** (``manage.py events_worker``, Issue #509) ist immer optional: Fehlt er, obwohl
+die Installation ihn braucht (``apps.events.presence.required_roles``), melden ``/health/``
+und ``/health/ready/`` „degraded“, die Anwendung bleibt aber in Betrieb. Braucht sie keinen,
+ändert sich nichts.
 """
 
 from __future__ import annotations
@@ -45,6 +50,14 @@ logger = logging.getLogger(__name__)
 
 #: Zeitlimit je Prüfung in Sekunden; die Antwort insgesamt bleibt unter der Probe-Grenze (5 s).
 CHECK_TIMEOUT = 2.0
+
+
+@dataclass(frozen=True)
+class Finding:
+    """Ergebnis einer Prüfung, die ohne Ausnahme „nicht in Ordnung“ meldet; ``detail`` ist ein fester Text."""
+
+    ok: bool
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -94,19 +107,58 @@ def check_storage() -> str:
     return "beschreibbar"
 
 
-CHECKS: dict[str, Callable[[], str]] = {
+def worker_finding() -> Finding:
+    """Läuft ein Worker für alle Rollen, die die Installation braucht? Ohne Bedarf immer in Ordnung.
+
+    Ohne Bedarf fragt die Prüfung die Datenbank gar nicht erst (``/health/`` wird häufig abgerufen).
+    """
+    from apps.events.presence import required_roles, worker_status
+
+    bedarf = required_roles()
+    if not bedarf:
+        return Finding(True, "nicht erforderlich")
+    status = worker_status(required=bedarf)
+    if status.degraded:
+        return Finding(False, f"kein Worker für {status.missing_summary()}")
+    return Finding(True, f"{len(status.workers)} Worker")
+
+
+@releases_db_connections  # läuft in einem eigenen Thread (#344)
+def check_worker() -> Finding:
+    return worker_finding()
+
+
+def worker_state() -> str:
+    """Für ``/health/``: ``ok``, ``fehlt``, ``nicht_erforderlich`` oder ``unbekannt`` (Tabelle fehlt, Datenbank weg)."""
+    try:
+        from apps.events.presence import required_roles, worker_status
+
+        bedarf = required_roles()
+        if not bedarf:
+            return "nicht_erforderlich"  # ohne Datenbankabfrage
+        status = worker_status(required=bedarf)
+    except Exception:  # noqa: BLE001 – der alte Endpunkt meldet nur, er bricht nicht ab
+        logger.debug("Worker-Zustand nicht ermittelbar", exc_info=True)
+        return "unbekannt"
+    return "fehlt" if status.degraded else "ok"
+
+
+CHECKS: dict[str, Callable[[], str | Finding]] = {
     "database": check_database,
     "cache": check_cache,
     "elasticsearch": check_elasticsearch,
     "storage": check_storage,
+    "worker": check_worker,
 }
+#: Prüfungen, die nie 503 auslösen (nur „degraded“)
+ALWAYS_OPTIONAL = frozenset({"worker"})
 
 
-def _ergebnis(name: str, start: float, future: Future[str]) -> CheckResult:
+def _ergebnis(name: str, start: float, future: Future[str | Finding]) -> CheckResult:
     verbleibend = max(0.0, CHECK_TIMEOUT - (time.monotonic() - start))
     try:
-        detail = future.result(timeout=verbleibend)
-        ok = True
+        ergebnis = future.result(timeout=verbleibend)
+        ok, detail = (ergebnis.ok, ergebnis.detail) if isinstance(ergebnis, Finding) else (True, ergebnis)
     except FutureTimeoutError:
         ok, detail = False, f"Zeitlimit {CHECK_TIMEOUT:g} s überschritten"
     except Exception as exc:  # jede Ausnahme ist hier ein Prüfergebnis, kein Absturz
@@ -119,7 +171,7 @@ def _ergebnis(name: str, start: float, future: Future[str]) -> CheckResult:
 
 def optional_checks() -> set[str]:
     roh = os.environ.get("HEALTH_READY_OPTIONAL", "")
-    return {teil.strip() for teil in roh.split(",") if teil.strip()}
+    return {teil.strip() for teil in roh.split(",") if teil.strip()} | ALWAYS_OPTIONAL
 
 
 def run_readiness_checks() -> list[CheckResult]:

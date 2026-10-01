@@ -89,6 +89,56 @@ ingestor:
     limits:
       memory: 1Gi
 
+# Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker), gleiches Image
+# und dieselbe Umgebung wie die Anwendung (inkl. app.extraEnv). Mehrere Repliken sind möglich.
+worker:
+  enabled: true
+  replicas: 1
+  # /metrics (Prometheus) und /health (Probes) des Workers
+  metricsPort: 9091
+  # Speichergrenze des Runners in MB; unter dem Speicherlimit halten (TASKS_MAX_MEMORY_MB)
+  maxMemoryMb: 400
+  # Warteschlangen dieses Workers, solange worker.heavy.enabled: alle außer ocr und ai. Ohne
+  # eigenen Worker für die Texterkennung bedient er alle.
+  queues: "default,mail,index,adapter"
+  # Zusätzliche Argumente, z. B. ["--stale-after", "600"]
+  extraArgs: []
+  # Nur für die Worker, z. B. EVENTS_DB_DIRECT_URL hinter PgBouncer
+  extraEnv: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  # nodeSelector, tolerations und affinity gelten für beide Worker
+  nodeSelector: {}
+  tolerations: []
+  # Die Worker binden media und files ein wie die Anwendung. Mit persistence.accessMode
+  # ReadWriteOnce auf mehreren Knoten an die Anwendung binden, z. B.
+  #   podAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       - labelSelector:
+  #           matchLabels: {app.kubernetes.io/component: app}
+  #         topologyKey: kubernetes.io/hostname
+  # oder ReadWriteMany verwenden (deploy/kubernetes/README.md, „Skalieren“).
+  affinity: {}
+  # Texterkennung und KI (Warteschlangen ocr, ai) in einem eigenen Worker: Jeder Neustart eines
+  # Runners wartet auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails
+  # und Suche nicht darauf, und der Speicherbedarf bekommt ein eigenes Limit.
+  heavy:
+    enabled: true
+    replicas: 1
+    queues: "ocr,ai"
+    maxMemoryMb: 800
+    extraArgs: []
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+
 # -----------------------------------------------------------------------------
 # Datenhaltung
 # -----------------------------------------------------------------------------

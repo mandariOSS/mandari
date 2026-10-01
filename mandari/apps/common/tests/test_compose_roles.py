@@ -39,3 +39,64 @@ def test_basisdatei_bleibt_profilfrei() -> None:
         "ingestor",
         "minutes-orchestrator",
     } <= set(basis)
+
+
+def test_worker_dienst_wie_die_anwendung_mit_lebenszeichen() -> None:
+    """Dienst worker (Issue #509): gleiches Image und gleiche Umgebung, 512 MB, Heartbeat als Healthcheck."""
+    modul = _lade_skript()
+    basis = modul._lade(modul.BASIS)["services"]
+    worker, anwendung = basis["worker"], basis["mandari"]
+
+    assert worker["image"] == anwendung["image"]
+    assert worker["environment"] == anwendung["environment"], "Aufträge sehen dieselbe Konfiguration"
+    assert worker["volumes"] == anwendung["volumes"]
+    assert worker["mem_limit"] == "512m"
+    befehl = worker["command"]
+    assert befehl[:3] == ["python", "manage.py", "events_worker"]
+    datei = befehl[befehl.index("--heartbeat-file") + 1]
+    assert datei in " ".join(worker["healthcheck"]["test"]), "Healthcheck prüft die Datei, die der Worker erneuert"
+    assert "mandari" not in worker["depends_on"], "Worker startet vor der Anwendung (Migration → Worker → Web)"
+    assert worker["labels"]["mandari.autoheal"] == "true"
+    for name in ("TASKS_BACKEND", "EVENTS_WORKER_REQUIRED", "INGESTOR_EVENTS_ENABLED", "EVENTS_DB_DIRECT_URL"):
+        assert name in anwendung["environment"]
+
+
+def _option(befehl: list[str], name: str) -> str | None:
+    return befehl[befehl.index(name) + 1] if name in befehl else None
+
+
+def test_texterkennung_und_ki_in_eigenem_worker() -> None:
+    """Jeder Neustart eines Runners wartet auf seinen längsten Auftrag (ocr bis 30 min): ocr und ai getrennt."""
+    from django.conf import settings
+
+    modul = _lade_skript()
+    basis = modul._lade(modul.BASIS)["services"]
+    haupt, ocr = basis["worker"], basis["worker-heavy"]
+
+    assert _option(ocr["command"], "--roles") == "tasks"
+    assert set(str(_option(ocr["command"], "--queues")).split(",")) == {"ocr", "ai"}
+    haupt_queues = set(str(_option(haupt["command"], "--queues")).split(","))
+    assert _option(haupt["command"], "--roles") is None, "der Hauptworker hat alle Rollen"
+    assert not haupt_queues & {"ocr", "ai"}, "der Hauptworker wartet nie auf die Texterkennung"
+    assert haupt_queues | {"ocr", "ai"} == set(settings.TASK_QUEUES), "zusammen jede Warteschlange"
+
+    # sonst wie der Hauptworker: Image, Umgebung, Volumes, Lebenszeichen, Neustart bei Hängern
+    for schluessel in ("image", "environment", "volumes", "healthcheck", "labels", "depends_on", "stop_grace_period"):
+        assert ocr[schluessel] == haupt[schluessel], schluessel
+    assert ocr["container_name"] != haupt["container_name"]
+    datei = _option(ocr["command"], "--heartbeat-file")
+    assert datei and datei in " ".join(ocr["healthcheck"]["test"])
+    grenze = int(str(_option(ocr["command"], "--max-memory-mb")))
+    assert ocr["mem_limit"] == "1g" and grenze < 1024, "eigenes Limit, Runner startet vorher neu"
+
+
+def test_rollen_worker_mit_direktverbindung_fuer_den_weckruf() -> None:
+    modul = _lade_skript()
+    worker = modul._lade(modul.ROLLEN["worker"])["services"]["worker"]
+    assert ":5432/" in worker["environment"]["EVENTS_DB_DIRECT_URL"], "am Pooler vorbei"
+    ocr = modul._lade(modul.ROLLEN["worker"])["services"]["worker-heavy"]
+    assert "DATA_HOST" in ocr["environment"]["DATABASE_URL"]
+    for rolle in ("web", "data"):
+        dienste = modul._lade(modul.ROLLEN[rolle])["services"]
+        assert dienste["worker"]["profiles"] == ["aus"]
+        assert dienste["worker-heavy"]["profiles"] == ["aus"]

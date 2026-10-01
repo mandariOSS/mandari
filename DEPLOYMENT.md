@@ -95,15 +95,20 @@ Migrationen müssen abwärtskompatibel sein: Der Rückfall rollt Code zurück, k
 Migrationen (`django-safemigrate` spielt nur verträgliche Migrationen vor dem Umschalten ein).
 Das interaktive `update.sh` für Selbst-Hoster nutzt dieselbe Anwendungsprüfung und rollt
 bei Fehlschlag ebenfalls zurück. Wie `deploy.sh` hält es die Worker (`WORKER_SERVICES`,
-Standard `ingestor minutes-orchestrator`) während aller Migrationen an und startet sie erst danach
-mit dem neuen Image – auch bei Abbruch oder Rückfall werden sie wieder gestartet. Der
+Standard `ingestor minutes-orchestrator worker worker-heavy`) während aller Migrationen an und startet sie erst danach
+mit dem neuen Image – auch bei Abbruch oder Rückfall werden sie wieder gestartet. Die Worker für
+Ereignisse und Aufträge (`worker`, `worker-heavy`) starten schon nach den Migrationen vor dem
+Umschalten der Anwendung (**Reihenfolge Migration → Worker → Web**), damit Aufträge der neuen
+Webprozesse sofort abgearbeitet werden. Der
 Protokoll-Orchestrator (`minutes-orchestrator`) nutzt das Anwendungs-Image und wechselt nach den
 Migrationen immer mit, auch wenn ein eigenes `WORKER_SERVICES` ihn nicht nennt; `--rollback`
 setzt ihn ebenfalls zurück. Dienste, die die Compose-Datei nicht kennt, überspringt das Skript.
 
 Für `deploy.sh` gehört der Orchestrator ebenfalls in `WORKER_SERVICES`
-(z. B. `WORKER_SERVICES="ingestor minutes-orchestrator"`); sonst läuft er nach dem Deploy mit dem
-alten Image weiter.
+(z. B. `WORKER_SERVICES="worker worker-heavy ingestor minutes-orchestrator"`); sonst läuft er nach dem
+Deploy mit dem alten Image weiter. Ohne Angabe nimmt `deploy.sh` die Dienste `worker` und
+`worker-heavy` (soweit die Compose-Datei sie kennt) und den Ingestor. Es startet alle `WORKER_SERVICES` nach der Migration **vor** der Anwendung
+(Migration → Worker → Web) und prüft sie danach wie bisher.
 
 ---
 
@@ -342,7 +347,7 @@ ohne Doppelläufe.
 ```bash
 python manage.py events_worker                                    # alle Rollen, alle Warteschlangen
 python manage.py events_worker --queues default,mail,index,ai,adapter
-python manage.py events_worker --roles tasks --queues ocr --max-memory-mb 900   # zweiter Worker
+python manage.py events_worker --roles tasks --queues ocr,ai --max-memory-mb 800   # zweiter Worker
 python manage.py events_worker --heartbeat-file /tmp/mandari-worker.heartbeat
 ```
 
@@ -373,11 +378,59 @@ python manage.py events_worker --heartbeat-file /tmp/mandari-worker.heartbeat
 - **Lebenszeichen:** Hängt eine Rolle länger als `--stale-after`, erneuert der Worker weder die
   Heartbeat-Datei noch seinen Eintrag in `events_worker`; `/health` antwortet dann 503.
 - **Speicher:** `TASKS_MAX_MEMORY_MB` (Standard 400) unter das Speicherlimit des Containers legen.
-  Texterkennung und KI (`ocr`, `ai`) laufen besser in einem eigenen Worker: Jeder Neustart des
-  Runners wartet auf den längsten laufenden Auftrag seines Prozesses.
+  Texterkennung und KI (`ocr`, `ai`) laufen in einem eigenen Worker (Dienst `worker-heavy`): Jeder
+  Neustart des Runners wartet auf den längsten laufenden Auftrag seines Prozesses (`ocr` bis
+  30 min); im selben Prozess stünden Mails und Suche so lange.
 
 Die Einzelbefehle `events_sequencer`, `events_dispatch`, `events_tasks` und `events_scheduler`
 bleiben für Fehlersuche und Handbetrieb (`--once`, `--list`, geparkte Ereignisse).
+
+### Betrieb als Dienste `worker` und `worker-heavy`
+
+Jede Installationsart bringt zwei Worker als eigene Dienste aus dem Anwendungs-Image mit, mit
+derselben Umgebung wie die Anwendung:
+
+| Dienst | Rollen und Warteschlangen | Speicherlimit |
+|---|---|---|
+| `worker` | alle Rollen; Aufträge und Abonnements aus `default`, `mail`, `index`, `adapter` | 512 MB (Runner-Neustart ab 400 MB) |
+| `worker-heavy` | nur `tasks`; Aufträge aus `ocr` und `ai` (Texterkennung, KI) | 1 GB (Runner-Neustart ab 800 MB) |
+
+Getrennt sind sie, weil jeder Neustart eines Runners (Zahl der Aufträge, Speichergrenze) auf seinen
+längsten laufenden Auftrag wartet, bei `ocr` bis zu 30 Minuten; Mails und Suchindex warten so nie
+auf die Texterkennung. `worker-heavy` ist nicht der OCR-Worker aus dem Ingestor-Image.
+
+| Installation | Wo | Lebenszeichen |
+|---|---|---|
+| Ein Server (Compose) | Dienste `worker` und `worker-heavy` in `docker-compose.yml` | Healthcheck über die Heartbeat-Datei (jünger als 60 s); `restart-unhealthy.sh` startet sie neu (Label `mandari.autoheal`) |
+| Mehrere Server | Rolle `worker` (`deploy/roles/worker.yml`), `worker` mit `EVENTS_DB_DIRECT_URL` direkt zu PostgreSQL | wie oben |
+| Kubernetes (Helm) | `templates/worker.yaml`, Werte unter `worker.*` und `worker.heavy.*` (`worker.heavy.enabled: false`: ein Worker für alles, so in `values-minimal.yaml`) | Start- und Liveness-Probe auf `/health` (Port 9091) |
+
+`install.sh` startet beide nach den Migrationen; `update.sh` und `deploy/scripts/deploy.sh` halten
+sie während der Migrationen an und starten sie danach vor der Anwendung (Migration → Worker →
+Web). Mit Helm läuft der Migrations-Job vor jedem Upgrade; Worker und Anwendung rollen danach
+gemeinsam aus. Mit Helm und `persistence.accessMode: ReadWriteOnce` müssen Anwendung, Ingestor und
+Worker auf einem Knoten laufen (`worker.affinity`); mehrere Knoten brauchen `ReadWriteMany`.
+
+**Wann meldet die Anwendung ein Fehlen?** Nur wenn die Installation Worker braucht: Dann melden
+`/health/` und `/health/ready/` `"degraded"` (Antwort bleibt 200, die Anwendung bleibt in Betrieb),
+und Admin-Startseite und Betriebsmonitor zeigen den Hinweis „Worker“. Gebraucht werden:
+
+| Einstellung | Nötige Rollen |
+|---|---|
+| `TASKS_BACKEND=journal` | `tasks` für **jede** Warteschlange (zusammen über alle Worker; ausgenommen Parallelität 0) und `scheduler` (wiederkehrende Aufträge) |
+| `INGESTOR_EVENTS_ENABLED=true` | `sequencer` |
+| `EVENTS_WORKER_REQUIRED=true` | alle Rollen, mit `tasks` wie oben |
+| `EVENTS_WORKER_REQUIRED=false` | keine (Meldung aus) |
+
+Fällt etwa nur `worker-heavy` aus, lautet der Hinweis „kein Worker für tasks (Warteschlangen ai,
+ocr)“. Die Zustellung an Abonnements (`dispatch`) prüft die Meldung nur mit
+`EVENTS_WORKER_REQUIRED=true`; ihren Rückstand zeigt `mandari_events_lag_seconds`
+(`docs/MONITORING.md`). Als laufend gilt ein Worker, dessen Rollen alle arbeiten und der sich in
+der letzten Minute in `events_worker` gemeldet hat.
+
+**Umschalten der Aufträge** auf die Worker: erst prüfen, dass beide laufen
+(`docker compose ps worker worker-heavy`, Admin-Hinweis), dann `TASKS_BACKEND=journal` in der
+`.env` setzen und Anwendung und Worker neu starten.
 
 ## ⏰ Geplante Aufgaben (Cron)
 
@@ -474,16 +527,17 @@ Obergrenze der Datenbank.
 |---|---|---|
 | mandari (Daphne, 1 Prozess) | **10** | `DB_POOL_MAX`; höchstens `DB_POOL_MAX_WAITING` Anfragen warten, der Rest bekommt 503 |
 | Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
-| Worker (`events_worker`, alle Rollen) | 21 | Pool 20 bei den Standard-Warteschlangen ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
+| Worker (Dienst `worker`, alle Rollen ohne `ocr`/`ai`) | 19 | Pool 18 ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
+| Worker für Texterkennung und KI (Dienst `worker-heavy`) | 7 | nur Rolle `tasks` mit `ocr` und `ai`; Rechnung unten |
 | OCR-Worker | 30 | gleiches Image wie der Ingestor |
 | Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
 | Kundenportal | 10 | eigener Container, eigene Datenbank |
 | Sicherung (`pg_dump`) | 2 | nur während des Laufs |
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
-| **Summe** | **116** | |
+| **Summe** | **121** | |
 | **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb (Vorgabe der `docker-compose.yml`: 100) |
 
-Reserve: rund 85 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
+Reserve: rund 80 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
 **und** prüft die Summe.
 
 ### Worker
@@ -503,9 +557,10 @@ arbeiten können. Er vergrößert seinen Pool beim Start selbst auf diese Zahl (
 | Abruf von `/metrics` (außer mit `--metrics-port 0`) | 1 |
 | Lauschverbindung des Weckrufs, am Pool vorbei | +1 in der Datenbank |
 
-Mit allen Rollen und Standard-Warteschlangen ohne Abonnements sind das 20 aus dem Pool und 21 in
-der Datenbank; jedes Abonnement kommt mit einer hinzu. Ein zweiter Worker nur für die
-Texterkennung (`--roles tasks --queues ocr`) braucht 6. Hinter PgBouncer zählt der Pool des
+Mit allen Rollen und allen Standard-Warteschlangen ohne Abonnements sind das 20 aus dem Pool und
+21 in der Datenbank; jedes Abonnement kommt mit einer hinzu. Der Dienst `worker` ohne `ocr` und
+`ai` braucht 18 aus dem Pool und 19 in der Datenbank, `worker-heavy`
+(`--roles tasks --queues ocr,ai`) 7. Hinter PgBouncer zählt der Pool des
 Workers gegen dessen `default_pool_size`, die Lauschverbindung geht über `EVENTS_DB_DIRECT_URL`
 direkt zur Datenbank.
 
@@ -646,9 +701,9 @@ docker compose logs -f mandari   # Live-Logs der Anwendung
 
 | Endpoint | Beschreibung |
 |----------|--------------|
-| `/health/` | Datenbankprüfung für bestehende Healthchecks (Compose, Statusseite) |
+| `/health/` | Datenbankprüfung für bestehende Healthchecks (Compose, Statusseite); Feld `worker` |
 | `/health/live/` | Liveness: Prozess antwortet, Datenbank-Pool nicht festgefahren |
-| `/health/ready/` | Readiness: Datenbank, Cache, Elasticsearch und Medienspeicher |
+| `/health/ready/` | Readiness: Datenbank, Cache, Elasticsearch und Medienspeicher; `worker` nur als Hinweis (`degraded`) |
 
 ### Metriken (optional)
 

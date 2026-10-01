@@ -71,6 +71,13 @@ Die Manifeste sind aus dem Chart erzeugt. Für Updates ist Helm deutlich bequeme
 | `elasticsearch.enabled` | `true` | Aus: Suche läuft über die Datenbank, spart etwa 2 GB Arbeitsspeicher |
 | `website.enabled` | `false` | Marketing-Website (Wagtail) mitinstallieren |
 | `ingestor.syncInterval` | `15` | Minuten zwischen zwei OParl-Synchronisationen |
+| `worker.enabled` | `true` | Worker für Ereignisse, Aufträge und Zeitpläne (`manage.py events_worker`), gleiches Image und dieselbe Umgebung wie die Anwendung |
+| `worker.replicas` | `1` | Mehrere Worker teilen sich die Arbeit (Leader-Leases, Aufträge per `SKIP LOCKED`) |
+| `worker.maxMemoryMb` | `400` | Speichergrenze des Runners (`TASKS_MAX_MEMORY_MB`), unter `worker.resources.limits.memory` (512Mi) halten |
+| `worker.queues` | `default,mail,index,adapter` | Warteschlangen des Hauptworkers, solange `worker.heavy.enabled`; sonst bedient er alle |
+| `worker.heavy.enabled` | `true` | Eigenes Deployment `mandari-worker-heavy` für Texterkennung und KI (`worker.heavy.queues`: `ocr,ai`, 1Gi, Runner-Neustart ab `worker.heavy.maxMemoryMb` 800). Ein Neustart des Runners wartet auf den längsten Auftrag (`ocr` bis 30 min); getrennt warten Mails und Suche nicht darauf |
+| `worker.extraArgs`, `worker.extraEnv` | – | z. B. `["--stale-after", "600"]` bzw. `EVENTS_DB_DIRECT_URL` hinter PgBouncer |
+| `worker.affinity` | `{}` | Für beide Worker, z. B. `podAffinity` zur Anwendung bei `ReadWriteOnce` (siehe „Skalieren“) |
 | `persistence.files.size` | `50Gi` | Heruntergeladene RIS-Dokumente – wächst mit der Zahl der Kommunen |
 | `secrets.existingSecret` | `""` | Eigenes Secret statt erzeugter Schlüssel |
 | `adminUser.email` / `.password` | `""` | Legt beim ersten Lauf ein Administrationskonto an |
@@ -154,6 +161,8 @@ kubectl -n mandari cp mandari-<pod>:/app/media ./media-backup
 ```bash
 kubectl -n mandari logs -f deploy/mandari
 kubectl -n mandari logs -f deploy/mandari-ingestor
+kubectl -n mandari logs -f deploy/mandari-worker
+kubectl -n mandari logs -f deploy/mandari-worker-heavy
 kubectl -n mandari logs job/mandari-migrate
 ```
 
@@ -166,7 +175,12 @@ kubectl -n mandari exec -it deploy/mandari-ingestor -- python -m src.main sync -
 
 **Skalieren.** Mehr Repliken der Anwendung brauchen eine Speicherklasse mit `ReadWriteMany`
 (NFS, CephFS, Longhorn, EFS). Der Ingestor bleibt bewusst bei einer Instanz, damit Quellen
-nicht doppelt abgefragt werden.
+nicht doppelt abgefragt werden. Die Worker binden `media` und `files` ein wie die Anwendung: Mit
+`ReadWriteOnce` (Standard) müssen auf einem Cluster mit mehreren Knoten Anwendung, Ingestor und
+Worker auf demselben Knoten laufen, sonst bleibt ein Pod mit „Multi-Attach“ hängen. Dafür
+`worker.affinity` (und `app.affinity`) auf denselben Knoten legen, etwa per `podAffinity` zur
+Anwendung (Beispiel in `values.yaml`), oder `ReadWriteMany` verwenden – Voraussetzung auch für
+`worker.replicas` > 1 auf verschiedenen Knoten.
 
 ## Deinstallieren
 

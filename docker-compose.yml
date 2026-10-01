@@ -33,6 +33,45 @@ x-logging: &default-logging
     max-size: "50m"
     max-file: "5"
 
+# =============================================================================
+# Umgebung der Anwendung: für die Anwendung (mandari) und den Worker gleich, damit
+# Aufträge im Worker dieselbe Konfiguration sehen wie die Webprozesse
+# =============================================================================
+x-app-environment: &app-environment
+  # Database
+  DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
+  # Cache (password-protected)
+  REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+  # Search
+  ELASTICSEARCH_URL: http://elasticsearch:9200
+  # Security
+  SECRET_KEY: ${SECRET_KEY:?Django secret key required}
+  ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
+  # Nur während eines Schlüsselwechsels (docs/KRYPTOKONZEPT.md)
+  ENCRYPTION_MASTER_KEY_PREVIOUS: ${ENCRYPTION_MASTER_KEY_PREVIOUS:-}
+  # Application
+  DEBUG: "false"
+  ALLOWED_HOSTS: ${DOMAIN:-localhost}
+  CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
+  SITE_URL: https://${DOMAIN:-localhost}
+  # Dokument-Cache (siehe docs/FILE_CACHE.md)
+  OPARL_FILES_ROOT: /app/files
+  # Nur mit Ratsinformationssystem im internen Netz (siehe .env.example)
+  INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
+  # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus
+  INSIGHT_SUBSCRIPTIONS_ENABLED: ${INSIGHT_SUBSCRIPTIONS_ENABLED:-false}
+  # Aufträge, Ereignisse und Worker (siehe .env.example und DEPLOYMENT.md, „Worker“)
+  TASKS_BACKEND: ${TASKS_BACKEND:-immediate}
+  TASKS_MAX_TASKS_PER_PROCESS: ${TASKS_MAX_TASKS_PER_PROCESS:-1000}
+  TASKS_MAX_MEMORY_MB: ${TASKS_MAX_MEMORY_MB:-400}
+  EVENTS_DB_DIRECT_URL: ${EVENTS_DB_DIRECT_URL:-}
+  EVENTS_WORKER_REQUIRED: ${EVENTS_WORKER_REQUIRED:-}
+  INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
+  # AI (optional)
+  NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+  # Timezone
+  TZ: ${TZ:-Europe/Berlin}
+
 services:
   # ===========================================================================
   # Reverse Proxy with automatic SSL (Let's Encrypt)
@@ -190,33 +229,7 @@ services:
     labels:
       # deploy/scripts/restart-unhealthy.sh startet den Dienst neu, wenn die Liveness rot ist (#344)
       mandari.autoheal: "true"
-    environment:
-      # Database
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
-      # Cache (password-protected)
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      # Search
-      ELASTICSEARCH_URL: http://elasticsearch:9200
-      # Security
-      SECRET_KEY: ${SECRET_KEY:?Django secret key required}
-      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
-      # Nur während eines Schlüsselwechsels (docs/KRYPTOKONZEPT.md)
-      ENCRYPTION_MASTER_KEY_PREVIOUS: ${ENCRYPTION_MASTER_KEY_PREVIOUS:-}
-      # Application
-      DEBUG: "false"
-      ALLOWED_HOSTS: ${DOMAIN:-localhost}
-      CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
-      SITE_URL: https://${DOMAIN:-localhost}
-      # Dokument-Cache (siehe docs/FILE_CACHE.md)
-      OPARL_FILES_ROOT: /app/files
-      # Nur mit Ratsinformationssystem im internen Netz (siehe .env.example)
-      INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
-      # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus
-      INSIGHT_SUBSCRIPTIONS_ENABLED: ${INSIGHT_SUBSCRIPTIONS_ENABLED:-false}
-      # AI (optional)
-      NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
-      # Timezone
-      TZ: ${TZ:-Europe/Berlin}
+    environment: *app-environment
     volumes:
       - mandari_media:/app/media
       - mandari_files:/app/files
@@ -241,6 +254,81 @@ services:
       timeout: 3s
       retries: 3
       start_period: 30s
+
+  # ===========================================================================
+  # Worker: Ereignisse, Aufträge und Zeitpläne (manage.py events_worker)
+  # Gleiches Image und dieselbe Umgebung wie die Anwendung. Starten nach den
+  # Migrationen und vor der Anwendung (update.sh, deploy/scripts/deploy.sh).
+  # /metrics und /health auf Port 9091 nur im internen Netz (nicht veröffentlicht).
+  # Zwei Dienste: worker (alle Rollen, alle Warteschlangen außer ocr und ai) und
+  # worker-heavy (nur Aufträge aus ocr und ai). Jeder Neustart eines Runners wartet
+  # auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails
+  # und Suche nicht auf die Texterkennung. Einzelheiten: DEPLOYMENT.md, „Worker“.
+  # ===========================================================================
+  worker: &worker-dienst
+    image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-worker
+    restart: unless-stopped
+    command:
+      - python
+      - manage.py
+      - events_worker
+      - --queues
+      - default,mail,index,adapter
+      - --heartbeat-file
+      - /tmp/mandari-worker.heartbeat
+    labels:
+      # deploy/scripts/restart-unhealthy.sh startet ihn neu, wenn eine Rolle hängt
+      mandari.autoheal: "true"
+    environment: *app-environment
+    volumes:
+      - mandari_media:/app/media
+      - mandari_files:/app/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mandari
+    # Der Runner startet oberhalb von TASKS_MAX_MEMORY_MB (Standard 400) neu, bevor das Limit greift
+    mem_limit: 512m
+    # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    healthcheck:
+      # Die Heartbeat-Datei erneuert der Worker nur, solange jede Rolle arbeitet
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os, sys, time; sys.exit(time.time() - os.path.getmtime('/tmp/mandari-worker.heartbeat') > 60)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # Texterkennung und KI (Warteschlangen ocr, ai): eigener Runner mit mehr Speicher,
+  # sonst wie worker (Umgebung, Volumes, Healthcheck über die Heartbeat-Datei)
+  worker-heavy:
+    <<: *worker-dienst
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-worker-heavy
+    command:
+      - python
+      - manage.py
+      - events_worker
+      - --roles
+      - tasks
+      - --queues
+      - ocr,ai
+      - --max-memory-mb
+      - "800"
+      - --heartbeat-file
+      - /tmp/mandari-worker.heartbeat
+    # Der Runner startet oberhalb von 800 MB (--max-memory-mb) neu, bevor das Limit greift
+    mem_limit: 1g
 
   # ===========================================================================
   # Protokollierung: Orchestrator der GPU-Rechenknoten (centron)

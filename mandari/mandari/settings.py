@@ -360,6 +360,26 @@ EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBU
 # gilt der Schlüssel als neu. Aufgeräumt wird täglich per Zeitplan (apps/events/schedules.py).
 EVENTS_IDEMPOTENCY_RETENTION_DAYS = int(os.environ.get("EVENTS_IDEMPOTENCY_RETENTION_DAYS", "30"))
 
+# Worker (manage.py events_worker, Issue #509): Braucht diese Installation einen laufenden Worker?
+# Dann melden /health/ und /health/ready/ "degraded" und der Admin einen Hinweis, solange keiner
+# die nötigen Rollen bedient (apps.events.presence). "true": alle Rollen; "false": nie; leer
+# (Standard): erst, wenn Aufträge über das Journal laufen (TASKS_BACKEND=journal → Rolle tasks)
+# oder der Ingestor Ereignisse schreibt (INGESTOR_EVENTS_ENABLED → Rolle sequencer). So meldet
+# keine bestehende Installation ohne Worker plötzlich "degraded".
+EVENTS_WORKER_REQUIRED = os.environ.get("EVENTS_WORKER_REQUIRED", "").strip().lower()
+if EVENTS_WORKER_REQUIRED not in ("", "auto", "true", "false", "1", "0", "yes", "no"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("EVENTS_WORKER_REQUIRED muss true, false oder leer sein.")
+# Schalter des Ingestors (ingestor/src/config.py). Die Anwendung liest ihn nur, um zu erkennen, dass
+# der Sequenzierer laufen muss (EVENTS_WORKER_REQUIRED).
+INGESTOR_EVENTS_ENABLED = os.environ.get("INGESTOR_EVENTS_ENABLED", "false").strip().lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
+
 
 # Cache - use Redis if available, fallback to local memory
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

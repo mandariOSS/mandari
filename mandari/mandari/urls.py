@@ -35,11 +35,14 @@ def health_check(request):
         db_status = "ok"
     except Exception:
         db_status = "error"
+    # Worker nur, wenn die Installation ihn braucht (apps.common.health.worker_state, Issue #509)
+    worker_status = health.worker_state() if db_status == "ok" else "unbekannt"
 
     return JsonResponse(
         {
-            "status": "ok" if db_status == "ok" else "degraded",
+            "status": "ok" if db_status == "ok" and worker_status != "fehlt" else "degraded",
             "database": db_status,
+            "worker": worker_status,
         }
     )
 

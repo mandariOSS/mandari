@@ -268,7 +268,7 @@ def _check(name: str, status: str, detail: str) -> dict:
 
 
 def collect_system_health() -> list[dict]:
-    """Datenbank, Cache, Elasticsearch, Ingestor-Daemon, Sync-Läufe."""
+    """Datenbank, Cache, Elasticsearch, Ingestor-Daemon, Sync-Läufe, Worker."""
     checks = []
 
     # Datenbank
@@ -380,7 +380,30 @@ def collect_system_health() -> list[dict]:
     except Exception as exc:
         checks.append(_check("Ingestor-Daemon", "warning", f"Status nicht ermittelbar: {exc}"))
 
+    checks.append(_worker_check())
     return checks
+
+
+def _worker_check() -> dict[str, object]:
+    """Worker (``manage.py events_worker``, Issue #509): Hinweis nur, wenn die Installation ihn braucht."""
+    try:
+        from apps.events.presence import worker_status
+
+        stand = worker_status()
+    except Exception as exc:  # noqa: BLE001 – z. B. Migration noch nicht eingespielt
+        return _check("Worker", "warning", f"Status nicht ermittelbar ({type(exc).__name__})")
+    rollen = ", ".join(sorted(stand.roles)) or "keine"
+    if stand.degraded:
+        fehlend = stand.missing_summary()
+        return _check(
+            "Worker",
+            "critical",
+            f"Kein Worker für {fehlend}: Aufträge bzw. Ereignisse bleiben liegen. Dienst worker starten "
+            "(DEPLOYMENT.md, Abschnitt Worker).",
+        )
+    if stand.workers:
+        return _check("Worker", "ok", f"{len(stand.workers)} Worker ({rollen})")
+    return _check("Worker", "inactive", "Nicht erforderlich, keiner gemeldet")
 
 
 # =============================================================================

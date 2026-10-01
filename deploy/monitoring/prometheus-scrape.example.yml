@@ -27,6 +27,19 @@ scrape_configs:
   #   static_configs:
   #     - targets: ["mandari.example.org"]
 
+  # Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker, --metrics-port):
+  # gleiche Zugriffsregeln wie die Anwendung, Pfad ohne Schrägstrich am Ende
+  - job_name: mandari-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["mandari-worker:9091"]
+        labels:
+          service: mandari-worker
+      # Texterkennung und KI (Dienst worker-heavy)
+      - targets: ["mandari-worker-heavy:9091"]
+        labels:
+          service: mandari-worker-heavy
+
   # Ingestor (Port laut ingestor/README, METRICS_PORT)
   - job_name: mandari-ingestor
     static_configs:
