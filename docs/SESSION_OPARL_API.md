@@ -331,6 +331,12 @@ Serialisierung (`mandari/hub/api/changes.py`).
 - **Rücknahmen:** Wird ein Objekt gelöscht oder nichtöffentlich, erscheint es als `delete` mit Grund;
   unter seiner Adresse steht das gekürzte Objekt. Dafür muss der Eintrag für Gelöschtes bestehen
   bleiben; er enthält nur Typ, Kennung und Zeitpunkte.
+- **Freischaltung:** Feed und Snapshot folgen der Freischaltung der Schnittstelle wie alle übrigen
+  Endpunkte: Ohne sie (oder bei deaktiviertem Mandanten) antworten sie mit `404`, gleich, was im Journal
+  geschieht. Nach erneuter Freischaltung gilt ein Cursor weiter (innerhalb der Aufbewahrung), denn die
+  Freischaltung ändert weder Daten noch ihre Sichtbarkeit. Das Ende der Veröffentlichung im
+  Bürgerportal betrifft nur dessen Spiegel (`OPARL_API.md`, Abschnitt „Welche Kommunen“), nicht die
+  eigene Schnittstelle des Mandanten.
 - **Snapshot:** `…/api/oparl/body/snapshot/` (am Body in `mandari:snapshot`) liefert den öffentlichen
   Gesamtstand als NDJSON mit dem Cursor, ab dem der Feed fortsetzt: den Body und die Objekte der Listen
   `organizations`, `people`, `meetings` und `papers` mit ihren Einbettungen (Mitgliedschaften,

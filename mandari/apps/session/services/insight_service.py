@@ -252,7 +252,12 @@ def retract_source(tenant: Any) -> PortalChange:
     jeder gespiegelte Eintrag per ``mark_deleted`` zurückgenommen – Einzel-Speichern, damit auch
     Suchindex und Signale folgen. Alle Einträge tragen denselben Zeitpunkt; mit den vorher
     gelisteten Kommunen steht er an der Quelle, damit ``restore_source`` genau das zurückholt.
+
+    Der Zeitpunkt bleibt zusätzlich dauerhaft an der Quelle (``publication.note_retraction``): Rücknahme
+    und Wiederherstellung erscheinen nicht im Journal, ein Cursor des Änderungsfeeds von vorher gilt
+    danach nicht mehr.
     """
+    from insight_core import publication
     from insight_core.models import OParlBody
 
     change = PortalChange()
@@ -265,8 +270,11 @@ def retract_source(tenant: Any) -> PortalChange:
         if isinstance(record, dict):
             # Schon zurückgenommen: ursprünglichen Zeitpunkt behalten, Listung zusammenführen
             listed |= set(record.get("listed_bodies") or [])
-        when = frueher or _retraction_stamp([body.pk for body in bodies])
+        when = frueher or _retraction_stamp(
+            [body.pk for body in bodies], after=_parse_stamp(publication.retracted_at(config))
+        )
         config[RETRACTION_KEY] = {"at": when.isoformat(), "listed_bodies": sorted(listed)}
+        publication.note_retraction(config, when)
         source.is_active = False
         source.sync_config = config
         source.save(update_fields=["is_active", "sync_config", "updated_at"])
@@ -340,14 +348,19 @@ def restore_source(tenant: Any, *, activate: bool = True) -> PortalChange:
     return change
 
 
-def _retraction_stamp(body_ids: list[Any]) -> datetime:
+def _retraction_stamp(body_ids: list[Any], *, after: datetime | None = None) -> datetime:
     """
-    Zeitpunkt der Rücknahme, echt später als jede frühere Rücknahme eines Eintrags dieser Kommunen.
+    Zeitpunkt der Rücknahme, echt später als jede frühere Rücknahme eines Eintrags dieser Kommunen
+    und als die letzte Rücknahme der Quelle (``after``).
 
     ``restore_source`` erkennt die Einträge der Rücknahme an diesem Zeitpunkt; ein zufällig
-    gleicher Zeitpunkt (grobe Systemuhr) darf früher Zurückgenommenes nicht wiederbeleben.
+    gleicher Zeitpunkt (grobe Systemuhr) darf früher Zurückgenommenes nicht wiederbeleben. Der
+    Änderungsfeed beginnt mit jeder Rücknahme einen neuen Abschnitt; dafür muss sich der Zeitpunkt
+    von dem der letzten unterscheiden.
     """
     stamp = timezone.now()
+    if after is not None and after >= stamp:
+        stamp = after + timedelta(microseconds=1)
     for queryset in _entry_querysets(body_ids):
         latest = queryset.filter(deleted=True).aggregate(latest=Max("deleted_at"))["latest"]
         if latest is not None and latest >= stamp:

@@ -171,6 +171,28 @@ Delta-Dateien von Lokaal Beslist in Flandern.
   (sonst `429`). Ein Platz trägt ein Zeichen seiner Anfrage und wird nur freigegeben, solange er noch
   dieses trägt. Der Schalter ist der des Feeds (`OPARL_CHANGES_ENABLED`).
 
+## Nachtrag zur Umsetzung (#707, Veröffentlichungsstand der Kommune)
+
+- **Nur veröffentlichte Kommunen:** Der Aggregator bietet Feed und Snapshot nur für Kommunen an, die das
+  Bürgerportal veröffentlicht und listet. Es gelten die Stände seiner Seiten (Issue #618): nicht
+  gelistet `404` wie bei ausgeschaltetem Feed, vorübergehend abgeschaltet `503` mit `Retry-After`,
+  dauerhaft zurückgenommen `410` (Problemtyp `kommune-zurueckgenommen`, ohne Snapshot). Die Absagen
+  sind feste Antworten ohne `ETag`. Die Session-Schnittstelle folgt wie bisher der Freischaltung des
+  Mandanten (Issue #319); das Ende der Veröffentlichung im Bürgerportal berührt sie nicht.
+- **Cursor nach einer Pause gültig:** Vorübergehendes Abschalten und das Ausblenden aus der Liste
+  ändern den Bestand nicht; was in der Zwischenzeit geschieht, steht im Journal. Ein Snapshot wäre für
+  große Kommunen teuer und brächte nichts.
+- **Cursor nach einer Rücknahme ungültig:** Die dauerhafte Rücknahme (und die Deaktivierung eines
+  Session-Mandanten) markiert den Bestand im Bürgerportal als gelöscht und holt ihn bei der
+  Wiederveröffentlichung zurück, ohne Ereignisse im Journal. Ein Abnehmer, der auf das `410` hin
+  gelöscht hat, bekäme die Einträge über seinen alten Cursor nie zurück. Die Quelle hält deshalb den
+  Zeitpunkt der letzten Rücknahme dauerhaft fest (`sync_config.retracted_at`); er geht als Abschnitt
+  (`Feed.epoch`) in die zugeordneten Daten der Cursor-Verschlüsselung ein. Ein Cursor aus einem
+  früheren Abschnitt lässt sich nicht mehr entschlüsseln und ergibt `410` mit Verweis auf den
+  Snapshot. Cursor ohne Abschnitt bleiben gültig, solange es keine Rücknahme gab. Ein Vergleich mit dem
+  Ausgabetag des Cursors genügt nicht: Rücknahme und Wiederveröffentlichung am selben Tag wären nicht
+  zu unterscheiden.
+
 ## Bezug
 
 - [A3 Sequenzierer](20260929-sequenzierer.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),

@@ -267,7 +267,7 @@ def _existing(kind: str, ids: Collection[uuid.UUID]) -> set[uuid.UUID]:
     return found
 
 
-def _feed(output: BestandMapping, pk: uuid.UUID) -> changes.Feed:
+def _feed(output: BestandMapping, pk: uuid.UUID, epoch: str) -> changes.Feed:
     uris = output.uris
 
     def addresses(kind: str, ids: Collection[uuid.UUID]) -> dict[uuid.UUID, str]:
@@ -276,29 +276,55 @@ def _feed(output: BestandMapping, pk: uuid.UUID) -> changes.Feed:
         # Eintrag – wie bei der Session-Schnittstelle
         return {object_id: uris.obj(kind, object_id) for object_id in _existing(kind, ids)}
 
-    return changes.Feed(body_id=pk, url=uris.changes(pk), snapshot_url=uris.snapshot(pk), addresses=addresses)
+    return changes.Feed(
+        body_id=pk, url=uris.changes(pk), snapshot_url=uris.snapshot(pk), addresses=addresses, epoch=epoch
+    )
 
 
-def _feed_unavailable(pk: uuid.UUID, segment: str) -> HttpResponse | None:
-    """Warum Feed oder Snapshot einer Kommune nicht geliefert werden (sonst ``None``)."""
+def _feed_or_unavailable(
+    request: HttpRequest, output: BestandMapping, pk: uuid.UUID, segment: str
+) -> changes.Feed | HttpResponse:
+    """
+    Feed einer Kommune – oder die Antwort, warum es für sie weder Feed noch Snapshot gibt.
+
+    Feed und Snapshot gibt es nur für Kommunen, die das Bürgerportal veröffentlicht und listet. Es gelten
+    dieselben Stände wie für seine Seiten (``insight_core.publication``):
+
+    - vorübergehend abgeschaltet: ``503`` mit ``Retry-After``. Der Cursor bleibt gültig – es wird nichts
+      gelöscht, und was in der Zwischenzeit geschieht, steht im Journal.
+    - dauerhaft zurückgenommen: ``410`` (``changes.withdrawn_response``). Die Rücknahme und eine spätere
+      Wiederherstellung ändern den Bestand am Journal vorbei; danach gilt ein älterer Cursor nicht mehr
+      (``Feed.epoch`` aus ``publication.retracted_at``), der Abnehmer steigt über den Snapshot neu ein.
+    - nicht gelistet (etwa die Demo-Kommune oder eine Kommune im Aufbau): Die Adressen gibt es nicht, wie
+      bei ausgeschaltetem Feed; der Body nennt sie nicht.
+
+    Alle Absagen sind feste Antworten: Sie hängen nicht davon ab, was im Journal steht.
+    """
     if not changes.enabled():
         # Ausgeschaltet gibt es die Adresse nicht
         return _unknown_list(segment)
     paused = _paused_response(pk)
     if paused is not None:
         return paused
-    if not OParlBody.objects.filter(pk=pk).exists():
+    state = publication.body_state(pk)
+    if state is not None and state.withdrawn:
+        return changes.withdrawn_response(request)
+    found = OParlBody.objects.filter(pk=pk).values_list("is_listed", "source__sync_config").first()
+    if found is None:
         return error_response(404, "Kommune (Body) nicht gefunden.")
-    return None
+    listed, config = found
+    if not listed:
+        return _unknown_list(segment)
+    return _feed(output, pk, publication.retracted_at(config))
 
 
 @endpoint
 def body_changes(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
     """Änderungsfeed einer Kommune (``hub.api.changes``)."""
-    unavailable = _feed_unavailable(pk, "changes")
-    if unavailable is not None:
-        return unavailable
-    return changes.changes_response(request, _feed(mapping(), pk))
+    feed = _feed_or_unavailable(request, mapping(), pk, "changes")
+    if isinstance(feed, HttpResponse):
+        return feed
+    return changes.changes_response(request, feed)
 
 
 def _section(output: BestandMapping, spec: Spec, pk: uuid.UUID) -> snapshot.Section:
@@ -312,10 +338,10 @@ def _section(output: BestandMapping, spec: Spec, pk: uuid.UUID) -> snapshot.Sect
 @endpoint
 def body_snapshot(request: HttpRequest, pk: uuid.UUID) -> HttpResponseBase:
     """Snapshot einer Kommune mit Cursor-Übergabe (``hub.api.snapshot``): dieselben Objekte wie die Listen."""
-    unavailable = _feed_unavailable(pk, "snapshot")
-    if unavailable is not None:
-        return unavailable
     output = mapping()
+    feed = _feed_or_unavailable(request, output, pk, "snapshot")
+    if isinstance(feed, HttpResponse):
+        return feed
 
     def body() -> Objekt:
         obj = _BODY.queryset(pk=pk).get()
@@ -323,7 +349,7 @@ def body_snapshot(request: HttpRequest, pk: uuid.UUID) -> HttpResponseBase:
         return output.tombstone("body", obj) if obj.deleted else output.body(obj)
 
     sections = [_section(output, spec, pk) for spec in BODY_LISTS.values()]
-    return snapshot.snapshot_response(request, snapshot.Snapshot(_feed(output, pk), body, sections))
+    return snapshot.snapshot_response(request, snapshot.Snapshot(feed, body, sections))
 
 
 def _meeting_location_response(output: BestandMapping, pk: uuid.UUID) -> HttpResponse:

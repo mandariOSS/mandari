@@ -24,6 +24,12 @@ Die Stände aller Kommunen liegen als kleine Tabelle im Cache (Redis in Produkti
 Setzen leert ihn, nach dem Commit noch einmal. Solange keine Kommune einen Stand hat, kostet die
 Prüfung keine Abfrage.
 
+Wird der ganze Bestand einer Quelle zurückgenommen (``retract_source`` in Session: dauerhafte
+Rücknahme oder Deaktivierung des Mandanten), hält die Quelle den Zeitpunkt dauerhaft fest
+(``RETRACTED_KEY``, ``note_retraction``). Die Rücknahme und ihre spätere Aufhebung geschehen am Journal
+der Ereignistechnik vorbei; ein Cursor des Änderungsfeeds aus der Zeit davor gilt danach nicht mehr
+(``hub.api.aggregator``), der Abnehmer steigt über den Snapshot neu ein.
+
 Maßgeblich ist die Kommune der Seite: bei Detailseiten die des Eintrags, sonst die gewählte (Portal-Host,
 ``?kommune=`` bei Kalender und Sitzungsplan, Session). Wählt ein View sie erst selbst – beim Erstaufruf
 ohne Session die einzige bzw. erste gelistete Kommune –, setzt ``enforce_selected_body`` (aus
@@ -58,6 +64,9 @@ CACHE_KEY = "insight_publication_states:v1"
 CACHE_SECONDS = 300
 #: Empfohlene Wartezeit bis zum nächsten Versuch bei vorübergehender Abschaltung (Sekunden)
 RETRY_AFTER_SECONDS = 3600
+#: Schlüssel in ``OParlSource.sync_config``: Zeitpunkt (ISO) der letzten Rücknahme des ganzen Bestands.
+#: Bleibt über die Wiederherstellung hinaus stehen.
+RETRACTED_KEY = "retracted_at"
 
 
 @dataclass(frozen=True)
@@ -133,6 +142,20 @@ def set_source_state(source: Any, mode: str | None, *, since: datetime | None = 
 
 def invalidate() -> None:
     cache.delete(CACHE_KEY)
+
+
+def note_retraction(config: dict[str, Any], when: datetime) -> None:
+    """
+    Rücknahme des ganzen Bestands in ``config`` (``OParlSource.sync_config``) festhalten; speichern
+    muss der Aufrufer. Eine wiederholte Rücknahme mit demselben Zeitpunkt ändert nichts.
+    """
+    config[RETRACTED_KEY] = when.isoformat()
+
+
+def retracted_at(config: Any) -> str:
+    """Zeitpunkt der letzten Rücknahme des ganzen Bestands als Text (``""``: nie zurückgenommen)."""
+    value = config.get(RETRACTED_KEY) if isinstance(config, dict) else None
+    return value if isinstance(value, str) else ""
 
 
 def states() -> dict[str, BodyState]:
