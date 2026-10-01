@@ -80,7 +80,8 @@ class TestInsight:
         expect(page.get_by_text("Radweg Hauptstraße")).to_be_visible()
         problems.assert_clean("Merkliste")
 
-    def test_buergerfrage_zaehlt_zeichen(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
+    def test_buergerfrage_zaehlt_zeichen(self, page: Any, goto: Any, settings: Any, problems: BrowserProblems) -> None:
+        settings.INSIGHT_QUESTIONS_ENABLED = True  # Ratsfragen sind standardmäßig pausiert (#734)
         body = _kommune(4, "Fragestadt")
         person = OParlPerson.objects.create(
             external_id=f"{RIS}/person/1", body=body, name="Anna Rat", family_name="Rat"

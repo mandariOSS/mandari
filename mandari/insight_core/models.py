@@ -439,6 +439,19 @@ class OParlBody(SourceDeletionModel):
         verbose_name="Akzentfarbe im eigenen Portal",
         help_text="Hexadezimal, z. B. #1e40af. Leer: Primärfarbe des Session-Mandanten, sonst mandari-Farben.",
     )
+    # Hinweis im Bürgerportal (Issue #734), z. B. wenn die Kommune ihre Daten nicht mehr bereitstellt. Nur
+    # Django kennt die Spalte; db_default, damit Inserts des Ingestors und älterer Images weiter funktionieren.
+    portal_notice = models.TextField(
+        max_length=1000,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Hinweis im Bürgerportal",
+        help_text=(
+            "Wird auf Einstieg und Listenseiten der Kommune angezeigt, z. B. „Die Stadt hat die Bereitstellung "
+            "ihrer Daten über die OParl-Schnittstelle zum … beendet.“ Leer: kein Hinweis."
+        ),
+    )
 
     # Personenfoto-Konfiguration
     person_photo_url_template = models.CharField(

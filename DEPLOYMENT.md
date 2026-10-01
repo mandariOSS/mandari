@@ -497,6 +497,12 @@ Links bleibt möglich; Beschluss-Abos sind nicht betroffen. Wer die Abos einscha
 Befehle selbst ein (z. B. `generate_alerts` täglich, `send_digest` wöchentlich). Ein Neuaufbau der
 Abos über die Datendrehscheibe ist geplant.
 
+**Ratsfragen im Bürgerportal** (`/insight/fragen/`) sind standardmäßig pausiert
+(`INSIGHT_QUESTIONS_ENABLED=false`, docs/INSIGHT_QUESTIONS.md): Die bisherigen Fragen und Antworten bleiben
+unter ihren Adressen lesbar, mit Hinweis und ohne Antwortquoten je Person und Fraktion. Stellen, Bestätigen
+und Antworten antworten mit 404, es gehen keine Mails hinaus; `send_question_reminders` endet mit Hinweis
+und ohne Wirkung, der Cron-Eintrag kann bleiben.
+
 Im Leerlauf schreibt der Job nichts. Er läuft im Web-Container und teilt sich dessen Speicher;
 `SESSION_PACKAGE_MAX_EMBED_MB` (Vorgabe 200) und `SESSION_PACKAGE_MAX_PAGES` (Vorgabe 3000) begrenzen,
 wie viele PDF-Anlagen je Mappe in das Gesamt-PDF eingebunden werden – weitere erscheinen dort als

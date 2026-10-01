@@ -212,7 +212,8 @@ class TestKalenderFeed:
 
 
 @pytest.mark.django_db
-def test_bestaetigungslink_einer_frage(frage: PublicQuestion) -> None:
+def test_bestaetigungslink_einer_frage(frage: PublicQuestion, settings: Any) -> None:
+    settings.INSIGHT_QUESTIONS_ENABLED = True  # Ratsfragen sind standardmäßig pausiert (#734)
     mail.outbox.clear()
     question_service.send_verification_email(frage)
 
@@ -302,8 +303,9 @@ NACHHER = ("insight_core", "0037_zugangstoken_als_hash")
 
 
 @pytest.mark.django_db(transaction=True)
-def test_migration_bestaetigungslink_uuid_im_schema(frage: PublicQuestion) -> None:
+def test_migration_bestaetigungslink_uuid_im_schema(frage: PublicQuestion, settings: Any) -> None:
     """Echter Lauf: Spalte vorher UUID, nachher Hash; der bisher verschickte UUID-Link gilt weiter."""
+    settings.INSIGHT_QUESTIONS_ENABLED = True  # Ratsfragen sind standardmäßig pausiert (#734)
     executor = MigrationExecutor(connection)
     executor.migrate([VORHER])
     try:

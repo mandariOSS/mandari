@@ -136,17 +136,21 @@ class PersonDetailView(DetailView):
         )
         context["council_role"] = council_membership.role if council_membership else None
 
-        # Öffentliche Fragen (bei allen Mandatsträger:innen: Rat/Hauptorgan oder Fraktion)
+        # Öffentliche Fragen (bei allen Mandatsträger:innen: Rat/Hauptorgan oder Fraktion). Pausiert
+        # (Issue #734): Reiter nur mit bisherigen Fragen, ohne Antwortquote und ohne „Frage stellen“.
         from ..services import question_service
 
-        context["can_ask"] = bool(council_membership) or question_service.is_mandate_holder(person)
+        enabled = question_service.questions_enabled()
+        context["can_ask"] = enabled and (bool(council_membership) or question_service.is_mandate_holder(person))
         context["faction"] = question_service.get_faction(person)
-        if context["can_ask"]:
+        if context["can_ask"] or not enabled:
             context["published_questions"] = PublicQuestion.objects.filter(
                 recipient=person,
                 status="published",
             ).order_by("-published_at", "-created_at")[:50]
+        if context["can_ask"]:
             context["answer_stats"] = question_service.get_answer_stats(person)
+        context["questions_tab"] = context["can_ask"] or bool(context.get("published_questions"))
 
         # SEO-Kontext
         from ..seo import get_person_seo

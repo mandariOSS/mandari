@@ -263,6 +263,7 @@ class TestMailFormulare:
         from insight_core.services import question_service
 
         settings.INSIGHT_MAILS_PER_IP_HOUR = 1
+        settings.INSIGHT_QUESTIONS_ENABLED = True  # Ratsfragen sind standardmäßig pausiert (#734)
         person = OParlPerson.objects.create(
             external_id="https://ris.fremd.example/oparl/person/1", body=body, name="Anna Rat", family_name="Rat"
         )
@@ -285,10 +286,11 @@ class TestMailFormulare:
             )
         assert len(mail.outbox) <= 1
 
-    def test_ratsfrage_bestaetigung_ohne_freitext(self, body: OParlBody) -> None:
+    def test_ratsfrage_bestaetigung_ohne_freitext(self, body: OParlBody, settings: Any) -> None:
         from insight_core.models import PublicQuestion
         from insight_core.services import question_service
 
+        settings.INSIGHT_QUESTIONS_ENABLED = True  # Ratsfragen sind standardmäßig pausiert (#734)
         person = OParlPerson.objects.create(
             external_id="https://ris.fremd.example/oparl/person/2", body=body, name="Anna Rat", family_name="Rat"
         )

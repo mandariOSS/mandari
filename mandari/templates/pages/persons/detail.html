@@ -72,7 +72,7 @@
                 class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
             Mitgliedschaften
         </button>
-        {% if can_ask %}
+        {% if questions_tab %}
         <button type="button" @click="tab = 'questions'"
                 :class="tab === 'questions' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
                 class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
@@ -96,9 +96,12 @@
         {% include "components/ris/membership_list.html" with items=past_memberships title="Ehemalige Mitgliedschaften" link_type="organization" collapsible="1" show_end_date="1" %}
     </div>
 
-    {# ── Tab: Fragen (Abgeordnetenwatch-Stil) — bei allen Mandatsträger:innen ── #}
-    {% if can_ask %}
+    {# ── Tab: Fragen (Abgeordnetenwatch-Stil) — bei allen Mandatsträger:innen; pausiert nur mit bisherigen Fragen ── #}
+    {% if questions_tab %}
     <div x-show="tab === 'questions'" x-cloak>
+        {% if not can_ask %}
+        {% include "components/questions_paused_notice.html" with extra_class="mb-4" %}
+        {% else %}
         {# Header mit Stats + CTA #}
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-4">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -133,6 +136,7 @@
             </div>
             {% endif %}
         </div>
+        {% endif %}
 
         {% if published_questions %}
         <div class="space-y-3">

@@ -1,0 +1,5 @@
+{# Ratsfragen pausiert (INSIGHT_QUESTIONS_ENABLED, Issue #734). Usage: {% include "components/questions_paused_notice.html" with extra_class="mb-6" %} #}
+<c-ui.alert variant="info" icon="circle-pause" title="Ratsfragen sind pausiert" class="{{ extra_class }}" data-testid="ratsfragen-pausiert">
+    Neue Fragen können derzeit nicht gestellt werden; die bisherigen Fragen und Antworten bleiben lesbar.
+    Offene Fragen haben die Ratsmitglieder möglicherweise nicht erreicht – Antwortquoten zeigen wir deshalb nicht an.
+</c-ui.alert>

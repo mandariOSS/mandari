@@ -59,7 +59,8 @@ from django.test.utils import setup_test_environment  # noqa: E402
 from django.utils import timezone  # noqa: E402
 
 setup_test_environment()
-_overrides = override_settings(MEDIA_ROOT=str(_media_root))
+# Ratsfragen sind standardmäßig pausiert (INSIGHT_QUESTIONS_ENABLED, Issue #734); der Smoke prüft den Ablauf
+_overrides = override_settings(MEDIA_ROOT=str(_media_root), INSIGHT_QUESTIONS_ENABLED=True)
 _overrides.enable()
 from _smoke_db import prepare_database  # noqa: E402
 

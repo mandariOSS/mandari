@@ -251,8 +251,11 @@
                 <i data-lucide="message-circle-question" class="w-5 h-5 text-primary-500"></i>
             </div>
             <div class="min-w-0">
-                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Frag deine Ratsmitglieder</div>
-                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{% if stats.public_questions %}{{ stats.public_questions }} &ouml;ffentliche Fragen und Antworten &ndash; stelle deine eigene.{% else %}Stelle &ouml;ffentliche Fragen an die Menschen, die Entscheidungen treffen.{% endif %}</p>
+                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{% if insight_questions_enabled %}Frag deine Ratsmitglieder{% else %}Ratsfragen{% endif %}</div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                    {% if not insight_questions_enabled %}{% if stats.public_questions %}{{ stats.public_questions }} bisherige Fragen und Antworten &ndash; neue Fragen sind derzeit pausiert.{% else %}Neue Fragen an die Ratsmitglieder sind derzeit pausiert.{% endif %}
+                    {% elif stats.public_questions %}{{ stats.public_questions }} &ouml;ffentliche Fragen und Antworten &ndash; stelle deine eigene.{% else %}Stelle &ouml;ffentliche Fragen an die Menschen, die Entscheidungen treffen.{% endif %}
+                </p>
             </div>
         </a>
 

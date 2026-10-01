@@ -5,6 +5,19 @@
 Bürger:innen stellen Mandatsträger:innen öffentliche Fragen; Fragen und Antworten sind
 für alle sichtbar. Eigener Reiter **Ratsfragen** im Insight-Portal (`/insight/fragen/`).
 
+**Pausiert (Standard).** Bis zum Neuaufbau sind die Ratsfragen über `INSIGHT_QUESTIONS_ENABLED=false`
+eingefroren (Issue #734):
+
+- Portal, Detailseiten und der Reiter „Fragen“ der Personen zeigen die bisherigen Fragen und Antworten mit
+  einem Hinweis. Antwortquoten und Antwortzeiten je Person und Fraktion sind ausgeblendet; offene Fragen
+  tragen „Ohne Antwort“ statt „Offen seit … Tagen“.
+- Stellen, Bestätigen, Antworten und die Bestätigungsseite antworten mit 404.
+- Keine Mails (Bestätigung, Moderation, Ratsmitglied, Fragesteller:in), keine Erinnerungen;
+  `send_question_reminders` endet mit Hinweis. Die Admin-Aktionen zum Freischalten und Erinnern ändern
+  nichts; Ablehnen bleibt möglich.
+
+Mit `INSIGHT_QUESTIONS_ENABLED=true` gilt der folgende Ablauf.
+
 **Ablauf**
 
 1. Frage stellen (`/insight/fragen/stellen/` → Person wählen → Formular mit Themenbereich)
@@ -24,6 +37,7 @@ RIS-spezifischen Rollenbezeichnungen.
 
 | Variable | Bedeutung |
 |----------|-----------|
+| `INSIGHT_QUESTIONS_ENABLED` | `true` schaltet die Ratsfragen ein; Standard `false` (pausiert, siehe oben) |
 | `INSIGHT_MODERATION_EMAILS` | Kommagetrennte Empfänger der Moderations-Hinweise; leer → alle aktiven Superuser mit E-Mail |
 | `SITE_URL` | Basis für alle Links in E-Mails |
 

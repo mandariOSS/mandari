@@ -539,6 +539,14 @@ INSIGHT_SUBSCRIPTIONS_ENABLED = os.environ.get("INSIGHT_SUBSCRIPTIONS_ENABLED", 
     "1",
     "yes",
 )
+# Ratsfragen im Bürgerportal (/insight/fragen/, send_question_reminders, Issue #734). Standard aus
+# (pausiert, bis die Funktion neu aufgebaut ist): Bisherige Fragen bleiben lesbar, es lassen sich
+# keine neuen stellen, keine Mails, keine Erinnerungen, keine Antwortquoten.
+INSIGHT_QUESTIONS_ENABLED = os.environ.get("INSIGHT_QUESTIONS_ENABLED", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 INSIGHT_DIGEST_ENABLED = os.environ.get("INSIGHT_DIGEST_ENABLED", "True").lower() in ("true", "1", "yes")
 INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL = int(os.environ.get("INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL", "20"))
 INSIGHT_DIGEST_FROM_EMAIL = os.environ.get("INSIGHT_DIGEST_FROM_EMAIL", "")  # Falls leer → DEFAULT_FROM_EMAIL
