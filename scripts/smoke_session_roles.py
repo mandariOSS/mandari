@@ -54,6 +54,7 @@ prepare_database(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
 from apps.session.models import SessionRole, SessionTenant, SessionUser  # noqa: E402
+from apps.session.permissions import HIDDEN_ROLE_FLAGS  # noqa: E402
 from apps.session.views.roles import permission_fields  # noqa: E402
 
 PASS = 0
@@ -92,9 +93,13 @@ base = f"/session/{tenant.slug}"
 
 # =============================================================================
 print("=== Phase A: Matrix-Vollständigkeit ===")
-all_can_fields = {f.name for f in SessionRole._meta.get_fields() if f.name.startswith("can_")}
+# Wirkungslose Häkchen (permissions.HIDDEN_ROLE_FLAGS) stehen bewusst nicht in der Matrix
+all_can_fields = {
+    f.name for f in SessionRole._meta.get_fields() if f.name.startswith("can_") and f.name not in HIDDEN_ROLE_FLAGS
+}
 matrix_fields = {n for _g, entries in permission_fields() for n, _l in entries}
 check("Alle Rechte in der Matrix", all_can_fields == matrix_fields, f"fehlend: {all_can_fields - matrix_fields}")
+check("Wirkungslose Häkchen nicht in der Matrix", not (HIDDEN_ROLE_FLAGS & matrix_fields))
 check("Neues Endgeräte-Recht enthalten", "can_manage_devices" in matrix_fields)
 
 resp = admin.get(f"{base}/settings/roles/")
