@@ -6,17 +6,22 @@ Aufwandsentschädigung (Voll-/Teilpauschale) und Funktionszulagen
 (z. B. Fraktionsvorsitz) als monatliche Posten: Katalog pflegen ->
 Personen zuordnen -> Monatslauf -> Genehmigung -> Export (CSV/SEPA).
 Alle Views erfordern ``manage_allowances`` (Bankdaten!).
+
+Der Abrechnungsmonat kommt aus ``year``/``month``. Ungültige Angaben führen nie still zu einem anderen
+Monat: Die Übersicht meldet sie und zeigt den laufenden Monat, schreibende Aktionen laufen gar nicht.
 """
 
 import logging
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.http import HttpResponse
 from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
@@ -32,23 +37,49 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import allowance_service, four_eyes_service
-from .allowances import warn_nothing_to_export
+from .allowances import _debtor_settings, debtor_problem, warn_nothing_to_export
 
 logger = logging.getLogger(__name__)
 
 _BOM = "﻿"
 
+#: Höchstbetrag einer Monatspauschale
+MAX_MONTHLY_AMOUNT = Decimal("99999")
 
-def _parse_period(request):
-    """Jahr/Monat aus GET/POST lesen (Default: aktueller Monat)."""
+_INVALID_PERIOD = (
+    f"Ungültiger Abrechnungsmonat – bitte Monat 1 bis 12 und ein Jahr von {allowance_service.YEAR_MIN} "
+    f"bis {allowance_service.YEAR_MAX} angeben."
+)
+
+
+def _parse_period(request) -> date | None:
+    """
+    Abrechnungsmonat (Monatserster) aus GET/POST; ohne Angabe der laufende Monat.
+
+    Ungültige Angaben (Text, Monat außerhalb 1–12, Jahr außerhalb des Abrechnungsbereichs) ergeben ``None``.
+    """
     today = timezone.localdate()
     data = request.POST if request.method == "POST" else request.GET
+    raw_year, raw_month = data.get("year"), data.get("month")
+    year = allowance_service.parse_year(raw_year) if raw_year else today.year
     try:
-        year = int(data.get("year", today.year))
-        month = int(data.get("month", today.month))
-        return date(year, month, 1)
-    except (TypeError, ValueError):
-        return date(today.year, today.month, 1)
+        month = int(str(raw_month).strip()) if raw_month else today.month
+    except ValueError:
+        return None
+    if year is None or not 1 <= month <= 12:
+        return None
+    return date(year, month, 1)
+
+
+def _period_url(view, period: date | None = None) -> str:
+    """Monatsseite, auf Wunsch mit dem gewählten Abrechnungsmonat."""
+    url = reverse("session:allowances_monthly", kwargs={"tenant_slug": view.session_tenant.slug})
+    return f"{url}?year={period.year}&month={period.month}" if period else url
+
+
+def _invalid_period(view, request):
+    messages.error(request, f"{_INVALID_PERIOD} Es wurde nichts ausgeführt.")
+    return redirect(_period_url(view))
 
 
 def _period_allowances(view, period):
@@ -68,6 +99,9 @@ class MonthlyAllowanceView(SessionViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         period = _parse_period(self.request)
+        if period is None:
+            messages.error(self.request, f"{_INVALID_PERIOD} Angezeigt wird der laufende Monat.")
+            period = timezone.localdate().replace(day=1)
         allowances = list(_period_allowances(self, period))
 
         assignments = (
@@ -81,9 +115,10 @@ class MonthlyAllowanceView(SessionViewMixin, TemplateView):
                 "assignments": assignments,
                 "period": period,
                 "allowances": allowances,
-                "sum_pending": sum(a.amount for a in allowances if a.status == "pending"),
-                "sum_approved": sum(a.amount for a in allowances if a.status == "approved"),
-                "sum_paid": sum(a.amount for a in allowances if a.status == "paid"),
+                "sum_pending": sum((a.amount for a in allowances if a.status == "pending"), Decimal("0.00")),
+                "sum_approved": sum((a.amount for a in allowances if a.status == "approved"), Decimal("0.00")),
+                "sum_paid": sum((a.amount for a in allowances if a.status == "paid"), Decimal("0.00")),
+                "open_statuses": allowance_service.OPEN_STATUSES,
                 "persons": SessionPerson.objects.filter(tenant=self.session_tenant, is_active=True).order_by(
                     "family_name", "given_name"
                 ),
@@ -95,20 +130,26 @@ class MonthlyAllowanceView(SessionViewMixin, TemplateView):
 
 
 class MonthlyRateSaveView(SessionViewMixin, View):
-    """Pauschale im Katalog anlegen oder ändern."""
+    """
+    Pauschale im Katalog anlegen oder ändern (``rate_id``).
+
+    Beim Ändern ist ``is_active`` ein Ankreuzfeld: fehlt es, wird die Pauschale deaktiviert und nicht mehr
+    abgerechnet. Eine zweite aktive Pauschale mit derselben Bezeichnung entsteht nicht – die jährliche
+    Anpassung ändert den Betrag der vorhandenen; bereits erzeugte Posten behalten ihren Betrag.
+    """
 
     permission_required = "manage_allowances"
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug):
         name = request.POST.get("name", "").strip()[:200]
-        try:
-            amount = Decimal(request.POST.get("amount", "").replace(",", "."))
-            assert Decimal("0") <= amount <= Decimal("99999")
-        except (InvalidOperation, AssertionError, AttributeError):
-            amount = None
+        amount = allowance_service.parse_amount(request.POST.get("amount", ""), maximum=MAX_MONTHLY_AMOUNT)
         if not name or amount is None:
-            messages.error(request, "Bitte Bezeichnung und gültigen Betrag angeben.")
+            messages.error(
+                request,
+                "Bitte Bezeichnung und gültigen Betrag angeben (0,00 bis 99.999,00 € mit höchstens zwei "
+                "Nachkommastellen).",
+            )
             return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
 
         rate = None
@@ -118,13 +159,28 @@ class MonthlyRateSaveView(SessionViewMixin, View):
                 rate = SessionMonthlyRate.objects.filter(tenant=self.session_tenant, pk=rate_id).first()
             except (ValueError, DjangoValidationError):
                 rate = None
+            if rate is None:
+                messages.error(request, "Pauschale nicht gefunden.")
+                return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
 
         values = {
             "name": name,
             "amount": amount,
             "legal_basis": request.POST.get("legal_basis", "").strip()[:200],
-            "is_active": request.POST.get("is_active", "1") == "1",
+            # Neu angelegt ist eine Pauschale aktiv; beim Ändern entscheidet das Ankreuzfeld
+            "is_active": True if rate is None else request.POST.get("is_active") == "1",
         }
+        duplicates = SessionMonthlyRate.objects.filter(tenant=self.session_tenant, name__iexact=name, is_active=True)
+        if rate is not None:
+            duplicates = duplicates.exclude(pk=rate.pk)
+        if values["is_active"] and duplicates.exists():
+            messages.error(
+                request,
+                f"Eine aktive Pauschale „{name}“ gibt es bereits – bitte dort den Betrag ändern oder sie "
+                "vorher deaktivieren.",
+            )
+            return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
+
         if rate is None:
             rate = SessionMonthlyRate.objects.create(tenant=self.session_tenant, **values)
             action = "create"
@@ -140,14 +196,15 @@ class MonthlyRateSaveView(SessionViewMixin, View):
             tenant=self.session_tenant,
             user=self.session_user,
             request=request,
-            changes={"pauschale": name, "betrag": str(amount)},
+            changes={"pauschale": name, "betrag": str(amount), "aktiv": values["is_active"]},
         )
-        messages.success(request, f"Pauschale „{name}“ gespeichert.")
+        state = "" if values["is_active"] else " (deaktiviert – wird nicht mehr abgerechnet)"
+        messages.success(request, f"Pauschale „{name}“ gespeichert{state}.")
         return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
 
 
 class MonthlyRateDeleteView(SessionViewMixin, View):
-    """Pauschale löschen (blockiert, wenn bereits abgerechnet wurde)."""
+    """Pauschale löschen (blockiert, wenn bereits abgerechnet wurde – dann deaktivieren)."""
 
     permission_required = "manage_allowances"
     http_method_names = ["post"]
@@ -160,22 +217,27 @@ class MonthlyRateDeleteView(SessionViewMixin, View):
         if rate is None:
             messages.error(request, "Pauschale nicht gefunden.")
             return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
+        in_use = (
+            "Diese Pauschale wurde bereits abgerechnet und kann nicht gelöscht werden — bitte stattdessen "
+            "deaktivieren (Bearbeiten, Haken bei „Aktiv“ entfernen)."
+        )
+        if rate.allowances.exists():
+            messages.error(request, in_use)
+            return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
         try:
-            audit.log_event(
-                "delete",
-                rate,
-                tenant=self.session_tenant,
-                user=self.session_user,
-                request=request,
-            )
-            rate.delete()
+            # Protokolleintrag und Löschen gemeinsam: Scheitert das Löschen, bleibt auch kein Eintrag „gelöscht“
+            with transaction.atomic():
+                audit.log_event(
+                    "delete",
+                    rate,
+                    tenant=self.session_tenant,
+                    user=self.session_user,
+                    request=request,
+                )
+                rate.delete()
             messages.success(request, "Pauschale gelöscht.")
         except ProtectedError:
-            messages.error(
-                request,
-                "Diese Pauschale wurde bereits abgerechnet und kann nicht gelöscht "
-                "werden — bitte stattdessen deaktivieren.",
-            )
+            messages.error(request, in_use)
         return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
 
 
@@ -257,6 +319,8 @@ class MonthlyGenerateView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug):
         period = _parse_period(request)
+        if period is None:
+            return _invalid_period(self, request)
         result = allowance_service.generate_monthly_allowances(
             self.session_tenant, period.year, period.month, created_by=self.session_user
         )
@@ -272,9 +336,7 @@ class MonthlyGenerateView(SessionViewMixin, View):
             request,
             f"Monatslauf {period:%m/%Y}: {result['created']} Posten erzeugt, {result['skipped']} bereits vorhanden.",
         )
-        return redirect(
-            f"/session/{self.session_tenant.slug}/allowances/monthly/?year={period.year}&month={period.month}"
-        )
+        return redirect(_period_url(self, period))
 
 
 class MonthlyApproveView(SessionViewMixin, View):
@@ -285,6 +347,8 @@ class MonthlyApproveView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug):
         period = _parse_period(request)
+        if period is None:
+            return _invalid_period(self, request)
         pending = _period_allowances(self, period).filter(status="pending")
         result = allowance_service.approve_monthly_allowances(
             pending,
@@ -306,9 +370,45 @@ class MonthlyApproveView(SessionViewMixin, View):
             changes={"monat": period.strftime("%m/%Y"), "genehmigt": result["approved"]},
         )
         messages.success(request, f"{result['approved']} Posten für {period:%m/%Y} genehmigt.")
-        return redirect(
-            f"/session/{self.session_tenant.slug}/allowances/monthly/?year={period.year}&month={period.month}"
-        )
+        return redirect(_period_url(self, period))
+
+
+class MonthlyCancelView(SessionViewMixin, View):
+    """
+    Einzelnen Posten stornieren, z. B. bei Verzicht oder nachträglich beendeter Funktion.
+
+    Nur offene (ausstehend/genehmigt) und noch nicht exportierte Posten; ausgezahlte sind überwiesen. Ein
+    stornierter Posten bleibt bestehen (Protokoll „Entschädigung storniert“), der Monatslauf legt ihn nicht neu an.
+    """
+
+    permission_required = "manage_allowances"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug):
+        period = _parse_period(request)
+        allowance = None
+        try:
+            allowance = (
+                SessionMonthlyAllowance.objects.filter(tenant=self.session_tenant, pk=request.POST.get("allowance_id"))
+                .select_related("person", "rate")
+                .first()
+            )
+        except (ValueError, DjangoValidationError):
+            allowance = None
+        if allowance is None:
+            messages.error(request, "Posten nicht gefunden.")
+        elif allowance_service.cancel_allowances([allowance], note=allowance_service.MANUAL_CANCEL_NOTE):
+            messages.success(
+                request,
+                f"Posten „{allowance.rate.name}“ für {allowance.person.display_name} ({allowance.period:%m/%Y}) "
+                "storniert.",
+            )
+        else:
+            messages.error(
+                request,
+                "Nur ausstehende oder genehmigte Posten, die noch nicht exportiert sind, lassen sich stornieren.",
+            )
+        return redirect(_period_url(self, period))
 
 
 class MonthlyCsvExportView(SessionViewMixin, View):
@@ -319,10 +419,12 @@ class MonthlyCsvExportView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug):
         period = _parse_period(request)
+        if period is None:
+            return _invalid_period(self, request)
         allowances = list(_period_allowances(self, period).exclude(status="cancelled"))
         if not allowances:
             messages.warning(request, "Keine Posten im Monat — nichts zu exportieren.")
-            return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
+            return redirect(_period_url(self, period))
 
         csv_text = allowance_service.build_monthly_export_csv(allowances)
         audit.log_event(
@@ -351,14 +453,14 @@ class MonthlySepaExportView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug):
         period = _parse_period(request)
-        debtor = (self.session_tenant.settings or {}).get("allowances", {})
-        if not debtor.get("debtor_iban"):
-            messages.error(
-                request,
-                "SEPA-Export nicht möglich — bitte zuerst das Auftraggeberkonto der "
-                "Kommune bei den Sitzungsgeldern hinterlegen.",
-            )
-            return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
+        if period is None:
+            return _invalid_period(self, request)
+        back = redirect(_period_url(self, period))
+        debtor = _debtor_settings(self.session_tenant)
+        problem = debtor_problem(debtor)
+        if problem:
+            messages.error(request, problem)
+            return back
 
         selection = _period_allowances(self, period)
         result = allowance_service.export_sepa(
@@ -371,14 +473,14 @@ class MonthlySepaExportView(SessionViewMixin, View):
         )
         if not result.reference and not result.skipped:
             warn_nothing_to_export(request, selection, "Keine genehmigten Posten im Monat — nichts zu exportieren.")
-            return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
+            return back
         if not result.reference:
             messages.error(
                 request,
                 "SEPA-Export nicht möglich — für keine der Personen ist eine IBAN hinterlegt: "
                 + ", ".join(result.skipped),
             )
-            return redirect("session:allowances_monthly", tenant_slug=tenant_slug)
+            return back
         reference, txn_count, total, skipped = result.reference, result.transaction_count, result.total, result.skipped
 
         audit.log_event(

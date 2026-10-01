@@ -1,0 +1,101 @@
+{# Sitzungsgeld: Entschädigungssätze und SEPA-Auftraggeberkonto (eingebunden in index.html) #}
+<div class="grid lg:grid-cols-2 gap-6">
+    <!-- Entschädigungssätze -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+            <i data-lucide="euro" class="w-5 h-5 text-primary-500"></i>
+            Entschädigungssätze
+        </h2>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+            Satz je Gremium und Funktion. Ohne Funktions-Satz gilt das Standard-Sitzungsgeld
+            des Gremiums (Stammdaten).
+        </p>
+        {% if rates %}
+        <table class="w-full text-sm mb-4">
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for rate in rates %}
+                <tr>
+                    <td class="py-2 text-gray-900 dark:text-white">{{ rate.organization.name }}</td>
+                    <td class="py-2 text-gray-600 dark:text-gray-400">{{ rate.get_role_display }}</td>
+                    <td class="py-2 text-right font-medium text-gray-900 dark:text-white">{{ rate.amount }} €</td>
+                    <td class="py-2 text-right">
+                        <form method="post" action="{% url 'session:allowance_rate_delete' tenant_slug=tenant_slug rate_id=rate.id %}" class="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="text-gray-400 hover:text-red-600" title="Satz entfernen">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        <form method="post" action="{% url 'session:allowance_rate_save' tenant_slug=tenant_slug %}" class="flex flex-wrap items-end gap-2">
+            {% csrf_token %}
+            <div class="flex-1 min-w-[140px]">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Gremium</label>
+                <select name="organization" required
+                        class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% for org in organizations %}
+                    <option value="{{ org.id }}">{{ org.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Funktion</label>
+                <select name="role"
+                        class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% for value, label in rate_roles %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="w-24">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Betrag (€)</label>
+                <input type="text" name="amount" required placeholder="30,00"
+                       class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <button type="submit"
+                    class="px-3 py-1.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+                Speichern
+            </button>
+        </form>
+    </div>
+
+    <!-- SEPA-Auftraggeberkonto -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+            <i data-lucide="landmark" class="w-5 h-5 text-blue-500"></i>
+            Auftraggeberkonto (SEPA)
+        </h2>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+            Konto der Kommune, von dem die Sitzungsgelder überwiesen werden.
+            Empfänger-Bankdaten werden verschlüsselt bei den Personen gepflegt.
+        </p>
+        <form method="post" action="{% url 'session:allowance_debtor_save' tenant_slug=tenant_slug %}" class="space-y-3">
+            {% csrf_token %}
+            <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Kontoinhaber</label>
+                <input type="text" name="debtor_name" value="{{ debtor.debtor_name|default:session_tenant.name }}"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div class="col-span-2">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">IBAN</label>
+                    <input type="text" name="debtor_iban" value="{{ debtor.debtor_iban|default:'' }}" placeholder="DE00 0000 0000 0000 0000 00"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">BIC (optional)</label>
+                    <input type="text" name="debtor_bic" value="{{ debtor.debtor_bic|default:'' }}"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono">
+                </div>
+            </div>
+            <button type="submit"
+                    class="px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">
+                Speichern
+            </button>
+        </form>
+    </div>
+</div>

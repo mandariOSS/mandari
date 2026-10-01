@@ -8,7 +8,9 @@ Statistiken und Berichte für den Sitzungsdienst (Issue #84).
 - Vorlagen-Durchlaufzeiten (Entwurf bis Freigabe)
 """
 
+from decimal import Decimal
 from statistics import median
+from typing import Any
 
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -117,13 +119,15 @@ def allowance_stats(tenant, year):
         .select_related("attendance__person")
     )
     per_person: dict = {}
-    totals = {"count": 0, "amount": 0, "paid": 0, "monthly": 0}
+
+    def _amounts() -> dict:
+        # Beträge als Decimal mit zwei Nachkommastellen – auch ohne Positionen („0.00“ statt „0“)
+        return {"count": 0, "amount": Decimal("0.00"), "paid": Decimal("0.00"), "monthly": Decimal("0.00")}
+
+    totals = _amounts()
 
     def _entry(person):
-        return per_person.setdefault(
-            person.pk,
-            {"name": person.display_name, "count": 0, "amount": 0, "paid": 0, "monthly": 0},
-        )
+        return per_person.setdefault(person.pk, {"name": person.display_name, **_amounts()})
 
     for allowance in rows:
         entry = _entry(allowance.attendance.person)
@@ -153,16 +157,17 @@ def allowance_stats(tenant, year):
     return sorted(per_person.values(), key=lambda e: e["name"]), totals
 
 
-def paper_throughput(tenant, year):
-    """Durchlaufzeit der Vorlagen (Anlage bis Freigabe) in Tagen."""
-    papers = SessionPaper.objects.filter(
-        tenant=tenant,
-        status__in=("approved", "scheduled", "completed"),
-        updated_at__year=year,
+def paper_throughput(tenant: Any, year: int) -> dict[str, Any]:
+    """
+    Durchlaufzeit der Vorlagen (Anlage bis Freigabe) in Tagen, für die im Jahr freigegebenen Vorlagen.
+
+    Maßgeblich ist der Freigabezeitpunkt (``approved_at``), nicht die letzte Änderung: Spätere Bearbeitungen
+    oder Statuswechsel verschieben weder das Jahr noch die Dauer.
+    """
+    papers = SessionPaper.objects.filter(tenant=tenant, approved_at__isnull=False, approved_at__year=year).only(
+        "created_at", "approved_at"
     )
-    durations = [
-        (paper.updated_at - paper.created_at).days for paper in papers if paper.updated_at and paper.created_at
-    ]
+    durations = [(paper.approved_at - paper.created_at).days for paper in papers if paper.created_at]
     if not durations:
         return {"count": 0, "median_days": None, "max_days": None}
     return {

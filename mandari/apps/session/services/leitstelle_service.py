@@ -220,6 +220,11 @@ def _paper_row(access: TenantAccess, paper: SessionPaper, **extra: Any) -> Row:
     return Row(access=access, title=paper.name, reference=paper.reference, url=_paper_url(access, paper), **extra)
 
 
+def _paper_deadline(paper: SessionPaper, today: date) -> dict[str, Any]:
+    """Frist einer Vorlage für eine Zeile – eine verstrichene Frist ist in jeder Liste „überfällig“."""
+    return {"due": paper.deadline, "overdue": bool(paper.deadline and paper.deadline < today)}
+
+
 def _meeting_row(access: TenantAccess, meeting: SessionMeeting, **extra: Any) -> Row:
     if not _meeting_visible(access, meeting):
         return Row(access=access, title=HIDDEN_MEETING, hidden=True, **extra)
@@ -425,13 +430,11 @@ def build_overview(membership: SessionTenantGroupMembership, user: Any) -> Overv
         .defer(*_deferred(SessionPaper))
     )
     overview.review_papers = [
-        _paper_row(by_id[paper.tenant_id], paper, when=paper.created_at, due=paper.deadline)
+        _paper_row(by_id[paper.tenant_id], paper, when=paper.created_at, **_paper_deadline(paper, today))
         for paper in papers.filter(status="review").order_by("created_at", "pk")[:LIST_LIMIT]
     ]
     overview.paper_deadlines = [
-        _paper_row(
-            by_id[paper.tenant_id], paper, due=paper.deadline, overdue=bool(paper.deadline and paper.deadline < today)
-        )
+        _paper_row(by_id[paper.tenant_id], paper, **_paper_deadline(paper, today))
         for paper in papers.filter(status__in=OPEN_PAPER_STATUSES, deadline__lte=horizon).order_by("deadline", "pk")[
             :LIST_LIMIT
         ]

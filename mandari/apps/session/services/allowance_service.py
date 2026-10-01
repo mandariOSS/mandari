@@ -28,13 +28,13 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.sax.saxutils import escape  # noqa: F401  (Doku: Escaping via ElementTree)
 
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.common import csv_safety
@@ -47,6 +47,90 @@ ELIGIBLE_STATUSES = ("present", "joined_late", "left_early")
 
 # Funktionen ohne Sitzungsgeld
 EXCLUDED_ROLES = ("guest",)
+
+#: Offene Positionen: noch nicht ausgezahlt, also änderbar und stornierbar
+OPEN_STATUSES = ("pending", "approved")
+
+#: Vermerk an Positionen, die der Abrechnungslauf storniert, weil ihre Grundlage entfallen ist (Sitzung
+#: abgesagt, Anwesenheit korrigiert). Nur solche Positionen leben wieder auf, wenn die Grundlage zurückkehrt;
+#: von Hand stornierte bleiben storniert. Der Text ist zugleich das Erkennungsmerkmal (``notes=AUTO_CANCEL_NOTE``)
+#: und muss deshalb unverändert bleiben – sonst leben bereits automatisch stornierte Positionen nicht mehr auf.
+AUTO_CANCEL_NOTE = "Automatisch storniert: Sitzung abgesagt oder Anwesenheit nicht mehr anrechenbar."
+MANUAL_CANCEL_NOTE = "Von Hand storniert."
+
+#: Zulässige Jahre in Abrechnung und Berichten (Eingaben außerhalb gelten als ungültig)
+YEAR_MIN = 2000
+YEAR_MAX = 2100
+
+#: Höchstbetrag eines Satzes: Beträge sind DecimalField(max_digits=8, decimal_places=2)
+MAX_AMOUNT = Decimal("999999.99")
+
+
+# =============================================================================
+# Eingaben
+# =============================================================================
+
+
+def parse_amount(raw: Any, *, maximum: Decimal = MAX_AMOUNT) -> Decimal | None:
+    """
+    Geldbetrag aus einer Formulareingabe: „30“, „30,5“, „1.234,56“ oder „30.50“.
+
+    Gültig sind endliche Beträge von 0 bis ``maximum`` mit höchstens zwei Nachkommastellen; alles andere
+    (leer, Text, NaN, Infinity, Exponentenschreibweise außerhalb des Bereichs, „12,345“) ergibt ``None``.
+    Nichts wird gerundet – was gespeichert wird, ist genau der eingegebene Betrag.
+    """
+    text = str(raw or "").strip().replace(" ", "")
+    if "," in text:
+        # Deutsche Schreibweise: Punkt als Tausendertrenner, Komma als Dezimaltrenner
+        text = text.replace(".", "").replace(",", ".")
+    try:
+        amount = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+    exponent = amount.as_tuple().exponent  # bei NaN/Infinity ein Kennbuchstabe statt einer Zahl
+    if not isinstance(exponent, int) or exponent < -2:
+        return None
+    if not Decimal("0") <= amount <= maximum:
+        return None
+    return abs(amount).quantize(Decimal("0.01"))  # abs: „-0“ als 0,00 speichern
+
+
+def parse_year(raw: Any) -> int | None:
+    """Jahreszahl zwischen YEAR_MIN und YEAR_MAX, sonst ``None``."""
+    try:
+        year = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return year if YEAR_MIN <= year <= YEAR_MAX else None
+
+
+def csv_amount(value: Decimal) -> str:
+    """Betrag für CSV-Dateien deutscher Tabellenkalkulationen: zwei Nachkommastellen, Dezimalkomma."""
+    return f"{value:.2f}".replace(".", ",")
+
+
+_IBAN_RE = re.compile(r"^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$")
+_BIC_RE = re.compile(r"^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$")
+
+
+def normalize_account_code(value: Any) -> str:
+    """IBAN oder BIC ohne Leerraum und in Großbuchstaben."""
+    return re.sub(r"\s+", "", str(value or "")).upper()
+
+
+def valid_iban(value: str) -> bool:
+    """IBAN-Format und Prüfziffer nach ISO 13616 (Modulo 97)."""
+    iban = normalize_account_code(value)
+    if not _IBAN_RE.match(iban):
+        return False
+    rearranged = iban[4:] + iban[:4]
+    digits = "".join(str(int(char, 36)) for char in rearranged)
+    return int(digits) % 97 == 1
+
+
+def valid_bic(value: str) -> bool:
+    """BIC nach ISO 9362: vier Buchstaben Institut, zwei Buchstaben Land, zwei Zeichen Ort, optional Filiale."""
+    return bool(_BIC_RE.match(normalize_account_code(value)))
 
 
 # =============================================================================
@@ -74,27 +158,104 @@ def rate_for(organization, role, rates_map=None) -> Decimal:
 # =============================================================================
 
 
+def basis_q(prefix: str = "attendance__") -> Q:
+    """
+    Grundlage einer Sitzungsgeld-Position: anrechenbare Anwesenheit in einer nicht abgesagten Sitzung.
+
+    Dieselbe Regel gilt beim Erzeugen, beim Genehmigen und vor dem SEPA-Export – eine spätere Korrektur
+    (Sitzung abgesagt, Anwesenheit auf „abwesend“ oder Gastrolle) wirkt so auf vorhandene Positionen zurück.
+    """
+    return Q(**{f"{prefix}meeting__cancelled": False, f"{prefix}status__in": ELIGIBLE_STATUSES}) & ~Q(
+        **{f"{prefix}role__in": EXCLUDED_ROLES}
+    )
+
+
+def has_basis(allowance: Any) -> bool:
+    """Hat die Position (noch) eine Grundlage? Gleiche Regel wie :func:`basis_q`, ohne Datenbankabfrage."""
+    attendance = allowance.attendance
+    return (
+        not attendance.meeting.cancelled
+        and attendance.status in ELIGIBLE_STATUSES
+        and attendance.role not in EXCLUDED_ROLES
+    )
+
+
+def period_allowances(tenant: Any, period_start: date, period_end: date, organization: Any = None) -> QuerySet[Any]:
+    """Sitzungsgeld-Positionen des Mandanten für Sitzungen im Zeitraum (optional eines Gremiums)."""
+    from apps.session.models import SessionAllowance
+
+    qs = SessionAllowance.objects.filter(
+        attendance__meeting__tenant=tenant,
+        attendance__meeting__start__date__gte=period_start,
+        attendance__meeting__start__date__lte=period_end,
+    )
+    if organization is not None:
+        qs = qs.filter(attendance__meeting__organization=organization)
+    return qs
+
+
+def cancel_allowances(allowances: Iterable[Any], *, note: str) -> int:
+    """
+    Offene, noch nicht exportierte Positionen stornieren (Sitzungsgeld oder Monatspauschalen).
+
+    Ausgezahlte oder bereits exportierte Positionen bleiben unverändert – sie sind überwiesen bzw. stehen in
+    einer Überweisungsdatei. Das Protokoll vermerkt jede Stornierung über das Audit-Signal
+    („Entschädigung storniert“). ``note`` landet bei Sitzungsgeld-Positionen im Notizfeld.
+    """
+    count = 0
+    for allowance in allowances:
+        if allowance.status not in OPEN_STATUSES or allowance.export_reference:
+            continue
+        allowance.status = "cancelled"
+        update_fields = ["status", "updated_at"]
+        if hasattr(allowance, "notes"):
+            allowance.notes = note
+            update_fields.append("notes")
+        allowance.save(update_fields=update_fields)
+        count += 1
+    return count
+
+
+def cancel_obsolete_allowances(tenant: Any, period_start: date, period_end: date, organization: Any = None) -> int:
+    """Offene Positionen im Zeitraum stornieren, deren Grundlage entfallen ist (Absage, Anwesenheit korrigiert)."""
+    obsolete = (
+        period_allowances(tenant, period_start, period_end, organization)
+        .filter(status__in=OPEN_STATUSES, export_reference="")
+        .exclude(basis_q())
+    )
+    return cancel_allowances(obsolete, note=AUTO_CANCEL_NOTE)
+
+
 def generate_allowances(tenant, period_start, period_end, *, organization=None, created_by=None) -> dict:
     """
-    Abrechnungslauf: Sitzungsgeld-Positionen aus Anwesenheiten erzeugen.
+    Abrechnungslauf: Sitzungsgeld-Positionen aus Anwesenheiten erzeugen und vorhandene abgleichen.
 
     Idempotent — Anwesenheiten mit vorhandener Position werden übersprungen
-    (OneToOne). Abgesagte Sitzungen zählen nicht.
+    (OneToOne). Abgesagte Sitzungen zählen nicht. Offene Positionen, deren Grundlage inzwischen entfallen
+    ist, storniert der Lauf (``cancelled``); kehrt die Grundlage zurück, lebt eine so stornierte Position
+    als „ausstehend“ wieder auf (``reactivated``) und muss erneut genehmigt werden.
 
     Returns:
-        dict: created, skipped_existing, skipped_zero, total (Decimal)
+        dict: created, reactivated, cancelled, skipped_existing, skipped_zero, total (Decimal)
     """
     from apps.session.models import SessionAllowance, SessionAllowanceRate, SessionAttendance
+
+    stats = {
+        "created": 0,
+        "reactivated": 0,
+        "cancelled": cancel_obsolete_allowances(tenant, period_start, period_end, organization),
+        "skipped_existing": 0,
+        "skipped_zero": 0,
+        "total": Decimal("0.00"),
+    }
 
     attendances = (
         SessionAttendance.objects.filter(
             meeting__tenant=tenant,
-            meeting__cancelled=False,
             meeting__start__date__gte=period_start,
             meeting__start__date__lte=period_end,
-            status__in=ELIGIBLE_STATUSES,
         )
-        .exclude(role__in=EXCLUDED_ROLES)
+        .filter(basis_q(prefix=""))
         .select_related("meeting__organization", "person")
     )
     if organization is not None:
@@ -104,13 +265,15 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
         (r.organization_id, r.role): r.amount for r in SessionAllowanceRate.objects.filter(organization__tenant=tenant)
     }
 
-    stats = {"created": 0, "skipped_existing": 0, "skipped_zero": 0, "total": Decimal("0.00")}
-    existing_ids = set(
-        SessionAllowance.objects.filter(attendance__meeting__tenant=tenant).values_list("attendance_id", flat=True)
-    )
+    existing = SessionAllowance.objects.filter(attendance__meeting__tenant=tenant)
+    existing_ids = set(existing.values_list("attendance_id", flat=True))
+    revivable = {
+        allowance.attendance_id: allowance
+        for allowance in existing.filter(status="cancelled", notes=AUTO_CANCEL_NOTE, export_reference="")
+    }
 
     for attendance in attendances:
-        if attendance.pk in existing_ids:
+        if attendance.pk in existing_ids and attendance.pk not in revivable:
             stats["skipped_existing"] += 1
             continue
         org = attendance.meeting.organization
@@ -118,14 +281,38 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
         if amount <= 0:
             stats["skipped_zero"] += 1
             continue
-        SessionAllowance.objects.create(
-            attendance=attendance,
-            amount=amount,
-            currency=org.allowance_currency or "EUR",
-            status="pending",
-            created_by=created_by,
-        )
-        stats["created"] += 1
+        revived = revivable.get(attendance.pk)
+        if revived is not None:
+            # Grundlage wieder da: neu festsetzen, die Genehmigung gilt nicht mehr (Vier-Augen-Prinzip)
+            revived.amount = amount
+            revived.currency = org.allowance_currency or "EUR"
+            revived.status = "pending"
+            revived.created_by = created_by
+            revived.approved_by = None
+            revived.approved_at = None
+            revived.notes = ""
+            revived.save(
+                update_fields=[
+                    "amount",
+                    "currency",
+                    "status",
+                    "created_by",
+                    "approved_by",
+                    "approved_at",
+                    "notes",
+                    "updated_at",
+                ]
+            )
+            stats["reactivated"] += 1
+        else:
+            SessionAllowance.objects.create(
+                attendance=attendance,
+                amount=amount,
+                currency=org.allowance_currency or "EUR",
+                status="pending",
+                created_by=created_by,
+            )
+            stats["created"] += 1
         stats["total"] += amount
 
     return stats
@@ -143,6 +330,8 @@ def approve_allowances(allowances, approver, *, four_eyes: bool = True) -> dict:
     Positionen, die der/die Genehmigende selbst erzeugt hat, werden
     NICHT genehmigt (blocked_four_eyes). ``four_eyes=False`` nur, wenn der
     Mandant das Vier-Augen-Prinzip für Sitzungsgeld abgeschaltet hat (Issue #222).
+    Positionen, deren Grundlage entfallen ist, storniert die Genehmigungs-View vorher mit
+    :func:`cancel_obsolete_allowances` – sie kommen hier nicht mehr als „ausstehend“ an.
 
     Returns:
         dict: approved, blocked_four_eyes
@@ -251,7 +440,7 @@ def build_export_csv(allowances) -> str:
                 attendance.meeting.name,
                 timezone.localtime(attendance.meeting.start).strftime("%d.%m.%Y"),
                 attendance.get_role_display(),
-                f"{allowance.amount:.2f}".replace(".", ","),
+                csv_amount(allowance.amount),
                 allowance.currency,
                 allowance.get_status_display(),
                 person.get_bank_account_holder_decrypted() or "",
@@ -587,10 +776,6 @@ def year_summary_totals(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     return totals
 
 
-def _csv_amount(value: Decimal) -> str:
-    return f"{value:.2f}".replace(".", ",")
-
-
 def year_summary_csv(rows: Iterable[dict[str, Any]], year: int) -> str:
     """
     Jahresübersicht als CSV (Semikolon, CRLF).
@@ -621,14 +806,14 @@ def year_summary_csv(rows: Iterable[dict[str, Any]], year: int) -> str:
                 year,
                 row["person"].display_name,
                 row["count"],
-                _csv_amount(row["total"]),
-                _csv_amount(row["paid"]),
-                _csv_amount(row["approved"]),
-                _csv_amount(row["pending"]),
+                csv_amount(row["total"]),
+                csv_amount(row["paid"]),
+                csv_amount(row["approved"]),
+                csv_amount(row["pending"]),
                 row["session"]["count"],
-                _csv_amount(row["session"]["total"]),
+                csv_amount(row["session"]["total"]),
                 row["monthly"]["count"],
-                _csv_amount(row["monthly"]["total"]),
+                csv_amount(row["monthly"]["total"]),
             ]
         )
     return buffer.getvalue()
@@ -768,7 +953,7 @@ def build_monthly_export_csv(allowances) -> str:
                 allowance.rate.name,
                 allowance.rate.legal_basis,
                 allowance.period.strftime("%m/%Y"),
-                f"{allowance.amount:.2f}".replace(".", ","),
+                csv_amount(allowance.amount),
                 allowance.get_status_display(),
                 person.get_bank_account_holder_decrypted() or "",
                 person.get_bank_iban_decrypted() or "",

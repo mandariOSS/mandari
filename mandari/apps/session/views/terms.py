@@ -60,6 +60,20 @@ def term_date_filter(term, field="date"):
     return q
 
 
+def meeting_term_filter(term, prefix=""):
+    """
+    Q-Filter: Sitzung gehört zur Periode – über die zugeordnete Wahlperiode oder, wenn keine zugeordnet ist,
+    über das Sitzungsdatum.
+
+    Sitzungen ohne Wahlperiode (ältere Bestände, Anlagewege vor der automatischen Zuordnung) zählen so in
+    Archiv, Sitzungsliste und Suche dort, wo ihr Datum liegt – wie Vorlagen über :func:`term_date_filter`.
+    """
+    q = Q(**{f"{prefix}legislative_term": term})
+    if term.start_date or term.end_date:
+        q |= Q(**{f"{prefix}legislative_term__isnull": True}) & term_date_filter(term, f"{prefix}start__date")
+    return q
+
+
 # =============================================================================
 # VERWALTUNG (Einstellungen)
 # =============================================================================
@@ -268,16 +282,21 @@ class ArchiveView(SessionViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         can_np_meetings = self.has_permission("view_non_public_meetings")
         can_np_papers = self.has_permission("view_non_public_papers")
+        # Vorlagen nur mit eigenem Sichtrecht: Zahl und Link führen sonst ins 403 der Vorlagenliste
+        can_papers = self.has_permission("view_papers")
 
         current = SessionLegislativeTerm.current_for(self.session_tenant)
         rows = []
         for term in SessionLegislativeTerm.objects.filter(tenant=self.session_tenant):
-            meetings = SessionMeeting.objects.filter(tenant=self.session_tenant, legislative_term=term)
+            meetings = SessionMeeting.objects.filter(tenant=self.session_tenant).filter(meeting_term_filter(term))
             if not can_np_meetings:
                 meetings = meetings.filter(is_public=True)
-            papers = SessionPaper.objects.filter(tenant=self.session_tenant).filter(term_date_filter(term))
-            if not can_np_papers:
-                papers = papers.filter(is_public=True)
+            paper_count = None
+            if can_papers:
+                papers = SessionPaper.objects.filter(tenant=self.session_tenant).filter(term_date_filter(term))
+                if not can_np_papers:
+                    papers = papers.filter(is_public=True)
+                paper_count = papers.count()
             memberships = SessionOrganizationMembership.objects.filter(
                 organization__tenant=self.session_tenant, legislative_term=term
             )
@@ -286,12 +305,13 @@ class ArchiveView(SessionViewMixin, TemplateView):
                     "term": term,
                     "is_current": current is not None and term.pk == current.pk,
                     "meeting_count": meetings.count(),
-                    "paper_count": papers.count(),
+                    "paper_count": paper_count,
                     "membership_count": memberships.count(),
                     "organization_count": memberships.values("organization_id").distinct().count(),
                 }
             )
         context["rows"] = rows
         context["current_term"] = current
+        context["can_view_papers"] = can_papers
         context["can_manage_terms"] = self.has_permission("manage_settings")
         return context

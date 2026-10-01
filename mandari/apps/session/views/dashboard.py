@@ -37,7 +37,7 @@ class DashboardView(SessionViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         tenant = self.session_tenant
-        today = timezone.now().date()
+        today = timezone.localdate()  # Kalendertag in der Zeitzone der Kommune, wie die start__date-Filter
         permissions = self.session_permissions
         # Jede Kachel nur mit ihrem Fachrecht (Funktionstrennung, Issue #221): Das Dashboard-Recht
         # allein zeigt keine Sitzungen, Vorlagen oder Anträge
