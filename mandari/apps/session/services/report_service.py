@@ -177,9 +177,12 @@ def paper_throughput(tenant: Any, year: int) -> dict[str, Any]:
     }
 
 
-def available_years(tenant):
+def available_years(tenant: Any) -> list[int]:
+    # Jahr in Ortszeit: Eine Sitzung am 01.01. um 00:30 Uhr gehört nicht ins Vorjahr (UTC)
     years = {
-        value.year for value in SessionMeeting.objects.filter(tenant=tenant).values_list("start", flat=True) if value
+        timezone.localtime(value).year
+        for value in SessionMeeting.objects.filter(tenant=tenant).values_list("start", flat=True)
+        if value
     }
     years.add(timezone.localdate().year)
     return sorted(years, reverse=True)

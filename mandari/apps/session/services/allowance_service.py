@@ -118,14 +118,26 @@ def normalize_account_code(value: Any) -> str:
     return re.sub(r"\s+", "", str(value or "")).upper()
 
 
-def valid_iban(value: str) -> bool:
-    """IBAN-Format und Prüfziffer nach ISO 13616 (Modulo 97)."""
+def iban_problem(value: Any) -> str:
+    """
+    Warum eine IBAN nicht stimmt – leer, wenn Format und Prüfziffer nach ISO 13616 (Modulo 97) passen.
+
+    Der Grund unterscheidet Format (Länge, Zeichen) und Prüfziffer, damit Sachbearbeitende wissen, wonach
+    sie suchen müssen; er passt hinter „Die IBAN ist ungültig: “.
+    """
     iban = normalize_account_code(value)
     if not _IBAN_RE.match(iban):
-        return False
+        return "falsches Format (in Deutschland 22 Zeichen: DE, zwei Prüfziffern und 18 Ziffern)"
     rearranged = iban[4:] + iban[:4]
     digits = "".join(str(int(char, 36)) for char in rearranged)
-    return int(digits) % 97 == 1
+    if int(digits) % 97 != 1:
+        return "die Prüfziffer stimmt nicht – bitte auf Tipp- und Zahlendreher prüfen"
+    return ""
+
+
+def valid_iban(value: str) -> bool:
+    """IBAN-Format und Prüfziffer nach ISO 13616 (Modulo 97)."""
+    return not iban_problem(value)
 
 
 def valid_bic(value: str) -> bool:

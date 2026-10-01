@@ -7,6 +7,7 @@ Provides views for the Session RIS administration interface.
 
 from datetime import timedelta
 
+from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import (
     TemplateView,
@@ -21,11 +22,41 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
-from ..services import joint_meeting_service
+from ..services import audit_log_service, joint_meeting_service
 
 # =============================================================================
 # DASHBOARD
 # =============================================================================
+
+#: Wegweiser für Rollen ohne Sitzungs-, Vorlagen- und Antragskacheln (Issue #708): Bereiche außerhalb des
+#: Sitzungsdienstes, je mit genau den Rechten, die auch die Seite verlangt (eines genügt). Das Audit-Log hat
+#: eine eigene Karte (Protokollkontrolle).
+ROLE_AREAS = (
+    (
+        ("manage_allowances",),
+        "session:allowances",
+        "Sitzungsgelder",
+        "banknote",
+        "Sitzungsgelder abrechnen, genehmigen und auszahlen",
+    ),
+    (("manage_devices",), "session:devices", "Endgeräte", "tablet", "Endgeräte für die digitale Ratsarbeit"),
+    (
+        ("manage_settings", "manage_users"),
+        "session:settings",
+        "Einstellungen",
+        "settings",
+        "Benutzer, Rollen und Einstellungen des Mandanten",
+    ),
+)
+
+
+def role_areas(permissions, tenant_slug: str) -> list[dict]:
+    """Bereiche aus :data:`ROLE_AREAS`, die die Person öffnen darf – ohne zusätzliche Rechte."""
+    return [
+        {"url": reverse(url_name, kwargs={"tenant_slug": tenant_slug}), "label": label, "icon": icon, "text": text}
+        for needed, url_name, label, icon, text in ROLE_AREAS
+        if any(perm in permissions for perm in needed)
+    ]
 
 
 class DashboardView(SessionViewMixin, TemplateView):
@@ -51,6 +82,15 @@ class DashboardView(SessionViewMixin, TemplateView):
                 "can_view_applications": can_applications,
             }
         )
+        # Kontrollrollen (Revision, Datenschutz) sehen bewusst keine Fachinhalte; ohne Fachkachel bliebe das
+        # Dashboard leer. Sie bekommen den Stand des Protokolls und Wegweiser in ihre Bereiche (Issue #708).
+        if "view_audit_log" in permissions:
+            context["audit_summary"] = audit_log_service.dashboard_summary(
+                tenant, with_verify="export_audit_log" in permissions
+            )
+        if not (can_meetings or can_papers or can_applications or "approve_papers" in permissions):
+            context["without_content_tiles"] = True
+            context["role_areas"] = role_areas(permissions, tenant.slug)
         meetings = SessionMeeting.objects.filter(tenant=tenant).visible_to(permissions)
         papers = SessionPaper.objects.filter(tenant=tenant).visible_to(permissions)
 

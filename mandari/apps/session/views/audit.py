@@ -135,7 +135,8 @@ class AuditLogListView(SessionViewMixin, ListView):
         context = super().get_context_data(**kwargs)
         for entry in context["entries"]:
             entry.change_rows = change_rows(entry.changes)
-        context["actions"] = SessionAuditLog.ACTION_CHOICES
+        # Nicht „actions“: so heißt der Kopf-Slot der Karten-Komponente (sonst stünde die Liste im Kartenkopf)
+        context["action_choices"] = SessionAuditLog.ACTION_CHOICES
         context["model_names"] = (
             SessionAuditLog.objects.filter(tenant=self.session_tenant)
             .values_list("model_name", flat=True)

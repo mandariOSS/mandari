@@ -36,6 +36,7 @@ from typing import Any, cast
 
 from django.conf import settings
 from django.template.loader import render_to_string
+from django.utils import timezone
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (
     ArrayObject,
@@ -481,7 +482,7 @@ class PackagePdfBuilder:
             {
                 "/Title": f"Sitzungsmappe {meeting.name} ({self.plan.variant_label}, Fassung {self.version})",
                 "/Author": meeting.tenant.name,
-                "/Subject": f"{meeting.organization.name}, Sitzung am {meeting.start:%d.%m.%Y}",
+                "/Subject": f"{meeting.organization.name}, Sitzung am {timezone.localtime(meeting.start):%d.%m.%Y}",
                 "/Creator": "mandari",
             }
         )

@@ -6,6 +6,10 @@ Ungültige Werte aus Adresszeile, Formular oder JSON-Körper (``?page=x``, ``?te
 kein JSON) dürfen nie zu HTTP 500 führen. Die Helfer liefern für ungültige Eingaben einen
 Rückfallwert bzw. ``None``; die View entscheidet, ob sie den Filter ignoriert, nichts findet
 oder mit 400 antwortet.
+
+Nullbytes (``%00``) in Suchbegriffen und Filtern: PostgreSQL lehnt Zeichenketten mit Nullbyte ab,
+die Abfrage endet dann mit HTTP 500 (SQLite nimmt sie an, deshalb fällt es in Tests nicht auf).
+:func:`text_param` und :func:`without_nul` entfernen sie, bevor ein Wert die Datenbank erreicht.
 """
 
 from __future__ import annotations
@@ -15,7 +19,9 @@ import uuid
 from datetime import date
 from typing import Any
 
-from django.http import HttpRequest
+from django.http import HttpRequest, QueryDict
+
+NUL = "\x00"
 
 
 def uuid_param(value: Any) -> str | None:
@@ -49,6 +55,25 @@ def int_param(value: Any, default: int, *, minimum: int | None = None, maximum: 
     if maximum is not None:
         number = min(maximum, number)
     return number
+
+
+def text_param(value: Any, *, max_length: int | None = None) -> str:
+    """Freitext (Suchbegriff, Filterwert) ohne Nullbytes und ohne Leerraum an den Rändern, höchstens ``max_length``."""
+    if value is None:
+        return ""
+    text = str(value).replace(NUL, "").strip()
+    return text[:max_length] if max_length is not None else text
+
+
+def without_nul(query: QueryDict) -> QueryDict:
+    """Anfrageparameter ohne Nullbytes in Namen und Werten; ohne Nullbyte unverändert dasselbe Objekt."""
+    if not any(NUL in key or any(NUL in value for value in values) for key, values in query.lists()):
+        return query
+    cleaned = QueryDict(mutable=True)
+    for key, values in query.lists():
+        cleaned.setlist(key.replace(NUL, ""), [value.replace(NUL, "") for value in values])
+    cleaned._mutable = False
+    return cleaned
 
 
 def json_body(request: HttpRequest) -> dict[str, Any] | None:

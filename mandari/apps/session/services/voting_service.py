@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 
 from ..models import (
@@ -35,7 +34,7 @@ from ..models import (
     SessionTenant,
     SessionVote,
 )
-from . import participation_service, protocol_lock
+from . import membership_service, participation_service, protocol_lock
 
 INDIVIDUAL_METHODS = ("open", "roll_call")
 
@@ -414,16 +413,19 @@ def tally(agenda_item: SessionAgendaItem, votes: list[SessionVote] | None = None
 
 
 def voting_members(circular: SessionCircularResolution):
-    """Aktive stimmberechtigte Besetzung des Gremiums – ohne Stellvertretungen, die keinen eigenen Sitz haben."""
-    today = timezone.localdate()
+    """
+    Aktive stimmberechtigte Besetzung des Gremiums – ohne Stellvertretungen, die keinen eigenen Sitz haben.
+
+    „Aktiv“ nach der gemeinsamen Regel (``membership_service.active_q``) wie Ladung und Anwesenheit:
+    laufende Besetzung einer aktiven Person; deaktivierte Personen stimmen nicht mehr mit ab.
+    """
     return (
         SessionOrganizationMembership.objects.filter(
+            membership_service.active_q(timezone.localdate()),
             organization=circular.organization,
             has_voting_rights=True,
             substitute_for__isnull=True,
         )
-        .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
-        .filter(Q(start_date__isnull=True) | Q(start_date__lte=today))
         .select_related("person")
         .order_by("person__family_name", "person__given_name")
     )

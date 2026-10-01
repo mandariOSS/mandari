@@ -16,6 +16,7 @@ from django.core.exceptions import PermissionDenied
 from django.http import Http404
 
 from apps.common.mixins import HTMXMixin
+from apps.common.params import without_nul
 
 USER_TENANTS_MAX_AGE = 600
 USER_TENANTS_SESSION_KEY = "session_user_tenants"
@@ -263,6 +264,9 @@ class SessionMixin(LoginRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         """Set up session context before view processing."""
         from apps.session.models import SessionTenant, SessionUser
+
+        # Such- und Filterparameter ohne Nullbytes: PostgreSQL bricht sonst mit HTTP 500 ab (Issue #708)
+        request.GET = without_nul(request.GET)
 
         # Get tenant slug from URL
         tenant_slug = kwargs.get("tenant_slug")
