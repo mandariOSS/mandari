@@ -104,8 +104,9 @@ su_viewer.roles.add(roles["viewer"])
 
 org = SessionOrganization.objects.create(tenant=tenant, name="Rat")
 meeting = SessionMeeting.objects.create(tenant=tenant, name="Ratssitzung", organization=org, start=timezone.now())
-paper = SessionPaper.objects.create(tenant=tenant, reference="V/2026/0001", name="Vorlage A")
-paper2 = SessionPaper.objects.create(tenant=tenant, reference="V/2026/0002", name="Vorlage B")
+# Auf die Tagesordnung kommen nur freigegebene Vorlagen (Issue #721)
+paper = SessionPaper.objects.create(tenant=tenant, reference="V/2026/0001", name="Vorlage A", status="approved")
+paper2 = SessionPaper.objects.create(tenant=tenant, reference="V/2026/0002", name="Vorlage B", status="approved")
 
 clerk = Client()
 clerk.force_login(clerk_user)

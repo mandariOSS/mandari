@@ -71,6 +71,15 @@ def antrag(tenant: SessionTenant, **kwargs: Any) -> SessionApplication:
     )
 
 
+def umwandeln_und_freigeben(application: SessionApplication) -> tuple[SessionPaper, bool]:
+    """Umwandlung (Vorlage im Entwurf, Issue #721) und Freigabe – erst danach ist die Vorlage veröffentlicht."""
+    paper, created = convert_to_paper(application)
+    assert paper.status == "draft"
+    paper.status = "approved"
+    paper.save()
+    return paper, created
+
+
 def sitzung(tenant: SessionTenant, gremium: SessionOrganization, **kwargs: Any) -> SessionMeeting:
     kwargs.setdefault("name", "Ratssitzung")
     kwargs.setdefault("start", timezone.now() + timedelta(days=5))
@@ -91,7 +100,7 @@ class TestAufbereitung:
         self, tenant: SessionTenant, rat: SessionOrganization
     ) -> None:
         application = antrag(tenant)
-        paper, created = convert_to_paper(application)
+        paper, created = umwandeln_und_freigeben(application)
         assert created and paper.is_public and paper.status == "approved"
         meeting = sitzung(tenant, rat)
         item = SessionAgendaItem.objects.create(meeting=meeting, number="7", name="Bänke", paper=paper)
@@ -126,7 +135,7 @@ class TestAufbereitung:
 
     def test_noe_top_in_oeffentlicher_sitzung(self, tenant: SessionTenant, rat: SessionOrganization) -> None:
         application = antrag(tenant)
-        paper, _ = convert_to_paper(application)
+        paper, _ = umwandeln_und_freigeben(application)
         meeting = sitzung(tenant, rat)
         item = SessionAgendaItem.objects.create(
             meeting=meeting, number="N1", name="Bänke", paper=paper, is_public=False
@@ -144,7 +153,7 @@ class TestAufbereitung:
         fremd = SessionTenant.objects.create(name="Fremdstadt", slug="fremdstadt")
         fremd_rat = SessionOrganization.objects.create(tenant=fremd, name="Fremder Rat")
         application = antrag(tenant)
-        paper, _ = convert_to_paper(application)
+        paper, _ = umwandeln_und_freigeben(application)
         station(paper, rat, meeting=sitzung(fremd, fremd_rat, name="Fremde Sitzung"), role="decision")
         station(paper, fremd_rat, role="preliminary")
         feedback = application_feedback.build(application)
@@ -153,7 +162,7 @@ class TestAufbereitung:
     def test_beschluss_nur_aus_entscheidender_station(self, tenant: SessionTenant, rat: SessionOrganization) -> None:
         bau = SessionOrganization.objects.create(tenant=tenant, name="Bauausschuss")
         application = antrag(tenant)
-        paper, _ = convert_to_paper(application)
+        paper, _ = umwandeln_und_freigeben(application)
         station(paper, bau, meeting=sitzung(tenant, bau), role="preliminary", result="approved", order=1)
         entscheidung = station(paper, rat, meeting=sitzung(tenant, rat), role="decision", order=2)
         assert application_feedback.build(application).decision is None
@@ -167,7 +176,7 @@ class TestAufbereitung:
 
     def test_top_ohne_station_zaehlt_als_beratung(self, tenant: SessionTenant, rat: SessionOrganization) -> None:
         application = antrag(tenant)
-        paper, _ = convert_to_paper(application)
+        paper, _ = umwandeln_und_freigeben(application)
         SessionAgendaItem.objects.create(
             meeting=sitzung(tenant, rat), number="3", name="Bänke", paper=paper, vote_result="approved"
         )
@@ -187,7 +196,7 @@ class TestAufbereitung:
         Sitzungen entstehen deshalb gegen die Schlüsselfolge.
         """
         application = antrag(tenant)
-        paper, _ = convert_to_paper(application)
+        paper, _ = umwandeln_und_freigeben(application)
         start = timezone.now() + timedelta(days=5)
         schluessel = sorted((uuid.uuid4() for _ in range(2)), reverse=True)
         for pk, ergebnis in zip(schluessel, ("approved", "rejected"), strict=True):
@@ -300,7 +309,7 @@ class TestApi:
         assert (body["reference"], body["status"], body["stations"]) == (application.reference, "submitted", [])
         assert body["paper"] == {"converted": False, "public": False, "reference_label": tenant.reference_label}
 
-        paper, _ = convert_to_paper(application)
+        paper, _ = umwandeln_und_freigeben(application)
         meeting = sitzung(tenant, rat, name="12. Ratssitzung")
         station(paper, rat, meeting=meeting, role="decision", result="approved", order=1)
         station(paper, rat, meeting=sitzung(tenant, rat, name="Geheim", is_public=False), role="hearing", order=2)

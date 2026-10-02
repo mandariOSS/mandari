@@ -113,11 +113,21 @@ def submit(motion: Motion, author: Any, commit: Commit) -> SessionApplication:
 
 
 def convert(application: SessionApplication, commit: Commit, **kwargs: Any) -> SessionPaper:
+    """Umwandlung (Vorlage im Entwurf, Issue #721) und Freigabe – erst die freigegebene Vorlage wird beraten."""
     from apps.session.services.application_service import convert_to_paper
 
     with commit():
         paper, _created = convert_to_paper(application, **kwargs)
+    assert paper.status == "draft"
+    release(paper, commit)
     return paper
+
+
+def release(paper: SessionPaper, commit: Commit) -> None:
+    """Abschluss des Freigabelaufs (Mitzeichnung, Vier-Augen-Prüfung) – hier verkürzt."""
+    with commit():
+        paper.status = "approved"
+        paper.save()
 
 
 def meeting(tenant: SessionTenant, gremium: SessionOrganization, days: int = 14, **kwargs: Any) -> SessionMeeting:
@@ -280,10 +290,16 @@ def test_e2e_einreichen_umwandeln_beschluss_rueckmeldung(
         )
     assert response.status_code == 302
     paper = SessionPaper.objects.get(source_application=application)
-    assert paper.reference
+    assert paper.reference and paper.status == "draft"
+    # Die Vorlage ist im Entwurf (Issue #721): „umgewandelt“ ja, die Drucksachennummer noch nicht
     umgewandelt = notifications(author, "Verwaltung: In Vorlage umgewandelt")
-    assert len(umgewandelt) == 1 and paper.reference in umgewandelt[0].message
-    assert not notifications(author, f"{tenant.reference_label} {paper.reference}")  # keine Doppelmeldung
+    assert len(umgewandelt) == 1 and paper.reference not in umgewandelt[0].message
+    assert not notifications(author, f"{tenant.reference_label} {paper.reference}")
+
+    # Mit der Freigabe ist die Vorlage veröffentlicht: Die Fraktion erfährt die Drucksachennummer genau einmal
+    release(paper, commit)
+    nummer = notifications(author, f"{tenant.reference_label} {paper.reference}")
+    assert len(nummer) == 1 and paper.reference in nummer[0].message
 
     # 3. Session: Beratungsfolge anlegen und terminieren
     bau_sitzung = meeting(tenant, gremien["bau"], days=10, name="3. Sitzung Bauausschuss")

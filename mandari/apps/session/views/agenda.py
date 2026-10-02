@@ -5,13 +5,15 @@ Tagesordnungs-Verwaltung für das Session RIS (Issue #26).
 Vollständiges TOP-Management: Anlegen, Bearbeiten, Absetzen (dokumentiert
 statt gelöscht), Löschen, Umsortieren (Drag-and-drop + Auf/Ab) mit
 automatischer Ö/NÖ-getrennter Neu-Nummerierung, Unterpunkten (5.1, 5.2)
-und Nachtrags-Kennzeichnung nach Ladungsversand.
+und Nachtrags-Kennzeichnung nach Ladungsversand. Als Vorlage eines TOP sind nur freigegebene Vorlagen
+wählbar (Issue #721).
 
 Nach der Genehmigung der Niederschrift sind Tagesordnung und Anwesenheit gesperrt
 (``protocol_lock``); die Views melden das vorab, statt in die Sperre des Modells zu laufen.
 """
 
 from django.contrib import messages
+from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -56,9 +58,23 @@ def _items(view):
     )
 
 
-def _papers(view):
-    """Auswahl „Vorlage“: nichtöffentliche Vorlagen nur mit dem NÖ-Sichtrecht für Vorlagen."""
-    return SessionPaper.objects.filter(tenant=view.session_tenant).visible_to(view.session_permissions)
+def _papers(view, current_id=None):
+    """
+    Auswahl „Vorlage“: nur freigegebene Vorlagen (Issue #721), nichtöffentliche nur mit dem NÖ-Sichtrecht für
+    Vorlagen. ``current_id``: bereits verknüpfte Vorlage bleibt wählbar (Bestand vor der Prüfung).
+    """
+    released = Q(status__in=agenda_service.RELEASED_PAPER_STATUSES)
+    if current_id is not None:
+        released |= Q(pk=current_id)
+    return SessionPaper.objects.filter(released, tenant=view.session_tenant).visible_to(view.session_permissions)
+
+
+def _release_error(form):
+    """Neu verknüpfte Vorlage nicht freigegeben (Issue #721): Fehler am Feld „Vorlage“."""
+    if "paper" in form.changed_data:
+        blocker = agenda_service.scheduling_error(form.instance.paper)
+        if blocker:
+            form.add_error("paper", blocker)
 
 
 def _get_meeting(view, meeting_id):
@@ -118,6 +134,7 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
             return gesperrt
         for feld, meldung in agenda_service.visibility_errors(form.instance).items():
             form.add_error(feld, meldung)
+        _release_error(form)
         if form.errors:
             return self.form_invalid(form)
         form.instance.meeting = meeting
@@ -178,7 +195,7 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
-        form.fields["paper"].queryset = _papers(self)
+        form.fields["paper"].queryset = _papers(self, current_id=self.object.paper_id)
         form.fields["parent"].queryset = (
             _items(self)
             .filter(meeting=self.object.meeting, parent__isnull=True)
@@ -194,6 +211,7 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
             return self.form_invalid(form)
         for feld, meldung in agenda_service.visibility_errors(form.instance).items():
             form.add_error(feld, meldung)
+        _release_error(form)
         if form.errors:
             return self.form_invalid(form)
         # Genehmigte Niederschrift: Nur die Rücknahme auf nichtöffentlich bleibt möglich, Nummer und Platz bleiben

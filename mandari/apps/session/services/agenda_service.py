@@ -7,6 +7,7 @@ Zentrale Logik für:
   Unterpunkte 5.1, 5.2, …)
 - Ö/NÖ-Gruppierung für Tagesordnungs- und Einladungsansichten
 - Umsortieren (Drag-and-drop-Reihenfolge, Auf/Ab)
+- Freigabestand: Auf eine Tagesordnung kommen nur freigegebene Vorlagen (Issue #721)
 """
 
 from typing import Any
@@ -16,6 +17,27 @@ from django.utils import timezone
 
 from apps.session.models import SessionAgendaItem, SessionMeeting
 from apps.session.services import protocol_lock
+from apps.session.services.numbering_service import FREIGEGEBEN
+
+#: Freigegebene Stände einer Vorlage (dieselben wie für die Nummernvergabe): nur so kommt sie auf eine
+#: Tagesordnung (Issue #721)
+RELEASED_PAPER_STATUSES = frozenset(FREIGEGEBEN)
+
+
+def scheduling_error(paper: Any) -> str:
+    """
+    Grund, warum eine Vorlage (noch) nicht auf eine Tagesordnung kommt; leer, wenn sie freigegeben ist.
+
+    Entwürfe, Vorlagen in Prüfung und zurückgezogene Vorlagen werden nicht terminiert – weder über die
+    Beratungsfolge noch über die Tagesordnung (Issue #721). Erst die Freigabe (Mitzeichnung, Vier-Augen-Prüfung)
+    macht eine Vorlage beratungsfähig.
+    """
+    if paper is None or paper.status in RELEASED_PAPER_STATUSES:
+        return ""
+    return (
+        f"Die Vorlage {paper.display_reference} ist nicht freigegeben (Status „{paper.get_status_display()}“). "
+        "Auf die Tagesordnung kommen nur freigegebene Vorlagen."
+    )
 
 
 def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:

@@ -321,8 +321,12 @@ resp = c_clerk.post(f"{SESSION}/applications/{app.id}/convert/", {}, follow=True
 app.refresh_from_db()
 paper = app.created_papers.first()
 check("In Vorlage umgewandelt", app.status == "converted" and paper is not None, app.status)
+check("Vorlage im Entwurf (Issue #721)", paper is not None and paper.status == "draft", getattr(paper, "status", ""))
 motion.refresh_from_db()
 check("Work bleibt bei Verwaltung (noch kein Termin)", motion.status == "at_admin")
+# Freigabelauf der Verwaltung (hier verkürzt): erst die freigegebene Vorlage ist beratungsfähig
+paper.status = "approved"
+paper.save()
 
 Notification.objects.all().delete()
 meeting = SessionMeeting.objects.create(

@@ -89,10 +89,11 @@ def convert_to_paper(
     """
     Antrag in eine Vorlage umwandeln (Issue #316: ein Weg für Portal und Admin).
 
-    Ein angenommener Antrag der Politik ist sofort Drucksache und beratungsfähig: Die Vorlage wird
-    freigegeben und öffentlich angelegt, die Nummer vergibt der Nummernkreis atomar beim Speichern
-    (Issue #150). Der Antrag wechselt per Einzel-Speichern auf „In Vorlage umgewandelt“ – so laufen
-    Audit-Log und die Rückmeldung an die einreichende Fraktion über die Signale.
+    Die Vorlage entsteht öffentlich **im Entwurf** (Issue #721): Sie durchläuft Mitzeichnung, Vier-Augen-Prüfung
+    und Freigabe wie jede Vorlage, bevor sie auf eine Tagesordnung kommt. Die Nummer vergibt der Nummernkreis
+    atomar beim Speichern, je nach Einstellung schon jetzt oder erst bei der Freigabe (Issue #150). Der Antrag
+    wechselt per Einzel-Speichern auf „In Vorlage umgewandelt“ – so laufen Audit-Log und die Rückmeldung an die
+    einreichende Fraktion über die Signale; die Drucksachennummer erfährt die Fraktion mit der Veröffentlichung.
 
     Returns:
         (Vorlage, neu angelegt?) – ein bereits umgewandelter Antrag liefert seine Vorlage zurück.
@@ -138,9 +139,8 @@ def convert_to_paper(
             main_organization=main_organization,
             source_application=application,
             created_by=session_user,
-            status="approved",
-            approved_by=session_user,
-            approved_at=timezone.now(),
+            # Entwurf statt „Freigegeben“ (Issue #721): keine Freigabe am Freigabelauf vorbei
+            status="draft",
         )
         application.status = "converted"
         application.save(update_fields=["status", "updated_at"])
