@@ -92,6 +92,9 @@ dependencies = [
 
     # Verträge der Datendrehscheibe: JSON Schema 2020-12 für Ereignisse und Befehle (hub/contracts, #517)
     "jsonschema>=4.25.0",
+    # Katalog der offenen Daten nach DCAT-AP.de als Turtle, RDF/XML und JSON-LD (hub/adapters/dcat, #104);
+    # BSD-3-Clause, reines Python, wird erst beim ersten Abruf eines Katalogs geladen
+    "rdflib>=7.6.0",
 
     # Transitive dependencies pinned for security
     "urllib3>=2.8.0",  # Security: fixes open redirect, info disclosure

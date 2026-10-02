@@ -41,6 +41,7 @@ mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **xhtml2pdf** | PDF-Generierung | Apache 2.0 | [GitHub](https://github.com/xhtml2pdf/xhtml2pdf) |
 | **segno** | QR-Code-Erzeugung (reines Python) | BSD-3-Clause | [GitHub](https://github.com/heuer/segno) |
 | **jsonschema** | Prüfung der Verträge für Ereignisse und Befehle (JSON Schema 2020-12) | MIT | [GitHub](https://github.com/python-jsonschema/jsonschema) |
+| **rdflib** | Datenkatalog nach DCAT-AP.de als Turtle, RDF/XML und JSON-LD | BSD-3-Clause | [GitHub](https://github.com/RDFLib/rdflib) |
 
 Vollständige Liste: [mandari/pyproject.toml](mandari/pyproject.toml) (direkte Abhängigkeiten), gesperrte
 Versionen in [mandari/uv.lock](mandari/uv.lock)
@@ -61,6 +62,14 @@ mandari implementiert den deutschen **OParl-Standard** für offene Ratsinformati
 
 - Website: [oparl.org](https://oparl.org)
 - Spezifikation: [Online-Ansicht](https://oparl.org/spezifikation/online-ansicht/)
+
+### DCAT-AP.de 3.0
+
+Den Katalog der offenen Ratsinformationen für Datenportale beschreibt mandari nach **DCAT-AP.de**, dem deutschen
+Anwendungsprofil von DCAT-AP für Metadaten offener Verwaltungsdaten.
+
+- Website: [dcat-ap.de](https://www.dcat-ap.de/)
+- Spezifikation: [DCAT-AP.de 3.0](https://www.dcat-ap.de/def/dcatde/3.0/spec/)
 
 ## Inspirationen & verwandte Projekte
 

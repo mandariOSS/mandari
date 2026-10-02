@@ -9,6 +9,8 @@ mandari-Anreicherungen (KI-Zusammenfassungen, Volltexte, stabile Datei-Proxies).
 - **CORS offen** (`Access-Control-Allow-Origin: *`)
 - **Rate-Limit**: standardmäßig 120 Anfragen/Minute je IP (HTTP 429 bei Überschreitung)
 - **Spezifikation**: https://oparl.org/spezifikation/
+- **Für Datenportale**: ein Katalog je Kommune nach DCAT-AP.de, der auf diese Schnittstelle verweist
+  ([DCAT_KATALOG.md](DCAT_KATALOG.md))
 
 ## Basis-URL
 
