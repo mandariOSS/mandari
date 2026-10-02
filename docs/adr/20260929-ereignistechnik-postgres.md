@@ -182,7 +182,9 @@ Entscheidung bleibt; präzisiert wurde:
 - **Schalter:** `INGESTOR_EVENTS_ENABLED`, Standard aus. Eingeschaltet wird erst, wenn die
   Migrationen der Ereignistechnik eingespielt sind und der Sequenzierer läuft; sonst sammeln sich
   Ereignisse ohne Folgenummer, und `mandari_events_sequencer_lag_seconds` wächst. Ausgeschaltet
-  läuft jeder Upsert ohne Abfrage des bisherigen Stands.
+  läuft jeder Upsert ohne Abfrage des bisherigen Stands. Der Schalter gilt auch für die Anwendung:
+  Markiert sie selbst eine Zeile des Bestands (Session nimmt ein Objekt sofort zurück), meldet sie
+  die Rücknahme mit denselben Ereignissen (`hub.ris.retraction`, Issue #707).
 - **Ausnahme je Quelle:** `sync_config["events_enabled"] = false` an einer Quelle nimmt nur sie
   aus; ihre Upserts laufen dann wie ausgeschaltet. Gedacht für eine Quelle, die bei jedem
   Vollabgleich Änderungen meldet, obwohl sich nichts geändert hat (sie liefert eingebettete und

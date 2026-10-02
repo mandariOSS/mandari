@@ -371,8 +371,9 @@ if EVENTS_WORKER_REQUIRED not in ("", "auto", "true", "false", "1", "0", "yes", 
     from django.core.exceptions import ImproperlyConfigured
 
     raise ImproperlyConfigured("EVENTS_WORKER_REQUIRED muss true, false oder leer sein.")
-# Schalter des Ingestors (ingestor/src/config.py). Die Anwendung liest ihn nur, um zu erkennen, dass
-# der Sequenzierer laufen muss (EVENTS_WORKER_REQUIRED).
+# Schalter des Ingestors (ingestor/src/config.py) für die Ereignisse zum RIS-Bestand. Die Anwendung liest
+# ihn, um zu erkennen, dass der Sequenzierer laufen muss (EVENTS_WORKER_REQUIRED), und meldet damit selbst
+# Rücknahmen, die mandari Session sofort im Bestand markiert (hub.ris.retraction, Issue #707).
 INGESTOR_EVENTS_ENABLED = os.environ.get("INGESTOR_EVENTS_ENABLED", "false").strip().lower() in (
     "true",
     "1",

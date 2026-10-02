@@ -335,6 +335,28 @@ def _section(output: BestandMapping, spec: Spec, pk: uuid.UUID) -> snapshot.Sect
     return snapshot.Section(queryset=spec.queryset(body_id=pk, deleted=False), render=render)
 
 
+def _snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed) -> snapshot.Snapshot:
+    def body() -> Objekt:
+        obj = _BODY.queryset(pk=pk).get()
+        # Eine zurückgenommene Kommune steht auch im Snapshot nur als gekürztes Objekt
+        return output.tombstone("body", obj) if obj.deleted else output.body(obj)
+
+    sections = [_section(output, spec, pk) for spec in BODY_LISTS.values()]
+    return snapshot.Snapshot(feed, body, sections)
+
+
+def snapshot_for_measurement(pk: uuid.UUID) -> snapshot.Snapshot:
+    """
+    Snapshot einer Kommune wie unter ``…/snapshot``, ohne Schalter und Veröffentlichungsstand zu prüfen.
+
+    Nur für die Messung von Bauzeit und Größe vor dem Einschalten (``manage.py oparl_snapshot_messen``); die
+    Ausgabe geht an niemanden. Abnehmer erreichen den Snapshot ausschließlich über ``body_snapshot``.
+    """
+    output = mapping()
+    found = OParlBody.objects.filter(pk=pk).values_list("source__sync_config", flat=True).first()
+    return _snapshot(output, pk, _feed(output, pk, publication.retracted_at(found)))
+
+
 @endpoint
 def body_snapshot(request: HttpRequest, pk: uuid.UUID) -> HttpResponseBase:
     """Snapshot einer Kommune mit Cursor-Übergabe (``hub.api.snapshot``): dieselben Objekte wie die Listen."""
@@ -342,14 +364,7 @@ def body_snapshot(request: HttpRequest, pk: uuid.UUID) -> HttpResponseBase:
     feed = _feed_or_unavailable(request, output, pk, "snapshot")
     if isinstance(feed, HttpResponse):
         return feed
-
-    def body() -> Objekt:
-        obj = _BODY.queryset(pk=pk).get()
-        # Eine zurückgenommene Kommune steht auch im Snapshot nur als gekürztes Objekt
-        return output.tombstone("body", obj) if obj.deleted else output.body(obj)
-
-    sections = [_section(output, spec, pk) for spec in BODY_LISTS.values()]
-    return snapshot.snapshot_response(request, snapshot.Snapshot(feed, body, sections))
+    return snapshot.snapshot_response(request, _snapshot(output, pk, feed))
 
 
 def _meeting_location_response(output: BestandMapping, pk: uuid.UUID) -> HttpResponse:

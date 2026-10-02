@@ -134,6 +134,22 @@ def _line(data: Objekt) -> bytes:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
 
 
+def write(snapshot: Snapshot, spool: IO[bytes]) -> tuple[Objekt, int]:
+    """
+    Body und alle Objekte der Kommune zeilenweise in ``spool`` schreiben (ohne die Kopfzeile).
+
+    Ergebnis: der Body und die Zahl der geschriebenen Zeilen. Derselbe Weg dient der Messung von Bauzeit
+    und Größe vor dem Einschalten (``manage.py oparl_snapshot_messen``).
+    """
+    body = snapshot.body()
+    spool.write(_line(body))
+    count = 1
+    for data in objects(snapshot):
+        spool.write(_line(data))
+        count += 1
+    return body, count
+
+
 # =============================================================================
 # Begrenzung gleichzeitiger Snapshots
 # =============================================================================
@@ -234,12 +250,7 @@ def snapshot_response(request: HttpRequest, snapshot: Snapshot) -> HttpResponseB
 
     spool: IO[bytes] = tempfile.TemporaryFile()  # noqa: SIM115 – die Antwort schließt die Datei nach der Übertragung
     try:
-        body = snapshot.body()
-        spool.write(_line(body))
-        count = 1
-        for data in objects(snapshot):
-            spool.write(_line(data))
-            count += 1
+        body, count = write(snapshot, spool)
         size = spool.tell()
         spool.seek(0)
     except BaseException:

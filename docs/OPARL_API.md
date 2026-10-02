@@ -442,6 +442,11 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 Ereignistechnik. Er gehört erst eingeschaltet (`OPARL_CHANGES_ENABLED=true`), wenn in der Installation
 der Sequenzierer läuft (`manage.py events_sequencer`) und die Erzeuger Ereignisse schreiben (Ingestor
 bzw. Session) – sonst bliebe er leer und täuschte Abnehmern vor, es habe sich nichts geändert.
+`INGESTOR_EVENTS_ENABLED=true` gehört dafür an Ingestor **und** Anwendung: Nimmt mandari Session ein
+Objekt sofort aus dem Bürgerportal zurück (nichtöffentlich gestellt, gelöscht, zurück in den Entwurf),
+markiert die Anwendung die Zeile im Bestand und meldet die Rücknahme selbst (`hub.ris.retraction`); der
+Ingestor findet sie beim nächsten Abgleich schon markiert vor und meldet sie nicht noch einmal. Mit
+Docker Compose reicht `docker-compose.yml` die Schalter aus der `.env` an Anwendung und Worker durch.
 Ausgeschaltet gibt es die Adresse nicht, und kein Body weist auf sie hin. Das Journal muss seine Zeilen
 mindestens `OPARL_CHANGES_RETENTION_DAYS` Tage behalten; ein Aufräumen darf nie kürzer greifen und
 hält fest, was es gelöscht hat (`apps.events.pruning`) – nur daran erkennt der Feed, dass Abnehmern
@@ -457,7 +462,29 @@ gleichzeitig entstehen (über den gemeinsamen Cache der Installation), und je Cl
 höchstens einer: Ein einzelner Abnehmer belegt nicht alle Plätze, auch nicht mit abgebrochenen Abrufen,
 deren Aufbau noch läuft. Bis die Datei fertig ist, fließt kein Byte zum Abnehmer. Vor dem Einschalten
 Bauzeit und Größe für die größte Kommune der Installation messen und das Leerlauf-Zeitlimit
-vorgeschalteter Proxys und Ingress-Komponenten darauf abstimmen.
+vorgeschalteter Proxys und Ingress-Komponenten darauf abstimmen:
+
+```bash
+python manage.py oparl_snapshot_messen              # die größte gelistete Kommune
+python manage.py oparl_snapshot_messen --anzahl 3   # die drei größten
+```
+
+Der Befehl baut den Snapshot auf demselben Weg in eine temporäre Datei, misst und verwirft sie; er
+braucht den Schalter nicht und gibt nichts an Abnehmer. Mit Docker Compose am besten in einem eigenen
+Container (`docker compose run --rm --no-deps mandari python manage.py oparl_snapshot_messen`), damit die
+Messung nicht am Speicherlimit der laufenden Anwendung zehrt. Ein Snapshot belegt beim Bauen CPU im
+Anwendungsprozess. Läuft die Anwendung in einem einzigen Prozess, `OPARL_SNAPSHOT_PARALLEL=1` setzen,
+damit gleichzeitige Snapshots die übrigen Anfragen nicht spürbar verlangsamen.
+
+**Nach dem Einschalten prüfen:** `scripts/feed_abnehmer.py` liest eine Kommune wie ein Abnehmer – Body,
+Snapshot, Feed ab dem Cursor des Snapshots bis zur leeren Seite, eine Stichprobe der Adressen, zuletzt
+`304` mit `If-None-Match` – und meldet jede Abweichung von den Zusagen dieses Abschnitts (Exit-Code 1).
+Nur lesend, mit Pausen unterhalb der Ratenbegrenzung:
+
+```bash
+python scripts/feed_abnehmer.py https://<installation>/oparl/v1/body/<uuid>
+python scripts/feed_abnehmer.py https://<installation>/oparl/v1/body/<uuid> --von-vorn   # alle Einträge
+```
 
 **Eine Serialisierung für beide Ausgaben:** Aggregator und Session-Schnittstelle
 (`SESSION_OPARL_API.md`) gehen denselben Weg – Abbildung auf das kanonische Modell, dann Ausgabe

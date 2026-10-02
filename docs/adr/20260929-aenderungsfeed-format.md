@@ -193,6 +193,28 @@ Delta-Dateien von Lokaal Beslist in Flandern.
   Ausgabetag des Cursors genügt nicht: Rücknahme und Wiederveröffentlichung am selben Tag wären nicht
   zu unterscheiden.
 
+## Nachtrag zur Umsetzung (#707, Erzeuger)
+
+- **Rücknahmen aus Session meldet die Anwendung:** Session nimmt ein eigenes Objekt im Moment der
+  Änderung aus dem Bürgerportal und markiert dazu die Zeile im Bestand. Der Ingestor meldet eine
+  Löschmarkierung nur beim Übergang `deleted = false → true`; beim nächsten Abgleich wäre die Zeile schon
+  markiert, und der Feed nennte die Rücknahme nie. Die Anwendung markiert deshalb über
+  `hub.ris.retraction.retract` und schreibt in derselben Transaktion dasselbe Ereignis, das der Ingestor
+  gebildet hätte (`ris.object.depublished` mit Mandant `source:<uuid>` und der Kommune des Objekts; ein
+  Test vergleicht beide Seiten). Die Zeile wird dabei gesperrt und erneut gelesen: Wer zuerst markiert,
+  meldet – nie beide.
+- **Gründe aus Session:** gelöscht `quelle_geloescht`, nichtöffentlich gestellt (auch mittelbar, etwa
+  die Anlagen einer nichtöffentlich gewordenen Sitzung) `nichtoeffentlich`, eine öffentliche Vorlage
+  zurück in Entwurf oder Prüfung `zurueckgenommen`.
+- **Schalter:** derselbe wie für den Ingestor (`INGESTOR_EVENTS_ENABLED`, je Quelle
+  `sync_config.events_enabled`), weil beide denselben Bestand melden.
+- **Die Rücknahme geht vor:** Scheitert das Schreiben des Ereignisses, bleibt das Objekt zurückgenommen
+  (eigener Sicherungspunkt), der Fehler wird protokolliert. Nichtöffentliches verlässt das Bürgerportal
+  sofort; eine fehlende Meldung im Feed ist der kleinere Schaden.
+- **Beide Ausgaben, dieselben Einträge:** Aggregator und Session-Schnittstelle lesen dieselbe Kommune im
+  Journal (kanonische Kennung des Body) und nennen die Rücknahme mit demselben Grund, jede unter ihrer
+  Adresse des Objekts.
+
 ## Bezug
 
 - [A3 Sequenzierer](20260929-sequenzierer.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),
