@@ -5,8 +5,9 @@
 <div x-show="sidebarOpen" x-transition.opacity @click="sidebarOpen=false"
     class="fixed inset-0 z-40 bg-black/40 lg:hidden" x-cloak></div>
 
-<aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
-    class="fixed inset-y-0 left-0 z-50 flex flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transition-transform duration-300"
+{# Geschlossen schon im HTML (mobil außerhalb, ab lg sichtbar); Alpine öffnet nur – sonst fährt die Leiste bei jedem Seitenaufruf sichtbar heraus #}
+<aside :class="sidebarOpen && '!translate-x-0'"
+    class="fixed inset-y-0 left-0 z-50 flex flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 -translate-x-full lg:translate-x-0 transition-transform duration-300"
     style="width:260px;">
 
     {% if insight_portal %}
