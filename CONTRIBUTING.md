@@ -90,9 +90,9 @@ Alle Prüfungen laufen auch in der CI und müssen grün sein.
 Im Pull Request startet die CI nur die Jobs, deren Bereich die Änderung berührt (Job „Geänderte
 Bereiche“ in `.github/workflows/pr-check.yml`; eine reine Ingestor-Änderung braucht zum Beispiel
 keine Django-Testsuite). Maßgeblich ist der Job **„CI-Ergebnis“**: Er ist grün, wenn jeder nötige Job
-bestanden hat. Änderungen an `.github/` oder an Abhängigkeitsdateien sowie jeder Push auf `dev` und
-`main` lassen alle Jobs laufen. Wer einen neuen Job anlegt, trägt ihn unter `needs` von
-`ci-ergebnis` ein (ein Test prüft das).
+bestanden hat. Änderungen an `.github/` oder an Abhängigkeitsdateien, jeder Push auf `dev` und
+`main` sowie jeder Lauf in der Merge-Queue lassen alle Jobs laufen. Wer einen neuen Job anlegt,
+trägt ihn unter `needs` von `ci-ergebnis` ein (ein Test prüft das).
 
 Zwei Grenzen des Filters: Die E2E-Tests laufen im Pull Request nur bei Templates, Frontend, Settings,
 Anmeldung, Editor und den Views der Seiten, die sie aufrufen. Ändert ein PR etwa einen Service, der
@@ -219,6 +219,21 @@ Für einen Pull Request:
 3. Alle Prüfungen lokal laufen lassen
 4. Pull Request gegen `dev` öffnen und beschreiben, **was** sich ändert und **warum**
 5. Bezug zum Issue herstellen (`Fixes #123`)
+
+Gemergt wird über die **Merge-Queue** von `dev`, nicht direkt. Wer mergen darf, reiht einen
+Pull Request mit
+
+```bash
+gh pr merge <nummer> --squash --auto
+```
+
+ein; er kommt in die Queue, sobald seine Prüfungen grün sind. Die Queue setzt ihn auf den
+aktuellen Stand von `dev` und alle Pull Requests vor ihm, prüft diesen kombinierten Stand mit
+allen Jobs der CI und merged erst, wenn „CI-Ergebnis“ grün ist. Scheitert die Prüfung, nimmt
+sie den Pull Request wieder heraus; er bleibt offen. So landet auf `dev` nur, was zusammen mit
+allem davor geprüft ist. Nach dem Merge holt sich die Staging-Umgebung den neuen Stand selbst
+(siehe [DEPLOYMENT.md](DEPLOYMENT.md#staging-als-prüfstand)). An der Queue vorbei mergen
+nur Administratoren im Notfall.
 
 Entwicklung findet auf `dev` statt; `main` ist der Produktionsstand.
 

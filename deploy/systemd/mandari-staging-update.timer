@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Staging als Pruefstand (Issue #737): fragt alle fuenf Minuten nach einem neuen gruenen dev-Stand.
+# Zusage: Staging zeigt spaetestens 30 Minuten nach gruener CI den neuen Stand (fuenf Minuten Abstand
+# plus Deploy-Dauer). Der Abstand zaehlt ab dem Ende des letzten Laufs; Laeufe ueberlappen nie.
+
+[Unit]
+Description=mandari: Staging regelmaessig auf den neuesten gruenen dev-Stand pruefen
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=5min
+AccuracySec=30s
+RandomizedDelaySec=30s
+Unit=mandari-staging-update.service
+
+[Install]
+WantedBy=timers.target

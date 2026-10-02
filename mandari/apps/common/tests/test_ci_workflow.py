@@ -16,7 +16,10 @@ gegen picomatch 2.3.1 abgeglichen; die Nachbildung deckt nur die hier genutzten 
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -138,13 +141,67 @@ def test_jeder_bereich_hat_filter_und_ausgabe() -> None:
 
 
 def test_pull_requests_ohne_workflow_weiten_pfadfilter() -> None:
-    # PyYAML liest den Schlüssel "on" als True (YAML 1.1)
-    workflow = _workflow()
-    ausloeser = workflow.get("on") or workflow[True]
-    pull_request = ausloeser["pull_request"] or {}
+    pull_request = _ausloeser()["pull_request"] or {}
     assert "paths" not in pull_request and "paths-ignore" not in pull_request, (
         "Ein paths-Filter am pull_request lässt ci-ergebnis ausbleiben; Pfade gehören in den Job changes"
     )
+
+
+def _ausloeser() -> dict[str, Any]:
+    # PyYAML liest den Schlüssel "on" als True (YAML 1.1)
+    workflow = _workflow()
+    ausloeser: dict[str, Any] = workflow.get("on") or workflow[True]
+    return ausloeser
+
+
+def test_merge_queue_loest_die_ci_aus() -> None:
+    """Issue #737: Ohne merge_group berichtet "CI-Ergebnis" in der Queue nie, und kein PR würde gemergt."""
+    merge_group = _ausloeser()["merge_group"] or {}
+    assert merge_group.get("types", ["checks_requested"]) == ["checks_requested"]
+    assert "paths" not in merge_group and "paths-ignore" not in merge_group
+    assert "branches" not in merge_group, "Die Queue jedes geschützten Zweigs soll prüfen"
+    # Läufe der Queue werden nicht von einem neueren Push abgebrochen (eigene Ref je Eintrag)
+    concurrency = _workflow()["concurrency"]
+    assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
+
+
+def _bash() -> str | None:
+    if os.name == "nt":
+        kandidat = Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "Git" / "usr" / "bin" / "bash.exe"
+        return str(kandidat) if kandidat.exists() else None
+    return shutil.which("bash")
+
+
+def _ergebnis_schritt_ausfuehren(tmp_path: Path, ereignis: str, filter_json: str) -> dict[str, str]:
+    """Führt das Skript des Schritts "Ergebnis festlegen" wie in GitHub Actions aus (bash, jq)."""
+    bash = _bash()
+    if bash is None or shutil.which("jq") is None:
+        pytest.skip("bash oder jq nicht vorhanden (in der CI beides da)")
+    skript = tmp_path / "ergebnis.sh"
+    skript.write_text(_schritt("changes", "ergebnis")["run"], encoding="utf-8", newline="\n")
+    ausgabe = tmp_path / "output"
+    env = {
+        **os.environ,
+        "EREIGNIS": ereignis,
+        "ZIELZWEIG": "",
+        "FILTER": filter_json,
+        "CODEQL_ERWEITERT": "",
+        "GITHUB_OUTPUT": str(ausgabe),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+    }
+    subprocess.run([bash, "-e", str(skript)], env=env, check=True, capture_output=True, timeout=60)  # noqa: S603
+    return dict(zeile.split("=", 1) for zeile in ausgabe.read_text(encoding="utf-8").splitlines())
+
+
+def test_merge_queue_laesst_alle_jobs_laufen(tmp_path: Path) -> None:
+    # In der Queue läuft der Pfadfilter nicht (nur pull_request); das Ergebnis muss trotzdem "alles" sein
+    werte = _ergebnis_schritt_ausfuehren(tmp_path, "merge_group", "{}")
+    bereiche = _bereiche_im_ergebnis_schritt()
+    assert {b: werte[b] for b in bereiche} == dict.fromkeys(bereiche, "true")
+
+    (tmp_path / "pr").mkdir()
+    werte = _ergebnis_schritt_ausfuehren(tmp_path / "pr", "pull_request", '{"verweise": "true"}')
+    assert werte["verweise"] == "true" and werte["test"] == "false", "Gegenprobe: im PR wirkt der Filter"
 
 
 def test_filter_nennen_nur_vorhandene_dateien() -> None:
@@ -183,6 +240,8 @@ def test_link_pruefung_intern_offline_extern_nicht_bei_push() -> None:
     assert "--offline" not in extern["with"]["args"]
     # Externe Verweise nicht bei jedem push auf dev/main abrufen (sparsam, keine Flake-Quelle)
     assert "github.event_name != 'push'" in extern["if"]
+    # und nicht in der Merge-Queue: ein langsamer fremder Server soll keinen Merge aufhalten (Issue #737)
+    assert "github.event_name != 'merge_group'" in extern["if"]
 
 
 def test_externe_link_pruefung_nennt_vorhandene_dateien_des_auftritts() -> None:

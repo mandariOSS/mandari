@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Staging als Pruefstand (Issue #737): ein Lauf von deploy/scripts/staging_update.sh.
+# Gestartet vom Timer mandari-staging-update.timer; von Hand: systemctl start mandari-staging-update.service
+#
+# Einrichtung (Schritt fuer Schritt in DEPLOYMENT.md, Abschnitt "Staging als Pruefstand"):
+#   1. Konfiguration nach /etc/mandari/staging-update.env (Vorlage staging-update.env.example)
+#   2. diese Datei und den Timer nach /etc/systemd/system/
+#   3. systemctl daemon-reload && systemctl enable --now mandari-staging-update.timer
+
+[Unit]
+Description=mandari: Staging auf den neuesten gruenen dev-Stand bringen
+Documentation=https://github.com/mandariOSS/mandari/blob/dev/DEPLOYMENT.md
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/mandari/staging-update.env
+# UPDATE_SKRIPT steht in der EnvironmentFile (Pfad zur Kopie von deploy/scripts/staging_update.sh)
+ExecStart=/bin/sh ${UPDATE_SKRIPT}
+# Sicherung, Migration und Pruefung brauchen Zeit; haengende Laeufe beendet systemd
+TimeoutStartSec=45min
+Nice=10
+NoNewPrivileges=yes

@@ -42,7 +42,9 @@ Issues ohne Meilenstein bilden den Rückstand. Sie werden bei der Planung eines 
 1. **Issue** mit Akzeptanzkriterien anlegen (Vorlagen „Bug Report“ bzw. „Feature Request“).
 2. **Branch** von `dev`, Umsetzung mit Tests (siehe [CONTRIBUTING.md](../CONTRIBUTING.md)).
 3. **Pull Request** gegen `dev` mit `Closes #…`; alle Prüfungen der CI müssen grün sein.
-4. **Review und Merge** nach `dev`.
+4. **Review und Merge** nach `dev` über die Merge-Queue (`gh pr merge <nummer> --squash --auto`): Sie prüft
+   den kombinierten Stand mit allen PRs davor, bevor er auf `dev` landet. Danach holt sich die
+   Staging-Umgebung den neuen Stand selbst ([DEPLOYMENT.md](../DEPLOYMENT.md#staging-als-prüfstand)).
 5. **Auslieferung:** Produktion wird aus `dev` aktualisiert, außerhalb der Sitzungszeiten der Kunden; danach
    wird `main` nachgezogen. Issues schließen mit dem Nachziehen von `main`.
 6. **Release:** Alle zwei Monate wird der Meilenstein abgeschlossen, das CHANGELOG zusammengeführt und ein

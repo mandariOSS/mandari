@@ -7,6 +7,7 @@
 | `install.sh` | Erstinstallation auf einem Server mit Docker Compose (siehe [README](README.md#installation)) |
 | `update.sh` | Aktualisieren für Selbstbetreiber: Sicherung, Migration, Umschalten, Prüfung, Rückfall |
 | `deploy/scripts/deploy.sh` | Nicht interaktiv (Betrieb, Cron, CI), gleiche Prüfung und gleicher Rückfall |
+| `deploy/scripts/staging_update.sh` | Staging als Prüfstand: zieht per systemd-Timer den neuesten grünen `dev`-Stand nach ([unten](#staging-als-prüfstand)) |
 | `install-k8s.sh` bzw. Helm | Kubernetes, siehe [`deploy/kubernetes/README.md`](deploy/kubernetes/README.md) |
 
 Die Images baut `.github/workflows/release.yml` und legt sie in der GitHub Container Registry ab
@@ -24,6 +25,8 @@ einem Image steckt, zeigt das Label `org.opencontainers.image.revision`. Bewegli
 ein anderes Tag, das es schon mit anderem Inhalt gibt, überschreibt der Workflow nicht (Warnung im Lauf).
 
 Ein Push deployt nichts; umgeschaltet wird auf dem Server mit `update.sh` oder `deploy/scripts/deploy.sh`.
+Einzige Ausnahme ist eine Staging-Umgebung mit `deploy/scripts/staging_update.sh`: Sie holt sich neue
+`dev`-Stände selbst, sobald CI und Release-Lauf grün sind ([Staging als Prüfstand](#staging-als-prüfstand)).
 `install.sh --tag …` und `update.sh --tag …` prüfen vorab, ob es das Tag für alle drei Images gibt, und
 brechen sonst mit einer Meldung ab, bevor sie etwas verändern.
 
@@ -109,6 +112,65 @@ Für `deploy.sh` gehört der Orchestrator ebenfalls in `WORKER_SERVICES`
 Deploy mit dem alten Image weiter. Ohne Angabe nimmt `deploy.sh` die Dienste `worker` und
 `worker-heavy` (soweit die Compose-Datei sie kennt) und den Ingestor. Es startet alle `WORKER_SERVICES` nach der Migration **vor** der Anwendung
 (Migration → Worker → Web) und prüft sie danach wie bisher.
+
+### Staging als Prüfstand
+
+Eine Staging-Umgebung kann sich selbst auf dem neuesten geprüften `dev`-Stand halten.
+`deploy/scripts/staging_update.sh` läuft dafür alle fünf Minuten per systemd-Timer und arbeitet
+**pull-basiert**: Der Server fragt die öffentliche GitHub-API, GitHub braucht keinen Zugang zum Server.
+
+Ein Lauf
+
+1. ermittelt das neueste Commit auf `dev`, für das der **Release-Lauf** (Images gebaut und veröffentlicht)
+   **und die CI** erfolgreich waren. Als CI zählt der Lauf nach dem Push auf `dev` oder der Lauf in der
+   Merge-Queue für genau dieses Commit;
+2. vergleicht dessen Tag `dev-<commit>` mit dem laufenden `IMAGE_TAG`. Gleich oder älter: nichts zu tun;
+3. ruft sonst den vorhandenen Deploy-Weg auf: `deploy.sh plan <tag>` (Images ziehen, `migrate --plan`,
+   `check`), dann `deploy.sh apply <tag>` mit Sicherung, Migration, Umschalten, Anwendungs- und
+   Worker-Prüfung und automatischem Rückfall;
+4. legt die gesamte Ausgabe als **Prüfprotokoll** ab (`<STATE_DIR>/protokolle/<zeit>-<tag>.log`, dazu die
+   Zeile in `deploy-log.tsv` und der Status in `<STATE_DIR>/status`).
+
+Damit zeigt Staging einen neuen Stand spätestens rund 30 Minuten nach grüner CI (fünf Minuten bis zur
+nächsten Abfrage plus Deploy). Ein Tag, dessen `apply` gescheitert ist, versucht das Skript nicht noch
+einmal; eine gescheiterte Vorbereitung (`plan`, etwa ein nicht abrufbares Image) höchstens dreimal. Der
+nächste neuere Stand wird wieder versucht. Ein Commit, das nur Markdown ändert, startet auf `dev` keine CI
+und wird deshalb nicht einzeln ausgerollt; es kommt mit dem nächsten Commit mit.
+
+**Schutz vor Verwechslung:** Das Skript arbeitet nur in einem Verzeichnis, dessen `.env` die Zeile
+`MANDARI_UMGEBUNG=staging` enthält, und bricht sonst ab, bevor es etwas verändert. Eine Produktion trägt
+diese Zeile nie.
+
+**Einrichtung** (als root auf dem Staging-Server; Voraussetzungen `curl` und `jq`):
+
+1. Staging-Installation wie gewohnt in einem eigenen Verzeichnis, mit eigener Datenbank und eigener `.env`.
+   In deren `.env` die Zeile `MANDARI_UMGEBUNG=staging` ergänzen.
+2. Die Umgebung für `deploy.sh` (Dienstnamen, Compose-Dateien, `BACKUP_DIR`, `NOTIFY_EMAIL`, `VERIFY_*`)
+   in `<staging>/deploy.env` ablegen, wie oben unter [Mit Skript](#mit-skript-gesundheitsprüfung-und-automatischer-rückfall).
+3. `deploy.sh`, `verify_deploy.py` und `staging_update.sh` aus `deploy/scripts/` gemeinsam in ein
+   Verzeichnis kopieren, z. B. `<staging>/deploy/`.
+4. `deploy/systemd/staging-update.env.example` als `/etc/mandari/staging-update.env` (Rechte 600)
+   ablegen und `MANDARI_DIR`, `UPDATE_SKRIPT` und `DEPLOY_ENV` eintragen.
+5. Probelauf ohne Änderung: `sudo sh -c 'set -a; . /etc/mandari/staging-update.env; set +a; sh "$UPDATE_SKRIPT" pruefen'`
+   zeigt, welchen Stand ein Lauf ausrollen würde.
+6. `deploy/systemd/mandari-staging-update.service` und `.timer` nach `/etc/systemd/system/` kopieren,
+   dann `systemctl daemon-reload && systemctl enable --now mandari-staging-update.timer`.
+
+**Im Betrieb:**
+
+```bash
+systemctl list-timers mandari-staging-update.timer      # nächster Lauf
+journalctl -u mandari-staging-update.service -n 50      # letzte Läufe
+systemctl start mandari-staging-update.service          # sofort prüfen und ggf. ausrollen
+touch <STATE_DIR>/pause                                 # pausieren (z. B. für einen Test auf festem Stand)
+rm <STATE_DIR>/pause                                    # fortsetzen
+```
+
+`<STATE_DIR>` ist `<staging>/staging-update`, wenn nicht anders gesetzt. Dort liegen auch das Log
+(`staging-update.log`), die Liste gescheiterter Tags (`fehlgeschlagen`; eine Zeile entfernen erlaubt einen
+neuen Versuch) und die Sperre gegen Doppelläufe. Ohne Token stellt ein Lauf drei Anfragen an die
+GitHub-API (bei neuem Stand vier); das Limit von 60 Anfragen je Stunde reicht damit aus. Für mehr Spielraum
+kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
 
 ---
 

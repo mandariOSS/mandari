@@ -5,9 +5,15 @@
 #
 # Pfadfilter (Issue #621): Der Job "Geänderte Bereiche" ordnet die Dateien eines
 # Pull Requests Bereichen zu; jeder Job läuft nur, wenn sein Bereich betroffen
-# ist. Sicherheitsnetz: push auf dev/main, der Wochenlauf, manuelle Starts, Pull
-# Requests gegen main und jede Änderung an .github/ oder an Abhängigkeitsdateien
-# lassen ALLE Jobs laufen.
+# ist. Sicherheitsnetz: push auf dev/main, die Merge-Queue, der Wochenlauf, manuelle
+# Starts, Pull Requests gegen main und jede Änderung an .github/ oder an
+# Abhängigkeitsdateien lassen ALLE Jobs laufen.
+#
+# Merge-Queue (Issue #737): Pull Requests auf dev werden über die Queue gemergt
+# (gh pr merge <n> --squash --auto). Die Queue prüft den kombinierten Stand aus dev
+# und allen PRs davor (Ereignis merge_group) mit allen Jobs und merged erst, wenn
+# "CI-Ergebnis" grün ist. Der Pflicht-Check muss deshalb auch für merge_group
+# berichten; jeder weitere Pflicht-Check braucht diesen Auslöser ebenfalls.
 #
 # Kein workflow-weiter paths-Filter für Pull Requests: "CI-Ergebnis" muss in
 # jedem Pull Request berichten, damit es später Pflicht-Check werden kann.
@@ -30,6 +36,9 @@ on:
     branches:
       - dev
       - main
+  # Merge-Queue: kombinierter Stand vor dem Merge, immer mit allen Jobs (kein Pfadfilter)
+  merge_group:
+    types: [checks_requested]
   # Wöchentlicher Volllauf auf dem Standardzweig: CodeQL auch ohne Änderung (neue Abfragen)
   # und pip-audit/npm audit gegen neu veröffentlichte Schwachstellen
   schedule:
@@ -502,10 +511,11 @@ jobs:
           args: --offline --include-fragments '**/*.md'
 
       # Mit Netz, nur für die Dateien des öffentlichen Auftritts: README, Mitwirken, Sicherheit,
-      # Verhaltenskodex, Danksagungen, Betrieb, Issue- und PR-Vorlagen. Nicht bei push auf dev/main:
-      # Dort hat der Pull Request schon geprüft; verwaiste Verweise findet der Wochenlauf.
+      # Verhaltenskodex, Danksagungen, Betrieb, Issue- und PR-Vorlagen. Nicht bei push auf dev/main
+      # und nicht in der Merge-Queue: Dort hat der Pull Request schon geprüft, und ein langsamer
+      # fremder Server soll keinen Merge aufhalten; verwaiste Verweise findet der Wochenlauf.
       - name: Externe Verweise (öffentlicher Auftritt)
-        if: ${{ !cancelled() && github.event_name != 'push' }}
+        if: ${{ !cancelled() && github.event_name != 'push' && github.event_name != 'merge_group' }}
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           lycheeVersion: v0.24.2
