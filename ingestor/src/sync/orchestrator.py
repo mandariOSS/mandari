@@ -27,7 +27,6 @@ from mandari_oparl import (
     ProcessedOrganization,
     ProcessedPaper,
     ProcessedPerson,
-    source_id_base,
 )
 from rich.progress import (
     BarColumn,
@@ -52,6 +51,7 @@ from src.client.oparl_compat import (
     oparl_error_message,
     timestamps_unreliable,
 )
+from src.client.source_options import SourceFetchOptions
 from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
@@ -237,10 +237,15 @@ class SyncOrchestrator:
 
         Ist eine Quelle umgezogen (eigene Installation auf neuer Domain), behalten ihre Objekte die Kennungen
         ihrer bisherigen Adressen: Für Adressen unter ``url`` rechnet der Ingestor auf der festgeschriebenen
-        Basis (``mandari_oparl.ids.canonical_uri``). Ohne Eintrag sind die Adressen kanonisch.
+        Basis (``mandari_oparl.ids.canonical_uri``). Ohne Eintrag sind die Adressen kanonisch. Hat sich beim
+        Umzug auch die Form der Adressen geändert, gelten ``id_address`` und die Abbildungsregeln
+        ``id_rules`` der Quelle (``IdBases.add_source``).
+
+        Raises:
+            ValueError: Die Abbildungsregeln der Quelle sind ungültig; der Abgleich der Quelle unterbleibt,
+                statt Objekte mit falschen Kennungen anzulegen.
         """
-        base = source_id_base(getattr(source_row, "sync_config", None))
-        if self.storage.id_bases.add(url, base):
+        if self.storage.id_bases.add_source(url, getattr(source_row, "sync_config", None)):
             self.processor.clear_id_cache()
 
     # ========== URL Auto-Detection ==========
@@ -404,6 +409,7 @@ class SyncOrchestrator:
                 max_concurrent=concurrent,
                 source_name=url.split("/")[2] if "/" in url else "unknown",
                 user_agent=getattr(source_row, "user_agent", None),
+                **SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None)).client_kwargs(),
             ) as client:
                 # Auto-detect URL type
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
@@ -603,6 +609,7 @@ class SyncOrchestrator:
                 max_concurrent=self.max_concurrent,
                 source_name=url.split("/")[2] if "/" in url else "unknown",
                 user_agent=getattr(source_row, "user_agent", None),
+                **SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None)).client_kwargs(),
             ) as client:
                 # Fetch system
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")

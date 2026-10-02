@@ -174,4 +174,25 @@ def test_session_spiegel_einer_umgezogenen_quelle_behaelt_die_kennungen() -> Non
     )
 
 
+# --- Umzug mit neuer Form der Adressen (Abbildungsregeln) ---------------------------------------------------
+
+REGELSATZ = _testvektoren()["regelsatz"]
+REGELN = _testvektoren()["regeln"]
+
+
+@pytest.mark.parametrize("vektor", REGELN, ids=[v["uri"][-35:] for v in REGELN])
+def test_regeln_ergeben_die_bisherige_kennung(vektor: dict[str, str]) -> None:
+    """Dieselben Vektoren prüft der Ingestor: neue Adressform, Kennung der bisherigen Adresse."""
+    erwartet = uuid.UUID(vektor["kennung"])
+    adresse, basis, regeln = REGELSATZ["adresse"], REGELSATZ["basis"], REGELSATZ["regeln"]
+    assert canonical_uri(vektor["uri"], adresse, basis, regeln) == vektor["kanonisch"]
+    assert canonical_id(vektor["kanonisch"]) == erwartet
+    source = OParlSource(
+        name="Beispiel-RIS",
+        url=f"{adresse}system",
+        sync_config={"id_address": adresse, "id_base": basis, "id_rules": regeln},
+    )
+    assert source.id_bases().id(vektor["uri"]) == erwartet
+
+
 pytestmark = pytest.mark.django_db

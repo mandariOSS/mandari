@@ -87,6 +87,38 @@ def download_headers(body) -> dict[str, str]:
     return {str(k): str(v) for k, v in headers.items() if isinstance(v, str | int | float) and str(k).strip()}
 
 
+#: Schalter je Quelle (``OParlSource.sync_config``): ``false`` = Dateien nicht automatisch abrufen.
+#: Gleicher Schlüssel wie im Ingestor (``ingestor/src/client/source_options.py``).
+FILE_DOWNLOADS_KEY = "file_downloads"
+
+
+def downloads_disabled(body) -> bool:
+    """
+    Die Quelle liefert Dokumente nur hinter einer Zugangsprüfung für Menschen (z. B. ALTCHA vor den
+    Anlagen). Cache, Vorschau und Textextraktion fragen sie dann gar nicht erst an – jeder Abruf brächte
+    nur die Prüfseite und würde den Bot-Schutz weiter verschärfen. Geschaltet über
+    ``sync_config["file_downloads"] = false``; die Dateien werden nachgeholt, sobald der Schalter fällt.
+    """
+    source = getattr(body, "source", None) if body is not None else None
+    if source is None:
+        return False
+    return _downloads_disabled_in(source.sync_config)
+
+
+def _downloads_disabled_in(sync_config) -> bool:
+    return isinstance(sync_config, dict) and sync_config.get(FILE_DOWNLOADS_KEY) is False
+
+
+def sources_without_downloads() -> list:
+    """
+    Quellen mit abgeschaltetem Dateiabruf (Primärschlüssel). Es gibt nur wenige Quellen; der Abgleich in
+    Python verhält sich in PostgreSQL und SQLite gleich (JSON-Vergleiche auf ``false`` tun das nicht).
+    """
+    from ..models import OParlSource
+
+    return [pk for pk, config in OParlSource.objects.values_list("pk", "sync_config") if _downloads_disabled_in(config)]
+
+
 def source_paused(body) -> bool:
     """
     Quellen-Schonung: Hat der Ingestor die Quelle mehrfach in Folge nicht erreicht
@@ -292,7 +324,7 @@ def fetch_and_cache(file_obj, client=None) -> str:
         if file_obj.local_status != "ok":
             _mark(file_obj, "ok")
         return "skipped"
-    if source_paused(file_obj.body):
+    if source_paused(file_obj.body) or downloads_disabled(file_obj.body):
         return "paused"
     url = file_obj.download_url or file_obj.access_url
     if not url:
@@ -352,6 +384,7 @@ def pending_queryset(body=None, retry_errors: bool = False):
     qs = (
         OParlFile.objects.filter(deleted=False, local_status__in=statuses, body__is_listed=True)
         .exclude(body__source__consecutive_failures__gte=backoff_failures())
+        .exclude(body__source_id__in=sources_without_downloads())
         .select_related("body", "body__source")
         .defer("text_content", "raw_json", "body__raw_json")
     )
@@ -393,7 +426,11 @@ def cache_stats() -> dict:
     by_status = dict(Counter(qs.values_list("local_status", flat=True)))
     cached_bytes = qs.filter(local_status="ok").aggregate(s=Sum("size"))["s"] or 0
     ok = by_status.get("ok", 0)
-    paused = qs.filter(local_status="none", body__source__consecutive_failures__gte=backoff_failures()).count()
+    paused = qs.filter(
+        Q(body__source__consecutive_failures__gte=backoff_failures())
+        | Q(body__source_id__in=sources_without_downloads()),
+        local_status="none",
+    ).count()
     per_body = []
     for row in (
         qs.values("body__name").annotate(n=Sum(1), cached=Sum("size", filter=Q(local_status="ok"))).order_by("-n")

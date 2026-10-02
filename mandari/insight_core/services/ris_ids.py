@@ -8,8 +8,10 @@ Django; ältere Objekte aus Django tragen noch zufällige Kennungen. Die Prüfun
 Entität:
 
 - **Kennung abweichend:** ``id`` ist nicht die kanonische Kennung der ``external_id``. Hat die Quelle eine
-  festgeschriebene Basis der Kennungen (``sync_config["id_base"]``, nach einem Umzug), gilt die Kennung der
-  Adresse auf dieser Basis (``OParlSource.id_bases``, wie Ingestor und Spiegel).
+  festgeschriebene Basis der Kennungen (``sync_config["id_base"]``, nach einem Umzug, ggf. mit
+  Abbildungsregeln ``id_rules``), gilt die Kennung der Adresse auf dieser Basis (``OParlSource.id_bases``,
+  wie Ingestor und Spiegel). Objekte ohne zuordenbare Quelle prüft sie mit den Basen aller Quellen, wie
+  der Ingestor sie über alle Quellen hinweg anwendet.
 - **URI abweichend** (nur Quellen aus mandari Session): ``external_id`` liegt nicht unter der
   öffentlichen OParl-Adresse der Installation (``SITE_URL``), sondern z. B. unter einem anderen Host.
 - **Ohne URI:** leere ``external_id``; eine kanonische Kennung ist nicht bestimmbar.
@@ -34,7 +36,7 @@ from uuid import UUID
 from django.db.models import F, Model, QuerySet
 from django.db.models.functions import Coalesce
 from django.urls import NoReverseMatch, reverse
-from mandari_oparl.ids import IdBases, canonical_id, source_id_base
+from mandari_oparl.ids import IdBases, source_id_base
 
 from apps.common.identifiers import site_url, stored_identifier_base
 from insight_core.models import (
@@ -132,6 +134,8 @@ class Report:
     #: Festgeschriebene Basis der Kennungen (``None``: noch keine) und aktuelle öffentliche Adresse
     identifier_base: str | None = None
     site_url: str = ""
+    #: Kanonische Kennungen über alle geprüften Quellen (für Objekte ohne zuordenbare Quelle)
+    ids: IdBases = field(default_factory=IdBases, compare=False)
 
     @property
     def base_deviates(self) -> bool:
@@ -156,6 +160,10 @@ class Report:
 
 #: Schlüssel für Objekte ohne zuordenbare Körperschaft
 NO_SOURCE = "-"
+
+
+class InvalidIdRulesError(ValueError):
+    """Die Abbildungsregeln einer Quelle (``sync_config["id_rules"]``) sind ungültig; die Meldung nennt die Quelle."""
 
 
 def session_oparl_base(tenant_slug: str, base: str | None = None) -> str | None:
@@ -239,7 +247,7 @@ def _check_entity(
                 count.uri_deviations += 1
                 if len(count.examples) < examples:
                     count.examples.append(f"URI: {external_id}")
-            expected = info.ids.id(external_id) if info is not None else canonical_id(external_id)
+            expected = (info.ids if info is not None else report.ids).id(external_id)
             if row["pk"] != expected:
                 count.id_deviations += 1
                 deviating[expected] = source_key
@@ -269,7 +277,11 @@ def check_ris_ids(only_source: str | None = None, examples: int = 0) -> Report:
         except ValueError:
             raise LookupError("Quelle nicht gefunden.") from None
     for source in sources:
-        report.sources[str(source.pk)] = _source_info(source, identifier_base)
+        try:
+            report.sources[str(source.pk)] = _source_info(source, identifier_base)
+            report.ids.add_source(source.url, source.sync_config)
+        except ValueError as exc:
+            raise InvalidIdRulesError(f"Quelle {source.pk}: {exc}") from None
     if only_source and not report.sources:
         raise LookupError("Quelle nicht gefunden.")
     selected = next(iter(report.sources)) if only_source else None

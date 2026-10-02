@@ -27,7 +27,7 @@ from insight_core.services.document_extraction import (
     DocumentDownloadError,
     download_and_extract,
 )
-from insight_core.services.file_cache import download_headers
+from insight_core.services.file_cache import download_headers, sources_without_downloads
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,8 @@ class Command(BaseCommand):
 
         # Filter: Nur Dateien mit Download-URL
         queryset = queryset.filter(Q(download_url__isnull=False) | Q(access_url__isnull=False))
+        # Quellen mit abgeschaltetem Dateiabruf (Zugangsprüfung vor den Dokumenten) auslassen
+        queryset = queryset.exclude(body__source_id__in=sources_without_downloads())
 
         # Filter: Nur pending/unverarbeitete Dateien (außer bei --reprocess)
         if not reprocess:

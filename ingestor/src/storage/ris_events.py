@@ -333,7 +333,8 @@ def consultation_events(
     for name, value in (
         ("organization", raw.get("organization")),
         ("meeting", raw.get("meeting")),
-        ("agenda_item", raw.get("agendaItem")),
+        # ALLRIS schreibt "agendaitem" (src/client/oparl_compat.py, consultation_agenda_item)
+        ("agenda_item", raw.get("agendaItem") or raw.get("agendaitem")),
     ):
         ref = _first_reference(value, ids)
         if ref is not None:

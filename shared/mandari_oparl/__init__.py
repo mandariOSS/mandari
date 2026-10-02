@@ -20,7 +20,19 @@ from .entities import (
     ProcessedPerson,
 )
 from .enums import OPARL_TYPE_MAP, OParlType
-from .ids import NS_MANDARI_RIS, SOURCE_ID_BASE_KEY, IdBases, canonical_id, canonical_uri, source_id_base
+from .ids import (
+    NS_MANDARI_RIS,
+    SOURCE_ID_ADDRESS_KEY,
+    SOURCE_ID_BASE_KEY,
+    SOURCE_ID_RULES_KEY,
+    IdBases,
+    canonical_id,
+    canonical_uri,
+    id_rules,
+    source_id_address,
+    source_id_base,
+    source_id_rules,
+)
 from .utils import generate_uuid, parse_date, parse_datetime
 
 __all__ = [
@@ -43,11 +55,16 @@ __all__ = [
     "ProcessedPerson",
     # Kanonische Kennungen
     "NS_MANDARI_RIS",
+    "SOURCE_ID_ADDRESS_KEY",
     "SOURCE_ID_BASE_KEY",
+    "SOURCE_ID_RULES_KEY",
     "IdBases",
     "canonical_id",
     "canonical_uri",
+    "id_rules",
+    "source_id_address",
     "source_id_base",
+    "source_id_rules",
     # Utils
     "generate_uuid",
     "parse_date",

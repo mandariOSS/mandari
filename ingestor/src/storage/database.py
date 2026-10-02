@@ -30,6 +30,7 @@ from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.client.source_options import SourceFetchOptions
 from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
@@ -387,6 +388,20 @@ class DatabaseStorage:
         if not isinstance(headers, dict):
             return {}
         return {str(k): str(v) for k, v in headers.items() if isinstance(v, str | int | float) and str(k).strip()}
+
+    async def file_downloads_enabled_for_body(self, body_id: UUID) -> bool:
+        """
+        Ob Dateien der Quelle eines Bodies automatisch abgerufen werden dürfen
+        (``sync_config["file_downloads"]``, ``src/client/source_options.py``). Ohne Quelle: ja.
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                select(OParlSource.sync_config)
+                .join(OParlBody, OParlBody.source_id == OParlSource.id)
+                .where(OParlBody.id == body_id)
+            )
+            sync_config = result.scalar_one_or_none()
+        return SourceFetchOptions.from_sync_config(sync_config).file_downloads
 
     async def get_source_by_url(self, url: str) -> OParlSource | None:
         """Get a source by URL."""
@@ -1638,11 +1653,20 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            # Bezüge nur ersetzen, nicht leeren: In Vorlagen eingebettete Beratungen nennen Sitzung und
+            # Tagesordnungspunkt oft nicht (ALLRIS); ohne COALESCE löschte jeder Vorlagen-Abgleich die
+            # Verknüpfung, die die Beratungsliste derselben Quelle liefert.
             update_set = {
-                "paper_id": paper_id,
-                "paper_external_id": stmt.excluded.paper_external_id,
-                "meeting_external_id": stmt.excluded.meeting_external_id,
-                "agenda_item_external_id": stmt.excluded.agenda_item_external_id,
+                "paper_id": func.coalesce(stmt.excluded.paper_id, OParlConsultation.paper_id),
+                "paper_external_id": func.coalesce(
+                    stmt.excluded.paper_external_id, OParlConsultation.paper_external_id
+                ),
+                "meeting_external_id": func.coalesce(
+                    stmt.excluded.meeting_external_id, OParlConsultation.meeting_external_id
+                ),
+                "agenda_item_external_id": func.coalesce(
+                    stmt.excluded.agenda_item_external_id, OParlConsultation.agenda_item_external_id
+                ),
                 "role": stmt.excluded.role,
                 "authoritative": stmt.excluded.authoritative,
                 "oparl_created": stmt.excluded.oparl_created,

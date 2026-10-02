@@ -15,6 +15,17 @@ nur kleine, gut testbare Hooks brauchen:
   Abrufdatum-Mitternachtsstempel; Organisationen haben gar keine Stempel.
   Eine Änderungserkennung über Zeitstempel ist damit unmöglich, wir
   vergleichen stattdessen den Inhalt (Content-Hash wie bei Scraper-Quellen).
+
+Dazu kommen Eigenheiten der OParl-Schnittstelle von ALLRIS unter ``/oparl/``
+(beobachtet in Bonn, Oktober 2026):
+
+- Organisationen tragen in ``type`` ein Kürzel der Gremienart (``"gr"``,
+  ``"at"``) und die Typ-URL in ``Type`` (:func:`oparl_type_url`)
+- Beratungen nennen den Tagesordnungspunkt ``agendaitem`` statt
+  ``agendaItem`` (:func:`consultation_agenda_item`)
+- ``modified_since`` filtert, fehlt aber in ``links.next``; die Quelle
+  bekommt dafür ``sync_config["carry_modified_since"]``
+  (``src/client/source_options.py``)
 """
 
 from __future__ import annotations
@@ -54,6 +65,37 @@ def detect_oparl_version(data: Any) -> str | None:
     items = data.get("data")
     if isinstance(items, list) and items:
         return detect_oparl_version(items[0])
+    return None
+
+
+def oparl_type_url(data: Any) -> str:
+    """
+    Typ-URL eines OParl-Objekts.
+
+    Maßgeblich ist ``type``. Steht dort keine OParl-Typ-URL, gilt ``Type``, sofern es eine ist: ALLRIS
+    liefert bei Organisationen ``"type": "gr"`` (bzw. ``"at"``) und ``"Type":
+    "https://schema.oparl.org/1.1/Organization"``. Ohne erkennbare Typ-URL bleibt der Wert von ``type``
+    (oder leer), damit unbekannte Objekte wie bisher übersprungen werden.
+    """
+    if not isinstance(data, dict):
+        return ""
+    value = data.get("type")
+    if isinstance(value, str) and value.startswith(OPARL_NAMESPACES):
+        return value
+    alternative = data.get("Type")
+    if isinstance(alternative, str) and alternative.startswith(OPARL_NAMESPACES):
+        return alternative
+    return value if isinstance(value, str) else ""
+
+
+def consultation_agenda_item(data: Any) -> str | None:
+    """Tagesordnungspunkt einer Beratung: ``agendaItem`` laut Spezifikation, ``agendaitem`` bei ALLRIS."""
+    if not isinstance(data, dict):
+        return None
+    for key in ("agendaItem", "agendaitem"):
+        value = data.get(key)
+        if isinstance(value, str) and value:
+            return value
     return None
 
 

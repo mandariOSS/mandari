@@ -20,7 +20,15 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from insight_core.services.ris_ids import ENTITIES, NO_SOURCE, Count, Report, SourceInfo, check_ris_ids
+from insight_core.services.ris_ids import (
+    ENTITIES,
+    NO_SOURCE,
+    Count,
+    InvalidIdRulesError,
+    Report,
+    SourceInfo,
+    check_ris_ids,
+)
 
 HEADER = f"  {'Entität':<16} {'Objekte':>10} {'Kennung abw.':>13} {'URI abw.':>9} {'ohne URI':>9} {'Kollision':>10}"
 
@@ -38,6 +46,8 @@ class Command(BaseCommand):
             report = check_ris_ids(only_source=options.get("source"), examples=max(0, options["examples"]))
         except LookupError as exc:
             raise CommandError("Quelle nicht gefunden (UUID oder URL angeben).") from exc
+        except InvalidIdRulesError as exc:
+            raise CommandError(f"Abbildungsregeln ungültig: {exc}") from exc
 
         self.stdout.write("Prüfung der kanonischen RIS-Kennungen (nur lesend, keine Änderungen)")
         self._write_bases(report)

@@ -62,6 +62,21 @@ Zieht eine Quelle um, hält `sync_config["id_base"]` die bisherige Basis fest; I
 rechnen damit gleich (gemeinsame Testvektoren `umzuege`). Der Umzug der Adressen im Bestand ist ein
 eigener Befehl (`move_session_sources`). Die Entscheidung selbst bleibt unverändert.
 
+## Nachtrag: Umzug mit neuer Form der Adressen (#88)
+
+Ändert eine Fremd-Quelle beim Umzug auch den Aufbau ihrer Adressen (ALLRIS: `…/public/oparl/papers?id=5` wird
+`…/oparl/papers/5`), bilden Abbildungsregeln in `sync_config["id_rules"]` den Rest der neuen Adresse auf den der
+bisherigen ab; `id_address` nennt den Präfix der neuen Adressen, `id_base` den der bisherigen. Es gilt die erste
+Regel, deren Muster den ganzen Rest erfasst; ohne passende Regel ist die neue Adresse kanonisch. Ingestor und Django
+rechnen gleich (`IdBases.add_source`, gemeinsame Testvektoren `regeln`). Ungültige Regeln brechen den Abgleich
+der Quelle ab. Der Bestand wird in place umgeschrieben (`external_id` neu, `id` bleibt).
+
+Lässt sich die alte Adresse aus der neuen nicht ableiten (ALLRIS: Dokumenttyp `dtyp` bei Dateien, Tagesordnungs-
+bezug `bi` bei Beratungen), behalten die umgeschriebenen Objekte ihre Kennung trotzdem; `check_ris_ids` zählt sie
+als „Kennung abweichend“. Das ist gewollt: Links, Suchindex und Dateivorschau bleiben gültig, und Ereignisse
+verweisen auf diese Typen nur über die Zeile im Bestand, nie über eine URL. Solche Abweichungen dürfen nicht durch
+Umschlüsseln „behoben“ werden.
+
 ## Alternativen
 
 - **Interne Session-Modelle als gemeinsames Modell.** Bindet Work, Portal und App an Session;
