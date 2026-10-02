@@ -7,8 +7,12 @@ OParl-Schnittstelle je Kommune anbietet, in der Sprache der Open-Data-Portale. I
 Abnehmer holen sie über die Schnittstelle selbst.
 
 - ``vokabular``: die kontrollierten Vokabulare (Lizenzen, Formate, Themen, Raumbezug …)
-- ``katalog``: das Katalogmodell und die drei Datensätze einer Kommune – ohne Django und ohne RDF
+- ``katalog``: das Katalogmodell und die drei Datensätze einer Kommune – ohne Datenbank und ohne RDF
 - ``rdf``: die Serialisierung als Turtle, RDF/XML und JSON-LD (rdflib, erst bei Bedarf geladen)
 - ``http``: Adressen mit Endung, Inhaltsaushandlung, Zwischenspeicher, Absagen
 - ``aggregator``: die Kataloge des Aggregators (gelistete Kommunen), Routen in ``urls``
+
+Den Katalog je Session-Mandant baut das Fachmodul mit demselben Modell (``apps/session/api/dcat.py``): Nur Session
+weiß, was eines Mandanten öffentlich ist, und die Drehscheibe importiert kein Fachmodul. Die CI prüft alle Kataloge
+gegen die SHACL-Regeln von DCAT-AP und DCAT-AP.de (``scripts/dcat_shacl.py``).
 """

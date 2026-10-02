@@ -128,6 +128,7 @@ dev = [
     "django-stubs[compatible-mypy]==6.1.1",
     "sqlalchemy>=2.0",  # Schema-Contract gegen die Ingestor-Modelle (insight_core/schema_contract.py)
     "djlint==1.46.2",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
+    "pyshacl==0.40.1",  # SHACL-Prüfung der Datenkataloge (scripts/dcat_shacl.py), gleiche Version wie CI
 ]
 
 [tool.uv]

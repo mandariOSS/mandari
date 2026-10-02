@@ -22,6 +22,11 @@ Ihr eigener Katalog antwortet mit ``404`` und einem Hinweis, im Gesamtkatalog fe
 als IRI taugen (``hub.adapters.dcat.adressen``); eine fehlerhafte Angabe einer Kommune darf den Gesamtkatalog nicht
 unlesbar machen.
 
+**Session-Mandanten** dieser Installation geben ihren Katalog selbst heraus (Herausgeber ist die Kommune). Für
+eine gelistete Kommune, die einen solchen Mandanten spiegelt, leitet der Katalog des Aggregators dorthin weiter,
+und der Gesamtkatalog lässt sie aus – sonst stünden dieselben Daten unter zwei Herausgebern in den Portalen. Die
+Weiterleitung ist vorübergehend (``302``, begrenzt zwischenspeicherbar): Die Spiegelung lässt sich ändern.
+
 **Veröffentlichungsstand** wie bei Feed und Snapshot (``insight_core.publication``): nicht gelistet ``404``,
 vorübergehend abgeschaltet ``503`` mit ``Retry-After``, dauerhaft zurückgenommen ``410``. Im Gesamtkatalog
 bleibt eine vorübergehend abgeschaltete Kommune stehen – nicht erreichbar ist nicht gelöscht; ein Portal,
@@ -34,23 +39,24 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import replace
-from datetime import date, datetime
-from typing import Any
+from datetime import datetime
 
 from django.conf import settings
 from django.db.models import Max, Min
 from django.db.models.functions import Coalesce
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
-from django.utils import timezone
 
 from hub.adapters.dcat import adressen, http, katalog, vokabular
-from hub.adapters.dcat.katalog import Angebot, Dienst, Katalog, Kennzahlen, Kontakt, Stelle, Zeitraum
+from hub.adapters.dcat.katalog import Angebot, Dienst, Katalog, Kennzahlen, Kontakt, Stelle
 from hub.api import changes
 from hub.api.http import endpoint, error_response
 from hub.ris.mapping.bestand import BestandUris
 from insight_core import publication
 from insight_core.models import OParlBody, OParlMeeting, OParlOrganization, OParlPaper, OParlPerson
+
+#: Wie lange ein Abnehmer die Weiterleitung auf den Katalog eines Session-Mandanten zwischenspeichern darf
+WEITERLEITUNG_MAX_AGE = 3600
 
 #: Hinweis, wenn eine Kommune keine zuordenbare offene Lizenz hat
 OHNE_LIZENZ = (
@@ -177,17 +183,6 @@ def angebot(body: OParlBody, state: publication.BodyState | None = None) -> Ange
     )
 
 
-def _tag(wert: datetime | date | None) -> date | None:
-    if isinstance(wert, datetime):
-        return timezone.localtime(wert).date() if timezone.is_aware(wert) else wert.date()
-    return wert
-
-
-def _zeitraum(werte: dict[str, Any]) -> Zeitraum | None:
-    beginn, ende = _tag(werte.get("beginn")), _tag(werte.get("ende"))
-    return Zeitraum(beginn, ende) if beginn or ende else None
-
-
 def kennzahlen(body_id: uuid.UUID) -> dict[str, Kennzahlen]:
     """
     Zeitraum und letzte Änderung je Datensatz aus dem Bestand der Kommune (vier Abfragen, nur bei einem
@@ -207,10 +202,38 @@ def kennzahlen(body_id: uuid.UUID) -> dict[str, Kennzahlen]:
     personen = OParlPerson.objects.filter(body_id=body_id, deleted=False).aggregate(geaendert=geaendert)
     gremien_geaendert = max((w for w in (gremien["geaendert"], personen["geaendert"]) if w), default=None)
     return {
-        katalog.SITZUNGEN: Kennzahlen(_zeitraum(sitzungen), sitzungen["geaendert"]),
-        katalog.VORLAGEN: Kennzahlen(_zeitraum(vorlagen), vorlagen["geaendert"]),
-        katalog.GREMIEN: Kennzahlen(_zeitraum(gremien), gremien_geaendert),
+        katalog.SITZUNGEN: Kennzahlen(katalog.zeitraum(sitzungen["beginn"], sitzungen["ende"]), sitzungen["geaendert"]),
+        katalog.VORLAGEN: Kennzahlen(katalog.zeitraum(vorlagen["beginn"], vorlagen["ende"]), vorlagen["geaendert"]),
+        katalog.GREMIEN: Kennzahlen(katalog.zeitraum(gremien["beginn"]), gremien_geaendert),
     }
+
+
+def session_mandant(body: OParlBody) -> str | None:
+    """
+    Slug des Session-Mandanten dieser Installation, dessen OParl-Schnittstelle die Kommune spiegelt – sonst
+    ``None``. Ein solcher Mandant gibt seinen Katalog selbst heraus (``apps/session/api/dcat.py``); der Aggregator
+    verweist darauf, statt dieselben Daten unter einem zweiten Herausgeber anzubieten.
+    """
+    config = body.source.sync_config if isinstance(body.source.sync_config, dict) else {}
+    slug = config.get("session_tenant")
+    return slug if isinstance(slug, str) and slug else None
+
+
+def _weiterleitung(slug: str, endung: str | None) -> HttpResponse:
+    """
+    Weiterleitung auf den Katalog des Session-Mandanten (in derselben Form).
+
+    Vorübergehend (``302``) und nur begrenzt zwischenspeicherbar: Die Zuordnung hängt an der Spiegel-Konfiguration
+    der Quelle und lässt sich ändern. Eine dauerhafte Weiterleitung dürften Abnehmer unbegrenzt behalten.
+    """
+    if endung is None:
+        pfad = reverse("session:dcat_catalog", kwargs={"tenant_slug": slug})
+    else:
+        pfad = reverse("session:dcat_catalog_format", kwargs={"tenant_slug": slug, "endung": endung})
+    response = HttpResponseRedirect(f"{adressen.site()}{pfad}")
+    response["Access-Control-Allow-Origin"] = "*"
+    response["Cache-Control"] = f"max-age={WEITERLEITUNG_MAX_AGE}"
+    return response
 
 
 # =============================================================================
@@ -245,9 +268,9 @@ def gesamtkatalog() -> Katalog:
     states = publication.states()
     datensaetze: list[katalog.Datensatz] = []
     seit: list[datetime] = []
-    for body in OParlBody.objects.listed().order_by("name", "id"):
+    for body in OParlBody.objects.listed().select_related("source").order_by("name", "id"):
         state = states.get(str(body.id))
-        if state is not None and state.withdrawn:
+        if (state is not None and state.withdrawn) or session_mandant(body):
             continue
         eintrag = angebot(body, state)
         if eintrag is None:
@@ -301,6 +324,12 @@ def body_catalog_view(request: HttpRequest, pk: uuid.UUID, endung: str | None = 
     """Katalog einer Kommune."""
     if not http.enabled():
         return http.ausgeschaltet()
+    body = OParlBody.objects.select_related("source").filter(pk=pk).first()
+    # Nur eine gelistete Kommune leitet weiter; eine nicht gelistete oder gelöschte verrät keinen Mandanten
+    gelistet = body is not None and not body.deleted and body.is_listed
+    slug = session_mandant(body) if body is not None and gelistet else None
+    if slug is not None:
+        return _weiterleitung(slug, endung)
     state = publication.body_state(pk)
     if state is not None and state.paused:
         response = error_response(503, "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet.")
@@ -311,8 +340,7 @@ def body_catalog_view(request: HttpRequest, pk: uuid.UUID, endung: str | None = 
         return http.problem_antwort(
             request, 410, "kommune-zurueckgenommen", "Die Kommune hat die Veröffentlichung dauerhaft zurückgenommen."
         )
-    body = OParlBody.objects.listed().filter(pk=pk).first()
-    if body is None:
+    if body is None or body.deleted or not body.is_listed:
         return error_response(404, "Kommune (Body) nicht gefunden.")
     eintrag = angebot(body, state)
     if eintrag is None:

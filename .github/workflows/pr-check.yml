@@ -180,6 +180,12 @@ jobs:
               - 'shared/**'
               - 'scripts/oparl_validator.py'
               - 'scripts/_smoke_db.py'
+              # Datenkatalog nach DCAT-AP.de (SHACL-Prüfung im selben Job); ein Update von rdflib kann die
+              # Serialisierung ändern, deshalb auch bei geänderten Abhängigkeiten
+              - 'mandari/apps/session/api/dcat.py'
+              - 'scripts/dcat_shacl.py'
+              - 'mandari/pyproject.toml'
+              - 'mandari/uv.lock'
               - '!**/*.md'
             e2e:
               - 'mandari/**/templates/**'
@@ -886,6 +892,7 @@ jobs:
   # liegt im Zwischenspeicher der Actions (Schlüssel: Prüfsumme) und wird nur geladen, wenn es dort
   # fehlt – der Job hängt so nicht bei jedem Lauf an der fremden Adresse. Die Prüfsumme gilt auch für
   # das Archiv aus dem Zwischenspeicher. Der Job hat nur Leserechte und keine Geheimnisse.
+  # Danach prüft er die Datenkataloge nach DCAT-AP.de gegen die SHACL-Regeln (scripts/dcat_shacl.py).
   oparl-validator:
     name: OParl-Validator (Aggregator und Session-Schnittstelle)
     needs: changes
@@ -940,6 +947,29 @@ jobs:
 
       - name: Beide OParl-Ausgaben prüfen (Testinstanz mit Demo-Daten)
         run: python scripts/oparl_validator.py --validator "$RUNNER_TEMP/oparl-validator-rs"
+
+      # Datenkataloge nach DCAT-AP.de (Issue #104) gegen die SHACL-Regeln von DCAT-AP 3.0 und DCAT-AP.de 3.0.
+      # Die Regeln lädt das Skript in festgelegter Fassung (Commit, SHA-256), die kontrollierten Vokabulare von
+      # ihren offiziellen Adressen. Die Ablage im Zwischenspeicher ist nur Ersatz, falls eine Quelle nicht
+      # antwortet; sie wird einmal je Kalenderwoche neu abgelegt.
+      - name: Kalenderwoche der Ablage
+        id: woche
+        if: ${{ !cancelled() }}
+        run: echo "woche=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Ablage der SHACL-Regeln und Vokabulare
+        if: ${{ !cancelled() }}
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/dcat-ablage
+          key: dcat-ablage-${{ steps.woche.outputs.woche }}
+          restore-keys: dcat-ablage-
+
+      - name: DCAT-AP.de-Kataloge gegen die SHACL-Regeln prüfen (Aggregator und Session-Mandant)
+        if: ${{ !cancelled() }}
+        run: |
+          pip install "pyshacl==0.40.1"
+          python scripts/dcat_shacl.py --ablage "$RUNNER_TEMP/dcat-ablage"
 
   # ===========================================================================
   # Abhängigkeiten: bekannte Schwachstellen, Lockfile-Abgleich

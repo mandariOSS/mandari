@@ -189,11 +189,17 @@ class SessionTenantAdmin(ModelAdmin):
         (
             "OParl-Verknüpfung",
             {
-                "fields": ("oparl_body", "oparl_public_since", "oparl_license", "oparl_license_valid_since"),
+                "fields": (
+                    "oparl_body",
+                    "oparl_public_since",
+                    "oparl_license",
+                    "oparl_license_valid_since",
+                    "dcat_contributor_id",
+                ),
                 "classes": ("collapse",),
                 "description": "Verknüpfung mit einer OParl-Kommune für die automatische Synchronisation öffentlicher Daten. "
                 "Die eigene OParl-Schnittstelle schaltet der Mandant in seinen Einstellungen frei; dort legt er auch "
-                "die Lizenz der offenen Daten fest.",
+                "die Lizenz der offenen Daten fest. Die Kennung bei GovData erscheint im Datenkatalog nach DCAT-AP.de.",
             },
         ),
         (

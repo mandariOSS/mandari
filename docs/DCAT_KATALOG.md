@@ -20,6 +20,7 @@ Der Katalog ist je Installation einzuschalten (`DCAT_ENABLED=true`); ausgeschalt
 |---|---|
 | `/data/dcat/catalog` | alle gelisteten Kommunen mit Lizenz in einem Katalog – ein Einstieg für ein Datenportal |
 | `/data/dcat/body/<uuid>/catalog` | Katalog einer Kommune; die Kennung ist die des Body in der OParl-Schnittstelle |
+| `/session/<slug>/api/dcat/catalog` | Katalog eines Session-Mandanten (Herausgeber ist die Kommune selbst) |
 
 Jede Adresse gibt es in drei Formen:
 
@@ -49,7 +50,8 @@ Drei Datensätze, so wie man Ratsinformationen sucht:
 | Gremien und Mandate | `#gremien` | OParl-Listen `organizations` und `people` |
 
 Ist der Änderungsfeed eingeschaltet (`OPARL_CHANGES_ENABLED`), hat jeder Datensatz zusätzlich Feed und Snapshot
-der Kommune als Distribution; beide gelten für alle Objekte der Kommune.
+der Kommune als Distribution; beide gelten für alle Objekte der Kommune. Den Sitzungskalender gibt es nur im
+Katalog des Aggregators (er ist ein Export des Bürgerportals).
 
 Die OParl-Schnittstelle erscheint als `dcat:DataService` (Endpunkt: System-Objekt des Aggregators, Beschreibung:
 die OParl-Spezifikation). Die Distributionen der Schnittstelle verweisen mit `dcat:accessService` darauf und
@@ -69,15 +71,22 @@ nennen OParl 1.1 als Standard (`dct:conformsTo`).
 
 ### Wer ist wer – keine Personendaten
 
+**Aggregator:**
+
 - **Herausgeber** (`dct:publisher`) und **Kontakt** (`dcat:contactPoint`) ist der Betreiber der Installation: Er
   macht die Daten über seine Schnittstelle zugänglich (`DCAT_PUBLISHER_NAME`, `DCAT_PUBLISHER_URL`,
   `DCAT_CONTACT_EMAIL`).
 - **Urheber** (`dct:creator`) ist die Kommune, aus deren Ratsinformationssystem die Daten stammen. Ihr Name ist
   auch der Text der Namensnennung.
 
-Herausgeber, Urheber und Kontakt sind Stellen, nie Personen. Kontaktname und -adresse aus der OParl-Quelle
-(`contactName`, `contactEmail`) übernimmt der Katalog bewusst nicht; die Kontaktadresse des Betreibers sollte ein
-Funktionspostfach sein. Personen der Kommune erscheinen nur über die verlinkte OParl-Liste, nicht im Katalog.
+**Session-Mandant:** Herausgeber und Kontakt ist die Kommune selbst – Name, Webseite und Kontakt-E-Mail des
+Mandanten, dieselben Angaben, die seine OParl-Schnittstelle an System und Body nennt. Die Kontakt-E-Mail sollte
+deshalb ein Funktionspostfach sein.
+
+Herausgeber, Urheber und Kontakt sind Stellen, nie Personen. Kontaktname und -adresse aus einer fremden
+OParl-Quelle (`contactName`, `contactEmail`) übernimmt der Katalog bewusst nicht; die Kontaktadresse des Betreibers
+sollte ein Funktionspostfach sein. Personen der Kommune erscheinen nur über die verlinkte OParl-Liste, nicht im
+Katalog.
 
 ### Lizenz
 
@@ -96,7 +105,9 @@ zugeordnet (`http`/`https`, `www.`, Schrägstrich am Ende, Sprachfassung), etwa:
 | `https://creativecommons.org/licenses/by/4.0/` | `cc-by/4.0` |
 
 Die vollständige Zuordnung steht in `hub/adapters/dcat/vokabular.py`. Lizenzen mit Namensnennung bekommen
-`dcatde:licenseAttributionByText` mit dem Namen der Kommune.
+`dcatde:licenseAttributionByText` mit dem Namen der Kommune. Session-Mandanten wählen ihre Lizenz in den
+Einstellungen (Karte „OParl-Schnittstelle“); dieselbe Karte zeigt die Adresse des Katalogs bzw. den Hinweis, dass
+es ohne Lizenz keinen gibt.
 
 **Ohne Lizenz kein Katalog:** Ohne Angabe (auch keine der Installation), bei einer unbekannten Angabe oder bei
 einer Lizenz mit Einschränkungen (nicht kommerziell, keine Bearbeitung) antwortet der Katalog der Kommune mit `404`
@@ -112,9 +123,26 @@ E-Mail-Adressen nur in gültiger Form. Alles andere gilt als „keine Angabe“.
 fallen weg, weil RDF/XML sie nicht darstellen kann. So macht eine fehlerhafte Angabe einer einzelnen Kommune den
 Gesamtkatalog nicht unlesbar (`hub/adapters/dcat/adressen.py`).
 
+### Session-Mandanten
+
+- Abrufbar wie die OParl-Schnittstelle erst nach der Freischaltung (Issue #319), sonst `404` ohne Auskunft über den
+  Mandanten. Das Ende der Veröffentlichung im Bürgerportal berührt den Katalog nicht.
+- Zeitraum und letzte Änderung nur aus öffentlichen Objekten (`apps/session/oparl_publication.py`).
+- Webseite (`dcat:landingPage`): der Einstieg im Bürgerportal, solange der Mandant dort veröffentlicht, sonst die
+  Webseite der Kommune.
+- Kennung bei GovData: Feld „Kennung bei GovData“ am Mandanten (`SessionTenant.dcat_contributor_id`, im Admin unter
+  „OParl-Verknüpfung“); nur in der Form `http://dcat-ap.de/def/contributors/…`.
+- Für eine gelistete Kommune, die einen Session-Mandanten dieser Installation spiegelt, leitet der Katalog des
+  Aggregators auf den Katalog des Mandanten weiter, in derselben Form; im Gesamtkatalog fehlt sie. So stehen
+  dieselben Daten nicht unter zwei Herausgebern in den Portalen. Die Weiterleitung ist vorübergehend (`302`,
+  `Cache-Control: max-age=3600`), weil sich die Spiegelung ändern lässt; eine dauerhafte (`301`) dürften Portale
+  unbegrenzt behalten. Eine nicht gelistete oder gelöschte Kommune antwortet mit `404` ohne Weiterleitung. Ist der
+  Mandant nicht (mehr) freigeschaltet, antwortet das Ziel mit `404`, und die Kommune fehlt in beiden Katalogen –
+  lieber keine Angabe als dieselben Daten unter dem Betreiber als Herausgeber.
+
 ### Veröffentlichungsstand
 
-Wie bei Feed und Snapshot (`insight_core/publication.py`):
+Für den Aggregator wie bei Feed und Snapshot (`insight_core/publication.py`):
 
 | Stand | Katalog der Kommune | Gesamtkatalog |
 |---|---|---|
@@ -144,7 +172,7 @@ das sie dort verlöre, würde ihre Datensätze löschen.
 | `DCAT_PUBLISHER_NAME` | `mandari` | Herausgeber der Datensätze des Aggregators (der Betreiber) |
 | `DCAT_PUBLISHER_URL` | `SITE_URL` | Webseite des Herausgebers |
 | `DCAT_CONTACT_EMAIL` | leer | Kontaktadresse (Funktionspostfach); leer: nur die Webseite |
-| `DCAT_CONTRIBUTOR_ID` | leer | Kennung des Betreibers bei GovData (`http://dcat-ap.de/def/contributors/…`); andere Werte werden nicht ausgegeben |
+| `DCAT_CONTRIBUTOR_ID` | leer | Kennung des Betreibers bei GovData (`http://dcat-ap.de/def/contributors/…`); andere Werte werden nicht ausgegeben. Session-Mandanten tragen ihre eigene Kennung (siehe oben). |
 | `DCAT_CACHE_SECONDS` | `300` | Zwischenspeicher der fertigen Kataloge (0 = aus) |
 
 Ein vorgeschalteter Reverse-Proxy muss `/data/dcat/*` an die Anwendung weiterreichen; das `Caddyfile` der
@@ -164,9 +192,23 @@ Community Edition tut das. Installationen mit eigener Proxy-Konfiguration tragen
    Harvesting-Quelle. GovData vergibt dabei eine Kennung; sie gehört nach `DCAT_CONTRIBUTOR_ID` und erscheint
    danach als `dcatde:contributorID` an jedem Datensatz. Landesportale (etwa Open.NRW) leiten ihre Datensätze
    meist selbst an GovData weiter; dann nur bei einem der beiden anmelden, sonst entstehen Dubletten.
+   Eine Kommune mit Session-Mandant meldet sich selbst an und nennt den Katalog ihres Mandanten; ihre Kennung von
+   GovData trägt der Betreiber am Mandanten ein.
 4. Abgleich: Portale erkennen Datensätze an `dct:identifier` (gleich der Kennung) und Änderungen an
    `dct:modified`. Verschwindet eine Kommune aus dem Katalog (Rücknahme, keine Lizenz mehr), löschen Portale
    ihre Datensätze beim nächsten Abgleich.
+
+## Prüfung
+
+- Tests: `hub/adapters/dcat/tests/` (Modell, Formen, Aggregator) und `apps/session/tests/test_dcat_katalog.py`
+  (Session-Mandant, Weiterleitung, Einstellungen).
+- **SHACL in der CI** (`scripts/dcat_shacl.py`, Job „OParl-Validator“): Gesamtkatalog, Katalog einer fremden
+  Kommune und Katalog des Demo-Mandanten, je in allen drei Formen, gegen die Regeln von DCAT-AP 3.0.0 (SEMIC,
+  CC BY 4.0) und DCAT-AP.de 3.0 (GovData, CC0) – dieselbe Zusammenstellung wie im Profil „DCAT-AP.de 3.0 –
+  Spezifikation“ des DCAT-AP.de-Validators. Die Regeln werden in festgelegter Fassung (Commit, SHA-256) geladen,
+  nicht mitgeliefert; die kontrollierten Vokabulare von ihren offiziellen Adressen, ersatzweise aus dem
+  Zwischenspeicher. Ein Verstoß (`sh:Violation`) lässt den Lauf scheitern, Warnungen werden gemeldet.
+- Lokal: `pip install pyshacl==0.40.1` (Extra `dev`), dann `python scripts/dcat_shacl.py`.
 
 ## Nicht enthalten
 
@@ -187,5 +229,5 @@ Community Edition tut das. Installationen mit eigener Proxy-Konfiguration tragen
 | `hub/adapters/dcat/rdf.py` | Serialisierung als Turtle, RDF/XML und JSON-LD |
 | `hub/adapters/dcat/http.py` | Formen, Inhaltsaushandlung, Zwischenspeicher, Absagen |
 | `hub/adapters/dcat/aggregator.py` | Kataloge des Aggregators, Routen in `urls.py` |
-
-Tests: `hub/adapters/dcat/tests/`.
+| `apps/session/api/dcat.py` | Katalog je Session-Mandant (das Fachmodul legt fest, was öffentlich ist) |
+| `scripts/dcat_shacl.py` | SHACL-Prüfung in der CI |

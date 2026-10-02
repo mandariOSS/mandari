@@ -20,7 +20,7 @@ Sicherheit: Tombstones enthalten keine Inhalte — nur Typ, ID, Zeitstempel.
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.session import audit
@@ -43,11 +43,11 @@ from apps.session.models import (
 # =============================================================================
 
 
-def visible_organizations(tenant):
+def visible_organizations(tenant: SessionTenant) -> QuerySet[SessionOrganization]:
     return SessionOrganization.objects.filter(tenant=tenant)
 
 
-def visible_persons(tenant):
+def visible_persons(tenant: SessionTenant) -> QuerySet[SessionPerson]:
     return SessionPerson.objects.filter(tenant=tenant)
 
 
@@ -55,7 +55,7 @@ def visible_memberships(tenant):
     return SessionOrganizationMembership.objects.filter(organization__tenant=tenant)
 
 
-def visible_meetings(tenant):
+def visible_meetings(tenant: SessionTenant) -> QuerySet[SessionMeeting]:
     return SessionMeeting.objects.filter(tenant=tenant, is_public=True)
 
 
@@ -72,7 +72,7 @@ def visible_agenda_items(tenant):
 UNVEROEFFENTLICHT = ("draft", "review")
 
 
-def visible_papers(tenant):
+def visible_papers(tenant: SessionTenant) -> QuerySet[SessionPaper]:
     return SessionPaper.objects.filter(tenant=tenant, is_public=True).exclude(status__in=UNVEROEFFENTLICHT)
 
 

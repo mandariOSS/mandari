@@ -103,6 +103,8 @@ class SettingsView(SessionViewMixin, TemplateView):
     permission_require_all = False
 
     def get_context_data(self, **kwargs):
+        from hub.adapters.dcat.http import enabled as dcat_enabled
+
         from ..models import SessionTenant
         from ..services import oparl_access, portal_publication
 
@@ -115,6 +117,8 @@ class SettingsView(SessionViewMixin, TemplateView):
         # Vor Issue #618 beendet: Bestand ohne Hinweis öffentlich, Auswahl anbieten
         context["portal_legacy_stock"] = portal_publication.legacy_stock(self.session_tenant)
         context["oparl_licenses"] = oparl_access.LICENSES
+        # Hinweis auf den Datenkatalog nach DCAT-AP.de (Issue #104): Adresse bzw. „ohne Lizenz kein Katalog“
+        context["dcat_enabled"] = dcat_enabled()
         return context
 
 

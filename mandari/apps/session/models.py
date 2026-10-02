@@ -23,6 +23,7 @@ from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
@@ -302,6 +303,26 @@ class SessionTenant(models.Model):
         blank=True,
         verbose_name="Lizenz gültig seit",
         help_text="Zeitpunkt, seit dem die angegebene Lizenz gilt (OParl ``licenseValidSince``)",
+    )
+    # Kennung des Mandanten als Datenbereitsteller bei GovData (``dcatde:contributorID`` im Datenkatalog nach
+    # DCAT-AP.de, docs/DCAT_KATALOG.md). GovData vergibt sie bei der Anmeldung; leer heißt keine Angabe.
+    # DB-seitiger Default, damit ein älteres Image weiter Mandanten anlegen kann.
+    dcat_contributor_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_default="",
+        validators=[
+            RegexValidator(
+                r"^http://dcat-ap\.de/def/contributors/[A-Za-z0-9_.-]+$",
+                "Bitte die Kennung aus der Liste von GovData angeben (http://dcat-ap.de/def/contributors/…).",
+            )
+        ],
+        verbose_name="Kennung bei GovData",
+        help_text=(
+            "Kennung als Datenbereitsteller (http://dcat-ap.de/def/contributors/…), vergeben bei der Anmeldung bei "
+            "GovData; erscheint im Datenkatalog an jedem Datensatz. Leer: keine Angabe"
+        ),
     )
 
     # Bürgerportal-Veröffentlichung (Issue #36): Erst wenn der Mandant den

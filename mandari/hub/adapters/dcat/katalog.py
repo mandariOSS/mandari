@@ -2,7 +2,7 @@
 """
 Katalogmodell nach DCAT-AP.de 3.0 und seine Datensätze je Kommune.
 
-Das Modell ist frei von Django und RDF: Die Ausgaben (Aggregator, Session-Mandanten) beschreiben, was eine
+Das Modell kennt weder Datenbank noch RDF: Die Ausgaben (Aggregator, Session-Mandanten) beschreiben, was eine
 Kommune anbietet (``Angebot``); ``datensaetze`` macht daraus die Datensätze mit ihren Distributionen,
 ``hub.adapters.dcat.rdf`` serialisiert den fertigen ``Katalog``.
 
@@ -29,6 +29,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Final
+
+from django.utils import timezone
 
 from hub.adapters.dcat import vokabular
 from hub.adapters.dcat.vokabular import Lizenz, Raumbezug
@@ -76,6 +78,19 @@ class Zeitraum:
 
     beginn: date | None = None
     ende: date | None = None
+
+
+def _tag(wert: date | datetime | None) -> date | None:
+    """Tag eines Zeitpunkts in der Zeitzone der Installation; ein Datum bleibt, wie es ist."""
+    if isinstance(wert, datetime):
+        return timezone.localtime(wert).date() if timezone.is_aware(wert) else wert.date()
+    return wert
+
+
+def zeitraum(beginn: date | datetime | None, ende: date | datetime | None = None) -> Zeitraum | None:
+    """Zeitraum aus frühestem und spätestem Wert (etwa aus einer Aggregat-Abfrage); ``None`` ohne beide."""
+    tag_beginn, tag_ende = _tag(beginn), _tag(ende)
+    return Zeitraum(tag_beginn, tag_ende) if tag_beginn or tag_ende else None
 
 
 @dataclass(frozen=True)
