@@ -1239,7 +1239,9 @@ def _stock(tenant: SessionTenant, kind: str) -> int:
 # ---------------------------------------------------------------------------
 
 _SALUTATIONS = {"frau": "Frau", "herr": "Herr"}
-_TITLE_RE = re.compile(r"^(dr|prof|dipl|ing|med|rer|nat|phil|jur|h\.c)(\.|-[\w.]+)*$", re.IGNORECASE)
+# Akademische Titel wie „Dr.“, „Prof.“, „Dipl.-Ing.“, „Dr.-Ing.“; jede Wiederholung beginnt mit „-“, damit das
+# Muster eindeutig bleibt (kein exponentielles Backtracking)
+_TITLE_RE = re.compile(r"^(dr|prof|dipl|ing|med|rer|nat|phil|jur|h\.c)\.?(-[a-zäöüß]+\.?)*$", re.IGNORECASE)
 
 
 def person_key(name: str) -> str:
