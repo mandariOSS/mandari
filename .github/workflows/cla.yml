@@ -1,0 +1,63 @@
+# =============================================================================
+# Mandari - Beitragsvereinbarung
+# =============================================================================
+# Prüft in jedem Pull Request, ob für alle Beteiligten eine Beitragsvereinbarung
+# vorliegt (Ablauf: docs/cla/README.md, Logik: scripts/cla_pruefung.py).
+#
+# Warum pull_request_target: Bei Pull Requests aus Forks hat das Ereignis
+# pull_request nur ein lesendes Token und keine Secrets. Der Hinweis im Pull
+# Request und die nicht öffentliche Signaturliste brauchen beides.
+#
+# Deshalb gilt hier, und muss so bleiben:
+# - Es wird nie der Stand des Pull Requests ausgecheckt oder ausgeführt, nur der
+#   Zielzweig (Skript und .github/cla.json stammen aus dem Repository selbst).
+# - Über den Pull Request liest das Skript ausschließlich Metadaten per API.
+# - Angaben aus dem Pull Request (Titel, Zweigname, Text) werden in keinem
+#   Schritt in einen Shell-Befehl eingesetzt.
+# - Das Token darf nur lesen und im Pull Request kommentieren.
+# Ein Test hält diese Punkte fest (mandari/apps/common/tests/test_cla_pruefung.py).
+# =============================================================================
+
+name: Beitragsvereinbarung
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+    branches:
+      - dev
+      - main
+
+permissions: {}
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pruefung:
+    name: Beitragsvereinbarung
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read         # Zielzweig auschecken, Commits des Pull Requests über die API lesen
+      pull-requests: write   # Hinweis im Pull Request schreiben und aktuell halten
+    steps:
+      # Der Zweigname statt des Commits aus dem Ereignis: Ein erneuter Lauf desselben Jobs sieht so
+      # die aktuelle Konfiguration (etwa nach der Freigabe einer Fassung).
+      - name: Zielzweig auschecken (nie den Stand des Pull Requests)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/cla_pruefung.py
+            .github/cla.json
+          sparse-checkout-cone-mode: false
+
+      - name: Zustimmung aller Beteiligten prüfen
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Nicht öffentliche Signaturliste; bei Läufen für Dependabot leer (dort nicht nötig)
+          CLA_SIGNATUREN: ${{ secrets.CLA_SIGNATUREN }}
+          PR_NUMMER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/cla_pruefung.py --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMMER"
