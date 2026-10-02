@@ -476,6 +476,16 @@ Messung nicht am Speicherlimit der laufenden Anwendung zehrt. Ein Snapshot beleg
 Anwendungsprozess. Läuft die Anwendung in einem einzigen Prozess, `OPARL_SNAPSHOT_PARALLEL=1` setzen,
 damit gleichzeitige Snapshots die übrigen Anfragen nicht spürbar verlangsamen.
 
+**Nach dem Einschalten prüfen:** `scripts/feed_abnehmer.py` liest eine Kommune wie ein Abnehmer – Body,
+Snapshot, Feed ab dem Cursor des Snapshots bis zur leeren Seite, eine Stichprobe der Adressen, zuletzt
+`304` mit `If-None-Match` – und meldet jede Abweichung von den Zusagen dieses Abschnitts (Exit-Code 1).
+Nur lesend, mit Pausen unterhalb der Ratenbegrenzung:
+
+```bash
+python scripts/feed_abnehmer.py https://<installation>/oparl/v1/body/<uuid>
+python scripts/feed_abnehmer.py https://<installation>/oparl/v1/body/<uuid> --von-vorn   # alle Einträge
+```
+
 **Eine Serialisierung für beide Ausgaben:** Aggregator und Session-Schnittstelle
 (`SESSION_OPARL_API.md`) gehen denselben Weg – Abbildung auf das kanonische Modell, dann Ausgabe
 (ADR `docs/adr/20260929-kanonisches-modell.md`):
