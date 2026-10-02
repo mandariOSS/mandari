@@ -17,6 +17,7 @@ from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
     OParlFile,
+    OParlLocation,
     OParlMeeting,
     OParlMembership,
     OParlOrganization,
@@ -211,3 +212,50 @@ def test_umgezogene_quelle_ohne_abweichung(db: Any) -> None:
 
     total = check_ris_ids().total()
     assert (total.objects, total.id_deviations, total.uri_deviations) == (3, 1, 0)
+
+
+# --- Umzug mit neuer Form der Adressen (Abbildungsregeln) -------------------------------------------------------
+
+ALT = "https://ris.beispiel.example/public/oparl/"
+NEU = "https://ris.beispiel.example/oparl/"
+REGELN = {
+    "id_address": NEU,
+    "id_base": ALT,
+    "id_rules": [
+        ["bodies/([0-9]+)", r"bodies?id=\1"],
+        ["organizations/([a-z]+)/([0-9]+)", r"organizations?typ=\1&id=\2"],
+        ["(locations|papers)/([0-9]+)", r"\1?id=\2"],
+    ],
+}
+
+
+def test_umgezogene_quelle_mit_regeln(db: Any) -> None:
+    """
+    Umgeschriebener Bestand: Kennung der alten, Adresse in neuer Form. Mit Regeln kanonisch; was sich nicht
+    ableiten lässt (Datei mit Dokumenttyp in der alten Adresse), bleibt abweichend, aber ohne Kollision.
+    """
+    source = OParlSource.objects.create(name="Beispiel-RIS", url=f"{NEU}system", sync_config=REGELN)
+    body = OParlBody.objects.create(
+        id=canonical_id(f"{ALT}bodies?id=1"), external_id=f"{NEU}bodies/1", source=source, name="Bsp", slug="bsp"
+    )
+    OParlPaper.objects.create(id=canonical_id(f"{ALT}papers?id=5"), external_id=f"{NEU}papers/5", body=body)
+    # Nach dem Umzug neu angelegt: Kennung über die Regel
+    OParlPaper.objects.create(id=canonical_id(f"{ALT}papers?id=6"), external_id=f"{NEU}papers/6", body=body)
+    OParlFile.objects.create(id=canonical_id(f"{ALT}files?id=7&dtyp=130"), external_id=f"{NEU}files/7", body=body)
+    # Ort ohne zuordenbare Körperschaft: Prüfung mit den Basen aller Quellen
+    OParlLocation.objects.create(id=canonical_id(f"{ALT}locations?id=8"), external_id=f"{NEU}locations/8")
+
+    report = check_ris_ids()
+    quelle = str(source.pk)
+    assert report.counts[(quelle, "body")].id_deviations == 0
+    assert report.counts[(quelle, "paper")].id_deviations == 0
+    assert report.counts[(quelle, "file")].id_deviations == 1
+    assert report.counts[(NO_SOURCE, "location")].id_deviations == 0
+    total = report.total()
+    assert (total.objects, total.id_deviations, total.collisions) == (5, 1, 0)
+
+
+def test_ungueltige_regeln_melden_die_quelle(db: Any) -> None:
+    source = OParlSource.objects.create(name="Beispiel-RIS", url=f"{NEU}system", sync_config={"id_rules": [["(", "x"]]})
+    with pytest.raises(CommandError, match=f"Abbildungsregeln ungültig: Quelle {source.pk}"):
+        call_command("check_ris_ids", stdout=StringIO())

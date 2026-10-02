@@ -27,7 +27,6 @@ from mandari_oparl import (
     ProcessedOrganization,
     ProcessedPaper,
     ProcessedPerson,
-    source_id_base,
 )
 from rich.progress import (
     BarColumn,
@@ -238,10 +237,15 @@ class SyncOrchestrator:
 
         Ist eine Quelle umgezogen (eigene Installation auf neuer Domain), behalten ihre Objekte die Kennungen
         ihrer bisherigen Adressen: Für Adressen unter ``url`` rechnet der Ingestor auf der festgeschriebenen
-        Basis (``mandari_oparl.ids.canonical_uri``). Ohne Eintrag sind die Adressen kanonisch.
+        Basis (``mandari_oparl.ids.canonical_uri``). Ohne Eintrag sind die Adressen kanonisch. Hat sich beim
+        Umzug auch die Form der Adressen geändert, gelten ``id_address`` und die Abbildungsregeln
+        ``id_rules`` der Quelle (``IdBases.add_source``).
+
+        Raises:
+            ValueError: Die Abbildungsregeln der Quelle sind ungültig; der Abgleich der Quelle unterbleibt,
+                statt Objekte mit falschen Kennungen anzulegen.
         """
-        base = source_id_base(getattr(source_row, "sync_config", None))
-        if self.storage.id_bases.add(url, base):
+        if self.storage.id_bases.add_source(url, getattr(source_row, "sync_config", None)):
             self.processor.clear_id_cache()
 
     # ========== URL Auto-Detection ==========

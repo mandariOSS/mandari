@@ -87,5 +87,105 @@
       "kanonisch": "https://neu.example/session/musterstadt/api/oparl/paper/0f2a3c4d-5e6f-4a1b-8c9d-0e1f2a3b4c5d/",
       "kennung": "fa8d01f0-969d-5c32-81c9-1c317b8726a2"
     }
+  ],
+  "regeln_beschreibung": "Umgezogene Quellen mit neuer Form der Adressen (sync_config id_address, id_base, id_rules): Liegt die Adresse unter 'adresse', bildet die erste Regel, deren Muster den ganzen Rest erfasst (re.fullmatch), den Rest auf die bisherige Form unter 'basis' ab (Match.expand). Ohne passende Regel ist die Adresse selbst kanonisch. Vorbild: ALLRIS, /public/oparl/<typ>?id=N wurde /oparl/<typ>/N; Dateien und Beratungen trugen zusätzliche Angaben (dtyp, bi), die sich aus der neuen Adresse nicht ableiten lassen. Werte nie ändern.",
+  "regelsatz": {
+    "adresse": "https://ris.beispiel.example/oparl/",
+    "basis": "https://ris.beispiel.example/public/oparl/",
+    "regeln": [
+      [
+        "bodies/([0-9]+)",
+        "bodies?id=\\1"
+      ],
+      [
+        "legislativeTerms/([0-9]+)",
+        "legislativeTerms?id=1_\\1"
+      ],
+      [
+        "organizations/([a-z]+)/([0-9]+)",
+        "organizations?typ=\\1&id=\\2"
+      ],
+      [
+        "(persons|memberships|meetings|agendaItems|papers)/([0-9]+)",
+        "\\1?id=\\2"
+      ]
+    ]
+  },
+  "regeln": [
+    {
+      "uri": "https://ris.beispiel.example/oparl/bodies/1",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/bodies?id=1",
+      "kennung": "c84fbb33-86cf-58e6-8ca6-ed648689d924"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/legislativeTerms/13",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/legislativeTerms?id=1_13",
+      "kennung": "25042db8-5e60-580c-b9af-99bb0f231cc6"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/organizations/gr/6",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/organizations?typ=gr&id=6",
+      "kennung": "d9da116a-216b-5aae-9673-f8d65db19eca"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/organizations/at/225",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/organizations?typ=at&id=225",
+      "kennung": "1e6cac2a-fce4-5297-ac5a-1b2b72c8b6ce"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/persons/2001250",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/persons?id=2001250",
+      "kennung": "9d31c5b1-070c-5b67-b243-07cdb4ba217e"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/memberships/18131",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/memberships?id=18131",
+      "kennung": "3dd9542a-e5d9-5acc-ab45-47ba741248a6"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/meetings/2005833",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/meetings?id=2005833",
+      "kennung": "70107593-2021-5c7f-b48d-5e43a83f33a6"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/agendaItems/2069142",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/agendaItems?id=2069142",
+      "kennung": "b6a366a0-20d6-596c-8c33-8f4b5cf7b183"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/papers/2025706",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/papers?id=2025706",
+      "kennung": "bc1bf8fa-34d7-595b-a328-f52c9294664e"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/files/3080129",
+      "kanonisch": "https://ris.beispiel.example/oparl/files/3080129",
+      "kennung": "cb8d8e10-ce5a-5b53-ad9f-7d7cc510eef2"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/consultations/9402",
+      "kanonisch": "https://ris.beispiel.example/oparl/consultations/9402",
+      "kennung": "f41f093b-5312-562c-a387-df3dccbe474a"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/papers/2025706/",
+      "kanonisch": "https://ris.beispiel.example/oparl/papers/2025706/",
+      "kennung": "64534f37-4026-5a5c-b579-e2872384c1d2"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparl/locations/7",
+      "kanonisch": "https://ris.beispiel.example/oparl/locations/7",
+      "kennung": "039d9a82-d5bb-5a7b-ac2b-0047063a7fc2"
+    },
+    {
+      "uri": "https://ris.beispiel.example/public/oparl/consultations?id=9402&bi=5",
+      "kanonisch": "https://ris.beispiel.example/public/oparl/consultations?id=9402&bi=5",
+      "kennung": "a1e6819a-536b-5248-89fe-48bc77873bc7"
+    },
+    {
+      "uri": "https://ris.beispiel.example/oparlx/papers/1",
+      "kanonisch": "https://ris.beispiel.example/oparlx/papers/1",
+      "kennung": "f43d4fc4-4ba4-530e-a499-7cdfedc3687a"
+    }
   ]
 }

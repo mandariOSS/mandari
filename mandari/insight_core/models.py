@@ -13,7 +13,7 @@ from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
-from mandari_oparl.ids import IdBases, canonical_id, source_id_base
+from mandari_oparl.ids import IdBases, canonical_id
 
 from apps.common.formatting import human_size
 from apps.common.tokens import HashedTokenMixin, unusable_token_hash
@@ -256,9 +256,14 @@ class OParlSource(models.Model):
 
         Steht in ``sync_config["id_base"]`` eine festgeschriebene Basis, bilden sich die Kennungen aller
         Adressen unter ``url`` auf dieser Basis – nach einem Umzug der Quelle bleiben sie so erhalten. Ohne
-        Eintrag sind die Adressen kanonisch. Ingestor und Spiegel rechnen ebenso (``mandari_oparl.ids``).
+        Eintrag sind die Adressen kanonisch. Hat sich beim Umzug auch die Form der Adressen geändert, gelten
+        ``id_address`` und die Abbildungsregeln ``id_rules``. Ingestor und Spiegel rechnen ebenso
+        (``mandari_oparl.ids``).
+
+        Raises:
+            ValueError: Die Abbildungsregeln der Quelle sind ungültig.
         """
-        return IdBases({self.url: source_id_base(self.sync_config)})
+        return IdBases.for_source(self.url, self.sync_config)
 
 
 class OParlBodyQuerySet(models.QuerySet):

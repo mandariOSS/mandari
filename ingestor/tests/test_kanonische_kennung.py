@@ -15,12 +15,17 @@ from uuid import UUID
 import pytest
 from mandari_oparl import (
     NS_MANDARI_RIS,
+    SOURCE_ID_ADDRESS_KEY,
     SOURCE_ID_BASE_KEY,
+    SOURCE_ID_RULES_KEY,
     IdBases,
     canonical_id,
     canonical_uri,
     generate_uuid,
+    id_rules,
+    source_id_address,
     source_id_base,
+    source_id_rules,
 )
 
 from src.sync.orchestrator import SyncOrchestrator
@@ -169,3 +174,134 @@ def test_orchestrator_uebernimmt_die_basis_der_quelle() -> None:
     assert orchestrator.processor.generate_uuid(adresse) == canonical_id(adresse)
     orchestrator._register_id_base(NEU, None)
     assert not orchestrator.storage.id_bases
+
+
+# --- Umzug mit neuer Form der Adressen (ALLRIS: /public/oparl/<typ>?id=N -> /oparl/<typ>/N) ---------------
+
+REGELSATZ = _testvektoren()["regelsatz"]
+REGELN = _testvektoren()["regeln"]
+REGEL_ADRESSE = REGELSATZ["adresse"]
+REGEL_BASIS = REGELSATZ["basis"]
+REGEL_KONFIGURATION = {
+    SOURCE_ID_ADDRESS_KEY: REGEL_ADRESSE,
+    SOURCE_ID_BASE_KEY: REGEL_BASIS,
+    SOURCE_ID_RULES_KEY: REGELSATZ["regeln"],
+}
+
+
+@pytest.mark.parametrize("vektor", REGELN, ids=[v["uri"][-35:] for v in REGELN])
+def test_regeln_ergeben_die_bisherige_kennung(vektor: dict[str, str]) -> None:
+    """Dieselben Vektoren prüft Django: neue Adressform, Kennung der bisherigen Adresse."""
+    erwartet = UUID(vektor["kennung"])
+    assert canonical_uri(vektor["uri"], REGEL_ADRESSE, REGEL_BASIS, REGELSATZ["regeln"]) == vektor["kanonisch"]
+    assert canonical_id(vektor["kanonisch"]) == erwartet
+    basen = IdBases.for_source(f"{REGEL_ADRESSE}system", REGEL_KONFIGURATION)
+    assert basen.id(vektor["uri"]) == erwartet
+    assert OParlProcessor(basen).generate_uuid(vektor["uri"]) == erwartet
+
+
+def test_regelvektoren_decken_die_faelle_ab() -> None:
+    """Abgebildete Adressen, Adressen ohne passende Regel, Präfixgrenze und Altbestand unter der Basis."""
+    abgebildet = [v for v in REGELN if v["uri"] != v["kanonisch"]]
+    unveraendert = [v for v in REGELN if v["uri"] == v["kanonisch"]]
+    assert len(abgebildet) >= 8 and len(unveraendert) >= 5
+    assert all(v["kanonisch"].startswith(REGEL_BASIS) for v in abgebildet)
+    kennungen = [v["kennung"] for v in REGELN]
+    assert len(set(kennungen)) == len(kennungen)
+
+
+@pytest.mark.parametrize(
+    "regeln",
+    [
+        r"papers/(\d+)",
+        {"papers": "x"},
+        [[r"papers/(\d+)"]],
+        [["", "x"]],
+        [[1, "x"]],
+        [["(", "x"]],
+        [[r"papers/(\d+)", r"papers?id=\2"]],
+        [[r"(?P<n>\d+)", r"\g<m>"]],
+        [[r"papers/(\d+)", r"papers?id=\q"]],
+        [["a", "b"]] * 51,
+        [["a" * 301, "b"]],
+    ],
+)
+def test_ungueltige_regeln_werden_abgewiesen(regeln: Any) -> None:
+    """Ungültige Regeln fallen auf, statt Objekte mit anderen Kennungen anzulegen."""
+    with pytest.raises(ValueError):
+        id_rules(regeln)
+    with pytest.raises(ValueError):
+        IdBases().add_source(f"{REGEL_ADRESSE}system", {SOURCE_ID_RULES_KEY: regeln})
+
+
+def test_gueltige_regeln() -> None:
+    assert id_rules(None) == ()
+    assert id_rules([]) == ()
+    assert id_rules([("a(b)", r"\g<1>"), ["(?P<n>c)", r"\g<n>"]]) == (("a(b)", r"\g<1>"), ("(?P<n>c)", r"\g<n>"))
+    assert source_id_rules({}) == () and source_id_rules(None) == ()
+    assert source_id_address({SOURCE_ID_ADDRESS_KEY: REGEL_ADRESSE}) == REGEL_ADRESSE
+    assert source_id_address({SOURCE_ID_ADDRESS_KEY: 5}) == ""
+
+
+def test_basen_mit_regeln() -> None:
+    regel = [["papers/([0-9]+)", r"papers?id=\1"]]
+    basen = IdBases()
+    # Gleicher Präfix, andere Form: Der Eintrag bleibt, auch ohne eigene Basis
+    assert basen.add("https://a.example/oparl/", "", regel) is True
+    assert basen.uri("https://a.example/oparl/papers/5") == "https://a.example/oparl/papers?id=5"
+    assert basen.uri("https://a.example/oparl/files/5") == "https://a.example/oparl/files/5"
+    assert basen.add("https://a.example/oparl", "https://a.example/oparl/", regel) is False
+    # Ohne Regeln und mit Basis gleich Adresse entfällt der Eintrag
+    assert basen.add("https://a.example/oparl/", "") is True
+    assert not basen
+
+
+def test_orchestrator_uebernimmt_adresse_und_regeln_der_quelle() -> None:
+    """Quelle unter ``…/oparl/system``, Objekte unter ``…/oparl/<typ>/N``: Kennungen der bisherigen Adressen."""
+    orchestrator = SyncOrchestrator.__new__(SyncOrchestrator)
+    orchestrator.storage = cast(Any, SimpleNamespace(id_bases=IdBases()))
+    orchestrator.processor = OParlProcessor(orchestrator.storage.id_bases)
+    quelle = f"{REGEL_ADRESSE}system"
+    vorlage = f"{REGEL_ADRESSE}papers/2025706"
+    datei = f"{REGEL_ADRESSE}files/3080129"
+    assert orchestrator.processor.generate_uuid(vorlage) == canonical_id(vorlage)
+
+    orchestrator._register_id_base(quelle, SimpleNamespace(sync_config=REGEL_KONFIGURATION))
+    assert orchestrator.processor.generate_uuid(vorlage) == canonical_id(f"{REGEL_BASIS}papers?id=2025706")
+    # Ohne passende Regel bleibt die Adresse kanonisch
+    assert orchestrator.processor.generate_uuid(datei) == canonical_id(datei)
+
+    # Ungültige Regeln: Der Abgleich der Quelle bricht ab (sync_all meldet den Fehler je Quelle)
+    with pytest.raises(ValueError):
+        orchestrator._register_id_base(quelle, SimpleNamespace(sync_config={SOURCE_ID_RULES_KEY: "x"}))
+
+
+def test_ereignisse_verweisen_auf_die_bisherigen_kennungen() -> None:
+    """Verweise aus URLs (Gremien, Sitzung, Tagesordnungspunkt, Vorlage) treffen die Objekte im Bestand."""
+    from src.storage import ris_events
+
+    basen = IdBases.for_source(f"{REGEL_ADRESSE}system", REGEL_KONFIGURATION)
+    beratung = ris_events.consultation_events(
+        canonical_id(f"{REGEL_BASIS}consultations?id=9402&bi=5"),
+        {
+            "id": f"{REGEL_ADRESSE}consultations/9402",
+            "paper": f"{REGEL_ADRESSE}papers/2025706",
+            "meeting": f"{REGEL_ADRESSE}meetings/2005833",
+            "agendaitem": f"{REGEL_ADRESSE}agendaItems/2069142",
+            "organization": [f"{REGEL_ADRESSE}organizations/gr/6"],
+        },
+        None,
+        ids=basen,
+    )
+    assert beratung[0].payload["paper"] == str(canonical_id(f"{REGEL_BASIS}papers?id=2025706"))
+    assert beratung[0].payload["meeting"] == str(canonical_id(f"{REGEL_BASIS}meetings?id=2005833"))
+    assert beratung[0].payload["agenda_item"] == str(canonical_id(f"{REGEL_BASIS}agendaItems?id=2069142"))
+    assert beratung[0].payload["organization"] == str(canonical_id(f"{REGEL_BASIS}organizations?typ=gr&id=6"))
+
+    sitzung = ris_events.meeting_events(
+        canonical_id(f"{REGEL_BASIS}meetings?id=2005833"),
+        {"id": f"{REGEL_ADRESSE}meetings/2005833", "organization": [f"{REGEL_ADRESSE}organizations/gr/6"]},
+        None,
+        ids=basen,
+    )
+    assert sitzung[0].payload["organizations"] == [str(canonical_id(f"{REGEL_BASIS}organizations?typ=gr&id=6"))]
