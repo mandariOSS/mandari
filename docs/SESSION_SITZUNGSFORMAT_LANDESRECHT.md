@@ -99,28 +99,38 @@ Sitzung (`SessionAttendance`, `apps/session/services/participation_service.py`) 
   dem Beginn gilt als Störung über Mitternacht und ist nur in einer Sitzung möglich, die bis in den Folgetag
   reicht (tatsächliches bzw. geplantes Sitzungsende; „Jetzt beenden“ nach Mitternacht geht immer). Sonst und
   bei einer nicht lesbaren Uhrzeit bleibt der bisherige Stand mit einer Fehlermeldung unverändert.
-- **Beschlussfähigkeit:** Zugeschaltete zählen wie Anwesende im Raum – bei jedem TOP, auch bei Wahlen und
-  geheimen Abstimmungen (sie gelten als anwesend, z. B. § 64 Abs. 3 Satz 5 NKomVG, § 52a Abs. 1 HGO) –,
-  während einer andauernden Störung aber nicht („nicht erreichbar“); nach dem Ende zählen sie wieder. Die
-  Anzeige nennt, wie viele zugeschaltet sind und wer wegen einer Störung nicht mitgezählt wird. Gäste und
-  Protokollführung zählen nie – auch nicht mit gesetztem Stimmrecht (wie bei der Stimmabgabe).
+- **Beschlussfähigkeit:** Zugeschaltete zählen wie Anwesende im Raum, während einer andauernden Störung aber
+  nicht („nicht erreichbar“); nach dem Ende zählen sie wieder. Schließt das Landesprofil nur die
+  Zugeschalteten von einer Abstimmung aus („für Zugeschaltete ausgeschlossen“, z. B. Bayern: „anwesend und
+  stimmberechtigt“, Art. 47 Abs. 2 GO), zählen sie für diesen TOP nicht. Ist der Vorgang in der ganzen Sitzung
+  unzulässig („in der Sitzung unzulässig“, z. B. Niedersachsen), zählen sie weiter mit – sie gelten als
+  anwesend (§ 64 Abs. 3 Satz 5 NKomVG). Die Anzeige nennt, wie viele zugeschaltet sind und wer wegen einer
+  Störung bzw. des Landesprofils nicht mitgezählt wird. Gäste und Protokollführung zählen nie – auch nicht mit
+  gesetztem Stimmrecht (wie bei der Stimmabgabe).
 - **Wahlen, geheime Abstimmungen, geheimhaltungspflichtige Angelegenheiten** (Issue #754): Die
   Abstimmungserfassung kennt die Angabe „Wahl“ je TOP, die TOP-Bearbeitung das Merkmal
   „geheimhaltungspflichtig“ (Geheimhaltung gesetzlich vorgeschrieben oder behördlich angeordnet, z. B. § 6
-  Abs. 3 Satz 1 NKomVG – nicht dasselbe wie nichtöffentlich). Das Landesprofil regelt je Vorgang
+  Abs. 3 Satz 1 NKomVG – nicht dasselbe wie nichtöffentlich, aber nur im nichtöffentlichen Teil möglich; ein
+  TOP mit geheimhaltungspflichtigem Unterpunkt bleibt ebenfalls nichtöffentlich). Das Merkmal lässt sich beim
+  Anlegen und Bearbeiten eines TOP setzen. Das Landesprofil regelt je Vorgang
   (`remote_elections`, `remote_secret_votes`, `remote_secrecy_matters`):
   - **für Zugeschaltete ausgeschlossen** (z. B. Bayern, Hessen, Brandenburg bei geheimen Wahlen):
-    Zugeschaltete stimmen bei dieser Abstimmung nicht ab, die Summen dürfen die Zahl der Stimmberechtigten im
-    Raum nicht übersteigen;
+    Zugeschaltete stimmen bei dieser Abstimmung nicht ab und zählen für diesen TOP nicht zur
+    Beschlussfähigkeit, die Summen dürfen die Zahl der Stimmberechtigten im Raum nicht übersteigen;
   - **in der Sitzung unzulässig, sobald jemand zugeschaltet ist** (Niedersachsen, Sachsen-Anhalt, Saarland):
-    Nimmt jemand zugeschaltet teil oder hat teilgenommen (auch vorzeitig getrennt), lassen sich geheime Wahlen
-    bzw. Abstimmungen weder in der Abstimmungserfassung noch im Sitzungscockpit erfassen und
-    geheimhaltungspflichtige TOPs nicht aufrufen. Die Oberfläche nennt Grund und Norm und bietet „TOP
-    vertagen“ an – die Zugeschalteten abzuschalten genügt nicht. Die Sperre gilt ab der ersten Zuschaltung bis
-    zum Sitzungsende; maßgeblich ist, ob jemand zugeschaltet teilnimmt, nicht schon das Format „hybrid“. Eine
+    Nimmt ein Mitglied des Gremiums (Mitglied, Vorsitz, stellvertretender Vorsitz) zugeschaltet teil oder hat
+    teilgenommen (auch vorzeitig getrennt), lassen sich geheime Wahlen bzw. Abstimmungen weder in der
+    Abstimmungserfassung noch im Sitzungscockpit erfassen und geheimhaltungspflichtige TOPs nicht aufrufen.
+    Zugeschaltete Gäste, Sachverständige und Protokollführung sperren nicht – etwa eine Anhörung per Video
+    (§ 64 Abs. 7 NKomVG); das Gesetz spricht von Abgeordneten (NI) bzw. Mitgliedern (ST). Die Oberfläche
+    nennt Grund und Norm und bietet „TOP vertagen“ an (nur ohne festgestelltes Ergebnis) – die Zugeschalteten
+    abzuschalten genügt nicht. Die Sperre gilt ab der ersten Zuschaltung bis zum Sitzungsende; maßgeblich ist,
+    ob ein Mitglied zugeschaltet teilnimmt, nicht das Format: weder „hybrid“ allein noch das nachträgliche
+    Umstellen auf „Präsenz“ – erfasste Zuschaltungen sperren weiter, bis die Teilnahmeart berichtigt ist. Eine
     Abstimmung, die laut Sitzungscockpit vor der ersten Zuschaltung abgeschlossen war, bleibt erfassbar; ohne
-    Zuschaltzeit gilt die Sperre ab Sitzungsbeginn. Dasselbe gilt in digitalen Sitzungen (Niedersachsen:
-    § 182 Abs. 2 Satz 6). In Präsenzsitzungen bleibt alles unverändert möglich;
+    Zuschaltzeit gilt die Sperre ab Sitzungsbeginn. Wird während einer offenen geheimen Abstimmung jemand
+    zugeschaltet, lässt sie sich nicht mehr schließen, nur abbrechen. Dasselbe gilt in digitalen Sitzungen
+    (Niedersachsen: § 182 Abs. 2 Satz 6). Präsenzsitzungen ohne Zuschaltung bleiben unverändert;
   - „nur unter Bedingungen“ und „ungeklärt“ ergeben einen Hinweis.
 
   Gilt die Regel für Wahlen nur für geheime Wahlen (`remote_elections_scope`, z. B. Niedersachsen: § 67
@@ -388,13 +398,14 @@ S = nur Sekundärquellen.
   teilnehmen, dürfen geheime Wahlen nicht durchgeführt werden.“ (§ 56b Abs. 1 Satz 8) – in der ganzen Sitzung;
   offene Wahlen (§ 56 Abs. 3: wenn kein Mitglied widerspricht) bleiben möglich. In Videokonferenzsitzungen nach
   § 56a dürfen Wahlen im Sinne von § 56 Abs. 3 nicht durchgeführt werden. Wortlaut nach dem Gesetzentwurf
-  Drs. 8/3424 (geprüft am 02.10.2026); die verkündete Fassung vor Einsatz prüfen.
+  Drs. 8/3424 (geprüft am 02.10.2026); die verkündete Fassung (Gesetz vom 16.05.2024, GVBl. LSA S. 128) stimmt
+  darin nach nicht amtlicher Textsammlung überein.
 - **Notlage:** Videokonferenz bei Naturkatastrophe, epidemischer oder pandemischer Lage oder sonstiger
   außergewöhnlicher Notsituation (§ 56a Abs. 1).
 - **Ungeklärt:** Vorgaben zur Öffentlichkeit in der verkündeten Fassung.
 - **Quellen (teils Sekundärquellen):** <https://presse.sachsen-anhalt.de/staatskanzlei/2023/12/05/sachsen-anhalt-bekommt-modernes-kommunalrecht>,
   <https://www.landesrecht.sachsen-anhalt.de/bsst/document/jlr-KomVerfGST2014V10P56a>,
-  Gesetzentwurf <https://olaf-meister.de/userspace/SA/olaf_meister/Dokumente/Land/Drs/83424lge.pdf>,
+  Gesetzentwurf (Parlamentsdokumentation des Landtags) <https://padoka.landtag.sachsen-anhalt.de/files/drs/wp8/drs/d3424lge.pdf>,
   Beispiel <https://www.raguhn-jessnitz.de/de/datei/anzeigen/id/41329,1203/hauptsatzung_r-j_11.07.2024.pdf>.
 
 ### Schleswig-Holstein
@@ -430,8 +441,10 @@ S = nur Sekundärquellen.
   Sachsen-Anhalt nur für Wahlen und geheime Abstimmungen geprüft (nicht amtliche Textsammlung bzw. Gesetzentwurf).
 - Sachsen-Anhalt: In Videokonferenzsitzungen nach § 56a sind alle Wahlen ausgeschlossen, in Hybridsitzungen nur
   geheime; das Profil kennt eine Regel je Land und sperrt offene Wahlen in digitalen Sitzungen bisher nicht.
-- Bayern verlangt für die Beschlussfähigkeit „anwesend und stimmberechtigt“ (Art. 47 Abs. 2 GO); Zugeschaltete,
-  die an Wahlen nicht teilnehmen, zählen in mandari dennoch mit (Regel der übrigen Länder).
+- Hessen: Zugeschaltete gelten als anwesend im Sinne von § 53 Abs. 1 Satz 1 HGO (Beschlussfähigkeit,
+  § 52a Abs. 1); mandari nimmt sie bei Wahlen („für Zugeschaltete ausgeschlossen“) wie in Bayern,
+  Baden-Württemberg, Brandenburg und Rheinland-Pfalz für diesen TOP aus der Beschlussfähigkeit. Eine eigene
+  Profileinstellung für die Beschlussfähigkeit fehlt noch.
 - Beschlossene Fassung des § 34a GO Schleswig-Holstein (Pflicht zur Zuschaltung ab 2027).
 - Bayern: Mehrheitserfordernis nach der Kommunalwahl 2026, Anwendung auf Ausschüsse.
 - Ausschüsse in Hessen, Rheinland-Pfalz, Sachsen, Thüringen; Fortgeltung § 182 NKomVG.

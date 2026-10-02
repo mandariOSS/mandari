@@ -40,7 +40,7 @@
         {% if barred_rule %}
         <c-ui.alert variant="error" icon="video-off" title="In dieser Sitzung unzulässig" data-testid="abstimmung-unzulaessig">
             <p>{{ barred_rule.message }}</p>
-            {% if not locked and item.vote_result != "deferred" %}
+            {% if not locked and item.vote_result == "pending" %}
             <c-ui.button type="submit" size="sm" variant="secondary" icon="calendar-clock" name="vertagen" value="1" class="mt-3" data-testid="top-vertagen">TOP vertagen</c-ui.button>
             {% endif %}
         </c-ui.alert>

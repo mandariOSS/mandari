@@ -19,8 +19,9 @@ Sitzungsleitung und Protokollführung (Recht ``conduct_meetings``) steuern die S
   (``voting_service``), deren Summen das Schließen übernimmt. Summen prüft ``voting_service.check_counts``
   gegen die stimmberechtigten Anwesenden.
 - **Sperre nach dem Landesprofil** (Issue #754): Ist eine geheime Wahl oder Abstimmung bzw. die Beratung einer
-  geheimhaltungspflichtigen Angelegenheit unzulässig, sobald jemand zugeschaltet teilnimmt (Niedersachsen),
-  lehnt das Cockpit Öffnen bzw. Aufruf mit Grund und Norm ab; **TOP vertagen** stellt „Vertagt“ fest.
+  geheimhaltungspflichtigen Angelegenheit unzulässig, sobald ein Mitglied zugeschaltet teilnimmt
+  (Niedersachsen), lehnt das Cockpit Öffnen, Schließen (Zuschaltung während der offenen Abstimmung) bzw.
+  Aufruf mit Grund und Norm ab; **TOP vertagen** stellt „Vertagt“ fest.
 
 Alle anderen mit dem Sichtrecht für Sitzungen sehen denselben Stand als Mitlese-Ansicht, nichtöffentliche
 TOPs nur mit dem NÖ-Recht (sonst nur „nichtöffentlicher Teil“). Jede Aktion läuft in einer Transaktion mit
@@ -724,6 +725,10 @@ def close_vote(
     item = _item(meeting, data.get("item"), permissions)
     if not item.vote_open:
         raise CockpitError(f"Zu TOP {item.number} läuft keine Abstimmung.")
+    # Während der offenen Abstimmung zugeschaltet (Issue #754): Die geheime Abstimmung lief mit Zugeschalteten
+    rule = participation_service.remote_vote_rule(meeting, item, at=_now())
+    if rule is not None and rule.barred:
+        raise CockpitError(f"{rule.message} Die laufende Abstimmung bitte abbrechen.")
     result = str(data.get("vote_result", ""))
     if result not in VOTE_RESULTS:
         raise CockpitError("Bitte das Ergebnis wählen: angenommen oder abgelehnt.")

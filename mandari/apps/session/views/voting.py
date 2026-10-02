@@ -134,6 +134,8 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
     def _capture(self, request, item):
         back = redirect("session:voting_capture", tenant_slug=self.session_tenant.slug, item_id=item.id)
         data = request.POST
+        # Gespeichertes Ergebnis vor den Formularwerten: Vertagen nur ohne festgestelltes Ergebnis (wie im Cockpit)
+        stored_result = item.vote_result
 
         # Art, Wahl und Ergebnis nur übernehmen, wenn sie hier geändert wurden – sonst gilt der aktuelle Stand,
         # etwa ein inzwischen im Sitzungscockpit festgestelltes Ergebnis (Issue #140)
@@ -157,6 +159,17 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
             # In dieser Sitzung unzulässig (Issue #754): weder Summen noch Stimmen, nur die Vertagung
             if item.vote_result != "deferred":
                 messages.error(request, sperre.message)
+                return back
+            if stored_result == "deferred":
+                messages.info(request, f"TOP {item.number} ist bereits vertagt.")
+                return back
+            if stored_result != "pending":
+                label = dict(item._meta.get_field("vote_result").choices).get(stored_result, stored_result)
+                messages.error(
+                    request,
+                    f"Für TOP {item.number} ist bereits ein Ergebnis festgestellt ({label}) – vertagen lässt sich "
+                    "nur ein TOP ohne Ergebnis.",
+                )
                 return back
             return self._defer(request, item, back)
         votes_by_person = {}

@@ -12,11 +12,13 @@ sehen und hören und gesehen und gehört werden. Die Anwesenheit hält dafür fe
   zählt die Person nicht zur Beschlussfähigkeit und stimmt nicht ab; nach dem Ende wieder.
 - **Landesprofil** (Wahlen, geheime Abstimmungen, geheimhaltungspflichtige Beratungen; Issue #754):
   „für Zugeschaltete ausgeschlossen“ (``excluded``, z. B. Bayern, Hessen) nimmt nur die Zugeschalteten aus
-  der Abstimmung; „in der Sitzung unzulässig“ (``meeting``, z. B. § 64 Abs. 3 Satz 6 NKomVG) sperrt den
-  Vorgang für die ganze Sitzung ab der ersten Zuschaltung – die Zugeschalteten abzuschalten genügt dort
-  nicht, der TOP wird vertagt. „Nur unter Bedingungen“ und „ungeklärt“ ergeben einen Hinweis. Zur
-  Beschlussfähigkeit zählen Zugeschaltete immer (außer während einer Störung). Muss die Sitzungsleitung im
-  Raum sein (``chair_present``), weist die Anwesenheit auf einen zugeschalteten Vorsitz hin.
+  der Abstimmung und für diesen TOP aus der Beschlussfähigkeit; „in der Sitzung unzulässig“ (``meeting``,
+  z. B. § 64 Abs. 3 Satz 6 NKomVG) sperrt den Vorgang für die ganze Sitzung ab der ersten Zuschaltung – die
+  Zugeschalteten abzuschalten genügt dort nicht, der TOP wird vertagt; zur Beschlussfähigkeit zählen sie dort
+  weiter (sie gelten als anwesend, Satz 5). Maßgeblich ist die Zuschaltung eines Gremienmitglieds
+  (:func:`first_connection`), nicht die eines Gastes oder externen Sachverständigen (Anhörung per Video) und
+  nicht das Sitzungsformat. „Nur unter Bedingungen“ und „ungeklärt“ ergeben einen Hinweis. Muss die
+  Sitzungsleitung im Raum sein (``chair_present``), weist die Anwesenheit auf einen zugeschalteten Vorsitz hin.
 
 Niederschrift, Teilnehmerverzeichnis und Protokoll-PDF nennen die Teilnahmeart je Person mit Zeiten,
 Unterbrechungen (gegangen und zurückgekommen, Issue #140) und Störungen (``participation_note``); der freie
@@ -32,6 +34,7 @@ from typing import Any
 from django.utils import timezone
 
 from apps.session.models import SessionAttendance, SessionMeeting, SessionStateProfile
+from apps.session.services import joint_meeting_service
 
 REMOTE = SessionAttendance.PARTICIPATION_REMOTE
 IN_PERSON = SessionAttendance.PARTICIPATION_IN_PERSON
@@ -43,6 +46,14 @@ MEETING = SessionStateProfile.REMOTE_VOTE_MEETING
 _STRICTNESS = {"allowed": 0, "unclear": 1, "conditional": 2, EXCLUDED: 3, MEETING: 4}
 #: Anwesenheitsstatus, mit denen eine zugeschaltete Person an der Sitzung teilnimmt oder teilgenommen hat
 PARTICIPATED_STATUSES = ("present", "joined_late", "left_early")
+#: Funktionen der Gremienmitglieder in der Anwesenheit: Nur die Zuschaltung von Mitgliedern sperrt („Abgeordnete“,
+#: § 64 Abs. 3 Satz 6 NKomVG; „Mitglieder“, § 56b Abs. 1 Satz 8 KVG LSA), nicht die eines Gastes oder externen
+#: Sachverständigen, etwa bei einer Anhörung per Video (§ 64 Abs. 7 NKomVG)
+MEMBER_ROLES = ("member", "chair", "deputy_chair")
+#: Funktionen, die nie als Gremienmitglied zählen. „Sachverständige/r“ (``expert``) ist offen: Beratende
+#: Mitglieder und sachkundige Bürger der Besetzung erscheinen in der Anwesenheit ebenfalls so
+#: (``attendance_service._ROLE_MAP``) – sie zählen, wenn sie eine aktive Mitgliedschaft im Gremium haben.
+NON_MEMBER_ROLES = ("guest", "recorder")
 #: Erste Zuschaltung ohne bekannte Uhrzeit: Die Sperre gilt ab Sitzungsbeginn (sicher als Standard)
 FROM_START = time.min
 
@@ -137,9 +148,9 @@ class RemoteVoteRule:
     #: Gegenstand als Satzanfang („Geheime Wahlen“) für die Sperre in der Sitzung
     title: str = ""
     norm: str = ""
-    #: In der Sitzung unzulässig und schon jemand zugeschaltet: Der Vorgang ist gesperrt (Issue #754)
+    #: In der Sitzung unzulässig und schon ein Mitglied zugeschaltet: Der Vorgang ist gesperrt (Issue #754)
     barred: bool = False
-    #: erste Zuschaltung (``FROM_START``: ohne bekannte Uhrzeit), ``None``: niemand zugeschaltet
+    #: erste Zuschaltung eines Mitglieds (``FROM_START``: ohne bekannte Uhrzeit), ``None``: kein Mitglied zugeschaltet
     since: time | None = None
 
     @property
@@ -165,7 +176,7 @@ class RemoteVoteRule:
             )
             if not self.barred:
                 if self.since is None:
-                    return f"{text} Bisher nimmt niemand zugeschaltet teil."
+                    return f"{text} Bisher nimmt kein Mitglied zugeschaltet teil."
                 return f"{text} Die Abstimmung lag vor der ersten Zuschaltung ({self.since:%H:%M} Uhr)."
             seit = "" if self.since in (None, FROM_START) else f" seit {self.since:%H:%M} Uhr"
             return (
@@ -192,23 +203,42 @@ class RemoteVoteRule:
 
 def first_connection(meeting: Any, attendances: list[Any] | None = None) -> time | None:
     """
-    Uhrzeit der ersten Zuschaltung in der Sitzung (Issue #754); ``None``, wenn niemand zugeschaltet teilnimmt.
+    Uhrzeit der ersten Zuschaltung eines Gremienmitglieds (Issue #754); ``None``, wenn kein Mitglied zugeschaltet
+    teilnimmt.
 
-    Maßgeblich ist, ob jemand zugeschaltet teilnimmt oder teilgenommen hat (auch vorzeitig getrennt), nicht schon
-    das Format „hybrid“. Fehlt eine Zuschaltzeit oder reicht die Sitzung über Mitternacht, gilt der
-    Sitzungsbeginn (``FROM_START``). ``attendances``: bereits geladene Anwesenheitszeilen.
+    Maßgeblich ist, ob ein Mitglied zugeschaltet teilnimmt oder teilgenommen hat (auch vorzeitig getrennt), nicht
+    schon das Format „hybrid“ – und auch nicht das Format „Präsenz“: Eine erfasste Zuschaltung bleibt maßgeblich,
+    wenn das Format nachträglich umgestellt wird. Mitglied ist, wer in der Anwesenheit als Mitglied, Vorsitz oder
+    stellvertretender Vorsitz geführt wird (``MEMBER_ROLES``) oder – als „Sachverständige/r“ geführt – eine aktive
+    Mitgliedschaft in einem beteiligten Gremium hat (beratende Mitglieder, sachkundige Bürger). Zugeschaltete
+    Gäste, externe Sachverständige und Protokollführung zählen nicht. Fehlt eine Zuschaltzeit oder reicht die
+    Sitzung über Mitternacht, gilt der Sitzungsbeginn (``FROM_START``). ``attendances``: bereits geladene
+    Anwesenheitszeilen.
     """
-    if not remote_allowed(meeting):
-        return None
-    arrivals: list[time | None]
+    rows: list[tuple[str, Any, time | None]]
     if attendances is None:
-        arrivals = list(
-            meeting.attendances.filter(participation_mode=REMOTE, status__in=PARTICIPATED_STATUSES).values_list(
-                "arrival_time", flat=True
-            )
+        rows = list(
+            meeting.attendances.filter(participation_mode=REMOTE, status__in=PARTICIPATED_STATUSES)
+            .exclude(role__in=NON_MEMBER_ROLES)
+            .values_list("role", "person_id", "arrival_time")
         )
     else:
-        arrivals = [a.arrival_time for a in attendances if a.is_remote and a.status in PARTICIPATED_STATUSES]
+        rows = [
+            (a.role, a.person_id, a.arrival_time)
+            for a in attendances
+            if a.is_remote and a.status in PARTICIPATED_STATUSES and a.role not in NON_MEMBER_ROLES
+        ]
+    unclear = {person_id for role, person_id, _arrival in rows if role not in MEMBER_ROLES}
+    members: set[Any] = set()
+    if unclear:
+        # Nur für als „Sachverständige/r“ Geführte: aktive Mitgliedschaft (nicht als Gast) in einem beteiligten Gremium
+        members = set(
+            joint_meeting_service.active_memberships(meeting)
+            .filter(person_id__in=unclear)
+            .exclude(role="guest")
+            .values_list("person_id", flat=True)
+        )
+    arrivals = [arrival for role, person_id, arrival in rows if role in MEMBER_ROLES or person_id in members]
     if not arrivals:
         return None
     known = [arrival for arrival in arrivals if arrival is not None]
@@ -246,19 +276,22 @@ def remote_vote_rule(
     Regel für Zugeschaltete bei einer Abstimmung bzw. Beratung: Wahlen (``is_election``), geheime Abstimmungen und
     geheimhaltungspflichtige Angelegenheiten (``requires_secrecy``).
 
-    ``None``, wenn nichts davon vorliegt, niemand zugeschaltet sein kann (Präsenzsitzung) oder der Mandant kein
-    Landesprofil hat. Gilt die Regel für Wahlen nur für geheime Wahlen (``remote_elections_scope``), bleiben offene
+    ``None``, wenn nichts davon vorliegt, niemand zugeschaltet sein kann (Präsenzsitzung ohne erfasste
+    Zuschaltung) oder der Mandant kein Landesprofil hat. Gilt die Regel für Wahlen nur für geheime Wahlen (``remote_elections_scope``), bleiben offene
     Wahlen unberührt. Treffen mehrere Regeln zu, gilt die strengste. ``voting_method``/``is_election`` überschreiben
     die gespeicherten Werte des TOP (Formular vor dem Speichern).
 
-    Bei „in der Sitzung unzulässig“ ist der Vorgang gesperrt (``barred``), sobald jemand zugeschaltet teilnimmt –
-    ab der ersten Zuschaltung bis zum Sitzungsende. Eine Abstimmung, die laut Sitzungscockpit vorher abgeschlossen
-    war, bleibt zulässig; ohne bekannte Zeit gilt die Sperre. ``at``: Zeitpunkt des Vorgangs (sonst
-    :func:`vote_moment`).
+    Bei „in der Sitzung unzulässig“ ist der Vorgang gesperrt (``barred``), sobald ein Mitglied zugeschaltet
+    teilnimmt – ab der ersten Zuschaltung bis zum Sitzungsende (:func:`first_connection`). Das gilt auch, wenn die
+    Sitzung inzwischen als Präsenzsitzung geführt wird, aber Zuschaltungen erfasst sind: Das Umstellen des Formats
+    hebt die Sperre nicht auf. Eine Abstimmung, die laut Sitzungscockpit vorher abgeschlossen war, bleibt
+    zulässig; ohne bekannte Zeit gilt die Sperre. ``at``: Zeitpunkt des Vorgangs (sonst :func:`vote_moment`).
     """
     method = voting_method if voting_method is not None else getattr(item, "voting_method", "")
     election = is_election if is_election is not None else bool(getattr(item, "is_election", False))
-    if not remote_allowed(meeting):
+    secrecy = bool(getattr(item, "requires_secrecy", False))
+    if not (election or method == "secret" or secrecy):
+        # Gewöhnlicher TOP: keine Regel, ohne das Landesprofil zu laden
         return None
     profile = meeting.tenant.state_profile
     if profile is None:
@@ -273,7 +306,7 @@ def remote_vote_rule(
             rules.append(("Wahlen", "Wahlen", profile.remote_elections))
     if method == "secret":
         rules.append(("geheimen Abstimmungen", "geheime Abstimmungen", profile.remote_secret_votes))
-    if getattr(item, "requires_secrecy", False):
+    if secrecy:
         rules.append(
             (
                 "der Beratung geheimhaltungspflichtiger Angelegenheiten",
@@ -287,6 +320,9 @@ def remote_vote_rule(
     chosen = [(dative, nominative) for dative, nominative, value in rules if value == rule]
     heading = " und ".join(nominative for _dative, nominative in chosen)
     since = first_connection(meeting, attendances) if rule == MEETING else None
+    if not remote_allowed(meeting) and since is None:
+        # Präsenzsitzung: nur eine erfasste Zuschaltung zählt (Sperre in der Sitzung), sonst keine Regel
+        return None
     moment = at if at is not None else vote_moment(item)
     barred = since is not None and (since == FROM_START or moment is None or moment >= since)
     return RemoteVoteRule(

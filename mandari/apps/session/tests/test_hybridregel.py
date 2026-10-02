@@ -6,9 +6,13 @@ Nach § 64 Abs. 3 Satz 6 NKomVG dürfen in einer Sitzung, an der Abgeordnete zug
 Wahlen, geheime Abstimmungen und Beratungen geheimhaltungspflichtiger Angelegenheiten nicht durchgeführt
 werden – in der ganzen Sitzung, nicht nur für die Zugeschalteten (für Videositzungen § 182 Abs. 2 Satz 6).
 
-- Sperre ab der ersten Zuschaltung bis zum Sitzungsende, auch in digitalen Sitzungen; Präsenz unverändert
-- Abstimmungserfassung und Sitzungscockpit nennen Grund und Norm und bieten die Vertagung an
-- Zugeschaltete zählen bei der Beschlussfähigkeit immer; offene Wahlen erfassen ihre Stimmen
+- Sperre ab der ersten Zuschaltung eines Gremienmitglieds bis zum Sitzungsende, auch in digitalen Sitzungen und
+  nach dem Umstellen auf Präsenz; zugeschaltete Gäste und externe Sachverständige sperren nicht
+- Abstimmungserfassung und Sitzungscockpit nennen Grund und Norm und bieten die Vertagung an (nur ohne Ergebnis)
+- Zugeschaltete zählen bei einer Sperre in der Sitzung zur Beschlussfähigkeit; schließt das Landesprofil nur sie
+  aus (Bayern, Baden-Württemberg, Brandenburg, Rheinland-Pfalz), zählen sie für den TOP wie bisher nicht
+- Offene Wahlen erfassen die Stimmen der Zugeschalteten
+- Geheimhaltungspflichtige TOPs nur nichtöffentlich, beim Anlegen und Bearbeiten
 - Sachsen-Anhalt und Saarland nach dem Wortlaut; Brandenburg schließt nur die Zugeschalteten aus
 - Datenmigration übernimmt die Profile; ein älteres Image legt weiter TOPs und Profile an
 """
@@ -28,6 +32,7 @@ from apps.session.models import (
     SessionAttendance,
     SessionAuditLog,
     SessionMeeting,
+    SessionPerson,
     SessionStateProfile,
 )
 from apps.session.services import (
@@ -141,15 +146,32 @@ def test_geheime_wahl_gesperrt_offene_wahl_erfasst_die_zugeschalteten() -> None:
     assert participation_service.remote_vote_rule(w.sitzung, top) is None
 
 
-def test_beschlussfaehigkeit_zaehlt_zugeschaltete_bei_jedem_top() -> None:
+def test_beschlussfaehigkeit_zaehlt_zugeschaltete_bei_der_sperre_in_der_sitzung() -> None:
     w = _sitzung(welt(status="draft"))
     _zuschalten(w)
     top = _top(w, voting_method="secret", is_election=True)
-    # Vier Stimmberechtigte (Fink entschuldigt): nötig 3, anwesend 3, davon 1 zugeschaltet
+    # Vier Stimmberechtigte (Fink entschuldigt): nötig 3, anwesend 3, davon 1 zugeschaltet (§ 64 Abs. 3 Satz 5)
     status = attendance_service.quorum_status(w.sitzung, top)
     assert (status["voting_present"], status["remote_present"], status["met"]) == (3, 1, True)
     assert status["remote_rule"].barred
-    assert "remote_excluded" not in status
+    assert status["remote_excluded"] == []
+
+
+@pytest.mark.parametrize(
+    ("profil", "geheim"),
+    [("BY", False), ("BW", False), ("RP", False), ("BB", True)],
+)
+def test_beschlussfaehigkeit_ohne_zugeschaltete_wo_das_landesprofil_nur_sie_ausschliesst(
+    profil: str, geheim: bool
+) -> None:
+    # Bayern (Art. 47 Abs. 2 GO), Baden-Württemberg (§ 37 Abs. 2 GemO): anwesend und stimmberechtigt;
+    # Brandenburg und Rheinland-Pfalz: Teilnahme der Zugeschalteten an diesem TOP ausgeschlossen – unverändert
+    w = _sitzung(welt(status="draft"), profil)
+    _zuschalten(w)
+    top = _top(w, voting_method="secret" if geheim else "summary", is_election=True)
+    status = attendance_service.quorum_status(w.sitzung, top)
+    assert status["remote_rule"].excluded and not status["remote_rule"].barred
+    assert (status["voting_present"], status["met"], status["remote_excluded"]) == (2, False, ["P Buche"])
 
 
 def test_videositzung_nach_paragraf_182_ebenso_gesperrt() -> None:
@@ -181,11 +203,58 @@ def test_hybride_sitzung_ohne_zuschaltung_bleibt_offen_mit_hinweis() -> None:
     erfassung = _erfassung(w)
 
     seite = erfassung.get(_url(w, top)).content.decode()
-    assert "Bisher nimmt niemand zugeschaltet teil." in seite
+    assert "Bisher nimmt kein Mitglied zugeschaltet teil." in seite
     daten = {"voting_method": "secret", "votes_yes": "2", "votes_no": "0", "votes_abstain": "0"}
     erfassung.post(_url(w, top), {**daten, "vote_result": "approved"})
     top.refresh_from_db()
     assert (top.voting_method, top.vote_result) == ("secret", "approved")
+
+
+def test_nur_die_zuschaltung_von_gremienmitgliedern_sperrt() -> None:
+    # „Abgeordnete“ (§ 64 Abs. 3 Satz 6 NKomVG): Eine Anhörung per Video (§ 64 Abs. 7) sperrt nicht
+    w = _sitzung(welt(status="draft"))
+    gutachterin = SessionPerson.objects.create(tenant=w.tenant, given_name="P", family_name="Gutachterin")
+    SessionAttendance.objects.create(meeting=w.sitzung, person=gutachterin, status="present", role="expert")
+    top = _top(w, voting_method="secret", is_election=True)
+
+    def gesperrt() -> tuple[bool, bool]:
+        # Abfragepfad (ohne geladene Zeilen) und Pfad mit Anwesenheitszeilen (Erfassung, Beschlussfähigkeit)
+        beurteilt = voting_service.eligibility(w.sitzung, top)
+        return _gesperrt(w, top), beurteilt.remote_rule is not None and beurteilt.remote_rule.barred
+
+    _zuschalten(w, "Esche")  # Gast
+    _zuschalten(w, "Gutachterin")  # Sachverständige ohne Mitgliedschaft
+    assert gesperrt() == (False, False)
+    hinweis = participation_service.remote_vote_rule(w.sitzung, top)
+    assert hinweis is not None and "Bisher nimmt kein Mitglied zugeschaltet teil." in hinweis.message
+
+    # Beratendes Mitglied der Besetzung (in der Anwesenheit „Sachverständige/r“): Abgeordnete/r, sperrt
+    _zuschalten(w, "Dachs")
+    assert gesperrt() == (True, True)
+    _zuschalten(w, "Dachs", status="absent")
+    assert gesperrt() == (False, False)
+
+    # Stimmberechtigtes Mitglied: sperrt
+    _zuschalten(w, "Buche")
+    assert gesperrt() == (True, True)
+
+
+def test_umstellen_auf_praesenz_hebt_die_sperre_nicht_auf() -> None:
+    w = _sitzung(welt(status="draft"))
+    zeile = _zuschalten(w)
+    top = _top(w, voting_method="secret")
+    assert _gesperrt(w, top)
+
+    SessionMeeting.objects.filter(pk=w.sitzung.pk).update(format=SessionMeeting.FORMAT_PRESENCE)
+    w.sitzung.refresh_from_db()
+    assert _gesperrt(w, top)
+    inhalt = _erfassung(w).post(_url(w, top), {"voting_method": "secret", "votes_yes": "2"}, follow=True)
+    assert "In dieser Sitzung nehmen Mitglieder zugeschaltet teil" in inhalt.content.decode()
+
+    # Erst die berichtigte Teilnahmeart hebt sie auf; ohne Zuschaltung gibt es in Präsenz keine Regel
+    zeile.participation_mode = SessionAttendance.PARTICIPATION_IN_PERSON
+    zeile.save()
+    assert participation_service.remote_vote_rule(w.sitzung, top) is None
 
 
 def test_beendete_zuschaltung_sperrt_bis_sitzungsende() -> None:
@@ -235,6 +304,20 @@ def test_vertagen_statt_abstimmen() -> None:
     assert 'data-testid="top-vertagen"' not in erfassung.get(_url(w, top)).content.decode()
 
 
+def test_erfassung_vertagt_keinen_top_mit_festgestelltem_ergebnis() -> None:
+    # Wie im Cockpit: Ein festgestelltes Ergebnis mit Summen wird nicht stillschweigend zu „Vertagt“
+    w = _sitzung(welt(status="draft"))
+    _zuschalten(w)
+    top = _top(w, voting_method="secret", vote_result="approved", votes_yes=2)
+    erfassung = _erfassung(w)
+    assert 'data-testid="top-vertagen"' not in erfassung.get(_url(w, top)).content.decode()
+
+    antwort = erfassung.post(_url(w, top), {"vertagen": "1", "voting_method": "secret"}, follow=True)
+    assert "bereits ein Ergebnis festgestellt (Angenommen)" in antwort.content.decode()
+    top.refresh_from_db()
+    assert (top.vote_result, top.votes_yes) == ("approved", 2)
+
+
 def test_niederschrift_uebernimmt_kein_ergebnis_einer_gesperrten_abstimmung() -> None:
     w = _sitzung(welt(status="draft"))
     _zuschalten(w)
@@ -272,23 +355,55 @@ def test_geheimhaltungspflichtiger_top_mit_zugeschalteten_nicht_beraten() -> Non
     top.refresh_from_db()
     assert top.start_time is None
 
-    # In der Präsenzsitzung kein Thema
+    # In der Präsenzsitzung ohne Zuschaltung kein Thema
     SessionMeeting.objects.filter(pk=w.sitzung.pk).update(format=SessionMeeting.FORMAT_PRESENCE)
     w.sitzung.refresh_from_db()
+    SessionAttendance.objects.filter(meeting=w.sitzung).update(
+        participation_mode=SessionAttendance.PARTICIPATION_IN_PERSON
+    )
     cockpit_service.perform(w.sitzung, "top_aufrufen", {"item": str(top.pk)}, permissions=STEUERN)
     top.refresh_from_db()
     assert top.start_time is not None
 
 
-def test_merkmal_geheimhaltungspflichtig_in_der_top_bearbeitung() -> None:
+def test_merkmal_geheimhaltungspflichtig_in_der_top_bearbeitung_nur_nichtoeffentlich() -> None:
     w = _sitzung(welt(status="draft"))
     top = _top(w)
     bearbeitung = client(nutzer(w.tenant, "tagesordnung", "view_meetings", "edit_meetings", "view_non_public_meetings"))
     url = f"{base(w)}/agenda/{top.pk}/edit/"
     assert 'name="requires_secrecy"' in bearbeitung.get(url).content.decode()
-    bearbeitung.post(url, {"name": top.name, "is_public": "on", "requires_secrecy": "on"})
+
+    # Öffentlich und geheimhaltungspflichtig: abgelehnt (sonst Betreff, Beschluss und Niederschrift öffentlich)
+    antwort = bearbeitung.post(url, {"name": top.name, "is_public": "on", "requires_secrecy": "on"})
+    assert "nur nichtöffentlich beraten werden" in antwort.content.decode()
     top.refresh_from_db()
-    assert top.requires_secrecy and top.is_public  # getrennt von öffentlich/nichtöffentlich
+    assert not top.requires_secrecy and top.is_public
+
+    # Nichtöffentlich: gespeichert, getrennt von nichtöffentlich
+    bearbeitung.post(url, {"name": top.name, "requires_secrecy": "on"})
+    top.refresh_from_db()
+    assert top.requires_secrecy and not top.is_public
+
+    # Ein TOP mit geheimhaltungspflichtigem Unterpunkt wird nicht öffentlich
+    oberpunkt = SessionAgendaItem.objects.create(meeting=w.sitzung, number="N2", order=4, name="Ober", is_public=False)
+    SessionAgendaItem.objects.filter(pk=top.pk).update(parent=oberpunkt)
+    antwort = bearbeitung.post(f"{base(w)}/agenda/{oberpunkt.pk}/edit/", {"name": "Ober", "is_public": "on"})
+    assert "ist geheimhaltungspflichtig" in antwort.content.decode()
+    oberpunkt.refresh_from_db()
+    assert not oberpunkt.is_public
+
+
+def test_merkmal_geheimhaltungspflichtig_beim_anlegen() -> None:
+    w = _sitzung(welt(status="draft"))
+    anlage = client(nutzer(w.tenant, "anlage", "view_meetings", "edit_meetings", "view_non_public_meetings"))
+    url = f"{base(w)}/meetings/{w.sitzung.pk}/agenda/add/"
+    assert 'name="requires_secrecy"' in anlage.get(url).content.decode()
+
+    anlage.post(url, {"name": "Öffentlich und geheim", "is_public": "on", "requires_secrecy": "on"})
+    assert not SessionAgendaItem.objects.filter(meeting=w.sitzung, name="Öffentlich und geheim").exists()
+    anlage.post(url, {"name": "Geheimhaltungspflichtig", "requires_secrecy": "on"})
+    neu = SessionAgendaItem.objects.get(meeting=w.sitzung, name="Geheimhaltungspflichtig")
+    assert neu.requires_secrecy and not neu.is_public
 
 
 def test_merkmal_nach_genehmigung_gesperrt() -> None:
@@ -331,6 +446,29 @@ def test_cockpit_lehnt_geheime_abstimmung_ab_und_vertagt() -> None:
     assert top.vote_result == "deferred" and top.end_time is not None
     with pytest.raises(CockpitError, match="bereits ein Ergebnis"):
         cockpit_service.perform(w.sitzung, "top_vertagen", {"item": str(top.pk)}, permissions=STEUERN)
+
+
+def test_cockpit_schliesst_keine_geheime_abstimmung_nach_zuschaltung_waehrend_sie_laeuft() -> None:
+    w = _sitzung(welt(status="draft"))
+    top = _top(w)
+    cockpit_service.perform(w.sitzung, "top_aufrufen", {"item": str(top.pk)}, permissions=STEUERN)
+    cockpit_service.perform(
+        w.sitzung, "abstimmung_oeffnen", {"item": str(top.pk), "voting_method": "secret"}, permissions=STEUERN
+    )
+
+    # Während der offenen geheimen Abstimmung wird ein Mitglied zugeschaltet: Schließen speichert kein Ergebnis
+    _zuschalten(w, von=participation_service.now())
+    schliessen = {"item": str(top.pk), "vote_result": "approved", "votes_yes": "2", "votes_no": "0"}
+    with pytest.raises(CockpitError, match="Die laufende Abstimmung bitte abbrechen"):
+        cockpit_service.perform(w.sitzung, "abstimmung_schliessen", schliessen, permissions=STEUERN)
+    top.refresh_from_db()
+    assert (top.vote_result, top.votes_yes, top.vote_closed_at) == ("pending", 0, None)
+
+    # Abbrechen und vertagen bleibt möglich
+    cockpit_service.perform(w.sitzung, "abstimmung_abbrechen", {"item": str(top.pk)}, permissions=STEUERN)
+    cockpit_service.perform(w.sitzung, "top_vertagen", {"item": str(top.pk)}, permissions=STEUERN)
+    top.refresh_from_db()
+    assert top.vote_result == "deferred"
 
 
 # =============================================================================

@@ -58,6 +58,13 @@
             </div>
         </div>
 
+        <!-- Geheimhaltungspflicht (Issue #754): nur im nichtöffentlichen Teil -->
+        <div class="flex items-center gap-2">
+            <input type="checkbox" name="requires_secrecy" id="id_requires_secrecy"
+                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+            <label for="id_requires_secrecy" class="text-xs font-medium text-gray-600 dark:text-gray-400">Geheimhaltungspflichtig (nur nichtöffentlich)</label>
+        </div>
+
         <div class="flex items-center justify-end gap-2">
             <button type="button"
                     data-action="clear-target" data-target="#agenda-form"

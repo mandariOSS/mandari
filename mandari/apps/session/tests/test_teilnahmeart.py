@@ -380,9 +380,9 @@ def test_wahl_ohne_zugeschaltete_wo_das_landesprofil_sie_ausschliesst() -> None:
     # Summen höchstens so viele wie Stimmberechtigte im Raum
     assert voting_service.check_counts(top, 3, 0, 0, assessed=beurteilt).exceeded
     assert not voting_service.check_counts(top, 2, 0, 0, assessed=beurteilt).exceeded
-    # Beschlussfähigkeit: Zugeschaltete gelten als anwesend und zählen auch hier mit (Issue #754)
+    # Beschlussfähigkeit für diese Wahl ohne Zugeschaltete (anwesend und stimmberechtigt, Art. 47 Abs. 2 GO)
     status = attendance_service.quorum_status(w.sitzung, top)
-    assert (status["voting_present"], status["remote_present"], status["met"]) == (3, 1, True)
+    assert (status["voting_present"], status["met"], status["remote_excluded"]) == (2, False, ["P Buche"])
     # Ohne Wahl stimmen Zugeschaltete mit
     top.is_election = False
     assert len(voting_service.eligibility(w.sitzung, top).voting) == 3
