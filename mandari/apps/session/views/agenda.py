@@ -143,11 +143,11 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
 
 
 class AgendaItemUpdateView(SessionViewMixin, UpdateView):
-    """TOP bearbeiten (Betreff, Ö/NÖ, Vorlagenzuordnung, Unterpunkt-Zuordnung)."""
+    """TOP bearbeiten (Betreff, Ö/NÖ, Vorlagenzuordnung, Unterpunkt-Zuordnung, Geheimhaltungspflicht #754)."""
 
     model = SessionAgendaItem
     template_name = "session/meetings/agenda_form.html"
-    fields = ["name", "is_public", "paper", "parent"]
+    fields = ["name", "is_public", "paper", "parent", "requires_secrecy"]
     pk_url_kwarg = "item_id"
     permission_required = "edit_meetings"
 

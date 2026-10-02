@@ -63,6 +63,8 @@ AGENDA_ITEM_LOCKED_FIELDS = (
     "voting_method",
     # Wahl (Issue #139): bestimmt Stimmrecht Zugeschalteter und Beschlussfähigkeit für den TOP
     "is_election",
+    # Geheimhaltungspflicht (Issue #754): bestimmt, ob die Beratung mit Zugeschalteten zulässig war
+    "requires_secrecy",
     # Zeiten aus dem Sitzungscockpit (Issue #140): stehen in der Niederschrift
     "start_time",
     "end_time",

@@ -50,8 +50,12 @@
             <div><dt class="font-medium text-gray-900 dark:text-white">Digital: Ausschüsse</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_digital_committees_display }}</dd></div>
             <div><dt class="font-medium text-gray-900 dark:text-white">Voraussetzung im Regelbetrieb</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_legal_basis_display }}{% if profile.norm_regular %} ({{ profile.norm_regular }}){% endif %}</dd></div>
             <div><dt class="font-medium text-gray-900 dark:text-white">Vorsitz</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_chair_present_display }}</dd></div>
-            <div><dt class="font-medium text-gray-900 dark:text-white">Wahlen für Zugeschaltete</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_remote_elections_display }}</dd></div>
-            <div><dt class="font-medium text-gray-900 dark:text-white">Geheime Abstimmungen für Zugeschaltete</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_remote_secret_votes_display }}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">{% if profile.remote_elections_scope == "secret_only" %}Geheime Wahlen{% else %}Wahlen{% endif %} mit Zugeschalteten</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_remote_elections_display }}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">Geheime Abstimmungen mit Zugeschalteten</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_remote_secret_votes_display }}</dd></div>
+            <div><dt class="font-medium text-gray-900 dark:text-white">Geheimhaltungspflichtige Angelegenheiten</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.get_remote_secrecy_matters_display }}</dd></div>
+            {% if profile.remote_vote_norm %}
+            <div><dt class="font-medium text-gray-900 dark:text-white">Norm zu Wahlen und geheimen Abstimmungen</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.remote_vote_norm }}</dd></div>
+            {% endif %}
             {% if profile.excluded_committee_kinds %}
             <div class="sm:col-span-2"><dt class="font-medium text-gray-900 dark:text-white">Ausgenommene Ausschüsse</dt><dd class="text-gray-600 dark:text-gray-400">{{ profile.excluded_committee_kind_labels|join:", " }} – {{ profile.get_excluded_committee_rule_display }}</dd></div>
             {% endif %}

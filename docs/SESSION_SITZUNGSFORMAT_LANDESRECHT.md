@@ -2,7 +2,9 @@
 
 > **Keine Rechtsberatung.** Diese Übersicht fasst die öffentlich zugängliche Rechtslage zu hybriden und
 > digitalen Gremiensitzungen in den 16 Ländern zusammen. **Stand der Recherche: 30.09.2026.** Maßgeblich
-> sind der amtliche Gesetzestext, die Hauptsatzung und die Geschäftsordnung der Kommune. „Ungeklärt“
+> sind der amtliche Gesetzestext, die Hauptsatzung und die Geschäftsordnung der Kommune. Am Wortlaut nachgeprüft
+> am 02.10.2026 (Issue #754): Wahlen und geheime Abstimmungen in Brandenburg, Hessen, Niedersachsen,
+> Rheinland-Pfalz, Saarland und Sachsen-Anhalt. „Ungeklärt“
 > heißt: Die Recherche hat keine gesicherte Aussage ergeben – nicht, dass das Format unzulässig ist.
 
 Issue: #138 (Grundlage für #139 Teilnahmeart, #140 Cockpit, #141 Selbst-Abstimmung, #142 Video-Adapter,
@@ -97,17 +99,36 @@ Sitzung (`SessionAttendance`, `apps/session/services/participation_service.py`) 
   dem Beginn gilt als Störung über Mitternacht und ist nur in einer Sitzung möglich, die bis in den Folgetag
   reicht (tatsächliches bzw. geplantes Sitzungsende; „Jetzt beenden“ nach Mitternacht geht immer). Sonst und
   bei einer nicht lesbaren Uhrzeit bleibt der bisherige Stand mit einer Fehlermeldung unverändert.
-- **Beschlussfähigkeit:** Zugeschaltete zählen wie Anwesende im Raum, während einer andauernden Störung aber
-  nicht („nicht erreichbar“); nach dem Ende zählen sie wieder. Die Anzeige nennt, wie viele zugeschaltet
-  sind und wer wegen einer Störung nicht mitgezählt wird. Gäste und Protokollführung zählen nie – auch nicht
-  mit gesetztem Stimmrecht (wie bei der Stimmabgabe).
-- **Wahlen und geheime Abstimmungen:** Die Abstimmungserfassung kennt die Angabe „Wahl“ je TOP. Schließt das
-  Landesprofil Zugeschaltete aus (`remote_elections` bzw. `remote_secret_votes` = ausgeschlossen, z. B.
-  Niedersachsen, Rheinland-Pfalz), stimmen sie bei dieser Abstimmung nicht ab, die Summen dürfen die Zahl der
-  Stimmberechtigten im Raum nicht übersteigen und die Beschlussfähigkeit für den TOP zählt sie nicht. „Nur
-  unter Bedingungen“ und „ungeklärt“ ergeben einen Hinweis. Während einer Störung ist keine Stimmabgabe
-  möglich. Mit der Genehmigung der Niederschrift ist die Angabe „Wahl“ gesperrt wie Ergebnis und
-  Abstimmungsart (`protocol_lock`); eine Berichtigung wertet Stimmen nach der gespeicherten Angabe.
+- **Beschlussfähigkeit:** Zugeschaltete zählen wie Anwesende im Raum – bei jedem TOP, auch bei Wahlen und
+  geheimen Abstimmungen (sie gelten als anwesend, z. B. § 64 Abs. 3 Satz 5 NKomVG, § 52a Abs. 1 HGO) –,
+  während einer andauernden Störung aber nicht („nicht erreichbar“); nach dem Ende zählen sie wieder. Die
+  Anzeige nennt, wie viele zugeschaltet sind und wer wegen einer Störung nicht mitgezählt wird. Gäste und
+  Protokollführung zählen nie – auch nicht mit gesetztem Stimmrecht (wie bei der Stimmabgabe).
+- **Wahlen, geheime Abstimmungen, geheimhaltungspflichtige Angelegenheiten** (Issue #754): Die
+  Abstimmungserfassung kennt die Angabe „Wahl“ je TOP, die TOP-Bearbeitung das Merkmal
+  „geheimhaltungspflichtig“ (Geheimhaltung gesetzlich vorgeschrieben oder behördlich angeordnet, z. B. § 6
+  Abs. 3 Satz 1 NKomVG – nicht dasselbe wie nichtöffentlich). Das Landesprofil regelt je Vorgang
+  (`remote_elections`, `remote_secret_votes`, `remote_secrecy_matters`):
+  - **für Zugeschaltete ausgeschlossen** (z. B. Bayern, Hessen, Brandenburg bei geheimen Wahlen):
+    Zugeschaltete stimmen bei dieser Abstimmung nicht ab, die Summen dürfen die Zahl der Stimmberechtigten im
+    Raum nicht übersteigen;
+  - **in der Sitzung unzulässig, sobald jemand zugeschaltet ist** (Niedersachsen, Sachsen-Anhalt, Saarland):
+    Nimmt jemand zugeschaltet teil oder hat teilgenommen (auch vorzeitig getrennt), lassen sich geheime Wahlen
+    bzw. Abstimmungen weder in der Abstimmungserfassung noch im Sitzungscockpit erfassen und
+    geheimhaltungspflichtige TOPs nicht aufrufen. Die Oberfläche nennt Grund und Norm und bietet „TOP
+    vertagen“ an – die Zugeschalteten abzuschalten genügt nicht. Die Sperre gilt ab der ersten Zuschaltung bis
+    zum Sitzungsende; maßgeblich ist, ob jemand zugeschaltet teilnimmt, nicht schon das Format „hybrid“. Eine
+    Abstimmung, die laut Sitzungscockpit vor der ersten Zuschaltung abgeschlossen war, bleibt erfassbar; ohne
+    Zuschaltzeit gilt die Sperre ab Sitzungsbeginn. Dasselbe gilt in digitalen Sitzungen (Niedersachsen:
+    § 182 Abs. 2 Satz 6). In Präsenzsitzungen bleibt alles unverändert möglich;
+  - „nur unter Bedingungen“ und „ungeklärt“ ergeben einen Hinweis.
+
+  Gilt die Regel für Wahlen nur für geheime Wahlen (`remote_elections_scope`, z. B. Niedersachsen: § 67
+  Satz 2 NKomVG), erfassen offene Wahlen die Stimmen der Zugeschalteten. Während einer Störung ist keine
+  Stimmabgabe möglich. Mit der Genehmigung der Niederschrift sind die Angaben „Wahl“ und
+  „geheimhaltungspflichtig“ gesperrt wie Ergebnis und Abstimmungsart (`protocol_lock`); eine Berichtigung
+  wertet Stimmen nach der gespeicherten Angabe. Die geheime Abstimmung Zugeschalteter am eigenen Gerät (#149)
+  bleibt für Niedersachsen ausgeschaltet.
 - **Sitzungsleitung:** Verlangt das Landesprofil die Sitzungsleitung im Sitzungsraum (`chair_present`),
   weist die Anwesenheit in hybriden Sitzungen auf einen zugeschalteten Vorsitz hin (ohne zu sperren – die
   Leitung kann an die Stellvertretung übergehen).
@@ -123,14 +144,15 @@ Sitzung (`SessionAttendance`, `apps/session/services/participation_service.py`) 
 Ändert sich die Rechtslage: `landesprofile.json` anpassen (`as_of` des Landes bzw. `stand` der Datei, Quellen),
 diese Übersicht nachziehen und nach dem Deploy `python manage.py session_state_profiles --sync` ausführen.
 `--check` meldet Abweichungen zwischen Datenbank und Datei. Die Datenmigration `session.0045` übernimmt die
-Profile beim ersten Deploy automatisch.
+Profile beim ersten Deploy automatisch, `session.0055` die Hybridregel aus Issue #754 (beide idempotent).
 
 ## Übersicht
 
 Spalten: **Hybrid Rat / Ausschüsse** und **Digital** (Rat): R = zulässig im Regelbetrieb, N = nur in
 Notlagen, – = nicht vorgesehen, ? = ungeklärt. **Vorsitz**: P = muss im Sitzungsraum anwesend sein.
-**Wahlen / geheim**: Teilnahme Zugeschalteter an Wahlen bzw. geheimen Abstimmungen (✗ = ausgeschlossen,
-B = nur unter Bedingungen, ? = ungeklärt). **Prüftiefe**: W = Wortlaut eingesehen, T = teilweise,
+**Wahlen / geheim**: Teilnahme Zugeschalteter an Wahlen bzw. geheimen Abstimmungen (✗ = für Zugeschaltete
+ausgeschlossen, S = in der ganzen Sitzung unzulässig, sobald jemand zugeschaltet ist, B = nur unter Bedingungen,
+? = ungeklärt; „g“ = Regel nur für geheime Wahlen). **Prüftiefe**: W = Wortlaut eingesehen, T = teilweise,
 S = nur Sekundärquellen.
 
 | Land | Kernnorm | Hybrid Rat | Hybrid Ausschüsse | Digital | Voraussetzung | Vorsitz | Wahlen / geheim | Prüftiefe |
@@ -138,17 +160,17 @@ S = nur Sekundärquellen.
 | Baden-Württemberg | § 37a GemO | R | R | N | Hauptsatzung | P | ✗ / ? | W |
 | Bayern | Art. 47a GO | R | ? | – | Geschäftsordnung | ? | ✗ / ? | W |
 | Berlin | § 8a BezVG | ? | ? | N | Beschluss (BVV-Vorstand) | ? | B / B | S |
-| Brandenburg | §§ 34, 43 BbgKVerf | R | R | N | Geschäftsordnung | P | ✗ / ? | T |
+| Brandenburg | §§ 34, 43 BbgKVerf | R | R | N | Geschäftsordnung | P | ✗g / ? | T |
 | Bremen (Bremerhaven) | § 38 Verfassung Bremerhaven | ? | ? | ? (Ausschüsse N) | ungeklärt | ? | ? / ? | S |
 | Hamburg | § 13 BezVG | N | R | N (Ausschüsse R) | Beschluss | ? | ✗ / ? | S |
 | Hessen | § 52a HGO | R | ? | – | Hauptsatzung | P | ✗ / ? | W |
 | Mecklenburg-Vorpommern | § 29a KV M-V | R | R | N | Hauptsatzung | P | ? / ✗ | T |
-| Niedersachsen | § 64 NKomVG | R | R | ? | Hauptsatzung | P | ✗ / ✗ | T |
+| Niedersachsen | § 64 NKomVG | R | R | ? | Hauptsatzung | P | Sg / S | T |
 | Nordrhein-Westfalen | §§ 47a, 58a GO NRW | N | R (außer HA, FA, RPA) | N | Hauptsatzung | P | B / B | W |
 | Rheinland-Pfalz | § 35a GemO | R | ? | N | Geschäftsordnung | P | ✗ / ✗ | T |
-| Saarland | §§ 48, 51a KSVG | N | R | N | Geschäftsordnung | ? | ✗ / ✗ | S |
+| Saarland | §§ 48, 51a KSVG | N | R | N | Geschäftsordnung | ? | S / S | T |
 | Sachsen | § 36a SächsGemO | N | ? | N | ungeklärt | ? | ? / ? | T |
-| Sachsen-Anhalt | § 56a KVG LSA | R | R | N | Hauptsatzung | ? | ✗ / ? | S |
+| Sachsen-Anhalt | §§ 56a, 56b KVG LSA | R | R | N | Hauptsatzung | P | Sg / ? | T |
 | Schleswig-Holstein | §§ 34a, 35a GO | R | R | N | Hauptsatzung | P | B / ? | T |
 | Thüringen | § 36a ThürKO | N | ? | N | Hauptsatzung | ? | ? / ? | T |
 
@@ -204,7 +226,10 @@ S = nur Sekundärquellen.
 - **Regelbetrieb:** Videoteilnahme auf **begründeten Antrag**; die Geschäftsordnung muss Gründe und Antragsverfahren
   regeln (§ 34 Abs. 2 Satz 4). Die Sitzungsleitung erfolgt immer in Präsenz; Hauptverwaltungsbeamte nur ausnahmsweise
   per Video (§ 34 Abs. 2 Satz 6).
-- **Ausschlüsse:** konstituierende Sitzung und Tagesordnungspunkte mit **geheimen Wahlentscheidungen** (§ 34 Abs. 2 Satz 2).
+- **Ausschlüsse:** keine Videoteilnahme an der konstituierenden Sitzung und an Tagesordnungspunkten, „in denen
+  geheime Wahlen durchzuführen sind“ (§ 34 Abs. 2 Satz 2) – ausgeschlossen ist die Teilnahme der Zugeschalteten
+  an diesem Punkt, nicht die Wahl in der Sitzung. Offene Wahlen und geheime Abstimmungen nennt die Norm nicht.
+  Wortlaut geprüft am 02.10.2026 (Fassung zuletzt geändert durch Art. 3 des Gesetzes vom 18.12.2025).
 - **Notlage:** Video- oder Audiositzung nach § 43 Abs. 2.
 - **Ausschüsse:** entsprechend (§ 44 Abs. 9 Satz 1, Hauptausschuss § 50 Abs. 4).
 - **Quellen:** Rundschreiben des MIK vom 13.06.2024
@@ -240,8 +265,11 @@ S = nur Sekundärquellen.
   (in Kraft am Tag nach der Verkündung).
 - **Regelbetrieb:** Zuschaltung, soweit die **Hauptsatzung** es bestimmt; nicht für den Vorsitzenden der
   Gemeindevertretung (§ 52a Abs. 1).
-- **Ausschlüsse:** Wahlen nach § 55, Beschlüsse nach § 39a Abs. 3 Satz 2, § 57 Abs. 2, § 76 Abs. 1 und Abs. 4
-  Satz 3, § 76a sowie die erste Sitzung der Gemeindevertretung; weitere Fälle per Hauptsatzung (§ 52a Abs. 2).
+- **Ausschlüsse:** Teilnahme per Bild-Ton-Übertragung bei Wahlen nach § 55 (alle Wahlen, auch offene),
+  Beschlüssen nach § 39a Abs. 3 Satz 2, § 57 Abs. 2, § 76 Abs. 1 und Abs. 4 Satz 3, § 76a sowie in der ersten
+  Sitzung der Gemeindevertretung; weitere Fälle per Hauptsatzung (§ 52a Abs. 2). Ausgeschlossen ist die
+  Teilnahme der Zugeschalteten, nicht der Vorgang; sie gelten als anwesend im Sinne von § 53 Abs. 1 Satz 1.
+  Geheime Abstimmungen nennt § 52a nicht (Wortlaut geprüft am 02.10.2026).
 - **Öffentlichkeit:** Zugeschaltete müssen für die Saalöffentlichkeit in Bild und Ton wahrnehmbar sein
   (§ 52a Abs. 3); Echtzeitübertragung im Internet per Hauptsatzung zulässig (§ 52 Abs. 3).
 - **Weiteres:** Gemeindevorstand per Geschäftsordnung (§ 67); Ausländerbeirat und Integrations-Kommission
@@ -269,13 +297,22 @@ S = nur Sekundärquellen.
 - **Regelbetrieb:** Abgeordnete **mit Ausnahme der oder des Vorsitzenden** können per Videokonferenztechnik
   teilnehmen, soweit die **Hauptsatzung** es zulässt; sie gelten als anwesend. Die Öffentlichkeit muss sie sehen
   und hören können.
-- **Ausschlüsse:** In Hybridsitzungen dürfen geheime Wahlen (§ 67 Satz 2) und geheime Abstimmungen (§ 66 Abs. 2)
-  **insgesamt** nicht durchgeführt werden; keine Beratung geheim zu haltender Angelegenheiten.
+- **Ausschlüsse:** In einer Sitzung, an der Abgeordnete zugeschaltet teilnehmen, dürfen geheime Wahlen (§ 67
+  Satz 2), nach § 66 Abs. 2 vorgesehene geheime Abstimmungen und Beratungen von Angelegenheiten, zu deren
+  Geheimhaltung die Kommune nach § 6 Abs. 3 Satz 1 verpflichtet ist, **in der ganzen Sitzung** nicht
+  durchgeführt werden (§ 64 Abs. 3 Satz 6); für Videositzungen nach § 182 ebenso (§ 182 Abs. 2 Satz 6).
+  Zugeschaltete gelten als anwesend (Satz 5) und nehmen an offenen Wahlen und Abstimmungen teil. Die
+  Zugeschalteten für diese Zeit abzuschalten, ist nach der Arbeitshilfe des NLT (Stand 05.07.2023, S. 8 f.)
+  unzulässig; ergibt sich eine geheime Wahl erst in der Sitzung, folgt sie in einer späteren Präsenzsitzung.
+  Das Muster einer Geschäftsordnung des NLT sieht eine geheime Abstimmung nur auf Mehrheitsbeschluss vor.
 - **Ausschüsse:** Hauptausschuss und Ausschüsse entsprechend (§ 64 Abs. 8).
 - **Ungeklärt:** Fortgeltung der Sonderregelung § 182 NKomVG (epidemische Lagen, Notsituationen) für rein
   digitale Sitzungen.
 - **Quellen:** <https://voris.wolterskluwer-online.de/browse/document/4fc126d2-a078-3b04-bdec-77b9525778e6>,
-  Arbeitshilfe des NLT <https://www.nlt.de/wp-content/uploads/2023/07/Arbeitshilfe-des-NLT-zur-optionalen-Einfuehrung-von-Hybridsitzungen-nach-%C2%A7-64-NKomVG-Gesamtdok.pdf>.
+  § 182 <https://voris.wolterskluwer-online.de/browse/document/90d143bf-4b8a-3fd4-803d-94a4742256f0>,
+  Arbeitshilfe des NLT <https://www.nlt.de/wp-content/uploads/2023/07/Arbeitshilfe-des-NLT-zur-optionalen-Einfuehrung-von-Hybridsitzungen-nach-%C2%A7-64-NKomVG-Gesamtdok.pdf>,
+  Muster einer Geschäftsordnung des NLT <https://www.nlt.de/wp-content/uploads/2021/10/Arbeitshilfe-Muster-einer-Geschaeftsordnung-Stand-13.10.2021.pdf>
+  (abgerufen 02.10.2026).
 
 ### Nordrhein-Westfalen
 
@@ -303,7 +340,11 @@ S = nur Sekundärquellen.
 - **Norm:** § 35a GemO (Digitale Sitzungsteilnahme, seit 2023), § 35 Abs. 3 GemO (Notlage).
 - **Regelbetrieb:** Ratsmitglieder können mit ihrer Zustimmung zugeschaltet werden, soweit der Gemeinderat es in der
   **Geschäftsordnung** zugelassen hat; nicht für den Vorsitzenden.
-- **Ausschlüsse:** konstituierende Sitzungen, **Satzungsbeschlüsse**, geheime Abstimmungen und Wahlen.
+- **Ausschlüsse:** „Die Teilnahme mittels Ton- und Bildübertragung darf nicht zugelassen werden bei
+  konstituierenden Sitzungen, Satzungsbeschlüssen sowie bei geheimen Abstimmungen und Wahlen.“ (§ 35a Abs. 1)
+  Ausgeschlossen ist die Teilnahme der Zugeschalteten, nicht der Vorgang in der Sitzung. Ob „geheimen“ auch
+  die Wahlen erfasst, ist ungeklärt; vorsorglich gilt der Ausschluss für alle Wahlen (Wortlaut geprüft am
+  02.10.2026 nach Auszug).
 - **Notlage:** Beschlüsse per Video- oder Telefonkonferenz, wenn zwei Drittel der gesetzlichen Zahl der
   Ratsmitglieder zustimmen (§ 35 Abs. 3).
 - **Ungeklärt:** Anwendung auf Ausschüsse.
@@ -318,8 +359,11 @@ S = nur Sekundärquellen.
   Mitgliederzahl zustimmen.
 - **Ausschüsse:** hybrid auch **im Regelbetrieb**, wenn der Gemeinderat es mit Zweidrittelmehrheit in der
   Geschäftsordnung festlegt.
-- **Ausschlüsse:** Wahlen und geheime Abstimmungen nicht digital oder hybrid.
-- **Quellen (Sekundärquellen, Wortlaut vor Einsatz prüfen):**
+- **Ausschlüsse:** „Die Durchführung von Wahlen und geheimen Abstimmungen in Videokonferenzen und
+  Hybridsitzungen ist unzulässig.“ (§ 51a Abs. 4) – in der ganzen Sitzung, sobald jemand zugeschaltet ist, nicht
+  nur für die Zugeschalteten. Fassung des Gesetzes Nr. 2187 vom 12.11.2025 (Amtsbl. I S. 285), Wortlaut nach nicht
+  amtlicher Textsammlung, geprüft am 02.10.2026.
+- **Quellen (teils Sekundärquellen):**
   <https://netzwerk-kommunalpolitik.de/2026/01/07/hybridsitzungen-im-saarlaendischen-kommunalrecht/>,
   <https://www.saarheim.de/Gesetze/ksvg.htm>.
 
@@ -337,15 +381,20 @@ S = nur Sekundärquellen.
 
 - **Norm:** § 56a KVG LSA in der Fassung des Gesetzes zur Fortentwicklung des Kommunalverfassungsrechts
   (verkündet am 31.05.2024).
-- **Regelbetrieb:** Hybridsitzungen auch außerhalb außergewöhnlicher Notsituationen; Einzelheiten in der
-  **Hauptsatzung**.
-- **Ausschlüsse:** geheime Wahlen (§ 56 Abs. 3 KVG LSA) in Hybridsitzungen unzulässig.
+- **Regelbetrieb:** Hybridsitzungen auch außerhalb außergewöhnlicher Notsituationen, soweit die **Hauptsatzung**
+  es zulässt (§ 56b Abs. 1); nicht zugeschaltet werden dürfen der Vorsitzende der Sitzung und der
+  Hauptverwaltungsbeamte (Satz 3). Zugeschaltete gelten als anwesend (Satz 5).
+- **Ausschlüsse:** „In einer Sitzung, an der Mitglieder durch Zuschaltung mittels Ton- und Bildübertragung
+  teilnehmen, dürfen geheime Wahlen nicht durchgeführt werden.“ (§ 56b Abs. 1 Satz 8) – in der ganzen Sitzung;
+  offene Wahlen (§ 56 Abs. 3: wenn kein Mitglied widerspricht) bleiben möglich. In Videokonferenzsitzungen nach
+  § 56a dürfen Wahlen im Sinne von § 56 Abs. 3 nicht durchgeführt werden. Wortlaut nach dem Gesetzentwurf
+  Drs. 8/3424 (geprüft am 02.10.2026); die verkündete Fassung vor Einsatz prüfen.
 - **Notlage:** Videokonferenz bei Naturkatastrophe, epidemischer oder pandemischer Lage oder sonstiger
   außergewöhnlicher Notsituation (§ 56a Abs. 1).
-- **Ungeklärt:** genauer Absatz der Regelbetriebsnorm, Vorgaben zum Vorsitz und zur Öffentlichkeit (Muster-Hauptsatzungen
-  nehmen den Vorsitz von der Zuschaltung aus).
+- **Ungeklärt:** Vorgaben zur Öffentlichkeit in der verkündeten Fassung.
 - **Quellen (teils Sekundärquellen):** <https://presse.sachsen-anhalt.de/staatskanzlei/2023/12/05/sachsen-anhalt-bekommt-modernes-kommunalrecht>,
   <https://www.landesrecht.sachsen-anhalt.de/bsst/document/jlr-KomVerfGST2014V10P56a>,
+  Gesetzentwurf <https://olaf-meister.de/userspace/SA/olaf_meister/Dokumente/Land/Drs/83424lge.pdf>,
   Beispiel <https://www.raguhn-jessnitz.de/de/datei/anzeigen/id/41329,1203/hauptsatzung_r-j_11.07.2024.pdf>.
 
 ### Schleswig-Holstein
@@ -377,7 +426,12 @@ S = nur Sekundärquellen.
 
 ## Offene Punkte der Recherche
 
-- Wortlaut prüfen, wo nur Sekundärquellen vorlagen: Berlin, Bremen/Bremerhaven, Hamburg, Saarland, Sachsen-Anhalt.
+- Wortlaut prüfen, wo nur Sekundärquellen vorlagen: Berlin, Bremen/Bremerhaven, Hamburg; Saarland und
+  Sachsen-Anhalt nur für Wahlen und geheime Abstimmungen geprüft (nicht amtliche Textsammlung bzw. Gesetzentwurf).
+- Sachsen-Anhalt: In Videokonferenzsitzungen nach § 56a sind alle Wahlen ausgeschlossen, in Hybridsitzungen nur
+  geheime; das Profil kennt eine Regel je Land und sperrt offene Wahlen in digitalen Sitzungen bisher nicht.
+- Bayern verlangt für die Beschlussfähigkeit „anwesend und stimmberechtigt“ (Art. 47 Abs. 2 GO); Zugeschaltete,
+  die an Wahlen nicht teilnehmen, zählen in mandari dennoch mit (Regel der übrigen Länder).
 - Beschlossene Fassung des § 34a GO Schleswig-Holstein (Pflicht zur Zuschaltung ab 2027).
 - Bayern: Mehrheitserfordernis nach der Kommunalwahl 2026, Anwendung auf Ausschüsse.
 - Ausschüsse in Hessen, Rheinland-Pfalz, Sachsen, Thüringen; Fortgeltung § 182 NKomVG.

@@ -11,10 +11,16 @@
                 <span>Aufgerufen um {{ top.start_time|time:"H:i" }} Uhr</span>
                 {% if not top.is_public %}<c-ui.badge color="red" icon="lock">Nichtöffentlich</c-ui.badge>{% endif %}
                 {% if top.is_election %}<c-ui.badge color="blue" icon="vote">Wahl</c-ui.badge>{% endif %}
+                {% if top.requires_secrecy %}<c-ui.badge color="amber" icon="shield">Geheimhaltungspflichtig</c-ui.badge>{% endif %}
             </p>
         </div>
         {% if state.item_quorum.remote_rule.message %}
-        <c-ui.alert variant="warning" icon="video-off">{{ state.item_quorum.remote_rule.message }}</c-ui.alert>
+        <c-ui.alert variant="{% if state.item_quorum.remote_rule.barred %}error{% else %}warning{% endif %}" icon="video-off" data-testid="cockpit-landesprofil">
+            <p>{{ state.item_quorum.remote_rule.message }}</p>
+            {% if state.item_quorum.remote_rule.barred and state.can_control and not state.locked and not top.vote_open and top.vote_result == "pending" %}
+            <div class="mt-3">{% include "session/cockpit/_action.html" with aktion="top_vertagen" ziel_top=top.id label="TOP vertagen" icon="calendar-clock" %}</div>
+            {% endif %}
+        </c-ui.alert>
         {% endif %}
         {% include "session/cockpit/_vote.html" %}
         {% if state.can_control and not state.locked and not meeting.cancelled %}

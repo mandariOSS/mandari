@@ -37,6 +37,14 @@
         {% for attendance in stray_votes %}
         <input type="hidden" name="vote_{{ attendance.person_id }}" value="">
         {% endfor %}
+        {% if barred_rule %}
+        <c-ui.alert variant="error" icon="video-off" title="In dieser Sitzung unzulässig" data-testid="abstimmung-unzulaessig">
+            <p>{{ barred_rule.message }}</p>
+            {% if not locked and item.vote_result != "deferred" %}
+            <c-ui.button type="submit" size="sm" variant="secondary" icon="calendar-clock" name="vertagen" value="1" class="mt-3" data-testid="top-vertagen">TOP vertagen</c-ui.button>
+            {% endif %}
+        </c-ui.alert>
+        {% endif %}
         <fieldset class="space-y-6" {% if locked %}disabled{% endif %}>
 
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">

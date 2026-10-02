@@ -8,8 +8,8 @@ Zentrale Logik für:
   Bei gemeinsamen Sitzungen mehrerer Gremien (Issue #317) zählt die Besetzung aller beteiligten
   Gremien; wer mehreren angehört, erhält eine Zeile (und damit eine Stimme).
 - Beschlussfähigkeits-Berechnung (Quorum: mehr als die Hälfte der
-  stimmberechtigten Mitglieder anwesend). Zugeschaltete zählen mit, außer während einer Störung und
-  bei Abstimmungen, von denen das Landesprofil sie ausschließt (Issue #139, participation_service).
+  stimmberechtigten Mitglieder anwesend). Zugeschaltete zählen mit (sie gelten als anwesend), außer während
+  einer Störung (Issue #139, participation_service) – auch bei Wahlen und geheimen Abstimmungen (Issue #754).
 - Sitze und Stellvertretungen (:func:`seat_split`): Grundgesamtheit sind die Sitze der Mitglieder.
   Eine Stellvertretung (Mitgliedschaft mit „Vertretung für“) zählt nur, wenn sie für eine nicht
   anwesende Person nachrückt – je vertretener Person höchstens eine.
@@ -200,8 +200,9 @@ def quorum_status(
     (Issue #69, generalisiert aus dieser Session-Implementierung).
 
     Teilnahmeart (Issue #139): Zugeschaltete zählen wie Anwesende im Raum, außer während einer
-    andauernden Störung (nicht erreichbar). Für einen TOP (``item``) zählen sie nicht, wenn das
-    Landesprofil sie von dieser Abstimmung ausschließt (Wahl, geheime Abstimmung).
+    andauernden Störung (nicht erreichbar). Das gilt für jeden TOP, auch für Wahlen und geheime Abstimmungen
+    (Issue #754: Zugeschaltete gelten als anwesend, z. B. § 64 Abs. 3 Satz 5 NKomVG). Für einen TOP (``item``)
+    liefert ``remote_rule`` den Hinweis des Landesprofils.
 
     In einer Präsenzsitzung als zugeschaltet erfasste Personen zählen bewusst weiter mit: Meist ist das
     eine überholte Teilnahmeart nach einer Änderung des Sitzungsformats. Die Beschlussfähigkeit soll nicht
@@ -210,7 +211,7 @@ def quorum_status(
 
     Returns:
         dict: voting_total, voting_present, required, met, has_list, rule sowie remote_present
-        (davon zugeschaltet), disrupted und remote_excluded (Namen, nicht mitgezählt) und remote_rule
+        (davon zugeschaltet), disrupted (Namen, nicht mitgezählt) und remote_rule
     """
     from apps.common.quorum import quorum_status as common_quorum_status
 
@@ -221,19 +222,16 @@ def quorum_status(
     if substitutes is None:
         substitutes = roster(meeting).substitutes if attendances else {}
 
-    rule = participation_service.remote_vote_rule(meeting, item) if item is not None else None
+    rule = participation_service.remote_vote_rule(meeting, item, attendances=attendances) if item is not None else None
     # Gäste und Protokollführung stimmen nie ab – auch mit gesetztem Stimmrecht nicht (wie voting_service)
     split = seat_split(voting_rows(attendances), substitutes, active_statuses=PRESENT_STATUSES)
     present: list[Any] = []
     disrupted: list[str] = []
-    excluded: list[str] = []
     for attendance in split.members + split.stepping_in:
         if attendance.status not in PRESENT_STATUSES:
             continue
         if participation_service.is_disrupted(attendance):
             disrupted.append(attendance.person.display_name)
-        elif rule is not None and rule.excluded and attendance.is_remote:
-            excluded.append(attendance.person.display_name)
         else:
             present.append(attendance)
     status = common_quorum_status(
@@ -245,7 +243,6 @@ def quorum_status(
         {
             "remote_present": sum(1 for a in present if a.is_remote),
             "disrupted": disrupted,
-            "remote_excluded": excluded,
             "remote_rule": rule,
         }
     )

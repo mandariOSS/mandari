@@ -6,6 +6,9 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
   (offen/namentlich/geheim, Befangenheit nach Gemeindeordnung); Stimmen nur von
   stimmberechtigten Anwesenden, Beratende und Gäste ausgewiesen (Issue #318)
 - nach Genehmigung der Niederschrift schreibgeschützt (Issue #318)
+- Sperre in der Sitzung (Issue #754): Ist eine geheime Wahl oder Abstimmung bzw. die Beratung einer
+  geheimhaltungspflichtigen Angelegenheit nach dem Landesprofil unzulässig, sobald jemand zugeschaltet
+  teilnimmt, nennt die Erfassung Grund und Norm und bietet nur die Vertagung an
 - Umlaufbeschlüsse: Anlage, Rücklauf-Erfassung, Ergebnisfeststellung
 """
 
@@ -84,10 +87,15 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         not_voting = assessed.unreachable + assessed.remote_excluded
         for attendance in assessed.voting + assessed.advisory + assessed.others + not_voting:
             attendance.current_vote = votes.get(attendance.person_id, "")
-        secret_rule = participation_service.remote_vote_rule(item.meeting, item, voting_method="secret")
-        election_rule = participation_service.remote_vote_rule(
-            item.meeting, item, voting_method="summary", is_election=True
+        # Hinweise für die Auswahl im Formular: geheime Abstimmung bzw. (offene) Wahl
+        secret_rule = participation_service.remote_vote_rule(
+            item.meeting, item, voting_method="secret", attendances=assessed.attendances
         )
+        election_rule = participation_service.remote_vote_rule(
+            item.meeting, item, voting_method="open", is_election=True, attendances=assessed.attendances
+        )
+        # Gesperrt nach dem gespeicherten Stand (Issue #754): Grund, Norm und Vertagung statt Erfassung
+        barred = assessed.remote_rule if assessed.remote_rule is not None and assessed.remote_rule.barred else None
         context.update(
             {
                 "item": item,
@@ -98,8 +106,9 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                 "unreachable": assessed.unreachable,
                 "remote_excluded": assessed.remote_excluded,
                 "remote_rule": assessed.remote_rule,
-                "secret_hint": secret_rule.message if secret_rule else "",
-                "election_hint": election_rule.message if election_rule else "",
+                "barred_rule": barred,
+                "secret_hint": secret_rule.message if secret_rule and not barred else "",
+                "election_hint": election_rule.message if election_rule and not barred else "",
                 "item_quorum": attendance_service.quorum_status(
                     item.meeting, item, attendances=assessed.attendances, substitutes=assessed.substitutes
                 ),
@@ -135,12 +144,21 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         # Wahl (Issue #139): Das Landesprofil kann Zugeschaltete ausschließen
         item.is_election = voting_service.form_flag(data, "is_election", item.is_election)
 
-        # Ergebnis (optional mitpflegen)
-        result = voting_service.form_value(data, "vote_result", item.vote_result)
+        # Ergebnis (optional mitpflegen); „Vertagen“ aus dem Hinweis zur Sperre (Issue #754)
+        result = (
+            "deferred" if data.get("vertagen") else voting_service.form_value(data, "vote_result", item.vote_result)
+        )
         if result in {value for value, _ in item._meta.get_field("vote_result").choices}:
             item.vote_result = result
 
         assessed = voting_service.eligibility(item.meeting, item)
+        sperre = assessed.remote_rule
+        if sperre is not None and sperre.barred:
+            # In dieser Sitzung unzulässig (Issue #754): weder Summen noch Stimmen, nur die Vertagung
+            if item.vote_result != "deferred":
+                messages.error(request, sperre.message)
+                return back
+            return self._defer(request, item, back)
         votes_by_person = {}
         for attendance in item.meeting.attendances.select_related("person"):
             key = f"vote_{attendance.person_id}"
@@ -215,6 +233,29 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         if next_url:
             return redirect(next_url)
         return back
+
+    def _defer(self, request, item, back):
+        """TOP vertagen statt abstimmen (Issue #754): Art, Wahl und Ergebnis speichern, keine Summen oder Stimmen."""
+        try:
+            item.save(update_fields=["voting_method", "is_election", "vote_result", "updated_at"])
+        except protocol_lock.ProtocolLockedError as exc:
+            messages.error(request, exc.user_message)
+            return back
+        audit.log_event(
+            "vote",
+            item,
+            tenant=self.session_tenant,
+            user=self.session_user,
+            request=request,
+            changes={
+                "abstimmung": item.get_voting_method_display(),
+                "wahl": item.is_election,
+                "ergebnis": item.get_vote_result_display(),
+            },
+        )
+        messages.success(request, f"TOP {item.number} wurde vertagt. Bitte in einer Präsenzsitzung behandeln.")
+        next_url = safe_next_url(request, self.session_tenant.slug)
+        return redirect(next_url) if next_url else back
 
 
 class CircularListView(SessionViewMixin, TemplateView):
