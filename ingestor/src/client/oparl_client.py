@@ -227,11 +227,18 @@ class OParlClient:
         user_agent: str | None = None,
         list_params: Mapping[str, str] | None = None,
         carry_modified_since: bool = False,
+        request_interval: float | None = None,
     ) -> None:
         self.max_concurrent = max_concurrent
         self.timeout = timeout or settings.oparl_request_timeout
-        # Je Quelle überschreibbar (sync_config["request_interval"], src/client/source_options.py)
+        # Wartezeit je Abrufplatz vor jeder Anfrage (OPARL_WAIT_TIME); bei max_concurrent Plätzen bis zu
+        # max_concurrent / wait_time Anfragen je Sekunde
         self.wait_time = settings.oparl_wait_time if wait_time is None else wait_time
+        # Mindestabstand zwischen dem Beginn zweier Anfragen dieses Clients, über alle Plätze hinweg
+        # (sync_config["request_interval"], src/client/source_options.py); ersetzt wait_time
+        self.request_interval = request_interval
+        self._pace_lock: asyncio.Lock | None = None
+        self._next_request_at = 0.0
         # Parameter für die erste Seite jeder Liste, z. B. {"size": "100"} (sync_config["list_params"])
         self.list_params: dict[str, str] = dict(list_params or {})
         # Quelle filtert mit modified_since, verliert den Parameter aber in links.next (ALLRIS)
@@ -290,7 +297,33 @@ class OParlClient:
         self.stats = SyncStats()
         self._circuit_breakers = {}
         self.host_health = {}
+        self._pace_lock = asyncio.Lock()
+        self._next_request_at = 0.0
         return self
+
+    async def _throttle(self, skip_wait: bool = False) -> None:
+        """
+        Vor einer Anfrage warten.
+
+        Mit ``request_interval`` beginnt jede Anfrage frühestens ``request_interval`` Sekunden nach der
+        vorigen dieses Clients, gleich wie viele Abrufe parallel laufen (höchstens ``1 / request_interval``
+        Anfragen je Sekunde und Abgleichslauf). Das gilt auch für Anfragen mit ``skip_wait``: Die Quelle
+        verlangt den Abstand für jede Anfrage. Ohne ``request_interval`` wartet jeder Abrufplatz
+        ``wait_time`` Sekunden (bisheriges Verhalten).
+        """
+        if self.request_interval is None:
+            if not skip_wait and self.wait_time > 0:
+                await asyncio.sleep(self.wait_time)
+            return
+        if self.request_interval <= 0:
+            return
+        if self._pace_lock is None:
+            self._pace_lock = asyncio.Lock()
+        # Die Sperre bleibt während des Wartens gehalten: Wartende kommen der Reihe nach dran
+        async with self._pace_lock:
+            while (wait := self._next_request_at - time.monotonic()) > 0:
+                await asyncio.sleep(wait)
+            self._next_request_at = time.monotonic() + self.request_interval
 
     # ------------------------------------------------------------------
     # Sperr- und Störungserkennung (Issue #123)
@@ -356,8 +389,7 @@ class OParlClient:
 
         health.ua_probe_status = 0
         try:
-            if self.wait_time > 0:
-                await asyncio.sleep(self.wait_time)
+            await self._throttle()
             start = time.time()
             response = await self._client.get(
                 url, headers={"User-Agent": NEUTRAL_USER_AGENT, "Accept": "application/json"}
@@ -517,9 +549,8 @@ class OParlClient:
             if settings.oparl_modified_since_enabled and url in self.modified_cache:
                 headers["If-Modified-Since"] = self.modified_cache[url]
 
-        # Rate limiting
-        if not skip_wait and self.wait_time > 0:
-            await asyncio.sleep(self.wait_time)
+        # Rate limiting (request_interval der Quelle bzw. wait_time je Abrufplatz)
+        await self._throttle(skip_wait)
 
         start = time.time()
         response = await self._client.get(url, headers=headers)

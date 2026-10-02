@@ -6,7 +6,11 @@ Die Standardwerte des Ingestors passen für die meisten Ratsinformationssysteme.
 mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen:
 
 ``request_interval``
-    Mindestabstand in Sekunden vor jeder Anfrage an diese Quelle (statt ``OPARL_WAIT_TIME``).
+    Mindestabstand in Sekunden zwischen dem Beginn zweier Anfragen an diese Quelle, über alle parallelen
+    Abrufe eines Abgleichslaufs hinweg (statt ``OPARL_WAIT_TIME`` je Abrufplatz). Ein Lauf stellt damit
+    höchstens ``1 / request_interval`` Anfragen je Sekunde, gleich welches ``--concurrent`` gilt. Zwei
+    Prozesse (Daemon und ein einzeln gestarteter Abgleich) zählen getrennt; ein Einzelabgleich einer
+    solchen Quelle läuft daher nur, solange der Daemon sie nicht abgleicht (``is_active = false``).
 ``list_params``
     Zusätzliche Parameter für die erste Seite jeder Liste, z. B. ``{"size": 100}`` bei ALLRIS: weniger,
     dafür größere Seiten. Die Folgeseiten kommen aus ``links.next`` der Quelle.
@@ -92,5 +96,5 @@ class SourceFetchOptions:
             "carry_modified_since": self.carry_modified_since,
         }
         if self.request_interval is not None:
-            kwargs["wait_time"] = self.request_interval
+            kwargs["request_interval"] = self.request_interval
         return kwargs

@@ -10,6 +10,7 @@ Organisationen mit ``"type": "gr"`` und der Typ-URL in ``Type``, Beratungen mit 
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -143,7 +144,7 @@ class TestSourceFetchOptions:
         assert options.client_kwargs() == {
             "list_params": {"size": "100"},
             "carry_modified_since": True,
-            "wait_time": 0.5,
+            "request_interval": 0.5,
         }
 
     def test_ungueltige_werte_gelten_als_nicht_gesetzt(self):
@@ -207,6 +208,21 @@ def make_client(server: FakeAllris, **kwargs: Any) -> OParlClient:
     return client
 
 
+def parallel_client(zeiten: list[float], *, max_concurrent: int, **kwargs: Any) -> OParlClient:
+    """Client mit mehreren Abrufplätzen; die Schnittstelle notiert den Beginn jeder Anfrage."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        zeiten.append(time.monotonic())
+        return httpx.Response(200, json={"id": str(request.url)})
+
+    client = OParlClient(max_concurrent=max_concurrent, **kwargs)
+    client._semaphore = asyncio.Semaphore(max_concurrent)
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client.stats = SyncStats()
+    client._circuit_breakers = {}
+    return client
+
+
 def ids_of(items: list[dict[str, Any]]) -> list[int]:
     return [int(item["id"].rsplit("/", 1)[1]) for item in items]
 
@@ -245,6 +261,38 @@ class TestClientAllris:
         assert all("modified_since" in parse_qs(urlparse(u).query) for u in server.requests)
         assert [parse_qs(urlparse(u).query).get("page", ["1"])[0] for u in server.requests] == ["1", "2", "3"]
         assert "www.rat.example" not in OParlClient.get_modified_since_unsupported()
+
+    async def test_abstand_gilt_ueber_alle_parallelen_abrufe(self):
+        """``request_interval``: Anfragen beginnen nacheinander im Abstand, auch bei mehreren Abrufplätzen."""
+        zeiten: list[float] = []
+        client = parallel_client(zeiten, max_concurrent=5, request_interval=0.1)
+        try:
+            ergebnisse = await asyncio.gather(
+                *(client.fetch(f"{BASE}/papers/{i}", use_cache=False) for i in range(6)),
+                # skip_wait umgeht nur die Wartezeit je Platz, nicht den Abstand der Quelle
+                client.fetch(f"{BASE}/system", use_cache=False, skip_wait=True),
+            )
+        finally:
+            assert client._client is not None
+            await client._client.aclose()
+
+        assert [r.status_code for r in ergebnisse] == [200] * 7
+        abstaende = [b - a for a, b in zip(zeiten, zeiten[1:], strict=False)]
+        assert len(abstaende) == 6
+        assert min(abstaende) >= 0.09
+        assert zeiten[-1] - zeiten[0] >= 0.59
+
+    async def test_ohne_abstand_wartet_jeder_platz_fuer_sich(self):
+        """Bisheriges Verhalten ohne ``request_interval``: ``wait_time`` je Abrufplatz, Plätze parallel."""
+        zeiten: list[float] = []
+        client = parallel_client(zeiten, max_concurrent=5, wait_time=0.1)
+        try:
+            await asyncio.gather(*(client.fetch(f"{BASE}/papers/{i}", use_cache=False) for i in range(5)))
+        finally:
+            assert client._client is not None
+            await client._client.aclose()
+        assert len(zeiten) == 5
+        assert max(zeiten) - min(zeiten) < 0.09
 
     async def test_carry_gilt_auch_bei_frueher_vermerktem_host(self, isolated_capability_cache):
         OParlClient.add_modified_since_unsupported({"www.rat.example"})
