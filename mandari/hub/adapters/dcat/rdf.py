@@ -29,6 +29,7 @@ Das Modul lädt ``rdflib`` (rund 15 MB). Es wird deshalb erst beim ersten Serial
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, date, datetime
 from typing import Any, Final
 from xml.sax.saxutils import escape, quoteattr
@@ -37,7 +38,7 @@ from django.utils import timezone
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import DCAT, DCTERMS, FOAF, RDF, XSD
 
-from hub.adapters.dcat import vokabular
+from hub.adapters.dcat import adressen, vokabular
 from hub.adapters.dcat.katalog import Datensatz, Dienst, Distribution, Katalog, Kontakt, Stelle, Zeitraum
 
 DCATDE: Final = Namespace("http://dcat-ap.de/def/dcatde/")
@@ -58,6 +59,11 @@ PRAEFIXE: Final[dict[str, str]] = {
 
 #: Endungen der Adressen, die ``serialisieren`` kennt
 ENDUNGEN: Final = ("ttl", "rdf", "jsonld")
+
+#: Zeichen, die XML 1.0 nicht erlaubt (Steuerzeichen außer Tabulator und Zeilenwechsel, Ersatzzeichen,
+#: ``U+FFFE``, ``U+FFFF``): Sie kämen mit Namen aus fremden Ratsinformationssystemen herein und machten RDF/XML
+#: ungültig. Sie fallen in allen Formen weg, damit alle denselben Graphen ergeben.
+_XML_UNZULAESSIG: Final = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
 
 def serialisieren(katalog: Katalog, endung: str) -> bytes:
@@ -138,7 +144,7 @@ def graph(katalog: Katalog) -> Graph:
 
 
 def _text(wert: str) -> Literal:
-    return Literal(wert, lang="de")
+    return Literal(_XML_UNZULAESSIG.sub("", wert), lang="de")
 
 
 def _zeitpunkt(wert: datetime) -> Literal:
@@ -156,8 +162,8 @@ def _stelle(g: Graph, stelle: Stelle) -> URIRef:
     g.add((knoten, RDF.type, FOAF.Agent))
     g.add((knoten, RDF.type, FOAF.Organization))
     g.add((knoten, FOAF.name, _text(stelle.name)))
-    if stelle.homepage:
-        g.add((knoten, FOAF.homepage, URIRef(stelle.homepage)))
+    if homepage := adressen.webadresse(stelle.homepage):
+        g.add((knoten, FOAF.homepage, URIRef(homepage)))
     return knoten
 
 
@@ -166,10 +172,10 @@ def _kontakt(g: Graph, kontakt: Kontakt) -> URIRef:
     g.add((knoten, RDF.type, VCARD.Kind))
     g.add((knoten, RDF.type, VCARD.Organization))
     g.add((knoten, VCARD.fn, _text(kontakt.name)))
-    if kontakt.email:
-        g.add((knoten, VCARD.hasEmail, URIRef(f"mailto:{kontakt.email}")))
-    if kontakt.url:
-        g.add((knoten, VCARD.hasURL, URIRef(kontakt.url)))
+    if email := adressen.email(kontakt.email):
+        g.add((knoten, VCARD.hasEmail, URIRef(f"mailto:{email}")))
+    if url := adressen.webadresse(kontakt.url):
+        g.add((knoten, VCARD.hasURL, URIRef(url)))
     return knoten
 
 
@@ -202,8 +208,8 @@ def _katalog(g: Graph, katalog: Katalog) -> None:
     g.add((knoten, DCTERMS.publisher, _stelle(g, katalog.herausgeber)))
     g.add((knoten, DCTERMS.language, URIRef(vokabular.SPRACHE_DEUTSCH)))
     g.add((knoten, DCAT.themeTaxonomy, URIRef(vokabular.THEMEN)))
-    if katalog.homepage:
-        g.add((knoten, FOAF.homepage, URIRef(katalog.homepage)))
+    if homepage := adressen.webadresse(katalog.homepage):
+        g.add((knoten, FOAF.homepage, URIRef(homepage)))
     if katalog.lizenz:
         g.add((knoten, DCTERMS.license, URIRef(katalog.lizenz.uri)))
     if katalog.raum:
@@ -244,10 +250,10 @@ def _datensatz(g: Graph, datensatz: Datensatz) -> URIRef:
         g.add((knoten, DCTERMS.issued, _zeitpunkt(datensatz.veroeffentlicht)))
     if datensatz.geaendert:
         g.add((knoten, DCTERMS.modified, _zeitpunkt(datensatz.geaendert)))
-    if datensatz.webseite:
-        g.add((knoten, DCAT.landingPage, URIRef(datensatz.webseite)))
-    if datensatz.bereitsteller:
-        g.add((knoten, DCATDE.contributorID, URIRef(datensatz.bereitsteller)))
+    if webseite := adressen.webadresse(datensatz.webseite):
+        g.add((knoten, DCAT.landingPage, URIRef(webseite)))
+    if bereitsteller := adressen.iri(datensatz.bereitsteller):
+        g.add((knoten, DCATDE.contributorID, URIRef(bereitsteller)))
     for distribution in datensatz.distributionen:
         g.add((knoten, DCAT.distribution, _distribution(g, datensatz, distribution)))
     return knoten

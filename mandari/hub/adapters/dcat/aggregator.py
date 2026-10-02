@@ -12,10 +12,15 @@ die Daten über seine Schnittstelle zugänglich (``DCAT_PUBLISHER_NAME``, ``DCAT
 ``DCAT_CONTACT_EMAIL``). Urheber (``dct:creator``) ist die Kommune, aus deren Ratsinformationssystem die
 Daten stammen; ihr Name ist auch der Text der Namensnennung.
 
-**Lizenz:** die Angabe der Kommune (OParl ``Body.license``), ersatzweise die der Installation
-(``OPARL_LICENSE_URL``), übersetzt in die Lizenzliste von DCAT-AP.de (``vokabular.lizenz``). Ohne eine
-zuordenbare offene Lizenz bietet der Katalog die Kommune nicht an: Ihr eigener Katalog antwortet mit
-``404`` und einem Hinweis, im Gesamtkatalog fehlt sie.
+**Lizenz:** die Angabe der Kommune (OParl ``Body.license``), übersetzt in die Lizenzliste von DCAT-AP.de
+(``vokabular.lizenz``). Die Lizenz der Installation (``OPARL_LICENSE_URL``) gilt nur, wenn die Kommune keine
+angibt (OParl 1.1: ``System.license`` gilt für Objekte ohne eigene Angabe) – nie anstelle einer unbekannten oder
+einschränkenden Angabe der Kommune. Ohne eine zuordenbare offene Lizenz bietet der Katalog die Kommune nicht an:
+Ihr eigener Katalog antwortet mit ``404`` und einem Hinweis, im Gesamtkatalog fehlt sie.
+
+**Fremde Angaben** (``Body.website`` aus dem Ratsinformationssystem, Einstellungen) nimmt der Katalog nur, wenn sie
+als IRI taugen (``hub.adapters.dcat.adressen``); eine fehlerhafte Angabe einer Kommune darf den Gesamtkatalog nicht
+unlesbar machen.
 
 **Veröffentlichungsstand** wie bei Feed und Snapshot (``insight_core.publication``): nicht gelistet ``404``,
 vorübergehend abgeschaltet ``503`` mit ``Retry-After``, dauerhaft zurückgenommen ``410``. Im Gesamtkatalog
@@ -39,7 +44,7 @@ from django.http import HttpRequest, HttpResponse
 from django.urls import reverse
 from django.utils import timezone
 
-from hub.adapters.dcat import http, katalog, vokabular
+from hub.adapters.dcat import adressen, http, katalog, vokabular
 from hub.adapters.dcat.katalog import Angebot, Dienst, Katalog, Kennzahlen, Kontakt, Stelle, Zeitraum
 from hub.api import changes
 from hub.api.http import endpoint, error_response
@@ -59,24 +64,14 @@ OHNE_LIZENZ = (
 # =============================================================================
 
 
-def _site() -> str:
-    return str(settings.SITE_URL).rstrip("/")
-
-
-def _web(adresse: str | None) -> str | None:
-    """Nur vollständige Webadressen (eine Angabe ohne Schema wäre im Katalog keine gültige IRI)."""
-    text = (adresse or "").strip()
-    return text if text.lower().startswith(("https://", "http://")) else None
-
-
 def katalog_adresse() -> str:
     """Adresse des Gesamtkatalogs (ohne Endung)."""
-    return f"{_site()}{reverse('dcat:catalog')}"
+    return f"{adressen.site()}{reverse('dcat:catalog')}"
 
 
 def kommunen_adresse(pk: uuid.UUID | str) -> str:
     """Adresse des Katalogs einer Kommune (ohne Endung); Basis der Kennungen ihrer Datensätze."""
-    return f"{_site()}{reverse('dcat:body_catalog', kwargs={'pk': pk})}"
+    return f"{adressen.site()}{reverse('dcat:body_catalog', kwargs={'pk': pk})}"
 
 
 def betreiber() -> Stelle:
@@ -84,18 +79,17 @@ def betreiber() -> Stelle:
     return Stelle(
         uri=f"{katalog_adresse()}#herausgeber",
         name=str(getattr(settings, "DCAT_PUBLISHER_NAME", "") or "mandari"),
-        homepage=_web(getattr(settings, "DCAT_PUBLISHER_URL", "")) or _site(),
+        homepage=adressen.webadresse(getattr(settings, "DCAT_PUBLISHER_URL", "")) or adressen.site(),
     )
 
 
 def kontakt() -> Kontakt:
     """Kontaktstelle des Betreibers: Funktionsadresse (``DCAT_CONTACT_EMAIL``) und Webseite."""
     stelle = betreiber()
-    email = str(getattr(settings, "DCAT_CONTACT_EMAIL", "") or "").strip()
     return Kontakt(
         uri=f"{katalog_adresse()}#kontakt",
         name=stelle.name,
-        email=email if "@" in email else None,
+        email=adressen.email(str(getattr(settings, "DCAT_CONTACT_EMAIL", "") or "")),
         url=stelle.homepage,
     )
 
@@ -129,13 +123,21 @@ def _dienst(datensaetze: tuple[katalog.Datensatz, ...]) -> Dienst:
 
 
 def _lizenz(body: OParlBody) -> vokabular.Lizenz | None:
-    return vokabular.lizenz(body.license) or vokabular.lizenz(getattr(settings, "OPARL_LICENSE_URL", ""))
+    """
+    Lizenz der Kommune; die der Installation (``OPARL_LICENSE_URL``) nur, wenn die Kommune keine angibt.
+
+    Eine unbekannte oder einschränkende Angabe der Kommune (etwa CC BY-NC) ergibt ``None``: Der Katalog darf ihre
+    Daten nicht unter der offenen Lizenz der Installation anbieten.
+    """
+    if (body.license or "").strip():
+        return vokabular.lizenz(body.license)
+    return vokabular.lizenz(getattr(settings, "OPARL_LICENSE_URL", ""))
 
 
 def _webseite(body: OParlBody) -> str:
     if body.slug:
-        return f"{_site()}{reverse('insight_core:insight:portal_entry', kwargs={'slug': body.slug})}"
-    return f"{_site()}{reverse('insight_core:insight:set_body', kwargs={'body_id': body.id})}"
+        return f"{adressen.site()}{reverse('insight_core:insight:portal_entry', kwargs={'slug': body.slug})}"
+    return f"{adressen.site()}{reverse('insight_core:insight:set_body', kwargs={'body_id': body.id})}"
 
 
 def angebot(body: OParlBody, state: publication.BodyState | None = None) -> Angebot | None:
@@ -149,7 +151,7 @@ def angebot(body: OParlBody, state: publication.BodyState | None = None) -> Ange
     uris = BestandUris(settings.OPARL_BASE_URL, settings.SITE_URL)
     basis = kommunen_adresse(body.id)
     feed = changes.enabled() and body.is_listed
-    kalender = f"{_site()}{reverse('insight_core:insight:calendar_feed')}?kommune={body.id}"
+    kalender = f"{adressen.site()}{reverse('insight_core:insight:calendar_feed')}?kommune={body.id}"
     return Angebot(
         basis=basis,
         kommune=body.name,
@@ -162,7 +164,7 @@ def angebot(body: OParlBody, state: publication.BodyState | None = None) -> Ange
             katalog.LISTE_PERSONEN: uris.list(body.id, "people"),
         },
         dienst=f"{katalog_adresse()}#oparl",
-        urheber=Stelle(uri=f"{basis}#kommune", name=body.name, homepage=_web(body.website)),
+        urheber=Stelle(uri=f"{basis}#kommune", name=body.name, homepage=adressen.webadresse(body.website)),
         kontakt=kontakt(),
         raum=vokabular.raumbezug(body.ags, body.rgs),
         veroeffentlicht=body.created_at,

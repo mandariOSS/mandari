@@ -277,6 +277,86 @@ def test_nicht_offene_lizenz_kein_katalog(welt: dict[str, Any]) -> None:
     assert Client().get(_pfad(welt["body"])).status_code == 404
 
 
+@pytest.mark.parametrize(
+    "angabe",
+    ["https://creativecommons.org/licenses/by-nc/4.0/", "https://ris.example/nutzungsbedingungen", "Alle Rechte"],
+)
+def test_lizenz_der_installation_ersetzt_keine_angabe_der_kommune(welt: dict[str, Any], angabe: str) -> None:
+    """
+    Gibt die Kommune eine einschränkende oder unbekannte Lizenz an, gilt die offene Lizenz der Installation nicht
+    ersatzweise (OParl 1.1: ``System.license`` nur für Objekte ohne eigene Angabe).
+    """
+    body = welt["body"]
+    OParlBody.objects.filter(pk=body.pk).update(license=angabe)
+    with override_settings(OPARL_LICENSE_URL="https://www.govdata.de/dl-de/zero-2-0"):
+        antwort = Client().get(_pfad(body))
+        assert antwort.status_code == 404
+        assert antwort.json()["type"].endswith("/keine-lizenz")
+        gesamt = Client().get("/data/dcat/catalog.ttl")
+    assert gesamt.status_code == 200
+    g = Graph().parse(data=gesamt.content, format="turtle")
+    assert not list(g.subjects(RDF.type, DCAT.Dataset))
+    assert URIRef("http://dcat-ap.de/def/licenses/dl-zero-de/2.0") not in set(g.objects(None, DCTERMS.license))
+
+
+@pytest.mark.parametrize(
+    "website",
+    [
+        "http://www.stadt.example/ rat haus",
+        "https://www.stadt.example/<rathaus>",
+        'https://www.stadt.example/"rat"',
+        "https://www.stadt.example/{rat}|haus",
+        "https://www.stadt.example/rat\\haus",
+        "https://www.stadt.example/rat\x07haus",
+        "www.stadt.example",
+        "javascript:alert(1)",
+        "https://",
+    ],
+)
+def test_fehlerhafte_webadresse_der_kommune_bricht_keinen_katalog(welt: dict[str, Any], website: str) -> None:
+    """
+    ``Body.website`` kommt ungeprüft aus fremden Ratsinformationssystemen. Eine Angabe, die keine gültige IRI ist,
+    fällt weg; der Katalog der Kommune und der Gesamtkatalog bleiben in allen drei Formen abrufbar.
+    """
+    body = welt["body"]
+    OParlBody.objects.filter(pk=body.pk).update(website=website)
+    for endung, form in (("ttl", "turtle"), ("rdf", "xml"), ("jsonld", "json-ld")):
+        for pfad in (_pfad(body, endung), f"/data/dcat/catalog.{endung}"):
+            antwort = Client().get(pfad)
+            assert antwort.status_code == 200, (pfad, antwort.status_code)
+            g = Graph().parse(data=antwort.content, format=form)
+            assert len(list(g.subjects(RDF.type, DCAT.Dataset))) == 3
+            urheber = g.value(URIRef(f"{_basis(body)}#sitzungen"), DCTERMS.creator)
+            assert g.value(urheber, FOAF.name) == Literal("Stadt Musterstadt", lang="de")
+            assert g.value(urheber, FOAF.homepage) is None
+
+
+def test_steuerzeichen_im_namen_ergeben_gueltiges_xml(welt: dict[str, Any]) -> None:
+    """Steuerzeichen aus fremden Namen fallen weg: RDF/XML bleibt gültiges XML, alle Formen denselben Graphen."""
+    body = welt["body"]
+    OParlBody.objects.filter(pk=body.pk).update(name="Stadt\x0bMuster\x1fstadt\ufffe")
+    graphen = []
+    for endung, form in (("ttl", "turtle"), ("rdf", "xml"), ("jsonld", "json-ld")):
+        for pfad in (_pfad(body, endung), f"/data/dcat/catalog.{endung}"):
+            antwort = Client().get(pfad)
+            assert antwort.status_code == 200, (pfad, antwort.status_code)
+            g = Graph().parse(data=antwort.content, format=form)
+            urheber = g.value(URIRef(f"{_basis(body)}#sitzungen"), DCTERMS.creator)
+            assert g.value(urheber, FOAF.name) == Literal("StadtMusterstadt", lang="de")
+            if pfad.startswith("/data/dcat/body/"):
+                graphen.append(g)
+    assert len({len(g) for g in graphen}) == 1
+
+
+def test_ungueltige_kontaktadresse_des_betreibers_faellt_weg(welt: dict[str, Any]) -> None:
+    with override_settings(DCAT_CONTACT_EMAIL="daten @betreiber.example", DCAT_PUBLISHER_URL="betreiber.example"):
+        g, _ = _katalog(welt)
+    kontakt = g.value(URIRef(f"{_basis(welt['body'])}#sitzungen"), DCAT.contactPoint)
+    assert g.value(kontakt, VCARD.hasEmail) is None
+    # Ohne gültige Webseite des Betreibers gilt die Adresse der Installation
+    assert g.value(kontakt, VCARD.hasURL) == URIRef(SITE)
+
+
 def test_nicht_gelistet_unbekannt_geloescht(welt: dict[str, Any]) -> None:
     body = welt["body"]
     assert Client().get("/data/dcat/body/00000000-0000-0000-0000-000000000000/catalog.ttl").status_code == 404

@@ -83,9 +83,10 @@ Funktionspostfach sein. Personen der Kommune erscheinen nur über die verlinkte 
 
 DCAT-AP.de verlangt eine Lizenz an jeder Distribution, und zwar aus der
 [Lizenzliste von DCAT-AP.de](https://www.dcat-ap.de/def/licenses/). Maßgeblich ist die Angabe der Kommune in
-ihrer OParl-Schnittstelle (`Body.license`), ersatzweise die der Installation (`OPARL_LICENSE_URL`). Gängige
-Schreibweisen der Lizenzadressen werden zugeordnet (`http`/`https`, `www.`, Schrägstrich am Ende,
-Sprachfassung), etwa:
+ihrer OParl-Schnittstelle (`Body.license`). Die Lizenz der Installation (`OPARL_LICENSE_URL`) gilt nur, wenn die
+Kommune keine angibt – wie in OParl 1.1, wo `System.license` nur für Objekte ohne eigene Angabe gilt. Eine
+unbekannte oder einschränkende Angabe der Kommune ersetzt sie nie. Gängige Schreibweisen der Lizenzadressen werden
+zugeordnet (`http`/`https`, `www.`, Schrägstrich am Ende, Sprachfassung), etwa:
 
 | Angabe | Lizenzliste |
 |---|---|
@@ -97,9 +98,19 @@ Sprachfassung), etwa:
 Die vollständige Zuordnung steht in `hub/adapters/dcat/vokabular.py`. Lizenzen mit Namensnennung bekommen
 `dcatde:licenseAttributionByText` mit dem Namen der Kommune.
 
-**Ohne Lizenz kein Katalog:** Ohne Angabe, bei einer unbekannten Angabe oder bei einer Lizenz mit Einschränkungen
-(nicht kommerziell, keine Bearbeitung) antwortet der Katalog der Kommune mit `404` und einem Problem nach
-RFC 9457 (Typ `keine-lizenz`, Hinweis auf `Body.license`); im Gesamtkatalog fehlt die Kommune.
+**Ohne Lizenz kein Katalog:** Ohne Angabe (auch keine der Installation), bei einer unbekannten Angabe oder bei
+einer Lizenz mit Einschränkungen (nicht kommerziell, keine Bearbeitung) antwortet der Katalog der Kommune mit `404`
+und einem Problem nach RFC 9457 (Typ `keine-lizenz`, Hinweis auf `Body.license`); im Gesamtkatalog fehlt die
+Kommune.
+
+### Fremde Angaben
+
+Webseiten und Kontaktadressen (`Body.website` aus dem Ratsinformationssystem, Einstellungen der Installation)
+werden im Graphen zu IRIs. Der Katalog übernimmt sie nur, wenn sie als IRI taugen: Webadressen mit `http`/`https`
+und Host, ohne Leer- und Steuerzeichen, spitze oder geschweifte Klammern, Anführungszeichen und ähnliches;
+E-Mail-Adressen nur in gültiger Form. Alles andere gilt als „keine Angabe“. Steuerzeichen in Namen und Texten
+fallen weg, weil RDF/XML sie nicht darstellen kann. So macht eine fehlerhafte Angabe einer einzelnen Kommune den
+Gesamtkatalog nicht unlesbar (`hub/adapters/dcat/adressen.py`).
 
 ### Veröffentlichungsstand
 
@@ -172,6 +183,7 @@ Community Edition tut das. Installationen mit eigener Proxy-Konfiguration tragen
 |---|---|
 | `hub/adapters/dcat/vokabular.py` | kontrollierte Vokabulare, Zuordnung der Lizenzen, Raumbezug |
 | `hub/adapters/dcat/katalog.py` | Katalogmodell und die drei Datensätze einer Kommune (ohne Django und RDF) |
+| `hub/adapters/dcat/adressen.py` | Basis der Adressen, Prüfung fremder Webadressen und E-Mail-Adressen |
 | `hub/adapters/dcat/rdf.py` | Serialisierung als Turtle, RDF/XML und JSON-LD |
 | `hub/adapters/dcat/http.py` | Formen, Inhaltsaushandlung, Zwischenspeicher, Absagen |
 | `hub/adapters/dcat/aggregator.py` | Kataloge des Aggregators, Routen in `urls.py` |
