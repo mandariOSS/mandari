@@ -312,8 +312,9 @@ def test_reuse_workflow_prueft_blockierend() -> None:
         ("scripts/smoke_tombstones.py", {"qualitaet", "test", "smoke", "codeql_python"}),
         ("mandari/Dockerfile", {"qualitaet", "docker"}),
         (".github/workflows/pr-check.yml", {"sicherheitsnetz", "qualitaet", "test"}),
-        # Lock-Datei der Django-Anwendung und ihr Export: Daraus installieren alle Jobs (Sicherheitsnetz)
-        ("mandari/uv.lock", {"sicherheitsnetz", "qualitaet", "test", "smoke"}),
+        # Lock-Datei der Django-Anwendung und ihr Export: Daraus installieren alle Jobs (Sicherheitsnetz); dazu
+        # die SHACL-Prüfung der Datenkataloge, weil ein Update von rdflib die Serialisierung ändern kann
+        ("mandari/uv.lock", {"sicherheitsnetz", "qualitaet", "test", "smoke", "oparl"}),
         ("scripts/export_requirements.sh", {"sicherheitsnetz", "qualitaet", "test", "audit"}),
         (
             "mandari/templates/work/base_work.html",
