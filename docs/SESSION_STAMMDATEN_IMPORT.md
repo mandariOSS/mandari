@@ -19,7 +19,8 @@ vorbefüllen und dient als Gegenprobe. Den Gesamtablauf beschreibt der Leitfaden
 python manage.py session_stammdaten_import --vorlagen /daten/vorlagen
 
 # … oder vorbefüllt mit dem öffentlichen Bestand einer Körperschaft im RIS-Bestand
-python manage.py session_stammdaten_import --vorlagen /daten/vorlagen     --aus-ris "https://ratsinfo.example.de/bi/" --stichtag 2026-10-01
+python manage.py session_stammdaten_import --vorlagen /daten/vorlagen \
+    --aus-ris "https://ratsinfo.example.de/bi/" --stichtag 2026-10-01
 
 # 2. Prüflauf: liest und prüft alles, schreibt nichts; Bericht zusätzlich als Datei
 python manage.py session_stammdaten_import --tenant musterstadt /daten/import --dry-run \
@@ -34,7 +35,8 @@ python manage.py session_stammdaten_import --tenant musterstadt /daten/import --
 ```
 
 Fehlt eine Datei, wird diese Objektart übersprungen. Besetzungen brauchen die Personendatei. Vorlagen
-überschreiben nie vorhandene Importdateien; dafür ein leeres Verzeichnis angeben.
+überschreiben nie vorhandene Importdateien; dafür ein leeres Verzeichnis angeben. Prüfen und Schreiben laufen
+beim Import in einer Transaktion; gleichzeitige Läufe für denselben Mandanten warten aufeinander.
 
 ## Vorlagen aus dem öffentlichen Bestand
 
@@ -43,14 +45,15 @@ Fehlt eine Datei, wird diese Objektart übersprungen. Besetzungen brauchen die P
 | Datei | Inhalt |
 |---|---|
 | `wahlperioden` | alle Wahlperioden des Bodys (bei SessionNet aus der Auswahl in der Gremienliste) |
-| `gremien`, `fraktionen` | alle Gremien; Namen mit „Fraktion“ oder „Gruppe“ in `fraktionen`. Die Art ist aus dem Namen geschätzt (Rat, Ausschuss, Beirat, Kommission; Verwaltungs-, Samtgemeinde- und Kreisausschuss als Hauptausschuss) und bleibt leer, wenn der Name nichts hergibt |
+| `gremien`, `fraktionen` | alle Gremien; Namen mit „Fraktion“ oder „Gruppe“ in `fraktionen`. Die Art ist aus dem Namen geschätzt (Rat, Ausschuss, Beirat, Kommission; Verwaltungs-, Samtgemeinde-, Kreis- und Regionsausschuss als Hauptausschuss) und bleibt leer, wenn der Name nichts hergibt |
 | `personen` | wer am Stichtag eine Besetzung hat; Anrede, Titel, Vor- und Nachname aus dem Anzeigenamen getrennt („Nachname, Vorname“ und Namenszusätze wie „von der“ werden erkannt), `kennung` = OParl-Kennung der Person. Kontakt- und Bankdaten bleiben leer |
-| `besetzungen` | die am Stichtag laufenden Besetzungen mit Funktion und Stimmrecht; ohne Beginn die am Stichtag laufende Wahlperiode |
+| `besetzungen` | die am Stichtag laufenden Besetzungen mit Funktion und Stimmrecht; ohne Beginn die am Stichtag laufende Wahlperiode. Bei Stellvertretungen, Hinzugewählten und sachkundigen Bürgern bleibt `stimmrecht` leer, wenn die Quelle nur ihren Standard nennt (SessionNet: „ja“, solange die Überschrift nicht „ohne Stimmrecht“ sagt); dann gilt die Regel unter „Dateien und Spalten“ |
 
 Bekannte Funktionen werden vereinheitlicht („Ratsherr“ → Mitglied, „Stellvertretende Mitglieder“ →
-stellvertretendes Mitglied), unbekannte wie „Bürgermeister“ bleiben stehen; der Prüflauf meldet sie, und die
-Verwaltung entscheidet (Vorsitz oder Mitglied). Zellen, die mit `=`, `+`, `-` oder `@` beginnen, bekommen ein
-Hochkomma, damit Excel sie nicht als Formel ausführt; der Import entfernt es wieder.
+stellvertretendes Mitglied, „Hinzugewählte Mitglieder“ → hinzugewähltes Mitglied), unbekannte wie
+„Bürgermeister“ bleiben stehen; der Prüflauf meldet sie, und die Verwaltung entscheidet (Vorsitz oder
+Mitglied). Zellen, die mit `=`, `+`, `-` oder `@` beginnen, bekommen ein Hochkomma, damit Excel sie nicht als
+Formel ausführt; der Import entfernt es wieder.
 
 Die Verwaltung prüft Namen, Arten und Funktionen, trägt Beginn, Kontakt- und Bankdaten nach und schickt die
 Dateien über einen gesicherten Kanal zurück. Öffentliche Listen sind oft unvollständig (etwa ohne
@@ -68,20 +71,27 @@ Pflichtspalten sind **fett**.
 | Datei | Spalten |
 |---|---|
 | `wahlperioden` | **name**, nummer, beginn, ende |
-| `gremien` | **name**, kurzname, **art** (Rat, Ausschuss, Beirat, Kommission, Sonstiges; auch Kreistag, Ortsrat, Verwaltungsausschuss …), ausschussart (Hauptausschuss – auch Verwaltungs-, Kreis- oder Samtgemeindeausschuss –, Finanzausschuss, Rechnungsprüfungsausschuss, anderer), uebergeordnet, ladungsfrist_tage, sollstaerke, beginn, ende, aktiv |
+| `gremien` | **name**, kurzname, **art** (Rat, Ausschuss, Beirat, Kommission, Sonstiges; auch Kreistag, Ortsrat, Verwaltungsausschuss …), ausschussart (Hauptausschuss – auch Verwaltungs-, Kreis-, Regions- oder Samtgemeindeausschuss –, Finanzausschuss, Rechnungsprüfungsausschuss, anderer), uebergeordnet, ladungsfrist_tage, sollstaerke, beginn, ende, aktiv |
 | `fraktionen` | **name**, kurzname, beginn, ende, aktiv |
 | `aemter` | **name**, kurzname, uebergeordnet, aktiv |
 | `personen` | **kennung**, anrede, titel, **vorname**, **nachname**, email, telefon, adresse, kontoinhaber, iban, bic, zustellweg (E-Mail, Portal, Brief), mandat_beginn, mandat_ende, aktiv |
-| `besetzungen` | **person** (Kennung aus `personen`), **gremium** (Name eines Gremiums, einer Fraktion oder eines Amts), funktion (Mitglied, Vorsitz, stellv. Vorsitz, sachkundige/r Bürger/in bzw. hinzugewählt, beratend bzw. Grundmandat, Gast), stimmrecht, beginn, ende, wahlperiode, vertretung_fuer (Kennung) |
+| `besetzungen` | **person** (Kennung aus `personen`), **gremium** (Name eines Gremiums, einer Fraktion oder eines Amts), funktion (Mitglied, stellvertretendes Mitglied, Vorsitz, stellv. Vorsitz, hinzugewählt, sachkundige/r Bürger/in, beratend bzw. Grundmandat, Gast), stimmrecht, beginn, ende, wahlperiode, vertretung_fuer (Kennung) |
 
 - `kennung` verknüpft nur die Dateien untereinander (z. B. die Personennummer des Altsystems) und wird nicht
   gespeichert.
-- Ohne `stimmrecht` haben beratende Mitglieder und Gäste keins, alle anderen schon. Ausnahme:
-  stellvertretende Mitglieder ohne `vertretung_fuer` bekommen kein Stimmrecht (Hinweis im Bericht), sonst
-  zählten sie bei der Beschlussfähigkeit als Mitglied. Mit `vertretung_fuer` rücken sie für die vertretene
-  Person nach.
+- Ohne Angabe in `stimmrecht` gilt für neue Besetzungen die Tabelle unten; eine Angabe in der Spalte geht
+  immer vor. Sonst zählten Personen ohne Stimme bei der Beschlussfähigkeit mit. Stellvertretende Mitglieder
+  mit `vertretung_fuer` rücken für die vertretene Person nach. Maßgeblich ist das Landesprofil des Mandanten.
 - Ohne `wahlperiode` bekommt eine neue Besetzung die Wahlperiode, in die ihr Beginn fällt.
 - Gremien und Fraktionen dürfen in den Besetzungen auch vorkommen, wenn sie schon im Mandanten angelegt sind.
+
+| Funktion | Stimmrecht ohne Angabe |
+|---|---|
+| beratend, Grundmandat (§ 71 Abs. 4 NKomVG), Gast | nein |
+| hinzugewählt | nein (§ 71 Abs. 7 NKomVG), Sammelhinweis im Bericht. In Ausschüssen nach § 73 NKomVG regelt das jeweilige Gesetz das Stimmrecht; dort `ja` angeben |
+| sachkundige/r Bürger/in | Landesprofil Niedersachsen: nein wie hinzugewählt; Landesprofil Nordrhein-Westfalen: ja (§ 58 Abs. 3 GO NRW); sonst ja, mit Sammelhinweis, das Stimmrecht nach Landesrecht zu prüfen |
+| stellvertretendes Mitglied ohne `vertretung_fuer` | nein, Hinweis im Bericht |
+| alle anderen | ja |
 
 ## Abgleich mit dem Bestand
 
@@ -89,12 +99,17 @@ Der Import erkennt vorhandene Datensätze an fachlichen Schlüsseln; eine eigene
 
 | Objekt | Schlüssel |
 |---|---|
-| Wahlperiode, Gremium, Fraktion, Amt | Name (Groß-/Kleinschreibung und Leerraum egal) |
+| Wahlperiode, Gremium, Fraktion, Amt | Name (Groß-/Kleinschreibung und Leerraum egal); gibt es den Namen im Mandanten mehrfach, ist das ein Fehler |
 | Person | Vor- und Nachname; gibt es den Namen im Mandanten mehrfach, zusätzlich die E-Mail |
 | Besetzung | Gremium, Person und Beginn |
 
 Vorhandene Datensätze werden aktualisiert, wenn die Datei abweichende Werte nennt. **Leere Zellen ändern
 nichts.** Der Import löscht nichts; was im Altsystem fehlt, bleibt in Session.
+
+Gibt es genau eine Person gleichen Namens, nennt die Datei aber eine andere E-Mail-Adresse als der Bestand,
+meldet der Bericht „möglicherweise eine andere Person“ und ob sich dabei Bankdaten ändern; die Werte selbst
+zeigt er nicht. Ist es eine andere Person, sie vorher von Hand mit ihrer E-Mail-Adresse anlegen; dann ordnet
+der Import über die E-Mail richtig zu.
 
 ## Prüfungen
 
@@ -105,11 +120,15 @@ Fehler stehen mit Datei und Zeile im Bericht; mit Fehlern schreibt auch der Impo
 - Ende vor Beginn; Wahlperioden, die sich überschneiden; Besetzungen derselben Person im selben Gremium,
   die sich überschneiden (auch mit vorhandenen Besetzungen)
 - Verweise auf unbekannte oder fehlerhafte Personen, Gremien, Wahlperioden und übergeordnete Gremien
+- Namen von Wahlperioden, Gremien, Fraktionen und Ämtern, die es im Mandanten mehrfach gibt (auch als
+  übergeordnetes Gremium und als Wahlperiode, in die der Beginn einer Besetzung fällt)
+- übergeordnete Gremien oder Ämter, die einen Ring bilden (A unter B, B unter A), aus Dateien und Bestand
+  zusammen
 - E-Mail-Adresse, IBAN (Prüfziffer) und BIC
 - ein Name, den es im Mandanten schon mit anderer Art gibt (z. B. als Fraktion statt als Gremium)
 
-Hinweise (z. B. Beginn außerhalb der genannten Wahlperiode, Abweichung in der Gegenprobe) halten den Import
-nicht auf.
+Hinweise (z. B. Beginn außerhalb der genannten Wahlperiode, angenommenes Stimmrecht, andere E-Mail bei
+gleichem Namen, Abweichung in der Gegenprobe) halten den Import nicht auf.
 
 ## Bericht und Zählabgleich
 
@@ -138,8 +157,10 @@ Abweichungen sind Hinweise: Öffentliche Listen zeigen oft nicht alle Mitglieder
 
 ## Grenzen
 
-- Die Zuordnung zu Körperschaften (Samtgemeinde und Mitgliedsgemeinden in einem Mandanten) folgt mit #756.
-  Bis dahin erkennt der Import Gremien am Namen im ganzen Mandanten: Gleichnamige Gremien zweier
-  Körperschaften (etwa zweimal „Verwaltungsausschuss“) lassen sich noch nicht getrennt übernehmen.
+- Die Zuordnung zu Körperschaften (Samtgemeinde und Mitgliedsgemeinden in einem Mandanten) folgt mit #756
+  (Spalte `koerperschaft`). Bis dahin erkennt der Import Gremien am Namen im ganzen Mandanten: Gleichnamige
+  Gremien zweier Körperschaften (etwa zweimal „Verwaltungsausschuss“) meldet er als Fehler, statt einen
+  beliebigen Datensatz zu nehmen; übernehmen lassen sie sich erst mit der Spalte.
 - Sitzungen, Vorlagen und Niederschriften übernimmt der Befehl nicht (#762, Soll-Teil).
-- Zeilen je Datei höchstens 20.000, Dateigröße höchstens 10 MB.
+- Zeilen je Datei höchstens 20.000, Dateigröße höchstens 10 MB; XLSX entpackt höchstens 50 MB, Spalten bis
+  XFD wie in Excel und höchstens 2 Millionen Zellen.

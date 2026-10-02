@@ -26,10 +26,11 @@ from apps.session.models import (
     SessionOrganization,
     SessionOrganizationMembership,
     SessionPerson,
+    SessionStateProfile,
     SessionTenant,
 )
-from apps.session.services import stammdaten_import
-from apps.session.services.stammdaten_tabellen import read_table
+from apps.session.services import stammdaten_import, stammdaten_tabellen
+from apps.session.services.stammdaten_tabellen import TableError, read_table
 from insight_core.models import (
     OParlBody,
     OParlLegislativeTerm,
@@ -38,6 +39,7 @@ from insight_core.models import (
     OParlPerson,
     OParlSource,
 )
+from insight_core.services.public_members import PublicMembership, PublicRoster
 
 pytestmark = pytest.mark.django_db
 
@@ -453,6 +455,8 @@ def test_personenschluessel_der_gegenprobe() -> None:
     assert stammdaten_import.person_key("Prof. Dr.-Ing. Ida  Muster") == "ida muster"
     assert stammdaten_import.person_key("Frau Lena Beispiel") == "lena beispiel"
     assert stammdaten_import.person_key("Beispiel, Frau Dr. Lena") == "lena beispiel"
+    # „Phil“ ohne Punkt ist ein Vorname, kein Titel
+    assert stammdaten_import.person_key("Phil Meyer") == "phil meyer"
 
 
 # ---------------------------------------------------------------- Vorlagen aus dem RIS-Bestand
@@ -604,6 +608,11 @@ def test_vorlagen_ueberschreiben_keine_importdateien(tmp_path: Path) -> None:
         ("Herr Prof. Dr.-Ing. Karl  Beispiel", ("Herr", "Prof. Dr.-Ing.", "Karl", "Beispiel")),
         ("Anna Maria van den Berg", ("", "", "Anna Maria", "van den Berg")),
         ("Einname", ("", "", "", "Einname")),
+        # Abkürzungen ohne Punkt sind Namen („Phil“, „Ing“), außer „Dr“ und „Prof“
+        ("Phil Meyer", ("", "", "Phil", "Meyer")),
+        ("Ing Hansen", ("", "", "Ing", "Hansen")),
+        ("Dr. med. Ina Arzt", ("", "Dr. med.", "Ina", "Arzt")),
+        ("Prof Dr Ida Muster", ("", "Prof Dr", "Ida", "Muster")),
     ],
 )
 def test_namen_fuer_die_vorlage(name: str, expected: tuple[str, str, str, str]) -> None:
@@ -615,6 +624,7 @@ def test_namen_fuer_die_vorlage(name: str, expected: tuple[str, str, str, str]) 
     [
         ("Samtgemeinderat", ("gremien", "Rat", "")),
         ("Samtgemeindeausschuss", ("gremien", "Ausschuss", "Hauptausschuss")),
+        ("Regionsausschuss", ("gremien", "Ausschuss", "Hauptausschuss")),
         ("Ausschuss für Finanzen", ("gremien", "Ausschuss", "")),
         ("Rechnungsprüfungsausschuss", ("gremien", "Ausschuss", "Rechnungsprüfungsausschuss")),
         ("Seniorenbeirat", ("gremien", "Beirat", "")),
@@ -639,6 +649,8 @@ def test_gremienarten_fuer_die_vorlage(name: str, expected: tuple[str, str, str]
         ("Beratende Mitglieder", ("advisor", False), "beratend"),
         ("Ordentliche Mitglieder", ("member", False), "Mitglied"),
         ("Sachkundige Bürger", ("expert_citizen", False), "sachkundige/r Bürger/in"),
+        # Hinzugewählte bleiben erkennbar: ohne Angabe kein Stimmrecht (§ 71 Abs. 7 NKomVG)
+        ("Hinzugewählte Mitglieder", ("expert_citizen", False), "hinzugewähltes Mitglied"),
         # Ämter sind keine Stellvertretung im Gremium: Die Verwaltung entscheidet, die Vorlage behält den Text
         ("stellv. Bürgermeister", None, "stellv. Bürgermeister"),
         ("Bürgermeisterin", None, "Bürgermeisterin"),
@@ -668,3 +680,267 @@ def test_stellvertretung_ohne_vertretene_person_hat_kein_stimmrecht(tenant: Sess
     )
     # Ausdrückliche Angabe gilt
     assert votes == {"Beispiel": False, "Mustermann": True}
+
+
+# ---------------------------------------------------------------- Stimmrecht nach Funktion und Landesrecht
+
+
+def _votes(tenant: SessionTenant) -> dict[str, bool]:
+    return dict(
+        SessionOrganizationMembership.objects.filter(organization__tenant=tenant).values_list(
+            "person__family_name", "has_voting_rights"
+        )
+    )
+
+
+def _co_opted_files(directory: Path) -> None:
+    write(directory, "gremien.csv", "name;art\nBauausschuss;Ausschuss\n")
+    write(
+        directory,
+        "personen.csv",
+        "kennung;vorname;nachname\nP1;Ida;Hinzu\nP2;Max;Mitstimme\nP3;Lena;Sachkundig\nP4;Tom;Ratsmitglied\n",
+    )
+    write(
+        directory,
+        "besetzungen.csv",
+        "person;gremium;funktion;stimmrecht;beginn\n"
+        "P1;Bauausschuss;hinzugewähltes Mitglied;;01.11.2026\n"
+        "P2;Bauausschuss;hinzugewähltes Mitglied;ja;01.11.2026\n"  # z. B. Ausschuss nach § 73 NKomVG
+        "P3;Bauausschuss;sachkundige Bürgerin;;01.11.2026\n"
+        "P4;Bauausschuss;Mitglied;;01.11.2026\n",
+    )
+
+
+def test_hinzugewaehlte_haben_ohne_angabe_kein_stimmrecht(tenant: SessionTenant, tmp_path: Path) -> None:
+    """§ 71 Abs. 7 NKomVG: sonst zählten Hinzugewählte in attendance_service.roster zur Beschlussfähigkeit."""
+    _co_opted_files(tmp_path)
+    out = run("--tenant", "musterdorf", str(tmp_path))
+    # Ausdrückliche Angabe gilt; sachkundige Bürger ohne Landesprofil mit Stimmrecht, aber mit Hinweis
+    assert _votes(tenant) == {"Hinzu": False, "Mitstimme": True, "Sachkundig": True, "Ratsmitglied": True}
+    assert "ohne Stimmrecht übernommen (§ 71 Abs. 7 NKomVG)" in out
+    assert "„ja“ angeben (Zeile 2)." in out
+    assert "das Stimmrecht hängt vom Landesrecht ab – bitte prüfen und in stimmrecht angeben (Zeile 4)." in out
+    hinzu = SessionOrganizationMembership.objects.get(person__family_name="Hinzu")
+    assert hinzu.role == "expert_citizen"
+
+
+@pytest.mark.parametrize(("code", "sachkundig"), [("NI", False), ("NW", True)])
+def test_stimmrecht_sachkundiger_buerger_nach_landesprofil(
+    tenant: SessionTenant, tmp_path: Path, code: str, sachkundig: bool
+) -> None:
+    tenant.state_profile = SessionStateProfile.objects.get(code=code)
+    tenant.save()
+    _co_opted_files(tmp_path)
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert not plan.errors
+    votes = {item.label.split(" – ")[0]: item.values["has_voting_rights"] for item in plan.memberships}
+    assert votes == {"Ida Hinzu": False, "Max Mitstimme": True, "Lena Sachkundig": sachkundig, "Tom Ratsmitglied": True}
+    hints = [f.text() for f in plan.hints]
+    # In Niedersachsen gilt die Regel für Hinzugewählte auch unter dem Namen „sachkundige Bürger“
+    expected = "Zeilen 2, 4" if code == "NI" else "Zeile 2"
+    assert any("§ 71 Abs. 7 NKomVG" in h and h.endswith(f"({expected}).") for h in hints)
+    assert not any("Landesrecht" in h for h in hints)
+
+
+def test_vorlage_aus_dem_ris_laesst_das_stimmrecht_hinzugewaehlter_offen() -> None:
+    """SessionNet nennt „ja“, solange die Überschrift nicht „ohne Stimmrecht“ sagt – das ist nur der Standard."""
+    roster = PublicRoster(
+        memberships=[
+            PublicMembership("p1", "Bauausschuss", "Hinzugewählte Mitglieder", True, None, None),
+            PublicMembership("p2", "Bauausschuss", "Hinzugewählte Mitglieder mit Stimmrecht", True, None, None),
+            PublicMembership("p3", "Bauausschuss", "Hinzugewählte Mitglieder", False, None, None),
+            PublicMembership("p4", "Bauausschuss", "Mitglieder", True, None, None),
+        ]
+    )
+    rows = stammdaten_import._prefill(roster, date(2026, 11, 15))["besetzungen"]
+    assert [(r["person"], r["funktion"], r["stimmrecht"]) for r in rows] == [
+        ("p1", "hinzugewähltes Mitglied", ""),
+        ("p2", "hinzugewähltes Mitglied", "ja"),
+        ("p3", "hinzugewähltes Mitglied", "nein"),
+        ("p4", "Mitglied", "ja"),
+    ]
+
+
+# ---------------------------------------------------------------- Mehrdeutige Namen im Bestand
+
+MEHRFACH = (
+    "ist im Mandanten mehrfach vorhanden und damit nicht eindeutig "
+    "(Abgleich je Körperschaft folgt mit der Spalte koerperschaft)."
+)
+
+
+def test_mehrdeutige_namen_im_bestand_sind_fehler(tenant: SessionTenant, tmp_path: Path) -> None:
+    """Zwei gleichnamige Gremien (z. B. zweier Körperschaften): keine beliebige Zuordnung, sondern ein Fehler."""
+    for active in (True, False):
+        SessionOrganization.objects.create(
+            tenant=tenant, name="Bauausschuss", organization_type="committee", is_active=active
+        )
+    for _ in range(2):
+        SessionLegislativeTerm.objects.create(
+            tenant=tenant, name="Wahlperiode 2026–2031", start_date=date(2026, 11, 1), end_date=date(2031, 10, 31)
+        )
+        SessionOrganization.objects.create(tenant=tenant, name="Verwaltungsausschuss", organization_type="committee")
+    write(tmp_path, "wahlperioden.csv", "name;nummer\nWahlperiode 2026–2031;20\n")
+    write(
+        tmp_path,
+        "gremien.csv",
+        "name;art;uebergeordnet;aktiv\nBauausschuss;Ausschuss;;ja\nUnterausschuss Hochbau;Ausschuss;Bauausschuss;\n",
+    )
+    write(tmp_path, "personen.csv", "kennung;vorname;nachname\nP1;Ida;Muster\n")
+    write(
+        tmp_path,
+        "besetzungen.csv",
+        "person;gremium;beginn;wahlperiode\n"
+        "P1;Verwaltungsausschuss;01.11.2026;\n"
+        "P1;Unterausschuss Hochbau;01.11.2026;Wahlperiode 2026–2031\n",
+    )
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert [f.text() for f in plan.errors] == [
+        f"wahlperioden.csv, Zeile 2: Wahlperiode „Wahlperiode 2026–2031“ {MEHRFACH}",
+        f"gremien.csv, Zeile 2: „Bauausschuss“ {MEHRFACH}",
+        f"gremien.csv, Zeile 3: Übergeordnetes Gremium „Bauausschuss“ {MEHRFACH}",
+        f"besetzungen.csv, Zeile 2: Gremium „Verwaltungsausschuss“ {MEHRFACH}",
+        "besetzungen.csv, Zeile 3: Gremium „Unterausschuss Hochbau“ hat Fehler (siehe gremien.csv, Zeile 3).",
+        f"besetzungen.csv, Zeile 3: Wahlperiode „Wahlperiode 2026–2031“ {MEHRFACH}",
+    ]
+    # Bestand vorher zählt jeden Datensatz, auch gleichnamige
+    assert plan.tallies["wahlperioden"].before == 2
+    assert plan.tallies["gremien"].before == 4
+    assert all(t.balanced for t in plan.tallies.values())
+    with pytest.raises(CommandError, match="Fehler – nichts geschrieben"):
+        run("--tenant", "musterdorf", str(tmp_path))
+    # Nichts angefasst: der inaktive Bauausschuss bleibt inaktiv
+    assert SessionOrganization.objects.filter(tenant=tenant, name="Bauausschuss", is_active=False).exists()
+
+
+def test_wahlperiode_zum_beginn_mehrdeutig(tenant: SessionTenant, tmp_path: Path) -> None:
+    for _ in range(2):
+        SessionLegislativeTerm.objects.create(
+            tenant=tenant, name="WP 2026", start_date=date(2026, 11, 1), end_date=date(2031, 10, 31)
+        )
+    SessionOrganization.objects.create(tenant=tenant, name="Rat", organization_type="council")
+    write(tmp_path, "personen.csv", "kennung;vorname;nachname\nP1;Ida;Muster\n")
+    write(tmp_path, "besetzungen.csv", "person;gremium;beginn\nP1;Rat;01.12.2026\n")
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert [f.text() for f in plan.errors] == [
+        f"besetzungen.csv, Zeile 2: Ida Muster – Rat: Wahlperiode zum Beginn – „WP 2026“ {MEHRFACH}"
+    ]
+
+
+# ---------------------------------------------------------------- Namensgleiche Person, Ringe
+
+
+def test_namensgleiche_person_mit_anderer_email_gibt_hinweis(tenant: SessionTenant, tmp_path: Path) -> None:
+    person = cast(Any, SessionPerson(tenant=tenant, given_name="Thomas", family_name="Müller", email="t1@example.org"))
+    person.set_bank_iban_encrypted(IBAN)
+    person.save()
+    write(
+        tmp_path,
+        "personen.csv",
+        f"kennung;vorname;nachname;email;iban\nP1;Thomas;Müller;t2@example.org;{IBAN_NEU}\n",
+    )
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert not plan.errors
+    assert plan.persons["P1"].changes == ["E-Mail", "IBAN"]
+    assert [f.text() for f in plan.hints] == [
+        "personen.csv, Zeile 2: Thomas Müller: andere E-Mail-Adresse als bei der vorhandenen Person gleichen "
+        "Namens – möglicherweise eine andere Person; dabei ändern sich auch IBAN. Vor dem Import prüfen; eine "
+        "andere Person gleichen Namens zuerst von Hand anlegen."
+    ]
+    assert IBAN_NEU not in plan.as_text()
+    assert "t1@example.org" not in plan.as_text()
+
+    # Gleiche E-Mail (Groß-/Kleinschreibung egal): kein Hinweis
+    write(tmp_path, "personen.csv", "kennung;vorname;nachname;email\nP1;Thomas;Müller;T1@example.org\n")
+    assert stammdaten_import.plan_import(tenant, tmp_path).hints == []
+
+
+def test_ringe_uebergeordneter_gremien_sind_fehler(tenant: SessionTenant, tmp_path: Path) -> None:
+    oben = SessionOrganization.objects.create(tenant=tenant, name="Fachbereich", organization_type="department")
+    SessionOrganization.objects.create(tenant=tenant, name="Amt 1", organization_type="department", parent=oben)
+    write(
+        tmp_path,
+        "gremien.csv",
+        "name;art;uebergeordnet\nA-Ausschuss;Ausschuss;B-Ausschuss\nB-Ausschuss;Ausschuss;A-Ausschuss\n"
+        "C-Ausschuss;Ausschuss;A-Ausschuss\n",
+    )
+    # Im Bestand liegt „Amt 1“ unter „Fachbereich“; die Datei hängt „Fachbereich“ unter „Amt 1“
+    write(tmp_path, "aemter.csv", "name;uebergeordnet\nFachbereich;Amt 1\n")
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert [f.text() for f in plan.errors] == [
+        "gremien.csv, Zeile 2: Übergeordnete Gremien bilden einen Ring: A-Ausschuss → B-Ausschuss → A-Ausschuss.",
+        "gremien.csv, Zeile 3: Übergeordnete Gremien bilden einen Ring: B-Ausschuss → A-Ausschuss → B-Ausschuss.",
+        "aemter.csv, Zeile 2: Übergeordnete Gremien bilden einen Ring: Fachbereich → Amt 1 → Fachbereich.",
+        "gremien.csv, Zeile 4: Übergeordnetes Gremium „A-Ausschuss“ hat Fehler.",
+    ]
+
+
+# ---------------------------------------------------------------- XLSX-Grenzen
+
+
+def _xlsx_cells(path: Path, rows: list[list[tuple[str, str]]]) -> None:
+    """XLSX mit frei gewählten Zellbezügen (Inline-Text)."""
+    main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    xml_rows = "".join(
+        f'<row r="{number}">'
+        + "".join(f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>' for ref, text in cells)
+        + "</row>"
+        for number, cells in enumerate(rows, start=1)
+    )
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "xl/workbook.xml",
+            f'<workbook xmlns="{main}" xmlns:r="{rel}"><sheets><sheet name="T" sheetId="1" r:id="rId1"/></sheets>'
+            "</workbook>",
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml", f'<worksheet xmlns="{main}"><sheetData>{xml_rows}</sheetData></worksheet>'
+        )
+
+
+def test_xlsx_zellbezug_ausserhalb_des_tabellenblatts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "personen.xlsx"
+    _xlsx_cells(path, [[("A1", "kennung"), ("ZZZZZZZZ1", "x")]])
+    with pytest.raises(TableError, match="außerhalb des Tabellenblatts"):
+        read_table(path)
+    _xlsx_cells(path, [[("A1", "kennung"), ("XFE1", "x")]])
+    with pytest.raises(TableError, match="außerhalb des Tabellenblatts"):
+        read_table(path)
+    # XFD ist die letzte Excel-Spalte; leere Zellen verlängern die Zeile nicht
+    _xlsx_cells(path, [[("A1", "kennung"), ("XFD1", "x")], [("A2", "P1"), ("XFC2", "")]])
+    table = read_table(path)
+    assert len(table.header) == 16_384
+    assert table.rows == [(2, ["P1"])]
+    # Je Zeile eine Zelle weit rechts: Zellen insgesamt begrenzt
+    monkeypatch.setattr(stammdaten_tabellen, "MAX_CELLS", 50_000)
+    _xlsx_cells(path, [[("A1", "kennung")]] + [[(f"XFD{n}", "x")] for n in range(2, 6)])
+    with pytest.raises(TableError, match="zu viele Zellen"):
+        read_table(path)
+
+
+# ---------------------------------------------------------------- Planen und Ausführen in einer Transaktion
+
+
+def test_import_sperrt_den_mandanten_vor_dem_planen(
+    tenant: SessionTenant, daten: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    for name in ("lock_tenant", "plan_import", "apply_plan"):
+        original = getattr(stammdaten_import, name)
+
+        def recorder(*args: Any, _name: str = name, _original: Any = original, **kwargs: Any) -> Any:
+            calls.append(_name)
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(stammdaten_import, name, recorder)
+    run("--tenant", "musterdorf", str(daten), "--dry-run")
+    assert calls == ["plan_import"]
+    calls.clear()
+    run("--tenant", "musterdorf", str(daten))
+    assert calls == ["lock_tenant", "plan_import", "apply_plan"]

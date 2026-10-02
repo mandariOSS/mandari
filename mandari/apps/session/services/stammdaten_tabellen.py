@@ -9,7 +9,8 @@ und die Zeilen mit ihrer Zeilennummer in der Datei, damit Fehlermeldungen zeilen
   (Semikolon, Komma oder Tabulator).
 - XLSX: erstes Tabellenblatt, ohne Zusatzbibliothek (ZIP + XML über ``defusedxml``). Zahlen in Datumsspalten
   sind Excel-Seriennummern; :func:`excel_date` rechnet sie um.
-- Grenzen gegen versehentlich riesige oder präparierte Dateien: Größe, entpackte Größe, Zeilenzahl.
+- Grenzen gegen versehentlich riesige oder präparierte Dateien: Größe, entpackte Größe, Zeilenzahl, Spalten
+  (wie Excel höchstens XFD) und Zellen insgesamt.
 """
 
 from __future__ import annotations
@@ -28,6 +29,11 @@ from defusedxml import ElementTree
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_UNPACKED_BYTES = 50 * 1024 * 1024
 MAX_ROWS = 20_000
+# Excel: höchstens 16.384 Spalten (A bis XFD). Zellen insgesamt (Zeilen × belegte Breite) begrenzt, damit eine
+# einzelne Zelle weit rechts je Zeile nicht Millionen leerer Zellen erzeugt
+MAX_COLUMNS = 16_384
+MAX_CELLS = 2_000_000
+_OUTSIDE_SHEET = "Ein Zellbezug liegt außerhalb des Tabellenblatts (höchstens Spalte XFD)."
 
 _NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 _REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -114,9 +120,12 @@ def _read_csv(path: Path) -> Table:
 
 
 def _column_index(letters: str) -> int:
+    """Spaltenbuchstaben -> Index ab 0; außerhalb von A bis XFD ein :class:`TableError`."""
     index = 0
-    for char in letters:
+    for char in letters[:4]:  # mehr als drei Buchstaben liegen ohnehin jenseits von XFD
         index = index * 26 + (ord(char) - ord("A") + 1)
+    if len(letters) > 3 or index > MAX_COLUMNS:
+        raise TableError(_OUTSIDE_SHEET)
     return index - 1
 
 
@@ -189,16 +198,24 @@ def _read_xlsx(path: Path) -> Table:
             raise TableError("Die XLSX-Datei enthält ungültiges XML.") from None
 
     rows: list[tuple[int, list[str]]] = []
+    total_cells = 0
     for row in sheet.iterfind("m:sheetData/m:row", _NS):
         cells: dict[int, str] = {}
         for position, cell in enumerate(row.findall("m:c", _NS)):
             match = _CELL_REF_RE.match(cell.get("r") or "")
             index = _column_index(match.group(1)) if match else position
-            cells[index] = _cell_text(cell, shared).strip()
+            if index >= MAX_COLUMNS:
+                raise TableError(_OUTSIDE_SHEET)
+            text = _cell_text(cell, shared).strip()
+            if text:  # leere (z. B. nur formatierte) Zellen verlängern die Zeile nicht
+                cells[index] = text
         try:
             number = int(row.get("r") or 0) or len(rows) + 1
         except ValueError:
             number = len(rows) + 1
+        total_cells += max(cells) + 1 if cells else 0
+        if total_cells > MAX_CELLS:
+            raise TableError("Das Tabellenblatt hat zu viele Zellen (Spalten weit rechts belegt?).")
         values = [cells.get(i, "") for i in range(max(cells) + 1)] if cells else []
         if any(values):
             rows.append((number, values))

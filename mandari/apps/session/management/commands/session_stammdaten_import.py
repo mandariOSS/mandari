@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db import transaction
 from django.utils import timezone
 
 from apps.session.models import SessionTenant
@@ -86,15 +87,20 @@ class Command(BaseCommand):
             if body is None:
                 raise CommandError("Body für die Gegenprobe nicht im RIS-Bestand gefunden.")
 
-        plan = stammdaten_import.plan_import(tenant, directory)
-        if body is not None:
-            stammdaten_import.cross_check(plan, public_members.current_members(body, day), day)
-        if not options["dry_run"] and not plan.errors:
-            try:
-                stammdaten_import.apply_plan(plan)
-            except Exception:
-                logger.exception("Stammdaten-Import für Mandant %s fehlgeschlagen", tenant.slug)
-                raise CommandError("Import fehlgeschlagen, nichts geschrieben (Einzelheiten im Log).") from None
+        write = not options["dry_run"]
+        # Planen und Ausführen in einer Transaktion, gleichzeitige Läufe je Mandant nacheinander
+        with transaction.atomic():
+            if write:
+                stammdaten_import.lock_tenant(tenant)
+            plan = stammdaten_import.plan_import(tenant, directory)
+            if body is not None:
+                stammdaten_import.cross_check(plan, public_members.current_members(body, day), day)
+            if write and not plan.errors:
+                try:
+                    stammdaten_import.apply_plan(plan)
+                except Exception:
+                    logger.exception("Stammdaten-Import für Mandant %s fehlgeschlagen", tenant.slug)
+                    raise CommandError("Import fehlgeschlagen, nichts geschrieben (Einzelheiten im Log).") from None
 
         self.stdout.write(plan.as_text())
         if options["bericht"]:

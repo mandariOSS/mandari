@@ -17,8 +17,13 @@ Zwei Schritte:
 **Idempotent** über fachliche Schlüssel (ohne zusätzliche Kennungsspalte in der Datenbank): Wahlperiode und
 Gremium (auch Fraktion und Amt) über den Namen, Person über Vor- und Nachname (bei gleichen Namen zusätzlich
 über die E-Mail), Besetzung über Gremium, Person und Beginn wie die Datenbankregel. Ein zweiter Import
-derselben Dateien ändert nichts. Leere Zellen ändern an vorhandenen Datensätzen nichts. Die Spalte
-``kennung`` der Personen (z. B. die Personennummer des Altsystems) verknüpft nur die Dateien untereinander.
+derselben Dateien ändert nichts. Gibt es einen Namen im Mandanten mehrfach (z. B. „Verwaltungsausschuss“
+zweier Körperschaften), ist das ein Fehler statt einer beliebigen Zuordnung. Leere Zellen ändern an
+vorhandenen Datensätzen nichts. Die Spalte ``kennung`` der Personen (z. B. die Personennummer des Altsystems)
+verknüpft nur die Dateien untereinander.
+
+**Stimmrecht** ohne Angabe nach Funktion und Landesprofil (:func:`default_vote`): Hinzugewählte ohne
+Stimmrecht (§ 71 Abs. 7 NKomVG), beratende Mitglieder und Gäste ebenso.
 
 **Sicherheit:** Telefon, Adresse und Bankdaten gehen nur über die Verschlüsselungs-Accessoren in die Datenbank
 und erscheinen nie in Bericht, Ausgabe oder Fehlermeldung.
@@ -101,7 +106,7 @@ COLUMNS: dict[str, tuple[Column, ...]] = {
         Column("art", "Rat, Ausschuss, Beirat, Kommission oder Sonstiges", required=True),
         Column(
             "ausschussart",
-            "Hauptausschuss (auch Verwaltungs-, Kreis-, Samtgemeindeausschuss), Finanzausschuss, "
+            "Hauptausschuss (auch Verwaltungs-, Kreis-, Regions-, Samtgemeindeausschuss), Finanzausschuss, "
             "Rechnungsprüfungsausschuss oder „anderer“",
         ),
         Column("uebergeordnet", "Name des übergeordneten Gremiums"),
@@ -146,10 +151,14 @@ COLUMNS: dict[str, tuple[Column, ...]] = {
         Column("gremium", "Name des Gremiums, der Fraktion oder des Amts", required=True),
         Column(
             "funktion",
-            "Mitglied, Vorsitz, stellv. Vorsitz, sachkundige/r Bürger/in (auch hinzugewählt), beratend "
+            "Mitglied, Vorsitz, stellv. Vorsitz, hinzugewählt, sachkundige/r Bürger/in, beratend "
             "(auch Grundmandat) oder Gast",
         ),
-        Column("stimmrecht", f"{_BOOL_HINT} (leer: nein bei beratend und Gast, sonst ja)"),
+        Column(
+            "stimmrecht",
+            f"{_BOOL_HINT} (leer: nein bei beratend, hinzugewählt und Gast, in Niedersachsen auch bei "
+            "sachkundigen Bürgern; sonst ja)",
+        ),
         Column("beginn", f"erster Tag ({_DATE_HINT})"),
         Column("ende", f"letzter Tag ({_DATE_HINT})"),
         Column("wahlperiode", "Name der Wahlperiode (leer: die Wahlperiode, in die der Beginn fällt)"),
@@ -198,6 +207,7 @@ _ART = {
     "hauptausschuss": "committee",
     "verwaltungsausschuss": "committee",
     "kreisausschuss": "committee",
+    "regionsausschuss": "committee",
     "samtgemeindeausschuss": "committee",
     "finanzausschuss": "committee",
     "rechnungspruefungsausschuss": "committee",
@@ -215,6 +225,7 @@ _COMMITTEE_KIND = {
     "hauptausschuss": SessionOrganization.COMMITTEE_KIND_MAIN,
     "verwaltungsausschuss": SessionOrganization.COMMITTEE_KIND_MAIN,
     "kreisausschuss": SessionOrganization.COMMITTEE_KIND_MAIN,
+    "regionsausschuss": SessionOrganization.COMMITTEE_KIND_MAIN,
     "samtgemeindeausschuss": SessionOrganization.COMMITTEE_KIND_MAIN,
     "finanzausschuss": SessionOrganization.COMMITTEE_KIND_FINANCE,
     "rechnungspruefungsausschuss": SessionOrganization.COMMITTEE_KIND_AUDIT,
@@ -282,13 +293,62 @@ def resolve_role(value: str) -> tuple[str, bool] | None:
     return None
 
 
+CO_OPTED_TEXT = "hinzugewähltes Mitglied"
+
+
+def co_opted(value: str) -> bool:
+    """„hinzugewählt“: Ausschussmitglied ohne Mandat in der Vertretung (§ 71 Abs. 7 NKomVG)."""
+    return "hinzugewaehlt" in _fold(value)
+
+
 def role_text(value: str) -> str:
     """Funktion für die Importvorlage: bekannte Angaben vereinheitlicht, unbekannte unverändert."""
     resolved = resolve_role(value) if value.strip() else None
     if resolved is None:
         return value.strip()
     role, deputy = resolved
+    if role == "expert_citizen" and co_opted(value):
+        # Bleibt erkennbar: Hinzugewählte haben ohne Angabe kein Stimmrecht (default_vote)
+        return CO_OPTED_TEXT
     return DEPUTY_TEXT if deputy else _ROLE_TEXT[role]
+
+
+# Hinweise zum Stimmrecht ohne Angabe in der Spalte stimmrecht (default_vote), je Zeile gesammelt
+VOTE_CO_OPTED = "co_opted"
+VOTE_UNCLEAR = "unclear"
+
+
+def default_vote(role: str, function: str, state: str | None) -> tuple[bool, str | None]:
+    """
+    Stimmrecht einer neuen Besetzung ohne Angabe in der Spalte ``stimmrecht`` -> (Stimmrecht, Hinweisart).
+
+    - beratend (auch Grundmandat, § 71 Abs. 4 NKomVG) und Gast: nein.
+    - hinzugewählt: nein (§ 71 Abs. 7 NKomVG), mit Sammelhinweis. Im Landesprofil Niedersachsen (NI) gilt das
+      auch, wenn die Datei die Funktion „sachkundige Bürger“ nennt. Ausschüsse nach § 73 NKomVG regelt das
+      jeweilige Gesetz; dort die Spalte ausfüllen.
+    - sachkundige Bürger im Landesprofil Nordrhein-Westfalen (NW): ja (§ 58 Abs. 3 GO NRW).
+    - sachkundige Bürger ohne eines dieser Landesprofile: ja, mit Sammelhinweis (Landesrecht prüfen).
+    - alle anderen: ja.
+
+    Sonst zählte eine Person ohne Stimme in ``attendance_service.roster`` zur Beschlussfähigkeit.
+    """
+    if role in _ROLES_WITHOUT_VOTE:
+        return False, None
+    if role != "expert_citizen":
+        return True, None
+    if co_opted(function) or state == "NI":
+        return False, VOTE_CO_OPTED
+    if state == "NW":
+        return True, None
+    return True, VOTE_UNCLEAR
+
+
+_VOTE_HINTS = {
+    VOTE_CO_OPTED: "Hinzugewählte ohne Angabe in stimmrecht ohne Stimmrecht übernommen (§ 71 Abs. 7 NKomVG); "
+    "wo ein Gesetz Stimmrecht vorsieht (Ausschüsse nach § 73 NKomVG), „ja“ angeben",
+    VOTE_UNCLEAR: "Sachkundige Bürger/innen ohne Angabe in stimmrecht mit Stimmrecht übernommen; das Stimmrecht "
+    "hängt vom Landesrecht ab – bitte prüfen und in stimmrecht angeben",
+}
 
 
 _DELIVERY = {
@@ -318,6 +378,35 @@ def _fold(value: str) -> str:
 def _name_key(value: str | None) -> str:
     """Schlüssel für Namen (Gremien, Wahlperioden, Personen): Groß-/Kleinschreibung und Leerraum egal."""
     return re.sub(r"\s+", " ", value or "").strip().casefold()
+
+
+def _by_name[N: (SessionLegislativeTerm, SessionOrganization)](objects: Iterable[N]) -> tuple[dict[str, N], set[str]]:
+    """
+    Bestand nach Namensschlüssel -> (eindeutige Namen, mehrfach vorhandene Namen).
+
+    Mehrfach vorhandene Namen lassen sich nicht zuordnen (z. B. „Verwaltungsausschuss“ zweier Körperschaften
+    im selben Mandanten, bis zur Spalte ``koerperschaft`` mit #756); der Plan meldet sie als Fehler, statt
+    einen beliebigen Datensatz zu nehmen.
+    """
+    unique: dict[str, N] = {}
+    ambiguous: set[str] = set()
+    for obj in objects:
+        key = _name_key(obj.name)
+        if key in ambiguous:
+            continue
+        if key in unique:
+            del unique[key]
+            ambiguous.add(key)
+        else:
+            unique[key] = obj
+    return unique, ambiguous
+
+
+def _ambiguous(name: str) -> str:
+    return (
+        f"„{name}“ ist im Mandanten mehrfach vorhanden und damit nicht eindeutig "
+        "(Abgleich je Körperschaft folgt mit der Spalte koerperschaft)."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -661,8 +750,9 @@ def _compare(item: Item, labels: dict[str, str]) -> None:
 
 def _plan_terms(plan: ImportPlan, rows: list[_Row]) -> None:
     tally = plan.tallies.setdefault("wahlperioden", Tally())
-    existing = {_name_key(t.name): t for t in SessionLegislativeTerm.objects.filter(tenant=plan.tenant)}
-    tally.before = len(existing)
+    stock = list(SessionLegislativeTerm.objects.filter(tenant=plan.tenant))
+    existing, ambiguous = _by_name(stock)
+    tally.before = len(stock)
     for row in rows:
         tally.rows += 1
         try:
@@ -677,6 +767,8 @@ def _plan_terms(plan: ImportPlan, rows: list[_Row]) -> None:
             plan.error(row.file, row.line, "Name fehlt.")
         elif key in plan.terms:
             plan.error(row.file, row.line, f"Wahlperiode „{name}“ doppelt (zuerst Zeile {plan.terms[key].line}).")
+        elif key in ambiguous:
+            plan.error(row.file, row.line, f"Wahlperiode {_ambiguous(name)}")
         elif start is not None and end is not None and end < start:
             plan.error(row.file, row.line, "Das Ende liegt vor dem Beginn.")
         else:
@@ -698,8 +790,9 @@ def _plan_terms(plan: ImportPlan, rows: list[_Row]) -> None:
             plan.terms[key] = item
 
     # Zeiträume dürfen sich nicht überschneiden (Datei und übriger Bestand zusammen)
+    matched = {item.instance.pk for item in plan.terms.values() if item.instance is not None}
     periods: list[tuple[str, date | None, date | None, Item | None]] = [
-        (t.name, t.start_date, t.end_date, None) for key, t in existing.items() if key not in plan.terms
+        (t.name, t.start_date, t.end_date, None) for t in stock if t.pk not in matched
     ]
     for item in plan.terms.values():
         start = item.values["start_date"] or (item.instance.start_date if item.instance is not None else None)
@@ -727,7 +820,9 @@ _ORG_LABELS = {
 }
 
 
-def _plan_organization_row(plan: ImportPlan, kind: str, row: _Row, existing: dict[str, Any]) -> None:
+def _plan_organization_row(
+    plan: ImportPlan, kind: str, row: _Row, existing: dict[str, SessionOrganization], ambiguous: set[str]
+) -> None:
     try:
         name = row.text("name", max_length=500)
         short_name = row.text("kurzname", max_length=100)
@@ -757,6 +852,8 @@ def _plan_organization_row(plan: ImportPlan, kind: str, row: _Row, existing: dic
     elif key in plan.organizations:
         first = plan.organizations[key]
         plan.error(row.file, row.line, f"„{name}“ doppelt (zuerst {first.file}, Zeile {first.line}).")
+    elif key in ambiguous:
+        plan.error(row.file, row.line, _ambiguous(name))
     elif start is not None and end is not None and end < start:
         plan.error(row.file, row.line, "Das Ende liegt vor dem Beginn.")
     elif instance is not None and instance.organization_type != org_type:
@@ -784,22 +881,23 @@ def _plan_organization_row(plan: ImportPlan, kind: str, row: _Row, existing: dic
                 "end_date": end,
                 "is_active": active,
             },
-            refs={"parent": _name_key(row.get("uebergeordnet")) or None},
+            refs={"parent": _name_key(row.get("uebergeordnet")) or None, "parent_label": row.get("uebergeordnet")},
         )
         _compare(item, _ORG_LABELS)
         plan.organizations[key] = item
 
 
 def _plan_organizations(plan: ImportPlan, rows_by_kind: dict[str, list[_Row]]) -> None:
-    existing = {_name_key(o.name): o for o in SessionOrganization.objects.filter(tenant=plan.tenant)}
+    stock = list(SessionOrganization.objects.filter(tenant=plan.tenant).select_related("parent"))
+    existing, ambiguous = _by_name(stock)
     for kind in ORGANIZATION_KINDS:
         if kind not in rows_by_kind:
             continue
         tally = plan.tallies.setdefault(kind, Tally())
-        tally.before = sum(1 for o in existing.values() if _org_kind(o.organization_type) == kind)
+        tally.before = sum(1 for o in stock if _org_kind(o.organization_type) == kind)
         for row in rows_by_kind[kind]:
             tally.rows += 1
-            _plan_organization_row(plan, kind, row, existing)
+            _plan_organization_row(plan, kind, row, existing, ambiguous)
 
     # Übergeordnetes Gremium: aus den Dateien oder dem Bestand
     for key, item in plan.organizations.items():
@@ -809,10 +907,13 @@ def _plan_organizations(plan: ImportPlan, rows_by_kind: dict[str, list[_Row]]) -
         parent_item = plan.organizations.get(parent_key)
         if parent_key == key:
             plan.fail(item, "Ein Gremium kann sich nicht selbst übergeordnet sein.")
+        elif parent_item is None and parent_key in ambiguous:
+            plan.fail(item, f"Übergeordnetes Gremium {_ambiguous(item.refs['parent_label'])}")
         elif parent_item is None and parent_key not in existing:
             plan.fail(item, "Übergeordnetes Gremium unbekannt (weder in den Dateien noch angelegt).")
         elif item.instance is not None and _name_key(getattr(item.instance.parent, "name", "")) != parent_key:
             item.changes.append("Übergeordnetes Gremium")
+    _fail_parent_rings(plan, existing)
     # Fehlerhafte übergeordnete Gremien ziehen ihre Untergremien mit (auch über mehrere Stufen)
     changed = True
     while changed:
@@ -822,6 +923,31 @@ def _plan_organizations(plan: ImportPlan, rows_by_kind: dict[str, list[_Row]]) -
             if not item.failed and parent_item is not None and parent_item.failed:
                 plan.fail(item, f"Übergeordnetes Gremium „{parent_item.label}“ hat Fehler.")
                 changed = True
+
+
+def _fail_parent_rings(plan: ImportPlan, existing: dict[str, SessionOrganization]) -> None:
+    """Übergeordnete Gremien und Ämter dürfen keinen Ring bilden (A → B → A), aus Dateien und Bestand zusammen."""
+    parents: dict[str, str] = {}
+    names: dict[str, str] = {}
+    for key, org in existing.items():
+        names[key] = org.name
+        if org.parent is not None:
+            parents[key] = _name_key(org.parent.name)
+    for key, item in plan.organizations.items():
+        names[key] = item.label
+        if item.refs["parent"] is not None:
+            parents[key] = item.refs["parent"]  # die Datei ersetzt das übergeordnete Gremium, leer lässt es
+    for key, item in plan.organizations.items():
+        if item.failed or parents.get(key, key) == key:
+            continue
+        path = [key]
+        current = parents[key]
+        while current in parents and current not in path:
+            path.append(current)
+            current = parents[current]
+        if current == key:
+            ring = " → ".join(names.get(k, k) for k in [*path, key])
+            plan.fail(item, f"Übergeordnete Gremien bilden einen Ring: {ring}.")
 
 
 def _org_kind(org_type: str) -> str:
@@ -844,6 +970,7 @@ _SECRET_LABELS = {
     "bank_iban": "IBAN",
     "bank_bic": "BIC",
 }
+_BANK_SECRETS = ("bank_account_holder", "bank_iban", "bank_bic")
 
 
 def _person_problems(row: _Row, given: str, family: str, email: str, start: Any, end: Any) -> list[str]:
@@ -952,30 +1079,50 @@ def _plan_persons(plan: ImportPlan, rows: list[_Row]) -> None:
             for secret, value in item.secrets.items():
                 if getattr(instance, f"get_{secret}_decrypted")() != value:
                     item.changes.append(_SECRET_LABELS[secret])
+            if email and instance.email and instance.email.casefold() != email.casefold():
+                # Gleicher Name, andere E-Mail: vielleicht eine andere Person. Der Bericht zeigt die Werte nicht,
+                # deshalb ausdrücklich darauf hinweisen (sonst ginge z. B. Sitzungsgeld auf ein fremdes Konto)
+                bank = [_SECRET_LABELS[s] for s in _BANK_SECRETS if _SECRET_LABELS[s] in item.changes]
+                plan.hint(
+                    row.file,
+                    row.line,
+                    f"{label}: andere E-Mail-Adresse als bei der vorhandenen Person gleichen Namens – möglicherweise "
+                    "eine andere Person"
+                    + (f"; dabei ändern sich auch {', '.join(bank)}" if bank else "")
+                    + ". Vor dem Import prüfen; eine andere Person gleichen Namens zuerst von Hand anlegen.",
+                )
         matched[identity] = item
         plan.persons[kennung] = item
 
 
-def _term_for_day(plan: ImportPlan, existing: dict[str, SessionLegislativeTerm], day: date | None) -> str | None:
-    """Wahlperiode (Namensschlüssel), die den Tag enthält – aus der Datei oder dem Bestand."""
+def _term_for_day(plan: ImportPlan, stock: list[SessionLegislativeTerm], day: date | None) -> str | None:
+    """Wahlperiode (Namensschlüssel), die den Tag enthält – aus der Datei oder dem Bestand (auch mehrdeutige)."""
     if day is None:
         return None
-    periods: dict[str, tuple[date | None, date | None]] = {
-        key: (term.start_date, term.end_date) for key, term in existing.items()
-    }
+    periods = [
+        (_name_key(term.name), term.start_date, term.end_date)
+        for term in stock
+        if _name_key(term.name) not in plan.terms
+    ]
     for key, item in plan.terms.items():
         if item.failed:
-            periods.pop(key, None)
             continue
         instance = item.instance
-        periods[key] = (
-            item.values["start_date"] or (instance.start_date if instance is not None else None),
-            item.values["end_date"] or (instance.end_date if instance is not None else None),
+        periods.append(
+            (
+                key,
+                item.values["start_date"] or (instance.start_date if instance is not None else None),
+                item.values["end_date"] or (instance.end_date if instance is not None else None),
+            )
         )
-    for key, (start, end) in periods.items():
+    for key, start, end in periods:
         if (start or end) and (start is None or start <= day) and (end is None or day <= end):
             return key
     return None
+
+
+def _lines_text(lines: list[int]) -> str:
+    return ("Zeile " if len(lines) == 1 else "Zeilen ") + ", ".join(str(line) for line in lines)
 
 
 _MEMBERSHIP_LABELS = {"role": "Funktion", "has_voting_rights": "Stimmrecht", "end_date": "Ende"}
@@ -983,8 +1130,11 @@ _MEMBERSHIP_LABELS = {"role": "Funktion", "has_voting_rights": "Stimmrecht", "en
 
 def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
     tally = plan.tallies.setdefault("besetzungen", Tally())
-    tenant_orgs = {_name_key(o.name): o for o in SessionOrganization.objects.filter(tenant=plan.tenant)}
-    terms = {_name_key(t.name): t for t in SessionLegislativeTerm.objects.filter(tenant=plan.tenant)}
+    tenant_orgs, ambiguous_orgs = _by_name(SessionOrganization.objects.filter(tenant=plan.tenant))
+    term_stock = list(SessionLegislativeTerm.objects.filter(tenant=plan.tenant))
+    terms, ambiguous_terms = _by_name(term_stock)
+    term_names = {_name_key(t.name): t.name for t in term_stock}
+    vote_hints: dict[str, list[int]] = {}
     by_pair: dict[tuple[Any, Any], list[SessionOrganizationMembership]] = {}
     for membership in SessionOrganizationMembership.objects.filter(organization__tenant=plan.tenant).select_related(
         "legislative_term"
@@ -1015,7 +1165,9 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
             problems.append(f"Person „{person_key}“ fehlt in der Personendatei.")
         elif person.failed:
             problems.append(f"Person „{person_key}“ hat Fehler (siehe {person.file}, Zeile {person.line}).")
-        if org_item is None and org_key not in tenant_orgs:
+        if org_item is None and org_key in ambiguous_orgs:
+            problems.append(f"Gremium {_ambiguous(org_name)}")
+        elif org_item is None and org_key not in tenant_orgs:
             problems.append(f"Gremium „{org_name}“ unbekannt (weder in den Dateien noch angelegt).")
         elif org_item is not None and org_item.failed:
             problems.append(f"Gremium „{org_name}“ hat Fehler (siehe {org_item.file}, Zeile {org_item.line}).")
@@ -1027,7 +1179,9 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
             problems.append("Eine Person kann sich nicht selbst vertreten.")
         if start is not None and end is not None and end < start:
             problems.append("Das Ende liegt vor dem Beginn.")
-        if term_key and term_item is None and term_key not in terms:
+        if term_key and term_item is None and term_key in ambiguous_terms:
+            problems.append(f"Wahlperiode {_ambiguous(term_name)}")
+        elif term_key and term_item is None and term_key not in terms:
             problems.append(f"Wahlperiode „{term_name}“ unbekannt.")
         elif term_item is not None and term_item.failed:
             problems.append(f"Wahlperiode „{term_name}“ hat Fehler.")
@@ -1044,6 +1198,13 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
         if org_instance is not None and person.instance is not None:
             pair_existing = by_pair.get((org_instance.pk, person.instance.pk), [])
         match = next((m for m in pair_existing if m.start_date == start), None)
+        # Ohne Angabe: Wahlperiode nach dem Beginn, nur für neue Besetzungen
+        term_ref = term_key or (_term_for_day(plan, term_stock, start) if match is None else None)
+        if term_ref in ambiguous_terms:
+            plan.error(
+                row.file, row.line, f"{label}: Wahlperiode zum Beginn – {_ambiguous(term_names[term_ref or ''])}"
+            )
+            continue
         if match is None and deputy and not substitute_key and vote is None:
             # Ohne vertretene Person zählte die Stellvertretung sonst als stimmberechtigtes Mitglied mit
             # (Beschlussfähigkeit, attendance_service.roster)
@@ -1054,9 +1215,11 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
                 "die vertretene Person angeben, damit sie nachrücken kann.",
             )
             vote = False
+        vote_hint = None
         if match is None:
             role = role or "member"
-            vote = (role not in _ROLES_WITHOUT_VOTE) if vote is None else vote
+            if vote is None:
+                vote, vote_hint = default_vote(role, row.get("funktion"), plan.tenant.state_profile_id)
         item = Item(
             kind="besetzungen",
             file=row.file,
@@ -1070,8 +1233,7 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
                 "person": person_key,
                 "person_label": person.label,
                 "substitute": substitute_key or None,
-                # Ohne Angabe: Wahlperiode nach dem Beginn, nur für neue Besetzungen
-                "term": term_key or (_term_for_day(plan, terms, start) if match is None else None),
+                "term": term_ref,
             },
         )
         _compare(item, _MEMBERSHIP_LABELS)
@@ -1109,6 +1271,11 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
             continue
         planned.setdefault((org_key, person_key), []).append(item)
         plan.memberships.append(item)
+        if vote_hint is not None:
+            vote_hints.setdefault(vote_hint, []).append(row.line)
+
+    for kind, lines in vote_hints.items():
+        plan.hint(plan.files.get("besetzungen", "besetzungen"), None, f"{_VOTE_HINTS[kind]} ({_lines_text(lines)}).")
 
 
 def _count(plan: ImportPlan) -> None:
@@ -1163,13 +1330,25 @@ def _assign(instance: Any, values: dict[str, Any]) -> None:
             setattr(instance, field_name, value)
 
 
+def lock_tenant(tenant: SessionTenant) -> None:
+    """
+    Importläufe für denselben Mandanten nacheinander: in derselben Transaktion vor :func:`plan_import` aufrufen,
+    damit zwischen Planen und :func:`apply_plan` kein zweiter Lauf dieselben Datensätze anlegt.
+
+    ``FOR NO KEY UPDATE`` (PostgreSQL) sperrt nur gegen weitere Importläufe und Änderungen am Mandanten, nicht
+    gegen neue Datensätze, die auf den Mandanten verweisen. SQLite (Tests) sperrt ohnehin die ganze Datenbank.
+    """
+    SessionTenant.objects.select_for_update(no_key=True).filter(pk=tenant.pk).values_list("pk", flat=True).first()
+
+
 def apply_plan(plan: ImportPlan) -> None:
     """Geplante Änderungen schreiben – nur ohne Fehler, ganz oder gar nicht."""
     if plan.errors:
         raise ValueError("Ein Import mit Fehlern wird nicht ausgeführt.")
     tenant = plan.tenant
     with transaction.atomic():
-        terms = {_name_key(t.name): t for t in SessionLegislativeTerm.objects.filter(tenant=tenant)}
+        # Nur eindeutige Namen: Mehrdeutige hat der Plan als Fehler gemeldet (KeyError statt beliebiger Zuordnung)
+        terms, _ = _by_name(SessionLegislativeTerm.objects.filter(tenant=tenant))
         for key, item in plan.terms.items():
             if item.action != UNCHANGED:
                 term = item.instance or SessionLegislativeTerm(tenant=tenant)
@@ -1177,7 +1356,7 @@ def apply_plan(plan: ImportPlan) -> None:
                 term.save()
                 terms[key] = term
 
-        orgs = {_name_key(o.name): o for o in SessionOrganization.objects.filter(tenant=tenant)}
+        orgs, _ = _by_name(SessionOrganization.objects.filter(tenant=tenant))
         for key, item in plan.organizations.items():
             if item.action != UNCHANGED:
                 org = item.instance or SessionOrganization(tenant=tenant)
@@ -1239,9 +1418,13 @@ def _stock(tenant: SessionTenant, kind: str) -> int:
 # ---------------------------------------------------------------------------
 
 _SALUTATIONS = {"frau": "Frau", "herr": "Herr"}
-# Akademische Titel wie „Dr.“, „Prof.“, „Dipl.-Ing.“, „Dr.-Ing.“; jede Wiederholung beginnt mit „-“, damit das
-# Muster eindeutig bleibt (kein exponentielles Backtracking)
-_TITLE_RE = re.compile(r"^(dr|prof|dipl|ing|med|rer|nat|phil|jur|h\.c)\.?(-[a-zäöüß]+\.?)*$", re.IGNORECASE)
+# Akademische Titel wie „Dr.“, „Prof.“, „Dipl.-Ing.“, „Dr.-Ing.“, „Dr. med.“; ohne Punkt nur „Dr“ und „Prof“,
+# denn „Phil“, „Ing“ oder „Med“ ohne Punkt sind Namen. Jede Wiederholung beginnt mit „-“, damit das Muster
+# eindeutig bleibt (kein exponentielles Backtracking)
+_TITLE_RE = re.compile(
+    r"^(?:(?:dr|prof)\.?|(?:dipl|ing|med|rer|nat|phil|jur|dent|vet|habil|h\.c)\.)(?:-[a-zäöüß]+\.?)*$",
+    re.IGNORECASE,
+)
 
 
 def person_key(name: str) -> str:
@@ -1409,9 +1592,12 @@ def _prefill(roster: PublicRoster, day: date) -> dict[str, list[dict[str, str]]]
     rows["personen"].sort(key=lambda row: (row["nachname"].casefold(), row["vorname"].casefold()))
     for membership in roster.memberships:
         vote = "" if membership.voting_right is None else ("ja" if membership.voting_right else "nein")
-        if (resolve_role(membership.role) or ("", False))[1]:
-            # Bei Stellvertretungen ist das öffentliche Stimmrecht nur der Standard der Quelle; leer lässt
-            # die Importregel greifen (ohne vertretene Person kein Stimmrecht)
+        role, deputy = resolve_role(membership.role) or ("", False)
+        stated = "stimm" in _fold(membership.role)  # „mit Stimmrecht“, „stimmberechtigt“
+        if deputy or (role == "expert_citizen" and membership.voting_right and not stated):
+            # Bei Stellvertretungen und Hinzugewählten ist ein öffentliches „ja“ nur der Standard der Quelle
+            # (SessionNet: ja, außer die Abschnittsüberschrift sagt „ohne Stimmrecht“); leer lässt die
+            # Importregel greifen (default_vote; Stellvertretung ohne vertretene Person kein Stimmrecht)
             vote = ""
         rows["besetzungen"].append(
             {
