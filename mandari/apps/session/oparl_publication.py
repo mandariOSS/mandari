@@ -179,8 +179,20 @@ KIND_BY_MODEL = {
 # =============================================================================
 
 
-def _write_tombstone(tenant_id, kind, object_id, object_created_at):
-    """Tombstone anlegen/aktualisieren (idempotent; nie während Tenant-Löschung)."""
+#: Gründe einer Rücknahme im Änderungsfeed (``hub.ris.retraction``): gelöscht, nichtöffentlich gestellt,
+#: zurück in Entwurf oder Prüfung genommen
+GELOESCHT = "quelle_geloescht"
+NICHTOEFFENTLICH = "nichtoeffentlich"
+ZURUECKGENOMMEN = "zurueckgenommen"
+
+
+def _write_tombstone(tenant_id, kind, object_id, object_created_at, reason=GELOESCHT):
+    """
+    Tombstone anlegen/aktualisieren (idempotent; nie während Tenant-Löschung).
+
+    ``reason``: Grund der Rücknahme, wie ihn der Änderungsfeed nennt (``GELOESCHT``, ``NICHTOEFFENTLICH``,
+    ``ZURUECKGENOMMEN``).
+    """
     if tenant_id is None or audit.is_tenant_deleting(tenant_id):
         return
     SessionOParlTombstone.objects.update_or_create(
@@ -193,12 +205,12 @@ def _write_tombstone(tenant_id, kind, object_id, object_created_at):
         },
     )
     # Sofort aus dem Bürgerportal zurücknehmen – nicht erst beim nächsten Sync des Spiegels
-    transaction.on_commit(lambda: retract_from_portal(tenant_id, kind, object_id))
+    transaction.on_commit(lambda: retract_from_portal(tenant_id, kind, object_id, reason))
     if kind == "meeting":
-        _retract_location(tenant_id, object_id)
+        _retract_location(tenant_id, object_id, reason)
 
 
-def _retract_location(tenant_id, meeting_id):
+def _retract_location(tenant_id, meeting_id, reason=GELOESCHT):
     """
     Sitzungsort mit seiner Sitzung zurücknehmen.
 
@@ -206,7 +218,7 @@ def _retract_location(tenant_id, meeting_id):
     Spiegel führt ihn als Text an der Sitzung; hat ein Abgleich ihn zusätzlich als eigenes Objekt in den
     Bestand geschrieben, bliebe er dort sonst nach der Rücknahme der Sitzung öffentlich abrufbar.
     """
-    transaction.on_commit(lambda: retract_from_portal(tenant_id, "location", meeting_id))
+    transaction.on_commit(lambda: retract_from_portal(tenant_id, "location", meeting_id, reason))
 
 
 def _has_location(meeting) -> bool:
@@ -250,7 +262,7 @@ def sync_agenda_numbers_to_portal(tenant_id, nummern) -> int:
     return anzahl
 
 
-def retract_from_portal(tenant_id, kind, object_id) -> int:
+def retract_from_portal(tenant_id, kind, object_id, reason=GELOESCHT) -> int:
     """
     Gespiegeltes Objekt im Bürgerportal sofort als zurückgenommen markieren.
 
@@ -259,8 +271,13 @@ def retract_from_portal(tenant_id, kind, object_id) -> int:
     aus der Öffentlichkeit verschwinden. Die gespiegelte Kennung ist die OParl-URL
     ``…/session/<slug>/api/oparl/<art>/<id>/``; ``mark_deleted`` entfernt das Objekt zugleich
     aus Suche und Listen, die Detailseite zeigt keinen Inhalt mehr (``withdrawn_by_publisher``).
+
+    Die Rücknahme erscheint mit ``reason`` im Änderungsfeed (``hub.ris.retraction``, Issue #707): Beim
+    nächsten Abgleich ist die Zeile schon markiert, und der Ingestor meldet sie nicht mehr.
     """
     from django.apps import apps
+
+    from hub.ris import retraction
 
     modell = _INSIGHT_MODELS.get(kind)
     slug = SessionTenant.objects.filter(pk=tenant_id).values_list("slug", flat=True).first()
@@ -270,11 +287,7 @@ def retract_from_portal(tenant_id, kind, object_id) -> int:
     treffer = model.objects.filter(
         external_id__endswith=f"/session/{slug}/api/oparl/{kind}/{object_id}/", deleted=False
     )
-    anzahl = 0
-    for obj in treffer:
-        obj.mark_deleted()
-        anzahl += 1
-    return anzahl
+    return sum(1 for obj in treffer if retraction.retract(obj, reason=reason))
 
 
 def _clear_tombstones(tenant_id, pairs):
@@ -309,6 +322,18 @@ def _dependents(instance):
         for file in instance.files.filter(is_public=True):
             result.append(("file", file.id, file.created_at))
     return result
+
+
+def _withdrawal_reason(instance) -> str:
+    """
+    Grund, aus dem ein bisher veröffentlichtes Objekt nicht mehr veröffentlicht ist.
+
+    Eine öffentliche Vorlage, die zurück in Entwurf oder Prüfung geht, nimmt die Verwaltung zurück; sonst
+    ist das Objekt (oder das, an dem es hängt) nichtöffentlich geworden.
+    """
+    if isinstance(instance, SessionPaper) and instance.is_public and instance.status in UNVEROEFFENTLICHT:
+        return ZURUECKGENOMMEN
+    return NICHTOEFFENTLICH
 
 
 def tombstone_post_delete(sender, instance, **kwargs):
@@ -347,7 +372,7 @@ def tombstone_post_save(sender, instance, created, **kwargs):
     if was_published == is_published:
         # Weiter öffentliche Sitzung ohne Ortsangabe: Der Ort entfällt, die Sitzung bleibt
         if is_published and sender is SessionMeeting and _has_location(old) and not _has_location(instance):
-            _retract_location(instance.tenant_id, instance.pk)
+            _retract_location(instance.tenant_id, instance.pk, GELOESCHT)
         return
 
     tenant_id = _resolve_tenant_id(instance)
@@ -355,9 +380,10 @@ def tombstone_post_save(sender, instance, created, **kwargs):
         return
 
     if was_published and not is_published:
-        _write_tombstone(tenant_id, kind, instance.pk, instance.created_at)
+        reason = _withdrawal_reason(instance)
+        _write_tombstone(tenant_id, kind, instance.pk, instance.created_at, reason)
         for dep_kind, dep_id, dep_created in _dependents(instance):
-            _write_tombstone(tenant_id, dep_kind, dep_id, dep_created)
+            _write_tombstone(tenant_id, dep_kind, dep_id, dep_created, reason)
     else:
         pairs = [(kind, instance.pk)]
         pairs.extend((dep_kind, dep_id) for dep_kind, dep_id, _ in _dependents(instance))

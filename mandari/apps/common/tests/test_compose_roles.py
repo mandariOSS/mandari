@@ -61,6 +61,15 @@ def test_worker_dienst_wie_die_anwendung_mit_lebenszeichen() -> None:
         assert name in anwendung["environment"]
 
 
+def test_schalter_des_aenderungsfeeds_erreichen_die_anwendung() -> None:
+    """Issue #707: Ohne Durchreichung bliebe ``OPARL_CHANGES_ENABLED`` in der ``.env`` wirkungslos."""
+    modul = _lade_skript()
+    umgebung = modul._lade(modul.BASIS)["services"]["mandari"]["environment"]
+    for name in ("OPARL_CHANGES_ENABLED", "OPARL_CHANGES_RETENTION_DAYS", "OPARL_SNAPSHOT_PARALLEL"):
+        assert name in umgebung, name
+    assert umgebung["OPARL_CHANGES_ENABLED"] == "${OPARL_CHANGES_ENABLED:-false}", "Standard bleibt aus"
+
+
 def _option(befehl: list[str], name: str) -> str | None:
     return befehl[befehl.index(name) + 1] if name in befehl else None
 
