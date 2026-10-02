@@ -29,6 +29,8 @@ from mandari_oparl import (
     parse_datetime,
 )
 
+from src.client.oparl_compat import consultation_agenda_item, oparl_type_url
+
 # Sitzung in der Session-Schnittstelle von mandari: …/session/<Mandant>/api/oparl/meeting/<Kennung>/
 _SESSION_MEETING_ID = re.compile(r"^(?P<base>.+/session/[^/]+/api/oparl/)meeting/(?P<key>[^/]+)/$")
 
@@ -89,9 +91,8 @@ class OParlProcessor:
         return parse_datetime(value)
 
     def get_type(self, data: dict[str, Any]) -> OParlType | None:
-        """Get OParl type from data."""
-        type_url = data.get("type", "")
-        return OPARL_TYPE_MAP.get(type_url)
+        """OParl-Typ eines Objekts (``type``, bei ALLRIS-Organisationen ``Type``, siehe ``oparl_type_url``)."""
+        return OPARL_TYPE_MAP.get(oparl_type_url(data))
 
     def process(
         self,
@@ -508,7 +509,7 @@ class OParlProcessor:
             oparl_modified=parse_datetime(data.get("modified")),
             paper_external_id=data.get("paper") if isinstance(data.get("paper"), str) else None,
             meeting_external_id=data.get("meeting") if isinstance(data.get("meeting"), str) else None,
-            agenda_item_external_id=data.get("agendaItem") if isinstance(data.get("agendaItem"), str) else None,
+            agenda_item_external_id=consultation_agenda_item(data),
             role=data.get("role"),
             authoritative=data.get("authoritative", False),
         )

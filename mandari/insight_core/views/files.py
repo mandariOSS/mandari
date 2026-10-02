@@ -207,6 +207,7 @@ import threading
 
 import httpx
 from django.conf import settings
+from django.utils.html import escape
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 from .. import throttle
@@ -218,6 +219,16 @@ logger = logging.getLogger(__name__)
 _LIVE_FETCH_SLOTS = threading.BoundedSemaphore(throttle.setting("FILE_PROXY_MAX_CONCURRENT"))
 #: Bis zu dieser Größe bleibt ein Live-Abruf im Speicher, darüber in einer temporären Datei
 _SPOOL_BYTES = 2 * 1024 * 1024
+
+
+def _original_link(url: str) -> str:
+    """Link auf das Dokument im Quell-RIS (nur http/https, maskiert); sonst ein Hinweis ohne Link."""
+    if not url.startswith(("https://", "http://")):
+        return "Bitte das Dokument direkt im Ratsinformationssystem der Kommune aufrufen."
+    return (
+        f'<a href="{escape(url)}" target="_blank" rel="noopener noreferrer">'
+        "Dokument im Ratsinformationssystem öffnen</a>"
+    )
 
 
 def _file_proxy_error(title, message, status=200):
@@ -288,6 +299,15 @@ def file_proxy(request, file_id):
     url = file_obj.download_url or file_obj.access_url
     if not url:
         raise Http404("Keine Download-URL verfügbar")
+
+    # Dokumente nur hinter einer Zugangsprüfung für Menschen (sync_config["file_downloads"] = false):
+    # nicht selbst abrufen, sondern auf das Original verweisen – dort löst der Browser die Prüfung.
+    if file_cache.downloads_disabled(file_obj.body):
+        return _file_proxy_error(
+            "Dokument beim Ratsinformationssystem öffnen",
+            "Diese Kommune gibt Dokumente nur nach einer Zugangsprüfung im Browser heraus. Wir rufen sie "
+            "deshalb nicht selbst ab. " + _original_link(url),
+        )
 
     # Quellen-Schonung (Issue #89): eine mehrfach unerreichbare Quelle wird nicht bei jedem
     # Vorschau-Aufruf erneut angefragt — das hält Ratenlimits/Sperren nur am Leben.

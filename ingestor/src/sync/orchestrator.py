@@ -52,6 +52,7 @@ from src.client.oparl_compat import (
     oparl_error_message,
     timestamps_unreliable,
 )
+from src.client.source_options import SourceFetchOptions
 from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
@@ -404,6 +405,7 @@ class SyncOrchestrator:
                 max_concurrent=concurrent,
                 source_name=url.split("/")[2] if "/" in url else "unknown",
                 user_agent=getattr(source_row, "user_agent", None),
+                **SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None)).client_kwargs(),
             ) as client:
                 # Auto-detect URL type
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
@@ -603,6 +605,7 @@ class SyncOrchestrator:
                 max_concurrent=self.max_concurrent,
                 source_name=url.split("/")[2] if "/" in url else "unknown",
                 user_agent=getattr(source_row, "user_agent", None),
+                **SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None)).client_kwargs(),
             ) as client:
                 # Fetch system
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")

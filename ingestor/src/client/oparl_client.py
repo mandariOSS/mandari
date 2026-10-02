@@ -14,7 +14,7 @@ Features:
 import asyncio
 import time
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -225,10 +225,17 @@ class OParlClient:
         wait_time: float | None = None,
         source_name: str | None = None,
         user_agent: str | None = None,
+        list_params: Mapping[str, str] | None = None,
+        carry_modified_since: bool = False,
     ) -> None:
         self.max_concurrent = max_concurrent
         self.timeout = timeout or settings.oparl_request_timeout
-        self.wait_time = wait_time or settings.oparl_wait_time
+        # Je Quelle überschreibbar (sync_config["request_interval"], src/client/source_options.py)
+        self.wait_time = settings.oparl_wait_time if wait_time is None else wait_time
+        # Parameter für die erste Seite jeder Liste, z. B. {"size": "100"} (sync_config["list_params"])
+        self.list_params: dict[str, str] = dict(list_params or {})
+        # Quelle filtert mit modified_since, verliert den Parameter aber in links.next (ALLRIS)
+        self.carry_modified_since = carry_modified_since
         self.max_retries = settings.oparl_max_retries
         self.retry_backoff = settings.oparl_retry_backoff
         self.source_name = source_name or "unknown"
@@ -580,6 +587,7 @@ class OParlClient:
         Yields:
             Lists of items from each page
         """
+        url = self._with_list_params(url, self.list_params)
         current_url: str | None = url
         pages_fetched = 0
         tried_modified_since = False
@@ -589,7 +597,13 @@ class OParlClient:
         # (z. B. Stadt Münster mit 401), gar nicht erst erneut damit anfragen —
         # spart pro Liste einen toten Request samt Timeout/Retry.
         host = urlparse(url).netloc
-        if modified_since and current_url and host not in self._modified_since_unsupported:
+        # Mit carry_modified_since gilt die Quelle als filterfähig, auch wenn ein früherer Lauf den Host
+        # (vor dem Schalter) als „ohne Filter“ vermerkt hat
+        if (
+            modified_since
+            and current_url
+            and (self.carry_modified_since or host not in self._modified_since_unsupported)
+        ):
             current_url = self._append_modified_since(current_url, modified_since)
             tried_modified_since = True
 
@@ -641,6 +655,7 @@ class OParlClient:
             if (
                 tried_modified_since
                 and pages_fetched == 0
+                and not self.carry_modified_since
                 and isinstance(result.data, dict)
                 and modified_since_dropped(result.data.get("links"))
             ):
@@ -669,6 +684,15 @@ class OParlClient:
             if isinstance(result.data, dict):
                 links = result.data.get("links", {})
                 current_url = links.get("next")
+                # Quelle filtert, verliert den Filter aber in links.next: wieder anhängen (ALLRIS)
+                if (
+                    current_url
+                    and tried_modified_since
+                    and modified_since is not None
+                    and self.carry_modified_since
+                    and "modified_since" not in parse_qs(urlparse(current_url).query)
+                ):
+                    current_url = self._append_modified_since(current_url, modified_since)
             else:
                 current_url = None
 
@@ -693,6 +717,22 @@ class OParlClient:
         async for page in self.fetch_list(url, modified_since, max_pages):
             all_items.extend(page)
         return all_items
+
+    @staticmethod
+    def _with_list_params(url: str, list_params: Mapping[str, str]) -> str:
+        """Listenparameter der Quelle ergänzen; vorhandene Parameter der URL bleiben unverändert."""
+        if not list_params:
+            return url
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        added = False
+        for key, value in list_params.items():
+            if key not in params:
+                params[key] = [value]
+                added = True
+        if not added:
+            return url
+        return urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
 
     @staticmethod
     def _append_modified_since(url: str, modified_since: datetime) -> str:

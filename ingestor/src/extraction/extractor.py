@@ -76,6 +76,12 @@ class TextExtractor:
         Returns:
             Number of files successfully extracted.
         """
+        # Quelle liefert Dokumente nur hinter einer Zugangsprüfung für Menschen (sync_config["file_downloads"]):
+        # nichts beanspruchen, die Dateien bleiben "pending" und werden nachgeholt, sobald der Schalter fällt
+        if not await self._file_downloads_enabled(body_id):
+            logger.debug("Dateiabruf für Body %s abgeschaltet (sync_config der Quelle)", body_id)
+            return 0
+
         files = await self.storage.get_pending_files(
             body_id=body_id,
             batch_size=self.batch_size,
@@ -189,6 +195,17 @@ class TextExtractor:
             sha256_hash=sha256_hash,
         )
         return False
+
+    async def _file_downloads_enabled(self, body_id: Any) -> bool:
+        """Schalter ``sync_config["file_downloads"]`` der Quelle; im Zweifel (Fehler, alter Storage) an."""
+        lookup = getattr(self.storage, "file_downloads_enabled_for_body", None)
+        if lookup is None or body_id is None:
+            return True
+        try:
+            return bool(await lookup(body_id))
+        except Exception as e:  # noqa: BLE001 - der Schalter ist optional, Extraktion läuft wie bisher weiter
+            logger.warning("Dateiabruf-Schalter für Body %s nicht ladbar: %s", body_id, e)
+            return True
 
     async def _download_headers(self, body_id: Any) -> dict[str, str]:
         """

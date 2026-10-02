@@ -971,3 +971,35 @@ async def test_umgezogene_quelle_behaelt_kennungen_und_verweise(bestand: Bestand
         "meeting": str(sitzung),
         "agenda_item": str(canonical_id(ITEM)),
     }
+
+
+# --- Eingebettete Beratungen ohne Sitzung und Tagesordnungspunkt (ALLRIS) ------------------------------
+
+
+async def test_eingebettete_beratung_ohne_bezuege_behaelt_sitzung_und_top(bestand: Bestand) -> None:
+    """ALLRIS bettet Beratungen in Vorlagen ohne Sitzung und TOP ein; die Beratungsliste liefert beides."""
+    paper_id = await bestand.paper()
+    await bestand.meeting(agendaItem=[top()])
+    aus_der_liste = bestand.processor.process_consultation(
+        {
+            "id": CONSULTATION,
+            "type": "https://schema.oparl.org/1.1/Consultation",
+            "paper": PAPER,
+            "meeting": MEETING,
+            "agendaitem": ITEM,
+            "role": "Vorberatung",
+        },
+        BODY,
+    )
+    await bestand.storage.upsert_consultation(aus_der_liste, bestand.body_id, paper_id)
+
+    # Abgleich der Vorlage mit der eingebetteten Beratung: ohne Sitzung und TOP, neue Rolle
+    await bestand.paper(
+        consultation=[{"id": CONSULTATION, "type": "https://schema.oparl.org/1.1/Consultation", "role": "Entscheidung"}]
+    )
+
+    zeile = "SELECT {} FROM oparl_consultations WHERE external_id = :e"
+    assert await bestand.wert(zeile.format("agenda_item_external_id"), e=CONSULTATION) == ITEM
+    assert await bestand.wert(zeile.format("meeting_external_id"), e=CONSULTATION) == MEETING
+    assert await bestand.wert(zeile.format("paper_external_id"), e=CONSULTATION) == PAPER
+    assert await bestand.wert(zeile.format("role"), e=CONSULTATION) == "Entscheidung"

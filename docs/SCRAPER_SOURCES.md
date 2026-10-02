@@ -124,6 +124,15 @@ Außerhalb von `scraper` (auf oberster Ebene der Sync config, auch für OParl-Qu
 | Schlüssel | Default | Bedeutung |
 |---|---|---|
 | `download_headers` | keine | Zusätzliche HTTP-Header für **Datei-Downloads** dieser Quelle (Dateicache, Textextraktion im Ingestor und in Django), z. B. `{"Referer": "https://rat.example.de/bi/", "Cookie": "consent=1"}`. Für RIS, die Anlagen nur mit Referer oder Consent-Cookie ausliefern (#116). Werte sind Klartext im Admin — keine persönlichen Sitzungs-Cookies hinterlegen. |
+| `file_downloads` | `true` | `false`: Dateien dieser Quelle **nicht automatisch abrufen** (Textextraktion im Ingestor und in Django, Dateicache, Vorschau). Für RIS, die Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefern (z. B. ALTCHA); die Vorschau verweist dann auf das Original. Die Dateien bleiben offen und werden nachgeholt, sobald der Schalter fällt. |
+| `request_interval` | `OPARL_WAIT_TIME` | Mindestabstand in Sekunden vor jeder OParl-Anfrage an diese Quelle (0–30), z. B. `0.5` für eine schonende Ersterfassung. |
+| `list_params` | keine | Zusätzliche Parameter für die erste Seite jeder OParl-Liste, z. B. `{"size": 100}` bei ALLRIS (100 statt 10 Einträge je Seite). Folgeseiten kommen aus `links.next`. |
+| `carry_modified_since` | `false` | `true`: Die Quelle filtert mit `modified_since`, lässt den Parameter aber in `links.next` weg (ALLRIS). Der Ingestor hängt ihn an jede Folgeseite an. Ohne den Schalter gilt die Quelle als „ohne Filter“, und der inkrementelle Abgleich erreicht neue Einträge erst im nächtlichen Vollabgleich, weil die Listen aufsteigend sortiert sind. |
+
+Eigenheiten der OParl-Schnittstelle von ALLRIS (`…/oparl/system`, gesehen Oktober 2026) gleicht der Ingestor
+selbst aus: Organisationen mit `"type": "gr"`/`"at"` und der Typ-URL in `Type`, Beratungen mit `agendaitem` statt
+`agendaItem`, in Vorlagen eingebettete Beratungen ohne Sitzung und Tagesordnungspunkt (vorhandene Bezüge bleiben
+erhalten).
 
 ### Schritt 4: Probe-Crawl mit Limit
 
