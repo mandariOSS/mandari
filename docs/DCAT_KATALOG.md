@@ -132,9 +132,13 @@ Gesamtkatalog nicht unlesbar (`hub/adapters/dcat/adressen.py`).
   Webseite der Kommune.
 - Kennung bei GovData: Feld „Kennung bei GovData“ am Mandanten (`SessionTenant.dcat_contributor_id`, im Admin unter
   „OParl-Verknüpfung“); nur in der Form `http://dcat-ap.de/def/contributors/…`.
-- Für eine Kommune, die einen Session-Mandanten dieser Installation spiegelt, leitet der Katalog des Aggregators
-  dauerhaft (`301`) auf den Katalog des Mandanten weiter, in derselben Form; im Gesamtkatalog fehlt sie. So stehen
-  dieselben Daten nicht unter zwei Herausgebern in den Portalen.
+- Für eine gelistete Kommune, die einen Session-Mandanten dieser Installation spiegelt, leitet der Katalog des
+  Aggregators auf den Katalog des Mandanten weiter, in derselben Form; im Gesamtkatalog fehlt sie. So stehen
+  dieselben Daten nicht unter zwei Herausgebern in den Portalen. Die Weiterleitung ist vorübergehend (`302`,
+  `Cache-Control: max-age=3600`), weil sich die Spiegelung ändern lässt; eine dauerhafte (`301`) dürften Portale
+  unbegrenzt behalten. Eine nicht gelistete oder gelöschte Kommune antwortet mit `404` ohne Weiterleitung. Ist der
+  Mandant nicht (mehr) freigeschaltet, antwortet das Ziel mit `404`, und die Kommune fehlt in beiden Katalogen –
+  lieber keine Angabe als dieselben Daten unter dem Betreiber als Herausgeber.
 
 ### Veröffentlichungsstand
 

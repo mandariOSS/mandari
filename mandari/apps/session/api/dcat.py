@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from django.conf import settings
 from django.db.models import Max, Min
 from django.http import HttpRequest, HttpResponse
 from django.urls import reverse
@@ -31,7 +30,7 @@ from django.urls import reverse
 from apps.session import oparl_publication as pub
 from apps.session.models import SessionTenant
 from apps.session.services.insight_service import oparl_system_url
-from hub.adapters.dcat import http, katalog, vokabular
+from hub.adapters.dcat import adressen, http, katalog, vokabular
 from hub.adapters.dcat.katalog import Angebot, Dienst, Katalog, Kennzahlen, Kontakt, Stelle
 from hub.api import changes
 from hub.api.http import endpoint, error_response
@@ -44,15 +43,6 @@ OHNE_LIZENZ = (
 )
 
 
-def _site() -> str:
-    return str(settings.SITE_URL).rstrip("/")
-
-
-def _web(adresse: str | None) -> str | None:
-    text = (adresse or "").strip()
-    return text if text.lower().startswith(("https://", "http://")) else None
-
-
 def _mandant(tenant_slug: str) -> SessionTenant | None:
     """Aktiv und mit freigeschalteter OParl-Schnittstelle – sonst nach außen wie ein unbekannter Mandant."""
     tenant: SessionTenant | None = SessionTenant.objects.filter(
@@ -63,7 +53,7 @@ def _mandant(tenant_slug: str) -> SessionTenant | None:
 
 def katalog_adresse(tenant: SessionTenant) -> str:
     """Adresse des Katalogs (ohne Endung); Basis der Kennungen seiner Datensätze."""
-    return f"{_site()}{reverse('session:dcat_catalog', kwargs={'tenant_slug': tenant.slug})}"
+    return f"{adressen.site()}{reverse('session:dcat_catalog', kwargs={'tenant_slug': tenant.slug})}"
 
 
 def angebot(tenant: SessionTenant) -> Angebot | None:
@@ -73,16 +63,16 @@ def angebot(tenant: SessionTenant) -> Angebot | None:
         return None
     basis = katalog_adresse(tenant)
     uris = SessionUris(oparl_system_url(tenant))
-    stelle = Stelle(uri=f"{basis}#herausgeber", name=tenant.name, homepage=_web(tenant.website))
-    email = (tenant.contact_email or "").strip()
+    stelle = Stelle(uri=f"{basis}#herausgeber", name=tenant.name, homepage=adressen.webadresse(tenant.website))
+    email = adressen.email(tenant.contact_email)
     kontakt = (
-        Kontakt(uri=f"{basis}#kontakt", name=tenant.name, email=email or None, url=stelle.homepage)
+        Kontakt(uri=f"{basis}#kontakt", name=tenant.name, email=email, url=stelle.homepage)
         if email or stelle.homepage
         else None
     )
     feed = changes.enabled()
     webseite = (
-        f"{_site()}{reverse('insight_core:insight:portal_entry', kwargs={'slug': tenant.slug})}"
+        f"{adressen.site()}{reverse('insight_core:insight:portal_entry', kwargs={'slug': tenant.slug})}"
         if tenant.insight_publish
         else stelle.homepage
     )

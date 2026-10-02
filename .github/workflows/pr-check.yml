@@ -180,9 +180,12 @@ jobs:
               - 'shared/**'
               - 'scripts/oparl_validator.py'
               - 'scripts/_smoke_db.py'
-              # Datenkatalog nach DCAT-AP.de (SHACL-Prüfung im selben Job)
+              # Datenkatalog nach DCAT-AP.de (SHACL-Prüfung im selben Job); ein Update von rdflib kann die
+              # Serialisierung ändern, deshalb auch bei geänderten Abhängigkeiten
               - 'mandari/apps/session/api/dcat.py'
               - 'scripts/dcat_shacl.py'
+              - 'mandari/pyproject.toml'
+              - 'mandari/uv.lock'
               - '!**/*.md'
             e2e:
               - 'mandari/**/templates/**'

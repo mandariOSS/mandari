@@ -23,8 +23,9 @@ als IRI taugen (``hub.adapters.dcat.adressen``); eine fehlerhafte Angabe einer K
 unlesbar machen.
 
 **Session-Mandanten** dieser Installation geben ihren Katalog selbst heraus (Herausgeber ist die Kommune). Für
-eine Kommune, die einen solchen Mandanten spiegelt, leitet der Katalog des Aggregators dauerhaft dorthin weiter,
-und der Gesamtkatalog lässt sie aus – sonst stünden dieselben Daten unter zwei Herausgebern in den Portalen.
+eine gelistete Kommune, die einen solchen Mandanten spiegelt, leitet der Katalog des Aggregators dorthin weiter,
+und der Gesamtkatalog lässt sie aus – sonst stünden dieselben Daten unter zwei Herausgebern in den Portalen. Die
+Weiterleitung ist vorübergehend (``302``, begrenzt zwischenspeicherbar): Die Spiegelung lässt sich ändern.
 
 **Veröffentlichungsstand** wie bei Feed und Snapshot (``insight_core.publication``): nicht gelistet ``404``,
 vorübergehend abgeschaltet ``503`` mit ``Retry-After``, dauerhaft zurückgenommen ``410``. Im Gesamtkatalog
@@ -43,7 +44,7 @@ from datetime import datetime
 from django.conf import settings
 from django.db.models import Max, Min
 from django.db.models.functions import Coalesce
-from django.http import HttpRequest, HttpResponse, HttpResponsePermanentRedirect
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
 from hub.adapters.dcat import adressen, http, katalog, vokabular
@@ -53,6 +54,9 @@ from hub.api.http import endpoint, error_response
 from hub.ris.mapping.bestand import BestandUris
 from insight_core import publication
 from insight_core.models import OParlBody, OParlMeeting, OParlOrganization, OParlPaper, OParlPerson
+
+#: Wie lange ein Abnehmer die Weiterleitung auf den Katalog eines Session-Mandanten zwischenspeichern darf
+WEITERLEITUNG_MAX_AGE = 3600
 
 #: Hinweis, wenn eine Kommune keine zuordenbare offene Lizenz hat
 OHNE_LIZENZ = (
@@ -216,13 +220,19 @@ def session_mandant(body: OParlBody) -> str | None:
 
 
 def _weiterleitung(slug: str, endung: str | None) -> HttpResponse:
-    """Dauerhafte Weiterleitung auf den Katalog des Session-Mandanten (in derselben Form)."""
+    """
+    Weiterleitung auf den Katalog des Session-Mandanten (in derselben Form).
+
+    Vorübergehend (``302``) und nur begrenzt zwischenspeicherbar: Die Zuordnung hängt an der Spiegel-Konfiguration
+    der Quelle und lässt sich ändern. Eine dauerhafte Weiterleitung dürften Abnehmer unbegrenzt behalten.
+    """
     if endung is None:
         pfad = reverse("session:dcat_catalog", kwargs={"tenant_slug": slug})
     else:
         pfad = reverse("session:dcat_catalog_format", kwargs={"tenant_slug": slug, "endung": endung})
-    response = HttpResponsePermanentRedirect(f"{adressen.site()}{pfad}")
+    response = HttpResponseRedirect(f"{adressen.site()}{pfad}")
     response["Access-Control-Allow-Origin"] = "*"
+    response["Cache-Control"] = f"max-age={WEITERLEITUNG_MAX_AGE}"
     return response
 
 
@@ -315,7 +325,9 @@ def body_catalog_view(request: HttpRequest, pk: uuid.UUID, endung: str | None = 
     if not http.enabled():
         return http.ausgeschaltet()
     body = OParlBody.objects.select_related("source").filter(pk=pk).first()
-    slug = session_mandant(body) if body is not None else None
+    # Nur eine gelistete Kommune leitet weiter; eine nicht gelistete oder gelöschte verrät keinen Mandanten
+    gelistet = body is not None and not body.deleted and body.is_listed
+    slug = session_mandant(body) if body is not None and gelistet else None
     if slug is not None:
         return _weiterleitung(slug, endung)
     state = publication.body_state(pk)

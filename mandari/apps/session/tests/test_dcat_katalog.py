@@ -122,6 +122,24 @@ def test_katalog_des_mandanten(tenant: SessionTenant) -> None:
     assert len(list(g.objects(dienst, DCAT.servesDataset))) == 3
 
 
+def test_ungueltige_angaben_des_mandanten_brechen_den_katalog_nicht(tenant: SessionTenant) -> None:
+    """
+    Webseite und Kontaktadresse prüft derselbe Helfer wie im Aggregator: Was keine gültige IRI ergibt (etwa ein am
+    Formular vorbei gespeicherter Wert), fällt weg; alle drei Formen bleiben lesbar. Ohne beides kein Kontakt.
+    """
+    SessionTenant.objects.filter(pk=tenant.pk).update(
+        website="https://www.musterstadt.example/rat haus", contact_email="rats buero@musterstadt.example"
+    )
+    for endung in ("ttl", "rdf", "jsonld"):
+        g = _graph(endung)
+        sitzungen = URIRef(f"{SITE}{KATALOG}#sitzungen")
+        herausgeber = g.value(sitzungen, DCTERMS.publisher)
+        assert g.value(herausgeber, FOAF.name) == Literal("Stadt Musterstadt", lang="de")
+        assert g.value(herausgeber, FOAF.homepage) is None
+        assert g.value(sitzungen, DCAT.contactPoint) is None
+        assert not list(g.objects(None, VCARD.hasEmail))
+
+
 def test_zeitraum_nur_aus_oeffentlichem(tenant: SessionTenant) -> None:
     g = _graph()
     basis = f"{SITE}{KATALOG}"
@@ -221,8 +239,22 @@ def test_aggregator_leitet_auf_den_katalog_des_mandanten_weiter(spiegel: OParlBo
     for endung, ziel in (("ttl", f"{SITE}{KATALOG}.ttl"), ("", f"{SITE}{KATALOG}")):
         pfad = f"/data/dcat/body/{spiegel.pk}/catalog" + (f".{endung}" if endung else "")
         antwort = Client().get(pfad)
-        assert antwort.status_code == 301, pfad
+        # Vorübergehend und begrenzt zwischenspeicherbar: Die Spiegelung lässt sich ändern
+        assert antwort.status_code == 302, pfad
         assert antwort["Location"] == ziel
+        assert antwort["Cache-Control"] == "max-age=3600"
+
+
+@pytest.mark.parametrize("aenderung", [{"is_listed": False}, {"deleted": True}])
+def test_nicht_gelistete_gespiegelte_kommune_leitet_nicht_weiter(
+    spiegel: OParlBody, aenderung: dict[str, bool]
+) -> None:
+    """Eine nicht gelistete oder gelöschte Kommune antwortet mit 404 und nennt keinen Mandanten."""
+    OParlBody.objects.filter(pk=spiegel.pk).update(**aenderung)
+    antwort = Client().get(f"/data/dcat/body/{spiegel.pk}/catalog.ttl")
+    assert antwort.status_code == 404
+    assert "Location" not in antwort
+    assert b"musterstadt" not in antwort.content
 
 
 def test_gesamtkatalog_ohne_gespiegelte_mandanten(spiegel: OParlBody) -> None:
