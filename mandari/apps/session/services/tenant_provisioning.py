@@ -388,6 +388,7 @@ def _apply(spec: TenantSpec, catalog: PresetKatalog, *, actor: str) -> Provision
         teile = [tenant.get_body_type_display() if tenant.body_type else "", f"AGS {tenant.ags}" if tenant.ags else ""]
         result.steps.append("Körperschaft: " + ", ".join(t for t in teile if t) + ".")
 
+    _ensure_body(tenant)
     _ensure_roles(tenant, result)
     _ensure_term(tenant, spec, result)
     _ensure_numbering(tenant, spec, result)
@@ -420,6 +421,18 @@ def _fill_blank_fields(tenant: SessionTenant, spec: TenantSpec, result: Provisio
         cast(Any, tenant).save(update_fields=[*ergaenzt, "updated_at"])
     if not tenant.is_active:
         result.warnings.append("Der Mandant ist deaktiviert. Reaktivieren im Admin: Aktion „Mandanten aktivieren“.")
+
+
+def _ensure_body(tenant: SessionTenant) -> None:
+    """Standardkörperschaft (Issue #756): vorhanden und um leere Angaben aus dem Mandanten ergänzt."""
+    from apps.session.services import body_service
+
+    body = body_service.default_body(tenant)
+    ergaenzt = [feld for feld, wert in body_service.default_fields(tenant).items() if wert and not getattr(body, feld)]
+    for feld in ergaenzt:
+        setattr(body, feld, getattr(tenant, feld))
+    if ergaenzt:
+        body.save(update_fields=[*ergaenzt, "updated_at"])
 
 
 def _ensure_roles(tenant: SessionTenant, result: ProvisioningResult) -> None:

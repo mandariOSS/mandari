@@ -15,7 +15,13 @@ Platzhalter im Muster:
 ``{wp}``    Nummer der Wahlperiode (Einstellungen → Wahlperioden)
 ``{prefix}`` Präfix des Nummernkreises (z. B. ``AN``)
 ``{gremium}`` Kurzname des federführenden Gremiums (eigener Zähler je Gremium)
+``{koerperschaft}`` Kurzname der Körperschaft der Vorlage (eigener Zähler je Körperschaft)
 ========== ==========================================================================
+
+Körperschaften (Issue #756): Ein Nummernkreis gilt für alle Körperschaften des Mandanten oder nur für eine
+(``SessionNumberRange.body``). Für eine Vorlage zählt zuerst ein Kreis ihrer Körperschaft, dann ein
+allgemeiner; jeweils der Kreis der Vorlagenart vor dem für alle Arten. Vorlagennummern bleiben je Mandant
+eindeutig – gleiche Muster in zwei Körperschaften brauchen ``{koerperschaft}`` oder ein eigenes Präfix.
 
 Unternummern (Ergänzung, Neufassung, Antwort …) hängen an der Nummer der Bezugsvorlage:
 ``{parent}.{sub}`` ergibt „22-0593.1“, ``{parent}/{sub}`` ergibt „V/0599/2024/1“.
@@ -36,10 +42,10 @@ from django.db import transaction
 from django.utils import timezone
 
 if TYPE_CHECKING:
-    from apps.session.models import SessionNumberRange, SessionPaper, SessionTenant
+    from apps.session.models import SessionBody, SessionNumberRange, SessionPaper, SessionTenant
 
 TOKEN_RE = re.compile(r"\{(\w+)(?::(\d{1,2}))?\}")
-HAUPT_PLATZHALTER = {"lfd", "jahr", "jj", "wp", "prefix", "gremium"}
+HAUPT_PLATZHALTER = {"lfd", "jahr", "jj", "wp", "prefix", "gremium", "koerperschaft"}
 UNTER_PLATZHALTER = {"parent", "sub"}
 #: Status, ab denen eine Vorlage als freigegeben gilt (Vergabe „bei Freigabe“)
 FREIGEGEBEN = {"approved", "scheduled", "completed"}
@@ -115,12 +121,22 @@ def _wahlperiode(tenant: SessionTenant, stichtag: date) -> int:
     return int(term.number)
 
 
+def _body_of(number_range: SessionNumberRange, paper: SessionPaper | None) -> SessionBody | None:
+    """Körperschaft für {koerperschaft}: die der Vorlage, ohne Vorlage die des Nummernkreises."""
+    if paper is not None and paper.body_id is not None:
+        return paper.body
+    if number_range.body_id is not None:
+        return number_range.body
+    return None
+
+
 def _werte(
     number_range: SessionNumberRange, paper: SessionPaper | None, stichtag: date, *, vorschau: bool = False
 ) -> dict[str, Any]:
     """
     Werte der Platzhalter am Stichtag. ``vorschau``: ohne federführendes Gremium mit Kurzname steht
-    „GREMIUM“ für {gremium} – die Vorschau zeigt dann das Schema statt eines Fehlers.
+    „GREMIUM“ für {gremium} (ohne Körperschaft mit Kurzname „KS“ für {koerperschaft}) – die Vorschau zeigt
+    dann das Schema statt eines Fehlers.
     """
     muster = number_range.pattern
     werte: dict[str, Any] = {
@@ -138,6 +154,17 @@ def _werte(
         if not kurz:
             raise NumberingError("Das Muster enthält {gremium}: Bitte ein federführendes Gremium mit Kurzname wählen.")
         werte["gremium"] = kurz
+    if "{koerperschaft" in muster:
+        body = _body_of(number_range, paper)
+        kurz = (body.short_name or "").strip() if body else ""
+        if not kurz and vorschau:
+            kurz = "KS"
+        if not kurz:
+            raise NumberingError(
+                "Das Muster enthält {koerperschaft}: Bitte für die Körperschaft der Vorlage einen Kurznamen "
+                "hinterlegen (Einstellungen → Körperschaften)."
+            )
+        werte["koerperschaft"] = kurz
     return werte
 
 
@@ -149,19 +176,32 @@ def _scope(number_range: SessionNumberRange, werte: dict[str, Any]) -> str:
         teile.append(f"wp{werte['wp']}")
     if "gremium" in werte:
         teile.append(str(werte["gremium"]))
+    if "koerperschaft" in werte:
+        teile.append(f"ks:{werte['koerperschaft']}")
     return "|".join(teile)
 
 
-def range_for(tenant: SessionTenant, paper_type: str) -> SessionNumberRange | None:
-    """Aktiver Nummernkreis für eine Vorlagenart: eigener Kreis vor dem allgemeinen; None ohne Kreis."""
-    allgemein = None
+def range_for(tenant: SessionTenant, paper_type: str, body: SessionBody | None = None) -> SessionNumberRange | None:
+    """
+    Aktiver Nummernkreis für eine Vorlagenart in einer Körperschaft; None ohne Kreis.
+
+    Vorrang (Issue #756): Kreis der Körperschaft vor dem Kreis für alle Körperschaften, jeweils der Kreis der
+    Vorlagenart vor dem für alle Arten. Kreise anderer Körperschaften gelten nie. Ohne ``body`` (Vorschau ohne
+    Vorlage) zählen nur die Kreise für alle Körperschaften.
+    """
+    kandidaten: dict[tuple[bool, bool], SessionNumberRange] = {}
+    body_id = body.pk if body is not None else None
     for rng in tenant.number_ranges.filter(is_active=True).order_by("order", "created_at"):
+        if rng.body_id is not None and rng.body_id != body_id:
+            continue
         arten = rng.paper_types or []
-        if paper_type in arten:
-            return rng
-        if not arten and allgemein is None:
-            allgemein = rng
-    return allgemein
+        if arten and paper_type not in arten:
+            continue
+        kandidaten.setdefault((rng.body_id is not None, bool(arten)), rng)
+    for schluessel in ((True, True), (True, False), (False, True), (False, False)):
+        if schluessel in kandidaten:
+            return kandidaten[schluessel]
+    return None
 
 
 def is_due(number_range: SessionNumberRange, paper: SessionPaper) -> bool:
@@ -197,7 +237,7 @@ def _assign_sub_number(paper: SessionPaper) -> bool:
     parent = SessionPaper.objects.select_for_update().get(pk=cast(Any, paper.parent_paper_id))
     if not parent.reference:
         return False  # Bezugsvorlage hat selbst noch keine Nummer
-    number_range = range_for(parent.tenant, parent.paper_type)
+    number_range = range_for(parent.tenant, parent.paper_type, parent.body)
     sub_pattern = number_range.sub_pattern if number_range else "{parent}.{sub}"
     belegt = {
         n
@@ -229,7 +269,7 @@ def assign_if_due(paper: SessionPaper) -> bool:
         return False
     if paper.parent_paper_id and paper.relation_type:
         return _assign_sub_number(paper)
-    number_range = range_for(paper.tenant, paper.paper_type)
+    number_range = range_for(paper.tenant, paper.paper_type, paper.body)
     if number_range is None or not is_due(number_range, paper):
         return False
     stichtag = timezone.localdate()
@@ -271,6 +311,11 @@ def preview(number_range: SessionNumberRange, paper: SessionPaper | None = None)
 
 
 def current_scope(number_range: SessionNumberRange) -> str:
+    if "{koerperschaft" in number_range.pattern and number_range.body_id is None:
+        # Der Kreis zählt je Körperschaft – für welche der Startwert gelten soll, ist offen
+        raise NumberingError(
+            "Bei Nummernkreisen für alle Körperschaften mit {koerperschaft} den Startwert über den Admin setzen."
+        )
     werte = _werte(number_range, None, timezone.localdate()) if "{gremium" not in number_range.pattern else None
     if werte is None:
         raise NumberingError("Bei Nummernkreisen je Gremium den Startwert über den Admin setzen.")
@@ -404,7 +449,8 @@ def apply_preset(tenant: SessionTenant, key: str) -> list[SessionNumberRange]:
 
     preset = PRESETS[key]
     with transaction.atomic():
-        bestehend = list(SessionNumberRange.objects.select_for_update().filter(tenant=tenant))
+        # Nur die Kreise für alle Körperschaften; Kreise einzelner Körperschaften bleiben unberührt (Issue #756)
+        bestehend = list(SessionNumberRange.objects.select_for_update().filter(tenant=tenant, body__isnull=True))
         aktiv = []
         for order, kreis in enumerate(preset.kreise):
             treffer = next(
@@ -423,7 +469,9 @@ def apply_preset(tenant: SessionTenant, key: str) -> list[SessionNumberRange]:
             rng.order, rng.is_active = order, True
             rng.save()
             aktiv.append(rng)
-        SessionNumberRange.objects.filter(tenant=tenant).exclude(pk__in=[r.pk for r in aktiv]).update(is_active=False)
+        SessionNumberRange.objects.filter(tenant=tenant, body__isnull=True).exclude(
+            pk__in=[r.pk for r in aktiv]
+        ).update(is_active=False)
         SessionTenantModel = type(tenant)
         SessionTenantModel.objects.filter(pk=tenant.pk).update(reference_label=preset.reference_label)
         tenant.reference_label = preset.reference_label

@@ -33,6 +33,7 @@ from .models import (
     SessionAPIToken,
     SessionApplication,
     SessionAuditLog,
+    SessionBody,
     SessionConsultation,
     SessionFile,
     SessionLegislativeTerm,
@@ -156,9 +157,40 @@ class SessionStateProfileAdmin(ModelAdmin):
         return False
 
 
+class SessionBodyInline(TabularInline):
+    """
+    Körperschaften des Mandanten (Issue #756): Der Betrieb legt weitere an, etwa die Mitgliedsgemeinden einer
+    Samtgemeinde. Die Standardkörperschaft entsteht mit dem Mandanten und wechselt nur in den
+    Session-Einstellungen; gelöscht wird hier nichts (Gremien und Vorlagen hängen daran).
+    """
+
+    model = SessionBody
+    extra = 0
+    fields = ["name", "short_name", "slug", "body_type", "ags", "rgs", "parent", "is_active", "is_default"]
+    readonly_fields = ["is_default"]
+    prepopulated_fields = {"slug": ("name",)}
+    verbose_name = "Körperschaft"
+    verbose_name_plural = "Körperschaften (die Verwaltung führt den Sitzungsdienst für jede davon)"
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        # Übergeordnete Körperschaft nur aus demselben Mandanten
+        if db_field.name == "parent":
+            match = getattr(request, "resolver_match", None)
+            tenant_id = match.kwargs.get("object_id") if match else None
+            kwargs["queryset"] = (
+                SessionBody.objects.filter(tenant_id=tenant_id) if tenant_id else SessionBody.objects.none()
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
 @admin.register(SessionTenant)
 class SessionTenantAdmin(ModelAdmin):
     """Admin for Session tenants."""
+
+    inlines = [SessionBodyInline]
 
     list_display = [
         "name",
