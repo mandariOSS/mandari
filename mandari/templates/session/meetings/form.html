@@ -53,12 +53,11 @@
                 <select name="organization" id="id_organization" required
                         class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                     <option value="">Bitte wählen...</option>
-                    {% for org in form.organization.field.queryset %}
-                    <option value="{{ org.id }}" {% if form.organization.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>
-                        {{ org.name }}
-                    </option>
-                    {% endfor %}
+                    {% include "session/partials/organization_options.html" with groups=organization_groups organizations=form.organization.field.queryset selected=form.organization.value %}
                 </select>
+                {% if body_choice.active %}
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Die Sitzung gehört zur Körperschaft ihres Gremiums.</p>
+                {% endif %}
                 {% if form.organization.errors %}
                 <p class="mt-1 text-sm text-red-600">{{ form.organization.errors.0 }}</p>
                 {% endif %}
@@ -77,7 +76,7 @@
                         <input type="checkbox" name="joint_organizations" value="{{ org.id }}"
                                {% if org.id|stringformat:"s" in joint_selected %}checked{% endif %}
                                class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
-                        {{ org.name }}
+                        {{ org.name }}{% if body_choice.active and org.body %} <span class="text-gray-500 dark:text-gray-400">({{ org.body.label }})</span>{% endif %}
                     </label>
                     {% endfor %}
                 </div>

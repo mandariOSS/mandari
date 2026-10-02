@@ -24,11 +24,12 @@ from apps.common.params import int_param
 from .. import audit
 from ..models import SessionMeeting, SessionOrganization
 from ..permissions import SessionViewMixin
-from ..services import calendar_service
+from ..services import body_service, calendar_service
+from .bodies import BodyFilterMixin
 
 
-class MeetingCalendarView(SessionViewMixin, TemplateView):
-    """Monatskalender über alle Gremien des Mandanten."""
+class MeetingCalendarView(BodyFilterMixin, SessionViewMixin, TemplateView):
+    """Monatskalender über alle Gremien des Mandanten; ab der zweiten Körperschaft mit Filter (Issue #756)."""
 
     template_name = "session/calendar/month.html"
     permission_required = "view_meetings"
@@ -43,7 +44,13 @@ class MeetingCalendarView(SessionViewMixin, TemplateView):
             year, month = today.year, today.month
 
         include_np = self.has_permission("view_non_public_meetings")
-        weeks, count = calendar_service.month_grid(self.session_tenant, year, month, include_non_public=include_np)
+        body_filter = self.body_choice.q("organization__") if self.body_choice.selected else None
+        weeks, count = calendar_service.month_grid(
+            self.session_tenant, year, month, include_non_public=include_np, only=body_filter
+        )
+        organizations = SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)
+        if self.body_choice.selected:
+            organizations = organizations.filter(self.body_choice.q())
 
         prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
         next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
@@ -60,9 +67,7 @@ class MeetingCalendarView(SessionViewMixin, TemplateView):
                 "next_year": next_year,
                 "next_month": next_month,
                 "today": today,
-                "organizations": SessionOrganization.objects.filter(
-                    tenant=self.session_tenant, is_active=True
-                ).order_by("name"),
+                "organizations": organizations.order_by("name"),
                 "can_plan": self.has_permission("edit_meetings"),
                 "weekday_labels": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
             }
@@ -81,11 +86,18 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        organizations = (
+            SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)
+            .exclude(organization_type="department")
+            .order_by("name")
+        )
         context.update(
             {
-                "organizations": SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)
-                .exclude(organization_type="department")
-                .order_by("name"),
+                "organizations": organizations,
+                # Ab der zweiten Körperschaft nach Körperschaft gruppiert (Issue #756)
+                "organization_groups": body_service.group_organizations(
+                    organizations, body_service.choice(self.session_tenant)
+                ),
                 "rhythm_choices": calendar_service.RHYTHM_CHOICES,
                 "weekday_choices": WEEKDAY_CHOICES,
                 "next_year": timezone.localdate().year + 1,

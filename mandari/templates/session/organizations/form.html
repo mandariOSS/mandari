@@ -39,7 +39,12 @@
             <!-- Grunddaten -->
             <div>
                 <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Grunddaten</h2>
-                <div class="space-y-4">
+                <div class="space-y-4"{% if "body" in form.fields %} x-data="{ orgType: '{{ form.organization_type.value|default:''|escapejs }}' }"{% endif %}>
+                    {% if "body" in form.fields %}
+                    <c-form.select :field="form.body" label="Körperschaft" required x-show="orgType !== 'department'"
+                                   help="Die Körperschaft, deren Gremium es ist. Sitzungen gehören über das Gremium zu ihr." />
+                    <p x-show="orgType === 'department'" x-cloak class="text-sm text-gray-600 dark:text-gray-400">Ämter gehören zur Standardkörperschaft „{{ form.default_body.name }}“.</p>
+                    {% endif %}
                     <div>
                         <label for="id_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
                         <input type="text" name="name" id="id_name" value="{{ form.name.value|default:'' }}" required
@@ -55,7 +60,7 @@
                         </div>
                         <div>
                             <label for="id_organization_type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Typ *</label>
-                            <select name="organization_type" id="id_organization_type"
+                            <select name="organization_type" id="id_organization_type"{% if "body" in form.fields %} x-model="orgType"{% endif %}
                                     class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                                 {% for value, label in form.organization_type.field.choices %}
                                 <option value="{{ value }}" {% if form.organization_type.value == value %}selected{% endif %}>{{ label }}</option>

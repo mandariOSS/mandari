@@ -25,7 +25,7 @@ from apps.common.params import uuid_param
 from .. import audit
 from ..models import SessionNumberRange, SessionPaper, SessionTenant
 from ..permissions import SessionViewMixin
-from ..services import numbering_service
+from ..services import body_service, numbering_service
 from ..services.numbering_service import NumberingError
 
 _log_event = cast(Any, audit).log_event
@@ -42,7 +42,9 @@ class NumberingSettingsView(SessionViewMixin, TemplateView):
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context: dict[str, Any] = cast(Any, super()).get_context_data(**kwargs)
         ranges: list[Any] = list(
-            SessionNumberRange.objects.filter(tenant=self.session_tenant).order_by("-is_active", "order")
+            SessionNumberRange.objects.filter(tenant=self.session_tenant)
+            .select_related("body")
+            .order_by("-is_active", "order")
         )
         typen = _paper_types()
         for rng in ranges:
@@ -53,6 +55,8 @@ class NumberingSettingsView(SessionViewMixin, TemplateView):
         context["reset_choices"] = SessionNumberRange.RESET_CHOICES
         context["assign_choices"] = SessionNumberRange.ASSIGN_CHOICES
         context["presets"] = numbering_service.PRESETS
+        # Körperschaft je Kreis (Issue #756): Auswahl erst ab der zweiten aktiven Körperschaft
+        context["body_choice"] = body_service.choice(cast(SessionTenant, self.session_tenant))
         return context
 
 
@@ -107,14 +111,20 @@ class NumberingSaveView(SessionViewMixin, View):
         if fehler:
             messages.error(request, " ".join(fehler))
             return
-        # Laufender Kreis: Muster und Zählerbereich bestimmen bereits vergebene Nummern mit
-        if rng.pk and rng.counters.filter(value__gt=0).exists() and (rng.pattern != pattern or rng.reset != reset):
+        body_id = self._body_id(request, rng)
+        if body_id is False:
+            messages.error(request, "Unbekannte Körperschaft.")
+            return
+        # Laufender Kreis: Muster, Zählerbereich und Körperschaft bestimmen bereits vergebene Nummern mit
+        changed = rng.pattern != pattern or rng.reset != reset or rng.body_id != body_id
+        if rng.pk and changed and rng.counters.filter(value__gt=0).exists():
             messages.error(
                 request,
-                "Aus diesem Kreis wurden schon Nummern vergeben – Muster und Zählerbereich bleiben. "
+                "Aus diesem Kreis wurden schon Nummern vergeben – Muster, Zählerbereich und Körperschaft bleiben. "
                 "Für ein neues Schema bitte einen neuen Kreis anlegen und diesen deaktivieren.",
             )
             return
+        rng.body_id = body_id
         typen = set(_paper_types())
         rng.name = (request.POST.get("name") or "Vorlagen").strip()[:100]
         rng.prefix = (request.POST.get("prefix") or "").strip()[:20]
@@ -134,6 +144,21 @@ class NumberingSaveView(SessionViewMixin, View):
         messages.success(
             request, f"Nummernkreis „{rng.name}“ gespeichert – nächste Nummer {numbering_service.preview(rng)}."
         )
+
+    def _body_id(self, request: HttpRequest, rng: SessionNumberRange) -> Any:
+        """
+        Körperschaft des Kreises aus dem Formular (Issue #756); leer = alle Körperschaften. Ohne Auswahl im
+        Formular (eine Körperschaft) bleibt sie, wie sie ist. ``False``: fremde oder ungültige Kennung.
+        """
+        if "body" not in request.POST:
+            return rng.body_id
+        raw = request.POST.get("body", "")
+        if not raw:
+            return None
+        body_id = uuid_param(raw)
+        if body_id is None or not body_service.bodies(self.tenant, include_inactive=True).filter(pk=body_id).exists():
+            return False
+        return body_id
 
     def _preset(self, request: HttpRequest) -> None:
         key = request.POST.get("preset", "")

@@ -39,6 +39,7 @@ from apps.session.models import (
     SessionAPIToken,
     SessionApplication,
     SessionAttendance,
+    SessionBody,
     SessionCircularResolution,
     SessionConsultation,
     SessionCosignature,
@@ -175,6 +176,9 @@ GET_MATRIX: list[tuple[str, frozenset[str]]] = [
     ("/settings/cosign/", frozenset({"manage_settings"})),
     ("/settings/privacy/", frozenset({"manage_settings"})),
     ("/settings/terms/", frozenset({"manage_settings"})),
+    # Körperschaften im Mandanten (Issue #756)
+    ("/settings/koerperschaften/", frozenset({"manage_settings"})),
+    ("/settings/koerperschaften/neu/", frozenset({"manage_settings"})),
 ]
 
 # Seiten, die alternativ mit weiteren Rechten erreichbar sind (Pfad → weitere Rechtesätze)
@@ -185,6 +189,7 @@ GET_ALTERNATIVES: dict[str, list[frozenset[str]]] = {
 
 # (Pfad-Vorlage, POST-Daten) — Mutationen, die ohne Berechtigung 403 liefern und nichts verändern dürfen
 MUTATIONS: list[tuple[str, dict[str, str]]] = [
+    ("/settings/koerperschaften/neu/", {"name": "Gemeinde X", "is_active": "on"}),
     ("/meetings/create/", {"name": "M", "organization": "{org_a}", "start": "2026-08-01T10:00"}),
     ("/meetings/{meeting_pub}/invitation/", {"dispatch_type": "invitation"}),
     ("/papers/create/", {"reference": "V/X", "name": "P", "paper_type": "proposal"}),
@@ -283,6 +288,7 @@ FOREIGN_DETAIL_PATHS = [
     "/applications/{app_b}/",
     "/organizations/{org_b}/",
     "/organizations/{org_b}/edit/",
+    "/settings/koerperschaften/{body_b}/",
     "/persons/{person_b}/",
     "/persons/{person_b}/edit/",
     "/agenda/{top_b}/edit/",
@@ -296,6 +302,8 @@ FOREIGN_DETAIL_PATHS = [
 
 # Fremde Objekt-Mutationen unter eigenem Tenant-Slug (POST) → 404
 FOREIGN_MUTATIONS: list[tuple[str, dict[str, str]]] = [
+    ("/settings/koerperschaften/{body_b}/standard/", {}),
+    ("/settings/koerperschaften/{body_b}/", {"name": "Übernommen", "is_active": "on"}),
     ("/agenda/{top_b}/delete/", {}),
     ("/files/{file_b}/delete/", {}),
     ("/memberships/{membership_b}/end/", {}),
@@ -512,6 +520,7 @@ def _build_world() -> World:
         "file_pub": file_pub.id,
         "file_np": file_np.id,
         "org_b": org_b.id,
+        "body_b": SessionBody.objects.get(tenant=tenant_b, is_default=True).id,
         "person_b": person_b.id,
         "meeting_b": meeting_b.id,
         "paper_b": paper_b.id,

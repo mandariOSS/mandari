@@ -32,14 +32,15 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
-from ..services import membership_service
+from ..services import body_service, membership_service
+from .bodies import BodyFilterMixin
 
 # =============================================================================
 # ORGANIZATIONS
 # =============================================================================
 
 
-class OrganizationListView(SessionViewMixin, ListView):
+class OrganizationListView(BodyFilterMixin, SessionViewMixin, ListView):
     """List of organizations/committees."""
 
     model = SessionOrganization
@@ -53,6 +54,10 @@ class OrganizationListView(SessionViewMixin, ListView):
         # Aktive Mitglieder nach derselben Regel wie Ladung und Anwesenheit (laufend heute, Person aktiv)
         active = membership_service.active_q(timezone.localdate(), "memberships__")
         qs = qs.annotate(member_count=Count("memberships", filter=active, distinct=True)).order_by("name")
+
+        # Körperschaft (Issue #756): Filter und Anzeige erst ab der zweiten aktiven Körperschaft
+        if self.body_choice.active:
+            qs = self.filter_body(qs).select_related("body")
 
         # Filter by type
         org_type = self.request.GET.get("type")
@@ -170,6 +175,8 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
 
 
 ORGANIZATION_FORM_FIELDS = [
+    # Körperschaft (Issue #756): nur im Formular, wenn der Mandant mehr als eine aktive führt
+    "body",
     "name",
     "short_name",
     "organization_type",
@@ -219,12 +226,51 @@ class SessionOrganizationForm(forms.ModelForm):
             raise forms.ValidationError("Das Sitzungsgeld darf nicht negativ sein.")
         return amount
 
+    #: Standardkörperschaft des Mandanten (setzt OrganizationFormMixin, solange die Auswahl erscheint)
+    default_body = None
+
+    def _clean_body(self, cleaned):
+        """
+        Körperschaft (Issue #756): Ämter gehören zur Standardkörperschaft (ADR), die Auswahl ist für sie
+        ausgeblendet. Mit Sitzungen oder Vorlagen bleibt das Gremium in seiner Körperschaft – sonst wanderten
+        Sitzungen still mit. Verglichen wird die wirksame Körperschaft: Ein Gremium ohne Angabe (älteres Image)
+        gehört zur Standardkörperschaft.
+        """
+        if "body" not in self.fields or self.default_body is None:
+            return None
+        department = cleaned.get("organization_type") == "department"
+        if department:
+            cleaned["body"] = self.default_body
+        body = cleaned.get("body")
+        instance = self.instance
+        if body is None or not instance.pk:
+            return body
+        if body_service.effective_body_id(instance, self.default_body.pk) == body.pk:
+            return body
+        if instance.meetings.exists() or instance.joint_meetings.exists() or instance.main_papers.exists():
+            if department:
+                # Das Feld ist für Ämter ausgeblendet: Meldung über dem Formular
+                self.add_error(
+                    None,
+                    "Ämter gehören zur Standardkörperschaft. Dieses Gremium hat aber schon Sitzungen oder Vorlagen "
+                    "in einer anderen Körperschaft.",
+                )
+            else:
+                self.add_error(
+                    "body",
+                    "Das Gremium hat bereits Sitzungen oder Vorlagen; die Körperschaft lässt sich nicht mehr ändern.",
+                )
+        return body
+
     def clean(self):
         cleaned = super().clean()
         error = membership_service.period_error(cleaned.get("start_date"), cleaned.get("end_date"))
         if error:
             self.add_error("end_date", error)
         parent = cleaned.get("parent")
+        body = self._clean_body(cleaned)
+        if parent is not None and body is not None and parent.body_id not in (None, body.pk):
+            self.add_error("parent", "Das übergeordnete Gremium gehört zu einer anderen Körperschaft.")
         if (
             parent is not None
             and self.instance.pk
@@ -250,6 +296,18 @@ class OrganizationFormMixin:
             # Weder das Gremium selbst noch seine Untergremien (keine Zyklen)
             parent_qs = parent_qs.exclude(pk=obj.pk).exclude(pk__in=descendant_ids(obj))
         form.fields["parent"].queryset = parent_qs
+        # Körperschaft (Issue #756): Auswahl erst ab der zweiten aktiven; sonst setzt das Modell die Standardkörperschaft
+        choice = body_service.choice(self.session_tenant)
+        if choice.active:
+            field = form.fields["body"]
+            field.queryset = body_service.selectable(self.session_tenant, obj.body_id if obj is not None else None)
+            field.required = True
+            field.empty_label = None
+            if obj is None or not obj.pk:
+                field.initial = choice.default_id
+            form.default_body = choice.default
+        else:
+            del form.fields["body"]
         form.fields["committee_kind"].choices = [
             ("", "Nicht eingeordnet"),
             *SessionOrganization.COMMITTEE_KIND_CHOICES,

@@ -1,0 +1,16 @@
+{% comment %}
+Filter „Körperschaft“ in einem GET-Formular (Issue #756). Erscheint erst, wenn der Mandant mehr als eine aktive
+Körperschaft führt; ohne Auswahl gilt die Gesamtansicht über alle Körperschaften.
+{% endcomment %}
+{% if body_choice.active %}
+<div class="w-full sm:w-48">
+    <label for="filter-body" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Körperschaft</label>
+    <select name="body" id="filter-body"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+        <option value="">Alle Körperschaften</option>
+        {% for body in body_choice.bodies %}
+        <option value="{{ body.slug }}" {% if body_choice.selected.pk == body.pk %}selected{% endif %}>{{ body.name }}</option>
+        {% endfor %}
+    </select>
+</div>
+{% endif %}

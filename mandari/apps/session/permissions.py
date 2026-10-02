@@ -273,9 +273,12 @@ class SessionMixin(LoginRequiredMixin):
         if not tenant_slug:
             raise Http404("Kein Mandant angegeben")
 
-        # Get tenant
+        # Get tenant – mit der Zahl seiner aktiven Körperschaften (Issue #756): Filter und Auswahl erscheinen erst ab
+        # der zweiten, und die Frage kostet so keine eigene Abfrage
+        from apps.session.services.body_service import annotate_body_count
+
         try:
-            self.session_tenant = SessionTenant.objects.get(slug=tenant_slug, is_active=True)
+            self.session_tenant = annotate_body_count(SessionTenant.objects.all()).get(slug=tenant_slug, is_active=True)
         except SessionTenant.DoesNotExist:
             raise Http404("Mandant nicht gefunden") from None
 

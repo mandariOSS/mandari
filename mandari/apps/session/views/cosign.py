@@ -24,6 +24,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import cosign_service, delegation_service
+from .bodies import BodyFilterMixin
 from .nexturl import safe_next_url
 from .papers import notify_creator_rejected
 
@@ -123,15 +124,18 @@ class CosignatureActionView(SessionViewMixin, View):
         return redirect("session:paper_detail", tenant_slug=self.session_tenant.slug, paper_id=paper.id)
 
 
-class MyCosignaturesView(SessionViewMixin, TemplateView):
-    """Arbeitsvorrat: offene Mitzeichnungen der eigenen Ämter."""
+class MyCosignaturesView(BodyFilterMixin, SessionViewMixin, TemplateView):
+    """Arbeitsvorrat: offene Mitzeichnungen der eigenen Ämter; ab der zweiten Körperschaft mit Filter (#756)."""
 
     template_name = "session/papers/cosign_list.html"
     permission_required = "view_papers"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        cosignatures = list(cosign_service.my_pending_cosignatures(self.session_user, self.session_permissions))
+        pending = cosign_service.my_pending_cosignatures(self.session_user, self.session_permissions)
+        if self.body_choice.active:
+            pending = self.filter_body(pending, "paper__").select_related("paper__body")
+        cosignatures = list(pending)
         for cosignature in cosignatures:
             cosignature.actionable = cosign_service.is_actionable(cosignature)
             # Vertretung (Issue #222): Stationen aus dem Arbeitsvorrat einer vertretenen Person

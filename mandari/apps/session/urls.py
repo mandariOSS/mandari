@@ -12,6 +12,7 @@ from .api import dcat as dcat_views
 from .api import oparl as oparl_api_views
 from .api import views as api_views
 from .views import approvals as approval_views
+from .views import bodies as body_views
 from .views import cockpit as cockpit_views
 from .views import invitation_responses as invitation_response_views
 from .views import leitstelle as leitstelle_views
@@ -564,6 +565,27 @@ urlpatterns = [
         "<slug:tenant_slug>/settings/",
         views.SettingsView.as_view(),
         name="settings",
+    ),
+    # Körperschaften im Mandanten (Issue #756)
+    path(
+        "<slug:tenant_slug>/settings/koerperschaften/",
+        body_views.BodyListView.as_view(),
+        name="settings_bodies",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/koerperschaften/neu/",
+        body_views.BodyCreateView.as_view(),
+        name="settings_body_create",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/koerperschaften/<uuid:body_id>/",
+        body_views.BodyUpdateView.as_view(),
+        name="settings_body_edit",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/koerperschaften/<uuid:body_id>/standard/",
+        body_views.BodyDefaultView.as_view(),
+        name="settings_body_default",
     ),
     path(
         "<slug:tenant_slug>/settings/insight-publish/",

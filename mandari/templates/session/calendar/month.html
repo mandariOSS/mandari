@@ -15,21 +15,33 @@
 {% block page_content %}
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
     <div class="flex items-center gap-2">
-        <a href="?year={{ prev_year }}&month={{ prev_month }}"
+        <a href="{% querystring year=prev_year month=prev_month %}"
            class="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700" title="Voriger Monat">
             <i data-lucide="chevron-left" class="w-5 h-5"></i>
         </a>
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white w-56 text-center">{{ month_name }} {{ year }}</h1>
-        <a href="?year={{ next_year }}&month={{ next_month }}"
+        <a href="{% querystring year=next_year month=next_month %}"
            class="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700" title="Nächster Monat">
             <i data-lucide="chevron-right" class="w-5 h-5"></i>
         </a>
-        <a href="{% url 'session:meeting_calendar' tenant_slug=tenant_slug %}"
+        <a href="{% url 'session:meeting_calendar' tenant_slug=tenant_slug %}{% if body_choice.selected %}?body={{ body_choice.selected.slug }}{% endif %}"
            class="ml-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
             Heute
         </a>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
+        {% if body_choice.active %}
+        <!-- Körperschaft (Issue #756): Gesamtansicht oder eine Körperschaft -->
+        <form method="get" class="flex items-end gap-2">
+            <input type="hidden" name="year" value="{{ year }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            {% include "session/partials/body_filter.html" %}
+            <button type="submit"
+                    class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
+                Anzeigen
+            </button>
+        </form>
+        {% endif %}
         <a href="{% url 'session:year_plan_pdf' tenant_slug=tenant_slug %}?year={{ year }}"
            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
             <i data-lucide="file-down" class="w-4 h-4"></i> Sitzungsplan {{ year }} (PDF)

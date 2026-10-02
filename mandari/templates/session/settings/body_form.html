@@ -1,0 +1,43 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}{% if object %}{{ object.name }}{% else %}Körperschaft anlegen{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Einstellungen</a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:settings_bodies' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Körperschaften</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">{% if object %}Bearbeiten{% else %}Anlegen{% endif %}</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-2xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">{% if object %}{{ object.name }}{% else %}Körperschaft anlegen{% endif %}</h1>
+
+    <form method="post" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4" novalidate>
+        {% csrf_token %}
+        <c-form.errors :form="form" />
+        <c-form.field :field="form.name" label="Name" placeholder="z. B. Gemeinde Musterdorf" required />
+        <div class="grid sm:grid-cols-2 gap-4">
+            <c-form.field :field="form.short_name" label="Kurzname" help="Wert des Platzhalters {koerperschaft} in Nummernkreisen" />
+            <c-form.field :field="form.slug" label="Kurzkennung" help="Für Filteradressen. {{ form.slug.help_text }}" />
+        </div>
+        <c-form.select :field="form.body_type" label="Art der Körperschaft" />
+        <div class="grid sm:grid-cols-2 gap-4">
+            <c-form.field :field="form.ags" label="Amtlicher Gemeindeschlüssel" help="8 Stellen für Gemeinden, 5 für Kreise" />
+            <c-form.field :field="form.rgs" label="Regionalschlüssel" help="12 Stellen" />
+        </div>
+        <c-form.select :field="form.parent" label="Gehört zu" help="z. B. die Samtgemeinde einer Mitgliedsgemeinde" />
+        {% if form.is_active.errors %}
+        <c-ui.alert variant="error">{{ form.is_active.errors.0 }}</c-ui.alert>
+        {% endif %}
+        <c-form.checkbox :field="form.is_active" label="Aktiv – erscheint in Auswahl und Filtern" />
+        <div class="flex items-center gap-3 pt-2">
+            <c-ui.button type="submit">Speichern</c-ui.button>
+            <a href="{% url 'session:settings_bodies' tenant_slug=tenant_slug %}" class="text-sm text-gray-600 dark:text-gray-400 hover:underline">Abbrechen</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

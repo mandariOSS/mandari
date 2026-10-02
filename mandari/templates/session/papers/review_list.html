@@ -8,6 +8,16 @@
 
 {% block page_content %}
 {% include "session/partials/my_delegations.html" %}
+{% if body_choice.active %}
+<!-- Körperschaft (Issue #756): Gesamtansicht oder eine Körperschaft -->
+<form method="get" class="flex flex-wrap items-end gap-4 mb-4">
+    {% include "session/partials/body_filter.html" %}
+    <button type="submit"
+            class="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors">
+        Filtern
+    </button>
+</form>
+{% endif %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     {% for paper in papers %}
     <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0 flex items-center gap-4 flex-wrap">
@@ -20,6 +30,7 @@
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {{ paper.get_paper_type_display }}
                 {% if paper.main_organization %}· {{ paper.main_organization.name }}{% endif %}
+                {% if body_choice.active and paper.body %}· {{ paper.body.label }}{% endif %}
                 {% if paper.created_by %}· eingereicht von {{ paper.created_by.user.email }}{% endif %}
                 · {{ paper.created_at|date:"d.m.Y" }}
                 {% if not paper.is_public %}· <span class="text-red-600 dark:text-red-400">NÖ</span>{% endif %}

@@ -41,8 +41,9 @@ from ..models import (
     SessionUser,
 )
 from ..permissions import SessionViewMixin, role_permissions
-from ..services import agenda_service, delegation_service, four_eyes_service, paper_version_service
+from ..services import agenda_service, body_service, delegation_service, four_eyes_service, paper_version_service
 from ..visibility import agenda_item_visible, meeting_visible, paper_visible
+from .bodies import BodyFilterMixin
 from .nexturl import safe_next_url
 
 logger = logging.getLogger(__name__)
@@ -158,21 +159,42 @@ class PaperNumberingFormMixin:
 
         paper = getattr(self, "object", None)
         typ = paper.paper_type if paper else "proposal"
-        rng = numbering_service.range_for(self.session_tenant, typ)
         context["reference_label"] = self.session_tenant.reference_label
+        body_choice = getattr(self, "body_choice", None)
+        if paper is None and body_choice is not None and body_choice.active:
+            # Beim Anlegen steht die Körperschaft noch nicht fest: Hinweis je Körperschaft (Issue #756), sofern
+            # sich Kreis oder nächste Nummer unterscheiden
+            hints = []
+            for body in body_choice.bodies:
+                probe = SessionPaper(tenant=self.session_tenant, paper_type=typ, body=body)
+                rng = numbering_service.range_for(self.session_tenant, typ, body)
+                hints.append((body, rng, numbering_service.preview(rng, probe) if rng is not None else ""))
+            if len({(rng.pk if rng else None, nummer) for _, rng, nummer in hints}) > 1:
+                context["numbering_hint"] = (
+                    "Die Nummer kommt aus dem Nummernkreis der Körperschaft – "
+                    + "; ".join(f"{body.name}: {self._range_hint(rng, nummer)}" for body, rng, nummer in hints)
+                    + "."
+                )
+                return context
+            _, rng, nummer = hints[0]
+        else:
+            # Vorlage ohne Körperschaft (älteres Image): die, die das Speichern ergänzt
+            body = None if paper is None else paper.body if paper.body_id else body_service.body_for_paper(paper)
+            rng = numbering_service.range_for(self.session_tenant, typ, body)
+            nummer = numbering_service.preview(rng, paper) if rng is not None else ""
         if rng is None:
             context["numbering_hint"] = "Für diese Vorlagenart ist kein Nummernkreis eingerichtet."
-        elif rng.assign_on == "release":
-            context["numbering_hint"] = (
-                f"Die Nummer wird bei der Freigabe vergeben (Nummernkreis „{rng.name}“, "
-                f"nächste {numbering_service.preview(rng, paper)})."
-            )
         else:
-            context["numbering_hint"] = (
-                f"Die Nummer wird beim Speichern vergeben (Nummernkreis „{rng.name}“, "
-                f"nächste {numbering_service.preview(rng, paper)})."
-            )
+            context["numbering_hint"] = f"Die Nummer wird {self._range_hint(rng, nummer)}."
         return context
+
+    @staticmethod
+    def _range_hint(rng: Any, nummer: str) -> str:
+        """„beim Speichern vergeben (Nummernkreis „…“, nächste …)“ bzw. „kein Nummernkreis eingerichtet“."""
+        if rng is None:
+            return "kein Nummernkreis eingerichtet"
+        wann = "bei der Freigabe" if rng.assign_on == "release" else "beim Speichern"
+        return f"{wann} vergeben (Nummernkreis „{rng.name}“, nächste {nummer})"
 
     def _save_with_numbering(self, form: Any, erfolg: str) -> Any:
         from ..services.numbering_service import NumberingError
@@ -197,6 +219,61 @@ class PaperNumberingFormMixin:
         return response
 
 
+class PaperBodyFormMixin:
+    """
+    Körperschaft der Vorlage (Issue #756): Auswahl erst ab der zweiten aktiven Körperschaft. Ohne Auswahl folgt
+    die Vorlage ihrem federführenden Gremium (SessionPaper.save); nach der Nummernvergabe bleibt sie fest,
+    weil der Nummernkreis von ihr abhängt.
+    """
+
+    body_choice = body_service.BodyChoice()
+
+    def _prepare_body(self, form: Any) -> Any:
+        self.body_choice = body_service.choice(self.session_tenant)
+        if not self.body_choice.active:
+            form.fields.pop("body", None)
+            return form
+        paper = form.instance
+        field = form.fields["body"]
+        field.queryset = body_service.selectable(self.session_tenant, paper.body_id)
+        field.required = False
+        field.empty_label = "Wie das federführende Gremium"
+        if paper.pk and paper.reference:
+            field.disabled = True
+            field.help_text = "Fest, seit die Vorlage ihre Nummer hat."
+        return form
+
+    def _body_invalid(self, form: Any) -> bool:
+        """
+        Federführendes Gremium und gewählte Körperschaft müssen zusammenpassen. Ohne beides verlangt das Formular
+        die Körperschaft – sonst landete die Vorlage still bei der Standardkörperschaft und wäre mit der Nummer
+        dort festgelegt.
+        """
+        field = form.fields.get("body")
+        if field is None:
+            return False
+        body = form.cleaned_data.get("body")
+        lead = form.cleaned_data.get("main_organization")
+        if body is None and lead is None and not field.disabled:
+            form.add_error("body", "Bitte die Körperschaft wählen – oder ein federführendes Gremium, dem sie folgt.")
+            return True
+        if body is None or lead is None:
+            return False
+        if body_service.effective_body_id(lead, self.body_choice.default_id) == body.pk:
+            return False
+        form.add_error("main_organization", "Das federführende Gremium gehört zu einer anderen Körperschaft.")
+        return True
+
+    def _body_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        context["body_choice"] = self.body_choice
+        form = context.get("form")
+        if self.body_choice.active and form is not None:
+            context["main_organization_groups"] = body_service.group_organizations(
+                form.fields["main_organization"].queryset, self.body_choice
+            )
+        return context
+
+
 def _active_text_blocks(tenant, categories=("resolution", "general")):
     """Aktive Textbausteine für die Editor-Auswahl (Issue #85)."""
     from ..models import SessionTextBlock
@@ -204,7 +281,7 @@ def _active_text_blocks(tenant, categories=("resolution", "general")):
     return SessionTextBlock.objects.filter(tenant=tenant, is_active=True, category__in=categories)
 
 
-class PaperListView(SessionViewMixin, ListView):
+class PaperListView(BodyFilterMixin, SessionViewMixin, ListView):
     """List of papers."""
 
     model = SessionPaper
@@ -222,6 +299,10 @@ class PaperListView(SessionViewMixin, ListView):
         # Ö/NÖ: Nichtöffentliche Vorlagen nur für Berechtigte
         if not self.has_permission("view_non_public_papers"):
             qs = qs.filter(is_public=True)
+
+        # Körperschaft (Issue #756): Filter und Anzeige erst ab der zweiten aktiven Körperschaft
+        if self.body_choice.active:
+            qs = self.filter_body(qs).select_related("body")
 
         # Filter by type
         paper_type = self.request.GET.get("type")
@@ -443,6 +524,8 @@ class PaperChildCreateView(SessionViewMixin, View):
                 paper_type=ART_JE_BEZUG.get(relation, parent.paper_type),
                 is_public=parent.is_public,
                 main_organization=parent.main_organization,
+                # Körperschaft der Bezugsvorlage (Issue #756), auch wenn sie dort ausdrücklich gewählt ist
+                body_id=parent.body_id,
                 lead_department=parent.lead_department,
                 date=timezone.localdate(),
                 created_by=self.session_user,
@@ -456,12 +539,13 @@ class PaperChildCreateView(SessionViewMixin, View):
         return redirect("session:paper_edit", tenant_slug=tenant_slug, paper_id=child.id)
 
 
-class PaperCreateView(PaperNumberingFormMixin, SessionViewMixin, CreateView):
+class PaperCreateView(PaperBodyFormMixin, PaperNumberingFormMixin, SessionViewMixin, CreateView):
     """Create a new paper."""
 
     model = SessionPaper
     template_name = "session/papers/form.html"
     fields = [
+        "body",
         "reference",
         "name",
         "paper_type",
@@ -482,7 +566,7 @@ class PaperCreateView(PaperNumberingFormMixin, SessionViewMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["text_blocks"] = _active_text_blocks(self.session_tenant)
-        return self._numbering_context(context)
+        return self._body_context(self._numbering_context(context))
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
@@ -498,9 +582,11 @@ class PaperCreateView(PaperNumberingFormMixin, SessionViewMixin, CreateView):
         form.fields["lead_department"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True, organization_type="department"
         )
-        return self._prepare_numbering(form)
+        return self._prepare_body(self._prepare_numbering(form))
 
     def form_valid(self, form):
+        if self._body_invalid(form):
+            return self.form_invalid(form)
         form.instance.tenant = self.session_tenant
         form.instance.created_by = self.session_user
         return self._save_with_numbering(form, "Vorlage wurde erstellt.")
@@ -515,7 +601,7 @@ class PaperCreateView(PaperNumberingFormMixin, SessionViewMixin, CreateView):
         )
 
 
-class PaperReviewListView(SessionViewMixin, ListView):
+class PaperReviewListView(BodyFilterMixin, SessionViewMixin, ListView):
     """Arbeitsvorrat „Meine zu prüfenden Vorlagen" (Status: In Prüfung)."""
 
     model = SessionPaper
@@ -528,6 +614,9 @@ class PaperReviewListView(SessionViewMixin, ListView):
         qs = super().get_queryset().filter(status="review")
         if not self.has_permission("view_non_public_papers"):
             qs = qs.filter(is_public=True)
+        # Körperschaft (Issue #756): Filter und Anzeige erst ab der zweiten aktiven Körperschaft
+        if self.body_choice.active:
+            qs = self.filter_body(qs).select_related("body")
         return qs.select_related("main_organization", "created_by__user").order_by("created_at")
 
     def get_context_data(self, **kwargs):
@@ -740,12 +829,13 @@ class PaperWorkflowView(SessionViewMixin, View):
         notify_creator_rejected(self.session_tenant, paper, comment)
 
 
-class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
+class PaperUpdateView(PaperBodyFormMixin, PaperNumberingFormMixin, SessionViewMixin, UpdateView):
     """Update a paper."""
 
     model = SessionPaper
     template_name = "session/papers/form.html"
     fields = [
+        "body",
         "reference",
         "name",
         "paper_type",
@@ -781,7 +871,7 @@ class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
         context["text_blocks"] = _active_text_blocks(self.session_tenant)
         context["content_locked"] = self.content_locked
         context["content_locked_message"] = paper_version_service.CONTENT_LOCKED_MESSAGE
-        return self._numbering_context(context)
+        return self._body_context(self._numbering_context(context))
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -806,9 +896,11 @@ class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
         form.fields["lead_department"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True, organization_type="department"
         )
-        return self._prepare_numbering(form)
+        return self._prepare_body(self._prepare_numbering(form))
 
     def form_valid(self, form):
+        if self._body_invalid(form):
+            return self.form_invalid(form)
         # Ab der Vorlage zur Freigabe: Inhalt festgeschrieben – Änderungen im Entwurf, als Neufassung oder nach Rücknahme
         if self.content_locked and set(form.changed_data) & set(self.CONTENT_FIELDS):
             form.add_error(None, paper_version_service.CONTENT_LOCKED_MESSAGE)
