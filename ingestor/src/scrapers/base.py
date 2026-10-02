@@ -50,6 +50,55 @@ class CrawlWindow:
         return result
 
 
+@dataclass(frozen=True)
+class BodySpec:
+    """
+    Eine Körperschaft innerhalb einer Instanz mit mehreren Körperschaften.
+
+    SessionNet unterscheidet sie über den Mandantenparameter ``__cpanr``
+    (eine Samtgemeinde führt sich und ihre Mitgliedsgemeinden oft in einer
+    Instanz). ``name``/``short_name`` leer = Name aus der Mandantenauswahl.
+    """
+
+    cpanr: int
+    name: str | None = None
+    short_name: str | None = None
+
+
+# "auto" = Körperschaften aus der Mandantenauswahl der Instanz ermitteln
+BODIES_AUTO = "auto"
+
+
+def _parse_bodies(raw: Any) -> list[BodySpec] | str | None:
+    """Liest scraper.bodies: fehlt = eine Körperschaft, "auto" oder Liste mit cpanr."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        if raw.strip().lower() == BODIES_AUTO:
+            return BODIES_AUTO
+        raise ValueError("sync_config['scraper']['bodies'] muss \"auto\" oder eine Liste sein.")
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("sync_config['scraper']['bodies'] muss eine nicht leere Liste sein.")
+    specs: list[BodySpec] = []
+    seen: set[int] = set()
+    for index, entry in enumerate(raw, start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"sync_config['scraper']['bodies'][{index}] ist kein Objekt.")
+        try:
+            cpanr = int(entry.get("cpanr"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            raise ValueError(f"sync_config['scraper']['bodies'][{index}]: cpanr fehlt oder ist keine Zahl.") from None
+        if cpanr < 1:
+            raise ValueError(f"sync_config['scraper']['bodies'][{index}]: cpanr muss größer als 0 sein.")
+        if cpanr in seen:
+            raise ValueError(f"sync_config['scraper']['bodies']: cpanr {cpanr} doppelt.")
+        seen.add(cpanr)
+        name = str(entry.get("name") or "").strip() or None
+        short_name = str(entry.get("short_name") or "").strip() or None
+        specs.append(BodySpec(cpanr=cpanr, name=name, short_name=short_name))
+    return specs
+
+
 @dataclass
 class ScraperConfig:
     """
@@ -74,6 +123,10 @@ class ScraperConfig:
     # Gremien-Mitglieder (kp0040) nur im Full-Crawl abrufen
     members_on_full_only: bool = True
     adapter_schema_version: int = 1
+    # Mehrere Körperschaften je Instanz (SessionNet: __cpanr). None = eine
+    # Körperschaft je Basis-URL (bisheriges Verhalten), "auto" = aus der
+    # Mandantenauswahl ermitteln, sonst feste Liste.
+    bodies: list[BodySpec] | str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -95,6 +148,7 @@ class ScraperConfig:
             "max_detail_pages",
             "members_on_full_only",
             "adapter_schema_version",
+            "bodies",
         }
         return cls(
             base_url=base_url if base_url.endswith("/") else base_url + "/",
@@ -107,6 +161,7 @@ class ScraperConfig:
             max_detail_pages=(int(raw["max_detail_pages"]) if raw.get("max_detail_pages") else None),
             members_on_full_only=bool(raw.get("members_on_full_only", True)),
             adapter_schema_version=int(raw.get("adapter_schema_version", 1)),
+            bodies=_parse_bodies(raw.get("bodies")),
             extra={k: v for k, v in raw.items() if k not in known},
         )
 
@@ -119,17 +174,31 @@ class ScraperAdapter(Protocol):
     stabilen id-URLs (kanonische Detailseiten-URLs des Vendors). Die
     Reihenfolge der Entity-Typen muss FK-kompatibel sein:
     organization -> person -> membership -> paper -> meeting -> consultation.
+
+    Eine Quelle kann mehrere Körperschaften (Bodies) liefern: ``resolve_bodies``
+    nennt sie vor dem Crawl, ``iter_body_entities`` ordnet jede Seite einer
+    davon zu.
     """
 
     vendor: str
     schema_version: int
 
     def build_body(self) -> dict[str, Any]:
-        """Synthetisches OParl-Body-Dict der Quelle."""
+        """Synthetisches OParl-Body-Dict der Quelle (erste Körperschaft)."""
+        ...
+
+    async def resolve_bodies(self) -> list[dict[str, Any]]:
+        """Alle Körperschaften der Quelle als synthetische OParl-Body-Dicts."""
         ...
 
     def iter_entities(self, window: CrawlWindow, full: bool) -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
         """Yield (entity_type, Seite von OParl-Dicts) in FK-Reihenfolge."""
+        ...
+
+    def iter_body_entities(
+        self, window: CrawlWindow, full: bool
+    ) -> AsyncIterator[tuple[str, str, list[dict[str, Any]]]]:
+        """Yield (Body-Kennung, entity_type, Seite) in FK-Reihenfolge je Körperschaft."""
         ...
 
     @property

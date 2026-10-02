@@ -118,6 +118,7 @@ Alle `scraper`-Schlüssel außer `base_url` sind optional:
 | `full_window_days` | `[-365, 210]` | Fenster des Full-Crawls (Historie) |
 | `max_detail_pages` | unbegrenzt | Obergrenze Detailseiten je Lauf (Onboarding/Pilot) |
 | `members_on_full_only` | `true` | Gremien-Mitglieder nur im Full-Crawl crawlen |
+| `bodies` | – (eine Körperschaft) | Mehrere Körperschaften je Instanz: `"auto"` oder Liste `[{"cpanr": 1, "name": "…", "short_name": "…"}]`, siehe Schritt 3a |
 
 Außerhalb von `scraper` (auf oberster Ebene der Sync config, auch für OParl-Quellen):
 
@@ -139,6 +140,50 @@ selbst aus: Organisationen mit `"type": "gr"`/`"at"` und der Typ-URL in `Type`, 
 `agendaItem`, in Vorlagen eingebettete Beratungen ohne Sitzung und Tagesordnungspunkt (vorhandene Bezüge bleiben
 erhalten).
 
+### Schritt 3a: Instanzen mit mehreren Körperschaften
+
+Eine SessionNet-Instanz kann mehrere Körperschaften führen, typisch die Samtgemeinde mit ihren
+Mitgliedsgemeinden, manchmal auch eine kommunale Gesellschaft. Erkennbar ist das an der Auswahl
+„Mandant“ in der Filterleiste der Gremienliste (`gr0040`) und an der Spalte „Mandant“ im
+Sitzungskalender; die Links tragen den Parameter `__cpanr`. Ohne weitere Angabe liest der Adapter
+nur die vorausgewählte Körperschaft und meldet im Log, wie viele die Instanz führt.
+
+Mit `scraper.bodies` wird je Körperschaft ein eigener Body angelegt, mit eigenen Gremien, Personen,
+Sitzungen, Vorlagen und Wahlperioden:
+
+```json
+{
+  "source_type": "scraper:sessionnet",
+  "scraper": {
+    "base_url": "https://ratsinfo.example.de/bi/",
+    "body_name": "Samtgemeinde Musterheide",
+    "bodies": [
+      {"cpanr": 1, "name": "Samtgemeinde Musterheide"},
+      {"cpanr": 2, "name": "Gemeinde Musterdorf", "short_name": "Musterdorf"}
+    ]
+  }
+}
+```
+
+- `"bodies": "auto"` übernimmt alle Mandanten der Auswahl mit ihren Namen (eine zusätzliche Anfrage,
+  um die Nummer des vorausgewählten Mandanten zu ermitteln). Mit einer Liste wählt man aus, etwa
+  ohne die kommunale Gesellschaft; fehlt `name`, gilt der Name aus der Auswahl.
+- Kennung eines Bodies: Basis-URL mit `?__cpanr=<n>`. Gremien, Sitzungen, Vorlagen und Dateien
+  behalten ihre instanzweiten Kennungen (`__kgrnr`, `__ksinr`, `__kvonr`); Personen und Orte gibt es
+  je Körperschaft (`pe0051.asp?__cpanr=<n>&__kpenr=<k>`), damit wer im Samtgemeinderat und im Rat
+  einer Mitgliedsgemeinde sitzt, in beiden Körperschaften vollständig erscheint.
+- Gremienliste und Kalender werden je Körperschaft mit `__cpanr` abgerufen, Detailseiten einmal je
+  Lauf. Sitzungen, die laut Spalte „Mandant“ zu einer anderen Körperschaft gehören, ordnet der
+  Adapter nicht zu (Gegenprobe, falls die Instanz den Parameter nicht beachtet).
+- Eine Vorlage, die in Gremien mehrerer Körperschaften beraten wird, gehört zur ersten Körperschaft
+  in der Reihenfolge von `bodies`, in der sie im Lauf vorkommt.
+- `bodies` vor dem ersten Lauf setzen. Der Upsert ändert die Körperschaft eines vorhandenen Objekts
+  nicht: Wird eine schon gecrawlte Quelle umgestellt, bleiben ihre Gremien, Sitzungen und Vorlagen
+  beim bisherigen Body (Basis-URL). Dann den Bestand der Quelle vorher entfernen.
+- Jeder neue Body ist sofort in den Listen des Portals (`is_listed` an). Bodies einer Quelle, die
+  noch nicht freigegeben ist, nach dem ersten Lauf im Admin ausblenden – bei mehreren
+  Körperschaften jeden einzeln.
+
 ### Schritt 4: Probe-Crawl mit Limit
 
 Beim Onboarding zunächst mit strengem Limit fahren
@@ -151,7 +196,8 @@ vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
 
 | SessionNet-Seite | OParl-Entität | external_id (kanonische URL) |
 |---|---|---|
-| Basis-URL | Body | `https://<host>/<prefix>/` |
+| Basis-URL | Body | `https://<host>/<prefix>/` (mehrere Körperschaften: `…/?__cpanr=N`) |
+| `gr0040` (Auswahl Wahlperiode, `__cwpnr`) | LegislativeTerm (am Body) | `…/gr0040.asp?__cwpnr=N` |
 | `si0057?__ksinr=` | Meeting inkl. TOPs (Ö/NÖ, Beschlüsse) | `…/si0057.asp?__ksinr=N` |
 | `si0050?__ksinr=` | Sitzungsdokumente (Einladung/Niederschrift) | `…/getfile.asp?id=N&type=do` |
 | `vo0050?__kvonr=` | Paper (Betreff, Nummer, Art) + Anlagen-PDFs | `…/vo0050.asp?__kvonr=N` |
@@ -191,7 +237,8 @@ werden in Elasticsearch indexiert.
   im SyncLog vermerkt — typisches Symptom eines Frontend-Redesigns der
   Instanz (Parser-Bruch).
 - Golden-File-Tests (`ingestor/tests/test_sessionnet_parser.py`) mit
-  eingefrorenen HTML-Fixtures zweier realer Instanzen sichern die Parser
+  eingefrorenen HTML-Fixtures zweier realer Instanzen und einer pseudonymisierten Instanz mit
+  mehreren Körperschaften (`tests/test_sessionnet_mehrere_koerperschaften.py`) sichern die Parser
   in CI ab.
 - robots-Sperren erscheinen als Fehlerklasse `robots_blocked` im
   Betriebsmonitor (Admin → Monitoring) und in der Alarmmail, mit Grund und

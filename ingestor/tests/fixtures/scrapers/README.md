@@ -15,6 +15,7 @@ Abgerufen am 2026-07-20 mit User-Agent
 |---|---|---|---|
 | `luedenscheid/` | https://buergerinfo.luedenscheid.de/ | `*.asp` | SessionNet 5.5.4 KP4 (Layout 6) |
 | `eschweiler/` | https://rat.eschweiler.de/bi/ | `*.php` | SessionNet 5.x (gleiches Markup) |
+| `samtgemeinde/` | pseudonymisiert (`ratsinfo.musterheide.example`) | `*.asp` | SessionNet 5.5, mehrere Mandanten |
 
 Seiten je Instanz:
 
@@ -25,5 +26,15 @@ Seiten je Instanz:
 - `gr0040.html` — Gremienliste
 - `kp0040.html` — Gremium-Mitglieder
 
-Die Inhalte sind amtliche öffentliche Ratsinformationen; die Fixtures dienen
-ausschließlich Testzwecken (Quellenangabe: jeweilige Kommune).
+`samtgemeinde/` bildet eine Instanz mit mehreren Körperschaften nach (Samtgemeinde,
+zwei Mitgliedsgemeinden, eine kommunale Gesellschaft; Auswahl über `__cpanr`). Das Markup
+der Filterleiste (Mandanten- und Wahlperiodenauswahl), der Gremienliste und des Kalenders mit
+der Spalte „Mandant“ folgt einer öffentlichen SessionNet-5.5-Instanz (abgerufen am
+2026-10-02 mit unserem User-Agent, robots.txt geprüft); Namen, Orte, Nummern und Inhalte sind
+erfunden, die Seiten gekürzt. Dateinamen tragen die Kennungsparameter
+(`gr0040_cpanr2.html`, `si0040_cpanr1_2026-09.html`, `si0057_1001.html`, …). Der
+nichtöffentliche Teil einer Sitzung zählt dort neu (`Ö 1`, `Ö 2`, `N 1`).
+
+Die Inhalte von `luedenscheid/` und `eschweiler/` sind amtliche öffentliche
+Ratsinformationen; alle Fixtures dienen ausschließlich Testzwecken (Quellenangabe:
+jeweilige Kommune).

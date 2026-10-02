@@ -1,0 +1,22 @@
+[
+  {
+    "cpanr": null,
+    "name": "Samtgemeinde Musterheide",
+    "selected": true
+  },
+  {
+    "cpanr": 3,
+    "name": "Gemeinde Beispielfeld",
+    "selected": false
+  },
+  {
+    "cpanr": 2,
+    "name": "Gemeinde Musterdorf",
+    "selected": false
+  },
+  {
+    "cpanr": 4,
+    "name": "Musterheide Touristik GmbH",
+    "selected": false
+  }
+]

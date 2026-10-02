@@ -1,0 +1,16 @@
+[
+  {
+    "wpnr": 2,
+    "name": "Wahlperiode 2026 - 2031",
+    "start_date": "2026-11-01",
+    "end_date": "2031-10-31",
+    "selected": false
+  },
+  {
+    "wpnr": 1,
+    "name": "Wahlperiode 2021 - 2026",
+    "start_date": "2021-11-01",
+    "end_date": "2026-10-31",
+    "selected": true
+  }
+]

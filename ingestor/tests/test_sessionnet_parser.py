@@ -23,6 +23,7 @@ from src.scrapers.base import CrawlWindow, ScraperConfig
 from src.scrapers.sessionnet import (
     SessionNetAdapter,
     parse_calendar,
+    parse_legislative_terms,
     parse_meeting_agenda,
     parse_meeting_info,
     parse_members,
@@ -88,6 +89,14 @@ class TestGoldenFiles:
         orgs = parse_organizations(read_fixture(instance, "gr0040.html"))
         assert orgs == read_expected(instance, "organizations")
         assert len(orgs) >= 20
+
+    def test_legislative_terms(self, instance):
+        terms = parse_legislative_terms(read_fixture(instance, "gr0040.html"))
+        assert terms == read_expected(instance, "legislative_terms")
+        # Sammelansichten ("Alle Wahlperioden", "Gesamt ab …") sind keine Wahlperioden
+        assert not any(t["name"].lower().startswith(("alle", "gesamt")) for t in terms)
+        assert sum(t["selected"] for t in terms) == 1
+        assert all(t["start_date"] for t in terms)
 
     def test_members(self, instance):
         members = parse_members(read_fixture(instance, "kp0040.html"))

@@ -1,0 +1,37 @@
+[
+  {
+    "wpnr": 7,
+    "name": "Wahlperiode 2025 - 2030",
+    "start_date": "2025-11-01",
+    "end_date": "2030-10-31",
+    "selected": true
+  },
+  {
+    "wpnr": 5,
+    "name": "Wahlperiode 2020 - 2025",
+    "start_date": "2020-11-01",
+    "end_date": "2025-10-31",
+    "selected": false
+  },
+  {
+    "wpnr": 4,
+    "name": "Wahlperiode 2014 - 2020",
+    "start_date": "2014-06-01",
+    "end_date": "2020-10-31",
+    "selected": false
+  },
+  {
+    "wpnr": 2,
+    "name": "Wahlperiode 2009 - 2014",
+    "start_date": "2009-10-21",
+    "end_date": "2014-05-31",
+    "selected": false
+  },
+  {
+    "wpnr": 1,
+    "name": "Wahlperiode 2004 - 2009",
+    "start_date": "2004-10-01",
+    "end_date": "2009-10-20",
+    "selected": false
+  }
+]

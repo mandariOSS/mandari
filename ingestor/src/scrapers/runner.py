@@ -12,12 +12,17 @@ Text-Extraktion und Elasticsearch-Indexierung. Der Kern bleibt unverändert.
   bei Differenz; "modified" ist die Crawl-Zeit des letzten echten Updates
 - Verschwinden: erst nach N (Default 3) Full-Crawls ohne Sichtung wird
   mark_entity_deleted gesetzt (Tombstone, nie physisches Löschen)
+
+Eine Quelle kann mehrere Körperschaften liefern (SessionNet-Instanz einer
+Samtgemeinde mit ihren Mitgliedsgemeinden): je Körperschaft ein Body, jede
+Seite des Adapters trägt die Kennung ihres Bodies.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED
 from src.config import settings
@@ -118,14 +123,17 @@ class ScraperSyncRunner:
             # Alle Ereignisse dieses Crawls tragen dieselbe Korrelations-ID (src/storage/events.py)
             start_correlation()
 
-            # Body anlegen/aktualisieren
-            body_dict = adapter.build_body()
-            processed_body = self.processor.process_body(body_dict, body_dict["id"])
-            body_id = await self.storage.upsert_body(processed_body, self.source.id)
-            result.bodies_synced = 1
-
+            # Body-Kennung -> UUID; mehrere Einträge bei mehreren Körperschaften je Instanz
+            body_ids: dict[str, UUID] = {}
             try:
-                async for entity_type, page in adapter.iter_entities(window, full=full):
+                # Bodies anlegen/aktualisieren (mit Wahlperioden)
+                for body_dict in await adapter.resolve_bodies():
+                    processed_body = self.processor.process_body(body_dict, body_dict["id"])
+                    body_ids[body_dict["id"]] = await self.storage.upsert_body(processed_body, self.source.id)
+                result.bodies_synced = len(body_ids)
+
+                async for body_external_id, entity_type, page in adapter.iter_body_entities(window, full=full):
+                    body_id = body_ids[body_external_id]
                     external_ids = [item["id"] for item in page if item.get("id")]
                     seen.setdefault(entity_type, set()).update(external_ids)
 
@@ -135,7 +143,7 @@ class ScraperSyncRunner:
                         if item_hash and stored_hashes.get(item.get("id", "")) == item_hash:
                             skipped_unchanged += 1
                             continue
-                        processed = self.processor.process(item, body_dict["id"])
+                        processed = self.processor.process(item, body_external_id)
                         if processed is None:
                             continue
                         stored = await self.orchestrator._store_entity(
@@ -172,7 +180,7 @@ class ScraperSyncRunner:
             # Full-Crawls zählen; Tombstone erst nach N Sichtungs-Ausfällen.
             deleted_count = 0
             if full and crawl_completed and not result.errors:
-                deleted_count = await self._handle_missing(body_id, window, seen, state, es_deletions)
+                deleted_count = await self._handle_missing(list(body_ids.values()), window, seen, state, es_deletions)
 
             # Zustand persistieren
             snapshots = dict(state.get("list_snapshots") or {})
@@ -193,25 +201,31 @@ class ScraperSyncRunner:
             await self.storage.update_scraper_state(self.source.url, state)
 
         # Text-Extraktion für neue Dateien (bestehender Extractor)
-        if settings.text_extraction_enabled:
+        if settings.text_extraction_enabled and body_ids:
             try:
                 from src.extraction.extractor import TextExtractor
 
                 extractor = TextExtractor(self.storage)
-                extracted = await extractor.extract_pending_files(body_id)
-                if extracted:
-                    console.print(f"[green]  {extracted} Dateien extrahiert[/green]")
+                for body_id in body_ids.values():
+                    extracted = await extractor.extract_pending_files(body_id)
+                    if extracted:
+                        console.print(f"[green]  {extracted} Dateien extrahiert[/green]")
             except Exception as e:
                 result.errors.append(f"Text extraction: {e}")
 
-        # Elasticsearch-Indexierung (gleicher Pfad wie OParl-Sync)
+        # Elasticsearch-Indexierung (gleicher Pfad wie OParl-Sync), je Body;
+        # Löschungen aus dem Index nur einmal
         total_synced = sum(stats.values())
-        index_stats: dict[str, Any] = {"errors": []}
         if settings.elasticsearch_indexing_enabled and (total_synced > 0 or es_deletions or full):
-            await self.orchestrator._index_body_elasticsearch(body_id, index_stats, es_deletions, full)
-            result.errors.extend(index_stats["errors"])
+            pending_deletions = es_deletions
+            for body_id in body_ids.values():
+                index_stats: dict[str, Any] = {"errors": []}
+                await self.orchestrator._index_body_elasticsearch(body_id, index_stats, pending_deletions, full)
+                result.errors.extend(index_stats["errors"])
+                pending_deletions = {}
 
-        await self.storage.update_body_sync_time(body_id)
+        for body_id in body_ids.values():
+            await self.storage.update_body_sync_time(body_id)
         await self.storage.update_source_sync_time(self.source.id, full_sync=full)
 
         for entity_type, count in stats.items():
@@ -240,7 +254,7 @@ class ScraperSyncRunner:
 
     async def _handle_missing(
         self,
-        body_id,
+        body_ids: list[UUID],
         window: CrawlWindow,
         seen: dict[str, set[str]],
         state: dict[str, Any],
@@ -250,17 +264,20 @@ class ScraperSyncRunner:
         Zählt nicht mehr gesichtete Objekte hoch und tombstonet nach
         N aufeinanderfolgenden Full-Crawls ohne Sichtung (Default 3).
         Wieder auftauchende Objekte werden vom Upsert-Pfad automatisch
-        reaktiviert (deleted=False im update_set).
+        reaktiviert (deleted=False im update_set). Kandidaten sind die aktiven
+        Objekte aller Bodies der Quelle.
         """
         threshold = max(1, settings.scraper_tombstone_full_crawls)
         missing_state: dict[str, dict[str, int]] = {k: dict(v) for k, v in (state.get("missing") or {}).items()}
         deleted_count = 0
 
         for entity_type in TOMBSTONE_ENTITY_TYPES:
-            if entity_type == "meeting":
-                candidates = await self.storage.get_active_meeting_ids_in_window(body_id, window.start, window.end)
-            else:
-                candidates = await self.storage.get_active_external_ids_for_body(entity_type, body_id)
+            candidates: set[str] = set()
+            for body_id in body_ids:
+                if entity_type == "meeting":
+                    candidates |= await self.storage.get_active_meeting_ids_in_window(body_id, window.start, window.end)
+                else:
+                    candidates |= await self.storage.get_active_external_ids_for_body(entity_type, body_id)
             seen_ids = seen.get(entity_type, set())
             counters = missing_state.setdefault(entity_type, {})
 
