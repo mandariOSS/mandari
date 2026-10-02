@@ -14,6 +14,12 @@ Seitenkürzel (produktweit stabil):
 - kp0040   Gremium-Mitglieder (__kgrnr; Personen mit pe0051-Links)
 - getfile  Datei-Download (id, type=do)
 
+Filterleiste (gr0040, si0040, kp0040):
+- __cwpnr  Wahlperiode (-> OParl LegislativeTerm am Body)
+- __cpanr  Mandant = Körperschaft. Eine Instanz kann mehrere führen (z. B. eine
+           Samtgemeinde mit ihren Mitgliedsgemeinden); mit scraper.bodies wird
+           je Mandant ein eigener Body gecrawlt.
+
 external_id = normalisierte kanonische Detail-URL (nur ID-Parameter, sortiert).
 Ausgabe: synthetische OParl-1.1-Dicts für die bestehende Pipeline.
 """
@@ -33,6 +39,7 @@ from bs4 import BeautifulSoup
 from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers.base import (
+    BodySpec,
     CrawlWindow,
     ScraperConfig,
     ScrapeStats,
@@ -70,11 +77,14 @@ class SessionNetUrls:
     def external_id(self, name: str, **params: Any) -> str:
         return normalize_external_id(
             self.page(name, **params),
-            keep_params=("__ksinr", "__kvonr", "__kgrnr", "__kpenr", "id", "type"),
+            keep_params=("__ksinr", "__kvonr", "__kgrnr", "__kpenr", "__cpanr", "__cwpnr", "id", "type"),
         )
 
-    def body_id(self) -> str:
-        return normalize_external_id(self.base_url, keep_params=())
+    def body_id(self, cpanr: int | None = None) -> str:
+        """Body-Kennung: Basis-URL, bei mehreren Körperschaften mit ``__cpanr``."""
+        if cpanr is None:
+            return normalize_external_id(self.base_url, keep_params=())
+        return normalize_external_id(f"{self.base_url}?__cpanr={cpanr}", keep_params=("__cpanr",))
 
 
 def _query_int(href: str, param: str) -> int | None:
@@ -361,17 +371,167 @@ def parse_members(html: str) -> list[dict[str, Any]]:
     return members
 
 
+# Mandantenauswahl: "Alle Mandanten" ist eine Ansicht, keine Körperschaft
+_ALL_VIEW_RE = re.compile(r"^alle\b", re.IGNORECASE)
+_TERM_WORD_RE = re.compile(r"wahlperiode", re.IGNORECASE)
+# Sammelansichten der Wahlperioden-Auswahl ("Alle Wahlperioden", "Gesamt ab 2004")
+_ALL_TERMS_RE = re.compile(r"^(alle|gesamt)\b", re.IGNORECASE)
+
+
+def _attr(tag: Any, name: str) -> str:
+    """Attributwert als Text (bs4 liefert bei Mehrfachwerten Listen)."""
+    value = tag.get(name)
+    if isinstance(value, list):
+        return " ".join(value)
+    return str(value or "")
+
+
+def _mandant_toggle(soup: BeautifulSoup) -> Any:
+    """Schalter der Mandantenauswahl in der Filterleiste (Beschriftung = gewählter Mandant)."""
+    for toggle in soup.find_all("a", class_="dropdown-toggle"):
+        label = f"{_attr(toggle, 'aria-label')} {_attr(toggle, 'title')}".lower()
+        if "mandant" in label:
+            return toggle
+    return None
+
+
+def parse_mandanten(html: str) -> list[dict[str, Any]]:
+    """
+    Parst die Mandantenauswahl der Filterleiste (gr0040, si0040).
+
+    Instanzen mit mehreren Körperschaften (z. B. eine Samtgemeinde mit ihren
+    Mitgliedsgemeinden) zeigen den gewählten Mandanten als Beschriftung und die
+    übrigen als Links mit ``__cpanr``. Liefert ``{"cpanr", "name", "selected"}``;
+    der gewählte Mandant steht vorn und hat ``cpanr`` None (die Seite nennt seine
+    Nummer nicht). "Alle Mandanten" ist keine Körperschaft und fehlt.
+    Instanzen ohne Mandantenauswahl: leere Liste.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    result: list[dict[str, Any]] = []
+    toggle = _mandant_toggle(soup)
+    if toggle is not None:
+        name = _clean(toggle.get_text())
+        if name and not _ALL_VIEW_RE.match(name):
+            result.append({"cpanr": None, "name": name, "selected": True})
+    seen: set[int] = set()
+    for link in soup.select("a.smcfiltermenumandant"):
+        cpanr = _query_int(_attr(link, "href"), "__cpanr")
+        name = _clean(link.get_text())
+        if cpanr is None or cpanr < 1 or cpanr in seen or not name or _ALL_VIEW_RE.match(name):
+            continue
+        seen.add(cpanr)
+        result.append({"cpanr": cpanr, "name": name, "selected": False})
+    return result
+
+
+def parse_calendar_mandanten(html: str) -> dict[int, str]:
+    """
+    Mandant je Kalendereintrag (si0040, Spalte "Mandant" = ``td.pagel``).
+
+    Nur Instanzen mit mehreren Körperschaften haben die Spalte; sonst leer.
+    Dient als Gegenprobe, dass die Instanz den Kalender wirklich nach
+    ``__cpanr`` gefiltert hat.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    result: dict[int, str] = {}
+    for cell in soup.select("td.silink"):
+        link = cell.find("a", href=re.compile(r"si0057\.(asp|php)\?"))
+        if link is None:
+            continue
+        ksinr = _query_int(_attr(link, "href"), "__ksinr")
+        row = cell.find_parent("tr")
+        mandant_cell = row.find("td", class_="pagel") if row is not None else None
+        if ksinr is None or mandant_cell is None:
+            continue
+        name = _clean(mandant_cell.get_text())
+        if name:
+            result[ksinr] = name
+    return result
+
+
+def _iso_date(value: str) -> str | None:
+    try:
+        return datetime.strptime(value, "%d.%m.%Y").date().isoformat()
+    except ValueError:
+        return None
+
+
+def parse_legislative_terms(html: str) -> list[dict[str, Any]]:
+    """
+    Parst die Wahlperioden aus der Filterleiste (gr0040, kp0040; ``__cwpnr``).
+
+    Liefert ``{"wpnr", "name", "start_date", "end_date", "selected"}`` (Datum ISO).
+    Sammelansichten ("Alle Wahlperioden", "Gesamt ab …", "Alle Daten") fehlen; Sortierlinks
+    mit ``__cwpnr`` gehören nicht zur Auswahl. Fehlt im Text das Wort
+    "Wahlperiode", entsteht der Name aus den Jahren ("Wahlperiode 2021–2026").
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    terms: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for link in soup.find_all("a", href=re.compile(r"__cwpnr=")):
+        classes = _attr(link, "class").split()
+        if not any(css.startswith("smcfiltermenu") for css in classes):
+            continue
+        wpnr = _query_int(_attr(link, "href"), "__cwpnr")
+        label = _clean(link.get_text())
+        if wpnr is None or wpnr in seen or not label or _ALL_TERMS_RE.match(label):
+            continue
+        seen.add(wpnr)
+        dates = _DATE_RE.findall(_clean(_attr(link, "title"))) or _DATE_RE.findall(label)
+        start = _iso_date(dates[0]) if dates else None
+        end = _iso_date(dates[1]) if len(dates) > 1 else None
+        if _TERM_WORD_RE.search(label) or start is None:
+            name = label
+        elif end is not None:
+            name = f"Wahlperiode {start[:4]}–{end[:4]}"
+        else:
+            name = f"Wahlperiode ab {start[:4]}"
+        terms.append(
+            {
+                "wpnr": wpnr,
+                "name": name,
+                "start_date": start,
+                "end_date": end,
+                "selected": "smcfiltermenuselected" in classes,
+            }
+        )
+    return terms
+
+
 # ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class BodyPlan:
+    """Eine Körperschaft, die ein Lauf crawlt (bei einer Körperschaft je Instanz genau eine)."""
+
+    body_id: str
+    name: str
+    short_name: str
+    website: str
+    cpanr: int | None = None  # None = Instanz ohne Mandantenparameter
+    menu_name: str | None = None  # Name in der Mandantenauswahl (Gegenprobe Kalender)
+    terms: list[dict[str, Any]] = field(default_factory=list)
+
+    def params(self) -> dict[str, Any]:
+        """Mandantenparameter für Listen-URLs und körperschaftsbezogene Kennungen."""
+        return {} if self.cpanr is None else {"__cpanr": self.cpanr}
 
 
 class SessionNetAdapter:
     """
     Crawlt eine SessionNet-Instanz und liefert synthetische OParl-Dicts.
 
-    Reihenfolge (FK-kompatibel): organization -> person -> membership,
-    danach je Kalendermonat paper -> meeting -> consultation.
+    Reihenfolge (FK-kompatibel) je Körperschaft: organization -> person ->
+    membership, danach je Kalendermonat paper -> meeting -> consultation.
+
+    Mehrere Körperschaften je Instanz (``scraper.bodies``): je Mandant
+    (``__cpanr``) ein Body mit eigenen Gremien, Personen und Sitzungen; Listen
+    (gr0040, si0040) tragen den Mandantenparameter, Detailseiten nicht (ihre
+    Nummern gelten instanzweit). Ohne ``bodies`` bleibt alles wie bisher: ein
+    Body je Basis-URL.
     """
 
     vendor = "sessionnet"
@@ -390,6 +550,10 @@ class SessionNetAdapter:
         # Snapshots des letzten Laufs (vom Runner gesetzt): unveränderte
         # Kalendermonate werden im inkrementellen Lauf übersprungen.
         self.previous_snapshots: dict[str, str] = {}
+        # Körperschaften dieses Laufs (resolve_bodies) und bereits geladene
+        # Gremienlisten je Mandant (kein zweiter Abruf im Crawl)
+        self.plans: list[BodyPlan] | None = None
+        self._gremien_html: dict[int | None, str | None] = {}
 
     # -------------------- Hilfen --------------------
 
@@ -400,6 +564,10 @@ class SessionNetAdapter:
         if html is not None:
             self.stats.pages_fetched += 1
         return html
+
+    def _budget_left(self) -> bool:
+        budget = self.config.max_detail_pages
+        return budget is None or self.stats.detail_pages_attempted < budget
 
     async def detect_variant(self) -> None:
         """Auto-Detect asp vs. php über die Kalenderseite."""
@@ -433,29 +601,160 @@ class SessionNetAdapter:
             "mimeType": mime,
         }
 
-    def build_body(self) -> dict[str, Any]:
-        return {
-            "id": self.urls.body_id(),
+    # -------------------- Körperschaften --------------------
+
+    def _single_plan(self) -> BodyPlan:
+        return BodyPlan(
+            body_id=self.urls.body_id(),
+            name=self.config.body_name,
+            short_name=self.config.body_name,
+            website=self.config.base_url,
+        )
+
+    def _body_dict(self, plan: BodyPlan) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "id": plan.body_id,
             "type": f"{OPARL}Body",
-            "name": self.config.body_name,
-            "shortName": self.config.body_name,
-            "website": self.config.base_url,
+            "name": plan.name,
+            "shortName": plan.short_name,
+            "website": plan.website,
         }
+        if plan.terms:
+            body["legislativeTerm"] = [
+                {
+                    "id": self.urls.external_id("gr0040", **plan.params(), __cwpnr=term["wpnr"]),
+                    "type": f"{OPARL}LegislativeTerm",
+                    "body": plan.body_id,
+                    "name": term["name"],
+                    "startDate": term["start_date"],
+                    "endDate": term["end_date"],
+                }
+                for term in plan.terms
+            ]
+        return body
+
+    def build_body(self) -> dict[str, Any]:
+        """Body-Dict der ersten Körperschaft (vor resolve_bodies: ohne Wahlperioden)."""
+        plan = self.plans[0] if self.plans else self._single_plan()
+        return self._body_dict(plan)
+
+    async def resolve_bodies(self) -> list[dict[str, Any]]:
+        """
+        Ermittelt die Körperschaften des Laufs und liefert ihre Body-Dicts.
+
+        Lädt dafür je Körperschaft die Gremienliste (gr0040), die der Crawl
+        ohnehin braucht: Sie nennt die Wahlperioden (``__cwpnr``) und bei
+        mehreren Körperschaften den Namen des gewählten Mandanten.
+        """
+        if self.plans is not None:
+            return [self._body_dict(plan) for plan in self.plans]
+        await self.detect_variant()
+        if self.config.bodies is None:
+            plan = self._single_plan()
+            html = await self._fetch(self.urls.page("gr0040"))
+            self._gremien_html[None] = html
+            if html:
+                plan.terms = parse_legislative_terms(html)
+                others = [m for m in parse_mandanten(html) if m["cpanr"] is not None]
+                if others:
+                    console.print(
+                        f"[yellow]SessionNet-Instanz {self.urls.base_url} führt {len(others) + 1} "
+                        "Körperschaften; ohne scraper.bodies wird nur die vorausgewählte gelesen[/yellow]"
+                    )
+            self.plans = [plan]
+            return [self._body_dict(plan)]
+
+        specs = await self._body_specs()
+        plans: list[BodyPlan] = []
+        for spec in specs:
+            html = self._gremien_html.get(spec.cpanr)
+            if spec.cpanr not in self._gremien_html:
+                html = await self._fetch(self.urls.page("gr0040", __cpanr=spec.cpanr))
+                self._gremien_html[spec.cpanr] = html
+            selected = next((m for m in parse_mandanten(html) if m["selected"]), None) if html else None
+            menu_name = selected["name"] if selected else None
+            name = spec.name or menu_name or f"{self.config.body_name} (Mandant {spec.cpanr})"
+            plans.append(
+                BodyPlan(
+                    body_id=self.urls.body_id(spec.cpanr),
+                    name=name,
+                    short_name=spec.short_name or name,
+                    website=self.urls.page("gr0040", __cpanr=spec.cpanr),
+                    cpanr=spec.cpanr,
+                    menu_name=menu_name,
+                    terms=parse_legislative_terms(html) if html else [],
+                )
+            )
+        if not plans:
+            console.print(
+                f"[yellow]SessionNet-Instanz {self.urls.base_url}: keine Mandantenauswahl gefunden — "
+                "eine Körperschaft je Basis-URL[/yellow]"
+            )
+            self.config.bodies = None
+            return await self.resolve_bodies()
+        self.plans = plans
+        return [self._body_dict(plan) for plan in plans]
+
+    async def _body_specs(self) -> list[BodySpec]:
+        """Feste Liste aus der Konfiguration oder ("auto") alle Mandanten der Instanz."""
+        if isinstance(self.config.bodies, list):
+            return list(self.config.bodies)
+        html = await self._fetch(self.urls.page("gr0040"))
+        entries = parse_mandanten(html) if html else []
+        found: dict[int, str] = {m["cpanr"]: m["name"] for m in entries if m["cpanr"] is not None}
+        selected = next((m for m in entries if m["selected"]), None)
+        if found and selected is not None:
+            # Die Seite nennt die Nummer des vorausgewählten Mandanten nicht;
+            # die Gremienliste eines anderen Mandanten führt ihn als Link.
+            first = min(found)
+            other_html = await self._fetch(self.urls.page("gr0040", __cpanr=first))
+            self._gremien_html[first] = other_html
+            for entry in parse_mandanten(other_html) if other_html else []:
+                if entry["cpanr"] is not None and entry["name"] == selected["name"]:
+                    found.setdefault(entry["cpanr"], entry["name"])
+            if selected["name"] not in found.values():
+                console.print(
+                    f"[yellow]SessionNet-Instanz {self.urls.base_url}: Nummer des Mandanten "
+                    f"{selected['name']!r} nicht ermittelbar — scraper.bodies als Liste angeben[/yellow]"
+                )
+        return [BodySpec(cpanr=cpanr) for cpanr in sorted(found)]
 
     # -------------------- Crawl --------------------
 
     async def iter_entities(self, window: CrawlWindow, full: bool) -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
-        await self.detect_variant()
-        body_id = self.urls.body_id()
-        detail_budget = self.config.max_detail_pages
+        """Wie iter_body_entities, ohne Body-Kennung (eine Körperschaft je Instanz)."""
+        async for _body_id, entity_type, page in self.iter_body_entities(window, full):
+            yield entity_type, page
 
-        def budget_left() -> bool:
-            return detail_budget is None or self.stats.detail_pages_attempted < detail_budget
+    async def iter_body_entities(
+        self, window: CrawlWindow, full: bool
+    ) -> AsyncIterator[tuple[str, str, list[dict[str, Any]]]]:
+        """Yield (Body-Kennung, entity_type, Seite) je Körperschaft in FK-Reihenfolge."""
+        if self.plans is None:
+            await self.resolve_bodies()
+        assert self.plans is not None
+        # Vorlagen je Lauf nur einmal laden, auch über Körperschaften hinweg
+        fetched_papers: set[int] = set()
+        for plan in self.plans:
+            async for entity_type, page in self._crawl_body(plan, window, full, fetched_papers):
+                yield plan.body_id, entity_type, page
+
+    async def _crawl_body(
+        self,
+        plan: BodyPlan,
+        window: CrawlWindow,
+        full: bool,
+        fetched_papers: set[int],
+    ) -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
+        body_id = plan.body_id
 
         # ---------------- Gremien ----------------
         org_by_name: dict[str, str] = {}
         org_dicts: list[dict[str, Any]] = []
-        gr_html = await self._fetch(self.urls.page("gr0040"))
+        if plan.cpanr in self._gremien_html:
+            gr_html = self._gremien_html[plan.cpanr]
+        else:
+            gr_html = await self._fetch(self.urls.page("gr0040", **plan.params()))
         if gr_html:
             orgs = parse_organizations(gr_html)
             if not orgs:
@@ -486,7 +785,7 @@ class SessionNetAdapter:
             persons: dict[str, dict[str, Any]] = {}
             memberships: list[dict[str, Any]] = []
             for org in org_dicts:
-                if not budget_left():
+                if not self._budget_left():
                     break
                 kgrnr = _query_int(org["id"], "__kgrnr")
                 if kgrnr is None:
@@ -500,7 +799,10 @@ class SessionNetAdapter:
                 self.stats.detail_pages_parsed += 1
                 for row in rows:
                     if row["kpenr"] is not None:
-                        person_id = self.urls.external_id("pe0051", __kpenr=row["kpenr"])
+                        # Bei mehreren Körperschaften je Körperschaft eine Person:
+                        # Wer im Samtgemeinderat und im Rat einer Mitgliedsgemeinde
+                        # sitzt, erscheint in beiden Bodies vollständig.
+                        person_id = self.urls.external_id("pe0051", **plan.params(), __kpenr=row["kpenr"])
                         member_key: Any = row["kpenr"]
                     else:
                         # Ohne Detailseite: stabiles Fragment-Schema auf
@@ -539,21 +841,36 @@ class SessionNetAdapter:
                 yield ("membership", memberships)
 
         # ---------------- Sitzungskalender (Fenster) ----------------
-        fetched_papers: set[int] = set()
+        budget = self.config.max_detail_pages
         for year, month in window.months():
-            if not budget_left():
+            if not self._budget_left():
                 console.print(
                     f"[yellow]Scraper: Detailseiten-Budget erreicht "
-                    f"({detail_budget}) — Crawl endet vor {month:02d}/{year}[/yellow]"
+                    f"({budget}) — Crawl endet vor {month:02d}/{year}[/yellow]"
                 )
                 break
-            cal_html = await self._fetch(self.urls.page("si0040", __cjahr=year, __cmonat=month, __canz=1))
+            cal_html = await self._fetch(
+                self.urls.page("si0040", **plan.params(), __cjahr=year, __cmonat=month, __canz=1)
+            )
             if not cal_html:
                 self.stats.parse_failures += 1
                 metrics.record_scraper_parse_failure(self.fetcher.source_name, "si0040")
                 continue
             stubs = sorted(parse_calendar(cal_html), key=MeetingStub.sort_key)
+            if plan.cpanr is not None and plan.menu_name:
+                # Gegenprobe: Einträge eines anderen Mandanten (Instanz hat
+                # __cpanr nicht beachtet) gehören nicht zu dieser Körperschaft.
+                row_mandants = parse_calendar_mandanten(cal_html)
+                foreign = [s for s in stubs if row_mandants.get(s.ksinr, plan.menu_name) != plan.menu_name]
+                if foreign:
+                    console.print(
+                        f"[yellow]Scraper: {len(foreign)} Sitzung(en) im Kalender {month:02d}/{year} gehören "
+                        f"nicht zu Mandant {plan.cpanr} — übersprungen[/yellow]"
+                    )
+                    stubs = [s for s in stubs if s not in foreign]
             month_key = f"{year:04d}-{month:02d}"
+            if plan.cpanr is not None:
+                month_key = f"p{plan.cpanr}:{month_key}"
             snapshot = with_content_hash({"stubs": [vars(s) for s in stubs]})["mandari:contentHash"]
             self.list_snapshots[month_key] = snapshot
             if not full and self.previous_snapshots.get(month_key) == snapshot:
@@ -566,7 +883,7 @@ class SessionNetAdapter:
             consultations: list[dict[str, Any]] = []
 
             for stub in stubs:
-                if not budget_left():
+                if not self._budget_left():
                     break
                 meeting = await self._build_meeting(stub, body_id, org_by_name)
                 if meeting is None:
@@ -576,7 +893,7 @@ class SessionNetAdapter:
                 for consultation in meeting.pop("mandari:consultations", []):
                     kvonr = consultation.pop("mandari:kvonr")
                     consultations.append(with_content_hash(consultation))
-                    if kvonr in fetched_papers or not budget_left():
+                    if kvonr in fetched_papers or not self._budget_left():
                         continue
                     fetched_papers.add(kvonr)
                     paper = await self._build_paper(kvonr, body_id)
@@ -642,7 +959,7 @@ class SessionNetAdapter:
         location = info.get("room") or stub.location
         if location:
             meeting["location"] = {
-                "id": f"{self.urls.body_id()}#location/{_slug(location)}",
+                "id": f"{body_id}#location/{_slug(location)}",
                 "type": f"{OPARL}Location",
                 "description": location,
             }
@@ -670,8 +987,17 @@ class SessionNetAdapter:
         # Tagesordnung + Beratungen
         agenda_items: list[dict[str, Any]] = []
         consultations: list[dict[str, Any]] = []
+        used_item_ids: set[str] = set()
         for index, row in enumerate(agenda.rows, start=1):
-            item_id = f"{external_id}#agendaitem/{row.number or index}"
+            key = row.number or str(index)
+            item_id = f"{external_id}#agendaitem/{key}"
+            if item_id in used_item_ids:
+                # Der nichtöffentliche Teil zählt oft neu ("Ö 1" … "N 1"); ohne
+                # eigene Kennung überschriebe der NÖ-TOP den öffentlichen.
+                item_id = f"{external_id}#agendaitem/{'' if row.public else 'N'}{key}"
+                if item_id in used_item_ids:
+                    item_id = f"{external_id}#agendaitem/{key}-{index}"
+            used_item_ids.add(item_id)
             item: dict[str, Any] = {
                 "id": item_id,
                 "type": f"{OPARL}AgendaItem",
