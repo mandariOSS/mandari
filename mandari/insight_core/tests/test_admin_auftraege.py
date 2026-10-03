@@ -14,6 +14,7 @@ import pytest
 from django.core.cache import cache
 
 from apps.events.models import Task, TaskStatus
+from apps.events.tasks_backend import journal_options
 from insight_core import background_tasks
 from insight_core.admin import run_sync_in_thread
 from insight_core.models import OParlBody, OParlSource
@@ -41,6 +42,9 @@ def test_sync_aus_dem_admin_landet_im_journal_statt_in_einem_faden(
     assert auftrag.status == TaskStatus.WARTEND
     assert auftrag.queue == "default"
     assert auftrag.args == {"args": [str(source.pk)], "kwargs": {"full": True}}
+    assert auftrag.max_attempts == 1, "ein gescheiterter Sync wird nicht wiederholt"
+    optionen, _ = journal_options()
+    assert optionen.timeout_for(auftrag.task_path, auftrag.queue) == 3600, "länger als die 5 min von default"
 
 
 @pytest.mark.django_db

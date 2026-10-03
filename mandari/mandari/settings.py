@@ -661,6 +661,10 @@ TASKS = {
             "tasks": {
                 # PDF-Export mit vielen Einträgen braucht länger als die 5 Minuten der Warteschlange
                 "apps.work.background_tasks.generate_dsgvo_export_task": {"timeout": 900, "max_attempts": 3},
+                # Admin (Issue #515): Ein Sync oder das Löschen einer großen Kommune dauert länger als
+                # 5 Minuten. Ein Sync wird nicht wiederholt (Protokoll und nächster Lauf zeigen den Fehler).
+                "insight_core.background_tasks.quelle_synchronisieren": {"timeout": 3600, "max_attempts": 1},
+                "insight_core.background_tasks.kommune_loeschen": {"timeout": 3600, "max_attempts": 3},
             },
         },
     }
