@@ -261,7 +261,7 @@ class SessionTenantAdmin(ModelAdmin):
         (
             "Einstellungen",
             {
-                "fields": ("settings", "is_active"),
+                "fields": ("settings", "is_active", "scoped_permissions_enabled"),
             },
         ),
         (
