@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Braucht die Installation einen Worker, und bedient ihn einer? (Issue #509, ``apps.events.presence``)
+Braucht die Installation einen Worker, und bedient ihn einer? (Issues #509, #515, ``apps.events.presence``)
 
-Ohne Bedarf meldet nichts ein Fehlen, damit bestehende Installationen ohne Worker nicht plötzlich
-„degraded“ melden.
+Seit die wiederkehrende Arbeit als Zeitpläne im Worker läuft, braucht ihn jede Installation (Runner und
+Zeitpläne); nur ``EVENTS_WORKER_REQUIRED=false`` schaltet die Meldung ab.
 """
 
 from __future__ import annotations
@@ -31,8 +31,22 @@ def test_alle_rollen_wie_im_worker() -> None:
     assert frozenset(ROLES) == presence.ALL_ROLES
 
 
-def test_ohne_journal_und_ereignisse_braucht_es_keinen_worker(ohne_bedarf: Any) -> None:
-    assert presence.required_roles() == frozenset()
+def test_zeitplaene_brauchen_immer_runner_und_scheduler(ohne_bedarf: Any) -> None:
+    """Ohne Worker fielen Erinnerungen, Einladungen und Aufräumen still aus (Issue #515)."""
+    assert presence.required_roles() == {"tasks", "scheduler"}
+
+
+def test_ohne_journal_reichen_die_warteschlangen_der_zeitplaene(ohne_bedarf: Any) -> None:
+    """Webprozesse führen Aufträge sofort aus; im Journal landen nur Zeitpläne und Admin-Aufträge."""
+    assert presence.required_queues() == {"default"}
+
+    ohne_bedarf.TASKS["default"]["OPTIONS"] = {**ohne_bedarf.TASKS["default"]["OPTIONS"], "concurrency": {"default": 0}}
+    assert presence.required_queues() == frozenset(), "bewusst abgeschaltete Warteschlange"
+
+
+def test_warteschlangen_der_zeitplaene_aus_dem_register(ohne_bedarf: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(presence, "schedule_queues", lambda: frozenset({"mail"}))
+    assert presence.required_queues() == {"default", "mail"}
 
 
 def test_auftraege_ueber_das_journal_brauchen_runner_und_zeitplaene(ohne_bedarf: Any) -> None:
@@ -48,7 +62,7 @@ def test_noetige_warteschlangen_ohne_abgeschaltete(ohne_bedarf: Any) -> None:
 
 def test_ereignisse_des_ingestors_brauchen_den_sequenzierer(ohne_bedarf: Any) -> None:
     ohne_bedarf.INGESTOR_EVENTS_ENABLED = True
-    assert presence.required_roles() == {"sequencer"}
+    assert presence.required_roles() == {"sequencer", "tasks", "scheduler"}
 
 
 @pytest.mark.parametrize(

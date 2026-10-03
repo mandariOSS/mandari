@@ -12,7 +12,6 @@ from __future__ import annotations
 from io import StringIO
 from pathlib import Path
 from typing import Any
-from unittest import mock
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -21,6 +20,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.events.models import Task
 from apps.work.meetings.models import AgendaItemPosition, AgendaSpeechNote, FileAnnotation, MeetingPreparation
 from insight_core.models import (
     OParlAgendaItem,
@@ -262,21 +262,21 @@ def test_admin_bricht_loeschung_der_kommune_bei_verweisen_mit_meldung_ab(
     assert "Kommune „Beispielstadt“ wird nicht gelöscht" in content
     assert "(work.MeetingPreparation): 1" in content
 
-    with mock.patch("insight_core.admin.threading.Thread") as thread:
-        admin_client.post(url, {"post": "yes"})
-    thread.assert_not_called()
+    admin_client.post(url, {"post": "yes"})
+    assert not Task.objects.filter(task_path__endswith="kommune_loeschen").exists()
     assert OParlBody.objects.filter(pk=body.pk).exists()
 
 
 def test_admin_loescht_kommune_ohne_verweise_weiterhin(admin_client: Client, body: OParlBody) -> None:
     url = reverse("admin:insight_core_oparlbody_delete", args=[body.pk])
 
-    # Die Löschung selbst läuft in einem Hintergrund-Thread; hier zählt nur, dass sie gestartet wird
-    with mock.patch("insight_core.admin.threading.Thread") as thread:
-        response = admin_client.post(url, {"post": "yes"})
+    # Die Löschung selbst läuft als Auftrag im Worker (Issue #515); hier zählt nur, dass er angelegt wird
+    response = admin_client.post(url, {"post": "yes"})
 
     assert response.status_code == 302
-    thread.return_value.start.assert_called_once_with()
+    auftrag = Task.objects.get(task_path="insight_core.background_tasks.kommune_loeschen")
+    assert auftrag.args == {"args": [str(body.pk)], "kwargs": {}}
+    assert OParlBody.objects.filter(pk=body.pk).exists()
 
 
 def test_admin_bricht_loeschung_der_quelle_bei_verweisen_ab(admin_client: Client, body: OParlBody, org: Any) -> None:

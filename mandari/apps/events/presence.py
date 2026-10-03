@@ -12,18 +12,20 @@ Tag.
 Zeitpunkte setzt und vergleicht die Datenbank (``Now()``), nicht die Uhr des Prozesses: Worker
 auf mehreren Rechnern mit Uhrenversatz würden sonst fälschlich als ausgefallen gelten.
 
-**Braucht die Installation einen Worker?** (``required_roles``, Issue #509) Nur dann melden Health
-und Admin sein Fehlen; sonst stünde jede bestehende Installation ohne Worker sofort auf
-„degraded“. ``EVENTS_WORKER_REQUIRED=true`` verlangt alle Rollen, ``false`` keine. Ohne Angabe
-gilt: Laufen Aufträge über das Journal (``TASKS_BACKEND=journal``), braucht es die Rollen ``tasks``
-und ``scheduler``, sonst blieben Aufträge liegen bzw. wiederkehrende (etwa das tägliche Aufräumen
-der Idempotenzschlüssel) entstünden gar nicht; schreibt der Ingestor Ereignisse
-(``INGESTOR_EVENTS_ENABLED``), die Rolle ``sequencer``, sonst bekämen sie keine Folgenummer.
+**Braucht die Installation einen Worker?** (``required_roles``, Issues #509, #515) Ja: Seit die
+wiederkehrende Arbeit (Erinnerungen und Einladungen zu Fraktionssitzungen, Verortung, Aufräumen)
+als Zeitpläne im Worker läuft und nicht mehr in einem Faden im Webprozess, braucht jede Installation
+die Rollen ``tasks`` und ``scheduler``; ohne sie fiele diese Arbeit still aus. Schreibt der Ingestor
+Ereignisse (``INGESTOR_EVENTS_ENABLED``), zusätzlich ``sequencer``, sonst bekämen sie keine
+Folgenummer. ``EVENTS_WORKER_REQUIRED=true`` verlangt alle Rollen, ``false`` keine (etwa eine
+Vorführinstanz ohne Worker).
 
 **Abdeckung je Warteschlange:** Ist ``tasks`` nötig, müssen die lebenden Worker mit dieser Rolle
-zusammen jede Warteschlange des Backends bedienen (``required_queues``; ausgenommen Warteschlangen
-mit Parallelität 0). Laufen Texterkennung und KI in einem eigenen Worker (``--queues ocr,ai``) und
-fällt der aus, meldet die Prüfung genau diese Warteschlangen.
+zusammen jede Warteschlange bedienen, in der Aufträge entstehen (``required_queues``; ausgenommen
+Warteschlangen mit Parallelität 0): mit ``TASKS_BACKEND=journal`` jede des Backends, sonst die der
+Zeitpläne und der Aufträge, die immer im Journal landen (``ALWAYS_JOURNAL_QUEUES``). Laufen
+Texterkennung und KI in einem eigenen Worker (``--queues ocr,ai``) und fällt der aus, meldet die
+Prüfung genau diese Warteschlangen.
 """
 
 from __future__ import annotations
@@ -42,6 +44,10 @@ from .models import WorkerProcess
 #: Alle Rollen (wie ``apps.events.worker.ROLES``; hier ohne Import des Workers)
 ALL_ROLES: Final = frozenset({"sequencer", "dispatch", "tasks", "scheduler"})
 _JOURNAL_BACKEND: Final = "apps.events.tasks_backend.JournalBackend"
+
+#: Warteschlangen der Aufträge, die unabhängig von ``TASKS_BACKEND`` im Journal landen (Admin: Sync einer
+#: Quelle, Löschen einer Kommune); die der Zeitpläne kommen aus dem Register hinzu
+ALWAYS_JOURNAL_QUEUES: Final = frozenset({"default"})
 
 #: So lange gilt ein Worker nach seiner letzten Meldung als lebend
 PRESENCE_TTL: Final = timedelta(seconds=60)
@@ -94,25 +100,36 @@ def required_roles() -> frozenset[str]:
         return ALL_ROLES
     if wert in ("false", "0", "no"):
         return frozenset()
-    rollen: set[str] = set()
-    backend = str(dict(getattr(settings, "TASKS", {}).get("default", {})).get("BACKEND", ""))
-    if backend == _JOURNAL_BACKEND:
-        # Runner für die Aufträge, Zeitpläne für die wiederkehrenden unter ihnen
-        rollen |= {"tasks", "scheduler"}
+    # Zeitpläne für die wiederkehrende Arbeit, Runner für ihre Aufträge (und alle übrigen mit Journal)
+    rollen: set[str] = {"tasks", "scheduler"}
     if getattr(settings, "INGESTOR_EVENTS_ENABLED", False):
         rollen.add("sequencer")
     return frozenset(rollen)
 
 
+def _journal_backend_active() -> bool:
+    return str(dict(getattr(settings, "TASKS", {}).get("default", {})).get("BACKEND", "")) == _JOURNAL_BACKEND
+
+
+def schedule_queues() -> frozenset[str]:
+    """Warteschlangen der registrierten Zeitpläne (lädt ``schedules.py`` aller Apps)."""
+    from .schedule import autodiscover, registry
+
+    autodiscover()
+    return frozenset(eintrag.task.queue_name for eintrag in registry)
+
+
 def required_queues() -> frozenset[str]:
     """Warteschlangen, die die Worker mit der Rolle ``tasks`` zusammen bedienen müssen.
 
-    Alle Warteschlangen des Backends außer denen mit Parallelität 0 (bewusst abgeschaltet).
+    Mit ``TASKS_BACKEND=journal`` alle des Backends, sonst die der Zeitpläne und
+    ``ALWAYS_JOURNAL_QUEUES``; jeweils ohne die mit Parallelität 0 (bewusst abgeschaltet).
     """
     from .tasks_backend import journal_options
 
     optionen, queues = journal_options()
-    return frozenset(queue for queue in queues if optionen.concurrency.get(queue, 1) > 0)
+    kandidaten = frozenset(queues) if _journal_backend_active() else ALWAYS_JOURNAL_QUEUES | schedule_queues()
+    return frozenset(queue for queue in kandidaten if optionen.concurrency.get(queue, 1) > 0)
 
 
 @dataclass(frozen=True)

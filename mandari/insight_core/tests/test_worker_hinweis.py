@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Admin-Hinweis zum Worker (Issue #509): Startseite und Betriebsmonitor zeigen ihn nur, wenn die
-Installation einen Worker braucht und keiner die nötigen Rollen bedient.
+Admin-Hinweis zum Worker (Issues #509, #515): Startseite und Betriebsmonitor zeigen ihn, wenn die
+Installation einen Worker braucht (Standard: immer, wegen der Zeitpläne) und keiner die nötigen Rollen
+bedient.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from insight_core.services.source_health import collect_system_health
 
 @pytest.fixture
 def ohne_bedarf(settings: Any) -> Any:
-    settings.EVENTS_WORKER_REQUIRED = ""
+    settings.EVENTS_WORKER_REQUIRED = "false"
     settings.INGESTOR_EVENTS_ENABLED = False
     return settings
 
@@ -34,16 +35,18 @@ def test_ohne_bedarf_kein_hinweis(ohne_bedarf: Any) -> None:
 
 @pytest.mark.django_db
 def test_fehlender_worker_bei_bedarf_ist_kritisch(ohne_bedarf: Any) -> None:
+    ohne_bedarf.EVENTS_WORKER_REQUIRED = ""
     ohne_bedarf.INGESTOR_EVENTS_ENABLED = True
 
     check = _worker(collect_system_health())
 
     assert check["status"] == "critical"
-    assert check["detail"].startswith("Kein Worker für sequencer")
+    assert check["detail"].startswith("Kein Worker für scheduler, sequencer, tasks")
 
 
 @pytest.mark.django_db
 def test_fehlender_worker_fuer_texterkennung_ist_kritisch(ohne_bedarf: Any) -> None:
+    ohne_bedarf.EVENTS_WORKER_REQUIRED = ""
     ohne_bedarf.TASKS = journal_einstellungen()
     presence.announce("haupt", sorted(presence.ALL_ROLES), ["default", "mail", "index", "adapter"])
 
@@ -66,12 +69,13 @@ def test_laufender_worker_ist_in_ordnung(ohne_bedarf: Any) -> None:
 
 @pytest.mark.django_db
 def test_admin_startseite_und_monitor_zeigen_den_hinweis(ohne_bedarf: Any, admin_client: Client) -> None:
+    ohne_bedarf.EVENTS_WORKER_REQUIRED = ""
     ohne_bedarf.INGESTOR_EVENTS_ENABLED = True
 
     for pfad in ("/admin/", "/admin/monitoring/"):
         response = admin_client.get(pfad)
         assert response.status_code == 200
-        assert "Kein Worker für sequencer" in response.content.decode(), pfad
+        assert "Kein Worker für scheduler, sequencer, tasks" in response.content.decode(), pfad
 
 
 @pytest.mark.django_db
