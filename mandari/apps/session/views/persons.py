@@ -71,8 +71,10 @@ class SessionPersonForm(forms.ModelForm):
         # Zustellweg (Issue #225): ohne Angabe bleibt es bei E-Mail (Importe, ältere Formulare)
         self.fields["delivery_channel"].required = False
         # Datum als ISO-Text vorbelegen, damit das Datumsfeld des Browsers es anzeigt
-        if self.instance.pk and self.instance.contact_consent_date:
-            self.initial["contact_consent_date"] = self.instance.contact_consent_date.isoformat()
+        for name in ("contact_consent_date", "recording_objection_date"):
+            value = getattr(self.instance, name) if self.instance.pk else None
+            if value:
+                self.initial[name] = value.isoformat()
         self.show_bank_fields = show_bank_fields
         if not show_bank_fields:
             for field in ("bank_account_holder", "bank_iban", "bank_bic"):

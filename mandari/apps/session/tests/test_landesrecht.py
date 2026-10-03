@@ -447,8 +447,12 @@ def test_person_und_gremium_formular_kennen_die_neuen_felder() -> None:
     w = _ni(welt(status="draft"))
     pflege = client(nutzer(w.tenant, "stammdaten", "view_meetings", "manage_organizations"))
     person = w.stimmberechtigt[1]
+    person.recording_objection, person.recording_objection_date = True, date(2026, 9, 1)
+    person.save()
     seite = pflege.get(f"{base(w)}/persons/{person.pk}/edit/").content.decode()
     assert 'data-testid="aufnahme-widerspruch"' in seite
+    # Datum als ISO-Text, damit das Datumsfeld es anzeigt und beim Speichern nicht verliert
+    assert 'value="2026-09-01"' in seite
     seite = pflege.get(f"{base(w)}/organizations/{w.gremium.pk}/edit/").content.decode()
     assert 'name="remote_local_rule"' in seite
 
