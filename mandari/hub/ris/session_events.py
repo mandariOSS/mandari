@@ -105,8 +105,9 @@ PAPER_PUBLIC_FIELDS: Final = (
 PAPER_INTERNAL_FIELDS: Final = ("status", "public", "mainText", "resolutionText")
 PAPER_FIELDS: Final = PAPER_PUBLIC_FIELDS + PAPER_INTERNAL_FIELDS
 
-#: Felder einer Beratung (``SessionMapping.consultation``); ``order`` bestimmt die Reihenfolge in der Vorlage,
-#: ``result`` (Ergebnis der Station) erfahren nur die übrigen Empfänger
+#: Felder einer Beratung (``SessionMapping.consultation``); ``result`` (Ergebnis der Station) erfahren nur die
+#: übrigen Empfänger. ``order`` nennt das Objekt der Beratung nicht, es ist aber öffentlich: Die Vorlage bettet
+#: ihre Beratungsfolge in dieser Reihenfolge ein (``SessionMapping.paper``)
 CONSULTATION_FIELDS: Final = ("organization", "meeting", "agendaItem", "role", "authoritative", "order", "result")
 #: Angaben, die die Schnittstelle bei einer Station in einer nichtöffentlichen Sitzung weglässt
 CONSULTATION_STATION_FIELDS: Final = ("organization", "role", "authoritative")

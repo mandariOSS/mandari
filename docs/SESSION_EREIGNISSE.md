@@ -123,6 +123,9 @@ meldet nichts, ebenso eine ersetzte Anlage mit gleichem Inhalt.
   Gremium noch Sitzung (wie die Schnittstelle: öffentlich bleibt nur, dass die Vorlage dort beraten wird).
 - Eine Vorlage ist veröffentlicht, wenn sie öffentlich und freigegeben ist; ihre Stationen sind es mit ihr,
   ihre Anlagen, wenn sie selbst öffentlich sind.
+- `order` einer Station ist öffentlich, obwohl das Objekt der Beratung das Feld nicht nennt: Die Vorlage
+  bettet ihre Beratungsfolge in dieser Reihenfolge ein (`SessionMapping.paper`). Eine verschobene Station
+  ändert also, was die Schnittstelle ausliefert.
 
 ## Freischaltung der Schnittstelle
 

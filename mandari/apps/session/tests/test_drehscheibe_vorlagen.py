@@ -439,6 +439,41 @@ class TestAnlagen:
         assert _neu(seit) == []
 
 
+class TestFreischaltung:
+    """Vor der Freischaltung der Schnittstelle (Issue #319): Vorlagen, Stationen und Anlagen nur nichtöffentlich."""
+
+    @pytest.fixture(autouse=True)
+    def gesperrt(self, welt: Welt) -> None:
+        welt.tenant.oparl_public_since = None
+        welt.tenant.save(update_fields=["oparl_public_since"])
+
+    def test_freigabe_station_anlage_und_ruecknahme_ohne_oeffentliches_ereignis(self, welt: Welt) -> None:
+        vorlage = welt.vorlage(status="draft")
+        sitzung = welt.sitzung()
+        seit = _start()
+        anlage = welt.hochladen(vorlage, "plan.txt")
+        antwort = welt.client.post(
+            welt.url(f"/papers/{vorlage.id}/consultations/add/"),
+            {"organization": str(welt.rat.pk), "role": "decision", "meeting": str(sitzung.pk)},
+        )
+        assert antwort.status_code == 302
+        assert welt.client.post(welt.url(f"/papers/{vorlage.id}/workflow/submit/")).status_code == 302
+        assert welt.client.post(welt.url(f"/papers/{vorlage.id}/workflow/approve/")).status_code == 302
+        vorlage.refresh_from_db()
+        assert vorlage.status == "approved"
+        _bearbeiten(welt, vorlage, date="2026-09-15")
+        vorlage.refresh_from_db()
+        _bearbeiten(welt, vorlage, is_public=None)
+        assert welt.client.post(welt.url(f"/files/{anlage.id}/delete/")).status_code == 302
+        sitzungs_anlage = welt.hochladen(sitzung, "einladung.txt")
+        welt.client.post(welt.url(f"/files/{sitzungs_anlage.id}/delete/"))
+
+        events = _neu(seit)
+        assert {e.type for e in events} >= {"ris.file.changed", "ris.consultation.changed", "ris.paper.changed"}
+        assert {e.visibility for e in events} == {"nichtoeffentlich"}, "Nichts ist öffentlich vor der Freischaltung"
+        assert not {"ris.paper.released", "ris.object.depublished"} & {e.type for e in events}
+
+
 def test_sitzung_nichtoeffentlich_nimmt_ihre_anlagen_zurueck(welt: Welt) -> None:
     """Die Anlagen einer Sitzung folgen ihrer Öffentlichkeit (Beobachtung der Sitzung schließt sie ein)."""
     from apps.session import hub_events
