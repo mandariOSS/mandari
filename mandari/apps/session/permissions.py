@@ -129,19 +129,14 @@ def role_permissions(session_user: Any) -> set[str]:
 
     Administratoren haben alle Fachrechte; die Kontrollrechte (Protokoll einsehen und
     exportieren, Issue #221) kommen auch bei ihnen nur aus den Einzelhaken der Rolle.
+
+    Seit Issue #772 über den Rechtekatalog aufgelöst (``apps.session.rechte``): Rollen → Rechte nach Objektart und
+    Aktion → bisherige Rechtenamen über das Leitrecht je Häkchen. Grundlage sind nur die mandantenweiten,
+    unbefristeten Rollen aus ``SessionUser.roles`` – dasselbe Ergebnis wie bisher, ohne zusätzliche Abfrage.
     """
-    if not session_user:
-        return set()
-    permissions: set[str] = set()
-    for role in session_user.roles.all():
-        if role.is_admin:
-            permissions |= ALL_PERMISSIONS
-        # Collect individual permissions from role
-        for attr in dir(role):
-            if attr.startswith("can_") and getattr(role, attr, False):
-                # Convert can_view_meetings to view_meetings
-                permissions.add(attr[4:])
-    return permissions
+    from apps.session.rechte.aufloesung import bisherige_rechte
+
+    return bisherige_rechte(session_user)
 
 
 def is_admin_user(session_user: Any) -> bool:

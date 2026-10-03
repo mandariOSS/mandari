@@ -421,6 +421,16 @@ class SessionTenant(models.Model):
         verbose_name="Bezeichnung der Vorlagennummer",
         help_text="z. B. „Drucksache“ oder „Vorlagen-Nr.“",
     )
+    # Rechte mit Geltungsbereich (Issue #772): Erst mit dem Schalter wirken befristete Zuweisungen und Zuweisungen
+    # für Körperschaften, Gremien oder Ämter. Ohne Schalter gilt genau das bisherige Rollenmodell.
+    # DB-Default für den Rückfall per Image.
+    scoped_permissions_enabled = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Rechte mit Geltungsbereich",
+        help_text="Befristete Rollenzuweisungen und Zuweisungen für Körperschaften, Gremien oder Ämter wirken lassen",
+    )
+
     # Zwei-Faktor-Pflicht für alle Nutzer (Admins und Nutzer mit Verwaltungsrechten sind immer verpflichtet)
     require_2fa = models.BooleanField(
         default=False,
@@ -1290,6 +1300,151 @@ class SessionDelegation(models.Model):
         return [
             str(self._meta.get_field(name).verbose_name) for name in self.SCOPE_FIELDS.values() if getattr(self, name)
         ]
+
+
+class SessionRoleAssignment(models.Model):
+    """
+    Rollenzuweisung: eine Rolle für ein Konto, einen Geltungsbereich und einen Zeitraum (Issue #772).
+
+    Bis auf die Aufhebung unveränderlich; eine Änderung ist Aufhebung plus neue Zuweisung, aufgehoben wird nur über
+    ``rechte.zuweisungen.aufheben``. Aufgehobene Zuweisungen bleiben als Nachweis. Im Übergang bleibt
+    ``SessionUser.roles`` maßgeblich für mandantenweite, unbefristete Rollen; zu jedem solchen Paar gibt es eine
+    gespiegelte Zuweisung (``apps.session.rechte``).
+
+    Die Fremdschlüssel löschen in PostgreSQL selbst mit (Migration ``*_rollenzuweisungen_spiegeln``), damit ein
+    älteres Image, das diese Tabelle nicht kennt, Konten, Rollen und Mandanten weiter löschen kann. Djangos
+    ``DB_CASCADE``/``DB_SET_NULL`` gehen hier nicht: Konto, Rolle und Mandant verweisen selbst mit Python-Löschregeln
+    weiter, und Django verbietet gemischte Ketten (Systemprüfung ``fields.E323``).
+    """
+
+    SCOPE_TENANT = "mandant"
+    SCOPE_BODY = "koerperschaft"
+    SCOPE_ORGANIZATION = "gremium"
+    SCOPE_DEPARTMENT = "amt"
+    SCOPE_CHOICES = [
+        (SCOPE_TENANT, "Mandant"),
+        (SCOPE_BODY, "Körperschaft"),
+        (SCOPE_ORGANIZATION, "Gremium"),
+        (SCOPE_DEPARTMENT, "Amt"),
+    ]
+
+    SOURCE_MANUAL = "manuell"
+    SOURCE_MANDATE = "mandat"
+    SOURCE_POSITION = "stelle"
+    SOURCE_DELEGATION = "vertretung"
+    SOURCE_MIGRATION = "migration"
+    SOURCE_CHOICES = [
+        (SOURCE_MANUAL, "Manuell"),
+        (SOURCE_MANDATE, "Mandat"),
+        (SOURCE_POSITION, "Stelle"),
+        (SOURCE_DELEGATION, "Vertretung"),
+        (SOURCE_MIGRATION, "Migration"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="role_assignments",
+        verbose_name="Mandant",
+    )
+    user = models.ForeignKey(
+        SessionUser,
+        on_delete=models.CASCADE,
+        related_name="role_assignments",
+        verbose_name="Konto",
+    )
+    role = models.ForeignKey(
+        SessionRole,
+        on_delete=models.CASCADE,
+        related_name="assignments",
+        verbose_name="Rolle",
+    )
+    scope_type = models.CharField(
+        max_length=20,
+        choices=SCOPE_CHOICES,
+        default=SCOPE_TENANT,
+        verbose_name="Geltungsbereich",
+    )
+    scope_id = models.UUIDField(
+        null=True,
+        blank=True,
+        verbose_name="Kennung des Geltungsbereichs",
+        help_text="Körperschaft, Gremium oder Amt; leer für den ganzen Mandanten",
+    )
+    valid_from = models.DateField(null=True, blank=True, verbose_name="Gültig ab")
+    valid_until = models.DateField(null=True, blank=True, verbose_name="Gültig bis einschließlich")
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_MANUAL,
+        verbose_name="Quelle",
+    )
+    note = models.CharField(max_length=500, blank=True, verbose_name="Vermerk")
+
+    created_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Angelegt von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Angelegt am")
+    revoked_at = models.DateTimeField(null=True, blank=True, verbose_name="Aufgehoben am")
+    revoked_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Aufgehoben von",
+    )
+
+    class Meta:
+        db_table = "session_role_assignments"
+        verbose_name = "Rollenzuweisung"
+        verbose_name_plural = "Rollenzuweisungen"
+        ordering = ["created_at"]
+        # Kein eigener Index: Gelesen wird je Konto (``user``, Index des Fremdschlüssels) und je Mandant (``tenant``)
+        constraints = [
+            # Höchstens eine aktive Spiegelzuweisung (mandantenweit, unbefristet) je Konto und Rolle
+            models.UniqueConstraint(
+                fields=["user", "role"],
+                condition=models.Q(
+                    revoked_at__isnull=True,
+                    scope_type="mandant",
+                    valid_from__isnull=True,
+                    valid_until__isnull=True,
+                ),
+                name="session_rz_spiegel_eindeutig",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(valid_from__isnull=True)
+                | models.Q(valid_until__isnull=True)
+                | models.Q(valid_until__gte=models.F("valid_from")),
+                name="session_rz_zeitraum",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(scope_type="mandant", scope_id__isnull=True)
+                | (~models.Q(scope_type="mandant") & models.Q(scope_id__isnull=False)),
+                name="session_rz_bereich",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.role.name} für {self.user.user.email} ({self.get_scope_type_display()})"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Nur neu anlegen: Eine bestehende Zuweisung ändert sich nur durch ``rechte.zuweisungen.aufheben``."""
+        if not self._state.adding:
+            raise ValueError("Rollenzuweisungen sind unveränderlich; eine Änderung ist Aufhebung plus neue Zuweisung.")
+        super().save(*args, **kwargs)
+
+    @property
+    def is_mirror(self) -> bool:
+        """Spiegel eines Eintrags in ``SessionUser.roles``: mandantenweit und unbefristet."""
+        return self.scope_type == self.SCOPE_TENANT and self.valid_from is None and self.valid_until is None
 
 
 # =============================================================================
