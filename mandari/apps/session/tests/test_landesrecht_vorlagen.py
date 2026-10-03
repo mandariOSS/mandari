@@ -300,6 +300,10 @@ def test_abberufener_ausschussvorsitz_nicht_erneut_benennbar() -> None:
     )
     besetzung.refresh_from_db()
     assert besetzung.end_reason == SessionOrganizationMembership.END_RECALLED
+    # Ein späteres Verschieben des Endes hebt den Sperrvermerk nicht auf
+    pflege.post(f"/session/{tenant.slug}/memberships/{besetzung.pk}/end/", {"end_date": "2026-12-30"})
+    besetzung.refresh_from_db()
+    assert besetzung.end_reason == SessionOrganizationMembership.END_RECALLED
 
     antwort = pflege.post(url, {"person": str(vorsitz.pk), "role": "chair", "start_date": "2027-02-01"})
     meldungen = " ".join(str(m) for m in get_messages(antwort.wsgi_request))

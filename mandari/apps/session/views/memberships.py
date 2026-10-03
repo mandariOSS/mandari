@@ -189,9 +189,11 @@ class MembershipEndView(SessionViewMixin, View):
             messages.error(request, error)
             return _org_redirect(self, membership.organization)
         membership.end_date = end_date
-        # Abberufung eines Vorsitzes (Issue #757, § 71 Abs. 8 NKomVG): Sperrvermerk für eine erneute Benennung
+        # Abberufung eines Vorsitzes (Issue #757, § 71 Abs. 8 NKomVG): Sperrvermerk für eine erneute Benennung. Ein
+        # späteres Verschieben des Endes ohne Häkchen hebt den Vermerk nicht auf.
         recalled = request.POST.get("end_reason") == SessionOrganizationMembership.END_RECALLED
-        membership.end_reason = SessionOrganizationMembership.END_RECALLED if recalled else ""
+        if recalled:
+            membership.end_reason = SessionOrganizationMembership.END_RECALLED
         membership.save()
         messages.success(
             request,
