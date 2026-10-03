@@ -124,15 +124,18 @@ class ConsultationCreateView(ConsultationBaseView):
             return self.redirect_to_paper(paper)
 
         last_order = paper.consultations.order_by("-order").values_list("order", flat=True).first() or 0
-        consultation = SessionConsultation.objects.create(
-            paper=paper,
-            organization=organization,
-            meeting=meeting,
-            role=role,
-            # Entscheidungs-Stationen sind standardmäßig authoritative (OParl)
-            authoritative=bool(request.POST.get("authoritative")) or role == "decision",
-            order=last_order + 1,
-        )
+        # Drehscheibe (Issue #534): neue Station der Beratungsfolge
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.paper(paper)
+            consultation = SessionConsultation.objects.create(
+                paper=paper,
+                organization=organization,
+                meeting=meeting,
+                role=role,
+                # Entscheidungs-Stationen sind standardmäßig authoritative (OParl)
+                authoritative=bool(request.POST.get("authoritative")) or role == "decision",
+                order=last_order + 1,
+            )
         messages.success(
             request,
             f"Beratungsstation {consultation.order} ({organization.name}, "
@@ -176,7 +179,10 @@ class ConsultationUpdateView(ConsultationBaseView):
         if result and result in RESULT_VALUES and not consultation.agenda_item_id:
             consultation.result = result
 
-        consultation.save()
+        # Drehscheibe (Issue #534): Rolle, Zielsitzung, Entscheidungsbefugnis, Ergebnis
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.paper(paper)
+            consultation.save()
         messages.success(request, f"Beratungsstation {consultation.order} wurde aktualisiert.")
         return self.redirect_to_paper(paper)
 
@@ -190,12 +196,15 @@ class ConsultationDeleteView(ConsultationBaseView):
         consultation = self.get_consultation(consultation_id)
         paper = consultation.paper
         label = f"Station {consultation.order} ({consultation.organization.name})"
-        consultation.delete()
-        # Lücken in der Reihenfolge schließen
-        for index, station in enumerate(paper.consultations.order_by("order", "created_at"), start=1):
-            if station.order != index:
-                station.order = index
-                station.save(update_fields=["order", "updated_at"])
+        # Drehscheibe (Issue #534): entfernte Station, neue Reihenfolge der übrigen
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.paper(paper)
+            consultation.delete()
+            # Lücken in der Reihenfolge schließen
+            for index, station in enumerate(paper.consultations.order_by("order", "created_at"), start=1):
+                if station.order != index:
+                    station.order = index
+                    station.save(update_fields=["order", "updated_at"])
         messages.success(request, f"{label} wurde aus der Beratungsfolge entfernt.")
         return self.redirect_to_paper(paper)
 
@@ -218,9 +227,12 @@ class ConsultationMoveView(ConsultationBaseView):
         if direction not in ("up", "down") or target < 0 or target >= len(stations):
             return self.redirect_to_paper(paper)
         other = stations[target]
-        consultation.order, other.order = other.order, consultation.order
-        consultation.save(update_fields=["order", "updated_at"])
-        other.save(update_fields=["order", "updated_at"])
+        # Drehscheibe (Issue #534): neue Reihenfolge der beiden Stationen
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.paper(paper)
+            consultation.order, other.order = other.order, consultation.order
+            consultation.save(update_fields=["order", "updated_at"])
+            other.save(update_fields=["order", "updated_at"])
         return self.redirect_to_paper(paper)
 
 
@@ -266,8 +278,10 @@ def schedule_consultation(view, request, consultation):
 
     # TOP, Verknüpfung und Status in einer Transaktion: Nachgelagerte Empfänger (Rückmeldung an die
     # einreichende Fraktion, Issue #316) sehen nie einen TOP ohne seine Beratungsstation.
-    # Drehscheibe (Issue #533): neuer TOP auf der Zielsitzung und die neue Nummerierung
+    # Drehscheibe (Issues #533, #534): neuer TOP auf der Zielsitzung, die neue Nummerierung, die terminierte
+    # Station und der Stand der Vorlage
     with transaction.atomic(), hub_events.track(view.session_tenant) as tracked:
+        tracked.paper(paper)
         tracked.agenda(meeting)
         item = SessionAgendaItem.objects.create(
             meeting=meeting,

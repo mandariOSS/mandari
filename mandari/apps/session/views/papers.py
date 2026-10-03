@@ -31,7 +31,7 @@ from django.views.generic import (
 
 from apps.common.params import uuid_param
 
-from .. import audit
+from .. import audit, hub_events
 from ..models import (
     SessionConsultation,
     SessionMeeting,
@@ -209,7 +209,10 @@ class PaperNumberingFormMixin:
             form.add_error("reference", f"{self.session_tenant.reference_label} {ref} ist bereits vergeben.")
             return self.form_invalid(form)
         try:
-            response = super().form_valid(form)
+            # Drehscheibe (Issue #534): angelegt, geändert, zurück in den Entwurf – samt TOPs mit ihrem Betreff
+            with hub_events.track(self.session_tenant) as tracked:
+                tracked.paper(form.instance)
+                response = super().form_valid(form)
         except NumberingError as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
@@ -516,20 +519,23 @@ class PaperChildCreateView(SessionViewMixin, View):
             )
             return redirect("session:paper_detail", tenant_slug=tenant_slug, paper_id=parent.id)
         try:
-            child = SessionPaper.objects.create(
-                tenant=self.session_tenant,
-                parent_paper=parent,
-                relation_type=relation,
-                name=f"{labels[relation]} zu {parent.reference}: {parent.name}"[:500],
-                paper_type=ART_JE_BEZUG.get(relation, parent.paper_type),
-                is_public=parent.is_public,
-                main_organization=parent.main_organization,
-                # Körperschaft der Bezugsvorlage (Issue #756), auch wenn sie dort ausdrücklich gewählt ist
-                body_id=parent.body_id,
-                lead_department=parent.lead_department,
-                date=timezone.localdate(),
-                created_by=self.session_user,
-            )
+            # Drehscheibe (Issue #534): neue Vorlage (Unternummer)
+            with hub_events.track(self.session_tenant) as tracked:
+                child = SessionPaper.objects.create(
+                    tenant=self.session_tenant,
+                    parent_paper=parent,
+                    relation_type=relation,
+                    name=f"{labels[relation]} zu {parent.reference}: {parent.name}"[:500],
+                    paper_type=ART_JE_BEZUG.get(relation, parent.paper_type),
+                    is_public=parent.is_public,
+                    main_organization=parent.main_organization,
+                    # Körperschaft der Bezugsvorlage (Issue #756), auch wenn sie dort ausdrücklich gewählt ist
+                    body_id=parent.body_id,
+                    lead_department=parent.lead_department,
+                    date=timezone.localdate(),
+                    created_by=self.session_user,
+                )
+                tracked.paper(child, created=True)
         except NumberingError as exc:
             messages.error(request, str(exc))
             return redirect("session:paper_detail", tenant_slug=tenant_slug, paper_id=parent.id)
@@ -714,7 +720,10 @@ class PaperWorkflowView(SessionViewMixin, View):
         paper.status = new_status
 
         if action == "submit":
-            paper.save()  # Audit: update über Signal
+            # Drehscheibe (Issue #534): Bearbeitungsstand „In Prüfung“ (nur intern)
+            with hub_events.track(self.session_tenant) as tracked:
+                tracked.paper(paper)
+                paper.save()  # Audit: update über Signal
             # Mitzeichnungskette aus den Regeln aufbauen (Issue #81)
             chain_count = cosign_service.build_chain(paper)
             self._notify_approvers(paper)
@@ -734,7 +743,9 @@ class PaperWorkflowView(SessionViewMixin, View):
             paper.approved_on_behalf_of = vertreten
             paper.approved_at = timezone.now()
             try:
-                with audit.in_vertretung(vertreten):
+                # Drehscheibe (Issue #534): Freigabe veröffentlicht eine öffentliche Vorlage (ris.paper.released)
+                with audit.in_vertretung(vertreten), hub_events.track(self.session_tenant) as tracked:
+                    tracked.paper(paper)
                     paper.save()  # Audit: approve-Aktion über Signal; vergibt ggf. die Nummer (Issue #150)
             except NumberingError as exc:
                 messages.error(request, f"Freigabe nicht möglich: {exc}")
@@ -749,7 +760,8 @@ class PaperWorkflowView(SessionViewMixin, View):
             paper.approved_by = None
             paper.approved_at = None
             paper.approved_on_behalf_of = None
-            with audit.in_vertretung(vertreten):
+            with audit.in_vertretung(vertreten), hub_events.track(self.session_tenant) as tracked:
+                tracked.paper(paper)
                 paper.save()
             # Audit: Zurückweisung mit Kommentar nachvollziehbar machen
             audit.log_event(

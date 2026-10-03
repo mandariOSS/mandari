@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Ereignisse aus mandari Session im kanonischen RIS-Modell (Datendrehscheibe, Etappe E4, Issue #533).
+Ereignisse aus mandari Session im kanonischen RIS-Modell (Datendrehscheibe, Etappe E4, Issues #533, #534).
 
 Session meldet ihre fachlichen Änderungen als Ereignisse ``ris.*``. Die Verträge gehören der Drehscheibe
 (``x-owner: hub.ris``, ``docs/adr/20260929-ereignisvertraege.md``): Dieselben Typen entstehen auch beim Abgleich
@@ -35,9 +35,9 @@ Schnittstelle (bis #758 einer je Mandant), der Mandant ``session:<uuid>``. Damit
 **Nutzlast:** nur Kennungen, Codes und Namen geänderter Felder (Namen des kanonischen Modells), nie Inhalte und
 nie Personen. Inhalte liest der Empfänger mit Rechteprüfung beim Eigentümer.
 
-**Reihenfolge** innerhalb einer Änderung: erst die Sitzungen, dann ihre Tagesordnungspunkte (in der Reihenfolge
-der Tagesordnung), zuletzt ausdrücklich gemeldete Vorgänge wie die Ladung. Der Sequenzierer übernimmt die
-Reihenfolge des Schreibens.
+**Reihenfolge** innerhalb einer Änderung: Sitzungen, Vorlagen, Tagesordnungspunkte (in der Reihenfolge der
+Tagesordnung), Beratungen (je Vorlage in der Reihenfolge der Stationen), Anlagen, zuletzt ausdrücklich gemeldete
+Vorgänge wie die Ladung. Der Sequenzierer übernimmt die Reihenfolge des Schreibens.
 """
 
 from __future__ import annotations
@@ -83,6 +83,43 @@ DISPATCH_TYPES: Final = frozenset({"invitation", "supplementary", "substitution"
 
 #: Feldname „öffentlich“ in den Änderungslisten, wenn sich die Sichtbarkeit einer Sitzung ändert
 PUBLIC: Final = "public"
+
+PAPER_CREATED: Final = "ris.paper.created"
+PAPER_RELEASED: Final = "ris.paper.released"
+PAPER_CHANGED: Final = "ris.paper.changed"
+CONSULTATION_CHANGED: Final = "ris.consultation.changed"
+FILE_CHANGED: Final = "ris.file.changed"
+
+#: Felder einer Vorlage, die die Schnittstelle ausliefert (``SessionMapping.paper``) ...
+PAPER_PUBLIC_FIELDS: Final = (
+    "name",
+    "reference",
+    "date",
+    "paperType",
+    "originatorPerson",
+    "originatorOrganization",
+    "underDirectionOf",
+)
+#: ... und solche, die nur die übrigen Empfänger erfahren: Bearbeitungsstand, Öffentlichkeit, Sachverhalt und
+#: Beschlussvorschlag (die Schnittstelle gibt Inhalte nur als Datei aus)
+PAPER_INTERNAL_FIELDS: Final = ("status", "public", "mainText", "resolutionText")
+PAPER_FIELDS: Final = PAPER_PUBLIC_FIELDS + PAPER_INTERNAL_FIELDS
+
+#: Felder einer Beratung (``SessionMapping.consultation``); ``result`` (Ergebnis der Station) erfahren nur die
+#: übrigen Empfänger. ``order`` nennt das Objekt der Beratung nicht, es ist aber öffentlich: Die Vorlage bettet
+#: ihre Beratungsfolge in dieser Reihenfolge ein (``SessionMapping.paper``)
+CONSULTATION_FIELDS: Final = ("organization", "meeting", "agendaItem", "role", "authoritative", "order", "result")
+#: Angaben, die die Schnittstelle bei einer Station in einer nichtöffentlichen Sitzung weglässt
+CONSULTATION_STATION_FIELDS: Final = ("organization", "role", "authoritative")
+
+#: Felder einer Datei: Anzeigename, Fassung (Nummer und gespeicherte Datei) und woran sie hängt
+FILE_FIELDS: Final = ("name", "version", "paper", "meeting", "agendaItem")
+#: Bezüge einer Datei: Feld, Objektart der Schnittstelle, Schlüssel der Nutzlast
+FILE_REFS: Final = (
+    ("paper", "paper", "paper"),
+    ("meeting", "meeting", "meeting"),
+    ("agendaItem", "agendaitem", "agenda_item"),
+)
 
 
 # =============================================================================
@@ -202,6 +239,175 @@ def agenda_item_state(item: Any, *, is_published: Callable[[Any], bool]) -> Agen
         fields=fields,
         paper_id=item.paper_id,
         paper_published=bool(paper is not None and is_published(paper)),
+    )
+
+
+@dataclass(frozen=True)
+class PaperState:
+    """Eine Vorlage, wie das kanonische Modell sie sieht."""
+
+    id: uuid.UUID
+    #: Liefert die Schnittstelle die Vorlage aus (öffentlich und freigegeben)?
+    published: bool
+    fields: Mapping[str, Any]
+    #: Einreichung, aus der die Vorlage entstand (Kennung in Session; nur in ``ris.paper.created``)
+    submission_id: uuid.UUID | None = None
+
+    def public_value(self, name: str) -> Any:
+        return self.fields.get(name) if self.published and name in PAPER_PUBLIC_FIELDS else None
+
+    @property
+    def withdrawal_reason(self) -> str:
+        """Grund, wenn die Vorlage nicht (mehr) veröffentlicht ist: zurück in Entwurf/Prüfung oder nichtöffentlich."""
+        return retraction.REASON_WITHDRAWN if self.fields.get("public") else retraction.REASON_NOT_PUBLIC
+
+
+@dataclass(frozen=True)
+class ConsultationState:
+    """Eine Station der Beratungsfolge; so öffentlich wie ihre Vorlage."""
+
+    id: uuid.UUID
+    paper_id: uuid.UUID
+    published: bool
+    fields: Mapping[str, Any]
+    #: Sind Zielsitzung bzw. Tagesordnungspunkt öffentlich? Sonst nennt die Schnittstelle sie nicht
+    meeting_public: bool = False
+    item_public: bool = False
+    #: Ist die Vorlage als öffentlich gekennzeichnet (auch wenn sie im Entwurf noch nicht veröffentlicht ist)?
+    paper_public: bool = False
+
+    @property
+    def withdrawal_reason(self) -> str:
+        """Grund der Rücknahme: wie die Vorlage – zurück im Entwurf (``zurueckgenommen``) oder nichtöffentlich."""
+        return retraction.REASON_WITHDRAWN if self.paper_public else retraction.REASON_NOT_PUBLIC
+
+    @property
+    def non_public_station(self) -> bool:
+        """Station in einer nichtöffentlichen Sitzung bzw. auf einem nichtöffentlichen TOP (nur „wird beraten“)."""
+        return (self.fields.get("meeting") is not None and not self.meeting_public) or (
+            self.fields.get("agendaItem") is not None and not self.item_public
+        )
+
+    def public_value(self, name: str) -> Any:
+        if not self.published or name == "result":
+            return None
+        if name == "meeting":
+            return self.fields.get("meeting") if self.meeting_public else None
+        if name == "agendaItem":
+            return self.fields.get("agendaItem") if self.item_public else None
+        if name in CONSULTATION_STATION_FIELDS and self.non_public_station:
+            return None
+        return self.fields.get(name)
+
+
+@dataclass(frozen=True)
+class FileState:
+    """Eine Anlage an einer Vorlage, Sitzung oder einem Tagesordnungspunkt."""
+
+    id: uuid.UUID
+    published: bool
+    fields: Mapping[str, Any]
+    #: Sind die Objekte, an denen die Datei hängt, veröffentlicht? Nur sie nennt ein öffentliches Ereignis
+    paper_published: bool = False
+    meeting_public: bool = False
+    item_public: bool = False
+    #: Grund, wenn die Datei nicht veröffentlicht ist (ihre Vorlage zurück im Entwurf oder nichtöffentlich)
+    withdrawal_reason: str = retraction.REASON_NOT_PUBLIC
+
+    def public_ref(self, name: str) -> Any:
+        flags = {"paper": self.paper_published, "meeting": self.meeting_public, "agendaItem": self.item_public}
+        return self.fields.get(name) if self.published and flags.get(name, False) else None
+
+    def public_value(self, name: str) -> Any:
+        if not self.published:
+            return None
+        if name in ("paper", "meeting", "agendaItem"):
+            return self.public_ref(name)
+        return self.fields.get(name)
+
+
+def paper_state(paper: Any, *, is_published: Callable[[Any], bool]) -> PaperState:
+    """Zustand einer Vorlage (``SessionPaper``)."""
+    fields = {
+        "name": paper.name,
+        "reference": paper.reference or "",
+        "date": paper.date,
+        "paperType": paper.paper_type,
+        "originatorPerson": paper.originator_person_id,
+        "originatorOrganization": paper.originator_organization_id,
+        "underDirectionOf": paper.main_organization_id,
+        "status": paper.status,
+        "public": bool(paper.is_public),
+        "mainText": paper.main_text,
+        "resolutionText": paper.resolution_text,
+    }
+    return PaperState(
+        id=paper.pk,
+        published=bool(is_published(paper)),
+        fields=fields,
+        submission_id=getattr(paper, "source_application_id", None),
+    )
+
+
+def _item_public(item: Any) -> bool:
+    return bool(item is not None and item.is_public and item.meeting.is_public)
+
+
+def consultation_state(consultation: Any, *, is_published: Callable[[Any], bool]) -> ConsultationState:
+    """Zustand einer Beratung (``SessionConsultation`` mit geladener Vorlage, Sitzung und TOP samt Sitzung)."""
+    meeting = consultation.meeting if consultation.meeting_id else None
+    item = consultation.agenda_item if consultation.agenda_item_id else None
+    fields = {
+        "organization": consultation.organization_id,
+        "meeting": consultation.meeting_id,
+        "agendaItem": consultation.agenda_item_id,
+        "role": consultation.role,
+        "authoritative": bool(consultation.authoritative),
+        "order": consultation.order,
+        "result": getattr(consultation, "result", "") or "",
+    }
+    return ConsultationState(
+        id=consultation.pk,
+        paper_id=consultation.paper_id,
+        published=bool(is_published(consultation.paper)),
+        fields=fields,
+        meeting_public=bool(meeting is not None and meeting.is_public),
+        item_public=_item_public(item),
+        paper_public=bool(consultation.paper.is_public),
+    )
+
+
+def file_state(file_obj: Any, *, is_published: Callable[[Any], bool]) -> FileState:
+    """Zustand einer Anlage (``SessionFile`` mit geladener Vorlage, Sitzung und TOP samt Sitzung)."""
+    paper = file_obj.paper if file_obj.paper_id else None
+    meeting = file_obj.meeting if file_obj.meeting_id else None
+    item = file_obj.agenda_item if file_obj.agenda_item_id else None
+    stored = str(file_obj.file.name or "") if file_obj.file else ""
+    fields = {
+        "name": file_obj.name,
+        "version": (file_obj.version, stored),
+        "paper": file_obj.paper_id,
+        "meeting": file_obj.meeting_id,
+        "agendaItem": file_obj.agenda_item_id,
+    }
+    paper_published = bool(paper is not None and is_published(paper))
+    # Öffentliche Anlage an einer öffentlichen Vorlage, die zurück im Entwurf ist: mit ihr zurückgenommen
+    withdrawn = bool(file_obj.is_public and paper is not None and paper.is_public and not paper_published)
+    return FileState(
+        id=file_obj.pk,
+        published=bool(is_published(file_obj)),
+        fields=fields,
+        paper_published=paper_published,
+        meeting_public=bool(meeting is not None and meeting.is_public),
+        item_public=_item_public(item),
+        withdrawal_reason=retraction.REASON_WITHDRAWN if withdrawn else retraction.REASON_NOT_PUBLIC,
+    )
+
+
+def _deleting(draft: Draft) -> Draft:
+    """Derselbe Entwurf mit Operation ``delete`` (Entfernen ohne öffentliche Rücknahme)."""
+    return Draft(
+        draft.type, draft.aggregate_type, draft.aggregate_id, draft.visibility, Operation.DELETE, draft.payload
     )
 
 
@@ -404,6 +610,194 @@ class SessionEvents:
         return Draft(
             AGENDA_ITEM_CHANGED, "AgendaItem", self.ref("agendaitem", state.id), visibility, Operation.UPSERT, payload
         )
+
+    # -- Vorlage -----------------------------------------------------------------------------------
+
+    def paper_drafts(self, before: PaperState | None, after: PaperState | None) -> list[Draft]:
+        """Ereignisse zur Änderung einer Vorlage (``before``/``after`` ``None``: neu bzw. gelöscht)."""
+        if before is None and after is None:
+            return []
+        if before is None:
+            assert after is not None
+            paper = self.ref("paper", after.id)
+            payload: dict[str, Any] = {"paper": str(paper)}
+            if after.submission_id is not None:
+                payload["submission"] = str(after.submission_id)
+            drafts = [Draft(PAPER_CREATED, "Paper", paper, Visibility.NICHTOEFFENTLICH, Operation.UPSERT, payload)]
+            if after.published:
+                drafts.append(self._released(after))
+            return drafts
+        paper = self.ref("paper", before.id)
+        if after is None:
+            if not before.published:
+                return []
+            return retraction.drafts("Paper", paper, retraction.REASON_DELETED_AT_SOURCE)
+
+        changed = _changed(PAPER_FIELDS, before.fields, after.fields)
+        if not before.published and after.published:
+            # Freigegeben bzw. veröffentlicht: für die Öffentlichkeit neu
+            return [self._released(after)]
+        if before.published and not after.published:
+            drafts = retraction.drafts("Paper", paper, after.withdrawal_reason)
+            if changed:
+                drafts.append(self._paper_changed(after, changed, Visibility.NICHTOEFFENTLICH))
+            return drafts
+        if not after.published:
+            return [self._paper_changed(after, changed, Visibility.NICHTOEFFENTLICH)] if changed else []
+        public = [name for name in PAPER_PUBLIC_FIELDS if before.public_value(name) != after.public_value(name)]
+        internal = [name for name in changed if name not in public]
+        drafts = []
+        if public:
+            drafts.append(self._paper_changed(after, public, Visibility.OEFFENTLICH))
+        if internal:
+            drafts.append(self._paper_changed(after, internal, Visibility.NICHTOEFFENTLICH))
+        return drafts
+
+    def _released(self, state: PaperState) -> Draft:
+        # Öffentlich: ohne die Einreichung, aus der die Vorlage entstand (Vertrag ris.paper.released)
+        paper = self.ref("paper", state.id)
+        return Draft(PAPER_RELEASED, "Paper", paper, Visibility.OEFFENTLICH, Operation.UPSERT, {"paper": str(paper)})
+
+    def _paper_changed(self, state: PaperState, changed: list[str], visibility: str) -> Draft:
+        paper = self.ref("paper", state.id)
+        payload = {"paper": str(paper), "changed": changed}
+        return Draft(PAPER_CHANGED, "Paper", paper, visibility, Operation.UPSERT, payload)
+
+    def papers_drafts(
+        self, before: Mapping[uuid.UUID, PaperState | None], after: Mapping[uuid.UUID, PaperState]
+    ) -> list[Draft]:
+        """Ereignisse zu mehreren Vorlagen, in der Reihenfolge, in der sie beobachtet wurden."""
+        drafts: list[Draft] = []
+        for key, state in before.items():
+            drafts.extend(self.paper_drafts(state, after.get(key)))
+        return drafts
+
+    # -- Beratungsfolge ----------------------------------------------------------------------------
+
+    def consultation_drafts(
+        self, before: Mapping[uuid.UUID, ConsultationState], after: Mapping[uuid.UUID, ConsultationState]
+    ) -> list[Draft]:
+        """Ereignisse zur Beratungsfolge, je Vorlage in der Reihenfolge der Stationen."""
+
+        def position(key: uuid.UUID) -> tuple[str, int, int, str]:
+            state = after.get(key) or before[key]
+            return (str(state.paper_id), 0 if key in after else 1, int(state.fields.get("order") or 0), str(key))
+
+        drafts: list[Draft] = []
+        for key in sorted(set(before) | set(after), key=position):
+            drafts.extend(self._consultation(before.get(key), after.get(key)))
+        return drafts
+
+    def _consultation(self, before: ConsultationState | None, after: ConsultationState | None) -> list[Draft]:
+        if before is None:
+            assert after is not None
+            return [self._consultation_draft(after, "added", None, after.published)]
+        consultation = self.ref("consultation", before.id)
+        if after is None:
+            if before.published:
+                return retraction.drafts("Consultation", consultation, retraction.REASON_DELETED_AT_SOURCE)
+            return [_deleting(self._consultation_draft(before, "removed", None, False))]
+
+        changed = _changed(CONSULTATION_FIELDS, before.fields, after.fields)
+        public = [name for name in CONSULTATION_FIELDS if before.public_value(name) != after.public_value(name)]
+        if not changed and not public and before.published == after.published:
+            return []
+        scheduled = before.fields.get("agendaItem") is None and after.fields.get("agendaItem") is not None
+        change = "scheduled" if scheduled else "changed"
+        if not before.published and after.published:
+            return [self._consultation_draft(after, "added", None, True)]
+        if before.published and not after.published:
+            # Die Vorlage wurde zurückgenommen bzw. nichtöffentlich: die Station mit ihr
+            drafts = retraction.drafts("Consultation", consultation, after.withdrawal_reason)
+            if changed:
+                drafts.append(self._consultation_draft(after, change, changed, False))
+            return drafts
+        if not after.published:
+            return [self._consultation_draft(after, change, changed, False)] if changed else []
+        internal = [name for name in changed if name not in public]
+        drafts = []
+        if public:
+            public_change = "scheduled" if "agendaItem" in public and after.item_public and scheduled else "changed"
+            drafts.append(self._consultation_draft(after, public_change, public, True))
+        if internal:
+            drafts.append(self._consultation_draft(after, change, internal, False))
+        return drafts
+
+    def _consultation_draft(
+        self, state: ConsultationState, change: str, changed: list[str] | None, public: bool
+    ) -> Draft:
+        consultation = self.ref("consultation", state.id)
+        payload: dict[str, Any] = {
+            "consultation": str(consultation),
+            "paper": str(self.ref("paper", state.paper_id)),
+            "change": change,
+        }
+        if changed and change != "added":
+            payload["changed"] = changed
+        for name, kind, key in (
+            ("organization", "organization", "organization"),
+            ("meeting", "meeting", "meeting"),
+            ("agendaItem", "agendaitem", "agenda_item"),
+        ):
+            found = state.public_value(name) if public else state.fields.get(name)
+            if found is not None:
+                payload[key] = str(self.ref(kind, found))
+        visibility = Visibility.OEFFENTLICH if public else Visibility.NICHTOEFFENTLICH
+        return Draft(CONSULTATION_CHANGED, "Consultation", consultation, visibility, Operation.UPSERT, payload)
+
+    # -- Anlagen -----------------------------------------------------------------------------------
+
+    def file_drafts(self, before: Mapping[uuid.UUID, FileState], after: Mapping[uuid.UUID, FileState]) -> list[Draft]:
+        """Ereignisse zu Anlagen (nach Kennung geordnet; Anlagen haben keine eigene Reihenfolge)."""
+        drafts: list[Draft] = []
+        for key in sorted(set(before) | set(after), key=str):
+            drafts.extend(self._file(before.get(key), after.get(key)))
+        return drafts
+
+    def _file(self, before: FileState | None, after: FileState | None) -> list[Draft]:
+        if before is None:
+            assert after is not None
+            return [self._file_draft(after, "added", after.published)]
+        file_id = self.ref("file", before.id)
+        if after is None:
+            if before.published:
+                return retraction.drafts("File", file_id, retraction.REASON_DELETED_AT_SOURCE)
+            return [_deleting(self._file_draft(before, "removed", False))]
+        if not before.published and after.published:
+            return [self._file_draft(after, "added", True)]
+        if before.published and not after.published:
+            # Wer die Anlage öffentlich kannte, erfährt die Rücknahme; Anlagen haben kein „geändert“ ohne Inhalt
+            return retraction.drafts("File", file_id, after.withdrawal_reason)
+        changed = _changed(FILE_FIELDS, before.fields, after.fields)
+        if not after.published:
+            return [self._file_draft(after, self._file_change(changed), False)] if changed else []
+        public = [name for name in FILE_FIELDS if before.public_value(name) != after.public_value(name)]
+        internal = [name for name in changed if name not in public]
+        drafts = []
+        if public:
+            drafts.append(self._file_draft(after, self._file_change(public), True))
+        if internal:
+            drafts.append(self._file_draft(after, self._file_change(internal), False))
+        return drafts
+
+    @staticmethod
+    def _file_change(names: list[str]) -> str:
+        if "version" in names:
+            return "replaced"
+        if "name" in names:
+            return "renamed"
+        # Neue Zugehörigkeit: Die Datei hängt jetzt (auch) woanders
+        return "added"
+
+    def _file_draft(self, state: FileState, change: str, public: bool) -> Draft:
+        file_id = self.ref("file", state.id)
+        payload: dict[str, Any] = {"file": str(file_id), "change": change}
+        for name, kind, key in FILE_REFS:
+            found = state.public_ref(name) if public else state.fields.get(name)
+            if found is not None:
+                payload[key] = str(self.ref(kind, found))
+        visibility = Visibility.OEFFENTLICH if public else Visibility.NICHTOEFFENTLICH
+        return Draft(FILE_CHANGED, "File", file_id, visibility, Operation.UPSERT, payload)
 
     # -- Ladung ------------------------------------------------------------------------------------
 

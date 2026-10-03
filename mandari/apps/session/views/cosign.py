@@ -15,7 +15,7 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
-from .. import audit
+from .. import audit, hub_events
 from ..models import (
     SessionCosignatureRule,
     SessionOrganization,
@@ -87,12 +87,14 @@ class CosignatureActionView(SessionViewMixin, View):
             else:
                 cosignature.status = "rejected"
                 cosignature.save()
-                # Zurückweisung wirft die Vorlage zurück an die Sachbearbeitung
-                paper.status = "draft"
-                paper.approved_by = None
-                paper.approved_at = None
-                paper.approved_on_behalf_of = None
-                paper.save()
+                # Zurückweisung wirft die Vorlage zurück an die Sachbearbeitung (Drehscheibe, Issue #534)
+                with hub_events.track(self.session_tenant) as tracked:
+                    tracked.paper(paper)
+                    paper.status = "draft"
+                    paper.approved_by = None
+                    paper.approved_at = None
+                    paper.approved_on_behalf_of = None
+                    paper.save()
                 # Wie die Zurückweisung im Freigabelauf: Die Sachbearbeitung erfährt es per E-Mail
                 notify_creator_rejected(self.session_tenant, paper, comment, stelle=cosignature.department.name)
                 messages.success(

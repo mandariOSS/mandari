@@ -500,7 +500,11 @@ def restore(
     if version.paper_id != paper.pk:
         raise RestoreRefusedError("Die Fassung gehört zu einer anderen Vorlage.")
     notes: list[str] = []
-    with transaction.atomic():
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #534): Angaben und Anlagen der wiederhergestellten Fassung
+    with transaction.atomic(), hub_events.track(paper.tenant) as tracked:
+        tracked.paper(paper)
         latest = Version.objects.filter(paper=paper).order_by("-number").first()
         if latest is None or latest.fingerprint != current_fingerprint(paper):
             snapshot(

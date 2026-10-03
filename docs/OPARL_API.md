@@ -446,9 +446,9 @@ bzw. Session) – sonst bliebe er leer und täuschte Abnehmern vor, es habe sich
 Objekt sofort aus dem Bürgerportal zurück (nichtöffentlich gestellt, gelöscht, zurück in den Entwurf),
 markiert die Anwendung die Zeile im Bestand und meldet die Rücknahme selbst (`hub.ris.retraction`); der
 Ingestor findet sie beim nächsten Abgleich schon markiert vor und meldet sie nicht noch einmal.
-Mit `SESSION_EVENTS` meldet Session ihre Änderungen an Sitzungen und Tagesordnung zusätzlich sofort selbst
-(`docs/SESSION_EREIGNISSE.md`); bis der Spiegel abgelöst ist, kann der Feed ein Objekt dann zweimal nennen. Mit
-Docker Compose reicht `docker-compose.yml` die Schalter aus der `.env` an Anwendung und Worker durch.
+Mit `SESSION_EVENTS` meldet Session ihre Änderungen an Sitzungen, Tagesordnung, Vorlagen, Beratungsfolge und
+Anlagen zusätzlich sofort selbst (`docs/SESSION_EREIGNISSE.md`); bis der Spiegel abgelöst ist, kann der Feed ein
+Objekt dann zweimal nennen. Mit Docker Compose reicht `docker-compose.yml` die Schalter aus der `.env` an Anwendung und Worker durch.
 Ausgeschaltet gibt es die Adresse nicht, und kein Body weist auf sie hin. Das Journal muss seine Zeilen
 mindestens `OPARL_CHANGES_RETENTION_DAYS` Tage behalten; ein Aufräumen darf nie kürzer greifen und
 hält fest, was es gelöscht hat (`apps.events.pruning`) – nur daran erkennt der Feed, dass Abnehmern

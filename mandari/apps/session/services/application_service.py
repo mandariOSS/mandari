@@ -125,7 +125,10 @@ def convert_to_paper(
             raise ConversionError("Das gewählte federführende Gremium wurde nicht gefunden.")
 
     has_financial_impact, financial_impact_note = financial_impact(application)
-    with transaction.atomic():
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #534): ris.paper.created mit der Einreichung, Anhänge nichtöffentlich an der Vorlage
+    with transaction.atomic(), hub_events.track(tenant) as tracked:
         paper = SessionPaper.objects.create(
             tenant=tenant,
             name=(name or "").strip()[:500] or application.title,
@@ -142,6 +145,7 @@ def convert_to_paper(
             # Entwurf statt „Freigegeben“ (Issue #721): keine Freigabe am Freigabelauf vorbei
             status="draft",
         )
+        tracked.paper(paper, created=True)
         application.status = "converted"
         application.save(update_fields=["status", "updated_at"])
         # Anhänge des Antrags hängen jetzt auch an der Vorlage – nichtöffentlich, bis die
