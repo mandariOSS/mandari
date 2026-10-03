@@ -27,7 +27,7 @@ Unternummern (Ergänzung, Neufassung, Antwort …) hängen an der Nummer der Bez
 ``{parent}.{sub}`` ergibt „22-0593.1“, ``{parent}/{sub}`` ergibt „V/0599/2024/1“.
 
 Die Presets bilden verbreitete Praxis ab (Stand 09/2026, recherchiert an öffentlichen
-Ratsinformationssystemen): Hamburger Bezirksversammlungen zählen je Bezirk und Wahlperiode
+Ratsinformationssystemen): Bezirksversammlungen in Stadtstaaten zählen je Bezirk und Wahlperiode
 über alle Drucksachenarten; NRW-Kommunen meist je Jahr, oft mit Präfixen je Art.
 """
 
@@ -373,8 +373,8 @@ PRESETS: dict[str, Preset] = {
         "Vorlagen-Nr.",
         (Kreis("Vorlagen", "V/{jahr}/{lfd:4}", sub_pattern="{parent}/{sub}"),),
     ),
-    "hamburg_bezirk": Preset(
-        "Bezirksversammlung (Hamburg)",
+    "stadtstaat_bezirk": Preset(
+        "Bezirksversammlung (Stadtstaat)",
         "Ein Zähler je Bezirk und Wahlperiode über alle Drucksachenarten: 22-0593, Unternummern 22-0593.1.",
         "Drucksache",
         (Kreis("Drucksachen", "{wp}-{lfd:4}", reset="term", sub_pattern="{parent}.{sub}"),),

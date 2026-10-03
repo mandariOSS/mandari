@@ -360,7 +360,7 @@ class TestNummernkreise:
     def test_preset_laesst_kreise_einzelner_koerperschaften_unberuehrt(self) -> None:
         tenant, _, mitglied = _samtgemeinde()
         eigener = SessionNumberRange.objects.create(tenant=tenant, body=mitglied, name="MD", pattern="MD/{jahr}/{lfd}")
-        numbering_service.apply_preset(tenant, "hamburg_bezirk")
+        numbering_service.apply_preset(tenant, "stadtstaat_bezirk")
         eigener.refresh_from_db()
         assert eigener.is_active
         assert not SessionNumberRange.objects.filter(tenant=tenant, body__isnull=True, pattern="V/{jahr}/{lfd:4}")[

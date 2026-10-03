@@ -12,17 +12,17 @@
       },
       "gremienvorlage": "nrw_stadt"
     },
-    "hamburg_bezirk": {
-      "bezeichnung": "Bezirk in Hamburg (Bezirksversammlung)",
+    "stadtstaat_bezirk": {
+      "bezeichnung": "Bezirk eines Stadtstaats (Bezirksversammlung)",
       "koerperschaftstyp": "bezirk",
-      "nummernkreis": "hamburg_bezirk",
+      "nummernkreis": "stadtstaat_bezirk",
       "wahlperiode": {
         "name": "22. Wahlperiode",
         "nummer": 22,
         "beginn": "2024-06-09",
         "ende": "2029-06-30"
       },
-      "gremienvorlage": "hamburg_bezirk"
+      "gremienvorlage": "stadtstaat_bezirk"
     },
     "ni_samtgemeinde": {
       "bezeichnung": "Samtgemeinde in Niedersachsen",
@@ -137,7 +137,7 @@
         }
       ]
     },
-    "hamburg_bezirk": {
+    "stadtstaat_bezirk": {
       "bezeichnung": "Bezirksversammlung, Hauptausschuss",
       "gremien": [
         {

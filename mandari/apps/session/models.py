@@ -463,7 +463,7 @@ class SessionTenant(models.Model):
         help_text="Zeigt den Umsetzungsstand öffentlicher, angenommener Beschlüsse in Insight („Was wurde aus …?“)",
     )
     # Bezeichnung der Vorlagennummer in Oberfläche und Dokumenten (Nummernkreise, Issue #150):
-    # „Drucksache“ (Hamburger Bezirke), „Vorlagen-Nr.“ (NRW-Kommunen) …
+    # „Drucksache“ (Bezirksversammlungen), „Vorlagen-Nr.“ (NRW-Kommunen) …
     reference_label = models.CharField(
         max_length=40,
         default="Vorlagen-Nr.",
@@ -2984,8 +2984,8 @@ class SessionNumberRange(models.Model):
     Nummernkreis für Vorlagen bzw. Drucksachen eines Mandanten (Issue #150).
 
     Das Muster setzt sich aus Platzhaltern zusammen (siehe
-    ``services/numbering_service.py``): ``{wp}-{lfd:4}`` ergibt „22-0593“ (Hamburger
-    Bezirke), ``V/{lfd:4}/{jahr}`` ergibt „V/0599/2024“ (Münster). Der Zähler läuft je
+    ``services/numbering_service.py``): ``{wp}-{lfd:4}`` ergibt „22-0593“ (Bezirks-
+    versammlungen), ``V/{lfd:4}/{jahr}`` ergibt „V/0599/2024“ (Münster). Der Zähler läuft je
     Zählerbereich (Jahr, Wahlperiode oder nie zurückgesetzt) und wird atomar in
     ``SessionNumberCounter`` hochgezählt. Ein Kreis ohne ``paper_types`` gilt für alle
     Vorlagenarten, für die kein spezieller Kreis existiert.

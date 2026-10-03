@@ -10,7 +10,7 @@ Bürgerportal (Insight) und in die OParl-Schnittstelle:
    Bürgerportal und zeigt dort den Umsetzungsstand seiner Beschlüsse.
 2. Mandant B „Bezirksamt Musterstadt-Süd (Demo)“ zählt seine Drucksachen selbst (eigener Zähler).
 3. Die Leitstelle ist Administrator in A und B – daran lässt sich der Mandantenwechsel zeigen. Im Profil
-   hamburg bilden A und B zudem eine Mandantengruppe mit Leitstellen-Übersicht, und Haupt- und Bauausschuss
+   stadtstaat bilden A und B zudem eine Mandantengruppe mit Leitstellen-Übersicht, und Haupt- und Bauausschuss
    tagen in einer gemeinsamen Sitzung (Issue #317).
 4. Die Musterfraktion ist über einen Einreichungs-Token mit Mandant A verbunden.
 5. Drehbuch-Daten in A: Antrag im Entwurf (Work), kommende Sitzung mit Ö- und NÖ-Teil,
@@ -28,7 +28,7 @@ Das Passwort der Leitstelle wird beim Anlegen erzeugt und nur dann ausgegeben (n
 
 Verwendung:
     python manage.py setup_demo_praesentation                    # Profil nrw
-    python manage.py setup_demo_praesentation --profil hamburg
+    python manage.py setup_demo_praesentation --profil stadtstaat
     python manage.py setup_demo_praesentation --reset
 """
 
@@ -91,7 +91,7 @@ class Profil:
 
 
 PROFILE: dict[str, Profil] = {
-    "hamburg": Profil("hamburg_bezirk", "22. Wahlperiode", 22, date(2024, 6, 9)),
+    "stadtstaat": Profil("stadtstaat_bezirk", "22. Wahlperiode", 22, date(2024, 6, 9)),
     "nrw": Profil("nrw_verwaltung_politik", "Wahlperiode 2025–2030", 1, date(2025, 11, 1)),
 }
 
@@ -128,7 +128,7 @@ SITZUNG_B = "Regionalausschuss (Demo-Drehbuch)"
 SITZUNG_GEMEINSAM = "Gemeinsame Sitzung Haupt- und Bauausschuss (Demo-Drehbuch)"
 DREHBUCH_SITZUNGEN = (SITZUNG_KOMMEND, SITZUNG_VERGANGEN, SITZUNG_VORBERATUNG, SITZUNG_GEMEINSAM)
 
-#: Mandantengruppe mit Leitstelle (Issue #317), nur im Profil hamburg
+#: Mandantengruppe mit Leitstelle (Issue #317), nur im Profil stadtstaat
 GRUPPE_SLUG = "bezirke-musterstadt-demo"
 GRUPPE_NAME = "Bezirke Musterstadt (Demo)"
 TOP_VERKEHR = "Verkehrskonzept Innenstadt: gemeinsame Beratung"
@@ -254,7 +254,7 @@ VORLAGEN_B = (
     ),
 )
 
-#: Arbeitsvorrat für die Leitstellen-Übersicht (Profil hamburg): eine Vorlage in Prüfung mit Frist
+#: Arbeitsvorrat für die Leitstellen-Übersicht (Profil stadtstaat): eine Vorlage in Prüfung mit Frist
 VORLAGE_LEITSTELLE = Vorlage(
     "Sanierung der Stadtteilbibliothek Süd",
     "review",
@@ -287,7 +287,7 @@ class Welt:
     sitzung_vergangen: SessionMeeting
     top_jugendzentrum: SessionAgendaItem
     beschluss: SessionAgendaItem
-    #: Nur im Profil hamburg (Issue #317)
+    #: Nur im Profil stadtstaat (Issue #317)
     gruppe: SessionTenantGroup | None = None
     sitzung_gemeinsam: SessionMeeting | None = None
 
@@ -331,7 +331,7 @@ class Command(BaseCommand):
             "--profil",
             choices=sorted(PROFILE),
             default="nrw",
-            help="Nummernkreis und Wahlperiode: hamburg (Drucksache 22-0001) oder nrw (0001/2026, AN/0001/2026).",
+            help="Nummernkreis und Wahlperiode: stadtstaat (Drucksache 22-0001) oder nrw (0001/2026, AN/0001/2026).",
         )
         parser.add_argument(
             "--reset",
@@ -353,8 +353,8 @@ class Command(BaseCommand):
 
         profil_name = str(options["profil"])
         profil = PROFILE[profil_name]
-        # Mandantengruppe mit Leitstelle und gemeinsame Sitzung zeigt das Profil hamburg (Issue #317)
-        self.mit_gruppe = profil_name == "hamburg"
+        # Mandantengruppe mit Leitstelle und gemeinsame Sitzung zeigt das Profil stadtstaat (Issue #317)
+        self.mit_gruppe = profil_name == "stadtstaat"
         self.passwoerter: dict[str, str] = {}
         self.hinweise: list[str] = []
 
@@ -531,7 +531,7 @@ class Command(BaseCommand):
         self, mandanten: list[SessionTenant], nutzer: User, leitstelle_b: SessionUser
     ) -> SessionTenantGroup | None:
         """
-        Mandantengruppe beider Bezirke mit der Leitstelle (Profil hamburg, Issue #317).
+        Mandantengruppe beider Bezirke mit der Leitstelle (Profil stadtstaat, Issue #317).
 
         Die Leitstelle sieht auf einer Seite die Arbeitsvorräte beider Bezirke. In B liegt dafür eine
         Vorlage in Prüfung mit Frist. Andere Profile entfernen Gruppe und Vorlage wieder.
@@ -601,7 +601,7 @@ class Command(BaseCommand):
         self, mandant: SessionTenant, ha: SessionOrganization, bau: SessionOrganization, verwaltung: SessionUser
     ) -> SessionMeeting | None:
         """
-        Gemeinsame Sitzung von Haupt- und Bauausschuss (Profil hamburg, Issue #317).
+        Gemeinsame Sitzung von Haupt- und Bauausschuss (Profil stadtstaat, Issue #317).
 
         Hakan Heller sitzt in beiden Ausschüssen: Die Ladung nennt ihn einmal, er hat eine Stimme.
         """
@@ -1240,7 +1240,7 @@ class Command(BaseCommand):
         for bezeichnung, adresse in einstiege:
             self.stdout.write(f"  {bezeichnung + ':':<24}{adresse}")
 
-        nummer = "Drucksache 22-…" if profil_name == "hamburg" else "Vorlagen-Nr. AN/…/<Jahr>"
+        nummer = "Drucksache 22-…" if profil_name == "stadtstaat" else "Vorlagen-Nr. AN/…/<Jahr>"
         sitzung = link("session:meeting_detail", tenant_slug=a.slug, meeting_id=welt.sitzung_kommend.id)
         spickzettel = [
             f"1. Work – als {DEMO_USERS['vorsitz']['email']}: Work-Antrag öffnen → Symbol „Bei Verwaltung "

@@ -46,10 +46,10 @@ def _anlegen(*args: str) -> str:
     return out.getvalue()
 
 
-def _hamburg(*extra: str) -> str:
+def _stadtstaat(*extra: str) -> str:
     return _anlegen(
         "--profile",
-        "hamburg_bezirk",
+        "stadtstaat_bezirk",
         "--name",
         "Bezirksversammlung Musterbezirk",
         "--slug",
@@ -62,11 +62,11 @@ def _hamburg(*extra: str) -> str:
 
 class TestBefehl:
     def test_neuer_mandant_ist_arbeitsfaehig(self) -> None:
-        ausgabe = _hamburg("--ags", "02000000")
+        ausgabe = _stadtstaat("--ags", "05999001")
 
         tenant = SessionTenant.objects.get(slug="musterbezirk")
         assert tenant.name == "Bezirksversammlung Musterbezirk"
-        assert tenant.body_type == "bezirk" and tenant.ags == "02000000"
+        assert tenant.body_type == "bezirk" and tenant.ags == "05999001"
         assert set(tenant.roles.values_list("name", flat=True)) == STANDARDROLLEN
         # Nummernkreis je Wahlperiode, Wahlperiode mit Nummer, Start und Ende
         kreise = list(tenant.number_ranges.filter(is_active=True))
@@ -126,11 +126,11 @@ class TestBefehl:
         assert tenant.body_type == "stadt"
 
     def test_zweiter_lauf_ergaenzt_nur(self) -> None:
-        _hamburg()
+        _stadtstaat()
         tenant = SessionTenant.objects.get(slug="musterbezirk")
         tenant.roles.filter(name="Datenschutz").delete()
 
-        ausgabe = _hamburg("--ags", "02000000")
+        ausgabe = _stadtstaat("--ags", "05999001")
 
         assert set(tenant.roles.values_list("name", flat=True)) == STANDARDROLLEN
         assert tenant.roles.count() == len(STANDARDROLLEN)
@@ -140,10 +140,10 @@ class TestBefehl:
         assert len(mail.outbox) == 1, "keine zweite Einladung"
         assert "bestand bereits" in ausgabe and "offene Einladung besteht bereits" in ausgabe
         tenant.refresh_from_db()
-        assert tenant.ags == "02000000", "leere Angaben werden ergänzt"
+        assert tenant.ags == "05999001", "leere Angaben werden ergänzt"
 
     def test_pruefauf_speichert_nichts(self) -> None:
-        ausgabe = _hamburg("--dry-run")
+        ausgabe = _stadtstaat("--dry-run")
 
         assert "Prüflauf" in ausgabe and "angelegt" in ausgabe
         assert not SessionTenant.objects.filter(slug="musterbezirk").exists()
@@ -163,7 +163,7 @@ class TestBefehl:
     )
     def test_ungueltige_angaben(self, argumente: tuple[str, ...], meldung: str) -> None:
         basis = {
-            "--profile": "hamburg_bezirk",
+            "--profile": "stadtstaat_bezirk",
             "--name": "Bezirk",
             "--slug": "bezirk",
             "--admin-email": "a@example.org",
@@ -184,14 +184,14 @@ class TestBefehl:
     def test_reservierte_slugs_der_middleware_werden_abgelehnt(self, slug: str) -> None:
         """Dieselbe Liste wie SessionTenantMiddleware – auch „leitstelle“ aus Teil B (#317)."""
         with pytest.raises(CommandError, match="reserviert"):
-            _hamburg("--slug", slug)
+            _stadtstaat("--slug", slug)
 
         assert "leitstelle" in RESERVED_SLUGS
         assert not SessionTenant.objects.filter(slug=slug).exists()
 
-    def test_hamburg_ohne_nummer_der_wahlperiode_wird_abgelehnt(self) -> None:
+    def test_stadtstaat_ohne_nummer_der_wahlperiode_wird_abgelehnt(self) -> None:
         with pytest.raises(CommandError, match="Nummer der Wahlperiode"):
-            _hamburg("--term-name", "Eigene Periode", "--term-start", "2024-06-09", "--term-end", "2029-06-30")
+            _stadtstaat("--term-name", "Eigene Periode", "--term-start", "2024-06-09", "--term-end", "2029-06-30")
 
     def test_eigene_wahlperiode_ohne_gremien(self) -> None:
         _anlegen(
@@ -222,7 +222,7 @@ class TestBefehl:
     def test_presets_anzeigen(self) -> None:
         ausgabe = _anlegen("--list-presets")
 
-        assert "hamburg_bezirk" in ausgabe and "nrw_stadt" in ausgabe
+        assert "stadtstaat_bezirk" in ausgabe and "nrw_stadt" in ausgabe
         assert "Bezirksversammlung, Hauptausschuss" in ausgabe
         assert "nrw_verwaltung_politik" in ausgabe and "Kreisfreie Stadt" in ausgabe
 
@@ -284,14 +284,14 @@ class TestService:
 
     def test_oparl_body_nennt_koerperschaftstyp_und_ags(self) -> None:
         tenant = SessionTenant.objects.create(
-            name="Bezirk Ost", slug="ost", body_type="bezirk", ags="02000000", oparl_public_since=timezone.now()
+            name="Bezirk Ost", slug="ost", body_type="bezirk", ags="05999001", oparl_public_since=timezone.now()
         )
         ohne = SessionTenant.objects.create(name="Alt", slug="alt-ohne", oparl_public_since=timezone.now())
 
         body = Client().get(f"/session/{tenant.slug}/api/oparl/body/").json()
         alt = Client().get(f"/session/{ohne.slug}/api/oparl/body/").json()
 
-        assert body["classification"] == "Bezirk" and body["ags"] == "02000000"
+        assert body["classification"] == "Bezirk" and body["ags"] == "05999001"
         assert alt["classification"] == "Kommune" and "ags" not in alt
 
     def test_build_spec_ausdrueckliche_werte_vor_profil(self) -> None:
@@ -302,7 +302,7 @@ class TestService:
             slug="bezirk",
             admin_email="A@Example.org",
             catalog=katalog,
-            profile="hamburg_bezirk",
+            profile="stadtstaat_bezirk",
             term_end=date(2029, 5, 31),
             committees="",
         )
@@ -342,12 +342,12 @@ class TestAdminAssistent:
         assert antwort.status_code == 302 and antwort["Location"] == self.URL
 
     def test_profil_belegt_vor(self, superuser: Client) -> None:
-        antwort = superuser.get(self.URL, {"profil": "hamburg_bezirk"})
+        antwort = superuser.get(self.URL, {"profil": "stadtstaat_bezirk"})
 
         form = antwort.context["form"]
-        assert form.initial["numbering"] == "hamburg_bezirk"
+        assert form.initial["numbering"] == "stadtstaat_bezirk"
         assert form.initial["term_number"] == 22
-        assert form.initial["committees"] == "hamburg_bezirk"
+        assert form.initial["committees"] == "stadtstaat_bezirk"
         assert "22. Wahlperiode" in antwort.content.decode()
 
     def test_legt_mandanten_an(self, superuser: Client) -> None:
@@ -357,12 +357,12 @@ class TestAdminAssistent:
                 "name": "Bezirksversammlung Nord",
                 "slug": "nord",
                 "body_type": "bezirk",
-                "numbering": "hamburg_bezirk",
+                "numbering": "stadtstaat_bezirk",
                 "term_name": "22. Wahlperiode",
                 "term_number": "22",
                 "term_start": "2024-06-09",
                 "term_end": "2029-06-30",
-                "committees": "hamburg_bezirk",
+                "committees": "stadtstaat_bezirk",
                 "admin_email": "nord@example.org",
             },
         )
@@ -381,7 +381,7 @@ class TestAdminAssistent:
         daten = {
             "name": "Bezirk",
             "slug": "bezirk",
-            "numbering": "hamburg_bezirk",
+            "numbering": "stadtstaat_bezirk",
             "term_name": "Eigene",
             "term_start": "2024-06-09",
             "term_end": "2029-06-30",

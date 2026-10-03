@@ -2,7 +2,7 @@
 """
 Demo-Drehbuch im Browser: eine Drucksache von der Fraktion bis ins Bürgerportal.
 
-Spielt die Präsentationsumgebung (``setup_demo_praesentation --profil hamburg``) so durch, wie sie
+Spielt die Präsentationsumgebung (``setup_demo_praesentation --profil stadtstaat``) so durch, wie sie
 vorgeführt wird – jede Rolle in einem eigenen Browser-Kontext:
 
 1. Der Fraktionsvorsitz reicht den Work-Antrag bei der Verwaltung ein → Eingangsnummer.
@@ -80,7 +80,7 @@ def praesentation(settings: Any, tmp_path: Path) -> None:
     """Präsentationsumgebung in der Testdatenbank, Passwörter der vorführenden Nutzer bekannt."""
     settings.MEDIA_ROOT = str(tmp_path / "media")
     settings.OPARL_API_RATE_LIMIT = 0
-    call_command("setup_demo_praesentation", "--profil", "hamburg", stdout=StringIO())
+    call_command("setup_demo_praesentation", "--profil", "stadtstaat", stdout=StringIO())
     for email in (DEMO_USERS["vorsitz"]["email"], DEMO_USERS["verwaltung"]["email"], drehbuch.LEITSTELLE["email"]):
         nutzer = User.objects.get(email=email)
         nutzer.set_password(PASSWORT)

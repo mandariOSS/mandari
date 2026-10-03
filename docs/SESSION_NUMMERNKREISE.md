@@ -10,7 +10,7 @@ vergeben. Einstellungen → **Nummernkreise** legt fest, wie sie aussieht und wa
 
 | Begriff | Bedeutung |
 |---|---|
-| **Vorlagen- bzw. Drucksachennummer** | Öffentliche Nummer einer Vorlage (`reference`, OParl `reference`). Die Bezeichnung ist je Mandant einstellbar: „Drucksache“ (Hamburger Bezirke), „Vorlagen-Nr.“ (NRW-Kommunen). |
+| **Vorlagen- bzw. Drucksachennummer** | Öffentliche Nummer einer Vorlage (`reference`, OParl `reference`). Die Bezeichnung ist je Mandant einstellbar: „Drucksache“ (Bezirksversammlungen), „Vorlagen-Nr.“ (NRW-Kommunen). |
 | **Eingangsnummer** | Interne Nummer eines Antrags beim Eingang (`A/<Jahr>/0001`), unabhängig von der Drucksachennummer. |
 | **Unternummer** | Ergänzung, Neufassung, Änderungsantrag, Antwort oder Beschlussempfehlung zu einer Vorlage, z. B. `22-0593.1` oder `V/0599/2026/1`. |
 | **Zählerbereich** | Wann der Zähler neu beginnt: jährlich, je Wahlperiode oder nie. |
@@ -37,7 +37,7 @@ Recherchiert an öffentlichen Ratsinformationssystemen (Stand 09/2026):
 
 | Preset | Beispiel | Zählerbereich |
 |---|---|---|
-| Bezirksversammlung (Hamburg) | `22-0593`, Unternummer `22-0593.1`; ein Zähler je Bezirk über alle Drucksachenarten | Wahlperiode |
+| Bezirksversammlung (Stadtstaat) | `22-0593`, Unternummer `22-0593.1`; ein Zähler je Bezirk über alle Drucksachenarten | Wahlperiode |
 | Verwaltung und Politik getrennt (z. B. Köln) | `1344/2026`, `AN/1492/2026`, Fortschreibung `/1` | Jahr |
 | Präfix je Vorlagenart (z. B. Münster) | `V/0599/2026`, `A/0012/2026`, `AF/0003/2026` | Jahr |
 | VO mit zweistelligem Jahr (z. B. Wuppertal) | `VO/1044/26`, `VO/1044/26/1` | Jahr |
@@ -46,12 +46,12 @@ Recherchiert an öffentlichen Ratsinformationssystemen (Stand 09/2026):
 | Standard | `V/2026/0001` | Jahr |
 
 Mehrere Bezirke einer Stadt sind je ein eigener Mandant mit eigenem Zähler – so wie in
-Hamburg jede Bezirksversammlung ihre Drucksachen unabhängig nummeriert.
+einem Stadtstaat jede Bezirksversammlung ihre Drucksachen unabhängig nummeriert.
 
 ## Zeitpunkt der Vergabe
 
 - **Beim Anlegen:** Die Nummer entsteht mit dem ersten Speichern (Anträge der Politik,
-  Hamburger Drucksachen).
+  Drucksachen der Bezirksversammlungen).
 - **Bei der Freigabe:** Entwürfe bleiben ohne Nummer („Nummer folgt“) und erhalten sie erst mit
   der Freigabe. Verworfene Entwürfe hinterlassen keine Lücken.
 
@@ -60,7 +60,7 @@ bekommt sofort seine Nummer aus dem Kreis seiner Art (z. B. `AN/…`).
 
 ## Umstieg aus einem Altsystem
 
-1. Preset wählen und bei Hamburger Mustern die Wahlperiode mit Nummer pflegen.
+1. Preset wählen und bei Mustern mit Wahlperiode (`{wp}`) die Wahlperiode mit Nummer pflegen.
 2. Beim Kreis „Nächste laufende Nummer setzen“: zuletzt im Altsystem vergebene Nummer + 1
    (z. B. `2615`, wenn dort bis `22-2614` vergeben ist). Der Zähler lässt sich nur erhöhen.
 3. Altbestände mit ihrer Originalnummer übernehmen: Nutzer mit Einstellungsrecht dürfen beim
