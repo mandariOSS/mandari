@@ -17,7 +17,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("session", "0053_dcat_kennung"),
+        ("session", "0055_landesprofile_hybridregel"),
     ]
 
     operations = [
