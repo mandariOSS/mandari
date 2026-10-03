@@ -92,24 +92,32 @@ Die öffentliche Fassung der Niederschrift ist keine Anlage in diesem Sinn; sie 
 | Abstimmung erfassen (Erfassung, Sitzungscockpit, Niederschrift bearbeiten) | `ris.voting.recorded` (Art und Ergebnis, nie Einzelstimmen) bei angenommen/abgelehnt, dazu `ris.resolution.adopted` (`changed: [result]`) |
 | Nur Summen korrigiert | `ris.voting.recorded` |
 | Vertagen, zurückziehen, zur Kenntnis nehmen | `ris.resolution.adopted` ohne Abstimmung |
-| Ergebnis zurücknehmen (wieder offen) | `ris.object.depublished` der Abstimmung (`zurueckgenommen`, nur wenn sie öffentlich war) und `ris.agendaitem.changed` (`result`) |
+| Ergebnis zurücknehmen (wieder offen bzw. ohne Abstimmung) | `ris.object.depublished` der Abstimmung (`zurueckgenommen`, nur wenn sie öffentlich war) und `ris.agendaitem.changed` (`result`) bzw. `ris.resolution.adopted` |
+| TOP bzw. Sitzung nach der Abstimmung nichtöffentlich, TOP gelöscht | mit dem TOP auch seine Abstimmung als `ris.object.depublished` (`nichtoeffentlich` bzw. `quelle_geloescht`) |
+| TOP mit Abstimmung wird veröffentlicht | mit dem TOP (`added`) `ris.voting.recorded` (öffentlich) |
 | Beschlussnummern vergeben | `ris.resolution.adopted` (`changed: [resolutionNumber]`) |
-| Beschlusskontrolle | `ris.resolution.implementation_changed` (öffentlich, nur bei zur Veröffentlichung freigegebener Umsetzung), sonst `ris.agendaitem.changed` (`implementationStatus`, intern) |
+| Beschlusskontrolle | `ris.resolution.implementation_changed` (öffentlich), wenn der Umsetzungsstand nach der Regel der Beschlussseiten im Bürgerportal öffentlich ist: Opt-in der Verwaltung (`SessionTenant.implementation_publish`) und am Beschluss, angenommen, nicht abgesetzt, öffentlicher TOP, Mandant veröffentlicht im Bürgerportal (`decision_tracking.is_publicly_visible`). Sonst `ris.agendaitem.changed` (`implementationStatus`, intern). Wird der Stand öffentlich (Freigabe, Annahme), ist er für die Öffentlichkeit neu; endet das bei weiter veröffentlichtem TOP, meldet `ris.agendaitem.changed` (`implementationStatus`, öffentlich), dass sie den TOP neu lesen soll |
 | Niederschrift anlegen, zur Prüfung geben, zurückweisen | `ris.meeting.changed` (`protocol`, intern) |
-| Niederschrift genehmigen bzw. ohne Genehmigungsschritt veröffentlichen | `ris.protocol.approved` (intern, `mode` `follow_up` mit `approved_in` oder `direct`) |
+| Niederschrift genehmigen | `ris.protocol.approved` (intern, `mode: follow_up`, mit `approved_in`, wenn die Genehmigungssitzung gewählt ist) |
+| Niederschrift ohne Genehmigungsschritt veröffentlichen (aus der Prüfung) | `ris.protocol.approved` (intern, `mode: direct`), dazu `ris.protocol.published` |
 | Öffentliche Fassung veröffentlichen, erneuern, nach einer Berichtigung neu erzeugen | `ris.protocol.published` (`published`, `renewed`, `corrected`) mit der Datei; eine ersetzte Fassung als `ris.object.depublished` |
+| Öffentlichen Inhalt nach der Veröffentlichung ändern (TOP nichtöffentlich, Sitzung umbenannt …) | nach dem Commit erneuert `refresh_meeting` die Fassung in eigener Erfassung: `ris.protocol.published` (`renewed`) und `ris.object.depublished` der alten Datei |
 | Veröffentlichung zurücknehmen (auch wenn die Sitzung nichtöffentlich wird) | `ris.object.depublished` der Datei (`zurueckgenommen`) und `ris.meeting.changed` (`resultsProtocol`) |
 | Berichtigung übernehmen | wie Abstimmung und Beschluss für die berichtigten TOPs |
 
 Die Abstimmung hat in Session keine eigene Adresse: Ihre Kennung bildet sich aus der Adresse des TOP mit dem
-Zusatz `voting`; im Änderungsfeed erscheint sie am TOP. Die Niederschrift (`protocol`) nennen die Ereignisse mit
-ihrer Kennung in Session. Eine Niederschrift ohne öffentliche Fassung (nichtöffentliche Sitzung) meldet nichts
-Öffentliches.
+Zusatz `voting`; im Änderungsfeed erscheint sie am TOP. Ebenso die Niederschrift (`protocol`): Adresse der
+Sitzung mit dem Zusatz `protocol`, nie die interne Kennung. Eine Niederschrift ohne öffentliche Fassung
+(nichtöffentliche Sitzung, Schnittstelle nicht freigeschaltet) meldet nichts Öffentliches.
+
+Umlaufbeschlüsse (`SessionCircularResolution`) melden noch nichts: `ris.resolution.adopted` verlangt einen
+Tagesordnungspunkt und kann sie nicht ausdrücken. Dafür braucht es eine Erweiterung des Vertrags.
 
 Nicht gemeldet, weil das kanonische Modell es nicht kennt: interne Notizen, Zugangsweg der
 Zugeschalteten, Einladungstext, tatsächliche Zeiten im Sitzungsverlauf, Unterpunkt-Zuordnung,
-Geheimhaltungsmerkmal, Frist, federführendes Amt, finanzielle Auswirkungen, Mitzeichnungen. Speichern ohne Änderung
-meldet nichts, ebenso eine ersetzte Anlage mit gleichem Inhalt.
+Geheimhaltungsmerkmal, Frist, federführendes Amt, finanzielle Auswirkungen, Mitzeichnungen, Umlaufbeschlüsse (siehe
+oben). Speichern ohne Änderung meldet nichts, ebenso eine ersetzte Anlage mit gleichem Inhalt. Umschalten am
+Mandanten (Freischaltung, Veröffentlichung des Umsetzungsstands) meldet ebenfalls nichts.
 
 ## Kennungen und Hülle
 
@@ -119,7 +127,8 @@ meldet nichts, ebenso eine ersetzte Anlage mit gleichem Inhalt.
 - Mandant `session:<uuid>`, `body_id` die kanonische Kennung des Body der Schnittstelle (bis #758 einer je
   Mandant). Damit nennt der Änderungsfeed der Session-Schnittstelle und des Aggregators die Ereignisse.
 - Ausnahme: `submission` in `ris.paper.created` ist die Kennung der Einreichung in Session (wie in `submission.*`).
-- Auslöser ist das angemeldete Konto (`user:<uuid>`), nie ein Name.
+- Auslöser ist das angemeldete Konto (`user:<uuid>`), nie ein Name; im Befehl
+  `session_publish_protocols` `system:niederschriften` mit einer Korrelation für den ganzen Lauf.
 - Ausnahme: `dispatch` in `ris.meeting.invited` ist die Kennung des Versandvorgangs in Session (kein
   Objekt des kanonischen Modells).
 

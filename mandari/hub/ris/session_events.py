@@ -188,7 +188,8 @@ class AgendaItemState:
     #: Ergebnis, Abstimmung, Beschlussnummer, Umsetzung (``DECISION_FIELDS``) und die Beratung des TOP
     decision: Mapping[str, Any] = field(default_factory=dict)
     consultation_id: uuid.UUID | None = None
-    #: Ist die Umsetzung zur Veröffentlichung freigegeben (Beschlusskontrolle, Issue #48)?
+    #: Ist der Umsetzungsstand öffentlich? Nach der Regel der Beschlusskontrolle (Issue #48): Opt-in der Verwaltung
+    #: am Mandanten und am Beschluss, angenommen, nicht abgesetzt, öffentlicher TOP einer öffentlichen Sitzung
     implementation_public: bool = False
 
     @property
@@ -245,12 +246,15 @@ def meeting_state(meeting: Any, *, is_published: Callable[[Any], bool]) -> Meeti
     return MeetingState(id=meeting.pk, publicity=publicity, fields=fields, organizations=organizations)
 
 
-def agenda_item_state(item: Any, *, is_published: Callable[[Any], bool]) -> AgendaItemState:
+def agenda_item_state(
+    item: Any, *, is_published: Callable[[Any], bool], implementation_public: Callable[[Any], bool]
+) -> AgendaItemState:
     """
     Zustand eines Tagesordnungspunkts (``SessionAgendaItem`` mit geladener Sitzung und Vorlage).
 
     ``is_published`` ist die Veröffentlichungsregel von Session (``SessionSource.is_published``), angewandt auf
-    den Punkt und auf seine Vorlage.
+    den Punkt und auf seine Vorlage; ``implementation_public`` die Regel der Beschlusskontrolle, ob der
+    Umsetzungsstand des Punkts öffentlich ist.
     """
     paper = item.paper if item.paper_id else None
     fields = {
@@ -283,7 +287,7 @@ def agenda_item_state(item: Any, *, is_published: Callable[[Any], bool]) -> Agen
         paper_published=bool(paper is not None and is_published(paper)),
         decision=decision,
         consultation_id=consultation.pk if consultation is not None else None,
-        implementation_public=bool(getattr(item, "implementation_public", False)),
+        implementation_public=bool(implementation_public(item)),
     )
 
 
@@ -463,6 +467,9 @@ class ProtocolState:
     approval_meeting_id: uuid.UUID | None = None
     #: Zuletzt übernommene Berichtigung: Entsteht danach eine neue Fassung, ist sie berichtigt, sonst erneuert
     last_correction_at: Any = None
+    #: Liefert die Schnittstelle des Mandanten überhaupt aus (Freischaltung, Issue #319)? Sonst ist auch die
+    #: öffentliche Fassung nicht öffentlich
+    interface_open: bool = True
 
     @property
     def approved(self) -> bool:
@@ -470,11 +477,16 @@ class ProtocolState:
 
     @property
     def published(self) -> bool:
-        return self.status == "published" and self.file_id is not None
+        """Gibt es eine öffentliche Fassung, die die Schnittstelle ausliefert (bzw. bei öffentlicher Sitzung)?"""
+        return self.interface_open and self.status == "published" and self.file_id is not None
 
 
-def protocol_state(protocol: Any) -> ProtocolState:
-    """Zustand einer Niederschrift (``SessionProtocol``); ``last_correction_at`` setzt der Aufrufer, wenn bekannt."""
+def protocol_state(protocol: Any, *, interface_open: bool) -> ProtocolState:
+    """
+    Zustand einer Niederschrift (``SessionProtocol``); ``last_correction_at`` setzt der Aufrufer, wenn bekannt.
+
+    ``interface_open``: Ist die Schnittstelle des Mandanten freigeschaltet (sonst ist nichts öffentlich)?
+    """
     public_file = protocol.public_file if protocol.public_file_id else None
     return ProtocolState(
         id=protocol.pk,
@@ -484,6 +496,7 @@ def protocol_state(protocol: Any) -> ProtocolState:
         file_created_at=public_file.created_at if public_file is not None else None,
         approval_meeting_id=protocol.approval_meeting_id,
         last_correction_at=getattr(protocol, "last_correction_at", None),
+        interface_open=interface_open,
     )
 
 
@@ -623,6 +636,14 @@ class SessionEvents:
             drafts.extend(self._decision(before.get(key), after.get(key)))
         return drafts
 
+    def protocol_id(self, meeting_pk: Any) -> uuid.UUID:
+        """
+        Kennung der Niederschrift einer Sitzung (Erweiterung des Modells): Session führt je Sitzung eine; ihre
+        Kennung bildet sich wie die der Abstimmung aus der Adresse der Sitzung mit dem Zusatz ``protocol``. So nennt
+        ein öffentliches Ereignis keine interne Kennung der (nichtöffentlichen) Niederschrift.
+        """
+        return self.uris.canonical_id(f"{self.uris.obj('meeting', meeting_pk)}protocol")
+
     def voting_id(self, item_pk: Any) -> uuid.UUID:
         """
         Kennung der Abstimmung zu einem TOP (Erweiterung des Modells): Session führt je TOP eine Abstimmung; ihre
@@ -633,17 +654,24 @@ class SessionEvents:
     def _decision(self, before: AgendaItemState | None, after: AgendaItemState | None) -> list[Draft]:
         """
         Beschlussfassung am TOP: Abstimmung (``ris.voting.recorded``), Beschluss bzw. Beschlussnummer
-        (``ris.resolution.adopted``), Umsetzung (``ris.resolution.implementation_changed``) und die Rücknahme
-        eines festgestellten Ergebnisses.
+        (``ris.resolution.adopted``), Umsetzung (``ris.resolution.implementation_changed``) und Rücknahmen.
+
+        Die Abstimmung ist ein eigenes Aggregat und so öffentlich wie ihr TOP: Wird er veröffentlicht, ist sie für
+        die Öffentlichkeit neu; endet seine Veröffentlichung (auch mit der Sitzung), wird er gelöscht oder das
+        Ergebnis zurückgenommen, wird sie zurückgenommen – wie Ort, Stationen und Anlagen mit ihrem Träger.
         """
-        if before is None or after is None:
-            # Ein neuer TOP trägt noch keinen Beschluss; ein gelöschter meldet seine Rücknahme selbst
+        if before is None:
+            # Ein neuer TOP trägt noch keinen Beschluss
+            return []
+        voting = self.voting_id(before.id)
+        result_old = before.decision.get("result", PENDING)
+        if after is None:
+            # Der gelöschte TOP meldet seine Rücknahme selbst; eine öffentlich bekannte Abstimmung geht mit ihm
+            if before.published and result_old in VOTED_RESULTS:
+                return retraction.drafts("Voting", voting, retraction.REASON_DELETED_AT_SOURCE)
             return []
         old = before.decision
         new = after.decision
-        if not new or old == new:
-            return []
-        result_old = old.get("result", PENDING)
         result_new = new.get("result", PENDING)
         public = after.published
         visibility = Visibility.OEFFENTLICH if public else Visibility.NICHTOEFFENTLICH
@@ -654,47 +682,63 @@ class SessionEvents:
         if paper is not None:
             base["paper"] = str(self.ref("paper", paper))
 
-        if result_new != PENDING:
-            vote_changed = any(old.get(name) != new.get(name) for name in ("result", "votingMethod", "votes"))
-            if result_new in VOTED_RESULTS and vote_changed:
-                payload = {
-                    "voting": str(self.voting_id(after.id)),
-                    **base,
-                    "method": new.get("votingMethod") or "summary",
-                    "result": result_new,
-                }
-                drafts.append(
-                    Draft(VOTING_RECORDED, "Voting", self.voting_id(after.id), visibility, Operation.UPSERT, payload)
-                )
-            changed = [name for name in ("result", "resolutionNumber") if old.get(name) != new.get(name)]
-            if changed:
-                payload = {**base, "result": result_new, "changed": changed}
-                consultation = after.consultation_id
-                if consultation is not None and (not public or after.paper_published):
-                    payload["consultation"] = str(self.ref("consultation", consultation))
-                drafts.append(Draft(RESOLUTION_ADOPTED, "AgendaItem", item, visibility, Operation.UPSERT, payload))
-        elif result_old != PENDING:
-            # Rücknahme eines festgestellten Ergebnisses: Wer die Abstimmung öffentlich kannte, erfährt sie als
-            # Rücknahme; der TOP selbst hat sich geändert (Ergebnis offen)
-            if before.published and result_old in VOTED_RESULTS:
-                drafts.extend(retraction.drafts("Voting", self.voting_id(after.id), retraction.REASON_WITHDRAWN))
-            changed = [name for name in ("result", "resolutionNumber") if old.get(name) != new.get(name)]
+        # Abstimmung: öffentlich bekannt nur mit veröffentlichtem TOP und einem Ergebnis aus einer Abstimmung
+        vote_changed = any(old.get(name) != new.get(name) for name in ("result", "votingMethod", "votes"))
+        vote_public_before = before.published and result_old in VOTED_RESULTS
+        vote_public_after = public and result_new in VOTED_RESULTS
+        if vote_public_before and not vote_public_after:
+            # TOP nicht mehr veröffentlicht oder Ergebnis zurückgenommen (offen bzw. ohne Abstimmung)
+            reason = retraction.REASON_WITHDRAWN if public else retraction.REASON_NOT_PUBLIC
+            drafts.extend(retraction.drafts("Voting", voting, reason))
+        if result_new in VOTED_RESULTS and (vote_changed or (vote_public_after and not vote_public_before)):
+            payload = {
+                "voting": str(voting),
+                **base,
+                "method": new.get("votingMethod") or "summary",
+                "result": result_new,
+            }
+            drafts.append(Draft(VOTING_RECORDED, "Voting", voting, visibility, Operation.UPSERT, payload))
+
+        # Beschluss: gefasst bzw. Beschlussnummer vergeben; ein zurückgenommenes Ergebnis ändert den TOP
+        changed = [name for name in ("result", "resolutionNumber") if old.get(name) != new.get(name)]
+        if changed and result_new != PENDING:
+            payload = {**base, "result": result_new, "changed": changed}
+            consultation = after.consultation_id
+            if consultation is not None and (not public or after.paper_published):
+                payload["consultation"] = str(self.ref("consultation", consultation))
+            drafts.append(Draft(RESOLUTION_ADOPTED, "AgendaItem", item, visibility, Operation.UPSERT, payload))
+        elif changed and result_old != PENDING:
             drafts.append(self._item_draft(after, "changed", changed, public))
 
-        status_old, status_new = old.get("implementationStatus", ""), new.get("implementationStatus", "")
-        if status_new != status_old and status_new in IMPLEMENTATION_STATUSES:
-            if public and after.implementation_public:
-                payload = {"agenda_item": str(item), "status": status_new}
-                if status_old in IMPLEMENTATION_STATUSES:
-                    payload["previous_status"] = status_old
-                if "paper" in base:
-                    payload["paper"] = base["paper"]
-                drafts.append(
-                    Draft(IMPLEMENTATION_CHANGED, "AgendaItem", item, Visibility.OEFFENTLICH, Operation.UPSERT, payload)
-                )
-            else:
-                drafts.append(self._item_draft(after, "changed", ["implementationStatus"], False))
+        drafts.extend(self._implementation(before, after, base))
         return drafts
+
+    def _implementation(self, before: AgendaItemState, after: AgendaItemState, base: Mapping[str, Any]) -> list[Draft]:
+        """
+        Umsetzungsstand (Beschlusskontrolle): öffentlich nur nach deren Regel (``implementation_public``), sonst
+        intern. Wird er öffentlich, ist er für die Öffentlichkeit neu; endet das bei weiter veröffentlichtem TOP,
+        liest die Öffentlichkeit den TOP neu (``ris.agendaitem.changed`` mit ``implementationStatus``).
+        """
+        status_old = before.decision.get("implementationStatus", "")
+        status_new = after.decision.get("implementationStatus", "")
+        shown_before = before.published and before.implementation_public and status_old in IMPLEMENTATION_STATUSES
+        shown_after = after.published and after.implementation_public and status_new in IMPLEMENTATION_STATUSES
+        if shown_after and (status_new != status_old or not shown_before):
+            payload: dict[str, Any] = {"agenda_item": base["agenda_item"], "status": status_new}
+            if shown_before:
+                payload["previous_status"] = status_old
+            if "paper" in base:
+                payload["paper"] = base["paper"]
+            item = self.ref("agendaitem", after.id)
+            return [
+                Draft(IMPLEMENTATION_CHANGED, "AgendaItem", item, Visibility.OEFFENTLICH, Operation.UPSERT, payload)
+            ]
+        if shown_before and not shown_after and after.published:
+            # Freigabe zurückgenommen bzw. Beschluss nicht mehr angenommen: kein öffentlicher Stand mehr
+            return [self._item_draft(after, "changed", ["implementationStatus"], True)]
+        if status_new != status_old:
+            return [self._item_draft(after, "changed", ["implementationStatus"], False)]
+        return []
 
     # -- Niederschrift -----------------------------------------------------------------------------
 
@@ -721,12 +765,15 @@ class SessionEvents:
                     Draft(MEETING_CHANGED, "Meeting", meeting, Visibility.NICHTOEFFENTLICH, Operation.UPSERT, changed)
                 )
             elif before is None or not before.approved:
-                payload: dict[str, Any] = {"protocol": str(after.id), "meeting": str(meeting)}
-                if after.approval_meeting_id is not None:
-                    payload["mode"] = "follow_up"
-                    payload["approved_in"] = str(self.ref("meeting", after.approval_meeting_id))
-                else:
+                payload: dict[str, Any] = {"protocol": str(self.protocol_id(after.meeting_id)), "meeting": str(meeting)}
+                if after.status == "published":
+                    # Aus der Prüfung direkt veröffentlicht: ohne Genehmigungsschritt
                     payload["mode"] = "direct"
+                else:
+                    # Genehmigt (Genehmigung in der Folgesitzung), die Sitzung nur, wenn sie gewählt ist
+                    payload["mode"] = "follow_up"
+                    if after.approval_meeting_id is not None:
+                        payload["approved_in"] = str(self.ref("meeting", after.approval_meeting_id))
                 drafts.append(
                     Draft(PROTOCOL_APPROVED, "Meeting", meeting, Visibility.NICHTOEFFENTLICH, Operation.UPSERT, payload)
                 )
@@ -744,7 +791,7 @@ class SessionEvents:
             else:
                 return drafts
             payload = {
-                "protocol": str(after.id),
+                "protocol": str(self.protocol_id(after.meeting_id)),
                 "meeting": str(meeting),
                 "change": change,
                 "file": str(self.ref("file", after.file_id)),

@@ -226,12 +226,14 @@ def publish(
     user: SessionUser | None = None,
     force: bool = False,
     text: str | None = None,
+    pdf: bytes | None = None,
 ) -> SessionFile | None:
     """
     Öffentliche Fassung erzeugen oder aktualisieren (idempotent).
 
     Nicht veröffentlichte Niederschriften und nichtöffentliche Sitzungen haben keine öffentliche
     Fassung – eine vorhandene wird zurückgenommen. Ist der Text unverändert, bleibt die Datei.
+    ``text`` und ``pdf`` übergibt, wer sie schon vor dem ersten Schreiben erzeugt hat (kurze Transaktion).
 
     Returns:
         Die aktuelle öffentliche Datei oder None.
@@ -244,7 +246,7 @@ def publish(
     # Drehscheibe (Issue #535): veröffentlicht, erneuert oder berichtigt (ris.protocol.published)
     with hub_events.track(protocol.meeting.tenant) as tracked:
         tracked.protocol(protocol.meeting)
-        return _publish(protocol, user=user, force=force, text=text)
+        return _publish(protocol, user=user, force=force, text=text, pdf=pdf)
 
 
 def _publish(
@@ -253,6 +255,7 @@ def _publish(
     user: SessionUser | None,
     force: bool,
     text: str | None,
+    pdf: bytes | None,
 ) -> SessionFile | None:
     text = public_text(protocol) if text is None else text
     current = _current_file(protocol)
@@ -265,7 +268,8 @@ def _publish(
     ):
         return current
 
-    pdf = protocol_service.build_protocol_pdf(protocol, internal=False)
+    if pdf is None:
+        pdf = protocol_service.build_protocol_pdf(protocol, internal=False)
     with transaction.atomic():
         new = SessionFile(
             tenant_id=protocol.meeting.tenant_id,
@@ -326,12 +330,20 @@ def _refresh(protocol: SessionProtocol) -> None:
     unchanged = current is not None and text is not None and current.is_public and current.text_content == text
     if unchanged:
         return
+    # Das PDF entsteht vor dem ersten Schreiben: Die Transaktion (mit den Ereignissen) bleibt kurz und hält den
+    # Sequenzierer nicht für die Dauer der Erzeugung auf
+    pdf = None
+    if text is not None:
+        try:
+            pdf = protocol_service.build_protocol_pdf(protocol, internal=False)
+        except Exception:
+            logger.exception("Öffentliche Fassung der Niederschrift %s konnte nicht erzeugt werden", protocol.pk)
     if current is not None:
         withdraw(protocol)
-    if text is None:
+    if text is None or pdf is None:
         return
     try:
-        publish(protocol, text=text)
+        publish(protocol, text=text, pdf=pdf)
     except Exception:
         logger.exception("Öffentliche Fassung der Niederschrift %s konnte nicht erneuert werden", protocol.pk)
 

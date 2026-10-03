@@ -141,6 +141,16 @@ class Reader:
         """Liefert die Schnittstelle das Objekt aus (``oparl_publication``, nur bei freigeschalteter Schnittstelle)?"""
         return self.open and oparl_publication._is_published(obj)
 
+    def implementation_public(self, item: Any) -> bool:
+        """
+        Ist der Umsetzungsstand des Beschlusses öffentlich? Dieselbe Regel wie die Beschlussseiten im Bürgerportal
+        (``decision_tracking``): Opt-in der Verwaltung am Mandanten und am Beschluss, angenommen, nicht abgesetzt,
+        öffentlicher TOP einer öffentlichen Sitzung, aktiv veröffentlicht.
+        """
+        from insight_core.services import decision_tracking
+
+        return self.open and decision_tracking.is_publicly_visible(item)
+
     def meetings(self, ids: set[uuid.UUID]) -> dict[uuid.UUID, MeetingState]:
         if not ids:
             return {}
@@ -158,7 +168,10 @@ class Reader:
             .select_related("meeting", "public_file")
             .annotate(last_correction_at=Max("corrections__applied_at", filter=Q(corrections__status="applied")))
         )
-        return {p.meeting_id: (protocol_state(p), self.open and bool(p.meeting.is_public)) for p in protocols}
+        return {
+            p.meeting_id: (protocol_state(p, interface_open=self.open), self.open and bool(p.meeting.is_public))
+            for p in protocols
+        }
 
     def papers(self, ids: set[uuid.UUID]) -> dict[uuid.UUID, PaperState]:
         if not ids:
@@ -180,9 +193,14 @@ class Reader:
         items = (
             SessionAgendaItem.objects.filter(meeting__tenant_id=self.tenant_id)
             .filter(scope)
-            .select_related("meeting", "paper", "consultation")
+            .select_related("meeting__tenant", "paper", "consultation")
         )
-        return {item.pk: agenda_item_state(item, is_published=self.is_published) for item in items}
+        return {
+            item.pk: agenda_item_state(
+                item, is_published=self.is_published, implementation_public=self.implementation_public
+            )
+            for item in items
+        }
 
     def _consultations(self, scope: Q) -> dict[uuid.UUID, ConsultationState]:
         consultations = (
