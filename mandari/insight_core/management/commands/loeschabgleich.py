@@ -8,6 +8,8 @@ Ein Lauf (stündlich per Cron oder Zeitplan):
        gesperrte Dokumente werden nach 1, 7 und 25 Tagen erneut geprüft
     3. Kopie und Text von Dokumenten löschen, die länger als FILE_PURGE_AFTER_DAYS gesperrt sind
        (nicht mehr abrufbare vorher noch einmal per GET prüfen)
+    4. Inhalte ohne Referenz aus der Ablage löschen (Ablage nach SHA-256): Eine ersetzte oder gelöschte
+       Fassung bleibt so nicht liegen, auch wenn der Cron für ``dokumentablage --aufraeumen`` fehlt
 
 Ein Lauf hält eine Sperre im gemeinsamen Cache: Überlappende Läufe (langsamer Lauf, zweiter Server)
 enden sofort, statt die Quellen doppelt zu belasten.
@@ -56,7 +58,7 @@ class Command(EinmaligMixin, BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         from insight_core.models import OParlBody
-        from insight_core.services import file_reconcile
+        from insight_core.services import file_reconcile, file_store
 
         body = None
         if options["body"]:
@@ -83,6 +85,8 @@ class Command(EinmaligMixin, BaseCommand):
                     self.stdout.write(f"Wieder freigegeben (Text wird neu erkannt): {restored}")
                 purged = file_reconcile.purge_expired(body=body, client=client, run=run)
                 self._report(f"Gelöscht nach {file_reconcile.purge_after_days()} Tagen Sperre", purged)
+        if not options["ohne_loeschen"] and file_store.uses_blobs():
+            self._report("Verwaiste Inhalte", file_store.cleanup_orphans())
         if run.braked:
             self.stderr.write(
                 f"Bremse: {len(run.braked)} Quelle(n) lieferten zu viele Dokumente nicht mehr; nichts davon "

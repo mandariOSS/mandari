@@ -7,6 +7,16 @@ minutenlang fest (Issue #86): kurze Timeouts, lokale Datei zuerst.
 
 ## Speicherlayout
 
+Seit Issue #788 liegen Dokumente **nach ihrem SHA-256** in der Ablage (`FILE_STORE_LAYOUT=sha256`, Standard):
+
+```
+<OPARL_FILES_ROOT>/sha256/<ab>/<sha256>      Inhalt, ohne Dateiendung
+<OPARL_FILES_ROOT>/sha256/tmp/*.part         Downloads, die gerade entstehen
+```
+
+Details unter [Ablage nach SHA-256](#ablage-nach-sha-256). Das bisherige Layout je Kommune gilt weiter für Kopien,
+die noch nicht umgestellt sind, und für Installationen mit `FILE_STORE_LAYOUT=kommune`:
+
 ```
 <OPARL_FILES_ROOT>/<kommune>/<jahr>/<datei-id>.pdf
 ```
@@ -58,6 +68,10 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, 0 = aus) |
 | `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange warten Vorschau und KI-Zusammenfassung höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After` bzw. die Bitte um einen neuen Versuch. Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
+| `FILE_STORE_LAYOUT` | `sha256` | Ablage nach SHA-256 mit Referenzzählung; `kommune` = bisheriges Layout je Kommune |
+| `INGESTOR_STORES_FILES` | `false` (Compose: `true`) | Der Ingestor legt Dateien selbst ab; `cache_files` holt Dateien in der Texterkennung nicht nach |
+| `OBJ_ENABLED` | `false` | S3-kompatibler Objektspeicher (siehe [Objektspeicher](#objektspeicher)) |
+| `OBJ_CACHE_MAX_GB` | 60 | Größe des lokalen Zwischenspeichers bei eingeschaltetem Objektspeicher |
 | `FILE_PURGE_AFTER_DAYS` | 30 | Kopie und Text gesperrter Dokumente nach so vielen Tagen löschen (Löschabgleich) |
 | `FILE_PURGE_CONFIRM_GRACE_DAYS` | 7 | Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich |
 | `FILE_RECONCILE_MAX_MISSING` | 10 | Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu `404`/`410`, wird keines gesperrt |
@@ -130,6 +144,82 @@ handle_response @dokument {
 
 Andere Webserver (z. B. nginx mit einer `internal`-Location): vorher prüfen, dass Typ, Anzeigeart, `nosniff`
 und die Sandbox aus der Antwort der Anwendung beim Client ankommen.
+
+### Ablage nach SHA-256
+
+Gleiche Dateien (dieselbe Anlage an mehreren Vorgängen) liegen nur einmal in der Ablage (Issue #788,
+`services/file_store.py`). Die Originale bleiben unverändert, es wird nichts komprimiert oder umgerechnet.
+
+- **Referenzzählung:** Jede Datei (`OParlFile.blob`) ist eine Referenz auf ihren Inhalt (`OParlFileBlob`, Tabelle
+  `oparl_file_blobs`). Ablegen, Ersetzen und Freigeben laufen in einer Transaktion mit gesperrter Zeile des Inhalts,
+  die Datei wird verschoben, solange die Sperre gilt. Fällt die letzte Referenz weg (neue Fassung, Löschen nach
+  Frist, `purge_deleted`, `prune_file_cache --unlisted`, Löschen einer Kommune), wird der Inhalt verwaist markiert;
+  `dokumentablage --aufraeumen` löscht ihn nach zehn Minuten – lokal und im Objektspeicher. Eine falsche Zählung
+  wird dabei berichtigt statt gelöscht.
+- **Ein Abruf je Datei:** Der Ingestor lädt jede Datei für die Texterkennung gestreamt in eine temporäre Datei
+  unter `sha256/tmp` (Größengrenze `TEXT_EXTRACTION_MAX_SIZE_MB` greift während des Downloads, nie liegt eine
+  ganze Datei im Arbeitsspeicher), hasht dabei und legt sie danach selbst ab – nur gelistete Kommunen, nie
+  unter `FILE_CACHE_MIN_FREE_GB` freiem Platz, keine Hinweisseiten statt der Datei. Dafür hängt der Dienst
+  `ingestor` das Volume `mandari_files` unter `OPARL_FILES_ROOT` ein. Mit `INGESTOR_STORES_FILES=true` holt
+  `cache_files` Dateien in der Texterkennung nicht ein zweites Mal (hängt die Erkennung länger als einen Tag,
+  doch). Maßgeblich ist die letzte Änderung des Datensatzes: Auch ältere Dateien, die wieder auf „pending“ gehen
+  (neue Fassung, Wiederfreigabe nach dem Löschabgleich), holt nur der Ingestor. Ausnahme vom Streaming: Ist
+  `MISTRAL_API_KEY` gesetzt und reicht pypdf nicht, liest der Ingestor die Datei für die Mistral-OCR ganz ein
+  (die Schnittstelle erwartet sie base64-kodiert in der Anfrage, bis `TEXT_EXTRACTION_MAX_SIZE_MB`); ohne
+  Mistral rendert Tesseract seitenweise.
+- **Rechte:** Abgelegte Inhalte sind für alle lesbar (`0644`), auch wenn der Download als temporäre Datei mit
+  `0600` entstand. Anwendung und Ingestor legen mit derselben Kennung ab (Compose: uid 1000), der Webserver liest
+  sie für die Auslieferung.
+- **Umstellen des Bestands:** `python manage.py dokumentablage --umstellen --limit 5000` verschiebt Kopien aus dem
+  Layout je Kommune in die Ablage (kein zweiter Platzbedarf, wiederaufnehmbar, so oft wiederholen, bis
+  `noch im alten Layout 0` erscheint). Doppelte Kopien entfallen dabei.
+- **Pflege:** `dokumentablage` zeigt Inhalte, Belegung, die Ersparnis durch Deduplizierung und verwaiste Inhalte;
+  `--referenzen` berechnet die Zähler aus den Verweisen neu; `--aufraeumen` stündlich per Cron. Verwaiste
+  Inhalte löscht außerdem jeder Lauf des Löschabgleichs (`loeschabgleich`), damit eine ersetzte oder gelöschte
+  Fassung nicht an einem zweiten Cron hängt. `cache_files --stats` nennt beide Größen: „belegt“ zählt jeden
+  Inhalt einmal (plus Kopien im alten Layout), „je Datei gezählt“ zählt Dateien mit gleichem Inhalt mehrfach.
+
+```cron
+50 * * * * docker exec mandari python manage.py dokumentablage --aufraeumen >> /var/log/mandari-dokumentablage.log 2>&1
+```
+
+- **Rückfall auf ein älteres Image:** Ältere Images finden die Kopien über `local_path` weiter, legen neue aber im
+  alten Layout ab. `purge_deleted`, `prune_file_cache` und `loeschabgleich` dürfen mit einem älteren Image nicht
+  laufen, solange Inhalte geteilt sind: Sie löschen Dateien nach `local_path` und kennen keine Referenzen
+  (`loeschabgleich` beim Ersetzen einer Fassung und beim Löschen nach Frist). Vor dem Rückfall also die
+  Cron-Einträge dieser Befehle aussetzen.
+
+### Objektspeicher
+
+Vorbereitet, **Standard aus**. Mit `OBJ_ENABLED=true` und den Zugangsdaten `OBJ_ENDPOINT`, `OBJ_BUCKET`, `OBJ_KEY`,
+`OBJ_SECRET` (nur in der Umgebung, nie im Repo; `OBJ_REGION` optional, sonst aus dem Endpunkt abgeleitet) liegt die
+Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha256/<ab>/<sha256>`):
+
+- `dokumentablage --hochladen` lädt Inhalte ohne Kopie im Objektspeicher hoch (`remote_at`).
+- Die lokale Ablage wird zum **Zwischenspeicher**: `dokumentablage --aufraeumen` verdrängt bei mehr als
+  `OBJ_CACHE_MAX_GB` (Standard 60) die am längsten nicht gelesenen Inhalte – nur solche, die sicher im Objektspeicher
+  liegen. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der Zugriffszeit (`atime`) der Datei,
+  höchstens einmal je Stunde. Die Änderungszeit bleibt unberührt, denn aus ihr bildet der Webserver `ETag` und
+  `Last-Modified`; so greifen bedingte Anfragen und Range-Anfragen mit `If-Range` weiter. Ein Mount mit
+  `noatime` stört nicht, die Zeit wird ausdrücklich gesetzt.
+- Fehlt ein Inhalt lokal, holt die Vorschau ihn gestreamt aus dem Objektspeicher (ohne Datenbankverbindung
+  festzuhalten, Hashprüfung, Gesamtdauer höchstens `OBJ_FETCH_TOTAL_SECONDS`, Standard 60) und liefert ihn wie
+  gewohnt aus. Antwortet der Objektspeicher nicht oder stimmt der Hash nicht, holt die Vorschau das Dokument wie
+  bisher von der Quelle.
+- **Prüfsummen:** boto3 sendet seit 1.36 standardmäßig Prüfsummen im `aws-chunked`-Verfahren, was manche
+  S3-kompatiblen Anbieter ablehnen. `OBJ_CHECKSUMS=when_required` (Standard) verhält sich wie frühere Versionen.
+  Beim ersten Test mit dem echten Bucket Hochladen, Holen und Löschen prüfen; nur wenn der Anbieter es verlangt,
+  `when_supported` setzen.
+- **Zugangsdaten einbinden:** `docker-compose.yml` reicht `OBJ_ENDPOINT`, `OBJ_BUCKET`, `OBJ_KEY` und
+  `OBJ_SECRET` per Variablenersetzung durch. Liegen sie in einer eigenen Umgebungsdatei statt in der `.env`,
+  liest Compose diese zusätzlich: `docker compose --env-file .env --env-file <datei> up -d` (spätere Dateien
+  gewinnen). Ein `env_file:` am Dienst reicht nicht, denn die Einträge unter `environment` (leer vorbelegt)
+  gingen vor.
+- Reihenfolge beim Einschalten: Bestand umstellen (`--umstellen`), Zugangsdaten setzen, `OBJ_ENABLED=true`,
+  Neustart, `dokumentablage --hochladen` bis nichts mehr offen ist, danach `--hochladen` und `--aufraeumen` per Cron.
+- Ausschalten: `OBJ_ENABLED=false`. Lokal verdrängte Inhalte holt die Vorschau dann von der Quelle; `cache_files`
+  lädt sie nach. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
+  (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie.
 
 ### Löschabgleich
 

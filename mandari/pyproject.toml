@@ -53,6 +53,8 @@ dependencies = [
 
     # AI / HTTP
     "httpx>=0.28.0",
+    # S3-kompatibler Objektspeicher für die Dokumentablage (#788); nur geladen, wenn OBJ_ENABLED gesetzt ist
+    "boto3>=1.40",
 
     # Utilities
     "pillow>=10.3.0",  # Security: fixes heap buffer overflow, DoS, eval injection
@@ -129,6 +131,7 @@ dev = [
     "sqlalchemy>=2.0",  # Schema-Contract gegen die Ingestor-Modelle (insight_core/schema_contract.py)
     "djlint==1.46.2",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
     "pyshacl==0.40.1",  # SHACL-Prüfung der Datenkataloge (scripts/dcat_shacl.py), gleiche Version wie CI
+    "moto[s3]>=5.1",  # lokaler S3-Ersatz für die Tests des Objektspeichers (insight_core/tests/test_dokumentablage.py)
 ]
 
 [tool.uv]

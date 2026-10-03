@@ -6,10 +6,12 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 """
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
+from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
@@ -42,6 +44,7 @@ from src.storage.models import (
     OParlBody,
     OParlConsultation,
     OParlFile,
+    OParlFileBlob,
     OParlLegislativeTerm,
     OParlLocation,
     OParlMeeting,
@@ -95,6 +98,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "local_status",
         "local_cached_at",
         "local_error",
+        "local_size",
+        "blob_id",
         # OParlPaper: AI enrichment + georeferencing (Django-managed)
         "summary",
         "locations",
@@ -2016,6 +2021,104 @@ class DatabaseStorage:
             stmt = update(OParlFile).where(OParlFile.id == file_id).values(**values)
             await session.execute(stmt)
             await session.commit()
+
+    # ========== Dokumentablage nach SHA-256 (Issue #788) ==========
+
+    async def body_stores_files(self, body_id: UUID) -> bool:
+        """Ist die Kommune gelistet (Django-Spalte ``is_listed``)? Im Zweifel nicht ablegen."""
+        try:
+            async with self.get_session() as session:
+                result = await session.execute(
+                    text("SELECT is_listed FROM oparl_bodies WHERE id = :id"), {"id": body_id}
+                )
+                return bool(result.scalar())
+        except Exception as e:  # noqa: BLE001 - ohne Spalte (älteres Schema) wird nichts abgelegt
+            logger.debug("is_listed für Body %s nicht lesbar: %s", body_id, e)
+            return False
+
+    async def attach_file_blob(self, file_id: UUID, sha256: str, size: int, source: Path, target: Path) -> bool:
+        """
+        Inhalt unter seinem SHA-256 ablegen und die Datei darauf verweisen lassen.
+
+        Gleiches Vorgehen wie ``file_store.attach`` in Django: Zeile des Inhalts sperren (bzw. anlegen),
+        Datei verschieben, solange die Sperre gilt, Referenz zählen, eine bisherige Referenz freigeben.
+        ``source`` liegt im selben Dateisystem wie ``target`` (``sha256/tmp``). Rückgabe: abgelegt?
+        """
+        remove_after: list[Path] = []
+        async with self.get_session() as session:
+            for _ in range(3):
+                await session.execute(
+                    pg_insert(OParlFileBlob)
+                    .values(sha256=sha256, size=size, ref_count=0)
+                    .on_conflict_do_nothing(index_elements=["sha256"])
+                )
+                locked = await session.execute(
+                    select(OParlFileBlob.sha256).where(OParlFileBlob.sha256 == sha256).with_for_update()
+                )
+                if locked.scalar() is not None:
+                    break
+            else:
+                await session.rollback()
+                return False
+            if target.is_file():
+                remove_after.append(source)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                # Temporäre Dateien entstehen mit 0600; Webserver und Anwendung müssen den Inhalt lesen
+                os.chmod(source, 0o644)
+                os.replace(source, target)
+            current = (
+                await session.execute(
+                    select(OParlFile.blob_id, OParlFile.local_path).where(OParlFile.id == file_id).with_for_update()
+                )
+            ).first()
+            if current is None:
+                await session.rollback()
+                source.unlink(missing_ok=True)
+                return False
+            old_blob, old_path = current
+            if old_blob != sha256:
+                await session.execute(
+                    update(OParlFileBlob)
+                    .where(OParlFileBlob.sha256 == sha256)
+                    .values(ref_count=OParlFileBlob.ref_count + 1, orphaned_at=None)
+                )
+                if old_blob:
+                    await session.execute(
+                        update(OParlFileBlob)
+                        .where(OParlFileBlob.sha256 == old_blob)
+                        .values(ref_count=OParlFileBlob.ref_count - 1)
+                    )
+                    await session.execute(
+                        update(OParlFileBlob)
+                        .where(
+                            OParlFileBlob.sha256 == old_blob,
+                            OParlFileBlob.ref_count <= 0,
+                            OParlFileBlob.orphaned_at.is_(None),
+                        )
+                        .values(orphaned_at=func.now())
+                    )
+                elif old_path and Path(old_path) != target and not Path(old_path).is_relative_to(target.parent.parent):
+                    # Kopie im bisherigen Layout je Kommune: nach dem Commit löschen. Ein Pfad unter sha256/
+                    # ohne Referenz gehört anderen Dateien und bleibt.
+                    remove_after.append(Path(old_path))
+            await session.execute(
+                update(OParlFile)
+                .where(OParlFile.id == file_id)
+                .values(
+                    blob_id=sha256,
+                    local_path=str(target),
+                    local_size=size,
+                    sha256_hash=sha256,
+                    local_status="ok",
+                    local_error="",
+                    local_cached_at=func.now(),
+                )
+            )
+            await session.commit()
+        for path in remove_after:
+            path.unlink(missing_ok=True)
+        return True
 
     # ========== Search Indexing Query Helpers ==========
 

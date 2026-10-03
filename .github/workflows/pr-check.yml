@@ -596,6 +596,7 @@ jobs:
           pip install -r /tmp/requirements.lock
           pip install --no-deps shared/
           pip install pytest pytest-django pytest-cov pytest-xdist factory-boy
+          pip install "moto[s3]>=5.1"  # lokaler S3-Ersatz für die Tests des Objektspeichers (#788)
           pip install "sqlalchemy>=2.0"  # Schema-Contract gegen die Ingestor-Modelle
 
       - uses: actions/setup-node@v7

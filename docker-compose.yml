@@ -59,6 +59,20 @@ x-app-environment: &app-environment
   # Lokale Kopien liefert Caddy aus (Range, ETag); Caddy liest dafür das Volume mandari_files
   # (siehe Dienst caddy und docs/FILE_CACHE.md, „Auslieferung über den Webserver“). Standard aus.
   FILE_ACCEL_REDIRECT: ${FILE_ACCEL_REDIRECT:-false}
+  # Ablage nach SHA-256 mit Referenzzählung (docs/FILE_CACHE.md, „Ablage nach SHA-256“); der Ingestor legt
+  # Dateien, die er für den Text lädt, selbst ab (Volume mandari_files im Dienst ingestor)
+  FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}
+  INGESTOR_STORES_FILES: ${INGESTOR_STORES_FILES:-true}
+  # S3-kompatibler Objektspeicher (docs/FILE_CACHE.md, „Objektspeicher“), Standard aus. Zugangsdaten nie im Repo:
+  # aus der .env oder einer eigenen Umgebungsdatei, die Compose zusätzlich liest (--env-file, siehe FILE_CACHE.md)
+  OBJ_ENABLED: ${OBJ_ENABLED:-false}
+  OBJ_ENDPOINT: ${OBJ_ENDPOINT:-}
+  OBJ_BUCKET: ${OBJ_BUCKET:-}
+  OBJ_KEY: ${OBJ_KEY:-}
+  OBJ_SECRET: ${OBJ_SECRET:-}
+  OBJ_REGION: ${OBJ_REGION:-}
+  OBJ_CACHE_MAX_GB: ${OBJ_CACHE_MAX_GB:-60}
+  OBJ_CHECKSUMS: ${OBJ_CHECKSUMS:-when_required}
   # Nur mit Ratsinformationssystem im internen Netz (siehe .env.example)
   INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
   # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus
@@ -432,8 +446,13 @@ services:
       TZ: ${TZ:-Europe/Berlin}
       # Änderungen am RIS-Bestand als Ereignisse ins Journal schreiben (Standard aus, siehe .env.example)
       INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
+      # Dateien für den Text gleich in der Ablage der Anwendung ablegen (ein Abruf je Datei, #788)
+      OPARL_FILES_ROOT: /app/files
+      FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}
+      FILE_CACHE_MIN_FREE_GB: ${FILE_CACHE_MIN_FREE_GB:-15}
     volumes:
       - ingestor_data:/app/data
+      - mandari_files:/app/files
     depends_on:
       postgres:
         condition: service_healthy

@@ -29,8 +29,10 @@ import logging
 import os
 import re
 import shutil
+import tempfile
 import time
 from collections import Counter
+from datetime import timedelta
 from pathlib import Path
 from typing import IO
 
@@ -273,6 +275,12 @@ def _mark(file_obj, status: str, error: str = "") -> str:
 
 def store_bytes(file_obj, data: bytes, *, content_type: str | None = None) -> Path:
     """Datei atomar ablegen und Metadaten (Pfad, Größe, Hash, Status) setzen."""
+    from . import file_store
+
+    if file_store.uses_blobs():
+        with file_store.Spool() as spool:
+            spool.write(data)
+            return file_store.store_spool(file_obj, spool, content_type=content_type)
     pin_body_dir(file_obj.body)
     path = target_path(file_obj)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -285,6 +293,12 @@ def store_bytes(file_obj, data: bytes, *, content_type: str | None = None) -> Pa
 
 def store_stream(file_obj, source: IO[bytes], *, content_type: str | None = None) -> Path:
     """Wie ``store_bytes``, aber aus einer Datei gelesen (ohne alles in den Speicher zu laden)."""
+    from . import file_store
+
+    if file_store.uses_blobs():
+        with file_store.Spool() as spool:
+            spool.copy_from(source)
+            return file_store.store_spool(file_obj, spool, content_type=content_type)
     pin_body_dir(file_obj.body)
     path = target_path(file_obj)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -376,25 +390,30 @@ def fetch_and_cache(file_obj, client=None) -> str:
                     return _mark(file_obj, "too_large", f"{declared // 1024 // 1024} MB")
                 if not has_room_for(max(declared, 0)):
                     return "disk_full"
-                chunks = []
+                # Gestreamt in eine temporäre Datei, nie die ganze Datei im Speicher (#788)
+                buffer = tempfile.SpooledTemporaryFile(max_size=2 * 1024 * 1024)  # noqa: SIM115
                 total = 0
+                head = b""
                 for chunk in response.iter_bytes():
                     total += len(chunk)
                     if total > max_bytes():
+                        buffer.close()
                         return _mark(file_obj, "too_large", f"> {max_bytes() // 1024 // 1024} MB")
-                    chunks.append(chunk)
-                data = b"".join(chunks)
+                    buffer.write(chunk)
+                    if len(head) < 512:
+                        head += chunk[: 512 - len(head)]
                 content_type = response.headers.get("content-type", "")
         except httpx.HTTPError as exc:
             return _mark(file_obj, "error", f"{type(exc).__name__}: {exc}")
 
-        if not data:
-            return _mark(file_obj, "error", "Leere Antwort")
-        if looks_like_html(data) and "html" not in (file_obj.mime_type or "").lower():
-            return _mark(file_obj, "error", "Quelle liefert eine HTML-Seite statt der Datei")
-        if not has_room_for(len(data)):
-            return "disk_full"
-        store_bytes(file_obj, data, content_type=content_type)
+        with buffer:
+            if not total:
+                return _mark(file_obj, "error", "Leere Antwort")
+            if looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
+                return _mark(file_obj, "error", "Quelle liefert eine HTML-Seite statt der Datei")
+            if not has_room_for(total):
+                return "disk_full"
+            store_stream(file_obj, buffer, content_type=content_type)
         return "ok"
     finally:
         if own_client:
@@ -416,6 +435,15 @@ def pending_queryset(body=None, retry_errors: bool = False):
         .select_related("body", "body__source")
         .defer("text_content", "raw_json", "body__raw_json")
     )
+    from . import file_store
+
+    if file_store.uses_blobs() and getattr(settings, "INGESTOR_STORES_FILES", False):
+        # Dateien, deren Text der Ingestor noch erkennt, legt er beim selben Abruf selbst ab (ein Abruf je
+        # Datei, #788). Maßgeblich ist die letzte Änderung des Datensatzes, nicht seine Anlage: Auch neu auf
+        # „pending“ gesetzte ältere Dateien (Ersetzen, Wiederfreigabe) holt nur der Ingestor; der Ingestor setzt
+        # sie beim Übernehmen in die Erkennung neu. Hängt die Erkennung länger als einen Tag, holt der Cache sie.
+        recent = timezone.now() - timedelta(days=1)
+        qs = qs.exclude(text_extraction_status__in=["pending", "processing"], updated_at__gte=recent)
     if body is not None:
         qs = qs.filter(body=body)
     return qs.order_by("-file_date", "-oparl_created", "-created_at")
@@ -477,6 +505,24 @@ def backfill_sizes(batch: int = 2000) -> Counter:
 # =============================================================================
 
 
+def stored_bytes() -> int:
+    """
+    Belegung der Ablage: jeder referenzierte Inhalt einmal (``oparl_file_blobs``) plus Kopien im alten Layout.
+
+    Mit eingeschaltetem Objektspeicher liegt davon lokal höchstens ``OBJ_CACHE_MAX_GB``.
+    """
+    from ..models import OParlFile, OParlFileBlob
+
+    blobs = OParlFileBlob.objects.filter(ref_count__gt=0).aggregate(s=Sum("size"))["s"] or 0
+    legacy = (
+        OParlFile.objects.filter(local_status="ok", blob__isnull=True).aggregate(s=Sum(Coalesce("local_size", "size")))[
+            "s"
+        ]
+        or 0
+    )
+    return int(blobs) + int(legacy)
+
+
 def cache_stats() -> dict:
     from ..models import OParlFile
 
@@ -485,6 +531,7 @@ def cache_stats() -> dict:
     by_status = dict(Counter(qs.values_list("local_status", flat=True)))
     # Gemessene Größe der Kopie (#786); für Kopien vor deren Einführung die Angabe aus der Quelle
     stored = Coalesce("local_size", "size")
+    # Je Datei gezählt: Dateien mit gleichem Inhalt zählen mehrfach (Ablage nach SHA-256, #788)
     cached_bytes = qs.filter(local_status="ok").aggregate(s=Sum(stored))["s"] or 0
     without_size = qs.filter(local_status="ok", local_size__isnull=True).count()
     ok = by_status.get("ok", 0)
@@ -512,6 +559,8 @@ def cache_stats() -> dict:
         "coverage": round(ok / total * 100, 1) if total else 0.0,
         "cached_bytes": cached_bytes,
         "cached_gb": round(cached_bytes / 1024**3, 2),
+        # Tatsächlich belegt: jeder Inhalt einmal (Ablage nach SHA-256) plus Kopien im alten Layout
+        "stored_bytes": stored_bytes(),
         # Kopien ohne gemessene Größe: mit ``cache_files --sizes`` nachtragen
         "without_size": without_size,
         "disk_free_bytes": disk_free_bytes(),

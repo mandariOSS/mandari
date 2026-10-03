@@ -131,6 +131,13 @@ class Settings(BaseSettings):
     text_extraction_timeout: float = 120.0
     text_extraction_batch_size: int = 500
 
+    # Dokumentablage (Issue #788): Dateien, die der Ingestor für den Text ohnehin lädt, legt er gleich in
+    # der Ablage nach SHA-256 der Anwendung ab (gleiches Volume, OPARL_FILES_ROOT). Leer = nicht ablegen.
+    # Nur gelistete Kommunen, nur mit FILE_STORE_LAYOUT=sha256, nie unter FILE_CACHE_MIN_FREE_GB freiem Platz.
+    oparl_files_root: str = ""
+    file_store_layout: str = "sha256"
+    file_cache_min_free_gb: int = 15
+
     # Mistral OCR (optional): wenn ein API-Key gesetzt ist, laeuft OCR fuer
     # Scan-PDFs ueber die Mistral-API statt lokal per Tesseract (deutlich
     # schneller bei grossen Backlogs). Tesseract bleibt Fallback.

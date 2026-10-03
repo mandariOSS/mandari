@@ -11,6 +11,7 @@ Zeitstempel je Host. Keine Abrufe fremder Server, kein echtes Redis: ein Ersatz 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 from typing import Any
 from uuid import uuid4
@@ -189,10 +190,10 @@ async def test_abstand_der_quelle_geht_vor(echte_drossel, monkeypatch):
     assert client.effective_interval == 0.01
 
 
-async def test_datei_download_zaehlt_mit(echte_drossel, monkeypatch):
+async def test_datei_download_zaehlt_mit(echte_drossel, monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    from src.extraction.extractor import TextExtractor
+    from src.extraction.extractor import DownloadedFile, TextExtractor
 
     reserviert: list[tuple[str, float]] = []
 
@@ -214,10 +215,12 @@ async def test_datei_download_zaehlt_mit(echte_drossel, monkeypatch):
 
     extractor = TextExtractor(_Speicher())
 
-    async def download(url: str, *_args: Any) -> bytes:
-        return b"Text"
+    async def download(url: str, *_args: Any) -> DownloadedFile:
+        ziel = tmp_path / "a.part"
+        ziel.write_bytes(b"Text")
+        return DownloadedFile(path=ziel, size=4, sha256=hashlib.sha256(b"Text").hexdigest(), head=b"Text")
 
-    monkeypatch.setattr(extractor, "_download", download)
+    monkeypatch.setattr(extractor, "_download_to_file", download)
     datei = SimpleNamespace(
         id=uuid4(),
         body_id=uuid4(),

@@ -146,10 +146,11 @@ def mark_present(file_obj: Any, now: datetime) -> None:
     file_obj.source_missing_since = None
     fields = ["source_checked_at", "source_missing_since"]
     if was_missing and file_obj.content_purged_at:
-        # Kopie und Text waren schon gelöscht: neu erkennen lassen, die Kopie holt cache_files nach
+        # Kopie und Text waren schon gelöscht: neu erkennen lassen (der Ingestor legt die Kopie dabei ab,
+        # sonst holt sie cache_files nach; updated_at hält den Cache so lange zurück)
         file_obj.content_purged_at = None
         file_obj.text_extraction_status = "pending"
-        fields += ["content_purged_at", "text_extraction_status"]
+        fields += ["content_purged_at", "text_extraction_status", "updated_at"]
     if was_missing:
         # Speichern über das Modell: die Signale nehmen das Dokument wieder in die Suche auf
         file_obj.save(update_fields=fields)
@@ -177,23 +178,22 @@ def _reset_text(file_obj: Any) -> list[str]:
 
 def replace_content(file_obj: Any, source: IO[bytes], sha256: str, content_type: str, now: datetime) -> None:
     """Die Quelle liefert einen anderen Inhalt: Kopie ersetzen, Text verwerfen (wird neu erkannt)."""
+    from . import file_store
+
     old_path = file_obj.local_path if file_obj.local_status == "ok" else None
     if old_path:
         if file_cache.caches_body(file_obj.body) and file_cache.has_room_for(0):
+            # Ablage nach SHA-256 gibt den alten Inhalt frei; im alten Layout überschreibt die neue Fassung
             new_path = file_cache.store_stream(file_obj, source, content_type=content_type)
-            if Path(old_path) != new_path:
+            if Path(old_path) != new_path and not file_store.uses_blobs():
                 Path(old_path).unlink(missing_ok=True)
         else:
             # Neue Fassung lässt sich nicht ablegen: die alte darf trotzdem nicht bleiben
-            Path(old_path).unlink(missing_ok=True)
-            file_obj.local_path = None
-            file_obj.local_size = None
-            file_obj.local_status = "none"
-            file_obj.save(update_fields=["local_path", "local_size", "local_status"])
+            file_store.release(file_obj)
     file_obj.sha256_hash = sha256
     file_obj.source_checked_at = now
     file_obj.source_missing_since = None
-    fields = ["sha256_hash", "source_checked_at", "source_missing_since", *_reset_text(file_obj)]
+    fields = ["sha256_hash", "source_checked_at", "source_missing_since", "updated_at", *_reset_text(file_obj)]
     # Über das Modell speichern: das Signal nimmt den alten Text aus dem Suchindex
     file_obj.save(update_fields=fields)
     _forget_summary(file_obj)
@@ -603,20 +603,18 @@ def restore_reappeared() -> int:
 
     return OParlFile.objects.filter(
         content_purged_at__isnull=False, deleted=False, source_missing_since__isnull=True
-    ).update(content_purged_at=None, text_extraction_status="pending")
+    ).update(content_purged_at=None, text_extraction_status="pending", updated_at=timezone.now())
 
 
 def _purge(file_obj: Any, now: datetime, results: Counter[str]) -> None:
     """Kopie und Text eines Dokuments löschen; der Datensatz bleibt als Tombstone."""
     from ..models import OParlFile
+    from . import file_store
 
-    if file_obj.local_path:
-        try:
-            Path(file_obj.local_path).unlink(missing_ok=True)
-            results["copies"] += 1
-        except OSError:
-            logger.warning("Dokument %s: lokale Kopie ließ sich nicht löschen", file_obj.pk)
-            return
+    if file_obj.local_path or file_obj.blob_id:
+        # Referenz freigeben: der Inhalt verschwindet, sobald ihn keine andere Datei mehr braucht
+        file_store.release(file_obj)
+        results["copies"] += 1
     OParlFile.objects.filter(pk=file_obj.pk).update(
         text_content=None,
         page_count=None,

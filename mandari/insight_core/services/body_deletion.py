@@ -85,6 +85,11 @@ def delete_body_data(body_id: str) -> dict:
 
     logger.info(f"[BodyDeletion] Starte Löschung von '{body_name}' ({body_id})")
 
+    # Ablage nach SHA-256 (#788): Referenzen freigeben, damit Inhalte ohne andere Nutzer aufgeräumt werden
+    from .file_store import release_queryset
+
+    release_queryset(OParlFile.objects.filter(body=body, blob__isnull=False))
+
     counts = {}
     steps = [
         ("files", OParlFile.objects.filter(body=body)),

@@ -12,11 +12,13 @@ den Django-Migrationen passt, prüft der Schema-Vertrag (``mandari/insight_core/
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -1051,3 +1053,99 @@ async def test_in_der_quelle_fehlende_datei_wird_weder_erkannt_noch_indexiert(be
 
     await setzen("text_extraction_status = 'pending'")
     assert await bestand.storage.get_pending_files(bestand.body_id) == []
+
+
+# --- Ablage nach SHA-256 (Issue #788) -------------------------------------------------------------------------------
+
+
+async def test_ablage_zaehlt_referenzen_und_gibt_alte_frei(bestand: Bestand, tmp_path: Path) -> None:
+    """Gleicher Inhalt liegt einmal in der Ablage; neue Fassungen geben die alte Referenz frei."""
+    root = tmp_path / "sha256"
+    (root / "tmp").mkdir(parents=True)
+
+    def spool(inhalt: bytes) -> tuple[str, Path]:
+        quelle = root / "tmp" / f"{uuid.uuid4().hex}.part"
+        quelle.write_bytes(inhalt)
+        return hashlib.sha256(inhalt).hexdigest(), quelle
+
+    erste = await bestand.storage.upsert_file(bestand.processor.process_file(datei(), BODY), bestand.body_id)
+    zweite = await bestand.storage.upsert_file(
+        bestand.processor.process_file(datei(id=f"{FILE}-2", accessUrl=f"{FILE}-2/download"), BODY), bestand.body_id
+    )
+    # Die erste Datei liegt noch im bisherigen Layout je Kommune
+    alt = tmp_path / "kommune" / "2026" / "erste.pdf"
+    alt.parent.mkdir(parents=True)
+    alt.write_bytes(b"alt")
+    async with bestand.storage.get_session() as session:
+        await session.execute(
+            text("UPDATE oparl_files SET local_path = :p, local_status = 'ok' WHERE id = :id"),
+            {"p": str(alt), "id": erste},
+        )
+        await session.commit()
+
+    sha_a, quelle = spool(b"%PDF-1.4 Inhalt A")
+    ziel_a = root / sha_a[:2] / sha_a
+    assert await bestand.storage.attach_file_blob(erste, sha_a, 17, quelle, ziel_a)
+    sha_a2, quelle2 = spool(b"%PDF-1.4 Inhalt A")
+    assert await bestand.storage.attach_file_blob(zweite, sha_a2, 17, quelle2, ziel_a)
+
+    assert ziel_a.read_bytes() == b"%PDF-1.4 Inhalt A"
+    assert not quelle.exists() and not quelle2.exists()
+    assert not alt.exists(), "Kopie im alten Layout ist nach dem Umzug weg"
+    assert await bestand.wert("SELECT ref_count FROM oparl_file_blobs WHERE sha256 = :s", s=sha_a) == 2
+    assert await bestand.wert("SELECT local_path FROM oparl_files WHERE id = :id", id=erste) == str(ziel_a)
+    assert await bestand.wert("SELECT local_size FROM oparl_files WHERE id = :id", id=erste) == 17
+
+    # Erneut derselbe Inhalt: keine zweite Referenz
+    sha_a3, quelle3 = spool(b"%PDF-1.4 Inhalt A")
+    assert await bestand.storage.attach_file_blob(erste, sha_a3, 17, quelle3, ziel_a)
+    assert await bestand.wert("SELECT ref_count FROM oparl_file_blobs WHERE sha256 = :s", s=sha_a) == 2
+
+    # Neue Fassung der ersten Datei: A verliert eine Referenz, B bekommt eine
+    sha_b, quelle_b = spool(b"%PDF-1.4 Inhalt B geschwaerzt")
+    assert await bestand.storage.attach_file_blob(erste, sha_b, 29, quelle_b, root / sha_b[:2] / sha_b)
+    assert await bestand.wert("SELECT ref_count FROM oparl_file_blobs WHERE sha256 = :s", s=sha_a) == 1
+    assert await bestand.wert("SELECT ref_count FROM oparl_file_blobs WHERE sha256 = :s", s=sha_b) == 1
+
+    # Auch die zweite wechselt: A ist verwaist, die Datei bleibt bis zum Aufräumen (Django) liegen
+    sha_b2, quelle_b2 = spool(b"%PDF-1.4 Inhalt B geschwaerzt")
+    assert await bestand.storage.attach_file_blob(zweite, sha_b2, 29, quelle_b2, root / sha_b[:2] / sha_b)
+    assert await bestand.wert("SELECT ref_count FROM oparl_file_blobs WHERE sha256 = :s", s=sha_a) == 0
+    assert await bestand.wert("SELECT orphaned_at IS NOT NULL FROM oparl_file_blobs WHERE sha256 = :s", s=sha_a)
+    assert ziel_a.exists()
+
+
+async def test_ablage_rechte_und_geteilter_pfad_ohne_referenz(bestand: Bestand, tmp_path: Path) -> None:
+    """Abgelegte Inhalte sind lesbar (0644); ein Pfad unter sha256/ ohne Referenz wird nie gelöscht."""
+    import stat
+
+    root = tmp_path / "sha256"
+    (root / "tmp").mkdir(parents=True)
+
+    def spool(inhalt: bytes) -> tuple[str, Path]:
+        quelle = root / "tmp" / f"{uuid.uuid4().hex}.part"
+        quelle.write_bytes(inhalt)
+        os.chmod(quelle, 0o600)
+        return hashlib.sha256(inhalt).hexdigest(), quelle
+
+    erste = await bestand.storage.upsert_file(bestand.processor.process_file(datei(), BODY), bestand.body_id)
+    zweite = await bestand.storage.upsert_file(
+        bestand.processor.process_file(datei(id=f"{FILE}-2", accessUrl=f"{FILE}-2/download"), BODY), bestand.body_id
+    )
+    sha_a, quelle = spool(b"%PDF-1.4 Inhalt A")
+    ziel_a = root / sha_a[:2] / sha_a
+    assert await bestand.storage.attach_file_blob(erste, sha_a, 17, quelle, ziel_a)
+    if os.name != "nt":
+        assert stat.S_IMODE(ziel_a.stat().st_mode) == 0o644
+
+    # Die zweite Datei zeigt ohne Referenz auf den Inhalt der ersten (Absturz, alter Code)
+    async with bestand.storage.get_session() as session:
+        await session.execute(
+            text("UPDATE oparl_files SET local_path = :p, local_status = 'ok' WHERE id = :id"),
+            {"p": str(ziel_a), "id": zweite},
+        )
+        await session.commit()
+    sha_b, quelle_b = spool(b"%PDF-1.4 Inhalt B")
+    assert await bestand.storage.attach_file_blob(zweite, sha_b, 17, quelle_b, root / sha_b[:2] / sha_b)
+    assert ziel_a.exists(), "geteilter Inhalt bleibt"
+    assert await bestand.wert("SELECT ref_count FROM oparl_file_blobs WHERE sha256 = :s", s=sha_a) == 1
