@@ -35,6 +35,7 @@ nicht ``aus`` ist. Wer nur einzelne Mandanten einschaltet, setzt ``EVENTS_WORKER
 from __future__ import annotations
 
 import logging
+import traceback
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -146,8 +147,14 @@ class Tracker:
                 work()
         except Exception as exc:  # noqa: BLE001 – Schattenbetrieb: die Änderung geht vor
             self._broken = True
+            # Fehlerklasse und Aufrufstellen (Datei, Zeile, Funktion), nie die Meldung oder Quelltext: Datenbankfehler
+            # nennen in der Meldung Werte der Zeile
+            stelle = " < ".join(
+                f"{frame.filename.replace(chr(92), '/').rsplit('/', 1)[-1]}:{frame.lineno} {frame.name}"
+                for frame in reversed(traceback.extract_tb(exc.__traceback__)[-3:])
+            )
             logger.warning(
-                "Session-Ereignisse im Schattenbetrieb übersprungen (%s, %s)", step, type(exc).__name__, exc_info=True
+                "Session-Ereignisse im Schattenbetrieb übersprungen (%s, %s) bei %s", step, type(exc).__name__, stelle
             )
 
     def meeting(self, meeting: Any, *, created: bool = False) -> None:

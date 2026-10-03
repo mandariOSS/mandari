@@ -460,7 +460,7 @@ class TestBetrieb:
         sitzung = welt.sitzung()
 
         def kaputt(self: Any, drafts: Any) -> int:
-            raise RuntimeError("Fehler beim Schreiben")
+            raise RuntimeError("Zeile enthält Ratssitzung (verlegt)")
 
         monkeypatch.setattr(SessionEvents, "publish", kaputt)
         seit = _start()
