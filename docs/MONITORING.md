@@ -264,7 +264,16 @@ Dieselben Eingriffe gibt es auf der Kommandozeile (`manage.py events_dispatch --
 `GET /health/worker/` fasst den Zustand von Worker, Ereignissen und Aufträgen in vier Prüfungen
 zusammen und antwortet mit **200**, wenn alle bestehen, sonst mit **503**. Gemessen wird in der
 Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Das Ergebnis gilt 15 s
-(Cache); die Antwort enthält nur Zahlen, Rollen und Warteschlangen, keine Namen von Aufträgen.
+(Cache).
+
+- `?pruefung=<name>` (kommagetrennt) lässt nur die genannten Prüfungen über den Status
+  entscheiden; ein unbekannter Name ergibt 400. **Für Alarme je Prüfung einen eigenen Endpunkt
+  anlegen:** `gescheitert` bleibt nach einem einzigen gescheiterten Auftrag 24 h rot (etwa ein
+  Verwaltungsbefehl mit Exit-Code ungleich 0). Mit nur einem Endpunkt für alles bliebe der Alarm
+  so lange ausgelöst, und ein späterer Rückstau käme ohne neue Mail.
+- Die Texte der Prüfungen (Zahlen, Rollen, Warteschlangen) stehen nur für die eigene Überwachung
+  in der Antwort: aus `METRICS_ALLOWED_NETWORKS` oder mit `Authorization: Bearer <METRICS_TOKEN>`,
+  wie bei `/metrics/`. Von außen kommt je Prüfung nur `ok`.
 
 | Prüfung | besteht, wenn |
 |---|---|
@@ -276,20 +285,53 @@ Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Das Ergebni
 Dazu meldet sich der Worker mit dem Scheduler selbst („Worker lebt“, `apps/events/push.py`), wenn
 `WORKER_PUSH_URL` gesetzt ist: alle `WORKER_PUSH_INTERVAL` Sekunden (Standard 60) `success=true`,
 solange jede Rolle arbeitet, sonst sofort `success=false`. Bleibt die Meldung aus, weil der Prozess,
-der Container oder der Server weg ist, alarmiert die Statusseite. Beispiel für Gatus (Mail an die
-Empfänger der Statusseite):
+der Container oder der Server weg ist, alarmiert die Statusseite. Die Meldung trägt das Token im
+Kopf `Authorization`; steht die Statusseite hinter einer Anmeldung (Basic Auth), muss der Pfad
+`/api/v1/endpoints/*/external` davon ausgenommen sein. Beispiel für Gatus (Mail an die Empfänger
+der Statusseite, je Prüfung ein Endpunkt):
 
 ```yaml
 endpoints:
-  - name: worker
+  - name: worker-lebenszeichen
     group: betrieb
-    url: https://mandari.example.org/health/worker/
-    interval: 2m
+    url: https://mandari.example.org/health/worker/?pruefung=lebenszeichen
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: email
+        failure-threshold: 3
+        send-on-resolved: true
+  - name: worker-rueckstau
+    group: betrieb
+    url: https://mandari.example.org/health/worker/?pruefung=rueckstau
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: email
+        failure-threshold: 3
+        send-on-resolved: true
+  - name: worker-fehlerquote
+    group: betrieb
+    url: https://mandari.example.org/health/worker/?pruefung=fehlerquote
+    interval: 5m
     conditions:
       - "[STATUS] == 200"
     alerts:
       - type: email
         failure-threshold: 2
+        send-on-resolved: true
+  # Bleibt nach einem Fehlschlag 24 h rot: eine Mail beim Auftreten, eine beim Erlöschen
+  - name: worker-gescheitert
+    group: betrieb
+    url: https://mandari.example.org/health/worker/?pruefung=gescheitert
+    interval: 5m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: email
+        failure-threshold: 1
         send-on-resolved: true
 
 external-endpoints:

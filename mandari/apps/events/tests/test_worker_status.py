@@ -174,6 +174,65 @@ def test_ergebnis_gilt_kurz_aus_dem_cache(client: Client, mit_bedarf: Any) -> No
     assert client.get("/health/worker/").status_code == 200
 
 
+@pytest.mark.django_db
+def test_je_pruefung_ein_status_damit_kein_befund_einen_anderen_verdeckt(client: Client, mit_bedarf: Any) -> None:
+    """Ein gescheiterter Auftrag bleibt 24 h rot; ein späterer Rückstau muss trotzdem alarmieren."""
+    _alle_worker()
+    _auftrag(TaskStatus.FEHLGESCHLAGEN)
+
+    def status_von(auswahl: str) -> int:
+        cache.clear()
+        return client.get(f"/health/worker/?pruefung={auswahl}").status_code
+
+    assert client.get("/health/worker/").status_code == 503, "ohne Auswahl entscheiden alle"
+    assert status_von("gescheitert") == 503
+    assert status_von("rueckstau") == 200
+    assert status_von("lebenszeichen,rueckstau") == 200
+    assert status_von("fehlerquote") == 200, "1 von 1 zählt erst ab MIN_FINISHED"
+
+    alt = _auftrag(TaskStatus.WARTEND)
+    Task.objects.filter(pk=alt.pk).update(run_after=timezone.now() - timedelta(seconds=status.MAX_TASK_WAIT + 60))
+    assert status_von("rueckstau") == 503, "der neue Befund schlägt an, obwohl gescheitert schon rot ist"
+
+    cache.clear()
+    daten = client.get("/health/worker/?pruefung=rueckstau").json()
+    assert set(daten["checks"]) == {"rueckstau"}
+    assert daten["status"] == "error"
+
+
+@pytest.mark.django_db
+def test_unbekannte_pruefung_400_ohne_echo(client: Client) -> None:
+    antwort = client.get("/health/worker/?pruefung=rueckstau,<b>gibt-es-nicht</b>")
+
+    assert antwort.status_code == 400
+    assert b"gibt-es-nicht" not in antwort.content
+    assert antwort.json()["pruefungen"] == ["lebenszeichen", "rueckstau", "fehlerquote", "gescheitert"]
+
+
+@pytest.mark.django_db
+def test_texte_der_pruefungen_nur_fuer_die_eigene_ueberwachung(client: Client, mit_bedarf: Any) -> None:
+    mit_bedarf.METRICS_TOKEN = "t" * 40
+    _alle_worker()
+    _auftrag(TaskStatus.FEHLGESCHLAGEN)
+
+    aussen = client.get("/health/worker/", REMOTE_ADDR="203.0.113.7")
+    assert aussen.status_code == 503
+    assert aussen.json() == {
+        "status": "error",
+        "checks": {
+            "lebenszeichen": {"ok": True},
+            "rueckstau": {"ok": True},
+            "fehlerquote": {"ok": True},
+            "gescheitert": {"ok": False},
+        },
+    }
+
+    mit_token = client.get("/health/worker/", REMOTE_ADDR="203.0.113.7", HTTP_AUTHORIZATION="Bearer " + "t" * 40)
+    assert mit_token.json()["checks"]["gescheitert"]["detail"] == "1 gescheiterte Aufträge (24 h), 0 tote Ereignisse"
+    intern = client.get("/health/worker/", REMOTE_ADDR="10.1.2.3")
+    assert "detail" in intern.json()["checks"]["lebenszeichen"]
+
+
 # --- „Worker lebt“ --------------------------------------------------------------------------------
 
 
@@ -302,3 +361,11 @@ def test_deploy_pruefung_ohne_bedarf_oder_abgeschaltet(settings: Any) -> None:
     settings.EVENTS_WORKER_REQUIRED = "false"
     assert pruefe_worker(warten=1) == (True, "nicht erforderlich")
     assert pruefe_worker(warten=0) == (True, "nicht geprüft (VERIFY_WORKER_SECONDS=0)")
+
+
+def test_gatus_beispiel_alarmiert_je_pruefung_getrennt() -> None:
+    """docs/MONITORING.md: je Prüfung ein Endpunkt, keiner für alle zusammen."""
+    text = (VERIFY.parents[2] / "docs" / "MONITORING.md").read_text(encoding="utf-8")
+    for name in status.CHECKS:
+        assert f"/health/worker/?pruefung={name}\n" in text, name
+    assert "url: https://mandari.example.org/health/worker/\n" not in text
