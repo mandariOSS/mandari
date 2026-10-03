@@ -283,8 +283,9 @@ def test_niederschrift_ohne_freischaltung_nichts_oeffentliches(events: SessionEv
 
 
 def beschluss(
-    *, published: bool = True, result: str = "approved", status: str = "open", **werte: Any
+    *, published: bool = True, result: str = "approved", status: str = "open", frei: bool = False
 ) -> AgendaItemState:
+    """TOP mit Beschluss; ``frei``: Umsetzungsstand nach der Regel der Beschlusskontrolle öffentlich."""
     decision = {
         "result": result,
         "votingMethod": "summary",
@@ -298,7 +299,7 @@ def beschluss(
         published=published,
         fields={"name": "Radweg", "number": "1", "order": 1, "public": published, "withdrawn": False},
         decision=decision,
-        **werte,
+        implementation_public=frei,
     )
 
 
@@ -336,17 +337,16 @@ def test_umsetzungsstand_nur_nach_der_regel_der_beschlusskontrolle(events: Sessi
     drafts = events.agenda_drafts({TOP: beschluss()}, {TOP: beschluss(status="done")})
     assert _arten(drafts) == [("ris.agendaitem.changed", "AgendaItem", "nichtoeffentlich")]
     # Mit Freigabe: öffentlich, mit früherem Stand nur, wenn auch der öffentlich war
-    frei = {"implementation_public": True}
-    drafts = events.agenda_drafts({TOP: beschluss(**frei)}, {TOP: beschluss(status="done", **frei)})
+    drafts = events.agenda_drafts({TOP: beschluss(frei=True)}, {TOP: beschluss(status="done", frei=True)})
     assert _arten(drafts) == [("ris.resolution.implementation_changed", "AgendaItem", "oeffentlich")]
     assert drafts[0].payload["previous_status"] == "open"
-    drafts = events.agenda_drafts({TOP: beschluss()}, {TOP: beschluss(**frei)})
+    drafts = events.agenda_drafts({TOP: beschluss()}, {TOP: beschluss(frei=True)})
     assert drafts[0].payload == {"agenda_item": str(events.ref("agendaitem", TOP)), "status": "open"}
     # Freigabe zurückgenommen, TOP weiter veröffentlicht: öffentlich „neu lesen“, ohne Stand
-    drafts = events.agenda_drafts({TOP: beschluss(**frei)}, {TOP: beschluss()})
+    drafts = events.agenda_drafts({TOP: beschluss(frei=True)}, {TOP: beschluss()})
     assert _arten(drafts) == [("ris.agendaitem.changed", "AgendaItem", "oeffentlich")]
     assert drafts[0].payload["changed"] == ["implementationStatus"]
     # TOP nicht mehr veröffentlicht: seine Rücknahme genügt
-    drafts = events.agenda_drafts({TOP: beschluss(**frei)}, {TOP: beschluss(published=False)})
+    drafts = events.agenda_drafts({TOP: beschluss(frei=True)}, {TOP: beschluss(published=False)})
     assert "ris.resolution.implementation_changed" not in {d.type for d in drafts}
     assert all(d.visibility == "nichtoeffentlich" or d.type == "ris.object.depublished" for d in drafts)
