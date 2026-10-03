@@ -5,15 +5,14 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
-from django.core.paginator import Paginator
-from django.db.models import Q
-from django.http import Http404, HttpResponse
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
-from django.views.decorators.http import require_GET
-from django.views.generic import TemplateView
+from urllib.parse import urlencode
 
-from apps.common.mixins import HTMXMixin
+from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
+from django.shortcuts import get_object_or_404
+from django.urls import reverse
+from django.utils import timezone
+from django.views import View
+from django.views.decorators.http import require_GET
 
 from ..models import (
     OParlAgendaItem,
@@ -23,7 +22,6 @@ from ..models import (
     withdrawn_q,
 )
 from ..services import file_accel, file_access, file_delivery, file_reconcile, file_store
-from ._helpers import ActiveBodyRequiredMixin, get_active_body, page_number
 
 # =============================================================================
 # Dokumente (Files)
@@ -148,53 +146,19 @@ def _annotate_files_with_context(files):
         f.context_info = ctx
 
 
-class FileListView(HTMXMixin, ActiveBodyRequiredMixin, TemplateView):
-    """Liste aller Dokumente/Dateien."""
+class FileListView(View):
+    """Alte Dokumentliste: Dokumente gehören in die Suche (Issue #783), Filter „Dokumente“.
 
-    template_name = "pages/files/list.html"
+    Die Adresse ``/insight/dokumente/`` bleibt für Lesezeichen und Suchmaschinen erhalten und leitet dauerhaft
+    auf die Suche mit dem Filter weiter; ein Suchbegriff (``q``) wird übernommen.
+    """
 
-    def get_template_names(self):
-        if self.is_htmx:
-            return ["partials/file_list_items.html"]
-        return [self.template_name]
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        body = get_active_body(self.request)
-        q = self.request.GET.get("q", "").strip()
-        page_num = page_number(self.request, maximum=100_000)
-
-        if body:
-            qs = (
-                OParlFile.objects.filter(body=body, deleted=False, source_missing_since__isnull=True)
-                .select_related("paper")
-                .order_by("-file_date", "-created_at")
-            )
-
-            if q:
-                qs = qs.filter(Q(name__icontains=q) | Q(file_name__icontains=q) | Q(paper__name__icontains=q))
-
-            paginator = Paginator(qs, 30)
-            page = paginator.get_page(page_num)
-
-            # Annotiere Dateien mit Kontext (Gremium, Sitzung, TOP)
-            _annotate_files_with_context(page.object_list)
-
-            context["files"] = page
-            context["paginator"] = paginator
-            context["total_count"] = paginator.count
-
-        context["query"] = q
-
-        from ..seo import get_page_seo
-
-        context["seo"] = get_page_seo(
-            self.request,
-            title="Dokumente",
-            description="Beschlüsse, Anträge, Berichte und Anlagen der Kommunalpolitik mit Volltextsuche durchsuchen.",
-            body=body,
-        ).to_dict()
-        return context
+    def get(self, request, *args, **kwargs):
+        params = {"type": "file"}
+        query = request.GET.get("q", "").strip()
+        if query:
+            params["q"] = query
+        return HttpResponsePermanentRedirect(f"{reverse('insight_core:insight:search')}?{urlencode(params)}")
 
 
 # =============================================================================
@@ -475,7 +439,7 @@ def _fetch_live(file_obj, url, filename, force_download):
             "Die Datei konnte auf dem OParl-Server nicht gefunden werden. "
             "Das liegt oft an veränderten Daten und URLs auf dem Quell-Server. "
             "Die Probleme werden nach unserem nächsten Scan in der Regel gelöst. "
-            "Bei längerfristigen Problemen mit bestimmten Dokumenten melde dich bitte bei "
+            "Bei längerfristigen Problemen mit bestimmten Dokumenten melden Sie sich bitte bei "
             'unserem Support unter <a href="mailto:support@mandari.de">support@mandari.de</a>.',
         )
     except safe_fetch.TooLargeError:
