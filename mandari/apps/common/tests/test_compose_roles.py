@@ -57,8 +57,15 @@ def test_worker_dienst_wie_die_anwendung_mit_lebenszeichen() -> None:
     assert datei in " ".join(worker["healthcheck"]["test"]), "Healthcheck prüft die Datei, die der Worker erneuert"
     assert "mandari" not in worker["depends_on"], "Worker startet vor der Anwendung (Migration → Worker → Web)"
     assert worker["labels"]["mandari.autoheal"] == "true"
-    for name in ("TASKS_BACKEND", "EVENTS_WORKER_REQUIRED", "INGESTOR_EVENTS_ENABLED", "EVENTS_DB_DIRECT_URL"):
+    for name in (
+        "TASKS_BACKEND",
+        "EVENTS_WORKER_REQUIRED",
+        "INGESTOR_EVENTS_ENABLED",
+        "SESSION_EVENTS",
+        "EVENTS_DB_DIRECT_URL",
+    ):
         assert name in anwendung["environment"]
+    assert anwendung["environment"]["SESSION_EVENTS"] == "${SESSION_EVENTS:-aus}", "Standard bleibt aus"
 
 
 def test_schalter_des_aenderungsfeeds_erreichen_die_anwendung() -> None:

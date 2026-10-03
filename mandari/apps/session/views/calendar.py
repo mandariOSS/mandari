@@ -21,7 +21,7 @@ from django.views.generic import TemplateView
 from apps.common.formatting import MONTH_NAMES, WEEKDAY_CHOICES
 from apps.common.params import int_param
 
-from .. import audit
+from .. import audit, hub_events
 from ..models import SessionMeeting, SessionOrganization
 from ..permissions import SessionViewMixin
 from ..services import body_service, calendar_service
@@ -196,20 +196,24 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
 
         created = 0
         for entry in entries:
-            # Wahlperiode wie bei der Einzelanlage aus dem Sitzungsdatum (SessionMeeting.save, Issue #39)
-            meeting = SessionMeeting.objects.create(
-                tenant=self.session_tenant,
-                name=form["name"],
-                organization=form["organization"],
-                start=entry["start"],
-                location=form["location"],
-                room=form["room"],
-                is_public=form["is_public"],
-                meeting_state="draft",
-                created_by=self.session_user,
-            )
-            # Standard-TOPs des Gremiums automatisch übernehmen (Issue #85)
-            textblock_service.apply_standard_items(meeting)
+            # Drehscheibe (Issue #533): je Termin die Sitzung, dann ihre Standard-TOPs
+            with hub_events.track(self.session_tenant) as tracked:
+                # Wahlperiode wie bei der Einzelanlage aus dem Sitzungsdatum (SessionMeeting.save, Issue #39)
+                meeting = SessionMeeting.objects.create(
+                    tenant=self.session_tenant,
+                    name=form["name"],
+                    organization=form["organization"],
+                    start=entry["start"],
+                    location=form["location"],
+                    room=form["room"],
+                    is_public=form["is_public"],
+                    meeting_state="draft",
+                    created_by=self.session_user,
+                )
+                tracked.meeting(meeting, created=True)
+                tracked.agenda(meeting)
+                # Standard-TOPs des Gremiums automatisch übernehmen (Issue #85)
+                textblock_service.apply_standard_items(meeting)
             created += 1
         audit.log_event(
             "create",

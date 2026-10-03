@@ -505,6 +505,7 @@ Hinweis „Worker“. Gebraucht werden:
 | Standard (`EVENTS_WORKER_REQUIRED` leer) | `scheduler` und `tasks` für die Warteschlangen der Zeitpläne und der Admin-Aufträge (`default`) |
 | `TASKS_BACKEND=journal` | zusätzlich `tasks` für **jede** Warteschlange (zusammen über alle Worker; ausgenommen Parallelität 0) |
 | `INGESTOR_EVENTS_ENABLED=true` | zusätzlich `sequencer` |
+| `SESSION_EVENTS=schatten` oder `aktiv` | zusätzlich `sequencer` |
 | `EVENTS_WORKER_REQUIRED=true` | alle Rollen, mit `tasks` wie oben |
 | `EVENTS_WORKER_REQUIRED=false` | keine (Meldung aus; ohne Worker laufen dann auch keine Zeitpläne, etwa auf einer Vorführinstanz) |
 

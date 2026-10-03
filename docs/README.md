@@ -29,6 +29,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `SESSION_LEITSTELLE.md` | Session → Leitstelle und gemeinsame Sitzungen (Seite folgt) |
 | `SESSION_SITZUNGSFORMAT_LANDESRECHT.md` | Session → Sitzungsformate und Landesrecht (Seite folgt) |
 | `SESSION_SITZUNGSCOCKPIT.md` | Session → Sitzungscockpit (Seite folgt) |
+| `SESSION_EREIGNISSE.md` | – (Session meldet Ereignisse an die Datendrehscheibe; Entwicklung und Betrieb) |
 | `SESSION_STAMMDATEN_IMPORT.md` | Session → Stammdaten aus Bestandssystemen übernehmen (Seite folgt) |
 | `SESSION_UMSTIEG_SESSIONNET.md` | Session → Umstieg aus SessionNet (Seite folgt) |
 | `FILE_CACHE.md` | [Betrieb → Dokument-Cache](https://docs.mandari.de/betrieb/dokument-cache/) |

@@ -842,7 +842,13 @@ def perform(
             raise CockpitError(
                 "Die Niederschrift dieser Sitzung ist genehmigt. Das Cockpit zeigt den Stand nur noch an."
             )
-        outcome = handler(locked, data, permissions=permissions, session_user=session_user, tenant=locked.tenant)
+        from apps.session import hub_events
+
+        # Drehscheibe (Issue #533): Eröffnen und Schließen ändern den Sitzungsstatus; die Tagesordnung gleich mit
+        with hub_events.track(locked.tenant) as tracked:
+            tracked.meeting(locked)
+            tracked.agenda(locked)
+            outcome = handler(locked, data, permissions=permissions, session_user=session_user, tenant=locked.tenant)
         # Die Signale der gespeicherten Objekte melden die Änderung ebenfalls; je Transaktion geht ein Hinweis
         notify_on_commit(locked.pk)
     return outcome

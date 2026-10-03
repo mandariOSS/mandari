@@ -15,10 +15,10 @@ auf mehreren Rechnern mit Uhrenversatz würden sonst fälschlich als ausgefallen
 **Braucht die Installation einen Worker?** (``required_roles``, Issues #509, #515) Ja: Seit die
 wiederkehrende Arbeit (Erinnerungen und Einladungen zu Fraktionssitzungen, Verortung, Aufräumen)
 als Zeitpläne im Worker läuft und nicht mehr in einem Faden im Webprozess, braucht jede Installation
-die Rollen ``tasks`` und ``scheduler``; ohne sie fiele diese Arbeit still aus. Schreibt der Ingestor
-Ereignisse (``INGESTOR_EVENTS_ENABLED``), zusätzlich ``sequencer``, sonst bekämen sie keine
-Folgenummer. ``EVENTS_WORKER_REQUIRED=true`` verlangt alle Rollen, ``false`` keine (etwa eine
-Vorführinstanz ohne Worker).
+die Rollen ``tasks`` und ``scheduler``; ohne sie fiele diese Arbeit still aus. Schreiben der Ingestor
+(``INGESTOR_EVENTS_ENABLED``) oder mandari Session (``SESSION_EVENTS`` nicht ``aus``) Ereignisse,
+zusätzlich ``sequencer``, sonst bekämen sie keine Folgenummer. ``EVENTS_WORKER_REQUIRED=true``
+verlangt alle Rollen, ``false`` keine (etwa eine Vorführinstanz ohne Worker).
 
 **Abdeckung je Warteschlange:** Ist ``tasks`` nötig, müssen die lebenden Worker mit dieser Rolle
 zusammen jede Warteschlange bedienen, in der Aufträge entstehen (``required_queues``; ausgenommen
@@ -103,6 +103,9 @@ def required_roles() -> frozenset[str]:
     # Zeitpläne für die wiederkehrende Arbeit, Runner für ihre Aufträge (und alle übrigen mit Journal)
     rollen: set[str] = {"tasks", "scheduler"}
     if getattr(settings, "INGESTOR_EVENTS_ENABLED", False):
+        rollen.add("sequencer")
+    if str(getattr(settings, "SESSION_EVENTS", "aus") or "aus").strip().lower() != "aus":
+        # Session schreibt Ereignisse (apps.session.hub_events): ohne Sequenzierer keine Folgenummer
         rollen.add("sequencer")
     return frozenset(rollen)
 

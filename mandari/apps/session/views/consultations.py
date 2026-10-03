@@ -24,6 +24,7 @@ from django.views import View
 
 from apps.common.params import uuid_param
 
+from .. import hub_events
 from ..models import (
     SessionAgendaItem,
     SessionConsultation,
@@ -265,7 +266,9 @@ def schedule_consultation(view, request, consultation):
 
     # TOP, Verknüpfung und Status in einer Transaktion: Nachgelagerte Empfänger (Rückmeldung an die
     # einreichende Fraktion, Issue #316) sehen nie einen TOP ohne seine Beratungsstation.
-    with transaction.atomic():
+    # Drehscheibe (Issue #533): neuer TOP auf der Zielsitzung und die neue Nummerierung
+    with transaction.atomic(), hub_events.track(view.session_tenant) as tracked:
+        tracked.agenda(meeting)
         item = SessionAgendaItem.objects.create(
             meeting=meeting,
             number="?",  # wird durch renumber_agenda gesetzt

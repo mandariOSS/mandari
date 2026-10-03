@@ -148,7 +148,8 @@ Prüfungen, die für eine Installation nicht kritisch sind, lassen sich mit
 weiter gemeldet (`"status": "degraded"`), die Antwort bleibt 200.
 
 Die Prüfung `worker` ist immer optional: Braucht die Installation einen Worker
-(`TASKS_BACKEND=journal`, `INGESTOR_EVENTS_ENABLED=true` oder `EVENTS_WORKER_REQUIRED=true`) und
+(`TASKS_BACKEND=journal`, `INGESTOR_EVENTS_ENABLED=true`, `SESSION_EVENTS` nicht `aus` oder
+`EVENTS_WORKER_REQUIRED=true`) und
 bedient keiner die nötigen Rollen – mit `tasks` jede Warteschlange –, melden `/health/ready/` und
 `/health/` (Feld `worker`) `"degraded"`; Admin-Startseite und Betriebsmonitor zeigen einen
 Hinweis. Ohne Bedarf steht dort „nicht erforderlich“, nichts wird gemeldet, und die Prüfung fragt

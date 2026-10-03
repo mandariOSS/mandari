@@ -389,6 +389,18 @@ WORKER_PUSH_TOKEN = os.environ.get("WORKER_PUSH_TOKEN", "")
 WORKER_PUSH_INTERVAL = float(os.environ.get("WORKER_PUSH_INTERVAL", "60"))
 
 
+# Ereignisse aus mandari Session an die Datendrehscheibe (apps.session.hub_events, Issue #533): Sitzungen,
+# Tagesordnung und Ladung als Ereignisse ris.* im Journal, in derselben Transaktion wie die Änderung.
+# "aus" (Standard): nichts. "schatten": Ereignisse werden geschrieben; scheitert das, bleibt die Änderung
+# bestehen und der Fehler steht im Protokoll (Parallelbetrieb neben den bisherigen Wegen). "aktiv": Änderung
+# und Ereignis sind atomar. Je Mandant überschreibbar (SessionTenant.hub_events, Admin). Braucht den
+# Sequenzierer im Worker; nicht "aus" verlangt ihn (EVENTS_WORKER_REQUIRED).
+SESSION_EVENTS = os.environ.get("SESSION_EVENTS", "aus").strip().lower() or "aus"
+if SESSION_EVENTS not in ("aus", "schatten", "aktiv"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("SESSION_EVENTS muss aus, schatten oder aktiv sein.")
+
 # Cache - use Redis if available, fallback to local memory
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 

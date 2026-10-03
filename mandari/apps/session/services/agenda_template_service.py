@@ -82,10 +82,14 @@ def apply(meeting: SessionMeeting, template: AgendaTemplate) -> ApplyResult:
     Raises:
         protocol_lock.ProtocolLockedError: Niederschrift genehmigt – keine neuen TOPs
     """
+    from apps.session import hub_events
     from apps.session.services import agenda_service
 
     supplementary = bool(meeting.invitation_sent_at) or meeting.meeting_state == "invitation_sent"
-    with transaction.atomic():
+    # Drehscheibe (Issue #533): neue TOPs, neue Nummern und ggf. das Sitzungsformat
+    with transaction.atomic(), hub_events.track(meeting.tenant) as tracked:
+        tracked.meeting(meeting)
+        tracked.agenda(meeting)
         for name, election in template.items:
             order = agenda_service.insertion_order(meeting, is_public=meeting.is_public)
             SessionAgendaItem.objects.create(
