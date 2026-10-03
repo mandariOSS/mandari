@@ -143,7 +143,7 @@ class TestRahmen:
 
     def test_schrift_inter_selbst_gehostet(self, besucher: Client) -> None:
         html = _seite(besucher, "paper_list")
-        assert "fonts/inter-latin" in html and "@font-face" in html
+        assert "vendor/inter/inter-latin" in html and "@font-face" in html
         assert "fonts.googleapis" not in html
 
     def test_fuss_mit_datenstand_und_barrierefreiheit(self, besucher: Client) -> None:
