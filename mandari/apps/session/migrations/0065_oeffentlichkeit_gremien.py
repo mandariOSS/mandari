@@ -62,7 +62,7 @@ def reload_versions(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("session", "0059_gremientypen_funktionen"),
+        ("session", "0064_gremientypen_funktionen"),
     ]
 
     operations = [

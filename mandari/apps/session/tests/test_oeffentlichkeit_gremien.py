@@ -273,8 +273,8 @@ def test_gremienformular_kennt_oeffentlichkeit_und_termine() -> None:
 # Datenmigration und Rückfall per Image
 # =============================================================================
 
-VORHER = ("session", "0059_gremientypen_funktionen")
-NACHHER = ("session", "0060_oeffentlichkeit_gremien")
+VORHER = ("session", "0064_gremientypen_funktionen")
+NACHHER = ("session", "0065_oeffentlichkeit_gremien")
 
 
 @pytest.mark.django_db(transaction=True)
