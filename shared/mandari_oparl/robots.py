@@ -14,7 +14,10 @@ Regeln (RFC 9309):
   gewinnt ``Allow``. ``*`` steht für beliebig viele Zeichen, ``$`` am Ende verankert das Pfadende.
   Pfad und Abfrage (``?…``) werden verglichen, Groß-/Kleinschreibung zählt.
 - Abruf: 2xx wird ausgewertet; 4xx (auch 401/403/406) heißt „nicht vorhanden“, also alles erlaubt;
-  5xx oder ein Netzfehler heißt „nicht erreichbar“, also alles gesperrt, bis ein Abruf gelingt.
+  5xx, 408, 429 oder ein Netzfehler heißt „nicht erreichbar“: Abrufe werden zurückgestellt, bis ein Abruf
+  der robots.txt gelingt (429 behandeln wir wie 5xx: Ein Host, der uns bremst, gibt damit keine Freigabe).
+  „Nicht erreichbar“ ist eine Störung, keine Sperre: Wer die Prüfung nutzt, stellt den Abruf zurück und
+  versucht es später erneut, statt ihn als gesperrt zu überspringen (:attr:`Decision.unreachable`).
 - ``/robots.txt`` selbst ist immer erlaubt; ausgewertet werden höchstens 500 KiB.
 
 Abrufe unterscheiden zwei Arten, weil viele Systeme nur Dokumente sperren: ``api`` (OParl-JSON, HTML-Seiten
@@ -44,7 +47,12 @@ RETRY_UNREACHABLE_SECONDS = 15 * 60
 #: Zustände einer robots.txt
 STATE_PARSED = "parsed"  # abgerufen und ausgewertet
 STATE_UNAVAILABLE = "unavailable"  # 4xx: gilt als nicht vorhanden, alles erlaubt
-STATE_UNREACHABLE = "unreachable"  # 5xx oder Netzfehler: alles gesperrt
+STATE_UNREACHABLE = "unreachable"  # 5xx, 408, 429 oder Netzfehler: Abrufe zurückstellen
+#: Zustand einer Entscheidung, die eine Ausnahme der Quelle getroffen hat (ohne Blick in die robots.txt)
+STATE_OVERRIDE = "override"
+
+#: Statuscodes, die wie ein Serverfehler als „nicht erreichbar“ gelten (Zeitüberschreitung, Ratenlimit)
+_UNREACHABLE_CLIENT_CODES = frozenset({408, 429})
 
 #: Arten von Abrufen
 KIND_API = "api"
@@ -116,17 +124,36 @@ class Rule:
 
 @dataclass(frozen=True)
 class Decision:
-    """Ergebnis einer Prüfung; ``rule`` nennt die entscheidende Zeile (für Protokoll und Bericht)."""
+    """
+    Ergebnis einer Prüfung; ``rule`` nennt die entscheidende Zeile (für Protokoll und Bericht).
+
+    Drei Fälle für den Aufrufer: erlaubt (``allowed``), gesperrt (``blocked``: die robots.txt untersagt den
+    Abruf, überspringen bis zu einer Freigabe) und nicht erreichbar (``unreachable``: zurückstellen und später
+    erneut versuchen, kein Befund gegen die Quelle).
+    """
 
     allowed: bool
     state: str
     rule: str = ""
+    #: HTTP-Status des Abrufs der robots.txt bei „nicht erreichbar“ (``None``: Netzfehler)
+    status_code: int | None = None
+
+    @property
+    def unreachable(self) -> bool:
+        """Die robots.txt war nicht erreichbar: Abruf zurückstellen, nicht als gesperrt werten."""
+        return not self.allowed and self.state == STATE_UNREACHABLE
+
+    @property
+    def blocked(self) -> bool:
+        """Die robots.txt untersagt den Abruf."""
+        return not self.allowed and self.state != STATE_UNREACHABLE
 
     @property
     def reason(self) -> str:
         """Kurzer fester Text für Protokolle und Fehlermeldungen (ohne Ausnahmetexte)."""
         if self.state == STATE_UNREACHABLE:
-            return "robots.txt nicht erreichbar, Abruf gilt als gesperrt"
+            cause = f"HTTP {self.status_code}" if self.status_code else "Netzfehler"
+            return f"robots.txt nicht erreichbar ({cause}), Abruf zurückgestellt"
         if self.allowed:
             return "robots.txt erlaubt den Abruf"
         return f"robots.txt sperrt den Abruf ({self.rule})" if self.rule else "robots.txt sperrt den Abruf"
@@ -184,9 +211,9 @@ class RobotsTxt:
     def from_response(cls, status_code: int | None, body: str | bytes | None = None) -> RobotsTxt:
         """
         Ergebnis eines Abrufs von ``/robots.txt`` (``status_code`` nach Weiterleitungen; ``None`` bei
-        Netzfehler oder Zeitüberschreitung).
+        Netzfehler oder Zeitüberschreitung). 408 und 429 zählen wie 5xx als „nicht erreichbar“.
         """
-        if status_code is None or status_code >= 500:
+        if status_code is None or status_code >= 500 or status_code in _UNREACHABLE_CLIENT_CODES:
             return cls(state=STATE_UNREACHABLE, status_code=status_code)
         if 200 <= status_code < 300:
             return cls.parse(body or "", status_code=status_code)
@@ -203,7 +230,7 @@ class RobotsTxt:
     def decide(self, url_or_path: str, tokens: Iterable[str] = (PRODUCT_TOKEN,)) -> Decision:
         """Darf die Adresse abgerufen werden? Bei mehreren Tokens müssen alle erlaubt sein."""
         if self.state == STATE_UNREACHABLE:
-            return Decision(allowed=False, state=self.state)
+            return Decision(allowed=False, state=self.state, status_code=self.status_code)
         if self.state == STATE_UNAVAILABLE:
             return Decision(allowed=True, state=self.state)
         target = _target(url_or_path)
@@ -246,6 +273,10 @@ class RobotsOverride:
 
     def covers(self, kind: str) -> bool:
         return self.scope == SCOPE_ALL or self.scope == kind
+
+    def decision(self) -> Decision:
+        """Entscheidung „erlaubt per Ausnahme“ (ohne Blick in die robots.txt)."""
+        return Decision(allowed=True, state=STATE_OVERRIDE, rule=f"Ausnahme der Quelle ({self.scope})")
 
 
 def _override_parts(sync_config: Any) -> tuple[Mapping[str, Any] | None, str | None]:

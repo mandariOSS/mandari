@@ -27,6 +27,7 @@ from insight_core.services import robots
 from insight_core.services.document_extraction import (
     DocumentDownloadError,
     RobotsBlockedError,
+    RobotsUnreachableError,
     download_and_extract,
 )
 from insight_core.services.file_cache import download_headers, sources_without_downloads
@@ -102,6 +103,7 @@ class Command(BaseCommand):
             "failed": 0,
             "ocr": 0,
             "skipped": 0,
+            "deferred": 0,
             "total_chars": 0,
         }
 
@@ -133,6 +135,8 @@ class Command(BaseCommand):
                                 stats["ocr"] += 1
                         elif result.get("skipped"):
                             stats["skipped"] += 1
+                        elif result.get("deferred"):
+                            stats["deferred"] += 1
                         else:
                             stats["failed"] += 1
                     except Exception as exc:
@@ -147,6 +151,8 @@ class Command(BaseCommand):
         self.stdout.write(f"  Zeichen gesamt: {stats['total_chars']:,}")
         if stats["skipped"]:
             self.stdout.write(self.style.WARNING(f"Übersprungen: {stats['skipped']}"))
+        if stats["deferred"]:
+            self.stdout.write(self.style.WARNING(f"Zurückgestellt (robots.txt nicht erreichbar): {stats['deferred']}"))
         if stats["failed"]:
             self.stdout.write(self.style.ERROR(f"Fehlgeschlagen: {stats['failed']}"))
 
@@ -202,6 +208,12 @@ class Command(BaseCommand):
             if verbose:
                 self.stdout.write(self.style.WARNING(f"  {file.id}: KI-OCR benötigt (kein Text via pypdf/Tesseract)"))
             return {"success": False, "reason": "ocr_needed"}
+
+        except RobotsUnreachableError as exc:
+            # Störung, keine Sperre: Datei bleibt "pending" und kommt beim nächsten Lauf wieder dran
+            if verbose:
+                self.stdout.write(self.style.WARNING(f"  {file.id}: {exc.reason}"))
+            return {"success": False, "deferred": True, "reason": "robots.txt nicht erreichbar"}
 
         except RobotsBlockedError as exc:
             # Kein Fehler der Quelle: übersprungen, bis eine Freigabe vorliegt (robots_override reiht neu ein)

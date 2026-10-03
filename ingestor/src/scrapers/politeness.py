@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from mandari_oparl.robots import KIND_API, RobotsOverride
+from mandari_oparl.robots import KIND_API, Decision, RobotsOverride
 
 from src.client.robots import robots_gate
 from src.config import settings
@@ -27,6 +27,10 @@ console = MaskingConsole()
 
 class RobotsDisallowedError(Exception):
     """robots.txt verbietet den Abruf des Pfads für unseren User-Agent."""
+
+
+class RobotsUnreachableError(Exception):
+    """robots.txt des Hosts nicht erreichbar (5xx, 408, 429, Netzfehler): Abruf zurückgestellt, keine Sperre."""
 
 
 class PoliteFetcher:
@@ -77,14 +81,17 @@ class PoliteFetcher:
     # robots.txt
     # ------------------------------------------------------------------
 
-    async def is_allowed(self, url: str, kind: str = KIND_API) -> bool:
-        """Prüft, ob robots.txt den Abruf der URL für unseren User-Agent erlaubt (RFC 9309)."""
+    async def decide(self, url: str, kind: str = KIND_API) -> Decision:
+        """robots.txt-Entscheidung für die URL mit unserem User-Agent (RFC 9309)."""
         if not self.respect_robots:
-            return True
-        decision = await robots_gate.decide(
+            return Decision(allowed=True, state="disabled")
+        return await robots_gate.decide(
             self._client, url, user_agent=self.user_agent, kind=kind, override=self.robots_override
         )
-        return decision.allowed
+
+    async def is_allowed(self, url: str, kind: str = KIND_API) -> bool:
+        """Prüft, ob robots.txt den Abruf der URL für unseren User-Agent erlaubt (RFC 9309)."""
+        return (await self.decide(url, kind)).allowed
 
     # ------------------------------------------------------------------
     # Fetch
@@ -94,12 +101,16 @@ class PoliteFetcher:
         """
         Holt eine Seite als Text (None bei nicht behebbarem Fehler).
 
-        Wirft RobotsDisallowedError, wenn robots.txt den Pfad verbietet.
+        Wirft RobotsDisallowedError, wenn robots.txt den Pfad verbietet, und RobotsUnreachableError, wenn
+        die robots.txt nicht erreichbar ist (dann später erneut versuchen, keine Sperre).
         """
         if not self._client:
             raise RuntimeError("PoliteFetcher nicht initialisiert — 'async with' verwenden.")
 
-        if not await self.is_allowed(url):
+        decision = await self.decide(url)
+        if decision.unreachable:
+            raise RobotsUnreachableError(f"{url}: {decision.reason}")
+        if not decision.allowed:
             raise RobotsDisallowedError(url)
 
         host = urlparse(url).netloc.lower()

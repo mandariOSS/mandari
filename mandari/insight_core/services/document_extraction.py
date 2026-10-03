@@ -82,6 +82,17 @@ class RobotsBlockedError(DocumentDownloadError):
         self.reason = reason
 
 
+class RobotsUnreachableError(DocumentDownloadError):
+    """
+    Die robots.txt der Quelle war nicht erreichbar (5xx, 408, 429, Netzfehler): Abruf zurückgestellt, keine
+    Sperre. Aufrufer lassen die Datei in der Warteschlange und versuchen es später erneut.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 def _http_get(
     url: str,
     timeout: float = 60.0,
@@ -91,17 +102,24 @@ def _http_get(
     """
     Führt einen HTTP-GET Request aus (``extra_headers``: Download-Header je Quelle, Issue #116).
 
-    Vorher gilt die robots.txt des Hosts (``sync_config`` der Quelle für eine Ausnahme mit Vermerk);
-    ist das Dokument gesperrt, folgt ``RobotsBlockedError`` ohne Anfrage an die Quelle.
+    Vorher gilt die robots.txt des Hosts (``sync_config`` der Quelle für eine Ausnahme mit Vermerk), geprüft
+    mit dem User-Agent des Abrufs (``User-Agent`` in ``extra_headers``, sonst unser Standard). Ist das Dokument
+    gesperrt, folgt ``RobotsBlockedError``, ist die robots.txt nicht erreichbar, ``RobotsUnreachableError`` –
+    jeweils ohne Anfrage an die Quelle.
     """
     from . import robots
 
-    decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config)
+    agent = next(
+        (v for k, v in (extra_headers or {}).items() if k.lower() == "user-agent" and v.strip()), robots.USER_AGENT
+    )
+    decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent)
+    if decision.unreachable:
+        raise RobotsUnreachableError(decision.reason)
     if not decision.allowed:
         raise RobotsBlockedError(decision.reason)
     headers = {
-        "User-Agent": robots.USER_AGENT,
-        **(extra_headers or {}),
+        **{k: v for k, v in (extra_headers or {}).items() if k.lower() != "user-agent"},
+        "User-Agent": agent,
     }
     from .safe_fetch import guarded_client
 
@@ -345,6 +363,7 @@ def download_and_extract(
 
     Raises:
         RobotsBlockedError: die robots.txt sperrt das Dokument
+        RobotsUnreachableError: die robots.txt ist nicht erreichbar (später erneut versuchen)
         DocumentDownloadError: Abruf fehlgeschlagen
     """
     response = _http_get(url, timeout=timeout, extra_headers=extra_headers, sync_config=sync_config)

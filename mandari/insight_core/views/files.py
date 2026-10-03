@@ -309,19 +309,6 @@ def file_proxy(request, file_id):
             "deshalb nicht selbst ab. " + _original_link(url),
         )
 
-    # robots.txt (RFC 9309) gilt auch für die Vorschau: gesperrte Dokumente rufen wir nicht selbst ab
-    decision = robots.check(url, robots.KIND_FILES, sync_config=robots.sync_config_of(file_obj))
-    if not decision.allowed:
-        reason = (
-            "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar."
-            if decision.state == "unreachable"
-            else "Diese Kommune untersagt automatische Abrufe ihrer Dokumente (robots.txt)."
-        )
-        return _file_proxy_error(
-            "Dokument beim Ratsinformationssystem öffnen",
-            reason + " Wir rufen das Dokument deshalb nicht selbst ab. " + _original_link(url),
-        )
-
     # Quellen-Schonung (Issue #89): eine mehrfach unerreichbare Quelle wird nicht bei jedem
     # Vorschau-Aufruf erneut angefragt — das hält Ratenlimits/Sperren nur am Leben.
     if file_cache.source_paused(file_obj.body):
@@ -360,9 +347,44 @@ def file_proxy(request, file_id):
         response["Retry-After"] = "30"
         return response
     try:
+        blocked = _robots_blocked(file_obj, url)
+        if blocked is not None:
+            return blocked
         return _fetch_live(file_obj, url, filename, force_download)
     finally:
         _LIVE_FETCH_SLOTS.release()
+
+
+def _robots_blocked(file_obj, url):
+    """
+    robots.txt (RFC 9309) gilt auch für die Vorschau: gesperrte Dokumente rufen wir nicht selbst ab, sondern
+    verweisen auf das Original. Erst nach Schonung, Drossel und Abrufplatz geprüft, damit eine geschonte Quelle
+    nicht über ihre robots.txt angefragt wird; der Abruf der robots.txt läuft ohne gehaltene
+    Datenbankverbindung. ``None``: Abruf erlaubt.
+    """
+    from apps.common.db_connections import release_idle_thread_connections
+
+    # Einstellungen der Quelle lesen, solange die Verbindung noch da ist (die Quelle hängt danach am Body)
+    sync_config = robots.sync_config_of(file_obj)
+    agent = robots.user_agent_for(file_obj)
+    release_idle_thread_connections()
+    decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent)
+    if decision.allowed:
+        return None
+    if decision.unreachable:
+        response = _file_proxy_error(
+            "Dokument beim Ratsinformationssystem öffnen",
+            "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar. Wir rufen das "
+            "Dokument deshalb jetzt nicht selbst ab. " + _original_link(url),
+            status=503,
+        )
+        response["Retry-After"] = "900"
+        return response
+    return _file_proxy_error(
+        "Dokument beim Ratsinformationssystem öffnen",
+        "Diese Kommune untersagt automatische Abrufe ihrer Dokumente (robots.txt). Wir rufen das Dokument "
+        "deshalb nicht selbst ab. " + _original_link(url),
+    )
 
 
 def _fetch_live(file_obj, url, filename, force_download):
@@ -386,7 +408,7 @@ def _fetch_live(file_obj, url, filename, force_download):
             total_seconds=throttle.setting("FILE_PROXY_TOTAL_SECONDS"),
             timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=5.0, pool=5.0),
             headers=headers,
-            user_agent=file_cache.USER_AGENT,
+            user_agent=robots.user_agent_for(file_obj),
         )
     except httpx.HTTPStatusError as e:
         spool.close()

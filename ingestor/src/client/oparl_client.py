@@ -21,7 +21,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
-from mandari_oparl.robots import KIND_API, RobotsOverride
+from mandari_oparl.robots import KIND_API, RETRY_UNREACHABLE_SECONDS, RobotsOverride
 
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
 from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message
@@ -101,11 +101,22 @@ class HostHealth:
     robots_blocked_count: int = 0
     robots_reason: str = ""
     ok_requests: int = 0
+    # robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler): zurückgestellte Anfragen, letzter Status
+    robots_unreachable_count: int = 0
+    robots_unreachable_status: int | None = None
 
     @property
     def robots_blocked(self) -> bool:
         """Die robots.txt sperrt den Host für uns ganz: gesperrte Anfragen, keine einzige erfolgreiche."""
         return self.robots_blocked_count > 0 and self.ok_requests == 0
+
+    @property
+    def robots_unreachable(self) -> bool:
+        """
+        Die robots.txt des Hosts war nicht erreichbar und keine Anfrage kam durch. Das ist eine Störung des
+        Hosts, keine Sperre: Befund wie eine 5xx-Serie (kurze Schonung), nicht ``robots_blocked``.
+        """
+        return self.robots_unreachable_count > 0 and self.ok_requests == 0
 
     @property
     def server_error_series(self) -> bool:
@@ -117,7 +128,7 @@ class HostHealth:
             return ERROR_KIND_UA_BLOCKED
         if self.robots_blocked:
             return ERROR_KIND_ROBOTS_BLOCKED
-        if self.server_error_series:
+        if self.server_error_series or self.robots_unreachable:
             return ERROR_KIND_SERVER_ERROR_SERIES
         return None
 
@@ -141,6 +152,15 @@ class HostHealth:
                 f"robots.txt sperrt: {self.host} untersagt unseren Abruf ({self.robots_reason}); "
                 f"{self.robots_blocked_count} Anfrage(n) nicht gestellt. Ausnahme nur mit Freigabe "
                 f"(sync_config robots_override)"
+            )
+        elif kind == ERROR_KIND_SERVER_ERROR_SERIES and not self.server_error_series:
+            # Nur die robots.txt war nicht erreichbar: Störung, keine Sperre
+            status = self.robots_unreachable_status
+            cause = f"HTTP {status}" if status else "Netzfehler"
+            text = (
+                f"Störung: robots.txt von {self.host} nicht erreichbar ({cause}); "
+                f"{self.robots_unreachable_count} Anfrage(n) zurückgestellt, neuer Versuch frühestens nach "
+                f"{RETRY_UNREACHABLE_SECONDS // 60} Minuten"
             )
         elif kind == ERROR_KIND_SERVER_ERROR_SERIES:
             codes = ", ".join(str(code) for code in self.last_status_codes)
@@ -177,6 +197,7 @@ class HostHealth:
             "failed_lists": list(self.failed_lists),
             "robots_blocked_count": self.robots_blocked_count,
             "robots_reason": self.robots_reason,
+            "robots_unreachable_count": self.robots_unreachable_count,
         }
 
 
@@ -438,8 +459,9 @@ class OParlClient:
 
     async def _robots_blocked(self, url: str) -> FetchResult | None:
         """
-        robots.txt des Hosts prüfen (RFC 9309, Art ``api``). Gesperrt: Ergebnis ohne Anfrage an die Quelle
-        mit Fehlerklasse ``robots_blocked``; erlaubt: ``None``.
+        robots.txt des Hosts prüfen (RFC 9309, Art ``api``). Erlaubt: ``None``. Gesperrt: Ergebnis ohne Anfrage
+        an die Quelle mit Fehlerklasse ``robots_blocked``. Nicht erreichbar (5xx, 408, 429, Netzfehler): Ergebnis
+        ohne Anfrage, gewertet als Störung (``server_error_series``), nicht als Sperre.
         """
         assert self._client is not None
         decision = await robots_gate.decide(
@@ -453,6 +475,16 @@ class OParlClient:
         if decision.allowed:
             return None
         health = self._health(url)
+        if decision.unreachable:
+            health.robots_unreachable_count += 1
+            health.robots_unreachable_status = decision.status_code
+            self.stats.errors += 1
+            metrics.record_http_error(self.source_name, "robots_unreachable")
+            if health.robots_unreachable_count == 1:
+                console.print(f"[yellow]{health.host}: {decision.reason}[/yellow]")
+            return FetchResult(
+                url=url, data=None, status_code=0, error=decision.reason, error_kind=ERROR_KIND_SERVER_ERROR_SERIES
+            )
         health.robots_blocked_count += 1
         health.robots_reason = decision.reason
         self.stats.errors += 1

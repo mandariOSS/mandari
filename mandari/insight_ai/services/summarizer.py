@@ -246,6 +246,7 @@ class SummaryService:
             DocumentDownloadError,
             download_and_extract,
         )
+        from insight_core.services.file_cache import download_headers
 
         url = file.download_url or file.access_url
         if not url:
@@ -255,14 +256,18 @@ class SummaryService:
         try:
             logger.info(f"Extracting text from file {file.id}: {url}")
 
-            # Download und OCR dauern: Datenbankverbindung solange an den Pool zurückgeben
+            # Einstellungen der Quelle (robots-Ausnahme, Download-Header samt User-Agent) noch mit Verbindung
+            # lesen; Download und OCR dauern, die Datenbankverbindung geht solange an den Pool zurück
+            sync_config = robots.sync_config_of(file)
+            extra_headers = download_headers(file.body)
             release_idle_thread_connections()
             result = download_and_extract(
                 url=url,
                 mime_type=file.mime_type,
                 original_name=file.file_name or file.name or "",
                 timeout=120.0,
-                sync_config=robots.sync_config_of(file),
+                extra_headers=extra_headers,
+                sync_config=sync_config,
             )
 
             if result.text and result.text.strip():

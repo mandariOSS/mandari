@@ -8,6 +8,11 @@ je Kommune **höchstens fünf Anfragen** (robots.txt, Startseite, bei 403 eine
 Vergleichsanfrage mit neutralem Client, danach OParl-Kandidaten) und umgeht nichts:
 Gates werden erkannt und gemeldet, nicht überwunden.
 
+Die robots.txt gilt auch hier (RFC 9309, ``mandari_oparl.robots``): Gesperrte Pfade fragen
+wir nicht an. Ist die Startseite gesperrt, entfallen Startseite und Vergleichsanfrage; ist
+die robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler), endet die Prüfung nach dieser
+einen Anfrage mit dem Befund „nicht erreichbar“.
+
 Die reinen Funktionen (Fingerprint, robots-Verdict, Gate-Erkennung, Kandidatenliste)
 sind ohne Netz testbar; ``probe_url`` bindet sie mit einem ``httpx.AsyncClient``
 zusammen.
@@ -23,7 +28,7 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx
 from mandari_oparl.crawler import product_token
-from mandari_oparl.robots import RobotsTxt
+from mandari_oparl.robots import STATE_UNREACHABLE, RobotsTxt
 
 from src.client.oparl_compat import detect_oparl_version, is_oparl_error
 
@@ -86,7 +91,7 @@ class ProbeResult:
     vendor: str = "unbekannt"
     vendor_label: str = VENDOR_LABELS["unbekannt"]
     landing_status: int | None = None
-    robots: str = "unbekannt"  # erlaubt | gesperrt | nicht_vorhanden | unbekannt
+    robots: str = "unbekannt"  # erlaubt | gesperrt | nicht_vorhanden | nicht_erreichbar | unbekannt
     robots_detail: str = ""
     gate: str | None = None  # browser_verification | proof_of_work | waf_forbidden
     ua_blocked: bool = False
@@ -210,6 +215,9 @@ def suggest_sync_config(result: ProbeResult) -> dict[str, Any] | None:
     if result.robots == "gesperrt":
         result.notes.append("kein Vorschlag: robots.txt untersagt den Abruf (§ 44b UrhG)")
         return None
+    if result.robots == "nicht_erreichbar":
+        result.notes.append("kein Vorschlag: robots.txt nicht erreichbar – Prüfung später wiederholen")
+        return None
     if result.vendor == "sessionnet":
         return {"scraper": "sessionnet", "base_url": result.url.rstrip("/")}
     if result.vendor in ("allris3", "allris4"):
@@ -236,7 +244,7 @@ def classify_batch(
         if r.oparl_endpoint:
             if r.oparl_endpoint.rstrip("/") not in registriert:
                 oparl_unregistriert.append({"url": r.url, "oparl_endpoint": r.oparl_endpoint, "vendor": r.vendor})
-        elif r.robots != "gesperrt" and not r.gate and not r.ua_blocked:
+        elif r.robots in ("erlaubt", "nicht_vorhanden") and not r.gate and not r.ua_blocked:
             ohne_oparl.append({"url": r.url, "vendor": r.vendor, "robots": r.robots})
     return {"ohne_oparl_robots_frei": ohne_oparl, "oparl_vorhanden_nicht_registriert": oparl_unregistriert}
 
@@ -267,6 +275,26 @@ async def _get(client: httpx.AsyncClient, url: str, budget: _Budget, **kw: Any) 
         return None
 
 
+async def _load_robots(
+    client: httpx.AsyncClient, robots_url: str, budget: _Budget, user_agent: str
+) -> tuple[RobotsTxt, str | None]:
+    """robots.txt abrufen und nach RFC 9309 einordnen; zweiter Wert: der Text, falls ausgewertet."""
+    if not budget.take():
+        return RobotsTxt.from_response(None), None
+    try:
+        antwort = await client.get(
+            robots_url,
+            follow_redirects=True,
+            timeout=15.0,
+            headers={"User-Agent": user_agent, "Accept": "text/plain"},
+        )
+    except httpx.HTTPError:
+        return RobotsTxt.from_response(None), None
+    robots = RobotsTxt.from_response(antwort.status_code, antwort.content)
+    text = antwort.text if 200 <= antwort.status_code < 300 else None
+    return robots, text
+
+
 async def probe_url(
     url: str,
     client: httpx.AsyncClient,
@@ -281,16 +309,30 @@ async def probe_url(
     result = ProbeResult(url=url, host=parsed.netloc.lower())
     budget = _Budget(max_requests)
     kopf = {"User-Agent": user_agent}
+    tokens = (product_token(user_agent),)
 
-    # 1) robots.txt
+    # 1) robots.txt (RFC 9309). Nicht erreichbar heißt: nichts weiter anfragen, später wiederholen.
     robots_url = urlunparse((parsed.scheme, parsed.netloc, "/robots.txt", "", "", ""))
-    robots_txt: str | None = None
-    antwort = await _get(client, robots_url, budget, headers=kopf)
-    if antwort is not None and antwort.status_code == 200 and "<html" not in antwort.text[:200].lower():
-        robots_txt = antwort.text
+    robots, robots_txt = await _load_robots(client, robots_url, budget, user_agent)
+    if robots.state == STATE_UNREACHABLE:
+        status = robots.status_code
+        ursache = f"HTTP {status}" if status else "Netzfehler"
+        result.robots = "nicht_erreichbar"
+        result.robots_detail = f"robots.txt nicht erreichbar ({ursache})"
+        result.notes.append("robots.txt nicht erreichbar – keine weiteren Anfragen")
+        result.requests = budget.used
+        result.sync_config = suggest_sync_config(result)
+        return result
 
-    # 2) Startseite
-    landing = await _get(client, url, budget, headers=kopf)
+    def erlaubt(adresse: str) -> bool:
+        return robots.decide(adresse, tokens).allowed
+
+    # 2) Startseite – nur, wenn die robots.txt sie erlaubt
+    landing: httpx.Response | None = None
+    if erlaubt(url):
+        landing = await _get(client, url, budget, headers=kopf)
+    else:
+        result.notes.append("Startseite per robots.txt gesperrt – nicht abgerufen")
     html = landing.text if landing is not None else ""
     header = dict(landing.headers) if landing is not None else {}
     result.landing_status = landing.status_code if landing is not None else None
@@ -308,14 +350,19 @@ async def probe_url(
                 result.vendor = fingerprint(vergleich.text, url, dict(vergleich.headers))
                 result.vendor_label = VENDOR_LABELS[result.vendor]
 
-    # 4) OParl-Autodiscovery mit dem Restbudget
+    # 4) OParl-Autodiscovery mit dem Restbudget; gesperrte Kandidaten fragen wir nicht an
     kandidaten = oparl_candidates(url, result.vendor)
     result.robots, result.robots_detail = robots_verdict(
         robots_txt, user_agent, [parsed.path or "/"] + [urlparse(k).path for k in kandidaten[:3]]
     )
+    gesperrte = [k for k in kandidaten if not erlaubt(k)]
+    if gesperrte:
+        result.notes.append(f"{len(gesperrte)} OParl-Kandidat(en) per robots.txt gesperrt – nicht abgerufen")
     for kandidat in kandidaten:
         if budget.used >= budget.limit:
             break
+        if kandidat in gesperrte:
+            continue
         antwort = await _get(client, kandidat, budget, headers={**kopf, "Accept": "application/json"})
         result.oparl_checked.append(kandidat)
         if antwort is None or antwort.status_code != 200:

@@ -80,13 +80,23 @@ Handlungsempfehlung bei „User-Agent gesperrt“: den Betreiber ansprechen. Neu
 
 Jeder automatische Abruf prüft vorher die robots.txt des Hosts nach RFC 9309 (`mandari_oparl.robots`):
 OParl-Schnittstelle und HTML-Seiten im Ingestor, Dateien in Textextraktion, Dokument-Cache, Vorschau und
-bei Personenfotos. Platzhalter (`*`, `$`) gelten, die längste passende Regel entscheidet. `Disallow: /*.pdf$`
-sperrt also nur Dokumente; die Schnittstelle bleibt erreichbar. Eine fehlende robots.txt (4xx) erlaubt alles.
-Ist sie nicht erreichbar (5xx, Netzfehler), gilt die letzte gültige Fassung, sonst bleibt der Host gesperrt
-und wird nach 15 Minuten erneut gefragt. Die Datei liegt 24 Stunden im Zwischenspeicher.
+bei Personenfotos, dazu RIS-Sondierung (`probe-ris`) und `manage.py add_oparl_source`. Platzhalter (`*`, `$`)
+gelten, die längste passende Regel entscheidet. `Disallow: /*.pdf$` sperrt also nur Dokumente; die Schnittstelle
+bleibt erreichbar. Eine fehlende robots.txt (4xx) erlaubt alles. Die Datei liegt 24 Stunden im Zwischenspeicher,
+je Host und User-Agent; geprüft wird mit dem User-Agent, mit dem auch abgerufen wird (Quelle bzw.
+`download_headers`).
+
+**Nicht erreichbar ist keine Sperre.** Liefert `/robots.txt` 5xx, 408, 429 oder einen Netzfehler, gilt die
+letzte gültige Fassung. Gibt es keine, stellen wir den Abruf zurück und fragen nach 15 Minuten erneut. Der
+Ingestor wertet das als Störung (`server_error_series`, kurze Schonung), nicht als `robots_blocked`.
+Textextraktion, Dokument-Cache und Personenfotos lassen die Dateien in der Warteschlange, statt sie zu
+überspringen.
 
 - **Bericht:** `manage.py robots_report` (`--nur-gesperrte`, `--json`, `--refresh`) nennt je Quelle
-  Schnittstelle und Datei-Hosts, die entscheidende Regel und eingetragene Ausnahmen.
+  Schnittstelle und Datei-Hosts, die entscheidende Regel und eingetragene Ausnahmen. Die robots.txt wird
+  immer ausgewertet: Quellen, die wir per Ausnahme gegen die robots.txt laden, stehen als `[AUSNAHME]`
+  („gesperrt (Disallow: …), Ausnahme aktiv“) mit auf der Liste, im JSON mit `robots_sperrt`. Das ist die
+  Liste der gesperrten Quellen für Freigabe-Anfragen.
 - **Ausnahme nur mit Freigabe der Stelle:** `manage.py robots_override <quelle> --scope files --note "…"`
   (`api`, `files` oder `all`). Ohne Vermerk (wer hat wann was freigegeben, Stand der Anfrage) wirkt
   die Ausnahme nicht. Das Setzen reiht übersprungene Dateien neu ein; `--entfernen` hebt sie auf.

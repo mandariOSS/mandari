@@ -4,7 +4,13 @@ robots.txt-Prüfung des Ingestors (RFC 9309, Auswertung in :mod:`mandari_oparl.r
 
 Jeder Abruf bei einer Quelle – OParl-JSON, HTML-Seiten der Scraper, Dateien für die Textextraktion –
 fragt vorher hier an. Die robots.txt eines Hosts wird einmal geladen und 24 Stunden im Prozess gehalten;
-alle Clients und Quellen eines Prozesses teilen sich den Zwischenspeicher.
+alle Clients und Quellen eines Prozesses teilen sich den Zwischenspeicher. Der Schlüssel ist Host und
+User-Agent: Manche Server filtern Wörter im User-Agent und antworten dann auch auf ``/robots.txt`` mit 403
+(gilt als „nicht vorhanden“). Eine Quelle mit eigenem User-Agent bekommt deshalb ihre eigene Antwort.
+
+Ist die robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler) und gibt es keine letzte gültige Fassung,
+lautet die Entscheidung „nicht erreichbar“ (:attr:`mandari_oparl.robots.Decision.unreachable`): Aufrufer
+stellen den Abruf zurück, statt ihn als gesperrt zu werten. Neuer Versuch nach 15 Minuten.
 
 Abruf mit unserem User-Agent und ``Accept: text/plain``: Mit dem JSON-Standard des OParl-Clients
 antworten manche Server mit 406, was als „nicht vorhanden“ (alles erlaubt) gälte.
@@ -64,11 +70,18 @@ class RobotsGate:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._entries: dict[str, _Entry] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        # Vorgaben je Host für alle User-Agents (Tests, Werkzeuge), siehe seed()
+        self._seeded: dict[str, RobotsTxt] = {}
         self._clock = clock
 
     def clear(self) -> None:
         self._entries.clear()
         self._locks.clear()
+        self._seeded.clear()
+
+    @staticmethod
+    def _key(url: str, user_agent: str) -> str:
+        return f"{host_key(url)} {user_agent}"
 
     async def _load(
         self,
@@ -77,7 +90,10 @@ class RobotsGate:
         user_agent: str,
         pace: Callable[[str], Awaitable[None]] | None,
     ) -> RobotsTxt:
-        key = host_key(url)
+        seeded = self._seeded.get(host_key(url))
+        if seeded is not None:
+            return seeded
+        key = self._key(url, user_agent)
         lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
             entry = self._entries.get(key)
@@ -115,9 +131,12 @@ class RobotsGate:
         async with httpx.AsyncClient(timeout=ROBOTS_TIMEOUT, follow_redirects=True) as own:
             return await own.get(target, headers=headers)
 
-    def seed(self, url: str, robots: RobotsTxt) -> None:
-        """Ergebnis für den Host einer URL vorgeben (Tests, Werkzeuge)."""
-        self._entries[host_key(url)] = _Entry(robots=robots, fetched_at=self._clock())
+    def seed(self, url: str, robots: RobotsTxt, *, user_agent: str | None = None) -> None:
+        """Ergebnis für den Host einer URL vorgeben (Tests, Werkzeuge); ohne ``user_agent`` für alle."""
+        if user_agent is None:
+            self._seeded[host_key(url)] = robots
+            return
+        self._entries[self._key(url, user_agent)] = _Entry(robots=robots, fetched_at=self._clock())
 
     async def decide(
         self,
@@ -130,14 +149,15 @@ class RobotsGate:
         pace: Callable[[str], Awaitable[None]] | None = None,
     ) -> Decision:
         """
-        Darf ``url`` (Art ``kind``: ``api`` oder ``files``) abgerufen werden?
+        Darf ``url`` (Art ``kind``: ``api`` oder ``files``) mit ``user_agent`` abgerufen werden?
 
         Eine Ausnahme der Quelle für diese Art erlaubt den Abruf, ohne die robots.txt zu laden. Ohne
         ``client`` wird für den Abruf der robots.txt ein eigener geöffnet. ``pace`` wird vor dem Abruf der
-        robots.txt aufgerufen (Drossel je Host).
+        robots.txt aufgerufen (Drossel je Host). Ausgewertet werden das Produkt-Token von ``user_agent`` und
+        unser eigenes (eine Regel für ``mandari-ingestor`` gilt immer).
         """
         if override is not None and override.covers(kind):
-            return Decision(allowed=True, state="override", rule=f"Ausnahme der Quelle ({override.scope})")
+            return override.decision()
         robots = await self._load(client, url, user_agent, pace)
         return robots.decide(url, tokens=(product_token(user_agent), PRODUCT_TOKEN))
 

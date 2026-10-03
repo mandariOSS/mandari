@@ -52,7 +52,7 @@ def _robots_ohne_netz(request, monkeypatch):
         return
     from insight_core.services import robots
 
-    monkeypatch.setattr(robots, "_fetch", lambda url: (404, b""))
+    monkeypatch.setattr(robots, "_fetch", lambda url, agent=None: (404, b""))
 
 
 @pytest.fixture

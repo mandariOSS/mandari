@@ -26,13 +26,13 @@ from uuid import UUID
 
 from mandari_oparl.robots import robots_override
 
-from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED
+from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED, ERROR_KIND_SERVER_ERROR_SERIES
 from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers import get_adapter
 from src.scrapers.base import CrawlWindow, ScraperConfig
-from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError
+from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError, RobotsUnreachableError
 from src.storage.events import start_correlation
 
 if TYPE_CHECKING:
@@ -159,6 +159,12 @@ class ScraperSyncRunner:
                 message = f"robots.txt verbietet {e}"
                 result.errors.append(message)
                 await self._sperre_festhalten(result, message)
+            except RobotsUnreachableError as e:
+                # Störung, keine Sperre: kurze Schonung wie bei einer 5xx-Serie, neuer Versuch im nächsten Lauf
+                message = f"Störung: {e}"
+                result.errors.append(message)
+                result.error_kind = ERROR_KIND_SERVER_ERROR_SERIES
+                await self.orchestrator._record_source_failure(self.source.url, message, ERROR_KIND_SERVER_ERROR_SERIES)
             except Exception as e:
                 result.errors.append(f"Crawl-Fehler: {e}")
                 console.print(f"[red]Scraper-Fehler bei {self.source.name}: {e}[/red]")

@@ -14,12 +14,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import time
+from collections.abc import Callable
 from io import BytesIO
 from typing import Any
 from uuid import UUID
 
 import httpx
-from mandari_oparl.robots import KIND_FILES, RobotsOverride
+from mandari_oparl.robots import KIND_FILES, RETRY_UNREACHABLE_SECONDS, RobotsOverride
 
 from src.client.robots import robots_gate
 from src.config import settings
@@ -43,6 +45,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+#: So lange gelten Einstellungen einer Quelle (Download-Header, robots-Ausnahme) im Zwischenspeicher je Body.
+#: Der Extraktions-Worker lebt lange; eine neue Ausnahme oder ein neuer Header wirkt spätestens danach.
+SOURCE_OPTIONS_TTL_SECONDS = 300.0
+
 PDF_MIME_TYPES = {"application/pdf", "application/x-pdf"}
 TEXT_MIME_TYPES = {"text/plain", "text/html"}
 SUPPORTED_MIME_TYPES = PDF_MIME_TYPES | TEXT_MIME_TYPES
@@ -56,18 +62,23 @@ class TextExtractor:
     with the results.
     """
 
-    def __init__(self, storage) -> None:
+    def __init__(self, storage, clock: Callable[[], float] = time.monotonic) -> None:
         """
         Args:
             storage: DatabaseStorage instance for querying/updating files.
+            clock: Uhr für Zwischenspeicher und Zurückstellen (Tests)
         """
         self.storage = storage
         self.max_size_bytes = settings.text_extraction_max_size_mb * 1024 * 1024
         self.concurrency = settings.text_extraction_concurrency
         self.timeout = settings.text_extraction_timeout
         self.batch_size = settings.text_extraction_batch_size
-        self._header_cache: dict[Any, dict[str, str]] = {}
-        self._robots_override_cache: dict[Any, RobotsOverride | None] = {}
+        self._clock = clock
+        # Je Body: (Wert, geladen um); gültig SOURCE_OPTIONS_TTL_SECONDS
+        self._header_cache: dict[Any, tuple[dict[str, str], float]] = {}
+        self._robots_override_cache: dict[Any, tuple[RobotsOverride | None, float]] = {}
+        # Bodies, deren robots.txt nicht erreichbar war: bis zu diesem Zeitpunkt nichts beanspruchen
+        self._deferred_until: dict[Any, float] = {}
 
     async def extract_pending_files(self, body_id: UUID) -> int:
         """
@@ -84,6 +95,14 @@ class TextExtractor:
         if not await self._file_downloads_enabled(body_id):
             logger.debug("Dateiabruf für Body %s abgeschaltet (sync_config der Quelle)", body_id)
             return 0
+        # Die robots.txt der Quelle war eben nicht erreichbar: Dateien bleiben "pending", bis der neue Versuch
+        # fällig ist, statt sie in jeder Runde zu beanspruchen und wieder zurückzustellen
+        deferred = self._deferred_until.get(body_id)
+        if deferred is not None:
+            if self._clock() < deferred:
+                logger.debug("Body %s zurückgestellt (robots.txt nicht erreichbar)", body_id)
+                return 0
+            del self._deferred_until[body_id]
 
         files = await self.storage.get_pending_files(
             body_id=body_id,
@@ -142,20 +161,29 @@ class TextExtractor:
 
         # robots.txt (RFC 9309) gilt auch für Dateien; viele Systeme sperren nur Dokumente (Disallow: /*.pdf$).
         # Gesperrte Dateien werden übersprungen; nach einer Freigabe holt sie robots_override (Django) zurück.
+        # Ist die robots.txt nicht erreichbar, bleibt die Datei "pending" und kommt später wieder dran.
+        # Geprüft wird mit dem User-Agent, mit dem die Datei auch geladen wird (Download-Header der Quelle).
+        headers = await self._download_headers(file_row.body_id)
         decision = await robots_gate.decide(
             None,
             download_url,
-            user_agent=settings.user_agent,
+            user_agent=_user_agent_of(headers),
             kind=KIND_FILES,
             override=await self._robots_override(file_row.body_id),
         )
+        if decision.unreachable:
+            logger.info("Datei %s zurückgestellt: %s", file_id, decision.reason)
+            if file_row.body_id is not None:
+                self._deferred_until[file_row.body_id] = self._clock() + RETRY_UNREACHABLE_SECONDS
+            await self.storage.update_file_text(file_id=file_id, status="pending")
+            return False
         if not decision.allowed:
             logger.info("Datei %s nicht abgerufen: %s", file_id, decision.reason)
             await self.storage.update_file_text(file_id=file_id, status="skipped", error=decision.reason)
             return False
 
         try:
-            data = await self._download(download_url, await self._download_headers(file_row.body_id))
+            data = await self._download(download_url, headers)
         except Exception as e:
             logger.warning("Download failed for %s: %s", download_url, e)
             await self.storage.update_file_text(
@@ -228,38 +256,49 @@ class TextExtractor:
         """
         Zusätzliche Download-Header je Quelle (``sync_config["download_headers"]``, Issue #116):
         manche RIS liefern Anlagen nur mit Referer oder Sitzungs-Cookie aus. Ergebnis je Body
-        zwischengespeichert; ohne Body oder Konfiguration leer.
+        ``SOURCE_OPTIONS_TTL_SECONDS`` zwischengespeichert; ohne Body oder Konfiguration leer.
         """
         if body_id is None:
             return {}
-        cache = self._header_cache
-        if body_id not in cache:
-            try:
-                cache[body_id] = await self.storage.get_download_headers_for_body(body_id)
-            except Exception as e:  # noqa: BLE001 - Header sind optional, Download läuft ohne weiter
-                logger.warning("Download-Header für Body %s nicht ladbar: %s", body_id, e)
-                cache[body_id] = {}
-        return cache[body_id]
+        cached = self._header_cache.get(body_id)
+        now = self._clock()
+        if cached is not None and now - cached[1] < SOURCE_OPTIONS_TTL_SECONDS:
+            return cached[0]
+        headers: dict[str, str]
+        try:
+            headers = await self.storage.get_download_headers_for_body(body_id)
+        except Exception as e:  # noqa: BLE001 - Header sind optional, Download läuft ohne weiter
+            logger.warning("Download-Header für Body %s nicht ladbar: %s", body_id, e)
+            headers = {}
+        self._header_cache[body_id] = (headers, now)
+        return headers
 
     async def _robots_override(self, body_id: Any) -> RobotsOverride | None:
-        """Ausnahme der Quelle von der robots.txt (``sync_config["robots_override"]``), je Body zwischengespeichert."""
+        """
+        Ausnahme der Quelle von der robots.txt (``sync_config["robots_override"]``), je Body
+        ``SOURCE_OPTIONS_TTL_SECONDS`` zwischengespeichert: Eine neu gesetzte Ausnahme wirkt im laufenden
+        Extraktions-Worker spätestens danach, ohne Neustart.
+        """
         if body_id is None:
             return None
-        cache = self._robots_override_cache
-        if body_id not in cache:
-            lookup = getattr(self.storage, "get_robots_override_for_body", None)
-            try:
-                cache[body_id] = await lookup(body_id) if lookup is not None else None
-            except Exception as e:  # noqa: BLE001 - ohne lesbare Ausnahme gilt die robots.txt
-                logger.warning("robots-Ausnahme für Body %s nicht ladbar: %s", body_id, e)
-                cache[body_id] = None
-        return cache[body_id]
+        cached = self._robots_override_cache.get(body_id)
+        now = self._clock()
+        if cached is not None and now - cached[1] < SOURCE_OPTIONS_TTL_SECONDS:
+            return cached[0]
+        lookup = getattr(self.storage, "get_robots_override_for_body", None)
+        try:
+            override = await lookup(body_id) if lookup is not None else None
+        except Exception as e:  # noqa: BLE001 - ohne lesbare Ausnahme gilt die robots.txt
+            logger.warning("robots-Ausnahme für Body %s nicht ladbar: %s", body_id, e)
+            override = None
+        self._robots_override_cache[body_id] = (override, now)
+        return override
 
     async def _download(self, url: str, extra_headers: dict[str, str] | None = None) -> bytes:
-        """Download a file via httpx async."""
+        """Download a file via httpx async (User-Agent aus den Download-Headern der Quelle, sonst Standard)."""
         headers = {
-            "User-Agent": settings.user_agent,
-            **(extra_headers or {}),
+            **{key: value for key, value in (extra_headers or {}).items() if key.lower() != "user-agent"},
+            "User-Agent": _user_agent_of(extra_headers),
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.get(url, headers=headers, follow_redirects=True)
@@ -293,6 +332,14 @@ class TextExtractor:
             return text, None, "text"
 
         return "", None, "none"
+
+
+def _user_agent_of(headers: dict[str, str] | None) -> str:
+    """User-Agent für Datei-Abrufe: aus den Download-Headern der Quelle (gleich welche Schreibweise), sonst Standard."""
+    for key, value in (headers or {}).items():
+        if key.lower() == "user-agent" and str(value).strip():
+            return str(value).strip()
+    return settings.user_agent
 
 
 def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int | None, str]:

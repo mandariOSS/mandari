@@ -34,9 +34,12 @@ Bevor ein Adapter entsteht, klärt der Zensus je Kommune vier Fragen mit **höch
 Anfragen** (robots.txt, Startseite, bei 403 eine Vergleichsanfrage mit neutralem Client,
 danach OParl-Kandidaten) und ohne jede Umgehung: Welcher Hersteller (SessionNet, ALLRIS 3/4,
 Sternberg RIM, more! rubin, regisafe, komuna)? Erlaubt die robots.txt unseren User-Agent
-(RFC 9309, Produkt-Token und voller UA-String)? Liegt ein Bot-Gate oder eine WAF davor
+(RFC 9309, Produkt-Token)? Liegt ein Bot-Gate oder eine WAF davor
 (Browser-Verifikation, Proof-of-Work) oder sperrt die Quelle nur unseren User-Agent? Gibt es
 längst einen OParl-Endpunkt (herstellertypische Pfade zuerst, Fehlerobjekte werden erkannt)?
+Die robots.txt gilt schon beim Zensus: Gesperrte Pfade (Startseite, OParl-Kandidaten) fragt er
+nicht an. Ist die robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler), endet die Prüfung
+nach dieser einen Anfrage mit dem Befund `nicht_erreichbar`.
 
 ```bash
 mandari-ingestor probe-ris https://buergerinfo.example.org/bi/            # eine Kommune, JSON
@@ -324,7 +327,8 @@ services:
 - **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de/crawler/; support@mandari.de)`
   (Env `INGESTOR_USER_AGENT`, ältere Schreibweise `SCRAPER_USER_AGENT`). Er gilt für
   OParl-Client, Scraper und Textextraktion. Django (Dokument-Cache, Textextraktion,
-  Vorschau) meldet sich mit demselben Produkt-Token. Der User-Agent ist **je Quelle** im
+  Vorschau, Personenfotos, `add_oparl_source`) meldet sich mit demselben Produkt-Token,
+  nie mit einem Browser-User-Agent. Der User-Agent ist **je Quelle** im
   Admin überschreibbar (Feld *User-Agent*, leer = Standard). Er nennt Produkt-Token,
   Version, die Infoseite für Betreiber und die Kontaktadresse. Mindestens eine Quelle
   filtert das Wort der Infoseite im User-Agent und antwortet mit HTTP 403 (Issue #123).
@@ -336,8 +340,9 @@ services:
 - **robots.txt**: nach RFC 9309 mit Platzhaltern (`*`, `$`), 24-h-Cache je Host,
   getrennt für Seiten bzw. Schnittstelle und Dateien. Disallow → kein Abruf; ist die
   Basis-URL gesperrt, wird die Quelle nicht gecrawlt und im Admin markiert. Fehlt die
-  robots.txt (4xx), ist alles erlaubt. Ist sie nicht erreichbar (5xx, Netzfehler), ist alles
-  gesperrt, bis ein Abruf gelingt. Ausnahmen nur mit Freigabe und Vermerk
+  robots.txt (4xx), ist alles erlaubt. Ist sie nicht erreichbar (5xx, 408, 429, Netzfehler),
+  werden Abrufe zurückgestellt, bis ein Abruf gelingt (Störung, keine Sperre). Für Dateien gilt
+  der User-Agent aus `download_headers`, auch beim Abruf der robots.txt. Ausnahmen nur mit Freigabe und Vermerk
   (`manage.py robots_override`), Überblick mit `manage.py robots_report`
   (`docs/MONITORING.md`).
 - **Keine Umgehung** von Logins, CAPTCHAs oder Session-Schranken — nur

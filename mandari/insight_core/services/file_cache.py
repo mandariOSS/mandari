@@ -319,7 +319,9 @@ def fetch_and_cache(file_obj, client=None) -> str:
     """
     Datei aus dem RIS laden und lokal ablegen.
 
-    Rückgabe: "ok", "missing", "error", "too_large", "disk_full", "skipped", "paused", "robots".
+    Rückgabe: "ok", "missing", "error", "too_large", "disk_full", "skipped", "paused", "robots" (die
+    robots.txt sperrt die Datei; vermerkt, bis eine Freigabe sie neu einreiht) oder "deferred" (die robots.txt
+    ist nicht erreichbar; nichts vermerkt, der nächste Lauf versucht es erneut).
     """
     import httpx
 
@@ -332,8 +334,13 @@ def fetch_and_cache(file_obj, client=None) -> str:
     url = file_obj.download_url or file_obj.access_url
     if not url:
         return _mark(file_obj, "error", "Keine Download-URL")
-    # robots.txt gilt auch für Dateien (RFC 9309); nach einer Freigabe reiht robots_override neu ein
-    decision = robots.check(url, robots.KIND_FILES, sync_config=robots.sync_config_of(file_obj))
+    # robots.txt gilt auch für Dateien (RFC 9309), geprüft mit dem User-Agent des Abrufs; nach einer Freigabe
+    # reiht robots_override neu ein. Nicht erreichbar ist keine Sperre: nichts vermerken, später erneut.
+    decision = robots.check(
+        url, robots.KIND_FILES, sync_config=robots.sync_config_of(file_obj), agent=robots.user_agent_for(file_obj)
+    )
+    if decision.unreachable:
+        return "deferred"
     if not decision.allowed:
         _mark(file_obj, "error", decision.reason)
         return "robots"
