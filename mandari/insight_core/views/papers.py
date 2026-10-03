@@ -111,22 +111,20 @@ class PaperDetailView(DetailView):
         files = [f for f in paper.files.all() if not f.withdrawn_by_publisher and not file_reconcile.is_blocked(f)]
         context["files"] = files
 
-        # Dateien mit extrahiertem Text für Rohtext-Tab
-        context["files_with_text"] = [f for f in files if f.text_content and f.text_content.strip()]
+        # Beratungsverlauf (Consultations mit Meeting-Info), Stand-Satz und Zeitstrahl
+        from ..services.paper_status import paper_status, timeline
 
-        # Beratungsverlauf (Consultations mit Meeting-Info)
         consultations = self._get_consultations_with_meetings(paper)
-        context["consultations"] = consultations
-
-        # Kontext-Summary für Dokumente-Tab (nächste zukünftige Beratung, Fallback neueste)
-        if consultations:
-            now = timezone.now()
-            with_meeting = [item for item in consultations if item.get("meeting") and item.get("date")]
-            if with_meeting:
-                future = [item for item in with_meeting if item["date"] >= now]
-                # Nächste zukünftige (früheste), sonst neueste vergangene
-                best = min(future, key=lambda x: x["date"]) if future else max(with_meeting, key=lambda x: x["date"])
-                context["file_context_summary"] = best
+        now = timezone.now()
+        status = paper_status(consultations, now)
+        context["paper_status"] = status
+        context["consultations"] = timeline(consultations, status, now)
+        # Gremium der Bezugsberatung als Angabe in der Dokumentansicht
+        reference = status.upcoming or status.last
+        context["viewer_committee"] = reference.get("organization_name") if reference else ""
+        # Seite des Vorgangs im Ratsinformationssystem (OParl ``web``), nur als http(s)-Adresse
+        web = (paper.raw_json or {}).get("web") if isinstance(paper.raw_json, dict) else None
+        context["source_url"] = web if isinstance(web, str) and web.startswith(("https://", "http://")) else ""
 
         # Ortsbezüge (offizielle OParl-Locations + extrahierte) für Karte/Liste
         locations = paper.locations if isinstance(paper.locations, list) else []

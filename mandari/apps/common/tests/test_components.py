@@ -18,7 +18,7 @@ from django.test import Client
 from django.urls import reverse
 from django_cotton.compiler_regex import CottonCompiler
 
-from apps.common.views_dev import UiKitDemoForm, build_demo_form
+from apps.common.views_dev import UiKitDemoForm, build_demo_form, ui_kit_context
 
 
 def render(source: str, **context: object) -> str:
@@ -182,9 +182,10 @@ class TestOtherComponents:
 
 class TestUiKitPreview:
     def test_preview_template_renders_all_components(self) -> None:
-        html = render_to_string("dev/ui_kit.html", {"form": build_demo_form(), "empty_form": UiKitDemoForm()})
+        html = render_to_string("dev/ui_kit.html", ui_kit_context())
         assert "UI-Kit" in html
-        for marker in ("<dialog", "<header", "<footer", 'scope="col"', 'role="alert"', 'aria-invalid="true"'):
+        markers = ("<dialog", "<header", "<footer", 'scope="col"', 'role="alert"', 'aria-invalid="true"')
+        for marker in (*markers, "Herunterladen", 'aria-current="step"'):
             assert marker in html, marker
         # Keine unaufgelösten Cotton-Tags im Ergebnis
         assert not re.search(r"<c-[a-z]", html)

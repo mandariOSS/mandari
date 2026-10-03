@@ -9,7 +9,13 @@
 import collapse from '@alpinejs/collapse'
 import focus from '@alpinejs/focus'
 import Alpine from 'alpinejs'
-import { bodySelectApp, merklisteController, neighborhoodSubscription, questionForm } from '../alpine/insight'
+import {
+  bodySelectApp,
+  documentText,
+  merklisteController,
+  neighborhoodSubscription,
+  questionForm,
+} from '../alpine/insight'
 import { meetingCockpit } from '../alpine/meeting-cockpit'
 import { installActions } from './actions'
 import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
@@ -49,6 +55,7 @@ if (document.documentElement.dataset.portal === 'insight') {
   Alpine.data('merklisteController', merklisteController)
   Alpine.data('questionForm', questionForm)
   Alpine.data('neighborhoodSubscription', neighborhoodSubscription)
+  Alpine.data('documentText', documentText)
   registerBookmarksStore(Alpine)
   // Vorgangsseite: Orte und amtliche Umringe (Leaflet als Vendor-Skript, läuft vor diesem Modul)
   initPaperMap()
