@@ -2323,7 +2323,9 @@ class SessionMeeting(EncryptionMixin, models.Model):
 
         - Ein stets nichtöffentlicher Ausschuss (z. B. Hauptausschuss, § 78 Abs. 2 NKomVG) tagt nie öffentlich; ein
           „öffentlich“ wird beim Speichern zurückgesetzt.
-        - Neue nichtöffentliche Sitzungen eines Gremiums mit „Termine veröffentlichen“ erhalten den öffentlichen Termin.
+        - Neue nichtöffentliche Sitzungen eines Gremiums mit „Termine veröffentlichen“ erhalten den öffentlichen Termin –
+          außer im Sitzungsformular, dessen Kästchen „Termin veröffentlichen“ die Vorgabe schon zeigt
+          (``_publicity_from_form``).
         """
         if self.organization_id is None or self.tenant_id is None:
             return
@@ -2338,7 +2340,8 @@ class SessionMeeting(EncryptionMixin, models.Model):
                 self.is_public = False
                 if update_fields is not None:
                     kwargs["update_fields"] = {*update_fields, "is_public"}
-        if self._state.adding and not self.is_public and organization.publish_dates:
+        from_form = getattr(self, "_publicity_from_form", False)
+        if self._state.adding and not self.is_public and organization.publish_dates and not from_form:
             self.date_public = True
 
     def sync_cancellation(self) -> None:

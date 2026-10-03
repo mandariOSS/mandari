@@ -18,7 +18,8 @@
  *   (`templates/feedback/report.html`).
  * - `data-public-default="<Selektor>"` an einer Gremienauswahl: setzt das Kontrollkästchen `<Selektor>` auf die
  *   Öffentlichkeit der gewählten Option (`data-public="1|0"`) und sperrt es bei `data-public-locked`, z. B. für
- *   den stets nichtöffentlichen Hauptausschuss (`templates/session/meetings/form.html`, Issue #757).
+ *   den stets nichtöffentlichen Hauptausschuss; mit `data-date-public-default="<Selektor>"` zusätzlich
+ *   „Termin veröffentlichen“ nach `data-date-public` (`templates/session/meetings/form.html`, Issue #757).
  */
 
 const UMLAUTE: Record<string, string> = { ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss' }
@@ -173,12 +174,17 @@ function fillBrowserInfo(root: ParentNode): void {
 export interface PublicDefault {
   isPublic: boolean
   locked: boolean
+  datePublic: boolean
 }
 
 /** Vorgabe der Öffentlichkeit aus einer Gremien-Option; `null`, wenn die Option keine Angabe trägt. */
 export function publicDefault(option: HTMLOptionElement | null | undefined): PublicDefault | null {
   if (!option || option.dataset.public === undefined) return null
-  return { isPublic: option.dataset.public === '1', locked: option.dataset.publicLocked === '1' }
+  return {
+    isPublic: option.dataset.public === '1',
+    locked: option.dataset.publicLocked === '1',
+    datePublic: option.dataset.datePublic === '1',
+  }
 }
 
 function onPublicDefaultChange(event: Event): void {
@@ -189,6 +195,8 @@ function onPublicDefaultChange(event: Event): void {
   if (!(checkbox instanceof HTMLInputElement) || !vorgabe) return
   checkbox.checked = vorgabe.isPublic && !vorgabe.locked
   checkbox.disabled = vorgabe.locked
+  const termin = select.dataset.datePublicDefault ? document.querySelector(select.dataset.datePublicDefault) : null
+  if (termin instanceof HTMLInputElement) termin.checked = vorgabe.datePublic && !checkbox.checked
 }
 
 // ---- Einstieg -------------------------------------------------------------------------------

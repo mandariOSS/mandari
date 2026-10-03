@@ -119,8 +119,8 @@ def test_hauptausschuss_laesst_sich_nicht_oeffentlich_schalten() -> None:
 
     # Formular: Vorgabe und Sperre an den Optionen, aus dem Gremium heraus vorbelegt
     seite = sitzungsdienst.get(url).content.decode()
-    assert re.search(rf'value="{g["ka"].pk}"\s+data-public="0" data-public-locked="1"', seite)
-    assert re.search(rf'value="{g["kt"].pk}"\s+data-public="1">', seite)
+    assert re.search(rf'value="{g["ka"].pk}"\s+data-public="0" data-date-public="0" data-public-locked="1"', seite)
+    assert re.search(rf'value="{g["kt"].pk}"\s+data-public="1" data-date-public="0">', seite)
     assert 'data-public-default="#id_is_public"' in seite
     seite = sitzungsdienst.get(f"{url}?organization={g['fr'].pk}").content.decode()
     assert f'value="{g["fr"].pk}" selected' in seite
@@ -250,6 +250,16 @@ def test_oeffentliche_sitzung_veroeffentlicht_keinen_extra_termin() -> None:
         },
     )
     assert not SessionMeeting.objects.get(name="FA").date_public
+    # Im Formular gilt das Kästchen – die Vorgabe des Gremiums zeigt die Option (data-date-public)
+    sitzungsdienst.post(
+        f"/session/{tenant.slug}/meetings/create/",
+        {"name": "FA2", "organization": str(g["fa"].pk), "start": "2026-11-22T17:00", "format": "presence"},
+    )
+    assert not SessionMeeting.objects.get(name="FA2").date_public
+    seite = sitzungsdienst.get(f"/session/{tenant.slug}/meetings/create/").content.decode()
+    assert re.search(rf'value="{g["fa"].pk}"\s+data-public="1" data-date-public="1"', seite)
+    # Jahresplanung und andere Wege ohne Formular: Vorgabe des Gremiums
+    assert _sitzung(tenant, g["fa"], is_public=False).date_public
 
 
 def test_gremienformular_kennt_oeffentlichkeit_und_termine() -> None:

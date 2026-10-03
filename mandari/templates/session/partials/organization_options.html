@@ -8,13 +8,13 @@ Ansicht die Öffentlichkeit je Gremium gesetzt (Issue #757), tragen die Optionen
 {% for label, orgs in groups %}
 <optgroup label="{{ label }}">
     {% for org in orgs %}
-    <option value="{{ org.id }}" {% if current == org.id|stringformat:"s" %}selected{% endif %}{% if org.public_code %} data-public="{{ org.public_code }}"{% if org.public_locked %} data-public-locked="1"{% endif %}{% endif %}>{{ org.name }}</option>
+    <option value="{{ org.id }}" {% if current == org.id|stringformat:"s" %}selected{% endif %}{% if org.public_code %} data-public="{{ org.public_code }}" data-date-public="{{ org.dates_public }}"{% if org.public_locked %} data-public-locked="1"{% endif %}{% endif %}>{{ org.name }}</option>
     {% endfor %}
 </optgroup>
 {% endfor %}
 {% else %}
 {% for org in organizations %}
-<option value="{{ org.id }}" {% if current == org.id|stringformat:"s" %}selected{% endif %}{% if org.public_code %} data-public="{{ org.public_code }}"{% if org.public_locked %} data-public-locked="1"{% endif %}{% endif %}>{{ org.name }}</option>
+<option value="{{ org.id }}" {% if current == org.id|stringformat:"s" %}selected{% endif %}{% if org.public_code %} data-public="{{ org.public_code }}" data-date-public="{{ org.dates_public }}"{% if org.public_locked %} data-public-locked="1"{% endif %}{% endif %}>{{ org.name }}</option>
 {% endfor %}
 {% endif %}
 {% endwith %}

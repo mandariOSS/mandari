@@ -179,6 +179,8 @@ class MeetingForm(forms.ModelForm):
         if meeting.format == SessionMeeting.FORMAT_PRESENCE:
             remote_access = ""
         meeting.set_remote_access_encrypted(remote_access)
+        # Öffentlichkeit und Termin stehen im Formular – die Vorgabe des Gremiums gilt hier nicht erneut (Issue #757)
+        meeting._publicity_from_form = True
         if commit:
             meeting.save()
             self.save_m2m()
@@ -230,6 +232,7 @@ class MeetingFormMixin:
         for org in [*organizations, *(org for _label, orgs in context["organization_groups"] or [] for org in orgs)]:
             publicity = state_law_service.publicity(org, law=law, body=bodies.get(org.body_id) or default_body)
             org.public_code, org.public_locked = ("1" if publicity.public else "0"), publicity.locked
+            org.dates_public = "1" if org.publish_dates else "0"
         context["organization_choices"] = organizations
         lead = context["form"].instance.organization if context["form"].instance.organization_id else None
         context["publicity_locked"] = bool(lead is not None and state_law_service.publicity(lead).locked)
