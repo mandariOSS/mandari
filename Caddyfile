@@ -102,6 +102,23 @@
 			health_headers {
 				Host {$DOMAIN:localhost}
 			}
+
+			# Dokumente aus der Ablage (docs/FILE_CACHE.md, „Auslieferung über den Webserver“, #785):
+			# Django prüft Zugriff und Sperre und antwortet mit X-Accel-Redirect, Caddy liefert die
+			# Bytes (Range/206, ETag). Nur Antworten von Django lösen das aus, nie Anfragen von außen.
+			# Typ, Anzeigeart, nosniff und Sandbox kommen aus der Antwort von Django; file_server
+			# bestimmt den Typ dann nicht nach der Dateiendung (sonst liefen HTML/SVG im Ursprung).
+			# Wirkt erst mit FILE_ACCEL_REDIRECT=true und der Ablage unter OPARL_FILES_MOUNT (read-only).
+			@dokument header X-Accel-Redirect /_mandari/dateien/*
+			handle_response @dokument {
+				root * {$OPARL_FILES_MOUNT:/srv/mandari-files}
+				copy_response_headers {
+					include Content-Type Content-Disposition X-Content-Type-Options Content-Security-Policy Cache-Control X-Mandari-Cache X-Request-ID
+				}
+				rewrite * {rp.header.X-Accel-Redirect}
+				uri strip_prefix /_mandari/dateien
+				file_server
+			}
 		}
 	}
 

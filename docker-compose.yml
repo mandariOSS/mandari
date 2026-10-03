@@ -56,6 +56,9 @@ x-app-environment: &app-environment
   SITE_URL: https://${DOMAIN:-localhost}
   # Dokument-Cache (siehe docs/FILE_CACHE.md)
   OPARL_FILES_ROOT: /app/files
+  # Lokale Kopien liefert Caddy aus (Range, ETag); Caddy liest dafür das Volume mandari_files
+  # (siehe Dienst caddy und docs/FILE_CACHE.md, „Auslieferung über den Webserver“). Standard aus.
+  FILE_ACCEL_REDIRECT: ${FILE_ACCEL_REDIRECT:-false}
   # Nur mit Ratsinformationssystem im internen Netz (siehe .env.example)
   INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
   # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus
@@ -95,10 +98,13 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-localhost}
       EMAIL: ${ACME_EMAIL:-admin@example.com}
+      # Ablage der Dokumente, nur lesend (Auslieferung per X-Accel-Redirect, FILE_ACCEL_REDIRECT)
+      OPARL_FILES_MOUNT: /srv/mandari-files
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - mandari_files:/srv/mandari-files:ro
     depends_on:
       - mandari
       - website

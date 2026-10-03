@@ -56,6 +56,7 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_CACHE_MIN_FREE_GB` | 15 | Unter dieser Grenze wird nichts mehr geschrieben (Schutz des Systemlaufwerks) |
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
+| `FILE_ACCEL_REDIRECT` | `false` | Lokale Kopien liefert der Webserver aus statt Django (siehe [Auslieferung über den Webserver](#auslieferung-über-den-webserver)) |
 
 ```cron
 40 * * * * docker exec mandari python manage.py cache_files --limit 400 >> /var/log/mandari-file-cache.log 2>&1
@@ -66,6 +67,51 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 - `cache_files --stats` zeigt Abdeckung, Belegung und freien Speicher; der Betriebsmonitor hat
   dafür den Check „Dokument-Cache“.
 - `purge_deleted` entfernt lokale Kopien getilgter Dateien.
+
+### Auslieferung über den Webserver
+
+Ohne weitere Einstellung streamt Django jede lokale Kopie selbst (`FileResponse`): ohne Range-Anfragen,
+ohne `ETag`, und jeder Download belegt einen Anwendungs-Thread. Mit `FILE_ACCEL_REDIRECT=true` prüft
+Django nur Zugriff und Sperre und antwortet ohne Dateiinhalt mit einer internen Weiterleitung
+(`X-Accel-Redirect: /_mandari/dateien/<pfad unterhalb der Ablage>`). Caddy liefert die Bytes aus der
+Ablage: Range-Anfragen bekommen `206`, dazu `ETag`, `Last-Modified` und `304` auf bedingte Anfragen.
+PDF-Betrachter im Browser laden so zuerst nur die Teile, die sie für die erste Seite brauchen.
+
+Der Block steht im `Caddyfile` (`handle_response` im `reverse_proxy` der Anwendung):
+
+```caddyfile
+@dokument header X-Accel-Redirect /_mandari/dateien/*
+handle_response @dokument {
+	root * {$OPARL_FILES_MOUNT:/srv/mandari-files}
+	copy_response_headers {
+		include Content-Type Content-Disposition X-Content-Type-Options Content-Security-Policy Cache-Control X-Mandari-Cache X-Request-ID
+	}
+	rewrite * {rp.header.X-Accel-Redirect}
+	uri strip_prefix /_mandari/dateien
+	file_server
+}
+```
+
+- **Schutzkopfzeilen:** Typ, Anzeigeart und Dateiname setzt weiter `file_delivery` in Django (nur passive
+  Formate im Browser, alles andere als `application/octet-stream` zum Herunterladen, `nosniff`, Sandbox außer
+  bei PDF). Caddy übernimmt genau diese Kopfzeilen; `file_server` bestimmt den Typ dann nicht nach der
+  Dateiendung. Fehlte die Übernahme, käme eine HTML- oder SVG-Anlage mit ihrem eigenen Typ im Ursprung
+  von Insight, Work und Session an.
+- **Nur unterhalb der Ablage:** Django leitet nur Dateien weiter, die nach Auflösen aller Verweise unterhalb
+  von `OPARL_FILES_ROOT` liegen und deren Pfadteile nur aus Buchstaben, Ziffern, `.`, `_` und `-` bestehen
+  (keine versteckten Dateien, kein `..`). Alles andere liefert Django wie bisher selbst aus.
+- **Nur Antworten von Django:** Caddy wertet `X-Accel-Redirect` ausschließlich in der Antwort der Anwendung
+  aus. Eine von außen mitgeschickte Kopfzeile bewirkt nichts, der Pfad `/_mandari/dateien/` ist von außen
+  nicht erreichbar.
+- **Voraussetzungen:** Caddy liest die Ablage nur lesend unter `OPARL_FILES_MOUNT` (Compose: Volume
+  `mandari_files` unter `/srv/mandari-files:ro`). Der relative Pfad ist in beiden Containern derselbe. Erst
+  danach `FILE_ACCEL_REDIRECT=true` setzen und die Anwendung neu starten; ohne den Block im Caddyfile kämen
+  leere Antworten an. Zurück: Schalter auf `false`, Neustart.
+- **Prüfen:** `curl -s -D - -o /dev/null -H "Range: bytes=0-1023" https://<domain>/insight/dokumente/<id>/preview/`
+  muss `206`, `Content-Range` und ein `ETag` zeigen, und `X-Accel-Redirect` darf nie beim Client ankommen.
+
+Andere Webserver (z. B. nginx mit einer `internal`-Location): vorher prüfen, dass Typ, Anzeigeart, `nosniff`
+und die Sandbox aus der Antwort der Anwendung beim Client ankommen.
 
 ### Quellen-Schonung
 

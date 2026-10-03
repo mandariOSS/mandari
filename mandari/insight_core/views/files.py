@@ -22,7 +22,7 @@ from ..models import (
     OParlMeeting,
     withdrawn_q,
 )
-from ..services import file_delivery
+from ..services import file_accel, file_delivery
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, page_number
 
 # =============================================================================
@@ -286,12 +286,14 @@ def file_proxy(request, file_id):
 
     local = file_cache.local_file(file_obj)
     if local is not None:
-        # FileResponse schließt die Datei nach dem Streaming selbst
-        response = FileResponse(open(local, "rb"))  # noqa: SIM115
-        # Nur passive Formate im Browser, alles andere als Download (fremde Quelle, gemeinsamer Ursprung)
-        file_delivery.apply(
-            response, file_cache.content_type_for(file_obj, "application/pdf"), filename, download=force_download
-        )
+        content_type = file_cache.content_type_for(file_obj, "application/pdf")
+        # Bytes liefert der Webserver (Range, ETag), Django setzt nur Typ und Schutzkopfzeilen (#785)
+        response = file_accel.response(local, content_type, filename, download=force_download)
+        if response is None:
+            # FileResponse schließt die Datei nach dem Streaming selbst
+            response = FileResponse(open(local, "rb"))  # noqa: SIM115
+            # Nur passive Formate im Browser, alles andere als Download (fremde Quelle, gemeinsamer Ursprung)
+            file_delivery.apply(response, content_type, filename, download=force_download)
         response["Cache-Control"] = "public, max-age=86400"
         response["X-Mandari-Cache"] = "hit"
         return response
