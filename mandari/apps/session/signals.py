@@ -17,6 +17,7 @@ from apps.session.models import (
     SessionApplication,
     SessionAttendance,
     SessionAttendanceDisruption,
+    SessionBody,
     SessionConsultation,
     SessionFile,
     SessionFileBlob,
@@ -67,6 +68,8 @@ AUDITED_MODELS = [
     SessionAllowanceRate,
     # Monatspauschalen (Issue #221): jeder Posten direkt – festgesetzt, genehmigt, ausgezahlt
     SessionMonthlyAllowance,
+    # Körperschaften (Issue #756): Anlegen, Bearbeiten, Standard festlegen
+    SessionBody,
 ]
 
 for _model in AUDITED_MODELS:
@@ -225,6 +228,21 @@ post_save.connect(
     tenant_numbering_post_save,
     sender=SessionTenant,
     dispatch_uid="session_tenant_numbering_post_save",
+)
+
+
+def tenant_body_post_save(sender, instance, created, **kwargs):
+    """Neuer Mandant bekommt sofort seine Standardkörperschaft (Issue #756) – auf jedem Anlageweg."""
+    if created and not kwargs.get("raw"):
+        from apps.session.services import body_service
+
+        body_service.default_body(instance)
+
+
+post_save.connect(
+    tenant_body_post_save,
+    sender=SessionTenant,
+    dispatch_uid="session_tenant_body_post_save",
 )
 
 

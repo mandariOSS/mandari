@@ -223,6 +223,27 @@ class SessionStateProfile(models.Model):
 # TENANT MODEL
 # =============================================================================
 
+#: Arten einer Körperschaft (Issue #317, erweitert mit #756) – gemeinsam für Mandant und Körperschaft. Die
+#: Bezeichnungen der älteren Werte erscheinen als ``classification`` in OParl und bleiben deshalb unverändert.
+BODY_TYPES = [
+    ("stadt", "Stadt"),
+    ("kreisfreie_stadt", "Kreisfreie Stadt"),
+    ("grosse_selbstaendige_stadt", "Große selbständige Stadt"),
+    ("gemeinde", "Gemeinde"),
+    ("einheitsgemeinde", "Einheitsgemeinde"),
+    ("selbstaendige_gemeinde", "Selbständige Gemeinde"),
+    ("samtgemeinde", "Samtgemeinde"),
+    ("mitgliedsgemeinde", "Mitgliedsgemeinde"),
+    ("kreis", "Kreis bzw. Landkreis"),
+    ("region", "Region"),
+    ("bezirk", "Bezirk"),
+    ("gemeindeverband", "Gemeindeverband"),
+    ("regionalverband", "Regionalverband"),
+    ("zweckverband", "Zweckverband"),
+    ("kommunale_gesellschaft", "Kommunale Gesellschaft"),
+    ("sonstige", "Sonstige Körperschaft"),
+]
+
 
 class SessionTenant(models.Model):
     """
@@ -243,18 +264,10 @@ class SessionTenant(models.Model):
     description = models.TextField(blank=True, verbose_name="Beschreibung")
 
     # Körperschaft (Issue #317): Art und Amtlicher Gemeindeschlüssel. Die Art erscheint in der OParl-API
-    # als ``classification`` des Body, der Schlüssel als ``ags``. Bei Bestandsmandanten leer.
-    BODY_TYPE_CHOICES = [
-        ("stadt", "Stadt"),
-        ("kreisfreie_stadt", "Kreisfreie Stadt"),
-        ("gemeinde", "Gemeinde"),
-        ("kreis", "Kreis bzw. Landkreis"),
-        ("bezirk", "Bezirk"),
-        ("gemeindeverband", "Gemeindeverband"),
-        ("regionalverband", "Regionalverband"),
-        ("zweckverband", "Zweckverband"),
-        ("sonstige", "Sonstige Körperschaft"),
-    ]
+    # als ``classification`` des Body, der Schlüssel als ``ags``. Bei Bestandsmandanten leer. Seit #756 führt
+    # ein Mandant (die Verwaltung) eine oder mehrere Körperschaften (SessionBody); die Standardkörperschaft
+    # übernimmt diese Angaben bei der Anlage, für die Veröffentlichung bleiben sie bis #758 hier maßgeblich.
+    BODY_TYPE_CHOICES = BODY_TYPES
     body_type = models.CharField(
         max_length=30,
         choices=BODY_TYPE_CHOICES,
@@ -644,6 +657,127 @@ class SessionTenant(models.Model):
     def get_encryption_organization(self):
         """Required for EncryptionMixin compatibility."""
         return self
+
+
+# =============================================================================
+# KÖRPERSCHAFTEN IM MANDANTEN (Issue #756)
+# =============================================================================
+
+
+class SessionBody(models.Model):
+    """
+    Körperschaft im Mandanten: die rechtliche Einheit, deren Gremien tagen (Issue #756).
+
+    Der Mandant ist die Verwaltung, die den Sitzungsdienst führt – eine Samtgemeinde etwa für sich und ihre
+    Mitgliedsgemeinden. Gremien, Vorlagen und Nummernkreise gehören zur Körperschaft; Personen, Konten,
+    Rollen, Abläufe, Schlüssel und Prüfprotokoll zur Verwaltung. Jeder Mandant hat genau eine
+    Standardkörperschaft (``is_default``); Bestandsmandanten bekommen sie per Migration aus den Angaben am
+    Mandanten. Entscheidung und Abgrenzung: docs/adr/20261002-koerperschaften-im-mandanten.md.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="bodies",
+        verbose_name="Mandant",
+    )
+    name = models.CharField(max_length=255, verbose_name="Name", help_text="z. B. „Gemeinde Musterdorf“")
+    short_name = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Kurzname",
+        help_text="z. B. „MD“; Wert des Platzhalters {koerperschaft} in Nummernkreisen",
+    )
+    slug = models.SlugField(
+        max_length=100,
+        verbose_name="Kurzkennung",
+        help_text="Eindeutig im Mandanten; erscheint in Filteradressen",
+    )
+    body_type = models.CharField(
+        max_length=30,
+        choices=BODY_TYPES,
+        blank=True,
+        default="",
+        verbose_name="Art der Körperschaft",
+    )
+    ags = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        validators=[RegexValidator(r"^(\d{2}|\d{3}|\d{5}|\d{8})$", "2, 3, 5 oder 8 Ziffern.")],
+        verbose_name="Amtlicher Gemeindeschlüssel",
+        help_text="8 Stellen für Gemeinden, 5 für Kreise",
+    )
+    rgs = models.CharField(
+        max_length=12,
+        blank=True,
+        default="",
+        validators=[RegexValidator(r"^(\d{9}|\d{12})$", "9 oder 12 Ziffern.")],
+        verbose_name="Regionalschlüssel",
+        help_text="12 Stellen; bei Mitgliedsgemeinden mit dem Verbandsschlüssel der Samtgemeinde",
+    )
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="children",
+        verbose_name="Übergeordnete Körperschaft",
+        help_text="z. B. die Samtgemeinde einer Mitgliedsgemeinde",
+    )
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name="Standardkörperschaft",
+        help_text="Körperschaft, die die Verwaltung trägt; Vorgabe beim Anlegen und für ältere Daten",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_bodies"
+        verbose_name = "Körperschaft"
+        verbose_name_plural = "Körperschaften"
+        ordering = ["-is_default", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "slug"], name="uniq_session_body_slug"),
+            # Genau eine Standardkörperschaft je Mandant (höchstens eine per Datenbank, mindestens eine per
+            # Migration und Anlage)
+            models.UniqueConstraint(
+                fields=["tenant"], condition=models.Q(is_default=True), name="uniq_session_body_default"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def label(self) -> str:
+        """Kurzname, sonst Name – für Filter, Spalten und Auswahl."""
+        return self.short_name or self.name
+
+    def clean(self) -> None:
+        super().clean()
+        if self.parent_id is not None:
+            if self.parent_id == self.pk:
+                raise ValidationError({"parent": "Eine Körperschaft kann sich nicht selbst untergeordnet sein."})
+            if self.parent is not None and self.parent.tenant_id != self.tenant_id:
+                raise ValidationError({"parent": "Die übergeordnete Körperschaft muss zum selben Mandanten gehören."})
+        if self.is_default and not self.is_active:
+            raise ValidationError({"is_active": "Die Standardkörperschaft lässt sich nicht deaktivieren."})
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self.slug and self.tenant_id is not None:
+            from .services import body_service
+
+            # Die eigene Zeile ausnehmen: Wer die Kurzkennung einer bestehenden Körperschaft leert, bekommt
+            # dieselbe wieder (sonst „md-2“ statt „md“, und bestehende Filteradressen änderten sich).
+            self.slug = body_service.free_slug(
+                SessionBody, self.tenant_id, self.short_name or self.name, exclude_pk=self.pk
+            )
+        super().save(*args, **kwargs)
 
 
 # =============================================================================
@@ -1305,6 +1439,17 @@ class SessionOrganization(models.Model):
         related_name="organizations",
         verbose_name="Mandant",
     )
+    # Körperschaft (Issue #756): Pflicht im Modell (save() setzt die Standardkörperschaft), in der Datenbank
+    # nullbar, damit ein älteres Image auf dem neuen Schema weiter Gremien anlegen kann. Leer gilt beim Lesen
+    # als Standardkörperschaft (body_service.body_q); jeder migrate-Lauf ordnet solche Nachzügler zu.
+    body = models.ForeignKey(
+        SessionBody,
+        on_delete=models.RESTRICT,
+        null=True,
+        blank=True,
+        related_name="organizations",
+        verbose_name="Körperschaft",
+    )
 
     # OParl link (optional)
     oparl_organization = models.OneToOneField(
@@ -1425,6 +1570,22 @@ class SessionOrganization(models.Model):
 
     def __str__(self):
         return self.name
+
+    def clean(self) -> None:
+        super().clean()
+        if self.body_id is not None and self.tenant_id is not None and self.body.tenant_id != self.tenant_id:
+            raise ValidationError({"body": "Die Körperschaft muss zum Mandanten des Gremiums gehören."})
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # Ohne Angabe gehört ein Gremium zur Standardkörperschaft (Issue #756) – auf jedem Anlageweg
+        if self.body_id is None and self.tenant_id is not None:
+            from .services import body_service
+
+            self.body = body_service.default_body(self.tenant)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = {*update_fields, "body"}
+        super().save(*args, **kwargs)
 
 
 class SessionPerson(EncryptionMixin, models.Model):
@@ -2471,6 +2632,17 @@ class SessionNumberRange(models.Model):
         related_name="number_ranges",
         verbose_name="Mandant",
     )
+    # Geltungsbereich (Issue #756): leer = für alle Körperschaften des Mandanten, sonst nur für Vorlagen dieser
+    # Körperschaft; der Kreis der Körperschaft hat Vorrang vor dem allgemeinen (numbering_service.range_for)
+    body = models.ForeignKey(
+        "SessionBody",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="number_ranges",
+        verbose_name="Körperschaft",
+        help_text="Leer: gilt für alle Körperschaften ohne eigenen Nummernkreis",
+    )
     name = models.CharField(
         max_length=100, verbose_name="Bezeichnung", help_text="z. B. Drucksachen, Anträge der Politik"
     )
@@ -2481,7 +2653,7 @@ class SessionNumberRange(models.Model):
         max_length=100,
         default="V/{jahr}/{lfd:4}",
         verbose_name="Muster",
-        help_text="Platzhalter: {lfd} bzw. {lfd:4}, {jahr}, {jj}, {wp}, {prefix}, {gremium}",
+        help_text="Platzhalter: {lfd} bzw. {lfd:4}, {jahr}, {jj}, {wp}, {prefix}, {gremium}, {koerperschaft}",
     )
     reset = models.CharField(max_length=10, choices=RESET_CHOICES, default="yearly", verbose_name="Zähler zurücksetzen")
     assign_on = models.CharField(
@@ -2557,6 +2729,16 @@ class SessionPaper(EncryptionMixin, models.Model):
         on_delete=models.CASCADE,
         related_name="papers",
         verbose_name="Mandant",
+    )
+    # Körperschaft (Issue #756): aus dem federführenden Gremium bzw. beim Anlegen gewählt, sonst die
+    # Standardkörperschaft (save()). In der Datenbank nullbar wie SessionOrganization.body.
+    body = models.ForeignKey(
+        SessionBody,
+        on_delete=models.RESTRICT,
+        null=True,
+        blank=True,
+        related_name="papers",
+        verbose_name="Körperschaft",
     )
 
     # OParl link (optional)
@@ -2775,6 +2957,14 @@ class SessionPaper(EncryptionMixin, models.Model):
         return self.reference or "Nummer folgt"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
+        # Körperschaft vor der Nummernvergabe: Sie wählt den Nummernkreis und füllt {koerperschaft} (Issue #756)
+        if self.body_id is None and self.tenant_id is not None:
+            from .services import body_service
+
+            self.body = body_service.body_for_paper(self)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = {*update_fields, "body"}
         # Nummernvergabe (Issue #150) in derselben Transaktion wie das Speichern: scheitert das
         # Speichern, wird auch der Zähler zurückgesetzt – keine verbrannten Nummern.
         if self.reference:

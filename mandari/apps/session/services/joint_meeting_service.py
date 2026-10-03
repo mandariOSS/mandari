@@ -13,8 +13,9 @@ von Bau- und Umweltausschuss.
   Stimmrecht hat; die vollständige Tagesordnung erhält, wer in mindestens einem Gremium mehr als Gast
   ist. Funktion und Vertretungshinweis stammen aus der maßgeblichen Mitgliedschaft: bevorzugt im
   federführenden Gremium, dann mit Stimmrecht, dann nach Funktion (Vorsitz vor Mitglied).
-- **Schutz:** Weitere Gremien müssen zum Mandanten der Sitzung gehören und dürfen nicht das
-  federführende Gremium sein – geprüft beim Zuordnen selbst (``m2m_changed``), nicht nur im Formular.
+- **Schutz:** Weitere Gremien müssen zum Mandanten und zur Körperschaft der Sitzung gehören (Issue #756)
+  und dürfen nicht das federführende Gremium sein – geprüft beim Zuordnen selbst (``m2m_changed``), nicht
+  nur im Formular.
 - **Nachvollziehbarkeit:** Änderungen der Zuordnung stehen im Audit-Log und setzen ``updated_at`` der
   Sitzung, damit OParl-Clients sie beim inkrementellen Abgleich erhalten.
 """
@@ -35,7 +36,7 @@ ROLE_RANK = {"chair": 0, "deputy_chair": 1, "member": 2, "expert_citizen": 3, "a
 
 
 class JointOrganizationError(ValueError):
-    """Unzulässige Zuordnung eines weiteren Gremiums (fremder Mandant oder federführendes Gremium)."""
+    """Unzulässige Zuordnung eines weiteren Gremiums (fremder Mandant, andere Körperschaft, federführend)."""
 
 
 @dataclass
@@ -154,6 +155,10 @@ def _check_assignment(meeting: SessionMeeting, organization_ids: Iterable[Any]) 
     foreign = SessionOrganization.objects.filter(pk__in=ids).exclude(tenant_id=meeting.tenant_id).exists()
     if foreign:
         raise JointOrganizationError("Weitere Gremien müssen zum Mandanten der Sitzung gehören.")
+    from apps.session.services import body_service
+
+    if not body_service.same_body(meeting.organization, SessionOrganization.objects.filter(pk__in=ids)):
+        raise JointOrganizationError("Gemeinsame Sitzungen sind nur mit Gremien derselben Körperschaft möglich.")
 
 
 def _log_change(meeting: SessionMeeting, action: str, organization_ids: Iterable[Any]) -> None:
