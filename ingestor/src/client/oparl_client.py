@@ -16,12 +16,13 @@ import time
 from collections import deque
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
 from mandari_oparl.robots import KIND_API, RETRY_UNREACHABLE_SECONDS, RobotsOverride
+from mandari_oparl.utils import parse_datetime
 
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
 from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message
@@ -39,6 +40,12 @@ ERROR_KIND_SERVER_ERROR_SERIES = "server_error_series"
 # robots.txt des Hosts verbietet den Abruf (Scraper-Quellen seit Issue #116, OParl-Schnittstelle und
 # Dateien nach RFC 9309, src/client/robots.py)
 ERROR_KIND_ROBOTS_BLOCKED = "robots_blocked"
+
+# Ergebnis der Prüfung, ob eine Quelle mit modified_since filtert (nach jedem Vollabgleich)
+MODIFIED_SINCE_SUPPORTED = "supported"  # filtert: inkrementelle Läufe holen nur Geändertes
+MODIFIED_SINCE_UNSUPPORTED = "unsupported"  # lehnt den Parameter ab (HTTP 400/401/403)
+MODIFIED_SINCE_IGNORED = "ignored"  # nimmt ihn an, liefert aber ungefiltert
+MODIFIED_SINCE_INCONCLUSIVE = "inconclusive"  # keine Aussage (Fehler, Sperre): Befund bleibt wie er ist
 
 # Neutraler Client-Header für die einmalige Vergleichsanfrage nach einem 403.
 # Absichtlich der nackte Bibliotheks-Default: Antwortet der Server darauf mit
@@ -260,6 +267,11 @@ class OParlClient:
     def add_modified_since_unsupported(cls, hosts) -> None:
         """Capability-Cache seeden, z. B. aus persistierter sync_config."""
         cls._modified_since_unsupported.update(h for h in hosts if h)
+
+    @classmethod
+    def discard_modified_since_unsupported(cls, host: str) -> None:
+        """Host filtert wieder mit modified_since (Prüfung nach einem Vollabgleich)."""
+        cls._modified_since_unsupported.discard(host)
 
     def __init__(
         self,
@@ -818,6 +830,36 @@ class OParlClient:
                     current_url = self._append_modified_since(current_url, modified_since)
             else:
                 current_url = None
+
+    async def probe_modified_since(self, list_url: str, since: datetime) -> str:
+        """
+        Prüft mit einer Anfrage, ob die Quelle eine Liste mit ``modified_since`` filtert.
+
+        Unabhängig vom bisherigen Befund des Hosts (der Parameter wird immer gesendet). Ergebnis:
+        ``supported``, ``unsupported`` (HTTP 400/401/403), ``ignored`` (Filter fehlt in den Listen-Links oder
+        die erste Seite enthält Objekte, die vor ``since`` zuletzt geändert wurden) oder ``inconclusive``.
+        """
+        url = self._append_modified_since(self._with_list_params(list_url, self.list_params), since)
+        result = await self.fetch(url, use_cache=False)
+        if result.error_kind is not None:
+            return MODIFIED_SINCE_INCONCLUSIVE  # Sperre oder Störung, kein Befund zum Filter
+        if result.status_code in (400, 401, 403):
+            return MODIFIED_SINCE_UNSUPPORTED
+        data = result.data
+        if result.error or not isinstance(data, dict) or is_oparl_error(data):
+            return MODIFIED_SINCE_INCONCLUSIVE
+        if not self.carry_modified_since and modified_since_dropped(data.get("links")):
+            return MODIFIED_SINCE_IGNORED
+        cutoff = since - timedelta(minutes=1)  # Rundung der Quelle auf Sekunden oder Minuten
+        for item in self._extract_items(data):
+            modified = parse_datetime(item.get("modified")) if isinstance(item, dict) else None
+            if modified is None:
+                continue
+            if modified.tzinfo is None:
+                modified = modified.replace(tzinfo=UTC)
+            if modified < cutoff:
+                return MODIFIED_SINCE_IGNORED
+        return MODIFIED_SINCE_SUPPORTED
 
     async def fetch_list_all(
         self,

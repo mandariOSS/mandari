@@ -526,6 +526,43 @@ class DatabaseStorage:
             source.sync_config = sync_config
             await session.commit()
 
+    # Ergebnis der letzten Prüfung von modified_since (nach jedem Vollabgleich)
+    SYNC_CONFIG_MODIFIED_SINCE_CHECK_KEY = "modified_since_check"
+
+    async def apply_modified_since_check(self, source_url: str, host: str, verdict: str, supported: bool) -> None:
+        """
+        Ergebnis der modified_since-Prüfung festhalten: an der Quelle vermerken und den Host im
+        persistierten Capability-Cache aller Quellen eintragen (filtert nicht) oder austragen (filtert).
+        """
+        if not host:
+            return
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource).with_for_update())
+            for source in result.scalars().all():
+                sync_config = dict(source.sync_config or {})
+                stored = {h for h in sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or [] if isinstance(h, str)}
+                changed = False
+                if supported and host in stored:
+                    stored.discard(host)
+                    changed = True
+                if source.url == source_url:
+                    if not supported and host not in stored:
+                        stored.add(host)
+                    sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_CHECK_KEY] = {
+                        "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                        "host": host,
+                        "result": verdict,
+                    }
+                    changed = True
+                if not changed:
+                    continue
+                if stored:
+                    sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(stored)
+                else:
+                    sync_config.pop(self.SYNC_CONFIG_MODIFIED_SINCE_KEY, None)
+                source.sync_config = sync_config
+            await session.commit()
+
     # Schlüssel in OParlSource.sync_config für den persistierten
     # Scraper-Zustand (Listen-Snapshots, Missing-Counter, letzte Läufe).
     SYNC_CONFIG_SCRAPER_STATE_KEY = "scraper_state"

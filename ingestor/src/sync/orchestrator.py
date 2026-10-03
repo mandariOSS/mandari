@@ -14,6 +14,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 from mandari_oparl import (
@@ -41,6 +42,8 @@ from src.client.oparl_client import (
     ERROR_KIND_ROBOTS_BLOCKED,
     ERROR_KIND_SERVER_ERROR_SERIES,
     ERROR_KIND_UA_BLOCKED,
+    MODIFIED_SINCE_INCONCLUSIVE,
+    MODIFIED_SINCE_SUPPORTED,
     OParlClient,
     SyncStats,
 )
@@ -498,6 +501,8 @@ class SyncOrchestrator:
                 result.http_stats = client.stats
                 result.success = True
                 await self._apply_host_findings(result, client)
+                if full:
+                    await self._recheck_modified_since(client, url, bodies_data)
 
                 total_synced = (
                     result.meetings_synced
@@ -587,6 +592,54 @@ class SyncOrchestrator:
             await self.storage.add_modified_since_unsupported_hosts(source_url, new_hosts)
         except Exception as e:
             console.print(f"[yellow]Capability-Cache konnte nicht gespeichert werden: {e}[/yellow]")
+
+    #: Zeitfenster der modified_since-Prüfung: die Quelle soll nur Objekte liefern, die seitdem geändert wurden
+    MODIFIED_SINCE_PROBE_DAYS = 7
+
+    async def _recheck_modified_since(
+        self, client: OParlClient, source_url: str, bodies_data: list[dict[str, Any]]
+    ) -> str | None:
+        """
+        Nach einem Vollabgleich prüfen, ob die Quelle (wieder) mit ``modified_since`` filtert.
+
+        Der Befund „filtert nicht“ hing bisher dauerhaft am Host; unterstützt die Quelle den Filter später,
+        liefen die inkrementellen Läufe trotzdem über die vollständigen Listen. Jetzt prüft eine Anfrage an
+        die erste Liste (Vorgänge, sonst Sitzungen) nach jedem Vollabgleich neu: filtert die Quelle, wird der
+        Host ausgetragen; lehnt sie ab oder liefert ungefiltert, wird er eingetragen. Ohne klare Aussage
+        bleibt alles, wie es ist. Fehler gefährden den Abgleich nie.
+        """
+        if not settings.oparl_modified_since_enabled:
+            return None
+        list_url = next(
+            (
+                body.get(key)
+                for body in bodies_data
+                if isinstance(body, dict)
+                for key in ("paper", "meeting")
+                if isinstance(body.get(key), str) and body.get(key)
+            ),
+            None,
+        )
+        if not list_url:
+            return None
+        host = urlparse(list_url).netloc
+        try:
+            since = datetime.now(UTC) - timedelta(days=self.MODIFIED_SINCE_PROBE_DAYS)
+            verdict = await client.probe_modified_since(list_url, since)
+            if verdict == MODIFIED_SINCE_INCONCLUSIVE:
+                console.print(f"[dim]  modified_since-Prüfung für {host}: keine Aussage[/dim]")
+                return verdict
+            supported = verdict == MODIFIED_SINCE_SUPPORTED
+            if supported:
+                OParlClient.discard_modified_since_unsupported(host)
+            else:
+                OParlClient.add_modified_since_unsupported({host})
+            await self.storage.apply_modified_since_check(source_url, host, verdict, supported)
+            console.print(f"[dim]  modified_since-Prüfung für {host}: {verdict}[/dim]")
+            return verdict
+        except Exception as e:  # noqa: BLE001 - Prüfung ist eine Zugabe, der Abgleich ist durch
+            console.print(f"[yellow]modified_since-Prüfung für {host} fehlgeschlagen: {e}[/yellow]")
+            return None
 
     async def _record_source_failure(self, url: str, error: str, error_kind: str | None = None) -> None:
         """Fehlerstatus für den Betriebsmonitor speichern — darf den Sync nie gefährden."""
@@ -732,6 +785,8 @@ class SyncOrchestrator:
                 result.http_stats = client.stats
                 result.success = True
                 await self._apply_host_findings(result, client)
+                if full:
+                    await self._recheck_modified_since(client, url, bodies_data)
 
                 # Calculate total entities synced
                 total_synced = (
