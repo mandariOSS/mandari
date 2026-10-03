@@ -1,0 +1,11 @@
+{
+  "erklaerung": "Befristete Ausnahmen für Meldungen ab high in Entwicklungswerkzeugen (devDependencies). Ausgelieferte Pakete haben nie Ausnahmen. Prüfung: scripts/npm_audit_pruefen.py",
+  "ausnahmen": [
+    {
+      "ghsa": "GHSA-vfj7-8cjw-p6xm",
+      "paket": "braces (über tailwindcss 3.4: chokidar, fast-glob, micromatch)",
+      "grund": "Nur beim Bauen der Stylesheets mit eigenen Eingaben, nicht ausgeliefert; eine korrigierte Version gibt es noch nicht. Ablösung mit Tailwind v4 (#171).",
+      "bis": "2026-11-30"
+    }
+  ]
+}

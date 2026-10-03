@@ -1009,11 +1009,10 @@ jobs:
           cd ingestor
           uv export --frozen --no-emit-project --no-emit-package mandari-oparl --no-hashes --all-extras -o /tmp/ingestor-requirements.txt
           pip-audit -r /tmp/ingestor-requirements.txt --no-deps --progress-spinner off
-      - name: npm audit (blockierend ab "high")
+      - name: npm audit (blockierend ab "high", Entwicklungswerkzeuge mit befristeten Ausnahmen)
         run: |
-          cd mandari
-          npm audit || true
-          npm audit --audit-level=high
+          (cd mandari && npm audit || true)
+          python scripts/npm_audit_pruefen.py
 
   ingestor-tests:
     name: Ingestor Tests
