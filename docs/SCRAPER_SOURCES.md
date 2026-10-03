@@ -321,23 +321,25 @@ services:
 
 ## 3. Politeness-Defaults (alle Scraper-Quellen)
 
-- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de; support@mandari.de)`
-  (Env `INGESTOR_USER_AGENT`, ältere Schreibweise `SCRAPER_USER_AGENT`) — gilt für
-  OParl-Client und Scraper gleichermaßen und ist **je Quelle** im Admin
-  überschreibbar (Feld *User-Agent*, leer = Standard). Der Wert bleibt
-  identifizierbar (Produkt-Token, Version, Website, Kontaktadresse), vermeidet
-  aber bewusst den Begriff, auf den mindestens eine Quelle im User-Agent
-  filtert und mit HTTP 403 antwortet (Issue #123). Die Infoseite
-  `https://mandari.de/crawler` gehört zur Marketing-Website und erklärt, wer
-  wir sind, warum wir abrufen und wie man uns erreicht/drosselt; sobald sie
-  unter einem Pfad ohne diesen Begriff erreichbar ist, gehört die URL wieder
-  in den User-Agent. Wie der Ingestor eine Sperre erkennt und was dann zu tun
-  ist: `docs/MONITORING.md`, Abschnitt „Sperren und 5xx-Serien“.
+- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de/crawler/; support@mandari.de)`
+  (Env `INGESTOR_USER_AGENT`, ältere Schreibweise `SCRAPER_USER_AGENT`). Er gilt für
+  OParl-Client, Scraper und Textextraktion. Django (Dokument-Cache, Textextraktion,
+  Vorschau) meldet sich mit demselben Produkt-Token. Der User-Agent ist **je Quelle** im
+  Admin überschreibbar (Feld *User-Agent*, leer = Standard). Er nennt Produkt-Token,
+  Version, die Infoseite für Betreiber und die Kontaktadresse. Mindestens eine Quelle
+  filtert das Wort der Infoseite im User-Agent und antwortet mit HTTP 403 (Issue #123).
+  Für solche Quellen setzen wir im Admin einen User-Agent ohne den Pfad der Infoseite.
+  Wie der Ingestor eine Sperre erkennt und was dann zu tun ist: `docs/MONITORING.md`,
+  Abschnitt „Sperren und 5xx-Serien“.
 - **Rate-Limit**: max. 1 Request / 2 s je Host (konfigurierbar je Quelle),
   `max_concurrent=1` — RIS-Server kleiner Kommunen sind schwachbrüstig.
-- **robots.txt**: wird respektiert (24-h-Cache je Host). Disallow →
-  Quelle wird nicht gecrawlt und im Admin markiert. Nicht abrufbare oder
-  ungültige robots.txt gilt als „erlaubt" (RFC 9309).
+- **robots.txt**: nach RFC 9309 mit Platzhaltern (`*`, `$`), 24-h-Cache je Host,
+  getrennt für Seiten bzw. Schnittstelle und Dateien. Disallow → kein Abruf; ist die
+  Basis-URL gesperrt, wird die Quelle nicht gecrawlt und im Admin markiert. Fehlt die
+  robots.txt (4xx), ist alles erlaubt. Ist sie nicht erreichbar (5xx, Netzfehler), ist alles
+  gesperrt, bis ein Abruf gelingt. Ausnahmen nur mit Freigabe und Vermerk
+  (`manage.py robots_override`), Überblick mit `manage.py robots_report`
+  (`docs/MONITORING.md`).
 - **Keine Umgehung** von Logins, CAPTCHAs oder Session-Schranken — nur
   öffentliche Bürgerinfo-Bereiche.
 - **Full-Crawls** sind selten (Scheduler-Nachtfenster) und gestaffelt;
