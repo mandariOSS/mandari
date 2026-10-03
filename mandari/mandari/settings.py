@@ -475,6 +475,10 @@ OPARL_FILES_ROOT = Path(os.environ.get("OPARL_FILES_ROOT", str(MEDIA_ROOT / "opa
 FILE_CACHE_MAX_MB = int(os.environ.get("FILE_CACHE_MAX_MB", "80"))
 FILE_CACHE_MIN_FREE_GB = int(os.environ.get("FILE_CACHE_MIN_FREE_GB", "15"))
 FILE_PROXY_TIMEOUT_SECONDS = int(os.environ.get("FILE_PROXY_TIMEOUT_SECONDS", "15"))
+# Lokale Kopien liefert der Webserver aus (X-Accel-Redirect, Range/ETag), Django prüft nur Zugriff und
+# Sperre (Issue #785, docs/FILE_CACHE.md). Erst einschalten, wenn der Webserver die Ablage lesen kann
+# und den Block aus dem Caddyfile hat – sonst kommen leere Antworten an.
+FILE_ACCEL_REDIRECT = os.environ.get("FILE_ACCEL_REDIRECT", "false").lower() in ("1", "true", "yes")
 # Quellen-Schonung (Issue #89): ab so vielen Sync-Fehlversuchen in Folge lassen Dokument-Cache
 # und Datei-Proxy das Ratsinformationssystem in Ruhe (Ratenlimits, IP-Sperren).
 INSIGHT_SOURCE_BACKOFF_FAILURES = int(os.environ.get("INSIGHT_SOURCE_BACKOFF_FAILURES", "3"))
