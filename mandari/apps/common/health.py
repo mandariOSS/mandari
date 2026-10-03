@@ -220,13 +220,14 @@ def _worker_status_cached() -> dict[str, Any]:
         daten = cache.get(_WORKER_STATUS_KEY)
     except Exception:  # noqa: BLE001 – ohne Cache wird eben jedes Mal geprüft
         daten = None
-    if not isinstance(daten, dict):
-        daten = worker_status_payload()
-        try:
-            cache.set(_WORKER_STATUS_KEY, daten, WORKER_STATUS_CACHE_SECONDS)
-        except Exception:  # noqa: BLE001
-            logger.debug("Worker-Status nicht im Cache abgelegt", exc_info=True)
-    return daten
+    if isinstance(daten, dict):
+        return daten
+    neu = worker_status_payload()
+    try:
+        cache.set(_WORKER_STATUS_KEY, neu, WORKER_STATUS_CACHE_SECONDS)
+    except Exception:  # noqa: BLE001
+        logger.debug("Worker-Status nicht im Cache abgelegt", exc_info=True)
+    return neu
 
 
 @never_cache
