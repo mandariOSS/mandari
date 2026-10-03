@@ -35,6 +35,24 @@ from src.client.oparl_compat import consultation_agenda_item, oparl_type_url
 _SESSION_MEETING_ID = re.compile(r"^(?P<base>.+/session/[^/]+/api/oparl/)meeting/(?P<key>[^/]+)/$")
 
 
+#: Größte Größenangabe, die wir übernehmen. Die Spalte ist in älteren Installationen ``integer``; eine
+#: unsinnige Angabe der Quelle (negativ, Text, mehr als 2 GiB) ließe sonst den ganzen Abgleich scheitern.
+MAX_FILE_SIZE = 2**31 - 1
+
+
+def file_size(value: Any) -> int | None:
+    """Größenangabe einer Datei aus OParl (Bytes) oder ``None``, wenn sie fehlt oder unbrauchbar ist."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if not isinstance(value, int) or value < 0 or value > MAX_FILE_SIZE:
+        return None
+    return value
+
+
 def session_location_id(meeting_external_id: str | None) -> str | None:
     """
     Kennung des Sitzungsortes im Session-RIS von mandari, ``None`` für Sitzungen anderer Quellen.
@@ -459,7 +477,7 @@ class OParlProcessor:
             name=name,
             file_name=file_name,
             mime_type=data.get("mimeType"),
-            size=data.get("size"),
+            size=file_size(data.get("size")),
             access_url=data.get("accessUrl"),
             download_url=data.get("downloadUrl"),
             date=parse_datetime(data.get("date")),

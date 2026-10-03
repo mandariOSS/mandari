@@ -67,6 +67,19 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 - `cache_files --stats` zeigt Abdeckung, Belegung und freien Speicher; der Betriebsmonitor hat
   dafür den Check „Dokument-Cache“.
 - `purge_deleted` entfernt lokale Kopien getilgter Dateien.
+- **Größe:** `local_size` ist die gemessene Größe unserer Kopie (Bytes, `bigint`). `size` bleibt die Angabe
+  der Quelle aus OParl; liefert die Quelle keine, überschreibt der Abgleich eine vorhandene nicht mehr mit
+  einem leeren Wert. Für Kopien von vor dieser Spalte einmalig `cache_files --sizes` ausführen
+  (wiederholbar, liest nur die Dateigröße von der Platte). Die Belegung in `cache_files --stats` stammt
+  aus `local_size`; Kopien ohne gemessene Größe weist die Ausgabe gesondert aus.
+- **Zugriffsprotokoll:** Jeder Abruf über die Dateivorschau zählt einmal in `oparl_file_access_days`: je Tag,
+  Kommune, Ergebnis (Treffer aus der lokalen Kopie, Abruf bei der Quelle, nicht ausgeliefert, gesperrt) und
+  Altersklasse des Dokuments (< 30 Tage, < 1 Jahr, < 3 Jahre, älter). Es gibt nur Zähler, keine Adressen,
+  Kennungen oder einzelnen Dokumente. `cache_files --stats` zeigt die letzten 30 Tage mit Trefferquote; daraus
+  ergibt sich, wie groß ein Zwischenspeicher sein muss. Ein Fehler beim Zählen verhindert die Auslieferung nie.
+  Mit der Auslieferung über den Webserver laden PDF-Betrachter große Dokumente in Teilen (Range-Anfragen),
+  und jede Anfrage läuft durch Django. Gezählt wird nur die erste Anfrage eines Abrufs (ohne `Range` oder mit
+  einem Bereich ab Byte 0); Folgeanfragen zählen weder als Abruf noch mit ihrer Größe.
 
 ### Auslieferung über den Webserver
 

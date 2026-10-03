@@ -36,6 +36,7 @@ from typing import IO
 
 from django.conf import settings
 from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from . import robots
@@ -302,12 +303,21 @@ def store_stream(file_obj, source: IO[bytes], *, content_type: str | None = None
 
 def _record_stored(file_obj, path: Path, size: int, sha256: str, content_type: str | None) -> Path:
     file_obj.local_path = str(path)
+    file_obj.local_size = size
     file_obj.size = size
     file_obj.sha256_hash = sha256
     file_obj.local_status = "ok"
     file_obj.local_error = ""
     file_obj.local_cached_at = timezone.now()
-    update_fields = ["local_path", "size", "sha256_hash", "local_status", "local_error", "local_cached_at"]
+    update_fields = [
+        "local_path",
+        "local_size",
+        "size",
+        "sha256_hash",
+        "local_status",
+        "local_error",
+        "local_cached_at",
+    ]
     if not file_obj.mime_type and content_type:
         file_obj.mime_type = content_type.split(";")[0].strip()[:100]
         update_fields.append("mime_type")
@@ -428,6 +438,37 @@ def cache_pending(body=None, *, limit: int = 500, retry_errors: bool = False, sl
     return results
 
 
+def backfill_sizes(batch: int = 2000) -> Counter:
+    """
+    Gemessene Größe für vorhandene Kopien nachtragen (``local_size`` aus der Datei auf der Platte).
+
+    Idempotent und wiederaufnehmbar: bearbeitet nur Kopien ohne Größe. Fehlt die Datei, bleibt die
+    Zeile unverändert (``cache_files --stats`` zählt sie weiter als „ohne Größe“).
+    """
+    from ..models import OParlFile
+
+    results: Counter = Counter()
+    last_pk = None
+    while True:
+        qs = OParlFile.objects.filter(local_status="ok", local_size__isnull=True).order_by("pk")
+        if last_pk is not None:
+            qs = qs.filter(pk__gt=last_pk)
+        rows = list(qs.values_list("pk", "local_path")[:batch])
+        if not rows:
+            return results
+        last_pk = rows[-1][0]
+        for pk, local_path in rows:
+            try:
+                size = Path(local_path).stat().st_size if local_path else None
+            except OSError:
+                size = None
+            if size is None:
+                results["missing"] += 1
+                continue
+            OParlFile.objects.filter(pk=pk, local_size__isnull=True).update(local_size=size)
+            results["updated"] += 1
+
+
 # =============================================================================
 # Statistik
 # =============================================================================
@@ -439,7 +480,10 @@ def cache_stats() -> dict:
     qs = OParlFile.objects.filter(deleted=False)
     total = qs.count()
     by_status = dict(Counter(qs.values_list("local_status", flat=True)))
-    cached_bytes = qs.filter(local_status="ok").aggregate(s=Sum("size"))["s"] or 0
+    # Gemessene Größe der Kopie (#786); für Kopien vor deren Einführung die Angabe aus der Quelle
+    stored = Coalesce("local_size", "size")
+    cached_bytes = qs.filter(local_status="ok").aggregate(s=Sum(stored))["s"] or 0
+    without_size = qs.filter(local_status="ok", local_size__isnull=True).count()
     ok = by_status.get("ok", 0)
     paused = qs.filter(
         Q(body__source__consecutive_failures__gte=backoff_failures())
@@ -448,7 +492,7 @@ def cache_stats() -> dict:
     ).count()
     per_body = []
     for row in (
-        qs.values("body__name").annotate(n=Sum(1), cached=Sum("size", filter=Q(local_status="ok"))).order_by("-n")
+        qs.values("body__name").annotate(n=Sum(1), cached=Sum(stored, filter=Q(local_status="ok"))).order_by("-n")
     ):
         per_body.append({"body": row["body__name"], "files": row["n"], "cached_bytes": row["cached"] or 0})
     return {
@@ -465,6 +509,8 @@ def cache_stats() -> dict:
         "coverage": round(ok / total * 100, 1) if total else 0.0,
         "cached_bytes": cached_bytes,
         "cached_gb": round(cached_bytes / 1024**3, 2),
+        # Kopien ohne gemessene Größe: mit ``cache_files --sizes`` nachtragen
+        "without_size": without_size,
         "disk_free_bytes": disk_free_bytes(),
         "min_free_gb": min_free_bytes() // 1024**3,
         "per_body": per_body,

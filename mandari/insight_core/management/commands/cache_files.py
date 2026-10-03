@@ -6,8 +6,10 @@ Cronjob (stündlich, neueste Dokumente zuerst, stoppt bei knappem Speicher):
     python manage.py cache_files --limit 400
 Eine Kommune komplett nachladen:
     python manage.py cache_files --body koeln --limit 100000
-Statistik:
+Statistik (Belegung, Abdeckung, Abrufe der letzten 30 Tage):
     python manage.py cache_files --stats
+Gemessene Größe vorhandener Kopien nachtragen (einmalig nach dem Update, wiederholbar):
+    python manage.py cache_files --sizes
 """
 
 from django.core.management.base import BaseCommand
@@ -23,11 +25,22 @@ class Command(BaseCommand):
         parser.add_argument("--retry-errors", action="store_true", help="Auch fehlgeschlagene Abrufe erneut versuchen")
         parser.add_argument("--sleep", type=float, default=0.05, help="Pause zwischen Abrufen (Sekunden)")
         parser.add_argument("--stats", action="store_true", help="Nur Statistik ausgeben")
+        parser.add_argument(
+            "--sizes", action="store_true", help="Gemessene Größe vorhandener Kopien nachtragen (local_size)"
+        )
 
     def handle(self, *args, **options):
         from insight_core.models import OParlBody
-        from insight_core.services.file_cache import cache_pending, cache_stats
+        from insight_core.services.file_cache import backfill_sizes, cache_pending, cache_stats
 
+        if options["sizes"]:
+            results = backfill_sizes()
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Größen nachgetragen: {results['updated']}, Datei fehlt auf der Platte: {results['missing']}"
+                )
+            )
+            return
         if options["stats"]:
             self._print_stats(cache_stats())
             return
@@ -59,7 +72,28 @@ class Command(BaseCommand):
             f"Fehler={stats['error']}, zu groß={stats['too_large']}, "
             f"wartend auf Quellen in Schonung={stats['paused']}, ausgeblendet (nicht gecacht)={stats['unlisted']}"
         )
+        if stats.get("without_size"):
+            self.stdout.write(
+                f"  {stats['without_size']} Kopien ohne gemessene Größe (Summe teils aus OParl): cache_files --sizes"
+            )
+        self._print_access()
         for row in stats["per_body"]:
             self.stdout.write(
                 f"  - {row['body']}: {row['files']} Dateien, {row['cached_bytes'] / 1024**3:.2f} GB lokal"
             )
+
+    def _print_access(self) -> None:
+        from insight_core.services.file_access import summary
+
+        access = summary(30)
+        counts = {key: value["count"] for key, value in access["by_outcome"].items()}
+        if not counts:
+            self.stdout.write("Abrufe der letzten 30 Tage: keine")
+            return
+        rate = f"{access['hit_rate']} %" if access["hit_rate"] is not None else "-"
+        alter = ", ".join(f"{key}={value}" for key, value in sorted(access["by_age"].items()))
+        self.stdout.write(
+            f"Abrufe der letzten 30 Tage: Treffer={counts.get('hit', 0)}, von der Quelle={counts.get('miss', 0)}, "
+            f"nicht ausgeliefert={counts.get('failed', 0)}, gesperrt={counts.get('blocked', 0)}, "
+            f"Trefferquote {rate}; nach Alter: {alter}"
+        )
