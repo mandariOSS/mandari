@@ -227,9 +227,13 @@ class ScraperSyncRunner:
         total_synced = sum(stats.values())
         if settings.elasticsearch_indexing_enabled and (total_synced > 0 or es_deletions or full):
             pending_deletions = es_deletions
+            from src.sync.orchestrator import index_since
+
             for body_id in body_ids.values():
                 index_stats: dict[str, Any] = {"errors": []}
-                await self.orchestrator._index_body_elasticsearch(body_id, index_stats, pending_deletions, full)
+                await self.orchestrator._index_body_elasticsearch(
+                    body_id, index_stats, pending_deletions, full, since=index_since(full, start_time)
+                )
                 result.errors.extend(index_stats["errors"])
                 pending_deletions = {}
 
