@@ -418,7 +418,7 @@ class FakeOrchestrator:
         es_deletions.setdefault(entity_type, []).append(entity["id"])
         return True
 
-    async def _index_body_elasticsearch(self, body_id, stats, es_deletions, full) -> None:
+    async def _index_body_elasticsearch(self, body_id, stats, es_deletions, full, since=None) -> None:
         self.indexed.append((body_id, sum(len(v) for v in es_deletions.values())))
 
 

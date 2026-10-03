@@ -35,6 +35,10 @@ def _with_name(doc: dict[str, Any], name: str | None) -> dict[str, Any]:
     return doc
 
 
+#: So viele Zeichen je Datei fließen in die Gewichtung eines Vorgangs ein (``file_contents_preview``)
+FILE_PREVIEW_CHARS = 5000
+
+
 def paper_to_doc(paper, files=None) -> dict[str, Any]:
     """Convert a Paper SQLAlchemy row to a partial Elasticsearch document (organization_names kommt von Django).
 
@@ -46,7 +50,7 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
     file_names: list[str] = []
     file_texts: list[str] = []
     total_len = 0
-    max_per_file = 5000
+    max_per_file = FILE_PREVIEW_CHARS
     max_total = 25000
 
     for f in files or []:

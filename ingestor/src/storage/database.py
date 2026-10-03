@@ -1972,17 +1972,34 @@ class DatabaseStorage:
     #: Einträge je Seite beim Aufbau des Suchindex (Speicher bleibt je Seite begrenzt)
     INDEX_PAGE_SIZE: Final = 500
 
+    async def get_body_last_sync(self, body_id: UUID) -> datetime | None:
+        """Letzter Abgleich eines Bodies (``last_sync``); Grundlage für die Indexierung geänderter Objekte."""
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlBody.last_sync).where(OParlBody.id == body_id))
+            value: datetime | None = result.scalar_one_or_none()
+            return value
+
     async def iter_for_body(
         self,
         body_id: UUID,
         model_class: Any,
         page_size: int | None = None,
+        *,
+        updated_since: datetime | None = None,
+        with_changed_files: bool = False,
     ) -> AsyncIterator[list[Any]]:
         """
         Alle nicht gelöschten Objekte einer Art eines Bodies, seitenweise nach ``id`` (Keyset).
 
         Ersetzt die frühere Abfrage mit fester Obergrenze (10.000 je Art): Größere Kommunen fehlten
         danach teilweise im Suchindex. Jede Seite kommt aus einer eigenen kurzen Sitzung.
+
+        ``updated_since``: nur Objekte, die seitdem geschrieben wurden (inkrementeller Abgleich). Mit
+        ``with_changed_files`` (Vorgänge) zählen auch Vorgänge, deren Dateien seitdem geändert wurden, etwa
+        durch eine neue Textextraktion: Deren Text fließt in die Gewichtung des Vorgangs ein.
+
+        Keyset über die UUID mit kurzer Sitzung je Seite: Ein Objekt, das während des Laufs mit kleinerer ID
+        hinzukommt, fehlt bis zum nächsten Lauf. Das ist hinnehmbar; der Speicher bleibt je Seite begrenzt.
         """
         size = max(1, page_size or self.INDEX_PAGE_SIZE)
         last_id: UUID | None = None
@@ -1992,6 +2009,16 @@ class DatabaseStorage:
                     model_class.body_id == body_id,
                     model_class.deleted == False,  # noqa: E712
                 )
+                if updated_since is not None:
+                    changed = model_class.updated_at >= updated_since
+                    if with_changed_files:
+                        changed_files = select(OParlFile.paper_id).where(
+                            OParlFile.body_id == body_id,
+                            OParlFile.paper_id.isnot(None),
+                            OParlFile.updated_at >= updated_since,
+                        )
+                        changed = or_(changed, model_class.id.in_(changed_files))
+                    stmt = stmt.where(changed)
                 if last_id is not None:
                     stmt = stmt.where(model_class.id > last_id)
                 stmt = stmt.order_by(model_class.id).limit(size)
@@ -2011,13 +2038,20 @@ class DatabaseStorage:
             OParlFile.text_extraction_status == "completed",
         )
 
-    async def iter_files_with_text(self, body_id: UUID, page_size: int | None = None) -> AsyncIterator[list[OParlFile]]:
-        """Dateien eines Bodies mit extrahiertem Text, seitenweise nach ``id`` (Volltexte sind groß)."""
+    async def iter_files_with_text(
+        self, body_id: UUID, page_size: int | None = None, *, updated_since: datetime | None = None
+    ) -> AsyncIterator[list[OParlFile]]:
+        """
+        Dateien eines Bodies mit extrahiertem Text, seitenweise nach ``id`` (Volltexte sind groß).
+        ``updated_since``: nur seitdem geschriebene Dateien (inkrementeller Abgleich).
+        """
         size = max(1, page_size or self.INDEX_PAGE_SIZE)
         last_id: UUID | None = None
         while True:
             async with self.get_session() as session:
                 stmt = self._files_with_text(body_id)
+                if updated_since is not None:
+                    stmt = stmt.where(OParlFile.updated_at >= updated_since)
                 if last_id is not None:
                     stmt = stmt.where(OParlFile.id > last_id)
                 result = await session.execute(stmt.order_by(OParlFile.id).limit(size))
@@ -2029,10 +2063,29 @@ class DatabaseStorage:
                 return
             last_id = rows[-1].id
 
-    async def get_files_with_text_for_papers(self, body_id: UUID, paper_ids: list[UUID]) -> list[OParlFile]:
-        """Dateien mit extrahiertem Text zu einer Seite von Vorgängen (für die Gewichtung im Suchindex)."""
+    async def get_files_with_text_for_papers(
+        self, body_id: UUID, paper_ids: list[UUID], max_chars: int | None = None
+    ) -> list[Any]:
+        """
+        Dateien mit extrahiertem Text zu einer Seite von Vorgängen, für die Gewichtung im Suchindex: nur
+        ``paper_id``, ``file_name`` und die ersten ``max_chars`` Zeichen des Textes (mehr nutzt der Vorgang nicht;
+        die Volltexte lädt nur die Indexierung der Dateien selbst).
+        """
         if not paper_ids:
             return []
+        text_content: Any = OParlFile.text_content
+        if max_chars is not None:
+            text_content = func.substr(OParlFile.text_content, 1, max_chars)
         async with self.get_session() as session:
-            stmt = self._files_with_text(body_id).where(OParlFile.paper_id.in_(paper_ids))
-            return list((await session.execute(stmt)).scalars().all())
+            stmt = (
+                select(OParlFile.paper_id, OParlFile.file_name, text_content.label("text_content"))
+                .where(
+                    OParlFile.body_id == body_id,
+                    OParlFile.deleted == False,  # noqa: E712
+                    OParlFile.text_content.isnot(None),
+                    OParlFile.text_extraction_status == "completed",
+                    OParlFile.paper_id.in_(paper_ids),
+                )
+                .order_by(OParlFile.id)
+            )
+            return list((await session.execute(stmt)).all())

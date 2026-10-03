@@ -175,15 +175,17 @@ class StubStorage:
         self.files = [rows["file"]]
 
     async def iter_for_body(
-        self, body_id: UUID, model_class: type, page_size: int | None = None
+        self, body_id: UUID, model_class: type, page_size: int | None = None, **_kwargs: Any
     ) -> AsyncIterator[list[SimpleNamespace]]:
         yield self.by_model[model_class.__name__]
 
-    async def get_files_with_text_for_papers(self, body_id: UUID, paper_ids: list[UUID]) -> list[SimpleNamespace]:
+    async def get_files_with_text_for_papers(
+        self, body_id: UUID, paper_ids: list[UUID], max_chars: int | None = None
+    ) -> list[SimpleNamespace]:
         return [f for f in self.files if f.paper_id in paper_ids]
 
     async def iter_files_with_text(
-        self, body_id: UUID, page_size: int | None = None
+        self, body_id: UUID, page_size: int | None = None, **_kwargs: Any
     ) -> AsyncIterator[list[SimpleNamespace]]:
         yield self.files
 
