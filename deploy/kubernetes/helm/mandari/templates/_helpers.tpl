@@ -140,6 +140,15 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
   value: {{ .Values.logging.format | quote }}
 - name: LOG_LEVEL
   value: {{ .Values.logging.level | quote }}
+# Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+- name: INGESTOR_EVENTS_ENABLED
+  value: {{ .Values.events.producers | toString | quote }}
+- name: OPARL_CHANGES_ENABLED
+  value: {{ .Values.events.changesFeed | toString | quote }}
+{{- if .Values.events.workerPushUrl }}
+- name: WORKER_PUSH_URL
+  value: {{ .Values.events.workerPushUrl | quote }}
+{{- end }}
 {{- if .Values.tracing.otlpEndpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ .Values.tracing.otlpEndpoint | quote }}
