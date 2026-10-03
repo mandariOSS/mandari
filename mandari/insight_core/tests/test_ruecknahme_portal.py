@@ -206,11 +206,12 @@ class TestSitzungsUndVorgangsseiten:
         # Bürgerportal leitet seit Issue #783 in die Suche weiter
         from insight_core.views import _annotate_files_with_context
 
-        anlage = welt["anlage"]
-        _annotate_files_with_context([anlage])
+        anlage = cast(Any, welt["anlage"])
+        annotieren = cast(Any, _annotate_files_with_context)
+        annotieren([anlage])
         assert anlage.context_info is not None and anlage.context_info["meeting"] == welt["sitzung"]
         welt["sitzung"].mark_deleted()
-        _annotate_files_with_context([anlage])
+        annotieren([anlage])
         assert anlage.context_info is None
 
     def test_fremdquelle_bleibt_transparent(self, welt: dict[str, Any]) -> None:
