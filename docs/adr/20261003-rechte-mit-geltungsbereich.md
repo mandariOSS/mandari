@@ -57,6 +57,12 @@ zunächst in Session, umgestellt ohne Verhaltensänderung.
   `sitzung.laden`, `umlauf.anlegen` …). Rechte ohne heutiges Häkchen (z. B. `tagesordnung.benehmen_erklaeren`,
   `konto.rechteauskunft`) hat bis zur Rollenmatrix nur die Administrator-Rolle; die zugehörigen Funktionen
   gibt es noch nicht.
+- Die Herkunft folgt der heutigen Prüfstelle, nicht dem Namen des Häkchens: Die Rücknahme einer Vorlage
+  (`vorlage.zurueckziehen`) folgt aus `can_edit_papers`, die Absage einer Sitzung (`sitzung.absagen`) aus
+  `can_edit_meetings` – beides geht heute im Bearbeiten-Formular. `sitzung.loeschen` folgt aus
+  `can_delete_meetings`. Ein Test ordnet jede Prüfstelle der Views (`permission_required`, `ACTION_PERMS`)
+  Katalogrechten zu, deren Herkunft genau das geprüfte Häkchen ist. So verliert keine Rolle eine Funktion,
+  wenn die Prüfstellen umgestellt werden.
 - Bis zur Rollenmatrix (#775) folgen die Rechte einer Rolle aus ihren Häkchen. Danach speichert die Rolle
   Katalogrechte, und die Häkchen werden daraus abgeleitet, bis sie entfallen.
 
@@ -82,6 +88,9 @@ zunächst in Session, umgestellt ohne Verhaltensänderung.
 - Zuweisungen sind bis auf die Aufhebung unveränderlich; eine Änderung ist Aufhebung plus neue Zuweisung.
   Aufgehobene Zuweisungen bleiben als Nachweis.
 - Administrator-Rollen werden vorerst nur mandantenweit und unbefristet zugewiesen.
+- Eine Rolle zu löschen löscht bis zur Rollenmatrix auch ihre Zuweisungen, aufgehobene eingeschlossen; die
+  Rollenänderung selbst steht im Prüfprotokoll. Mit der Rollenmatrix (#775) werden Rollen mit Zuweisungen
+  deaktiviert statt gelöscht, damit der Nachweis bleibt.
 
 **Zugriffskontext**
 
@@ -95,7 +104,8 @@ zunächst in Session, umgestellt ohne Verhaltensänderung.
   unbefristete Rollen. Zu jedem solchen Paar gibt es eine gespiegelte Zuweisung (Quelle Migration bzw.
   manuell): angelegt per Datenmigration, nachgeführt bei jeder Änderung der Rollen und bei jedem `migrate`
   (Änderungen eines älteren Images). Höchstens eine aktive Spiegelzuweisung je Konto und Rolle
-  (Datenbankregel).
+  (Datenbankregel). Der Abgleich vergleicht Rollen und Spiegel in je einer Abfrage; in PostgreSQL warten
+  Rollenänderungen, bis er fertig ist.
 - Befristete Zuweisungen und Zuweisungen mit Geltungsbereich gehen nur in den Zugriffskontext ein, wenn der
   Mandant den Schalter „Rechte mit Geltungsbereich“ eingeschaltet hat (Standard aus). Ohne Schalter gilt genau
   das heutige Modell.
@@ -110,7 +120,10 @@ zunächst in Session, umgestellt ohne Verhaltensänderung.
   Äquivalenztests vergleichen alte und neue Auflösung für jede Standardrolle und jedes Häkchen.
 - Abwärtskompatibel: neue Tabelle, Schalter mit Datenbank-Standardwert. Die Fremdschlüssel der Zuweisung
   löschen in PostgreSQL selbst mit (`ON DELETE CASCADE` bzw. `SET NULL`), damit ein älteres Image, das die
-  Tabelle nicht kennt, Konten, Rollen und Mandanten weiter löschen kann.
+  Tabelle nicht kennt, Konten, Rollen und Mandanten weiter löschen kann. Djangos `DB_CASCADE` und
+  `DB_SET_NULL` gehen hier nicht: Konto, Rolle und Mandant verweisen selbst mit Python-Löschregeln weiter, und
+  gemischte Ketten verbietet Django (Systemprüfung `fields.E323`). Die Regeln setzt deshalb die Migration; ein
+  PostgreSQL-Test in der CI prüft sie.
 - Die Häkchen-Spalten entfallen zwei Releases nach der Umstellung der Prüfstellen und der Rollenmatrix
   (eigenes Issue); bis dahin ist die Migration umkehrbar.
 - Vertretungen (`SessionDelegation`) und Amtszuordnungen der Mitzeichnung bleiben vorerst eigene Modelle. Die
@@ -179,13 +192,16 @@ zunächst in Session, umgestellt ohne Verhaltensänderung.
 - Bis zur Umstellung der Prüfstellen (#773) wirken befristete Zuweisungen und Zuweisungen mit Geltungsbereich
   nur im Zugriffskontext, noch nicht in Oberfläche und API.
 - Die Datenbankregeln für das Mitlöschen stehen außerhalb der Django-Felddefinition; ändert eine spätere
-  Migration diese Fremdschlüssel, muss sie die Regeln neu setzen.
+  Migration diese Fremdschlüssel, muss sie die Regeln neu setzen (der PostgreSQL-Test schlägt sonst fehl).
 
 ## Prüfung (Fitnessfunktion)
 
 - Katalogtest: gültige Kennungen, jedes Häkchen hat genau ein Leitrecht, jedes Recht höchstens eine Herkunft,
   Kontrollrechte nicht in der Administrator-Vollmacht.
 - Äquivalenztests alt gegen neu für jede Standardrolle, jedes einzelne Häkchen und zufällige Kombinationen.
+- Zuordnungstest: Jede Prüfstelle der Views entspricht Katalogrechten, deren Herkunft genau das geprüfte
+  Häkchen ist; jedes Recht mit Herkunft hat eine Prüfstelle oder einen benannten Grund, Rechte ohne Herkunft
+  entsprechen keiner heutigen Stelle.
 - Sicherheitsmatrix vor und nach jeder Stufe unverändert grün; Abfragezahl-Tests unverändert.
 - Migrationstest: alter Stand → Konten mit Rollen → weitermigrieren → je Konto und Rolle genau eine
   Spiegelzuweisung; zweiter Abgleich ändert nichts; Rückmigration möglich.
