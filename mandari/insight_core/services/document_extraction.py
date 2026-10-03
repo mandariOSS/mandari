@@ -107,7 +107,7 @@ def _http_get(
     gesperrt, folgt ``RobotsBlockedError``, ist die robots.txt nicht erreichbar, ``RobotsUnreachableError`` –
     jeweils ohne Anfrage an die Quelle.
     """
-    from . import robots
+    from . import host_pacing, robots
 
     agent = next(
         (v for k, v in (extra_headers or {}).items() if k.lower() == "user-agent" and v.strip()), robots.USER_AGENT
@@ -117,6 +117,7 @@ def _http_get(
         raise RobotsUnreachableError(decision.reason)
     if not decision.allowed:
         raise RobotsBlockedError(decision.reason)
+    host_pacing.wait(url, sync_config=sync_config)  # Drossel je Host über alle Prozesse
     headers = {
         **{k: v for k, v in (extra_headers or {}).items() if k.lower() != "user-agent"},
         "User-Agent": agent,

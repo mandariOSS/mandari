@@ -211,7 +211,7 @@ from django.utils.html import escape
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 from .. import throttle
-from ..services import robots, safe_fetch
+from ..services import host_pacing, robots, safe_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +338,21 @@ def file_proxy(request, file_id):
             status=429,
         )
         response["Retry-After"] = "60"
+        return response
+    # Drossel je Host über alle Prozesse: höchstens kurz warten, sonst später erneut versuchen lassen
+    if not host_pacing.wait(
+        url,
+        sync_config=robots.sync_config_of(file_obj),
+        max_wait=float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5)),
+    ):
+        response = _file_proxy_error(
+            "Gerade viele Abrufe",
+            "Das Dokument lag noch nicht in unserem Zwischenspeicher, und beim Ratsinformationssystem dieser "
+            "Kommune stehen gerade viele Abrufe an. Wir fragen jede Kommune nur in ruhigem Takt an. Bitte "
+            "versuche es gleich noch einmal.",
+            status=503,
+        )
+        response["Retry-After"] = "30"
         return response
     if not _LIVE_FETCH_SLOTS.acquire(timeout=2):
         response = _file_proxy_error(

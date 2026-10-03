@@ -6,11 +6,11 @@ Die Standardwerte des Ingestors passen für die meisten Ratsinformationssysteme.
 mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen:
 
 ``request_interval``
-    Mindestabstand in Sekunden zwischen dem Beginn zweier Anfragen an diese Quelle, über alle parallelen
-    Abrufe eines Abgleichslaufs hinweg (statt ``OPARL_WAIT_TIME`` je Abrufplatz). Ein Lauf stellt damit
-    höchstens ``1 / request_interval`` Anfragen je Sekunde, gleich welches ``--concurrent`` gilt. Zwei
-    Prozesse (Daemon und ein einzeln gestarteter Abgleich) zählen getrennt; ein Einzelabgleich einer
-    solchen Quelle läuft daher nur, solange der Daemon sie nicht abgleicht (``is_active = false``).
+    Mindestabstand in Sekunden zwischen dem Beginn zweier Anfragen an den Host dieser Quelle. Ohne Wert gilt
+    der Standard des Ingestors (``INGESTOR_REQUEST_INTERVAL``, eine Anfrage je Sekunde). Der Abstand gilt über
+    alle Abrufplätze, Quellen auf demselben Host und Prozesse hinweg (Daemon, Einzelabgleich, Django), weil
+    alle denselben Zeitstempel in Redis nutzen (``src/client/host_pacing.py``). ``0`` schaltet die Drossel
+    für die Quelle ab.
 ``list_params``
     Zusätzliche Parameter für die erste Seite jeder Liste, z. B. ``{"size": 100}`` bei ALLRIS: weniger,
     dafür größere Seiten. Die Folgeseiten kommen aus ``links.next`` der Quelle.
@@ -38,25 +38,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from mandari_oparl.pacing import MAX_REQUEST_INTERVAL as MAX_REQUEST_INTERVAL  # Bestandsname
+from mandari_oparl.pacing import REQUEST_INTERVAL_KEY
+from mandari_oparl.pacing import request_interval as _request_interval
 from mandari_oparl.robots import RobotsOverride, robots_override
 
-REQUEST_INTERVAL_KEY = "request_interval"
 LIST_PARAMS_KEY = "list_params"
 CARRY_MODIFIED_SINCE_KEY = "carry_modified_since"
 FILE_DOWNLOADS_KEY = "file_downloads"
 
-#: Obergrenze für den Abstand zwischen zwei Anfragen (Tippfehler wie 600 statt 0.6 bremsen sonst alles aus)
-MAX_REQUEST_INTERVAL = 30.0
 
 _PARAM_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,39}$")
-
-
-def _request_interval(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    if value < 0 or value > MAX_REQUEST_INTERVAL:
-        return None
-    return float(value)
 
 
 def _list_params(value: Any) -> dict[str, str]:

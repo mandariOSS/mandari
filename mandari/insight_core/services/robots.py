@@ -78,10 +78,12 @@ def _cache_key(url: str, agent: str) -> str:
 
 
 def _fetch(url: str, agent: str = USER_AGENT) -> tuple[int | None, bytes]:
+    from . import host_pacing
     from .safe_fetch import guarded_client
 
     target = robots_url(url)
     try:
+        host_pacing.wait(target)  # zählt wie jede Anfrage an den Host
         with guarded_client(timeout=_TIMEOUT, follow_redirects=True, max_redirects=5) as client:
             response = client.get(target, headers={"User-Agent": agent, "Accept": "text/plain"})
             return response.status_code, response.content[:MAX_BYTES]

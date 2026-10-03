@@ -8,6 +8,7 @@ from functools import lru_cache
 from importlib import metadata
 
 from mandari_oparl.crawler import user_agent as crawler_user_agent
+from mandari_oparl.pacing import DEFAULT_INTERVAL
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -66,7 +67,15 @@ class Settings(BaseSettings):
     oparl_request_timeout: int = 60  # Sekunden pro HTTP-Request (zuvor 300)
     oparl_max_retries: int = 3  # Wiederholungsversuche bei Fehlern (zuvor 5)
     oparl_retry_backoff: float = 2.0
-    oparl_wait_time: float = 0.05  # Seconds between requests (reduced from 0.2)
+    # Wartezeit je Abrufplatz; gilt nur noch mit abgeschalteter Drossel (INGESTOR_REQUEST_INTERVAL=0)
+    oparl_wait_time: float = 0.05
+    # Drossel je Host über alle Quellen und Prozesse (src/client/host_pacing.py): Mindestabstand in Sekunden
+    # zwischen zwei Anfragen an denselben Host. Standard eine Anfrage je Sekunde; je Quelle abweichend über
+    # sync_config["request_interval"]. 0 schaltet die Drossel ab (nur für Tests und Notfälle).
+    request_interval: float = Field(
+        default=DEFAULT_INTERVAL,
+        validation_alias=AliasChoices("INGESTOR_REQUEST_INTERVAL", "request_interval"),
+    )
     oparl_etag_cache_enabled: bool = True
     oparl_modified_since_enabled: bool = True
     oparl_max_concurrent: int = 20  # Concurrent HTTP requests

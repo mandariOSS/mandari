@@ -388,9 +388,9 @@ class _Speicher:
     async def get_download_headers_for_body(self, body_id: Any) -> dict[str, str]:
         return self.headers
 
-    async def get_robots_override_for_body(self, body_id: Any) -> Any:
+    async def get_fetch_options_for_body(self, body_id: Any) -> SourceFetchOptions:
         self.override_abfragen += 1
-        return robots_override(self.override_config)
+        return SourceFetchOptions.from_sync_config(self.override_config)
 
     async def update_file_text(self, **kwargs: Any) -> None:
         self.updates.append(kwargs)
