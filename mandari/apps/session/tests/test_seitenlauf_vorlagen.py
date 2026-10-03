@@ -344,7 +344,9 @@ def _bauen() -> Welt:
 def welt(django_db_setup: None, django_db_blocker: Any, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Welt]:
     """Modulweite Testdaten; jede schreibende Anfrage wird zurückgerollt."""
     media_root = tmp_path_factory.mktemp("seitenlauf-media")
-    with override_settings(MEDIA_ROOT=str(media_root)), django_db_blocker.unblock():
+    # Ohne Ereignisse an die Drehscheibe: Die Daten werden außerhalb der Testtransaktion festgeschrieben, ihre
+    # Ereignisse blieben sonst bei eingeschaltetem SESSION_EVENTS für spätere Module im Journal stehen
+    with override_settings(MEDIA_ROOT=str(media_root), SESSION_EVENTS="aus"), django_db_blocker.unblock():
         gebaut = _bauen()
         yield gebaut
         # Unternummern zuerst: Die Bezugsvorlage ist geschützt, solange es sie gibt

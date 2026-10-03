@@ -72,6 +72,8 @@ x-app-environment: &app-environment
   EVENTS_DB_DIRECT_URL: ${EVENTS_DB_DIRECT_URL:-}
   EVENTS_WORKER_REQUIRED: ${EVENTS_WORKER_REQUIRED:-}
   INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
+  # Ereignisse aus mandari Session an die Datendrehscheibe (aus, schatten, aktiv; siehe .env.example), Standard aus
+  SESSION_EVENTS: ${SESSION_EVENTS:-aus}
   # Änderungsfeed und Snapshot je Kommune (siehe .env.example und docs/OPARL_API.md, „Betrieb“), Standard aus
   OPARL_CHANGES_ENABLED: ${OPARL_CHANGES_ENABLED:-false}
   OPARL_CHANGES_RETENTION_DAYS: ${OPARL_CHANGES_RETENTION_DAYS:-90}

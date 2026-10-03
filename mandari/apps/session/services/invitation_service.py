@@ -268,13 +268,18 @@ def send_invitations(
 
     pdf_name = "nachtrags-tagesordnung.pdf" if supplementary else "einladung-tagesordnung.pdf"
 
-    dispatch = SessionInvitationDispatch.objects.create(
-        meeting=meeting,
-        dispatch_type=dispatch_type,
-        subject=subject,
-        message=message,
-        sent_by=sent_by,
-    )
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #533): Der Versandvorgang und seine Meldung entstehen zusammen, vor dem Versand der Mails
+    with hub_events.track(meeting.tenant) as tracked:
+        dispatch = SessionInvitationDispatch.objects.create(
+            meeting=meeting,
+            dispatch_type=dispatch_type,
+            subject=subject,
+            message=message,
+            sent_by=sent_by,
+        )
+        tracked.invited(meeting, dispatch)
 
     sent_count = 0
     failed_count = 0
@@ -322,10 +327,13 @@ def send_invitations(
 
     # Erstladung: Sitzungsstatus fortschreiben
     if not supplementary and meeting.invitation_sent_at is None:
-        meeting.invitation_sent_at = timezone.now()
-        if meeting.meeting_state in ("draft", "scheduled"):
-            meeting.meeting_state = "invitation_sent"
-        meeting.save()  # Audit: invitation_sent-Aktion über Signal
+        # Drehscheibe (Issue #533): Mit der Ladung ist die Tagesordnung veröffentlicht (Status „Einladung versandt“)
+        with hub_events.track(meeting.tenant) as tracked:
+            tracked.meeting(meeting)
+            meeting.invitation_sent_at = timezone.now()
+            if meeting.meeting_state in ("draft", "scheduled"):
+                meeting.meeting_state = "invitation_sent"
+            meeting.save()  # Audit: invitation_sent-Aktion über Signal
 
     # Audit: Versand mit Zusammenfassung protokollieren (wer, wann, an wen)
     audit.log_event(
