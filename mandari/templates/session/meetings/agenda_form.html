@@ -108,6 +108,21 @@
                 </p>
             </div>
 
+            <!-- Geheimhaltungspflicht (Issue #754) -->
+            <div>
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" name="requires_secrecy" id="id_requires_secrecy"
+                           {% if form.requires_secrecy.value %}checked{% endif %}
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                    <label for="id_requires_secrecy" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Geheimhaltungspflichtige Angelegenheit
+                    </label>
+                </div>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 ml-7">
+                    Geheimhaltung gesetzlich vorgeschrieben oder behördlich angeordnet (z. B. § 6 Abs. 3 Satz 1 NKomVG); nur im nichtöffentlichen Teil. Nach dem Landesprofil kann die Beratung mit Zugeschalteten unzulässig sein.
+                </p>
+            </div>
+
             <!-- Actions -->
             <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=object.meeting_id %}"

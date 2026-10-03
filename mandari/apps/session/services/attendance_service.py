@@ -8,8 +8,9 @@ Zentrale Logik für:
   Bei gemeinsamen Sitzungen mehrerer Gremien (Issue #317) zählt die Besetzung aller beteiligten
   Gremien; wer mehreren angehört, erhält eine Zeile (und damit eine Stimme).
 - Beschlussfähigkeits-Berechnung (Quorum: mehr als die Hälfte der
-  stimmberechtigten Mitglieder anwesend). Zugeschaltete zählen mit, außer während einer Störung und
-  bei Abstimmungen, von denen das Landesprofil sie ausschließt (Issue #139, participation_service).
+  stimmberechtigten Mitglieder anwesend). Zugeschaltete zählen mit, außer während einer Störung und bei
+  Abstimmungen, von denen das Landesprofil nur sie ausschließt (Issue #139, participation_service). Ist der
+  Vorgang mit Zugeschalteten in der ganzen Sitzung unzulässig (Issue #754), zählen sie weiter mit.
 - Sitze und Stellvertretungen (:func:`seat_split`): Grundgesamtheit sind die Sitze der Mitglieder.
   Eine Stellvertretung (Mitgliedschaft mit „Vertretung für“) zählt nur, wenn sie für eine nicht
   anwesende Person nachrückt – je vertretener Person höchstens eine.
@@ -200,8 +201,11 @@ def quorum_status(
     (Issue #69, generalisiert aus dieser Session-Implementierung).
 
     Teilnahmeart (Issue #139): Zugeschaltete zählen wie Anwesende im Raum, außer während einer
-    andauernden Störung (nicht erreichbar). Für einen TOP (``item``) zählen sie nicht, wenn das
-    Landesprofil sie von dieser Abstimmung ausschließt (Wahl, geheime Abstimmung).
+    andauernden Störung (nicht erreichbar). Für einen TOP (``item``) zählen sie nicht, wenn das Landesprofil
+    nur sie von dieser Abstimmung ausschließt („für Zugeschaltete ausgeschlossen“, z. B. Bayern: anwesend
+    *und stimmberechtigt*, Art. 47 Abs. 2 GO). Ist der Vorgang mit Zugeschalteten in der ganzen Sitzung
+    unzulässig („in der Sitzung unzulässig“, Issue #754), zählen sie mit: Sie gelten als anwesend (z. B.
+    § 64 Abs. 3 Satz 5 NKomVG); ``remote_rule`` liefert dann Sperre und Hinweis.
 
     In einer Präsenzsitzung als zugeschaltet erfasste Personen zählen bewusst weiter mit: Meist ist das
     eine überholte Teilnahmeart nach einer Änderung des Sitzungsformats. Die Beschlussfähigkeit soll nicht
@@ -221,7 +225,7 @@ def quorum_status(
     if substitutes is None:
         substitutes = roster(meeting).substitutes if attendances else {}
 
-    rule = participation_service.remote_vote_rule(meeting, item) if item is not None else None
+    rule = participation_service.remote_vote_rule(meeting, item, attendances=attendances) if item is not None else None
     # Gäste und Protokollführung stimmen nie ab – auch mit gesetztem Stimmrecht nicht (wie voting_service)
     split = seat_split(voting_rows(attendances), substitutes, active_statuses=PRESENT_STATUSES)
     present: list[Any] = []

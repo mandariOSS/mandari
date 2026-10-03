@@ -28,12 +28,21 @@ def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:
     - Eine nicht-öffentliche Vorlage steht nie auf einem öffentlichen TOP (sonst erschiene ihr
       Betreff in Tagesordnung, Einladung und Bürgerportal). Das gilt auch für die Unterpunkte eines
       TOP, der öffentlich wird: Sie folgen ihm (:func:`cascade_visibility`).
+    - Eine geheimhaltungspflichtige Angelegenheit (``requires_secrecy``, Issue #754) wird nie öffentlich beraten –
+      sonst erschienen Betreff, Beschluss und Niederschrift im Bürgerportal und über OParl. Auch ein TOP, dessen
+      Unterpunkt geheimhaltungspflichtig ist, bleibt nichtöffentlich.
     """
     errors: dict[str, str] = {}
     parent = item.parent
     if parent is not None and parent.is_public != item.is_public:
         teil = "öffentlich" if parent.is_public else "nicht-öffentlich"
         errors["is_public"] = f"Unterpunkte haben dieselbe Öffentlichkeit wie ihr TOP – TOP {parent.number} ist {teil}."
+    if item.is_public and getattr(item, "requires_secrecy", False):
+        errors.setdefault(
+            "is_public",
+            "Eine geheimhaltungspflichtige Angelegenheit kann nur nichtöffentlich beraten werden – bitte "
+            "„öffentlich“ abwählen.",
+        )
     paper = item.paper
     if item.is_public and paper is not None and not paper.is_public:
         errors["paper"] = (
@@ -52,6 +61,13 @@ def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:
                 "is_public",
                 f"Unterpunkt {', '.join(nummern)} berät eine nicht-öffentliche Vorlage – der TOP kann deshalb "
                 "nicht öffentlich werden.",
+            )
+        geheim = list(item.sub_items.filter(requires_secrecy=True).order_by("order").values_list("number", flat=True))
+        if geheim:
+            errors.setdefault(
+                "is_public",
+                f"Unterpunkt {', '.join(geheim)} ist geheimhaltungspflichtig – der TOP kann deshalb nicht öffentlich "
+                "werden.",
             )
     return errors
 

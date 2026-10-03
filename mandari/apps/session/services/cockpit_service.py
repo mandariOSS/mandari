@@ -18,6 +18,10 @@ Sitzungsleitung und Protokollführung (Recht ``conduct_meetings``) steuern die S
   ``vote_result`` und den Summen; Einzelstimmen (offen, namentlich) erfasst die Abstimmungserfassung
   (``voting_service``), deren Summen das Schließen übernimmt. Summen prüft ``voting_service.check_counts``
   gegen die stimmberechtigten Anwesenden.
+- **Sperre nach dem Landesprofil** (Issue #754): Ist eine geheime Wahl oder Abstimmung bzw. die Beratung einer
+  geheimhaltungspflichtigen Angelegenheit unzulässig, sobald ein Mitglied zugeschaltet teilnimmt
+  (Niedersachsen), lehnt das Cockpit Öffnen, Schließen (Zuschaltung während der offenen Abstimmung) bzw.
+  Aufruf mit Grund und Norm ab; **TOP vertagen** stellt „Vertagt“ fest.
 
 Alle anderen mit dem Sichtrecht für Sitzungen sehen denselben Stand als Mitlese-Ansicht, nichtöffentliche
 TOPs nur mit dem NÖ-Recht (sonst nur „nichtöffentlicher Teil“). Jede Aktion läuft in einer Transaktion mit
@@ -481,6 +485,13 @@ def _call(meeting: SessionMeeting, item: SessionAgendaItem, permissions: Collect
         raise CockpitError(f"TOP {item.number} ist bereits aufgerufen.")
     _ensure_no_open_vote(meeting, permissions)
     _ensure_running_visible(meeting, permissions)
+    if item.requires_secrecy:
+        # Geheimhaltungspflichtige Angelegenheit (Issue #754): Beratung mit Zugeschalteten ggf. unzulässig
+        rule = participation_service.remote_vote_rule(
+            meeting, item, voting_method="summary", is_election=False, at=_now()
+        )
+        if rule is not None and rule.barred:
+            raise CockpitError(rule.message)
     opened = meeting.meeting_state != RUNNING
     if opened:
         _start(meeting)
@@ -642,6 +653,10 @@ def open_vote(meeting: SessionMeeting, data: Mapping[str, Any], *, permissions: 
     item.is_election = bool(data.get("is_election"))
     item.vote_opened_at = timezone.now()
     item.vote_closed_at = None
+    # Geheime Wahl bzw. Abstimmung mit Zugeschalteten ggf. in der ganzen Sitzung unzulässig (Issue #754)
+    rule = participation_service.remote_vote_rule(meeting, item, at=_now())
+    if rule is not None and rule.barred:
+        raise CockpitError(rule.message)
     item.save(update_fields=["voting_method", "is_election", "vote_opened_at", "vote_closed_at", "updated_at"])
     return Outcome(f"Abstimmung zu TOP {item.number} geöffnet ({item.get_voting_method_display()}).", level="info")
 
@@ -653,6 +668,39 @@ def cancel_vote(meeting: SessionMeeting, data: Mapping[str, Any], *, permissions
     item.vote_opened_at = None
     item.save(update_fields=["vote_opened_at", "updated_at"])
     return Outcome(f"Abstimmung zu TOP {item.number} abgebrochen – es wurde kein Ergebnis festgestellt.", level="info")
+
+
+def defer_item(
+    meeting: SessionMeeting,
+    data: Mapping[str, Any],
+    *,
+    permissions: Collection[str],
+    session_user: SessionUser | None = None,
+    tenant: SessionTenant | None = None,
+    **_: Any,
+) -> Outcome:
+    """TOP vertagen (Issue #754): Ergebnis „Vertagt“, ein aufgerufener TOP endet."""
+    item = _item(meeting, data.get("item"), permissions)
+    if item.vote_open:
+        raise CockpitError(f"Zu TOP {item.number} läuft eine Abstimmung – bitte zuerst abbrechen.")
+    if item.vote_result != "pending":
+        raise CockpitError(
+            f"Für TOP {item.number} ist bereits ein Ergebnis festgestellt ({item.get_vote_result_display()})."
+        )
+    item.vote_result = "deferred"
+    fields = ["vote_result", "updated_at"]
+    if _is_running(item):
+        item.end_time = _now()
+        fields.append("end_time")
+    item.save(update_fields=fields)
+    audit.log_event(
+        "vote_result",
+        item,
+        tenant=tenant or meeting.tenant,
+        user=session_user,
+        changes={"ergebnis": item.get_vote_result_display(), "quelle": "Sitzungscockpit"},
+    )
+    return Outcome(f"TOP {item.number} vertagt.")
 
 
 def _count(data: Mapping[str, Any], name: str) -> int:
@@ -677,6 +725,10 @@ def close_vote(
     item = _item(meeting, data.get("item"), permissions)
     if not item.vote_open:
         raise CockpitError(f"Zu TOP {item.number} läuft keine Abstimmung.")
+    # Während der offenen Abstimmung zugeschaltet (Issue #754): Die geheime Abstimmung lief mit Zugeschalteten
+    rule = participation_service.remote_vote_rule(meeting, item, at=_now())
+    if rule is not None and rule.barred:
+        raise CockpitError(f"{rule.message} Die laufende Abstimmung bitte abbrechen.")
     result = str(data.get("vote_result", ""))
     if result not in VOTE_RESULTS:
         raise CockpitError("Bitte das Ergebnis wählen: angenommen oder abgelehnt.")
@@ -739,6 +791,7 @@ ACTIONS: dict[str, Handler] = {
     "abstimmung_oeffnen": open_vote,
     "abstimmung_abbrechen": cancel_vote,
     "abstimmung_schliessen": close_vote,
+    "top_vertagen": defer_item,
 }
 
 

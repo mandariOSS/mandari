@@ -17,6 +17,8 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
 - Teilnahmeart (Issue #139): Zugeschaltete stimmen ab wie Anwesende im Raum – außer während einer
   andauernden Störung und bei Wahlen bzw. geheimen Abstimmungen, von denen das Landesprofil sie
   ausschließt (``participation_service.remote_vote_rule``).
+- Sperre in der Sitzung (Issue #754): Ist ein Vorgang nach dem Landesprofil unzulässig, sobald jemand
+  zugeschaltet teilnimmt (Niedersachsen: geheime Wahlen und Abstimmungen), schreibt der Service keine Stimmen.
 """
 
 from dataclasses import dataclass, field
@@ -113,7 +115,8 @@ class Eligibility:
     standby: list[SessionAttendance] = field(default_factory=list)
     #: Stellvertretung -> vertretene Personen (für die Beschlussfähigkeit ohne erneutes Laden)
     substitutes: dict[Any, frozenset[Any]] = field(default_factory=dict)
-    #: Regel des Landesprofils für Zugeschaltete bei dieser Abstimmung (nur mit TOP)
+    #: Regel des Landesprofils für Zugeschaltete bei dieser Abstimmung (nur mit TOP); ``remote_rule.barred``:
+    #: in dieser Sitzung unzulässig, weil jemand zugeschaltet teilnimmt (Issue #754)
     remote_rule: Any = None
     #: alle Zeilen der Anwesenheitsliste (für die Beschlussfähigkeit ohne erneutes Laden)
     attendances: list[SessionAttendance] = field(default_factory=list)
@@ -166,7 +169,9 @@ def eligibility(
         )
     )
     rule = (
-        participation_service.remote_vote_rule(meeting, item, voting_method=voting_method, is_election=is_election)
+        participation_service.remote_vote_rule(
+            meeting, item, voting_method=voting_method, is_election=is_election, attendances=attendances
+        )
         if item is not None
         else None
     )
@@ -237,7 +242,7 @@ def check_counts(
     if not assessed.has_list:
         return CountCheck()
     # Vom Landesprofil ausgeschlossene Zugeschaltete zählen nicht (auch bei einer Prüfung ohne TOP-Bezug)
-    rule = participation_service.remote_vote_rule(agenda_item.meeting, agenda_item)
+    rule = participation_service.remote_vote_rule(agenda_item.meeting, agenda_item, attendances=assessed.attendances)
     voting = [a for a in assessed.voting if not (rule is not None and rule.excluded and a.is_remote)]
     total = yes + no + abstain
     if excluded is None:
@@ -342,6 +347,10 @@ def capture_votes(
             protocol_lock.ensure_unlocked(agenda_item.meeting_id)
         if schreibende:
             beurteilt = assessed or eligibility(agenda_item.meeting, agenda_item)
+            sperre = beurteilt.remote_rule
+            if sperre is not None and sperre.barred:
+                # In dieser Sitzung unzulässig (Issue #754): keine Stimmen, auch keine Vermerke
+                raise VotingRightsError(sperre.message)
             berechtigt = beurteilt.voting_person_ids
             ohne = [p for p in schreibende if p.pk not in berechtigt]
             if ohne:

@@ -96,11 +96,11 @@ def _locked(view, meeting_id, message=protocol_lock.MESSAGE_AGENDA):
 
 
 class AgendaItemCreateView(SessionViewMixin, CreateView):
-    """Create a new agenda item via HTMX."""
+    """Create a new agenda item via HTMX (mit Merkmal „geheimhaltungspflichtig“, Issue #754)."""
 
     model = SessionAgendaItem
     template_name = "session/partials/agenda_item_form.html"
-    fields = ["name", "is_public", "paper", "parent"]
+    fields = ["name", "is_public", "paper", "parent", "requires_secrecy"]
     permission_required = "edit_meetings"
 
     def get_form(self, form_class=None):
@@ -143,11 +143,11 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
 
 
 class AgendaItemUpdateView(SessionViewMixin, UpdateView):
-    """TOP bearbeiten (Betreff, Ö/NÖ, Vorlagenzuordnung, Unterpunkt-Zuordnung)."""
+    """TOP bearbeiten (Betreff, Ö/NÖ, Vorlagenzuordnung, Unterpunkt-Zuordnung, Geheimhaltungspflicht #754)."""
 
     model = SessionAgendaItem
     template_name = "session/meetings/agenda_form.html"
-    fields = ["name", "is_public", "paper", "parent"]
+    fields = ["name", "is_public", "paper", "parent", "requires_secrecy"]
     pk_url_kwarg = "item_id"
     permission_required = "edit_meetings"
 

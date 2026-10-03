@@ -31,6 +31,7 @@ from ..services import (
     agenda_service,
     cockpit_service,
     four_eyes_service,
+    participation_service,
     protocol_correction_service,
     protocol_lock,
     protocol_service,
@@ -269,8 +270,13 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
                 continue
             item.protocol_note = data.get(f"protocol_note_{prefix}", "")
             item.resolution_text = data.get(f"resolution_text_{prefix}", item.resolution_text)
+            # In dieser Sitzung unzulässige geheime Wahl bzw. Abstimmung (Issue #754): Texte ja, Ergebnis nur „Vertagt“
+            sperre = participation_service.remote_vote_rule(meeting, item, attendances=assessed.attendances)
+            gesperrt = sperre is not None and sperre.barred
             vote = voting_service.form_value(data, f"vote_result_{prefix}", item.vote_result)
-            if vote in _VOTE_RESULTS:
+            if sperre is not None and gesperrt and vote not in (item.vote_result, "pending", "deferred"):
+                messages.error(request, f"TOP {item.number}: {sperre.message}")
+            elif vote in _VOTE_RESULTS:
                 item.vote_result = vote
             counts = {field: getattr(item, field) for field in _COUNT_FIELDS}
             # Offene und namentliche Abstimmung: Die Summen ergeben sich aus den Einzelstimmen und ändern sich nur
@@ -280,7 +286,8 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
                 raw = str(voting_service.form_value(data, f"{field}_{prefix}", "") or "").strip()
                 if raw.isascii() and raw.isdigit():  # „²“ ist für isdigit() eine Ziffer, für int() nicht
                     counts[field] = min(int(raw), 9999)
-            if any(counts[field] != getattr(item, field) for field in _COUNT_FIELDS):
+            # Keine Stimmenzahlen für einen gesperrten Vorgang
+            if not gesperrt and any(counts[field] != getattr(item, field) for field in _COUNT_FIELDS):
                 check = voting_service.check_counts(
                     item, counts["votes_yes"], counts["votes_no"], counts["votes_abstain"], assessed=assessed
                 )

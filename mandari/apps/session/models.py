@@ -96,11 +96,24 @@ class SessionStateProfile(models.Model):
         ("not_required", "darf zugeschaltet sein"),
         (RULE_UNCLEAR, "ungeklärt"),
     ]
+    # Regeln für Wahlen, geheime Abstimmungen und geheimhaltungspflichtige Beratungen (Issues #139, #754):
+    # „ausgeschlossen“ nimmt nur die Zugeschalteten heraus (z. B. Bayern, Hessen); „in der Sitzung unzulässig“
+    # sperrt den Vorgang für die ganze Sitzung, sobald jemand zugeschaltet teilnimmt (z. B. § 64 Abs. 3 Satz 6
+    # NKomVG) – die Zugeschalteten abzuschalten genügt dort nicht.
+    REMOTE_VOTE_EXCLUDED = "excluded"
+    REMOTE_VOTE_MEETING = "meeting"
     REMOTE_VOTE_CHOICES = [
         ("allowed", "zulässig"),
-        ("excluded", "ausgeschlossen"),
+        (REMOTE_VOTE_EXCLUDED, "für Zugeschaltete ausgeschlossen"),
+        (REMOTE_VOTE_MEETING, "in der Sitzung unzulässig, sobald jemand zugeschaltet ist"),
         ("conditional", "nur unter Bedingungen"),
         (RULE_UNCLEAR, "ungeklärt"),
+    ]
+    ELECTIONS_ALL = "all"
+    ELECTIONS_SECRET_ONLY = "secret_only"
+    ELECTION_SCOPE_CHOICES = [
+        (ELECTIONS_ALL, "alle Wahlen"),
+        (ELECTIONS_SECRET_ONLY, "nur geheime Wahlen"),
     ]
     VERIFICATION_CHOICES = [
         ("wortlaut", "Gesetzeswortlaut eingesehen"),
@@ -128,6 +141,32 @@ class SessionStateProfile(models.Model):
     )
     remote_secret_votes = models.CharField(
         max_length=20, choices=REMOTE_VOTE_CHOICES, verbose_name="Geheime Abstimmungen für Zugeschaltete"
+    )
+    # Issue #754: DB-Defaults für den Rückfall per Image (älterer Code legt Profile ohne diese Spalten an)
+    remote_elections_scope = models.CharField(
+        max_length=20,
+        choices=ELECTION_SCOPE_CHOICES,
+        default=ELECTIONS_ALL,
+        db_default=ELECTIONS_ALL,
+        verbose_name="Regel für Wahlen gilt für",
+        help_text="z. B. Niedersachsen: nur geheime Wahlen (§ 67 Satz 2 NKomVG); offene Wahlen bleiben möglich",
+    )
+    remote_secrecy_matters = models.CharField(
+        max_length=20,
+        choices=REMOTE_VOTE_CHOICES,
+        default=RULE_UNCLEAR,
+        db_default=RULE_UNCLEAR,
+        verbose_name="Geheimhaltungspflichtige Angelegenheiten mit Zugeschalteten",
+        help_text="Beratung von Angelegenheiten, deren Geheimhaltung gesetzlich vorgeschrieben oder behördlich "
+        "angeordnet ist (z. B. § 6 Abs. 3 Satz 1 NKomVG)",
+    )
+    remote_vote_norm = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Norm zu Wahlen und geheimen Abstimmungen",
+        help_text="Erscheint im Hinweis, wenn eine Abstimmung gesperrt ist",
     )
     excluded_committee_kinds = models.JSONField(
         default=list,
@@ -2236,6 +2275,16 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
         db_default=False,
         verbose_name="Wahl",
         help_text="Personalentscheidung, z. B. Wahl in ein Gremium oder Amt",
+    )
+    # Geheimhaltungspflichtige Angelegenheit (Issue #754): nicht dasselbe wie nichtöffentlich – Personal- und
+    # Grundstückssachen sind in der Regel nur nichtöffentlich. Das Landesprofil regelt, ob die Beratung mit
+    # Zugeschalteten zulässig ist (``SessionStateProfile.remote_secrecy_matters``).
+    requires_secrecy = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Geheimhaltungspflichtig",
+        help_text="Geheimhaltung gesetzlich vorgeschrieben oder behördlich angeordnet (z. B. § 6 Abs. 3 Satz 1 "
+        "NKomVG); nicht dasselbe wie nichtöffentlich",
     )
 
     # Beschlusskontrolle (Issue #37): Umsetzung nach der Beschlussfassung.

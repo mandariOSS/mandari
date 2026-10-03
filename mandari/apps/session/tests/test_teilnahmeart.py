@@ -365,29 +365,31 @@ def _offener_top(w: Welt) -> SessionAgendaItem:
     return SessionAgendaItem.objects.create(meeting=w.sitzung, number="2", order=3, name="Wahl Vorsitz")
 
 
-def test_geheime_abstimmung_ohne_zugeschaltete_wo_das_landesprofil_es_ausschliesst() -> None:
-    w = _hybrid(welt(status="review"), "NI")
+def test_wahl_ohne_zugeschaltete_wo_das_landesprofil_sie_ausschliesst() -> None:
+    # Bayern (Art. 47a GO): Zugeschaltete nehmen an Wahlen nicht teil – die Wahl selbst bleibt zulässig
+    w = _hybrid(welt(status="review"), "BY")
     _zuschalten(w)
     top = _offener_top(w)
-    top.voting_method = "secret"
+    top.is_election = True
 
     beurteilt = voting_service.eligibility(w.sitzung, top)
     assert [a.person.family_name for a in beurteilt.voting] == ["Amsel", "Carl"]
     assert [a.person.family_name for a in beurteilt.remote_excluded] == ["Buche"]
-    assert beurteilt.remote_rule.message.startswith("Zugeschaltete nehmen nach dem Landesprofil Niedersachsen")
+    assert beurteilt.remote_rule.message.startswith("Zugeschaltete nehmen nach dem Landesprofil Bayern an Wahlen")
+    assert not beurteilt.remote_rule.barred
     # Summen höchstens so viele wie Stimmberechtigte im Raum
     assert voting_service.check_counts(top, 3, 0, 0, assessed=beurteilt).exceeded
     assert not voting_service.check_counts(top, 2, 0, 0, assessed=beurteilt).exceeded
-    # Beschlussfähigkeit für diese Abstimmung ohne Zugeschaltete
+    # Beschlussfähigkeit für diese Wahl ohne Zugeschaltete (anwesend und stimmberechtigt, Art. 47 Abs. 2 GO)
     status = attendance_service.quorum_status(w.sitzung, top)
     assert (status["voting_present"], status["met"], status["remote_excluded"]) == (2, False, ["P Buche"])
-    # Offene Abstimmung: Zugeschaltete stimmen mit
-    top.voting_method = "open"
+    # Ohne Wahl stimmen Zugeschaltete mit
+    top.is_election = False
     assert len(voting_service.eligibility(w.sitzung, top).voting) == 3
 
 
 def test_wahl_ohne_zugeschaltete_und_stimme_wird_abgelehnt() -> None:
-    w = _hybrid(welt(status="draft"), "NI")
+    w = _hybrid(welt(status="draft"), "BY")
     zeile = _zuschalten(w)
     top = _offener_top(w)
     abstimmung = _abstimmung(w)
