@@ -151,3 +151,123 @@ def test_vorschau_wartet_nicht_endlos(uhr: _Uhr, settings: Any, monkeypatch: pyt
     response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
     assert response.status_code == 503
     assert response["Retry-After"] == "30"
+
+
+def _datei(nummer: int = 3) -> OParlFile:
+    return OParlFile.objects.create(
+        body=_quelle(),
+        external_id=f"https://rat.example.de/files/{uuid.uuid4()}",
+        name="Vorlage",
+        download_url=f"https://rat.example.de/getfile?id={nummer}",
+    )
+
+
+def test_vorschau_wartet_mit_abrufplatz_und_ohne_datenbankverbindung(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Reihenfolge: Abrufplatz belegen (begrenzt die wartenden Threads), Verbindung an den Pool zurückgeben, erst
+    dann auf den Takt warten. Vorher wartete die Vorschau mit ausgeliehener Verbindung und ohne Grenze.
+    """
+    from django.http import HttpResponse
+
+    from apps.common import db_connections
+    from insight_core.views import files as views
+
+    ablauf: list[str] = []
+    echte_freigabe = db_connections.release_idle_thread_connections
+
+    def freigabe() -> None:
+        ablauf.append("freigabe")
+        echte_freigabe()
+
+    def takt(url: str, **kw: Any) -> bool:
+        ablauf.append(f"takt max_wait={kw.get('max_wait') is not None}")
+        return True
+
+    class _Platz:
+        def acquire(self, timeout: float | None = None) -> bool:
+            ablauf.append("platz")
+            return True
+
+        def release(self) -> None:
+            ablauf.append("platz frei")
+
+    def abruf(*_a: Any, **_kw: Any) -> HttpResponse:
+        ablauf.append("abruf")
+        return HttpResponse(b"%PDF-1.4", content_type="application/pdf")
+
+    monkeypatch.setattr(db_connections, "release_idle_thread_connections", freigabe)
+    monkeypatch.setattr(host_pacing, "wait", takt)
+    monkeypatch.setattr(views, "_LIVE_FETCH_SLOTS", _Platz())
+    monkeypatch.setattr(views, "_fetch_live", abruf)
+    datei = _datei()
+    response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
+    assert response.status_code == 200
+    assert ablauf == ["platz", "freigabe", "takt max_wait=True", "abruf", "platz frei"]
+
+
+def test_vorschau_laedt_robots_txt_nur_mit_hoechstwartezeit(
+    uhr: _Uhr, settings: Any, monkeypatch: pytest.MonkeyPatch, echte_robots: None
+) -> None:
+    """
+    Fehlt die robots.txt im Cache, zählt ihr Abruf zur Höchstwartezeit der Vorschau. Vorher wartete er ohne
+    Grenze und schlief in der Web-Anfrage den ganzen reservierten Takt des Hosts ab.
+    """
+    settings.REDIS_URL = ""
+    settings.FILE_PROXY_PACE_MAX_WAIT_SECONDS = 2
+    robots_abrufe: list[str] = []
+
+    def robots_404(request: httpx.Request) -> httpx.Response:
+        robots_abrufe.append(request.url.path)
+        return httpx.Response(404)
+
+    def client(*_a: Any, **_kw: Any) -> httpx.Client:
+        return httpx.Client(transport=httpx.MockTransport(robots_404))
+
+    def kein_abruf(*_a: Any, **_kw: Any) -> Any:
+        raise AssertionError("ohne freien Zeitpunkt kein Abruf des Dokuments")
+
+    monkeypatch.setattr("insight_core.services.safe_fetch.guarded_client", client)
+    monkeypatch.setattr("insight_core.services.safe_fetch.download_to", kein_abruf)
+    datei = _datei(4)
+    # Andere Abrufe haben den Host für die nächsten zwei Sekunden belegt
+    for _ in range(2):
+        host_pacing.wait("https://rat.example.de/oparl/papers")
+    vorher = len(uhr.geschlafen)
+    response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
+    assert response.status_code == 503
+    assert response["Retry-After"] == "30"
+    assert robots_abrufe == ["/robots.txt"]
+    # robots.txt und Dokument zusammen höchstens FILE_PROXY_PACE_MAX_WAIT_SECONDS
+    assert all(sekunden <= 2 for sekunden in uhr.geschlafen[vorher:])
+
+
+def test_zusammenfassung_wartet_nicht_auf_den_takt(uhr: _Uhr, settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Die Zusammenfassung lädt Dokumente in der Web-Anfrage nach: nur mit Höchstwartezeit, sonst neuer Versuch."""
+    from unittest import mock
+
+    from insight_ai.services.summarizer import NoTextContentError, SummaryError, SummaryService
+    from insight_core.models import OParlPaper
+
+    settings.REDIS_URL = ""
+
+    def kein_abruf(*_a: Any, **_kw: Any) -> Any:
+        raise AssertionError("ohne freien Zeitpunkt kein Abruf")
+
+    monkeypatch.setattr("insight_core.services.safe_fetch.guarded_client", kein_abruf)
+    datei = _datei(5)
+    assert datei.body is not None
+    paper = OParlPaper.objects.create(
+        external_id=f"https://rat.example.de/papers/{uuid.uuid4()}", body=datei.body, name="Vorlage"
+    )
+    datei.paper = paper
+    datei.save(update_fields=["paper"])
+    for _ in range(10):
+        host_pacing.wait("https://rat.example.de/oparl/papers")
+
+    anbieter = mock.Mock()
+    anbieter.is_available.return_value = True
+    with pytest.raises(SummaryError) as fehler:
+        SummaryService(provider=anbieter, pace_max_wait=2).generate_summary(paper, save=False)
+    # Vorübergehend, nicht „kein Text“ (das würde sich die Ansicht merken)
+    assert not isinstance(fehler.value, NoTextContentError)
+    anbieter.chat_completion.assert_not_called()

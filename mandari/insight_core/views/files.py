@@ -339,21 +339,6 @@ def file_proxy(request, file_id):
         )
         response["Retry-After"] = "60"
         return response
-    # Drossel je Host über alle Prozesse: höchstens kurz warten, sonst später erneut versuchen lassen
-    if not host_pacing.wait(
-        url,
-        sync_config=robots.sync_config_of(file_obj),
-        max_wait=float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5)),
-    ):
-        response = _file_proxy_error(
-            "Gerade viele Abrufe",
-            "Das Dokument lag noch nicht in unserem Zwischenspeicher, und beim Ratsinformationssystem dieser "
-            "Kommune stehen gerade viele Abrufe an. Wir fragen jede Kommune nur in ruhigem Takt an. Bitte "
-            "versuche es gleich noch einmal.",
-            status=503,
-        )
-        response["Retry-After"] = "30"
-        return response
     if not _LIVE_FETCH_SLOTS.acquire(timeout=2):
         response = _file_proxy_error(
             "Gerade viele Abrufe",
@@ -364,7 +349,7 @@ def file_proxy(request, file_id):
         response["Retry-After"] = "30"
         return response
     try:
-        blocked = _robots_blocked(file_obj, url)
+        blocked = _robots_or_pacing_blocked(file_obj, url)
         if blocked is not None:
             return blocked
         return _fetch_live(file_obj, url, filename, force_download)
@@ -372,21 +357,48 @@ def file_proxy(request, file_id):
         _LIVE_FETCH_SLOTS.release()
 
 
-def _robots_blocked(file_obj, url):
+def _source_busy_response():
+    response = _file_proxy_error(
+        "Gerade viele Abrufe",
+        "Das Dokument lag noch nicht in unserem Zwischenspeicher, und beim Ratsinformationssystem dieser "
+        "Kommune stehen gerade viele Abrufe an. Wir fragen jede Kommune nur in ruhigem Takt an. Bitte "
+        "versuche es gleich noch einmal.",
+        status=503,
+    )
+    response["Retry-After"] = "30"
+    return response
+
+
+def _robots_or_pacing_blocked(file_obj, url):
     """
+    robots.txt und Drossel je Host vor dem Live-Abruf; ``None``: Abruf erlaubt und Zeitpunkt reserviert.
+
+    Läuft erst nach Schonung, Drossel je IP und mit belegtem Abrufplatz: So wird eine geschonte Quelle nicht
+    über ihre robots.txt angefragt, und es warten höchstens ``FILE_PROXY_MAX_CONCURRENT`` Threads je Prozess.
+    Vor jedem Warten geht die Datenbankverbindung an den Pool zurück; robots.txt und Takt zusammen warten
+    höchstens ``FILE_PROXY_PACE_MAX_WAIT_SECONDS`` (sonst 503 mit ``Retry-After``).
+
     robots.txt (RFC 9309) gilt auch für die Vorschau: gesperrte Dokumente rufen wir nicht selbst ab, sondern
-    verweisen auf das Original. Erst nach Schonung, Drossel und Abrufplatz geprüft, damit eine geschonte Quelle
-    nicht über ihre robots.txt angefragt wird; der Abruf der robots.txt läuft ohne gehaltene
-    Datenbankverbindung. ``None``: Abruf erlaubt.
+    verweisen auf das Original.
     """
+    import time
+
     from apps.common.db_connections import release_idle_thread_connections
 
     # Einstellungen der Quelle lesen, solange die Verbindung noch da ist (die Quelle hängt danach am Body)
     sync_config = robots.sync_config_of(file_obj)
     agent = robots.user_agent_for(file_obj)
+    max_wait = float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
+    deadline = time.monotonic() + max_wait
     release_idle_thread_connections()
-    decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent)
+    try:
+        decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=max_wait)
+    except host_pacing.PacingBusyError:
+        return _source_busy_response()
     if decision.allowed:
+        # Drossel je Host über alle Prozesse: höchstens die verbleibende Zeit warten
+        if not host_pacing.wait(url, sync_config=sync_config, max_wait=max(0.0, deadline - time.monotonic())):
+            return _source_busy_response()
         return None
     if decision.unreachable:
         response = _file_proxy_error(

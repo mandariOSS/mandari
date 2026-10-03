@@ -228,3 +228,54 @@ async def test_datei_download_zaehlt_mit(echte_drossel, monkeypatch):
     )
     await extractor._process_file(datei)
     assert ("https://rat.example.de/a.txt", 3.0) in reserviert
+
+
+async def test_horizont_je_host_bleibt_kurz(echte_drossel, monkeypatch):
+    """
+    Grenze gleichzeitiger Anfragen je Host: Nicht jeder freie Abrufplatz reserviert einen eigenen Zeitpunkt.
+    Ohne Grenze reichte der Takt bei zehn Plätzen neun Abstände in die Zukunft, und die Vorschau in Django fand
+    während eines Abgleichs keinen freien Zeitpunkt.
+    """
+    monkeypatch.setattr(settings, "request_interval", 0.05)
+    monkeypatch.setattr(settings, "host_max_concurrent", 2)
+    gewartet: list[float] = []
+
+    async def schlafen(sekunden: float) -> None:
+        gewartet.append(sekunden)
+        await asyncio.sleep(sekunden)
+
+    monkeypatch.setattr(host_pacer, "_sleep", schlafen)
+    aktiv = 0
+    hoechstens = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal aktiv, hoechstens
+        aktiv += 1
+        hoechstens = max(hoechstens, aktiv)
+        await asyncio.sleep(0.01)
+        aktiv -= 1
+        return httpx.Response(200, json={"id": str(request.url)})
+
+    client = OParlClient(max_concurrent=10)
+    client._semaphore = asyncio.Semaphore(10)
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        await asyncio.gather(*(client.fetch(f"https://rat.example.de/oparl/p/{i}", use_cache=False) for i in range(10)))
+    finally:
+        await client._client.aclose()
+
+    assert hoechstens <= 2
+    assert gewartet, "die Drossel hat gewartet"
+    # Höchstens zwei Abstände voraus (plus Laufzeit), nicht neun
+    assert max(gewartet) <= 2 * 0.05 + 0.03
+
+
+async def test_andere_hosts_teilen_die_grenze_nicht(echte_drossel, monkeypatch):
+    monkeypatch.setattr(settings, "host_max_concurrent", 1)
+    a = host_pacer.limit("https://a.example/x", 1.0)
+    b = host_pacer.limit("https://b.example/x", 1.0)
+    async with a, b:
+        assert host_pacer.limit("https://A.example/y", 1.0) is a
+    # Ohne Drossel keine Grenze
+    async with host_pacer.limit("https://a.example/x", 0), host_pacer.limit("https://a.example/x", 0):
+        pass

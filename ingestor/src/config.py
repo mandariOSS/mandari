@@ -76,6 +76,14 @@ class Settings(BaseSettings):
         default=DEFAULT_INTERVAL,
         validation_alias=AliasChoices("INGESTOR_REQUEST_INTERVAL", "request_interval"),
     )
+    # Höchstens so viele laufende Anfragen je Host in einem Prozess (Reservierung des Takts und Anfrage
+    # zusammen). Hält den reservierten Takt kurz: Ohne Grenze reservierte jeder Abrufplatz einen eigenen
+    # Zeitpunkt, der Horizont je Host lag bei 20 Plätzen 20 s voraus, und die Vorschau fand keinen freien
+    # Zeitpunkt mehr. 0 = keine Grenze.
+    host_max_concurrent: int = Field(
+        default=2,
+        validation_alias=AliasChoices("INGESTOR_HOST_MAX_CONCURRENT", "host_max_concurrent"),
+    )
     oparl_etag_cache_enabled: bool = True
     oparl_modified_since_enabled: bool = True
     oparl_max_concurrent: int = 20  # Concurrent HTTP requests

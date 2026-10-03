@@ -81,7 +81,7 @@ from insight_core.services import person_photos, question_service, robots  # noq
 
 # Ohne Netz: die Test-Quellen haben keine robots.txt (HTTP 404, alles erlaubt). Die Prüfung selbst testen
 # insight_core/tests/test_robots_txt.py und ingestor/tests/test_robots.py.
-robots._fetch = lambda url, agent=None: (404, b"")
+robots._fetch = lambda url, *args, **kwargs: (404, b"")
 
 PASS = 0
 FAIL = 0

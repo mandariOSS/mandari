@@ -56,14 +56,18 @@ class SummaryService:
     Automatically extracts text from PDFs on-demand if needed.
     """
 
-    def __init__(self, provider=None):
+    def __init__(self, provider=None, *, pace_max_wait: float | None = None):
         """
         Initialize the summary service.
 
         Args:
             provider: Optional AI provider. Defaults to NebiusProvider.
+            pace_max_wait: Höchstwartezeit auf die Drossel je Host beim Nachladen von Dokumenten. In einer
+                Web-Anfrage immer setzen: Ohne freien Zeitpunkt bricht die Erstellung dann mit der Bitte um
+                einen neuen Versuch ab, statt die Anfrage lange schlafen zu lassen.
         """
         self.provider = provider or NebiusProvider()
+        self.pace_max_wait = pace_max_wait
 
     def generate_summary(self, paper: "OParlPaper", save: bool = True) -> str:
         """
@@ -244,6 +248,8 @@ class SummaryService:
         from insight_core.services import robots
         from insight_core.services.document_extraction import (
             DocumentDownloadError,
+            RobotsUnreachableError,
+            SourceBusyError,
             download_and_extract,
         )
         from insight_core.services.file_cache import download_headers
@@ -268,6 +274,7 @@ class SummaryService:
                 timeout=120.0,
                 extra_headers=extra_headers,
                 sync_config=sync_config,
+                max_wait=self.pace_max_wait,
             )
 
             if result.text and result.text.strip():
@@ -280,6 +287,12 @@ class SummaryService:
             logger.warning(f"No text extracted from file {file.id}")
             return ""
 
+        except (SourceBusyError, RobotsUnreachableError) as e:
+            # Vorübergehend: nicht als „kein Text“ werten, sondern um einen neuen Versuch bitten
+            logger.info(f"File {file.id} not fetched now: {e}")
+            raise SummaryError(
+                "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
+            ) from e
         except DocumentDownloadError as e:
             logger.warning(f"Failed to download file {file.id}: {e}")
             return ""

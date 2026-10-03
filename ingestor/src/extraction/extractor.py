@@ -192,9 +192,10 @@ class TextExtractor:
             return False
 
         try:
-            # Drossel je Host: Dateien zählen wie jede andere Anfrage an die Quelle
-            await pace(download_url)
-            data = await self._download(download_url, headers)
+            # Drossel je Host: Dateien zählen wie jede andere Anfrage an die Quelle (mit Grenze je Host)
+            async with host_pacer.limit(download_url, interval):
+                await pace(download_url)
+                data = await self._download(download_url, headers)
         except Exception as e:
             logger.warning("Download failed for %s: %s", download_url, e)
             await self.storage.update_file_text(

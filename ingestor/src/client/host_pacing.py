@@ -6,11 +6,16 @@ Vor jeder Anfrage an eine Quelle reserviert der Ingestor einen Zeitpunkt für de
 Der Zeitstempel liegt in Redis und gilt damit über alle Quellen, Abrufplätze und Prozesse hinweg, auch für
 Django (Dokument-Cache, Vorschau). Ist Redis nicht erreichbar, drosselt der Prozess für sich und versucht es
 nach einer Minute erneut.
+
+Zusätzlich laufen je Prozess und Host höchstens ``settings.host_max_concurrent`` Anfragen gleichzeitig
+(:meth:`HostPacer.limit`, Reservierung und Anfrage zusammen). Sonst reservierte jeder freie Abrufplatz einen
+eigenen Zeitpunkt, und der Takt je Host reichte so viele Sekunden in die Zukunft, wie es Plätze gibt.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -44,12 +49,37 @@ class HostPacer:
         self._local = LocalSchedule()
         self._script: Any = None
         self._redis_down_until = 0.0
+        # Grenze gleichzeitiger Anfragen je Host; Semaphoren gehören zur laufenden Ereignisschleife
+        self._limits: dict[str, asyncio.Semaphore] = {}
+        self._limits_loop: asyncio.AbstractEventLoop | None = None
 
     def reset(self) -> None:
         """Zustand im Prozess verwerfen (Tests)."""
         self._local.clear()
         self._script = None
         self._redis_down_until = 0.0
+        self._limits = {}
+        self._limits_loop = None
+
+    def limit(self, url: str, interval: float) -> contextlib.AbstractAsyncContextManager[Any]:
+        """
+        Höchstens ``settings.host_max_concurrent`` laufende Anfragen je Host in diesem Prozess. Um Reservierung
+        (:meth:`wait`) und Anfrage legen: ``async with host_pacer.limit(url): await wait(...); await get(...)``.
+        So bleibt der reservierte Takt je Host kurz, und andere Prozesse (Vorschau) finden einen freien Zeitpunkt.
+        Ohne Drossel (``interval`` 0) gibt es keine Reservierung und damit auch keine Grenze.
+        """
+        size = settings.host_max_concurrent
+        host = host_of(url)
+        if size <= 0 or interval <= 0 or not host:
+            return contextlib.nullcontext()
+        loop = asyncio.get_running_loop()
+        if self._limits_loop is not loop:
+            self._limits = {}
+            self._limits_loop = loop
+        semaphore = self._limits.get(host)
+        if semaphore is None:
+            semaphore = self._limits[host] = asyncio.Semaphore(size)
+        return semaphore
 
     def _get_script(self) -> Any:
         if self._script is None:

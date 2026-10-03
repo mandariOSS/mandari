@@ -8,6 +8,10 @@ So bleibt es bei höchstens einer Anfrage je Abstand an einen Host, gleich welch
 
 Abstand: ``sync_config["request_interval"]`` der Quelle, sonst ``RIS_REQUEST_INTERVAL`` (Standard eine Sekunde).
 Ohne erreichbares Redis drosselt der Prozess für sich und versucht es nach einer Minute erneut.
+
+In einer Web-Anfrage (Vorschau, Zusammenfassung) wird nur mit Höchstwartezeit gewartet (``max_wait``) und ohne
+gehaltene Datenbankverbindung; ist kein Zeitpunkt frei, folgt :class:`PacingBusyError` bzw. ``False``, und die
+Anfrage bittet um einen neuen Versuch, statt den Takt zu brechen.
 """
 
 from __future__ import annotations
@@ -24,6 +28,11 @@ logger = logging.getLogger(__name__)
 
 #: Nach einem Redis-Fehler so lange nur im Prozess drosseln
 REDIS_RETRY_SECONDS = 60.0
+
+
+class PacingBusyError(Exception):
+    """Innerhalb der Höchstwartezeit ist kein Zeitpunkt für den Host frei (nur mit ``max_wait``)."""
+
 
 _lock = threading.Lock()
 _local = LocalSchedule()

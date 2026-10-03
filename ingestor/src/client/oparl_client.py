@@ -648,12 +648,14 @@ class OParlClient:
             if settings.oparl_modified_since_enabled and url in self.modified_cache:
                 headers["If-Modified-Since"] = self.modified_cache[url]
 
-        # Drossel je Host (request_interval der Quelle bzw. Standard), über alle Prozesse
-        await self._throttle(url, skip_wait)
+        # Drossel je Host (request_interval der Quelle bzw. Standard), über alle Prozesse; je Host laufen in
+        # diesem Prozess höchstens host_max_concurrent Anfragen, damit der reservierte Takt kurz bleibt
+        async with host_pacer.limit(url, self.effective_interval):
+            await self._throttle(url, skip_wait)
 
-        start = time.time()
-        response = await self._client.get(url, headers=headers)
-        fetch_time = time.time() - start
+            start = time.time()
+            response = await self._client.get(url, headers=headers)
+            fetch_time = time.time() - start
 
         self.stats.http_requests += 1
         self.stats.http_time += fetch_time

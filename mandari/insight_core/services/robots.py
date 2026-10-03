@@ -77,13 +77,20 @@ def _cache_key(url: str, agent: str) -> str:
     return _CACHE_PREFIX + hashlib.sha256(f"{host_key(url)} {agent}".encode()).hexdigest()[:32]
 
 
-def _fetch(url: str, agent: str = USER_AGENT) -> tuple[int | None, bytes]:
+def _fetch(
+    url: str, agent: str = USER_AGENT, *, sync_config: Any = None, max_wait: float | None = None
+) -> tuple[int | None, bytes]:
+    """
+    robots.txt abrufen. Der Abruf zählt wie jede Anfrage an den Host (Drossel je Host); mit ``max_wait`` wird
+    höchstens so lange gewartet, sonst folgt :class:`~insight_core.services.host_pacing.PacingBusyError`.
+    """
     from . import host_pacing
     from .safe_fetch import guarded_client
 
     target = robots_url(url)
+    if not host_pacing.wait(target, sync_config=sync_config, max_wait=max_wait):
+        raise host_pacing.PacingBusyError(target)
     try:
-        host_pacing.wait(target)  # zählt wie jede Anfrage an den Host
         with guarded_client(timeout=_TIMEOUT, follow_redirects=True, max_redirects=5) as client:
             response = client.get(target, headers={"User-Agent": agent, "Accept": "text/plain"})
             return response.status_code, response.content[:MAX_BYTES]
@@ -96,10 +103,18 @@ def _from_entry(data: dict[str, Any]) -> RobotsTxt:
     return RobotsTxt.from_response(data.get("status"), (data.get("text") or "").encode())
 
 
-def load(url: str, *, refresh: bool = False, agent: str | None = None) -> RobotsTxt:
+def load(
+    url: str,
+    *,
+    refresh: bool = False,
+    agent: str | None = None,
+    sync_config: Any = None,
+    max_wait: float | None = None,
+) -> RobotsTxt:
     """
     Ausgewertete robots.txt zum Host von ``url``, abgerufen mit ``agent`` (Standard: unser User-Agent);
-    aus dem Cache, sonst neu abgerufen.
+    aus dem Cache, sonst neu abgerufen. ``sync_config`` (Abstand der Quelle) und ``max_wait`` gelten für die
+    Drossel je Host beim Abruf; in Web-Anfragen nur mit ``max_wait`` aufrufen.
     """
     agent = agent or USER_AGENT
     key = _cache_key(url, agent)
@@ -112,7 +127,7 @@ def load(url: str, *, refresh: bool = False, agent: str | None = None) -> Robots
             last_good = entry.get("last_good")
             return _from_entry(last_good) if current.state == STATE_UNREACHABLE and last_good else current
 
-    status, body = _fetch(url, agent)
+    status, body = _fetch(url, agent, sync_config=sync_config, max_wait=max_wait)
     fresh = {"status": status, "text": body.decode("utf-8", errors="replace"), "fetched_at": now}
     robots = RobotsTxt.from_response(status, body)
     previous_good = None
@@ -155,22 +170,39 @@ def user_agent_for(obj: Any) -> str:
     return USER_AGENT
 
 
-def decide(url: str, *, agent: str | None = None, refresh: bool = False) -> Decision:
+def decide(
+    url: str,
+    *,
+    agent: str | None = None,
+    refresh: bool = False,
+    sync_config: Any = None,
+    max_wait: float | None = None,
+) -> Decision:
     """Was sagt die robots.txt allein (ohne Ausnahme der Quelle) zu ``url`` für ``agent``?"""
     agent = agent or USER_AGENT
-    robots_txt = load(url, refresh=refresh, agent=agent)
+    robots_txt = load(url, refresh=refresh, agent=agent, sync_config=sync_config, max_wait=max_wait)
     return robots_txt.decide(url, tokens=(product_token(agent), PRODUCT_TOKEN))
 
 
-def check(url: str, kind: str = KIND_FILES, *, sync_config: Any = None, agent: str | None = None) -> Decision:
+def check(
+    url: str,
+    kind: str = KIND_FILES,
+    *,
+    sync_config: Any = None,
+    agent: str | None = None,
+    max_wait: float | None = None,
+) -> Decision:
     """
     Darf ``url`` (Art ``api`` oder ``files``) mit ``agent`` abgerufen werden? Eine gültige Ausnahme der Quelle
     für diese Art erlaubt den Abruf ohne Blick in die robots.txt.
+
+    ``max_wait``: Muss die robots.txt erst geladen werden, wartet die Drossel je Host höchstens so lange (für
+    Web-Anfragen); sonst folgt :class:`~insight_core.services.host_pacing.PacingBusyError`.
     """
     override = robots_override(sync_config)
     if override is not None and override.covers(kind):
         return override.decision()
-    return decide(url, agent=agent)
+    return decide(url, agent=agent, sync_config=sync_config, max_wait=max_wait)
 
 
 def requeue_blocked_files(source: Any) -> dict[str, int]:
