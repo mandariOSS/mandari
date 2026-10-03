@@ -4,7 +4,9 @@ Management Command: monatlicher Verfügbarkeitsbericht aus der Statusseite (Issu
 
     python manage.py availability_report --month 2026-08 [--gatus-url https://status.example] [--out bericht.md]
 
-Ohne ``--month`` wird der Vormonat berichtet; ohne ``--gatus-url`` gilt ``GATUS_URL``.
+Ohne ``--month`` wird der Vormonat berichtet; ohne ``--gatus-url`` gilt ``GATUS_URL``. Nennt ``--out``
+ein Verzeichnis (vorhanden oder mit ``/`` am Ende), heißt die Datei ``verfuegbarkeit-<YYYY-MM>.md``;
+so schreibt der Zeitplan ``befehl:availability_report`` nach ``REPORTS_ROOT`` (Issue #516).
 Ohne erreichbare Statusseite endet der Lauf mit Exit-Code 1.
 Auswertung und Grenzen: apps/common/availability.py.
 """
@@ -35,7 +37,7 @@ class Command(EinmaligMixin, BaseCommand):
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--month", help="Monat im Format YYYY-MM (Standard: Vormonat)")
         parser.add_argument("--gatus-url", help="Basis-URL der Statusseite (Standard: GATUS_URL)")
-        parser.add_argument("--out", help="Zieldatei (Markdown); ohne Angabe Ausgabe auf stdout")
+        parser.add_argument("--out", help="Zieldatei oder Verzeichnis (Markdown); ohne Angabe Ausgabe auf stdout")
         parser.add_argument("--target", type=float, default=99.5, help="Zielverfügbarkeit in Prozent (Standard 99,5)")
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -60,6 +62,9 @@ class Command(EinmaligMixin, BaseCommand):
         bericht = bericht_markdown(monat, dienste, ziel=options["target"], quelle=basis)
         if options["out"]:
             ziel = Path(options["out"])
+            if ziel.is_dir() or str(options["out"]).endswith(("/", "\\")):
+                ziel.mkdir(parents=True, exist_ok=True)
+                ziel = ziel / f"verfuegbarkeit-{monat}.md"
             ziel.write_text(bericht, encoding="utf-8")
             self.stdout.write(self.style.SUCCESS(f"Bericht für {monat} geschrieben: {ziel} ({len(dienste)} Dienste)"))
         else:

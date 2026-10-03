@@ -110,7 +110,8 @@ worker:
       cpu: 100m
       memory: 256Mi
     limits:
-      memory: 512Mi
+      # Verwaltungsbefehle der Zeitpläne laufen als eigene Prozesse im Worker (früher Host-Cron)
+      memory: 1Gi
   # nodeSelector, tolerations und affinity gelten für beide Worker
   nodeSelector: {}
   tolerations: []

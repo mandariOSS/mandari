@@ -360,6 +360,13 @@ EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBU
 # gilt der Schlüssel als neu. Aufgeräumt wird täglich per Zeitplan (apps/events/schedules.py).
 EVENTS_IDEMPOTENCY_RETENTION_DAYS = int(os.environ.get("EVENTS_IDEMPOTENCY_RETENTION_DAYS", "30"))
 
+# Zeitpläne (apps.events.schedule, Issue #516): einzelne abschalten, Namen kommagetrennt, z. B.
+# "befehl:build_meeting_packages". Ihre Termine verstreichen ohne Auftrag; ein noch vorhandener
+# Cron-Eintrag des Befehls läuft dann wieder (Rückweg je Befehl, DEPLOYMENT.md „Geplante Aufgaben“).
+EVENTS_SCHEDULES_DISABLED = [
+    name.strip() for name in os.environ.get("EVENTS_SCHEDULES_DISABLED", "").split(",") if name.strip()
+]
+
 # Worker (manage.py events_worker, Issue #509): Braucht diese Installation einen laufenden Worker?
 # Dann melden /health/ und /health/ready/ "degraded" und der Admin einen Hinweis, solange keiner
 # die nötigen Rollen bedient (apps.events.presence). "true": alle Rollen; "false": nie; leer
@@ -497,6 +504,9 @@ SESSION_PACKAGE_MAX_PAGES = int(os.environ.get("SESSION_PACKAGE_MAX_PAGES", "300
 # nie aus (PROTECTED_MEDIA_PREFIXES). Die Pakete löscht mandari nicht selbst.
 AUDIT_ARCHIVE_STORAGE = os.environ.get("AUDIT_ARCHIVE_STORAGE", "")
 AUDIT_ARCHIVE_ROOT = Path(os.environ.get("AUDIT_ARCHIVE_ROOT", str(MEDIA_ROOT / "audit_archive")))
+# Berichte der Zeitpläne (Issue #516), etwa der monatliche Verfügbarkeitsbericht: im Medien-Volume
+# (also in der Sicherung), nie über /media/ abrufbar (mandari/media.py)
+REPORTS_ROOT = Path(os.environ.get("REPORTS_ROOT", str(MEDIA_ROOT / "berichte")))
 # Obergrenze eines Exports aus der Oberfläche; größere Zeiträume über manage.py export_audit_log
 AUDIT_EXPORT_MAX_ROWS = int(os.environ.get("AUDIT_EXPORT_MAX_ROWS", "100000"))
 # Aufbewahrung des mandantenübergreifenden Sicherheitsprotokolls in Tagen (purge_security_audit_log)
@@ -654,6 +664,9 @@ TASKS = {
             "tasks": {
                 # PDF-Export mit vielen Einträgen braucht länger als die 5 Minuten der Warteschlange
                 "apps.work.background_tasks.generate_dsgvo_export_task": {"timeout": 900, "max_attempts": 3},
+                # Verwaltungsbefehle als Zeitpläne (Issue #516): eigene Zeitgrenze je Befehl, höchstens
+                # 3600 s; der Prozess endet vorher (apps.events.verwaltungsbefehle)
+                "apps.events.verwaltungsbefehle.befehl_ausfuehren": {"timeout": 3660, "max_attempts": 1},
             },
         },
     }

@@ -41,11 +41,8 @@ RIS-spezifischen Rollenbezeichnungen.
 | `INSIGHT_MODERATION_EMAILS` | Kommagetrennte Empfänger der Moderations-Hinweise; leer → alle aktiven Superuser mit E-Mail |
 | `SITE_URL` | Basis für alle Links in E-Mails |
 
-**Cron** (täglich, erinnert Ratsmitglieder 14 Tage nach Veröffentlichung, danach alle 14 Tage):
-
-```cron
-30 7 * * * docker exec mandari python manage.py send_question_reminders >> /var/log/mandari-question-reminders.log 2>&1
-```
+**Zeitplan im Worker** `befehl:send_question_reminders` (täglich 07:30, erinnert Ratsmitglieder
+14 Tage nach Veröffentlichung, danach alle 14 Tage; `DEPLOYMENT.md`, „Geplante Aufgaben“).
 
 ## Personenfotos
 
@@ -60,10 +57,7 @@ Regex mit einer Capture-Group auf die `external_id`. Für bekannte RIS greifen P
 
 Manuell im Admin hochgeladene Fotos (`photo_status = manual`) werden nie überschrieben.
 
-**Cron** (wöchentlich; prüft nur ungeprüfte oder >30 Tage alte Einträge):
-
-```cron
-0 3 * * 1 docker exec mandari python manage.py fetch_person_photos >> /var/log/mandari-person-photos.log 2>&1
-```
+**Zeitplan im Worker** `befehl:fetch_person_photos` (montags 03:00; prüft nur ungeprüfte oder
+>30 Tage alte Einträge).
 
 Einmalig alles neu laden: `python manage.py fetch_person_photos --body muenster --force`

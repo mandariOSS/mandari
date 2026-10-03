@@ -17,6 +17,12 @@ Verwendung im Management-Command::
 Ein zweiter Aufruf während der Laufzeit endet mit einer Meldung auf stderr und Exit-Code 0
 (nichts zu tun) – Cron-Mails bleiben damit aus. ``--ohne-sperre`` erzwingt den Lauf.
 
+**Übergabe an die Zeitpläne (Issue #516):** Läuft der Befehl als Zeitplan im Worker
+(``apps.events.verwaltungsbefehle.zeitplan_uebernimmt``), endet ein Aufruf von außen – etwa ein
+übrig gebliebener Cron-Eintrag – ebenso mit Hinweis und Exit-Code 0, damit nichts doppelt läuft.
+Ohne laufenden Worker läuft er wie bisher. ``--dry-run`` läuft immer, ``--trotz-zeitplan``
+erzwingt einen echten Lauf von Hand.
+
 Mit dem lokalen Speicher-Cache (Entwicklung, Tests) schützt die Sperre nur innerhalb eines
 Prozesses; der Mehr-Server-Betrieb setzt den Redis-Cache voraus (docs/MEHR_SERVER_BETRIEB.md).
 """
@@ -74,6 +80,17 @@ class Sperre:
         self.freigeben()
 
 
+def zeitplan_uebernimmt(befehl: str) -> bool:
+    """Bedient ein Worker den Zeitplan dieses Befehls? Im Zweifel nein (dann läuft er wie bisher)."""
+    try:
+        from apps.events.verwaltungsbefehle import zeitplan_uebernimmt as pruefen
+
+        return pruefen(befehl)
+    except Exception:  # noqa: BLE001 – ohne Datenbank oder Tabelle entscheidet der alte Weg
+        logger.debug("Zeitplan von %s nicht prüfbar", befehl, exc_info=True)
+        return False
+
+
 class EinmaligMixin:
     """Management-Command nur einmal gleichzeitig ausführen (vor ``BaseCommand`` einreihen)."""
 
@@ -85,10 +102,25 @@ class EinmaligMixin:
         # und die Option wäre still verschwunden. create_parser bleibt bei BaseCommand.
         parser = super().create_parser(prog_name, subcommand, **kwargs)  # type: ignore[misc]
         parser.add_argument("--ohne-sperre", action="store_true", help="Singleton-Sperre ignorieren (Notfall).")
+        parser.add_argument(
+            "--trotz-zeitplan",
+            action="store_true",
+            help="Auch ausführen, wenn der Befehl als Zeitplan im Worker läuft (Handbetrieb).",
+        )
         return parser
 
     def execute(self, *args: Any, **options: Any) -> Any:
-        name = self.sperre or getattr(self, "_command_name", "") or type(self).__module__.rsplit(".", 1)[-1]
+        befehl = type(self).__module__.rsplit(".", 1)[-1]
+        name = self.sperre or getattr(self, "_command_name", "") or befehl
+        trotz_zeitplan = options.pop("trotz_zeitplan", False)
+        if not trotz_zeitplan and not options.get("dry_run") and zeitplan_uebernimmt(befehl):
+            meldung = (
+                f"{befehl}: läuft als Zeitplan im Worker – Aufruf übersprungen. Cron-Eintrag entfernen "
+                "(DEPLOYMENT.md, „Geplante Aufgaben“); --trotz-zeitplan erzwingt den Lauf."
+            )
+            logger.warning(meldung)
+            OutputWrapper(options.get("stderr") or sys.stderr).write(meldung)
+            return None
         if options.pop("ohne_sperre", False):
             return super().execute(*args, **options)  # type: ignore[misc]
         sperre = Sperre(name, self.sperre_ttl)

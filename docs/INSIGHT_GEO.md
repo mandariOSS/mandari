@@ -123,11 +123,9 @@ Planseite `scanurl`, Planstand „Im Verfahren“, Rang kleiner als der der Land
 Einschalten klären (siehe Machbarkeitsbericht, Abschnitt Urheberrecht). Lücken zeigt der Admin unter
 „Bebauungspläne der Vorgänge“, Filter „Kein Umring gefunden“.
 
-Cron (siehe `DEPLOYMENT.md`):
-
-```cron
-50 4 * * *  docker exec mandari python manage.py sync_plan_boundaries >> /var/log/mandari-plan-boundaries.log 2>&1
-```
+Der Abruf läuft täglich um 04:50 als Zeitplan `befehl:sync_plan_boundaries` im Worker (siehe
+`DEPLOYMENT.md`, „Geplante Aufgaben“); von Hand:
+`docker compose exec worker python manage.py sync_plan_boundaries --trotz-zeitplan`.
 
 ## Nachbarschafts-Autocomplete (`services/neighborhood.py`)
 

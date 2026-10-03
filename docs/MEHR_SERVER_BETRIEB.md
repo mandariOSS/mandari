@@ -72,7 +72,8 @@ Mehrere Server bedeuten die Gefahr, dass derselbe Job zweimal läuft – etwa we
 `worker`-Profil versehentlich auf zwei Servern aktiv ist oder Cron auf zwei web-Servern
 eingerichtet wurde. Drei Schutzmechanismen:
 
-1. **Management-Commands** (Cron, `DEPLOYMENT.md` → „Geplante Aufgaben“) tragen die
+1. **Management-Commands** (Zeitpläne im Worker, `DEPLOYMENT.md` → „Geplante Aufgaben“;
+   je Termin plant genau ein Scheduler über seine Lease einen Auftrag) tragen zusätzlich die
    Singleton-Sperre `apps/common/einmalig.py`: `cache.add` in Redis vergibt den Zuschlag
    atomar an genau einen Aufrufer; die Sperre verfällt nach `sperre_ttl` Sekunden von
    selbst (Absturzschutz) und wird nach dem Lauf sofort freigegeben. Ein zweiter Aufruf
@@ -80,9 +81,9 @@ eingerichtet wurde. Drei Schutzmechanismen:
    Geschützt: `send_session_reminders`, `send_question_reminders`,
    `send_task_due_reminders`, `fetch_person_photos`, `cleanup_orphaned_accounts`,
    `check_source_health`, `check_service_levels`, `availability_report`,
-   `build_meeting_packages`.
-   `--ohne-sperre` erzwingt den Lauf (Notfall). Cron trotzdem nur auf **einem** Server
-   einrichten – die Sperre ist das Sicherheitsnetz, nicht das Konzept.
+   `build_meeting_packages`, `session_privacy_purge` und die übrigen Befehle der Zeitpläne.
+   `--ohne-sperre` erzwingt den Lauf (Notfall). Die Sperre ist das Sicherheitsnetz, die
+   Lease des Schedulers das Konzept; Host-Cron für diese Befehle gibt es nicht mehr.
 2. **Protokoll-Orchestrator** (`minutes_orchestrator`) hält dieselbe Sperre je Durchlauf;
    ein zweiter Orchestrator überspringt Takte statt doppelt Rechenknoten anzulegen.
 3. **Ingestor-Daemon** nutzt eine PostgreSQL-Advisory-Sperre (`pg_try_advisory_lock`),

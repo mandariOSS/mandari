@@ -48,6 +48,8 @@ PROTECTED_MEDIA_PREFIXES = (
     "motions/documents/",
     # Archivpakete des Protokolls (Issue #221): nie über eine URL
     "audit_archive/",
+    # Berichte der Zeitpläne (REPORTS_ROOT, Issue #516): nie über eine URL
+    "berichte/",
     # Dokument-Cache der OParl-Dateien (Standardablage ohne OPARL_FILES_ROOT): nur über den
     # Datei-Proxy, der auch zurückgezogene Dokumente berücksichtigt
     "oparl_files/",
@@ -58,7 +60,7 @@ PROTECTED_MEDIA_PREFIXES = (
 
 #: Einstellungen mit eigenen Ablagen, die nie über ``/media/`` hinausgehen. Zeigen sie in ein
 #: Verzeichnis unter ``MEDIA_ROOT``, gilt dessen Präfix zusätzlich als geschützt.
-_PROTECTED_ROOT_SETTINGS = ("OPARL_FILES_ROOT", "AUDIT_ARCHIVE_ROOT")
+_PROTECTED_ROOT_SETTINGS = ("OPARL_FILES_ROOT", "AUDIT_ARCHIVE_ROOT", "REPORTS_ROOT")
 
 #: URL-Präfix der Medien (wie das Muster ``media`` in ``mandari/urls.py``)
 MEDIA_URL_PREFIX = "/media/"

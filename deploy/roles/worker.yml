@@ -50,6 +50,9 @@ services:
       EVENTS_DB_DIRECT_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
       ELASTICSEARCH_URL: http://${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:9200
+      # Die Anwendung läuft auf dem Web-Server: Metriken für check_service_levels (Zeitplan) über
+      # dessen Adresse im privaten Netz; leer = Prüfung der Fehlerquote entfällt
+      METRICS_URL: ${METRICS_URL:-}
     depends_on: !reset []
 
   # Nur Aufträge aus ocr und ai: ohne Weckruf, also ohne Direktverbindung
