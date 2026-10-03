@@ -58,6 +58,9 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, 0 = aus) |
 | `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange warten Vorschau und KI-Zusammenfassung höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After` bzw. die Bitte um einen neuen Versuch. Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
+| `FILE_PURGE_AFTER_DAYS` | 30 | Kopie und Text gesperrter Dokumente nach so vielen Tagen löschen (Löschabgleich) |
+| `FILE_PURGE_CONFIRM_GRACE_DAYS` | 7 | Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich |
+| `FILE_RECONCILE_MAX_MISSING` | 10 | Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu `404`/`410`, wird keines gesperrt |
 | `FILE_ACCEL_REDIRECT` | `false` | Lokale Kopien liefert der Webserver aus statt Django (siehe [Auslieferung über den Webserver](#auslieferung-über-den-webserver)) |
 
 ```cron
@@ -127,6 +130,62 @@ handle_response @dokument {
 
 Andere Webserver (z. B. nginx mit einer `internal`-Location): vorher prüfen, dass Typ, Anzeigeart, `nosniff`
 und die Sandbox aus der Antwort der Anwendung beim Client ankommen.
+
+### Löschabgleich
+
+Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (Issue #787,
+`services/file_reconcile.py`):
+
+- **Sperre sofort:** Ein Dokument ist gesperrt, wenn die Quelle es als gelöscht meldet (OParl `deleted`, der
+  Ingestor markiert es) oder seine Download-Adresse `404`/`410` liefert (`source_missing_since`). Gesperrt
+  heißt: Die Vorschau antwortet mit `410` und liefert keine Bytes, auch nicht aus der lokalen Kopie; die
+  Vorgangsseite zeigt weder Dokument noch Text; der OParl-Objekt-Endpunkt (`/oparl/v1/file/<id>`) gibt kein
+  Feld `text` mehr aus; Suchindex (auch nach einem vollständigen Neuaufbau) und KI-Zusammenfassung des
+  Vorgangs verlieren es, eine neue Zusammenfassung nimmt seinen Text nicht auf; der Ingestor erkennt keinen
+  Text mehr und nimmt die Datei nicht wieder in den Index. Liefert die Quelle das Dokument wieder, wird die
+  Sperre aufgehoben. Browser und Zwischenspeicher dürfen ein vorher ausgeliefertes Dokument noch bis zu 24 h
+  zeigen (`Cache-Control: public, max-age=86400`); das liegt bewusst innerhalb der Vorgabe des Konzepts.
+- **Änderung per Hash:** Meldet die Quelle eine Änderung (`modified`) nach unserer Kopie bzw. Texterkennung,
+  lädt der Abgleich die Datei neu und vergleicht den SHA-256. Anderer Inhalt ersetzt die Kopie, der alte Text
+  wird verworfen und vom Ingestor neu erkannt; gleicher Inhalt ändert nichts.
+- **Stichproben:** Gedrosselte HEAD-Anfragen auf die Download-Adressen (am längsten nicht geprüfte zuerst)
+  finden Löschungen, die die Quelle nicht meldet. Ein `404`/`410` (oder ein Server ohne HEAD) wird per GET
+  bestätigt, eine abweichende Größe per Hash abgeglichen. Liefert HEAD eine HTML-Seite statt der Datei
+  (weiche 404), entscheidet ebenfalls ein GET; eine Hinweisseite gilt nie als „vorhanden“. Mindestabstand je
+  Host (`--interval`), höchstens `--head-limit` Anfragen je Kommune und Lauf. Antwortet ein Host mit `429`
+  oder `503`, fragt der Lauf ihn nicht weiter an (auch kein GET hinterher); nach fünf Fehlern in Folge ebenso.
+  Stichproben laufen nur für gelistete Kommunen (ausgeblendete zeigen nichts öffentlich); mit `--body` für
+  genau diese Kommune. Quellen in Schonung oder mit abgeschaltetem Dateiabruf bleiben unberührt.
+- **Erneut prüfen:** Ein wegen `404`/`410` gesperrtes Dokument prüft der Abgleich nach 1, 7 und 25 Tagen
+  erneut (vor den übrigen Stichproben) und unmittelbar vor dem Löschen noch einmal per GET. Liefert die
+  Quelle es wieder, wird entsperrt statt gelöscht. Eine vorübergehende `404` (Wartung, Umstellung, eine
+  Firewall) versteckt ein Dokument also höchstens bis zur nächsten Prüfung und löscht nichts.
+- **Bremse:** Liefern in einem Lauf mehr als `FILE_RECONCILE_MAX_MISSING` (Standard 10, `--max-fehlend`)
+  Dokumente einer Quelle neu `404`/`410`, sperrt der Lauf keines davon und lässt die Quelle für den Rest des
+  Laufs in Ruhe. Die Ausgabe nennt sie (`gebremst=…`, Hinweis auf stderr). Dann die Quelle prüfen (neue
+  Adressen nach einer Umstellung, Wartung, Sperre unserer Abrufe); bei einer echten Massenlöschung den Lauf mit
+  höherem `--max-fehlend` für diese Kommune wiederholen.
+- **robots.txt ist verbindlich:** Vor jedem Abruf einer Datei prüft der Abgleich die robots.txt des Hosts
+  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf). Eine
+  Ausnahme trägt nur eine Quelle mit Vermerk in `sync_config["robots_override"]`, z. B.
+  `{"scope": "files", "note": "Zustimmung liegt vor, Anfrage läuft"}` (Bereich `files` oder `all`, Vermerk
+  mindestens zehn Zeichen; dasselbe Format wie für die übrigen Abrufe der Quelle).
+  `loeschabgleich --robots` listet je Quelle, ob die robots.txt Dateiabrufe sperrt, samt Ausnahmen.
+- **Löschen nach Frist:** Nach `FILE_PURGE_AFTER_DAYS` (Standard 30) Tagen Sperre löscht der Abgleich die lokale
+  Kopie und den extrahierten Text (`content_purged_at`). Der Datensatz bleibt als Tombstone. Hebt die Quelle die
+  Löschung später auf, wird der Text neu erkannt und die Kopie nachgeladen. Nicht mehr abrufbare Dokumente
+  (`404`/`410`) fragt der Abgleich vorher noch einmal per GET ab (gedrosselt, robots.txt); lässt sich die Quelle
+  nicht befragen (Fehler, robots.txt, Schonung), wartet er bis zu `FILE_PURGE_CONFIRM_GRACE_DAYS` (Standard 7)
+  Tage und löscht danach ohne Rückfrage. In der Quelle gelöschte Dokumente ohne Löschzeitpunkt (Altbestand) bekommen beim ersten Lauf den
+  aktuellen Zeitpunkt; ihre Frist beginnt also dann und nicht rückwirkend.
+
+```cron
+15 * * * * docker exec mandari python manage.py loeschabgleich >> /var/log/mandari-loeschabgleich.log 2>&1
+```
+
+Ein Lauf gleicht höchstens 200 geänderte Dokumente ab (`--changed-limit`) und nimmt je Kommune 30 Stichproben
+(`--head-limit`). `--nur-loeschen` und `--ohne-loeschen` trennen die Schritte. Ein Lauf hält eine Sperre im
+gemeinsamen Cache: Startet der nächste, bevor der vorige fertig ist, endet er sofort mit einem Hinweis.
 
 ### Quellen-Schonung
 

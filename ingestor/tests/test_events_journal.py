@@ -1018,3 +1018,36 @@ async def test_abgleich_ohne_groesse_behaelt_die_vorhandene(bestand: Bestand) ->
 
     await bestand.storage.upsert_file(bestand.processor.process_file(datei(size=815), BODY), bestand.body_id)
     assert await bestand.wert("SELECT size FROM oparl_files WHERE id = :id", id=file_id) == 815
+
+
+# --- Löschabgleich (Issue #787) -------------------------------------------------------------------------------------
+
+
+async def test_in_der_quelle_fehlende_datei_wird_weder_erkannt_noch_indexiert(bestand: Bestand) -> None:
+    """Liefert die Download-Adresse 404/410 (von Django gesperrt), lässt der Ingestor Text und Suche aus."""
+    paper_id = await bestand.paper()
+    file_id = await bestand.storage.upsert_file(bestand.processor.process_file(datei(), BODY), bestand.body_id)
+
+    async def setzen(sql: str) -> None:
+        async with bestand.storage.get_session() as session:
+            await session.execute(text(f"UPDATE oparl_files SET {sql} WHERE id = :id"), {"id": file_id})
+            await session.commit()
+
+    async def dateien_mit_text() -> list[uuid.UUID]:
+        return [f.id async for seite in bestand.storage.iter_files_with_text(bestand.body_id) for f in seite]
+
+    async def vorgaenge_mit_text() -> list[uuid.UUID]:
+        zeilen = await bestand.storage.get_files_with_text_for_papers(bestand.body_id, [paper_id])
+        return [zeile.paper_id for zeile in zeilen]
+
+    await setzen(f"text_content = 'Text', text_extraction_status = 'completed', paper_id = '{paper_id}'")
+    assert await dateien_mit_text() == [file_id]
+    assert await vorgaenge_mit_text() == [paper_id]
+
+    # Gesperrt: Der Text bleibt bis zum Löschen nach Frist, wird aber weder als Datei noch im Vorgang indexiert
+    await setzen("source_missing_since = now()")
+    assert await dateien_mit_text() == []
+    assert await vorgaenge_mit_text() == []
+
+    await setzen("text_extraction_status = 'pending'")
+    assert await bestand.storage.get_pending_files(bestand.body_id) == []

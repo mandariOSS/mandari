@@ -302,24 +302,28 @@ class SummaryService:
 
     @staticmethod
     def _withdrawn_since(paper: "OParlPaper", started: tuple[bool, list]) -> bool:
-        """Vorgang oder eine der verwendeten Anlagen seit Beginn gelöscht bzw. zurückgenommen?"""
+        """Vorgang oder eine der verwendeten Anlagen seit Beginn gelöscht, zurückgenommen oder gesperrt?"""
+        from django.db.models import Q
+
         from insight_core.models import OParlFile, OParlPaper
 
         was_deleted, file_ids = started
         return (
             not was_deleted and OParlPaper.objects.filter(pk=paper.pk, deleted=True).exists()
-        ) or OParlFile.objects.filter(pk__in=file_ids, deleted=True).exists()
+        ) or OParlFile.objects.filter(pk__in=file_ids).filter(
+            Q(deleted=True) | Q(source_missing_since__isnull=False)
+        ).exists()
 
     @staticmethod
     def _current_files(paper: "OParlPaper"):
         """
-        Anlagen, die in die Zusammenfassung einfließen dürfen: nur nicht gelöschte.
+        Anlagen, die in die Zusammenfassung einfließen dürfen: nur nicht gelöschte und nicht gesperrte.
 
-        Zurückgenommene Anlagen (in Session nicht-öffentlich gestellt oder gelöscht) und in der
-        Quelle gelöschte Dateien gehören nicht mehr zum Vorgang; ihr Text darf nicht über eine
-        öffentlich abrufbare Zusammenfassung weiterleben.
+        Zurückgenommene Anlagen (in Session nicht-öffentlich gestellt oder gelöscht), in der
+        Quelle gelöschte und dort nicht mehr abrufbare Dateien (Löschabgleich, #787) gehören nicht mehr
+        zum Vorgang; ihr Text darf nicht über eine öffentlich abrufbare Zusammenfassung weiterleben.
         """
-        return paper.files.filter(deleted=False)
+        return paper.files.filter(deleted=False, source_missing_since__isnull=True)
 
     def is_available(self) -> bool:
         """

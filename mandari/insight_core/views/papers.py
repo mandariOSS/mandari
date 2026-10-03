@@ -20,6 +20,7 @@ from ..models import (
     OParlPaper,
     withdrawn_q,
 )
+from ..services import file_reconcile
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -105,8 +106,9 @@ class PaperDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         paper = self.object
 
-        # Alle Dateien (zurückgenommene Anlagen aus Session nie)
-        files = [f for f in paper.files.all() if not f.withdrawn_by_publisher]
+        # Alle Dateien – ohne zurückgenommene Anlagen aus Session und ohne Dokumente, die die Kommune
+        # entfernt hat oder die dort nicht mehr abrufbar sind (Löschabgleich, #787)
+        files = [f for f in paper.files.all() if not f.withdrawn_by_publisher and not file_reconcile.is_blocked(f)]
         context["files"] = files
 
         # Dateien mit extrahiertem Text für Rohtext-Tab

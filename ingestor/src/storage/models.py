@@ -383,6 +383,10 @@ class OParlFile(Base):
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Löschabgleich (Django, Issue #787): Download-Adresse liefert 404/410 -> gesperrt. Der Ingestor
+    # erkennt dann keinen Text und nimmt die Datei nicht in den Suchindex.
+    source_missing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

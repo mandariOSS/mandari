@@ -1014,6 +1014,19 @@ class OParlFile(SourceDeletionModel):
     # fehlt bei manchen Quellen; als Speichermaß taugt nur diese Spalte.
     local_size = models.BigIntegerField(blank=True, null=True, verbose_name="Größe der Kopie (Bytes)")
 
+    # Löschabgleich mit der Quelle (Issue #787, services/file_reconcile.py). Gesperrt ist ein Dokument,
+    # wenn es in der Quelle gelöscht ist (``deleted``) oder seine Download-Adresse 404/410 liefert.
+    source_checked_at = models.DateTimeField(blank=True, null=True, verbose_name="Mit der Quelle abgeglichen am")
+    source_missing_since = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="In der Quelle nicht mehr abrufbar seit",
+        help_text="Download-Adresse liefert 404/410: gesperrt, Kopie und Text werden nach der Frist gelöscht.",
+    )
+    content_purged_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="Kopie und Text gelöscht am", help_text="Nach dem Löschabgleich."
+    )
+
     # Text extraction tracking
     text_extraction_status = models.CharField(
         max_length=20,

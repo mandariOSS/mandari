@@ -492,6 +492,13 @@ FILE_ACCEL_REDIRECT = os.environ.get("FILE_ACCEL_REDIRECT", "false").lower() in 
 # FILE_PROXY_PACE_MAX_WAIT_SECONDS auf ihren Zeitpunkt und bittet sonst um einen neuen Versuch.
 RIS_REQUEST_INTERVAL = float(os.environ.get("RIS_REQUEST_INTERVAL", "1.0"))
 FILE_PROXY_PACE_MAX_WAIT_SECONDS = float(os.environ.get("FILE_PROXY_PACE_MAX_WAIT_SECONDS", "5"))
+# Löschabgleich (Issue #787): Kopie und Text eines gesperrten Dokuments nach so vielen Tagen löschen
+FILE_PURGE_AFTER_DAYS = int(os.environ.get("FILE_PURGE_AFTER_DAYS", "30"))
+# Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich
+FILE_PURGE_CONFIRM_GRACE_DAYS = int(os.environ.get("FILE_PURGE_CONFIRM_GRACE_DAYS", "7"))
+# Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu 404/410, wird keines
+# gesperrt (kaputte Quelle, Umstellung, Wartung) und die Quelle ruht für den Lauf
+FILE_RECONCILE_MAX_MISSING = int(os.environ.get("FILE_RECONCILE_MAX_MISSING", "10"))
 # Quellen-Schonung (Issue #89): ab so vielen Sync-Fehlversuchen in Folge lassen Dokument-Cache
 # und Datei-Proxy das Ratsinformationssystem in Ruhe (Ratenlimits, IP-Sperren).
 INSIGHT_SOURCE_BACKOFF_FAILURES = int(os.environ.get("INSIGHT_SOURCE_BACKOFF_FAILURES", "3"))
