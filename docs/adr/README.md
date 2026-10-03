@@ -23,5 +23,6 @@ Dateiname `JJJJMMTT-kurztitel.md`. Status: vorgeschlagen, angenommen, abgelöst.
 | [20260929-portal-modul.md](20260929-portal-modul.md) | Datendrehscheibe A11: Bürgerportal als eigenes Fachmodul; `insight_core` wird reiner RIS-Bestand | vorgeschlagen |
 | [20260930-pdf-seitenanalyse-bibliothek.md](20260930-pdf-seitenanalyse-bibliothek.md) | PDF-Seitenanalyse mit pypdfium2 und pypdf statt PyMuPDF (Lizenz, OEM) | angenommen |
 | [20261002-koerperschaften-im-mandanten.md](20261002-koerperschaften-im-mandanten.md) | Körperschaften im Mandanten: Der Mandant ist die Verwaltung, die Körperschaft die rechtliche Einheit | angenommen |
+| [20261003-rechte-mit-geltungsbereich.md](20261003-rechte-mit-geltungsbereich.md) | Rechte mit Geltungsbereich in Session: Objektart und Aktion, Zuweisung für Bereich und Zeitraum | angenommen |
 
 Die Einträge „Datendrehscheibe A1–A11“ gehören zusammen (Epic #476); die Reihenfolge der Nummern entspricht den Abhängigkeiten.
