@@ -3,7 +3,7 @@
 Stand eines Vorgangs in einem Satz und der Beratungsverlauf als Zeitstrahl (Vorgangsdetail im Bürgerportal).
 
 Wer über eine Suchmaschine auf einen Vorgang kommt, will zuerst wissen, wo die Sache steht. Der Satz fasst
-die letzte Beratung zusammen: „Am 06.12.2011 in der Bezirksvertretung Münster-Südost zur Kenntnis
+die letzte Beratung zusammen: „Am 06.12.2011 in der Bezirksvertretung Mitte zur Kenntnis
 genommen.“ Grundlage ist der Beratungsverlauf, wie ihn ``PaperDetailView`` aufbereitet (je Beratung ein
 Eintrag mit ``date``, ``meeting``, ``organization_name``, ``agenda_number``, ``result``, ``public``,
 ``role`` und ``authoritative``).
