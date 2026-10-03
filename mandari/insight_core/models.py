@@ -1010,6 +1010,9 @@ class OParlFile(SourceDeletionModel):
     )
     local_cached_at = models.DateTimeField(blank=True, null=True, verbose_name="Lokal gespeichert am")
     local_error = models.CharField(max_length=500, blank=True, default="", db_default="", verbose_name="Cache-Fehler")
+    # Gemessene Größe unserer Kopie in Bytes (Issue #786). ``size`` ist die Angabe der Quelle aus OParl und
+    # fehlt bei manchen Quellen; als Speichermaß taugt nur diese Spalte.
+    local_size = models.BigIntegerField(blank=True, null=True, verbose_name="Größe der Kopie (Bytes)")
 
     # Text extraction tracking
     text_extraction_status = models.CharField(
@@ -1067,6 +1070,56 @@ class OParlFile(SourceDeletionModel):
     def size_human(self):
         """Menschenlesbare Dateigröße."""
         return human_size(self.size) if self.size else ""
+
+
+class OParlFileAccessDay(models.Model):
+    """
+    Zugriffsprotokoll der Dokumentablage je Tag (Issue #786), ohne Personenbezug.
+
+    Ein Zähler je Tag, Kommune, Ergebnis und Altersklasse des Dokuments. Daraus ergeben sich die
+    Trefferquote der lokalen Kopien, die Abrufe bei den Quellen und welche Dokumente überhaupt noch
+    gelesen werden – Grundlage für die Größe eines Zwischenspeichers. Geschrieben von
+    ``services/file_access.py``; für Dateien ohne Kommune gibt es Zeilen ohne ``body``.
+    """
+
+    OUTCOME_HIT = "hit"
+    OUTCOME_MISS = "miss"
+    OUTCOME_FAILED = "failed"
+    OUTCOME_BLOCKED = "blocked"
+    OUTCOME_CHOICES = [
+        (OUTCOME_HIT, "Treffer (lokale Kopie)"),
+        (OUTCOME_MISS, "Fehlzugriff (von der Quelle geholt)"),
+        (OUTCOME_FAILED, "Nicht ausgeliefert (Quelle nicht erreichbar, zu groß, gedrosselt)"),
+        (OUTCOME_BLOCKED, "Gesperrt"),
+    ]
+    AGE_CHOICES = [
+        ("d30", "jünger als 30 Tage"),
+        ("d365", "30 Tage bis 1 Jahr"),
+        ("y3", "1 bis 3 Jahre"),
+        ("older", "älter als 3 Jahre"),
+        ("unknown", "unbekannt"),
+    ]
+
+    id = models.BigAutoField(primary_key=True)
+    day = models.DateField(verbose_name="Tag")
+    body = models.ForeignKey(
+        OParlBody, on_delete=models.CASCADE, related_name="file_access_days", blank=True, null=True
+    )
+    outcome = models.CharField(max_length=16, choices=OUTCOME_CHOICES, verbose_name="Ergebnis")
+    age_class = models.CharField(max_length=16, choices=AGE_CHOICES, verbose_name="Alter des Dokuments")
+    count = models.PositiveIntegerField(default=0, verbose_name="Abrufe")
+    bytes = models.BigIntegerField(default=0, verbose_name="Bytes (Dateigröße je Abruf)")
+
+    class Meta:
+        db_table = "oparl_file_access_days"
+        verbose_name = "Dokumentabrufe je Tag"
+        verbose_name_plural = "Dokumentabrufe je Tag"
+        constraints = [
+            models.UniqueConstraint(fields=["day", "body", "outcome", "age_class"], name="oparl_file_access_day_key"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.day} {self.outcome} {self.age_class}: {self.count}"
 
 
 class OParlMembership(SourceDeletionModel):

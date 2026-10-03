@@ -1588,7 +1588,8 @@ class DatabaseStorage:
                 "name": stmt.excluded.name,
                 "file_name": stmt.excluded.file_name,
                 "mime_type": stmt.excluded.mime_type,
-                "size": stmt.excluded.size,
+                # Ohne Größenangabe der Quelle bleibt eine vorhandene Größe stehen (Issue #786)
+                "size": func.coalesce(stmt.excluded.size, OParlFile.size),
                 "access_url": stmt.excluded.access_url,
                 "download_url": stmt.excluded.download_url,
                 "file_date": stmt.excluded.file_date,

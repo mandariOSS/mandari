@@ -22,7 +22,7 @@ from ..models import (
     OParlMeeting,
     withdrawn_q,
 )
-from ..services import file_accel, file_delivery
+from ..services import file_accel, file_access, file_delivery
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, page_number
 
 # =============================================================================
@@ -269,18 +269,25 @@ def file_proxy(request, file_id):
     2. Live-Abruf mit kurzen Timeouts; erfolgreiche Antworten werden
        direkt in den Cache geschrieben (Write-Through)
     3. Freundliche Fehlerseite, wenn die Quelle nicht erreichbar ist
+
+    Jeder Abruf zählt im Zugriffsprotokoll (Treffer, Abruf bei der Quelle, Fehler, Sperre; #786).
     """
+    file_obj = get_object_or_404(
+        OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
+    )
+    return file_access.record_response(file_obj, _deliver_file(request, file_obj))
+
+
+def _deliver_file(request, file_obj):
+    """Lokale Kopie, sonst Live-Abruf, sonst Fehlerseite (siehe ``file_proxy``)."""
     from django.http import FileResponse
 
     from ..services import file_cache
 
-    file_obj = get_object_or_404(
-        OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
-    )
     if file_obj.withdrawn_by_publisher:
         from ._withdrawn import withdrawn_response
 
-        return withdrawn_response(request, file_obj)
+        return file_access.mark_blocked(withdrawn_response(request, file_obj))
     force_download = request.GET.get("download") == "1"
     filename = file_obj.file_name or file_obj.name or "dokument.pdf"
 

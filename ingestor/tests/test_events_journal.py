@@ -1003,3 +1003,18 @@ async def test_eingebettete_beratung_ohne_bezuege_behaelt_sitzung_und_top(bestan
     assert await bestand.wert(zeile.format("meeting_external_id"), e=CONSULTATION) == MEETING
     assert await bestand.wert(zeile.format("paper_external_id"), e=CONSULTATION) == PAPER
     assert await bestand.wert(zeile.format("role"), e=CONSULTATION) == "Entscheidung"
+
+
+# --- Dateigröße (Issue #786) ---------------------------------------------------------------------------------------
+
+
+async def test_abgleich_ohne_groesse_behaelt_die_vorhandene(bestand: Bestand) -> None:
+    """Liefert die Quelle keine Größe, überschreibt der Abgleich eine vorhandene nicht mit NULL."""
+    file_id = await bestand.storage.upsert_file(bestand.processor.process_file(datei(size=4711), BODY), bestand.body_id)
+    assert await bestand.wert("SELECT size FROM oparl_files WHERE id = :id", id=file_id) == 4711
+
+    await bestand.storage.upsert_file(bestand.processor.process_file(datei(), BODY), bestand.body_id)
+    assert await bestand.wert("SELECT size FROM oparl_files WHERE id = :id", id=file_id) == 4711
+
+    await bestand.storage.upsert_file(bestand.processor.process_file(datei(size=815), BODY), bestand.body_id)
+    assert await bestand.wert("SELECT size FROM oparl_files WHERE id = :id", id=file_id) == 815
