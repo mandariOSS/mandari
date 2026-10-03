@@ -5,6 +5,7 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
+from django.conf import settings
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
@@ -283,7 +284,9 @@ def _generate_summary(request, paper):
 
     retry = True
     try:
-        summary = SummaryService().generate_summary(paper)
+        # Dokumente nachladen nur mit Höchstwartezeit auf die Drossel je Host (Web-Anfrage)
+        pace_max_wait = float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
+        summary = SummaryService(pace_max_wait=pace_max_wait).generate_summary(paper)
         return _summary_response(request, {"paper": paper, "summary": summary})
     except NoTextContentError:
         summary_guard.remember_no_text(paper.pk)

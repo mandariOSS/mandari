@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
@@ -82,6 +83,13 @@ class RobotsBlockedError(DocumentDownloadError):
         self.reason = reason
 
 
+class SourceBusyError(DocumentDownloadError):
+    """
+    Die Drossel je Host lässt innerhalb der Höchstwartezeit keinen Abruf zu (nur mit ``max_wait``, also in
+    Web-Anfragen). Kein Fehler der Quelle: später erneut versuchen.
+    """
+
+
 class RobotsUnreachableError(DocumentDownloadError):
     """
     Die robots.txt der Quelle war nicht erreichbar (5xx, 408, 429, Netzfehler): Abruf zurückgestellt, keine
@@ -98,25 +106,37 @@ def _http_get(
     timeout: float = 60.0,
     extra_headers: dict[str, str] | None = None,
     sync_config: Any = None,
+    max_wait: float | None = None,
 ) -> httpx.Response:
     """
     Führt einen HTTP-GET Request aus (``extra_headers``: Download-Header je Quelle, Issue #116).
+
+    Vor dem Abruf (und vor dem Abruf der robots.txt) gilt die Drossel je Host. ``max_wait``: höchstens so lange
+    auf einen freien Zeitpunkt warten (Web-Anfragen), sonst ``SourceBusyError``; ``None`` wartet, bis er frei ist.
 
     Vorher gilt die robots.txt des Hosts (``sync_config`` der Quelle für eine Ausnahme mit Vermerk), geprüft
     mit dem User-Agent des Abrufs (``User-Agent`` in ``extra_headers``, sonst unser Standard). Ist das Dokument
     gesperrt, folgt ``RobotsBlockedError``, ist die robots.txt nicht erreichbar, ``RobotsUnreachableError`` –
     jeweils ohne Anfrage an die Quelle.
     """
-    from . import robots
+    from . import host_pacing, robots
 
     agent = next(
         (v for k, v in (extra_headers or {}).items() if k.lower() == "user-agent" and v.strip()), robots.USER_AGENT
     )
-    decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent)
+    deadline = None if max_wait is None else time.monotonic() + max_wait
+    try:
+        decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=max_wait)
+    except host_pacing.PacingBusyError as exc:
+        raise SourceBusyError(f"Drossel je Host: kein freier Zeitpunkt für {url}") from exc
     if decision.unreachable:
         raise RobotsUnreachableError(decision.reason)
     if not decision.allowed:
         raise RobotsBlockedError(decision.reason)
+    # Drossel je Host über alle Prozesse; mit Höchstwartezeit gilt die verbleibende Zeit
+    remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+    if not host_pacing.wait(url, sync_config=sync_config, max_wait=remaining):
+        raise SourceBusyError(f"Drossel je Host: kein freier Zeitpunkt für {url}")
     headers = {
         **{k: v for k, v in (extra_headers or {}).items() if k.lower() != "user-agent"},
         "User-Agent": agent,
@@ -347,6 +367,7 @@ def download_and_extract(
     timeout: float = 60.0,
     extra_headers: dict[str, str] | None = None,
     sync_config: Any = None,
+    max_wait: float | None = None,
 ) -> ExtractedDocument:
     """
     Lädt ein Dokument herunter und extrahiert Text.
@@ -356,7 +377,8 @@ def download_and_extract(
         mime_type: MIME-Typ (optional, wird aus Response ermittelt)
         original_name: Originaler Dateiname
         timeout: HTTP-Timeout in Sekunden
-        sync_config: ``sync_config`` der Quelle (Ausnahme von der robots.txt)
+        sync_config: ``sync_config`` der Quelle (Ausnahme von der robots.txt, Abstand der Drossel)
+        max_wait: höchstens so lange auf die Drossel je Host warten (Web-Anfragen)
 
     Returns:
         ExtractedDocument mit Binärdaten, Text und Metadaten
@@ -364,9 +386,10 @@ def download_and_extract(
     Raises:
         RobotsBlockedError: die robots.txt sperrt das Dokument
         RobotsUnreachableError: die robots.txt ist nicht erreichbar (später erneut versuchen)
+        SourceBusyError: kein freier Zeitpunkt innerhalb von ``max_wait`` (später erneut versuchen)
         DocumentDownloadError: Abruf fehlgeschlagen
     """
-    response = _http_get(url, timeout=timeout, extra_headers=extra_headers, sync_config=sync_config)
+    response = _http_get(url, timeout=timeout, extra_headers=extra_headers, sync_config=sync_config, max_wait=max_wait)
     binary = response.content
     resolved_mime = mime_type or response.headers.get("Content-Type", "").split(";")[0]
     checksum = hashlib.sha256(binary).hexdigest()

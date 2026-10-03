@@ -355,6 +355,7 @@ def fetch_and_cache(file_obj, client=None) -> str:
         _mark(file_obj, "error", decision.reason)
         return "robots"
 
+    from . import host_pacing
     from .safe_fetch import guarded_client
 
     own_client = client is None
@@ -363,6 +364,8 @@ def fetch_and_cache(file_obj, client=None) -> str:
         client = guarded_client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True)
     try:
         try:
+            # Drossel je Host über alle Prozesse (Ingestor, Vorschau, andere Quellen auf dem Host)
+            host_pacing.wait(url, sync_config=robots.sync_config_of(file_obj))
             with client.stream("GET", url, headers=download_headers(file_obj.body)) as response:
                 if response.status_code in (404, 410):
                     return _mark(file_obj, "missing", f"HTTP {response.status_code}")

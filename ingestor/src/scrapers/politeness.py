@@ -1,7 +1,7 @@
 """
 Höflicher HTML-Fetcher für Scraper-Adapter.
 
-- Rate-Limit je Host (konfigurierbar je Quelle, Default 1 Request / 2 s)
+- Drossel je Host über alle Quellen und Prozesse (konfigurierbar je Quelle, Default 1 Request / 2 s)
 - max_concurrent=1 je Quelle (Serialisierung über Lock)
 - robots.txt-Respekt nach RFC 9309 mit Platzhaltern (src/client/robots.py, 24-h-Cache je Host)
 - Transparenter User-Agent (settings.user_agent, je Quelle überschreibbar)
@@ -10,13 +10,12 @@ Höflicher HTML-Fetcher für Scraper-Adapter.
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 from mandari_oparl.robots import KIND_API, Decision, RobotsOverride
 
+from src.client.host_pacing import host_pacer
 from src.client.robots import robots_gate
 from src.config import settings
 from src.metrics import metrics
@@ -61,7 +60,6 @@ class PoliteFetcher:
 
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()  # max_concurrent=1: serialisiert alle Requests
-        self._last_request_at: dict[str, float] = {}
         self.pages_fetched = 0
 
     async def __aenter__(self) -> PoliteFetcher:
@@ -81,12 +79,15 @@ class PoliteFetcher:
     # robots.txt
     # ------------------------------------------------------------------
 
+    async def _pace(self, url: str) -> None:
+        await host_pacer.wait(url, self.rate_limit_seconds)
+
     async def decide(self, url: str, kind: str = KIND_API) -> Decision:
         """robots.txt-Entscheidung für die URL mit unserem User-Agent (RFC 9309)."""
         if not self.respect_robots:
             return Decision(allowed=True, state="disabled")
         return await robots_gate.decide(
-            self._client, url, user_agent=self.user_agent, kind=kind, override=self.robots_override
+            self._client, url, user_agent=self.user_agent, kind=kind, override=self.robots_override, pace=self._pace
         )
 
     async def is_allowed(self, url: str, kind: str = KIND_API) -> bool:
@@ -113,19 +114,12 @@ class PoliteFetcher:
         if not decision.allowed:
             raise RobotsDisallowedError(url)
 
-        host = urlparse(url).netloc.lower()
         last_error: str | None = None
 
         for attempt in range(self.max_retries):
             async with self._lock:
-                # Rate-Limit je Host: Mindestabstand zwischen Requests
-                wait = 0.0
-                last = self._last_request_at.get(host)
-                if last is not None:
-                    wait = max(0.0, self.rate_limit_seconds - (time.monotonic() - last))
-                if wait > 0:
-                    await asyncio.sleep(wait)
-                self._last_request_at[host] = time.monotonic()
+                # Drossel je Host über alle Quellen und Prozesse (src/client/host_pacing.py)
+                await self._pace(url)
 
                 try:
                     response = await self._client.get(url)

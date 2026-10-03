@@ -58,6 +58,29 @@ def _robots_zwischenspeicher(request: pytest.FixtureRequest, monkeypatch: pytest
     robots_gate.clear()
 
 
+@pytest.fixture(autouse=True)
+def _drossel_je_host(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Drossel je Host ohne Redis und Zustand je Test; ohne Fixture ``echte_drossel`` ist sie abgeschaltet.
+
+    Standard im Betrieb ist eine Anfrage je Sekunde und Host (src/client/host_pacing.py). Tests, die nur den
+    Abruf prüfen, sollen nicht sekundenweise warten; die Drossel-Tests fordern ``echte_drossel`` an.
+    """
+    from src.client.host_pacing import host_pacer
+    from src.config import settings
+
+    host_pacer.reset()
+    monkeypatch.setattr(host_pacer, "redis_enabled", False)
+    if "echte_drossel" not in request.fixturenames:
+        monkeypatch.setattr(settings, "request_interval", 0.0)
+    yield
+    host_pacer.reset()
+
+
+@pytest.fixture
+def echte_drossel() -> None:
+    """Drossel je Host im Test mit dem Standardabstand (siehe ``_drossel_je_host``)."""
+
+
 @pytest.fixture
 def echte_robots() -> None:
     """Echte robots.txt-Prüfung im Test (siehe ``_robots_zwischenspeicher``)."""

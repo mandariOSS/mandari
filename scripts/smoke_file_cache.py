@@ -31,6 +31,8 @@ os.environ["MANDARI_SYNC_WATCHDOG"] = "0"
 os.environ["EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 os.environ["ALLOWED_HOSTS"] = "testserver,localhost"
 os.environ["REDIS_URL"] = ""
+# Drossel je Host aus: die Smoke-Quellen sind nachgebildet
+os.environ["RIS_REQUEST_INTERVAL"] = "0"
 os.environ["OPARL_FILES_ROOT"] = str(_tmp / "files")
 os.environ["FILE_CACHE_MAX_MB"] = "1"
 os.environ["FILE_CACHE_MIN_FREE_GB"] = "0"
@@ -59,7 +61,7 @@ from insight_core.services import file_cache, robots, source_health  # noqa: E40
 
 # Ohne Netz: die Test-Quellen haben keine robots.txt (HTTP 404, alles erlaubt). Die Prüfung selbst testen
 # insight_core/tests/test_robots_txt.py und ingestor/tests/test_robots.py.
-robots._fetch = lambda url, agent=None: (404, b"")
+robots._fetch = lambda url, *args, **kwargs: (404, b"")
 
 PASS = 0
 FAIL = 0

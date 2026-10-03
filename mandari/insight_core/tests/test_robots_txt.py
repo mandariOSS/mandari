@@ -32,7 +32,7 @@ def robots_txt(echte_robots: None, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     """robots.txt je Host nachbilden (Antwort oder Funktion des User-Agents); zählt Abrufe und User-Agents."""
     stand: dict[str, Any] = {"antworten": {}, "abrufe": [], "agents": []}
 
-    def fetch(url: str, agent: str = robots.USER_AGENT) -> tuple[int | None, bytes]:
+    def fetch(url: str, agent: str = robots.USER_AGENT, **_kwargs: Any) -> tuple[int | None, bytes]:
         host = httpx.URL(url).host
         stand["abrufe"].append(host)
         stand["agents"].append(agent)

@@ -22,7 +22,7 @@ from django.core.files.base import ContentFile
 from django.db.models import Q
 from django.utils import timezone
 
-from . import robots
+from . import host_pacing, robots
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,7 @@ def fetch_person_photo(person, client=None) -> str:
         return "deferred"
     if not decision.allowed:
         return _mark(person, "error", decision.reason)
+    host_pacing.wait(url, sync_config=robots.sync_config_of(person))  # Drossel je Host über alle Prozesse
 
     own_client = client is None
     if own_client:

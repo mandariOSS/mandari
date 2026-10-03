@@ -21,9 +21,11 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from mandari_oparl.robots import KIND_FILES, RETRY_UNREACHABLE_SECONDS, RobotsOverride
+from mandari_oparl.robots import KIND_FILES, RETRY_UNREACHABLE_SECONDS
 
+from src.client.host_pacing import host_pacer
 from src.client.robots import robots_gate
+from src.client.source_options import SourceFetchOptions
 from src.config import settings
 
 try:
@@ -76,7 +78,7 @@ class TextExtractor:
         self._clock = clock
         # Je Body: (Wert, geladen um); gültig SOURCE_OPTIONS_TTL_SECONDS
         self._header_cache: dict[Any, tuple[dict[str, str], float]] = {}
-        self._robots_override_cache: dict[Any, tuple[RobotsOverride | None, float]] = {}
+        self._options_cache: dict[Any, tuple[SourceFetchOptions, float]] = {}
         # Bodies, deren robots.txt nicht erreichbar war: bis zu diesem Zeitpunkt nichts beanspruchen
         self._deferred_until: dict[Any, float] = {}
 
@@ -164,12 +166,19 @@ class TextExtractor:
         # Ist die robots.txt nicht erreichbar, bleibt die Datei "pending" und kommt später wieder dran.
         # Geprüft wird mit dem User-Agent, mit dem die Datei auch geladen wird (Download-Header der Quelle).
         headers = await self._download_headers(file_row.body_id)
+        options = await self._fetch_options(file_row.body_id)
+        interval = settings.request_interval if options.request_interval is None else options.request_interval
+
+        async def pace(url: str) -> None:
+            await host_pacer.wait(url, interval)
+
         decision = await robots_gate.decide(
             None,
             download_url,
             user_agent=_user_agent_of(headers),
             kind=KIND_FILES,
-            override=await self._robots_override(file_row.body_id),
+            override=options.robots_override,
+            pace=pace,
         )
         if decision.unreachable:
             logger.info("Datei %s zurückgestellt: %s", file_id, decision.reason)
@@ -183,7 +192,10 @@ class TextExtractor:
             return False
 
         try:
-            data = await self._download(download_url, headers)
+            # Drossel je Host: Dateien zählen wie jede andere Anfrage an die Quelle (mit Grenze je Host)
+            async with host_pacer.limit(download_url, interval):
+                await pace(download_url)
+                data = await self._download(download_url, headers)
         except Exception as e:
             logger.warning("Download failed for %s: %s", download_url, e)
             await self.storage.update_file_text(
@@ -273,26 +285,27 @@ class TextExtractor:
         self._header_cache[body_id] = (headers, now)
         return headers
 
-    async def _robots_override(self, body_id: Any) -> RobotsOverride | None:
+    async def _fetch_options(self, body_id: Any) -> SourceFetchOptions:
         """
-        Ausnahme der Quelle von der robots.txt (``sync_config["robots_override"]``), je Body
-        ``SOURCE_OPTIONS_TTL_SECONDS`` zwischengespeichert: Eine neu gesetzte Ausnahme wirkt im laufenden
-        Extraktions-Worker spätestens danach, ohne Neustart.
+        Abrufoptionen der Quelle eines Bodies (Abstand, robots-Ausnahme), je Body ``SOURCE_OPTIONS_TTL_SECONDS``
+        zwischengespeichert: Eine neu gesetzte Ausnahme wirkt im laufenden Extraktions-Worker spätestens danach,
+        ohne Neustart.
         """
         if body_id is None:
-            return None
-        cached = self._robots_override_cache.get(body_id)
+            return SourceFetchOptions()
+        cached = self._options_cache.get(body_id)
         now = self._clock()
         if cached is not None and now - cached[1] < SOURCE_OPTIONS_TTL_SECONDS:
             return cached[0]
-        lookup = getattr(self.storage, "get_robots_override_for_body", None)
+        lookup = getattr(self.storage, "get_fetch_options_for_body", None)
+        options: SourceFetchOptions
         try:
-            override = await lookup(body_id) if lookup is not None else None
-        except Exception as e:  # noqa: BLE001 - ohne lesbare Ausnahme gilt die robots.txt
-            logger.warning("robots-Ausnahme für Body %s nicht ladbar: %s", body_id, e)
-            override = None
-        self._robots_override_cache[body_id] = (override, now)
-        return override
+            options = await lookup(body_id) if lookup is not None else SourceFetchOptions()
+        except Exception as e:  # noqa: BLE001 - ohne lesbare Optionen gelten die Standards
+            logger.warning("Abrufoptionen für Body %s nicht ladbar: %s", body_id, e)
+            options = SourceFetchOptions()
+        self._options_cache[body_id] = (options, now)
+        return options
 
     async def _download(self, url: str, extra_headers: dict[str, str] | None = None) -> bytes:
         """Download a file via httpx async (User-Agent aus den Download-Headern der Quelle, sonst Standard)."""
