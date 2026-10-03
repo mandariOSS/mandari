@@ -1,27 +1,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Sync Watchdog — prüft ob der Ingestor-Container lebt und bereinigt hängende Logs.
+Verbindung zum Ingestor: Status und Anstoß der Synchronisation.
 
-Der eigentliche Sync läuft im Ingestor-Container (eigener Prozess).
-Django ist nur das Kontrollzentrum (Logs anzeigen, Syncs triggern via Redis).
+Der eigentliche Sync läuft im Ingestor-Container (eigener Prozess). Django ist nur das
+Kontrollzentrum (Logs anzeigen, Syncs per Redis anstoßen). Hängende Sync-Protokolle räumt der
+Zeitplan ``insight_sync.schedules.haengende_syncs_bereinigen`` im Worker auf (Issue #515; bis dahin
+ein Faden im Webprozess).
 """
 
 import logging
-import os
-import threading
 from datetime import timedelta
 
 logger = logging.getLogger("insight_sync.daemon")
 
-_watchdog_thread: threading.Thread | None = None
-_stop_event = threading.Event()
-_start_lock = threading.Lock()
-_started = False
-
-
-def is_running() -> bool:
-    """Prüft ob der Watchdog-Thread läuft."""
-    return _watchdog_thread is not None and _watchdog_thread.is_alive()
+#: So lange darf ein Sync laufen, bevor sein Protokoll als fehlgeschlagen gilt
+STALE_AFTER = timedelta(minutes=15)
 
 
 def is_ingestor_active() -> bool:
@@ -35,38 +28,6 @@ def is_ingestor_active() -> bool:
         return SyncLog.objects.filter(started_at__gte=cutoff).exists()
     except Exception:
         return False
-
-
-def start():
-    """Startet den Watchdog-Thread (Thread-safe, idempotent)."""
-    global _watchdog_thread, _started
-
-    with _start_lock:
-        if _started or is_running():
-            return
-
-        _started = True
-        _stop_event.clear()
-        _watchdog_thread = threading.Thread(
-            target=_watchdog_loop,
-            name="sync-watchdog",
-            daemon=True,
-        )
-        _watchdog_thread.start()
-        logger.info("Sync-Watchdog gestartet (pid=%d).", os.getpid())
-
-
-def stop():
-    """Stoppt den Watchdog-Thread."""
-    global _watchdog_thread
-
-    if not is_running():
-        return
-
-    _stop_event.set()
-    _watchdog_thread.join(timeout=10)
-    _watchdog_thread = None
-    logger.info("Sync-Watchdog gestoppt.")
 
 
 def trigger_sync(full: bool = False):
@@ -95,125 +56,18 @@ def trigger_sync(full: bool = False):
         return False
 
 
-def _cleanup_stale_syncs():
-    """Markiert hängende Syncs (>15 Min) als fehlgeschlagen."""
-    try:
-        from django.utils import timezone
+def cleanup_stale_syncs() -> int:
+    """Markiert hängende Syncs (länger als ``STALE_AFTER``) als fehlgeschlagen; liefert ihre Anzahl."""
+    from django.utils import timezone
 
-        from .models import SyncLog
+    from .models import SyncLog
 
-        cutoff = timezone.now() - timedelta(minutes=15)
-        count = SyncLog.objects.filter(status="running", started_at__lt=cutoff).update(
-            status="failed",
-            finished_at=timezone.now(),
-            errors=["Sync-Timeout: Prozess hat nicht innerhalb von 15 Minuten geantwortet"],
-        )
-        if count:
-            logger.warning(f"{count} hängende Sync-Logs bereinigt")
-    except Exception:
-        pass
-
-
-def _run_periodic_georef():
-    """Periodischer Georef-Lauf (Regex/Gazetteer, begrenzt, cache-gelockt)."""
-    try:
-        from insight_core.services.georef_runner import run_auto_georef_pass
-
-        run_auto_georef_pass()
-    except Exception:
-        logger.exception("Periodischer Georef-Lauf fehlgeschlagen")
-
-
-def _run_periodic_faction_reminders():
-    """Periodischer Erinnerungslauf für Fraktionssitzungen (48 h vorher, cache-gelockt)."""
-    try:
-        from apps.work.faction.services import run_faction_reminder_pass
-
-        run_faction_reminder_pass()
-    except Exception:
-        logger.exception("Periodischer Fraktions-Erinnerungslauf fehlgeschlagen")
-
-
-def _run_periodic_faction_invitations():
-    """Periodischer Einladungslauf für Fraktionssitzungen (Issue #62, cache-gelockt)."""
-    try:
-        from apps.work.faction.invitations import run_faction_invitation_pass
-
-        run_faction_invitation_pass()
-    except Exception:
-        logger.exception("Periodischer Fraktions-Einladungslauf fehlgeschlagen")
-
-
-def _run_periodic_faction_schedule():
-    """Periodische Sitzungserzeugung aus Sitzungsreihen (Issue #61, cache-gelockt)."""
-    try:
-        from apps.work.faction.generation import run_faction_schedule_pass
-
-        run_faction_schedule_pass()
-    except Exception:
-        logger.exception("Periodische Fraktions-Sitzungserzeugung fehlgeschlagen")
-
-
-def _watchdog_loop() -> None:
-    """Watchdog-Loop: Bereinigt hängende Logs, prüft Ingestor-Status."""
-    from django.conf import settings
-
-    from apps.common.db_connections import close_thread_connections
-
-    _wait(10)
-
-    _cleanup_stale_syncs()
-    logger.info("Sync-Watchdog aktiv. Ingestor-Container übernimmt die Synchronisation.")
-
-    georef_interval = max(1, int(getattr(settings, "GEOREF_AUTO_INTERVAL_MINUTES", 15)))
-    minutes_since_georef = georef_interval  # erster Lauf direkt nach dem Start
-
-    reminder_interval = max(1, int(getattr(settings, "FACTION_REMINDER_INTERVAL_MINUTES", 15)))
-    minutes_since_reminder = reminder_interval  # erster Lauf direkt nach dem Start
-
-    schedule_interval = max(1, int(getattr(settings, "FACTION_SCHEDULE_INTERVAL_MINUTES", 60)))
-    minutes_since_schedule = schedule_interval  # erster Lauf direkt nach dem Start
-
-    invitation_interval = max(1, int(getattr(settings, "FACTION_INVITATION_INTERVAL_MINUTES", 15)))
-    minutes_since_invitation = invitation_interval  # erster Lauf direkt nach dem Start
-
-    while not _stop_event.is_set():
-        try:
-            _cleanup_stale_syncs()
-
-            # Periodischer Georef-Lauf (der Ingestor-Container synct nur,
-            # die Georeferenzierung läuft Django-seitig)
-            minutes_since_georef += 1
-            if minutes_since_georef >= georef_interval:
-                minutes_since_georef = 0
-                _run_periodic_georef()
-
-            # Periodische Erinnerungen für Fraktionssitzungen (Issue #59)
-            minutes_since_reminder += 1
-            if minutes_since_reminder >= reminder_interval:
-                minutes_since_reminder = 0
-                _run_periodic_faction_reminders()
-
-            # Periodische Sitzungserzeugung aus Sitzungsreihen (Issue #61)
-            minutes_since_schedule += 1
-            if minutes_since_schedule >= schedule_interval:
-                minutes_since_schedule = 0
-                _run_periodic_faction_schedule()
-
-            # Periodischer Einladungsversand/Freigabe-Hinweise (Issue #62)
-            minutes_since_invitation += 1
-            if minutes_since_invitation >= invitation_interval:
-                minutes_since_invitation = 0
-                _run_periodic_faction_invitations()
-        except Exception:
-            logger.exception("Fehler im Watchdog-Loop")
-        finally:
-            # Zwischen den Läufen keine Verbindung festhalten: Der Thread lebt so lange wie
-            # der Webprozess und belegte sonst dauerhaft einen Platz im Datenbank-Pool
-            # (Issue #344). Beim nächsten Lauf holt er sich einfach eine neue.
-            close_thread_connections()
-        _wait(60)
-
-
-def _wait(seconds: float) -> bool:
-    return _stop_event.wait(timeout=seconds)
+    jetzt = timezone.now()
+    count = SyncLog.objects.filter(status="running", started_at__lt=jetzt - STALE_AFTER).update(
+        status="failed",
+        finished_at=jetzt,
+        errors=["Sync-Timeout: Prozess hat nicht innerhalb von 15 Minuten geantwortet"],
+    )
+    if count:
+        logger.warning("%d hängende Sync-Logs bereinigt", count)
+    return count

@@ -360,12 +360,12 @@ EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBU
 # gilt der Schlüssel als neu. Aufgeräumt wird täglich per Zeitplan (apps/events/schedules.py).
 EVENTS_IDEMPOTENCY_RETENTION_DAYS = int(os.environ.get("EVENTS_IDEMPOTENCY_RETENTION_DAYS", "30"))
 
-# Worker (manage.py events_worker, Issue #509): Braucht diese Installation einen laufenden Worker?
-# Dann melden /health/ und /health/ready/ "degraded" und der Admin einen Hinweis, solange keiner
-# die nötigen Rollen bedient (apps.events.presence). "true": alle Rollen; "false": nie; leer
-# (Standard): erst, wenn Aufträge über das Journal laufen (TASKS_BACKEND=journal → Rolle tasks)
-# oder der Ingestor Ereignisse schreibt (INGESTOR_EVENTS_ENABLED → Rolle sequencer). So meldet
-# keine bestehende Installation ohne Worker plötzlich "degraded".
+# Worker (manage.py events_worker, Issues #509, #515): Braucht diese Installation einen laufenden
+# Worker? Dann melden /health/ und /health/ready/ "degraded" und der Admin einen Hinweis, solange
+# keiner die nötigen Rollen bedient (apps.events.presence). "true": alle Rollen; "false": nie (etwa
+# eine Vorführinstanz ohne Worker; ihre Zeitpläne laufen dann nicht); leer (Standard): immer tasks
+# und scheduler, weil die wiederkehrende Arbeit als Zeitpläne im Worker läuft, dazu sequencer, wenn
+# der Ingestor Ereignisse schreibt (INGESTOR_EVENTS_ENABLED).
 EVENTS_WORKER_REQUIRED = os.environ.get("EVENTS_WORKER_REQUIRED", "").strip().lower()
 if EVENTS_WORKER_REQUIRED not in ("", "auto", "true", "false", "1", "0", "yes", "no"):
     from django.core.exceptions import ImproperlyConfigured
@@ -576,7 +576,7 @@ GEOCODING_RATE_LIMIT = int(os.environ.get("GEOCODING_RATE_LIMIT", "5"))  # Reque
 # Kappung nur für LLM-Pass und Legacy-Photon-Pfad (Gazetteer-Pass nutzt Volltext)
 GEOREF_TEXT_MAX_CHARS = int(os.environ.get("GEOREF_TEXT_MAX_CHARS", "8000"))
 # Automatischer Georef-Lauf (Regex/Gazetteer-Pass, KEIN LLM): periodisch nach
-# Sync-Zyklen bzw. über den Sync-Watchdog, begrenzt pro Lauf
+# Sync-Zyklen bzw. als Zeitplan im Worker (insight_core/schedules.py), begrenzt pro Lauf
 GEOREF_AUTO_ENABLED = os.environ.get("GEOREF_AUTO_ENABLED", "True").lower() in ("true", "1", "yes")
 GEOREF_AUTO_LIMIT = int(os.environ.get("GEOREF_AUTO_LIMIT", "50"))  # Papers pro Lauf
 GEOREF_AUTO_INTERVAL_MINUTES = int(os.environ.get("GEOREF_AUTO_INTERVAL_MINUTES", "15"))
@@ -665,6 +665,10 @@ TASKS = {
             "tasks": {
                 # PDF-Export mit vielen Einträgen braucht länger als die 5 Minuten der Warteschlange
                 "apps.work.background_tasks.generate_dsgvo_export_task": {"timeout": 900, "max_attempts": 3},
+                # Admin (Issue #515): Ein Sync oder das Löschen einer großen Kommune dauert länger als
+                # 5 Minuten. Ein Sync wird nicht wiederholt (Protokoll und nächster Lauf zeigen den Fehler).
+                "insight_core.background_tasks.quelle_synchronisieren": {"timeout": 3600, "max_attempts": 1},
+                "insight_core.background_tasks.kommune_loeschen": {"timeout": 3600, "max_attempts": 3},
             },
         },
     }

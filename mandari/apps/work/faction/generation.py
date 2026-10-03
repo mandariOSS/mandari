@@ -18,7 +18,7 @@ Ausgefallene Termine werden ersatzlos gestrichen: Sie werden als Sitzung
 mit Status "cancelled" und Ausfallgrund angelegt (als "entfällt" sichtbar),
 es wird nicht verschoben.
 
-Läuft periodisch über den Sync-Watchdog (insight_sync/daemon.py) — analog
+Läuft periodisch als Zeitplan im Worker (apps/work/schedules.py, Issue #515) — analog
 zum Erinnerungslauf (Issue #59) und Auto-Georef-Lauf.
 """
 
@@ -304,7 +304,7 @@ def run_faction_schedule_pass(now=None) -> dict:
     """
     Periodischer Erzeugungslauf (Issue #61).
 
-    Wird vom Sync-Watchdog-Zyklus (insight_sync/daemon.py) aufgerufen —
+    Wird vom Zeitplan ``fraktionssitzungen_erzeugen`` (apps/work/schedules.py) aufgerufen —
     analog zum Erinnerungslauf. Ein Cache-Lock verhindert parallele Läufe.
 
     Returns:

@@ -2,8 +2,8 @@
 """
 Automatischer Georeferenzierungs-Lauf (periodisch, begrenzt).
 
-Wird nach Sync-Zyklen (sync_daemon) bzw. periodisch vom Sync-Watchdog
-aufgerufen. Verarbeitet pro Lauf höchstens GEOREF_AUTO_LIMIT Papers mit
+Wird nach Sync-Zyklen (sync_daemon) bzw. periodisch vom Zeitplan ``verortung_automatisch``
+(insight_core/schedules.py) aufgerufen. Verarbeitet pro Lauf höchstens GEOREF_AUTO_LIMIT Papers mit
 georef_status=pending und vorhandenem Text — nur der Regex/Gazetteer-Pass.
 Der LLM-Pass läuft aus Kostengründen NIE automatisch (manuell via
 `extract_locations --mode ai`).

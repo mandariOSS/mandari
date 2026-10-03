@@ -5,7 +5,6 @@ Django Admin Konfiguration für OParl-Models.
 Verwendet Django Unfold für modernes Admin-Interface.
 """
 
-import threading
 from typing import Any
 
 from django import forms
@@ -21,7 +20,6 @@ from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
 from apps.common.admin_mixins import NoAddAdminMixin, ReadOnlyAdminMixin, status_text
-from apps.common.db_connections import releases_db_connections
 
 from .models import (
     ChatUsage,
@@ -60,26 +58,20 @@ def _reference_protection(label: str, references: list[Any]) -> list[str]:
 
 
 def run_sync_in_thread(source, full: bool = False):
-    """Run sync in a separate thread to not block the admin.
+    """Sync einer Quelle als Auftrag im Worker anlegen, ohne den Admin zu blockieren (Issue #515).
+
+    Immer im Journal, auch solange die Webprozesse Aufträge sonst sofort ausführen: Ein Sync dauert
+    Minuten. Bis Issue #515 lief er in einem Faden im Webprozess.
 
     Args:
         source: OParlSource instance
         full: True für Full Sync
     """
+    from apps.events.tasks_backend import journal_backend
 
-    # Eigener Thread: Ohne den Dekorator nähme er seine Datenbankverbindung mit ins Grab,
-    # und mit Pool wäre der Platz für immer verloren (Issue #344).
-    @releases_db_connections
-    def sync_task():
-        try:
-            from insight_sync.tasks import run_sync_with_logging
+    from .background_tasks import quelle_synchronisieren
 
-            run_sync_with_logging(source=source, full=full, triggered_by="admin")
-        except Exception as e:
-            print(f"Sync error: {e}")
-
-    thread = threading.Thread(target=sync_task, daemon=True)
-    thread.start()
+    journal_backend().enqueue(quelle_synchronisieren, [str(source.pk)], {"full": bool(full)})
 
 
 class SourceTypeListFilter(admin.SimpleListFilter):
@@ -428,30 +420,23 @@ class OParlBodyAdmin(ModelAdmin):
         return summaries, model_count, set(), protected
 
     def delete_model(self, request, obj):
-        # Thread statt django.tasks: das Default-TASKS-Backend (Immediate)
-        # würde synchron im Request laufen und den Proxy-Timeout reißen.
+        # Auftrag im Worker (Issue #515), immer im Journal: Das sofort ausführende Backend würde
+        # synchron im Request laufen und den Proxy-Timeout reißen.
         from django.core.cache import cache
 
-        from .services.body_deletion import delete_body_data
+        from apps.events.tasks_backend import journal_backend
+
+        from .background_tasks import DELETION_LOCK_TTL, deletion_lock_key, kommune_loeschen
 
         body_id = str(obj.id)
 
         # Doppelklick-Schutz: pro Body nur eine laufende Löschung
-        # (cache.add ist atomar; Lock verfällt nach 2h von selbst)
-        if not cache.add(f"body-deletion-{body_id}", "running", timeout=7200):
+        # (cache.add ist atomar; Lock verfällt nach 2h von selbst, der Auftrag gibt ihn am Ende frei)
+        if not cache.add(deletion_lock_key(body_id), "running", timeout=DELETION_LOCK_TTL):
             messages.warning(request, f"Löschung von „{obj.name}“ läuft bereits.")
             return
 
-        def deletion_task():
-            from django.db import connection
-
-            try:
-                delete_body_data(body_id)
-            finally:
-                cache.delete(f"body-deletion-{body_id}")
-                connection.close()
-
-        threading.Thread(target=deletion_task, daemon=True).start()
+        journal_backend().enqueue(kommune_loeschen, [body_id], {})
         messages.info(
             request,
             f"Löschung von „{obj.name}“ läuft im Hintergrund. Je nach Datenmenge kann das einige Minuten dauern.",

@@ -244,9 +244,6 @@ ignore_imports = [
     "insight_core.services.decision_tracking -> apps.session.models",
     "insight_core.views.decisions -> apps.session.models",
     "insight_core.views.protocols -> apps.work.faction.models",
-    "insight_sync.daemon -> apps.work.faction.generation",
-    "insight_sync.daemon -> apps.work.faction.invitations",
-    "insight_sync.daemon -> apps.work.faction.services",
 ]
 
 [[tool.importlinter.contracts]]
