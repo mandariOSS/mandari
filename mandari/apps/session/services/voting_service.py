@@ -410,6 +410,9 @@ def result_rule_problem(agenda_item: SessionAgendaItem) -> str:
     Ergebnisregel aus dem Landesprofil (Issue #757, z. B. § 66 Abs. 1 NKomVG): Bei Stimmengleichheit ist ein
     Antrag abgelehnt, Enthaltungen zählen nicht mit. „Angenommen“ mit höchstens so vielen Ja- wie Nein-Stimmen
     widerspricht der Regel; leer, wenn alles passt, keine Summen erfasst sind oder es um eine Wahl geht.
+
+    Gilt für jeden Weg, auf dem ein Ergebnis entsteht: Abstimmungserfassung, Sitzungscockpit und Niederschrift.
+    Die Meldung unterscheidet Stimmengleichheit von einer Mehrheit der Nein-Stimmen.
     """
     from apps.session.services import state_law_service
 
@@ -421,11 +424,16 @@ def result_rule_problem(agenda_item: SessionAgendaItem) -> str:
     law = state_law_service.for_meeting(agenda_item.meeting)
     if law is None or law.value("tie_vote") != "rejected" or yes > no:
         return ""
-    norm = law.norm("tie_vote")
     abstentions = " Enthaltungen zählen nicht mit." if law.value("abstentions") == "not_counted" else ""
+    if yes == no:
+        norm = law.norm("tie_vote")
+        reason = f"Bei Stimmengleichheit ist er abgelehnt{f' ({norm})' if norm else ''}."
+    else:
+        norm = law.norm("majority") or law.norm("tie_vote")
+        reason = f"Er braucht mehr Ja- als Nein-Stimmen{f' ({norm})' if norm else ''}."
     return (
-        f"Mit {yes} Ja- und {no} Nein-Stimmen ist der Antrag nicht angenommen: Bei Stimmengleichheit ist er "
-        f"abgelehnt{f' ({norm})' if norm else ''}.{abstentions} Bitte das Ergebnis prüfen."
+        f"Mit {yes} Ja- und {no} Nein-Stimmen ist der Antrag nicht angenommen: {reason}{abstentions} "
+        "Bitte das Ergebnis prüfen."
     )
 
 

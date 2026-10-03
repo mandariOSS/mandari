@@ -253,8 +253,10 @@ def rule_for(profile: Any, organization: Any, meeting_format: str) -> FormatRule
     if excluded or suspected:
         # Bis zur Einordnung gilt bei verdächtigem Namen vorsorglich die strengere Regel
         rule = _stricter(rule, profile.excluded_committee_rule)
-    # Örtliche Abweichung (Issue #757, z. B. § 64 Abs. 8 NKomVG): Die Hauptsatzung schließt die Zuschaltung aus
-    locally_excluded = getattr(organization, "remote_local_rule", "") == "excluded"
+    # Örtliche Abweichung (Issue #757, z. B. § 64 Abs. 8 NKomVG): Die Hauptsatzung schließt die Zuschaltung aus.
+    # Sie betrifft nur die hybride Sitzung (§ 64 Abs. 3 bis 7); Videositzungen in einer Notlage (§ 182) beruhen auf
+    # einer eigenen Grundlage und folgen weiter der Regel des Landesprofils.
+    locally_excluded = meeting_format == FORMAT_HYBRID and getattr(organization, "remote_local_rule", "") == "excluded"
     if locally_excluded:
         rule = RULE_NONE
     norm = {RULE_REGULAR: profile.norm_regular, RULE_EMERGENCY: profile.norm_emergency}.get(rule, "")

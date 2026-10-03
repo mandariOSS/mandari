@@ -53,7 +53,8 @@ Issue: #138 (Grundlage für #139 Teilnahmeart, #140 Cockpit, #141 Selbst-Abstimm
 7. Fraktionen und Verwaltungseinheiten unterliegen nicht den Sitzungsregeln der Kommunalverfassung.
 
 8. Schließt die Hauptsatzung die Zuschaltung für ein Gremium aus (örtliche Regel am Gremium, z. B. § 64 Abs. 8
-   NKomVG), ist das Format für dieses Gremium nicht zulässig.
+   NKomVG), ist die hybride Sitzung für dieses Gremium nicht zulässig. Videositzungen in einer Notlage (§ 182
+   NKomVG) beruhen auf einer eigenen Grundlage; für sie gilt weiter die Regel des Landesprofils.
 9. Beschränkt die Hauptsatzung die Zuschaltung auf öffentliche Sitzungen (Ortsrecht der Körperschaft, § 64
    Abs. 3 Satz 3 NKomVG), sind nichtöffentliche Sitzungen nur in Präsenz möglich.
 10. Verlangt das Landesrecht für die Notlage einen Beschluss der Vertretung mit Ablauf (Niedersachsen: § 182
@@ -223,7 +224,7 @@ Sitzung (`SessionAttendance`, `apps/session/services/participation_service.py`) 
 eine neue Rechtslage zu einem Stichtag als neue Fassung unter `versions`), diese Übersicht nachziehen und nach
 dem Deploy `python manage.py session_state_profiles --sync` ausführen. `--check` meldet Abweichungen zwischen
 Datenbank und Datei, auch bei den Fassungen. Die Datenmigration `session.0045` übernimmt die Profile beim ersten
-Deploy automatisch, `session.0055` die Hybridregel aus Issue #754, `session.0058` die Fassungen aus Issue #757
+Deploy automatisch, `session.0055` die Hybridregel aus Issue #754, `session.0063` die Fassungen aus Issue #757
 (alle idempotent).
 
 ## Übersicht

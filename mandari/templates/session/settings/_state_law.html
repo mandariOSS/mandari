@@ -38,11 +38,12 @@ Norm, Quelle und Stand; „ungeklärt“, wo die Quelle nichts sicher belegt.
 
 <c-ui.card title="Ortsrecht der Körperschaften" subtitle="Hauptsatzung und Geschäftsordnung">
     <ul class="divide-y divide-gray-100 dark:divide-gray-700 text-sm" data-testid="ortsrecht-liste">
-        {% for body, rules in local_rules %}
+        {% for body, rules, warning in local_rules %}
         <li class="py-2 flex items-center justify-between gap-3">
             <div class="min-w-0">
                 <p class="font-medium text-gray-900 dark:text-white">{{ body.name }}</p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">{{ rules.rules_label|default:"Geschäftsordnung nicht hinterlegt" }}</p>
+                {% if warning %}<p class="text-xs text-amber-700 dark:text-amber-400" data-testid="notlage-ablauf">{{ warning }}</p>{% endif %}
             </div>
             <a href="{% url 'session:settings_local_rules' tenant_slug=tenant_slug body_id=body.pk %}" class="text-primary-600 dark:text-primary-400 hover:underline whitespace-nowrap">Ortsrecht bearbeiten</a>
         </li>

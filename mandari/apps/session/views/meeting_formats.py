@@ -21,6 +21,7 @@ from django import forms
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
+from django.utils import timezone
 from django.views.generic import TemplateView
 
 from .. import audit
@@ -106,9 +107,16 @@ class MeetingFormatSettingsView(SessionViewMixin, TemplateView):
             # Sitzungsrecht in der Fassung zum Stichtag (Issue #757)
             context["law"] = state_law_service.effective(self.tenant.state_profile, self._stichtag())
             context["law_versions"] = state_law_service.versions(self.tenant.state_profile)
-        context["local_rules"] = [
-            (body, LocalRules.of(body)) for body in body_service.bodies(self.tenant, include_inactive=False)
-        ]
+            # Hinweis am Nachweis der Hauptsatzungsregel (z. B. Zweidrittelmehrheit, § 64 Abs. 3 Satz 4 NKomVG)
+            # nach dem heute geltenden Recht, unabhängig vom Stichtag der Rechtsübersicht
+            context["basis_hint"] = state_law_service.effective(self.tenant.state_profile).entries.get(
+                "remote_basis_hint"
+            )
+        # Je Körperschaft: Ortsrecht und Warnung vor dem Ablauf eines Notlagenbeschlusses
+        context["local_rules"] = []
+        for body in body_service.bodies(self.tenant, include_inactive=False):
+            rules = LocalRules.of(body)
+            context["local_rules"].append((body, rules, state_law_service.emergency_warning(rules)))
         # Ausgenommene Ausschussarten (z. B. NRW): Welche Gremien sind eingeordnet, welche nicht?
         context["committee_kinds"] = meeting_format_service.committee_kind_overview(self.tenant)
         context["can_manage_organizations"] = cast(Any, self).has_permission("manage_organizations")
@@ -256,8 +264,11 @@ class BodyLocalRulesView(SessionViewMixin, TemplateView):
         before = LocalRules.of(body).to_json()
         after = form.rules().to_json()
         if before != after:
+            # Ohne Speichersignal: Der Eintrag unten nennt die geänderten Regeln einzeln; das Signal des
+            # Prüfprotokolls schriebe sonst einen zweiten Eintrag für dieselbe Änderung
             body.local_rules = after
-            body.save(update_fields=["local_rules", "updated_at"])
+            body.updated_at = timezone.now()
+            SessionBody.objects.filter(pk=body.pk).update(local_rules=after, updated_at=body.updated_at)
             changes = {
                 name: {"alt": before.get(name, ""), "neu": after.get(name, "")}
                 for name in sorted(set(before) | set(after))

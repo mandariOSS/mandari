@@ -759,6 +759,11 @@ def close_vote(
         warning = check.message if check.exceeded else ""
         item.votes_yes, item.votes_no, item.votes_abstain = yes, no, abstain
     item.vote_result = result
+    # Ergebnisregel des Landesprofils (Issue #757, z. B. Stimmengleichheit = abgelehnt): nichts speichern, die
+    # Aktion läuft in einer Transaktion (auch die neu berechneten Summen gehen zurück)
+    problem = voting_service.result_rule_problem(item)
+    if problem:
+        raise CockpitError(f"TOP {item.number}: {problem}")
     item.vote_closed_at = timezone.now()
     item.save(update_fields=["votes_yes", "votes_no", "votes_abstain", "vote_result", "vote_closed_at", "updated_at"])
     audit.log_event(

@@ -69,7 +69,7 @@ def load_profiles_and_versions(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("session", "0057_koerperschaften_zuordnen"),
+        ("session", "0062_rollenzuweisungen_spiegeln"),
     ]
 
     operations = [

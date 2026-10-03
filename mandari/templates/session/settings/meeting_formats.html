@@ -35,6 +35,7 @@
                 <c-form.field :field="form.hybrid_basis_date" label="Datum" type="date" help="Beschluss oder Inkrafttreten" />
                 <c-form.field :field="form.hybrid_basis_reference" label="Fundstelle" placeholder="z. B. § 7 Hauptsatzung, Amtsblatt 2024 Nr. 5" />
             </div>
+            {% if basis_hint %}<p class="text-xs text-gray-500 dark:text-gray-400" data-testid="nachweis-hinweis">{{ basis_hint.text }}{% if basis_hint.norm %} ({{ basis_hint.norm }}){% endif %}</p>{% endif %}
             <c-form.field :field="form.digital_public_registration_days" label="Anmeldefrist für die digitale Öffentlichkeit (Tage vor der Sitzung)" type="number"
                           help="Nur wenn die Geschäftsordnung einen geschützten Zugang mit Anmeldung vorsieht (z. B. NRW, § 3 DigiSiVO)." />
             <c-ui.button type="submit">Speichern</c-ui.button>

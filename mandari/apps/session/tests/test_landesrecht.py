@@ -15,7 +15,7 @@ Landesprofil als Sitzungsrecht (Issue #757, Teil L2a).
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from apps.session.models import (
+    SessionAgendaItem,
     SessionAttendance,
     SessionAttendanceDisruption,
     SessionAuditLog,
@@ -41,6 +42,7 @@ from apps.session.services import (
     meeting_format_service,
     participation_service,
     state_law_service,
+    voting_service,
 )
 from apps.session.services.state_law_service import LAW_FIELDS, LawDataError, LocalRules
 from apps.session.tests._niederschrift import Welt, base, client, nutzer, welt
@@ -246,9 +248,97 @@ def test_ohne_regel_im_landesprofil_bleibt_die_erfassung_frei() -> None:
     w.tenant.save()
     w.top.votes_yes, w.top.votes_no = 1, 1
     assert w.top.vote_result == "approved"
-    from apps.session.services import voting_service
-
     assert voting_service.result_rule_problem(w.top) == ""
+
+
+def test_meldung_unterscheidet_gleichstand_und_mehrheit_der_nein_stimmen() -> None:
+    w = _ni(welt(status="draft"), tag=date(2026, 10, 20))
+    w.top.votes_yes, w.top.votes_no = 3, 5
+    meldung = voting_service.result_rule_problem(w.top)
+    assert "Er braucht mehr Ja- als Nein-Stimmen (§ 66 Abs. 1 NKomVG)." in meldung
+    assert "Stimmengleichheit" not in meldung
+    w.top.votes_yes = 5
+    assert "Bei Stimmengleichheit ist er abgelehnt (§ 66 Abs. 1 NKomVG)." in voting_service.result_rule_problem(w.top)
+
+
+def test_cockpit_stellt_kein_angenommen_gegen_die_ergebnisregel_fest() -> None:
+    w = _ni(welt(status="draft"))
+    leitung = nutzer(w.tenant, "leitung", "view_meetings", "conduct_meetings")
+    SessionAgendaItem.objects.filter(pk=w.top.pk).update(vote_opened_at=timezone.now(), vote_result="pending")
+
+    def schliessen(**daten: Any) -> cockpit_service.Outcome:
+        return cockpit_service.perform(
+            SessionMeeting.objects.get(pk=w.sitzung.pk),
+            "abstimmung_schliessen",
+            {"item": str(w.top.pk), **{key: str(value) for key, value in daten.items()}},
+            permissions={"view_meetings", "conduct_meetings"},
+            session_user=leitung,
+        )
+
+    with pytest.raises(cockpit_service.CockpitError, match="Bei Stimmengleichheit ist er abgelehnt"):
+        schliessen(votes_yes=1, votes_no=1, votes_abstain=1, vote_result="approved")
+    with pytest.raises(cockpit_service.CockpitError, match="mehr Ja- als Nein-Stimmen"):
+        schliessen(votes_yes=1, votes_no=2, vote_result="approved")
+    w.top.refresh_from_db()
+    assert w.top.vote_open and (w.top.vote_result, w.top.votes_yes, w.top.votes_no) == ("pending", 2, 1)
+
+    schliessen(votes_yes=1, votes_no=1, votes_abstain=1, vote_result="rejected")
+    w.top.refresh_from_db()
+    assert not w.top.vote_open and (w.top.vote_result, w.top.votes_yes, w.top.votes_no) == ("rejected", 1, 1)
+
+
+def test_niederschrift_uebernimmt_kein_angenommen_gegen_die_ergebnisregel() -> None:
+    w = _ni(welt(status="draft"))
+    niederschrift = client(nutzer(w.tenant, "niederschrift", "view_meetings", "view_protocols", "edit_protocols"))
+    url = f"{base(w)}/meetings/{w.sitzung.pk}/protocol/edit/"
+    felder = {"content": "Neu", f"protocol_note_{w.top.pk}": "Aussprache neu"}
+    zahlen = {f"votes_yes_{w.top.pk}": "1", f"votes_no_{w.top.pk}": "1", f"votes_abstain_{w.top.pk}": "1"}
+
+    antwort = niederschrift.post(url, {**felder, **zahlen, f"vote_result_{w.top.pk}": "approved"})
+    meldungen = " ".join(str(m) for m in get_messages(antwort.wsgi_request))
+    assert "TOP 1: Mit 1 Ja- und 1 Nein-Stimmen ist der Antrag nicht angenommen" in meldungen
+    assert "Ergebnis und Stimmenzahlen wurden nicht übernommen." in meldungen
+    w.top.refresh_from_db()
+    # Texte gespeichert, Ergebnis und Stimmen wie vorher
+    assert (w.top.protocol_note, w.top.vote_result, w.top.votes_yes, w.top.votes_no) == (
+        "Aussprache neu",
+        "approved",
+        2,
+        1,
+    )
+
+    niederschrift.post(url, {**felder, **zahlen, f"vote_result_{w.top.pk}": "rejected"})
+    w.top.refresh_from_db()
+    assert (w.top.vote_result, w.top.votes_yes, w.top.votes_no) == ("rejected", 1, 1)
+
+    # Ein schon so gespeicherter Stand aus der Zeit vor der Regel: Texte werden gespeichert, nur ein Hinweis
+    SessionAgendaItem.objects.filter(pk=w.top.pk).update(vote_result="approved")
+    zweite = client(nutzer(w.tenant, "niederschrift2", "view_meetings", "view_protocols", "edit_protocols"))
+    antwort = zweite.post(url, {**felder, f"protocol_note_{w.top.pk}": "Nur Text"})
+    w.top.refresh_from_db()
+    assert (w.top.protocol_note, w.top.vote_result) == ("Nur Text", "approved")
+    meldungen = " ".join(str(m) for m in get_messages(antwort.wsgi_request))
+    assert "Bei Stimmengleichheit ist er abgelehnt" in meldungen and "nicht übernommen" not in meldungen
+
+
+def test_einspruch_in_drei_varianten_und_einberufungsverlangen() -> None:
+    meeting_format_service.sync_profiles()
+    recht = state_law_service.effective(SessionStateProfile.objects.get(code="NI"), date(2026, 10, 20))
+    einspruch = recht.text("objection")
+    # § 88 Abs. 1: rechtswidrig, ohne Wochenfrist; § 88 Abs. 4 und § 79 Abs. 1: Gefährdung des Wohls, eine Woche
+    assert einspruch.count("Wohl der Kommune") == 2 and einspruch.count("binnen einer Woche") == 2
+    for teil in (
+        "ohne Wochenfrist",
+        "§ 88 Abs. 1 und 2",
+        "§ 88 Abs. 4",
+        "§ 79 Abs. 1",
+        "der Hauptausschuss entscheidet",
+    ):
+        assert teil in einspruch
+    assert "frühestens drei Tage nach der ersten Beschlussfassung" in einspruch
+    assert recht.norm("objection") == "§ 79 Abs. 1, § 88 Abs. 1, 2 und 4 NKomVG"
+    # § 59 Abs. 2 Satz 4: eine bzw. ein Abgeordneter, wenn die letzte Sitzung über drei Monate zurückliegt
+    assert "länger als drei Monate zurückliegt" in recht.text("convocation")
 
 
 # =============================================================================
@@ -290,6 +380,13 @@ def test_oertliche_regel_schliesst_ein_gremium_aus() -> None:
     w.gremium.save()
     ergebnis = meeting_format_service.check(w.tenant, [w.gremium], SessionMeeting.FORMAT_HYBRID)
     assert any("nach der Hauptsatzung ausgeschlossen" in fehler for fehler in ergebnis.errors)
+
+    # Videositzungen in einer Notlage (§ 182) beruhen auf einer eigenen Grundlage, nicht auf § 64 Abs. 8
+    _ortsrecht(w, emergency_date="2026-11-20", emergency_until="2027-02-19", emergency_reference="Rat, TOP 3")
+    notlage = meeting_format_service.check(
+        w.tenant, [w.gremium], SessionMeeting.FORMAT_DIGITAL, "Hochwasser", day=date(2026, 12, 1)
+    )
+    assert notlage.ok, notlage.errors
 
 
 def test_zuschaltung_nur_in_oeffentlichen_sitzungen() -> None:
@@ -432,6 +529,22 @@ def test_ortsrecht_pflegen_mit_pruefprotokoll() -> None:
     eintrag = SessionAuditLog.objects.filter(tenant=w.tenant, action="update").order_by("-seq").first()
     assert eintrag is not None and "ortsrecht" in eintrag.changes
     assert eintrag.changes["ortsrecht"]["invitation_days"] == {"alt": "", "neu": 7}
+    # Ein Eintrag je Änderung (nicht zusätzlich der des Speichersignals)
+    assert SessionAuditLog.objects.filter(tenant=w.tenant, object_id=body.pk, action="update").count() == 1
+
+
+def test_sitzungsformate_zeigen_ablaufwarnung_und_zweidrittelhinweis() -> None:
+    w = _ni(welt(status="draft"))
+    heute = timezone.localdate()
+    ablauf = heute + timedelta(days=5)
+    _ortsrecht(w, emergency_date=(heute - timedelta(days=60)).isoformat(), emergency_until=ablauf.isoformat())
+    einstellungen = client(nutzer(w.tenant, "einstellungen", "view_meetings", "manage_settings"))
+    seite = einstellungen.get(f"{base(w)}/settings/meeting-formats/").content.decode()
+    # Warnung in der Liste des Ortsrechts, nicht erst auf der Seite der Körperschaft
+    assert 'data-testid="notlage-ablauf"' in seite
+    assert "läuft am " + ablauf.strftime("%d.%m.%Y") + " ab" in seite
+    # Zweidrittelmehrheit direkt am Nachweis der Hauptsatzungsregel (§ 64 Abs. 3 Satz 4)
+    assert 'data-testid="nachweis-hinweis"' in seite and "(§ 64 Abs. 3 Satz 4 NKomVG)" in seite
 
 
 def test_ortsrecht_liest_fremde_oder_kaputte_werte_als_nicht_geregelt() -> None:
@@ -461,8 +574,8 @@ def test_person_und_gremium_formular_kennen_die_neuen_felder() -> None:
 # Datenmigration und Rückfall per Image
 # =============================================================================
 
-VORHER = ("session", "0057_koerperschaften_zuordnen")
-NACHHER = ("session", "0058_landesprofil_sitzungsrecht")
+VORHER = ("session", "0062_rollenzuweisungen_spiegeln")
+NACHHER = ("session", "0063_landesprofil_sitzungsrecht")
 
 
 @pytest.mark.django_db(transaction=True)

@@ -268,6 +268,7 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
             prefix = str(item.pk)
             if f"protocol_note_{prefix}" not in data:
                 continue
+            stored = {field: getattr(item, field) for field in ("vote_result", *_COUNT_FIELDS)}
             item.protocol_note = data.get(f"protocol_note_{prefix}", "")
             item.resolution_text = data.get(f"resolution_text_{prefix}", item.resolution_text)
             # In dieser Sitzung unzulässige geheime Wahl bzw. Abstimmung (Issue #754): Texte ja, Ergebnis nur „Vertagt“
@@ -296,11 +297,29 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
                 if not check.hard:
                     for field, value in counts.items():
                         setattr(item, field, value)
+            self._check_result_rule(request, item, stored)
             if can_view_np:
                 np_note = data.get(f"protocol_note_np_{prefix}", None)
                 if np_note is not None:
                     item.set_protocol_note_encrypted(np_note)
             item.save(update_fields=_ITEM_FIELDS)
+
+    @staticmethod
+    def _check_result_rule(request, item, stored):
+        """
+        Ergebnisregel des Landesprofils (Issue #757, z. B. Stimmengleichheit = abgelehnt): Ein hier geändertes
+        Ergebnis bzw. geänderte Stimmenzahlen, die der Regel widersprechen, nicht übernehmen (die Texte schon).
+        Ein schon so gespeicherter Stand (aus der Zeit vor der Regel) bleibt und erhält nur einen Hinweis.
+        """
+        problem = voting_service.result_rule_problem(item)
+        if not problem:
+            return
+        if all(getattr(item, field) == value for field, value in stored.items()):
+            messages.warning(request, f"TOP {item.number}: {problem}")
+            return
+        for field, value in stored.items():
+            setattr(item, field, value)
+        messages.error(request, f"TOP {item.number}: {problem} Ergebnis und Stimmenzahlen wurden nicht übernommen.")
 
 
 class ProtocolWorkflowView(SessionViewMixin, View):
