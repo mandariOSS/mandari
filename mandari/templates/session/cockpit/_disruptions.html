@@ -6,6 +6,9 @@ und jetzt beenden. Der Vermerk bleibt intern und erscheint nur Steuernden.
 {% url 'session:meeting_cockpit_action' tenant_slug=tenant_slug meeting_id=meeting.id as action_url %}
 <c-ui.card title="Störungsprotokoll" data-testid="cockpit-stoerungen">
     <div class="space-y-3 text-sm">
+        {% if state.interruption_hint %}
+        <c-ui.alert variant="warning" icon="pause" data-testid="cockpit-unterbrechen">{{ state.interruption_hint }}</c-ui.alert>
+        {% endif %}
         {% if state.can_control and not state.locked and not meeting.cancelled %}
         <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML" class="space-y-2"
               data-cockpit-form="stoerung">
@@ -26,6 +29,11 @@ und jetzt beenden. Der Vermerk bleibt intern und erscheint nur Steuernden.
                     {% for value, label in state.disruption_causes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                 </select>
             </label>
+            <label class="block text-gray-700 dark:text-gray-300">Verantwortungsbereich
+                <select name="responsibility" id="stoerung-bereich" class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% for value, label in state.disruption_responsibilities %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+            </label>
             <label class="block text-gray-700 dark:text-gray-300">Vermerk (intern)
                 <input type="text" name="note" id="stoerung-vermerk" maxlength="255" placeholder="z. B. telefonisch gemeldet"
                        class="mt-1 block w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400">
@@ -41,7 +49,7 @@ und jetzt beenden. Der Vermerk bleibt intern und erscheint nur Steuernden.
                 <div class="min-w-0">
                     <p class="font-medium text-gray-900 dark:text-white">{{ person_row.person.display_name }}</p>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                        {{ disruption.get_cause_display }} ·
+                        {{ disruption.get_cause_display }}{% if disruption.responsibility %} · {{ disruption.get_responsibility_display }}{% endif %} ·
                         {% if disruption.ongoing %}seit {{ disruption.started_at|time:"H:i" }} Uhr{% else %}{{ disruption.started_at|time:"H:i" }}–{{ disruption.ended_at|time:"H:i" }} Uhr ({{ disruption.duration_minutes }} Min.){% endif %}
                         {% if state.can_control and disruption.note %}<br>Vermerk: {{ disruption.note }}{% endif %}
                     </p>

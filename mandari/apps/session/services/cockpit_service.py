@@ -113,6 +113,11 @@ class CockpitState:
     disruption_causes: list[tuple[str, str]] = field(
         default_factory=lambda: list(SessionAttendanceDisruption.CAUSE_CHOICES)
     )
+    #: Verantwortungsbereich einer Störung (Issue #757) und Hinweis „Sitzung unterbrechen“
+    disruption_responsibilities: list[tuple[str, str]] = field(
+        default_factory=lambda: list(SessionAttendanceDisruption.RESPONSIBILITY_CHOICES)
+    )
+    interruption_hint: str = ""
     voting_methods: list[tuple[str, str]] = field(default_factory=lambda: list(SessionAgendaItem.VOTING_METHOD_CHOICES))
 
     @property
@@ -333,6 +338,7 @@ def build_state(meeting: SessionMeeting, permissions: Collection[str], *, versio
         disruptions=disruptions,
         remote_allowed=participation_service.remote_allowed(meeting),
         version=version,
+        interruption_hint=participation_service.interruption_hint(meeting, [d for _a, d in disruptions]),
     )
 
 
@@ -589,6 +595,11 @@ def _cause(raw: Any) -> str:
     return str(raw) if raw in causes else SessionAttendanceDisruption.CAUSE_CONNECTION
 
 
+def _responsibility(raw: Any) -> str:
+    values = {value for value, _ in SessionAttendanceDisruption.RESPONSIBILITY_CHOICES}
+    return str(raw) if raw in values else ""
+
+
 def start_disruption(meeting: SessionMeeting, data: Mapping[str, Any], **_: Any) -> Outcome:
     attendance = _attendance(meeting, data.get("attendance"))
     name = attendance.person.display_name
@@ -601,6 +612,7 @@ def start_disruption(meeting: SessionMeeting, data: Mapping[str, Any], **_: Any)
         attendance=attendance,
         started_at=moment,
         cause=_cause(data.get("cause")),
+        responsibility=_responsibility(data.get("responsibility")),
         note=str(data.get("note") or "").strip()[:255],
     )
     return Outcome(
@@ -747,6 +759,11 @@ def close_vote(
         warning = check.message if check.exceeded else ""
         item.votes_yes, item.votes_no, item.votes_abstain = yes, no, abstain
     item.vote_result = result
+    # Ergebnisregel des Landesprofils (Issue #757, z. B. Stimmengleichheit = abgelehnt): nichts speichern, die
+    # Aktion läuft in einer Transaktion (auch die neu berechneten Summen gehen zurück)
+    problem = voting_service.result_rule_problem(item)
+    if problem:
+        raise CockpitError(f"TOP {item.number}: {problem}")
     item.vote_closed_at = timezone.now()
     item.save(update_fields=["votes_yes", "votes_no", "votes_abstain", "vote_result", "vote_closed_at", "updated_at"])
     audit.log_event(

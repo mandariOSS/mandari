@@ -214,6 +214,10 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                 tally = voting_service.capture_votes(
                     item, votes_by_person, recorded_by=self.session_user, assessed=assessed
                 )
+                # Ergebnisregel des Landesprofils (Issue #757) nach den Summen – auch aus Einzelstimmen
+                problem = voting_service.result_rule_problem(item)
+                if problem:
+                    raise voting_service.VotingRightsError(problem)
         except (voting_service.VotingRightsError, protocol_lock.ProtocolLockedError) as exc:
             messages.error(request, exc.user_message)
             return back

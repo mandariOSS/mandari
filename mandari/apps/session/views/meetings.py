@@ -29,7 +29,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
-from ..services import body_service, joint_meeting_service, meeting_format_service
+from ..services import body_service, joint_meeting_service, meeting_format_service, state_law_service
 from ..visibility import paper_visible
 from .bodies import BodyFilterMixin
 
@@ -81,7 +81,9 @@ MEETING_FORM_FIELDS = [
 ]
 
 #: Felder, von denen die Zulässigkeit des Sitzungsformats abhängt
-FORMAT_RELEVANT_FIELDS = frozenset({"format", "format_reason", "organization", "joint_organizations"})
+#: Seit Issue #757 auch die Öffentlichkeit (Zuschaltung nur in öffentlichen Sitzungen); ein anderer Sitzungstag
+#: (Fassung des Landesprofils, Notlagenbeschluss) prüft ``MeetingForm.clean`` gesondert
+FORMAT_RELEVANT_FIELDS = frozenset({"format", "format_reason", "organization", "joint_organizations", "is_public"})
 
 
 def _format_warnings(request, form) -> None:
@@ -136,6 +138,9 @@ class MeetingForm(forms.ModelForm):
         # Ende nach Beginn prüft das Modell (SessionMeeting.clean) – für dieses Formular wie für den Admin
         lead = cleaned.get("organization")
         relevant = self.instance._state.adding or bool(FORMAT_RELEVANT_FIELDS.intersection(self.changed_data))
+        if not relevant and "start" in self.changed_data and cleaned.get("start") is not None:
+            # Verschoben auf einen anderen Tag: Fassung des Landesprofils und Notlagenbeschluss neu prüfen
+            relevant = state_law_service.local_day(cleaned["start"]) != state_law_service.local_day(self.instance.start)
         if lead is not None and relevant:
             organizations = [lead, *(org for org in cleaned.get("joint_organizations") or [] if org != lead)]
             self.format_check = meeting_format_service.check(
@@ -143,6 +148,8 @@ class MeetingForm(forms.ModelForm):
                 organizations,
                 cleaned.get("format") or SessionMeeting.FORMAT_PRESENCE,
                 cleaned.get("format_reason") or "",
+                day=state_law_service.local_day(cleaned.get("start")),
+                is_public=bool(cleaned.get("is_public")),
             )
             for message in self.format_check.errors:
                 self.add_error("format", message)

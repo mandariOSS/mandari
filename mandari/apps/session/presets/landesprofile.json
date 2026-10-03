@@ -262,8 +262,8 @@
       "law": "Niedersächsisches Kommunalverfassungsgesetz (NKomVG)",
       "hybrid_council": "regular",
       "hybrid_committees": "regular",
-      "digital_council": "unclear",
-      "digital_committees": "unclear",
+      "digital_council": "emergency",
+      "digital_committees": "emergency",
       "legal_basis": "hauptsatzung",
       "chair_present": "required",
       "remote_elections": "meeting",
@@ -278,7 +278,7 @@
       "public_registration_required": false,
       "norm_regular": "§ 64 Abs. 3 NKomVG",
       "norm_emergency": "§ 182 NKomVG",
-      "emergency_requirements": "Sonderregelungen für epidemische Lagen und außergewöhnliche Notsituationen; Fortgeltung ungeklärt.",
+      "emergency_requirements": "Örtlich relevantes Infektionsgeschehen oder außergewöhnliche Notlage: Die Vertretung beschließt auf Vorschlag der bzw. des HVB mit Zweidrittelmehrheit die Erleichterungen für höchstens drei Monate (§ 182 Abs. 1 Satz 2); danach kann die Ladung im Benehmen mit dem Vorsitz eine Videositzung anordnen. Beschluss mit Datum und Ablauf im Ortsrecht der Körperschaft hinterlegen.",
       "excluded_matters": "In einer Sitzung, an der Abgeordnete zugeschaltet teilnehmen, dürfen geheime Wahlen (§ 67 Satz 2 NKomVG), nach § 66 Abs. 2 vorgesehene geheime Abstimmungen und Beratungen von Angelegenheiten, zu deren Geheimhaltung die Kommune nach § 6 Abs. 3 Satz 1 verpflichtet ist, nicht durchgeführt werden (§ 64 Abs. 3 Satz 6); in Videositzungen nach § 182 ebenso (§ 182 Abs. 2 Satz 6). Zugeschaltete gelten als anwesend (§ 64 Abs. 3 Satz 5) und nehmen an offenen Wahlen und Abstimmungen teil.",
       "public_rule": "Die Öffentlichkeit muss die Zugeschalteten sehen und hören können.",
       "notes": "Hybridsitzungen nach § 64 Abs. 3 NKomVG, gültig ab 30.03.2022; für Hauptausschuss und Ausschüsse entsprechend (§ 64 Abs. 8). Der Ausschluss gilt für die ganze Sitzung, sobald jemand zugeschaltet teilnimmt: Die Zugeschalteten für diese Zeit abzuschalten, ist nach der Arbeitshilfe des NLT (Stand 05.07.2023, S. 8 f.) unzulässig; ergibt sich eine geheime Wahl erst in der Sitzung, folgt sie in einer späteren Präsenzsitzung. Die Sperre gilt ab der ersten Zuschaltung bis zum Sitzungsende (sicherer Standard; ob eine beendete Zuschaltung genügt, ist ungeklärt). Das Muster einer Geschäftsordnung des NLT sieht eine geheime Abstimmung nur auf Mehrheitsbeschluss vor.",
@@ -289,7 +289,85 @@
         {"title": "NLT: Muster einer Geschäftsordnung (Stand 13.10.2021)", "url": "https://www.nlt.de/wp-content/uploads/2021/10/Arbeitshilfe-Muster-einer-Geschaeftsordnung-Stand-13.10.2021.pdf"}
       ],
       "as_of": "2026-10-02",
-      "verification": "teilweise"
+      "verification": "teilweise",
+      "versions": [
+        {
+          "valid_from": "2026-05-07",
+          "title": "NKomVG in der Fassung ab 07.05.2026",
+          "amendment": "zuletzt geändert durch Art. 3 des Gesetzes vom 28.04.2026 (Nds. GVBl. 2026 Nr. 30)",
+          "as_of": "2026-10-02",
+          "verification": "teilweise",
+          "sources": [
+            {"title": "NKomVG in der Fassung ab 07.05.2026 (NI-VORIS)", "url": "https://voris.wolterskluwer-online.de/browse/document/ef43f33c-e3d3-3ffd-99ad-c8b008cdee38"},
+            {"title": "Nds. GVBl. 2026 Nr. 30", "url": "https://www.verkuendung-niedersachsen.de/api/ndsgvbl/2026/30/0/nds-gvbl-2026-30.pdf"},
+            {"title": "§ 64 NKomVG (NI-VORIS)", "url": "https://voris.wolterskluwer-online.de/browse/document/4fc126d2-a078-3b04-bdec-77b9525778e6"},
+            {"title": "§ 182 NKomVG (NI-VORIS)", "url": "https://voris.wolterskluwer-online.de/browse/document/90d143bf-4b8a-3fd4-803d-94a4742256f0"},
+            {"title": "NLT: Muster einer Geschäftsordnung (Stand 13.10.2021)", "url": "https://www.nlt.de/wp-content/uploads/2021/10/Arbeitshilfe-Muster-einer-Geschaeftsordnung-Stand-13.10.2021.pdf"}
+          ],
+          "law": {
+            "body_types": {"text": "Gemeinden und Städte, Samtgemeinden mit ihren Mitgliedsgemeinden, Landkreise und die Region Hannover. Organe sind die Vertretung, der Hauptausschuss und die Hauptverwaltungsbeamtin bzw. der Hauptverwaltungsbeamte (HVB).", "norm": "§ 7 NKomVG"},
+            "designations": {"value": {"council": {"gemeinde": "Rat", "stadt": "Rat", "einheitsgemeinde": "Rat", "selbstaendige_gemeinde": "Rat", "grosse_selbstaendige_stadt": "Rat", "kreisfreie_stadt": "Rat", "mitgliedsgemeinde": "Rat", "samtgemeinde": "Samtgemeinderat", "kreis": "Kreistag", "region": "Regionsversammlung"}, "main": {"gemeinde": "Verwaltungsausschuss", "stadt": "Verwaltungsausschuss", "einheitsgemeinde": "Verwaltungsausschuss", "selbstaendige_gemeinde": "Verwaltungsausschuss", "grosse_selbstaendige_stadt": "Verwaltungsausschuss", "kreisfreie_stadt": "Verwaltungsausschuss", "mitgliedsgemeinde": "Verwaltungsausschuss", "samtgemeinde": "Samtgemeindeausschuss", "kreis": "Kreisausschuss", "region": "Regionsausschuss"}}, "text": "„Hauptausschuss“ ist der Oberbegriff; gesetzlicher Name je Kommunenart: Verwaltungsausschuss (Gemeinde, Stadt), Samtgemeindeausschuss, Kreisausschuss, Regionsausschuss. Die Vertretung heißt Rat, Samtgemeinderat, Kreistag bzw. Regionsversammlung.", "norm": "§ 7 Abs. 2 NKomVG"},
+            "local_councils": {"text": "Ortsräte bzw. Ortsvorsteherinnen und Ortsvorsteher in Ortschaften, nicht in Mitgliedsgemeinden von Samtgemeinden; Stadtbezirksräte nur in kreisfreien Städten und Städten mit mehr als 100.000 Einwohnern. Die Ortsbürgermeisterin bzw. der Ortsbürgermeister lädt; der Ortsrat ist zu allen wichtigen Fragen anzuhören.", "norm": "§§ 90–96 NKomVG"},
+            "publicity": {"text": "Die Vertretung tagt öffentlich; der Ausschluss der Öffentlichkeit ist zu begründen. Die Öffentlichkeit der Ausschüsse regelt die Geschäftsordnung. Der Hauptausschuss tagt stets nichtöffentlich; alle Abgeordneten dürfen zuhören.", "norm": "§ 64 Abs. 1, § 72 Abs. 1, § 78 Abs. 2 NKomVG"},
+            "non_public_committee_kinds": {"value": ["main"], "text": "Hauptausschuss: stets nichtöffentlich.", "norm": "§ 78 Abs. 2 NKomVG"},
+            "residents_questions": {"value": "all", "text": "Einwohnerfragestunde in öffentlichen Sitzungen nach der Geschäftsordnung; Anhörung von Sachverständigen und Einwohnern.", "norm": "§ 62 NKomVG"},
+            "convocation": {"text": "Die bzw. der HVB lädt schriftlich oder elektronisch; Ladungsfrist, Abkürzung in Eilfällen und Einzelheiten regelt die Geschäftsordnung. Zeit, Ort und Tagesordnung öffentlicher Sitzungen sind ortsüblich bekannt zu machen. Unverzüglich einzuberufen ist, wenn ein Drittel der Mitglieder oder der Hauptausschuss es unter Angabe des Beratungsgegenstands verlangt, außerdem auf Verlangen einer bzw. eines einzelnen Abgeordneten (mit Beratungsgegenstand), wenn die letzte Sitzung der Vertretung länger als drei Monate zurückliegt.", "norm": "§ 59 Abs. 1, 2 und 5 NKomVG"},
+            "first_meeting": {"text": "Die erste Sitzung findet binnen eines Monats nach Beginn der Wahlperiode statt; die Ladungsfrist beträgt eine Woche, geladen werden darf schon vor Beginn der Wahlperiode.", "norm": "§ 59 Abs. 2 und 4 NKomVG"},
+            "agenda": {"text": "Die bzw. der HVB stellt die Tagesordnung im Benehmen mit dem Vorsitz auf; der Vorsitz kann Punkte verlangen. In dringenden Fällen lässt sich die Tagesordnung mit Zweidrittelmehrheit der Mitglieder erweitern. Ausschüsse: Einberufung im Einvernehmen, Tagesordnung im Benehmen mit dem Ausschussvorsitz.", "norm": "§ 59 Abs. 3, § 72 NKomVG"},
+            "quorum": {"text": "Beschlussfähig, wenn die Mehrheit der Mitglieder anwesend ist; festzustellen zu Beginn der Sitzung. Für eine erneute Einberufung wegen Beschlussunfähigkeit verlangt das Gesetz einen ausdrücklichen Hinweis in der Ladung.", "norm": "§ 65 NKomVG"},
+            "majority": {"text": "Beschlüsse mit der Mehrheit der auf Ja oder Nein lautenden Stimmen, soweit das Gesetz nichts anderes bestimmt.", "norm": "§ 66 Abs. 1 NKomVG"},
+            "tie_vote": {"value": "rejected", "text": "Bei Stimmengleichheit ist ein Antrag abgelehnt.", "norm": "§ 66 Abs. 1 NKomVG"},
+            "abstentions": {"value": "not_counted", "text": "Stimmenthaltungen zählen bei der Mehrheit nicht mit.", "norm": "§ 66 Abs. 1 NKomVG"},
+            "voting_methods": {"text": "Abgestimmt wird offen, soweit die Geschäftsordnung nichts anderes regelt; das Muster des NLT sieht eine geheime Abstimmung nur auf Mehrheitsbeschluss vor.", "norm": "§ 66 NKomVG", "source": 4},
+            "elections": {"text": "Wahlen schriftlich; bei nur einer vorgeschlagenen Person per Zuruf oder Handzeichen, wenn niemand widerspricht; auf Verlangen eines Mitglieds geheim; Los bei Stimmengleichheit im zweiten Wahlgang.", "norm": "§ 67 NKomVG"},
+            "bias": {"text": "Wer betroffen ist, teilt das vorher mit; das Gremium entscheidet. Betroffene verlassen den Beratungsraum (in öffentlicher Sitzung: den Zuschauerbereich). Kein Verbot bei Rechtsnormen (nur Mitteilung), bei der Besetzung unbesoldeter Stellen und bei Wahlen.", "norm": "§ 41 i. V. m. § 54 Abs. 3 NKomVG"},
+            "minutes": {"text": "Im Gesetz „Protokoll“: wesentlicher Inhalt, Abstimmungs- und Wahlergebnisse, auf Verlangen das Stimmverhalten (nicht bei geheimer Abstimmung). Unterzeichnung und Genehmigung regelt die Geschäftsordnung.", "norm": "§ 68 NKomVG"},
+            "motions": {"text": "Jedes Mitglied kann Anträge stellen und von der bzw. dem HVB Auskunft verlangen; Akteneinsicht auf Verlangen eines Viertels der Mitglieder oder einer Fraktion bzw. Gruppe – beides nicht bei geheimhaltungspflichtigen Angelegenheiten. Fristen regelt die Geschäftsordnung.", "norm": "§ 56, § 58 Abs. 4 NKomVG"},
+            "urgent_decisions": {"text": "Eilentscheidung durch den Hauptausschuss, bei drohenden erheblichen Nachteilen durch die bzw. den HVB im Einvernehmen mit einer ehrenamtlichen Stellvertretung; Vertretung und Hauptausschuss sind unverzüglich zu unterrichten.", "norm": "§ 89 NKomVG"},
+            "objection": {"text": "Drei Fälle; in jedem wird der Beschluss zunächst nicht ausgeführt. (1) Rechtswidriger Beschluss der Vertretung: Die bzw. der HVB berichtet der Kommunalaufsicht oder legt stattdessen Einspruch ein (ohne Wochenfrist). Die Vertretung beschließt dann erneut in einer Sitzung frühestens drei Tage nach der ersten Beschlussfassung; hält die bzw. der HVB auch den neuen Beschluss für rechtswidrig, entscheidet die Kommunalaufsicht. Entsprechend für Beschlüsse von Hauptausschuss, Stadtbezirks- und Ortsrat (§ 88 Abs. 1 und 2). (2) Beschluss eines beschließenden Ausschusses, der das Wohl der Kommune gefährdet: Einspruch der bzw. des HVB binnen einer Woche; der Hauptausschuss entscheidet (§ 88 Abs. 4). (3) Beschluss von Vertretung, Stadtbezirks- oder Ortsrat, der nach Ansicht des Hauptausschusses das Wohl der Kommune gefährdet: Einspruch des Hauptausschusses binnen einer Woche; erneut beschlossen wird in einer Sitzung frühestens drei Tage nach der ersten (§ 79 Abs. 1).", "norm": "§ 79 Abs. 1, § 88 Abs. 1, 2 und 4 NKomVG"},
+            "term_years": {"value": 5, "text": "Die allgemeine Wahlperiode dauert fünf Jahre.", "norm": "§ 47 NKomVG"},
+            "term": {"text": "Die Wahlperiode 2026–2031 beginnt am 01.11.2026.", "norm": "§ 47 NKomVG"},
+            "seat_allocation": {"value": "dhondt", "text": "Ausschusssitze nach dem Höchstzahlverfahren nach d’Hondt.", "norm": "§ 71 Abs. 2 NKomVG"},
+            "committee_seats": {"text": "Fraktionen und Gruppen ohne Sitz erhalten ein Grundmandat mit beratender Stimme; Hinzugewählte wirken ohne Stimmrecht mit; die Vertretung stellt die Besetzung durch Beschluss fest.", "norm": "§ 71 Abs. 4, 5 und 7 NKomVG"},
+            "chair_recall_bar": {"value": false, "text": "In dieser Fassung keine Regel zur Abberufung von Ausschussvorsitzen.", "norm": "§ 71 Abs. 8 NKomVG"},
+            "hvb": {"text": "Die bzw. der HVB ist Mitglied der Vertretung mit Stimme und führt den Vorsitz im Hauptausschuss. Den Vorsitz der Vertretung wählt diese aus ihrer Mitte; in Mitgliedsgemeinden führt die Bürgermeisterin bzw. der Bürgermeister den Ratsvorsitz.", "norm": "§§ 45, 61, 74, 105 NKomVG"},
+            "remote_basis_hint": {"text": "Die Regel in der Hauptsatzung braucht die Mehrheit von zwei Dritteln der Mitglieder der Vertretung.", "norm": "§ 64 Abs. 3 Satz 4 NKomVG", "source": 2},
+            "remote_per_invitation": {"value": true, "text": "Die Hauptsatzung kann vorsehen, dass die bzw. der HVB im Benehmen mit dem Vorsitz die Zuschaltung in der Ladung zulässt.", "norm": "§ 64 Abs. 3 Satz 2 NKomVG", "source": 2},
+            "remote_public_only": {"value": true, "text": "Die Hauptsatzung kann die Zuschaltung auf öffentliche Sitzungen beschränken.", "norm": "§ 64 Abs. 3 Satz 3 NKomVG", "source": 2},
+            "session_lead": {"value": "chair", "text": "Die bzw. der Vorsitzende nimmt im Sitzungsraum teil.", "norm": "§ 64 Abs. 3 Satz 1 NKomVG", "source": 2},
+            "committee_deviation": {"value": true, "text": "Für Hauptausschuss und Ausschüsse gelten die Regeln entsprechend, soweit die Hauptsatzung nichts anderes bestimmt.", "norm": "§ 64 Abs. 8 NKomVG", "source": 2},
+            "remote_non_public_notice": {"text": "Hinweis für Zugeschaltete: In nichtöffentlichen Sitzungen ist sicherzustellen, dass Dritte die Sitzung nicht mitverfolgen können (§ 64 Abs. 6 NKomVG).", "norm": "§ 64 Abs. 6 NKomVG", "source": 2},
+            "disruption": {"value": "interrupt", "text": "Liegt eine Störung der Übertragung im Verantwortungsbereich der Kommune, ist die Sitzung zu unterbrechen oder abzubrechen; sonstige Störungen sind unbeachtlich.", "norm": "§ 64 Abs. 5 NKomVG", "source": 2},
+            "video_hearings": {"text": "Anhörungen per Videokonferenz nur, soweit die Hauptsatzung es zulässt.", "norm": "§ 64 Abs. 7 NKomVG", "source": 2},
+            "emergency_resolution": {"value": true, "text": "In einer Notlage beschließt die Vertretung auf Vorschlag der bzw. des HVB mit Zweidrittelmehrheit die Erleichterungen für höchstens drei Monate; danach kann die Ladung eine Videositzung anordnen. Geheime Wahlen und Abstimmungen sind dann unzulässig; ein Umlaufverfahren nur, wenn vier Fünftel der Mitglieder einverstanden sind.", "norm": "§ 182 NKomVG", "source": 3},
+            "emergency_max_months": {"value": 3, "text": "Höchstdauer eines Beschlusses über die Erleichterungen in einer Notlage.", "norm": "§ 182 Abs. 1 Satz 2 NKomVG", "source": 3},
+            "recording": {"value": "local_basis", "text": "Film- und Tonaufnahmen von Abgeordneten nur, soweit die Hauptsatzung es bestimmt.", "norm": "§ 64 Abs. 2 NKomVG", "source": 2},
+            "recording_objection": {"value": true, "text": "Einzelne Abgeordnete können Aufnahmen ihrer Person widersprechen.", "norm": "§ 64 Abs. 2 NKomVG", "source": 2},
+            "video_public": {"value": "unclear", "unclear": true, "text": "In dieser Fassung ohne ausdrückliche Regel; eine Übertragung richtet sich nach den Regeln für Bild- und Tonaufnahmen.", "norm": "§ 64 Abs. 2 NKomVG", "source": 2}
+          }
+        },
+        {
+          "valid_from": "2026-11-01",
+          "title": "NKomVG in der Fassung ab 01.11.2026",
+          "amendment": "Art. 1 des Gesetzes vom 09.09.2026 (Nds. GVBl. 2026 Nr. 77)",
+          "as_of": "2026-10-02",
+          "verification": "teilweise",
+          "sources": [
+            {"title": "NKomVG in der Fassung ab 01.11.2026 (NI-VORIS)", "url": "https://voris.wolterskluwer-online.de/browse/document/f0e5a51c-8827-33a6-907e-3994202d691b"},
+            {"title": "Nds. GVBl. 2026 Nr. 77", "url": "https://www.verkuendung-niedersachsen.de/api/ndsgvbl/2026/77/0/nds-gvbl-2026-77.pdf"}
+          ],
+          "law": {
+            "youth_body": {"text": "Jugendliche können ein Jugendbeteiligungsgremium verlangen; die Geschäftsordnung regelt die Rechte seiner Mitglieder in den Sitzungen der Vertretung und der Ausschüsse.", "norm": "§ 36 NKomVG"},
+            "residents_questions": {"value": "present_only", "text": "Fragen in der Einwohnerfragestunde nur von anwesenden Einwohnerinnen und Einwohnern.", "norm": "§ 62 Abs. 1 NKomVG"},
+            "seat_allocation": {"value": "sainte_lague_schepers", "text": "Ausschusssitze und -vorsitze nach Sainte-Laguë/Schepers; bei gleichen Zahlen entscheidet das Los.", "norm": "§ 71 Abs. 2 und 8 NKomVG"},
+            "chair_recall_bar": {"value": true, "text": "Ausschussvorsitze lassen sich mit Zweidrittelmehrheit abberufen; dieselbe Person kann nicht erneut benannt werden.", "norm": "§ 71 Abs. 8 NKomVG"},
+            "hvb_deputies_max": {"value": 5, "text": "Bis zu fünf ehrenamtliche Stellvertretungen der bzw. des HVB.", "norm": "§ 81 Abs. 2 NKomVG"},
+            "adult_offices": {"value": ["local_chair", "local_mayor", "member_municipality_mayor", "municipal_director", "hvb"], "text": "Erst ab 18 Jahren: Vorsitz und Stellvertretung in Orts- und Stadtbezirksrat, Ortsvorsteherin bzw. Ortsvorsteher, Bürgermeisterin bzw. Bürgermeister der Mitgliedsgemeinde, Gemeindedirektorin bzw. Gemeindedirektor und Stellvertretung, HVB. Wählbar ab 16 Jahren erst ab der Wahl 2031.", "norm": "§ 80 Abs. 4, § 92 Abs. 1, § 96 Abs. 1, § 105 Abs. 1, § 106 Abs. 1 NKomVG"},
+            "session_lead": {"value": "session_lead", "text": "Im Sitzungsraum muss die Sitzungsleitung teilnehmen – auch eine Stellvertretung, die die Sitzung leitet.", "norm": "§ 64 Abs. 3 Satz 1 NKomVG"},
+            "video_public": {"value": "local_basis", "text": "Die Öffentlichkeit kann Sitzungen der Vertretung und der Ausschüsse per Videokonferenztechnik verfolgen, soweit die Hauptsatzung es zulässt (Zweidrittelmehrheit); Abgeordnete können widersprechen, soweit technisch möglich.", "norm": "§ 64 Abs. 9 NKomVG"}
+          }
+        }
+      ]
     },
     {
       "code": "NW",

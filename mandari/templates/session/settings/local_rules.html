@@ -1,0 +1,75 @@
+{% extends "session/base_session.html" %}
+{% comment %}Ortsrecht einer Körperschaft: Hauptsatzung und Geschäftsordnung (Issue #757).{% endcomment %}
+
+{% block page_title %}Ortsrecht – {{ body.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Einstellungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Sitzungsformate
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Ortsrecht</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Ortsrecht: {{ body.name }}</h1>
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+        Hauptsatzung und Geschäftsordnung gelten je Körperschaft. mandari prüft damit hybride Sitzungen, setzt Vermerke in die Ladung
+        und weist auf fehlende Nachweise hin.
+    </p>
+    {% if emergency_warning %}<c-ui.alert variant="warning" icon="calendar-clock">{{ emergency_warning }}</c-ui.alert>{% endif %}
+
+    <form method="post" class="space-y-6" data-testid="ortsrecht">
+        {% csrf_token %}
+        <c-form.errors :form="form" />
+        <c-ui.card title="Hauptsatzung" subtitle="Zuschaltung, Aufnahmen und Übertragung, Notlage">
+            <div class="space-y-4">
+                <div>
+                    <c-form.checkbox :field="form.remote_per_invitation" label="Zuschaltung je Ladung zulassen" />
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Die Hauptsatzung sieht vor, dass die Zuschaltung in der Ladung zugelassen wird. Die Ladung hybrider Sitzungen erhält dann einen Vermerk.</p>
+                </div>
+                <div>
+                    <c-form.checkbox :field="form.remote_public_only" label="Zuschaltung nur in öffentlichen Sitzungen" />
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Nichtöffentliche Sitzungen lassen sich dann nicht hybrid oder digital laden.</p>
+                </div>
+                <div class="grid sm:grid-cols-3 gap-4">
+                    <c-form.field :field="form.recording_date" label="Bild- und Tonaufnahmen: Hauptsatzung vom" type="date" />
+                    <c-form.field :field="form.recording_reference" label="Fundstelle" class="sm:col-span-2" placeholder="z. B. § 8 Hauptsatzung" />
+                    <c-form.field :field="form.video_public_date" label="Öffentlichkeit per Video: Hauptsatzung vom" type="date" />
+                    <c-form.field :field="form.video_public_reference" label="Fundstelle" class="sm:col-span-2" placeholder="z. B. § 8a Hauptsatzung" />
+                    <c-form.field :field="form.emergency_date" label="Notlagenbeschluss vom" type="date" />
+                    <c-form.field :field="form.emergency_until" label="gilt bis" type="date" />
+                    <c-form.field :field="form.emergency_reference" label="Fundstelle" placeholder="z. B. Rat, TOP 4" />
+                </div>
+                {% if law and law.entries.remote_basis_hint %}<p class="text-xs text-gray-500 dark:text-gray-400">{{ law.entries.remote_basis_hint.text }}</p>{% endif %}
+            </div>
+        </c-ui.card>
+
+        <c-ui.card title="Geschäftsordnung" subtitle="Fristen, Niederschrift, Abstimmungen, Öffentlichkeit">
+            <div class="grid sm:grid-cols-3 gap-4">
+                <c-form.field :field="form.rules_date" label="Geschäftsordnung vom" type="date" />
+                <c-form.field :field="form.rules_reference" label="Fundstelle" class="sm:col-span-2" />
+                <c-form.field :field="form.invitation_days" label="Ladungsfrist (Tage)" type="number" />
+                <c-form.select :field="form.invitation_day_kind" label="Zählweise" />
+                <c-form.select :field="form.deadline_start" label="Fristbeginn" />
+                <c-form.field :field="form.urgent_days" label="Ladungsfrist im Eilfall (Tage)" type="number" />
+                <c-form.field :field="form.urgent_notice" label="Pflichthinweis in der Ladung im Eilfall" class="sm:col-span-2" />
+                <c-form.field :field="form.motion_days" label="Antragsfrist (Tage vor der Sitzung)" type="number" />
+                <c-form.field :field="form.question_days" label="Frist für Anfragen (Tage vor der Sitzung)" type="number" />
+                <c-form.field :field="form.residents_questions_minutes" label="Einwohnerfragestunde (Minuten)" type="number" />
+                <c-form.field :field="form.minutes_signers" label="Unterzeichnende der Niederschrift" class="sm:col-span-2" placeholder="z. B. Vorsitz, Bürgermeister/in, Protokollführung" />
+                <c-form.select :field="form.committees_public" label="Ausschüsse tagen" />
+                <c-form.field :field="form.voting_methods" label="Abstimmungsarten" class="sm:col-span-3" placeholder="z. B. offen; namentlich auf Verlangen eines Fünftels; geheim auf Mehrheitsbeschluss" />
+            </div>
+        </c-ui.card>
+        <c-ui.button type="submit">Speichern</c-ui.button>
+    </form>
+</div>
+{% endblock %}

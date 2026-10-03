@@ -468,6 +468,12 @@ urlpatterns = [
         views.MeetingFormatSettingsView.as_view(),
         name="settings_meeting_formats",
     ),
+    # Ortsrecht je Körperschaft: Hauptsatzung und Geschäftsordnung (Issue #757)
+    path(
+        "<slug:tenant_slug>/settings/meeting-formats/ortsrecht/<uuid:body_id>/",
+        views.BodyLocalRulesView.as_view(),
+        name="settings_local_rules",
+    ),
     path(
         "<slug:tenant_slug>/settings/privacy/purge/",
         views.PrivacyPurgeRunView.as_view(),

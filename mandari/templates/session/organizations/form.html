@@ -84,6 +84,8 @@
                     {% if committee_kind_hint %}
                     <p class="-mt-2 text-sm text-amber-700 dark:text-amber-400">Der Name deutet auf {{ committee_kind_hint }} hin. Bitte die Ausschussart festlegen.</p>
                     {% endif %}
+                    <c-form.select :field="form.remote_local_rule" label="Zuschaltung (örtliche Regel)"
+                                   help="Nur wenn die Hauptsatzung für dieses Gremium von der Regel des Landesprofils abweicht" />
                 </div>
             </div>
 

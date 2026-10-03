@@ -1,0 +1,52 @@
+{% comment %}
+Sitzungsrecht des Landes in der Fassung zum Stichtag und Ortsrecht je Körperschaft (Issue #757). Jeder Eintrag nennt
+Norm, Quelle und Stand; „ungeklärt“, wo die Quelle nichts sicher belegt.
+{% endcomment %}
+{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug as formats_url %}
+{% if law %}
+<c-ui.card title="Sitzungsrecht {{ profile.name }}" subtitle="{{ law.version_label }}{% if law.version %}: {{ law.version.title }}{% endif %} – Stichtag {{ law.day|date:'d.m.Y' }}">
+    <div class="space-y-4 text-sm" data-testid="sitzungsrecht">
+        {% if law_versions %}
+        <p class="text-gray-600 dark:text-gray-400">
+            Fassungen:
+            {% for version in law_versions %}
+            <a href="{{ formats_url }}?stichtag={{ version.valid_from|date:'Y-m-d' }}" class="text-primary-600 dark:text-primary-400 hover:underline">ab {{ version.valid_from|date:'d.m.Y' }}</a>{% if version.amendment %} ({{ version.amendment }}){% endif %}{% if not forloop.last %} · {% endif %}
+            {% endfor %}
+        </p>
+        {% endif %}
+        {% for group_label, entries in law.groups %}
+        <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">{{ group_label }}</h3>
+            <dl class="mt-2 space-y-2">
+                {% for entry in entries %}
+                <div>
+                    <dt class="font-medium text-gray-800 dark:text-gray-200">{{ entry.label }}{% if entry.value_label %}: {{ entry.value_label }}{% endif %}</dt>
+                    <dd class="text-gray-600 dark:text-gray-400">
+                        {% if entry.text %}{{ entry.text }} {% endif %}
+                        <span class="text-xs">({% if entry.unclear %}ungeklärt{% if entry.norm %}; {% endif %}{% endif %}{{ entry.norm }}{% if entry.source_url %}; <a href="{{ entry.source_url }}" class="hover:underline" target="_blank" rel="noopener noreferrer">{{ entry.source_title|default:"Quelle" }}</a>{% endif %}{% if entry.as_of %}; Stand {{ entry.as_of|date:'d.m.Y' }}{% endif %})</span>
+                    </dd>
+                </div>
+                {% endfor %}
+            </dl>
+        </div>
+        {% empty %}
+        <p class="text-gray-500 dark:text-gray-400">Für diesen Stichtag ist im Landesprofil kein Sitzungsrecht erfasst.</p>
+        {% endfor %}
+    </div>
+</c-ui.card>
+{% endif %}
+
+<c-ui.card title="Ortsrecht der Körperschaften" subtitle="Hauptsatzung und Geschäftsordnung">
+    <ul class="divide-y divide-gray-100 dark:divide-gray-700 text-sm" data-testid="ortsrecht-liste">
+        {% for body, rules, warning in local_rules %}
+        <li class="py-2 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white">{{ body.name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ rules.rules_label|default:"Geschäftsordnung nicht hinterlegt" }}</p>
+                {% if warning %}<p class="text-xs text-amber-700 dark:text-amber-400" data-testid="notlage-ablauf">{{ warning }}</p>{% endif %}
+            </div>
+            <a href="{% url 'session:settings_local_rules' tenant_slug=tenant_slug body_id=body.pk %}" class="text-primary-600 dark:text-primary-400 hover:underline whitespace-nowrap">Ortsrecht bearbeiten</a>
+        </li>
+        {% endfor %}
+    </ul>
+</c-ui.card>

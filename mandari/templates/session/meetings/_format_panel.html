@@ -7,6 +7,7 @@
     {% if format_info.legal_basis %}<p>Rechtsgrundlage: {{ format_info.legal_basis }}</p>{% endif %}
     {% if format_info.reason %}<p>Begründung: {{ format_info.reason }}</p>{% endif %}
     {% if format_info.remote_access %}<p>Zugang für Zugeschaltete: {{ format_info.remote_access|linebreaksbr }}</p>{% endif %}
+    {% for notice in format_info.notices %}<p>{{ notice }}</p>{% endfor %}
     {% endif %}
     {% if format_info.public_hint or format_info.public_url %}
     <p>

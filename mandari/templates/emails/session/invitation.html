@@ -45,7 +45,12 @@ selbst über den persönlichen Link bestätigt. Zustellweg Portal: Hinweis ohne 
         <td class="key">Rechtsgrundlage</td>
         <td>{{ format_info.legal_basis }}</td>
     </tr>
-    {% endif %}{% endif %}
+    {% endif %}{% for notice in format_info.notices %}
+    <tr>
+        <td class="key">Hinweis</td>
+        <td>{{ notice }}</td>
+    </tr>
+    {% endfor %}{% endif %}
 </table>
 {% if message %}
 <div class="card">

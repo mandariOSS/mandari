@@ -52,9 +52,78 @@ Issue: #138 (Grundlage für #139 Teilnahmeart, #140 Cockpit, #141 Selbst-Abstimm
    „ungeklärt“. Wo das Land einen Beschluss des Gremiums verlangt (Hamburg, Berlin), ist die Begründung Pflicht.
 7. Fraktionen und Verwaltungseinheiten unterliegen nicht den Sitzungsregeln der Kommunalverfassung.
 
-Beim Bearbeiten einer gespeicherten Sitzung prüft das Formular nur, wenn sich Format, Begründung oder die
-beteiligten Gremien ändern; so bleibt eine Sitzung auch nach einem Wechsel des Landesprofils absag- und
+8. Schließt die Hauptsatzung die Zuschaltung für ein Gremium aus (örtliche Regel am Gremium, z. B. § 64 Abs. 8
+   NKomVG), ist die hybride Sitzung für dieses Gremium nicht zulässig. Videositzungen in einer Notlage (§ 182
+   NKomVG) beruhen auf einer eigenen Grundlage; für sie gilt weiter die Regel des Landesprofils.
+9. Beschränkt die Hauptsatzung die Zuschaltung auf öffentliche Sitzungen (Ortsrecht der Körperschaft, § 64
+   Abs. 3 Satz 3 NKomVG), sind nichtöffentliche Sitzungen nur in Präsenz möglich.
+10. Verlangt das Landesrecht für die Notlage einen Beschluss der Vertretung mit Ablauf (Niedersachsen: § 182
+    Abs. 1 Satz 2 NKomVG, höchstens drei Monate), muss der Beschluss im Ortsrecht der Körperschaft stehen und
+    den Sitzungstag abdecken.
+
+Maßgeblich ist das Landesprofil in der **Fassung zum Sitzungsdatum** (nächster Abschnitt). Beim Bearbeiten einer
+gespeicherten Sitzung prüft das Formular nur, wenn sich Format, Begründung, Öffentlichkeit, die beteiligten
+Gremien oder der Sitzungstag ändern; so bleibt eine Sitzung auch nach einem Wechsel des Landesprofils absag- und
 bearbeitbar; der Versand prüft das Format erneut (siehe unten).
+
+## Landesrecht als Sitzungsrecht (Issue #757)
+
+Das Landesprofil beschreibt nicht nur hybride und digitale Sitzungen, sondern das Sitzungsrecht des Landes:
+Körperschaften und Gremienbezeichnungen, Öffentlichkeit, Einberufung und Tagesordnung, Beschlussfähigkeit,
+Abstimmungen und Wahlen, Mitwirkungsverbot, Niederschrift, Antragsrecht, Eilentscheidung und Einspruch,
+Wahlperiode, Ausschussbesetzung, Ämter, Aufnahmen und Übertragung. Bisher ist Niedersachsen erfasst; die übrigen
+Länder folgen bei Bedarf.
+
+### Fassungen mit Stichtag
+
+- Kommunalverfassungen ändern sich zu Stichtagen. Je Land gibt es **Fassungen** (`SessionStateProfileVersion`) mit
+  „gültig ab“. Maßgeblich ist die Fassung zum **Sitzungsdatum**: die jüngste mit Stichtag am oder vor dem Tag.
+  Spätere Fassungen erben die Einträge früherer und überschreiben nur, was sich ändert; eine Fassung kann auch
+  Felder des Landesprofils ab dem Stichtag ändern (`overrides`). Vor der ersten Fassung gilt das Landesprofil
+  ohne Sitzungsrecht.
+- Niedersachsen: Fassung ab **07.05.2026** (zuletzt geändert durch Art. 3 des Gesetzes vom 28.04.2026, Nds. GVBl.
+  2026 Nr. 30) und ab **01.11.2026** (Art. 1 des Gesetzes vom 09.09.2026, Nds. GVBl. 2026 Nr. 77): Ausschusssitze
+  nach Sainte-Laguë/Schepers statt d’Hondt, Abberufung von Ausschussvorsitzen ohne erneute Benennung,
+  „Sitzungsleitung“ statt „Vorsitz“ im Sitzungsraum, Öffentlichkeit per Video laut Hauptsatzung (§ 64 Abs. 9
+  neu), Einwohnerfragen nur von Anwesenden, bis zu fünf ehrenamtliche Stellvertretungen der bzw. des HVB,
+  Jugendbeteiligungsgremium, einzelne Ämter erst ab 18. Eine Sitzung am 31.10.2026 folgt der ersten, eine am
+  01.11.2026 der zweiten Fassung.
+- **Jeder Eintrag nennt Norm, Quelle und Stand**; „ungeklärt“, wo die Quelle nichts sicher belegt. Werte mit
+  fester Bedeutung (z. B. Stimmengleichheit, Verteilungsverfahren, Sitzungsleitung, Öffentlichkeit per Video)
+  prüft der Code (`apps/session/services/state_law_service.py`, Katalog `LAW_FIELDS`), Erläuterungen zeigt die
+  Rechtsübersicht unter Einstellungen → Sitzungsformate, wahlweise zu einem Stichtag (`?stichtag=JJJJ-MM-TT`).
+
+### Ortsrecht je Körperschaft
+
+Hauptsatzung und Geschäftsordnung gelten je Körperschaft (Einstellungen → Sitzungsformate → Ortsrecht,
+`SessionBody.local_rules`); jede Änderung steht im Prüfprotokoll:
+
+- **Hauptsatzung:** Zuschaltung je Ladung zulassen (Vermerk in der Ladung), Zuschaltung nur in öffentlichen
+  Sitzungen, Nachweise (Datum, Fundstelle) für Bild- und Tonaufnahmen und für die Öffentlichkeit per Video,
+  Notlagenbeschluss mit Datum, Ablauf und Fundstelle (Warnung zwei Wochen vor dem Ablauf).
+- **Geschäftsordnung:** Datum und Fundstelle, Ladungsfrist mit Zählweise (Kalender- oder Arbeitstage) und
+  Fristbeginn (Absendung oder Bereitstellung), Eilfrist mit Pflichthinweis, Antrags- und Anfragefristen,
+  Unterzeichnende der Niederschrift, Abstimmungsarten, Öffentlichkeit der Ausschüsse, Zeitrahmen der
+  Einwohnerfragestunde. Fristberechnung und Abläufe nutzen diese Werte schrittweise (Fristen, Ablauf-Regelwerk).
+
+### Was mandari daraus prüft und anzeigt
+
+- **Ergebnisregel:** Kennt das Landesprofil „Stimmengleichheit = abgelehnt“ (Niedersachsen: § 66 Abs. 1 NKomVG),
+  lehnt die Abstimmungserfassung „angenommen“ mit höchstens so vielen Ja- wie Nein-Stimmen ab; Enthaltungen
+  zählen nicht mit.
+- **Sitzungsleitung:** Ab der Fassung mit „Sitzungsleitung“ weist die Anwesenheit auch auf eine zugeschaltete
+  Stellvertretung hin, wenn der Vorsitz nicht im Raum ist und sie die Sitzung leitet.
+- **Ladung:** Vermerk „Zuschaltung mit dieser Ladung zugelassen“ (§ 64 Abs. 3 Satz 2 NKomVG) und Pflichthinweis
+  an Zugeschaltete, dass Dritte den nichtöffentlichen Teil nicht mitverfolgen (§ 64 Abs. 6 NKomVG).
+- **Störungen:** Im Störungsprotokoll lässt sich der Verantwortungsbereich festhalten; liegt eine andauernde
+  Störung im Verantwortungsbereich der Kommune, fordert das Sitzungscockpit zur Unterbrechung auf (§ 64 Abs. 5
+  NKomVG). Sonstige Störungen sind für die Sitzung unbeachtlich; die Person zählt nur für ihre Dauer nicht mit.
+- **Übertragung** (Adresse für die Öffentlichkeit an der Sitzung): Die Detailseite weist intern auf einen
+  fehlenden Nachweis in der Hauptsatzung hin – bis 31.10.2026 für Bild- und Tonaufnahmen (§ 64 Abs. 2), ab
+  01.11.2026 für die Öffentlichkeit per Video (§ 64 Abs. 9) – und nennt Mitglieder, die Aufnahmen ihrer Person
+  widersprochen haben (Kennzeichen an der Person). Livestream und Aufzeichnung selbst: #146.
+- **Notlage:** Digitale Sitzungen nach § 182 NKomVG sind „nur in Notlagen“ zulässig und brauchen den Beschluss
+  im Ortsrecht (siehe Prüfregeln).
 
 ### Ladung, Tagesordnung und Öffentlichkeit
 
@@ -151,10 +220,12 @@ Sitzung (`SessionAttendance`, `apps/session/services/participation_service.py`) 
 
 ### Pflege
 
-Ändert sich die Rechtslage: `landesprofile.json` anpassen (`as_of` des Landes bzw. `stand` der Datei, Quellen),
-diese Übersicht nachziehen und nach dem Deploy `python manage.py session_state_profiles --sync` ausführen.
-`--check` meldet Abweichungen zwischen Datenbank und Datei. Die Datenmigration `session.0045` übernimmt die
-Profile beim ersten Deploy automatisch, `session.0055` die Hybridregel aus Issue #754 (beide idempotent).
+Ändert sich die Rechtslage: `landesprofile.json` anpassen (`as_of` des Landes bzw. `stand` der Datei, Quellen;
+eine neue Rechtslage zu einem Stichtag als neue Fassung unter `versions`), diese Übersicht nachziehen und nach
+dem Deploy `python manage.py session_state_profiles --sync` ausführen. `--check` meldet Abweichungen zwischen
+Datenbank und Datei, auch bei den Fassungen. Die Datenmigration `session.0045` übernimmt die Profile beim ersten
+Deploy automatisch, `session.0055` die Hybridregel aus Issue #754, `session.0063` die Fassungen aus Issue #757
+(alle idempotent).
 
 ## Übersicht
 
@@ -175,7 +246,7 @@ S = nur Sekundärquellen.
 | Hamburg | § 13 BezVG | N | R | N (Ausschüsse R) | Beschluss | ? | ✗ / ? | S |
 | Hessen | § 52a HGO | R | ? | – | Hauptsatzung | P | ✗ / ? | W |
 | Mecklenburg-Vorpommern | § 29a KV M-V | R | R | N | Hauptsatzung | P | ? / ✗ | T |
-| Niedersachsen | § 64 NKomVG | R | R | ? | Hauptsatzung | P | Sg / S | T |
+| Niedersachsen | § 64 NKomVG | R | R | N | Hauptsatzung | P | Sg / S | T |
 | Nordrhein-Westfalen | §§ 47a, 58a GO NRW | N | R (außer HA, FA, RPA) | N | Hauptsatzung | P | B / B | W |
 | Rheinland-Pfalz | § 35a GemO | R | ? | N | Geschäftsordnung | P | ✗ / ✗ | T |
 | Saarland | §§ 48, 51a KSVG | N | R | N | Geschäftsordnung | ? | S / S | T |
@@ -315,9 +386,18 @@ S = nur Sekundärquellen.
   Zugeschalteten für diese Zeit abzuschalten, ist nach der Arbeitshilfe des NLT (Stand 05.07.2023, S. 8 f.)
   unzulässig; ergibt sich eine geheime Wahl erst in der Sitzung, folgt sie in einer späteren Präsenzsitzung.
   Das Muster einer Geschäftsordnung des NLT sieht eine geheime Abstimmung nur auf Mehrheitsbeschluss vor.
-- **Ausschüsse:** Hauptausschuss und Ausschüsse entsprechend (§ 64 Abs. 8).
-- **Ungeklärt:** Fortgeltung der Sonderregelung § 182 NKomVG (epidemische Lagen, Notsituationen) für rein
-  digitale Sitzungen.
+- **Ausschüsse:** Hauptausschuss und Ausschüsse entsprechend, soweit die Hauptsatzung nichts anderes bestimmt
+  (§ 64 Abs. 8).
+- **Notlage (§ 182):** Bei örtlich relevantem Infektionsgeschehen oder außergewöhnlicher Notlage beschließt die
+  Vertretung auf Vorschlag der bzw. des HVB mit Zweidrittelmehrheit die Erleichterungen für höchstens drei
+  Monate (Abs. 1 Satz 2); danach kann die Ladung eine Videositzung anordnen, geheime Wahlen und Abstimmungen
+  sind dann unzulässig (Abs. 2 Satz 6). Nach der Arbeitshilfe des NLT seit dem Gesetz vom 07.12.2021 in Kraft;
+  das Profil sagt deshalb „nur in Notlagen“ (bisher „ungeklärt“).
+- **Fassungen des Sitzungsrechts:** ab 07.05.2026
+  <https://voris.wolterskluwer-online.de/browse/document/ef43f33c-e3d3-3ffd-99ad-c8b008cdee38> (Nds. GVBl. 2026
+  Nr. 30 <https://www.verkuendung-niedersachsen.de/api/ndsgvbl/2026/30/0/nds-gvbl-2026-30.pdf>) und ab 01.11.2026
+  <https://voris.wolterskluwer-online.de/browse/document/f0e5a51c-8827-33a6-907e-3994202d691b> (Nds. GVBl. 2026
+  Nr. 77 <https://www.verkuendung-niedersachsen.de/api/ndsgvbl/2026/77/0/nds-gvbl-2026-77.pdf>), siehe oben.
 - **Quellen:** <https://voris.wolterskluwer-online.de/browse/document/4fc126d2-a078-3b04-bdec-77b9525778e6>,
   § 182 <https://voris.wolterskluwer-online.de/browse/document/90d143bf-4b8a-3fd4-803d-94a4742256f0>,
   Arbeitshilfe des NLT <https://www.nlt.de/wp-content/uploads/2023/07/Arbeitshilfe-des-NLT-zur-optionalen-Einfuehrung-von-Hybridsitzungen-nach-%C2%A7-64-NKomVG-Gesamtdok.pdf>,
@@ -447,5 +527,7 @@ S = nur Sekundärquellen.
   Profileinstellung für die Beschlussfähigkeit fehlt noch.
 - Beschlossene Fassung des § 34a GO Schleswig-Holstein (Pflicht zur Zuschaltung ab 2027).
 - Bayern: Mehrheitserfordernis nach der Kommunalwahl 2026, Anwendung auf Ausschüsse.
-- Ausschüsse in Hessen, Rheinland-Pfalz, Sachsen, Thüringen; Fortgeltung § 182 NKomVG.
+- Ausschüsse in Hessen, Rheinland-Pfalz, Sachsen, Thüringen.
+- Sitzungsrecht (Fassungen) der übrigen Länder; Niedersachsen: Spezialregeln der Ausschüsse nach § 73 NKomVG
+  und die Anwendungshinweise der Spitzenverbände zu den Änderungen ab 01.11.2026 nicht geprüft.
 - Landkreisordnungen sind nicht Gegenstand dieser Übersicht (in den meisten Ländern parallel geregelt).

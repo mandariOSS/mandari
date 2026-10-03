@@ -405,6 +405,38 @@ def recompute_sums(agenda_item: SessionAgendaItem) -> None:
     agenda_item.save(update_fields=["votes_yes", "votes_no", "votes_abstain", "updated_at"])
 
 
+def result_rule_problem(agenda_item: SessionAgendaItem) -> str:
+    """
+    Ergebnisregel aus dem Landesprofil (Issue #757, z. B. § 66 Abs. 1 NKomVG): Bei Stimmengleichheit ist ein
+    Antrag abgelehnt, Enthaltungen zählen nicht mit. „Angenommen“ mit höchstens so vielen Ja- wie Nein-Stimmen
+    widerspricht der Regel; leer, wenn alles passt, keine Summen erfasst sind oder es um eine Wahl geht.
+
+    Gilt für jeden Weg, auf dem ein Ergebnis entsteht: Abstimmungserfassung, Sitzungscockpit und Niederschrift.
+    Die Meldung unterscheidet Stimmengleichheit von einer Mehrheit der Nein-Stimmen.
+    """
+    from apps.session.services import state_law_service
+
+    if agenda_item.vote_result != "approved" or agenda_item.is_election:
+        return ""
+    yes, no = agenda_item.votes_yes or 0, agenda_item.votes_no or 0
+    if yes == 0 and no == 0:
+        return ""
+    law = state_law_service.for_meeting(agenda_item.meeting)
+    if law is None or law.value("tie_vote") != "rejected" or yes > no:
+        return ""
+    abstentions = " Enthaltungen zählen nicht mit." if law.value("abstentions") == "not_counted" else ""
+    if yes == no:
+        norm = law.norm("tie_vote")
+        reason = f"Bei Stimmengleichheit ist er abgelehnt{f' ({norm})' if norm else ''}."
+    else:
+        norm = law.norm("majority") or law.norm("tie_vote")
+        reason = f"Er braucht mehr Ja- als Nein-Stimmen{f' ({norm})' if norm else ''}."
+    return (
+        f"Mit {yes} Ja- und {no} Nein-Stimmen ist der Antrag nicht angenommen: {reason}{abstentions} "
+        "Bitte das Ergebnis prüfen."
+    )
+
+
 def tally(agenda_item: SessionAgendaItem, votes: list[SessionVote] | None = None) -> dict:
     """Übersicht: Summen + Befangene/Nicht-Teilnehmende (``votes``: bereits geladene Einzelstimmen)."""
     if votes is None:

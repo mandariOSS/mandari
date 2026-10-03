@@ -26,6 +26,9 @@
         {% if format_info.legal_basis or format_info.reason %}
         <tr><td><strong>Rechtsgrundlage:</strong></td><td>{{ format_info.legal_basis }}{% if format_info.reason %}{% if format_info.legal_basis %}<br>{% endif %}Begründung: {{ format_info.reason }}{% endif %}</td></tr>
         {% endif %}
+        {% if format_info.notices %}
+        <tr><td><strong>Hinweis:</strong></td><td>{% for notice in format_info.notices %}{{ notice }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td></tr>
+        {% endif %}
         {% endif %}
         {% if format_info.public_hint or format_info.public_url %}
         <tr><td><strong>Öffentlichkeit:</strong></td><td>{{ format_info.public_hint }}{% if format_info.public_url %} {{ format_info.public_url }}{% endif %}</td></tr>

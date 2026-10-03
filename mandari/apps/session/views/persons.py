@@ -58,6 +58,9 @@ class SessionPersonForm(forms.ModelForm):
             "contact_consent_date",
             "contact_consent_evidence",
             "delivery_channel",
+            # Widerspruch gegen Bild- und Tonaufnahmen (Issue #757)
+            "recording_objection",
+            "recording_objection_date",
             "is_active",
             "start_date",
             "end_date",
@@ -68,8 +71,10 @@ class SessionPersonForm(forms.ModelForm):
         # Zustellweg (Issue #225): ohne Angabe bleibt es bei E-Mail (Importe, ältere Formulare)
         self.fields["delivery_channel"].required = False
         # Datum als ISO-Text vorbelegen, damit das Datumsfeld des Browsers es anzeigt
-        if self.instance.pk and self.instance.contact_consent_date:
-            self.initial["contact_consent_date"] = self.instance.contact_consent_date.isoformat()
+        for name in ("contact_consent_date", "recording_objection_date"):
+            value = getattr(self.instance, name) if self.instance.pk else None
+            if value:
+                self.initial[name] = value.isoformat()
         self.show_bank_fields = show_bank_fields
         if not show_bank_fields:
             for field in ("bank_account_holder", "bank_iban", "bank_bic"):
@@ -107,6 +112,12 @@ class SessionPersonForm(forms.ModelForm):
         start, end = cleaned.get("start_date"), cleaned.get("end_date")
         if start is not None and end is not None and end < start:
             self.add_error("end_date", "Das Mandatsende liegt vor dem Mandatsbeginn.")
+        # Ohne Widerspruch kein Datum; ein Widerspruch in der Zukunft ist ein Tippfehler
+        objection_date = cleaned.get("recording_objection_date")
+        if not cleaned.get("recording_objection"):
+            cleaned["recording_objection_date"] = None
+        elif objection_date is not None and objection_date > timezone.localdate():
+            self.add_error("recording_objection_date", "Der Widerspruch kann nicht in der Zukunft liegen.")
         if not cleaned.get("contact_publish"):
             cleaned["contact_consent_date"] = None
             cleaned["contact_consent_evidence"] = ""

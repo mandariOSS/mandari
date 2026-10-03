@@ -159,8 +159,31 @@ geschlossen, (a) bis auf die Verweisung. Details: `docs/WORK_SESSION_SUBMISSION.
 | Land | Abweichung gegenüber NRW |
 |---|---|
 | **Hessen (HGO)** | Andere Begriffe (Gemeindevertretung statt Rat, Vorsitz durch Gemeindevertretung selbst, nicht durch den Bürgermeister). Einberufung und Ladungsfrist in § 58 HGO. Für Darmstadt maßgeblich. |
-| **Niedersachsen (NKomVG)** | Ladungsfristen und Ausschussrechte abweichend geregelt. |
+| **Niedersachsen (NKomVG)** | Hauptverwaltungsbeamtin bzw. -beamter (HVB) lädt und stellt die Tagesordnung im Benehmen mit dem Vorsitz auf; Hauptausschuss stets nichtöffentlich; Fristen fast nur in der Geschäftsordnung. Einzelheiten unten. |
 | **Bayern (GO)** | Stärkere Stellung des ersten Bürgermeisters bei der Tagesordnung. |
+
+### Niedersachsen im Einzelnen
+
+Grundlage ist das NKomVG in der Fassung zum Sitzungsdatum (ab 07.05.2026 bzw. ab 01.11.2026, siehe
+`docs/SESSION_SITZUNGSFORMAT_LANDESRECHT.md`). Gegenüber dem Ablauf oben ändert sich:
+
+- **Antrag und Anfrage:** Jedes Mitglied der Vertretung kann Anträge stellen und von der bzw. dem HVB Auskunft
+  verlangen; Akteneinsicht auf Verlangen eines Viertels der Mitglieder oder einer Fraktion bzw. Gruppe (§ 56,
+  § 58 Abs. 4). Antrags- und Anfragefristen stehen nur in der Geschäftsordnung (Praxis: Anträge 10 bis 14 Tage,
+  Anfragen 5 Tage vor der Sitzung) – in mandari im Ortsrecht der Körperschaft.
+- **Tagesordnung:** Die bzw. der HVB stellt sie im Benehmen mit dem Vorsitz auf; der Vorsitz kann Punkte
+  verlangen; in dringenden Fällen Erweiterung mit Zweidrittelmehrheit (§ 59 Abs. 3). In Ausschüssen lädt die
+  bzw. der HVB im Einvernehmen, die Tagesordnung entsteht im Benehmen mit dem Ausschussvorsitz (§ 72).
+- **Ladung:** Ladungsfrist, Eilfrist und Fristbeginn (Absendung oder Bereitstellung im Ratsinformationssystem)
+  regelt die Geschäftsordnung; die erste Sitzung der Wahlperiode hat eine Woche Frist (§ 59).
+- **Beratungsfolge:** Der Hauptausschuss (Verwaltungs-, Samtgemeinde-, Kreis- bzw. Regionsausschuss) bereitet
+  Beschlüsse der Vertretung vor und tagt stets nichtöffentlich (§ 78 Abs. 2); alle Abgeordneten dürfen zuhören.
+  Ortsräte sind zu allen wichtigen Fragen ihrer Ortschaft anzuhören (§ 94).
+- **Beschluss:** Mehrheit der Ja- und Nein-Stimmen, Enthaltungen zählen nicht, Stimmengleichheit = abgelehnt
+  (§ 66 Abs. 1) – die Abstimmungserfassung prüft das.
+- **Samtgemeinde:** Die Verwaltung der Samtgemeinde führt in der Praxis auch den Sitzungsdienst der
+  Mitgliedsgemeinden; Anträge, Ladung und Niederschrift tragen die Körperschaft, deren Gremium berät
+  (Körperschaften im Mandanten).
 
 Das Modell ist so geschnitten, dass **Fristen und Zuständigkeiten Parameter sind**, nicht
 fest verdrahtete Schritte. Der Ablauf selbst — Idee, Legitimation, Einreichung, Prüfung,
