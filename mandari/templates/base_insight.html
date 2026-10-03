@@ -9,7 +9,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="{% block meta_description %}{% if seo.description %}{{ seo.description }}{% else %}mandari Insight – öffentliche Ratsinformationen der Kommunen{% endif %}{% endblock %}">
-    <meta name="theme-color" content="{% if insight_portal.accent_color %}{{ insight_portal.accent_color }}{% else %}#4f46e5{% endif %}">
+    <meta name="theme-color" content="{% if insight_portal.accent_color %}{{ insight_portal.accent_color }}{% else %}#17703f{% endif %}">
     {% if seo.keywords %}<meta name="keywords" content="{{ seo.keywords }}">{% endif %}
     {% if seo.author %}<meta name="author" content="{{ seo.author }}">{% endif %}
     {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
@@ -82,8 +82,9 @@
         /* Bürgerportal einer Körperschaft (Issue #317): Akzentfarbe, serverseitig auf #rrggbb geprüft */
         {% if insight_portal.accent_color %}
         :root { --portal-accent: {{ insight_portal.accent_color }}; }
+        /* Ganze Skala aus der Akzentfarbe, Kontraste geprüft (Issue #783, insight_core/farbskala.py) */
+        html[data-portal="insight"] { {% for stufe, kanal in insight_portal.accent_scale %}--primary-{{ stufe }}: {{ kanal }}; {% endfor %}}
         .portal-accent-bar { height: 4px; background-color: var(--portal-accent); }
-        .portal-accent-text { color: var(--portal-accent); }
         {% endif %}
 
         /* Loading indicator for HTMX */
@@ -106,7 +107,7 @@
             top: -100%;
             left: 50%;
             transform: translateX(-50%);
-            background: #4f46e5;
+            background: rgb(var(--primary-600));
             color: white;
             padding: 0.75rem 1.5rem;
             border-radius: 0.5rem;
@@ -123,25 +124,25 @@
 
         /* Focus visible styles - WCAG 2.1 */
         :focus-visible {
-            outline: 2px solid #4f46e5;
+            outline: 2px solid rgb(var(--primary-600));
             outline-offset: 2px;
         }
         .dark :focus-visible {
-            outline-color: #818cf8;
+            outline-color: rgb(var(--primary-400));
         }
 
         /* Improved focus for buttons and links */
         a:focus-visible,
         button:focus-visible,
         [role="button"]:focus-visible {
-            outline: 2px solid #4f46e5;
+            outline: 2px solid rgb(var(--primary-600));
             outline-offset: 2px;
             border-radius: 0.25rem;
         }
         .dark a:focus-visible,
         .dark button:focus-visible,
         .dark [role="button"]:focus-visible {
-            outline-color: #818cf8;
+            outline-color: rgb(var(--primary-400));
         }
 
         /* Touch target minimum size - WCAG 2.1 AAA */

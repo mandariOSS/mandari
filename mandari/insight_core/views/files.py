@@ -208,7 +208,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 .icon{{width:3rem;height:3rem;margin:0 auto 1rem;color:#9ca3af}}
 h1{{font-size:1.125rem;font-weight:600;margin-bottom:.5rem;color:#111827}}
 p{{font-size:.875rem;line-height:1.625;color:#6b7280}}
-a{{color:#4f46e5;text-decoration:underline}}
+a{{color:#17703f;text-decoration:underline}}
 @media(prefers-color-scheme:dark){{body{{background:#111827;color:#d1d5db}}h1{{color:#f9fafb}}p{{color:#9ca3af}}.icon{{color:#6b7280}}}}
 </style></head>
 <body><div class="card">
