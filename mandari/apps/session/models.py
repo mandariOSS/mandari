@@ -1306,12 +1306,15 @@ class SessionRoleAssignment(models.Model):
     """
     Rollenzuweisung: eine Rolle für ein Konto, einen Geltungsbereich und einen Zeitraum (Issue #772).
 
-    Bis auf die Aufhebung unveränderlich; eine Änderung ist Aufhebung plus neue Zuweisung. Aufgehobene
-    Zuweisungen bleiben als Nachweis. Im Übergang bleibt ``SessionUser.roles`` maßgeblich für mandantenweite,
-    unbefristete Rollen; zu jedem solchen Paar gibt es eine gespiegelte Zuweisung (``apps.session.rechte``).
+    Bis auf die Aufhebung unveränderlich; eine Änderung ist Aufhebung plus neue Zuweisung, aufgehoben wird nur über
+    ``rechte.zuweisungen.aufheben``. Aufgehobene Zuweisungen bleiben als Nachweis. Im Übergang bleibt
+    ``SessionUser.roles`` maßgeblich für mandantenweite, unbefristete Rollen; zu jedem solchen Paar gibt es eine
+    gespiegelte Zuweisung (``apps.session.rechte``).
 
     Die Fremdschlüssel löschen in PostgreSQL selbst mit (Migration ``*_rollenzuweisungen_spiegeln``), damit ein
-    älteres Image, das diese Tabelle nicht kennt, Konten, Rollen und Mandanten weiter löschen kann.
+    älteres Image, das diese Tabelle nicht kennt, Konten, Rollen und Mandanten weiter löschen kann. Djangos
+    ``DB_CASCADE``/``DB_SET_NULL`` gehen hier nicht: Konto, Rolle und Mandant verweisen selbst mit Python-Löschregeln
+    weiter, und Django verbietet gemischte Ketten (Systemprüfung ``fields.E323``).
     """
 
     SCOPE_TENANT = "mandant"
@@ -1403,9 +1406,7 @@ class SessionRoleAssignment(models.Model):
         verbose_name = "Rollenzuweisung"
         verbose_name_plural = "Rollenzuweisungen"
         ordering = ["created_at"]
-        indexes = [
-            models.Index(fields=["tenant", "user", "revoked_at"], name="session_rz_konto_idx"),
-        ]
+        # Kein eigener Index: Gelesen wird je Konto (``user``, Index des Fremdschlüssels) und je Mandant (``tenant``)
         constraints = [
             # Höchstens eine aktive Spiegelzuweisung (mandantenweit, unbefristet) je Konto und Rolle
             models.UniqueConstraint(
@@ -1433,6 +1434,12 @@ class SessionRoleAssignment(models.Model):
 
     def __str__(self) -> str:
         return f"{self.role.name} für {self.user.user.email} ({self.get_scope_type_display()})"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Nur neu anlegen: Eine bestehende Zuweisung ändert sich nur durch ``rechte.zuweisungen.aufheben``."""
+        if not self._state.adding:
+            raise ValueError("Rollenzuweisungen sind unveränderlich; eine Änderung ist Aufhebung plus neue Zuweisung.")
+        super().save(*args, **kwargs)
 
     @property
     def is_mirror(self) -> bool:

@@ -210,6 +210,9 @@ class SessionTenantAdmin(ModelAdmin):
         "oparl_public_since",
         "oparl_license",
         "oparl_license_valid_since",
+        # Rechte mit Geltungsbereich (Issue #772): nur lesend, bis die Prüfstellen den Zugriffskontext auswerten
+        # (#773) – vorher bewirkte Einschalten nichts
+        "scoped_permissions_enabled",
         "created_at",
         "updated_at",
     ]

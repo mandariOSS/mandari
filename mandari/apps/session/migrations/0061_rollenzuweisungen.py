@@ -155,12 +155,6 @@ class Migration(migrations.Migration):
                 "verbose_name_plural": "Rollenzuweisungen",
                 "db_table": "session_role_assignments",
                 "ordering": ["created_at"],
-                "indexes": [
-                    models.Index(
-                        fields=["tenant", "user", "revoked_at"],
-                        name="session_rz_konto_idx",
-                    )
-                ],
                 "constraints": [
                     models.UniqueConstraint(
                         condition=models.Q(

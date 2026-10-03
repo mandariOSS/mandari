@@ -6,7 +6,9 @@ Rollen des Bestands als Zuweisungen spiegeln (Issue #772) – ohne Verhaltensän
    Rolle) bzw. ``ON DELETE SET NULL`` (angelegt von, aufgehoben von). Ein älteres Image kennt die Tabelle nicht;
    ohne diese Regeln schlüge dort das Löschen eines Kontos, einer Rolle oder eines Mandanten fehl. Das neue Image
    löscht wie gewohnt über Django mit. Ändert eine spätere Migration diese Fremdschlüssel, muss sie die Regeln neu
-   setzen. Andere Datenbanken (SQLite in Tests) brauchen das nicht.
+   setzen (``test_fremdschluessel_loeschen_in_postgresql_selbst_mit`` prüft das in der CI). Andere Datenbanken
+   (SQLite in Tests) brauchen das nicht. Djangos ``DB_CASCADE``/``DB_SET_NULL`` scheiden aus: Konto, Rolle und
+   Mandant verweisen selbst mit Python-Löschregeln weiter, gemischte Ketten verbietet Django (``fields.E323``).
 2. **Spiegel:** Je Paar aus ``SessionUser.roles`` eine mandantenweite, unbefristete Zuweisung mit Quelle
    „Migration“. Die bisherigen Rechte ändern sich nicht: ``SessionUser.roles`` bleibt maßgeblich.
 

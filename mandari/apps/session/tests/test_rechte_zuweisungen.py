@@ -13,7 +13,9 @@ Rollenzuweisungen mit Geltungsbereich und Zeitraum (Issue #772, ADR „Rechte mi
 from __future__ import annotations
 
 import importlib
+from collections.abc import Callable
 from datetime import date, timedelta
+from functools import partial
 from typing import Any, cast
 
 import pytest
@@ -49,6 +51,22 @@ def _konto(tenant: SessionTenant, *rollen: SessionRole) -> SessionUser:
 
 def _frisch(konto: SessionUser) -> SessionUser:
     return SessionUser.objects.select_related("tenant").prefetch_related("roles").get(pk=konto.pk)
+
+
+def _abgleichen_mit_einschub(stelle: int, aenderung: Callable[[], Any]) -> bool:
+    """Abgleich, vor dessen ``stelle``-ter Abfrage ``aenderung`` läuft; ``False``, wenn er so viele nicht hat."""
+    stand = {"abfragen": 0, "geaendert": False}
+
+    def einschub(execute: Any, sql: str, params: Any, many: bool, context: Any) -> Any:
+        if not stand["geaendert"] and stand["abfragen"] == stelle:
+            stand["geaendert"] = True
+            aenderung()
+        stand["abfragen"] += 1
+        return execute(sql, params, many, context)
+
+    with connection.execute_wrapper(einschub):
+        zuweisungen.abgleichen()
+    return bool(stand["geaendert"])
 
 
 def _spiegel(konto: SessionUser) -> set[Any]:
@@ -157,6 +175,33 @@ class TestSpiegel:
         from django.db.models.signals import post_migrate
 
         assert any("session_rollen_post_migrate" in str(eintrag[0]) for eintrag in post_migrate.receivers)
+
+    @pytest.mark.parametrize("aenderung", ["hinzufuegen", "entfernen", "entfernen_ohne_spiegel"])
+    def test_rollenaenderung_an_jeder_stelle_des_abgleichs(
+        self, tenant: SessionTenant, rollen: dict[str, SessionRole], aenderung: str
+    ) -> None:
+        """
+        Eine Rollenänderung zwischen zwei Abfragen des Abgleichs (``migrate`` bei laufendem Dienst) hebt weder ihren
+        frischen Spiegel als verwaist auf noch legt sie einen Spiegel für eine eben entzogene Rolle an.
+        """
+        through = SessionUser.roles.through
+        rolle = rollen["clerk"]
+        stelle = 0
+        while True:
+            konto = _konto(tenant)
+            if aenderung == "entfernen":
+                konto.roles.add(rolle)
+            elif aenderung == "entfernen_ohne_spiegel":
+                # Wie ein älteres Image: Rolle ohne Spiegel
+                through.objects.bulk_create([through(sessionuser_id=konto.pk, sessionrole_id=rolle.pk)])
+            aendern = partial(konto.roles.add if aenderung == "hinzufuegen" else konto.roles.remove, rolle)
+            if not _abgleichen_mit_einschub(stelle, aendern):
+                break
+            paare = set(through.objects.values_list("sessionuser_id", "sessionrole_id"))
+            aktiv = SessionRoleAssignment.objects.filter(zuweisungen.spiegel_q()).values_list("user_id", "role_id")
+            assert set(aktiv) == paare, f"Änderung vor Abfrage {stelle}"
+            stelle += 1
+        assert stelle >= 2
 
 
 @pytest.fixture
@@ -293,6 +338,54 @@ class TestZuweisen:
             zuweisungen.zuweisen(konto, fremde_rolle)
         with pytest.raises(ValueError):
             zuweisungen.zuweisen(konto, rollen["clerk"], bereich_art=AMT, bereich_kennung=fremdes_amt.pk)
+
+    def test_gleichzeitiges_aufheben_ueberschreibt_nichts(
+        self, tenant: SessionTenant, rollen: dict[str, SessionRole], aufbau: dict[str, Any]
+    ) -> None:
+        erster, zweiter = _konto(tenant, rollen["admin"]), _konto(tenant, rollen["admin"])
+        zuweisung = zuweisungen.zuweisen(
+            _konto(tenant), rollen["clerk"], bereich_art=AMT, bereich_kennung=aufbau["bauamt"].pk
+        )
+        # Zwei Aufrufe mit demselben, noch nicht aufgehobenen Stand
+        eins = SessionRoleAssignment.objects.get(pk=zuweisung.pk)
+        zwei = SessionRoleAssignment.objects.get(pk=zuweisung.pk)
+        assert zuweisungen.aufheben(eins, von=erster) is True
+        zeitpunkt = SessionRoleAssignment.objects.get(pk=zuweisung.pk).revoked_at
+        assert zuweisungen.aufheben(zwei, von=zweiter) is False
+        gespeichert = SessionRoleAssignment.objects.get(pk=zuweisung.pk)
+        assert (gespeichert.revoked_at, gespeichert.revoked_by_id) == (zeitpunkt, erster.pk)
+        assert (zwei.revoked_at, zwei.revoked_by_id) == (zeitpunkt, erster.pk)
+
+    def test_veraltetes_aufheben_entzieht_keine_neu_vergebene_rolle(
+        self, tenant: SessionTenant, rollen: dict[str, SessionRole]
+    ) -> None:
+        konto = _konto(tenant)
+        alt = zuweisungen.zuweisen(konto, rollen["clerk"])
+        veraltet = SessionRoleAssignment.objects.get(pk=alt.pk)
+        zuweisungen.aufheben(alt)
+        konto.roles.add(rollen["clerk"])  # neu vergeben, neuer Spiegel
+        assert zuweisungen.aufheben(veraltet) is False
+        assert list(konto.roles.all()) == [rollen["clerk"]]
+        assert _spiegel(konto) == {rollen["clerk"].pk}
+
+    def test_zuweisung_ist_unveraenderlich(self, tenant: SessionTenant, rollen: dict[str, SessionRole]) -> None:
+        zuweisung = zuweisungen.zuweisen(_konto(tenant), rollen["clerk"])
+        zuweisung.note = "geändert"
+        with pytest.raises(ValueError):
+            zuweisung.save()
+        zuweisung.revoked_at = timezone.now()
+        with pytest.raises(ValueError):
+            zuweisung.save(update_fields=["revoked_at"])
+        zuweisung.refresh_from_db()
+        assert (zuweisung.note, zuweisung.revoked_at) == ("", None)
+
+
+def test_schalter_im_admin_nur_lesend(rf: Any) -> None:
+    """Bis die Prüfstellen den Zugriffskontext auswerten (#773), bewirkte Einschalten nichts."""
+    from django.contrib import admin
+
+    modell_admin = admin.site.get_model_admin(SessionTenant)
+    assert "scoped_permissions_enabled" in modell_admin.get_readonly_fields(rf.get("/"))
 
 
 @pytest.mark.django_db

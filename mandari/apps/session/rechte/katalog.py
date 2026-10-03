@@ -10,6 +10,11 @@ zusätzlich erlaubt (``edit_meetings`` deckt Laden, Umlaufverfahren, Beschlussko
 
 Rechte ohne Herkunft gibt es heute noch nicht als Funktion; bis zur Rollenmatrix (#775) hat sie nur die
 Administrator-Rolle. Kontrollrechte (#221) gehören nie zur Administrator-Vollmacht.
+
+Welche heutige Prüfstelle (``permission_required`` und ``ACTION_PERMS`` der Session-Views) welchem Recht
+entspricht, hält ``apps/session/tests/test_rechte_pruefstellen.py`` fest: Die Herkunft jedes zugeordneten Rechts
+ist genau das Häkchen, das die Stelle heute prüft. So verliert keine Rolle eine Funktion, wenn die Prüfstellen auf
+den Katalog umgestellt werden (#773).
 """
 
 from __future__ import annotations
@@ -78,7 +83,9 @@ RECHTE: Final[tuple[Recht, ...]] = (
     _r("sitzung.noe_sehen", "Nichtöffentliche Sitzungen und TOPs sehen", "view_non_public_meetings", leit=True),
     _r("sitzung.anlegen", "Sitzungen anlegen", "create_meetings", leit=True),
     _r("sitzung.bearbeiten", "Sitzungen bearbeiten", "edit_meetings", leit=True),
-    _r("sitzung.loeschen", "Sitzungen absagen und löschen", "delete_meetings", leit=True),
+    _r("sitzung.planen", "Sitzungen planen (Jahresplanung mit Serienterminen als Entwürfe)", "edit_meetings"),
+    _r("sitzung.absagen", "Sitzungen absagen und Absage zurücknehmen", "edit_meetings"),
+    _r("sitzung.loeschen", "Sitzungen löschen", "delete_meetings", leit=True),
     _r("sitzung.laden", "Zur Sitzung laden", "edit_meetings"),
     _r("sitzung.leiten", "Sitzung leiten (Cockpit)", "conduct_meetings", leit=True),
     _r("sitzung.anwesenheit_fuehren", "Anwesenheit führen", "manage_attendance", leit=True),
@@ -97,7 +104,7 @@ RECHTE: Final[tuple[Recht, ...]] = (
     _r("vorlage.freigeben", "Vorlagen freigeben", "approve_papers", leit=True, station=True),
     _r("vorlage.zurueckweisen", "Vorlagen zurückweisen", "approve_papers"),
     _r("vorlage.terminieren", "Vorlagen terminieren und weiterleiten", "edit_meetings"),
-    _r("vorlage.zurueckziehen", "Vorlagen zurückziehen"),
+    _r("vorlage.zurueckziehen", "Vorlagen zurückziehen und Rücknahme aufheben", "edit_papers"),
     _r("vorlage.veroeffentlichen", "Vorlagen veröffentlichen"),
     # Antrag, Anfrage
     _r("antrag.sehen", "Anträge und Anfragen sehen", "view_applications", leit=True),

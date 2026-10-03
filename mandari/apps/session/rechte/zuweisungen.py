@@ -11,7 +11,8 @@ Konto und Rolle gibt es genau eine aktive **Spiegelzuweisung**:
   kennt, und für Massenänderungen ohne Signal.
 
 Die Spiegelung schreibt keine eigenen Einträge ins Prüfprotokoll; die Rollenänderung protokolliert wie bisher die
-Oberfläche. Zuweisungen sind bis auf die Aufhebung unveränderlich; aufgehobene bleiben als Nachweis.
+Oberfläche. Zuweisungen sind bis auf die Aufhebung unveränderlich (:func:`aufheben`); aufgehobene bleiben als
+Nachweis.
 """
 
 from __future__ import annotations
@@ -21,8 +22,8 @@ from collections.abc import Iterable
 from datetime import date
 from typing import Any
 
-from django.db import transaction
-from django.db.models import Q
+from django.db import connection, transaction
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from .bereiche import AMT, GREMIUM, KOERPERSCHAFT, bereich, bereichsbaum
@@ -110,6 +111,12 @@ def abgleichen(registry: Any = None) -> dict[str, int]:
     Spiegel mit ``SessionUser.roles`` abgleichen: fehlende Spiegelzuweisungen anlegen, verwaiste aufheben.
 
     Idempotent. ``registry`` ist die App-Registry des Migrationsstands (``post_migrate``) oder ``None``.
+
+    Beide Richtungen vergleichen Rollen und Spiegel in **einer** Abfrage (``NOT EXISTS``), nie zwei getrennt gelesene
+    Stände: Eine Rollenänderung zwischen zwei Lesezugriffen ließe sonst ihren frischen Spiegel als verwaist aufheben
+    bzw. einen Spiegel für eine eben entzogene Rolle anlegen. In PostgreSQL warten Rollenänderungen zudem, bis der
+    Abgleich fertig ist (Sperre ``SHARE`` auf der Verknüpfungstabelle, nur Schreiben wartet): Signal und Abgleich
+    sehen damit stets denselben Stand.
     """
     from django.apps import apps as global_apps
 
@@ -120,15 +127,28 @@ def abgleichen(registry: Any = None) -> dict[str, int]:
     except LookupError:
         return {}
     through = konto_modell.roles.through
-    paare = set(through.objects.values_list("sessionuser_id", "sessionrole_id"))
-    spiegel = {(k, r): pk for pk, k, r in modell.objects.filter(spiegel_q()).values_list("pk", "user_id", "role_id")}
-    verwaist = [pk for paar, pk in spiegel.items() if paar not in paare]
     with transaction.atomic():
-        angelegt = _spiegel_anlegen(
-            modell, konto_modell, paare - set(spiegel), quelle="migration", vermerk=VERMERK_ABGLEICH
+        if connection.vendor == "postgresql":
+            with connection.cursor() as cursor:
+                cursor.execute(f"LOCK TABLE {connection.ops.quote_name(through._meta.db_table)} IN SHARE MODE")
+        aktiv = modell.objects.filter(spiegel_q())
+        fehlend = list(
+            through.objects.filter(
+                ~Exists(aktiv.filter(user_id=OuterRef("sessionuser_id"), role_id=OuterRef("sessionrole_id")))
+            ).values_list("sessionuser_id", "sessionrole_id", "sessionuser__tenant_id")
         )
-        aufgehoben = int(modell.objects.filter(pk__in=verwaist).update(revoked_at=timezone.now())) if verwaist else 0
-    return {"angelegt": angelegt, "aufgehoben": aufgehoben}
+        if fehlend:
+            modell.objects.bulk_create(
+                [
+                    modell(tenant_id=mandant, user_id=konto, role_id=rolle, source="migration", note=VERMERK_ABGLEICH)
+                    for konto, rolle, mandant in fehlend
+                ],
+                ignore_conflicts=True,
+            )
+        aufgehoben = aktiv.filter(
+            ~Exists(through.objects.filter(sessionuser_id=OuterRef("user_id"), sessionrole_id=OuterRef("role_id")))
+        ).update(revoked_at=timezone.now())
+    return {"angelegt": len(fehlend), "aufgehoben": int(aufgehoben)}
 
 
 def post_migrate_abgleichen(sender: Any, apps: Any = None, **kwargs: Any) -> None:
@@ -210,12 +230,23 @@ def zuweisen(
 
 
 @transaction.atomic
-def aufheben(zuweisung: Any, *, von: Any = None) -> None:
-    """Eine Zuweisung aufheben (bleibt als Nachweis); beim Spiegel auch die Rolle aus ``SessionUser.roles``."""
-    if zuweisung.revoked_at is not None:
-        return
-    zuweisung.revoked_at = timezone.now()
-    zuweisung.revoked_by = von
-    zuweisung.save(update_fields=["revoked_at", "revoked_by"])
+def aufheben(zuweisung: Any, *, von: Any = None) -> bool:
+    """
+    Eine Zuweisung aufheben (bleibt als Nachweis); beim Spiegel auch die Rolle aus ``SessionUser.roles``.
+
+    Bedingt in einer Abfrage (nur solange nicht aufgehoben): Heben zwei Aufrufe gleichzeitig auf, gilt der erste;
+    Zeitpunkt und Person der Aufhebung überschreibt keiner. ``True``, wenn dieser Aufruf aufgehoben hat.
+    """
+    from apps.session.models import SessionRoleAssignment
+
+    jetzt = timezone.now()
+    getroffen = SessionRoleAssignment.objects.filter(pk=zuweisung.pk, revoked_at__isnull=True).update(
+        revoked_at=jetzt, revoked_by=von
+    )
+    if not getroffen:
+        zuweisung.refresh_from_db(fields=["revoked_at", "revoked_by"])
+        return False
+    zuweisung.revoked_at, zuweisung.revoked_by = jetzt, von
     if zuweisung.is_mirror:
         zuweisung.user.roles.remove(zuweisung.role)
+    return True
