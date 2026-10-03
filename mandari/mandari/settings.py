@@ -381,6 +381,13 @@ INGESTOR_EVENTS_ENABLED = os.environ.get("INGESTOR_EVENTS_ENABLED", "false").str
     "on",
 )
 
+# „Worker lebt“ an die Statusseite (Issue #574, apps/events/push.py): externer Endpunkt von Gatus,
+# z. B. https://status.example/api/v1/endpoints/betrieb_worker/external; leer = keine Meldung.
+# Bleibt die Meldung aus, alarmiert die Statusseite. Gemeldet wird alle WORKER_PUSH_INTERVAL Sekunden.
+WORKER_PUSH_URL = os.environ.get("WORKER_PUSH_URL", "").strip()
+WORKER_PUSH_TOKEN = os.environ.get("WORKER_PUSH_TOKEN", "")
+WORKER_PUSH_INTERVAL = float(os.environ.get("WORKER_PUSH_INTERVAL", "60"))
+
 
 # Cache - use Redis if available, fallback to local memory
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

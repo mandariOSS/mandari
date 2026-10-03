@@ -54,7 +54,12 @@ case "$1" in
     if [ -n "${FAKE_EVENTS:-}" ]; then printf '%b\\n' "$FAKE_EVENTS"; fi
     ;;
   inspect)
-    echo "/worker-1 ${FAKE_STATUS:-running} ${FAKE_EXIT:-0} ${FAKE_RESTARTS:-3}"
+    if [[ "$*" == *Health* ]]; then
+      # Healthcheck-Zustand; leer = Container ohne Healthcheck
+      echo "${FAKE_HEALTH:-}"
+    else
+      echo "/worker-1 ${FAKE_STATUS:-running} ${FAKE_EXIT:-0} ${FAKE_RESTARTS:-3}"
+    fi
     ;;
 esac
 exit 0
@@ -251,3 +256,40 @@ def test_vorgabe_nimmt_auch_den_worker_fuer_texterkennung(tmp_path: Path) -> Non
     worker = _index(aufrufe, "up -d --no-deps worker worker-heavy ingestor")
     anwendung = _index(aufrufe, "up -d --no-deps --wait mandari")
     assert angehalten < migration < worker < anwendung
+
+
+# -- Gesundheitsprüfung per Heartbeat (Issue #574) -------------------------------------------------
+
+
+def test_worker_mit_healthcheck_muss_healthy_werden(tmp_path: Path) -> None:
+    """events_worker erneuert die Heartbeat-Datei nur, solange jede Rolle arbeitet; „unhealthy“ heißt Rückfall."""
+    rc, ausgabe, _, arbeit = _lauf(tmp_path, "apply", "dev-neu", WORKER_SERVICES="worker", FAKE_HEALTH="unhealthy")
+
+    assert rc == 1, ausgabe
+    assert _tag(arbeit) == "dev-alt"
+    assert "FAIL worker: unhealthy (Heartbeat" in ausgabe
+
+    (tmp_path / "gesund").mkdir()
+    rc, ausgabe, _, arbeit = _lauf(
+        tmp_path / "gesund", "apply", "dev-neu", WORKER_SERVICES="worker", FAKE_HEALTH="healthy"
+    )
+    assert rc == 0, ausgabe
+    assert _tag(arbeit) == "dev-neu"
+    assert "OK   worker: healthy (Heartbeat)" in ausgabe
+
+
+def test_worker_der_nicht_gesund_wird_fuehrt_zum_rueckfall(tmp_path: Path) -> None:
+    rc, ausgabe, _, arbeit = _lauf(
+        tmp_path, "apply", "dev-neu", WORKER_SERVICES="worker", FAKE_HEALTH="starting", WORKER_HEALTH_SECONDS="0"
+    )
+
+    assert rc == 1, ausgabe
+    assert _tag(arbeit) == "dev-alt"
+    assert "FAIL worker: starting (Heartbeat, nach 0 s)" in ausgabe
+
+
+def test_container_ohne_healthcheck_zaehlen_nur_mit_ihrem_zustand(tmp_path: Path) -> None:
+    rc, ausgabe, _, _ = _lauf(tmp_path, "apply", "dev-neu", FAKE_HEALTH="")
+
+    assert rc == 0, ausgabe
+    assert "(Heartbeat" not in ausgabe

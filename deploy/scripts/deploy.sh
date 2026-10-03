@@ -18,6 +18,8 @@
 #   WORKER_CHECK_SECONDS  so lange nach dem Start keine Worker-Beendigung      (Standard 60, 0 = aus)
 #                    mit Exit-Code ungleich 0; Exit 0 ist planmaessig (Worker enden nach
 #                    jedem Durchlauf und werden neu gestartet)
+#   WORKER_HEALTH_SECONDS  so lange darauf warten, dass Worker mit Healthcheck   (Standard 120)
+#                    (Heartbeat-Datei von events_worker) "healthy" werden
 #   DB_SERVICE       PostgreSQL-Dienst fuer die Sicherung                      (Standard postgres)
 #   BACKUP_DIR       Ablage der Pre-Deploy-Dumps                               (Standard $MANDARI_DIR/backups)
 #   BACKUP_KEEP      wie viele Dumps behalten                                  (Standard 5)
@@ -37,6 +39,7 @@ COMPOSE_FILES="${COMPOSE_FILES:-docker-compose.yml}"
 APP_SERVICE="${APP_SERVICE:-mandari}"
 WORKER_SERVICES="${WORKER_SERVICES:-}"
 WORKER_CHECK_SECONDS="${WORKER_CHECK_SECONDS:-60}"
+WORKER_HEALTH_SECONDS="${WORKER_HEALTH_SECONDS:-120}"
 DB_SERVICE="${DB_SERVICE:-postgres}"
 BACKUP_DIR="${BACKUP_DIR:-$MANDARI_DIR/backups}"
 BACKUP_KEEP="${BACKUP_KEEP:-5}"
@@ -111,6 +114,11 @@ worker_container() {
   done
 }
 
+gesundheit() {
+  # Healthcheck-Zustand eines Containers (starting, healthy, unhealthy) oder leer ohne Healthcheck
+  docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$1" 2>/dev/null || true
+}
+
 worker_beobachten() {
   # Zeichnet im Hintergrund jedes Beenden (Docker-Ereignis "die") der Worker-Container ab
   # Zeitpunkt $1 (Unix-Sekunden) auf, bis WORKER_CHECK_SECONDS nach diesem Aufruf. --since holt
@@ -179,6 +187,28 @@ EOF
       echo "  OK   $cname: $status (Exit $code, Neustarts insgesamt $neustarts)"
     else
       echo "  FAIL $cname: $status, Exit $code (Neustarts insgesamt $neustarts)"
+      fehler=1
+    fi
+  done
+  # Gesundheitspruefung per Heartbeat (Issue #574): Container mit Healthcheck (die Worker fuer
+  # Ereignisse, Auftraege und Zeitplaene erneuern eine Heartbeat-Datei, solange jede Rolle arbeitet)
+  # muessen "healthy" werden. Container ohne Healthcheck (Ingestor) zaehlen nur mit dem Zustand oben.
+  for zeile in $(worker_container | tr ' ' ':'); do
+    dienst=${zeile%%:*}
+    id=${zeile#*:}
+    [ "$id" != "-" ] || continue
+    gesund=$(gesundheit "$id")
+    [ -n "$gesund" ] || continue
+    gewartet=0
+    while [ "$gesund" = starting ] && [ "$gewartet" -lt "$WORKER_HEALTH_SECONDS" ]; do
+      sleep 5
+      gewartet=$((gewartet + 5))
+      gesund=$(gesundheit "$id")
+    done
+    if [ "$gesund" = healthy ]; then
+      echo "  OK   $dienst: healthy (Heartbeat)"
+    else
+      echo "  FAIL $dienst: ${gesund:-unbekannt} (Heartbeat, nach ${gewartet} s)"
       fehler=1
     fi
   done

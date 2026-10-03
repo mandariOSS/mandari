@@ -109,3 +109,11 @@ def test_rollen_worker_mit_direktverbindung_fuer_den_weckruf() -> None:
         dienste = modul._lade(modul.ROLLEN[rolle])["services"]
         assert dienste["worker"]["profiles"] == ["aus"]
         assert dienste["worker-heavy"]["profiles"] == ["aus"]
+
+
+def test_worker_lebt_meldung_erreicht_den_worker() -> None:
+    """Issue #574: Der Worker meldet sich selbst an die Statusseite, wenn eine Adresse gesetzt ist."""
+    modul = _lade_skript()
+    umgebung = modul._lade(modul.BASIS)["services"]["worker"]["environment"]
+    assert umgebung["WORKER_PUSH_URL"] == "${WORKER_PUSH_URL:-}", "Standard: keine Meldung"
+    assert "WORKER_PUSH_TOKEN" in umgebung

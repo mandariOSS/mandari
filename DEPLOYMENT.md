@@ -77,7 +77,11 @@ Anmeldeseite, Bürgerportal, OParl-System, optional angemeldete Demo-Seiten, jew
 Inhaltsprüfung) und **Worker-Prüfung**: Beendet sich ein Container aus `WORKER_SERVICES` in den
 ersten `WORKER_CHECK_SECONDS` (Standard 60) mit einem Exit-Code ungleich 0 (etwa in einer
 Neustart-Schleife nach einem Startfehler), gilt der Deploy als gescheitert; Exit 0 ist planmäßig, weil die Worker nach jedem
-Durchlauf enden und neu starten. Scheitert eine der Prüfungen, schaltet das Skript **selbsttätig auf
+Durchlauf enden und neu starten. Worker mit Healthcheck (`worker`, `worker-heavy`: Heartbeat-Datei
+von `events_worker`) müssen außerdem binnen `WORKER_HEALTH_SECONDS` (Standard 120) „healthy“ werden,
+und die Anwendungsprüfung verlangt, dass lebende Worker alle Rollen bedienen, die die Installation
+braucht (`VERIFY_WORKER_SECONDS`, Standard 90; Issue #574). Ein Stand ohne laufenden Worker fällt so
+beim Deploy auf, nicht erst, wenn Erinnerungen ausbleiben. Scheitert eine der Prüfungen, schaltet das Skript **selbsttätig auf
 das vorherige Image zurück** und meldet das per Mail. Jeder Lauf schreibt eine Zeile in `deploy-log.tsv`
 (alt, neu, Ergebnis, Unterbrechung in Sekunden, Dauer), die Grundlage für die Kennzahl
 „Ausfallzeit je Deploy“ aus dem Verfügbarkeitskonzept.

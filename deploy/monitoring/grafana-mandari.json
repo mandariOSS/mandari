@@ -9,7 +9,7 @@
   ],
   "title": "mandari – Betrieb",
   "uid": "mandari-betrieb",
-  "description": "Anwendungsmetriken von /metrics/ (Issue #231): Latenz p95 je View, Fehlerquote, Pool-Belegung, Cache-Trefferquote.",
+  "description": "Anwendungsmetriken von /metrics/ (Issue #231): Latenz p95 je View, Fehlerquote, Pool-Belegung, Cache-Trefferquote; Ereignisse, Aufträge und Worker (Issue #574).",
   "tags": ["mandari"],
   "timezone": "browser",
   "schemaVersion": 39,
@@ -120,6 +120,264 @@
         { "refId": "B", "expr": "sum(increase(mandari_emails_total{job=\"$job\",result=\"failed\"}[1h]))", "legendFormat": "Mails fehlgeschlagen" },
         { "refId": "C", "expr": "sum(increase(mandari_pdf_documents_total{job=\"$job\"}[1h]))", "legendFormat": "PDFs" },
         { "refId": "D", "expr": "sum(mandari_transcription_jobs{job=\"$job\",status=\"queued\"})", "legendFormat": "Transkription wartend" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Ereignisse: Rückstand (Alarm ab 5 min)",
+      "description": "Sequenzierer und Zustellung je Abonnement (Issue #574); ein pausiertes Abonnement wächst bewusst.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(mandari_events_sequencer_lag_seconds)",
+          "legendFormat": "Sequenzierer"
+        },
+        {
+          "refId": "B",
+          "expr": "max(mandari_events_sequencer_blocked_seconds)",
+          "legendFormat": "Sequenzierer aufgehalten"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (subscription) (mandari_events_lag_seconds)",
+          "legendFormat": "{{subscription}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Aufträge: wartend und älteste Wartezeit",
+      "description": "Rückstand des Runners je Warteschlange (Alarm ab 15 min Wartezeit).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (queue) (mandari_tasks_queued)",
+          "legendFormat": "wartend {{queue}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (queue) (mandari_tasks_oldest_queued_seconds)",
+          "legendFormat": "Wartezeit {{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Gescheitert: Aufträge (24 h) und tote Ereignisse",
+      "description": "Jeder Wert über 0 ist ein Alarm; Ursache im Protokoll des Workers, Admin „Aufträge“ bzw. „Ereignisse“.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(max by (queue) (mandari_tasks_dead))",
+          "legendFormat": "Aufträge"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(max by (subscription) (mandari_events_parked{state=\"tot\"}))",
+          "legendFormat": "tote Ereignisse"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Aufträge: Fehlversuche (1 h)",
+      "description": "Gescheiterte Versuche je Grund (fehler, endgueltig, zeitgrenze, sperre_abgelaufen); nur aus dem Worker.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 25,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (grund) (increase(mandari_tasks_failed_total[1h]))",
+          "legendFormat": "{{grund}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Worker: Rollen und Speicher",
+      "description": "1 = Rolle arbeitet; Speicher des Runners (Neustart oberhalb von TASKS_MAX_MEMORY_MB).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 25,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 419430400
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min by (role) (mandari_worker_role_up)",
+          "legendFormat": "{{role}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max(mandari_worker_rss_bytes)",
+          "legendFormat": "Speicher Runner"
+        }
       ]
     }
   ]

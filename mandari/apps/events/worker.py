@@ -71,6 +71,7 @@ from .dispatch import POLL_INTERVAL as DISPATCH_INTERVAL
 from .dispatch import Dispatcher
 from .metrics import WORKER_ROLES, RoleState
 from .models import NOTIFY_CHANNEL
+from .push import Push, push_from_settings
 from .scheduler import POLL_INTERVAL as SCHEDULER_INTERVAL
 from .scheduler import Scheduler
 from .sequencer import POLL_INTERVAL as SEQUENCER_INTERVAL
@@ -248,6 +249,8 @@ class Worker:
         self._ohne_lebenszeichen: list[str] = []
         self._datei_warnung = False
         self._aufgeraeumt = False
+        #: „Worker lebt“ an die Statusseite (Issue #574); nur der Worker mit dem Scheduler meldet
+        self.push: Push | None = push_from_settings() if ROLE_SCHEDULER in self.roles else None
 
     # -- Zustand ------------------------------------------------------------------------------
 
@@ -456,12 +459,18 @@ class Worker:
                     self.stale_after,
                 )
             self._ohne_lebenszeichen = haengend
+            self._melden(False, f"Rolle(n) {', '.join(haengend)} ohne Lebenszeichen")
             return
         if self._ohne_lebenszeichen:
             logger.info("Worker: alle Rollen arbeiten wieder")
             self._ohne_lebenszeichen = []
         self._datei_erneuern()
         self._anmelden()
+        self._melden(True)
+
+    def _melden(self, ok: bool, error: str = "") -> None:
+        if self.push is not None:
+            self.push.report(ok, error)
 
     def _datei_erneuern(self) -> None:
         if self.heartbeat_file is None:

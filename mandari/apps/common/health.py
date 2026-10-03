@@ -13,6 +13,9 @@ Getrennte Gesundheitsprüfungen (Issue #231, Teil 1).
   Ein Ausfall von Redis oder Elasticsearch macht die Readiness rot, die Liveness bleibt
   davon unberührt.
 - ``/health/`` bleibt für bestehende Healthchecks (Compose, Statusseite) erhalten.
+- ``/health/worker/`` (Issue #574): Lebenszeichen, Rückstau, Fehlerquote und gescheiterte Arbeit des
+  Workers (``apps.events.status``); 503, sobald eine Prüfung scheitert. Gedacht für die
+  Statusseite, die daraus per Mail alarmiert. Das Ergebnis gilt ``WORKER_STATUS_CACHE_SECONDS``.
 
 Über ``HEALTH_READY_OPTIONAL`` (kommagetrennt, z. B. ``elasticsearch``) lassen sich
 Prüfungen als optional erklären: Sie werden weiter gemeldet, machen die Antwort aber nicht
@@ -183,6 +186,42 @@ def run_readiness_checks() -> list[CheckResult]:
     finally:
         # Nicht auf hängende Threads warten – sie laufen im Hintergrund aus.
         executor.shutdown(wait=False, cancel_futures=True)
+
+
+#: So lange gilt ein Ergebnis von ``/health/worker/`` (die Statusseite fragt etwa minütlich; jeder
+#: Abruf kostet einige Abfragen, ohne Anmeldung)
+WORKER_STATUS_CACHE_SECONDS = 15
+_WORKER_STATUS_KEY = "health:worker"
+
+
+def worker_status_payload() -> dict[str, object]:
+    """Ergebnis der Worker-Prüfungen als JSON-fähiges Wörterbuch (``status`` ``ok`` oder ``error``)."""
+    from apps.events.status import run_checks
+
+    ergebnisse = run_checks()
+    return {
+        "status": "ok" if all(c.ok for c in ergebnisse.values()) else "error",
+        "checks": {name: {"ok": c.ok, "detail": c.detail} for name, c in ergebnisse.items()},
+    }
+
+
+@never_cache
+@require_GET
+def worker(request: HttpRequest) -> JsonResponse:
+    """Statusprüfungen des Workers; 503, sobald eine scheitert (Issue #574)."""
+    try:
+        daten = cache.get(_WORKER_STATUS_KEY)
+    except Exception:  # noqa: BLE001 – ohne Cache wird eben jedes Mal geprüft
+        daten = None
+    if not isinstance(daten, dict):
+        daten = worker_status_payload()
+        try:
+            cache.set(_WORKER_STATUS_KEY, daten, WORKER_STATUS_CACHE_SECONDS)
+        except Exception:  # noqa: BLE001
+            logger.debug("Worker-Status nicht im Cache abgelegt", exc_info=True)
+    if daten["status"] != "ok":
+        logger.warning("Worker-Prüfung: %s", ", ".join(n for n, c in daten["checks"].items() if not c["ok"]))
+    return JsonResponse(daten, status=200 if daten["status"] == "ok" else 503)
 
 
 @never_cache

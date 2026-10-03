@@ -75,6 +75,9 @@ x-app-environment: &app-environment
   OPARL_SNAPSHOT_PARALLEL: ${OPARL_SNAPSHOT_PARALLEL:-2}
   # AI (optional)
   NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+  # „Worker lebt“ an die Statusseite (docs/MONITORING.md, „Worker“); leer = keine Meldung
+  WORKER_PUSH_URL: ${WORKER_PUSH_URL:-}
+  WORKER_PUSH_TOKEN: ${WORKER_PUSH_TOKEN:-}
   # Timezone
   TZ: ${TZ:-Europe/Berlin}
 

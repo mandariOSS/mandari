@@ -259,6 +259,54 @@ den Betrieb“, mit Konto, Adresse, Aktion und Kennungen, ohne Inhalte):
 Dieselben Eingriffe gibt es auf der Kommandozeile (`manage.py events_dispatch --list`,
 `--retry-parked`, `--discard-parked`); dort ohne Eintrag im Sicherheitsprotokoll.
 
+### Worker für die Statusseite (Issue #574)
+
+`GET /health/worker/` fasst den Zustand von Worker, Ereignissen und Aufträgen in vier Prüfungen
+zusammen und antwortet mit **200**, wenn alle bestehen, sonst mit **503**. Gemessen wird in der
+Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Das Ergebnis gilt 15 s
+(Cache); die Antwort enthält nur Zahlen, Rollen und Warteschlangen, keine Namen von Aufträgen.
+
+| Prüfung | besteht, wenn |
+|---|---|
+| `lebenszeichen` | lebende Worker alle Rollen und Warteschlangen bedienen, die die Installation braucht (wie `/health/` Feld `worker`) |
+| `rueckstau` | Sequenzierer (auch aufgehalten) und Zustellung je nicht pausiertem Abonnement höchstens 5 min, ältester fälliger Auftrag höchstens 15 min |
+| `fehlerquote` | höchstens 20 % der in der letzten Stunde beendeten Aufträge gescheitert (erst ab 5 beendeten) |
+| `gescheitert` | kein Auftrag in den letzten 24 h endgültig gescheitert und kein totes Ereignis |
+
+Dazu meldet sich der Worker mit dem Scheduler selbst („Worker lebt“, `apps/events/push.py`), wenn
+`WORKER_PUSH_URL` gesetzt ist: alle `WORKER_PUSH_INTERVAL` Sekunden (Standard 60) `success=true`,
+solange jede Rolle arbeitet, sonst sofort `success=false`. Bleibt die Meldung aus, weil der Prozess,
+der Container oder der Server weg ist, alarmiert die Statusseite. Beispiel für Gatus (Mail an die
+Empfänger der Statusseite):
+
+```yaml
+endpoints:
+  - name: worker
+    group: betrieb
+    url: https://mandari.example.org/health/worker/
+    interval: 2m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: email
+        failure-threshold: 2
+        send-on-resolved: true
+
+external-endpoints:
+  - name: worker-lebt          # WORKER_PUSH_URL=https://<statusseite>/api/v1/endpoints/betrieb_worker-lebt/external
+    group: betrieb
+    token: "<zufälliges Token, auch in WORKER_PUSH_TOKEN>"
+    heartbeat:
+      interval: 10m
+    alerts:
+      - type: email
+        send-on-resolved: true
+```
+
+Das Grafana-Dashboard (`deploy/monitoring/grafana-mandari.json`) zeigt dieselben Größen als
+Verlauf: Rückstand von Sequenzierer und Abonnements, wartende Aufträge und Wartezeit, Gescheitertes,
+Fehlversuche je Grund, Rollen und Speicher des Workers.
+
 ## Service-Level-Alarme
 
 ```cron
