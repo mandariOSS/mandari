@@ -55,6 +55,8 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_CACHE_MAX_MB` | 80 | Größere Dateien werden nicht gecacht, aber weiter durchgereicht |
 | `FILE_CACHE_MIN_FREE_GB` | 15 | Unter dieser Grenze wird nichts mehr geschrieben (Schutz des Systemlaufwerks) |
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
+| `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, 0 = aus) |
+| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange wartet die Vorschau höchstens auf ihren Zeitpunkt, sonst HTTP 503 mit `Retry-After` |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
 | `FILE_ACCEL_REDIRECT` | `false` | Lokale Kopien liefert der Webserver aus statt Django (siehe [Auslieferung über den Webserver](#auslieferung-über-den-webserver)) |
 

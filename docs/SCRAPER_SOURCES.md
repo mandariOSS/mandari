@@ -129,7 +129,7 @@ Außerhalb von `scraper` (auf oberster Ebene der Sync config, auch für OParl-Qu
 |---|---|---|
 | `download_headers` | keine | Zusätzliche HTTP-Header für **Datei-Downloads** dieser Quelle (Dateicache, Textextraktion im Ingestor und in Django), z. B. `{"Referer": "https://rat.example.de/bi/", "Cookie": "consent=1"}`. Für RIS, die Anlagen nur mit Referer oder Consent-Cookie ausliefern (#116). Werte sind Klartext im Admin — keine persönlichen Sitzungs-Cookies hinterlegen. |
 | `file_downloads` | `true` | `false`: Dateien dieser Quelle **nicht automatisch abrufen** (Textextraktion im Ingestor und in Django, Dateicache, Vorschau). Für RIS, die Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefern (z. B. ALTCHA); die Vorschau verweist dann auf das Original. Die Dateien bleiben offen und werden nachgeholt, sobald der Schalter fällt. |
-| `request_interval` | `OPARL_WAIT_TIME` | Mindestabstand in Sekunden zwischen dem Beginn zweier OParl-Anfragen an diese Quelle (0–30), über alle parallelen Abrufe eines Abgleichslaufs hinweg: höchstens `1 / request_interval` Anfragen je Sekunde, gleich welches `--concurrent` gilt (ohne den Schlüssel wartet jeder Abrufplatz `OPARL_WAIT_TIME`). Daemon und ein einzeln gestarteter Abgleich zählen getrennt; während eines Einzelabgleichs die Quelle im Daemon pausieren (`is_active = false`). |
+| `request_interval` | `INGESTOR_REQUEST_INTERVAL` (1 s) | Mindestabstand in Sekunden zwischen dem Beginn zweier Anfragen an den Host dieser Quelle (0–30). Er gilt über alle Abrufplätze, alle Quellen auf demselben Host und alle Prozesse (Daemon, Einzelabgleich, Dokument-Cache und Vorschau in Django), weil alle denselben Zeitstempel je Host in Redis reservieren. Ohne den Schlüssel gilt der Standard (`INGESTOR_REQUEST_INTERVAL` bzw. `RIS_REQUEST_INTERVAL` in Django, je eine Anfrage je Sekunde). `0` schaltet die Drossel für die Quelle ab. Ohne erreichbares Redis drosselt jeder Prozess für sich. |
 | `list_params` | keine | Zusätzliche Parameter für die erste Seite jeder OParl-Liste, z. B. `{"size": 100}` bei ALLRIS (100 statt 10 Einträge je Seite). Folgeseiten kommen aus `links.next`. |
 | `carry_modified_since` | `false` | `true`: Die Quelle filtert mit `modified_since`, lässt den Parameter aber in `links.next` weg (ALLRIS). Der Ingestor hängt ihn an jede Folgeseite an. Ohne den Schalter gilt die Quelle als „ohne Filter“, und der inkrementelle Abgleich erreicht neue Einträge erst im nächtlichen Vollabgleich, weil die Listen aufsteigend sortiert sind. |
 
@@ -336,7 +336,9 @@ services:
   Wie der Ingestor eine Sperre erkennt und was dann zu tun ist: `docs/MONITORING.md`,
   Abschnitt „Sperren und 5xx-Serien“.
 - **Rate-Limit**: max. 1 Request / 2 s je Host (konfigurierbar je Quelle),
-  `max_concurrent=1` — RIS-Server kleiner Kommunen sind schwachbrüstig.
+  `max_concurrent=1` — RIS-Server kleiner Kommunen sind schwachbrüstig. Der Abstand
+  gilt über alle Quellen und Prozesse hinweg (Drossel je Host, gemeinsamer Zeitstempel
+  in Redis; siehe `request_interval` oben).
 - **robots.txt**: nach RFC 9309 mit Platzhaltern (`*`, `$`), 24-h-Cache je Host,
   getrennt für Seiten bzw. Schnittstelle und Dateien. Disallow → kein Abruf; ist die
   Basis-URL gesperrt, wird die Quelle nicht gecrawlt und im Admin markiert. Fehlt die
