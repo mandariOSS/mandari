@@ -597,7 +597,7 @@ class TestKeinTextGesperrter:
         weg = _datei(
             body, tmp_path, "weg.pdf", paper=paper, text_content="Entfernter Text", source_missing_since=timezone.now()
         )
-        dienst = SummaryService(provider=object())  # type: ignore[no-untyped-call]
+        dienst = SummaryService(provider=object())
         text = dienst._collect_text_content_with_extraction(paper)
         assert "Sichtbarer Text" in text
         assert "Entfernter Text" not in text
