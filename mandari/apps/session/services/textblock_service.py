@@ -51,6 +51,7 @@ def apply_standard_items(meeting: SessionMeeting) -> int:
             number=str(number),
             order=(existing + index + 1) * 100,
             name=template.name,
+            kind=template.kind,
             is_public=template.is_public and meeting.is_public,
         )
         created += 1
@@ -62,6 +63,7 @@ def apply_standard_items(meeting: SessionMeeting) -> int:
             number=str(number),
             order=END_ORDER_BASE + index * 100,
             name=template.name,
+            kind=template.kind,
             is_public=template.is_public and meeting.is_public,
             is_end_item=True,
         )

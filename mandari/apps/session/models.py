@@ -1678,13 +1678,22 @@ class SessionOrganization(models.Model):
     # Basic info
     name = models.CharField(max_length=500, verbose_name="Name")
     short_name = models.CharField(max_length=100, blank=True, verbose_name="Kurzname")
+    # Ortsrat bzw. Stadtbezirksrat, Gruppe und Jugendbeteiligungsgremium seit Issue #757 (z. B. §§ 36, 57, 90
+    # NKomVG). Der Hauptausschuss ist ein Ausschuss mit der gesetzlichen Ausschussart „Hauptausschuss“; seinen
+    # gesetzlichen Namen je Körperschaftstyp liefert das Landesprofil (state_law_service.legal_designation).
+    TYPE_LOCAL_COUNCIL = "local_council"
+    TYPE_GROUP = "group"
+    TYPE_YOUTH_COUNCIL = "youth_council"
     organization_type = models.CharField(
         max_length=100,
         choices=[
             ("committee", "Ausschuss"),
             ("council", "Rat"),
+            (TYPE_LOCAL_COUNCIL, "Ortsrat bzw. Stadtbezirksrat"),
             ("faction", "Fraktion"),
+            (TYPE_GROUP, "Gruppe"),
             ("advisory", "Beirat"),
+            (TYPE_YOUTH_COUNCIL, "Jugendbeteiligungsgremium"),
             ("commission", "Kommission"),
             ("department", "Amt/Fachbereich"),
             ("other", "Sonstiges"),
@@ -1701,10 +1710,13 @@ class SessionOrganization(models.Model):
     COMMITTEE_KIND_FINANCE = "finance"
     COMMITTEE_KIND_AUDIT = "audit"
     COMMITTEE_KIND_ORDINARY = "ordinary"
+    # Ausschuss nach besonderen Rechtsvorschriften (Issue #757, z. B. Jugendhilfeausschuss, § 73 NKomVG)
+    COMMITTEE_KIND_SPECIAL = "special"
     COMMITTEE_KIND_CHOICES = [
         (COMMITTEE_KIND_MAIN, "Hauptausschuss"),
         (COMMITTEE_KIND_FINANCE, "Finanzausschuss"),
         (COMMITTEE_KIND_AUDIT, "Rechnungsprüfungsausschuss"),
+        (COMMITTEE_KIND_SPECIAL, "Ausschuss nach besonderen Rechtsvorschriften"),
         (COMMITTEE_KIND_ORDINARY, "Anderer Ausschuss (keine besondere Art)"),
     ]
     committee_kind = models.CharField(
@@ -1909,6 +1921,14 @@ class SessionPerson(EncryptionMixin, models.Model):
         help_text="Die Person widerspricht Aufnahmen und Übertragungen ihrer Person in Sitzungen",
     )
     recording_objection_date = models.DateField(null=True, blank=True, verbose_name="Widerspruch vom")
+    # Ämter erst ab 18 (Issue #757, z. B. § 80 Abs. 4, § 92 Abs. 1, § 105 Abs. 1 NKomVG ab 01.11.2026): nur bei
+    # minderjährigen Mitgliedern auszufüllen; ein Datum statt des Geburtsdatums genügt für die Prüfung.
+    adult_from = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Volljährig ab",
+        help_text="Nur bei Minderjährigen: Tag des 18. Geburtstags (Ämter, die das Landesrecht erst ab 18 zulässt)",
+    )
 
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
@@ -1965,6 +1985,17 @@ class SessionOrganizationMembership(models.Model):
         verbose_name="Person",
     )
 
+    # Funktionen nach Landesrecht seit Issue #757 (z. B. NKomVG): HVB kraft Amtes (§ 45), ehrenamtliche
+    # Stellvertretung des HVB (§ 81 Abs. 2), Grundmandat (beratend, § 71 Abs. 4), hinzugewählt ohne Stimmrecht
+    # (§ 71 Abs. 7), Ortsvorsteher/in (§ 96), Gemeindedirektor/in (§ 106).
+    ROLE_HVB = "hvb"
+    ROLE_HVB_DEPUTY = "hvb_deputy"
+    ROLE_BASIC_MANDATE = "basic_mandate"
+    ROLE_CO_OPTED = "co_opted"
+    ROLE_LOCAL_MAYOR = "local_mayor"
+    ROLE_MUNICIPAL_DIRECTOR = "municipal_director"
+    #: Funktionen ohne Stimmrecht nach dem Gesetz – das Häkchen „stimmberechtigt“ gilt für sie nicht
+    ROLES_WITHOUT_VOTE = frozenset({ROLE_BASIC_MANDATE, ROLE_CO_OPTED})
     role = models.CharField(
         max_length=100,
         choices=[
@@ -1973,6 +2004,12 @@ class SessionOrganizationMembership(models.Model):
             ("deputy_chair", "Stellv. Vorsitzende/r"),
             ("expert_citizen", "Sachkundige/r Bürger/in"),
             ("advisor", "Beratendes Mitglied"),
+            (ROLE_HVB, "Hauptverwaltungsbeamtin/-beamter (kraft Amtes)"),
+            (ROLE_HVB_DEPUTY, "Ehrenamtliche Stellvertretung des HVB"),
+            (ROLE_BASIC_MANDATE, "Grundmandat (beratend)"),
+            (ROLE_CO_OPTED, "Hinzugewählt (ohne Stimmrecht)"),
+            (ROLE_LOCAL_MAYOR, "Ortsvorsteher/in"),
+            (ROLE_MUNICIPAL_DIRECTOR, "Gemeindedirektor/in"),
             ("guest", "Gast"),
         ],
         default="member",
@@ -1984,6 +2021,19 @@ class SessionOrganizationMembership(models.Model):
 
     # Voting rights
     has_voting_rights = models.BooleanField(default=True, verbose_name="Stimmberechtigt")
+
+    # Ende durch Abberufung (Issue #757, § 71 Abs. 8 NKomVG ab 01.11.2026): Sperrvermerk – dieselbe Person kann
+    # in diesem Gremium und dieser Wahlperiode nicht erneut den Vorsitz übernehmen.
+    END_RECALLED = "recalled"
+    END_REASON_CHOICES = [("", "Kein besonderer Grund"), (END_RECALLED, "Abberufen")]
+    end_reason = models.CharField(
+        max_length=20,
+        choices=END_REASON_CHOICES,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Grund des Endes",
+    )
 
     # Vertreterregelung: Diese Mitgliedschaft vertritt eine andere Person
     substitute_for = models.ForeignKey(
@@ -2580,6 +2630,19 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
 
     # Visibility
     is_public = models.BooleanField(default=True, verbose_name="Öffentlich")
+
+    # Art des TOP (Issue #757): Die Einwohnerfragestunde gehört in den öffentlichen Teil; Zeitrahmen aus der
+    # Geschäftsordnung, Fragen nach Landesrecht (z. B. § 62 NKomVG, ab 01.11.2026 nur von Anwesenden).
+    KIND_RESIDENTS_QUESTIONS = "residents_questions"
+    KIND_CHOICES = [("", "Tagesordnungspunkt"), (KIND_RESIDENTS_QUESTIONS, "Einwohnerfragestunde")]
+    kind = models.CharField(
+        max_length=30,
+        choices=KIND_CHOICES,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Art des Tagesordnungspunkts",
+    )
 
     # Absetzung (dokumentiert statt gelöscht)
     is_withdrawn = models.BooleanField(default=False, verbose_name="Abgesetzt")
@@ -5798,6 +5861,15 @@ class SessionStandardAgendaItem(models.Model):
         help_text="Leer = gilt für alle Gremien",
     )
     name = models.CharField(max_length=500, verbose_name="Betreff")
+    # Art des TOP, den die Sitzung erhält (Issue #757), z. B. Einwohnerfragestunde
+    kind = models.CharField(
+        max_length=30,
+        choices=[("", "Tagesordnungspunkt"), ("residents_questions", "Einwohnerfragestunde")],
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Art des Tagesordnungspunkts",
+    )
     placement = models.CharField(max_length=10, choices=PLACEMENT_CHOICES, default="start", verbose_name="Position")
     order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
     is_public = models.BooleanField(default=True, verbose_name="Öffentlich")

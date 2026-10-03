@@ -90,6 +90,8 @@ class TenantProvisioningForm(forms.Form):
     term_start = forms.DateField(label="Beginn", widget=date_widget())
     term_end = forms.DateField(label="Ende", widget=date_widget())
     committees = forms.ChoiceField(label="Gremienvorlage", required=False, widget=UnfoldAdminSelectWidget)
+    # Landesprofil (Issue #757): beim Anlegen übernehmen, wenn der Mandant noch keines hat
+    state_profile = forms.ChoiceField(label="Landesprofil", required=False, widget=UnfoldAdminSelectWidget)
     admin_email = forms.EmailField(
         label="E-Mail des ersten Administrators",
         help_text="Vorhandenes Konto wird Mitglied; sonst geht eine Einladung per E-Mail hinaus.",
@@ -114,6 +116,12 @@ class TenantProvisioningForm(forms.Form):
             ("", "Keine Gremien anlegen"),
             *((key, vorlage.label) for key, vorlage in katalog.committee_templates.items()),
         ]
+        from apps.session.models import SessionStateProfile
+
+        felder["state_profile"].choices = [
+            ("", "Kein Landesprofil"),
+            *SessionStateProfile.objects.order_by("name").values_list("code", "name"),
+        ]
 
     def to_spec(self) -> TenantSpec:
         daten = self.cleaned_data
@@ -130,6 +138,7 @@ class TenantProvisioningForm(forms.Form):
             term_start=daten.get("term_start"),
             term_end=daten.get("term_end"),
             committees=str(daten.get("committees") or ""),
+            state_profile=str(daten.get("state_profile") or ""),
         )
 
 
@@ -144,6 +153,7 @@ def initial_from_profile(profil: Profil | None) -> dict[str, Any]:
         "term_start": profil.term_start,
         "term_end": profil.term_end,
         "committees": profil.committees,
+        "state_profile": profil.state_profile,
     }
 
 

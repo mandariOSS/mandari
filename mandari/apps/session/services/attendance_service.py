@@ -31,6 +31,14 @@ _ROLE_MAP = {
     "deputy_chair": "deputy_chair",
     "expert_citizen": "expert",
     "advisor": "expert",
+    # Funktionen nach Landesrecht (Issue #757): HVB und ehrenamtliche Stellvertretungen sind Mitglieder der
+    # Vertretung; Grundmandat, Hinzugewählte, Ortsvorsteher und Gemeindedirektor wirken beratend mit
+    "hvb": "member",
+    "hvb_deputy": "member",
+    "basic_mandate": "expert",
+    "co_opted": "expert",
+    "local_mayor": "expert",
+    "municipal_director": "expert",
     "guest": "guest",
 }
 

@@ -31,7 +31,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
-from ..services import agenda_service, participation_service, protocol_lock
+from ..services import agenda_service, agenda_template_service, participation_service, protocol_lock
 from ..visibility import meeting_q
 from .attendance import SessionAttendanceForm
 
@@ -106,6 +106,49 @@ def _locked(view, meeting_id, message=protocol_lock.MESSAGE_AGENDA):
     return redirect("session:meeting_detail", tenant_slug=view.session_tenant.slug, meeting_id=meeting_id)
 
 
+class AgendaTemplateApplyView(SessionViewMixin, View):
+    """Tagesordnungsvorlage übernehmen (Issue #757), z. B. „Konstituierende Sitzung (Niedersachsen)“."""
+
+    permission_required = "edit_meetings"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug, meeting_id):
+        meeting = _get_meeting(self, meeting_id)
+        gesperrt = _locked(self, meeting.pk)
+        if gesperrt:
+            return gesperrt
+        vorlagen = {vorlage.key: vorlage for vorlage in agenda_template_service.available(self.session_tenant)}
+        vorlage = vorlagen.get(str(request.POST.get("vorlage") or ""))
+        if vorlage is None:
+            messages.error(request, "Bitte eine Tagesordnungsvorlage auswählen.")
+            return _meeting_redirect(self, meeting)
+        try:
+            ergebnis = agenda_template_service.apply(meeting, vorlage)
+        except protocol_lock.ProtocolLockedError as exc:
+            messages.error(request, exc.user_message)
+            return _meeting_redirect(self, meeting)
+        from .. import audit
+
+        audit.log_event(
+            "update",
+            meeting,
+            tenant=self.session_tenant,
+            user=self.session_user,
+            request=request,
+            changes={
+                "tagesordnungsvorlage": vorlage.label,
+                "tops": ergebnis.created,
+                **({"format": "Präsenzsitzung"} if ergebnis.format_changed else {}),
+            },
+        )
+        messages.success(request, f"{ergebnis.created} Tagesordnungspunkte aus „{vorlage.label}“ übernommen.")
+        if ergebnis.format_changed:
+            messages.info(request, f"Die Sitzung ist jetzt als Präsenzsitzung angesetzt. {vorlage.hint}".strip())
+        if ergebnis.warning:
+            messages.warning(request, ergebnis.warning)
+        return _meeting_redirect(self, meeting)
+
+
 # =============================================================================
 # AGENDA ITEMS
 # =============================================================================
@@ -116,7 +159,7 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
 
     model = SessionAgendaItem
     template_name = "session/partials/agenda_item_form.html"
-    fields = ["name", "is_public", "paper", "parent", "requires_secrecy"]
+    fields = ["name", "is_public", "paper", "parent", "requires_secrecy", "kind"]
     permission_required = "edit_meetings"
 
     def get_form(self, form_class=None):
@@ -164,7 +207,7 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
 
     model = SessionAgendaItem
     template_name = "session/meetings/agenda_form.html"
-    fields = ["name", "is_public", "paper", "parent", "requires_secrecy"]
+    fields = ["name", "is_public", "paper", "parent", "requires_secrecy", "kind"]
     pk_url_kwarg = "item_id"
     permission_required = "edit_meetings"
 

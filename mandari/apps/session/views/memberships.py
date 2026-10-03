@@ -95,6 +95,9 @@ class MembershipCreateView(SessionViewMixin, View):
         error = membership_service.period_error(start_date, end_date) or membership_service.overlap_error(
             organization, person, start_date, end_date
         )
+        role = _valid_role(request.POST.get("role", "member"), "member")
+        # Funktion nach Landesrecht (Issue #757): Altersgrenze, Sperrvermerk nach Abberufung
+        error = error or " ".join(membership_service.role_problems(organization, person, role, start_date))
         if error:
             messages.error(request, error)
             return _org_redirect(self, organization)
@@ -102,8 +105,8 @@ class MembershipCreateView(SessionViewMixin, View):
         membership = SessionOrganizationMembership.objects.create(
             organization=organization,
             person=person,
-            role=_valid_role(request.POST.get("role", "member"), "member"),
-            has_voting_rights=request.POST.get("has_voting_rights") == "on",
+            role=role,
+            has_voting_rights=membership_service.voting_rights(role, request.POST.get("has_voting_rights") == "on"),
             substitute_for=substitute_for,
             start_date=start_date,
             end_date=end_date,
@@ -136,6 +139,14 @@ class MembershipUpdateView(SessionViewMixin, View):
         error = membership_service.period_error(start_date, end_date) or membership_service.overlap_error(
             organization, membership.person, start_date, end_date, exclude_pk=membership.pk
         )
+        role = _valid_role(request.POST.get("role", membership.role), membership.role)
+        if not error and (role != membership.role or start_date != membership.start_date):
+            # Funktion nach Landesrecht (Issue #757): Altersgrenze, Sperrvermerk nach Abberufung
+            error = " ".join(
+                membership_service.role_problems(
+                    organization, membership.person, role, start_date, exclude_pk=membership.pk
+                )
+            )
         if error:
             messages.error(request, error)
             return _org_redirect(self, organization)
@@ -150,8 +161,10 @@ class MembershipUpdateView(SessionViewMixin, View):
             else:
                 membership.substitute_for = None
 
-        membership.role = _valid_role(request.POST.get("role", membership.role), membership.role)
-        membership.has_voting_rights = request.POST.get("has_voting_rights") == "on"
+        membership.role = role
+        membership.has_voting_rights = membership_service.voting_rights(
+            role, request.POST.get("has_voting_rights") == "on"
+        )
         if start_date != membership.start_date:
             # Wahlperiode folgt dem Beginn (Issue #39)
             membership.legislative_term = membership_service.term_for(self.session_tenant, start_date)
@@ -176,10 +189,14 @@ class MembershipEndView(SessionViewMixin, View):
             messages.error(request, error)
             return _org_redirect(self, membership.organization)
         membership.end_date = end_date
+        # Abberufung eines Vorsitzes (Issue #757, § 71 Abs. 8 NKomVG): Sperrvermerk für eine erneute Benennung
+        recalled = request.POST.get("end_reason") == SessionOrganizationMembership.END_RECALLED
+        membership.end_reason = SessionOrganizationMembership.END_RECALLED if recalled else ""
         membership.save()
         messages.success(
             request,
-            f"Mitgliedschaft von {membership.person.display_name} wurde zum {membership.end_date:%d.%m.%Y} beendet.",
+            f"Mitgliedschaft von {membership.person.display_name} wurde zum {membership.end_date:%d.%m.%Y} "
+            f"{'durch Abberufung ' if recalled else ''}beendet.",
         )
         return _org_redirect(self, membership.organization)
 

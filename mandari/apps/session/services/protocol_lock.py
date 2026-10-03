@@ -65,6 +65,8 @@ AGENDA_ITEM_LOCKED_FIELDS = (
     "is_election",
     # Geheimhaltungspflicht (Issue #754): bestimmt, ob die Beratung mit Zugeschalteten zulässig war
     "requires_secrecy",
+    # Art des TOP (Issue #757), z. B. Einwohnerfragestunde
+    "kind",
     # Zeiten aus dem Sitzungscockpit (Issue #140): stehen in der Niederschrift
     "start_time",
     "end_time",

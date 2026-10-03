@@ -27,6 +27,7 @@ from typing import Any, cast
 
 from django.db import transaction
 from django.db.models import Q, QuerySet
+from django.utils import timezone
 
 from apps.session.models import SessionLegislativeTerm, SessionOrganizationMembership
 
@@ -93,6 +94,89 @@ def term_for(tenant: Any, day: date | None) -> SessionLegislativeTerm | None:
     """Wahlperiode, die den Tag enthält – ohne Rückfall auf die aktuelle Periode."""
     term: SessionLegislativeTerm | None = _terms().for_date(tenant, day, fallback=False)
     return term
+
+
+# ---------------------------------------------------------------------------
+# Funktionen nach Landesrecht (Issue #757)
+# ---------------------------------------------------------------------------
+
+#: Ämter, die das Landesrecht erst ab 18 zulässt – Schlüssel wie im Sitzungsrecht (``adult_offices``)
+OFFICE_LABELS = {
+    "local_chair": "Vorsitz und Stellvertretung im Orts- bzw. Stadtbezirksrat",
+    "local_mayor": "Ortsvorsteherin bzw. Ortsvorsteher",
+    "member_municipality_mayor": "Bürgermeisterin bzw. Bürgermeister der Mitgliedsgemeinde",
+    "municipal_director": "Gemeindedirektorin bzw. Gemeindedirektor",
+    "hvb": "Hauptverwaltungsbeamtin bzw. Hauptverwaltungsbeamter",
+}
+
+
+def office_of(role: str, organization: Any) -> str:
+    """Amt, das eine Funktion in einem Gremium bedeutet (für die Altersgrenze); leer, wenn keines."""
+    if role in ("hvb", "local_mayor", "municipal_director"):
+        return role
+    if organization.organization_type == "local_council" and role in ("chair", "deputy_chair"):
+        return "local_chair"
+    if organization.organization_type == "council" and role == "chair":
+        from apps.session.services import body_service
+
+        body = organization.body if organization.body_id else body_service.default_body(organization.tenant)
+        if (body.body_type or organization.tenant.body_type) == "mitgliedsgemeinde":
+            # Den Ratsvorsitz einer Mitgliedsgemeinde führt die Bürgermeisterin bzw. der Bürgermeister (§ 105)
+            return "member_municipality_mayor"
+    return ""
+
+
+def role_problems(
+    organization: Any, person: Any, role: str, start: date | None, *, exclude_pk: Any = None
+) -> list[str]:
+    """
+    Funktion nach dem Landesprofil in der Fassung zum Beginn der Besetzung prüfen (Meldungen, leer = zulässig):
+
+    - Ämter erst ab 18 (z. B. § 80 Abs. 4, § 92 Abs. 1, § 96 Abs. 1, § 105 Abs. 1, § 106 Abs. 1 NKomVG ab
+      01.11.2026), wenn an der Person „volljährig ab“ eingetragen ist
+    - Sperrvermerk: Wer als Ausschussvorsitz abberufen wurde, wird in dieser Wahlperiode nicht erneut benannt
+      (§ 71 Abs. 8 NKomVG ab 01.11.2026)
+    """
+    from apps.session.services import state_law_service
+
+    profile = organization.tenant.state_profile
+    if profile is None:
+        return []
+    day = start or timezone.localdate()
+    law = state_law_service.effective(profile, day)
+    problems = []
+    office = office_of(role, organization)
+    adult_from = getattr(person, "adult_from", None)
+    if office and office in (law.value("adult_offices") or []) and adult_from is not None and day < adult_from:
+        norm = law.norm("adult_offices")
+        problems.append(
+            f"{OFFICE_LABELS[office]}: erst ab 18 Jahren{f' ({norm})' if norm else ''}. {person.display_name} ist "
+            f"erst ab {adult_from:%d.%m.%Y} volljährig."
+        )
+    if role == "chair" and organization.organization_type == "committee" and law.value("chair_recall_bar", False):
+        recalled = SessionOrganizationMembership.objects.filter(
+            organization=organization,
+            person=person,
+            role="chair",
+            end_reason=SessionOrganizationMembership.END_RECALLED,
+        )
+        if exclude_pk is not None:
+            recalled = recalled.exclude(pk=exclude_pk)
+        term = term_for(organization.tenant, day)
+        if term is not None:
+            recalled = recalled.filter(legislative_term=term)
+        if recalled.exists():
+            norm = law.norm("chair_recall_bar")
+            problems.append(
+                f"{person.display_name} wurde als Vorsitz dieses Ausschusses abberufen und kann in dieser "
+                f"Wahlperiode nicht erneut benannt werden{f' ({norm})' if norm else ''}."
+            )
+    return problems
+
+
+def voting_rights(role: str, requested: bool) -> bool:
+    """Stimmrecht einer Besetzung: Grundmandat und Hinzugewählte stimmen nach dem Gesetz nie mit."""
+    return False if role in SessionOrganizationMembership.ROLES_WITHOUT_VOTE else requested
 
 
 # ---------------------------------------------------------------------------

@@ -61,6 +61,8 @@ class SessionPersonForm(forms.ModelForm):
             # Widerspruch gegen Bild- und Tonaufnahmen (Issue #757)
             "recording_objection",
             "recording_objection_date",
+            # Ämter erst ab 18 (Issue #757)
+            "adult_from",
             "is_active",
             "start_date",
             "end_date",
@@ -71,7 +73,7 @@ class SessionPersonForm(forms.ModelForm):
         # Zustellweg (Issue #225): ohne Angabe bleibt es bei E-Mail (Importe, ältere Formulare)
         self.fields["delivery_channel"].required = False
         # Datum als ISO-Text vorbelegen, damit das Datumsfeld des Browsers es anzeigt
-        for name in ("contact_consent_date", "recording_objection_date"):
+        for name in ("contact_consent_date", "recording_objection_date", "adult_from"):
             value = getattr(self.instance, name) if self.instance.pk else None
             if value:
                 self.initial[name] = value.isoformat()

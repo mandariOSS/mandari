@@ -586,6 +586,27 @@ def body_of(meeting: Any) -> Any:
     return body_service.default_body(meeting.tenant)
 
 
+def legal_designation(organization: Any) -> str:
+    """
+    Gesetzlicher Name eines Gremiums nach dem Körperschaftstyp (Issue #757, z. B. § 7 Abs. 2 NKomVG):
+    Hauptausschuss → Verwaltungs-, Samtgemeinde-, Kreis- bzw. Regionsausschuss; Vertretung → Rat, Samtgemeinderat,
+    Kreistag bzw. Regionsversammlung. Leer, wenn das Landesprofil keine Bezeichnung kennt.
+    """
+    tenant = organization.tenant
+    if tenant.state_profile is None:
+        return ""
+    if organization.organization_type == "council":
+        key = "council"
+    elif organization.organization_type == "committee" and organization.committee_kind == "main":
+        key = "main"
+    else:
+        return ""
+    names = effective(tenant.state_profile).value("designations") or {}
+    body = organization.body if organization.body_id else None
+    body_type = (getattr(body, "body_type", "") or tenant.body_type or "") if body is not None else tenant.body_type
+    return str((names.get(key) or {}).get(body_type or "", ""))
+
+
 # =============================================================================
 # Notlagenbeschluss (z. B. § 182 Abs. 1 Satz 2 NKomVG)
 # =============================================================================

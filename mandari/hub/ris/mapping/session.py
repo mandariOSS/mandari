@@ -57,6 +57,10 @@ ORGANIZATION_TYPES: Final[dict[str, str]] = {
     "advisory": "Gremium",
     "commission": "Gremium",
     "faction": "Fraktion",
+    # Gruppe nach § 57 NKomVG: Zusammenschluss wie eine Fraktion (Issue #757)
+    "group": "Fraktion",
+    "local_council": "Gremium",
+    "youth_council": "Gremium",
     "department": "Verwaltungsbereich",
     "other": "Sonstiges",
 }

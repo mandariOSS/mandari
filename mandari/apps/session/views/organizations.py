@@ -32,7 +32,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
-from ..services import body_service, membership_service
+from ..services import body_service, membership_service, state_law_service
 from .bodies import BodyFilterMixin
 
 # =============================================================================
@@ -103,6 +103,9 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         org = self.object
+        # Gesetzlicher Name nach Körperschaftstyp (Issue #757), wenn er vom Namen abweicht
+        designation = state_law_service.legal_designation(org)
+        context["legal_designation"] = designation if designation and designation != org.name else ""
 
         # Besetzung je Wahlperiode (Issue #39): Standard ist die aktive
         # Besetzung; über ?term=<id> lassen sich vergangene Perioden einsehen

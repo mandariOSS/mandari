@@ -32,7 +32,20 @@ from django.utils import timezone
 from apps.session.models import SessionMeeting, SessionOrganization, SessionOrganizationMembership, SessionPerson
 
 #: Rangfolge der Funktionen bei mehreren Mitgliedschaften derselben Person (kleiner = maßgeblicher)
-ROLE_RANK = {"chair": 0, "deputy_chair": 1, "member": 2, "expert_citizen": 3, "advisor": 4, "guest": 5}
+ROLE_RANK = {
+    "chair": 0,
+    "deputy_chair": 1,
+    "hvb": 2,
+    "hvb_deputy": 2,
+    "member": 2,
+    "expert_citizen": 3,
+    "co_opted": 3,
+    "advisor": 4,
+    "basic_mandate": 4,
+    "local_mayor": 4,
+    "municipal_director": 4,
+    "guest": 5,
+}
 
 
 class JointOrganizationError(ValueError):

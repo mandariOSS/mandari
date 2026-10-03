@@ -1,0 +1,38 @@
+{
+  "hinweis": "Tagesordnungsvorlagen (Issue #757). Die Punkte werden an die Tagesordnung einer Sitzung angehängt und lassen sich danach frei bearbeiten. Keine Rechtsberatung – maßgeblich sind Gesetz, Hauptsatzung und Geschäftsordnung.",
+  "vorlagen": {
+    "konstituierend_ni": {
+      "bezeichnung": "Konstituierende Sitzung der Vertretung (Niedersachsen)",
+      "landesprofil": "NI",
+      "praesenz": true,
+      "hinweis": "Erste Sitzung binnen eines Monats nach Beginn der Wahlperiode, Ladungsfrist eine Woche (§ 59 NKomVG). Präsenz empfohlen: Jedes Mitglied kann eine geheime Wahl verlangen (§ 67 Satz 2 NKomVG); in einer Sitzung mit Zugeschalteten wäre sie unzulässig (§ 64 Abs. 3 Satz 6 NKomVG).",
+      "tops": [
+        {"name": "Eröffnung der Sitzung, Feststellung der ordnungsgemäßen Ladung und der Beschlussfähigkeit"},
+        {"name": "Verpflichtung der Abgeordneten"},
+        {"name": "Wahl der bzw. des Vorsitzenden der Vertretung", "wahl": true},
+        {"name": "Wahl der Stellvertretungen der bzw. des Vorsitzenden", "wahl": true},
+        {"name": "Bekanntgabe der Fraktionen und Gruppen"},
+        {"name": "Besetzung des Hauptausschusses (Sitzverteilung und Feststellung)"},
+        {"name": "Bildung und Besetzung der Ausschüsse"},
+        {"name": "Wahl der ehrenamtlichen Stellvertretungen der Hauptverwaltungsbeamtin bzw. des Hauptverwaltungsbeamten", "wahl": true},
+        {"name": "Geschäftsordnung"}
+      ]
+    },
+    "konstituierend_ni_mitgliedsgemeinde": {
+      "bezeichnung": "Konstituierende Sitzung des Rates einer Mitgliedsgemeinde (Niedersachsen)",
+      "landesprofil": "NI",
+      "praesenz": true,
+      "hinweis": "Zur ersten Sitzung lädt die bisherige Bürgermeisterin bzw. der bisherige Bürgermeister (§ 103 NKomVG). Präsenz empfohlen: Jedes Mitglied kann eine geheime Wahl verlangen (§ 67 Satz 2 NKomVG); in einer Sitzung mit Zugeschalteten wäre sie unzulässig (§ 64 Abs. 3 Satz 6 NKomVG).",
+      "tops": [
+        {"name": "Eröffnung der Sitzung, Feststellung der ordnungsgemäßen Ladung und der Beschlussfähigkeit"},
+        {"name": "Verpflichtung der Ratsmitglieder"},
+        {"name": "Wahl der Bürgermeisterin bzw. des Bürgermeisters", "wahl": true},
+        {"name": "Wahl der Stellvertretungen der Bürgermeisterin bzw. des Bürgermeisters", "wahl": true},
+        {"name": "Bekanntgabe der Fraktionen und Gruppen"},
+        {"name": "Besetzung des Verwaltungsausschusses (soweit gebildet)"},
+        {"name": "Bildung und Besetzung der Ausschüsse"},
+        {"name": "Geschäftsordnung"}
+      ]
+    }
+  }
+}

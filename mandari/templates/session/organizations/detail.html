@@ -31,6 +31,7 @@
                     {% if organization.short_name %}
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ organization.short_name }}</p>
                     {% endif %}
+                    {% if legal_designation %}<p class="text-sm text-gray-500 dark:text-gray-400 mt-1" data-testid="gesetzliche-bezeichnung">Gesetzliche Bezeichnung: {{ legal_designation }}</p>{% endif %}
                 </div>
                 {% if can_manage %}
                 <div class="flex items-center gap-2">
@@ -174,6 +175,7 @@
                                         <form method="post" action="{% url 'session:membership_end' tenant_slug=tenant_slug membership_id=membership.id %}" class="flex items-center gap-2">
                                             {% csrf_token %}
                                             <input type="date" name="end_date" class="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                            {% if membership.role == "chair" %}<label class="text-xs text-gray-600 dark:text-gray-400"><input type="checkbox" name="end_reason" value="recalled" class="w-3.5 h-3.5 rounded"> abberufen</label>{% endif %}
                                             <button type="submit" class="px-2 py-1 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded">
                                                 Beenden
                                             </button>
