@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Session meldet ihre fachlichen Änderungen an die Datendrehscheibe (Etappe E4, Issue #533).
+Session meldet ihre fachlichen Änderungen an die Datendrehscheibe (Etappe E4, Issues #533, #534).
 
 Fachfunktionen legen ``track()`` um ihre Änderung und nennen die betroffenen Objekte, bevor sie sie ändern::
 
@@ -52,15 +52,21 @@ from django.db import transaction
 from django.db.models import Q
 
 from apps.session import oparl_publication
-from apps.session.models import SessionAgendaItem, SessionMeeting
+from apps.session.models import SessionAgendaItem, SessionConsultation, SessionFile, SessionMeeting, SessionPaper
 from hub.ris.mapping.session import SessionUris
 from hub.ris.retraction import Draft
 from hub.ris.session_events import (
     AgendaItemState,
+    ConsultationState,
+    FileState,
     MeetingState,
+    PaperState,
     SessionEvents,
     agenda_item_state,
+    consultation_state,
+    file_state,
     meeting_state,
+    paper_state,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,6 +121,9 @@ class Reader:
     Veröffentlichungsregel seiner Schnittstelle.
     """
 
+    #: Sammlungen, die über einen Bereich beobachtet werden (alle Objekte, die ihn erfüllen, auch neue)
+    KINDS: Final = ("item", "consultation", "file")
+
     def __init__(self, tenant: Any) -> None:
         self.tenant_id = tenant.pk
         self.open = interface_open(tenant)
@@ -131,16 +140,48 @@ class Reader:
         )
         return {meeting.pk: meeting_state(meeting, is_published=self.is_published) for meeting in meetings}
 
-    def agenda(self, meeting_ids: set[uuid.UUID], item_ids: set[uuid.UUID]) -> dict[uuid.UUID, AgendaItemState]:
-        """Alle Punkte der Sitzungen ``meeting_ids`` und dazu die Punkte ``item_ids`` (wohin sie auch verschoben sind)."""
-        if not meeting_ids and not item_ids:
+    def papers(self, ids: set[uuid.UUID]) -> dict[uuid.UUID, PaperState]:
+        if not ids:
             return {}
+        papers = SessionPaper.objects.filter(tenant_id=self.tenant_id, pk__in=ids)
+        return {paper.pk: paper_state(paper, is_published=self.is_published) for paper in papers}
+
+    def load(self, kind: str, scope: Q) -> dict[uuid.UUID, Any]:
+        """Zustände der Sammlung ``kind`` (``KINDS``) im Bereich ``scope``."""
+        if kind == "item":
+            return self._items(scope)
+        if kind == "consultation":
+            return self._consultations(scope)
+        if kind == "file":
+            return self._files(scope)
+        raise ValueError("Unbekannte Sammlung.")
+
+    def _items(self, scope: Q) -> dict[uuid.UUID, AgendaItemState]:
         items = (
             SessionAgendaItem.objects.filter(meeting__tenant_id=self.tenant_id)
-            .filter(Q(meeting_id__in=meeting_ids) | Q(pk__in=item_ids))
+            .filter(scope)
             .select_related("meeting", "paper")
         )
         return {item.pk: agenda_item_state(item, is_published=self.is_published) for item in items}
+
+    def _consultations(self, scope: Q) -> dict[uuid.UUID, ConsultationState]:
+        consultations = (
+            SessionConsultation.objects.filter(paper__tenant_id=self.tenant_id)
+            .filter(scope)
+            .select_related("paper", "meeting", "agenda_item__meeting")
+        )
+        return {c.pk: consultation_state(c, is_published=self.is_published) for c in consultations}
+
+    def _files(self, scope: Q) -> dict[uuid.UUID, FileState]:
+        """Anlagen an Vorlagen, Sitzungen und TOPs; ohne die öffentliche Fassung der Niederschrift (eigene Meldung)."""
+        files = (
+            SessionFile.objects.filter(tenant_id=self.tenant_id)
+            .filter(scope)
+            .filter(Q(paper__isnull=False) | Q(meeting__isnull=False) | Q(agenda_item__isnull=False))
+            .exclude(public_protocol__isnull=False)
+            .select_related("paper", "meeting", "agenda_item__meeting")
+        )
+        return {f.pk: file_state(f, is_published=self.is_published) for f in files}
 
 
 # =============================================================================
@@ -160,8 +201,11 @@ class Tracker:
         #: Geschrieben (bzw. abgeschlossen): Eine spätere Erfassung schließt sich nicht mehr an
         self.closed = False
         self._meetings: dict[uuid.UUID, MeetingState | None] = {}
-        self._agendas: set[uuid.UUID] = set()
-        self._items: dict[uuid.UUID, AgendaItemState] = {}
+        self._papers: dict[uuid.UUID, PaperState | None] = {}
+        #: je Sammlung: beobachteter Bereich und Zustände davor
+        self._scopes: dict[str, Q] = {}
+        self._before: dict[str, dict[uuid.UUID, Any]] = {kind: {} for kind in Reader.KINDS}
+        self._watched: set[tuple[str, Any]] = set()
         self._explicit: list[Draft] = []
         self._broken = False
 
@@ -191,32 +235,65 @@ class Tracker:
                 "Session-Ereignisse im Schattenbetrieb übersprungen (%s, %s) bei %s", step, type(exc).__name__, stelle
             )
 
+    def _scope(self, kind: str, scope: Q) -> None:
+        """Alle Objekte der Sammlung ``kind`` im Bereich ``scope`` beobachten (Zustand jetzt, vor der Änderung)."""
+        for key, state in self.reader.load(kind, scope).items():
+            self._before[kind].setdefault(key, state)
+        self._scopes[kind] = self._scopes[kind] | scope if kind in self._scopes else scope
+
+    def _once(self, label: str, key: Any, step: str, work: Callable[[], None]) -> None:
+        if key is None or (label, key) in self._watched:
+            return
+        self._watched.add((label, key))
+        self._guard(step, work)
+
     def meeting(self, meeting: Any, *, created: bool = False) -> None:
-        """Sitzung beobachten – vor der Änderung; ``created``: gerade erst angelegt (vorher gab es sie nicht)."""
+        """
+        Sitzung beobachten – vor der Änderung; ``created``: gerade erst angelegt (vorher gab es sie nicht).
+
+        Mit ihr die Anlagen der Sitzung und die Beratungen, die in ihr stattfinden (ihre Öffentlichkeit folgt der
+        Sitzung).
+        """
         key = meeting.pk
-        if key is None or key in self._meetings:
-            return
-        if created:
-            self._meetings[key] = None
-            return
 
         def read() -> None:
-            self._meetings[key] = self.reader.meetings({key}).get(key)
+            self._meetings[key] = None if created else self.reader.meetings({key}).get(key)
+            self._scope("file", Q(meeting_id=key))
+            self._scope("consultation", Q(meeting_id=key))
 
-        self._guard("Sitzung", read)
+        self._once("meeting", key, "Sitzung", read)
 
     def agenda(self, meeting: Any) -> None:
-        """Tagesordnung einer Sitzung beobachten (alle Punkte, auch neue und gelöschte) – vor der Änderung."""
+        """Tagesordnung einer Sitzung beobachten (alle Punkte, auch neue und gelöschte, mit Anlagen und Beratungen)."""
         key = meeting.pk
-        if key is None or key in self._agendas:
-            return
-        self._agendas.add(key)
 
         def read() -> None:
-            for item_id, state in self.reader.agenda({key}, set()).items():
-                self._items.setdefault(item_id, state)
+            self._scope("item", Q(meeting_id=key))
+            self._scope("file", Q(agenda_item__meeting_id=key))
+            self._scope("consultation", Q(agenda_item__meeting_id=key))
 
-        self._guard("Tagesordnung", read)
+        self._once("agenda", key, "Tagesordnung", read)
+
+    def paper(self, paper: Any, *, created: bool = False) -> None:
+        """
+        Vorlage beobachten – vor der Änderung – samt Beratungsfolge, Anlagen und den TOPs, auf denen sie steht.
+
+        Ohne ``created`` gilt eine Vorlage, die es noch nicht gibt, ebenfalls als neu.
+        """
+        key = paper.pk
+
+        def read() -> None:
+            self._papers[key] = None if created else self.reader.papers({key}).get(key)
+            self._scope("consultation", Q(paper_id=key))
+            self._scope("file", Q(paper_id=key))
+            self._scope("item", Q(paper_id=key))
+
+        self._once("paper", key, "Vorlage", read)
+
+    def file(self, file_obj: Any) -> None:
+        """Eine Anlage beobachten (vor dem Hochladen, Ersetzen, Umbenennen oder Löschen)."""
+        key = file_obj.pk
+        self._once("file", key, "Anlage", lambda: self._scope("file", Q(pk=key)))
 
     def invited(self, meeting: Any, dispatch: Any) -> None:
         """Versandvorgang einer Ladung melden (nach den Zustandsänderungen)."""
@@ -226,21 +303,29 @@ class Tracker:
 
         self._guard("Ladung", build)
 
+    def _after(self, kind: str) -> dict[uuid.UUID, Any]:
+        """Zustand danach: alles im beobachteten Bereich und alles, was vorher darin lag (gelöscht, verschoben)."""
+        if kind not in self._scopes:
+            return {}
+        return self.reader.load(kind, self._scopes[kind] | Q(pk__in=list(self._before[kind])))
+
     def flush(self) -> int:
         """Zustand danach lesen, Ereignisse bilden und schreiben (in der laufenden Transaktion)."""
         written = 0
 
         def write() -> None:
             nonlocal written
+            events = self.events
             drafts: list[Draft] = []
             after_meetings = self.reader.meetings(set(self._meetings))
             for key, before in self._meetings.items():
-                drafts.extend(self.events.meeting_drafts(before, after_meetings.get(key)))
-            if self._agendas or self._items:
-                after_items = self.reader.agenda(self._agendas, set(self._items))
-                drafts.extend(self.events.agenda_drafts(self._items, after_items))
+                drafts.extend(events.meeting_drafts(before, after_meetings.get(key)))
+            drafts.extend(events.papers_drafts(self._papers, self.reader.papers(set(self._papers))))
+            drafts.extend(events.agenda_drafts(self._before["item"], self._after("item")))
+            drafts.extend(events.consultation_drafts(self._before["consultation"], self._after("consultation")))
+            drafts.extend(events.file_drafts(self._before["file"], self._after("file")))
             drafts.extend(self._explicit)
-            written = self.events.publish(drafts)
+            written = events.publish(drafts)
 
         self._guard("Schreiben", write)
         return written
@@ -259,6 +344,12 @@ class _Off:
         return None
 
     def agenda(self, meeting: Any) -> None:
+        return None
+
+    def paper(self, paper: Any, *, created: bool = False) -> None:
+        return None
+
+    def file(self, file_obj: Any) -> None:
         return None
 
     def invited(self, meeting: Any, dispatch: Any) -> None:

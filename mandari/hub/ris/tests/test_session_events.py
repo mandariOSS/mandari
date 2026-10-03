@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Ereignisse aus Session-Zuständen (``hub.ris.session_events``, Issue #533): Sichtbarkeit je Feld und Übergang.
+Ereignisse aus Session-Zuständen (``hub.ris.session_events``, Issues #533, #534): Sichtbarkeit je Feld und Übergang.
 
 Die Zustände stehen hier ohne Datenbank; die Fachfunktionen prüft ``apps/session/tests/test_drehscheibe_sitzungen.py``.
 """
@@ -19,7 +19,10 @@ from hub.ris.session_events import (
     FULL,
     HIDDEN,
     AgendaItemState,
+    ConsultationState,
+    FileState,
     MeetingState,
+    PaperState,
     SessionEvents,
 )
 
@@ -28,6 +31,9 @@ SITZUNG = uuid.UUID("00000000-0000-4000-8000-000000000001")
 ANDERE = uuid.UUID("00000000-0000-4000-8000-000000000002")
 TOP = uuid.UUID("00000000-0000-4000-8000-000000000003")
 VORLAGE = uuid.UUID("00000000-0000-4000-8000-000000000004")
+STATION = uuid.UUID("00000000-0000-4000-8000-000000000005")
+DATEI = uuid.UUID("00000000-0000-4000-8000-000000000006")
+ANTRAG = uuid.UUID("00000000-0000-4000-8000-000000000007")
 
 
 @pytest.fixture
@@ -130,3 +136,93 @@ def test_nichtoeffentlicher_top_nennt_seine_vorlage(events: SessionEvents) -> No
 def test_unbekannte_versandart(events: SessionEvents) -> None:
     with pytest.raises(ValueError):
         events.invited_draft(SITZUNG, uuid.uuid4(), "brieftaube")
+
+
+# -- Vorlagen, Beratungen, Anlagen (Issue #534) ---------------------------------------------------------------
+
+
+def vorlage(*, published: bool = True, public: bool = True, **felder: Any) -> PaperState:
+    werte: dict[str, Any] = {
+        "name": "Radweg",
+        "reference": "2026/0001",
+        "date": None,
+        "paperType": "proposal",
+        "originatorPerson": None,
+        "originatorOrganization": None,
+        "underDirectionOf": ANDERE,
+        "status": "approved" if published else "draft",
+        "public": public,
+        "mainText": "",
+        "resolutionText": "",
+    }
+    werte.update(felder)
+    return PaperState(id=VORLAGE, published=published, fields=werte, submission_id=ANTRAG)
+
+
+def station(*, published: bool = True, meeting_public: bool = True, item: uuid.UUID | None = None) -> ConsultationState:
+    werte: dict[str, Any] = {
+        "organization": ANDERE,
+        "meeting": SITZUNG,
+        "agendaItem": item,
+        "role": "decision",
+        "authoritative": True,
+        "order": 1,
+        "result": "",
+    }
+    return ConsultationState(
+        id=STATION,
+        paper_id=VORLAGE,
+        published=published,
+        fields=werte,
+        meeting_public=meeting_public,
+        item_public=item is not None and meeting_public,
+        paper_public=True,
+    )
+
+
+def anlage(**felder: Any) -> FileState:
+    werte: dict[str, Any] = {
+        "name": "plan.pdf",
+        "version": (1, "a"),
+        "paper": VORLAGE,
+        "meeting": None,
+        "agendaItem": None,
+    }
+    werte.update(felder)
+    return FileState(id=DATEI, published=True, fields=werte, paper_published=True)
+
+
+def test_veroeffentlicht_angelegte_vorlage_nennt_einreichung_nur_nichtoeffentlich(events: SessionEvents) -> None:
+    drafts = events.paper_drafts(None, vorlage())
+    assert kurz(drafts) == [
+        ("ris.paper.created", "Paper", "nichtoeffentlich"),
+        ("ris.paper.released", "Paper", "oeffentlich"),
+    ]
+    assert drafts[0].payload["submission"] == str(ANTRAG)
+    assert "submission" not in drafts[1].payload
+
+
+def test_nichtoeffentliche_vorlage_zurueckgenommen_aus_dem_entwurf(events: SessionEvents) -> None:
+    drafts = events.paper_drafts(vorlage(), vorlage(published=False, public=False))
+    assert drafts[0].payload["reason"] == "nichtoeffentlich"
+    drafts = events.paper_drafts(vorlage(), vorlage(published=False, status="draft"))
+    assert drafts[0].payload["reason"] == "zurueckgenommen"
+
+
+def test_station_in_nichtoeffentlicher_sitzung(events: SessionEvents) -> None:
+    drafts = events.consultation_drafts({}, {STATION: station(meeting_public=False)})
+    assert kurz(drafts) == [("ris.consultation.changed", "Consultation", "oeffentlich")]
+    assert set(drafts[0].payload) == {"consultation", "paper", "change"}
+
+
+def test_station_terminiert(events: SessionEvents) -> None:
+    drafts = events.consultation_drafts({STATION: station()}, {STATION: station(item=TOP)})
+    assert kurz(drafts) == [("ris.consultation.changed", "Consultation", "oeffentlich")]
+    assert drafts[0].payload["change"] == "scheduled"
+    assert drafts[0].payload["agenda_item"] == str(events.ref("agendaitem", TOP))
+
+
+def test_anlage_ersetzt_und_umbenannt(events: SessionEvents) -> None:
+    assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage(version=(2, "b"))})[0].payload["change"] == "replaced"
+    assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage(name="Plan.pdf")})[0].payload["change"] == "renamed"
+    assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage()}) == []
