@@ -272,4 +272,4 @@ class BodyLocalRulesView(SessionViewMixin, TemplateView):
                 changes={"ortsrecht": changes},
             )
         messages.success(request, f"Ortsrecht für „{body.name}“ gespeichert.")
-        return redirect("session:settings_local_rules", tenant_slug=self.session_tenant.slug, body_id=body.pk)
+        return redirect("session:settings_local_rules", tenant_slug=body.tenant.slug, body_id=body.pk)
