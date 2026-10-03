@@ -126,16 +126,20 @@ class TestRahmen:
         assert "fixed bottom-4 right-4" not in html
 
     def test_menue_ist_ein_dialog(self, besucher: Client) -> None:
+        # Seit Stufe 3 (Variante C) ist das Menü am Handy das Blatt „Mehr“ der Leiste unten
         html = _seite(besucher, "paper_list")
-        knopf = re.search(r'<button[^>]*x-ref="menuButton"[^>]*>', html, re.S)
-        assert knopf and 'aria-controls="insight-navigation"' in knopf.group(0)
-        assert 'aria-expanded="false"' in knopf.group(0)
+        knopf = re.search(r'<button[^>]*x-ref="mehrButton"[^>]*>', html, re.S)
+        assert knopf and 'aria-controls="insight-mehr"' in knopf.group(0)
+        assert 'aria-expanded="false"' in knopf.group(0) and 'aria-haspopup="dialog"' in knopf.group(0)
+        blatt = re.search(r'<div id="insight-mehr"[^>]*>', html, re.S)
+        assert blatt and 'role="dialog"' in blatt.group(0) and 'aria-modal="true"' in blatt.group(0)
+        assert 'x-trap.noscroll="mehrOffen"' in blatt.group(0)
+        assert '@keydown.escape.window="mehrOffen &amp;&amp; closeMehr()"' in html or (
+            '@keydown.escape.window="mehrOffen && closeMehr()"' in html
+        )
+        # Geschlossen schon im HTML (#763): die Seitenleiste steht nur ab lg, nichts fährt beim Laden heraus
         leiste = re.search(r'<aside id="insight-navigation"[^>]*>', html, re.S)
-        assert leiste
-        assert ":role=\"sidebarOpen ? 'dialog' : null\"" in leiste.group(0)
-        assert "x-trap" in leiste.group(0) and "@keydown.escape.window" in leiste.group(0)
-        # Geschlossen schon im HTML (#763): mobil außerhalb und unsichtbar, ab lg sichtbar
-        assert "-translate-x-full invisible lg:translate-x-0 lg:visible" in leiste.group(0)
+        assert leiste and "hidden lg:flex" in leiste.group(0) and "translate" not in leiste.group(0)
 
     def test_suche_in_der_kopfzeile_ausser_auf_uebersicht_und_suche(self, besucher: Client) -> None:
         assert 'role="search"' in _seite(besucher, "paper_list")

@@ -73,3 +73,7 @@ def breadcrumb_area(url_name: str | None) -> dict[str, str | bool]:
         return {}
     label, list_name = AREA_PAGES[area]
     return {"label": label, "url_name": f"insight_core:insight:{list_name}", "current": url_name == list_name}
+
+
+#: Bereiche, die am Handy im Blatt „Mehr“ liegen (Leiste unten: Start, Sitzungen, Vorgänge, Karte, Mehr; Stufe 3)
+MORE_AREAS = frozenset({"gremien", "personen", "beschluesse", "ratsfragen", "ki", "gespeichert", "benachrichtigungen"})

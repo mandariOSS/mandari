@@ -13,7 +13,7 @@ from django.http import HttpRequest
 from django.utils.functional import SimpleLazyObject
 
 from .models import OParlBody
-from .navigation import breadcrumb_area, nav_area
+from .navigation import MORE_AREAS, breadcrumb_area, nav_area
 from .publication import DETAIL_PAGES, PORTAL_NAMESPACE, body_id_of
 
 
@@ -43,6 +43,8 @@ def navigation_context(request: HttpRequest) -> dict[str, Any]:
         "insight_breadcrumb": breadcrumb_area(url_name),
         # Namensnennung der Quellen im Kommunenwechsel; erst abgefragt, wenn ein Template sie zeigt
         "kommunenverzeichnis_quellen": SimpleLazyObject(_kommunenverzeichnis_quellen),
+        # Am Handy liegt der Bereich im Blatt „Mehr“: dann ist „Mehr“ in der Leiste unten hervorgehoben (Stufe 3)
+        "insight_area_more": nav_area(url_name) in MORE_AREAS,
     }
 
 

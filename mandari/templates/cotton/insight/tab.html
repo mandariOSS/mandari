@@ -1,0 +1,14 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Ziel der Leiste unten am Handy (Issue #783, Stufe 3, Variante C): Symbol über der Beschriftung, aktiver Bereich mit
+Fläche in der Kennfarbe und aria-current="page".
+  <c-insight.tab href="…" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.tab>
+{% endcomment %}
+<c-vars href="" icon="" area="" />
+<a href="{{ href }}" {% if area == insight_area %}aria-current="page"{% endif %}
+    class="flex flex-col items-center justify-center gap-0.5 h-16 min-w-0 px-1 text-[0.75rem] leading-tight {% if area == insight_area %}font-semibold text-gray-900 dark:text-white{% else %}font-medium text-gray-600 dark:text-gray-400{% endif %}">
+    <span class="inline-flex items-center justify-center w-14 h-8 rounded-full {% if area == insight_area %}bg-primary-100 dark:bg-primary-900/60 text-primary-700 dark:text-primary-200{% endif %}">
+        <i data-lucide="{{ icon }}" class="w-[22px] h-[22px]" aria-hidden="true"></i>
+    </span>
+    <span class="max-w-full truncate">{{ slot }}</span>
+</a>

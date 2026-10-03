@@ -92,7 +92,38 @@ class TestInsight:
         page.keyboard.press("Escape")
         expect(dialog).to_be_hidden()
         expect(ausloeser).to_be_focused()
+        # Leiste unten nur am Handy
+        expect(page.get_by_role("navigation", name="Hauptbereiche")).to_be_hidden()
         problems.assert_clean("Kommune wechseln")
+
+    @pytest.mark.parametrize("breite", [390, 360])
+    def test_leiste_unten_und_blatt_mehr(self, page: Any, goto: Any, problems: BrowserProblems, breite: int) -> None:
+        """Am Handy (#783, Stufe 3): fünf Ziele unten, Blatt „Mehr“ als Dialog, kein waagerechtes Überlaufen."""
+        body = _kommune(breite, f"Mobilstadt {breite}")
+        page.set_viewport_size({"width": breite, "height": 780})
+        _kommune_waehlen(page, goto, body)
+        goto("/insight/vorgaenge/")
+        leiste = page.get_by_role("navigation", name="Hauptbereiche")
+        expect(leiste).to_be_visible()
+        expect(leiste.get_by_role("link", name="Vorgänge")).to_have_attribute("aria-current", "page")
+        expect(page.locator("#insight-navigation")).to_be_hidden()
+        assert page.evaluate("document.documentElement.scrollWidth") <= breite
+
+        mehr = leiste.get_by_role("button", name="Mehr")
+        mehr.click()
+        blatt = page.get_by_role("dialog", name="Mehr")
+        expect(blatt).to_be_visible()
+        expect(blatt.get_by_role("link", name="Gremien")).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(blatt).to_be_hidden()
+        expect(mehr).to_be_focused()
+
+        mehr.click()
+        blatt.get_by_role("button", name="Kommune wechseln").click()
+        expect(page.get_by_role("dialog", name="Kommune wechseln")).to_be_visible()
+        expect(blatt).to_be_hidden()
+        expect(page.locator("#kommune-dialog-eingabe")).to_be_focused()
+        problems.assert_clean("Leiste unten")
 
     def test_merkliste_laedt_gemerkte_vorgaenge(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
         body = _kommune(3, "Merkstadt")

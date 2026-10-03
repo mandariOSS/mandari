@@ -177,21 +177,18 @@
 
     {% include "components/insight_sidebar.html" %}
 
-    <div class="lg:pl-[17rem] min-h-screen flex flex-col">
+    <div class="lg:pl-[17rem] min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
         {# Kopfzeile des Inhalts (Variante A, Issue #783): Brotkrumen mit Kommune, Suche, Dunkelmodus #}
         <header class="sticky top-0 z-30 bg-band-hell/95 dark:bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
             <div class="h-16 px-4 sm:px-8 flex items-center gap-2 sm:gap-6">
-                <button type="button" x-ref="menuButton" @click="openMenu()"
-                    class="lg:hidden inline-flex items-center gap-1.5 h-11 pl-2.5 pr-3 rounded-lg ring-1 ring-inset ring-gray-300 dark:ring-gray-700 text-[0.95rem] font-medium text-gray-800 dark:text-gray-200"
-                    aria-controls="insight-navigation" :aria-expanded="sidebarOpen.toString()" aria-expanded="false">
-                    <i data-lucide="menu" class="w-[18px] h-[18px]" aria-hidden="true"></i> Menü
-                </button>
-                <div class="lg:hidden flex-1 min-w-0 text-center">
+                {# Am Handy: Wortmarke, Kommune (öffnet den Wechsel) und Suche; die Bereiche liegen in der Leiste unten #}
+                <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" class="lg:hidden shrink-0 text-[1.15rem] font-bold tracking-tight leading-none text-gray-900 dark:text-white" aria-label="mandari Insight, Übersicht">mandari<span class="text-indigo-600 dark:text-indigo-400" aria-hidden="true">.</span></a>
+                <div class="lg:hidden flex-1 min-w-0">
                     {% if insight_portal %}
-                    <span class="font-semibold truncate">{{ insight_portal.name }}</span>
+                    <span class="block font-semibold truncate">{{ insight_portal.name }}</span>
                     {% else %}
                     <button type="button" @click="openCityModal()" aria-haspopup="dialog" data-kommune-wechseln
-                        class="inline-flex items-center gap-1 max-w-full h-11 px-2 font-semibold text-gray-900 dark:text-white">
+                        class="inline-flex items-center gap-1 max-w-full h-11 px-1 font-semibold text-gray-900 dark:text-white">
                         <span class="truncate">{% if page_body %}{{ page_body.get_display_name }}{% else %}Kommune wählen{% endif %}</span>
                         <span class="sr-only">– Kommune wechseln</span>
                         <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
@@ -239,7 +236,7 @@
                 </a>
                 {% endif %}
                 <button type="button" @click="darkMode=!darkMode"
-                    class="hidden sm:inline-flex items-center justify-center w-11 h-11 rounded-lg text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-band-grau"
+                    class="hidden lg:inline-flex items-center justify-center w-11 h-11 rounded-lg text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-band-grau"
                     :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'"
                     aria-label="Zum dunklen Modus wechseln" :aria-pressed="darkMode.toString()">
                     <i x-show="!darkMode" data-lucide="moon" class="w-5 h-5" aria-hidden="true"></i>
@@ -261,6 +258,9 @@
 
         {% include "components/insight_footer.html" %}
     </div>
+
+    {# Am Handy: Leiste unten mit fünf Zielen und Blatt „Mehr“ (Variante C) #}
+    {% include "components/insight_leiste_unten.html" %}
 
     {% include "components/document_viewer.html" %}
 
