@@ -55,7 +55,11 @@ prepare_database(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
 from insight_core.models import OParlBody, OParlFile, OParlPaper, OParlSource  # noqa: E402
-from insight_core.services import file_cache, source_health  # noqa: E402
+from insight_core.services import file_cache, robots, source_health  # noqa: E402
+
+# Ohne Netz: die Test-Quellen haben keine robots.txt (HTTP 404, alles erlaubt). Die Prüfung selbst testen
+# insight_core/tests/test_robots_txt.py und ingestor/tests/test_robots.py.
+robots._fetch = lambda url, agent=None: (404, b"")
 
 PASS = 0
 FAIL = 0

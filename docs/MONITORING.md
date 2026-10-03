@@ -45,7 +45,7 @@ Alarmmail nennt beides (Issue #123):
 | Fehlerklasse | Erkennung | Was der Ingestor tut |
 |---|---|---|
 | `ua_blocked` — „User-Agent gesperrt“ | Ein Endpunkt antwortet mit HTTP 403. Der Client stellt daraufhin **genau eine** Vergleichsanfrage mit neutralem Client-Header (`python-httpx/<Version>`). Kommt darauf eine normale Antwort, filtert die Quelle gezielt auf unseren User-Agent. | Befund mit Zeitstempel in Sync-Log und Quellenstatus; die Quelle wird ab dem ersten Befund geschont (frühestens nach 60 Minuten wieder, danach wachsend bis 6 Stunden). Der Regelbetrieb läuft weiter mit unserem User-Agent — **keine Umgehung**. |
-| `robots_blocked` — „robots.txt sperrt“ | Scraper-Quellen (#116): Die robots.txt der Instanz verbietet unserem User-Agent den Abruf der Basis-URL oder einer Seite. | Kein Crawl, keine Umgehung. Fehlerklasse mit Grund und Empfehlung an der Quelle; Schonung mit täglicher Nachprüfung (robots.txt ändert sich selten). Handlungsempfehlung: Betreiber um Freigabe unseres User-Agents in der robots.txt oder um die OParl-Schnittstelle bitten (Textvorschlag unten, sinngemäß). |
+| `robots_blocked` — „robots.txt sperrt“ | Die robots.txt des Hosts verbietet unserem User-Agent den Abruf (RFC 9309, alle Quellen seit #793; Scraper seit #116). Als Befund der Quelle zählt nur eine vollständige Sperre; einzelne gesperrte Listen stehen im Sync-Log. | Kein Crawl, keine Umgehung. Fehlerklasse mit Grund und Empfehlung an der Quelle; Schonung mit täglicher Nachprüfung (robots.txt ändert sich selten). Handlungsempfehlung: Betreiber um Freigabe unseres User-Agents in der robots.txt oder um die OParl-Schnittstelle bitten (Textvorschlag unten, sinngemäß). |
 | `server_error_series` — „5xx-Serie“ | Ab `OPARL_SERVER_ERROR_SERIES_THRESHOLD` (Standard 5) aufeinanderfolgenden 5xx-Antworten je Host. | Sync-Warnung mit Statistik (Anzahl, Zeitraum, letzte Statuscodes, **betroffene Objektlisten**) statt stiller Lücke; Schonung ab dem ersten Befund (frühestens nach 30 Minuten). Eine erfolgreiche Antwort beendet die Serie. |
 
 Die Statistik steht im Feld *Letzter Fehler* der Quelle und in den Details des Sync-Protokolls
@@ -75,6 +75,37 @@ Handlungsempfehlung bei „User-Agent gesperrt“: den Betreiber ansprechen. Neu
 >
 > Mit freundlichen Grüßen
 > <Name>, mandari
+
+### robots.txt: Regeln, Ausnahmen, Bericht
+
+Jeder automatische Abruf prüft vorher die robots.txt des Hosts nach RFC 9309 (`mandari_oparl.robots`):
+OParl-Schnittstelle und HTML-Seiten im Ingestor, Dateien in Textextraktion, Dokument-Cache, Vorschau und
+bei Personenfotos, dazu RIS-Sondierung (`probe-ris`) und `manage.py add_oparl_source`. Platzhalter (`*`, `$`)
+gelten, die längste passende Regel entscheidet. `Disallow: /*.pdf$` sperrt also nur Dokumente; die Schnittstelle
+bleibt erreichbar. Eine fehlende robots.txt (4xx) erlaubt alles. Die Datei liegt 24 Stunden im Zwischenspeicher,
+je Host und User-Agent; geprüft wird mit dem User-Agent, mit dem auch abgerufen wird (Quelle bzw.
+`download_headers`).
+
+**Nicht erreichbar ist keine Sperre.** Liefert `/robots.txt` 5xx, 408, 429 oder einen Netzfehler, gilt die
+letzte gültige Fassung. Gibt es keine, stellen wir den Abruf zurück und fragen nach 15 Minuten erneut. Der
+Ingestor wertet das als Störung (`server_error_series`, kurze Schonung), nicht als `robots_blocked`.
+Textextraktion, Dokument-Cache und Personenfotos lassen die Dateien in der Warteschlange, statt sie zu
+überspringen.
+
+- **Bericht:** `manage.py robots_report` (`--nur-gesperrte`, `--json`, `--refresh`) nennt je Quelle
+  Schnittstelle und Datei-Hosts, die entscheidende Regel und eingetragene Ausnahmen. Die robots.txt wird
+  immer ausgewertet: Quellen, die wir per Ausnahme gegen die robots.txt laden, stehen als `[AUSNAHME]`
+  („gesperrt (Disallow: …), Ausnahme aktiv“) mit auf der Liste, im JSON mit `robots_sperrt`. Das ist die
+  Liste der gesperrten Quellen für Freigabe-Anfragen.
+- **Ausnahme nur mit Freigabe der Stelle:** `manage.py robots_override <quelle> --scope files --note "…"`
+  (`api`, `files` oder `all`). Ohne Vermerk (wer hat wann was freigegeben, Stand der Anfrage) wirkt
+  die Ausnahme nicht. Das Setzen reiht übersprungene Dateien neu ein; `--entfernen` hebt sie auf.
+- **Nach geänderter robots.txt:** `manage.py robots_report --refresh --requeue` reiht übersprungene
+  Dateien der Quellen neu ein, deren Dateien jetzt erlaubt sind.
+
+Der User-Agent nennt Infoseite und Kontakt (`mandari-ingestor/<Version> (+https://mandari.de/crawler/;
+support@mandari.de)`). Quellen, die das Wort der Infoseite im User-Agent filtern (#123), bekommen im
+Admin einen User-Agent je Quelle.
 
 ## CSP-Verstoßmeldungen
 

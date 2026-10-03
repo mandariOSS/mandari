@@ -18,6 +18,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Any
 
 import httpx
 from django.conf import settings
@@ -73,11 +74,52 @@ class DocumentDownloadError(RuntimeError):
     """Wird geworfen, wenn ein Dokument nicht heruntergeladen werden kann."""
 
 
-def _http_get(url: str, timeout: float = 60.0, extra_headers: dict[str, str] | None = None) -> httpx.Response:
-    """Führt einen HTTP-GET Request aus (``extra_headers``: Download-Header je Quelle, Issue #116)."""
+class RobotsBlockedError(DocumentDownloadError):
+    """Die robots.txt der Quelle sperrt das Dokument; ``reason`` beginnt mit ``robots.txt``."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class RobotsUnreachableError(DocumentDownloadError):
+    """
+    Die robots.txt der Quelle war nicht erreichbar (5xx, 408, 429, Netzfehler): Abruf zurückgestellt, keine
+    Sperre. Aufrufer lassen die Datei in der Warteschlange und versuchen es später erneut.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _http_get(
+    url: str,
+    timeout: float = 60.0,
+    extra_headers: dict[str, str] | None = None,
+    sync_config: Any = None,
+) -> httpx.Response:
+    """
+    Führt einen HTTP-GET Request aus (``extra_headers``: Download-Header je Quelle, Issue #116).
+
+    Vorher gilt die robots.txt des Hosts (``sync_config`` der Quelle für eine Ausnahme mit Vermerk), geprüft
+    mit dem User-Agent des Abrufs (``User-Agent`` in ``extra_headers``, sonst unser Standard). Ist das Dokument
+    gesperrt, folgt ``RobotsBlockedError``, ist die robots.txt nicht erreichbar, ``RobotsUnreachableError`` –
+    jeweils ohne Anfrage an die Quelle.
+    """
+    from . import robots
+
+    agent = next(
+        (v for k, v in (extra_headers or {}).items() if k.lower() == "user-agent" and v.strip()), robots.USER_AGENT
+    )
+    decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent)
+    if decision.unreachable:
+        raise RobotsUnreachableError(decision.reason)
+    if not decision.allowed:
+        raise RobotsBlockedError(decision.reason)
     headers = {
-        "User-Agent": "Mandari/2.0 (https://mandari.dev; contact@mandari.dev)",
-        **(extra_headers or {}),
+        **{k: v for k, v in (extra_headers or {}).items() if k.lower() != "user-agent"},
+        "User-Agent": agent,
     }
     from .safe_fetch import guarded_client
 
@@ -304,6 +346,7 @@ def download_and_extract(
     original_name: str = "",
     timeout: float = 60.0,
     extra_headers: dict[str, str] | None = None,
+    sync_config: Any = None,
 ) -> ExtractedDocument:
     """
     Lädt ein Dokument herunter und extrahiert Text.
@@ -313,11 +356,17 @@ def download_and_extract(
         mime_type: MIME-Typ (optional, wird aus Response ermittelt)
         original_name: Originaler Dateiname
         timeout: HTTP-Timeout in Sekunden
+        sync_config: ``sync_config`` der Quelle (Ausnahme von der robots.txt)
 
     Returns:
         ExtractedDocument mit Binärdaten, Text und Metadaten
+
+    Raises:
+        RobotsBlockedError: die robots.txt sperrt das Dokument
+        RobotsUnreachableError: die robots.txt ist nicht erreichbar (später erneut versuchen)
+        DocumentDownloadError: Abruf fehlgeschlagen
     """
-    response = _http_get(url, timeout=timeout, extra_headers=extra_headers)
+    response = _http_get(url, timeout=timeout, extra_headers=extra_headers, sync_config=sync_config)
     binary = response.content
     resolved_mime = mime_type or response.headers.get("Content-Type", "").split(";")[0]
     checksum = hashlib.sha256(binary).hexdigest()

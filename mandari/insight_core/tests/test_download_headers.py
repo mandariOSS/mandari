@@ -93,7 +93,7 @@ def test_textextraktion_reicht_header_durch(monkeypatch: Any) -> None:
     )
     assert ergebnis.text.strip() == "Nur Text"
     assert gesehen[0]["referer"] == "https://rat.example.de/bi/"
-    assert "Mandari" in gesehen[0]["user-agent"]
+    assert gesehen[0]["user-agent"].startswith("mandari-ingestor (+https://mandari.de/crawler/;")
 
 
 def test_robots_sperre_ist_kritisch_mit_empfehlung(db: Any) -> None:

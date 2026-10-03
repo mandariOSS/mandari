@@ -7,6 +7,7 @@ Settings for the OParl synchronization service.
 from functools import lru_cache
 from importlib import metadata
 
+from mandari_oparl.crawler import user_agent as crawler_user_agent
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,12 +21,14 @@ def _ingestor_version() -> str:
 
 
 # Transparenter User-Agent (Produkt-Token/Version, Infoseite, Kontaktadresse), damit
-# Betreiber uns identifizieren und gezielt drosseln oder ansprechen können.
-# Bewusst ohne den Begriff, den mindestens ein RIS im User-Agent filtert und mit
-# 403 quittiert, obwohl derselbe Abruf mit neutralem Client durchgeht (Issue #123).
-# Gilt für OParl-Client und Scraper gleichermaßen; je Quelle überschreibbar
-# (OParlSource.user_agent).
-DEFAULT_USER_AGENT = f"mandari-ingestor/{_ingestor_version()} (+https://mandari.de; support@mandari.de)"
+# Betreiber uns identifizieren, auf der Infoseite unsere Regeln finden und uns gezielt
+# drosseln, ausschließen oder ansprechen können (mandari_oparl.crawler). Dasselbe
+# Produkt-Token wertet die robots.txt-Prüfung aus.
+# Mindestens ein RIS filtert den Begriff „crawler“ im User-Agent und antwortet mit 403,
+# obwohl derselbe Abruf mit neutralem Client durchgeht (Issue #123). Für solche Quellen
+# gilt der User-Agent je Quelle (OParlSource.user_agent), z. B. ohne Infoseiten-Pfad;
+# die Sperre meldet der Monitor als „User-Agent gesperrt“.
+DEFAULT_USER_AGENT = crawler_user_agent(_ingestor_version())
 
 
 class Settings(BaseSettings):

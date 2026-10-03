@@ -54,7 +54,7 @@ async def test_extractor_sendet_quellen_header_und_cached_je_body(monkeypatch: p
         assert daten.startswith(b"%PDF")
 
     assert gesehen[0]["referer"] == "https://rat.example.de/bi/" and gesehen[0]["cookie"] == "consent=1"
-    assert "Mandari" in gesehen[0]["user-agent"], "eigener User-Agent bleibt"
+    assert gesehen[0]["user-agent"].startswith("mandari-ingestor/"), "eigener User-Agent bleibt"
     assert storage.abfragen == 1, "Header je Body nur einmal aus der Datenbank"
     assert await extractor._download_headers(None) == {}
 

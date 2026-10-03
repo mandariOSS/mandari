@@ -35,6 +35,34 @@ def _root_logging_zuruecksetzen() -> Iterator[None]:
     observability._logging_ready = ready
 
 
+@pytest.fixture(autouse=True)
+def _robots_zwischenspeicher(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """robots.txt-Zwischenspeicher je Test leeren; ohne Fixture ``echte_robots`` gilt „keine robots.txt“.
+
+    Der Ingestor fragt vor jedem Abruf die robots.txt des Hosts an (src/client/robots.py). Tests, die nur
+    den Abruf selbst prüfen, sollen dafür keine Antwort nachbilden müssen; die robots-Tests fordern
+    ``echte_robots`` an und bekommen die echte Prüfung.
+    """
+    from mandari_oparl.robots import STATE_UNAVAILABLE, RobotsTxt
+
+    from src.client.robots import RobotsGate, robots_gate
+
+    robots_gate.clear()
+    if "echte_robots" not in request.fixturenames:
+
+        async def _keine_robots(self: RobotsGate, *args: object, **kwargs: object) -> RobotsTxt:
+            return RobotsTxt(state=STATE_UNAVAILABLE, status_code=404)
+
+        monkeypatch.setattr(RobotsGate, "_load", _keine_robots)
+    yield
+    robots_gate.clear()
+
+
+@pytest.fixture
+def echte_robots() -> None:
+    """Echte robots.txt-Prüfung im Test (siehe ``_robots_zwischenspeicher``)."""
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest."""
     config.addinivalue_line("markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')")

@@ -77,16 +77,19 @@ class FakeRis:
         oparl_body: dict | None = None,
         landing_status: int = 200,
         block_ua: bool = False,
+        robots_status: int = 200,
     ) -> None:
         self.html, self.robots, self.oparl_path, self.oparl_body = html, robots, oparl_path, oparl_body
-        self.landing_status, self.block_ua = landing_status, block_ua
+        self.landing_status, self.block_ua, self.robots_status = landing_status, block_ua, robots_status
         self.requests: list[tuple[str, str]] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append((request.url.path, request.headers.get("User-Agent", "")))
         pfad = request.url.path
         if pfad == "/robots.txt":
-            return httpx.Response(200, text=self.robots) if self.robots is not None else httpx.Response(404)
+            if self.robots is None:
+                return httpx.Response(404)
+            return httpx.Response(self.robots_status, text=self.robots)
         if self.oparl_path and pfad == self.oparl_path:
             return httpx.Response(200, json=self.oparl_body or {})
         if pfad.startswith(("/oparl", "/bi/oparl", "/public/oparl", "/webservice")):
@@ -136,13 +139,77 @@ async def test_probe_meldet_ua_sperre_ohne_umgehung() -> None:
 
 
 @pytest.mark.asyncio
-async def test_probe_gate_und_robots_gesperrt() -> None:
-    fake = FakeRis(html="<title>Just a moment...</title>", robots="User-agent: *\nDisallow: /\n", landing_status=503)
+async def test_probe_gate_ohne_robots_sperre() -> None:
+    fake = FakeRis(html="<title>Just a moment...</title>", landing_status=503)
     r = await _probe(fake)
 
     assert r.gate == "browser_verification"
-    assert r.robots == "gesperrt"
     assert r.sync_config is None
+
+
+@pytest.mark.asyncio
+async def test_probe_robots_sperrt_alles_keine_weitere_anfrage() -> None:
+    fake = FakeRis(html="<title>Just a moment...</title>", robots="User-agent: *\nDisallow: /\n", landing_status=503)
+    r = await _probe(fake)
+
+    assert r.robots == "gesperrt" and "alles gesperrt" in r.robots_detail
+    assert [pfad for pfad, _ in fake.requests] == ["/robots.txt"], "gesperrte Pfade werden nicht angefragt"
+    assert r.requests == 1
+    assert r.landing_status is None and r.gate is None
+    assert r.sync_config is None
+
+
+@pytest.mark.asyncio
+async def test_probe_fragt_gesperrte_oparl_kandidaten_nicht_an() -> None:
+    fake = FakeRis(html="<html>x</html>", robots="User-agent: *\nDisallow: /oparl/\n")
+    r = await _probe(fake)
+
+    pfade = [pfad for pfad, _ in fake.requests]
+    assert pfade[:2] == ["/robots.txt", "/"]
+    assert not any(pfad.startswith("/oparl/") for pfad in pfade)
+    assert r.robots == "gesperrt"
+    assert any("gesperrt – nicht abgerufen" in n for n in r.notes)
+
+
+@pytest.mark.asyncio
+async def test_probe_eigene_gruppe_sperrt_startseite_kandidaten_erlaubt() -> None:
+    fake = FakeRis(
+        html="<html>x</html>",
+        robots="User-agent: mandari-ingestor\nDisallow: /\nAllow: /oparl/\n",
+        oparl_path="/oparl/system",
+        oparl_body={"id": "https://ris.example.org/oparl/system", "type": "https://schema.oparl.org/1.1/System"},
+    )
+    r = await _probe(fake)
+
+    pfade = [pfad for pfad, _ in fake.requests]
+    assert "/" not in pfade, "Startseite gesperrt"
+    assert r.oparl_endpoint == "https://ris.example.org/oparl/system"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [500, 503, 429])
+async def test_probe_robots_nicht_erreichbar_bricht_ab(status: int) -> None:
+    fake = FakeRis(html="<html>x</html>", robots="User-agent: *\nAllow: /\n", robots_status=status)
+    r = await _probe(fake)
+
+    assert r.robots == "nicht_erreichbar" and f"HTTP {status}" in r.robots_detail
+    assert [pfad for pfad, _ in fake.requests] == ["/robots.txt"]
+    assert r.requests == 1 and r.sync_config is None
+
+
+@pytest.mark.asyncio
+async def test_probe_robots_netzfehler_bricht_ab() -> None:
+    gesehen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gesehen.append(request.url.path)
+        raise httpx.ConnectError("keine Verbindung", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
+
+    assert gesehen == ["/robots.txt"]
+    assert r.robots == "nicht_erreichbar" and "Netzfehler" in r.robots_detail
 
 
 @pytest.mark.asyncio
@@ -173,8 +240,9 @@ def test_batch_klassifikation() -> None:
     c = rp.ProbeResult(url="https://c", vendor="rubin", oparl_endpoint="https://c/oparl/system")
     d = rp.ProbeResult(url="https://d", vendor="regisafe", robots="gesperrt")
     e = rp.ProbeResult(url="https://e", vendor="unbekannt", gate="proof_of_work")
+    f = rp.ProbeResult(url="https://f", vendor="sessionnet", robots="nicht_erreichbar")
 
-    listen = rp.classify_batch([a, b, c, d, e], registered_urls={"https://c/oparl/system"})
+    listen = rp.classify_batch([a, b, c, d, e, f], registered_urls={"https://c/oparl/system"})
 
     assert [x["url"] for x in listen["ohne_oparl_robots_frei"]] == ["https://a"]
     assert [x["url"] for x in listen["oparl_vorhanden_nicht_registriert"]] == ["https://b"]

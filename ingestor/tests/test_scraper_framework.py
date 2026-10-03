@@ -5,12 +5,13 @@ Quellen-Konfiguration, Politeness (robots.txt, Rate-Limit).
 """
 
 import time
-import urllib.robotparser
 from datetime import date
 
 import httpx
 import pytest
+from mandari_oparl.robots import RobotsTxt
 
+from src.client.robots import robots_gate
 from src.scrapers import get_adapter
 from src.scrapers.base import (
     CrawlWindow,
@@ -19,7 +20,7 @@ from src.scrapers.base import (
     normalize_external_id,
     with_content_hash,
 )
-from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError, _RobotsEntry
+from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError
 
 
 class TestNormalizeExternalId:
@@ -126,28 +127,28 @@ class TestAdapterRegistry:
             get_adapter("scraper:doesnotexist", config, fetcher=None)
 
 
-def _make_robots_entry(rules: str) -> _RobotsEntry:
-    parser = urllib.robotparser.RobotFileParser()
-    parser.parse(rules.splitlines())
-    return _RobotsEntry(parser=parser, fetched_at=time.monotonic())
-
-
 class TestRobots:
-    async def test_disallow_respected(self):
+    async def test_disallow_respected(self, echte_robots):
         fetcher = PoliteFetcher()
-        fetcher._robots_cache["rat.example.de"] = _make_robots_entry("User-agent: *\nDisallow: /bi/")
+        robots_gate.seed("https://rat.example.de/", RobotsTxt.parse("User-agent: *\nDisallow: /bi/"))
         assert await fetcher.is_allowed("https://rat.example.de/bi/si0040.asp") is False
         assert await fetcher.is_allowed("https://rat.example.de/andere.html") is True
 
-    async def test_no_robots_means_allowed(self):
+    async def test_no_robots_means_allowed(self, echte_robots):
         fetcher = PoliteFetcher()
-        fetcher._robots_cache["rat.example.de"] = _RobotsEntry(parser=None, fetched_at=time.monotonic())
+        robots_gate.seed("https://rat.example.de/", RobotsTxt.from_response(404))
         assert await fetcher.is_allowed("https://rat.example.de/bi/si0040.asp") is True
 
-    async def test_specific_agent_disallow(self):
+    async def test_specific_agent_disallow(self, echte_robots):
         fetcher = PoliteFetcher()
-        fetcher._robots_cache["rat.example.de"] = _make_robots_entry("User-agent: mandari-ingestor\nDisallow: /")
+        robots_gate.seed("https://rat.example.de/", RobotsTxt.parse("User-agent: mandari-ingestor\nDisallow: /"))
         assert await fetcher.is_allowed("https://rat.example.de/bi/si0040.asp") is False
+
+    async def test_wildcard_sperrt_nur_dokumente(self, echte_robots):
+        fetcher = PoliteFetcher()
+        robots_gate.seed("https://rat.example.de/", RobotsTxt.parse("User-agent: *\nDisallow: /*.pdf$"))
+        assert await fetcher.is_allowed("https://rat.example.de/bi/si0040.asp") is True
+        assert await fetcher.is_allowed("https://rat.example.de/bi/getfile.asp/vorlage.pdf") is False
 
 
 class TestPoliteFetcher:
@@ -172,7 +173,7 @@ class TestPoliteFetcher:
         finally:
             await fetcher._client.aclose()
 
-    async def test_robots_disallow_raises(self):
+    async def test_robots_disallow_raises(self, echte_robots):
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/robots.txt":
                 return httpx.Response(200, text="User-agent: *\nDisallow: /")
@@ -206,9 +207,9 @@ class TestPoliteFetcher:
             await fetcher._client.aclose()
         assert seen_agents
         assert all(agent.startswith("mandari-ingestor/") for agent in seen_agents)
-        # Kontaktadresse bleibt, der filterauslösende Begriff nicht (Issue #123)
+        # Kontaktadresse und Infoseite für Betreiber (Quellen mit Wortfilter: User-Agent je Quelle, Issue #123)
         assert all("support@mandari.de" in agent for agent in seen_agents)
-        assert all("crawler" not in agent.lower() for agent in seen_agents)
+        assert all("https://mandari.de/crawler/" in agent for agent in seen_agents)
 
     async def test_404_returns_none(self):
         def handler(request: httpx.Request) -> httpx.Response:

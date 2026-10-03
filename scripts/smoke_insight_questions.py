@@ -75,7 +75,11 @@ from insight_core.models import (  # noqa: E402
     OParlSource,
     PublicQuestion,
 )
-from insight_core.services import person_photos, question_service  # noqa: E402
+from insight_core.services import person_photos, question_service, robots  # noqa: E402
+
+# Ohne Netz: die Test-Quellen haben keine robots.txt (HTTP 404, alles erlaubt). Die Prüfung selbst testen
+# insight_core/tests/test_robots_txt.py und ingestor/tests/test_robots.py.
+robots._fetch = lambda url, agent=None: (404, b"")
 
 PASS = 0
 FAIL = 0
@@ -498,8 +502,11 @@ class FakeClient:
     def close(self):
         pass
 
-    def get(self, url):
+    def get(self, url, headers=None):
         FakeClient.calls.append(url)
+        # Fotos werden mit unserer Kennung geladen, nie mit einem Browser-User-Agent
+        if headers is not None:
+            assert "mandari-ingestor" in headers.get("User-Agent", ""), headers
         if url.endswith("pe105.jpg"):
             return FakeResponse(404, b"", "text/html")
         if url.endswith("pe106.jpg"):

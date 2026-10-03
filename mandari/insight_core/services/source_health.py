@@ -53,8 +53,9 @@ ERROR_KIND_INFO = {
         ),
         "recommendation": (
             "Betreiber der Quelle ansprechen: um eine Freigabe unseres User-Agents in der robots.txt "
-            "oder um die OParl-Schnittstelle bitten (Textvorschlag in docs/MONITORING.md). Der Ingestor "
-            "prüft die robots.txt täglich erneut; bis dahin bleiben die Daten dieser Kommune unverändert."
+            "oder um die OParl-Schnittstelle bitten (Textvorschlag in docs/MONITORING.md). Liegt eine "
+            "Freigabe vor: manage.py robots_override mit Vermerk; Überblick: manage.py robots_report. Der "
+            "Ingestor prüft die robots.txt täglich erneut; bis dahin bleiben die Daten dieser Kommune unverändert."
         ),
     },
     "server_error_series": {

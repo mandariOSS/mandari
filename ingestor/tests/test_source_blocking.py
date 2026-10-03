@@ -97,10 +97,10 @@ def always_server_error(_request: httpx.Request, _agents: list[str]) -> httpx.Re
 # ---------------------------------------------------------------------------
 
 
-def test_default_user_agent_is_identifiable_without_trigger_word() -> None:
+def test_default_user_agent_nennt_infoseite_und_kontakt() -> None:
+    # Quellen, die den Begriff der Infoseite im User-Agent filtern, bekommen einen User-Agent je Quelle
     assert DEFAULT_USER_AGENT.startswith("mandari-ingestor/")
-    assert "support@mandari.de" in DEFAULT_USER_AGENT
-    assert "crawler" not in DEFAULT_USER_AGENT.lower()
+    assert "(+https://mandari.de/crawler/; support@mandari.de)" in DEFAULT_USER_AGENT
     assert OParlClient().user_agent == settings.user_agent
     assert OParlClient(user_agent="  ").user_agent == settings.user_agent
 

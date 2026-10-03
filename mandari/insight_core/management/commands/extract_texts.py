@@ -23,8 +23,11 @@ from django.db.models import Q
 from apps.common.db_connections import releases_db_connections
 from insight_core.management.arguments import add_extraction_arguments
 from insight_core.models import OParlBody, OParlFile
+from insight_core.services import robots
 from insight_core.services.document_extraction import (
     DocumentDownloadError,
+    RobotsBlockedError,
+    RobotsUnreachableError,
     download_and_extract,
 )
 from insight_core.services.file_cache import download_headers, sources_without_downloads
@@ -100,6 +103,7 @@ class Command(BaseCommand):
             "failed": 0,
             "ocr": 0,
             "skipped": 0,
+            "deferred": 0,
             "total_chars": 0,
         }
 
@@ -131,6 +135,8 @@ class Command(BaseCommand):
                                 stats["ocr"] += 1
                         elif result.get("skipped"):
                             stats["skipped"] += 1
+                        elif result.get("deferred"):
+                            stats["deferred"] += 1
                         else:
                             stats["failed"] += 1
                     except Exception as exc:
@@ -145,6 +151,8 @@ class Command(BaseCommand):
         self.stdout.write(f"  Zeichen gesamt: {stats['total_chars']:,}")
         if stats["skipped"]:
             self.stdout.write(self.style.WARNING(f"Übersprungen: {stats['skipped']}"))
+        if stats["deferred"]:
+            self.stdout.write(self.style.WARNING(f"Zurückgestellt (robots.txt nicht erreichbar): {stats['deferred']}"))
         if stats["failed"]:
             self.stdout.write(self.style.ERROR(f"Fehlgeschlagen: {stats['failed']}"))
 
@@ -169,6 +177,7 @@ class Command(BaseCommand):
                 original_name=file.file_name or file.name or "",
                 timeout=120.0,
                 extra_headers=download_headers(file.body),
+                sync_config=robots.sync_config_of(file.body),
             )
 
             # Text speichern
@@ -199,6 +208,21 @@ class Command(BaseCommand):
             if verbose:
                 self.stdout.write(self.style.WARNING(f"  {file.id}: KI-OCR benötigt (kein Text via pypdf/Tesseract)"))
             return {"success": False, "reason": "ocr_needed"}
+
+        except RobotsUnreachableError as exc:
+            # Störung, keine Sperre: Datei bleibt "pending" und kommt beim nächsten Lauf wieder dran
+            if verbose:
+                self.stdout.write(self.style.WARNING(f"  {file.id}: {exc.reason}"))
+            return {"success": False, "deferred": True, "reason": "robots.txt nicht erreichbar"}
+
+        except RobotsBlockedError as exc:
+            # Kein Fehler der Quelle: übersprungen, bis eine Freigabe vorliegt (robots_override reiht neu ein)
+            file.text_extraction_status = "skipped"
+            file.text_extraction_error = exc.reason[:500]
+            file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
+            if verbose:
+                self.stdout.write(self.style.WARNING(f"  {file.id}: {exc.reason}"))
+            return {"success": False, "skipped": True, "reason": "robots.txt"}
 
         except DocumentDownloadError as exc:
             file.text_extraction_status = "failed"

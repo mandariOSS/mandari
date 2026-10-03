@@ -26,6 +26,7 @@ from mandari_oparl import (
     ProcessedPaper,
     ProcessedPerson,
 )
+from mandari_oparl.robots import RobotsOverride
 from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -402,6 +403,17 @@ class DatabaseStorage:
             )
             sync_config = result.scalar_one_or_none()
         return SourceFetchOptions.from_sync_config(sync_config).file_downloads
+
+    async def get_robots_override_for_body(self, body_id: UUID) -> RobotsOverride | None:
+        """Ausnahme der Quelle eines Bodies von der robots.txt (``sync_config["robots_override"]``, mit Vermerk)."""
+        async with self.get_session() as session:
+            result = await session.execute(
+                select(OParlSource.sync_config)
+                .join(OParlBody, OParlBody.source_id == OParlSource.id)
+                .where(OParlBody.id == body_id)
+            )
+            sync_config = result.scalar_one_or_none()
+        return SourceFetchOptions.from_sync_config(sync_config).robots_override
 
     async def get_source_by_url(self, url: str) -> OParlSource | None:
         """Get a source by URL."""
