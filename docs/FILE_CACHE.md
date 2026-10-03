@@ -77,6 +77,9 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
   Altersklasse des Dokuments (< 30 Tage, < 1 Jahr, < 3 Jahre, älter). Es gibt nur Zähler, keine Adressen,
   Kennungen oder einzelnen Dokumente. `cache_files --stats` zeigt die letzten 30 Tage mit Trefferquote; daraus
   ergibt sich, wie groß ein Zwischenspeicher sein muss. Ein Fehler beim Zählen verhindert die Auslieferung nie.
+  Mit der Auslieferung über den Webserver laden PDF-Betrachter große Dokumente in Teilen (Range-Anfragen),
+  und jede Anfrage läuft durch Django. Gezählt wird nur die erste Anfrage eines Abrufs (ohne `Range` oder mit
+  einem Bereich ab Byte 0); Folgeanfragen zählen weder als Abruf noch mit ihrer Größe.
 
 ### Auslieferung über den Webserver
 

@@ -6,16 +6,21 @@ Jeder Abruf über die Dateivorschau zählt einmal: je Tag, Kommune, Ergebnis (Tr
 Kopie, Abruf bei der Quelle, nicht ausgeliefert, gesperrt) und Altersklasse des Dokuments. Es gibt
 keine Adressen, keine Kennungen und keine einzelnen Dokumente im Protokoll, nur Zähler.
 
+PDF-Betrachter laden große Dokumente in Teilen (Range-Anfragen), sobald der Webserver sie ausliefert
+(#785). Gezählt wird nur die erste Anfrage eines Abrufs: ohne ``Range`` oder mit einem Bereich ab
+Byte 0. Folgeanfragen zählen weder als Abruf noch mit ihrer Größe.
+
 Das Zählen darf die Auslieferung nie verhindern: Fehler werden nur protokolliert.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from django.db import DatabaseError, IntegrityError, transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Q, Sum
 from django.http import HttpResponseBase
 from django.utils import timezone
@@ -29,6 +34,27 @@ BLOCKED = "blocked"
 
 #: Markierung an einer Antwort, die ein Dokument bewusst nicht ausliefert (zurückgenommen, gesperrt)
 BLOCKED_ATTRIBUTE = "mandari_file_blocked"
+
+#: Beginn des ersten Bereichs einer ``Range``-Kopfzeile (``bytes=<start>-…``)
+_RANGE_START = re.compile(r"\s*bytes\s*=\s*(\d*)\s*-", re.IGNORECASE)
+
+
+def counts_as_access(request: Any) -> bool:
+    """
+    Zählt diese Anfrage als eigener Abruf? Ja ohne ``Range`` und für einen Bereich ab Byte 0.
+
+    Folgeanfragen eines PDF-Betrachters (``bytes=65536-…``, auch Bereiche vom Ende ``bytes=-500``)
+    gehören zu einem Abruf, der schon gezählt ist. Eine unlesbare ``Range`` ignoriert der Webserver und
+    liefert die ganze Datei: Die zählt.
+    """
+    header = (getattr(request, "META", None) or {}).get("HTTP_RANGE", "")
+    if not header:
+        return True
+    match = _RANGE_START.match(header)
+    if match is None:
+        return True
+    start = match.group(1)
+    return bool(start) and int(start) == 0
 
 
 def age_class(file_obj: Any, now: datetime | None = None) -> str:
@@ -68,8 +94,7 @@ def mark_blocked(response: HttpResponseBase) -> HttpResponseBase:
     return response
 
 
-def record(file_obj: Any, outcome: str, *, day: date | None = None) -> None:
-    """Einen Abruf zählen; Fehler beim Zählen werden nur protokolliert."""
+def _count(file_obj: Any, outcome: str, day: date | None) -> None:
     from ..models import OParlFileAccessDay
 
     key = {
@@ -80,22 +105,35 @@ def record(file_obj: Any, outcome: str, *, day: date | None = None) -> None:
     }
     size = int(getattr(file_obj, "local_size", None) or getattr(file_obj, "size", None) or 0)
     size = size if outcome in (HIT, MISS) else 0
+    if OParlFileAccessDay.objects.filter(**key).update(count=F("count") + 1, bytes=F("bytes") + size):
+        return
     try:
-        if OParlFileAccessDay.objects.filter(**key).update(count=F("count") + 1, bytes=F("bytes") + size):
-            return
-        try:
-            with transaction.atomic():
-                OParlFileAccessDay.objects.create(**key, count=1, bytes=size)
-        except IntegrityError:
-            # Ein paralleler Abruf hat die Zeile eben angelegt
-            OParlFileAccessDay.objects.filter(**key).update(count=F("count") + 1, bytes=F("bytes") + size)
-    except DatabaseError:
+        with transaction.atomic():
+            OParlFileAccessDay.objects.create(**key, count=1, bytes=size)
+    except IntegrityError:
+        # Ein paralleler Abruf hat die Zeile eben angelegt
+        OParlFileAccessDay.objects.filter(**key).update(count=F("count") + 1, bytes=F("bytes") + size)
+
+
+def record(file_obj: Any, outcome: str, *, day: date | None = None) -> None:
+    """Einen Abruf zählen; jeder Fehler beim Zählen wird nur protokolliert, nie weitergereicht."""
+    try:
+        _count(file_obj, outcome, day)
+    except Exception:  # Zählfehler (Datenbank, unerwartete Werte) verhindern die Auslieferung nie
         logger.warning("Dokumentabruf %s konnte nicht gezählt werden", getattr(file_obj, "id", "?"), exc_info=True)
 
 
-def record_response(file_obj: Any, response: HttpResponseBase) -> HttpResponseBase:
-    """Ergebnis aus der Antwort ableiten, zählen und die Antwort unverändert zurückgeben."""
-    record(file_obj, outcome_of(response))
+def record_response(file_obj: Any, response: HttpResponseBase, request: Any = None) -> HttpResponseBase:
+    """
+    Ergebnis aus der Antwort ableiten, zählen und die Antwort unverändert zurückgeben.
+
+    Mit ``request`` zählen Folgeanfragen eines Abrufs in Teilen nicht (``counts_as_access``).
+    """
+    try:
+        if request is None or counts_as_access(request):
+            record(file_obj, outcome_of(response))
+    except Exception:
+        logger.warning("Dokumentabruf %s konnte nicht gezählt werden", getattr(file_obj, "id", "?"), exc_info=True)
     return response
 
 

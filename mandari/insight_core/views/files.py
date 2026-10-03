@@ -270,12 +270,20 @@ def file_proxy(request, file_id):
        direkt in den Cache geschrieben (Write-Through)
     3. Freundliche Fehlerseite, wenn die Quelle nicht erreichbar ist
 
-    Jeder Abruf zählt im Zugriffsprotokoll (Treffer, Abruf bei der Quelle, Fehler, Sperre; #786).
+    Jeder Abruf zählt im Zugriffsprotokoll (Treffer, Abruf bei der Quelle, Fehler, Sperre; #786),
+    Folgeanfragen eines Abrufs in Teilen (Range) nicht.
     """
     file_obj = get_object_or_404(
         OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
     )
-    return file_access.record_response(file_obj, _deliver_file(request, file_obj))
+    try:
+        response = _deliver_file(request, file_obj)
+    except Http404:
+        # Keine Download-Adresse: nicht ausgeliefert
+        if file_access.counts_as_access(request):
+            file_access.record(file_obj, file_access.FAILED)
+        raise
+    return file_access.record_response(file_obj, response, request)
 
 
 def _deliver_file(request, file_obj):

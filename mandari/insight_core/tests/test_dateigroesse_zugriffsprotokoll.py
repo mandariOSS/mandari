@@ -149,6 +149,29 @@ class TestZugriffsprotokoll:
         assert response.status_code == 200
         assert response["X-Mandari-Cache"] == "hit"
 
+    def test_unerwarteter_fehler_beim_zaehlen_verhindert_die_auslieferung_nicht(
+        self, body: OParlBody, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        pfad = tmp_path / "a.pdf"
+        pfad.write_bytes(b"%PDF-1.4 test")
+        datei = _datei(body, local_path=str(pfad), local_status="ok")
+
+        def kaputt(*args: Any, **kwargs: Any) -> str:
+            raise TypeError("unerwarteter Datumswert")
+
+        monkeypatch.setattr(file_access, "age_class", kaputt)
+        response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
+        assert response.status_code == 200
+        assert response["X-Mandari-Cache"] == "hit"
+        assert not OParlFileAccessDay.objects.exists()
+
+    def test_ohne_download_adresse_zaehlt_als_fehler(self, body: OParlBody) -> None:
+        datei = OParlFile.objects.create(
+            external_id="https://ris.fremd.example/oparl/file/ohne-url", body=body, name="Ohne Adresse"
+        )
+        assert Client().get(f"/insight/dokumente/{datei.id}/preview/").status_code == 404
+        assert list(OParlFileAccessDay.objects.values_list("outcome", flat=True)) == ["failed"]
+
     def test_zusammenfassung_mit_trefferquote(self, body: OParlBody) -> None:
         heute = timezone.localdate()
         OParlFileAccessDay.objects.create(day=heute, body=body, outcome="hit", age_class="d30", count=9, bytes=900)
@@ -171,3 +194,51 @@ class TestZugriffsprotokoll:
 
     def test_ohne_datum(self) -> None:
         assert file_access.age_class(OParlFile(), now=timezone.now()) == "unknown"
+
+
+class TestAbrufInTeilen:
+    """Mit dem Webserver (#785) lädt ein PDF-Betrachter in Teilen: ein Öffnen zählt trotzdem einmal."""
+
+    def test_folgeanfragen_zaehlen_nicht(self, body: OParlBody, ablage: Path, settings: Any) -> None:
+        settings.FILE_ACCEL_REDIRECT = True
+        pfad = ablage / "beispielstadt" / "2026" / "a1b2.pdf"
+        pfad.parent.mkdir(parents=True)
+        pfad.write_bytes(b"%PDF-1.4 " + b"x" * 991)
+        datei = _datei(body, local_path=str(pfad), local_status="ok", local_size=1000)
+        adresse = f"/insight/dokumente/{datei.id}/preview/"
+        client = Client()
+
+        # Erste Anfrage des Betrachters, danach Teile mitten aus der Datei und vom Ende
+        assert client.get(adresse)["X-Accel-Redirect"].startswith("/_mandari/dateien/")
+        for bereich in ("bytes=200-399", "bytes=400-999", "bytes=-100", "bytes=600-699, 800-899"):
+            response = client.get(adresse, HTTP_RANGE=bereich)
+            assert response.status_code == 200
+            assert response["X-Accel-Redirect"].startswith("/_mandari/dateien/")
+        zeile = OParlFileAccessDay.objects.get()
+        assert (zeile.outcome, zeile.count, zeile.bytes) == ("hit", 1, 1000)
+
+        # Ein neuer Abruf, der mit einem Bereich ab Byte 0 beginnt, zählt
+        client.get(adresse, HTTP_RANGE="bytes=0-199")
+        zeile.refresh_from_db()
+        assert (zeile.count, zeile.bytes) == (2, 2000)
+
+    @pytest.mark.parametrize(
+        ("kopfzeile", "zaehlt"),
+        [
+            ("", True),
+            ("bytes=0-", True),
+            ("bytes=0-65535", True),
+            ("Bytes = 00-10", True),
+            ("bytes=65536-131071", False),
+            ("bytes=-500", False),
+            ("bytes=1-", False),
+            ("unsinn", True),
+        ],
+    )
+    def test_erste_anfrage_erkennen(self, kopfzeile: str, zaehlt: bool) -> None:
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        if kopfzeile:
+            request.META["HTTP_RANGE"] = kopfzeile
+        assert file_access.counts_as_access(request) is zaehlt
