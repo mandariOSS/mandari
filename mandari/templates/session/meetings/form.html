@@ -50,10 +50,10 @@
                 <label for="id_organization" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Gremium *
                 </label>
-                <select name="organization" id="id_organization" required
+                <select name="organization" id="id_organization" required data-public-default="#id_is_public" data-date-public-default="#id_date_public"
                         class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                     <option value="">Bitte wählen...</option>
-                    {% include "session/partials/organization_options.html" with groups=organization_groups organizations=form.organization.field.queryset selected=form.organization.value %}
+                    {% include "session/partials/organization_options.html" with groups=organization_groups organizations=organization_choices selected=form.organization.value %}
                 </select>
                 {% if body_choice.active %}
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Die Sitzung gehört zur Körperschaft ihres Gremiums.</p>
@@ -139,15 +139,17 @@
             <div>
                 <div class="flex items-center gap-3">
                     <input type="checkbox" name="is_public" id="id_is_public"
-                           {% if form.is_public.value %}checked{% endif %}
+                           {% if form.is_public.value and not publicity_locked %}checked{% endif %}{% if publicity_locked %} disabled{% endif %}
                            class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
                     <label for="id_is_public" class="text-sm font-medium text-gray-700 dark:text-gray-300">
                         Öffentliche Sitzung
                     </label>
                 </div>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 ml-7">
-                    Öffentliche Sitzungen werden über die OParl-API veröffentlicht.
+                    Öffentliche Sitzungen werden über die OParl-API veröffentlicht. Die Vorgabe richtet sich nach dem Gremium.
                 </p>
+                {% if form.is_public.errors %}<p class="mt-1 text-sm text-red-600 ml-7">{{ form.is_public.errors.0 }}</p>{% endif %}
+                <c-form.checkbox :field="form.date_public" label="Bei nichtöffentlicher Sitzung: Termin veröffentlichen (ohne Tagesordnung, Ort und Unterlagen)" class="mt-2 ml-7" />
             </div>
 
             {% include "session/meetings/_format_fields.html" %}

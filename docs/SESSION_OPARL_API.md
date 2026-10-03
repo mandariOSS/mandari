@@ -65,7 +65,7 @@ markiert sind:
 
 | Objekttyp | Sichtbarkeitsregel |
 |-----------|--------------------|
-| Meeting | `is_public=True` |
+| Meeting | `is_public=True`; eine nichtöffentliche Sitzung mit veröffentlichtem Termin (`date_public`, Issue #757) nur als Termin: Name, Beginn, Ende, Status, Gremien und `mandari:nonPublic: true` – ohne Ort, Tagesordnung, Anlagen, Niederschrift und Sitzungsformat |
 | AgendaItem | `is_public=True` **und** Sitzung öffentlich (NÖ-Teil niemals; `resolutionText` nur der öffentliche Beschlusstext) |
 | Paper | `is_public=True` |
 | File | `is_public=True` **und** übergeordnetes Objekt (Vorlage/Sitzung/TOP) öffentlich; die öffentliche Niederschrift nur, solange sie veröffentlicht ist |
@@ -271,6 +271,15 @@ für die Öffentlichkeit) sowie – bei digitalen Sitzungen mit geschütztem Zug
 Der Zugangsweg für zugeschaltete Mitglieder wird **nie** ausgeliefert (verschlüsselt, nur in der Ladung
 an die Mitglieder). Die Insight-Sitzungsseite zeigt daraus die Karte „Teilnahme der Öffentlichkeit“;
 Links nur mit `http(s)`. Rechtsgrundlagen je Land: `SESSION_SITZUNGSFORMAT_LANDESRECHT.md`.
+
+## Termine nichtöffentlicher Sitzungen (Erweiterung, Issue #757)
+
+Ein Gremium kann die Termine seiner nichtöffentlichen Sitzungen veröffentlichen (Einstellung „Termine
+nichtöffentlicher Sitzungen veröffentlichen“, je Sitzung „Termin veröffentlichen“), z. B. der stets
+nichtöffentliche Hauptausschuss. Das `Meeting` erscheint dann mit Name, Beginn, Ende, Status, Gremien und
+`mandari:nonPublic: true`; Ort (`location`, auch unter `…/location/<Kennung>/`), Tagesordnung, Anlagen,
+Niederschrift und Sitzungsformat fehlen. Wird eine öffentliche Sitzung nichtöffentlich und bleibt nur ihr
+Termin veröffentlicht, nimmt die Schnittstelle TOPs, Anlagen und Ort zurück (Tombstones), die Sitzung bleibt.
 
 ## Beratungsfolge (Consultation)
 

@@ -614,7 +614,8 @@ def test_ende_vor_beginn_gilt_auch_ausserhalb_des_sitzungsformulars(welt: Welt) 
 
 def test_gremium_ist_beim_bearbeiten_vorausgewaehlt(welt: Welt) -> None:
     seite = welt.client.get(welt.url(f"/meetings/{welt.sitzung.pk}/edit/")).content.decode()
-    assert re.search(rf'<option value="{welt.gremium.pk}"\s+selected>', seite)
+    # Die Vorgabe der Öffentlichkeit (Issue #757) folgt als data-Attribut
+    assert re.search(rf'<option value="{welt.gremium.pk}"\s+selected[^>]*>', seite)
 
 
 def _wahlperioden(tenant: SessionTenant) -> tuple[SessionLegislativeTerm, SessionLegislativeTerm]:

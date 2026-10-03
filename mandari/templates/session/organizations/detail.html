@@ -32,6 +32,7 @@
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ organization.short_name }}</p>
                     {% endif %}
                     {% if legal_designation %}<p class="text-sm text-gray-500 dark:text-gray-400 mt-1" data-testid="gesetzliche-bezeichnung">Gesetzliche Bezeichnung: {{ legal_designation }}</p>{% endif %}
+                    {% if main_committee_hint %}<c-ui.alert variant="info" icon="scale" class="mt-3" data-testid="hauptausschuss-hinweis">{{ main_committee_hint }}</c-ui.alert>{% endif %}
                 </div>
                 {% if can_manage %}
                 <div class="flex items-center gap-2">

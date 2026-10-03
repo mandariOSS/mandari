@@ -129,6 +129,8 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
             )
         else:
             context["memberships"] = memberships_qs.filter(active).order_by("person__family_name")
+        # Hauptausschuss (Issue #757): Vorsitz bei der bzw. dem HVB, stets nichtöffentlich
+        context["main_committee_hint"] = state_law_service.main_committee_hint(org, list(context["memberships"]))
 
         # Künftige Besetzungen (z. B. nach einem Periodenwechsel mit künftigem Stichtag)
         context["upcoming_memberships"] = (
@@ -187,6 +189,9 @@ ORGANIZATION_FORM_FIELDS = [
     "committee_kind",
     # Örtliche Abweichung der Hauptsatzung für hybride Sitzungen (Issue #757)
     "remote_local_rule",
+    # Öffentlichkeit der Sitzungen und Termine nichtöffentlicher Sitzungen (Issue #757)
+    "publicity",
+    "publish_dates",
     "parent",
     "meeting_frequency",
     "invitation_period_days",

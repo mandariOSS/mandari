@@ -338,7 +338,8 @@ def _location_response(mapping, pk):
     meeting = pub.visible_meetings(mapping.tenant).filter(pk=pk).first()
     if meeting is not None:
         gone = mapping.tombstone("location", pk, meeting.created_at, meeting.updated_at)
-        return json_response(mapping.location(meeting) or gone)
+        # Nur Termin einer nichtöffentlichen Sitzung (Issue #757): kein Ort
+        return json_response((mapping.location(meeting) if meeting.is_public else None) or gone)
     tombstone = SessionOParlTombstone.objects.filter(tenant=mapping.tenant, oparl_type="meeting", object_id=pk).first()
     if tombstone is not None:
         return json_response(mapping.tombstone("location", pk, tombstone.object_created_at, tombstone.deleted_at))

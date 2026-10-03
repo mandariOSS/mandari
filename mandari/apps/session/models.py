@@ -1765,6 +1765,33 @@ class SessionOrganization(models.Model):
         verbose_name="Mitglieder",
     )
 
+    # Öffentlichkeit der Sitzungen (Issue #757): Standard nach Landesrecht und Geschäftsordnung oder abweichend am
+    # Gremium; Termine nichtöffentlicher Sitzungen lassen sich veröffentlichen (Datum und Gremium, ohne Inhalte).
+    # Ein stets nichtöffentlicher Ausschuss (z. B. Hauptausschuss, § 78 Abs. 2 NKomVG) tagt immer nichtöffentlich.
+    PUBLICITY_PUBLIC = "public"
+    PUBLICITY_NON_PUBLIC = "non_public"
+    PUBLICITY_CHOICES = [
+        ("", "Nach Landesrecht und Geschäftsordnung"),
+        (PUBLICITY_PUBLIC, "Öffentlich"),
+        (PUBLICITY_NON_PUBLIC, "Nichtöffentlich"),
+    ]
+    publicity = models.CharField(
+        max_length=20,
+        choices=PUBLICITY_CHOICES,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Öffentlichkeit der Sitzungen",
+        help_text="Vorgabe für neue Sitzungen",
+    )
+    publish_dates = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Termine nichtöffentlicher Sitzungen veröffentlichen",
+        help_text="Datum, Uhrzeit und Gremium erscheinen in der OParl-Schnittstelle und im Bürgerportal, ohne "
+        "Tagesordnung, Ort und Unterlagen",
+    )
+
     # Settings
     default_meeting_location = models.CharField(max_length=255, blank=True, verbose_name="Standardort für Sitzungen")
     default_meeting_start_time = models.TimeField(blank=True, null=True, verbose_name="Standardzeit für Sitzungen")
@@ -2222,6 +2249,15 @@ class SessionMeeting(EncryptionMixin, models.Model):
         verbose_name="Öffentlich",
         help_text="Wird über OParl-API veröffentlicht",
     )
+    # Termin einer nichtöffentlichen Sitzung veröffentlichen (Issue #757): Name, Beginn, Ende, Status und Gremien
+    # erscheinen in der OParl-Schnittstelle, nie Tagesordnung, Ort oder Unterlagen. Ohne Wirkung bei öffentlichen
+    # Sitzungen. DB-seitiger Default, damit ein älteres Image weiter Sitzungen anlegen kann.
+    date_public = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Termin veröffentlichen",
+        help_text="Nur bei nichtöffentlichen Sitzungen: Datum und Gremium öffentlich, ohne Inhalte",
+    )
 
     # Non-public internal notes (encrypted)
     internal_notes_encrypted = EncryptedTextField(blank=True, null=True, verbose_name="Interne Notizen")
@@ -2274,11 +2310,39 @@ class SessionMeeting(EncryptionMixin, models.Model):
         if self._state.adding and self.legislative_term_id is None and self.tenant_id and hasattr(self.start, "date"):
             start = timezone.localtime(self.start) if timezone.is_aware(self.start) else self.start
             self.legislative_term = SessionLegislativeTerm.for_date(self.tenant, start.date())
+        self.apply_publicity_rules(kwargs)
         self.sync_cancellation()
         update_fields = kwargs.get("update_fields")
         if update_fields is not None and {"cancelled", "meeting_state"} & set(update_fields):
             kwargs["update_fields"] = {*update_fields, "cancelled", "meeting_state"}
         super().save(*args, **kwargs)
+
+    def apply_publicity_rules(self, kwargs: dict[str, Any]) -> None:
+        """
+        Öffentlichkeit nach Landesrecht (Issue #757) auf jedem Speicherweg – Formular, Jahresplanung, Admin, API:
+
+        - Ein stets nichtöffentlicher Ausschuss (z. B. Hauptausschuss, § 78 Abs. 2 NKomVG) tagt nie öffentlich; ein
+          „öffentlich“ wird beim Speichern zurückgesetzt.
+        - Neue nichtöffentliche Sitzungen eines Gremiums mit „Termine veröffentlichen“ erhalten den öffentlichen Termin –
+          außer im Sitzungsformular, dessen Kästchen „Termin veröffentlichen“ die Vorgabe schon zeigt
+          (``_publicity_from_form``).
+        """
+        if self.organization_id is None or self.tenant_id is None:
+            return
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "is_public" not in update_fields and "organization" not in update_fields:
+            return
+        organization = self.organization
+        if self.is_public and organization.committee_kind:
+            from apps.session.services import state_law_service
+
+            if state_law_service.publicity(organization, state_law_service.meeting_day(self)).locked:
+                self.is_public = False
+                if update_fields is not None:
+                    kwargs["update_fields"] = {*update_fields, "is_public"}
+        from_form = getattr(self, "_publicity_from_form", False)
+        if self._state.adding and not self.is_public and organization.publish_dates and not from_form:
+            self.date_public = True
 
     def sync_cancellation(self) -> None:
         """Häkchen und Status der Absage angleichen (abgesagt gewinnt)."""

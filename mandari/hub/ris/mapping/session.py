@@ -312,7 +312,10 @@ class SessionMapping:
     # -- Sitzung, Ort, Tagesordnung ------------------------------------------------------------------
 
     def meeting(self, meeting: Any) -> Objekt:
-        _require_public("meeting", meeting, meeting.is_public)
+        if not meeting.is_public:
+            # Termin einer nichtöffentlichen Sitzung (Issue #757): nur Termin und Gremien, nie Ort oder Inhalte
+            _require_public("meeting", meeting, bool(getattr(meeting, "date_public", False)))
+            return self._meeting_date(meeting)
         protocol_file = self.source.results_protocol(meeting)
         protocol_file_id = protocol_file.pk if protocol_file is not None else None
         files = [f for f in meeting.files.all() if f.is_public and f.pk != protocol_file_id]
@@ -349,6 +352,26 @@ class SessionMapping:
                 or None,
                 # Sitzungsformat (Issue #138): nie der Zugangsweg der Zugeschalteten
                 **self._format_extension(meeting),
+            }
+        )
+
+    def _meeting_date(self, meeting: Any) -> Objekt:
+        """Nichtöffentliche Sitzung mit veröffentlichtem Termin: ohne Ort, Tagesordnung, Anlagen und Format."""
+        return clean(
+            {
+                "id": self.uris.obj("meeting", meeting.id),
+                "type": schema_type("meeting"),
+                "name": meeting.name,
+                "meetingState": meeting.get_meeting_state_display(),
+                "cancelled": meeting.cancelled,
+                "start": iso(meeting.start),
+                "end": iso(meeting.end),
+                "organization": [
+                    self.uris.obj("organization", org_id) for org_id in meeting.participating_organization_ids
+                ],
+                "agendaItem": [],
+                **_timestamps(meeting),
+                "mandari:nonPublic": True,
             }
         )
 

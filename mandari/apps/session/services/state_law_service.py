@@ -89,6 +89,17 @@ LAW_FIELDS: dict[str, LawField] = {
         LawField("publicity", "publicity", "Öffentlichkeit der Sitzungen"),
         LawField("non_public_committee_kinds", "publicity", "Stets nichtöffentliche Ausschüsse", KIND_LIST),
         LawField(
+            "main_committee_chair",
+            "publicity",
+            "Vorsitz im Hauptausschuss",
+            KIND_CHOICE,
+            (
+                ("hvb", "die Hauptverwaltungsbeamtin bzw. der Hauptverwaltungsbeamte"),
+                ("elected", "gewählt"),
+                (UNCLEAR, "ungeklärt"),
+            ),
+        ),
+        LawField(
             "residents_questions",
             "publicity",
             "Einwohnerfragestunde",
@@ -601,6 +612,81 @@ def residents_questions_note(meeting: Any) -> str:
         norm = law.norm("residents_questions")
         parts.append(f"Fragen nur von anwesenden Einwohnerinnen und Einwohnern{f' ({norm})' if norm else ''}.")
     return " ".join(parts)
+
+
+@dataclass(frozen=True)
+class Publicity:
+    """Öffentlichkeit der Sitzungen eines Gremiums (Issue #757): Vorgabe, Sperre und Grund."""
+
+    public: bool
+    #: Landesrecht schreibt „nichtöffentlich“ vor; „öffentlich“ ist nicht wählbar
+    locked: bool = False
+    reason: str = ""
+
+
+#: Gremientypen, die ohne Angabe öffentlich bzw. nichtöffentlich tagen
+_PUBLIC_TYPES = frozenset({"council", "local_council", "youth_council", "advisory", "commission", "other"})
+_NON_PUBLIC_TYPES = frozenset({"faction", "group", "department"})
+
+
+#: Platzhalter: Fassung des Landesprofils selbst bestimmen
+_FROM_TENANT: Any = object()
+
+
+def publicity(organization: Any, day: date | None = None, *, law: Any = _FROM_TENANT, body: Any = None) -> Publicity:
+    """
+    Öffentlichkeit neuer Sitzungen eines Gremiums:
+
+    1. Stets nichtöffentlich, wenn das Landesprofil die Ausschussart ausnimmt (z. B. Hauptausschuss, § 78 Abs. 2
+       NKomVG) – gesperrt.
+    2. Einstellung am Gremium (öffentlich bzw. nichtöffentlich).
+    3. Nach Gremientyp: Vertretung, Ortsrat, Beiräte öffentlich; Fraktionen, Gruppen und Verwaltung nichtöffentlich;
+       Ausschüsse nach der Geschäftsordnung der Körperschaft (Ortsrecht), ohne Angabe öffentlich.
+
+    ``law`` (Fassung, ``None`` ohne Landesprofil) und ``body`` (Körperschaft des Gremiums) lassen sich für Listen
+    einmal vorab bestimmen, statt je Gremium zu laden.
+    """
+    kind = organization.committee_kind or ""
+    if organization.organization_type == "committee" and kind:
+        if law is _FROM_TENANT:
+            profile = organization.tenant.state_profile
+            law = effective(profile, day) if profile is not None else None
+        if law is not None and kind in (law.value("non_public_committee_kinds") or []):
+            label = dict(organization.COMMITTEE_KIND_CHOICES).get(kind, kind)
+            norm = law.norm("non_public_committee_kinds")
+            return Publicity(False, True, f"Der {label} tagt stets nichtöffentlich{f' ({norm})' if norm else ''}.")
+    if organization.publicity == organization.PUBLICITY_PUBLIC:
+        return Publicity(True, reason="Einstellung am Gremium")
+    if organization.publicity == organization.PUBLICITY_NON_PUBLIC:
+        return Publicity(False, reason="Einstellung am Gremium")
+    if organization.organization_type in _NON_PUBLIC_TYPES:
+        return Publicity(False, reason="Gremientyp")
+    if organization.organization_type == "committee":
+        if body is None:
+            from apps.session.services import body_service
+
+            body = organization.body if organization.body_id else body_service.default_body(organization.tenant)
+        if LocalRules.of(body).committees_public == "non_public":
+            return Publicity(False, reason="Geschäftsordnung")
+    return Publicity(True, reason="Gremientyp")
+
+
+def main_committee_hint(organization: Any, memberships: Any) -> str:
+    """
+    Hinweis am Hauptausschuss (Issue #757): Führt nach dem Landesprofil die bzw. der HVB den Vorsitz (z. B. § 74
+    NKomVG), aber keine laufende Besetzung hat diese Funktion, fehlt sie in Ladung und Anwesenheit.
+    """
+    if organization.committee_kind != "main" or organization.tenant.state_profile is None:
+        return ""
+    law = effective(organization.tenant.state_profile)
+    if law.value("main_committee_chair") != "hvb" or any(m.role == "hvb" for m in memberships):
+        return ""
+    norm = law.norm("main_committee_chair")
+    return (
+        f"Den Vorsitz führt die Hauptverwaltungsbeamtin bzw. der Hauptverwaltungsbeamte{f' ({norm})' if norm else ''}; "
+        "bitte mit der Funktion „Hauptverwaltungsbeamtin/-beamter (kraft Amtes)“ in die Besetzung aufnehmen. "
+        "Die Sitzungen sind stets nichtöffentlich."
+    )
 
 
 def legal_designation(organization: Any) -> str:

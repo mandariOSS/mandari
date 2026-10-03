@@ -149,6 +149,18 @@ Hauptsatzung und Geschäftsordnung gelten je Körperschaft (Einstellungen → Si
   den Zeitrahmen aus der Geschäftsordnung der Körperschaft („Höchstens 30 Minuten (Geschäftsordnung).“) und ab der
   Fassung vom 01.11.2026 „Fragen nur von anwesenden Einwohnerinnen und Einwohnern (§ 62 Abs. 1 NKomVG)“.
 
+### Öffentlichkeit der Gremien
+
+- **Stets nichtöffentlich:** Nimmt das Landesprofil eine Ausschussart aus (Niedersachsen: Hauptausschuss, § 78 Abs. 2
+  NKomVG), lässt sich keine Sitzung dieses Gremiums öffentlich schalten – weder im Formular noch über
+  Jahresplanung, Admin oder Schnittstellen. Den Vorsitz führt dort die bzw. der HVB (§ 74 NKomVG): Die Besetzung
+  lehnt „Vorsitzende/r“ ab und erwartet die Funktion „HVB (kraft Amtes)“, die in der Anwesenheit als Vorsitz zählt.
+- **Vorgabe je Gremium:** Vertretung, Ortsrat und Beiräte öffentlich, Fraktionen, Gruppen und Verwaltung
+  nichtöffentlich, Ausschüsse nach der Geschäftsordnung (Ortsrecht „Ausschüsse tagen“); am Gremium abweichend
+  einstellbar. Das Sitzungsformular übernimmt die Vorgabe bei der Wahl des Gremiums.
+- **Termine nichtöffentlicher Sitzungen** lassen sich je Gremium veröffentlichen: nur Termin und Gremium, ohne
+  Tagesordnung, Ort und Unterlagen (`docs/SESSION_OPARL_API.md`).
+
 ### Ladung, Tagesordnung und Öffentlichkeit
 
 - **Ladung und Ladungs-PDF** (auch Nachtrag, Sitzungsmappe, Abruf in mandari Work) nennen bei hybriden und
