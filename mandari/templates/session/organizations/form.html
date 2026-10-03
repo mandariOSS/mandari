@@ -86,6 +86,9 @@
                     {% endif %}
                     <c-form.select :field="form.remote_local_rule" label="Zuschaltung (örtliche Regel)"
                                    help="Nur wenn die Hauptsatzung für dieses Gremium von der Regel des Landesprofils abweicht" />
+                    <c-form.select :field="form.publicity" label="Öffentlichkeit der Sitzungen"
+                                   help="Vorgabe für neue Sitzungen; ein stets nichtöffentlicher Ausschuss (z. B. Hauptausschuss) tagt immer nichtöffentlich" />
+                    <c-form.checkbox :field="form.publish_dates" label="Termine nichtöffentlicher Sitzungen veröffentlichen (ohne Tagesordnung, Ort und Unterlagen)" />
                 </div>
             </div>
 

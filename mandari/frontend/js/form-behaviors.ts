@@ -16,6 +16,9 @@
  * - `data-browser-info="<Selektor>"` an einem Formular: schreibt Browser- und Umgebungsangaben für
  *   die Fehlersuche in das Feld `<Selektor>` und zeigt sie in `[data-browser-info-preview]`
  *   (`templates/feedback/report.html`).
+ * - `data-public-default="<Selektor>"` an einer Gremienauswahl: setzt das Kontrollkästchen `<Selektor>` auf die
+ *   Öffentlichkeit der gewählten Option (`data-public="1|0"`) und sperrt es bei `data-public-locked`, z. B. für
+ *   den stets nichtöffentlichen Hauptausschuss (`templates/session/meetings/form.html`, Issue #757).
  */
 
 const UMLAUTE: Record<string, string> = { ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss' }
@@ -165,11 +168,35 @@ function fillBrowserInfo(root: ParentNode): void {
   }
 }
 
+// ---- Öffentlichkeit nach Gremium ------------------------------------------------------------
+
+export interface PublicDefault {
+  isPublic: boolean
+  locked: boolean
+}
+
+/** Vorgabe der Öffentlichkeit aus einer Gremien-Option; `null`, wenn die Option keine Angabe trägt. */
+export function publicDefault(option: HTMLOptionElement | null | undefined): PublicDefault | null {
+  if (!option || option.dataset.public === undefined) return null
+  return { isPublic: option.dataset.public === '1', locked: option.dataset.publicLocked === '1' }
+}
+
+function onPublicDefaultChange(event: Event): void {
+  const select = event.target
+  if (!(select instanceof HTMLSelectElement) || !select.dataset.publicDefault) return
+  const checkbox = document.querySelector(select.dataset.publicDefault)
+  const vorgabe = publicDefault(select.selectedOptions[0])
+  if (!(checkbox instanceof HTMLInputElement) || !vorgabe) return
+  checkbox.checked = vorgabe.isPublic && !vorgabe.locked
+  checkbox.disabled = vorgabe.locked
+}
+
 // ---- Einstieg -------------------------------------------------------------------------------
 
 export function installFormBehaviors(root: Document = document): void {
   root.addEventListener('input', onSlugInput)
   root.addEventListener('change', onFilterChange)
+  root.addEventListener('change', onPublicDefaultChange)
   root.addEventListener('focusin', onFocusIn)
   root.addEventListener('click', onTextblockClick)
   // Vite-Module laufen nach dem Parsen: das Markup der Seite steht bereits

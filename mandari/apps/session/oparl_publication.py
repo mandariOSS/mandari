@@ -6,7 +6,9 @@ Zwei Aufgaben:
 
 1. **Sichtbarkeits-Querysets**: Welche Objekte eines Mandanten sind über
    die öffentliche OParl-API sichtbar? Grundsatz: NUR öffentliche Daten
-   (``is_public``), NÖ-Teile von Sitzungen und deren Anlagen niemals.
+   (``is_public``), NÖ-Teile von Sitzungen und deren Anlagen niemals. Von einer
+   nichtöffentlichen Sitzung mit veröffentlichtem Termin (``date_public``, Issue #757)
+   erscheint nur der Termin – Tagesordnung, Ort und Anlagen hängen weiter an ``is_public``.
 
 2. **Tombstone-Buchhaltung** (OParl 1.1 §2.8): Objekte, die einmal
    öffentlich ausgeliefert wurden und danach gelöscht oder auf
@@ -56,7 +58,8 @@ def visible_memberships(tenant):
 
 
 def visible_meetings(tenant: SessionTenant) -> QuerySet[SessionMeeting]:
-    return SessionMeeting.objects.filter(tenant=tenant, is_public=True)
+    """Öffentliche Sitzungen und nichtöffentliche mit veröffentlichtem Termin (nur Termin, Issue #757)."""
+    return SessionMeeting.objects.filter(Q(is_public=True) | Q(date_public=True), tenant=tenant)
 
 
 def visible_agenda_items(tenant):
@@ -118,7 +121,8 @@ def _is_published(instance) -> bool:
     """War/ist das Objekt über die öffentliche OParl-API sichtbar?"""
     try:
         if isinstance(instance, SessionMeeting):
-            return instance.is_public
+            # Termin einer nichtöffentlichen Sitzung (Issue #757): die Sitzung selbst ist sichtbar, nichts darunter
+            return bool(instance.is_public or getattr(instance, "date_public", False))
         if isinstance(instance, SessionPaper):
             return instance.is_public and instance.status not in UNVEROEFFENTLICHT
         if isinstance(instance, SessionAgendaItem):
@@ -367,6 +371,10 @@ def tombstone_post_save(sender, instance, created, **kwargs):
     if old is None:
         return
 
+    if sender is SessionMeeting:
+        _meeting_transition(instance, old)
+        return
+
     was_published = _is_published(old)
     is_published = _is_published(instance)
     if was_published == is_published:
@@ -388,3 +396,34 @@ def tombstone_post_save(sender, instance, created, **kwargs):
         pairs = [(kind, instance.pk)]
         pairs.extend((dep_kind, dep_id) for dep_kind, dep_id, _ in _dependents(instance))
         _clear_tombstones(tenant_id, pairs)
+
+
+def _meeting_transition(instance, old) -> None:
+    """
+    Ö/NÖ-Wechsel einer Sitzung mit zwei Stufen (Issue #757): öffentlich (Sitzung, Ort, öffentliche TOPs und
+    Anlagen) und „nur Termin“ (``date_public``: die Sitzung ohne Ort und Inhalte).
+
+    - Sitzung sichtbar -> unsichtbar: Grabstein für die Sitzung (mit Ort)
+    - öffentlich -> nicht mehr öffentlich: Grabsteine für TOPs und Anlagen; bleibt der Termin sichtbar, wird
+      der Ort zurückgenommen
+    - und jeweils umgekehrt: Grabsteine entfernen
+    """
+    tenant_id = instance.tenant_id
+    if tenant_id is None:
+        return
+    was_visible, is_visible = _is_published(old), _is_published(instance)
+    was_full, is_full = bool(old.is_public), bool(instance.is_public)
+    if was_visible and not is_visible:
+        _write_tombstone(tenant_id, "meeting", instance.pk, instance.created_at, NICHTOEFFENTLICH)
+    elif is_visible and not was_visible:
+        _clear_tombstones(tenant_id, [("meeting", instance.pk)])
+    if was_full and not is_full:
+        for dep_kind, dep_id, dep_created in _dependents(instance):
+            _write_tombstone(tenant_id, dep_kind, dep_id, dep_created, NICHTOEFFENTLICH)
+        if is_visible and _has_location(old):
+            _retract_location(tenant_id, instance.pk, NICHTOEFFENTLICH)
+    elif is_full and not was_full:
+        _clear_tombstones(tenant_id, [(kind, dep_id) for kind, dep_id, _ in _dependents(instance)])
+    elif was_full and is_full and _has_location(old) and not _has_location(instance):
+        # Weiter öffentliche Sitzung ohne Ortsangabe: Der Ort entfällt, die Sitzung bleibt
+        _retract_location(tenant_id, instance.pk, GELOESCHT)

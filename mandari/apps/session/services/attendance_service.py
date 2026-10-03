@@ -176,9 +176,13 @@ def attendance_defaults(
     notes = ""
     if membership.substitute_for_id and membership.substitute_for is not None:
         notes = f"Vertretung für {membership.substitute_for.display_name}"
+    role = _ROLE_MAP.get(membership.role, "member")
+    if membership.role == "hvb" and membership.organization.committee_kind == "main":
+        # Im Hauptausschuss führt die bzw. der HVB den Vorsitz (Issue #757, z. B. § 74 NKomVG)
+        role = "chair"
     return {
         "status": "invited",
-        "role": _ROLE_MAP.get(membership.role, "member"),
+        "role": role,
         # Grundmandat und Hinzugewählte nie mit Stimmrecht (Issue #757, ``votes``); der Sitz einer gemeinsamen
         # Sitzung rechnet ebenso (joint_meeting_service.merge_seats)
         "has_voting_rights": membership.votes if has_voting_rights is None else has_voting_rights,

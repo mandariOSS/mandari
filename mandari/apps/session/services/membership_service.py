@@ -155,6 +155,13 @@ def role_problems(
             f"{OFFICE_LABELS[office]}: erst ab 18 Jahren{f' ({norm})' if norm else ''}. {person.display_name} ist "
             f"erst ab {adult_from:%d.%m.%Y} volljährig."
         )
+    if role == "chair" and organization.committee_kind == "main" and law.value("main_committee_chair") == "hvb":
+        norm = law.norm("main_committee_chair")
+        problems.append(
+            "Den Vorsitz im Hauptausschuss führt die Hauptverwaltungsbeamtin bzw. der Hauptverwaltungsbeamte"
+            f"{f' ({norm})' if norm else ''}. Bitte die Funktion „Hauptverwaltungsbeamtin/-beamter (kraft Amtes)“ "
+            "wählen."
+        )
     if role == "chair" and organization.organization_type == "committee" and law.value("chair_recall_bar", False):
         recalled = SessionOrganizationMembership.objects.filter(
             organization=organization,

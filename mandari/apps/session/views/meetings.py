@@ -78,6 +78,8 @@ MEETING_FORM_FIELDS = [
     "location",
     "room",
     "is_public",
+    # Termin einer nichtöffentlichen Sitzung veröffentlichen (Issue #757)
+    "date_public",
     # Sitzungsformat (Issue #138)
     "format",
     "format_reason",
@@ -143,6 +145,16 @@ class MeetingForm(forms.ModelForm):
         cleaned = super().clean()
         # Ende nach Beginn prüft das Modell (SessionMeeting.clean) – für dieses Formular wie für den Admin
         lead = cleaned.get("organization")
+        if lead is not None and cleaned.get("is_public"):
+            # Stets nichtöffentliche Gremien (Issue #757, z. B. Hauptausschuss nach § 78 Abs. 2 NKomVG)
+            day = state_law_service.local_day(cleaned.get("start"))
+            for org in [lead, *(cleaned.get("joint_organizations") or [])]:
+                publicity = state_law_service.publicity(org, day)
+                if publicity.locked:
+                    self.add_error("is_public", publicity.reason)
+                    break
+        if cleaned.get("is_public"):
+            cleaned["date_public"] = False
         relevant = self.instance._state.adding or bool(FORMAT_RELEVANT_FIELDS.intersection(self.changed_data))
         if not relevant and "start" in self.changed_data and cleaned.get("start") is not None:
             # Verschoben auf einen anderen Tag: Fassung des Landesprofils und Notlagenbeschluss neu prüfen
@@ -209,6 +221,18 @@ class MeetingFormMixin:
         )
         context["state_profile"] = self.session_tenant.state_profile
         context["can_manage_settings"] = self.has_permission("manage_settings")
+        # Öffentlichkeit je Gremium (Issue #757): Vorgabe und Sperre an den Optionen, das Formular folgt der Auswahl
+        tenant = self.session_tenant
+        law = state_law_service.effective(tenant.state_profile) if tenant.state_profile is not None else None
+        bodies = {body.pk: body for body in body_service.bodies(tenant, include_inactive=True)}
+        default_body = next((body for body in bodies.values() if body.is_default), None)
+        organizations = list(context["form"].fields["organization"].queryset)
+        for org in [*organizations, *(org for _label, orgs in context["organization_groups"] or [] for org in orgs)]:
+            publicity = state_law_service.publicity(org, law=law, body=bodies.get(org.body_id) or default_body)
+            org.public_code, org.public_locked = ("1" if publicity.public else "0"), publicity.locked
+        context["organization_choices"] = organizations
+        lead = context["form"].instance.organization if context["form"].instance.organization_id else None
+        context["publicity_locked"] = bool(lead is not None and state_law_service.publicity(lead).locked)
         return context
 
 
@@ -427,6 +451,24 @@ class MeetingCreateView(MeetingFormMixin, SessionViewMixin, CreateView):
     template_name = "session/meetings/form.html"
     form_class = MeetingForm
     permission_required = "create_meetings"
+
+    def get_initial(self):
+        """Aus einem Gremium heraus angelegt (``?organization=``): Gremium und dessen Öffentlichkeit vorbelegen."""
+        initial = super().get_initial()
+        from apps.common.params import uuid_param
+
+        org_id = uuid_param(self.request.GET.get("organization", ""))
+        org = (
+            SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True, pk=org_id).first()
+            if org_id
+            else None
+        )
+        if org is not None:
+            publicity = state_law_service.publicity(org)
+            initial.update(
+                organization=org.pk, is_public=publicity.public, date_public=not publicity.public and org.publish_dates
+            )
+        return initial
 
     def form_valid(self, form):
         if not _joint_valid(form):
