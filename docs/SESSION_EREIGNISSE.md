@@ -30,13 +30,19 @@ Grundlagen: [Ereignistechnik](adr/20260929-ereignistechnik-postgres.md),
   Shell melden nichts.
 - **Verschachtelung.** Ein `track` in einem anderen für denselben Mandanten schließt sich dem äußeren an;
   jedes Objekt wird einmal gemeldet (Sitzung anlegen mit Standard-TOPs: erst die Sitzung, dann die TOPs).
+  Die Erfassung endet noch in ihrer Transaktion. Ein Rückruf nach dem Commit (`transaction.on_commit`), der
+  selbst `track` aufruft, öffnet deshalb eine eigene Erfassung mit eigener Transaktion.
+- **Gleichzeitige Änderungen.** `track` liest den Zustand davor ohne Sperre (außer wo die Fachfunktion selbst
+  sperrt, etwa Sitzungscockpit und Erfassung). Ändern zwei Anfragen dasselbe Objekt gleichzeitig, können beide
+  dieselbe Änderung melden. Verloren geht dabei keine. „Genau ein Ereignis je Änderung“ gilt also nur ohne
+  Gleichzeitigkeit; Abnehmer verarbeiten Ereignisse ohnehin idempotent (Ereignistechnik, ADR).
 
 ## Schalter
 
 | Wert | Wirkung |
 |---|---|
 | `aus` (Standard) | nichts; keine zusätzliche Abfrage, keine zusätzliche Transaktion |
-| `schatten` | Ereignisse werden geschrieben. Scheitert das Bilden oder Schreiben, bleibt die Änderung bestehen (eigener Sicherungspunkt); das Protokoll nennt Schritt und Fehlerklasse, keine Inhalte. Für den Parallelbetrieb neben den bisherigen Wegen |
+| `schatten` | Ereignisse werden geschrieben und erreichen wie im aktiven Betrieb den Änderungsfeed und alle Abonnenten; „Schatten“ heißt nicht „unsichtbar“. Anders ist nur der Fehlerfall: Scheitert das Bilden oder Schreiben, bleibt die Änderung bestehen (eigener Sicherungspunkt); das Protokoll nennt Schritt, Fehlerklasse und Aufrufstellen, keine Inhalte. Für den Parallelbetrieb neben den bisherigen Wegen |
 | `aktiv` | Änderung und Ereignisse sind atomar: Scheitert ein Ereignis, bleibt auch die Änderung aus |
 
 - Installation: `SESSION_EVENTS` (`.env`, Compose reicht es an Anwendung und Worker durch).
@@ -44,7 +50,7 @@ Grundlagen: [Ereignistechnik](adr/20260929-ereignistechnik-postgres.md),
   So lässt sich ein einzelner Mandant im Schatten betreiben, bevor die Installation umschaltet.
 - Die Ereignisse brauchen den Sequenzierer (Dienst `worker`). Ist `SESSION_EVENTS` nicht `aus`, meldet
   `/health/` ohne Worker `degraded`. Wer nur einzelne Mandanten einschaltet, setzt
-  `EVENTS_WORKER_REQUIRED=true`.
+  `EVENTS_WORKER_REQUIRED=true`; der Admin weist beim Speichern eines solchen Mandanten darauf hin.
 
 ## Ereignisse je Fachfunktion (#533)
 
@@ -80,6 +86,9 @@ Geheimhaltungsmerkmal. Speichern ohne Änderung meldet nichts.
   Feldern. Von einer nichtöffentlichen Sitzung mit veröffentlichtem Termin sind das Name, Zeit, Status,
   Absage und Gremien. Ändert sich nur, was die Öffentlichkeit nicht sieht (etwa der Ort einer solchen
   Sitzung), geht das Ereignis nur an `nichtoeffentlich`; der Feed bleibt unverändert.
+- Vor der Freischaltung der Schnittstelle (`SessionTenant.oparl_public_since`, #319) und bei deaktiviertem
+  Mandanten liefert sie nichts aus: Alle Ereignisse sind dann `nichtoeffentlich`, auch die zu öffentlichen
+  Sitzungen (Einführung, Testdaten, Schulung, Umstieg).
 - Wird ein Objekt öffentlich, erscheint es öffentlichen Empfängern als neu (`ris.meeting.scheduled`,
   `added`).
 - Endet die Veröffentlichung, meldet `ris.object.depublished` (Operation `delete`) die Rücknahme mit
@@ -89,6 +98,14 @@ Geheimhaltungsmerkmal. Speichern ohne Änderung meldet nichts.
   `ris.agendaitem.changed` (`deleted`, nur `nichtoeffentlich`) – wie beim Ingestor (`hub.ris.retraction`).
 - Ein öffentliches Ereignis nennt keine Kennung eines nichtöffentlichen Objekts, etwa die Vorlage eines
   TOP nur, solange sie veröffentlicht ist.
+
+## Freischaltung der Schnittstelle
+
+Die Freischaltung selbst meldet nichts. Öffentliche Abnehmer steigen danach über den Snapshot der
+Session-Schnittstelle ein (`…/api/oparl/body/snapshot/`, mit Cursor für den Feed). Ereignisse von vorher sind
+`nichtoeffentlich` und erscheinen im öffentlichen Feed nicht. Auch die Rücknahme der Freischaltung meldet
+nichts; die Schnittstelle samt Feed antwortet dann wieder mit 404 (möglich nur, solange der Mandant nicht im
+Bürgerportal veröffentlicht).
 
 ## Übergang
 

@@ -24,6 +24,7 @@ from typing import Any, cast
 
 import pytest
 from django.core.cache import cache
+from django.db import transaction
 from django.db.models import Max
 from django.test import Client
 from django.utils import timezone
@@ -512,6 +513,157 @@ class TestBetrieb:
             tracked.meeting(sitzung)
             tracked.agenda(sitzung)
             assert tracked.active is False
+
+
+# =============================================================================
+# Rückrufe nach dem Commit, Freischaltung, Mandantengrenze
+# =============================================================================
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rueckruf_nach_dem_commit_meldet_seine_eigene_aenderung(welt: Welt) -> None:
+    """
+    Ein ``on_commit``-Rückruf mit eigener Erfassung schließt sich nicht der schon geschriebenen an.
+
+    Ist die Transaktion von ``track`` die äußerste (Ansichten ohne eigenes ``atomic``), laufen die Rückrufe beim
+    Verlassen von ``track``. Hinge sich ihre Erfassung an die abgeschlossene, blieben ihre Änderungen ungemeldet.
+    """
+    sitzung = welt.sitzung()
+    gelaufen: list[bool] = []
+
+    def rueckruf() -> None:
+        with hub_events.track(welt.tenant) as tracked:
+            tracked.meeting(sitzung)
+            SessionMeeting.objects.filter(pk=sitzung.pk).update(name="Ratssitzung (verlegt)")
+        gelaufen.append(True)
+
+    seit = _start()
+    with hub_events.track(welt.tenant) as tracked:
+        tracked.meeting(sitzung)
+        SessionMeeting.objects.filter(pk=sitzung.pk).update(room="Saal 2")
+        transaction.on_commit(rueckruf)
+    assert gelaufen == [True]
+    events = _neu(seit)
+    assert [(e.type, e.payload["changed"]) for e in events] == [
+        ("ris.meeting.changed", ["location"]),
+        ("ris.meeting.changed", ["name"]),
+    ]
+    # Zwei Transaktionen, zwei Korrelationen
+    assert events[0].correlation_id != events[1].correlation_id
+
+
+class TestFreischaltung:
+    """Vor der Freischaltung der Schnittstelle (Issue #319) ist nichts öffentlich – auch keine Rücknahme."""
+
+    @pytest.fixture(autouse=True)
+    def gesperrt(self, welt: Welt) -> None:
+        welt.tenant.oparl_public_since = None
+        welt.tenant.save(update_fields=["oparl_public_since"])
+        assert hub_events.interface_open(welt.tenant) is False
+
+    def test_oeffentliche_sitzung_und_tops_nur_nichtoeffentlich(self, welt: Welt) -> None:
+        SessionStandardAgendaItem.objects.create(tenant=welt.tenant, name="Eröffnung", placement="start", order=1)
+        seit = _start()
+        antwort = welt.client.post(
+            welt.url("/meetings/create/"),
+            {"name": "Ratssitzung", "organization": str(welt.rat.pk), "start": "2031-03-01T17:00", "is_public": "on"},
+        )
+        assert antwort.status_code == 302
+        assert _kurz(_neu(seit)) == [
+            ("ris.meeting.scheduled", "Meeting", "nichtoeffentlich", "upsert"),
+            ("ris.agendaitem.changed", "AgendaItem", "nichtoeffentlich", "upsert"),
+        ]
+
+    def test_aenderung_und_rueckzug_ohne_oeffentliche_ruecknahme(self, welt: Welt) -> None:
+        sitzung = welt.sitzung()
+        top = welt.top(sitzung, 1)
+        seit = _start()
+        _bearbeiten(welt, sitzung, room="Saal 2")
+        _bearbeiten(welt, SessionMeeting.objects.get(pk=sitzung.pk), is_public=None)
+        assert welt.client.post(welt.url(f"/agenda/{top.id}/delete/")).status_code == 302
+        events = _neu(seit)
+        assert events, "Die übrigen Empfänger erfahren die Änderungen"
+        assert {e.visibility for e in events} == {"nichtoeffentlich"}
+        assert "ris.object.depublished" not in {e.type for e in events}
+
+    def test_deaktivierter_mandant_ist_nicht_oeffentlich(self, welt: Welt) -> None:
+        welt.tenant.oparl_public_since = timezone.now()
+        welt.tenant.is_active = False
+        assert hub_events.interface_open(welt.tenant) is False
+        welt.tenant.is_active = True
+        assert hub_events.interface_open(welt.tenant) is True
+
+
+def test_objekte_eines_anderen_mandanten_werden_nicht_gemeldet(welt: Welt) -> None:
+    """Die Erfassung liest nur Objekte ihres Mandanten – ein fremdes Objekt ergäbe Kennungen auf falscher Basis."""
+    fremd = SessionTenant.objects.create(name="Bezirk Süd", slug="sued", oparl_public_since=timezone.now())
+    gremium = SessionOrganization.objects.create(tenant=fremd, name="Rat")
+    sitzung = SessionMeeting.objects.create(
+        tenant=fremd, name="Fremd", organization=gremium, start=timezone.now(), is_public=True
+    )
+    seit = _start()
+    with hub_events.track(welt.tenant) as tracked:
+        tracked.meeting(sitzung)
+        tracked.agenda(sitzung)
+        welt.top(sitzung, 1)
+        SessionMeeting.objects.filter(pk=sitzung.pk).update(name="Fremd (verlegt)")
+    assert _neu(seit) == []
+
+
+def test_anwesenheit_im_cockpit_liest_keine_tagesordnung(welt: Welt, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anwesenheit und Störungen ändern nichts im kanonischen Modell: keine Erfassung, kein Lesen vorher/nachher."""
+    from apps.session.models import SessionAttendance, SessionPerson
+    from apps.session.services import cockpit_service
+
+    sitzung = welt.sitzung()
+    welt.top(sitzung, 1)
+    person = SessionPerson.objects.create(tenant=welt.tenant, given_name="Ada", family_name="Amsel")
+    zeile = SessionAttendance.objects.create(meeting=sitzung, person=person, status="invited")
+
+    def nicht_erfassen(tenant: Any) -> Any:
+        raise AssertionError("Anwesenheit wird nicht erfasst")
+
+    seit = _start()
+    with monkeypatch.context() as m:
+        m.setattr(hub_events, "track", nicht_erfassen)
+        cockpit_service.perform(
+            sitzung,
+            "anwesenheit",
+            {"attendance": str(zeile.pk), "wechsel": "anwesend"},
+            permissions={"view_meetings", "conduct_meetings"},
+        )
+    zeile.refresh_from_db()
+    assert zeile.status == "present"
+    assert _neu(seit) == []
+    # Eröffnen ändert den Sitzungsstatus und wird gemeldet
+    cockpit_service.perform(sitzung, "sitzung_eroeffnen", {}, permissions={"view_meetings", "conduct_meetings"})
+    assert [e.type for e in _neu(seit)] == ["ris.meeting.changed"]
+
+
+def test_admin_weist_auf_den_sequenzierer_hin(welt: Welt, settings: Any, rf: Any) -> None:
+    """Nur ein Mandant eingeschaltet, die Installation aus: Der Admin verlangt ``EVENTS_WORKER_REQUIRED``."""
+    from django.contrib.messages import get_messages
+    from django.contrib.messages.storage.fallback import FallbackStorage
+
+    from apps.session.admin import SessionTenantAdmin
+
+    settings.SESSION_EVENTS = "aus"
+    settings.EVENTS_WORKER_REQUIRED = ""
+    settings.INGESTOR_EVENTS_ENABLED = False
+    settings.TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}
+
+    def hinweise() -> list[str]:
+        request = rf.post("/")
+        request.session = {}
+        request._messages = FallbackStorage(request)
+        SessionTenantAdmin._warn_events_without_worker(request, welt.tenant)
+        return [str(m) for m in get_messages(request)]
+
+    assert hinweise() == []
+    welt.tenant.hub_events = "schatten"
+    assert any("EVENTS_WORKER_REQUIRED=true" in text for text in hinweise())
+    settings.EVENTS_WORKER_REQUIRED = "true"
+    assert hinweise() == []
 
 
 def test_kennungen_wie_die_session_schnittstelle(welt: Welt) -> None:

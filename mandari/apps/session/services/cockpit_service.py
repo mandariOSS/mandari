@@ -811,6 +811,10 @@ ACTIONS: dict[str, Handler] = {
     "top_vertagen": defer_item,
 }
 
+#: Aktionen ohne Änderung im kanonischen Modell (Anwesenheit, Störungen): nichts für die Drehscheibe, also auch
+#: kein Lesen der Tagesordnung vorher und nachher (häufigste Aktion im Cockpit)
+UNTRACKED_ACTIONS: frozenset[str] = frozenset({"anwesenheit", "stoerung_beginn", "stoerung_ende"})
+
 
 def perform(
     meeting: SessionMeeting,
@@ -844,11 +848,16 @@ def perform(
             )
         from apps.session import hub_events
 
-        # Drehscheibe (Issue #533): Eröffnen und Schließen ändern den Sitzungsstatus; die Tagesordnung gleich mit
-        with hub_events.track(locked.tenant) as tracked:
-            tracked.meeting(locked)
-            tracked.agenda(locked)
+        if action in UNTRACKED_ACTIONS:
             outcome = handler(locked, data, permissions=permissions, session_user=session_user, tenant=locked.tenant)
+        else:
+            # Drehscheibe (Issue #533): Eröffnen und Schließen ändern den Sitzungsstatus; die Tagesordnung gleich mit
+            with hub_events.track(locked.tenant) as tracked:
+                tracked.meeting(locked)
+                tracked.agenda(locked)
+                outcome = handler(
+                    locked, data, permissions=permissions, session_user=session_user, tenant=locked.tenant
+                )
         # Die Signale der gespeicherten Objekte melden die Änderung ebenfalls; je Transaktion geht ein Hinweis
         notify_on_commit(locked.pk)
     return outcome

@@ -21,7 +21,8 @@ Schnittstelle (bis #758 einer je Mandant), der Mandant ``session:<uuid>``. Damit
 **Sichtbarkeit** folgt der Veröffentlichung in der Schnittstelle (``apps.session.oparl_publication``):
 
 - ``oeffentlich`` ist nur, was die Schnittstelle nach der Änderung ausliefert, und nur mit den Feldern, die sie
-  ausliefert. Von einer nichtöffentlichen Sitzung mit veröffentlichtem Termin (Issue #757) sind das Name, Zeit,
+  ausliefert. Vor ihrer Freischaltung (Issue #319) liefert sie nichts aus; der Aufrufer übergibt dann eine
+  Veröffentlichungsregel, nach der nichts veröffentlicht ist. Von einer nichtöffentlichen Sitzung mit veröffentlichtem Termin (Issue #757) sind das Name, Zeit,
   Status, Absage und Gremien, nie Ort oder Format. Ändert sich nur, was die Öffentlichkeit nicht sieht, erfährt
   sie davon nichts – der Feed bleibt unverändert.
 - Wird ein Objekt veröffentlicht, ist es für öffentliche Empfänger neu (``ris.meeting.scheduled``, ``added``).
@@ -151,14 +152,19 @@ def _meeting_format(meeting: Any) -> tuple[str, ...] | None:
     return (meeting.format, url, note)
 
 
-def meeting_state(meeting: Any) -> MeetingState:
-    """Zustand einer Sitzung (``SessionMeeting``); weitere Gremien am besten vorgeladen (``joint_organizations``)."""
-    if meeting.is_public:
-        publicity = FULL
-    elif getattr(meeting, "date_public", False):
-        publicity = DATE_ONLY
-    else:
+def meeting_state(meeting: Any, *, is_published: Callable[[Any], bool]) -> MeetingState:
+    """
+    Zustand einer Sitzung (``SessionMeeting``); weitere Gremien am besten vorgeladen (``joint_organizations``).
+
+    ``is_published`` ist die Veröffentlichungsregel von Session samt Freischaltung der Schnittstelle: Liefert sie
+    die Sitzung nicht aus, ist sie verborgen, sonst ganz öffentlich oder nur ihr Termin.
+    """
+    if not is_published(meeting):
         publicity = HIDDEN
+    elif meeting.is_public:
+        publicity = FULL
+    else:
+        publicity = DATE_ONLY
     organizations = tuple(meeting.participating_organization_ids)
     fields = {
         "name": meeting.name,
