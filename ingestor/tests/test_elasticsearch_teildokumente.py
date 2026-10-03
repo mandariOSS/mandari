@@ -9,6 +9,7 @@ Neuindexierung. Jetzt schreibt er per ``update``/``doc_as_upsert`` nur seine eig
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -173,11 +174,18 @@ class StubStorage:
         }
         self.files = [rows["file"]]
 
-    async def get_all_for_body(self, body_id: UUID, model_class: type) -> list[SimpleNamespace]:
-        return self.by_model[model_class.__name__]
+    async def iter_for_body(
+        self, body_id: UUID, model_class: type, page_size: int | None = None
+    ) -> AsyncIterator[list[SimpleNamespace]]:
+        yield self.by_model[model_class.__name__]
 
-    async def get_files_with_text(self, body_id: UUID) -> list[SimpleNamespace]:
-        return self.files
+    async def get_files_with_text_for_papers(self, body_id: UUID, paper_ids: list[UUID]) -> list[SimpleNamespace]:
+        return [f for f in self.files if f.paper_id in paper_ids]
+
+    async def iter_files_with_text(
+        self, body_id: UUID, page_size: int | None = None
+    ) -> AsyncIterator[list[SimpleNamespace]]:
+        yield self.files
 
 
 def _portal_docs(rows: dict[str, SimpleNamespace]) -> dict[str, dict[str, Any]]:

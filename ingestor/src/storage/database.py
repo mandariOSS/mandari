@@ -6,6 +6,7 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 """
 
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
@@ -1968,33 +1969,70 @@ class DatabaseStorage:
 
     # ========== Search Indexing Query Helpers ==========
 
-    async def get_all_for_body(
+    #: Einträge je Seite beim Aufbau des Suchindex (Speicher bleibt je Seite begrenzt)
+    INDEX_PAGE_SIZE: Final = 500
+
+    async def iter_for_body(
         self,
         body_id: UUID,
-        model_class: type,
-        limit: int = 10000,
-    ) -> list:
-        """Generic query: all non-deleted entities of a type for a body."""
-        async with self.get_session() as session:
-            stmt = (
-                select(model_class)
-                .where(
+        model_class: Any,
+        page_size: int | None = None,
+    ) -> AsyncIterator[list[Any]]:
+        """
+        Alle nicht gelöschten Objekte einer Art eines Bodies, seitenweise nach ``id`` (Keyset).
+
+        Ersetzt die frühere Abfrage mit fester Obergrenze (10.000 je Art): Größere Kommunen fehlten
+        danach teilweise im Suchindex. Jede Seite kommt aus einer eigenen kurzen Sitzung.
+        """
+        size = max(1, page_size or self.INDEX_PAGE_SIZE)
+        last_id: UUID | None = None
+        while True:
+            async with self.get_session() as session:
+                stmt = select(model_class).where(
                     model_class.body_id == body_id,
                     model_class.deleted == False,  # noqa: E712
                 )
-                .limit(limit)
-            )
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+                if last_id is not None:
+                    stmt = stmt.where(model_class.id > last_id)
+                stmt = stmt.order_by(model_class.id).limit(size)
+                rows: list[Any] = list((await session.execute(stmt)).scalars().all())
+            if not rows:
+                return
+            yield rows
+            if len(rows) < size:
+                return
+            last_id = rows[-1].id
 
-    async def get_files_with_text(self, body_id: UUID) -> list[OParlFile]:
-        """Get files that have extracted text content."""
+    def _files_with_text(self, body_id: UUID) -> Any:
+        return select(OParlFile).where(
+            OParlFile.body_id == body_id,
+            OParlFile.deleted == False,  # noqa: E712
+            OParlFile.text_content.isnot(None),
+            OParlFile.text_extraction_status == "completed",
+        )
+
+    async def iter_files_with_text(self, body_id: UUID, page_size: int | None = None) -> AsyncIterator[list[OParlFile]]:
+        """Dateien eines Bodies mit extrahiertem Text, seitenweise nach ``id`` (Volltexte sind groß)."""
+        size = max(1, page_size or self.INDEX_PAGE_SIZE)
+        last_id: UUID | None = None
+        while True:
+            async with self.get_session() as session:
+                stmt = self._files_with_text(body_id)
+                if last_id is not None:
+                    stmt = stmt.where(OParlFile.id > last_id)
+                result = await session.execute(stmt.order_by(OParlFile.id).limit(size))
+                rows: list[OParlFile] = list(result.scalars().all())
+            if not rows:
+                return
+            yield rows
+            if len(rows) < size:
+                return
+            last_id = rows[-1].id
+
+    async def get_files_with_text_for_papers(self, body_id: UUID, paper_ids: list[UUID]) -> list[OParlFile]:
+        """Dateien mit extrahiertem Text zu einer Seite von Vorgängen (für die Gewichtung im Suchindex)."""
+        if not paper_ids:
+            return []
         async with self.get_session() as session:
-            stmt = select(OParlFile).where(
-                OParlFile.body_id == body_id,
-                OParlFile.deleted == False,  # noqa: E712
-                OParlFile.text_content.isnot(None),
-                OParlFile.text_extraction_status == "completed",
-            )
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            stmt = self._files_with_text(body_id).where(OParlFile.paper_id.in_(paper_ids))
+            return list((await session.execute(stmt)).scalars().all())

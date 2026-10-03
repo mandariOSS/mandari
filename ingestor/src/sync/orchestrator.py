@@ -1091,7 +1091,6 @@ class SyncOrchestrator:
                             "[yellow]  Elasticsearch indices missing: "
                             f"{', '.join(sorted(missing))} — run `manage.py setup_elasticsearch`[/yellow]"
                         )
-                    batch_size = settings.elasticsearch_batch_size
                     indexed_total = 0
 
                     # Remove documents of tombstoned entities from the
@@ -1104,48 +1103,33 @@ class SyncOrchestrator:
                             f"[yellow]  Removed {total_tombstoned} tombstoned documents from Elasticsearch[/yellow]"
                         )
 
-                    # Index papers (with file contents for paper-boosting)
-                    papers = await self.storage.get_all_for_body(body_id, PaperModel)
-                    # Build paper_id → files lookup from already-loaded files
-                    files_with_text = await self.storage.get_files_with_text(body_id)
-                    files_by_paper: dict[str, list] = {}
-                    for f in files_with_text:
-                        if f.paper_id:
-                            pid = str(f.paper_id)
-                            files_by_paper.setdefault(pid, []).append(f)
+                    # Seitenweise: jede Art vollständig, Speicher je Seite begrenzt (früher höchstens
+                    # 10.000 je Art, größere Kommunen fehlten danach teilweise in der Suche)
+                    page_size = settings.elasticsearch_batch_size
 
-                    for i in range(0, len(papers), batch_size):
-                        docs = [
-                            paper_to_doc(p, files=files_by_paper.get(str(p.id), [])) for p in papers[i : i + batch_size]
-                        ]
+                    # Vorgänge mit den Texten ihrer Dateien (Gewichtung in der Suche)
+                    async for papers in self.storage.iter_for_body(body_id, PaperModel, page_size):
+                        files_by_paper: dict[str, list[Any]] = {}
+                        paper_files = await self.storage.get_files_with_text_for_papers(body_id, [p.id for p in papers])
+                        for f in paper_files:
+                            files_by_paper.setdefault(str(f.paper_id), []).append(f)
+                        docs = [paper_to_doc(p, files=files_by_paper.get(str(p.id), [])) for p in papers]
                         await indexer.index_documents("papers", docs)
                         indexed_total += len(docs)
 
-                    # Index meetings
-                    meetings = await self.storage.get_all_for_body(body_id, MeetingModel)
-                    for i in range(0, len(meetings), batch_size):
-                        docs = [meeting_to_doc(m) for m in meetings[i : i + batch_size]]
-                        await indexer.index_documents("meetings", docs)
-                        indexed_total += len(docs)
+                    for model, index_name, to_doc in (
+                        (MeetingModel, "meetings", meeting_to_doc),
+                        (PersonModel, "persons", person_to_doc),
+                        (OrgModel, "organizations", organization_to_doc),
+                    ):
+                        async for rows in self.storage.iter_for_body(body_id, model, page_size):
+                            docs = [to_doc(row) for row in rows]
+                            await indexer.index_documents(index_name, docs)
+                            indexed_total += len(docs)
 
-                    # Index persons
-                    persons = await self.storage.get_all_for_body(body_id, PersonModel)
-                    for i in range(0, len(persons), batch_size):
-                        docs = [person_to_doc(p) for p in persons[i : i + batch_size]]
-                        await indexer.index_documents("persons", docs)
-                        indexed_total += len(docs)
-
-                    # Index organizations
-                    orgs = await self.storage.get_all_for_body(body_id, OrgModel)
-                    for i in range(0, len(orgs), batch_size):
-                        docs = [organization_to_doc(o) for o in orgs[i : i + batch_size]]
-                        await indexer.index_documents("organizations", docs)
-                        indexed_total += len(docs)
-
-                    # Index files with text content
-                    files = await self.storage.get_files_with_text(body_id)
-                    for i in range(0, len(files), batch_size):
-                        docs = [file_to_doc(f) for f in files[i : i + batch_size]]
+                    # Dateien mit extrahiertem Text
+                    async for files in self.storage.iter_files_with_text(body_id, page_size):
+                        docs = [file_to_doc(f) for f in files]
                         await indexer.index_documents("files", docs)
                         indexed_total += len(docs)
 
