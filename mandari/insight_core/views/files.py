@@ -22,7 +22,7 @@ from ..models import (
     OParlMeeting,
     withdrawn_q,
 )
-from ..services import file_accel, file_access, file_delivery
+from ..services import file_accel, file_access, file_delivery, file_reconcile
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, page_number
 
 # =============================================================================
@@ -166,7 +166,7 @@ class FileListView(HTMXMixin, ActiveBodyRequiredMixin, TemplateView):
 
         if body:
             qs = (
-                OParlFile.objects.filter(body=body, deleted=False)
+                OParlFile.objects.filter(body=body, deleted=False, source_missing_since__isnull=True)
                 .select_related("paper")
                 .order_by("-file_date", "-created_at")
             )
@@ -296,6 +296,15 @@ def _deliver_file(request, file_obj):
         from ._withdrawn import withdrawn_response
 
         return file_access.mark_blocked(withdrawn_response(request, file_obj))
+    if file_reconcile.is_blocked(file_obj):
+        # Von der Kommune entfernt oder nicht mehr abrufbar: keine Bytes, auch nicht aus der Kopie (#787)
+        response = _file_proxy_error(
+            "Dokument von der Kommune entfernt",
+            "Die Kommune hat dieses Dokument aus ihrem Ratsinformationssystem entfernt. "
+            "Wir zeigen es deshalb ebenfalls nicht mehr an.",
+            status=410,
+        )
+        return file_access.mark_blocked(response)
     force_download = request.GET.get("download") == "1"
     filename = file_obj.file_name or file_obj.name or "dokument.pdf"
 

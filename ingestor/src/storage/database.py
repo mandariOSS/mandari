@@ -1932,8 +1932,9 @@ class DatabaseStorage:
         async with self.get_session() as session:
             candidates = select(OParlFile.id).where(
                 OParlFile.body_id == body_id,
-                # Keine Textextraktion fuer von der Quelle geloeschte Dateien
+                # Keine Textextraktion fuer von der Quelle geloeschte oder dort fehlende Dateien (#787)
                 OParlFile.deleted == False,  # noqa: E712
+                OParlFile.source_missing_since.is_(None),
                 or_(
                     OParlFile.text_extraction_status == "pending",
                     and_(
@@ -2083,6 +2084,8 @@ class DatabaseStorage:
         return select(OParlFile).where(
             OParlFile.body_id == body_id,
             OParlFile.deleted == False,  # noqa: E712
+            # In der Quelle nicht mehr abrufbar (Löschabgleich, #787): nicht wieder indexieren
+            OParlFile.source_missing_since.is_(None),
             OParlFile.text_content.isnot(None),
             OParlFile.text_extraction_status == "completed",
         )
@@ -2131,6 +2134,8 @@ class DatabaseStorage:
                 .where(
                     OParlFile.body_id == body_id,
                     OParlFile.deleted == False,  # noqa: E712
+                    # In der Quelle nicht mehr abrufbar (Löschabgleich, #787): nicht in den Vorgang übernehmen
+                    OParlFile.source_missing_since.is_(None),
                     OParlFile.text_content.isnot(None),
                     OParlFile.text_extraction_status == "completed",
                     OParlFile.paper_id.in_(paper_ids),
