@@ -1,0 +1,55 @@
+{% load l10n %}
+{# Seitenleiste der Sitzung: Karte des Sitzungsorts und Angaben (Beginn, Ende, Ort, Adresse) #}
+{% if location_coordinates %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="map" class="w-4 h-4 text-primary-500"></i>
+            Veranstaltungsort
+        </h3>
+        {% if meeting.location_name %}
+        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ meeting.location_name }}</p>
+        {% endif %}
+    </div>
+    <div id="location-map" class="h-64 w-full"
+         data-tile-url="{% url 'insight_core:insight:tile_proxy' z=0 x=0 y=0 %}"
+         data-lat="{{ location_coordinates.lat|unlocalize }}" data-lng="{{ location_coordinates.lng|unlocalize }}"
+         data-location-name="{{ meeting.location_name|default:'' }}" data-location-address="{{ meeting.location_address|default:'' }}"></div>
+</div>
+{% endif %}
+
+<!-- Info Card -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+    <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
+    <dl class="space-y-4">
+        {% if meeting.start %}
+        <div>
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Beginn</dt>
+            <dd class="font-medium text-gray-900 dark:text-white">
+                {{ meeting.start|date:"d.m.Y H:i" }} Uhr
+            </dd>
+        </div>
+        {% endif %}
+        {% if meeting.end and meeting.start and meeting.end > meeting.start or meeting.end and not meeting.start %}
+        {# Ein Ende vor oder gleich dem Beginn (oft Mitternacht ohne Uhrzeit aus der Quelle) ist keine Angabe #}
+        <div>
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Ende</dt>
+            <dd class="font-medium text-gray-900 dark:text-white" data-testid="sitzung-ende">
+                {% if meeting.start and meeting.end|date:"Ymd" == meeting.start|date:"Ymd" %}{{ meeting.end|date:"H:i" }}{% else %}{{ meeting.end|date:"d.m.Y H:i" }}{% endif %} Uhr
+            </dd>
+        </div>
+        {% endif %}
+        {% if meeting.location_name %}
+        <div>
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Ort</dt>
+            <dd class="font-medium text-gray-900 dark:text-white">{{ meeting.location_name }}</dd>
+        </div>
+        {% endif %}
+        {% if meeting.location_address %}
+        <div>
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Adresse</dt>
+            <dd class="text-gray-700 dark:text-gray-300">{{ meeting.location_address }}</dd>
+        </div>
+        {% endif %}
+    </dl>
+</div>

@@ -196,7 +196,8 @@ class TestSuche:
         client = Client()
         client.get(f"/insight/kommune/{body.id}/")
         assert client.get(f"/insight/suche/partials/results/?q=Rad&page={seite}").status_code == 200
-        assert client.get(f"/insight/dokumente/?page={seite}").status_code == 200
+        # Die alte Dokumentliste leitet in die Suche weiter (Issue #783), auch mit kaputter Seitenzahl
+        assert client.get(f"/insight/dokumente/?page={seite}").status_code == 301
 
 
 # =============================================================================

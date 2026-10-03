@@ -34,7 +34,7 @@ interface LeafletBounds {
   isValid(): boolean
 }
 
-interface LeafletLayer {
+export interface LeafletLayer {
   addTo(map: LeafletMap): LeafletLayer
   bindPopup(content: HTMLElement): LeafletLayer
 }
@@ -43,13 +43,13 @@ interface LeafletGeoJson extends LeafletLayer {
   getBounds(): LeafletBounds
 }
 
-interface LeafletMap {
+export interface LeafletMap {
   fitBounds(bounds: LeafletBounds, options?: Record<string, unknown>): LeafletMap
   setView(center: LatLng, zoom: number): LeafletMap
   attributionControl?: { addAttribution(text: string): unknown }
 }
 
-interface LeafletStatic {
+export interface LeafletStatic {
   map(element: HTMLElement, options: Record<string, unknown>): LeafletMap
   tileLayer(url: string, options: Record<string, unknown>): LeafletLayer
   circleMarker(latlng: LatLng, options: Record<string, unknown>): LeafletLayer
@@ -58,7 +58,7 @@ interface LeafletStatic {
 }
 
 const AREA_STYLE = { color: '#16a34a', weight: 2, fillOpacity: 0.15 }
-const PLACE_STYLE = { radius: 7, color: '#ffffff', weight: 3, fillColor: '#6366f1', fillOpacity: 1 }
+export const PLACE_STYLE = { radius: 7, color: '#ffffff', weight: 3, fillColor: '#6366f1', fillOpacity: 1 }
 
 function escapeHtml(text: string): string {
   const element = document.createElement('span')
@@ -66,7 +66,7 @@ function escapeHtml(text: string): string {
   return element.innerHTML
 }
 
-function popupContent(text: string): HTMLElement {
+export function popupContent(text: string): HTMLElement {
   const element = document.createElement('span')
   element.textContent = text
   return element

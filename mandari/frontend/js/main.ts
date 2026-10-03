@@ -16,13 +16,16 @@ import {
   neighborhoodSubscription,
   questionForm,
 } from '../alpine/insight'
+import { insightShell } from '../alpine/insight-shell'
 import { meetingCockpit } from '../alpine/meeting-cockpit'
+import { neighborhoodApp } from '../alpine/neighborhood'
 import { installActions } from './actions'
 import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
 import { showToast, toastManager } from './alpine/toast'
 import { installFormBehaviors } from './form-behaviors'
 import { setupHtmx } from './htmx-setup'
 import { installIconObserver, renderIcons } from './icons'
+import { initMeetingMap } from './meeting-map'
 import { initPaperMap } from './paper-map'
 import { registerBookmarksStore } from './stores/bookmarks'
 
@@ -50,15 +53,18 @@ Alpine.data('confirmDialog', confirmDialog)
 Alpine.data('meetingCockpit', meetingCockpit)
 
 if (document.documentElement.dataset.portal === 'insight') {
-  // Seitenkomponenten des Insight-Portals (vorher Inline-Skripte, #172)
+  // Rahmen (Menü, Kommunenwechsel, Dokumentansicht; Issue #783) und Seitenkomponenten (vorher Inline-Skripte, #172)
+  Alpine.data('insightShell', insightShell)
   Alpine.data('bodySelectApp', bodySelectApp)
   Alpine.data('merklisteController', merklisteController)
   Alpine.data('questionForm', questionForm)
   Alpine.data('neighborhoodSubscription', neighborhoodSubscription)
   Alpine.data('documentText', documentText)
+  Alpine.data('neighborhoodApp', neighborhoodApp)
   registerBookmarksStore(Alpine)
-  // Vorgangsseite: Orte und amtliche Umringe (Leaflet als Vendor-Skript, läuft vor diesem Modul)
+  // Vorgangsseite: Orte und amtliche Umringe; Sitzungsseite: Sitzungsort (Leaflet als Vendor-Skript, läuft vor diesem Modul)
   initPaperMap()
+  initMeetingMap()
 }
 
 // Mobile: Seitenleiste nach Navigation schließen (Layouts halten `sidebarOpen` am <html>)
