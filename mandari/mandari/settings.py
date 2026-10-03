@@ -360,13 +360,6 @@ EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBU
 # gilt der Schlüssel als neu. Aufgeräumt wird täglich per Zeitplan (apps/events/schedules.py).
 EVENTS_IDEMPOTENCY_RETENTION_DAYS = int(os.environ.get("EVENTS_IDEMPOTENCY_RETENTION_DAYS", "30"))
 
-# Zeitpläne (apps.events.schedule, Issue #516): einzelne abschalten, Namen kommagetrennt, z. B.
-# "befehl:build_meeting_packages". Ihre Termine verstreichen ohne Auftrag; ein noch vorhandener
-# Cron-Eintrag des Befehls läuft dann wieder (Rückweg je Befehl, DEPLOYMENT.md „Geplante Aufgaben“).
-EVENTS_SCHEDULES_DISABLED = [
-    name.strip() for name in os.environ.get("EVENTS_SCHEDULES_DISABLED", "").split(",") if name.strip()
-]
-
 # Worker (manage.py events_worker, Issue #509): Braucht diese Installation einen laufenden Worker?
 # Dann melden /health/ und /health/ready/ "degraded" und der Admin einen Hinweis, solange keiner
 # die nötigen Rollen bedient (apps.events.presence). "true": alle Rollen; "false": nie; leer
@@ -636,6 +629,13 @@ DCAT_CACHE_SECONDS = int(os.environ.get("DCAT_CACHE_SECONDS", "300"))
 SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))
 SYNC_FULL_HOUR = int(os.environ.get("SYNC_FULL_HOUR", "3"))
 
+# Zeitpläne (apps.events.schedule, Issue #516): einzelne abschalten, Namen kommagetrennt, z. B.
+# "befehl:build_meeting_packages". Ihre Termine verstreichen ohne Auftrag; ein noch vorhandener
+# Cron-Eintrag des Befehls läuft dann wieder (Rückweg je Befehl, DEPLOYMENT.md „Geplante Aufgaben“).
+EVENTS_SCHEDULES_DISABLED = [
+    name.strip() for name in os.environ.get("EVENTS_SCHEDULES_DISABLED", "").split(",") if name.strip()
+]
+
 # Hintergrundaufträge über die Tasks-Schnittstelle von Django
 # https://docs.djangoproject.com/en/stable/topics/tasks/ und docs/adr/20260929-auftraege-und-zeitplaene.md
 #
@@ -662,11 +662,11 @@ TASKS = {
             "max_tasks_per_process": int(os.environ.get("TASKS_MAX_TASKS_PER_PROCESS", "1000")),
             "max_memory_mb": int(os.environ.get("TASKS_MAX_MEMORY_MB", "400")),
             "tasks": {
-                # PDF-Export mit vielen Einträgen braucht länger als die 5 Minuten der Warteschlange
-                "apps.work.background_tasks.generate_dsgvo_export_task": {"timeout": 900, "max_attempts": 3},
                 # Verwaltungsbefehle als Zeitpläne (Issue #516): eigene Zeitgrenze je Befehl, höchstens
                 # 3600 s; der Prozess endet vorher (apps.events.verwaltungsbefehle)
                 "apps.events.verwaltungsbefehle.befehl_ausfuehren": {"timeout": 3660, "max_attempts": 1},
+                # PDF-Export mit vielen Einträgen braucht länger als die 5 Minuten der Warteschlange
+                "apps.work.background_tasks.generate_dsgvo_export_task": {"timeout": 900, "max_attempts": 3},
             },
         },
     }
