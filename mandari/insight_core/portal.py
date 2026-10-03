@@ -39,6 +39,8 @@ from django.http.request import split_domain_port, validate_host
 from django.urls import Resolver404, resolve, reverse
 from django.utils.html import format_html
 
+from insight_core.farbskala import skala
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -104,6 +106,11 @@ class PortalContext:
     def can_leave(self) -> bool:
         """Den Kontext verlassen (zur gemeinsamen Auswahl) geht nur beim Einstieg über den Pfad."""
         return not self.via_host
+
+    @property
+    def accent_scale(self) -> tuple[tuple[int, str], ...]:
+        """Kennfarbe als Skala 50–950 für die CSS-Variablen ``--primary-*`` (Issue #783); leer ohne Akzentfarbe."""
+        return skala(self.accent_color) if self.accent_color else ()
 
 
 # ---------------------------------------------------------------------------

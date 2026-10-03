@@ -1,12 +1,12 @@
 /**
- * Karte des Sitzungsorts (templates/pages/meetings/_location_card.html, vorher Inline-Skript).
+ * Karte des Sitzungsorts (templates/pages/meetings/_details_card.html, vorher Inline-Skript).
  *
  * Liest Koordinaten, Ort, Adresse und Kachel-URL aus den Datenattributen von `#location-map` und setzt
  * einen Punkt wie auf der Vorgangsseite. Ort und Adresse stammen aus der Quelle und gelangen nur als Text
  * in das Popup, nie als HTML.
  */
 
-import { type LeafletStatic, PLACE_STYLE } from './paper-map'
+import { type LeafletStatic, placeStyle } from './paper-map'
 
 function popupFor(name: string, address: string): HTMLElement {
   const popup = document.createElement('div')
@@ -39,7 +39,7 @@ export function initMeetingMap(): void {
     })
     .addTo(map)
 
-  const marker = leaflet.circleMarker([lat, lng], PLACE_STYLE)
+  const marker = leaflet.circleMarker([lat, lng], placeStyle())
   const name = element.dataset.locationName ?? ''
   if (name) marker.bindPopup(popupFor(name, element.dataset.locationAddress ?? ''))
   marker.addTo(map)
