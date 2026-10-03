@@ -29,8 +29,9 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
-from ..services import joint_meeting_service, meeting_format_service
+from ..services import body_service, joint_meeting_service, meeting_format_service
 from ..visibility import paper_visible
+from .bodies import BodyFilterMixin
 
 # =============================================================================
 # MEETINGS
@@ -43,11 +44,22 @@ def _joint_selected(form) -> set[str]:
 
 
 def _joint_valid(form) -> bool:
-    """Das federführende Gremium ist nicht zugleich weiteres Gremium der gemeinsamen Sitzung."""
+    """
+    Das federführende Gremium ist nicht zugleich weiteres Gremium der gemeinsamen Sitzung, und alle Gremien
+    gehören zu einer Körperschaft (Issue #756) – sonst wiese erst die Zuordnung selbst sie zurück.
+    """
     lead = form.cleaned_data.get("organization")
-    if lead is not None and lead in form.cleaned_data.get("joint_organizations", []):
+    joint = list(form.cleaned_data.get("joint_organizations") or [])
+    if lead is not None and lead in joint:
         form.add_error("joint_organizations", "Das federführende Gremium ist bereits beteiligt – bitte abwählen.")
         return False
+    if lead is not None and joint:
+        others = SessionOrganization.objects.filter(pk__in=[org.pk for org in joint])
+        if not body_service.same_body(lead, others):
+            form.add_error(
+                "joint_organizations", "Gemeinsame Sitzungen sind nur mit Gremien derselben Körperschaft möglich."
+            )
+            return False
     return True
 
 
@@ -107,7 +119,10 @@ class MeetingForm(forms.ModelForm):
         self.fields["organization"].queryset = SessionOrganization.objects.filter(
             tenant=tenant, is_active=True
         ).exclude(organization_type="department")
-        self.fields["joint_organizations"].queryset = joint_meeting_service.selectable_organizations(tenant)
+        # Mit Körperschaft (Issue #756): Ab der zweiten steht sie neben dem Gremium – ohne Abfrage je Zeile
+        self.fields["joint_organizations"].queryset = joint_meeting_service.selectable_organizations(
+            tenant
+        ).select_related("body")
         # Ohne Angabe bleibt es bei der Präsenzsitzung (Importe, ältere Formulare)
         self.fields["format"].required = False
         if self.instance.pk:
@@ -173,12 +188,18 @@ class MeetingFormMixin:
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["joint_selected"] = _joint_selected(context["form"])
+        # Körperschaft (Issue #756): Gremien ab der zweiten Körperschaft nach Körperschaft gruppiert – die
+        # Sitzung gehört über ihr Gremium zur Körperschaft
+        context["body_choice"] = body_service.choice(self.session_tenant)
+        context["organization_groups"] = body_service.group_organizations(
+            context["form"].fields["organization"].queryset, context["body_choice"]
+        )
         context["state_profile"] = self.session_tenant.state_profile
         context["can_manage_settings"] = self.has_permission("manage_settings")
         return context
 
 
-class MeetingListView(SessionViewMixin, ListView):
+class MeetingListView(BodyFilterMixin, SessionViewMixin, ListView):
     """List of meetings."""
 
     model = SessionMeeting
@@ -195,6 +216,10 @@ class MeetingListView(SessionViewMixin, ListView):
         # Ö/NÖ: Nichtöffentliche Sitzungen nur für Berechtigte
         if not self.has_permission("view_non_public_meetings"):
             qs = qs.filter(is_public=True)
+
+        # Körperschaft (Issue #756) über das federführende Gremium; Filter und Anzeige erst ab der zweiten
+        if self.body_choice.active:
+            qs = self.filter_body(qs, "organization__").select_related("organization__body")
 
         # Filter nach Gremium: federführend oder als weiteres Gremium beteiligt (Issue #317)
         org_id = self.request.GET.get("organization")
@@ -250,6 +275,7 @@ class MeetingListView(SessionViewMixin, ListView):
         context["organizations"] = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         ).order_by("name")
+        context["organization_groups"] = body_service.group_organizations(context["organizations"], self.body_choice)
         context["meeting_states"] = SessionMeeting._meta.get_field("meeting_state").choices
 
         # Perioden-Filter (Issue #39)

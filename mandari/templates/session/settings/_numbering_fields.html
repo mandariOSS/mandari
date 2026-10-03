@@ -1,8 +1,19 @@
 {% comment %}
 Formularfelder eines Nummernkreises (Issue #150). Kontext: rng (oder None für neu), paper_types,
-reset_choices, assign_choices. Feld-IDs sind je Kreis eindeutig.
+reset_choices, assign_choices, body_choice (Körperschaft erst ab der zweiten, Issue #756). Feld-IDs sind je
+Kreis eindeutig.
 {% endcomment %}
 {% with fid=rng.id|default:"neu" %}
+{% if body_choice.active %}
+<div class="sm:col-span-2">
+    <label for="body-{{ fid }}" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Körperschaft</label>
+    <select id="body-{{ fid }}" name="body" class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+        <option value="">Alle Körperschaften ohne eigenen Kreis</option>
+        {% for body in body_choice.bodies %}<option value="{{ body.id }}" {% if rng.body_id == body.id %}selected{% endif %}>{{ body.name }}</option>{% endfor %}
+        {% if rng.body and not rng.body.is_active %}<option value="{{ rng.body.id }}" selected>{{ rng.body.name }} (inaktiv)</option>{% endif %}
+    </select>
+</div>
+{% endif %}
 <div>
     <label for="name-{{ fid }}" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bezeichnung</label>
     <input type="text" id="name-{{ fid }}" name="name" value="{{ rng.name|default:'' }}" required maxlength="100"

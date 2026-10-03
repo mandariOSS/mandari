@@ -121,6 +121,13 @@
                 <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Zuordnung</h2>
 
                 <div class="space-y-4">
+                    {% if "body" in form.fields %}
+                    {% if form.body.field.disabled %}
+                    <p class="text-sm text-gray-700 dark:text-gray-300">Körperschaft: {% firstof object.body.name body_choice.default.name %} <span class="text-gray-500 dark:text-gray-400">(fest, seit die Vorlage ihre Nummer hat)</span></p>
+                    {% else %}
+                    <c-form.select :field="form.body" label="Körperschaft" help="Ohne Auswahl die Körperschaft des federführenden Gremiums" />
+                    {% endif %}
+                    {% endif %}
                     <!-- Federführendes Gremium -->
                     <div>
                         <label for="id_main_organization" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -129,12 +136,9 @@
                         <select name="main_organization" id="id_main_organization"
                                 class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                             <option value="">Kein Gremium</option>
-                            {% for org in form.main_organization.field.queryset %}
-                            <option value="{{ org.id }}" {% if form.main_organization.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>
-                                {{ org.name }}
-                            </option>
-                            {% endfor %}
+                            {% include "session/partials/organization_options.html" with groups=main_organization_groups organizations=form.main_organization.field.queryset selected=form.main_organization.value %}
                         </select>
+                        {% if form.main_organization.errors %}<p class="mt-1 text-sm text-red-600">{{ form.main_organization.errors.0 }}</p>{% endif %}
                     </div>
 
                     <!-- Federführendes Amt (Issue #81) -->

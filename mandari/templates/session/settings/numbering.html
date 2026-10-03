@@ -43,7 +43,7 @@
                 <div>
                     <h2 class="font-semibold text-gray-900 dark:text-white">{{ rng.name }}{% if not rng.is_active %} <span class="text-xs font-normal text-gray-500">(inaktiv)</span>{% endif %}</h2>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                        {% if rng.typ_namen %}{{ rng.typ_namen|join:", " }}{% else %}alle Vorlagenarten ohne eigenen Kreis{% endif %}
+                        {% if rng.typ_namen %}{{ rng.typ_namen|join:", " }}{% else %}alle Vorlagenarten ohne eigenen Kreis{% endif %}{% if body_choice.active %} · {% if rng.body %}{{ rng.body.name }}{% else %}alle Körperschaften{% endif %}{% endif %}
                         · {{ rng.get_reset_display }} · Vergabe: {{ rng.get_assign_on_display }}
                     </p>
                 </div>

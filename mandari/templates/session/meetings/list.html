@@ -45,13 +45,11 @@
             <select name="organization" aria-label="Gremium"
                     class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                 <option value="">Alle Gremien</option>
-                {% for org in organizations %}
-                <option value="{{ org.id }}" {% if request.GET.organization == org.id|stringformat:"s" %}selected{% endif %}>
-                    {{ org.name }}
-                </option>
-                {% endfor %}
+                {% include "session/partials/organization_options.html" with groups=organization_groups organizations=organizations selected=request.GET.organization %}
             </select>
         </div>
+
+        {% include "session/partials/body_filter.html" %}
 
         <!-- State -->
         <div class="w-full sm:w-40">
@@ -124,7 +122,7 @@
                     {% endif %}
                 </div>
                 <p class="text-sm text-gray-500 dark:text-gray-400">
-                    <span class="font-medium">{{ meeting.organizations_label }}</span>{% if meeting.is_joint %} (gemeinsame Sitzung){% endif %}
+                    <span class="font-medium">{{ meeting.organizations_label }}</span>{% if meeting.is_joint %} (gemeinsame Sitzung){% endif %}{% if body_choice.active and meeting.organization.body %} &middot; {{ meeting.organization.body.label }}{% endif %}
                     &middot; {{ meeting.start|date:"d.m.Y" }} um {{ meeting.start|date:"H:i" }} Uhr
                     {% if meeting.location %}&middot; {{ meeting.location }}{% endif %}
                 </p>

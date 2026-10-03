@@ -21,11 +21,14 @@ Entscheidung und Abgrenzung: docs/adr/20261002-koerperschaften-im-mandanten.md.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from django.apps import apps as django_apps
 from django.db import IntegrityError, transaction
-from django.db.models import OuterRef, Q, QuerySet, Subquery
+from django.db.models import Count, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Coalesce
 from django.utils.text import slugify
 
 if TYPE_CHECKING:
@@ -107,9 +110,30 @@ def bodies(tenant: SessionTenant, *, include_inactive: bool = False) -> QuerySet
     return qs.order_by("-is_default", "name")
 
 
+def selectable(tenant: SessionTenant, current_id: Any = None) -> QuerySet[SessionBody]:
+    """Körperschaften für ein Auswahlfeld: die aktiven, beim Bearbeiten zusätzlich die bisherige."""
+    from apps.session.models import SessionBody
+
+    condition = Q(is_active=True)
+    if current_id is not None:
+        condition |= Q(pk=current_id)
+    return SessionBody.objects.filter(condition, tenant_id=tenant.pk).order_by("-is_default", "name")
+
+
 def has_multiple(tenant: SessionTenant) -> bool:
     """Führt der Mandant mehr als eine aktive Körperschaft? Erst dann zeigt die Oberfläche Auswahl und Filter."""
+    count = getattr(tenant, "active_body_count", None)
+    if count is not None:
+        return bool(count > 1)
     return bodies(tenant)[:2].count() > 1
+
+
+def has_several(tenant: SessionTenant) -> bool:
+    """
+    Führt der Mandant mehr als eine Körperschaft, inaktive eingeschlossen? Dann bleibt die Verwaltung der
+    Körperschaften in den Einstellungen erreichbar – auch, um eine deaktivierte wieder zu aktivieren.
+    """
+    return has_multiple(tenant) or bodies(tenant, include_inactive=True)[:2].count() > 1
 
 
 def body_q(body: SessionBody, prefix: str = "") -> Q:
@@ -146,6 +170,92 @@ def bodies_in_scope(session_user: SessionUser) -> QuerySet[SessionBody]:
     from apps.session.models import SessionBody
 
     return SessionBody.objects.filter(tenant_id=session_user.tenant_id)
+
+
+# ---------------------------------------------------------------------------
+# Auswahl in der Oberfläche (Filter, Formulare)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BodyChoice:
+    """
+    Körperschaften für Filter und Formulare. Leer, solange der Mandant nur eine aktive Körperschaft führt –
+    dann zeigt die Oberfläche nichts davon (``active``).
+    """
+
+    bodies: tuple[SessionBody, ...] = ()
+    selected: SessionBody | None = None
+
+    @property
+    def active(self) -> bool:
+        return len(self.bodies) > 1
+
+    @property
+    def default(self) -> SessionBody | None:
+        """Standardkörperschaft; None ohne Auswahl."""
+        return next((body for body in self.bodies if body.is_default), None)
+
+    @property
+    def default_id(self) -> Any:
+        """Kennung der Standardkörperschaft (Vorbelegung beim Anlegen); None ohne Auswahl."""
+        default = self.default
+        return default.pk if default is not None else None
+
+    def q(self, prefix: str = "") -> Q:
+        """Filter auf die gewählte Körperschaft; ohne Auswahl keine Einschränkung."""
+        return body_q(self.selected, prefix) if self.selected is not None else Q()
+
+
+def annotate_body_count(queryset: QuerySet[Any]) -> QuerySet[Any]:
+    """
+    Mandanten mit der Zahl ihrer aktiven Körperschaften (``active_body_count``) – in derselben Abfrage, mit der
+    die Views den Mandanten laden. So kostet die Frage „mehr als eine?“ Mandanten mit einer Körperschaft keine
+    eigene Abfrage.
+    """
+    from apps.session.models import SessionBody
+
+    count = (
+        SessionBody.objects.filter(tenant=OuterRef("pk"), is_active=True)
+        .order_by()
+        .values("tenant")
+        .annotate(n=Count("pk"))
+        .values("n")[:1]
+    )
+    annotated: QuerySet[Any] = queryset.annotate(active_body_count=Coalesce(Subquery(count), 0))
+    return annotated
+
+
+def choice(tenant: SessionTenant, slug: str = "") -> BodyChoice:
+    """Auswahl für Listen und Formulare; ``slug`` wählt eine Körperschaft (unbekannt: keine Einschränkung)."""
+    count = getattr(tenant, "active_body_count", None)
+    if count is not None and count < 2:
+        return BodyChoice()
+    items = tuple(bodies(tenant))
+    if len(items) < 2:
+        return BodyChoice()
+    selected = next((body for body in items if body.slug == slug), None) if slug else None
+    return BodyChoice(items, selected)
+
+
+def group_organizations(
+    organizations: Iterable[SessionOrganization], body_choice: BodyChoice
+) -> list[tuple[str, list[SessionOrganization]]]:
+    """
+    Gremien je Körperschaft für gruppierte Auswahlfelder (Reihenfolge wie ``body_choice.bodies``); leer, solange
+    der Mandant nur eine Körperschaft führt. Gremien ohne Körperschaft stehen bei der Standardkörperschaft.
+    """
+    if not body_choice.active:
+        return []
+    default_id = next((body.pk for body in body_choice.bodies if body.is_default), None)
+    groups: dict[Any, list[SessionOrganization]] = {body.pk: [] for body in body_choice.bodies}
+    rest: list[SessionOrganization] = []
+    for organization in organizations:
+        groups.get(effective_body_id(organization, default_id), rest).append(organization)
+    result = [(body.name, groups[body.pk]) for body in body_choice.bodies if groups[body.pk]]
+    if rest:
+        result.append(("Inaktive Körperschaften", rest))
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -119,6 +119,11 @@ class SettingsView(SessionViewMixin, TemplateView):
         context["oparl_licenses"] = oparl_access.LICENSES
         # Hinweis auf den Datenkatalog nach DCAT-AP.de (Issue #104): Adresse bzw. „ohne Lizenz kein Katalog“
         context["dcat_enabled"] = dcat_enabled()
+        # Körperschaften (Issue #756): Kachel erst ab der zweiten Körperschaft, inaktive eingeschlossen – sonst
+        # wäre eine deaktivierte zweite über die Oberfläche nicht mehr zu reaktivieren
+        from ..services import body_service
+
+        context["has_several_bodies"] = body_service.has_several(self.session_tenant)
         return context
 
 

@@ -12,6 +12,7 @@ Sitzungskalender und Jahresplanung (Issue #82).
 import calendar as _calendar
 from datetime import date, datetime, time, timedelta
 
+from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -123,9 +124,11 @@ def generate_series(
     return results
 
 
-def month_grid(tenant: SessionTenant, year: int, month: int, *, include_non_public: bool):
+def month_grid(tenant: SessionTenant, year: int, month: int, *, include_non_public: bool, only: Q | None = None):
     """
     Wochen eines Monats mit den Sitzungen je Tag.
+
+    ``only``: zusätzliche Einschränkung der Sitzungen, etwa auf eine Körperschaft (Issue #756).
 
     Returns:
         (weeks, meetings_count): weeks = Liste von Wochen, jede Woche eine
@@ -138,6 +141,8 @@ def month_grid(tenant: SessionTenant, year: int, month: int, *, include_non_publ
     )
     if not include_non_public:
         qs = qs.filter(is_public=True)
+    if only is not None:
+        qs = qs.filter(only)
 
     meetings = list(qs)
     # Gemeinsame Sitzungen (Issue #317): weitere Gremien in einer Abfrage, nur wenn es welche gibt
