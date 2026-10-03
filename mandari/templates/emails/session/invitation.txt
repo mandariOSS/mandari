@@ -7,7 +7,8 @@ Termin:  {{ start_local|date:"l, d.m.Y" }}, {{ start_local|date:"H:i" }} Uhr{% i
 Ort:     {{ location }}{% endif %}{% if format_info.is_remote %}
 Format:  {{ format_info.description }}{% if format_info.remote_access %}
 Zugang:  {{ format_info.remote_access }}{% endif %}{% if format_info.legal_basis %}
-Rechtsgrundlage: {{ format_info.legal_basis }}{% endif %}{% endif %}
+Rechtsgrundlage: {{ format_info.legal_basis }}{% endif %}{% for notice in format_info.notices %}
+Hinweis: {{ notice }}{% endfor %}{% endif %}
 {% if message %}
 {{ message }}
 {% endif %}

@@ -33,7 +33,7 @@ from typing import Any
 
 from django.utils import timezone
 
-from apps.session.models import SessionAttendance, SessionMeeting, SessionStateProfile
+from apps.session.models import SessionAttendance, SessionAttendanceDisruption, SessionMeeting, SessionStateProfile
 from apps.session.services import joint_meeting_service
 
 REMOTE = SessionAttendance.PARTICIPATION_REMOTE
@@ -340,15 +340,59 @@ def chair_hint(meeting: Any, attendances: list[Any]) -> str:
     """Hinweis, wenn die Sitzungsleitung nach dem Landesprofil im Raum sein muss, aber zugeschaltet ist."""
     if getattr(meeting, "format", "") != SessionMeeting.FORMAT_HYBRID:
         return ""
-    profile = meeting.tenant.state_profile
-    if profile is None or profile.chair_present != "required":
+    from apps.session.services import state_law_service
+
+    law = state_law_service.for_meeting(meeting)
+    if law is None or law.profile.chair_present != "required":
         return ""
+    profile = law.profile
     chairs = [a.person.display_name for a in attendances if a.is_remote and a.role == "chair"]
+    if law.value("session_lead") == "session_lead":
+        # Fassung mit „Sitzungsleitung“ (z. B. § 64 Abs. 3 Satz 1 NKomVG ab 01.11.2026): Fehlt der Vorsitz im Raum,
+        # leitet eine Stellvertretung – auch sie muss im Raum sein
+        chair_in_room = any(
+            a.role == "chair" and not a.is_remote and a.status in PARTICIPATED_STATUSES for a in attendances
+        )
+        deputies = [a.person.display_name for a in attendances if a.is_remote and a.role == "deputy_chair"]
+        leads = chairs or ([] if chair_in_room else deputies)
+        if not leads:
+            return ""
+        norm = law.norm("session_lead")
+        return (
+            f"Nach dem Landesprofil {profile.name} ({law.version_label}{f', {norm}' if norm else ''}) muss die "
+            "Sitzungsleitung im Sitzungsraum anwesend sein – auch eine Stellvertretung, die die Sitzung leitet; "
+            f"zugeschaltet: {', '.join(leads)}."
+        )
     if not chairs:
         return ""
     return (
         f"Nach dem Landesprofil {profile.name} muss die Sitzungsleitung im Sitzungsraum anwesend sein; "
         f"zugeschaltet ist der Vorsitz: {', '.join(chairs)}."
+    )
+
+
+def interruption_hint(meeting: Any, disruptions: list[Any]) -> str:
+    """
+    Hinweis „Sitzung unterbrechen“ (Issue #757): Dauert eine Störung an, die im Verantwortungsbereich der Kommune
+    liegt, ist die Sitzung nach dem Landesrecht zu unterbrechen oder abzubrechen (z. B. § 64 Abs. 5 NKomVG);
+    sonstige Störungen sind für die Sitzung unbeachtlich, die Person zählt nur für ihre Dauer nicht mit.
+    """
+    from apps.session.services import state_law_service
+
+    municipal = [
+        d
+        for d in disruptions
+        if d.ongoing and d.responsibility == SessionAttendanceDisruption.RESPONSIBILITY_MUNICIPALITY
+    ]
+    if not municipal:
+        return ""
+    law = state_law_service.for_meeting(meeting)
+    if law is None or law.value("disruption") != "interrupt":
+        return ""
+    norm = law.norm("disruption")
+    return (
+        f"Störung im Verantwortungsbereich der Kommune{f' ({norm})' if norm else ''}: Die Sitzung ist zu "
+        "unterbrechen, bis die Übertragung wieder steht, oder abzubrechen."
     )
 
 

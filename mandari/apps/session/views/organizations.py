@@ -182,6 +182,8 @@ ORGANIZATION_FORM_FIELDS = [
     "organization_type",
     # Gesetzliche Ausschussart für Sitzungsformate (Issue #138)
     "committee_kind",
+    # Örtliche Abweichung der Hauptsatzung für hybride Sitzungen (Issue #757)
+    "remote_local_rule",
     "parent",
     "meeting_frequency",
     "invitation_period_days",

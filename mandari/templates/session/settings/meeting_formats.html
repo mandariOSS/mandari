@@ -81,6 +81,8 @@
     </c-ui.card>
     {% endif %}
 
+    {% include "session/settings/_state_law.html" %}
+
     {% if committee_kinds %}{% include "session/settings/_committee_kinds.html" %}{% endif %}
 
     <c-ui.alert variant="warning" icon="scale">

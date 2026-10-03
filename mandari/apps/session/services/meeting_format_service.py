@@ -111,31 +111,43 @@ def sync_profiles(model: Any = None, path: Path | None = None) -> tuple[int, int
     Landesprofile aus der Datei anlegen bzw. aktualisieren (idempotent).
 
     ``model`` erlaubt den Aufruf aus Datenmigrationen mit dem historischen Modell; Schlüssel, die das
-    Modell (noch) nicht kennt, werden übergangen. Rückgabe: (angelegt, aktualisiert).
+    Modell (noch) nicht kennt, werden übergangen. Ohne ``model`` übernimmt der Lauf auch die Fassungen mit
+    Sitzungsrecht (Issue #757, ``state_law_service.sync_versions``). Rückgabe: (angelegt, aktualisiert)
+    der Landesprofile.
     """
+    with_versions = model is None
     if model is None:
         from apps.session.models import SessionStateProfile
 
         model = SessionStateProfile
     known = {f.name for f in model._meta.get_fields() if getattr(f, "concrete", False)}
     created = updated = 0
-    for row in profile_rows(path):
+    rows = profile_rows(path)
+    for row in rows:
         values = {key: value for key, value in row.items() if key in known and key != "code"}
         _obj, was_created = model.objects.update_or_create(code=row["code"], defaults=values)
         if was_created:
             created += 1
         else:
             updated += 1
+    if with_versions:
+        from apps.session.models import SessionStateProfileVersion
+        from apps.session.services import state_law_service
+
+        state_law_service.sync_versions(model, SessionStateProfileVersion, rows)
     return created, updated
 
 
 def profile_differences(path: Path | None = None) -> list[str]:
     """Abweichungen zwischen Datenbank und Profildatei (für ``session_state_profiles --check``)."""
-    from apps.session.models import SessionStateProfile
+    from apps.session.models import SessionStateProfile, SessionStateProfileVersion
+    from apps.session.services import state_law_service
 
     known = {f.name for f in SessionStateProfile._meta.get_fields() if getattr(f, "concrete", False)}
     stored = {p.code: p for p in SessionStateProfile.objects.all()}
+    stored_versions = {(v.profile_id, v.valid_from): v for v in SessionStateProfileVersion.objects.all()}
     differences = []
+    wanted_versions = set()
     for row in profile_rows(path):
         profile = stored.get(row["code"])
         if profile is None:
@@ -144,6 +156,20 @@ def profile_differences(path: Path | None = None) -> list[str]:
         changed = sorted(key for key, value in row.items() if key in known and getattr(profile, key) != value)
         if changed:
             differences.append(f"{row['code']}: abweichend ({', '.join(changed)})")
+        for raw in row.get("versions") or []:
+            values = state_law_service.normalize_version(row["code"], raw, profile_fields=known)
+            key = (row["code"], values.pop("valid_from"))
+            wanted_versions.add(key)
+            version = stored_versions.get(key)
+            label = f"{key[0]}, Fassung ab {key[1]:%d.%m.%Y}"
+            if version is None:
+                differences.append(f"{label}: fehlt in der Datenbank")
+                continue
+            changed = sorted(name for name, value in values.items() if getattr(version, name) != value)
+            if changed:
+                differences.append(f"{label}: abweichend ({', '.join(changed)})")
+    for code, valid_from in sorted(set(stored_versions) - wanted_versions):
+        differences.append(f"{code}, Fassung ab {valid_from:%d.%m.%Y}: nicht mehr in der Profildatei")
     return differences
 
 
@@ -165,6 +191,8 @@ class FormatRule:
     unclassified: bool = False
     #: Ausgenommene Ausschussarten, auf die der Name eines nicht eingeordneten Gremiums hindeutet
     suspected_kinds: tuple[str, ...] = ()
+    #: Örtliche Regel am Gremium: laut Hauptsatzung keine Zuschaltung (Issue #757)
+    locally_excluded: bool = False
 
 
 def _stricter(first: str, second: str) -> str:
@@ -225,6 +253,10 @@ def rule_for(profile: Any, organization: Any, meeting_format: str) -> FormatRule
     if excluded or suspected:
         # Bis zur Einordnung gilt bei verdächtigem Namen vorsorglich die strengere Regel
         rule = _stricter(rule, profile.excluded_committee_rule)
+    # Örtliche Abweichung (Issue #757, z. B. § 64 Abs. 8 NKomVG): Die Hauptsatzung schließt die Zuschaltung aus
+    locally_excluded = getattr(organization, "remote_local_rule", "") == "excluded"
+    if locally_excluded:
+        rule = RULE_NONE
     norm = {RULE_REGULAR: profile.norm_regular, RULE_EMERGENCY: profile.norm_emergency}.get(rule, "")
     return FormatRule(
         organization,
@@ -233,6 +265,7 @@ def rule_for(profile: Any, organization: Any, meeting_format: str) -> FormatRule
         excluded_kind=excluded,
         unclassified=unclassified,
         suspected_kinds=suspected,
+        locally_excluded=locally_excluded,
     )
 
 
@@ -259,19 +292,39 @@ class FormatCheck:
             self.warnings.append(message)
 
 
-def check(tenant: Any, organizations: Iterable[Any], meeting_format: str, reason: str = "") -> FormatCheck:
-    """Sitzungsformat für die beteiligten Gremien gegen das Landesprofil des Mandanten prüfen."""
+def check(
+    tenant: Any,
+    organizations: Iterable[Any],
+    meeting_format: str,
+    reason: str = "",
+    *,
+    day: date | None = None,
+    is_public: bool | None = None,
+) -> FormatCheck:
+    """
+    Sitzungsformat für die beteiligten Gremien gegen das Landesprofil des Mandanten prüfen.
+
+    ``day`` wählt die Fassung des Landesprofils (Issue #757; Standard heute) und prüft einen Notlagenbeschluss
+    gegen das Sitzungsdatum; ``is_public`` prüft die örtliche Beschränkung der Zuschaltung auf öffentliche
+    Sitzungen. Das Ortsrecht kommt von der Körperschaft des ersten (federführenden) Gremiums.
+    """
+    from apps.session.services import state_law_service
+
     result = FormatCheck()
     if meeting_format == FORMAT_PRESENCE:
         return result
+    organizations = list(organizations)
     label = _FORMAT_PLURAL.get(meeting_format, "Hybride oder digitale Sitzungen")
-    profile = tenant.state_profile
-    if profile is None:
+    if tenant.state_profile is None:
         result._add(
             f"{label} setzen ein Landesprofil voraus. Bitte in den Einstellungen unter „Sitzungsformate“ "
             "das Land wählen und die örtliche Rechtsgrundlage nachweisen."
         )
         return result
+    law = state_law_service.effective(tenant.state_profile, day)
+    profile = law.profile
+    body = _body_of_organizations(tenant, organizations)
+    local = state_law_service.LocalRules.of(body)
 
     result.rules = [rule_for(profile, org, meeting_format) for org in organizations]
     regulated = [r for r in result.rules if not r.unregulated]
@@ -304,7 +357,12 @@ def check(tenant: Any, organizations: Iterable[Any], meeting_format: str, reason
                 "festlegen, ob eine dieser Arten zutrifft."
             )
         if item.rule == RULE_NONE:
-            if item.excluded_kind:
+            if item.locally_excluded:
+                result._add(
+                    f"{label} sind für „{org_name}“ nach der Hauptsatzung ausgeschlossen (örtliche Regel beim "
+                    "Gremium unter „Zuschaltung“)."
+                )
+            elif item.excluded_kind:
                 result._add(
                     f"{label} sind für „{org_name}“ ({kind_label}) nach dem Landesprofil {profile.name} "
                     f"ausgeschlossen ({profile.norm_regular or profile.law})."
@@ -313,6 +371,8 @@ def check(tenant: Any, organizations: Iterable[Any], meeting_format: str, reason
                 result._add(f"{label} sind für „{org_name}“ nach {profile.law} nicht vorgesehen.")
         elif item.rule == RULE_EMERGENCY:
             result.needs_reason = True
+            for problem in state_law_service.emergency_problems(law, local, law.day, body.name):
+                result._add(problem)
             if profile.emergency_needs_local_basis and not documented:
                 result._add(
                     f"{label} in einer Notlage setzen nach {profile.norm_emergency or profile.law} eine "
@@ -346,7 +406,23 @@ def check(tenant: Any, organizations: Iterable[Any], meeting_format: str, reason
         requirements = profile.emergency_requirements.strip()
         hint = f" Voraussetzungen: {requirements}" if requirements else ""
         result._add(f"Bitte das Sitzungsformat begründen (Notlage bzw. Beschluss des Gremiums).{hint}")
+    # Hauptsatzung beschränkt die Zuschaltung auf öffentliche Sitzungen (Issue #757, § 64 Abs. 3 Satz 3 NKomVG)
+    if regulated and is_public is False and local.remote_public_only and law.value("remote_public_only", False):
+        norm = law.norm("remote_public_only")
+        result._add(
+            "Nach der Hauptsatzung ist die Zuschaltung nur in öffentlichen Sitzungen zulässig"
+            f"{f' ({norm})' if norm else ''}. Bitte die Sitzung als Präsenzsitzung führen oder öffentlich laden."
+        )
     return result
+
+
+def _body_of_organizations(tenant: Any, organizations: list[Any]) -> Any:
+    """Körperschaft des federführenden Gremiums (Ortsrecht); ohne Gremium die Standardkörperschaft."""
+    from apps.session.services import body_service
+
+    lead = organizations[0] if organizations else None
+    body = getattr(lead, "body", None) if lead is not None else None
+    return body if body is not None else body_service.default_body(tenant)
 
 
 def strictest_rule(rules: Iterable[FormatRule]) -> FormatRule | None:
@@ -445,12 +521,16 @@ _DESCRIPTIONS = {
 
 
 def check_meeting(meeting: Any) -> FormatCheck:
-    """Gespeichertes Format einer Sitzung gegen das aktuelle Landesprofil prüfen (Ladung, Anzeige)."""
+    """Gespeichertes Format einer Sitzung gegen das Landesprofil in der Fassung zum Sitzungsdatum prüfen."""
+    from apps.session.services import state_law_service
+
     return check(
         meeting.tenant,
         meeting.participating_organizations,
         meeting.format or FORMAT_PRESENCE,
         meeting.format_reason or "",
+        day=state_law_service.meeting_day(meeting),
+        is_public=bool(meeting.is_public),
     )
 
 
@@ -472,6 +552,8 @@ class MeetingFormatInfo:
     warnings: tuple[str, ...]
     #: Hinweise der Prüfung, die die Ladung nicht sperren (z. B. nicht eingeordneter Ausschuss)
     hints: tuple[str, ...] = ()
+    #: Vermerke für die Ladung (Issue #757): Zulassung der Zuschaltung, Pflichthinweis an Zugeschaltete
+    notices: tuple[str, ...] = ()
 
     @property
     def is_remote(self) -> bool:
@@ -513,6 +595,9 @@ def describe(meeting: Any, *, for_members: bool = False, checks: bool = True) ->
     remote_access = ""
     if for_members and remote:
         remote_access = str(meeting.get_remote_access_decrypted() or "")
+    hints = list(result.warnings)
+    if checks:
+        hints.extend(media_hints(meeting))
     return MeetingFormatInfo(
         format=meeting_format,
         label=str(meeting.get_format_display()),
@@ -525,5 +610,88 @@ def describe(meeting: Any, *, for_members: bool = False, checks: bool = True) ->
         public_registration_required=bool(profile and profile.public_registration_required),
         public_registration_days=tenant.digital_public_registration_days,
         warnings=tuple(result.errors),
-        hints=tuple(result.warnings),
+        hints=tuple(hints),
+        notices=tuple(invitation_notices(meeting, for_members=for_members)) if remote and checks else (),
     )
+
+
+# =============================================================================
+# Ortsrecht in Ladung und Anzeige (Issue #757)
+# =============================================================================
+
+
+def invitation_notices(meeting: Any, *, for_members: bool = False) -> list[str]:
+    """
+    Vermerke zum Sitzungsformat für die Ladung einer hybriden oder digitalen Sitzung:
+
+    - Zulassung der Zuschaltung mit dieser Ladung, wenn die Hauptsatzung sie je Ladung vorsieht (§ 64 Abs. 3
+      Satz 2 NKomVG)
+    - Pflichthinweis an Zugeschaltete, dass niemand den nichtöffentlichen Teil mitverfolgen darf (§ 64 Abs. 6
+      NKomVG) – in der Fassung für Mitglieder bzw. bei einer nichtöffentlichen Sitzung
+    """
+    from apps.session.services import state_law_service
+
+    law = state_law_service.for_meeting(meeting)
+    if law is None or (meeting.format or FORMAT_PRESENCE) == FORMAT_PRESENCE:
+        return []
+    notices = []
+    local = state_law_service.LocalRules.of(state_law_service.body_of(meeting))
+    if local.remote_per_invitation and law.value("remote_per_invitation", False):
+        norm = law.norm("remote_per_invitation")
+        basis = f" ({norm} i. V. m. der Hauptsatzung)" if norm else " (Hauptsatzung)"
+        notices.append(f"Die Teilnahme per Bild-Ton-Übertragung ist mit dieser Ladung zugelassen{basis}.")
+    text = law.text("remote_non_public_notice")
+    if text and (for_members or not meeting.is_public):
+        notices.append(text)
+    return notices
+
+
+def media_hints(meeting: Any) -> list[str]:
+    """
+    Hinweise zur Übertragung einer Sitzung (``public_access_url``) nach Landesrecht und Hauptsatzung:
+    fehlender Nachweis für Bild- und Tonaufnahmen bzw. die Öffentlichkeit per Video, Widersprüche von
+    Mitgliedern (§ 64 Abs. 2 und 9 NKomVG). Nur intern (Detailseite) – nie in öffentlichen Dokumenten.
+    """
+    from apps.session.services import state_law_service
+
+    if not (meeting.public_access_url or "").strip():
+        return []
+    law = state_law_service.for_meeting(meeting)
+    if law is None:
+        return []
+    local = state_law_service.LocalRules.of(state_law_service.body_of(meeting))
+    hints = []
+    video = law.value("video_public")
+    recording = law.value("recording")
+    if video == "local_basis" and not local.video_public_basis:
+        hints.append(
+            "Die Öffentlichkeit darf die Sitzung per Video nur verfolgen, soweit die Hauptsatzung es zulässt "
+            f"({law.norm('video_public')}). Bitte den Nachweis im Ortsrecht der Körperschaft hinterlegen."
+        )
+    elif video != "local_basis" and recording == "local_basis" and not local.recording_basis:
+        hints.append(
+            "Bild- und Tonaufnahmen von Mitgliedern sind nur zulässig, soweit die Hauptsatzung es bestimmt "
+            f"({law.norm('recording')}). Bitte den Nachweis im Ortsrecht der Körperschaft hinterlegen."
+        )
+    if law.value("recording_objection", False):
+        names = recording_objections(meeting)
+        if names:
+            hints.append(
+                f"Widerspruch gegen Bild- und Tonaufnahmen ({law.norm('recording_objection')}): "
+                f"{join_labels(names)} – nicht aufnehmen bzw. übertragen."
+            )
+    return hints
+
+
+def recording_objections(meeting: Any) -> list[str]:
+    """Mitglieder der beteiligten Gremien mit Widerspruch gegen Bild- und Tonaufnahmen (Namen, sortiert)."""
+    from apps.session.models import SessionOrganizationMembership
+    from apps.session.services import membership_service, state_law_service
+
+    day = state_law_service.meeting_day(meeting)
+    memberships = SessionOrganizationMembership.objects.filter(
+        membership_service.active_q(day),
+        organization_id__in=meeting.participating_organization_ids,
+        person__recording_objection=True,
+    ).select_related("person")
+    return sorted({membership.person.display_name for membership in memberships})

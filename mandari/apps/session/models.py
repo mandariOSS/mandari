@@ -219,6 +219,55 @@ class SessionStateProfile(models.Model):
         return [labels.get(kind, kind) for kind in self.excluded_committee_kinds or []]
 
 
+class SessionStateProfileVersion(models.Model):
+    """
+    Fassung eines Landesprofils mit Stichtag (Issue #757): Sitzungsrecht ab ``valid_from``.
+
+    Kommunalverfassungen ändern sich zu festen Stichtagen – in Niedersachsen am 07.05.2026 und am 01.11.2026,
+    dem Beginn der Wahlperiode. Maßgeblich ist die Fassung zum Sitzungsdatum: die jüngste mit ``valid_from``
+    am oder vor dem Tag. Spätere Fassungen erben die Einträge der früheren und überschreiben nur, was sich
+    ändert (``state_law_service.effective``). Vor der ersten Fassung gilt das Landesprofil ohne Sitzungsrecht.
+
+    ``law`` hält das Sitzungsrecht als Einträge aus dem Katalog ``state_law_service.LAW_FIELDS`` – je Eintrag
+    Wert, Erläuterung, Norm, Quelle und Stand; ``overrides`` ändert Felder des Landesprofils ab dem Stichtag.
+    Referenzdaten aus ``apps/session/presets/landesprofile.json`` (``session_state_profiles --sync``).
+    """
+
+    profile = models.ForeignKey(
+        SessionStateProfile,
+        on_delete=models.CASCADE,
+        related_name="versions",
+        verbose_name="Landesprofil",
+    )
+    valid_from = models.DateField(verbose_name="Gültig ab")
+    title = models.CharField(max_length=255, verbose_name="Bezeichnung")
+    amendment = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Änderung", help_text="Änderungsgesetz mit Fundstelle"
+    )
+    overrides = models.JSONField(
+        default=dict, blank=True, verbose_name="Abweichende Felder des Landesprofils ab dem Stichtag"
+    )
+    law = models.JSONField(default=dict, blank=True, verbose_name="Sitzungsrecht")
+    sources = models.JSONField(default=list, blank=True, verbose_name="Quellen")
+    as_of = models.DateField(verbose_name="Stand der Recherche")
+    verification = models.CharField(
+        max_length=20, choices=SessionStateProfile.VERIFICATION_CHOICES, verbose_name="Prüftiefe"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_state_profile_versions"
+        verbose_name = "Fassung eines Landesprofils"
+        verbose_name_plural = "Fassungen der Landesprofile"
+        ordering = ["profile", "valid_from"]
+        constraints = [
+            models.UniqueConstraint(fields=["profile", "valid_from"], name="uniq_state_profile_version"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.profile_id}: {self.title}"
+
+
 # =============================================================================
 # TENANT MODEL
 # =============================================================================
@@ -741,6 +790,16 @@ class SessionBody(models.Model):
         default=False,
         verbose_name="Standardkörperschaft",
         help_text="Körperschaft, die die Verwaltung trägt; Vorgabe beim Anlegen und für ältere Daten",
+    )
+    # Ortsrecht (Issue #757): Regeln aus Hauptsatzung und Geschäftsordnung der Körperschaft – Zuschaltung,
+    # Bild- und Tonaufnahmen, Öffentlichkeit per Video, Notlagenbeschluss, Fristen und Abläufe der GO. Schlüssel
+    # und Prüfung in ``state_law_service.LocalRules``. In der Datenbank nullbar: Ein älteres Image legt
+    # Körperschaften ohne diese Spalte an; leer heißt „nichts geregelt“.
+    local_rules = models.JSONField(
+        null=True,
+        blank=True,
+        default=dict,
+        verbose_name="Ortsrecht (Hauptsatzung und Geschäftsordnung)",
     )
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1658,6 +1717,22 @@ class SessionOrganization(models.Model):
         help_text="Für Sitzungsformate: Haupt-, Finanz- und Rechnungsprüfungsausschuss haben im Kommunalrecht "
         "teils besondere Regeln",
     )
+    # Örtliche Abweichung für hybride Sitzungen (Issue #757): Die Hauptsatzung kann für Ausschüsse anderes
+    # bestimmen als für die Vertretung (z. B. § 64 Abs. 8 NKomVG). Leer: Regel des Landesprofils.
+    REMOTE_LOCAL_EXCLUDED = "excluded"
+    REMOTE_LOCAL_CHOICES = [
+        ("", "Wie im Landesprofil"),
+        (REMOTE_LOCAL_EXCLUDED, "Laut Hauptsatzung keine Zuschaltung"),
+    ]
+    remote_local_rule = models.CharField(
+        max_length=20,
+        choices=REMOTE_LOCAL_CHOICES,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Zuschaltung (örtliche Regel)",
+        help_text="Abweichung der Hauptsatzung für dieses Gremium, z. B. keine hybriden Ausschusssitzungen",
+    )
 
     # Hierarchy
     parent = models.ForeignKey(
@@ -1823,6 +1898,17 @@ class SessionPerson(EncryptionMixin, models.Model):
         default="email",
         verbose_name="Zustellweg für Ladungen",
     )
+
+    # Widerspruch gegen Bild- und Tonaufnahmen (Issue #757, z. B. § 64 Abs. 2 Satz 3 NKomVG): Lässt die
+    # Hauptsatzung Aufnahmen oder die Übertragung zu, darf jede bzw. jeder Abgeordnete widersprechen. Bezug
+    # zum Livestream (#146). DB-seitige Defaults, damit ein älteres Image weiter Personen anlegen kann.
+    recording_objection = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Widerspruch gegen Bild- und Tonaufnahmen",
+        help_text="Die Person widerspricht Aufnahmen und Übertragungen ihrer Person in Sitzungen",
+    )
+    recording_objection_date = models.DateField(null=True, blank=True, verbose_name="Widerspruch vom")
 
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
@@ -4093,6 +4179,23 @@ class SessionAttendanceDisruption(models.Model):
     started_at = models.TimeField(verbose_name="Beginn")
     ended_at = models.TimeField(blank=True, null=True, verbose_name="Ende", help_text="Leer: Die Störung dauert an")
     cause = models.CharField(max_length=20, choices=CAUSE_CHOICES, default=CAUSE_CONNECTION, verbose_name="Ursache")
+    # Verantwortungsbereich (Issue #757, z. B. § 64 Abs. 5 NKomVG): Eine Störung, die die Kommune zu
+    # verantworten hat, unterbricht die Sitzung; sonstige Störungen sind für die Sitzung unbeachtlich.
+    RESPONSIBILITY_MUNICIPALITY = "municipality"
+    RESPONSIBILITY_OTHER = "other"
+    RESPONSIBILITY_CHOICES = [
+        ("", "Nicht festgestellt"),
+        (RESPONSIBILITY_MUNICIPALITY, "Im Verantwortungsbereich der Kommune"),
+        (RESPONSIBILITY_OTHER, "Außerhalb des Verantwortungsbereichs der Kommune"),
+    ]
+    responsibility = models.CharField(
+        max_length=20,
+        choices=RESPONSIBILITY_CHOICES,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Verantwortungsbereich",
+    )
     note = models.CharField(max_length=255, blank=True, verbose_name="Vermerk", help_text="Nur intern")
 
     created_at = models.DateTimeField(auto_now_add=True)
