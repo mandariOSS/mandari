@@ -1,0 +1,19 @@
+{% extends "base_insight.html" %}
+{% comment %}
+Rückmeldung ohne JavaScript (views/feedback.py): derselbe Schritt wie im Seitenende, dazu der Rückweg.
+{% endcomment %}
+
+{% block title %}Rückmeldung{% endblock %}
+
+{% block content %}
+<section aria-label="Rückmeldung zu einer Seite" class="max-w-3xl rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 py-6">
+    <div id="rueckmeldung-inhalt" aria-live="polite">{% include feedback_partial %}</div>
+    {% if back_url %}
+    <p class="mt-6">
+        <a href="{{ back_url }}" class="inline-flex items-center gap-1 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+            <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i>Zurück zur Seite
+        </a>
+    </p>
+    {% endif %}
+</section>
+{% endblock %}

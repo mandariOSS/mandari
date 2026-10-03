@@ -25,6 +25,8 @@ DEFAULTS: dict[str, int] = {
     # Formulare, die E-Mails auslösen (Kontakt, Abos, Beschluss-Abos, Ratsfragen)
     "INSIGHT_MAILS_PER_IP_HOUR": 10,
     "INSIGHT_MAILS_PER_ADDRESS_DAY": 3,
+    # Anonyme Rückmeldung am Seitenende („War diese Seite hilfreich?“), Antworten und Ergänzungen
+    "INSIGHT_FEEDBACK_PER_IP_HOUR": 30,
     # Kachel-Proxy (nur Abrufe bei OpenStreetMap, Kacheln aus dem Cache sind frei)
     "INSIGHT_TILE_FETCHES_PER_IP_MINUTE": 300,
     "INSIGHT_TILE_FETCHES_PER_MINUTE": 1200,
