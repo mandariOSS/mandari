@@ -23,6 +23,10 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
     ``false``: Dateien dieser Quelle nicht automatisch abrufen (Textextraktion im Ingestor, Dateicache und
     Vorschau in Django). Für Quellen, die Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefern;
     die Dateien bleiben in der Warteschlange und werden nachgeholt, sobald der Schalter fällt.
+``robots_override``
+    Ausnahme von der robots.txt, nur mit Freigabe der Stelle und Pflicht-Vermerk, z. B.
+    ``{"scope": "files", "note": "Freigabe per E-Mail vom …, offizielle Anfrage läuft"}``. ``scope``: ``api``,
+    ``files`` oder ``all``. Ohne Vermerk gilt die robots.txt (``mandari_oparl.robots.robots_override``).
 
 Ungültige Werte gelten als nicht gesetzt.
 """
@@ -33,6 +37,8 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
+
+from mandari_oparl.robots import RobotsOverride, robots_override
 
 REQUEST_INTERVAL_KEY = "request_interval"
 LIST_PARAMS_KEY = "list_params"
@@ -76,6 +82,7 @@ class SourceFetchOptions:
     list_params: dict[str, str] = field(default_factory=dict)
     carry_modified_since: bool = False
     file_downloads: bool = True
+    robots_override: RobotsOverride | None = None
 
     @classmethod
     def from_sync_config(cls, sync_config: Any) -> SourceFetchOptions:
@@ -87,6 +94,7 @@ class SourceFetchOptions:
             carry_modified_since=sync_config.get(CARRY_MODIFIED_SINCE_KEY) is True,
             # Nur ein ausdrückliches false schaltet ab
             file_downloads=sync_config.get(FILE_DOWNLOADS_KEY) is not False,
+            robots_override=robots_override(sync_config),
         )
 
     def client_kwargs(self) -> dict[str, Any]:
@@ -94,6 +102,7 @@ class SourceFetchOptions:
         kwargs: dict[str, Any] = {
             "list_params": dict(self.list_params),
             "carry_modified_since": self.carry_modified_since,
+            "robots_override": self.robots_override,
         }
         if self.request_interval is not None:
             kwargs["request_interval"] = self.request_interval

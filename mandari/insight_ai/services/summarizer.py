@@ -241,6 +241,7 @@ class SummaryService:
         Returns:
             Extracted text or empty string on failure
         """
+        from insight_core.services import robots
         from insight_core.services.document_extraction import (
             DocumentDownloadError,
             download_and_extract,
@@ -261,6 +262,7 @@ class SummaryService:
                 mime_type=file.mime_type,
                 original_name=file.file_name or file.name or "",
                 timeout=120.0,
+                sync_config=robots.sync_config_of(file),
             )
 
             if result.text and result.text.strip():

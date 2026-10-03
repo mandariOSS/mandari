@@ -24,6 +24,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from mandari_oparl.robots import robots_override
+
 from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED
 from src.config import settings
 from src.metrics import metrics
@@ -103,6 +105,7 @@ class ScraperSyncRunner:
             rate_limit_seconds=config.rate_limit_seconds,
             source_name=self.source.name,
             user_agent=getattr(self.source, "user_agent", None) or None,
+            robots_override=robots_override(getattr(self.source, "sync_config", None)),
         ) as fetcher:
             adapter = get_adapter(self.source_type, config, fetcher)
             # Listen-Diffing: bekannte Monats-Snapshots aus dem letzten Lauf

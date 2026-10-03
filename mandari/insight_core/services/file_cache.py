@@ -38,10 +38,13 @@ from django.conf import settings
 from django.db.models import Q, Sum
 from django.utils import timezone
 
+from . import robots
+
 logger = logging.getLogger(__name__)
 
-# Ehrliche Kennung mit Kontakt — Kommunen sollen uns zuordnen (und freischalten) können.
-USER_AGENT = "mandari-file-cache/1.0 (+https://mandari.de; support@mandari.de)"
+# Ehrliche Kennung mit Infoseite und Kontakt — Kommunen sollen uns zuordnen (und freischalten) können.
+# Dasselbe Produkt-Token wie der Ingestor: eine robots.txt-Regel für uns gilt für alle Abrufe.
+USER_AGENT = robots.USER_AGENT
 STATUS_CHOICES = [
     ("none", "Nicht zwischengespeichert"),
     ("ok", "Lokal vorhanden"),
@@ -316,7 +319,7 @@ def fetch_and_cache(file_obj, client=None) -> str:
     """
     Datei aus dem RIS laden und lokal ablegen.
 
-    Rückgabe: "ok", "missing", "error", "too_large", "disk_full", "skipped", "paused".
+    Rückgabe: "ok", "missing", "error", "too_large", "disk_full", "skipped", "paused", "robots".
     """
     import httpx
 
@@ -329,6 +332,11 @@ def fetch_and_cache(file_obj, client=None) -> str:
     url = file_obj.download_url or file_obj.access_url
     if not url:
         return _mark(file_obj, "error", "Keine Download-URL")
+    # robots.txt gilt auch für Dateien (RFC 9309); nach einer Freigabe reiht robots_override neu ein
+    decision = robots.check(url, robots.KIND_FILES, sync_config=robots.sync_config_of(file_obj))
+    if not decision.allowed:
+        _mark(file_obj, "error", decision.reason)
+        return "robots"
 
     from .safe_fetch import guarded_client
 

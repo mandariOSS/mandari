@@ -19,7 +19,9 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from mandari_oparl.robots import KIND_FILES, RobotsOverride
 
+from src.client.robots import robots_gate
 from src.config import settings
 
 try:
@@ -65,6 +67,7 @@ class TextExtractor:
         self.timeout = settings.text_extraction_timeout
         self.batch_size = settings.text_extraction_batch_size
         self._header_cache: dict[Any, dict[str, str]] = {}
+        self._robots_override_cache: dict[Any, RobotsOverride | None] = {}
 
     async def extract_pending_files(self, body_id: UUID) -> int:
         """
@@ -135,6 +138,20 @@ class TextExtractor:
                 status="skipped",
                 error=f"Unsupported MIME type: {mime_type}",
             )
+            return False
+
+        # robots.txt (RFC 9309) gilt auch für Dateien; viele Systeme sperren nur Dokumente (Disallow: /*.pdf$).
+        # Gesperrte Dateien werden übersprungen; nach einer Freigabe holt sie robots_override (Django) zurück.
+        decision = await robots_gate.decide(
+            None,
+            download_url,
+            user_agent=settings.user_agent,
+            kind=KIND_FILES,
+            override=await self._robots_override(file_row.body_id),
+        )
+        if not decision.allowed:
+            logger.info("Datei %s nicht abgerufen: %s", file_id, decision.reason)
+            await self.storage.update_file_text(file_id=file_id, status="skipped", error=decision.reason)
             return False
 
         try:
@@ -224,10 +241,24 @@ class TextExtractor:
                 cache[body_id] = {}
         return cache[body_id]
 
+    async def _robots_override(self, body_id: Any) -> RobotsOverride | None:
+        """Ausnahme der Quelle von der robots.txt (``sync_config["robots_override"]``), je Body zwischengespeichert."""
+        if body_id is None:
+            return None
+        cache = self._robots_override_cache
+        if body_id not in cache:
+            lookup = getattr(self.storage, "get_robots_override_for_body", None)
+            try:
+                cache[body_id] = await lookup(body_id) if lookup is not None else None
+            except Exception as e:  # noqa: BLE001 - ohne lesbare Ausnahme gilt die robots.txt
+                logger.warning("robots-Ausnahme für Body %s nicht ladbar: %s", body_id, e)
+                cache[body_id] = None
+        return cache[body_id]
+
     async def _download(self, url: str, extra_headers: dict[str, str] | None = None) -> bytes:
         """Download a file via httpx async."""
         headers = {
-            "User-Agent": "Mandari/2.0 (+https://mandari.de; support@mandari.de)",
+            "User-Agent": settings.user_agent,
             **(extra_headers or {}),
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:

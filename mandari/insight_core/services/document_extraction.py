@@ -18,6 +18,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Any
 
 import httpx
 from django.conf import settings
@@ -73,10 +74,33 @@ class DocumentDownloadError(RuntimeError):
     """Wird geworfen, wenn ein Dokument nicht heruntergeladen werden kann."""
 
 
-def _http_get(url: str, timeout: float = 60.0, extra_headers: dict[str, str] | None = None) -> httpx.Response:
-    """Führt einen HTTP-GET Request aus (``extra_headers``: Download-Header je Quelle, Issue #116)."""
+class RobotsBlockedError(DocumentDownloadError):
+    """Die robots.txt der Quelle sperrt das Dokument; ``reason`` beginnt mit ``robots.txt``."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _http_get(
+    url: str,
+    timeout: float = 60.0,
+    extra_headers: dict[str, str] | None = None,
+    sync_config: Any = None,
+) -> httpx.Response:
+    """
+    Führt einen HTTP-GET Request aus (``extra_headers``: Download-Header je Quelle, Issue #116).
+
+    Vorher gilt die robots.txt des Hosts (``sync_config`` der Quelle für eine Ausnahme mit Vermerk);
+    ist das Dokument gesperrt, folgt ``RobotsBlockedError`` ohne Anfrage an die Quelle.
+    """
+    from . import robots
+
+    decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config)
+    if not decision.allowed:
+        raise RobotsBlockedError(decision.reason)
     headers = {
-        "User-Agent": "Mandari/2.0 (https://mandari.dev; contact@mandari.dev)",
+        "User-Agent": robots.USER_AGENT,
         **(extra_headers or {}),
     }
     from .safe_fetch import guarded_client
@@ -304,6 +328,7 @@ def download_and_extract(
     original_name: str = "",
     timeout: float = 60.0,
     extra_headers: dict[str, str] | None = None,
+    sync_config: Any = None,
 ) -> ExtractedDocument:
     """
     Lädt ein Dokument herunter und extrahiert Text.
@@ -313,11 +338,16 @@ def download_and_extract(
         mime_type: MIME-Typ (optional, wird aus Response ermittelt)
         original_name: Originaler Dateiname
         timeout: HTTP-Timeout in Sekunden
+        sync_config: ``sync_config`` der Quelle (Ausnahme von der robots.txt)
 
     Returns:
         ExtractedDocument mit Binärdaten, Text und Metadaten
+
+    Raises:
+        RobotsBlockedError: die robots.txt sperrt das Dokument
+        DocumentDownloadError: Abruf fehlgeschlagen
     """
-    response = _http_get(url, timeout=timeout, extra_headers=extra_headers)
+    response = _http_get(url, timeout=timeout, extra_headers=extra_headers, sync_config=sync_config)
     binary = response.content
     resolved_mime = mime_type or response.headers.get("Content-Type", "").split(";")[0]
     checksum = hashlib.sha256(binary).hexdigest()

@@ -3,7 +3,7 @@ Höflicher HTML-Fetcher für Scraper-Adapter.
 
 - Rate-Limit je Host (konfigurierbar je Quelle, Default 1 Request / 2 s)
 - max_concurrent=1 je Quelle (Serialisierung über Lock)
-- robots.txt-Respekt (urllib.robotparser, 24-h-Cache, Fehler => erlaubt)
+- robots.txt-Respekt nach RFC 9309 mit Platzhaltern (src/client/robots.py, 24-h-Cache je Host)
 - Transparenter User-Agent (settings.user_agent, je Quelle überschreibbar)
 """
 
@@ -11,26 +11,18 @@ from __future__ import annotations
 
 import asyncio
 import time
-import urllib.robotparser
-from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 import httpx
+from mandari_oparl.robots import KIND_API, RobotsOverride
 
+from src.client.robots import robots_gate
 from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
 
 console = MaskingConsole()
-
-ROBOTS_CACHE_SECONDS = 24 * 3600
-
-
-@dataclass
-class _RobotsEntry:
-    parser: urllib.robotparser.RobotFileParser | None  # None = alles erlaubt
-    fetched_at: float
 
 
 class RobotsDisallowedError(Exception):
@@ -53,6 +45,7 @@ class PoliteFetcher:
         user_agent: str | None = None,
         source_name: str = "scraper",
         respect_robots: bool = True,
+        robots_override: RobotsOverride | None = None,
     ) -> None:
         self.rate_limit_seconds = max(0.0, rate_limit_seconds)
         self.timeout = timeout
@@ -60,11 +53,11 @@ class PoliteFetcher:
         self.user_agent = user_agent or settings.user_agent
         self.source_name = source_name
         self.respect_robots = respect_robots
+        self.robots_override = robots_override
 
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()  # max_concurrent=1: serialisiert alle Requests
         self._last_request_at: dict[str, float] = {}
-        self._robots_cache: dict[str, _RobotsEntry] = {}
         self.pages_fetched = 0
 
     async def __aenter__(self) -> PoliteFetcher:
@@ -84,41 +77,14 @@ class PoliteFetcher:
     # robots.txt
     # ------------------------------------------------------------------
 
-    async def _get_robots(self, host_url: str) -> _RobotsEntry:
-        parsed = urlparse(host_url)
-        host_key = parsed.netloc.lower()
-        entry = self._robots_cache.get(host_key)
-        now = time.monotonic()
-        if entry and now - entry.fetched_at < ROBOTS_CACHE_SECONDS:
-            return entry
-
-        robots_url = urlunparse((parsed.scheme or "https", parsed.netloc, "/robots.txt", "", "", ""))
-        parser: urllib.robotparser.RobotFileParser | None = None
-        try:
-            assert self._client is not None
-            response = await self._client.get(robots_url)
-            if response.status_code == 200 and "<html" not in response.text[:200].lower():
-                parser = urllib.robotparser.RobotFileParser()
-                parser.parse(response.text.splitlines())
-            # 4xx/5xx oder HTML-Fehlerseite => keine (gültige) robots.txt
-            # => alles erlaubt (RFC 9309: unavailable == allow)
-        except httpx.HTTPError as e:
-            console.print(f"[yellow]robots.txt {robots_url} nicht abrufbar: {e} — erlaubt[/yellow]")
-
-        entry = _RobotsEntry(parser=parser, fetched_at=now)
-        self._robots_cache[host_key] = entry
-        return entry
-
-    async def is_allowed(self, url: str) -> bool:
-        """Prüft, ob robots.txt den Abruf der URL für unseren UA erlaubt."""
+    async def is_allowed(self, url: str, kind: str = KIND_API) -> bool:
+        """Prüft, ob robots.txt den Abruf der URL für unseren User-Agent erlaubt (RFC 9309)."""
         if not self.respect_robots:
             return True
-        entry = await self._get_robots(url)
-        if entry.parser is None:
-            return True
-        # Sowohl unser Produkt-Token als auch der volle UA-String prüfen
-        token = self.user_agent.split("/")[0].split(" ")[0]
-        return entry.parser.can_fetch(token, url) and entry.parser.can_fetch(self.user_agent, url)
+        decision = await robots_gate.decide(
+            self._client, url, user_agent=self.user_agent, kind=kind, override=self.robots_override
+        )
+        return decision.allowed
 
     # ------------------------------------------------------------------
     # Fetch

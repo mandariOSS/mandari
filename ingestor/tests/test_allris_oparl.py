@@ -126,7 +126,11 @@ class TestSourceFetchOptions:
             options = SourceFetchOptions.from_sync_config(config)
             assert options == SourceFetchOptions()
             assert options.file_downloads is True
-            assert options.client_kwargs() == {"list_params": {}, "carry_modified_since": False}
+            assert options.client_kwargs() == {
+                "list_params": {},
+                "carry_modified_since": False,
+                "robots_override": None,
+            }
 
     def test_gueltige_werte(self):
         options = SourceFetchOptions.from_sync_config(
@@ -144,6 +148,7 @@ class TestSourceFetchOptions:
         assert options.client_kwargs() == {
             "list_params": {"size": "100"},
             "carry_modified_since": True,
+            "robots_override": None,
             "request_interval": 0.5,
         }
 

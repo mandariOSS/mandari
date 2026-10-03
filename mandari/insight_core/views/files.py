@@ -211,7 +211,7 @@ from django.utils.html import escape
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 from .. import throttle
-from ..services import safe_fetch
+from ..services import robots, safe_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -307,6 +307,19 @@ def file_proxy(request, file_id):
             "Dokument beim Ratsinformationssystem öffnen",
             "Diese Kommune gibt Dokumente nur nach einer Zugangsprüfung im Browser heraus. Wir rufen sie "
             "deshalb nicht selbst ab. " + _original_link(url),
+        )
+
+    # robots.txt (RFC 9309) gilt auch für die Vorschau: gesperrte Dokumente rufen wir nicht selbst ab
+    decision = robots.check(url, robots.KIND_FILES, sync_config=robots.sync_config_of(file_obj))
+    if not decision.allowed:
+        reason = (
+            "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar."
+            if decision.state == "unreachable"
+            else "Diese Kommune untersagt automatische Abrufe ihrer Dokumente (robots.txt)."
+        )
+        return _file_proxy_error(
+            "Dokument beim Ratsinformationssystem öffnen",
+            reason + " Wir rufen das Dokument deshalb nicht selbst ab. " + _original_link(url),
         )
 
     # Quellen-Schonung (Issue #89): eine mehrfach unerreichbare Quelle wird nicht bei jedem

@@ -19,6 +19,8 @@ from django.core.files.base import ContentFile
 from django.db.models import Q
 from django.utils import timezone
 
+from . import robots
+
 logger = logging.getLogger(__name__)
 
 USER_AGENT = (
@@ -99,6 +101,10 @@ def fetch_person_photo(person, client=None) -> str:
     url = person.photo_url
     if not url:
         return "skipped"
+    # robots.txt gilt für jeden automatischen Abruf (RFC 9309), auch für Fotos
+    decision = robots.check(url, robots.KIND_FILES, sync_config=robots.sync_config_of(person))
+    if not decision.allowed:
+        return _mark(person, "error", decision.reason)
 
     own_client = client is None
     if own_client:

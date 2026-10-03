@@ -17,12 +17,13 @@ from __future__ import annotations
 
 import json
 import re
-import urllib.robotparser
 from dataclasses import asdict, dataclass, field
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from mandari_oparl.crawler import product_token
+from mandari_oparl.robots import RobotsTxt
 
 from src.client.oparl_compat import detect_oparl_version, is_oparl_error
 
@@ -164,15 +165,14 @@ def robots_verdict(robots_txt: str | None, user_agent: str, paths: list[str]) ->
     (Verdict, Detail) nach RFC 9309 für unseren User-Agent.
 
     Verdict: ``erlaubt``, ``gesperrt`` (mindestens einer der Pfade), ``nicht_vorhanden``.
-    Geprüft wird das Produkt-Token (Text vor ``/`` oder Leerzeichen) und der volle UA-String,
-    wie es der Fetcher des Ingestors auch tut.
+    Geprüft wird das Produkt-Token (Text vor ``/`` oder Leerzeichen) mit Platzhaltern und längster
+    Übereinstimmung, wie es der Ingestor beim Abruf auch tut (``mandari_oparl.robots``).
     """
     if robots_txt is None:
         return "nicht_vorhanden", "keine gültige robots.txt (RFC 9309: unavailable = erlaubt)"
-    parser = urllib.robotparser.RobotFileParser()
-    parser.parse(robots_txt.splitlines())
-    token = user_agent.split("/")[0].split(" ")[0]
-    gesperrt = [p for p in paths if not (parser.can_fetch(token, p) and parser.can_fetch(user_agent, p))]
+    robots = RobotsTxt.parse(robots_txt)
+    tokens = (product_token(user_agent),)
+    gesperrt = [p for p in paths if not robots.decide(p, tokens).allowed]
     if gesperrt:
         alles = re.search(r"^\s*disallow\s*:\s*/\s*$", robots_txt, re.IGNORECASE | re.MULTILINE) is not None
         detail = (

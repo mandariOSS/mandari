@@ -23,8 +23,10 @@ from django.db.models import Q
 from apps.common.db_connections import releases_db_connections
 from insight_core.management.arguments import add_extraction_arguments
 from insight_core.models import OParlBody, OParlFile
+from insight_core.services import robots
 from insight_core.services.document_extraction import (
     DocumentDownloadError,
+    RobotsBlockedError,
     download_and_extract,
 )
 from insight_core.services.file_cache import download_headers, sources_without_downloads
@@ -169,6 +171,7 @@ class Command(BaseCommand):
                 original_name=file.file_name or file.name or "",
                 timeout=120.0,
                 extra_headers=download_headers(file.body),
+                sync_config=robots.sync_config_of(file.body),
             )
 
             # Text speichern
@@ -199,6 +202,15 @@ class Command(BaseCommand):
             if verbose:
                 self.stdout.write(self.style.WARNING(f"  {file.id}: KI-OCR benötigt (kein Text via pypdf/Tesseract)"))
             return {"success": False, "reason": "ocr_needed"}
+
+        except RobotsBlockedError as exc:
+            # Kein Fehler der Quelle: übersprungen, bis eine Freigabe vorliegt (robots_override reiht neu ein)
+            file.text_extraction_status = "skipped"
+            file.text_extraction_error = exc.reason[:500]
+            file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
+            if verbose:
+                self.stdout.write(self.style.WARNING(f"  {file.id}: {exc.reason}"))
+            return {"success": False, "skipped": True, "reason": "robots.txt"}
 
         except DocumentDownloadError as exc:
             file.text_extraction_status = "failed"
