@@ -9,9 +9,10 @@ from typing import Any
 
 from django.conf import settings
 from django.http import HttpRequest
+from django.utils.functional import SimpleLazyObject
 
 from .models import OParlBody
-from .navigation import nav_area
+from .navigation import breadcrumb_area, nav_area
 from .publication import PORTAL_NAMESPACE
 
 
@@ -37,6 +38,8 @@ def navigation_context(request: HttpRequest) -> dict[str, Any]:
         "insight_questions_enabled": bool(getattr(settings, "INSIGHT_QUESTIONS_ENABLED", False)),
         # Bereich der Seite in der Navigation (Hervorhebung und aria-current, Issue #783)
         "insight_area": nav_area(url_name),
+        # Bereich als Brotkrume der Kopfzeile (Stufe 2)
+        "insight_breadcrumb": breadcrumb_area(url_name),
     }
 
 
@@ -63,7 +66,9 @@ def active_body(request):
             body = portal.body
             bodies = [body]
         else:
-            bodies = list(OParlBody.objects.listed().order_by("name"))
+            # Erst bei Bedarf geladen (alte Auswahl in base.html); der Kommunenwechsel des Bürgerportals fragt das
+            # Verzeichnis selbst ab und braucht keine Liste aller Kommunen je Seitenaufruf (Issue #783)
+            bodies = SimpleLazyObject(lambda: list(OParlBody.objects.listed().order_by("name")))
 
             # "all" bedeutet: Alle Kommunen anzeigen (keine spezifische ausgewählt)
             if body_id == "all":
@@ -77,7 +82,7 @@ def active_body(request):
 
             # Kein Fallback mehr - wenn keine Kommune ausgewählt, zeigen wir alle
             # Nur bei erster Nutzung (keine Session) setzen wir auf "all"
-            if body_id is None and bodies:
+            if body_id is None and OParlBody.objects.listed().exists():
                 show_all_bodies = True
                 request.session["active_body_id"] = "all"
 
@@ -136,8 +141,12 @@ def active_body(request):
         if age > timedelta(days=critical_days):
             stale_days = age.days
 
+    from .services.kommunenverzeichnis import ort_der_koerperschaft
+
     return {
         "active_body": body,
+        # Zweite Zeile im Kommunenwechsel und in „Zuletzt besucht“: „Kreisfreie Stadt, Nordrhein-Westfalen“
+        "active_body_ort": ort_der_koerperschaft(body) if body is not None else "",
         "available_bodies": bodies,
         "show_all_bodies": show_all_bodies,
         "insight_decisions_published": decisions_published,

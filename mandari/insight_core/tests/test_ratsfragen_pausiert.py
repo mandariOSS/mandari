@@ -212,8 +212,9 @@ class TestPausiert:
 
     def test_startseite_laedt_nicht_zum_fragen_ein(self, client: Client) -> None:
         inhalt = client.get("/insight/").content.decode()
+        # Seit #783 ohne Kachel „Ratsfragen“ auf der Übersicht; eingeladen wird dort also nirgends
         assert "Frag deine Ratsmitglieder" not in inhalt
-        assert "derzeit pausiert" in inhalt
+        assert "Fragen Sie Ihre Ratsmitglieder" not in inhalt
 
     def test_keine_mails_aus_dem_dienst(self, welt: dict[str, Any]) -> None:
         mail.outbox.clear()

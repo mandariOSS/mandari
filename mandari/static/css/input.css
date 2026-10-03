@@ -33,6 +33,17 @@
     --primary-900: 11 59 33;
     --primary-950: 5 36 20;
   }
+  /* Bänder (Issue #783, Stufe 2): Weiß für Inhalt, kühles Grau für Leiste, Kopf- und Nebenbänder, Tinte für den Fuß */
+  :root {
+    --band-hell: 255 255 255;
+    --band-grau: 238 240 244;
+    --band-tinte: 17 24 39;
+  }
+  .dark {
+    --band-hell: 17 24 39;
+    --band-grau: 24 33 49;
+    --band-tinte: 10 14 24;
+  }
 }
 
 /* Custom styles */

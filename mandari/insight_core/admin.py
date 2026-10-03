@@ -698,6 +698,29 @@ class OParlMeetingAdmin(ModelAdmin):
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 
 
+from .models import Municipality, MunicipalityTerm
+
+
+class MunicipalityTermInline(ReadOnlyAdminMixin, TabularInline):
+    model = MunicipalityTerm
+    fields = ["kind", "label", "normalized"]
+    extra = 0
+
+
+@admin.register(Municipality)
+class MunicipalityAdmin(ReadOnlyAdminMixin, ModelAdmin):
+    """Kommunenverzeichnis für den Kommunenwechsel (Issue #783), nur lesen.
+
+    Gefüllt per ``manage.py kommunenverzeichnis_importieren``; wählbar ist ein Eintrag, wenn eine gelistete
+    Kommune denselben Regionalschlüssel oder AGS trägt.
+    """
+
+    list_display = ["name", "kind", "district", "state_key", "key", "ags"]
+    list_filter = ["state_key", "is_association"]
+    search_fields = ["name", "key", "ags", "district", "terms__normalized"]
+    inlines = [MunicipalityTermInline]
+
+
 from .models import PaperLocation
 
 

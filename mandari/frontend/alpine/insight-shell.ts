@@ -8,6 +8,7 @@
  */
 
 import { defineComponent } from '../js/alpine/component'
+import { zuletztMerken } from './kommunen-wahl'
 
 /** Nach dieser Zeit ohne Ladeereignis zeigt die Dokumentansicht einen Fehler statt eines Ladekreises. */
 export const DOC_TIMEOUT_MS = 30_000
@@ -32,7 +33,6 @@ export const insightShell = defineComponent(() => ({
   darkMode: readDarkMode(),
   sidebarOpen: false,
   cityModalOpen: false,
-  citySearch: '',
   activeBodyId: '',
   docViewerUrl: '',
   docViewerName: '',
@@ -42,8 +42,13 @@ export const insightShell = defineComponent(() => ({
   _docTimeout: undefined as ReturnType<typeof setTimeout> | undefined,
 
   init() {
-    this.activeBodyId = (this.$el as HTMLElement).dataset.activeBody ?? ''
+    const data = (this.$el as HTMLElement).dataset
+    this.activeBodyId = data.activeBody ?? ''
     this.$watch('darkMode', (value: boolean) => storeDarkMode(value))
+    // Besuchte Kommune für „Zuletzt besucht“ im Kommunenwechsel merken (nur im Browser)
+    if (data.kommuneUrl && data.kommuneName) {
+      zuletztMerken({ name: data.kommuneName, ort: data.kommuneOrt ?? '', url: data.kommuneUrl })
+    }
   },
 
   openMenu() {
@@ -58,15 +63,14 @@ export const insightShell = defineComponent(() => ({
   },
 
   openCityModal() {
-    // Aus dem mobilen Menü heraus: erst das Menü schließen, sonst liegen zwei Dialoge übereinander
+    // Aus dem mobilen Menü heraus: erst das Menü schließen, sonst liegen zwei Dialoge übereinander. Den Fokus ins
+    // Suchfeld setzt der Kommunenwechsel selbst (frontend/alpine/kommunen-wahl.ts).
     this.sidebarOpen = false
     this.cityModalOpen = true
-    this.$nextTick(() => (this.$refs.citySearchInput as HTMLElement | undefined)?.focus())
   },
 
   closeCityModal() {
     this.cityModalOpen = false
-    this.citySearch = ''
   },
 
   openDoc(url: string, name?: string, meta?: string) {
