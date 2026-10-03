@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
 
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import Count, Q
 from django.urls import reverse
 
@@ -41,6 +41,8 @@ MIN_LAENGE = 2
 MIN_LAENGE_UNSCHARF = 4
 #: Mindestähnlichkeit (0–1) unscharfer Treffer in Python
 MIN_AEHNLICHKEIT = 0.72
+#: Wortähnlichkeit (pg_trgm), ab der PostgreSQL einen Begriff als Kandidaten liefert
+SCHWELLE_TRIGRAMM = 0.5
 #: Kandidaten aus der Datenbank vor der Rangfolge
 MAX_KANDIDATEN = 300
 #: Größe der Standortzelle in Grad (eine Nachkommastelle, etwa 11 km Nord-Süd)
@@ -279,7 +281,12 @@ def _kandidaten(eingabe: str) -> list[MunicipalityTerm]:
     if eingabe.isdigit():
         return list(basis.filter(kind=MunicipalityTerm.Kind.POSTCODE, normalized__startswith=eingabe)[:MAX_KANDIDATEN])
     if connection.vendor == "postgresql" and len(eingabe) >= MIN_LAENGE_UNSCHARF:
-        with connection.cursor() as cursor:
+        # Der Planer schätzt den GIN-Index bei häufigen Trigrammen zu teuer und liest sonst die ganze Tabelle
+        # (gemessen: 100 ms statt 2 ms bei 70.000 Begriffen). Beides gilt nur für diese Transaktion (SET LOCAL),
+        # auch hinter PgBouncer. Schwelle 0,5 statt 0,6, damit vertauschte Buchstaben („Altdrof“) Kandidaten finden.
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
+            cursor.execute("SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", [str(SCHWELLE_TRIGRAMM)])
             cursor.execute(_SQL_KANDIDATEN, [eingabe + "%", "% " + eingabe + "%", eingabe, eingabe, MAX_KANDIDATEN])
             ids = [zeile[0] for zeile in cursor.fetchall()]
         return list(basis.filter(id__in=ids))
