@@ -502,8 +502,11 @@ class FakeClient:
     def close(self):
         pass
 
-    def get(self, url):
+    def get(self, url, headers=None):
         FakeClient.calls.append(url)
+        # Fotos werden mit unserer Kennung geladen, nie mit einem Browser-User-Agent
+        if headers is not None:
+            assert "mandari-ingestor" in headers.get("User-Agent", ""), headers
         if url.endswith("pe105.jpg"):
             return FakeResponse(404, b"", "text/html")
         if url.endswith("pe106.jpg"):
