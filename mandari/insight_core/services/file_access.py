@@ -16,7 +16,6 @@ Das Zählen darf die Auslieferung nie verhindern: Fehler werden nur protokollier
 from __future__ import annotations
 
 import logging
-import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -35,9 +34,6 @@ BLOCKED = "blocked"
 #: Markierung an einer Antwort, die ein Dokument bewusst nicht ausliefert (zurückgenommen, gesperrt)
 BLOCKED_ATTRIBUTE = "mandari_file_blocked"
 
-#: Beginn des ersten Bereichs einer ``Range``-Kopfzeile (``bytes=<start>-…``)
-_RANGE_START = re.compile(r"\s*bytes\s*=\s*(\d*)\s*-", re.IGNORECASE)
-
 
 def counts_as_access(request: Any) -> bool:
     """
@@ -46,15 +42,25 @@ def counts_as_access(request: Any) -> bool:
     Folgeanfragen eines PDF-Betrachters (``bytes=65536-…``, auch Bereiche vom Ende ``bytes=-500``)
     gehören zu einem Abruf, der schon gezählt ist. Eine unlesbare ``Range`` ignoriert der Webserver und
     liefert die ganze Datei: Die zählt.
+
+    Ausgewertet wird nur der Beginn des ersten Bereichs (``bytes=<start>-…``), mit einfachen
+    Zeichenkettenoperationen in linearer Zeit, denn die Kopfzeile kommt vom Client.
     """
     header = (getattr(request, "META", None) or {}).get("HTTP_RANGE", "")
     if not header:
         return True
-    match = _RANGE_START.match(header)
-    if match is None:
+    unit, has_equals, ranges = header.partition("=")
+    if not has_equals or unit.strip().lower() != "bytes":
         return True
-    start = match.group(1)
-    return bool(start) and int(start) == 0
+    start, has_dash, _ = ranges.split(",", 1)[0].partition("-")
+    if not has_dash:
+        return True
+    start = start.strip()
+    if not start:
+        return False  # Bereich vom Ende (``bytes=-500``)
+    if not (start.isascii() and start.isdigit()):
+        return True
+    return int(start) == 0
 
 
 def age_class(file_obj: Any, now: datetime | None = None) -> str:

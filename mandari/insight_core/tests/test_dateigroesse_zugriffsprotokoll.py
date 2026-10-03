@@ -233,6 +233,14 @@ class TestAbrufInTeilen:
             ("bytes=-500", False),
             ("bytes=1-", False),
             ("unsinn", True),
+            (" bytes = 0 - 99", True),
+            ("bytes=0-99, 500-599", True),
+            ("bytes=500-599, 0-99", False),
+            ("bytes=0x-", True),
+            ("bytes=1 2-", True),
+            ("bytes=5", True),
+            ("items=0-", True),
+            ("bytes=١-", True),
         ],
     )
     def test_erste_anfrage_erkennen(self, kopfzeile: str, zaehlt: bool) -> None:
@@ -242,3 +250,20 @@ class TestAbrufInTeilen:
         if kopfzeile:
             request.META["HTTP_RANGE"] = kopfzeile
         assert file_access.counts_as_access(request) is zaehlt
+
+    @pytest.mark.parametrize(
+        "kopfzeile",
+        ["bytes=" + " " * 60_000, "bytes=" + " " * 60_000 + "x", " " * 60_000],
+        ids=["leerzeichen-nach-gleich", "leerzeichen-dann-zeichen", "nur-leerzeichen"],
+    )
+    def test_lange_kopfzeile_kostet_keine_rechenzeit(self, kopfzeile: str) -> None:
+        """Die Range-Kopfzeile kommt vom Client: Ihre Auswertung muss linear bleiben."""
+        import time
+
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.META["HTTP_RANGE"] = kopfzeile
+        beginn = time.perf_counter()
+        assert file_access.counts_as_access(request) is True
+        assert time.perf_counter() - beginn < 0.5
