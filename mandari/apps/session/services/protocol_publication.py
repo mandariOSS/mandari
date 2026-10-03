@@ -205,13 +205,18 @@ def withdraw(protocol: SessionProtocol) -> bool:
     Returns:
         True, wenn es eine öffentliche Fassung gab.
     """
-    current = _current_file(protocol)
-    SessionProtocol.objects.filter(pk=protocol.pk).update(public_file=None)
-    protocol.public_file = None
-    if current is None:
-        return False
-    current.delete()
-    _touch_meeting(protocol.meeting_id)
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #535): Rücknahme der öffentlichen Fassung (ris.object.depublished der Datei)
+    with hub_events.track(protocol.meeting.tenant) as tracked:
+        tracked.protocol(protocol.meeting)
+        current = _current_file(protocol)
+        SessionProtocol.objects.filter(pk=protocol.pk).update(public_file=None)
+        protocol.public_file = None
+        if current is None:
+            return False
+        current.delete()
+        _touch_meeting(protocol.meeting_id)
     return True
 
 
@@ -234,6 +239,21 @@ def publish(
     if not is_publishable(protocol):
         withdraw(protocol)
         return None
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #535): veröffentlicht, erneuert oder berichtigt (ris.protocol.published)
+    with hub_events.track(protocol.meeting.tenant) as tracked:
+        tracked.protocol(protocol.meeting)
+        return _publish(protocol, user=user, force=force, text=text)
+
+
+def _publish(
+    protocol: SessionProtocol,
+    *,
+    user: SessionUser | None,
+    force: bool,
+    text: str | None,
+) -> SessionFile | None:
     text = public_text(protocol) if text is None else text
     current = _current_file(protocol)
     if (
@@ -292,6 +312,15 @@ def refresh_meeting(meeting_id: Any) -> None:
     )
     if protocol is None or (protocol.public_file_id is None and not is_publishable(protocol)):
         return
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #535): Rücknahme der alten und neue Fassung in einem Zug – erneuert bzw. berichtigt
+    with hub_events.track(protocol.meeting.tenant) as tracked:
+        tracked.protocol(protocol.meeting)
+        _refresh(protocol)
+
+
+def _refresh(protocol: SessionProtocol) -> None:
     text = public_text(protocol) if is_publishable(protocol) else None
     current = _current_file(protocol)
     unchanged = current is not None and text is not None and current.is_public and current.text_content == text

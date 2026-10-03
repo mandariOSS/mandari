@@ -25,7 +25,7 @@ from django.views.generic import TemplateView
 
 from apps.common.params import uuid_param
 
-from .. import audit
+from .. import audit, hub_events
 from ..models import (
     SessionAgendaItem,
     SessionCircularResolution,
@@ -125,10 +125,12 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
 
     def post(self, request, tenant_slug, item_id):
         item = _get_item(self, item_id)
-        with transaction.atomic():
+        # Drehscheibe (Issue #535): Abstimmung, Beschluss, Vertagung und Rücknahme eines Ergebnisses
+        with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
             # Sperre auf der Sitzung wie bei jeder Cockpit-Aktion (Issue #140): Erfassung und Cockpit schreiben
             # nacheinander, der TOP wird erst unter der Sperre geladen
             cockpit_service.lock_meeting(item.meeting_id)
+            tracked.agenda(item.meeting)
             return self._capture(request, _get_item(self, item_id))
 
     def _capture(self, request, item):

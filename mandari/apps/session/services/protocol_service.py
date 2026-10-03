@@ -66,11 +66,16 @@ def get_or_create_protocol(meeting: SessionMeeting, created_by=None) -> tuple[Se
     protocol = getattr(meeting, "protocol", None)
     if protocol is not None:
         return protocol, False
-    protocol = SessionProtocol.objects.create(
-        meeting=meeting,
-        created_by=created_by,
-        content=_initial_content(meeting),
-    )
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #535): Entwurf der Niederschrift (ris.meeting.changed mit protocol, intern)
+    with hub_events.track(meeting.tenant) as tracked:
+        tracked.protocol(meeting)
+        protocol = SessionProtocol.objects.create(
+            meeting=meeting,
+            created_by=created_by,
+            content=_initial_content(meeting),
+        )
     return protocol, True
 
 
@@ -143,6 +148,29 @@ def _select_approval_item(meeting: SessionMeeting, raw: str, *, include_non_publ
 
 
 def perform_action(
+    protocol: SessionProtocol,
+    action: str,
+    *,
+    user: Any,
+    data: Any,
+    request: Any = None,
+    include_non_public: bool = False,
+) -> str:
+    """
+    Workflow-Schritt ausführen (siehe ``_perform_action``) und an die Drehscheibe melden (Issue #535): Prüfung und
+    Entwurf intern, Genehmigung, Veröffentlichung und Rücknahme der öffentlichen Fassung.
+    """
+    from apps.session import hub_events
+
+    meeting = protocol.meeting
+    with hub_events.track(meeting.tenant) as tracked:
+        tracked.protocol(meeting)
+        return _perform_action(
+            protocol, action, user=user, data=data, request=request, include_non_public=include_non_public
+        )
+
+
+def _perform_action(
     protocol: SessionProtocol,
     action: str,
     *,

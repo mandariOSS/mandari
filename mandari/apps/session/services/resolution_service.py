@@ -91,15 +91,20 @@ def assign_resolution_number(item: SessionAgendaItem) -> bool:
 
 def ensure_numbers_for_meeting(meeting: SessionMeeting) -> int:
     """Beschlussnummern für alle gefassten Beschlüsse einer Sitzung vergeben."""
+    from apps.session import hub_events
+
     assigned = 0
-    items = (
-        meeting.agenda_items.filter(vote_result__in=DECIDED_RESULTS)
-        .exclude(is_withdrawn=True)
-        .order_by("order", "number")
-    )
-    for item in items:
-        if assign_resolution_number(item):
-            assigned += 1
+    # Drehscheibe (Issue #535): je neu nummeriertem Beschluss ris.resolution.adopted (resolutionNumber)
+    with hub_events.track(meeting.tenant) as tracked:
+        tracked.agenda(meeting)
+        items = (
+            meeting.agenda_items.filter(vote_result__in=DECIDED_RESULTS)
+            .exclude(is_withdrawn=True)
+            .order_by("order", "number")
+        )
+        for item in items:
+            if assign_resolution_number(item):
+                assigned += 1
     return assigned
 
 

@@ -24,7 +24,7 @@ from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
-from .. import audit
+from .. import audit, hub_events
 from ..models import SessionAgendaItem, SessionMeeting, SessionProtocolCorrection, SessionTextBlock, SessionVote
 from ..permissions import SessionViewMixin
 from ..services import (
@@ -243,8 +243,10 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
         # TOP-weise Protokolltexte + Beschlussergebnisse. Die Niederschrift wird oft parallel zur Sitzung
         # geschrieben: Sperre auf der Sitzung wie im Cockpit, TOPs erst unter der Sperre laden, Ergebnis und
         # Summen nur übernehmen, wenn sie hier geändert wurden, Zeiten des Cockpits nie mitspeichern (Issue #140)
-        with transaction.atomic():
+        # Drehscheibe (Issue #535): Ergebnisse, Summen und Beschlusstexte der TOPs
+        with transaction.atomic(), hub_events.track(self.session_tenant) as tracked:
             cockpit_service.lock_meeting(meeting.pk)
+            tracked.agenda(meeting)
             self._save_items(request, meeting, can_view_np)
 
         messages.success(request, "Protokoll wurde gespeichert.")

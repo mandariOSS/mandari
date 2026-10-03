@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Ereignisse aus Session-Zuständen (``hub.ris.session_events``, Issues #533, #534): Sichtbarkeit je Feld und Übergang.
+Ereignisse aus Session-Zuständen (``hub.ris.session_events``, Issues #533–#535): Sichtbarkeit je Feld und Übergang.
 
 Die Zustände stehen hier ohne Datenbank; die Fachfunktionen prüft ``apps/session/tests/test_drehscheibe_sitzungen.py``.
 """
@@ -23,6 +23,7 @@ from hub.ris.session_events import (
     FileState,
     MeetingState,
     PaperState,
+    ProtocolState,
     SessionEvents,
 )
 
@@ -34,6 +35,7 @@ VORLAGE = uuid.UUID("00000000-0000-4000-8000-000000000004")
 STATION = uuid.UUID("00000000-0000-4000-8000-000000000005")
 DATEI = uuid.UUID("00000000-0000-4000-8000-000000000006")
 ANTRAG = uuid.UUID("00000000-0000-4000-8000-000000000007")
+PROTOKOLL = uuid.UUID("00000000-0000-4000-8000-000000000008")
 
 
 @pytest.fixture
@@ -226,3 +228,35 @@ def test_anlage_ersetzt_und_umbenannt(events: SessionEvents) -> None:
     assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage(version=(2, "b"))})[0].payload["change"] == "replaced"
     assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage(name="Plan.pdf")})[0].payload["change"] == "renamed"
     assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage()}) == []
+
+
+# -- Niederschrift (Issue #535) ---------------------------------------------------------------------------------
+
+
+def niederschrift(status: str, datei: uuid.UUID | None = None, **werte: Any) -> ProtocolState:
+    return ProtocolState(id=PROTOKOLL, meeting_id=SITZUNG, status=status, file_id=datei, **werte)
+
+
+def test_niederschrift_berichtigt_oder_erneuert(events: SessionEvents) -> None:
+    vorher = niederschrift("published", DATEI, file_created_at=datetime(2026, 10, 1, tzinfo=UTC))
+    berichtigt = niederschrift("published", ANTRAG, last_correction_at=datetime(2026, 10, 2, tzinfo=UTC))
+    erneuert = niederschrift("published", ANTRAG, last_correction_at=datetime(2026, 9, 30, tzinfo=UTC))
+    assert events.protocol_drafts(vorher, berichtigt, meeting_full=True)[0].payload["change"] == "corrected"
+    assert events.protocol_drafts(vorher, erneuert, meeting_full=True)[0].payload["change"] == "renewed"
+
+
+def test_niederschrift_nichtoeffentlicher_sitzung_nur_intern(events: SessionEvents) -> None:
+    """Ohne öffentliche Fassung (nichtöffentliche Sitzung) gibt es nichts Öffentliches zu melden."""
+    drafts = events.protocol_drafts(niederschrift("approved"), niederschrift("published"), meeting_full=False)
+    assert drafts == []
+    drafts = events.protocol_drafts(niederschrift("review"), niederschrift("published"), meeting_full=False)
+    assert kurz(drafts) == [("ris.protocol.approved", "Meeting", "nichtoeffentlich")]
+    assert drafts[0].payload["mode"] == "direct"
+
+
+def test_genehmigung_in_der_folgesitzung(events: SessionEvents) -> None:
+    drafts = events.protocol_drafts(
+        niederschrift("review"), niederschrift("approved", approval_meeting_id=ANDERE), meeting_full=True
+    )
+    assert drafts[0].payload["mode"] == "follow_up"
+    assert drafts[0].payload["approved_in"] == str(events.ref("meeting", ANDERE))

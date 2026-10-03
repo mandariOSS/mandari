@@ -389,9 +389,9 @@ WORKER_PUSH_TOKEN = os.environ.get("WORKER_PUSH_TOKEN", "")
 WORKER_PUSH_INTERVAL = float(os.environ.get("WORKER_PUSH_INTERVAL", "60"))
 
 
-# Ereignisse aus mandari Session an die Datendrehscheibe (apps.session.hub_events, Issues #533, #534): Sitzungen,
-# Tagesordnung, Ladung, Vorlagen, Beratungsfolge und Anlagen als Ereignisse ris.* im Journal, in derselben
-# Transaktion wie die Änderung.
+# Ereignisse aus mandari Session an die Datendrehscheibe (apps.session.hub_events, Issues #533–#535): Sitzungen,
+# Tagesordnung, Ladung, Vorlagen, Beratungsfolge, Anlagen, Abstimmungen, Beschlüsse und Niederschriften als
+# Ereignisse ris.* im Journal, in derselben Transaktion wie die Änderung.
 # "aus" (Standard): nichts. "schatten": Ereignisse werden geschrieben und erreichen Feed und Abonnenten wie
 # bei "aktiv"; scheitert das Schreiben, bleibt die Änderung bestehen und der Fehler steht im Protokoll
 # (Parallelbetrieb neben den bisherigen Wegen). "aktiv": Änderung und Ereignis sind atomar. Je Mandant
