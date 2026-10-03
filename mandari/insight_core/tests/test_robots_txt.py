@@ -35,7 +35,8 @@ def robots_txt(echte_robots: None, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     def fetch(url: str) -> tuple[int | None, bytes]:
         host = httpx.URL(url).host
         stand["abrufe"].append(host)
-        return stand["antworten"].get(host, (404, b""))
+        antwort: tuple[int | None, bytes] = stand["antworten"].get(host, (404, b""))
+        return antwort
 
     monkeypatch.setattr(robots, "_fetch", fetch)
     return stand
@@ -70,7 +71,7 @@ def _pdf_client(gesehen: list[str]) -> httpx.Client:
 
 
 class TestPruefung:
-    def test_dokumentsperre_trifft_nur_dateien(self, robots_txt):
+    def test_dokumentsperre_trifft_nur_dateien(self, robots_txt: dict[str, Any]) -> None:
         robots_txt["antworten"]["rat.example.de"] = (200, NUR_DOKUMENTE_GESPERRT)
         assert not robots.check("https://rat.example.de/dokumente/vorlage.pdf").allowed
         assert robots.check("https://rat.example.de/oparl/system", "api").allowed
@@ -78,7 +79,9 @@ class TestPruefung:
         # Einmal je Host abgerufen, danach aus dem Cache
         assert robots_txt["abrufe"] == ["rat.example.de"]
 
-    def test_nicht_erreichbar_sperrt_und_letzte_gueltige_fassung_gilt_weiter(self, robots_txt, monkeypatch):
+    def test_nicht_erreichbar_sperrt_und_letzte_gueltige_fassung_gilt_weiter(
+        self, robots_txt: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         jetzt = [1_000_000.0]
         monkeypatch.setattr(robots, "_now", lambda: jetzt[0])
         robots_txt["antworten"]["rat.example.de"] = (503, b"")
@@ -92,7 +95,7 @@ class TestPruefung:
         assert robots.check("https://rat.example.de/a.html").allowed
         assert not robots.check("https://rat.example.de/a.pdf").allowed
 
-    def test_ausnahme_braucht_vermerk(self, robots_txt):
+    def test_ausnahme_braucht_vermerk(self, robots_txt: dict[str, Any]) -> None:
         robots_txt["antworten"]["rat.example.de"] = (200, NUR_DOKUMENTE_GESPERRT)
         url = "https://rat.example.de/a.pdf"
         assert not robots.check(url, sync_config={"robots_override": {"scope": "files"}}).allowed
@@ -101,7 +104,9 @@ class TestPruefung:
 
 
 class TestDokumentCache:
-    def test_gesperrte_datei_wird_nicht_geladen(self, robots_txt, tmp_path, monkeypatch):
+    def test_gesperrte_datei_wird_nicht_geladen(
+        self, robots_txt: dict[str, Any], tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         robots_txt["antworten"]["rat.example.de"] = (200, NUR_DOKUMENTE_GESPERRT)
         monkeypatch.setattr(file_cache, "cache_root", lambda: tmp_path)
         datei = _datei(_quelle())
@@ -111,7 +116,9 @@ class TestDokumentCache:
         datei.refresh_from_db()
         assert datei.local_status == "error" and datei.local_error.startswith("robots.txt sperrt")
 
-    def test_ausnahme_laedt_und_nutzt_eigenen_user_agent(self, robots_txt, tmp_path, monkeypatch):
+    def test_ausnahme_laedt_und_nutzt_eigenen_user_agent(
+        self, robots_txt: dict[str, Any], tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         robots_txt["antworten"]["rat.example.de"] = (200, NUR_DOKUMENTE_GESPERRT)
         monkeypatch.setattr(file_cache, "cache_root", lambda: tmp_path)
         datei = _datei(_quelle({"robots_override": {"scope": "files", "note": VERMERK}}))
@@ -122,7 +129,7 @@ class TestDokumentCache:
 
 
 class TestTextextraktionUndFotos:
-    def test_textextraktion_ohne_abruf(self, robots_txt, monkeypatch):
+    def test_textextraktion_ohne_abruf(self, robots_txt: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
         robots_txt["antworten"]["rat.example.de"] = (200, NUR_DOKUMENTE_GESPERRT)
 
         def kein_client(*_a: Any, **_kw: Any) -> Any:
@@ -133,7 +140,7 @@ class TestTextextraktionUndFotos:
             document_extraction.download_and_extract(url="https://rat.example.de/dokumente/a.pdf")
         assert fehler.value.reason.startswith("robots.txt")
 
-    def test_personenfoto_gesperrt(self, robots_txt):
+    def test_personenfoto_gesperrt(self, robots_txt: dict[str, Any]) -> None:
         robots_txt["antworten"]["rat.example.de"] = (200, b"User-agent: mandari-ingestor\nDisallow: /fotos/\n")
         person = OParlPerson.objects.create(
             body=_quelle(),
@@ -152,7 +159,9 @@ class TestTextextraktionUndFotos:
 
 
 class TestVorschau:
-    def test_gesperrtes_dokument_verweist_auf_das_original(self, robots_txt, monkeypatch):
+    def test_gesperrtes_dokument_verweist_auf_das_original(
+        self, robots_txt: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         robots_txt["antworten"]["rat.example.de"] = (200, NUR_DOKUMENTE_GESPERRT)
 
         def kein_abruf(*_a: Any, **_kw: Any) -> Any:
@@ -167,7 +176,7 @@ class TestVorschau:
 
 
 class TestBefehle:
-    def test_bericht_nennt_gesperrte_quellen_und_regel(self, robots_txt):
+    def test_bericht_nennt_gesperrte_quellen_und_regel(self, robots_txt: dict[str, Any]) -> None:
         robots_txt["antworten"]["rat.example.de"] = (200, NUR_DOKUMENTE_GESPERRT)
         frei = _quelle()
         _datei(frei, url="https://dateien.example.org/a.pdf")
@@ -191,7 +200,7 @@ class TestBefehle:
         assert VERMERK in text.getvalue()
         assert "[GESPERRT]" in text.getvalue()
 
-    def test_ausnahme_setzen_reiht_uebersprungene_dateien_neu_ein(self, robots_txt):
+    def test_ausnahme_setzen_reiht_uebersprungene_dateien_neu_ein(self, robots_txt: dict[str, Any]) -> None:
         body = _quelle()
         datei = _datei(body)
         OParlFile.objects.filter(pk=datei.pk).update(

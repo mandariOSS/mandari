@@ -75,7 +75,11 @@ from insight_core.models import (  # noqa: E402
     OParlSource,
     PublicQuestion,
 )
-from insight_core.services import person_photos, question_service  # noqa: E402
+from insight_core.services import person_photos, question_service, robots  # noqa: E402
+
+# Ohne Netz: die Test-Quellen haben keine robots.txt (HTTP 404, alles erlaubt). Die Prüfung selbst testen
+# insight_core/tests/test_robots_txt.py und ingestor/tests/test_robots.py.
+robots._fetch = lambda url: (404, b"")
 
 PASS = 0
 FAIL = 0
