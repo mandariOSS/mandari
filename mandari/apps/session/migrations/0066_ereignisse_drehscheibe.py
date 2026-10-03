@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
                 ],
                 db_default="",
                 default="",
-                help_text="Sitzungen, Tagesordnung und Ladung als Ereignisse melden; leer: wie die Installation (SESSION_EVENTS)",
+                help_text="Fachliche Änderungen der Session als Ereignisse melden; leer: wie die Installation (SESSION_EVENTS)",
                 max_length=10,
                 verbose_name="Ereignisse an die Datendrehscheibe",
             ),

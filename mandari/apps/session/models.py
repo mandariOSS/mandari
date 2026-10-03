@@ -495,7 +495,7 @@ class SessionTenant(models.Model):
         default="",
         db_default="",
         verbose_name="Ereignisse an die Datendrehscheibe",
-        help_text="Sitzungen, Tagesordnung und Ladung als Ereignisse melden; leer: wie die Installation (SESSION_EVENTS)",
+        help_text="Fachliche Änderungen der Session als Ereignisse melden; leer: wie die Installation (SESSION_EVENTS)",
     )
 
     # Zwei-Faktor-Pflicht für alle Nutzer (Admins und Nutzer mit Verwaltungsrechten sind immer verpflichtet)
