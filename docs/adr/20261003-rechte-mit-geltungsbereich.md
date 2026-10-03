@@ -96,12 +96,15 @@ zunächst in Session, umgestellt ohne Verhaltensänderung.
   manuell): angelegt per Datenmigration, nachgeführt bei jeder Änderung der Rollen und bei jedem `migrate`
   (Änderungen eines älteren Images). Höchstens eine aktive Spiegelzuweisung je Konto und Rolle
   (Datenbankregel).
-- Befristete Zuweisungen und Zuweisungen mit Geltungsbereich wirken nur, wenn der Mandant den Schalter „Rechte
-  mit Geltungsbereich“ eingeschaltet hat (Standard aus). Ohne Schalter gilt genau das heutige Modell.
+- Befristete Zuweisungen und Zuweisungen mit Geltungsbereich gehen nur in den Zugriffskontext ein, wenn der
+  Mandant den Schalter „Rechte mit Geltungsbereich“ eingeschaltet hat (Standard aus). Ohne Schalter gilt genau
+  das heutige Modell.
 - Verträgliche Prüfschicht: `SessionPermissionChecker` und `visible_to()` arbeiten bis zur Umstellung (#773)
-  mit den bisherigen Rechtenamen. Diese werden aus dem Zugriffskontext abgeleitet: Ein Häkchen gilt, wenn sein
-  Leitrecht mandantenweit gilt. Zuweisungen mit Geltungsbereich gewähren über die alten Namen nichts; sie
-  wirken erst über die zentrale Prüfung.
+  mit den bisherigen Rechtenamen. Diese werden aus den Spiegelzuweisungen (also aus `SessionUser.roles`) über
+  den Katalog abgeleitet: Ein Häkchen gilt, wenn sein Leitrecht mandantenweit gilt. Befristete Zuweisungen und
+  Zuweisungen mit Geltungsbereich gewähren über die alten Namen nichts; sie wirken erst über die zentrale
+  Prüfung. So bleibt die Abfragezahl je Seite gleich, und keine Prüfstelle sieht ein Recht, dessen
+  Geltungsbereich sie nicht auswerten kann.
 - Nachweis: Die Sicherheitsmatrix (`test_security_matrix.py`, `test_noe_sichtbarkeit.py`,
   `test_funktionstrennung.py`, `test_rechtevergabe.py`) läuft vor und nach der Umstellung unverändert grün;
   Äquivalenztests vergleichen alte und neue Auflösung für jede Standardrolle und jedes Häkchen.
@@ -173,8 +176,8 @@ zunächst in Session, umgestellt ohne Verhaltensänderung.
 
 - Bis zum Entfernen der Häkchen gibt es zwei Darstellungen derselben Rollenrechte (Häkchen und Katalog) und
   eine Spiegelung `SessionUser.roles` ↔ Zuweisung, die nachgeführt werden muss.
-- Bis zur Umstellung der Prüfstellen (#773) wirken Zuweisungen mit Geltungsbereich nur im Zugriffskontext,
-  noch nicht in Oberfläche und API.
+- Bis zur Umstellung der Prüfstellen (#773) wirken befristete Zuweisungen und Zuweisungen mit Geltungsbereich
+  nur im Zugriffskontext, noch nicht in Oberfläche und API.
 - Die Datenbankregeln für das Mitlöschen stehen außerhalb der Django-Felddefinition; ändert eine spätere
   Migration diese Fremdschlüssel, muss sie die Regeln neu setzen.
 
