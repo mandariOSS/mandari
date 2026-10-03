@@ -63,6 +63,7 @@ def eintrag(
     top: str | None = None,
     rolle: str | None = None,
     entscheidung: bool = False,
+    gremien: int | None = None,
 ) -> dict[str, Any]:
     """Eintrag wie aus ``PaperDetailView._get_consultations_with_meetings``."""
     return {
@@ -71,6 +72,7 @@ def eintrag(
         "agenda_item": None,
         "date": datum,
         "organization_name": gremium,
+        "organization_count": gremien,
         "agenda_number": top,
         "result": ergebnis,
         "public": public,
@@ -174,6 +176,63 @@ class TestStandSatz:
         stand = paper_status([eintrag(tag(2026, 5, 4), "Sitzung", "beschlossen")], JETZT)
         assert stand.text == "Am 04.05.2026 beschlossen."
 
+    @pytest.mark.parametrize(
+        "ergebnis",
+        [
+            "vertagt",
+            "Vertagt",
+            "einstimmig vertagt",
+            "Vertagt in die nächste Sitzung",
+            "nicht behandelt",
+            "1. Lesung - vertagt",
+            "zurückgestellt, neuer Termin offen",
+            "Abgesetzt.",
+        ],
+    )
+    def test_vertagt_erkannt(self, ergebnis: str) -> None:
+        stand = paper_status([eintrag(tag(2026, 6, 2), "Hauptausschuss", ergebnis)], JETZT)
+        assert stand.kind == DEFERRED
+        assert stand.text.endswith("Ein neuer Termin ist nicht bekannt.")
+
+    @pytest.mark.parametrize(
+        "ergebnis",
+        [
+            "Maßnahme auf 2027 verschoben",
+            "Die Sanierung wird auf 2027 verschoben, die Mittel bleiben gesperrt",
+            "Beschlossen: Baubeginn verschoben",
+            "Verschobene Haushaltsmittel freigegeben",
+        ],
+    )
+    def test_beschlussinhalt_ist_keine_vertagung(self, ergebnis: str) -> None:
+        stand = paper_status([eintrag(tag(2026, 6, 2), "Hauptausschuss", ergebnis)], JETZT)
+        assert stand.kind == DECIDED
+        assert "Ein neuer Termin" not in stand.text
+
+    def test_langes_ergebnis_im_satz_gekuerzt(self) -> None:
+        beschluss = (
+            "Der Rat beauftragt die Verwaltung, für den Abschnitt zwischen Bahnhof und Markt eine Planung für "
+            "einen getrennten Fuß- und Radweg vorzulegen und die Kosten im Haushalt 2027 zu veranschlagen."
+        )
+        verlauf = [eintrag(tag(2026, 5, 4), "Rat der Stadt", beschluss)]
+        stand = paper_status(verlauf, JETZT)
+        ergebnis = stand.text.split("Ergebnis: ", 1)[1]
+        assert ergebnis.endswith("…") and len(ergebnis) <= 120
+        assert beschluss.startswith(ergebnis[:-1])
+        assert not ergebnis[:-1].endswith(" ")
+        # Der Zeitstrahl zeigt das Ergebnis ungekürzt
+        assert timeline(verlauf, stand, JETZT)[0]["result"] == beschluss
+
+    def test_kurzes_ergebnis_ungekuerzt(self) -> None:
+        stand = paper_status([eintrag(tag(2026, 5, 4), "Rat der Stadt", "Beschluss gemäß Vorlage")], JETZT)
+        assert stand.text == "Am 04.05.2026 im Rat der Stadt beraten. Ergebnis: Beschluss gemäß Vorlage."
+
+    def test_gremium_mit_komma_im_namen(self) -> None:
+        name = "Ausschuss für Planung, Bau und Umwelt"
+        verlauf = [eintrag(tag(2026, 5, 4), name, "beschlossen", gremien=1), eintrag(tag(2026, 11, 3), name, gremien=1)]
+        assert paper_status(verlauf, JETZT).text == (
+            f"Am 04.05.2026 im {name} beschlossen. Nächste Beratung am 03.11.2026 im {name}."
+        )
+
 
 class TestGremiumUndErgebnis:
     @pytest.mark.parametrize(
@@ -195,6 +254,19 @@ class TestGremiumUndErgebnis:
     )
     def test_ortsangabe(self, name: str | None, erwartet: str) -> None:
         assert in_committee(name) == erwartet
+
+    @pytest.mark.parametrize(
+        ("name", "anzahl", "erwartet"),
+        [
+            ("Ausschuss für Planung, Bau und Umwelt", 1, "im Ausschuss für Planung, Bau und Umwelt"),
+            ("Ausschuss für Planung, Bau und Umwelt", None, "im Gremium „Ausschuss für Planung, Bau und Umwelt“"),
+            ("Rat, Hauptausschuss", 2, "im Gremium „Rat, Hauptausschuss“"),
+            ("Bauausschuss", 2, "im Gremium „Bauausschuss“"),
+            ("Bezirksvertretung Nord", 1, "in der Bezirksvertretung Nord"),
+        ],
+    )
+    def test_ortsangabe_mit_anzahl_der_gremien(self, name: str, anzahl: int | None, erwartet: str) -> None:
+        assert in_committee(name, anzahl) == erwartet
 
     @pytest.mark.parametrize(
         ("ergebnis", "erwartet"),
@@ -354,6 +426,47 @@ class TestVorgangsseite:
         seite = Client().get(f"/insight/vorgaenge/{vorgang.id}/").content.decode()
         assert "Noch keine Beratung bekannt." in seite
         assert "Beratungsverlauf" not in seite
+
+    def test_gremium_mit_komma_aus_der_sitzung(self, vorgang: OParlPaper) -> None:
+        from insight_core.models import OParlOrganization
+
+        gremium = OParlOrganization.objects.create(
+            external_id="https://ris.beispielstadt.example/oparl/organization/1",
+            body=vorgang.body,
+            name="Ausschuss für Planung, Bau und Umwelt",
+        )
+        for sitzung in OParlMeeting.objects.filter(body=vorgang.body):
+            sitzung.organizations.add(gremium)
+        seite = Client().get(f"/insight/vorgaenge/{vorgang.id}/").content.decode()
+        assert "Am 06.12.2011 im Ausschuss für Planung, Bau und Umwelt zur Kenntnis genommen." in seite
+
+    def test_zusammenfassung_fehlgeschlagen_ein_ausloeser(self, vorgang: OParlPaper, monkeypatch: Any) -> None:
+        from insight_ai.services.summarizer import SummaryError
+
+        def scheitert(self: Any, paper: Any) -> str:
+            raise SummaryError("Dienst gestört")
+
+        monkeypatch.setattr("insight_ai.services.summarizer.SummaryService.generate_summary", scheitert)
+        antwort = Client().post(f"/insight/vorgaenge/{vorgang.id}/zusammenfassung/", HTTP_HX_REQUEST="true")
+        html = antwort.content.decode()
+        assert "Dienst gestört" not in html
+        # Kopfknopf „Zusammenfassen“ fällt weg, „Erneut versuchen“ zeigt den Ladehinweis
+        assert '<div id="summary-action" hx-swap-oob="true"></div>' in html
+        assert "Erneut versuchen" in html
+        assert 'hx-indicator="#summary-retry-status"' in html and 'id="summary-retry-status"' in html
+        assert "bg-red-50" not in html
+
+    def test_zusammenfassung_ohne_text_ohne_erneuten_versuch(self, vorgang: OParlPaper, monkeypatch: Any) -> None:
+        from insight_ai.services.summarizer import NoTextContentError
+
+        def ohne_text(self: Any, paper: Any) -> str:
+            raise NoTextContentError("kein Text")
+
+        monkeypatch.setattr("insight_ai.services.summarizer.SummaryService.generate_summary", ohne_text)
+        antwort = Client().post(f"/insight/vorgaenge/{vorgang.id}/zusammenfassung/", HTTP_HX_REQUEST="true")
+        html = antwort.content.decode()
+        assert "Erneut versuchen" not in html
+        assert '<div id="summary-action" hx-swap-oob="true"></div>' in html
 
     def test_quelle_nur_als_http_adresse(self, vorgang: OParlPaper) -> None:
         vorgang.raw_json = {"web": "javascript:alert(1)"}

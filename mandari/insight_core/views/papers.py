@@ -199,6 +199,7 @@ class PaperDetailView(DetailView):
                     "agenda_item": agenda_item,
                     "date": meeting.start if meeting else None,
                     "organization_name": meeting.get_display_name() if meeting else None,
+                    "organization_count": _organization_count(meeting) if meeting else None,
                     "agenda_number": agenda_item.number if agenda_item else None,
                     "result": agenda_item.result if agenda_item else None,
                     "public": agenda_item.public if agenda_item else True,
@@ -211,6 +212,19 @@ class PaperDetailView(DetailView):
         result.sort(key=lambda x: x["date"] or timezone.now(), reverse=False)
 
         return result
+
+
+def _organization_count(meeting) -> int | None:
+    """Anzahl der Gremien hinter ``OParlMeeting.get_display_name`` (Namen mit Komma verbunden).
+
+    Aus den vorgeladenen Gremien und ohne weitere Abfrage; ``None``, wenn sie so nicht feststeht. Der
+    Stand-Satz beugt danach auch Gremiennamen mit Komma („im Ausschuss für Planung, Bau und Umwelt“).
+    """
+    named = [org for org in list(meeting.organizations.all())[:2] if org.name]
+    if named:
+        return len(named)
+    urls = meeting.raw_json.get("organization") if isinstance(meeting.raw_json, dict) else None
+    return 1 if isinstance(urls, list) and len(urls) == 1 else None
 
 
 NO_TEXT_MESSAGE = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."

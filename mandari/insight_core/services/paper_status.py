@@ -6,7 +6,7 @@ Wer über eine Suchmaschine auf einen Vorgang kommt, will zuerst wissen, wo die 
 die letzte Beratung zusammen: „Am 06.12.2011 in der Bezirksvertretung Mitte zur Kenntnis
 genommen.“ Grundlage ist der Beratungsverlauf, wie ihn ``PaperDetailView`` aufbereitet (je Beratung ein
 Eintrag mit ``date``, ``meeting``, ``organization_name``, ``agenda_number``, ``result``, ``public``,
-``role`` und ``authoritative``).
+``role`` und ``authoritative``, optional ``organization_count``).
 
 Fälle:
 
@@ -44,8 +44,14 @@ UPCOMING: Final = "upcoming"
 CANCELLED: Final = "cancelled"
 UNDATED: Final = "undated"
 
-#: Ergebnisse, nach denen die Sache erneut beraten werden muss
-_DEFERRED_WORDS: Final = ("vertagt", "zurückgestellt", "abgesetzt", "verschoben", "nicht behandelt")
+#: Ergebnisse, nach denen die Sache erneut beraten werden muss (Wortfolgen, klein geschrieben)
+_DEFERRED_PHRASES: Final = (("vertagt",), ("zurückgestellt",), ("abgesetzt",), ("verschoben",), ("nicht", "behandelt"))
+
+#: Trenner zwischen Teilen eines Ergebnisses („1. Lesung – vertagt“, „vertagt, neuer Termin offen“)
+_RESULT_PARTS: Final = re.compile(r"\s[-–]\s|[:;,()]")
+
+#: Längstes Ergebnis im Stand-Satz (Zeichen); der Zeitstrahl zeigt es ungekürzt
+_RESULT_MAX_CHARS: Final = 120
 
 #: So lange nach der Sitzung heißt ein fehlendes Ergebnis „noch nicht veröffentlicht“
 _RESULT_PENDING_DAYS: Final = 60
@@ -138,16 +144,20 @@ def _head_noun(name: str) -> str | None:
     return None
 
 
-def in_committee(name: str | None) -> str:
+def in_committee(name: str | None, count: int | None = None) -> str:
     """Ortsangabe für ein Gremium: „im Rat der Stadt“, „in der Bezirksvertretung Mitte“.
 
     Unbekanntes Geschlecht, Abkürzungen und mehrere Gremien stehen neutral: „im Gremium „BV Süd““.
+    ``count`` ist die Anzahl der Gremien hinter dem Namen (mehrere stehen mit Komma verbunden). Ist sie
+    nicht bekannt, gilt ein Name mit Komma als mehrere Gremien; bei genau einem Gremium wird auch ein Name
+    mit Komma gebeugt („im Ausschuss für Planung, Bau und Umwelt“).
     Ohne verwertbaren Namen (nur „Sitzung“) gibt es keine Ortsangabe.
     """
     name = " ".join(str(name or "").split())
     if not name or name.lower() == "sitzung":
         return ""
-    head = _head_noun(name) if "," not in name else None
+    several = count > 1 if count else "," in name
+    head = None if several else _head_noun(name)
     if head and head.lower() not in _ARTICLES and head[:1].isupper():
         lowered = head.lower()
         if lowered.endswith(_FEMININE):
@@ -180,14 +190,35 @@ def result_as_participle(result: str | None) -> str | None:
 
 
 def _is_deferred(result: str | None) -> bool:
-    lowered = _clean(result).lower()
-    return any(word in lowered for word in _DEFERRED_WORDS)
+    """Vertagt, wenn ein Teil des Ergebnisses mit der Wendung beginnt oder als kurzer Partizip-Satz auf ihr endet.
+
+    „Vertagt in die nächste Sitzung“, „einstimmig vertagt“ und „1. Lesung – vertagt“ zählen, ein
+    Beschlussinhalt wie „Maßnahme auf 2027 verschoben“ nicht.
+    """
+    for part in _RESULT_PARTS.split(_clean(result)):
+        words = tuple(word for word in (token.strip(".!?\"'„“‚‘").lower() for token in part.split()) if word)
+        for phrase in _DEFERRED_PHRASES:
+            if words[: len(phrase)] == phrase:
+                return True
+            if words[-len(phrase) :] == phrase and result_as_participle(part) is not None:
+                return True
+    return False
+
+
+def _shorten(text: str, limit: int = _RESULT_MAX_CHARS) -> str:
+    """Auf höchstens ``limit`` Zeichen an einer Wortgrenze kürzen, mit „…“ am Ende."""
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    if " " in cut:
+        cut = cut[: cut.rindex(" ")]
+    return cut.rstrip(" ,;:-–") + "…"
 
 
 def _next_sentence(upcoming: Mapping[str, Any] | None, *, first: bool = False) -> str:
     if upcoming is None:
         return ""
-    where = in_committee(upcoming.get("organization_name"))
+    where = in_committee(upcoming.get("organization_name"), upcoming.get("organization_count"))
     label = "Erste Beratung" if first else "Nächste Beratung"
     return f"{label} am {_local_date(upcoming['date'])}{' ' + where if where else ''}."
 
@@ -213,7 +244,7 @@ def paper_status(entries: Sequence[Mapping[str, Any]], now: datetime | None = No
 
     last = max(past, key=lambda entry: entry["date"])
     when = f"Am {_local_date(last['date'])}"
-    where = in_committee(last.get("organization_name"))
+    where = in_committee(last.get("organization_name"), last.get("organization_count"))
     prefix = f"{when} {where}" if where else when
     result = _clean(last.get("result"))
     public = last.get("public", True) is not False
@@ -230,7 +261,12 @@ def paper_status(entries: Sequence[Mapping[str, Any]], now: datetime | None = No
 
     participle = result_as_participle(result)
     beraten = "nichtöffentlich beraten" if not public else "beraten"
-    text = f"{prefix} {participle}." if participle else f"{prefix} {beraten}. Ergebnis: {result}."
+    if participle:
+        text = f"{prefix} {participle}."
+    else:
+        # Lange Beschlusstexte gekürzt; ganz stehen sie im Zeitstrahl
+        shown = _shorten(result)
+        text = f"{prefix} {beraten}. Ergebnis: {shown}{'' if shown.endswith('…') else '.'}"
     if _is_deferred(result):
         return PaperStatus(DEFERRED, _join(text, follow or "Ein neuer Termin ist nicht bekannt."), last, upcoming)
     return PaperStatus(DECIDED, _join(text, follow), last, upcoming)
