@@ -66,6 +66,11 @@ def _valid_role(raw_role, default: str) -> str:
     return raw_role if raw_role in valid_roles else default
 
 
+def _recall_applies(organization, role: str) -> bool:
+    """Abberufung mit Sperrvermerk gibt es nur für den Vorsitz eines Ausschusses (§ 71 Abs. 8 NKomVG)."""
+    return role == "chair" and organization.organization_type == "committee"
+
+
 # =============================================================================
 # VIEWS
 # =============================================================================
@@ -147,10 +152,18 @@ class MembershipUpdateView(SessionViewMixin, View):
                     organization, membership.person, role, start_date, exclude_pk=membership.pk
                 )
             )
+        # Sperrvermerk der Abberufung (Issue #757, § 71 Abs. 8): nur am Vorsitz eines Ausschusses, mit Ende; ein
+        # versehentlich gesetzter Vermerk lässt sich hier zurücknehmen (Prüfprotokoll über das Speichersignal)
+        recall_field = "end_reason_shown" in request.POST and _recall_applies(organization, role)
+        recalled = request.POST.get("end_reason") == SessionOrganizationMembership.END_RECALLED
+        if not error and recall_field and recalled and end_date is None:
+            error = "Für die Abberufung bitte das Ende der Besetzung angeben."
         if error:
             messages.error(request, error)
             return _org_redirect(self, organization)
 
+        if recall_field:
+            membership.end_reason = SessionOrganizationMembership.END_RECALLED if recalled else ""
         if "substitute_for" in request.POST:
             if request.POST["substitute_for"]:
                 substitute_for = _tenant_person(self, request.POST["substitute_for"])
@@ -189,9 +202,12 @@ class MembershipEndView(SessionViewMixin, View):
             messages.error(request, error)
             return _org_redirect(self, membership.organization)
         membership.end_date = end_date
-        # Abberufung eines Vorsitzes (Issue #757, § 71 Abs. 8 NKomVG): Sperrvermerk für eine erneute Benennung. Ein
-        # späteres Verschieben des Endes ohne Häkchen hebt den Vermerk nicht auf.
-        recalled = request.POST.get("end_reason") == SessionOrganizationMembership.END_RECALLED
+        # Abberufung eines Ausschussvorsitzes (Issue #757, § 71 Abs. 8 NKomVG): Sperrvermerk für eine erneute
+        # Benennung. Ein späteres Verschieben des Endes ohne Häkchen hebt den Vermerk nicht auf; zurücknehmen lässt
+        # er sich in der Bearbeitung der Besetzung.
+        recalled = request.POST.get("end_reason") == SessionOrganizationMembership.END_RECALLED and _recall_applies(
+            membership.organization, membership.role
+        )
         if recalled:
             membership.end_reason = SessionOrganizationMembership.END_RECALLED
         membership.save()

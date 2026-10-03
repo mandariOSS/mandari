@@ -68,8 +68,9 @@
         <div class="flex items-center gap-2">
             <select name="kind" id="id_kind" aria-label="Art des Tagesordnungspunkts"
                     class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                <option value="">Tagesordnungspunkt</option>
-                <option value="residents_questions">Einwohnerfragestunde</option>
+                {% for value, label in form.kind.field.choices %}
+                <option value="{{ value }}" {% if form.kind.value|default:"" == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
             </select>
         </div>
 

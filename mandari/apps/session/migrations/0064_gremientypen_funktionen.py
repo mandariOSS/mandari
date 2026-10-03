@@ -13,7 +13,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("session", "0058_landesprofil_sitzungsrecht"),
+        ("session", "0063_landesprofil_sitzungsrecht"),
     ]
 
     operations = [

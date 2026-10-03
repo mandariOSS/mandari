@@ -48,6 +48,7 @@
                 {% if item.is_supplementary %}<span class="tag"> (Nachtrag)</span>{% endif %}
                 {% if item.is_withdrawn %}<span class="tag"> (abgesetzt)</span>{% endif %}
                 {% if item.paper and item.paper_visible %}<br><span class="muted">Vorlage: {{ item.paper.reference }}</span>{% endif %}
+                {% if item.residents_questions_note %}<br><span class="muted">{{ item.residents_questions_note }}</span>{% endif %}
                 {% for sub in item.children_list %}
                 <br><strong>{{ sub.number }}</strong>&nbsp; <span class="{% if sub.is_withdrawn %}withdrawn{% endif %}">{{ sub.name }}</span>{% if sub.is_supplementary %}<span class="tag"> (Nachtrag)</span>{% endif %}
                 {% endfor %}
@@ -68,6 +69,7 @@
                 {% if item.is_supplementary %}<span class="tag"> (Nachtrag)</span>{% endif %}
                 {% if item.is_withdrawn %}<span class="tag"> (abgesetzt)</span>{% endif %}
                 {% if item.paper and item.paper_visible %}<br><span class="muted">Vorlage: {{ item.paper.reference }}</span>{% endif %}
+                {% if item.residents_questions_note %}<br><span class="muted">{{ item.residents_questions_note }}</span>{% endif %}
                 {% for sub in item.children_list %}
                 <br><strong>{{ sub.number }}</strong>&nbsp; <span class="{% if sub.is_withdrawn %}withdrawn{% endif %}">{{ sub.name }}</span>{% if sub.is_supplementary %}<span class="tag"> (Nachtrag)</span>{% endif %}
                 {% endfor %}

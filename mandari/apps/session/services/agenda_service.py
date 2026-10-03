@@ -282,6 +282,16 @@ def grouped_agenda(meeting: SessionMeeting, include_non_public: bool = True):
     for item in items:
         item.children_list = children.get(item.id, [])
 
+    # Einwohnerfragestunde (Issue #757): Zeitrahmen aus der Geschäftsordnung und Regel des Landesrechts am TOP
+    # (Detailseite, Ladung); nur abgefragt, wenn die Sitzung einen solchen TOP hat
+    questions = [item for item in items if item.kind == SessionAgendaItem.KIND_RESIDENTS_QUESTIONS]
+    if questions:
+        from apps.session.services import state_law_service
+
+        note = state_law_service.residents_questions_note(meeting)
+        for item in questions:
+            item.residents_questions_note = note
+
     result = {
         "public": [i for i in items if i.parent_id is None and i.is_public],
         "non_public": [],

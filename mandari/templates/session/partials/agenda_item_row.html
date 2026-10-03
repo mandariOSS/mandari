@@ -41,6 +41,7 @@ Kontext: item, tenant_slug, agenda_can_edit, agenda_can_retract (genehmigte Nied
             {% if item.is_withdrawn and item.withdrawn_reason %}
             <p class="text-xs text-amber-700 dark:text-amber-400 mb-1">Grund: {{ item.withdrawn_reason }}</p>
             {% endif %}
+            {% if item.residents_questions_note %}<p class="text-xs text-gray-500 dark:text-gray-400 mb-1" data-testid="einwohnerfragestunde-hinweis">{{ item.residents_questions_note }}</p>{% endif %}
             {% if item.paper and item.paper_visible %}
             <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=item.paper.id %}"
                class="inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline">

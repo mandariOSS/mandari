@@ -586,6 +586,23 @@ def body_of(meeting: Any) -> Any:
     return body_service.default_body(meeting.tenant)
 
 
+def residents_questions_note(meeting: Any) -> str:
+    """
+    Hinweis zur Einwohnerfragestunde einer Sitzung (Issue #757, z. B. § 62 NKomVG): Zeitrahmen aus der
+    Geschäftsordnung der Körperschaft und – nach der Fassung zum Sitzungsdatum – „nur Anwesende“ (Niedersachsen ab
+    01.11.2026). Leer, wenn nichts davon geregelt ist. Für TOP-Liste und Ladung.
+    """
+    parts = []
+    minutes = LocalRules.of(body_of(meeting)).residents_questions_minutes
+    if minutes:
+        parts.append(f"Höchstens {minutes} Minuten (Geschäftsordnung).")
+    law = for_meeting(meeting)
+    if law is not None and law.value("residents_questions") == "present_only":
+        norm = law.norm("residents_questions")
+        parts.append(f"Fragen nur von anwesenden Einwohnerinnen und Einwohnern{f' ({norm})' if norm else ''}.")
+    return " ".join(parts)
+
+
 def legal_designation(organization: Any) -> str:
     """
     Gesetzlicher Name eines Gremiums nach dem Körperschaftstyp (Issue #757, z. B. § 7 Abs. 2 NKomVG):

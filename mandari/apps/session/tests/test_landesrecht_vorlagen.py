@@ -14,7 +14,7 @@ Gremientypen, Funktionen und Vorlagen nach Landesrecht (Issue #757, Teil L2b).
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from io import StringIO
 from typing import Any
 
@@ -42,6 +42,7 @@ from apps.session.services import (
     agenda_template_service,
     attendance_service,
     body_service,
+    invitation_service,
     meeting_format_service,
     membership_service,
     state_law_service,
@@ -49,7 +50,7 @@ from apps.session.services import (
     textblock_service,
 )
 from apps.session.services.state_law_service import LocalRules
-from apps.session.tests._niederschrift import client, nutzer
+from apps.session.tests._niederschrift import client, nutzer, pdf_text
 from hub.ris.mapping.session import ORGANIZATION_TYPES
 
 pytestmark = pytest.mark.django_db
@@ -221,6 +222,33 @@ def test_weitere_koerperschaft_aus_der_vorlage() -> None:
     assert SessionOrganization.objects.filter(tenant=tenant, name="Rat").count() == 1
 
 
+def test_bricht_die_vorlage_ab_bleibt_keine_koerperschaft_zurueck(monkeypatch: pytest.MonkeyPatch) -> None:
+    tenant = _mandant("ni_samtgemeinde", slug="sg-abbruch")
+    einstellungen = client(nutzer(tenant, "einstellungen", "view_meetings", "manage_settings"))
+    gremien_vorher = SessionOrganization.objects.filter(tenant=tenant).count()
+    original = tenant_provisioning.apply_template
+
+    def abbruch(body: Any, vorlage: Any) -> list[str]:
+        original(body, vorlage)  # Gremien sind angelegt, dann bricht die Vorlage ab
+        raise RuntimeError("Abbruch")
+
+    monkeypatch.setattr(tenant_provisioning, "apply_template", abbruch)
+    with pytest.raises(RuntimeError):
+        einstellungen.post(
+            f"/session/{tenant.slug}/settings/koerperschaften/neu/",
+            {
+                "name": "Gemeinde Abbruch",
+                "short_name": "AB",
+                "body_type": "mitgliedsgemeinde",
+                "parent": str(body_service.default_body(tenant).pk),
+                "is_active": "on",
+                "template": "ni_mitgliedsgemeinde",
+            },
+        )
+    assert not SessionBody.objects.filter(tenant=tenant, name="Gemeinde Abbruch").exists()
+    assert SessionOrganization.objects.filter(tenant=tenant).count() == gremien_vorher
+
+
 def test_gesetzliche_bezeichnung_auf_der_gremienseite() -> None:
     meeting_format_service.sync_profiles()
     tenant = SessionTenant.objects.create(
@@ -263,6 +291,50 @@ def test_grundmandat_und_hinzugewaehlte_ohne_stimmrecht() -> None:
     assert attendance_service._ROLE_MAP["basic_mandate"] == "expert"
     assert attendance_service._ROLE_MAP["hvb"] == "member"
     assert ORGANIZATION_TYPES["group"] == "Fraktion"
+
+
+def test_grundmandat_stimmt_nie_mit_auch_wenn_das_kennzeichen_gesetzt_ist() -> None:
+    tenant, _pflege = _ni_mandant()
+    fa = _gremien(tenant)["Finanzausschuss"]
+    grund = SessionPerson.objects.create(tenant=tenant, given_name="G", family_name="Grund")
+    hinzu = SessionPerson.objects.create(tenant=tenant, given_name="H", family_name="Hinzu")
+    mitglied = SessionPerson.objects.create(tenant=tenant, given_name="M", family_name="Mitglied")
+    # Admin, Stammdaten-Import oder Periodenwechsel können das Kennzeichen setzen
+    for person, rolle in ((grund, "basic_mandate"), (hinzu, "co_opted"), (mitglied, "member")):
+        SessionOrganizationMembership.objects.create(
+            organization=fa, person=person, role=rolle, has_voting_rights=True, start_date=date(2026, 11, 1)
+        )
+    sitzung = _sitzung(tenant, fa)
+    assert attendance_service.ensure_attendance(sitzung, grund).has_voting_rights is False
+    assert attendance_service.ensure_attendance(sitzung, hinzu).has_voting_rights is False
+    assert attendance_service.ensure_attendance(sitzung, mitglied).has_voting_rights is True
+    # Beschlussfähigkeit: nur das Mitglied zählt
+    assert attendance_service.roster(sitzung).voting_members == frozenset({mitglied.pk})
+
+
+def test_hoechstens_fuenf_ehrenamtliche_stellvertretungen_des_hvb() -> None:
+    tenant, pflege = _ni_mandant()
+    rat = _gremien(tenant)["Rat"]
+    url = f"/session/{tenant.slug}/organizations/{rat.pk}/memberships/add/"
+    for nummer in range(5):
+        person = SessionPerson.objects.create(tenant=tenant, given_name="S", family_name=f"Stell{nummer}")
+        pflege.post(
+            url, {"person": str(person.pk), "role": "hvb_deputy", "has_voting_rights": "on", "start_date": "2026-11-10"}
+        )
+    assert SessionOrganizationMembership.objects.filter(organization=rat, role="hvb_deputy").count() == 5
+
+    sechste = SessionPerson.objects.create(tenant=tenant, given_name="S", family_name="Stell5")
+    antwort = pflege.post(
+        url, {"person": str(sechste.pk), "role": "hvb_deputy", "has_voting_rights": "on", "start_date": "2026-11-10"}
+    )
+    meldungen = " ".join(str(m) for m in get_messages(antwort.wsgi_request))
+    assert "Höchstens 5 ehrenamtliche Stellvertretungen der bzw. des HVB (§ 81 Abs. 2 NKomVG)" in meldungen
+    assert SessionOrganizationMembership.objects.filter(organization=rat, role="hvb_deputy").count() == 5
+    # Nach dem Ende einer Stellvertretung ist wieder Platz
+    SessionOrganizationMembership.objects.filter(organization=rat, person__family_name="Stell0").update(
+        end_date=date(2026, 12, 31)
+    )
+    assert membership_service.role_problems(rat, sechste, "hvb_deputy", date(2027, 1, 1)) == []
 
 
 def test_aemter_erst_ab_18_ab_der_fassung_vom_01_11_2026() -> None:
@@ -314,6 +386,56 @@ def test_abberufener_ausschussvorsitz_nicht_erneut_benennbar() -> None:
     assert membership_service.role_problems(fa, andere, "chair", date(2027, 2, 1)) == []
 
 
+def test_sperrvermerk_nur_beim_ausschussvorsitz_und_ruecknehmbar() -> None:
+    tenant, pflege = _ni_mandant()
+    gremien = _gremien(tenant)
+    fa, rat = gremien["Finanzausschuss"], gremien["Rat"]
+    vorsitz = SessionPerson.objects.create(tenant=tenant, given_name="V", family_name="Vorsitz")
+    # Laufend heute, damit die Gremienseite die Besetzung zeigt
+    beginn, ende = timezone.localdate() - timedelta(days=10), timezone.localdate() + timedelta(days=30)
+    ratsvorsitz = SessionOrganizationMembership.objects.create(
+        organization=rat, person=vorsitz, role="chair", start_date=beginn
+    )
+    # Rat: kein Kästchen, und der Server übernimmt den Vermerk nicht
+    seite = pflege.get(f"/session/{tenant.slug}/organizations/{rat.pk}/").content.decode()
+    assert "Vorsitz" in seite and 'value="recalled"' not in seite and 'data-testid="sperrvermerk"' not in seite
+    pflege.post(
+        f"/session/{tenant.slug}/memberships/{ratsvorsitz.pk}/end/",
+        {"end_date": ende.isoformat(), "end_reason": "recalled"},
+    )
+    ratsvorsitz.refresh_from_db()
+    assert ratsvorsitz.end_date == ende and ratsvorsitz.end_reason == ""
+
+    # Ausschuss: Kästchen beim Beenden und in der Bearbeitung; ein versehentlich gesetzter Vermerk lässt sich
+    # zurücknehmen (Prüfprotokoll)
+    besetzung = SessionOrganizationMembership.objects.create(
+        organization=fa,
+        person=vorsitz,
+        role="chair",
+        start_date=beginn,
+        end_date=ende,
+        end_reason=SessionOrganizationMembership.END_RECALLED,
+    )
+    seite = pflege.get(f"/session/{tenant.slug}/organizations/{fa.pk}/").content.decode()
+    assert 'data-testid="sperrvermerk"' in seite and 'value="recalled"' in seite
+    daten = {"role": "chair", "start_date": beginn.isoformat(), "end_date": ende.isoformat(), "end_reason_shown": "1"}
+    pflege.post(f"/session/{tenant.slug}/memberships/{besetzung.pk}/update/", daten)
+    besetzung.refresh_from_db()
+    assert besetzung.end_reason == ""
+    eintraege = SessionAuditLog.objects.filter(tenant=tenant, object_id=besetzung.pk, action="update")
+    assert any("end_reason" in eintrag.changes for eintrag in eintraege)
+    # Wieder setzen geht in der Bearbeitung, aber nur mit Ende
+    pflege.post(
+        f"/session/{tenant.slug}/memberships/{besetzung.pk}/update/",
+        {**daten, "end_date": "", "end_reason": "recalled"},
+    )
+    besetzung.refresh_from_db()
+    assert besetzung.end_reason == "" and besetzung.end_date == ende
+    pflege.post(f"/session/{tenant.slug}/memberships/{besetzung.pk}/update/", {**daten, "end_reason": "recalled"})
+    besetzung.refresh_from_db()
+    assert besetzung.end_reason == SessionOrganizationMembership.END_RECALLED
+
+
 # =============================================================================
 # Einwohnerfragestunde und konstituierende Sitzung
 # =============================================================================
@@ -333,6 +455,32 @@ def test_einwohnerfragestunde_aus_dem_standard_top_und_nur_oeffentlich() -> None
     assert top.is_public and agenda_service.visibility_errors(top) == {}
     top.is_public = False
     assert "öffentlichen Teil" in agenda_service.visibility_errors(top)["is_public"]
+
+
+def test_einwohnerfragestunde_nennt_zeitrahmen_und_ab_01_11_2026_nur_anwesende() -> None:
+    tenant = _mandant("ni_landkreis", slug="lk-fragen")
+    kreistag = _gremien(tenant)["Kreistag"]
+    sitzung = _sitzung(tenant, kreistag)  # 20.11.2026
+    textblock_service.apply_standard_items(sitzung)
+    hinweis = (
+        "Höchstens 30 Minuten (Geschäftsordnung). Fragen nur von anwesenden Einwohnerinnen und Einwohnern "
+        "(§ 62 Abs. 1 NKomVG)."
+    )
+    agenda = agenda_service.grouped_agenda(sitzung)
+    top = next(item for item in agenda["public"] if item.kind == "residents_questions")
+    assert top.residents_questions_note == hinweis
+    # Tagesordnung auf der Sitzungsseite und Ladung
+    seite = client(nutzer(tenant, "leser", "view_meetings")).get(f"/session/{tenant.slug}/meetings/{sitzung.pk}/")
+    inhalt = seite.content.decode()
+    assert 'data-testid="einwohnerfragestunde-hinweis"' in inhalt and hinweis in inhalt
+    ladung = " ".join(pdf_text(invitation_service.build_agenda_pdf(sitzung, include_non_public=False)).split())
+    assert "Höchstens 30 Minuten (Geschäftsordnung)." in ladung and "nur von anwesenden Einwohnerinnen" in ladung
+
+    # Vor dem 01.11.2026 dürfen alle Einwohnerinnen und Einwohner fragen
+    frueher = SessionMeeting.objects.create(
+        tenant=tenant, organization=kreistag, name="Sitzung", start=_am(date(2026, 10, 20))
+    )
+    assert state_law_service.residents_questions_note(frueher) == "Höchstens 30 Minuten (Geschäftsordnung)."
 
 
 def test_konstituierende_sitzung_aus_der_vorlage_in_praesenz() -> None:
@@ -391,8 +539,8 @@ def test_vorlagen_nur_fuer_das_eigene_land() -> None:
 # Datenmigration und Rückfall per Image
 # =============================================================================
 
-VORHER = ("session", "0058_landesprofil_sitzungsrecht")
-NACHHER = ("session", "0059_gremientypen_funktionen")
+VORHER = ("session", "0063_landesprofil_sitzungsrecht")
+NACHHER = ("session", "0064_gremientypen_funktionen")
 
 
 @pytest.mark.django_db(transaction=True)

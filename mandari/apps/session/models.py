@@ -2070,6 +2070,14 @@ class SessionOrganizationMembership(models.Model):
     def __str__(self):
         return f"{self.person} - {self.organization} ({self.role})"
 
+    @property
+    def votes(self) -> bool:
+        """
+        Stimmrecht dieser Besetzung nach dem Gesetz (Issue #757): Grundmandat und Hinzugewählte stimmen nie mit,
+        auch wenn das Kennzeichen gesetzt ist (Admin, Stammdaten-Import, Periodenwechsel).
+        """
+        return bool(self.has_voting_rights) and self.role not in self.ROLES_WITHOUT_VOTE
+
 
 # =============================================================================
 # MEETING MODELS

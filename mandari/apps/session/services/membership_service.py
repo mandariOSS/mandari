@@ -136,6 +136,8 @@ def role_problems(
       01.11.2026), wenn an der Person „volljährig ab“ eingetragen ist
     - Sperrvermerk: Wer als Ausschussvorsitz abberufen wurde, wird in dieser Wahlperiode nicht erneut benannt
       (§ 71 Abs. 8 NKomVG ab 01.11.2026)
+    - Höchstzahl der ehrenamtlichen Stellvertretungen des HVB im Gremium am Beginn der Besetzung (§ 81 Abs. 2
+      NKomVG ab 01.11.2026: bis zu fünf)
     """
     from apps.session.services import state_law_service
 
@@ -170,6 +172,23 @@ def role_problems(
             problems.append(
                 f"{person.display_name} wurde als Vorsitz dieses Ausschusses abberufen und kann in dieser "
                 f"Wahlperiode nicht erneut benannt werden{f' ({norm})' if norm else ''}."
+            )
+    limit = law.value("hvb_deputies_max")
+    if role == SessionOrganizationMembership.ROLE_HVB_DEPUTY and isinstance(limit, int) and limit > 0:
+        running = SessionOrganizationMembership.objects.filter(
+            Q(start_date__isnull=True) | Q(start_date__lte=day),
+            Q(end_date__isnull=True) | Q(end_date__gte=day),
+            organization=organization,
+            role=SessionOrganizationMembership.ROLE_HVB_DEPUTY,
+        )
+        if exclude_pk is not None:
+            running = running.exclude(pk=exclude_pk)
+        count = running.count()
+        if count >= limit:
+            norm = law.norm("hvb_deputies_max")
+            problems.append(
+                f"Höchstens {limit} ehrenamtliche Stellvertretungen der bzw. des HVB{f' ({norm})' if norm else ''}; "
+                f"in diesem Gremium sind am {day:%d.%m.%Y} schon {count} besetzt."
             )
     return problems
 

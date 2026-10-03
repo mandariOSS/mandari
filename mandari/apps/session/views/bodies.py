@@ -18,6 +18,7 @@ from typing import Any, cast
 
 from django import forms
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -159,12 +160,17 @@ class BodyCreateView(SessionViewMixin, CreateView):  # type: ignore[type-arg]
         return _bodies_url(self)
 
     def form_valid(self, form: Any) -> HttpResponse:
-        response = super().form_valid(form)
-        messages.success(self.request, f"Körperschaft „{form.instance.name}“ wurde angelegt.")
+        # Körperschaft und Vorlage gemeinsam: Bricht die Vorlage ab, bleibt keine Körperschaft mit einem Teil der
+        # Gremien zurück. Meldungen erst nach dem Commit.
         vorlage = form.templates.get(form.cleaned_data.get("template") or "")
-        if vorlage is not None:
-            for schritt in tenant_provisioning.apply_template(form.instance, vorlage):
-                messages.info(self.request, schritt)
+        schritte: list[str] = []
+        with transaction.atomic():
+            response = super().form_valid(form)
+            if vorlage is not None:
+                schritte = tenant_provisioning.apply_template(form.instance, vorlage)
+        messages.success(self.request, f"Körperschaft „{form.instance.name}“ wurde angelegt.")
+        for schritt in schritte:
+            messages.info(self.request, schritt)
         return response
 
 
