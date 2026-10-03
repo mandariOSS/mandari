@@ -187,7 +187,8 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
 - [ ] Tägliche Sicherung eingetragen (`crontab -l`), Probelauf mit `./backup.sh --verify`
 - [ ] Passphrase für die Konfiguration in der Sicherung eingerichtet und außerhalb des Servers verwahrt
   (Abschnitt „Sicherung“)
-- [ ] Geplante Aufgaben eingerichtet (Abschnitt „Geplante Aufgaben (Cron)“)
+- [ ] Worker läuft (`docker compose ps worker` „healthy“), `python manage.py events_scheduler --list`
+  zeigt die Zeitpläne (Abschnitt „Geplante Aufgaben“); in der Crontab nur Aufgaben des Betriebssystems
 
 ---
 
@@ -513,6 +514,9 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:fetch_person_photos` | montags 03:00 | Personenfotos |
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
+| `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, neueste fehlende Dateien zuerst (`docs/FILE_CACHE.md`) |
+| `befehl:generate_alerts` | täglich 07:45 | Benachrichtigungen der Abos zu Themen und Orten; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
+| `befehl:send_digest` | montags 08:00 | Wochenmail der Abos; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:check_source_health` | stündlich :15 | Zustand der Quellen (Issue #231, `docs/MONITORING.md`) |
 | `befehl:check_service_levels` | täglich 06:30 | Service-Level |
 | `befehl:availability_report` | am 1. um 00:15 | Verfügbarkeitsbericht des Vormonats nach `REPORTS_ROOT`; nur mit `GATUS_URL` |
@@ -523,8 +527,9 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 
 Dazu die Zeitpläne aus dem Abschnitt „Worker“ (Fraktionssitzungen, Verortung, Aufräumen).
 `python manage.py events_scheduler --list` zeigt alle mit dem zuletzt geplanten Termin; von Hand
-läuft ein Befehl weiter mit `docker compose exec worker python manage.py <befehl> --trotz-zeitplan`
-(`--dry-run` immer).
+läuft ein Befehl weiter mit `docker compose exec worker python manage.py <befehl> --trotz-zeitplan`.
+Aufrufe, die nur lesen oder berichten, laufen immer: `--dry-run`, `check_source_health --report`,
+`check_service_levels --report`, `cache_files --stats` und `availability_report` ohne `--out`.
 
 **Auf dem Host** bleiben nur Aufgaben des Betriebssystems: die Datensicherung (`./backup.sh`,
 Abschnitt „Backup“), der Journal-Alarm (`deploy/logging/journal-alert.sh`) und der Neustart
@@ -539,8 +544,9 @@ eigenen Compose-Dateien also auch in seiner `environment`.
 
 ### Umstellung von Host-Cron (Upgrade-Hinweis)
 
-Bestehende Installationen hatten die Befehle oben in der Crontab des Hosts. Die Umstellung läuft
-ohne Doppelläufe und ohne Lücke:
+Bestehende Installationen hatten die Befehle oben in der Crontab des Hosts (auch `cache_files` aus
+`docs/FILE_CACHE.md` und, bei eingeschalteten Abos, `generate_alerts`/`send_digest`). Die Umstellung
+läuft ohne Doppelläufe und ohne Lücke:
 
 1. **Worker zuerst:** `docker compose ps worker` zeigt `healthy`, `/health/` meldet
    `"worker": "ok"`. Ohne laufenden Worker gibt es keine Zeitpläne.
@@ -555,19 +561,26 @@ ohne Doppelläufe und ohne Lücke:
    docker compose logs --since 24h worker | grep "Zeitplan befehl:"
    ```
 
-3. **Crontab bereinigen**, wenn die Zeitpläne laufen. Erst sichern, dann nur die Zeilen der Befehle
-   oben entfernen (eigene Einträge wie `generate_alerts`/`send_digest` für die Abos bleiben):
+3. **Crontab bereinigen**, wenn die Zeitpläne laufen. Erst sichern, dann die Zeilen der Befehle oben
+   entfernen. Übrig bleiben nur Aufgaben des Betriebssystems (Datensicherung, Journal-Alarm, Neustart
+   ungesunder Container); steht danach noch ein `manage.py`-Aufruf in der Crontab, gehört er als
+   Zeitplan in den Code (`apps/common/schedules.py`):
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
-   crontab -l
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
+   crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 
 4. **Rückweg:** einzelne Zeitpläne abschalten mit `EVENTS_SCHEDULES_DISABLED=befehl:<name>`
    (kommagetrennt) in der `.env` und `docker compose up -d worker mandari`; ihre Termine
    verstreichen dann ohne Auftrag, und ein noch vorhandener (oder aus der Sicherung
    zurückgespielter) Cron-Eintrag läuft wieder. Beim Wiedereinschalten wird nichts nachgeholt.
+   Insgesamt zurück geht es mit dem vorherigen Image (`deploy.sh rollback <tag>`) und der gesicherten
+   Crontab. Beim späteren erneuten Update holt jeder Zeitplan seinen letzten verpassten Termin einmal
+   nach, auch wenn ihn in der Zwischenzeit der Cron-Eintrag erledigt hat. Die Befehle sind weitgehend
+   wiederholbar (Erinnerungen und Benachrichtigungen je Objekt und Frist einmal); ein Service-Level-
+   oder Quellenalarm kann dabei ein zweites Mal kommen.
 
 Nach dem Update mit der Hash-Kette (Issue #221) einmal den Altbestand verketten; bis dahin
 schreiben betroffene Mandanten unverkettet weiter. Der Befehl ist wiederholbar und arbeitet in
@@ -602,9 +615,9 @@ Verweisseite und bleiben im ZIP-Paket vollständig.
 **Abos zu Themen und Orten im Bürgerportal** (`/insight/benachrichtigungen/`) sind standardmäßig
 abgeschaltet (`INSIGHT_SUBSCRIPTIONS_ENABLED=false`): keine Links im Portal, die Abo-Seiten antworten
 mit 404, `generate_alerts` und `send_digest` brechen mit Hinweis ab. Abmelden über bereits versandte
-Links bleibt möglich; Beschluss-Abos sind nicht betroffen. Wer die Abos einschaltet, plant beide
-Befehle selbst ein (z. B. `generate_alerts` täglich, `send_digest` wöchentlich). Ein Neuaufbau der
-Abos über die Datendrehscheibe ist geplant.
+Links bleibt möglich; Beschluss-Abos sind nicht betroffen. Eingeschaltet laufen beide Befehle als
+Zeitpläne im Worker (`generate_alerts` täglich 07:45, `send_digest` montags 08:00, Abschnitt
+„Geplante Aufgaben“). Ein Neuaufbau der Abos über die Datendrehscheibe ist geplant.
 
 **Ratsfragen im Bürgerportal** (`/insight/fragen/`) sind standardmäßig pausiert
 (`INSIGHT_QUESTIONS_ENABLED=false`, docs/INSIGHT_QUESTIONS.md): Die bisherigen Fragen und Antworten bleiben

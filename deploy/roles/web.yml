@@ -8,7 +8,8 @@
 # Die Datendienste laufen nicht hier; die Anwendung verbindet sich über DATA_HOST.
 # Mehrere web-Server brauchen gemeinsame Ablagen für Medien und Dokument-Cache
 # (mandari_media, mandari_files), z. B. per NFS – siehe docs/MEHR_SERVER_BETRIEB.md.
-# Die Singleton-Sperre der Cron-Jobs liegt in Redis; Cron nur auf EINEM web-Server einrichten.
+# Wiederkehrende Verwaltungsbefehle laufen als Zeitpläne im Worker (DEPLOYMENT.md, „Geplante
+# Aufgaben“), nicht per Cron auf den web-Servern; die Singleton-Sperre in Redis ist das Sicherheitsnetz.
 
 services:
   postgres:

@@ -24,6 +24,7 @@ from apps.common.einmalig import EinmaligMixin
 class Command(EinmaligMixin, BaseCommand):
     sperre = "check_service_levels"  # Singleton je Cache/Redis, #55
     sperre_ttl = 3600
+    nur_lesend = ("report",)  # nur Ausgabe: läuft auch, wenn der Worker den Zeitplan bedient
     help = (
         "Prüft Speicherplatz, TLS-Laufzeiten, Fehlerquote, Warteschlange und tote Ereignisse; "
         "verschickt Alarme per E-Mail"

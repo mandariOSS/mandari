@@ -57,14 +57,16 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
 
-```cron
-40 * * * * docker exec mandari python manage.py cache_files --limit 400 >> /var/log/mandari-file-cache.log 2>&1
-```
+Nachgeladen wird stündlich um :40 vom Zeitplan `befehl:cache_files` im Worker
+(`cache_files --limit 400`, Zeitgrenze 50 Minuten; `DEPLOYMENT.md`, „Geplante Aufgaben“). Ein
+Host-Cron ist dafür nicht mehr nötig; ein alter Eintrag überspringt, solange der Worker den Zeitplan
+bedient, und gehört aus der Crontab entfernt (Upgrade-Hinweis dort). Abschalten:
+`EVENTS_SCHEDULES_DISABLED=befehl:cache_files`.
 
-- Der Cron lädt neueste Dokumente zuerst nach; jeder Live-Abruf über die Vorschau legt die Datei
-  ebenfalls ab (Write-Through).
-- `cache_files --stats` zeigt Abdeckung, Belegung und freien Speicher; der Betriebsmonitor hat
-  dafür den Check „Dokument-Cache“.
+- Der Zeitplan lädt neueste Dokumente zuerst nach; jeder Live-Abruf über die Vorschau legt die Datei
+  ebenfalls ab (Write-Through). Die Ausgabe steht im Protokoll des Workers.
+- `cache_files --stats` zeigt Abdeckung, Belegung und freien Speicher (läuft immer); der
+  Betriebsmonitor hat dafür den Check „Dokument-Cache“.
 - `purge_deleted` entfernt lokale Kopien getilgter Dateien.
 
 ### Quellen-Schonung
@@ -90,6 +92,8 @@ echo "//<box-host>/backup /srv/mandari-files/stadt-koeln cifs credentials=/root/
 mount -a
 ```
 
-Der Container sieht `/srv/mandari-files` als `/app/files`; die Kommune landet automatisch im
-gemounteten Unterverzeichnis. Nach dem Mount einmal `cache_files --body koeln --limit 100000`
+Anwendung und Worker sehen `/srv/mandari-files` als `/app/files` (beide brauchen denselben Mount,
+weil der Zeitplan im Worker den Cache füllt); die Kommune landet automatisch im gemounteten
+Unterverzeichnis. Nach dem Mount einmal
+`docker compose exec mandari python manage.py cache_files --body <slug> --limit 100000 --trotz-zeitplan`
 für den Erstbestand ausführen (ca. 65 GB, dauert mehrere Stunden).

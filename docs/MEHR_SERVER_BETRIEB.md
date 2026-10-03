@@ -69,8 +69,8 @@ Reihenfolge beim ersten Start: data → web (führt die Migrationen aus) → wor
 ## Kein Doppellauf zeitgesteuerter Jobs
 
 Mehrere Server bedeuten die Gefahr, dass derselbe Job zweimal läuft – etwa wenn das
-`worker`-Profil versehentlich auf zwei Servern aktiv ist oder Cron auf zwei web-Servern
-eingerichtet wurde. Drei Schutzmechanismen:
+`worker`-Profil versehentlich auf zwei Servern aktiv ist oder auf einem web-Server noch ein alter
+Cron-Eintrag steht. Drei Schutzmechanismen:
 
 1. **Management-Commands** (Zeitpläne im Worker, `DEPLOYMENT.md` → „Geplante Aufgaben“;
    je Termin plant genau ein Scheduler über seine Lease einen Auftrag) tragen zusätzlich die
@@ -81,7 +81,8 @@ eingerichtet wurde. Drei Schutzmechanismen:
    Geschützt: `send_session_reminders`, `send_question_reminders`,
    `send_task_due_reminders`, `fetch_person_photos`, `cleanup_orphaned_accounts`,
    `check_source_health`, `check_service_levels`, `availability_report`,
-   `build_meeting_packages`, `session_privacy_purge` und die übrigen Befehle der Zeitpläne.
+   `build_meeting_packages`, `session_privacy_purge`, `cache_files`, `generate_alerts`,
+   `send_digest` und die übrigen Befehle der Zeitpläne.
    `--ohne-sperre` erzwingt den Lauf (Notfall). Die Sperre ist das Sicherheitsnetz, die
    Lease des Schedulers das Konzept; Host-Cron für diese Befehle gibt es nicht mehr.
 2. **Protokoll-Orchestrator** (`minutes_orchestrator`) hält dieselbe Sperre je Durchlauf;
@@ -102,9 +103,9 @@ docker compose exec postgres psql -U mandari -c \
   "SELECT application_name, state FROM pg_stat_activity WHERE application_name LIKE 'ingestor-daemon %';"
 # → genau eine Zeile, auch wenn zwei Ingestor-Container laufen
 
-# Auf einem web-Server: Cron-Command zweimal gleichzeitig starten
-docker compose exec -T mandari python manage.py check_source_health & \
-docker compose exec -T mandari python manage.py check_source_health
+# Auf einem web-Server: denselben Befehl zweimal gleichzeitig von Hand starten
+docker compose exec -T mandari python manage.py check_source_health --trotz-zeitplan & \
+docker compose exec -T mandari python manage.py check_source_health --trotz-zeitplan
 # → einer läuft, der andere meldet „läuft bereits auf … – übersprungen“
 ```
 

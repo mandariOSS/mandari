@@ -14,6 +14,7 @@ Verwaltungsbefehle als Zeitpläne statt Host-Cronjobs (Issue #516, ``apps.events
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -41,6 +42,8 @@ FRUEHERE_CRONTAB: dict[str, tuple[str, list[str]]] = {
     "fetch_person_photos": ("0 3 * * 1", []),
     "sync_plan_boundaries": ("50 4 * * *", []),
     "cleanup_orphaned_accounts": ("45 3 * * *", []),
+    # docs/FILE_CACHE.md
+    "cache_files": ("40 * * * *", ["--limit", "400"]),
     "check_source_health": ("15 * * * *", []),
     "check_service_levels": ("30 6 * * *", []),
     "verify_audit_chain": ("20 4 * * *", []),
@@ -216,11 +219,16 @@ def test_alter_cron_eintrag_ueberspringt_wenn_der_worker_uebernimmt(monkeypatch:
     assert "Aufruf übersprungen" not in fehler, "ohne Worker wie bisher"
 
 
-def test_privacy_purge_hat_die_sperre_und_die_uebergabe() -> None:
-    from apps.common.einmalig import EinmaligMixin
-    from apps.session.management.commands.session_privacy_purge import Command
+def test_jeder_befehl_der_zeitplaene_hat_die_sperre_und_die_uebergabe(settings: Any) -> None:
+    """Ohne EinmaligMixin liefe ein alter Cron-Eintrag neben dem Zeitplan (Doppellauf)."""
+    from django.core.management import get_commands, load_command_class
 
-    assert issubclass(Command, EinmaligMixin)
+    from apps.common.einmalig import EinmaligMixin
+
+    befehle = _alle_befehle(settings)
+    assert {"session_privacy_purge", "cache_files", "generate_alerts", "send_digest"} <= befehle
+    ohne = sorted(b for b in befehle if not isinstance(load_command_class(get_commands()[b], b), EinmaligMixin))
+    assert ohne == []
 
 
 # --- Abschalten einzelner Zeitpläne ---------------------------------------------------------------
@@ -252,3 +260,108 @@ def test_liste_der_abgeschalteten_aus_den_einstellungen(settings: Any) -> None:
     assert disabled_schedules() == {"befehl:a", "befehl:b"}
     settings.EVENTS_SCHEDULES_DISABLED = ["befehl:c"]
     assert disabled_schedules() == {"befehl:c"}
+
+
+# --- Bedingte Zeitpläne und Betriebsdoku ----------------------------------------------------------
+
+REPO = Path(settings.BASE_DIR).parent
+
+
+def _alle_befehle(settings: Any) -> set[str]:
+    """Befehle aller Zeitpläne, auch der nur bei bestimmten Einstellungen registrierten."""
+    from apps.common import schedules
+
+    settings.INSIGHT_SUBSCRIPTIONS_ENABLED = True
+    settings.GATUS_URL = "https://status.example.org"
+    register = ScheduleRegistry()
+    schedules.registrieren(ziel=register)
+    return {e.args[0] for e in register if e.name.startswith(verwaltungsbefehle.PRAEFIX)}
+
+
+def test_abos_laufen_als_zeitplan_nur_wenn_sie_eingeschaltet_sind(settings: Any) -> None:
+    from apps.common import schedules
+
+    settings.INSIGHT_SUBSCRIPTIONS_ENABLED = False
+    aus = ScheduleRegistry()
+    schedules.registrieren(ziel=aus)
+    assert aus.get("befehl:generate_alerts") is None
+    assert aus.get("befehl:send_digest") is None
+
+    settings.INSIGHT_SUBSCRIPTIONS_ENABLED = True
+    settings.GATUS_URL = "https://status.example.org"
+    an = ScheduleRegistry()
+    schedules.registrieren(ziel=an)
+    alarme, wochenmail, bericht = (
+        an.get("befehl:generate_alerts"),
+        an.get("befehl:send_digest"),
+        an.get("befehl:availability_report"),
+    )
+    assert alarme is not None and alarme.trigger == Cron("45 7 * * *")
+    assert wochenmail is not None and wochenmail.trigger == Cron("0 8 * * 1"), "montags nach den Benachrichtigungen"
+    assert bericht is not None and bericht.args[1] == ["--out", f"{settings.REPORTS_ROOT}/"]
+    assert len(an) == len(aus) + 3
+
+
+def test_upgrade_hinweis_entfernt_alle_befehle_der_zeitplaene_aus_der_crontab(settings: Any) -> None:
+    """Das grep-Muster zum Bereinigen der Crontab (DEPLOYMENT.md) nennt jeden Befehl eines Zeitplans."""
+    text = (REPO / "DEPLOYMENT.md").read_text(encoding="utf-8")
+    treffer = re.search(r"grep -v -E 'manage\\\.py \(([^)]*)\)'", text)
+    assert treffer, "Befehl zum Bereinigen der Crontab fehlt in DEPLOYMENT.md"
+    assert set(treffer.group(1).split("|")) == _alle_befehle(settings)
+
+
+#: Crontab-Zeile mit Django-Befehl: fünf Zeitfelder (oder @hourly …), danach manage.py
+CRON_MIT_DJANGO = re.compile(r"^\s*(?:(?:[\d*/,\-]+\s+){5}|@\w+\s+).*manage\.py\s")
+
+
+def test_beispiel_crontabs_enthalten_nur_aufgaben_des_betriebssystems() -> None:
+    """ADR „Aufträge und Zeitpläne“: Django-Befehle laufen als Zeitpläne, nicht per Host-Cron."""
+    dateien = [REPO / ".env.example", *REPO.glob("*.md"), *(REPO / "docs").rglob("*.md"), *(REPO / "deploy").rglob("*")]
+    funde = [
+        f"{datei.relative_to(REPO)}: {zeile.strip()}"
+        for datei in dateien
+        if datei.is_file() and datei.suffix in {".md", ".yml", ".yaml", ".sh", ".example", ".txt", ""}
+        for zeile in datei.read_text(encoding="utf-8", errors="replace").splitlines()
+        if CRON_MIT_DJANGO.match(zeile)
+    ]
+    assert funde == []
+
+
+def test_crontab_muster_erkennt_django_befehle() -> None:
+    assert CRON_MIT_DJANGO.match("40 * * * * docker exec mandari python manage.py cache_files --limit 400")
+    assert CRON_MIT_DJANGO.match("0 7 * * * cd /opt/mandari && docker compose exec -T mandari python manage.py x >> l")
+    assert CRON_MIT_DJANGO.match("@hourly docker exec mandari python manage.py check_source_health")
+    assert not CRON_MIT_DJANGO.match("0 2 * * * cd /opt/mandari && ./backup.sh --quiet >> backup.log 2>&1")
+    assert not CRON_MIT_DJANGO.match("docker compose exec mandari python manage.py audit_chain_backfill")
+
+
+@pytest.mark.django_db
+def test_handaufrufe_zur_kontrolle_laufen_neben_dem_zeitplan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """cache_files: der alte Cron-Eintrag überspringt, die Statistik läuft (Issue #516)."""
+    monkeypatch.delenv(verwaltungsbefehle.AUS_ZEITPLAN_ENV, raising=False)
+    presence.announce("worker", ["scheduler", "tasks"], [])
+
+    aus, fehler = StringIO(), StringIO()
+    call_command("cache_files", "--limit", "400", stdout=aus, stderr=fehler)
+    assert "läuft als Zeitplan im Worker – Aufruf übersprungen" in fehler.getvalue()
+    assert aus.getvalue() == ""
+
+    aus, fehler = StringIO(), StringIO()
+    call_command("cache_files", "--stats", stdout=aus, stderr=fehler)
+    assert "Aufruf übersprungen" not in fehler.getvalue()
+    assert "Cache " in aus.getvalue()
+
+
+def test_berichtsoptionen_der_betriebspruefungen_aendern_nichts() -> None:
+    from django.core.management import get_commands, load_command_class
+
+    def befehl(name: str) -> Any:
+        return load_command_class(get_commands()[name], name)
+
+    assert befehl("check_source_health").liest_nur({"report": True})
+    assert befehl("check_service_levels").liest_nur({"report": True})
+    assert not befehl("check_service_levels").liest_nur({"report": False})
+    assert befehl("availability_report").liest_nur({"out": None}), "nur Ausgabe auf stdout"
+    assert not befehl("availability_report").liest_nur({"out": "/berichte/"})
+    assert befehl("cache_files").liest_nur({"stats": True})
+    assert not befehl("send_session_reminders").liest_nur({"tenant": "musterstadt"})

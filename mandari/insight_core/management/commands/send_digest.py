@@ -4,7 +4,8 @@ Management Command: Send Digest Emails
 
 Sends digest emails to subscribers who have unsent alerts.
 
-Run as cronjob: weekly (e.g. Monday 8:00).
+Läuft montags 08:00 als Zeitplan befehl:send_digest im Worker, wenn die Abos eingeschaltet sind
+(apps/common/schedules.py, Issue #516).
 Usage: python manage.py send_digest
 """
 
@@ -14,12 +15,15 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
 
+from apps.common.einmalig import EinmaligMixin
 from apps.common.email import render_email
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "send_digest"  # Singleton je Cache/Redis, #55
+    sperre_ttl = 3600
     help = "Versendet Digest-E-Mails an Insight-Abonnenten mit neuen Benachrichtigungen"
 
     def add_arguments(self, parser):

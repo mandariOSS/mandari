@@ -2,19 +2,27 @@
 """
 Management Command: OParl-Dokumente lokal zwischenspeichern.
 
-Cronjob (stündlich, neueste Dokumente zuerst, stoppt bei knappem Speicher):
+Stündlich als Zeitplan ``befehl:cache_files`` im Worker (``apps/common/schedules.py``, Issue #516;
+neueste Dokumente zuerst, stoppt bei knappem Speicher):
     python manage.py cache_files --limit 400
-Eine Kommune komplett nachladen:
-    python manage.py cache_files --body koeln --limit 100000
-Statistik:
+Eine Kommune komplett nachladen (von Hand; läuft auch, während der Worker den Zeitplan bedient):
+    python manage.py cache_files --body <slug> --limit 100000 --trotz-zeitplan
+Statistik (läuft immer):
     python manage.py cache_files --stats
 """
 
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
+from apps.common.einmalig import EinmaligMixin
 
-class Command(BaseCommand):
+
+class Command(EinmaligMixin, BaseCommand):
+    # Singleton je Cache/Redis (#55); verfällt vor dem nächsten stündlichen Termin, falls ein Lauf an
+    # seiner Zeitgrenze abgebrochen wird
+    sperre = "cache_files"
+    sperre_ttl = 3000
+    nur_lesend = ("stats",)
     help = "Lädt OParl-Dateien (PDFs) aus den Ratsinformationssystemen in den lokalen Dokument-Cache"
 
     def add_arguments(self, parser):

@@ -40,6 +40,10 @@ class Command(EinmaligMixin, BaseCommand):
         parser.add_argument("--out", help="Zieldatei oder Verzeichnis (Markdown); ohne Angabe Ausgabe auf stdout")
         parser.add_argument("--target", type=float, default=99.5, help="Zielverfügbarkeit in Prozent (Standard 99,5)")
 
+    def liest_nur(self, options: dict[str, Any]) -> bool:
+        # Ohne --out nur Ausgabe auf stdout: läuft auch, wenn der Worker den Zeitplan bedient
+        return super().liest_nur(options) or not options.get("out")
+
     def handle(self, *args: Any, **options: Any) -> None:
         from apps.common.availability import GatusError, bericht_markdown, monatsgrenzen, sammle_dienste
 
