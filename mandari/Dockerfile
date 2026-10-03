@@ -3,7 +3,7 @@
 # Multi-stage build: build-deps bleiben nicht im finalen Image
 
 # uv mit fester Version (Dependabot hebt sie wie die Python-Basis), nur für den Export aus uv.lock
-FROM ghcr.io/astral-sh/uv:0.12.21 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.23 AS uv
 
 # =============================================================================
 # Stage 1: Python dependencies bauen
