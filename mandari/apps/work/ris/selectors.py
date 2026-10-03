@@ -35,7 +35,8 @@ from insight_core.models import (
 
 Bodies = QuerySet[OParlBody]
 
-DECISION_ORGANIZATION_TYPES = ("council", "committee", "advisory")
+#: Ortsräte bzw. Stadtbezirksräte beschließen in ihrer Ortschaft ebenfalls (Issue #757)
+DECISION_ORGANIZATION_TYPES = ("council", "committee", "advisory", "local_council")
 
 
 # ---------------------------------------------------------------------------

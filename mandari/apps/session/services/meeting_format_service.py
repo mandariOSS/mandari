@@ -57,7 +57,7 @@ RULE_UNCLEAR = "unclear"
 _STRICTNESS = {RULE_REGULAR: 0, RULE_UNCLEAR: 1, RULE_EMERGENCY: 2, RULE_NONE: 3}
 
 #: Gremientypen ohne Sitzungsregeln der Kommunalverfassung (Fraktionen, Verwaltung)
-UNREGULATED_TYPES = frozenset({"faction", "department"})
+UNREGULATED_TYPES = frozenset({"faction", "group", "department"})
 
 _FORMAT_PLURAL = {FORMAT_HYBRID: "Hybride Sitzungen", FORMAT_DIGITAL: "Digitale Sitzungen"}
 

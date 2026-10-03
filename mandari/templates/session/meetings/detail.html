@@ -101,6 +101,7 @@
                 {% endif %}
             </div>
             <div id="agenda-form"></div>
+            {% if agenda_templates %}{% include "session/meetings/_agenda_template.html" %}{% endif %}
 
             {% if agenda_public or agenda_non_public %}
             <!-- Öffentlicher Teil -->

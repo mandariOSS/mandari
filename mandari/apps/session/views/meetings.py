@@ -29,7 +29,13 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
-from ..services import body_service, joint_meeting_service, meeting_format_service, state_law_service
+from ..services import (
+    agenda_template_service,
+    body_service,
+    joint_meeting_service,
+    meeting_format_service,
+    state_law_service,
+)
 from ..visibility import paper_visible
 from .bodies import BodyFilterMixin
 
@@ -328,6 +334,11 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         protocol = getattr(meeting, "protocol", None)
         context["protocol_locked"] = protocol is not None and protocol.is_locked
         context["agenda_can_edit"] = self.has_permission("edit_meetings") and not context["protocol_locked"]
+        # Tagesordnungsvorlagen des Landesprofils, z. B. konstituierende Sitzung (Issue #757) – bis zur Ladung
+        planning = self.object.meeting_state in ("draft", "scheduled") and not self.object.invitation_sent_at
+        context["agenda_templates"] = (
+            agenda_template_service.available(self.session_tenant) if context["agenda_can_edit"] and planning else []
+        )
         context["agenda_can_retract"] = self.has_permission("edit_meetings") and context["protocol_locked"]
 
         # Lesezugriff auf Nichtöffentliches protokollieren (Issue #221): nur Objekt, nie Inhalt

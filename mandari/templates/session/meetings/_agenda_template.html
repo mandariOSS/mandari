@@ -1,0 +1,11 @@
+{% comment %}Tagesordnungsvorlage übernehmen (Issue #757), z. B. konstituierende Sitzung nach dem Landesprofil.{% endcomment %}
+<form method="post" action="{% url 'session:agenda_template_apply' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+      class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-2 text-sm" data-testid="tagesordnungsvorlage">
+    {% csrf_token %}
+    <label for="tagesordnungsvorlage" class="text-gray-600 dark:text-gray-400">Vorlage</label>
+    <select name="vorlage" id="tagesordnungsvorlage"
+            class="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+        {% for vorlage in agenda_templates %}<option value="{{ vorlage.key }}">{{ vorlage.label }}</option>{% endfor %}
+    </select>
+    <c-ui.button type="submit" size="sm" variant="secondary" icon="list-plus">Punkte übernehmen</c-ui.button>
+</form>

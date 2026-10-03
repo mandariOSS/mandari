@@ -58,6 +58,11 @@ class Command(BaseCommand):
         parser.add_argument("--kind", default=None, help="Körperschaftstyp, z. B. stadt, bezirk, gemeinde")
         parser.add_argument("--ags", default="", help="Amtlicher Gemeindeschlüssel (2, 3, 5 oder 8 Ziffern)")
         parser.add_argument("--numbering", default=None, help="Nummernkreis-Preset, z. B. hamburg_bezirk")
+        parser.add_argument(
+            "--landesprofil",
+            default=None,
+            help="Länderkürzel des Landesprofils, z. B. NI (ohne Angabe: aus dem Profil)",
+        )
         parser.add_argument("--term-name", default=None, help="Name der aktuellen Wahlperiode (eigene statt Profil)")
         parser.add_argument("--term-number", type=int, default=None, help="Nummer der Wahlperiode (für {wp})")
         parser.add_argument("--term-start", default=None, help="Beginn der Wahlperiode (JJJJ-MM-TT)")
@@ -97,6 +102,7 @@ class Command(BaseCommand):
                 term_start=_datum(options["term_start"], "--term-start"),
                 term_end=_datum(options["term_end"], "--term-end"),
                 committees="" if options["no_committees"] else options["committees"],
+                state_profile=options["landesprofil"],
             )
             ergebnis = tenant_provisioning.provision_tenant(
                 spec, catalog=katalog, dry_run=options["dry_run"], actor=ACTOR
@@ -126,6 +132,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"  {profil.key:<18} {profil.label} – Nummernkreis {profil.numbering}, "
                 f"{profil.term_name}, Gremien: {profil.committees or 'keine'}"
+                f"{f', Landesprofil {profil.state_profile}' if profil.state_profile else ''}"
             )
         self.stdout.write("Gremienvorlagen:")
         for vorlage in katalog.committee_templates.values():

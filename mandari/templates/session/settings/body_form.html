@@ -30,6 +30,9 @@
             <c-form.field :field="form.rgs" label="Regionalschlüssel" help="12 Stellen" />
         </div>
         <c-form.select :field="form.parent" label="Gehört zu" help="z. B. die Samtgemeinde einer Mitgliedsgemeinde" />
+        {% if form.template %}
+        <c-form.select :field="form.template" label="Vorlage" help="Legt Gremien mit gesetzlicher Ausschussart an, belegt die Geschäftsordnung vor und ergänzt Standard-TOPs" />
+        {% endif %}
         {% if form.is_active.errors %}
         <c-ui.alert variant="error">{{ form.is_active.errors.0 }}</c-ui.alert>
         {% endif %}

@@ -32,7 +32,20 @@ from django.utils import timezone
 from apps.session.models import SessionMeeting, SessionOrganization, SessionOrganizationMembership, SessionPerson
 
 #: Rangfolge der Funktionen bei mehreren Mitgliedschaften derselben Person (kleiner = maßgeblicher)
-ROLE_RANK = {"chair": 0, "deputy_chair": 1, "member": 2, "expert_citizen": 3, "advisor": 4, "guest": 5}
+ROLE_RANK = {
+    "chair": 0,
+    "deputy_chair": 1,
+    "hvb": 2,
+    "hvb_deputy": 2,
+    "member": 2,
+    "expert_citizen": 3,
+    "co_opted": 3,
+    "advisor": 4,
+    "basic_mandate": 4,
+    "local_mayor": 4,
+    "municipal_director": 4,
+    "guest": 5,
+}
 
 
 class JointOrganizationError(ValueError):
@@ -76,7 +89,7 @@ def active_memberships(meeting: SessionMeeting) -> QuerySet[SessionOrganizationM
 def _rank(membership: SessionOrganizationMembership, lead_id: Any) -> tuple[bool, bool, int]:
     return (
         membership.organization_id != lead_id,
-        not membership.has_voting_rights,
+        not membership.votes,
         ROLE_RANK.get(membership.role, len(ROLE_RANK)),
     )
 
@@ -92,12 +105,13 @@ def merge_seats(meeting: SessionMeeting, memberships: Iterable[SessionOrganizati
             seats[membership.person_id] = Seat(
                 person=membership.person,
                 membership=membership,
-                has_voting_rights=membership.has_voting_rights,
+                has_voting_rights=membership.votes,
                 full_agenda=membership.role != "guest",
                 organizations=[org_name],
             )
             continue
-        seat.has_voting_rights = seat.has_voting_rights or membership.has_voting_rights
+        # Stimmrecht nach dem Gesetz (Issue #757): Grundmandat und Hinzugewählte nie
+        seat.has_voting_rights = seat.has_voting_rights or membership.votes
         seat.full_agenda = seat.full_agenda or membership.role != "guest"
         if org_name not in seat.organizations:
             seat.organizations.append(org_name)

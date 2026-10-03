@@ -11,7 +11,11 @@ Bestehendes aber nicht; nur Nummernkreis-Preset und Angaben der genannten Wahlpe
 angeglichen. Ein Prüflauf (``dry_run``) führt alle Schritte aus und rollt sie zurück.
 
 Profile und Gremienvorlagen stehen in ``apps/session/presets/mandanten.json``; eine eigene Datei
-gleicher Struktur lässt sich angeben (``load_presets``).
+gleicher Struktur lässt sich angeben (``load_presets``). Seit Issue #757 bringt ein Profil das Landesprofil mit
+(Übernahme beim Anlegen, wenn der Mandant noch keines hat) und eine Gremienvorlage ist eine Vorlage je
+Körperschaftstyp: Gremien mit gesetzlicher Ausschussart und Ladungsfrist, Vorbelegung der Geschäftsordnung
+(Ortsrecht der Körperschaft) und Standard-TOPs wie die Einwohnerfragestunde. ``apply_template`` wendet eine
+Vorlage auch auf eine weitere Körperschaft an (z. B. Mitgliedsgemeinde einer Samtgemeinde).
 
 **Deaktivieren und Reaktivieren:** ``set_tenant_active`` speichert den Mandanten einzeln; das
 Signal ruft ``on_active_changed``, das seine Bürgerportal-Quelle zurücknimmt bzw. wiederherstellt
@@ -80,6 +84,20 @@ class Gremium:
     name: str
     short_name: str
     organization_type: str
+    #: Gesetzliche Ausschussart (Issue #757), z. B. „main“ für den Hauptausschuss
+    committee_kind: str = ""
+    #: Ladungsfrist in Tagen; ohne Angabe die Vorgabe des Modells
+    invitation_days: int | None = None
+
+
+@dataclass(frozen=True)
+class StandardTop:
+    """Standard-TOP einer Vorlage (Issue #757), z. B. die Einwohnerfragestunde im Rat."""
+
+    name: str
+    kind: str
+    #: Gremientyp, dessen Gremien der Vorlage den TOP erhalten (z. B. „council“)
+    organization_type: str
 
 
 @dataclass(frozen=True)
@@ -87,6 +105,9 @@ class GremienVorlage:
     key: str
     label: str
     gremien: tuple[Gremium, ...]
+    #: Vorbelegung des Ortsrechts der Körperschaft (``state_law_service.LocalRules``), z. B. Fristen der GO
+    local_rules: dict[str, Any] = field(default_factory=dict)
+    standard_items: tuple[StandardTop, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -100,6 +121,8 @@ class Profil:
     term_start: date
     term_end: date | None
     committees: str
+    #: Länderkürzel des Landesprofils (Issue #757), leer: keines
+    state_profile: str = ""
 
 
 @dataclass(frozen=True)
@@ -112,6 +135,59 @@ def _organization_types() -> set[str]:
     from apps.session.models import SessionOrganization
 
     return {str(key) for key, _ in SessionOrganization._meta.get_field("organization_type").choices or []}
+
+
+def _committee_kinds() -> set[str]:
+    from apps.session.models import SessionOrganization
+
+    return {key for key, _ in SessionOrganization.COMMITTEE_KIND_CHOICES}
+
+
+def _agenda_kinds() -> set[str]:
+    from apps.session.models import SessionAgendaItem
+
+    return {key for key, _ in SessionAgendaItem.KIND_CHOICES if key}
+
+
+def _gremium(key: str, gremium: Any, arten: set[str]) -> Gremium:
+    eintrag = gremium if isinstance(gremium, dict) else {}
+    name = str(eintrag.get("name") or "").strip()
+    art = str(eintrag.get("art") or "committee")
+    ausschussart = str(eintrag.get("ausschussart") or "")
+    frist = eintrag.get("ladungsfrist")
+    if not name or len(name) > 500 or art not in arten:
+        raise ProvisioningError([f"Gremienvorlage „{key}“: Gremium ohne Namen oder mit unbekannter Art."])
+    if ausschussart and ausschussart not in _committee_kinds():
+        raise ProvisioningError([f"Gremienvorlage „{key}“: unbekannte Ausschussart bei „{name}“."])
+    if frist is not None and (isinstance(frist, bool) or not isinstance(frist, int) or not 0 <= frist <= 120):
+        raise ProvisioningError([f"Gremienvorlage „{key}“: Ladungsfrist bei „{name}“ in ganzen Tagen (0–120)."])
+    return Gremium(name, str(eintrag.get("kurzname") or "")[:100], art, ausschussart, frist)
+
+
+def _vorlage(key: str, eintrag: dict[str, Any], arten: set[str]) -> GremienVorlage:
+    """Gremienvorlage mit Geschäftsordnung und Standard-TOPs lesen und prüfen."""
+    from apps.session.services.state_law_service import LocalRules
+
+    gremien = eintrag.get("gremien")
+    if not isinstance(gremien, list) or not gremien:
+        raise ProvisioningError([f"Gremienvorlage „{key}“: Liste „gremien“ fehlt."])
+    liste = tuple(_gremium(key, gremium, arten) for gremium in gremien)
+    roh = eintrag.get("geschaeftsordnung") or {}
+    regeln = LocalRules.from_json(roh).to_json() if isinstance(roh, dict) else None
+    if regeln is None or set(roh) - set(regeln):
+        raise ProvisioningError([f"Gremienvorlage „{key}“: Geschäftsordnung mit unbekannten oder ungültigen Werten."])
+    tops = []
+    for top in eintrag.get("standard_tops") or []:
+        top = top if isinstance(top, dict) else {}
+        name, art, gremium = (
+            str(top.get("name") or "").strip(),
+            str(top.get("art") or ""),
+            str(top.get("gremium") or ""),
+        )
+        if not name or (art and art not in _agenda_kinds()) or gremium not in arten:
+            raise ProvisioningError([f"Gremienvorlage „{key}“: Standard-TOP ohne Namen oder mit unbekannter Art."])
+        tops.append(StandardTop(name[:500], art, gremium))
+    return GremienVorlage(str(key), str(eintrag.get("bezeichnung") or key), liste, regeln, tuple(tops))
 
 
 def _body_types() -> set[str]:
@@ -145,17 +221,7 @@ def load_presets(path: Path | None = None) -> PresetKatalog:
     arten = _organization_types()
     vorlagen: dict[str, GremienVorlage] = {}
     for key, eintrag in (daten.get("gremienvorlagen") or {}).items():
-        gremien = eintrag.get("gremien") if isinstance(eintrag, dict) else None
-        if not isinstance(gremien, list) or not gremien:
-            raise ProvisioningError([f"Gremienvorlage „{key}“: Liste „gremien“ fehlt."])
-        liste = []
-        for gremium in gremien:
-            name = str((gremium or {}).get("name") or "").strip()
-            art = str((gremium or {}).get("art") or "committee")
-            if not name or len(name) > 500 or art not in arten:
-                raise ProvisioningError([f"Gremienvorlage „{key}“: Gremium ohne Namen oder mit unbekannter Art."])
-            liste.append(Gremium(name, str(gremium.get("kurzname") or "")[:100], art))
-        vorlagen[str(key)] = GremienVorlage(str(key), str(eintrag.get("bezeichnung") or key), tuple(liste))
+        vorlagen[str(key)] = _vorlage(str(key), eintrag if isinstance(eintrag, dict) else {}, arten)
 
     profile: dict[str, Profil] = {}
     for key, eintrag in (daten.get("profile") or {}).items():
@@ -179,6 +245,7 @@ def load_presets(path: Path | None = None) -> PresetKatalog:
             term_start=start or date.min,
             term_end=ende,
             committees=str(eintrag.get("gremienvorlage") or ""),
+            state_profile=str(eintrag.get("landesprofil") or ""),
         )
         fehler = []
         if start is None or not profil.term_name:
@@ -189,6 +256,8 @@ def load_presets(path: Path | None = None) -> PresetKatalog:
             fehler.append(f"Profil „{key}“: unbekannter Körperschaftstyp.")
         if profil.committees and profil.committees not in vorlagen:
             fehler.append(f"Profil „{key}“: unbekannte Gremienvorlage.")
+        if profil.state_profile and len(profil.state_profile) != 2:
+            fehler.append(f"Profil „{key}“: Landesprofil als Länderkürzel angeben (z. B. NI).")
         if fehler:
             raise ProvisioningError(fehler)
         profile[str(key)] = profil
@@ -216,6 +285,8 @@ class TenantSpec:
     term_start: date | None = None
     term_end: date | None = None
     committees: str = ""
+    #: Länderkürzel des Landesprofils (Issue #757); leer: keines setzen
+    state_profile: str = ""
 
 
 def build_spec(
@@ -234,6 +305,7 @@ def build_spec(
     term_start: date | None = None,
     term_end: date | None = None,
     committees: str | None = None,
+    state_profile: str | None = None,
 ) -> TenantSpec:
     """
     Angaben aus einem Profil und ausdrücklichen Werten zusammensetzen: ``None`` übernimmt den Wert
@@ -266,6 +338,9 @@ def build_spec(
         term_start=periode[2],
         term_end=periode[3],
         committees=committees if committees is not None else (vorlage.committees if vorlage else ""),
+        state_profile=(state_profile if state_profile is not None else (vorlage.state_profile if vorlage else ""))
+        .strip()
+        .upper(),
     )
 
 
@@ -301,6 +376,13 @@ def validate_spec(spec: TenantSpec, catalog: PresetKatalog) -> list[str]:
         fehler.append("Das Nummernkreis-Preset zählt je Wahlperiode: Bitte die Nummer der Wahlperiode angeben.")
     if spec.committees and spec.committees not in catalog.committee_templates:
         fehler.append("Unbekannte Gremienvorlage.")
+    if spec.state_profile:
+        from apps.session.models import SessionStateProfile
+
+        if not SessionStateProfile.objects.filter(code=spec.state_profile).exists():
+            fehler.append(
+                "Unbekanntes Landesprofil. Die Landesprofile übernimmt „manage.py session_state_profiles --sync“."
+            )
     try:
         validate_email(spec.admin_email)
     except ValidationError:
@@ -389,6 +471,7 @@ def _apply(spec: TenantSpec, catalog: PresetKatalog, *, actor: str) -> Provision
         result.steps.append("Körperschaft: " + ", ".join(t for t in teile if t) + ".")
 
     _ensure_body(tenant)
+    _ensure_state_profile(tenant, spec, result)
     _ensure_roles(tenant, result)
     _ensure_term(tenant, spec, result)
     _ensure_numbering(tenant, spec, result)
@@ -402,6 +485,7 @@ def _apply(spec: TenantSpec, catalog: PresetKatalog, *, actor: str) -> Provision
         "nummernkreis": spec.numbering,
         "wahlperiode": spec.term_name,
         "gremienvorlage": spec.committees or "keine",
+        "landesprofil": tenant.state_profile_id or "keines",
         "administrator": ADMIN_STATUS_LABELS.get(result.admin_status, result.admin_status),
     }
     audit.log_event("create" if result.created else "update", tenant, tenant=tenant, changes=changes)
@@ -433,6 +517,20 @@ def _ensure_body(tenant: SessionTenant) -> None:
         setattr(body, feld, getattr(tenant, feld))
     if ergaenzt:
         body.save(update_fields=[*ergaenzt, "updated_at"])
+
+
+def _ensure_state_profile(tenant: SessionTenant, spec: TenantSpec, result: ProvisioningResult) -> None:
+    """Landesprofil aus dem Profil übernehmen (Issue #757) – nur, wenn der Mandant noch keines hat."""
+    if not spec.state_profile:
+        return
+    if tenant.state_profile_id is None:
+        tenant.state_profile_id = spec.state_profile
+        cast(Any, tenant).save(update_fields=["state_profile", "updated_at"])
+        result.steps.append(f"Landesprofil {spec.state_profile} übernommen.")
+    elif tenant.state_profile_id != spec.state_profile:
+        result.warnings.append(
+            f"Das Landesprofil bleibt {tenant.state_profile_id}; ändern lässt es sich unter Einstellungen → Sitzungsformate."
+        )
 
 
 def _ensure_roles(tenant: SessionTenant, result: ProvisioningResult) -> None:
@@ -476,28 +574,75 @@ def _ensure_numbering(tenant: SessionTenant, spec: TenantSpec, result: Provision
 def _ensure_committees(
     tenant: SessionTenant, spec: TenantSpec, catalog: PresetKatalog, result: ProvisioningResult
 ) -> None:
-    from apps.session.models import SessionOrganization
+    from apps.session.services import body_service
 
     if not spec.committees:
         return
     vorlage = catalog.committee_templates[spec.committees]
+    result.steps.extend(apply_template(body_service.default_body(tenant), vorlage))
+
+
+def apply_template(body: Any, vorlage: GremienVorlage) -> list[str]:
+    """
+    Vorlage auf eine Körperschaft anwenden (Issue #757): fehlende Gremien mit Ausschussart und Ladungsfrist
+    anlegen, die Geschäftsordnung vorbelegen, solange das Ortsrecht leer ist, und Standard-TOPs der Gremien
+    ergänzen. Bestehendes bleibt unverändert (idempotent). Rückgabe: Schritte für Ausgabe und Meldung.
+    """
+    from apps.session.models import SessionOrganization, SessionStandardAgendaItem
+    from apps.session.services import body_service
+
+    tenant = body.tenant
+    schritte: list[str] = []
     neu = []
+    gremien: list[tuple[Gremium, Any]] = []
     for gremium in vorlage.gremien:
-        _, angelegt = SessionOrganization.objects.get_or_create(
-            tenant=tenant,
-            name=gremium.name,
-            defaults={
-                "short_name": gremium.short_name,
-                "organization_type": gremium.organization_type,
-                "is_active": True,
-            },
+        defaults: dict[str, Any] = {
+            "short_name": gremium.short_name,
+            "organization_type": gremium.organization_type,
+            "committee_kind": gremium.committee_kind,
+            "is_active": True,
+        }
+        if gremium.invitation_days is not None:
+            defaults["invitation_period_days"] = gremium.invitation_days
+        # Vorhanden ist ein gleichnamiges Gremium der Körperschaft (ohne Angabe: Standardkörperschaft)
+        organization = (
+            SessionOrganization.objects.filter(body_service.body_q(body), tenant=tenant, name=gremium.name)
+            .order_by("created_at")
+            .first()
         )
+        angelegt = organization is None
+        if organization is None:
+            organization = SessionOrganization.objects.create(tenant=tenant, body=body, name=gremium.name, **defaults)
+        gremien.append((gremium, organization))
         if angelegt:
             neu.append(gremium.name)
     if neu:
-        result.steps.append(f"Gremien aus der Vorlage „{vorlage.label}“ angelegt: {', '.join(neu)}.")
+        schritte.append(f"Gremien aus der Vorlage „{vorlage.label}“ angelegt: {', '.join(neu)}.")
     else:
-        result.steps.append(f"Gremien der Vorlage „{vorlage.label}“ sind vorhanden.")
+        schritte.append(f"Gremien der Vorlage „{vorlage.label}“ sind vorhanden.")
+    if vorlage.local_rules and not body.local_rules:
+        body.local_rules = dict(vorlage.local_rules)
+        body.save(update_fields=["local_rules", "updated_at"])
+        schritte.append(
+            f"Geschäftsordnung für „{body.name}“ vorbelegt (Fristen, Niederschrift, Abstimmungen) – bitte an die "
+            "örtliche Geschäftsordnung anpassen (Einstellungen → Sitzungsformate → Ortsrecht)."
+        )
+    tops = []
+    for top in vorlage.standard_items:
+        for gremium, organization in gremien:
+            if gremium.organization_type != top.organization_type:
+                continue
+            _, angelegt = SessionStandardAgendaItem.objects.get_or_create(
+                tenant=tenant,
+                organization=organization,
+                name=top.name,
+                defaults={"kind": top.kind, "placement": "start", "order": 10, "is_public": True},
+            )
+            if angelegt:
+                tops.append(f"{top.name} ({organization.name})")
+    if tops:
+        schritte.append(f"Standard-TOPs angelegt: {', '.join(tops)}.")
+    return schritte
 
 
 def _ensure_key(tenant: SessionTenant, result: ProvisioningResult) -> None:

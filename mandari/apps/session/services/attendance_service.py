@@ -31,6 +31,14 @@ _ROLE_MAP = {
     "deputy_chair": "deputy_chair",
     "expert_citizen": "expert",
     "advisor": "expert",
+    # Funktionen nach Landesrecht (Issue #757): HVB und ehrenamtliche Stellvertretungen sind Mitglieder der
+    # Vertretung; Grundmandat, Hinzugewählte, Ortsvorsteher und Gemeindedirektor wirken beratend mit
+    "hvb": "member",
+    "hvb_deputy": "member",
+    "basic_mandate": "expert",
+    "co_opted": "expert",
+    "local_mayor": "expert",
+    "municipal_director": "expert",
     "guest": "guest",
 }
 
@@ -55,7 +63,13 @@ class Roster:
 
 def roster(meeting: SessionMeeting) -> Roster:
     """Besetzung für Beschlussfähigkeit und Stimmrecht – eine Abfrage."""
-    rows = list(active_memberships(meeting).values_list("person_id", "substitute_for_id", "has_voting_rights"))
+    # Grundmandat und Hinzugewählte stimmen nach dem Gesetz nie mit (Issue #757), auch mit gesetztem Kennzeichen
+    rows = [
+        (person, principal, voting and role not in SessionOrganizationMembership.ROLES_WITHOUT_VOTE)
+        for person, principal, voting, role in active_memberships(meeting).values_list(
+            "person_id", "substitute_for_id", "has_voting_rights", "role"
+        )
+    ]
     own = {person for person, principal, _voting in rows if principal is None}
     substitutes: dict[Any, set[Any]] = {}
     for person, principal, _voting in rows:
@@ -165,7 +179,9 @@ def attendance_defaults(
     return {
         "status": "invited",
         "role": _ROLE_MAP.get(membership.role, "member"),
-        "has_voting_rights": membership.has_voting_rights if has_voting_rights is None else has_voting_rights,
+        # Grundmandat und Hinzugewählte nie mit Stimmrecht (Issue #757, ``votes``); der Sitz einer gemeinsamen
+        # Sitzung rechnet ebenso (joint_meeting_service.merge_seats)
+        "has_voting_rights": membership.votes if has_voting_rights is None else has_voting_rights,
         "notes": notes,
     }
 

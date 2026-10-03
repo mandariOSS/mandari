@@ -65,6 +65,11 @@ def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:
             "Eine geheimhaltungspflichtige Angelegenheit kann nur nichtöffentlich beraten werden – bitte "
             "„öffentlich“ abwählen.",
         )
+    if not item.is_public and getattr(item, "kind", "") == item.KIND_RESIDENTS_QUESTIONS:
+        # Einwohnerfragestunde (Issue #757): nur in öffentlicher Sitzung (z. B. § 62 NKomVG)
+        errors.setdefault(
+            "is_public", "Die Einwohnerfragestunde gehört in den öffentlichen Teil – bitte „öffentlich“ wählen."
+        )
     paper = item.paper
     if item.is_public and paper is not None and not paper.is_public:
         errors["paper"] = (
@@ -276,6 +281,16 @@ def grouped_agenda(meeting: SessionMeeting, include_non_public: bool = True):
             children.setdefault(item.parent_id, []).append(item)
     for item in items:
         item.children_list = children.get(item.id, [])
+
+    # Einwohnerfragestunde (Issue #757): Zeitrahmen aus der Geschäftsordnung und Regel des Landesrechts am TOP
+    # (Detailseite, Ladung); nur abgefragt, wenn die Sitzung einen solchen TOP hat
+    questions = [item for item in items if item.kind == SessionAgendaItem.KIND_RESIDENTS_QUESTIONS]
+    if questions:
+        from apps.session.services import state_law_service
+
+        note = state_law_service.residents_questions_note(meeting)
+        for item in questions:
+            item.residents_questions_note = note
 
     result = {
         "public": [i for i in items if i.parent_id is None and i.is_public],

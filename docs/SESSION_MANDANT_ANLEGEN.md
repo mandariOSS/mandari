@@ -21,7 +21,8 @@ Ein Aufruf macht einen Mandanten arbeitsfähig:
 | Standardrollen | Administrator, Sachbearbeiter, Protokollant, Lesezugriff sowie die Kontrollrollen Revision und Datenschutz (#221) |
 | Nummernkreis | Preset aus `docs/SESSION_NUMMERNKREISE.md`, z. B. `hamburg_bezirk` (Drucksache `22-0001`) oder `nrw_verwaltung_politik` |
 | Wahlperiode | aktuelle Wahlperiode mit Name, Beginn, Ende und – für Nummern je Wahlperiode – ihrer Nummer |
-| Gremien | optional aus einer Gremienvorlage, z. B. Rat, Hauptausschuss, Finanzausschuss |
+| Landesprofil | aus dem Profil, wenn der Mandant noch keines hat (z. B. `NI`, Issue #757) |
+| Gremien | optional aus einer Gremienvorlage, z. B. Rat, Hauptausschuss, Finanzausschuss – mit gesetzlicher Ausschussart, Ladungsfrist, Vorbelegung der Geschäftsordnung und Standard-TOPs |
 | Administrator | vorhandenes Konto wird Mitglied mit der Rolle Administrator; sonst Einladung per E-Mail |
 | Schlüssel | Schlüssel für verschlüsselte Felder, eingepackt mit dem Hauptschlüssel |
 
@@ -71,6 +72,32 @@ Die mitgelieferte Datei `mandari/apps/session/presets/mandanten.json` enthält:
 |---|---|---|---|---|
 | `nrw_stadt` | Stadt | `nrw_verwaltung_politik` (`1344/2026`, `AN/1492/2026`) | „Wahlperiode 2025–2030“, 01.11.2025 bis 31.10.2030 | Rat, Hauptausschuss, Finanzausschuss |
 | `hamburg_bezirk` | Bezirk | `hamburg_bezirk` (`22-0593`) | „22. Wahlperiode“ (Nr. 22), 09.06.2024 bis 30.06.2029 | Bezirksversammlung, Hauptausschuss |
+| `ni_samtgemeinde` | Samtgemeinde | `standard` | „Wahlperiode 2026–2031“, 01.11.2026 bis 31.10.2031 | Samtgemeinderat, Samtgemeindeausschuss, Finanzausschuss |
+| `ni_mitgliedsgemeinde` | Mitgliedsgemeinde | `standard` | wie oben | Rat, Verwaltungsausschuss |
+| `ni_mitgliedsgemeinde_ohne_va` | Mitgliedsgemeinde | `standard` | wie oben | Rat |
+| `ni_mitgliedsgemeinde_gd`, `ni_mitgliedsgemeinde_ohne_va_gd` | Mitgliedsgemeinde mit Gemeindedirektor | `standard` | wie oben | Rat (und Verwaltungsausschuss); Niederschrift unterzeichnet die Gemeindedirektorin bzw. der Gemeindedirektor mit |
+| `ni_stadt_ortsraete` | Stadt | `standard` | wie oben | Rat, Verwaltungsausschuss, Finanzausschuss, Ortsrat (Ortschaft benennen) |
+| `ni_landkreis` | Landkreis | `standard` | wie oben | Kreistag, Kreisausschuss, Finanzausschuss, Jugendhilfeausschuss |
+
+Die Profile für Niedersachsen (Issue #757) setzen das Landesprofil `NI`, legen den Hauptausschuss mit der
+gesetzlichen Ausschussart „Hauptausschuss“ und seinem Namen nach Körperschaftstyp an (§ 7 Abs. 2 NKomVG),
+belegen die Geschäftsordnung der Körperschaft vor (Ladungsfrist 7 Kalendertage ab Bereitstellung, Eilfall 3 Tage
+mit Pflichthinweis, Anträge 14 und Anfragen 5 Tage vorher, Unterzeichnende der Niederschrift, Abstimmungsarten,
+öffentliche Ausschüsse, Einwohnerfragestunde 30 Minuten) und legen im Rat den Standard-TOP
+„Einwohnerfragestunde“ an. Die Werte sind eine Vorbelegung nach dem Muster des NLT und verbreiteter Praxis;
+bitte an die örtliche Geschäftsordnung anpassen (Einstellungen → Sitzungsformate → Ortsrecht).
+
+**Weitere Körperschaften:** Führt die Verwaltung mehrere Körperschaften (z. B. eine Samtgemeinde mit ihren
+Mitgliedsgemeinden), lässt sich beim Anlegen einer Körperschaft unter Einstellungen → Körperschaften dieselbe
+Gremienvorlage wählen: Gremien, Geschäftsordnung und Standard-TOPs entstehen dann in dieser Körperschaft.
+
+**Konstituierende Sitzung:** Für Mandanten mit Landesprofil `NI` bietet die Tagesordnung einer noch nicht
+geladenen Sitzung die Vorlagen „Konstituierende Sitzung der Vertretung“ und „… des Rates einer Mitgliedsgemeinde“
+(`mandari/apps/session/presets/tagesordnungen.json`): Verpflichtung, Wahl des Vorsitzes und der Stellvertretungen
+(als Wahl gekennzeichnet), Fraktionen und Gruppen, Hauptausschuss, Ausschüsse, Stellvertretungen der bzw. des
+HVB, Geschäftsordnung. Die Sitzung wird dabei auf Präsenz gestellt, weil jedes Mitglied eine geheime Wahl verlangen
+kann (§ 67 Satz 2 NKomVG) und diese mit Zugeschalteten unzulässig wäre. Der Assistent für den
+Wahlperiodenwechsel (#155) baut darauf auf.
 
 Die Daten der Wahlperioden sind Vorschläge; bitte prüfen Sie sie vor dem Anlegen. Eine eigene
 Datei hat denselben Aufbau:
@@ -92,8 +119,13 @@ Datei hat denselben Aufbau:
 }
 ```
 
-Erlaubte Gremienarten: `council`, `committee`, `advisory`, `commission`, `department`, `faction`,
-`other`.
+Erlaubte Gremienarten: `council`, `committee`, `local_council` (Ortsrat bzw. Stadtbezirksrat), `advisory`,
+`youth_council` (Jugendbeteiligungsgremium), `commission`, `department`, `faction`, `group` (Gruppe), `other`.
+Je Gremium optional `ausschussart` (`main`, `finance`, `audit`, `special` für Ausschüsse nach besonderen
+Rechtsvorschriften, `ordinary`) und `ladungsfrist` (Tage). Je Gremienvorlage optional `geschaeftsordnung`
+(Schlüssel wie im Ortsrecht, z. B. `invitation_days`, `question_days`, `minutes_signers`) und `standard_tops`
+(`name`, `art` z. B. `residents_questions`, `gremium` als Gremienart). Je Profil optional `landesprofil`
+(Länderkürzel).
 
 ### Erster Administrator
 

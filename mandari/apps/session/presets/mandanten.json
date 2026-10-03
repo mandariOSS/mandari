@@ -23,22 +23,419 @@
         "ende": "2029-06-30"
       },
       "gremienvorlage": "hamburg_bezirk"
+    },
+    "ni_samtgemeinde": {
+      "bezeichnung": "Samtgemeinde in Niedersachsen",
+      "koerperschaftstyp": "samtgemeinde",
+      "landesprofil": "NI",
+      "nummernkreis": "standard",
+      "wahlperiode": {
+        "name": "Wahlperiode 2026–2031",
+        "nummer": null,
+        "beginn": "2026-11-01",
+        "ende": "2031-10-31"
+      },
+      "gremienvorlage": "ni_samtgemeinde"
+    },
+    "ni_mitgliedsgemeinde": {
+      "bezeichnung": "Mitgliedsgemeinde in Niedersachsen (mit Verwaltungsausschuss)",
+      "koerperschaftstyp": "mitgliedsgemeinde",
+      "landesprofil": "NI",
+      "nummernkreis": "standard",
+      "wahlperiode": {
+        "name": "Wahlperiode 2026–2031",
+        "nummer": null,
+        "beginn": "2026-11-01",
+        "ende": "2031-10-31"
+      },
+      "gremienvorlage": "ni_mitgliedsgemeinde"
+    },
+    "ni_mitgliedsgemeinde_ohne_va": {
+      "bezeichnung": "Mitgliedsgemeinde in Niedersachsen (ohne Verwaltungsausschuss)",
+      "koerperschaftstyp": "mitgliedsgemeinde",
+      "landesprofil": "NI",
+      "nummernkreis": "standard",
+      "wahlperiode": {
+        "name": "Wahlperiode 2026–2031",
+        "nummer": null,
+        "beginn": "2026-11-01",
+        "ende": "2031-10-31"
+      },
+      "gremienvorlage": "ni_mitgliedsgemeinde_ohne_va"
+    },
+    "ni_mitgliedsgemeinde_gd": {
+      "bezeichnung": "Mitgliedsgemeinde in Niedersachsen (mit Verwaltungsausschuss und Gemeindedirektor)",
+      "koerperschaftstyp": "mitgliedsgemeinde",
+      "landesprofil": "NI",
+      "nummernkreis": "standard",
+      "wahlperiode": {
+        "name": "Wahlperiode 2026–2031",
+        "nummer": null,
+        "beginn": "2026-11-01",
+        "ende": "2031-10-31"
+      },
+      "gremienvorlage": "ni_mitgliedsgemeinde_gd"
+    },
+    "ni_mitgliedsgemeinde_ohne_va_gd": {
+      "bezeichnung": "Mitgliedsgemeinde in Niedersachsen (ohne Verwaltungsausschuss, mit Gemeindedirektor)",
+      "koerperschaftstyp": "mitgliedsgemeinde",
+      "landesprofil": "NI",
+      "nummernkreis": "standard",
+      "wahlperiode": {
+        "name": "Wahlperiode 2026–2031",
+        "nummer": null,
+        "beginn": "2026-11-01",
+        "ende": "2031-10-31"
+      },
+      "gremienvorlage": "ni_mitgliedsgemeinde_ohne_va_gd"
+    },
+    "ni_stadt_ortsraete": {
+      "bezeichnung": "Stadt in Niedersachsen mit Ortsräten",
+      "koerperschaftstyp": "stadt",
+      "landesprofil": "NI",
+      "nummernkreis": "standard",
+      "wahlperiode": {
+        "name": "Wahlperiode 2026–2031",
+        "nummer": null,
+        "beginn": "2026-11-01",
+        "ende": "2031-10-31"
+      },
+      "gremienvorlage": "ni_stadt_ortsraete"
+    },
+    "ni_landkreis": {
+      "bezeichnung": "Landkreis in Niedersachsen",
+      "koerperschaftstyp": "kreis",
+      "landesprofil": "NI",
+      "nummernkreis": "standard",
+      "wahlperiode": {
+        "name": "Wahlperiode 2026–2031",
+        "nummer": null,
+        "beginn": "2026-11-01",
+        "ende": "2031-10-31"
+      },
+      "gremienvorlage": "ni_landkreis"
     }
   },
   "gremienvorlagen": {
     "nrw_stadt": {
       "bezeichnung": "Rat, Hauptausschuss, Finanzausschuss",
       "gremien": [
-        {"name": "Rat", "kurzname": "Rat", "art": "council"},
-        {"name": "Hauptausschuss", "kurzname": "HA", "art": "committee"},
-        {"name": "Finanzausschuss", "kurzname": "FA", "art": "committee"}
+        {
+          "name": "Rat",
+          "kurzname": "Rat",
+          "art": "council"
+        },
+        {
+          "name": "Hauptausschuss",
+          "kurzname": "HA",
+          "art": "committee"
+        },
+        {
+          "name": "Finanzausschuss",
+          "kurzname": "FA",
+          "art": "committee"
+        }
       ]
     },
     "hamburg_bezirk": {
       "bezeichnung": "Bezirksversammlung, Hauptausschuss",
       "gremien": [
-        {"name": "Bezirksversammlung", "kurzname": "BV", "art": "council"},
-        {"name": "Hauptausschuss", "kurzname": "HA", "art": "committee"}
+        {
+          "name": "Bezirksversammlung",
+          "kurzname": "BV",
+          "art": "council"
+        },
+        {
+          "name": "Hauptausschuss",
+          "kurzname": "HA",
+          "art": "committee"
+        }
+      ]
+    },
+    "ni_samtgemeinde": {
+      "bezeichnung": "Samtgemeinderat, Samtgemeindeausschuss, Finanzausschuss",
+      "gremien": [
+        {
+          "name": "Samtgemeinderat",
+          "kurzname": "SGR",
+          "art": "council",
+          "ladungsfrist": 7
+        },
+        {
+          "name": "Samtgemeindeausschuss",
+          "kurzname": "SGA",
+          "art": "committee",
+          "ausschussart": "main",
+          "ladungsfrist": 6
+        },
+        {
+          "name": "Finanzausschuss",
+          "kurzname": "FA",
+          "art": "committee",
+          "ausschussart": "finance",
+          "ladungsfrist": 7
+        }
+      ],
+      "geschaeftsordnung": {
+        "invitation_days": 7,
+        "invitation_day_kind": "calendar",
+        "deadline_start": "provision",
+        "urgent_days": 3,
+        "urgent_notice": "Die Ladungsfrist ist wegen Eilbedürftigkeit abgekürzt.",
+        "motion_days": 14,
+        "question_days": 5,
+        "voting_methods": "offen; geheim nur auf Beschluss der Mehrheit",
+        "committees_public": "public",
+        "residents_questions_minutes": 30,
+        "minutes_signers": "Vorsitz, Samtgemeindebürgermeister/in, Protokollführung"
+      },
+      "standard_tops": [
+        {
+          "name": "Einwohnerfragestunde",
+          "art": "residents_questions",
+          "gremium": "council"
+        }
+      ]
+    },
+    "ni_mitgliedsgemeinde": {
+      "bezeichnung": "Rat und Verwaltungsausschuss einer Mitgliedsgemeinde",
+      "gremien": [
+        {
+          "name": "Rat",
+          "kurzname": "Rat",
+          "art": "council",
+          "ladungsfrist": 7
+        },
+        {
+          "name": "Verwaltungsausschuss",
+          "kurzname": "VA",
+          "art": "committee",
+          "ausschussart": "main",
+          "ladungsfrist": 6
+        }
+      ],
+      "geschaeftsordnung": {
+        "invitation_days": 7,
+        "invitation_day_kind": "calendar",
+        "deadline_start": "provision",
+        "urgent_days": 3,
+        "urgent_notice": "Die Ladungsfrist ist wegen Eilbedürftigkeit abgekürzt.",
+        "motion_days": 14,
+        "question_days": 5,
+        "voting_methods": "offen; geheim nur auf Beschluss der Mehrheit",
+        "committees_public": "public",
+        "residents_questions_minutes": 30,
+        "minutes_signers": "Bürgermeister/in, Verwaltungsvertreter/in, Protokollführung"
+      },
+      "standard_tops": [
+        {
+          "name": "Einwohnerfragestunde",
+          "art": "residents_questions",
+          "gremium": "council"
+        }
+      ]
+    },
+    "ni_mitgliedsgemeinde_ohne_va": {
+      "bezeichnung": "Rat einer Mitgliedsgemeinde ohne Verwaltungsausschuss",
+      "gremien": [
+        {
+          "name": "Rat",
+          "kurzname": "Rat",
+          "art": "council",
+          "ladungsfrist": 7
+        }
+      ],
+      "geschaeftsordnung": {
+        "invitation_days": 7,
+        "invitation_day_kind": "calendar",
+        "deadline_start": "provision",
+        "urgent_days": 3,
+        "urgent_notice": "Die Ladungsfrist ist wegen Eilbedürftigkeit abgekürzt.",
+        "motion_days": 14,
+        "question_days": 5,
+        "voting_methods": "offen; geheim nur auf Beschluss der Mehrheit",
+        "committees_public": "public",
+        "residents_questions_minutes": 30,
+        "minutes_signers": "Bürgermeister/in, Verwaltungsvertreter/in, Protokollführung"
+      },
+      "standard_tops": [
+        {
+          "name": "Einwohnerfragestunde",
+          "art": "residents_questions",
+          "gremium": "council"
+        }
+      ]
+    },
+    "ni_mitgliedsgemeinde_gd": {
+      "bezeichnung": "Rat und Verwaltungsausschuss einer Mitgliedsgemeinde mit Gemeindedirektor",
+      "gremien": [
+        {
+          "name": "Rat",
+          "kurzname": "Rat",
+          "art": "council",
+          "ladungsfrist": 7
+        },
+        {
+          "name": "Verwaltungsausschuss",
+          "kurzname": "VA",
+          "art": "committee",
+          "ausschussart": "main",
+          "ladungsfrist": 6
+        }
+      ],
+      "geschaeftsordnung": {
+        "invitation_days": 7,
+        "invitation_day_kind": "calendar",
+        "deadline_start": "provision",
+        "urgent_days": 3,
+        "urgent_notice": "Die Ladungsfrist ist wegen Eilbedürftigkeit abgekürzt.",
+        "motion_days": 14,
+        "question_days": 5,
+        "voting_methods": "offen; geheim nur auf Beschluss der Mehrheit",
+        "committees_public": "public",
+        "residents_questions_minutes": 30,
+        "minutes_signers": "Bürgermeister/in, Gemeindedirektor/in, Protokollführung"
+      },
+      "standard_tops": [
+        {
+          "name": "Einwohnerfragestunde",
+          "art": "residents_questions",
+          "gremium": "council"
+        }
+      ]
+    },
+    "ni_mitgliedsgemeinde_ohne_va_gd": {
+      "bezeichnung": "Rat einer Mitgliedsgemeinde mit Gemeindedirektor, ohne Verwaltungsausschuss",
+      "gremien": [
+        {
+          "name": "Rat",
+          "kurzname": "Rat",
+          "art": "council",
+          "ladungsfrist": 7
+        }
+      ],
+      "geschaeftsordnung": {
+        "invitation_days": 7,
+        "invitation_day_kind": "calendar",
+        "deadline_start": "provision",
+        "urgent_days": 3,
+        "urgent_notice": "Die Ladungsfrist ist wegen Eilbedürftigkeit abgekürzt.",
+        "motion_days": 14,
+        "question_days": 5,
+        "voting_methods": "offen; geheim nur auf Beschluss der Mehrheit",
+        "committees_public": "public",
+        "residents_questions_minutes": 30,
+        "minutes_signers": "Bürgermeister/in, Gemeindedirektor/in, Protokollführung"
+      },
+      "standard_tops": [
+        {
+          "name": "Einwohnerfragestunde",
+          "art": "residents_questions",
+          "gremium": "council"
+        }
+      ]
+    },
+    "ni_stadt_ortsraete": {
+      "bezeichnung": "Rat, Verwaltungsausschuss, Finanzausschuss, Ortsrat",
+      "gremien": [
+        {
+          "name": "Rat",
+          "kurzname": "Rat",
+          "art": "council",
+          "ladungsfrist": 7
+        },
+        {
+          "name": "Verwaltungsausschuss",
+          "kurzname": "VA",
+          "art": "committee",
+          "ausschussart": "main",
+          "ladungsfrist": 6
+        },
+        {
+          "name": "Finanzausschuss",
+          "kurzname": "FA",
+          "art": "committee",
+          "ausschussart": "finance",
+          "ladungsfrist": 7
+        },
+        {
+          "name": "Ortsrat (Ortschaft benennen)",
+          "kurzname": "OR",
+          "art": "local_council",
+          "ladungsfrist": 7
+        }
+      ],
+      "geschaeftsordnung": {
+        "invitation_days": 7,
+        "invitation_day_kind": "calendar",
+        "deadline_start": "provision",
+        "urgent_days": 3,
+        "urgent_notice": "Die Ladungsfrist ist wegen Eilbedürftigkeit abgekürzt.",
+        "motion_days": 14,
+        "question_days": 5,
+        "voting_methods": "offen; geheim nur auf Beschluss der Mehrheit",
+        "committees_public": "public",
+        "residents_questions_minutes": 30,
+        "minutes_signers": "Ratsvorsitz, Bürgermeister/in, Protokollführung"
+      },
+      "standard_tops": [
+        {
+          "name": "Einwohnerfragestunde",
+          "art": "residents_questions",
+          "gremium": "council"
+        }
+      ]
+    },
+    "ni_landkreis": {
+      "bezeichnung": "Kreistag, Kreisausschuss, Finanzausschuss, Jugendhilfeausschuss",
+      "gremien": [
+        {
+          "name": "Kreistag",
+          "kurzname": "KT",
+          "art": "council",
+          "ladungsfrist": 7
+        },
+        {
+          "name": "Kreisausschuss",
+          "kurzname": "KA",
+          "art": "committee",
+          "ausschussart": "main",
+          "ladungsfrist": 7
+        },
+        {
+          "name": "Finanzausschuss",
+          "kurzname": "FA",
+          "art": "committee",
+          "ausschussart": "finance",
+          "ladungsfrist": 7
+        },
+        {
+          "name": "Jugendhilfeausschuss",
+          "kurzname": "JHA",
+          "art": "committee",
+          "ausschussart": "special",
+          "ladungsfrist": 7
+        }
+      ],
+      "geschaeftsordnung": {
+        "invitation_days": 7,
+        "invitation_day_kind": "calendar",
+        "deadline_start": "provision",
+        "urgent_days": 3,
+        "urgent_notice": "Die Ladungsfrist ist wegen Eilbedürftigkeit abgekürzt.",
+        "motion_days": 14,
+        "question_days": 5,
+        "voting_methods": "offen; geheim nur auf Beschluss der Mehrheit",
+        "committees_public": "public",
+        "residents_questions_minutes": 30,
+        "minutes_signers": "Vorsitz, Landrat/Landrätin, Protokollführung"
+      },
+      "standard_tops": [
+        {
+          "name": "Einwohnerfragestunde",
+          "art": "residents_questions",
+          "gremium": "council"
+        }
       ]
     }
   }

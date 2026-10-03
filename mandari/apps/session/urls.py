@@ -463,6 +463,12 @@ urlpatterns = [
         name="privacy_settings",
     ),
     # Sitzungsformate und Landesprofil (Issue #138)
+    # Tagesordnungsvorlage übernehmen, z. B. konstituierende Sitzung (Issue #757)
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/agenda/vorlage/",
+        views.AgendaTemplateApplyView.as_view(),
+        name="agenda_template_apply",
+    ),
     path(
         "<slug:tenant_slug>/settings/meeting-formats/",
         views.MeetingFormatSettingsView.as_view(),

@@ -12,11 +12,13 @@ Körperschaften im Mandanten (Issue #756): Verwaltung und Filter.
 
 from __future__ import annotations
 
+import logging
 from functools import cached_property
 from typing import Any, cast
 
 from django import forms
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -26,7 +28,9 @@ from django.views.generic import CreateView, TemplateView, UpdateView
 
 from ..models import SessionBody, SessionTenant
 from ..permissions import SessionViewMixin
-from ..services import body_service
+from ..services import body_service, tenant_provisioning
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Filter in Listen
@@ -64,6 +68,9 @@ class SessionBodyForm(forms.ModelForm):  # type: ignore[type-arg]
     weil der Mandant kein Formularfeld ist – sonst endete eine doppelte Kennung im Serverfehler.
     """
 
+    #: Vorlage je Körperschaftstyp (Issue #757): Gremien, Geschäftsordnung und Standard-TOPs – nur beim Anlegen
+    template = forms.ChoiceField(label="Vorlage", required=False)
+
     class Meta:
         model = SessionBody
         fields = ["name", "short_name", "slug", "body_type", "ags", "rgs", "parent", "is_active"]
@@ -72,6 +79,13 @@ class SessionBodyForm(forms.ModelForm):  # type: ignore[type-arg]
         super().__init__(*args, **kwargs)
         self.tenant = tenant
         self.instance.tenant = tenant
+        self.templates: dict[str, tenant_provisioning.GremienVorlage] = {}
+        if not self.instance._state.adding:
+            del self.fields["template"]
+        else:
+            self.templates = _templates()
+            choices = [(key, vorlage.label) for key, vorlage in self.templates.items()]
+            self.fields["template"].choices = [("", "Ohne Vorlage"), *choices]  # type: ignore[attr-defined]
         parents = SessionBody.objects.filter(tenant=tenant).order_by("-is_default", "name")
         if self.instance.pk:
             parents = parents.exclude(pk=self.instance.pk)
@@ -102,6 +116,15 @@ class SessionBodyForm(forms.ModelForm):  # type: ignore[type-arg]
                 raise forms.ValidationError("Die Körperschaft stünde damit über sich selbst.")
             current, depth = current.parent, depth + 1
         return parent
+
+
+def _templates() -> dict[str, tenant_provisioning.GremienVorlage]:
+    """Vorlagen je Körperschaftstyp aus der Preset-Datei; eine ungültige Datei ergibt keine Auswahl."""
+    try:
+        return tenant_provisioning.load_presets().committee_templates
+    except tenant_provisioning.ProvisioningError:
+        logger.exception("Preset-Datei der Mandanten ist ungültig.")
+        return {}
 
 
 class BodyListView(SessionViewMixin, TemplateView):
@@ -137,8 +160,18 @@ class BodyCreateView(SessionViewMixin, CreateView):  # type: ignore[type-arg]
         return _bodies_url(self)
 
     def form_valid(self, form: Any) -> HttpResponse:
+        # Körperschaft und Vorlage gemeinsam: Bricht die Vorlage ab, bleibt keine Körperschaft mit einem Teil der
+        # Gremien zurück. Meldungen erst nach dem Commit.
+        vorlage = form.templates.get(form.cleaned_data.get("template") or "")
+        schritte: list[str] = []
+        with transaction.atomic():
+            response = super().form_valid(form)
+            if vorlage is not None:
+                schritte = tenant_provisioning.apply_template(form.instance, vorlage)
         messages.success(self.request, f"Körperschaft „{form.instance.name}“ wurde angelegt.")
-        return super().form_valid(form)
+        for schritt in schritte:
+            messages.info(self.request, schritt)
+        return response
 
 
 class BodyUpdateView(SessionViewMixin, UpdateView):  # type: ignore[type-arg]

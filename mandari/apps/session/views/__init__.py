@@ -15,6 +15,7 @@ from .agenda import (
     AgendaItemUpdateView,
     AgendaItemWithdrawView,
     AgendaReorderView,
+    AgendaTemplateApplyView,
     AttendanceUpdateView,
 )
 from .allowances import (
@@ -294,6 +295,7 @@ __all__ = [
     "AgendaItemUpdateView",
     "AgendaItemWithdrawView",
     "AgendaReorderView",
+    "AgendaTemplateApplyView",
     "ApplicationConvertView",
     "ApplicationDetailView",
     "ApplicationListView",

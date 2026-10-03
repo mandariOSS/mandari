@@ -125,6 +125,30 @@ Hauptsatzung und Geschäftsordnung gelten je Körperschaft (Einstellungen → Si
 - **Notlage:** Digitale Sitzungen nach § 182 NKomVG sind „nur in Notlagen“ zulässig und brauchen den Beschluss
   im Ortsrecht (siehe Prüfregeln).
 
+### Gremientypen, Funktionen und Vorlagen
+
+- **Gremientypen:** Ortsrat bzw. Stadtbezirksrat, Gruppe (wie eine Fraktion, ohne Sitzungsregeln) und
+  Jugendbeteiligungsgremium; gesetzliche Ausschussart „Ausschuss nach besonderen Rechtsvorschriften“ (§ 73 NKomVG).
+  Der Hauptausschuss ist ein Ausschuss mit der Ausschussart „Hauptausschuss“; seine gesetzliche Bezeichnung nach
+  dem Körperschaftstyp (Verwaltungs-, Samtgemeinde-, Kreis-, Regionsausschuss) zeigt die Gremienseite.
+- **Funktionen:** Hauptverwaltungsbeamtin bzw. -beamter kraft Amtes, ehrenamtliche Stellvertretung des HVB,
+  Grundmandat (beratend) und Hinzugewählte (immer ohne Stimmrecht – auch wenn das Kennzeichen über Admin,
+  Stammdaten-Import oder Periodenwechsel gesetzt ist, zählen sie weder bei Abstimmung noch bei der
+  Beschlussfähigkeit), Ortsvorsteherin bzw. Ortsvorsteher, Gemeindedirektorin bzw. Gemeindedirektor.
+- **Höchstzahl der Stellvertretungen des HVB** (Fassung ab 01.11.2026, § 81 Abs. 2 NKomVG: bis zu fünf): Die
+  Besetzung lehnt eine weitere ehrenamtliche Stellvertretung ab, wenn im Gremium am Beginn schon so viele laufen.
+- **Ämter erst ab 18** (Fassung ab 01.11.2026): Ist an der Person „volljährig ab“ eingetragen, lehnt die Besetzung
+  Vorsitz und Stellvertretung im Ortsrat, Ortsvorsteher, Ratsvorsitz einer Mitgliedsgemeinde, Gemeindedirektor und
+  HVB vor diesem Tag ab.
+- **Abberufung:** Das Ende einer Besetzung als Ausschussvorsitz lässt sich als „abberufen“ vermerken; ab der
+  Fassung vom 01.11.2026 lehnt mandari dann eine erneute Benennung derselben Person in diesem Ausschuss und dieser
+  Wahlperiode ab (§ 71 Abs. 8 NKomVG). Das Kästchen gibt es nur beim Vorsitz eines Ausschusses; ein versehentlich
+  gesetzter Vermerk lässt sich in der Bearbeitung der Besetzung zurücknehmen (Prüfprotokoll).
+- **Vorlagen je Körperschaftstyp** und **konstituierende Sitzung:** siehe `docs/SESSION_MANDANT_ANLEGEN.md`.
+- **TOP-Art Einwohnerfragestunde:** nur im öffentlichen Teil. Tagesordnung, Ladung und Serienbrief nennen am TOP
+  den Zeitrahmen aus der Geschäftsordnung der Körperschaft („Höchstens 30 Minuten (Geschäftsordnung).“) und ab der
+  Fassung vom 01.11.2026 „Fragen nur von anwesenden Einwohnerinnen und Einwohnern (§ 62 Abs. 1 NKomVG)“.
+
 ### Ladung, Tagesordnung und Öffentlichkeit
 
 - **Ladung und Ladungs-PDF** (auch Nachtrag, Sitzungsmappe, Abruf in mandari Work) nennen bei hybriden und

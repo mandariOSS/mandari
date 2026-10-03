@@ -82,7 +82,7 @@ mit QR-Code. Gerendert über apps/common/pdf.py (xhtml2pdf).
     <div class="section-title">{% if supplementary %}Nachtrags-Tagesordnung – {% endif %}Öffentlicher Teil</div>
     <table class="agenda">
         {% for item in entry.agenda.public %}
-        <tr><td class="top-nr">{{ item.number }}</td><td>{{ item.name }}{% if item.is_withdrawn %} (abgesetzt){% endif %}{% for sub in item.children_list %}<br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.name }}{% endfor %}</td></tr>
+        <tr><td class="top-nr">{{ item.number }}</td><td>{{ item.name }}{% if item.is_withdrawn %} (abgesetzt){% endif %}{% if item.residents_questions_note %}<br>{{ item.residents_questions_note }}{% endif %}{% for sub in item.children_list %}<br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.name }}{% endfor %}</td></tr>
         {% endfor %}
     </table>
     {% endif %}
@@ -90,7 +90,7 @@ mit QR-Code. Gerendert über apps/common/pdf.py (xhtml2pdf).
     <div class="section-title">{% if supplementary %}Nachtrags-Tagesordnung – {% endif %}Nichtöffentlicher Teil</div>
     <table class="agenda">
         {% for item in entry.agenda.non_public %}
-        <tr><td class="top-nr">{{ item.number }}</td><td>{{ item.name }}{% if item.is_withdrawn %} (abgesetzt){% endif %}{% for sub in item.children_list %}<br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.name }}{% endfor %}</td></tr>
+        <tr><td class="top-nr">{{ item.number }}</td><td>{{ item.name }}{% if item.is_withdrawn %} (abgesetzt){% endif %}{% if item.residents_questions_note %}<br>{{ item.residents_questions_note }}{% endif %}{% for sub in item.children_list %}<br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.name }}{% endfor %}</td></tr>
         {% endfor %}
     </table>
     {% endif %}
