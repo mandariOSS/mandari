@@ -122,12 +122,15 @@ class TestSitzungsortInDerKarte:
             location_address="Platz 1 `${alert(3)}`",
         )
         html = Client().get(f"/insight/termine/{meeting.id}/").content.decode()
+        # Die Karte zeichnet das Bundle (frontend/js/meeting-map.ts) aus Datenattributen, kein Inline-Skript
+        karte = re.search(r'<div id="location-map"[^>]*>', html)
+        assert karte, "Karte fehlt – Testaufbau prüfen"
         skripte = _ausfuehrbare_skripte(html)
-        assert "L.map(" in skripte, "Karte fehlt – Testaufbau prüfen"
         assert "alert(1)" not in skripte
         assert "alert(3)" not in skripte
-        # Die Angaben selbst erscheinen weiter, maskiert als Text
+        # Die Angaben selbst erscheinen weiter, maskiert als Text bzw. im Attribut
         assert "Rathaus ${alert(1)} &lt;img" in html
+        assert 'data-location-name="Rathaus ${alert(1)} &lt;img src=x onerror=alert(2)&gt;"' in karte.group(0)
 
 
 # =============================================================================

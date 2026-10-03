@@ -78,7 +78,7 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
         context["seo"] = get_page_seo(
             self.request,
             title="Benachrichtigungen",
-            description="Per E-Mail informiert bleiben: Benachrichtigungen zu Themen, Gremien und Orten deiner Kommune abonnieren.",
+            description="Per E-Mail informiert bleiben: Benachrichtigungen zu Themen, Gremien und Orten Ihrer Kommune abonnieren.",
             body=body,
         ).to_dict()
         return context

@@ -15,7 +15,7 @@
         <div>
             <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Was wurde aus …?</h1>
             <p class="text-gray-600 dark:text-gray-400 max-w-2xl">
-                Beschlüsse {% if active_body %}der {{ active_body.get_display_name }}{% endif %} und ihr Umsetzungsstand,
+                Beschlüsse{% if active_body %} aus {{ active_body.get_display_name }}{% endif %} und ihr Umsetzungsstand,
                 gemeldet von der Verwaltung. Abonnieren Sie einzelne Beschlüsse, um bei Änderungen informiert zu werden.
             </p>
         </div>
@@ -26,8 +26,8 @@
         <i data-lucide="gavel" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4"></i>
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Noch keine Beschlusskontrolle veröffentlicht</h2>
         <p class="text-gray-600 dark:text-gray-400 max-w-xl mx-auto">
-            Die Verwaltung {% if active_body %}der {{ active_body.get_display_name }}{% endif %} veröffentlicht den Umsetzungsstand
-            ihrer Beschlüsse hier noch nicht. Kommunen mit mandari Session können das mit einem Klick freischalten.
+            Die Verwaltung{% if active_body %} von {{ active_body.get_display_name }}{% endif %} veröffentlicht den Umsetzungsstand
+            ihrer Beschlüsse hier noch nicht.
         </p>
     </div>
     {% else %}

@@ -201,14 +201,17 @@ class TestSitzungsUndVorgangsseiten:
         assert f"/insight/termine/{welt['sitzung'].id}/" not in seite
         assert "TOP 1" not in seite
 
-    def test_dokumentliste_ohne_zurueckgenommene_sitzung(self, welt: dict[str, Any]) -> None:
+    def test_dokumentkontext_ohne_zurueckgenommene_sitzung(self, welt: dict[str, Any]) -> None:
+        # Kontext der Anlagen (Gremium, Sitzung, TOP) für die RIS-Dateien in Work; die Liste im
+        # Bürgerportal leitet seit Issue #783 in die Suche weiter
+        from insight_core.views import _annotate_files_with_context
+
+        anlage = welt["anlage"]
+        _annotate_files_with_context([anlage])
+        assert anlage.context_info is not None and anlage.context_info["meeting"] == welt["sitzung"]
         welt["sitzung"].mark_deleted()
-        client = Client()
-        client.get(f"/insight/kommune/{welt['body'].id}/")
-        seite = client.get("/insight/dokumente/").content.decode()
-        assert "Begründung" in seite
-        assert f"/insight/termine/{welt['sitzung'].id}/" not in seite
-        assert "TOP 1" not in seite
+        _annotate_files_with_context([anlage])
+        assert anlage.context_info is None
 
     def test_fremdquelle_bleibt_transparent(self, welt: dict[str, Any]) -> None:
         fremd_sitzung = OParlMeeting.objects.create(

@@ -1,7 +1,7 @@
 {% extends "base_insight.html" %}
 {% load l10n %}
 
-{% block title %}{% if active_body %}{{ active_body.get_display_name }} - Ratsinformationen{% else %}Mandari Insight Portal{% endif %}{% endblock %}
+{% block title %}{% if active_body %}{{ active_body.get_display_name }} - Ratsinformationen{% else %}mandari Insight{% endif %}{% endblock %}
 
 {% block meta_description %}{% if active_body %}Ratsinformationen für {{ active_body.get_display_name }}: Sitzungen, Vorgänge, Gremien und Personen transparent einsehen.{% else %}Kommunalpolitische Transparenz: Ratsinformationen durchsuchen und verstehen.{% endif %}{% endblock %}
 
@@ -30,7 +30,7 @@
             {% if active_body.description %}
             <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-5">{{ active_body.description }}</p>
             {% else %}
-            <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-5">Alle &ouml;ffentlichen Ratsinformationen deiner Stadt &ndash; Sitzungen, Vorg&auml;nge, Gremien und die Menschen, die Entscheidungen treffen.</p>
+            <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-5">Alle &ouml;ffentlichen Ratsinformationen Ihrer Kommune &ndash; Sitzungen, Vorg&auml;nge, Gremien und die Menschen, die Entscheidungen treffen.</p>
             {% endif %}
 
             <!-- Search Mode Tabs -->
@@ -55,7 +55,7 @@
 
             <!-- Tab 1: Topic Search (HTMX) -->
             <div x-show="mode === 'topics'" x-cloak class="max-w-xl">
-                <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Suche nach Themen, Gremien, Personen oder Dokumenten in den Ratsinformationen.</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Suchen Sie nach Themen, Gremien, Personen oder Dokumenten in den Ratsinformationen.</p>
                 <div class="relative">
                     <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 pointer-events-none"></i>
                     <input type="text"
@@ -75,7 +75,7 @@
 
             <!-- Tab 2: Neighborhood Search (Alpine.js) -->
             <div x-show="mode === 'neighborhood'" x-cloak class="max-w-xl">
-                <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Gib deine Stra&szlig;e oder einen Stadtteil ein &ndash; wir zeigen dir alle Vorg&auml;nge im Umkreis von 500&thinsp;m, z.&thinsp;B. Bauvorhaben, Verkehrsplanungen oder Spielplatz-Sanierungen.</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Geben Sie Ihre Stra&szlig;e oder einen Stadtteil ein &ndash; wir zeigen Ihnen alle Vorg&auml;nge im Umkreis von 500&thinsp;m, z.&thinsp;B. Bauvorhaben, Verkehrsplanungen oder Spielplatz-Sanierungen.</p>
                 <div class="relative">
                     <i data-lucide="map-pin" class="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 pointer-events-none"></i>
                     <input type="text"
@@ -242,7 +242,7 @@
 </section>
 
 <section class="fade-up d2 mb-10">
-    <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Was m&ouml;chtest du wissen?</h2>
+    <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Was m&ouml;chten Sie wissen?</h2>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
         <a href="{% url 'insight_core:insight:question_portal' %}"
@@ -251,15 +251,15 @@
                 <i data-lucide="message-circle-question" class="w-5 h-5 text-primary-500"></i>
             </div>
             <div class="min-w-0">
-                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{% if insight_questions_enabled %}Frag deine Ratsmitglieder{% else %}Ratsfragen{% endif %}</div>
+                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{% if insight_questions_enabled %}Fragen Sie Ihre Ratsmitglieder{% else %}Ratsfragen{% endif %}</div>
                 <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
                     {% if not insight_questions_enabled %}{% if stats.public_questions %}{{ stats.public_questions }} bisherige Fragen und Antworten &ndash; neue Fragen sind derzeit pausiert.{% else %}Neue Fragen an die Ratsmitglieder sind derzeit pausiert.{% endif %}
-                    {% elif stats.public_questions %}{{ stats.public_questions }} &ouml;ffentliche Fragen und Antworten &ndash; stelle deine eigene.{% else %}Stelle &ouml;ffentliche Fragen an die Menschen, die Entscheidungen treffen.{% endif %}
+                    {% elif stats.public_questions %}{{ stats.public_questions }} &ouml;ffentliche Fragen und Antworten &ndash; stellen Sie Ihre eigene.{% else %}Stellen Sie &ouml;ffentliche Fragen an die Menschen, die Entscheidungen treffen.{% endif %}
                 </p>
             </div>
         </a>
 
-        <a href="{% url 'insight_core:insight:file_list' %}"
+        <a href="{% url 'insight_core:insight:search' %}?type=file"
             class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all flex items-start gap-4">
             <div class="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                 <i data-lucide="file-search" class="w-5 h-5 text-emerald-500"></i>

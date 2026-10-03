@@ -108,7 +108,7 @@ class Command(BaseCommand):
                 },
             )
 
-            subject = f"Dein Mandari-Digest: {alert_count} neue Treffer ({subscriber.body.get_display_name()})"
+            subject = f"Ihr mandari-Digest: {alert_count} neue Treffer ({subscriber.body.get_display_name()})"
 
             # Send
             try:
