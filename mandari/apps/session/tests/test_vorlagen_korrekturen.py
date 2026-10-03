@@ -41,7 +41,7 @@ from apps.session.models import (
     SessionTenant,
     SessionUser,
 )
-from apps.session.services import numbering_service
+from apps.session.services import agenda_service, numbering_service
 from apps.session.services.application_service import convert_to_paper
 
 pytestmark = pytest.mark.django_db
@@ -281,9 +281,12 @@ def test_freigegebene_vorlage_bietet_nur_noch_sichtbarkeit_der_anlagen_an(welt: 
 # =============================================================================
 
 
-def test_top_aus_beratungsfolge_vor_nummernvergabe_und_danach(welt: Any) -> None:
-    SessionNumberRange.objects.filter(tenant=welt.tenant).update(assign_on="release")
-    paper = SessionPaper.objects.create(tenant=welt.tenant, name="Testvorlage Freigabe-Nummer", is_public=True)
+def test_top_aus_beratungsfolge_ohne_nummer_ohne_praefix(welt: Any) -> None:
+    # Freigegebene Vorlage ohne Nummer (kein Nummernkreis): TOP nur mit dem Titel, ohne „: “-Präfix
+    SessionNumberRange.objects.filter(tenant=welt.tenant).delete()
+    paper = SessionPaper.objects.create(
+        tenant=welt.tenant, name="Testvorlage ohne Nummer", is_public=True, status="approved"
+    )
     assert paper.reference == ""
     sitzung = SessionMeeting.objects.create(
         tenant=welt.tenant, name="HA", organization=welt.gremium, start=timezone.now() + timedelta(days=7)
@@ -292,6 +295,21 @@ def test_top_aus_beratungsfolge_vor_nummernvergabe_und_danach(welt: Any) -> None
     client = _client(welt.admin)
     client.post(f"/session/{welt.tenant.slug}/consultations/{station.id}/schedule/")
     top = SessionAgendaItem.objects.get(meeting=sitzung, paper=paper)
+    assert top.name == "Testvorlage ohne Nummer"
+
+
+def test_top_vor_nummernvergabe_erhaelt_die_nummer_bei_der_freigabe(welt: Any) -> None:
+    # Bestand aus der Zeit, als sich auch Entwürfe terminieren ließen (vor Issue #721): Die Freigabe zieht die
+    # Nummer im TOP-Namen nach
+    SessionNumberRange.objects.filter(tenant=welt.tenant).update(assign_on="release")
+    paper = SessionPaper.objects.create(tenant=welt.tenant, name="Testvorlage Freigabe-Nummer", is_public=True)
+    assert paper.reference == ""
+    sitzung = SessionMeeting.objects.create(
+        tenant=welt.tenant, name="HA", organization=welt.gremium, start=timezone.now() + timedelta(days=7)
+    )
+    top = SessionAgendaItem.objects.create(
+        meeting=sitzung, number="1", name=agenda_service.paper_item_name(paper), paper=paper
+    )
     assert top.name == "Testvorlage Freigabe-Nummer"
 
     paper.status = "approved"

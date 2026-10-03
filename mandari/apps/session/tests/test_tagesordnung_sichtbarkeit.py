@@ -41,8 +41,13 @@ def welt() -> dict[str, Any]:
     geheim_sitzung = SessionMeeting.objects.create(
         tenant=tenant, name="Klausur HA", organization=gremium, start=timezone.now(), is_public=False
     )
-    oe_vorlage = SessionPaper.objects.create(tenant=tenant, name="Radweg Hauptstraße", is_public=True)
-    noe_vorlage = SessionPaper.objects.create(tenant=tenant, name="Personalie Kämmerei", is_public=False)
+    # Freigegeben: Nur freigegebene Vorlagen sind als Vorlage eines TOP wählbar (Issue #721)
+    oe_vorlage = SessionPaper.objects.create(
+        tenant=tenant, name="Radweg Hauptstraße", is_public=True, status="approved"
+    )
+    noe_vorlage = SessionPaper.objects.create(
+        tenant=tenant, name="Personalie Kämmerei", is_public=False, status="approved"
+    )
     oe_top = SessionAgendaItem.objects.create(meeting=sitzung, name="Radweg", number="1", order=1, paper=oe_vorlage)
     noe_top = SessionAgendaItem.objects.create(
         meeting=sitzung, name="Grundstücksverkauf Parzelle 7", number="2", order=2, is_public=False

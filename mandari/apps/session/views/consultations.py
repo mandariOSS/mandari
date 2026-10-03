@@ -8,7 +8,8 @@ Entscheidung im Rat). Die Views verwalten die Kette der Beratungsstationen
 
 - Station anlegen/bearbeiten/löschen/umsortieren (Berechtigung: edit_papers)
 - Station terminieren = TOP auf der Zielsitzung anlegen (edit_meetings),
-  mit Ö/NÖ- und Nachtrags-Logik der Tagesordnungsverwaltung (Issue #26)
+  mit Ö/NÖ- und Nachtrags-Logik der Tagesordnungsverwaltung (Issue #26);
+  nur für freigegebene Vorlagen (Issue #721) – Stationen planen lässt sich schon im Entwurf
 - Weiterleitung an die nächste Station nach vorliegendem Ergebnis
 
 Das Beschlussergebnis je Station schreibt signals.sync_consultation_result
@@ -224,7 +225,7 @@ class ConsultationMoveView(ConsultationBaseView):
 
 def schedule_consultation(view, request, consultation):
     """
-    Station terminieren: TOP auf der Zielsitzung anlegen und verknüpfen.
+    Station terminieren: TOP auf der Zielsitzung anlegen und verknüpfen – nur für freigegebene Vorlagen.
 
     Nutzt die Nummerierungs-/Ö-NÖ-Logik der Tagesordnungsverwaltung
     (Issue #26): Der TOP übernimmt die Sichtbarkeit der Vorlage, wird bei
@@ -235,6 +236,11 @@ def schedule_consultation(view, request, consultation):
 
     if consultation.agenda_item_id:
         messages.info(request, "Diese Station hat bereits einen Tagesordnungspunkt.")
+        return False
+    # Nur freigegebene Vorlagen kommen auf die Tagesordnung (Issue #721)
+    blocker = agenda_service.scheduling_error(paper)
+    if blocker:
+        messages.error(request, blocker)
         return False
 
     meeting = consultation.meeting

@@ -41,7 +41,7 @@ from ..models import (
     SessionUser,
 )
 from ..permissions import SessionViewMixin, role_permissions
-from ..services import delegation_service, four_eyes_service, paper_version_service
+from ..services import agenda_service, delegation_service, four_eyes_service, paper_version_service
 from ..visibility import agenda_item_visible, meeting_visible, paper_visible
 from .nexturl import safe_next_url
 
@@ -353,6 +353,8 @@ class PaperDetailView(SessionViewMixin, DetailView):
             )
         context["consultation_can_edit"] = self.has_permission("edit_papers")
         context["consultation_can_schedule"] = self.has_permission("edit_meetings")
+        # Terminieren erst nach der Freigabe (Issue #721); Stationen planen geht schon im Entwurf
+        context["consultation_schedule_blocker"] = agenda_service.scheduling_error(paper)
 
         # Mitzeichnungslauf (Issue #81)
         from ..services import cosign_service

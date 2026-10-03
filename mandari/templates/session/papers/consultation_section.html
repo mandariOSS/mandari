@@ -1,7 +1,7 @@
 {% comment %}
 Beratungsfolge einer Vorlage (Issue #34).
 Kontext: paper, consultations, consultation_can_edit, consultation_can_schedule,
-consultation_roles, consultation_results, consultation_organizations,
+consultation_schedule_blocker (Terminieren erst nach der Freigabe, Issue #721), consultation_roles, consultation_results, consultation_organizations,
 consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sichtrecht nicht nennen.
 {% endcomment %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -13,6 +13,11 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Weg der Vorlage durch die Gremien — Vorberatung bis Entscheidung.
         </p>
+        {% if consultation_can_schedule and consultation_schedule_blocker and consultations %}
+        <p class="text-xs text-amber-700 dark:text-amber-400 mt-1" data-testid="terminieren-nach-freigabe">
+            Tagesordnungspunkte lassen sich erst nach der Freigabe der Vorlage anlegen.
+        </p>
+        {% endif %}
     </div>
 
     {% if consultations %}
@@ -117,7 +122,7 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                 </div>
 
                 <div class="flex items-center gap-1 flex-shrink-0">
-                    {% if consultation_can_schedule and not station.agenda_item and station.meeting and not station.noe_hidden %}
+                    {% if consultation_can_schedule and not consultation_schedule_blocker and not station.agenda_item and station.meeting and not station.noe_hidden %}
                     <form method="post" action="{% url 'session:consultation_schedule' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
                         {% csrf_token %}
                         <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
@@ -126,7 +131,7 @@ consultation_meetings, tenant_slug. station.noe_hidden: Sitzung/TOP ohne NÖ-Sic
                         </button>
                     </form>
                     {% endif %}
-                    {% if consultation_can_schedule and station.is_done and not forloop.last %}
+                    {% if consultation_can_schedule and not consultation_schedule_blocker and station.is_done and not forloop.last %}
                     <form method="post" action="{% url 'session:consultation_forward' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
                         {% csrf_token %}
                         <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"

@@ -222,10 +222,10 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
             messages.success(
                 request,
                 f"Antrag wurde in eine Vorlage umgewandelt – {self.session_tenant.reference_label} "
-                f"{paper.display_reference}.",
+                f"{paper.display_reference}. Die Vorlage ist im Entwurf und durchläuft den Freigabelauf.",
             )
         else:
-            messages.info(request, f'Der Antrag wurde bereits in die Vorlage "{paper.reference}" umgewandelt.')
+            messages.info(request, f'Der Antrag wurde bereits in die Vorlage "{paper.display_reference}" umgewandelt.')
 
         return redirect(
             "session:paper_detail",
