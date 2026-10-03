@@ -1,0 +1,8 @@
+{% comment %}
+Letzte Brotkrume einer Detailseite in der Kopfzeile (Issue #783, Stufe 2), im Block „brotkrumen_aktuell“:
+  {% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ meeting.get_display_name }}</c-insight.brotkrume>{% endblock %}
+{% endcomment %}
+<li class="flex items-center gap-1.5 min-w-0">
+    <i data-lucide="chevron-right" class="w-3.5 h-3.5 shrink-0 text-gray-400" aria-hidden="true"></i>
+    <span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100 truncate">{{ slot }}</span>
+</li>

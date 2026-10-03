@@ -1,0 +1,14 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Kopfband einer Seite des Bürgerportals (Issue #783, Stufe 2): Titel, ein erklärender Satz und darunter höchstens
+eine Aktion bzw. die Filter. Fläche „grau“ (Listen, Detail) oder „marke“ (Übersicht, Kommunenauswahl).
+  <c-insight.kopfband titel="Vorgänge" text="Alle Vorlagen und Anträge …">…Filter…</c-insight.kopfband>
+{% endcomment %}
+<c-vars titel="" text="" ton="grau" />
+<section class="{% if ton == 'marke' %}bg-primary-100 dark:bg-primary-950{% else %}bg-band-grau{% endif %}" {{ attrs }}>
+    <div class="max-w-6xl px-4 sm:px-8 py-8 sm:py-10">
+        <h1 class="text-[1.75rem] sm:text-[2.25rem] font-bold tracking-tight leading-tight text-gray-900 dark:text-white break-words">{{ titel }}</h1>
+        {% if text %}<p class="mt-2 max-w-2xl text-[1.0625rem] leading-relaxed text-gray-700 dark:text-gray-300">{{ text }}</p>{% endif %}
+        {% if slot %}<div class="mt-6">{{ slot }}</div>{% endif %}
+    </div>
+</section>

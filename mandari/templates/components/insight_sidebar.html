@@ -1,12 +1,15 @@
 {% load static %}
-{# Seitenleiste des Bürgerportals (Issue #783): sieben Bereiche, Beschlüsse und Ratsfragen nur mit Inhalten #}
+{% comment %}
+Seitenleiste des Bürgerportals (Issue #783, Variante A): eigene graue Fläche ohne Trennlinien, oben die Kommune als
+weiße Schaltfläche, sieben Bereiche (Beschlüsse und Ratsfragen nur mit Inhalten), unten „Für Sie“.
+Geschlossen schon im HTML (mobil außerhalb und unsichtbar, ab lg sichtbar); Alpine öffnet nur – sonst fährt die
+Leiste bei jedem Seitenaufruf sichtbar heraus (#763). Mobil geöffnet ist sie ein modaler Dialog.
+{% endcomment %}
 
 {# Mobil: Abdunklung hinter dem geöffneten Menü #}
 <div x-show="sidebarOpen" x-transition.opacity @click="closeMenu()"
-    class="fixed inset-0 z-40 bg-black/40 lg:hidden" aria-hidden="true" x-cloak></div>
+    class="fixed inset-0 z-40 bg-gray-950/40 dark:bg-black/60 lg:hidden" aria-hidden="true" x-cloak></div>
 
-{% comment %}Geschlossen schon im HTML (mobil außerhalb und unsichtbar, ab lg sichtbar); Alpine öffnet nur – sonst fährt
-die Leiste bei jedem Seitenaufruf sichtbar heraus (#763). Mobil geöffnet ist sie ein modaler Dialog.{% endcomment %}
 <aside id="insight-navigation"
     :class="sidebarOpen && '!translate-x-0 !visible'"
     :role="sidebarOpen ? 'dialog' : null"
@@ -14,86 +17,96 @@ die Leiste bei jedem Seitenaufruf sichtbar heraus (#763). Mobil geöffnet ist si
     x-trap.noscroll="sidebarOpen"
     @keydown.escape.window="closeMenu()"
     aria-label="Navigation"
-    class="fixed inset-y-0 left-0 z-50 w-[288px] max-w-[85vw] lg:w-[260px] flex flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 -translate-x-full invisible lg:translate-x-0 lg:visible transition-[transform,visibility] duration-300">
+    class="fixed inset-y-0 left-0 z-50 w-[86%] max-w-[22rem] lg:w-[17rem] flex flex-col overflow-y-auto bg-band-grau -translate-x-full invisible lg:translate-x-0 lg:visible transition-[transform,visibility] duration-300 motion-reduce:transition-none">
 
-    <button type="button" @click="closeMenu()"
-        class="lg:hidden absolute right-2 top-2.5 z-10 touch-target inline-flex items-center gap-1.5 px-3 rounded-lg bg-white dark:bg-gray-900 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800">
-        <i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i> Schließen
-    </button>
-
-    {% if insight_portal %}
-    {# Bürgerportal einer Körperschaft (Issue #317): eigener Name und eigenes Logo, Kommune fest #}
-    {% if insight_portal.accent_color %}<div class="portal-accent-bar" aria-hidden="true"></div>{% endif %}
-    <a href="{{ insight_portal.home_url }}" class="flex items-center gap-3 min-h-16 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        {% if insight_portal.logo_url %}
-        <img {{ insight_portal.logo_attrs }} alt="Logo {{ insight_portal.name }}" class="w-9 h-9 object-contain flex-shrink-0">
-        {% endif %}
-        <span class="flex-1 min-w-0">
-            <span class="block text-sm font-bold text-gray-900 dark:text-white leading-tight truncate">{{ insight_portal.name }}</span>
-            <span class="block text-xs font-medium text-primary-700 dark:text-primary-300">Bürgerportal</span>
-        </span>
-    </a>
-    {% else %}
-    <a href="{% url 'insight_core:insight:portal_home' %}" class="flex items-center h-16 px-4 border-b border-gray-200 dark:border-gray-700">
-        <span class="flex items-baseline">
-            <span class="text-[17px] font-bold text-gray-900 dark:text-white tracking-tight leading-none">mandari</span><span class="text-[17px] font-bold leading-none text-indigo-600 dark:text-indigo-400" aria-hidden="true">.</span>
-            <span class="ml-1.5 text-[15px] font-semibold leading-none text-primary-700 dark:text-primary-300">Insight</span>
-        </span>
-    </a>
-
-    {# Kommune wechseln #}
-    <button type="button" @click="openCityModal()" aria-haspopup="dialog"
-        class="w-full flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left">
-        <span class="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
-            {% if active_body and active_body.logo %}
-            <img {{ active_body.logo_img_attrs }} alt="" class="w-8 h-8 object-contain">
-            {% else %}
-            <i data-lucide="landmark" class="w-4 h-4 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
-            {% endif %}
-        </span>
-        <span class="flex-1 min-w-0">
-            <span class="block text-sm font-semibold text-gray-900 dark:text-white leading-tight truncate">
-                {% if active_body %}{{ active_body.get_display_name }}{% else %}Alle Kommunen{% endif %}
+    <div class="h-16 shrink-0 flex items-center justify-between gap-3 px-5 lg:px-5">
+        {% if insight_portal %}
+        {# Bürgerportal einer Körperschaft (Issue #317): eigener Name und eigenes Logo, Kommune fest #}
+        <a href="{{ insight_portal.home_url }}" class="flex items-center gap-2.5 min-w-0">
+            {% if insight_portal.logo_url %}<img {{ insight_portal.logo_attrs }} alt="" class="w-8 h-8 rounded-md bg-white object-contain p-0.5 shrink-0">{% endif %}
+            <span class="min-w-0">
+                <span class="block text-[0.95rem] font-bold leading-tight text-gray-900 dark:text-white truncate">{{ insight_portal.name }}</span>
+                <span class="block text-[0.8125rem] font-medium text-primary-700 dark:text-primary-300">Bürgerportal</span>
             </span>
-            <span class="block text-xs text-gray-600 dark:text-gray-400">Kommune wechseln</span>
-        </span>
-        <i data-lucide="chevrons-up-down" class="w-4 h-4 text-gray-500 flex-shrink-0" aria-hidden="true"></i>
-    </button>
+        </a>
+        {% else %}
+        <a href="{% url 'insight_core:insight:portal_home' %}" class="inline-flex items-baseline gap-1.5 leading-none text-gray-900 dark:text-white" aria-label="mandari Insight, Übersicht">
+            <span class="text-[1.3rem] font-bold tracking-tight">mandari<span class="text-indigo-600 dark:text-indigo-400" aria-hidden="true">.</span></span>
+            <span class="text-[1.05rem] font-semibold text-primary-700 dark:text-primary-300">Insight</span>
+        </a>
+        {% endif %}
+        <button type="button" @click="closeMenu()"
+            class="lg:hidden inline-flex items-center gap-1.5 h-11 pl-2.5 pr-3 rounded-lg ring-1 ring-inset ring-gray-300 dark:ring-gray-700 text-[0.95rem] font-medium text-gray-800 dark:text-gray-200">
+            <i data-lucide="x" class="w-[18px] h-[18px]" aria-hidden="true"></i> Schließen
+        </button>
+    </div>
+
+    {% if not insight_portal %}
+    {# Kommune wechseln: weiße Schaltfläche auf der grauen Leiste #}
+    <div class="px-3">
+        <button type="button" @click="openCityModal()" aria-haspopup="dialog" data-kommune-wechseln
+            class="w-full flex items-center gap-3 rounded-xl bg-band-hell px-3 py-2.5 text-left ring-1 ring-transparent hover:ring-gray-300 dark:hover:ring-gray-600 transition-shadow">
+            <span class="w-9 h-9 rounded-lg bg-white flex items-center justify-center shrink-0 overflow-hidden {% if not active_body.logo %}bg-band-grau{% endif %}">
+                {% if active_body and active_body.logo %}
+                <img {{ active_body.logo_img_attrs }} alt="" class="w-9 h-9 object-contain p-1">
+                {% else %}
+                <i data-lucide="landmark" class="w-[18px] h-[18px] text-gray-600 dark:text-gray-300" aria-hidden="true"></i>
+                {% endif %}
+            </span>
+            <span class="flex-1 min-w-0">
+                <span class="block text-[0.95rem] font-semibold leading-tight text-gray-900 dark:text-white truncate">{% if active_body %}{{ active_body.get_display_name }}{% else %}Kommune wählen{% endif %}</span>
+                <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if active_body %}Kommune wechseln{% else %}Nach Name oder Postleitzahl{% endif %}</span>
+            </span>
+            <i data-lucide="chevrons-up-down" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+        </button>
+    </div>
     {% endif %}
 
-    <nav class="flex-1 overflow-y-auto pt-3 px-2" aria-label="Bereiche">
-        <c-insight.nav-link href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" icon="house" area="uebersicht">Übersicht</c-insight.nav-link>
-        <c-insight.nav-link href="{% url 'insight_core:insight:meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.nav-link>
-        <c-insight.nav-link href="{% url 'insight_core:insight:paper_list' %}" icon="file-text" area="vorgaenge">Vorgänge</c-insight.nav-link>
-        {% if insight_decisions_published %}
-        <c-insight.nav-link href="{% url 'insight_core:insight:decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.nav-link>
-        {% endif %}
-        <c-insight.nav-link href="{% url 'insight_core:insight:organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.nav-link>
-        <c-insight.nav-link href="{% url 'insight_core:insight:person_list' %}" icon="users" area="personen">Personen</c-insight.nav-link>
-        {% if insight_questions_enabled %}
-        <c-insight.nav-link href="{% url 'insight_core:insight:question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.nav-link>
-        {% endif %}
-        <c-insight.nav-link href="{% url 'insight_core:insight:map' %}" icon="map" area="karte">Karte</c-insight.nav-link>
-        <c-insight.nav-link href="{% url 'insight_core:insight:chat' %}" icon="sparkle" area="ki">KI-Assistent</c-insight.nav-link>
+    <nav class="mt-5 px-3" aria-label="Bereiche">
+        <ul class="space-y-0.5">
+            <li><c-insight.nav-link href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" icon="house" area="uebersicht">Übersicht</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:paper_list' %}" icon="file-text" area="vorgaenge">Vorgänge</c-insight.nav-link></li>
+            {% if insight_decisions_published %}
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.nav-link></li>
+            {% endif %}
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:person_list' %}" icon="users" area="personen">Personen</c-insight.nav-link></li>
+            {% if insight_questions_enabled %}
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.nav-link></li>
+            {% endif %}
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:map' %}" icon="map" area="karte">Karte</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:chat' %}" icon="sparkle" area="ki">KI-Assistent</c-insight.nav-link></li>
+        </ul>
     </nav>
 
-    {# Für Sie: Merkliste, Benachrichtigungen, Konto #}
-    <div class="px-2 py-2 border-t border-gray-200 dark:border-gray-700" role="group" aria-label="Für Sie">
-        <c-insight.nav-link href="{% url 'insight_core:insight:saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.nav-link>
-        {% if insight_subscriptions_enabled %}
-        <c-insight.nav-link href="{% url 'insight_core:insight:notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.nav-link>
-        {% endif %}
-        {% if request.user.is_authenticated %}
-        <div class="flex items-center gap-2.5 px-3 py-2 text-sm">
-            <i data-lucide="circle-user" class="w-[18px] h-[18px] flex-shrink-0 text-gray-500" aria-hidden="true"></i>
-            <span class="flex-1 min-w-0 truncate text-gray-700 dark:text-gray-300">{{ request.user.get_full_name|default:request.user.email }}</span>
-            <a href="{% url 'accounts:logout' %}" class="text-sm font-medium text-gray-700 dark:text-gray-300 underline-offset-4 hover:underline">Abmelden</a>
-        </div>
-        {% else %}
-        <c-insight.nav-link href="{% url 'accounts:login' %}" icon="log-in">Anmelden</c-insight.nav-link>
-        {% endif %}
-        {% if insight_portal.can_leave %}
-        <c-insight.nav-link href="{% url 'insight_core:insight:clear_body' %}" icon="layout-grid">Alle Kommunen im Bürgerportal</c-insight.nav-link>
-        {% endif %}
+    {# Für Sie: Merkliste, Benachrichtigungen, Konto; mobil auch der Dunkelmodus #}
+    <div class="mt-auto px-3 pt-8 pb-[max(1.25rem,env(safe-area-inset-bottom))]" role="group" aria-label="Für Sie">
+        <ul class="space-y-0.5">
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.nav-link></li>
+            {% if insight_subscriptions_enabled %}
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.nav-link></li>
+            {% endif %}
+            {% if request.user.is_authenticated %}
+            <li class="flex items-center gap-3 h-10 px-3 text-[0.9rem]">
+                <i data-lucide="circle-user" class="w-[18px] h-[18px] shrink-0 text-gray-500" aria-hidden="true"></i>
+                <span class="flex-1 min-w-0 truncate text-gray-700 dark:text-gray-300">{{ request.user.get_full_name|default:request.user.email }}</span>
+                <a href="{% url 'accounts:logout' %}" class="font-medium text-gray-700 dark:text-gray-300 underline-offset-4 hover:underline">Abmelden</a>
+            </li>
+            {% else %}
+            <li><c-insight.nav-link href="{% url 'accounts:login' %}" icon="log-in">Anmelden</c-insight.nav-link></li>
+            {% endif %}
+            {% if insight_portal.can_leave %}
+            <li><c-insight.nav-link href="{% url 'insight_core:insight:clear_body' %}" icon="layout-grid">Alle Kommunen im Bürgerportal</c-insight.nav-link></li>
+            {% endif %}
+            <li class="sm:hidden">
+                <button type="button" @click="darkMode=!darkMode" :aria-pressed="darkMode.toString()" aria-pressed="false"
+                    class="w-full flex items-center gap-3 h-10 px-3 rounded-lg text-[0.95rem] font-medium text-gray-700 dark:text-gray-300 hover:bg-band-hell">
+                    <i x-show="!darkMode" data-lucide="moon" class="w-[18px] h-[18px] text-gray-500" aria-hidden="true"></i>
+                    <i x-show="darkMode" data-lucide="sun" class="w-[18px] h-[18px] text-gray-500" aria-hidden="true" x-cloak></i>
+                    Dunkler Modus
+                </button>
+            </li>
+        </ul>
     </div>
 </aside>

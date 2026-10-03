@@ -1,0 +1,23 @@
+{# Hinweise zur gewählten Kommune über dem Seiteninhalt: Archiv, veralteter Datenstand, Hinweis der Kommune (#618, #734) #}
+{% if active_body_archive or active_body_stale_days or active_body_notice %}
+<div class="px-4 sm:px-8 pt-5 space-y-3">
+    {% if active_body_archive %}
+    <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-900 dark:text-amber-200" role="status" data-testid="archiv-hinweis">
+        <i data-lucide="archive" class="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" aria-hidden="true"></i>
+        <div>
+            <strong>Archiv – nicht mehr aktuell.</strong> Die Kommune veröffentlicht hier {% if active_body_archive.since %}seit dem {{ active_body_archive.since|date:"d.m.Y" }} {% endif %}keine neuen Ratsinformationen mehr. Die Inhalte bleiben als Archiv lesbar, werden aber nicht mehr aktualisiert.
+        </div>
+    </div>
+    {% elif active_body_stale_days %}
+    <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-900 dark:text-amber-200" role="status">
+        <i data-lucide="alert-triangle" class="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" aria-hidden="true"></i>
+        <div>
+            <strong>Datenstand: {{ active_body.last_sync|date:"d.m.Y" }}</strong> — die Daten dieser Kommune konnten seit {{ active_body_stale_days }} Tagen nicht aktualisiert werden, weil das Ratsinformationssystem derzeit nicht erreichbar ist. Inhalte können veraltet sein.
+        </div>
+    </div>
+    {% endif %}
+    {% if active_body_notice %}
+    <c-ui.alert variant="warning" icon="info" data-testid="kommune-hinweis">{{ active_body_notice|linebreaksbr }}</c-ui.alert>
+    {% endif %}
+</div>
+{% endif %}

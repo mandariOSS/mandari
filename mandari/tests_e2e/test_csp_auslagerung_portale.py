@@ -55,18 +55,44 @@ def _kommune_waehlen(page: Any, goto: Any, body: OParlBody) -> None:
 
 
 class TestInsight:
-    def test_kommunenauswahl_filtert_sofort(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
+    def test_kommunenauswahl_schlaegt_vor(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
+        """Kommunenwechsel (#783): Vorschläge vom Server, Pfeiltasten in die Liste, keine Liste aller Kommunen."""
         _kommune(1, "Nordstadt")
         _kommune(2, "Südheim")
         goto("/insight/")
-        wait_for_component(page, "bodySelectApp")
+        wait_for_component(page, "kommunenWahl")
+        expect(page.get_by_text("Südheim")).to_have_count(0)
 
-        page.fill("#body-select-search", "nord")
-        expect(page.get_by_text("1 von 2 Kommunen")).to_be_visible()
-        expect(page.locator("[x-ref=grid] [data-search]", has_text="Südheim")).to_be_hidden()
-        page.fill("#body-select-search", "gibtsnicht")
-        expect(page.get_by_text("Keine Kommune gefunden", exact=True)).to_be_visible()
+        page.fill("#auswahl-eingabe", "nord")
+        treffer = page.locator("#auswahl-ergebnisse a[data-kommune-ziel]", has_text="Nordstadt")
+        expect(treffer).to_be_visible()
+        expect(page.locator("#auswahl-ergebnisse", has_text="Südheim")).to_have_count(0)
+        page.keyboard.press("ArrowDown")
+        expect(treffer).to_be_focused()
+        page.keyboard.press("Escape")
+        expect(page.locator("#auswahl-eingabe")).to_be_focused()
+        page.fill("#auswahl-eingabe", "gibtsnicht")
+        expect(page.get_by_text("Keine Kommune gefunden.", exact=True)).to_be_visible()
         problems.assert_clean("Kommunenauswahl")
+
+    def test_kommune_wechseln_als_dialog(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
+        """Dialog: Fokus im Suchfeld, Escape schließt, der Fokus kehrt auf den Auslöser zurück (#783)."""
+        body = _kommune(4, "Weststadt")
+        _kommune(5, "Oststadt")
+        _kommune_waehlen(page, goto, body)
+        goto("/insight/vorgaenge/")
+        ausloeser = page.locator("[data-kommune-wechseln]:visible").first
+        ausloeser.click()
+        dialog = page.get_by_role("dialog", name="Kommune wechseln")
+        expect(dialog).to_be_visible()
+        expect(page.locator("#kommune-dialog-eingabe")).to_be_focused()
+        expect(dialog.get_by_text("Zuletzt besucht")).to_be_visible()
+        page.keyboard.type("osts")
+        expect(dialog.locator("a[data-kommune-ziel]", has_text="Oststadt")).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(dialog).to_be_hidden()
+        expect(ausloeser).to_be_focused()
+        problems.assert_clean("Kommune wechseln")
 
     def test_merkliste_laedt_gemerkte_vorgaenge(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
         body = _kommune(3, "Merkstadt")

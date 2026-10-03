@@ -83,6 +83,13 @@ export const neighborhoodApp = defineComponent(() => ({
         this.updateMap()
         void this.fetchResults()
       })
+    } else if (params.get('q')) {
+      // Adresse aus dem Band „Was passiert in Ihrer Nähe?“ der Übersicht: ersten Vorschlag übernehmen
+      this.searchQuery = (params.get('q') ?? '').slice(0, 120)
+      void this.fetchSuggestions().then(() => {
+        const erster = this.suggestions[0]
+        if (erster) this.selectSuggestion(erster)
+      })
     }
   },
 

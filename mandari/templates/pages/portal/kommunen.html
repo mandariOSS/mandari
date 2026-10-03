@@ -1,0 +1,64 @@
+{% extends "base_insight.html" %}
+
+{% block title %}Kommune w&auml;hlen{% endblock %}
+
+{% comment %}
+Kommune wählen ohne JavaScript (Issue #783, Stufe 2): Suche per Formular (höchstens acht Vorschläge) und Stöbern
+Land → Kreis → (Gemeindeverband →) Kommune über Links. Mit JavaScript übernimmt der Dialog dasselbe.
+{% endcomment %}
+{% block page %}
+<c-insight.kopfband titel="Kommune wählen" text="Suchen Sie nach dem Namen, einem Ortsteil oder der Postleitzahl – oder wählen Sie Bundesland und Kreis.">
+    <form action="{% url 'insight_core:insight:kommunen' %}" method="get" role="search" class="flex flex-col sm:flex-row gap-3 max-w-2xl">
+        <label for="kommunen-suche" class="sr-only">Kommune oder Postleitzahl</label>
+        <input id="kommunen-suche" type="search" name="q" value="{{ eingabe }}" placeholder="Kommune oder Postleitzahl" autocomplete="off"
+            class="h-12 w-full sm:w-auto sm:flex-1 min-w-0 px-4 rounded-lg bg-band-hell border border-gray-300 dark:border-gray-700 text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <button type="submit" class="h-12 px-5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white font-semibold">Suchen</button>
+    </form>
+</c-insight.kopfband>
+
+<c-insight.band>
+    <div class="max-w-3xl">
+        {% if eingabe %}
+        <h2 class="text-[1.125rem] font-semibold text-gray-900 dark:text-white">{% if treffer %}Vorschläge zu „{{ eingabe }}“{% else %}Keine Kommune zu „{{ eingabe }}“ gefunden{% endif %}</h2>
+        {% if treffer %}
+        <ul class="mt-3 -mx-3 divide-y divide-gray-200 dark:divide-gray-800">
+            {% for t in treffer %}
+            <li>{% include "partials/kommune_eintrag.html" with eintrag=t %}</li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mt-2 text-gray-700 dark:text-gray-300">Versuchen Sie es mit der Postleitzahl oder wählen Sie unten Bundesland und Kreis.</p>
+        {% endif %}
+        <p class="mt-6"><a href="{% url 'insight_core:insight:kommunen' %}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Nach Bundesland suchen</a></p>
+        {% elif stufe %}
+        <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 class="text-[1.125rem] font-semibold text-gray-900 dark:text-white">{% if stufe.stufe == "land" %}Nach Bundesland suchen{% else %}{{ stufe.titel }}{% endif %}</h2>
+            {% if stufe.zurueck %}
+            <a href="?{% if stufe.zurueck.land %}land={{ stufe.zurueck.land }}{% endif %}{% if stufe.zurueck.kreis %}&amp;kreis={{ stufe.zurueck.kreis }}{% endif %}" class="inline-flex items-center gap-1 font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4"><i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i><span class="sr-only">Zurück: </span>{{ stufe.zurueck.titel }}</a>
+            {% endif %}
+        </div>
+        {% if stufe.eintraege %}
+        <ul class="mt-3 -mx-3 grid sm:grid-cols-2 gap-x-2">
+            {% for e in stufe.eintraege %}
+            <li>
+                {% if e.art == "kommune" %}
+                {% include "partials/kommune_eintrag.html" with eintrag=e %}
+                {% else %}
+                <a href="?land={{ e.land }}{% if e.kreis %}&amp;kreis={{ e.kreis }}{% endif %}{% if e.verband %}&amp;verband={{ e.verband }}{% endif %}" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-band-grau">
+                    <span class="flex-1 min-w-0">
+                        <span class="block font-medium text-gray-900 dark:text-white truncate">{{ e.name }}</span>
+                        <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if e.ort %}{{ e.ort }}, {% endif %}{{ e.anzahl }} {% if e.anzahl == 1 %}Kommune{% else %}Kommunen{% endif %}{% if e.mit_daten %}, {{ e.mit_daten }} mit Daten{% endif %}</span>
+                    </span>
+                    <i data-lucide="chevron-right" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+                </a>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% elif verzeichnis_leer %}
+        <p class="mt-2 text-gray-700 dark:text-gray-300">Das Verzeichnis der Kommunen ist noch nicht geladen. Die Suche findet alle Kommunen, für die schon Daten vorliegen.</p>
+        {% endif %}
+        {% endif %}
+    </div>
+</c-insight.band>
+{% endblock %}

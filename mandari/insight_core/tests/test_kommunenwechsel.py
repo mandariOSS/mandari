@@ -1,0 +1,372 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""
+Kommunenwechsel für Tausende Kommunen (Issue #783, Stufe 2): Verzeichnis, Import, Suche, Nähe, Stöbern und die
+Schnittstellen des Dialogs. Nie eine lange Liste: höchstens acht Vorschläge, Stöbern in Stufen.
+"""
+
+from __future__ import annotations
+
+import io
+import statistics
+import time
+from typing import Any
+
+import pytest
+from django.core.management import call_command
+from django.test import Client
+from django.urls import reverse
+
+from insight_core.models import Municipality, MunicipalityTerm, OParlBody, OParlSource
+from insight_core.services import kommunenverzeichnis as verzeichnis
+from insight_core.services.kommunenverzeichnis_import import aus_koerperschaften, importieren
+
+KOPF = "schluessel;name;art;kreis;breite;laenge;plz;ortsteile\n"
+CSV = KOPF + (
+    "059990000000;Übungsheim;Kreisfreie Stadt;;51.9625;7.6256;48143|48145|48165;Heidekamp|Lindenhof|Kirchweg\n"
+    "064390014014;Übungsheim;Gemeinde;Landkreis Musterkreis;49.9228;8.8656;64839;\n"
+    "091890140140;Übungsheim;Gemeinde;Landkreis Talkreis;48.6833;10.9000;86692;\n"
+    "059980012012;Nordheim;Stadt;Kreis Nordland;52.0919;7.6083;48268;Feldmark\n"
+    "059980028028;Südheim;Stadt;Kreis Nordland;52.1475;7.3442;48565;Oberdorf|Unterdorf\n"
+    "033990011011;Heidestadt;Stadt;Landkreis Heideland;52.6256;10.0825;29221|29223;\n"
+    "033995401000;Samtgemeinde Moorbach;Samtgemeinde;Landkreis Heideland;52.6194;10.2453;;\n"
+    "033995401014;Moorbach;Gemeinde;Landkreis Heideland;52.6194;10.2453;29331;\n"
+    "033995401015;Birkholz;Gemeinde;Landkreis Heideland;52.6000;10.3167;29353;\n"
+    "069990000000;Brückenstadt am Strom;Kreisfreie Stadt;;50.1109;8.6821;60311;Uferviertel\n"
+    "129990000000;Grenzstadt (Oder);Kreisfreie Stadt;;52.3471;14.5506;15230;\n"
+    "040990000000;Hafenstadt;Kreisfreie Stadt;;53.0700;8.8000;28195|28199;Altstadt|Speicherhof\n"
+)
+
+
+@pytest.fixture
+def source(db: Any) -> OParlSource:
+    return OParlSource.objects.create(name="Test-RIS", url="https://ris.example.org/system")
+
+
+def _body(source: OParlSource, name: str, **felder: Any) -> OParlBody:
+    nummer = OParlBody.objects.count() + 1
+    return OParlBody.objects.create(
+        external_id=f"https://ris.example.org/body/{nummer}", source=source, name=name, **felder
+    )
+
+
+@pytest.fixture
+def verzeichnis_mit_daten(source: OParlSource) -> dict[str, OParlBody]:
+    importieren(io.StringIO(CSV))
+    return {
+        "uebungsheim": _body(source, "Stadt Übungsheim", short_name="Übungsheim", rgs="059990000000", ags="05999000"),
+        "heidestadt": _body(source, "Stadt Heidestadt", ags="03399011"),
+        # Regionalrat ohne Gemeindeschlüssel: nur über den Namen auffindbar
+        "regionalrat": _body(
+            source,
+            "Regionalrat Beispielbezirk",
+            ags="053",
+            latitude=50.94,
+            longitude=6.96,
+            classification="Regionalrat",
+        ),
+        # Nicht gelistet: bleibt „noch nicht verfügbar“
+        "nordheim": _body(source, "Stadt Nordheim", ags="05998012", is_listed=False),
+    }
+
+
+def _namen(treffer: list[verzeichnis.Treffer]) -> list[str]:
+    return [f"{t.name} – {t.ort}" for t in treffer]
+
+
+class TestNormalisieren:
+    @pytest.mark.parametrize(
+        ("eingabe", "erwartet"),
+        [
+            ("Übungsheim (Westf.)", "uebungsheim westf"),
+            ("Groß-Musterau", "gross musterau"),
+            ("  GRENZSTADT  (Oder) ", "grenzstadt oder"),
+            ("Kühlbach", "kuehlbach"),
+            ("Bad Übungsheim", "bad uebungsheim"),
+            ("Sankt Beispiel", "sankt beispiel"),
+            ("Sainte-Écluse", "sainte ecluse"),
+        ],
+    )
+    def test_normalisieren(self, eingabe: str, erwartet: str) -> None:
+        assert verzeichnis.normalisieren(eingabe) == erwartet
+
+    def test_varianten_fuer_umlaute_ohne_punkte(self) -> None:
+        assert verzeichnis.varianten("Übungsheim") == {"uebungsheim", "ubungsheim"}
+        assert verzeichnis.varianten("Heidestadt") == {"heidestadt"}
+
+
+@pytest.mark.django_db
+class TestImport:
+    def test_eintraege_und_suchbegriffe(self) -> None:
+        ergebnis = importieren(io.StringIO(CSV))
+        assert (ergebnis.neu, ergebnis.aktualisiert, ergebnis.uebersprungen) == (12, 0, [])
+        eintrag = Municipality.objects.get(key="059990000000")
+        assert (eintrag.ags, eintrag.district_key, eintrag.state_key) == ("05999000", "05999", "05")
+        begriffe = set(eintrag.terms.values_list("kind", "normalized"))
+        assert ("name", "uebungsheim") in begriffe and ("name", "ubungsheim") in begriffe
+        assert ("ortsteil", "heidekamp") in begriffe and ("plz", "48165") in begriffe
+
+    def test_gemeindeverband_ohne_erfundenen_gemeindeschluessel(self) -> None:
+        importieren(io.StringIO(CSV))
+        samtgemeinde = Municipality.objects.get(key="033995401000")
+        assert samtgemeinde.is_association and samtgemeinde.ags == ""
+        assert not Municipality.objects.get(key="033995401014").is_association
+
+    def test_wiederholt_und_ersetzen(self) -> None:
+        importieren(io.StringIO(CSV))
+        geaendert = KOPF + "059990000000;Übungsheim (Westf.);Kreisfreie Stadt;;51.96;7.62;48143;Heidekamp\n"
+        ergebnis = importieren(io.StringIO(geaendert), ersetzen=True)
+        assert (ergebnis.neu, ergebnis.aktualisiert, ergebnis.entfernt) == (0, 1, 11)
+        eintrag = Municipality.objects.get()
+        assert eintrag.name == "Übungsheim (Westf.)"
+        assert not eintrag.terms.filter(normalized="lindenhof").exists(), "Begriffe werden neu geschrieben"
+
+    def test_ungueltige_zeilen_werden_uebersprungen(self) -> None:
+        daten = (
+            KOPF
+            + "12345;Kurz;;;;;;\n995150000000;Kein Land;;;;;;\n059990000000;;;;;;;\n05999000;Übungsheim;;;x;y;4814;\n"
+        )
+        ergebnis = importieren(io.StringIO(daten))
+        assert ergebnis.neu == 1 and len(ergebnis.uebersprungen) == 3
+        eintrag = Municipality.objects.get(key="05999000")
+        assert eintrag.latitude is None and not eintrag.terms.filter(kind="plz").exists()
+
+    def test_fehlende_spalten(self) -> None:
+        with pytest.raises(ValueError, match="schluessel"):
+            importieren(io.StringIO("name;kreis\nÜbungsheim;\n"))
+
+    def test_aus_koerperschaften(self, source: OParlSource) -> None:
+        _body(source, "Stadt Beispielstadt", short_name="Beispielstadt", ags="05999000", latitude=51.5, longitude=7.5)
+        _body(source, "Regionalrat Beispielbezirk", ags="053")
+        ergebnis = aus_koerperschaften()
+        assert ergebnis.neu == 1
+        eintrag = Municipality.objects.get(key="05999000")
+        assert eintrag.name == "Beispielstadt" and eintrag.latitude == 51.5
+        assert aus_koerperschaften().neu == 0, "zweiter Lauf legt nichts doppelt an"
+
+    def test_befehl(self, tmp_path: Any) -> None:
+        datei = tmp_path / "kommunen.csv"
+        datei.write_text(CSV, encoding="utf-8")
+        ausgabe = io.StringIO()
+        call_command("kommunenverzeichnis_importieren", "--datei", str(datei), stdout=ausgabe)
+        assert "12 neu" in ausgabe.getvalue()
+
+
+@pytest.mark.django_db
+class TestSuche:
+    def test_gleichnamige_orte_mit_kreis_und_land_und_verfuegbare_zuerst(
+        self, verzeichnis_mit_daten: dict[str, OParlBody]
+    ) -> None:
+        treffer = verzeichnis.suchen("Übungsheim")
+        assert _namen(treffer)[:3] == [
+            "Übungsheim – Kreisfreie Stadt, Nordrhein-Westfalen",
+            "Übungsheim – Landkreis Musterkreis, Hessen",
+            "Übungsheim – Landkreis Talkreis, Bayern",
+        ]
+        assert treffer[0].url == reverse(
+            "insight_core:insight:set_body", args=[verzeichnis_mit_daten["uebungsheim"].id]
+        )
+        assert not treffer[1].verfuegbar and not treffer[2].verfuegbar
+
+    @pytest.mark.parametrize("eingabe", ["ubungsheim", "uebungsheim", "ÜBUNGSHEIM", "Uebungshiem", "übngsheim"])
+    def test_umlaute_und_tippfehler(self, verzeichnis_mit_daten: dict[str, OParlBody], eingabe: str) -> None:
+        assert verzeichnis.suchen(eingabe)[0].name == "Übungsheim"
+
+    def test_ortsteil(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        (treffer,) = verzeichnis.suchen("Heidekamp")
+        assert (treffer.name, treffer.hinweis, treffer.verfuegbar) == ("Übungsheim", "Ortsteil Heidekamp", True)
+
+    def test_postleitzahl(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        (treffer,) = verzeichnis.suchen("48165")
+        assert (treffer.name, treffer.hinweis) == ("Übungsheim", "PLZ 48165")
+        assert {t.name for t in verzeichnis.suchen("48")} == {"Übungsheim", "Nordheim", "Südheim"}
+
+    def test_mehrere_woerter_unterscheiden(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        assert _namen(verzeichnis.suchen("Übungsheim Hessen")) == ["Übungsheim – Landkreis Musterkreis, Hessen"]
+        assert [t.name for t in verzeichnis.suchen("Grenzstadt Oder")][0] == "Grenzstadt (Oder)"
+
+    def test_wortanfang_im_namen(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        assert [t.name for t in verzeichnis.suchen("strom")] == ["Brückenstadt am Strom"]
+
+    def test_nicht_gelistet_bleibt_nicht_verfuegbar(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        (nordheim,) = verzeichnis.suchen("Nordheim")
+        assert not nordheim.verfuegbar and nordheim.url == ""
+
+    def test_koerperschaft_ohne_verzeichniseintrag(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        (treffer,) = verzeichnis.suchen("regionalrat")
+        assert treffer.verfuegbar and treffer.ort == "Regionalrat, Nordrhein-Westfalen"
+
+    def test_samtgemeinde_findbar(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        namen = [t.name for t in verzeichnis.suchen("Moorbach")]
+        assert namen == ["Moorbach", "Samtgemeinde Moorbach"]
+
+    @pytest.mark.parametrize("eingabe", ["", " ", "m", "-", "xyzzyq"])
+    def test_leer_oder_ohne_treffer(self, verzeichnis_mit_daten: dict[str, OParlBody], eingabe: str) -> None:
+        assert verzeichnis.suchen(eingabe) == []
+
+    def test_hoechstens_acht(self, source: OParlSource) -> None:
+        zeilen = [f"{'09' if i % 2 else '07'}{i:010d};Mustertal;Gemeinde;Kreis {i};;;;\n" for i in range(20)]
+        zeilen.append("019990033033;Mustertal am See;Gemeinde;Kreis Seenland;;;23730;\n")
+        importieren(io.StringIO(KOPF + "".join(zeilen)))
+        assert len(verzeichnis.suchen("Mustertal")) == verzeichnis.MAX_TREFFER
+        assert [t.name for t in verzeichnis.suchen("Mustertal am")] == ["Mustertal am See"]
+        assert [t.name for t in verzeichnis.suchen("Mustertal Seenland")] == ["Mustertal am See"]
+
+    def test_leeres_verzeichnis_findet_gelistete_kommunen(self, source: OParlSource) -> None:
+        _body(source, "Stadt Übungsheim", short_name="Übungsheim", ags="05999000")
+        (treffer,) = verzeichnis.suchen("ubungsheim")
+        assert treffer.verfuegbar and treffer.name == "Übungsheim"
+
+
+def _viele_kommunen(anzahl: int) -> None:
+    """Testverzeichnis mit ``anzahl`` Kommunen, je drei Ortsteilen und einer Postleitzahl."""
+    silben = ["berg", "dorf", "feld", "hausen", "heim", "ingen", "kirchen", "stadt", "tal", "wald", "au", "burg"]
+    anfang = ["Alt", "Neu", "Ober", "Unter", "Groß", "Klein", "Bad", "Sankt", "Hohen", "Nieder", "Mühl", "Rot"]
+    zeilen = []
+    for i in range(anzahl):
+        name = f"{anfang[i % 12]}{silben[(i // 12) % 12]}{'' if i < 144 else ' ' + str(i)}"
+        land = f"{(i % 16) + 1:02d}"
+        ortsteile = "|".join(f"{silben[(i + k) % 12].capitalize()}{anfang[(i + k) % 12].lower()}" for k in range(3))
+        zeilen.append(
+            f"{land}{i % 10}{i % 100:02d}{i:04d}{i % 1000:03d};{name};Gemeinde;Kreis {i % 40};"
+            f"{47.5 + (i % 80) / 10};{6 + (i % 90) / 10};{10000 + i * 7:05d};{ortsteile}\n"
+        )
+    ergebnis = importieren(io.StringIO(KOPF + "".join(zeilen)))
+    assert ergebnis.uebersprungen == []
+
+
+@pytest.mark.django_db
+class TestAntwortzeit:
+    """Mit mehreren hundert Kommunen antwortet die Suche unter 150 ms (Vorgabe aus #783)."""
+
+    GRENZE_MS = 150
+
+    def test_suche_mit_600_kommunen(self) -> None:
+        _viele_kommunen(600)
+        assert Municipality.objects.count() == 600
+        eingaben = ["Neuberg", "neub", "Obertal", "groß", "Grossdorf", "Bad Au", "Mühlheim", "muhlheim", "Rotwald",
+                    "Sankt Ingen", "Hohenkirch", "Unterfeld 300", "Feldalt", "10007", "1015", "Klainstadt", "Nieder",
+                    "Burgrot", "alth", "Talneu"]  # fmt: skip
+        dauer = []
+        for eingabe in eingaben:
+            start = time.perf_counter()
+            treffer = verzeichnis.suchen(eingabe)
+            dauer.append((time.perf_counter() - start) * 1000)
+            assert len(treffer) <= verzeichnis.MAX_TREFFER
+        assert statistics.median(dauer) < self.GRENZE_MS, dauer
+        assert max(dauer) < self.GRENZE_MS * 2, dauer
+
+    def test_vorschlaege_ueber_die_schnittstelle(self, client: Client) -> None:
+        _viele_kommunen(600)
+        url = reverse("insight_core:insight:kommunen_vorschlaege")
+        client.get(url, {"q": "Neu"})  # erste Anfrage lädt URL-Konfiguration und Vorlagen
+        dauer = []
+        for eingabe in ["Neuberg", "Grossdorf", "Rotwald", "10007", "Sankt Ingen"]:
+            start = time.perf_counter()
+            antwort = client.get(url, {"q": eingabe})
+            dauer.append((time.perf_counter() - start) * 1000)
+            assert antwort.status_code == 200
+        assert statistics.median(dauer) < self.GRENZE_MS, dauer
+
+
+@pytest.mark.django_db
+class TestNaehe:
+    def test_zelle_rundet_auf_ein_zehntel_grad(self) -> None:
+        assert verzeichnis.zelle(51.9612, 7.6287) == (51.95, 7.65)
+        assert verzeichnis.zelle(52.0, 7.0) == (52.05, 7.05)
+
+    def test_kandidaten_und_verfuegbarkeit(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        ergebnis = verzeichnis.in_der_naehe(51.96, 7.63)
+        namen = [k["name"] for k in ergebnis["kandidaten"]]
+        assert namen[:3] == ["Übungsheim", "Nordheim", "Südheim"]
+        assert ergebnis["kandidaten"][0]["verfuegbar"] and not ergebnis["kandidaten"][1]["verfuegbar"]
+        assert ergebnis["naechste_mit_daten"] is None
+        assert all("breite" in k and "laenge" in k for k in ergebnis["kandidaten"])
+
+    def test_naechste_kommune_mit_daten(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        ergebnis = verzeichnis.in_der_naehe(48.68, 10.90)  # Übungsheim (Talkreis), ohne Daten
+        assert not any(k["verfuegbar"] for k in ergebnis["kandidaten"])
+        assert ergebnis["naechste_mit_daten"]["name"] in {"Regionalrat Beispielbezirk", "Übungsheim", "Heidestadt"}
+
+    def test_entfernung(self) -> None:
+        assert 490 < verzeichnis.entfernung_km((51.96, 7.63), (48.14, 11.58)) < 530
+
+
+@pytest.mark.django_db
+class TestStoebern:
+    def test_laender(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        stufe = verzeichnis.stoebern()
+        laender = {e["name"]: e for e in stufe["eintraege"]}
+        assert stufe["stufe"] == "land" and len(laender) == 6
+        assert (laender["Nordrhein-Westfalen"]["anzahl"], laender["Nordrhein-Westfalen"]["mit_daten"]) == (3, 1)
+        assert laender["Hessen"]["mit_daten"] == 0
+        assert {e["art"] for e in stufe["eintraege"]} == {"gruppe"}, "jede Stufe trägt die Art für den Dialog"
+
+    def test_kreise_mit_kreisfreier_stadt_direkt(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        stufe = verzeichnis.stoebern("05")
+        assert stufe["titel"] == "Nordrhein-Westfalen"
+        art_und_name = [(e["art"], e["name"]) for e in stufe["eintraege"]]
+        assert art_und_name == [("gruppe", "Kreis Nordland"), ("kommune", "Übungsheim")]
+        assert stufe["eintraege"][1]["verfuegbar"]
+
+    def test_kommunen_eines_kreises(self, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        stufe = verzeichnis.stoebern("03", "03399")
+        assert stufe["stufe"] == "kommune" and stufe["zurueck"] == {"titel": "Niedersachsen", "land": "03"}
+        assert [e["name"] for e in stufe["eintraege"]] == [
+            "Samtgemeinde Moorbach",
+            "Birkholz",
+            "Heidestadt",
+            "Moorbach",
+        ]
+
+    def test_grosser_kreis_nach_gemeindeverbaenden(self, source: OParlSource) -> None:
+        zeilen = ["033995401000;Samtgemeinde Moorbach;Samtgemeinde;Landkreis Heideland;;;;\n"]
+        zeilen += [f"033995401{i:03d};Ort {i};Gemeinde;Landkreis Heideland;;;;\n" for i in range(1, 30)]
+        zeilen += [f"03399{i:04d}{i:03d};Stadt {i};Stadt;Landkreis Heideland;;;;\n" for i in range(1, 20)]
+        importieren(io.StringIO(KOPF + "".join(zeilen)))
+        stufe = verzeichnis.stoebern("03", "03399")
+        assert stufe["stufe"] == "verband"
+        gruppe = stufe["eintraege"][0]
+        assert (gruppe["art"], gruppe["name"], gruppe["anzahl"]) == ("gruppe", "Samtgemeinde Moorbach", 29)
+        assert len(stufe["eintraege"]) == 1 + 19
+        unten = verzeichnis.stoebern("03", "03399", gruppe["verband"])
+        assert len(unten["eintraege"]) == 30 and unten["titel"] == "Samtgemeinde Moorbach"
+
+
+@pytest.mark.django_db
+class TestSchnittstellen:
+    def test_vorschlaege(self, client: Client, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        antwort = client.get(reverse("insight_core:insight:kommunen_vorschlaege"), {"q": "Heidekamp"})
+        assert antwort.status_code == 200
+        assert "public" in antwort["Cache-Control"]
+        (treffer,) = antwort.json()["treffer"]
+        assert treffer["name"] == "Übungsheim" and treffer["hinweis"] == "Ortsteil Heidekamp" and treffer["verfuegbar"]
+        assert "sessionid" not in antwort.cookies, "keine Sitzung für Vorschläge"
+
+    def test_naehe_nur_mit_zelle(self, client: Client, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        url = reverse("insight_core:insight:kommunen_naehe")
+        assert client.get(url).status_code == 400
+        assert client.get(url, {"zelle": "51.9612345,7.6"}).status_code == 400, "nur grob gerundet"
+        assert client.get(url, {"zelle": "abc"}).json() == {"fehler": "Standort fehlt oder ist ungültig."}
+        antwort = client.get(url, {"zelle": "51.96,7.63"})
+        assert antwort.json()["zelle"] == [51.95, 7.65]
+        assert client.get(url, {"zelle": "40.4,-3.7"}).json()["kandidaten"] == []
+        assert "sessionid" not in antwort.cookies
+
+    def test_stoebern_prueft_parameter(self, client: Client, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        url = reverse("insight_core:insight:kommunen_stoebern")
+        assert client.get(url, {"land": "05"}).json()["stufe"] == "kreis"
+        assert client.get(url, {"land": "x5"}).json()["stufe"] == "land"
+        assert client.get(url, {"land": "05", "kreis": "03399"}).json()["stufe"] == "kreis", "Kreis passt nicht"
+
+    def test_seite_ohne_javascript(self, client: Client, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        url = reverse("insight_core:insight:kommunen")
+        html = client.get(url, {"q": "Übungsheim"}).content.decode()
+        assert "Landkreis Musterkreis, Hessen" in html and "noch nicht verfügbar" in html
+        assert reverse("insight_core:insight:set_body", args=[verzeichnis_mit_daten["uebungsheim"].id]) in html
+        assert 'content="noindex, follow"' in html
+        stufe = client.get(url, {"land": "03"}).content.decode()
+        assert "Landkreis Heideland" in stufe and "?land=03&amp;kreis=03399" in stufe
+
+
+def test_suchbegriff_kinds_vollstaendig() -> None:
+    assert {k.value for k in MunicipalityTerm.Kind} == {"name", "ortsteil", "plz"}

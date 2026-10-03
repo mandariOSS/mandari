@@ -3,29 +3,10 @@
 
 {% block title %}Sitzungen{% endblock %}
 
-{% block content %}
-<div>
-    <!-- Header -->
-    <div class="flex items-start justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Sitzungen</h1>
-            <p class="text-gray-600 dark:text-gray-400">
-                {% if active_body %}
-                    Sitzungen der {{ active_body.name }}
-                {% else %}
-                    Bitte wählen Sie eine Kommune aus
-                {% endif %}
-            </p>
-        </div>
-        <a href="{% url 'insight_core:insight:meeting_calendar' %}"
-           class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-colors">
-            <i data-lucide="calendar" class="w-5 h-5"></i>
-            Kalender
-        </a>
-    </div>
-
+{% block page %}
+<c-insight.kopfband titel="Sitzungen" text="{% if active_body %}Öffentliche Sitzungen der Gremien von {{ active_body.get_display_name }}, mit Tagesordnung und Unterlagen.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">
     <!-- Search -->
-    <div class="mb-6">
+    <div class="mb-4">
         <div class="relative max-w-md">
             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
             <input type="search"
@@ -48,26 +29,26 @@
             </div>
         </div>
     </div>
-
     <!-- Period Tabs -->
-    <div id="period-tabs" class="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
+    <div id="period-tabs" class="flex gap-2 border-b border-gray-200 dark:border-gray-700">
         <a href="?period=upcoming{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
-           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if request.GET.period == 'upcoming' or not request.GET.period %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if request.GET.period == 'upcoming' or not request.GET.period %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
             Kommende
         </a>
         <a href="?period=past{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
-           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if request.GET.period == 'past' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if request.GET.period == 'past' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
             Vergangene
         </a>
         <a href="?period=all{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
-           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if request.GET.period == 'all' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if request.GET.period == 'all' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
             Alle
         </a>
     </div>
-
-    <!-- Meetings List Container -->
+    <p class="mt-4 text-[0.95rem]"><a href="{% url 'insight_core:insight:meeting_calendar' %}" class="inline-flex items-center gap-1.5 font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline"><i data-lucide="calendar" class="w-4 h-4" aria-hidden="true"></i>Als Kalender ansehen</a></p>
+</c-insight.kopfband>
+<c-insight.band>
     <div id="meetings-list">
         {% include "partials/meeting_list_items.html" %}
     </div>
-</div>
+</c-insight.band>
 {% endblock %}

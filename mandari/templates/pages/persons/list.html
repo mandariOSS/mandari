@@ -3,22 +3,10 @@
 
 {% block title %}Personen{% endblock %}
 
-{% block content %}
-<div>
-    <!-- Header -->
-    <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Personen</h1>
-        <p class="text-gray-600 dark:text-gray-400">
-            {% if active_body %}
-                Alle Personen der {{ active_body.name }}
-            {% else %}
-                Bitte wählen Sie eine Kommune aus
-            {% endif %}
-        </p>
-    </div>
-
+{% block page %}
+<c-insight.kopfband titel="Personen" text="{% if active_body %}Ratsmitglieder und sachkundige Bürgerinnen und Bürger von {{ active_body.get_display_name }}.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">
     <!-- Search -->
-    <div class="mb-6">
+    <div class="mb-4">
         <div class="relative max-w-md">
             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
             <input type="search"
@@ -40,10 +28,10 @@
             </div>
         </div>
     </div>
-
-    <!-- Persons List Container -->
+</c-insight.kopfband>
+<c-insight.band>
     <div id="persons-list">
         {% include "partials/person_list_items.html" %}
     </div>
-</div>
+</c-insight.band>
 {% endblock %}

@@ -19,6 +19,12 @@ module.exports = {
             `rgb(var(--primary-${stufe}) / <alpha-value>)`,
           ]),
         ),
+        // Flächen des Bürgerportals (Issue #783, Stufe 2): Bänder statt Karten, hell und dunkel aus input.css
+        band: {
+          hell: 'rgb(var(--band-hell) / <alpha-value>)',
+          grau: 'rgb(var(--band-grau) / <alpha-value>)',
+          tinte: 'rgb(var(--band-tinte) / <alpha-value>)',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],

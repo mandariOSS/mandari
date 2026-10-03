@@ -1,0 +1,104 @@
+{% comment %}
+Kommunenwechsel (Issue #783, Stufe 2) – im Dialog des Rahmens und auf der Auswahlseite. Für Tausende Kommunen, nie als
+lange Liste: Suchfeld mit höchstens acht Vorschlägen, „In meiner Nähe“ auf Klick, „Zuletzt besucht“ aus dem Browser,
+Stöbern Land → Kreis → Kommune. Logik in frontend/alpine/kommunen-wahl.ts; ohne JavaScript schickt das Formular an
+die Seite „Kommune wählen“. Parameter: id (eindeutiger Präfix), im_dialog.
+{% endcomment %}
+<div x-data="kommunenWahl" @keydown="tasten($event)" {% if im_dialog %}data-im-dialog{% endif %}
+    data-vorschlaege-url="{% url 'insight_core:insight:kommunen_vorschlaege' %}"
+    data-naehe-url="{% url 'insight_core:insight:kommunen_naehe' %}"
+    data-stoebern-url="{% url 'insight_core:insight:kommunen_stoebern' %}">
+    <form action="{% url 'insight_core:insight:kommunen' %}" method="get" role="search" @submit.prevent="suchen()">
+        <label for="{{ id }}-eingabe" class="sr-only">Kommune oder Postleitzahl</label>
+        <span class="relative block">
+            <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+            <input id="{{ id }}-eingabe" x-ref="eingabe" x-model="eingabe" name="q" type="search" autocomplete="off"
+                placeholder="Kommune oder Postleitzahl" aria-describedby="{{ id }}-meldung" aria-controls="{{ id }}-ergebnisse"
+                class="h-12 w-full pl-11 pr-4 rounded-lg bg-band-grau border border-transparent text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        </span>
+    </form>
+    <button type="button" @click="inDerNaehe()" x-show="!sucheAktiv()" :disabled="standort === 'laedt'" x-cloak
+        class="mt-3 inline-flex items-center gap-2 min-h-11 text-[0.95rem] font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline disabled:opacity-60">
+        <i data-lucide="locate-fixed" class="w-[18px] h-[18px]" aria-hidden="true"></i>
+        <span x-text="standort === 'laedt' ? 'Standort wird ermittelt …' : 'In meiner Nähe'">In meiner Nähe</span>
+    </button>
+    <p id="{{ id }}-meldung" role="status" aria-live="polite" class="text-[0.9rem] text-gray-700 dark:text-gray-300"
+        :class="(standort === 'verweigert' || standort === 'fehler' || (sucheAktiv() && !sucht && !treffer.length)) ? 'mt-3' : 'sr-only'" x-text="meldung"></p>
+
+    <div id="{{ id }}-ergebnisse">
+        {# Vorschläge, sonst Kommunen in der Nähe, sonst zuletzt besucht #}
+        <section x-show="liste().eintraege.length" class="mt-4" x-cloak>
+            <h3 x-show="liste().titel" x-text="liste().titel" class="text-[0.875rem] font-medium text-gray-600 dark:text-gray-400"></h3>
+            <ul class="mt-1 -mx-3">
+                <template x-for="(t, i) in liste().eintraege" :key="t.name + t.ort + (t.hinweis || '') + (t.url || '')">
+                    <li :class="i && 'border-t border-gray-200 dark:border-gray-800'">
+                        <template x-if="t.verfuegbar">
+                            <a :href="t.url" @click="merken(t)" data-kommune-ziel class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-band-grau focus-visible:bg-band-grau">
+                                <span class="flex-1 min-w-0">
+                                    <span class="block font-semibold text-gray-900 dark:text-white truncate" x-text="t.name"></span>
+                                    <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate" x-text="zweiteZeile(t)"></span>
+                                </span>
+                                <span x-show="t.entfernung !== undefined" x-text="entfernungText(t.entfernung)" class="shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400"></span>
+                            </a>
+                        </template>
+                        <template x-if="!t.verfuegbar">
+                            <div class="flex flex-col sm:flex-row sm:items-center gap-x-3 px-3 py-3">
+                                <span class="flex-1 min-w-0">
+                                    <span class="block font-medium text-gray-700 dark:text-gray-300 truncate" x-text="t.name"></span>
+                                    <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate" x-text="zweiteZeile(t)"></span>
+                                </span>
+                                <span class="sm:shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400">noch nicht verfügbar</span>
+                            </div>
+                        </template>
+                    </li>
+                </template>
+            </ul>
+            <p x-show="!sucheAktiv() && naehe && naechsteMitDaten" class="mt-3 text-[0.9rem] text-gray-700 dark:text-gray-300" x-cloak>
+                Nächste Kommune mit Daten:
+                <a :href="naechsteMitDaten && naechsteMitDaten.url" @click="naechsteMitDaten && merken(naechsteMitDaten)" data-kommune-ziel class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4" x-text="naechsteMitDaten && naechsteMitDaten.name"></a>
+                <span x-show="naechsteMitDaten && naechsteMitDaten.entfernung !== undefined" x-text="naechsteMitDaten ? '(' + entfernungText(naechsteMitDaten.entfernung) + ')' : ''"></span>
+            </p>
+        </section>
+
+        {# Stöbern in Stufen statt einer flachen Liste #}
+        <section x-show="!sucheAktiv() && stufe && stufe.eintraege.length" class="mt-6" aria-labelledby="{{ id }}-stufe" x-cloak>
+            <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <h3 id="{{ id }}-stufe" x-ref="stufenTitel" tabindex="-1" x-text="stufenTitel()" class="text-[0.95rem] font-semibold text-gray-900 dark:text-white focus:outline-none"></h3>
+                <button type="button" x-show="stufe && stufe.zurueck" @click="stoebern(stufe.zurueck)"
+                    class="inline-flex items-center gap-1 min-h-11 text-[0.9rem] font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">
+                    <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i><span class="sr-only">Zurück: </span><span x-text="stufe && stufe.zurueck ? stufe.zurueck.titel : ''"></span>
+                </button>
+            </div>
+            <ul class="mt-2 -mx-3 grid sm:grid-cols-2 gap-x-2">
+                <template x-for="e in (stufe ? stufe.eintraege : [])" :key="(e.land || '') + (e.kreis || '') + (e.verband || '') + e.name + (e.url || '')">
+                    <li>
+                        <template x-if="e.art === 'gruppe'">
+                            <button type="button" data-kommune-ziel @click="stoebern({ land: e.land, kreis: e.kreis, verband: e.verband })"
+                                class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-band-grau focus-visible:bg-band-grau">
+                                <span class="flex-1 min-w-0">
+                                    <span class="block font-medium text-gray-900 dark:text-white truncate" x-text="e.name"></span>
+                                    <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate" x-text="stoebernInfo(e)"></span>
+                                </span>
+                                <i data-lucide="chevron-right" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+                            </button>
+                        </template>
+                        <template x-if="e.art === 'kommune' && e.verfuegbar">
+                            <a :href="e.url" @click="merken(e)" data-kommune-ziel class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-band-grau focus-visible:bg-band-grau">
+                                <span class="flex-1 min-w-0">
+                                    <span class="block font-semibold text-gray-900 dark:text-white truncate" x-text="e.name"></span>
+                                    <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate" x-text="e.ort"></span>
+                                </span>
+                            </a>
+                        </template>
+                        <template x-if="e.art === 'kommune' && !e.verfuegbar">
+                            <div class="px-3 py-2.5">
+                                <span class="block font-medium text-gray-700 dark:text-gray-300 truncate" x-text="e.name"></span>
+                                <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">noch nicht verfügbar</span>
+                            </div>
+                        </template>
+                    </li>
+                </template>
+            </ul>
+        </section>
+    </div>
+</div>
