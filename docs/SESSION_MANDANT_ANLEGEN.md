@@ -19,7 +19,7 @@ Ein Aufruf macht einen Mandanten arbeitsfähig:
 |---|---|
 | Stammdaten | Name, URL-Kürzel (Slug), optional Kurzname, Körperschaftstyp und Amtlicher Gemeindeschlüssel (AGS) |
 | Standardrollen | Administrator, Sachbearbeiter, Protokollant, Lesezugriff sowie die Kontrollrollen Revision und Datenschutz (#221) |
-| Nummernkreis | Preset aus `docs/SESSION_NUMMERNKREISE.md`, z. B. `hamburg_bezirk` (Drucksache `22-0001`) oder `nrw_verwaltung_politik` |
+| Nummernkreis | Preset aus `docs/SESSION_NUMMERNKREISE.md`, z. B. `stadtstaat_bezirk` (Drucksache `22-0001`) oder `nrw_verwaltung_politik` |
 | Wahlperiode | aktuelle Wahlperiode mit Name, Beginn, Ende und – für Nummern je Wahlperiode – ihrer Nummer |
 | Landesprofil | aus dem Profil, wenn der Mandant noch keines hat (z. B. `NI`, Issue #757) |
 | Gremien | optional aus einer Gremienvorlage, z. B. Rat, Hauptausschuss, Finanzausschuss – mit gesetzlicher Ausschussart, Ladungsfrist, Vorbelegung der Geschäftsordnung und Standard-TOPs |
@@ -40,8 +40,8 @@ veröffentlichen.
 # Profile, Gremienvorlagen, Nummernkreis-Presets und Körperschaftstypen anzeigen
 python manage.py session_create_tenant --list-presets
 
-# Hamburger Bezirk nach Profil – zuerst als Prüflauf, dann ohne --dry-run
-python manage.py session_create_tenant --profile hamburg_bezirk \
+# Bezirk eines Stadtstaats nach Profil – zuerst als Prüflauf, dann ohne --dry-run
+python manage.py session_create_tenant --profile stadtstaat_bezirk \
     --name "Bezirksversammlung Musterbezirk" --slug musterbezirk \
     --admin-email sitzungsdienst@example.org --dry-run
 
@@ -71,7 +71,7 @@ Die mitgelieferte Datei `mandari/apps/session/presets/mandanten.json` enthält:
 | Profil | Körperschaftstyp | Nummernkreis | Wahlperiode | Gremien |
 |---|---|---|---|---|
 | `nrw_stadt` | Stadt | `nrw_verwaltung_politik` (`1344/2026`, `AN/1492/2026`) | „Wahlperiode 2025–2030“, 01.11.2025 bis 31.10.2030 | Rat, Hauptausschuss, Finanzausschuss |
-| `hamburg_bezirk` | Bezirk | `hamburg_bezirk` (`22-0593`) | „22. Wahlperiode“ (Nr. 22), 09.06.2024 bis 30.06.2029 | Bezirksversammlung, Hauptausschuss |
+| `stadtstaat_bezirk` | Bezirk | `stadtstaat_bezirk` (`22-0593`) | „22. Wahlperiode“ (Nr. 22), 09.06.2024 bis 30.06.2029 | Bezirksversammlung, Hauptausschuss |
 | `ni_samtgemeinde` | Samtgemeinde | `standard` | „Wahlperiode 2026–2031“, 01.11.2026 bis 31.10.2031 | Samtgemeinderat, Samtgemeindeausschuss, Finanzausschuss |
 | `ni_mitgliedsgemeinde` | Mitgliedsgemeinde | `standard` | wie oben | Rat, Verwaltungsausschuss |
 | `ni_mitgliedsgemeinde_ohne_va` | Mitgliedsgemeinde | `standard` | wie oben | Rat |

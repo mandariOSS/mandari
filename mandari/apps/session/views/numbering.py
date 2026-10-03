@@ -4,7 +4,7 @@ Einstellungen → Nummernkreise (Issue #150).
 
 Die Verwaltung legt fest, wie Vorlagen- bzw. Drucksachennummern aussehen: Muster, Zählerbereich
 (Jahr, Wahlperiode, fortlaufend), Zeitpunkt der Vergabe, Vorlagenarten je Kreis und das Muster
-der Unternummern. Presets übernehmen verbreitete Praxis (Hamburger Bezirke, NRW-Kommunen). Der
+der Unternummern. Presets übernehmen verbreitete Praxis (Bezirksversammlungen, NRW-Kommunen). Der
 Startwert ist nur aufwärts verstellbar – so lässt sich beim Umstieg aus einem Altsystem nahtlos
 weiterzählen, ohne dass je eine Nummer doppelt entsteht.
 """

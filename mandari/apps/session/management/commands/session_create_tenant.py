@@ -10,8 +10,8 @@ Einladungslinks aus. Anleitung: docs/SESSION_MANDANT_ANLEGEN.md.
     # Profile, Gremienvorlagen und Nummernkreis-Presets anzeigen
     python manage.py session_create_tenant --list-presets
 
-    # Hamburger Bezirk nach Profil, zuerst als Prüflauf
-    python manage.py session_create_tenant --profile hamburg_bezirk \\
+    # Bezirk eines Stadtstaats nach Profil, zuerst als Prüflauf
+    python manage.py session_create_tenant --profile stadtstaat_bezirk \\
         --name "Bezirksversammlung Musterbezirk" --slug musterbezirk \\
         --admin-email sitzungsdienst@example.org --dry-run
 
@@ -52,12 +52,12 @@ class Command(BaseCommand):
         parser.add_argument("--slug", help="URL-Kürzel (Kleinbuchstaben, Ziffern, Bindestriche)")
         parser.add_argument("--admin-email", help="E-Mail des ersten Administrators (Konto oder Einladung)")
         parser.add_argument(
-            "--profile", default="", help="Profil aus der Preset-Datei, z. B. nrw_stadt, hamburg_bezirk"
+            "--profile", default="", help="Profil aus der Preset-Datei, z. B. nrw_stadt, stadtstaat_bezirk"
         )
         parser.add_argument("--short-name", default="", help="Kurzname (höchstens 50 Zeichen)")
         parser.add_argument("--kind", default=None, help="Körperschaftstyp, z. B. stadt, bezirk, gemeinde")
         parser.add_argument("--ags", default="", help="Amtlicher Gemeindeschlüssel (2, 3, 5 oder 8 Ziffern)")
-        parser.add_argument("--numbering", default=None, help="Nummernkreis-Preset, z. B. hamburg_bezirk")
+        parser.add_argument("--numbering", default=None, help="Nummernkreis-Preset, z. B. stadtstaat_bezirk")
         parser.add_argument(
             "--landesprofil",
             default=None,

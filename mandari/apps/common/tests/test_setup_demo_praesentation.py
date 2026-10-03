@@ -127,12 +127,12 @@ def vorsitz() -> Membership:
 
 class TestIdempotenz:
     def test_zweiter_lauf_verdoppelt_nichts(self) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         vorher = zaehlstand()
         nummern = drehbuch_nummern(DEMO_SESSION_SLUG, drehbuch.VORLAGEN_A)
         beschluss = SessionAgendaItem.objects.get(name=drehbuch.BESCHLUSS_LASTENRAD)
 
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
 
         assert zaehlstand() == vorher
         assert drehbuch_nummern(DEMO_SESSION_SLUG, drehbuch.VORLAGEN_A) == nummern
@@ -150,8 +150,8 @@ class TestIdempotenz:
 
 
 class TestNummernkreise:
-    def test_hamburg_zaehlt_je_mandant(self) -> None:
-        ausfuehren("--profil", "hamburg")
+    def test_stadtstaat_zaehlt_je_mandant(self) -> None:
+        ausfuehren("--profil", "stadtstaat")
         a = drehbuch_nummern(DEMO_SESSION_SLUG, drehbuch.VORLAGEN_A)
         b = drehbuch_nummern(drehbuch.MANDANT_B_SLUG, drehbuch.VORLAGEN_B)
         assert a == [f"22-{n:04d}" for n in range(1, len(drehbuch.VORLAGEN_A) + 1)]
@@ -168,7 +168,7 @@ class TestNummernkreise:
         assert SessionLegislativeTerm.objects.filter(tenant=mandant(), number=1).count() == 1
 
     def test_profilwechsel_ersetzt_die_wahlperiode(self) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         ausgabe = ausfuehren("--profil", "nrw")
         namen = set(SessionLegislativeTerm.objects.filter(tenant=mandant()).values_list("name", flat=True))
         assert namen == {"Wahlperiode 2025–2030"}
@@ -194,7 +194,7 @@ class TestLeitstelleUndVerbindung:
         assert nutzer.check_password(treffer.group(1))
 
     def test_fraktion_ist_mit_mandant_a_verbunden(self) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         verbindung = AdministrationConnection.objects.get(organization__slug=DEMO_ORG_SLUG)
         assert verbindung.tenant.slug == DEMO_SESSION_SLUG
         assert ris_submission.connection_state(verbindung) == (True, "")
@@ -202,12 +202,12 @@ class TestLeitstelleUndVerbindung:
         assert token.name == drehbuch.TOKEN_NAME and token.can_submit_applications
 
         # Zweiter Lauf verwendet die Verbindung weiter
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         assert AdministrationConnection.objects.get(organization__slug=DEMO_ORG_SLUG).pk == verbindung.pk
         assert SessionAPIToken.objects.filter(name=drehbuch.TOKEN_NAME).count() == 1
 
     def test_antrag_laesst_sich_einreichen(self) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         antrag = Motion.objects.get(organization__slug=DEMO_ORG_SLUG, title=drehbuch.ANTRAG_TITEL)
         assert antrag.status == "draft"
         assert ris_submission.can_submit(antrag, vorsitz()) == (True, "")
@@ -224,7 +224,7 @@ class TestLeitstelleUndVerbindung:
 
 class TestDrehbuchDaten:
     def test_sitzungen_beratungsfolge_und_beschlusskontrolle(self) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         kommend = SessionMeeting.objects.get(tenant__slug=DEMO_SESSION_SLUG, name=drehbuch.SITZUNG_KOMMEND)
         assert kommend.meeting_state == "invitation_sent" and kommend.invitation_sent_at is not None
         assert kommend.invitation_sent_at.date() <= kommend.invitation_deadline
@@ -258,7 +258,7 @@ class TestDrehbuchDaten:
         assert drehbuch.TOP_REINIGUNG not in protokoll.content
 
     def test_sitzungsgeld_im_vier_augen_prinzip(self) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         positionen = list(
             SessionAllowance.objects.filter(attendance__meeting__name=drehbuch.SITZUNG_VERGANGEN).select_related(
                 "created_by__user"
@@ -278,7 +278,7 @@ class TestDrehbuchDaten:
         assert allowance_service.approve_allowances(positionen, leitstelle)["approved"] == 5
 
         # Ein erneuter Lauf setzt die Probe zurück
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         assert set(
             SessionAllowance.objects.filter(attendance__meeting__name=drehbuch.SITZUNG_VERGANGEN).values_list(
                 "status", flat=True
@@ -287,10 +287,10 @@ class TestDrehbuchDaten:
 
 
 class TestLeitstellenGruppeUndGemeinsameSitzung:
-    """Profil hamburg: beide Bezirke als Mandantengruppe mit Leitstelle, gemeinsame Sitzung zweier Ausschüsse."""
+    """Profil stadtstaat: beide Bezirke als Mandantengruppe mit Leitstelle, gemeinsame Sitzung zweier Ausschüsse."""
 
-    def test_hamburg_legt_gruppe_und_gemeinsame_sitzung_an(self) -> None:
-        ausgabe = ausfuehren("--profil", "hamburg")
+    def test_stadtstaat_legt_gruppe_und_gemeinsame_sitzung_an(self) -> None:
+        ausgabe = ausfuehren("--profil", "stadtstaat")
         gruppe = SessionTenantGroup.objects.get(slug=drehbuch.GRUPPE_SLUG)
         assert set(gruppe.tenants.values_list("slug", flat=True)) == {DEMO_SESSION_SLUG, drehbuch.MANDANT_B_SLUG}
         leitstelle = User.objects.get(email=drehbuch.LEITSTELLE["email"])
@@ -311,12 +311,12 @@ class TestLeitstellenGruppeUndGemeinsameSitzung:
         assert "Gemeinsame Sitzung" in ausgabe
 
     def test_nrw_und_reset_entfernen_gruppe_und_gemeinsame_sitzung(self) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         ausfuehren("--profil", "nrw")
         assert not SessionTenantGroup.objects.filter(slug=drehbuch.GRUPPE_SLUG).exists()
         assert not SessionMeeting.objects.filter(name=drehbuch.SITZUNG_GEMEINSAM).exists()
         assert not SessionPaper.objects.filter(name=drehbuch.VORLAGE_LEITSTELLE.name).exists()
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         ausfuehren("--reset")
         assert not SessionTenantGroup.objects.exists()
         assert not SessionTenantGroupTenant.objects.exists()
@@ -324,7 +324,7 @@ class TestLeitstellenGruppeUndGemeinsameSitzung:
 
 class TestSpiegel:
     def test_spiegel_enthaelt_den_jugendzentrum_top(self) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         kommune = OParlBody.objects.get(source__url__contains=f"/session/{DEMO_SESSION_SLUG}/api/oparl/")
         assert kommune.is_listed is False
         spiegel = gespiegelt(top_jugendzentrum())
@@ -334,7 +334,7 @@ class TestSpiegel:
         assert not OParlAgendaItem.objects.filter(name=drehbuch.TOP_REINIGUNG).exists()
 
     def test_oe_zu_noe_nimmt_den_top_sofort_zurueck(self, django_capture_on_commit_callbacks: Any) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         top = top_jugendzentrum()
         with django_capture_on_commit_callbacks(execute=True):
             top.is_public = False
@@ -342,7 +342,7 @@ class TestSpiegel:
         assert gespiegelt(top).deleted is True
 
     def test_erneuter_lauf_setzt_die_probe_zurueck(self, django_capture_on_commit_callbacks: Any) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         antrag = Motion.objects.get(organization__slug=DEMO_ORG_SLUG, title=drehbuch.ANTRAG_TITEL)
         eingang = ris_submission.submit_motion(antrag, vorsitz(), ris_submission.build_prefill(antrag))
         top = top_jugendzentrum()
@@ -351,7 +351,7 @@ class TestSpiegel:
             top.save()
 
         with django_capture_on_commit_callbacks(execute=True):
-            ausfuehren("--profil", "hamburg")
+            ausfuehren("--profil", "stadtstaat")
 
         antrag.refresh_from_db()
         assert antrag.status == "draft" and antrag.session_application_id is None
@@ -363,7 +363,7 @@ class TestSpiegel:
 
 class TestReset:
     def test_reset_entfernt_nur_die_praesentation(self) -> None:
-        ausfuehren("--profil", "hamburg")
+        ausfuehren("--profil", "stadtstaat")
         basis_papiere = set(
             SessionPaper.objects.filter(tenant__slug=DEMO_SESSION_SLUG, reference__startswith="SV/").values_list(
                 "reference", flat=True

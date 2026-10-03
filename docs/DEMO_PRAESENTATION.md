@@ -14,7 +14,7 @@ Alle Daten sind synthetisch und als Demo gekennzeichnet.
 
 ```bash
 python manage.py setup_demo_praesentation                  # Profil nrw (Standard)
-python manage.py setup_demo_praesentation --profil hamburg
+python manage.py setup_demo_praesentation --profil stadtstaat
 python manage.py setup_demo_praesentation --reset          # Präsentation entfernen
 ```
 
@@ -31,7 +31,7 @@ Session-Dashboard A und B) und ein Spickzettel mit dem Klickpfad.
 | Profil | Wahlperiode | Nummernkreis (Preset) | Beispielnummern |
 |---|---|---|---|
 | `nrw` (Standard) | „Wahlperiode 2025–2030“, Nr. 1, ab 01.11.2025 | Verwaltung und Politik getrennt (`nrw_verwaltung_politik`) | Vorlage `0001/2026`, umgewandelter Antrag `AN/0001/2026`, Bezeichnung „Vorlagen-Nr.“ |
-| `hamburg` | „22. Wahlperiode“, Nr. 22, ab 09.06.2024 | Bezirksversammlung (`hamburg_bezirk`) | `22-0001` für alle Drucksachenarten, Bezeichnung „Drucksache“ |
+| `stadtstaat` | „22. Wahlperiode“, Nr. 22, ab 09.06.2024 | Bezirksversammlung (`stadtstaat_bezirk`) | `22-0001` für alle Drucksachenarten, Bezeichnung „Drucksache“ |
 
 Beide Mandanten bekommen dasselbe Profil, zählen aber jeder für sich (siehe
 [Nummernkreise](SESSION_NUMMERNKREISE.md)). Ein Profilwechsel ändert Wahlperiode und
@@ -87,7 +87,7 @@ ein neues setzt `python manage.py changepassword demo-leitstelle@demo.mandari.de
 `demo.mandari.de` ist über `TWO_FACTOR_EXEMPT_EMAIL_DOMAINS` von der Zwei-Faktor-Pflicht
 ausgenommen (Standardwert); fehlt sie dort, weist der Befehl darauf hin.
 
-Im Profil `hamburg` bilden A und B zusätzlich die Mandantengruppe „Bezirke Musterstadt (Demo)“
+Im Profil `stadtstaat` bilden A und B zusätzlich die Mandantengruppe „Bezirke Musterstadt (Demo)“
 (Slug `bezirke-musterstadt-demo`) mit der Leitstelle als Mitglied. In B liegt dafür die Vorlage
 „Sanierung der Stadtteilbibliothek Süd“ in Prüfung mit Frist, in A tagen Haupt- und Bauausschuss in
 einer gemeinsamen Sitzung. Das Profil `nrw` entfernt Gruppe, Vorlage und gemeinsame Sitzung wieder.
@@ -114,8 +114,8 @@ Link `/insight/kommune/<uuid>/` erreichbar.
 | 6 | Bürgerportal | Link „Bürgerportal-Beschluss“ | „Was wurde aus …?“ mit öffentlicher Statusmeldung, ohne internen Vermerk |
 | 7 | Verwaltung, dann Leitstelle | Sitzungsgeld (Link mit Zeitraum der vergangenen Sitzung) → „2. Genehmigen (Vier-Augen)“ | Die Verwaltung wird abgewiesen, die Leitstelle genehmigt fünf Positionen |
 | 8 | Leitstelle | Seitenleiste „Mandant wechseln“ → „Bezirksamt Musterstadt-Süd (Demo)“ | Eigener Mandant, eigene Nummernfolge ab `…0001` |
-| 9 | Leitstelle (nur `hamburg`) | Seitenleiste „Leitstelle Bezirke Musterstadt (Demo)“ | Kennzahlen, Vorlagen in Prüfung, Fristen und Sitzungen beider Bezirke auf einer Seite; Suche über beide Bezirke |
-| 10 | Verwaltung (nur `hamburg`) | Sitzungen → „Gemeinsame Sitzung Haupt- und Bauausschuss (Demo-Drehbuch)“ → Ladung | Beide Ausschüsse genannt; Hakan Heller sitzt in beiden und steht im Empfängerkreis einmal |
+| 9 | Leitstelle (nur `stadtstaat`) | Seitenleiste „Leitstelle Bezirke Musterstadt (Demo)“ | Kennzahlen, Vorlagen in Prüfung, Fristen und Sitzungen beider Bezirke auf einer Seite; Suche über beide Bezirke |
+| 10 | Verwaltung (nur `stadtstaat`) | Sitzungen → „Gemeinsame Sitzung Haupt- und Bauausschuss (Demo-Drehbuch)“ → Ladung | Beide Ausschüsse genannt; Hakan Heller sitzt in beiden und steht im Empfängerkreis einmal |
 
 Hinweise für die Vorführung:
 
@@ -145,6 +145,6 @@ Hinweise für die Vorführung:
 - `apps/common/tests/test_setup_demo_praesentation.py`: Idempotenz, Nummern je Mandant, Leitstelle,
   Verbindung und Einreichung, Drehbuch-Daten, Vier-Augen-Prinzip, Spiegel inkl. sofortiger
   Rücknahme, Proben-Rücksetzung und `--reset`.
-- `tests_e2e/test_demo_drehbuch.py`: spielt das Drehbuch im Browser durch (Profil `hamburg`):
+- `tests_e2e/test_demo_drehbuch.py`: spielt das Drehbuch im Browser durch (Profil `stadtstaat`):
   `MANDARI_E2E=1 pytest tests_e2e/test_demo_drehbuch.py --browser-channel chromium` nach
   `npm run build`.

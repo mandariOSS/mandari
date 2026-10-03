@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Nummernkreise (Issue #150): Vorlagen- und Drucksachennummern werden klar, eindeutig und
-unveränderlich vergeben – nach Hamburger Bezirks-Praxis (22-0593, 22-0593.1) ebenso wie nach
+unveränderlich vergeben – nach der Praxis von Bezirksversammlungen (22-0593, 22-0593.1) ebenso wie nach
 NRW-Mustern (V/0599/2026, AN/1492/2026).
 """
 
@@ -43,9 +43,9 @@ def _paper(tenant: SessionTenant, **kwargs: Any) -> SessionPaper:
     return SessionPaper.objects.create(tenant=tenant, **kwargs)
 
 
-def _hamburg(tenant: SessionTenant, wp: int | None = 22) -> None:
+def _stadtstaat(tenant: SessionTenant, wp: int | None = 22) -> None:
     SessionLegislativeTerm.objects.create(tenant=tenant, name="22. Wahlperiode", number=wp, start_date=date(2024, 6, 9))
-    numbering_service.apply_preset(tenant, "hamburg_bezirk")
+    numbering_service.apply_preset(tenant, "stadtstaat_bezirk")
 
 
 class TestVergabe:
@@ -57,15 +57,15 @@ class TestVergabe:
         assert eins.reference_assigned_at is not None
 
     def test_mandanten_zaehlen_unabhaengig(self) -> None:
-        a, b = _tenant("altona"), _tenant("eimsbuettel")
-        _hamburg(a)
-        _hamburg(b)
+        a, b = _tenant("bezirk-nord"), _tenant("bezirk-sued")
+        _stadtstaat(a)
+        _stadtstaat(b)
         assert [_paper(a).reference for _ in range(2)] == ["22-0001", "22-0002"]
         assert _paper(b).reference == "22-0001"
 
-    def test_hamburg_unternummern(self) -> None:
+    def test_stadtstaat_unternummern(self) -> None:
         tenant = _tenant()
-        _hamburg(tenant)
+        _stadtstaat(tenant)
         antrag = _paper(tenant, paper_type="motion")
         empfehlung = _paper(tenant, parent_paper=antrag, relation_type="recommendation", paper_type="recommendation")
         antwort = _paper(tenant, parent_paper=antrag, relation_type="answer", paper_type="answer")
@@ -76,7 +76,7 @@ class TestVergabe:
 
     def test_ohne_nummer_der_wahlperiode_klarer_fehler(self) -> None:
         tenant = _tenant()
-        _hamburg(tenant, wp=None)
+        _stadtstaat(tenant, wp=None)
         with pytest.raises(NumberingError, match="Wahlperiode"):
             _paper(tenant)
         assert not SessionPaper.objects.filter(tenant=tenant).exists()
@@ -124,10 +124,10 @@ class TestVergabe:
 
     def test_preset_erneut_behaelt_zaehler(self) -> None:
         tenant = _tenant()
-        _hamburg(tenant)
+        _stadtstaat(tenant)
         _paper(tenant)
         numbering_service.apply_preset(tenant, "standard")
-        numbering_service.apply_preset(tenant, "hamburg_bezirk")
+        numbering_service.apply_preset(tenant, "stadtstaat_bezirk")
         assert _paper(tenant).reference == "22-0002"
         assert SessionNumberRange.objects.filter(tenant=tenant, is_active=True).count() == 1
 
@@ -135,7 +135,7 @@ class TestVergabe:
 class TestStartwertUndMuster:
     def test_startwert_nur_aufwaerts(self) -> None:
         tenant = _tenant()
-        _hamburg(tenant)
+        _stadtstaat(tenant)
         rng = tenant.number_ranges.get(is_active=True)
         numbering_service.set_next_number(rng, 2615)
         assert numbering_service.preview(rng) == "22-2615"
@@ -186,7 +186,7 @@ def _client(tenant: SessionTenant, *, admin: bool = False, **perms: bool) -> Cli
 class TestOberflaeche:
     def test_anlegen_ohne_nummernfeld_vergibt_automatisch(self) -> None:
         tenant = _tenant()
-        _hamburg(tenant)
+        _stadtstaat(tenant)
         client = _client(tenant, can_view_papers=True, can_create_papers=True)
         antwort = client.get(f"/session/{tenant.slug}/papers/create/")
         assert antwort.status_code == 200 and 'name="reference"' not in antwort.content.decode()
@@ -209,7 +209,7 @@ class TestOberflaeche:
 
     def test_unternummer_ueber_detailseite(self) -> None:
         tenant = _tenant()
-        _hamburg(tenant)
+        _stadtstaat(tenant)
         antrag = _paper(tenant, paper_type="motion")
         client = _client(tenant, can_view_papers=True, can_create_papers=True, can_edit_papers=True)
         seite = client.get(f"/session/{tenant.slug}/papers/{antrag.id}/").content.decode()
@@ -264,7 +264,7 @@ class TestOberflaeche:
         client = _client(tenant, admin=True)
         url = f"/session/{tenant.slug}/settings/numbering/"
         assert client.get(url).status_code == 200
-        client.post(url + "save/", {"action": "preset", "preset": "hamburg_bezirk"})
+        client.post(url + "save/", {"action": "preset", "preset": "stadtstaat_bezirk"})
         rng = tenant.number_ranges.get(is_active=True)
         client.post(url + "save/", {"action": "next", "range_id": str(rng.id), "next_number": "2615"})
         seite = client.get(url).content.decode()

@@ -147,7 +147,7 @@ Gremiums, und die Niederschrift genehmigt die Folgesitzung des federführenden G
 
 ## Demo
 
-`python manage.py setup_demo_praesentation --profil hamburg` legt die Gruppe „Bezirke Musterstadt
+`python manage.py setup_demo_praesentation --profil stadtstaat` legt die Gruppe „Bezirke Musterstadt
 (Demo)“ mit beiden Demo-Bezirken und der Leitstelle an, dazu eine Vorlage in Prüfung in Bezirk B und
 eine gemeinsame Sitzung von Haupt- und Bauausschuss in Bezirk A. Ein Mitglied sitzt in beiden
 Ausschüssen und steht im Empfängerkreis nur einmal. Das Profil `nrw` und `--reset` entfernen Gruppe,

@@ -37,8 +37,8 @@ def kommunen(db: Any) -> dict[str, OParlBody]:
     nord = OParlBody.objects.create(
         external_id="https://ris.example.org/body/nord",
         source=source,
-        name="Bezirk Hamburg-Nord",
-        display_name="Hamburg-Nord",
+        name="Bezirk Musterstadt-Nord",
+        display_name="Musterstadt-Nord",
         slug="nord",
         accent_color="#0f766e",
     )
@@ -64,10 +64,10 @@ class TestEinstieg:
         assert antwort.status_code == 200
         seite = antwort.content.decode()
         kontext = antwort.context["insight_portal"]
-        assert kontext.name == "Hamburg-Nord" and kontext.accent_color == "#0f766e"
+        assert kontext.name == "Musterstadt-Nord" and kontext.accent_color == "#0f766e"
         assert "/media/bodies/logos/nord.svg" in seite
         assert "--portal-accent: #0f766e" in seite
-        assert "| Hamburg-Nord</title>" in seite
+        assert "| Musterstadt-Nord</title>" in seite
         assert antwort.context["available_bodies"] == [kommunen["nord"]]
         assert antwort.context["active_body"] == kommunen["nord"]
 
@@ -75,8 +75,8 @@ class TestEinstieg:
         nord = Client().get("/insight/k/nord/").content.decode()
         sued = Client().get("/insight/k/sued/").content.decode()
 
-        assert "Hamburg-Nord" in nord and "bodies/logos/nord.svg" in nord and "bodies/logos/sued.png" not in nord
-        assert "Bezirk Süd" in sued and "bodies/logos/sued.png" in sued and "Hamburg-Nord" not in sued
+        assert "Musterstadt-Nord" in nord and "bodies/logos/nord.svg" in nord and "bodies/logos/sued.png" not in nord
+        assert "Bezirk Süd" in sued and "bodies/logos/sued.png" in sued and "Musterstadt-Nord" not in sued
         assert "--portal-accent" not in sued, "ohne Akzentfarbe die mandari-Farben"
 
     def test_links_bleiben_im_kontext(self, kommunen: dict[str, OParlBody]) -> None:
