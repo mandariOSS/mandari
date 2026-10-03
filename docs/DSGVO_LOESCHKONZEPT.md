@@ -151,6 +151,7 @@ abrufen, folgen dem Löschabgleich ([FILE_CACHE.md, „Löschabgleich“](FILE_C
 | Download-Adresse liefert das Dokument wieder (Prüfung nach 1, 7 und 25 Tagen und vor dem Löschen) | Sperre aufgehoben, nichts gelöscht |
 | Quelle ändert das Dokument (anderer SHA-256, z. B. eine Schwärzung) | Kopie und Text werden durch die neue Fassung ersetzt, die alte Fassung gelöscht |
 | 30 Tage gesperrt (`FILE_PURGE_AFTER_DAYS`) | lokale Kopie und extrahierter Text gelöscht; der Datensatz bleibt als Tombstone (Name, Adresse, Fingerabdruck). Lässt sich die Quelle vor dem Löschen nicht befragen, spätestens sieben Tage später (`FILE_PURGE_CONFIRM_GRACE_DAYS`) |
+| Inhalt wird von keiner Datei mehr gebraucht (Ablage nach SHA-256: ersetzte Fassung, Löschen nach Frist) | Inhalt verwaist; der nächste Lauf von `loeschabgleich` bzw. `dokumentablage --aufraeumen` löscht ihn nach zehn Minuten lokal und im Objektspeicher. Ist der Objektspeicher ausgeschaltet (`OBJ_ENABLED=false`), bleibt eine dort schon liegende Kopie bis zum ersten Aufräumen nach dem Wiedereinschalten |
 | Sicherungen | restic hält Stände 30 Tage; spätestens dann ist auch dort nichts mehr |
 
 ## 7. Zugehörige Dokumente

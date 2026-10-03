@@ -22,7 +22,7 @@ from ..models import (
     OParlMeeting,
     withdrawn_q,
 )
-from ..services import file_accel, file_access, file_delivery, file_reconcile
+from ..services import file_accel, file_access, file_delivery, file_reconcile, file_store
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, page_number
 
 # =============================================================================
@@ -308,7 +308,8 @@ def _deliver_file(request, file_obj):
     force_download = request.GET.get("download") == "1"
     filename = file_obj.file_name or file_obj.name or "dokument.pdf"
 
-    local = file_cache.local_file(file_obj)
+    # Lokale Kopie; mit Objektspeicher wird ein lokal verdrängter Inhalt von dort geholt (#788)
+    local = file_store.local_copy(file_obj)
     if local is not None:
         content_type = file_cache.content_type_for(file_obj, "application/pdf")
         # Bytes liefert der Webserver (Range, ETag), Django setzt nur Typ und Schutzkopfzeilen (#785)

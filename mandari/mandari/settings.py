@@ -513,6 +513,27 @@ FILE_PURGE_CONFIRM_GRACE_DAYS = int(os.environ.get("FILE_PURGE_CONFIRM_GRACE_DAY
 # Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu 404/410, wird keines
 # gesperrt (kaputte Quelle, Umstellung, Wartung) und die Quelle ruht für den Lauf
 FILE_RECONCILE_MAX_MISSING = int(os.environ.get("FILE_RECONCILE_MAX_MISSING", "10"))
+# Ablage nach SHA-256 mit Referenzzählung (Issue #788): "sha256" (Standard) oder "kommune" (bisheriges
+# Layout je Kommune, ohne Deduplizierung und ohne Objektspeicher)
+FILE_STORE_LAYOUT = os.environ.get("FILE_STORE_LAYOUT", "sha256")
+# Der Ingestor legt Dateien, die er für den Text lädt, selbst in der Ablage ab (OPARL_FILES_ROOT im
+# Ingestor). Dann holt der Dokument-Cache Dateien in der Texterkennung nicht ein zweites Mal.
+INGESTOR_STORES_FILES = os.environ.get("INGESTOR_STORES_FILES", "false").lower() in ("1", "true", "yes")
+# S3-kompatibler Objektspeicher für die Ablage (Issue #788), Standard aus. Zugangsdaten nur aus der Umgebung.
+# Eingeschaltet ist die lokale Ablage ein Zwischenspeicher mit höchstens OBJ_CACHE_MAX_GB.
+OBJ_ENABLED = os.environ.get("OBJ_ENABLED", "false").lower() in ("1", "true", "yes")
+OBJ_ENDPOINT = os.environ.get("OBJ_ENDPOINT", "")
+OBJ_BUCKET = os.environ.get("OBJ_BUCKET", "")
+OBJ_KEY = os.environ.get("OBJ_KEY", "")
+OBJ_SECRET = os.environ.get("OBJ_SECRET", "")
+OBJ_REGION = os.environ.get("OBJ_REGION", "")
+OBJ_ADDRESSING_STYLE = os.environ.get("OBJ_ADDRESSING_STYLE", "auto")
+OBJ_TIMEOUT_SECONDS = float(os.environ.get("OBJ_TIMEOUT_SECONDS", "30"))
+OBJ_CACHE_MAX_GB = int(os.environ.get("OBJ_CACHE_MAX_GB", "60"))
+# Gesamtdauer eines Abrufs aus dem Objektspeicher in der Vorschau (danach Rückfall auf die Quelle)
+OBJ_FETCH_TOTAL_SECONDS = float(os.environ.get("OBJ_FETCH_TOTAL_SECONDS", "60"))
+# Prüfsummen beim Upload: "when_required" (verträglich mit S3-kompatiblen Anbietern) oder "when_supported"
+OBJ_CHECKSUMS = os.environ.get("OBJ_CHECKSUMS", "when_required")
 # Quellen-Schonung (Issue #89): ab so vielen Sync-Fehlversuchen in Folge lassen Dokument-Cache
 # und Datei-Proxy das Ratsinformationssystem in Ruhe (Ratenlimits, IP-Sperren).
 INSIGHT_SOURCE_BACKOFF_FAILURES = int(os.environ.get("INSIGHT_SOURCE_BACKOFF_FAILURES", "3"))

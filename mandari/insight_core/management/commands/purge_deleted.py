@@ -87,10 +87,19 @@ def _chunked_delete(queryset, batch_size: int = BATCH_SIZE) -> int:
 
 
 def _remove_local_files(file_qs) -> int:
-    """Entfernt lokale Dateikopien (local_path) vom Datenträger."""
-    removed = 0
+    """Entfernt lokale Dateikopien (local_path) vom Datenträger.
+
+    Ablage nach SHA-256 (#788): Referenzen werden freigegeben; ein Inhalt verschwindet erst, wenn ihn keine
+    andere Datei mehr braucht (``dokumentablage --aufraeumen``).
+    """
+    from insight_core.services.file_store import blob_root, release_queryset
+
+    removed = release_queryset(file_qs.filter(blob__isnull=False))
     for local_path in (
-        file_qs.exclude(local_path__isnull=True).exclude(local_path="").values_list("local_path", flat=True)
+        file_qs.exclude(local_path__isnull=True)
+        .exclude(local_path="")
+        .exclude(local_path__startswith=str(blob_root()))
+        .values_list("local_path", flat=True)
     ):
         try:
             path = Path(local_path)

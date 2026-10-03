@@ -182,13 +182,17 @@ class TestAbgleichPerHash:
         assert datei.source_checked_at is not None
         assert Path(datei.local_path or "").read_bytes() == PDF_ALT
 
-    def test_anderer_inhalt_ersetzt_kopie_und_text(self, body: OParlBody, tmp_path: Path, ablage: Path) -> None:
+    def test_anderer_inhalt_ersetzt_kopie_und_text(
+        self, body: OParlBody, tmp_path: Path, ablage: Path, django_capture_on_commit_callbacks: Any
+    ) -> None:
         paper = OParlPaper.objects.create(
             external_id="https://ris.fremd.example/oparl/paper/1", body=body, name="Vorlage", summary="mit Namen"
         )
         datei = _datei(body, tmp_path, paper=paper)
         alte_kopie = Path(datei.local_path or "")
-        assert file_reconcile.verify(datei, _client(_liefert(PDF_NEU))) == file_reconcile.CHANGED
+        # Die alte Kopie verschwindet nach dem Commit (Ablage nach SHA-256, #788)
+        with django_capture_on_commit_callbacks(execute=True):
+            assert file_reconcile.verify(datei, _client(_liefert(PDF_NEU))) == file_reconcile.CHANGED
         datei.refresh_from_db()
         assert Path(datei.local_path or "").read_bytes() == PDF_NEU
         assert not alte_kopie.exists()

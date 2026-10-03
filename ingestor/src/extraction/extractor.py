@@ -7,6 +7,11 @@ Downloads PDF files and extracts text using a fallback chain:
 3. AI OCR (placeholder for future Mistral integration)
 
 Async-capable: PDF downloads via httpx, sync extraction via asyncio.to_thread().
+
+Downloads laufen gestreamt in eine temporäre Datei, die beim Schreiben gehasht wird; die Größengrenze
+greift schon während des Downloads, nie liegt eine ganze Datei im Arbeitsspeicher (Issue #788). Ist die
+Dokumentablage eingerichtet (``OPARL_FILES_ROOT``), legt der Ingestor die Datei danach gleich unter
+ihrem SHA-256 ab – ein Abruf je Datei für Text und Ablage.
 """
 
 from __future__ import annotations
@@ -14,9 +19,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
+import shutil
+import tempfile
 import time
 from collections.abc import Callable
-from io import BytesIO
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -34,10 +43,10 @@ except ImportError:
     PdfReader = None  # type: ignore[assignment, misc]
 
 try:
-    from pdf2image import convert_from_bytes
+    from pdf2image import convert_from_path
     from pdf2image.exceptions import PDFInfoNotInstalledError
 except ImportError:
-    convert_from_bytes = None  # type: ignore[assignment, misc]
+    convert_from_path = None  # type: ignore[assignment, misc]
     PDFInfoNotInstalledError = None  # type: ignore[assignment, misc]
 
 try:
@@ -54,6 +63,39 @@ SOURCE_OPTIONS_TTL_SECONDS = 300.0
 PDF_MIME_TYPES = {"application/pdf", "application/x-pdf"}
 TEXT_MIME_TYPES = {"text/plain", "text/html"}
 SUPPORTED_MIME_TYPES = PDF_MIME_TYPES | TEXT_MIME_TYPES
+#: Textdateien werden höchstens bis zu dieser Größe gelesen
+MAX_TEXT_BYTES = 20 * 1024 * 1024
+
+
+class FileTooLargeError(Exception):
+    """Die Datei überschreitet ``TEXT_EXTRACTION_MAX_SIZE_MB`` (Abbruch während des Downloads)."""
+
+
+@dataclass
+class DownloadedFile:
+    """Gestreamt geladene Datei in einer temporären Datei."""
+
+    path: Path
+    size: int
+    sha256: str
+    head: bytes
+
+    def discard(self) -> None:
+        self.path.unlink(missing_ok=True)
+
+
+def blob_root() -> Path | None:
+    """Wurzel der Ablage nach SHA-256 oder ``None``, wenn der Ingestor nichts ablegt."""
+    root = (settings.oparl_files_root or "").strip()
+    if not root or (settings.file_store_layout or "sha256").strip().lower() != "sha256":
+        return None
+    path = Path(root)
+    return path / "sha256" if path.is_dir() else None
+
+
+def looks_like_html(data: bytes) -> bool:
+    head = data[:512].lstrip().lower()
+    return head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<html" in head[:200]
 
 
 class TextExtractor:
@@ -195,7 +237,14 @@ class TextExtractor:
             # Drossel je Host: Dateien zählen wie jede andere Anfrage an die Quelle (mit Grenze je Host)
             async with host_pacer.limit(download_url, interval):
                 await pace(download_url)
-                data = await self._download(download_url, headers)
+                downloaded = await self._download_to_file(download_url, headers)
+        except FileTooLargeError:
+            await self.storage.update_file_text(
+                file_id=file_id,
+                status="skipped",
+                error=f"File too large: > {self.max_size_bytes} bytes",
+            )
+            return False
         except Exception as e:
             logger.warning("Download failed for %s: %s", download_url, e)
             await self.storage.update_file_text(
@@ -205,25 +254,27 @@ class TextExtractor:
             )
             return False
 
-        # Size check after download
-        if len(data) > self.max_size_bytes:
-            await self.storage.update_file_text(
-                file_id=file_id,
-                status="skipped",
-                error=f"File too large: {len(data)} bytes",
-            )
-            return False
+        try:
+            return await self._extract_and_store(file_row, downloaded, mime_type, file_name)
+        finally:
+            downloaded.discard()
 
-        # Calculate hash
-        sha256_hash = hashlib.sha256(data).hexdigest()
+    async def _extract_and_store(
+        self, file_row: Any, downloaded: DownloadedFile, mime_type: str, file_name: str
+    ) -> bool:
+        """Text aus der geladenen Datei erkennen, Ergebnis speichern und die Datei in der Ablage ablegen."""
+        file_id = file_row.id
+        sha256_hash = downloaded.sha256
 
         # Detect MIME type from content if not set
-        if not mime_type and data[:5] == b"%PDF-":
+        if not mime_type and downloaded.head[:5] == b"%PDF-":
             mime_type = "application/pdf"
 
         # Extract text
         try:
-            text, page_count, method = await asyncio.to_thread(self._extract_text, data, mime_type, file_name)
+            text, page_count, method = await asyncio.to_thread(
+                self._extract_text, downloaded.path, mime_type, file_name
+            )
         except Exception as e:
             logger.warning("Extraction failed for %s: %s", file_name or file_id, e)
             await self.storage.update_file_text(
@@ -232,7 +283,9 @@ class TextExtractor:
                 error=f"Extraction failed: {e}",
                 sha256_hash=sha256_hash,
             )
+            await self._store(file_row, downloaded, mime_type)
             return False
+        await self._store(file_row, downloaded, mime_type)
 
         if text.strip():
             await self.storage.update_file_text(
@@ -307,21 +360,83 @@ class TextExtractor:
         self._options_cache[body_id] = (options, now)
         return options
 
-    async def _download(self, url: str, extra_headers: dict[str, str] | None = None) -> bytes:
-        """Download a file via httpx async (User-Agent aus den Download-Headern der Quelle, sonst Standard)."""
+    async def _download_to_file(self, url: str, extra_headers: dict[str, str] | None = None) -> DownloadedFile:
+        """
+        Datei gestreamt in eine temporäre Datei laden und dabei hashen.
+
+        Bricht ab, sobald die Größengrenze überschritten ist (auch bei falscher ``Content-Length``). Mit
+        eingerichteter Ablage liegt die temporäre Datei im selben Dateisystem wie die Ablage.
+        """
         headers = {
             **{key: value for key, value in (extra_headers or {}).items() if key.lower() != "user-agent"},
             "User-Agent": _user_agent_of(extra_headers),
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(url, headers=headers, follow_redirects=True)
-            response.raise_for_status()
-            return response.content
+        root = blob_root()
+        directory: Path | None = None
+        if root is not None:
+            directory = root / "tmp"
+            directory.mkdir(parents=True, exist_ok=True)
+        handle, name = tempfile.mkstemp(suffix=".part", dir=directory)
+        path = Path(name)
+        digest = hashlib.sha256()
+        size = 0
+        head = b""
+        try:
+            with os.fdopen(handle, "wb") as target:
+                async with (
+                    httpx.AsyncClient(timeout=self.timeout) as client,
+                    client.stream("GET", url, headers=headers, follow_redirects=True) as response,
+                ):
+                    response.raise_for_status()
+                    declared = response.headers.get("content-length")
+                    if declared and declared.isdigit() and int(declared) > self.max_size_bytes:
+                        raise FileTooLargeError
+                    async for chunk in response.aiter_bytes(256 * 1024):
+                        size += len(chunk)
+                        if size > self.max_size_bytes:
+                            raise FileTooLargeError
+                        digest.update(chunk)
+                        target.write(chunk)
+                        if len(head) < 512:
+                            head += chunk[: 512 - len(head)]
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        return DownloadedFile(path=path, size=size, sha256=digest.hexdigest(), head=head)
+
+    async def _store(self, file_row: Any, downloaded: DownloadedFile, mime_type: str) -> bool:
+        """
+        Geladene Datei in der Ablage nach SHA-256 ablegen (nur gelistete Kommunen, genug Platz).
+
+        Hinweis- oder Prüfseiten statt der Datei (HTML bei erwarteter PDF) und leere Antworten werden nicht
+        abgelegt. Fehler beim Ablegen verhindern die Texterkennung nie.
+        """
+        root = blob_root()
+        attach = getattr(self.storage, "attach_file_blob", None)
+        if root is None or attach is None or not downloaded.size or file_row.body_id is None:
+            return False
+        if looks_like_html(downloaded.head) and "html" not in (mime_type or "").lower():
+            return False
+        try:
+            free = shutil.disk_usage(root.parent).free
+            if free - downloaded.size < settings.file_cache_min_free_gb * 1024**3:
+                logger.info("Ablage: zu wenig freier Speicher, Datei %s nicht abgelegt", file_row.id)
+                return False
+            if not await self.storage.body_stores_files(file_row.body_id):
+                return False
+            target = root / downloaded.sha256[:2] / downloaded.sha256
+            if downloaded.path.parent != root / "tmp":
+                return False
+            stored = bool(await attach(file_row.id, downloaded.sha256, downloaded.size, downloaded.path, target))
+        except Exception as e:  # noqa: BLE001 - Ablage ist optional, der Text zählt
+            logger.warning("Datei %s nicht abgelegt: %s", file_row.id, e)
+            return False
+        return stored
 
     @staticmethod
-    def _extract_text(data: bytes, mime_type: str, file_name: str) -> tuple[str, int | None, str]:
+    def _extract_text(source: Path, mime_type: str, file_name: str) -> tuple[str, int | None, str]:
         """
-        Extract text from file data. Runs in a thread (sync).
+        Extract text from a downloaded file. Runs in a thread (sync).
 
         Returns:
             (text, page_count, extraction_method)
@@ -330,7 +445,10 @@ class TextExtractor:
 
         # PDF extraction
         if resolved_mime in PDF_MIME_TYPES or file_name.lower().endswith(".pdf"):
-            return _extract_text_from_pdf(data, file_name)
+            return _extract_text_from_pdf(source, file_name)
+
+        with open(source, "rb") as handle:
+            data = handle.read(MAX_TEXT_BYTES)
 
         # Plain text / HTML
         if resolved_mime.startswith("text/"):
@@ -355,9 +473,11 @@ def _user_agent_of(headers: dict[str, str] | None) -> str:
     return settings.user_agent
 
 
-def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int | None, str]:
+def _extract_text_from_pdf(source: Path, file_name: str = "") -> tuple[str, int | None, str]:
     """
-    Extract text from a PDF using the fallback chain: pypdf -> Tesseract.
+    Extract text from a PDF file using the fallback chain: pypdf -> Mistral -> Tesseract.
+
+    Liest aus der Datei; pypdf und pdftoppm laden nur, was sie brauchen.
 
     Returns:
         (text, page_count, extraction_method)
@@ -367,7 +487,7 @@ def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int |
     # 1. Try pypdf (fast, for text-based PDFs)
     if PdfReader is not None:
         try:
-            reader = PdfReader(BytesIO(data))
+            reader = PdfReader(source)
             page_count = len(reader.pages)
 
             text_fragments: list[str] = []
@@ -392,7 +512,7 @@ def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int |
 
     if _settings.mistral_api_key:
         try:
-            text = _extract_text_with_mistral(data, file_name)
+            text = _extract_text_with_mistral(source.read_bytes(), file_name)
             if text.strip():
                 logger.debug("Mistral OCR ok: %d chars", len(text))
                 return text, page_count, "mistral"
@@ -400,7 +520,7 @@ def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int |
             logger.warning("Mistral OCR failed for %s, falling back to Tesseract: %s", file_name, exc)
 
     # 3. Tesseract OCR (local)
-    text, success = _extract_text_with_ocr(data, page_count=page_count)
+    text, success = _extract_text_with_ocr(source, page_count=page_count)
     if success and text.strip():
         logger.debug("Tesseract OCR ok: %d chars", len(text))
         return text, page_count, "tesseract"
@@ -464,16 +584,17 @@ OCR_MAX_PAGES = 100  # Schutz vor Extremfaellen (Anlagenbaende etc.)
 OCR_DPI = 200  # 200 dpi reicht Tesseract; 300 dpi verdoppelt den Speicher
 
 
-def _extract_text_with_ocr(data: bytes, page_count: int | None = None) -> tuple[str, bool]:
+def _extract_text_with_ocr(source: Path, page_count: int | None = None) -> tuple[str, bool]:
     """
     Extract text via Tesseract OCR — seitenweise.
 
-    convert_from_bytes ohne first_page/last_page rendert ALLE Seiten
+    Ohne first_page/last_page rendert pdf2image ALLE Seiten
     gleichzeitig in den RAM (~26 MB pro A4-Seite bei 300 dpi) — ein
     50-Seiten-Scan sprengt damit jedes Container-Limit (OOM-Kill).
     Deshalb: eine Seite rendern, OCRen, freigeben, naechste Seite.
+    Gerendert wird direkt aus der Datei, ohne sie in den Speicher zu laden.
     """
-    if convert_from_bytes is None or pytesseract is None:
+    if convert_from_path is None or pytesseract is None:
         logger.warning("OCR not available (pdf2image or pytesseract missing)")
         return "", False
 
@@ -488,8 +609,8 @@ def _extract_text_with_ocr(data: bytes, page_count: int | None = None) -> tuple[
             # Eigenes Temp-Verzeichnis pro Seite: pdf2image raeumt seine
             # Zwischendateien sonst bei Abbruechen nicht auf (57GB-Vorfall)
             with tempfile.TemporaryDirectory(prefix="ocr-page-") as tmpdir:
-                images = convert_from_bytes(
-                    data, dpi=OCR_DPI, first_page=page_no, last_page=page_no, output_folder=tmpdir
+                images = convert_from_path(
+                    source, dpi=OCR_DPI, first_page=page_no, last_page=page_no, output_folder=tmpdir
                 )
                 if images:
                     images[0].load()

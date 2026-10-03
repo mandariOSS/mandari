@@ -70,6 +70,7 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         from insight_core.models import OParlBody, OParlFile
         from insight_core.services.file_cache import body_dir_name, cache_root
+        from insight_core.services.file_store import release_queryset
 
         if not options["unlisted"]:
             raise CommandError("Bitte --unlisted angeben (bewusst kein Standard, der etwas löscht).")
@@ -97,6 +98,8 @@ class Command(BaseCommand):
             gesamt_dateien += anzahl
             if dry_run:
                 continue
+            # Ablage nach SHA-256: Referenzen freigeben (Inhalte anderer Kommunen bleiben), danach Status
+            release_queryset(dateien.filter(blob__isnull=False))
             dateien.update(local_status="none", local_path=None, local_error="")
             if verzeichnis.is_dir() and not geteilt:
                 shutil.rmtree(verzeichnis)

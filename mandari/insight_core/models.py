@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
+from django.db.models.functions import Now
 from django.utils import timezone
 from mandari_oparl.ids import IdBases, canonical_id
 
@@ -948,6 +949,32 @@ class OParlAgendaItem(SourceDeletionModel):
         )
 
 
+class OParlFileBlob(models.Model):
+    """
+    Inhalt einer Datei in der Ablage, abgelegt unter seinem SHA-256 (Issue #788, services/file_store.py).
+
+    Gleiche Dateien (dieselbe Anlage an mehreren Vorgängen) liegen nur einmal in der Ablage; jede Datei
+    (``OParlFile.blob``) zählt als Referenz. Fällt die letzte Referenz weg, wird der Inhalt verwaist
+    markiert und vom Aufräumen gelöscht – lokal und im Objektspeicher. Die Originale bleiben unverändert.
+    Ingestor und Django schreiben beide (gleiches Vorgehen: Zeile sperren, Datei ablegen, zählen).
+    """
+
+    sha256 = models.CharField(max_length=64, primary_key=True)
+    size = models.BigIntegerField(verbose_name="Größe (Bytes)")
+    ref_count = models.IntegerField(default=0, db_default=0, verbose_name="Referenzen")
+    created_at = models.DateTimeField(default=timezone.now, db_default=Now(), verbose_name="Abgelegt am")
+    orphaned_at = models.DateTimeField(blank=True, null=True, verbose_name="Ohne Referenz seit")
+    remote_at = models.DateTimeField(blank=True, null=True, verbose_name="Im Objektspeicher seit")
+
+    class Meta:
+        db_table = "oparl_file_blobs"
+        verbose_name = "Dateiinhalt"
+        verbose_name_plural = "Dateiinhalte"
+
+    def __str__(self) -> str:
+        return f"{self.sha256[:12]} ({self.ref_count} Referenzen)"
+
+
 class OParlFile(SourceDeletionModel):
     """Eine Datei/Anlage."""
 
@@ -1025,6 +1052,15 @@ class OParlFile(SourceDeletionModel):
     )
     content_purged_at = models.DateTimeField(
         blank=True, null=True, verbose_name="Kopie und Text gelöscht am", help_text="Nach dem Löschabgleich."
+    )
+    # Inhalt in der Ablage nach SHA-256 (Issue #788); leer bei Kopien im bisherigen Layout je Kommune
+    blob = models.ForeignKey(
+        OParlFileBlob,
+        on_delete=models.PROTECT,
+        related_name="files",
+        blank=True,
+        null=True,
+        verbose_name="Inhalt in der Ablage",
     )
 
     # Text extraction tracking

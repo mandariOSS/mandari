@@ -48,10 +48,11 @@ async def test_extractor_sendet_quellen_header_und_cached_je_body(monkeypatch: p
     body_id = uuid.uuid4()
 
     for _ in range(2):
-        daten = await extractor._download(
+        geladen = await extractor._download_to_file(
             "https://rat.example.de/bi/getfile.asp?id=1", await extractor._download_headers(body_id)
         )
-        assert daten.startswith(b"%PDF")
+        assert geladen.path.read_bytes().startswith(b"%PDF")
+        geladen.discard()
 
     assert gesehen[0]["referer"] == "https://rat.example.de/bi/" and gesehen[0]["cookie"] == "consent=1"
     assert gesehen[0]["user-agent"].startswith("mandari-ingestor/"), "eigener User-Agent bleibt"

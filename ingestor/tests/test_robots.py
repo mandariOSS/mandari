@@ -7,7 +7,11 @@ alle Antworten kommen aus httpx.MockTransport.
 
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
@@ -30,7 +34,7 @@ from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED, ERROR_KIND_SERVER
 from src.client.robots import RobotsGate, robots_gate
 from src.client.source_options import SourceFetchOptions
 from src.config import DEFAULT_USER_AGENT
-from src.extraction.extractor import TextExtractor
+from src.extraction.extractor import DownloadedFile, TextExtractor
 from src.sync.orchestrator import source_backoff_until
 
 # ---------------------------------------------------------------------------
@@ -403,6 +407,16 @@ class _Speicher:
         return list(self.wartend)
 
 
+def _geladen(inhalt: bytes = b"Text") -> DownloadedFile:
+    """Ergebnis eines Downloads wie aus ``_download_to_file``: eine temporäre Datei mit Hash."""
+    handle, name = tempfile.mkstemp(suffix=".part")
+    with os.fdopen(handle, "wb") as ziel:
+        ziel.write(inhalt)
+    return DownloadedFile(
+        path=Path(name), size=len(inhalt), sha256=hashlib.sha256(inhalt).hexdigest(), head=inhalt[:512]
+    )
+
+
 def _datei(url: str) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid4(), body_id=uuid4(), download_url=url, access_url=None, mime_type="application/pdf", file_name="a.pdf"
@@ -415,10 +429,10 @@ class TestDateien:
         speicher = _Speicher()
         extractor = TextExtractor(speicher)
 
-        async def kein_download(*_args: Any, **_kwargs: Any) -> bytes:
+        async def kein_download(*_args: Any, **_kwargs: Any) -> DownloadedFile:
             raise AssertionError("gesperrte Datei darf nicht geladen werden")
 
-        monkeypatch.setattr(extractor, "_download", kein_download)
+        monkeypatch.setattr(extractor, "_download_to_file", kein_download)
         assert await extractor._process_file(_datei("https://rat.example.de/dokumente/vorlage.pdf")) is False
         assert speicher.updates[0]["status"] == "skipped"
         assert speicher.updates[0]["error"].startswith("robots.txt")
@@ -429,11 +443,11 @@ class TestDateien:
         extractor = TextExtractor(_Speicher(config))
         geladen: list[str] = []
 
-        async def download(url: str, *_args: Any) -> bytes:
+        async def download(url: str, *_args: Any) -> DownloadedFile:
             geladen.append(url)
-            return b"Text"
+            return _geladen()
 
-        monkeypatch.setattr(extractor, "_download", download)
+        monkeypatch.setattr(extractor, "_download_to_file", download)
         await extractor._process_file(_datei("https://rat.example.de/dokumente/vorlage.pdf"))
         assert geladen == ["https://rat.example.de/dokumente/vorlage.pdf"]
 
@@ -453,10 +467,10 @@ class TestDateienNichtErreichbar:
         uhr = _Uhrwerk()
         extractor = TextExtractor(speicher, clock=uhr)
 
-        async def kein_download(*_args: Any, **_kwargs: Any) -> bytes:
+        async def kein_download(*_args: Any, **_kwargs: Any) -> DownloadedFile:
             raise AssertionError("ohne erreichbare robots.txt wird nichts geladen")
 
-        monkeypatch.setattr(extractor, "_download", kein_download)
+        monkeypatch.setattr(extractor, "_download_to_file", kein_download)
         datei = _datei("https://rat.example.de/dokumente/vorlage.pdf")
         speicher.wartend = [datei]
         assert await extractor.extract_pending_files(datei.body_id) == 0
@@ -479,11 +493,11 @@ class TestDateienNichtErreichbar:
         extractor = TextExtractor(speicher, clock=uhr)
         geladen: list[str] = []
 
-        async def download(url: str, *_args: Any) -> bytes:
+        async def download(url: str, *_args: Any) -> DownloadedFile:
             geladen.append(url)
-            return b"Text"
+            return _geladen()
 
-        monkeypatch.setattr(extractor, "_download", download)
+        monkeypatch.setattr(extractor, "_download_to_file", download)
         datei = _datei("https://rat.example.de/dokumente/vorlage.pdf")
         await extractor._process_file(datei)
         assert speicher.updates[-1]["status"] == "skipped" and geladen == []
