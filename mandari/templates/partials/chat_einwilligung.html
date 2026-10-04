@@ -1,0 +1,56 @@
+{# KI-Assistent: Einwilligung vor dem ersten Gespräch (aus pages/chat.html, im Gültigkeitsbereich von chatApp) #}
+<!-- DSGVO Consent Card -->
+<template x-if="!hasConsent">
+    <div class="max-w-2xl mx-auto w-full fade-up">
+        <!-- Header -->
+        <div class="mb-8 text-center">
+            <div class="relative w-16 h-16 mx-auto mb-5">
+                <div class="absolute inset-0 rounded-2xl bg-primary-500/20 blur-lg"></div>
+                <div class="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/20">
+                    <svg class="w-8 h-8 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                </div>
+            </div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2">KI-Assistent</h1>
+            <p class="text-sm lg:text-base text-gray-500 dark:text-gray-400 max-w-lg mx-auto">
+                Stellen Sie Fragen zu kommunalpolitischen Themen und erhalten Sie verständliche Antworten auf Basis öffentlicher Ratsdokumente.
+            </p>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="p-6 lg:p-8">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800/50 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Datenschutzhinweis</h2>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-5">
+                            Der KI-Assistent nutzt <strong class="text-gray-700 dark:text-gray-300">Nebius AI</strong> (Kimi K2) zur Verarbeitung Ihrer Anfragen.
+                            Ihre Fragen werden an die Nebius TokenFactory API übermittelt.
+                            Es gelten die Bestimmungen unserer
+                            <a href="{{ marketing_url }}/datenschutz/" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Datenschutzerklärung</a>.
+                        </p>
+                        <label class="flex items-start gap-3 p-3 -mx-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 cursor-pointer select-none transition-colors">
+                            <input type="checkbox" x-model="consentChecked"
+                                   class="mt-1 w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                            <span class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+                                Ich habe die Datenschutzerklärung gelesen und stimme der Verarbeitung meiner Anfragen durch Nebius AI zu.
+                            </span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 lg:px-8 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 flex items-center justify-end gap-3">
+                <a href="{% url 'insight_core:insight:portal_home' %}"
+                   class="px-5 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    Abbrechen
+                </a>
+                <button type="button" @click="giveConsent()"
+                        :disabled="!consentChecked"
+                        class="px-6 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 dark:disabled:text-gray-500 text-white text-sm font-semibold rounded-lg transition-all disabled:cursor-not-allowed shadow-sm hover:shadow-md disabled:shadow-none">
+                    Zustimmen &amp; Chat starten
+                </button>
+            </div>
+        </div>
+    </div>
+</template>
