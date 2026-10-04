@@ -1,0 +1,10 @@
+{% comment %}
+Sitzung im RIS-Bestand gelöscht oder zurückgezogen (Issue #524): Die Arbeitsdaten der Organisation bleiben, die Seite
+sagt, warum die Sitzung im Ratsinformationssystem fehlt. Nichts ist zu tun; deshalb nur ein Hinweis, keine Aktion.
+{% endcomment %}
+{% if meeting.deleted %}
+<c-ui.alert variant="warning" title="{{ meeting.deletion_label }}" class="mb-4">
+    {% if meeting.depublished %}Die Verwaltung hat diese Sitzung zurückgezogen.{% else %}Die Sitzung wurde im Ratsinformationssystem gelöscht.{% endif %}
+    Vorbereitung, Notizen und Positionen bleiben erhalten.
+</c-ui.alert>
+{% endif %}

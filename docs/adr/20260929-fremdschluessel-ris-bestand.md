@@ -78,6 +78,29 @@ sind oft nicht wiederherstellbar.
   erhalten.
 - Nächtliche Konsistenzprüfung zählt Verweise auf markierte Objekte (Metrik), ohne zu löschen.
 
+## Nachtrag zur Umsetzung (#524)
+
+- **Grund der Markierung:** Jedes Objekt des Bestands trägt neben `deleted` den Grund `deletion_reason`
+  (`quelle_geloescht`, `zurueckgenommen`, `nichtoeffentlich`, `datenschutz`, wie in `ris.object.depublished`).
+  `depublished` ist kein eigenes Feld, sondern ein Grund außer `quelle_geloescht`. Ingestor und Spiegel markieren mit
+  `quelle_geloescht`, die Rücknahme aus Session (`hub.ris.retraction`) mit ihrem Grund, das Beenden der
+  Veröffentlichung einer Kommune mit `zurueckgenommen`. Liefert die Quelle das Objekt wieder, werden Markierung und
+  Grund aufgehoben. Markierungen von vor diesem Stand haben keinen Grund; Session-Objekte gelten dann als
+  zurückgezogen.
+- **Verweise aus Work:** Notizen, Positionen, Redebeiträge, Ergänzungsdokumente, Sitzungsvorbereitungen, Kommentare,
+  Datei-Anmerkungen, Aussetzungsregeln und regional geteilte Anträge zeigen mit `PROTECT` auf den Bestand, der
+  optionale Sitzungsbezug eines Redebeitrags mit `SET_NULL`. Die Verweise aus Session und `tenants` waren schon
+  `SET_NULL`.
+- **Fitnessfunktion:** `hub/ris/tests/test_loeschsemantik.py` prüft alle Relationen auf den Bestand. Ausnahmen sind die
+  Daten des Bürgerportals und abgeleitete Geodaten in insight_core (Abos, Ratsfragen, Rückmeldungen, Straßen,
+  Adressen, Verortungen); über sie steht eine Entscheidung aus (Issue #524). Die Liste darf nur kürzer werden.
+- **Work** zeigt markierte Sitzungen und Tagesordnungspunkte mit dem Hinweis „Zurückgezogen“ bzw. „In der Quelle
+  gelöscht“; Vorbereitung, Notizen und Positionen bleiben.
+- **Dokumente:** Der Löschabgleich (#787) entfernt Kopie und Text einer in der Quelle gelöschten Datei nach 30 Tagen
+  Sperre; der Datensatz bleibt als markiertes Objekt. Verweise aus Work (Anmerkungen) bleiben dadurch gültig.
+- **Hartes Aufräumen** bleibt vorerst manuell (`purge_deleted`, mit Probelauf und Verweisprüfung); ob ein Auftrag nach
+  einer Frist aufräumt, ist offen (Issue #524).
+
 ## Bezug
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),

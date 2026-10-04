@@ -171,6 +171,7 @@ class SessionMirror:
             "raw_json": data,
             "deleted": False,
             "deleted_at": None,
+            "deletion_reason": None,
         }
 
     def _handle_tombstone(self, data) -> bool:

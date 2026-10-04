@@ -870,6 +870,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1016,6 +1017,7 @@ class DatabaseStorage:
                 .values(
                     deleted=True,
                     deleted_at=now,
+                    deletion_reason=ris_events.REASON_DELETED_AT_SOURCE,
                     oparl_modified=modified or now,
                     updated_at=func.now(),
                 )
@@ -1098,6 +1100,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1238,6 +1241,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1366,6 +1370,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1421,6 +1426,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1544,6 +1550,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1613,6 +1620,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
 
@@ -1677,6 +1685,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1740,6 +1749,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1817,6 +1827,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1862,6 +1873,7 @@ class DatabaseStorage:
                 # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
                 "deleted": False,
                 "deleted_at": None,
+                "deletion_reason": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)

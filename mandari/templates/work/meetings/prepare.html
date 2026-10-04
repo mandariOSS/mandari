@@ -78,6 +78,7 @@
 {% if no_body_linked %}
 {% include "work/ris/partials/_no_body_notice.html" %}
 {% elif meeting %}
+{% include "work/meetings/partials/_withdrawn_notice.html" %}
 {{ prepare_config|json_script:"prepare-config" }}
 <div x-data="preparationApp" @keydown.window="handleKeydown($event)" class="fade-up">
 

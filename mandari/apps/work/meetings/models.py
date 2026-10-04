@@ -36,7 +36,7 @@ class MeetingPreparation(EncryptionMixin, models.Model):
     )
     meeting = models.ForeignKey(
         "insight_core.OParlMeeting",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="work_preparations",
         verbose_name="Sitzung",
     )
@@ -172,7 +172,7 @@ class AgendaItemPosition(EncryptionMixin, models.Model):
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="work_positions",
         verbose_name="Tagesordnungspunkt",
     )
@@ -342,7 +342,7 @@ class AgendaPrivateNote(EncryptionMixin, models.Model):
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="work_private_notes",
         verbose_name="Tagesordnungspunkt",
     )
@@ -396,7 +396,7 @@ class AgendaSpeechNote(EncryptionMixin, models.Model):
     # Phase 1: meeting bleibt für Abwärtskompatibilität, wird in Phase 3 entfernt
     meeting = models.ForeignKey(
         "insight_core.OParlMeeting",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="work_speech_notes",
         verbose_name="Sitzung",
         null=True,
@@ -404,7 +404,7 @@ class AgendaSpeechNote(EncryptionMixin, models.Model):
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="work_speech_notes",
         verbose_name="Tagesordnungspunkt",
     )
@@ -492,7 +492,7 @@ class AgendaItemNote(EncryptionMixin, models.Model):
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="work_notes",
         verbose_name="Tagesordnungspunkt",
     )
@@ -665,7 +665,7 @@ class AgendaSupplementaryDocument(models.Model):
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="work_supplementary_documents",
         verbose_name="Tagesordnungspunkt",
     )
@@ -806,7 +806,7 @@ class FileAnnotation(EncryptionMixin, models.Model):
     )
     oparl_file = models.ForeignKey(
         "insight_core.OParlFile",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="work_annotations",
@@ -883,7 +883,7 @@ class PaperComment(EncryptionMixin, models.Model):
 
     paper = models.ForeignKey(
         "insight_core.OParlPaper",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="work_comments",
         verbose_name="Vorgang",
     )

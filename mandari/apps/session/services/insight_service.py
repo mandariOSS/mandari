@@ -280,7 +280,7 @@ def retract_source(tenant: Any) -> PortalChange:
     danach nicht mehr.
     """
     from insight_core import publication
-    from insight_core.models import OParlBody
+    from insight_core.models import REASON_WITHDRAWN, OParlBody
 
     change = PortalChange()
     for source in session_sources(tenant):
@@ -309,7 +309,7 @@ def retract_source(tenant: Any) -> PortalChange:
         body_ids = [body.pk for body in bodies]
         for queryset in [*_entry_querysets(body_ids), _location_queryset(body_ids)]:
             for obj in queryset.filter(deleted=False).iterator(chunk_size=500):
-                obj.mark_deleted(when)
+                obj.mark_deleted(when, reason=REASON_WITHDRAWN)
                 change.entries += 1
     if change.sources:
         logger.info("[Insight] Bürgerportal-Quelle für Session-Mandant '%s' zurückgenommen.", tenant.slug)

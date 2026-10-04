@@ -55,6 +55,8 @@ export interface PreparedItem {
   id: string
   number: string
   name: string
+  /** „Zurückgezogen“ bzw. „In der Quelle gelöscht“, leer solange es den TOP im RIS gibt (Issue #524) */
+  withdrawn: string
   position: string
   isFinal: boolean
   reasoning: string

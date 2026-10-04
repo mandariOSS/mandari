@@ -209,7 +209,7 @@ def retract(obj: Any, *, reason: str, when: datetime | None = None) -> bool:
         row = model._default_manager.select_for_update(no_key=True).filter(pk=obj.pk, deleted=False).first()
         if row is None:
             return False
-        row.mark_deleted(when)
+        row.mark_deleted(when, reason=reason)
         try:
             with transaction.atomic():
                 _report(row, reason)

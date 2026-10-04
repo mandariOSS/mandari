@@ -1553,7 +1553,7 @@ class MotionShare(models.Model):
     )
     body = models.ForeignKey(
         "insight_core.OParlBody",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="shared_motions",
