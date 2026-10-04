@@ -317,6 +317,9 @@ def test_migration_bestaetigungslink_uuid_im_schema(frage: PublicQuestion, setti
         executor.migrate([NACHHER])
 
         assert _gespeichert(PublicQuestion, frage.pk, "verification_token") == hash_token(str(alt))
+        # Die Seite läuft mit dem heutigen Code und braucht dessen Schema (spätere Spalten des RIS-Bestands)
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
         assert Client().get(f"/insight/fragen/verifizieren/{alt}/").status_code == 200
     finally:
         executor = MigrationExecutor(connection)
