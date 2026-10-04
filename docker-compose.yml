@@ -104,6 +104,10 @@ x-app-environment: &app-environment
   SEARCH_INDEX_SUBSCRIPTION: ${SEARCH_INDEX_SUBSCRIPTION:-aus}
   SEARCH_INDEX_SHADOW_BODIES: ${SEARCH_INDEX_SHADOW_BODIES:-}
   SEARCH_INDEX_SHADOW_MAX_DOCS: ${SEARCH_INDEX_SHADOW_MAX_DOCS:-100000}
+  # Abfrage der Volltextsuche (v2 Standard, v1 = bisherige Abfrage als Rückfall; siehe .env.example)
+  SEARCH_RANKING: ${SEARCH_RANKING:-v2}
+  SEARCH_RECENCY_WEIGHT: ${SEARCH_RECENCY_WEIGHT:-1.0}
+  SEARCH_MIN_RELEVANCE: ${SEARCH_MIN_RELEVANCE:-0.05}
   # Änderungsfeed und Snapshot je Kommune (siehe .env.example und docs/OPARL_API.md, „Betrieb“), Standard aus
   OPARL_CHANGES_ENABLED: ${OPARL_CHANGES_ENABLED:-false}
   OPARL_CHANGES_RETENTION_DAYS: ${OPARL_CHANGES_RETENTION_DAYS:-90}

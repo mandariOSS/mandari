@@ -604,6 +604,23 @@ Abonnement in der Datenbank auf `schatten`, schreibt es weiter nur den Schatteni
 `loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt (Schalter oder
 Zustand `schatten`); `--abonnement` zusätzlich, solange es überhaupt zugestellt wird.
 
+### Abfrage der Volltextsuche (`SEARCH_RANKING`)
+
+Insight und Work suchen mit derselben Abfrage. `v2` (Standard) verlangt alle Wörter, behandelt Straßen
+(„Str.“, „Straße“, „Hafenstraße“ und „Hafen-Straße“) gleich, sucht unscharf nur, wenn fast nichts gefunden
+wird, und gibt neueren Treffern einen begrenzten Bonus. `v1` ist die bisherige Abfrage.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `SEARCH_RANKING` | `v2` (Standard) oder `v1` (Rückfall) |
+| `SEARCH_RECENCY_WEIGHT` | Aktualitätsbonus: neue Treffer zählen höchstens (1 + Wert)-fach, Standard `1.0`, `0` = aus |
+| `SEARCH_MIN_RELEVANCE` | Treffer unter diesem Anteil des besten Werts ihres Index entfallen, Standard `0.05`, `0` = aus |
+
+Es gibt keinen neuen Index und keine Neuindizierung. Abbildung, Schattenindizes und Abonnement bleiben
+unberührt. **Rückfall:** `SEARCH_RANKING=v1` in der `.env`, dann `docker compose up -d mandari worker`.
+**Messen** (nur lesend, gibt nur Zahlen und Aktenzeichen aus):
+`docker exec mandari python manage.py suchqualitaet messen --ranking v1 --ranking v2`.
+
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 
 Den Text der RIS-Dateien erkennt eine Implementierung, die Bibliothek `mandari_dokumente` in `shared/`

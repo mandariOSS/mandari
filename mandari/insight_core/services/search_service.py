@@ -6,6 +6,8 @@ Bietet Volltextsuche über Elasticsearch für alle OParl-Entitäten.
 """
 
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from django.conf import settings
@@ -13,6 +15,9 @@ from django.utils.html import escape
 from django.utils.safestring import SafeString, mark_safe
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
+
+from . import search_ranking
+from .search_ranking import DATE_FIELD_BY_INDEX
 
 HIGHLIGHT_PRE = '<mark class="bg-yellow-200 dark:bg-yellow-800">'
 HIGHLIGHT_POST = "</mark>"
@@ -34,15 +39,46 @@ ALL_INDEXES = [INDEX_MEETINGS, INDEX_PAPERS, INDEX_PERSONS, INDEX_ORGANIZATIONS,
 # (Elasticsearch selbst erlaubt höchstens 10.000, index.max_result_window).
 MAX_RESULT_DEPTH = 1000
 
+#: Unter so vielen genauen Treffern läuft in v2 die unscharfe Rückfallsuche (ähnliche Schreibweisen)
+FUZZY_FALLBACK_BELOW = 3
+
+#: Elasticsearch hebt höchstens 1.000.000 Zeichen je Feld hervor (index.highlight.max_analyzed_offset); mit
+#: diesem Wert hört die Hervorhebung davor auf, statt die ganze Abfrage scheitern zu lassen
+HIGHLIGHT_MAX_ANALYZED_OFFSET = 999_999
+
 HIGHLIGHT = {
     "pre_tags": [HIGHLIGHT_PRE],
     "post_tags": [HIGHLIGHT_POST],
+    "max_analyzed_offset": HIGHLIGHT_MAX_ANALYZED_OFFSET,
     "fields": {
         "name": {"number_of_fragments": 0},
         "text_content": {"fragment_size": 200, "number_of_fragments": 1},
         "reference": {"number_of_fragments": 0},
     },
 }
+
+SORT_RELEVANCE = "relevance"
+SORT_NEWEST = "newest"
+RANKING_VERSIONS = ("v1", "v2")
+
+
+def ranking_version(override: str | None = None) -> str:
+    """Wirksame Abfrageversion: ``override`` (Messbefehl), sonst ``SEARCH_RANKING`` (Standard v2)."""
+    version = (override or getattr(settings, "SEARCH_RANKING", "v2") or "v2").strip().lower()
+    return version if version in RANKING_VERSIONS else "v2"
+
+
+@dataclass
+class RankedHits:
+    """Ergebnis von Schritt 1: Rangfolge über die Indexe ohne Dokumentinhalte."""
+
+    #: (Relevanz, Reihenfolge des Index, Index, Dokument-ID) in der Reihenfolge der Trefferliste
+    entries: list[tuple[float, int, str, str]] = field(default_factory=list)
+    queries: dict[str, dict[str, Any]] = field(default_factory=dict)
+    total: int = 0
+    #: Treffer stammen aus der unscharfen Rückfallsuche (Hinweis „ähnliche Schreibweisen“)
+    similar_spelling: bool = False
+    errors: int = 0
 
 
 class ElasticsearchService:
@@ -72,6 +108,8 @@ class ElasticsearchService:
         organization_name: str | None = None,
         paper_type: str | None = None,
         body_ids: list[str] | None = None,
+        sort: str = SORT_RELEVANCE,
+        ranking: str | None = None,
     ) -> dict[str, Any]:
         """
         Multi-Index-Suche über alle Entitäten.
@@ -90,9 +128,12 @@ class ElasticsearchService:
             organization_name: Gremium-Filter (exakter Name, wirkt auf
                        papers/meetings/files über organization_names)
             paper_type: Vorlagen-Art (nur papers-Index)
+            sort: ``relevance`` (Standard; in v2 mit Aktualitätsbonus) oder ``newest`` (Datum absteigend,
+                       in v2 nur über Treffer ab der Mindestrelevanz)
+            ranking: Abfrageversion ``v1``/``v2``; Standard ``SEARCH_RANKING``
 
         Returns:
-            Dict mit results, total, page, page_size, pages
+            Dict mit results, total, page, page_size, pages, similar_spelling
 
         Ablauf in zwei Schritten: Zuerst liefert jeder Index Kennung und Relevanz seiner besten
         ``page * page_size`` Treffer (ohne Dokumentinhalt); gemischt und nach Relevanz sortiert
@@ -100,91 +141,236 @@ class ElasticsearchService:
         Seite samt Hervorhebung geladen. Vorher holte jeder Index fest ``2 * page_size``
         Treffer ab Position 0 – ab Seite 3 blieben Seiten leer, obwohl mehr Treffer gemeldet wurden.
         """
-        if index_names is None:
-            index_names = ALL_INDEXES
-
         page = max(1, int(page))
         start = (page - 1) * page_size
         depth = min(page * page_size, MAX_RESULT_DEPTH)
 
-        # (Relevanz, Reihenfolge des Index, Index, Dokument-ID)
-        ranking: list[tuple[float, int, str, str]] = []
-        queries: dict[str, dict[str, Any]] = {}
-        total_hits = 0
-        error_count = 0
+        ranked = self.rank_hits(
+            query,
+            body_id=body_id,
+            index_names=index_names,
+            depth=depth if start < depth else 0,
+            date_from=date_from,
+            date_to=date_to,
+            organization_name=organization_name,
+            paper_type=paper_type,
+            body_ids=body_ids,
+            sort=sort,
+            ranking=ranking,
+        )
+        page_hits = ranked.entries[start : start + page_size]
+        total_hits = ranked.total
+
+        return {
+            "results": self._load_page_documents(page_hits, ranked.queries),
+            "total": total_hits,
+            "page": page,
+            "page_size": page_size,
+            "pages": (min(total_hits, MAX_RESULT_DEPTH) + page_size - 1) // page_size if total_hits > 0 else 0,
+            "similar_spelling": ranked.similar_spelling,
+        }
+
+    def rank_hits(
+        self,
+        query: str,
+        *,
+        body_id: str | None = None,
+        index_names: list[str] | None = None,
+        depth: int = MAX_RESULT_DEPTH,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        organization_name: str | None = None,
+        paper_type: str | None = None,
+        body_ids: list[str] | None = None,
+        sort: str = SORT_RELEVANCE,
+        ranking: str | None = None,
+    ) -> RankedHits:
+        """Schritt 1: Rangfolge der besten ``depth`` Treffer je Index, gemischt; ohne Dokumentinhalte.
+
+        In v2 folgt bei weniger als ``FUZZY_FALLBACK_BELOW`` genauen Treffern die unscharfe Rückfallsuche.
+        """
+        if index_names is None:
+            index_names = ALL_INDEXES
+        version = ranking_version(ranking)
+        name_part_is_rare = version == "v2" and bool(query) and self._name_part_is_rare(query, body_id, body_ids)
+
+        def build(index_name: str, fuzzy: bool) -> dict[str, Any]:
+            return self._build_query(
+                query,
+                body_id,
+                index_name,
+                date_from=date_from,
+                date_to=date_to,
+                organization_name=organization_name,
+                paper_type=paper_type,
+                body_ids=body_ids,
+                ranking=version,
+                fuzzy=fuzzy,
+                name_part_is_rare=name_part_is_rare,
+            )
+
+        ranked = self._rank(index_names, build, False, depth, sort, version, bool(query))
+        if version == "v2" and query and ranked.total < FUZZY_FALLBACK_BELOW and ranked.errors < len(index_names):
+            unscharf = self._rank(index_names, build, True, depth, sort, version, True)
+            if unscharf.total > ranked.total:
+                unscharf.similar_spelling = True
+                ranked = unscharf
+
+        # Elasticsearch komplett nicht erreichbar → Fehler signalisieren, damit
+        # Aufrufer (views/search.py) auf die Django-Datenbanksuche zurückfallen
+        # können statt still leere Ergebnisse zu zeigen.
+        if index_names and ranked.errors == len(index_names):
+            raise RuntimeError("Elasticsearch nicht erreichbar (alle Indexe fehlgeschlagen)")
+        return ranked
+
+    def _rank(
+        self,
+        index_names: list[str],
+        build: Callable[[str, bool], dict[str, Any]],
+        fuzzy: bool,
+        depth: int,
+        sort: str,
+        version: str,
+        has_query: bool,
+    ) -> RankedHits:
+        ranked = RankedHits()
+        min_relevance = float(getattr(settings, "SEARCH_MIN_RELEVANCE", 0.05)) if version == "v2" and has_query else 0.0
+        # (Datum fehlt?, -Datum, -Relevanz, Reihenfolge) für „Neueste“
+        newest_keys: dict[tuple[str, str], tuple[int, float]] = {}
 
         for position, index_name in enumerate(index_names):
             try:
                 # Prüfen ob Index existiert
                 if not self.client.indices.exists(index=index_name):
                     continue
-
-                es_query = self._build_query(
-                    query,
-                    body_id,
-                    index_name,
-                    date_from=date_from,
-                    date_to=date_to,
-                    organization_name=organization_name,
-                    paper_type=paper_type,
-                    body_ids=body_ids,
-                )
-                queries[index_name] = es_query
-
-                # Schritt 1: nur Kennungen und Relevanz; liegt die Seite hinter der
-                # Suchtiefe, reicht die Anzahl
-                result = self.client.search(
-                    index=index_name,
-                    body={"query": es_query, "size": depth if start < depth else 0, "from": 0, "_source": False},
-                )
-                for hit in result["hits"]["hits"]:
-                    ranking.append((float(hit.get("_score") or 0), position, index_name, hit["_id"]))
-                total_hits += result["hits"]["total"]["value"]
-
+                es_query = build(index_name, fuzzy)
+                ranked.queries[index_name] = es_query
+                hits, total = self._index_hits(index_name, es_query, depth, sort, min_relevance)
+                for hit in hits:
+                    score = float(hit.get("_score") or 0)
+                    ranked.entries.append((score, position, index_name, hit["_id"]))
+                    if sort == SORT_NEWEST:
+                        datum = (hit.get("sort") or [None])[0]
+                        newest_keys[(index_name, hit["_id"])] = (
+                            (0, -float(datum)) if isinstance(datum, int | float) else (1, 0.0)
+                        )
+                ranked.total += total
             except NotFoundError:
                 pass
             except Exception as e:
-                error_count += 1
+                ranked.errors += 1
                 logger.error(f"Unerwarteter Fehler bei Index '{index_name}': {e}")
 
-        # Elasticsearch komplett nicht erreichbar → Fehler signalisieren, damit
-        # Aufrufer (views/search.py) auf die Django-Datenbanksuche zurückfallen
-        # können statt still leere Ergebnisse zu zeigen.
-        if index_names and error_count == len(index_names):
-            raise RuntimeError("Elasticsearch nicht erreichbar (alle Indexe fehlgeschlagen)")
+        if sort == SORT_NEWEST:
+            ranked.entries.sort(key=lambda e: (*newest_keys.get((e[2], e[3]), (1, 0.0)), -e[0], e[1]))
+        else:
+            # Nach Relevanz mischen (bei Gleichstand in der Reihenfolge der Indexe)
+            ranked.entries.sort(key=lambda eintrag: (-eintrag[0], eintrag[1]))
+        return ranked
 
-        # Nach Relevanz mischen (bei Gleichstand in der Reihenfolge der Indexe), dann paginieren
-        ranking.sort(key=lambda eintrag: (-eintrag[0], eintrag[1]))
-        page_hits = ranking[start : start + page_size]
+    def _index_hits(
+        self, index_name: str, es_query: dict[str, Any], depth: int, sort: str, min_relevance: float
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Treffer (``_id``, ``_score``, bei „Neueste“ ``sort``) und Gesamtzahl eines Index.
 
-        return {
-            "results": self._load_page_documents(page_hits, queries),
-            "total": total_hits,
-            "page": page,
-            "page_size": page_size,
-            "pages": (min(total_hits, MAX_RESULT_DEPTH) + page_size - 1) // page_size if total_hits > 0 else 0,
-        }
+        Mit Mindestrelevanz (v2) entfallen Treffer unter ``min_relevance`` × bestem Wert des Index; die
+        Gesamtzahl zählt dann nur die übrigen.
+        """
+        date_field = DATE_FIELD_BY_INDEX.get(index_name)
+        newest = sort == SORT_NEWEST and date_field is not None
+        hits: list[dict[str, Any]] = []
+        total = 0
+        threshold = 0.0
+        if not newest or min_relevance > 0:
+            # Bei „Neueste“ genügt der beste Treffer, um die Schwelle der Mindestrelevanz zu bestimmen
+            result = self.client.search(
+                index=index_name,
+                body={"query": es_query, "size": 1 if newest else depth, "from": 0, "_source": False},
+            )
+            hits = result["hits"]["hits"]
+            total = int(result["hits"]["total"]["value"])
+            if min_relevance > 0 and hits:
+                threshold = float(result["hits"].get("max_score") or hits[0].get("_score") or 0) * min_relevance
+        if newest:
+            body: dict[str, Any] = {
+                "query": es_query,
+                "size": depth,
+                "from": 0,
+                "_source": False,
+                "sort": [{date_field: {"order": "desc", "missing": "_last", "unmapped_type": "date"}}, "_score"],
+                "track_scores": True,
+            }
+            if threshold > 0:
+                body["min_score"] = threshold
+            result = self.client.search(index=index_name, body=body)
+            return result["hits"]["hits"], int(result["hits"]["total"]["value"])
+        if threshold <= 0:
+            return hits, total
+        kept = [hit for hit in hits if float(hit.get("_score") or 0) >= threshold]
+        if total > len(hits) and len(kept) == len(hits):
+            # Hinter der Suchtiefe liegen weitere Treffer über der Schwelle: genau zählen
+            total = int(self.client.count(index=index_name, query=es_query, min_score=threshold)["count"])
+        else:
+            total = len(kept)
+        return kept, total
+
+    def _name_part_is_rare(self, query: str, body_id: str | None, body_ids: list[str] | None) -> bool:
+        """Ist der Namensteil eines Straßenkompositums („witzleben“ in „Witzlebenstraße“) selten genug?
+
+        Er gilt als eigene Lesart, wenn höchstens ``SEARCH_NAME_PART_MAX_DOCS`` Vorgänge und Dateien der
+        Kommune ihn enthalten und mindestens die Hälfte davon eine Schreibweise der Straße.
+        """
+        queries = search_ranking.name_part_count_queries(search_ranking.parse(query))
+        if queries is None:
+            return False
+        bare, forms = queries
+        filters = self._filter_clauses(body_id, "papers", body_ids=body_ids)
+
+        def count(clause: dict[str, Any]) -> int:
+            return int(
+                self.client.count(
+                    index="papers,files",
+                    ignore_unavailable=True,
+                    query={"bool": {"must": [clause], "filter": filters}},
+                )["count"]
+            )
+
+        try:
+            bare_count = count(bare)
+            if bare_count == 0 or bare_count > int(getattr(settings, "SEARCH_NAME_PART_MAX_DOCS", 400)):
+                return False
+            return count(forms) * 2 >= bare_count
+        except Exception as e:  # Zählen ist nur eine Verfeinerung: ohne Antwort ohne Namensteil suchen
+            logger.warning(f"Seltenheit des Namensteils nicht prüfbar: {e}")
+            return False
 
     def _load_page_documents(
         self, page_hits: list[tuple[float, int, str, str]], queries: dict[str, dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Schritt 2: Dokumente einer Seite mit Hervorhebung laden, in der Reihenfolge der Seite."""
+        """Schritt 2: Dokumente einer Seite mit Hervorhebung laden, in der Reihenfolge der Seite.
+
+        Scheitert die Hervorhebung (etwa an einem Feld über der Analysegrenze), lädt der Index die Treffer
+        ohne Hervorhebung, statt alle Dokumente der Seite zu verwerfen.
+        """
         docs: dict[tuple[str, str], dict[str, Any]] = {}
         for index_name in dict.fromkeys(eintrag[2] for eintrag in page_hits):
             ids = [eintrag[3] for eintrag in page_hits if eintrag[2] == index_name]
+            body: dict[str, Any] = {
+                # Dieselbe Abfrage (für die Hervorhebung), eingeschränkt auf die Treffer der Seite
+                "query": {"bool": {"must": [queries[index_name]], "filter": [{"ids": {"values": ids}}]}},
+                "size": len(ids),
+                "highlight": HIGHLIGHT,
+            }
             try:
-                result = self.client.search(
-                    index=index_name,
-                    body={
-                        # Dieselbe Abfrage (für die Hervorhebung), eingeschränkt auf die Treffer der Seite
-                        "query": {"bool": {"must": [queries[index_name]], "filter": [{"ids": {"values": ids}}]}},
-                        "size": len(ids),
-                        "highlight": HIGHLIGHT,
-                    },
-                )
+                result = self.client.search(index=index_name, body=body)
             except Exception as e:
-                logger.error(f"Unerwarteter Fehler beim Laden der Treffer aus Index '{index_name}': {e}")
-                continue
+                logger.warning(f"Hervorhebung im Index '{index_name}' fehlgeschlagen, lade ohne: {e}")
+                body.pop("highlight")
+                try:
+                    result = self.client.search(index=index_name, body=body)
+                except Exception as e2:
+                    logger.error(f"Unerwarteter Fehler beim Laden der Treffer aus Index '{index_name}': {e2}")
+                    continue
             for hit in result["hits"]["hits"]:
                 docs[(index_name, hit["_id"])] = self._to_result(hit, index_name)
 
@@ -208,17 +394,13 @@ class ElasticsearchService:
         # Highlighting in _formatted übersetzen (Kompatibilität)
         if "highlight" in hit:
             formatted = dict(doc)
-            for field, fragments in hit["highlight"].items():
-                formatted[field] = fragments[0] if fragments else doc.get(field, "")
+            for field_name, fragments in hit["highlight"].items():
+                formatted[field_name] = fragments[0] if fragments else doc.get(field_name, "")
             doc["_formatted"] = formatted
         return doc
 
     # Datumsfeld je Index für Zeitraum-Filter
-    DATE_FIELD_BY_INDEX = {
-        "papers": "date",
-        "meetings": "start",
-        "files": "meeting_date",
-    }
+    DATE_FIELD_BY_INDEX = DATE_FIELD_BY_INDEX
 
     def _build_query(
         self,
@@ -230,25 +412,60 @@ class ElasticsearchService:
         organization_name: str | None = None,
         paper_type: str | None = None,
         body_ids: list[str] | None = None,
+        *,
+        ranking: str | None = None,
+        fuzzy: bool = False,
+        name_part_is_rare: bool = False,
     ) -> dict[str, Any]:
-        """Baut die Elasticsearch-Query für einen Index."""
-        must = []
-        filter_clauses = []
-
-        if query:
-            must.append(
-                {
-                    "multi_match": {
-                        "query": query,
-                        "fields": self._get_search_fields(index_name),
-                        "type": "best_fields",
-                        "fuzziness": "AUTO",
+        """Baut die Elasticsearch-Query für einen Index (v1 wie bis 10/2026, v2 nach ``search_ranking``)."""
+        filter_clauses = self._filter_clauses(
+            body_id,
+            index_name,
+            date_from=date_from,
+            date_to=date_to,
+            organization_name=organization_name,
+            paper_type=paper_type,
+            body_ids=body_ids,
+        )
+        if ranking_version(ranking) == "v1":
+            must: list[dict[str, Any]] = []
+            if query:
+                must.append(
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": self._get_search_fields(index_name),
+                            "type": "best_fields",
+                            "fuzziness": "AUTO",
+                        }
                     }
-                }
-            )
-        else:
-            must.append({"match_all": {}})
+                )
+            else:
+                must.append({"match_all": {}})
+            return {"bool": {"must": must, "filter": filter_clauses}}
 
+        if not query:
+            text: dict[str, Any] = {"match_all": {}}
+        elif fuzzy:
+            text = search_ranking.fuzzy_query(query, index_name)
+        else:
+            text = search_ranking.text_query(query, index_name, name_part_is_rare=name_part_is_rare)
+        weight = float(getattr(settings, "SEARCH_RECENCY_WEIGHT", 1.0))
+        return search_ranking.with_recency({"bool": {"must": [text], "filter": filter_clauses}}, index_name, weight)
+
+    def _filter_clauses(
+        self,
+        body_id: str | None,
+        index_name: str,
+        *,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        organization_name: str | None = None,
+        paper_type: str | None = None,
+        body_ids: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Filter einer Suche: Kommune(n), Zeitraum, Gremium, Art."""
+        filter_clauses: list[dict[str, Any]] = []
         # Kommune(n)-Filter: mehrere body_ids (terms) haben Vorrang vor
         # dem einzelnen body_id (term)
         if body_ids:
@@ -273,13 +490,7 @@ class ElasticsearchService:
 
         if paper_type and index_name == "papers":
             filter_clauses.append({"term": {"paper_type": paper_type}})
-
-        return {
-            "bool": {
-                "must": must,
-                "filter": filter_clauses,
-            }
-        }
+        return filter_clauses
 
     @staticmethod
     def _get_search_fields(index_name: str) -> list[str]:
