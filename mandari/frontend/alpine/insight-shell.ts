@@ -33,6 +33,8 @@ export const insightShell = defineComponent(() => ({
   darkMode: readDarkMode(),
   mehrOffen: false,
   cityModalOpen: false,
+  /** Inhalt des Kommunenwechsels erst beim ersten Öffnen aufbauen (`x-if` im Dialog), danach bleibt er stehen */
+  kommunenWahlBereit: false,
   activeBodyId: '',
   docViewerUrl: '',
   docViewerName: '',
@@ -66,6 +68,7 @@ export const insightShell = defineComponent(() => ({
     // Aus dem Blatt „Mehr“ heraus: erst das Blatt schließen, sonst liegen zwei Dialoge übereinander. Den Fokus ins
     // Suchfeld setzt der Kommunenwechsel selbst (frontend/alpine/kommunen-wahl.ts).
     this.mehrOffen = false
+    this.kommunenWahlBereit = true
     this.cityModalOpen = true
   },
 

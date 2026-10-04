@@ -7,11 +7,14 @@ Schnittstellen des Dialogs. Nie eine lange Liste: höchstens acht Vorschläge, S
 from __future__ import annotations
 
 import io
+import re
 import statistics
 import time
+from pathlib import Path
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.core.management import call_command
 from django.test import Client
 from django.urls import reverse
@@ -453,6 +456,117 @@ class TestVerzeichnisImBetrieb:
         client.get(reverse("insight_core:insight:set_body", args=[body.id]))
         dialog = client.get(reverse("insight_core:insight:paper_list")).content.decode()
         assert 'data-testid="kommunen-quellen"' in dialog, "auch im Dialog „Kommune wechseln“"
+
+
+def _auswahlseite(client: Client) -> str:
+    client.get(reverse("insight_core:insight:clear_body"))
+    antwort = client.get(reverse("insight_core:insight:portal_home"))
+    assert antwort.status_code == 200
+    return antwort.content.decode()
+
+
+def _seite_mit_dialog(client: Client, body: OParlBody) -> str:
+    client.get(reverse("insight_core:insight:set_body", args=[body.id]))
+    antwort = client.get(reverse("insight_core:insight:paper_list"))
+    assert antwort.status_code == 200
+    return antwort.content.decode()
+
+
+def _ohne_templates(html: str) -> str:
+    """Markup, wie es vor Alpine im Dokument steht: Inhalte von ``<template>`` (auch verschachtelt) fallen weg."""
+    innerstes = re.compile(r"<template\b[^>]*>(?:(?!<template\b).)*?</template>", re.S)
+    while (ohne := innerstes.sub("", html)) != html:
+        html = ohne
+    return html
+
+
+def _links_ohne_adresse(html: str) -> list[str]:
+    return [tag for tag in re.findall(r"<a\b[^>]*>", _ohne_templates(html)) if not re.search(r"\shref=", tag)]
+
+
+def _ebenen(html: str) -> list[int]:
+    return [int(ebene) for ebene in re.findall(r"<h([1-6])\b", html)]
+
+
+class TestAuswahlseiteOhneSprung:
+    """Kommunenauswahl ohne Layout-Verschiebung (CLS), mit Links samt Adresse und lückenloser Überschriftenfolge."""
+
+    def test_erste_stufe_steht_im_markup(self, client: Client, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        html = _auswahlseite(client)
+        wahl = html[html.index('id="auswahl-eingabe"') : html.index('id="alle-kommunen-titel"')]
+        assert "data-stufe-start" in html, "der Browser lädt die Länder nicht erst nach"
+        assert len(re.findall(r'data-land="\d{2}"', wahl)) == len(verzeichnis.stoebern()["eintraege"]) == 6
+        nrw = re.search(r'data-land="05".*?</button>', wahl, re.S)
+        bremen = re.search(r'data-land="04".*?</button>', wahl, re.S)
+        assert nrw and "Nordrhein-Westfalen" in nrw.group(0) and "3 Kommunen, 1 mit Daten" in nrw.group(0)
+        assert bremen and "1 Kommune</span>" in bremen.group(0), "Text wie stoebernInfo() im Browser"
+
+    def test_was_erst_mit_alpine_erscheint_verschiebt_nichts(
+        self, client: Client, verzeichnis_mit_daten: dict[str, OParlBody]
+    ) -> None:
+        html = _auswahlseite(client)
+        wahl = html[html.index('id="auswahl-eingabe"') : html.index('id="alle-kommunen-titel"')]
+        stoebern = re.search(r'<section x-show="stoebernSichtbar\(\)"[^>]*>', wahl)
+        naehe = re.search(r'<button type="button" @click="inDerNaehe\(\)"[^>]*>', wahl)
+        assert stoebern and 'x-cloak="platz"' in stoebern.group(0), "unsichtbar, aber mit Platz bis Alpine läuft"
+        assert naehe and 'x-cloak="platz"' in naehe.group(0)
+        assert 'id="auswahl-ergebnisse" class="flow-root"' in wahl, "Abstände springen nicht aus dem Behälter"
+        assert '[x-cloak="platz"] { visibility: hidden !important; }' in html
+        assert '[x-cloak="platz"] { display: none !important; }</style></noscript>' in html, (
+            "ohne JavaScript keine Lücke"
+        )
+
+    def test_ohne_verzeichnis_laedt_der_browser_die_erste_stufe(self, client: Client, source: OParlSource) -> None:
+        _body(source, "Stadt Übungsheim")
+        _body(source, "Stadt Heidestadt")
+        html = _auswahlseite(client)
+        assert "data-stufe-start" not in html and "data-land=" not in html
+        assert re.search(r'<section x-show="stoebernSichtbar\(\)"[^>]*x-cloak>', html)
+
+    def test_links_im_markup_haben_eine_adresse(
+        self, client: Client, verzeichnis_mit_daten: dict[str, OParlBody]
+    ) -> None:
+        """Lighthouse „crawlable-anchors“: ``<a :href>`` ohne ``href`` nur in ``<template>``, wo Alpine sie einfügt."""
+        assert _links_ohne_adresse(_auswahlseite(client)) == []
+        assert _links_ohne_adresse(_seite_mit_dialog(client, verzeichnis_mit_daten["uebungsheim"])) == []
+
+    def test_ueberschriften_ohne_sprung(self, client: Client, verzeichnis_mit_daten: dict[str, OParlBody]) -> None:
+        """Lighthouse „heading-order“: auf der Seite h1 → h2, im Dialog unter dessen h2 dann h3."""
+        html = _auswahlseite(client)
+        hauptteil = _ebenen(html[html.index('<main id="main-content"') : html.index("</main>")])
+        assert hauptteil[0] == 1 and all(b - a <= 1 for a, b in zip(hauptteil, hauptteil[1:], strict=False)), hauptteil
+        assert re.search(r'<h2 id="auswahl-stufe"', html)
+        seite = _seite_mit_dialog(client, verzeichnis_mit_daten["uebungsheim"])
+        dialog = seite[seite.index('aria-labelledby="kommune-dialog-titel"') : seite.index('id="kommune-dialog-stufe"')]
+        assert _ebenen(dialog) == [2, 3, 3], "Dialogtitel h2, darunter „Zuletzt besucht“ und Stufe als h3"
+
+    def test_dialog_baut_den_wechsel_erst_beim_oeffnen_auf(
+        self, client: Client, verzeichnis_mit_daten: dict[str, OParlBody]
+    ) -> None:
+        """Weniger Arbeit beim Start jeder Seite (TBT): Der Inhalt des Dialogs steht in ``<template x-if>``."""
+        html = _seite_mit_dialog(client, verzeichnis_mit_daten["uebungsheim"])
+        start = html.index('<template x-if="kommunenWahlBereit">')
+        eingabe = html.index('id="kommune-dialog-eingabe"')
+        assert start < html.index('x-data="kommunenWahl"', start) < eingabe
+        assert "</template>" not in html[start:eingabe]
+        assert 'id="kommune-dialog-eingabe"' not in _ohne_templates(html)
+
+
+def test_insight_vorlagen_ohne_links_ohne_adresse() -> None:
+    """Jedes ``<a :href>`` der Bürgerportal-Vorlagen hat einen ``href``-Rückfall oder steht in einem ``<template>``."""
+    vorlagen = Path(settings.BASE_DIR) / "templates"
+    dateien = [vorlagen / "base_insight.html"] + [
+        datei
+        for ordner in ("components", "pages", "partials", "cotton/insight")
+        for datei in (vorlagen / ordner).rglob("*.html")
+    ]
+    fehlend = [
+        f"{datei.relative_to(vorlagen)}: {tag[:80]}"
+        for datei in dateien
+        for tag in re.findall(r"<a\b[^>]*:href=[^>]*>", _ohne_templates(datei.read_text(encoding="utf-8")))
+        if not re.search(r"\shref=", tag)
+    ]
+    assert fehlend == []
 
 
 def test_caddyfile_erlaubt_den_standort_fuer_die_eigene_seite() -> None:

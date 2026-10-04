@@ -115,7 +115,7 @@
                     <div class="min-w-0">
                         <p class="text-sm font-semibold text-primary-900 dark:text-primary-200 mb-0.5">Per E-Mail informiert werden</p>
                         <p class="text-xs text-primary-700/80 dark:text-primary-300/70 mb-3 leading-relaxed">Sie erhalten eine w&ouml;chentliche E-Mail, wenn neue Vorg&auml;nge in Ihrer N&auml;he ver&ouml;ffentlicht werden.</p>
-                        <a :href="'/insight/benachrichtigungen/?lat=' + selectedLat + '&lon=' + selectedLon + '&name=' + encodeURIComponent(selectedName || '')"
+                        <a href="{% url 'insight_core:insight:notifications' %}" :href="'/insight/benachrichtigungen/?lat=' + selectedLat + '&lon=' + selectedLon + '&name=' + encodeURIComponent(selectedName || '')"
                            class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
                             <i data-lucide="mail" class="w-3.5 h-3.5"></i>
                             Nachbarschaft abonnieren

@@ -79,11 +79,13 @@ installIconObserver()
 // Alpine hier sofort, hätten work.ts und das Editor-Bundle ihre Komponenten noch nicht
 // registriert, und jedes x-data dieser Seiten bliebe leer. Deshalb bis
 // DOMContentLoaded warten; nur wenn das Ereignis schon ausgelöst wurde (Skript
-// nachträglich eingefügt), sofort starten.
+// nachträglich eingefügt), sofort starten. Gestartet wird in einer eigenen Aufgabe:
+// Sonst liefen Auswertung der Module, HTMX und der Aufbau aller Komponenten als eine
+// lange Aufgabe, die den Hauptthread blockiert (Total Blocking Time).
 const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
 const domContentLoadedStarted = document.readyState === 'complete' || (navigation?.domContentLoadedEventStart ?? 0) > 0
 if (domContentLoadedStarted) {
   Alpine.start()
 } else {
-  document.addEventListener('DOMContentLoaded', () => Alpine.start(), { once: true })
+  document.addEventListener('DOMContentLoaded', () => setTimeout(() => Alpine.start()), { once: true })
 }

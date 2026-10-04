@@ -1,4 +1,5 @@
 {# Document Viewer Modal - öffnet Dokumente (PDFs) im iframe #}
+{# Links tragen href="" wie nach dem Start von Alpine (docViewerUrl leer): kein Link ohne Adresse im Markup #}
 <div x-show="docViewerUrl" x-cloak
      x-transition:enter="transition ease-out duration-200"
      x-transition:enter-start="opacity-0"
@@ -37,7 +38,7 @@
             </div>
             <div class="flex items-center gap-2 flex-shrink-0 ml-4">
                 {# Download #}
-                <a :href="docViewerUrl + (docViewerUrl.includes('?') ? '&' : '?') + 'download=1'"
+                <a href="" :href="docViewerUrl + (docViewerUrl.includes('?') ? '&' : '?') + 'download=1'"
                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                    title="Herunterladen">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -46,7 +47,7 @@
                     <span class="hidden sm:inline">Download</span>
                 </a>
                 {# Open in new tab #}
-                <a :href="docViewerUrl" target="_blank" rel="noopener noreferrer"
+                <a href="" :href="docViewerUrl" target="_blank" rel="noopener noreferrer"
                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                    title="In neuem Tab öffnen">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -96,7 +97,7 @@
                 <div class="text-center">
                     <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">Vorschau nicht verfügbar</p>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Das Dokument kann nicht eingebettet angezeigt werden.</p>
-                    <a :href="docViewerUrl" target="_blank" rel="noopener noreferrer"
+                    <a href="" :href="docViewerUrl" target="_blank" rel="noopener noreferrer"
                        class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>

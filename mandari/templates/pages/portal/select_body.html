@@ -14,7 +14,7 @@ Name, Ortsteil oder Postleitzahl, in der Nähe oder über das Stöbern Land → 
 {% if hat_kommunen %}
 <c-insight.band aria-label="Kommune suchen">
     <div class="max-w-3xl">
-        {% include "components/kommunen_wahl.html" with id="auswahl" %}
+        {% include "components/kommunen_wahl.html" with id="auswahl" stufe_start=stoebern_start %}
     </div>
 </c-insight.band>
 
