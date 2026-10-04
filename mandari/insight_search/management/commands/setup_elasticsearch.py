@@ -15,6 +15,8 @@ import logging
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from insight_search.indices import analysis_settings, index_configs
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,189 +94,11 @@ class Command(BaseCommand):
 
     def _get_analysis_settings(self, synonym_list: list[str]) -> dict:
         """Gibt die Analyse-Einstellungen für deutsche Suche zurück."""
-        analysis = {
-            "analyzer": {
-                "german_custom": {
-                    "type": "custom",
-                    "tokenizer": "standard",
-                    "filter": [
-                        "lowercase",
-                        "german_normalization",
-                        "german_stop",
-                        "german_stemmer",
-                    ],
-                },
-                "german_search": {
-                    "type": "custom",
-                    "tokenizer": "standard",
-                    "filter": [
-                        "lowercase",
-                        "german_normalization",
-                        "german_stop",
-                        "german_stemmer",
-                    ],
-                },
-            },
-            "filter": {
-                "german_stop": {
-                    "type": "stop",
-                    "stopwords": "_german_",
-                },
-                "german_stemmer": {
-                    "type": "stemmer",
-                    "language": "light_german",
-                },
-            },
-        }
-
-        if synonym_list:
-            analysis["filter"]["german_synonyms"] = {
-                "type": "synonym",
-                "synonyms": synonym_list,
-                "lenient": True,
-            }
-            # Synonyme in den Search-Analyzer einbauen (nicht im Index-Analyzer!)
-            analysis["analyzer"]["german_search"]["filter"].insert(1, "german_synonyms")
-
-        return analysis
+        return analysis_settings(synonym_list)
 
     def _get_index_configs(self, synonym_list: list[str]) -> dict:
-        """Gibt die Konfigurationen für alle Indizes zurück."""
-        analysis = self._get_analysis_settings(synonym_list)
-
-        common_settings = {
-            "number_of_shards": 1,
-            "number_of_replicas": 0,
-            "analysis": analysis,
-        }
-
-        return {
-            "papers": {
-                "settings": common_settings,
-                "mappings": {
-                    "properties": {
-                        "id": {"type": "keyword"},
-                        "type": {"type": "keyword"},
-                        "body_id": {"type": "keyword"},
-                        "name": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
-                        "reference": {
-                            "type": "text",
-                            "analyzer": "standard",
-                            "fields": {"keyword": {"type": "keyword"}},
-                        },
-                        "paper_type": {"type": "keyword"},
-                        "date": {
-                            "type": "date",
-                            "format": "strict_date_optional_time||yyyy-MM-dd",
-                            "ignore_malformed": True,
-                        },
-                        "oparl_created": {"type": "date", "ignore_malformed": True},
-                        "oparl_modified": {"type": "date", "ignore_malformed": True},
-                        "file_contents_preview": {
-                            "type": "text",
-                            "analyzer": "german_custom",
-                            "search_analyzer": "german_search",
-                        },
-                        "file_names": {"type": "text"},
-                        # Gremien der Beratungen — für Ausschuss-Filter
-                        "organization_names": {
-                            "type": "text",
-                            "analyzer": "german_custom",
-                            "search_analyzer": "german_search",
-                        },
-                    }
-                },
-            },
-            "meetings": {
-                "settings": common_settings,
-                "mappings": {
-                    "properties": {
-                        "id": {"type": "keyword"},
-                        "type": {"type": "keyword"},
-                        "body_id": {"type": "keyword"},
-                        "name": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
-                        "organization_names": {
-                            "type": "text",
-                            "analyzer": "german_custom",
-                            "search_analyzer": "german_search",
-                        },
-                        "location_name": {"type": "text"},
-                        "start": {"type": "date", "ignore_malformed": True},
-                        "end": {"type": "date", "ignore_malformed": True},
-                        "cancelled": {"type": "boolean"},
-                        "oparl_modified": {"type": "date", "ignore_malformed": True},
-                    }
-                },
-            },
-            "persons": {
-                "settings": common_settings,
-                "mappings": {
-                    "properties": {
-                        "id": {"type": "keyword"},
-                        "type": {"type": "keyword"},
-                        "body_id": {"type": "keyword"},
-                        "name": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
-                        "given_name": {"type": "text"},
-                        "family_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
-                        "title": {"type": "text"},
-                        "oparl_modified": {"type": "date", "ignore_malformed": True},
-                    }
-                },
-            },
-            "organizations": {
-                "settings": common_settings,
-                "mappings": {
-                    "properties": {
-                        "id": {"type": "keyword"},
-                        "type": {"type": "keyword"},
-                        "body_id": {"type": "keyword"},
-                        "name": {
-                            "type": "text",
-                            "analyzer": "german_custom",
-                            "search_analyzer": "german_search",
-                            "fields": {"keyword": {"type": "keyword"}},
-                        },
-                        "short_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
-                        "organization_type": {"type": "keyword"},
-                        "classification": {"type": "keyword"},
-                        "oparl_modified": {"type": "date", "ignore_malformed": True},
-                    }
-                },
-            },
-            "files": {
-                "settings": common_settings,
-                "mappings": {
-                    "properties": {
-                        "id": {"type": "keyword"},
-                        "type": {"type": "keyword"},
-                        "body_id": {"type": "keyword"},
-                        "name": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
-                        "file_name": {"type": "text"},
-                        "mime_type": {"type": "keyword"},
-                        "access_url": {"type": "keyword", "index": False},
-                        "text_content": {
-                            "type": "text",
-                            "analyzer": "german_custom",
-                            "search_analyzer": "german_search",
-                        },
-                        "text_preview": {"type": "text", "index": False},
-                        "paper_id": {"type": "keyword"},
-                        "paper_name": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
-                        "paper_reference": {"type": "text", "analyzer": "standard"},
-                        "meeting_id": {"type": "keyword"},
-                        "organization_names": {
-                            "type": "text",
-                            "analyzer": "german_custom",
-                            "search_analyzer": "german_search",
-                        },
-                        "meeting_name": {"type": "text"},
-                        "meeting_date": {"type": "date", "ignore_malformed": True},
-                        "agenda_number": {"type": "keyword"},
-                        "oparl_modified": {"type": "date", "ignore_malformed": True},
-                    }
-                },
-            },
-        }
+        """Gibt die Konfigurationen für alle Indizes zurück (auch Grundlage der Schattenindizes)."""
+        return index_configs(synonym_list)
 
     def _reset_index(self, client, index_name: str):
         """Löscht und erstellt einen Index neu."""

@@ -17,19 +17,35 @@ Rolle (``--roles dispatch``); der Befehl bleibt für Betrieb und Fehlersuche.
     manage.py events_dispatch --list                   # Zustand, Cursor und geparkte Ereignisse
     manage.py events_dispatch --retry-parked 17        # geparktes Ereignis sofort erneut zustellen
     manage.py events_dispatch --discard-parked 17      # geparktes Ereignis verwerfen
+    manage.py events_dispatch --replay suchindex --from-seq 1200        # ab Folgenummer erneut zustellen
+    manage.py events_dispatch --replay suchindex --since 2026-10-01T00:00  # ab Erfassungszeitpunkt
+
+Nachspielen (``--replay``) setzt nur den Cursor zurück; zugestellt wird im laufenden Worker bzw. mit
+``--once``. Der Handler muss wiederholte Ereignisse vertragen (Idempotenz).
 """
 
 from __future__ import annotations
 
 import signal
 import threading
+from datetime import datetime
 from types import FrameType
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db.models import Count
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
-from apps.events.dispatch import POLL_INTERVAL, Dispatcher, discard_parked, head_seq, retry_parked
+from apps.events.dispatch import (
+    POLL_INTERVAL,
+    Dispatcher,
+    discard_parked,
+    first_seq_since,
+    head_seq,
+    retry_parked,
+    rewind,
+)
 from apps.events.models import ParkedEvent, ParkedState, Subscription
 from apps.events.registry import Subscriber, load_subscribers
 from apps.events.sequencer import SEQUENCED_CHANNEL
@@ -59,6 +75,15 @@ class Command(BaseCommand):
             "--retry-parked", type=int, metavar="ID", help="Geparktes Ereignis sofort erneut zustellen."
         )
         parser.add_argument("--discard-parked", type=int, metavar="ID", help="Geparktes Ereignis verwerfen.")
+        parser.add_argument(
+            "--replay",
+            metavar="NAME",
+            help="Nachspielen: Cursor des Abonnements zurücksetzen (mit --from-seq/--since).",
+        )
+        parser.add_argument("--from-seq", type=int, metavar="N", help="Nachspielen ab dieser Folgenummer.")
+        parser.add_argument(
+            "--since", metavar="DATUM", help="Nachspielen ab diesem Erfassungszeitpunkt (ISO 8601, Ortszeit ohne Zone)."
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         if options["list"]:
@@ -70,6 +95,9 @@ class Command(BaseCommand):
                     "Nicht möglich: unbekannt oder nicht das erste geparkte Ereignis seines Objekts (Reihenfolge)."
                 )
             self.stdout.write("Wird beim nächsten Lauf erneut zugestellt.")
+            return
+        if options["replay"] is not None or options["from_seq"] is not None or options["since"] is not None:
+            self._nachspielen(options["replay"], options["from_seq"], options["since"])
             return
         if options["discard_parked"] is not None:
             if not discard_parked(options["discard_parked"]):
@@ -99,6 +127,38 @@ class Command(BaseCommand):
         self.stdout.write(f"Zustellung gestartet für {namen}.")
         dispatcher.run(stop, interval=max(0.05, float(options["interval"])))
         self.stdout.write("Zustellung beendet.")
+
+    def _nachspielen(self, name: str | None, ab_seq: int | None, seit: str | None) -> None:
+        if not name or (ab_seq is None) == (seit is None):
+            raise CommandError("Nachspielen: --replay NAME und genau eines von --from-seq oder --since angeben.")
+        if ab_seq is None:
+            zeitpunkt = self._zeitpunkt(seit or "")
+            ab_seq = first_seq_since(zeitpunkt)
+            if ab_seq is None:
+                self.stdout.write("Seit diesem Zeitpunkt gibt es keine nummerierten Ereignisse; nichts zu tun.")
+                return
+        try:
+            ergebnis = rewind(name, ab_seq)
+        except ValueError as exc:
+            raise CommandError(f"Nachspielen nicht möglich: {exc}") from None
+        if ergebnis is None:
+            raise CommandError(f"Abonnement {name} gibt es nicht (noch nie zugestellt).")
+        vorher, neu = ergebnis
+        self.stdout.write(
+            f"Abonnement {name}: Cursor {vorher} -> {neu}; Ereignisse ab Folgenummer {neu + 1} werden erneut zugestellt."
+        )
+
+    @staticmethod
+    def _zeitpunkt(angabe: str) -> datetime:
+        try:
+            zeitpunkt = parse_datetime(angabe.strip())
+        except ValueError:  # Format stimmt, Datum nicht (z. B. Monat 13)
+            zeitpunkt = None
+        if zeitpunkt is None:
+            raise CommandError("--since: Zeitpunkt im Format 2026-10-01T00:00 (ISO 8601) angeben.")
+        if timezone.is_naive(zeitpunkt):
+            zeitpunkt = timezone.make_aware(zeitpunkt)
+        return zeitpunkt
 
     def _auswahl(self, namen: list[str], warteschlangen: str) -> list[Subscriber]:
         alle = load_subscribers()

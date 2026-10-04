@@ -95,6 +95,10 @@ x-app-environment: &app-environment
   METRICS_URL: ${METRICS_URL:-http://mandari:8000/metrics/}
   # Ereignisse aus mandari Session an die Datendrehscheibe (aus, schatten, aktiv; siehe .env.example), Standard aus
   SESSION_EVENTS: ${SESSION_EVENTS:-aus}
+  # Suchindex als Abonnement (aus, schatten, aktiv; siehe .env.example), Standard aus
+  SEARCH_INDEX_SUBSCRIPTION: ${SEARCH_INDEX_SUBSCRIPTION:-aus}
+  SEARCH_INDEX_SHADOW_BODIES: ${SEARCH_INDEX_SHADOW_BODIES:-}
+  SEARCH_INDEX_SHADOW_MAX_DOCS: ${SEARCH_INDEX_SHADOW_MAX_DOCS:-100000}
   # Änderungsfeed und Snapshot je Kommune (siehe .env.example und docs/OPARL_API.md, „Betrieb“), Standard aus
   OPARL_CHANGES_ENABLED: ${OPARL_CHANGES_ENABLED:-false}
   OPARL_CHANGES_RETENTION_DAYS: ${OPARL_CHANGES_RETENTION_DAYS:-90}
