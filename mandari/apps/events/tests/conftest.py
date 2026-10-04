@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -13,6 +14,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from apps.events import registry
 from apps.events.tests.hilfen import Sicht, direktverbindung, nur_postgres
+from apps.events.tests.prozess import Probe
 
 
 @pytest.fixture(autouse=True)
@@ -60,3 +62,13 @@ def sicht() -> Iterator[Sicht]:
     tabelle.anlegen()
     yield tabelle
     tabelle.entfernen()
+
+
+@pytest.fixture
+def probe(tmp_path: Path) -> Iterator[Probe]:
+    """Tabellen und Worker-Prozesse für Absturz- und Lasttests; braucht ``django_db(transaction=True)``."""
+    nur_postgres()
+    umgebung = Probe(tmp_path)
+    umgebung.anlegen()
+    yield umgebung
+    umgebung.aufraeumen()

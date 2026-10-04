@@ -385,6 +385,23 @@ Umgesetzt in `apps/session/hub_events.py` (Erfassung in den Fachfunktionen) und
   kanonische aus der Adresse des TOP mit dem Zusatz `voting`. Die Rücknahme eines Ergebnisses meldet
   `ris.object.depublished` der Abstimmung (`zurueckgenommen`) und die Änderung des TOP.
 
+## Nachtrag zu den Nachweisen (#514)
+
+Die Qualitätsziele und die Fitnessfunktion oben sind belegt; Tests, Messwerte und Grenzen stehen in
+`docs/EREIGNISTECHNIK_NACHWEISE.md`. Die Entscheidung bleibt; präzisiert wurde:
+
+- **Absturz als eigener Prozess:** Die Absturz- und Lasttests starten `events_worker` als eigenen
+  Prozess und beenden ihn hart (`apps/events/tests/prozess.py`). Ein Absturz mitten im Batch lässt die
+  Sicht unverändert (die offene Transaktion rollt zurück), der externe Effekt des Batches im Flug wird
+  nach dem Neustart wiederholt.
+- **Wiederanlauf:** Die Zustellung läuft nach einem Absturz ohne Handarbeit weiter, sobald die Leases
+  des toten Prozesses ablaufen (höchstens 30 s). Ein unterbrochener Auftrag wird nach Ablauf seiner
+  Sperre wiederholt, 45 bis 90 s nach dem Absturz; neue Aufträge laufen sofort.
+- **Doppelzustellung je Abonnement:** `apps/events/tests/test_zusagen.py` verlangt für jedes
+  registrierte Abonnement einen Test, der jedes Ereignis zweimal zustellt (`DOPPELZUSTELLUNG`).
+- **Rückstau:** Die Latenz bei Rückstau hängt an seiner Größe; abgebaut wird mit mehreren tausend
+  Ereignissen je Sekunde und Abonnement (gemessen ohne die Kosten des Handlers).
+
 ## Bezug
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A3 Sequenzierer](20260929-sequenzierer.md),
