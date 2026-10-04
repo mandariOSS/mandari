@@ -9,7 +9,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("insight_core", "0047_texterkennung_abbrueche"),
+        ("insight_core", "0049_beschlussfassung_befuellen"),
     ]
 
     operations = [

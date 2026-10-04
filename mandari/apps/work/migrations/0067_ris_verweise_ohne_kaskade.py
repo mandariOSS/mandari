@@ -13,7 +13,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("insight_core", "0048_loeschgrund"),
+        ("insight_core", "0050_loeschgrund"),
         ("work", "0066_einreichung_per_email"),
     ]
 
