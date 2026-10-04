@@ -463,7 +463,7 @@ class TestZeitplan:
     def test_nur_die_kennzahlen_lesen_nur(self) -> None:
         from django.core.management import get_commands, load_command_class
 
-        befehl = load_command_class(get_commands()["dokumentablage"], "dokumentablage")
+        befehl: Any = load_command_class(get_commands()["dokumentablage"], "dokumentablage")
         assert befehl.liest_nur({"umstellen": False, "aufraeumen": False, "hochladen": False, "referenzen": False})
         for schritt in ("umstellen", "aufraeumen", "hochladen", "referenzen"):
             assert not befehl.liest_nur({schritt: True}), schritt
