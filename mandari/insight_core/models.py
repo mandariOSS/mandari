@@ -28,6 +28,22 @@ from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 #: Kennung gespiegelter Objekte aus der OParl-API von mandari Session: ``…/session/<slug>/api/oparl/…``
 SESSION_OPARL_MARKERS = ("/session/", "/api/oparl/")
 
+#: Gründe einer Löschmarkierung im RIS-Bestand (Issue #524, ADR ``docs/adr/20260929-kanonisches-modell.md``), wie im
+#: Vertrag ``ris.object.depublished``: in der Quelle gelöscht (``deleted``) oder vom Herausgeber zurückgenommen
+#: (``depublished``: zurückgezogen, nicht mehr öffentlich, aus Datenschutzgründen entfernt).
+REASON_DELETED_AT_SOURCE = "quelle_geloescht"
+REASON_WITHDRAWN = "zurueckgenommen"
+REASON_NOT_PUBLIC = "nichtoeffentlich"
+REASON_PRIVACY = "datenschutz"
+DELETION_REASON_CHOICES = [
+    (REASON_DELETED_AT_SOURCE, "In der Quelle gelöscht"),
+    (REASON_WITHDRAWN, "Zurückgezogen"),
+    (REASON_NOT_PUBLIC, "Nicht mehr öffentlich"),
+    (REASON_PRIVACY, "Aus Datenschutzgründen entfernt"),
+]
+#: Gründe, aus denen ein Objekt nicht gelöscht, sondern zurückgenommen ist (``depublished``)
+DEPUBLISHED_REASONS = frozenset({REASON_WITHDRAWN, REASON_NOT_PUBLIC, REASON_PRIVACY})
+
 #: Slugs, die mit festen Adressen kollidieren (``/sitemap-insight-index.xml`` ist der Sitemap-Index)
 RESERVED_BODY_SLUGS = frozenset({"index"})
 BODY_SLUG_RE = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
@@ -115,12 +131,21 @@ class SourceDeletionModel(CanonicalIdModel):
         verbose_name="Gelöscht am",
         help_text="Zeitpunkt, zu dem die Löschung in der Quelle erkannt wurde.",
     )
+    # Grund der Markierung (Issue #524); nullable, damit Schreiber ohne die Spalte weiter markieren können.
+    # Leer bei Markierungen vor diesem Stand.
+    deletion_reason = models.CharField(
+        "Grund der Löschmarkierung",
+        max_length=20,
+        blank=True,
+        null=True,
+        choices=DELETION_REASON_CHOICES,
+    )
 
     class Meta:
         abstract = True
 
-    def mark_deleted(self, when: Any = None) -> None:
-        """Markiert das Objekt als in der Quelle gelöscht (idempotent).
+    def mark_deleted(self, when: Any = None, reason: str = REASON_DELETED_AT_SOURCE) -> None:
+        """Markiert das Objekt als gelöscht bzw. zurückgenommen, mit Grund (idempotent).
 
         ``oparl_modified`` wird auf den Löschzeitpunkt gesetzt, damit der
         Tombstone in inkrementellen ``modified_since``-Abfragen unserer
@@ -130,10 +155,13 @@ class SourceDeletionModel(CanonicalIdModel):
 
         if self.deleted:
             return
+        if reason not in dict(DELETION_REASON_CHOICES):
+            raise ValueError("Unbekannter Grund einer Löschmarkierung.")
         self.deleted = True
         self.deleted_at = when or timezone.now()
+        self.deletion_reason = reason
         self.oparl_modified = self.deleted_at
-        self.save(update_fields=["deleted", "deleted_at", "oparl_modified", "updated_at"])
+        self.save(update_fields=["deleted", "deleted_at", "deletion_reason", "oparl_modified", "updated_at"])
         if self.withdrawn_by_publisher:
             self._forget_summaries()
 
@@ -148,6 +176,26 @@ class SourceDeletionModel(CanonicalIdModel):
             OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(summary=None)
             if isinstance(self, OParlPaper):
                 self.summary = None
+
+    @property
+    def depublished(self) -> bool:
+        """
+        Vom Herausgeber zurückgenommen (``depublished``) statt in der Quelle gelöscht (``deleted``).
+
+        Markierungen ohne Grund (vor Issue #524) gelten als zurückgenommen, wenn mandari Session sie gesetzt hat.
+        """
+        if not self.deleted:
+            return False
+        if self.deletion_reason:
+            return self.deletion_reason in DEPUBLISHED_REASONS
+        return self.withdrawn_by_publisher
+
+    @property
+    def deletion_label(self) -> str:
+        """Hinweis für Oberflächen: „Zurückgezogen“ bzw. „In der Quelle gelöscht“; leer, solange es das Objekt gibt."""
+        if not self.deleted:
+            return ""
+        return "Zurückgezogen" if self.depublished else "In der Quelle gelöscht"
 
     @property
     def withdrawn_by_publisher(self) -> bool:

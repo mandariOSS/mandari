@@ -325,6 +325,8 @@ def serialize_prepared_item(entry: PreparedItem, index: int, data: PreparationDa
         "id": str(item.id),
         "number": item.number or str(index + 1),
         "name": item.name or "Ohne Titel",
+        # Im RIS-Bestand gelöscht oder zurückgezogen (Issue #524): Hinweis statt Fehler, die Arbeitsdaten bleiben
+        "withdrawn": item.deletion_label,
         # Position (org-weit)
         "position": position.position if position else "open",
         "isFinal": position.is_final if position else False,

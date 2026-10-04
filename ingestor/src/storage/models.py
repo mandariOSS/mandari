@@ -108,6 +108,8 @@ class OParlBody(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -162,6 +164,8 @@ class OParlMeeting(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -203,6 +207,8 @@ class OParlPaper(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -253,6 +259,8 @@ class OParlPerson(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -293,6 +301,8 @@ class OParlOrganization(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -348,6 +358,8 @@ class OParlAgendaItem(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -427,6 +439,8 @@ class OParlFile(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Löschabgleich (Django, Issue #787): Download-Adresse liefert 404/410 -> gesperrt. Der Ingestor
     # erkennt dann keinen Text und nimmt die Datei nicht in den Suchindex.
@@ -470,6 +484,8 @@ class OParlLocation(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -508,6 +524,8 @@ class OParlConsultation(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -547,6 +565,8 @@ class OParlMembership(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -583,6 +603,8 @@ class OParlLegislativeTerm(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Grund der Markierung (Issue #524): quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz
+    deletion_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

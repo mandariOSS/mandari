@@ -242,6 +242,8 @@ async def test_ohne_schalter_schreibt_der_ingestor_kein_ereignis(bestand: Bestan
     finally:
         await aus.close()
     assert await bestand.wert("SELECT count(*) FROM oparl_papers") == 1
+    # Markiert mit Grund (Issue #524)
+    assert await bestand.wert("SELECT deletion_reason FROM oparl_papers") == "quelle_geloescht"
     assert await bestand.ereignisse() == []
 
 
@@ -311,6 +313,9 @@ async def test_ausgenommene_quelle_schreibt_keine_ereignisse(bestand: Bestand, m
         ("ris.agendaitem.changed", None),  # war als gelöscht markiert und ist wieder da
         ("ris.meeting.changed", ["name"]),
     ]
+    # Wieder geliefert: Markierung samt Grund aufgehoben (Issue #524)
+    assert await bestand.wert("SELECT deleted FROM oparl_agenda_items") is False
+    assert await bestand.wert("SELECT deletion_reason FROM oparl_agenda_items") is None
 
 
 async def test_metrik_zaehlt_ereignisse_je_typ_und_kommune(bestand: Bestand, monkeypatch: pytest.MonkeyPatch) -> None:

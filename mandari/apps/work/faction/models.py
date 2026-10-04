@@ -169,7 +169,7 @@ class FactionSuspensionRule(models.Model):
 
     ris_organization = models.ForeignKey(
         "insight_core.OParlOrganization",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="faction_suspension_rules",
         verbose_name="RIS-Gremium",
         help_text="Nach einer Sitzung dieses Gremiums entfällt die nächste Fraktionssitzung",
