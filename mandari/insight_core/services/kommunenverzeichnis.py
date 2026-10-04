@@ -261,7 +261,7 @@ def _bewerten(eingabe: str, begriff: str) -> tuple[int, float]:
         return 1, len(eingabe) / len(begriff)
     if len(eingabe) < MIN_LAENGE_UNSCHARF or eingabe.isdigit():
         return -1, 0.0
-    # Unscharf: Tippfehler im Namen oder in einem seiner Wörter („Münser“, „Frankfrt“)
+    # Unscharf: Tippfehler im Namen oder in einem seiner Wörter („Übngsheim“, „Beispielstad“)
     vergleiche = [begriff, *woerter, *(wort[: len(eingabe) + 1] for wort in woerter)]
     aehnlichkeit = max(SequenceMatcher(None, eingabe, kandidat).ratio() for kandidat in vergleiche)
     return (0, aehnlichkeit) if aehnlichkeit >= MIN_AEHNLICHKEIT else (-1, 0.0)
@@ -289,6 +289,8 @@ def _kandidaten(eingabe: str) -> list[MunicipalityTerm]:
             cursor.execute("SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", [str(SCHWELLE_TRIGRAMM)])
             cursor.execute(_SQL_KANDIDATEN, [eingabe + "%", "% " + eingabe + "%", eingabe, eingabe, MAX_KANDIDATEN])
             ids = [zeile[0] for zeile in cursor.fetchall()]
+            # Läuft die Suche in einer äußeren Transaktion, gilt der Hinweis an den Planer nur für diese Abfrage
+            cursor.execute("SET LOCAL enable_seqscan TO DEFAULT")
         return list(basis.filter(id__in=ids))
     praefix = Q(normalized__startswith=eingabe) | Q(normalized__contains=" " + eingabe)
     kandidaten = list(basis.filter(praefix)[:MAX_KANDIDATEN])
