@@ -152,6 +152,34 @@ def test_nearby_papers_filters_by_distance_and_dedupes(
     assert [r["name"] for r in results] == ["Nah", "Fern"]
 
 
+def test_nearby_papers_same_distance_newest_first(geo_body: OParlBody, make_paper: Callable[..., OParlPaper]) -> None:
+    """Gleicher Punkt (Straße als ein Punkt verortet): neueste Vorgänge zuerst, ohne Datum zuletzt."""
+    import datetime
+
+    # Älteste zuerst anlegen: ohne zweiten Sortierschlüssel kämen sie in Anlagereihenfolge
+    undated = make_paper(geo_body, name="Ohne Datum", locations=[_loc(CENTER_LAT, CENTER_LON)])
+    sync_paper_locations(undated)
+    for year in range(2015, 2025):
+        paper = make_paper(
+            geo_body, name=f"Jahrgang {year}", date=datetime.date(year, 3, 1), locations=[_loc(CENTER_LAT, CENTER_LON)]
+        )
+        sync_paper_locations(paper)
+    # Näher als alle anderen bleibt vorn, auch wenn er älter ist
+    closer_old = make_paper(
+        geo_body, name="Alt, aber näher", date=datetime.date(2010, 1, 1), locations=[_loc(CENTER_LAT, CENTER_LON)]
+    )
+    sync_paper_locations(closer_old)
+    search_lat = CENTER_LAT - 0.0005
+
+    PaperLocation.objects.filter(paper=closer_old).update(latitude=search_lat)
+    results = nearby_papers(geo_body, search_lat, CENTER_LON, 500, limit=4)
+    assert [r["name"] for r in results] == ["Alt, aber näher", "Jahrgang 2024", "Jahrgang 2023", "Jahrgang 2022"]
+
+    results = nearby_papers(geo_body, search_lat, CENTER_LON, 500)
+    assert [r["name"] for r in results][-1] == "Ohne Datum"
+    assert [r["name"] for r in results][1:4] == ["Jahrgang 2024", "Jahrgang 2023", "Jahrgang 2022"]
+
+
 def test_nearby_papers_excludes_removed_rows(geo_body: OParlBody, make_paper: Callable[..., OParlPaper]) -> None:
     paper = make_paper(geo_body, locations=[_loc(CENTER_LAT, CENTER_LON)])
     sync_paper_locations(paper)
@@ -199,3 +227,24 @@ def test_nearby_papers_scales_with_index(geo_body: OParlBody, make_paper: Callab
     assert results and results[0]["distance"] == 0
     assert all(r["distance"] <= 500 for r in results)
     assert len({r["id"] for r in results}) == len(results)
+
+
+def test_results_partial_counts_in_german(geo_body: OParlBody, make_paper: Callable[..., OParlPaper]) -> None:
+    """Zählzeile der Ergebnisliste: „1 Vorgang“, „2 Vorgänge“ (nicht „Vorgange“)."""
+    from django.test import Client
+
+    client = Client()
+    session = client.session
+    session["active_body_id"] = str(geo_body.id)
+    session.save()
+    url = "/insight/nachbarschaft/partials/results/"
+    params = {"lat": CENTER_LAT, "lon": CENTER_LON, "radius": 500}
+
+    sync_paper_locations(make_paper(geo_body, locations=[_loc(CENTER_LAT, CENTER_LON)]))
+    html = client.get(url, params).content.decode()
+    assert "Vorgang im Umkreis von 500&nbsp;m" in html
+
+    sync_paper_locations(make_paper(geo_body, locations=[_loc(CENTER_LAT, CENTER_LON)]))
+    html = client.get(url, params).content.decode()
+    assert "Vorg&auml;nge im Umkreis von 500&nbsp;m" in html
+    assert "Vorgange" not in html

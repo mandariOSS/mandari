@@ -260,9 +260,19 @@ def _result_row(
     }
 
 
+def _nearby_sort_key(item: dict[str, Any]) -> tuple[int, bool, int, str]:
+    """Entfernung, dann neueste zuerst (ohne Datum zuletzt), dann Kennung – stabil bei Gleichstand."""
+    date = item["date"]
+    return (item["distance"], date is None, -date.toordinal() if date is not None else 0, item["id"])
+
+
 def nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int, limit: int = 50) -> list[dict[str, Any]]:
     """
     Vorgänge im Umkreis, nächster Punkt je Vorgang, sortiert nach Entfernung.
+
+    Bei gleicher Entfernung kommen neuere Vorgänge zuerst: Straßen sind als ein Punkt verortet,
+    sodass oft Hunderte Vorgänge 0 m entfernt sind – ohne zweiten Schlüssel wäre die Auswahl
+    der ersten ``limit`` Treffer zufällig (meist alte Jahrgänge).
 
     Zwei Stufen: Bounding-Box auf den Index (body, latitude, longitude), dann
     Haversine-Feinfilter in SQL. Entfernte Verortungen und gelöschte Vorgänge bleiben außen vor.
@@ -285,7 +295,7 @@ def nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int, limit:
         .exclude(status=PaperLocation.STATUS_REMOVED)
         .annotate(distance=_distance_expression(lat, lon))
         .filter(distance__lte=float(radius_m))
-        .order_by("distance")
+        .order_by("distance", F("paper__date").desc(nulls_last=True), "paper_id")
         .values(
             "paper_id",
             "latitude",
@@ -338,4 +348,4 @@ def nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int, limit:
                 paper["date"],
             )
 
-    return sorted(results.values(), key=lambda item: item["distance"])[:limit]
+    return sorted(results.values(), key=_nearby_sort_key)[:limit]
