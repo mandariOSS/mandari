@@ -3,22 +3,10 @@
 
 {% block title %}Vorgänge{% endblock %}
 
-{% block content %}
-<div>
-    <!-- Header -->
-    <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Vorgänge</h1>
-        <p class="text-gray-600 dark:text-gray-400">
-            {% if active_body %}
-                Alle Vorgänge und Vorlagen der {{ active_body.name }}
-            {% else %}
-                Bitte wählen Sie eine Kommune aus
-            {% endif %}
-        </p>
-    </div>
-
+{% block page %}
+<c-insight.kopfband titel="Vorgänge" text="{% if active_body %}Vorlagen, Anträge und Anfragen von {{ active_body.get_display_name }} mit Beratungsverlauf und Dokumenten.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">
     <!-- Filters -->
-    <div class="mb-6">
+    <div class="mb-4">
         <form method="get" class="flex flex-col sm:flex-row gap-3" id="paper-filter-form">
             <div class="relative flex-1 min-w-0">
                 <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true"></i>
@@ -63,10 +51,10 @@
             {% endif %}
         </form>
     </div>
-
-    <!-- Papers List Container -->
+</c-insight.kopfband>
+<c-insight.band>
     <div id="papers-list">
         {% include "partials/paper_list_items.html" %}
     </div>
-</div>
+</c-insight.band>
 {% endblock %}

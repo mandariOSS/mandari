@@ -9,14 +9,9 @@
 import collapse from '@alpinejs/collapse'
 import focus from '@alpinejs/focus'
 import Alpine from 'alpinejs'
-import {
-  bodySelectApp,
-  documentText,
-  merklisteController,
-  neighborhoodSubscription,
-  questionForm,
-} from '../alpine/insight'
+import { documentText, merklisteController, neighborhoodSubscription, questionForm } from '../alpine/insight'
 import { insightShell } from '../alpine/insight-shell'
+import { kommunenWahl } from '../alpine/kommunen-wahl'
 import { meetingCockpit } from '../alpine/meeting-cockpit'
 import { neighborhoodApp } from '../alpine/neighborhood'
 import { installActions } from './actions'
@@ -55,7 +50,7 @@ Alpine.data('meetingCockpit', meetingCockpit)
 if (document.documentElement.dataset.portal === 'insight') {
   // Rahmen (Menü, Kommunenwechsel, Dokumentansicht; Issue #783) und Seitenkomponenten (vorher Inline-Skripte, #172)
   Alpine.data('insightShell', insightShell)
-  Alpine.data('bodySelectApp', bodySelectApp)
+  Alpine.data('kommunenWahl', kommunenWahl)
   Alpine.data('merklisteController', merklisteController)
   Alpine.data('questionForm', questionForm)
   Alpine.data('neighborhoodSubscription', neighborhoodSubscription)

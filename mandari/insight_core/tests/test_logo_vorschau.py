@@ -187,14 +187,15 @@ def test_kommunenwahl_und_seitenleiste_binden_die_vorschau_ein() -> None:
     klein = _daten(body)["sizes"][0]["name"]
     client = Client()
 
+    # Die Auswahl zeigt keine Liste aller Kommunen mehr (Issue #783, Stufe 2), also auch keine Logos
     wahl = client.get("/insight/").content.decode()
-    assert f'src="/media/{klein}"' in wahl
-    assert 'width="64" height="64"' in wahl
     assert f'src="/media/{body.logo.name}"' not in wahl, "Das Original wird nicht mehr geladen"
 
     client.get(f"/insight/kommune/{body.id}/")
     start = client.get("/insight/").content.decode()
-    assert f'srcset="/media/{klein} 1x' in start
+    assert f'src="/media/{klein}"' in start and f'srcset="/media/{klein} 1x' in start
+    assert 'width="64" height="64"' in start
+    assert f'src="/media/{body.logo.name}"' not in start
 
 
 def test_gemeinsame_logodatei_bleibt_fuer_die_andere_kommune(media_root: Path) -> None:

@@ -1,0 +1,17 @@
+{# Eintrag im Kommunenwechsel ohne JavaScript (pages/portal/kommunen.html): wählbar mit Daten, sonst als Text #}
+{% if eintrag.verfuegbar %}
+<a href="{{ eintrag.url }}" class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-band-grau">
+    <span class="flex-1 min-w-0">
+        <span class="block font-semibold text-gray-900 dark:text-white truncate">{{ eintrag.name }}</span>
+        <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{% if eintrag.hinweis %}{{ eintrag.hinweis }}, {% endif %}{{ eintrag.ort }}</span>
+    </span>
+</a>
+{% else %}
+<div class="flex flex-col sm:flex-row sm:items-center gap-x-3 px-3 py-3">
+    <span class="flex-1 min-w-0">
+        <span class="block font-medium text-gray-700 dark:text-gray-300 truncate">{{ eintrag.name }}</span>
+        <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{% if eintrag.hinweis %}{{ eintrag.hinweis }}, {% endif %}{{ eintrag.ort }}</span>
+    </span>
+    <span class="sm:shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400">noch nicht verfügbar</span>
+</div>
+{% endif %}

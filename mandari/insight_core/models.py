@@ -1610,6 +1610,83 @@ class OParlBodyGeoSuggestion(models.Model):
         return f"{self.name} (Relation {self.osm_relation_id}) für {self.body.get_display_name()}"
 
 
+class Municipality(models.Model):
+    """Eintrag im Kommunenverzeichnis für den Kommunenwechsel im Bürgerportal (Issue #783, Stufe 2).
+
+    Enthält alle Gemeinden, Gemeindeverbände und kreisfreien Städte, nicht nur die mit Daten. Wählbar ist
+    ein Eintrag, wenn eine gelistete Kommune denselben Regionalschlüssel oder AGS trägt; die Zuordnung
+    entsteht bei jeder Abfrage neu (``services/kommunenverzeichnis.py``). Befüllt per
+    ``manage.py kommunenverzeichnis_importieren`` (docs/INSIGHT_KOMMUNENWECHSEL.md).
+    """
+
+    key = models.CharField(
+        max_length=12,
+        unique=True,
+        verbose_name="Schlüssel",
+        help_text="Regionalschlüssel (12 Stellen) oder, wenn nicht bekannt, Amtlicher Gemeindeschlüssel (8 Stellen)",
+    )
+    ags = models.CharField(max_length=8, blank=True, default="", db_index=True, verbose_name="AGS")
+    name = models.CharField(max_length=200, verbose_name="Name")
+    kind = models.CharField(
+        max_length=60, blank=True, default="", verbose_name="Art", help_text="z. B. Stadt, Gemeinde, Samtgemeinde"
+    )
+    is_association = models.BooleanField(
+        default=False,
+        verbose_name="Gemeindeverband",
+        help_text="Samtgemeinde, Verbandsgemeinde, Amt o. Ä.: im Stöbern eine Stufe zwischen Kreis und Gemeinde",
+    )
+    district_key = models.CharField(max_length=5, db_index=True, verbose_name="Kreisschlüssel")
+    district = models.CharField(max_length=200, blank=True, default="", verbose_name="Kreis")
+    state_key = models.CharField(max_length=2, db_index=True, verbose_name="Land")
+    latitude = models.FloatField(blank=True, null=True, db_index=True, verbose_name="Breite")
+    longitude = models.FloatField(blank=True, null=True, verbose_name="Länge")
+    imported = models.BooleanField(
+        default=False,
+        verbose_name="Aus Datei importiert",
+        help_text="Aus der CSV-Datei (Quellen mit Namensnennung); nicht gesetzt bei Einträgen aus den gelisteten Kommunen",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "insight_municipality"
+        verbose_name = "Kommune im Verzeichnis"
+        verbose_name_plural = "Kommunenverzeichnis"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.key})"
+
+
+class MunicipalityTerm(models.Model):
+    """Suchbegriff eines Verzeichniseintrags: Name, Ortsteil oder Postleitzahl.
+
+    ``normalized`` ist klein geschrieben, ohne Satzzeichen, Umlaute als ``ae`` usw. Für Umlaute ohne Punkte
+    („Ubungsheim“ für „Übungsheim“) steht eine zweite Zeile mit ``a``, ``o``, ``u``. In PostgreSQL trägt die Spalte einen
+    Trigramm-Index (``pg_trgm``) für die unscharfe Suche.
+    """
+
+    class Kind(models.TextChoices):
+        NAME = "name", "Name"
+        DISTRICT_PART = "ortsteil", "Ortsteil"
+        POSTCODE = "plz", "Postleitzahl"
+
+    municipality = models.ForeignKey(Municipality, on_delete=models.CASCADE, related_name="terms")
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.NAME)
+    label = models.CharField(max_length=200, verbose_name="Anzeige")
+    normalized = models.CharField(max_length=200, db_index=True)
+
+    class Meta:
+        db_table = "insight_municipality_term"
+        verbose_name = "Suchbegriff im Kommunenverzeichnis"
+        verbose_name_plural = "Suchbegriffe im Kommunenverzeichnis"
+        constraints = [
+            models.UniqueConstraint(fields=["municipality", "kind", "normalized"], name="uniq_municipality_term"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.label} → {self.municipality_id}"
+
+
 class PaperLocation(models.Model):
     """Eine Verortung eines Vorgangs als eigene, indexierbare Zeile.
 

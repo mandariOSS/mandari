@@ -21,6 +21,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `SESSION_BESCHLUSSKONTROLLE.md` | [Session → Beschlusskontrolle](https://docs.mandari.de/session/beschlusskontrolle/) |
 | `INSIGHT_DECISION_TRACKING.md` | [Insight → Beschlüsse verfolgen](https://docs.mandari.de/insight/beschluesse/) |
 | `INSIGHT_GEO.md` | Insight → Nachbarschaft und Verortung (Seite folgt) |
+| `INSIGHT_KOMMUNENWECHSEL.md` | Insight → Kommunenwechsel und Kommunenverzeichnis (Seite folgt) |
 | `INSIGHT_QUESTIONS.md` | [Insight → Ratsfragen](https://docs.mandari.de/insight/ratsfragen/) |
 | `SESSION_REMINDERS.md` | [Session → Fristen-Erinnerungen](https://docs.mandari.de/session/fristen-erinnerungen/) |
 | `PROTOKOLLIERUNG.md` | [Datenschutz → Protokollierungskonzept](https://docs.mandari.de/datenschutz/) (Seite folgt) |

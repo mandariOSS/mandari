@@ -1,21 +1,21 @@
 {% if papers %}
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+<div class="-mx-3">
     <div class="overflow-x-auto">
     <table class="w-full">
         <thead>
-            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Vorgang</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Vorlagen-Nr.</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Typ</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Datum</th>
+            <tr class="border-b border-gray-300 dark:border-gray-700">
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Vorgang</th>
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Vorlagen-Nr.</th>
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Typ</th>
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Datum</th>
                 <th class="w-10 px-2 py-3"></th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
             {% for paper in papers %}
-            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+            <tr class="hover:bg-band-grau/70 group cursor-pointer"
                 data-href="{% url 'insight_core:insight:paper_detail' paper.id %}">
-                <td class="px-6 py-3">
+                <td class="px-3 py-3.5">
                     <a href="{% url 'insight_core:insight:paper_detail' paper.id %}"
                        class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
                         {{ paper.name|default:"Vorgang" }}
@@ -26,17 +26,17 @@
                         {% if paper.paper_type %}{{ paper.paper_type }}{% endif %}
                     </div>
                 </td>
-                <td class="px-4 py-3 text-sm max-sm:hidden">
+                <td class="px-3 py-3.5 text-sm max-sm:hidden">
                     {% if paper.reference %}
                     <span class="font-mono text-gray-500 dark:text-gray-400">{{ paper.reference }}</span>
                     {% else %}
                     <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                <td class="px-3 py-3.5 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
                     {{ paper.paper_type|default:"—" }}
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                <td class="px-3 py-3.5 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
                     {% if paper.date %}
                     <time datetime="{{ paper.date|date:'Y-m-d' }}">{{ paper.date|date:"d.m.Y" }}</time>
                     {% else %}
@@ -90,7 +90,7 @@
 {% endif %}
 
 {% else %}
-<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="py-12 text-center">
     <i data-lucide="file-text" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Vorgänge gefunden</h3>
     <p class="text-gray-500 dark:text-gray-400">

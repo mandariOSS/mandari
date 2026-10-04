@@ -6,7 +6,6 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import json
-import re
 
 from django.http import HttpResponse
 from django.shortcuts import redirect
@@ -24,78 +23,6 @@ from ._helpers import get_active_body, is_all_bodies_mode
 # =============================================================================
 # Portal Homepage (RIS)
 # =============================================================================
-
-# Bundesland aus den ersten beiden Stellen des Amtlichen Gemeindeschlüssels (AGS)
-AGS_BUNDESLAND = {
-    "01": "Schleswig-Holstein",
-    "02": "Hamburg",
-    "03": "Niedersachsen",
-    "04": "Bremen",
-    "05": "Nordrhein-Westfalen",
-    "06": "Hessen",
-    "07": "Rheinland-Pfalz",
-    "08": "Baden-Württemberg",
-    "09": "Bayern",
-    "10": "Saarland",
-    "11": "Berlin",
-    "12": "Brandenburg",
-    "13": "Mecklenburg-Vorpommern",
-    "14": "Sachsen",
-    "15": "Sachsen-Anhalt",
-    "16": "Thüringen",
-}
-
-
-#: Ableitung des Körperschafts-Typs aus dem Namen, wenn die OParl-Quelle
-#: keine ``classification`` liefert (Reihenfolge = Priorität).
-_KIND_PATTERNS = (
-    (re.compile(r"^(bezirksregierung|regionalrat|regionalverband|landschaftsverband)", re.I), "Regionalrat"),
-    (re.compile(r"^(landkreis|kreis)(\s|$)", re.I), "Landkreis"),
-    (re.compile(r"^(bundesstadt|landeshauptstadt|freie und hansestadt|hansestadt)", re.I), "Kreisfreie Stadt"),
-    (re.compile(r"kreisfrei", re.I), "Kreisfreie Stadt"),
-    (re.compile(r"^(samtgemeinde|verbandsgemeinde|amt)(\s|$)", re.I), "Gemeindeverband"),
-    (re.compile(r"^(gemeinde|markt|flecken)(\s|$)", re.I), "Gemeinde"),
-    (re.compile(r"^stadt(\s|$)", re.I), "Stadt"),
-)
-
-
-def get_kind_label_for_body(body):
-    """Anzeige-Typ einer Körperschaft: OParl-``classification`` oder Ableitung
-    aus dem Namen; letzter Fallback „Kommune"."""
-    if body.classification:
-        return body.classification
-    name = body.name or ""
-    for pattern, label in _KIND_PATTERNS:
-        if pattern.search(name):
-            return label
-    return "Kommune"
-
-
-def get_bundesland_for_body(body):
-    """Leitet das Bundesland aus dem AGS der Kommune ab (oder None)."""
-    if body.ags and len(body.ags) >= 2:
-        return AGS_BUNDESLAND.get(body.ags[:2])
-    return None
-
-
-def _bodies_with_stats():
-    """Alle Kommunen inkl. Kennzahlen (Vorgänge/Gremien/Sitzungen) und Region.
-
-    Die Kennzahlen kommen aus dem Cache (drei gruppierte Count-Queries über die
-    großen Tabellen, siehe ``services.portal_stats``); die Kommunenliste selbst
-    bleibt frisch.
-    """
-    bodies = list(OParlBody.objects.listed().order_by("name"))
-    counts = portal_stats.counts_by_body()
-
-    for body in bodies:
-        key = str(body.id)
-        body.stat_papers = counts["papers"].get(key, 0)
-        body.stat_organizations = counts["organizations"].get(key, 0)
-        body.stat_meetings = counts["meetings"].get(key, 0)
-        body.bundesland = get_bundesland_for_body(body)
-        body.kind_label = get_kind_label_for_body(body)
-    return bodies
 
 
 class PortalHomeView(TemplateView):
@@ -132,10 +59,9 @@ class PortalHomeView(TemplateView):
         context["all_bodies_mode"] = all_bodies_mode
 
         if all_bodies_mode:
-            # Kommune-Auswahl: alle gelisteten Kommunen mit echten Kennzahlen
-            bodies = _bodies_with_stats()
-            context["select_bodies"] = bodies
-            context["stats"] = {"bodies": len(bodies), **portal_stats.overview_stats()}
+            # Kommunenauswahl (Issue #783): keine Liste aller Kommunen, sondern Suche, Nähe und Stöbern über das
+            # Kommunenverzeichnis (services/kommunenverzeichnis.py); hier nur, ob es überhaupt Kommunen gibt
+            context["hat_kommunen"] = OParlBody.objects.listed().exists()
             context["upcoming_meetings"] = None
             context["recent_papers"] = None
 
@@ -198,8 +124,21 @@ def set_body(request, body_id):
     # SECURITY: Use Django's built-in URL validation to prevent Open Redirect
     default_redirect = "/insight/"
     referer = request.META.get("HTTP_REFERER", "")
+    # Brotkrumen einer Seite aus einer anderen Kommune (Issue #783): erst diese Kommune wählen, dann auf ihre
+    # Übersicht bzw. Liste. Nur relative Pfade des Bürgerportals.
+    weiter = request.GET.get("weiter", "")
 
-    if referer and url_has_allowed_host_and_scheme(
+    if (
+        weiter.startswith("/insight/")
+        and not weiter.startswith("/insight/kommune/")
+        and url_has_allowed_host_and_scheme(
+            weiter,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        )
+    ):
+        redirect_url = weiter
+    elif referer and url_has_allowed_host_and_scheme(
         referer,
         allowed_hosts={request.get_host()},
         require_https=request.is_secure(),

@@ -1,15 +1,37 @@
-{# Fuß des Bürgerportals (Issue #783): Datenstand der Kommune und Pflichtlinks, ohne Werbezeile #}
-<footer class="border-t border-gray-200 dark:border-gray-700 pt-5 pb-8 mt-12 flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
-    <p>
-        {% if active_body.last_sync %}Letzter Abgleich mit dem Ratsinformationssystem: {{ active_body.last_sync|date:"d.m.Y, H:i" }} Uhr{% else %}Ein Angebot von <a href="{{ marketing_url }}/" class="font-medium text-gray-800 dark:text-gray-200 underline-offset-4 hover:underline">mandari</a>{% endif %}
-    </p>
-    <nav aria-label="Rechtliches und Informationen">
-        <ul class="flex flex-wrap gap-x-4 gap-y-1">
-            <li><a href="{{ marketing_url }}/" class="underline-offset-4 hover:underline hover:text-gray-900 dark:hover:text-white">mandari.de</a></li>
-            <li><a href="{{ marketing_url }}/barrierefreiheit/" class="underline-offset-4 hover:underline hover:text-gray-900 dark:hover:text-white">Barrierefreiheit</a></li>
-            <li><a href="{{ marketing_url }}/datenschutz/" class="underline-offset-4 hover:underline hover:text-gray-900 dark:hover:text-white">Datenschutz</a></li>
-            <li><a href="{{ marketing_url }}/impressum/" class="underline-offset-4 hover:underline hover:text-gray-900 dark:hover:text-white">Impressum</a></li>
-            <li><a href="https://github.com/mandariOSS/mandari" rel="noopener noreferrer" class="underline-offset-4 hover:underline hover:text-gray-900 dark:hover:text-white">Quellcode</a></li>
-        </ul>
-    </nav>
+{# Fuß des Bürgerportals (Issue #783): Band in Tinte mit Herkunft und Datenstand der Daten (Kommune der Seite), Wege und Pflichtlinks #}
+<footer class="bg-band-tinte text-gray-300">
+    <div class="max-w-6xl px-5 sm:px-8 py-12 grid gap-10 md:grid-cols-[minmax(0,1.4fr)_1fr_1fr]">
+        <div class="max-w-md">
+            <p class="text-[1.15rem] font-bold tracking-tight text-white">mandari<span class="text-indigo-400" aria-hidden="true">.</span> <span class="font-semibold text-primary-300">{% if insight_portal %}{{ insight_portal.name }}{% else %}Insight{% endif %}</span></p>
+            <p class="mt-3 text-[0.9375rem] leading-relaxed">
+                {% if page_body %}Die Daten stammen aus dem Ratsinformationssystem von {{ page_body.get_display_name }}.{% else %}Öffentliche Ratsinformationen der Kommunen aus ihren Ratsinformationssystemen.{% endif %}
+                {% if page_body.last_sync %}Letzter Abgleich: {{ page_body.last_sync|date:"d.m.Y, H:i" }} Uhr.{% endif %}
+            </p>
+        </div>
+        <nav aria-label="Bürgerportal">
+            <p class="text-[0.875rem] text-gray-400">Bürgerportal</p>
+            <ul class="mt-3 space-y-2 text-[0.9375rem]">
+                {% if not insight_portal %}
+                <li><a href="{% url 'insight_core:insight:kommunen' %}" class="hover:text-white underline-offset-4 hover:underline">Kommune wählen</a></li>
+                {% endif %}
+                <li><a href="{% url 'insight_core:insight:saved' %}" class="hover:text-white underline-offset-4 hover:underline">Gespeichert</a></li>
+                {% if insight_subscriptions_enabled %}
+                <li><a href="{% url 'insight_core:insight:notifications' %}" class="hover:text-white underline-offset-4 hover:underline">Benachrichtigungen</a></li>
+                {% endif %}
+                {% if not request.user.is_authenticated %}
+                <li><a href="{% url 'accounts:login' %}" class="hover:text-white underline-offset-4 hover:underline">Anmelden</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+        <nav aria-label="Rechtliches und Informationen">
+            <p class="text-[0.875rem] text-gray-400">mandari</p>
+            <ul class="mt-3 space-y-2 text-[0.9375rem]">
+                <li><a href="{{ marketing_url }}/" class="hover:text-white underline-offset-4 hover:underline">mandari.de</a></li>
+                <li><a href="{{ marketing_url }}/barrierefreiheit/" class="hover:text-white underline-offset-4 hover:underline">Barrierefreiheit</a></li>
+                <li><a href="{{ marketing_url }}/datenschutz/" class="hover:text-white underline-offset-4 hover:underline">Datenschutz</a></li>
+                <li><a href="{{ marketing_url }}/impressum/" class="hover:text-white underline-offset-4 hover:underline">Impressum</a></li>
+                <li><a href="https://github.com/mandariOSS/mandari" rel="noopener noreferrer" class="hover:text-white underline-offset-4 hover:underline">Quellcode</a></li>
+            </ul>
+        </nav>
+    </div>
 </footer>

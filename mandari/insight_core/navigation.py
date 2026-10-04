@@ -45,3 +45,31 @@ NAV_AREAS: dict[str, str] = {
 def nav_area(url_name: str | None) -> str:
     """Bereich der Navigation für einen URL-Namen; leer, wenn die Seite keinem Bereich angehört."""
     return NAV_AREAS.get(url_name or "", "")
+
+
+#: Bereich → (Name, URL-Name der Übersichtsseite) für die Brotkrumen der Kopfzeile (Stufe 2)
+AREA_PAGES: dict[str, tuple[str, str]] = {
+    "sitzungen": ("Sitzungen", "meeting_list"),
+    "vorgaenge": ("Vorgänge", "paper_list"),
+    "beschluesse": ("Beschlüsse", "decision_list"),
+    "gremien": ("Gremien", "organization_list"),
+    "personen": ("Personen", "person_list"),
+    "ratsfragen": ("Ratsfragen", "question_portal"),
+    "karte": ("Karte", "map"),
+    "ki": ("KI-Assistent", "chat"),
+    "suche": ("Suche", "search"),
+    "gespeichert": ("Gespeichert", "saved"),
+    "benachrichtigungen": ("Benachrichtigungen", "notifications"),
+}
+
+
+def breadcrumb_area(url_name: str | None) -> dict[str, str | bool]:
+    """Bereich als zweite Brotkrume („Beispielstadt › Vorgänge › …“); leer auf der Übersicht und außerhalb der Bereiche.
+
+    ``current`` ist wahr, wenn die Seite selbst die Übersicht des Bereichs ist (dann ohne Link, mit aria-current).
+    """
+    area = nav_area(url_name)
+    if area not in AREA_PAGES:
+        return {}
+    label, list_name = AREA_PAGES[area]
+    return {"label": label, "url_name": f"insight_core:insight:{list_name}", "current": url_name == list_name}
