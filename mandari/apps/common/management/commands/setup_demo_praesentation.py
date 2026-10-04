@@ -57,6 +57,7 @@ from apps.common.management.commands.setup_demo_environment import (
     DEMO_SESSION_SLUG,
     DEMO_START_DATE,
     DEMO_USERS,
+    sitzungstermin,
 )
 
 if TYPE_CHECKING:
@@ -683,7 +684,8 @@ class Command(BaseCommand):
 
     @staticmethod
     def _termin(tage: int) -> datetime:
-        return (timezone.localtime() + timedelta(days=tage)).replace(hour=17, minute=0, second=0, microsecond=0)
+        """Sitzungstermin relativ zum Aufbautag, immer an einem Werktag um 17 Uhr (wie die Basisdemo)."""
+        return sitzungstermin(tage)
 
     def _vorlage(
         self,
