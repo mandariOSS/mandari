@@ -56,6 +56,23 @@ x-app-environment: &app-environment
   SITE_URL: https://${DOMAIN:-localhost}
   # Dokument-Cache (siehe docs/FILE_CACHE.md)
   OPARL_FILES_ROOT: /app/files
+  # Lokale Kopien liefert Caddy aus (Range, ETag); Caddy liest dafür das Volume mandari_files
+  # (siehe Dienst caddy und docs/FILE_CACHE.md, „Auslieferung über den Webserver“). Standard aus.
+  FILE_ACCEL_REDIRECT: ${FILE_ACCEL_REDIRECT:-false}
+  # Ablage nach SHA-256 mit Referenzzählung (docs/FILE_CACHE.md, „Ablage nach SHA-256“); der Ingestor legt
+  # Dateien, die er für den Text lädt, selbst ab (Volume mandari_files im Dienst ingestor)
+  FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}
+  INGESTOR_STORES_FILES: ${INGESTOR_STORES_FILES:-true}
+  # S3-kompatibler Objektspeicher (docs/FILE_CACHE.md, „Objektspeicher“), Standard aus. Zugangsdaten nie im Repo:
+  # aus der .env oder einer eigenen Umgebungsdatei, die Compose zusätzlich liest (--env-file, siehe FILE_CACHE.md)
+  OBJ_ENABLED: ${OBJ_ENABLED:-false}
+  OBJ_ENDPOINT: ${OBJ_ENDPOINT:-}
+  OBJ_BUCKET: ${OBJ_BUCKET:-}
+  OBJ_KEY: ${OBJ_KEY:-}
+  OBJ_SECRET: ${OBJ_SECRET:-}
+  OBJ_REGION: ${OBJ_REGION:-}
+  OBJ_CACHE_MAX_GB: ${OBJ_CACHE_MAX_GB:-60}
+  OBJ_CHECKSUMS: ${OBJ_CHECKSUMS:-when_required}
   # Nur mit Ratsinformationssystem im internen Netz (siehe .env.example)
   INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
   # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus
@@ -76,12 +93,17 @@ x-app-environment: &app-environment
   INSIGHT_ALERT_EMAILS: ${INSIGHT_ALERT_EMAILS:-}
   GATUS_URL: ${GATUS_URL:-}
   METRICS_URL: ${METRICS_URL:-http://mandari:8000/metrics/}
+  # Ereignisse aus mandari Session an die Datendrehscheibe (aus, schatten, aktiv; siehe .env.example), Standard aus
+  SESSION_EVENTS: ${SESSION_EVENTS:-aus}
   # Änderungsfeed und Snapshot je Kommune (siehe .env.example und docs/OPARL_API.md, „Betrieb“), Standard aus
   OPARL_CHANGES_ENABLED: ${OPARL_CHANGES_ENABLED:-false}
   OPARL_CHANGES_RETENTION_DAYS: ${OPARL_CHANGES_RETENTION_DAYS:-90}
   OPARL_SNAPSHOT_PARALLEL: ${OPARL_SNAPSHOT_PARALLEL:-2}
   # AI (optional)
   NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+  # „Worker lebt“ an die Statusseite (docs/MONITORING.md, „Worker“); leer = keine Meldung
+  WORKER_PUSH_URL: ${WORKER_PUSH_URL:-}
+  WORKER_PUSH_TOKEN: ${WORKER_PUSH_TOKEN:-}
   # Timezone
   TZ: ${TZ:-Europe/Berlin}
 
@@ -99,10 +121,13 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-localhost}
       EMAIL: ${ACME_EMAIL:-admin@example.com}
+      # Ablage der Dokumente, nur lesend (Auslieferung per X-Accel-Redirect, FILE_ACCEL_REDIRECT)
+      OPARL_FILES_MOUNT: /srv/mandari-files
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - mandari_files:/srv/mandari-files:ro
     depends_on:
       - mandari
       - website
@@ -430,8 +455,13 @@ services:
       TZ: ${TZ:-Europe/Berlin}
       # Änderungen am RIS-Bestand als Ereignisse ins Journal schreiben (Standard aus, siehe .env.example)
       INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
+      # Dateien für den Text gleich in der Ablage der Anwendung ablegen (ein Abruf je Datei, #788)
+      OPARL_FILES_ROOT: /app/files
+      FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}
+      FILE_CACHE_MIN_FREE_GB: ${FILE_CACHE_MIN_FREE_GB:-15}
     volumes:
       - ingestor_data:/app/data
+      - mandari_files:/app/files
     depends_on:
       postgres:
         condition: service_healthy

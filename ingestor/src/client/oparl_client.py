@@ -16,14 +16,18 @@ import time
 from collections import deque
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
+from mandari_oparl.robots import KIND_API, RETRY_UNREACHABLE_SECONDS, RobotsOverride
+from mandari_oparl.utils import parse_datetime
 
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
+from src.client.host_pacing import host_pacer
 from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message
+from src.client.robots import robots_gate
 from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
@@ -34,8 +38,15 @@ console = MaskingConsole()
 # kennt dieselben Werte (insight_core.models.OParlSource.ERROR_KIND_*).
 ERROR_KIND_UA_BLOCKED = "ua_blocked"
 ERROR_KIND_SERVER_ERROR_SERIES = "server_error_series"
-# robots.txt der Instanz verbietet unseren Crawler (Scraper-Quellen, Issue #116)
+# robots.txt des Hosts verbietet den Abruf (Scraper-Quellen seit Issue #116, OParl-Schnittstelle und
+# Dateien nach RFC 9309, src/client/robots.py)
 ERROR_KIND_ROBOTS_BLOCKED = "robots_blocked"
+
+# Ergebnis der Prüfung, ob eine Quelle mit modified_since filtert (nach jedem Vollabgleich)
+MODIFIED_SINCE_SUPPORTED = "supported"  # filtert: inkrementelle Läufe holen nur Geändertes
+MODIFIED_SINCE_UNSUPPORTED = "unsupported"  # lehnt den Parameter ab (HTTP 400/401/403)
+MODIFIED_SINCE_IGNORED = "ignored"  # nimmt ihn an, liefert aber ungefiltert
+MODIFIED_SINCE_INCONCLUSIVE = "inconclusive"  # keine Aussage (Fehler, Sperre): Befund bleibt wie er ist
 
 # Neutraler Client-Header für die einmalige Vergleichsanfrage nach einem 403.
 # Absichtlich der nackte Bibliotheks-Default: Antwortet der Server darauf mit
@@ -94,6 +105,26 @@ class HostHealth:
     last_server_error_at: datetime | None = None
     last_status_codes: deque[int] = field(default_factory=lambda: deque(maxlen=10))
     failed_lists: list[str] = field(default_factory=list)
+    # robots.txt: gesperrte Anfragen, entscheidende Regel und erfolgreiche Anfragen an den Host
+    robots_blocked_count: int = 0
+    robots_reason: str = ""
+    ok_requests: int = 0
+    # robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler): zurückgestellte Anfragen, letzter Status
+    robots_unreachable_count: int = 0
+    robots_unreachable_status: int | None = None
+
+    @property
+    def robots_blocked(self) -> bool:
+        """Die robots.txt sperrt den Host für uns ganz: gesperrte Anfragen, keine einzige erfolgreiche."""
+        return self.robots_blocked_count > 0 and self.ok_requests == 0
+
+    @property
+    def robots_unreachable(self) -> bool:
+        """
+        Die robots.txt des Hosts war nicht erreichbar und keine Anfrage kam durch. Das ist eine Störung des
+        Hosts, keine Sperre: Befund wie eine 5xx-Serie (kurze Schonung), nicht ``robots_blocked``.
+        """
+        return self.robots_unreachable_count > 0 and self.ok_requests == 0
 
     @property
     def server_error_series(self) -> bool:
@@ -103,7 +134,9 @@ class HostHealth:
     def error_kind(self) -> str | None:
         if self.ua_blocked_at is not None:
             return ERROR_KIND_UA_BLOCKED
-        if self.server_error_series:
+        if self.robots_blocked:
+            return ERROR_KIND_ROBOTS_BLOCKED
+        if self.server_error_series or self.robots_unreachable:
             return ERROR_KIND_SERVER_ERROR_SERIES
         return None
 
@@ -121,6 +154,21 @@ class HostHealth:
                 f"User-Agent gesperrt: {self.host} antwortet auf unseren User-Agent mit HTTP 403, "
                 f"ein neutraler Client erhält HTTP {self.ua_probe_status} "
                 f"(erkannt {self.ua_blocked_at:%d.%m.%Y %H:%M} UTC)"
+            )
+        elif kind == ERROR_KIND_ROBOTS_BLOCKED:
+            text = (
+                f"robots.txt sperrt: {self.host} untersagt unseren Abruf ({self.robots_reason}); "
+                f"{self.robots_blocked_count} Anfrage(n) nicht gestellt. Ausnahme nur mit Freigabe "
+                f"(sync_config robots_override)"
+            )
+        elif kind == ERROR_KIND_SERVER_ERROR_SERIES and not self.server_error_series:
+            # Nur die robots.txt war nicht erreichbar: Störung, keine Sperre
+            status = self.robots_unreachable_status
+            cause = f"HTTP {status}" if status else "Netzfehler"
+            text = (
+                f"Störung: robots.txt von {self.host} nicht erreichbar ({cause}); "
+                f"{self.robots_unreachable_count} Anfrage(n) zurückgestellt, neuer Versuch frühestens nach "
+                f"{RETRY_UNREACHABLE_SECONDS // 60} Minuten"
             )
         elif kind == ERROR_KIND_SERVER_ERROR_SERIES:
             codes = ", ".join(str(code) for code in self.last_status_codes)
@@ -155,6 +203,9 @@ class HostHealth:
             "last_server_error_at": self.last_server_error_at.isoformat() if self.last_server_error_at else None,
             "last_status_codes": list(self.last_status_codes),
             "failed_lists": list(self.failed_lists),
+            "robots_blocked_count": self.robots_blocked_count,
+            "robots_reason": self.robots_reason,
+            "robots_unreachable_count": self.robots_unreachable_count,
         }
 
 
@@ -218,6 +269,11 @@ class OParlClient:
         """Capability-Cache seeden, z. B. aus persistierter sync_config."""
         cls._modified_since_unsupported.update(h for h in hosts if h)
 
+    @classmethod
+    def discard_modified_since_unsupported(cls, host: str) -> None:
+        """Host filtert wieder mit modified_since (Prüfung nach einem Vollabgleich)."""
+        cls._modified_since_unsupported.discard(host)
+
     def __init__(
         self,
         max_concurrent: int = 10,
@@ -228,17 +284,17 @@ class OParlClient:
         list_params: Mapping[str, str] | None = None,
         carry_modified_since: bool = False,
         request_interval: float | None = None,
+        robots_override: RobotsOverride | None = None,
     ) -> None:
         self.max_concurrent = max_concurrent
         self.timeout = timeout or settings.oparl_request_timeout
         # Wartezeit je Abrufplatz vor jeder Anfrage (OPARL_WAIT_TIME); bei max_concurrent Plätzen bis zu
         # max_concurrent / wait_time Anfragen je Sekunde
         self.wait_time = settings.oparl_wait_time if wait_time is None else wait_time
-        # Mindestabstand zwischen dem Beginn zweier Anfragen dieses Clients, über alle Plätze hinweg
-        # (sync_config["request_interval"], src/client/source_options.py); ersetzt wait_time
+        # Mindestabstand zwischen dem Beginn zweier Anfragen an denselben Host, über alle Abrufplätze, Quellen
+        # und Prozesse hinweg (sync_config["request_interval"], src/client/source_options.py); ohne Wert gilt
+        # der Standard (INGESTOR_REQUEST_INTERVAL, eine Anfrage je Sekunde). Ersetzt wait_time.
         self.request_interval = request_interval
-        self._pace_lock: asyncio.Lock | None = None
-        self._next_request_at = 0.0
         # Parameter für die erste Seite jeder Liste, z. B. {"size": "100"} (sync_config["list_params"])
         self.list_params: dict[str, str] = dict(list_params or {})
         # Quelle filtert mit modified_since, verliert den Parameter aber in links.next (ALLRIS)
@@ -248,6 +304,8 @@ class OParlClient:
         self.source_name = source_name or "unknown"
         # Je Quelle überschreibbar (OParlSource.user_agent); leer = Standard
         self.user_agent = (user_agent or "").strip() or settings.user_agent
+        # Ausnahme der Quelle von der robots.txt (sync_config["robots_override"], nur mit Vermerk)
+        self.robots_override = robots_override
 
         # Sperr- und Störungsbefund je Host (Issue #123), lebt so lange wie der Client
         self.host_health: dict[str, HostHealth] = {}
@@ -297,33 +355,28 @@ class OParlClient:
         self.stats = SyncStats()
         self._circuit_breakers = {}
         self.host_health = {}
-        self._pace_lock = asyncio.Lock()
-        self._next_request_at = 0.0
         return self
 
-    async def _throttle(self, skip_wait: bool = False) -> None:
-        """
-        Vor einer Anfrage warten.
+    @property
+    def effective_interval(self) -> float:
+        """Abstand je Host: ``request_interval`` der Quelle, sonst der Standard des Ingestors."""
+        return settings.request_interval if self.request_interval is None else self.request_interval
 
-        Mit ``request_interval`` beginnt jede Anfrage frühestens ``request_interval`` Sekunden nach der
-        vorigen dieses Clients, gleich wie viele Abrufe parallel laufen (höchstens ``1 / request_interval``
-        Anfragen je Sekunde und Abgleichslauf). Das gilt auch für Anfragen mit ``skip_wait``: Die Quelle
-        verlangt den Abstand für jede Anfrage. Ohne ``request_interval`` wartet jeder Abrufplatz
-        ``wait_time`` Sekunden (bisheriges Verhalten).
+    async def _throttle(self, url: str, skip_wait: bool = False) -> None:
         """
-        if self.request_interval is None:
-            if not skip_wait and self.wait_time > 0:
-                await asyncio.sleep(self.wait_time)
+        Vor einer Anfrage an den Host von ``url`` warten (Drossel je Host, src/client/host_pacing.py).
+
+        Jede Anfrage beginnt frühestens ``effective_interval`` Sekunden nach der vorigen an denselben Host,
+        gleich ob sie aus diesem Client, einer anderen Quelle auf dem Host oder einem anderen Prozess kommt.
+        Das gilt auch für Anfragen mit ``skip_wait``. Nur mit Abstand 0 (Drossel aus) wartet wie früher jeder
+        Abrufplatz ``wait_time`` Sekunden.
+        """
+        interval = self.effective_interval
+        if interval > 0:
+            await host_pacer.wait(url, interval)
             return
-        if self.request_interval <= 0:
-            return
-        if self._pace_lock is None:
-            self._pace_lock = asyncio.Lock()
-        # Die Sperre bleibt während des Wartens gehalten: Wartende kommen der Reihe nach dran
-        async with self._pace_lock:
-            while (wait := self._next_request_at - time.monotonic()) > 0:
-                await asyncio.sleep(wait)
-            self._next_request_at = time.monotonic() + self.request_interval
+        if self.request_interval is None and not skip_wait and self.wait_time > 0:
+            await asyncio.sleep(self.wait_time)
 
     # ------------------------------------------------------------------
     # Sperr- und Störungserkennung (Issue #123)
@@ -364,6 +417,7 @@ class OParlClient:
             )
 
     def _note_success(self, url: str) -> None:
+        self._health(url).ok_requests += 1
         # Eine erfolgreiche Antwort beendet die Serie, die Gesamtzahl bleibt für die Statistik
         health = self.host_health.get(urlparse(url).netloc)
         if health is not None:
@@ -389,7 +443,7 @@ class OParlClient:
 
         health.ua_probe_status = 0
         try:
-            await self._throttle()
+            await self._throttle(url)
             start = time.time()
             response = await self._client.get(
                 url, headers={"User-Agent": NEUTRAL_USER_AGENT, "Accept": "application/json"}
@@ -409,6 +463,48 @@ class OParlClient:
             )
             return ERROR_KIND_UA_BLOCKED, f"User-Agent gesperrt: neutraler Client erhält HTTP {response.status_code}"
         return None, f"Zugriff verweigert, auch für neutralen Client (HTTP {response.status_code})"
+
+    async def _robots_blocked(self, url: str) -> FetchResult | None:
+        """
+        robots.txt des Hosts prüfen (RFC 9309, Art ``api``). Erlaubt: ``None``. Gesperrt: Ergebnis ohne Anfrage
+        an die Quelle mit Fehlerklasse ``robots_blocked``. Nicht erreichbar (5xx, 408, 429, Netzfehler): Ergebnis
+        ohne Anfrage, gewertet als Störung (``server_error_series``), nicht als Sperre.
+        """
+        assert self._client is not None
+        decision = await robots_gate.decide(
+            self._client,
+            url,
+            user_agent=self.user_agent,
+            kind=KIND_API,
+            override=self.robots_override,
+            pace=self._pace_robots,
+        )
+        if decision.allowed:
+            return None
+        health = self._health(url)
+        if decision.unreachable:
+            health.robots_unreachable_count += 1
+            health.robots_unreachable_status = decision.status_code
+            self.stats.errors += 1
+            metrics.record_http_error(self.source_name, "robots_unreachable")
+            if health.robots_unreachable_count == 1:
+                console.print(f"[yellow]{health.host}: {decision.reason}[/yellow]")
+            return FetchResult(
+                url=url, data=None, status_code=0, error=decision.reason, error_kind=ERROR_KIND_SERVER_ERROR_SERIES
+            )
+        health.robots_blocked_count += 1
+        health.robots_reason = decision.reason
+        self.stats.errors += 1
+        metrics.record_http_error(self.source_name, ERROR_KIND_ROBOTS_BLOCKED)
+        if health.robots_blocked_count == 1:
+            console.print(f"[red]{health.host}: {decision.reason} — kein Abruf[/red]")
+        return FetchResult(
+            url=url, data=None, status_code=0, error=decision.reason, error_kind=ERROR_KIND_ROBOTS_BLOCKED
+        )
+
+    async def _pace_robots(self, url: str) -> None:
+        """Abruf der robots.txt zählt wie jede Anfrage an die Quelle."""
+        await self._throttle(url)
 
     def _get_circuit_breaker(self, url: str) -> CircuitBreaker:
         """Get or create circuit breaker for URL's host."""
@@ -463,6 +559,9 @@ class OParlClient:
         skip_wait: bool,
     ) -> FetchResult:
         """Fetch with exponential backoff retry and circuit breaker."""
+        blocked = await self._robots_blocked(url)
+        if blocked is not None:
+            return blocked
         last_error: str | None = None
         circuit_breaker = self._get_circuit_breaker(url)
 
@@ -549,12 +648,14 @@ class OParlClient:
             if settings.oparl_modified_since_enabled and url in self.modified_cache:
                 headers["If-Modified-Since"] = self.modified_cache[url]
 
-        # Rate limiting (request_interval der Quelle bzw. wait_time je Abrufplatz)
-        await self._throttle(skip_wait)
+        # Drossel je Host (request_interval der Quelle bzw. Standard), über alle Prozesse; je Host laufen in
+        # diesem Prozess höchstens host_max_concurrent Anfragen, damit der reservierte Takt kurz bleibt
+        async with host_pacer.limit(url, self.effective_interval):
+            await self._throttle(url, skip_wait)
 
-        start = time.time()
-        response = await self._client.get(url, headers=headers)
-        fetch_time = time.time() - start
+            start = time.time()
+            response = await self._client.get(url, headers=headers)
+            fetch_time = time.time() - start
 
         self.stats.http_requests += 1
         self.stats.http_time += fetch_time
@@ -726,6 +827,36 @@ class OParlClient:
                     current_url = self._append_modified_since(current_url, modified_since)
             else:
                 current_url = None
+
+    async def probe_modified_since(self, list_url: str, since: datetime) -> str:
+        """
+        Prüft mit einer Anfrage, ob die Quelle eine Liste mit ``modified_since`` filtert.
+
+        Unabhängig vom bisherigen Befund des Hosts (der Parameter wird immer gesendet). Ergebnis:
+        ``supported``, ``unsupported`` (HTTP 400/401/403), ``ignored`` (Filter fehlt in den Listen-Links oder
+        die erste Seite enthält Objekte, die vor ``since`` zuletzt geändert wurden) oder ``inconclusive``.
+        """
+        url = self._append_modified_since(self._with_list_params(list_url, self.list_params), since)
+        result = await self.fetch(url, use_cache=False)
+        if result.error_kind is not None:
+            return MODIFIED_SINCE_INCONCLUSIVE  # Sperre oder Störung, kein Befund zum Filter
+        if result.status_code in (400, 401, 403):
+            return MODIFIED_SINCE_UNSUPPORTED
+        data = result.data
+        if result.error or not isinstance(data, dict) or is_oparl_error(data):
+            return MODIFIED_SINCE_INCONCLUSIVE
+        if not self.carry_modified_since and modified_since_dropped(data.get("links")):
+            return MODIFIED_SINCE_IGNORED
+        cutoff = since - timedelta(minutes=1)  # Rundung der Quelle auf Sekunden oder Minuten
+        for item in self._extract_items(data):
+            modified = parse_datetime(item.get("modified")) if isinstance(item, dict) else None
+            if modified is None:
+                continue
+            if modified.tzinfo is None:
+                modified = modified.replace(tzinfo=UTC)
+            if modified < cutoff:
+                return MODIFIED_SINCE_IGNORED
+        return MODIFIED_SINCE_SUPPORTED
 
     async def fetch_list_all(
         self,

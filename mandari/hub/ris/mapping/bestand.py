@@ -63,6 +63,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
 )
+from insight_core.services.file_reconcile import is_blocked
 
 #: Version der Abbildung
 VERSION: Final = 1
@@ -656,7 +657,8 @@ class BestandMapping:
                 # Quelle nicht erreichbar ist; der Abnehmer verbindet sich nicht mit dem RIS der Kommune)
                 "accessUrl": proxy_url,
                 "downloadUrl": f"{proxy_url}?download=1",
-                "text": (file_obj.text_content or None) if include_text else None,
+                # Gesperrte Dokumente (in der Quelle gelöscht oder nicht mehr abrufbar, #787): kein Text
+                "text": (file_obj.text_content or None) if include_text and not is_blocked(file_obj) else None,
                 "paper": [self.uris.obj("paper", file_obj.paper_id)] if file_obj.paper_id else None,
                 "meeting": [self.uris.obj("meeting", file_obj.meeting_id)] if file_obj.meeting_id else None,
                 **_timestamps(file_obj),

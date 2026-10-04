@@ -4,8 +4,11 @@ Personenfotos aus Ratsinformationssystemen lokal zwischenspeichern.
 
 Warum lokal? Hotlinks auf das RIS brechen still (Systemwechsel, Bot-Schutz,
 Referrer-Regeln) und erzeugen bei jedem Seitenaufruf 404-Requests im Browser.
-Der Abruf läuft serverseitig mit Browser-User-Agent, normalisiert das Bild
-(max. 400 px, JPEG) und merkt sich „kein Foto vorhanden“, damit die
+Der Abruf läuft serverseitig mit unserer Kennung (``mandari-ingestor``, wie alle
+automatischen Abrufe, siehe ``mandari_oparl.crawler``) und beachtet die robots.txt.
+Braucht ein RIS einen anderen User-Agent, gilt der aus ``sync_config["download_headers"]``
+der Quelle (nur nach Absprache mit dem Betreiber). Das Bild wird normalisiert
+(max. 400 px, JPEG); „kein Foto vorhanden“ wird vermerkt, damit die
 Avatar-Komponente sauber auf Initialen zurückfällt.
 """
 
@@ -19,12 +22,12 @@ from django.core.files.base import ContentFile
 from django.db.models import Q
 from django.utils import timezone
 
+from . import host_pacing, robots
+
 logger = logging.getLogger(__name__)
 
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/128.0 Safari/537.36 mandari-photo-cache/1.0"
-)
+#: Dieselbe Kennung wie alle automatischen Abrufe (kein Browser-User-Agent)
+USER_AGENT = robots.USER_AGENT
 MAX_BYTES = 5 * 1024 * 1024
 MAX_SIZE = (400, 400)
 
@@ -90,7 +93,8 @@ def fetch_person_photo(person, client=None) -> str:
     """
     Foto einer Person abrufen und lokal speichern.
 
-    Rückgabe: "ok", "missing", "error", "skipped" (keine URL/manuell).
+    Rückgabe: "ok", "missing", "error", "skipped" (keine URL/manuell) oder "deferred" (robots.txt nicht
+    erreichbar; nichts vermerkt, der nächste Lauf versucht es erneut).
     """
     import httpx
 
@@ -99,13 +103,22 @@ def fetch_person_photo(person, client=None) -> str:
     url = person.photo_url
     if not url:
         return "skipped"
+    # robots.txt gilt für jeden automatischen Abruf (RFC 9309), auch für Fotos – geprüft mit dem User-Agent,
+    # mit dem das Foto geladen wird
+    agent = robots.user_agent_for(person)
+    decision = robots.check(url, robots.KIND_FILES, sync_config=robots.sync_config_of(person), agent=agent)
+    if decision.unreachable:
+        return "deferred"
+    if not decision.allowed:
+        return _mark(person, "error", decision.reason)
+    host_pacing.wait(url, sync_config=robots.sync_config_of(person))  # Drossel je Host über alle Prozesse
 
     own_client = client is None
     if own_client:
         client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=True)
     try:
         try:
-            response = client.get(url)
+            response = client.get(url, headers={"User-Agent": agent})
         except httpx.HTTPError as exc:
             return _mark(person, "error", f"{type(exc).__name__}: {exc}")
 

@@ -31,6 +31,9 @@ MIGRATION = ("insight_core", "0039_oparlbody_file_cache_dir")
 @pytest.fixture(autouse=True)
 def _cache_wurzel(tmp_path: Path, settings: Any) -> Path:
     settings.OPARL_FILES_ROOT = str(tmp_path)
+    # Verzeichnis je Kommune gibt es nur im bisherigen Layout; die Ablage nach SHA-256 (Standard, #788)
+    # prüft test_dokumentablage.py
+    settings.FILE_STORE_LAYOUT = "kommune"
     return tmp_path
 
 

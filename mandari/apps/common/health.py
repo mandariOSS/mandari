@@ -13,6 +13,14 @@ Getrennte Gesundheitsprüfungen (Issue #231, Teil 1).
   Ein Ausfall von Redis oder Elasticsearch macht die Readiness rot, die Liveness bleibt
   davon unberührt.
 - ``/health/`` bleibt für bestehende Healthchecks (Compose, Statusseite) erhalten.
+- ``/health/worker/`` (Issue #574): Lebenszeichen, Rückstau, Fehlerquote und gescheiterte Arbeit des
+  Workers (``apps.events.status``); 503, sobald eine Prüfung scheitert. Gedacht für die
+  Statusseite, die daraus per Mail alarmiert. ``?pruefung=rueckstau`` (kommagetrennt) lässt nur
+  die genannten Prüfungen über den Status entscheiden: je Prüfung ein Alarm, damit ein lang
+  anhaltender Befund (ein gescheiterter Auftrag bleibt 24 h stehen) keinen späteren anderen
+  verdeckt. Die Texte der Prüfungen nur intern (``METRICS_ALLOWED_NETWORKS`` bzw.
+  ``METRICS_TOKEN`` wie ``/metrics/``), sonst nur ``ok`` je Prüfung. Das Ergebnis gilt
+  ``WORKER_STATUS_CACHE_SECONDS``.
 
 Über ``HEALTH_READY_OPTIONAL`` (kommagetrennt, z. B. ``elasticsearch``) lassen sich
 Prüfungen als optional erklären: Sie werden weiter gemeldet, machen die Antwort aber nicht
@@ -34,6 +42,7 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
+from typing import Any
 
 from django.conf import settings
 from django.core.cache import cache
@@ -183,6 +192,73 @@ def run_readiness_checks() -> list[CheckResult]:
     finally:
         # Nicht auf hängende Threads warten – sie laufen im Hintergrund aus.
         executor.shutdown(wait=False, cancel_futures=True)
+
+
+#: So lange gilt ein Ergebnis von ``/health/worker/`` (die Statusseite fragt etwa minütlich; jeder
+#: Abruf kostet einige Abfragen, ohne Anmeldung)
+WORKER_STATUS_CACHE_SECONDS = 15
+_WORKER_STATUS_KEY = "health:worker"
+
+
+#: Abfrageparameter: Namen der Prüfungen, die über den Status entscheiden (kommagetrennt)
+WORKER_SELECTION_PARAM = "pruefung"
+
+
+def worker_status_payload() -> dict[str, Any]:
+    """Ergebnis aller Worker-Prüfungen als JSON-fähiges Wörterbuch (``status`` ``ok`` oder ``error``)."""
+    from apps.events.status import run_checks
+
+    ergebnisse = run_checks()
+    return {
+        "status": "ok" if all(c.ok for c in ergebnisse.values()) else "error",
+        "checks": {name: {"ok": c.ok, "detail": c.detail} for name, c in ergebnisse.items()},
+    }
+
+
+def _worker_status_cached() -> dict[str, Any]:
+    try:
+        daten = cache.get(_WORKER_STATUS_KEY)
+    except Exception:  # noqa: BLE001 – ohne Cache wird eben jedes Mal geprüft
+        daten = None
+    if isinstance(daten, dict):
+        return daten
+    neu = worker_status_payload()
+    try:
+        cache.set(_WORKER_STATUS_KEY, neu, WORKER_STATUS_CACHE_SECONDS)
+    except Exception:  # noqa: BLE001
+        logger.debug("Worker-Status nicht im Cache abgelegt", exc_info=True)
+    return neu
+
+
+@never_cache
+@require_GET
+def worker(request: HttpRequest) -> JsonResponse:
+    """Statusprüfungen des Workers; 503, sobald eine der gewählten (ohne Auswahl: aller) scheitert (Issue #574)."""
+    from apps.common.metrics import access_allowed
+    from apps.events.status import CHECKS
+
+    auswahl = [n.strip() for n in request.GET.get(WORKER_SELECTION_PARAM, "").split(",") if n.strip()]
+    if any(name not in CHECKS for name in auswahl):
+        # Feste Antwort ohne Echo der Eingabe
+        return JsonResponse(
+            {"status": "error", "fehler": "unbekannte Prüfung", "pruefungen": list(CHECKS)},
+            status=400,
+        )
+    alle: dict[str, dict[str, Any]] = _worker_status_cached()["checks"]
+    unbekannt = {"ok": False, "detail": "nicht prüfbar"}
+    gewaehlt = {name: alle.get(name, unbekannt) for name in (auswahl or list(alle))}
+    ok = all(c["ok"] for c in gewaehlt.values())
+    if not ok:
+        logger.warning("Worker-Prüfung: %s", ", ".join(n for n, c in gewaehlt.items() if not c["ok"]))
+    # Zahlen und Rollen nur für die eigene Überwachung; nach außen genügt, was besteht
+    intern = access_allowed(request)
+    return JsonResponse(
+        {
+            "status": "ok" if ok else "error",
+            "checks": {n: (dict(c) if intern else {"ok": c["ok"]}) for n, c in gewaehlt.items()},
+        },
+        status=200 if ok else 503,
+    )
 
 
 @never_cache

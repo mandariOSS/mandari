@@ -58,7 +58,9 @@ INDEX_CONFIG = {
     "files": {
         "model": OParlFile,
         "builder": file_to_doc,
+        # Gesperrte Dokumente (Löschabgleich, #787) bleiben auch beim Neuaufbau draußen
         "queryset_filter": lambda qs: qs.filter(
+            source_missing_since__isnull=True,
             text_content__isnull=False,
             text_extraction_status="completed",
         ).select_related("paper"),
@@ -165,6 +167,7 @@ class Command(BaseCommand):
                         if index_name == "papers":
                             files = obj.files.filter(
                                 deleted=False,
+                                source_missing_since__isnull=True,
                                 text_content__isnull=False,
                                 text_extraction_status="completed",
                             )

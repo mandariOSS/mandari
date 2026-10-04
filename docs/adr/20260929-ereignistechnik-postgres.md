@@ -362,6 +362,29 @@ präzisiert wurde:
   Listeners, `/metrics` und Hauptfaden plus Reserve; der Worker vergrößert seinen Pool darauf
   (`DEPLOYMENT.md`, Abschnitt Datenbankverbindungen).
 
+## Nachtrag zur Umsetzung in Session (#533, #534, #535)
+
+Umgesetzt in `apps/session/hub_events.py` (Erfassung in den Fachfunktionen) und
+`hub/ris/session_events.py` (Ereignisse aus Zuständen, Eigentümer der Verträge `ris.*`); Überblick in
+`docs/SESSION_EREIGNISSE.md`. Die Entscheidung bleibt; präzisiert wurde:
+
+- **Fachlicher Anlass als Zustandsvergleich:** Eine Fachfunktion nennt vor der Änderung die betroffenen
+  Objekte (`hub_events.track`), am Ende desselben Blocks vergleicht die Drehscheibe den Zustand im
+  kanonischen Modell vorher und nachher. Ereignisse entstehen genau für geänderte Objekte, eines je Objekt
+  und Empfängerkreis; Änderungen außerhalb des kanonischen Modells ergeben keines. Signale schreiben nie
+  Ereignisse.
+- **Schalter mit Schattenbetrieb:** `SESSION_EVENTS` (`aus`, `schatten`, `aktiv`), je Mandant
+  überschreibbar. Im Schatten läuft das Schreiben in einem Sicherungspunkt, ein Fehler lässt die
+  Änderung bestehen; erst `aktiv` gibt die Garantie „Ereignis und Änderung atomar“.
+- **Herkunft:** Mandant `session:<uuid>`, `body_id` die kanonische Kennung des Body der
+  Session-Schnittstelle; so liest der Änderungsfeed die Ereignisse beider Erzeuger unter derselben
+  Kommune.
+- **Abhängige Objekte:** Mit einer Vorlage beobachtet die Erfassung ihre Stationen, Anlagen und TOPs, mit
+  einer Sitzung ihre Anlagen und Beratungen; deren Sichtbarkeit folgt dem Träger, Rücknahmen ziehen sie mit.
+- **Abstimmung ohne Adresse:** Session führt je TOP eine Abstimmung; ihre Kennung bildet sich wie jede
+  kanonische aus der Adresse des TOP mit dem Zusatz `voting`. Die Rücknahme eines Ergebnisses meldet
+  `ris.object.depublished` der Abstimmung (`zurueckgenommen`) und die Änderung des TOP.
+
 ## Bezug
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A3 Sequenzierer](20260929-sequenzierer.md),

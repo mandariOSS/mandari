@@ -31,7 +31,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Final, ParamSpec, TypeVar
 
 from django.core.exceptions import ImproperlyConfigured
@@ -307,6 +307,39 @@ def enqueue_once(task: Task[P, R], idempotency_key: str, /, *args: P.args, **kwa
     if isinstance(backend, JournalBackend):
         return backend.enqueue_once(task, idempotency_key, args, kwargs)
     return task.enqueue(*args, **kwargs)
+
+
+#: Aufbewahrung beendeter Aufträge (ADR A4): erledigte 14 Tage, tote und endgültig fehlgeschlagene 90 Tage
+KEEP_DONE: Final = timedelta(days=14)
+KEEP_FAILED: Final = timedelta(days=90)
+#: Zeilen je Löschschritt; kurze Transaktionen statt einer langen Sperre
+PURGE_BATCH: Final = 5000
+
+
+def purge_finished(now: datetime | None = None, batch: int = PURGE_BATCH) -> int:
+    """Löscht beendete Aufträge nach ihrer Aufbewahrungsfrist; liefert ihre Anzahl.
+
+    Mit den Zeilen verfallen auch ihre Idempotenzschlüssel (``enqueue_once``). Wartende und laufende
+    Aufträge bleiben unberührt.
+    """
+    jetzt = now or timezone.now()
+    regeln = (
+        (TaskStatus.ERLEDIGT, KEEP_DONE),
+        (TaskStatus.FEHLGESCHLAGEN, KEEP_FAILED),
+        (TaskStatus.TOT, KEEP_FAILED),
+    )
+    geloescht = 0
+    for status, frist in regeln:
+        while True:
+            schritt = list(
+                TaskRow.objects.filter(status=status, finished_at__lt=jetzt - frist).values_list("pk", flat=True)[
+                    :batch
+                ]
+            )
+            if not schritt:
+                break
+            geloescht += TaskRow.objects.filter(pk__in=schritt).delete()[0]
+    return geloescht
 
 
 def journal_options(alias: str = "default") -> tuple[JournalOptions, tuple[str, ...]]:

@@ -24,6 +24,7 @@ from django.views.generic import (
     UpdateView,
 )
 
+from .. import hub_events
 from ..models import (
     SessionAgendaItem,
     SessionAttendance,
@@ -181,18 +182,21 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
         if form.errors:
             return self.form_invalid(form)
         form.instance.meeting = meeting
-        # Vor den Ende-TOPs (z. B. „Verschiedenes“) einreihen, nicht dahinter
-        form.instance.order = agenda_service.insertion_order(
-            meeting, is_public=form.instance.is_public, parent_id=form.instance.parent_id
-        )
-        form.instance.number = "?"  # wird durch renumber_agenda gesetzt
+        # Drehscheibe (Issue #533): neuer TOP und die neue Reihenfolge der übrigen (schon das Einreihen rückt auf)
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.agenda(meeting)
+            # Vor den Ende-TOPs (z. B. „Verschiedenes“) einreihen, nicht dahinter
+            form.instance.order = agenda_service.insertion_order(
+                meeting, is_public=form.instance.is_public, parent_id=form.instance.parent_id
+            )
+            form.instance.number = "?"  # wird durch renumber_agenda gesetzt
 
-        # Nachtrag: nach Versand der Ladung hinzugefügte TOPs kennzeichnen
-        if meeting.invitation_sent_at or meeting.meeting_state == "invitation_sent":
-            form.instance.is_supplementary = True
+            # Nachtrag: nach Versand der Ladung hinzugefügte TOPs kennzeichnen
+            if meeting.invitation_sent_at or meeting.meeting_state == "invitation_sent":
+                form.instance.is_supplementary = True
 
-        self.object = form.save()
-        agenda_service.renumber_agenda(meeting)
+            self.object = form.save()
+            agenda_service.renumber_agenda(meeting)
 
         if self.is_htmx:
             return HttpResponse(
@@ -262,16 +266,19 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
         if locked and not (form.changed_data == ["is_public"] and not form.instance.is_public):
             messages.error(self.request, protocol_lock.MESSAGE_RETRACT_ONLY)
             return redirect(self.get_success_url())
-        # Wechsel Ö <-> NÖ: im Zielteil hinter den regulären TOPs einreihen, aber vor den Ende-TOPs
-        # („Verschiedenes“) – wie ein neu ergänzter TOP
-        if "is_public" in form.changed_data and not locked:
-            form.instance.order = agenda_service.insertion_order(
-                form.instance.meeting, is_public=form.instance.is_public, parent_id=form.instance.parent_id
-            )
-        response = super().form_valid(form)
-        if "is_public" in form.changed_data:
-            agenda_service.cascade_visibility(self.object)
-        agenda_service.renumber_agenda(self.object.meeting)
+        # Drehscheibe (Issue #533): Änderung, Ö/NÖ-Wechsel samt Unterpunkten, neue Reihenfolge und Nummern
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.agenda(form.instance.meeting)
+            # Wechsel Ö <-> NÖ: im Zielteil hinter den regulären TOPs einreihen, aber vor den Ende-TOPs
+            # („Verschiedenes“) – wie ein neu ergänzter TOP
+            if "is_public" in form.changed_data and not locked:
+                form.instance.order = agenda_service.insertion_order(
+                    form.instance.meeting, is_public=form.instance.is_public, parent_id=form.instance.parent_id
+                )
+            response = super().form_valid(form)
+            if "is_public" in form.changed_data:
+                agenda_service.cascade_visibility(self.object)
+            agenda_service.renumber_agenda(self.object.meeting)
         messages.success(self.request, f"TOP „{self.object.name}“ wurde aktualisiert.")
         return response
 
@@ -296,16 +303,19 @@ class AgendaItemWithdrawView(SessionViewMixin, View):
         gesperrt = _locked(self, item.meeting_id)
         if gesperrt:
             return gesperrt
-        if request.POST.get("restore") == "1":
-            item.is_withdrawn = False
-            item.withdrawn_reason = ""
-            item.save()
-            messages.success(request, f"Absetzung von TOP {item.number} wurde aufgehoben.")
-        else:
-            item.is_withdrawn = True
-            item.withdrawn_reason = request.POST.get("reason", "").strip()
-            item.save()  # Audit: withdraw-Aktion über Signal
-            messages.success(request, f"TOP {item.number} „{item.name}“ wurde abgesetzt.")
+        # Drehscheibe (Issue #533): Absetzen bzw. Aufheben der Absetzung
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.agenda(item.meeting)
+            if request.POST.get("restore") == "1":
+                item.is_withdrawn = False
+                item.withdrawn_reason = ""
+                item.save()
+                messages.success(request, f"Absetzung von TOP {item.number} wurde aufgehoben.")
+            else:
+                item.is_withdrawn = True
+                item.withdrawn_reason = request.POST.get("reason", "").strip()
+                item.save()  # Audit: withdraw-Aktion über Signal
+                messages.success(request, f"TOP {item.number} „{item.name}“ wurde abgesetzt.")
         return _meeting_redirect(self, item.meeting)
 
 
@@ -322,8 +332,11 @@ class AgendaItemDeleteView(SessionViewMixin, View):
             return gesperrt
         meeting = item.meeting
         name = f"TOP {item.number} „{item.name}“"
-        item.delete()  # Audit: delete-Eintrag über Signal (auch für Unterpunkte via CASCADE)
-        agenda_service.renumber_agenda(meeting)
+        # Drehscheibe (Issue #533): gelöschter TOP samt Unterpunkten, neue Nummerierung der übrigen
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.agenda(meeting)
+            item.delete()  # Audit: delete-Eintrag über Signal (auch für Unterpunkte via CASCADE)
+            agenda_service.renumber_agenda(meeting)
         messages.success(request, f"{name} wurde gelöscht.")
         return _meeting_redirect(self, meeting)
 
@@ -343,7 +356,10 @@ class AgendaItemMoveView(SessionViewMixin, View):
         if direction not in ("up", "down"):
             messages.error(request, "Ungültige Richtung.")
         else:
-            agenda_service.move_item(item, direction)
+            # Drehscheibe (Issue #533): neue Reihenfolge und Nummern
+            with hub_events.track(self.session_tenant) as tracked:
+                tracked.agenda(item.meeting)
+                agenda_service.move_item(item, direction)
         return _meeting_redirect(self, item.meeting)
 
 
@@ -362,7 +378,10 @@ class AgendaReorderView(SessionViewMixin, View):
             return _meeting_redirect(self, meeting)
         raw = request.POST.get("order", "")
         ordered_ids = [part.strip() for part in raw.split(",") if part.strip()]
-        agenda_service.apply_order(meeting, ordered_ids)
+        # Drehscheibe (Issue #533): neue Reihenfolge und Nummern
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.agenda(meeting)
+            agenda_service.apply_order(meeting, ordered_ids)
         if self.is_htmx or request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse({"ok": True})
         return _meeting_redirect(self, meeting)

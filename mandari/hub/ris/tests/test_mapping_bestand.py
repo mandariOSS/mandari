@@ -206,6 +206,19 @@ def test_datei_mit_text_nur_am_objekt_endpunkt(welt: dict[str, Any]) -> None:
     assert eingebettet == abbildung.file(welt["file"]) and "text" not in eingebettet
 
 
+def test_gesperrte_datei_ohne_text(welt: dict[str, Any]) -> None:
+    """In der Quelle nicht mehr abrufbar (Löschabgleich, #787): kein Text, sonst dieselbe Ausgabe."""
+    datei = welt["file"]
+    vorher = _json(f"/oparl/v1/file/{datei.pk}")
+    assert vorher["text"] == "Erkannter Text"
+
+    OParlFile.objects.filter(pk=datei.pk).update(source_missing_since=ZEIT)
+    cache.clear()
+    nachher = _json(f"/oparl/v1/file/{datei.pk}")
+    assert "text" not in nachher
+    assert nachher == {key: value for key, value in vorher.items() if key != "text"}
+
+
 def test_system_und_body_aus_der_abbildung(welt: dict[str, Any]) -> None:
     abbildung = _abbildung()
     body = abbildung.body(welt["body"])

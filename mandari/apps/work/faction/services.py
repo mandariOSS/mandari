@@ -393,7 +393,7 @@ def run_faction_reminder_pass(now=None) -> dict:
     """
     Periodischer Erinnerungslauf (Issue #59).
 
-    Wird vom Sync-Watchdog-Zyklus (insight_sync/daemon.py) aufgerufen —
+    Wird vom Zeitplan ``fraktionserinnerungen_senden`` (apps/work/schedules.py) aufgerufen —
     analog zum Auto-Georef-Lauf. Verschickt einmalig je Sitzung eine
     Erinnerung an Zusagen/Vielleicht-Antworten, sobald der Sitzungsbeginn
     weniger als FACTION_REMINDER_WINDOW_HOURS (48 h) entfernt ist.

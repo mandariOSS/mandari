@@ -57,8 +57,15 @@ def test_worker_dienst_wie_die_anwendung_mit_lebenszeichen() -> None:
     assert datei in " ".join(worker["healthcheck"]["test"]), "Healthcheck prüft die Datei, die der Worker erneuert"
     assert "mandari" not in worker["depends_on"], "Worker startet vor der Anwendung (Migration → Worker → Web)"
     assert worker["labels"]["mandari.autoheal"] == "true"
-    for name in ("TASKS_BACKEND", "EVENTS_WORKER_REQUIRED", "INGESTOR_EVENTS_ENABLED", "EVENTS_DB_DIRECT_URL"):
+    for name in (
+        "TASKS_BACKEND",
+        "EVENTS_WORKER_REQUIRED",
+        "INGESTOR_EVENTS_ENABLED",
+        "SESSION_EVENTS",
+        "EVENTS_DB_DIRECT_URL",
+    ):
         assert name in anwendung["environment"]
+    assert anwendung["environment"]["SESSION_EVENTS"] == "${SESSION_EVENTS:-aus}", "Standard bleibt aus"
 
 
 def test_schalter_des_aenderungsfeeds_erreichen_die_anwendung() -> None:
@@ -118,3 +125,11 @@ def test_rollen_worker_mit_direktverbindung_fuer_den_weckruf() -> None:
         dienste = modul._lade(modul.ROLLEN[rolle])["services"]
         assert dienste["worker"]["profiles"] == ["aus"]
         assert dienste["worker-heavy"]["profiles"] == ["aus"]
+
+
+def test_worker_lebt_meldung_erreicht_den_worker() -> None:
+    """Issue #574: Der Worker meldet sich selbst an die Statusseite, wenn eine Adresse gesetzt ist."""
+    modul = _lade_skript()
+    umgebung = modul._lade(modul.BASIS)["services"]["worker"]["environment"]
+    assert umgebung["WORKER_PUSH_URL"] == "${WORKER_PUSH_URL:-}", "Standard: keine Meldung"
+    assert "WORKER_PUSH_TOKEN" in umgebung

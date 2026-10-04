@@ -77,7 +77,11 @@ Anmeldeseite, Bürgerportal, OParl-System, optional angemeldete Demo-Seiten, jew
 Inhaltsprüfung) und **Worker-Prüfung**: Beendet sich ein Container aus `WORKER_SERVICES` in den
 ersten `WORKER_CHECK_SECONDS` (Standard 60) mit einem Exit-Code ungleich 0 (etwa in einer
 Neustart-Schleife nach einem Startfehler), gilt der Deploy als gescheitert; Exit 0 ist planmäßig, weil die Worker nach jedem
-Durchlauf enden und neu starten. Scheitert eine der Prüfungen, schaltet das Skript **selbsttätig auf
+Durchlauf enden und neu starten. Worker mit Healthcheck (`worker`, `worker-heavy`: Heartbeat-Datei
+von `events_worker`) müssen außerdem binnen `WORKER_HEALTH_SECONDS` (Standard 120) „healthy“ werden,
+und die Anwendungsprüfung verlangt, dass lebende Worker alle Rollen bedienen, die die Installation
+braucht (`VERIFY_WORKER_SECONDS`, Standard 90; Issue #574). Ein Stand ohne laufenden Worker fällt so
+beim Deploy auf, nicht erst, wenn Erinnerungen ausbleiben. Scheitert eine der Prüfungen, schaltet das Skript **selbsttätig auf
 das vorherige Image zurück** und meldet das per Mail. Jeder Lauf schreibt eine Zeile in `deploy-log.tsv`
 (alt, neu, Ergebnis, Unterbrechung in Sekunden, Dauer), die Grundlage für die Kennzahl
 „Ausfallzeit je Deploy“ aus dem Verfügbarkeitskonzept.
@@ -474,16 +478,37 @@ Web). Mit Helm läuft der Migrations-Job vor jedem Upgrade; Worker und Anwendung
 gemeinsam aus. Mit Helm und `persistence.accessMode: ReadWriteOnce` müssen Anwendung, Ingestor und
 Worker auf einem Knoten laufen (`worker.affinity`); mehrere Knoten brauchen `ReadWriteMany`.
 
-**Wann meldet die Anwendung ein Fehlen?** Nur wenn die Installation Worker braucht: Dann melden
-`/health/` und `/health/ready/` `"degraded"` (Antwort bleibt 200, die Anwendung bleibt in Betrieb),
-und Admin-Startseite und Betriebsmonitor zeigen den Hinweis „Worker“. Gebraucht werden:
+**Zeitpläne im Worker** (Issue #515): Wiederkehrende Arbeit läuft als Zeitplan (`schedules.py`
+der Apps), nicht mehr in einem Faden im Webprozess. Der Scheduler legt je Termin genau einen
+Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeholt.
+
+| Zeitplan | Wann | Was |
+|---|---|---|
+| `insight_sync.schedules.haengende_syncs_bereinigen` | alle 5 min | Sync-Protokolle, die länger als 15 min laufen, als fehlgeschlagen markieren |
+| `insight_core.schedules.verortung_automatisch` | alle `GEOREF_AUTO_INTERVAL_MINUTES` (15) min | begrenzter Verortungslauf (`GEOREF_AUTO_ENABLED`, `GEOREF_AUTO_LIMIT`) |
+| `apps.work.schedules.fraktionserinnerungen_senden` | alle `FACTION_REMINDER_INTERVAL_MINUTES` (15) min | Erinnerungen an Fraktionssitzungen |
+| `apps.work.schedules.fraktionseinladungen_senden` | alle `FACTION_INVITATION_INTERVAL_MINUTES` (15) min | automatische Einladungen und Freigabe-Hinweise |
+| `apps.work.schedules.fraktionssitzungen_erzeugen` | alle `FACTION_SCHEDULE_INTERVAL_MINUTES` (60) min | Sitzungen aus Sitzungsreihen |
+| `apps.events.schedules.idempotenzschluessel_aufraeumen` | täglich 03:40 | Idempotenzschlüssel nach `EVENTS_IDEMPOTENCY_RETENTION_DAYS` |
+| `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach 14, tote und fehlgeschlagene nach 90 Tagen |
+
+`python manage.py events_scheduler --list` zeigt alle Zeitpläne mit dem zuletzt geplanten Termin. Auch Sync
+einer Quelle und Löschen einer Kommune aus dem Admin laufen als Auftrag im Worker (Warteschlange
+`default`), unabhängig von `TASKS_BACKEND`.
+
+**Wann meldet die Anwendung ein Fehlen?** Wenn die Installation Worker braucht, und das ist wegen
+der Zeitpläne der Standard: Dann melden `/health/` und `/health/ready/` `"degraded"` (Antwort
+bleibt 200, die Anwendung bleibt in Betrieb), und Admin-Startseite und Betriebsmonitor zeigen den
+Hinweis „Worker“. Gebraucht werden:
 
 | Einstellung | Nötige Rollen |
 |---|---|
-| `TASKS_BACKEND=journal` | `tasks` für **jede** Warteschlange (zusammen über alle Worker; ausgenommen Parallelität 0) und `scheduler` (wiederkehrende Aufträge) |
-| `INGESTOR_EVENTS_ENABLED=true` | `sequencer` |
+| Standard (`EVENTS_WORKER_REQUIRED` leer) | `scheduler` und `tasks` für die Warteschlangen der Zeitpläne und der Admin-Aufträge (`default`) |
+| `TASKS_BACKEND=journal` | zusätzlich `tasks` für **jede** Warteschlange (zusammen über alle Worker; ausgenommen Parallelität 0) |
+| `INGESTOR_EVENTS_ENABLED=true` | zusätzlich `sequencer` |
+| `SESSION_EVENTS=schatten` oder `aktiv` | zusätzlich `sequencer` |
 | `EVENTS_WORKER_REQUIRED=true` | alle Rollen, mit `tasks` wie oben |
-| `EVENTS_WORKER_REQUIRED=false` | keine (Meldung aus) |
+| `EVENTS_WORKER_REQUIRED=false` | keine (Meldung aus; ohne Worker laufen dann auch keine Zeitpläne, etwa auf einer Vorführinstanz) |
 
 Fällt etwa nur `worker-heavy` aus, lautet der Hinweis „kein Worker für tasks (Warteschlangen ai,
 ocr)“. Die Zustellung an Abonnements (`dispatch`) prüft die Meldung nur mit
@@ -721,7 +746,7 @@ auflegt, räumte so den Pool binnen Sekunden leer, bis zum Neustart gut 25 Stund
 |---|---|
 | Verbindung wird im Thread der View zurückgegeben, auch nach einem Abbruch | `ReleaseDatabaseConnectionsMiddleware`, ganz vorn in `MIDDLEWARE` |
 | Fehlerseiten geben ihre Verbindung zurück (Django rendert sie unter ASGI in Executor-Threads, die nie eine Anfrage abschließen) | Dekorator an `handler_400/403/404/500` in `mandari/urls.py` |
-| Eigene Threads geben ihre Verbindung zurück | Dekorator `releases_db_connections` (Readiness-Prüfung, Admin-Sync), `close_thread_connections()` nach jedem Lauf des Sync-Watchdogs |
+| Eigene Threads geben ihre Verbindung zurück | Dekorator `releases_db_connections` (Readiness-Prüfung); Hintergrundarbeit läuft nicht mehr in Fäden des Webprozesses, sondern als Auftrag oder Zeitplan im Worker (Issue #515) |
 | Eine Welle prallt schnell ab, statt Threads zu stapeln | `DB_POOL_MAX_WAITING`, `DB_POOL_TIMEOUT` |
 | Leerer Pool liefert 503 mit `Retry-After`, ohne selbst die Datenbank zu brauchen | `DatabaseErrorMiddleware`, `handler_500` |
 | Festgefahrener Pool wird erkannt | `/health/live/` antwortet 503, wenn eine Minute lang keine Verbindung zurückkam, die Datenbank aber erreichbar ist |

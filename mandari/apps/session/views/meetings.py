@@ -21,6 +21,7 @@ from django.views.generic import (
 
 from apps.common.params import date_param, uuid_param
 
+from .. import hub_events
 from ..models import (
     SessionAttendance,
     SessionAttendanceDisruption,
@@ -482,12 +483,15 @@ class MeetingCreateView(MeetingFormMixin, SessionViewMixin, CreateView):
 
         messages.success(self.request, "Sitzung wurde erstellt.")
         _format_warnings(self.request, form)
-        response = super().form_valid(form)
-
-        # Standard-TOPs des Gremiums automatisch übernehmen (Issue #85)
         from ..services import textblock_service
 
-        applied = textblock_service.apply_standard_items(self.object)
+        # Drehscheibe (Issue #533): erst die Sitzung, dann ihre Standard-TOPs
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.meeting(form.instance)
+            tracked.agenda(form.instance)
+            response = super().form_valid(form)
+            # Standard-TOPs des Gremiums automatisch übernehmen (Issue #85)
+            applied = textblock_service.apply_standard_items(self.object)
         if applied:
             messages.info(
                 self.request,
@@ -529,7 +533,11 @@ class MeetingUpdateView(MeetingFormMixin, SessionViewMixin, UpdateView):
             form.instance.assign_legislative_term()
         messages.success(self.request, "Sitzung wurde aktualisiert.")
         _format_warnings(self.request, form)
-        return super().form_valid(form)
+        # Drehscheibe (Issue #533): Änderung, Absage, Öffentlichkeit – mit der Folge für die Tagesordnung
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.meeting(form.instance)
+            tracked.agenda(form.instance)
+            return super().form_valid(form)
 
     def get_success_url(self):
         return reverse(

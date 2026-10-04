@@ -331,13 +331,18 @@ def _send_substitution(meeting: SessionMeeting, absent: SessionPerson, membershi
 
     outcome = SubstituteOutcome()
     date_str = timezone.localtime(meeting.start).strftime("%d.%m.%Y")
-    dispatch = SessionInvitationDispatch.objects.create(
-        meeting=meeting,
-        dispatch_type="substitution",
-        subject=f"Vertretungsanfrage: {meeting.name} am {date_str}",
-        message=f"Vertretung für {absent.display_name}",
-        sent_by=None,
-    )
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #533): Versandvorgang und Meldung zusammen, vor dem Versand (ohne Personen im Ereignis)
+    with hub_events.track(meeting.tenant) as tracked:
+        dispatch = SessionInvitationDispatch.objects.create(
+            meeting=meeting,
+            dispatch_type="substitution",
+            subject=f"Vertretungsanfrage: {meeting.name} am {date_str}",
+            message=f"Vertretung für {absent.display_name}",
+            sent_by=None,
+        )
+        tracked.invited(meeting, dispatch)
     needs_portal = any(m.person.delivery_channel == "portal" for m in memberships)
     portal_ids = portal_link_service.portal_person_ids(meeting.tenant) if needs_portal else set()
     pdfs: dict[bool, bytes] = {}

@@ -17,6 +17,7 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandParser
 
+from apps.events import event_context, system_ref
 from apps.session.models import SessionProtocol
 from apps.session.services import protocol_publication
 
@@ -39,6 +40,15 @@ class Command(BaseCommand):
             protocols = protocols.filter(meeting__tenant__slug=options["tenant"])
         if not options.get("force"):
             protocols = protocols.filter(public_file__isnull=True)
+        # Ereignisse an die Drehscheibe (Issue #535): ein Auslöser und eine Korrelation für den ganzen Lauf
+        with event_context(actor_ref=system_ref("niederschriften")):
+            created, failed = self._publish_all(protocols, options)
+        summary = f"{created} öffentliche Fassung(en) erzeugt"
+        if failed:
+            summary += f", {failed} fehlgeschlagen"
+        self.stdout.write(self.style.SUCCESS(summary + "."))
+
+    def _publish_all(self, protocols: Any, options: dict[str, Any]) -> tuple[int, int]:
         created = 0
         failed = 0
         for protocol in protocols.order_by("meeting__start"):
@@ -55,7 +65,4 @@ class Command(BaseCommand):
                 continue
             created += 1
             self.stdout.write(f"erzeugt: {label}")
-        summary = f"{created} öffentliche Fassung(en) erzeugt"
-        if failed:
-            summary += f", {failed} fehlgeschlagen"
-        self.stdout.write(self.style.SUCCESS(summary + "."))
+        return created, failed

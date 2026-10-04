@@ -25,6 +25,7 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
         try:
             files = paper.files.filter(
                 deleted=False,
+                source_missing_since__isnull=True,
                 text_content__isnull=False,
                 text_extraction_status="completed",
             )

@@ -34,9 +34,12 @@ Bevor ein Adapter entsteht, klärt der Zensus je Kommune vier Fragen mit **höch
 Anfragen** (robots.txt, Startseite, bei 403 eine Vergleichsanfrage mit neutralem Client,
 danach OParl-Kandidaten) und ohne jede Umgehung: Welcher Hersteller (SessionNet, ALLRIS 3/4,
 Sternberg RIM, more! rubin, regisafe, komuna)? Erlaubt die robots.txt unseren User-Agent
-(RFC 9309, Produkt-Token und voller UA-String)? Liegt ein Bot-Gate oder eine WAF davor
+(RFC 9309, Produkt-Token)? Liegt ein Bot-Gate oder eine WAF davor
 (Browser-Verifikation, Proof-of-Work) oder sperrt die Quelle nur unseren User-Agent? Gibt es
 längst einen OParl-Endpunkt (herstellertypische Pfade zuerst, Fehlerobjekte werden erkannt)?
+Die robots.txt gilt schon beim Zensus: Gesperrte Pfade (Startseite, OParl-Kandidaten) fragt er
+nicht an. Ist die robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler), endet die Prüfung
+nach dieser einen Anfrage mit dem Befund `nicht_erreichbar`.
 
 ```bash
 mandari-ingestor probe-ris https://buergerinfo.example.org/bi/            # eine Kommune, JSON
@@ -126,7 +129,7 @@ Außerhalb von `scraper` (auf oberster Ebene der Sync config, auch für OParl-Qu
 |---|---|---|
 | `download_headers` | keine | Zusätzliche HTTP-Header für **Datei-Downloads** dieser Quelle (Dateicache, Textextraktion im Ingestor und in Django), z. B. `{"Referer": "https://rat.example.de/bi/", "Cookie": "consent=1"}`. Für RIS, die Anlagen nur mit Referer oder Consent-Cookie ausliefern (#116). Werte sind Klartext im Admin — keine persönlichen Sitzungs-Cookies hinterlegen. |
 | `file_downloads` | `true` | `false`: Dateien dieser Quelle **nicht automatisch abrufen** (Textextraktion im Ingestor und in Django, Dateicache, Vorschau). Für RIS, die Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefern (z. B. ALTCHA); die Vorschau verweist dann auf das Original. Die Dateien bleiben offen und werden nachgeholt, sobald der Schalter fällt. |
-| `request_interval` | `OPARL_WAIT_TIME` | Mindestabstand in Sekunden zwischen dem Beginn zweier OParl-Anfragen an diese Quelle (0–30), über alle parallelen Abrufe eines Abgleichslaufs hinweg: höchstens `1 / request_interval` Anfragen je Sekunde, gleich welches `--concurrent` gilt (ohne den Schlüssel wartet jeder Abrufplatz `OPARL_WAIT_TIME`). Daemon und ein einzeln gestarteter Abgleich zählen getrennt; während eines Einzelabgleichs die Quelle im Daemon pausieren (`is_active = false`). |
+| `request_interval` | `INGESTOR_REQUEST_INTERVAL` (1 s) | Mindestabstand in Sekunden zwischen dem Beginn zweier Anfragen an den Host dieser Quelle (0–30). Er gilt über alle Abrufplätze, alle Quellen auf demselben Host und alle Prozesse (Daemon, Einzelabgleich, Dokument-Cache und Vorschau in Django), weil alle denselben Zeitstempel je Host in Redis reservieren. Ohne den Schlüssel gilt der Standard (`INGESTOR_REQUEST_INTERVAL` bzw. `RIS_REQUEST_INTERVAL` in Django, je eine Anfrage je Sekunde). `0` schaltet die Drossel für die Quelle ab. Ohne erreichbares Redis drosselt jeder Prozess für sich. Je Prozess und Host laufen höchstens `INGESTOR_HOST_MAX_CONCURRENT` Anfragen (Standard 2) gleichzeitig, damit der reservierte Takt nicht so viele Sekunden vorausreicht, wie es Abrufplätze gibt. |
 | `list_params` | keine | Zusätzliche Parameter für die erste Seite jeder OParl-Liste, z. B. `{"size": 100}` bei ALLRIS (100 statt 10 Einträge je Seite). Folgeseiten kommen aus `links.next`. |
 | `carry_modified_since` | `false` | `true`: Die Quelle filtert mit `modified_since`, lässt den Parameter aber in `links.next` weg (ALLRIS). Der Ingestor hängt ihn an jede Folgeseite an. Ohne den Schalter gilt die Quelle als „ohne Filter“, und der inkrementelle Abgleich erreicht neue Einträge erst im nächtlichen Vollabgleich, weil die Listen aufsteigend sortiert sind. |
 
@@ -321,23 +324,29 @@ services:
 
 ## 3. Politeness-Defaults (alle Scraper-Quellen)
 
-- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de; support@mandari.de)`
-  (Env `INGESTOR_USER_AGENT`, ältere Schreibweise `SCRAPER_USER_AGENT`) — gilt für
-  OParl-Client und Scraper gleichermaßen und ist **je Quelle** im Admin
-  überschreibbar (Feld *User-Agent*, leer = Standard). Der Wert bleibt
-  identifizierbar (Produkt-Token, Version, Website, Kontaktadresse), vermeidet
-  aber bewusst den Begriff, auf den mindestens eine Quelle im User-Agent
-  filtert und mit HTTP 403 antwortet (Issue #123). Die Infoseite
-  `https://mandari.de/crawler` gehört zur Marketing-Website und erklärt, wer
-  wir sind, warum wir abrufen und wie man uns erreicht/drosselt; sobald sie
-  unter einem Pfad ohne diesen Begriff erreichbar ist, gehört die URL wieder
-  in den User-Agent. Wie der Ingestor eine Sperre erkennt und was dann zu tun
-  ist: `docs/MONITORING.md`, Abschnitt „Sperren und 5xx-Serien“.
+- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de/crawler/; support@mandari.de)`
+  (Env `INGESTOR_USER_AGENT`, ältere Schreibweise `SCRAPER_USER_AGENT`). Er gilt für
+  OParl-Client, Scraper und Textextraktion. Django (Dokument-Cache, Textextraktion,
+  Vorschau, Personenfotos, `add_oparl_source`) meldet sich mit demselben Produkt-Token,
+  nie mit einem Browser-User-Agent. Der User-Agent ist **je Quelle** im
+  Admin überschreibbar (Feld *User-Agent*, leer = Standard). Er nennt Produkt-Token,
+  Version, die Infoseite für Betreiber und die Kontaktadresse. Mindestens eine Quelle
+  filtert das Wort der Infoseite im User-Agent und antwortet mit HTTP 403 (Issue #123).
+  Für solche Quellen setzen wir im Admin einen User-Agent ohne den Pfad der Infoseite.
+  Wie der Ingestor eine Sperre erkennt und was dann zu tun ist: `docs/MONITORING.md`,
+  Abschnitt „Sperren und 5xx-Serien“.
 - **Rate-Limit**: max. 1 Request / 2 s je Host (konfigurierbar je Quelle),
-  `max_concurrent=1` — RIS-Server kleiner Kommunen sind schwachbrüstig.
-- **robots.txt**: wird respektiert (24-h-Cache je Host). Disallow →
-  Quelle wird nicht gecrawlt und im Admin markiert. Nicht abrufbare oder
-  ungültige robots.txt gilt als „erlaubt" (RFC 9309).
+  `max_concurrent=1` — RIS-Server kleiner Kommunen sind schwachbrüstig. Der Abstand
+  gilt über alle Quellen und Prozesse hinweg (Drossel je Host, gemeinsamer Zeitstempel
+  in Redis; siehe `request_interval` oben).
+- **robots.txt**: nach RFC 9309 mit Platzhaltern (`*`, `$`), 24-h-Cache je Host,
+  getrennt für Seiten bzw. Schnittstelle und Dateien. Disallow → kein Abruf; ist die
+  Basis-URL gesperrt, wird die Quelle nicht gecrawlt und im Admin markiert. Fehlt die
+  robots.txt (4xx), ist alles erlaubt. Ist sie nicht erreichbar (5xx, 408, 429, Netzfehler),
+  werden Abrufe zurückgestellt, bis ein Abruf gelingt (Störung, keine Sperre). Für Dateien gilt
+  der User-Agent aus `download_headers`, auch beim Abruf der robots.txt. Ausnahmen nur mit Freigabe und Vermerk
+  (`manage.py robots_override`), Überblick mit `manage.py robots_report`
+  (`docs/MONITORING.md`).
 - **Keine Umgehung** von Logins, CAPTCHAs oder Session-Schranken — nur
   öffentliche Bürgerinfo-Bereiche.
 - **Full-Crawls** sind selten (Scheduler-Nachtfenster) und gestaffelt;

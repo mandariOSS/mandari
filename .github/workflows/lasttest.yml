@@ -128,7 +128,6 @@ jobs:
       TWO_FACTOR_ENFORCEMENT: 'false'
       # Alle simulierten Abnehmer der Schnittstelle kommen von einer Adresse
       OPARL_API_RATE_LIMIT: '0'
-      MANDARI_SYNC_WATCHDOG: '0'
       EMAIL_BACKEND: django.core.mail.backends.dummy.EmailBackend
       LOG_LEVEL: WARNING
 

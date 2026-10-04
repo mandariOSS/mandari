@@ -1,0 +1,12 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Zeitstrahl (geordnete Liste) für Abläufe wie den Beratungsverlauf eines Vorgangs.
+  <c-insight.timeline class="mt-6">
+      <c-insight.timeline-entry date="06.12.2011" title="Rat" href="/insight/termine/…/" state="latest">TOP 5</c-insight.timeline-entry>
+  </c-insight.timeline>
+Weitere Attribute (aria-label, data-*) werden durchgereicht.
+{% endcomment %}
+<c-vars class="" />
+<ol class="{{ class }}" {{ attrs }}>
+    {{ slot }}
+</ol>

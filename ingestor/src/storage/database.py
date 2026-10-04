@@ -6,9 +6,12 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 """
 
 import logging
+import os
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
+from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
@@ -41,6 +44,7 @@ from src.storage.models import (
     OParlBody,
     OParlConsultation,
     OParlFile,
+    OParlFileBlob,
     OParlLegislativeTerm,
     OParlLocation,
     OParlMeeting,
@@ -94,6 +98,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "local_status",
         "local_cached_at",
         "local_error",
+        "local_size",
+        "blob_id",
         # OParlPaper: AI enrichment + georeferencing (Django-managed)
         "summary",
         "locations",
@@ -403,6 +409,17 @@ class DatabaseStorage:
             sync_config = result.scalar_one_or_none()
         return SourceFetchOptions.from_sync_config(sync_config).file_downloads
 
+    async def get_fetch_options_for_body(self, body_id: UUID) -> SourceFetchOptions:
+        """Abrufoptionen der Quelle eines Bodies (Abstand, robots-Ausnahme mit Vermerk; ``sync_config``)."""
+        async with self.get_session() as session:
+            result = await session.execute(
+                select(OParlSource.sync_config)
+                .join(OParlBody, OParlBody.source_id == OParlSource.id)
+                .where(OParlBody.id == body_id)
+            )
+            sync_config = result.scalar_one_or_none()
+        return SourceFetchOptions.from_sync_config(sync_config)
+
     async def get_source_by_url(self, url: str) -> OParlSource | None:
         """Get a source by URL."""
         async with self.get_session() as session:
@@ -511,6 +528,43 @@ class DatabaseStorage:
                 return
             sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(merged)
             source.sync_config = sync_config
+            await session.commit()
+
+    # Ergebnis der letzten Prüfung von modified_since (nach jedem Vollabgleich)
+    SYNC_CONFIG_MODIFIED_SINCE_CHECK_KEY = "modified_since_check"
+
+    async def apply_modified_since_check(self, source_url: str, host: str, verdict: str, supported: bool) -> None:
+        """
+        Ergebnis der modified_since-Prüfung festhalten: an der Quelle vermerken und den Host im
+        persistierten Capability-Cache aller Quellen eintragen (filtert nicht) oder austragen (filtert).
+        """
+        if not host:
+            return
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource).with_for_update())
+            for source in result.scalars().all():
+                sync_config = dict(source.sync_config or {})
+                stored = {h for h in sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or [] if isinstance(h, str)}
+                changed = False
+                if supported and host in stored:
+                    stored.discard(host)
+                    changed = True
+                if source.url == source_url:
+                    if not supported and host not in stored:
+                        stored.add(host)
+                    sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_CHECK_KEY] = {
+                        "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                        "host": host,
+                        "result": verdict,
+                    }
+                    changed = True
+                if not changed:
+                    continue
+                if stored:
+                    sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(stored)
+                else:
+                    sync_config.pop(self.SYNC_CONFIG_MODIFIED_SINCE_KEY, None)
+                source.sync_config = sync_config
             await session.commit()
 
     # Schlüssel in OParlSource.sync_config für den persistierten
@@ -1538,7 +1592,8 @@ class DatabaseStorage:
                 "name": stmt.excluded.name,
                 "file_name": stmt.excluded.file_name,
                 "mime_type": stmt.excluded.mime_type,
-                "size": stmt.excluded.size,
+                # Ohne Größenangabe der Quelle bleibt eine vorhandene Größe stehen (Issue #786)
+                "size": func.coalesce(stmt.excluded.size, OParlFile.size),
                 "access_url": stmt.excluded.access_url,
                 "download_url": stmt.excluded.download_url,
                 "file_date": stmt.excluded.file_date,
@@ -1882,8 +1937,9 @@ class DatabaseStorage:
         async with self.get_session() as session:
             candidates = select(OParlFile.id).where(
                 OParlFile.body_id == body_id,
-                # Keine Textextraktion fuer von der Quelle geloeschte Dateien
+                # Keine Textextraktion fuer von der Quelle geloeschte oder dort fehlende Dateien (#787)
                 OParlFile.deleted == False,  # noqa: E712
+                OParlFile.source_missing_since.is_(None),
                 or_(
                     OParlFile.text_extraction_status == "pending",
                     and_(
@@ -1966,35 +2022,227 @@ class DatabaseStorage:
             await session.execute(stmt)
             await session.commit()
 
+    # ========== Dokumentablage nach SHA-256 (Issue #788) ==========
+
+    async def body_stores_files(self, body_id: UUID) -> bool:
+        """Ist die Kommune gelistet (Django-Spalte ``is_listed``)? Im Zweifel nicht ablegen."""
+        try:
+            async with self.get_session() as session:
+                result = await session.execute(
+                    text("SELECT is_listed FROM oparl_bodies WHERE id = :id"), {"id": body_id}
+                )
+                return bool(result.scalar())
+        except Exception as e:  # noqa: BLE001 - ohne Spalte (älteres Schema) wird nichts abgelegt
+            logger.debug("is_listed für Body %s nicht lesbar: %s", body_id, e)
+            return False
+
+    async def attach_file_blob(self, file_id: UUID, sha256: str, size: int, source: Path, target: Path) -> bool:
+        """
+        Inhalt unter seinem SHA-256 ablegen und die Datei darauf verweisen lassen.
+
+        Gleiches Vorgehen wie ``file_store.attach`` in Django: Zeile des Inhalts sperren (bzw. anlegen),
+        Datei verschieben, solange die Sperre gilt, Referenz zählen, eine bisherige Referenz freigeben.
+        ``source`` liegt im selben Dateisystem wie ``target`` (``sha256/tmp``). Rückgabe: abgelegt?
+        """
+        remove_after: list[Path] = []
+        async with self.get_session() as session:
+            for _ in range(3):
+                await session.execute(
+                    pg_insert(OParlFileBlob)
+                    .values(sha256=sha256, size=size, ref_count=0)
+                    .on_conflict_do_nothing(index_elements=["sha256"])
+                )
+                locked = await session.execute(
+                    select(OParlFileBlob.sha256).where(OParlFileBlob.sha256 == sha256).with_for_update()
+                )
+                if locked.scalar() is not None:
+                    break
+            else:
+                await session.rollback()
+                return False
+            if target.is_file():
+                remove_after.append(source)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                # Temporäre Dateien entstehen mit 0600; Webserver und Anwendung müssen den Inhalt lesen
+                os.chmod(source, 0o644)
+                os.replace(source, target)
+            current = (
+                await session.execute(
+                    select(OParlFile.blob_id, OParlFile.local_path).where(OParlFile.id == file_id).with_for_update()
+                )
+            ).first()
+            if current is None:
+                await session.rollback()
+                source.unlink(missing_ok=True)
+                return False
+            old_blob, old_path = current
+            if old_blob != sha256:
+                await session.execute(
+                    update(OParlFileBlob)
+                    .where(OParlFileBlob.sha256 == sha256)
+                    .values(ref_count=OParlFileBlob.ref_count + 1, orphaned_at=None)
+                )
+                if old_blob:
+                    await session.execute(
+                        update(OParlFileBlob)
+                        .where(OParlFileBlob.sha256 == old_blob)
+                        .values(ref_count=OParlFileBlob.ref_count - 1)
+                    )
+                    await session.execute(
+                        update(OParlFileBlob)
+                        .where(
+                            OParlFileBlob.sha256 == old_blob,
+                            OParlFileBlob.ref_count <= 0,
+                            OParlFileBlob.orphaned_at.is_(None),
+                        )
+                        .values(orphaned_at=func.now())
+                    )
+                elif old_path and Path(old_path) != target and not Path(old_path).is_relative_to(target.parent.parent):
+                    # Kopie im bisherigen Layout je Kommune: nach dem Commit löschen. Ein Pfad unter sha256/
+                    # ohne Referenz gehört anderen Dateien und bleibt.
+                    remove_after.append(Path(old_path))
+            await session.execute(
+                update(OParlFile)
+                .where(OParlFile.id == file_id)
+                .values(
+                    blob_id=sha256,
+                    local_path=str(target),
+                    local_size=size,
+                    sha256_hash=sha256,
+                    local_status="ok",
+                    local_error="",
+                    local_cached_at=func.now(),
+                )
+            )
+            await session.commit()
+        for path in remove_after:
+            path.unlink(missing_ok=True)
+        return True
+
     # ========== Search Indexing Query Helpers ==========
 
-    async def get_all_for_body(
+    #: Einträge je Seite beim Aufbau des Suchindex (Speicher bleibt je Seite begrenzt)
+    INDEX_PAGE_SIZE: Final = 500
+
+    async def get_body_last_sync(self, body_id: UUID) -> datetime | None:
+        """Letzter Abgleich eines Bodies (``last_sync``); Grundlage für die Indexierung geänderter Objekte."""
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlBody.last_sync).where(OParlBody.id == body_id))
+            value: datetime | None = result.scalar_one_or_none()
+            return value
+
+    async def iter_for_body(
         self,
         body_id: UUID,
-        model_class: type,
-        limit: int = 10000,
-    ) -> list:
-        """Generic query: all non-deleted entities of a type for a body."""
-        async with self.get_session() as session:
-            stmt = (
-                select(model_class)
-                .where(
+        model_class: Any,
+        page_size: int | None = None,
+        *,
+        updated_since: datetime | None = None,
+        with_changed_files: bool = False,
+    ) -> AsyncIterator[list[Any]]:
+        """
+        Alle nicht gelöschten Objekte einer Art eines Bodies, seitenweise nach ``id`` (Keyset).
+
+        Ersetzt die frühere Abfrage mit fester Obergrenze (10.000 je Art): Größere Kommunen fehlten
+        danach teilweise im Suchindex. Jede Seite kommt aus einer eigenen kurzen Sitzung.
+
+        ``updated_since``: nur Objekte, die seitdem geschrieben wurden (inkrementeller Abgleich). Mit
+        ``with_changed_files`` (Vorgänge) zählen auch Vorgänge, deren Dateien seitdem geändert wurden, etwa
+        durch eine neue Textextraktion: Deren Text fließt in die Gewichtung des Vorgangs ein.
+
+        Keyset über die UUID mit kurzer Sitzung je Seite: Ein Objekt, das während des Laufs mit kleinerer ID
+        hinzukommt, fehlt bis zum nächsten Lauf. Das ist hinnehmbar; der Speicher bleibt je Seite begrenzt.
+        """
+        size = max(1, page_size or self.INDEX_PAGE_SIZE)
+        last_id: UUID | None = None
+        while True:
+            async with self.get_session() as session:
+                stmt = select(model_class).where(
                     model_class.body_id == body_id,
                     model_class.deleted == False,  # noqa: E712
                 )
-                .limit(limit)
-            )
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+                if updated_since is not None:
+                    changed = model_class.updated_at >= updated_since
+                    if with_changed_files:
+                        changed_files = select(OParlFile.paper_id).where(
+                            OParlFile.body_id == body_id,
+                            OParlFile.paper_id.isnot(None),
+                            OParlFile.updated_at >= updated_since,
+                        )
+                        changed = or_(changed, model_class.id.in_(changed_files))
+                    stmt = stmt.where(changed)
+                if last_id is not None:
+                    stmt = stmt.where(model_class.id > last_id)
+                stmt = stmt.order_by(model_class.id).limit(size)
+                rows: list[Any] = list((await session.execute(stmt)).scalars().all())
+            if not rows:
+                return
+            yield rows
+            if len(rows) < size:
+                return
+            last_id = rows[-1].id
 
-    async def get_files_with_text(self, body_id: UUID) -> list[OParlFile]:
-        """Get files that have extracted text content."""
+    def _files_with_text(self, body_id: UUID) -> Any:
+        return select(OParlFile).where(
+            OParlFile.body_id == body_id,
+            OParlFile.deleted == False,  # noqa: E712
+            # In der Quelle nicht mehr abrufbar (Löschabgleich, #787): nicht wieder indexieren
+            OParlFile.source_missing_since.is_(None),
+            OParlFile.text_content.isnot(None),
+            OParlFile.text_extraction_status == "completed",
+        )
+
+    async def iter_files_with_text(
+        self, body_id: UUID, page_size: int | None = None, *, updated_since: datetime | None = None
+    ) -> AsyncIterator[list[OParlFile]]:
+        """
+        Dateien eines Bodies mit extrahiertem Text, seitenweise nach ``id`` (Volltexte sind groß).
+        ``updated_since``: nur seitdem geschriebene Dateien (inkrementeller Abgleich).
+        """
+        size = max(1, page_size or self.INDEX_PAGE_SIZE)
+        last_id: UUID | None = None
+        while True:
+            async with self.get_session() as session:
+                stmt = self._files_with_text(body_id)
+                if updated_since is not None:
+                    stmt = stmt.where(OParlFile.updated_at >= updated_since)
+                if last_id is not None:
+                    stmt = stmt.where(OParlFile.id > last_id)
+                result = await session.execute(stmt.order_by(OParlFile.id).limit(size))
+                rows: list[OParlFile] = list(result.scalars().all())
+            if not rows:
+                return
+            yield rows
+            if len(rows) < size:
+                return
+            last_id = rows[-1].id
+
+    async def get_files_with_text_for_papers(
+        self, body_id: UUID, paper_ids: list[UUID], max_chars: int | None = None
+    ) -> list[Any]:
+        """
+        Dateien mit extrahiertem Text zu einer Seite von Vorgängen, für die Gewichtung im Suchindex: nur
+        ``paper_id``, ``file_name`` und die ersten ``max_chars`` Zeichen des Textes (mehr nutzt der Vorgang nicht;
+        die Volltexte lädt nur die Indexierung der Dateien selbst).
+        """
+        if not paper_ids:
+            return []
+        text_content: Any = OParlFile.text_content
+        if max_chars is not None:
+            text_content = func.substr(OParlFile.text_content, 1, max_chars)
         async with self.get_session() as session:
-            stmt = select(OParlFile).where(
-                OParlFile.body_id == body_id,
-                OParlFile.deleted == False,  # noqa: E712
-                OParlFile.text_content.isnot(None),
-                OParlFile.text_extraction_status == "completed",
+            stmt = (
+                select(OParlFile.paper_id, OParlFile.file_name, text_content.label("text_content"))
+                .where(
+                    OParlFile.body_id == body_id,
+                    OParlFile.deleted == False,  # noqa: E712
+                    # In der Quelle nicht mehr abrufbar (Löschabgleich, #787): nicht in den Vorgang übernehmen
+                    OParlFile.source_missing_since.is_(None),
+                    OParlFile.text_content.isnot(None),
+                    OParlFile.text_extraction_status == "completed",
+                    OParlFile.paper_id.in_(paper_ids),
+                )
+                .order_by(OParlFile.id)
             )
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            return list((await session.execute(stmt)).all())

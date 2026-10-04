@@ -5,7 +5,6 @@ Django Admin Konfiguration für OParl-Models.
 Verwendet Django Unfold für modernes Admin-Interface.
 """
 
-import threading
 from typing import Any
 
 from django import forms
@@ -21,7 +20,6 @@ from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
 from apps.common.admin_mixins import NoAddAdminMixin, ReadOnlyAdminMixin, status_text
-from apps.common.db_connections import releases_db_connections
 
 from .models import (
     ChatUsage,
@@ -60,26 +58,20 @@ def _reference_protection(label: str, references: list[Any]) -> list[str]:
 
 
 def run_sync_in_thread(source, full: bool = False):
-    """Run sync in a separate thread to not block the admin.
+    """Sync einer Quelle als Auftrag im Worker anlegen, ohne den Admin zu blockieren (Issue #515).
+
+    Immer im Journal, auch solange die Webprozesse Aufträge sonst sofort ausführen: Ein Sync dauert
+    Minuten. Bis Issue #515 lief er in einem Faden im Webprozess.
 
     Args:
         source: OParlSource instance
         full: True für Full Sync
     """
+    from apps.events.tasks_backend import journal_backend
 
-    # Eigener Thread: Ohne den Dekorator nähme er seine Datenbankverbindung mit ins Grab,
-    # und mit Pool wäre der Platz für immer verloren (Issue #344).
-    @releases_db_connections
-    def sync_task():
-        try:
-            from insight_sync.tasks import run_sync_with_logging
+    from .background_tasks import quelle_synchronisieren
 
-            run_sync_with_logging(source=source, full=full, triggered_by="admin")
-        except Exception as e:
-            print(f"Sync error: {e}")
-
-    thread = threading.Thread(target=sync_task, daemon=True)
-    thread.start()
+    journal_backend().enqueue(quelle_synchronisieren, [str(source.pk)], {"full": bool(full)})
 
 
 class SourceTypeListFilter(admin.SimpleListFilter):
@@ -428,30 +420,23 @@ class OParlBodyAdmin(ModelAdmin):
         return summaries, model_count, set(), protected
 
     def delete_model(self, request, obj):
-        # Thread statt django.tasks: das Default-TASKS-Backend (Immediate)
-        # würde synchron im Request laufen und den Proxy-Timeout reißen.
+        # Auftrag im Worker (Issue #515), immer im Journal: Das sofort ausführende Backend würde
+        # synchron im Request laufen und den Proxy-Timeout reißen.
         from django.core.cache import cache
 
-        from .services.body_deletion import delete_body_data
+        from apps.events.tasks_backend import journal_backend
+
+        from .background_tasks import DELETION_LOCK_TTL, deletion_lock_key, kommune_loeschen
 
         body_id = str(obj.id)
 
         # Doppelklick-Schutz: pro Body nur eine laufende Löschung
-        # (cache.add ist atomar; Lock verfällt nach 2h von selbst)
-        if not cache.add(f"body-deletion-{body_id}", "running", timeout=7200):
+        # (cache.add ist atomar; Lock verfällt nach 2h von selbst, der Auftrag gibt ihn am Ende frei)
+        if not cache.add(deletion_lock_key(body_id), "running", timeout=DELETION_LOCK_TTL):
             messages.warning(request, f"Löschung von „{obj.name}“ läuft bereits.")
             return
 
-        def deletion_task():
-            from django.db import connection
-
-            try:
-                delete_body_data(body_id)
-            finally:
-                cache.delete(f"body-deletion-{body_id}")
-                connection.close()
-
-        threading.Thread(target=deletion_task, daemon=True).start()
+        journal_backend().enqueue(kommune_loeschen, [body_id], {})
         messages.info(
             request,
             f"Löschung von „{obj.name}“ läuft im Hintergrund. Je nach Datenmenge kann das einige Minuten dauern.",
@@ -1542,3 +1527,54 @@ class DigestLogAdmin(ReadOnlyAdminMixin, ModelAdmin):
     readonly_fields = ["id", "sent_at", "subscriber", "alert_count", "success", "error"]
     ordering = ["-sent_at"]
     list_per_page = 50
+
+
+# =============================================================================
+# Rückmeldungen zu Seiten („War diese Seite hilfreich?“), ohne IP-Adresse und Cookie
+# =============================================================================
+
+from .models import PageFeedback  # noqa: E402
+from .services import page_feedback as page_feedback_service  # noqa: E402
+
+
+@admin.register(PageFeedback)
+class PageFeedbackAdmin(ReadOnlyAdminMixin, ModelAdmin):
+    """Auswertung: Zählung je Seitentyp und Seite über der Liste, Freitexte in der Liste.
+
+    Die Zählung folgt den gewählten Filtern (Kommune, Zeitraum, Seitentyp). Einträge löscht ein
+    täglicher Auftrag nach zwölf Monaten (``insight_core/schedules.py``).
+    """
+
+    list_display = ["created_on", "page_label", "body", "helpful", "short_comment", "path"]
+    list_filter = ["helpful", "page_type", "body", ("comment", admin.EmptyFieldListFilter), "created_on"]
+    search_fields = ["comment", "path"]
+    readonly_fields = ["created_on", "page_type", "path", "body", "helpful", "comment"]
+    ordering = ["-created_on", "-id"]
+    list_per_page = 50
+    list_before_template = "admin/insight_core/pagefeedback/auswertung.html"
+
+    @admin.display(description="Seitentyp", ordering="page_type")
+    def page_label(self, obj: PageFeedback) -> str:
+        return page_feedback_service.PAGE_TYPES.get(obj.page_type, obj.page_type)
+
+    @admin.display(description="Ergänzung")
+    def short_comment(self, obj: PageFeedback) -> str:
+        return obj.comment if len(obj.comment) <= 80 else obj.comment[:80] + " …"
+
+    def changelist_view(self, request: HttpRequest, extra_context: dict[str, Any] | None = None) -> HttpResponse:
+        response = super().changelist_view(request, extra_context)
+        context = getattr(response, "context_data", None)
+        changelist = context.get("cl") if isinstance(context, dict) else None
+        if changelist is not None:
+            queryset = changelist.queryset
+            by_type = page_feedback_service.summary(queryset)
+            by_page = page_feedback_service.summary(queryset, by="path", limit=15)
+            context["feedback_by_type"] = {
+                "headers": ["Seitentyp", "Ja", "Nein", "Anteil Ja", "Mit Ergänzung"],
+                "rows": [[r["label"], r["yes"], r["no"], f"{r['share']} %", r["comments"]] for r in by_type],
+            }
+            context["feedback_by_page"] = {
+                "headers": ["Seite", "Ja", "Nein", "Mit Ergänzung"],
+                "rows": [[r["label"], r["yes"], r["no"], r["comments"]] for r in by_page],
+            }
+        return response

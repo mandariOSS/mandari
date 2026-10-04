@@ -53,6 +53,8 @@ urlpatterns = [
     # Getrennte Liveness-/Readiness-Prüfungen (Issue #231)
     path("health/live/", health.live, name="health_live"),
     path("health/ready/", health.ready, name="health_ready"),
+    # Worker für die Statusseite: Lebenszeichen, Rückstau, Fehlerquote (Issue #574)
+    path("health/worker/", health.worker, name="health_worker"),
     # Prometheus-Metriken; nur intern (METRICS_ALLOWED_NETWORKS / METRICS_TOKEN), sonst 404
     path("metrics/", metrics.metrics_view, name="metrics"),
     path("csp-report/", csp.csp_report, name="csp_report"),

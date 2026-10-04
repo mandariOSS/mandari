@@ -142,16 +142,16 @@ def test_alter_health_endpunkt_bleibt(client: Client) -> None:
     assert client.get("/health/").status_code == 200
 
 
-# -- Worker (Issue #509): nur gemeldet, wenn die Installation ihn braucht ---------------------------
+# -- Worker (Issues #509, #515): gemeldet, wenn die Installation ihn braucht ------------------------
 
 
 @pytest.fixture
 def nur_worker_echt(monkeypatch: pytest.MonkeyPatch, settings: Any) -> Any:
-    """Alle Prüfungen bis auf den Worker in Ordnung; ohne Bedarf an einem Worker."""
+    """Alle Prüfungen bis auf den Worker in Ordnung; ohne Bedarf an einem Worker (abgeschaltet)."""
     checks: dict[str, Any] = {n: (lambda: "ok") for n in health.CHECKS}
     checks["worker"] = health.check_worker
     monkeypatch.setattr(health, "CHECKS", checks)
-    settings.EVENTS_WORKER_REQUIRED = ""
+    settings.EVENTS_WORKER_REQUIRED = "false"
     settings.INGESTOR_EVENTS_ENABLED = False
     return settings
 
@@ -165,8 +165,22 @@ def test_ohne_bedarf_meldet_der_fehlende_worker_nichts(client: Client, nur_worke
     assert client.get("/health/").json() == {"status": "ok", "database": "ok", "worker": "nicht_erforderlich"}
 
 
+@pytest.mark.django_db
+def test_ohne_worker_fehlen_die_zeitplaene(client: Client, nur_worker_echt: Any) -> None:
+    """Standard (leer): Zeitpläne brauchen immer Runner und Scheduler (Issue #515)."""
+    nur_worker_echt.EVENTS_WORKER_REQUIRED = ""
+
+    daten = client.get("/health/ready/").json()
+
+    assert daten["status"] == "degraded"
+    assert daten["checks"]["worker"]["detail"] == "kein Worker für scheduler, tasks"
+    assert client.get("/health/").json() == {"status": "degraded", "database": "ok", "worker": "fehlt"}
+
+
+@pytest.mark.django_db
 def test_fehlender_worker_bei_bedarf_ist_degraded_aber_nicht_rot(client: Client, nur_worker_echt: Any) -> None:
-    nur_worker_echt.INGESTOR_EVENTS_ENABLED = True  # Ereignisse brauchen den Sequenzierer
+    nur_worker_echt.EVENTS_WORKER_REQUIRED = ""
+    nur_worker_echt.INGESTOR_EVENTS_ENABLED = True  # Ereignisse brauchen zusätzlich den Sequenzierer
 
     response = client.get("/health/ready/")
 
@@ -174,7 +188,7 @@ def test_fehlender_worker_bei_bedarf_ist_degraded_aber_nicht_rot(client: Client,
     assert response.status_code == 200, "die Anwendung bleibt in Betrieb"
     assert daten["status"] == "degraded"
     assert daten["checks"]["worker"] == {**daten["checks"]["worker"], "ok": False, "optional": True}
-    assert daten["checks"]["worker"]["detail"] == "kein Worker für sequencer"
+    assert daten["checks"]["worker"]["detail"] == "kein Worker für scheduler, sequencer, tasks"
     alt = client.get("/health/")
     assert alt.status_code == 200
     assert alt.json() == {"status": "degraded", "database": "ok", "worker": "fehlt"}

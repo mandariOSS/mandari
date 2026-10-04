@@ -22,7 +22,7 @@ from ..models import (
     OParlMeeting,
     withdrawn_q,
 )
-from ..services import file_delivery
+from ..services import file_accel, file_access, file_delivery, file_reconcile, file_store
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, page_number
 
 # =============================================================================
@@ -166,7 +166,7 @@ class FileListView(HTMXMixin, ActiveBodyRequiredMixin, TemplateView):
 
         if body:
             qs = (
-                OParlFile.objects.filter(body=body, deleted=False)
+                OParlFile.objects.filter(body=body, deleted=False, source_missing_since__isnull=True)
                 .select_related("paper")
                 .order_by("-file_date", "-created_at")
             )
@@ -211,7 +211,7 @@ from django.utils.html import escape
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 from .. import throttle
-from ..services import safe_fetch
+from ..services import host_pacing, robots, safe_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +245,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 h1{{font-size:1.125rem;font-weight:600;margin-bottom:.5rem;color:#111827}}
 p{{font-size:.875rem;line-height:1.625;color:#6b7280}}
 a{{color:#4f46e5;text-decoration:underline}}
-@media(prefers-color-scheme:dark){{body{{background:#111827;color:#d1d5db}}h1{{color:#f9fafb}}p{{color:#9ca3af}}.icon{{color:#6b7280}}}}
+@media(prefers-color-scheme:dark){{body{{background:#111827;color:#d1d5db}}h1{{color:#f9fafb}}p{{color:#9ca3af}}.icon{{color:#6b7280}}a{{color:#a5b4fc}}}}
 </style></head>
 <body><div class="card">
 <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -269,29 +269,56 @@ def file_proxy(request, file_id):
     2. Live-Abruf mit kurzen Timeouts; erfolgreiche Antworten werden
        direkt in den Cache geschrieben (Write-Through)
     3. Freundliche Fehlerseite, wenn die Quelle nicht erreichbar ist
+
+    Jeder Abruf zählt im Zugriffsprotokoll (Treffer, Abruf bei der Quelle, Fehler, Sperre; #786),
+    Folgeanfragen eines Abrufs in Teilen (Range) nicht.
     """
+    file_obj = get_object_or_404(
+        OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
+    )
+    try:
+        response = _deliver_file(request, file_obj)
+    except Http404:
+        # Keine Download-Adresse: nicht ausgeliefert
+        if file_access.counts_as_access(request):
+            file_access.record(file_obj, file_access.FAILED)
+        raise
+    return file_access.record_response(file_obj, response, request)
+
+
+def _deliver_file(request, file_obj):
+    """Lokale Kopie, sonst Live-Abruf, sonst Fehlerseite (siehe ``file_proxy``)."""
     from django.http import FileResponse
 
     from ..services import file_cache
 
-    file_obj = get_object_or_404(
-        OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
-    )
     if file_obj.withdrawn_by_publisher:
         from ._withdrawn import withdrawn_response
 
-        return withdrawn_response(request, file_obj)
+        return file_access.mark_blocked(withdrawn_response(request, file_obj))
+    if file_reconcile.is_blocked(file_obj):
+        # Von der Kommune entfernt oder nicht mehr abrufbar: keine Bytes, auch nicht aus der Kopie (#787)
+        response = _file_proxy_error(
+            "Dokument von der Kommune entfernt",
+            "Die Kommune hat dieses Dokument aus ihrem Ratsinformationssystem entfernt. "
+            "Wir zeigen es deshalb ebenfalls nicht mehr an.",
+            status=410,
+        )
+        return file_access.mark_blocked(response)
     force_download = request.GET.get("download") == "1"
     filename = file_obj.file_name or file_obj.name or "dokument.pdf"
 
-    local = file_cache.local_file(file_obj)
+    # Lokale Kopie; mit Objektspeicher wird ein lokal verdrängter Inhalt von dort geholt (#788)
+    local = file_store.local_copy(file_obj)
     if local is not None:
-        # FileResponse schließt die Datei nach dem Streaming selbst
-        response = FileResponse(open(local, "rb"))  # noqa: SIM115
-        # Nur passive Formate im Browser, alles andere als Download (fremde Quelle, gemeinsamer Ursprung)
-        file_delivery.apply(
-            response, file_cache.content_type_for(file_obj, "application/pdf"), filename, download=force_download
-        )
+        content_type = file_cache.content_type_for(file_obj, "application/pdf")
+        # Bytes liefert der Webserver (Range, ETag), Django setzt nur Typ und Schutzkopfzeilen (#785)
+        response = file_accel.response(local, content_type, filename, download=force_download)
+        if response is None:
+            # FileResponse schließt die Datei nach dem Streaming selbst
+            response = FileResponse(open(local, "rb"))  # noqa: SIM115
+            # Nur passive Formate im Browser, alles andere als Download (fremde Quelle, gemeinsamer Ursprung)
+            file_delivery.apply(response, content_type, filename, download=force_download)
         response["Cache-Control"] = "public, max-age=86400"
         response["X-Mandari-Cache"] = "hit"
         return response
@@ -316,7 +343,7 @@ def file_proxy(request, file_id):
             "Ratsinformationssystem derzeit nicht erreichbar",
             "Das Ratsinformationssystem dieser Kommune antwortet seit mehreren Abrufen nicht. "
             "Wir schonen die Quelle und holen das Dokument automatisch nach, sobald sie wieder "
-            "erreichbar ist. Es lag noch nicht in unserem Zwischenspeicher.",
+            "erreichbar ist. Es lag noch nicht in unserem Zwischenspeicher. " + _original_link(url),
         )
         response.status_code = 503
         response["Retry-After"] = "3600"
@@ -332,7 +359,8 @@ def file_proxy(request, file_id):
     ):
         response = _file_proxy_error(
             "Zu viele Abrufe",
-            "Von deinem Anschluss kamen in kurzer Zeit sehr viele Dokumentabrufe. Bitte warte einen Moment.",
+            "Von deinem Anschluss kamen in kurzer Zeit sehr viele Dokumentabrufe. Bitte warte einen Moment. "
+            + _original_link(url),
             status=429,
         )
         response["Retry-After"] = "60"
@@ -341,15 +369,77 @@ def file_proxy(request, file_id):
         response = _file_proxy_error(
             "Gerade viele Abrufe",
             "Das Dokument lag noch nicht in unserem Zwischenspeicher, und gerade laufen viele Abrufe "
-            "bei Ratsinformationssystemen. Bitte versuche es gleich noch einmal.",
+            "bei Ratsinformationssystemen. Bitte versuche es gleich noch einmal. " + _original_link(url),
             status=503,
         )
         response["Retry-After"] = "30"
         return response
     try:
+        blocked = _robots_or_pacing_blocked(file_obj, url)
+        if blocked is not None:
+            return blocked
         return _fetch_live(file_obj, url, filename, force_download)
     finally:
         _LIVE_FETCH_SLOTS.release()
+
+
+def _source_busy_response(url):
+    response = _file_proxy_error(
+        "Gerade viele Abrufe",
+        "Das Dokument lag noch nicht in unserem Zwischenspeicher, und beim Ratsinformationssystem dieser "
+        "Kommune stehen gerade viele Abrufe an. Wir fragen jede Kommune nur in ruhigem Takt an. Bitte "
+        "versuche es gleich noch einmal. " + _original_link(url),
+        status=503,
+    )
+    response["Retry-After"] = "30"
+    return response
+
+
+def _robots_or_pacing_blocked(file_obj, url):
+    """
+    robots.txt und Drossel je Host vor dem Live-Abruf; ``None``: Abruf erlaubt und Zeitpunkt reserviert.
+
+    Läuft erst nach Schonung, Drossel je IP und mit belegtem Abrufplatz: So wird eine geschonte Quelle nicht
+    über ihre robots.txt angefragt, und es warten höchstens ``FILE_PROXY_MAX_CONCURRENT`` Threads je Prozess.
+    Vor jedem Warten geht die Datenbankverbindung an den Pool zurück; robots.txt und Takt zusammen warten
+    höchstens ``FILE_PROXY_PACE_MAX_WAIT_SECONDS`` (sonst 503 mit ``Retry-After``).
+
+    robots.txt (RFC 9309) gilt auch für die Vorschau: gesperrte Dokumente rufen wir nicht selbst ab, sondern
+    verweisen auf das Original.
+    """
+    import time
+
+    from apps.common.db_connections import release_idle_thread_connections
+
+    # Einstellungen der Quelle lesen, solange die Verbindung noch da ist (die Quelle hängt danach am Body)
+    sync_config = robots.sync_config_of(file_obj)
+    agent = robots.user_agent_for(file_obj)
+    max_wait = float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
+    deadline = time.monotonic() + max_wait
+    release_idle_thread_connections()
+    try:
+        decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=max_wait)
+    except host_pacing.PacingBusyError:
+        return _source_busy_response(url)
+    if decision.allowed:
+        # Drossel je Host über alle Prozesse: höchstens die verbleibende Zeit warten
+        if not host_pacing.wait(url, sync_config=sync_config, max_wait=max(0.0, deadline - time.monotonic())):
+            return _source_busy_response(url)
+        return None
+    if decision.unreachable:
+        response = _file_proxy_error(
+            "Dokument beim Ratsinformationssystem öffnen",
+            "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar. Wir rufen das "
+            "Dokument deshalb jetzt nicht selbst ab. " + _original_link(url),
+            status=503,
+        )
+        response["Retry-After"] = "900"
+        return response
+    return _file_proxy_error(
+        "Dokument beim Ratsinformationssystem öffnen",
+        "Diese Kommune untersagt automatische Abrufe ihrer Dokumente (robots.txt). Wir rufen das Dokument "
+        "deshalb nicht selbst ab. " + _original_link(url),
+    )
 
 
 def _fetch_live(file_obj, url, filename, force_download):
@@ -373,7 +463,7 @@ def _fetch_live(file_obj, url, filename, force_download):
             total_seconds=throttle.setting("FILE_PROXY_TOTAL_SECONDS"),
             timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=5.0, pool=5.0),
             headers=headers,
-            user_agent=file_cache.USER_AGENT,
+            user_agent=robots.user_agent_for(file_obj),
         )
     except httpx.HTTPStatusError as e:
         spool.close()
@@ -381,8 +471,14 @@ def _fetch_live(file_obj, url, filename, force_download):
             file_obj.local_status = "missing"
             file_obj.local_error = "HTTP 404"
             file_obj.save(update_fields=["local_status", "local_error"])
+        if e.response.status_code != 404:
+            # Abgelehnt oder gestört (etwa eine Sperre gegen unsere Server): im Browser oft trotzdem abrufbar
+            return _file_proxy_error(
+                f"Fehler {e.response.status_code}",
+                "Das Ratsinformationssystem hat uns das Dokument gerade nicht ausgeliefert. " + _original_link(url),
+            )
         return _file_proxy_error(
-            "Datei nicht gefunden" if e.response.status_code == 404 else f"Fehler {e.response.status_code}",
+            "Datei nicht gefunden",
             "Die Datei konnte auf dem OParl-Server nicht gefunden werden. "
             "Das liegt oft an veränderten Daten und URLs auf dem Quell-Server. "
             "Die Probleme werden nach unserem nächsten Scan in der Regel gelöst. "
@@ -393,26 +489,28 @@ def _fetch_live(file_obj, url, filename, force_download):
         spool.close()
         return _file_proxy_error(
             "Datei zu groß für die Vorschau",
-            "Dieses Dokument ist größer, als die Vorschau direkt abrufen kann. "
-            "Bitte lade es beim Ratsinformationssystem der Kommune herunter.",
+            "Dieses Dokument ist größer, als die Vorschau direkt abrufen kann. " + _original_link(url),
             status=413,
         )
     except safe_fetch.DeadlineExceededError:
         spool.close()
         return _file_proxy_error(
             "Abruf dauert zu lange",
-            "Das Ratsinformationssystem liefert das Dokument gerade sehr langsam. Bitte versuche es später erneut.",
+            "Das Ratsinformationssystem liefert das Dokument gerade sehr langsam. Bitte versuche es später erneut. "
+            + _original_link(url),
             status=504,
         )
     except httpx.RequestError as exc:
         spool.close()
-        if isinstance(exc, safe_fetch.BlockedDestinationError):
+        blocked = isinstance(exc, safe_fetch.BlockedDestinationError)
+        if blocked:
             logger.warning("Dokument %s: Download-Adresse nicht öffentlich erreichbar, Abruf gesperrt", file_obj.id)
         return _file_proxy_error(
             "Server nicht erreichbar",
             "Das Ratsinformationssystem ist momentan nicht erreichbar und dieses Dokument lag noch nicht "
             "in unserem Zwischenspeicher. Wir legen Dokumente laufend im Zwischenspeicher ab — "
-            "bitte versuche es später erneut.",
+            # Keine Links auf nicht öffentliche Adressen
+            "bitte versuche es später erneut." + ("" if blocked else " " + _original_link(url)),
         )
 
     spool.seek(0)
@@ -425,7 +523,7 @@ def _fetch_live(file_obj, url, filename, force_download):
         return _file_proxy_error(
             "Quelle liefert derzeit keine Datei",
             "Das Ratsinformationssystem antwortet mit einer Hinweisseite statt mit dem Dokument "
-            "(z. B. Wartung). Bitte versuche es später erneut.",
+            "(z. B. Wartung). Bitte versuche es später erneut. " + _original_link(url),
         )
 
     # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte (nur gelistete Kommunen)

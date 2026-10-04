@@ -31,7 +31,7 @@ from django.views.generic.base import ContextMixin
 
 from apps.common.params import uuid_param
 
-from .. import audit
+from .. import audit, hub_events
 from ..models import (
     SessionAgendaItem,
     SessionFile,
@@ -196,8 +196,10 @@ class FileUploadView(SessionMixin, View):
                 session_file.meeting = target
             else:
                 session_file.agenda_item = target
-            # Speichert Inhalt (dedupliziert) und Anlage, legt Fassung 1 an (Issue #226)
-            file_version_service.attach_upload(session_file, uploaded, user=self.session_user)
+            # Speichert Inhalt (dedupliziert) und Anlage, legt Fassung 1 an (Issue #226); Drehscheibe (Issue #534)
+            with hub_events.track(self.session_tenant) as tracked:
+                tracked.file(session_file)
+                file_version_service.attach_upload(session_file, uploaded, user=self.session_user)
             created += 1
 
         if created:
@@ -251,7 +253,10 @@ class FileUpdateView(SessionMixin, View):
         session_file.is_public = request.POST.get("is_public") == "on" and not file_service.is_application_file(
             session_file
         )
-        session_file.save()
+        # Drehscheibe (Issue #534): umbenannt, veröffentlicht oder zurückgenommen
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.file(session_file)
+            session_file.save()
 
         messages.success(request, f"Anlage „{session_file.name}“ wurde aktualisiert.")
         return _redirect_to_parent(tenant_slug, session_file)
@@ -289,14 +294,13 @@ class FileReplaceView(SessionMixin, View):
         data = uploaded.read()
         uploaded.seek(0)
 
-        # Neue Fassung; die bisherige bleibt im Verlauf abrufbar (Issue #226)
-        new_version = file_version_service.replace_content(
-            session_file,
-            uploaded,
-            user=self.session_user,
-            mime_type=mime_type,
-            text_content=file_service.extract_text(data, mime_type, uploaded.name),
-        )
+        text_content = file_service.extract_text(data, mime_type, uploaded.name)
+        # Neue Fassung; die bisherige bleibt im Verlauf abrufbar (Issue #226); Drehscheibe (Issue #534)
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.file(session_file)
+            new_version = file_version_service.replace_content(
+                session_file, uploaded, user=self.session_user, mime_type=mime_type, text_content=text_content
+            )
         if new_version is None:
             messages.info(request, "Die Datei gleicht der aktuellen Fassung – es wurde nichts geändert.")
             return _redirect_to_parent(tenant_slug, session_file)
@@ -330,7 +334,10 @@ class FileDeleteView(SessionMixin, View):
             messages.error(request, paper_version_service.CONTENT_LOCKED_MESSAGE)
             return response
         name = session_file.name
-        session_file.delete()
+        # Drehscheibe (Issue #534): Wer die Anlage öffentlich kannte, erfährt die Rücknahme
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.file(session_file)
+            session_file.delete()
         messages.success(self.request, f"Anlage „{name}“ wurde gelöscht.")
         return response
 

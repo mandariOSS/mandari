@@ -264,7 +264,7 @@ class SessionTenantAdmin(ModelAdmin):
         (
             "Einstellungen",
             {
-                "fields": ("settings", "is_active", "scoped_permissions_enabled"),
+                "fields": ("settings", "is_active", "scoped_permissions_enabled", "hub_events"),
             },
         ),
         (
@@ -320,6 +320,24 @@ class SessionTenantAdmin(ModelAdmin):
         # Der pre_save-Hook merkt sich den gespeicherten Stand vor dem Speichern (signals.py)
         if change and getattr(obj, "_is_active_old", None) is False and obj.is_active:
             self._warn_locked(request, [obj])
+        self._warn_events_without_worker(request, obj)
+
+    @staticmethod
+    def _warn_events_without_worker(request: HttpRequest, tenant: SessionTenant) -> None:
+        """
+        Mandant meldet Ereignisse an die Datendrehscheibe, die Installation verlangt aber keinen Sequenzierer
+        (Issue #533): Ohne ihn bekämen die Ereignisse keine Folgenummer, und Health meldete das nicht.
+        """
+        from apps.events.presence import required_roles
+        from apps.session import hub_events
+
+        if hub_events.enabled(tenant) and "sequencer" not in required_roles():
+            messages.warning(
+                request,
+                "Ereignisse an die Datendrehscheibe brauchen den Sequenzierer im Worker. Die Installation verlangt "
+                "ihn nicht: Setzen Sie EVENTS_WORKER_REQUIRED=true, damit Health und Admin sein Fehlen melden.",
+                fail_silently=True,
+            )
 
     @staticmethod
     def _warn_locked(request, tenants) -> None:

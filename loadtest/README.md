@@ -71,7 +71,6 @@ export DATABASE_URL=sqlite:///$PWD/../.lasttest.sqlite3   # oder eine PostgreSQL
 export ENCRYPTION_MASTER_KEY=$(python -c 'import base64,secrets;print(base64.b64encode(secrets.token_bytes(32)).decode())')
 export ELASTICSEARCH_AUTO_INDEX=False
 export ELASTICSEARCH_URL=                              # leer: Suche fällt sofort auf die Datenbank zurück
-export MANDARI_SYNC_WATCHDOG=0
 export REDIS_URL=                                     # leer: Cache im Prozess, Channel-Layer im Speicher
 export ALLOWED_HOSTS=localhost,127.0.0.1
 export OPARL_API_RATE_LIMIT=0                         # alle simulierten Abnehmer kommen von einer Adresse

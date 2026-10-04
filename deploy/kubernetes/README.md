@@ -182,6 +182,15 @@ Worker auf demselben Knoten laufen, sonst bleibt ein Pod mit „Multi-Attach“ 
 Anwendung (Beispiel in `values.yaml`), oder `ReadWriteMany` verwenden – Voraussetzung auch für
 `worker.replicas` > 1 auf verschiedenen Knoten.
 
+### Ereignistechnik einschalten
+
+Die Schalter stehen unter `events.*` und gelten für Anwendung, Worker und Ingestor gemeinsam:
+`events.producers` (Ereignisse zum RIS-Bestand, `INGESTOR_EVENTS_ENABLED`), danach
+`events.changesFeed` (Änderungsfeed und Snapshot, `OPARL_CHANGES_ENABLED`). Erst einschalten, wenn
+der Worker läuft (`kubectl get pods -l app.kubernetes.io/component=worker`, `/health/worker/`).
+`events.workerPushUrl` meldet „Worker lebt“ an einen externen Endpunkt der Statusseite
+(`docs/MONITORING.md`, „Worker“).
+
 ## Deinstallieren
 
 ```bash

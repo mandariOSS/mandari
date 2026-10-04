@@ -14,6 +14,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 from mandari_oparl import (
@@ -41,6 +42,8 @@ from src.client.oparl_client import (
     ERROR_KIND_ROBOTS_BLOCKED,
     ERROR_KIND_SERVER_ERROR_SERIES,
     ERROR_KIND_UA_BLOCKED,
+    MODIFIED_SINCE_INCONCLUSIVE,
+    MODIFIED_SINCE_SUPPORTED,
     OParlClient,
     SyncStats,
 )
@@ -77,6 +80,24 @@ BACKOFF_MIN_MINUTES_BY_KIND = {
     # robots.txt ändert sich selten: einmal täglich nachsehen genügt (Issue #116)
     ERROR_KIND_ROBOTS_BLOCKED: 24 * 60,
 }
+# Inkrementeller Abgleich: Suchindex nur für Objekte, die seit dem vorigen Abgleich des Bodies geschrieben
+# wurden. Der Puffer fängt Uhrabweichungen zwischen Ingestor und Datenbank ab; doppelt indexiert schadet nicht.
+INDEX_SINCE_MARGIN = timedelta(minutes=5)
+
+
+def index_since(full: bool, previous_sync: datetime | None) -> datetime | None:
+    """
+    Ab wann ein Lauf Objekte in den Suchindex schreibt: ``None`` = alle (Vollabgleich oder Body ohne vorigen
+    Abgleich), sonst der vorige Abgleich des Bodies abzüglich Puffer. Vorher schrieb jeder inkrementelle Lauf
+    mit einer Änderung den ganzen Body neu.
+    """
+    if full or previous_sync is None:
+        return None
+    if previous_sync.tzinfo is None:
+        previous_sync = previous_sync.replace(tzinfo=UTC)
+    return previous_sync - INDEX_SINCE_MARGIN
+
+
 # Anzeigetexte der Fehlerklassen (Schonungsmeldung in sync_all, Status in list-sources)
 ERROR_KIND_LABELS = {
     ERROR_KIND_UA_BLOCKED: "User-Agent gesperrt",
@@ -480,6 +501,8 @@ class SyncOrchestrator:
                 result.http_stats = client.stats
                 result.success = True
                 await self._apply_host_findings(result, client)
+                if full:
+                    await self._recheck_modified_since(client, url, bodies_data)
 
                 total_synced = (
                     result.meetings_synced
@@ -569,6 +592,54 @@ class SyncOrchestrator:
             await self.storage.add_modified_since_unsupported_hosts(source_url, new_hosts)
         except Exception as e:
             console.print(f"[yellow]Capability-Cache konnte nicht gespeichert werden: {e}[/yellow]")
+
+    #: Zeitfenster der modified_since-Prüfung: die Quelle soll nur Objekte liefern, die seitdem geändert wurden
+    MODIFIED_SINCE_PROBE_DAYS = 7
+
+    async def _recheck_modified_since(
+        self, client: OParlClient, source_url: str, bodies_data: list[dict[str, Any]]
+    ) -> str | None:
+        """
+        Nach einem Vollabgleich prüfen, ob die Quelle (wieder) mit ``modified_since`` filtert.
+
+        Der Befund „filtert nicht“ hing bisher dauerhaft am Host; unterstützt die Quelle den Filter später,
+        liefen die inkrementellen Läufe trotzdem über die vollständigen Listen. Jetzt prüft eine Anfrage an
+        die erste Liste (Vorgänge, sonst Sitzungen) nach jedem Vollabgleich neu: filtert die Quelle, wird der
+        Host ausgetragen; lehnt sie ab oder liefert ungefiltert, wird er eingetragen. Ohne klare Aussage
+        bleibt alles, wie es ist. Fehler gefährden den Abgleich nie.
+        """
+        if not settings.oparl_modified_since_enabled:
+            return None
+        list_url = next(
+            (
+                body.get(key)
+                for body in bodies_data
+                if isinstance(body, dict)
+                for key in ("paper", "meeting")
+                if isinstance(body.get(key), str) and body.get(key)
+            ),
+            None,
+        )
+        if not list_url:
+            return None
+        host = urlparse(list_url).netloc
+        try:
+            since = datetime.now(UTC) - timedelta(days=self.MODIFIED_SINCE_PROBE_DAYS)
+            verdict = await client.probe_modified_since(list_url, since)
+            if verdict == MODIFIED_SINCE_INCONCLUSIVE:
+                console.print(f"[dim]  modified_since-Prüfung für {host}: keine Aussage[/dim]")
+                return verdict
+            supported = verdict == MODIFIED_SINCE_SUPPORTED
+            if supported:
+                OParlClient.discard_modified_since_unsupported(host)
+            else:
+                OParlClient.add_modified_since_unsupported({host})
+            await self.storage.apply_modified_since_check(source_url, host, verdict, supported)
+            console.print(f"[dim]  modified_since-Prüfung für {host}: {verdict}[/dim]")
+            return verdict
+        except Exception as e:  # noqa: BLE001 - Prüfung ist eine Zugabe, der Abgleich ist durch
+            console.print(f"[yellow]modified_since-Prüfung für {host} fehlgeschlagen: {e}[/yellow]")
+            return None
 
     async def _record_source_failure(self, url: str, error: str, error_kind: str | None = None) -> None:
         """Fehlerstatus für den Betriebsmonitor speichern — darf den Sync nie gefährden."""
@@ -714,6 +785,8 @@ class SyncOrchestrator:
                 result.http_stats = client.stats
                 result.success = True
                 await self._apply_host_findings(result, client)
+                if full:
+                    await self._recheck_modified_since(client, url, bodies_data)
 
                 # Calculate total entities synced
                 total_synced = (
@@ -813,6 +886,12 @@ class SyncOrchestrator:
         # Process and store body
         processed_body = self.processor.process_body(body_data, body_external_id)
         body_id = await self.storage.upsert_body(processed_body, source_id)
+        # Voriger Abgleich des Bodies: Ab dann geschriebene Objekte gehen in den Suchindex (inkrementell)
+        try:
+            previous_sync = await self.storage.get_body_last_sync(body_id)
+        except Exception as e:  # noqa: BLE001 - ohne Zeitpunkt wird der ganze Body indexiert
+            console.print(f"[yellow]  Letzter Abgleich des Bodies nicht lesbar ({e}), Suchindex vollständig[/yellow]")
+            previous_sync = None
 
         # Determine modified_since for incremental sync
         # Uses 7 days ago at 00:00 — wide enough to catch corrections,
@@ -1019,8 +1098,13 @@ class SyncOrchestrator:
             )
         )
         total_tombstoned = sum(len(ids) for ids in es_deletions.values())
-        if settings.elasticsearch_indexing_enabled and (full or total_synced > 0 or total_tombstoned > 0):
-            await self._index_body_elasticsearch(body_id, stats, es_deletions, full)
+        text_extracted = stats.get("text_extracted", 0) or 0
+        if settings.elasticsearch_indexing_enabled and (
+            full or total_synced > 0 or total_tombstoned > 0 or text_extracted > 0
+        ):
+            await self._index_body_elasticsearch(
+                body_id, stats, es_deletions, full, since=index_since(full, previous_sync)
+            )
         elif settings.elasticsearch_indexing_enabled and not full:
             console.print("[dim]  Elasticsearch indexing skipped (no changes)[/dim]")
 
@@ -1044,11 +1128,15 @@ class SyncOrchestrator:
         stats: dict[str, Any],
         es_deletions: dict[str, list[str]],
         full: bool,
+        since: datetime | None = None,
     ) -> None:
         """
-        Indexiert alle Entitäten eines Bodies in Elasticsearch und entfernt
+        Indexiert die Entitäten eines Bodies in Elasticsearch und entfernt
         Dokumente tombstoneder Objekte. Gemeinsamer Pfad für OParl-Sync
         (_sync_body) und Scraper-Quellen (ScraperSyncRunner).
+
+        Vollabgleich (oder ``since`` leer): alle Objekte, seitenweise. Inkrementell: nur Objekte, die seit
+        ``since`` geschrieben wurden, dazu Vorgänge, deren Dateien seitdem geändert wurden (Gewichtung).
 
         Geschrieben werden Teildokumente (partielles Update): Felder, die nur
         Django setzt (z. B. organization_names), bleiben erhalten (Issue #429).
@@ -1058,6 +1146,7 @@ class SyncOrchestrator:
         total_tombstoned = sum(len(ids) for ids in es_deletions.values())
         try:
             from src.indexing.document_builders import (
+                FILE_PREVIEW_CHARS,
                 file_to_doc,
                 meeting_to_doc,
                 organization_to_doc,
@@ -1091,7 +1180,6 @@ class SyncOrchestrator:
                             "[yellow]  Elasticsearch indices missing: "
                             f"{', '.join(sorted(missing))} — run `manage.py setup_elasticsearch`[/yellow]"
                         )
-                    batch_size = settings.elasticsearch_batch_size
                     indexed_total = 0
 
                     # Remove documents of tombstoned entities from the
@@ -1104,53 +1192,49 @@ class SyncOrchestrator:
                             f"[yellow]  Removed {total_tombstoned} tombstoned documents from Elasticsearch[/yellow]"
                         )
 
-                    # Index papers (with file contents for paper-boosting)
-                    papers = await self.storage.get_all_for_body(body_id, PaperModel)
-                    # Build paper_id → files lookup from already-loaded files
-                    files_with_text = await self.storage.get_files_with_text(body_id)
-                    files_by_paper: dict[str, list] = {}
-                    for f in files_with_text:
-                        if f.paper_id:
-                            pid = str(f.paper_id)
-                            files_by_paper.setdefault(pid, []).append(f)
+                    # Seitenweise: jede Art vollständig, Speicher je Seite begrenzt (früher höchstens
+                    # 10.000 je Art, größere Kommunen fehlten danach teilweise in der Suche). Inkrementelle
+                    # Läufe schreiben nur, was seit dem vorigen Abgleich geändert wurde.
+                    page_size = settings.elasticsearch_batch_size
+                    updated_since = None if full else since
 
-                    for i in range(0, len(papers), batch_size):
-                        docs = [
-                            paper_to_doc(p, files=files_by_paper.get(str(p.id), [])) for p in papers[i : i + batch_size]
-                        ]
+                    # Vorgänge mit den Texten ihrer Dateien (Gewichtung in der Suche, je Datei nur der Anfang)
+                    async for papers in self.storage.iter_for_body(
+                        body_id, PaperModel, page_size, updated_since=updated_since, with_changed_files=True
+                    ):
+                        files_by_paper: dict[str, list[Any]] = {}
+                        paper_files = await self.storage.get_files_with_text_for_papers(
+                            body_id, [p.id for p in papers], max_chars=FILE_PREVIEW_CHARS
+                        )
+                        for f in paper_files:
+                            files_by_paper.setdefault(str(f.paper_id), []).append(f)
+                        docs = [paper_to_doc(p, files=files_by_paper.get(str(p.id), [])) for p in papers]
                         await indexer.index_documents("papers", docs)
                         indexed_total += len(docs)
 
-                    # Index meetings
-                    meetings = await self.storage.get_all_for_body(body_id, MeetingModel)
-                    for i in range(0, len(meetings), batch_size):
-                        docs = [meeting_to_doc(m) for m in meetings[i : i + batch_size]]
-                        await indexer.index_documents("meetings", docs)
-                        indexed_total += len(docs)
+                    for model, index_name, to_doc in (
+                        (MeetingModel, "meetings", meeting_to_doc),
+                        (PersonModel, "persons", person_to_doc),
+                        (OrgModel, "organizations", organization_to_doc),
+                    ):
+                        async for rows in self.storage.iter_for_body(
+                            body_id, model, page_size, updated_since=updated_since
+                        ):
+                            docs = [to_doc(row) for row in rows]
+                            await indexer.index_documents(index_name, docs)
+                            indexed_total += len(docs)
 
-                    # Index persons
-                    persons = await self.storage.get_all_for_body(body_id, PersonModel)
-                    for i in range(0, len(persons), batch_size):
-                        docs = [person_to_doc(p) for p in persons[i : i + batch_size]]
-                        await indexer.index_documents("persons", docs)
-                        indexed_total += len(docs)
-
-                    # Index organizations
-                    orgs = await self.storage.get_all_for_body(body_id, OrgModel)
-                    for i in range(0, len(orgs), batch_size):
-                        docs = [organization_to_doc(o) for o in orgs[i : i + batch_size]]
-                        await indexer.index_documents("organizations", docs)
-                        indexed_total += len(docs)
-
-                    # Index files with text content
-                    files = await self.storage.get_files_with_text(body_id)
-                    for i in range(0, len(files), batch_size):
-                        docs = [file_to_doc(f) for f in files[i : i + batch_size]]
+                    # Dateien mit extrahiertem Text
+                    async for files in self.storage.iter_files_with_text(
+                        body_id, page_size, updated_since=updated_since
+                    ):
+                        docs = [file_to_doc(f) for f in files]
                         await indexer.index_documents("files", docs)
                         indexed_total += len(docs)
 
                     stats["indexed"] = indexed_total
-                    console.print(f"[green]  Indexed {indexed_total} documents in Elasticsearch[/green]")
+                    scope = "" if updated_since is None else f" (geändert seit {updated_since:%d.%m. %H:%M} UTC)"
+                    console.print(f"[green]  Indexed {indexed_total} documents in Elasticsearch{scope}[/green]")
 
         except Exception as e:
             console.print(f"[red]  Elasticsearch indexing error: {e}[/red]")

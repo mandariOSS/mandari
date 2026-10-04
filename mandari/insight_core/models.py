@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
+from django.db.models.functions import Now
 from django.utils import timezone
 from mandari_oparl.ids import IdBases, canonical_id
 
@@ -948,6 +949,32 @@ class OParlAgendaItem(SourceDeletionModel):
         )
 
 
+class OParlFileBlob(models.Model):
+    """
+    Inhalt einer Datei in der Ablage, abgelegt unter seinem SHA-256 (Issue #788, services/file_store.py).
+
+    Gleiche Dateien (dieselbe Anlage an mehreren Vorgängen) liegen nur einmal in der Ablage; jede Datei
+    (``OParlFile.blob``) zählt als Referenz. Fällt die letzte Referenz weg, wird der Inhalt verwaist
+    markiert und vom Aufräumen gelöscht – lokal und im Objektspeicher. Die Originale bleiben unverändert.
+    Ingestor und Django schreiben beide (gleiches Vorgehen: Zeile sperren, Datei ablegen, zählen).
+    """
+
+    sha256 = models.CharField(max_length=64, primary_key=True)
+    size = models.BigIntegerField(verbose_name="Größe (Bytes)")
+    ref_count = models.IntegerField(default=0, db_default=0, verbose_name="Referenzen")
+    created_at = models.DateTimeField(default=timezone.now, db_default=Now(), verbose_name="Abgelegt am")
+    orphaned_at = models.DateTimeField(blank=True, null=True, verbose_name="Ohne Referenz seit")
+    remote_at = models.DateTimeField(blank=True, null=True, verbose_name="Im Objektspeicher seit")
+
+    class Meta:
+        db_table = "oparl_file_blobs"
+        verbose_name = "Dateiinhalt"
+        verbose_name_plural = "Dateiinhalte"
+
+    def __str__(self) -> str:
+        return f"{self.sha256[:12]} ({self.ref_count} Referenzen)"
+
+
 class OParlFile(SourceDeletionModel):
     """Eine Datei/Anlage."""
 
@@ -1010,6 +1037,31 @@ class OParlFile(SourceDeletionModel):
     )
     local_cached_at = models.DateTimeField(blank=True, null=True, verbose_name="Lokal gespeichert am")
     local_error = models.CharField(max_length=500, blank=True, default="", db_default="", verbose_name="Cache-Fehler")
+    # Gemessene Größe unserer Kopie in Bytes (Issue #786). ``size`` ist die Angabe der Quelle aus OParl und
+    # fehlt bei manchen Quellen; als Speichermaß taugt nur diese Spalte.
+    local_size = models.BigIntegerField(blank=True, null=True, verbose_name="Größe der Kopie (Bytes)")
+
+    # Löschabgleich mit der Quelle (Issue #787, services/file_reconcile.py). Gesperrt ist ein Dokument,
+    # wenn es in der Quelle gelöscht ist (``deleted``) oder seine Download-Adresse 404/410 liefert.
+    source_checked_at = models.DateTimeField(blank=True, null=True, verbose_name="Mit der Quelle abgeglichen am")
+    source_missing_since = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="In der Quelle nicht mehr abrufbar seit",
+        help_text="Download-Adresse liefert 404/410: gesperrt, Kopie und Text werden nach der Frist gelöscht.",
+    )
+    content_purged_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="Kopie und Text gelöscht am", help_text="Nach dem Löschabgleich."
+    )
+    # Inhalt in der Ablage nach SHA-256 (Issue #788); leer bei Kopien im bisherigen Layout je Kommune
+    blob = models.ForeignKey(
+        OParlFileBlob,
+        on_delete=models.PROTECT,
+        related_name="files",
+        blank=True,
+        null=True,
+        verbose_name="Inhalt in der Ablage",
+    )
 
     # Text extraction tracking
     text_extraction_status = models.CharField(
@@ -1067,6 +1119,56 @@ class OParlFile(SourceDeletionModel):
     def size_human(self):
         """Menschenlesbare Dateigröße."""
         return human_size(self.size) if self.size else ""
+
+
+class OParlFileAccessDay(models.Model):
+    """
+    Zugriffsprotokoll der Dokumentablage je Tag (Issue #786), ohne Personenbezug.
+
+    Ein Zähler je Tag, Kommune, Ergebnis und Altersklasse des Dokuments. Daraus ergeben sich die
+    Trefferquote der lokalen Kopien, die Abrufe bei den Quellen und welche Dokumente überhaupt noch
+    gelesen werden – Grundlage für die Größe eines Zwischenspeichers. Geschrieben von
+    ``services/file_access.py``; für Dateien ohne Kommune gibt es Zeilen ohne ``body``.
+    """
+
+    OUTCOME_HIT = "hit"
+    OUTCOME_MISS = "miss"
+    OUTCOME_FAILED = "failed"
+    OUTCOME_BLOCKED = "blocked"
+    OUTCOME_CHOICES = [
+        (OUTCOME_HIT, "Treffer (lokale Kopie)"),
+        (OUTCOME_MISS, "Fehlzugriff (von der Quelle geholt)"),
+        (OUTCOME_FAILED, "Nicht ausgeliefert (Quelle nicht erreichbar, zu groß, gedrosselt)"),
+        (OUTCOME_BLOCKED, "Gesperrt"),
+    ]
+    AGE_CHOICES = [
+        ("d30", "jünger als 30 Tage"),
+        ("d365", "30 Tage bis 1 Jahr"),
+        ("y3", "1 bis 3 Jahre"),
+        ("older", "älter als 3 Jahre"),
+        ("unknown", "unbekannt"),
+    ]
+
+    id = models.BigAutoField(primary_key=True)
+    day = models.DateField(verbose_name="Tag")
+    body = models.ForeignKey(
+        OParlBody, on_delete=models.CASCADE, related_name="file_access_days", blank=True, null=True
+    )
+    outcome = models.CharField(max_length=16, choices=OUTCOME_CHOICES, verbose_name="Ergebnis")
+    age_class = models.CharField(max_length=16, choices=AGE_CHOICES, verbose_name="Alter des Dokuments")
+    count = models.PositiveIntegerField(default=0, verbose_name="Abrufe")
+    bytes = models.BigIntegerField(default=0, verbose_name="Bytes (Dateigröße je Abruf)")
+
+    class Meta:
+        db_table = "oparl_file_access_days"
+        verbose_name = "Dokumentabrufe je Tag"
+        verbose_name_plural = "Dokumentabrufe je Tag"
+        constraints = [
+            models.UniqueConstraint(fields=["day", "body", "outcome", "age_class"], name="oparl_file_access_day_key"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.day} {self.outcome} {self.age_class}: {self.count}"
 
 
 class OParlMembership(SourceDeletionModel):
@@ -2331,3 +2433,38 @@ class DigestLog(models.Model):
 
     def __str__(self):
         return f"Digest {self.sent_at:%d.%m.%Y} → {self.subscriber.email} ({self.alert_count} Alerts)"
+
+
+class PageFeedback(models.Model):
+    """Rückmeldung „War diese Seite hilfreich?“ am Seitenende des Bürgerportals.
+
+    Gespeichert werden nur Antwort, optionaler Satz, Seitentyp, Pfad, Kommune und der Tag – keine
+    IP-Adresse, keine Uhrzeit, kein Cookie. Gegen Massenabgaben zählt ``throttle`` grob je Adresse
+    im Cache. „Anonym“ sagen wir trotzdem nicht: Die Zugriffsprotokolle des Webservers halten wie bei jedem
+    Aufruf Adresse, Zeit und Seite fest, und der Satz kann Personenbezug enthalten. Nach ``services.page_feedback.RETENTION_DAYS`` löscht ein täglicher Auftrag die Einträge.
+    """
+
+    COMMENT_MAX_LENGTH = 500
+
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="page_feedback",
+        null=True,
+        blank=True,
+        verbose_name="Kommune",
+    )
+    page_type = models.CharField(max_length=50, db_index=True, verbose_name="Seitentyp")
+    path = models.CharField(max_length=255, blank=True, default="", verbose_name="Seite")
+    helpful = models.BooleanField(verbose_name="Hilfreich")
+    comment = models.TextField(max_length=COMMENT_MAX_LENGTH, blank=True, default="", verbose_name="Ergänzung")
+    created_on = models.DateField(auto_now_add=True, db_index=True, verbose_name="Tag")
+
+    class Meta:
+        db_table = "insight_page_feedback"
+        verbose_name = "Rückmeldung zu einer Seite"
+        verbose_name_plural = "Rückmeldungen zu Seiten"
+        ordering = ["-created_on", "-id"]
+
+    def __str__(self) -> str:
+        return f"{'Ja' if self.helpful else 'Nein'} – {self.page_type} ({self.created_on:%d.%m.%Y})"

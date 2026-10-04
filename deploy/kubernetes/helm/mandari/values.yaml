@@ -44,6 +44,20 @@ adminUser:
   password: ""
 
 # -----------------------------------------------------------------------------
+# Ereignistechnik: Schalter je Erzeuger und „Worker lebt“ (DEPLOYMENT.md, „Worker“;
+# docs/OPARL_API.md, „Betrieb“). Reihenfolge beim Einschalten: Worker → Erzeuger → Feed.
+# -----------------------------------------------------------------------------
+events:
+  # Erzeuger: Ingestor und Anwendung (Rücknahmen aus Session) melden Änderungen am RIS-Bestand
+  # als Ereignisse (INGESTOR_EVENTS_ENABLED). Erst einschalten, wenn der Worker läuft.
+  producers: false
+  # Änderungsfeed und Snapshot je Kommune (OPARL_CHANGES_ENABLED); erst nach den Erzeugern
+  changesFeed: false
+  # „Worker lebt“ an die Statusseite (WORKER_PUSH_URL, externer Endpunkt von Gatus); das Token
+  # WORKER_PUSH_TOKEN über app.extraEnvFromSecret
+  workerPushUrl: ""
+
+# -----------------------------------------------------------------------------
 # Anwendung (Django)
 # -----------------------------------------------------------------------------
 app:

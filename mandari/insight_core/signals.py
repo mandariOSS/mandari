@@ -159,33 +159,49 @@ def index_file(sender, instance, **kwargs):
     Nur wenn text_content vorhanden ist.
     Aktualisiert auch das Parent-Paper (file_contents_preview).
     """
-    # Tombstone: aus dem Index entfernen statt indexieren
-    if instance.deleted:
-        _delete_document("files", str(instance.id))
+    # Tombstone oder in der Quelle nicht mehr abrufbar (Löschabgleich, #787): aus dem Index entfernen
+    if instance.deleted or getattr(instance, "source_missing_since", None):
+        remove_file_from_index(instance)
         return
 
     # Nur indexieren wenn Text vorhanden
     if not instance.text_content:
+        update_fields = kwargs.get("update_fields")
+        if update_fields and "text_content" in update_fields:
+            # Text verworfen (Inhalt in der Quelle geändert): alten Stand nicht weiter finden lassen
+            remove_file_from_index(instance)
         return
 
     doc = _file_to_doc(instance)
     _index_document("files", str(instance.id), doc)
 
     # Re-index parent paper so file_contents_preview stays current
-    if instance.paper_id:
-        try:
-            paper = OParlPaper.objects.get(id=instance.paper_id)
-            if paper.deleted:
-                return
-            files = paper.files.filter(
-                deleted=False,
-                text_content__isnull=False,
-                text_extraction_status="completed",
-            )
-            paper_doc = _paper_to_doc(paper, files=files)
-            _index_document("papers", str(paper.id), paper_doc)
-        except OParlPaper.DoesNotExist:
-            pass
+    _reindex_paper_files(instance.paper_id)
+
+
+def _reindex_paper_files(paper_id) -> None:
+    """Vorgang neu indexieren, damit die Textvorschau seiner Dateien aktuell bleibt."""
+    if not paper_id:
+        return
+    try:
+        paper = OParlPaper.objects.get(id=paper_id)
+    except OParlPaper.DoesNotExist:
+        return
+    if paper.deleted:
+        return
+    files = paper.files.filter(
+        deleted=False,
+        source_missing_since__isnull=True,
+        text_content__isnull=False,
+        text_extraction_status="completed",
+    )
+    _index_document("papers", str(paper.id), _paper_to_doc(paper, files=files))
+
+
+def remove_file_from_index(instance) -> None:
+    """Datei aus dem Suchindex nehmen und die Textvorschau ihres Vorgangs neu aufbauen."""
+    _delete_document("files", str(instance.id))
+    _reindex_paper_files(getattr(instance, "paper_id", None))
 
 
 @receiver(post_delete, sender=OParlFile)

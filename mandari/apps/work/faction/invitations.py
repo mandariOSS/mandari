@@ -21,7 +21,7 @@ es wird schlicht auditiert, WER es war (Issue #66).
 
 Baut auf dem vorhandenen Versand (Issue #59: ICS/PDF/Nachladung) und der
 Sitzungserzeugung (Issue #61) auf; der periodische Lauf hängt wie
-Erinnerungen/Erzeugung am Sync-Watchdog.
+Erinnerungen/Erzeugung an einem Zeitplan im Worker (apps/work/schedules.py).
 """
 
 import logging
@@ -339,7 +339,7 @@ def _send_release_notice(meeting, dispatch_at, *, final: bool) -> int:
 
 
 # =============================================================================
-# Periodischer Einladungslauf (Sync-Watchdog)
+# Periodischer Einladungslauf (Zeitplan im Worker)
 # =============================================================================
 
 

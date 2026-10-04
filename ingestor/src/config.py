@@ -7,6 +7,8 @@ Settings for the OParl synchronization service.
 from functools import lru_cache
 from importlib import metadata
 
+from mandari_oparl.crawler import user_agent as crawler_user_agent
+from mandari_oparl.pacing import DEFAULT_INTERVAL
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,12 +22,14 @@ def _ingestor_version() -> str:
 
 
 # Transparenter User-Agent (Produkt-Token/Version, Infoseite, Kontaktadresse), damit
-# Betreiber uns identifizieren und gezielt drosseln oder ansprechen können.
-# Bewusst ohne den Begriff, den mindestens ein RIS im User-Agent filtert und mit
-# 403 quittiert, obwohl derselbe Abruf mit neutralem Client durchgeht (Issue #123).
-# Gilt für OParl-Client und Scraper gleichermaßen; je Quelle überschreibbar
-# (OParlSource.user_agent).
-DEFAULT_USER_AGENT = f"mandari-ingestor/{_ingestor_version()} (+https://mandari.de; support@mandari.de)"
+# Betreiber uns identifizieren, auf der Infoseite unsere Regeln finden und uns gezielt
+# drosseln, ausschließen oder ansprechen können (mandari_oparl.crawler). Dasselbe
+# Produkt-Token wertet die robots.txt-Prüfung aus.
+# Mindestens ein RIS filtert den Begriff „crawler“ im User-Agent und antwortet mit 403,
+# obwohl derselbe Abruf mit neutralem Client durchgeht (Issue #123). Für solche Quellen
+# gilt der User-Agent je Quelle (OParlSource.user_agent), z. B. ohne Infoseiten-Pfad;
+# die Sperre meldet der Monitor als „User-Agent gesperrt“.
+DEFAULT_USER_AGENT = crawler_user_agent(_ingestor_version())
 
 
 class Settings(BaseSettings):
@@ -63,7 +67,23 @@ class Settings(BaseSettings):
     oparl_request_timeout: int = 60  # Sekunden pro HTTP-Request (zuvor 300)
     oparl_max_retries: int = 3  # Wiederholungsversuche bei Fehlern (zuvor 5)
     oparl_retry_backoff: float = 2.0
-    oparl_wait_time: float = 0.05  # Seconds between requests (reduced from 0.2)
+    # Wartezeit je Abrufplatz; gilt nur noch mit abgeschalteter Drossel (INGESTOR_REQUEST_INTERVAL=0)
+    oparl_wait_time: float = 0.05
+    # Drossel je Host über alle Quellen und Prozesse (src/client/host_pacing.py): Mindestabstand in Sekunden
+    # zwischen zwei Anfragen an denselben Host. Standard eine Anfrage je Sekunde; je Quelle abweichend über
+    # sync_config["request_interval"]. 0 schaltet die Drossel ab (nur für Tests und Notfälle).
+    request_interval: float = Field(
+        default=DEFAULT_INTERVAL,
+        validation_alias=AliasChoices("INGESTOR_REQUEST_INTERVAL", "request_interval"),
+    )
+    # Höchstens so viele laufende Anfragen je Host in einem Prozess (Reservierung des Takts und Anfrage
+    # zusammen). Hält den reservierten Takt kurz: Ohne Grenze reservierte jeder Abrufplatz einen eigenen
+    # Zeitpunkt, der Horizont je Host lag bei 20 Plätzen 20 s voraus, und die Vorschau fand keinen freien
+    # Zeitpunkt mehr. 0 = keine Grenze.
+    host_max_concurrent: int = Field(
+        default=2,
+        validation_alias=AliasChoices("INGESTOR_HOST_MAX_CONCURRENT", "host_max_concurrent"),
+    )
     oparl_etag_cache_enabled: bool = True
     oparl_modified_since_enabled: bool = True
     oparl_max_concurrent: int = 20  # Concurrent HTTP requests
@@ -110,6 +130,13 @@ class Settings(BaseSettings):
     text_extraction_concurrency: int = 4
     text_extraction_timeout: float = 120.0
     text_extraction_batch_size: int = 500
+
+    # Dokumentablage (Issue #788): Dateien, die der Ingestor für den Text ohnehin lädt, legt er gleich in
+    # der Ablage nach SHA-256 der Anwendung ab (gleiches Volume, OPARL_FILES_ROOT). Leer = nicht ablegen.
+    # Nur gelistete Kommunen, nur mit FILE_STORE_LAYOUT=sha256, nie unter FILE_CACHE_MIN_FREE_GB freiem Platz.
+    oparl_files_root: str = ""
+    file_store_layout: str = "sha256"
+    file_cache_min_free_gb: int = 15
 
     # Mistral OCR (optional): wenn ein API-Key gesetzt ist, laeuft OCR fuer
     # Scan-PDFs ueber die Mistral-API statt lokal per Tesseract (deutlich

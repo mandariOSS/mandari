@@ -215,7 +215,9 @@ def rundgang(
     django_db_setup: None, django_db_blocker: Any, tmp_path_factory: pytest.TempPathFactory
 ) -> Iterator[Rundgang]:
     media = tmp_path_factory.mktemp("rundgang-media")
-    with override_settings(MEDIA_ROOT=str(media)), django_db_blocker.unblock():
+    # Ohne Ereignisse an die Drehscheibe: Die Daten werden außerhalb der Testtransaktion festgeschrieben, ihre
+    # Ereignisse blieben sonst bei eingeschaltetem SESSION_EVENTS für spätere Module im Journal stehen
+    with override_settings(MEDIA_ROOT=str(media), SESSION_EVENTS="aus"), django_db_blocker.unblock():
         gebaut = _baue()
         yield gebaut
         SessionTenant.objects.filter(pk=gebaut.tenant.pk).delete()

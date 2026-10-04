@@ -245,9 +245,7 @@ insight_search.management.commands.reindex_elasticsearch
 insight_search.management.commands.setup_elasticsearch
 insight_search.synonyms
 insight_sync.admin
-insight_sync.apps
 insight_sync.daemon
-insight_sync.management.commands.sync_daemon
 insight_sync.management.commands.sync_session_insight
 insight_sync.models
 insight_sync.session_mirror

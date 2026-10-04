@@ -39,3 +39,22 @@ def client_for(db):
         return client
 
     return _client
+
+
+@pytest.fixture(autouse=True)
+def _robots_ohne_netz(request, monkeypatch):
+    """Abrufe aus Django fragen vorher die robots.txt des Hosts (insight_core.services.robots).
+
+    Ohne Fixture ``echte_robots`` antwortet jeder Host „keine robots.txt“ (HTTP 404, alles erlaubt), damit
+    Tests nie ins Netz gehen und Abruftests keine robots.txt nachbilden müssen.
+    """
+    if "echte_robots" in request.fixturenames:
+        return
+    from insight_core.services import robots
+
+    monkeypatch.setattr(robots, "_fetch", lambda url, *args, **kwargs: (404, b""))
+
+
+@pytest.fixture
+def echte_robots():
+    """Echte robots.txt-Prüfung im Test; den Abruf (``robots._fetch``) bildet der Test selbst nach."""

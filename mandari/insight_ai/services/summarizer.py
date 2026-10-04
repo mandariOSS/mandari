@@ -56,14 +56,18 @@ class SummaryService:
     Automatically extracts text from PDFs on-demand if needed.
     """
 
-    def __init__(self, provider=None):
+    def __init__(self, provider=None, *, pace_max_wait: float | None = None):
         """
         Initialize the summary service.
 
         Args:
             provider: Optional AI provider. Defaults to NebiusProvider.
+            pace_max_wait: Höchstwartezeit auf die Drossel je Host beim Nachladen von Dokumenten. In einer
+                Web-Anfrage immer setzen: Ohne freien Zeitpunkt bricht die Erstellung dann mit der Bitte um
+                einen neuen Versuch ab, statt die Anfrage lange schlafen zu lassen.
         """
         self.provider = provider or NebiusProvider()
+        self.pace_max_wait = pace_max_wait
 
     def generate_summary(self, paper: "OParlPaper", save: bool = True) -> str:
         """
@@ -241,10 +245,14 @@ class SummaryService:
         Returns:
             Extracted text or empty string on failure
         """
+        from insight_core.services import robots
         from insight_core.services.document_extraction import (
             DocumentDownloadError,
+            RobotsUnreachableError,
+            SourceBusyError,
             download_and_extract,
         )
+        from insight_core.services.file_cache import download_headers
 
         url = file.download_url or file.access_url
         if not url:
@@ -254,13 +262,19 @@ class SummaryService:
         try:
             logger.info(f"Extracting text from file {file.id}: {url}")
 
-            # Download und OCR dauern: Datenbankverbindung solange an den Pool zurückgeben
+            # Einstellungen der Quelle (robots-Ausnahme, Download-Header samt User-Agent) noch mit Verbindung
+            # lesen; Download und OCR dauern, die Datenbankverbindung geht solange an den Pool zurück
+            sync_config = robots.sync_config_of(file)
+            extra_headers = download_headers(file.body)
             release_idle_thread_connections()
             result = download_and_extract(
                 url=url,
                 mime_type=file.mime_type,
                 original_name=file.file_name or file.name or "",
                 timeout=120.0,
+                extra_headers=extra_headers,
+                sync_config=sync_config,
+                max_wait=self.pace_max_wait,
             )
 
             if result.text and result.text.strip():
@@ -273,6 +287,12 @@ class SummaryService:
             logger.warning(f"No text extracted from file {file.id}")
             return ""
 
+        except (SourceBusyError, RobotsUnreachableError) as e:
+            # Vorübergehend: nicht als „kein Text“ werten, sondern um einen neuen Versuch bitten
+            logger.info(f"File {file.id} not fetched now: {e}")
+            raise SummaryError(
+                "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
+            ) from e
         except DocumentDownloadError as e:
             logger.warning(f"Failed to download file {file.id}: {e}")
             return ""
@@ -282,24 +302,28 @@ class SummaryService:
 
     @staticmethod
     def _withdrawn_since(paper: "OParlPaper", started: tuple[bool, list]) -> bool:
-        """Vorgang oder eine der verwendeten Anlagen seit Beginn gelöscht bzw. zurückgenommen?"""
+        """Vorgang oder eine der verwendeten Anlagen seit Beginn gelöscht, zurückgenommen oder gesperrt?"""
+        from django.db.models import Q
+
         from insight_core.models import OParlFile, OParlPaper
 
         was_deleted, file_ids = started
         return (
             not was_deleted and OParlPaper.objects.filter(pk=paper.pk, deleted=True).exists()
-        ) or OParlFile.objects.filter(pk__in=file_ids, deleted=True).exists()
+        ) or OParlFile.objects.filter(pk__in=file_ids).filter(
+            Q(deleted=True) | Q(source_missing_since__isnull=False)
+        ).exists()
 
     @staticmethod
     def _current_files(paper: "OParlPaper"):
         """
-        Anlagen, die in die Zusammenfassung einfließen dürfen: nur nicht gelöschte.
+        Anlagen, die in die Zusammenfassung einfließen dürfen: nur nicht gelöschte und nicht gesperrte.
 
-        Zurückgenommene Anlagen (in Session nicht-öffentlich gestellt oder gelöscht) und in der
-        Quelle gelöschte Dateien gehören nicht mehr zum Vorgang; ihr Text darf nicht über eine
-        öffentlich abrufbare Zusammenfassung weiterleben.
+        Zurückgenommene Anlagen (in Session nicht-öffentlich gestellt oder gelöscht), in der
+        Quelle gelöschte und dort nicht mehr abrufbare Dateien (Löschabgleich, #787) gehören nicht mehr
+        zum Vorgang; ihr Text darf nicht über eine öffentlich abrufbare Zusammenfassung weiterleben.
         """
-        return paper.files.filter(deleted=False)
+        return paper.files.filter(deleted=False, source_missing_since__isnull=True)
 
     def is_available(self) -> bool:
         """

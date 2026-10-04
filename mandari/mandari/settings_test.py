@@ -14,8 +14,6 @@ import secrets
 import tempfile
 from pathlib import Path
 
-# Muss VOR dem Import der Settings gesetzt sein (wird in AppConfig.ready gelesen)
-os.environ.setdefault("MANDARI_SYNC_WATCHDOG", "0")
 os.environ.setdefault("ELASTICSEARCH_AUTO_INDEX", "False")
 os.environ.setdefault("ENCRYPTION_MASTER_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
 # Ohne DEBUG verlangt settings.py einen eigenen Schlüssel – auch Tests, die die Settings neu laden
@@ -33,9 +31,13 @@ SESSION_ENGINE = "django.contrib.sessions.backends.db"
 MAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 MAILERS = {"default": {"BACKEND": MAIL_BACKEND, "OPTIONS": {}}}
 ELASTICSEARCH_AUTO_INDEX = False
+# Drossel je Host aus: Tests sollen nicht sekundenweise warten (eigene Tests in test_drossel_je_host.py)
+RIS_REQUEST_INTERVAL = 0.0
 # publish() prüft jedes Ereignis gegen das Vertragsregister (in der CI läuft die Suite mit DEBUG=false)
 EVENTS_VALIDATE_CONTRACTS = True
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # schnelle Hashes nur im Test
+# Tests laufen ohne Worker; die Prüfungen des Bedarfs (apps.events.presence) setzen den Wert selbst
+EVENTS_WORKER_REQUIRED = "false"
 # Sofort ausführen, wie ohne TASKS_BACKEND in Produktion; JournalBackend testen apps/events/tests
 TASKS = {
     "default": {

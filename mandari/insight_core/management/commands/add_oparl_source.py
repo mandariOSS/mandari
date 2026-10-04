@@ -65,9 +65,23 @@ class Command(BaseCommand):
             help="Custom display name for the body",
         )
 
+    def _robots_allows(self, url) -> bool:
+        """robots.txt (RFC 9309) gilt auch beim Anlegen einer Quelle: gesperrte Adressen nicht abrufen."""
+        from insight_core.services import robots
+
+        decision = robots.check(url, robots.KIND_API)
+        if not decision.allowed:
+            self.stdout.write(self.style.ERROR(f"{url}: {decision.reason} – kein Abruf"))
+        return decision.allowed
+
     def fetch_oparl_system(self, url):
         """Fetch OParl system data."""
-        headers = {"User-Agent": "Mandari/1.0 (https://mandari.dev)", "Accept": "application/json"}
+        from insight_core.services import robots
+
+        if not self._robots_allows(url):
+            return None
+        # Dieselbe Kennung wie alle automatischen Abrufe (mandari_oparl.crawler)
+        headers = {"User-Agent": robots.USER_AGENT, "Accept": "application/json"}
 
         try:
             with httpx.Client(timeout=30.0, headers=headers, follow_redirects=True) as client:
@@ -83,7 +97,11 @@ class Command(BaseCommand):
 
     def fetch_oparl_body(self, url):
         """Fetch OParl body data."""
-        headers = {"User-Agent": "Mandari/1.0 (https://mandari.dev)", "Accept": "application/json"}
+        from insight_core.services import robots
+
+        if not self._robots_allows(url):
+            return None
+        headers = {"User-Agent": robots.USER_AGENT, "Accept": "application/json"}
 
         try:
             with httpx.Client(timeout=30.0, headers=headers, follow_redirects=True) as client:

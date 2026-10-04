@@ -360,12 +360,12 @@ EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBU
 # gilt der Schlüssel als neu. Aufgeräumt wird täglich per Zeitplan (apps/events/schedules.py).
 EVENTS_IDEMPOTENCY_RETENTION_DAYS = int(os.environ.get("EVENTS_IDEMPOTENCY_RETENTION_DAYS", "30"))
 
-# Worker (manage.py events_worker, Issue #509): Braucht diese Installation einen laufenden Worker?
-# Dann melden /health/ und /health/ready/ "degraded" und der Admin einen Hinweis, solange keiner
-# die nötigen Rollen bedient (apps.events.presence). "true": alle Rollen; "false": nie; leer
-# (Standard): erst, wenn Aufträge über das Journal laufen (TASKS_BACKEND=journal → Rolle tasks)
-# oder der Ingestor Ereignisse schreibt (INGESTOR_EVENTS_ENABLED → Rolle sequencer). So meldet
-# keine bestehende Installation ohne Worker plötzlich "degraded".
+# Worker (manage.py events_worker, Issues #509, #515): Braucht diese Installation einen laufenden
+# Worker? Dann melden /health/ und /health/ready/ "degraded" und der Admin einen Hinweis, solange
+# keiner die nötigen Rollen bedient (apps.events.presence). "true": alle Rollen; "false": nie (etwa
+# eine Vorführinstanz ohne Worker; ihre Zeitpläne laufen dann nicht); leer (Standard): immer tasks
+# und scheduler, weil die wiederkehrende Arbeit als Zeitpläne im Worker läuft, dazu sequencer, wenn
+# der Ingestor Ereignisse schreibt (INGESTOR_EVENTS_ENABLED).
 EVENTS_WORKER_REQUIRED = os.environ.get("EVENTS_WORKER_REQUIRED", "").strip().lower()
 if EVENTS_WORKER_REQUIRED not in ("", "auto", "true", "false", "1", "0", "yes", "no"):
     from django.core.exceptions import ImproperlyConfigured
@@ -381,6 +381,27 @@ INGESTOR_EVENTS_ENABLED = os.environ.get("INGESTOR_EVENTS_ENABLED", "false").str
     "on",
 )
 
+# „Worker lebt“ an die Statusseite (Issue #574, apps/events/push.py): externer Endpunkt von Gatus,
+# z. B. https://status.example/api/v1/endpoints/betrieb_worker/external; leer = keine Meldung.
+# Bleibt die Meldung aus, alarmiert die Statusseite. Gemeldet wird alle WORKER_PUSH_INTERVAL Sekunden.
+WORKER_PUSH_URL = os.environ.get("WORKER_PUSH_URL", "").strip()
+WORKER_PUSH_TOKEN = os.environ.get("WORKER_PUSH_TOKEN", "")
+WORKER_PUSH_INTERVAL = float(os.environ.get("WORKER_PUSH_INTERVAL", "60"))
+
+
+# Ereignisse aus mandari Session an die Datendrehscheibe (apps.session.hub_events, Issues #533–#535): Sitzungen,
+# Tagesordnung, Ladung, Vorlagen, Beratungsfolge, Anlagen, Abstimmungen, Beschlüsse und Niederschriften als
+# Ereignisse ris.* im Journal, in derselben Transaktion wie die Änderung.
+# "aus" (Standard): nichts. "schatten": Ereignisse werden geschrieben und erreichen Feed und Abonnenten wie
+# bei "aktiv"; scheitert das Schreiben, bleibt die Änderung bestehen und der Fehler steht im Protokoll
+# (Parallelbetrieb neben den bisherigen Wegen). "aktiv": Änderung und Ereignis sind atomar. Je Mandant
+# überschreibbar (SessionTenant.hub_events, Admin). Braucht den Sequenzierer im Worker; nicht "aus" verlangt
+# ihn (EVENTS_WORKER_REQUIRED).
+SESSION_EVENTS = os.environ.get("SESSION_EVENTS", "aus").strip().lower() or "aus"
+if SESSION_EVENTS not in ("aus", "schatten", "aktiv"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("SESSION_EVENTS muss aus, schatten oder aktiv sein.")
 
 # Cache - use Redis if available, fallback to local memory
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
@@ -475,6 +496,44 @@ OPARL_FILES_ROOT = Path(os.environ.get("OPARL_FILES_ROOT", str(MEDIA_ROOT / "opa
 FILE_CACHE_MAX_MB = int(os.environ.get("FILE_CACHE_MAX_MB", "80"))
 FILE_CACHE_MIN_FREE_GB = int(os.environ.get("FILE_CACHE_MIN_FREE_GB", "15"))
 FILE_PROXY_TIMEOUT_SECONDS = int(os.environ.get("FILE_PROXY_TIMEOUT_SECONDS", "15"))
+# Lokale Kopien liefert der Webserver aus (X-Accel-Redirect, Range/ETag), Django prüft nur Zugriff und
+# Sperre (Issue #785, docs/FILE_CACHE.md). Erst einschalten, wenn der Webserver die Ablage lesen kann
+# und den Block aus dem Caddyfile hat – sonst kommen leere Antworten an.
+FILE_ACCEL_REDIRECT = os.environ.get("FILE_ACCEL_REDIRECT", "false").lower() in ("1", "true", "yes")
+# Drossel je Host über alle Prozesse (insight_core/services/host_pacing.py, gemeinsam mit dem Ingestor):
+# Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe Ratsinformationssystem. Je Quelle
+# abweichend über sync_config["request_interval"]; 0 schaltet die Drossel ab. Die Vorschau wartet höchstens
+# FILE_PROXY_PACE_MAX_WAIT_SECONDS auf ihren Zeitpunkt und bittet sonst um einen neuen Versuch.
+RIS_REQUEST_INTERVAL = float(os.environ.get("RIS_REQUEST_INTERVAL", "1.0"))
+FILE_PROXY_PACE_MAX_WAIT_SECONDS = float(os.environ.get("FILE_PROXY_PACE_MAX_WAIT_SECONDS", "5"))
+# Löschabgleich (Issue #787): Kopie und Text eines gesperrten Dokuments nach so vielen Tagen löschen
+FILE_PURGE_AFTER_DAYS = int(os.environ.get("FILE_PURGE_AFTER_DAYS", "30"))
+# Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich
+FILE_PURGE_CONFIRM_GRACE_DAYS = int(os.environ.get("FILE_PURGE_CONFIRM_GRACE_DAYS", "7"))
+# Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu 404/410, wird keines
+# gesperrt (kaputte Quelle, Umstellung, Wartung) und die Quelle ruht für den Lauf
+FILE_RECONCILE_MAX_MISSING = int(os.environ.get("FILE_RECONCILE_MAX_MISSING", "10"))
+# Ablage nach SHA-256 mit Referenzzählung (Issue #788): "sha256" (Standard) oder "kommune" (bisheriges
+# Layout je Kommune, ohne Deduplizierung und ohne Objektspeicher)
+FILE_STORE_LAYOUT = os.environ.get("FILE_STORE_LAYOUT", "sha256")
+# Der Ingestor legt Dateien, die er für den Text lädt, selbst in der Ablage ab (OPARL_FILES_ROOT im
+# Ingestor). Dann holt der Dokument-Cache Dateien in der Texterkennung nicht ein zweites Mal.
+INGESTOR_STORES_FILES = os.environ.get("INGESTOR_STORES_FILES", "false").lower() in ("1", "true", "yes")
+# S3-kompatibler Objektspeicher für die Ablage (Issue #788), Standard aus. Zugangsdaten nur aus der Umgebung.
+# Eingeschaltet ist die lokale Ablage ein Zwischenspeicher mit höchstens OBJ_CACHE_MAX_GB.
+OBJ_ENABLED = os.environ.get("OBJ_ENABLED", "false").lower() in ("1", "true", "yes")
+OBJ_ENDPOINT = os.environ.get("OBJ_ENDPOINT", "")
+OBJ_BUCKET = os.environ.get("OBJ_BUCKET", "")
+OBJ_KEY = os.environ.get("OBJ_KEY", "")
+OBJ_SECRET = os.environ.get("OBJ_SECRET", "")
+OBJ_REGION = os.environ.get("OBJ_REGION", "")
+OBJ_ADDRESSING_STYLE = os.environ.get("OBJ_ADDRESSING_STYLE", "auto")
+OBJ_TIMEOUT_SECONDS = float(os.environ.get("OBJ_TIMEOUT_SECONDS", "30"))
+OBJ_CACHE_MAX_GB = int(os.environ.get("OBJ_CACHE_MAX_GB", "60"))
+# Gesamtdauer eines Abrufs aus dem Objektspeicher in der Vorschau (danach Rückfall auf die Quelle)
+OBJ_FETCH_TOTAL_SECONDS = float(os.environ.get("OBJ_FETCH_TOTAL_SECONDS", "60"))
+# Prüfsummen beim Upload: "when_required" (verträglich mit S3-kompatiblen Anbietern) oder "when_supported"
+OBJ_CHECKSUMS = os.environ.get("OBJ_CHECKSUMS", "when_required")
 # Quellen-Schonung (Issue #89): ab so vielen Sync-Fehlversuchen in Folge lassen Dokument-Cache
 # und Datei-Proxy das Ratsinformationssystem in Ruhe (Ratenlimits, IP-Sperren).
 INSIGHT_SOURCE_BACKOFF_FAILURES = int(os.environ.get("INSIGHT_SOURCE_BACKOFF_FAILURES", "3"))
@@ -568,7 +627,7 @@ GEOCODING_RATE_LIMIT = int(os.environ.get("GEOCODING_RATE_LIMIT", "5"))  # Reque
 # Kappung nur für LLM-Pass und Legacy-Photon-Pfad (Gazetteer-Pass nutzt Volltext)
 GEOREF_TEXT_MAX_CHARS = int(os.environ.get("GEOREF_TEXT_MAX_CHARS", "8000"))
 # Automatischer Georef-Lauf (Regex/Gazetteer-Pass, KEIN LLM): periodisch nach
-# Sync-Zyklen bzw. über den Sync-Watchdog, begrenzt pro Lauf
+# Sync-Zyklen bzw. als Zeitplan im Worker (insight_core/schedules.py), begrenzt pro Lauf
 GEOREF_AUTO_ENABLED = os.environ.get("GEOREF_AUTO_ENABLED", "True").lower() in ("true", "1", "yes")
 GEOREF_AUTO_LIMIT = int(os.environ.get("GEOREF_AUTO_LIMIT", "50"))  # Papers pro Lauf
 GEOREF_AUTO_INTERVAL_MINUTES = int(os.environ.get("GEOREF_AUTO_INTERVAL_MINUTES", "15"))
@@ -667,6 +726,10 @@ TASKS = {
                 "apps.events.verwaltungsbefehle.befehl_ausfuehren": {"timeout": 3660, "max_attempts": 1},
                 # PDF-Export mit vielen Einträgen braucht länger als die 5 Minuten der Warteschlange
                 "apps.work.background_tasks.generate_dsgvo_export_task": {"timeout": 900, "max_attempts": 3},
+                # Admin (Issue #515): Ein Sync oder das Löschen einer großen Kommune dauert länger als
+                # 5 Minuten. Ein Sync wird nicht wiederholt (Protokoll und nächster Lauf zeigen den Fehler).
+                "insight_core.background_tasks.quelle_synchronisieren": {"timeout": 3600, "max_attempts": 1},
+                "insight_core.background_tasks.kommune_loeschen": {"timeout": 3600, "max_attempts": 3},
             },
         },
     }

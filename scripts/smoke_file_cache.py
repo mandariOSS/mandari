@@ -31,6 +31,8 @@ os.environ["MANDARI_SYNC_WATCHDOG"] = "0"
 os.environ["EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 os.environ["ALLOWED_HOSTS"] = "testserver,localhost"
 os.environ["REDIS_URL"] = ""
+# Drossel je Host aus: die Smoke-Quellen sind nachgebildet
+os.environ["RIS_REQUEST_INTERVAL"] = "0"
 os.environ["OPARL_FILES_ROOT"] = str(_tmp / "files")
 os.environ["FILE_CACHE_MAX_MB"] = "1"
 os.environ["FILE_CACHE_MIN_FREE_GB"] = "0"
@@ -55,7 +57,11 @@ prepare_database(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
 from insight_core.models import OParlBody, OParlFile, OParlPaper, OParlSource  # noqa: E402
-from insight_core.services import file_cache, source_health  # noqa: E402
+from insight_core.services import file_cache, robots, source_health  # noqa: E402
+
+# Ohne Netz: die Test-Quellen haben keine robots.txt (HTTP 404, alles erlaubt). Die Prüfung selbst testen
+# insight_core/tests/test_robots_txt.py und ingestor/tests/test_robots.py.
+robots._fetch = lambda url, *args, **kwargs: (404, b"")
 
 PASS = 0
 FAIL = 0
@@ -190,10 +196,11 @@ f_ok.refresh_from_db()
 path = Path(f_ok.local_path)
 check("Abruf ok + Datei gespeichert", status == "ok" and f_ok.local_status == "ok" and path.is_file())
 check(
-    "Layout <root>/<kommune>/<jahr>/<id>.pdf",
-    path.parent.parent.name == "stadt-koeln-test"
-    and path.parent.name == str((now - timedelta(days=1)).year)
-    and path.name == f"{f_ok.id}.pdf",
+    "Layout <root>/sha256/<ab>/<sha256> (Ablage nach Hash, #788)",
+    path.parent.parent.name == "sha256"
+    and path.name == f_ok.sha256_hash
+    and path.parent.name == f_ok.sha256_hash[:2]
+    and f_ok.blob_id == f_ok.sha256_hash,
     str(path),
 )
 check(
@@ -273,7 +280,10 @@ try:
     results = file_cache.cache_pending(limit=10, sleep=0)
     check("cache_pending lädt Bonn-Datei + alte Datei", results["ok"] == 2, str(results))
     f_bonn.refresh_from_db()
-    check("Jahr aus file_date", Path(f_bonn.local_path).parent.name == str((now - timedelta(days=400)).year))
+    check(
+        "Datei der zweiten Kommune liegt unter ihrem Hash",
+        Path(f_bonn.local_path).parent.parent.name == "sha256" and Path(f_bonn.local_path).name == f_bonn.sha256_hash,
+    )
     results = file_cache.cache_pending(limit=10, retry_errors=True, sleep=0)
     check("retry-errors versucht Fehler erneut", results["error"] >= 1, str(results))
 
@@ -404,7 +414,19 @@ f_ok.deleted_at = now - timedelta(days=400)
 f_ok.save(update_fields=["deleted", "deleted_at"])
 try:
     call_command("purge_deleted", ids=[str(f_ok.id)], yes=True, stdout=io.StringIO())
-    check("purge_deleted entfernt lokale Kopie", not Path(f_ok.local_path).is_file())
+    # Ablage nach Hash (#788): purge_deleted gibt die Referenz frei, das Aufräumen löscht den Inhalt, sobald
+    # ihn keine andere Datei mehr braucht (gleiche Bytes teilen sich einen Inhalt)
+    from insight_core.models import OParlFileBlob  # noqa: E402
+    from insight_core.services import file_store  # noqa: E402
+
+    file_store.cleanup_orphans(min_age=timedelta(0))
+    rest = OParlFile.objects.filter(blob_id=f_ok.blob_id).count()
+    inhalt = OParlFileBlob.objects.filter(pk=f_ok.blob_id).first()
+    if rest:
+        ok = inhalt is not None and inhalt.ref_count == rest and Path(f_ok.local_path).is_file()
+    else:
+        ok = inhalt is None and not Path(f_ok.local_path).is_file()
+    check("purge_deleted gibt die Referenz frei, Aufräumen löscht ungeteilte Inhalte", ok, f"{rest} weitere")
 except Exception as exc:  # Command hat evtl. andere Pflichtparameter
     check("purge_deleted entfernt lokale Kopie", False, str(exc))
 

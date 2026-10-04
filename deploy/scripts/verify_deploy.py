@@ -14,6 +14,10 @@ Steuerung über Umgebungsvariablen (im Container gesetzt oder per ``docker exec 
     VERIFY_PATHS       anonyme Pfade, kommagetrennt (Standard: Login, Bürgerportal, OParl-System, Readiness)
     VERIFY_DEMO_PAGES  angemeldete Prüfungen: ``mail=/pfad,/pfad;mail2=/pfad`` (Konten müssen existieren)
     VERIFY_MIN_BYTES   Mindestlänge einer HTML-Antwort (Standard 800)
+    VERIFY_WORKER_SECONDS  so lange auf einen Worker warten, der alle nötigen Rollen bedient
+                       (Standard 90; 0 = Worker nicht prüfen). Braucht die Installation keinen
+                       Worker (``EVENTS_WORKER_REQUIRED=false``) oder kennt der Stand die Prüfung
+                       noch nicht (Rückfall auf ein älteres Image), gilt sie als bestanden.
 
 Exit-Code 1 bei jedem Fehlschlag; die Ausgabe nennt jede Prüfung mit Ergebnis.
 """
@@ -22,6 +26,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 from django.conf import settings
 from django.test import Client
@@ -58,6 +63,34 @@ def pruefe(client: Client, pfad: str, *, erwartet: int = 200) -> tuple[bool, str
     return True, f"{len(inhalt)} Bytes"
 
 
+def pruefe_worker(warten: float | None = None, takt: float = 5.0) -> tuple[bool, str]:
+    """Bedienen lebende Worker alle Rollen und Warteschlangen, die die Installation braucht (Issue #574)?
+
+    Die Worker starten vor der Anwendung (Migration → Worker → Web) und melden sich alle paar Sekunden;
+    die Prüfung wartet trotzdem bis ``VERIFY_WORKER_SECONDS``, damit ein langsamer Start nicht als
+    Ausfall zählt.
+    """
+    if warten is None:
+        warten = float(os.environ.get("VERIFY_WORKER_SECONDS", "90"))
+    if warten <= 0:
+        return True, "nicht geprüft (VERIFY_WORKER_SECONDS=0)"
+    try:
+        from apps.events.presence import required_roles, worker_status
+    except ImportError:
+        return True, "nicht prüfbar (Stand ohne Worker-Prüfung)"
+    bedarf = required_roles()
+    if not bedarf:
+        return True, "nicht erforderlich"
+    ende = time.monotonic() + warten
+    while True:
+        stand = worker_status(required=bedarf)
+        if not stand.degraded:
+            return True, f"{len(stand.workers)} Worker ({', '.join(sorted(stand.roles))})"
+        if time.monotonic() >= ende:
+            return False, f"kein Worker für {stand.missing_summary()} (nach {warten:.0f} s)"
+        time.sleep(takt)
+
+
 def main() -> int:
     fehler = 0
     h = host()
@@ -89,6 +122,10 @@ def main() -> int:
                 ok, detail = pruefe(angemeldet, pfad)
                 fehler += 0 if ok else 1
                 print(f"  {'OK  ' if ok else 'FAIL'} {pfad} (als {mail.strip().split('@')[0]}): {detail}")
+
+    ok, detail = pruefe_worker()
+    fehler += 0 if ok else 1
+    print(f"  {'OK  ' if ok else 'FAIL'} Worker: {detail}")
 
     print("ERGEBNIS: " + ("alle Prüfungen bestanden" if fehler == 0 else f"{fehler} Prüfung(en) fehlgeschlagen"))
     return 1 if fehler else 0

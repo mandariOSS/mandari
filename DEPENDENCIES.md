@@ -42,6 +42,7 @@ mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **segno** | QR-Code-Erzeugung (reines Python) | BSD-3-Clause | [GitHub](https://github.com/heuer/segno) |
 | **jsonschema** | Prüfung der Verträge für Ereignisse und Befehle (JSON Schema 2020-12) | MIT | [GitHub](https://github.com/python-jsonschema/jsonschema) |
 | **rdflib** | Datenkatalog nach DCAT-AP.de als Turtle, RDF/XML und JSON-LD | BSD-3-Clause | [GitHub](https://github.com/RDFLib/rdflib) |
+| **boto3** | S3-kompatibler Objektspeicher für die Dokumentablage (optional, Standard aus) | Apache 2.0 | [GitHub](https://github.com/boto/boto3) |
 
 Vollständige Liste: [mandari/pyproject.toml](mandari/pyproject.toml) (direkte Abhängigkeiten), gesperrte
 Versionen in [mandari/uv.lock](mandari/uv.lock)

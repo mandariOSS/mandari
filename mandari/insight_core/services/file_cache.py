@@ -29,19 +29,25 @@ import logging
 import os
 import re
 import shutil
+import tempfile
 import time
 from collections import Counter
+from datetime import timedelta
 from pathlib import Path
 from typing import IO
 
 from django.conf import settings
 from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
+
+from . import robots
 
 logger = logging.getLogger(__name__)
 
-# Ehrliche Kennung mit Kontakt — Kommunen sollen uns zuordnen (und freischalten) können.
-USER_AGENT = "mandari-file-cache/1.0 (+https://mandari.de; support@mandari.de)"
+# Ehrliche Kennung mit Infoseite und Kontakt — Kommunen sollen uns zuordnen (und freischalten) können.
+# Dasselbe Produkt-Token wie der Ingestor: eine robots.txt-Regel für uns gilt für alle Abrufe.
+USER_AGENT = robots.USER_AGENT
 STATUS_CHOICES = [
     ("none", "Nicht zwischengespeichert"),
     ("ok", "Lokal vorhanden"),
@@ -269,6 +275,12 @@ def _mark(file_obj, status: str, error: str = "") -> str:
 
 def store_bytes(file_obj, data: bytes, *, content_type: str | None = None) -> Path:
     """Datei atomar ablegen und Metadaten (Pfad, Größe, Hash, Status) setzen."""
+    from . import file_store
+
+    if file_store.uses_blobs():
+        with file_store.Spool() as spool:
+            spool.write(data)
+            return file_store.store_spool(file_obj, spool, content_type=content_type)
     pin_body_dir(file_obj.body)
     path = target_path(file_obj)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -281,6 +293,12 @@ def store_bytes(file_obj, data: bytes, *, content_type: str | None = None) -> Pa
 
 def store_stream(file_obj, source: IO[bytes], *, content_type: str | None = None) -> Path:
     """Wie ``store_bytes``, aber aus einer Datei gelesen (ohne alles in den Speicher zu laden)."""
+    from . import file_store
+
+    if file_store.uses_blobs():
+        with file_store.Spool() as spool:
+            spool.copy_from(source)
+            return file_store.store_spool(file_obj, spool, content_type=content_type)
     pin_body_dir(file_obj.body)
     path = target_path(file_obj)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -299,12 +317,21 @@ def store_stream(file_obj, source: IO[bytes], *, content_type: str | None = None
 
 def _record_stored(file_obj, path: Path, size: int, sha256: str, content_type: str | None) -> Path:
     file_obj.local_path = str(path)
+    file_obj.local_size = size
     file_obj.size = size
     file_obj.sha256_hash = sha256
     file_obj.local_status = "ok"
     file_obj.local_error = ""
     file_obj.local_cached_at = timezone.now()
-    update_fields = ["local_path", "size", "sha256_hash", "local_status", "local_error", "local_cached_at"]
+    update_fields = [
+        "local_path",
+        "local_size",
+        "size",
+        "sha256_hash",
+        "local_status",
+        "local_error",
+        "local_cached_at",
+    ]
     if not file_obj.mime_type and content_type:
         file_obj.mime_type = content_type.split(";")[0].strip()[:100]
         update_fields.append("mime_type")
@@ -316,7 +343,9 @@ def fetch_and_cache(file_obj, client=None) -> str:
     """
     Datei aus dem RIS laden und lokal ablegen.
 
-    Rückgabe: "ok", "missing", "error", "too_large", "disk_full", "skipped", "paused".
+    Rückgabe: "ok", "missing", "error", "too_large", "disk_full", "skipped", "paused", "robots" (die
+    robots.txt sperrt die Datei; vermerkt, bis eine Freigabe sie neu einreiht) oder "deferred" (die robots.txt
+    ist nicht erreichbar; nichts vermerkt, der nächste Lauf versucht es erneut).
     """
     import httpx
 
@@ -329,7 +358,18 @@ def fetch_and_cache(file_obj, client=None) -> str:
     url = file_obj.download_url or file_obj.access_url
     if not url:
         return _mark(file_obj, "error", "Keine Download-URL")
+    # robots.txt gilt auch für Dateien (RFC 9309), geprüft mit dem User-Agent des Abrufs; nach einer Freigabe
+    # reiht robots_override neu ein. Nicht erreichbar ist keine Sperre: nichts vermerken, später erneut.
+    decision = robots.check(
+        url, robots.KIND_FILES, sync_config=robots.sync_config_of(file_obj), agent=robots.user_agent_for(file_obj)
+    )
+    if decision.unreachable:
+        return "deferred"
+    if not decision.allowed:
+        _mark(file_obj, "error", decision.reason)
+        return "robots"
 
+    from . import host_pacing
     from .safe_fetch import guarded_client
 
     own_client = client is None
@@ -338,6 +378,8 @@ def fetch_and_cache(file_obj, client=None) -> str:
         client = guarded_client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True)
     try:
         try:
+            # Drossel je Host über alle Prozesse (Ingestor, Vorschau, andere Quellen auf dem Host)
+            host_pacing.wait(url, sync_config=robots.sync_config_of(file_obj))
             with client.stream("GET", url, headers=download_headers(file_obj.body)) as response:
                 if response.status_code in (404, 410):
                     return _mark(file_obj, "missing", f"HTTP {response.status_code}")
@@ -348,25 +390,30 @@ def fetch_and_cache(file_obj, client=None) -> str:
                     return _mark(file_obj, "too_large", f"{declared // 1024 // 1024} MB")
                 if not has_room_for(max(declared, 0)):
                     return "disk_full"
-                chunks = []
+                # Gestreamt in eine temporäre Datei, nie die ganze Datei im Speicher (#788)
+                buffer = tempfile.SpooledTemporaryFile(max_size=2 * 1024 * 1024)  # noqa: SIM115
                 total = 0
+                head = b""
                 for chunk in response.iter_bytes():
                     total += len(chunk)
                     if total > max_bytes():
+                        buffer.close()
                         return _mark(file_obj, "too_large", f"> {max_bytes() // 1024 // 1024} MB")
-                    chunks.append(chunk)
-                data = b"".join(chunks)
+                    buffer.write(chunk)
+                    if len(head) < 512:
+                        head += chunk[: 512 - len(head)]
                 content_type = response.headers.get("content-type", "")
         except httpx.HTTPError as exc:
             return _mark(file_obj, "error", f"{type(exc).__name__}: {exc}")
 
-        if not data:
-            return _mark(file_obj, "error", "Leere Antwort")
-        if looks_like_html(data) and "html" not in (file_obj.mime_type or "").lower():
-            return _mark(file_obj, "error", "Quelle liefert eine HTML-Seite statt der Datei")
-        if not has_room_for(len(data)):
-            return "disk_full"
-        store_bytes(file_obj, data, content_type=content_type)
+        with buffer:
+            if not total:
+                return _mark(file_obj, "error", "Leere Antwort")
+            if looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
+                return _mark(file_obj, "error", "Quelle liefert eine HTML-Seite statt der Datei")
+            if not has_room_for(total):
+                return "disk_full"
+            store_stream(file_obj, buffer, content_type=content_type)
         return "ok"
     finally:
         if own_client:
@@ -388,6 +435,15 @@ def pending_queryset(body=None, retry_errors: bool = False):
         .select_related("body", "body__source")
         .defer("text_content", "raw_json", "body__raw_json")
     )
+    from . import file_store
+
+    if file_store.uses_blobs() and getattr(settings, "INGESTOR_STORES_FILES", False):
+        # Dateien, deren Text der Ingestor noch erkennt, legt er beim selben Abruf selbst ab (ein Abruf je
+        # Datei, #788). Maßgeblich ist die letzte Änderung des Datensatzes, nicht seine Anlage: Auch neu auf
+        # „pending“ gesetzte ältere Dateien (Ersetzen, Wiederfreigabe) holt nur der Ingestor; der Ingestor setzt
+        # sie beim Übernehmen in die Erkennung neu. Hängt die Erkennung länger als einen Tag, holt der Cache sie.
+        recent = timezone.now() - timedelta(days=1)
+        qs = qs.exclude(text_extraction_status__in=["pending", "processing"], updated_at__gte=recent)
     if body is not None:
         qs = qs.filter(body=body)
     return qs.order_by("-file_date", "-oparl_created", "-created_at")
@@ -413,9 +469,58 @@ def cache_pending(body=None, *, limit: int = 500, retry_errors: bool = False, sl
     return results
 
 
+def backfill_sizes(batch: int = 2000) -> Counter:
+    """
+    Gemessene Größe für vorhandene Kopien nachtragen (``local_size`` aus der Datei auf der Platte).
+
+    Idempotent und wiederaufnehmbar: bearbeitet nur Kopien ohne Größe. Fehlt die Datei, bleibt die
+    Zeile unverändert (``cache_files --stats`` zählt sie weiter als „ohne Größe“).
+    """
+    from ..models import OParlFile
+
+    results: Counter = Counter()
+    last_pk = None
+    while True:
+        qs = OParlFile.objects.filter(local_status="ok", local_size__isnull=True).order_by("pk")
+        if last_pk is not None:
+            qs = qs.filter(pk__gt=last_pk)
+        rows = list(qs.values_list("pk", "local_path")[:batch])
+        if not rows:
+            return results
+        last_pk = rows[-1][0]
+        for pk, local_path in rows:
+            try:
+                size = Path(local_path).stat().st_size if local_path else None
+            except OSError:
+                size = None
+            if size is None:
+                results["missing"] += 1
+                continue
+            OParlFile.objects.filter(pk=pk, local_size__isnull=True).update(local_size=size)
+            results["updated"] += 1
+
+
 # =============================================================================
 # Statistik
 # =============================================================================
+
+
+def stored_bytes() -> int:
+    """
+    Belegung der Ablage: jeder referenzierte Inhalt einmal (``oparl_file_blobs``) plus Kopien im alten Layout.
+
+    Mit eingeschaltetem Objektspeicher liegt davon lokal höchstens ``OBJ_CACHE_MAX_GB``.
+    """
+    from ..models import OParlFile, OParlFileBlob
+
+    blobs = OParlFileBlob.objects.filter(ref_count__gt=0).aggregate(s=Sum("size"))["s"] or 0
+    legacy = (
+        OParlFile.objects.filter(local_status="ok", blob__isnull=True).aggregate(s=Sum(Coalesce("local_size", "size")))[
+            "s"
+        ]
+        or 0
+    )
+    return int(blobs) + int(legacy)
 
 
 def cache_stats() -> dict:
@@ -424,7 +529,11 @@ def cache_stats() -> dict:
     qs = OParlFile.objects.filter(deleted=False)
     total = qs.count()
     by_status = dict(Counter(qs.values_list("local_status", flat=True)))
-    cached_bytes = qs.filter(local_status="ok").aggregate(s=Sum("size"))["s"] or 0
+    # Gemessene Größe der Kopie (#786); für Kopien vor deren Einführung die Angabe aus der Quelle
+    stored = Coalesce("local_size", "size")
+    # Je Datei gezählt: Dateien mit gleichem Inhalt zählen mehrfach (Ablage nach SHA-256, #788)
+    cached_bytes = qs.filter(local_status="ok").aggregate(s=Sum(stored))["s"] or 0
+    without_size = qs.filter(local_status="ok", local_size__isnull=True).count()
     ok = by_status.get("ok", 0)
     paused = qs.filter(
         Q(body__source__consecutive_failures__gte=backoff_failures())
@@ -433,7 +542,7 @@ def cache_stats() -> dict:
     ).count()
     per_body = []
     for row in (
-        qs.values("body__name").annotate(n=Sum(1), cached=Sum("size", filter=Q(local_status="ok"))).order_by("-n")
+        qs.values("body__name").annotate(n=Sum(1), cached=Sum(stored, filter=Q(local_status="ok"))).order_by("-n")
     ):
         per_body.append({"body": row["body__name"], "files": row["n"], "cached_bytes": row["cached"] or 0})
     return {
@@ -450,6 +559,10 @@ def cache_stats() -> dict:
         "coverage": round(ok / total * 100, 1) if total else 0.0,
         "cached_bytes": cached_bytes,
         "cached_gb": round(cached_bytes / 1024**3, 2),
+        # Tatsächlich belegt: jeder Inhalt einmal (Ablage nach SHA-256) plus Kopien im alten Layout
+        "stored_bytes": stored_bytes(),
+        # Kopien ohne gemessene Größe: mit ``cache_files --sizes`` nachtragen
+        "without_size": without_size,
         "disk_free_bytes": disk_free_bytes(),
         "min_free_gb": min_free_bytes() // 1024**3,
         "per_body": per_body,

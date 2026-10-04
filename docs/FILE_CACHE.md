@@ -7,6 +7,16 @@ minutenlang fest (Issue #86): kurze Timeouts, lokale Datei zuerst.
 
 ## Speicherlayout
 
+Seit Issue #788 liegen Dokumente **nach ihrem SHA-256** in der Ablage (`FILE_STORE_LAYOUT=sha256`, Standard):
+
+```
+<OPARL_FILES_ROOT>/sha256/<ab>/<sha256>      Inhalt, ohne Dateiendung
+<OPARL_FILES_ROOT>/sha256/tmp/*.part         Downloads, die gerade entstehen
+```
+
+Details unter [Ablage nach SHA-256](#ablage-nach-sha-256). Das bisherige Layout je Kommune gilt weiter für Kopien,
+die noch nicht umgestellt sind, und für Installationen mit `FILE_STORE_LAYOUT=kommune`:
+
 ```
 <OPARL_FILES_ROOT>/<kommune>/<jahr>/<datei-id>.pdf
 ```
@@ -55,7 +65,17 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_CACHE_MAX_MB` | 80 | Größere Dateien werden nicht gecacht, aber weiter durchgereicht |
 | `FILE_CACHE_MIN_FREE_GB` | 15 | Unter dieser Grenze wird nichts mehr geschrieben (Schutz des Systemlaufwerks) |
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
+| `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, 0 = aus) |
+| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange warten Vorschau und KI-Zusammenfassung höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After` bzw. die Bitte um einen neuen Versuch. Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
+| `FILE_STORE_LAYOUT` | `sha256` | Ablage nach SHA-256 mit Referenzzählung; `kommune` = bisheriges Layout je Kommune |
+| `INGESTOR_STORES_FILES` | `false` (Compose: `true`) | Der Ingestor legt Dateien selbst ab; `cache_files` holt Dateien in der Texterkennung nicht nach |
+| `OBJ_ENABLED` | `false` | S3-kompatibler Objektspeicher (siehe [Objektspeicher](#objektspeicher)) |
+| `OBJ_CACHE_MAX_GB` | 60 | Größe des lokalen Zwischenspeichers bei eingeschaltetem Objektspeicher |
+| `FILE_PURGE_AFTER_DAYS` | 30 | Kopie und Text gesperrter Dokumente nach so vielen Tagen löschen (Löschabgleich) |
+| `FILE_PURGE_CONFIRM_GRACE_DAYS` | 7 | Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich |
+| `FILE_RECONCILE_MAX_MISSING` | 10 | Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu `404`/`410`, wird keines gesperrt |
+| `FILE_ACCEL_REDIRECT` | `false` | Lokale Kopien liefert der Webserver aus statt Django (siehe [Auslieferung über den Webserver](#auslieferung-über-den-webserver)) |
 
 Nachgeladen wird stündlich um :40 vom Zeitplan `befehl:cache_files` im Worker
 (`cache_files --limit 400`, Zeitgrenze 50 Minuten; `DEPLOYMENT.md`, „Geplante Aufgaben“). Ein
@@ -68,6 +88,196 @@ bedient, und gehört aus der Crontab entfernt (Upgrade-Hinweis dort). Abschalten
 - `cache_files --stats` zeigt Abdeckung, Belegung und freien Speicher (läuft immer); der
   Betriebsmonitor hat dafür den Check „Dokument-Cache“.
 - `purge_deleted` entfernt lokale Kopien getilgter Dateien.
+- **Größe:** `local_size` ist die gemessene Größe unserer Kopie (Bytes, `bigint`). `size` bleibt die Angabe
+  der Quelle aus OParl; liefert die Quelle keine, überschreibt der Abgleich eine vorhandene nicht mehr mit
+  einem leeren Wert. Für Kopien von vor dieser Spalte einmalig `cache_files --sizes` ausführen
+  (wiederholbar, liest nur die Dateigröße von der Platte). Die Belegung in `cache_files --stats` stammt
+  aus `local_size`; Kopien ohne gemessene Größe weist die Ausgabe gesondert aus.
+- **Zugriffsprotokoll:** Jeder Abruf über die Dateivorschau zählt einmal in `oparl_file_access_days`: je Tag,
+  Kommune, Ergebnis (Treffer aus der lokalen Kopie, Abruf bei der Quelle, nicht ausgeliefert, gesperrt) und
+  Altersklasse des Dokuments (< 30 Tage, < 1 Jahr, < 3 Jahre, älter). Es gibt nur Zähler, keine Adressen,
+  Kennungen oder einzelnen Dokumente. `cache_files --stats` zeigt die letzten 30 Tage mit Trefferquote; daraus
+  ergibt sich, wie groß ein Zwischenspeicher sein muss. Ein Fehler beim Zählen verhindert die Auslieferung nie.
+  Mit der Auslieferung über den Webserver laden PDF-Betrachter große Dokumente in Teilen (Range-Anfragen),
+  und jede Anfrage läuft durch Django. Gezählt wird nur die erste Anfrage eines Abrufs (ohne `Range` oder mit
+  einem Bereich ab Byte 0); Folgeanfragen zählen weder als Abruf noch mit ihrer Größe.
+
+### Auslieferung über den Webserver
+
+Ohne weitere Einstellung streamt Django jede lokale Kopie selbst (`FileResponse`): ohne Range-Anfragen,
+ohne `ETag`, und jeder Download belegt einen Anwendungs-Thread. Mit `FILE_ACCEL_REDIRECT=true` prüft
+Django nur Zugriff und Sperre und antwortet ohne Dateiinhalt mit einer internen Weiterleitung
+(`X-Accel-Redirect: /_mandari/dateien/<pfad unterhalb der Ablage>`). Caddy liefert die Bytes aus der
+Ablage: Range-Anfragen bekommen `206`, dazu `ETag`, `Last-Modified` und `304` auf bedingte Anfragen.
+PDF-Betrachter im Browser laden so zuerst nur die Teile, die sie für die erste Seite brauchen.
+
+Der Block steht im `Caddyfile` (`handle_response` im `reverse_proxy` der Anwendung):
+
+```caddyfile
+@dokument header X-Accel-Redirect /_mandari/dateien/*
+handle_response @dokument {
+	root * {$OPARL_FILES_MOUNT:/srv/mandari-files}
+	copy_response_headers {
+		include Content-Type Content-Disposition X-Content-Type-Options Content-Security-Policy Cache-Control X-Mandari-Cache X-Request-ID
+	}
+	rewrite * {rp.header.X-Accel-Redirect}
+	uri strip_prefix /_mandari/dateien
+	file_server
+}
+```
+
+- **Schutzkopfzeilen:** Typ, Anzeigeart und Dateiname setzt weiter `file_delivery` in Django (nur passive
+  Formate im Browser, alles andere als `application/octet-stream` zum Herunterladen, `nosniff`, Sandbox außer
+  bei PDF). Caddy übernimmt genau diese Kopfzeilen; `file_server` bestimmt den Typ dann nicht nach der
+  Dateiendung. Fehlte die Übernahme, käme eine HTML- oder SVG-Anlage mit ihrem eigenen Typ im Ursprung
+  von Insight, Work und Session an.
+- **Nur unterhalb der Ablage:** Django leitet nur Dateien weiter, die nach Auflösen aller Verweise unterhalb
+  von `OPARL_FILES_ROOT` liegen und deren Pfadteile nur aus Buchstaben, Ziffern, `.`, `_` und `-` bestehen
+  (keine versteckten Dateien, kein `..`). Alles andere liefert Django wie bisher selbst aus.
+- **Nur Antworten von Django:** Caddy wertet `X-Accel-Redirect` ausschließlich in der Antwort der Anwendung
+  aus. Eine von außen mitgeschickte Kopfzeile bewirkt nichts, der Pfad `/_mandari/dateien/` ist von außen
+  nicht erreichbar.
+- **Voraussetzungen:** Caddy liest die Ablage nur lesend unter `OPARL_FILES_MOUNT` (Compose: Volume
+  `mandari_files` unter `/srv/mandari-files:ro`). Der relative Pfad ist in beiden Containern derselbe. Erst
+  danach `FILE_ACCEL_REDIRECT=true` setzen und die Anwendung neu starten; ohne den Block im Caddyfile kämen
+  leere Antworten an. Zurück: Schalter auf `false`, Neustart.
+- **Prüfen:** `curl -s -D - -o /dev/null -H "Range: bytes=0-1023" https://<domain>/insight/dokumente/<id>/preview/`
+  muss `206`, `Content-Range` und ein `ETag` zeigen, und `X-Accel-Redirect` darf nie beim Client ankommen.
+
+Andere Webserver (z. B. nginx mit einer `internal`-Location): vorher prüfen, dass Typ, Anzeigeart, `nosniff`
+und die Sandbox aus der Antwort der Anwendung beim Client ankommen.
+
+### Ablage nach SHA-256
+
+Gleiche Dateien (dieselbe Anlage an mehreren Vorgängen) liegen nur einmal in der Ablage (Issue #788,
+`services/file_store.py`). Die Originale bleiben unverändert, es wird nichts komprimiert oder umgerechnet.
+
+- **Referenzzählung:** Jede Datei (`OParlFile.blob`) ist eine Referenz auf ihren Inhalt (`OParlFileBlob`, Tabelle
+  `oparl_file_blobs`). Ablegen, Ersetzen und Freigeben laufen in einer Transaktion mit gesperrter Zeile des Inhalts,
+  die Datei wird verschoben, solange die Sperre gilt. Fällt die letzte Referenz weg (neue Fassung, Löschen nach
+  Frist, `purge_deleted`, `prune_file_cache --unlisted`, Löschen einer Kommune), wird der Inhalt verwaist markiert;
+  `dokumentablage --aufraeumen` löscht ihn nach zehn Minuten – lokal und im Objektspeicher. Eine falsche Zählung
+  wird dabei berichtigt statt gelöscht.
+- **Ein Abruf je Datei:** Der Ingestor lädt jede Datei für die Texterkennung gestreamt in eine temporäre Datei
+  unter `sha256/tmp` (Größengrenze `TEXT_EXTRACTION_MAX_SIZE_MB` greift während des Downloads, nie liegt eine
+  ganze Datei im Arbeitsspeicher), hasht dabei und legt sie danach selbst ab – nur gelistete Kommunen, nie
+  unter `FILE_CACHE_MIN_FREE_GB` freiem Platz, keine Hinweisseiten statt der Datei. Dafür hängt der Dienst
+  `ingestor` das Volume `mandari_files` unter `OPARL_FILES_ROOT` ein. Mit `INGESTOR_STORES_FILES=true` holt
+  `cache_files` Dateien in der Texterkennung nicht ein zweites Mal (hängt die Erkennung länger als einen Tag,
+  doch). Maßgeblich ist die letzte Änderung des Datensatzes: Auch ältere Dateien, die wieder auf „pending“ gehen
+  (neue Fassung, Wiederfreigabe nach dem Löschabgleich), holt nur der Ingestor. Ausnahme vom Streaming: Ist
+  `MISTRAL_API_KEY` gesetzt und reicht pypdf nicht, liest der Ingestor die Datei für die Mistral-OCR ganz ein
+  (die Schnittstelle erwartet sie base64-kodiert in der Anfrage, bis `TEXT_EXTRACTION_MAX_SIZE_MB`); ohne
+  Mistral rendert Tesseract seitenweise.
+- **Rechte:** Abgelegte Inhalte sind für alle lesbar (`0644`), auch wenn der Download als temporäre Datei mit
+  `0600` entstand. Anwendung und Ingestor legen mit derselben Kennung ab (Compose: uid 1000), der Webserver liest
+  sie für die Auslieferung.
+- **Umstellen des Bestands:** `python manage.py dokumentablage --umstellen --limit 5000` verschiebt Kopien aus dem
+  Layout je Kommune in die Ablage (kein zweiter Platzbedarf, wiederaufnehmbar, so oft wiederholen, bis
+  `noch im alten Layout 0` erscheint). Doppelte Kopien entfallen dabei.
+- **Pflege:** `dokumentablage` zeigt Inhalte, Belegung, die Ersparnis durch Deduplizierung und verwaiste Inhalte;
+  `--referenzen` berechnet die Zähler aus den Verweisen neu; `--aufraeumen` stündlich per Cron. Verwaiste
+  Inhalte löscht außerdem jeder Lauf des Löschabgleichs (`loeschabgleich`), damit eine ersetzte oder gelöschte
+  Fassung nicht an einem zweiten Cron hängt. `cache_files --stats` nennt beide Größen: „belegt“ zählt jeden
+  Inhalt einmal (plus Kopien im alten Layout), „je Datei gezählt“ zählt Dateien mit gleichem Inhalt mehrfach.
+
+```cron
+50 * * * * docker exec mandari python manage.py dokumentablage --aufraeumen >> /var/log/mandari-dokumentablage.log 2>&1
+```
+
+- **Rückfall auf ein älteres Image:** Ältere Images finden die Kopien über `local_path` weiter, legen neue aber im
+  alten Layout ab. `purge_deleted`, `prune_file_cache` und `loeschabgleich` dürfen mit einem älteren Image nicht
+  laufen, solange Inhalte geteilt sind: Sie löschen Dateien nach `local_path` und kennen keine Referenzen
+  (`loeschabgleich` beim Ersetzen einer Fassung und beim Löschen nach Frist). Vor dem Rückfall also die
+  Cron-Einträge dieser Befehle aussetzen.
+
+### Objektspeicher
+
+Vorbereitet, **Standard aus**. Mit `OBJ_ENABLED=true` und den Zugangsdaten `OBJ_ENDPOINT`, `OBJ_BUCKET`, `OBJ_KEY`,
+`OBJ_SECRET` (nur in der Umgebung, nie im Repo; `OBJ_REGION` optional, sonst aus dem Endpunkt abgeleitet) liegt die
+Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha256/<ab>/<sha256>`):
+
+- `dokumentablage --hochladen` lädt Inhalte ohne Kopie im Objektspeicher hoch (`remote_at`).
+- Die lokale Ablage wird zum **Zwischenspeicher**: `dokumentablage --aufraeumen` verdrängt bei mehr als
+  `OBJ_CACHE_MAX_GB` (Standard 60) die am längsten nicht gelesenen Inhalte – nur solche, die sicher im Objektspeicher
+  liegen. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der Zugriffszeit (`atime`) der Datei,
+  höchstens einmal je Stunde. Die Änderungszeit bleibt unberührt, denn aus ihr bildet der Webserver `ETag` und
+  `Last-Modified`; so greifen bedingte Anfragen und Range-Anfragen mit `If-Range` weiter. Ein Mount mit
+  `noatime` stört nicht, die Zeit wird ausdrücklich gesetzt.
+- Fehlt ein Inhalt lokal, holt die Vorschau ihn gestreamt aus dem Objektspeicher (ohne Datenbankverbindung
+  festzuhalten, Hashprüfung, Gesamtdauer höchstens `OBJ_FETCH_TOTAL_SECONDS`, Standard 60) und liefert ihn wie
+  gewohnt aus. Antwortet der Objektspeicher nicht oder stimmt der Hash nicht, holt die Vorschau das Dokument wie
+  bisher von der Quelle.
+- **Prüfsummen:** boto3 sendet seit 1.36 standardmäßig Prüfsummen im `aws-chunked`-Verfahren, was manche
+  S3-kompatiblen Anbieter ablehnen. `OBJ_CHECKSUMS=when_required` (Standard) verhält sich wie frühere Versionen.
+  Beim ersten Test mit dem echten Bucket Hochladen, Holen und Löschen prüfen; nur wenn der Anbieter es verlangt,
+  `when_supported` setzen.
+- **Zugangsdaten einbinden:** `docker-compose.yml` reicht `OBJ_ENDPOINT`, `OBJ_BUCKET`, `OBJ_KEY` und
+  `OBJ_SECRET` per Variablenersetzung durch. Liegen sie in einer eigenen Umgebungsdatei statt in der `.env`,
+  liest Compose diese zusätzlich: `docker compose --env-file .env --env-file <datei> up -d` (spätere Dateien
+  gewinnen). Ein `env_file:` am Dienst reicht nicht, denn die Einträge unter `environment` (leer vorbelegt)
+  gingen vor.
+- Reihenfolge beim Einschalten: Bestand umstellen (`--umstellen`), Zugangsdaten setzen, `OBJ_ENABLED=true`,
+  Neustart, `dokumentablage --hochladen` bis nichts mehr offen ist, danach `--hochladen` und `--aufraeumen` per Cron.
+- Ausschalten: `OBJ_ENABLED=false`. Lokal verdrängte Inhalte holt die Vorschau dann von der Quelle; `cache_files`
+  lädt sie nach. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
+  (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie.
+
+### Löschabgleich
+
+Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (Issue #787,
+`services/file_reconcile.py`):
+
+- **Sperre sofort:** Ein Dokument ist gesperrt, wenn die Quelle es als gelöscht meldet (OParl `deleted`, der
+  Ingestor markiert es) oder seine Download-Adresse `404`/`410` liefert (`source_missing_since`). Gesperrt
+  heißt: Die Vorschau antwortet mit `410` und liefert keine Bytes, auch nicht aus der lokalen Kopie; die
+  Vorgangsseite zeigt weder Dokument noch Text; der OParl-Objekt-Endpunkt (`/oparl/v1/file/<id>`) gibt kein
+  Feld `text` mehr aus; Suchindex (auch nach einem vollständigen Neuaufbau) und KI-Zusammenfassung des
+  Vorgangs verlieren es, eine neue Zusammenfassung nimmt seinen Text nicht auf; der Ingestor erkennt keinen
+  Text mehr und nimmt die Datei nicht wieder in den Index. Liefert die Quelle das Dokument wieder, wird die
+  Sperre aufgehoben. Browser und Zwischenspeicher dürfen ein vorher ausgeliefertes Dokument noch bis zu 24 h
+  zeigen (`Cache-Control: public, max-age=86400`); das liegt bewusst innerhalb der Vorgabe des Konzepts.
+- **Änderung per Hash:** Meldet die Quelle eine Änderung (`modified`) nach unserer Kopie bzw. Texterkennung,
+  lädt der Abgleich die Datei neu und vergleicht den SHA-256. Anderer Inhalt ersetzt die Kopie, der alte Text
+  wird verworfen und vom Ingestor neu erkannt; gleicher Inhalt ändert nichts.
+- **Stichproben:** Gedrosselte HEAD-Anfragen auf die Download-Adressen (am längsten nicht geprüfte zuerst)
+  finden Löschungen, die die Quelle nicht meldet. Ein `404`/`410` (oder ein Server ohne HEAD) wird per GET
+  bestätigt, eine abweichende Größe per Hash abgeglichen. Liefert HEAD eine HTML-Seite statt der Datei
+  (weiche 404), entscheidet ebenfalls ein GET; eine Hinweisseite gilt nie als „vorhanden“. Mindestabstand je
+  Host (`--interval`), höchstens `--head-limit` Anfragen je Kommune und Lauf. Antwortet ein Host mit `429`
+  oder `503`, fragt der Lauf ihn nicht weiter an (auch kein GET hinterher); nach fünf Fehlern in Folge ebenso.
+  Stichproben laufen nur für gelistete Kommunen (ausgeblendete zeigen nichts öffentlich); mit `--body` für
+  genau diese Kommune. Quellen in Schonung oder mit abgeschaltetem Dateiabruf bleiben unberührt.
+- **Erneut prüfen:** Ein wegen `404`/`410` gesperrtes Dokument prüft der Abgleich nach 1, 7 und 25 Tagen
+  erneut (vor den übrigen Stichproben) und unmittelbar vor dem Löschen noch einmal per GET. Liefert die
+  Quelle es wieder, wird entsperrt statt gelöscht. Eine vorübergehende `404` (Wartung, Umstellung, eine
+  Firewall) versteckt ein Dokument also höchstens bis zur nächsten Prüfung und löscht nichts.
+- **Bremse:** Liefern in einem Lauf mehr als `FILE_RECONCILE_MAX_MISSING` (Standard 10, `--max-fehlend`)
+  Dokumente einer Quelle neu `404`/`410`, sperrt der Lauf keines davon und lässt die Quelle für den Rest des
+  Laufs in Ruhe. Die Ausgabe nennt sie (`gebremst=…`, Hinweis auf stderr). Dann die Quelle prüfen (neue
+  Adressen nach einer Umstellung, Wartung, Sperre unserer Abrufe); bei einer echten Massenlöschung den Lauf mit
+  höherem `--max-fehlend` für diese Kommune wiederholen.
+- **robots.txt ist verbindlich:** Vor jedem Abruf einer Datei prüft der Abgleich die robots.txt des Hosts
+  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf). Eine
+  Ausnahme trägt nur eine Quelle mit Vermerk in `sync_config["robots_override"]`, z. B.
+  `{"scope": "files", "note": "Zustimmung liegt vor, Anfrage läuft"}` (Bereich `files` oder `all`, Vermerk
+  mindestens zehn Zeichen; dasselbe Format wie für die übrigen Abrufe der Quelle).
+  `loeschabgleich --robots` listet je Quelle, ob die robots.txt Dateiabrufe sperrt, samt Ausnahmen.
+- **Löschen nach Frist:** Nach `FILE_PURGE_AFTER_DAYS` (Standard 30) Tagen Sperre löscht der Abgleich die lokale
+  Kopie und den extrahierten Text (`content_purged_at`). Der Datensatz bleibt als Tombstone. Hebt die Quelle die
+  Löschung später auf, wird der Text neu erkannt und die Kopie nachgeladen. Nicht mehr abrufbare Dokumente
+  (`404`/`410`) fragt der Abgleich vorher noch einmal per GET ab (gedrosselt, robots.txt); lässt sich die Quelle
+  nicht befragen (Fehler, robots.txt, Schonung), wartet er bis zu `FILE_PURGE_CONFIRM_GRACE_DAYS` (Standard 7)
+  Tage und löscht danach ohne Rückfrage. In der Quelle gelöschte Dokumente ohne Löschzeitpunkt (Altbestand) bekommen beim ersten Lauf den
+  aktuellen Zeitpunkt; ihre Frist beginnt also dann und nicht rückwirkend.
+
+```cron
+15 * * * * docker exec mandari python manage.py loeschabgleich >> /var/log/mandari-loeschabgleich.log 2>&1
+```
+
+Ein Lauf gleicht höchstens 200 geänderte Dokumente ab (`--changed-limit`) und nimmt je Kommune 30 Stichproben
+(`--head-limit`). `--nur-loeschen` und `--ohne-loeschen` trennen die Schritte. Ein Lauf hält eine Sperre im
+gemeinsamen Cache: Startet der nächste, bevor der vorige fertig ist, endet er sofort mit einem Hinweis.
 
 ### Quellen-Schonung
 

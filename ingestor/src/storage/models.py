@@ -347,6 +347,19 @@ class OParlAgendaItem(Base):
     meeting: Mapped["OParlMeeting"] = relationship(back_populates="agenda_items")
 
 
+class OParlFileBlob(Base):
+    """Inhalt einer Datei in der Ablage nach SHA-256 (Django: ``OParlFileBlob``, Issue #788)."""
+
+    __tablename__ = "oparl_file_blobs"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    size: Mapped[int] = mapped_column(BigInteger)
+    ref_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    orphaned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    remote_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class OParlFile(Base):
     """A file/document attachment."""
 
@@ -368,6 +381,15 @@ class OParlFile(Base):
 
     # Local storage
     local_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Ablage nach SHA-256 (Django-verwaltet, Issue #786/#788): Zustand, gemessene Größe und Inhalt der Kopie.
+    # Der Ingestor setzt sie nur beim Ablegen (attach_file_blob), nie im Upsert (ENRICHMENT_FIELDS).
+    local_status: Mapped[str] = mapped_column(String(20), server_default="none")
+    local_cached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    local_error: Mapped[str] = mapped_column(String(500), server_default="")
+    local_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    blob_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("oparl_file_blobs.sha256"), nullable=True, index=True
+    )
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     sha256_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
@@ -382,6 +404,10 @@ class OParlFile(Base):
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Löschabgleich (Django, Issue #787): Download-Adresse liefert 404/410 -> gesperrt. Der Ingestor
+    # erkennt dann keinen Text und nimmt die Datei nicht in den Suchindex.
+    source_missing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
