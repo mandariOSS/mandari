@@ -77,6 +77,27 @@ als „Kennung abweichend“. Das ist gewollt: Links, Suchindex und Dateivorscha
 verweisen auf diese Typen nur über die Zeile im Bestand, nie über eine URL. Solche Abweichungen dürfen nicht durch
 Umschlüsseln „behoben“ werden.
 
+## Nachtrag: Beschlussfassung im Bestand (#525)
+
+Die Erweiterungen Abstimmung, Beschluss, Umsetzung und Genehmigung der Niederschrift stehen im RIS-Bestand in
+eigenen, nullable Spalten, nicht nur in `raw_json`:
+
+- **Tagesordnungspunkt:** `resolution_number`, Abstimmung (`vote_method`, `vote_result`, `votes_yes`, `votes_no`,
+  `votes_abstain`), Einzelstimmen `roll_call` (nur bei namentlicher Abstimmung) und der veröffentlichte
+  Umsetzungsstand (`implementation_status`, `implementation_deadline`, `implementation_note`,
+  `implementation_modified`).
+- **Sitzung:** `protocol_approval_mode`, `protocol_approved_on`, `protocol_approved_in_external_id`.
+- **Abstimmung am Tagesordnungspunkt:** Session führt eine Abstimmung je Punkt, die Schnittstelle bettet sie als
+  `mandari:vote` ein. Der Bestand speichert sie deshalb am Punkt; ihre kanonische Kennung leitet sich wie in
+  `ris.voting.recorded` aus der Adresse des Punkts ab. Liefern Quellen später mehrere Abstimmungen je Punkt, wird
+  daraus eine eigene Tabelle (additive Änderung).
+- **Eine Übersetzung:** `shared/mandari_oparl/extensions.py` liest die Erweiterungen eines OParl-Objekts für
+  Ingestor, Spiegel und Datenmigration gleich und verwirft, was nicht passt (unbekannte Codes, falsche Typen,
+  Einzelstimmen ohne namentliche Abstimmung). Bezeichnungen der Codes stehen dort einmal.
+- **Lesen:** `hub/ris/selectors.py` (`decision`, `protocol_approval`) und die Abbildung des Bestands geben die
+  Spalten in derselben Form aus, die Session liefert. Das Beschluss-Tracking in Bürgerportal und Work liest
+  noch Session-Tabellen; es zieht mit #538 auf diese Felder um (nach dem Umschalten auf den Projektor, #537).
+
 ## Alternativen
 
 - **Interne Session-Modelle als gemeinsames Modell.** Bindet Work, Portal und App an Session;

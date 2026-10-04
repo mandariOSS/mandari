@@ -43,11 +43,15 @@ from hub.ris.canonical import (
     Objekt,
     as_list,
     clean,
+    implementation_extension,
     iso,
     iso_date,
     iso_day,
+    protocol_approval_extension,
+    roll_call_extension,
     schema_type,
     tombstone,
+    vote_extension,
 )
 from hub.ris.mapping.session import ORGANIZATION_TYPES as SESSION_ORGANIZATION_TYPES
 from insight_core.models import (
@@ -243,16 +247,28 @@ class RefContext:
 
     @classmethod
     def for_meetings(cls, meetings: Iterable[OParlMeeting]) -> RefContext:
-        """Für Sitzungen: Ort und die Beratungen der eingebetteten Tagesordnungspunkte."""
+        """
+        Für Sitzungen: Ort, die Beratungen der eingebetteten Tagesordnungspunkte und die Sitzung, in der die
+        Niederschrift genehmigt wurde.
+        """
         ctx = cls()
         location_exts = set()
         agenda_exts = set()
+        approving_exts = set()
         for meeting in meetings:
             ext = _location_ext(meeting.raw_json)
             if ext:
                 location_exts.add(ext)
+            if meeting.protocol_approved_in_external_id:
+                approving_exts.add(meeting.protocol_approved_in_external_id)
             for item in meeting.agenda_items.all():
                 agenda_exts.add(item.external_id)
+        if approving_exts:
+            ctx.meeting_by_ext = dict(
+                OParlMeeting.objects.filter(external_id__in=approving_exts, deleted=False).values_list(
+                    "external_id", "id"
+                )
+            )
         if location_exts:
             ctx.location_by_ext = {
                 loc.external_id: loc
@@ -530,8 +546,14 @@ class BestandMapping:
                 # Abgekündigt: Der Ort steht als Location-Objekt in ``location``
                 "mandari:locationName": meeting.location_name if not location else None,
                 "mandari:locationAddress": meeting.location_address if not location else None,
+                # Genehmigung der Niederschrift (Issue #525); die genehmigende Sitzung nur, wenn sie im Bestand ist
+                "mandari:protocolApproval": protocol_approval_extension(meeting, self._approving_meeting(meeting, ctx)),
             }
         )
+
+    def _approving_meeting(self, meeting: OParlMeeting, ctx: RefContext) -> str | None:
+        approving = ctx.meeting_by_ext.get(meeting.protocol_approved_in_external_id or "")
+        return self.uris.obj("meeting", approving) if approving else None
 
     def location(self, location: OParlLocation, ctx: RefContext | None = None) -> Objekt:
         return clean(
@@ -573,7 +595,6 @@ class BestandMapping:
 
     def agenda_item(self, item: OParlAgendaItem, ctx: RefContext) -> Objekt:
         consultation_ids = ctx.consultations_by_agenda_ext.get(item.external_id, [])
-        raw = item.raw_json or {}
         return clean(
             {
                 "id": self.uris.obj("agendaitem", item.id),
@@ -588,10 +609,12 @@ class BestandMapping:
                 "resolutionText": item.resolution_text,
                 **_timestamps(item),
                 "mandari:originalId": item.external_id,
-                # Abstimmungsergebnis aus dem Quell-RIS (mandari Session): Summen immer, Einzelstimmen nur,
-                # wenn die Quelle sie bei namentlicher Abstimmung liefert
-                "mandari:vote": raw.get("mandari:vote") or None,
-                "mandari:rollCall": raw.get("mandari:rollCall") or None,
+                # Beschlussfassung aus dem Quell-RIS (mandari Session, Issue #525): Nummer, Summen der Abstimmung,
+                # Einzelstimmen nur bei namentlicher Abstimmung, veröffentlichter Umsetzungsstand
+                "mandari:resolutionNumber": item.resolution_number,
+                "mandari:vote": vote_extension(item),
+                "mandari:rollCall": roll_call_extension(item),
+                "mandari:implementation": implementation_extension(item),
             }
         )
 

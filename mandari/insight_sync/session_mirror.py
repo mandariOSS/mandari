@@ -27,6 +27,7 @@ from datetime import UTC, date, datetime
 from urllib.parse import quote
 
 from django.utils import timezone
+from mandari_oparl.extensions import agenda_item_columns, meeting_columns
 
 from insight_core.models import (
     OParlAgendaItem,
@@ -343,6 +344,8 @@ class SessionMirror:
                     "end": _parse_dt(data.get("end")),
                     "location_name": location_name,
                     "location_address": location_address,
+                    # Genehmigung der Niederschrift (Issue #525)
+                    **meeting_columns(data),
                     **self._base_defaults(data),
                 },
             ),
@@ -377,6 +380,8 @@ class SessionMirror:
                     "public": bool(data.get("public", True)),
                     "result": data.get("result"),
                     "resolution_text": data.get("resolutionText"),
+                    # Beschlussfassung: Nummer, Abstimmung, Einzelstimmen, Umsetzung (Issue #525)
+                    **agenda_item_columns(data),
                     **self._base_defaults(data),
                 },
             ),

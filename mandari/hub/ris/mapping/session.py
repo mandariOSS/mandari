@@ -46,8 +46,8 @@ from mandari_oparl.ids import canonical_id, canonical_uri
 
 from hub.ris.canonical import Objekt, as_list, clean, iso, iso_date, iso_day, schema_type, tombstone
 
-#: Version der Abbildung
-VERSION: Final = 1
+#: Version der Abbildung (2: Umsetzungsstand und Genehmigung der Niederschrift, Issue #525)
+VERSION: Final = 2
 
 #: Art des Gremiums in Session (``SessionOrganization.organization_type``) -> ``organizationType``.
 #: OParl 1.1 kennt sieben Werte; die feinere Art (Ausschuss, Rat, Beirat …) steht in ``classification``.
@@ -93,6 +93,8 @@ class SessionSource:
     - ``mime_type(name)``: Typ, mit dem der Download ausgeliefert wird
     - ``meeting_format(meeting)``: Sitzungsformat mit Hinweis für die Öffentlichkeit
     - ``results_protocol(meeting)``: öffentliche Fassung der Niederschrift als Datei oder ``None``
+    - ``implementation_public(item)``: Ist der Umsetzungsstand des Beschlusses öffentlich (Freigabe der
+      Verwaltung, wie die Beschlussseiten im Bürgerportal)? Ohne Angabe nie.
     """
 
     is_published: Callable[[Any], bool]
@@ -100,6 +102,7 @@ class SessionSource:
     mime_type: Callable[[str], str]
     meeting_format: Callable[[Any], Any]
     results_protocol: Callable[[Any], Any]
+    implementation_public: Callable[[Any], bool] | None = None
 
 
 class SessionUris:
@@ -337,6 +340,8 @@ class SessionMapping:
                 ],
                 # Ergebnisprotokoll: öffentliche Fassung der Niederschrift (Issue #318)
                 "resultsProtocol": self.file(protocol_file) if protocol_file is not None else None,
+                # Genehmigung dieser Fassung (Issue #525): nur, wenn sie veröffentlicht ist
+                "mandari:protocolApproval": self._protocol_approval(meeting) if protocol_file is not None else None,
                 "auxiliaryFile": [self.file(f) for f in files],
                 # OParl 1.1 bettet Tagesordnungspunkte in Meeting ein (nur der öffentliche Teil)
                 "agendaItem": [self.agenda_item(item) for item in items],
@@ -453,6 +458,47 @@ class SessionMapping:
                 "mandari:resolutionNumber": item.resolution_number or None,
                 "mandari:vote": self._vote(item),
                 "mandari:rollCall": self._roll_call(item),
+                "mandari:implementation": self._implementation(item),
+            }
+        )
+
+    def _implementation(self, item: Any) -> Objekt | None:
+        """
+        Umsetzungsstand des Beschlusses (Beschlusskontrolle, Issue #525): nur mit Freigabe der Verwaltung und nur die
+        öffentliche Statusmeldung; Erledigungsvermerk, Zuständigkeit und Bearbeiter bleiben intern.
+        """
+        rule = self.source.implementation_public
+        if rule is None or not item.implementation_status or not rule(item):
+            return None
+        return clean(
+            {
+                "status": item.implementation_status,
+                "statusLabel": item.get_implementation_status_display(),
+                "deadline": iso_date(item.implementation_deadline),
+                "note": item.implementation_public_note or None,
+                "modified": iso(item.implementation_updated_at),
+            }
+        )
+
+    def _protocol_approval(self, meeting: Any) -> Objekt | None:
+        """
+        Genehmigung der veröffentlichten Niederschrift (Issue #525): Weg, Tag und die genehmigende Sitzung, diese nur,
+        wenn sie selbst öffentlich ist. Ohne Genehmigungsschritt veröffentlicht heißt: Genehmigung und
+        Veröffentlichung fielen in denselben Schritt (Session setzt dann beide Zeitpunkte gleich).
+        """
+        protocol = meeting.protocol
+        if protocol.approved_at is None:
+            return None
+        if protocol.published_at is not None and protocol.approved_at == protocol.published_at:
+            return {"mode": "direct", "date": iso_day(protocol.approved_at)}
+        approving = protocol.approval_meeting if protocol.approval_meeting_id else None
+        if approving is None or not self.source.is_published(approving):
+            return {"mode": "follow_up", "date": iso_day(protocol.approved_at)}
+        return clean(
+            {
+                "mode": "follow_up",
+                "date": iso_day(approving.start or protocol.approved_at),
+                "meeting": self.uris.obj("meeting", approving.pk),
             }
         )
 
