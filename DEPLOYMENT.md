@@ -604,6 +604,28 @@ Abonnement in der Datenbank auf `schatten`, schreibt es weiter nur den Schatteni
 `loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt (Schalter oder
 Zustand `schatten`); `--abonnement` zusätzlich, solange es überhaupt zugestellt wird.
 
+### OCR-Worker des Ingestors (`extract-daemon`)
+
+Der OCR-Worker (`python -m src.main extract-daemon`, Ingestor-Image) erkennt den Text der Dokumente:
+pypdf, optional Mistral, sonst Tesseract. Tesseract läuft Seite für Seite als eigener Unterprozess mit
+Grenzen (Issue #817); eine zu große Seite beendet nur diese Seite, nicht den Worker:
+
+| Variable | Standard | Wirkung |
+|---|---|---|
+| `OCR_MAX_MEGAPIXELS` | `8` | Bildpunkte je Seite (Mio.); große Seiten (Pläne) werden mit kleinerer Auflösung gerendert, A4 bleibt bei `OCR_DPI` |
+| `OCR_DPI` | `200` | Grundauflösung |
+| `OCR_MEMORY_LIMIT_MB` | `1024` | Adressraum je Unterprozess (`pdftoppm`, `tesseract`); darüber ein zweiter Versuch mit halber Auflösung, danach wird die Seite übersprungen. Unter dem Speicherlimit des Containers halten |
+| `OCR_PAGE_TIMEOUT` | `120` | Sekunden je Seite und Schritt |
+| `OCR_FILE_BUDGET_SECONDS` | `1200` | Zeitbudget je Datei; danach gilt der bis dahin erkannte Text |
+| `OCR_MAX_PAGES` | `100` | höchstens so viele Seiten je Datei |
+| `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
+| `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
+
+Dateien mit einem Abbruch laufen danach einzeln und zuletzt. Hängende und aufgegebene Dateien meldet die
+Prüfung `texterkennung` in `/health/worker/` (`docs/MONITORING.md`) und der Betriebsmonitor unter
+„Handlungsbedarf“. Wird eine aufgegebene Datei wieder auf `pending` gesetzt, bekommt sie genau einen
+weiteren Versuch; gelingt er, beginnt der Zähler von vorn.
+
 ## ⏰ Geplante Aufgaben (Zeitpläne im Worker)
 
 Wiederkehrende Verwaltungsbefehle laufen als **Zeitpläne im Worker** (Issue #516,

@@ -1138,6 +1138,21 @@ class OParlFile(SourceDeletionModel):
     page_count = models.PositiveIntegerField(
         blank=True, null=True, verbose_name="Seitenanzahl", help_text="Anzahl der Seiten (bei PDFs)"
     )
+    # Abbrüche der Texterkennung (Issue #817), geschrieben vom OCR-Worker des Ingestors: begonnene, nie beendete
+    # Bearbeitungen; nach TEXT_EXTRACTION_MAX_ATTEMPTS gilt die Datei als gescheitert („Speichergrenze“).
+    # db_default: Ingestor-INSERTs und ältere Images kennen die Spalten nicht.
+    text_extraction_attempts = models.IntegerField(
+        default=0,
+        db_default=0,
+        verbose_name="Abgebrochene Versuche",
+        help_text="Begonnene, nie beendete Bearbeitungen der Texterkennung (Worker beendet)",
+    )
+    text_extraction_started_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Bearbeitung seit",
+        help_text="Beginn der laufenden Bearbeitung der Texterkennung",
+    )
 
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)

@@ -630,6 +630,11 @@ NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 MISTRAL_OCR_RATE_LIMIT = int(os.environ.get("MISTRAL_OCR_RATE_LIMIT", "60"))  # Requests pro Minute
 
+# Texterkennung im OCR-Worker des Ingestors (Issue #817): Dateien länger als diese Zeit in "processing" gelten
+# als abgebrochen und werden zurückgestellt. Gleiche Variable wie im Ingestor; die Prüfung „texterkennung“
+# (/health/worker/) meldet Dateien, die trotzdem länger hängen.
+TEXT_EXTRACTION_STALE_MINUTES = int(os.environ.get("TEXT_EXTRACTION_STALE_MINUTES", "60"))
+
 # Insight Subscriptions (E-Mail-Digest)
 # Abos zu Themen und Orten (Seite /insight/benachrichtigungen/, generate_alerts, send_digest).
 # Standard aus: Die Befehle sind nirgends eingeplant; der Wiederaufbau über die Datendrehscheibe

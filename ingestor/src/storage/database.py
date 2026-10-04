@@ -84,6 +84,10 @@ _ENTITY_MODEL_MAP: dict[str, type] = {
 # Some of these columns only exist in Django's schema (not in the
 # ingestor's SQLAlchemy models) — they are listed anyway so the guard
 # also catches future model additions.
+#: Grund für Dateien, deren Bearbeitung wiederholt abbrach (Worker beendet, meist Speichermangel, Issue #817);
+#: Django zählt sie über Status ``failed`` mit Abbruchzähler > 0, nicht über diesen Text.
+STALE_GIVE_UP_REASON: Final = "Speichergrenze"
+
 ENRICHMENT_FIELDS: frozenset[str] = frozenset(
     {
         # OParlFile: text extraction / OCR pipeline
@@ -93,6 +97,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "text_extraction_error",
         "text_extracted_at",
         "page_count",
+        "text_extraction_attempts",
+        "text_extraction_started_at",
         "sha256_hash",
         "local_path",
         "local_status",
@@ -1903,9 +1909,65 @@ class DatabaseStorage:
 
     # ========== Text Extraction Queries ==========
 
-    # Files stuck in 'processing' longer than this are considered abandoned
-    # (worker crash) and become claimable again.
-    PROCESSING_STALE_AFTER = timedelta(hours=2)
+    # Dateien in "processing", deren Bearbeitung länger zurückliegt, gelten als abgebrochen (Worker beendet).
+    # Gilt bei Aufruf ohne eigene Grenze; der Extraktor nimmt TEXT_EXTRACTION_STALE_MINUTES (Issue #817).
+    PROCESSING_STALE_AFTER = timedelta(hours=1)
+
+    @staticmethod
+    def _stale_processing(cutoff: datetime) -> Any:
+        """
+        Bedingung für abgebrochene Bearbeitungen: Status ``processing`` und Beginn vor ``cutoff``. Ohne
+        Beginn (Zeilen aus der Zeit vor Issue #817) zählt die letzte Änderung der Zeile.
+        """
+        return and_(
+            OParlFile.text_extraction_status == "processing",
+            or_(
+                OParlFile.text_extraction_started_at < cutoff,
+                and_(OParlFile.text_extraction_started_at.is_(None), OParlFile.updated_at < cutoff),
+            ),
+        )
+
+    async def release_stale_extractions(
+        self, stale_after: timedelta | None = None, max_attempts: int = 3
+    ) -> tuple[int, int]:
+        """
+        Abgebrochene Bearbeitungen auflösen (Issue #817), über alle Kommunen.
+
+        Stirbt der Worker mitten in der Arbeit (etwa durch den Speicherwächter des Kernels), bleiben seine
+        Dateien in ``processing``. Nach ``stale_after``:
+
+        - Dateien, deren Bearbeitung schon ``max_attempts``-mal begonnen und nie beendet wurde, werden
+          ``failed`` mit dem Grund „Speichergrenze“ – keine Endlosschleife über dieselbe Datei.
+        - alle anderen zurück nach ``pending``; der Zähler bleibt, der nächste Versuch läuft allein.
+
+        Rückgabe: (zurückgestellt, aufgegeben).
+        """
+        cutoff = datetime.now(UTC) - (stale_after or self.PROCESSING_STALE_AFTER)
+        stale = self._stale_processing(cutoff)
+        async with self.get_session() as session:
+            given_up = await session.execute(
+                update(OParlFile)
+                .where(stale, OParlFile.text_extraction_attempts >= max_attempts)
+                .values(
+                    text_extraction_status="failed",
+                    text_extraction_error=(
+                        f"{STALE_GIVE_UP_REASON}: Bearbeitung {max_attempts}-mal abgebrochen (Worker beendet)"
+                    ),
+                    text_extraction_started_at=None,
+                    updated_at=func.now(),
+                )
+                .returning(OParlFile.id)
+            )
+            aufgegeben = len(given_up.all())
+            released = await session.execute(
+                update(OParlFile)
+                .where(stale)
+                .values(text_extraction_status="pending", text_extraction_started_at=None, updated_at=func.now())
+                .returning(OParlFile.id)
+            )
+            zurueck = len(released.all())
+            await session.commit()
+        return zurueck, aufgegeben
 
     async def get_pending_files(
         self,
@@ -1923,30 +1985,22 @@ class DatabaseStorage:
         PC) never claim the same file twice.
 
         The extractor later overwrites the transient 'processing' status with
-        completed/failed/skipped via update_file_text. Crash recovery: rows
-        stuck in 'processing' with updated_at older than PROCESSING_STALE_AFTER
-        are treated as claimable again.
+        completed/failed/skipped via update_file_text. Abgebrochene Bearbeitungen
+        stellt ``release_stale_extractions`` zurück (bzw. gibt sie nach mehreren
+        Abbrüchen auf); beansprucht wird nur ``pending``.
 
         Args:
             body_id: Body to query files for
             batch_size: Maximum number of files to claim
             max_size_bytes: Skip files larger than this (optional)
         """
-        stale_cutoff = datetime.now(UTC) - self.PROCESSING_STALE_AFTER
-
         async with self.get_session() as session:
             candidates = select(OParlFile.id).where(
                 OParlFile.body_id == body_id,
                 # Keine Textextraktion fuer von der Quelle geloeschte oder dort fehlende Dateien (#787)
                 OParlFile.deleted == False,  # noqa: E712
                 OParlFile.source_missing_since.is_(None),
-                or_(
-                    OParlFile.text_extraction_status == "pending",
-                    and_(
-                        OParlFile.text_extraction_status == "processing",
-                        OParlFile.updated_at < stale_cutoff,
-                    ),
-                ),
+                OParlFile.text_extraction_status == "pending",
                 or_(
                     OParlFile.download_url.isnot(None),
                     OParlFile.access_url.isnot(None),
@@ -1968,6 +2022,7 @@ class DatabaseStorage:
                 .where(OParlFile.id.in_(candidates.scalar_subquery()))
                 .values(
                     text_extraction_status="processing",
+                    text_extraction_started_at=func.now(),
                     updated_at=func.now(),
                 )
                 .returning(OParlFile)
@@ -1977,6 +2032,34 @@ class DatabaseStorage:
             files = list(result.scalars().all())
             await session.commit()
             return files
+
+    async def mark_extraction_started(self, file_id: UUID) -> int | None:
+        """
+        Bearbeitung einer beanspruchten Datei beginnt: Versuch zählen, Beginn festhalten (Issue #817).
+
+        Endet die Bearbeitung nie (Worker stirbt), bleibt der Zähler stehen; ``release_stale_extractions``
+        gibt die Datei nach ``TEXT_EXTRACTION_MAX_ATTEMPTS`` Abbrüchen auf. ``update_file_text`` setzt ihn
+        zurück. Wurde die Datei inzwischen zurückgestellt, nimmt dieser Aufruf sie wieder in Bearbeitung.
+        Rückgabe: Zahl der begonnenen Versuche, ``None``, wenn die Datei nicht mehr zu bearbeiten ist.
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                update(OParlFile)
+                .where(
+                    OParlFile.id == file_id,
+                    OParlFile.text_extraction_status.in_(("processing", "pending")),
+                )
+                .values(
+                    text_extraction_status="processing",
+                    text_extraction_attempts=OParlFile.text_extraction_attempts + 1,
+                    text_extraction_started_at=func.now(),
+                    updated_at=func.now(),
+                )
+                .returning(OParlFile.text_extraction_attempts)
+            )
+            attempts = result.scalar()
+            await session.commit()
+            return None if attempts is None else int(attempts)
 
     async def update_file_text(
         self,
@@ -2003,6 +2086,9 @@ class DatabaseStorage:
         async with self.get_session() as session:
             values: dict = {
                 "text_extraction_status": status,
+                # Bearbeitung beendet (gleich wie): kein Abbruch, Zähler und Beginn zurücksetzen (Issue #817)
+                "text_extraction_attempts": 0,
+                "text_extraction_started_at": None,
                 "updated_at": func.now(),
             }
             if text_content is not None:

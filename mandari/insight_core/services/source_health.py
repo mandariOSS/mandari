@@ -460,6 +460,13 @@ def collect_action_items() -> list[dict]:
         reverse("admin:insight_core_oparlfile_changelist") + "?text_extraction_status__exact=failed",
         level="ok",
     )
+    # Der OCR-Worker starb an diesen Dateien wiederholt (Speichergrenze) und hat sie aufgegeben (Issue #817)
+    add(
+        "Texterkennung nach wiederholtem Abbruch aufgegeben (Speichergrenze)",
+        OParlFile.objects.filter(text_extraction_status="failed", text_extraction_attempts__gt=0).count(),
+        reverse("admin:insight_core_oparlfile_changelist")
+        + "?text_extraction_status__exact=failed&text_extraction_attempts__gt=0",
+    )
     add(
         "Dokumente mit Cache-Fehler",
         OParlFile.objects.filter(deleted=False, local_status="error").count(),

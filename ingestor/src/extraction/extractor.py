@@ -3,8 +3,8 @@ Text Extraction Pipeline for the Ingestor.
 
 Downloads PDF files and extracts text using a fallback chain:
 1. pypdf (fast, text-based PDFs)
-2. Tesseract OCR (local, scanned PDFs)
-3. AI OCR (placeholder for future Mistral integration)
+2. Mistral OCR (optional, mit API-Schlüssel)
+3. Tesseract OCR (lokal, Seite für Seite mit Speicher- und Zeitgrenzen, ``src.extraction.ocr``)
 
 Async-capable: PDF downloads via httpx, sync extraction via asyncio.to_thread().
 
@@ -12,6 +12,11 @@ Downloads laufen gestreamt in eine temporäre Datei, die beim Schreiben gehasht 
 greift schon während des Downloads, nie liegt eine ganze Datei im Arbeitsspeicher (Issue #788). Ist die
 Dokumentablage eingerichtet (``OPARL_FILES_ROOT``), legt der Ingestor die Datei danach gleich unter
 ihrem SHA-256 ab – ein Abruf je Datei für Text und Ablage.
+
+Abbrüche (Issue #817): Jede Datei zählt ihre begonnenen Bearbeitungen. Stirbt der Worker mitten in einer
+Datei, stellt die nächste Runde sie nach ``TEXT_EXTRACTION_STALE_MINUTES`` zurück; Dateien mit einem
+Abbruch laufen danach einzeln, nach ``TEXT_EXTRACTION_MAX_ATTEMPTS`` Abbrüchen gelten sie als gescheitert
+(„Speichergrenze“) statt den Worker immer wieder zu beenden.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -36,23 +42,12 @@ from src.client.host_pacing import host_pacer
 from src.client.robots import robots_gate
 from src.client.source_options import SourceFetchOptions
 from src.config import settings
+from src.extraction.ocr import MEMORY_LIMIT_REASON, OcrLimits, OcrMemoryLimitError, ocr_pdf
 
 try:
     from pypdf import PdfReader
 except ImportError:
     PdfReader = None  # type: ignore[assignment, misc]
-
-try:
-    from pdf2image import convert_from_path
-    from pdf2image.exceptions import PDFInfoNotInstalledError
-except ImportError:
-    convert_from_path = None  # type: ignore[assignment, misc]
-    PDFInfoNotInstalledError = None  # type: ignore[assignment, misc]
-
-try:
-    import pytesseract
-except ImportError:
-    pytesseract = None  # type: ignore[assignment, misc]
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +60,8 @@ TEXT_MIME_TYPES = {"text/plain", "text/html"}
 SUPPORTED_MIME_TYPES = PDF_MIME_TYPES | TEXT_MIME_TYPES
 #: Textdateien werden höchstens bis zu dieser Größe gelesen
 MAX_TEXT_BYTES = 20 * 1024 * 1024
+#: Abgebrochene Bearbeitungen höchstens so oft je Minute auflösen (eine Abfrage über alle Kommunen)
+RELEASE_STALE_EVERY_SECONDS = 60.0
 
 
 class FileTooLargeError(Exception):
@@ -123,6 +120,37 @@ class TextExtractor:
         self._options_cache: dict[Any, tuple[SourceFetchOptions, float]] = {}
         # Bodies, deren robots.txt nicht erreichbar war: bis zu diesem Zeitpunkt nichts beanspruchen
         self._deferred_until: dict[Any, float] = {}
+        # Letztes Auflösen abgebrochener Bearbeitungen (Issue #817)
+        self._released_at: float | None = None
+
+    async def release_stale(self) -> tuple[int, int]:
+        """
+        Abgebrochene Bearbeitungen (Worker beendet) zurückstellen bzw. nach zu vielen Abbrüchen aufgeben,
+        höchstens alle ``RELEASE_STALE_EVERY_SECONDS``. Rückgabe: (zurückgestellt, aufgegeben).
+        """
+        release = getattr(self.storage, "release_stale_extractions", None)
+        now = self._clock()
+        if release is None or (self._released_at is not None and now - self._released_at < RELEASE_STALE_EVERY_SECONDS):
+            return 0, 0
+        self._released_at = now
+        try:
+            zurueck, aufgegeben = await release(
+                stale_after=timedelta(minutes=settings.text_extraction_stale_minutes),
+                max_attempts=settings.text_extraction_max_attempts,
+            )
+        except Exception as e:  # noqa: BLE001 - die Extraktion läuft auch ohne Auflösen weiter
+            logger.warning("Abgebrochene Textextraktionen nicht auflösbar: %s", e)
+            return 0, 0
+        if zurueck:
+            logger.warning("Textextraktion: %d abgebrochene Dateien zurückgestellt (Worker beendet)", zurueck)
+        if aufgegeben:
+            logger.error(
+                "Textextraktion: %d Dateien nach %d Abbrüchen aufgegeben (%s)",
+                aufgegeben,
+                settings.text_extraction_max_attempts,
+                MEMORY_LIMIT_REASON,
+            )
+        return zurueck, aufgegeben
 
     async def extract_pending_files(self, body_id: UUID) -> int:
         """
@@ -134,6 +162,8 @@ class TextExtractor:
         Returns:
             Number of files successfully extracted.
         """
+        # Abgebrochene Bearbeitungen aller Kommunen auflösen (höchstens einmal je Minute, Issue #817)
+        await self.release_stale()
         # Quelle liefert Dokumente nur hinter einer Zugangsprüfung für Menschen (sync_config["file_downloads"]):
         # nichts beanspruchen, die Dateien bleiben "pending" und werden nachgeholt, sobald der Schalter fällt
         if not await self._file_downloads_enabled(body_id):
@@ -170,10 +200,20 @@ class TextExtractor:
                 if success:
                     extracted += 1
 
+        # Dateien, deren Bearbeitung schon einmal abbrach, laufen zuletzt und einzeln: Stirbt der Worker
+        # wieder, zählt der Abbruch nur bei der Datei, die ihn auslöst, nicht bei einer zufällig parallelen.
+        suspects = [f for f in files if (getattr(f, "text_extraction_attempts", 0) or 0) > 0]
+        regular = [f for f in files if (getattr(f, "text_extraction_attempts", 0) or 0) <= 0]
         await asyncio.gather(
-            *(process_one(f) for f in files),
+            *(process_one(f) for f in regular),
             return_exceptions=True,
         )
+        for file_row in suspects:
+            try:
+                if await self._process_file(file_row):
+                    extracted += 1
+            except Exception as e:  # noqa: BLE001 - wie gather(return_exceptions=True)
+                logger.warning("Textextraktion für Datei %s fehlgeschlagen: %s", file_row.id, e)
 
         logger.info("Extracted text from %d/%d files", extracted, len(files))
         return extracted
@@ -233,6 +273,10 @@ class TextExtractor:
             await self.storage.update_file_text(file_id=file_id, status="skipped", error=decision.reason)
             return False
 
+        # Ab hier kann die Bearbeitung den Worker beenden (Speicher): Versuch zählen (Issue #817)
+        if not await self._mark_started(file_id):
+            return False
+
         try:
             # Drossel je Host: Dateien zählen wie jede andere Anfrage an die Quelle (mit Grenze je Host)
             async with host_pacer.limit(download_url, interval):
@@ -275,6 +319,16 @@ class TextExtractor:
             text, page_count, method = await asyncio.to_thread(
                 self._extract_text, downloaded.path, mime_type, file_name
             )
+        except OcrMemoryLimitError as e:
+            logger.warning("Texterkennung an der Speichergrenze für %s: %s", file_name or file_id, e)
+            await self.storage.update_file_text(
+                file_id=file_id,
+                status="failed",
+                error=str(e),
+                sha256_hash=sha256_hash,
+            )
+            await self._store(file_row, downloaded, mime_type)
+            return False
         except Exception as e:
             logger.warning("Extraction failed for %s: %s", file_name or file_id, e)
             await self.storage.update_file_text(
@@ -305,6 +359,23 @@ class TextExtractor:
             sha256_hash=sha256_hash,
         )
         return False
+
+    async def _mark_started(self, file_id: Any) -> bool:
+        """Begonnene Bearbeitung zählen; ``False``, wenn die Datei nicht mehr zu bearbeiten ist."""
+        mark = getattr(self.storage, "mark_extraction_started", None)
+        if mark is None:
+            return True
+        try:
+            attempts = await mark(file_id)
+        except Exception as e:  # noqa: BLE001 - ohne Zähler läuft die Bearbeitung wie bisher
+            logger.warning("Bearbeitungsbeginn für Datei %s nicht gespeichert: %s", file_id, e)
+            return True
+        if attempts is None:
+            logger.info("Datei %s nicht mehr in Bearbeitung, übersprungen", file_id)
+            return False
+        if attempts > 1:
+            logger.warning("Datei %s: Versuch %d nach Abbruch, läuft einzeln", file_id, attempts)
+        return True
 
     async def _file_downloads_enabled(self, body_id: Any) -> bool:
         """Schalter ``sync_config["file_downloads"]`` der Quelle; im Zweifel (Fehler, alter Storage) an."""
@@ -477,12 +548,14 @@ def _extract_text_from_pdf(source: Path, file_name: str = "") -> tuple[str, int 
     """
     Extract text from a PDF file using the fallback chain: pypdf -> Mistral -> Tesseract.
 
-    Liest aus der Datei; pypdf und pdftoppm laden nur, was sie brauchen.
+    Liest aus der Datei; pypdf und pdftoppm laden nur, was sie brauchen. pypdf liefert dabei die Seitengrößen,
+    aus denen die Texterkennung die Auflösung je Seite bestimmt (Issue #817).
 
     Returns:
         (text, page_count, extraction_method)
     """
     page_count = None
+    page_sizes: list[tuple[float, float] | None] | None = None
 
     # 1. Try pypdf (fast, for text-based PDFs)
     if PdfReader is not None:
@@ -491,14 +564,18 @@ def _extract_text_from_pdf(source: Path, file_name: str = "") -> tuple[str, int 
             page_count = len(reader.pages)
 
             text_fragments: list[str] = []
+            page_sizes = []
             for page in reader.pages:
                 try:
                     page_text = page.extract_text() or ""
                 except Exception:
                     page_text = ""
                 text_fragments.append(page_text.strip())
+                if len(page_sizes) < settings.ocr_max_pages:
+                    page_sizes.append(_page_size(page))
 
             text = "\n\n".join(f for f in text_fragments if f)
+            del reader, text_fragments
 
             if text.strip():
                 logger.debug("pypdf extraction ok: %d chars", len(text))
@@ -508,9 +585,7 @@ def _extract_text_from_pdf(source: Path, file_name: str = "") -> tuple[str, int 
             logger.warning("pypdf extraction failed: %s", exc)
 
     # 2. Mistral OCR (API, optional) — schneller als lokales Tesseract
-    from src.config import settings as _settings
-
-    if _settings.mistral_api_key:
+    if settings.mistral_api_key:
         try:
             text = _extract_text_with_mistral(source.read_bytes(), file_name)
             if text.strip():
@@ -519,14 +594,38 @@ def _extract_text_from_pdf(source: Path, file_name: str = "") -> tuple[str, int 
         except Exception as exc:
             logger.warning("Mistral OCR failed for %s, falling back to Tesseract: %s", file_name, exc)
 
-    # 3. Tesseract OCR (local)
-    text, success = _extract_text_with_ocr(source, page_count=page_count)
-    if success and text.strip():
-        logger.debug("Tesseract OCR ok: %d chars", len(text))
-        return text, page_count, "tesseract"
+    # 3. Tesseract OCR (lokal, Seite für Seite mit Grenzen); OcrMemoryLimitError geht an den Aufrufer
+    result = ocr_pdf(source, page_count=page_count, page_sizes=page_sizes, limits=ocr_limits())
+    if result.notes:
+        logger.warning("OCR %s: %s", file_name or source.name, "; ".join(result.notes))
+    if result.text.strip():
+        logger.debug("Tesseract OCR ok: %d chars", len(result.text))
+        return result.text, page_count, "tesseract"
 
     logger.warning("No text extracted from PDF")
     return "", page_count, "none"
+
+
+def _page_size(page: Any) -> tuple[float, float] | None:
+    """Breite und Höhe einer Seite in PDF-Punkten (MediaBox wie pdftoppm, mit UserUnit); ``None`` bei Fehlern."""
+    try:
+        box = page.mediabox
+        unit = float(getattr(page, "user_unit", 1) or 1)
+        return abs(float(box.width)) * unit, abs(float(box.height)) * unit
+    except Exception:  # noqa: BLE001 - ohne Größe skaliert die Texterkennung über die lange Seite
+        return None
+
+
+def ocr_limits() -> OcrLimits:
+    """Grenzen der Texterkennung aus den Einstellungen (``OCR_*``)."""
+    return OcrLimits(
+        dpi=settings.ocr_dpi,
+        max_pixels=int(settings.ocr_max_megapixels * 1_000_000),
+        memory_limit_mb=settings.ocr_memory_limit_mb,
+        page_timeout=settings.ocr_page_timeout,
+        file_budget=settings.ocr_file_budget_seconds,
+        max_pages=settings.ocr_max_pages,
+    )
 
 
 def _extract_text_with_mistral(data: bytes, file_name: str = "") -> str:
@@ -578,67 +677,6 @@ def _extract_text_with_mistral(data: bytes, file_name: str = "") -> str:
     response.raise_for_status()
     result = response.json()
     return (result.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
-
-
-OCR_MAX_PAGES = 100  # Schutz vor Extremfaellen (Anlagenbaende etc.)
-OCR_DPI = 200  # 200 dpi reicht Tesseract; 300 dpi verdoppelt den Speicher
-
-
-def _extract_text_with_ocr(source: Path, page_count: int | None = None) -> tuple[str, bool]:
-    """
-    Extract text via Tesseract OCR — seitenweise.
-
-    Ohne first_page/last_page rendert pdf2image ALLE Seiten
-    gleichzeitig in den RAM (~26 MB pro A4-Seite bei 300 dpi) — ein
-    50-Seiten-Scan sprengt damit jedes Container-Limit (OOM-Kill).
-    Deshalb: eine Seite rendern, OCRen, freigeben, naechste Seite.
-    Gerendert wird direkt aus der Datei, ohne sie in den Speicher zu laden.
-    """
-    if convert_from_path is None or pytesseract is None:
-        logger.warning("OCR not available (pdf2image or pytesseract missing)")
-        return "", False
-
-    max_pages = min(page_count, OCR_MAX_PAGES) if page_count else OCR_MAX_PAGES
-    ocr_fragments: list[str] = []
-    rendered_any = False
-
-    import tempfile
-
-    for page_no in range(1, max_pages + 1):
-        try:
-            # Eigenes Temp-Verzeichnis pro Seite: pdf2image raeumt seine
-            # Zwischendateien sonst bei Abbruechen nicht auf (57GB-Vorfall)
-            with tempfile.TemporaryDirectory(prefix="ocr-page-") as tmpdir:
-                images = convert_from_path(
-                    source, dpi=OCR_DPI, first_page=page_no, last_page=page_no, output_folder=tmpdir
-                )
-                if images:
-                    images[0].load()
-        except Exception as exc:
-            if PDFInfoNotInstalledError and isinstance(exc, PDFInfoNotInstalledError):
-                logger.warning("Poppler not installed, skipping OCR")
-                return "", False
-            # Hinter der letzten Seite / defekte Seite: abbrechen
-            if rendered_any:
-                break
-            logger.warning("Error converting PDF for OCR: %s", exc)
-            return "", False
-
-        if not images:
-            break
-        rendered_any = True
-
-        try:
-            ocr_text = pytesseract.image_to_string(images[0], lang="deu")
-        except Exception as exc:
-            logger.warning("OCR error for page %d: %s", page_no, exc)
-            ocr_text = ""
-        ocr_fragments.append(ocr_text.strip())
-        images[0].close()
-        del images
-
-    text = "\n\n".join(f for f in ocr_fragments if f)
-    return text, rendered_any
 
 
 def _extract_text_from_plain(data: bytes) -> str:
