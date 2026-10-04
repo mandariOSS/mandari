@@ -463,6 +463,9 @@ services:
       OPARL_FILES_ROOT: /app/files
       FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}
       FILE_CACHE_MIN_FREE_GB: ${FILE_CACHE_MIN_FREE_GB:-15}
+      # Der Sync erkennt den Text selbst (TEXT_EXTRACTION_ENABLED): Adressraum je Tesseract-Unterprozess
+      # deutlich unter dem Speicherlimit des Containers (512 MB) halten (#817)
+      OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-384}
     volumes:
       - ingestor_data:/app/data
       - mandari_files:/app/files

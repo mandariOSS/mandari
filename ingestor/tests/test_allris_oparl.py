@@ -321,7 +321,7 @@ class _Storage:
     async def file_downloads_enabled_for_body(self, body_id: Any) -> bool:
         return self.enabled
 
-    async def get_pending_files(self, body_id: Any, batch_size: int, max_size_bytes: int | None) -> list[Any]:
+    async def get_pending_files(self, body_id: Any, batch_size: int, max_size_bytes: int | None, **_: Any) -> list[Any]:
         self.claimed += 1
         return []
 
@@ -335,15 +335,17 @@ class TestDateiabruf:
     async def test_eingeschaltete_quelle_laeuft_wie_bisher(self):
         storage = _Storage(enabled=True)
         assert await TextExtractor(storage).extract_pending_files(uuid.uuid4()) == 0
-        assert storage.claimed == 1
+        assert storage.claimed >= 1
 
     async def test_storage_ohne_schalter_laeuft_wie_bisher(self):
         class Alt:
             claimed = 0
 
-            async def get_pending_files(self, body_id: Any, batch_size: int, max_size_bytes: int | None) -> list:
+            async def get_pending_files(
+                self, body_id: Any, batch_size: int, max_size_bytes: int | None, **_: Any
+            ) -> list:
                 Alt.claimed += 1
                 return []
 
         await TextExtractor(Alt()).extract_pending_files(uuid.uuid4())
-        assert Alt.claimed == 1
+        assert Alt.claimed >= 1

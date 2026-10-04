@@ -130,6 +130,18 @@ class Settings(BaseSettings):
     text_extraction_concurrency: int = 4
     text_extraction_timeout: float = 120.0
     text_extraction_batch_size: int = 500
+    # Texterkennung mit Grenzen (Issue #817): Rendern und Tesseract je Seite als Unterprozess mit Speicher- und
+    # Zeitgrenze, Auflösung je Seitengröße gedeckelt, Zeitbudget je Datei (danach gilt der bis dahin erkannte Text)
+    ocr_dpi: int = 200
+    ocr_max_megapixels: float = 8.0
+    ocr_memory_limit_mb: int = 1024
+    ocr_page_timeout: float = 120.0
+    ocr_file_budget_seconds: float = 1200.0
+    ocr_max_pages: int = 100
+    # Dateien in "processing", deren Bearbeitung länger zurückliegt, gelten als abgebrochen (Worker beendet):
+    # zurück nach "pending", nach TEXT_EXTRACTION_MAX_ATTEMPTS abgebrochenen Versuchen "failed" (Speichergrenze)
+    text_extraction_stale_minutes: int = 60
+    text_extraction_max_attempts: int = 3
 
     # Dokumentablage (Issue #788): Dateien, die der Ingestor für den Text ohnehin lädt, legt er gleich in
     # der Ablage nach SHA-256 der Anwendung ab (gleiches Volume, OPARL_FILES_ROOT). Leer = nicht ablegen.

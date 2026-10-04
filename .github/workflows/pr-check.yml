@@ -1046,6 +1046,11 @@ jobs:
           enable-cache: true
       - name: Abhängigkeiten
         run: cd ingestor && uv sync --frozen --extra dev
+      # Texterkennung mit echten Werkzeugen wie im Image (tests/test_ocr_grenzen.py, Issue #817)
+      - name: Poppler und Tesseract
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-deu
       - name: pytest
         env:
           INGESTOR_TEST_DATABASE_URL: postgresql://test:test@localhost:5432/test

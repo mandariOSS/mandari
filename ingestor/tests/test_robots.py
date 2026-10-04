@@ -474,8 +474,9 @@ class TestDateienNichtErreichbar:
         datei = _datei("https://rat.example.de/dokumente/vorlage.pdf")
         speicher.wartend = [datei]
         assert await extractor.extract_pending_files(datei.body_id) == 0
-        # Nicht „skipped“: die Datei bleibt in der Warteschlange und kommt später wieder dran
-        assert speicher.updates == [{"file_id": datei.id, "status": "pending"}]
+        # Nicht „skipped“: die Datei bleibt in der Warteschlange und kommt später wieder dran. Begonnen war
+        # sie noch nicht: Abbruchzähler bleiben (Issue #817)
+        assert speicher.updates == [{"file_id": datei.id, "status": "pending", "reset_attempts": False}]
         assert speicher.beansprucht == [datei.body_id]
 
         # Bis zum neuen Versuch beansprucht der Worker für diesen Body nichts

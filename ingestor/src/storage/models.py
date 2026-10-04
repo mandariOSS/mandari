@@ -399,6 +399,10 @@ class OParlFile(Base):
     text_extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     text_extracted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Abgebrochene Versuche und Beginn der laufenden Bearbeitung (Issue #817, Django-Migration insight_core 0047).
+    # Nur Standard der Datenbank: Upserts und ältere Ingestor-Images schreiben die Spalten nie.
+    text_extraction_attempts: Mapped[int] = mapped_column(Integer, server_default="0")
+    text_extraction_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)

@@ -67,7 +67,7 @@ def test_alles_in_ordnung(client: Client, mit_bedarf: Any) -> None:
     assert antwort.status_code == 200
     daten = antwort.json()
     assert daten["status"] == "ok"
-    assert set(daten["checks"]) == {"lebenszeichen", "rueckstau", "fehlerquote", "gescheitert"}
+    assert set(daten["checks"]) == {"lebenszeichen", "rueckstau", "fehlerquote", "gescheitert", "texterkennung"}
     assert all(c["ok"] for c in daten["checks"].values()), daten
     assert daten["checks"]["lebenszeichen"]["detail"] == "1 Worker (dispatch, scheduler, sequencer, tasks)"
     assert daten["checks"]["fehlerquote"]["detail"] == "0 von 3 Aufträgen der letzten Stunde gescheitert (0%)"
@@ -206,7 +206,7 @@ def test_unbekannte_pruefung_400_ohne_echo(client: Client) -> None:
 
     assert antwort.status_code == 400
     assert b"gibt-es-nicht" not in antwort.content
-    assert antwort.json()["pruefungen"] == ["lebenszeichen", "rueckstau", "fehlerquote", "gescheitert"]
+    assert antwort.json()["pruefungen"] == ["lebenszeichen", "rueckstau", "fehlerquote", "gescheitert", "texterkennung"]
 
 
 @pytest.mark.django_db
@@ -224,6 +224,7 @@ def test_texte_der_pruefungen_nur_fuer_die_eigene_ueberwachung(client: Client, m
             "rueckstau": {"ok": True},
             "fehlerquote": {"ok": True},
             "gescheitert": {"ok": False},
+            "texterkennung": {"ok": True},
         },
     }
 

@@ -17,6 +17,9 @@ Anwendung sie beantworten kann, auch wenn der Worker selbst steht:
   Auftrags nach einem Tag; tote Ereignisse bleiben, bis sie im Admin erneut versucht oder verworfen
   sind.
 
+Fachmodule ergänzen eigene Prüfungen über ``register_check``: ``texterkennung`` (``insight_core``, Issue #817)
+meldet hängende und nach wiederholtem Abbruch aufgegebene Dateien des OCR-Workers.
+
 Die Antworten enthalten nur Zahlen, Rollen- und Warteschlangennamen, keine Namen von Aufträgen oder
 Abonnements: Der Endpunkt ist wie ``/health/ready/`` ohne Anmeldung erreichbar. Einzelheiten
 stehen im Admin (Ereignisse, Aufträge) und in ``/metrics/``.
@@ -135,6 +138,14 @@ CHECKS: dict[str, Callable[[], Check]] = {
     "fehlerquote": check_error_rate,
     "gescheitert": check_failed,
 }
+
+
+def register_check(name: str, check: Callable[[], Check]) -> None:
+    """
+    Prüfung eines Fachmoduls aufnehmen, das die Plattform nicht kennen darf (Schichtenmodell), etwa
+    ``texterkennung`` aus ``insight_core`` (Issue #817). Aufruf aus ``AppConfig.ready``.
+    """
+    CHECKS[name] = check
 
 
 def run_checks() -> dict[str, Check]:

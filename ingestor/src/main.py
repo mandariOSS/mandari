@@ -451,6 +451,11 @@ def extract_daemon(
     console.print(f"  Concurrency: {settings.text_extraction_concurrency}")
     console.print(f"  Max file size: {settings.text_extraction_max_size_mb} MB")
     console.print(f"  Batch size: {settings.text_extraction_batch_size}")
+    console.print(
+        f"  OCR limits: {settings.ocr_max_megapixels:g} MP/page, {settings.ocr_memory_limit_mb} MB/subprocess, "
+        f"stale after {settings.text_extraction_stale_minutes} min, give up after "
+        f"{settings.text_extraction_max_attempts} aborts"
+    )
     console.print()
 
     async def run_worker() -> None:
