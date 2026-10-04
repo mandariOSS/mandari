@@ -1056,7 +1056,7 @@ UNFOLD = {
                         "link": reverse_lazy("admin:insight_core_oparlmeeting_changelist"),
                     },
                     {
-                        "title": _("Vorgange"),
+                        "title": _("Vorgänge"),
                         "icon": "description",
                         "link": reverse_lazy("admin:insight_core_oparlpaper_changelist"),
                     },

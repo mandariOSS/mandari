@@ -5,6 +5,9 @@
  * data-autocomplete-url data-results-url>` mit `#neighborhood-map` und `#results-container`.
  * Stadtteile übergeben Name und Koordinaten als Datenattribute (`data-name`, `data-lat`, `data-lon`),
  * nie als Quelltext. Titel aus den Ergebnissen gelangen nur als Text in die Popups.
+ *
+ * Die URLs liest `init()` einmal von der Wurzel: In Ereignis-Handlern (`@input`, `@click`) ist
+ * `$el` das auslösende Element, nicht die Wurzel mit den Datenattributen.
  */
 
 import { defineComponent } from '../js/alpine/component'
@@ -62,12 +65,17 @@ export const neighborhoodApp = defineComponent(() => ({
   selectedName: '' as string,
   radius: 500,
   loading: false,
+  _autocompleteUrl: '',
+  _resultsUrl: '',
   // Leaflet-Objekte nicht reaktiv halten (Alpine würde sie in Proxys hüllen)
   _map: undefined as NeighborhoodMap | undefined,
   _areaLayers: [] as Layer[],
   _resultLayers: [] as Layer[],
 
   init() {
+    const root = this.$root as HTMLElement
+    this._autocompleteUrl = root.dataset.autocompleteUrl ?? ''
+    this._resultsUrl = root.dataset.resultsUrl ?? ''
     this.initMap()
     const params = new URLSearchParams(window.location.search)
     const lat = number(params.get('lat') ?? undefined)
@@ -99,7 +107,7 @@ export const neighborhoodApp = defineComponent(() => ({
     const L = leaflet()
     const element = document.getElementById('neighborhood-map')
     if (!L || !element) return
-    const root = this.$el as HTMLElement
+    const root = this.$root as HTMLElement
     const lat = number(root.dataset.centerLat)
     const lon = number(root.dataset.centerLon)
     const center: LatLng = lat !== null && lon !== null ? [lat, lon] : FALLBACK_CENTER
@@ -117,7 +125,8 @@ export const neighborhoodApp = defineComponent(() => ({
       this.suggestions = []
       return
     }
-    const url = `${(this.$el as HTMLElement).dataset.autocompleteUrl ?? ''}?q=${encodeURIComponent(this.searchQuery)}`
+    if (!this._autocompleteUrl) return
+    const url = `${this._autocompleteUrl}?q=${encodeURIComponent(this.searchQuery)}`
     try {
       const response = await fetch(url)
       this.suggestions = response.ok ? ((await response.json()) as PlaceSuggestion[]) : []
@@ -178,10 +187,9 @@ export const neighborhoodApp = defineComponent(() => ({
   async fetchResults() {
     const L = leaflet()
     const container = document.getElementById('results-container')
-    if (this.selectedLat === null || this.selectedLon === null || !container) return
+    if (this.selectedLat === null || this.selectedLon === null || !container || !this._resultsUrl) return
     this.loading = true
-    const base = (this.$el as HTMLElement).dataset.resultsUrl ?? ''
-    const url = `${base}?lat=${this.selectedLat}&lon=${this.selectedLon}&radius=${this.radius}`
+    const url = `${this._resultsUrl}?lat=${this.selectedLat}&lon=${this.selectedLon}&radius=${this.radius}`
     try {
       const response = await fetch(url, { headers: { 'HX-Request': 'true' } })
       if (!response.ok) throw new Error(String(response.status))

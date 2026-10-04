@@ -2,7 +2,7 @@
 <div class="space-y-2">
     <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
         <span class="font-medium text-gray-900 dark:text-white">{{ results|length }}</span>
-        Vorgang{{ results|length|pluralize:"e" }} im Umkreis von {{ radius }}m gefunden
+        {% if results|length == 1 %}Vorgang{% else %}Vorg&auml;nge{% endif %} im Umkreis von {{ radius }}&nbsp;m gefunden
     </p>
     {% for r in results %}
     <a href="{{ r.url }}"
