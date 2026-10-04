@@ -1,11 +1,12 @@
 {# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
 {% comment %}
 Weg zurück zur Liste auf Detailseiten am Handy (Issue #783, Stufe 2); ab lg tragen die Brotkrumen der Kopfzeile ihn.
+Gehört die Seite zu einer anderen als der gewählten Kommune, wählt der Link sie erst (wie die Brotkrumen).
   <c-insight.zurueck href="{% url 'insight_core:insight:meeting_list' %}">Sitzungen</c-insight.zurueck>
 {% endcomment %}
 <c-vars href="" />
 <nav aria-label="Zurück" class="lg:hidden mb-4">
-    <a href="{{ href }}" class="inline-flex items-center gap-1 -ml-1 min-h-11 font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+    <a href="{% if page_body_foreign %}{% url 'insight_core:insight:set_body' page_body.id %}?weiter={{ href|urlencode }}{% else %}{{ href }}{% endif %}" class="inline-flex items-center gap-1 -ml-1 min-h-11 font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
         <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i>{{ slot }}
     </a>
 </nav>

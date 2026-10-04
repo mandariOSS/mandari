@@ -116,6 +116,16 @@ class TestFremdeKommune:
         # Die Seitenleiste bleibt bei der Wahl: Ihre Bereiche führen zu den Listen von A
         assert "Beispielstadt" in _seitenleiste(html)
 
+    def test_vorgang_mit_einer_zeile_brotkrumen_und_weg_zurueck(self, client: Client, kommunen: dict[str, Any]) -> None:
+        _waehlen(client, kommunen["a"])
+        html = _html(client, reverse("insight_core:insight:paper_detail", args=[kommunen["vorgang_b"].pk]))
+        assert html.count('aria-label="Brotkrumen"') == 1, "nur die Kopfzeile trägt Brotkrumen"
+        krumen = _brotkrumen(html)
+        assert ">Musterhausen</a>" in krumen and 'aria-current="page"' in krumen and "Radweg Musterhausen" in krumen
+        zurueck = re.search(r'<nav aria-label="Zurück"[^>]*>\s*<a href="([^"]*)"', html)
+        waehlen = reverse("insight_core:insight:set_body", args=[kommunen["b"].id])
+        assert zurueck and zurueck.group(1) == f"{waehlen}?weiter=/insight/vorgaenge/", "am Handy zur Liste von B"
+
     def test_eigene_kommune_ohne_umweg_ueber_die_wahl(self, client: Client, kommunen: dict[str, Any]) -> None:
         _waehlen(client, kommunen["a"])
         html = _html(client, reverse("insight_core:insight:paper_detail", args=[kommunen["vorgang_a"].pk]))
