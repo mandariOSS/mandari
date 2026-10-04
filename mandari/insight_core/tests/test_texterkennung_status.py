@@ -64,13 +64,27 @@ def test_haengende_dateien_ueber_der_zeitgrenze() -> None:
 @pytest.mark.django_db
 def test_aufgegebene_dateien_24_stunden_rot() -> None:
     _datei(text_extraction_status="pending", text_extraction_attempts=1)
-    datei = _datei(text_extraction_status="failed", text_extraction_attempts=3)
+    datei = _datei(text_extraction_status="failed", text_extraction_attempts=3, text_extracted_at=timezone.now())
 
     stand = extraction_health()
     assert (stand.abgebrochen, stand.aufgegeben) == (1, 1)
     assert not check_text_extraction().ok
 
-    OParlFile.objects.filter(pk=datei.pk).update(updated_at=timezone.now() - timedelta(hours=25))
+    OParlFile.objects.filter(pk=datei.pk).update(text_extracted_at=timezone.now() - timedelta(hours=25))
+    assert check_text_extraction().ok
+
+
+@pytest.mark.django_db
+def test_spaetere_aenderung_der_zeile_verlaengert_das_fenster_nicht() -> None:
+    """Maßgeblich ist der Zeitpunkt der Aufgabe, nicht updated_at (Dokumentablage, Abgleich, Sync ändern die Zeile)."""
+    _datei(
+        text_extraction_status="failed",
+        text_extraction_attempts=3,
+        text_extracted_at=timezone.now() - timedelta(hours=25),
+        updated_at=timezone.now(),
+    )
+
+    assert extraction_health().aufgegeben == 0
     assert check_text_extraction().ok
 
 
@@ -79,7 +93,7 @@ def test_statusseite_je_pruefung(client: Client) -> None:
     assert "texterkennung" in status.CHECKS
     assert client.get("/health/worker/?pruefung=texterkennung").status_code == 200
 
-    _datei(text_extraction_status="failed", text_extraction_attempts=3)
+    _datei(text_extraction_status="failed", text_extraction_attempts=3, text_extracted_at=timezone.now())
     cache.clear()
     antwort = client.get("/health/worker/?pruefung=texterkennung")
 

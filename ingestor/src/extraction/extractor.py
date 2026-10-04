@@ -15,8 +15,12 @@ ihrem SHA-256 ab – ein Abruf je Datei für Text und Ablage.
 
 Abbrüche (Issue #817): Jede Datei zählt ihre begonnenen Bearbeitungen. Stirbt der Worker mitten in einer
 Datei, stellt die nächste Runde sie nach ``TEXT_EXTRACTION_STALE_MINUTES`` zurück; Dateien mit einem
-Abbruch laufen danach einzeln, nach ``TEXT_EXTRACTION_MAX_ATTEMPTS`` Abbrüchen gelten sie als gescheitert
-(„Speichergrenze“) statt den Worker immer wieder zu beenden.
+Abbruch laufen danach einzeln und zuletzt (je Kommune), nach ``TEXT_EXTRACTION_MAX_ATTEMPTS`` Abbrüchen
+gelten sie als gescheitert („Speichergrenze“) statt den Worker immer wieder zu beenden.
+
+Beansprucht wird in kleinen Portionen (``CLAIM_PER_SLOT`` Dateien je Platz der Parallelität): Das
+Beanspruchen startet die Zeitgrenze, eine beanspruchte Datei darf also nicht hinter einem ganzen Stapel
+warten, sonst gälte sie als abgebrochen, obwohl der Worker lebt.
 """
 
 from __future__ import annotations
@@ -60,8 +64,13 @@ TEXT_MIME_TYPES = {"text/plain", "text/html"}
 SUPPORTED_MIME_TYPES = PDF_MIME_TYPES | TEXT_MIME_TYPES
 #: Textdateien werden höchstens bis zu dieser Größe gelesen
 MAX_TEXT_BYTES = 20 * 1024 * 1024
-#: Abgebrochene Bearbeitungen höchstens so oft je Minute auflösen (eine Abfrage über alle Kommunen)
+#: Abgebrochene Bearbeitungen höchstens einmal in diesem Abstand auflösen (eine Abfrage über alle Kommunen),
+#: je Speicher: Sync und Scraper legen je Kommune einen eigenen Extraktor an
 RELEASE_STALE_EVERY_SECONDS = 60.0
+#: Je Platz der Parallelität höchstens so viele Dateien auf einmal beanspruchen (Issue #817). Eine
+#: beanspruchte Datei wartet so höchstens auf eine andere Datei ihres Platzes (``OCR_FILE_BUDGET_SECONDS``
+#: plus Abruf), deutlich unter ``TEXT_EXTRACTION_STALE_MINUTES``, statt auf einen ganzen Stapel.
+CLAIM_PER_SLOT = 2
 
 
 class FileTooLargeError(Exception):
@@ -120,19 +129,21 @@ class TextExtractor:
         self._options_cache: dict[Any, tuple[SourceFetchOptions, float]] = {}
         # Bodies, deren robots.txt nicht erreichbar war: bis zu diesem Zeitpunkt nichts beanspruchen
         self._deferred_until: dict[Any, float] = {}
-        # Letztes Auflösen abgebrochener Bearbeitungen (Issue #817)
-        self._released_at: float | None = None
 
     async def release_stale(self) -> tuple[int, int]:
         """
         Abgebrochene Bearbeitungen (Worker beendet) zurückstellen bzw. nach zu vielen Abbrüchen aufgeben,
-        höchstens alle ``RELEASE_STALE_EVERY_SECONDS``. Rückgabe: (zurückgestellt, aufgegeben).
+        höchstens alle ``RELEASE_STALE_EVERY_SECONDS`` je Speicher (``stale_extractions_released_at``), auch
+        wenn Sync und Scraper je Kommune einen eigenen Extraktor anlegen. Rückgabe: (zurückgestellt, aufgegeben).
         """
         release = getattr(self.storage, "release_stale_extractions", None)
-        now = self._clock()
-        if release is None or (self._released_at is not None and now - self._released_at < RELEASE_STALE_EVERY_SECONDS):
+        if release is None:
             return 0, 0
-        self._released_at = now
+        now = self._clock()
+        last = getattr(self.storage, "stale_extractions_released_at", None)
+        if last is not None and now - last < RELEASE_STALE_EVERY_SECONDS:
+            return 0, 0
+        self.storage.stale_extractions_released_at = now
         try:
             zurueck, aufgegeben = await release(
                 stale_after=timedelta(minutes=settings.text_extraction_stale_minutes),
@@ -171,37 +182,71 @@ class TextExtractor:
             return 0
         # Die robots.txt der Quelle war eben nicht erreichbar: Dateien bleiben "pending", bis der neue Versuch
         # fällig ist, statt sie in jeder Runde zu beanspruchen und wieder zurückzustellen
-        deferred = self._deferred_until.get(body_id)
-        if deferred is not None:
-            if self._clock() < deferred:
-                logger.debug("Body %s zurückgestellt (robots.txt nicht erreichbar)", body_id)
-                return 0
-            del self._deferred_until[body_id]
-
-        files = await self.storage.get_pending_files(
-            body_id=body_id,
-            batch_size=self.batch_size,
-            max_size_bytes=self.max_size_bytes,
-        )
-
-        if not files:
-            logger.debug("No pending files for body %s", body_id)
+        if self._deferred(body_id):
+            logger.debug("Body %s zurückgestellt (robots.txt nicht erreichbar)", body_id)
             return 0
 
-        logger.info("Extracting text from %d pending files", len(files))
+        # Höchstens batch_size Dateien je Aufruf, beansprucht in kleinen Portionen direkt vor der Bearbeitung:
+        # Das Beanspruchen startet die Zeitgrenze für abgebrochene Bearbeitungen (Issue #817)
+        claimed = 0
+        extracted = 0
+        portion = max(1, self.concurrency) * CLAIM_PER_SLOT
+        # 1. Dateien ohne Abbruch, parallel
+        while claimed < self.batch_size and not self._deferred(body_id):
+            requested = min(portion, self.batch_size - claimed)
+            files = await self.storage.get_pending_files(
+                body_id=body_id,
+                batch_size=requested,
+                max_size_bytes=self.max_size_bytes,
+                retried=False,
+            )
+            if not files:
+                break
+            claimed += len(files)
+            extracted += await self._process_claimed(files)
+            if len(files) < requested:
+                break  # keine weiteren wartenden Dateien ohne Abbruch
+        # 2. Dateien, deren Bearbeitung schon einmal abbrach: zuletzt, einzeln beansprucht und allein
+        # bearbeitet. Stirbt der Worker wieder, zählt der Abbruch nur bei der Datei, die ihn auslöst.
+        while claimed < self.batch_size and not self._deferred(body_id):
+            files = await self.storage.get_pending_files(
+                body_id=body_id, batch_size=1, max_size_bytes=self.max_size_bytes, retried=True
+            )
+            if not files:
+                break
+            claimed += len(files)
+            extracted += await self._process_claimed(files)
 
+        if claimed:
+            logger.info("Extracted text from %d/%d files", extracted, claimed)
+        else:
+            logger.debug("No pending files for body %s", body_id)
+        return extracted
+
+    def _deferred(self, body_id: Any) -> bool:
+        """Ist die Kommune zurückgestellt (robots.txt eben nicht erreichbar)? Abgelaufene Fristen verfallen."""
+        until = self._deferred_until.get(body_id)
+        if until is None:
+            return False
+        if self._clock() < until:
+            return True
+        del self._deferred_until[body_id]
+        return False
+
+    async def _process_claimed(self, files: list[Any]) -> int:
+        """
+        Beanspruchte Dateien bearbeiten: ohne Abbruch parallel (``TEXT_EXTRACTION_CONCURRENCY``), Dateien mit
+        einem Abbruch danach einzeln. Rückgabe: Zahl der Dateien mit Text.
+        """
         semaphore = asyncio.Semaphore(self.concurrency)
         extracted = 0
 
-        async def process_one(file_row):
+        async def process_one(file_row: Any) -> None:
             nonlocal extracted
             async with semaphore:
-                success = await self._process_file(file_row)
-                if success:
+                if await self._process_file(file_row):
                     extracted += 1
 
-        # Dateien, deren Bearbeitung schon einmal abbrach, laufen zuletzt und einzeln: Stirbt der Worker
-        # wieder, zählt der Abbruch nur bei der Datei, die ihn auslöst, nicht bei einer zufällig parallelen.
         suspects = [f for f in files if (getattr(f, "text_extraction_attempts", 0) or 0) > 0]
         regular = [f for f in files if (getattr(f, "text_extraction_attempts", 0) or 0) <= 0]
         await asyncio.gather(
@@ -214,8 +259,6 @@ class TextExtractor:
                     extracted += 1
             except Exception as e:  # noqa: BLE001 - wie gather(return_exceptions=True)
                 logger.warning("Textextraktion für Datei %s fehlgeschlagen: %s", file_row.id, e)
-
-        logger.info("Extracted text from %d/%d files", extracted, len(files))
         return extracted
 
     async def _process_file(self, file_row) -> bool:
@@ -266,7 +309,8 @@ class TextExtractor:
             logger.info("Datei %s zurückgestellt: %s", file_id, decision.reason)
             if file_row.body_id is not None:
                 self._deferred_until[file_row.body_id] = self._clock() + RETRY_UNREACHABLE_SECONDS
-            await self.storage.update_file_text(file_id=file_id, status="pending")
+            # Noch nicht begonnen: Abbruchzähler bleiben, eine verdächtige Datei läuft weiter einzeln und zuletzt
+            await self.storage.update_file_text(file_id=file_id, status="pending", reset_attempts=False)
             return False
         if not decision.allowed:
             logger.info("Datei %s nicht abgerufen: %s", file_id, decision.reason)

@@ -236,6 +236,10 @@ class DatabaseStorage:
         # mit dem Prozessor.
         self.id_bases = IdBases()
 
+        # Letztes Auflösen abgebrochener Textextraktionen (Uhr des Extraktors, Issue #817): gilt für alle
+        # Extraktoren an diesem Speicher, auch wenn Sync und Scraper je Kommune einen eigenen anlegen
+        self.stale_extractions_released_at: float | None = None
+
         # Cache for body UUIDs (external_id -> UUID)
         self._body_uuid_cache: dict[str, UUID] = {}
         self._meeting_uuid_cache: dict[str, UUID] = {}
@@ -1937,7 +1941,9 @@ class DatabaseStorage:
         Dateien in ``processing``. Nach ``stale_after``:
 
         - Dateien, deren Bearbeitung schon ``max_attempts``-mal begonnen und nie beendet wurde, werden
-          ``failed`` mit dem Grund „Speichergrenze“ – keine Endlosschleife über dieselbe Datei.
+          ``failed`` mit dem Grund „Speichergrenze“ – keine Endlosschleife über dieselbe Datei. Der Zeitpunkt
+          der Aufgabe steht in ``text_extracted_at`` (Prüfung ``texterkennung``: aufgegeben in 24 h), nicht nur
+          in ``updated_at``, das jede spätere Änderung der Zeile verschiebt.
         - alle anderen zurück nach ``pending``; der Zähler bleibt, der nächste Versuch läuft allein.
 
         Rückgabe: (zurückgestellt, aufgegeben).
@@ -1954,6 +1960,7 @@ class DatabaseStorage:
                         f"{STALE_GIVE_UP_REASON}: Bearbeitung {max_attempts}-mal abgebrochen (Worker beendet)"
                     ),
                     text_extraction_started_at=None,
+                    text_extracted_at=func.now(),
                     updated_at=func.now(),
                 )
                 .returning(OParlFile.id)
@@ -1974,6 +1981,7 @@ class DatabaseStorage:
         body_id: UUID,
         batch_size: int = 100,
         max_size_bytes: int | None = None,
+        retried: bool | None = None,
     ) -> list[OParlFile]:
         """
         Atomically CLAIM files pending text extraction (multi-worker safe).
@@ -1989,10 +1997,16 @@ class DatabaseStorage:
         stellt ``release_stale_extractions`` zurück (bzw. gibt sie nach mehreren
         Abbrüchen auf); beansprucht wird nur ``pending``.
 
+        Das Beanspruchen setzt den Beginn (``text_extraction_started_at``); ab dann läuft die Zeitgrenze für
+        abgebrochene Bearbeitungen. Aufrufer beanspruchen deshalb nur, was sie gleich bearbeiten (kleine
+        Portionen, Issue #817), sonst gelten wartende Dateien eines langen Stapels als abgebrochen.
+
         Args:
             body_id: Body to query files for
             batch_size: Maximum number of files to claim
             max_size_bytes: Skip files larger than this (optional)
+            retried: ``False`` nur Dateien ohne Abbruch, ``True`` nur Dateien nach einem Abbruch
+                (``text_extraction_attempts`` > 0), ``None`` alle
         """
         async with self.get_session() as session:
             candidates = select(OParlFile.id).where(
@@ -2014,6 +2028,10 @@ class DatabaseStorage:
                         OParlFile.size <= max_size_bytes,
                     )
                 )
+            if retried is True:
+                candidates = candidates.where(OParlFile.text_extraction_attempts > 0)
+            elif retried is False:
+                candidates = candidates.where(OParlFile.text_extraction_attempts <= 0)
 
             candidates = candidates.order_by(OParlFile.created_at).limit(batch_size).with_for_update(skip_locked=True)
 
@@ -2070,8 +2088,15 @@ class DatabaseStorage:
         error: str | None = None,
         page_count: int | None = None,
         sha256_hash: str | None = None,
+        reset_attempts: bool = True,
     ) -> None:
-        """Update a file with text extraction results."""
+        """
+        Update a file with text extraction results.
+
+        ``reset_attempts=False``: Die Datei wird zurückgestellt, bevor ihre Bearbeitung begann (robots.txt
+        nicht erreichbar); der Abbruchzähler bleibt, sonst liefe eine Datei, an der der Worker schon starb,
+        wieder parallel statt einzeln und zuletzt (Issue #817).
+        """
         from datetime import datetime
 
         # PostgreSQL lehnt Null-Bytes in Textfeldern ab („invalid byte sequence for encoding UTF8:
@@ -2086,11 +2111,12 @@ class DatabaseStorage:
         async with self.get_session() as session:
             values: dict = {
                 "text_extraction_status": status,
-                # Bearbeitung beendet (gleich wie): kein Abbruch, Zähler und Beginn zurücksetzen (Issue #817)
-                "text_extraction_attempts": 0,
                 "text_extraction_started_at": None,
                 "updated_at": func.now(),
             }
+            if reset_attempts:
+                # Bearbeitung beendet (gleich wie): kein Abbruch, Zähler zurücksetzen (Issue #817)
+                values["text_extraction_attempts"] = 0
             if text_content is not None:
                 values["text_content"] = text_content
             if method is not None:

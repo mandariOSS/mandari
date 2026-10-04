@@ -614,14 +614,20 @@ Grenzen (Issue #817); eine zu große Seite beendet nur diese Seite, nicht den Wo
 |---|---|---|
 | `OCR_MAX_MEGAPIXELS` | `8` | Bildpunkte je Seite (Mio.); große Seiten (Pläne) werden mit kleinerer Auflösung gerendert, A4 bleibt bei `OCR_DPI` |
 | `OCR_DPI` | `200` | Grundauflösung |
-| `OCR_MEMORY_LIMIT_MB` | `1024` | Adressraum je Unterprozess (`pdftoppm`, `tesseract`); darüber ein zweiter Versuch mit halber Auflösung, danach wird die Seite übersprungen. Unter dem Speicherlimit des Containers halten |
+| `OCR_MEMORY_LIMIT_MB` | `1024` | Adressraum je Unterprozess (`pdftoppm`, `tesseract`); darüber ein zweiter Versuch mit halber Auflösung, danach wird die Seite übersprungen. Unter dem Speicherlimit des Containers halten; im Compose-Dienst `ingestor` (512 MB, erkennt den Text im Sync selbst) ist `384` vorgegeben |
 | `OCR_PAGE_TIMEOUT` | `120` | Sekunden je Seite und Schritt |
 | `OCR_FILE_BUDGET_SECONDS` | `1200` | Zeitbudget je Datei; danach gilt der bis dahin erkannte Text |
 | `OCR_MAX_PAGES` | `100` | höchstens so viele Seiten je Datei |
 | `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
 | `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
 
-Dateien mit einem Abbruch laufen danach einzeln und zuletzt. Hängende und aufgegebene Dateien meldet die
+Beansprucht wird in kleinen Portionen direkt vor der Bearbeitung (höchstens zwei Dateien je Platz von
+`TEXT_EXTRACTION_CONCURRENCY`); `TEXT_EXTRACTION_BATCH_SIZE` begrenzt nur die Dateien je Kommune und Runde.
+Eine beanspruchte Datei wartet so nie hinter einem ganzen Stapel und gilt nicht als abgebrochen, solange der
+Worker lebt. Im OCR-Worker (`extract-daemon`), der die Kommunen nacheinander bearbeitet, laufen Dateien mit
+einem Abbruch danach einzeln und zuletzt. Erkennt der Sync- oder Scraper-Lauf den Text selbst
+(`TEXT_EXTRACTION_ENABLED`), gilt das nur je Kommune, weil dort mehrere Kommunen parallel laufen; hängende
+Dateien löst auch er höchstens einmal je Minute und Lauf auf. Hängende und aufgegebene Dateien meldet die
 Prüfung `texterkennung` in `/health/worker/` (`docs/MONITORING.md`) und der Betriebsmonitor unter
 „Handlungsbedarf“. Wird eine aufgegebene Datei wieder auf `pending` gesetzt, bekommt sie genau einen
 weiteren Versuch; gelingt er, beginnt der Zähler von vorn.

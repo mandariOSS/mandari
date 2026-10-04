@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
@@ -46,14 +46,22 @@ class _Speicher:
         self.ablauf: list[str] = []
         self.aufloesungen: list[dict[str, Any]] = []
         self.updates: list[dict[str, Any]] = []
+        # Je Beanspruchen: (höchstens, retried, beansprucht)
+        self.anfragen: list[tuple[int, bool | None, list[str]]] = []
 
     async def release_stale_extractions(self, **werte: Any) -> tuple[int, int]:
         self.aufloesungen.append(werte)
         return 2, 1
 
-    async def get_pending_files(self, **_werte: Any) -> list[Any]:
-        dateien, self.dateien = self.dateien, []
-        return dateien
+    async def get_pending_files(
+        self, *, body_id: Any, batch_size: int, max_size_bytes: int | None = None, retried: bool | None = None
+    ) -> list[Any]:
+        passend = [d for d in self.dateien if retried is None or (d.text_extraction_attempts > 0) == retried]
+        auswahl = passend[:batch_size]
+        for datei in auswahl:
+            self.dateien.remove(datei)
+        self.anfragen.append((batch_size, retried, [d.id for d in auswahl]))
+        return auswahl
 
     async def mark_extraction_started(self, file_id: Any) -> int | None:
         self.ablauf.append(f"start {file_id}")
@@ -130,9 +138,61 @@ async def test_dateien_nach_abbruch_laufen_zuletzt_und_einzeln(monkeypatch: pyte
 
     reihenfolge = [name for name, _ in protokoll]
     assert set(reihenfolge[:2]) == {"a", "b"} and reihenfolge[2:] == ["verdaechtig", "c"]
-    # Verdächtige Dateien laufen allein
+    # Verdächtige Dateien laufen allein und werden erst direkt davor einzeln beansprucht
     assert dict(protokoll)["verdaechtig"] == {"verdaechtig"}
     assert dict(protokoll)["c"] == {"c"}
+    assert speicher.anfragen == [
+        (8, False, ["a", "b"]),
+        (1, True, ["verdaechtig"]),
+        (1, True, ["c"]),
+        (1, True, []),
+    ]
+
+
+async def test_beansprucht_in_kleinen_portionen_direkt_vor_der_bearbeitung(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Das Beanspruchen startet die Zeitgrenze (Issue #817): Mit Parallelität 1 höchstens zwei Dateien auf einmal,
+    nie der ganze Stapel, sonst gälten wartende Dateien eines langen Stapels als abgebrochen.
+    """
+    speicher = _Speicher([_datei(f"d{nummer}") for nummer in range(7)])
+    extractor = TextExtractor(speicher)
+    extractor.concurrency = 1
+    extractor.batch_size = 500
+    beansprucht_bei_beginn: list[int] = []
+
+    async def bearbeiten(datei: Any) -> bool:
+        # Wie viele Dateien sind beansprucht, aber noch nicht begonnen?
+        beansprucht = sum(len(namen) for _, _, namen in speicher.anfragen)
+        beansprucht_bei_beginn.append(beansprucht - len(beansprucht_bei_beginn) - 1)
+        return True
+
+    monkeypatch.setattr(extractor, "_process_file", bearbeiten)
+    assert await extractor.extract_pending_files(uuid.UUID(int=1)) == 7
+
+    assert [(hoechstens, retried) for hoechstens, retried, _ in speicher.anfragen] == [
+        (2, False),
+        (2, False),
+        (2, False),
+        (2, False),
+        (1, True),
+    ]
+    # Beim Beginn einer Datei wartet höchstens eine weitere beanspruchte Datei
+    assert max(beansprucht_bei_beginn) <= 1
+
+
+async def test_hoechstens_batch_size_dateien_je_aufruf(monkeypatch: pytest.MonkeyPatch) -> None:
+    speicher = _Speicher([_datei(f"d{nummer}") for nummer in range(5)] + [_datei("v", versuche=1)])
+    extractor = TextExtractor(speicher)
+    extractor.concurrency = 2
+    extractor.batch_size = 3
+
+    async def bearbeiten(datei: Any) -> bool:
+        return True
+
+    monkeypatch.setattr(extractor, "_process_file", bearbeiten)
+    assert await extractor.extract_pending_files(uuid.UUID(int=1)) == 3
+    assert [(hoechstens, retried) for hoechstens, retried, _ in speicher.anfragen] == [(3, False)]
+    assert len(speicher.dateien) == 3
 
 
 async def test_haengende_dateien_werden_hoechstens_einmal_je_minute_aufgeloest() -> None:
@@ -151,6 +211,20 @@ async def test_haengende_dateien_werden_hoechstens_einmal_je_minute_aufgeloest()
         "stale_after": timedelta(minutes=settings.text_extraction_stale_minutes),
         "max_attempts": settings.text_extraction_max_attempts,
     }
+
+
+async def test_aufloesen_hoechstens_einmal_je_minute_auch_mit_einem_extraktor_je_kommune() -> None:
+    """Sync und Scraper legen je Kommune einen Extraktor an; die Grenze gilt je Speicher, nicht je Extraktor."""
+    speicher = _Speicher()
+    uhr = _Uhr()
+
+    for nummer in range(5):
+        await TextExtractor(speicher, clock=uhr).extract_pending_files(uuid.UUID(int=nummer))
+        uhr.jetzt += 10
+    assert len(speicher.aufloesungen) == 1
+    uhr.jetzt += 20
+    await TextExtractor(speicher, clock=uhr).extract_pending_files(uuid.UUID(int=1))
+    assert len(speicher.aufloesungen) == 2
 
 
 # --- Speicher gegen PostgreSQL -----------------------------------------------------------------------------
@@ -246,6 +320,11 @@ async def test_zaehler_beim_start_und_zuruecksetzen_beim_ende(speicher: tuple[Da
 
     assert await storage.mark_extraction_started(datei) == 1
     assert await storage.mark_extraction_started(datei) == 2
+    # Zurückgestellt vor dem Beginn (robots.txt nicht erreichbar): der Zähler bleibt
+    await storage.update_file_text(datei, status="pending", reset_attempts=False)
+    status, versuche, beginn, _ = await _zeile(storage, datei)
+    assert (status, versuche, beginn) == ("pending", 2, None)
+    assert await storage.mark_extraction_started(datei) == 3
     await storage.update_file_text(datei, text_content="Beschluss", method="pypdf", status="completed")
     status, versuche, beginn, _ = await _zeile(storage, datei)
     assert (status, versuche, beginn) == ("completed", 0, None)
@@ -296,6 +375,10 @@ async def test_haengende_dateien_zurueckstellen_oder_aufgeben(speicher: tuple[Da
     assert (status, beginn) == ("failed", None)
     assert fehler.startswith("Speichergrenze")
     assert versuche == 3
+    # Zeitpunkt der Aufgabe für die Prüfung „texterkennung“ (aufgegeben in 24 h), unabhängig von updated_at
+    async with storage.get_session() as session:
+        aufgegeben_am = await session.scalar(select(OParlFile.text_extracted_at).where(OParlFile.id == dreimal))
+    assert aufgegeben_am is not None and datetime.now(UTC) - aufgegeben_am < timedelta(minutes=5)
     assert (await _zeile(storage, einmal))[:3] == ("pending", 1, None)
     assert (await _zeile(storage, nie_begonnen))[:2] == ("pending", 0)
     assert (await _zeile(storage, altbestand))[:2] == ("pending", 0)
@@ -305,3 +388,66 @@ async def test_haengende_dateien_zurueckstellen_oder_aufgeben(speicher: tuple[Da
     beansprucht = {f.id: f.text_extraction_attempts for f in await storage.get_pending_files(body_id=body_id)}
     assert beansprucht == {einmal: 1, nie_begonnen: 0, altbestand: 0}
     assert await storage.mark_extraction_started(einmal) == 2
+
+
+async def _zeit_vergeht(storage: DatabaseStorage, dauer: timedelta) -> None:
+    """Uhr vorstellen: Beginn und letzte Änderung aller Dateien in Bearbeitung rücken um ``dauer`` zurück."""
+    async with storage.get_session() as session:
+        await session.execute(
+            update(OParlFile)
+            .where(OParlFile.text_extraction_status == "processing")
+            .values(
+                text_extraction_started_at=OParlFile.text_extraction_started_at - dauer,
+                updated_at=OParlFile.updated_at - dauer,
+            )
+        )
+        await session.commit()
+
+
+async def _haengend(storage: DatabaseStorage, grenze: timedelta) -> int:
+    """Wie die Prüfung „texterkennung“: Dateien in Bearbeitung, deren Beginn länger als ``grenze`` zurückliegt."""
+    cutoff = datetime.now(UTC) - grenze
+    async with storage.get_session() as session:
+        anzahl = await session.scalar(
+            select(func.count())
+            .select_from(OParlFile)
+            .where(
+                OParlFile.text_extraction_status == "processing",
+                or_(
+                    OParlFile.text_extraction_started_at < cutoff,
+                    (OParlFile.text_extraction_started_at.is_(None)) & (OParlFile.updated_at < cutoff),
+                ),
+            )
+        )
+    return int(anzahl or 0)
+
+
+@pytest.mark.integration
+async def test_langer_stapel_laesst_wartende_dateien_nicht_haengen(
+    speicher: tuple[DatabaseStorage, uuid.UUID], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Ein Stapel, der viel länger als die Zeitgrenze läuft (Parallelität 1, je Datei 30 min Texterkennung), ergibt
+    weder „hängende“ Dateien noch ein Zurückstellen noch wartender Dateien durch einen zweiten Extraktor: Der
+    Worker beansprucht erst kurz vor der Bearbeitung, nicht den ganzen Stapel auf einmal (Issue #817).
+    """
+    storage, body_id = speicher
+    for nummer in range(1, 7):
+        await _datei_anlegen(storage, body_id, nummer)
+    grenze = timedelta(minutes=60)
+    extractor = TextExtractor(storage)
+    extractor.concurrency = 1
+    extractor.batch_size = 500
+    befunde: list[tuple[int, tuple[int, int]]] = []
+
+    async def bearbeiten(datei: Any) -> bool:
+        assert await storage.mark_extraction_started(datei.id) == 1
+        await _zeit_vergeht(storage, timedelta(minutes=30))
+        # Prüfung „texterkennung“ und ein zweiter Extraktor (Sync, Scraper) während des Stapels
+        befunde.append((await _haengend(storage, grenze), await storage.release_stale_extractions(grenze, 3)))
+        await storage.update_file_text(datei.id, text_content="Beschluss", method="pypdf", status="completed")
+        return True
+
+    monkeypatch.setattr(extractor, "_process_file", bearbeiten)
+    assert await extractor.extract_pending_files(body_id) == 6
+    assert befunde == [(0, (0, 0))] * 6

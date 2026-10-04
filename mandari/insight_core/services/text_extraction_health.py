@@ -10,7 +10,9 @@ nach mehreren Abbrüchen als gescheitert auf (Grund „Speichergrenze“). Gemes
 - ``haengend``: Dateien länger als die Zeitgrenze (plus Spielraum) in ``processing`` – der Worker löst sie
   nicht auf, läuft also nicht oder hängt selbst.
 - ``abgebrochen``: Dateien mit mindestens einem Abbruch, die noch einmal laufen.
-- ``aufgegeben``: in den letzten 24 Stunden nach wiederholten Abbrüchen aufgegebene Dateien.
+- ``aufgegeben``: in den letzten 24 Stunden nach wiederholten Abbrüchen aufgegebene Dateien. Maßgeblich ist der
+  Zeitpunkt der Aufgabe (``text_extracted_at``, beim Aufgeben gesetzt), nicht ``updated_at``: Spätere Änderungen
+  der Zeile (Dokumentablage, Abgleich, Sync) verlängern das Fenster sonst ohne neuen Abbruch.
 
 Die Prüfung ``texterkennung`` in ``/health/worker/`` (Statusseite) scheitert bei hängenden oder aufgegebenen
 Dateien; wie ``gescheitert`` bleibt sie nach einer aufgegebenen Datei 24 Stunden rot.
@@ -66,7 +68,7 @@ def extraction_health(now: datetime | None = None) -> ExtractionHealth:
                 filter=Q(
                     text_extraction_status="failed",
                     text_extraction_attempts__gt=0,
-                    updated_at__gte=now - GIVE_UP_WINDOW,
+                    text_extracted_at__gte=now - GIVE_UP_WINDOW,
                 ),
             ),
         )
