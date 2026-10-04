@@ -116,9 +116,14 @@ jobs:
               - 'mandari/**/*.py'
               - 'shared/**'
               - 'scripts/mypy_allowlist.*'
+            # Verträge zwischen Programmteilen: Tabellen des Ingestors und die Ereignisverträge (Schemas,
+            # Hülle, Prüfskript); die Schemas sind JSON und fallen nicht unter "python"
             vertrag:
               - 'ingestor/src/**'
               - 'scripts/check_schema_contract.py'
+              - 'mandari/hub/contracts/schemas/**'
+              - 'mandari/hub/contracts/envelope/**'
+              - 'scripts/check_event_contracts.py'
             templates:
               - 'mandari/**/templates/**'
             frontend:
@@ -439,6 +444,23 @@ jobs:
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
         run: python scripts/check_schema_contract.py
+
+      # Ereignisverträge (docs/adr/20260929-ereignisvertraege.md, Issue #519): Jeder Ereignistyp im Code hat
+      # ein Schema, bestehende Versionen ändern sich gegenüber der Zielverzweigung nur additiv, und
+      # docs/EREIGNISKATALOG.md ist aus dem Register erzeugt. Basis ist der Stand, in den gemergt wird
+      # (Pull Request, Merge-Queue) bzw. der vorige Stand des Zweigs (push); ohne Basis (Wochenlauf,
+      # manueller Start) entfällt nur der Vergleich.
+      - name: Ereignisverträge (Schema je Ereignis, nur additive Änderungen, Katalog aktuell)
+        if: ${{ !cancelled() && steps.pydeps.outcome == 'success' }}
+        env:
+          BASIS: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [ -n "$BASIS" ] && [ "$BASIS" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=1 origin "$BASIS"
+            python scripts/check_event_contracts.py --base "$BASIS"
+          else
+            python scripts/check_event_contracts.py
+          fi
 
       # Die Django-Tests zum Contract lesen den Quellbaum des Ingestors; bei Django-Änderungen
       # laufen sie ohnehin im Job "Test". Dazu gehört der Vertragstest der Ereignisse, die der

@@ -97,5 +97,20 @@ verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
 - **Codes** übernehmen die Werte des Eigentümers (`confirmed`/`declined`, `motion`, `in_review` …);
   die Gründe einer Rücknahme stehen wie im Änderungsfeed (`quelle_geloescht`, `zurueckgenommen`,
   `nichtoeffentlich`, `datenschutz`).
-- **Nur additive Änderungen** an einer bestehenden Version: neue Felder optional. Entfernen,
-  Umbenennen, Typwechsel und neue Pflichtfelder ergeben eine neue Version.
+- **Nur additive Änderungen** an einer bestehenden Version: neue Felder optional, neue Codes in einer
+  Codeliste. Entfernen, Umbenennen, Typwechsel, neue Pflichtfelder und jede Lockerung (Pflichtfeld wird
+  optional, Format oder Muster entfällt, Grenze steigt) ergeben eine neue Version `v<n+1>.json` neben der
+  alten; eine Version wird nie gelöscht.
+
+## Prüfung in der CI und Ereigniskatalog
+
+`scripts/check_event_contracts.py` (Job „Qualität“, Issue #519) prüft, dass jeder Ereignistyp im Code ein
+Schema hat, dass bestehende Versionen sich gegenüber der Zielverzweigung nur additiv ändern
+(`hub/contracts/compatibility.py`), und dass der Katalog
+[`docs/EREIGNISKATALOG.md`](../../../../docs/EREIGNISKATALOG.md) aktuell ist. Nach jeder Änderung an einem
+Schema den Katalog neu erzeugen und mit committen:
+
+```bash
+python scripts/check_event_contracts.py --write-catalog
+python scripts/check_event_contracts.py --base origin/dev
+```

@@ -32,6 +32,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `SESSION_SITZUNGSCOCKPIT.md` | Session → Sitzungscockpit (Seite folgt) |
 | `SESSION_EREIGNISSE.md` | – (Session meldet Ereignisse an die Datendrehscheibe; Entwicklung und Betrieb) |
 | `DREHSCHEIBE_UMSTELLUNG.md` | – (Checkliste je Umstellung eines Weges auf die Datendrehscheibe: Schatten, Vergleich, Umschalten, Aufräumen, Abbruchkriterien; Betrieb) |
+| `EREIGNISKATALOG.md` | – (aus dem Vertragsregister erzeugt: alle Ereignisse und Befehle der Datendrehscheibe) |
 | `SESSION_STAMMDATEN_IMPORT.md` | Session → Stammdaten aus Bestandssystemen übernehmen (Seite folgt) |
 | `SESSION_UMSTIEG_SESSIONNET.md` | Session → Umstieg aus SessionNet (Seite folgt) |
 | `FILE_CACHE.md` | [Betrieb → Dokument-Cache](https://docs.mandari.de/betrieb/dokument-cache/) |

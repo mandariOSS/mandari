@@ -137,6 +137,33 @@ Ein Ereignis, das `oeffentlich` sein darf, nennt keine Kennung eines nichtöffen
 `ris.paper.released` führt die Einreichung nicht, aus der die Vorlage entstand; diesen Bezug meldet
 `ris.paper.created` (nur `nichtoeffentlich`).
 
+## Nachtrag zur Prüfung in der CI (#519)
+
+Die Prüfungen 1 bis 3 laufen im Job „Qualität“ als `scripts/check_event_contracts.py`, die Prüfungen 4
+und 6 bereits im Register und seinen Tests (#517, #518). Die Umsetzung legt fest, was „rein additiv“
+heißt; die Entscheidung bleibt unverändert.
+
+- **Schema je Ereignis im Code (1).** Statisch geprüft werden alle Zeichenketten in `mandari/`,
+  `ingestor/src/` und `shared/` (ohne Tests und Migrationen), die nach den Namensregeln ein Ereignis
+  sind; das trifft Erzeuger und Abonnenten. Die Version prüft das Skript, wo sie im Quelltext feststeht:
+  `publish("<typ>", version=<n>)` und die Modulkonstante `VERSION` eines Moduls, das Ereignistypen nennt
+  (so führen `hub/ris` und der Ingestor ihre Schemaversion). Was erst zur Laufzeit feststeht, prüft
+  `publish()` in den Tests gegen das Register.
+- **Nur additiv (2).** Verglichen wird jede Datei unter `hub/contracts/schemas/` und die Hülle mit dem
+  Stand, in den gemergt wird. Erlaubt sind ein neues optionales Feld, ein neuer Code in einer Codeliste
+  (`enum`), eine weitere Sichtbarkeitsklasse, neue Einträge in `$defs` und geänderte Erläuterungen
+  (`title`, `description`, `examples`, Anmerkungen `x-…` außer `x-kind` und `x-visibility`). Neue Codes
+  zählen als Ergänzung wie neue Felder: Empfänger behandeln einen unbekannten Code wie einen fehlenden
+  Wert. Brechend ist alles andere, ausdrücklich auch jede Lockerung (ein Pflichtfeld wird optional, ein
+  Format oder Muster entfällt, eine Grenze steigt): Ein Empfänger, der heute eine Kennung erwartet, darf
+  morgen keinen beliebigen Text bekommen. Eine Version, die verschwindet, ist brechend, weil das Journal
+  noch Ereignisse dieser Version enthalten kann. Die Regeln stehen in `hub/contracts/compatibility.py`.
+- **Katalog (3).** `docs/EREIGNISKATALOG.md` erzeugt `hub/contracts/catalog.py` aus Register und Hülle
+  (Übersicht, Felder je Version, Beispiele); neu schreiben mit
+  `python scripts/check_event_contracts.py --write-catalog`.
+- Prüfung 5 (`publish()` nur im Paket aus `x-owner`) ist damit noch nicht automatisiert: Abonnenten nennen
+  dieselben Typen, und `ris.*` entsteht in `hub.ris` und im Ingestor.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),
