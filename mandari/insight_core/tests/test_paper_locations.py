@@ -238,7 +238,7 @@ def test_results_partial_counts_in_german(geo_body: OParlBody, make_paper: Calla
     session["active_body_id"] = str(geo_body.id)
     session.save()
     url = "/insight/nachbarschaft/partials/results/"
-    params = {"lat": CENTER_LAT, "lon": CENTER_LON, "radius": 500}
+    params = {"lat": str(CENTER_LAT), "lon": str(CENTER_LON), "radius": "500"}
 
     sync_paper_locations(make_paper(geo_body, locations=[_loc(CENTER_LAT, CENTER_LON)]))
     html = client.get(url, params).content.decode()
