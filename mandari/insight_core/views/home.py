@@ -124,8 +124,21 @@ def set_body(request, body_id):
     # SECURITY: Use Django's built-in URL validation to prevent Open Redirect
     default_redirect = "/insight/"
     referer = request.META.get("HTTP_REFERER", "")
+    # Brotkrumen einer Seite aus einer anderen Kommune (Issue #783): erst diese Kommune wählen, dann auf ihre
+    # Übersicht bzw. Liste. Nur relative Pfade des Bürgerportals.
+    weiter = request.GET.get("weiter", "")
 
-    if referer and url_has_allowed_host_and_scheme(
+    if (
+        weiter.startswith("/insight/")
+        and not weiter.startswith("/insight/kommune/")
+        and url_has_allowed_host_and_scheme(
+            weiter,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        )
+    ):
+        redirect_url = weiter
+    elif referer and url_has_allowed_host_and_scheme(
         referer,
         allowed_hosts={request.get_host()},
         require_https=request.is_secure(),

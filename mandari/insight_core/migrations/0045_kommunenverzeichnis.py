@@ -30,7 +30,7 @@ def trigramm_index_entfernen(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("insight_core", "0043_dokumentablage_sha256"),
+        ("insight_core", "0044_page_feedback"),
     ]
 
     operations = [
@@ -103,6 +103,14 @@ class Migration(migrations.Migration):
                 (
                     "longitude",
                     models.FloatField(blank=True, null=True, verbose_name="Länge"),
+                ),
+                (
+                    "imported",
+                    models.BooleanField(
+                        default=False,
+                        help_text="Aus der CSV-Datei (Quellen mit Namensnennung); nicht gesetzt bei Einträgen aus den gelisteten Kommunen",
+                        verbose_name="Aus Datei importiert",
+                    ),
                 ),
                 ("updated_at", models.DateTimeField(auto_now=True)),
             ],

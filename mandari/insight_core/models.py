@@ -1640,6 +1640,11 @@ class Municipality(models.Model):
     state_key = models.CharField(max_length=2, db_index=True, verbose_name="Land")
     latitude = models.FloatField(blank=True, null=True, db_index=True, verbose_name="Breite")
     longitude = models.FloatField(blank=True, null=True, verbose_name="Länge")
+    imported = models.BooleanField(
+        default=False,
+        verbose_name="Aus Datei importiert",
+        help_text="Aus der CSV-Datei (Quellen mit Namensnennung); nicht gesetzt bei Einträgen aus den gelisteten Kommunen",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

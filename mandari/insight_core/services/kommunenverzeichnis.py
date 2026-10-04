@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
 
+from django.conf import settings
+from django.core.cache import cache
 from django.db import connection, transaction
 from django.db.models import Count, Q
 from django.urls import reverse
@@ -106,6 +108,49 @@ def get_bundesland_for_body(body: OParlBody) -> str | None:
         if schluessel and len(schluessel) >= 2 and schluessel[:2] in LAENDER:
             return LAENDER[schluessel[:2]]
     return None
+
+
+# ---------------------------------------------------------------------------
+# Namensnennung der Quellen
+# ---------------------------------------------------------------------------
+
+#: Quellen eines aus der CSV-Datei importierten Verzeichnisses (Format und Herkunft: docs/INSIGHT_KOMMUNENWECHSEL.md).
+#: Wer andere Quellen nutzt, setzt ``INSIGHT_KOMMUNENVERZEICHNIS_QUELLEN`` in den Einstellungen.
+QUELLEN: tuple[dict[str, str], ...] = (
+    {
+        "name": "Gemeindeverzeichnis des Statistischen Bundesamts (Destatis)",
+        "url": "https://www.destatis.de/DE/Themen/Laender-Regionen/Regionales/Gemeindeverzeichnis/_inhalt.html",
+        "lizenz": "Datenlizenz Deutschland – Namensnennung – Version 2.0",
+        "lizenz_url": "https://www.govdata.de/dl-de/by-2-0",
+    },
+    {
+        "name": "Postleitzahlen und Ortsteile © OpenStreetMap-Mitwirkende",
+        "url": "https://www.openstreetmap.org/copyright",
+        "lizenz": "Open Database License (ODbL)",
+        "lizenz_url": "https://opendatacommons.org/licenses/odbl/",
+    },
+)
+_QUELLEN_CACHE = "insight_kommunenverzeichnis_importiert:v1"
+_QUELLEN_SEKUNDEN = 600
+
+
+def quellen() -> list[dict[str, str]]:
+    """Namensnennung für Kommunenwechsel und Schnittstellen; leer, solange nichts aus einer Datei importiert ist.
+
+    Einträge aus den gelisteten Kommunen (``aus_koerperschaften``) stammen aus unseren eigenen Daten und brauchen
+    keine Nennung. Ob importiert wurde, steht zehn Minuten im Cache; der Import leert ihn.
+    """
+    importiert = cache.get(_QUELLEN_CACHE)
+    if importiert is None:
+        importiert = Municipality.objects.filter(imported=True).exists()
+        cache.set(_QUELLEN_CACHE, importiert, _QUELLEN_SEKUNDEN)
+    if not importiert:
+        return []
+    return [dict(quelle) for quelle in getattr(settings, "INSIGHT_KOMMUNENVERZEICHNIS_QUELLEN", QUELLEN)]
+
+
+def quellen_vergessen() -> None:
+    cache.delete(_QUELLEN_CACHE)
 
 
 # ---------------------------------------------------------------------------

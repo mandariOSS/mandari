@@ -7,13 +7,14 @@ Stellt globale Context-Variablen für alle Templates bereit.
 
 from typing import Any
 
+from django.apps import apps
 from django.conf import settings
 from django.http import HttpRequest
 from django.utils.functional import SimpleLazyObject
 
 from .models import OParlBody
 from .navigation import breadcrumb_area, nav_area
-from .publication import PORTAL_NAMESPACE
+from .publication import DETAIL_PAGES, PORTAL_NAMESPACE, body_id_of
 
 
 def navigation_context(request: HttpRequest) -> dict[str, Any]:
@@ -40,15 +41,56 @@ def navigation_context(request: HttpRequest) -> dict[str, Any]:
         "insight_area": nav_area(url_name),
         # Bereich als Brotkrume der Kopfzeile (Stufe 2)
         "insight_breadcrumb": breadcrumb_area(url_name),
+        # Namensnennung der Quellen im Kommunenwechsel; erst abgefragt, wenn ein Template sie zeigt
+        "kommunenverzeichnis_quellen": SimpleLazyObject(_kommunenverzeichnis_quellen),
     }
 
 
-def active_body(request):
+def _kommunenverzeichnis_quellen() -> list[dict[str, str]]:
+    from .services.kommunenverzeichnis import quellen
+
+    try:
+        return quellen()
+    except Exception:  # noqa: BLE001 - die Namensnennung darf keine Seite brechen (Datenbank noch nicht migriert)
+        return []
+
+
+def _seiten_kommune(request: HttpRequest, gewaehlt: OParlBody | None, match: Any) -> OParlBody | None:
+    """
+    Kommune der angezeigten Seite: bei Detailseiten die des Eintrags, sonst die gewählte (Issue #783).
+
+    Wer über eine Suchmaschine direkt auf einen Vorgang kommt oder bei gewählter Kommune A einen Vorgang von B
+    öffnet, sieht in Brotkrumen, Fuß und Kopfzeile die Kommune des Vorgangs, nicht die der Sitzung. Die Middleware
+    des Veröffentlichungsstands kennt die Kommune des Eintrags schon, wenn eine Quelle einen Stand hat
+    (``request.insight_publication_body``); sonst genügt eine Abfrage über den Primärschlüssel.
+    """
+    if match is None or match.namespace != PORTAL_NAMESPACE:
+        return gewaehlt
+    detail = DETAIL_PAGES.get(match.url_name or "")
+    if detail is None:
+        return gewaehlt
+    if hasattr(request, "insight_publication_body"):
+        body_id = request.insight_publication_body
+    else:
+        model_name, key = detail
+        body_id = body_id_of(apps.get_model("insight_core", model_name), match.kwargs.get(key))
+    if body_id is None:
+        return None
+    if gewaehlt is not None and str(gewaehlt.pk) == str(body_id):
+        return gewaehlt
+    return OParlBody.objects.filter(pk=body_id).first()
+
+
+def active_body(request: HttpRequest) -> dict[str, Any]:
     """
     Stellt die aktive Kommune (Body) im Template-Context bereit.
 
     Die Kommune wird aus der Session oder URL ermittelt.
     Wenn "all" in der Session steht, wird keine spezifische Kommune ausgewählt.
+
+    ``active_body`` ist die gewählte Kommune (Seitenleiste, Navigation, Listen), ``page_body`` die Kommune der
+    angezeigten Seite (Brotkrumen, Fuß, Datenstand, „Zuletzt besucht“); beide unterscheiden sich nur auf
+    Detailseiten.
     """
     from .portal import get_portal
 
@@ -128,16 +170,23 @@ def active_body(request):
         and (match.url_name in BODY_PAGES or match.url_name == "portal_entry")
     )
 
-    # Datenstand-Hinweis: Quelle der Kommune seit der kritischen Schwelle nicht synchronisiert. Mit eigenem
-    # Hinweis der Kommune entfällt er – der nennt den Grund, „nicht erreichbar“ träfe dann nicht zu.
+    # Kommune der Seite: auf Detailseiten die des Eintrags (Herkunft im Fuß, Brotkrumen, Datenstand)
+    try:
+        page_body = _seiten_kommune(request, body, match)
+    except Exception:  # noqa: BLE001 - der Rahmen darf keine Seite brechen (wie oben)
+        page_body = body
+
+    # Datenstand-Hinweis: Quelle der Kommune der Seite seit der kritischen Schwelle nicht synchronisiert. Mit
+    # eigenem Hinweis der Kommune entfällt er – der nennt den Grund, „nicht erreichbar“ träfe dann nicht zu.
     stale_days = None
-    if body and body.last_sync and archive is None and not notice:
+    page_notice = (page_body.portal_notice or "").strip() if page_body is not None else ""
+    if page_body is not None and page_body.last_sync and archive is None and not page_notice:
         from datetime import timedelta
 
         from django.utils import timezone
 
         critical_days = int(getattr(settings, "INSIGHT_SOURCE_STALE_CRITICAL_DAYS", 7))
-        age = timezone.now() - body.last_sync
+        age = timezone.now() - page_body.last_sync
         if age > timedelta(days=critical_days):
             stale_days = age.days
 
@@ -145,8 +194,13 @@ def active_body(request):
 
     return {
         "active_body": body,
-        # Zweite Zeile im Kommunenwechsel und in „Zuletzt besucht“: „Kreisfreie Stadt, Nordrhein-Westfalen“
-        "active_body_ort": ort_der_koerperschaft(body) if body is not None else "",
+        "page_body": page_body,
+        # Zweite Zeile in „Zuletzt besucht“: „Kreisfreie Stadt, Nordrhein-Westfalen“
+        "page_body_ort": ort_der_koerperschaft(page_body) if page_body is not None else "",
+        # Seite einer anderen als der gewählten Kommune: Brotkrumen wählen beim Klick erst diese Kommune
+        "page_body_foreign": page_body is not None
+        and portal is None
+        and (body is None or str(page_body.pk) != str(body.pk)),
         "available_bodies": bodies,
         "show_all_bodies": show_all_bodies,
         "insight_decisions_published": decisions_published,

@@ -8,6 +8,9 @@ Zeitpläne des Bürgerportals (``apps.events.schedule``, Issue #515).
 - ``rueckmeldungen_aufraeumen``: täglich um 03:50 Uhr (``TIME_ZONE``) Rückmeldungen zu Seiten
   nach zwölf Monaten löschen (``INSIGHT_FEEDBACK_RETENTION_DAYS``). Idempotent; ein verpasster Termin
   wird einmal nachgeholt.
+- ``kommunenverzeichnis_abgleichen``: stündlich die gelisteten Kommunen ins Kommunenverzeichnis übernehmen, soweit
+  sie dort fehlen (Issue #783). Nach dem Deploy und nach dem Listen einer Kommune ist der Kommunenwechsel so ohne
+  Handgriff vollständig; der Import der CSV-Datei bleibt ein eigener Schritt (docs/INSIGHT_KOMMUNENWECHSEL.md).
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from django.tasks import task
 from apps.events.schedule import cron, every
 
 from .services.georef_runner import run_auto_georef_pass
+from .services.kommunenverzeichnis_import import aus_koerperschaften
 from .services.page_feedback import purge_expired
 
 
@@ -33,3 +37,10 @@ def verortung_automatisch() -> None:
 def rueckmeldungen_aufraeumen() -> int:
     """Löscht Rückmeldungen nach der Aufbewahrungsfrist; liefert ihre Anzahl."""
     return purge_expired()
+
+
+@every(hours=1)
+@task
+def kommunenverzeichnis_abgleichen() -> int:
+    """Gelistete Kommunen ohne Verzeichniseintrag übernehmen (idempotent); Rückgabe: Zahl der neuen Einträge."""
+    return aus_koerperschaften().neu

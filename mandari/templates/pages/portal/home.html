@@ -28,11 +28,6 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
                 </span>
                 <button type="submit" class="h-14 px-6 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-[1.0625rem] font-semibold">Suchen</button>
             </form>
-            <p class="mt-4">
-                <a href="{% url 'insight_core:insight:neighborhood' %}" class="inline-flex items-center gap-2 text-[0.95rem] font-medium text-gray-900 dark:text-white underline underline-offset-4 decoration-primary-600/60">
-                    <i data-lucide="map-pin" class="w-[18px] h-[18px] text-primary-700 dark:text-primary-300" aria-hidden="true"></i>Vorgänge in Ihrer Nähe finden
-                </a>
-            </p>
         </div>
         {% if active_body.hero_image %}
         <figure class="hidden lg:block relative">

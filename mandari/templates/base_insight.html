@@ -3,7 +3,7 @@
 <html lang="de" class="scroll-smooth" data-portal="insight"
       data-authenticated="{{ request.user.is_authenticated|yesno:"true,false" }}"
       data-active-body="{% if active_body %}{{ active_body.id }}{% endif %}"
-      {% if active_body and not insight_portal %}data-kommune-name="{{ active_body.get_display_name }}" data-kommune-ort="{{ active_body_ort }}" data-kommune-url="{% url 'insight_core:insight:set_body' active_body.id %}"{% endif %}
+      {% if page_body and not insight_portal %}data-kommune-name="{{ page_body.get_display_name }}" data-kommune-ort="{{ page_body_ort }}" data-kommune-url="{% url 'insight_core:insight:set_body' page_body.id %}"{% endif %}
       x-data="insightShell"
       :class="{ 'dark': darkMode }">
 <head>
@@ -192,19 +192,21 @@
                     {% else %}
                     <button type="button" @click="openCityModal()" aria-haspopup="dialog" data-kommune-wechseln
                         class="inline-flex items-center gap-1 max-w-full h-11 px-2 font-semibold text-gray-900 dark:text-white">
-                        <span class="truncate">{% if active_body %}{{ active_body.get_display_name }}{% else %}Kommune wählen{% endif %}</span>
+                        <span class="truncate">{% if page_body %}{{ page_body.get_display_name }}{% else %}Kommune wählen{% endif %}</span>
                         <span class="sr-only">– Kommune wechseln</span>
                         <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
                     </button>
                     {% endif %}
                 </div>
+                {# Brotkrumen mit der Kommune der Seite; gehört sie nicht zur gewählten, wählen die Links sie erst #}
                 <nav aria-label="Brotkrumen" class="hidden lg:block flex-1 min-w-0 text-[0.9rem]">
                     <ol class="flex items-center gap-1.5 min-w-0 text-gray-600 dark:text-gray-400">
                         <li class="shrink-0">
                             {% if insight_breadcrumb or insight_area != "uebersicht" %}
-                            <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{% if insight_portal %}{{ insight_portal.name }}{% elif active_body %}{{ active_body.get_display_name }}{% else %}Alle Kommunen{% endif %}</a>
+                            {% url 'insight_core:insight:portal_home' as start_url %}
+                            <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% elif page_body_foreign %}{% url 'insight_core:insight:set_body' page_body.id %}?weiter={{ start_url|urlencode }}{% else %}{{ start_url }}{% endif %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{% if insight_portal %}{{ insight_portal.name }}{% elif page_body %}{{ page_body.get_display_name }}{% else %}Alle Kommunen{% endif %}</a>
                             {% else %}
-                            <span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100">{% if insight_portal %}{{ insight_portal.name }}{% elif active_body %}{{ active_body.get_display_name }}{% else %}Alle Kommunen{% endif %}</span>
+                            <span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100">{% if insight_portal %}{{ insight_portal.name }}{% elif page_body %}{{ page_body.get_display_name }}{% else %}Alle Kommunen{% endif %}</span>
                             {% endif %}
                         </li>
                         {% if insight_breadcrumb %}
@@ -213,7 +215,8 @@
                             {% if insight_breadcrumb.current %}
                             <span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100">{{ insight_breadcrumb.label }}</span>
                             {% else %}
-                            <a href="{% url insight_breadcrumb.url_name %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{{ insight_breadcrumb.label }}</a>
+                            {% url insight_breadcrumb.url_name as bereich_url %}
+                            <a href="{% if page_body_foreign %}{% url 'insight_core:insight:set_body' page_body.id %}?weiter={{ bereich_url|urlencode }}{% else %}{{ bereich_url }}{% endif %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{{ insight_breadcrumb.label }}</a>
                             {% endif %}
                         </li>
                         {% endif %}

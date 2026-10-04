@@ -4,8 +4,10 @@ Kommunenwechsel (Issue #783, Stufe 2): Vorschläge, Nähe und Stöbern für Taus
 
 Drei kleine JSON-Schnittstellen für den Dialog „Kommune wechseln“ (``frontend/alpine/kommunen-wahl.ts``) und eine
 Seite, die ohne JavaScript dasselbe leistet (Suche per Formular, Stöbern über Links). Keine der Antworten hängt
-von der Sitzung ab; sie dürfen daher öffentlich zwischengespeichert werden. Der Standort für „In meiner Nähe“
-kommt nur als Zelle von 0,1 Grad an und wird nirgends gespeichert.
+von der gewählten Kommune ab oder legt eine Sitzung an; der Browser darf sie zwischenspeichern. Weil die
+Anmeldeprüfung jede Anfrage sieht, tragen sie „Vary: Cookie“: Ein gemeinsamer Cache teilt sie nur zwischen Anfragen
+mit demselben Cookie. Der Standort für „In meiner Nähe“ kommt nur als Zelle von 0,1 Grad an und wird nirgends
+gespeichert. Stammt das Verzeichnis aus einer Datei, nennen alle Antworten ihre Quellen (``quellen``).
 """
 
 from __future__ import annotations
@@ -32,6 +34,10 @@ _LAENGE = (4.0, 16.5)
 
 
 def _json(daten: dict[str, Any], max_age: int) -> JsonResponse:
+    quellen = verzeichnis.quellen()
+    if quellen:
+        # Namensnennung der Quellen (u. a. ODbL) auch in den Auszügen des Verzeichnisses
+        daten = {**daten, "quellen": quellen}
     antwort = JsonResponse(daten, json_dumps_params={"ensure_ascii": False})
     patch_cache_control(antwort, public=True, max_age=max_age)
     return antwort

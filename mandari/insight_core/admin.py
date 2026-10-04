@@ -716,7 +716,7 @@ class MunicipalityAdmin(ReadOnlyAdminMixin, ModelAdmin):
     """
 
     list_display = ["name", "kind", "district", "state_key", "key", "ags"]
-    list_filter = ["state_key", "is_association"]
+    list_filter = ["state_key", "is_association", "imported"]
     search_fields = ["name", "key", "ags", "district", "terms__normalized"]
     inlines = [MunicipalityTermInline]
 
