@@ -31,6 +31,7 @@ from apps.session.models import (
     SessionMeeting,
     SessionProtocol,
     SessionProtocolCorrection,
+    SessionTenant,
 )
 from apps.session.services import agenda_service, four_eyes_service
 
@@ -243,6 +244,8 @@ def _perform_action(
         protocol.approved_by = user
         protocol.approved_on_behalf_of = vertreten
         protocol.approved_at = now
+        # Genehmigungsweg festhalten (Issue #525): übersteht Rücknahme und erneute Veröffentlichung
+        protocol.approval_mode = SessionTenant.PROTOCOL_APPROVAL_FOLLOW_UP
         item = _select_approval_item(meeting, str(data.get("approval_item", "")), include_non_public=include_non_public)
         if item is not None:
             protocol.approval_agenda_item = item
@@ -277,6 +280,7 @@ def _perform_action(
             protocol.approved_by = user
             protocol.approved_on_behalf_of = vertreten
             protocol.approved_at = now
+            protocol.approval_mode = SessionTenant.PROTOCOL_APPROVAL_DIRECT
         protocol.published_at = now
         try:
             with transaction.atomic():

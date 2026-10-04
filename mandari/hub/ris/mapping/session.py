@@ -49,6 +49,10 @@ from hub.ris.canonical import Objekt, as_list, clean, iso, iso_date, iso_day, sc
 #: Version der Abbildung (2: Umsetzungsstand und Genehmigung der Niederschrift, Issue #525)
 VERSION: Final = 2
 
+#: Genehmigungsweg der Niederschrift (``mandari:protocolApproval``, wie ``ris.protocol.approved``)
+FOLLOW_UP: Final = "follow_up"
+DIRECT: Final = "direct"
+
 #: Art des Gremiums in Session (``SessionOrganization.organization_type``) -> ``organizationType``.
 #: OParl 1.1 kennt sieben Werte; die feinere Art (Ausschuss, Rat, Beirat …) steht in ``classification``.
 ORGANIZATION_TYPES: Final[dict[str, str]] = {
@@ -483,20 +487,27 @@ class SessionMapping:
     def _protocol_approval(self, meeting: Any) -> Objekt | None:
         """
         Genehmigung der veröffentlichten Niederschrift (Issue #525): Weg, Tag und die genehmigende Sitzung, diese nur,
-        wenn sie selbst öffentlich ist. Ohne Genehmigungsschritt veröffentlicht heißt: Genehmigung und
-        Veröffentlichung fielen in denselben Schritt (Session setzt dann beide Zeitpunkte gleich).
+        wenn sie selbst öffentlich ist.
+
+        Den Weg hält Session an der Niederschrift fest (``approval_mode``, gesetzt beim Genehmigen bzw. beim
+        Veröffentlichen ohne Genehmigungsschritt); er übersteht Rücknahme und erneute Veröffentlichung. Ohne Angabe
+        (ältere bzw. ohne den Workflow angelegte Niederschriften) gilt: Fielen Genehmigung und Veröffentlichung in
+        denselben Schritt, war es eine Veröffentlichung ohne Genehmigungsschritt.
         """
         protocol = meeting.protocol
         if protocol.approved_at is None:
             return None
-        if protocol.published_at is not None and protocol.approved_at == protocol.published_at:
-            return {"mode": "direct", "date": iso_day(protocol.approved_at)}
+        mode = protocol.approval_mode or (
+            DIRECT if protocol.published_at is not None and protocol.approved_at == protocol.published_at else FOLLOW_UP
+        )
+        if mode == DIRECT:
+            return {"mode": DIRECT, "date": iso_day(protocol.approved_at)}
         approving = protocol.approval_meeting if protocol.approval_meeting_id else None
         if approving is None or not self.source.is_published(approving):
-            return {"mode": "follow_up", "date": iso_day(protocol.approved_at)}
+            return {"mode": FOLLOW_UP, "date": iso_day(protocol.approved_at)}
         return clean(
             {
-                "mode": "follow_up",
+                "mode": FOLLOW_UP,
                 "date": iso_day(approving.start or protocol.approved_at),
                 "meeting": self.uris.obj("meeting", approving.pk),
             }

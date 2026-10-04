@@ -991,7 +991,7 @@ class OParlAgendaItem(SourceDeletionModel):
         "Umsetzungsstand", max_length=20, blank=True, null=True, choices=list(IMPLEMENTATION_LABELS.items())
     )
     implementation_deadline = models.DateField("Erledigungsfrist", blank=True, null=True)
-    implementation_note = models.TextField("Öffentliche Statusmeldung zur Umsetzung", blank=True, null=True)
+    implementation_public_note = models.TextField("Öffentliche Statusmeldung zur Umsetzung", blank=True, null=True)
     implementation_modified = models.DateTimeField("Umsetzungsstand geändert am", blank=True, null=True)
 
     # OParl-Zeitstempel

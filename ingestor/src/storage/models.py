@@ -341,7 +341,7 @@ class OParlAgendaItem(Base):
     roll_call: Mapped[list[dict[str, str]] | None] = mapped_column(JSONB, nullable=True)
     implementation_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     implementation_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
-    implementation_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    implementation_public_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     implementation_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --

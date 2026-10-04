@@ -53,7 +53,7 @@ def test_tagesordnungspunkt_mit_beschlussfassung() -> None:
         "roll_call": [{"name": "Petra Muster", "vote": "yes"}, {"name": "Max Beispiel", "vote": "excluded"}],
         "implementation_status": "in_progress",
         "implementation_deadline": dt.date(2026, 12, 31),
-        "implementation_note": "Ausschreibung läuft.",
+        "implementation_public_note": "Ausschreibung läuft.",
         "implementation_modified": dt.datetime(2026, 9, 20, 8, 0, tzinfo=dt.UTC),
     }
 

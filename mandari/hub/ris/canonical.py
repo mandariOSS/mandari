@@ -160,7 +160,7 @@ def implementation_extension(item: Any) -> Objekt | None:
             "status": item.implementation_status,
             "statusLabel": IMPLEMENTATION_LABELS.get(item.implementation_status),
             "deadline": iso_date(item.implementation_deadline),
-            "note": item.implementation_note,
+            "note": item.implementation_public_note,
             "modified": iso(item.implementation_modified),
         }
     )

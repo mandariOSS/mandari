@@ -86,7 +86,7 @@ AGENDA_ITEM_COLUMNS: Final[tuple[str, ...]] = (
     "roll_call",
     "implementation_status",
     "implementation_deadline",
-    "implementation_note",
+    "implementation_public_note",
     "implementation_modified",
 )
 #: Spalten der Sitzung, die ``meeting_columns`` liefert
@@ -171,7 +171,7 @@ def agenda_item_columns(data: Mapping[str, Any]) -> dict[str, Any]:
         "roll_call": _roll_call(data.get("mandari:rollCall")) if method == "roll_call" else None,
         "implementation_status": status,
         "implementation_deadline": _date(implementation.get("deadline")) if status else None,
-        "implementation_note": _text(implementation.get("note"), NOTE_MAX) if status else None,
+        "implementation_public_note": _text(implementation.get("note"), NOTE_MAX) if status else None,
         "implementation_modified": _datetime(implementation.get("modified")) if status else None,
     }
 

@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddField(
             model_name="oparlagendaitem",
-            name="implementation_note",
+            name="implementation_public_note",
             field=models.TextField(
                 blank=True,
                 null=True,

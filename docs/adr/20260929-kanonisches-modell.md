@@ -84,8 +84,10 @@ eigenen, nullable Spalten, nicht nur in `raw_json`:
 
 - **Tagesordnungspunkt:** `resolution_number`, Abstimmung (`vote_method`, `vote_result`, `votes_yes`, `votes_no`,
   `votes_abstain`), Einzelstimmen `roll_call` (nur bei namentlicher Abstimmung) und der veröffentlichte
-  Umsetzungsstand (`implementation_status`, `implementation_deadline`, `implementation_note`,
-  `implementation_modified`).
+  Umsetzungsstand (`implementation_status`, `implementation_deadline`, `implementation_public_note`,
+  `implementation_modified`). Die Statusmeldung heißt wie ihr Gegenstück in Session (`implementation_public_note`),
+  nicht wie der interne Erledigungsvermerk dort (`implementation_note`): Eine Abbildung nach Feldnamen, etwa im
+  RIS-Projektor (#537), gibt so nie den internen Vermerk aus.
 - **Sitzung:** `protocol_approval_mode`, `protocol_approved_on`, `protocol_approved_in_external_id`.
 - **Abstimmung am Tagesordnungspunkt:** Session führt eine Abstimmung je Punkt, die Schnittstelle bettet sie als
   `mandari:vote` ein. Der Bestand speichert sie deshalb am Punkt; ihre kanonische Kennung leitet sich wie in

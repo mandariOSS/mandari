@@ -69,8 +69,8 @@ from insight_core.models import (
 )
 from insight_core.services.file_reconcile import is_blocked
 
-#: Version der Abbildung
-VERSION: Final = 1
+#: Version der Abbildung (2: Beschlussfassung und Genehmigung der Niederschrift aus eigenen Spalten, Issue #525)
+VERSION: Final = 2
 
 # Verbreitete Angaben fremder Quellen, die keiner der sieben Werte sind, aber eindeutig dazugehören.
 # Manche RIS ordnen nach dem Kommunalrecht: Hauptorgan (Rat, Kreistag) und Hilfsorgan (Ausschüsse,

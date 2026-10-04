@@ -108,6 +108,33 @@ def ensure_numbers_for_meeting(meeting: SessionMeeting) -> int:
     return assigned
 
 
+def touch_published_implementations(tenant) -> int:
+    """
+    Freigabe des Umsetzungsstands am Mandanten geändert (Schalter der Verwaltung, Veröffentlichung im Bürgerportal
+    beendet bzw. wieder aufgenommen, Issue #525): Die OParl-Schnittstelle gibt ``mandari:implementation`` der
+    freigegebenen Beschlüsse anders aus, ohne dass sich die TOPs selbst ändern. Ihr ``updated_at`` rückt vor, damit
+    Abgleiche mit ``modified_since`` (Ingestor, Spiegel, Dritte) sie sofort neu lesen, nicht erst beim Vollabgleich.
+
+    Betroffen sind die Beschlüsse, die am TOP die Regel der Beschlussseiten erfüllen (``decision_tracking.visibility``):
+    angenommen, öffentlicher TOP einer öffentlichen Sitzung, am Beschluss freigegeben, nicht abgesetzt. Ein
+    ``UPDATE`` ohne Signale: Nur der Zeitpunkt ändert sich, kein fachlicher Inhalt (kein Audit, keine Sperre).
+
+    Returns:
+        Zahl der betroffenen Beschlüsse.
+    """
+    return (
+        SessionAgendaItem.objects.filter(
+            meeting__tenant=tenant,
+            vote_result="approved",
+            is_public=True,
+            meeting__is_public=True,
+            implementation_public=True,
+        )
+        .exclude(is_withdrawn=True)
+        .update(updated_at=timezone.now())
+    )
+
+
 def build_extract_pdf(items: list, *, internal: bool, permissions=None) -> bytes:
     """
     Beschlussauszug-PDF erzeugen (ein oder mehrere TOPs, je TOP eine Seite).
