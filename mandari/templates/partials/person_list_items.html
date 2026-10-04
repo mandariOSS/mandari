@@ -1,20 +1,20 @@
 {% if persons %}
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+<div class="-mx-3">
     <div class="overflow-x-auto">
     <table class="w-full">
         <thead>
-            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Name</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Funktion</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Kontakt</th>
+            <tr class="border-b border-gray-300 dark:border-gray-700">
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Name</th>
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Funktion</th>
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Kontakt</th>
                 <th class="w-10 px-2 py-3"></th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
             {% for person in persons %}
-            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+            <tr class="hover:bg-band-grau/70 group cursor-pointer"
                 data-href="{% url 'insight_core:insight:person_detail' person.id %}">
-                <td class="px-6 py-3">
+                <td class="px-3 py-3.5">
                     <div class="flex items-center gap-3">
                         {% include "components/person_avatar.html" with person=person size="sm" %}
                         <div>
@@ -28,10 +28,10 @@
                         </div>
                     </div>
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                <td class="px-3 py-3.5 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
                     {{ person.council_role|default:"—" }}
                 </td>
-                <td class="px-4 py-3 max-sm:hidden">
+                <td class="px-3 py-3.5 max-sm:hidden">
                     {% if person.email %}
                     <a href="mailto:{{ person.email }}" class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
                         {{ person.email }}
@@ -87,7 +87,7 @@
 {% endif %}
 
 {% else %}
-<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="py-12 text-center">
     <i data-lucide="user" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Personen gefunden</h3>
     <p class="text-gray-500 dark:text-gray-400">

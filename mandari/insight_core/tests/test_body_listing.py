@@ -68,11 +68,14 @@ def test_selection_page_and_switcher_hide_body(listed_bodies: list[OParlBody], h
     response = Client().get("/insight/")
 
     assert response.status_code == 200
-    assert hidden_body not in response.context["select_bodies"]
     assert hidden_body not in response.context["available_bodies"]
-    assert response.context["stats"]["bodies"] == 2
-    assert response.context["stats"]["papers"] == 0
     assert "Stadt Abc (Demo)" not in response.content.decode()
+    # Kommunenwechsel (Issue #783): Vorschläge nur aus gelisteten Kommunen
+    vorschlaege = Client().get("/insight/kommunen/vorschlaege/", {"q": "Abc"}).json()["treffer"]
+    assert vorschlaege == []
+    erste = listed_bodies[0].name
+    treffer = Client().get("/insight/kommunen/vorschlaege/", {"q": erste}).json()["treffer"]
+    assert [t["name"] for t in treffer] == [erste]
 
 
 def test_hidden_body_stays_reachable_by_url(listed_bodies: list[OParlBody], hidden_body: OParlBody) -> None:

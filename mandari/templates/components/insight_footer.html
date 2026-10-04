@@ -1,18 +1,37 @@
-{% load static %}
-{# Minimaler Footer für das Insight Portal (Sidebar-Layout) #}
-<footer class="border-t border-gray-200 dark:border-gray-700 pt-5 pb-8 mt-12 flex flex-col items-center gap-3 text-center">
-    <div class="flex items-center gap-2 text-xs text-gray-400">
-        <div class="w-5 h-5 rounded bg-primary-600 flex items-center justify-center flex-shrink-0">
-            <svg class="w-3 h-3 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+{# Fuß des Bürgerportals (Issue #783): Band in Tinte mit Herkunft und Datenstand der Daten (Kommune der Seite), Wege und Pflichtlinks #}
+<footer class="bg-band-tinte text-gray-300">
+    <div class="max-w-6xl px-5 sm:px-8 py-12 grid gap-10 md:grid-cols-[minmax(0,1.4fr)_1fr_1fr]">
+        <div class="max-w-md">
+            <p class="text-[1.15rem] font-bold tracking-tight text-white">mandari<span class="text-indigo-400" aria-hidden="true">.</span> <span class="font-semibold text-primary-300">{% if insight_portal %}{{ insight_portal.name }}{% else %}Insight{% endif %}</span></p>
+            <p class="mt-3 text-[0.9375rem] leading-relaxed">
+                {% if page_body %}Die Daten stammen aus dem Ratsinformationssystem von {{ page_body.get_display_name }}.{% else %}Öffentliche Ratsinformationen der Kommunen aus ihren Ratsinformationssystemen.{% endif %}
+                {% if page_body.last_sync %}Letzter Abgleich: {{ page_body.last_sync|date:"d.m.Y, H:i" }} Uhr.{% endif %}
+            </p>
         </div>
-        <a href="{{ marketing_url }}/" class="font-semibold text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Mandari</a>
-        <span>&middot; Open Source Kommunaltransparenz</span>
-    </div>
-    <div class="flex items-center justify-center flex-wrap gap-x-4 gap-y-1 text-xs font-medium">
-        <a href="{{ marketing_url }}/" class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">mandari.de</a>
-        <a href="{{ marketing_url }}/ueber-uns/" class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Über Mandari</a>
-        <a href="{{ marketing_url }}/datenschutz/" class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Datenschutz</a>
-        <a href="{{ marketing_url }}/impressum/" class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Impressum</a>
-        <a href="https://github.com/mandariOSS/mandari" target="_blank" rel="noopener noreferrer" class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">GitHub</a>
+        <nav aria-label="Bürgerportal">
+            <p class="text-[0.875rem] text-gray-400">Bürgerportal</p>
+            <ul class="mt-3 space-y-2 text-[0.9375rem]">
+                {% if not insight_portal %}
+                <li><a href="{% url 'insight_core:insight:kommunen' %}" class="hover:text-white underline-offset-4 hover:underline">Kommune wählen</a></li>
+                {% endif %}
+                <li><a href="{% url 'insight_core:insight:saved' %}" class="hover:text-white underline-offset-4 hover:underline">Gespeichert</a></li>
+                {% if insight_subscriptions_enabled %}
+                <li><a href="{% url 'insight_core:insight:notifications' %}" class="hover:text-white underline-offset-4 hover:underline">Benachrichtigungen</a></li>
+                {% endif %}
+                {% if not request.user.is_authenticated %}
+                <li><a href="{% url 'accounts:login' %}" class="hover:text-white underline-offset-4 hover:underline">Anmelden</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+        <nav aria-label="Rechtliches und Informationen">
+            <p class="text-[0.875rem] text-gray-400">mandari</p>
+            <ul class="mt-3 space-y-2 text-[0.9375rem]">
+                <li><a href="{{ marketing_url }}/" class="hover:text-white underline-offset-4 hover:underline">mandari.de</a></li>
+                <li><a href="{{ marketing_url }}/barrierefreiheit/" class="hover:text-white underline-offset-4 hover:underline">Barrierefreiheit</a></li>
+                <li><a href="{{ marketing_url }}/datenschutz/" class="hover:text-white underline-offset-4 hover:underline">Datenschutz</a></li>
+                <li><a href="{{ marketing_url }}/impressum/" class="hover:text-white underline-offset-4 hover:underline">Impressum</a></li>
+                <li><a href="https://github.com/mandariOSS/mandari" rel="noopener noreferrer" class="hover:text-white underline-offset-4 hover:underline">Quellcode</a></li>
+            </ul>
+        </nav>
     </div>
 </footer>

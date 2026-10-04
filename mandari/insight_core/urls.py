@@ -23,6 +23,11 @@ insight_patterns = [
     # Kommune wechseln
     path("kommune/<uuid:body_id>/", views.set_body, name="set_body"),
     path("kommune/alle/", views.clear_body, name="clear_body"),
+    # Kommunenwechsel für Tausende Kommunen (Issue #783): Vorschläge, Nähe, Stöbern, Seite ohne JavaScript
+    path("kommunen/", views.kommunen_seite, name="kommunen"),
+    path("kommunen/vorschlaege/", views.kommunen_vorschlaege, name="kommunen_vorschlaege"),
+    path("kommunen/naehe/", views.kommunen_naehe, name="kommunen_naehe"),
+    path("kommunen/stoebern/", views.kommunen_stoebern, name="kommunen_stoebern"),
     # Bürgerportal je Körperschaft (Issue #317): eigener Einstieg, optional mit Zielseite
     path("k/<slug:slug>/", views.portal_entry, name="portal_entry"),
     path("k/<slug:slug>/<path:rest>", views.portal_entry, name="portal_entry_path"),

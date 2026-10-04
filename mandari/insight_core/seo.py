@@ -59,7 +59,7 @@ class SEOContext:
     json_ld: dict | None = None
     keywords: list[str] = field(default_factory=list)
     robots: str = "index, follow"
-    author: str = "Mandari"
+    author: str = "mandari"
 
     def to_dict(self) -> dict[str, Any]:
         """Konvertiert zu Dictionary für Template-Rendering."""
@@ -139,7 +139,7 @@ def get_paper_seo(paper, request: HttpRequest) -> SEOContext:
         },
         "publisher": {
             "@type": "Organization",
-            "name": "Mandari",
+            "name": "mandari",
             "url": get_site_url(),
         },
     }
@@ -368,9 +368,9 @@ def get_portal_home_seo(request: HttpRequest, body=None) -> SEOContext:
         title = f"{name} - Insight Portal"[:60]
         description = f"Ratsinformationen für {name}. Aktuelle Sitzungen, Vorgänge und Beschlüsse."
     else:
-        title = "Wähle deine Kommune - Mandari Insight"
+        title = "Kommune wählen – mandari Insight"
         description = (
-            "Lokalpolitik, die alle verstehen: Wähle deine Kommune und entdecke "
+            "Lokalpolitik, die alle verstehen: Wählen Sie Ihre Kommune und sehen Sie "
             "Sitzungen, Vorgänge, Gremien und die Menschen hinter den Entscheidungen."
         )
 

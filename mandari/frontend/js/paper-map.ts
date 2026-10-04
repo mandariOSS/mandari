@@ -34,7 +34,7 @@ interface LeafletBounds {
   isValid(): boolean
 }
 
-interface LeafletLayer {
+export interface LeafletLayer {
   addTo(map: LeafletMap): LeafletLayer
   bindPopup(content: HTMLElement): LeafletLayer
 }
@@ -43,13 +43,13 @@ interface LeafletGeoJson extends LeafletLayer {
   getBounds(): LeafletBounds
 }
 
-interface LeafletMap {
+export interface LeafletMap {
   fitBounds(bounds: LeafletBounds, options?: Record<string, unknown>): LeafletMap
   setView(center: LatLng, zoom: number): LeafletMap
   attributionControl?: { addAttribution(text: string): unknown }
 }
 
-interface LeafletStatic {
+export interface LeafletStatic {
   map(element: HTMLElement, options: Record<string, unknown>): LeafletMap
   tileLayer(url: string, options: Record<string, unknown>): LeafletLayer
   circleMarker(latlng: LatLng, options: Record<string, unknown>): LeafletLayer
@@ -57,8 +57,20 @@ interface LeafletStatic {
   latLngBounds(latlngs: LatLng[]): LeafletBounds
 }
 
-const AREA_STYLE = { color: '#16a34a', weight: 2, fillOpacity: 0.15 }
-const PLACE_STYLE = { radius: 7, color: '#ffffff', weight: 3, fillColor: '#6366f1', fillOpacity: 1 }
+/**
+ * Kennfarbe als CSS-Farbe aus den Kanälen `--primary-<stufe>` (Issue #783): Grün im Bürgerportal, eigene Farbe
+ * im Portal einer Körperschaft. Ohne Variable (Test, alter Stand) Grün 600.
+ */
+export function themeColor(stufe = 600): string {
+  const kanal = getComputedStyle(document.documentElement).getPropertyValue(`--primary-${stufe}`).trim()
+  const teile = kanal.split(/\s+/).filter(Boolean)
+  return teile.length === 3 ? `rgb(${teile.join(', ')})` : '#17703f'
+}
+
+/** Punkt für Orte auf Karten (Vorgang, Sitzungsort, Nachbarschaft) in der Kennfarbe */
+export function placeStyle(): Record<string, unknown> {
+  return { radius: 7, color: '#ffffff', weight: 3, fillColor: themeColor(600), fillOpacity: 1 }
+}
 
 function escapeHtml(text: string): string {
   const element = document.createElement('span')
@@ -66,7 +78,7 @@ function escapeHtml(text: string): string {
   return element.innerHTML
 }
 
-function popupContent(text: string): HTMLElement {
+export function popupContent(text: string): HTMLElement {
   const element = document.createElement('span')
   element.textContent = text
   return element
@@ -100,14 +112,16 @@ export function initPaperMap(): void {
   }
 
   const bounds = leaflet.latLngBounds([])
+  const style = placeStyle()
+  const areaStyle = { color: themeColor(700), weight: 2, fillOpacity: 0.15 }
   for (const area of data.areas) {
-    const layer = leaflet.geoJSON(area.geometry, { style: AREA_STYLE })
+    const layer = leaflet.geoJSON(area.geometry, { style: areaStyle })
     layer.bindPopup(popupContent(area.name))
     layer.addTo(map)
     bounds.extend(layer.getBounds())
   }
   for (const place of data.places) {
-    const marker = leaflet.circleMarker([place.lat, place.lon], PLACE_STYLE)
+    const marker = leaflet.circleMarker([place.lat, place.lon], style)
     if (place.name) marker.bindPopup(popupContent(place.name))
     marker.addTo(map)
     bounds.extend([place.lat, place.lon])
