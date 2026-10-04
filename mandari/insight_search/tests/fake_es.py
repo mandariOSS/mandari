@@ -131,11 +131,21 @@ class FakeElasticsearch:
         antwort.update(status=201 if vorhanden is None else 200)
         return antwort
 
-    def count(self, *, index: str, allow_no_indices: bool = False) -> dict[str, Any]:
+    def count(
+        self, *, index: str, allow_no_indices: bool = False, query: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         namen = [name for name in self.indizes if fnmatch.fnmatch(name, index)]
         if not namen and not allow_no_indices and "*" not in index:
             raise KeyError(index)
-        return {"count": sum(len(self.indizes[name].docs) for name in namen)}
+        kommunen = None if query is None else set(query["terms"]["body_id"])
+        return {
+            "count": sum(
+                1
+                for name in namen
+                for doc in self.indizes[name].docs.values()
+                if kommunen is None or doc.source.get("body_id") in kommunen
+            )
+        }
 
     def mget(self, *, index: str, ids: list[str], source: bool = True) -> dict[str, Any]:
         docs = []

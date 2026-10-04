@@ -10,9 +10,14 @@ Schattenbetrieb des Suchindex (Abonnement ``suchindex``, Issue #526): Stand, Vol
     manage.py suchindex_schatten vergleichen --stichprobe 50 --json
     manage.py suchindex_schatten loeschen --ja [--abonnement]
 
-Der Vollbau hält die Obergrenze ``SEARCH_INDEX_SHADOW_MAX_DOCS`` ein und verlangt ohne gewählte
-Kommunen ``--alle``. Er liest den ganzen Bestand der Kommunen (Datenbank und Elasticsearch wie ein
+Der Vollbau hält die Obergrenze ``SEARCH_INDEX_SHADOW_MAX_DOCS`` ein: Geprüft wird, was danach im
+Schattenindex liegt (vorhandene Dokumente anderer Kommunen bzw. Indizes plus der Vollbau), sodass
+auch das Erweitern um weitere Kommunen die Grenze nicht umgeht. Ohne gewählte Kommunen verlangt er
+``--alle``. Er liest den ganzen Bestand der Kommunen (Datenbank und Elasticsearch wie ein
 ``reindex_elasticsearch``): außerhalb der Hauptlast und als eigener Prozess starten, nicht im Worker.
+
+``loeschen`` geht nur, wenn das Abonnement nicht mehr in den Schattenindex schreibt; ``--abonnement``
+nur, wenn es gar nicht mehr zugestellt wird. Der Eingriff steht im Sicherheitsprotokoll.
 
 Der Vergleich gibt den Exit-Code 0 auch bei Abweichungen; ``--streng`` liefert dann 1 (für Prüfungen).
 Ausgegeben werden nur Kennungen, Zahlen und Feldnamen, nie Inhalte.
@@ -27,8 +32,10 @@ from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db import transaction
 from django.utils import timezone
 
+from apps.events.eingriffe import record_command
 from insight_search import abonnement, schatten
 from insight_search.indices import INDEXES
 
@@ -134,17 +141,22 @@ class Command(BaseCommand):
             raise CommandError(
                 "Keine Kommunen gewählt (--kommune oder SEARCH_INDEX_SHADOW_BODIES). Für alle Kommunen --alle angeben."
             )
-        plan = schatten.plan_build(kommunen, self._indizes(options["index"]))
+        plan = schatten.plan_build(es, kommunen, self._indizes(options["index"]))
         for index, anzahl in plan.dokumente.items():
             self.stdout.write(f"  {index:14} {anzahl:>10} Dokumente")
         obergrenze = int(settings.SEARCH_INDEX_SHADOW_MAX_DOCS)
         self.stdout.write(
             f"Gesamt {plan.gesamt} Dokumente, Version (Folgenummer) {plan.version}, Obergrenze {obergrenze or 'keine'}"
         )
-        if obergrenze and plan.gesamt > obergrenze:
+        self.stdout.write(
+            f"Schattenindex danach etwa {plan.danach} Dokumente ({plan.bleibend} bleiben aus anderen Kommunen "
+            "bzw. Indizes)"
+        )
+        if obergrenze and plan.danach > obergrenze:
             raise CommandError(
-                f"Der Vollbau überschritte die Obergrenze ({plan.gesamt} > {obergrenze}); weniger Kommunen bzw. "
-                "Indizes wählen oder SEARCH_INDEX_SHADOW_MAX_DOCS bewusst anheben."
+                f"Der Vollbau überschritte die Obergrenze ({plan.danach} > {obergrenze} Dokumente im Schattenindex); "
+                "weniger Kommunen bzw. Indizes wählen, nicht mehr benötigte Schattendokumente löschen "
+                "(loeschen) oder SEARCH_INDEX_SHADOW_MAX_DOCS bewusst anheben."
             )
         if options["trocken"]:
             self.stdout.write("Trockenlauf: nichts geschrieben.")
@@ -234,12 +246,29 @@ class Command(BaseCommand):
         if not options["ja"]:
             raise CommandError("Löschen nur mit --ja.")
         abo = schatten.subscription_status()
-        if settings.SEARCH_INDEX_SUBSCRIPTION == "schatten" and abo.vorhanden and abo.zustand != "pausiert":
+        if schatten.writes_shadow(abo):
             raise CommandError(
                 "Das Abonnement schreibt noch in den Schattenindex: erst SEARCH_INDEX_SUBSCRIPTION=aus setzen und den "
                 "Worker neu starten (oder das Abonnement im Admin pausieren), dann löschen."
             )
-        geloescht, abonnement_weg = schatten.drop(es, subscription=options["abonnement"])
-        self.stdout.write(f"Gelöscht: {', '.join(geloescht) or 'keine Schattenindizes vorhanden'}")
+        if options["abonnement"] and schatten.subscription_running(abo):
+            raise CommandError(
+                "Das Abonnement wird noch zugestellt: Cursor und geparkte Ereignisse nur entfernen, wenn "
+                "SEARCH_INDEX_SUBSCRIPTION=aus gilt (Worker neu gestartet) oder das Abonnement pausiert ist."
+            )
+        with transaction.atomic():
+            ergebnis = schatten.drop(es, subscription=options["abonnement"])
+            if ergebnis.indizes or ergebnis.abonnement_entfernt:
+                record_command(
+                    "suchindex_schatten",
+                    "suchindex_schatten_loeschen",
+                    abonnement=abonnement.NAME,
+                    indizes=ergebnis.indizes,
+                    abonnement_entfernt=ergebnis.abonnement_entfernt,
+                    cursor=ergebnis.cursor,
+                    geparkt_entfernt=ergebnis.geparkt_entfernt,
+                )
+        self.stdout.write(f"Gelöscht: {', '.join(ergebnis.indizes) or 'keine Schattenindizes vorhanden'}")
         if options["abonnement"]:
-            self.stdout.write(f"Abonnement {abonnement.NAME}: {'entfernt' if abonnement_weg else 'war nicht angelegt'}")
+            weg = "entfernt" if ergebnis.abonnement_entfernt else "war nicht angelegt"
+            self.stdout.write(f"Abonnement {abonnement.NAME}: {weg}")

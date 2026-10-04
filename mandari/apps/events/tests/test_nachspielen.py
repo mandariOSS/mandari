@@ -8,6 +8,7 @@ das vertragen.
 
 from __future__ import annotations
 
+import uuid
 from datetime import timedelta
 from io import StringIO
 
@@ -18,7 +19,7 @@ from django.utils import timezone
 
 from apps.events import Delivery, subscriber
 from apps.events.dispatch import deliver_batch, ensure_subscription, first_seq_since, rewind
-from apps.events.models import Event, Subscription
+from apps.events.models import Event, ParkedEvent, ParkedState, Subscription
 from apps.events.registry import Subscriber
 from apps.events.tests.hilfen import nummeriert
 
@@ -98,3 +99,36 @@ def test_befehl_replay(leeres_register: dict[str, Subscriber]) -> None:
         call_command("events_dispatch", "--replay", NAME, "--since", "2026-13-01T00:00")
     with pytest.raises(CommandError, match="gibt es nicht"):
         call_command("events_dispatch", "--replay", "unbekannt", "--from-seq", "1")
+
+
+@pytest.mark.django_db
+def test_eingriffe_der_kommandozeile_stehen_im_sicherheitsprotokoll(leeres_register: dict[str, Subscriber]) -> None:
+    from apps.accounts.models import SecurityAuditLog
+
+    spec = _abonnement([])
+    ensure_subscription(spec)
+    erstes, _ = nummeriert(), nummeriert()
+    deliver_batch(spec)
+    geparkt = ParkedEvent.objects.create(
+        subscription=NAME, event_seq=erstes.seq or 0, aggregate_id=uuid.uuid4(), state=ParkedState.TOT, attempts=5
+    )
+
+    call_command("events_dispatch", "--replay", NAME, "--from-seq", str(erstes.seq), stdout=StringIO())
+    call_command("events_dispatch", "--replay", NAME, "--from-seq", str(erstes.seq), stdout=StringIO())  # ohne Wirkung
+    call_command("events_dispatch", "--retry-parked", str(geparkt.pk), stdout=StringIO())
+    call_command("events_dispatch", "--discard-parked", str(geparkt.pk), stdout=StringIO())
+    with pytest.raises(CommandError):
+        call_command("events_dispatch", "--discard-parked", str(geparkt.pk))
+
+    eintraege = list(SecurityAuditLog.objects.filter(event="betrieb").order_by("created_at"))
+    assert [eintrag.details["aktion"] for eintrag in eintraege] == [
+        "abonnement_nachspielen",
+        "geparkt_wiederholen",
+        "geparkt_verworfen",
+    ]
+    assert all(eintrag.details["quelle"] == "kommandozeile" for eintrag in eintraege)
+    assert all(eintrag.details["befehl"] == "events_dispatch" for eintrag in eintraege)
+    assert eintraege[0].details["abonnement"] == NAME
+    assert eintraege[0].details["nachher"] == (erstes.seq or 0) - 1
+    assert eintraege[1].details["zustand"] == ParkedState.TOT and eintraege[1].details["versuche"] == 5
+    assert eintraege[2].details["folgenummer"] == erstes.seq

@@ -17,9 +17,18 @@ Datenbank auf ``schatten``.
 **Ablauf je Batch:**
 
 1. Aus den Ereignissen die betroffenen Dokumente bestimmen (``affected``): Sitzung, Vorgang, Datei,
-   Person, Gremium über ``aggregate_type``; eine Datei oder Beratung betrifft zusätzlich ihren
-   Vorgang (Textvorschau, Dateinamen, Gremien), wie heute die Signale. Nur öffentliche Ereignisse;
-   im Schattenbetrieb nur die gewählten Kommunen (``SEARCH_INDEX_SHADOW_BODIES``).
+   Person, Gremium über ``aggregate_type``. Abhängige Dokumente: Eine Datei oder Beratung betrifft
+   zusätzlich ihren Vorgang (Textvorschau, Dateinamen, Gremien), wie heute die Signale; ein Vorgang
+   bzw. eine Sitzung die indexierbaren Dateien, die direkt an ihm bzw. ihr hängen (Name und
+   Aktenzeichen des Vorgangs, Name und Datum der Sitzung). Nur öffentliche Ereignisse, dazu die
+   Texterkennung (``ris.file.text_extracted``, laut Vertrag ``intern``: eine Anreicherung ohne Inhalt;
+   das Dokument entsteht wie jedes andere nur aus dem RIS-Bestand). Im Schattenbetrieb nur die
+   gewählten Kommunen (``SEARCH_INDEX_SHADOW_BODIES``).
+
+   **Bekannte Lücken** (Issue #821, Voraussetzung für #527): Sitzung über die Beratung → Dateien der
+   beratenen Vorgänge (``meeting_name``/``meeting_date``), Tagesordnungspunkt → Dateien
+   (``agenda_number``, ``ris.agendaitem.*`` ist nicht abonniert), Gremium → ``organization_names``
+   von Sitzungen, Vorgängen und Dateien; für Gremien und Personen gibt es nur Löschmeldungen.
 2. Jedes Dokument aus dem **aktuellen** Bestand bauen (``insight_core.services.search_projection``,
    Dokumentbauer wie ``reindex_elasticsearch``). Gehört das Objekt nicht (mehr) in den Index, wird
    sein Dokument gelöscht.
@@ -56,7 +65,7 @@ from prometheus_client import Counter
 
 from apps.events import Delivery, TargetUnavailableError
 from apps.events.models import Event, Visibility
-from insight_core.services.search_projection import iter_documents, related_paper_ids
+from insight_core.services.search_projection import iter_documents, related_file_ids, related_paper_ids
 from insight_search.indices import INDEXES, SHADOW_PREFIX, ensure_shadow_indices, shadow_name
 
 logger = logging.getLogger(__name__)
@@ -83,6 +92,15 @@ INDEX_BY_AGGREGATE: Final[Mapping[str, str]] = {
 }
 #: Objekttypen, deren Änderung das Dokument ihres Vorgangs ändert
 _PAPER_DEPENDENTS: Final = ("File", "Consultation")
+#: Objekttypen, deren Änderung die Dokumente der Dateien ändert, die an ihnen hängen
+_FILE_OWNERS: Final = ("Paper", "Meeting")
+#: Sichtbarkeiten je Ereignistyp, die den Suchindex betreffen; alle übrigen Typen nur ``oeffentlich``.
+#: Die Texterkennung ist laut Vertrag ``intern`` (Anreicherung, Nutzlast ohne Inhalt); das Dokument der
+#: Datei entsteht trotzdem nur aus dem RIS-Bestand mit derselben Auswahl wie ``reindex_elasticsearch``.
+_VISIBILITY_BY_TYPE: Final[Mapping[str, frozenset[str]]] = {
+    "ris.file.text_extracted": frozenset({Visibility.OEFFENTLICH.value, Visibility.INTERN.value}),
+}
+_PUBLIC: Final = frozenset({Visibility.OEFFENTLICH.value})
 
 #: Höchstens so viele Aktionen bzw. Bytes je Bulk-Anfrage
 BULK_ACTIONS: Final = 100
@@ -124,6 +142,8 @@ class Tally:
 
     indexed: int = 0
     deleted: int = 0
+    #: Löschen eines Dokuments, das nicht im Index stand (etwa eine Datei ohne erkannten Text)
+    absent: int = 0
     stale: int = 0
     skipped_body: int = 0
     skipped_limit: int = 0
@@ -189,22 +209,32 @@ def _seq(ereignis: Event) -> int:
     return ereignis.seq
 
 
+def relevant(ereignis: Event) -> bool:
+    """Betrifft das Ereignis seiner Sichtbarkeit nach den Suchindex (``_VISIBILITY_BY_TYPE``)?"""
+    return str(ereignis.visibility) in _VISIBILITY_BY_TYPE.get(ereignis.type, _PUBLIC)
+
+
 def affected(events: Iterable[Event], bodies: frozenset[str] | None = None) -> tuple[dict[Target, int], int]:
     """Betroffene Dokumente mit der höchsten Folgenummer, die sie betrifft; dazu die Zahl übergangener Ereignisse.
 
     ``bodies``: nur Ereignisse dieser Kommunen (Kennungen klein geschrieben); ``None`` = alle.
-    Nichtöffentliche Ereignisse betreffen den Suchindex nicht.
+    Nichtöffentliche Ereignisse betreffen den Suchindex nicht (``relevant``).
     """
     ziele: dict[Target, int] = {}
     uebergangen = 0
     abhaengige: dict[str, dict[uuid.UUID, int]] = {}
+    besitzer: dict[str, dict[uuid.UUID, int]] = {}
 
     def merken(ziel: Target, seq: int) -> None:
         if ziele.get(ziel, -1) < seq:
             ziele[ziel] = seq
 
+    def vormerken(je_typ: dict[str, dict[uuid.UUID, int]], ereignis: Event, seq: int) -> None:
+        objekte = je_typ.setdefault(ereignis.aggregate_type, {})
+        objekte[ereignis.aggregate_id] = max(objekte.get(ereignis.aggregate_id, -1), seq)
+
     for ereignis in events:
-        if ereignis.visibility != Visibility.OEFFENTLICH:
+        if not relevant(ereignis):
             continue
         if bodies is not None and (ereignis.body_id is None or str(ereignis.body_id) not in bodies):
             uebergangen += 1
@@ -218,13 +248,18 @@ def affected(events: Iterable[Event], bodies: frozenset[str] | None = None) -> t
             vorgang = _uuid(nutzlast.get("paper"))
             if vorgang is not None:
                 merken(Target("papers", vorgang), seq)
-            je_typ = abhaengige.setdefault(ereignis.aggregate_type, {})
-            je_typ[ereignis.aggregate_id] = max(je_typ.get(ereignis.aggregate_id, -1), seq)
+            vormerken(abhaengige, ereignis, seq)
+        if ereignis.aggregate_type in _FILE_OWNERS:
+            vormerken(besitzer, ereignis, seq)
 
     # Der Vorgang laut Bestand (die Nutzlast nennt ihn nicht immer, etwa bei einer Rücknahme)
     for aggregate_type, objekte in abhaengige.items():
         for objekt, vorgang in related_paper_ids(aggregate_type, objekte).items():
             merken(Target("papers", vorgang), objekte[objekt])
+    # Die Dateien eines Vorgangs bzw. einer Sitzung
+    for aggregate_type, objekte in besitzer.items():
+        for datei, objekt in related_file_ids(aggregate_type, objekte).items():
+            merken(Target("files", datei), objekte[objekt])
     return ziele, uebergangen
 
 
@@ -272,7 +307,7 @@ def _senden(es: Any, paket: list[Any], tally: Tally) -> None:
             else:
                 tally.indexed += 1
         elif aktion == "delete" and status == 404:
-            tally.deleted += 1  # war nicht (mehr) im Index
+            tally.absent += 1  # war nicht (mehr) im Index
         elif status == 409:
             tally.stale += 1  # neuerer Stand schon im Index (externe Version)
         elif status in _UNAVAILABLE or status >= 500:

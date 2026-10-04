@@ -22,6 +22,8 @@ from apps.events.models import Event, ParkedEvent, Subscription, SubscriptionSta
 from apps.events.registry import Subscriber, get
 from apps.events.tests.hilfen import nummeriert
 from insight_core.models import OParlBody, OParlConsultation, OParlFile, OParlMeeting, OParlPaper
+from insight_core.services.search_documents import paper_to_doc
+from insight_core.services.search_projection import iter_documents
 from insight_search import abonnement, subscribers
 from insight_search.indices import index_configs, shadow_name, synonyms
 from insight_search.tests.fake_es import FakeElasticsearch
@@ -315,3 +317,126 @@ def test_ueberlast_gilt_als_nicht_erreichbar(status: int, nicht_erreichbar: bool
     assert abonnement._unavailable(ApiError("x", meta=meta, body={})) is nicht_erreichbar
     assert abonnement._unavailable(EsConnectionError("weg")) is True
     assert abonnement._unavailable(RuntimeError("anderes")) is False
+
+
+# --- Sichtbarkeit je Typ, abhängige Dokumente --------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_texterkennung_ist_intern_und_aktualisiert_datei_und_vorgang(
+    settings: Any, leeres_register: dict[str, Subscriber], es: FakeElasticsearch, kommune: Kommune
+) -> None:
+    spec = _abonnement(settings)
+    body = kommune("Beispielstadt")
+    vorgang = _vorgang(body, name="Radweg")
+    datei = _datei(body, vorgang, text_content="Radweg entlang der Bahnstrecke")
+    nutzlast = {"file": str(datei.pk), "method": "pypdf"}
+    # Vertrag ris.file.text_extracted: x-visibility "intern" (Anreicherung ohne Inhalt)
+    ereignis = _ereignis("ris.file.text_extracted", datei, body, visibility="intern", payload=nutzlast)
+
+    assert deliver_batch(spec).delivered == 1
+
+    doc = es.doc("schatten-files", datei.pk)
+    assert doc is not None and doc.version == ereignis.seq
+    assert "Bahnstrecke" in doc.source["text_content"]
+    papier = es.doc("schatten-papers", vorgang.pk)
+    assert papier is not None and "Bahnstrecke" in papier.source["file_contents_preview"]
+
+
+@pytest.mark.django_db
+def test_intern_gilt_nur_fuer_die_texterkennung(
+    settings: Any, leeres_register: dict[str, Subscriber], es: FakeElasticsearch, kommune: Kommune
+) -> None:
+    spec = _abonnement(settings)
+    body = kommune("Beispielstadt")
+    datei = _datei(body, None)
+    _ereignis("ris.file.changed", datei, body, visibility="intern", payload={"file": str(datei.pk)})
+    _ereignis("ris.file.text_extracted", datei, body, visibility="nichtoeffentlich", payload={"file": str(datei.pk)})
+    _ereignis("ris.meeting.changed", _sitzung(body), body, visibility="intern")
+
+    assert deliver_batch(spec).delivered == 3
+
+    assert not any(index.docs for index in es.indizes.values())
+
+
+@pytest.mark.django_db
+def test_vorgang_aktualisiert_seine_dateien(
+    settings: Any, leeres_register: dict[str, Subscriber], es: FakeElasticsearch, kommune: Kommune
+) -> None:
+    spec = _abonnement(settings)
+    body = kommune("Beispielstadt")
+    vorgang = _vorgang(body, name="Alter Titel", reference="V/1")
+    mit_text = _datei(body, vorgang)
+    ohne_text = _datei(body, vorgang, text_content=None, text_extraction_status="pending")
+    OParlPaper.objects.filter(pk=vorgang.pk).update(name="Neuer Titel")
+    ereignis = _ereignis("ris.paper.changed", vorgang, body, payload={"paper": str(vorgang.pk)})
+
+    deliver_batch(spec)
+
+    doc = es.doc("schatten-files", mit_text.pk)
+    assert doc is not None and doc.version == ereignis.seq
+    assert (doc.source["paper_name"], doc.source["paper_reference"]) == ("Neuer Titel", "V/1")
+    # Dateien, die nicht in den Index gehören, betrifft die Änderung des Vorgangs nicht
+    assert es.doc("schatten-files", ohne_text.pk) is None
+    assert abonnement.affected([ereignis])[0].keys() == {
+        abonnement.Target("papers", vorgang.pk),
+        abonnement.Target("files", mit_text.pk),
+    }
+
+
+@pytest.mark.django_db
+def test_sitzung_aktualisiert_die_dateien_an_ihr(
+    settings: Any, leeres_register: dict[str, Subscriber], es: FakeElasticsearch, kommune: Kommune
+) -> None:
+    spec = _abonnement(settings)
+    body = kommune("Beispielstadt")
+    sitzung = _sitzung(body)
+    einladung = _datei(body, None, meeting=sitzung, name="Einladung")
+    OParlMeeting.objects.filter(pk=sitzung.pk).update(name="Rat (verschoben)")
+    _ereignis("ris.meeting.changed", sitzung, body)
+
+    deliver_batch(spec)
+
+    doc = es.doc("schatten-files", einladung.pk)
+    assert doc is not None and doc.source["meeting_name"] == "Rat (verschoben)"
+
+
+@pytest.mark.django_db
+def test_loeschen_eines_fehlenden_dokuments_zaehlt_nicht_als_geloescht(es: FakeElasticsearch) -> None:
+    tally = abonnement.Tally()
+    es.ablegen("schatten-files", {"id": "vorhanden"}, version=1)
+
+    abonnement.write(
+        es,
+        [
+            abonnement.Operation("schatten-files", "vorhanden", 5, None),
+            abonnement.Operation("schatten-files", "fehlt", 5, None),
+        ],
+        tally,
+    )
+
+    assert (tally.deleted, tally.absent) == (1, 1)
+
+
+@pytest.mark.django_db
+def test_vorgaenge_ohne_abfragen_je_vorgang(kommune: Kommune, django_assert_max_num_queries: Any) -> None:
+    body = kommune("Beispielstadt")
+    vorgaenge = []
+    for nummer in range(5):
+        vorgang = _vorgang(body, name=f"Vorlage {nummer}")
+        _datei(body, vorgang, file_name=f"a{nummer}.pdf", text_content="A" * 6000 + " Ende")
+        _datei(body, vorgang, file_name=f"b{nummer}.pdf", text_content="  kurz  ")
+        _datei(body, vorgang, file_name="weg.pdf", deleted=True)
+        OParlConsultation.objects.create(
+            external_id=f"https://ris.example/consultation/{uuid.uuid4()}", body=body, paper=vorgang
+        )
+        vorgaenge.append(vorgang)
+    erwartet = {vorgang.pk: paper_to_doc(OParlPaper.objects.get(pk=vorgang.pk)) for vorgang in vorgaenge}
+
+    # Vorgänge, Beratungen, Dateien: je eine Abfrage für den ganzen Abschnitt
+    with django_assert_max_num_queries(3):
+        dokumente = dict(iter_documents("papers", [vorgang.pk for vorgang in vorgaenge]))
+
+    assert dokumente == erwartet  # dieselben Dokumente wie ohne Vorladen
+    vorschau = erwartet[vorgaenge[0].pk]["file_contents_preview"]
+    assert "A" * 5000 in vorschau and "Ende" not in vorschau and "kurz" in vorschau

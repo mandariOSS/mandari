@@ -7,13 +7,17 @@ Ausgabe macht der Befehl.
 
 - ``build``: baut den Schattenindex für die gewählten Kommunen einmal aus dem Bestand, mit externer
   Version gleich der höchsten Folgenummer **vor** dem Lesen. Danach eintreffende Ereignisse haben
-  höhere Folgenummern und gewinnen; ältere verlieren gegen den Vollbau.
+  höhere Folgenummern und gewinnen; ältere verlieren gegen den Vollbau. Die Obergrenze prüft der
+  Plan (``plan_build``) gegen den Schattenindex **danach**: was schon darin liegt und der Vollbau nicht
+  ersetzt (andere Kommunen bzw. Indizes), plus die Dokumente des Vollbaus.
 - ``compare``: je Index und Kommune die Zahl der Dokumente im Bestand (Datenbank), im Live- und im
   Schattenindex, fehlende und überzählige Dokumente des Schattenindex und eine Stichprobe gemeinsamer
   Dokumente mit den Feldern, die abweichen. Dazu, ob die Abbildungen (Felder) gleich sind.
 - ``status``: Schalter, Abonnement (Zustand, Cursor, Rückstand, geparkte Ereignisse) und Größe der
   Schattenindizes samt Speicher von Elasticsearch.
-- ``drop``: löscht die Schattenindizes, auf Wunsch auch das Abonnement (Cursor und Geparktes).
+- ``drop``: löscht die Schattenindizes, auf Wunsch auch das Abonnement (Cursor und Geparktes). Ob das
+  gerade geht, sagen ``writes_shadow`` und ``subscription_running``; der Befehl hält den Eingriff im
+  Sicherheitsprotokoll fest.
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ from django.db.models import Count
 from django.db.models.functions import Now
 
 from apps.events.dispatch import head_seq
-from apps.events.models import Event, ParkedEvent, Subscription
+from apps.events.models import Event, ParkedEvent, Subscription, SubscriptionState
 from apps.events.registry import type_filter
 from insight_core.services.search_projection import count_documents, iter_all_documents
 from insight_search import abonnement
@@ -152,14 +156,44 @@ class BuildPlan:
     indizes: list[str]
     dokumente: dict[str, int]
     version: int
+    #: Schattendokumente, die der Vollbau nicht ersetzt (andere Kommunen bzw. Indizes)
+    bleibend: int = 0
 
     @property
     def gesamt(self) -> int:
         return sum(self.dokumente.values())
 
+    @property
+    def danach(self) -> int:
+        """Ungefähre Zahl aller Schattendokumente nach dem Vollbau (gegen die Obergrenze geprüft)."""
+        return self.bleibend + self.gesamt
 
-def plan_build(kommunen: Iterable[uuid.UUID], indizes: Iterable[str]) -> BuildPlan:
-    """Zählt, was der Vollbau schreiben würde; die Version ist die höchste Folgenummer **vor** dem Lesen."""
+
+def remaining_shadow_documents(es: Any, kommunen: Iterable[uuid.UUID], indizes: Iterable[str]) -> int:
+    """Schattendokumente, die ein Vollbau dieser Auswahl nicht ersetzt.
+
+    Alle Schattendokumente abzüglich derer der gewählten Kommunen in den gewählten Indizes (ohne
+    Kommunen: alle Dokumente dieser Indizes). Was der Vollbau ersetzt, zählt so nicht doppelt; Dokumente
+    der Auswahl, die es im Bestand nicht mehr gibt, bleiben zwar liegen, zählen hier aber nicht mit.
+    """
+    kennungen = [str(kommune) for kommune in kommunen]
+    ersetzt = 0
+    for index in indizes:
+        name = shadow_name(index)
+        if not es.indices.exists(index=name):
+            continue
+        if kennungen:
+            ersetzt += int(es.count(index=name, query={"terms": {"body_id": kennungen}})["count"])
+        else:
+            ersetzt += int(es.count(index=name)["count"])
+    return max(abonnement.shadow_document_count(es) - ersetzt, 0)
+
+
+def plan_build(es: Any, kommunen: Iterable[uuid.UUID], indizes: Iterable[str]) -> BuildPlan:
+    """Zählt, was der Vollbau schreiben würde und was danach im Schattenindex liegt.
+
+    Die Version ist die höchste Folgenummer **vor** dem Lesen.
+    """
     version = head_seq()
     liste = list(kommunen)
     gewaehlt = list(indizes)
@@ -168,6 +202,7 @@ def plan_build(kommunen: Iterable[uuid.UUID], indizes: Iterable[str]) -> BuildPl
         indizes=gewaehlt,
         dokumente={index: count_documents(index, liste) for index in gewaehlt},
         version=version,
+        bleibend=remaining_shadow_documents(es, liste, gewaehlt),
     )
 
 
@@ -344,12 +379,18 @@ def compare(
     examples: int = 5,
     seed: int | None = None,
 ) -> Iterator[IndexComparison]:
-    """Vergleich je Index; ohne Kommunen die aus ``SEARCH_INDEX_SHADOW_BODIES``, sonst alle im Schattenindex."""
+    """Vergleich je Index und Kommune.
+
+    Ohne gewählte Kommunen die aus ``SEARCH_INDEX_SHADOW_BODIES``. Ist auch die leer, gehören alle
+    Kommunen in den Schattenindex; verglichen werden dann die aus Live- **und** Schattenindex, damit
+    auch eine Kommune auffällt, die im Schattenindex ganz fehlt.
+    """
     rng = random.Random(seed)  # noqa: S311 – Stichprobe, kein Geheimnis
     gewaehlt = [str(kommune).lower() for kommune in kommunen] or list(settings.SEARCH_INDEX_SHADOW_BODIES)
     for index in indizes:
         vergleich = IndexComparison(index=index, abbildung_abweichend=mapping_differences(es, index))
-        for kommune in gewaehlt or bodies_in(es, shadow_name(index)):
+        alle = [] if gewaehlt else sorted(set(bodies_in(es, index)) | set(bodies_in(es, shadow_name(index))))
+        for kommune in gewaehlt or alle:
             vergleich.kommunen.append(compare_body(es, index, kommune, sample=sample, examples=examples, rng=rng))
         yield vergleich
 
@@ -357,14 +398,43 @@ def compare(
 # --- Aufräumen ----------------------------------------------------------------------------------
 
 
-def drop(es: Any, *, subscription: bool) -> tuple[list[str], bool]:
-    """Löscht die Schattenindizes und auf Wunsch das Abonnement; gibt die gelöschten Indizes zurück."""
+def subscription_running(stand: SubscriptionStatus) -> bool:
+    """Wird das Abonnement zugestellt (laut Schalter registriert, angelegt und nicht pausiert)?"""
+    return (
+        settings.SEARCH_INDEX_SUBSCRIPTION != "aus" and stand.vorhanden and stand.zustand != SubscriptionState.PAUSIERT
+    )
+
+
+def writes_shadow(stand: SubscriptionStatus) -> bool:
+    """Schreibt das Abonnement in den Schattenindex (Schalter ``schatten`` oder Zustand ``schatten``)?"""
+    return subscription_running(stand) and (
+        settings.SEARCH_INDEX_SUBSCRIPTION == "schatten" or stand.zustand == SubscriptionState.SCHATTEN
+    )
+
+
+@dataclass
+class DropResult:
+    indizes: list[str]
+    abonnement_entfernt: bool = False
+    cursor: int | None = None
+    geparkt_entfernt: int = 0
+
+
+def drop(es: Any, *, subscription: bool) -> DropResult:
+    """Löscht die Schattenindizes und auf Wunsch das Abonnement (Cursor und geparkte Ereignisse).
+
+    Das Abonnement wird in der laufenden Transaktion entfernt: Der Aufrufer schreibt den Eintrag im
+    Sicherheitsprotokoll in derselben Transaktion.
+    """
     geloescht = [shadow_name(index) for index in INDEXES if es.indices.exists(index=shadow_name(index))]
     if geloescht:
         es.indices.delete(index=",".join(geloescht))
-    abonnement_weg = False
+    ergebnis = DropResult(indizes=geloescht)
     if subscription:
         with transaction.atomic():
-            ParkedEvent.objects.filter(subscription=abonnement.NAME).delete()
-            abonnement_weg = bool(Subscription.objects.filter(name=abonnement.NAME).delete()[0])
-    return geloescht, abonnement_weg
+            ergebnis.cursor = (
+                Subscription.objects.filter(name=abonnement.NAME).values_list("cursor_seq", flat=True).first()
+            )
+            ergebnis.geparkt_entfernt = ParkedEvent.objects.filter(subscription=abonnement.NAME).delete()[0]
+            ergebnis.abonnement_entfernt = bool(Subscription.objects.filter(name=abonnement.NAME).delete()[0])
+    return ergebnis

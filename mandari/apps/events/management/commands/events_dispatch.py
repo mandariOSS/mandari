@@ -22,17 +22,22 @@ Rolle (``--roles dispatch``); der Befehl bleibt für Betrieb und Fehlersuche.
 
 Nachspielen (``--replay``) setzt nur den Cursor zurück; zugestellt wird im laufenden Worker bzw. mit
 ``--once``. Der Handler muss wiederholte Ereignisse vertragen (Idempotenz).
+
+Nachspielen, erneut Zustellen und Verwerfen sind Eingriffe: Sie stehen wie im Admin im
+Sicherheitsprotokoll (``apps.events.eingriffe``, Quelle ``kommandozeile``), in derselben Transaktion.
 """
 
 from __future__ import annotations
 
 import signal
 import threading
+from collections.abc import Callable
 from datetime import datetime
 from types import FrameType
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -46,6 +51,7 @@ from apps.events.dispatch import (
     retry_parked,
     rewind,
 )
+from apps.events.eingriffe import parked_identifiers, record_command
 from apps.events.models import ParkedEvent, ParkedState, Subscription
 from apps.events.registry import Subscriber, load_subscribers
 from apps.events.sequencer import SEQUENCED_CHANNEL
@@ -90,7 +96,7 @@ class Command(BaseCommand):
             self._liste()
             return
         if options["retry_parked"] is not None:
-            if not retry_parked(options["retry_parked"]):
+            if not self._geparkt(options["retry_parked"], retry_parked, "geparkt_wiederholen"):
                 raise CommandError(
                     "Nicht möglich: unbekannt oder nicht das erste geparkte Ereignis seines Objekts (Reihenfolge)."
                 )
@@ -100,7 +106,7 @@ class Command(BaseCommand):
             self._nachspielen(options["replay"], options["from_seq"], options["since"])
             return
         if options["discard_parked"] is not None:
-            if not discard_parked(options["discard_parked"]):
+            if not self._geparkt(options["discard_parked"], discard_parked, "geparkt_verworfen"):
                 raise CommandError("Unbekanntes geparktes Ereignis.")
             self.stdout.write("Verworfen; das nächste Ereignis desselben Objekts rückt nach.")
             return
@@ -138,7 +144,16 @@ class Command(BaseCommand):
                 self.stdout.write("Seit diesem Zeitpunkt gibt es keine nummerierten Ereignisse; nichts zu tun.")
                 return
         try:
-            ergebnis = rewind(name, ab_seq)
+            with transaction.atomic():
+                ergebnis = rewind(name, ab_seq)
+                if ergebnis is not None and ergebnis[0] != ergebnis[1]:
+                    record_command(
+                        "events_dispatch",
+                        "abonnement_nachspielen",
+                        abonnement=name,
+                        vorher=ergebnis[0],
+                        nachher=ergebnis[1],
+                    )
         except ValueError as exc:
             raise CommandError(f"Nachspielen nicht möglich: {exc}") from None
         if ergebnis is None:
@@ -147,6 +162,16 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Abonnement {name}: Cursor {vorher} -> {neu}; Ereignisse ab Folgenummer {neu + 1} werden erneut zugestellt."
         )
+
+    @staticmethod
+    def _geparkt(parked_id: int, eingriff: Callable[[int], bool], aktion: str) -> bool:
+        """Erneut zustellen bzw. verwerfen samt Eintrag im Sicherheitsprotokoll (eine Transaktion)."""
+        with transaction.atomic():
+            geparkt = ParkedEvent.objects.filter(pk=parked_id).first()
+            if geparkt is None or not eingriff(parked_id):
+                return False
+            record_command("events_dispatch", aktion, **parked_identifiers(geparkt))
+        return True
 
     @staticmethod
     def _zeitpunkt(angabe: str) -> datetime:

@@ -185,3 +185,99 @@ def test_loeschen_nur_wenn_das_abonnement_nicht_mehr_schreibt(settings: Any, es:
     assert set(es.indizes) == {"papers"}  # der Live-Index bleibt
     assert not Subscription.objects.filter(name="suchindex").exists()
     assert not ParkedEvent.objects.filter(subscription="suchindex").exists()
+
+
+# --- Obergrenze beim Erweitern -------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_vollbau_beim_erweitern_zaehlt_den_vorhandenen_schattenindex(
+    settings: Any, es: FakeElasticsearch, kommune: Kommune
+) -> None:
+    erste, zweite = kommune("Erste"), kommune("Zweite")
+    for _ in range(3):
+        _vorgang(erste), _vorgang(zweite)
+    settings.SEARCH_INDEX_SHADOW_MAX_DOCS = 4
+
+    _befehl("aufbauen", "--kommune", str(erste.pk), "--index", "papers")
+    assert len(es.indizes["schatten-papers"].docs) == 3
+
+    # Die zweite Kommune allein (3) läge unter der Grenze, zusammen mit der ersten (6) nicht
+    with pytest.raises(CommandError, match=r"Obergrenze \(6 > 4"):
+        _befehl("aufbauen", "--kommune", str(zweite.pk), "--index", "papers")
+    with pytest.raises(CommandError, match="Obergrenze"):
+        _befehl("aufbauen", "--kommune", str(zweite.pk), "--index", "papers", "--trocken")
+    assert len(es.indizes["schatten-papers"].docs) == 3
+
+    # Neu aufbauen ersetzt die eigenen Dokumente und zählt sie nicht doppelt
+    ausgabe = _befehl("aufbauen", "--kommune", str(erste.pk), "--index", "papers")
+    assert "Schattenindex danach etwa 3 Dokumente (0 bleiben" in ausgabe
+    assert len(es.indizes["schatten-papers"].docs) == 3
+
+    # Dokumente anderer Indizes zählen mit
+    es.ablegen("schatten-meetings", {"id": str(uuid.uuid4()), "body_id": str(erste.pk)})
+    es.ablegen("schatten-meetings", {"id": str(uuid.uuid4()), "body_id": str(erste.pk)})
+    with pytest.raises(CommandError, match=r"Obergrenze \(5 > 4"):
+        _befehl("aufbauen", "--kommune", str(erste.pk), "--index", "papers")
+
+
+# --- Vergleich ohne Auswahl ----------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_vergleich_ohne_auswahl_meldet_kommune_die_im_schattenindex_fehlt(
+    settings: Any, es: FakeElasticsearch, kommune: Kommune
+) -> None:
+    settings.SEARCH_INDEX_SHADOW_BODIES = []  # alle Kommunen im Schattenbetrieb
+    da, fehlt = kommune("Da"), kommune("Fehlt")
+    sitzung, vergessen = _sitzung(da), _sitzung(fehlt)
+    for dokument in (meeting_to_doc(sitzung), meeting_to_doc(vergessen)):
+        es.ablegen("meetings", dokument)
+    es.ablegen("schatten-meetings", meeting_to_doc(sitzung))
+
+    daten = json.loads(_befehl("vergleichen", "--index", "meetings", "--json"))
+
+    kommunen = {eintrag["kommune"]: eintrag for eintrag in daten["indizes"][0]["kommunen"]}
+    assert set(kommunen) == {str(da.pk), str(fehlt.pk)}
+    assert (kommunen[str(fehlt.pk)]["fehlt"], kommunen[str(fehlt.pk)]["schatten"]) == (1, 0)
+    assert kommunen[str(da.pk)]["fehlt"] == 0
+    assert daten["abweichung"] is True
+
+
+# --- Schutz beim Löschen, Sicherheitsprotokoll ----------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_loeschen_schuetzt_auch_bei_schalter_aktiv_und_protokolliert(settings: Any, es: FakeElasticsearch) -> None:
+    from apps.accounts.models import SecurityAuditLog
+
+    settings.SEARCH_INDEX_SUBSCRIPTION = "aktiv"
+    Subscription.objects.create(name="suchindex", cursor_seq=7, state=SubscriptionState.SCHATTEN)
+    es.ablegen("schatten-papers", {"id": "1"})
+
+    # Zustand "schatten" in der Datenbank: Der Handler schreibt weiter in den Schattenindex
+    with pytest.raises(CommandError, match="schreibt noch"):
+        _befehl("loeschen", "--ja")
+
+    # Nach dem Umschalten (Zustand aktiv) dürfen die Schattenindizes weg, das Abonnement aber nicht
+    Subscription.objects.filter(name="suchindex").update(state=SubscriptionState.AKTIV)
+    with pytest.raises(CommandError, match="noch zugestellt"):
+        _befehl("loeschen", "--ja", "--abonnement")
+    assert "schatten-papers" in es.indizes
+    assert not SecurityAuditLog.objects.exists()
+
+    assert "Gelöscht: schatten-papers" in _befehl("loeschen", "--ja")
+    assert Subscription.objects.filter(name="suchindex").exists()
+
+    settings.SEARCH_INDEX_SUBSCRIPTION = "aus"
+    ParkedEvent.objects.create(
+        subscription="suchindex", event_seq=3, aggregate_id=uuid.uuid4(), state="wiederholen", attempts=1
+    )
+    _befehl("loeschen", "--ja", "--abonnement")
+
+    eintraege = list(SecurityAuditLog.objects.filter(event="betrieb").order_by("created_at"))
+    assert [eintrag.details["aktion"] for eintrag in eintraege] == ["suchindex_schatten_loeschen"] * 2
+    assert eintraege[0].details["indizes"] == ["schatten-papers"]
+    assert eintraege[0].details["quelle"] == "kommandozeile" and eintraege[0].user_ref is None
+    assert eintraege[1].details["abonnement_entfernt"] is True
+    assert (eintraege[1].details["cursor"], eintraege[1].details["geparkt_entfernt"]) == (7, 1)
