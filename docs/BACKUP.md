@@ -40,6 +40,36 @@ Zeitpläne und Aufbewahrung sind über die `.env` des Stacks einstellbar.
 Nicht gesichert werden Elasticsearch (Suchindex, lässt sich aus der Datenbank
 neu aufbauen) und Redis (Cache, Sitzungen).
 
+### Journal und Aufträge
+
+Die Ereignistechnik (`apps/events`) hält ihren ganzen Zustand in der Hauptdatenbank: das Journal
+(`events_event`) mit Folgenummern, Abonnements mit Cursor, geparkte Ereignisse, Aufträge
+(`events_task`), Zeitpläne und Leases. Der Datenbank-Dump enthält sie transaktionskonsistent; eine
+Datenbank-Sicht passt nach dem Einspielen zu ihrem Cursor, laufende Aufträge und Leases laufen nach
+ihrer Frist ab (Auftrag 60 s, Lease 30 s) und werden ohne Handarbeit wieder aufgenommen.
+
+Zwei Dinge liegen außerhalb der Sicherung und brauchen nach dem Einspielen einen Schritt:
+
+1. **Folgenummer anheben.** Zwischen Sicherung und Ausfall hat der Sequenzierer weitere Nummern
+   vergeben; der Suchindex (externe Version gleich Folgenummer) und Abnehmer des Änderungsfeeds
+   (Cursor) kennen sie. Ohne Anheben bekämen neue Ereignisse dieselben Nummern: Der Suchindex verwürfe
+   sie als veraltet, ein Abnehmer des Feeds überspränge sie. Deshalb **vor dem Start des Workers**:
+   `python manage.py events_after_restore --apply`. Der Befehl hebt die Sequenz um 100 000 000 über
+   das Ende des Journals; ein zweiter Aufruf ändert nichts, und solange ein Sequenzierer eine gültige
+   Lease hält, verweigert er. Ohne `--apply` zeigt er nur den Stand: Journal, Abonnements (Sicht oder
+   externes Ziel), Geparktes, Aufträge; ein Cursor hinter dem Ende des Journals beendet ihn mit
+   Exit-Code 1. Abnehmer des Feeds, deren Cursor auf ein verlorenes Ereignis zeigt, erhalten `410` und
+   steigen über den Snapshot neu ein.
+2. **Externe Ziele neu aufbauen oder nachspielen.** Was ein Abonnement außerhalb der Datenbank
+   schreibt (Suchindex, später Webhooks und Adapter), steht auf einem neueren Stand als das Journal.
+   Der Suchindex wird neu aufgebaut (`reindex_elasticsearch --clear`, im Schattenbetrieb
+   `suchindex_schatten loeschen` und `aufbauen`). Eine Datenbank-Sicht lässt sich jederzeit aus dem
+   Journal nachspielen: Sicht leeren, `events_dispatch --replay <abonnement> --from-seq 1`.
+
+`./backup.sh --restore` erledigt Schritt 1 selbst (nach dem Einspielen der Datenbank, vor dem Start
+der Dienste) und baut den Suchindex neu auf. Der monatliche Wiederherstellungstest prüft zusätzlich,
+dass kein Cursor hinter dem Ende des Journals steht und die Sequenz nicht darunter liegt.
+
 ### Sicherheit
 
 - Die Daten werden **vor der Übertragung verschlüsselt** (restic: AES-256 im
@@ -152,6 +182,13 @@ docker exec mandari-backup sh -c \
 docker exec mandari-backup rm -rf /work/restore
 ```
 
+Danach, **bevor** der Worker wieder startet, die Folgenummer anheben (Abschnitt „Journal und
+Aufträge“), dann Worker, Anwendung und Ingestor starten und den Suchindex neu aufbauen:
+
+```bash
+docker compose run --rm --no-deps mandari python manage.py events_after_restore --apply
+```
+
 ### Dateien und Konfiguration
 
 ```bash
@@ -175,8 +212,30 @@ deshalb bewusst vom Host aus.
 4. Nur PostgreSQL starten (`docker compose up -d postgres`), Rollen aus
    `globals.sql` einspielen, danach jede Datenbank mit `pg_restore` (siehe oben).
 5. Dateien (`/source/files`, `/source/media`) und Caddy-Daten zurückkopieren.
-6. mandari-Stack starten; Suchindex neu aufbauen (Elasticsearch wird nicht gesichert).
-7. Backup-Stack starten und eine Sicherung auslösen.
+6. Folgenummer anheben, bevor der Worker startet
+   (`docker compose run --rm --no-deps mandari python manage.py events_after_restore --apply`).
+7. mandari-Stack starten; Suchindex neu aufbauen (Elasticsearch wird nicht gesichert).
+8. Backup-Stack starten und eine Sicherung auslösen.
+
+### Restore-Probe mit Journal (4. Oktober 2026)
+
+Erprobt mit PostgreSQL 16 und `pg_dump`/`pg_restore` wie im Backup-Stack:
+
+1. Quelle: 1 000 nummerierte Ereignisse, ein Abonnement mit Cursor 1 000, ein laufender und ein
+   wartender Auftrag. Dump erstellt.
+2. Nach dem Dump 500 weitere Ereignisse nummeriert (Folgenummern bis 1 500). Sie gehen mit der
+   Wiederherstellung verloren, Abnehmer kennen sie aber.
+3. Dump in eine neue Datenbank eingespielt: 1 000 Ereignisse, Cursor 1 000, Sequenz 1 000, beide
+   Aufträge da.
+4. `events_after_restore` zeigte den Stand, `--apply` hob die Sequenz von 1 000 auf 100 001 000, ein
+   zweiter Aufruf änderte nichts.
+5. Drei neue Ereignisse bekamen 100 001 001 bis 100 001 003, also keine der verlorenen Nummern.
+   Prüfung wie im monatlichen Test: kein Cursor hinter dem Journal, Sequenz nicht darunter.
+
+Nachspielen einer Datenbank-Sicht nach der Wiederherstellung (Sicht leeren, ab Folgenummer 1
+zustellen, gleiche Prüfsumme) und das Verhalten eines externen Ziels mit externer Version prüft
+`mandari/apps/events/tests/test_wiederherstellung.py`; den ganzen Rundlauf mit `./backup.sh`
+einschließlich Journal prüft `.github/workflows/backup-roundtrip.yml`.
 
 ## Grenzen
 

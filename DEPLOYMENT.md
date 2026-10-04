@@ -289,7 +289,9 @@ eins davon, bricht es ab, ohne etwas zu verändern. Nach Übersicht und Rückfra
    an die wiederhergestellte `.env` angeglichen.
 2. Nur PostgreSQL starten, jede Datenbank in eine Zwischen-Datenbank einspielen und erst danach
    gegen die bestehende tauschen. Schlägt das Einspielen fehl, bleibt die bisherige Datenbank
-   unverändert.
+   unverändert. Danach die Folgenummer der Ereignistechnik anheben (`events_after_restore --apply`),
+   bevor der Worker startet; scheitert das, bleibt der Worker angehalten (`docs/BACKUP.md`, Abschnitt
+   „Journal und Aufträge“).
 3. Uploads und Dokument-Cache zurückspielen (gleichnamige Dateien werden überschrieben, später
    hinzugekommene bleiben liegen).
 4. Alle Dienste starten, `migrate` ausführen und den Suchindex neu aufbauen

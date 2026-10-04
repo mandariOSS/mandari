@@ -737,6 +737,15 @@ if [ "$RESTORE_MODE" = true ]; then
     if ! run_step "Mandari-DB wiederherstellen" restore_database postgres.sql "$DB_NAME" "$DB_USER"; then
         error "Die Mandari-DB ließ sich nicht einspielen; die bisherige Datenbank ist unverändert (Details: $BACKUP_LOG). $ABORT_HINT"
     fi
+    # Ereignistechnik: Die Folgenummer über alles heben, was vor dem Ausfall vergeben wurde, bevor der
+    # Worker startet – sonst vergäbe er Nummern, die Suchindex und Feed-Abnehmer schon kennen
+    # (docs/BACKUP.md, „Journal und Aufträge“). Ohne Ereignistechnik in der Sicherung tut der Befehl nichts.
+    SEQUENCE_RAISED=true
+    if ! run_step "Folgenummer anheben" volume_container folgenummer "$APP_SERVICE" \
+        python manage.py events_after_restore --apply < /dev/null; then
+        SEQUENCE_RAISED=false
+        RESTORE_PROBLEMS+=("Folgenummer")
+    fi
     if archive_has postgres_website.sql; then
         if ! run_step "Website-DB wiederherstellen" restore_database postgres_website.sql "$WEBSITE_DB" "$DB_USER"; then
             warn "Website-DB ließ sich nicht einspielen; die bisherige ist unverändert."
@@ -760,6 +769,13 @@ if [ "$RESTORE_MODE" = true ]; then
     #     (Elasticsearch wird nicht gesichert)
     if ! run_step "Alle Services starten" docker compose up -d; then
         RESTORE_PROBLEMS+=("Dienststart")
+    fi
+    if [ "$SEQUENCE_RAISED" != true ]; then
+        # Ohne angehobene Folgenummer darf kein Sequenzierer laufen
+        docker compose stop worker worker-heavy >> "$BACKUP_LOG" 2>&1 || true
+        warn "Worker angehalten. Folgenummer von Hand anheben, dann den Worker starten:"
+        warn "  docker exec $APP_CONTAINER python manage.py events_after_restore --apply"
+        warn "  docker compose up -d worker worker-heavy"
     fi
     printf "  %-30s " "Mandari"
     if wait_for_healthy "$APP_CONTAINER" 90; then

@@ -241,6 +241,20 @@ cmd_restore_test() {
         checked=$((checked + 1))
     done <<< "$tables"
 
+    # Ereignistechnik (Issue #573): Cursor und Sequenz passen zum Journal derselben Sicherung
+    if [ "$(psql "${P[@]}" -d "$db" -Atc "select to_regclass('public.events_event') is not null")" = t ]; then
+        local journal head sequence ahead tasks
+        read -r journal head sequence ahead tasks <<< "$(psql "${P[@]}" -d "$db" -At -F ' ' -c "
+            select count(*), coalesce(max(seq), 0), (select last_value from events_seq),
+                   (select count(*) from events_subscription
+                     where cursor_seq > (select coalesce(max(seq), 0) from events_event)),
+                   (select count(*) from events_task)
+              from events_event")" || restore_fail "Journal der Ereignistechnik nicht lesbar"
+        log "  Journal: $journal Ereignisse bis Folgenummer $head, Sequenz $sequence, Aufträge $tasks"
+        [ "$ahead" = 0 ] || restore_fail "Journal: $ahead Abonnements mit Cursor hinter dem Ende des Journals"
+        [ "$sequence" -ge "$head" ] || restore_fail "Journal: Sequenz $sequence unter der höchsten Folgenummer $head"
+    fi
+
     log "  Stichprobe: $SAMPLE_FILES Dateien (unverändert seit über 25 Stunden)"
     sample=$(find /source/files /source/media -type f -mmin +1500 2>/dev/null | shuf -n "$SAMPLE_FILES")
     while IFS= read -r file; do
