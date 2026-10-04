@@ -8,7 +8,8 @@
       :class="{ 'dark': darkMode }">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {# viewport-fit=cover: sonst liefert env(safe-area-inset-*) auf iOS überall 0 (Leiste unten, Blätter, Querformat) #}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="{% block meta_description %}{% if seo.description %}{{ seo.description }}{% else %}mandari Insight – öffentliche Ratsinformationen der Kommunen{% endif %}{% endblock %}">
     <meta name="theme-color" content="{% if insight_portal.accent_color %}{{ insight_portal.accent_color }}{% else %}#17703f{% endif %}">
     {% if seo.keywords %}<meta name="keywords" content="{{ seo.keywords }}">{% endif %}
@@ -177,9 +178,10 @@
 
     {% include "components/insight_sidebar.html" %}
 
-    <div class="lg:pl-[17rem] min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
+    {# Seitliche Safe-Area (Querformat mit Aussparung) für Kopfzeile, Inhalt und Fuß; ab lg sind die Ränder 0 #}
+    <div class="pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-[17rem] min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
         {# Kopfzeile des Inhalts (Variante A, Issue #783): Brotkrumen mit Kommune, Suche, Dunkelmodus #}
-        <header class="sticky top-0 z-30 bg-band-hell/95 dark:bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
+        <header class="sticky top-0 z-30 pt-[env(safe-area-inset-top)] bg-band-hell/95 dark:bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
             <div class="h-16 px-4 sm:px-8 flex items-center gap-2 sm:gap-6">
                 {# Am Handy: Wortmarke, Kommune (öffnet den Wechsel) und Suche; die Bereiche liegen in der Leiste unten #}
                 <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" class="lg:hidden shrink-0 text-[1.15rem] font-bold tracking-tight leading-none text-gray-900 dark:text-white" aria-label="mandari Insight, Übersicht">mandari<span class="text-indigo-600 dark:text-indigo-400" aria-hidden="true">.</span></a>
@@ -188,7 +190,8 @@
                     <span class="block font-semibold truncate">{{ insight_portal.name }}</span>
                     {% else %}
                     <button type="button" @click="openCityModal()" aria-haspopup="dialog" data-kommune-wechseln
-                        class="inline-flex items-center gap-1 max-w-full h-11 px-1 font-semibold text-gray-900 dark:text-white">
+                        class="inline-flex items-center gap-1.5 max-w-full h-11 px-1 font-semibold text-gray-900 dark:text-white">
+                        {% if page_body.logo %}<img src="{{ page_body.logo.url }}" alt="" class="hidden min-[390px]:block w-7 h-7 shrink-0 rounded-md bg-white object-contain p-0.5">{% endif %}
                         <span class="truncate">{% if page_body %}{{ page_body.get_display_name }}{% else %}Kommune wählen{% endif %}</span>
                         <span class="sr-only">– Kommune wechseln</span>
                         <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>

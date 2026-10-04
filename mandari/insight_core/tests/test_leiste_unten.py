@@ -118,3 +118,83 @@ def test_kopfzeile_am_handy_ohne_menue(besucher: Client) -> None:
 def test_inhalt_nicht_unter_der_leiste(besucher: Client) -> None:
     html = _seite(besucher, "paper_list")
     assert "pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0" in html
+
+
+def test_viewport_fit_cover_fuer_die_safe_area(besucher: Client) -> None:
+    """Ohne ``viewport-fit=cover`` liefert ``env(safe-area-inset-*)`` auf iOS überall 0."""
+    html = _seite(besucher, "paper_list")
+    (meta,) = re.findall(r'<meta name="viewport" content="([^"]*)">', html)
+    assert {teil.strip() for teil in meta.split(",")} >= {"width=device-width", "viewport-fit=cover"}
+
+
+def test_safe_area_seitlich_und_oben(besucher: Client) -> None:
+    html = _seite(besucher, "paper_list")
+    seitlich = "pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+    rahmen = re.search(r'<div class="([^"]*lg:pl-\[17rem\][^"]*)">', html)
+    assert rahmen and seitlich in rahmen.group(1), "Kopfzeile, Inhalt und Fuß im Querformat neben der Aussparung"
+    assert seitlich in _leiste(html)
+    assert seitlich in _blatt(html)
+    kopf = re.search(r"<header ([^>]*)>", html)
+    assert kopf and "pt-[env(safe-area-inset-top)]" in kopf.group(1)
+    assert "rand-sicher" in html, "Dokumentansicht mit Abstand zur Safe-Area"
+
+
+@pytest.mark.parametrize(
+    ("seite", "einstellungen"),
+    [
+        ("decision_list", {}),
+        ("question_portal", {"INSIGHT_QUESTIONS_ENABLED": False}),
+    ],
+)
+def test_mehr_nur_hervorgehoben_wenn_das_blatt_den_bereich_zeigt(
+    besucher: Client, settings: Any, seite: str, einstellungen: dict[str, bool]
+) -> None:
+    for name, wert in einstellungen.items():
+        setattr(settings, name, wert)
+    antwort = besucher.get(reverse(f"insight_core:insight:{seite}"))
+    assert antwort.status_code == 200
+    leiste = _leiste(antwort.content.decode())
+    assert "enthält den aktuellen Bereich" not in leiste, "der Eintrag fehlt im Blatt"
+    assert "bg-primary-100" not in leiste
+
+
+@override_settings(INSIGHT_QUESTIONS_ENABLED=True)
+def test_mehr_hervorgehoben_bei_eingeschalteten_ratsfragen(besucher: Client) -> None:
+    leiste = _leiste(_seite(besucher, "question_portal"))
+    assert "enthält den aktuellen Bereich" in leiste
+
+
+def test_bedingte_bereiche_im_blatt() -> None:
+    from insight_core.navigation import more_area_listed
+
+    aus = {"decisions": False, "questions": False, "subscriptions": False}
+    assert more_area_listed("gremien", **aus) and more_area_listed("gespeichert", **aus)
+    assert not more_area_listed("vorgaenge", decisions=True, questions=True, subscriptions=True), "Leiste, nicht Blatt"
+    for bereich, schalter in (
+        ("beschluesse", "decisions"),
+        ("ratsfragen", "questions"),
+        ("benachrichtigungen", "subscriptions"),
+    ):
+        assert not more_area_listed(bereich, **aus)
+        assert more_area_listed(bereich, **{**aus, schalter: True})
+
+
+def test_kopfzeile_nennt_die_kommune_der_seite(besucher: Client, kommune: OParlBody) -> None:
+    from insight_core.models import OParlPaper
+
+    andere = OParlBody.objects.create(
+        external_id="https://ris.example.org/body/2",
+        source=kommune.source,
+        name="Gemeinde Musterhausen",
+        display_name="Musterhausen",
+        logo="logos/musterhausen.png",
+    )
+    vorgang = OParlPaper.objects.create(external_id="https://ris.example.org/paper/9", body=andere, name="Radweg")
+    antwort = besucher.get(reverse("insight_core:insight:paper_detail", args=[vorgang.pk]))
+    kopf = antwort.content.decode()
+    kopf = kopf[kopf.index("<header") : kopf.index("</header>")]
+    knopf = re.search(r"<button[^>]*data-kommune-wechseln[^>]*>(.*?)</button>", kopf, re.S)
+    assert knopf and '<span class="truncate">Musterhausen</span>' in knopf.group(1)
+    assert "Beispielstadt" not in knopf.group(1), "nicht die gewählte Kommune aus der Sitzung"
+    logo = re.search(r'<img src="[^"]*musterhausen\.png" alt="" class="([^"]*)">', knopf.group(1))
+    assert logo and "hidden min-[390px]:block" in logo.group(1), "Logo erst ab 390 px"
