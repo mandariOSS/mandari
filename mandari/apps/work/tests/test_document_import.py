@@ -18,6 +18,7 @@ import pytest
 from django.contrib.messages import get_messages
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
+from mandari_dokumente import OcrResult
 
 from apps.work.motions.models import Motion
 
@@ -140,8 +141,8 @@ def test_gescannte_pdf_nutzt_texterkennung(org: Any, mitglied: Any) -> None:
 
     datei = SimpleUploadedFile("scan.pdf", _gescannte_pdf(), content_type="application/pdf")
     with mock.patch(
-        "insight_core.services.document_extraction._extract_text_with_ocr",
-        return_value=("Gescannter Antrag: 50 Bäume", True),
+        "mandari_dokumente.texterkennung.ocr_pdf",
+        return_value=OcrResult(text="Gescannter Antrag: 50 Bäume", pages_rendered=1),
     ) as ocr:
         ergebnis = MotionImportService.import_pdf(datei, org, mitglied)
 
@@ -158,7 +159,7 @@ def test_gescannte_pdf_ohne_texterkennung_wird_mit_hinweis_uebernommen(org: Any,
     from apps.work.motions.import_service import MotionImportService
 
     datei = SimpleUploadedFile("scan.pdf", _gescannte_pdf(), content_type="application/pdf")
-    with mock.patch("insight_core.services.document_extraction._extract_text_with_ocr", return_value=("", False)):
+    with mock.patch("mandari_dokumente.texterkennung.ocr_pdf", return_value=OcrResult()):
         ergebnis = MotionImportService.import_pdf(datei, org, mitglied)
 
     assert ergebnis.success, ergebnis.error
@@ -172,7 +173,7 @@ def test_unlesbare_pdf_meldet_fehler_ohne_dokument(org: Any, mitglied: Any) -> N
     from apps.work.motions.import_service import IMPORT_FAILED_MESSAGE, MotionImportService
 
     datei = SimpleUploadedFile("kaputt.pdf", b"%PDF-1.4 kein echtes PDF", content_type="application/pdf")
-    with mock.patch("insight_core.services.document_extraction._extract_text_with_ocr", return_value=("", False)):
+    with mock.patch("mandari_dokumente.texterkennung.ocr_pdf", return_value=OcrResult()):
         ergebnis = MotionImportService.import_pdf(datei, org, mitglied)
 
     assert not ergebnis.success
@@ -297,12 +298,12 @@ def test_gescannte_pdf_mit_vielen_seiten_begrenzt_texterkennung(org: Any, mitgli
 
     datei = SimpleUploadedFile("scan.pdf", puffer.getvalue(), content_type="application/pdf")
     with mock.patch(
-        "insight_core.services.document_extraction._extract_text_with_ocr",
-        return_value=("Gescannter Antrag\n\nDer Rat beschließt.", True),
+        "mandari_dokumente.texterkennung.ocr_pdf",
+        return_value=OcrResult(text="Gescannter Antrag\n\nDer Rat beschließt.", pages_rendered=2),
     ) as ocr:
         antwort = client_for(mitglied.user).post(f"/work/{org.slug}/documents/import/", {"import_files": [datei]})
 
-    assert ocr.call_args.kwargs["max_pages"] == 2
+    assert ocr.call_args.kwargs["limits"].max_pages == 2
     assert ocr.call_args.kwargs["page_count"] == 5
     texte = [str(m) for m in get_messages(antwort.wsgi_request)]
     assert any("ersten 2 von 5 Seiten" in t for t in texte), texte

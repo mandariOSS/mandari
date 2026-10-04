@@ -604,11 +604,21 @@ Abonnement in der Datenbank auf `schatten`, schreibt es weiter nur den Schatteni
 `loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt (Schalter oder
 Zustand `schatten`); `--abonnement` zusätzlich, solange es überhaupt zugestellt wird.
 
-### OCR-Worker des Ingestors (`extract-daemon`)
+### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 
-Der OCR-Worker (`python -m src.main extract-daemon`, Ingestor-Image) erkennt den Text der Dokumente:
-pypdf, optional Mistral, sonst Tesseract. Tesseract läuft Seite für Seite als eigener Unterprozess mit
-Grenzen (Issue #817); eine zu große Seite beendet nur diese Seite, nicht den Worker:
+Den Text der RIS-Dateien erkennt eine Implementierung, die Bibliothek `mandari_dokumente` in `shared/`
+(`docs/adr/20261004-texterkennung-shared.md`): pypdf, optional Mistral, sonst Tesseract. Tesseract läuft
+Seite für Seite als eigener Unterprozess mit Grenzen (Issue #817); eine zu große Seite beendet nur diese
+Seite, nicht den Prozess. Wer sie ausführt, wählt `TEXT_EXTRACTION_RUNNER` – **in Anwendung und Ingestor
+gleich setzen**, sonst arbeiten beide oder keiner:
+
+- `ingestor` (Standard): der OCR-Worker des Ingestors (`python -m src.main extract-daemon`, Ingestor-Image).
+- `worker`: Aufträge `file.extract_text` in der Warteschlange `ocr` (Dienst `worker-heavy` bzw. jeder Worker,
+  der `ocr` bedient). Der Zeitplan `texterkennung_einplanen` reiht alle zwei Minuten höchstens
+  `TEXT_EXTRACTION_QUEUE_DEPTH` (Standard 20) Aufträge ein; der OCR-Worker des Ingestors ruht dann. Die
+  Speichergrenze des Containers (1 GB) muss `OCR_MEMORY_LIMIT_MB` und den Worker selbst tragen.
+
+Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 
 | Variable | Standard | Wirkung |
 |---|---|---|
@@ -620,6 +630,8 @@ Grenzen (Issue #817); eine zu große Seite beendet nur diese Seite, nicht den Wo
 | `OCR_MAX_PAGES` | `100` | höchstens so viele Seiten je Datei |
 | `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
 | `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
+| `TEXT_EXTRACTION_MAX_SIZE_MB` | `50` | größere Dateien werden übersprungen |
+| `MISTRAL_API_KEY`, `MISTRAL_OCR_MODEL`, `MISTRAL_OCR_RATE_LIMIT` | leer, `pixtral-12b-2409`, `60` | Mistral vor Tesseract, Anfragen je Minute und Prozess |
 
 Beansprucht wird in kleinen Portionen direkt vor der Bearbeitung (höchstens zwei Dateien je Platz von
 `TEXT_EXTRACTION_CONCURRENCY`); `TEXT_EXTRACTION_BATCH_SIZE` begrenzt nur die Dateien je Kommune und Runde.
@@ -631,6 +643,12 @@ Dateien löst auch er höchstens einmal je Minute und Lauf auf. Hängende und au
 Prüfung `texterkennung` in `/health/worker/` (`docs/MONITORING.md`) und der Betriebsmonitor unter
 „Handlungsbedarf“. Wird eine aufgegebene Datei wieder auf `pending` gesetzt, bekommt sie genau einen
 weiteren Versuch; gelingt er, beginnt der Zähler von vorn.
+
+**Umstellen auf Aufträge:** Ein Worker bedient `ocr` (`docker compose ps worker-heavy`), dann
+`TEXT_EXTRACTION_RUNNER=worker` in der `.env` setzen und Anwendung, Worker und Ingestor-Dienste neu starten.
+Dateien, die der OCR-Worker gerade bearbeitet, löst die Zeitgrenze auf. **Rückweg:** Variable entfernen
+(bzw. `ingestor`) und dieselben Dienste neu starten; eingereihte Aufträge erledigen sich noch oder finden
+ihre Datei bereits bearbeitet.
 
 ## ⏰ Geplante Aufgaben (Zeitpläne im Worker)
 

@@ -142,6 +142,10 @@ class Settings(BaseSettings):
     # zurück nach "pending", nach TEXT_EXTRACTION_MAX_ATTEMPTS abgebrochenen Versuchen "failed" (Speichergrenze)
     text_extraction_stale_minutes: int = 60
     text_extraction_max_attempts: int = 3
+    # Wer den Text erkennt (Issue #530): "ingestor" = dieser OCR-Worker (Standard), "worker" = Aufträge
+    # file.extract_text der Anwendung (Warteschlange ocr); dann ruht die Texterkennung hier. Gleiche Variable
+    # in Anwendung und Ingestor setzen, sonst arbeiten beide oder keiner.
+    text_extraction_runner: str = "ingestor"
 
     # Dokumentablage (Issue #788): Dateien, die der Ingestor für den Text ohnehin lädt, legt er gleich in
     # der Ablage nach SHA-256 der Anwendung ab (gleiches Volume, OPARL_FILES_ROOT). Leer = nicht ablegen.
@@ -155,6 +159,7 @@ class Settings(BaseSettings):
     # schneller bei grossen Backlogs). Tesseract bleibt Fallback.
     mistral_api_key: str = ""
     mistral_ocr_model: str = "pixtral-12b-2409"
+    mistral_ocr_rate_limit: int = 60  # Anfragen je Minute und Prozess (wie in der Anwendung)
 
     # Elasticsearch Indexing
     elasticsearch_indexing_enabled: bool = True

@@ -41,6 +41,19 @@ def quelle_synchronisieren(source_id: str, full: bool = False) -> None:
     run_sync_with_logging(source=source, full=full, triggered_by="admin")
 
 
+@task(queue_name="ocr")
+def file_extract_text(file_id: str) -> None:
+    """
+    Auftrag ``file.extract_text`` (Issue #530): Text einer RIS-Datei mit der gemeinsamen Texterkennung
+    (``mandari_dokumente``), eingereiht vom Zeitplan ``texterkennung_einplanen`` bei
+    ``TEXT_EXTRACTION_RUNNER=worker``. Wiederholbar: Eine erledigte Datei wird übersprungen.
+    """
+    from .services.text_extraction_job import extract_file
+
+    ergebnis = extract_file(file_id)
+    logger.info("Texterkennung Datei %s: %s", file_id, ergebnis)
+
+
 @task
 def kommune_loeschen(body_id: str) -> None:
     """Löscht eine Kommune mit allen RIS-Daten; gibt danach den Doppelklick-Schutz frei."""

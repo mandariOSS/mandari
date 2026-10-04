@@ -1,58 +1,41 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Dokument-Extraktion Service.
+Dokument-Extraktion in der Anwendung: Abruf und Texterkennung.
 
-Lädt Dokumente herunter und extrahiert Text aus PDFs.
-
-Fallback-Kette:
-1. pypdf (schnell, nur für Text-PDFs)
-2. Mistral OCR (API, hochwertig, wenn konfiguriert)
-3. Tesseract OCR (lokal, als letzter Fallback)
-
-Portiert von _old/insight_ai/services/document_extraction.py.
+Der Abruf (robots.txt, Drossel je Host, nur öffentliche Ziele) gehört der Anwendung. Die Texterkennung selbst
+ist die gemeinsame Bibliothek ``mandari_dokumente`` (shared/, Issue #530) – dieselbe Implementierung wie im
+OCR-Worker des Ingestors: pypdf, optional Mistral, sonst Tesseract Seite für Seite mit Speicher- und
+Zeitgrenzen (Issue #817). Die frühere eigene Umsetzung (alle Seiten auf einmal, eigene Mistral-Anbindung) ist
+entfallen. Grenzen und Mistral-Zugang kommen aus den Einstellungen (``OCR_*``, ``MISTRAL_*``).
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import tempfile
 import time
 from dataclasses import dataclass
-from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 import httpx
 from django.conf import settings
-from django.utils.encoding import force_str
-
-try:
-    from pypdf import PdfReader
-except ImportError:
-    PdfReader = None  # type: ignore[assignment, misc]
-
-try:
-    from pdf2image import convert_from_bytes, pdfinfo_from_bytes
-    from pdf2image.exceptions import PDFInfoNotInstalledError
-except ImportError:
-    convert_from_bytes = None  # type: ignore[assignment, misc]
-    pdfinfo_from_bytes = None  # type: ignore[assignment, misc]
-    PDFInfoNotInstalledError = None  # type: ignore[assignment, misc]
-
-try:
-    import pytesseract
-except ImportError:
-    pytesseract = None  # type: ignore[assignment, misc]
+from mandari_dokumente import (
+    METHOD_NONE,
+    ExtractionConfig,
+    MistralConfig,
+    OcrLimits,
+    OcrMemoryLimitError,
+    extract_text,
+)
 
 logger = logging.getLogger(__name__)
 
 PDF_MIME_TYPES = {
     "application/pdf",
     "application/x-pdf",
-}
-
-WORD_MIME_TYPES = {
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 
@@ -68,11 +51,28 @@ class ExtractedDocument:
     source_url: str
     ocr_performed: bool = False
     page_count: int | None = None
-    extraction_method: str = "none"  # pypdf, mistral, tesseract, none
+    extraction_method: str = "none"  # pypdf, mistral, tesseract, text, none
+
+
+@dataclass(slots=True)
+class DownloadedFile:
+    """Gestreamt geladene Datei in einer temporären Datei (``discard`` löscht sie)."""
+
+    path: Path
+    size: int
+    sha256: str
+    content_type: str
+
+    def discard(self) -> None:
+        self.path.unlink(missing_ok=True)
 
 
 class DocumentDownloadError(RuntimeError):
     """Wird geworfen, wenn ein Dokument nicht heruntergeladen werden kann."""
+
+
+class DocumentTooLargeError(DocumentDownloadError):
+    """Die Datei überschreitet ``TEXT_EXTRACTION_MAX_SIZE_MB`` (Abbruch während des Downloads)."""
 
 
 class RobotsBlockedError(DocumentDownloadError):
@@ -101,23 +101,40 @@ class RobotsUnreachableError(DocumentDownloadError):
         self.reason = reason
 
 
-def _http_get(
+def extraction_config(ocr_max_pages: int | None = None) -> ExtractionConfig:
+    """Grenzen der Texterkennung und Mistral-Zugang aus den Einstellungen; ``ocr_max_pages`` begrenzt enger."""
+    max_pages = int(getattr(settings, "OCR_MAX_PAGES", 100))
+    if ocr_max_pages is not None:
+        max_pages = max(0, min(max_pages, ocr_max_pages))
+    return ExtractionConfig(
+        ocr=OcrLimits(
+            dpi=int(getattr(settings, "OCR_DPI", 200)),
+            max_pixels=int(float(getattr(settings, "OCR_MAX_MEGAPIXELS", 8)) * 1_000_000),
+            memory_limit_mb=int(getattr(settings, "OCR_MEMORY_LIMIT_MB", 1024)),
+            page_timeout=float(getattr(settings, "OCR_PAGE_TIMEOUT", 120)),
+            file_budget=float(getattr(settings, "OCR_FILE_BUDGET_SECONDS", 1200)),
+            max_pages=max_pages,
+        ),
+        mistral=MistralConfig(
+            api_key=str(getattr(settings, "MISTRAL_API_KEY", "") or ""),
+            model=str(getattr(settings, "MISTRAL_OCR_MODEL", "pixtral-12b-2409")),
+            requests_per_minute=int(getattr(settings, "MISTRAL_OCR_RATE_LIMIT", 60)),
+        ),
+    )
+
+
+def _prepare_fetch(
     url: str,
-    timeout: float = 60.0,
-    extra_headers: dict[str, str] | None = None,
-    sync_config: Any = None,
-    max_wait: float | None = None,
-) -> httpx.Response:
+    extra_headers: dict[str, str] | None,
+    sync_config: Any,
+    max_wait: float | None,
+) -> tuple[str, dict[str, str]]:
     """
-    Führt einen HTTP-GET Request aus (``extra_headers``: Download-Header je Quelle, Issue #116).
+    robots.txt und Drossel je Host vor einem Abruf; Rückgabe: (User-Agent, Header ohne User-Agent).
 
-    Vor dem Abruf (und vor dem Abruf der robots.txt) gilt die Drossel je Host. ``max_wait``: höchstens so lange
-    auf einen freien Zeitpunkt warten (Web-Anfragen), sonst ``SourceBusyError``; ``None`` wartet, bis er frei ist.
-
-    Vorher gilt die robots.txt des Hosts (``sync_config`` der Quelle für eine Ausnahme mit Vermerk), geprüft
-    mit dem User-Agent des Abrufs (``User-Agent`` in ``extra_headers``, sonst unser Standard). Ist das Dokument
-    gesperrt, folgt ``RobotsBlockedError``, ist die robots.txt nicht erreichbar, ``RobotsUnreachableError`` –
-    jeweils ohne Anfrage an die Quelle.
+    Geprüft wird mit dem User-Agent des Abrufs (``User-Agent`` in ``extra_headers``, sonst unser Standard).
+    Gesperrt: ``RobotsBlockedError``, robots.txt nicht erreichbar: ``RobotsUnreachableError``, kein freier
+    Zeitpunkt innerhalb von ``max_wait``: ``SourceBusyError`` – jeweils ohne Anfrage an die Quelle.
     """
     from . import host_pacing, robots
 
@@ -137,226 +154,102 @@ def _http_get(
     remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
     if not host_pacing.wait(url, sync_config=sync_config, max_wait=remaining):
         raise SourceBusyError(f"Drossel je Host: kein freier Zeitpunkt für {url}")
-    headers = {
-        **{k: v for k, v in (extra_headers or {}).items() if k.lower() != "user-agent"},
-        "User-Agent": agent,
-    }
+    return agent, {k: v for k, v in (extra_headers or {}).items() if k.lower() != "user-agent"}
+
+
+def _http_get(
+    url: str,
+    timeout: float = 60.0,
+    extra_headers: dict[str, str] | None = None,
+    sync_config: Any = None,
+    max_wait: float | None = None,
+) -> httpx.Response:
+    """
+    HTTP-GET nach robots.txt und Drossel je Host (``extra_headers``: Download-Header je Quelle, Issue #116).
+
+    Nur für Abrufe, deren Antwort ohnehin in den Speicher gehört (Web-Anfragen, KI); die Texterkennung der
+    RIS-Dateien lädt gestreamt (``download_to_file``).
+    """
+    agent, headers = _prepare_fetch(url, extra_headers, sync_config, max_wait)
     from .safe_fetch import guarded_client
 
     try:
         # Nur öffentliche Ziele, auch nach Weiterleitungen (Adressen stammen aus der Quelle)
         with guarded_client(timeout=timeout) as client:
-            response = client.get(url, headers=headers, follow_redirects=True)
+            response = client.get(url, headers={**headers, "User-Agent": agent}, follow_redirects=True)
             response.raise_for_status()
     except httpx.HTTPError as exc:
         raise DocumentDownloadError(f"Download fehlgeschlagen: {url}") from exc
     return response
 
 
-def _extract_text_from_pdf(
-    data: bytes, file_name: str = "", ocr_max_pages: int | None = None
-) -> tuple[str, int | None, str]:
+def download_to_file(
+    url: str,
+    *,
+    max_bytes: int,
+    timeout: float = 120.0,
+    extra_headers: dict[str, str] | None = None,
+    sync_config: Any = None,
+) -> DownloadedFile:
     """
-    Extrahiert Text aus einer PDF-Datei.
+    Datei nach robots.txt und Drossel je Host gestreamt in eine temporäre Datei laden und dabei hashen.
 
-    Fallback-Kette:
-    1. pypdf (schnell, nur Text-PDFs)
-    2. Mistral OCR (API, wenn konfiguriert)
-    3. Tesseract OCR (lokal; ``ocr_max_pages`` begrenzt die erkannten Seiten)
-
-    Returns:
-        Tuple mit (text, page_count, extraction_method)
+    Nie liegt die ganze Datei im Speicher; die Größengrenze greift während des Downloads
+    (``DocumentTooLargeError``). Fehler der Quelle: ``DocumentDownloadError``.
     """
-    page_count = None
+    from .safe_fetch import DeadlineExceededError, TooLargeError, download_to
 
-    # 1. Versuche pypdf (schnell, für Text-PDFs)
-    if PdfReader is not None:
-        try:
-            reader = PdfReader(BytesIO(data))
-            page_count = len(reader.pages)
-
-            text_fragments: list[str] = []
-            for page in reader.pages:
-                try:
-                    page_text = page.extract_text() or ""
-                except Exception:
-                    page_text = ""
-                text_fragments.append(page_text.strip())
-
-            text = "\n\n".join(fragment for fragment in text_fragments if fragment)
-
-            if text.strip():
-                logger.debug(f"pypdf Extraktion erfolgreich: {len(text)} Zeichen")
-                return text, page_count, "pypdf"
-
-        except Exception as exc:
-            logger.warning("pypdf Extraktion fehlgeschlagen: %s", exc)
-
-    # 2. Versuche Mistral OCR (wenn konfiguriert)
-    mistral_api_key = getattr(settings, "MISTRAL_API_KEY", "")
-    if mistral_api_key:
-        try:
-            from .mistral_ocr import extract_text_with_mistral
-
-            text = extract_text_with_mistral(data, file_name or "document.pdf")
-            if text.strip():
-                logger.debug(f"Mistral OCR erfolgreich: {len(text)} Zeichen")
-                return text, page_count, "mistral"
-
-        except Exception as exc:
-            logger.warning("Mistral OCR fehlgeschlagen: %s", exc)
-
-    # 3. Fallback auf Tesseract OCR (lokal)
-    text, success = _extract_text_with_ocr(data, max_pages=ocr_max_pages, page_count=page_count)
-    if success and text.strip():
-        logger.debug(f"Tesseract OCR erfolgreich: {len(text)} Zeichen")
-        return text, page_count, "tesseract"
-
-    # Kein Text extrahiert
-    logger.warning("Keine Textextraktion möglich für PDF")
-    return "", page_count, "none"
-
-
-#: Auflösung für die Texterkennung; Tesseract erkennt Fließtext ab etwa 300 dpi zuverlässig
-OCR_DPI = 300
-
-
-def _extract_text_with_ocr(
-    data: bytes, max_pages: int | None = None, page_count: int | None = None
-) -> tuple[str, bool]:
-    """
-    Extrahiert Text aus einem Dokument mittels OCR.
-
-    Seite für Seite und in Graustufen: Früher wurden alle Seiten auf einmal in Farbe gerastert
-    (rund 26 MB je A4-Seite bei 300 dpi, dazu der Rohdatenstrom) – ein gescannter Antrag mit
-    zwanzig Seiten brauchte über 1 GB Arbeitsspeicher und damit mehr, als der Web-Container hat.
-    Jetzt liegt immer nur eine Seite (rund 9 MB) im Speicher. ``max_pages`` begrenzt die Zahl der
-    erkannten Seiten, etwa für den Import im laufenden Seitenaufruf.
-
-    Returns:
-        Tuple mit (text, success)
-    """
-    if convert_from_bytes is None or pytesseract is None:
-        logger.warning("OCR nicht verfügbar (pdf2image oder pytesseract fehlt).")
-        return "", False
-
-    total = page_count
-    if total is None:
-        try:
-            total = int(pdfinfo_from_bytes(data)["Pages"]) if pdfinfo_from_bytes is not None else None
-        except Exception as exc:
-            if PDFInfoNotInstalledError and isinstance(exc, PDFInfoNotInstalledError):
-                logger.warning("Poppler nicht installiert, OCR wird übersprungen.")
-            else:
-                logger.warning("Fehler beim Lesen der Seitenzahl für OCR: %s", type(exc).__name__)
-            return "", False
-    if not total:
-        return "", False
-    limit = total if max_pages is None else max(0, min(total, max_pages))
-
-    ocr_fragments: list[str] = []
-    for number in range(1, limit + 1):
-        try:
-            images = convert_from_bytes(data, dpi=OCR_DPI, first_page=number, last_page=number, grayscale=True)
-        except Exception as exc:
-            if PDFInfoNotInstalledError and isinstance(exc, PDFInfoNotInstalledError):
-                logger.warning("Poppler nicht installiert, OCR wird übersprungen.")
-                return "", False
-            logger.warning("Fehler beim Konvertieren von Seite %s für OCR: %s", number, type(exc).__name__)
-            continue
-        for image in images:
-            try:
-                # Deutsche Sprache für bessere Erkennung von Umlauten
-                ocr_text = pytesseract.image_to_string(image, lang="deu")
-            except Exception as exc:
-                logger.warning("OCR-Fehler für Seite %s: %s", number, type(exc).__name__)
-                ocr_text = ""
-            finally:
-                image.close()
-            ocr_fragments.append(ocr_text.strip())
-
-    text = "\n\n".join(fragment for fragment in ocr_fragments if fragment)
-    return text, True
-
-
-def _extract_text_from_plain(data: bytes) -> str:
-    """Dekodiert Textdateien in UTF-8 (Fallback latin-1)."""
+    agent, headers = _prepare_fetch(url, extra_headers, sync_config, None)
+    handle, name = tempfile.mkstemp(suffix=".part", prefix="texterkennung-")
+    path = Path(name)
     try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        return data.decode("latin-1", errors="ignore")
-
-
-def _strip_html_tags(html: str) -> str:
-    """Minimale HTML-Bereinigung ohne externe Abhängigkeiten."""
-    from html.parser import HTMLParser
-
-    class TextExtractor(HTMLParser):
-        def __init__(self) -> None:
-            super().__init__()
-            self.fragments: list[str] = []
-
-        def handle_data(self, data: str) -> None:
-            cleaned = data.strip()
-            if cleaned:
-                self.fragments.append(cleaned)
-
-    parser = TextExtractor()
-    parser.feed(html)
-    return "\n".join(parser.fragments)
+        with os.fdopen(handle, "wb") as target:
+            result = download_to(
+                target,
+                url,
+                max_bytes=max_bytes,
+                total_seconds=timeout,
+                timeout=httpx.Timeout(timeout),
+                headers=headers,
+                user_agent=agent,
+            )
+    except TooLargeError as exc:
+        path.unlink(missing_ok=True)
+        raise DocumentTooLargeError(f"Datei größer als {max_bytes // 1024 // 1024} MB") from exc
+    except (httpx.HTTPError, DeadlineExceededError) as exc:
+        path.unlink(missing_ok=True)
+        raise DocumentDownloadError(f"Download fehlgeschlagen ({type(exc).__name__})") from exc
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return DownloadedFile(path=path, size=result.size, sha256=digest.hexdigest(), content_type=result.content_type)
 
 
 def extract_text_from_file(
-    data: bytes,
+    data: bytes | Path,
     mime_type: str | None = None,
     file_name: str = "",
     ocr_max_pages: int | None = None,
 ) -> tuple[str, bool, int | None, str]:
     """
-    Extrahiert Text aus Binärdaten basierend auf MIME-Typ.
+    Text aus Binärdaten (oder einer Datei) mit der gemeinsamen Texterkennung.
 
-    Args:
-        data: Binärdaten der Datei
-        mime_type: MIME-Typ der Datei
-        file_name: Optionaler Dateiname für Fallback-Erkennung
-        ocr_max_pages: Höchstzahl der Seiten für die lokale Texterkennung (``None`` = alle)
+    ``ocr_max_pages`` begrenzt die erkannten Seiten (etwa beim Import im laufenden Seitenaufruf). Scheitert die
+    Erkennung an der Speichergrenze, ist das Ergebnis leer (Methode ``none``); Aufrufer brechen deshalb nie ab.
 
     Returns:
         Tuple mit (text, ocr_performed, page_count, extraction_method)
     """
-    text = ""
-    ocr_used = False
-    page_count: int | None = None
-    extraction_method = "none"
-
-    resolved_mime = mime_type or ""
-
-    # PDF-Erkennung
-    if resolved_mime in PDF_MIME_TYPES or file_name.lower().endswith(".pdf"):
-        text, page_count, extraction_method = _extract_text_from_pdf(data, file_name, ocr_max_pages)
-        ocr_used = extraction_method in ("mistral", "tesseract")
-
-    # Textdateien
-    elif resolved_mime.startswith("text/"):
-        text = _extract_text_from_plain(data)
-        if resolved_mime == "text/html":
-            text = _strip_html_tags(text)
-        extraction_method = "text"
-
-    # Word-Dokumente (OCR-Fallback)
-    elif resolved_mime in WORD_MIME_TYPES:
-        logger.info("Word-Datei erkannt, versuche OCR-Fallback.")
-        text, ocr_used = _extract_text_with_ocr(data)
-        extraction_method = "tesseract" if ocr_used else "none"
-
-    # Generischer Fallback
-    else:
-        text = _extract_text_from_plain(data)
-        extraction_method = "text" if text.strip() else "none"
-
-    # PostgreSQL speichert keine Null-Bytes in Textfeldern; manche PDFs enthalten sie im Textstrom
-    text = force_str(text or "").replace("\x00", "").strip()
-    return text, ocr_used, page_count, extraction_method
+    try:
+        result = extract_text(data, mime_type, file_name, extraction_config(ocr_max_pages))
+    except OcrMemoryLimitError:
+        logger.warning("Texterkennung an der Speichergrenze für %s", file_name or "Datei")
+        return "", False, None, METHOD_NONE
+    return result.text, result.ocr_performed, result.page_count, result.method
 
 
 def download_and_extract(
@@ -379,9 +272,6 @@ def download_and_extract(
         timeout: HTTP-Timeout in Sekunden
         sync_config: ``sync_config`` der Quelle (Ausnahme von der robots.txt, Abstand der Drossel)
         max_wait: höchstens so lange auf die Drossel je Host warten (Web-Anfragen)
-
-    Returns:
-        ExtractedDocument mit Binärdaten, Text und Metadaten
 
     Raises:
         RobotsBlockedError: die robots.txt sperrt das Dokument

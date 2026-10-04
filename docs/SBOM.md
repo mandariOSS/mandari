@@ -55,8 +55,6 @@
 | Komponente | Version | Lizenz | Zweck |
 |---|---|---|---|
 | pypdf | ≥ 6.4.0 | BSD-3-Clause | PDF-Textextraktion |
-| pytesseract | ≥ 0.3.10 | Apache-2.0 | OCR (Tesseract-Anbindung) |
-| pdf2image | ≥ 1.16.0 | MIT | PDF → Bild-Konvertierung für OCR |
 | xhtml2pdf | ≥ 0.2.17 | Apache-2.0 | PDF-Generierung aus HTML |
 | reportlab | ≥ 4.0.0 | BSD-3-Clause | PDF-Generierung (Low-Level) |
 | python-docx | ≥ 1.1.0 | MIT | DOCX-Generierung |
@@ -100,8 +98,6 @@
 | prometheus-client | ≥ 0.21.0 | Apache-2.0 | Metriken/Monitoring |
 | aiohttp | ≥ 3.11.0 | Apache-2.0 | HTTP (Monitoring & Resilience) |
 | pypdf | ≥ 4.0.0 | BSD-3-Clause | PDF-Textextraktion |
-| pytesseract | ≥ 0.3.10 | Apache-2.0 | OCR |
-| pdf2image | ≥ 1.17.0 | MIT | PDF → Bild-Konvertierung |
 
 ---
 
@@ -110,6 +106,8 @@
 | Komponente | Version | Lizenz | Zweck |
 |---|---|---|---|
 | pydantic | ≥ 2.10.0 | MIT | OParl-Typen als Pydantic-Schemas |
+| pypdf | ≥ 6.19.0 | BSD-3-Clause | Texterkennung `mandari_dokumente`: Textebene und Seitengrößen |
+| httpx | ≥ 0.28.0 | BSD-3-Clause | Texterkennung `mandari_dokumente`: Mistral-Anbindung (optional) |
 
 ---
 
@@ -122,8 +120,8 @@
 | Elasticsearch | 8 | SSPL / Elastic License 2.0 | Volltextsuche |
 | Caddy | 2 | Apache-2.0 | Reverse Proxy mit automatischem TLS |
 | Docker / Docker Compose | — | Apache-2.0 | Container-Plattform |
-| Tesseract OCR | — | Apache-2.0 | OCR-Engine (System-Abhängigkeit von pytesseract) |
-| Poppler | — | GPL-2.0/-3.0 | PDF-Rendering (System-Abhängigkeit von pdf2image) |
+| Tesseract OCR | — | Apache-2.0 | OCR-Engine, als Unterprozess aus `mandari_dokumente` |
+| Poppler (`pdftoppm`) | — | GPL-2.0/-3.0 | Rendern einzelner Seiten, als Unterprozess aus `mandari_dokumente` |
 
 ## 5. Frontend-Bibliotheken (via Templates/Static)
 
