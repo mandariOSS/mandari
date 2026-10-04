@@ -8,6 +8,7 @@ ein Doppelzustellungstest für jedes Abonnement.
 from __future__ import annotations
 
 import importlib
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -63,7 +64,12 @@ def test_verschachtelte_transaktionen_halten_die_reihenfolge_je_objekt(
     sequenzierer.drain()
     assert folgenummern([spaeter]) == [None], "wartet auf die ältere, noch offene Transaktion"
     aussen.commit()
-    sequenzierer.drain()
+    # In der CI halten offene Transaktionen paralleler Testprozesse die Grenze clusterweit kurz auf
+    ende = time.monotonic() + 60
+    while None in folgenummern([erstes, tief, innen, spaeter]):
+        assert time.monotonic() < ende, "nicht alle Ereignisse nummeriert"
+        sequenzierer.drain()
+        time.sleep(0.05)
     sequenzierer.release()
 
     nummern = folgenummern([erstes, tief, innen, spaeter, verworfen])
