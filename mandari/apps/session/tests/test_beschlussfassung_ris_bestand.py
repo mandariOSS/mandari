@@ -13,7 +13,7 @@ Beschlussfassung im kanonischen Modell (Issue #525): von Session über die Abbil
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.test import Client
@@ -49,8 +49,9 @@ def _spiegeln(sitzung_json: dict[str, Any]) -> OParlMeeting:
     body, _ = OParlBody.objects.get_or_create(
         external_id=f"{BASIS}body/", defaults={"source": source, "name": "Nord", "slug": "nord-spiegel"}
     )
-    mirror: Any = SessionMirror(source, fetch=lambda url: {})
-    return mirror._upsert_meeting(body, sitzung_json)
+    # Wie in insight_sync/tests/test_session_mirror_ort.py: Der Spiegel ist nicht typisiert
+    mirror = cast(Any, SessionMirror)(source, fetch=lambda url: {})
+    return cast(OParlMeeting, mirror._upsert_meeting(body, sitzung_json))
 
 
 def _beschluss(welt: Welt, **werte: Any) -> SessionAgendaItem:
