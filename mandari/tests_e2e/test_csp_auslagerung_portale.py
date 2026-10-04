@@ -55,18 +55,112 @@ def _kommune_waehlen(page: Any, goto: Any, body: OParlBody) -> None:
 
 
 class TestInsight:
-    def test_kommunenauswahl_filtert_sofort(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
+    def test_kommunenauswahl_schlaegt_vor(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
+        """Kommunenwechsel (#783): Vorschläge vom Server, Pfeiltasten in die Liste, keine Liste aller Kommunen."""
         _kommune(1, "Nordstadt")
         _kommune(2, "Südheim")
         goto("/insight/")
-        wait_for_component(page, "bodySelectApp")
+        wait_for_component(page, "kommunenWahl")
+        expect(page.get_by_text("Südheim")).to_have_count(0)
 
-        page.fill("#body-select-search", "nord")
-        expect(page.get_by_text("1 von 2 Kommunen")).to_be_visible()
-        expect(page.locator("[x-ref=grid] [data-search]", has_text="Südheim")).to_be_hidden()
-        page.fill("#body-select-search", "gibtsnicht")
-        expect(page.get_by_text("Keine Kommune gefunden", exact=True)).to_be_visible()
+        page.fill("#auswahl-eingabe", "nord")
+        treffer = page.locator("#auswahl-ergebnisse a[data-kommune-ziel]", has_text="Nordstadt")
+        expect(treffer).to_be_visible()
+        expect(page.locator("#auswahl-ergebnisse", has_text="Südheim")).to_have_count(0)
+        page.keyboard.press("ArrowDown")
+        expect(treffer).to_be_focused()
+        page.keyboard.press("Escape")
+        expect(page.locator("#auswahl-eingabe")).to_be_focused()
+        page.fill("#auswahl-eingabe", "gibtsnicht")
+        expect(page.get_by_text("Keine Kommune gefunden.", exact=True)).to_be_visible()
         problems.assert_clean("Kommunenauswahl")
+
+    def test_kommune_wechseln_als_dialog(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
+        """Dialog: Fokus im Suchfeld, Escape schließt, der Fokus kehrt auf den Auslöser zurück (#783)."""
+        body = _kommune(4, "Weststadt")
+        _kommune(5, "Oststadt")
+        _kommune_waehlen(page, goto, body)
+        goto("/insight/vorgaenge/")
+        ausloeser = page.locator("[data-kommune-wechseln]:visible").first
+        ausloeser.click()
+        dialog = page.get_by_role("dialog", name="Kommune wechseln")
+        expect(dialog).to_be_visible()
+        expect(page.locator("#kommune-dialog-eingabe")).to_be_focused()
+        expect(dialog.get_by_text("Zuletzt besucht")).to_be_visible()
+        page.keyboard.type("osts")
+        expect(dialog.locator("a[data-kommune-ziel]", has_text="Oststadt")).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(dialog).to_be_hidden()
+        expect(ausloeser).to_be_focused()
+        # Leiste unten nur am Handy
+        expect(page.get_by_role("navigation", name="Hauptbereiche")).to_be_hidden()
+        problems.assert_clean("Kommune wechseln")
+
+    @pytest.mark.parametrize("breite", [390, 360])
+    def test_leiste_unten_und_blatt_mehr(self, page: Any, goto: Any, problems: BrowserProblems, breite: int) -> None:
+        """Am Handy (#783, Stufe 3): fünf Ziele unten, Blatt „Mehr“ als Dialog, kein waagerechtes Überlaufen."""
+        body = _kommune(breite, f"Mobilstadt {breite}")
+        page.set_viewport_size({"width": breite, "height": 780})
+        _kommune_waehlen(page, goto, body)
+        goto("/insight/vorgaenge/")
+        leiste = page.get_by_role("navigation", name="Hauptbereiche")
+        expect(leiste).to_be_visible()
+        expect(leiste.get_by_role("link", name="Vorgänge")).to_have_attribute("aria-current", "page")
+        expect(page.locator("#insight-navigation")).to_be_hidden()
+        assert page.evaluate("document.documentElement.scrollWidth") <= breite
+
+        mehr = leiste.get_by_role("button", name="Mehr")
+        mehr.click()
+        blatt = page.get_by_role("dialog", name="Mehr")
+        expect(blatt).to_be_visible()
+        expect(blatt.get_by_role("link", name="Gremien")).to_be_visible()
+        page.keyboard.press("Escape")
+        expect(blatt).to_be_hidden()
+        expect(mehr).to_be_focused()
+
+        mehr.click()
+        blatt.get_by_role("button", name="Kommune wechseln").click()
+        expect(page.get_by_role("dialog", name="Kommune wechseln")).to_be_visible()
+        expect(blatt).to_be_hidden()
+        expect(page.locator("#kommune-dialog-eingabe")).to_be_focused()
+        problems.assert_clean("Leiste unten")
+
+    def test_safe_area_im_querformat(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
+        """Querformat mit Aussparung und Home-Indikator (#783, Stufe 3): nichts liegt in der Safe-Area.
+
+        Chromium emuliert die Ränder über CDP; ob iOS sie überhaupt liefert, hängt an ``viewport-fit=cover``
+        (geprüft in ``insight_core/tests/test_leiste_unten.py``).
+        """
+        body = _kommune(844, "Querstadt")
+        page.set_viewport_size({"width": 844, "height": 390})
+        cdp = page.context.new_cdp_session(page)
+        cdp.send("Emulation.setSafeAreaInsetsOverride", {"insets": {"top": 0, "bottom": 21, "left": 47, "right": 47}})
+        _kommune_waehlen(page, goto, body)
+        goto("/insight/vorgaenge/")
+        leiste = page.get_by_role("navigation", name="Hauptbereiche")
+        expect(leiste).to_be_visible()
+        unten = leiste.bounding_box()
+        assert unten is not None and unten["y"] + unten["height"] == 390
+        for name in ("Start", "Karte"):
+            ziel = leiste.get_by_role("link", name=name).bounding_box()
+            assert ziel is not None and ziel["y"] + ziel["height"] <= 390 - 21, f"{name} über dem Home-Indikator"
+        wortmarke = page.get_by_role("link", name="mandari Insight, Übersicht").bounding_box()
+        assert wortmarke is not None and wortmarke["x"] >= 47, "Kopfzeile neben der Aussparung"
+        suche = page.locator("header").get_by_role("link", name="Suche").bounding_box()
+        assert suche is not None and suche["x"] + suche["width"] <= 844 - 47
+        ueberschrift = page.locator("main h1").first.bounding_box()
+        assert ueberschrift is not None and ueberschrift["x"] >= 47, "Inhalt neben der Aussparung"
+
+        leiste.get_by_role("button", name="Mehr").click()
+        blatt = page.get_by_role("dialog", name="Mehr")
+        expect(blatt).to_be_visible()
+        gremien = blatt.get_by_role("link", name="Gremien").bounding_box()
+        assert gremien is not None and gremien["x"] >= 47
+        anmelden = blatt.get_by_role("link", name="Anmelden")
+        anmelden.scroll_into_view_if_needed()
+        box = anmelden.bounding_box()
+        assert box is not None and box["y"] + box["height"] <= 390 - 21
+        problems.assert_clean("Safe-Area")
 
     def test_merkliste_laedt_gemerkte_vorgaenge(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
         body = _kommune(3, "Merkstadt")

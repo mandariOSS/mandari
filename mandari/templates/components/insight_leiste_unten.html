@@ -1,0 +1,87 @@
+{% comment %}
+Am Handy (unter lg) die Leiste unten mit fünf Zielen und das Blatt „Mehr“ (Issue #783, Stufe 3, Variante C). Beides
+steht geschlossen im HTML; Alpine öffnet das Blatt nur auf Klick (wie die Korrektur aus #763). Das Blatt ist ein
+modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt auf „Mehr“ zurück. Safe-Area unten für Geräte ohne Knopf,
+seitlich für das Querformat (wirkt nur mit viewport-fit=cover im Layout).
+{% endcomment %}
+<nav aria-label="Hauptbereiche" class="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+    <ul class="grid grid-cols-5 max-w-xl mx-auto">
+        <li><c-insight.tab href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" icon="house" area="uebersicht">Start</c-insight.tab></li>
+        <li><c-insight.tab href="{% url 'insight_core:insight:meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.tab></li>
+        <li><c-insight.tab href="{% url 'insight_core:insight:paper_list' %}" icon="file-text" area="vorgaenge">Vorgänge</c-insight.tab></li>
+        <li><c-insight.tab href="{% url 'insight_core:insight:map' %}" icon="map" area="karte">Karte</c-insight.tab></li>
+        <li>
+            <button type="button" x-ref="mehrButton" @click="openMehr()" aria-haspopup="dialog" aria-controls="insight-mehr"
+                :aria-expanded="mehrOffen.toString()" aria-expanded="false"
+                class="w-full flex flex-col items-center justify-center gap-0.5 h-16 px-1 text-[0.75rem] leading-tight {% if insight_area_more %}font-semibold text-gray-900 dark:text-white{% else %}font-medium text-gray-600 dark:text-gray-400{% endif %}">
+                <span class="inline-flex items-center justify-center w-14 h-8 rounded-full {% if insight_area_more %}bg-primary-100 dark:bg-primary-900/60 text-primary-700 dark:text-primary-200{% endif %}">
+                    <i data-lucide="ellipsis" class="w-[22px] h-[22px]" aria-hidden="true"></i>
+                </span>
+                <span>Mehr</span>{% if insight_area_more %}<span class="sr-only">, enthält den aktuellen Bereich</span>{% endif %}
+            </button>
+        </li>
+    </ul>
+</nav>
+
+<div x-show="mehrOffen" class="lg:hidden fixed inset-0 z-[60]" @keydown.escape.window="mehrOffen && closeMehr()" x-cloak>
+    <div x-show="mehrOffen" x-transition.opacity class="absolute inset-0 bg-gray-950/40 dark:bg-black/60" @click="closeMehr()" aria-hidden="true"></div>
+    <div id="insight-mehr" role="dialog" aria-modal="true" aria-labelledby="insight-mehr-titel" x-trap.noscroll="mehrOffen"
+        x-show="mehrOffen"
+        x-transition:enter="transition-transform duration-200 ease-out motion-reduce:transition-none"
+        x-transition:enter-start="translate-y-full" x-transition:enter-end="translate-y-0"
+        x-transition:leave="transition-transform duration-150 ease-in motion-reduce:transition-none"
+        x-transition:leave-start="translate-y-0" x-transition:leave-end="translate-y-full"
+        class="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto overscroll-contain rounded-t-2xl bg-band-hell shadow-2xl pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+        <div class="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
+            <h2 id="insight-mehr-titel" class="text-[1.125rem] font-semibold text-gray-900 dark:text-white">Mehr</h2>
+            <button type="button" @click="closeMehr()" aria-label="Schließen"
+                class="inline-flex items-center justify-center w-11 h-11 -mr-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-band-grau">
+                <i data-lucide="x" class="w-6 h-6" aria-hidden="true"></i>
+            </button>
+        </div>
+        <nav aria-label="Weitere Bereiche" class="px-2">
+            <ul class="space-y-0.5">
+                <li><c-insight.blatt-link href="{% url 'insight_core:insight:organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.blatt-link></li>
+                <li><c-insight.blatt-link href="{% url 'insight_core:insight:person_list' %}" icon="users" area="personen">Personen</c-insight.blatt-link></li>
+                {% if insight_decisions_published %}
+                <li><c-insight.blatt-link href="{% url 'insight_core:insight:decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.blatt-link></li>
+                {% endif %}
+                {% if insight_questions_enabled %}
+                <li><c-insight.blatt-link href="{% url 'insight_core:insight:question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.blatt-link></li>
+                {% endif %}
+                <li><c-insight.blatt-link href="{% url 'insight_core:insight:chat' %}" icon="sparkle" area="ki">KI-Assistent</c-insight.blatt-link></li>
+                <li><c-insight.blatt-link href="{% url 'insight_core:insight:saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.blatt-link></li>
+                {% if insight_subscriptions_enabled %}
+                <li><c-insight.blatt-link href="{% url 'insight_core:insight:notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.blatt-link></li>
+                {% endif %}
+            </ul>
+        </nav>
+        <div class="mx-5 my-3 border-t border-gray-200 dark:border-gray-800" aria-hidden="true"></div>
+        <ul class="px-2 space-y-0.5">
+            {% if not insight_portal %}
+            <li>
+                <button type="button" @click="openCityModal()" data-kommune-wechseln aria-haspopup="dialog"
+                    class="w-full flex items-center gap-4 min-h-12 px-3 rounded-lg text-left text-[1.0625rem] font-medium text-gray-800 dark:text-gray-200 hover:bg-band-grau">
+                    <i data-lucide="map-pin" class="w-[22px] h-[22px] shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
+                    <span class="flex-1 min-w-0 truncate">Kommune wechseln</span>
+                </button>
+            </li>
+            {% elif insight_portal.can_leave %}
+            <li><c-insight.blatt-link href="{% url 'insight_core:insight:clear_body' %}" icon="layout-grid">Alle Kommunen im Bürgerportal</c-insight.blatt-link></li>
+            {% endif %}
+            <li>
+                <button type="button" @click="darkMode=!darkMode" :aria-pressed="darkMode.toString()" aria-pressed="false"
+                    class="w-full flex items-center gap-4 min-h-12 px-3 rounded-lg text-left text-[1.0625rem] font-medium text-gray-800 dark:text-gray-200 hover:bg-band-grau">
+                    <i x-show="!darkMode" data-lucide="moon" class="w-[22px] h-[22px] shrink-0 text-gray-500" aria-hidden="true"></i>
+                    <i x-show="darkMode" data-lucide="sun" class="w-[22px] h-[22px] shrink-0 text-gray-400" aria-hidden="true" x-cloak></i>
+                    <span class="flex-1 min-w-0">Dunkler Modus</span>
+                </button>
+            </li>
+            {% if request.user.is_authenticated %}
+            <li><c-insight.blatt-link href="{% url 'accounts:logout' %}" icon="log-out">Abmelden</c-insight.blatt-link></li>
+            {% else %}
+            <li><c-insight.blatt-link href="{% url 'accounts:login' %}" icon="log-in">Anmelden</c-insight.blatt-link></li>
+            {% endif %}
+        </ul>
+    </div>
+</div>

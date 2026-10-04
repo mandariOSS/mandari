@@ -9,8 +9,8 @@ Prüfungen:
   1. Kommune-Auswahl (leer / 1 Kommune / 8 Kommunen):
      - 0 Kommunen: freundlicher Empty-State statt Fehler
      - 1 Kommune (Self-Hosting): automatische Auswahl + Redirect, kein Auswahlzwang
-     - 8 Kommunen: Auswahlseite mit Suchfeld, Karten (Name, Bundesland aus AGS,
-       Kennzahlen aus echten Daten), "Alle Kommunen durchsuchen", ohne Wappen/Logos
+     - 8 Kommunen: Auswahlseite mit Suchfeld statt Liste (#783), Vorschläge mit Name und
+       Bundesland aus AGS, "In allen Kommunen suchen", ohne Wappen/Logos
   2. set_body-/clear_body-Flow: Session-Persistenz, Redirects, HTMX-HX-Redirect
   3. Kommunenübergreifende Suche im "Alle Kommunen"-Modus (Django-Fallback)
   4. Kommune-Filter: Listen-Partials liefern nur Daten der aktiven Kommune
@@ -223,17 +223,34 @@ invalidate_portal_stats()
 resp = client.get("/insight/")
 page = html(resp)
 check("GET /insight/ mit 8 Kommunen: 200 (Auswahlseite)", resp.status_code == 200, f"status={resp.status_code}")
-check("Headline vorhanden", "hle deine Kommune" in page)
-check("Suchfeld vorhanden", 'id="body-select-search"' in page)
-check("Alle 8 Kommunen gelistet", all(name in page for name, _ in CITY_SPECS))
-check("Client-Filter-Attribute (data-search)", page.count("data-search") >= 8)
-check("Bundesland aus AGS (NRW)", "Nordrhein-Westfalen" in page)
-check("Bundesland aus AGS (Bayern)", "Bayern" in page)
-check("Fallback ohne AGS (classification)", "Kreisfreie Stadt" in page)
-check("Kennzahlen aus echten Daten", ">1</strong> Vorg" in page.replace("\n", ""))
-check("'Alle Kommunen durchsuchen' vorhanden", "Alle Kommunen durchsuchen" in page)
-check("Keine Wappen/Logos auf Karten", "bodies/logos" not in page)
-check("Set-Body-Links vorhanden", f"/insight/kommune/{body_a.id}/" in page)
+check("Headline vorhanden", "hlen Sie Ihre Kommune" in page)
+check("Suchfeld vorhanden", 'id="auswahl-eingabe"' in page)
+check("Keine Liste aller Kommunen (#783)", not any(name in page for name, _ in CITY_SPECS))
+check(
+    "Vorschläge, Nähe und Stöbern angebunden",
+    all(f"data-{art}-url" in page for art in ("vorschlaege", "naehe", "stoebern")),
+)
+check("'In allen Kommunen suchen' vorhanden", "In allen Kommunen suchen" in page)
+check("Keine Wappen/Logos", "bodies/logos" not in page)
+check("Kein Schimmer und keine Einblendung", "select-hero-glow" not in page and "fade-up" not in page)
+
+# Vorschläge zur Eingabe: Name, Bundesland aus AGS, Art als Rückfall, Link zum Wählen
+vorschlaege = client.get("/insight/kommunen/vorschlaege/", {"q": CITY_SPECS[0][0]}).json()["treffer"]
+check(
+    "Vorschlag zur ersten Kommune", bool(vorschlaege) and vorschlaege[0]["name"] == CITY_SPECS[0][0], str(vorschlaege)
+)
+check("Vorschlag wählt die Kommune", any(t.get("url") == f"/insight/kommune/{body_a.id}/" for t in vorschlaege))
+alle_orte = " ".join(
+    t["ort"]
+    for name, _ in CITY_SPECS
+    for t in client.get("/insight/kommunen/vorschlaege/", {"q": name}).json()["treffer"]
+)
+check("Bundesland aus AGS (NRW)", "Nordrhein-Westfalen" in alle_orte, alle_orte)
+check("Bundesland aus AGS (Bayern)", "Bayern" in alle_orte)
+check("Art als Rückfall (classification)", "Kreisfreie Stadt" in alle_orte)
+check(
+    "Höchstens acht Vorschläge", len(client.get("/insight/kommunen/vorschlaege/", {"q": "st"}).json()["treffer"]) <= 8
+)
 
 # SEO der Auswahlseite
 check("SEO: <title> gesetzt", "<title>Kommune w" in page)
@@ -277,7 +294,7 @@ resp = client.get("/insight/kommune/alle/")
 check("clear_body: Redirect", resp.status_code == 302, f"status={resp.status_code}")
 check("clear_body: Session 'all'", client.session.get("active_body_id") == "all")
 resp = client.get("/insight/")
-check("Nach clear_body: Auswahlseite", "hle deine Kommune" in html(resp))
+check("Nach clear_body: Auswahlseite", "hlen Sie Ihre Kommune" in html(resp))
 
 # Unbekannte Body-ID: kein Crash
 import uuid as uuid_mod  # noqa: E402
@@ -296,7 +313,6 @@ for url in [
     "/insight/vorgaenge/",
     "/insight/gremien/",
     "/insight/personen/",
-    "/insight/dokumente/",
     "/insight/karte/",
     "/insight/nachbarschaft/",
     "/insight/termine/kalender/",
@@ -310,6 +326,13 @@ for url in [
         f"status={resp.status_code} loc={resp.headers.get('Location')}",
     )
 
+# Dokumente sind in die Suche gewandert: dauerhafte Weiterleitung, auch ohne gewählte Kommune
+resp = client.get("/insight/dokumente/")
+check(
+    "All-Modus: /insight/dokumente/ → Suche nach Dokumenten",
+    resp.status_code == 301 and resp.headers.get("Location", "").endswith("/insight/suche/?type=file"),
+    f"status={resp.status_code} loc={resp.headers.get('Location')}",
+)
 # Suche bleibt kommunenübergreifend erreichbar (gleichwertige Option)
 resp = client.get("/insight/suche/")
 check("All-Modus: Suche bleibt erreichbar (200)", resp.status_code == 200, f"status={resp.status_code}")

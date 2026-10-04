@@ -1,19 +1,19 @@
 {% load tz %}
 {% if organizations %}
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+<div class="-mx-3">
     <div class="overflow-x-auto">
     <table class="w-full">
         <thead>
-            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Gremium</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Nächste Sitzung</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Letzte Sitzung</th>
+            <tr class="border-b border-gray-300 dark:border-gray-700">
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Gremium</th>
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Nächste Sitzung</th>
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Letzte Sitzung</th>
                 <th class="w-10 px-2 py-3"><span class="sr-only">Aktionen</span></th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
             {% for org in organizations %}
-            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+            <tr class="hover:bg-band-grau/70 group cursor-pointer"
                 data-href="{% url 'insight_core:insight:organization_detail' org.id %}">
                 {# Gremium #}
                 <td class="px-6 py-4">
@@ -106,7 +106,7 @@
 {% endif %}
 
 {% else %}
-<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="py-12 text-center">
     <i data-lucide="users" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Gremien gefunden</h3>
     <p class="text-gray-500 dark:text-gray-400">

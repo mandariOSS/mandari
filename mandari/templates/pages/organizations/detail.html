@@ -3,24 +3,13 @@
 
 {% block title %}{{ organization.name }}{% endblock %}
 
+{% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ organization.name }}</c-insight.brotkrume>{% endblock %}
+
 {% block content %}
 <div x-data="{ tab: 'members' }">
     {% include "partials/tombstone_notice.html" with object=organization %}
 
-    {# Breadcrumb #}
-    <nav class="mb-6">
-        <ol class="flex items-center gap-2 text-sm">
-            <li>
-                <a href="{% url 'insight_core:insight:organization_list' %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                    Gremien
-                </a>
-            </li>
-            <li class="text-gray-400">/</li>
-            <li class="text-gray-900 dark:text-white font-medium">
-                {{ organization.name }}
-            </li>
-        </ol>
-    </nav>
+    <c-insight.zurueck href="{% url 'insight_core:insight:organization_list' %}">Gremien</c-insight.zurueck>
 
     {# Hero #}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">

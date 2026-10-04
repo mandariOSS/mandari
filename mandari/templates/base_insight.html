@@ -2,45 +2,21 @@
 <!DOCTYPE html>
 <html lang="de" class="scroll-smooth" data-portal="insight"
       data-authenticated="{{ request.user.is_authenticated|yesno:"true,false" }}"
-      x-data="{
-          darkMode: localStorage.getItem('darkMode') === 'true',
-          sidebarOpen: false,
-          cityModalOpen: false,
-          citySearch: '',
-          activeBodyId: '{% if active_body %}{{ active_body.id }}{% endif %}',
-          docViewerUrl: '',
-          docViewerName: '',
-          docViewerMeta: '',
-          docViewerLoading: false,
-          docViewerError: false,
-          _docTimeout: null,
-          openDoc(url, name, meta) {
-              this.docViewerUrl = url;
-              this.docViewerName = name || 'Dokument';
-              this.docViewerMeta = meta || '';
-              this.docViewerLoading = true;
-              this.docViewerError = false;
-              clearTimeout(this._docTimeout);
-              this._docTimeout = setTimeout(() => {
-                  if (this.docViewerLoading) {
-                      this.docViewerLoading = false;
-                      this.docViewerError = true;
-                  }
-              }, 30000);
-          }
-      }"
-      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
+      data-active-body="{% if active_body %}{{ active_body.id }}{% endif %}"
+      {% if page_body and not insight_portal %}data-kommune-name="{{ page_body.get_display_name }}" data-kommune-ort="{{ page_body_ort }}" data-kommune-url="{% url 'insight_core:insight:set_body' page_body.id %}"{% endif %}
+      x-data="insightShell"
       :class="{ 'dark': darkMode }">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="{% block meta_description %}{% if seo.description %}{{ seo.description }}{% else %}Mandari - Kommunalpolitische Transparenz{% endif %}{% endblock %}">
-    <meta name="theme-color" content="{% if insight_portal.accent_color %}{{ insight_portal.accent_color }}{% else %}#4f46e5{% endif %}">
+    {# viewport-fit=cover: sonst liefert env(safe-area-inset-*) auf iOS überall 0 (Leiste unten, Blätter, Querformat) #}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="{% block meta_description %}{% if seo.description %}{{ seo.description }}{% else %}mandari Insight – öffentliche Ratsinformationen der Kommunen{% endif %}{% endblock %}">
+    <meta name="theme-color" content="{% if insight_portal.accent_color %}{{ insight_portal.accent_color }}{% else %}#17703f{% endif %}">
     {% if seo.keywords %}<meta name="keywords" content="{{ seo.keywords }}">{% endif %}
     {% if seo.author %}<meta name="author" content="{{ seo.author }}">{% endif %}
     {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
 
-    <title>{% block title %}Mandari{% endblock %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}Mandari Insight{% endif %}</title>
+    <title>{% block title %}mandari{% endblock %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}</title>
 
     <!-- Canonical URL -->
     {% if seo.canonical_url %}
@@ -48,17 +24,17 @@
     {% endif %}
 
     <!-- Open Graph -->
-    <meta property="og:title" content="{% block og_title %}{% if seo.title %}{{ seo.title }}{% else %}Mandari{% endif %}{% endblock %}">
+    <meta property="og:title" content="{% block og_title %}{% if seo.title %}{{ seo.title }}{% else %}mandari Insight{% endif %}{% endblock %}">
     <meta property="og:description" content="{% block og_description %}{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}{% endblock %}">
     <meta property="og:type" content="{% if seo.og_type %}{{ seo.og_type }}{% else %}website{% endif %}">
     <meta property="og:url" content="{% if seo.canonical_url %}{{ seo.canonical_url }}{% else %}{{ request.build_absolute_uri }}{% endif %}">
     <meta property="og:image" content="{% block og_image %}{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}{% endblock %}">
     <meta property="og:locale" content="de_DE">
-    <meta property="og:site_name" content="{% if insight_portal %}{{ insight_portal.name }}{% else %}Mandari{% endif %}">
+    <meta property="og:site_name" content="{% if insight_portal %}{{ insight_portal.name }}{% else %}mandari{% endif %}">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="{% if seo.twitter_card %}{{ seo.twitter_card }}{% else %}summary{% endif %}">
-    <meta name="twitter:title" content="{% if seo.title %}{{ seo.title }}{% else %}Mandari{% endif %}">
+    <meta name="twitter:title" content="{% if seo.title %}{{ seo.title }}{% else %}mandari Insight{% endif %}">
     <meta name="twitter:description" content="{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}">
     <meta name="twitter:image" content="{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}">
 
@@ -73,6 +49,9 @@
     <link rel="icon" type="image/png" sizes="192x192" href="{% static 'brand/favicon-192.png' %}">
     <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
 
+    <!-- Schrift Inter, selbst gehostet wie auf mandari.de (keine Anfrage an Dritte) -->
+    <link rel="preload" href="{% static 'vendor/inter/inter-latin.woff2' %}" as="font" type="font/woff2" crossorigin>
+
     <!-- TailwindCSS (lokal kompiliert, DSGVO-konform) -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 
@@ -85,11 +64,28 @@
     <style nonce="{{ csp_nonce }}">
         [x-cloak] { display: none !important; }
 
+        @font-face {
+            font-family: 'Inter';
+            font-style: normal;
+            font-weight: 400 700;
+            font-display: swap;
+            src: url("{% static 'vendor/inter/inter-latin.woff2' %}") format('woff2');
+            unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+        }
+        @font-face {
+            font-family: 'Inter';
+            font-style: normal;
+            font-weight: 400 700;
+            font-display: swap;
+            src: url("{% static 'vendor/inter/inter-latin-ext.woff2' %}") format('woff2');
+            unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+        }
+
         /* Bürgerportal einer Körperschaft (Issue #317): Akzentfarbe, serverseitig auf #rrggbb geprüft */
         {% if insight_portal.accent_color %}
         :root { --portal-accent: {{ insight_portal.accent_color }}; }
-        .portal-accent-bar { height: 4px; background-color: var(--portal-accent); }
-        .portal-accent-text { color: var(--portal-accent); }
+        /* Ganze Skala aus der Akzentfarbe, Kontraste geprüft (Issue #783, insight_core/farbskala.py) */
+        html[data-portal="insight"] { {% for stufe, kanal in insight_portal.accent_scale %}--primary-{{ stufe }}: {{ kanal }}; {% endfor %}}
         {% endif %}
 
         /* Loading indicator for HTMX */
@@ -112,7 +108,7 @@
             top: -100%;
             left: 50%;
             transform: translateX(-50%);
-            background: #4f46e5;
+            background: rgb(var(--primary-600));
             color: white;
             padding: 0.75rem 1.5rem;
             border-radius: 0.5rem;
@@ -129,25 +125,25 @@
 
         /* Focus visible styles - WCAG 2.1 */
         :focus-visible {
-            outline: 2px solid #4f46e5;
+            outline: 2px solid rgb(var(--primary-600));
             outline-offset: 2px;
         }
         .dark :focus-visible {
-            outline-color: #818cf8;
+            outline-color: rgb(var(--primary-400));
         }
 
         /* Improved focus for buttons and links */
         a:focus-visible,
         button:focus-visible,
         [role="button"]:focus-visible {
-            outline: 2px solid #4f46e5;
+            outline: 2px solid rgb(var(--primary-600));
             outline-offset: 2px;
             border-radius: 0.25rem;
         }
         .dark a:focus-visible,
         .dark button:focus-visible,
         .dark [role="button"]:focus-visible {
-            outline-color: #818cf8;
+            outline-color: rgb(var(--primary-400));
         }
 
         /* Touch target minimum size - WCAG 2.1 AAA */
@@ -162,97 +158,114 @@
             overflow-wrap: anywhere;
         }
 
-        /* Sidebar layout responsive */
-        @media(max-width:1024px) {
-            .sidebar-push { margin-left: 0 !important; }
-        }
-
         /* Custom scrollbar */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
         .dark ::-webkit-scrollbar-thumb { background: #4b5563; }
         ::-webkit-scrollbar-track { background: transparent; }
 
-        /* Fade-up animation */
-        .fade-up { animation: fadeUp .5s cubic-bezier(.16,1,.3,1) both; }
-        @keyframes fadeUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
-        .d1{animation-delay:.04s} .d2{animation-delay:.08s} .d3{animation-delay:.12s} .d4{animation-delay:.16s}
     </style>
 
     {% block extra_head %}{% endblock %}
 </head>
 
-<body class="min-h-screen bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+<body class="min-h-screen bg-band-hell text-gray-900 dark:text-gray-100">
     {% if demo_instance %}{% include "partials/demo_hinweis.html" %}{% endif %}
-    <!-- Skip Link for Accessibility - WCAG 2.1 AA -->
-    <a href="#main-content" class="skip-link">
-        Zum Hauptinhalt springen
-    </a>
+    <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
 
-    <!-- City Search Modal (im Portal einer Körperschaft ist die Kommune fest) -->
-    {% if not insight_portal %}{% include "components/city_search_modal.html" %}{% endif %}
+    {# Kommune wechseln (im Portal einer Körperschaft ist die Kommune fest) #}
+    {% if not insight_portal %}{% include "components/kommunen_dialog.html" %}{% endif %}
 
-    <!-- Sidebar -->
     {% include "components/insight_sidebar.html" %}
 
-    <!-- Main Content Area -->
-    <main id="main-content" class="min-h-screen sidebar-push" style="margin-left:260px;" role="main" tabindex="-1">
-
-        <!-- Top bar (mobile menu + dark mode) -->
-        <div class="sticky top-0 z-30 bg-[#faf9f7]/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 lg:px-8"
-            style="height:52px;">
-            <button type="button" @click="sidebarOpen=true" class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" aria-label="Menü öffnen">
-                <i data-lucide="menu" class="w-5 h-5 text-gray-600 dark:text-gray-400"></i>
-            </button>
-            <div class="lg:hidden text-sm font-bold text-gray-900 dark:text-white truncate">
-                {% if active_body %}{{ active_body.get_display_name }}{% else %}Mandari Insight{% endif %}
+    {# Seitliche Safe-Area (Querformat mit Aussparung) für Kopfzeile, Inhalt und Fuß; ab lg sind die Ränder 0 #}
+    <div class="pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-[17rem] min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
+        {# Kopfzeile des Inhalts (Variante A, Issue #783): Brotkrumen mit Kommune, Suche, Dunkelmodus #}
+        <header class="sticky top-0 z-30 pt-[env(safe-area-inset-top)] bg-band-hell/95 dark:bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
+            <div class="h-16 px-4 sm:px-8 flex items-center gap-2 sm:gap-6">
+                {# Am Handy: Wortmarke, Kommune (öffnet den Wechsel) und Suche; die Bereiche liegen in der Leiste unten #}
+                <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" class="lg:hidden shrink-0 text-[1.15rem] font-bold tracking-tight leading-none text-gray-900 dark:text-white" aria-label="mandari Insight, Übersicht">mandari<span class="text-indigo-600 dark:text-indigo-400" aria-hidden="true">.</span></a>
+                <div class="lg:hidden flex-1 min-w-0">
+                    {% if insight_portal %}
+                    <span class="block font-semibold truncate">{{ insight_portal.name }}</span>
+                    {% else %}
+                    <button type="button" @click="openCityModal()" aria-haspopup="dialog" data-kommune-wechseln
+                        class="inline-flex items-center gap-1.5 max-w-full h-11 px-1 font-semibold text-gray-900 dark:text-white">
+                        {% if page_body.logo %}<img {{ page_body.logo_img_attrs }} alt="" class="hidden min-[390px]:block w-7 h-7 shrink-0 rounded-md bg-white object-contain p-0.5">{% endif %}
+                        <span class="truncate">{% if page_body %}{{ page_body.get_display_name }}{% else %}Kommune wählen{% endif %}</span>
+                        <span class="sr-only">– Kommune wechseln</span>
+                        <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+                    </button>
+                    {% endif %}
+                </div>
+                {# Brotkrumen mit der Kommune der Seite; gehört sie nicht zur gewählten, wählen die Links sie erst #}
+                <nav aria-label="Brotkrumen" class="hidden lg:block flex-1 min-w-0 text-[0.9rem]">
+                    <ol class="flex items-center gap-1.5 min-w-0 text-gray-600 dark:text-gray-400">
+                        <li class="shrink-0">
+                            {% if insight_breadcrumb or insight_area != "uebersicht" %}
+                            {% url 'insight_core:insight:portal_home' as start_url %}
+                            <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% elif page_body_foreign %}{% url 'insight_core:insight:set_body' page_body.id %}?weiter={{ start_url|urlencode }}{% else %}{{ start_url }}{% endif %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{% if insight_portal %}{{ insight_portal.name }}{% elif page_body %}{{ page_body.get_display_name }}{% else %}Alle Kommunen{% endif %}</a>
+                            {% else %}
+                            <span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100">{% if insight_portal %}{{ insight_portal.name }}{% elif page_body %}{{ page_body.get_display_name }}{% else %}Alle Kommunen{% endif %}</span>
+                            {% endif %}
+                        </li>
+                        {% if insight_breadcrumb %}
+                        <li class="flex items-center gap-1.5 shrink-0">
+                            <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-gray-400" aria-hidden="true"></i>
+                            {% if insight_breadcrumb.current %}
+                            <span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100">{{ insight_breadcrumb.label }}</span>
+                            {% else %}
+                            {% url insight_breadcrumb.url_name as bereich_url %}
+                            <a href="{% if page_body_foreign %}{% url 'insight_core:insight:set_body' page_body.id %}?weiter={{ bereich_url|urlencode }}{% else %}{{ bereich_url }}{% endif %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{{ insight_breadcrumb.label }}</a>
+                            {% endif %}
+                        </li>
+                        {% endif %}
+                        {% block brotkrumen_aktuell %}{% endblock %}
+                    </ol>
+                </nav>
+                {% if insight_area != "uebersicht" and insight_area != "suche" %}
+                <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="hidden lg:block w-[22rem] max-w-[40%]">
+                    <label for="kopf-suche" class="sr-only">Ratsinformationen durchsuchen</label>
+                    <span class="relative block">
+                        <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+                        <input id="kopf-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …" autocomplete="off"
+                            class="w-full h-11 pl-11 pr-4 rounded-lg bg-band-grau border border-transparent text-[0.95rem] text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                    </span>
+                </form>
+                {% endif %}
+                {% if insight_area != "suche" %}
+                <a href="{% url 'insight_core:insight:search' %}" class="lg:hidden inline-flex items-center justify-center w-11 h-11 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-band-grau" aria-label="Suche">
+                    <i data-lucide="search" class="w-5 h-5" aria-hidden="true"></i>
+                </a>
+                {% endif %}
+                <button type="button" @click="darkMode=!darkMode"
+                    class="hidden lg:inline-flex items-center justify-center w-11 h-11 rounded-lg text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-band-grau"
+                    :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'"
+                    aria-label="Zum dunklen Modus wechseln" :aria-pressed="darkMode.toString()">
+                    <i x-show="!darkMode" data-lucide="moon" class="w-5 h-5" aria-hidden="true"></i>
+                    <i x-show="darkMode" data-lucide="sun" class="w-5 h-5" aria-hidden="true" x-cloak></i>
+                </button>
             </div>
-            <div class="hidden lg:block"></div>
-            <!-- Dark mode toggle -->
-            <button type="button" @click="darkMode=!darkMode"
-                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'"
-                :aria-pressed="darkMode.toString()">
-                <i x-show="!darkMode" data-lucide="moon" class="w-5 h-5 text-gray-500"></i>
-                <i x-show="darkMode" data-lucide="sun" class="w-5 h-5 text-gray-400" x-cloak></i>
-            </button>
-        </div>
+        </header>
 
-        <!-- Page content -->
-        <div class="px-4 lg:px-8 py-6 flex flex-col" style="min-height:calc(100vh - 52px);">
-            <div class="flex-1 flex flex-col">
-                {% if active_body_archive %}
-                <div class="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-900 dark:text-amber-200" role="status" data-testid="archiv-hinweis">
-                    <i data-lucide="archive" class="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400"></i>
-                    <div>
-                        <strong>Archiv – nicht mehr aktuell.</strong> Die Kommune veröffentlicht hier {% if active_body_archive.since %}seit dem {{ active_body_archive.since|date:"d.m.Y" }} {% endif %}keine neuen Ratsinformationen mehr. Die Inhalte bleiben als Archiv lesbar, werden aber nicht mehr aktualisiert.
-                    </div>
-                </div>
-                {% elif active_body_stale_days %}
-                <div class="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-900 dark:text-amber-200" role="status">
-                    <i data-lucide="alert-triangle" class="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400"></i>
-                    <div>
-                        <strong>Datenstand: {{ active_body.last_sync|date:"d.m.Y" }}</strong> — die Daten dieser Kommune konnten seit {{ active_body_stale_days }} Tagen nicht aktualisiert werden, weil das Ratsinformationssystem derzeit nicht erreichbar ist. Inhalte können veraltet sein.
-                    </div>
-                </div>
-                {% endif %}
-                {% if active_body_notice %}
-                <c-ui.alert variant="warning" icon="info" class="mb-5" data-testid="kommune-hinweis">{{ active_body_notice|linebreaksbr }}</c-ui.alert>
-                {% endif %}
+        <main id="main-content" class="flex-1" tabindex="-1">
+            {% include "partials/insight_hinweise.html" %}
+            {# Seiten in Bändern überschreiben „page“ (Kopfband, Inhalt, Nebenband); alle übrigen füllen „content“ #}
+            {% block page %}
+            <div class="px-4 sm:px-8 py-6 lg:py-8">
                 {% block content %}{% endblock %}
                 {% include "partials/page_feedback.html" %}
             </div>
+            {% endblock %}
+        </main>
 
-            {% include "components/insight_footer.html" %}
-        </div>
-    </main>
+        {% include "components/insight_footer.html" %}
+    </div>
 
-    <!-- Document Viewer Modal -->
+    {# Am Handy: Leiste unten mit fünf Zielen und Blatt „Mehr“ (Variante C) #}
+    {% include "components/insight_leiste_unten.html" %}
+
     {% include "components/document_viewer.html" %}
-
-    <!-- Chatbot Popup -->
-    {% block chatbot %}{% include "components/chatbot_popup.html" %}{% endblock %}
-
 
     {% block extra_scripts %}{% endblock %}
 </body>

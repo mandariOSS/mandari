@@ -2,6 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Kennfarbe (Issue #783): Tailwind liest primary-* aus diesen Kanälen (tailwind.config.js).
+   Standard Indigo für Work, Session und Konto; das Bürgerportal (data-portal="insight") ist Grün wie auf
+   mandari.de. Körperschaftsportale setzen ihre eigene Skala im Layout (insight_core/farbskala.py).
+   Grün geprüft: 600 trägt weißen Text (6,1 : 1), 500 auf Weiß 4,5 : 1, 400 auf gray-900 10 : 1. */
+@layer base {
+  :root {
+    --primary-50: 238 242 255;
+    --primary-100: 224 231 255;
+    --primary-200: 199 210 254;
+    --primary-300: 165 180 252;
+    --primary-400: 129 140 248;
+    --primary-500: 99 102 241;
+    --primary-600: 79 70 229;
+    --primary-700: 67 56 202;
+    --primary-800: 55 48 163;
+    --primary-900: 49 46 129;
+    --primary-950: 30 27 75;
+  }
+  [data-portal="insight"] {
+    --primary-50: 240 249 243;
+    --primary-100: 226 242 231;
+    --primary-200: 195 229 207;
+    --primary-300: 160 216 181;
+    --primary-400: 134 214 164;
+    --primary-500: 34 135 77;
+    --primary-600: 23 112 63;
+    --primary-700: 18 92 51;
+    --primary-800: 14 74 41;
+    --primary-900: 11 59 33;
+    --primary-950: 5 36 20;
+  }
+  /* Bänder (Issue #783, Stufe 2): Weiß für Inhalt, kühles Grau für Leiste, Kopf- und Nebenbänder, Tinte für den Fuß */
+  :root {
+    --band-hell: 255 255 255;
+    --band-grau: 238 240 244;
+    --band-tinte: 17 24 39;
+  }
+  .dark {
+    --band-hell: 17 24 39;
+    --band-grau: 24 33 49;
+    --band-tinte: 10 14 24;
+  }
+}
+
 /* Custom styles */
 @layer components {
   /* Smooth scrolling */
@@ -37,6 +81,15 @@
   }
 }
 
+/* Safe-Area (viewport-fit=cover in Insight und Work): Abstand zum Bildschirmrand mindestens so groß wie Aussparung
+   und Home-Indikator. Grundabstand aus --rand (Standard 1rem), z. B. sm:[--rand:1.5rem]. */
+@layer utilities {
+  .rand-sicher {
+    padding: max(var(--rand, 1rem), env(safe-area-inset-top)) max(var(--rand, 1rem), env(safe-area-inset-right))
+      max(var(--rand, 1rem), env(safe-area-inset-bottom)) max(var(--rand, 1rem), env(safe-area-inset-left));
+  }
+}
+
 /* Aufgaben-Kanban (templates/work/tasks/list.html): auf Mobil horizontales Scroll-Snapping
    der Spalten, ab md greift das Tailwind-Grid des Markups. */
 @media (max-width: 767.98px) {
@@ -58,20 +111,20 @@
 
 /* ---- Aus Seiten-Templates ausgelagert (#172: keine Inline-Styles in Seiten) ------------------ */
 
-/* Kommunenauswahl (templates/pages/portal/select_body.html): ruhiger Indigo-Schein hinter dem Hero */
+/* Kommunenauswahl (templates/pages/portal/select_body.html): ruhiger Schein in der Kennfarbe hinter dem Hero */
 .select-hero-glow {
   position: absolute;
   inset: -120px 0 auto 0;
   height: 380px;
   pointer-events: none;
   background:
-    radial-gradient(420px 220px at 50% 20%, rgba(79, 70, 229, 0.1), transparent 70%),
-    radial-gradient(680px 300px at 50% 0%, rgba(79, 70, 229, 0.05), transparent 75%);
+    radial-gradient(420px 220px at 50% 20%, rgb(var(--primary-600) / 0.1), transparent 70%),
+    radial-gradient(680px 300px at 50% 0%, rgb(var(--primary-600) / 0.05), transparent 75%);
 }
 .dark .select-hero-glow {
   background:
-    radial-gradient(420px 220px at 50% 20%, rgba(129, 140, 248, 0.12), transparent 70%),
-    radial-gradient(680px 300px at 50% 0%, rgba(129, 140, 248, 0.06), transparent 75%);
+    radial-gradient(420px 220px at 50% 20%, rgb(var(--primary-400) / 0.12), transparent 70%),
+    radial-gradient(680px 300px at 50% 0%, rgb(var(--primary-400) / 0.06), transparent 75%);
 }
 
 /* Sitzungsplan (templates/pages/meetings/year_plan.html): Druckansicht ohne Bedienelemente */
@@ -105,7 +158,121 @@
   animation-delay: 150ms;
 }
 
-/* Insight-Seitenleiste: Markierung des aktiven Eintrags (vorher style-Attribut je Link) */
-.nav-active-bar {
-  box-shadow: inset 3px 0 0 #4f46e5;
+/* Nachbarschaft (templates/pages/neighborhood.html): Kartenhöhe und Suchumkreis (vorher Inline-Stil, #783) */
+#neighborhood-map {
+  height: 400px;
+  border-radius: 0.75rem;
+}
+@media (min-width: 1024px) {
+  #neighborhood-map {
+    height: 480px;
+  }
+}
+.search-radius {
+  fill: rgb(var(--primary-600));
+  fill-opacity: 0.08;
+  stroke: rgb(var(--primary-600));
+  stroke-opacity: 0.4;
+  stroke-width: 2;
+}
+
+/* Karte (templates/pages/map.html): vorher Inline-Stil, Farben aus der Kennfarbe (#783), auf #map begrenzt */
+#map {
+  height: calc(100vh - 200px);
+  min-height: 500px;
+  border-radius: 0 0 0.75rem 0.75rem;
+}
+#map .leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+#map .leaflet-control-zoom a {
+  background: white !important;
+  color: #374151 !important;
+  border: none !important;
+  width: 32px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+}
+#map .leaflet-control-zoom a:hover {
+  background: #f3f4f6 !important;
+}
+.dark #map .leaflet-control-zoom a {
+  background: #374151 !important;
+  color: #e5e7eb !important;
+}
+.dark #map .leaflet-control-zoom a:hover {
+  background: #4b5563 !important;
+}
+#map .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.85) !important;
+  padding: 2px 8px !important;
+  font-size: 10px !important;
+  border-radius: 4px !important;
+}
+.dark #map .leaflet-control-attribution {
+  background: rgba(31, 41, 55, 0.85) !important;
+  color: #9ca3af !important;
+}
+#map .leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 0;
+}
+#map .leaflet-popup-content {
+  margin: 0;
+  min-width: 220px;
+}
+.dark #map .leaflet-popup-content-wrapper {
+  background: #1f2937;
+  color: #f3f4f6;
+}
+.dark #map .leaflet-popup-tip {
+  background: #1f2937;
+}
+#map .custom-marker {
+  background: transparent !important;
+  border: none !important;
+}
+#map .marker-dot {
+  width: 22px;
+  height: 22px;
+  background: rgb(var(--primary-600));
+  border: 3px solid white;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+#map .marker-cluster {
+  background: rgb(var(--primary-600) / 0.15) !important;
+}
+#map .marker-cluster div {
+  background: rgb(var(--primary-600)) !important;
+  color: white !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+}
+.map-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+  pointer-events: none;
+}
+.map-overlay-card {
+  background: white;
+  padding: 20px 28px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  pointer-events: auto;
+}
+.dark .map-overlay-card {
+  background: #1f2937;
+}
+.map-container.is-empty #map {
+  filter: grayscale(0.6) opacity(0.5);
 }

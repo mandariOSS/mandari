@@ -1,9 +1,7 @@
 /**
- * Insight-Portal (Alpine-Komponenten, #172): Kommunenauswahl, Merkliste, Bürgerfrage und
- * Benachrichtigungs-Abo. Vorher Inline-Skripte der Templates.
+ * Insight-Portal (Alpine-Komponenten, #172): Merkliste, Bürgerfrage und Benachrichtigungs-Abo. Vorher
+ * Inline-Skripte der Templates. Den Kommunenwechsel übernimmt `kommunen-wahl.ts` (Issue #783).
  *
- * - `bodySelectApp`: Sofortfilter der Kommune-Karten (`[data-search]` in `x-ref="grid"`).
- *   Markup: `templates/pages/portal/select_body.html`.
  * - `merklisteController`: lädt die Karten gemerkter Einträge (`data-entities-url`).
  *   Markup: `templates/pages/merkliste.html`.
  * - `questionForm`: Zeichenzähler, Startwert aus der serverseitig gefüllten Textarea.
@@ -16,45 +14,6 @@
 
 import { defineComponent } from '../js/alpine/component'
 import type { BookmarksStore, BookmarkType } from '../js/stores/bookmarks'
-
-// ---- Kommunenauswahl --------------------------------------------------------------------------
-
-export function normalizeQuery(value: string | undefined | null): string {
-  return (value || '').toLowerCase().trim()
-}
-
-/** Passt jeder Suchbegriff (durch Leerzeichen getrennt) in den Suchtext der Karte? */
-export function matchesQuery(haystack: string | undefined, query: string): boolean {
-  const q = normalizeQuery(query)
-  if (!q) return true
-  const text = haystack ?? ''
-  return q.split(/\s+/).every((term) => text.includes(term))
-}
-
-export const bodySelectApp = defineComponent(() => ({
-  q: '',
-  visibleCount: 0,
-
-  init() {
-    // x-ref="grid" steht erst nach dem Initialisieren der Kinder bereit
-    this.$nextTick(() => this.updateCount())
-    this.$watch('q', () => this.updateCount())
-  },
-
-  matches(haystack: string | undefined): boolean {
-    return matchesQuery(haystack, this.q)
-  },
-
-  updateCount() {
-    const grid = this.$refs.grid as HTMLElement | undefined
-    if (!grid) {
-      this.visibleCount = 0
-      return
-    }
-    const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-search]'))
-    this.visibleCount = cards.filter((card) => this.matches(card.dataset.search)).length
-  },
-}))
 
 // ---- Merkliste --------------------------------------------------------------------------------
 

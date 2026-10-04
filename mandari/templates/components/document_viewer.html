@@ -7,7 +7,7 @@
      x-transition:leave-start="opacity-100"
      x-transition:leave-end="opacity-0"
      @keydown.escape.window="docViewerUrl=''; clearTimeout(_docTimeout)"
-     class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 lg:p-8">
+     class="fixed inset-0 z-[60] flex items-center justify-center rand-sicher sm:[--rand:1.5rem] lg:[--rand:2rem]">
 
     {# Backdrop #}
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="docViewerUrl=''; clearTimeout(_docTimeout)"></div>

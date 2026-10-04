@@ -42,6 +42,12 @@ from .home import (
     clear_body,
     set_body,
 )
+from .kommunen import (
+    kommunen_naehe,
+    kommunen_seite,
+    kommunen_stoebern,
+    kommunen_vorschlaege,
+)
 from .maps import (
     MapView,
     map_markers,
@@ -126,6 +132,10 @@ __all__ = [
     "PersonDetailView",
     "PersonListView",
     "PortalHomeView",
+    "kommunen_naehe",
+    "kommunen_seite",
+    "kommunen_stoebern",
+    "kommunen_vorschlaege",
     "portal_entry",
     "PublicProtocolDetailView",
     "PublicProtocolListView",
