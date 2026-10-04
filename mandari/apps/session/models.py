@@ -3947,6 +3947,18 @@ class SessionProtocol(EncryptionMixin, models.Model):
         verbose_name="Genehmigt in Vertretung für",
     )
     published_at = models.DateTimeField(blank=True, null=True, verbose_name="Veröffentlicht am")
+    # Genehmigungsweg dieser Niederschrift (Issue #525): beim Genehmigen bzw. beim Veröffentlichen ohne
+    # Genehmigungsschritt festgehalten, übersteht Rücknahme und erneute Veröffentlichung (``published_at`` ändert
+    # sich dabei, ``approved_at`` nicht). Leer: vor diesem Stand bzw. ohne den Workflow angelegt. DB-Default für den
+    # Rückfall per Image.
+    approval_mode = models.CharField(
+        max_length=20,
+        choices=SessionTenant.PROTOCOL_APPROVAL_CHOICES,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Genehmigungsweg",
+    )
 
     # Genehmigungsvermerk (Issue #31): Genehmigung erfolgt üblicherweise in
     # der Folgesitzung des Gremiums

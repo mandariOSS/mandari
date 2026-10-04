@@ -29,6 +29,7 @@ from mandari_oparl import (
     ProcessedPaper,
     ProcessedPerson,
 )
+from mandari_oparl.extensions import AGENDA_ITEM_COLUMNS, MEETING_COLUMNS
 from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -172,6 +173,14 @@ def _normalized_urls(value: Any) -> list[str]:
         if isinstance(item, str) and item and item not in urls:
             urls.append(item)
     return urls
+
+
+def _extension_columns(values: dict[str, Any], columns: tuple[str, ...]) -> dict[str, Any]:
+    """
+    Spalten der Beschlussfassung bzw. der Genehmigung (``mandari_oparl.extensions``, Issue #525): immer alle,
+    fehlende als ``None``. Liefert die Quelle eine Erweiterung nicht mehr, wird die Spalte geleert.
+    """
+    return {name: values.get(name) for name in columns}
 
 
 def _assert_no_enrichment_overwrite(update_set: dict) -> None:
@@ -1083,6 +1092,7 @@ class DatabaseStorage:
                 raw_json=meeting.raw_json,
                 created_at=func.now(),
                 updated_at=func.now(),
+                **_extension_columns(meeting.protocol_approval, MEETING_COLUMNS),
             )
             update_set = {
                 "name": stmt.excluded.name,
@@ -1092,6 +1102,7 @@ class DatabaseStorage:
                 "end": stmt.excluded.end,
                 "location_name": stmt.excluded.location_name,
                 "location_address": stmt.excluded.location_address,
+                **{name: getattr(stmt.excluded, name) for name in MEETING_COLUMNS},
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
@@ -1529,6 +1540,7 @@ class DatabaseStorage:
                 raw_json=item.raw_json,
                 created_at=func.now(),
                 updated_at=func.now(),
+                **_extension_columns(item.decision, AGENDA_ITEM_COLUMNS),
             )
             update_set = {
                 "meeting_id": meeting_id,
@@ -1538,6 +1550,7 @@ class DatabaseStorage:
                 "public": stmt.excluded.public,
                 "result": stmt.excluded.result,
                 "resolution_text": stmt.excluded.resolution_text,
+                **{name: getattr(stmt.excluded, name) for name in AGENDA_ITEM_COLUMNS},
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,

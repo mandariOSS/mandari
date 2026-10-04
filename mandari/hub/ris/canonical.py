@@ -14,6 +14,12 @@ from datetime import UTC, date, datetime
 from typing import Any, Final
 
 from django.utils import timezone
+from mandari_oparl.extensions import (
+    IMPLEMENTATION_LABELS,
+    RESULT_LABELS,
+    ROLL_CALL_VOTE_LABELS,
+    VOTING_METHOD_LABELS,
+)
 
 #: Schema-Basis der OParl-1.1-Spezifikation
 SCHEMA_BASE: Final = "https://schema.oparl.org/1.1"
@@ -108,3 +114,69 @@ def tombstone(object_id: str, kind: str, created: datetime | None, modified: dat
         "modified": iso(modified),
         "deleted": True,
     }
+
+
+# -- Beschlussfassung (Erweiterungen des kanonischen Modells, Issue #525) --------------------------------------------
+#
+# Aus den Spalten des RIS-Bestands (``mandari_oparl.extensions``) entstehen dieselben Erweiterungen, die mandari Session
+# ausgibt: Die offene Schnittstelle gibt sie weiter, das Bürgerportal liest sie über die Lese-Fassade.
+
+
+def vote_extension(item: Any) -> Objekt | None:
+    """``mandari:vote`` eines Tagesordnungspunkts: Art, Ergebnis und Summen; ``None`` ohne Abstimmung."""
+    if not item.vote_method and not item.vote_result:
+        return None
+    return clean(
+        {
+            "method": item.vote_method,
+            "methodLabel": VOTING_METHOD_LABELS.get(item.vote_method or ""),
+            "result": item.vote_result,
+            "resultLabel": RESULT_LABELS.get(item.vote_result or ""),
+            "yes": item.votes_yes,
+            "no": item.votes_no,
+            "abstain": item.votes_abstain,
+        }
+    )
+
+
+def roll_call_extension(item: Any) -> list[Objekt] | None:
+    """``mandari:rollCall``: Einzelstimmen, ausschließlich bei namentlicher Abstimmung."""
+    if item.vote_method != "roll_call" or not isinstance(item.roll_call, list):
+        return None
+    entries = [
+        {"name": entry["name"], "vote": entry["vote"], "voteLabel": ROLL_CALL_VOTE_LABELS[entry["vote"]]}
+        for entry in item.roll_call
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str) and entry.get("vote") in ROLL_CALL_VOTE_LABELS
+    ]
+    return entries or None
+
+
+def implementation_extension(item: Any) -> Objekt | None:
+    """``mandari:implementation``: veröffentlichter Umsetzungsstand des Beschlusses; ``None`` ohne Angabe."""
+    if not item.implementation_status:
+        return None
+    return clean(
+        {
+            "status": item.implementation_status,
+            "statusLabel": IMPLEMENTATION_LABELS.get(item.implementation_status),
+            "deadline": iso_date(item.implementation_deadline),
+            "note": item.implementation_public_note,
+            "modified": iso(item.implementation_modified),
+        }
+    )
+
+
+def protocol_approval_extension(meeting: Any, approved_in: str | None = None) -> Objekt | None:
+    """
+    ``mandari:protocolApproval`` einer Sitzung: Weg, Tag und (als Adresse ``approved_in``, sofern bekannt) die
+    genehmigende Sitzung; ``None`` ohne Angabe.
+    """
+    if not meeting.protocol_approval_mode:
+        return None
+    return clean(
+        {
+            "mode": meeting.protocol_approval_mode,
+            "date": iso_date(meeting.protocol_approved_on),
+            "meeting": approved_in,
+        }
+    )

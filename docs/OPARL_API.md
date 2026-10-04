@@ -404,6 +404,15 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
 | `mandari:sha256`, `mandari:pageCount` | File | SHA-256-Hash / Seitenzahl |
 | `mandari:locationName`, `mandari:locationAddress` | Meeting | abgekündigt: Ortsangabe als Text, wenn die Quelle kein Location-Objekt liefert; steht jetzt in `Meeting.location` |
+| `mandari:protocolApproval` | Meeting | Genehmigung der veröffentlichten Niederschrift: `mode` (`follow_up`, `direct`), `date`, `meeting` (genehmigende Sitzung, nur wenn sie im Bestand ist) |
+| `mandari:resolutionNumber` | AgendaItem | Beschlussnummer |
+| `mandari:vote` | AgendaItem | Abstimmung: `method`, `methodLabel`, `result`, `resultLabel`, `yes`, `no`, `abstain` |
+| `mandari:rollCall` | AgendaItem | Einzelstimmen (`name`, `vote`, `voteLabel`), nur bei namentlicher Abstimmung |
+| `mandari:implementation` | AgendaItem | veröffentlichter Umsetzungsstand des Beschlusses: `status`, `statusLabel`, `deadline`, `note`, `modified` |
+
+Die Felder der Beschlussfassung (Issue #525) liefern Quellen, die mandari Session betreiben. Der Bestand
+speichert sie in eigenen Spalten (`mandari_oparl/extensions.py` übersetzt für Ingestor und Spiegel gleich);
+die Schnittstelle gibt sie aus diesen Spalten aus, nicht aus den Rohdaten der Quelle.
 
 ## Einschränkungen (v1)
 

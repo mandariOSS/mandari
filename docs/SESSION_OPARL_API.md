@@ -261,6 +261,26 @@ gespiegelten `resultsProtocol` bzw. `verbatimProtocol` – auch bei fremden OPar
 oder nur summierte Abstimmungen liefern nie Einzelstimmen. Die Insight-OParl-API reicht beide Felder
 durch, die Insight-Sitzungsseite zeigt Summen und (aufklappbar) die namentlichen Stimmen.
 
+## Umsetzungsstand und Genehmigung der Niederschrift (Erweiterung, Issue #525)
+
+- `AgendaItem` `mandari:implementation`: Umsetzungsstand eines Beschlusses (`status` aus `open`,
+  `in_progress`, `done`, `deferred`, dazu `statusLabel`, `deadline`, `note`, `modified`). Nur nach derselben
+  Regel wie die Beschlussseiten im Bürgerportal: Freigabe der Verwaltung am Mandanten und am Beschluss,
+  angenommen, nicht abgesetzt, öffentlicher TOP einer öffentlichen Sitzung, Mandant veröffentlicht. `note` ist
+  die öffentliche Statusmeldung; Erledigungsvermerk, Zuständigkeit und Bearbeitung bleiben intern. Ändert sich
+  die Freigabe am Mandanten (Schalter „Umsetzungsstand veröffentlichen“, Veröffentlichung im Bürgerportal beendet
+  bzw. wieder aufgenommen), gelten die betroffenen Beschlüsse als geändert (`modified`): Abgleiche mit
+  `modified_since` lesen sie sofort neu, nicht erst beim nächsten Vollabgleich.
+- `Meeting` `mandari:protocolApproval`: Genehmigung der veröffentlichten Niederschrift, nur solange
+  `resultsProtocol` ausgeliefert wird. `mode` ist `follow_up` (genehmigt, Tag der genehmigenden Sitzung bzw. der
+  Genehmigung in `date`, die Sitzung in `meeting` nur, wenn sie öffentlich ist) oder `direct` (ohne
+  Genehmigungsschritt veröffentlicht). Den Weg hält die Niederschrift beim Genehmigen bzw. beim Veröffentlichen
+  ohne Genehmigungsschritt fest; Rücknahme und erneute Veröffentlichung (etwa nach einer Berichtigung) ändern ihn
+  nicht.
+
+Ingestor und Spiegel übernehmen beide Erweiterungen wie Beschlussnummer und Abstimmung in Spalten des RIS-Bestands
+(`mandari_oparl/extensions.py`); Bürgerportal und Work lesen sie über die Lese-Fassade (`hub/ris/selectors.py`).
+
 ## Sitzungsformat und Übertragung (Erweiterung, Issue #138)
 
 Hybride und digitale Sitzungen sowie Sitzungen mit Übertragung tragen am `Meeting` zusätzlich

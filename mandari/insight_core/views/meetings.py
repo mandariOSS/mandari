@@ -18,6 +18,7 @@ from django.views.generic import DetailView, ListView, TemplateView
 
 from apps.common.formatting import MONTH_ABBREVIATIONS
 from apps.common.mixins import HTMXMixin
+from hub.ris import selectors as ris_selectors
 
 from ..models import (
     OParlBody,
@@ -359,12 +360,12 @@ class MeetingDetailView(DetailView):
             # An jedes AgendaItem anhängen
             for item in agenda_items:
                 item._prefetched_papers = papers_by_agenda.get(item.external_id, [])
-        # Abstimmungsergebnisse aus dem Quell-RIS (Issue #41): Summen + namentliche Stimmen
+        # Abstimmungsergebnisse aus dem Quell-RIS (Issue #41): Summen + namentliche Stimmen, aus dem kanonischen
+        # Modell über die Lese-Fassade (Issue #525)
         for item in agenda_items:
-            raw = item.raw_json or {}
-            item.vote_info = raw.get("mandari:vote") if isinstance(raw.get("mandari:vote"), dict) else None
-            roll_call = raw.get("mandari:rollCall")
-            item.roll_call = roll_call if isinstance(roll_call, list) and roll_call else None
+            beschluss = ris_selectors.decision(item)
+            item.vote_info = beschluss.vote
+            item.roll_call_entries = beschluss.roll_call
         context["agenda_items"] = agenda_items
         context["protocol_file"] = _protocol_file(meeting)
         context["broadcast"] = _broadcast_info(meeting)

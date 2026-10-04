@@ -99,6 +99,17 @@ def _results_protocol(meeting):
     return file_obj
 
 
+def _implementation_public(item):
+    """
+    Umsetzungsstand eines Beschlusses öffentlich (Issue #525)? Dieselbe Regel wie die Beschlussseiten im Bürgerportal
+    und die Ereignisse an die Drehscheibe: Freigabe der Verwaltung am Mandanten und am Beschluss, angenommen, nicht
+    abgesetzt, öffentlicher TOP einer öffentlichen Sitzung, Mandant aktiv veröffentlicht.
+    """
+    from insight_core.services import decision_tracking
+
+    return decision_tracking.is_publicly_visible(item)
+
+
 #: Was die Abbildung aus Session braucht (die Drehscheibe importiert das Fachmodul nicht)
 SOURCE = SessionSource(
     is_published=pub._is_published,
@@ -107,6 +118,7 @@ SOURCE = SessionSource(
     # Ohne Prüfungen: Die Ausgabe nennt das Format, nicht die Hinweise für die Sitzungsvorbereitung
     meeting_format=lambda meeting: meeting_format_service.describe(meeting, checks=False),
     results_protocol=_results_protocol,
+    implementation_public=_implementation_public,
 )
 
 
@@ -134,7 +146,10 @@ def _public_files_qs():
 
 def _prepare_meetings(qs, tenant):
     # tenant__state_profile: Sitzungsformat (Erweiterung der Abbildung) ohne Abfrage je Sitzung
-    return qs.select_related("protocol__public_file__meeting", "tenant__state_profile").prefetch_related(
+    # protocol__approval_meeting: Genehmigung der Niederschrift (Issue #525) ohne Abfrage je Sitzung
+    return qs.select_related(
+        "protocol__public_file__meeting", "protocol__approval_meeting", "tenant__state_profile"
+    ).prefetch_related(
         "joint_organizations",
         Prefetch(
             "agenda_items",
@@ -165,7 +180,8 @@ def _prepare_organizations(qs, tenant):
 
 
 def _prepare_agenda_items(qs, tenant):
-    return qs.select_related("meeting", "consultation__paper").prefetch_related(
+    # meeting__tenant: Freigabe des Umsetzungsstands (Issue #525) ohne Abfrage je TOP
+    return qs.select_related("meeting__tenant", "consultation__paper").prefetch_related(
         Prefetch("files", queryset=_public_files_qs()),
         "votes__person",
     )
