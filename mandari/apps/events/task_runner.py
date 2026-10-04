@@ -42,6 +42,7 @@ import enum
 import logging
 import os
 import random
+import re
 import sys
 import threading
 import time
@@ -64,6 +65,7 @@ from django.utils.module_loading import import_string
 from . import leases
 from .models import Task as TaskRow
 from .models import TaskStatus
+from .publishing import event_context, system_ref
 from .task_metrics import TASK_DURATION, TASKS_FAILED, WORKER_RSS
 from .tasks_backend import RESULT_OK, JournalBackend, JournalOptions, PermanentTaskError, journal_options
 
@@ -201,6 +203,12 @@ def claim(queue_name: str, config: JournalOptions, lock_ttl: timedelta = LOCK_TT
     )
 
 
+def _ausloeser(task_path: str) -> str:
+    """``actor_ref`` der Ereignisse eines Auftrags: ``system:<name der Auftragsfunktion>``."""
+    name = re.sub(r"[^a-z0-9_.-]", "_", task_path.rsplit(".", 1)[-1].lower())[:64]
+    return system_ref(name or "auftrag")
+
+
 def execute(claimed: ClaimedTask, *, backend_alias: str = "default", worker_id: str = "direkt") -> Outcome:
     """Führt den Auftrag aus und meldet das Ergebnis; schreibt nichts in ``events_task``."""
     try:
@@ -231,10 +239,12 @@ def execute(claimed: ClaimedTask, *, backend_alias: str = "default", worker_id: 
     task_started.send(sender=JournalBackend, task_result=ergebnis)
     start = time.monotonic()
     try:
-        if ziel.takes_context:
-            ziel.call(TaskContext(task_result=ergebnis), *claimed.args, **claimed.kwargs)
-        else:
-            ziel.call(*claimed.args, **claimed.kwargs)
+        # Ereignisse eines Auftrags gehören zu einem Vorgang: Korrelation = Kennung des Auftrags (#510)
+        with event_context(correlation_id=claimed.id, actor_ref=_ausloeser(claimed.task_path)):
+            if ziel.takes_context:
+                ziel.call(TaskContext(task_result=ergebnis), *claimed.args, **claimed.kwargs)
+            else:
+                ziel.call(*claimed.args, **claimed.kwargs)
     except PermanentTaskError as exc:
         logger.warning("Auftrag %s (%s) endgültig gescheitert", claimed.id, claimed.task_path, exc_info=True)
         ausgang = Outcome(_klassenpfad(exc), retry=False)

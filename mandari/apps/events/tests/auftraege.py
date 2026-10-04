@@ -61,6 +61,17 @@ def mit_kontext(context: TaskContext[Any, Any], kennung: str) -> None:
     aufrufe.append(("mit_kontext", (kennung, context.attempt, context.task_result.id)))
 
 
+@task
+def kontext_merken(kennung: str) -> None:
+    """Hält den Kontext fest, den ``publish()`` im Auftrag sähe (Korrelation, Auslöser)."""
+    from apps.events.publishing import current_context
+
+    kontext = current_context()
+    aufrufe.append(
+        ("kontext_merken", (kennung, kontext.correlation_id if kontext else None, kontext and kontext.actor_ref))
+    )
+
+
 @task(queue_name="ai")
 def haengen(kennung: str) -> None:
     HAENGT.set()

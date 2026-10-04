@@ -11,6 +11,8 @@ Admin-Seite der Ereignistechnik (Issue #510): Abonnements mit Rückstand, gepark
   die Reihenfolge je Objekt ein: Ein Folgeereignis lässt sich nicht vorziehen, nach dem Verwerfen rückt
   das nächste nach.
 - **Aufträge:** nur lesend, mit Filtern nach Status und Warteschlange.
+- **Worker:** laufende Prozesse von ``events_worker`` mit Rollen, Warteschlangen und letzter Meldung,
+  nur lesend (``apps.events.presence``).
 
 Nur für Administratoren (Superuser) sichtbar und bedienbar. Anlegen, Ändern und Löschen gibt es nicht:
 Zeilen entstehen im Betrieb, und ein gelöschtes Abonnement finge am Ende des Journals neu an. Jeder
@@ -25,7 +27,18 @@ from typing import Any
 from django.contrib import admin, messages
 from django.contrib.admin import helpers
 from django.db import transaction
-from django.db.models import Count, IntegerField, OuterRef, QuerySet, Subquery, Value
+from django.db.models import (
+    BooleanField,
+    Count,
+    DateTimeField,
+    ExpressionWrapper,
+    IntegerField,
+    OuterRef,
+    Q,
+    QuerySet,
+    Subquery,
+    Value,
+)
 from django.db.models.functions import Coalesce, Now
 from django.http import HttpRequest
 from django.template.response import TemplateResponse
@@ -39,9 +52,18 @@ from unfold.admin import ModelAdmin
 from apps.accounts.security_audit import record_operation
 from apps.common.admin_mixins import ImmutableAdminMixin, status_pill
 
-from . import dispatch, metrics, registry
+from . import dispatch, metrics, presence, registry
 from .eingriffe import parked_identifiers
-from .models import Event, ParkedEvent, ParkedState, Subscription, SubscriptionState, Task, TaskStatus
+from .models import (
+    Event,
+    ParkedEvent,
+    ParkedState,
+    Subscription,
+    SubscriptionState,
+    Task,
+    TaskStatus,
+    WorkerProcess,
+)
 
 #: Farben der Zustände in den Listen
 _FARBEN: dict[str, str] = {
@@ -375,3 +397,43 @@ class TaskAdmin(_NurAdministratoren, ModelAdmin):  # type: ignore[misc]
     @admin.display(description="Versuche")
     def versuche(self, obj: Task) -> str:
         return f"{obj.attempts} / {obj.max_attempts}"
+
+
+# =============================================================================
+# Worker
+# =============================================================================
+
+
+@admin.register(WorkerProcess)
+class WorkerProcessAdmin(_NurAdministratoren, ModelAdmin):  # type: ignore[misc]
+    """
+    Worker-Prozesse (``events_worker``), nur lesend.
+
+    Ein Prozess erneuert seine Zeile nur, solange jede seiner Rollen arbeitet; „lebt“ heißt gemeldet
+    innerhalb von ``presence.PRESENCE_TTL`` (Uhr der Datenbank). Zeilen abgestürzter Prozesse bleiben
+    bis zum Aufräumen nach einem Tag stehen und erscheinen als „veraltet“.
+    """
+
+    list_display = ("holder", "zustand", "rollen", "warteschlangen", "started_at", "seen_at")
+    ordering = ("-seen_at",)
+    fields = ("holder", "roles", "queues", "started_at", "seen_at")
+    readonly_fields = fields
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet[WorkerProcess]:
+        basis: QuerySet[WorkerProcess] = super().get_queryset(request)
+        grenze = ExpressionWrapper(Now() - presence.PRESENCE_TTL, output_field=DateTimeField())
+        return basis.annotate(lebt=ExpressionWrapper(Q(seen_at__gte=grenze), output_field=BooleanField()))
+
+    @admin.display(description="Zustand", ordering="seen_at")
+    def zustand(self, obj: WorkerProcess) -> SafeString:
+        if getattr(obj, "lebt", False):
+            return status_pill("#16a34a", "lebt")
+        return status_pill("#dc2626", "veraltet")
+
+    @admin.display(description="Rollen")
+    def rollen(self, obj: WorkerProcess) -> str:
+        return ", ".join(obj.roles)
+
+    @admin.display(description="Warteschlangen")
+    def warteschlangen(self, obj: WorkerProcess) -> str:
+        return ", ".join(obj.queues) or "alle"

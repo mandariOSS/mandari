@@ -1304,6 +1304,12 @@ UNFOLD = {
                         "link": reverse_lazy("admin:events_task_changelist"),
                         "permission": "apps.events.admin.nur_administratoren",
                     },
+                    {
+                        "title": _("Worker"),
+                        "icon": "memory",
+                        "link": reverse_lazy("admin:events_workerprocess_changelist"),
+                        "permission": "apps.events.admin.nur_administratoren",
+                    },
                 ],
             },
             {

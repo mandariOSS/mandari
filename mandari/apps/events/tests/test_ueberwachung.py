@@ -29,7 +29,15 @@ from apps.accounts.models import SecurityAuditLog
 from apps.common.tests.factories import UserFactory
 from apps.events import Delivery, dispatch, subscriber
 from apps.events.metrics import subscription_lags
-from apps.events.models import Event, ParkedEvent, ParkedState, Subscription, SubscriptionState, Task
+from apps.events.models import (
+    Event,
+    ParkedEvent,
+    ParkedState,
+    Subscription,
+    SubscriptionState,
+    Task,
+    WorkerProcess,
+)
 from apps.events.tests.hilfen import nummeriert
 
 pytestmark = pytest.mark.django_db
@@ -167,7 +175,7 @@ def _eingriffe() -> list[dict[str, Any]]:
     return [eintrag.details for eintrag in SecurityAuditLog.objects.filter(event="betrieb").order_by("seq")]
 
 
-@pytest.mark.parametrize("seite", ["subscription", "parkedevent", "task"])
+@pytest.mark.parametrize("seite", ["subscription", "parkedevent", "task", "workerprocess"])
 def test_nur_administratoren_sehen_die_seiten(abo: Subscription, seite: str) -> None:
     mitarbeiter = Client()
     mitarbeiter.force_login(cast(Any, UserFactory)(email="mitarbeit@example.org", is_staff=True))
@@ -279,3 +287,21 @@ def test_auftraege_lesend(admin: Client) -> None:
     assert "apps.common.email.senden" in liste.content.decode()
     assert admin.post(reverse("admin:events_task_delete", args=[auftrag.pk]), {"post": "yes"}).status_code == 403
     assert Task.objects.filter(pk=auftrag.pk).exists()
+
+
+def test_worker_lesend_mit_zustand(admin: Client) -> None:
+    """Laufende und veraltete Worker-Prozesse (Issue #510), nur lesend."""
+    WorkerProcess.objects.create(holder="host:1:lebt", roles=["sequencer", "dispatch"], queues=[])
+    veraltet = WorkerProcess.objects.create(holder="host:2:alt", roles=["tasks"], queues=["ocr", "ai"])
+    WorkerProcess.objects.filter(pk=veraltet.pk).update(seen_at=timezone.now() - timedelta(minutes=10))
+
+    liste = admin.get(reverse("admin:events_workerprocess_changelist"))
+    inhalt = liste.content.decode()
+
+    assert liste.status_code == 200
+    assert "host:1:lebt" in inhalt and "sequencer, dispatch" in inhalt and "alle" in inhalt
+    assert "host:2:alt" in inhalt and "ocr, ai" in inhalt
+    assert inhalt.count(">lebt<") == 1 and inhalt.count(">veraltet<") == 1
+    loeschen = reverse("admin:events_workerprocess_delete", args=[veraltet.pk])
+    assert admin.post(loeschen, {"post": "yes"}).status_code == 403
+    assert WorkerProcess.objects.count() == 2

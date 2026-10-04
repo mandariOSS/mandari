@@ -213,6 +213,16 @@ def test_kontext_kennt_versuch_und_kennung(journal: JournalBackend) -> None:
 
 
 @pytest.mark.django_db
+def test_ereignisse_eines_auftrags_tragen_seine_kennung_als_korrelation(journal: JournalBackend) -> None:
+    """``publish()`` im Auftrag: Korrelation = Kennung des Auftrags, Auslöser ``system:<auftrag>`` (#510)."""
+    ergebnis = T.kontext_merken.enqueue("k")
+    geholt = claim("default", journal.config)
+    assert geholt is not None
+    assert execute(geholt).ok
+    assert auftraege.aufrufe == [("kontext_merken", ("k", uuid.UUID(str(ergebnis.id)), "system:kontext_merken"))]
+
+
+@pytest.mark.django_db
 def test_fremder_versuch_ueberschreibt_nichts(journal: JournalBackend) -> None:
     """Abgrenzung: Hat ein anderer Runner nach Ablauf der Sperre übernommen, gilt das alte Ergebnis nicht."""
     ergebnis = T.merken.enqueue("a")
