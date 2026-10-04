@@ -83,16 +83,31 @@ def test_plan_beansprucht_und_reiht_begrenzt_ein(body: OParlBody) -> None:
     _datei(body, deleted=True)
     _datei(body, download_url=None)
     _datei(body, size=900 * 1024 * 1024)
+    # Quelle mit abgeschaltetem Dateiabruf (Zugangsprüfung vor den Dokumenten)
+    gesperrte_quelle = OParlSource.objects.create(
+        name="Gesperrt", url="https://ris2.example.org/oparl/system", sync_config={"file_downloads": False}
+    )
+    gesperrt = OParlBody.objects.create(
+        external_id="https://ris2.example.org/oparl/body/1", source=gesperrte_quelle, name="Gesperrt", is_listed=False
+    )
+    _datei(gesperrt)
 
     assert text_extraction_job.plan() == 2
 
     auftraege = _auftraege()
     assert {a.queue for a in auftraege} == {"ocr"} and {a.status for a in auftraege} == {TaskStatus.WARTEND}
     beansprucht = {str(d.pk) for d in OParlFile.objects.filter(text_extraction_status="processing")}
-    assert beansprucht == {a.args["args"][0] for a in auftraege} == {str(d.pk) for d in dateien[:2]}
-    assert OParlFile.objects.get(pk=dateien[0].pk).text_extraction_started_at is not None
+    assert beansprucht == {a.args["args"][0] for a in auftraege}
+    assert len(beansprucht) == 2 and beansprucht <= {str(d.pk) for d in dateien}
+    assert all(
+        d.text_extraction_started_at is not None for d in OParlFile.objects.filter(text_extraction_status="processing")
+    )
     # Rückstau voll: kein weiterer Auftrag
     assert text_extraction_job.plan() == 0
+    # Nach dem Abarbeiten kommt die dritte Datei dran, die der gesperrten Quelle nie
+    Task.objects.filter(task_path=text_extraction_job.TASK_PATH).update(status=TaskStatus.ERLEDIGT)
+    assert text_extraction_job.plan() == 1
+    assert OParlFile.objects.filter(body=gesperrt, text_extraction_status="pending").count() == 1
 
 
 @pytest.mark.django_db

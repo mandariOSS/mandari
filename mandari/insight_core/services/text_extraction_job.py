@@ -94,14 +94,19 @@ def release_stale(now: datetime | None = None) -> tuple[int, int]:
 
 
 def _claimable() -> Q:
+    from ..models import OParlBody
     from .file_cache import sources_without_downloads
 
-    return (
+    bedingung = (
         Q(text_extraction_status="pending", deleted=False, source_missing_since__isnull=True)
         & (Q(download_url__isnull=False) | Q(access_url__isnull=False))
         & (Q(size__isnull=True) | Q(size__lte=_max_bytes()))
-        & ~Q(body__source_id__in=sources_without_downloads())
     )
+    gesperrt = sources_without_downloads()
+    if gesperrt:
+        # Unterabfrage statt Verknüpfung: FOR UPDATE verträgt keine äußere Verknüpfung (Kommune ist nullbar)
+        bedingung &= ~Q(body_id__in=OParlBody.objects.filter(source_id__in=gesperrt).values("pk"))
+    return bedingung
 
 
 def waiting_tasks() -> int:
@@ -133,7 +138,7 @@ def plan(now: datetime | None = None) -> int:
     backend = journal_backend()
     with transaction.atomic():
         ids = list(
-            OParlFile.objects.select_for_update(skip_locked=True)
+            OParlFile.objects.select_for_update(skip_locked=True, of=("self",))
             .filter(_claimable())
             .order_by("created_at")
             .values_list("id", flat=True)[:frei]
