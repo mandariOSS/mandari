@@ -1,0 +1,14 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Eintrag der Insight-Navigation (Seitenleiste, Issue #783).
+  <c-insight.nav-link href="…" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.nav-link>
+Aktiv, wenn ``area`` dem Bereich der Seite entspricht (``insight_area`` aus dem Kontextprozessor):
+dann hervorgehoben und mit aria-current="page", damit Bildschirmleser den Ort nennen.
+{% endcomment %}
+<c-vars href="" icon="" area="" />
+<a href="{{ href }}"
+    class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if area and area == insight_area %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300{% else %}font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+    {% if area and area == insight_area %}aria-current="page"{% endif %} {{ attrs }}>
+    <i data-lucide="{{ icon }}" class="w-[18px] h-[18px] flex-shrink-0" aria-hidden="true"></i>
+    <span class="flex-1 min-w-0 truncate">{{ slot }}</span>
+</a>

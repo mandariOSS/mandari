@@ -109,3 +109,21 @@
 .nav-active-bar {
   box-shadow: inset 3px 0 0 #4f46e5;
 }
+
+/* Nachbarschaft (templates/pages/neighborhood.html): Kartenhöhe und Suchumkreis (vorher Inline-Stil, #783) */
+#neighborhood-map {
+  height: 400px;
+  border-radius: 0.75rem;
+}
+@media (min-width: 1024px) {
+  #neighborhood-map {
+    height: 480px;
+  }
+}
+.search-radius {
+  fill: theme("colors.primary.600");
+  fill-opacity: 0.08;
+  stroke: theme("colors.primary.600");
+  stroke-opacity: 0.4;
+  stroke-width: 2;
+}

@@ -223,7 +223,7 @@ invalidate_portal_stats()
 resp = client.get("/insight/")
 page = html(resp)
 check("GET /insight/ mit 8 Kommunen: 200 (Auswahlseite)", resp.status_code == 200, f"status={resp.status_code}")
-check("Headline vorhanden", "hle deine Kommune" in page)
+check("Headline vorhanden", "hlen Sie Ihre Kommune" in page)
 check("Suchfeld vorhanden", 'id="body-select-search"' in page)
 check("Alle 8 Kommunen gelistet", all(name in page for name, _ in CITY_SPECS))
 check("Client-Filter-Attribute (data-search)", page.count("data-search") >= 8)
@@ -277,7 +277,7 @@ resp = client.get("/insight/kommune/alle/")
 check("clear_body: Redirect", resp.status_code == 302, f"status={resp.status_code}")
 check("clear_body: Session 'all'", client.session.get("active_body_id") == "all")
 resp = client.get("/insight/")
-check("Nach clear_body: Auswahlseite", "hle deine Kommune" in html(resp))
+check("Nach clear_body: Auswahlseite", "hlen Sie Ihre Kommune" in html(resp))
 
 # Unbekannte Body-ID: kein Crash
 import uuid as uuid_mod  # noqa: E402
@@ -296,7 +296,6 @@ for url in [
     "/insight/vorgaenge/",
     "/insight/gremien/",
     "/insight/personen/",
-    "/insight/dokumente/",
     "/insight/karte/",
     "/insight/nachbarschaft/",
     "/insight/termine/kalender/",
@@ -310,6 +309,13 @@ for url in [
         f"status={resp.status_code} loc={resp.headers.get('Location')}",
     )
 
+# Dokumente sind in die Suche gewandert: dauerhafte Weiterleitung, auch ohne gewählte Kommune
+resp = client.get("/insight/dokumente/")
+check(
+    "All-Modus: /insight/dokumente/ → Suche nach Dokumenten",
+    resp.status_code == 301 and resp.headers.get("Location", "").endswith("/insight/suche/?type=file"),
+    f"status={resp.status_code} loc={resp.headers.get('Location')}",
+)
 # Suche bleibt kommunenübergreifend erreichbar (gleichwertige Option)
 resp = client.get("/insight/suche/")
 check("All-Modus: Suche bleibt erreichbar (200)", resp.status_code == 200, f"status={resp.status_code}")

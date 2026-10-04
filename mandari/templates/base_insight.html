@@ -2,45 +2,19 @@
 <!DOCTYPE html>
 <html lang="de" class="scroll-smooth" data-portal="insight"
       data-authenticated="{{ request.user.is_authenticated|yesno:"true,false" }}"
-      x-data="{
-          darkMode: localStorage.getItem('darkMode') === 'true',
-          sidebarOpen: false,
-          cityModalOpen: false,
-          citySearch: '',
-          activeBodyId: '{% if active_body %}{{ active_body.id }}{% endif %}',
-          docViewerUrl: '',
-          docViewerName: '',
-          docViewerMeta: '',
-          docViewerLoading: false,
-          docViewerError: false,
-          _docTimeout: null,
-          openDoc(url, name, meta) {
-              this.docViewerUrl = url;
-              this.docViewerName = name || 'Dokument';
-              this.docViewerMeta = meta || '';
-              this.docViewerLoading = true;
-              this.docViewerError = false;
-              clearTimeout(this._docTimeout);
-              this._docTimeout = setTimeout(() => {
-                  if (this.docViewerLoading) {
-                      this.docViewerLoading = false;
-                      this.docViewerError = true;
-                  }
-              }, 30000);
-          }
-      }"
-      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
+      data-active-body="{% if active_body %}{{ active_body.id }}{% endif %}"
+      x-data="insightShell"
       :class="{ 'dark': darkMode }">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="{% block meta_description %}{% if seo.description %}{{ seo.description }}{% else %}Mandari - Kommunalpolitische Transparenz{% endif %}{% endblock %}">
+    <meta name="description" content="{% block meta_description %}{% if seo.description %}{{ seo.description }}{% else %}mandari Insight – öffentliche Ratsinformationen der Kommunen{% endif %}{% endblock %}">
     <meta name="theme-color" content="{% if insight_portal.accent_color %}{{ insight_portal.accent_color }}{% else %}#4f46e5{% endif %}">
     {% if seo.keywords %}<meta name="keywords" content="{{ seo.keywords }}">{% endif %}
     {% if seo.author %}<meta name="author" content="{{ seo.author }}">{% endif %}
     {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
 
-    <title>{% block title %}Mandari{% endblock %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}Mandari Insight{% endif %}</title>
+    <title>{% block title %}mandari{% endblock %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}</title>
 
     <!-- Canonical URL -->
     {% if seo.canonical_url %}
@@ -48,17 +22,17 @@
     {% endif %}
 
     <!-- Open Graph -->
-    <meta property="og:title" content="{% block og_title %}{% if seo.title %}{{ seo.title }}{% else %}Mandari{% endif %}{% endblock %}">
+    <meta property="og:title" content="{% block og_title %}{% if seo.title %}{{ seo.title }}{% else %}mandari Insight{% endif %}{% endblock %}">
     <meta property="og:description" content="{% block og_description %}{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}{% endblock %}">
     <meta property="og:type" content="{% if seo.og_type %}{{ seo.og_type }}{% else %}website{% endif %}">
     <meta property="og:url" content="{% if seo.canonical_url %}{{ seo.canonical_url }}{% else %}{{ request.build_absolute_uri }}{% endif %}">
     <meta property="og:image" content="{% block og_image %}{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}{% endblock %}">
     <meta property="og:locale" content="de_DE">
-    <meta property="og:site_name" content="{% if insight_portal %}{{ insight_portal.name }}{% else %}Mandari{% endif %}">
+    <meta property="og:site_name" content="{% if insight_portal %}{{ insight_portal.name }}{% else %}mandari{% endif %}">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="{% if seo.twitter_card %}{{ seo.twitter_card }}{% else %}summary{% endif %}">
-    <meta name="twitter:title" content="{% if seo.title %}{{ seo.title }}{% else %}Mandari{% endif %}">
+    <meta name="twitter:title" content="{% if seo.title %}{{ seo.title }}{% else %}mandari Insight{% endif %}">
     <meta name="twitter:description" content="{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}">
     <meta name="twitter:image" content="{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}">
 
@@ -73,6 +47,9 @@
     <link rel="icon" type="image/png" sizes="192x192" href="{% static 'brand/favicon-192.png' %}">
     <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
 
+    <!-- Schrift Inter, selbst gehostet wie auf mandari.de (keine Anfrage an Dritte) -->
+    <link rel="preload" href="{% static 'vendor/inter/inter-latin.woff2' %}" as="font" type="font/woff2" crossorigin>
+
     <!-- TailwindCSS (lokal kompiliert, DSGVO-konform) -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 
@@ -84,6 +61,23 @@
     <!-- Custom Styles -->
     <style nonce="{{ csp_nonce }}">
         [x-cloak] { display: none !important; }
+
+        @font-face {
+            font-family: 'Inter';
+            font-style: normal;
+            font-weight: 400 700;
+            font-display: swap;
+            src: url("{% static 'vendor/inter/inter-latin.woff2' %}") format('woff2');
+            unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+        }
+        @font-face {
+            font-family: 'Inter';
+            font-style: normal;
+            font-weight: 400 700;
+            font-display: swap;
+            src: url("{% static 'vendor/inter/inter-latin-ext.woff2' %}") format('woff2');
+            unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+        }
 
         /* Bürgerportal einer Körperschaft (Issue #317): Akzentfarbe, serverseitig auf #rrggbb geprüft */
         {% if insight_portal.accent_color %}
@@ -162,11 +156,6 @@
             overflow-wrap: anywhere;
         }
 
-        /* Sidebar layout responsive */
-        @media(max-width:1024px) {
-            .sidebar-push { margin-left: 0 !important; }
-        }
-
         /* Custom scrollbar */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
@@ -196,30 +185,44 @@
     {% include "components/insight_sidebar.html" %}
 
     <!-- Main Content Area -->
-    <main id="main-content" class="min-h-screen sidebar-push" style="margin-left:260px;" role="main" tabindex="-1">
+    <main id="main-content" class="min-h-screen lg:ml-[260px]" tabindex="-1">
 
-        <!-- Top bar (mobile menu + dark mode) -->
-        <div class="sticky top-0 z-30 bg-[#faf9f7]/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 lg:px-8"
-            style="height:52px;">
-            <button type="button" @click="sidebarOpen=true" class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" aria-label="Menü öffnen">
-                <i data-lucide="menu" class="w-5 h-5 text-gray-600 dark:text-gray-400"></i>
+        {# Kopfzeile: mobil Menü und Kommune, sonst Suche (außer auf Übersicht und Suche) und Dunkelmodus #}
+        <div class="sticky top-0 z-30 h-[52px] bg-[#faf9f7]/90 dark:bg-gray-900/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex items-center gap-3 px-4 lg:px-8">
+            <button type="button" x-ref="menuButton" @click="openMenu()"
+                class="lg:hidden touch-target inline-flex items-center gap-1.5 -ml-2 px-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-controls="insight-navigation" :aria-expanded="sidebarOpen.toString()" aria-expanded="false">
+                <i data-lucide="menu" class="w-5 h-5" aria-hidden="true"></i> Menü
             </button>
-            <div class="lg:hidden text-sm font-bold text-gray-900 dark:text-white truncate">
-                {% if active_body %}{{ active_body.get_display_name }}{% else %}Mandari Insight{% endif %}
+            <div class="lg:hidden flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-white truncate">
+                {% if active_body %}{{ active_body.get_display_name }}{% else %}mandari Insight{% endif %}
             </div>
-            <div class="hidden lg:block"></div>
-            <!-- Dark mode toggle -->
+            <div class="hidden lg:block flex-1"></div>
+            {% if insight_area != "uebersicht" and insight_area != "suche" %}
+            <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="hidden md:block w-full max-w-sm">
+                <label for="kopf-suche" class="sr-only">Suche in den Ratsinformationen</label>
+                <span class="relative block">
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
+                    <input id="kopf-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …"
+                        class="w-full h-9 pl-9 pr-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600">
+                </span>
+            </form>
+            <a href="{% url 'insight_core:insight:search' %}" class="md:hidden touch-target inline-flex items-center justify-center rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Suche">
+                <i data-lucide="search" class="w-5 h-5" aria-hidden="true"></i>
+            </a>
+            {% endif %}
             <button type="button" @click="darkMode=!darkMode"
-                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                class="touch-target inline-flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'"
+                aria-label="Zum dunklen Modus wechseln"
                 :aria-pressed="darkMode.toString()">
-                <i x-show="!darkMode" data-lucide="moon" class="w-5 h-5 text-gray-500"></i>
-                <i x-show="darkMode" data-lucide="sun" class="w-5 h-5 text-gray-400" x-cloak></i>
+                <i x-show="!darkMode" data-lucide="moon" class="w-5 h-5 text-gray-600" aria-hidden="true"></i>
+                <i x-show="darkMode" data-lucide="sun" class="w-5 h-5 text-gray-300" aria-hidden="true" x-cloak></i>
             </button>
         </div>
 
         <!-- Page content -->
-        <div class="px-4 lg:px-8 py-6 flex flex-col" style="min-height:calc(100vh - 52px);">
+        <div class="px-4 lg:px-8 py-6 flex flex-col min-h-[calc(100vh-52px)]">
             <div class="flex-1 flex flex-col">
                 {% if active_body_archive %}
                 <div class="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-900 dark:text-amber-200" role="status" data-testid="archiv-hinweis">
@@ -249,10 +252,6 @@
 
     <!-- Document Viewer Modal -->
     {% include "components/document_viewer.html" %}
-
-    <!-- Chatbot Popup -->
-    {% block chatbot %}{% include "components/chatbot_popup.html" %}{% endblock %}
-
 
     {% block extra_scripts %}{% endblock %}
 </body>
