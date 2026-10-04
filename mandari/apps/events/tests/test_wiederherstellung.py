@@ -12,6 +12,7 @@ Rundlauf mit ``pg_dump``/``pg_restore`` prüft ``.github/workflows/backup-roundt
 from __future__ import annotations
 
 import hashlib
+import time
 import uuid
 from datetime import timedelta
 from io import StringIO
@@ -65,8 +66,12 @@ def _schreiben(objekte: list[uuid.UUID], anzahl: int) -> None:
     with transaction.atomic():
         for i in range(anzahl):
             ereignis_anlegen(aggregate_id=objekte[i % len(objekte)])
-    sequenzierer = Sequencer()
-    sequenzierer.drain()
+    # In der CI halten offene Transaktionen paralleler Testprozesse die Grenze clusterweit kurz auf
+    sequenzierer, ende = Sequencer(), time.monotonic() + 60
+    while Event.objects.filter(seq__isnull=True).exists():
+        assert time.monotonic() < ende, "nicht alle Ereignisse nummeriert"
+        sequenzierer.drain()
+        time.sleep(0.05)
     sequenzierer.release()
     for name in ("test.sicht", "test.extern"):
         while deliver_batch(get(name)).more:
