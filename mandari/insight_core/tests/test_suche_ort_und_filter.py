@@ -262,3 +262,28 @@ def test_nur_wortsuche_und_nulltreffer_hilfe(strassen: OParlBody, dienst: _Diens
     dienst.treffer = False
     html = _seite(Client(), "/insight/suche/?q=Kita&period=12m")
     assert "Keine Treffer für „Kita“" in html and "Ohne Filter" in html
+
+
+def test_komponenten_reiter_facette_textlink() -> None:
+    from django.template import engines
+    from django_cotton.compiler_regex import CottonCompiler
+
+    def render(quelle: str, **kontext: Any) -> str:
+        return engines["django"].from_string(CottonCompiler().process(quelle)).render(kontext)
+
+    reiter = render(
+        '<c-suche.reiter :tabs="t" />',
+        t=[
+            {"label": "Alle", "count": "7", "url": "?q=x", "active": True},
+            {"label": "Personen", "count": "1", "url": "?q=x&result_type=persons", "active": False},
+        ],
+    )
+    assert reiter.count('aria-current="page"') == 1 and 'hx-push-url="true"' in reiter
+    facette = render(
+        '<c-suche.facette titel="Art" name="paper_type" :optionen="o" />',
+        o=[{"value": "Antrag", "count": "3", "checked": True}, {"value": "Vorlage", "count": "9", "checked": False}],
+    )
+    # zwei Felder und „Anwenden“ gehören zum Suchformular
+    assert "<details" in facette and facette.count('form="suche-form"') == 3 and "(gewählt: Antrag)" in facette
+    link = render('<c-suche.textlink href="?q=x" hx-get="?q=x">entfernen</c-suche.textlink>')
+    assert 'href="?q=x"' in link and 'hx-get="?q=x"' in link and ">entfernen</a>" in link

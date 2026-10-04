@@ -17,8 +17,8 @@ Kontext: insight_core.services.search_page.build_context.
     {% endif %}
     {% if active_filters or place_url %}
     <p class="mt-4 text-sm text-gray-700 dark:text-gray-300">
-        {% for f in active_filters %}{{ f.label }} · <a href="{{ f.url }}" hx-get="{{ f.url }}" hx-target="#suchergebnis" hx-push-url="true" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">entfernen</a>{% if not forloop.last %}<span aria-hidden="true"> · </span>{% endif %}{% endfor %}
-        {% if place_url %}Ohne Ortsband · <a href="{{ place_url }}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Ortsband zeigen</a>{% endif %}
+        {% for f in active_filters %}{{ f.label }} · <c-suche.textlink href="{{ f.url }}" hx-get="{{ f.url }}" hx-target="#suchergebnis" hx-push-url="true">entfernen</c-suche.textlink>{% if not forloop.last %}<span aria-hidden="true"> · </span>{% endif %}{% endfor %}
+        {% if place_url %}Ohne Ortsband · <c-suche.textlink href="{{ place_url }}">Ortsband zeigen</c-suche.textlink>{% endif %}
     </p>
     {% endif %}
     {% if similar_spelling %}
@@ -26,7 +26,7 @@ Kontext: insight_core.services.search_page.build_context.
     {% endif %}
     {% if fallback %}
     <div hx-get="{% url 'insight_core:insight:search_results' %}?q={{ query|urlencode }}" hx-trigger="load" hx-swap="outerHTML" class="py-6">
-        <p class="text-gray-700 dark:text-gray-300">Die Volltextsuche ist gerade nicht erreichbar. <a href="{% url 'insight_core:insight:search_results' %}?q={{ query|urlencode }}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Treffer in Titeln und Aktenzeichen anzeigen</a></p>
+        <p class="text-gray-700 dark:text-gray-300">Die Volltextsuche ist gerade nicht erreichbar. <c-suche.textlink href="{% url 'insight_core:insight:search_results' %}?q={{ query|urlencode }}">Treffer in Titeln und Aktenzeichen anzeigen</c-suche.textlink></p>
     </div>
     {% elif groups %}
     <ol id="treffer-liste" class="mt-2" aria-label="Treffer">
@@ -39,13 +39,13 @@ Kontext: insight_core.services.search_page.build_context.
     <div class="py-8">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Keine Treffer für „{{ query }}“</h2>
         {% if without_filters_url %}
-        <p class="mt-2 text-gray-700 dark:text-gray-300">Mit den gewählten Filtern gibt es nichts. <a href="{{ without_filters_url }}" hx-get="{{ without_filters_url }}" hx-target="#suchergebnis" hx-push-url="true" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Ohne Filter: {{ without_filters_count|default:"Treffer anzeigen" }}</a></p>
+        <p class="mt-2 text-gray-700 dark:text-gray-300">Mit den gewählten Filtern gibt es nichts. <c-suche.textlink href="{{ without_filters_url }}" hx-get="{{ without_filters_url }}" hx-target="#suchergebnis" hx-push-url="true">Ohne Filter: {{ without_filters_count|default:"Treffer anzeigen" }}</c-suche.textlink></p>
         {% else %}
         <p class="mt-2 max-w-xl text-gray-700 dark:text-gray-300">Prüfen Sie die Schreibweise oder suchen Sie mit weniger Wörtern. Bei Straßen genügt der Name ohne „Straße“.</p>
         {% endif %}
     </div>
     {% endif %}
     {% if insight_subscriptions_enabled %}
-    <p class="mt-8"><a href="{% url 'insight_core:insight:notifications' %}?keyword={{ query|urlencode }}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Bei neuen Treffern zu „{{ query }}“ benachrichtigen</a></p>
+    <p class="mt-8"><c-suche.textlink href="{% url 'insight_core:insight:notifications' %}?keyword={{ query|urlencode }}">Bei neuen Treffern zu „{{ query }}“ benachrichtigen</c-suche.textlink></p>
     {% endif %}
 </c-insight.band>

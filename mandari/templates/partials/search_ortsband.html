@@ -9,8 +9,7 @@ und der Link führt zur Kartenseite. Feste Höhe der Karte: kein Layoutsprung.
         <div class="order-2 lg:order-1 min-w-0">
             <p class="text-sm text-gray-700 dark:text-gray-300">
                 Als Straße erkannt ·
-                <a href="{{ word_only_url }}" hx-get="{{ word_only_url }}" hx-target="#suchergebnis" hx-push-url="true"
-                   class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Nur Wortsuche</a>
+                <c-suche.textlink href="{{ word_only_url }}" hx-get="{{ word_only_url }}" hx-target="#suchergebnis" hx-push-url="true">Nur Wortsuche</c-suche.textlink>
             </p>
             <h2 id="ort-titel" class="mt-1 text-xl sm:text-2xl font-bold tracking-tight text-gray-900 dark:text-white">{{ band.name }}</h2>
             <p class="mt-1 max-w-xl text-gray-700 dark:text-gray-300">Was im Umkreis von {{ band.radius }} m zuletzt beraten wurde, auch wenn der Straßenname nicht im Titel steht.</p>
@@ -34,7 +33,7 @@ und der Link führt zur Kartenseite. Feste Höhe der Karte: kein Layoutsprung.
                 {% if insight_subscriptions_enabled %}
                 <a href="{{ band.abo_url }}" class="inline-flex items-center min-h-11 px-4 rounded-lg border border-primary-700 dark:border-primary-300 font-medium text-primary-800 dark:text-primary-200 hover:bg-primary-100 dark:hover:bg-primary-900/50">Bei Neuem in der Nähe benachrichtigen</a>
                 {% endif %}
-                <a href="{{ band.map_url }}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Alle {{ band.total }} Vorgänge im Umkreis auf der Karte</a>
+                <c-suche.textlink href="{{ band.map_url }}">Alle {{ band.total }} Vorgänge im Umkreis auf der Karte</c-suche.textlink>
             </div>
         </div>
         <div class="order-1 lg:order-2">
