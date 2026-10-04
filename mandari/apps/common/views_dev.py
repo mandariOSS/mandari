@@ -10,6 +10,9 @@ rendert dieselbe Vorlage, damit Komponentenänderungen nicht unbemerkt brechen.
 
 from __future__ import annotations
 
+import uuid
+from types import SimpleNamespace
+
 from django import forms
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
@@ -42,8 +45,29 @@ def ui_kit(request: HttpRequest) -> HttpResponse:
 
     if not (settings.DEBUG or getattr(settings, "UI_KIT_PREVIEW", False)):
         raise Http404
-    return render(
-        request,
-        "dev/ui_kit.html",
-        {"form": build_demo_form(), "empty_form": UiKitDemoForm()},
+    return render(request, "dev/ui_kit.html", ui_kit_context())
+
+
+def ui_kit_context() -> dict[str, object]:
+    """Beispieldaten der Vorschau (auch für den Snapshot-Test)."""
+    return {
+        "form": build_demo_form(),
+        "empty_form": UiKitDemoForm(),
+        "demo_file": _demo_file("Antrag der Verwaltung"),
+        "demo_file_barriere": _demo_file("Stellungnahme zum Antrag (nicht barrierefrei)"),
+    }
+
+
+def _demo_file(name: str) -> SimpleNamespace:
+    """Anlage für die Vorschau der Dokumentzeile (Attribute wie OParlFile)."""
+    return SimpleNamespace(
+        id=uuid.uuid5(uuid.NAMESPACE_URL, name),
+        name=name,
+        file_name="",
+        mime_type="application/pdf",
+        size=245_760,
+        size_human="240 KB",
+        text_content="Der Rat möge beschließen:\n\n1. Die Verwaltung wird beauftragt, …",
+        download_url="https://ris.example/datei.pdf",
+        access_url=None,
     )

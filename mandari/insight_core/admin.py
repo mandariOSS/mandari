@@ -1527,3 +1527,54 @@ class DigestLogAdmin(ReadOnlyAdminMixin, ModelAdmin):
     readonly_fields = ["id", "sent_at", "subscriber", "alert_count", "success", "error"]
     ordering = ["-sent_at"]
     list_per_page = 50
+
+
+# =============================================================================
+# Rückmeldungen zu Seiten („War diese Seite hilfreich?“), ohne IP-Adresse und Cookie
+# =============================================================================
+
+from .models import PageFeedback  # noqa: E402
+from .services import page_feedback as page_feedback_service  # noqa: E402
+
+
+@admin.register(PageFeedback)
+class PageFeedbackAdmin(ReadOnlyAdminMixin, ModelAdmin):
+    """Auswertung: Zählung je Seitentyp und Seite über der Liste, Freitexte in der Liste.
+
+    Die Zählung folgt den gewählten Filtern (Kommune, Zeitraum, Seitentyp). Einträge löscht ein
+    täglicher Auftrag nach zwölf Monaten (``insight_core/schedules.py``).
+    """
+
+    list_display = ["created_on", "page_label", "body", "helpful", "short_comment", "path"]
+    list_filter = ["helpful", "page_type", "body", ("comment", admin.EmptyFieldListFilter), "created_on"]
+    search_fields = ["comment", "path"]
+    readonly_fields = ["created_on", "page_type", "path", "body", "helpful", "comment"]
+    ordering = ["-created_on", "-id"]
+    list_per_page = 50
+    list_before_template = "admin/insight_core/pagefeedback/auswertung.html"
+
+    @admin.display(description="Seitentyp", ordering="page_type")
+    def page_label(self, obj: PageFeedback) -> str:
+        return page_feedback_service.PAGE_TYPES.get(obj.page_type, obj.page_type)
+
+    @admin.display(description="Ergänzung")
+    def short_comment(self, obj: PageFeedback) -> str:
+        return obj.comment if len(obj.comment) <= 80 else obj.comment[:80] + " …"
+
+    def changelist_view(self, request: HttpRequest, extra_context: dict[str, Any] | None = None) -> HttpResponse:
+        response = super().changelist_view(request, extra_context)
+        context = getattr(response, "context_data", None)
+        changelist = context.get("cl") if isinstance(context, dict) else None
+        if changelist is not None:
+            queryset = changelist.queryset
+            by_type = page_feedback_service.summary(queryset)
+            by_page = page_feedback_service.summary(queryset, by="path", limit=15)
+            context["feedback_by_type"] = {
+                "headers": ["Seitentyp", "Ja", "Nein", "Anteil Ja", "Mit Ergänzung"],
+                "rows": [[r["label"], r["yes"], r["no"], f"{r['share']} %", r["comments"]] for r in by_type],
+            }
+            context["feedback_by_page"] = {
+                "headers": ["Seite", "Ja", "Nein", "Mit Ergänzung"],
+                "rows": [[r["label"], r["yes"], r["no"], r["comments"]] for r in by_page],
+            }
+        return response

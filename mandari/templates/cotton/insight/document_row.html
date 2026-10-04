@@ -1,0 +1,61 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Dokumentzeile im Bürgerportal (Vorgang, Sitzung): Name, Art und Größe, dazu die Aktionen
+  Ansehen       – Dokumentansicht im Portal (openDoc des Layouts, components/document_viewer.html),
+  Text          – klappt den ausgelesenen Text auf (nur wenn vorhanden),
+  Herunterladen – Datei über den Dateiabruf des Portals.
+  <ul><c-insight.document-row :file="file" meta="Rat · A-S/0011/2009" /></ul>
+Parameter: file (OParlFile), meta (Zeile unter dem Titel der Dokumentansicht).
+Steht „nicht barrierefrei“ im Namen, kommt „Text“ zuerst: Der ausgelesene Text ist dann die zugängliche Fassung.
+Zustand des Aufklappens: Alpine-Komponente documentText (frontend/alpine/insight.ts).
+{% endcomment %}
+<c-vars file="" meta="" />
+{% with name=file.name|default:file.file_name|default:"Dokument" is_pdf=file.mime_type|default:""|lower %}
+<li class="py-4 border-t border-gray-200 dark:border-gray-700 first:border-t-0" x-data="documentText">
+    {% partialdef text-button %}
+    <button type="button" @click="toggle()" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false"
+            aria-controls="text-{{ file.id }}"
+            class="group inline-flex items-center gap-1.5 min-h-11 px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+        <i data-lucide="text" class="w-4 h-4" aria-hidden="true"></i>Text<span class="sr-only">: {{ name }}</span>
+        <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-aria-expanded:rotate-180" aria-hidden="true"></i>
+    </button>
+    {% endpartialdef %}
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-1">
+        <div class="flex items-start gap-3 flex-1 basis-full sm:basis-0 min-w-0 sm:min-w-[15rem]">
+            <i data-lucide="file-text" class="hidden sm:block mt-0.5 w-5 h-5 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
+            <div class="min-w-0">
+                <p class="font-semibold leading-snug text-gray-900 dark:text-white break-words">{{ name }}</p>
+                <p class="mt-0.5 flex flex-wrap gap-x-3 text-sm text-gray-600 dark:text-gray-400">
+                    <span>{% if "pdf" in is_pdf %}PDF{% else %}Dokument{% endif %}</span>
+                    {% if file.size %}<span class="tabular-nums">{{ file.size_human }}</span>{% endif %}
+                </p>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-1 -ml-2 sm:ml-0 text-sm font-medium">
+            {% if file.text_content.strip and "nicht barrierefrei" in name|lower %}{% partial text-button %}{% endif %}
+            {% if file.download_url or file.access_url %}
+            <button type="button"
+                    data-doc-url="{% url 'insight_core:insight:file_proxy' file.id %}" data-doc-name="{{ name }}" data-doc-meta="{{ meta }}"
+                    @click="openDoc($el.dataset.docUrl, $el.dataset.docName, $el.dataset.docMeta)"
+                    class="inline-flex items-center gap-1.5 min-h-11 px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+                <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>Ansehen<span class="sr-only">: {{ name }}</span>
+            </button>
+            {% endif %}
+            {% if file.text_content.strip and "nicht barrierefrei" not in name|lower %}{% partial text-button %}{% endif %}
+            {% if file.download_url or file.access_url %}
+            <a href="{% url 'insight_core:insight:file_proxy' file.id %}?download=1"
+               class="inline-flex items-center gap-1.5 min-h-11 px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+                <i data-lucide="download" class="w-4 h-4" aria-hidden="true"></i>Herunterladen<span class="sr-only">: {{ name }}</span>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% if file.text_content.strip %}
+    <div id="text-{{ file.id }}" x-show="open" x-collapse x-cloak class="mt-2 sm:ml-8">
+        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Automatisch aus {% if "pdf" in is_pdf %}dem PDF{% else %}dem Dokument{% endif %} ausgelesen, Lesefehler sind möglich.</p>
+        <div tabindex="0" role="region" aria-label="Text: {{ name }}"
+             class="mt-2 max-h-[22rem] overflow-y-auto rounded-lg bg-gray-100 dark:bg-gray-800 px-5 py-4 text-[0.95rem] leading-relaxed whitespace-pre-line break-words text-gray-800 dark:text-gray-200">{{ file.text_content }}</div>
+    </div>
+    {% endif %}
+</li>
+{% endwith %}

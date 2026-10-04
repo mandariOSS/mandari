@@ -245,7 +245,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 h1{{font-size:1.125rem;font-weight:600;margin-bottom:.5rem;color:#111827}}
 p{{font-size:.875rem;line-height:1.625;color:#6b7280}}
 a{{color:#4f46e5;text-decoration:underline}}
-@media(prefers-color-scheme:dark){{body{{background:#111827;color:#d1d5db}}h1{{color:#f9fafb}}p{{color:#9ca3af}}.icon{{color:#6b7280}}}}
+@media(prefers-color-scheme:dark){{body{{background:#111827;color:#d1d5db}}h1{{color:#f9fafb}}p{{color:#9ca3af}}.icon{{color:#6b7280}}a{{color:#a5b4fc}}}}
 </style></head>
 <body><div class="card">
 <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -343,7 +343,7 @@ def _deliver_file(request, file_obj):
             "Ratsinformationssystem derzeit nicht erreichbar",
             "Das Ratsinformationssystem dieser Kommune antwortet seit mehreren Abrufen nicht. "
             "Wir schonen die Quelle und holen das Dokument automatisch nach, sobald sie wieder "
-            "erreichbar ist. Es lag noch nicht in unserem Zwischenspeicher.",
+            "erreichbar ist. Es lag noch nicht in unserem Zwischenspeicher. " + _original_link(url),
         )
         response.status_code = 503
         response["Retry-After"] = "3600"
@@ -359,7 +359,8 @@ def _deliver_file(request, file_obj):
     ):
         response = _file_proxy_error(
             "Zu viele Abrufe",
-            "Von deinem Anschluss kamen in kurzer Zeit sehr viele Dokumentabrufe. Bitte warte einen Moment.",
+            "Von deinem Anschluss kamen in kurzer Zeit sehr viele Dokumentabrufe. Bitte warte einen Moment. "
+            + _original_link(url),
             status=429,
         )
         response["Retry-After"] = "60"
@@ -368,7 +369,7 @@ def _deliver_file(request, file_obj):
         response = _file_proxy_error(
             "Gerade viele Abrufe",
             "Das Dokument lag noch nicht in unserem Zwischenspeicher, und gerade laufen viele Abrufe "
-            "bei Ratsinformationssystemen. Bitte versuche es gleich noch einmal.",
+            "bei Ratsinformationssystemen. Bitte versuche es gleich noch einmal. " + _original_link(url),
             status=503,
         )
         response["Retry-After"] = "30"
@@ -382,12 +383,12 @@ def _deliver_file(request, file_obj):
         _LIVE_FETCH_SLOTS.release()
 
 
-def _source_busy_response():
+def _source_busy_response(url):
     response = _file_proxy_error(
         "Gerade viele Abrufe",
         "Das Dokument lag noch nicht in unserem Zwischenspeicher, und beim Ratsinformationssystem dieser "
         "Kommune stehen gerade viele Abrufe an. Wir fragen jede Kommune nur in ruhigem Takt an. Bitte "
-        "versuche es gleich noch einmal.",
+        "versuche es gleich noch einmal. " + _original_link(url),
         status=503,
     )
     response["Retry-After"] = "30"
@@ -419,11 +420,11 @@ def _robots_or_pacing_blocked(file_obj, url):
     try:
         decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=max_wait)
     except host_pacing.PacingBusyError:
-        return _source_busy_response()
+        return _source_busy_response(url)
     if decision.allowed:
         # Drossel je Host über alle Prozesse: höchstens die verbleibende Zeit warten
         if not host_pacing.wait(url, sync_config=sync_config, max_wait=max(0.0, deadline - time.monotonic())):
-            return _source_busy_response()
+            return _source_busy_response(url)
         return None
     if decision.unreachable:
         response = _file_proxy_error(
@@ -470,8 +471,14 @@ def _fetch_live(file_obj, url, filename, force_download):
             file_obj.local_status = "missing"
             file_obj.local_error = "HTTP 404"
             file_obj.save(update_fields=["local_status", "local_error"])
+        if e.response.status_code != 404:
+            # Abgelehnt oder gestört (etwa eine Sperre gegen unsere Server): im Browser oft trotzdem abrufbar
+            return _file_proxy_error(
+                f"Fehler {e.response.status_code}",
+                "Das Ratsinformationssystem hat uns das Dokument gerade nicht ausgeliefert. " + _original_link(url),
+            )
         return _file_proxy_error(
-            "Datei nicht gefunden" if e.response.status_code == 404 else f"Fehler {e.response.status_code}",
+            "Datei nicht gefunden",
             "Die Datei konnte auf dem OParl-Server nicht gefunden werden. "
             "Das liegt oft an veränderten Daten und URLs auf dem Quell-Server. "
             "Die Probleme werden nach unserem nächsten Scan in der Regel gelöst. "
@@ -482,26 +489,28 @@ def _fetch_live(file_obj, url, filename, force_download):
         spool.close()
         return _file_proxy_error(
             "Datei zu groß für die Vorschau",
-            "Dieses Dokument ist größer, als die Vorschau direkt abrufen kann. "
-            "Bitte lade es beim Ratsinformationssystem der Kommune herunter.",
+            "Dieses Dokument ist größer, als die Vorschau direkt abrufen kann. " + _original_link(url),
             status=413,
         )
     except safe_fetch.DeadlineExceededError:
         spool.close()
         return _file_proxy_error(
             "Abruf dauert zu lange",
-            "Das Ratsinformationssystem liefert das Dokument gerade sehr langsam. Bitte versuche es später erneut.",
+            "Das Ratsinformationssystem liefert das Dokument gerade sehr langsam. Bitte versuche es später erneut. "
+            + _original_link(url),
             status=504,
         )
     except httpx.RequestError as exc:
         spool.close()
-        if isinstance(exc, safe_fetch.BlockedDestinationError):
+        blocked = isinstance(exc, safe_fetch.BlockedDestinationError)
+        if blocked:
             logger.warning("Dokument %s: Download-Adresse nicht öffentlich erreichbar, Abruf gesperrt", file_obj.id)
         return _file_proxy_error(
             "Server nicht erreichbar",
             "Das Ratsinformationssystem ist momentan nicht erreichbar und dieses Dokument lag noch nicht "
             "in unserem Zwischenspeicher. Wir legen Dokumente laufend im Zwischenspeicher ab — "
-            "bitte versuche es später erneut.",
+            # Keine Links auf nicht öffentliche Adressen
+            "bitte versuche es später erneut." + ("" if blocked else " " + _original_link(url)),
         )
 
     spool.seek(0)
@@ -514,7 +523,7 @@ def _fetch_live(file_obj, url, filename, force_download):
         return _file_proxy_error(
             "Quelle liefert derzeit keine Datei",
             "Das Ratsinformationssystem antwortet mit einer Hinweisseite statt mit dem Dokument "
-            "(z. B. Wartung). Bitte versuche es später erneut.",
+            "(z. B. Wartung). Bitte versuche es später erneut. " + _original_link(url),
         )
 
     # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte (nur gelistete Kommunen)
