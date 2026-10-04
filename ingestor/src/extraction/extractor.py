@@ -1,10 +1,10 @@
 """
 Text Extraction Pipeline for the Ingestor.
 
-Downloads PDF files and extracts text using a fallback chain:
-1. pypdf (fast, text-based PDFs)
-2. Mistral OCR (optional, mit API-Schlüssel)
-3. Tesseract OCR (lokal, Seite für Seite mit Speicher- und Zeitgrenzen, ``src.extraction.ocr``)
+Lädt Dateien und erkennt ihren Text mit der gemeinsamen Texterkennung ``mandari_dokumente`` (shared/,
+Issue #530): pypdf, optional Mistral, sonst Tesseract Seite für Seite mit Speicher- und Zeitgrenzen. Dieselbe
+Implementierung nutzt der Auftrag ``file.extract_text`` der Anwendung; welcher Weg arbeitet, entscheidet
+``TEXT_EXTRACTION_RUNNER`` (``ingestor`` = dieser Worker, Standard; ``worker`` = Aufträge der Anwendung).
 
 Async-capable: PDF downloads via httpx, sync extraction via asyncio.to_thread().
 
@@ -40,18 +40,20 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from mandari_dokumente import (
+    MEMORY_LIMIT_REASON,
+    ExtractionConfig,
+    MistralConfig,
+    OcrLimits,
+    OcrMemoryLimitError,
+    extract_text,
+)
 from mandari_oparl.robots import KIND_FILES, RETRY_UNREACHABLE_SECONDS
 
 from src.client.host_pacing import host_pacer
 from src.client.robots import robots_gate
 from src.client.source_options import SourceFetchOptions
 from src.config import settings
-from src.extraction.ocr import MEMORY_LIMIT_REASON, OcrLimits, OcrMemoryLimitError, ocr_pdf
-
-try:
-    from pypdf import PdfReader
-except ImportError:
-    PdfReader = None  # type: ignore[assignment, misc]
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +64,8 @@ SOURCE_OPTIONS_TTL_SECONDS = 300.0
 PDF_MIME_TYPES = {"application/pdf", "application/x-pdf"}
 TEXT_MIME_TYPES = {"text/plain", "text/html"}
 SUPPORTED_MIME_TYPES = PDF_MIME_TYPES | TEXT_MIME_TYPES
-#: Textdateien werden höchstens bis zu dieser Größe gelesen
-MAX_TEXT_BYTES = 20 * 1024 * 1024
+#: Wert von ``TEXT_EXTRACTION_RUNNER``, mit dem die Aufträge der Anwendung den Text erkennen (nicht dieser Worker)
+RUNNER_WORKER = "worker"
 #: Abgebrochene Bearbeitungen höchstens einmal in diesem Abstand auflösen (eine Abfrage über alle Kommunen),
 #: je Speicher: Sync und Scraper legen je Kommune einen eigenen Extraktor an
 RELEASE_STALE_EVERY_SECONDS = 60.0
@@ -173,6 +175,10 @@ class TextExtractor:
         Returns:
             Number of files successfully extracted.
         """
+        # Die Aufträge der Anwendung erkennen den Text (Issue #530): kein Doppelbetrieb, hier nichts beanspruchen
+        if runs_elsewhere():
+            logger.debug("Texterkennung über Aufträge der Anwendung (TEXT_EXTRACTION_RUNNER=worker)")
+            return 0
         # Abgebrochene Bearbeitungen aller Kommunen auflösen (höchstens einmal je Minute, Issue #817)
         await self.release_stale()
         # Quelle liefert Dokumente nur hinter einer Zugangsprüfung für Menschen (sync_config["file_downloads"]):
@@ -551,33 +557,40 @@ class TextExtractor:
     @staticmethod
     def _extract_text(source: Path, mime_type: str, file_name: str) -> tuple[str, int | None, str]:
         """
-        Extract text from a downloaded file. Runs in a thread (sync).
+        Text der geladenen Datei mit der gemeinsamen Texterkennung (läuft in einem Thread).
+
+        ``OcrMemoryLimitError`` geht an den Aufrufer (Datei gilt als gescheitert, Grund „Speichergrenze“).
 
         Returns:
             (text, page_count, extraction_method)
         """
-        resolved_mime = mime_type or ""
+        result = extract_text(source, mime_type, file_name, extraction_config())
+        return result.text, result.page_count, result.method
 
-        # PDF extraction
-        if resolved_mime in PDF_MIME_TYPES or file_name.lower().endswith(".pdf"):
-            return _extract_text_from_pdf(source, file_name)
 
-        with open(source, "rb") as handle:
-            data = handle.read(MAX_TEXT_BYTES)
+def runs_elsewhere() -> bool:
+    """``TEXT_EXTRACTION_RUNNER=worker``: Die Anwendung erkennt den Text in Aufträgen, dieser Worker ruht."""
+    return (settings.text_extraction_runner or "").strip().lower() == RUNNER_WORKER
 
-        # Plain text / HTML
-        if resolved_mime.startswith("text/"):
-            text = _extract_text_from_plain(data)
-            if resolved_mime == "text/html":
-                text = _strip_html_tags(text)
-            return text, None, "text"
 
-        # Try as text fallback
-        text = _extract_text_from_plain(data)
-        if text.strip():
-            return text, None, "text"
-
-        return "", None, "none"
+def extraction_config() -> ExtractionConfig:
+    """Grenzen der Texterkennung und Mistral-Zugang aus den Einstellungen (``OCR_*``, ``MISTRAL_*``)."""
+    return ExtractionConfig(
+        ocr=OcrLimits(
+            dpi=settings.ocr_dpi,
+            max_pixels=int(settings.ocr_max_megapixels * 1_000_000),
+            memory_limit_mb=settings.ocr_memory_limit_mb,
+            page_timeout=settings.ocr_page_timeout,
+            file_budget=settings.ocr_file_budget_seconds,
+            max_pages=settings.ocr_max_pages,
+        ),
+        mistral=MistralConfig(
+            api_key=settings.mistral_api_key,
+            model=settings.mistral_ocr_model,
+            timeout=settings.text_extraction_timeout,
+            requests_per_minute=settings.mistral_ocr_rate_limit,
+        ),
+    )
 
 
 def _user_agent_of(headers: dict[str, str] | None) -> str:
@@ -586,165 +599,3 @@ def _user_agent_of(headers: dict[str, str] | None) -> str:
         if key.lower() == "user-agent" and str(value).strip():
             return str(value).strip()
     return settings.user_agent
-
-
-def _extract_text_from_pdf(source: Path, file_name: str = "") -> tuple[str, int | None, str]:
-    """
-    Extract text from a PDF file using the fallback chain: pypdf -> Mistral -> Tesseract.
-
-    Liest aus der Datei; pypdf und pdftoppm laden nur, was sie brauchen. pypdf liefert dabei die Seitengrößen,
-    aus denen die Texterkennung die Auflösung je Seite bestimmt (Issue #817).
-
-    Returns:
-        (text, page_count, extraction_method)
-    """
-    page_count = None
-    page_sizes: list[tuple[float, float] | None] | None = None
-
-    # 1. Try pypdf (fast, for text-based PDFs)
-    if PdfReader is not None:
-        try:
-            reader = PdfReader(source)
-            page_count = len(reader.pages)
-
-            text_fragments: list[str] = []
-            page_sizes = []
-            for page in reader.pages:
-                try:
-                    page_text = page.extract_text() or ""
-                except Exception:
-                    page_text = ""
-                text_fragments.append(page_text.strip())
-                if len(page_sizes) < settings.ocr_max_pages:
-                    page_sizes.append(_page_size(page))
-
-            text = "\n\n".join(f for f in text_fragments if f)
-            del reader, text_fragments
-
-            if text.strip():
-                logger.debug("pypdf extraction ok: %d chars", len(text))
-                return text, page_count, "pypdf"
-
-        except Exception as exc:
-            logger.warning("pypdf extraction failed: %s", exc)
-
-    # 2. Mistral OCR (API, optional) — schneller als lokales Tesseract
-    if settings.mistral_api_key:
-        try:
-            text = _extract_text_with_mistral(source.read_bytes(), file_name)
-            if text.strip():
-                logger.debug("Mistral OCR ok: %d chars", len(text))
-                return text, page_count, "mistral"
-        except Exception as exc:
-            logger.warning("Mistral OCR failed for %s, falling back to Tesseract: %s", file_name, exc)
-
-    # 3. Tesseract OCR (lokal, Seite für Seite mit Grenzen); OcrMemoryLimitError geht an den Aufrufer
-    result = ocr_pdf(source, page_count=page_count, page_sizes=page_sizes, limits=ocr_limits())
-    if result.notes:
-        logger.warning("OCR %s: %s", file_name or source.name, "; ".join(result.notes))
-    if result.text.strip():
-        logger.debug("Tesseract OCR ok: %d chars", len(result.text))
-        return result.text, page_count, "tesseract"
-
-    logger.warning("No text extracted from PDF")
-    return "", page_count, "none"
-
-
-def _page_size(page: Any) -> tuple[float, float] | None:
-    """Breite und Höhe einer Seite in PDF-Punkten (MediaBox wie pdftoppm, mit UserUnit); ``None`` bei Fehlern."""
-    try:
-        box = page.mediabox
-        unit = float(getattr(page, "user_unit", 1) or 1)
-        return abs(float(box.width)) * unit, abs(float(box.height)) * unit
-    except Exception:  # noqa: BLE001 - ohne Größe skaliert die Texterkennung über die lange Seite
-        return None
-
-
-def ocr_limits() -> OcrLimits:
-    """Grenzen der Texterkennung aus den Einstellungen (``OCR_*``)."""
-    return OcrLimits(
-        dpi=settings.ocr_dpi,
-        max_pixels=int(settings.ocr_max_megapixels * 1_000_000),
-        memory_limit_mb=settings.ocr_memory_limit_mb,
-        page_timeout=settings.ocr_page_timeout,
-        file_budget=settings.ocr_file_budget_seconds,
-        max_pages=settings.ocr_max_pages,
-    )
-
-
-def _extract_text_with_mistral(data: bytes, file_name: str = "") -> str:
-    """
-    OCR über die Mistral-API (synchron, läuft im Extraktions-Thread).
-
-    Nutzt dasselbe Request-Format wie die Django-Seite
-    (insight_core/services/mistral_ocr.py), damit sich beide Pfade
-    identisch verhalten.
-    """
-    import base64
-
-    import httpx
-
-    from src.config import settings
-
-    pdf_base64 = base64.b64encode(data).decode("utf-8")
-    payload = {
-        "model": settings.mistral_ocr_model,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            "Extrahiere den vollständigen Text aus diesem PDF-Dokument. "
-                            "Gib nur den extrahierten Text zurück, ohne Kommentare oder Formatierung. "
-                            "Behalte Absätze und Strukturierung bei. "
-                            "Falls das Dokument auf Deutsch ist, behalte die deutsche Sprache bei."
-                        ),
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:application/pdf;base64,{pdf_base64}"},
-                    },
-                ],
-            }
-        ],
-        "max_tokens": 32000,
-    }
-
-    response = httpx.post(
-        "https://api.mistral.ai/v1/chat/completions",
-        json=payload,
-        headers={"Authorization": f"Bearer {settings.mistral_api_key}"},
-        timeout=settings.text_extraction_timeout,
-    )
-    response.raise_for_status()
-    result = response.json()
-    return (result.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
-
-
-def _extract_text_from_plain(data: bytes) -> str:
-    """Decode text files as UTF-8 with latin-1 fallback."""
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        return data.decode("latin-1", errors="ignore")
-
-
-def _strip_html_tags(html: str) -> str:
-    """Minimal HTML tag stripping without external dependencies."""
-    from html.parser import HTMLParser
-
-    class _TextExtractor(HTMLParser):
-        def __init__(self) -> None:
-            super().__init__()
-            self.fragments: list[str] = []
-
-        def handle_data(self, data: str) -> None:
-            cleaned = data.strip()
-            if cleaned:
-                self.fragments.append(cleaned)
-
-    parser = _TextExtractor()
-    parser.feed(html)
-    return "\n".join(parser.fragments)

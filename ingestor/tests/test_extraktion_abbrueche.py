@@ -451,3 +451,12 @@ async def test_langer_stapel_laesst_wartende_dateien_nicht_haengen(
     monkeypatch.setattr(extractor, "_process_file", bearbeiten)
     assert await extractor.extract_pending_files(body_id) == 6
     assert befunde == [(0, (0, 0))] * 6
+
+
+async def test_ruht_wenn_die_auftraege_der_anwendung_den_text_erkennen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TEXT_EXTRACTION_RUNNER=worker (Issue #530): kein Doppelbetrieb, der OCR-Worker beansprucht nichts."""
+    monkeypatch.setattr(settings, "text_extraction_runner", "worker")
+    speicher = _Speicher([_datei("a")])
+
+    assert await TextExtractor(speicher).extract_pending_files(uuid.UUID(int=1)) == 0
+    assert speicher.dateien and speicher.aufloesungen == []

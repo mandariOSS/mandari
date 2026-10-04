@@ -85,7 +85,7 @@ WORKDIR /app
 # Runtime-Dependencies (keine Compiler, kein Node)
 # libpq5: PostgreSQL Client-Library
 # libcairo2, libpango-1.0-0: PDF-Generierung (xhtml2pdf)
-# poppler-utils: pdf2image
+# poppler-utils: pdftoppm für die Texterkennung (mandari_dokumente, shared/)
 # tesseract-ocr: OCR
 # shared-mime-info: MIME-Type-Erkennung
 # curl: Health-Checks

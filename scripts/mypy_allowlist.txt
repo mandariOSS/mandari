@@ -209,12 +209,10 @@ insight_core.ranking
 insight_core.seo
 insight_core.services.body_deletion
 insight_core.services.decision_tracking
-insight_core.services.document_extraction
 insight_core.services.file_cache
 insight_core.services.gazetteer
 insight_core.services.georef_runner
 insight_core.services.georeferencing
-insight_core.services.mistral_ocr
 insight_core.services.oparl_locations
 insight_core.services.person_photos
 insight_core.services.question_service

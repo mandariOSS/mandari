@@ -630,10 +630,32 @@ NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 MISTRAL_OCR_RATE_LIMIT = int(os.environ.get("MISTRAL_OCR_RATE_LIMIT", "60"))  # Requests pro Minute
 
-# Texterkennung im OCR-Worker des Ingestors (Issue #817): Dateien länger als diese Zeit in "processing" gelten
-# als abgebrochen und werden zurückgestellt. Gleiche Variable wie im Ingestor; die Prüfung „texterkennung“
+MISTRAL_OCR_MODEL = os.environ.get("MISTRAL_OCR_MODEL", "pixtral-12b-2409")
+
+# Texterkennung (Issues #817, #530): eine Implementierung in shared/mandari_dokumente, gleiche Variablen wie
+# im Ingestor. TEXT_EXTRACTION_RUNNER wählt, wer den Text der RIS-Dateien erkennt: "ingestor" (Standard,
+# OCR-Worker des Ingestors) oder "worker" (Aufträge file.extract_text in der Warteschlange ocr, braucht
+# TASKS_BACKEND=journal). In Anwendung und Ingestor gleich setzen, sonst arbeiten beide oder keiner.
+TEXT_EXTRACTION_RUNNER = os.environ.get("TEXT_EXTRACTION_RUNNER", "ingestor").strip().lower() or "ingestor"
+if TEXT_EXTRACTION_RUNNER not in ("ingestor", "worker"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("TEXT_EXTRACTION_RUNNER muss ingestor oder worker sein.")
+# Dateien länger als diese Zeit in "processing" gelten als abgebrochen und werden zurückgestellt; nach
+# TEXT_EXTRACTION_MAX_ATTEMPTS Abbrüchen gescheitert („Speichergrenze“). Die Prüfung „texterkennung“
 # (/health/worker/) meldet Dateien, die trotzdem länger hängen.
 TEXT_EXTRACTION_STALE_MINUTES = int(os.environ.get("TEXT_EXTRACTION_STALE_MINUTES", "60"))
+TEXT_EXTRACTION_MAX_ATTEMPTS = int(os.environ.get("TEXT_EXTRACTION_MAX_ATTEMPTS", "3"))
+TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", "50"))
+# Je Lauf des Zeitplans höchstens so viele Aufträge einreihen bzw. wartend halten (nur mit Runner "worker")
+TEXT_EXTRACTION_QUEUE_DEPTH = int(os.environ.get("TEXT_EXTRACTION_QUEUE_DEPTH", "20"))
+# Grenzen je Seite und Datei (DEPLOYMENT.md, „OCR-Worker des Ingestors“)
+OCR_DPI = int(os.environ.get("OCR_DPI", "200"))
+OCR_MAX_MEGAPIXELS = float(os.environ.get("OCR_MAX_MEGAPIXELS", "8"))
+OCR_MEMORY_LIMIT_MB = int(os.environ.get("OCR_MEMORY_LIMIT_MB", "1024"))
+OCR_PAGE_TIMEOUT = float(os.environ.get("OCR_PAGE_TIMEOUT", "120"))
+OCR_FILE_BUDGET_SECONDS = float(os.environ.get("OCR_FILE_BUDGET_SECONDS", "1200"))
+OCR_MAX_PAGES = int(os.environ.get("OCR_MAX_PAGES", "100"))
 
 # Insight Subscriptions (E-Mail-Digest)
 # Abos zu Themen und Orten (Seite /insight/benachrichtigungen/, generate_alerts, send_digest).
@@ -772,6 +794,9 @@ TASKS = {
                 # 5 Minuten. Ein Sync wird nicht wiederholt (Protokoll und nächster Lauf zeigen den Fehler).
                 "insight_core.background_tasks.quelle_synchronisieren": {"timeout": 3600, "max_attempts": 1},
                 "insight_core.background_tasks.kommune_loeschen": {"timeout": 3600, "max_attempts": 3},
+                # Texterkennung einer Datei (Issue #530): Zeitbudget je Datei (OCR_FILE_BUDGET_SECONDS) plus Abruf;
+                # Abbrüche zählt die Datei selbst (TEXT_EXTRACTION_MAX_ATTEMPTS)
+                "insight_core.background_tasks.file_extract_text": {"timeout": 1800, "max_attempts": 3},
             },
         },
     }

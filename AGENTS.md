@@ -375,8 +375,8 @@ class OParlXxx(models.Model):
 
 | Service | Zweck |
 |---------|-------|
-| `document_extraction.py` | PDF-Textextraktion (pypdf → Mistral → Tesseract) |
-| `mistral_ocr.py` | Mistral AI OCR-Integration |
+| `document_extraction.py` | Abruf von Dokumenten und Texterkennung über `mandari_dokumente` (shared/: pypdf → Mistral → Tesseract seitenweise) |
+| `text_extraction_job.py` | Auftrag `file.extract_text` (Warteschlange `ocr`) und Zeitplan, bei `TEXT_EXTRACTION_RUNNER=worker` |
 | `search_service.py` | Elasticsearch Multi-Index-Suche |
 
 ### SEO & Sitemaps

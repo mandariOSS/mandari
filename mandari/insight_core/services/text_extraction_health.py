@@ -8,7 +8,9 @@ Stirbt der Worker mitten in einer Datei (meist durch den Speicherwächter des Ke
 nach mehreren Abbrüchen als gescheitert auf (Grund „Speichergrenze“). Gemessen in der Datenbank:
 
 - ``haengend``: Dateien länger als die Zeitgrenze (plus Spielraum) in ``processing`` – der Worker löst sie
-  nicht auf, läuft also nicht oder hängt selbst.
+  nicht auf, läuft also nicht oder hängt selbst. Mit ``TEXT_EXTRACTION_RUNNER=worker`` zählen Dateien, deren
+  Auftrag noch wartet, nicht dazu (Issue #530): Sie warten auf einen Platz in der Warteschlange ``ocr``; steht
+  sie, meldet das die Prüfung ``rueckstau``.
 - ``abgebrochen``: Dateien mit mindestens einem Abbruch, die noch einmal laufen.
 - ``aufgegeben``: in den letzten 24 Stunden nach wiederholten Abbrüchen aufgegebene Dateien. Maßgeblich ist der
   Zeitpunkt der Aufgabe (``text_extracted_at``, beim Aufgeben gesetzt), nicht ``updated_at``: Spätere Änderungen
@@ -51,14 +53,19 @@ def stale_after() -> timedelta:
 def extraction_health(now: datetime | None = None) -> ExtractionHealth:
     """Zahlen aus einer Abfrage über den Index des Status (nur ``pending``, ``processing``, ``failed``)."""
     from ..models import OParlFile
+    from .text_extraction_job import queued_file_ids
 
     now = now or timezone.now()
     grenze = now - stale_after() - STALE_MARGIN
+    haengend = Q(text_extraction_status="processing", beginn__lt=grenze)
+    eingereiht = queued_file_ids()
+    if eingereiht:
+        haengend &= ~Q(pk__in=eingereiht)
     zahlen = (
         OParlFile.objects.filter(text_extraction_status__in=["pending", "processing", "failed"])
         .annotate(beginn=Coalesce("text_extraction_started_at", "updated_at"))
         .aggregate(
-            haengend=Count("id", filter=Q(text_extraction_status="processing", beginn__lt=grenze)),
+            haengend=Count("id", filter=haengend),
             abgebrochen=Count(
                 "id",
                 filter=Q(text_extraction_status__in=["pending", "processing"], text_extraction_attempts__gt=0),

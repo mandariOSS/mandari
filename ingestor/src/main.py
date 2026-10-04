@@ -456,6 +456,9 @@ def extract_daemon(
         f"stale after {settings.text_extraction_stale_minutes} min, give up after "
         f"{settings.text_extraction_max_attempts} aborts"
     )
+    if (settings.text_extraction_runner or "").strip().lower() == "worker":
+        # Issue #530: Die Aufträge file.extract_text der Anwendung erkennen den Text; dieser Worker ruht
+        console.print("[yellow]  TEXT_EXTRACTION_RUNNER=worker: text recognition runs in the app worker, idle here[/yellow]")
     console.print()
 
     async def run_worker() -> None:

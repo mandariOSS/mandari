@@ -1,5 +1,6 @@
 """
-Texterkennung mit Speicher- und Zeitgrenzen (Issue #817).
+Texterkennung mit Speicher- und Zeitgrenzen (Issue #817) in der gemeinsamen Bibliothek ``mandari_dokumente``
+(shared/, Issue #530). Die Tests stehen beim Ingestor, weil dessen CI-Job Poppler und Tesseract installiert.
 
 Ein künstlich großes PDF (A4, A0-Plan, 200 × 200 Zoll) zeigt, dass jede Seite einzeln und mit gedeckelter
 Bildgröße gerendert wird; Unterprozesse an der Speichergrenze beenden nur die Seite, nicht den Worker. Die
@@ -18,11 +19,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from mandari_dokumente import ExtractionConfig, extract_text, ocr
+from mandari_dokumente.ocr import OcrLimits, OcrMemoryLimitError, ocr_pdf, page_dpi
 
-from src.extraction import extractor as extractor_modul
-from src.extraction import ocr
 from src.extraction.extractor import DownloadedFile, TextExtractor
-from src.extraction.ocr import OcrLimits, OcrMemoryLimitError, ocr_pdf, page_dpi
 
 A4 = (595.0, 842.0)
 A0 = (2384.0, 3370.0)
@@ -198,15 +198,19 @@ def test_zeitgrenze_einer_seite_und_zeitbudget_der_datei(grosses_pdf: Path) -> N
     assert ergebnis.text == "Seite 1"
 
 
-def test_pdf_ueber_extraktor_seitengroessen_aus_pypdf(grosses_pdf: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("als_bytes", [False, True])
+def test_texterkennung_seitengroessen_aus_pypdf(
+    grosses_pdf: Path, monkeypatch: pytest.MonkeyPatch, als_bytes: bool
+) -> None:
     runner = FakeRunner()
     monkeypatch.setattr(ocr, "tools_available", lambda: True)
     monkeypatch.setattr(ocr, "run_limited", runner)
+    quelle = grosses_pdf.read_bytes() if als_bytes else grosses_pdf
 
-    text, seiten, methode = extractor_modul._extract_text_from_pdf(grosses_pdf, "anlagenband.pdf")
+    ergebnis = extract_text(quelle, "application/pdf", "anlagenband.pdf", ExtractionConfig(ocr=LIMITS))
 
-    assert (seiten, methode) == (3, "tesseract")
-    assert "Seite 3" in text
+    assert (ergebnis.page_count, ergebnis.method, ergebnis.ocr_performed) == (3, "tesseract", True)
+    assert "Seite 3" in ergebnis.text
     riesig = runner.renders()[2]
     assert _pixel(RIESIG, _dpi(riesig)) <= LIMITS.max_pixels
 

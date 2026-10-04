@@ -1,5 +1,6 @@
 """
-Seitenweise Texterkennung mit Speicher- und Zeitgrenzen (Issue #817).
+Seitenweise Texterkennung mit Speicher- und Zeitgrenzen (Issue #817; seit Issue #530 in ``shared/``, für
+Ingestor und Anwendung).
 
 Der OCR-Worker wurde vom Kernel wegen Speichermangels beendet, sobald eine Seite sehr groß war (Pläne,
 Anlagenbände): ``pdf2image`` lud jede Seite als Bild in den Python-Prozess, ``pytesseract`` schrieb sie
