@@ -191,7 +191,7 @@
                     {% else %}
                     <button type="button" @click="openCityModal()" aria-haspopup="dialog" data-kommune-wechseln
                         class="inline-flex items-center gap-1.5 max-w-full h-11 px-1 font-semibold text-gray-900 dark:text-white">
-                        {% if page_body.logo %}<img src="{{ page_body.logo.url }}" alt="" class="hidden min-[390px]:block w-7 h-7 shrink-0 rounded-md bg-white object-contain p-0.5">{% endif %}
+                        {% if page_body.logo %}<img {{ page_body.logo_img_attrs }} alt="" class="hidden min-[390px]:block w-7 h-7 shrink-0 rounded-md bg-white object-contain p-0.5">{% endif %}
                         <span class="truncate">{% if page_body %}{{ page_body.get_display_name }}{% else %}Kommune wählen{% endif %}</span>
                         <span class="sr-only">– Kommune wechseln</span>
                         <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
