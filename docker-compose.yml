@@ -90,6 +90,9 @@ x-app-environment: &app-environment
   EVENTS_SCHEDULES_DISABLED: ${EVENTS_SCHEDULES_DISABLED:-}
   # Wer den Text der RIS-Dateien erkennt: ingestor (Standard) oder worker (Aufträge in ocr), siehe .env.example
   TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
+  # Adressraum je Tesseract-Unterprozess der Anwendung (Import, Aufträge in ocr): im worker-heavy belegt der
+  # Runner selbst bis 800 MB, der Container hat 1 GB
+  OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-512}
   # Für die Zeitpläne der Betriebsprüfungen, die jetzt im Worker laufen: Empfänger der Alarme,
   # Statusseite für den Verfügbarkeitsbericht, Metriken der Anwendung über ihren Dienstnamen
   INSIGHT_ALERT_EMAILS: ${INSIGHT_ALERT_EMAILS:-}
@@ -373,10 +376,6 @@ services:
       - "800"
       - --heartbeat-file
       - /tmp/mandari-worker.heartbeat
-    environment:
-      <<: *app-environment
-      # Adressraum je Tesseract-Unterprozess: der Runner selbst darf bis 800 MB belegen, der Container 1 GB
-      OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-512}
     # Der Runner startet oberhalb von 800 MB (--max-memory-mb) neu, bevor das Limit greift
     mem_limit: 1g
 

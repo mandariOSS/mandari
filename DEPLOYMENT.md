@@ -616,8 +616,8 @@ gleich setzen**, sonst arbeiten beide oder keiner:
 - `worker`: Aufträge `file.extract_text` in der Warteschlange `ocr` (Dienst `worker-heavy` bzw. jeder Worker,
   der `ocr` bedient). Der Zeitplan `texterkennung_einplanen` reiht alle zwei Minuten höchstens
   `TEXT_EXTRACTION_QUEUE_DEPTH` (Standard 20) Aufträge ein; der OCR-Worker des Ingestors ruht dann. Die
-  Speichergrenze des Containers (1 GB) muss `OCR_MEMORY_LIMIT_MB` und den Worker selbst tragen; im
-  Compose-Dienst `worker-heavy` ist `512` vorgegeben. Solange ein Auftrag wartet, gilt seine Datei weder als
+  Speichergrenze des Containers (1 GB) muss `OCR_MEMORY_LIMIT_MB` und den Worker selbst tragen; in den
+  Compose-Diensten der Anwendung (auch `worker-heavy`) ist `512` vorgegeben. Solange ein Auftrag wartet, gilt seine Datei weder als
   abgebrochen noch als hängend (steht die Warteschlange, meldet das die Prüfung `rueckstau`). Quellen in
   Schonung beansprucht der Zeitplan nicht; ist eine Quelle gerade nicht abrufbar (robots.txt), geht die Datei
   ohne Abbruch zurück, und aus dieser Kommune wird 15 Minuten lang nichts eingereiht.
