@@ -64,7 +64,7 @@
                 <div class="flex items-center gap-3.5 mb-4">
                     {% if body.logo %}
                     <div class="w-11 h-11 rounded-xl bg-white dark:bg-gray-700 border border-gray-100 dark:border-gray-600 flex items-center justify-center flex-shrink-0 overflow-hidden p-1">
-                        <img src="{{ body.logo.url }}" alt="Logo {{ body.get_display_name }}" class="max-w-full max-h-full object-contain" loading="lazy">
+                        <img {{ body.logo_img_attrs }} alt="Logo {{ body.get_display_name }}" class="max-w-full max-h-full object-contain" loading="lazy">
                     </div>
                     {% else %}
                     <div class="w-11 h-11 rounded-xl bg-primary-50 dark:bg-primary-900/25 flex items-center justify-center flex-shrink-0">

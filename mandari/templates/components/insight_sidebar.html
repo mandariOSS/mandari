@@ -15,7 +15,7 @@
     {% if insight_portal.accent_color %}<div class="portal-accent-bar" aria-hidden="true"></div>{% endif %}
     <a href="{{ insight_portal.home_url }}" class="flex items-center gap-3 min-h-16 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
         {% if insight_portal.logo_url %}
-        <img src="{{ insight_portal.logo_url }}" alt="Logo {{ insight_portal.name }}" class="w-9 h-9 object-contain flex-shrink-0">
+        <img {{ insight_portal.logo_attrs }} alt="Logo {{ insight_portal.name }}" class="w-9 h-9 object-contain flex-shrink-0">
         {% endif %}
         <span class="flex-1 min-w-0">
             <span class="block text-sm font-bold text-gray-900 dark:text-white leading-tight truncate">{{ insight_portal.name }}</span>
@@ -36,7 +36,7 @@
         class="w-full flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left">
         <div class="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
             {% if active_body and active_body.logo %}
-            <img src="{{ active_body.logo.url }}" alt="" class="w-8 h-8 object-contain">
+            <img {{ active_body.logo_img_attrs }} alt="" class="w-8 h-8 object-contain">
             {% else %}
             <svg class="w-[16px] h-[16px] text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
             {% endif %}

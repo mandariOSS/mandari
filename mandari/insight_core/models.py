@@ -358,6 +358,15 @@ class OParlBody(SourceDeletionModel):
         validators=[FileExtensionValidator(allowed_extensions=["svg", "png", "jpg", "jpeg", "webp", "gif"])],
         help_text="Logo der Kommune (SVG, PNG, JPG, WebP). Format wird automatisch angepasst.",
     )
+    # WebP-Fassungen des Logos in Anzeigegröße (insight_core/logo_vorschau.py); NULL = noch keine.
+    # Nullbar ohne Default: Der Ingestor legt Kommunen per SQLAlchemy an und kennt die Spalte nicht.
+    logo_thumbnails = models.JSONField(
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="Logo-Vorschaubilder",
+        help_text="Wird beim Speichern eines Logos erzeugt (Befehl build_logo_thumbnails für den Bestand).",
+    )
 
     # Geografische Daten (für Karten)
     latitude = models.DecimalField(
@@ -521,6 +530,27 @@ class OParlBody(SourceDeletionModel):
 
             pin_body_dir(self)
         super().save(*args, **kwargs)
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or "logo" in update_fields:
+            self.update_logo_thumbnails()
+
+    def update_logo_thumbnails(self, *, force: bool = False) -> bool:
+        """Vorschaubilder des Logos erzeugen oder abräumen; ``True``, wenn sich etwas geändert hat."""
+        from .logo_vorschau import abgleichen
+
+        neu = abgleichen(self.logo, self.logo_thumbnails, erzwingen=force)
+        if neu == self.logo_thumbnails:
+            return False
+        self.logo_thumbnails = neu
+        type(self).objects.filter(pk=self.pk).update(logo_thumbnails=neu)
+        return True
+
+    @property
+    def logo_img_attrs(self) -> str:
+        """``src``/``srcset``/``width``/``height`` für ``<img {{ body.logo_img_attrs }} …>`` (Vorschau oder Original)."""
+        from .logo_vorschau import img_attrs
+
+        return img_attrs(self.logo, self.logo_thumbnails)
 
     def get_display_name(self) -> str:
         """Gibt den Anzeigenamen zurück (display_name > short_name > name)."""

@@ -73,7 +73,7 @@
                         <!-- Logo oder Initialen -->
                         <span class="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shrink-0 {% if not body.logo %}bg-gradient-to-br from-primary-500 to-primary-600{% else %}bg-white dark:bg-gray-600{% endif %}" aria-hidden="true">
                             {% if body.logo %}
-                            <img src="{{ body.logo.url }}"
+                            <img {{ body.logo_img_attrs }}
                                  alt=""
                                  class="max-w-[85%] max-h-[85%] object-contain">
                             {% else %}
