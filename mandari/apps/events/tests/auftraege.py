@@ -94,7 +94,7 @@ def probe_ausfuehrung(context: TaskContext[Any, Any], kennung: str, sekunden: fl
     from apps.events.tests.prozess import AUSFUEHRUNG
 
     def festhalten(phase: str) -> None:
-        with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as verbindung:
+        with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, prepare_threshold=None) as verbindung:
             verbindung.execute(
                 f"INSERT INTO {AUSFUEHRUNG} (kennung, versuch, phase) VALUES (%s, %s, %s)",
                 [kennung, context.attempt, phase],

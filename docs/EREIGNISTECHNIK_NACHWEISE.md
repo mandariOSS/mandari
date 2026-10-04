@@ -100,9 +100,9 @@ Das Journal wuchs um rund 460 bis 570 Bytes je Ereignis samt Indizes (je nach La
   selbst kostet (der Suchindex baut je Objekt ein Dokument aus dem Bestand und schreibt es per
   Bulk-Anfrage), kommt hinzu und wird bei jeder Umstellung im Schattenbetrieb gemessen
   (`docs/DREHSCHEIBE_UMSTELLUNG.md`).
-- Die CI (4 vCPU, PostgreSQL mit `fsync`) misst dasselbe mit 10 000 Ereignissen bei jedem Pull Request
-  und schreibt die Werte in die Zusammenfassung des Jobs; die Prüfung scheitert, wenn eine Zusage
-  verletzt ist.
+- Die CI (4 vCPU, PostgreSQL mit `fsync`, Anwendung über PgBouncer) misst dasselbe mit 10 000
+  Ereignissen bei jeder Änderung an der Ereignistechnik und schreibt die Werte in die Zusammenfassung
+  des Jobs; die Prüfung scheitert, wenn eine Zusage verletzt ist.
 
 ## 4. Grenzwerte im Betrieb
 
@@ -124,6 +124,8 @@ DATABASE_URL=postgresql://…/mandari pytest apps/events/tests/test_absturz.py a
 EVENTS_LAST_EREIGNISSE=300000 EVENTS_LAST_BERICHT=/tmp/last.json DATABASE_URL=… pytest apps/events/tests/test_last.py -s
 ```
 
-In der CI laufen alle drei Dateien bei jedem Pull Request mit (Standard: 10 000 Ereignisse), im Job
-„Ereignistechnik hinter PgBouncer“ zusätzlich über den Verbindungspooler; der Lasttest schreibt seine
-Zahlen in die Zusammenfassung des Jobs.
+In der CI läuft `test_zusagen.py` in jedem Testlauf. Absturz- und Lasttest messen Zeiten und laufen
+deshalb nicht neben parallelen Testprozessen (deren offene Transaktionen halten den Sequenzierer
+clusterweit auf), sondern im Job „Ereignistechnik hinter PgBouncer“ bei jeder Änderung an
+`apps/events`, also über den Verbindungspooler (Standard: 10 000 Ereignisse). Der Lasttest schreibt
+seine Zahlen in die Zusammenfassung des Jobs.

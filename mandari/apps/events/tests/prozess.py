@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import psycopg
+import pytest
 
 if TYPE_CHECKING:
     from apps.events.models import Event
@@ -118,7 +119,7 @@ def extern_handler(events: list[Event], delivery: Delivery) -> None:
     """Externer Effekt: eigene Verbindung mit Autocommit, bleibt auch nach einem Absturz bestehen."""
     verbindung: psycopg.Connection[Any] | None = getattr(_extern, "verbindung", None)
     if verbindung is None or verbindung.closed:
-        verbindung = psycopg.connect(_verbindungsdaten(), autocommit=True)
+        verbindung = psycopg.connect(_verbindungsdaten(), autocommit=True, prepare_threshold=None)
         _extern.verbindung = verbindung
     verbindung.execute(
         f"INSERT INTO {EXTERN} (event_id, aggregate_id, seq) SELECT * FROM unnest(%s::uuid[], %s::uuid[], %s::bigint[])",
@@ -153,6 +154,15 @@ def main(argumente: list[str]) -> None:
 
 
 # --- Testprozess -------------------------------------------------------------------------------
+
+
+#: Absturz- und Lasttests messen Zeiten. Mit parallelen Testprozessen (pytest-xdist) halten deren offene
+#: Transaktionen den Sequenzierer clusterweit auf (``xmin``); in der CI laufen sie deshalb im Job
+#: „Ereignistechnik hinter PgBouncer“ ohne parallele Prozesse.
+nur_ohne_parallele_tests = pytest.mark.skipif(
+    bool(os.environ.get("PYTEST_XDIST_WORKER")),
+    reason="Zeitmessung nur ohne parallele Testprozesse (clusterweites xmin); in der CI im Job hinter PgBouncer",
+)
 
 
 def testdatenbank_url() -> str:
@@ -223,8 +233,11 @@ class Probe:
                 v.execute(f"DROP TABLE IF EXISTS {tabelle}")
 
     def verbindung(self, *, autocommit: bool = True) -> psycopg.Connection[Any]:
-        """Direktverbindung zur Testdatenbank (wie ``hilfen.direktverbindung``, ohne Weckruf-Daten)."""
-        return psycopg.connect(testdatenbank_url(), autocommit=autocommit)
+        """
+        Verbindung zur Testdatenbank, ohne vorbereitete Anweisungen: Hinter PgBouncer im Transaktionsmodus
+        wechselt die Serververbindung, eine vorbereitete Anweisung gäbe es dort nicht oder schon.
+        """
+        return psycopg.connect(testdatenbank_url(), autocommit=autocommit, prepare_threshold=None)
 
     def worker(self, *argumente: str, **umgebung: str) -> WorkerProzess:
         """Startet ``events_worker`` als eigenen Prozess (Standard: Sequenzierer und Zustellung der Probe)."""

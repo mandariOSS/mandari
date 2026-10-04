@@ -36,9 +36,9 @@ import pytest
 
 from apps.events.dispatch import set_state
 from apps.events.models import SubscriptionState
-from apps.events.tests.prozess import EXTERN, EXTERN_ABO, SICHT, SICHT_ABO, Probe
+from apps.events.tests.prozess import EXTERN, EXTERN_ABO, SICHT, SICHT_ABO, Probe, nur_ohne_parallele_tests
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), nur_ohne_parallele_tests]
 
 EREIGNISSE = int(os.environ.get("EVENTS_LAST_EREIGNISSE", "10000"))
 SCHREIBER = int(os.environ.get("EVENTS_LAST_SCHREIBER", "4"))

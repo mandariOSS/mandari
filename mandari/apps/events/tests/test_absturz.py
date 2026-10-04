@@ -25,9 +25,9 @@ from apps.events.models import Task as TaskRow
 from apps.events.task_runner import LOCK_TTL, MAINTENANCE_INTERVAL
 from apps.events.tests import auftraege
 from apps.events.tests.auftraege import journal_einstellungen
-from apps.events.tests.prozess import AUSFUEHRUNG, EXTERN, EXTERN_ABO, SICHT, SICHT_ABO, Probe
+from apps.events.tests.prozess import AUSFUEHRUNG, EXTERN, EXTERN_ABO, SICHT, SICHT_ABO, Probe, nur_ohne_parallele_tests
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), nur_ohne_parallele_tests]
 
 #: Zusage (ADR Ereignistechnik, Qualitätsziele): Wiederanlauf nach einem Absturz ohne Handarbeit
 WIEDERANLAUF = 60.0
