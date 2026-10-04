@@ -51,7 +51,7 @@
         {% if not paper.summary and files %}
         <div id="summary-action">
             <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
-                    hx-target="#paper-summary" hx-swap="innerHTML" hx-request="timeout:300000"
+                    hx-target="#paper-summary" hx-swap="innerHTML"
                     hx-disabled-elt="this" hx-indicator="#summary-status"
                     class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-gray-900 dark:text-white hover:bg-white dark:hover:bg-gray-700 disabled:opacity-60 transition-colors">
                 <i data-lucide="sparkles" class="w-4 h-4 text-primary-700 dark:text-primary-300" aria-hidden="true"></i>

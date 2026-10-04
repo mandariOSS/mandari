@@ -456,6 +456,25 @@ class TestVorgangsseite:
         assert 'hx-indicator="#summary-retry-status"' in html and 'id="summary-retry-status"' in html
         assert "bg-red-50" not in html
 
+    def test_hx_request_nur_als_json(self) -> None:
+        """htmx 2 schickt eine Anfrage nicht ab, wenn ``hx-request`` kein JSON ist (so blieb „Zusammenfassen“ stumm)."""
+        import html
+        import json
+        import re
+        from pathlib import Path
+
+        from django.conf import settings
+
+        fehler = []
+        for pfad in Path(settings.BASE_DIR, "templates").rglob("*.html"):
+            for wert in re.findall(r'hx-request="([^"]*)"', pfad.read_text(encoding="utf-8")):
+                text = html.unescape(wert).strip()
+                try:
+                    json.loads(text if text.startswith("{") else "{" + text + "}")
+                except ValueError:
+                    fehler.append(f"{pfad.name}: {wert}")
+        assert fehler == []
+
     def test_zusammenfassung_ohne_text_ohne_erneuten_versuch(self, vorgang: OParlPaper, monkeypatch: Any) -> None:
         from insight_ai.services.summarizer import NoTextContentError
 

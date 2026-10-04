@@ -13,7 +13,7 @@
 <p class="mt-3 text-gray-700 dark:text-gray-300">{{ error }}</p>
 {% if retry is not False %}
 <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
-        hx-target="#paper-summary" hx-swap="innerHTML" hx-request="timeout:300000"
+        hx-target="#paper-summary" hx-swap="innerHTML"
         hx-disabled-elt="this" hx-indicator="#summary-retry-status"
         class="mt-2 -ml-2 inline-flex items-center gap-1.5 min-h-11 px-2 rounded-md text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 disabled:opacity-60">
     <i data-lucide="refresh-cw" class="w-4 h-4" aria-hidden="true"></i>Erneut versuchen
@@ -28,7 +28,6 @@
 <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
         hx-target="#paper-summary"
         hx-swap="innerHTML"
-        hx-request="timeout:300000"
         class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
     <i data-lucide="sparkles" class="w-4 h-4"></i>
     Zusammenfassung generieren
