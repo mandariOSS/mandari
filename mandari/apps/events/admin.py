@@ -4,7 +4,8 @@ Admin-Seite der Ereignistechnik (Issue #510): Abonnements mit Rückstand, gepark
 
 - **Abonnements:** Zustand, Cursor, Rückstand (wie ``mandari_events_lag_seconds``) und geparkte
   Ereignisse je Zustand. Pausieren und Fortsetzen (aktiv oder im Schattenbetrieb) über
-  ``dispatch.set_state``.
+  ``dispatch.set_state``; Nachspielen ab Folgenummer oder Zeitpunkt über ``dispatch.rewind`` (mit
+  Zwischenseite, wie ``events_dispatch --replay``).
 - **Geparkte Ereignisse:** standardmäßig nur der Kopf jeder Kette je Objekt mit der Zahl seiner
   Folgeereignisse, statt einer langen Liste blockierter Ereignisse. Erneut versuchen
   (``dispatch.retry_parked``) und verwerfen (``dispatch.discard_parked``, mit Bestätigung). Beide halten
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin import helpers
 from django.db import transaction
@@ -48,6 +50,7 @@ from django.utils.html import format_html
 from django.utils.http import urlencode
 from django.utils.safestring import SafeString
 from unfold.admin import ModelAdmin
+from unfold.widgets import UnfoldAdminBigIntegerFieldWidget, UnfoldAdminTextInputWidget
 
 from apps.accounts.security_audit import record_operation
 from apps.common.admin_mixins import ImmutableAdminMixin, status_pill
@@ -134,15 +137,39 @@ def _geparkt(state: str) -> Coalesce:
     return Coalesce(Subquery(anzahl, output_field=IntegerField()), Value(0))
 
 
+class NachspielenForm(forms.Form):
+    """Ab wo nachgespielt wird: Folgenummer oder Erfassungszeitpunkt, genau eines (wie ``--replay``)."""
+
+    ab_folgenummer = forms.IntegerField(
+        label="Ab Folgenummer",
+        required=False,
+        min_value=1,
+        widget=UnfoldAdminBigIntegerFieldWidget,
+        help_text="Dieses und alle späteren Ereignisse werden dem Abonnement erneut zugestellt.",
+    )
+    seit = forms.DateTimeField(
+        label="Oder ab Zeitpunkt",
+        required=False,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="Erfassungszeitpunkt im Journal, z. B. 2026-10-01 00:00 (Zeitzone der Plattform).",
+    )
+
+    def clean(self) -> dict[str, Any]:
+        daten: dict[str, Any] = super().clean() or {}
+        if not self.errors and (daten.get("ab_folgenummer") is None) == (daten.get("seit") is None):
+            raise forms.ValidationError("Genau eines angeben: Folgenummer oder Zeitpunkt.")
+        return daten
+
+
 @admin.register(Subscription)
 class SubscriptionAdmin(_NurAdministratoren, ModelAdmin):  # type: ignore[misc]
-    """Abonnements der Zustellung: Zustand, Rückstand, geparkte Ereignisse; pausieren und fortsetzen."""
+    """Abonnements der Zustellung: Zustand, Rückstand, geparkte Ereignisse; pausieren, fortsetzen, nachspielen."""
 
     list_display = ("name", "zustand", "warteschlange", "cursor_seq", "rueckstand", "geparkt", "updated_at")
     ordering = ("name",)
     search_fields = ("name",)
     list_filter = ("state",)
-    actions = ("pausieren", "fortsetzen", "fortsetzen_im_schatten")
+    actions = ("pausieren", "fortsetzen", "fortsetzen_im_schatten", "nachspielen")
     fields = ("name", "state", "cursor_seq", "updated_at")
     readonly_fields = fields
 
@@ -221,6 +248,59 @@ class SubscriptionAdmin(_NurAdministratoren, ModelAdmin):  # type: ignore[misc]
     @admin.action(description="Fortsetzen im Schattenbetrieb", permissions=["eingriff"])
     def fortsetzen_im_schatten(self, request: HttpRequest, queryset: QuerySet[Subscription]) -> None:
         self._zustand_setzen(request, queryset, SubscriptionState.SCHATTEN, {SubscriptionState.PAUSIERT})
+
+    @admin.action(
+        description="Nachspielen ab Folgenummer oder Zeitpunkt (Cursor zurücksetzen)", permissions=["eingriff"]
+    )
+    def nachspielen(self, request: HttpRequest, queryset: QuerySet[Subscription]) -> TemplateResponse | None:
+        """Setzt den Cursor zurück (``dispatch.rewind``); zugestellt wird im laufenden Worker.
+
+        Erst die abgeschickte Zwischenseite (POST mit ``post=ja`` und gültigem Formular) greift ein.
+        Der Cursor geht nur zurück: Steht er schon davor, bleibt das Abonnement unverändert.
+        """
+        form = NachspielenForm(request.POST if request.POST.get("post") == "ja" else None)
+        if not form.is_valid():
+            context = {
+                **self.admin_site.each_context(request),
+                "title": "Abonnements nachspielen",
+                "opts": self.model._meta,
+                "form": form,
+                "queryset": queryset.order_by("name"),
+                "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
+            }
+            return TemplateResponse(request, "admin/events/subscription/nachspielen.html", context)
+        ab_seq: int | None = form.cleaned_data["ab_folgenummer"]
+        if ab_seq is None:
+            ab_seq = dispatch.first_seq_since(form.cleaned_data["seit"])
+            if ab_seq is None:
+                messages.info(request, "Seit diesem Zeitpunkt gibt es keine nummerierten Ereignisse; nichts zu tun.")
+                return None
+        zurueckgesetzt, unveraendert = [], []
+        for name in queryset.order_by("name").values_list("name", flat=True):
+            try:
+                with transaction.atomic():
+                    ergebnis = dispatch.rewind(name, ab_seq)
+                    if ergebnis is None or ergebnis[0] == ergebnis[1]:
+                        unveraendert.append(name)
+                        continue
+                    vorher, nachher = ergebnis
+                    record_operation(request, "abonnement_nachspielen", abonnement=name, vorher=vorher, nachher=nachher)
+            except ValueError:
+                # Cursor steht schon vor der Folgenummer: Nachspielen überspringt nie Ereignisse
+                unveraendert.append(name)
+                continue
+            zurueckgesetzt.append(f"{name} (Cursor {vorher} → {nachher})")
+        if zurueckgesetzt:
+            messages.success(
+                request,
+                f"Ereignisse ab Folgenummer {ab_seq} werden erneut zugestellt: {', '.join(zurueckgesetzt)}.",
+            )
+        if unveraendert:
+            messages.warning(
+                request,
+                f"Unverändert (Cursor steht schon vor Folgenummer {ab_seq}): {', '.join(unveraendert)}.",
+            )
+        return None
 
 
 def _registriert() -> dict[str, registry.Subscriber]:

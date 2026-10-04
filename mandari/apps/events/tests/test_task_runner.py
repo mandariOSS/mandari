@@ -223,6 +223,33 @@ def test_ereignisse_eines_auftrags_tragen_seine_kennung_als_korrelation(journal:
 
 
 @pytest.mark.django_db
+def test_auftrag_scheitert_nie_an_seinem_ausloeser(journal: JournalBackend) -> None:
+    """Beginnt die Auftragsfunktion nicht mit a-z, weicht der Auslöser aus, statt jeden Versuch scheitern zu lassen."""
+    T._neu_aufbauen.enqueue("k")
+    geholt = claim("default", journal.config)
+    assert geholt is not None
+    assert execute(geholt).ok
+    assert auftraege.aufrufe == [("_neu_aufbauen", ("k", "system:auftrag.neu_aufbauen"))]
+
+
+@pytest.mark.parametrize(
+    ("pfad", "ausloeser"),
+    [
+        (f"{PFAD}.merken", "system:merken"),
+        (f"{PFAD}._neu_aufbauen", "system:auftrag.neu_aufbauen"),
+        (f"{PFAD}.übernehmen", "system:auftrag.bernehmen"),
+        (f"{PFAD}.Übernehmen", "system:auftrag.bernehmen"),
+        (f"{PFAD}.Mail_Senden", "system:mail_senden"),
+        (f"{PFAD}.___", "system:auftrag"),
+        (f"{PFAD}.{'a' * 100}", f"system:{'a' * 64}"),
+        (f"{PFAD}._{'b' * 100}", f"system:auftrag.{'b' * 56}"),
+    ],
+)
+def test_ausloeser_ist_immer_gueltig(pfad: str, ausloeser: str) -> None:
+    assert task_runner._ausloeser(pfad) == ausloeser
+
+
+@pytest.mark.django_db
 def test_fremder_versuch_ueberschreibt_nichts(journal: JournalBackend) -> None:
     """Abgrenzung: Hat ein anderer Runner nach Ablauf der Sperre übernommen, gilt das alte Ergebnis nicht."""
     ergebnis = T.merken.enqueue("a")

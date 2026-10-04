@@ -280,7 +280,9 @@ den Betrieb“, mit Konto, Adresse, Aktion und Kennungen, ohne Inhalte):
 
 - **Abonnements:** Zustand, Warteschlange, Cursor, Rückstand (wie `mandari_events_lag_seconds`, rot ab
   300 s) und geparkte Ereignisse je Zustand. Aktionen: Pausieren (nichts mehr zustellen, der Cursor
-  bleibt stehen), Fortsetzen (aktiv) und Fortsetzen im Schattenbetrieb – beide nur für pausierte.
+  bleibt stehen), Fortsetzen (aktiv) und Fortsetzen im Schattenbetrieb – beide nur für pausierte –
+  sowie Nachspielen ab Folgenummer oder Zeitpunkt (Zwischenseite; setzt den Cursor nur zurück, der
+  laufende Worker stellt erneut zu; der Handler muss das vertragen).
 - **Geparkte Ereignisse:** standardmäßig der Kopf jeder Kette je Objekt (wiederholen oder tot) mit der
   Zahl seiner Folgeereignisse; „Alle Ereignisse“ bzw. der Filter nach Zustand zeigt auch die
   blockierten. Aktionen: Erneut versuchen (nur das erste Ereignis eines Objekts, mit allen Versuchen) und

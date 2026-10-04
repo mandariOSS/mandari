@@ -1,0 +1,61 @@
+{% extends "admin/base_site.html" %}
+{% load i18n l10n unfold %}
+
+{% comment %}
+Zwischenseite der Aktion „Nachspielen“ an Abonnements (apps/events/admin.py). Erst das abgeschickte
+Formular (POST mit post=ja, Folgenummer oder Zeitpunkt) setzt den Cursor zurück; jeder Eingriff steht im
+Sicherheitsprotokoll.
+{% endcomment %}
+
+{% block breadcrumbs %}
+    <div class="px-4">
+        <div class="container mb-6 mx-auto -my-3 lg:mb-12">
+            <ul class="flex flex-wrap">
+                {% url "admin:index" as index_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=index_url name=_("Home") %}
+                {% url "admin:events_subscription_changelist" as changelist_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=changelist_url name=opts.verbose_name_plural|capfirst %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link="" name=title %}
+            </ul>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div class="flex flex-col gap-6 max-w-4xl">
+        <p>
+            Nachspielen setzt den Cursor zurück: Das Abonnement bekommt die Ereignisse ab der Folgenummer erneut
+            zugestellt, im laufenden Worker. Der Handler muss wiederholte Ereignisse vertragen. Bereits geparkte
+            Ereignisse bleiben geparkt. Steht der Cursor schon davor, bleibt das Abonnement unverändert. Der
+            Eingriff wird mit Ihrem Admin-Konto im Sicherheitsprotokoll festgehalten.
+        </p>
+
+        {% component "unfold/components/card.html" with title="Diese Abonnements nachspielen" %}
+            <ul class="leading-relaxed mb-4">
+                {% for abo in queryset %}
+                    <li>{{ abo.name }}: {{ abo.get_state_display }}, Cursor {{ abo.cursor_seq|unlocalize }}</li>
+                {% endfor %}
+            </ul>
+            <form method="post" novalidate>
+                {% csrf_token %}
+                {% if form.non_field_errors %}
+                    <ul class="flex flex-col gap-1 mb-6 text-red-600 font-semibold">
+                        {% for fehler in form.non_field_errors %}<li>{{ fehler }}</li>{% endfor %}
+                    </ul>
+                {% endif %}
+                {% for field in form %}
+                    {% include "unfold/helpers/field.html" with field=field %}
+                {% endfor %}
+                {% for abo in queryset %}
+                    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ abo.pk|unlocalize }}">
+                {% endfor %}
+                <input type="hidden" name="action" value="nachspielen">
+                <input type="hidden" name="post" value="ja">
+                <div class="flex gap-4 items-center">
+                    {% component "unfold/components/button.html" with submit=1 %}Nachspielen{% endcomponent %}
+                    <a href="{% url 'admin:events_subscription_changelist' %}">Abbrechen</a>
+                </div>
+            </form>
+        {% endcomponent %}
+    </div>
+{% endblock %}

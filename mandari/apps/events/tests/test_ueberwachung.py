@@ -5,9 +5,9 @@
 - ``mandari_events_lag_seconds{subscription}``: Rückstand je registriertem Abonnement, nur über die
   Typen, die es zugestellt bekommt; ``mandari_events_subscription_paused`` für den Alarmausschluss
 - ``dispatch.set_state``: pausieren und fortsetzen unter der Zeilensperre
-- Admin-Seite: nur für Superuser; Pausieren/Fortsetzen, geparkte Ereignisse als Ketten je Objekt,
-  erneut versuchen und verwerfen (mit Bestätigung), Aufträge lesend – jeder Eingriff im
-  Sicherheitsprotokoll
+- Admin-Seite: nur für Superuser; Pausieren/Fortsetzen, Nachspielen ab Folgenummer oder Zeitpunkt
+  (mit Zwischenseite), geparkte Ereignisse als Ketten je Objekt, erneut versuchen und verwerfen (mit
+  Bestätigung), Aufträge und Worker lesend – jeder Eingriff im Sicherheitsprotokoll
 
 Mit SQLite und PostgreSQL; ``mandari_events_published_total`` prüft ``test_sequencer.py`` (PostgreSQL).
 """
@@ -20,6 +20,7 @@ from typing import Any, cast
 
 import pytest
 from django.contrib.admin import helpers
+from django.contrib.messages import get_messages
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -275,6 +276,103 @@ def test_verwerfen_erst_nach_bestaetigung(admin: Client) -> None:
     naechstes.refresh_from_db()
     assert naechstes.state == ParkedState.WIEDERHOLEN  # rückt nach und wird sofort zugestellt
     assert [eingriff["aktion"] for eingriff in _eingriffe()] == ["geparkt_verworfen"]
+
+
+def _cursor(seq: int | None) -> None:
+    Subscription.objects.filter(name=NAME).update(cursor_seq=cast(int, seq))
+
+
+def _cursor_jetzt() -> int:
+    return Subscription.objects.get(name=NAME).cursor_seq
+
+
+def _meldungen(antwort: Any) -> list[str]:
+    return [str(meldung) for meldung in get_messages(antwort.wsgi_request)]
+
+
+def test_mitarbeiter_ohne_adminrechte_koennen_nicht_nachspielen(abo: Subscription) -> None:
+    letztes = nummeriert()
+    _cursor(letztes.seq)
+    mitarbeiter = Client()
+    mitarbeiter.force_login(cast(Any, UserFactory)(email="mitarbeit@example.org", is_staff=True))
+
+    antwort = _aktion(mitarbeiter, "subscription", "nachspielen", [abo], post="ja", ab_folgenummer="1")
+
+    assert antwort.status_code == 403
+    assert _cursor_jetzt() == letztes.seq
+    assert _eingriffe() == []
+
+
+def test_nachspielen_ab_folgenummer_erst_nach_formular(admin: Client) -> None:
+    erstes, zweites, drittes = nummeriert(), nummeriert(), nummeriert()
+    _cursor(drittes.seq)
+    abo = Subscription.objects.get(name=NAME)
+
+    formular = _aktion(admin, "subscription", "nachspielen", [abo])
+
+    assert formular.status_code == 200
+    assert "admin/events/subscription/nachspielen.html" in [t.name for t in formular.templates]
+    assert f"Cursor {drittes.seq}" in formular.content.decode()
+    assert _cursor_jetzt() == drittes.seq and _eingriffe() == []
+
+    antwort = _aktion(admin, "subscription", "nachspielen", [abo], post="ja", ab_folgenummer=str(zweites.seq))
+
+    assert antwort.status_code == 302
+    assert _cursor_jetzt() == erstes.seq  # zweites und drittes werden erneut zugestellt
+    assert _eingriffe() == [
+        {"aktion": "abonnement_nachspielen", "abonnement": NAME, "vorher": drittes.seq, "nachher": erstes.seq}
+    ]
+    eintrag = SecurityAuditLog.objects.get(event="betrieb")
+    assert eintrag.user_ref is not None and eintrag.entry_hash
+    assert any(f"ab Folgenummer {zweites.seq}" in meldung for meldung in _meldungen(antwort))
+
+
+def test_nachspielen_ab_zeitpunkt(admin: Client) -> None:
+    _alt(nummeriert(), 60)
+    ab_hier = _alt(nummeriert(), 10)
+    letztes = nummeriert()
+    _cursor(letztes.seq)
+    seit = timezone.localtime(_vor(30)).strftime("%Y-%m-%d %H:%M")
+
+    antwort = _aktion(admin, "subscription", "nachspielen", [Subscription.objects.get(name=NAME)], post="ja", seit=seit)
+
+    assert antwort.status_code == 302
+    assert _cursor_jetzt() == cast(int, ab_hier.seq) - 1
+    assert [eingriff["aktion"] for eingriff in _eingriffe()] == ["abonnement_nachspielen"]
+
+
+@pytest.mark.parametrize(
+    "angaben",
+    [{}, {"ab_folgenummer": "1", "seit": "2026-10-01 00:00"}, {"ab_folgenummer": "0"}, {"seit": "kein Datum"}],
+)
+def test_nachspielen_braucht_genau_eine_gueltige_angabe(admin: Client, angaben: dict[str, str]) -> None:
+    letztes = nummeriert()
+    _cursor(letztes.seq)
+
+    antwort = _aktion(admin, "subscription", "nachspielen", [Subscription.objects.get(name=NAME)], post="ja", **angaben)
+
+    assert antwort.status_code == 200
+    assert antwort.context["form"].errors
+    assert _cursor_jetzt() == letztes.seq and _eingriffe() == []
+
+
+def test_nachspielen_setzt_den_cursor_nur_zurueck(admin: Client) -> None:
+    erstes, _, drittes = nummeriert(), nummeriert(), nummeriert()
+    _cursor(erstes.seq)
+
+    antwort = _aktion(
+        admin,
+        "subscription",
+        "nachspielen",
+        [Subscription.objects.get(name=NAME)],
+        post="ja",
+        ab_folgenummer=str(drittes.seq),
+    )
+
+    assert antwort.status_code == 302
+    assert _cursor_jetzt() == erstes.seq  # Ereignisse überspringen gibt es nicht
+    assert _eingriffe() == []
+    assert any("Unverändert" in meldung and NAME in meldung for meldung in _meldungen(antwort))
 
 
 def test_auftraege_lesend(admin: Client) -> None:

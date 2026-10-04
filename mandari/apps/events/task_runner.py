@@ -203,10 +203,22 @@ def claim(queue_name: str, config: JournalOptions, lock_ttl: timedelta = LOCK_TT
     )
 
 
+#: Auslöser, wenn der Name der Auftragsfunktion nicht mit a-z beginnt (``system:auftrag.<rest>``)
+AUSLOESER_ERSATZ = "auftrag"
+
+
 def _ausloeser(task_path: str) -> str:
-    """``actor_ref`` der Ereignisse eines Auftrags: ``system:<name der Auftragsfunktion>``."""
-    name = re.sub(r"[^a-z0-9_.-]", "_", task_path.rsplit(".", 1)[-1].lower())[:64]
-    return system_ref(name or "auftrag")
+    """``actor_ref`` der Ereignisse eines Auftrags: ``system:<name der Auftragsfunktion>``.
+
+    ``system_ref`` verlangt einen Namen, der mit a-z beginnt. Beginnt die Funktion anders (führender
+    Unterstrich, Ziffer, Umlaut), heißt der Auslöser ``system:auftrag.<rest>`` bzw. ``system:auftrag``:
+    Ein Auftrag darf nie an seinem Auslöser scheitern (die Prüfung liefe in jedem Versuch erneut).
+    """
+    name = re.sub(r"[^a-z0-9_.-]", "_", task_path.rsplit(".", 1)[-1].lower())
+    if not "a" <= name[:1] <= "z":
+        rest = name.lstrip("_.-")
+        name = f"{AUSLOESER_ERSATZ}.{rest}" if rest else AUSLOESER_ERSATZ
+    return system_ref(name[:64])
 
 
 def execute(claimed: ClaimedTask, *, backend_alias: str = "default", worker_id: str = "direkt") -> Outcome:

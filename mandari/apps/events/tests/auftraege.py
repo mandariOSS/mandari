@@ -72,6 +72,15 @@ def kontext_merken(kennung: str) -> None:
     )
 
 
+@task
+def _neu_aufbauen(kennung: str) -> None:
+    """Name mit führendem Unterstrich: passt nicht direkt in ``system:<name>`` (Auslöser weicht aus)."""
+    from apps.events.publishing import current_context
+
+    kontext = current_context()
+    aufrufe.append(("_neu_aufbauen", (kennung, kontext and kontext.actor_ref)))
+
+
 @task(queue_name="ai")
 def haengen(kennung: str) -> None:
     HAENGT.set()

@@ -24,7 +24,7 @@ Gelten für alle Umstellungen; erst danach wird zum ersten Mal ein Weg umgeschal
 - [ ] Sicherung umfasst Journal und Aufträge, Wiederherstellung mit Anheben der Folgenummer und
       Nachspielen erprobt (`docs/BACKUP.md`, Abschnitt „Journal und Aufträge“, #573)
 - [ ] Überwachung: Rückstand je Abonnement, tote Ereignisse, Sequenzierer-Stau mit Alarm; Worker-Prüfung
-      auf der Statusseite; Admin-Seite für Abonnements, geparkte Ereignisse und Worker
+      auf der Statusseite; Admin-Seite für Abonnements (mit Nachspielen), geparkte Ereignisse und Worker
       (`docs/MONITORING.md`, #510)
 - [ ] Erzeuger der benötigten Ereignisse laufen in Produktion (Ingestor, Session); ihre Verträge decken
       ab, was der neue Weg braucht
