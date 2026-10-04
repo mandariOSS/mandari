@@ -2433,3 +2433,38 @@ class DigestLog(models.Model):
 
     def __str__(self):
         return f"Digest {self.sent_at:%d.%m.%Y} → {self.subscriber.email} ({self.alert_count} Alerts)"
+
+
+class PageFeedback(models.Model):
+    """Rückmeldung „War diese Seite hilfreich?“ am Seitenende des Bürgerportals.
+
+    Gespeichert werden nur Antwort, optionaler Satz, Seitentyp, Pfad, Kommune und der Tag – keine
+    IP-Adresse, keine Uhrzeit, kein Cookie. Gegen Massenabgaben zählt ``throttle`` grob je Adresse
+    im Cache. „Anonym“ sagen wir trotzdem nicht: Die Zugriffsprotokolle des Webservers halten wie bei jedem
+    Aufruf Adresse, Zeit und Seite fest, und der Satz kann Personenbezug enthalten. Nach ``services.page_feedback.RETENTION_DAYS`` löscht ein täglicher Auftrag die Einträge.
+    """
+
+    COMMENT_MAX_LENGTH = 500
+
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="page_feedback",
+        null=True,
+        blank=True,
+        verbose_name="Kommune",
+    )
+    page_type = models.CharField(max_length=50, db_index=True, verbose_name="Seitentyp")
+    path = models.CharField(max_length=255, blank=True, default="", verbose_name="Seite")
+    helpful = models.BooleanField(verbose_name="Hilfreich")
+    comment = models.TextField(max_length=COMMENT_MAX_LENGTH, blank=True, default="", verbose_name="Ergänzung")
+    created_on = models.DateField(auto_now_add=True, db_index=True, verbose_name="Tag")
+
+    class Meta:
+        db_table = "insight_page_feedback"
+        verbose_name = "Rückmeldung zu einer Seite"
+        verbose_name_plural = "Rückmeldungen zu Seiten"
+        ordering = ["-created_on", "-id"]
+
+    def __str__(self) -> str:
+        return f"{'Ja' if self.helpful else 'Nein'} – {self.page_type} ({self.created_on:%d.%m.%Y})"

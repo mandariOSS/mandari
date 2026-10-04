@@ -30,6 +30,7 @@ from .decisions import (  # noqa: F401
     confirm_decision_subscription,
     unsubscribe_decision,
 )
+from .feedback import page_feedback
 from .files import (
     FileListView,
     _annotate_files_with_context,
@@ -157,6 +158,7 @@ __all__ = [
     "map_markers",
     "neighborhood_autocomplete",
     "neighborhood_results",
+    "page_feedback",
     "paper_summary",
     "search_results",
     "set_body",
