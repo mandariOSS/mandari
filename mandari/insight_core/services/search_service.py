@@ -208,7 +208,7 @@ class ElasticsearchService:
         date_from: str | None = None,
         date_to: str | None = None,
         organization_name: str | None = None,
-        paper_type: str | None = None,
+        paper_type: str | list[str] | None = None,
         body_ids: list[str] | None = None,
         sort: str = SORT_RELEVANCE,
         ranking: str | None = None,
@@ -373,11 +373,20 @@ class ElasticsearchService:
         date_from: str | None = None,
         date_to: str | None = None,
         organization_name: str | None = None,
-        paper_type: str | None = None,
+        paper_type: str | list[str] | None = None,
         sort: str = SORT_RELEVANCE,
         ranking: str | None = None,
+        file_paper_filter: Callable[[set[str]], set[str]] | None = None,
+        weights: Mapping[str, float] | None = None,
+        kinds: set[str] | None = None,
     ) -> dict[str, Any]:
         """Treffer nach Vorgang gruppiert (Konzept Insight-Suche, P0.5).
+
+        ``file_paper_filter`` bekommt die Vorgänge der gefundenen Dateien und gibt die zulässigen zurück (Filter
+        „Art“: Dateien tragen im Index keine Art, P0 filtert sie über ihren Vorgang nach). Dateien ohne
+        zulässigen Vorgang entfallen dann; die Zahl zählt die gebildeten Gruppen. ``weights`` überschreibt die
+        Gewichte der Rangfusion (Index mit 0 wird nur gezählt), ``kinds`` behält nur Gruppen dieser Arten
+        (``paper``, ``meeting``, ``file``, ``person``, ``organization``) – so zählt ein Aufruf für alle Reiter.
 
         Dateien mit Vorgang stehen unter ihm, auch wenn der Vorgang selbst nicht trifft; Unterlagen ohne
         Vorgang unter ihrer Sitzung. Die Reihenfolge entsteht per Rangfusion über die Indexe (Reciprocal Rank
@@ -393,8 +402,12 @@ class ElasticsearchService:
         indexes = list(index_names or ALL_INDEXES)
         page = max(1, int(page))
         want = page * page_size
+        if weights is None:
+            weights = dict.fromkeys(indexes, 1.0) if len(indexes) == 1 else RRF_WEIGHTS
         depths = {
             index: min(want * (FILES_DEPTH_FACTOR if index == INDEX_FILES else 1), MAX_RESULT_DEPTH)
+            if weights.get(index, 0) > 0
+            else 0
             for index in indexes
         }
         ranked = self.rank_hits(
@@ -411,21 +424,94 @@ class ElasticsearchService:
             ranking=ranking,
             sources={INDEX_FILES: ["paper_id", "meeting_id"]},
         )
-        weights = dict.fromkeys(indexes, 1.0) if len(indexes) == 1 else RRF_WEIGHTS
+        if file_paper_filter is not None and INDEX_FILES in ranked.hits_by_index:
+            files = ranked.hits_by_index[INDEX_FILES]
+            erlaubt = file_paper_filter({str((h.get("_source") or {}).get("paper_id")) for h in files} - {"None"})
+            ranked.hits_by_index[INDEX_FILES] = [
+                h for h in files if str((h.get("_source") or {}).get("paper_id")) in erlaubt
+            ]
         groups = self._groups(ranked, indexes, weights, sort)
+        if kinds is not None:
+            groups = [group for group in groups if group["kind"] in kinds]
         page_groups = groups[(page - 1) * page_size : want]
         has_more = len(groups) > want or any(
             index in ranked.truncated and weights.get(index, 0) > 0 for index in indexes
         )
+        if file_paper_filter is not None:
+            counts = {
+                "vorgaenge": sum(1 for g in groups if g["kind"] == "paper"),
+                "unterlagen": 0,
+                "meetings": ranked.totals_by_index.get(INDEX_MEETINGS, 0),
+                "persons": ranked.totals_by_index.get(INDEX_PERSONS, 0),
+                "organizations": ranked.totals_by_index.get(INDEX_ORGANIZATIONS, 0),
+                "approx": has_more,
+            }
+        else:
+            counts = self._group_counts(ranked)
         return {
             "groups": self._load_groups(page_groups, ranked.queries),
-            "counts": self._group_counts(ranked),
+            "counts": counts,
             "page": page,
             "page_size": page_size,
             "pages": page + 1 if has_more else page,
             "has_more": has_more,
             "similar_spelling": ranked.similar_spelling,
             "totals_by_index": dict(ranked.totals_by_index),
+        }
+
+    def facet_counts(
+        self,
+        query: str,
+        *,
+        body_id: str | None = None,
+        body_ids: list[str] | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        ranking: str | None = None,
+        today: str = "now/d",
+    ) -> dict[str, Any]:
+        """Zähler für die Filter „Art“ (Originalwerte von ``paper_type``) und „Zeitraum“ über die Vorgänge.
+
+        Ohne den Art-Filter selbst, damit die anderen Arten wählbar bleiben; mit derselben Mindestrelevanz wie
+        die Liste. Zeitraum: letzte 12 Monate, 2 Jahre, 5 Jahre, älter (``filters``-Aggregation auf ``date``).
+        """
+        version = ranking_version(ranking)
+        es_query = self._build_query(
+            query, body_id, INDEX_PAPERS, date_from=date_from, date_to=date_to, body_ids=body_ids, ranking=version
+        )
+        leer: dict[str, Any] = {"paper_types": {}, "periods": {}}
+        try:
+            if not self.client.indices.exists(index=INDEX_PAPERS):
+                return leer
+            probe = self.client.search(index=INDEX_PAPERS, body={"query": es_query, "size": 1, "_source": False})
+            bester = float(probe["hits"].get("max_score") or 0)
+            relevanz = float(getattr(settings, "SEARCH_MIN_RELEVANCE", 0.05)) if version == "v2" and query else 0.0
+            body: dict[str, Any] = {
+                "query": es_query,
+                "size": 0,
+                "aggs": {
+                    "art": {"terms": {"field": "paper_type", "size": 200}},
+                    "zeitraum": {
+                        "filters": {
+                            "filters": {
+                                "12m": {"range": {"date": {"gte": f"{today}-12M"}}},
+                                "2y": {"range": {"date": {"gte": f"{today}-2y"}}},
+                                "5y": {"range": {"date": {"gte": f"{today}-5y"}}},
+                                "older": {"range": {"date": {"lt": f"{today}-5y"}}},
+                            }
+                        }
+                    },
+                },
+            }
+            if relevanz > 0 and bester > 0:
+                body["min_score"] = bester * relevanz
+            aggs = self.client.search(index=INDEX_PAPERS, body=body)["aggregations"]
+        except Exception as e:  # ohne Zähler bleiben die Filter nutzbar
+            logger.warning(f"Filterzähler nicht ermittelbar: {e}")
+            return leer
+        return {
+            "paper_types": {b["key"]: int(b["doc_count"]) for b in aggs["art"]["buckets"]},
+            "periods": {k: int(v["doc_count"]) for k, v in aggs["zeitraum"]["buckets"].items()},
         }
 
     @staticmethod
@@ -718,7 +804,7 @@ class ElasticsearchService:
         date_from: str | None = None,
         date_to: str | None = None,
         organization_name: str | None = None,
-        paper_type: str | None = None,
+        paper_type: str | list[str] | None = None,
         body_ids: list[str] | None = None,
         *,
         ranking: str | None = None,
@@ -769,7 +855,7 @@ class ElasticsearchService:
         date_from: str | None = None,
         date_to: str | None = None,
         organization_name: str | None = None,
-        paper_type: str | None = None,
+        paper_type: str | list[str] | None = None,
         body_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Filter einer Suche: Kommune(n), Zeitraum, Gremium, Art."""
@@ -797,7 +883,10 @@ class ElasticsearchService:
             filter_clauses.append({"match_phrase": {"organization_names": organization_name}})
 
         if paper_type and index_name == "papers":
-            filter_clauses.append({"term": {"paper_type": paper_type}})
+            if isinstance(paper_type, list):
+                filter_clauses.append({"terms": {"paper_type": paper_type}})
+            else:
+                filter_clauses.append({"term": {"paper_type": paper_type}})
         return filter_clauses
 
     @staticmethod

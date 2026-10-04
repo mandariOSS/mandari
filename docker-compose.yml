@@ -108,6 +108,10 @@ x-app-environment: &app-environment
   SEARCH_RANKING: ${SEARCH_RANKING:-v2}
   SEARCH_RECENCY_WEIGHT: ${SEARCH_RECENCY_WEIGHT:-1.0}
   SEARCH_MIN_RELEVANCE: ${SEARCH_MIN_RELEVANCE:-0.05}
+  # Ortsband der Insight-Suche (an/aus, Mindestanteil verorteter Vorgänge, Umkreis in Metern)
+  INSIGHT_SEARCH_PLACES: ${INSIGHT_SEARCH_PLACES:-true}
+  INSIGHT_SEARCH_PLACES_MIN_SHARE: ${INSIGHT_SEARCH_PLACES_MIN_SHARE:-0.5}
+  INSIGHT_SEARCH_PLACES_RADIUS: ${INSIGHT_SEARCH_PLACES_RADIUS:-500}
   # Änderungsfeed und Snapshot je Kommune (siehe .env.example und docs/OPARL_API.md, „Betrieb“), Standard aus
   OPARL_CHANGES_ENABLED: ${OPARL_CHANGES_ENABLED:-false}
   OPARL_CHANGES_RETENTION_DAYS: ${OPARL_CHANGES_RETENTION_DAYS:-90}

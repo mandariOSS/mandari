@@ -181,8 +181,11 @@
         </c-insight.timeline>
     </c-ui.card>
 
-    <c-ui.card title="Suche: Treffer" subtitle="c-suche.treffer-vorgang / c-suche.treffer-person – treffer (Dict aus search_presentation.present_groups)">
-        <ol>
+    <c-ui.card title="Suche: Treffer" subtitle="c-suche.textlink – href; c-suche.reiter – tabs; c-suche.filterleiste – zeitraum, art, sortierung (c-suche.facette); c-suche.treffer-vorgang / -person – treffer">
+        <p class="mb-4 text-sm">Zeitraum: Letzte 2 Jahre · <c-suche.textlink href="#">entfernen</c-suche.textlink></p>
+        <c-suche.reiter :tabs="demo_reiter" />
+        <c-suche.filterleiste :zeitraum="demo_zeitraum" :art="demo_art" :sortierung="demo_sortierung" />
+        <ol class="mt-4">
             <c-suche.treffer-vorgang :treffer="demo_treffer" />
         </ol>
     </c-ui.card>

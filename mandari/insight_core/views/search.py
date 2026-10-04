@@ -6,7 +6,10 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import render
+from django.utils.cache import patch_vary_headers
+from django.utils.http import urlencode
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
@@ -33,33 +36,68 @@ def _searchable_body_ids() -> list[str]:
 
 
 class SearchView(TemplateView):
-    """Suchseite mit erweiterter Filterung."""
+    """Suchseite (Konzept Insight-Suche, P0.8/P0.9): Ergebnisse serverseitig, ohne JavaScript nutzbar.
+
+    Live-Suche, Filter und Reiter fragen dieselbe Adresse per HTMX ab (``hx-push-url``: Zurück, Teilen und Neuladen
+    behalten die Suche). Dann kommt nur der Ergebnisbereich (Seite 1) bzw. die nächsten Einträge (ab Seite 2).
+    """
 
     template_name = "pages/search.html"
 
+    def get(self, request, *args, **kwargs):
+        context = self.get_context_data(**kwargs)
+        # Wiederherstellung aus dem Verlauf (htmx bei fehlendem Verlaufs-Cache) braucht die ganze Seite
+        teil = (
+            request.headers.get("HX-Request") == "true" and request.headers.get("HX-History-Restore-Request") != "true"
+        )
+        if not teil:
+            response = self.render_to_response(context)
+        elif len(context["params"].q) < 2:
+            # Feld geleert oder zu kurz: Ergebnisbereich leeren statt die ganze Seite hineinzusetzen
+            response = HttpResponse("")
+        else:
+            template = "partials/search_results_liste.html" if context["page"] > 1 else "partials/search_page.html"
+            response = render(request, template, context)
+        # Dieselbe Adresse liefert Seite oder Ausschnitt: Caches müssen beides auseinanderhalten
+        patch_vary_headers(response, ("HX-Request", "HX-History-Restore-Request"))
+        return response
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["query"] = self.request.GET.get("q", "")
-        context["search_type"] = self.request.GET.get("type", "all")
-        context["available_types"] = [
-            ("all", "Alle"),
-            ("paper", "Vorgänge"),
-            ("meeting", "Sitzungen"),
-            ("person", "Personen"),
-            ("organization", "Gremien"),
-            ("file", "Dokumente"),
-        ]
+        from django.utils import timezone
 
         from ..seo import get_page_seo
+        from ..services.search_page import SearchParams, build_context
 
+        params = SearchParams.from_get(self.request.GET)
         body = None if is_all_bodies_mode(self.request) else get_active_body(self.request)
+        context["params"] = params
+        context["query"] = params.q
         context["seo"] = get_page_seo(
             self.request,
-            title="Suche",
+            title=f"„{params.q}“ – Suche" if params.q else "Suche",
             description="Volltextsuche über Vorgänge, Sitzungen, Personen, Gremien und Dokumente der Ratsinformationen.",
             body=body,
         ).to_dict()
+        if len(params.q) < 2:
+            return context
+        try:
+            from ..services.search_service import get_search_service
+
+            body_ids = None if body else _searchable_body_ids()
+            context.update(build_context(get_search_service(), params, body, body_ids, timezone.localdate()))
+        except Exception as e:  # Elasticsearch nicht erreichbar: Datenbanksuche über das Partial, Seite bleibt nutzbar
+            import logging
+
+            logging.getLogger(__name__).warning(f"Suche ohne Elasticsearch, Datenbanksuche: {e}")
+            context.update(_fallback_context(params, body))
+        context["page"] = context.get("page", 1)
         return context
+
+
+def _fallback_context(params, body):
+    """Ohne Elasticsearch: Der Ergebnisbereich lädt die Datenbanksuche des Partials nach (keine Abfragen hier)."""
+    return {"groups": [], "page": 1, "has_more": False, "tabs": [], "fallback": True}
 
 
 @require_GET
@@ -271,6 +309,7 @@ def _grouped_results(request, search_service, query, body, body_id, body_ids, in
             "page": grouped["page"],
             "pages": grouped["pages"],
             "has_more": grouped["has_more"],
+            "next_url": f"/insight/suche/?{urlencode({'q': query, 'type': search_type, 'page': grouped['page'] + 1})}",
             "count_sentence": count_sentence(grouped["counts"]),
             "other_types": other_types,
             "similar_spelling": grouped["similar_spelling"],

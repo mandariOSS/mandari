@@ -1,8 +1,6 @@
-{% comment %}„Mehr laden“ der Trefferliste: hängt die nächste Seite an #treffer-liste an; ohne JavaScript ein Link.{% endcomment %}
-{% if has_more %}
-<a href="{% url 'insight_core:insight:search' %}?q={{ query|urlencode }}{% if search_type %}&amp;type={{ search_type }}{% endif %}&amp;page={{ page|add:1 }}"
-   hx-get="{% url 'insight_core:insight:search_results' %}?q={{ query|urlencode }}{% if search_type %}&amp;type={{ search_type }}{% endif %}&amp;page={{ page|add:1 }}"
-   hx-target="#treffer-liste" hx-swap="beforeend" hx-push-url="false"
+{% comment %}„Mehr laden“ der Trefferliste: hängt die nächste Seite an #treffer-liste an; ohne JavaScript ein Link (next_url).{% endcomment %}
+{% if has_more and next_url %}
+<a href="{{ next_url }}" hx-get="{{ next_url }}" hx-target="#treffer-liste" hx-swap="beforeend" hx-push-url="false"
    class="inline-flex items-center gap-2 min-h-11 px-5 rounded-lg border border-gray-300 dark:border-gray-600 font-medium text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
     Weitere Treffer laden
 </a>
