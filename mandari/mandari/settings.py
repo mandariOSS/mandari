@@ -6,6 +6,7 @@ Mandari Insight - Kommunalpolitische Transparenz
 """
 
 import os
+import uuid
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -591,6 +592,36 @@ ELASTICSEARCH_AUTO_INDEX = os.environ.get("ELASTICSEARCH_AUTO_INDEX", "True").lo
     "1",
     "yes",
 )
+
+# Suchindex als Abonnement der Datendrehscheibe (insight_search.abonnement, Issue #526): "aus" (Standard)
+# registriert kein Abonnement. "schatten" pflegt aus den ris.*-Ereignissen einen Schattenindex
+# (schatten-papers usw., gleiche Abbildung) neben dem Live-Index; Vergleich mit
+# manage.py suchindex_schatten vergleichen. "aktiv" schreibt den Live-Index; erst mit dem Umschalten
+# (Issue #527) verwenden, das die bisherigen Wege abschaltet. Der Schattenbetrieb lässt sich auf
+# Kommunen (Kennungen, kommagetrennt; leer = alle) und eine ungefähre Obergrenze an Dokumenten
+# begrenzen (Speicher von Elasticsearch, 0 = keine Grenze).
+SEARCH_INDEX_SUBSCRIPTION = os.environ.get("SEARCH_INDEX_SUBSCRIPTION", "aus").strip().lower() or "aus"
+if SEARCH_INDEX_SUBSCRIPTION not in ("aus", "schatten", "aktiv"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("SEARCH_INDEX_SUBSCRIPTION muss aus, schatten oder aktiv sein.")
+SEARCH_INDEX_SHADOW_BODIES = [
+    teil.strip().lower() for teil in os.environ.get("SEARCH_INDEX_SHADOW_BODIES", "").split(",") if teil.strip()
+]
+for _kommune in SEARCH_INDEX_SHADOW_BODIES:
+    try:
+        uuid.UUID(_kommune)
+    except ValueError:
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(
+            "SEARCH_INDEX_SHADOW_BODIES: nur Kennungen von Kommunen (UUID), kommagetrennt."
+        ) from None
+SEARCH_INDEX_SHADOW_MAX_DOCS = int(os.environ.get("SEARCH_INDEX_SHADOW_MAX_DOCS", "100000"))
+if SEARCH_INDEX_SHADOW_MAX_DOCS < 0:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("SEARCH_INDEX_SHADOW_MAX_DOCS darf nicht negativ sein (0 = keine Grenze).")
 
 # Nebius AI (KI-Features: Dokumenten-Assistent, Zusammenfassungen)
 NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")

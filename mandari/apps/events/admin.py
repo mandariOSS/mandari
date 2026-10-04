@@ -40,6 +40,7 @@ from apps.accounts.security_audit import record_operation
 from apps.common.admin_mixins import ImmutableAdminMixin, status_pill
 
 from . import dispatch, metrics, registry
+from .eingriffe import parked_identifiers
 from .models import Event, ParkedEvent, ParkedState, Subscription, SubscriptionState, Task, TaskStatus
 
 #: Farben der Zustände in den Listen
@@ -292,7 +293,7 @@ class ParkedEventAdmin(_NurAdministratoren, ModelAdmin):  # type: ignore[misc]
                 if not dispatch.retry_parked(geparkt.pk):
                     uebersprungen += 1
                     continue
-                record_operation(request, "geparkt_wiederholen", **_kennungen(geparkt))
+                record_operation(request, "geparkt_wiederholen", **parked_identifiers(geparkt))
             erledigt += 1
         if erledigt:
             messages.success(request, f"{erledigt} Ereignis(se) werden beim nächsten Lauf erneut zugestellt.")
@@ -319,24 +320,12 @@ class ParkedEventAdmin(_NurAdministratoren, ModelAdmin):  # type: ignore[misc]
             with transaction.atomic():
                 if not dispatch.discard_parked(geparkt.pk):
                     continue
-                record_operation(request, "geparkt_verworfen", **_kennungen(geparkt))
+                record_operation(request, "geparkt_verworfen", **parked_identifiers(geparkt))
             verworfen += 1
         messages.success(
             request, f"{verworfen} Ereignis(se) verworfen; das nächste Ereignis desselben Objekts rückt jeweils nach."
         )
         return None
-
-
-def _kennungen(geparkt: ParkedEvent) -> dict[str, Any]:
-    """Was das Sicherheitsprotokoll zu einem geparkten Ereignis festhält: Kennungen und Codes, keine Inhalte."""
-    return {
-        "abonnement": geparkt.subscription,
-        "folgenummer": geparkt.event_seq,
-        "objekt": str(geparkt.aggregate_id),
-        "zustand": geparkt.state,
-        "versuche": geparkt.attempts,
-        "fehlercode": geparkt.error_code or "",
-    }
 
 
 # =============================================================================

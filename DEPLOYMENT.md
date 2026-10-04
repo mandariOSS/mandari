@@ -520,6 +520,90 @@ der letzten Minute in `events_worker` gemeldet hat.
 (`docker compose ps worker worker-heavy`, Admin-Hinweis), dann `TASKS_BACKEND=journal` in der
 `.env` setzen und Anwendung und Worker neu starten.
 
+### Suchindex als Abonnement (Schattenbetrieb)
+
+Heute schreiben Django-Signale, der Ingestor und `reindex_elasticsearch` den Suchindex. Künftig
+schreibt ihn nur das Abonnement `suchindex` aus den `ris.*`-Ereignissen der Datendrehscheibe
+(Issue #526, Umschalten in #527). Vor dem Umschalten läuft es im Schattenbetrieb: Es pflegt
+Schattenindizes `schatten-papers`, `schatten-meetings`, `schatten-persons`,
+`schatten-organizations` und `schatten-files` mit derselben Abbildung wie der Live-Index, der
+unverändert weiterläuft.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `SEARCH_INDEX_SUBSCRIPTION` | `aus` (Standard), `schatten`, `aktiv` (erst mit #527) |
+| `SEARCH_INDEX_SHADOW_BODIES` | Kommunen des Schattenbetriebs (Kennungen, kommagetrennt; leer = alle) |
+| `SEARCH_INDEX_SHADOW_MAX_DOCS` | ungefähre Obergrenze aller Schattendokumente (Standard 100000, 0 = keine) |
+
+- Jedes Ereignis baut die betroffenen Dokumente aus dem **aktuellen** Bestand (Dokumentbauer wie
+  `reindex_elasticsearch`) und schreibt sie mit externer Version gleich der Folgenummer: Ein älterer
+  Stand verliert, wiederholte oder nachgespielte Ereignisse schaden nicht.
+- Abhängige Dokumente: Eine Datei oder Beratung aktualisiert auch ihren Vorgang; ein Vorgang bzw.
+  eine Sitzung aktualisiert die indexierbaren Dateien, die direkt an ihm bzw. ihr hängen.
+- Berücksichtigt werden öffentliche Ereignisse und die Texterkennung (`ris.file.text_extracted`,
+  laut Vertrag `intern`): Die Dokumente entstehen in beiden Fällen nur aus dem RIS-Bestand.
+- Ist Elasticsearch nicht erreichbar, wartet die Zustellung und stellt denselben Batch erneut zu;
+  lehnt es ein Dokument ab, wird nur dessen Ereignis geparkt (Admin „Abonnements“).
+- Ist die Obergrenze erreicht, werden vorhandene Dokumente weiter aktualisiert, aber keine neuen
+  angelegt (Protokoll und `mandari_search_subscription_documents_total{result="skipped_limit"}`).
+  Der Vollbau prüft vorab, wie viele Dokumente **danach** im Schattenindex liegen (auch die der
+  schon gebauten Kommunen), und bricht sonst ab.
+- Nachspielen, erneut Zustellen, Verwerfen und `loeschen` stehen wie die Eingriffe im Admin im
+  Sicherheitsprotokoll (Ereignis „Eingriff in den Betrieb“, Quelle `kommandozeile`).
+
+**Erwartete, erklärbare Abweichungen im Vergleich** (bis Issue #821 erledigt ist):
+
+- Dateien, deren Text nach dem Vollbau erkannt wurde: Die Texterkennung meldet noch kein Ereignis
+  (`ris.file.text_extracted` hat einen Vertrag, aber keinen Erzeuger). Sie fehlen im Schattenindex,
+  ebenso ihr Text in der Vorschau des Vorgangs.
+- Gremien und Personen: Für sie gibt es nur Löschmeldungen; Änderungen erreichen den Schattenindex
+  erst über einen neuen Vollbau.
+- Dateien an Vorgängen: `meeting_name` und `meeting_date` kommen aus der Sitzung der Beratung; eine
+  geänderte Sitzung aktualisiert nur die Dateien, die direkt an ihr hängen. `agenda_number` folgt dem
+  Tagesordnungspunkt, dessen Ereignisse (`ris.agendaitem.*`) das Abonnement nicht bekommt.
+- `organization_names` von Sitzungen, Vorgängen und Dateien: Ein umbenanntes Gremium ändert sie erst
+  mit dem nächsten Ereignis des jeweiligen Objekts.
+- Felder, die der Ingestor im Live-Index mit eigenem Dokumentbauer anders schreibt.
+
+Alles andere ist ein Befund vor dem Umschalten (#527).
+
+```bash
+python manage.py suchindex_schatten status                   # Schalter, Cursor, Rückstand, Größe, Heap
+python manage.py suchindex_schatten aufbauen --trocken       # zählen, was der Vollbau schreiben würde
+python manage.py suchindex_schatten aufbauen                 # Vollbau der gewählten Kommunen
+python manage.py suchindex_schatten vergleichen [--json]     # Bestand, live, Schatten je Index und Kommune
+python manage.py events_dispatch --replay suchindex --from-seq 1   # ältere Ereignisse nachholen
+python manage.py suchindex_schatten loeschen --ja [--abonnement]   # Rückfall: Schattenindizes entfernen
+```
+
+**Einschalten (Compose):** erst eine Kommune, dann messen, dann erweitern.
+
+1. Vorher messen: `docker compose exec mandari python manage.py suchindex_schatten status`
+   (Heap von Elasticsearch) und `docker stats --no-stream` (Speicher von `elasticsearch` und `worker`).
+2. In der `.env` `SEARCH_INDEX_SUBSCRIPTION=schatten` und `SEARCH_INDEX_SHADOW_BODIES=<Kennung>`
+   setzen, dann `docker compose up -d worker mandari` (Worker und Anwendung lesen die Einstellung).
+3. `docker compose run --rm --no-deps mandari python manage.py suchindex_schatten aufbauen --trocken`,
+   dann ohne `--trocken` (eigener Container, nicht im Worker).
+4. Nach einem Tag `suchindex_schatten vergleichen` und erneut messen wie in Schritt 1. Fehlende
+   Dokumente nennen Kennungen; abweichende Felder zeigen, welcher Weg welches Feld anders schreibt.
+5. Erweitern, indem weitere Kennungen in `SEARCH_INDEX_SHADOW_BODIES` kommen, Worker neu starten und
+   `aufbauen --kommune <neue Kennung> --trocken`, dann ohne `--trocken` ausführen. Die Ausgabe nennt,
+   wie viele Dokumente danach im Schattenindex liegen; über der Obergrenze bricht der Vollbau ab.
+
+Idempotenzprobe nach dem Vollbau (optional): `events_dispatch --replay suchindex --from-seq 1`. Weil
+der Vollbau neuer ist, bleiben `indexed` und `deleted` der Kennzahl bei 0 (außer für Dateien, deren
+Text erst nach dem Vollbau erkannt wurde); es wachsen nur `stale`, `skipped_body` und `absent`
+(Löschen eines Objekts, das nicht im Index steht, etwa eine Datei ohne erkannten Text).
+
+**Umschalten (erst mit #527):** `SEARCH_INDEX_SUBSCRIPTION=aktiv` allein genügt nicht. Steht das
+Abonnement in der Datenbank auf `schatten`, schreibt es weiter nur den Schattenindex. Im Admin
+(„Ereignistechnik → Abonnements“) erst „Pausieren“, dann „Fortsetzen (aktiv)“.
+
+**Rückfall:** `SEARCH_INDEX_SUBSCRIPTION=aus`, `docker compose up -d worker mandari`, dann
+`python manage.py suchindex_schatten loeschen --ja --abonnement`. Der Live-Index ist nie betroffen.
+`loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt (Schalter oder
+Zustand `schatten`); `--abonnement` zusätzlich, solange es überhaupt zugestellt wird.
+
 ## ⏰ Geplante Aufgaben (Zeitpläne im Worker)
 
 Wiederkehrende Verwaltungsbefehle laufen als **Zeitpläne im Worker** (Issue #516,

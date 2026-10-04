@@ -11,6 +11,10 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
+#: Textvorschau eines Vorgangs: höchstens so viele Zeichen je Datei und insgesamt
+PREVIEW_CHARS_PER_FILE = 5000
+PREVIEW_CHARS_TOTAL = 25000
+
 
 def paper_to_doc(paper, files=None) -> dict[str, Any]:
     """Convert an OParlPaper to a Elasticsearch document.
@@ -35,8 +39,8 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
     file_names: list[str] = []
     file_texts: list[str] = []
     total_len = 0
-    max_per_file = 5000
-    max_total = 25000
+    max_per_file = PREVIEW_CHARS_PER_FILE
+    max_total = PREVIEW_CHARS_TOTAL
 
     for f in files:
         if f.file_name:

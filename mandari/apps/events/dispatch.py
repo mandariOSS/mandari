@@ -558,6 +558,39 @@ def retry_parked(parked_id: int) -> bool:
         )
 
 
+def first_seq_since(since: datetime) -> int | None:
+    """Kleinste Folgenummer eines Ereignisses, das ab ``since`` erfasst wurde (``None``: keines)."""
+    return (
+        Event.objects.filter(seq__isnull=False, recorded_at__gte=since)
+        .order_by("seq")
+        .values_list("seq", flat=True)
+        .first()
+    )
+
+
+def rewind(name: str, from_seq: int) -> tuple[int, int] | None:
+    """Nachspielen: Das Abonnement bekommt die Ereignisse ab Folgenummer ``from_seq`` erneut zugestellt.
+
+    Setzt den Cursor auf ``from_seq - 1``, nur rückwärts; gibt den alten und neuen Cursor zurück
+    (``None``, wenn es das Abonnement nicht gibt). Unter der Zeilensperre: Ein laufender Lauf eines
+    externen Handlers verwirft danach sein Ergebnis, weil sich der Cursor geändert hat. Der Handler
+    muss das Nachspielen vertragen (Idempotenz); bereits geparkte Ereignisse bleiben geparkt.
+    """
+    if from_seq < 1:
+        raise ValueError("Folgenummern beginnen bei 1")
+    with transaction.atomic():
+        vorher = Subscription.objects.select_for_update().filter(name=name).values_list("cursor_seq", flat=True).first()
+        if vorher is None:
+            return None
+        neu = from_seq - 1
+        if neu > vorher:
+            raise ValueError("Nachspielen setzt den Cursor nur zurück (Ereignisse überspringen ist nicht vorgesehen)")
+        if neu != vorher:
+            _cursor_setzen(name, neu)
+            logger.warning("Abonnement %s: Cursor für Nachspielen von %s auf %s zurückgesetzt", name, vorher, neu)
+    return vorher, neu
+
+
 def repair_chains(name: str) -> int:
     """Macht Ketten ohne erstes Ereignis wieder zustellbar (etwa nach Löschen von Hand); gibt die Zahl zurück."""
     vorgaenger = ParkedEvent.objects.filter(
