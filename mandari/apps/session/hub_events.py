@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Session meldet ihre fachlichen Änderungen an die Datendrehscheibe (Etappe E4, Issues #533, #534).
+Session meldet ihre fachlichen Änderungen an die Datendrehscheibe (Etappe E4, Issues #533–#535).
 
 Fachfunktionen legen ``track()`` um ihre Änderung und nennen die betroffenen Objekte, bevor sie sie ändern::
 
@@ -49,10 +49,17 @@ from typing import Any, Final
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Max, Q
 
 from apps.session import oparl_publication
-from apps.session.models import SessionAgendaItem, SessionConsultation, SessionFile, SessionMeeting, SessionPaper
+from apps.session.models import (
+    SessionAgendaItem,
+    SessionConsultation,
+    SessionFile,
+    SessionMeeting,
+    SessionPaper,
+    SessionProtocol,
+)
 from hub.ris.mapping.session import SessionUris
 from hub.ris.retraction import Draft
 from hub.ris.session_events import (
@@ -61,12 +68,14 @@ from hub.ris.session_events import (
     FileState,
     MeetingState,
     PaperState,
+    ProtocolState,
     SessionEvents,
     agenda_item_state,
     consultation_state,
     file_state,
     meeting_state,
     paper_state,
+    protocol_state,
 )
 
 logger = logging.getLogger(__name__)
@@ -132,6 +141,16 @@ class Reader:
         """Liefert die Schnittstelle das Objekt aus (``oparl_publication``, nur bei freigeschalteter Schnittstelle)?"""
         return self.open and oparl_publication._is_published(obj)
 
+    def implementation_public(self, item: Any) -> bool:
+        """
+        Ist der Umsetzungsstand des Beschlusses öffentlich? Dieselbe Regel wie die Beschlussseiten im Bürgerportal
+        (``decision_tracking``): Opt-in der Verwaltung am Mandanten und am Beschluss, angenommen, nicht abgesetzt,
+        öffentlicher TOP einer öffentlichen Sitzung, aktiv veröffentlicht.
+        """
+        from insight_core.services import decision_tracking
+
+        return self.open and decision_tracking.is_publicly_visible(item)
+
     def meetings(self, ids: set[uuid.UUID]) -> dict[uuid.UUID, MeetingState]:
         if not ids:
             return {}
@@ -139,6 +158,20 @@ class Reader:
             "joint_organizations"
         )
         return {meeting.pk: meeting_state(meeting, is_published=self.is_published) for meeting in meetings}
+
+    def protocols(self, meeting_ids: set[uuid.UUID]) -> dict[uuid.UUID, tuple[ProtocolState, bool]]:
+        """Niederschriften der Sitzungen (Schlüssel: Sitzung) und ob die Sitzung öffentlich ist."""
+        if not meeting_ids:
+            return {}
+        protocols = (
+            SessionProtocol.objects.filter(meeting__tenant_id=self.tenant_id, meeting_id__in=meeting_ids)
+            .select_related("meeting", "public_file")
+            .annotate(last_correction_at=Max("corrections__applied_at", filter=Q(corrections__status="applied")))
+        )
+        return {
+            p.meeting_id: (protocol_state(p, interface_open=self.open), self.open and bool(p.meeting.is_public))
+            for p in protocols
+        }
 
     def papers(self, ids: set[uuid.UUID]) -> dict[uuid.UUID, PaperState]:
         if not ids:
@@ -160,9 +193,14 @@ class Reader:
         items = (
             SessionAgendaItem.objects.filter(meeting__tenant_id=self.tenant_id)
             .filter(scope)
-            .select_related("meeting", "paper")
+            .select_related("meeting__tenant", "paper", "consultation")
         )
-        return {item.pk: agenda_item_state(item, is_published=self.is_published) for item in items}
+        return {
+            item.pk: agenda_item_state(
+                item, is_published=self.is_published, implementation_public=self.implementation_public
+            )
+            for item in items
+        }
 
     def _consultations(self, scope: Q) -> dict[uuid.UUID, ConsultationState]:
         consultations = (
@@ -202,6 +240,8 @@ class Tracker:
         self.closed = False
         self._meetings: dict[uuid.UUID, MeetingState | None] = {}
         self._papers: dict[uuid.UUID, PaperState | None] = {}
+        #: Niederschriften je Sitzung (Zustand davor; ``None``: es gab noch keine)
+        self._protocols: dict[uuid.UUID, ProtocolState | None] = {}
         #: je Sammlung: beobachteter Bereich und Zustände davor
         self._scopes: dict[str, Q] = {}
         self._before: dict[str, dict[uuid.UUID, Any]] = {kind: {} for kind in Reader.KINDS}
@@ -290,6 +330,20 @@ class Tracker:
 
         self._once("paper", key, "Vorlage", read)
 
+    def protocol(self, meeting: Any) -> None:
+        """
+        Niederschrift einer Sitzung beobachten – Entwurf, Prüfung, Genehmigung, öffentliche Fassung und ihre
+        Rücknahme – samt Tagesordnung (Berichtigungen ändern Ergebnisse und Texte der TOPs).
+        """
+        key = meeting.pk
+
+        def read() -> None:
+            found = self.reader.protocols({key}).get(key)
+            self._protocols[key] = found[0] if found is not None else None
+
+        self._once("protocol", key, "Niederschrift", read)
+        self.agenda(meeting)
+
     def file(self, file_obj: Any) -> None:
         """Eine Anlage beobachten (vor dem Hochladen, Ersetzen, Umbenennen oder Löschen)."""
         key = file_obj.pk
@@ -324,6 +378,11 @@ class Tracker:
             drafts.extend(events.agenda_drafts(self._before["item"], self._after("item")))
             drafts.extend(events.consultation_drafts(self._before["consultation"], self._after("consultation")))
             drafts.extend(events.file_drafts(self._before["file"], self._after("file")))
+            after_protocols = self.reader.protocols(set(self._protocols))
+            for key, before_protocol in self._protocols.items():
+                found = after_protocols.get(key)
+                after_protocol, full = found if found is not None else (None, False)
+                drafts.extend(events.protocol_drafts(before_protocol, after_protocol, meeting_full=full))
             drafts.extend(self._explicit)
             written = events.publish(drafts)
 
@@ -350,6 +409,9 @@ class _Off:
         return None
 
     def file(self, file_obj: Any) -> None:
+        return None
+
+    def protocol(self, meeting: Any) -> None:
         return None
 
     def invited(self, meeting: Any, dispatch: Any) -> None:

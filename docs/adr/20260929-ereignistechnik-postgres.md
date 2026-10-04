@@ -362,7 +362,7 @@ präzisiert wurde:
   Listeners, `/metrics` und Hauptfaden plus Reserve; der Worker vergrößert seinen Pool darauf
   (`DEPLOYMENT.md`, Abschnitt Datenbankverbindungen).
 
-## Nachtrag zur Umsetzung in Session (#533)
+## Nachtrag zur Umsetzung in Session (#533, #534, #535)
 
 Umgesetzt in `apps/session/hub_events.py` (Erfassung in den Fachfunktionen) und
 `hub/ris/session_events.py` (Ereignisse aus Zuständen, Eigentümer der Verträge `ris.*`); Überblick in
@@ -379,6 +379,11 @@ Umgesetzt in `apps/session/hub_events.py` (Erfassung in den Fachfunktionen) und
 - **Herkunft:** Mandant `session:<uuid>`, `body_id` die kanonische Kennung des Body der
   Session-Schnittstelle; so liest der Änderungsfeed die Ereignisse beider Erzeuger unter derselben
   Kommune.
+- **Abhängige Objekte:** Mit einer Vorlage beobachtet die Erfassung ihre Stationen, Anlagen und TOPs, mit
+  einer Sitzung ihre Anlagen und Beratungen; deren Sichtbarkeit folgt dem Träger, Rücknahmen ziehen sie mit.
+- **Abstimmung ohne Adresse:** Session führt je TOP eine Abstimmung; ihre Kennung bildet sich wie jede
+  kanonische aus der Adresse des TOP mit dem Zusatz `voting`. Die Rücknahme eines Ergebnisses meldet
+  `ris.object.depublished` der Abstimmung (`zurueckgenommen`) und die Änderung des TOP.
 
 ## Bezug
 

@@ -432,7 +432,15 @@ def _apply(correction: SessionProtocolCorrection) -> None:
     stale = CorrectionError(
         "Der Stand hat sich seit dem Antrag geändert. Bitte lehnen Sie die Berichtigung ab und stellen Sie sie neu."
     )
-    with transaction.atomic(), protocol_lock.permit(protocol.meeting_id):
+    from apps.session import hub_events
+
+    # Drehscheibe (Issue #535): berichtigte Ergebnisse, Stimmen und Texte der TOPs
+    with (
+        transaction.atomic(),
+        protocol_lock.permit(protocol.meeting_id),
+        hub_events.track(protocol.meeting.tenant) as tracked,
+    ):
+        tracked.agenda(protocol.meeting)
         source: Model
         if correction.target == Correction.TARGET_ITEM:
             if correction.agenda_item_id is None:

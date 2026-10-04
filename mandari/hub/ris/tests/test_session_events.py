@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Ereignisse aus Session-Zuständen (``hub.ris.session_events``, Issues #533, #534): Sichtbarkeit je Feld und Übergang.
+Ereignisse aus Session-Zuständen (``hub.ris.session_events``, Issues #533–#535): Sichtbarkeit je Feld und Übergang.
 
 Die Zustände stehen hier ohne Datenbank; die Fachfunktionen prüft ``apps/session/tests/test_drehscheibe_sitzungen.py``.
 """
@@ -23,6 +23,7 @@ from hub.ris.session_events import (
     FileState,
     MeetingState,
     PaperState,
+    ProtocolState,
     SessionEvents,
 )
 
@@ -34,6 +35,7 @@ VORLAGE = uuid.UUID("00000000-0000-4000-8000-000000000004")
 STATION = uuid.UUID("00000000-0000-4000-8000-000000000005")
 DATEI = uuid.UUID("00000000-0000-4000-8000-000000000006")
 ANTRAG = uuid.UUID("00000000-0000-4000-8000-000000000007")
+PROTOKOLL = uuid.UUID("00000000-0000-4000-8000-000000000008")
 
 
 @pytest.fixture
@@ -226,3 +228,125 @@ def test_anlage_ersetzt_und_umbenannt(events: SessionEvents) -> None:
     assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage(version=(2, "b"))})[0].payload["change"] == "replaced"
     assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage(name="Plan.pdf")})[0].payload["change"] == "renamed"
     assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage()}) == []
+
+
+# -- Niederschrift (Issue #535) ---------------------------------------------------------------------------------
+
+
+def niederschrift(status: str, datei: uuid.UUID | None = None, **werte: Any) -> ProtocolState:
+    return ProtocolState(id=PROTOKOLL, meeting_id=SITZUNG, status=status, file_id=datei, **werte)
+
+
+def test_niederschrift_berichtigt_oder_erneuert(events: SessionEvents) -> None:
+    vorher = niederschrift("published", DATEI, file_created_at=datetime(2026, 10, 1, tzinfo=UTC))
+    berichtigt = niederschrift("published", ANTRAG, last_correction_at=datetime(2026, 10, 2, tzinfo=UTC))
+    erneuert = niederschrift("published", ANTRAG, last_correction_at=datetime(2026, 9, 30, tzinfo=UTC))
+    assert events.protocol_drafts(vorher, berichtigt, meeting_full=True)[0].payload["change"] == "corrected"
+    assert events.protocol_drafts(vorher, erneuert, meeting_full=True)[0].payload["change"] == "renewed"
+
+
+def test_niederschrift_nichtoeffentlicher_sitzung_nur_intern(events: SessionEvents) -> None:
+    """Ohne öffentliche Fassung (nichtöffentliche Sitzung) gibt es nichts Öffentliches zu melden."""
+    drafts = events.protocol_drafts(niederschrift("approved"), niederschrift("published"), meeting_full=False)
+    assert drafts == []
+    drafts = events.protocol_drafts(niederschrift("review"), niederschrift("published"), meeting_full=False)
+    assert kurz(drafts) == [("ris.protocol.approved", "Meeting", "nichtoeffentlich")]
+    assert drafts[0].payload["mode"] == "direct"
+
+
+def test_genehmigung_in_der_folgesitzung(events: SessionEvents) -> None:
+    drafts = events.protocol_drafts(
+        niederschrift("review"), niederschrift("approved", approval_meeting_id=ANDERE), meeting_full=True
+    )
+    assert drafts[0].payload["mode"] == "follow_up"
+    assert drafts[0].payload["approved_in"] == str(events.ref("meeting", ANDERE))
+
+
+def test_genehmigung_ohne_gewaehlte_sitzung_ist_folgesitzung(events: SessionEvents) -> None:
+    """``direct`` heißt „ohne Genehmigungsschritt“ (Prüfung → veröffentlicht), nicht „ohne gewählte Sitzung“."""
+    drafts = events.protocol_drafts(niederschrift("review"), niederschrift("approved"), meeting_full=True)
+    assert drafts[0].payload["mode"] == "follow_up"
+    assert "approved_in" not in drafts[0].payload
+    assert drafts[0].payload["protocol"] == str(events.protocol_id(SITZUNG))
+    assert drafts[0].payload["protocol"] != str(PROTOKOLL), "Nie die interne Kennung der Niederschrift"
+
+
+def test_niederschrift_ohne_freischaltung_nichts_oeffentliches(events: SessionEvents) -> None:
+    vorher = niederschrift("published", DATEI, interface_open=False)
+    neu = niederschrift("published", ANTRAG, interface_open=False)
+    assert events.protocol_drafts(vorher, neu, meeting_full=False) == []
+    assert events.protocol_drafts(vorher, niederschrift("approved", interface_open=False), meeting_full=False) == []
+    assert events.protocol_drafts(vorher, None, meeting_full=False) == []
+
+
+# -- Abstimmung und Umsetzung folgen dem TOP (Issue #535) -------------------------------------------------------
+
+
+def beschluss(
+    *, published: bool = True, result: str = "approved", status: str = "open", frei: bool = False
+) -> AgendaItemState:
+    """TOP mit Beschluss; ``frei``: Umsetzungsstand nach der Regel der Beschlusskontrolle öffentlich."""
+    decision = {
+        "result": result,
+        "votingMethod": "summary",
+        "votes": (10, 0, 0),
+        "resolutionNumber": "",
+        "implementationStatus": status,
+    }
+    return AgendaItemState(
+        id=TOP,
+        meeting_id=SITZUNG,
+        published=published,
+        fields={"name": "Radweg", "number": "1", "order": 1, "public": published, "withdrawn": False},
+        decision=decision,
+        implementation_public=frei,
+    )
+
+
+def _arten(drafts: list[Any]) -> list[tuple[str, str, str]]:
+    return [(d.type, d.aggregate_type, d.visibility) for d in drafts]
+
+
+def test_abstimmung_mit_dem_top_zurueckgenommen_und_wieder_veroeffentlicht(events: SessionEvents) -> None:
+    zurueck = events.agenda_drafts({TOP: beschluss()}, {TOP: beschluss(published=False)})
+    assert _arten(zurueck) == [
+        ("ris.object.depublished", "AgendaItem", "oeffentlich"),
+        ("ris.agendaitem.changed", "AgendaItem", "nichtoeffentlich"),
+        ("ris.object.depublished", "Voting", "oeffentlich"),
+    ]
+    assert zurueck[2].payload["reason"] == "nichtoeffentlich"
+
+    wieder = events.agenda_drafts({TOP: beschluss(published=False)}, {TOP: beschluss()})
+    assert _arten(wieder) == [
+        ("ris.agendaitem.changed", "AgendaItem", "oeffentlich"),
+        ("ris.voting.recorded", "Voting", "oeffentlich"),
+    ]
+
+
+def test_geloeschter_top_nimmt_seine_abstimmung_mit(events: SessionEvents) -> None:
+    drafts = events.agenda_drafts({TOP: beschluss(result="rejected")}, {})
+    assert [(d.aggregate_type, d.payload["reason"]) for d in drafts] == [
+        ("AgendaItem", "quelle_geloescht"),
+        ("Voting", "quelle_geloescht"),
+    ]
+    assert events.agenda_drafts({TOP: beschluss(published=False)}, {})[-1].aggregate_type == "AgendaItem"
+
+
+def test_umsetzungsstand_nur_nach_der_regel_der_beschlusskontrolle(events: SessionEvents) -> None:
+    # Ohne Freigabe (Opt-in, angenommen …): intern
+    drafts = events.agenda_drafts({TOP: beschluss()}, {TOP: beschluss(status="done")})
+    assert _arten(drafts) == [("ris.agendaitem.changed", "AgendaItem", "nichtoeffentlich")]
+    # Mit Freigabe: öffentlich, mit früherem Stand nur, wenn auch der öffentlich war
+    drafts = events.agenda_drafts({TOP: beschluss(frei=True)}, {TOP: beschluss(status="done", frei=True)})
+    assert _arten(drafts) == [("ris.resolution.implementation_changed", "AgendaItem", "oeffentlich")]
+    assert drafts[0].payload["previous_status"] == "open"
+    drafts = events.agenda_drafts({TOP: beschluss()}, {TOP: beschluss(frei=True)})
+    assert drafts[0].payload == {"agenda_item": str(events.ref("agendaitem", TOP)), "status": "open"}
+    # Freigabe zurückgenommen, TOP weiter veröffentlicht: öffentlich „neu lesen“, ohne Stand
+    drafts = events.agenda_drafts({TOP: beschluss(frei=True)}, {TOP: beschluss()})
+    assert _arten(drafts) == [("ris.agendaitem.changed", "AgendaItem", "oeffentlich")]
+    assert drafts[0].payload["changed"] == ["implementationStatus"]
+    # TOP nicht mehr veröffentlicht: seine Rücknahme genügt
+    drafts = events.agenda_drafts({TOP: beschluss(frei=True)}, {TOP: beschluss(published=False)})
+    assert "ris.resolution.implementation_changed" not in {d.type for d in drafts}
+    assert all(d.visibility == "nichtoeffentlich" or d.type == "ris.object.depublished" for d in drafts)

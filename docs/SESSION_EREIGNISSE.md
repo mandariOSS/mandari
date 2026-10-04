@@ -15,14 +15,14 @@ Grundlagen: [Ereignistechnik](adr/20260929-ereignistechnik-postgres.md),
 |---|---|---|
 | umgesetzt | Sitzungen, Tagesordnung, Ladung | #533 |
 | umgesetzt | Vorlagen, Beratungsfolge, Anlagen | #534 |
-| offen | Abstimmung, Beschluss, Niederschrift, Rücknahme | #535 |
+| umgesetzt | Abstimmung, Beschluss, Niederschrift, Rücknahme | #535 |
 
 ## Aufbau
 
 - **`apps/session/hub_events.py`** (Session): Schalter und Erfassung. Eine Fachfunktion legt
   `hub_events.track(tenant)` um ihre Änderung und nennt die betroffenen Objekte, **bevor** sie sie ändert
   (`tracked.meeting(...)`, `tracked.agenda(...)`, `tracked.paper(...)`, `tracked.file(...)`,
-  `tracked.invited(...)`). Mit einer Sitzung beobachtet `track` auch ihre Anlagen und die Beratungen in ihr, mit
+  `tracked.protocol(...)`, `tracked.invited(...)`). Mit einer Sitzung beobachtet `track` auch ihre Anlagen und die Beratungen in ihr, mit
   einer Tagesordnung die Anlagen und Beratungen ihrer Punkte, mit einer Vorlage ihre Beratungsfolge, Anlagen und
   die TOPs, auf denen sie steht – deren Sichtbarkeit hängt daran. Am Ende des Blocks liest
   `track` den Zustand erneut und schreibt die Ereignisse in derselben Transaktion.
@@ -85,10 +85,39 @@ Grundlagen: [Ereignistechnik](adr/20260929-ereignistechnik-postgres.md),
 
 Die öffentliche Fassung der Niederschrift ist keine Anlage in diesem Sinn; sie meldet #535.
 
+## Ereignisse je Fachfunktion (#535)
+
+| Fachfunktion | Ereignisse |
+|---|---|
+| Abstimmung erfassen (Erfassung, Sitzungscockpit, Niederschrift bearbeiten) | `ris.voting.recorded` (Art und Ergebnis, nie Einzelstimmen) bei angenommen/abgelehnt, dazu `ris.resolution.adopted` (`changed: [result]`) |
+| Nur Summen korrigiert | `ris.voting.recorded` |
+| Vertagen, zurückziehen, zur Kenntnis nehmen | `ris.resolution.adopted` ohne Abstimmung |
+| Ergebnis zurücknehmen (wieder offen bzw. ohne Abstimmung) | `ris.object.depublished` der Abstimmung (`zurueckgenommen`, nur wenn sie öffentlich war) und `ris.agendaitem.changed` (`result`) bzw. `ris.resolution.adopted` |
+| TOP bzw. Sitzung nach der Abstimmung nichtöffentlich, TOP gelöscht | mit dem TOP auch seine Abstimmung als `ris.object.depublished` (`nichtoeffentlich` bzw. `quelle_geloescht`) |
+| TOP mit Abstimmung wird veröffentlicht | mit dem TOP (`added`) `ris.voting.recorded` (öffentlich) |
+| Beschlussnummern vergeben | `ris.resolution.adopted` (`changed: [resolutionNumber]`) |
+| Beschlusskontrolle | `ris.resolution.implementation_changed` (öffentlich), wenn der Umsetzungsstand nach der Regel der Beschlussseiten im Bürgerportal öffentlich ist: Opt-in der Verwaltung (`SessionTenant.implementation_publish`) und am Beschluss, angenommen, nicht abgesetzt, öffentlicher TOP, Mandant veröffentlicht im Bürgerportal (`decision_tracking.is_publicly_visible`). Sonst `ris.agendaitem.changed` (`implementationStatus`, intern). Wird der Stand öffentlich (Freigabe, Annahme), ist er für die Öffentlichkeit neu; endet das bei weiter veröffentlichtem TOP, meldet `ris.agendaitem.changed` (`implementationStatus`, öffentlich), dass sie den TOP neu lesen soll |
+| Niederschrift anlegen, zur Prüfung geben, zurückweisen | `ris.meeting.changed` (`protocol`, intern) |
+| Niederschrift genehmigen | `ris.protocol.approved` (intern, `mode: follow_up`, mit `approved_in`, wenn die Genehmigungssitzung gewählt ist) |
+| Niederschrift ohne Genehmigungsschritt veröffentlichen (aus der Prüfung) | `ris.protocol.approved` (intern, `mode: direct`), dazu `ris.protocol.published` |
+| Öffentliche Fassung veröffentlichen, erneuern, nach einer Berichtigung neu erzeugen | `ris.protocol.published` (`published`, `renewed`, `corrected`) mit der Datei; eine ersetzte Fassung als `ris.object.depublished` |
+| Öffentlichen Inhalt nach der Veröffentlichung ändern (TOP nichtöffentlich, Sitzung umbenannt …) | nach dem Commit erneuert `refresh_meeting` die Fassung in eigener Erfassung: `ris.protocol.published` (`renewed`) und `ris.object.depublished` der alten Datei |
+| Veröffentlichung zurücknehmen (auch wenn die Sitzung nichtöffentlich wird) | `ris.object.depublished` der Datei (`zurueckgenommen`) und `ris.meeting.changed` (`resultsProtocol`) |
+| Berichtigung übernehmen | wie Abstimmung und Beschluss für die berichtigten TOPs |
+
+Die Abstimmung hat in Session keine eigene Adresse: Ihre Kennung bildet sich aus der Adresse des TOP mit dem
+Zusatz `voting`; im Änderungsfeed erscheint sie am TOP. Ebenso die Niederschrift (`protocol`): Adresse der
+Sitzung mit dem Zusatz `protocol`, nie die interne Kennung. Eine Niederschrift ohne öffentliche Fassung
+(nichtöffentliche Sitzung, Schnittstelle nicht freigeschaltet) meldet nichts Öffentliches.
+
+Umlaufbeschlüsse (`SessionCircularResolution`) melden noch nichts: `ris.resolution.adopted` verlangt einen
+Tagesordnungspunkt und kann sie nicht ausdrücken. Dafür braucht es eine Erweiterung des Vertrags.
+
 Nicht gemeldet, weil das kanonische Modell es nicht kennt: interne Notizen, Zugangsweg der
 Zugeschalteten, Einladungstext, tatsächliche Zeiten im Sitzungsverlauf, Unterpunkt-Zuordnung,
-Geheimhaltungsmerkmal, Frist, federführendes Amt, finanzielle Auswirkungen, Mitzeichnungen. Speichern ohne Änderung
-meldet nichts, ebenso eine ersetzte Anlage mit gleichem Inhalt.
+Geheimhaltungsmerkmal, Frist, federführendes Amt, finanzielle Auswirkungen, Mitzeichnungen, Umlaufbeschlüsse (siehe
+oben). Speichern ohne Änderung meldet nichts, ebenso eine ersetzte Anlage mit gleichem Inhalt. Umschalten am
+Mandanten (Freischaltung, Veröffentlichung des Umsetzungsstands) meldet ebenfalls nichts.
 
 ## Kennungen und Hülle
 
@@ -98,7 +127,8 @@ meldet nichts, ebenso eine ersetzte Anlage mit gleichem Inhalt.
 - Mandant `session:<uuid>`, `body_id` die kanonische Kennung des Body der Schnittstelle (bis #758 einer je
   Mandant). Damit nennt der Änderungsfeed der Session-Schnittstelle und des Aggregators die Ereignisse.
 - Ausnahme: `submission` in `ris.paper.created` ist die Kennung der Einreichung in Session (wie in `submission.*`).
-- Auslöser ist das angemeldete Konto (`user:<uuid>`), nie ein Name.
+- Auslöser ist das angemeldete Konto (`user:<uuid>`), nie ein Name; im Befehl
+  `session_publish_protocols` `system:niederschriften` mit einer Korrelation für den ganzen Lauf.
 - Ausnahme: `dispatch` in `ris.meeting.invited` ist die Kennung des Versandvorgangs in Session (kein
   Objekt des kanonischen Modells).
 
@@ -156,5 +186,7 @@ Beratungen je Vorlage in der Reihenfolge der Stationen, Anlagen, dann ausdrückl
   Schattenbetrieb und Atomarität, Ankunft im Änderungsfeed der Session-Schnittstelle.
 - `apps/session/tests/test_drehscheibe_vorlagen.py`: Vorlagen, Freigabelauf, Rücknahme samt Stationen und
   Anlagen, Antrag, Beratungsfolge, Terminieren, Anlagen.
+- `apps/session/tests/test_drehscheibe_beschluesse.py`: Abstimmung, Vertagung, Rücknahme eines Ergebnisses,
+  nichtöffentliche TOPs, Beschlussnummer, Beschlusskontrolle, Niederschrift vom Entwurf bis zur Rücknahme.
 - `hub/ris/tests/test_session_events.py`: Übergänge der Sichtbarkeit ohne Datenbank.
 - Jedes Ereignis prüft `publish()` in Tests gegen seinen Vertrag (`EVENTS_VALIDATE_CONTRACTS`).

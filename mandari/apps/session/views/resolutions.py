@@ -25,7 +25,7 @@ from django.views.generic import TemplateView
 from apps.common import csv_safety
 from apps.common.params import uuid_param
 
-from .. import audit
+from .. import audit, hub_events
 from ..models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionResolutionForwarding
 from ..permissions import SessionViewMixin
 from ..services import four_eyes_service, resolution_service
@@ -366,19 +366,22 @@ class ResolutionTrackingUpdateView(SessionViewMixin, View):
         item.implementation_public = request.POST.get("public") != "0"
         item.implementation_updated_at = timezone.now()
         item.implementation_updated_by = self.session_user
-        item.save(
-            update_fields=[
-                "implementation_status",
-                "implementation_recipient",
-                "implementation_deadline",
-                "implementation_note",
-                "implementation_public_note",
-                "implementation_public",
-                "implementation_updated_at",
-                "implementation_updated_by",
-                "updated_at",
-            ]
-        )
+        # Drehscheibe (Issue #535): Umsetzungsstand (öffentlich nur, wenn zur Veröffentlichung freigegeben)
+        with hub_events.track(self.session_tenant) as tracked:
+            tracked.agenda(item.meeting)
+            item.save(
+                update_fields=[
+                    "implementation_status",
+                    "implementation_recipient",
+                    "implementation_deadline",
+                    "implementation_note",
+                    "implementation_public_note",
+                    "implementation_public",
+                    "implementation_updated_at",
+                    "implementation_updated_by",
+                    "updated_at",
+                ]
+            )
 
         audit.log_event(
             "update",
