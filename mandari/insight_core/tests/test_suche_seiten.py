@@ -47,7 +47,13 @@ class _FakeElasticsearch:
             if "highlight" in body:
                 hit["highlight"] = {"name": [f"<mark>Dokument</mark> {doc_id}"]}
             hits.append(hit)
-        return {"hits": {"hits": hits, "total": {"value": len(self.daten[index]), "relation": "eq"}}}
+        bester = max((score for _doc_id, score in self.daten[index]), default=None)
+        gesamt = len(self.daten[index])
+        return {"hits": {"hits": hits, "total": {"value": gesamt, "relation": "eq"}, "max_score": bester}}
+
+    def count(self, index: str, query: dict[str, Any], min_score: float = 0.0, **_: Any) -> dict[str, int]:
+        self.aufrufe.append((index, {"count": query, "min_score": min_score}))
+        return {"count": sum(1 for _doc_id, score in self.daten[index] if score >= min_score)}
 
 
 def _dienst(daten: dict[str, list[tuple[str, float]]]) -> tuple[ElasticsearchService, _FakeElasticsearch]:
@@ -92,13 +98,14 @@ def test_inhalte_nur_fuer_die_angezeigte_seite() -> None:
 
     dienst.search_all("Radweg", page=2, page_size=20, index_names=["papers", "files"])
 
-    rangfolge = [body for _index, body in client.aufrufe if "highlight" not in body]
+    rangfolge = [body for _index, body in client.aufrufe if "highlight" not in body and "count" not in body]
     inhalte = [body for _index, body in client.aufrufe if "highlight" in body]
     assert all(body["_source"] is False and body["size"] == 40 for body in rangfolge)
     assert sum(body["size"] for body in inhalte) == 20
 
 
-def test_suchtiefe_ist_begrenzt() -> None:
+def test_suchtiefe_ist_begrenzt(settings: Any) -> None:
+    settings.SEARCH_MIN_RELEVANCE = 0  # die künstlichen Werte fallen bis ins Negative; hier zählt nur die Tiefe
     dienst, client = _dienst({"papers": _vorgaenge(3000)})
     letzte_seite = MAX_RESULT_DEPTH // 20
 
@@ -110,4 +117,4 @@ def test_suchtiefe_ist_begrenzt() -> None:
     dahinter = dienst.search_all("Radweg", page=letzte_seite + 1, page_size=20, index_names=["papers"])
     assert dahinter["results"] == []
     assert dahinter["total"] == 3000
-    assert all(body["size"] == 0 for _index, body in client.aufrufe)
+    assert all(body.get("size", 0) == 0 for _index, body in client.aufrufe)
