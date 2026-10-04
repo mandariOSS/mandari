@@ -8,7 +8,7 @@
  */
 
 import { defineComponent } from '../js/alpine/component'
-import { PLACE_STYLE, popupContent } from '../js/paper-map'
+import { placeStyle, popupContent } from '../js/paper-map'
 
 type LatLng = [number, number]
 
@@ -186,7 +186,7 @@ export const neighborhoodApp = defineComponent(() => ({
           const lat = number(item.dataset.paperLat)
           const lon = number(item.dataset.paperLon)
           if (lat === null || lon === null) continue
-          const marker = L.circleMarker([lat, lon], PLACE_STYLE)
+          const marker = L.circleMarker([lat, lon], placeStyle())
           if (item.dataset.paperTitle) marker.bindPopup(popupContent(item.dataset.paperTitle))
           this._resultLayers.push(marker.addTo(map))
         }
