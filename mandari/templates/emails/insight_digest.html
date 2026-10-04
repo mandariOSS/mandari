@@ -1,8 +1,8 @@
 {% extends "emails/base_email.html" %}
-{% block subject %}Dein Mandari-Digest{% endblock %}
+{% block subject %}Ihr mandari-Digest{% endblock %}
 {% block preheader %}{{ subscriber.body.get_display_name }} — {{ alert_count }} neue{{ alert_count|pluralize:"r,n" }} Treffer{% endblock %}
 {% block content %}
-<h1 class="h1">Dein Mandari-Digest</h1>
+<h1 class="h1">Ihr mandari-Digest</h1>
 <p class="muted">{{ subscriber.body.get_display_name }} &mdash; {{ alert_count }} neue{{ alert_count|pluralize:"r,n" }} Treffer</p>
 {% if neighborhood_alerts %}
 <h2 class="h2">&#127968; Nachbarschaft{% if subscriber.neighborhood_name %} &mdash; {{ subscriber.neighborhood_name }}{% endif %}</h2>

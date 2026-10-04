@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return ['cursor-pointer'];
         },
         height: 'auto',
-        eventColor: '#6366f1',
+        eventColor: 'rgb(var(--primary-600))',  // Kennfarbe (Issue #783)
         eventTextColor: '#ffffff',
         nowIndicator: true,
         dayMaxEvents: 3,
@@ -117,20 +117,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <style nonce="{{ csp_nonce }}">
     .fc {
-        --fc-today-bg-color: rgba(99, 102, 241, 0.1);
+        --fc-today-bg-color: rgb(var(--primary-600) / 0.08);
     }
     .fc .fc-button-primary {
-        background-color: #6366f1;
-        border-color: #6366f1;
+        background-color: rgb(var(--primary-600));
+        border-color: rgb(var(--primary-600));
     }
     .fc .fc-button-primary:hover {
-        background-color: #4f46e5;
-        border-color: #4f46e5;
+        background-color: rgb(var(--primary-700));
+        border-color: rgb(var(--primary-700));
     }
     .fc .fc-button-primary:not(:disabled).fc-button-active,
     .fc .fc-button-primary:not(:disabled):active {
-        background-color: #4338ca;
-        border-color: #4338ca;
+        background-color: rgb(var(--primary-800));
+        border-color: rgb(var(--primary-800));
     }
     .dark .fc-theme-standard td,
     .dark .fc-theme-standard th {
@@ -185,8 +185,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     /* Dark mode Event-Farben */
     .dark .fc-event {
-        background-color: #6366f1 !important;
-        border-color: #6366f1 !important;
+        background-color: rgb(var(--primary-600)) !important;
+        border-color: rgb(var(--primary-600)) !important;
     }
 </style>
 {% endblock %}
