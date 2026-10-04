@@ -13,15 +13,18 @@ Meeting         ``ris.meeting.scheduled`` (neu erkannt), ``ris.meeting.changed``
 Paper           ``ris.paper.released`` (neu erkannt), ``ris.paper.changed``
 AgendaItem      ``ris.agendaitem.changed`` (``added``, ``changed``, ``moved``, ``deleted``)
 Consultation    ``ris.consultation.changed`` (``added``, ``scheduled``, ``changed``)
-File            ``ris.file.changed`` (``added``, ``replaced``, ``renamed``)
+File            ``ris.file.changed`` (``added``, ``replaced``, ``renamed``),
+                ``ris.file.text_extracted`` (Text erkannt, Sichtbarkeit ``intern``)
+Organization    ``ris.organization.changed`` (``added``, ``changed``)
+Person          ``ris.person.changed`` (``added``, ``changed``)
 alle Typen      ``ris.object.depublished`` (Löschmarkierung der Quelle)
 ==============  =====================================================================
 
 Die Löschmarkierung eines nichtöffentlichen Tagesordnungspunkts ist keine Rücknahme (öffentliche
 Empfänger haben ihn nie gesehen): Sie erscheint als ``ris.agendaitem.changed`` mit ``deleted``.
 
-Für Gremien, Personen, Mitgliedschaften, Orte, Wahlperioden und Kommunen gibt es noch keinen
-Vertrag für Änderungen; sie melden nur ihre Löschmarkierung.
+Für Mitgliedschaften, Orte, Wahlperioden und Kommunen gibt es noch keinen Vertrag für Änderungen;
+sie melden nur ihre Löschmarkierung.
 
 Regeln:
 
@@ -55,7 +58,9 @@ Regeln:
   (``public: false``): Ihre Ereignisse sind ``nichtoeffentlich``. Wird ein bisher öffentlicher Punkt
   nichtöffentlich, meldet zusätzlich ``ris.object.depublished`` (Grund ``nichtoeffentlich``) die
   Rücknahme an öffentliche Empfänger; wird er öffentlich, erscheint er ihnen als ``added``. Löscht
-  die Quelle einen nichtöffentlichen Punkt, bleibt auch diese Meldung ``nichtoeffentlich``.
+  die Quelle einen nichtöffentlichen Punkt, bleibt auch diese Meldung ``nichtoeffentlich``. Die
+  Texterkennung (``ris.file.text_extracted``) ist laut Vertrag ``intern``: eine Anreicherung des
+  Bestands, keine Veröffentlichung der Quelle; die Nutzlast nennt nur Datei, Verfahren und Länge.
 
 Dieses Modul braucht nur die Standardbibliothek und ``mandari_oparl``; die Vertragstests der
 Drehscheibe laden es ohne die übrige Umgebung des Ingestors
@@ -78,6 +83,7 @@ VERSION: Final = 1
 
 OEFFENTLICH: Final = "oeffentlich"
 NICHTOEFFENTLICH: Final = "nichtoeffentlich"
+INTERN: Final = "intern"
 UPSERT: Final = "upsert"
 DELETE: Final = "delete"
 
@@ -129,6 +135,10 @@ FILE_NAME_FIELDS: Final = frozenset({"name", "fileName"})
 
 #: Feldnamen, wie sie die Verträge in ``changed`` zulassen.
 _FIELD_NAME: Final = re.compile(r"^[a-z][A-Za-z0-9_]{0,63}$")
+#: Verfahren der Texterkennung als Code (Vertrag ``ris.file.text_extracted``, Feld ``method``).
+_METHOD: Final = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+#: Verfahren, wenn der Code nicht darstellbar ist.
+METHOD_UNKNOWN: Final = "unbekannt"
 MAX_CHANGED: Final = 64
 MAX_ORGANIZATIONS: Final = 50
 
@@ -425,6 +435,51 @@ def file_events(
         if ref is not None:
             payload[name] = ref
     return [Draft("ris.file.changed", "File", file_id, payload)]
+
+
+def _changed_events(
+    event_type: str, aggregate_type: str, key: str, object_id: UUID, raw: Mapping[str, Any], prior: Prior | None
+) -> list[Draft]:
+    """``added`` für ein neu erkanntes oder wieder geliefertes Objekt, sonst ``changed`` mit den geänderten Feldern."""
+    payload: dict[str, Any] = {key: str(object_id)}
+    if prior is None or prior.deleted:
+        payload["change"] = "added"
+        return [Draft(event_type, aggregate_type, object_id, payload)]
+    names = field_names(differing_keys(prior.raw_json, raw))
+    if not names:
+        return []
+    payload["change"] = "changed"
+    payload["changed"] = names
+    return [Draft(event_type, aggregate_type, object_id, payload)]
+
+
+def organization_events(organization_id: UUID, raw: Mapping[str, Any], prior: Prior | None) -> list[Draft]:
+    """``ris.organization.changed``: Gremium neu erkannt (``added``) oder geändert (``changed``)."""
+    return _changed_events("ris.organization.changed", "Organization", "organization", organization_id, raw, prior)
+
+
+def person_events(person_id: UUID, raw: Mapping[str, Any], prior: Prior | None) -> list[Draft]:
+    """``ris.person.changed``: Person neu erkannt (``added``) oder geändert (``changed``)."""
+    return _changed_events("ris.person.changed", "Person", "person", person_id, raw, prior)
+
+
+def method_code(method: str | None) -> str:
+    """Verfahren der Texterkennung als Code des Vertrags; nicht darstellbare werden ``METHOD_UNKNOWN``."""
+    code = (method or "").strip().lower()
+    return code if _METHOD.fullmatch(code) else METHOD_UNKNOWN
+
+
+def text_extracted_events(file_id: UUID, method: str | None, characters: int | None = None) -> list[Draft]:
+    """
+    ``ris.file.text_extracted``: Der Text einer Datei liegt vor (Sichtbarkeit ``intern``).
+
+    Nur für eine Erkennung mit Text; ohne Text ändert sich am Bestand nichts, was ein Empfänger lesen könnte.
+    Die Nutzlast nennt nie den Text selbst, nur seine Länge.
+    """
+    payload: dict[str, Any] = {"file": str(file_id), "method": method_code(method)}
+    if characters is not None and characters >= 0:
+        payload["characters"] = characters
+    return [Draft("ris.file.text_extracted", "File", file_id, payload, INTERN)]
 
 
 def depublished_draft(entity_type: str, object_id: UUID, reason: str = REASON_DELETED_AT_SOURCE) -> Draft:

@@ -152,7 +152,7 @@ def _body_id(row: Any) -> uuid.UUID | None:
     return getattr(row, "body_id", None)
 
 
-def _source_id(body_id: uuid.UUID | None) -> uuid.UUID | None:
+def event_source_id(body_id: uuid.UUID | None) -> uuid.UUID | None:
     """Quelle der Kommune, sofern sie Ereignisse schreibt; sonst ``None``."""
     if body_id is None:
         return None
@@ -172,7 +172,7 @@ def _report(row: Any, reason: str) -> int:
     if aggregate_type is None or not events_enabled():
         return 0
     body_id = _body_id(row)
-    source_id = _source_id(body_id)
+    source_id = event_source_id(body_id)
     if source_id is None:
         return 0
     public = not isinstance(row, OParlAgendaItem) or row.public is not False

@@ -24,7 +24,7 @@ from django.test import override_settings
 from django.utils import timezone
 from mandari_dokumente import ExtractionResult, OcrMemoryLimitError
 
-from apps.events.models import Task, TaskStatus
+from apps.events.models import Event, Task, TaskStatus
 from insight_core.background_tasks import file_extract_text
 from insight_core.models import OParlBody, OParlFile, OParlSource
 from insight_core.services import document_extraction, file_cache, text_extraction_job
@@ -170,6 +170,52 @@ def test_auftrag_erkennt_text_und_speichert(body: OParlBody, tmp_path: Path) -> 
     assert not geladen.path.exists(), "temporäre Datei aufgeräumt"
     # Wiederholt zugestellt: erledigte Datei wird übersprungen
     assert text_extraction_job.extract_file(str(datei.pk)) == text_extraction_job.NICHT_ZU_TUN
+
+
+@pytest.mark.django_db
+def test_auftrag_meldet_erkannten_text_intern(body: OParlBody, tmp_path: Path, settings: Any) -> None:
+    """``ris.file.text_extracted`` wie im Ingestor (Issue #821): nur mit Text, intern, ohne den Text selbst."""
+    settings.INGESTOR_EVENTS_ENABLED = True
+    mit_text, ohne_text = (
+        _datei(body, text_extraction_status="processing"),
+        _datei(body, text_extraction_status="processing"),
+    )
+    ergebnisse = [ExtractionResult("Beschluss zum Radweg", "tesseract", 3), ExtractionResult("", "none", 1)]
+
+    with (
+        mock.patch.object(document_extraction, "download_to_file", side_effect=lambda *a, **k: _geladen(tmp_path)),
+        mock.patch.object(text_extraction_job, "extract_text", side_effect=ergebnisse),
+    ):
+        assert text_extraction_job.extract_file(str(mit_text.pk)) == text_extraction_job.ERLEDIGT
+        assert text_extraction_job.extract_file(str(ohne_text.pk)) == text_extraction_job.OHNE_TEXT
+
+    (ereignis,) = Event.objects.filter(type="ris.file.text_extracted")
+    assert (ereignis.aggregate_type, ereignis.aggregate_id, ereignis.body_id) == ("File", mit_text.pk, body.pk)
+    assert (ereignis.visibility, ereignis.tenant_ref) == ("intern", f"source:{body.source_id}")
+    assert ereignis.payload == {"file": str(mit_text.pk), "method": "tesseract", "characters": 20}
+
+
+@pytest.mark.django_db
+def test_ohne_schalter_oder_bei_fehler_bleibt_das_ergebnis_ohne_ereignis(
+    body: OParlBody, tmp_path: Path, settings: Any
+) -> None:
+    datei = _datei(body, text_extraction_status="processing")
+    ergebnis = ExtractionResult("Beschluss zum Radweg", "pypdf", 1)
+    with (
+        mock.patch.object(document_extraction, "download_to_file", side_effect=lambda *a, **k: _geladen(tmp_path)),
+        mock.patch.object(text_extraction_job, "extract_text", return_value=ergebnis),
+    ):
+        assert text_extraction_job.extract_file(str(datei.pk)) == text_extraction_job.ERLEDIGT
+        assert not Event.objects.exists()  # INGESTOR_EVENTS_ENABLED aus
+
+        settings.INGESTOR_EVENTS_ENABLED = True
+        OParlFile.objects.filter(pk=datei.pk).update(text_extraction_status="processing")
+        with mock.patch("hub.ris.text_extraction.publish", side_effect=RuntimeError("Journal nicht erreichbar")):
+            assert text_extraction_job.extract_file(str(datei.pk)) == text_extraction_job.ERLEDIGT
+
+    datei.refresh_from_db()
+    assert (datei.text_extraction_status, datei.text_content) == ("completed", "Beschluss zum Radweg")
+    assert not Event.objects.exists()
 
 
 @pytest.mark.django_db

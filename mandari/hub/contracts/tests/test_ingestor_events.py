@@ -28,7 +28,7 @@ TENANT = "source:3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d"
 BODY = uuid.UUID("7e8f9a0b-1c2d-5e3f-8a4b-5c6d7e8f9a0b")
 BASE = "https://ris.example.org/oparl"
 MEETING, PAPER, ITEM, FILE = (f"{BASE}/{art}/1" for art in ("meeting", "paper", "agendaitem", "file"))
-CONSULTATION, ORG = f"{BASE}/consultation/1", f"{BASE}/organization/1"
+CONSULTATION, ORG, PERSON = f"{BASE}/consultation/1", f"{BASE}/organization/1", f"{BASE}/person/1"
 
 
 def _laden() -> ModuleType:
@@ -56,6 +56,8 @@ def _alle_ereignisse() -> list[tuple[str, Any]]:
     punkt = {"id": ITEM, "number": "1", "name": "Mehr Bänke im Park", "public": True}
     beratung = {"id": CONSULTATION, "role": "Vorberatung", "organization": [ORG]}
     datei = {"id": FILE, "name": "Anlage 1", "accessUrl": f"{FILE}/download", "size": 1000}
+    gremium = {"id": ORG, "name": "Rat", "organizationType": "Gremium", "membership": [f"{BASE}/membership/1"]}
+    person = {"id": PERSON, "name": "Ratsmitglied", "familyName": "Muster", "membership": [f"{BASE}/membership/1"]}
     viele_felder = vorlage | {f"feld{i:03d}": i for i in range(100)} | {"mandari:publicAccess": "stream"}
     sitzung_id, vorlage_id, punkt_id = cid(MEETING), cid(PAPER), cid(ITEM)
     gruppen: dict[str, list[Any]] = {
@@ -118,6 +120,17 @@ def _alle_ereignisse() -> list[tuple[str, Any]]:
         "Datei ersetzt": ris_events.file_events(cid(FILE), datei | {"size": 2000}, Prior(datei)),
         "Datei umbenannt": ris_events.file_events(cid(FILE), datei | {"name": "Anlage A"}, Prior(datei)),
         "Datei erstmals an einer Vorlage": ris_events.file_events(cid(FILE), datei, Prior(datei), paper_id=vorlage_id),
+        "Text erkannt": ris_events.text_extracted_events(cid(FILE), "tesseract", 18342),
+        "Text erkannt, Verfahren nicht darstellbar": ris_events.text_extracted_events(cid(FILE), "OCR (alt)", None),
+        "Gremium neu": ris_events.organization_events(cid(ORG), gremium, None),
+        "Gremium wieder geliefert": ris_events.organization_events(cid(ORG), gremium, Prior(gremium, deleted=True)),
+        "Gremium umbenannt": ris_events.organization_events(
+            cid(ORG), gremium | {"name": "Rat der Stadt"}, Prior(gremium)
+        ),
+        "Person neu": ris_events.person_events(cid(PERSON), person, None),
+        "Person geändert": ris_events.person_events(
+            cid(PERSON), person | {"title": ["Dr."], "membership": [f"{BASE}/membership/2"]}, Prior(person)
+        ),
         "Löschmarkierung eines nichtöffentlichen Punkts": ris_events.depublished_events(
             "agendaitem", punkt_id, public=False, meeting_id=sitzung_id
         ),
@@ -134,7 +147,7 @@ EREIGNISSE = _alle_ereignisse()
 
 def test_jeder_weg_bildet_ein_ereignis() -> None:
     namen = {name for name, _ in EREIGNISSE}
-    assert len(namen) == 24 + len(ris_events.AGGREGATE_TYPES)
+    assert len(namen) == 31 + len(ris_events.AGGREGATE_TYPES)
     # Wechsel in den nichtöffentlichen Teil: Rücknahme für öffentliche Empfänger und die Änderung selbst
     assert [e.type for name, e in EREIGNISSE if name == "Punkt wird nichtöffentlich"] == [
         "ris.object.depublished",
@@ -178,6 +191,9 @@ def test_ingestor_meldet_nur_vertraege_der_drehscheibe() -> None:
         ("ris.agendaitem.changed", 1),
         ("ris.consultation.changed", 1),
         ("ris.file.changed", 1),
+        ("ris.file.text_extracted", 1),
+        ("ris.organization.changed", 1),
+        ("ris.person.changed", 1),
         ("ris.object.depublished", 1),
     }
     for typ, version in typen:
@@ -194,9 +210,44 @@ def test_loeschmarkierung_kennt_jeden_typ_des_vertrags_ausser_der_abstimmung() -
 def test_feldnamen_wie_im_vertrag() -> None:
     """Das Muster für ``changed`` ist im Ingestor dasselbe wie in den Verträgen."""
     register = get_registry()
-    for typ in ("ris.paper.changed", "ris.meeting.changed", "ris.agendaitem.changed", "ris.consultation.changed"):
+    for typ in (
+        "ris.paper.changed",
+        "ris.meeting.changed",
+        "ris.agendaitem.changed",
+        "ris.consultation.changed",
+        "ris.organization.changed",
+        "ris.person.changed",
+    ):
         changed = register.schema(typ, 1)["properties"]["changed"]
         assert changed["items"]["pattern"] == ris_events._FIELD_NAME.pattern
         assert changed["maxItems"] == ris_events.MAX_CHANGED
     organisationen = register.schema("ris.meeting.changed", 1)["properties"]["organizations"]
     assert organisationen["maxItems"] == ris_events.MAX_ORGANIZATIONS
+
+
+def test_gremium_und_person_nur_bei_fachlicher_aenderung() -> None:
+    """Derselbe Vergleich wie für die übrigen Typen (#822): Reihenfolge, leere Werte und Zeitstempel zählen nicht."""
+    gremium = {"id": ORG, "name": "Rat", "membership": [f"{BASE}/membership/1", f"{BASE}/membership/2"]}
+    gleich = gremium | {"membership": gremium["membership"][::-1], "website": "", "modified": "2026-10-05T08:00:00Z"}
+    assert ris_events.organization_events(cid(ORG), gleich, Prior(gremium)) == []
+    person = {"id": PERSON, "name": "Ratsmitglied", "title": []}
+    assert ris_events.person_events(cid(PERSON), person | {"title": None}, Prior(person)) == []
+    (umbenannt,) = ris_events.organization_events(cid(ORG), gremium | {"name": "Rat der Stadt"}, Prior(gremium))
+    assert umbenannt.payload == {"organization": str(cid(ORG)), "change": "changed", "changed": ["name"]}
+
+
+def test_texterkennung_wie_im_auftrag_der_anwendung() -> None:
+    """Ingestor und Auftrag ``file.extract_text`` (``hub.ris.text_extraction``) melden denselben Text gleich."""
+    from hub.ris import text_extraction
+
+    vertrag = get_registry().schema("ris.file.text_extracted", 1)["properties"]["method"]
+    assert vertrag["pattern"] == ris_events._METHOD.pattern == text_extraction._METHOD.pattern
+    assert ris_events.METHOD_UNKNOWN == text_extraction.METHOD_UNKNOWN
+    for verfahren, zeichen in (("pypdf", 18342), ("Tesseract", 12), ("OCR (alt)", 0), (None, None), ("x" * 40, 5)):
+        (ereignis,) = ris_events.text_extracted_events(cid(FILE), verfahren, zeichen)
+        assert ereignis.payload == text_extraction.payload(cid(FILE), verfahren, zeichen)
+        assert (ereignis.type, ereignis.visibility, ereignis.aggregate_type) == (
+            text_extraction.TEXT_EXTRACTED,
+            "intern",
+            "File",
+        )

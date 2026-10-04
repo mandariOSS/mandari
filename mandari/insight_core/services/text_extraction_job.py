@@ -280,7 +280,16 @@ def _defer(file: OParlFile) -> str:
 
 
 def _store_result(file: OParlFile, result: ExtractionResult, sha256: str | None) -> None:
-    """Ergebnis über ``save()`` speichern: der Suchindex folgt wie bei ``extract_texts`` (Signal)."""
+    """
+    Ergebnis über ``save()`` speichern: der Suchindex folgt wie bei ``extract_texts`` (Signal).
+
+    Mit Text meldet ``ris.file.text_extracted`` das Ergebnis in derselben Transaktion wie im Ingestor
+    (``hub.ris.text_extraction``, Issue #821). Scheitert nur das Ereignis, gilt das Ergebnis trotzdem
+    (eigener Sicherungspunkt): Eine wiederholte Erkennung kostet mehr als ein fehlendes Ereignis, das der
+    Vollbau des Schattenindex nachholt. Protokolliert wird nur die Kennung der Datei.
+    """
+    from hub.ris.text_extraction import report_text_extracted
+
     file.text_extraction_status = "completed"
     file.text_extraction_method = result.method or METHOD_NONE
     file.text_extraction_error = "; ".join(result.notes)[:500] or None
@@ -305,7 +314,16 @@ def _store_result(file: OParlFile, result: ExtractionResult, sha256: str | None)
     if result.text:
         file.text_content = result.text
         felder.append("text_content")
-    file.save(update_fields=felder)
+    with transaction.atomic():
+        file.save(update_fields=felder)
+        if result.text:
+            try:
+                with transaction.atomic():
+                    report_text_extracted(
+                        file.pk, file.body_id, method=file.text_extraction_method, characters=len(result.text)
+                    )
+            except Exception:
+                logger.exception("Texterkennung der Datei %s ohne Ereignis im Journal", file.pk)
 
 
 def extract_file(file_id: str) -> str:

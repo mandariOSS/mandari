@@ -10,6 +10,13 @@ from src import observability
 from src.storage.database import DatabaseStorage
 
 
+class _Result:
+    """Ergebnis des Updates: keine Zeile (die Datei gibt es hier nicht), also auch kein Ereignis."""
+
+    def scalar_one_or_none(self) -> None:
+        return None
+
+
 class _Session:
     def __init__(self, calls: list[Any]) -> None:
         self.calls = calls
@@ -20,8 +27,9 @@ class _Session:
     async def __aexit__(self, *exc: object) -> None:
         return None
 
-    async def execute(self, stmt: Any) -> None:
+    async def execute(self, stmt: Any) -> _Result:
         self.calls.append(stmt.compile().params)
+        return _Result()
 
     async def commit(self) -> None:
         return None

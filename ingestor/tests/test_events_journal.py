@@ -444,7 +444,8 @@ async def test_gremien_der_sitzung_in_der_transaktion_des_ereignisses(bestand: B
     org_id = await bestand.gremium()
     meeting_id = await bestand.meeting(organization=[ORG])
 
-    (ereignis,) = await bestand.ereignisse()
+    gremium, ereignis = await bestand.ereignisse()
+    assert gremium["type"] == "ris.organization.changed"
     assert ereignis["type"] == "ris.meeting.scheduled"
     assert ereignis["payload"] == {"meeting": str(meeting_id), "organizations": [str(org_id)]}
     assert await bestand.wert(GREMIEN_DER_SITZUNG.format("oparlorganization_id"), id=meeting_id) == org_id
@@ -461,7 +462,7 @@ async def test_gremien_der_sitzung_in_der_transaktion_des_ereignisses(bestand: B
 
     # Vollabgleich ohne Änderung: gleiche Zuordnung, kein Ereignis
     await bestand.meeting(organization=[ORG], name="Rat (Sondersitzung)")
-    assert len(await bestand.ereignisse()) == 2
+    assert len(await bestand.ereignisse()) == 3
 
 
 async def test_scheitert_das_ereignis_bleibt_auch_die_zuordnung_der_gremien_aus(
@@ -486,7 +487,7 @@ async def test_gremium_erst_spaeter_im_bestand_meldet_die_sitzung(bestand: Besta
 
     org_id = await bestand.gremium()
     await bestand.meeting(organization=[ORG])
-    _, ereignis = await bestand.ereignisse()
+    _, _, ereignis = await bestand.ereignisse()
     assert ereignis["type"] == "ris.meeting.changed"
     assert ereignis["payload"] == {
         "meeting": str(meeting_id),
@@ -497,7 +498,7 @@ async def test_gremium_erst_spaeter_im_bestand_meldet_die_sitzung(bestand: Besta
     assert await bestand.wert(GREMIEN_DER_SITZUNG.format("xmin::text"), id=meeting_id) == ereignis["xid_text"]
 
     await bestand.meeting(organization=[ORG])
-    assert len(await bestand.ereignisse()) == 2
+    assert len(await bestand.ereignisse()) == 3
 
 
 async def test_orte_der_vorlage_in_der_transaktion_des_ereignisses(bestand: Bestand) -> None:
@@ -805,7 +806,7 @@ async def test_loeschmarkierung_eines_nichtoeffentlichen_punkts_wird_nicht_oeffe
 
 
 async def test_loeschmarkierung_von_gremium_person_und_mitgliedschaft(bestand: Bestand) -> None:
-    """Auch Typen ohne eigenes Änderungsereignis melden ihre Rücknahme."""
+    """Gremien und Personen melden Neues (#821), Mitgliedschaften nicht; alle drei melden ihre Rücknahme."""
     org_url, person_url, mitgliedschaft_url = f"{BASE}/organization/1", f"{BASE}/person/1", f"{BASE}/membership/1"
     verarbeiter = bestand.processor
     organisation = {"id": org_url, "type": "https://schema.oparl.org/1.1/Organization", "name": "Rat"}
@@ -821,16 +822,98 @@ async def test_loeschmarkierung_von_gremium_person_und_mitgliedschaft(bestand: B
     assert await bestand.storage.upsert_membership(
         verarbeiter.process_membership(mitgliedschaft, BODY), bestand.body_id
     )
-    # Für Änderungen an diesen Typen gibt es noch keinen Vertrag.
-    assert await bestand.ereignisse() == []
+    # Für Änderungen an Mitgliedschaften gibt es noch keinen Vertrag.
+    assert [(e["type"], e["payload"]["change"]) for e in await bestand.ereignisse()] == [
+        ("ris.organization.changed", "added"),
+        ("ris.person.changed", "added"),
+    ]
 
     for typ, url in (("membership", mitgliedschaft_url), ("person", person_url), ("organization", org_url)):
         assert await bestand.storage.mark_entity_deleted(typ, url) == canonical_id(url)
 
-    ereignisse = await bestand.ereignisse()
+    ereignisse = (await bestand.ereignisse())[2:]
     assert [e["payload"]["object_type"] for e in ereignisse] == ["Membership", "Person", "Organization"]
     assert {e["type"] for e in ereignisse} == {"ris.object.depublished"}
     assert {e["body_id"] for e in ereignisse} == {bestand.body_id}
+
+
+async def test_gremium_und_person_melden_neu_geaendert_und_wieder_geliefert(bestand: Bestand) -> None:
+    """``ris.organization.changed`` und ``ris.person.changed`` (#821): fachlicher Vergleich wie bei den übrigen."""
+    verarbeiter = bestand.processor
+    person_url = f"{BASE}/person/1"
+    mitglieder = [f"{BASE}/membership/1", f"{BASE}/membership/2"]
+
+    async def gremium(**felder: Any) -> uuid.UUID:
+        daten = {"id": ORG, "type": "https://schema.oparl.org/1.1/Organization", "name": "Rat", **felder}
+        return await bestand.storage.upsert_organization(verarbeiter.process_organization(daten, BODY), bestand.body_id)
+
+    async def person(**felder: Any) -> uuid.UUID:
+        daten = {"id": person_url, "type": "https://schema.oparl.org/1.1/Person", "name": "Ratsmitglied", **felder}
+        return await bestand.storage.upsert_person(verarbeiter.process_person(daten, BODY), bestand.body_id)
+
+    org_id = await gremium(membership=mitglieder, modified="2026-09-01T10:00:00+02:00")
+    person_id = await person(familyName="Muster")
+    # Andere Reihenfolge, leere Werte, neuer Zeitstempel: keine Änderung
+    await gremium(membership=mitglieder[::-1], website="", modified="2026-09-30T10:00:00+02:00")
+    await person(familyName="Muster", title=[])
+    assert len(await bestand.ereignisse()) == 2
+
+    await gremium(membership=mitglieder, name="Rat der Stadt", modified="2026-10-01T09:00:00+02:00")
+    await person(familyName="Beispiel", title=["Dr."])
+    *_, umbenannt, geaendert = await bestand.ereignisse()
+    assert (umbenannt["type"], umbenannt["aggregate_type"], umbenannt["aggregate_id"]) == (
+        "ris.organization.changed",
+        "Organization",
+        org_id,
+    )
+    assert umbenannt["payload"] == {"organization": str(org_id), "change": "changed", "changed": ["name"]}
+    assert umbenannt["occurred_at"] == datetime.fromisoformat("2026-10-01T09:00:00+02:00")
+    assert geaendert["payload"] == {"person": str(person_id), "change": "changed", "changed": ["familyName", "title"]}
+    assert {e["visibility"] for e in (umbenannt, geaendert)} == {"oeffentlich"}
+    assert {e["tenant_ref"] for e in (umbenannt, geaendert)} == {f"source:{bestand.source_id}"}
+
+    # Nach der Löschmarkierung wieder geliefert: für Empfänger wieder neu
+    await bestand.storage.mark_entity_deleted("organization", ORG)
+    await gremium(membership=mitglieder, name="Rat der Stadt")
+    *_, depubliziert, wieder = await bestand.ereignisse()
+    assert depubliziert["type"] == "ris.object.depublished"
+    assert wieder["payload"] == {"organization": str(org_id), "change": "added"}
+
+
+async def test_texterkennung_meldet_den_text_in_derselben_transaktion(bestand: Bestand) -> None:
+    """``ris.file.text_extracted`` (#821): nur mit Text, ``intern``, in der Transaktion des Speicherns."""
+    file_id = await bestand.storage.upsert_file(bestand.processor.process_file(datei(), BODY), bestand.body_id)
+    vorher = len(await bestand.ereignisse())
+
+    await bestand.storage.update_file_text(file_id, status="failed", error="Download failed")
+    await bestand.storage.update_file_text(file_id, method="none", status="completed")
+    assert len(await bestand.ereignisse()) == vorher
+
+    await bestand.storage.update_file_text(file_id, text_content="Beschluss zum Radweg", method="pypdf")
+    ereignis = (await bestand.ereignisse())[-1]
+    assert (ereignis["type"], ereignis["aggregate_type"], ereignis["aggregate_id"]) == (
+        "ris.file.text_extracted",
+        "File",
+        file_id,
+    )
+    assert (ereignis["visibility"], ereignis["body_id"]) == ("intern", bestand.body_id)
+    assert ereignis["payload"] == {"file": str(file_id), "method": "pypdf", "characters": 20}
+    zeile = await bestand.wert("SELECT xmin::text FROM oparl_files WHERE id = :id", id=file_id)
+    assert zeile == ereignis["xid_text"]
+
+
+async def test_scheitert_das_ereignis_der_texterkennung_bleibt_der_text_aus(
+    bestand: Bestand, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file_id = await bestand.storage.upsert_file(bestand.processor.process_file(datei(), BODY), bestand.body_id)
+
+    async def abbrechen(session: AsyncSession, neue: Any) -> list[uuid.UUID]:
+        raise RuntimeError("Abbruch vor dem Commit")
+
+    monkeypatch.setattr(events, "publish_many", abbrechen)
+    with pytest.raises(RuntimeError, match="Abbruch"):
+        await bestand.storage.update_file_text(file_id, text_content="Beschluss zum Radweg", method="pypdf")
+    assert await bestand.wert("SELECT text_content FROM oparl_files WHERE id = :id", id=file_id) is None
 
 
 # --- Korrelation und Nebenläufigkeit ----------------------------------------------------------------------------

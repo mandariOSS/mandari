@@ -27,9 +27,11 @@ Die CI prüft das und erzeugt diese Datei neu (`scripts/check_event_contracts.py
 | `ris.meeting.invited` | Ereignis | 1 | `hub.ris` | nichtoeffentlich | Ladung versendet |
 | `ris.meeting.scheduled` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Sitzung angesetzt |
 | `ris.object.depublished` | Ereignis | 1 | `hub.ris` | oeffentlich | Objekt zurückgenommen |
+| `ris.organization.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Gremium geändert |
 | `ris.paper.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Vorlage geändert |
 | `ris.paper.created` | Ereignis | 1 | `hub.ris` | nichtoeffentlich | Vorlage angelegt |
 | `ris.paper.released` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Vorlage freigegeben |
+| `ris.person.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Person geändert |
 | `ris.protocol.approved` | Ereignis | 1 | `hub.ris` | nichtoeffentlich | Niederschrift genehmigt |
 | `ris.protocol.published` | Ereignis | 1 | `hub.ris` | oeffentlich | Niederschrift veröffentlicht |
 | `ris.resolution.adopted` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Beschluss gefasst |
@@ -503,6 +505,43 @@ Beispiel 2:
 }
 ```
 
+### ris.organization.changed v1
+
+**Gremium geändert.** Ein Gremium wurde neu erkannt (added) oder geändert (changed), etwa Name, Art oder Zeitraum. Aggregat: Organization. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+
+- Art: Ereignis
+- Eigentümer: `hub.ris`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.organization.changed/v1.json`](../mandari/hub/contracts/schemas/ris.organization.changed/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `organization` | ja | Zeichenkette (uuid) | Kanonische Kennung des Gremiums. |
+| `change` | ja | Code: `added`, `changed` | Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert). |
+| `changed` | nein | Liste aus Zeichenkette (Muster `^[a-z][A-Za-z0-9_]{0,63}$`) (1 bis 64 Einträge) | Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. name, organizationType); bei change changed. |
+
+Beispiel 1:
+
+```json
+{
+  "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f",
+  "change": "added"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f",
+  "change": "changed",
+  "changed": [
+    "name",
+    "shortName"
+  ]
+}
+```
+
 ### ris.paper.changed v1
 
 **Vorlage geändert.** Eine Vorlage wurde geändert: Inhalt, Fassung oder Kennzeichen. Aggregat: Paper. changed nennt die geänderten Felder. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
@@ -578,6 +617,43 @@ Beispiel 1:
 ```json
 {
   "paper": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"
+}
+```
+
+### ris.person.changed v1
+
+**Person geändert.** Eine Person wurde neu erkannt (added) oder geändert (changed), etwa Name, Titel oder Mitgliedschaften. Aggregat: Person. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+
+- Art: Ereignis
+- Eigentümer: `hub.ris`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.person.changed/v1.json`](../mandari/hub/contracts/schemas/ris.person.changed/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `person` | ja | Zeichenkette (uuid) | Kanonische Kennung der Person. |
+| `change` | ja | Code: `added`, `changed` | Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert). |
+| `changed` | nein | Liste aus Zeichenkette (Muster `^[a-z][A-Za-z0-9_]{0,63}$`) (1 bis 64 Einträge) | Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. familyName, membership); bei change changed. |
+
+Beispiel 1:
+
+```json
+{
+  "person": "6d1e2f3a-4b5c-5d6e-8f7a-9b0c1d2e3f4a",
+  "change": "added"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "person": "6d1e2f3a-4b5c-5d6e-8f7a-9b0c1d2e3f4a",
+  "change": "changed",
+  "changed": [
+    "familyName",
+    "membership"
+  ]
 }
 ```
 
