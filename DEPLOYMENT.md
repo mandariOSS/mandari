@@ -549,7 +549,9 @@ Bestehende Installationen hatten die Befehle oben in der Crontab des Hosts (auch
 läuft ohne Doppelläufe und ohne Lücke:
 
 1. **Worker zuerst:** `docker compose ps worker` zeigt `healthy`, `/health/` meldet
-   `"worker": "ok"`. Ohne laufenden Worker gibt es keine Zeitpläne.
+   `"worker": "ok"`. Ohne laufenden Worker gibt es keine Zeitpläne. Im Rollenbetrieb
+   (`docs/MEHR_SERVER_BETRIEB.md`) vorher die gemeinsame Ablage für Medien und Dokument-Cache auf
+   dem worker-Server einrichten – Sitzungsmappen, Personenfotos und `cache_files` laufen dort.
 2. **Update einspielen.** Ab jetzt planen die Zeitpläne. Ein noch vorhandener Cron-Eintrag ruft den
    Befehl weiter auf; der erkennt, dass ein Worker seinen Zeitplan bedient (Scheduler und Runner
    für `default` leben), und endet mit dem Hinweis „läuft als Zeitplan im Worker – Aufruf

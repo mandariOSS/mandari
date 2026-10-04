@@ -96,4 +96,7 @@ Anwendung und Worker sehen `/srv/mandari-files` als `/app/files` (beide brauchen
 weil der Zeitplan im Worker den Cache füllt); die Kommune landet automatisch im gemounteten
 Unterverzeichnis. Nach dem Mount einmal
 `docker compose exec mandari python manage.py cache_files --body <slug> --limit 100000 --trotz-zeitplan`
-für den Erstbestand ausführen (ca. 65 GB, dauert mehrere Stunden).
+für den Erstbestand ausführen (ca. 65 GB, dauert mehrere Stunden). Für diese Zeit
+`EVENTS_SCHEDULES_DISABLED=befehl:cache_files` bei Worker und Anwendung setzen: Die Sperre des
+Befehls verfällt nach 3000 s, sonst startet der stündliche Zeitplan parallel und fragt dieselben
+Quellen doppelt an. Danach den Schalter wieder entfernen.

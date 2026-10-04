@@ -24,9 +24,12 @@ genau einer Rolle zugeordnet ist.
   werden ausschließlich an die private Adresse `DATA_BIND` gebunden. Niemals an eine
   öffentliche Adresse – PostgreSQL, Redis und Elasticsearch sind ohne TLS und mit einfachem
   Passwort- bzw. ohne Schutz konfiguriert.
-- **Gemeinsame Ablagen** bei mehr als einem `web`-Server: Die Volumes `mandari_media`
-  (Uploads) und `mandari_files` (Dokument-Cache, `docs/FILE_CACHE.md`) müssen auf allen
-  web-Servern denselben Inhalt zeigen, z. B. als NFS-Mount. Mit nur einem web-Server entfällt das.
+- **Gemeinsame Ablagen** auf allen Servern mit `web`- oder `worker`-Rolle: Die Volumes
+  `mandari_media` (Uploads) und `mandari_files` (Dokument-Cache, `docs/FILE_CACHE.md`) müssen
+  dort denselben Inhalt zeigen, z. B. als NFS-Mount. Das gilt auch bei nur einem web-Server: Der
+  Worker erzeugt Sitzungsmappen aus hochgeladenen Unterlagen und füllt Personenfotos und
+  Dokument-Cache; ohne gemeinsame Ablage scheitern die Mappen, und die Anwendung sieht Fotos und
+  Cache nicht.
 - **Dieselbe `.env`-Basis** auf allen Servern: `POSTGRES_PASSWORD`, `REDIS_PASSWORD`,
   `SECRET_KEY`, `ENCRYPTION_MASTER_KEY`, `DOMAIN` müssen überall identisch sein.
 
