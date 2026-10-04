@@ -96,7 +96,7 @@ class MerklisteView(TemplateView):
         context["seo"] = get_page_seo(
             self.request,
             title="Merkliste",
-            description="Deine gespeicherten Vorgänge, Sitzungen, Gremien und Personen auf einen Blick.",
+            description="Ihre gespeicherten Vorgänge, Sitzungen, Gremien und Personen auf einen Blick.",
             robots="noindex, follow",
         ).to_dict()
         return context

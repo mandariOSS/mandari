@@ -5,12 +5,17 @@ Context Processors für Mandari Insight.
 Stellt globale Context-Variablen für alle Templates bereit.
 """
 
+from typing import Any
+
 from django.conf import settings
+from django.http import HttpRequest
 
-from .models import OParlBody, OParlMeeting
+from .models import OParlBody
+from .navigation import nav_area
+from .publication import PORTAL_NAMESPACE
 
 
-def navigation_context(request):
+def navigation_context(request: HttpRequest) -> dict[str, Any]:
     """
     Setzt den Navigationskontext.
 
@@ -18,6 +23,8 @@ def navigation_context(request):
     Marketing pages are served by the separate Wagtail site.
     """
     marketing_url = getattr(settings, "MARKETING_URL", "")
+    match = getattr(request, "resolver_match", None)
+    url_name = match.url_name if match is not None and match.namespace == PORTAL_NAMESPACE else None
     return {
         "is_portal": True,
         "is_marketing": False,
@@ -28,6 +35,8 @@ def navigation_context(request):
         "insight_subscriptions_enabled": bool(getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False)),
         # Ratsfragen (INSIGHT_QUESTIONS_ENABLED, Issue #734): pausiert lesbar, ohne Stellen und Antwortquoten
         "insight_questions_enabled": bool(getattr(settings, "INSIGHT_QUESTIONS_ENABLED", False)),
+        # Bereich der Seite in der Navigation (Hervorhebung und aria-current, Issue #783)
+        "insight_area": nav_area(url_name),
     }
 
 
@@ -76,19 +85,10 @@ def active_body(request):
         # Datenbank noch nicht migriert oder andere Fehler
         pass
 
-    # Count upcoming meetings for sidebar badge
-    upcoming_count = 0
-    if body:
-        from django.utils import timezone
-
-        upcoming_count = OParlMeeting.objects.filter(
-            body=body, start__gte=timezone.now(), cancelled=False, deleted=False
-        ).count()
-
     # Archiv (Issue #618): Die Kommune veröffentlicht nicht mehr, der Bestand bleibt lesbar. Maßgeblich
     # ist die Kommune der Seite (Middleware), sonst die gewählte. Detailseiten haben eine eigene
     # Kommune: Ohne deren Stand gilt nicht der Stand der gewählten Kommune.
-    from .publication import BODY_PAGES, PORTAL_NAMESPACE, body_state
+    from .publication import BODY_PAGES, body_state
 
     publication_state = getattr(request, "insight_publication_state", None)
     match = getattr(request, "resolver_match", None)
@@ -101,6 +101,17 @@ def active_body(request):
         except Exception:  # noqa: BLE001 - der Hinweis darf keine Seite brechen (wie oben)
             publication_state = None
     archive = publication_state if publication_state is not None and publication_state.archived else None
+
+    # Beschlüsse stehen nur in der Navigation, wenn die Kommune sie veröffentlicht (Issue #783):
+    # Ein Eintrag, der auf „Noch keine Beschlüsse“ führt, hilft niemandem. Nur auf Portalseiten abgefragt.
+    decisions_published = False
+    if body is not None and portal_page:
+        from .services import decision_tracking
+
+        try:
+            decisions_published = decision_tracking.publishing_tenants(body).exists()
+        except Exception:  # noqa: BLE001 - die Navigation darf keine Seite brechen (wie oben)
+            decisions_published = False
 
     # Hinweis der Kommune (Issue #734, im Admin gepflegt), z. B. „Die Stadt stellt ihre Daten nicht mehr
     # bereit“: auf Einstieg und Listen der gewählten Kommune (BODY_PAGES, dazu der eigene Einstieg
@@ -129,7 +140,7 @@ def active_body(request):
         "active_body": body,
         "available_bodies": bodies,
         "show_all_bodies": show_all_bodies,
-        "upcoming_meeting_count": upcoming_count,
+        "insight_decisions_published": decisions_published,
         "active_body_stale_days": stale_days,
         "active_body_archive": archive,
         "active_body_notice": notice if body_page else "",

@@ -34,7 +34,6 @@ LISTEN = (
     "/insight/termine/",
     "/insight/gremien/",
     "/insight/personen/",
-    "/insight/dokumente/",
     "/insight/beschluesse/",
     "/insight/fragen/",
 )

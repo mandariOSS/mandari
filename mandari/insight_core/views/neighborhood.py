@@ -58,7 +58,7 @@ class NeighborhoodView(ActiveBodyRequiredMixin, TemplateView):
         context["seo"] = get_page_seo(
             self.request,
             title="Nachbarschaft",
-            description="Was passiert vor deiner Haustür? Vorgänge und Beschlüsse im Umkreis deiner Straße oder deines Stadtteils.",
+            description="Was passiert vor Ihrer Haustür? Vorgänge und Beschlüsse im Umkreis Ihrer Straße oder Ihres Stadtteils.",
             body=body,
         ).to_dict()
 

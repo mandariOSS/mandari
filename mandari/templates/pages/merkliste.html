@@ -6,7 +6,7 @@
 <div x-data="merklisteController" data-entities-url="{% url 'insight_core:insight:bookmark_entities' %}">
     <div class="mb-6">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Merkliste</h1>
-        <p class="text-gray-500 dark:text-gray-400 mt-1">Deine gespeicherten Vorgänge, Sitzungen, Gremien und Personen.</p>
+        <p class="text-gray-500 dark:text-gray-400 mt-1">Ihre gespeicherten Vorgänge, Sitzungen, Gremien und Personen.</p>
     </div>
 
     {# Info-Box für anonyme User #}
@@ -18,9 +18,9 @@
         <div>
             <p class="text-sm font-medium text-blue-800 dark:text-blue-300">Lokale Speicherung</p>
             <p class="text-sm text-blue-700 dark:text-blue-400 mt-0.5">
-                Deine Merkliste wird lokal in deinem Browser gespeichert.
-                <a href="{% url 'accounts:login' %}" class="underline hover:text-blue-900 dark:hover:text-blue-200">Melde dich an</a>
-                für geräteübergreifende Nutzung.
+                Ihre Merkliste wird lokal in Ihrem Browser gespeichert.
+                <a href="{% url 'accounts:login' %}" class="underline hover:text-blue-900 dark:hover:text-blue-200">Melden Sie sich an</a>,
+                um sie auf allen Geräten zu nutzen.
             </p>
         </div>
     </div>
@@ -82,7 +82,7 @@
             </svg>
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Noch nichts gespeichert</h3>
             <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
-                Klicke auf den Stern bei Vorgängen, Sitzungen, Gremien oder Personen, um sie hier wiederzufinden.
+                Klicken Sie auf den Stern bei Vorgängen, Sitzungen, Gremien oder Personen, um sie hier wiederzufinden.
             </p>
         </div>
     {% endif %}
@@ -98,7 +98,7 @@
         </svg>
         <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Noch nichts gespeichert</h3>
         <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
-            Klicke auf den Stern bei Vorgängen, Sitzungen, Gremien oder Personen, um sie hier wiederzufinden.
+            Klicken Sie auf den Stern bei Vorgängen, Sitzungen, Gremien oder Personen, um sie hier wiederzufinden.
         </p>
     </div>
 
