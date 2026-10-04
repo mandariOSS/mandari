@@ -65,7 +65,7 @@ Mandant **„Stadtverwaltung Musterstadt (Demo)"**
   „Kämmerei (Demo)" mit einer Mitzeichnungsregel für Vorlagen mit finanziellen Auswirkungen
 - 3 Sitzungen mit Tagesordnung, 4 Vorlagen (eine mit vertraulichem Inhalt),
   2 Anträge der Musterfraktion: „Jugendbeirat“ ist eingegangen, „Trinkwasserbrunnen“ hat die Verwaltung
-  in eine Vorlage umgewandelt (`convert_to_paper`), freigegeben und auf die kommende Ratssitzung gesetzt –
+  in eine Vorlage umgewandelt (Stand wie nach `convert_to_paper`), freigegeben und auf die kommende Ratssitzung gesetzt –
   mit Beratungsfolge (Entscheidung im Rat) auf diesem TOP
 - Anwesenheit und genehmigtes Protokoll der vergangenen Hauptausschuss-Sitzung
 

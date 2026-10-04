@@ -1228,7 +1228,7 @@ class Command(BaseCommand):
             (
                 DEMO_ANTRAG_TRINKBRUNNEN,
                 "motion",
-                "in_review",
+                "converted",
                 "Angesichts zunehmender Hitzetage verbessert kostenloses Trinkwasser die "
                 "Aufenthaltsqualität und die Gesundheitsvorsorge in der Innenstadt.",
                 "Die Verwaltung errichtet bis Sommer 2026 drei öffentliche Trinkwasserbrunnen "
@@ -1244,12 +1244,6 @@ class Command(BaseCommand):
                 "",
             ),
         ]
-        # Ein umgewandelter Antrag bleibt umgewandelt – sonst stünde er bei jedem Lauf wieder zur Umwandlung
-        umgewandelt = set(
-            SessionPaper.objects.filter(tenant=tenant, source_application__isnull=False).values_list(
-                "source_application__title", flat=True
-            )
-        )
         applications: dict[str, SessionApplication] = {}
         for title, app_type, status, justification, resolution, financial in applications_def:
             application, _ = SessionApplication.objects.update_or_create(
@@ -1257,7 +1251,7 @@ class Command(BaseCommand):
                 title=title,
                 defaults={
                     "application_type": app_type,
-                    "status": "converted" if title in umgewandelt else status,
+                    "status": status,
                     "justification": justification,
                     "resolution_proposal": resolution,
                     "financial_impact": financial,
@@ -1269,7 +1263,7 @@ class Command(BaseCommand):
                     "received_by": session_user if status != "submitted" else None,
                 },
             )
-            if status == "in_review":
+            if status != "submitted":
                 application.set_additional_info_encrypted(
                     "Demo: Vertrauliche Anmerkung der Fraktion zur Standortabstimmung."
                 )
@@ -1278,19 +1272,29 @@ class Command(BaseCommand):
         self._count("Session: Anträge", len(applications_def))
 
         # --- Antrag → Vorlage für die kommende Ratssitzung ------------
-        # Derselbe Weg wie in der Antragsbearbeitung (application_service.convert_to_paper). Danach führt die
-        # Demo die Vorlage durch Freigabe und Terminierung, damit sie auf der Tagesordnung steht.
-        from apps.session.services import application_service
-
-        antrag_vorlage, _ = application_service.convert_to_paper(
-            applications[DEMO_ANTRAG_TRINKBRUNNEN],
-            session_user=session_user,
-            main_organization_id=s_orgs["rat"].pk,
+        # Stand nach der Antragsbearbeitung: umgewandelt wie application_service.convert_to_paper (Antragsart
+        # „motion“, Texte aus dem Antrag, Ursprungsantrag), dann freigegeben und terminiert. Als Demo-Datenpflege
+        # direkt angelegt (natürlicher Schlüssel: Ursprungsantrag); die Nummer vergibt der Nummernkreis.
+        trinkbrunnen = applications[DEMO_ANTRAG_TRINKBRUNNEN]
+        antrag_vorlage, _ = SessionPaper.objects.update_or_create(
+            tenant=tenant,
+            source_application=trinkbrunnen,
+            defaults={
+                "name": trinkbrunnen.title,
+                "paper_type": "motion",
+                "status": "scheduled",
+                "main_text": trinkbrunnen.justification,
+                "resolution_text": trinkbrunnen.resolution_proposal,
+                "has_financial_impact": True,
+                "financial_impact_note": trinkbrunnen.financial_impact,
+                "is_public": True,
+                "date": today - timedelta(days=7),
+                "main_organization": s_orgs["rat"],
+                "created_by": session_user,
+                "approved_by": session_user,
+                "approved_at": now - timedelta(days=5),
+            },
         )
-        antrag_vorlage.status = "scheduled"
-        antrag_vorlage.approved_by = session_user
-        antrag_vorlage.approved_at = antrag_vorlage.approved_at or now
-        antrag_vorlage.save()
         s_papers["antrag-trinkbrunnen"] = antrag_vorlage
 
         # --- Sitzungen mit Tagesordnung -------------------------------
