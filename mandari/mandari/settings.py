@@ -481,9 +481,15 @@ if not DEBUG:
             "BACKEND": "django.core.files.storage.FileSystemStorage",
         },
         "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+            # Manifest-Storage von WhiteNoise; Vite-Dateien behalten ihren Vite-Namen (mandari/static_files.py)
+            "BACKEND": "mandari.static_files.ManifestStaticFilesStorage",
         },
     }
+
+from mandari.static_files import immutable_file_test
+
+# Gehashte Dateien dauerhaft cachen: die des Manifest-Storage und zusätzlich die von Vite unter dist/assets/.
+WHITENOISE_IMMUTABLE_FILE_TEST = immutable_file_test
 
 
 # Media files
