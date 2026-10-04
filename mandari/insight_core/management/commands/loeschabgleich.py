@@ -2,21 +2,22 @@
 """
 Management Command: Löschabgleich der Dokumente mit den Quellen (Issue #787, docs/FILE_CACHE.md).
 
-Ein Lauf (stündlich per Cron oder Zeitplan):
+Ein Lauf (stündlich um :15 als Zeitplan ``befehl:loeschabgleich`` im Worker, ``apps/common/schedules.py``):
     1. von der Quelle geänderte Dokumente neu laden und per SHA-256 vergleichen
     2. gedrosselte HEAD-Stichproben je gelisteter Kommune (404/410 sperrt, abweichende Größe gleicht ab);
        gesperrte Dokumente werden nach 1, 7 und 25 Tagen erneut geprüft
     3. Kopie und Text von Dokumenten löschen, die länger als FILE_PURGE_AFTER_DAYS gesperrt sind
        (nicht mehr abrufbare vorher noch einmal per GET prüfen)
     4. Inhalte ohne Referenz aus der Ablage löschen (Ablage nach SHA-256): Eine ersetzte oder gelöschte
-       Fassung bleibt so nicht liegen, auch wenn der Cron für ``dokumentablage --aufraeumen`` fehlt
+       Fassung bleibt so nicht liegen, auch wenn der Zeitplan für ``dokumentablage --aufraeumen`` aus ist
 
 Ein Lauf hält eine Sperre im gemeinsamen Cache: Überlappende Läufe (langsamer Lauf, zweiter Server)
 enden sofort, statt die Quellen doppelt zu belasten.
 
-    python manage.py loeschabgleich
-    python manage.py loeschabgleich --body beispielstadt --head-limit 200
-    python manage.py loeschabgleich --nur-loeschen
+Von Hand, während der Worker den Zeitplan bedient, mit ``--trotz-zeitplan``; ``--robots`` läuft immer:
+
+    python manage.py loeschabgleich --body beispielstadt --head-limit 200 --trotz-zeitplan
+    python manage.py loeschabgleich --nur-loeschen --trotz-zeitplan
     python manage.py loeschabgleich --robots      # Quellen, deren robots.txt Dateiabrufe sperrt
 """
 
@@ -35,8 +36,10 @@ class Command(EinmaligMixin, BaseCommand):
     help = "Gleicht Dokumente mit den Quellen ab: Änderungen per Hash, Stichproben per HEAD, Löschen nach Frist"
 
     sperre = "loeschabgleich"
-    #: Verfällt von selbst, falls ein Lauf abstürzt; ein regulärer Lauf gibt sie sofort frei
-    sperre_ttl = 6 * 3600
+    #: Verfällt vor dem nächsten stündlichen Termin, falls ein Lauf an seiner Zeitgrenze abgebrochen wird
+    #: oder abstürzt; ein regulärer Lauf gibt sie sofort frei
+    sperre_ttl = 3000
+    nur_lesend = ("robots",)
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--body", help="Kommune (Slug oder Name-Teil); Standard: alle")

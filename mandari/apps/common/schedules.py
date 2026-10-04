@@ -35,6 +35,15 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     # Dokument-Cache (docs/FILE_CACHE.md): stündlich die neuesten fehlenden Dateien nachladen. Die
     # Zeitgrenze liegt unter dem Abstand, damit ein abgebrochener Lauf den nächsten nicht sperrt.
     befehl_als_zeitplan("cache_files", crontab="40 * * * *", argumente=["--limit", "400"], zeitgrenze=3000, ziel=ziel)
+    # Löschabgleich mit den Quellen (Issue #787): stündlich; Zeitgrenze und Sperre wie bei cache_files
+    befehl_als_zeitplan("loeschabgleich", crontab="15 * * * *", zeitgrenze=3000, ziel=ziel)
+    # Dokumentablage (Issue #788): verwaiste Inhalte löschen, Zwischenspeicher begrenzen. Mit Objektspeicher
+    # (und Ablage nach SHA-256) vorher hochladen; den Zwischenspeicher verlassen nur hochgeladene Inhalte.
+    ablage = ["--aufraeumen"]
+    layout = str(getattr(settings, "FILE_STORE_LAYOUT", "") or "").strip().lower()
+    if getattr(settings, "OBJ_ENABLED", False) and layout != "kommune":
+        ablage.insert(0, "--hochladen")
+    befehl_als_zeitplan("dokumentablage", crontab="50 * * * *", argumente=ablage, zeitgrenze=3000, ziel=ziel)
 
     # Abos zu Themen und Orten im Bürgerportal (Issue #460): nur, wenn sie eingeschaltet sind. Beide
     # Befehle sind wiederholbar (Benachrichtigung je Abonnent und Vorgang einmal).

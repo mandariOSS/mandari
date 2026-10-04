@@ -412,3 +412,66 @@ class TestObjektspeicher:
         objektspeicher.put_object(Bucket=BUCKET, Key=f"sha256/{sha[:2]}/{sha}", Body=b"manipuliert")
         assert file_store.fetch_remote(sha) is None
         assert not pfad.exists()
+
+
+# =============================================================================
+# Zeitplan im Worker (Issue #516)
+# =============================================================================
+
+
+class TestZeitplan:
+    """``--aufraeumen`` läuft als Zeitplan; Kennzahlen laufen immer, die übrigen Schritte von Hand erzwungen."""
+
+    @pytest.fixture
+    def worker(self, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+        from apps.events import presence, verwaltungsbefehle
+
+        monkeypatch.delenv(verwaltungsbefehle.AUS_ZEITPLAN_ENV, raising=False)
+        presence.announce("worker", ["scheduler", "tasks"], [])
+        yield
+        presence.withdraw("worker")
+
+    @staticmethod
+    def _lauf(*argumente: str) -> tuple[str, str]:
+        out, err = StringIO(), StringIO()
+        call_command("dokumentablage", *argumente, stdout=out, stderr=err)
+        return out.getvalue(), err.getvalue()
+
+    def test_alter_cron_eintrag_ueberspringt_die_kennzahlen_laufen(self, ablage: Path, worker: None) -> None:
+        out, err = self._lauf("--aufraeumen")
+        assert "läuft als Zeitplan im Worker – Aufruf übersprungen" in err
+        assert out == ""
+
+        out, err = self._lauf()
+        assert "Aufruf übersprungen" not in err
+        assert "Ablage (sha256)" in out
+
+    @pytest.mark.parametrize("schritt", ["--umstellen", "--referenzen", "--aufraeumen"])
+    def test_schritte_von_hand_mit_trotz_zeitplan(self, ablage: Path, worker: None, schritt: str) -> None:
+        out, err = self._lauf(schritt)
+        assert "Aufruf übersprungen" in err
+
+        out, err = self._lauf(schritt, "--trotz-zeitplan")
+        assert "Aufruf übersprungen" not in err
+        assert "Ablage (sha256)" in out
+
+    def test_ohne_worker_wie_bisher(self, ablage: Path) -> None:
+        out, err = self._lauf("--aufraeumen")
+        assert "Aufruf übersprungen" not in err
+        assert "Verwaiste Inhalte: " in out
+
+    def test_nur_die_kennzahlen_lesen_nur(self) -> None:
+        from django.core.management import get_commands, load_command_class
+
+        befehl = load_command_class(get_commands()["dokumentablage"], "dokumentablage")
+        assert befehl.liest_nur({"umstellen": False, "aufraeumen": False, "hochladen": False, "referenzen": False})
+        for schritt in ("umstellen", "aufraeumen", "hochladen", "referenzen"):
+            assert not befehl.liest_nur({schritt: True}), schritt
+
+    def test_zweiter_lauf_endet_sofort(self, ablage: Path) -> None:
+        from apps.common.einmalig import Sperre
+
+        with Sperre("dokumentablage"):
+            out, err = self._lauf("--aufraeumen")
+        assert "läuft bereits" in err
+        assert out == ""

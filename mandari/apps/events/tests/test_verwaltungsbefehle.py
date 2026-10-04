@@ -44,6 +44,8 @@ FRUEHERE_CRONTAB: dict[str, tuple[str, list[str]]] = {
     "cleanup_orphaned_accounts": ("45 3 * * *", []),
     # docs/FILE_CACHE.md
     "cache_files": ("40 * * * *", ["--limit", "400"]),
+    "loeschabgleich": ("15 * * * *", []),
+    "dokumentablage": ("50 * * * *", ["--aufraeumen"]),
     "check_source_health": ("15 * * * *", []),
     "check_service_levels": ("30 6 * * *", []),
     "verify_audit_chain": ("20 4 * * *", []),
@@ -302,6 +304,29 @@ def test_abos_laufen_als_zeitplan_nur_wenn_sie_eingeschaltet_sind(settings: Any)
     assert len(an) == len(aus) + 3
 
 
+@pytest.mark.parametrize(
+    ("objektspeicher", "layout", "argumente"),
+    [
+        (False, "sha256", ["--aufraeumen"]),
+        (True, "sha256", ["--hochladen", "--aufraeumen"]),
+        (True, "kommune", ["--aufraeumen"]),
+    ],
+)
+def test_dokumentablage_laedt_mit_objektspeicher_vor_dem_aufraeumen_hoch(
+    settings: Any, objektspeicher: bool, layout: str, argumente: list[str]
+) -> None:
+    """Den Zwischenspeicher verlassen nur hochgeladene Inhalte; ohne Ablage nach SHA-256 gibt es nichts hochzuladen."""
+    from apps.common import schedules
+
+    settings.OBJ_ENABLED = objektspeicher
+    settings.FILE_STORE_LAYOUT = layout
+    register = ScheduleRegistry()
+    schedules.registrieren(ziel=register)
+    eintrag = register.get("befehl:dokumentablage")
+    assert eintrag is not None and eintrag.trigger == Cron("50 * * * *")
+    assert eintrag.args[1] == argumente
+
+
 def test_upgrade_hinweis_entfernt_alle_befehle_der_zeitplaene_aus_der_crontab(settings: Any) -> None:
     """Das grep-Muster zum Bereinigen der Crontab (DEPLOYMENT.md) nennt jeden Befehl eines Zeitplans."""
     text = (REPO / "DEPLOYMENT.md").read_text(encoding="utf-8")
@@ -364,4 +389,8 @@ def test_berichtsoptionen_der_betriebspruefungen_aendern_nichts() -> None:
     assert befehl("availability_report").liest_nur({"out": None}), "nur Ausgabe auf stdout"
     assert not befehl("availability_report").liest_nur({"out": "/berichte/"})
     assert befehl("cache_files").liest_nur({"stats": True})
+    assert befehl("loeschabgleich").liest_nur({"robots": True})
+    assert not befehl("loeschabgleich").liest_nur({"robots": False, "nur_loeschen": True})
+    assert befehl("dokumentablage").liest_nur({"aufraeumen": False}), "nur Kennzahlen"
+    assert not befehl("dokumentablage").liest_nur({"aufraeumen": True})
     assert not befehl("send_session_reminders").liest_nur({"tenant": "musterstadt"})

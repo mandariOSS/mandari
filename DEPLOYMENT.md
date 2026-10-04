@@ -540,6 +540,8 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
 | `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, neueste fehlende Dateien zuerst (`docs/FILE_CACHE.md`) |
+| `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
+| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788) |
 | `befehl:generate_alerts` | täglich 07:45 | Benachrichtigungen der Abos zu Themen und Orten; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:send_digest` | montags 08:00 | Wochenmail der Abos; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:check_source_health` | stündlich :15 | Zustand der Quellen (Issue #231, `docs/MONITORING.md`) |
@@ -554,7 +556,8 @@ Dazu die Zeitpläne aus dem Abschnitt „Worker“ (Fraktionssitzungen, Verortun
 `python manage.py events_scheduler --list` zeigt alle mit dem zuletzt geplanten Termin; von Hand
 läuft ein Befehl weiter mit `docker compose exec worker python manage.py <befehl> --trotz-zeitplan`.
 Aufrufe, die nur lesen oder berichten, laufen immer: `--dry-run`, `check_source_health --report`,
-`check_service_levels --report`, `cache_files --stats` und `availability_report` ohne `--out`.
+`check_service_levels --report`, `cache_files --stats`, `loeschabgleich --robots`, `dokumentablage`
+ohne Schritt (Kennzahlen) und `availability_report` ohne `--out`.
 
 **Auf dem Host** bleiben nur Aufgaben des Betriebssystems: die Datensicherung (`./backup.sh`,
 Abschnitt „Backup“), der Journal-Alarm (`deploy/logging/journal-alert.sh`) und der Neustart
@@ -569,8 +572,9 @@ eigenen Compose-Dateien also auch in seiner `environment`.
 
 ### Umstellung von Host-Cron (Upgrade-Hinweis)
 
-Bestehende Installationen hatten die Befehle oben in der Crontab des Hosts (auch `cache_files` aus
-`docs/FILE_CACHE.md` und, bei eingeschalteten Abos, `generate_alerts`/`send_digest`). Die Umstellung
+Bestehende Installationen hatten die Befehle oben in der Crontab des Hosts (auch `cache_files`,
+`loeschabgleich` und `dokumentablage --aufraeumen` aus `docs/FILE_CACHE.md` und, bei eingeschalteten
+Abos, `generate_alerts`/`send_digest`). Die Umstellung
 läuft ohne Doppelläufe und ohne Lücke:
 
 1. **Worker zuerst:** `docker compose ps worker` zeigt `healthy`, `/health/` meldet
@@ -595,7 +599,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 
