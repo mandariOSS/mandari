@@ -25,8 +25,13 @@ Fiktive Kommune **„Musterstadt (Demo)"** (`OParlBody`, Slug `musterstadt-demo`
 - 1 Wahlperiode, 6 Sitzungen (vergangen und kommend) mit Tagesordnungspunkten
 - 12 Vorlagen verschiedener Typen (Beschlussvorlage, Antrag, Anfrage,
   Mitteilungsvorlage) mit Beratungen (`OParlConsultation`)
-- 2 kleine, selbst generierte PDF-Dateien mit gesetztem `text_content`
-  (keine OCR nötig), abgelegt unter `MEDIA_ROOT/demo/`
+- 5 kleine, selbst generierte PDF-Dateien mit gesetztem `text_content`
+  (keine OCR nötig), abgelegt unter `MEDIA_ROOT/demo/` – darunter die Unterlagen aller Vorlagen der
+  kommenden Ratssitzung, die die Fraktion in Work unter „Sitzung vorbereiten“ je TOP sieht
+- Sitzungstermine liegen relativ zum Aufbautag, immer an einem Werktag um 17 Uhr Ortszeit (die
+  Fraktionssitzung um 19 Uhr): Fällt ein Termin auf ein Wochenende, einen bundesweiten Feiertag,
+  Heiligabend oder Silvester, rückt eine kommende Sitzung auf den nächsten, eine vergangene auf den
+  vorherigen Werktag. Die kommende Ratssitzung liegt in Insight und Session am selben Tag.
 
 Die Kommune ist **nicht gelistet** (`is_listed=False`): Sie erscheint weder in der
 Kommunenauswahl noch in Übersichten, Sitemaps oder der OParl-Aggregations-API, ist aber per
@@ -59,7 +64,9 @@ Mandant **„Stadtverwaltung Musterstadt (Demo)"**
   über die Accessoren AES-256-GCM-verschlüsselt gespeichert; dazu das Amt
   „Kämmerei (Demo)" mit einer Mitzeichnungsregel für Vorlagen mit finanziellen Auswirkungen
 - 3 Sitzungen mit Tagesordnung, 4 Vorlagen (eine mit vertraulichem Inhalt),
-  2 Anträge der Musterfraktion
+  2 Anträge der Musterfraktion: „Jugendbeirat“ ist eingegangen, „Trinkwasserbrunnen“ hat die Verwaltung
+  in eine Vorlage umgewandelt (`convert_to_paper`), freigegeben und auf die kommende Ratssitzung gesetzt –
+  mit Beratungsfolge (Entscheidung im Rat) auf diesem TOP
 - Anwesenheit und genehmigtes Protokoll der vergangenen Hauptausschuss-Sitzung
 
 Der Mandant veröffentlicht nicht im Bürgerportal (`insight_publish` aus); das schaltet erst

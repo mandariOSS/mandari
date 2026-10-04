@@ -21,6 +21,9 @@ angelegt. Ein wiederholter Lauf aktualisiert statt zu duplizieren.
 Die Passwörter der Demo-Nutzer werden bei JEDEM Lauf neu generiert und
 ausschließlich auf stdout ausgegeben (niemals gespeichert).
 
+Termine: Sitzungen liegen relativ zum Aufbautag (die öffentliche Demo baut nachts neu auf), immer an
+einem Werktag um 17 Uhr Ortszeit (``sitzungstermin``) – nie am Wochenende oder an einem Feiertag.
+
 Aufräumen: --reset entfernt sämtliche Demo-Daten (und nur diese) wieder – einschließlich einer
 darauf aufgesetzten Präsentationsumgebung (setup_demo_praesentation).
 
@@ -30,7 +33,7 @@ Verwendung:
 """
 
 import secrets
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from datetime import time as dt_time
 from io import BytesIO
 from pathlib import Path
@@ -54,6 +57,10 @@ DEMO_EMAIL_DOMAIN = "demo.mandari.de"
 DEMO_MEDIA_SUBDIR = "demo"
 # Fester Mandatsbeginn: Teil natürlicher Schlüssel (Idempotenz bei Wiederholung)
 DEMO_START_DATE = date(2024, 7, 1)
+#: Antrag der Musterfraktion, den die Verwaltung in eine Vorlage umgewandelt und auf die kommende
+#: Ratssitzung gesetzt hat (durchgehende Vorführung Work → Session)
+DEMO_ANTRAG_TRINKBRUNNEN = "Antrag: Öffentliche Trinkwasserbrunnen in der Innenstadt (Demo)"
+DEMO_RATSSITZUNG = "Ratssitzung (Demo, kommend)"
 
 DEMO_USERS = {
     "vorsitz": {
@@ -102,6 +109,63 @@ DEMO_SESSION_ROLE_BY_USER = {
     "protokoll": "Protokollant",
     "lesezugriff": "Lesezugriff",
 }
+
+
+def _ostersonntag(jahr: int) -> date:
+    """Ostersonntag (gregorianisch, Gaußsche Osterformel in der Fassung von Meeus)."""
+    a = jahr % 19
+    b, c = divmod(jahr, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    wochentag = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * wochentag) // 451
+    monat, tag = divmod(h + wochentag - 7 * m + 114, 31)
+    return date(jahr, monat, tag + 1)
+
+
+def sitzungsfreie_tage(jahr: int) -> set[date]:
+    """Bundesweite gesetzliche Feiertage sowie Heiligabend und Silvester – an diesen Tagen tagt die Demo nicht."""
+    ostern = _ostersonntag(jahr)
+    return {
+        date(jahr, 1, 1),
+        ostern - timedelta(days=2),  # Karfreitag
+        ostern + timedelta(days=1),  # Ostermontag
+        date(jahr, 5, 1),
+        ostern + timedelta(days=39),  # Christi Himmelfahrt
+        ostern + timedelta(days=50),  # Pfingstmontag
+        date(jahr, 10, 3),
+        date(jahr, 12, 24),
+        date(jahr, 12, 25),
+        date(jahr, 12, 26),
+        date(jahr, 12, 31),
+    }
+
+
+def ist_sitzungstag(tag: date) -> bool:
+    """Montag bis Freitag und kein sitzungsfreier Tag."""
+    return tag.weekday() < 5 and tag not in sitzungsfreie_tage(tag.year)
+
+
+def aufbautag() -> date:
+    """Bezugstag aller relativen Demo-Termine (eigene Funktion, damit Tests ihn festlegen können)."""
+    return timezone.localdate()
+
+
+def sitzungstermin(tage: int, stunde: int = 17) -> datetime:
+    """
+    Termin ``tage`` Tage nach (negativ: vor) dem Aufbautag um ``stunde`` Uhr Ortszeit, immer an einem Sitzungstag.
+
+    Fällt der Tag auf ein Wochenende oder einen Feiertag, rückt ein kommender Termin auf den nächsten, ein
+    vergangener auf den vorherigen Sitzungstag – kommende Sitzungen bleiben kommend, vergangene vergangen.
+    """
+    tag = aufbautag() + timedelta(days=tage)
+    schritt = timedelta(days=-1 if tage < 0 else 1)
+    while not ist_sitzungstag(tag):
+        tag += schritt
+    return timezone.make_aware(datetime.combine(tag, dt_time(stunde, 0)))
 
 
 def _ext(kind: str, key: str) -> str:
@@ -352,9 +416,6 @@ class Command(BaseCommand):
         self._count("Insight: Mitgliedschaften", membership_count)
 
         # --- Sitzungen ------------------------------------------------
-        def meeting_dt(days: int, hour: int = 17):
-            return (now + timedelta(days=days)).replace(hour=hour, minute=0, second=0, microsecond=0)
-
         sitzungen_def = [
             ("rat-1", "rat", "Sitzung des Rates der Stadt Musterstadt", -84, "Ratssaal"),
             ("rat-2", "rat", "Sitzung des Rates der Stadt Musterstadt", -28, "Ratssaal"),
@@ -365,7 +426,7 @@ class Command(BaseCommand):
         ]
         meetings: dict[str, OParlMeeting] = {}
         for key, org_key, name, day_offset, room in sitzungen_def:
-            start = meeting_dt(day_offset)
+            start = sitzungstermin(day_offset)
             meeting, _ = OParlMeeting.objects.update_or_create(
                 external_id=_ext("meeting", key),
                 defaults={
@@ -559,6 +620,56 @@ class Command(BaseCommand):
                     "",
                     "Beschlussvorschlag: Der Rat beschließt den Lückenschluss des Radwegs",
                     "in der Bahnhofstraße gemäß Anlage 1.",
+                ],
+            ),
+            # Unterlagen der kommenden Ratssitzung (rat-3): Die Fraktion bereitet sie in Work vor und sieht
+            # je TOP die Dokumente aus dem RIS – ohne Datei an der Vorlage bliebe der Abschnitt dort leer
+            (
+                "trinkbrunnen-antrag",
+                "trinkbrunnen",
+                "Antrag Trinkwasserbrunnen in der Innenstadt (Demo)",
+                "demo-antrag-trinkbrunnen.pdf",
+                [
+                    "Antrag A/2026/D-009 - Öffentliche Trinkwasserbrunnen in der Innenstadt",
+                    "",
+                    "Antragstellerin: Musterfraktion (Demo)",
+                    "",
+                    "Beschlussvorschlag: Die Verwaltung errichtet bis Sommer 2026 drei öffentliche",
+                    "Trinkwasserbrunnen in der Innenstadt (Marktplatz, Stadtpark, Bahnhofsvorplatz).",
+                    "",
+                    "Begründung: Angesichts zunehmender Hitzetage verbessert kostenloses Trinkwasser",
+                    "die Aufenthaltsqualität und die Gesundheitsvorsorge in der Innenstadt.",
+                    "Kosten: ca. 45.000 Euro brutto aus dem Klimafolgenanpassungs-Budget.",
+                ],
+            ),
+            (
+                "jugendbeirat-antrag",
+                "jugendbeirat",
+                "Antrag Jugendbeirat (Demo)",
+                "demo-antrag-jugendbeirat.pdf",
+                [
+                    "Antrag A/2026/D-011 - Einrichtung eines Jugendbeirats",
+                    "",
+                    "Beschlussvorschlag: Der Rat beschließt die Einrichtung eines Jugendbeirats",
+                    "zum Schuljahr 2026/27.",
+                    "",
+                    "Begründung: Junge Menschen sollen frühzeitig und verbindlich an kommunalen",
+                    "Entscheidungen beteiligt werden.",
+                ],
+            ),
+            (
+                "feuerwehr-vorlage",
+                "feuerwehr",
+                "Beschlussvorlage Feuerwehrbedarfsplan 2026-2031 (Demo)",
+                "demo-vorlage-feuerwehr.pdf",
+                [
+                    "Beschlussvorlage V/2026/D-012 - Feuerwehrbedarfsplan 2026-2031",
+                    "",
+                    "Sachverhalt: Der Feuerwehrbedarfsplan wird für die Jahre 2026 bis 2031",
+                    "fortgeschrieben. Er beschreibt Schutzziele, Standorte und Fahrzeugbedarf.",
+                    "Investitionen: ca. 420.000 Euro brutto über fünf Jahre.",
+                    "",
+                    "Beschlussvorschlag: Der Rat beschließt den Feuerwehrbedarfsplan 2026-2031.",
                 ],
             ),
         ]
@@ -861,7 +972,7 @@ class Command(BaseCommand):
         self._count("Work: Aufgaben", len(tasks_def))
 
         # --- Fraktionssitzung -----------------------------------------
-        fm_start = (now + timedelta(days=10)).replace(hour=19, minute=0, second=0, microsecond=0)
+        fm_start = sitzungstermin(10, stunde=19)
         faction_meeting, _ = FactionMeeting.objects.update_or_create(
             organization=org,
             title="Fraktionssitzung zur Vorbereitung der Ratssitzung (Demo)",
@@ -894,6 +1005,7 @@ class Command(BaseCommand):
         from apps.session.models import (
             SessionAgendaItem,
             SessionApplication,
+            SessionConsultation,
             SessionMeeting,
             SessionOrganization,
             SessionOrganizationMembership,
@@ -1111,14 +1223,81 @@ class Command(BaseCommand):
         vertraulich.save()
         self._count("Session: Vorlagen", len(session_papers_def))
 
-        # --- Sitzungen mit Tagesordnung -------------------------------
-        def s_meeting_dt(days: int):
-            return (now + timedelta(days=days)).replace(hour=17, minute=0, second=0, microsecond=0)
+        # --- Anträge von Fraktionen -----------------------------------
+        applications_def = [
+            (
+                DEMO_ANTRAG_TRINKBRUNNEN,
+                "motion",
+                "in_review",
+                "Angesichts zunehmender Hitzetage verbessert kostenloses Trinkwasser die "
+                "Aufenthaltsqualität und die Gesundheitsvorsorge in der Innenstadt.",
+                "Die Verwaltung errichtet bis Sommer 2026 drei öffentliche Trinkwasserbrunnen "
+                "(Marktplatz, Stadtpark, Bahnhofsvorplatz).",
+                "Kosten: ca. 45.000 Euro brutto, Deckung aus dem Klimafolgenanpassungs-Budget.",
+            ),
+            (
+                "Antrag: Einrichtung eines Jugendbeirats (Demo)",
+                "motion",
+                "submitted",
+                "Junge Menschen sollen frühzeitig und verbindlich an kommunalen Entscheidungen beteiligt werden.",
+                "Der Rat beschließt die Einrichtung eines Jugendbeirats zum Schuljahr 2026/27.",
+                "",
+            ),
+        ]
+        # Ein umgewandelter Antrag bleibt umgewandelt – sonst stünde er bei jedem Lauf wieder zur Umwandlung
+        umgewandelt = set(
+            SessionPaper.objects.filter(tenant=tenant, source_application__isnull=False).values_list(
+                "source_application__title", flat=True
+            )
+        )
+        applications: dict[str, SessionApplication] = {}
+        for title, app_type, status, justification, resolution, financial in applications_def:
+            application, _ = SessionApplication.objects.update_or_create(
+                tenant=tenant,
+                title=title,
+                defaults={
+                    "application_type": app_type,
+                    "status": "converted" if title in umgewandelt else status,
+                    "justification": justification,
+                    "resolution_proposal": resolution,
+                    "financial_impact": financial,
+                    "submitting_organization": work_org,
+                    "submitter_name": "Vera Beispiel (Demo)",
+                    "submitter_email": DEMO_USERS["vorsitz"]["email"],
+                    "target_organization": s_orgs["rat"],
+                    "received_at": now - timedelta(days=10) if status != "submitted" else None,
+                    "received_by": session_user if status != "submitted" else None,
+                },
+            )
+            if status == "in_review":
+                application.set_additional_info_encrypted(
+                    "Demo: Vertrauliche Anmerkung der Fraktion zur Standortabstimmung."
+                )
+                application.save()
+            applications[title] = application
+        self._count("Session: Anträge", len(applications_def))
 
+        # --- Antrag → Vorlage für die kommende Ratssitzung ------------
+        # Derselbe Weg wie in der Antragsbearbeitung (application_service.convert_to_paper). Danach führt die
+        # Demo die Vorlage durch Freigabe und Terminierung, damit sie auf der Tagesordnung steht.
+        from apps.session.services import application_service
+
+        antrag_vorlage, _ = application_service.convert_to_paper(
+            applications[DEMO_ANTRAG_TRINKBRUNNEN],
+            session_user=session_user,
+            main_organization_id=s_orgs["rat"].pk,
+        )
+        antrag_vorlage.status = "scheduled"
+        antrag_vorlage.approved_by = session_user
+        antrag_vorlage.approved_at = antrag_vorlage.approved_at or now
+        antrag_vorlage.save()
+        s_papers["antrag-trinkbrunnen"] = antrag_vorlage
+
+        # --- Sitzungen mit Tagesordnung -------------------------------
         # Namen sind der natürliche Schlüssel je (tenant, organization) — daher eindeutig
         session_meetings_def = [
             (
-                "Ratssitzung (Demo, kommend)",
+                DEMO_RATSSITZUNG,
                 "rat",
                 14,
                 "scheduled",
@@ -1126,6 +1305,7 @@ class Command(BaseCommand):
                     ("1", "Eröffnung und Feststellung der Tagesordnung", None),
                     ("2", "Sanierung des Spielplatzes am Stadtpark", "SV/2026/D-001"),
                     ("3", "Neufassung der Straßenreinigungssatzung", "SV/2026/D-004"),
+                    ("4", "Antrag: Öffentliche Trinkwasserbrunnen in der Innenstadt", "antrag-trinkbrunnen"),
                 ],
             ),
             (
@@ -1144,8 +1324,9 @@ class Command(BaseCommand):
             ),
         ]
         top_count = 0
+        s_tops: dict[str, SessionAgendaItem] = {}
         for name, org_key, day_offset, state, tops in session_meetings_def:
-            start = s_meeting_dt(day_offset)
+            start = sitzungstermin(day_offset)
             meeting, _ = SessionMeeting.objects.update_or_create(
                 tenant=tenant,
                 organization=s_orgs[org_key],
@@ -1164,7 +1345,7 @@ class Command(BaseCommand):
                 },
             )
             for order, (number, title, paper_ref) in enumerate(tops, start=1):
-                SessionAgendaItem.objects.update_or_create(
+                s_tops[f"{name}/{number}"], _ = SessionAgendaItem.objects.update_or_create(
                     meeting=meeting,
                     number=number,
                     defaults={
@@ -1179,51 +1360,21 @@ class Command(BaseCommand):
         self._count("Session: Sitzungen", len(session_meetings_def))
         self._count("Session: Tagesordnungspunkte", top_count)
 
-        # --- Anträge von Fraktionen -----------------------------------
-        applications_def = [
-            (
-                "Antrag: Öffentliche Trinkwasserbrunnen in der Innenstadt (Demo)",
-                "motion",
-                "in_review",
-                "Angesichts zunehmender Hitzetage verbessert kostenloses Trinkwasser die "
-                "Aufenthaltsqualität und die Gesundheitsvorsorge in der Innenstadt.",
-                "Die Verwaltung errichtet bis Sommer 2026 drei öffentliche Trinkwasserbrunnen "
-                "(Marktplatz, Stadtpark, Bahnhofsvorplatz).",
-                "Kosten: ca. 45.000 Euro brutto, Deckung aus dem Klimafolgenanpassungs-Budget.",
-            ),
-            (
-                "Antrag: Einrichtung eines Jugendbeirats (Demo)",
-                "motion",
-                "submitted",
-                "Junge Menschen sollen frühzeitig und verbindlich an kommunalen Entscheidungen beteiligt werden.",
-                "Der Rat beschließt die Einrichtung eines Jugendbeirats zum Schuljahr 2026/27.",
-                "",
-            ),
-        ]
-        for title, app_type, status, justification, resolution, financial in applications_def:
-            application, _ = SessionApplication.objects.update_or_create(
-                tenant=tenant,
-                title=title,
-                defaults={
-                    "application_type": app_type,
-                    "status": status,
-                    "justification": justification,
-                    "resolution_proposal": resolution,
-                    "financial_impact": financial,
-                    "submitting_organization": work_org,
-                    "submitter_name": "Vera Beispiel (Demo)",
-                    "submitter_email": DEMO_USERS["vorsitz"]["email"],
-                    "target_organization": s_orgs["rat"],
-                    "received_at": now - timedelta(days=10) if status != "submitted" else None,
-                    "received_by": session_user if status != "submitted" else None,
-                },
-            )
-            if status == "in_review":
-                application.set_additional_info_encrypted(
-                    "Demo: Vertrauliche Anmerkung der Fraktion zur Standortabstimmung."
-                )
-                application.save()
-        self._count("Session: Anträge", len(applications_def))
+        # Beratungsfolge des Antrags: Entscheidung im Rat, terminiert auf den TOP der kommenden Ratssitzung
+        top_antrag = s_tops[f"{DEMO_RATSSITZUNG}/4"]
+        SessionConsultation.objects.update_or_create(
+            paper=antrag_vorlage,
+            organization=s_orgs["rat"],
+            defaults={
+                "role": "decision",
+                "authoritative": True,
+                "order": 1,
+                "meeting": top_antrag.meeting,
+                "agenda_item": top_antrag,
+                "result": "pending",
+            },
+        )
+        self._count("Session: Beratungen")
 
         # --- Anwesenheit + genehmigtes Protokoll (vergangene Sitzung) -
         from apps.session.models import SessionAttendance, SessionProtocol
