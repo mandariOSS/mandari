@@ -30,7 +30,7 @@ def trigramm_index_entfernen(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("insight_core", "0044_page_feedback"),
+        ("insight_core", "0045_oparlbody_logo_thumbnails"),
     ]
 
     operations = [
