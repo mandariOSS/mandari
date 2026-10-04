@@ -130,6 +130,20 @@ def test_command_schreibt_datei(gatus: None, tmp_path: Path) -> None:
     assert "99.875 %" in ziel.read_text(encoding="utf-8")
 
 
+def test_command_schreibt_in_ein_verzeichnis_je_monat(gatus: None, tmp_path: Path) -> None:
+    """So schreibt der Zeitplan befehl:availability_report nach REPORTS_ROOT (Issue #516)."""
+    ziel = tmp_path / "berichte"
+
+    call_command(
+        "availability_report", "--month", "2026-08", "--gatus-url", BASIS, "--out", f"{ziel}/", stdout=StringIO()
+    )
+    call_command(
+        "availability_report", "--month", "2026-09", "--gatus-url", BASIS, "--out", str(ziel), stdout=StringIO()
+    )
+
+    assert sorted(p.name for p in ziel.iterdir()) == ["verfuegbarkeit-2026-08.md", "verfuegbarkeit-2026-09.md"]
+
+
 def test_command_ohne_statusseite_bricht_ab(monkeypatch: pytest.MonkeyPatch) -> None:
     def weg(url: str, timeout: float) -> bytes:
         raise av.GatusError(f"Statusseite nicht erreichbar ({url})")

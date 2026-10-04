@@ -86,6 +86,13 @@ x-app-environment: &app-environment
   EVENTS_DB_DIRECT_URL: ${EVENTS_DB_DIRECT_URL:-}
   EVENTS_WORKER_REQUIRED: ${EVENTS_WORKER_REQUIRED:-}
   INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
+  # Zeitpläne im Worker statt Host-Cron (DEPLOYMENT.md, „Geplante Aufgaben“): einzelne abschalten
+  EVENTS_SCHEDULES_DISABLED: ${EVENTS_SCHEDULES_DISABLED:-}
+  # Für die Zeitpläne der Betriebsprüfungen, die jetzt im Worker laufen: Empfänger der Alarme,
+  # Statusseite für den Verfügbarkeitsbericht, Metriken der Anwendung über ihren Dienstnamen
+  INSIGHT_ALERT_EMAILS: ${INSIGHT_ALERT_EMAILS:-}
+  GATUS_URL: ${GATUS_URL:-}
+  METRICS_URL: ${METRICS_URL:-http://mandari:8000/metrics/}
   # Ereignisse aus mandari Session an die Datendrehscheibe (aus, schatten, aktiv; siehe .env.example), Standard aus
   SESSION_EVENTS: ${SESSION_EVENTS:-aus}
   # Änderungsfeed und Snapshot je Kommune (siehe .env.example und docs/OPARL_API.md, „Betrieb“), Standard aus
@@ -322,8 +329,10 @@ services:
         condition: service_healthy
     networks:
       - mandari
-    # Der Runner startet oberhalb von TASKS_MAX_MEMORY_MB (Standard 400) neu, bevor das Limit greift
-    mem_limit: 512m
+    # Der Runner startet oberhalb von TASKS_MAX_MEMORY_MB (Standard 400) neu, bevor das Limit greift.
+    # Die Verwaltungsbefehle der Zeitpläne (früher Host-Cron im Anwendungscontainer, etwa die
+    # Sitzungsmappen) laufen hier als eigene Prozesse und brauchen den Rest bis 1 GB.
+    mem_limit: 1g
     # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
     stop_grace_period: 30s
     security_opt:

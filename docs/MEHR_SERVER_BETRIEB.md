@@ -24,9 +24,12 @@ genau einer Rolle zugeordnet ist.
   werden ausschließlich an die private Adresse `DATA_BIND` gebunden. Niemals an eine
   öffentliche Adresse – PostgreSQL, Redis und Elasticsearch sind ohne TLS und mit einfachem
   Passwort- bzw. ohne Schutz konfiguriert.
-- **Gemeinsame Ablagen** bei mehr als einem `web`-Server: Die Volumes `mandari_media`
-  (Uploads) und `mandari_files` (Dokument-Cache, `docs/FILE_CACHE.md`) müssen auf allen
-  web-Servern denselben Inhalt zeigen, z. B. als NFS-Mount. Mit nur einem web-Server entfällt das.
+- **Gemeinsame Ablagen** auf allen Servern mit `web`- oder `worker`-Rolle: Die Volumes
+  `mandari_media` (Uploads) und `mandari_files` (Dokument-Cache, `docs/FILE_CACHE.md`) müssen
+  dort denselben Inhalt zeigen, z. B. als NFS-Mount. Das gilt auch bei nur einem web-Server: Der
+  Worker erzeugt Sitzungsmappen aus hochgeladenen Unterlagen und füllt Personenfotos und
+  Dokument-Cache; ohne gemeinsame Ablage scheitern die Mappen, und die Anwendung sieht Fotos und
+  Cache nicht.
 - **Dieselbe `.env`-Basis** auf allen Servern: `POSTGRES_PASSWORD`, `REDIS_PASSWORD`,
   `SECRET_KEY`, `ENCRYPTION_MASTER_KEY`, `DOMAIN` müssen überall identisch sein.
 
@@ -69,10 +72,11 @@ Reihenfolge beim ersten Start: data → web (führt die Migrationen aus) → wor
 ## Kein Doppellauf zeitgesteuerter Jobs
 
 Mehrere Server bedeuten die Gefahr, dass derselbe Job zweimal läuft – etwa wenn das
-`worker`-Profil versehentlich auf zwei Servern aktiv ist oder Cron auf zwei web-Servern
-eingerichtet wurde. Drei Schutzmechanismen:
+`worker`-Profil versehentlich auf zwei Servern aktiv ist oder auf einem web-Server noch ein alter
+Cron-Eintrag steht. Drei Schutzmechanismen:
 
-1. **Management-Commands** (Cron, `DEPLOYMENT.md` → „Geplante Aufgaben“) tragen die
+1. **Management-Commands** (Zeitpläne im Worker, `DEPLOYMENT.md` → „Geplante Aufgaben“;
+   je Termin plant genau ein Scheduler über seine Lease einen Auftrag) tragen zusätzlich die
    Singleton-Sperre `apps/common/einmalig.py`: `cache.add` in Redis vergibt den Zuschlag
    atomar an genau einen Aufrufer; die Sperre verfällt nach `sperre_ttl` Sekunden von
    selbst (Absturzschutz) und wird nach dem Lauf sofort freigegeben. Ein zweiter Aufruf
@@ -80,9 +84,10 @@ eingerichtet wurde. Drei Schutzmechanismen:
    Geschützt: `send_session_reminders`, `send_question_reminders`,
    `send_task_due_reminders`, `fetch_person_photos`, `cleanup_orphaned_accounts`,
    `check_source_health`, `check_service_levels`, `availability_report`,
-   `build_meeting_packages`.
-   `--ohne-sperre` erzwingt den Lauf (Notfall). Cron trotzdem nur auf **einem** Server
-   einrichten – die Sperre ist das Sicherheitsnetz, nicht das Konzept.
+   `build_meeting_packages`, `session_privacy_purge`, `cache_files`, `generate_alerts`,
+   `send_digest` und die übrigen Befehle der Zeitpläne.
+   `--ohne-sperre` erzwingt den Lauf (Notfall). Die Sperre ist das Sicherheitsnetz, die
+   Lease des Schedulers das Konzept; Host-Cron für diese Befehle gibt es nicht mehr.
 2. **Protokoll-Orchestrator** (`minutes_orchestrator`) hält dieselbe Sperre je Durchlauf;
    ein zweiter Orchestrator überspringt Takte statt doppelt Rechenknoten anzulegen.
 3. **Ingestor-Daemon** nutzt eine PostgreSQL-Advisory-Sperre (`pg_try_advisory_lock`),
@@ -101,9 +106,9 @@ docker compose exec postgres psql -U mandari -c \
   "SELECT application_name, state FROM pg_stat_activity WHERE application_name LIKE 'ingestor-daemon %';"
 # → genau eine Zeile, auch wenn zwei Ingestor-Container laufen
 
-# Auf einem web-Server: Cron-Command zweimal gleichzeitig starten
-docker compose exec -T mandari python manage.py check_source_health & \
-docker compose exec -T mandari python manage.py check_source_health
+# Auf einem web-Server: denselben Befehl zweimal gleichzeitig von Hand starten
+docker compose exec -T mandari python manage.py check_source_health --trotz-zeitplan & \
+docker compose exec -T mandari python manage.py check_source_health --trotz-zeitplan
 # → einer läuft, der andere meldet „läuft bereits auf … – übersprungen“
 ```
 

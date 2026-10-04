@@ -586,6 +586,30 @@ class TestLaufsperre:
         assert "purged" not in out.getvalue()
         assert not OParlFile.objects.filter(content_purged_at__isnull=False).exists()
 
+    def test_neben_dem_zeitplan_laeuft_nur_der_robots_bericht(
+        self, body: OParlBody, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Zeitplan im Worker (Issue #516): ein alter Cron-Eintrag überspringt, ``--robots`` läuft."""
+        from io import StringIO
+
+        from apps.events import presence, verwaltungsbefehle
+
+        monkeypatch.delenv(verwaltungsbefehle.AUS_ZEITPLAN_ENV, raising=False)
+        monkeypatch.setattr(file_reconcile, "fetch_client", lambda: _client(_liefert(PDF_ALT)))
+        _datei(body, tmp_path, deleted=True, deleted_at=timezone.now() - timedelta(days=31))
+        _datei(body, tmp_path, "da.pdf")
+        presence.announce("worker", ["scheduler", "tasks"], [])
+
+        out, err = StringIO(), StringIO()
+        call_command("loeschabgleich", stdout=out, stderr=err)
+        assert "läuft als Zeitplan im Worker – Aufruf übersprungen" in err.getvalue()
+        assert not OParlFile.objects.filter(content_purged_at__isnull=False).exists()
+
+        out, err = StringIO(), StringIO()
+        call_command("loeschabgleich", "--robots", stdout=out, stderr=err)
+        assert "Aufruf übersprungen" not in err.getvalue()
+        assert f"{body.source.name}: " in out.getvalue()
+
 
 # =============================================================================
 # Kein Text gesperrter Dokumente in OParl-Ausgabe, Zusammenfassung und Suchindex

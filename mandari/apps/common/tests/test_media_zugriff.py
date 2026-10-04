@@ -26,6 +26,7 @@ DATEIEN = (
     "session/files/2026/09/geheim.txt",
     "motions/documents/2026/09/antrag.txt",
     "audit_archive/paket-2026.json",
+    "berichte/verfuegbarkeit-2026-09.md",
     "tasks/attachments/aufgabe.txt",
     "exports/org-1/mitglied-1/dsgvo-export-1.json",
     "oparl_files/musterstadt/2026/vorlage.pdf",
@@ -91,6 +92,8 @@ ANGEMELDET_GESPERRT = (
     "/media/tasks/%2e%2e/audit_archive/paket-2026.json",
     "/media/Session/files/2026/09/geheim.txt",
     "/media/SESSION/FILES/2026/09/geheim.txt",
+    # Berichte der Zeitpläne (REPORTS_ROOT, Issue #516) nie über eine URL
+    "/media/berichte/verfuegbarkeit-2026-09.md",
     # Datenexporte nur über work:export_download, Dokument-Cache nur über den Datei-Proxy
     "/media/exports/org-1/mitglied-1/dsgvo-export-1.json",
     "/media/Exports/org-1/mitglied-1/dsgvo-export-1.json",

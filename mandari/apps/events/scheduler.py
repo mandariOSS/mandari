@@ -33,7 +33,7 @@ from django.utils import timezone
 
 from . import leases
 from .models import ScheduleState
-from .schedule import Schedule, ScheduleRegistry
+from .schedule import Schedule, ScheduleRegistry, disabled_schedules
 from .schedule import registry as standard_register
 from .tasks_backend import JournalBackend, journal_backend
 
@@ -90,10 +90,11 @@ class Scheduler:
         # Meist ist nichts fällig: alle Stände in einer Abfrage ohne Sperren lesen, im Zweifel in
         # ``_plan`` unter Sperre genau prüfen
         staende: dict[str, datetime] = dict(ScheduleState.objects.values_list("name", "last_slot"))
+        abgeschaltet = disabled_schedules()
         angelegt: list[str] = []
         for eintrag in self.registry:
             try:
-                if self._plan(eintrag, jetzt, staende.get(eintrag.name)):
+                if self._plan(eintrag, jetzt, staende.get(eintrag.name), eintrag.name in abgeschaltet):
                     angelegt.append(eintrag.name)
             except leases.LeaseLostError:
                 self.is_leader = False
@@ -105,7 +106,7 @@ class Scheduler:
                 logger.exception("Zeitplan %s: Planung gescheitert, die übrigen laufen weiter", eintrag.name)
         return angelegt
 
-    def _plan(self, eintrag: Schedule, jetzt: datetime, zuletzt: datetime | None) -> bool:
+    def _plan(self, eintrag: Schedule, jetzt: datetime, zuletzt: datetime | None, abgeschaltet: bool = False) -> bool:
         termin = eintrag.trigger.latest(jetzt)
         if zuletzt is not None and termin <= zuletzt:
             return False
@@ -120,7 +121,9 @@ class Scheduler:
             if termin <= stand.last_slot:
                 return False
 
-            faellig = eintrag.is_due(termin, jetzt)
+            # Abgeschaltet (EVENTS_SCHEDULES_DISABLED): Der Termin verstreicht, damit beim Einschalten
+            # nichts nachgeholt wird, was in der Zwischenzeit anders erledigt wurde (alter Cron-Eintrag)
+            faellig = eintrag.is_due(termin, jetzt) and not abgeschaltet
             if faellig:
                 ergebnis: TaskResult[Any, Any] = self.backend.enqueue_once(
                     eintrag.task,
@@ -130,6 +133,8 @@ class Scheduler:
                 )
                 stand.last_task_id = ergebnis.id
                 logger.info("Zeitplan %s: Auftrag %s für %s", eintrag.name, ergebnis.id, termin.isoformat())
+            elif abgeschaltet:
+                logger.debug("Zeitplan %s: abgeschaltet, Termin %s ohne Auftrag", eintrag.name, termin.isoformat())
             else:
                 logger.info("Zeitplan %s: Termin %s verpasst und ausgelassen", eintrag.name, termin.isoformat())
             stand.last_slot = termin

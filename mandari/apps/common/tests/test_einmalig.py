@@ -101,3 +101,39 @@ def test_ohne_sperre_option_ueberlebt_eigenes_add_arguments() -> None:
     assert MitEigenenArgumenten.laeufe == [], "gesperrt → übersprungen"
     call_command(MitEigenenArgumenten(), "--report", "--ohne-sperre")
     assert MitEigenenArgumenten.laeufe == [True]
+
+
+class NurLesend(EinmaligMixin, BaseCommand):
+    """Ein Befehl mit Berichtsoption wie check_source_health --report."""
+
+    sperre = "nur-lesend"
+    nur_lesend = ("report",)
+    laeufe: list[str] = []
+
+    def add_arguments(self, parser: Any) -> None:
+        parser.add_argument("--report", action="store_true")
+        parser.add_argument("--dry-run", action="store_true")
+
+    def handle(self, *args: Any, **options: Any) -> None:
+        NurLesend.laeufe.append("bericht" if options["report"] else "probe" if options["dry_run"] else "lauf")
+
+
+def test_berichte_und_probelaeufe_laufen_auch_wenn_der_zeitplan_uebernimmt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bedient ein Worker den Zeitplan, überspringt nur der ändernde Aufruf (Issue #516)."""
+    import apps.common.einmalig as einmalig
+
+    monkeypatch.setattr(einmalig, "zeitplan_uebernimmt", lambda befehl: True)
+    NurLesend.laeufe.clear()
+
+    err = StringIO()
+    call_command(NurLesend(), stderr=err)
+    assert NurLesend.laeufe == []
+    assert "Aufruf übersprungen" in err.getvalue()
+
+    call_command(NurLesend(), "--report")
+    call_command(NurLesend(), "--dry-run")
+    call_command(NurLesend(), "--trotz-zeitplan")
+    assert NurLesend.laeufe == ["bericht", "probe", "lauf"]
+
+    assert NurLesend().liest_nur({"report": True}) and NurLesend().liest_nur({"dry_run": True})
+    assert not NurLesend().liest_nur({"report": False, "dry_run": False})

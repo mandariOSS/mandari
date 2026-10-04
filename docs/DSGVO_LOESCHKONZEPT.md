@@ -76,7 +76,7 @@ Zwei gleichwertige Wege:
 
 1. **UI**: *Einstellungen → Datenschutz → Löschlauf ausführen* (mit
    Probelauf-Option, Berechtigung `manage_settings`).
-2. **Kommandozeile** (z. B. Cron, monatlich):
+2. **Zeitplan im Worker** (monatlich, `befehl:session_privacy_purge`) oder von Hand:
 
    ```bash
    python manage.py session_privacy_purge              # alle aktiven Mandanten
@@ -84,7 +84,7 @@ Zwei gleichwertige Wege:
    python manage.py session_privacy_purge --dry-run    # nur zählen
    ```
 
-   Konten ohne Zuordnung (plattformweit, täglich per Cron, siehe DEPLOYMENT.md):
+   Konten ohne Zuordnung (plattformweit, täglich als Zeitplan im Worker, siehe DEPLOYMENT.md):
 
    ```bash
    python manage.py cleanup_orphaned_accounts           # löschen

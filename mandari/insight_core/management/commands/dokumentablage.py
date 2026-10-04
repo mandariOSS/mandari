@@ -2,6 +2,10 @@
 """
 Management Command: Pflege der Dokumentablage nach SHA-256 (Issue #788, docs/FILE_CACHE.md).
 
+Stündlich um :50 als Zeitplan ``befehl:dokumentablage`` im Worker (``apps/common/schedules.py``, Issue #516):
+``--aufraeumen``, mit Objektspeicher ``--hochladen --aufraeumen``. Die Kennzahlen laufen immer; die übrigen
+Schritte von Hand, während der Worker den Zeitplan bedient, mit ``--trotz-zeitplan``:
+
     python manage.py dokumentablage                    # Kennzahlen
     python manage.py dokumentablage --umstellen        # Kopien im Layout je Kommune verschieben (wiederaufnehmbar)
     python manage.py dokumentablage --aufraeumen       # Inhalte ohne Referenz löschen, Zwischenspeicher begrenzen
@@ -16,9 +20,23 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
+from apps.common.einmalig import EinmaligMixin
 
-class Command(BaseCommand):
+#: Optionen, die die Ablage ändern; ohne sie zeigt der Befehl nur Kennzahlen
+SCHRITTE = ("umstellen", "aufraeumen", "hochladen", "referenzen")
+
+
+class Command(EinmaligMixin, BaseCommand):
     help = "Pflegt die Dokumentablage nach SHA-256: umstellen, aufräumen, hochladen, Referenzen prüfen"
+
+    # Singleton je Cache/Redis (#55); verfällt vor dem nächsten stündlichen Termin, falls ein Lauf an
+    # seiner Zeitgrenze abgebrochen wird
+    sperre = "dokumentablage"
+    sperre_ttl = 3000
+
+    def liest_nur(self, options: dict[str, Any]) -> bool:
+        """Nur Kennzahlen (kein Schritt gewählt): läuft auch, während der Worker den Zeitplan bedient."""
+        return not any(options.get(name) for name in SCHRITTE)
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--umstellen", action="store_true", help="Kopien im alten Layout in die Ablage verschieben")

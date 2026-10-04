@@ -160,9 +160,8 @@ Readiness-Probe. Die Statusseite (Gatus) kann `/health/ready/` als Bedingung neh
 
 ## Alarmierung
 
-```cron
-15 * * * * docker exec mandari python manage.py check_source_health >> /var/log/mandari-source-health.log 2>&1
-```
+Zeitplan im Worker `befehl:check_source_health`, stündlich um :15 (`DEPLOYMENT.md`, „Geplante
+Aufgaben“).
 
 - Kritische Quelle → E-Mail-Alarm, Wiederholung frühestens nach 7 Tagen (`health_alert_sent_at`)
 - Quelle wieder OK → Entwarnung, Zeitstempel wird gelöscht
@@ -383,9 +382,8 @@ Fehlversuche je Grund, Rollen und Speicher des Workers.
 
 ## Service-Level-Alarme
 
-```cron
-30 6 * * * docker exec mandari python manage.py check_service_levels >> /var/log/mandari-service-levels.log 2>&1
-```
+Zeitplan im Worker `befehl:check_service_levels`, täglich 06:30. Er läuft im Worker und liest die
+Metriken der Anwendung über `METRICS_URL` (Compose: `http://mandari:8000/metrics/`).
 
 `check_service_levels` prüft täglich und meldet Unterschreitungen per E-Mail an
 `INSIGHT_ALERT_EMAILS` (Code in `apps/common/service_levels.py`):
@@ -400,7 +398,7 @@ Fehlversuche je Grund, Rollen und Speicher des Workers.
 
 Zur Fehlerquote ehrlich: Die Zähler leben im Web-Prozess und beginnen bei jedem Neustart bei
 null. Der Lauf merkt sich deshalb den letzten Zählerstand im Cache und bewertet die Differenz
-seit dem letzten Lauf – bei täglichem Cron die letzten ~24 h. Liegt der Zähler unter dem
+seit dem letzten Lauf – beim täglichen Zeitplan die letzten ~24 h. Liegt der Zähler unter dem
 gemerkten Stand (Neustart), gilt der Stand seit dem Start. Sind die Metriken nicht abrufbar,
 ist das selbst ein Alarm.
 
@@ -414,9 +412,9 @@ ohne die Sperre zu setzen.
 
 ## Verfügbarkeitsbericht
 
-```cron
-15 0 1 * * docker exec mandari python manage.py availability_report --out /var/lib/mandari/reports/verfuegbarkeit-$(date -d "yesterday" +\%Y-\%m).md >> /var/log/mandari-availability.log 2>&1
-```
+Zeitplan im Worker `befehl:availability_report`, am 1. jedes Monats um 00:15, nur mit `GATUS_URL`.
+Er schreibt `verfuegbarkeit-<YYYY-MM>.md` nach `REPORTS_ROOT` (Vorgabe `<MEDIA_ROOT>/berichte`, in
+der Sicherung, nie über `/media/` abrufbar).
 
 `availability_report --month YYYY-MM [--gatus-url URL] [--out datei.md] [--target 99.5]`
 stellt aus der Statusseite (Gatus, `GATUS_URL`) die Verfügbarkeit je überwachtem Dienst –

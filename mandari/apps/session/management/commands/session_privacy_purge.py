@@ -21,11 +21,14 @@ Aufrufe:
 
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.common.einmalig import EinmaligMixin
 from apps.session.models import SessionTenant
 from apps.session.services import privacy_service
 
 
-class Command(BaseCommand):
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "session_privacy_purge"  # Singleton je Cache/Redis, #55; Zeitplan befehl:session_privacy_purge
+    sperre_ttl = 3 * 3600
     help = "DSGVO-Löschlauf: Fristen anwenden, ausgeschiedene Mandatsträger anonymisieren (auditiert)."
 
     def add_arguments(self, parser):

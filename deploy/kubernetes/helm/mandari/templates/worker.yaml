@@ -74,6 +74,10 @@ spec:
             # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
             - name: TASKS_MAX_MEMORY_MB
               value: {{ .maxMemoryMb | quote }}
+            # Zeitplan check_service_levels läuft im Worker: Metriken der Anwendung über ihren Service
+            # (überschreibbar mit app.extraEnv bzw. worker.extraEnv)
+            - name: METRICS_URL
+              value: {{ printf "http://%s:%v/metrics/" (include "mandari.fullname" $root) $root.Values.service.port | quote }}
             {{- range $key, $value := $root.Values.app.extraEnv }}
             - name: {{ $key }}
               value: {{ $value | quote }}

@@ -42,7 +42,7 @@ def test_basisdatei_bleibt_profilfrei() -> None:
 
 
 def test_worker_dienst_wie_die_anwendung_mit_lebenszeichen() -> None:
-    """Dienst worker (Issue #509): gleiches Image und gleiche Umgebung, 512 MB, Heartbeat als Healthcheck."""
+    """Dienst worker (Issue #509): gleiches Image und gleiche Umgebung, 1 GB, Heartbeat als Healthcheck."""
     modul = _lade_skript()
     basis = modul._lade(modul.BASIS)["services"]
     worker, anwendung = basis["worker"], basis["mandari"]
@@ -50,7 +50,7 @@ def test_worker_dienst_wie_die_anwendung_mit_lebenszeichen() -> None:
     assert worker["image"] == anwendung["image"]
     assert worker["environment"] == anwendung["environment"], "Aufträge sehen dieselbe Konfiguration"
     assert worker["volumes"] == anwendung["volumes"]
-    assert worker["mem_limit"] == "512m"
+    assert worker["mem_limit"] == "1g", "Verwaltungsbefehle der Zeitpläne laufen als eigene Prozesse (#516)"
     befehl = worker["command"]
     assert befehl[:3] == ["python", "manage.py", "events_worker"]
     datei = befehl[befehl.index("--heartbeat-file") + 1]
@@ -75,6 +75,15 @@ def test_schalter_des_aenderungsfeeds_erreichen_die_anwendung() -> None:
     for name in ("OPARL_CHANGES_ENABLED", "OPARL_CHANGES_RETENTION_DAYS", "OPARL_SNAPSHOT_PARALLEL"):
         assert name in umgebung, name
     assert umgebung["OPARL_CHANGES_ENABLED"] == "${OPARL_CHANGES_ENABLED:-false}", "Standard bleibt aus"
+
+
+def test_zeitplaene_im_worker_bekommen_ihre_einstellungen() -> None:
+    """Issue #516: Die Betriebsprüfungen laufen im Worker und brauchen Empfänger, Statusseite und Metriken."""
+    modul = _lade_skript()
+    umgebung = modul._lade(modul.BASIS)["services"]["worker"]["environment"]
+    for name in ("EVENTS_SCHEDULES_DISABLED", "INSIGHT_ALERT_EMAILS", "GATUS_URL", "METRICS_URL"):
+        assert name in umgebung, name
+    assert umgebung["METRICS_URL"] == "${METRICS_URL:-http://mandari:8000/metrics/}", "nicht 127.0.0.1 im Worker"
 
 
 def _option(befehl: list[str], name: str) -> str | None:

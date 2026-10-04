@@ -77,14 +77,16 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_RECONCILE_MAX_MISSING` | 10 | Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu `404`/`410`, wird keines gesperrt |
 | `FILE_ACCEL_REDIRECT` | `false` | Lokale Kopien liefert der Webserver aus statt Django (siehe [Auslieferung über den Webserver](#auslieferung-über-den-webserver)) |
 
-```cron
-40 * * * * docker exec mandari python manage.py cache_files --limit 400 >> /var/log/mandari-file-cache.log 2>&1
-```
+Nachgeladen wird stündlich um :40 vom Zeitplan `befehl:cache_files` im Worker
+(`cache_files --limit 400`, Zeitgrenze 50 Minuten; `DEPLOYMENT.md`, „Geplante Aufgaben“). Ein
+Host-Cron ist dafür nicht mehr nötig; ein alter Eintrag überspringt, solange der Worker den Zeitplan
+bedient, und gehört aus der Crontab entfernt (Upgrade-Hinweis dort). Abschalten:
+`EVENTS_SCHEDULES_DISABLED=befehl:cache_files`.
 
-- Der Cron lädt neueste Dokumente zuerst nach; jeder Live-Abruf über die Vorschau legt die Datei
-  ebenfalls ab (Write-Through).
-- `cache_files --stats` zeigt Abdeckung, Belegung und freien Speicher; der Betriebsmonitor hat
-  dafür den Check „Dokument-Cache“.
+- Der Zeitplan lädt neueste Dokumente zuerst nach; jeder Live-Abruf über die Vorschau legt die Datei
+  ebenfalls ab (Write-Through). Die Ausgabe steht im Protokoll des Workers.
+- `cache_files --stats` zeigt Abdeckung, Belegung und freien Speicher (läuft immer); der
+  Betriebsmonitor hat dafür den Check „Dokument-Cache“.
 - `purge_deleted` entfernt lokale Kopien getilgter Dateien.
 - **Größe:** `local_size` ist die gemessene Größe unserer Kopie (Bytes, `bigint`). `size` bleibt die Angabe
   der Quelle aus OParl; liefert die Quelle keine, überschreibt der Abgleich eine vorhandene nicht mehr mit
@@ -170,24 +172,25 @@ Gleiche Dateien (dieselbe Anlage an mehreren Vorgängen) liegen nur einmal in de
 - **Rechte:** Abgelegte Inhalte sind für alle lesbar (`0644`), auch wenn der Download als temporäre Datei mit
   `0600` entstand. Anwendung und Ingestor legen mit derselben Kennung ab (Compose: uid 1000), der Webserver liest
   sie für die Auslieferung.
-- **Umstellen des Bestands:** `python manage.py dokumentablage --umstellen --limit 5000` verschiebt Kopien aus dem
-  Layout je Kommune in die Ablage (kein zweiter Platzbedarf, wiederaufnehmbar, so oft wiederholen, bis
+- **Umstellen des Bestands:** `python manage.py dokumentablage --umstellen --limit 5000 --trotz-zeitplan` verschiebt
+  Kopien aus dem Layout je Kommune in die Ablage (kein zweiter Platzbedarf, wiederaufnehmbar, so oft wiederholen, bis
   `noch im alten Layout 0` erscheint). Doppelte Kopien entfallen dabei.
 - **Pflege:** `dokumentablage` zeigt Inhalte, Belegung, die Ersparnis durch Deduplizierung und verwaiste Inhalte;
-  `--referenzen` berechnet die Zähler aus den Verweisen neu; `--aufraeumen` stündlich per Cron. Verwaiste
-  Inhalte löscht außerdem jeder Lauf des Löschabgleichs (`loeschabgleich`), damit eine ersetzte oder gelöschte
-  Fassung nicht an einem zweiten Cron hängt. `cache_files --stats` nennt beide Größen: „belegt“ zählt jeden
+  `--referenzen` berechnet die Zähler aus den Verweisen neu; `--aufraeumen` läuft stündlich um :50 als Zeitplan
+  `befehl:dokumentablage` im Worker (`DEPLOYMENT.md`, „Geplante Aufgaben“). Verwaiste Inhalte löscht außerdem
+  jeder Lauf des Löschabgleichs (`loeschabgleich`), damit eine ersetzte oder gelöschte Fassung nicht an einem
+  zweiten Zeitplan hängt. `cache_files --stats` nennt beide Größen: „belegt“ zählt jeden
   Inhalt einmal (plus Kopien im alten Layout), „je Datei gezählt“ zählt Dateien mit gleichem Inhalt mehrfach.
 
-```cron
-50 * * * * docker exec mandari python manage.py dokumentablage --aufraeumen >> /var/log/mandari-dokumentablage.log 2>&1
-```
+- **Von Hand:** Die Kennzahlen (`dokumentablage` ohne Schritt) laufen immer. Die Schritte brauchen
+  `--trotz-zeitplan`, solange der Worker den Zeitplan bedient; ein alter Cron-Eintrag überspringt dann und gehört
+  aus der Crontab entfernt. Abschalten: `EVENTS_SCHEDULES_DISABLED=befehl:dokumentablage`.
 
 - **Rückfall auf ein älteres Image:** Ältere Images finden die Kopien über `local_path` weiter, legen neue aber im
   alten Layout ab. `purge_deleted`, `prune_file_cache` und `loeschabgleich` dürfen mit einem älteren Image nicht
   laufen, solange Inhalte geteilt sind: Sie löschen Dateien nach `local_path` und kennen keine Referenzen
-  (`loeschabgleich` beim Ersetzen einer Fassung und beim Löschen nach Frist). Vor dem Rückfall also die
-  Cron-Einträge dieser Befehle aussetzen.
+  (`loeschabgleich` beim Ersetzen einer Fassung und beim Löschen nach Frist). Ein so altes Image kennt keine
+  Zeitpläne dieser Befehle; aus einer gesicherten Crontab also keine Einträge dieser Befehle zurückspielen.
 
 ### Objektspeicher
 
@@ -216,7 +219,8 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   gewinnen). Ein `env_file:` am Dienst reicht nicht, denn die Einträge unter `environment` (leer vorbelegt)
   gingen vor.
 - Reihenfolge beim Einschalten: Bestand umstellen (`--umstellen`), Zugangsdaten setzen, `OBJ_ENABLED=true`,
-  Neustart, `dokumentablage --hochladen` bis nichts mehr offen ist, danach `--hochladen` und `--aufraeumen` per Cron.
+  Neustart, `dokumentablage --hochladen --trotz-zeitplan` bis nichts mehr offen ist. Danach lädt der Zeitplan
+  `befehl:dokumentablage` vor jedem Aufräumen selbst hoch (`--hochladen --aufraeumen`, solange `OBJ_ENABLED` gesetzt ist).
 - Ausschalten: `OBJ_ENABLED=false`. Lokal verdrängte Inhalte holt die Vorschau dann von der Quelle; `cache_files`
   lädt sie nach. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
   (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie.
@@ -269,13 +273,17 @@ Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (I
   Tage und löscht danach ohne Rückfrage. In der Quelle gelöschte Dokumente ohne Löschzeitpunkt (Altbestand) bekommen beim ersten Lauf den
   aktuellen Zeitpunkt; ihre Frist beginnt also dann und nicht rückwirkend.
 
-```cron
-15 * * * * docker exec mandari python manage.py loeschabgleich >> /var/log/mandari-loeschabgleich.log 2>&1
-```
+Der Abgleich läuft stündlich um :15 als Zeitplan `befehl:loeschabgleich` im Worker (Zeitgrenze 50 Minuten;
+`DEPLOYMENT.md`, „Geplante Aufgaben“). **Vor dem ersten Lauf `loeschabgleich --robots` ansehen** (läuft immer,
+auch neben dem Zeitplan): Die Liste zeigt, welche Quellen der Abgleich wegen ihrer robots.txt nicht abfragt. Wer
+das vor dem ersten Lauf prüfen will, setzt vor dem Update `EVENTS_SCHEDULES_DISABLED=befehl:loeschabgleich` bei
+Worker und Anwendung und entfernt den Schalter danach; derselbe Schalter schaltet den Abgleich ab. Von Hand
+läuft er mit `--trotz-zeitplan`.
 
 Ein Lauf gleicht höchstens 200 geänderte Dokumente ab (`--changed-limit`) und nimmt je Kommune 30 Stichproben
 (`--head-limit`). `--nur-loeschen` und `--ohne-loeschen` trennen die Schritte. Ein Lauf hält eine Sperre im
-gemeinsamen Cache: Startet der nächste, bevor der vorige fertig ist, endet er sofort mit einem Hinweis.
+gemeinsamen Cache: Startet der nächste, bevor der vorige fertig ist, endet er sofort mit einem Hinweis. Die
+Sperre verfällt nach 3000 s; für einen längeren Handlauf den Zeitplan so lange abschalten.
 
 ### Quellen-Schonung
 
@@ -300,6 +308,11 @@ echo "//<box-host>/backup /srv/mandari-files/stadt-koeln cifs credentials=/root/
 mount -a
 ```
 
-Der Container sieht `/srv/mandari-files` als `/app/files`; die Kommune landet automatisch im
-gemounteten Unterverzeichnis. Nach dem Mount einmal `cache_files --body koeln --limit 100000`
-für den Erstbestand ausführen (ca. 65 GB, dauert mehrere Stunden).
+Anwendung und Worker sehen `/srv/mandari-files` als `/app/files` (beide brauchen denselben Mount,
+weil der Zeitplan im Worker den Cache füllt); die Kommune landet automatisch im gemounteten
+Unterverzeichnis. Nach dem Mount einmal
+`docker compose exec mandari python manage.py cache_files --body <slug> --limit 100000 --trotz-zeitplan`
+für den Erstbestand ausführen (ca. 65 GB, dauert mehrere Stunden). Für diese Zeit
+`EVENTS_SCHEDULES_DISABLED=befehl:cache_files` bei Worker und Anwendung setzen: Die Sperre des
+Befehls verfällt nach 3000 s, sonst startet der stündliche Zeitplan parallel und fragt dieselben
+Quellen doppelt an. Danach den Schalter wieder entfernen.

@@ -16,6 +16,7 @@ from apps.common.einmalig import EinmaligMixin
 class Command(EinmaligMixin, BaseCommand):
     sperre = "check_source_health"  # Singleton je Cache/Redis, #55
     sperre_ttl = 3600
+    nur_lesend = ("report",)  # nur Ausgabe: läuft auch, wenn der Worker den Zeitplan bedient
     help = "Bewertet OParl-Quellen und Systemdienste; verschickt Alarme und Entwarnungen per E-Mail"
 
     def add_arguments(self, parser):

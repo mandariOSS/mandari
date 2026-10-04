@@ -20,21 +20,17 @@ Beschlusskontrolle verschoben, wird für die neue Frist erneut erinnert.
 
 ## Betrieb
 
-Täglicher Lauf (z. B. Cron auf dem Host, werktags morgens):
+Der tägliche Lauf um 07:00 ist der Zeitplan `befehl:send_session_reminders` im Worker
+(`DEPLOYMENT.md`, „Geplante Aufgaben“); ein Host-Cron ist nicht nötig. Die Ausgabe steht im
+Protokoll des Workers. Von Hand:
 
 ```bash
-# alle aktiven Mandanten
-docker compose exec -T mandari python manage.py send_session_reminders
+# Testlauf ohne Versand (läuft immer)
+docker compose exec -T worker python manage.py send_session_reminders --dry-run
 
-# nur ein Mandant / Testlauf ohne Versand
-docker compose exec -T mandari python manage.py send_session_reminders --tenant stadt-musterstadt
-docker compose exec -T mandari python manage.py send_session_reminders --dry-run
-```
-
-Beispiel-Crontab (07:00 Uhr, Container `mandari`):
-
-```cron
-0 7 * * * cd /opt/mandari && docker compose exec -T mandari python manage.py send_session_reminders >> /var/log/mandari-reminders.log 2>&1
+# alle aktiven Mandanten bzw. nur einer, zusätzlich zum Zeitplan
+docker compose exec -T worker python manage.py send_session_reminders --trotz-zeitplan
+docker compose exec -T worker python manage.py send_session_reminders --tenant stadt-musterstadt --trotz-zeitplan
 ```
 
 Mehrfaches Ausführen am selben Tag erzeugt keine doppelten E-Mails.
@@ -68,5 +64,5 @@ Gegenüber früher gilt die Regel jetzt auch für den Knopf: Mit dem Standard-An
 ohne Zu- oder Absage (bisher nur, wer auch den Erhalt nicht bestätigt hatte); das frühere
 Verhalten des Knopfs entspricht dem Anlass „Empfangsbestätigung fehlt“.
 
-Für die automatische Erinnerung genügt der bestehende Cron-Eintrag oben; ein zusätzlicher ist
+Für die automatische Erinnerung genügt der tägliche Lauf oben; ein zusätzlicher Zeitplan ist
 nicht nötig.

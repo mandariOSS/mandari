@@ -29,6 +29,9 @@ Schedulers geladen) oder als Dekorator über ``@task``::
   für den jüngsten verpassten Termin an; ``Catchup.AUSLASSEN`` nur, wenn der Termin höchstens
   ``grace`` zurückliegt, sonst geht es mit dem nächsten Termin weiter.
 - Ein neu registrierter Zeitplan beginnt mit seinem nächsten Termin, nicht sofort beim Deploy.
+- ``EVENTS_SCHEDULES_DISABLED`` (Namen, kommagetrennt) schaltet einzelne Zeitpläne ab: Ihre Termine
+  verstreichen ohne Auftrag (``disabled_schedules``). Wieder eingeschaltet, geht es mit dem nächsten
+  Termin weiter; verstrichene werden nicht nachgeholt.
 
 Argumente müssen JSON sein und dürfen wie bei jedem Auftrag nur Kennungen enthalten.
 """
@@ -340,6 +343,13 @@ def cron[T: Task[Any, Any]](
         grace=grace,
         ziel=registry,
     )
+
+
+def disabled_schedules() -> frozenset[str]:
+    """Namen der abgeschalteten Zeitpläne (``EVENTS_SCHEDULES_DISABLED``)."""
+    roh = getattr(settings, "EVENTS_SCHEDULES_DISABLED", ()) or ()
+    teile = roh.split(",") if isinstance(roh, str) else roh
+    return frozenset(str(teil).strip() for teil in teile if str(teil).strip())
 
 
 def autodiscover() -> None:

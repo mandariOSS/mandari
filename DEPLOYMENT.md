@@ -191,7 +191,8 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
 - [ ] Tägliche Sicherung eingetragen (`crontab -l`), Probelauf mit `./backup.sh --verify`
 - [ ] Passphrase für die Konfiguration in der Sicherung eingerichtet und außerhalb des Servers verwahrt
   (Abschnitt „Sicherung“)
-- [ ] Geplante Aufgaben eingerichtet (Abschnitt „Geplante Aufgaben (Cron)“)
+- [ ] Worker läuft (`docker compose ps worker` „healthy“), `python manage.py events_scheduler --list`
+  zeigt die Zeitpläne (Abschnitt „Geplante Aufgaben“); in der Crontab nur Aufgaben des Betriebssystems
 
 ---
 
@@ -458,7 +459,7 @@ derselben Umgebung wie die Anwendung:
 
 | Dienst | Rollen und Warteschlangen | Speicherlimit |
 |---|---|---|
-| `worker` | alle Rollen; Aufträge und Abonnements aus `default`, `mail`, `index`, `adapter` | 512 MB (Runner-Neustart ab 400 MB) |
+| `worker` | alle Rollen; Aufträge und Abonnements aus `default`, `mail`, `index`, `adapter` | 1 GB (Runner-Neustart ab 400 MB; der Rest für die Verwaltungsbefehle der Zeitpläne, die als eigene Prozesse laufen) |
 | `worker-heavy` | nur `tasks`; Aufträge aus `ocr` und `ai` (Texterkennung, KI) | 1 GB (Runner-Neustart ab 800 MB) |
 
 Getrennt sind sie, weil jeder Neustart eines Runners (Zahl der Aufträge, Speichergrenze) auf seinen
@@ -519,40 +520,105 @@ der letzten Minute in `events_worker` gemeldet hat.
 (`docker compose ps worker worker-heavy`, Admin-Hinweis), dann `TASKS_BACKEND=journal` in der
 `.env` setzen und Anwendung und Worker neu starten.
 
-## ⏰ Geplante Aufgaben (Cron)
+## ⏰ Geplante Aufgaben (Zeitpläne im Worker)
 
-Die Anwendung bringt keinen eigenen Scheduler mit. Wiederkehrende Management-Commands
-laufen auf dem Host per Cron gegen den laufenden Container, jeweils mit eigener Logdatei.
-Jedes dieser Commands hält während des Laufs eine Singleton-Sperre in Redis; ein
-überlappender zweiter Aufruf wird mit Hinweis übersprungen (`--ohne-sperre` erzwingt):
+Wiederkehrende Verwaltungsbefehle laufen als **Zeitpläne im Worker** (Issue #516,
+`apps/common/schedules.py`), nicht mehr per Host-Cron. Sie sind damit in jeder Installationsart
+gleich (Compose, mehrere Server, Helm), versioniert und überwacht: Ein gescheiterter Lauf erscheint
+in `mandari_tasks_dead` und im Admin unter „Aufträge“. Jeder Lauf startet den Befehl wie früher
+der Cron-Eintrag als eigenen Prozess (im Worker-Container), mit derselben Singleton-Sperre in
+Redis und einer festen Zeitgrenze; ein Fehlschlag wird nicht wiederholt, der nächste Termin ist
+die Wiederholung. Zeiten in `TIME_ZONE`, ein verpasster Termin wird einmal nachgeholt. Die
+Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 
-```cron
-# Erinnerungen und Pflege (Containername folgt COMPOSE_PROJECT_NAME, Vorgabe mandari)
-0 7 * * *   docker exec mandari python manage.py send_session_reminders   >> /var/log/mandari-reminders.log 2>&1
-30 7 * * *  docker exec mandari python manage.py send_question_reminders  >> /var/log/mandari-question-reminders.log 2>&1
-15 7 * * *  docker exec mandari python manage.py send_task_due_reminders  >> /var/log/mandari-task-reminders.log 2>&1
-0 3 * * 1   docker exec mandari python manage.py fetch_person_photos      >> /var/log/mandari-person-photos.log 2>&1
-# Amtliche Umringe von Bebauungsplänen abrufen und Vorlagen zuordnen (Issue #598, docs/INSIGHT_GEO.md)
-50 4 * * *  docker exec mandari python manage.py sync_plan_boundaries     >> /var/log/mandari-plan-boundaries.log 2>&1
-# Verwaiste Konten (unbestätigt, abgelehnt, ohne Zuordnung) nach Frist löschen, Issue #238
-45 3 * * *  docker exec mandari python manage.py cleanup_orphaned_accounts >> /var/log/mandari-orphaned-accounts.log 2>&1
-# Betrieb (Issue #231, docs/MONITORING.md): Quellen stündlich, Service-Level täglich, Verfügbarkeitsbericht monatlich
-15 * * * *  docker exec mandari python manage.py check_source_health    >> /var/log/mandari-source-health.log 2>&1
-30 6 * * *  docker exec mandari python manage.py check_service_levels   >> /var/log/mandari-service-levels.log 2>&1
-15 0 1 * *  docker exec mandari python manage.py availability_report --out /var/lib/mandari/reports/verfuegbarkeit-$(date -d "yesterday" +\%Y-\%m).md >> /var/log/mandari-availability.log 2>&1
-# Protokollierung (Issue #221, docs/PROTOKOLLIERUNG.md): Hash-Ketten täglich prüfen (Exit-Code 1 bei Befund),
-# Sicherheitsprotokoll nach Frist archivieren und löschen, DSGVO-Löschlauf mit Archivpaket monatlich
-20 4 * * *  docker exec mandari python manage.py verify_audit_chain       >> /var/log/mandari-audit-chain.log 2>&1
-40 4 * * *  docker exec mandari python manage.py purge_security_audit_log >> /var/log/mandari-security-audit.log 2>&1
-0 5 1 * *   docker exec mandari python manage.py session_privacy_purge    >> /var/log/mandari-privacy-purge.log 2>&1
-```
+| Zeitplan | Wann | Befehl |
+|---|---|---|
+| `befehl:send_session_reminders` | täglich 07:00 | Fristen-Erinnerungen des Sitzungsdienstes |
+| `befehl:send_task_due_reminders` | täglich 07:15 | fällige Aufgaben |
+| `befehl:send_question_reminders` | täglich 07:30 | Ratsfragen (ohne Wirkung, solange pausiert) |
+| `befehl:fetch_person_photos` | montags 03:00 | Personenfotos |
+| `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
+| `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
+| `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, neueste fehlende Dateien zuerst (`docs/FILE_CACHE.md`) |
+| `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
+| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788) |
+| `befehl:generate_alerts` | täglich 07:45 | Benachrichtigungen der Abos zu Themen und Orten; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
+| `befehl:send_digest` | montags 08:00 | Wochenmail der Abos; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
+| `befehl:check_source_health` | stündlich :15 | Zustand der Quellen (Issue #231, `docs/MONITORING.md`) |
+| `befehl:check_service_levels` | täglich 06:30 | Service-Level |
+| `befehl:availability_report` | am 1. um 00:15 | Verfügbarkeitsbericht des Vormonats nach `REPORTS_ROOT`; nur mit `GATUS_URL` |
+| `befehl:verify_audit_chain` | täglich 04:20 | Hash-Ketten prüfen (Issue #221; ein Befund lässt den Lauf scheitern) |
+| `befehl:purge_security_audit_log` | täglich 04:40 | Sicherheitsprotokoll nach Frist |
+| `befehl:session_privacy_purge` | am 1. um 05:00 | DSGVO-Löschlauf mit Archivpaket |
+| `befehl:build_meeting_packages` | jede Minute | Sitzungsmappen (Issue #218): `--limit 5 --max-seconds 240` |
+
+Dazu die Zeitpläne aus dem Abschnitt „Worker“ (Fraktionssitzungen, Verortung, Aufräumen).
+`python manage.py events_scheduler --list` zeigt alle mit dem zuletzt geplanten Termin; von Hand
+läuft ein Befehl weiter mit `docker compose exec worker python manage.py <befehl> --trotz-zeitplan`.
+Aufrufe, die nur lesen oder berichten, laufen immer: `--dry-run`, `check_source_health --report`,
+`check_service_levels --report`, `cache_files --stats`, `loeschabgleich --robots`, `dokumentablage`
+ohne Schritt (Kennzahlen) und `availability_report` ohne `--out`.
+
+**Auf dem Host** bleiben nur Aufgaben des Betriebssystems: die Datensicherung (`./backup.sh`,
+Abschnitt „Backup“), der Journal-Alarm (`deploy/logging/journal-alert.sh`) und der Neustart
+ungesunder Container (`deploy/scripts/restart-unhealthy.sh`, Abschnitt „Automatischer Neustart“).
+
+`REPORTS_ROOT` (Vorgabe `<MEDIA_ROOT>/berichte`) liegt im Medien-Volume und damit in der Sicherung
+und ist nie über `/media/` abrufbar. `check_service_levels` braucht `INSIGHT_ALERT_EMAILS` als
+Empfänger und erreicht die Metriken der Anwendung über `METRICS_URL` (Compose-Vorgabe
+`http://mandari:8000/metrics/`, der Dienstname der Anwendung; auf einem getrennten Worker-Server die
+Adresse des Web-Servers im privaten Netz). Diese Einstellungen braucht jetzt der **Worker**; in
+eigenen Compose-Dateien also auch in seiner `environment`.
+
+### Umstellung von Host-Cron (Upgrade-Hinweis)
+
+Bestehende Installationen hatten die Befehle oben in der Crontab des Hosts (auch `cache_files`,
+`loeschabgleich` und `dokumentablage --aufraeumen` aus `docs/FILE_CACHE.md` und, bei eingeschalteten
+Abos, `generate_alerts`/`send_digest`). Die Umstellung
+läuft ohne Doppelläufe und ohne Lücke:
+
+1. **Worker zuerst:** `docker compose ps worker` zeigt `healthy`, `/health/` meldet
+   `"worker": "ok"`. Ohne laufenden Worker gibt es keine Zeitpläne. Im Rollenbetrieb
+   (`docs/MEHR_SERVER_BETRIEB.md`) vorher die gemeinsame Ablage für Medien und Dokument-Cache auf
+   dem worker-Server einrichten – Sitzungsmappen, Personenfotos und `cache_files` laufen dort.
+2. **Update einspielen.** Ab jetzt planen die Zeitpläne. Ein noch vorhandener Cron-Eintrag ruft den
+   Befehl weiter auf; der erkennt, dass ein Worker seinen Zeitplan bedient (Scheduler und Runner
+   für `default` leben), und endet mit dem Hinweis „läuft als Zeitplan im Worker – Aufruf
+   übersprungen“ (Exit-Code 0, in seiner Logdatei). Läuft kein Worker, arbeitet der Cron-Eintrag
+   wie bisher. Kontrolle nach einem Tag:
+
+   ```bash
+   grep -h "Aufruf übersprungen" /var/log/mandari-*.log | tail
+   docker compose logs --since 24h worker | grep "Zeitplan befehl:"
+   ```
+
+3. **Crontab bereinigen**, wenn die Zeitpläne laufen. Erst sichern, dann die Zeilen der Befehle oben
+   entfernen. Übrig bleiben nur Aufgaben des Betriebssystems (Datensicherung, Journal-Alarm, Neustart
+   ungesunder Container); steht danach noch ein `manage.py`-Aufruf in der Crontab, gehört er als
+   Zeitplan in den Code (`apps/common/schedules.py`):
+
+   ```bash
+   crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
+   crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
+   ```
+
+4. **Rückweg:** einzelne Zeitpläne abschalten mit `EVENTS_SCHEDULES_DISABLED=befehl:<name>`
+   (kommagetrennt) in der `.env` und `docker compose up -d worker mandari`; ihre Termine
+   verstreichen dann ohne Auftrag, und ein noch vorhandener (oder aus der Sicherung
+   zurückgespielter) Cron-Eintrag läuft wieder. Beim Wiedereinschalten wird nichts nachgeholt.
+   Insgesamt zurück geht es mit dem vorherigen Image (`deploy.sh rollback <tag>`) und der gesicherten
+   Crontab. Beim späteren erneuten Update holt jeder Zeitplan seinen letzten verpassten Termin einmal
+   nach, auch wenn ihn in der Zwischenzeit der Cron-Eintrag erledigt hat. Die Befehle sind weitgehend
+   wiederholbar (Erinnerungen und Benachrichtigungen je Objekt und Frist einmal); ein Service-Level-
+   oder Quellenalarm kann dabei ein zweites Mal kommen.
 
 Nach dem Update mit der Hash-Kette (Issue #221) einmal den Altbestand verketten; bis dahin
 schreiben betroffene Mandanten unverkettet weiter. Der Befehl ist wiederholbar und arbeitet in
 kurzen Transaktionen:
 
 ```bash
-docker exec mandari python manage.py audit_chain_backfill
+docker compose exec mandari python manage.py audit_chain_backfill
 ```
 
 Nach dem Update mit der öffentlichen Niederschrift (Issue #318) einmal die öffentliche Fassung für
@@ -560,7 +626,7 @@ bereits veröffentlichte Niederschriften erzeugen (OParl `resultsProtocol`, Bür
 ist wiederholbar, erzeugt nur Fehlendes und kennt `--dry-run` und `--tenant <slug>`:
 
 ```bash
-docker exec mandari python manage.py session_publish_protocols
+docker compose exec mandari python manage.py session_publish_protocols
 ```
 
 Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vorgabe
@@ -570,36 +636,28 @@ URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE
 exportiert `export_audit_log`; `SECURITY_AUDIT_RETENTION_DAYS` (Vorgabe 365) ist die Frist des
 Sicherheitsprotokolls.
 
-Dazu minütlich die Hintergrund-Erzeugung der Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218).
-Die Oberfläche legt nur Anforderungen an; ohne diesen Job bleibt eine Mappe bei „wird erstellt“:
-
-```cron
-* * * * *   docker exec mandari python manage.py build_meeting_packages --limit 5 --max-seconds 240 >> /var/log/mandari-meeting-packages.log 2>&1
-```
+Die Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218) erzeugt der Zeitplan
+`befehl:build_meeting_packages`; die Oberfläche legt nur Anforderungen an, ohne Worker bleibt eine
+Mappe bei „wird erstellt“. Im Leerlauf schreibt der Lauf nichts. Er läuft als eigener Prozess im Worker-Container (1 GB);
+`SESSION_PACKAGE_MAX_EMBED_MB` (Vorgabe 200) und `SESSION_PACKAGE_MAX_PAGES` (Vorgabe 3000) begrenzen,
+wie viele PDF-Anlagen je Mappe in das Gesamt-PDF eingebunden werden – weitere erscheinen dort als
+Verweisseite und bleiben im ZIP-Paket vollständig.
 
 **Abos zu Themen und Orten im Bürgerportal** (`/insight/benachrichtigungen/`) sind standardmäßig
 abgeschaltet (`INSIGHT_SUBSCRIPTIONS_ENABLED=false`): keine Links im Portal, die Abo-Seiten antworten
 mit 404, `generate_alerts` und `send_digest` brechen mit Hinweis ab. Abmelden über bereits versandte
-Links bleibt möglich; Beschluss-Abos sind nicht betroffen. Wer die Abos einschaltet, plant beide
-Befehle selbst ein (z. B. `generate_alerts` täglich, `send_digest` wöchentlich). Ein Neuaufbau der
-Abos über die Datendrehscheibe ist geplant.
+Links bleibt möglich; Beschluss-Abos sind nicht betroffen. Eingeschaltet laufen beide Befehle als
+Zeitpläne im Worker (`generate_alerts` täglich 07:45, `send_digest` montags 08:00, Abschnitt
+„Geplante Aufgaben“). Ein Neuaufbau der Abos über die Datendrehscheibe ist geplant.
 
 **Ratsfragen im Bürgerportal** (`/insight/fragen/`) sind standardmäßig pausiert
 (`INSIGHT_QUESTIONS_ENABLED=false`, docs/INSIGHT_QUESTIONS.md): Die bisherigen Fragen und Antworten bleiben
 unter ihren Adressen lesbar, mit Hinweis und ohne Antwortquoten je Person und Fraktion. Stellen, Bestätigen
 und Antworten antworten mit 404, es gehen keine Mails hinaus; `send_question_reminders` endet mit Hinweis
-und ohne Wirkung, der Cron-Eintrag kann bleiben.
+und ohne Wirkung, der Zeitplan kann bleiben.
 
-Im Leerlauf schreibt der Job nichts. Er läuft im Web-Container und teilt sich dessen Speicher;
-`SESSION_PACKAGE_MAX_EMBED_MB` (Vorgabe 200) und `SESSION_PACKAGE_MAX_PAGES` (Vorgabe 3000) begrenzen,
-wie viele PDF-Anlagen je Mappe in das Gesamt-PDF eingebunden werden – weitere erscheinen dort als
-Verweisseite und bleiben im ZIP-Paket vollständig.
-
-`check_service_levels` braucht `INSIGHT_ALERT_EMAILS` als Empfänger und erreicht die Metriken
-der laufenden Instanz über `METRICS_URL` (Vorgabe `http://127.0.0.1:8000/metrics/`, also im
-Container selbst). `availability_report` braucht `GATUS_URL` (Statusseite) und ein
-beschreibbares Zielverzeichnis im Container; ohne erreichbare Statusseite endet der Lauf mit
-Exit-Code 1.
+`availability_report` braucht `GATUS_URL` (Statusseite); ohne erreichbare Statusseite endet der
+Lauf mit Exit-Code 1 (im Zeitplan: gescheiterter Auftrag).
 
 Vor dem ersten Scharfschalten von `cleanup_orphaned_accounts` lohnt ein Probelauf mit
 `--dry-run`; die Kriterien stehen in `docs/DSGVO_LOESCHKONZEPT.md`. Die Ausgaben aller
@@ -622,15 +680,16 @@ Obergrenze der Datenbank.
 | Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
 | Worker (Dienst `worker`, alle Rollen ohne `ocr`/`ai`) | 19 | Pool 18 ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
 | Worker für Texterkennung und KI (Dienst `worker-heavy`) | 7 | nur Rolle `tasks` mit `ocr` und `ai`; Rechnung unten |
+| Verwaltungsbefehle der Zeitpläne (eigene Prozesse im Dienst `worker`) | 8 | höchstens 4 gleichzeitig (Parallelität von `default`), je Prozess 1–2 Verbindungen; früher als Host-Cron im Anwendungscontainer |
 | OCR-Worker | 30 | gleiches Image wie der Ingestor |
 | Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
 | Kundenportal | 10 | eigener Container, eigene Datenbank |
 | Sicherung (`pg_dump`) | 2 | nur während des Laufs |
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
-| **Summe** | **121** | |
+| **Summe** | **129** | |
 | **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb (Vorgabe der `docker-compose.yml`: 100) |
 
-Reserve: rund 80 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
+Reserve: rund 70 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
 **und** prüft die Summe.
 
 ### Worker

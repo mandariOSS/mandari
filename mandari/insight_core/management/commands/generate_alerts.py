@@ -6,7 +6,8 @@ Generates SubscriptionAlert entries for active subscribers based on:
 1. Neighborhood subscriptions (Haversine proximity query)
 2. Keyword subscriptions (Elasticsearch or Django ORM fallback)
 
-Run as cronjob: daily or before digest sending.
+Läuft täglich als Zeitplan befehl:generate_alerts im Worker, wenn die Abos eingeschaltet sind
+(apps/common/schedules.py, Issue #516).
 Usage: python manage.py generate_alerts
 """
 
@@ -17,10 +18,14 @@ from django.core.management.base import BaseCommand
 from django.db import connection
 from django.utils import timezone
 
+from apps.common.einmalig import EinmaligMixin
+
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "generate_alerts"  # Singleton je Cache/Redis, #55
+    sperre_ttl = 3600
     help = "Generiert Benachrichtigungen für aktive Insight-Abonnenten"
 
     def add_arguments(self, parser):
