@@ -98,6 +98,124 @@ def test_zeitstempel_eingebetteter_objekte_sind_keine_aenderung() -> None:
     assert ereignis.payload["changed"] == ["agendaItem"]
 
 
+def personen(*nummern: int) -> list[str]:
+    return [f"{BASE}/person/{nummer}" for nummer in nummern]
+
+
+def test_andere_reihenfolge_der_teilnehmer_ist_keine_aenderung() -> None:
+    """
+    Befund aus dem Betrieb (Issue #553): Eine Quelle liefert ``participant`` von Abruf zu Abruf anders
+    sortiert (dieselben Personen, zwei Einträge vertauscht). Jeder Abgleich meldete die Sitzung als
+    geändert, obwohl sich fachlich nichts geändert hatte.
+    """
+    alt = meeting(participant=personen(254, 274, 250, 330, 1285, 853))
+    neu = meeting(participant=personen(254, 274, 250, 1285, 330, 853))
+    assert ris_events.meeting_events(cid(MEETING), neu, Prior(alt)) == []
+    # Kommt eine Person dazu oder fällt eine weg, ist das weiterhin eine Änderung.
+    for geaendert in (personen(254, 274, 250, 1285, 330, 853, 7), personen(254, 274, 250, 1285, 330)):
+        (ereignis,) = ris_events.meeting_events(cid(MEETING), meeting(participant=geaendert), Prior(alt))
+        assert ereignis.payload["changed"] == ["participant"]
+
+
+#: Platzhalter: Das Feld fehlt im Objekt der Quelle.
+FEHLT = object()
+
+
+def _ohne_fehlende(daten: dict[str, Any]) -> dict[str, Any]:
+    return {feld: wert for feld, wert in daten.items() if wert is not FEHLT}
+
+
+def _ereignisse_je_typ(typ: str, alt: dict[str, Any], neu: dict[str, Any]) -> list[ris_events.Draft]:
+    """Ereignisse des Abgleichs eines Objekts dieser Art vom Stand ``alt`` auf den Stand ``neu``."""
+    bauen = {"meeting": meeting, "paper": paper, "agendaitem": item, "consultation": consultation, "file": datei}[typ]
+    vorher, nachher = _ohne_fehlende(bauen(**alt)), _ohne_fehlende(bauen(**neu))
+    if typ == "meeting":
+        return ris_events.meeting_events(cid(MEETING), nachher, Prior(vorher))
+    if typ == "paper":
+        return ris_events.paper_events(cid(PAPER), nachher, Prior(vorher))
+    if typ == "agendaitem":
+        prior = Prior(vorher, meeting_id=cid(MEETING))
+        return ris_events.agenda_item_events(cid(ITEM), nachher, prior, meeting_id=cid(MEETING), public=True)
+    if typ == "consultation":
+        return ris_events.consultation_events(cid(CONSULTATION), nachher, Prior(vorher), paper_id=cid(PAPER))
+    return ris_events.file_events(cid(FILE), nachher, Prior(vorher))
+
+
+#: Je Objektart eine Liste, die Quellen in wechselnder Reihenfolge liefern können
+LISTEN_JE_TYP = [
+    ("meeting", "participant", personen(1, 2, 3)),
+    ("meeting", "organization", [ORG, f"{BASE}/organization/2"]),
+    ("meeting", "auxiliaryFile", [{"id": f"{BASE}/file/{i}", "name": f"Anlage {i}"} for i in (1, 2)]),
+    ("meeting", "agendaItem", [item(), item(id=f"{BASE}/agendaitem/2", number="2", name="Haushalt")]),
+    ("paper", "originatorPerson", personen(1, 2)),
+    ("paper", "underDirectionOf", [ORG, f"{BASE}/organization/2"]),
+    ("paper", "keyword", ["Park", "Bänke"]),
+    ("paper", "consultation", [{"id": f"{BASE}/consultation/{i}", "role": "Vorberatung"} for i in (1, 2)]),
+    ("agendaitem", "auxiliaryFile", [{"id": f"{BASE}/file/{i}", "name": f"Anlage {i}"} for i in (1, 2)]),
+    ("agendaitem", "keyword", ["Park", "Bänke"]),
+    ("consultation", "organization", [ORG, f"{BASE}/organization/2"]),
+    ("file", "derivativeFile", [f"{BASE}/file/2", f"{BASE}/file/3"]),
+]
+
+
+@pytest.mark.parametrize(("typ", "feld", "liste"), LISTEN_JE_TYP, ids=[f"{t}-{f}" for t, f, _ in LISTEN_JE_TYP])
+def test_listen_vergleichen_jede_objektart_ohne_reihenfolge(typ: str, feld: str, liste: list[Any]) -> None:
+    assert _ereignisse_je_typ(typ, {feld: liste}, {feld: list(reversed(liste))}) == []
+    # Doppelte Einträge sagen nichts Neues.
+    assert _ereignisse_je_typ(typ, {feld: liste}, {feld: [*liste, liste[0]]}) == []
+    # Eine andere Menge bleibt eine Änderung.
+    (ereignis,) = _ereignisse_je_typ(typ, {feld: liste}, {feld: liste[:1]})
+    assert ereignis.payload.get("changed", [feld]) == [feld]
+
+
+#: Je Objektart ein Feld, dessen Änderung ein Ereignis ergibt
+FELD_JE_TYP = {
+    "meeting": "participant",
+    "paper": "keyword",
+    "agendaitem": "auxiliaryFile",
+    "consultation": "organization",
+    "file": "derivativeFile",
+}
+
+
+@pytest.mark.parametrize("typ", sorted(FELD_JE_TYP))
+@pytest.mark.parametrize(
+    ("alt", "neu"),
+    [(None, []), ([], None), (None, ""), ({}, None), (FEHLT, []), ([], FEHLT)],
+    ids=["null-liste", "liste-null", "null-text", "objekt-null", "fehlt-liste", "liste-fehlt"],
+)
+def test_leere_werte_gelten_als_fehlend(typ: str, alt: Any, neu: Any) -> None:
+    """``null``, leere Liste, leeres Objekt, leerer Text und ein fehlendes Feld sind fachlich dasselbe."""
+    feld = FELD_JE_TYP[typ]
+    assert _ereignisse_je_typ(typ, {feld: alt}, {feld: neu}) == []
+    # Ein Wert statt keinem bleibt eine Änderung.
+    assert _ereignisse_je_typ(typ, {feld: alt}, {feld: [f"{BASE}/file/9"]}) != []
+
+
+def test_reihenfolge_eingebetteter_objekte_zaehlt_nicht_ihr_inhalt_schon() -> None:
+    zweiter = item(id=f"{BASE}/agendaitem/2", number="2", name="Haushalt")
+    alt = meeting(agendaItem=[item(auxiliaryFile=personen(1, 2)), zweiter])
+    neu = meeting(agendaItem=[zweiter, item(auxiliaryFile=personen(2, 1), modified="2026-09-30T00:00:00+02:00")])
+    assert ris_events.meeting_events(cid(MEETING), neu, Prior(alt)) == []
+    neu = meeting(agendaItem=[zweiter, item(name="Mehr Bänke", auxiliaryFile=personen(2, 1))])
+    (ereignis,) = ris_events.meeting_events(cid(MEETING), neu, Prior(alt))
+    assert ereignis.payload["changed"] == ["agendaItem"]
+
+
+def test_koordinaten_bleiben_geordnet() -> None:
+    """In GeoJSON trägt die Reihenfolge die Bedeutung (Länge vor Breite, Verlauf einer Linie)."""
+
+    def ort(*koordinaten: list[float]) -> dict[str, Any]:
+        geojson = {"type": "Feature", "geometry": {"type": "LineString", "coordinates": list(koordinaten)}}
+        return {"id": f"{BASE}/location/1", "geojson": geojson}
+
+    alt = paper(location=[ort([7.62, 51.96], [7.63, 51.97])])
+    assert ris_events.paper_events(cid(PAPER), paper(location=[ort([7.62, 51.96], [7.63, 51.97])]), Prior(alt)) == []
+    for neu in (ort([7.63, 51.97], [7.62, 51.96]), ort([51.96, 7.62], [7.63, 51.97])):
+        (ereignis,) = ris_events.paper_events(cid(PAPER), paper(location=[neu]), Prior(alt))
+        assert ereignis.payload["changed"] == ["location"]
+
+
 def test_geaenderte_felder_heissen_wie_in_oparl() -> None:
     neu = paper(name="Mehr Bänke", paperType="Anfrage", reference="A/1")
     (ereignis,) = ris_events.paper_events(cid(PAPER), neu, Prior(paper()))

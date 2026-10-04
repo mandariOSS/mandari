@@ -568,6 +568,31 @@ async def test_vollabgleich_ohne_aenderung_schreibt_kein_ereignis(bestand: Besta
     assert await bestand.wert("SELECT raw_json->>'modified' FROM oparl_papers") == "2026-09-30T00:00:00+02:00"
 
 
+async def test_andere_reihenfolge_der_quelle_schreibt_kein_ereignis(bestand: Bestand) -> None:
+    """
+    Befund aus dem Betrieb (Issue #553): Die Quelle sortiert Teilnehmer und eingebettete Listen bei
+    jedem Abruf anders. Das ist keine Änderung; erst eine andere Menge ist eine.
+    """
+    personen = [f"{BASE}/person/{nummer}" for nummer in (254, 274, 330, 1285)]
+    punkte = [top(), top(id=f"{BASE}/agendaitem/2", number="2", name="Haushalt")]
+    meeting_id = await bestand.meeting(participant=personen, agendaItem=punkte, auxiliaryFile=[datei()])
+    beratungen = [{"id": f"{BASE}/consultation/{i}", "role": "Vorberatung", "meeting": MEETING} for i in (1, 2)]
+    await bestand.paper(consultation=beratungen, keyword=["Park", "Bänke"])
+    vorher = len(await bestand.ereignisse())
+
+    await bestand.meeting(participant=personen[::-1], agendaItem=punkte[::-1], auxiliaryFile=[datei()], keyword=[])
+    await bestand.paper(consultation=beratungen[::-1], keyword=["Bänke", "Park", "Park"])
+    assert len(await bestand.ereignisse()) == vorher
+    # Der Upsert selbst läuft wie bisher: Die Zeile trägt die Reihenfolge des letzten Abrufs.
+    assert await bestand.wert("SELECT raw_json->'participant'->>0 FROM oparl_meetings") == personen[-1]
+
+    await bestand.meeting(participant=personen[1:], agendaItem=punkte, auxiliaryFile=[datei()])
+    ereignis = (await bestand.ereignisse())[-1]
+    assert ereignis["type"] == "ris.meeting.changed"
+    assert ereignis["payload"]["meeting"] == str(meeting_id)
+    assert ereignis["payload"]["changed"] == ["participant"]
+
+
 async def test_geaenderte_vorlage_nennt_die_felder(bestand: Bestand) -> None:
     paper_id = await bestand.paper()
     await bestand.paper(name="Mehr Bänke", reference="A/1", modified="2026-09-02T09:00:00+02:00")
