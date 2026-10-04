@@ -92,6 +92,16 @@ export const merklisteController = defineComponent(() => ({
   },
 }))
 
+// ---- Dokumentzeile: ausgelesener Text --------------------------------------------------------
+
+export const documentText = defineComponent(() => ({
+  open: false,
+
+  toggle() {
+    this.open = !this.open
+  },
+}))
+
 // ---- Bürgerfrage -----------------------------------------------------------------------------
 
 export const questionForm = defineComponent(() => ({

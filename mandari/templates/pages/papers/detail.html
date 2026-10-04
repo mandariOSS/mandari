@@ -10,366 +10,128 @@
 {% endblock %}
 
 {% block content %}
-<div>
-    {% include "partials/tombstone_notice.html" with object=paper %}
+{% include "partials/tombstone_notice.html" with object=paper %}
 
-    {# Breadcrumb #}
-    <nav class="mb-6">
-        <ol class="flex items-center gap-2 text-sm">
+{# Kopf: wo steht die Sache? Titel, Angaben in einer Zeile, Stand-Satz und Aktionen (Stufe 2a) #}
+<header class="rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-7 sm:pb-8">
+    <nav aria-label="Brotkrumen" class="text-[0.9rem]">
+        <a href="{% url 'insight_core:insight:paper_list' %}"
+           class="sm:hidden inline-flex items-center gap-1 -ml-1 py-1 font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+            <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i>Vorgänge
+        </a>
+        <ol class="hidden sm:flex flex-wrap items-center gap-1.5 text-gray-600 dark:text-gray-400">
             <li>
-                <a href="{% url 'insight_core:insight:paper_list' %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                    Vorgänge
-                </a>
+                {% if active_body and active_body.pk == paper.body_id %}
+                <a href="{% url 'insight_core:insight:portal_home' %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{{ paper.body.get_display_name }}</a>
+                {% else %}{{ paper.body.get_display_name }}{% endif %}
             </li>
-            <li class="text-gray-400">/</li>
-            <li class="text-gray-900 dark:text-white font-medium truncate">
-                {{ paper.reference|default:paper.name|truncatechars:50 }}
+            <li class="flex items-center gap-1.5">
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-gray-400" aria-hidden="true"></i>
+                <a href="{% url 'insight_core:insight:paper_list' %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">Vorgänge</a>
+            </li>
+            <li class="flex items-center gap-1.5 min-w-0">
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-gray-400" aria-hidden="true"></i>
+                <span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100 truncate">{{ paper.reference|default:paper.name|truncatechars:50 }}</span>
             </li>
         </ol>
     </nav>
-
-    {# Hero #}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
-        <div class="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div class="flex-1 min-w-0">
-                {% if paper.reference %}
-                <p class="text-sm font-mono text-gray-500 dark:text-gray-400 mb-1">{{ paper.reference }}</p>
-                {% endif %}
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-                    {{ paper.name|default:"Vorgang" }}
-                </h1>
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-                    {% if paper.paper_type %}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-400">
-                        {{ paper.paper_type }}
-                    </span>
-                    {% endif %}
-                    {% if paper.date %}
-                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ paper.date|date:"d.m.Y" }}</span>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="flex-shrink-0">
-                {% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="lg" %}
-            </div>
+    <h1 class="mt-4 max-w-4xl text-[1.75rem] sm:text-[2.25rem] leading-[1.12] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">
+        {{ paper.name|default:"Vorgang" }}
+    </h1>
+    <p class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.95rem] text-gray-700 dark:text-gray-300">
+        {% if paper.paper_type %}<span>{{ paper.paper_type }}</span>{% endif %}
+        {% if paper.reference %}<span>{{ paper.reference }}</span>{% endif %}
+        {% if paper.date %}<span class="tabular-nums">vom {{ paper.date|date:"d.m.Y" }}</span>{% endif %}
+    </p>
+    <p class="mt-5 max-w-3xl text-[1.0625rem] leading-relaxed text-gray-900 dark:text-gray-100" data-testid="vorgang-stand">
+        <span class="font-semibold">Stand:</span> {{ paper_status.text }}
+    </p>
+    <div class="mt-6 flex flex-wrap items-center gap-2">
+        {% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="lg" %}
+        {% if not paper.summary and files %}
+        <div id="summary-action">
+            <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
+                    hx-target="#paper-summary" hx-swap="innerHTML"
+                    hx-disabled-elt="this" hx-indicator="#summary-status"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-gray-900 dark:text-white hover:bg-white dark:hover:bg-gray-700 disabled:opacity-60 transition-colors">
+                <i data-lucide="sparkles" class="w-4 h-4 text-primary-700 dark:text-primary-300" aria-hidden="true"></i>
+                Zusammenfassen
+            </button>
         </div>
+        {% endif %}
     </div>
+    <p id="summary-status" role="status" class="hidden [&.htmx-request]:block mt-3 text-sm text-gray-700 dark:text-gray-300">
+        Die KI fasst die Dokumente zusammen. Das dauert bis zu drei Minuten.
+    </p>
+</header>
 
-    <div class="grid lg:grid-cols-3 gap-8">
-        <!-- Main Content -->
-        <div class="lg:col-span-2 space-y-6">
-            <!-- AI Summary -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                        <i data-lucide="sparkles" class="w-5 h-5 text-primary-500"></i>
-                        KI-Zusammenfassung
-                    </h2>
-                </div>
-                <div id="paper-summary" class="px-6 py-4">
-                    {% if paper.summary %}
-                        <div class="prose prose-sm dark:prose-invert max-w-none">
-                            {{ paper.summary|linebreaks }}
-                        </div>
-                    {% else %}
-                        <div x-data="{ loading: false, elapsed: 0, interval: null }"
-                             x-init="$watch('loading', value => {
-                                 if (value) {
-                                     elapsed = 0;
-                                     interval = setInterval(() => elapsed++, 1000);
-                                 } else if (interval) {
-                                     clearInterval(interval);
-                                 }
-                             })">
-                            <button type="button" hx-post="{% url 'insight_core:insight:paper_summary' paper.id %}"
-                                    hx-target="#paper-summary"
-                                    hx-swap="innerHTML"
-                                    hx-request="timeout:300000"
-                                    @htmx:before-request="loading = true"
-                                    @htmx:after-request="loading = false"
-                                    x-show="!loading"
-                                    class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
-                                <i data-lucide="sparkles" class="w-4 h-4"></i>
-                                Zusammenfassung generieren
-                            </button>
-                            <p x-show="!loading" class="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                                Klicken Sie, um eine KI-Zusammenfassung dieses Vorgangs zu erstellen.
-                            </p>
+<div class="mt-10 grid gap-12 lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_21rem]">
+    <div class="min-w-0">
+        <div id="paper-summary" class="mb-12 empty:hidden" aria-live="polite">{% if paper.summary %}{% include "partials/paper_summary.html" with summary=paper.summary %}{% endif %}</div>
 
-                            <!-- Loading State -->
-                            <div x-show="loading" x-cloak class="space-y-4">
-                                <div class="flex items-center gap-3">
-                                    <svg class="animate-spin h-6 w-6 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    <div>
-                                        <p class="font-medium text-gray-900 dark:text-white">KI-Analyse läuft...</p>
-                                        <p class="text-sm text-gray-500 dark:text-gray-400">
-                                            <span x-text="elapsed + 's'"></span> vergangen
-                                        </p>
-                                    </div>
-                                </div>
-                                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 text-sm">
-                                    <p class="font-medium text-blue-800 dark:text-blue-300 mb-2">Was passiert gerade?</p>
-                                    <ul class="space-y-1 text-blue-700 dark:text-blue-400">
-                                        <li x-show="elapsed < 5">📄 Dokumente werden analysiert...</li>
-                                        <li x-show="elapsed >= 5 && elapsed < 30">🤔 KI denkt nach (Reasoning-Modell)...</li>
-                                        <li x-show="elapsed >= 30 && elapsed < 90">✍️ Zusammenfassung wird geschrieben...</li>
-                                        <li x-show="elapsed >= 90">⏳ Das dauert etwas länger bei komplexen Dokumenten...</li>
-                                    </ul>
-                                    <p class="mt-2 text-xs text-blue-600 dark:text-blue-500">
-                                        Dieser Vorgang kann 1-3 Minuten dauern. Bitte lassen Sie die Seite geöffnet.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Files & Raw Text Tabs -->
+        <section aria-labelledby="dokumente-titel">
+            <h2 id="dokumente-titel" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Dokumente</h2>
             {% if files %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
-                 x-data="{ activeTab: 'files' }">
-                <!-- Tab Navigation -->
-                <div class="flex border-b border-gray-200 dark:border-gray-700">
-                    <button type="button" @click="activeTab = 'files'"
-                            :class="activeTab === 'files' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'"
-                            class="px-6 py-4 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2">
-                        <i data-lucide="files" class="w-4 h-4"></i>
-                        Dokumente ({{ files|length }})
-                    </button>
-                    {% if files_with_text %}
-                    <button type="button" @click="activeTab = 'text'"
-                            :class="activeTab === 'text' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'"
-                            class="px-6 py-4 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2">
-                        <i data-lucide="file-text" class="w-4 h-4"></i>
-                        Rohtext ({{ files_with_text|length }})
-                    </button>
-                    {% endif %}
-                </div>
-
-                <!-- Files Tab Content -->
-                <div x-show="activeTab === 'files'" class="divide-y divide-gray-200 dark:divide-gray-700">
-                    {% if file_context_summary %}
-                    <div class="px-6 py-3 bg-blue-50 dark:bg-blue-900/20 flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
-                        <i data-lucide="info" class="w-4 h-4 flex-shrink-0"></i>
-                        <span>
-                            Nächste Beratung:
-                            <strong>{{ file_context_summary.organization_name }}</strong>{% if file_context_summary.date %},
-                            Sitzung am
-                            <a href="{% url 'insight_core:insight:meeting_detail' file_context_summary.meeting.id %}"
-                               class="underline hover:text-blue-900 dark:hover:text-blue-100">{{ file_context_summary.date|date:"d.m.Y" }}</a>{% endif %}{% if file_context_summary.agenda_number %},
-                            TOP {{ file_context_summary.agenda_number }}{% endif %}
-                        </span>
-                    </div>
-                    {% endif %}
-                    {% for file in files %}
-                    <div class="px-6 py-4 {% if file.download_url or file.access_url %}cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50{% endif %} transition-colors"
-                         {% if file.download_url or file.access_url %}
-                         @click="openDoc('{% url 'insight_core:insight:file_proxy' file.id %}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if file_context_summary.organization_name %}{{ file_context_summary.organization_name|escapejs }} · {% endif %}{% if paper.reference %}{{ paper.reference|escapejs }} · {% endif %}{% if file.size %}{{ file.size_human }}{% endif %}{% if file.mime_type %} · {{ file.mime_type }}{% endif %}')"
-                         {% endif %}>
-                        <div class="flex items-center gap-4">
-                            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
-                                {% if 'pdf' in file.mime_type|default:'' %}bg-red-100 dark:bg-red-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
-                                {% if 'pdf' in file.mime_type|default:'' %}
-                                    <i data-lucide="file-text" class="w-5 h-5 text-red-500 dark:text-red-400"></i>
-                                {% else %}
-                                    <i data-lucide="file" class="w-5 h-5 text-gray-500 dark:text-gray-400"></i>
-                                {% endif %}
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="font-medium text-gray-900 dark:text-white truncate md:whitespace-normal md:overflow-visible">
-                                    {{ file.name|default:file.file_name }}
-                                </p>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">
-                                    {% if file.size %}{{ file.size_human }}{% endif %}
-                                    {% if file.mime_type %}&middot; {{ file.mime_type }}{% endif %}
-                                </p>
-                            </div>
-                            <div class="flex items-center gap-2 flex-shrink-0">
-                                {% if file.download_url or file.access_url %}
-                                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-600 dark:text-primary-400">
-                                    <i data-lucide="eye" class="w-4 h-4"></i>
-                                    Ansehen
-                                </span>
-                                <a href="{{ file.download_url|default:file.access_url }}"
-                                   target="_blank" rel="noopener noreferrer" @click.stop
-                                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="In neuem Tab öffnen">
-                                    <i data-lucide="external-link" class="w-4 h-4 text-gray-400"></i>
-                                </a>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-
-                <!-- Raw Text Tab Content -->
-                {% if files_with_text %}
-                <div x-show="activeTab === 'text'" x-cloak class="divide-y divide-gray-200 dark:divide-gray-700">
-                    {% for file in files_with_text %}
-                    <div class="px-6 py-4" x-data="{ expanded: false }">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center flex-shrink-0">
-                                    <i data-lucide="file-text" class="w-4 h-4 text-rose-600 dark:text-rose-400"></i>
-                                </div>
-                                <div>
-                                    <p class="font-medium text-gray-900 dark:text-white text-sm">
-                                        {{ file.name|default:file.file_name }}
-                                    </p>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                                        {{ file.text_content|length|floatformat:0 }} Zeichen
-                                    </p>
-                                </div>
-                            </div>
-                            <button type="button" @click="expanded = !expanded"
-                                    class="text-sm text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
-                                <span x-text="expanded ? 'Einklappen' : 'Anzeigen'"></span>
-                                <i data-lucide="chevron-down" class="w-4 h-4 transition-transform" :class="expanded && 'rotate-180'"></i>
-                            </button>
-                        </div>
-                        <div x-show="expanded" x-collapse>
-                            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-96 overflow-y-auto">
-                                <pre class="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-mono leading-relaxed">{{ file.text_content }}</pre>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% endif %}
-            </div>
+            <ul class="mt-3">
+                {% for file in files %}
+                <c-insight.document-row :file="file" meta="{% if viewer_committee %}{{ viewer_committee }} · {% endif %}{{ paper.reference|default:'' }}" />
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="mt-3 text-gray-700 dark:text-gray-300">Zu diesem Vorgang sind keine Dokumente veröffentlicht.</p>
             {% endif %}
+        </section>
 
-            <!-- Beratungsverlauf (Consultation History) -->
-            {% if consultations %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                        <i data-lucide="git-branch" class="w-5 h-5 text-blue-500"></i>
-                        Beratungsverlauf ({{ consultations|length }})
-                    </h2>
-                </div>
-                <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                    {% for item in consultations %}
-                    <div class="px-6 py-4">
-                        <div class="flex items-start gap-4">
-                            <!-- Timeline Indicator -->
-                            <div class="flex flex-col items-center">
-                                <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0
-                                    {% if item.authoritative %}bg-green-100 dark:bg-green-900/50{% else %}bg-blue-100 dark:bg-blue-900/50{% endif %}">
-                                    {% if item.authoritative %}
-                                        <i data-lucide="check-circle" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
-                                    {% else %}
-                                        <i data-lucide="message-circle" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <!-- Content -->
-                            <div class="flex-1 min-w-0">
-                                <div class="flex flex-wrap items-center gap-2 mb-1">
-                                    {% if item.date %}
-                                    <span class="text-sm font-medium text-gray-900 dark:text-white">
-                                        {{ item.date|date:"d.m.Y" }}
-                                    </span>
-                                    {% endif %}
-                                    {% if item.organization_name %}
-                                    <span class="text-sm text-gray-600 dark:text-gray-400">
-                                        {{ item.organization_name }}
-                                    </span>
-                                    {% endif %}
-                                </div>
-
-                                <div class="flex flex-wrap items-center gap-2 mb-2">
-                                    {% if item.agenda_number %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                                        TOP {{ item.agenda_number }}
-                                    </span>
-                                    {% endif %}
-                                    {% if not item.public %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400">
-                                        <i data-lucide="lock" class="w-3 h-3 mr-1"></i>
-                                        nicht öffentlich
-                                    </span>
-                                    {% endif %}
-                                    {% if item.role %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400">
-                                        {{ item.role }}
-                                    </span>
-                                    {% endif %}
-                                    {% if item.authoritative %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400">
-                                        <i data-lucide="gavel" class="w-3 h-3 mr-1"></i>
-                                        Entscheidung
-                                    </span>
-                                    {% endif %}
-                                </div>
-
-                                {% if item.result %}
-                                <p class="text-sm text-gray-700 dark:text-gray-300 font-medium">
-                                    <span class="text-gray-500 dark:text-gray-400">Beschluss:</span>
-                                    {{ item.result }}
-                                </p>
-                                {% endif %}
-
-                                {% if item.meeting %}
-                                <a href="{% url 'insight_core:insight:meeting_detail' item.meeting.id %}"
-                                   class="inline-flex items-center gap-1 mt-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
-                                    <i data-lucide="external-link" class="w-3 h-3"></i>
-                                    Zur Sitzung
-                                </a>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- Sidebar -->
-        <div class="space-y-6">
-            {% if paper_locations or plan_areas %}
-            <!-- Orte und amtliche Umringe (Georeferenzierung, #598) -->
-            {% include "partials/paper_places.html" %}
-            {% endif %}
-
-            <!-- Info Card -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
-                <dl class="space-y-4">
-                    {% if paper.reference %}
-                    <div>
-                        <dt class="text-sm text-gray-500 dark:text-gray-400">Vorlagen-Nr.</dt>
-                        <dd class="font-mono font-medium text-gray-900 dark:text-white">{{ paper.reference }}</dd>
-                    </div>
-                    {% endif %}
-                    {% if paper.paper_type %}
-                    <div>
-                        <dt class="text-sm text-gray-500 dark:text-gray-400">Typ</dt>
-                        <dd class="font-medium text-gray-900 dark:text-white">{{ paper.paper_type }}</dd>
-                    </div>
-                    {% endif %}
-                    {% if paper.date %}
-                    <div>
-                        <dt class="text-sm text-gray-500 dark:text-gray-400">Datum</dt>
-                        <dd class="font-medium text-gray-900 dark:text-white">{{ paper.date|date:"d.m.Y" }}</dd>
-                    </div>
-                    {% endif %}
-                    {% if paper.oparl_created %}
-                    <div>
-                        <dt class="text-sm text-gray-500 dark:text-gray-400">Erstellt</dt>
-                        <dd class="font-medium text-gray-900 dark:text-white">{{ paper.oparl_created|date:"d.m.Y H:i" }}</dd>
-                    </div>
-                    {% endif %}
-                </dl>
-            </div>
-        </div>
+        {% if consultations %}
+        <section aria-labelledby="verlauf-titel" class="mt-12">
+            <h2 id="verlauf-titel" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Beratungsverlauf</h2>
+            <c-insight.timeline class="mt-6">
+                {% for item in consultations %}
+                <c-insight.timeline-entry date="{{ item.date|date:'d.m.Y' }}" title="{{ item.organization_name|default:'Sitzung' }}"
+                    href="{% if item.meeting %}{% url 'insight_core:insight:meeting_detail' item.meeting.id %}{% endif %}" state="{{ item.state }}">
+                    {% if item.detail %}{{ item.detail }}.{% endif %}
+                    {% if item.result %}Ergebnis: <span class="font-semibold text-gray-900 dark:text-white">{{ item.result }}</span>{% endif %}
+                </c-insight.timeline-entry>
+                {% endfor %}
+            </c-insight.timeline>
+        </section>
+        {% endif %}
     </div>
+
+    <aside class="min-w-0" aria-label="Orte und Angaben">
+        {% if paper_locations or plan_areas %}
+        {# Orte und amtliche Umringe (Georeferenzierung, #598) #}
+        {% include "partials/paper_places.html" %}
+        {% endif %}
+
+        <h2 class="{% if paper_locations or plan_areas %}mt-10 {% endif %}text-[1.125rem] font-bold tracking-tight text-gray-900 dark:text-white">Angaben</h2>
+        <dl class="mt-3 grid grid-cols-[7.5rem_minmax(0,1fr)] gap-y-2 text-[0.9rem]">
+            {% if paper.reference %}
+            <dt class="text-gray-600 dark:text-gray-400">Vorlagen-Nr.</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words">{{ paper.reference }}</dd>
+            {% endif %}
+            {% if paper.paper_type %}
+            <dt class="text-gray-600 dark:text-gray-400">Art</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words">{{ paper.paper_type }}</dd>
+            {% endif %}
+            {% if paper.date %}
+            <dt class="text-gray-600 dark:text-gray-400">Datum</dt>
+            <dd class="text-gray-900 dark:text-gray-100 tabular-nums">{{ paper.date|date:"d.m.Y" }}</dd>
+            {% endif %}
+            <dt class="text-gray-600 dark:text-gray-400">Kommune</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words">{{ paper.body.get_display_name }}</dd>
+            {% if source_url %}
+            <dt class="text-gray-600 dark:text-gray-400">Quelle</dt>
+            <dd>
+                <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+                    Ratsinformationssystem<span class="sr-only"> (öffnet in neuem Fenster)</span>
+                    <i data-lucide="external-link" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></i>
+                </a>
+            </dd>
+            {% endif %}
+        </dl>
+    </aside>
 </div>
 {% endblock %}
 

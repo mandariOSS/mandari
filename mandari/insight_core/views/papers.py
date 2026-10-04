@@ -111,22 +111,20 @@ class PaperDetailView(DetailView):
         files = [f for f in paper.files.all() if not f.withdrawn_by_publisher and not file_reconcile.is_blocked(f)]
         context["files"] = files
 
-        # Dateien mit extrahiertem Text für Rohtext-Tab
-        context["files_with_text"] = [f for f in files if f.text_content and f.text_content.strip()]
+        # Beratungsverlauf (Consultations mit Meeting-Info), Stand-Satz und Zeitstrahl
+        from ..services.paper_status import paper_status, timeline
 
-        # Beratungsverlauf (Consultations mit Meeting-Info)
         consultations = self._get_consultations_with_meetings(paper)
-        context["consultations"] = consultations
-
-        # Kontext-Summary für Dokumente-Tab (nächste zukünftige Beratung, Fallback neueste)
-        if consultations:
-            now = timezone.now()
-            with_meeting = [item for item in consultations if item.get("meeting") and item.get("date")]
-            if with_meeting:
-                future = [item for item in with_meeting if item["date"] >= now]
-                # Nächste zukünftige (früheste), sonst neueste vergangene
-                best = min(future, key=lambda x: x["date"]) if future else max(with_meeting, key=lambda x: x["date"])
-                context["file_context_summary"] = best
+        now = timezone.now()
+        status = paper_status(consultations, now)
+        context["paper_status"] = status
+        context["consultations"] = timeline(consultations, status, now)
+        # Gremium der Bezugsberatung als Angabe in der Dokumentansicht
+        reference = status.upcoming or status.last
+        context["viewer_committee"] = reference.get("organization_name") if reference else ""
+        # Seite des Vorgangs im Ratsinformationssystem (OParl ``web``), nur als http(s)-Adresse
+        web = (paper.raw_json or {}).get("web") if isinstance(paper.raw_json, dict) else None
+        context["source_url"] = web if isinstance(web, str) and web.startswith(("https://", "http://")) else ""
 
         # Ortsbezüge (offizielle OParl-Locations + extrahierte) für Karte/Liste
         locations = paper.locations if isinstance(paper.locations, list) else []
@@ -201,6 +199,7 @@ class PaperDetailView(DetailView):
                     "agenda_item": agenda_item,
                     "date": meeting.start if meeting else None,
                     "organization_name": meeting.get_display_name() if meeting else None,
+                    "organization_count": _organization_count(meeting) if meeting else None,
                     "agenda_number": agenda_item.number if agenda_item else None,
                     "result": agenda_item.result if agenda_item else None,
                     "public": agenda_item.public if agenda_item else True,
@@ -213,6 +212,19 @@ class PaperDetailView(DetailView):
         result.sort(key=lambda x: x["date"] or timezone.now(), reverse=False)
 
         return result
+
+
+def _organization_count(meeting) -> int | None:
+    """Anzahl der Gremien hinter ``OParlMeeting.get_display_name`` (Namen mit Komma verbunden).
+
+    Aus den vorgeladenen Gremien und ohne weitere Abfrage; ``None``, wenn sie so nicht feststeht. Der
+    Stand-Satz beugt danach auch Gremiennamen mit Komma („im Ausschuss für Planung, Bau und Umwelt“).
+    """
+    named = [org for org in list(meeting.organizations.all())[:2] if org.name]
+    if named:
+        return len(named)
+    urls = meeting.raw_json.get("organization") if isinstance(meeting.raw_json, dict) else None
+    return 1 if isinstance(urls, list) and len(urls) == 1 else None
 
 
 NO_TEXT_MESSAGE = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."
