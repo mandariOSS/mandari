@@ -3,7 +3,7 @@
 # Optimized for faster builds with better caching
 
 # uv mit fester Version (Dependabot hebt sie wie die Python-Basis)
-FROM ghcr.io/astral-sh/uv:0.12.21 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.23 AS uv
 
 FROM python:3.14-slim AS builder
 
