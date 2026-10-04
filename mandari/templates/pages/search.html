@@ -1,115 +1,45 @@
 {% extends "base_insight.html" %}
 {% load static %}
 
-{% block title %}Suche{% if query %}: {{ query }}{% endif %}{% endblock %}
+{% block title %}{% if query %}„{{ query }}“ – Suche{% else %}Suche{% endif %}{% endblock %}
 
-{% block content %}
-<div>
-    <!-- Header -->
-    <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Suche</h1>
-        <p class="text-gray-600 dark:text-gray-400">
-            Durchsuchen Sie alle Daten
-            {% if active_body %}der {{ active_body.name }}{% endif %}
-        </p>
-    </div>
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
+{% endblock %}
 
-    <!-- Search Form -->
-    <div class="mb-6">
-        <div class="relative">
-            <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
-            <input type="search"
-                   name="q"
-                   id="search-input"
-                   value="{{ query }}"
-                   placeholder="Suchen Sie nach Themen, Vorlagen, Personen..."
-                   autocomplete="off"
-                   hx-get="{% url 'insight_core:insight:search_results' %}"
-                   hx-trigger="keyup changed delay:300ms, search{% if query %}, load{% endif %}"
-                   hx-target="#search-results"
-                   hx-indicator="#search-loading"
-                   hx-include="#search-type-filter"
-                   class="w-full pl-12 pr-12 py-4 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-lg text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">
-
-            <!-- Loading indicator -->
-            <div id="search-loading" class="htmx-indicator absolute right-4 top-1/2 -translate-y-1/2">
-                <svg class="animate-spin h-5 w-5 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-            </div>
+{% comment %}
+Suchseite (Konzept Insight-Suche, P0.8/P0.9): Kopfband mit Suchfeld, darunter der Ergebnisbereich (Ortsband, Reiter,
+Filter, Liste). Ergebnisse kommen serverseitig; Live-Suche, Filter und Reiter tauschen per HTMX nur #suchergebnis aus
+und schreiben die Adresse fort (hx-push-url). Filter liegen außerhalb des Formulars und gehören per form="suche-form" dazu.
+{% endcomment %}
+{% block page %}
+<c-insight.kopfband titel_id="suche-titel" text_id="suche-zahl"
+    titel="{% if query and active_body %}„{{ query }}“ in {{ active_body.get_display_name }}{% elif query %}„{{ query }}“{% else %}Suche{% endif %}"
+    text="{% if count_sentence %}{{ count_sentence }}{% elif not query %}Vorgänge, Sitzungen, Dokumente, Personen und Gremien{% if active_body %} von {{ active_body.get_display_name }}{% endif %}. Für Straßen genügt der Name.{% endif %}">
+    <form id="suche-form" action="{% url 'insight_core:insight:search' %}" method="get" role="search"
+          hx-get="{% url 'insight_core:insight:search' %}" hx-target="#suchergebnis" hx-push-url="true"
+          hx-include="[form='suche-form']" hx-indicator="#suche-laden" class="flex gap-3 max-w-3xl">
+        <div class="relative flex-1 min-w-0">
+            <label for="suche-eingabe" class="sr-only">Suchbegriff</label>
+            <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+            <input id="suche-eingabe" type="search" name="q" value="{{ query }}" autocomplete="off" enterkeyhint="search"
+                   placeholder="Straße, Thema oder Aktenzeichen"
+                   hx-get="{% url 'insight_core:insight:search' %}" hx-trigger="input changed delay:400ms, search"
+                   hx-target="#suchergebnis" hx-push-url="true" hx-include="#suche-form, [form='suche-form']" hx-indicator="#suche-laden"
+                   class="w-full min-h-12 pl-11 pr-10 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-[1.0625rem] text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/30 outline-none">
+            <span id="suche-laden" class="htmx-indicator absolute right-3.5 top-1/2 -translate-y-1/2" aria-hidden="true">
+                <i data-lucide="loader-circle" class="w-5 h-5 animate-spin text-primary-700 dark:text-primary-300"></i>
+            </span>
         </div>
-    </div>
-
-    <!-- Type Filter -->
-    <div class="mb-6">
-        <div class="flex flex-wrap gap-2">
-            {% for type_key, type_label in available_types %}
-            <label class="inline-flex items-center">
-                <input type="radio"
-                       name="type"
-                       id="search-type-filter"
-                       value="{{ type_key }}"
-                       {% if search_type == type_key %}checked{% endif %}
-                       hx-get="{% url 'insight_core:insight:search_results' %}"
-                       hx-trigger="change"
-                       hx-target="#search-results"
-                       hx-indicator="#search-loading"
-                       hx-include="#search-input"
-                       class="sr-only peer">
-                <span class="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-all
-                            peer-checked:bg-primary-500 peer-checked:text-white
-                            bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300
-                            hover:bg-gray-200 dark:hover:bg-gray-700">
-                    {% if type_key == 'paper' %}<i data-lucide="file-text" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
-                    {% if type_key == 'meeting' %}<i data-lucide="calendar" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
-                    {% if type_key == 'person' %}<i data-lucide="user" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
-                    {% if type_key == 'organization' %}<i data-lucide="users" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
-                    {% if type_key == 'file' %}<i data-lucide="file-search" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
-                    {{ type_label }}
-                </span>
-            </label>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- Subscribe CTA -->
-    {% if query and insight_subscriptions_enabled %}
-    <div class="mb-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-3">
-        <div class="flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2 min-w-0">
-                <i data-lucide="bell" class="w-4 h-4 text-primary-500 shrink-0"></i>
-                <p class="text-sm text-primary-800 dark:text-primary-200 truncate">
-                    Neue Treffer f&uuml;r <strong>&bdquo;{{ query }}&ldquo;</strong> per E-Mail erhalten?
-                </p>
-            </div>
-            <a href="{% url 'insight_core:insight:notifications' %}?keyword={{ query|urlencode }}"
-               class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium rounded-lg transition-colors shrink-0 whitespace-nowrap">
-                <i data-lucide="mail" class="w-3.5 h-3.5"></i>
-                Abonnieren
-            </a>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Search Results -->
-    <div id="search-results">
-        {% if query %}
-            <div class="text-center py-12">
-                <svg class="animate-spin h-8 w-8 mx-auto text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-            </div>
-        {% else %}
-            <div class="text-center py-12">
-                <i data-lucide="search" class="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4"></i>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Suche starten</h3>
-                <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
-                    Geben Sie einen Suchbegriff ein, um Vorgänge, Personen, Gremien, Sitzungen und Dokumenteninhalte zu finden.
-                </p>
-            </div>
-        {% endif %}
-    </div>
+        <button type="submit" class="shrink-0 min-h-12 px-5 rounded-xl bg-primary-700 hover:bg-primary-800 text-white font-semibold">Suchen</button>
+    </form>
+</c-insight.kopfband>
+<div id="suchergebnis">
+    {% if query|length > 1 %}{% include "partials/search_page.html" %}{% endif %}
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- Karte im Ortsband: frontend/js/search-place-map.ts liest #suche-ort-daten -->
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
 {% endblock %}

@@ -640,6 +640,13 @@ SEARCH_MIN_RELEVANCE = float(os.environ.get("SEARCH_MIN_RELEVANCE", "0.05"))
 # wenn höchstens so viele Vorgänge und Dokumente der Kommune ihn enthalten
 SEARCH_NAME_PART_MAX_DOCS = int(os.environ.get("SEARCH_NAME_PART_MAX_DOCS", "400"))
 
+# Ortsband der Insight-Suche (Konzept Insight-Suche, P0.8): erkennt die Suche eine eindeutige Straße aus dem
+# eigenen Straßenverzeichnis, zeigt sie die neuesten Vorgänge im Umkreis mit Karte. Nur für Kommunen, deren Vorgänge
+# zu mindestens INSIGHT_SEARCH_PLACES_MIN_SHARE verortet sind. Suchanfragen gehen dabei an keinen externen Dienst.
+INSIGHT_SEARCH_PLACES = os.environ.get("INSIGHT_SEARCH_PLACES", "true").lower() in ("true", "1", "yes", "an")
+INSIGHT_SEARCH_PLACES_MIN_SHARE = float(os.environ.get("INSIGHT_SEARCH_PLACES_MIN_SHARE", "0.5"))
+INSIGHT_SEARCH_PLACES_RADIUS = int(os.environ.get("INSIGHT_SEARCH_PLACES_RADIUS", "500"))
+
 # Nebius AI (KI-Features: Dokumenten-Assistent, Zusammenfassungen)
 NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
 

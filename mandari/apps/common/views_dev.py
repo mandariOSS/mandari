@@ -56,6 +56,23 @@ def ui_kit_context() -> dict[str, object]:
         "demo_file": _demo_file("Antrag der Verwaltung"),
         "demo_file_barriere": _demo_file("Stellungnahme zum Antrag (nicht barrierefrei)"),
         "demo_treffer": _demo_treffer(),
+        "demo_reiter": [
+            {"key": "", "label": "Alle", "count": "94", "url": "#", "active": True},
+            {"key": "papers", "label": "Vorgänge", "count": "79", "url": "#", "active": False},
+            {"key": "files", "label": "Dokumente", "count": "126", "url": "#", "active": False},
+        ],
+        "demo_zeitraum": [
+            {"value": "", "label": "Beliebig", "count": None, "checked": True},
+            {"value": "2y", "label": "Letzte 2 Jahre", "count": "31", "checked": False},
+        ],
+        "demo_art": [
+            {"value": "Vorlage", "count": "64", "checked": True},
+            {"value": "Antrag", "count": "9", "checked": False},
+        ],
+        "demo_sortierung": [
+            {"value": "relevance", "label": "Relevanz", "checked": True},
+            {"value": "newest", "label": "Neueste", "checked": False},
+        ],
     }
 
 

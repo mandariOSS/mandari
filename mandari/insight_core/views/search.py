@@ -7,6 +7,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 
 from django.db.models import Q
 from django.shortcuts import render
+from django.utils.http import urlencode
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
@@ -33,33 +34,80 @@ def _searchable_body_ids() -> list[str]:
 
 
 class SearchView(TemplateView):
-    """Suchseite mit erweiterter Filterung."""
+    """Suchseite (Konzept Insight-Suche, P0.8/P0.9): Ergebnisse serverseitig, ohne JavaScript nutzbar.
+
+    Live-Suche, Filter und Reiter fragen dieselbe Adresse per HTMX ab (``hx-push-url``: Zurück, Teilen und Neuladen
+    behalten die Suche). Dann kommt nur der Ergebnisbereich (Seite 1) bzw. die nächsten Einträge (ab Seite 2).
+    """
 
     template_name = "pages/search.html"
 
+    def get(self, request, *args, **kwargs):
+        context = self.get_context_data(**kwargs)
+        if request.headers.get("HX-Request") == "true" and context.get("params") and context["params"].q:
+            template = "partials/search_results_liste.html" if context["page"] > 1 else "partials/search_page.html"
+            return render(request, template, context)
+        return self.render_to_response(context)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["query"] = self.request.GET.get("q", "")
-        context["search_type"] = self.request.GET.get("type", "all")
-        context["available_types"] = [
-            ("all", "Alle"),
-            ("paper", "Vorgänge"),
-            ("meeting", "Sitzungen"),
-            ("person", "Personen"),
-            ("organization", "Gremien"),
-            ("file", "Dokumente"),
-        ]
+        from django.utils import timezone
 
         from ..seo import get_page_seo
+        from ..services.search_page import SearchParams, build_context
 
+        params = SearchParams.from_get(self.request.GET)
         body = None if is_all_bodies_mode(self.request) else get_active_body(self.request)
+        context["params"] = params
+        context["query"] = params.q
         context["seo"] = get_page_seo(
             self.request,
-            title="Suche",
+            title=f"„{params.q}“ – Suche" if params.q else "Suche",
             description="Volltextsuche über Vorgänge, Sitzungen, Personen, Gremien und Dokumente der Ratsinformationen.",
             body=body,
         ).to_dict()
+        if len(params.q) < 2:
+            return context
+        try:
+            from ..services.search_service import get_search_service
+
+            body_ids = None if body else _searchable_body_ids()
+            context.update(build_context(get_search_service(), params, body, body_ids, timezone.localdate()))
+        except Exception as e:  # Elasticsearch nicht erreichbar: einfache Datenbanksuche, Seite bleibt nutzbar
+            import logging
+
+            logging.getLogger(__name__).warning(f"Suche ohne Elasticsearch, Datenbanksuche: {e}")
+            context.update(_fallback_context(params, body))
+        context["page"] = context.get("page", 1)
         return context
+
+
+def _fallback_context(params, body):
+    """Datenbanksuche nach Titel und Aktenzeichen, wenn Elasticsearch fehlt (je Typ höchstens zehn)."""
+    body_filter = {"body": body} if body else {"body_id__in": _searchable_body_ids()}
+    query = params.q
+    groups = []
+    for paper in OParlPaper.objects.filter(deleted=False, **body_filter).filter(
+        Q(name__icontains=query) | Q(reference__icontains=query)
+    )[:10]:
+        groups.append(
+            {
+                "kind": "vorgang",
+                "url": f"/insight/vorgaenge/{paper.id}/",
+                "title": paper.name or paper.reference,
+                "context": [c for c in (paper.paper_type, paper.reference) if c],
+            }
+        )
+    for meeting in OParlMeeting.objects.filter(deleted=False, **body_filter).filter(name__icontains=query)[:10]:
+        groups.append(
+            {
+                "kind": "sitzung",
+                "url": f"/insight/termine/{meeting.id}/",
+                "title": meeting.name or "Sitzung",
+                "context": [],
+            }
+        )
+    return {"groups": groups, "page": 1, "has_more": False, "tabs": [], "fallback": True}
 
 
 @require_GET
@@ -271,6 +319,7 @@ def _grouped_results(request, search_service, query, body, body_id, body_ids, in
             "page": grouped["page"],
             "pages": grouped["pages"],
             "has_more": grouped["has_more"],
+            "next_url": f"/insight/suche/?{urlencode({'q': query, 'type': search_type, 'page': grouped['page'] + 1})}",
             "count_sentence": count_sentence(grouped["counts"]),
             "other_types": other_types,
             "similar_spelling": grouped["similar_spelling"],
