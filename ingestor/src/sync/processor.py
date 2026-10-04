@@ -28,6 +28,7 @@ from mandari_oparl import (
     parse_date,
     parse_datetime,
 )
+from mandari_oparl.extensions import agenda_item_columns, meeting_columns
 
 from src.client.oparl_compat import consultation_agenda_item, oparl_type_url
 
@@ -230,6 +231,7 @@ class OParlProcessor:
             cancelled=data.get("cancelled", False),
             start=parse_datetime(data.get("start")),
             end=parse_datetime(data.get("end")),
+            protocol_approval=meeting_columns(data),
         )
 
         # Extract location
@@ -435,6 +437,7 @@ class OParlProcessor:
             result=data.get("result"),
             resolution_text=data.get("resolutionText"),
             meeting_external_id=data.get("meeting") if isinstance(data.get("meeting"), str) else None,
+            decision=agenda_item_columns(data),
         )
 
         # Extract consultation reference

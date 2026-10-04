@@ -14,6 +14,12 @@ from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Now
 from django.utils import timezone
+from mandari_oparl.extensions import (
+    APPROVAL_MODE_LABELS,
+    IMPLEMENTATION_LABELS,
+    RESULT_LABELS,
+    VOTING_METHOD_LABELS,
+)
 from mandari_oparl.ids import IdBases, canonical_id
 
 from apps.common.formatting import human_size
@@ -827,6 +833,19 @@ class OParlMeeting(SourceDeletionModel):
     location_name = models.CharField(max_length=500, blank=True, null=True)
     location_address = models.TextField(blank=True, null=True)
 
+    # Genehmigung der veröffentlichten Niederschrift (Erweiterung ``mandari:protocolApproval``, Issue #525)
+    protocol_approval_mode = models.CharField(
+        "Genehmigungsweg der Niederschrift",
+        max_length=20,
+        blank=True,
+        null=True,
+        choices=list(APPROVAL_MODE_LABELS.items()),
+    )
+    protocol_approved_on = models.DateField("Niederschrift genehmigt am", blank=True, null=True)
+    protocol_approved_in_external_id = models.TextField(
+        "Genehmigt in der Sitzung", blank=True, null=True, help_text="OParl-Kennung (URL) der genehmigenden Sitzung."
+    )
+
     # Gremien, die an dieser Sitzung beteiligt sind
     organizations = models.ManyToManyField(OParlOrganization, related_name="meetings", blank=True)
 
@@ -998,6 +1017,30 @@ class OParlAgendaItem(SourceDeletionModel):
     public = models.BooleanField(default=True)
     result = models.TextField(blank=True, null=True)
     resolution_text = models.TextField(blank=True, null=True)
+
+    # Beschlussfassung (Erweiterungen des kanonischen Modells, Issue #525): Beschlussnummer, Abstimmung (eine je
+    # TOP), Einzelstimmen nur bei namentlicher Abstimmung und der veröffentlichte Umsetzungsstand. Quelle sind die
+    # Erweiterungen ``mandari:*`` des AgendaItem (``mandari_oparl.extensions``); nullable, damit Schreiber ohne
+    # diese Spalten (älterer Ingestor) weiter einfügen können.
+    resolution_number = models.CharField("Beschlussnummer", max_length=100, blank=True, null=True)
+    vote_method = models.CharField(
+        "Abstimmungsart", max_length=20, blank=True, null=True, choices=list(VOTING_METHOD_LABELS.items())
+    )
+    vote_result = models.CharField(
+        "Ergebnis der Abstimmung", max_length=20, blank=True, null=True, choices=list(RESULT_LABELS.items())
+    )
+    votes_yes = models.PositiveIntegerField("Ja-Stimmen", blank=True, null=True)
+    votes_no = models.PositiveIntegerField("Nein-Stimmen", blank=True, null=True)
+    votes_abstain = models.PositiveIntegerField("Enthaltungen", blank=True, null=True)
+    roll_call = models.JSONField(
+        "Einzelstimmen", blank=True, null=True, help_text="Nur bei namentlicher Abstimmung: Liste aus name und vote."
+    )
+    implementation_status = models.CharField(
+        "Umsetzungsstand", max_length=20, blank=True, null=True, choices=list(IMPLEMENTATION_LABELS.items())
+    )
+    implementation_deadline = models.DateField("Erledigungsfrist", blank=True, null=True)
+    implementation_public_note = models.TextField("Öffentliche Statusmeldung zur Umsetzung", blank=True, null=True)
+    implementation_modified = models.DateTimeField("Umsetzungsstand geändert am", blank=True, null=True)
 
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)

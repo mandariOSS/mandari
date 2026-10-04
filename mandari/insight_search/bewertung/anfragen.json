@@ -1,0 +1,379 @@
+{
+ "beschreibung": "Bewertungssatz der Insight-Suche (Konzept Insight-Suche, 1.3 und 4.4): feste Anfragen je Kommune mit Absicht (A Ort, B Thema, C Akteur, D Nummer), Präfixen relevanter Begriffe (Prüfung auf Rauschen) und optional dem Aktenzeichen des neuesten relevanten Vorgangs. Nur öffentliche RIS-Kennungen, keine Nutzerdaten.",
+ "anfragen": [
+  {
+   "kommune": "muenster",
+   "text": "von-witzleben",
+   "absicht": "A",
+   "relevant": [
+    "witzleb"
+   ],
+   "neuester": "V/0573/2025"
+  },
+  {
+   "kommune": "muenster",
+   "text": "Von-Witzleben-Straße",
+   "absicht": "A",
+   "relevant": [
+    "witzleb"
+   ],
+   "neuester": "V/0573/2025"
+  },
+  {
+   "kommune": "muenster",
+   "text": "Witzlebenstraße",
+   "absicht": "A",
+   "relevant": [
+    "witzleb"
+   ],
+   "neuester": "V/0573/2025"
+  },
+  {
+   "kommune": "muenster",
+   "text": "Witzleben Str.",
+   "absicht": "A",
+   "relevant": [
+    "witzleb"
+   ],
+   "neuester": "V/0573/2025"
+  },
+  {
+   "kommune": "muenster",
+   "text": "Hafenstraße",
+   "absicht": "A",
+   "relevant": [
+    "hafenstr"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Radweg",
+   "absicht": "B",
+   "relevant": [
+    "radweg"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Schule",
+   "absicht": "B",
+   "relevant": [
+    "schul"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Kita",
+   "absicht": "B",
+   "relevant": [
+    "kita",
+    "kindertages"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Bebauungsplan",
+   "absicht": "B",
+   "relevant": [
+    "bebauungspl",
+    "b-plan"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Haushalt",
+   "absicht": "B",
+   "relevant": [
+    "haushalt"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Spielplatz",
+   "absicht": "B",
+   "relevant": [
+    "spielpl"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Baumfällung",
+   "absicht": "B",
+   "relevant": [
+    "baumfall",
+    "baumfäll"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Parkplätze",
+   "absicht": "B",
+   "relevant": [
+    "parkpl"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Straßenbeleuchtung",
+   "absicht": "B",
+   "relevant": [
+    "strassenbeleucht",
+    "straßenbeleucht"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Lärmschutz",
+   "absicht": "B",
+   "relevant": [
+    "larmschutz",
+    "lärmschutz"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "Kreisverkehr",
+   "absicht": "B",
+   "relevant": [
+    "kreisverkehr"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Hafenstraße",
+   "absicht": "A",
+   "relevant": [
+    "hafenstr"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Radweg",
+   "absicht": "B",
+   "relevant": [
+    "radweg"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Schule",
+   "absicht": "B",
+   "relevant": [
+    "schul"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Kita",
+   "absicht": "B",
+   "relevant": [
+    "kita",
+    "kindertages"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Bebauungsplan",
+   "absicht": "B",
+   "relevant": [
+    "bebauungspl",
+    "b-plan"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Haushalt",
+   "absicht": "B",
+   "relevant": [
+    "haushalt"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Spielplatz",
+   "absicht": "B",
+   "relevant": [
+    "spielpl"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Baumfällung",
+   "absicht": "B",
+   "relevant": [
+    "baumfall",
+    "baumfäll"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Parkplätze",
+   "absicht": "B",
+   "relevant": [
+    "parkpl"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Straßenbeleuchtung",
+   "absicht": "B",
+   "relevant": [
+    "strassenbeleucht",
+    "straßenbeleucht"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Lärmschutz",
+   "absicht": "B",
+   "relevant": [
+    "larmschutz",
+    "lärmschutz"
+   ]
+  },
+  {
+   "kommune": "koeln",
+   "text": "Kreisverkehr",
+   "absicht": "B",
+   "relevant": [
+    "kreisverkehr"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Hafenstraße",
+   "absicht": "A",
+   "relevant": [
+    "hafenstr"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Radweg",
+   "absicht": "B",
+   "relevant": [
+    "radweg"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Schule",
+   "absicht": "B",
+   "relevant": [
+    "schul"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Kita",
+   "absicht": "B",
+   "relevant": [
+    "kita",
+    "kindertages"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Bebauungsplan",
+   "absicht": "B",
+   "relevant": [
+    "bebauungspl",
+    "b-plan"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Haushalt",
+   "absicht": "B",
+   "relevant": [
+    "haushalt"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Spielplatz",
+   "absicht": "B",
+   "relevant": [
+    "spielpl"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Baumfällung",
+   "absicht": "B",
+   "relevant": [
+    "baumfall",
+    "baumfäll"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Parkplätze",
+   "absicht": "B",
+   "relevant": [
+    "parkpl"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Straßenbeleuchtung",
+   "absicht": "B",
+   "relevant": [
+    "strassenbeleucht",
+    "straßenbeleucht"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Lärmschutz",
+   "absicht": "B",
+   "relevant": [
+    "larmschutz",
+    "lärmschutz"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Kreisverkehr",
+   "absicht": "B",
+   "relevant": [
+    "kreisverkehr"
+   ]
+  },
+  {
+   "kommune": "muenster",
+   "text": "V/0624/2016",
+   "absicht": "D",
+   "relevant": [
+    "0624"
+   ],
+   "neuester": "V/0624/2016"
+  },
+  {
+   "kommune": "muenster",
+   "text": "Bezirksvertretung Mitte",
+   "absicht": "C",
+   "relevant": [
+    "bezirksvertret"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "witzleben",
+   "absicht": "A",
+   "relevant": [
+    "witzleb"
+   ]
+  },
+  {
+   "kommune": "darmstadt",
+   "text": "Haushalt",
+   "absicht": "B",
+   "relevant": [
+    "haushalt"
+   ],
+   "typ": "files",
+   "seiten": 5
+  }
+ ]
+}

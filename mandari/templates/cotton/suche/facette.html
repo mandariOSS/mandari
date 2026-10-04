@@ -1,0 +1,33 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Ein Filter der Suche als Knopf mit Ausklappliste (Konzept Insight-Suche 3.4), ohne JavaScript per <details>.
+  <c-suche.facette titel="Art" name="paper_type" typ="checkbox" :optionen="art_options" />
+Parameter: titel, name (Parameter wie in SearchQuery), typ (checkbox für Mehrfachauswahl, radio für eine Auswahl),
+optionen (Liste von {value, label?, count?, checked}; bei radio steht „ohne Filter“ als Option mit leerem Wert).
+Die Felder gehören per form="suche-form" zum Suchformular: Mit HTMX wirkt eine Änderung sofort, ohne JavaScript
+übernimmt „Anwenden“.
+{% endcomment %}
+<c-vars titel="" name="" typ="checkbox" optionen="" />
+<details class="relative group">
+    <summary class="list-none inline-flex items-center gap-1.5 min-h-11 px-3.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 cursor-pointer hover:border-gray-500 [&::-webkit-details-marker]:hidden">
+        {{ titel }}{% for o in optionen %}{% if o.checked and o.value %}<span class="sr-only"> (gewählt: {{ o.label|default:o.value }})</span><span class="w-1.5 h-1.5 rounded-full bg-primary-700 dark:bg-primary-300" aria-hidden="true"></span>{% endif %}{% endfor %}
+        <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180" aria-hidden="true"></i>
+    </summary>
+    <fieldset class="absolute left-0 z-30 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-2 shadow-lg">
+        <legend class="sr-only">{{ titel }}</legend>
+        {% for o in optionen %}
+        <label class="flex items-center gap-3 min-h-10 px-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer">
+            <input type="{{ typ }}" name="{{ name }}" value="{{ o.value }}" form="suche-form" {% if o.checked %}checked{% endif %}
+                   hx-get="{% url 'insight_core:insight:search' %}" hx-trigger="change" hx-target="#suchergebnis" hx-push-url="true" hx-include="#suche-form, [form='suche-form']"
+                   class="w-4 h-4 accent-primary-700">
+            <span class="flex-1 min-w-0">{{ o.label|default:o.value }}</span>
+            {% if o.count is not None %}<span class="tabular-nums text-sm text-gray-600 dark:text-gray-400">{{ o.count }}</span>{% endif %}
+        </label>
+        {% empty %}
+        <p class="px-2 py-2 text-sm text-gray-600 dark:text-gray-400">Keine Auswahl möglich.</p>
+        {% endfor %}
+        <div class="mt-1 px-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+            <button type="submit" form="suche-form" class="min-h-10 px-3 rounded-lg font-medium text-primary-700 dark:text-primary-300 hover:bg-primary-50 dark:hover:bg-gray-800">Anwenden</button>
+        </div>
+    </fieldset>
+</details>

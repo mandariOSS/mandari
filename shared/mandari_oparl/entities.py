@@ -49,6 +49,9 @@ class ProcessedMeeting(ProcessedEntity):
     location_external_id: str | None = None
     location_name: str | None = None
     location_address: str | None = None
+    # Genehmigung der Niederschrift (Erweiterung ``mandari:protocolApproval``): Spalten des RIS-Bestands
+    # aus ``mandari_oparl.extensions.meeting_columns`` (Issue #525)
+    protocol_approval: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProcessedPaper(ProcessedEntity):
@@ -98,6 +101,9 @@ class ProcessedAgendaItem(ProcessedEntity):
     result: str | None = None
     resolution_text: str | None = None
     meeting_external_id: str | None = None
+    # Beschlussfassung (Erweiterungen ``mandari:vote``, ``mandari:rollCall``, ``mandari:resolutionNumber``,
+    # ``mandari:implementation``): Spalten aus ``mandari_oparl.extensions.agenda_item_columns`` (Issue #525)
+    decision: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProcessedFile(ProcessedEntity):

@@ -334,8 +334,13 @@ bleibt; präzisiert wurde:
 - **Alarmregeln** als Prometheus-Regeln (`deploy/monitoring/prometheus-alerts.example.yml`,
   `docs/MONITORING.md`): Rückstand über fünf Minuten, tote Ereignisse, Sequenzierer-Stau über fünf
   Minuten, dazu Hinweise auf viele blockierte Ereignisse und einen gestörten Weckruf.
-- **Offen:** Nachspielen eines Abonnements ab einer Folgenummer und die Push-Prüfung „Worker lebt“.
-  Heartbeat und `/metrics` im Worker-Prozess bringt der folgende Nachtrag (#508).
+- **Nachgezogen:** Nachspielen ab Folgenummer oder Zeitpunkt (Admin-Aktion am Abonnement und
+  `events_dispatch --replay`, beide über `dispatch.rewind` und mit Eintrag im Sicherheitsprotokoll), die
+  Push-Prüfung „Worker lebt“ (#574), die Übersicht der Worker-Prozesse im Admin und der Kontext je
+  Auftrag: Ereignisse eines Auftrags tragen seine Kennung als Korrelations-ID und `system:<auftrag>`
+  als Auslöser (`task_runner.execute`). Folgeereignisse eines Handlers setzen weiterhin selbst
+  `event_context(caused_by=ereignis)`; die Zustellung kennt nur Batches, nicht das auslösende
+  Einzelereignis. Heartbeat und `/metrics` im Worker-Prozess bringt der folgende Nachtrag (#508).
 
 ## Nachtrag zur Umsetzung des Workers (#508)
 
@@ -384,6 +389,23 @@ Umgesetzt in `apps/session/hub_events.py` (Erfassung in den Fachfunktionen) und
 - **Abstimmung ohne Adresse:** Session führt je TOP eine Abstimmung; ihre Kennung bildet sich wie jede
   kanonische aus der Adresse des TOP mit dem Zusatz `voting`. Die Rücknahme eines Ergebnisses meldet
   `ris.object.depublished` der Abstimmung (`zurueckgenommen`) und die Änderung des TOP.
+
+## Nachtrag zu den Nachweisen (#514)
+
+Die Qualitätsziele und die Fitnessfunktion oben sind belegt; Tests, Messwerte und Grenzen stehen in
+`docs/EREIGNISTECHNIK_NACHWEISE.md`. Die Entscheidung bleibt; präzisiert wurde:
+
+- **Absturz als eigener Prozess:** Die Absturz- und Lasttests starten `events_worker` als eigenen
+  Prozess und beenden ihn hart (`apps/events/tests/prozess.py`). Ein Absturz mitten im Batch lässt die
+  Sicht unverändert (die offene Transaktion rollt zurück), der externe Effekt des Batches im Flug wird
+  nach dem Neustart wiederholt.
+- **Wiederanlauf:** Die Zustellung läuft nach einem Absturz ohne Handarbeit weiter, sobald die Leases
+  des toten Prozesses ablaufen (höchstens 30 s). Ein unterbrochener Auftrag wird nach Ablauf seiner
+  Sperre wiederholt, 45 bis 90 s nach dem Absturz; neue Aufträge laufen sofort.
+- **Doppelzustellung je Abonnement:** `apps/events/tests/test_zusagen.py` verlangt für jedes
+  registrierte Abonnement einen Test, der jedes Ereignis zweimal zustellt (`DOPPELZUSTELLUNG`).
+- **Rückstau:** Die Latenz bei Rückstau hängt an seiner Größe; abgebaut wird mit mehreren tausend
+  Ereignissen je Sekunde und Abonnement (gemessen ohne die Kosten des Handlers).
 
 ## Bezug
 

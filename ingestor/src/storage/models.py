@@ -155,6 +155,11 @@ class OParlMeeting(Base):
     location_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     location_address: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Genehmigung der Niederschrift (Erweiterung mandari:protocolApproval, Issue #525)
+    protocol_approval_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    protocol_approved_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    protocol_approved_in_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
@@ -334,6 +339,20 @@ class OParlAgendaItem(Base):
     public: Mapped[bool] = mapped_column(Boolean, default=True)
     result: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolution_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Beschlussfassung (Erweiterungen mandari:vote, mandari:rollCall, mandari:resolutionNumber,
+    # mandari:implementation; Issue #525)
+    resolution_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    vote_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    vote_result: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    votes_yes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    votes_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    votes_abstain: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    roll_call: Mapped[list[dict[str, str]] | None] = mapped_column(JSONB, nullable=True)
+    implementation_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    implementation_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    implementation_public_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    implementation_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)

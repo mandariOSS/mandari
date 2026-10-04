@@ -23,11 +23,14 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
+from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -61,6 +64,12 @@ def _uuid(value: object) -> uuid.UUID | None:
 # =============================================================================
 # Sitzungen
 # =============================================================================
+
+
+def body_ids_by_slug(slugs: Iterable[str]) -> dict[str, str]:
+    """Kennungen von Kommunen zu ihren Kurznamen (``muenster`` → UUID als Text); unbekannte fehlen."""
+    rows = OParlBody.objects.filter(slug__in=list(slugs)).values_list("slug", "id")
+    return {str(slug): str(pk) for slug, pk in rows}
 
 
 def meetings(bodies: Bodies) -> QuerySet[OParlMeeting]:
@@ -143,6 +152,55 @@ def agenda_item_exists(agenda_item_id: object) -> bool:
     """Gibt es diesen Tagesordnungspunkt im RIS-Bestand?"""
     pk = _uuid(agenda_item_id)
     return pk is not None and OParlAgendaItem.objects.filter(pk=pk).exists()
+
+
+@dataclass(frozen=True)
+class Decision:
+    """
+    Beschlussfassung an einem Tagesordnungspunkt (kanonisches Modell, Issue #525), in der Form der Erweiterungen
+    ``mandari:*`` der offenen Schnittstelle: Beschlussnummer, Abstimmung (Art, Ergebnis, Summen, je mit Bezeichnung),
+    Einzelstimmen nur bei namentlicher Abstimmung, veröffentlichter Umsetzungsstand. Fehlendes ist ``None``.
+    """
+
+    resolution_number: str | None
+    vote: dict[str, Any] | None
+    roll_call: list[dict[str, Any]] | None
+    implementation: dict[str, Any] | None
+
+
+def decision(agenda_item: OParlAgendaItem) -> Decision:
+    """Beschlussfassung eines Tagesordnungspunkts aus dem RIS-Bestand (ohne Abfrage)."""
+    return Decision(
+        resolution_number=agenda_item.resolution_number or None,
+        vote=vote_extension(agenda_item),
+        roll_call=roll_call_extension(agenda_item),
+        implementation=implementation_extension(agenda_item),
+    )
+
+
+@dataclass(frozen=True)
+class ProtocolApproval:
+    """Genehmigung der veröffentlichten Niederschrift einer Sitzung (Issue #525)."""
+
+    #: ``follow_up`` (in der Folgesitzung) oder ``direct`` (ohne Genehmigungsschritt veröffentlicht)
+    mode: str
+    approved_on: date | None
+    #: genehmigende Sitzung, sofern sie im Bestand ist
+    approved_in: OParlMeeting | None
+
+
+def protocol_approval(meeting: OParlMeeting) -> ProtocolApproval | None:
+    """Genehmigung der Niederschrift; ``None`` ohne Angabe. Höchstens eine Abfrage (genehmigende Sitzung)."""
+    if not meeting.protocol_approval_mode:
+        return None
+    approved_in = None
+    if meeting.protocol_approved_in_external_id:
+        approved_in = OParlMeeting.objects.filter(
+            external_id=meeting.protocol_approved_in_external_id, deleted=False
+        ).first()
+    return ProtocolApproval(
+        mode=meeting.protocol_approval_mode, approved_on=meeting.protocol_approved_on, approved_in=approved_in
+    )
 
 
 def agenda_items_by_external_id(external_ids: Iterable[str]) -> QuerySet[OParlAgendaItem]:

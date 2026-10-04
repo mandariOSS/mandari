@@ -309,6 +309,12 @@ def test_reuse_workflow_prueft_blockierend() -> None:
         ("ingestor/src/storage/events.py", {"qualitaet", "vertrag", "ingestor", "journal", "codeql_python"}),
         ("ingestor/src/storage/database.py", {"qualitaet", "vertrag", "ingestor", "codeql_python"}),
         ("ingestor/tests/test_loeschmarkierung.py", {"qualitaet", "ingestor", "codeql_python"}),
+        # Ereignisverträge sind JSON: Sie lösen die Prüfung der Verträge aus (Issue #519)
+        (
+            "mandari/hub/contracts/schemas/ris.paper.changed/v1.json",
+            {"qualitaet", "vertrag", "test", "smoke", "oparl"},
+        ),
+        ("scripts/check_event_contracts.py", {"qualitaet", "vertrag", "test", "codeql_python"}),
         ("scripts/smoke_tombstones.py", {"qualitaet", "test", "smoke", "codeql_python"}),
         ("mandari/Dockerfile", {"qualitaet", "docker"}),
         (".github/workflows/pr-check.yml", {"sicherheitsnetz", "qualitaet", "test"}),

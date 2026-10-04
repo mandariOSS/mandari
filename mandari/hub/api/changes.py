@@ -47,6 +47,11 @@ nach der Ausgabe eines gültigen Cursors geschah, ist dann noch vorhanden. Ob Ze
 hält das Aufräumen ausdrücklich fest (``apps.events.pruning``); aus Lücken in den Folgenummern lässt es
 sich nicht schließen, denn der Sequenzierer darf Nummern verwerfen.
 
+**Wiederherstellung:** Wird die Datenbank aus einer Sicherung zurückgespielt, fehlen Ereignisse, die
+Abnehmer schon gesehen haben. Ein Cursor, dessen Ereignis nicht mehr im Journal steht (und nicht
+aufgeräumt wurde), ergibt ``410`` mit dem Verweis auf den Snapshot; die Folgenummern dieser Ereignisse
+werden nie wieder vergeben (``apps.events.wiederherstellung``).
+
 **Abschnitte des Bestands:** Ändert sich der Bestand einer Kommune am Journal vorbei – das Bürgerportal
 nimmt sie dauerhaft zurück und stellt sie später wieder her –, kann der Feed das nicht nachzeichnen.
 Die Ausgabe beginnt dann einen neuen Abschnitt (``Feed.epoch``); er geht in die Verschlüsselung des
@@ -300,6 +305,24 @@ def _missing_since(cursor: Cursor) -> bool:
     return horizon.recorded_before > datetime.combine(cursor.day, time.min, tzinfo=UTC)
 
 
+def _lost_in_restore(cursor: Cursor) -> bool:
+    """
+    Zeigt der Cursor auf ein Ereignis, das es nicht mehr gibt, ohne dass aufgeräumt wurde?
+
+    Jeder Cursor nennt die Folgenummer eines Ereignisses, das bei seiner Ausgabe im Journal stand (oder 0),
+    und Zeilen löscht nur das Aufräumen, das festgehalten wird. Fehlt das Ereignis oberhalb dessen, wurde
+    die Datenbank aus einer Sicherung wiederhergestellt: Der Abnehmer hat Ereignisse gesehen, die es nicht
+    mehr gibt, und steigt über den Snapshot neu ein. Ihre Folgenummern werden nie wieder vergeben
+    (``apps.events.wiederherstellung``), die Antwort bleibt also ``410``.
+    """
+    if cursor.seq <= 0:
+        return False
+    horizon = pruning.horizon()
+    if horizon is not None and cursor.seq <= horizon.through_seq:
+        return False
+    return not Event.objects.filter(seq=cursor.seq).exists()
+
+
 def _operation(event: Event) -> tuple[str, str | None]:
     """Operation und Grund eines Eintrags nach dem Vertrag des Ereignisses."""
     if event.aggregate_type in CARRIERS:
@@ -463,7 +486,7 @@ def changes_response(request: HttpRequest, feed: Feed) -> HttpResponse:
             cursor = decode_cursor(feed.body_id, token, feed.epoch)
         except CursorExpiredError:
             return expired_response(request, feed)
-        if (day - cursor.day).days > days or _missing_since(cursor):
+        if (day - cursor.day).days > days or _missing_since(cursor) or _lost_in_restore(cursor):
             return expired_response(request, feed)
         after = cursor.seq
     else:

@@ -280,16 +280,26 @@ den Betrieb“, mit Konto, Adresse, Aktion und Kennungen, ohne Inhalte):
 
 - **Abonnements:** Zustand, Warteschlange, Cursor, Rückstand (wie `mandari_events_lag_seconds`, rot ab
   300 s) und geparkte Ereignisse je Zustand. Aktionen: Pausieren (nichts mehr zustellen, der Cursor
-  bleibt stehen), Fortsetzen (aktiv) und Fortsetzen im Schattenbetrieb – beide nur für pausierte.
+  bleibt stehen), Fortsetzen (aktiv) und Fortsetzen im Schattenbetrieb – beide nur für pausierte –
+  sowie Nachspielen ab Folgenummer oder Zeitpunkt (Zwischenseite; setzt den Cursor nur zurück, der
+  laufende Worker stellt erneut zu; der Handler muss das vertragen).
 - **Geparkte Ereignisse:** standardmäßig der Kopf jeder Kette je Objekt (wiederholen oder tot) mit der
   Zahl seiner Folgeereignisse; „Alle Ereignisse“ bzw. der Filter nach Zustand zeigt auch die
   blockierten. Aktionen: Erneut versuchen (nur das erste Ereignis eines Objekts, mit allen Versuchen) und
   Verwerfen (mit Bestätigung; das nächste Ereignis desselben Objekts rückt nach und wird sofort
   zugestellt).
 - **Aufträge:** nur lesend, Filter nach Status und Warteschlange.
+- **Worker:** die Prozesse von `events_worker` mit Rollen, Warteschlangen, Start und letzter Meldung,
+  nur lesend. „lebt“ heißt gemeldet innerhalb von 60 s; ein Prozess meldet sich nur, solange jede seiner
+  Rollen arbeitet. Zeilen abgestürzter Prozesse erscheinen als „veraltet“ und werden nach einem Tag
+  aufgeräumt.
 
 Dieselben Eingriffe gibt es auf der Kommandozeile (`manage.py events_dispatch --list`,
-`--retry-parked`, `--discard-parked`); dort ohne Eintrag im Sicherheitsprotokoll.
+`--retry-parked`, `--discard-parked`, `--replay`); auch sie stehen im Sicherheitsprotokoll (Quelle
+`kommandozeile`, ohne Konto).
+
+Ereignisse, die ein Auftrag veröffentlicht, tragen die Kennung des Auftrags als Korrelations-ID und
+`system:<auftrag>` als Auslöser; so findet man im Journal, was ein Auftrag ausgelöst hat.
 
 ### Worker für die Statusseite (Issue #574)
 

@@ -61,6 +61,15 @@ def _tenant_visibility(tenant: Any) -> str:
     }.get(tenant.insight_end_mode or "", HIDDEN)
 
 
+def tenant_publishes_implementation(tenant: Any) -> bool:
+    """
+    Anteil des Mandanten an ``is_publicly_visible``: Kommune verknüpft, Mandant aktiv, Umsetzungsstand von der
+    Verwaltung freigegeben und im Bürgerportal aktiv veröffentlicht. Ändert sich das, ändert sich die Ausgabe des
+    Umsetzungsstands aller freigegebenen Beschlüsse des Mandanten (Issue #525).
+    """
+    return bool(tenant.oparl_body_id) and _tenant_visibility(tenant) == VISIBLE
+
+
 def publishing_tenants(body: Any) -> Any:
     """Mandanten, deren Beschlüsse lesbar sind: veröffentlichend oder als Archiv."""
     from django.db.models import Q

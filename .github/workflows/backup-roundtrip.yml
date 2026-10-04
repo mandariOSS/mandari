@@ -95,6 +95,37 @@ jobs:
           echo "BACKUP_TEST_PASSPHRASE=$passphrase" >> "$GITHUB_ENV"
           docker compose config --services
 
+          # Hilfen für das Journal der Ereignistechnik (Issue #573), in den folgenden Schritten geladen
+          cat > "$RUNNER_TEMP/journal.sh" <<'BASH'
+          journal_schreiben() {
+            docker exec -i mandari-postgres psql -X -q -v ON_ERROR_STOP=1 -U mandari -d mandari -v n="$1" <<'SQL'
+          INSERT INTO events_event (event_id, type, version, aggregate_type, aggregate_id, tenant_ref, visibility,
+                                    occurred_at, correlation_id, payload)
+          SELECT gen_random_uuid(), 'ci.probe.geaendert', 1, 'Objekt', gen_random_uuid(), 'org:ci', 'intern', now(),
+                 gen_random_uuid(), '{}'::jsonb
+            FROM generate_series(1, :n);
+          SQL
+            # Nummern vergibt der Sequenzierer: der laufende Worker oder ein einzelner Lauf
+            for _ in $(seq 1 90); do
+              offen=$(docker exec mandari-postgres psql -X -At -U mandari -d mandari -c \
+                "select count(*) from events_event where seq is null")
+              [ "$offen" = 0 ] && return 0
+              if [ "$(docker inspect -f '{{.State.Running}}' mandari-worker 2>/dev/null)" != true ]; then
+                docker exec mandari python manage.py events_sequencer --once > /dev/null
+              fi
+              sleep 1
+            done
+            echo "::error::Ereignisse ohne Folgenummer"
+            return 1
+          }
+          # Zahl der Ereignisse, höchste Folgenummer, Stand der Sequenz
+          journal_stand() {
+            docker exec mandari-postgres psql -X -At -F ' ' -U mandari -d mandari -c \
+              "select count(*), coalesce(max(seq), 0), (select last_value from events_seq) from events_event"
+          }
+          BASH
+          echo "BASH_ENV=$RUNNER_TEMP/journal.sh" >> "$GITHUB_ENV"
+
       - name: Docker Buildx einrichten
         uses: docker/setup-buildx-action@v4
 
@@ -138,6 +169,15 @@ jobs:
             echo inhalt-uploads > /app/media/ci/probe.txt &&
             echo inhalt-dokument > /app/files/ci/probe.pdf'
 
+          # Ereignistechnik (Issue #573): drei nummerierte Ereignisse, ein Abonnement mit Cursor am Ende
+          journal_schreiben 3
+          docker exec -i mandari-postgres psql -X -q -v ON_ERROR_STOP=1 -U mandari -d mandari <<'SQL'
+          INSERT INTO events_subscription (name, cursor_seq, state, updated_at)
+          SELECT 'ci.probe', max(seq), 'aktiv', now() FROM events_event;
+          SQL
+          journal_stand > "$RUNNER_TEMP/journal.gesichert"
+          cat "$RUNNER_TEMP/journal.gesichert"
+
       - name: Sichern (./backup.sh --verify)
         run: |
           BACKUP_PASSPHRASE="$BACKUP_TEST_PASSPHRASE" ./backup.sh --verify
@@ -173,6 +213,11 @@ jobs:
           docker exec -u root mandari sh -c '
             rm /app/media/ci/probe.txt /app/files/ci/probe.pdf &&
             echo spaeter > /app/media/ci/spaeter.txt'
+
+          # Nach der Sicherung vergebene Folgenummern: Abnehmer kennen sie, die Sicherung nicht
+          journal_schreiben 2
+          journal_stand > "$RUNNER_TEMP/journal.verloren"
+          cat "$RUNNER_TEMP/journal.verloren"
 
           # Wie eine Neuinstallation: neues Datenbank-Passwort (in Rolle und .env) und neuer Hauptschlüssel
           new_password=$(openssl rand -hex 24)
@@ -239,6 +284,24 @@ jobs:
           [ "$(docker exec mandari cat /app/media/ci/probe.txt)" = inhalt-uploads ]
           [ "$(docker exec mandari cat /app/files/ci/probe.pdf)" = inhalt-dokument ]
           docker exec mandari test -e /app/media/ci/spaeter.txt
+
+          # Ereignistechnik: Journal und Cursor auf dem Stand der Sicherung, Folgenummer über alles
+          # gehoben, was vorher vergeben wurde; ein neues Ereignis bekommt eine Nummer jenseits davon
+          grep -E "Folgenummer anheben.*✓" "$RUNNER_TEMP/restore.txt"
+          read -r anzahl gesichert _ < "$RUNNER_TEMP/journal.gesichert"
+          read -r _ verloren _ < "$RUNNER_TEMP/journal.verloren"
+          read -r jetzt hoechste sequenz <<< "$(journal_stand)"
+          cursor=$(docker exec mandari-postgres psql -X -At -U mandari -d mandari -c \
+            "select cursor_seq from events_subscription where name = 'ci.probe'")
+          echo "Journal $jetzt Ereignisse bis $hoechste, Cursor $cursor, Sequenz $sequenz (gesichert $gesichert, danach vergeben bis $verloren)"
+          [ "$jetzt" = "$anzahl" ] && [ "$hoechste" = "$gesichert" ] && [ "$cursor" = "$gesichert" ] ||
+            { echo "::error::Journal nicht auf dem Stand der Sicherung"; exit 1; }
+          [ "$sequenz" -ge $((gesichert + 100000000)) ] || { echo "::error::Folgenummer nicht angehoben"; exit 1; }
+          journal_schreiben 1
+          neu=$(docker exec mandari-postgres psql -X -At -U mandari -d mandari -c "select max(seq) from events_event")
+          [ "$neu" -gt "$verloren" ] || { echo "::error::Folgenummer $neu schon vor der Wiederherstellung vergeben"; exit 1; }
+          docker exec mandari python manage.py events_after_restore | tee "$RUNNER_TEMP/nach.txt"
+          grep -q "ci.probe" "$RUNNER_TEMP/nach.txt"
 
           # Migrationen und Suchindex liefen, das Schema ist vollständig
           grep -E "Datenbank-Migrationen.*✓" "$RUNNER_TEMP/restore.txt"

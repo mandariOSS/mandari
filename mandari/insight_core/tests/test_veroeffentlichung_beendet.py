@@ -206,6 +206,19 @@ class TestVoruebergehend:
                 aufrufe.append(kwargs)
                 return {"results": [], "total": 0, "page": 1, "pages": 0}
 
+            def search_grouped(self, query: str, **kwargs: Any) -> dict[str, Any]:
+                aufrufe.append(kwargs)
+                leer: dict[str, Any] = {}
+                return {
+                    "groups": [],
+                    "counts": leer,
+                    "page": 1,
+                    "pages": 1,
+                    "has_more": False,
+                    "similar_spelling": False,
+                    "totals_by_index": leer,
+                }
+
         monkeypatch.setattr("insight_core.services.search_service.get_search_service", lambda: _Dienst())
         client = Client()
         client.get("/insight/kommune/alle/")

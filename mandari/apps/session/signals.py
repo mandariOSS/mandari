@@ -132,21 +132,30 @@ for _model in oparl_publication.KIND_BY_MODEL:
 # =============================================================================
 
 
+#: Gespeicherter Stand des Mandanten, den die Hooks vergleichen: Veröffentlichung, Aktiv-Stand, Freischaltung der
+#: Schnittstelle und die Freigabe des Umsetzungsstands (``decision_tracking.tenant_publishes_implementation``)
+TENANT_TRACKED_FIELDS = (
+    "insight_publish",
+    "is_active",
+    "insight_end_mode",
+    "oparl_public_since",
+    "implementation_publish",
+    "oparl_body",
+)
+
+
 def tenant_publication_pre_save(sender, instance, **kwargs):
     """Alten Veröffentlichungs- und Aktiv-Stand merken (Provisioning- und Deaktivierungs-Hook)."""
-    old = None
-    if instance.pk:
-        old = (
-            sender.objects.filter(pk=instance.pk)
-            .values_list("insight_publish", "is_active", "insight_end_mode", "oparl_public_since")
-            .first()
-        )
-    (
-        instance._insight_publish_old,
-        instance._is_active_old,
-        instance._insight_end_mode_old,
-        instance._oparl_public_since_old,
-    ) = old if old is not None else (None, None, None, None)
+    from insight_core.services import decision_tracking
+
+    old = sender.objects.only(*TENANT_TRACKED_FIELDS).filter(pk=instance.pk).first() if instance.pk else None
+    instance._insight_publish_old = old.insight_publish if old is not None else None
+    instance._is_active_old = old.is_active if old is not None else None
+    instance._insight_end_mode_old = old.insight_end_mode if old is not None else None
+    instance._oparl_public_since_old = old.oparl_public_since if old is not None else None
+    instance._implementation_published_old = (
+        decision_tracking.tenant_publishes_implementation(old) if old is not None else None
+    )
 
 
 def _field_saved(kwargs, name: str) -> bool:
@@ -213,6 +222,38 @@ post_save.connect(
     tenant_publication_post_save,
     sender=SessionTenant,
     dispatch_uid="session_tenant_publication_post_save",
+)
+
+
+def tenant_implementation_post_save(sender, instance, created, **kwargs):
+    """
+    Freigabe des Umsetzungsstands am Mandanten geändert (Issue #525): Schalter der Verwaltung, Veröffentlichung im
+    Bürgerportal beendet bzw. wieder aufgenommen, Mandant deaktiviert bzw. reaktiviert, Kommune gewechselt – auf
+    jedem Weg (Einstellungen, Admin, Dienste).
+
+    Die OParl-Schnittstelle gibt ``mandari:implementation`` der freigegebenen Beschlüsse dann anders aus, ohne dass
+    sich die TOPs ändern; ihr ``updated_at`` rückt vor, damit der inkrementelle Abgleich (``modified_since``) des
+    RIS-Bestands sie sofort neu liest. Sonst bliebe ein zurückgenommener Umsetzungsstand bis zum nächsten
+    Vollabgleich in der offenen Schnittstelle.
+    """
+    if kwargs.get("raw") or created:
+        return
+    old = getattr(instance, "_implementation_published_old", None)
+    if old is None:
+        return
+    from insight_core.services import decision_tracking
+
+    if decision_tracking.tenant_publishes_implementation(instance) == old:
+        return
+    from apps.session.services import resolution_service
+
+    resolution_service.touch_published_implementations(instance)
+
+
+post_save.connect(
+    tenant_implementation_post_save,
+    sender=SessionTenant,
+    dispatch_uid="session_tenant_implementation_post_save",
 )
 
 

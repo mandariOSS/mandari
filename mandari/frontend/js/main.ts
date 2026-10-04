@@ -22,6 +22,7 @@ import { setupHtmx } from './htmx-setup'
 import { installIconObserver, renderIcons } from './icons'
 import { initMeetingMap } from './meeting-map'
 import { initPaperMap } from './paper-map'
+import { initSearchPlaceMap } from './search-place-map'
 import { registerBookmarksStore } from './stores/bookmarks'
 
 // ---- HTMX --------------------------------------------------------------------
@@ -60,6 +61,12 @@ if (document.documentElement.dataset.portal === 'insight') {
   // Vorgangsseite: Orte und amtliche Umringe; Sitzungsseite: Sitzungsort (Leaflet als Vendor-Skript, läuft vor diesem Modul)
   initPaperMap()
   initMeetingMap()
+  // Suche: Karte im Ortsband (auch nach HTMX-Austausch, siehe search-place-map.ts)
+  try {
+    initSearchPlaceMap()
+  } catch (error) {
+    console.warn('Karte im Ortsband nicht gezeichnet', error)
+  }
 }
 
 // Mobile: Seitenleiste nach Navigation schließen (Layouts halten `sidebarOpen` am <html>)

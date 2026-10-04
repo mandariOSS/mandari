@@ -101,10 +101,12 @@ def highlight_html(value: Any) -> SafeString:
     Elasticsearch fügt ``HIGHLIGHT_PRE``/``HIGHLIGHT_POST`` in den unmaskierten Quelltext ein;
     Namen und Volltexte stammen aus fremden Ratsinformationssystemen und PDFs.
     """
+    from insight_core.services.search_presentation import clean_snippet
     from insight_core.services.search_service import HIGHLIGHT_POST, HIGHLIGHT_PRE
 
     teile: list[str] = []
-    for index, abschnitt in enumerate(str(value or "").split(HIGHLIGHT_PRE)):
+    # Symbolschrift- und Steuerzeichen sowie offene Silbentrennung aus PDF-Texten vor dem Maskieren entfernen
+    for index, abschnitt in enumerate(clean_snippet(str(value or "")).split(HIGHLIGHT_PRE)):
         if index == 0:
             teile.append(escape(abschnitt))
             continue

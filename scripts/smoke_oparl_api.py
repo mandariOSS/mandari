@@ -72,6 +72,8 @@ from _smoke_db import prepare_database  # noqa: E402
 
 prepare_database(PROJECT_DIR)
 
+from mandari_oparl.extensions import agenda_item_columns  # noqa: E402
+
 from insight_core.models import (  # noqa: E402
     OParlAgendaItem,
     OParlBody,
@@ -269,6 +271,10 @@ OParlMeeting.objects.create(
     oparl_modified=ts(0),
 )
 
+a1_raw = {
+    "mandari:vote": {"method": "roll_call", "methodLabel": "Namentlich", "yes": 21, "no": 4, "abstain": 2},
+    "mandari:rollCall": [{"name": "Erika Musterfrau", "vote": "yes", "voteLabel": "Ja"}],
+}
 a1 = OParlAgendaItem.objects.create(
     external_id=f"{RIS}/agendaitem/1",
     meeting=meeting1,
@@ -277,10 +283,9 @@ a1 = OParlAgendaItem.objects.create(
     name="Haushaltssatzung 2024",
     public=True,
     result="beschlossen",
-    raw_json={
-        "mandari:vote": {"method": "roll_call", "methodLabel": "Namentlich", "yes": 21, "no": 4, "abstain": 2},
-        "mandari:rollCall": [{"name": "Erika Musterfrau", "vote": "yes", "voteLabel": "Ja"}],
-    },
+    raw_json=a1_raw,
+    # Beschlussfassung wie von Ingestor und Spiegel geschrieben (Issue #525)
+    **agenda_item_columns(a1_raw),
     oparl_created=ts(0),
     oparl_modified=ts(0),
 )

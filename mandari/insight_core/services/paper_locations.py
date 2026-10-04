@@ -18,6 +18,7 @@ Länge) und setzt den Korrektur-Workflow um:
 from __future__ import annotations
 
 import math
+import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -266,9 +267,15 @@ def _nearby_sort_key(item: dict[str, Any]) -> tuple[int, bool, int, str]:
     return (item["distance"], date is None, -date.toordinal() if date is not None else 0, item["id"])
 
 
-def nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int, limit: int = 50) -> list[dict[str, Any]]:
+def nearby_papers(
+    body: OParlBody, lat: float, lon: float, radius_m: int, limit: int = 50, order: str = "distance"
+) -> list[dict[str, Any]]:
     """
     Vorgänge im Umkreis, nächster Punkt je Vorgang, sortiert nach Entfernung.
+
+    ``order="date"`` sortiert vor der Kappung nach Datum des Vorgangs (neueste zuerst, bei Gleichstand nach
+    Entfernung): In dicht verorteten Vierteln liegen Hunderte Vorgänge im Umkreis, nach Entfernung gekappt
+    fielen gerade die neuen heraus (Ortsband der Suche).
 
     Bei gleicher Entfernung kommen neuere Vorgänge zuerst: Straßen sind als ein Punkt verortet,
     sodass oft Hunderte Vorgänge 0 m entfernt sind – ohne zweiten Schlüssel wäre die Auswahl
@@ -295,7 +302,13 @@ def nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int, limit:
         .exclude(status=PaperLocation.STATUS_REMOVED)
         .annotate(distance=_distance_expression(lat, lon))
         .filter(distance__lte=float(radius_m))
-        .order_by("distance", F("paper__date").desc(nulls_last=True), "paper_id")
+        .order_by(
+            *(
+                (F("paper__date").desc(nulls_last=True), "distance", "paper_id")
+                if order == "date"
+                else ("distance", F("paper__date").desc(nulls_last=True), "paper_id")
+            )
+        )
         .values(
             "paper_id",
             "latitude",
@@ -326,6 +339,9 @@ def nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int, limit:
         if len(results) >= limit:
             break
 
+    if order == "date":
+        # Umringe ändern die Reihenfolge nach Datum nicht; sie kämen sonst unsortiert ans Ende
+        return list(results.values())
     plan_hits = {
         paper_id: hit
         for paper_id, hit in nearby_plan_papers(body, lat, lon, float(radius_m)).items()
@@ -349,3 +365,65 @@ def nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int, limit:
             )
 
     return sorted(results.values(), key=_nearby_sort_key)[:limit]
+
+
+def count_nearby_papers(body: OParlBody, lat: float, lon: float, radius_m: int) -> int:
+    """Zahl der Vorgänge mit mindestens einem Ort im Umkreis (für „Alle … Vorgänge im Umkreis“)."""
+    from insight_core.models import PaperLocation
+
+    south, north, west, east = bounding_box(lat, lon, float(radius_m))
+    return (
+        PaperLocation.objects.filter(
+            body=body,
+            latitude__gte=south,
+            latitude__lte=north,
+            longitude__gte=west,
+            longitude__lte=east,
+            paper__deleted=False,
+        )
+        .exclude(status=PaperLocation.STATUS_REMOVED)
+        .annotate(distance=_distance_expression(lat, lon))
+        .filter(distance__lte=float(radius_m))
+        .values("paper_id")
+        .distinct()
+        .count()
+    )
+
+
+def location_counts(paper_ids: list[str]) -> dict[str, int]:  # Kennungen als Text aus nearby_papers
+    """Zahl der Orte je Vorgang (Sammelvorlagen nennen Dutzende Straßen der ganzen Stadt)."""
+    from django.db.models import Count
+
+    from insight_core.models import PaperLocation
+
+    if not paper_ids:
+        return {}
+    rows = (
+        PaperLocation.objects.filter(paper_id__in=[uuid.UUID(pid) for pid in paper_ids])
+        .exclude(status=PaperLocation.STATUS_REMOVED)
+        .values("paper_id")
+        .annotate(n=Count("id"))
+    )
+    return {str(row["paper_id"]): int(row["n"]) for row in rows}
+
+
+def located_share(body: OParlBody) -> float:
+    """Anteil der Vorgänge einer Kommune mit mindestens einem Ort (0–1), einen Tag im Cache."""
+    from django.core.cache import cache
+
+    from insight_core.models import OParlPaper, PaperLocation
+
+    def berechnen() -> float:
+        alle = OParlPaper.objects.filter(body=body, deleted=False).count()
+        if not alle:
+            return 0.0
+        verortet = (
+            PaperLocation.objects.filter(body=body, paper__deleted=False)
+            .exclude(status=PaperLocation.STATUS_REMOVED)
+            .values("paper_id")
+            .distinct()
+            .count()
+        )
+        return verortet / alle
+
+    return float(cache.get_or_set(f"suche:verortung:{body.pk}", berechnen, 24 * 3600) or 0.0)

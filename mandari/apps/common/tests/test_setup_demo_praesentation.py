@@ -12,6 +12,7 @@ ein Ö→NÖ-Wechsel sofort im Bürgerportal ankommt und --reset nur die Präsen
 from __future__ import annotations
 
 import re
+from datetime import date
 from io import StringIO
 from pathlib import Path
 from typing import Any, cast
@@ -20,8 +21,10 @@ import pytest
 from django.core.management import call_command
 from django.db.models import Model
 from django.test import Client
+from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.common.management.commands import setup_demo_environment as basisdemo
 from apps.common.management.commands import setup_demo_praesentation as drehbuch
 from apps.common.management.commands.setup_demo_environment import DEMO_ORG_SLUG, DEMO_SESSION_SLUG, DEMO_USERS
 from apps.session.models import (
@@ -223,6 +226,16 @@ class TestLeitstelleUndVerbindung:
 
 
 class TestDrehbuchDaten:
+    def test_alle_sitzungen_an_werktagen(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Aufbau an einem Sonntag: keine Sitzung beider Mandanten am Wochenende oder Feiertag, 17 Uhr Ortszeit."""
+        monkeypatch.setattr(basisdemo, "aufbautag", lambda: date(2026, 10, 4))
+        ausfuehren("--profil", "stadtstaat")
+        termine = list(SessionMeeting.objects.values_list("name", "start"))
+        assert len(termine) >= 8
+        for name, start in termine:
+            lokal = timezone.localtime(start)
+            assert basisdemo.ist_sitzungstag(lokal.date()) and lokal.hour == 17, f"{name}: {lokal:%a %d.%m. %H:%M}"
+
     def test_sitzungen_beratungsfolge_und_beschlusskontrolle(self) -> None:
         ausfuehren("--profil", "stadtstaat")
         kommend = SessionMeeting.objects.get(tenant__slug=DEMO_SESSION_SLUG, name=drehbuch.SITZUNG_KOMMEND)

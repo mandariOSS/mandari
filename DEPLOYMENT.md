@@ -289,7 +289,9 @@ eins davon, bricht es ab, ohne etwas zu verändern. Nach Übersicht und Rückfra
    an die wiederhergestellte `.env` angeglichen.
 2. Nur PostgreSQL starten, jede Datenbank in eine Zwischen-Datenbank einspielen und erst danach
    gegen die bestehende tauschen. Schlägt das Einspielen fehl, bleibt die bisherige Datenbank
-   unverändert.
+   unverändert. Danach die Folgenummer der Ereignistechnik anheben (`events_after_restore --apply`),
+   bevor der Worker startet; scheitert das, bleibt der Worker angehalten (`docs/BACKUP.md`, Abschnitt
+   „Journal und Aufträge“).
 3. Uploads und Dokument-Cache zurückspielen (gleichnamige Dateien werden überschrieben, später
    hinzugekommene bleiben liegen).
 4. Alle Dienste starten, `migrate` ausführen und den Suchindex neu aufbauen
@@ -603,6 +605,23 @@ Abonnement in der Datenbank auf `schatten`, schreibt es weiter nur den Schatteni
 `python manage.py suchindex_schatten loeschen --ja --abonnement`. Der Live-Index ist nie betroffen.
 `loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt (Schalter oder
 Zustand `schatten`); `--abonnement` zusätzlich, solange es überhaupt zugestellt wird.
+
+### Abfrage der Volltextsuche (`SEARCH_RANKING`)
+
+Insight und Work suchen mit derselben Abfrage. `v2` (Standard) verlangt alle Wörter, behandelt Straßen
+(„Str.“, „Straße“, „Hafenstraße“ und „Hafen-Straße“) gleich, sucht unscharf nur, wenn fast nichts gefunden
+wird, und gibt neueren Treffern einen begrenzten Bonus. `v1` ist die bisherige Abfrage.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `SEARCH_RANKING` | `v2` (Standard) oder `v1` (Rückfall) |
+| `SEARCH_RECENCY_WEIGHT` | Aktualitätsbonus: neue Treffer zählen höchstens (1 + Wert)-fach, Standard `1.0`, `0` = aus |
+| `SEARCH_MIN_RELEVANCE` | Treffer unter diesem Anteil des besten Werts ihres Index entfallen, Standard `0.05`, `0` = aus |
+
+Es gibt keinen neuen Index und keine Neuindizierung. Abbildung, Schattenindizes und Abonnement bleiben
+unberührt. **Rückfall:** `SEARCH_RANKING=v1` in der `.env`, dann `docker compose up -d mandari worker`.
+**Messen** (nur lesend, gibt nur Zahlen und Aktenzeichen aus):
+`docker exec mandari python manage.py suchqualitaet messen --ranking v1 --ranking v2`.
 
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 

@@ -134,6 +134,26 @@ Zur Stau-Metrik kommt `mandari_events_sequencer_lag_seconds` (ältestes vergebba
 Nummer): Sie zeigt einen ausgefallenen oder hängenden Sequenzierer, den
 `mandari_events_sequencer_blocked_seconds` nicht erfasst.
 
+## Nachtrag zur Wiederherstellung (#573)
+
+`seq` übersteht Sicherung und Wiederherstellung, die Sequenz `events_seq` aber steht danach auf dem
+Stand der Sicherung. Nummern, die zwischen Sicherung und Ausfall vergeben wurden, kennen Abnehmer
+außerhalb der Datenbank (Suchindex mit externer Version, Cursor des Änderungsfeeds). Würden sie neu
+vergeben, verwürfe der Suchindex die neuen Ereignisse als veraltet, und ein Abnehmer des Feeds
+überspränge sie. Die Entscheidung bleibt; ergänzt wurde:
+
+- **Anheben vor dem Start des Sequenzierers:** `manage.py events_after_restore --apply`
+  (`apps/events/wiederherstellung.py`) setzt die Sequenz um einen Abstand (Standard 100 000 000) über
+  das Ende des Journals. Das ist eine gewollte Lücke; Lücken sind unschädlich (siehe oben). Der Befehl
+  verweigert, solange ein Sequenzierer eine gültige Lease hält, und hebt nicht doppelt an, solange
+  seither nichts nummeriert wurde. `backup.sh --restore` ruft ihn nach dem Einspielen der Datenbank
+  auf; ohne Erfolg bleibt der Worker angehalten.
+- **Feed:** Ein Cursor nennt immer die Folgenummer eines Ereignisses, das bei seiner Ausgabe im
+  Journal stand. Fehlt dieses Ereignis oberhalb des festgehaltenen Aufräumens, ging es mit einer
+  Wiederherstellung verloren; die Antwort ist `410` mit dem Verweis auf den Snapshot
+  (`hub.api.changes`). Weil die verlorenen Nummern nie wieder vergeben werden, bleibt das so.
+- **Ablauf und Probe:** `docs/BACKUP.md`, Abschnitt „Journal und Aufträge“.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),

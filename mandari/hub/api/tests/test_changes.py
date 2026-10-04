@@ -362,7 +362,8 @@ def test_neue_aenderung_erscheint_nach_dem_letzten_stand(kommune: OParlBody) -> 
 
 
 def test_cursor_ist_opak(kommune: OParlBody) -> None:
-    for nummer in (987654321, 987654322):
+    # Ein Cursor nennt immer ein Ereignis im Journal (sonst gilt es als mit einer Wiederherstellung verloren)
+    for nummer in (987654320, 987654321, 987654322):
         angelegt = ereignis("ris.paper.changed", kommune.pk, nummeriert=False)
         Event.objects.filter(pk=angelegt.pk).update(seq=nummer)
 
@@ -788,6 +789,24 @@ def test_journal_das_kuerzer_aufbewahrt_als_zugesagt_ergibt_410(kommune: OParlBo
     # Schließt der Cursor an die gelöschten Zeilen an, fehlt nichts
     anschluss = changes.encode_cursor(kommune.pk, alt[-1].seq or 0, HEUTE - timedelta(days=2))
     assert len(_feed(kommune, after=anschluss)["data"]) == 1
+
+
+def test_cursor_auf_ein_mit_der_wiederherstellung_verlorenes_ereignis_ergibt_410(kommune: OParlBody) -> None:
+    """
+    Nach dem Einspielen einer Sicherung fehlen Ereignisse, die ein Abnehmer schon gesehen hat
+    (``apps.events.wiederherstellung``). Sein Cursor nennt eines davon: Er steigt über den Snapshot neu ein.
+    """
+    erhalten = ereignis("ris.paper.changed", kommune.pk)
+    verloren = ereignis("ris.paper.changed", kommune.pk)
+    gesehen = _feed(kommune)["cursor"]
+    assert _stand(kommune, gesehen).seq == verloren.seq
+    Event.objects.filter(pk=verloren.pk).delete()  # Stand der Sicherung
+
+    _abgelaufen(Client().get(_pfad(kommune), {"after": gesehen}), kommune)
+    # Wer nur bis zum erhaltenen Ereignis gelesen hatte, verpasst nichts und liest weiter
+    bis_erhalten = changes.encode_cursor(kommune.pk, erhalten.seq or 0, HEUTE)
+    neu = ereignis("ris.paper.changed", kommune.pk)
+    assert [e["id"] for e in _feed(kommune, after=bis_erhalten)["data"]] == [f"{API}/paper/{neu.aggregate_id}"]
 
 
 def test_aufraeumen_wird_ausdruecklich_festgehalten(kommune: OParlBody) -> None:

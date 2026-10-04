@@ -623,6 +623,30 @@ if SEARCH_INDEX_SHADOW_MAX_DOCS < 0:
 
     raise ImproperlyConfigured("SEARCH_INDEX_SHADOW_MAX_DOCS darf nicht negativ sein (0 = keine Grenze).")
 
+# Abfrage der Volltextsuche (Konzept Insight-Suche, P0): "v2" (Standard) sucht alle Wörter (UND), Straßen
+# mit optionalem Grundwort, Unschärfe nur als Rückfall, mit begrenztem Aktualitätsbonus und Mindestrelevanz;
+# "v1" ist die bisherige Abfrage (ODER, Unschärfe immer) als Rückfall ohne Deploy (Neustart genügt).
+SEARCH_RANKING = os.environ.get("SEARCH_RANKING", "v2").strip().lower() or "v2"
+if SEARCH_RANKING not in ("v1", "v2"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("SEARCH_RANKING muss v1 oder v2 sein.")
+# Stärke des Aktualitätsbonus: Ein frisch beratener Treffer zählt höchstens (1 + Wert)-fach (0 = aus)
+SEARCH_RECENCY_WEIGHT = float(os.environ.get("SEARCH_RECENCY_WEIGHT", "1.0"))
+# Treffer unter diesem Anteil des besten Werts ihres Index entfallen (v2; 0 = alle behalten). 0,05 behält in
+# Münster rund 90 % der Treffer mit allen Wörtern (0,1: rund 75 %) und hält Randtreffer aus „Neueste“ heraus
+SEARCH_MIN_RELEVANCE = float(os.environ.get("SEARCH_MIN_RELEVANCE", "0.05"))
+# Namensteil eines Straßenkompositums („witzleben“ aus „Witzlebenstraße“) zählt als eigene Lesart nur,
+# wenn höchstens so viele Vorgänge und Dokumente der Kommune ihn enthalten
+SEARCH_NAME_PART_MAX_DOCS = int(os.environ.get("SEARCH_NAME_PART_MAX_DOCS", "400"))
+
+# Ortsband der Insight-Suche (Konzept Insight-Suche, P0.8): erkennt die Suche eine eindeutige Straße aus dem
+# eigenen Straßenverzeichnis, zeigt sie die neuesten Vorgänge im Umkreis mit Karte. Nur für Kommunen, deren Vorgänge
+# zu mindestens INSIGHT_SEARCH_PLACES_MIN_SHARE verortet sind. Suchanfragen gehen dabei an keinen externen Dienst.
+INSIGHT_SEARCH_PLACES = os.environ.get("INSIGHT_SEARCH_PLACES", "true").lower() in ("true", "1", "yes", "an")
+INSIGHT_SEARCH_PLACES_MIN_SHARE = float(os.environ.get("INSIGHT_SEARCH_PLACES_MIN_SHARE", "0.5"))
+INSIGHT_SEARCH_PLACES_RADIUS = int(os.environ.get("INSIGHT_SEARCH_PLACES_RADIUS", "500"))
+
 # Nebius AI (KI-Features: Dokumenten-Assistent, Zusammenfassungen)
 NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
 
@@ -1285,6 +1309,12 @@ UNFOLD = {
                         "title": _("Aufträge"),
                         "icon": "task",
                         "link": reverse_lazy("admin:events_task_changelist"),
+                        "permission": "apps.events.admin.nur_administratoren",
+                    },
+                    {
+                        "title": _("Worker"),
+                        "icon": "memory",
+                        "link": reverse_lazy("admin:events_workerprocess_changelist"),
                         "permission": "apps.events.admin.nur_administratoren",
                     },
                 ],

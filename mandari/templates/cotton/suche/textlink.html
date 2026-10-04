@@ -1,0 +1,8 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Textlink der Suchseite in der Kennfarbe, unterstrichen (zweite Wege neben dem einen Knopf, Konzept 1.2 „weniger ist mehr“).
+  <c-suche.textlink href="?q=…" hx-get="?q=…" hx-target="#suchergebnis" hx-push-url="true">entfernen</c-suche.textlink>
+Parameter: href; weitere Attribute (HTMX) werden durchgereicht.
+{% endcomment %}
+<c-vars href="" />
+<a href="{{ href }}" {{ attrs }} class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">{{ slot }}</a>
