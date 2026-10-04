@@ -313,7 +313,7 @@ Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Das Ergebni
 | `rueckstau` | Sequenzierer (auch aufgehalten) und Zustellung je nicht pausiertem Abonnement höchstens 5 min, ältester fälliger Auftrag höchstens 15 min |
 | `fehlerquote` | höchstens 20 % der in der letzten Stunde beendeten Aufträge gescheitert (erst ab 5 beendeten) |
 | `gescheitert` | kein Auftrag in den letzten 24 h endgültig gescheitert und kein totes Ereignis |
-| `texterkennung` | OCR-Worker des Ingestors: keine Datei länger als `TEXT_EXTRACTION_STALE_MINUTES` (Standard 60) plus 15 min in `processing` und keine Datei in den letzten 24 h nach wiederholtem Abbruch aufgegeben (Speichergrenze, Issue #817). Der Text nennt zusätzlich, wie viele Dateien nach einem Abbruch erneut eingeplant sind |
+| `texterkennung` | Texterkennung (OCR-Worker des Ingestors bzw. Aufträge `file.extract_text`, je nach `TEXT_EXTRACTION_RUNNER`): keine Datei länger als `TEXT_EXTRACTION_STALE_MINUTES` (Standard 60) plus 15 min in `processing` und keine Datei in den letzten 24 h nach wiederholtem Abbruch aufgegeben (Speichergrenze, Issue #817). Der Text nennt zusätzlich, wie viele Dateien nach einem Abbruch erneut eingeplant sind |
 
 Dazu meldet sich der Worker mit dem Scheduler selbst („Worker lebt“, `apps/events/push.py`), wenn
 `WORKER_PUSH_URL` gesetzt ist: alle `WORKER_PUSH_INTERVAL` Sekunden (Standard 60) `success=true`,
