@@ -26,8 +26,12 @@ Vertrag für Änderungen; sie melden nur ihre Löschmarkierung.
 Regeln:
 
 - **Nur echte Änderungen.** Ein Upsert ohne inhaltliche Änderung ergibt kein Ereignis. Verglichen
-  wird das Objekt der Quelle (``raw_json``) Feld für Feld. ``created``, ``modified`` und der
-  Content-Hash zählen auf keiner Ebene: Manche Quellen stempeln sie bei jedem Abruf neu. Der
+  wird das Objekt der Quelle (``raw_json``) Feld für Feld, fachlich statt wörtlich
+  (``comparable``): Listen sind Mengen, ihre Reihenfolge und doppelte Einträge zählen nicht (manche
+  Quellen sortieren etwa ``participant`` bei jedem Abruf anders, Issue #553), außer in GeoJSON;
+  ``null``, leere Listen, leere Objekte und leerer Text gelten als fehlendes Feld. ``created``,
+  ``modified`` und der Content-Hash zählen auf keiner Ebene: Manche Quellen stempeln sie bei jedem
+  Abruf neu. Der
   Rückverweis auf das übergeordnete Objekt (``meeting`` am Tagesordnungspunkt, ``paper`` an der
   Beratung, ``paper``/``meeting``/``agendaItem`` an der Datei) zählt ebenfalls nicht: Eingebettet
   fehlt er, in der eigenen Liste steht er, und jeder Vollabgleich schriebe sonst beide Fassungen
@@ -60,6 +64,7 @@ Drehscheibe laden es ohne die übrige Umgebung des Ingestors
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -97,6 +102,9 @@ AGGREGATE_TYPES: Final[dict[str, str]] = {
 
 #: Felder ohne Aussage über eine Änderung, auf jeder Ebene (wie ``VOLATILE_HASH_FIELDS`` der Scraper).
 VOLATILE_FIELDS: Final = frozenset({"modified", "created", "mandari:contentHash"})
+#: Felder, deren Listen geordnet verglichen werden: In GeoJSON trägt die Reihenfolge die Bedeutung
+#: (Länge vor Breite, Verlauf einer Linie oder Fläche).
+ORDERED_FIELDS: Final = frozenset({"geojson"})
 #: Rückverweise auf das übergeordnete Objekt; eingebettet fehlen sie.
 AGENDA_ITEM_BACKREFS: Final = frozenset({"meeting"})
 CONSULTATION_BACKREFS: Final = frozenset({"paper"})
@@ -155,23 +163,57 @@ class Draft:
 # --- Vergleich -----------------------------------------------------------------------------------
 
 
-def _stable(value: Any) -> Any:
-    """Wert ohne die Felder, die keine Änderung anzeigen (auf jeder Ebene)."""
+def _is_empty(value: Any) -> bool:
+    return value is None or (isinstance(value, str | Mapping | list | tuple) and len(value) == 0)
+
+
+def _sort_key(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
+def comparable(value: Any, *, ordered: bool = False) -> Any:
+    """
+    Fachlicher Vergleichswert eines Felds der Quelle; gleiche Werte bedeuten: nichts geändert.
+
+    - ``created``, ``modified`` und der Content-Hash fehlen auf jeder Ebene (``VOLATILE_FIELDS``).
+    - Listen werden zu Mengen: Reihenfolge und doppelte Einträge zählen nicht. Quellen liefern
+      Verweislisten wie ``participant`` von Abruf zu Abruf unterschiedlich sortiert (Issue #553).
+      Eingebettete Objekte werden dabei als Ganzes verglichen; ändert sich eines, ändert sich die
+      Liste. Ausnahme sind Werte unter ``ORDERED_FIELDS`` (``ordered``).
+    - ``null``, leere Listen, leere Objekte und leerer Text gelten als fehlend (``None``).
+    """
+    result: Any
     if isinstance(value, Mapping):
-        return {key: _stable(item) for key, item in value.items() if key not in VOLATILE_FIELDS}
-    if isinstance(value, list | tuple):
-        return [_stable(item) for item in value]
-    return value
+        result = {}
+        for key, item in value.items():
+            if key in VOLATILE_FIELDS:
+                continue
+            item = comparable(item, ordered=ordered or key in ORDERED_FIELDS)
+            if item is not None:
+                result[key] = item
+    elif isinstance(value, list | tuple):
+        items = [comparable(item, ordered=ordered) for item in value]
+        result = items if ordered else sorted({_sort_key(item) for item in items if item is not None})
+    else:
+        result = value
+    return None if _is_empty(result) else result
 
 
 def differing_keys(
     old: Mapping[str, Any] | None, new: Mapping[str, Any] | None, ignore: Iterable[str] = ()
 ) -> list[str]:
-    """Schlüssel der obersten Ebene, deren Wert sich geändert hat, sortiert (Schreibweise der Quelle)."""
+    """
+    Schlüssel der obersten Ebene, deren Wert sich fachlich geändert hat (``comparable``), sortiert
+    (Schreibweise der Quelle).
+    """
     old, new = old or {}, new or {}
     skip = VOLATILE_FIELDS.union(ignore)
     return sorted(
-        key for key in old.keys() | new.keys() if key not in skip and _stable(old.get(key)) != _stable(new.get(key))
+        key
+        for key in old.keys() | new.keys()
+        if key not in skip
+        and comparable(old.get(key), ordered=key in ORDERED_FIELDS)
+        != comparable(new.get(key), ordered=key in ORDERED_FIELDS)
     )
 
 
