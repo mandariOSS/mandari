@@ -230,25 +230,33 @@ def download_to_file(
 
 
 def extract_text_from_file(
-    data: bytes | Path,
+    data: bytes,
     mime_type: str | None = None,
     file_name: str = "",
     ocr_max_pages: int | None = None,
 ) -> tuple[str, bool, int | None, str]:
     """
-    Text aus Binärdaten (oder einer Datei) mit der gemeinsamen Texterkennung.
+    Text aus Binärdaten mit der gemeinsamen Texterkennung.
 
-    ``ocr_max_pages`` begrenzt die erkannten Seiten (etwa beim Import im laufenden Seitenaufruf). Scheitert die
-    Erkennung an der Speichergrenze, ist das Ergebnis leer (Methode ``none``); Aufrufer brechen deshalb nie ab.
+    Die Daten (oft hochgeladen oder von einer Quelle geladen) landen zuerst in einer eigenen temporären Datei;
+    die Bibliothek und ihre Unterprozesse sehen nur deren Pfad, nie Werte von außen. ``ocr_max_pages``
+    begrenzt die erkannten Seiten (etwa beim Import im laufenden Seitenaufruf). Scheitert die Erkennung an der
+    Speichergrenze, ist das Ergebnis leer (Methode ``none``); Aufrufer brechen deshalb nie ab.
 
     Returns:
         Tuple mit (text, ocr_performed, page_count, extraction_method)
     """
+    handle, name = tempfile.mkstemp(suffix=".bin", prefix="texterkennung-")
+    path = Path(name)
     try:
-        result = extract_text(data, mime_type, file_name, extraction_config(ocr_max_pages))
+        with os.fdopen(handle, "wb") as target:
+            target.write(data)
+        result = extract_text(path, mime_type, file_name, extraction_config(ocr_max_pages))
     except OcrMemoryLimitError:
         logger.warning("Texterkennung an der Speichergrenze für %s", file_name or "Datei")
         return "", False, None, METHOD_NONE
+    finally:
+        path.unlink(missing_ok=True)
     return result.text, result.ocr_performed, result.page_count, result.method
 
 
