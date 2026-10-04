@@ -100,6 +100,32 @@ def treffen(kennung: str) -> None:
     aufrufe.append(("treffen", kennung))
 
 
+@task(takes_context=True)
+def probe_ausfuehrung(context: TaskContext[Any, Any], kennung: str, sekunden: float) -> None:
+    """
+    Für Absturztests mit dem Worker als eigenem Prozess (``prozess.py``): hält Beginn und Ende jedes
+    Versuchs über eine eigene Verbindung fest, damit die Zeilen einen Abschuss überstehen. Nur der erste
+    Versuch dauert ``sekunden``; eine Wiederholung endet sofort.
+    """
+    import os
+
+    import psycopg
+
+    from apps.events.tests.prozess import AUSFUEHRUNG
+
+    def festhalten(phase: str) -> None:
+        with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, prepare_threshold=None) as verbindung:
+            verbindung.execute(
+                f"INSERT INTO {AUSFUEHRUNG} (kennung, versuch, phase) VALUES (%s, %s, %s)",
+                [kennung, context.attempt, phase],
+            )
+
+    festhalten("beginn")
+    if context.attempt == 1:
+        time.sleep(sekunden)
+    festhalten("ende")
+
+
 def keine_task(kennung: str) -> None:
     """Gewöhnliche Funktion ohne ``@task``: der Runner darf sie nicht ausführen."""
     aufrufe.append(("keine_task", kennung))

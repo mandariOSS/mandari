@@ -38,6 +38,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `MONITORING.md` | [Betrieb → Betriebsmonitor](https://docs.mandari.de/betrieb/monitoring/) |
 | `BACKUP.md` | [Betrieb → Updates und Backups](https://docs.mandari.de/betrieb/updates-backups/) |
 | `LASTTESTS.md` | Betrieb → Größenempfehlungen und Lasttests (Seite folgt) |
+| `EREIGNISTECHNIK_NACHWEISE.md` | – (Zusagen der Ereignistechnik: Absturz-, Doppelzustellungs- und Lasttests mit Messwerten; Entwicklung und Betrieb) |
 | `SCRAPER_SOURCES.md` | [Betrieb → Quellen anbinden](https://docs.mandari.de/betrieb/quellen-anbinden/) |
 | `DEMO_ENVIRONMENT.md` | [Betrieb → Demo-Umgebung](https://docs.mandari.de/betrieb/demo-umgebung/) |
 | `DEMO_PRAESENTATION.md` | – (Drehbuch für Produktvorstellungen, nur intern) |
