@@ -55,7 +55,7 @@ def active_body(request):
     # Versuche Body aus Session zu laden
     body_id = request.session.get("active_body_id") if hasattr(request, "session") else None
     body = None
-    bodies = []
+    bodies: Any = []
     show_all_bodies = False
     portal = None
 

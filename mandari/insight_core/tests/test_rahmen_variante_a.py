@@ -100,7 +100,7 @@ class TestKopfzeile:
         html = _seite(besucher, "meeting_detail", sitzung.pk)
         krumen = _brotkrumen(html)
         assert f'href="{reverse("insight_core:insight:meeting_list")}"' in krumen and ">Sitzungen</a>" in krumen
-        assert 'aria-current="page"' in krumen and sitzung.get_display_name() in krumen
+        assert 'aria-current="page"' in krumen and "Ratssitzung" in krumen
         assert '<nav aria-label="Zurück" class="lg:hidden mb-4">' in html, "am Handy der Weg zurück zur Liste"
 
     def test_uebersicht_ohne_zweites_suchfeld_in_der_kopfzeile(self, besucher: Client) -> None:
