@@ -255,6 +255,28 @@ def test_htmx_tauscht_nur_den_ergebnisbereich(strassen: OParlBody, dienst: _Dien
 
 
 @pytest.mark.django_db
+def test_art_filter_laesst_nur_vorgaenge(strassen: OParlBody, dienst: _Dienst) -> None:
+    _seite(Client(), "/insight/suche/?q=Kita&paper_type=Antrag")
+    assert dienst.aufrufe[0]["kinds"] == {"paper"}
+
+    _seite(Client(), "/insight/suche/?q=Kita&result_type=persons&paper_type=Antrag")
+    assert dienst.aufrufe[-1]["kinds"] == set()
+
+
+@pytest.mark.django_db
+def test_htmx_verlauf_leeres_feld_und_vary(strassen: OParlBody, dienst: _Dienst) -> None:
+    client = Client()
+    client.get("/insight/k/beispielstadt/")
+    # Verlaufs-Wiederherstellung ohne Cache: ganze Seite, nicht nur der Ergebnisbereich
+    ganz = client.get("/insight/suche/?q=Kita", headers={"HX-Request": "true", "HX-History-Restore-Request": "true"})
+    assert "<html" in ganz.content.decode()
+    # Feld geleert: leerer Ergebnisbereich statt der ganzen Seite darin
+    leer = client.get("/insight/suche/?q=", headers={"HX-Request": "true"})
+    assert leer.status_code == 200 and leer.content == b""
+    assert "HX-Request" in leer["Vary"] and "HX-Request" in ganz["Vary"]
+
+
+@pytest.mark.django_db
 def test_nur_wortsuche_und_nulltreffer_hilfe(strassen: OParlBody, dienst: _Dienst) -> None:
     _vorgang(strassen, "Fahrradverkehr im Westen", date(2026, 8, 13), [(CENTER_LAT, CENTER_LON)])
     assert "Als Straße erkannt" not in _seite(Client(), "/insight/suche/?q=witzleben&ort=aus")

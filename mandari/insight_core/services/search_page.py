@@ -157,6 +157,10 @@ def build_context(
         paper_type = [raw for label in params.paper_types for raw in raw_by_label.get(label, [])] or ["∅"]
 
     tab = next(t for t in TABS if t[0] == params.result_type)
+    kinds = tab[3]
+    if params.paper_types:
+        # „Art“ gibt es nur für Vorgänge: Sitzungen und Unterlagen ohne Vorgang fallen mit dem Filter heraus
+        kinds = {"paper"} if kinds is None else kinds & {"paper"}
     grouped = service.search_grouped(
         params.q,
         page=params.page,
@@ -166,7 +170,7 @@ def build_context(
         paper_type=paper_type,
         sort=params.sort,
         weights=tab[2],
-        kinds=tab[3],
+        kinds=kinds,
         file_paper_filter=papers_of_types(params.paper_types, slug) if params.paper_types else None,
         **common,
     )

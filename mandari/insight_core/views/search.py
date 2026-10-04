@@ -6,7 +6,9 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import render
+from django.utils.cache import patch_vary_headers
 from django.utils.http import urlencode
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
@@ -44,10 +46,21 @@ class SearchView(TemplateView):
 
     def get(self, request, *args, **kwargs):
         context = self.get_context_data(**kwargs)
-        if request.headers.get("HX-Request") == "true" and context.get("params") and context["params"].q:
+        # Wiederherstellung aus dem Verlauf (htmx bei fehlendem Verlaufs-Cache) braucht die ganze Seite
+        teil = (
+            request.headers.get("HX-Request") == "true" and request.headers.get("HX-History-Restore-Request") != "true"
+        )
+        if not teil:
+            response = self.render_to_response(context)
+        elif len(context["params"].q) < 2:
+            # Feld geleert oder zu kurz: Ergebnisbereich leeren statt die ganze Seite hineinzusetzen
+            response = HttpResponse("")
+        else:
             template = "partials/search_results_liste.html" if context["page"] > 1 else "partials/search_page.html"
-            return render(request, template, context)
-        return self.render_to_response(context)
+            response = render(request, template, context)
+        # Dieselbe Adresse liefert Seite oder Ausschnitt: Caches müssen beides auseinanderhalten
+        patch_vary_headers(response, ("HX-Request", "HX-History-Restore-Request"))
+        return response
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
