@@ -30,7 +30,7 @@ def trigramm_index_entfernen(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("insight_core", "0042_loeschabgleich"),
+        ("insight_core", "0043_dokumentablage_sha256"),
     ]
 
     operations = [
