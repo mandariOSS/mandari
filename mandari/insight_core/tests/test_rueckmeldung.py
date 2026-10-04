@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Anonyme Rückmeldung am Seitenende des Bürgerportals („War diese Seite hilfreich? Ja / Nein“).
+Rückmeldung am Seitenende des Bürgerportals („War diese Seite hilfreich? Ja / Nein“).
 
 Geprüft wird, dass nur Antwort, optionaler Satz, Seitentyp, Pfad, Kommune und Tag gespeichert werden
 (keine IP-Adresse, kein Cookie), der Spamschutz und die grobe Ratenbegrenzung greifen, der Satz nur mit
@@ -68,7 +68,10 @@ class TestFormular:
         assert 'name="page_type" value="paper_detail"' in seite
         assert f'name="path" value="/insight/vorgaenge/{vorgang.id}/"' in seite
         assert f'name="body" value="{vorgang.body_id}"' in seite
-        assert "keine IP-Adresse und kein Cookie" in seite
+        assert "Eine IP-Adresse speichern wir dazu" in seite and "setzen kein Cookie" in seite
+        assert "/datenschutz/#rueckmeldung" in seite
+        # Keine absolute Zusage: Zugriffsprotokolle des Webservers und der Freitext können Personenbezug haben
+        assert "Anonym" not in seite
         assert 'name="website"' in seite and 'tabindex="-1"' in seite
 
     def test_seiten_ohne_rueckmeldung(self, vorgang: OParlPaper) -> None:
@@ -77,7 +80,7 @@ class TestFormular:
 
 
 class TestAntwort:
-    def test_ja_wird_anonym_gespeichert(self, vorgang: OParlPaper) -> None:
+    def test_ja_wird_ohne_adresse_und_kennung_gespeichert(self, vorgang: OParlPaper) -> None:
         client = Client()
         client.get(f"/insight/vorgaenge/{vorgang.id}/")
         sitzung_vorher = dict(client.session)
@@ -177,6 +180,15 @@ class TestErgaenzung:
         assert "Bitte höchstens 500 Zeichen." in html and 'aria-invalid="true"' in html
         assert "x" * 501 in html  # Text bleibt erhalten
         assert PageFeedback.objects.get().comment == ""
+
+    def test_zeilenumbrueche_zaehlen_wie_im_browser(self, vorgang: OParlPaper) -> None:
+        """Der Browser zählt einen Umbruch als ein Zeichen (maxlength), sendet aber CRLF."""
+        client = Client()
+        zeichen = _zeichen(_antwort(client, vorgang, "nein").content.decode())
+        satz = "\r\n".join(["x" * 99] * 5)  # im Browser 499 Zeichen, gesendet 503
+        antwort = client.post(URL, {"token": zeichen, "comment": satz}, headers=HTMX)
+        assert "Danke, Ihre Ergänzung ist angekommen." in antwort.content.decode()
+        assert PageFeedback.objects.get().comment == "\n".join(["x" * 99] * 5)
 
     def test_leerer_satz(self, vorgang: OParlPaper) -> None:
         client = Client()

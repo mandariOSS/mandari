@@ -1,9 +1,11 @@
 {% load page_feedback %}
 {% comment %}
-Anonyme Rückmeldung am Seitenende des Bürgerportals (eingebunden in base_insight.html).
+Rückmeldung am Seitenende des Bürgerportals (eingebunden in base_insight.html).
 Schritt 1 „War diese Seite hilfreich? Ja / Nein“ speichert die Antwort; Schritt 2 hängt optional einen Satz an.
 Gespeichert werden Antwort, Satz, Seitentyp, Pfad, Kommune und Tag – keine IP-Adresse, kein Cookie
-(insight_core/services/page_feedback.py). Die Teile danke, ergaenzt und hinweis liefert views/feedback.py.
+(insight_core/services/page_feedback.py). Der Hinweis sagt bewusst nicht „anonym“: Die Zugriffsprotokolle
+des Webservers halten wie bei jedem Aufruf Adresse und Seite fest (Datenschutzerklärung, Abschnitt #rueckmeldung).
+Die Teile danke, ergaenzt und hinweis liefert views/feedback.py.
 {% endcomment %}
 {% page_feedback_context as fb %}
 {% if fb %}
@@ -26,7 +28,9 @@ Gespeichert werden Antwort, Satz, Seitentyp, Pfad, Kommune und Tag – keine IP-
         </form>
     </div>
     <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">
-        Anonym: Wir speichern nur Ihre Antwort, die Seite und den Tag – keine IP-Adresse und kein Cookie.
+        Zur Rückmeldung speichern wir nur Ihre Antwort, die Seite und den Tag. Eine IP-Adresse speichern wir dazu
+        nicht, und wir setzen kein Cookie.
+        <a href="{{ marketing_url }}/datenschutz/#rueckmeldung" class="underline underline-offset-4 hover:text-gray-900 dark:hover:text-white">Mehr zum Datenschutz</a>
     </p>
 </section>
 {% endif %}

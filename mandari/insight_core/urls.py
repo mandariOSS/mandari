@@ -84,7 +84,7 @@ insight_patterns = [
     # Chat (KI-Assistent)
     path("chat/", views.ChatView.as_view(), name="chat"),
     path("chat/api/message/", views.chat_message, name="chat_message"),
-    # Anonyme Rückmeldung am Seitenende („War diese Seite hilfreich?“)
+    # Rückmeldung am Seitenende („War diese Seite hilfreich?“)
     path("rueckmeldung/", views.page_feedback, name="page_feedback"),
 ]
 

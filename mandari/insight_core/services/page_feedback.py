@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Anonyme Rückmeldung am Seitenende des Bürgerportals: „War diese Seite hilfreich? Ja / Nein“.
+Rückmeldung am Seitenende des Bürgerportals: „War diese Seite hilfreich? Ja / Nein“.
 
 Statt A/B-Tests und Messung im Browser fragen wir auf jeder Seite schlicht nach. Gespeichert werden
 Antwort, optional ein Satz (höchstens 500 Zeichen), Seitentyp, Pfad, Kommune und der Tag. Nicht
 gespeichert werden IP-Adresse, Uhrzeit, Browserdaten oder eine Kennung; die Rückmeldung setzt kein
 Cookie. Gegen Massenabgaben zählt ``throttle`` grob je Adresse im Cache (gehasht, eine Stunde).
-Spamschutz: verstecktes Feld (Honeypot) wie bei den Bürgerfragen.
+Spamschutz: verstecktes Feld (Honeypot) wie bei den Bürgerfragen. Der Hinweis im Formular verspricht
+deshalb keine Anonymität, sondern nennt, was die Rückmeldung speichert; die Zugriffsprotokolle des
+Webservers und ein frei eingegebener Satz können Personenbezug haben (Datenschutzerklärung, Abschnitt
+„Rückmeldung zu Seiten im Portal Insight“).
 
 Der optionale Satz wird über ein signiertes, eine Stunde gültiges Zeichen der Antwort zugeordnet, das
 nur in der Antwortseite steht – ohne Sitzung und ohne Cookie. Nach zwölf Monaten löscht der tägliche

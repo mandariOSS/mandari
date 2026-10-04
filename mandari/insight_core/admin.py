@@ -1530,7 +1530,7 @@ class DigestLogAdmin(ReadOnlyAdminMixin, ModelAdmin):
 
 
 # =============================================================================
-# Anonyme Rückmeldungen zu Seiten („War diese Seite hilfreich?“)
+# Rückmeldungen zu Seiten („War diese Seite hilfreich?“), ohne IP-Adresse und Cookie
 # =============================================================================
 
 from .models import PageFeedback  # noqa: E402

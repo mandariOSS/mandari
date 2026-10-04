@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Anonyme Rückmeldung am Seitenende: „War diese Seite hilfreich? Ja / Nein“, optional ein Satz.
+Rückmeldung am Seitenende: „War diese Seite hilfreich? Ja / Nein“, optional ein Satz.
 
 Ein Endpunkt für beide Schritte (POST): Antwort speichern, danach optional den Satz an die Antwort
 hängen. Mit HTMX kommt nur der Teil für ``#rueckmeldung-inhalt`` zurück (immer Status 200, HTMX tauscht
@@ -35,11 +35,23 @@ class FeedbackForm(forms.Form):
     website = forms.CharField(required=False)  # Honeypot: Menschen sehen das Feld nicht
 
 
+class CommentField(forms.CharField):
+    """Satz mit Zeilenumbrüchen wie im Browser gezählt: CRLF als ein Zeichen, bevor die Länge geprüft wird.
+
+    ``maxlength`` im Textfeld zählt einen Umbruch als ein Zeichen, gesendet wird aber CRLF; ohne Angleich
+    lehnte der Server einen Satz ab, den der Browser zugelassen hat.
+    """
+
+    def to_python(self, value: Any) -> str | None:
+        text = super().to_python(value)
+        return text.replace("\r\n", "\n").replace("\r", "\n") if text else text
+
+
 class FeedbackCommentForm(forms.Form):
     token = forms.CharField(max_length=200)
     path = forms.CharField(max_length=255, required=False)
     helpful = forms.ChoiceField(choices=[("ja", "Ja"), ("nein", "Nein")], required=False)
-    comment = forms.CharField(max_length=PageFeedback.COMMENT_MAX_LENGTH, required=False)
+    comment = CommentField(max_length=PageFeedback.COMMENT_MAX_LENGTH, required=False)
     website = forms.CharField(required=False)
 
 

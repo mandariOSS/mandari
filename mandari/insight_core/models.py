@@ -2436,11 +2436,12 @@ class DigestLog(models.Model):
 
 
 class PageFeedback(models.Model):
-    """Anonyme Rückmeldung „War diese Seite hilfreich?“ am Seitenende des Bürgerportals.
+    """Rückmeldung „War diese Seite hilfreich?“ am Seitenende des Bürgerportals.
 
     Gespeichert werden nur Antwort, optionaler Satz, Seitentyp, Pfad, Kommune und der Tag – keine
     IP-Adresse, keine Uhrzeit, kein Cookie. Gegen Massenabgaben zählt ``throttle`` grob je Adresse
-    im Cache. Nach ``services.page_feedback.RETENTION_DAYS`` löscht ein täglicher Auftrag die Einträge.
+    im Cache. „Anonym“ sagen wir trotzdem nicht: Die Zugriffsprotokolle des Webservers halten wie bei jedem
+    Aufruf Adresse, Zeit und Seite fest, und der Satz kann Personenbezug enthalten. Nach ``services.page_feedback.RETENTION_DAYS`` löscht ein täglicher Auftrag die Einträge.
     """
 
     COMMENT_MAX_LENGTH = 500

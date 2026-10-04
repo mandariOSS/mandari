@@ -5,7 +5,7 @@ Zeitpläne des Bürgerportals (``apps.events.schedule``, Issue #515).
 - ``verortung_automatisch``: alle ``GEOREF_AUTO_INTERVAL_MINUTES`` (Standard 15) Minuten ein begrenzter
   Verortungslauf (Regex/Gazetteer, ``GEOREF_AUTO_LIMIT`` Vorlagen, abschaltbar mit
   ``GEOREF_AUTO_ENABLED=false``). Bis Issue #515 lief er in einem Faden im Webprozess.
-- ``rueckmeldungen_aufraeumen``: täglich um 03:50 Uhr (``TIME_ZONE``) anonyme Rückmeldungen zu Seiten
+- ``rueckmeldungen_aufraeumen``: täglich um 03:50 Uhr (``TIME_ZONE``) Rückmeldungen zu Seiten
   nach zwölf Monaten löschen (``INSIGHT_FEEDBACK_RETENTION_DAYS``). Idempotent; ein verpasster Termin
   wird einmal nachgeholt.
 """

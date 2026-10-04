@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Template-Tag für die anonyme Rückmeldung am Seitenende (``partials/page_feedback.html``)."""
+"""Template-Tag für die Rückmeldung am Seitenende (``partials/page_feedback.html``)."""
 
 from __future__ import annotations
 
