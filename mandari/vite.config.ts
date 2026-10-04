@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
+import { lucideIcons } from './frontend/vite/lucide-icons'
 
 /**
  * Vite-Build für mandari (django-vite liest das Manifest).
@@ -11,11 +12,14 @@ import { defineConfig } from 'vite'
  *   frontend/editor/index.ts  – nur Editor-Seiten (TipTap, Yjs) inkl. der Alpine-Komponenten
  *                               frontend/alpine/document-editor.ts und prepare-meeting.ts
  *
+ * Lucide-Icons: nur die im Projekt genannten im Haupt-Bundle, der Rest bei Bedarf (frontend/vite/lucide-icons.ts).
+ *
  * Entwicklung: `npm run dev` (Dev-Server mit HMR, DJANGO_VITE_DEV_MODE=1)
  * Produktion:  `npm run build` → static/dist/ (Manifest + gehashte Dateien)
  */
 export default defineConfig({
   base: '/static/dist/',
+  plugins: [lucideIcons(__dirname)],
   build: {
     manifest: 'manifest.json',
     outDir: resolve(__dirname, 'static/dist'),

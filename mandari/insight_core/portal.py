@@ -37,6 +37,7 @@ from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, HttpResponseRedirect
 from django.http.request import split_domain_port, validate_host
 from django.urls import Resolver404, resolve, reverse
+from django.utils.html import format_html
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -90,6 +91,8 @@ class PortalContext:
     name: str
     logo_url: str | None
     accent_color: str | None
+    #: ``src`` (und bei einem Kommunen-Logo ``srcset``/``width``/``height``) für ``<img {{ … }}>``
+    logo_attrs: str = ""
 
     @property
     def home_url(self) -> str:
@@ -265,6 +268,7 @@ def _resolve(request: HttpRequest) -> PortalContext | None:
 def build_context(body: OParlBody, *, via_host: bool, slug: str) -> PortalContext:
     fallback = tenant_branding(body)
     logo_url = body.logo.url if body.logo else fallback.get("logo_url")
+    logo_attrs = body.logo_img_attrs if body.logo else (format_html('src="{}"', logo_url) if logo_url else "")
     accent = body.accent_color if body.accent_color and COLOR_RE.fullmatch(body.accent_color) else None
     return PortalContext(
         body=body,
@@ -273,6 +277,7 @@ def build_context(body: OParlBody, *, via_host: bool, slug: str) -> PortalContex
         name=str(cast(Any, body).get_display_name()),
         logo_url=logo_url,
         accent_color=accent or fallback.get("accent_color"),
+        logo_attrs=logo_attrs,
     )
 
 

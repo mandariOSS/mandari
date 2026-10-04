@@ -17,6 +17,7 @@ In Produktion reicht Caddy ``/media/*`` an Django weiter. Zwei Wege führen zur 
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -40,6 +41,9 @@ PUBLIC_MEDIA_PREFIXES = (
     "avatars/",
     "demo/",
 )
+
+#: Öffentliche Medien mit Inhalts-Hash im Namen: ein Jahr cachebar (Logo-Vorschauen, insight_core/logo_vorschau.py)
+IMMUTABLE_MEDIA_RE = re.compile(r"^bodies/logos/vorschau/[^/]+-[0-9a-f]{12}-\d+\.webp$")
 
 #: Medien, die NIE direkt ausgeliefert werden – nur über zugriffsgeprüfte
 #: Download-Views (Session-Anlagen, Dokument-Anhänge im Work-Portal).
@@ -120,10 +124,17 @@ def _is_public(path: str) -> bool:
     return path.startswith(PUBLIC_MEDIA_PREFIXES)
 
 
+def _cache_control(path: str) -> str:
+    """Vorschaubilder mit Inhalts-Hash im Namen ändern sich nie (ein neues Logo bekommt einen neuen Namen)."""
+    if IMMUTABLE_MEDIA_RE.match(path):
+        return "public, max-age=31536000, immutable"
+    return "public, max-age=3600" if _is_public(path) else "private, no-store"
+
+
 def _deliver(request: HttpRequest, path: str) -> HttpResponseBase:
     """Die Datei unter dem geprüften Pfad; ``Http404``, wenn es sie nicht gibt."""
     response = static_serve(request, path, document_root=str(settings.MEDIA_ROOT))
-    response["Cache-Control"] = "public, max-age=3600" if _is_public(path) else "private, no-store"
+    response["Cache-Control"] = _cache_control(path)
     # Zweite Verteidigungslinie zur Upload-Pruefung (Issue #260): Nur Bildformate
     # werden eingebettet ausgeliefert. Alles andere geht als Download hinaus, damit
     # eine Datei nicht im Ursprung der Anwendung zur Anzeige und Ausfuehrung kommt.

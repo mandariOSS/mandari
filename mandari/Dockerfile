@@ -54,6 +54,15 @@ COPY mandari/tailwind.config.js mandari/vite.config.ts mandari/tsconfig.json ./
 COPY mandari/static/ ./static/
 COPY mandari/templates/ ./templates/
 COPY mandari/frontend/ ./frontend/
+# Python-Quellen nur für die Icon-Auswahl des Vite-Builds: Icon-Namen aus Views und Modellen
+# (frontend/vite/lucide-icons.ts). Fehlen sie, lädt die Seite den vollständigen Icon-Satz nach.
+COPY mandari/apps/ ./apps/
+COPY mandari/hub/ ./hub/
+COPY mandari/insight_core/ ./insight_core/
+COPY mandari/insight_ai/ ./insight_ai/
+COPY mandari/insight_search/ ./insight_search/
+COPY mandari/insight_sync/ ./insight_sync/
+COPY mandari/mandari/ ./mandari/
 
 # Build CSS (Tailwind) + JS-Bundles (Vite, Manifest in static/dist/)
 # Build-Fehler muessen den Image-Build abbrechen (kein stilles Ausliefern alter Bundles)
