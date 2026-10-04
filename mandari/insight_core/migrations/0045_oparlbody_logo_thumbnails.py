@@ -13,7 +13,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("insight_core", "0043_dokumentablage_sha256"),
+        ("insight_core", "0044_page_feedback"),
     ]
 
     operations = [
