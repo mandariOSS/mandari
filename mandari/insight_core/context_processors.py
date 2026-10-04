@@ -13,7 +13,7 @@ from django.http import HttpRequest
 from django.utils.functional import SimpleLazyObject
 
 from .models import OParlBody
-from .navigation import breadcrumb_area, nav_area
+from .navigation import breadcrumb_area, more_area_listed, nav_area
 from .publication import DETAIL_PAGES, PORTAL_NAMESPACE, body_id_of
 
 
@@ -192,9 +192,20 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
 
     from .services.kommunenverzeichnis import ort_der_koerperschaft
 
+    # Am Handy liegt der Bereich im Blatt „Mehr“: dann ist „Mehr“ in der Leiste unten hervorgehoben (Stufe 3) – aber
+    # nur, wenn das Blatt den Bereich auch zeigt (Beschlüsse, Ratsfragen und Benachrichtigungen sind bedingt)
+    area = nav_area(match.url_name if match is not None and match.namespace == PORTAL_NAMESPACE else None)
+    area_more = more_area_listed(
+        area,
+        decisions=decisions_published,
+        questions=bool(getattr(settings, "INSIGHT_QUESTIONS_ENABLED", False)),
+        subscriptions=bool(getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False)),
+    )
+
     return {
         "active_body": body,
         "page_body": page_body,
+        "insight_area_more": area_more,
         # Zweite Zeile in „Zuletzt besucht“: „Kreisfreie Stadt, Nordrhein-Westfalen“
         "page_body_ort": ort_der_koerperschaft(page_body) if page_body is not None else "",
         # Seite einer anderen als der gewählten Kommune: Brotkrumen wählen beim Klick erst diese Kommune

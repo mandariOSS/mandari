@@ -73,3 +73,18 @@ def breadcrumb_area(url_name: str | None) -> dict[str, str | bool]:
         return {}
     label, list_name = AREA_PAGES[area]
     return {"label": label, "url_name": f"insight_core:insight:{list_name}", "current": url_name == list_name}
+
+
+#: Bereiche, die am Handy im Blatt „Mehr“ liegen (Leiste unten: Start, Sitzungen, Vorgänge, Karte, Mehr; Stufe 3)
+MORE_AREAS = frozenset({"gremien", "personen", "beschluesse", "ratsfragen", "ki", "gespeichert", "benachrichtigungen"})
+
+
+def more_area_listed(area: str, *, decisions: bool, questions: bool, subscriptions: bool) -> bool:
+    """Liegt der Bereich im Blatt „Mehr“ und zeigt das Blatt ihn auch?
+
+    Beschlüsse (nur wenn die Kommune sie veröffentlicht), Ratsfragen (``INSIGHT_QUESTIONS_ENABLED``) und
+    Benachrichtigungen (``INSIGHT_SUBSCRIPTIONS_ENABLED``) stehen nur bedingt im Blatt. Ruft jemand eine dieser
+    Seiten direkt auf, obwohl das Blatt sie nicht zeigt, darf „Mehr“ nicht „enthält den aktuellen Bereich“ ansagen.
+    """
+    bedingt = {"beschluesse": decisions, "ratsfragen": questions, "benachrichtigungen": subscriptions}
+    return area in MORE_AREAS and bedingt.get(area, True)

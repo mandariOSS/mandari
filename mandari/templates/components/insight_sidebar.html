@@ -1,25 +1,15 @@
 {% load static %}
 {% comment %}
 Seitenleiste des Bürgerportals (Issue #783, Variante A): eigene graue Fläche ohne Trennlinien, oben die Kommune als
-weiße Schaltfläche, sieben Bereiche (Beschlüsse und Ratsfragen nur mit Inhalten), unten „Für Sie“.
-Geschlossen schon im HTML (mobil außerhalb und unsichtbar, ab lg sichtbar); Alpine öffnet nur – sonst fährt die
-Leiste bei jedem Seitenaufruf sichtbar heraus (#763). Mobil geöffnet ist sie ein modaler Dialog.
+weiße Schaltfläche, sieben Bereiche (Beschlüsse und Ratsfragen nur mit Inhalten), unten „Für Sie“. Nur ab lg; am
+Handy übernehmen die Leiste unten und das Blatt „Mehr“ (components/insight_leiste_unten.html, Variante C). Die Leiste
+steht fest im HTML und wird nie per Skript eingeblendet, ein Herausfahren beim Seitenaufruf (#763) ist damit
+ausgeschlossen.
 {% endcomment %}
+<aside id="insight-navigation" aria-label="Navigation"
+    class="hidden lg:flex fixed inset-y-0 left-0 z-40 w-[17rem] flex-col overflow-y-auto bg-band-grau">
 
-{# Mobil: Abdunklung hinter dem geöffneten Menü #}
-<div x-show="sidebarOpen" x-transition.opacity @click="closeMenu()"
-    class="fixed inset-0 z-40 bg-gray-950/40 dark:bg-black/60 lg:hidden" aria-hidden="true" x-cloak></div>
-
-<aside id="insight-navigation"
-    :class="sidebarOpen && '!translate-x-0 !visible'"
-    :role="sidebarOpen ? 'dialog' : null"
-    :aria-modal="sidebarOpen ? 'true' : null"
-    x-trap.noscroll="sidebarOpen"
-    @keydown.escape.window="closeMenu()"
-    aria-label="Navigation"
-    class="fixed inset-y-0 left-0 z-50 w-[86%] max-w-[22rem] lg:w-[17rem] flex flex-col overflow-y-auto bg-band-grau -translate-x-full invisible lg:translate-x-0 lg:visible transition-[transform,visibility] duration-300 motion-reduce:transition-none">
-
-    <div class="h-16 shrink-0 flex items-center justify-between gap-3 px-5 lg:px-5">
+    <div class="h-16 shrink-0 flex items-center gap-3 px-5">
         {% if insight_portal %}
         {# Bürgerportal einer Körperschaft (Issue #317): eigener Name und eigenes Logo, Kommune fest #}
         <a href="{{ insight_portal.home_url }}" class="flex items-center gap-2.5 min-w-0">
@@ -35,10 +25,6 @@ Leiste bei jedem Seitenaufruf sichtbar heraus (#763). Mobil geöffnet ist sie ei
             <span class="text-[1.05rem] font-semibold text-primary-700 dark:text-primary-300">Insight</span>
         </a>
         {% endif %}
-        <button type="button" @click="closeMenu()"
-            class="lg:hidden inline-flex items-center gap-1.5 h-11 pl-2.5 pr-3 rounded-lg ring-1 ring-inset ring-gray-300 dark:ring-gray-700 text-[0.95rem] font-medium text-gray-800 dark:text-gray-200">
-            <i data-lucide="x" class="w-[18px] h-[18px]" aria-hidden="true"></i> Schließen
-        </button>
     </div>
 
     {% if not insight_portal %}
@@ -80,8 +66,8 @@ Leiste bei jedem Seitenaufruf sichtbar heraus (#763). Mobil geöffnet ist sie ei
         </ul>
     </nav>
 
-    {# Für Sie: Merkliste, Benachrichtigungen, Konto; mobil auch der Dunkelmodus #}
-    <div class="mt-auto px-3 pt-8 pb-[max(1.25rem,env(safe-area-inset-bottom))]" role="group" aria-label="Für Sie">
+    {# Für Sie: Merkliste, Benachrichtigungen, Konto #}
+    <div class="mt-auto px-3 pt-8 pb-5" role="group" aria-label="Für Sie">
         <ul class="space-y-0.5">
             <li><c-insight.nav-link href="{% url 'insight_core:insight:saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.nav-link></li>
             {% if insight_subscriptions_enabled %}
@@ -99,14 +85,6 @@ Leiste bei jedem Seitenaufruf sichtbar heraus (#763). Mobil geöffnet ist sie ei
             {% if insight_portal.can_leave %}
             <li><c-insight.nav-link href="{% url 'insight_core:insight:clear_body' %}" icon="layout-grid">Alle Kommunen im Bürgerportal</c-insight.nav-link></li>
             {% endif %}
-            <li class="sm:hidden">
-                <button type="button" @click="darkMode=!darkMode" :aria-pressed="darkMode.toString()" aria-pressed="false"
-                    class="w-full flex items-center gap-3 h-10 px-3 rounded-lg text-[0.95rem] font-medium text-gray-700 dark:text-gray-300 hover:bg-band-hell">
-                    <i x-show="!darkMode" data-lucide="moon" class="w-[18px] h-[18px] text-gray-500" aria-hidden="true"></i>
-                    <i x-show="darkMode" data-lucide="sun" class="w-[18px] h-[18px] text-gray-500" aria-hidden="true" x-cloak></i>
-                    Dunkler Modus
-                </button>
-            </li>
         </ul>
     </div>
 </aside>

@@ -1,10 +1,10 @@
 /**
- * Rahmen des Bürgerportals (Issue #783): Dunkelmodus, mobiles Menü als Dialog, Kommunenwechsel und
+ * Rahmen des Bürgerportals (Issue #783): Dunkelmodus, Blatt „Mehr“ der mobilen Leiste unten, Kommunenwechsel und
  * Dokumentansicht. Vorher ein Inline-Objekt am `<html>` von `templates/base_insight.html`.
  *
- * Markup: `<html x-data="insightShell" data-active-body="<uuid>">`, Menüknopf mit `x-ref="menuButton"`.
- * Das Menü ist mobil ein modaler Dialog: Escape schließt es, der Fokus kehrt auf den Menüknopf zurück.
- * Ab `lg` steht die Leiste fest; `sidebarOpen` bleibt dort `false`.
+ * Markup: `<html x-data="insightShell" data-active-body="<uuid>">`, Knopf „Mehr“ mit `x-ref="mehrButton"`.
+ * Das Blatt ist ein modaler Dialog: Escape schließt es, der Fokus kehrt auf „Mehr“ zurück. Ab `lg` gibt es weder
+ * Leiste unten noch Blatt, dort steht die Seitenleiste fest.
  */
 
 import { defineComponent } from '../js/alpine/component'
@@ -31,7 +31,7 @@ function storeDarkMode(value: boolean): void {
 
 export const insightShell = defineComponent(() => ({
   darkMode: readDarkMode(),
-  sidebarOpen: false,
+  mehrOffen: false,
   cityModalOpen: false,
   activeBodyId: '',
   docViewerUrl: '',
@@ -51,21 +51,21 @@ export const insightShell = defineComponent(() => ({
     }
   },
 
-  openMenu() {
-    this.sidebarOpen = true
+  openMehr() {
+    this.mehrOffen = true
   },
 
-  /** Schließt das mobile Menü und gibt den Fokus an den Menüknopf zurück. */
-  closeMenu() {
-    if (!this.sidebarOpen) return
-    this.sidebarOpen = false
-    this.$nextTick(() => (this.$refs.menuButton as HTMLElement | undefined)?.focus())
+  /** Schließt das Blatt „Mehr“ und gibt den Fokus an den Knopf in der Leiste zurück. */
+  closeMehr() {
+    if (!this.mehrOffen) return
+    this.mehrOffen = false
+    this.$nextTick(() => (this.$refs.mehrButton as HTMLElement | undefined)?.focus())
   },
 
   openCityModal() {
-    // Aus dem mobilen Menü heraus: erst das Menü schließen, sonst liegen zwei Dialoge übereinander. Den Fokus ins
+    // Aus dem Blatt „Mehr“ heraus: erst das Blatt schließen, sonst liegen zwei Dialoge übereinander. Den Fokus ins
     // Suchfeld setzt der Kommunenwechsel selbst (frontend/alpine/kommunen-wahl.ts).
-    this.sidebarOpen = false
+    this.mehrOffen = false
     this.cityModalOpen = true
   },
 

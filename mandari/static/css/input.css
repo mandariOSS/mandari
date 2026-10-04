@@ -81,6 +81,15 @@
   }
 }
 
+/* Safe-Area (viewport-fit=cover in Insight und Work): Abstand zum Bildschirmrand mindestens so groß wie Aussparung
+   und Home-Indikator. Grundabstand aus --rand (Standard 1rem), z. B. sm:[--rand:1.5rem]. */
+@layer utilities {
+  .rand-sicher {
+    padding: max(var(--rand, 1rem), env(safe-area-inset-top)) max(var(--rand, 1rem), env(safe-area-inset-right))
+      max(var(--rand, 1rem), env(safe-area-inset-bottom)) max(var(--rand, 1rem), env(safe-area-inset-left));
+  }
+}
+
 /* Aufgaben-Kanban (templates/work/tasks/list.html): auf Mobil horizontales Scroll-Snapping
    der Spalten, ab md greift das Tailwind-Grid des Markups. */
 @media (max-width: 767.98px) {
