@@ -616,7 +616,11 @@ gleich setzen**, sonst arbeiten beide oder keiner:
 - `worker`: Aufträge `file.extract_text` in der Warteschlange `ocr` (Dienst `worker-heavy` bzw. jeder Worker,
   der `ocr` bedient). Der Zeitplan `texterkennung_einplanen` reiht alle zwei Minuten höchstens
   `TEXT_EXTRACTION_QUEUE_DEPTH` (Standard 20) Aufträge ein; der OCR-Worker des Ingestors ruht dann. Die
-  Speichergrenze des Containers (1 GB) muss `OCR_MEMORY_LIMIT_MB` und den Worker selbst tragen.
+  Speichergrenze des Containers (1 GB) muss `OCR_MEMORY_LIMIT_MB` und den Worker selbst tragen; im
+  Compose-Dienst `worker-heavy` ist `512` vorgegeben. Solange ein Auftrag wartet, gilt seine Datei weder als
+  abgebrochen noch als hängend (steht die Warteschlange, meldet das die Prüfung `rueckstau`). Quellen in
+  Schonung beansprucht der Zeitplan nicht; ist eine Quelle gerade nicht abrufbar (robots.txt), geht die Datei
+  ohne Abbruch zurück, und aus dieser Kommune wird 15 Minuten lang nichts eingereiht.
 
 Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 
@@ -645,7 +649,9 @@ Prüfung `texterkennung` in `/health/worker/` (`docs/MONITORING.md`) und der Bet
 weiteren Versuch; gelingt er, beginnt der Zähler von vorn.
 
 **Umstellen auf Aufträge:** Ein Worker bedient `ocr` (`docker compose ps worker-heavy`), dann
-`TEXT_EXTRACTION_RUNNER=worker` in der `.env` setzen und Anwendung, Worker und Ingestor-Dienste neu starten.
+`TEXT_EXTRACTION_RUNNER=worker` in der `.env` setzen (Compose reicht die Variable an Anwendung, Worker und
+Ingestor weiter; eigene Override-Dateien für einen OCR-Worker brauchen sie ebenfalls) und Anwendung, Worker
+und Ingestor-Dienste neu starten.
 Dateien, die der OCR-Worker gerade bearbeitet, löst die Zeitgrenze auf. **Rückweg:** Variable entfernen
 (bzw. `ingestor`) und dieselben Dienste neu starten; eingereihte Aufträge erledigen sich noch oder finden
 ihre Datei bereits bearbeitet.

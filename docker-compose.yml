@@ -88,6 +88,8 @@ x-app-environment: &app-environment
   INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
   # Zeitpläne im Worker statt Host-Cron (DEPLOYMENT.md, „Geplante Aufgaben“): einzelne abschalten
   EVENTS_SCHEDULES_DISABLED: ${EVENTS_SCHEDULES_DISABLED:-}
+  # Wer den Text der RIS-Dateien erkennt: ingestor (Standard) oder worker (Aufträge in ocr), siehe .env.example
+  TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
   # Für die Zeitpläne der Betriebsprüfungen, die jetzt im Worker laufen: Empfänger der Alarme,
   # Statusseite für den Verfügbarkeitsbericht, Metriken der Anwendung über ihren Dienstnamen
   INSIGHT_ALERT_EMAILS: ${INSIGHT_ALERT_EMAILS:-}
@@ -371,6 +373,10 @@ services:
       - "800"
       - --heartbeat-file
       - /tmp/mandari-worker.heartbeat
+    environment:
+      <<: *app-environment
+      # Adressraum je Tesseract-Unterprozess: der Runner selbst darf bis 800 MB belegen, der Container 1 GB
+      OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-512}
     # Der Runner startet oberhalb von 800 MB (--max-memory-mb) neu, bevor das Limit greift
     mem_limit: 1g
 
@@ -466,6 +472,8 @@ services:
       # Der Sync erkennt den Text selbst (TEXT_EXTRACTION_ENABLED): Adressraum je Tesseract-Unterprozess
       # deutlich unter dem Speicherlimit des Containers (512 MB) halten (#817)
       OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-384}
+      # worker: die Aufträge der Anwendung erkennen den Text, Sync und OCR-Worker ruhen (gleich wie dort)
+      TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
     volumes:
       - ingestor_data:/app/data
       - mandari_files:/app/files

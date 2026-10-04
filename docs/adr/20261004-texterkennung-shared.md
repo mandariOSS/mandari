@@ -30,7 +30,10 @@ eine eigene Warteschlange `ocr` im Worker der Anwendung vor.
   Texterkennung einer RIS-Datei im Worker der Anwendung, mit denselben Regeln für Abbrüche wie im Ingestor
   (Versuch zählen, nach Zeitablauf zurückstellen, nach mehreren Abbrüchen „Speichergrenze“). Der Zeitplan
   `texterkennung_einplanen` beansprucht wartende Dateien und reiht Aufträge ein, höchstens
-  `TEXT_EXTRACTION_QUEUE_DEPTH` gleichzeitig.
+  `TEXT_EXTRACTION_QUEUE_DEPTH` gleichzeitig. Maßgeblich für die Zeitgrenze ist der Beginn des Auftrags: Eine
+  Datei, deren Auftrag noch wartet, gilt nicht als abgebrochen. Quellen in Schonung beansprucht er nicht, und
+  eine gerade nicht abrufbare Kommune ruht wie im Ingestor eine Weile, damit zurückgestellte ältere Dateien die
+  Warteschlange nicht blockieren.
 - **Ein Schalter, kein Doppelbetrieb**: `TEXT_EXTRACTION_RUNNER` (`ingestor` = OCR-Worker des Ingestors,
   Standard und bisheriges Verhalten; `worker` = Aufträge der Anwendung). Mit `worker` ruht die Texterkennung
   im Ingestor; der Zeitplan ist nur dann eingeplant. Welcher Worker die Warteschlange `ocr` bedient

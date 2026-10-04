@@ -14,11 +14,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import shutil
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import httpx
 from django.conf import settings
@@ -37,6 +38,53 @@ PDF_MIME_TYPES = {
     "application/pdf",
     "application/x-pdf",
 }
+
+#: Präfixe eigener temporärer Dateien (``texterkennung-*``, auch der Bibliothek) und Seitenverzeichnisse der
+#: Texterkennung (``ocr-seite-*``). Sie enthalten Dokumentinhalte, auch nichtöffentliche Anlagen.
+TEMP_FILE_PREFIX: Final = "texterkennung-"
+TEMP_DIR_PREFIX: Final = "ocr-seite-"
+#: Ältere Reste gelten als liegengeblieben (Prozess beendet, etwa vom Speicherwächter oder an der Zeitgrenze
+#: des Runners): weit über der längsten Bearbeitung (Auftrag höchstens 30 min, Anfragen Sekunden)
+TEMP_MAX_AGE_SECONDS: Final = 2 * 3600
+#: Je Prozess höchstens so oft nach Resten sehen (beim ersten Abruf bzw. der ersten Erkennung, dann stündlich)
+TEMP_PURGE_EVERY_SECONDS: Final = 3600
+_purge_state: dict[str, float] = {}
+
+
+def purge_leftover_temp_files(
+    max_age: float = TEMP_MAX_AGE_SECONDS, now: float | None = None, directory: Path | None = None
+) -> int:
+    """
+    Liegengebliebene temporäre Dateien der Texterkennung löschen. Endet ein Prozess mitten in der Arbeit
+    (Speicherwächter, Zeitgrenze), räumt kein ``finally`` mehr auf. Rückgabe: Zahl der gelöschten Reste.
+    """
+    jetzt = time.time() if now is None else now
+    root = directory or Path(tempfile.gettempdir())
+    removed = 0
+    for path in [*root.glob(f"{TEMP_FILE_PREFIX}*"), *root.glob(f"{TEMP_DIR_PREFIX}*")]:
+        try:
+            if jetzt - path.stat().st_mtime <= max_age:
+                continue
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+            removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.info("Texterkennung: %d liegengebliebene temporäre Dateien gelöscht", removed)
+    return removed
+
+
+def _purge_now_and_then() -> None:
+    """``purge_leftover_temp_files`` höchstens einmal je ``TEMP_PURGE_EVERY_SECONDS`` und Prozess."""
+    jetzt = time.monotonic()
+    zuletzt = _purge_state.get("at")
+    if zuletzt is not None and jetzt - zuletzt < TEMP_PURGE_EVERY_SECONDS:
+        return
+    _purge_state["at"] = jetzt
+    purge_leftover_temp_files()
 
 
 @dataclass(slots=True)
@@ -200,7 +248,8 @@ def download_to_file(
     from .safe_fetch import DeadlineExceededError, TooLargeError, download_to
 
     agent, headers = _prepare_fetch(url, extra_headers, sync_config, None)
-    handle, name = tempfile.mkstemp(suffix=".part", prefix="texterkennung-")
+    _purge_now_and_then()
+    handle, name = tempfile.mkstemp(suffix=".part", prefix=TEMP_FILE_PREFIX)
     path = Path(name)
     try:
         with os.fdopen(handle, "wb") as target:
@@ -239,14 +288,16 @@ def extract_text_from_file(
     Text aus Binärdaten mit der gemeinsamen Texterkennung.
 
     Die Daten (oft hochgeladen oder von einer Quelle geladen) landen zuerst in einer eigenen temporären Datei;
-    die Bibliothek und ihre Unterprozesse sehen nur deren Pfad, nie Werte von außen. ``ocr_max_pages``
+    die Bibliothek und ihre Unterprozesse sehen nur deren Pfad, nie Werte von außen. Bleibt sie liegen, weil
+    der Prozess endet, löscht sie ``purge_leftover_temp_files`` nach ``TEMP_MAX_AGE_SECONDS``. ``ocr_max_pages``
     begrenzt die erkannten Seiten (etwa beim Import im laufenden Seitenaufruf). Scheitert die Erkennung an der
     Speichergrenze, ist das Ergebnis leer (Methode ``none``); Aufrufer brechen deshalb nie ab.
 
     Returns:
         Tuple mit (text, ocr_performed, page_count, extraction_method)
     """
-    handle, name = tempfile.mkstemp(suffix=".bin", prefix="texterkennung-")
+    _purge_now_and_then()
+    handle, name = tempfile.mkstemp(suffix=".bin", prefix=TEMP_FILE_PREFIX)
     path = Path(name)
     try:
         with os.fdopen(handle, "wb") as target:
