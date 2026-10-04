@@ -195,3 +195,35 @@ def test_kommunenwahl_und_seitenleiste_binden_die_vorschau_ein() -> None:
     client.get(f"/insight/kommune/{body.id}/")
     start = client.get("/insight/").content.decode()
     assert f'srcset="/media/{klein} 1x' in start
+
+
+def test_gemeinsame_logodatei_bleibt_fuer_die_andere_kommune(media_root: Path) -> None:
+    erste = _mit_logo("geteilt.png", _bild(300, 300))
+    zweite = _kommune(2)
+    zweite.logo.name = erste.logo.name  # dieselbe Datei, wie beim Anlegen per Shell
+    zweite.save()
+    namen = [g["name"] for g in _daten(erste)["sizes"]]
+    assert [g["name"] for g in _daten(zweite)["sizes"]] == namen, "gleicher Inhalt, gleiche Fassungen"
+
+    erste.logo.save("eigenes.png", ContentFile(_bild(300, 150, modus="RGB")))
+    assert all(_datei(media_root, n).exists() for n in namen), "Die zweite Kommune zeigt sie noch"
+
+    zweite.logo = None
+    zweite.save()
+    assert not any(_datei(media_root, n).exists() for n in namen), "Niemand nutzt sie mehr"
+
+
+def test_neue_version_bekommt_neue_namen(media_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from insight_core import logo_vorschau
+
+    body = _mit_logo("version.png", _bild(300, 300))
+    alte = [g["name"] for g in _daten(body)["sizes"]]
+
+    monkeypatch.setattr(logo_vorschau, "VERSION", logo_vorschau.VERSION + 1)
+    assert body.update_logo_thumbnails()
+
+    neue = [g["name"] for g in _daten(body)["sizes"]]
+    assert neue and set(neue).isdisjoint(alte), "Ein Jahr gecachte Namen dürfen keinen neuen Inhalt bekommen"
+    assert all(_datei(media_root, n).exists() for n in neue)
+    assert not any(_datei(media_root, n).exists() for n in alte)
+    assert all(IMMUTABLE_MEDIA_RE.match(n) for n in neue)

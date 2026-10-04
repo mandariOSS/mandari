@@ -538,12 +538,25 @@ class OParlBody(SourceDeletionModel):
         """Vorschaubilder des Logos erzeugen oder abräumen; ``True``, wenn sich etwas geändert hat."""
         from .logo_vorschau import abgleichen
 
-        neu = abgleichen(self.logo, self.logo_thumbnails, erzwingen=force)
+        neu = abgleichen(
+            self.logo, self.logo_thumbnails, erzwingen=force, anderswo_genutzt=self._logo_vorschauen_anderer
+        )
         if neu == self.logo_thumbnails:
             return False
         self.logo_thumbnails = neu
         type(self).objects.filter(pk=self.pk).update(logo_thumbnails=neu)
         return True
+
+    def _logo_vorschauen_anderer(self, inhalt: str) -> set[str]:
+        """Vorschaubilder mit diesem Hash, die andere Kommunen zeigen (dieselbe Logodatei, z. B. per Shell gesetzt)."""
+        andere = type(self).objects.exclude(pk=self.pk).filter(logo_thumbnails__hash=inhalt)
+        return {
+            str(groesse["name"])
+            for daten in andere.values_list("logo_thumbnails", flat=True)
+            if isinstance(daten, dict)
+            for groesse in daten.get("sizes", [])
+            if groesse.get("name")
+        }
 
     @property
     def logo_img_attrs(self) -> str:

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Callable, Collection
 from io import BytesIO
 from pathlib import PurePosixPath
 from typing import Any
@@ -38,7 +39,8 @@ logger = logging.getLogger(__name__)
 GROESSEN = (64, 128)
 #: Ablage unter ``MEDIA_ROOT``; liegt unter ``bodies/`` und ist damit öffentlich (``mandari/media.py``)
 ORDNER = "bodies/logos/vorschau"
-#: Erhöhen, wenn sich Größen oder Kodierung ändern: Der Befehl erzeugt dann alle Fassungen neu.
+#: Erhöhen, wenn sich Größen oder Kodierung ändern: Der Befehl erzeugt dann alle Fassungen neu. Die Version
+#: geht in den Hash im Dateinamen ein; neue Fassungen bekommen so neue Namen (die alten sind ein Jahr gecacht).
 VERSION = 1
 #: Größere Originale werden nicht verarbeitet (Schutz vor Speicherbedarf beim Dekodieren)
 MAX_BYTES = 20 * 1024 * 1024
@@ -76,7 +78,7 @@ def _fassungen_erzeugen(datei: FieldFile) -> dict[str, Any]:
         return ergebnis
     with storage.open(name, "rb") as quelle:
         roh = quelle.read()
-    inhalt = hashlib.sha256(roh).hexdigest()[:12]
+    inhalt = hashlib.sha256(roh + f"|v{VERSION}".encode()).hexdigest()[:12]
     stamm = slugify(PurePosixPath(name).stem)[:40].strip("-") or "logo"
     ergebnis["hash"] = inhalt
 
@@ -102,13 +104,19 @@ def _fassungen_erzeugen(datei: FieldFile) -> dict[str, Any]:
 
 
 def abgleichen(
-    datei: FieldFile | None, bisher: dict[str, Any] | None, *, erzwingen: bool = False
+    datei: FieldFile | None,
+    bisher: dict[str, Any] | None,
+    *,
+    erzwingen: bool = False,
+    anderswo_genutzt: Callable[[str], Collection[str]] | None = None,
 ) -> dict[str, Any] | None:
     """Neuer Wert für ``logo_thumbnails``: erzeugt fehlende Fassungen und räumt die des alten Logos ab.
 
     Idempotent: Passen die gespeicherten Fassungen zum Logo, bleibt alles, wie es ist. ``erzwingen``
     liest das Original erneut; Dateien mit gleichem Inhalts-Hash werden dabei nicht neu geschrieben.
     Ein nicht lesbares Bild wird protokolliert und ergibt keine Fassungen (Anzeige des Originals).
+    ``anderswo_genutzt(hash)`` nennt Fassungen, die eine andere Kommune mit derselben Logodatei noch
+    zeigt (gleicher Name, gleicher Hash); sie bleiben liegen, bis die letzte sie nicht mehr braucht.
     """
     if not erzwingen and ist_aktuell(datei, bisher):
         return bisher
@@ -120,13 +128,17 @@ def abgleichen(
             logger.warning("Vorschaubilder für Logo %s nicht erzeugt", datei.name, exc_info=True)
             neu = {"source": datei.name, "v": VERSION, "sizes": [], "error": True}
     behalten = set(_namen(neu))
+    veraltet = [name for name in _namen(bisher) if name not in behalten and name.startswith(f"{ORDNER}/")]
+    if veraltet and anderswo_genutzt is not None and isinstance(bisher, dict) and bisher.get("hash"):
+        behalten.update(anderswo_genutzt(str(bisher["hash"])))
     storage = datei.storage if datei is not None else default_storage
-    for name in _namen(bisher):
-        if name not in behalten and name.startswith(f"{ORDNER}/"):
-            try:
-                storage.delete(name)
-            except OSError:
-                logger.warning("Altes Vorschaubild %s nicht gelöscht", name, exc_info=True)
+    for name in veraltet:
+        if name in behalten:
+            continue
+        try:
+            storage.delete(name)
+        except OSError:
+            logger.warning("Altes Vorschaubild %s nicht gelöscht", name, exc_info=True)
     return neu
 
 
