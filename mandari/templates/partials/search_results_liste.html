@@ -1,0 +1,35 @@
+{% comment %}
+Trefferliste der Suchseite (Konzept Insight-Suche, P0.5/P0.6): Gruppen aus search_presentation.present_groups.
+Seite 1 bringt die ehrliche Zahl, den Hinweis auf ähnliche Schreibweisen und die Liste; ab Seite 2 hängt „Mehr laden“
+weitere Einträge an die Liste (hx-swap beforeend) und ersetzt sich selbst out of band.
+{% endcomment %}
+{% if page == 1 or not page %}
+<div>
+    {% if count_sentence %}
+    <p class="text-[0.95rem] text-gray-700 dark:text-gray-300">
+        {{ count_sentence }}{% if other_types %} · Außerdem {% for ot in other_types %}<a href="?q={{ query|urlencode }}&amp;type={{ ot.type }}" class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ ot.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}
+    </p>
+    {% endif %}
+    {% if similar_spelling %}
+    <p class="mt-2 text-[0.95rem] text-gray-700 dark:text-gray-300">Keine genauen Treffer für „{{ query }}“. Ergebnisse für ähnliche Schreibweisen:</p>
+    {% endif %}
+    {% if groups %}
+    <ol id="treffer-liste" class="mt-4" aria-label="Suchergebnisse">
+        {% for treffer in groups %}
+        {% if treffer.kind == "person" or treffer.kind == "gremium" %}<c-suche.treffer-person :treffer="treffer" />{% else %}<c-suche.treffer-vorgang :treffer="treffer" />{% endif %}
+        {% endfor %}
+    </ol>
+    {% else %}
+    <div class="py-10">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Keine Treffer für „{{ query }}“</h2>
+        <p class="mt-2 max-w-xl text-gray-700 dark:text-gray-300">Prüfen Sie die Schreibweise oder suchen Sie mit weniger Wörtern. Bei Straßen genügt der Name ohne „Straße“.</p>
+    </div>
+    {% endif %}
+    <div id="mehr-laden" class="pt-4">{% include "partials/search_results_mehr.html" %}</div>
+</div>
+{% else %}
+{% for treffer in groups %}
+{% if treffer.kind == "person" or treffer.kind == "gremium" %}<c-suche.treffer-person :treffer="treffer" />{% else %}<c-suche.treffer-vorgang :treffer="treffer" />{% endif %}
+{% endfor %}
+<div id="mehr-laden" hx-swap-oob="true" class="pt-4">{% include "partials/search_results_mehr.html" %}</div>
+{% endif %}

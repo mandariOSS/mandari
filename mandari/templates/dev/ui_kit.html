@@ -181,6 +181,12 @@
         </c-insight.timeline>
     </c-ui.card>
 
+    <c-ui.card title="Suche: Treffer" subtitle="c-suche.treffer-vorgang / c-suche.treffer-person – treffer (Dict aus search_presentation.present_groups)">
+        <ol>
+            <c-suche.treffer-vorgang :treffer="demo_treffer" />
+        </ol>
+    </c-ui.card>
+
     <c-ui.card title="Panel-Abschnitt und Textbutton" subtitle="c-ui.panel-section – title, count, action-Slot; c-ui.text-button – variant (primary|danger|muted), icon" padding="none">
         <c-ui.panel-section title="Aufgaben" count="2">
             <c-slot name="action"><c-ui.text-button icon="plus">Aufgabe</c-ui.text-button></c-slot>

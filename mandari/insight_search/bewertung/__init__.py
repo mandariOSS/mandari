@@ -19,6 +19,7 @@ Elasticsearch bekommt nur Such- und Zählanfragen; ausgegeben werden Zahlen und 
 from __future__ import annotations
 
 import json
+import re
 import statistics
 import time
 from dataclasses import asdict, dataclass, field
@@ -72,6 +73,16 @@ class Messwert:
     top20_rauschen: int = 0
     leere_seiten: int = 0
     dauer_ms: float = 0.0
+    #: Gruppierte Liste (Konzept P0.5–P0.7); ``None``, wenn der Dienst nicht gruppiert
+    vorgaenge_als_treffer: int | None = None
+    gruppen_vorgaenge: int | None = None
+    doppelte_seite1_vorher: int = 0
+    doppelte_seite1: int = 0
+    vorgaenge_beraten: int = 0
+    vorgaenge_mit_kontext: int = 0
+    unsauber_vorher: int = 0
+    unsauber: int = 0
+    dauer_gruppiert_ms: float = 0.0
 
 
 @dataclass
@@ -98,6 +109,24 @@ class Bericht:
             "z4_rauschen_top20_prozent": _prozent(sum(m.top20_rauschen for m in self.messwerte), top20),
             "z8_leere_seiten": sum(m.leere_seiten for m in self.messwerte),
             "z13_p95_ms": round(dauern[max(0, int(len(dauern) * 0.95 + 0.5) - 1)], 1) if dauern else None,
+            **self._kennzahlen_gruppiert(),
+        }
+
+    def _kennzahlen_gruppiert(self) -> dict[str, Any]:
+        """Z5 (Doppelte auf Seite 1), Z6 (Treffer ohne Klick), Z7 (unsaubere Ausschnitte), Dauer der Liste."""
+        gruppiert = [m for m in self.messwerte if m.gruppen_vorgaenge is not None]
+        if not gruppiert:
+            return {}
+        dauern = sorted(m.dauer_gruppiert_ms for m in gruppiert)
+        return {
+            "z5_doppelte_seite1_vorher": sum(m.doppelte_seite1_vorher for m in gruppiert),
+            "z5_doppelte_seite1": sum(m.doppelte_seite1 for m in gruppiert),
+            "z6_treffer_ohne_klick_prozent": _prozent(
+                sum(m.vorgaenge_mit_kontext for m in gruppiert), sum(m.vorgaenge_beraten for m in gruppiert)
+            ),
+            "z7_unsauber_vorher": sum(m.unsauber_vorher for m in gruppiert),
+            "z7_unsauber": sum(m.unsauber for m in gruppiert),
+            "z13_p95_gruppiert_ms": round(dauern[max(0, int(len(dauern) * 0.95 + 0.5) - 1)], 1),
         }
 
     def als_dict(self) -> dict[str, Any]:
@@ -190,7 +219,51 @@ def _messe(dienst: Any, anfrage: Anfrage, body_id: str, ranking: str, stichtag: 
     top20 = eintraege[:SEITE]
     wert.top20 = len(top20)
     wert.top20_rauschen = len(top20) - _relevante(dienst.client, top20, anfrage.relevant)
+    if hasattr(dienst, "search_grouped"):
+        _messe_gruppen(dienst, anfrage, body_id, ranking, seite1, wert)
     return wert
+
+
+#: Zeichen, die ein Ausschnitt nicht zeigen darf (Privatbereich, Steuerzeichen, Ersatzzeichen) und offene Trennung
+_UNSAUBER: Final = re.compile(
+    r"[\ue000-\uf8ff\x00-\x08\x0b\x0c\x0e-\x1f\ufffd]|[a-zäöüß]- (?!(?:und|oder|bzw|sowie|bis|als|noch)\b)[a-zäöüß]"
+)
+_DATUM: Final = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
+
+
+def _messe_gruppen(
+    dienst: Any, anfrage: Anfrage, body_id: str, ranking: str, seite1: dict[str, Any], wert: Messwert
+) -> None:
+    """Gruppierte erste Seite gegen die bisherige Trefferliste (Z3, Z5, Z6, Z7)."""
+    from insight_core.services.search_presentation import present_groups
+
+    vorher = seite1["results"]
+    schluessel = [str(d.get("paper_id") if d.get("_index") == "files" else d.get("id")) for d in vorher]
+    vorgaenge = [
+        k for k, d in zip(schluessel, vorher, strict=True) if d.get("_index") in ("papers", "files") and k != "None"
+    ]
+    wert.doppelte_seite1_vorher = len(vorgaenge) - len(set(vorgaenge))
+    wert.unsauber_vorher = sum(
+        1 for d in vorher if _UNSAUBER.search(str((d.get("_formatted") or {}).get("text_content", "")))
+    )
+    indexe = [anfrage.typ] if anfrage.typ else None
+    beginn = time.perf_counter()
+    gruppiert = dienst.search_grouped(
+        anfrage.text, body_id=body_id, page=1, page_size=SEITE, index_names=indexe, ranking=ranking
+    )
+    treffer = present_groups(gruppiert["groups"])
+    wert.dauer_gruppiert_ms = round((time.perf_counter() - beginn) * 1000, 1)
+    wert.vorgaenge_als_treffer = int(seite1.get("papers_total", 0)) or None
+    wert.gruppen_vorgaenge = int(gruppiert["counts"].get("vorgaenge", 0))
+    urls = [t["url"] for t in treffer if t["kind"] == "vorgang"]
+    wert.doppelte_seite1 = len(urls) - len(set(urls))
+    for t in treffer:
+        if t["kind"] == "vorgang" and t.get("status_kind") not in ("", "none"):
+            wert.vorgaenge_beraten += 1
+            kontext = t.get("context") or []
+            if t.get("status") and len(kontext) >= 3 and any(_DATUM.match(teil) for teil in kontext):
+                wert.vorgaenge_mit_kontext += 1
+        wert.unsauber += bool(_UNSAUBER.search(str(t.get("snippet") or "")))
 
 
 def _quellen(client: Any, eintraege: list[tuple[str, str]]) -> dict[tuple[str, str], dict[str, Any]]:
