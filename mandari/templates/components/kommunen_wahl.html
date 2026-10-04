@@ -2,9 +2,13 @@
 Kommunenwechsel (Issue #783, Stufe 2) – im Dialog des Rahmens und auf der Auswahlseite. Für Tausende Kommunen, nie als
 lange Liste: Suchfeld mit höchstens acht Vorschlägen, „In meiner Nähe“ auf Klick, „Zuletzt besucht“ aus dem Browser,
 Stöbern Land → Kreis → Kommune. Logik in frontend/alpine/kommunen-wahl.ts; ohne JavaScript schickt das Formular an
-die Seite „Kommune wählen“. Parameter: id (eindeutiger Präfix), im_dialog.
+die Seite „Kommune wählen“. Parameter: id (eindeutiger Präfix), im_dialog, stufe_start (erste Stufe des Stöberns
+fertig im Markup, nur auf der Auswahlseite). Überschriften: h3 unter dem h2 des Dialogs, auf der Seite h2.
+Ohne Sprung beim Start (CLS): Was erst mit Alpine erscheinen kann („Zuletzt besucht“), steht über Bereichen, die bis
+dahin unsichtbar ihren Platz halten (x-cloak="platz").
 {% endcomment %}
-<div x-data="kommunenWahl" @keydown="tasten($event)" {% if im_dialog %}data-im-dialog{% endif %}
+{% load humanize %}
+<div x-data="kommunenWahl" @keydown="tasten($event)" {% if im_dialog %}data-im-dialog{% endif %}{% if stufe_start.eintraege %} data-stufe-start{% endif %}
     data-vorschlaege-url="{% url 'insight_core:insight:kommunen_vorschlaege' %}"
     data-naehe-url="{% url 'insight_core:insight:kommunen_naehe' %}"
     data-stoebern-url="{% url 'insight_core:insight:kommunen_stoebern' %}">
@@ -17,7 +21,7 @@ die Seite „Kommune wählen“. Parameter: id (eindeutiger Präfix), im_dialog.
                 class="h-12 w-full pl-11 pr-4 rounded-lg bg-band-grau border border-transparent text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
         </span>
     </form>
-    <button type="button" @click="inDerNaehe()" x-show="!sucheAktiv()" :disabled="standort === 'laedt'" x-cloak
+    <button type="button" @click="inDerNaehe()" x-show="!sucheAktiv()" :disabled="standort === 'laedt'" x-cloak="platz"
         class="mt-3 inline-flex items-center gap-2 min-h-11 text-[0.95rem] font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline disabled:opacity-60">
         <i data-lucide="locate-fixed" class="w-[18px] h-[18px]" aria-hidden="true"></i>
         <span x-text="standort === 'laedt' ? 'Standort wird ermittelt …' : 'In meiner Nähe'">In meiner Nähe</span>
@@ -25,10 +29,11 @@ die Seite „Kommune wählen“. Parameter: id (eindeutiger Präfix), im_dialog.
     <p id="{{ id }}-meldung" role="status" aria-live="polite" class="text-[0.9rem] text-gray-700 dark:text-gray-300"
         :class="(standort === 'verweigert' || standort === 'fehler' || (sucheAktiv() && !sucht && !treffer.length)) ? 'mt-3' : 'sr-only'" x-text="meldung"></p>
 
-    <div id="{{ id }}-ergebnisse">
+    {# flow-root: Die Abstände der Bereiche bleiben innen, der Behälter springt nicht, wenn „Zuletzt besucht“ erscheint #}
+    <div id="{{ id }}-ergebnisse" class="flow-root">
         {# Vorschläge, sonst Kommunen in der Nähe, sonst zuletzt besucht #}
         <section x-show="liste().eintraege.length" class="mt-4" x-cloak>
-            <h3 x-show="liste().titel" x-text="liste().titel" class="text-[0.875rem] font-medium text-gray-600 dark:text-gray-400"></h3>
+            <h{{ im_dialog|yesno:"3,2" }} x-show="liste().titel" x-text="liste().titel" class="text-[0.875rem] font-medium text-gray-600 dark:text-gray-400"></h{{ im_dialog|yesno:"3,2" }}>
             <ul class="mt-1 -mx-3">
                 <template x-for="(t, i) in liste().eintraege" :key="t.name + t.ort + (t.hinweis || '') + (t.url || '')">
                     <li :class="i && 'border-t border-gray-200 dark:border-gray-800'">
@@ -55,21 +60,40 @@ die Seite „Kommune wählen“. Parameter: id (eindeutiger Präfix), im_dialog.
             </ul>
             <p x-show="!sucheAktiv() && naehe && naechsteMitDaten" class="mt-3 text-[0.9rem] text-gray-700 dark:text-gray-300" x-cloak>
                 Nächste Kommune mit Daten:
-                <a :href="naechsteMitDaten && naechsteMitDaten.url" @click="naechsteMitDaten && merken(naechsteMitDaten)" data-kommune-ziel class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4" x-text="naechsteMitDaten && naechsteMitDaten.name"></a>
+                <template x-if="naechsteMitDaten && naechsteMitDaten.url">
+                    <a :href="naechsteMitDaten.url" @click="merken(naechsteMitDaten)" data-kommune-ziel class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4" x-text="naechsteMitDaten.name"></a>
+                </template>
                 <span x-show="naechsteMitDaten && naechsteMitDaten.entfernung !== undefined" x-text="naechsteMitDaten ? '(' + entfernungText(naechsteMitDaten.entfernung) + ')' : ''"></span>
             </p>
         </section>
 
         {# Stöbern in Stufen statt einer flachen Liste #}
-        <section x-show="!sucheAktiv() && stufe && stufe.eintraege.length" class="mt-6" aria-labelledby="{{ id }}-stufe" x-cloak>
+        <section x-show="stoebernSichtbar()" class="mt-6" aria-labelledby="{{ id }}-stufe" x-cloak{% if stufe_start.eintraege %}="platz"{% endif %}>
             <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <h3 id="{{ id }}-stufe" x-ref="stufenTitel" tabindex="-1" x-text="stufenTitel()" class="text-[0.95rem] font-semibold text-gray-900 dark:text-white focus:outline-none"></h3>
-                <button type="button" x-show="stufe && stufe.zurueck" @click="stoebern(stufe.zurueck)"
+                <h{{ im_dialog|yesno:"3,2" }} id="{{ id }}-stufe" x-ref="stufenTitel" tabindex="-1" x-text="stufenTitel()" class="text-[0.95rem] font-semibold text-gray-900 dark:text-white focus:outline-none">Nach Bundesland suchen</h{{ im_dialog|yesno:"3,2" }}>
+                <button type="button" x-show="stufe && stufe.zurueck" @click="stoebern(stufe.zurueck)" x-cloak
                     class="inline-flex items-center gap-1 min-h-11 text-[0.9rem] font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">
                     <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i><span class="sr-only">Zurück: </span><span x-text="stufe && stufe.zurueck ? stufe.zurueck.titel : ''"></span>
                 </button>
             </div>
-            <ul class="mt-2 -mx-3 grid sm:grid-cols-2 gap-x-2">
+            {% if stufe_start.eintraege %}
+            {# Länder aus dem Markup, bis eine Stufe geladen ist (Text wie stoebernInfo()); ein Klick-Handler für alle #}
+            <ul x-show="!stufe" @click="stoebernKlick($event)" class="mt-2 -mx-3 grid sm:grid-cols-2 gap-x-2">
+                {% for e in stufe_start.eintraege %}
+                <li>
+                    <button type="button" data-kommune-ziel data-land="{{ e.land }}"
+                        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-band-grau focus-visible:bg-band-grau">
+                        <span class="flex-1 min-w-0">
+                            <span class="block font-medium text-gray-900 dark:text-white truncate">{{ e.name }}</span>
+                            <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{% if e.ort %}{{ e.ort }}, {% endif %}{{ e.anzahl|intcomma }} {{ e.anzahl|pluralize:"Kommune,Kommunen" }}{% if e.mit_daten %}, {{ e.mit_daten }} mit Daten{% endif %}</span>
+                        </span>
+                        <i data-lucide="chevron-right" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+                    </button>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            <ul x-show="stufe" class="mt-2 -mx-3 grid sm:grid-cols-2 gap-x-2" x-cloak>
                 <template x-for="e in (stufe ? stufe.eintraege : [])" :key="(e.land || '') + (e.kreis || '') + (e.verband || '') + e.name + (e.url || '')">
                     <li>
                         <template x-if="e.art === 'gruppe'">

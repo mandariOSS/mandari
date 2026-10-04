@@ -6,7 +6,8 @@
  * - „In meiner Nähe“ nur auf Klick: Der Browser fragt den Standort, schickt nur eine Zelle von 0,1 Grad
  *   (`data-naehe-url`) und sortiert die Kandidaten selbst nach der genauen Entfernung. Gespeichert wird nichts.
  * - „Zuletzt besucht“ lokal im Browser (localStorage, kein Cookie), höchstens fünf.
- * - Stöbern Land → Kreis → (Gemeindeverband →) Kommune in Stufen (`data-stoebern-url`).
+ * - Stöbern Land → Kreis → (Gemeindeverband →) Kommune in Stufen (`data-stoebern-url`). Auf der Auswahlseite steht
+ *   die erste Stufe (Länder) schon im Markup (`data-stufe-start`); geladen wird erst die nächste.
  *
  * Markup: `templates/components/kommunen_wahl.html` (im Dialog des Rahmens und auf der Auswahlseite). Ergebnisse sind
  * Links; Pfeiltasten wandern zwischen Eingabe und Links, Escape kehrt zur Eingabe zurück. Kommunen ohne Daten
@@ -123,7 +124,9 @@ export const kommunenWahl = defineComponent(() => ({
   naehe: null as KommuneTreffer[] | null,
   naechsteMitDaten: null as KommuneTreffer | null,
   standort: '' as '' | 'laedt' | 'fehler' | 'verweigert' | 'leer',
+  /** Geladene Stufe; `null` heißt: noch keine, oder die Länder aus dem Markup (`_startImMarkup`) */
   stufe: null as StoebernStufe | null,
+  _startImMarkup: false,
   _adressen: {} as Record<string, string>,
   _abbrueche: {} as Record<string, AbortController>,
   _zeitgeber: undefined as ReturnType<typeof setTimeout> | undefined,
@@ -135,23 +138,27 @@ export const kommunenWahl = defineComponent(() => ({
       naehe: daten.naeheUrl ?? '',
       stoebern: daten.stoebernUrl ?? '',
     }
+    this._startImMarkup = daten.stufeStart !== undefined
     this.zuletzt = zuletztLesen()
     this.$watch('eingabe', () => {
       clearTimeout(this._zeitgeber)
       this._zeitgeber = setTimeout(() => this.suchen(), VERZOEGERUNG_MS)
     })
-    // Im Dialog des Rahmens: beim Öffnen „Zuletzt besucht“ auffrischen und die erste Stufe des Stöberns laden
+    // Im Dialog des Rahmens: beim Öffnen „Zuletzt besucht“ auffrischen und die erste Stufe des Stöberns laden. Der
+    // Dialog baut diesen Inhalt erst beim ersten Öffnen auf; dann ist er schon offen, wenn init() läuft.
     const offen = (): boolean => Boolean((this as unknown as { cityModalOpen?: boolean }).cityModalOpen)
     if (daten.imDialog !== undefined) {
-      this.$watch('cityModalOpen', (wert: boolean) => {
-        if (!wert) return
+      const beimOeffnen = (): void => {
         this.zuletzt = zuletztLesen()
         if (!this.stufe) this.stoebern()
         // Nach der Fokusfalle (sie setzt den Fokus auf das erste Element) ins Suchfeld
         setTimeout(() => (this.$refs.eingabe as HTMLInputElement | undefined)?.focus(), 50)
+      }
+      this.$watch('cityModalOpen', (wert: boolean) => {
+        if (wert) beimOeffnen()
       })
-      if (offen()) this.stoebern()
-    } else {
+      if (offen()) beimOeffnen()
+    } else if (!this._startImMarkup) {
       this.stoebern()
     }
   },
@@ -237,17 +244,32 @@ export const kommunenWahl = defineComponent(() => ({
   async stoebern(parameter: { land?: string; kreis?: string; verband?: string } = {}) {
     const abfrage = new URLSearchParams()
     for (const [schluessel, wert] of Object.entries(parameter)) if (wert) abfrage.set(schluessel, wert)
+    // Titel vor dem Laden greifen: Kam der Klick aus der Liste, ist der Knopf danach ersetzt, und $refs fände von dort
+    // aus nichts mehr
+    const titel = this.$refs.stufenTitel as HTMLElement | undefined
     const daten = await this.laden<StoebernStufe>('stoebern', `${this._adressen.stoebern}?${abfrage.toString()}`)
     if (daten !== null) {
-      const vorher = this.stufe
+      const wechsel = this.stufe !== null || this._startImMarkup
       this.stufe = daten
       // Nach einem Wechsel der Stufe den Fokus an den Titel geben, damit Bildschirmleser die neue Stufe ansagen
-      if (vorher) this.$nextTick(() => (this.$refs.stufenTitel as HTMLElement | undefined)?.focus())
+      if (wechsel) this.$nextTick(() => titel?.focus())
     }
+  },
+
+  /** Klick in die Länder aus dem Markup: ein Handler für die ganze Liste statt einer Direktive je Eintrag. */
+  stoebernKlick(event: MouseEvent) {
+    const land = (event.target as Element | null)?.closest<HTMLElement>('[data-land]')?.dataset.land
+    if (land) this.stoebern({ land })
   },
 
   sucheAktiv(): boolean {
     return this.eingabe.trim().length >= 2
+  },
+
+  /** Stöbern zeigen (nicht während der Suche): die geladene Stufe, wenn sie Einträge hat, sonst die aus dem Markup. */
+  stoebernSichtbar(): boolean {
+    if (this.sucheAktiv()) return false
+    return this.stufe ? this.stufe.eintraege.length > 0 : this._startImMarkup
   },
 
   /** Was unter dem Suchfeld steht: Vorschläge, sonst die Nähe, sonst „Zuletzt besucht“. */

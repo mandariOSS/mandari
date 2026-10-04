@@ -62,7 +62,9 @@
 
     <!-- Custom Styles -->
     <style nonce="{{ csp_nonce }}">
-        [x-cloak] { display: none !important; }
+        [x-cloak]:not([x-cloak="platz"]) { display: none !important; }
+        /* Bis Alpine läuft unsichtbar, aber mit Platz: Was danach erscheint, verschiebt nichts (CLS, Kommunenauswahl) */
+        [x-cloak="platz"] { visibility: hidden !important; }
 
         @font-face {
             font-family: 'Inter';
@@ -165,6 +167,9 @@
         ::-webkit-scrollbar-track { background: transparent; }
 
     </style>
+
+    {# Ohne JavaScript füllt nichts diese Bereiche: ganz ausblenden statt Platz zu halten #}
+    <noscript><style nonce="{{ csp_nonce }}">[x-cloak="platz"] { display: none !important; }</style></noscript>
 
     {% block extra_head %}{% endblock %}
 </head>

@@ -17,7 +17,7 @@ from ..models import (
     OParlMeeting,
     OParlPaper,
 )
-from ..services import portal_stats
+from ..services import kommunenverzeichnis, portal_stats
 from ._helpers import get_active_body, is_all_bodies_mode
 
 # =============================================================================
@@ -62,6 +62,10 @@ class PortalHomeView(TemplateView):
             # Kommunenauswahl (Issue #783): keine Liste aller Kommunen, sondern Suche, Nähe und Stöbern über das
             # Kommunenverzeichnis (services/kommunenverzeichnis.py); hier nur, ob es überhaupt Kommunen gibt
             context["hat_kommunen"] = OParlBody.objects.listed().exists()
+            if context["hat_kommunen"]:
+                # Erste Stufe des Stöberns (Länder) gleich im Markup: Sie hält ihren Platz, statt nach dem Laden
+                # alles darunter zu verschieben (CLS), und spart die erste Anfrage
+                context["stoebern_start"] = kommunenverzeichnis.stoebern()
             context["upcoming_meetings"] = None
             context["recent_papers"] = None
 
