@@ -1,0 +1,60 @@
+{# KI-Assistent: Liste der Nachrichten mit Quellen und Fehlern (aus pages/chat.html, im Gültigkeitsbereich von chatApp) #}
+<!-- Message List -->
+<template x-for="(msg, index) in messages" :key="index">
+    <div>
+        <!-- User Message -->
+        <template x-if="msg.role === 'user'">
+            <div class="flex justify-end">
+                <div class="bg-primary-600 text-white rounded-2xl rounded-br-md px-5 py-3 max-w-[75%] shadow-sm">
+                    <p class="text-[15px] leading-relaxed whitespace-pre-wrap" x-text="msg.content"></p>
+                </div>
+            </div>
+        </template>
+        <!-- Assistant Message -->
+        <template x-if="msg.role === 'assistant'">
+            <div class="flex justify-start gap-3">
+                <div class="w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-900/30 border border-primary-100 dark:border-primary-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg class="w-[18px] h-[18px] text-primary-500 dark:text-primary-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                </div>
+                <div class="max-w-[85%] min-w-0">
+                    <div class="bg-gray-50 dark:bg-gray-750 text-gray-900 dark:text-gray-100 rounded-2xl rounded-tl-md px-5 py-3.5 border border-gray-100 dark:border-gray-700">
+                        <div class="prose dark:prose-invert max-w-none
+                                    prose-p:my-1.5 prose-p:leading-relaxed prose-p:text-[15px]
+                                    prose-headings:my-2.5 prose-headings:text-base prose-headings:font-semibold
+                                    prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-li:text-[15px]
+                                    prose-strong:text-gray-900 dark:prose-strong:text-white
+                                    prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-a:font-medium prose-a:no-underline hover:prose-a:underline
+                                    prose-code:text-sm prose-code:bg-gray-100 dark:prose-code:bg-gray-800 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded"
+                             x-html="renderMarkdown(msg.content)"></div>
+                    </div>
+                    <!-- Sources -->
+                    <template x-if="msg.sources && msg.sources.length > 0">
+                        <div class="mt-2.5 space-y-1.5">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 pl-1">Quellen</p>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="(src, si) in msg.sources" :key="si">
+                                    <a :href="src.url"
+                                       class="group inline-flex items-center gap-2 pl-2 pr-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:border-primary-300 dark:hover:border-primary-700 hover:text-primary-600 dark:hover:text-primary-400 transition-all">
+                                        <svg class="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13H8"/><path d="M16 17H8"/><path d="M16 13h-2"/></svg>
+                                        <span x-text="src.title.substring(0, 60) + (src.title.length > 60 ? '...' : '')"></span>
+                                    </a>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </template>
+        <!-- Error Message -->
+        <template x-if="msg.role === 'error'">
+            <div class="flex justify-start gap-3">
+                <div class="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg class="w-[18px] h-[18px] text-red-500 dark:text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+                </div>
+                <div class="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-800/40 rounded-2xl rounded-tl-md px-5 py-3 max-w-[80%]">
+                    <p class="text-sm leading-relaxed" x-text="msg.content"></p>
+                </div>
+            </div>
+        </template>
+    </div>
+</template>
