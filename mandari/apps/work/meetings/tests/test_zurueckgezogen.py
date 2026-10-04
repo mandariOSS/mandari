@@ -13,6 +13,7 @@ import re
 from typing import Any
 
 import pytest
+from django.db import models
 from django.db.models import ProtectedError
 
 from apps.work.meetings.models import AgendaItemPosition, AgendaSpeechNote, MeetingPreparation
@@ -68,9 +69,10 @@ def test_harte_loeschung_der_sitzung_bricht_bei_arbeitsdaten_ab(org: Any, meetin
 
 def test_redebeitrag_behaelt_sich_ohne_sitzungsbezug() -> None:
     """Der Sitzungsbezug eines Redebeitrags ist optional (``SET_NULL``), der TOP-Bezug geschützt."""
-    feld = AgendaSpeechNote._meta.get_field("meeting")
-    assert feld.remote_field.on_delete.__name__ == "SET_NULL"
-    assert AgendaSpeechNote._meta.get_field("agenda_item").remote_field.on_delete.__name__ == "PROTECT"
+    sitzung = AgendaSpeechNote._meta.get_field("meeting").remote_field
+    punkt = AgendaSpeechNote._meta.get_field("agenda_item").remote_field
+    assert sitzung is not None and sitzung.on_delete is models.SET_NULL
+    assert punkt is not None and punkt.on_delete is models.PROTECT
 
 
 @pytest.mark.parametrize(
