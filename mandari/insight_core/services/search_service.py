@@ -6,7 +6,7 @@ Bietet Volltextsuche über Elasticsearch für alle OParl-Entitäten.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,6 +17,7 @@ from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
 
 from . import search_ranking
+from .search_presentation import clean_snippet
 from .search_ranking import DATE_FIELD_BY_INDEX
 
 HIGHLIGHT_PRE = '<mark class="bg-yellow-200 dark:bg-yellow-800">'
@@ -54,8 +55,28 @@ HIGHLIGHT = {
         "name": {"number_of_fragments": 0},
         "text_content": {"fragment_size": 200, "number_of_fragments": 1},
         "reference": {"number_of_fragments": 0},
+        # Ausschnitt für Vorgänge (Text ihrer Dokumente, gekürzt im Index)
+        "file_contents_preview": {"fragment_size": 200, "number_of_fragments": 1},
     },
 }
+
+#: Rangfusion (Reciprocal Rank Fusion): Konstante und Gewicht je Index; Personen und Gremien nur im eigenen Typ
+RRF_K = 60
+RRF_WEIGHTS = {"papers": 1.0, "files": 0.9, "meetings": 0.6, "persons": 0.0, "organizations": 0.0}
+#: Dateien je Seite tiefer abrufen, damit genug Vorgänge zusammenkommen (höchstens MAX_RESULT_DEPTH)
+FILES_DEPTH_FACTOR = 5
+#: Dokumente je Gruppe, deren Namen die Liste nennt
+MAX_DOCS_PER_GROUP = 10
+FILE_LABEL_FIELDS = ["id", "name", "file_name"]
+#: Bis zu dieser Zahl ist ``cardinality`` praktisch genau; darüber zeigt die Seite „rund“
+GROUP_COUNT_PRECISION = 3000
+#: Gruppe eines Treffers: Vorgang, sonst Sitzung, sonst das Dokument selbst (``papers`` hat kein ``paper_id``)
+GROUP_KEY_SCRIPT = (
+    "if (doc.containsKey('paper_id') && doc['paper_id'].size() > 0) { emit(doc['paper_id'].value); }"
+    " else if (doc.containsKey('meeting_id') && doc['meeting_id'].size() > 0)"
+    " { emit('meeting:' + doc['meeting_id'].value); }"
+    " else { emit(doc['id'].value); }"
+)
 
 SORT_RELEVANCE = "relevance"
 SORT_NEWEST = "newest"
@@ -79,6 +100,13 @@ class RankedHits:
     #: Treffer stammen aus der unscharfen Rückfallsuche (Hinweis „ähnliche Schreibweisen“)
     similar_spelling: bool = False
     errors: int = 0
+    #: Treffer je Index (``_id``, ``_score``, ggf. ``_source`` und ``sort``) in der Reihenfolge des Index
+    hits_by_index: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    totals_by_index: dict[str, int] = field(default_factory=dict)
+    #: Schwelle der Mindestrelevanz je Index (0 = keine)
+    thresholds: dict[str, float] = field(default_factory=dict)
+    #: Indexe, hinter deren Suchtiefe weitere Treffer liegen
+    truncated: set[str] = field(default_factory=set)
 
 
 class ElasticsearchService:
@@ -176,7 +204,7 @@ class ElasticsearchService:
         *,
         body_id: str | None = None,
         index_names: list[str] | None = None,
-        depth: int = MAX_RESULT_DEPTH,
+        depth: int | Mapping[str, int] = MAX_RESULT_DEPTH,
         date_from: str | None = None,
         date_to: str | None = None,
         organization_name: str | None = None,
@@ -184,10 +212,12 @@ class ElasticsearchService:
         body_ids: list[str] | None = None,
         sort: str = SORT_RELEVANCE,
         ranking: str | None = None,
+        sources: Mapping[str, list[str]] | None = None,
     ) -> RankedHits:
         """Schritt 1: Rangfolge der besten ``depth`` Treffer je Index, gemischt; ohne Dokumentinhalte.
 
-        In v2 folgt bei weniger als ``FUZZY_FALLBACK_BELOW`` genauen Treffern die unscharfe Rückfallsuche.
+        ``depth`` gilt für alle Indexe oder je Index; ``sources`` nennt je Index Felder, die schon dieser
+        Schritt liefert (etwa ``paper_id`` der Dateien für die Gruppierung). In v2 folgt bei weniger als ``FUZZY_FALLBACK_BELOW`` genauen Treffern die unscharfe Rückfallsuche.
         """
         if index_names is None:
             index_names = ALL_INDEXES
@@ -209,9 +239,11 @@ class ElasticsearchService:
                 name_part_is_rare=name_part_is_rare,
             )
 
-        ranked = self._rank(index_names, build, False, depth, sort, version, bool(query))
+        depths = depth if isinstance(depth, Mapping) else dict.fromkeys(index_names, depth)
+        felder = sources or {}
+        ranked = self._rank(index_names, build, False, depths, felder, sort, version, bool(query))
         if version == "v2" and query and ranked.total < FUZZY_FALLBACK_BELOW and ranked.errors < len(index_names):
-            unscharf = self._rank(index_names, build, True, depth, sort, version, True)
+            unscharf = self._rank(index_names, build, True, depths, felder, sort, version, True)
             if unscharf.total > ranked.total:
                 unscharf.similar_spelling = True
                 ranked = unscharf
@@ -228,7 +260,8 @@ class ElasticsearchService:
         index_names: list[str],
         build: Callable[[str, bool], dict[str, Any]],
         fuzzy: bool,
-        depth: int,
+        depths: Mapping[str, int],
+        sources: Mapping[str, list[str]],
         sort: str,
         version: str,
         has_query: bool,
@@ -245,7 +278,15 @@ class ElasticsearchService:
                     continue
                 es_query = build(index_name, fuzzy)
                 ranked.queries[index_name] = es_query
-                hits, total = self._index_hits(index_name, es_query, depth, sort, min_relevance)
+                depth = depths.get(index_name, MAX_RESULT_DEPTH)
+                hits, total, threshold = self._index_hits(
+                    index_name, es_query, depth, sort, min_relevance, sources.get(index_name)
+                )
+                ranked.hits_by_index[index_name] = hits
+                ranked.totals_by_index[index_name] = total
+                ranked.thresholds[index_name] = threshold
+                if total > len(hits) and len(hits) >= depth:
+                    ranked.truncated.add(index_name)
                 for hit in hits:
                     score = float(hit.get("_score") or 0)
                     ranked.entries.append((score, position, index_name, hit["_id"]))
@@ -269,8 +310,14 @@ class ElasticsearchService:
         return ranked
 
     def _index_hits(
-        self, index_name: str, es_query: dict[str, Any], depth: int, sort: str, min_relevance: float
-    ) -> tuple[list[dict[str, Any]], int]:
+        self,
+        index_name: str,
+        es_query: dict[str, Any],
+        depth: int,
+        sort: str,
+        min_relevance: float,
+        source: list[str] | None = None,
+    ) -> tuple[list[dict[str, Any]], int, float]:
         """Treffer (``_id``, ``_score``, bei „Neueste“ ``sort``) und Gesamtzahl eines Index.
 
         Mit Mindestrelevanz (v2) entfallen Treffer unter ``min_relevance`` × bestem Wert des Index; die
@@ -285,7 +332,7 @@ class ElasticsearchService:
             # Bei „Neueste“ genügt der beste Treffer, um die Schwelle der Mindestrelevanz zu bestimmen
             result = self.client.search(
                 index=index_name,
-                body={"query": es_query, "size": 1 if newest else depth, "from": 0, "_source": False},
+                body={"query": es_query, "size": 1 if newest else depth, "from": 0, "_source": source or False},
             )
             hits = result["hits"]["hits"]
             total = int(result["hits"]["total"]["value"])
@@ -296,23 +343,284 @@ class ElasticsearchService:
                 "query": es_query,
                 "size": depth,
                 "from": 0,
-                "_source": False,
+                "_source": source or False,
                 "sort": [{date_field: {"order": "desc", "missing": "_last", "unmapped_type": "date"}}, "_score"],
                 "track_scores": True,
             }
             if threshold > 0:
                 body["min_score"] = threshold
             result = self.client.search(index=index_name, body=body)
-            return result["hits"]["hits"], int(result["hits"]["total"]["value"])
+            return result["hits"]["hits"], int(result["hits"]["total"]["value"]), threshold
         if threshold <= 0:
-            return hits, total
+            return hits, total, threshold
         kept = [hit for hit in hits if float(hit.get("_score") or 0) >= threshold]
         if total > len(hits) and len(kept) == len(hits):
             # Hinter der Suchtiefe liegen weitere Treffer über der Schwelle: genau zählen
             total = int(self.client.count(index=index_name, query=es_query, min_score=threshold)["count"])
         else:
             total = len(kept)
-        return kept, total
+        return kept, total, threshold
+
+    def search_grouped(
+        self,
+        query: str,
+        *,
+        body_id: str | None = None,
+        body_ids: list[str] | None = None,
+        page: int = 1,
+        page_size: int = 20,
+        index_names: list[str] | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        organization_name: str | None = None,
+        paper_type: str | None = None,
+        sort: str = SORT_RELEVANCE,
+        ranking: str | None = None,
+    ) -> dict[str, Any]:
+        """Treffer nach Vorgang gruppiert (Konzept Insight-Suche, P0.5).
+
+        Dateien mit Vorgang stehen unter ihm, auch wenn der Vorgang selbst nicht trifft; Unterlagen ohne
+        Vorgang unter ihrer Sitzung. Die Reihenfolge entsteht per Rangfusion über die Indexe (Reciprocal Rank
+        Fusion, ``RRF_K``): Je Index zählt der beste Platz der Gruppe, gewichtet nach Typ. Personen und
+        Gremien erscheinen in „Alle“ nicht (nur gezählt in ``totals_by_index``), im eigenen Typ schon.
+        „Neueste“ ordnet die Gruppen nach ihrem neuesten Treffer.
+
+        Returns:
+            Dict mit ``groups`` (Rohdaten je Gruppe für ``search_presentation.present_groups``), ``counts``
+            (Vorgänge, Sitzungsunterlagen, Sitzungen; ``approx`` über der Genauigkeitsgrenze), ``page``,
+            ``pages``, ``has_more``, ``similar_spelling`` und ``totals_by_index``.
+        """
+        indexes = list(index_names or ALL_INDEXES)
+        page = max(1, int(page))
+        want = page * page_size
+        depths = {
+            index: min(want * (FILES_DEPTH_FACTOR if index == INDEX_FILES else 1), MAX_RESULT_DEPTH)
+            for index in indexes
+        }
+        ranked = self.rank_hits(
+            query,
+            body_id=body_id,
+            body_ids=body_ids,
+            index_names=indexes,
+            depth=depths,
+            date_from=date_from,
+            date_to=date_to,
+            organization_name=organization_name,
+            paper_type=paper_type,
+            sort=sort,
+            ranking=ranking,
+            sources={INDEX_FILES: ["paper_id", "meeting_id"]},
+        )
+        weights = dict.fromkeys(indexes, 1.0) if len(indexes) == 1 else RRF_WEIGHTS
+        groups = self._groups(ranked, indexes, weights, sort)
+        page_groups = groups[(page - 1) * page_size : want]
+        has_more = len(groups) > want or any(
+            index in ranked.truncated and weights.get(index, 0) > 0 for index in indexes
+        )
+        return {
+            "groups": self._load_groups(page_groups, ranked.queries),
+            "counts": self._group_counts(ranked),
+            "page": page,
+            "page_size": page_size,
+            "pages": page + 1 if has_more else page,
+            "has_more": has_more,
+            "similar_spelling": ranked.similar_spelling,
+            "totals_by_index": dict(ranked.totals_by_index),
+        }
+
+    @staticmethod
+    def _group_key(index_name: str, hit: Mapping[str, Any]) -> tuple[str, str]:
+        source = hit.get("_source") or {}
+        if index_name == INDEX_FILES:
+            if source.get("paper_id"):
+                return "paper", str(source["paper_id"])
+            if source.get("meeting_id"):
+                return "meeting", str(source["meeting_id"])
+            return "file", str(hit["_id"])
+        kind = {
+            INDEX_PAPERS: "paper",
+            INDEX_MEETINGS: "meeting",
+            INDEX_PERSONS: "person",
+            INDEX_ORGANIZATIONS: "organization",
+        }
+        return kind.get(index_name, index_name), str(hit["_id"])
+
+    def _groups(
+        self, ranked: RankedHits, indexes: list[str], weights: Mapping[str, float], sort: str
+    ) -> list[dict[str, Any]]:
+        """Gruppen in Listenreihenfolge: Rangfusion bzw. neuester Treffer; Mitglieder je Index nach Rang."""
+        groups: dict[tuple[str, str], dict[str, Any]] = {}
+        for index_name in indexes:
+            weight = float(weights.get(index_name, 0.0))
+            if weight <= 0:
+                continue
+            for rank, hit in enumerate(ranked.hits_by_index.get(index_name, []), start=1):
+                kind, key = self._group_key(index_name, hit)
+                group = groups.setdefault(
+                    (kind, key), {"kind": kind, "key": key, "score": 0.0, "newest": None, "members": {}}
+                )
+                members = group["members"].setdefault(index_name, [])
+                if not members:  # bester Platz dieses Index
+                    group["score"] += weight / (RRF_K + rank)
+                members.append(str(hit["_id"]))
+                datum = (hit.get("sort") or [None])[0]
+                if isinstance(datum, int | float) and (group["newest"] is None or datum > group["newest"]):
+                    group["newest"] = float(datum)
+        ordered = list(groups.values())
+        if sort == SORT_NEWEST:
+            ordered.sort(key=lambda g: (g["newest"] is None, -(g["newest"] or 0.0), -g["score"]))
+        else:
+            ordered.sort(key=lambda g: -g["score"])
+        return ordered
+
+    def _load_groups(
+        self, page_groups: list[dict[str, Any]], queries: Mapping[str, dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Inhalte der Gruppen einer Seite: Vorgang bzw. Sitzung, bestes Dokument mit Ausschnitt, weitere Namen.
+
+        Je Index höchstens zwei Abfragen; Vorgänge und Sitzungen werden auch geladen, wenn nur ihre Dokumente
+        treffen (Filter auf die Kennungen, die Abfrage nur für die Hervorhebung).
+        """
+        wanted: dict[str, list[str]] = {index: [] for index in ALL_INDEXES}
+        main_files: list[str] = []
+        other_files: list[str] = []
+        for group in page_groups:
+            kind, key = group["kind"], group["key"]
+            if kind == "paper":
+                wanted[INDEX_PAPERS].append(key)
+            elif kind == "meeting":
+                wanted[INDEX_MEETINGS].append(key)
+            elif kind == "person":
+                wanted[INDEX_PERSONS].append(key)
+            elif kind == "organization":
+                wanted[INDEX_ORGANIZATIONS].append(key)
+            files = group["members"].get(INDEX_FILES, [])
+            if files:
+                main_files.append(files[0])
+                other_files += files[1:MAX_DOCS_PER_GROUP]
+
+        docs: dict[tuple[str, str], dict[str, Any]] = {}
+        excludes = {INDEX_PAPERS: ["file_contents_preview", "file_names"], INDEX_FILES: ["text_content"]}
+        for index_name, ids in [*wanted.items(), (INDEX_FILES, main_files)]:
+            if ids:
+                docs.update(self._fetch(index_name, ids, queries.get(index_name), excludes.get(index_name, [])))
+        if other_files:
+            body = {"query": {"ids": {"values": other_files}}, "size": len(other_files), "_source": FILE_LABEL_FIELDS}
+            try:
+                for hit in self.client.search(index=INDEX_FILES, body=body)["hits"]["hits"]:
+                    docs[(INDEX_FILES, hit["_id"])] = self._to_result(hit, INDEX_FILES)
+            except Exception as e:  # Namen weiterer Dokumente sind Beiwerk: ohne sie bleibt die Gruppe
+                logger.warning(f"Weitere Dokumente nicht ladbar: {e}")
+
+        result: list[dict[str, Any]] = []
+        for group in page_groups:
+            kind, key = group["kind"], group["key"]
+            files = group["members"].get(INDEX_FILES, [])
+            entry: dict[str, Any] = {"kind": kind, "key": key}
+            index_by_kind = {
+                "paper": INDEX_PAPERS,
+                "meeting": INDEX_MEETINGS,
+                "person": INDEX_PERSONS,
+                "organization": INDEX_ORGANIZATIONS,
+            }
+            if kind in index_by_kind:
+                entry[kind] = docs.get((index_by_kind[kind], key))
+            if kind == "meeting":
+                entry["meeting_id"] = key
+            entry["file"] = docs.get((INDEX_FILES, files[0])) if files else None
+            entry["others"] = [
+                docs[(INDEX_FILES, doc_id)] for doc_id in files[1:MAX_DOCS_PER_GROUP] if (INDEX_FILES, doc_id) in docs
+            ]
+            entry["more"] = max(0, len(files) - 1)
+            if kind != "file" and entry.get(kind) is None and entry["file"] is None:
+                continue  # zwischen den Schritten gelöscht
+            result.append(entry)
+        return result
+
+    def _fetch(
+        self, index_name: str, ids: list[str], query: dict[str, Any] | None, excludes: list[str]
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """Dokumente per Kennung, mit Hervorhebung aus ``query``; scheitert sie, ohne Hervorhebung."""
+        es_query: dict[str, Any] = {"bool": {"filter": [{"ids": {"values": ids}}]}}
+        if query is not None:
+            es_query["bool"]["should"] = [query]
+        body: dict[str, Any] = {"query": es_query, "size": len(ids), "_source": {"excludes": excludes}}
+        if query is not None:
+            body["highlight"] = HIGHLIGHT
+        try:
+            hits = self.client.search(index=index_name, body=body)["hits"]["hits"]
+        except Exception as e:
+            logger.warning(f"Hervorhebung im Index '{index_name}' fehlgeschlagen, lade ohne: {e}")
+            body.pop("highlight", None)
+            try:
+                hits = self.client.search(index=index_name, body=body)["hits"]["hits"]
+            except Exception as e2:
+                logger.error(f"Unerwarteter Fehler beim Laden der Treffer aus Index '{index_name}': {e2}")
+                return {}
+        return {(index_name, hit["_id"]): self._to_result(hit, index_name) for hit in hits}
+
+    def _group_counts(self, ranked: RankedHits) -> dict[str, Any]:
+        """Ehrliche Zahl: Vorgänge (Vorgang oder Datei mit Vorgang) und Sitzungsunterlagen ohne Vorgang.
+
+        Eine Abfrage über ``papers`` und ``files`` mit der Mindestrelevanz je Index; gezählt wird ein
+        Laufzeitfeld (Vorgang, sonst Sitzung, sonst die Datei) per ``cardinality``. Bis
+        ``GROUP_COUNT_PRECISION`` ist die Zahl praktisch genau, darüber steht „rund“.
+        """
+        counts: dict[str, Any] = {
+            "vorgaenge": 0,
+            "unterlagen": 0,
+            "meetings": ranked.totals_by_index.get(INDEX_MEETINGS, 0),
+            "persons": ranked.totals_by_index.get(INDEX_PERSONS, 0),
+            "organizations": ranked.totals_by_index.get(INDEX_ORGANIZATIONS, 0),
+            "approx": False,
+        }
+        parts: list[dict[str, Any]] = []
+        for index_name in (INDEX_PAPERS, INDEX_FILES):
+            query = ranked.queries.get(index_name)
+            if query is None:
+                continue
+            threshold = ranked.thresholds.get(index_name, 0.0)
+            inner = {"function_score": {"query": query, "min_score": threshold}} if threshold > 0 else query
+            parts.append({"bool": {"filter": [{"term": {"_index": index_name}}], "must": [inner]}})
+        if not parts:
+            return counts
+        cardinality = {"cardinality": {"field": "gruppe", "precision_threshold": GROUP_COUNT_PRECISION}}
+        body = {
+            "size": 0,
+            "query": {"bool": {"should": parts, "minimum_should_match": 1}},
+            "runtime_mappings": {"gruppe": {"type": "keyword", "script": {"source": GROUP_KEY_SCRIPT}}},
+            "aggs": {
+                "vorgaenge": {
+                    "filter": {
+                        "bool": {
+                            "should": [{"term": {"_index": INDEX_PAPERS}}, {"exists": {"field": "paper_id"}}],
+                            "minimum_should_match": 1,
+                        }
+                    },
+                    "aggs": {"n": cardinality},
+                },
+                "unterlagen": {
+                    "filter": {
+                        "bool": {
+                            "filter": [{"term": {"_index": INDEX_FILES}}],
+                            "must_not": [{"exists": {"field": "paper_id"}}],
+                        }
+                    },
+                    "aggs": {"n": cardinality},
+                },
+            },
+        }
+        indexes = ",".join(index for index in (INDEX_PAPERS, INDEX_FILES) if index in ranked.queries)
+        try:
+            aggs = self.client.search(index=indexes, body=body)["aggregations"]
+        except Exception as e:  # ohne Zahl bleibt die Liste nutzbar; sie zeigt dann die Trefferzahl je Typ
+            logger.warning(f"Gruppenzahl nicht ermittelbar: {e}")
+            counts["vorgaenge"] = ranked.totals_by_index.get(INDEX_PAPERS, 0)
+            return counts
+        counts["vorgaenge"] = int(aggs["vorgaenge"]["n"]["value"])
+        counts["unterlagen"] = int(aggs["unterlagen"]["n"]["value"])
+        counts["approx"] = max(counts["vorgaenge"], counts["unterlagen"]) > GROUP_COUNT_PRECISION
+        return counts
 
     def _name_part_is_rare(self, query: str, body_id: str | None, body_ids: list[str] | None) -> bool:
         """Ist der Namensteil eines Straßenkompositums („witzleben“ in „Witzlebenstraße“) selten genug?
@@ -587,7 +895,8 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
     # Highlighted Felder extrahieren (falls vorhanden)
     formatted = hit.get("_formatted", {})
     highlighted_name = _safe_highlight(formatted.get("name", hit.get("name")))
-    highlighted_text = _safe_highlight(formatted.get("text_content", ""))
+    # Ausschnitte vor der Maskierung säubern (Symbolschrift, Steuerzeichen, Silbentrennung)
+    highlighted_text = _safe_highlight(clean_snippet(formatted.get("text_content", "")))
 
     # Titel und Vorschautexte sind immer SafeString: Hervorhebungen mit <mark>, alle Rückfallwerte
     # (Aktenzeichen, Namensteile, IDs) maskiert. Das Template gibt sie ohne |safe aus.
@@ -667,7 +976,7 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
             "url": f"/insight/vorgaenge/{hit.get('paper_id')}/",
             # Vorschau immer \u00fcber den eigenen Datei-Proxy, nie die Adresse aus der Quelle
             "access_url": _preview_url(hit.get("id")),
-            "text_preview": highlighted_text or _text(hit.get("text_preview")),
+            "text_preview": highlighted_text or _text(clean_snippet(hit.get("text_preview"))),
             "paper_id": hit.get("paper_id"),
             "highlight": highlighted_text if highlighted_text else None,
         }

@@ -115,8 +115,13 @@ def search_results(request):
         }
         index_names = index_map.get(search_type)
 
-        # Suche ausführen
-        page_size = 3 if is_dropdown else 20
+        if not is_dropdown:
+            return _grouped_results(
+                request, search_service, query, body, body_id, body_ids, index_names, search_type, page
+            )
+
+        # Suche ausführen (Kopfzeilen-Vorschau: einzelne Treffer)
+        page_size = 3
         search_result = search_service.search_all(
             query=query,
             body_id=body_id,
@@ -214,13 +219,62 @@ def search_results(request):
 
         if is_dropdown:
             results = results[:3]
+            return render(
+                request,
+                "partials/search_results.html",
+                {"results": results, "query": query, "total": len(results), "is_dropdown": True},
+            )
+        # Ganze Seite: dieselbe Liste wie mit Elasticsearch, nur ohne Kontext und Ausschnitt
+        kinds = {"paper": "vorgang", "meeting": "sitzung", "person": "person", "organization": "gremium"}
+        groups = [
+            {
+                "kind": kinds.get(r["type"], "dokument"),
+                "url": r["url"],
+                "title": r["title"],
+                "context": [r["subtitle"]] if r.get("subtitle") else [],
+            }
+            for r in results
+        ]
         return render(
             request,
             "partials/search_results.html",
-            {
-                "results": results,
-                "query": query,
-                "total": len(results),
-                "is_dropdown": is_dropdown,
-            },
+            {"results": groups, "groups": groups, "query": query, "page": 1, "is_dropdown": False},
         )
+
+
+#: Typen, die in „Alle“ nicht in der Liste stehen, sondern als Link mit Zahl (Konzept Insight-Suche, 3.2)
+_OTHER_TYPES = (("persons", "person", "Person", "Personen"), ("organizations", "organization", "Gremium", "Gremien"))
+
+
+def _grouped_results(request, search_service, query, body, body_id, body_ids, index_names, search_type, page):
+    """Ganze Suchseite: Treffer nach Vorgang gruppiert, mit Kontextzeile, Stand-Satz und ehrlicher Zahl."""
+    from ..services.search_presentation import count_sentence, present_groups
+
+    grouped = search_service.search_grouped(
+        query, body_id=body_id, body_ids=body_ids, page=page, page_size=20, index_names=index_names
+    )
+    groups = present_groups(grouped["groups"], body.slug if body else "")
+    totals = grouped["totals_by_index"]
+    other_types = []
+    if index_names is None:
+        for index, type_key, one, many in _OTHER_TYPES:
+            n = int(totals.get(index) or 0)
+            if n:
+                other_types.append({"type": type_key, "label": f"{n} {one if n == 1 else many}"})
+    return render(
+        request,
+        "partials/search_results.html",
+        {
+            "results": groups,
+            "groups": groups,
+            "query": query,
+            "page": grouped["page"],
+            "pages": grouped["pages"],
+            "has_more": grouped["has_more"],
+            "count_sentence": count_sentence(grouped["counts"]),
+            "other_types": other_types,
+            "similar_spelling": grouped["similar_spelling"],
+            "search_type": search_type,
+            "is_dropdown": False,
+        },
+    )
