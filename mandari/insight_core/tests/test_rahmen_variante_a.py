@@ -128,6 +128,7 @@ class TestBaender:
         assert html.count('type="submit"') >= 1 and ">Suchen</button>" in html
         assert "Nächste Sitzungen" in html and "Neue Vorgänge" in html and "Radweg am Markt" in html
         assert "Was passiert in Ihrer Nähe?" in html
+        assert "Vorgänge in Ihrer Nähe finden" not in html, "ein Weg in die Nachbarschaft genügt (das graue Band)"
         for slop in ("in Zahlen", "Was möchten Sie wissen", "fade-up", "rounded-xl border border-gray-200"):
             assert slop not in html, slop
 

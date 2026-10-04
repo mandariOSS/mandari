@@ -24,7 +24,7 @@ from typing import TextIO
 from django.db import transaction
 
 from ..models import Municipality, MunicipalityTerm, OParlBody
-from .kommunenverzeichnis import LAENDER, get_kind_label_for_body, varianten
+from .kommunenverzeichnis import LAENDER, get_kind_label_for_body, quellen_vergessen, varianten
 
 SPALTEN = ("schluessel", "name", "art", "kreis", "breite", "laenge", "plz", "ortsteile")
 _SCHLUESSEL = re.compile(r"^\d{8}(\d{4})?$")
@@ -95,6 +95,7 @@ def _zeile_lesen(nummer: int, zeile: dict[str, str]) -> _Zeile | str:
         state_key=schluessel[:2],
         latitude=breite,
         longitude=laenge,
+        imported=True,
     )
     postleitzahlen = [plz for plz in _liste(zeile.get("plz") or "") if _PLZ.match(plz)]
     return _Zeile(eintrag, _liste(zeile.get("ortsteile") or ""), postleitzahlen)
@@ -132,7 +133,18 @@ def _speichern(zeilen: list[_Zeile], ergebnis: Ergebnis) -> None:
             zeile.eintrag.pk = alt.pk
     Municipality.objects.bulk_create(neu)
     aktualisieren = [z.eintrag for z in zeilen if z.eintrag.key in vorhanden]
-    felder = ["ags", "name", "kind", "is_association", "district_key", "district", "state_key", "latitude", "longitude"]
+    felder = [
+        "ags",
+        "name",
+        "kind",
+        "is_association",
+        "district_key",
+        "district",
+        "state_key",
+        "latitude",
+        "longitude",
+        "imported",
+    ]
     Municipality.objects.bulk_update(aktualisieren, felder)
     ergebnis.neu += len(neu)
     ergebnis.aktualisiert += len(aktualisieren)
@@ -168,6 +180,8 @@ def importieren(datei: TextIO, *, ersetzen: bool = False) -> Ergebnis:
         if ersetzen:
             _, je_modell = Municipality.objects.exclude(key__in=list(gelesen)).delete()
             ergebnis.entfernt = je_modell.get(Municipality._meta.label, 0)
+        # Namensnennung der Quellen im Kommunenwechsel und in den Schnittstellen neu bestimmen
+        transaction.on_commit(quellen_vergessen)
     return ergebnis
 
 
@@ -175,16 +189,27 @@ def aus_koerperschaften() -> Ergebnis:
     """Gelistete Kommunen mit Regionalschlüssel oder AGS ins Verzeichnis übernehmen, soweit sie dort fehlen.
 
     Damit ist der Kommunenwechsel auch ohne vollständiges Verzeichnis nutzbar; Kreis, Ortsteile und
-    Postleitzahlen kommen erst mit dem Import dazu.
+    Postleitzahlen kommen erst mit dem Import dazu. Idempotent; läuft stündlich im Worker
+    (``insight_core.schedules.kommunenverzeichnis_abgleichen``), damit neu gelistete Kommunen nach dem Deploy
+    ohne Handgriff wählbar sind.
     """
     ergebnis = Ergebnis()
-    vorhanden_rs = set(Municipality.objects.values_list("key", flat=True))
-    vorhanden_ags = set(Municipality.objects.exclude(ags="").values_list("ags", flat=True))
-    zeilen: list[_Zeile] = []
+    kandidaten: list[tuple[OParlBody, str]] = []
     for body in OParlBody.objects.listed():
         schluessel = body.rgs if body.rgs and len(body.rgs) == 12 else body.ags if len(body.ags or "") == 8 else ""
-        if not schluessel or schluessel[:2] not in LAENDER:
-            continue
+        if schluessel and schluessel[:2] in LAENDER:
+            kandidaten.append((body, schluessel))
+    if not kandidaten:
+        return ergebnis
+    # Nur die Schlüssel der gelisteten Kommunen abfragen, nicht das ganze Verzeichnis
+    vorhanden_rs = set(Municipality.objects.filter(key__in=[s for _, s in kandidaten]).values_list("key", flat=True))
+    vorhanden_ags = set(
+        Municipality.objects.filter(ags__in=[ags_aus_schluessel(s) for _, s in kandidaten]).values_list(
+            "ags", flat=True
+        )
+    )
+    zeilen: list[_Zeile] = []
+    for body, schluessel in kandidaten:
         if schluessel in vorhanden_rs or ags_aus_schluessel(schluessel) in vorhanden_ags:
             continue
         art = get_kind_label_for_body(body)
@@ -202,7 +227,7 @@ def aus_koerperschaften() -> Ergebnis:
         )
         zeilen.append(_Zeile(eintrag, [], []))
         vorhanden_rs.add(schluessel)
-    with transaction.atomic():
-        if zeilen:
+    if zeilen:
+        with transaction.atomic():
             _speichern(zeilen, ergebnis)
     return ergebnis

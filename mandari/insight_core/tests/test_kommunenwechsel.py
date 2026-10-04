@@ -370,3 +370,99 @@ class TestSchnittstellen:
 
 def test_suchbegriff_kinds_vollstaendig() -> None:
     assert {k.value for k in MunicipalityTerm.Kind} == {"name", "ortsteil", "plz"}
+
+
+@pytest.mark.django_db
+class TestVerzeichnisImBetrieb:
+    """Nach dem Deploy ohne Handgriff vollständig, Namensnennung der Quellen sobald aus einer Datei importiert."""
+
+    def test_zeitplan_uebernimmt_gelistete_kommunen_stuendlich(self, source: OParlSource) -> None:
+        from datetime import timedelta
+
+        from apps.events.schedule import Catchup, Every, autodiscover, registry
+
+        autodiscover()
+        eintrag = registry.get("insight_core.schedules.kommunenverzeichnis_abgleichen")
+        assert eintrag is not None, "Zeitplan im Worker registriert"
+        assert eintrag.trigger == Every(timedelta(hours=1)) and eintrag.catchup == Catchup.NACHHOLEN
+        assert eintrag.task.queue_name == "default", "der Worker der Compose-Vorlage bedient default"
+
+        _body(source, "Stadt Beispielstadt", short_name="Beispielstadt", ags="05999000")
+        _body(source, "Gemeinde Ungelistet", ags="05999001", is_listed=False)
+        assert eintrag.task.call() == 1
+        assert list(Municipality.objects.values_list("key", "imported")) == [("05999000", False)]
+        assert eintrag.task.call() == 0, "idempotent"
+
+    def test_abgleich_fragt_nur_die_schluessel_der_gelisteten_kommunen_ab(self, source: OParlSource) -> None:
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        importieren(io.StringIO(CSV))
+        _body(source, "Stadt Übungsheim", rgs="059990000000", ags="05999000")
+        with CaptureQueriesContext(connection) as abfragen:
+            assert aus_koerperschaften().neu == 0
+        verzeichnis_abfragen = [q["sql"] for q in abfragen.captured_queries if '"insight_municipality"' in q["sql"]]
+        assert len(verzeichnis_abfragen) == 2
+        assert all(" IN (" in sql for sql in verzeichnis_abfragen), "nicht das ganze Verzeichnis lesen (stündlich)"
+        assert len(abfragen.captured_queries) <= 3, "ohne neue Einträge keine Transaktion"
+
+    def test_import_setzt_merkmal_auch_fuer_vorher_uebernommene(self, source: OParlSource) -> None:
+        _body(source, "Stadt Übungsheim", short_name="Übungsheim", rgs="059990000000")
+        aus_koerperschaften()
+        assert not Municipality.objects.get(key="059990000000").imported
+        importieren(io.StringIO(CSV))
+        assert Municipality.objects.get(key="059990000000").imported
+
+    def test_quellen_erst_nach_dem_import(self, source: OParlSource, django_capture_on_commit_callbacks: Any) -> None:
+        _body(source, "Stadt Beispielstadt", ags="05999000")
+        aus_koerperschaften()
+        assert verzeichnis.quellen() == [], "eigene Daten brauchen keine Namensnennung"
+        with django_capture_on_commit_callbacks(execute=True):
+            importieren(io.StringIO(CSV))
+        namen = [q["name"] for q in verzeichnis.quellen()]
+        assert any("Statistischen Bundesamts" in name for name in namen)
+        assert any("© OpenStreetMap-Mitwirkende" in name for name in namen)
+        lizenzen = {q["lizenz_url"] for q in verzeichnis.quellen()}
+        assert "https://www.govdata.de/dl-de/by-2-0" in lizenzen
+
+    def test_schnittstellen_und_seiten_nennen_die_quellen(
+        self, client: Client, source: OParlSource, django_capture_on_commit_callbacks: Any
+    ) -> None:
+        body = _body(source, "Stadt Übungsheim", short_name="Übungsheim", rgs="059990000000", ags="05999000")
+        aus_koerperschaften()
+        vorschlaege = reverse("insight_core:insight:kommunen_vorschlaege")
+        assert "quellen" not in client.get(vorschlaege, {"q": "Übungsheim"}).json()
+        seite = client.get(reverse("insight_core:insight:kommunen")).content.decode()
+        assert 'data-testid="kommunen-quellen"' not in seite
+
+        with django_capture_on_commit_callbacks(execute=True):
+            importieren(io.StringIO(CSV))
+        for url, parameter in (
+            (vorschlaege, {"q": "Übungsheim"}),
+            (reverse("insight_core:insight:kommunen_naehe"), {"zelle": "51.96,7.63"}),
+            (reverse("insight_core:insight:kommunen_stoebern"), {}),
+        ):
+            quellen = client.get(url, parameter).json()["quellen"]
+            assert [q["lizenz"] for q in quellen] == [
+                "Datenlizenz Deutschland – Namensnennung – Version 2.0",
+                "Open Database License (ODbL)",
+            ], url
+        seite = client.get(reverse("insight_core:insight:kommunen")).content.decode()
+        assert 'data-testid="kommunen-quellen"' in seite
+        assert 'href="https://www.openstreetmap.org/copyright"' in seite
+        client.get(reverse("insight_core:insight:set_body", args=[body.id]))
+        dialog = client.get(reverse("insight_core:insight:paper_list")).content.decode()
+        assert 'data-testid="kommunen-quellen"' in dialog, "auch im Dialog „Kommune wechseln“"
+
+
+def test_caddyfile_erlaubt_den_standort_fuer_die_eigene_seite() -> None:
+    """„In meiner Nähe“ scheitert sonst sofort: Permissions-Policy ``geolocation=()`` sperrt die Abfrage im Browser."""
+    from pathlib import Path
+
+    from django.conf import settings
+
+    caddyfile = (Path(settings.BASE_DIR).parent / "Caddyfile").read_text(encoding="utf-8")
+    (zeile,) = [z.strip() for z in caddyfile.splitlines() if z.strip().startswith("Permissions-Policy")]
+    regeln = {regel.strip() for regel in zeile.split('"')[1].split(",")}
+    assert "geolocation=(self)" in regeln
+    assert {"camera=()", "microphone=()"} <= regeln, "Kamera und Mikrofon bleiben gesperrt"

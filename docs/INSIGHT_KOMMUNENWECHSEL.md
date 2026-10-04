@@ -9,7 +9,8 @@ Kopfzeile am Handy oder Auswahlseite `/insight/`), hat vier Wege:
    Ortsteil oder eine Postleitzahl. Kreis und Land stehen in der zweiten Zeile, damit gleichnamige Orte
    unterscheidbar sind; ein zweites Wort filtert danach („Beispielstadt Hessen“).
 2. **„In meiner Nähe“.** Nur auf Klick fragt der Browser den Standort. An den Server geht ausschließlich eine
-   Zelle von 0,1 Grad (etwa 11 km), die genaue Entfernung rechnet der Browser. Gespeichert wird nichts.
+   Zelle von 0,1 Grad (etwa 11 km), die genaue Entfernung rechnet der Browser. Gespeichert wird nichts. Dafür
+   muss der Proxy den Standort für die eigene Seite erlauben (siehe „Proxy“ unten).
 3. **„Zuletzt besucht“.** Bis zu fünf Kommunen merkt sich der Browser selbst (`localStorage`, kein Cookie).
 4. **Stöbern** Land → Kreis → (Gemeindeverband →) Kommune. Kreisfreie Städte sind auf der Ebene des Landes direkt
    wählbar; Kreise mit mehr als 40 Einträgen gliedern sich zuerst nach Gemeindeverbänden.
@@ -24,7 +25,10 @@ Vorschlägen, Escape führt zurück bzw. schließt den Dialog.
 
 ## Schnittstellen
 
-Alle drei Antworten hängen nicht von der Sitzung ab und dürfen öffentlich zwischengespeichert werden.
+Keine der drei Antworten hängt von der gewählten Kommune ab oder legt eine Sitzung an; der Browser darf sie
+zwischenspeichern (`Cache-Control: public`). Weil die Anmeldeprüfung jede Anfrage sieht, tragen sie `Vary: Cookie`:
+Ein gemeinsamer Cache teilt sie nur zwischen Anfragen mit demselben Cookie. Stammt das Verzeichnis aus einer Datei,
+nennt jede Antwort zusätzlich ihre Quellen (`quellen`: Name, Adresse, Lizenz, Adresse der Lizenz).
 
 | Adresse | Zweck |
 |---|---|
@@ -46,6 +50,11 @@ python manage.py kommunenverzeichnis_importieren --datei kommunen.csv           
 python manage.py kommunenverzeichnis_importieren --datei kommunen.csv --ersetzen # Einträge außerhalb der Datei entfernen
 python manage.py kommunenverzeichnis_importieren --aus-koerperschaften           # gelistete Kommunen ergänzen
 ```
+
+Die gelisteten Kommunen ergänzt der Worker selbst: Der Zeitplan `insight_core.schedules.kommunenverzeichnis_abgleichen`
+übernimmt stündlich jede gelistete Kommune mit Regionalschlüssel oder AGS, die im Verzeichnis fehlt (idempotent,
+wie `--aus-koerperschaften`). Nach einem Deploy und nach dem Listen einer neuen Kommune ist der Wechsel damit
+spätestens nach einer Stunde vollständig, ohne Handgriff. Wer nicht warten will, ruft den Befehl einmal von Hand auf.
 
 Format: UTF-8, Semikolon, Kopfzeile, je Gemeinde, Gemeindeverband oder kreisfreie Stadt eine Zeile.
 
@@ -69,7 +78,18 @@ Der Import ist idempotent und läuft in einer Transaktion; fehlerhafte Zeilen we
 übersprungen. Ohne Import findet der Wechsel weiterhin alle gelisteten Kommunen über ihren Namen; „noch nicht
 verfügbar“, Ortsteile, Postleitzahlen und das Stöbern brauchen das Verzeichnis.
 
-**Quellen.** Schlüssel, Namen, Kreise und Mittelpunkte enthält das Gemeindeverzeichnis des Statistischen
-Bundesamts (GV-ISys, Datenlizenz Deutschland – Namensnennung 2.0). Postleitzahlen und Ortsteile lassen sich aus
-OpenStreetMap ableiten (ODbL, Namensnennung „© OpenStreetMap-Mitwirkende“). Die Umwandlung in das Format oben
-ist ein einmaliger Schritt beim Betrieb; Lizenzhinweise gehören in die Erklärung des Bürgerportals.
+**Quellen und Namensnennung.** Schlüssel, Namen, Kreise und Mittelpunkte enthält das Gemeindeverzeichnis des
+Statistischen Bundesamts (GV-ISys, Datenlizenz Deutschland – Namensnennung 2.0). Postleitzahlen und Ortsteile lassen
+sich aus OpenStreetMap ableiten (ODbL, Namensnennung „© OpenStreetMap-Mitwirkende“). Einträge aus der Datei tragen
+das Merkmal `imported`; sobald es einen solchen Eintrag gibt, nennen der Kommunenwechsel, die Seite
+`/insight/kommunen/` und die drei Schnittstellen beide Quellen mit Lizenz. Die Antworten der Schnittstellen sind
+damit Auszüge einer abgeleiteten Datenbank unter ODbL. Wer andere Quellen nutzt, setzt die Nennung in den
+Einstellungen (`INSIGHT_KOMMUNENVERZEICHNIS_QUELLEN`, Liste mit `name`, `url`, `lizenz`, `lizenz_url`). Die
+Umwandlung der Quellen in das Format oben ist ein Schritt beim Betrieb, nachverfolgt in Issue #783.
+
+## Proxy
+
+„In meiner Nähe“ braucht die Standortfreigabe des Browsers. Das mitgelieferte `Caddyfile` erlaubt sie nur für die
+eigene Seite (`Permissions-Policy: camera=(), microphone=(), geolocation=(self)`). Wer einen eigenen Proxy betreibt,
+darf `geolocation` nicht ganz sperren (`geolocation=()`): Der Browser lehnt die Abfrage dann ohne Rückfrage ab, und
+der Wechsel meldet nur, dass der Standort nicht freigegeben wurde.
