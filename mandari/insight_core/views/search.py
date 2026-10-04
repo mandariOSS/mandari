@@ -73,7 +73,7 @@ class SearchView(TemplateView):
 
             body_ids = None if body else _searchable_body_ids()
             context.update(build_context(get_search_service(), params, body, body_ids, timezone.localdate()))
-        except Exception as e:  # Elasticsearch nicht erreichbar: einfache Datenbanksuche, Seite bleibt nutzbar
+        except Exception as e:  # Elasticsearch nicht erreichbar: Datenbanksuche über das Partial, Seite bleibt nutzbar
             import logging
 
             logging.getLogger(__name__).warning(f"Suche ohne Elasticsearch, Datenbanksuche: {e}")
@@ -83,31 +83,8 @@ class SearchView(TemplateView):
 
 
 def _fallback_context(params, body):
-    """Datenbanksuche nach Titel und Aktenzeichen, wenn Elasticsearch fehlt (je Typ höchstens zehn)."""
-    body_filter = {"body": body} if body else {"body_id__in": _searchable_body_ids()}
-    query = params.q
-    groups = []
-    for paper in OParlPaper.objects.filter(deleted=False, **body_filter).filter(
-        Q(name__icontains=query) | Q(reference__icontains=query)
-    )[:10]:
-        groups.append(
-            {
-                "kind": "vorgang",
-                "url": f"/insight/vorgaenge/{paper.id}/",
-                "title": paper.name or paper.reference,
-                "context": [c for c in (paper.paper_type, paper.reference) if c],
-            }
-        )
-    for meeting in OParlMeeting.objects.filter(deleted=False, **body_filter).filter(name__icontains=query)[:10]:
-        groups.append(
-            {
-                "kind": "sitzung",
-                "url": f"/insight/termine/{meeting.id}/",
-                "title": meeting.name or "Sitzung",
-                "context": [],
-            }
-        )
-    return {"groups": groups, "page": 1, "has_more": False, "tabs": [], "fallback": True}
+    """Ohne Elasticsearch: Der Ergebnisbereich lädt die Datenbanksuche des Partials nach (keine Abfragen hier)."""
+    return {"groups": [], "page": 1, "has_more": False, "tabs": [], "fallback": True}
 
 
 @require_GET
