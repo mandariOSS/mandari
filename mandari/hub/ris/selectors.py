@@ -63,6 +63,12 @@ def _uuid(value: object) -> uuid.UUID | None:
 # =============================================================================
 
 
+def body_ids_by_slug(slugs: Iterable[str]) -> dict[str, str]:
+    """Kennungen von Kommunen zu ihren Kurznamen (``muenster`` → UUID als Text); unbekannte fehlen."""
+    rows = OParlBody.objects.filter(slug__in=list(slugs)).values_list("slug", "id")
+    return {str(slug): str(pk) for slug, pk in rows}
+
+
 def meetings(bodies: Bodies) -> QuerySet[OParlMeeting]:
     """Sitzungen der Kommunen."""
     return OParlMeeting.objects.filter(body__in=bodies)

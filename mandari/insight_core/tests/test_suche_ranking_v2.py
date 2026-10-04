@@ -121,7 +121,7 @@ def test_unscharf_nur_im_rueckfall_mit_grenzen() -> None:
 
 
 def test_aktualitaet_nur_mit_datum_und_begrenzt() -> None:
-    basis = {"match_all": {}}
+    basis: dict[str, Any] = {"match_all": {}}
     mit_bonus = search_ranking.with_recency(basis, "files", 1.0)["function_score"]
 
     assert mit_bonus["boost_mode"] == "multiply" and mit_bonus["score_mode"] == "sum"
@@ -289,7 +289,7 @@ def test_seite_bleibt_gefuellt_wenn_die_hervorhebung_scheitert() -> None:
 
     assert [d["id"] for d in ergebnis["results"]] == ["f0", "f1", "f2", "f3", "f4"]
     assert "_formatted" not in ergebnis["results"][0]
-    assert 0 < HIGHLIGHT["max_analyzed_offset"] < 1_000_000
+    assert 0 < cast(int, HIGHLIGHT["max_analyzed_offset"]) < 1_000_000
 
 
 @pytest.mark.parametrize(

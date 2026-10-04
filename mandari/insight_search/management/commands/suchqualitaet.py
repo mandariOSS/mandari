@@ -40,17 +40,14 @@ class Command(BaseCommand):
         messen.add_argument("--json", action="store_true", help="Ausgabe als JSON.")
 
     def handle(self, *args: Any, **options: Any) -> None:
-        from insight_core.models import OParlBody
+        from hub.ris.selectors import body_ids_by_slug
         from insight_core.services.search_service import get_search_service, ranking_version
 
         datei = Path(options["datei"]) if options["datei"] else bewertung.ANFRAGEN_DATEI
         if not datei.is_file():
             raise CommandError(f"Bewertungssatz nicht gefunden: {datei}")
         anfragen = bewertung.lade_anfragen(datei, kommune=options["kommune"])
-        kurznamen = {a.kommune for a in anfragen}
-        kommunen = {
-            slug: str(pk) for slug, pk in OParlBody.objects.filter(slug__in=kurznamen).values_list("slug", "id")
-        }
+        kommunen = body_ids_by_slug({a.kommune for a in anfragen})
         if not kommunen:
             raise CommandError("Keine Kommune des Bewertungssatzes in dieser Installation.")
 
