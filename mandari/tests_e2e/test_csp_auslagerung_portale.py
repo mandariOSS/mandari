@@ -125,6 +125,43 @@ class TestInsight:
         expect(page.locator("#kommune-dialog-eingabe")).to_be_focused()
         problems.assert_clean("Leiste unten")
 
+    def test_safe_area_im_querformat(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
+        """Querformat mit Aussparung und Home-Indikator (#783, Stufe 3): nichts liegt in der Safe-Area.
+
+        Chromium emuliert die Ränder über CDP; ob iOS sie überhaupt liefert, hängt an ``viewport-fit=cover``
+        (geprüft in ``insight_core/tests/test_leiste_unten.py``).
+        """
+        body = _kommune(844, "Querstadt")
+        page.set_viewport_size({"width": 844, "height": 390})
+        cdp = page.context.new_cdp_session(page)
+        cdp.send("Emulation.setSafeAreaInsetsOverride", {"insets": {"top": 0, "bottom": 21, "left": 47, "right": 47}})
+        _kommune_waehlen(page, goto, body)
+        goto("/insight/vorgaenge/")
+        leiste = page.get_by_role("navigation", name="Hauptbereiche")
+        expect(leiste).to_be_visible()
+        unten = leiste.bounding_box()
+        assert unten is not None and unten["y"] + unten["height"] == 390
+        for name in ("Start", "Karte"):
+            ziel = leiste.get_by_role("link", name=name).bounding_box()
+            assert ziel is not None and ziel["y"] + ziel["height"] <= 390 - 21, f"{name} über dem Home-Indikator"
+        wortmarke = page.get_by_role("link", name="mandari Insight, Übersicht").bounding_box()
+        assert wortmarke is not None and wortmarke["x"] >= 47, "Kopfzeile neben der Aussparung"
+        suche = page.locator("header").get_by_role("link", name="Suche").bounding_box()
+        assert suche is not None and suche["x"] + suche["width"] <= 844 - 47
+        ueberschrift = page.locator("main h1").first.bounding_box()
+        assert ueberschrift is not None and ueberschrift["x"] >= 47, "Inhalt neben der Aussparung"
+
+        leiste.get_by_role("button", name="Mehr").click()
+        blatt = page.get_by_role("dialog", name="Mehr")
+        expect(blatt).to_be_visible()
+        gremien = blatt.get_by_role("link", name="Gremien").bounding_box()
+        assert gremien is not None and gremien["x"] >= 47
+        anmelden = blatt.get_by_role("link", name="Anmelden")
+        anmelden.scroll_into_view_if_needed()
+        box = anmelden.bounding_box()
+        assert box is not None and box["y"] + box["height"] <= 390 - 21
+        problems.assert_clean("Safe-Area")
+
     def test_merkliste_laedt_gemerkte_vorgaenge(self, page: Any, goto: Any, problems: BrowserProblems) -> None:
         body = _kommune(3, "Merkstadt")
         paper = OParlPaper.objects.create(external_id=f"{RIS}/paper/1", body=body, name="Radweg Hauptstraße")

@@ -1,9 +1,10 @@
 {% comment %}
 Am Handy (unter lg) die Leiste unten mit fünf Zielen und das Blatt „Mehr“ (Issue #783, Stufe 3, Variante C). Beides
 steht geschlossen im HTML; Alpine öffnet das Blatt nur auf Klick (wie die Korrektur aus #763). Das Blatt ist ein
-modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt auf „Mehr“ zurück. Safe-Area unten für Geräte ohne Knopf.
+modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt auf „Mehr“ zurück. Safe-Area unten für Geräte ohne Knopf,
+seitlich für das Querformat (wirkt nur mit viewport-fit=cover im Layout).
 {% endcomment %}
-<nav aria-label="Hauptbereiche" class="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)]">
+<nav aria-label="Hauptbereiche" class="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
     <ul class="grid grid-cols-5 max-w-xl mx-auto">
         <li><c-insight.tab href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" icon="house" area="uebersicht">Start</c-insight.tab></li>
         <li><c-insight.tab href="{% url 'insight_core:insight:meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.tab></li>
@@ -30,7 +31,7 @@ modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt auf „Mehr“ zur
         x-transition:enter-start="translate-y-full" x-transition:enter-end="translate-y-0"
         x-transition:leave="transition-transform duration-150 ease-in motion-reduce:transition-none"
         x-transition:leave-start="translate-y-0" x-transition:leave-end="translate-y-full"
-        class="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto overscroll-contain rounded-t-2xl bg-band-hell shadow-2xl pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        class="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto overscroll-contain rounded-t-2xl bg-band-hell shadow-2xl pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         <div class="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
             <h2 id="insight-mehr-titel" class="text-[1.125rem] font-semibold text-gray-900 dark:text-white">Mehr</h2>
             <button type="button" @click="closeMehr()" aria-label="Schließen"
