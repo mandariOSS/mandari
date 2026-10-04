@@ -307,8 +307,8 @@
     {
       "id": 10,
       "type": "stat",
-      "title": "Worker: Rollen und Speicher",
-      "description": "1 = Rolle arbeitet; Speicher des Runners (Neustart oberhalb von TASKS_MAX_MEMORY_MB).",
+      "title": "Worker: Rollen, Lebenszeichen und Speicher",
+      "description": "1 = Rolle arbeitet; Speicher des Runners (Neustart oberhalb von TASKS_MAX_MEMORY_MB); Sekunden seit dem letzten Lebenszeichen je Rolle (Heartbeat veraltet ab 300 s).",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -364,6 +364,34 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 300
+                    }
+                  ]
+                }
+              }
+            ]
           }
         ]
       },
@@ -377,6 +405,11 @@
           "refId": "B",
           "expr": "max(mandari_worker_rss_bytes)",
           "legendFormat": "Speicher Runner"
+        },
+        {
+          "refId": "C",
+          "expr": "max by (role) (mandari_worker_role_beat_age_seconds)",
+          "legendFormat": "Lebenszeichen {{role}}"
         }
       ]
     }

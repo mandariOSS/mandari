@@ -334,8 +334,13 @@ bleibt; präzisiert wurde:
 - **Alarmregeln** als Prometheus-Regeln (`deploy/monitoring/prometheus-alerts.example.yml`,
   `docs/MONITORING.md`): Rückstand über fünf Minuten, tote Ereignisse, Sequenzierer-Stau über fünf
   Minuten, dazu Hinweise auf viele blockierte Ereignisse und einen gestörten Weckruf.
-- **Offen:** Nachspielen eines Abonnements ab einer Folgenummer und die Push-Prüfung „Worker lebt“.
-  Heartbeat und `/metrics` im Worker-Prozess bringt der folgende Nachtrag (#508).
+- **Nachgezogen:** Nachspielen ab Folgenummer oder Zeitpunkt (Admin-Aktion am Abonnement und
+  `events_dispatch --replay`, beide über `dispatch.rewind` und mit Eintrag im Sicherheitsprotokoll), die
+  Push-Prüfung „Worker lebt“ (#574), die Übersicht der Worker-Prozesse im Admin und der Kontext je
+  Auftrag: Ereignisse eines Auftrags tragen seine Kennung als Korrelations-ID und `system:<auftrag>`
+  als Auslöser (`task_runner.execute`). Folgeereignisse eines Handlers setzen weiterhin selbst
+  `event_context(caused_by=ereignis)`; die Zustellung kennt nur Batches, nicht das auslösende
+  Einzelereignis. Heartbeat und `/metrics` im Worker-Prozess bringt der folgende Nachtrag (#508).
 
 ## Nachtrag zur Umsetzung des Workers (#508)
 
