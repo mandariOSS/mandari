@@ -196,5 +196,5 @@ def test_kopfzeile_nennt_die_kommune_der_seite(besucher: Client, kommune: OParlB
     knopf = re.search(r"<button[^>]*data-kommune-wechseln[^>]*>(.*?)</button>", kopf, re.S)
     assert knopf and '<span class="truncate">Musterhausen</span>' in knopf.group(1)
     assert "Beispielstadt" not in knopf.group(1), "nicht die gewählte Kommune aus der Sitzung"
-    logo = re.search(r'<img src="[^"]*musterhausen\.png" alt="" class="([^"]*)">', knopf.group(1))
+    logo = re.search(r'<img [^>]*src="[^"]*musterhausen\.png"[^>]* class="([^"]*)">', knopf.group(1))
     assert logo and "hidden min-[390px]:block" in logo.group(1), "Logo erst ab 390 px"
