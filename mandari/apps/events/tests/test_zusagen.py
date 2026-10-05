@@ -28,10 +28,13 @@ from apps.events.tests.hilfen import Sicht, folgenummern, nur_postgres, roh_einf
 #: (``<Pfad>::<Testname>``, Pfad relativ zu ``mandari/``). Ein neues Abonnement braucht hier einen
 #: Eintrag; Zustellung mindestens einmal heißt, jeder Handler muss eine Wiederholung vertragen.
 DOPPELZUSTELLUNG = {
+    "benachrichtigung": (
+        "apps/work/notifications/tests/test_benachrichtigung_abonnement.py::test_doppelte_zustellung_benachrichtigt_einmal"
+    ),
     "suchindex": "insight_search/tests/test_suchindex_abonnement.py::test_wiederholung_und_veralteter_stand_schaden_nicht",
 }
 #: Schalter, unter denen sich Abonnements registrieren (alle eingeschaltet, damit keines fehlt)
-SCHALTER = {"SEARCH_INDEX_SUBSCRIPTION": "aktiv"}
+SCHALTER = {"SEARCH_INDEX_SUBSCRIPTION": "aktiv", "WORK_NOTIFICATION_SUBSCRIPTION": "aktiv"}
 
 
 @pytest.mark.django_db(transaction=True)

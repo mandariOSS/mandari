@@ -47,6 +47,8 @@ Die CI prüft das und erzeugt diese Datei neu (`scripts/check_event_contracts.py
 | `work.document.status_changed` | Ereignis | 1 | `apps.work` | intern | Dokumentstatus in Work geändert |
 | `work.factionmeeting.invited` | Ereignis | 1 | `apps.work` | intern | Einladung zur Fraktionssitzung versendet |
 | `work.task.assigned` | Ereignis | 1 | `apps.work` | intern | Aufgabe zugewiesen |
+| `work.task.commented` | Ereignis | 1 | `apps.work` | intern | Aufgabe kommentiert |
+| `work.task.completed` | Ereignis | 1 | `apps.work` | intern | Aufgabe erledigt |
 
 ## Ereignishülle v1
 
@@ -1080,6 +1082,54 @@ Beispiel 1:
   "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
   "assignee": "abcdef01-2345-4678-9abc-def012345678",
   "created": true
+}
+```
+
+### work.task.commented v1
+
+**Aufgabe kommentiert.** Zu einer Aufgabe wurde ein Kommentar geschrieben. Aggregat: Task.
+
+- Art: Ereignis
+- Eigentümer: `apps.work`
+- Sichtbarkeit: intern
+- Schema: [`work.task.commented/v1.json`](../mandari/hub/contracts/schemas/work.task.commented/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `task` | ja | Zeichenkette (uuid) | Kennung der Aufgabe. |
+| `organization` | ja | Zeichenkette (uuid) | Organisation der Aufgabe. |
+| `comment` | ja | Zeichenkette (uuid) | Kennung des Kommentars (Eintrag im Verlauf der Aufgabe). |
+
+Beispiel 1:
+
+```json
+{
+  "task": "fedcba98-7654-4321-8fed-cba987654321",
+  "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "comment": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+}
+```
+
+### work.task.completed v1
+
+**Aufgabe erledigt.** Eine Aufgabe wurde als erledigt markiert. Aggregat: Task.
+
+- Art: Ereignis
+- Eigentümer: `apps.work`
+- Sichtbarkeit: intern
+- Schema: [`work.task.completed/v1.json`](../mandari/hub/contracts/schemas/work.task.completed/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `task` | ja | Zeichenkette (uuid) | Kennung der Aufgabe. |
+| `organization` | ja | Zeichenkette (uuid) | Organisation der Aufgabe. |
+
+Beispiel 1:
+
+```json
+{
+  "task": "fedcba98-7654-4321-8fed-cba987654321",
+  "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d"
 }
 ```
 

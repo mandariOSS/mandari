@@ -54,6 +54,8 @@ STARTUMFANG: dict[str, tuple[str, str, frozenset[str]]] = {
     "work.document.status_changed": (EVENT, "apps.work", frozenset({INTERN})),
     "work.factionmeeting.invited": (EVENT, "apps.work", frozenset({INTERN})),
     "work.task.assigned": (EVENT, "apps.work", frozenset({INTERN})),
+    "work.task.completed": (EVENT, "apps.work", frozenset({INTERN})),
+    "work.task.commented": (EVENT, "apps.work", frozenset({INTERN})),
     "core.membership.changed": (EVENT, "apps.tenants", frozenset({PB})),
     "core.user.registered": (EVENT, "apps.accounts", frozenset({PB})),
     "submission.submit": (COMMAND, "apps.session", frozenset({NOE})),

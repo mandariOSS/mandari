@@ -185,6 +185,7 @@ das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 | `mandari_db_pool_requests_waiting` | – | Anfragen, die auf eine Pool-Verbindung warten |
 | `mandari_db_connections_open` | – | nur ohne Pool: offene Verbindungen laut `pg_stat_activity` |
 | `mandari_cache_keyspace_hits_total`, `…_misses_total`, `mandari_cache_hit_ratio` | – | Redis `INFO stats` (serverweit); ohne Redis-Backend nicht vorhanden |
+| `mandari_notification_subscription_total` | `type`, `result` | Abonnement `benachrichtigung` (Issue #529): je Ereignistyp `angelegt` bzw. `keine` (nichts zu benachrichtigen), im Schattenbetrieb `gleich` bzw. `fehlt` (der bisherige Weg hat die Benachrichtigung nicht angelegt; Alarm vor dem Umschalten) |
 | `mandari_emails_total` | `result` (`sent`, `failed`) | Versandversuche über `apps.common.email` |
 | `mandari_pdf_documents_total`, `mandari_pdf_generation_seconds` | `result` | PDF-Erzeugung an der zentralen Stelle `apps.common.pdf.html_to_pdf` |
 | `mandari_transcription_jobs` | `status` | wartende und laufende Transkriptionsaufträge |

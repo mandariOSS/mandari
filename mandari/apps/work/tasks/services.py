@@ -22,7 +22,7 @@ from django.utils import timezone
 
 from apps.tenants.models import Membership, Organization
 
-from . import selectors
+from . import ereignisse, selectors
 from .activity import log_activity, log_field_change
 from .models import Task, TaskActivity, TaskAttachment, TaskChecklistItem, TaskLabel, TaskShare
 
@@ -41,6 +41,12 @@ def _hub() -> Any:
     from apps.work.notifications.services import NotificationHub
 
     return NotificationHub
+
+
+def _erledigt(task: Task, membership: Membership) -> None:
+    """Erledigung melden (Datendrehscheibe) bzw. wie bisher direkt benachrichtigen."""
+    if not ereignisse.melden(ereignisse.ERLEDIGT, task, membership):
+        _hub().notify_task_completed(task, membership)
 
 
 def can_edit_task(task: Task, membership: Membership) -> bool:
@@ -94,8 +100,12 @@ def create_task(
     task.position = selectors.next_position(organization, task.status)
     task.save()
     log_activity(task, membership, "created")
-    if task.assigned_to and task.assigned_to != membership:
-        _hub().notify_task_assigned(task, task.assigned_to, membership)
+    if task.assigned_to:
+        uebernommen = ereignisse.melden(
+            ereignisse.ZUGEWIESEN, task, membership, assignee=task.assigned_to_id, created=True
+        )
+        if not uebernommen and task.assigned_to != membership:
+            _hub().notify_task_assigned(task, task.assigned_to, membership)
     return task
 
 
@@ -242,7 +252,7 @@ def move_task(task: Task, membership: Membership, *, new_status: str, new_positi
     if old_status != new_status:
         if new_status == "done":
             log_activity(task, membership, "completed")
-            _hub().notify_task_completed(task, membership)
+            _erledigt(task, membership)
         elif old_status == "done":
             log_activity(task, membership, "reopened")
         else:
@@ -306,7 +316,7 @@ def toggle_completion(
             log_activity(task, membership, "completed")
     task.save()
     if task.is_completed and record_activity:
-        _hub().notify_task_completed(task, membership)
+        _erledigt(task, membership)
     return task
 
 
@@ -343,15 +353,19 @@ def _log_changes(task: Task, membership: Membership, old: dict[str, Any]) -> Non
     if old["status_raw"] != task.status:
         if task.status == "done":
             log_activity(task, membership, "completed")
-            hub.notify_task_completed(task, membership)
+            _erledigt(task, membership)
         elif old["status_raw"] == "done":
             log_activity(task, membership, "reopened")
         else:
             changes.append(("status", old["status"], task.get_status_display(), "status_changed"))
 
     assignee_changed = old["assigned_to_raw"] != task.assigned_to_id
-    if assignee_changed and task.assigned_to and task.assigned_to != membership:
-        hub.notify_task_assigned(task, task.assigned_to, membership)
+    if assignee_changed and task.assigned_to:
+        uebernommen = ereignisse.melden(
+            ereignisse.ZUGEWIESEN, task, membership, assignee=task.assigned_to_id, created=False
+        )
+        if not uebernommen and task.assigned_to != membership:
+            hub.notify_task_assigned(task, task.assigned_to, membership)
     if old["priority_raw"] != task.priority:
         changes.append(("priority", old["priority"], task.get_priority_display(), "priority_changed"))
     if old["due_date_raw"] != task.due_date:
@@ -380,10 +394,12 @@ def apply_panel_update(task: Task, membership: Membership, old_values: dict[str,
     return task
 
 
+@transaction.atomic
 def add_comment(task: Task, membership: Membership, content: str) -> TaskActivity:
     """Kommentar als Aktivität anlegen und Beteiligte benachrichtigen."""
     activity = log_activity(task, membership, "comment", content=content)
-    _hub().notify_task_comment(task, activity, membership)
+    if not ereignisse.melden(ereignisse.KOMMENTIERT, task, membership, comment=activity.id):
+        _hub().notify_task_comment(task, activity, membership)
     return activity
 
 

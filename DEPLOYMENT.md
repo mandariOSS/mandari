@@ -639,6 +639,34 @@ unberührt. **Rückfall:** `SEARCH_RANKING=v1` in der `.env`, dann `docker compo
 **Messen** (nur lesend, gibt nur Zahlen und Aktenzeichen aus):
 `docker exec mandari python manage.py suchqualitaet messen --ranking v1 --ranking v2`.
 
+### Benachrichtigungen als Abonnement
+
+Benachrichtigungen entstehen künftig aus Ereignissen der Datendrehscheibe statt in der Anfrage
+(Issue #529). Den Anfang machen Aufgaben: `work.task.assigned`, `work.task.completed` und
+`work.task.commented`. Das Abonnement `benachrichtigung` (Worker, Rolle `dispatch`, Warteschlange
+`default`) legt daraus die Benachrichtigungen an – eine je Ereignis und Empfänger – und reiht die Mail
+mit demselben Idempotenzschlüssel als Auftrag ein (Warteschlange `mail`).
+
+| `WORK_NOTIFICATION_SUBSCRIPTION` | Bedeutung |
+|---|---|
+| `aus` (Standard) | wie bisher: Benachrichtigung und Mail entstehen in der Anfrage, keine Ereignisse |
+| `schatten` | zusätzlich Ereignisse; das Abonnement legt nichts an, sondern vergleicht mit dem bisherigen Weg (`mandari_notification_subscription_total{result="gleich"\|"fehlt"}`) |
+| `aktiv` | nur noch über das Abonnement; Änderung und Ereignis sind atomar |
+
+**Einschalten in Stufen:** `schatten` setzen, Anwendung und Worker neu starten, einige Tage beobachten
+(`result="fehlt"` bleibt bei null, `mandari_events_lag_seconds{subscription="benachrichtigung"}` klein).
+Dann umschalten: Das Abonnement steht in der Datenbank auf `schatten`, der Schalter allein ändert das
+nicht. Erst im Admin („Ereignistechnik → Abonnements“) `benachrichtigung` pausieren und „Fortsetzen
+(aktiv)“, danach `WORK_NOTIFICATION_SUBSCRIPTION=aktiv` und Anwendung und Worker neu starten. In dieser
+Reihenfolge entsteht weder eine doppelte noch eine fehlende Benachrichtigung: Das aktive Abonnement
+überspringt, was der bisherige Weg kurz zuvor schon angelegt hat. Voraussetzung: Sequenzierer und
+Zustellung laufen (Worker), am besten mit `TASKS_BACKEND=journal`, damit die Mail nicht in der Zustellung
+versendet wird.
+
+**Rückweg:** `aus` und Neustart; Benachrichtigungen entstehen wieder in der Anfrage. Ereignisse, die das
+Abonnement noch nicht zugestellt hat, bleiben im Journal liegen (ohne Benachrichtigung); vor dem
+Umschalten deshalb warten, bis der Rückstand des Abonnements null ist.
+
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 
 Den Text der RIS-Dateien erkennt eine Implementierung, die Bibliothek `mandari_dokumente` in `shared/`
