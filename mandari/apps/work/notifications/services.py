@@ -510,6 +510,14 @@ class NotificationHub:
 
     LEVEL_LABELS = {"view": "Lesen", "comment": "Kommentieren", "edit": "Bearbeiten", "admin": "Verwalten"}
 
+    @staticmethod
+    def _hidden_from(motion, recipient) -> bool:
+        """
+        Unterlage aus „Nichtöffentliche Vorgänge“, die die empfangende Person nicht öffnen darf (Issue #873)?
+        Dann keine Nachricht – sie enthielte Titel oder Auszüge.
+        """
+        return motion.is_sworn_in_only() and not motion.can_access(recipient)
+
     @classmethod
     def notify_document_shared(cls, motion, recipient, level: str, sharer, send_email: bool = True):
         """
@@ -519,6 +527,8 @@ class NotificationHub:
         die E-Mail der einzige Kanal, deshalb läuft sie über den normalen
         E-Mail-Pfad (Präferenz „sofort“ ist Standard).
         """
+        if cls._hidden_from(motion, recipient):
+            return None
         label = cls.LEVEL_LABELS.get(level, level)
         return cls.send(
             recipient=recipient,
@@ -592,7 +602,7 @@ class NotificationHub:
         actor_name = actor.user.get_display_name() if hasattr(actor.user, "get_display_name") else actor.user.email
         sent = []
         for recipient in recipients.values():
-            if not recipient.is_active:
+            if not recipient.is_active or cls._hidden_from(motion, recipient):
                 continue
             notification = cls.send(
                 recipient=recipient,
@@ -615,6 +625,8 @@ class NotificationHub:
         assigner,  # Membership
     ):
         """Notify user when they are set as responsible for a document."""
+        if cls._hidden_from(motion, assignee):
+            return None
         return cls.send(
             recipient=assignee,
             notification_type=NotificationType.MOTION_ASSIGNED,
@@ -628,6 +640,8 @@ class NotificationHub:
     @classmethod
     def notify_motion_ris_status(cls, motion, recipient, title: str, message: str):
         """Rückmeldung der Verwaltung zu einem eingereichten Antrag (Issue #40)."""
+        if cls._hidden_from(motion, recipient):
+            return None
         return cls.send(
             recipient=recipient,
             notification_type=NotificationType.MOTION_STATUS,
@@ -645,6 +659,8 @@ class NotificationHub:
         days_left: int,
     ):
         """Remind responsible member about an upcoming or overdue document deadline."""
+        if cls._hidden_from(motion, recipient):
+            return None
         if days_left < 0:
             message = f'Das Dokument "{motion.title}" ist seit {abs(days_left)} Tag(en) überfällig.'
         elif days_left == 0:
@@ -669,6 +685,8 @@ class NotificationHub:
     ):
         """Notify a member that their approval was requested for a document."""
         motion = approval.motion
+        if cls._hidden_from(motion, approval.approver):
+            return None
         return cls.send(
             recipient=approval.approver,
             notification_type=NotificationType.MOTION_APPROVAL_REQUESTED,
@@ -688,6 +706,8 @@ class NotificationHub:
     ):
         """Notify document owner about an approval decision."""
         motion = approval.motion
+        if cls._hidden_from(motion, recipient):
+            return None
         decision = "erteilt" if approval.approved else "abgelehnt"
         return cls.send(
             recipient=recipient,
@@ -815,15 +835,28 @@ class NotificationHub:
         return f"notif_count_{membership.id}"
 
     @classmethod
+    def for_recipient(cls, membership):
+        """
+        Benachrichtigungen der Person für Glocke und Benachrichtigungszentrale.
+
+        Nachrichten zu Unterlagen in „Nichtöffentliche Vorgänge“, die die Person nicht (mehr) öffnen darf – etwa
+        nach Entzug der Vereidigung –, bleiben gespeichert, erscheinen aber nicht (Issue #873).
+        """
+        from apps.work.motions.non_public import hidden_document_ids
+
+        notifications = Notification.objects.filter(recipient=membership)
+        hidden = hidden_document_ids(membership)
+        if hidden:
+            notifications = notifications.exclude(metadata__motion_id__in=hidden)
+        return notifications
+
+    @classmethod
     def get_unread_count(cls, membership) -> int:
         """Get count of unread notifications for a user (cached for 30 seconds)."""
         cache_key = cls._get_count_cache_key(membership)
         count = cache.get(cache_key)
         if count is None:
-            count = Notification.objects.filter(
-                recipient=membership,
-                is_read=False,
-            ).count()
+            count = cls.for_recipient(membership).filter(is_read=False).count()
             cache.set(cache_key, count, 30)  # 30 seconds TTL
         return count
 

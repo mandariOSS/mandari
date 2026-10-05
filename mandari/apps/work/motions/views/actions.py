@@ -320,10 +320,12 @@ class MotionMetaUpdateView(WorkViewMixin, View):
 
         elif action == "set_folder":
             folder_id = request.POST.get("folder", "").strip()
-            if folder_id:
-                motion.folder = _get_org_folder_or_404(self.organization, folder_id)
-            else:
-                motion.folder = None
+            target = _get_org_folder_or_404(self.organization, folder_id, self.membership) if folder_id else None
+            # „Nichtöffentliche Vorgänge“: weder heraus noch hinein (Motion.folder_move_denied, #873)
+            denied = motion.folder_move_denied(target)
+            if denied:
+                return JsonResponse({"error": denied}, status=403)
+            motion.folder = target
             motion.save(update_fields=["folder", "updated_at"])
 
         elif action == "set_due_date":
@@ -581,6 +583,10 @@ class MotionDocumentDownloadView(WorkViewMixin, View):
             handle = document.file.open("rb")
         except (FileNotFoundError, ValueError):
             raise Http404("Datei nicht gefunden.") from None
+        if motion.is_sworn_in_only():
+            from .. import non_public
+
+            non_public.log_access(motion, self.membership, request, non_public.ACCESS_DOWNLOADED, document=document)
         response = FileResponse(
             handle,
             as_attachment=True,
@@ -647,6 +653,10 @@ class MotionExportView(WorkViewMixin, View):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         export_format = request.GET.get("format", "pdf")
+        if export_format in ("pdf", "docx") and motion.is_sworn_in_only():
+            from .. import non_public
+
+            non_public.log_access(motion, self.membership, request, non_public.ACCESS_EXPORTED)
 
         if export_format == "pdf":
             try:

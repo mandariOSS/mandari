@@ -42,7 +42,7 @@ Kontext: folder_entries, current_folder, root_document_count, filter_query, can_
                  style="padding-left: {{ entry.indent }}px">
                 <a href="?ordner={{ entry.folder.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}"
                    class="flex-1 flex items-center gap-2 px-2 py-1.5 min-w-0 text-sm {% if current_folder and current_folder.id == entry.folder.id %}text-primary-700 dark:text-primary-300 font-semibold{% else %}text-gray-700 dark:text-gray-300{% endif %}">
-                    <i data-lucide="folder" class="w-4 h-4 flex-shrink-0 {% if entry.folder.color %}text-{{ entry.folder.color }}-500{% else %}text-gray-400{% endif %}"></i>
+                    <i data-lucide="{% if entry.folder.sworn_in_only %}folder-lock{% else %}folder{% endif %}" class="w-4 h-4 flex-shrink-0 {% if entry.folder.color %}text-{{ entry.folder.color }}-500{% else %}text-gray-400{% endif %}"></i>
                     <span class="flex-1 truncate">{{ entry.folder.name }}</span>
                     <span class="text-[11px] text-gray-400 flex-shrink-0">{{ entry.count }}</span>
                 </a>

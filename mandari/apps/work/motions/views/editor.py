@@ -119,7 +119,9 @@ class MotionCreateView(WorkViewMixin, TemplateView):
         # Aktuell gewählter Ordner aus der Liste (?ordner=<id>):
         # neues Dokument landet dort
         folder_param = self.request.GET.get("ordner")
-        context["current_folder"] = _get_org_folder_or_404(self.organization, folder_param) if folder_param else None
+        context["current_folder"] = (
+            _get_org_folder_or_404(self.organization, folder_param, self.membership) if folder_param else None
+        )
 
         # Änderungsantrag (?bezug=<id>): Bezugsantrag und vorgeschlagene Sichtbarkeit (Issue #735)
         context |= references.new_document_context(self.organization, self.membership, self.request.GET)
@@ -153,7 +155,11 @@ class MotionCreateView(WorkViewMixin, TemplateView):
         # Ordner-Ablage: Dokument im aktuell gewählten Ordner anlegen
         folder_id = request.POST.get("folder", "").strip()
         if folder_id:
-            motion.folder = _get_org_folder_or_404(self.organization, folder_id)
+            motion.folder = _get_org_folder_or_404(self.organization, folder_id, self.membership)
+            # „Nichtöffentliche Vorgänge“: alle Vereidigten sehen es über den Ordner; gespeichert als „privat“
+            # für den Rückfall auf eine ältere Version, Freigaben gibt es dort nicht (Issue #873)
+            if motion.folder.is_sworn_in_only():
+                motion.visibility = "private"
 
         # Handle document type (new system)
         document_type_id = request.POST.get("document_type")
@@ -227,6 +233,12 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         access_level = self._get_access_level(motion)
         if access_level == "none":
             raise PermissionDenied("Keine Berechtigung für dieses Dokument.")
+        # „Nichtöffentliche Vorgänge“ (Issue #873): jeder Aufruf steht in der Änderungshistorie
+        context["is_sworn_in_only"] = motion.is_sworn_in_only()
+        if context["is_sworn_in_only"]:
+            from .. import non_public
+
+            non_public.log_access(motion, self.membership, self.request, non_public.ACCESS_OPENED)
 
         context["motion"] = motion
         # Nur bereinigt als HTML ausgeben – auch Altbestand vor der Positivliste (apps/work/sanitize.py)
@@ -331,7 +343,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         )
 
         # Ordner-Feld (Details-Sidebar): alle Ordner der Org, eingerückt
-        context["org_folders"] = _flatten_folder_tree(self.organization)
+        context["org_folders"] = _flatten_folder_tree(self.organization, self.membership)
 
         # Bezugsantrag, Bezugssitzung und Änderungsanträge (Details-Sidebar, Issue #586)
         context["bezug"] = references.reference_context(motion, self.membership, self.organization)
@@ -658,7 +670,7 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
         current_folder = None
         folder_param = self.request.GET.get("ordner")
         if folder_param:
-            current_folder = _get_org_folder_or_404(self.organization, folder_param)
+            current_folder = _get_org_folder_or_404(self.organization, folder_param, self.membership)
             # Nur innerhalb des freigegebenen Teilbaums navigierbar
             if current_folder.id not in folder_levels:
                 raise Http404("Ordner nicht freigegeben")

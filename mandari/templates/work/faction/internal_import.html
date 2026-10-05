@@ -1,0 +1,48 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Nichtöffentliche Unterlage (PDF) einlesen (Issue #873). Kontext: meeting, max_mb, error
+{% endcomment %}
+
+{% block page_title %}Nichtöffentliche Unterlage einlesen{% endblock %}
+
+{% block header_title %}Nichtöffentliche Unterlage einlesen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ meeting.title }} · {{ meeting.start|date:"d.m.Y" }}</p>
+{% endblock %}
+
+{% block header_actions %}
+<c-ui.button variant="secondary" size="sm" href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}">
+    Zurück zur Sitzung
+</c-ui.button>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-2xl space-y-4">
+    <p class="text-sm text-gray-600 dark:text-gray-300">
+        Work liest die Tagesordnungspunkte aus der PDF-Datei und schlägt sie als nichtöffentliche TOPs vor.
+        Die Datei liegt danach im Dokumentenspeicher im Ordner „Nichtöffentliche Vorgänge“, den nur vereidigte
+        Mitglieder öffnen können.
+    </p>
+
+    {% if error %}<c-ui.alert variant="error">{{ error }}</c-ui.alert>{% endif %}
+
+    <form method="post" enctype="multipart/form-data" class="space-y-3">
+        {% csrf_token %}
+        <div>
+            <label for="datei" class="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                PDF-Datei (höchstens {{ max_mb }} MB)
+            </label>
+            <input id="datei"
+                   type="file"
+                   name="datei"
+                   accept=".pdf,application/pdf"
+                   required
+                   class="mt-1 block w-full text-sm text-gray-700 dark:text-gray-200">
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Gescannte Unterlagen erkennt Work selbst, ohne externen Dienst. Das kann bis zu einer Minute dauern.
+            </p>
+        </div>
+        <c-ui.button type="submit" size="sm" icon="file-search">Einlesen</c-ui.button>
+    </form>
+</div>
+{% endblock %}

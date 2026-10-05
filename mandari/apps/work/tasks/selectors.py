@@ -250,13 +250,17 @@ def export_queryset(organization: Organization, membership: Membership) -> Query
 
 
 def find_motion(organization: Organization, membership: Membership, motion_id: Any) -> Motion | None:
-    """Dokument per ID, das das Mitglied sehen darf (Prefill "Aufgabe aus Dokument"), sonst ``None``."""
+    """
+    Dokument per ID, das das Mitglied sehen darf (Prefill "Aufgabe aus Dokument"), sonst ``None``.
+
+    Nie aus „Nichtöffentliche Vorgänge“: Der Titel stünde sonst an der Aufgabe bei allen, die sie sehen (#873).
+    """
     from django.core.exceptions import ValidationError
 
-    from apps.work.motions.models import Motion
+    from apps.work.motions.models import Motion, exclude_sworn_in_only
 
     try:
-        visible = cast(Any, Motion).visible_to(membership)
+        visible = exclude_sworn_in_only(cast(Any, Motion).visible_to(membership))
         return cast("Motion", visible.get(id=motion_id, organization=organization))
     except (Motion.DoesNotExist, ValueError, ValidationError):
         return None

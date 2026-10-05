@@ -286,9 +286,19 @@ class DocumentFolder(models.Model):
     ausschließlich Motion.visibility und MotionShare). Einzige Ausnahme:
     Gäste können per FolderGuestShare für einen Ordner (rekursiv inkl.
     aller Unterordner und enthaltenen Dokumente) freigegeben werden.
+
+    Ausnahme „Nichtöffentliche Vorgänge“ (``sworn_in_only``, Issue #873): Dokumente in diesem Ordner
+    (und darunter) öffnen ausschließlich vereidigte Mitglieder der Organisation – alle Vereidigten,
+    unabhängig von gespeicherter Sichtbarkeit, Freigaben, Federführung oder Mitarbeit. Gespeichert werden
+    sie als „privat“: Eine ältere Version ohne diese Regel (Rückfall) zeigt sie dann nur Autor:in,
+    Federführung und Mitarbeit. Der Ordner wird von Work angelegt, liegt auf der Wurzelebene und lässt sich
+    weder umbenennen, verschieben, löschen noch freigeben.
     """
 
     MAX_DEPTH = 4
+
+    #: Name des Ordners für nichtöffentliche Unterlagen (Issue #873)
+    NON_PUBLIC_NAME = "Nichtöffentliche Vorgänge"
 
     # Kleine Palette, identisch zu tenants.Topic.COLOR_CHOICES
     COLOR_CHOICES = [
@@ -330,6 +340,15 @@ class DocumentFolder(models.Model):
     color = models.CharField(max_length=20, choices=COLOR_CHOICES, blank=True, default="", verbose_name="Farbe")
     position = models.IntegerField(default=0, verbose_name="Sortierung")
 
+    # Nur für vereidigte Mitglieder (Issue #873). Datenbank-Standardwert: Eine ältere Version (Rückfall)
+    # legt Ordner ohne diese Spalte an.
+    sworn_in_only = models.BooleanField(
+        default=False,
+        db_default=False,
+        editable=False,
+        verbose_name="Nur für vereidigte Mitglieder",
+    )
+
     created_by = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.SET_NULL,
@@ -355,10 +374,74 @@ class DocumentFolder(models.Model):
                 condition=models.Q(parent__isnull=True),
                 name="uniq_document_folder_name_root",
             ),
+            # Höchstens ein Ordner „Nichtöffentliche Vorgänge“ je Organisation
+            models.UniqueConstraint(
+                fields=["organization"],
+                condition=models.Q(sworn_in_only=True),
+                name="uniq_document_folder_sworn_in_only",
+            ),
         ]
 
     def __str__(self):
         return self.name
+
+    def is_sworn_in_only(self) -> bool:
+        """Liegt der Ordner (selbst oder über einen übergeordneten Ordner) im Bereich nur für Vereidigte?"""
+        node: DocumentFolder | None = self
+        depth = 0
+        while node is not None and depth <= self.MAX_DEPTH:
+            if node.sworn_in_only:
+                return True
+            node = node.parent
+            depth += 1
+        return False
+
+    @classmethod
+    def visible_to(cls, organization, membership=None):
+        """
+        Ordner der Organisation; mit ``membership`` ohne „Nichtöffentliche Vorgänge“ (samt Inhalt) für alle, die
+        ihn nicht öffnen dürfen (Issue #873). Ordner steuern sonst keine Sichtbarkeit.
+        """
+        from apps.work.faction.visibility import is_sworn_member
+
+        folders = cls.objects.filter(organization=organization)
+        if membership is not None and not is_sworn_member(membership):
+            folders = folders.exclude(sworn_in_only_q(""))
+        return folders
+
+    @classmethod
+    def non_public_folder(cls, organization, created_by=None) -> "DocumentFolder":
+        """
+        Ordner „Nichtöffentliche Vorgänge“ der Organisation; legt ihn beim ersten Aufruf auf der Wurzelebene an.
+
+        Gibt es auf der Wurzelebene schon einen gewöhnlichen Ordner dieses Namens, bleibt er unverändert
+        (seine Dokumente behalten ihre Rechte); der neue Ordner erhält dann einen Zusatz.
+        """
+        from django.db import IntegrityError, transaction
+
+        existing = cls.objects.filter(organization=organization, sworn_in_only=True).first()
+        if existing is not None:
+            return existing
+        taken = set(cls.objects.filter(organization=organization, parent__isnull=True).values_list("name", flat=True))
+        name = cls.NON_PUBLIC_NAME
+        counter = 2
+        while name in taken:
+            name = f"{cls.NON_PUBLIC_NAME} ({counter})"
+            counter += 1
+        try:
+            with transaction.atomic():
+                return cls.objects.create(
+                    organization=organization,
+                    name=name,
+                    parent=None,
+                    color="amber",
+                    position=-1,
+                    sworn_in_only=True,
+                    created_by=created_by,
+                )
+        except IntegrityError:
+            # Gleichzeitig angelegt: den vorhandenen Ordner verwenden
+            return cls.objects.get(organization=organization, sworn_in_only=True)
 
     def get_depth(self) -> int:
         """Tiefe im Baum (Ordner auf Wurzelebene = 1)."""
@@ -404,6 +487,13 @@ class DocumentFolder(models.Model):
     def clean(self):
         from django.core.exceptions import ValidationError
 
+        # „Nichtöffentliche Vorgänge“ (Issue #873): bleibt auf der Wurzelebene und ohne Unterordner, damit
+        # kein Dokument über Ordnerverschiebungen aus dem Bereich nur für Vereidigte herausfällt
+        if self.sworn_in_only and self.parent_id is not None:
+            raise ValidationError({"parent": "Dieser Ordner bleibt auf der obersten Ebene."})
+        if self.parent is not None and self.parent.is_sworn_in_only():
+            raise ValidationError({"parent": "In diesem Ordner sind keine Unterordner möglich."})
+
         if self.parent is not None:
             if self.parent_id == self.id:
                 raise ValidationError({"parent": "Ein Ordner kann nicht sein eigener Unterordner sein."})
@@ -431,7 +521,12 @@ class DocumentFolder(models.Model):
         Löschen ohne Datenverlust: Dokumente und Unterordner wandern zum
         Parent (bzw. zur Wurzel "Alle Dokumente"). Bewusst KEIN Cascade
         auf Motions.
+
+        Der Ordner „Nichtöffentliche Vorgänge“ lässt sich nicht löschen: Seine Dokumente würden sonst für
+        alle Mitglieder sichtbar (Issue #873).
         """
+        if self.sworn_in_only:
+            raise ValueError("Der Ordner für nichtöffentliche Vorgänge kann nicht gelöscht werden.")
         self.motions.update(folder=self.parent)
 
         # Unterordner einzeln umhängen; Namenskollisionen auf der
@@ -511,6 +606,12 @@ class FolderGuestShare(models.Model):
     def __str__(self):
         return f"{self.folder.name} → {self.user} ({self.level})"
 
+    def save(self, *args, **kwargs):
+        """„Nichtöffentliche Vorgänge“ lassen sich nicht freigeben – auch nicht an der Oberfläche vorbei (#873)."""
+        if self.folder.is_sworn_in_only():
+            raise ValueError("Der Ordner für nichtöffentliche Vorgänge kann nicht freigegeben werden.")
+        super().save(*args, **kwargs)
+
     @classmethod
     def shared_folder_levels(cls, user, organization) -> dict:
         """
@@ -521,7 +622,8 @@ class FolderGuestShare(models.Model):
         Freigaben auf einem Pfad gewinnt das höchste Level.
         """
         direct: dict = {}
-        qs = cls.objects.filter(user=user, folder__organization=organization)
+        # „Nichtöffentliche Vorgänge“ lassen sich nicht freigeben (Issue #873); Altlasten wirken nicht
+        qs = cls.objects.filter(user=user, folder__organization=organization).exclude(sworn_in_only_q("folder"))
         for folder_id, level in qs.values_list("folder_id", "level"):
             current = direct.get(folder_id)
             if current is None or cls.LEVEL_RANK.get(level, 0) > cls.LEVEL_RANK.get(current, 0):
@@ -560,7 +662,9 @@ class FolderGuestShare(models.Model):
         Grundlage dafür, welche Dokumente eine Ordner-Freigabe umfasst (Motion._folder_share_applies).
         """
         shares = list(
-            cls.objects.filter(user=user, folder__organization=organization).values_list("folder_id", "created_by_id")
+            cls.objects.filter(user=user, folder__organization=organization)
+            .exclude(sworn_in_only_q("folder"))
+            .values_list("folder_id", "created_by_id")
         )
         if not shares:
             return []
@@ -582,6 +686,44 @@ class FolderGuestShare(models.Model):
                 stack.extend(children.get(folder_id, []))
             scopes.append((subtree, created_by_id))
         return scopes
+
+
+#: Feste Meldungen zum Ordner „Nichtöffentliche Vorgänge“ (Issue #873)
+NON_PUBLIC_MOVE_OUT = "Nichtöffentliche Unterlagen bleiben im Ordner „Nichtöffentliche Vorgänge“."
+NON_PUBLIC_MOVE_IN = (
+    "Vorhandene Dokumente lassen sich nicht nach „Nichtöffentliche Vorgänge“ verschieben. "
+    "Neue Unterlagen dort anlegen oder in der Fraktionssitzung einlesen."
+)
+
+
+def sworn_in_only_q(prefix: str = "folder") -> models.Q:
+    """
+    Bedingung „liegt im Bereich nur für Vereidigte“ (Issue #873) für Abfragen über ``prefix``.
+
+    ``prefix="folder"`` für Dokumente, ``prefix="motion__folder"`` für Anhänge, ``prefix=""`` für Ordner selbst.
+    Prüft den Ordner und seine übergeordneten Ordner bis zur maximalen Tiefe in einer Abfrage (Verknüpfungen
+    statt Zusatzabfragen).
+    """
+    condition = models.Q()
+    path = f"{prefix}__" if prefix else ""
+    for _ in range(DocumentFolder.MAX_DEPTH):
+        condition |= models.Q(**{f"{path}sworn_in_only": True})
+        path = f"{path}parent__"
+    return condition
+
+
+def exclude_sworn_in_only(queryset, membership=None, prefix: str = "folder"):
+    """
+    Dokumente aus „Nichtöffentliche Vorgänge“ entfernen, wenn ``membership`` sie nicht öffnen darf.
+
+    Ohne ``membership`` werden sie immer entfernt – für Verknüpfungen, über die Titel bei anderen Personen
+    landen würden (Aufgaben, Redebeiträge, Bezugsanträge).
+    """
+    from apps.work.faction.visibility import is_sworn_member
+
+    if membership is not None and is_sworn_member(membership):
+        return queryset
+    return queryset.exclude(sworn_in_only_q(prefix))
 
 
 class StatusTransitionError(ValueError):
@@ -966,11 +1108,12 @@ class Motion(EncryptionMixin, models.Model):
           mit ``motions.view_former_members``, auch Entwürfe und private (Issue #590).
         - Gäste ausschließlich persönlich freigegebene Dokumente sowie Dokumente in für sie
           freigegebenen Ordnern (rekursiv) – nie Dokumente im Papierkorb.
+        - Dokumente in „Nichtöffentliche Vorgänge“ nur für vereidigte Mitglieder, nie für Gäste (Issue #873).
 
         Args:
             include_deleted: Auch Dokumente im Papierkorb liefern (nur für Mitglieder).
         """
-        qs = cls.objects.filter(organization=membership.organization)
+        qs = exclude_sworn_in_only(cls.objects.filter(organization=membership.organization), membership)
         is_guest = getattr(membership, "is_guest", False)
         if not include_deleted or is_guest:
             qs = qs.exclude(status="deleted")
@@ -1005,6 +1148,11 @@ class Motion(EncryptionMixin, models.Model):
         )
         if former:
             access |= models.Q(author__isnull=True)
+        # „Nichtöffentliche Vorgänge“: für Vereidigte wie organisationsweit (Nicht-Vereidigte sind oben entfernt)
+        from apps.work.faction.visibility import is_sworn_member
+
+        if is_sworn_member(membership):
+            access |= sworn_in_only_q()
         return qs.filter(access).distinct()
 
     @property
@@ -1148,10 +1296,19 @@ class Motion(EncryptionMixin, models.Model):
           Kommentieren (``motions.comment``) oder Lesen.
         - Dokumente entfernter Mitglieder (Autor:in geleert): mit ``motions.view_former_members``
           mindestens Lesen, auch Entwürfe und private Dokumente (Issue #590).
+        - Dokumente in „Nichtöffentliche Vorgänge“: nur vereidigte Mitglieder, nie Gäste – vor allen anderen
+          Regeln, auch vor Freigaben, Federführung und Mitarbeit. Für Vereidigte gelten sie unabhängig von
+          ihrer gespeicherten Sichtbarkeit wie organisationsweite Dokumente (Issue #873).
         - ``status_lock``: danach greift die Status-Sperre für den Inhalt (apply_status_lock).
         """
         if membership is None or membership.organization_id != self.organization_id:
             return "none"
+        sworn_in_only = self.is_sworn_in_only()
+        if sworn_in_only:
+            from apps.work.faction.visibility import is_sworn_member
+
+            if not is_sworn_member(membership):
+                return "none"
 
         if getattr(membership, "is_guest", False):
             if self.status == "deleted":
@@ -1183,7 +1340,7 @@ class Motion(EncryptionMixin, models.Model):
         # Abfragen nur, wo sie das Ergebnis ändern können (Freigaben, Mitarbeit)
         edit_all = membership.has_permission("motions.edit_all")
         can_edit_own = membership.has_permission("motions.edit")
-        if self.visibility == "organization":
+        if self.visibility == "organization" or sworn_in_only:
             if edit_all or (
                 can_edit_own
                 and (self._member_share_level(membership) in ("edit", "admin") or self._is_assigned(membership))
@@ -1260,8 +1417,35 @@ class Motion(EncryptionMixin, models.Model):
         return level == "admin" or (level == "edit" and membership.has_permission("motions.delete"))
 
     def can_share(self, membership) -> bool:
-        """Darf die Person Freigaben und Sichtbarkeit ändern? Verwaltungsrecht und ``motions.share``."""
+        """
+        Darf die Person Freigaben und Sichtbarkeit ändern? Verwaltungsrecht und ``motions.share``.
+
+        Dokumente in „Nichtöffentliche Vorgänge“ lassen sich nie freigeben (Issue #873).
+        """
+        if self.is_sworn_in_only():
+            return False
         return self.can_manage(membership) and membership.has_permission("motions.share")
+
+    def is_sworn_in_only(self) -> bool:
+        """Liegt das Dokument in „Nichtöffentliche Vorgänge“ (oder darunter)? Ohne Ordner keine Abfrage."""
+        if self.folder_id is None:
+            return False
+        folder = self.folder
+        return folder is not None and folder.is_sworn_in_only()
+
+    def folder_move_denied(self, target) -> str:
+        """
+        Feste Meldung, wenn das Verschieben nach ``target`` (``None`` = Wurzel) den Bereich „Nichtöffentliche
+        Vorgänge“ berühren würde, sonst ``""`` (Issue #873).
+
+        - Heraus geht ein Dokument nie: Es würde sonst für alle sichtbar, die das Dokument sonst sehen dürften.
+        - Hinein auch nicht: Ein bestehendes Dokument kann mit Aufgaben, Bezügen oder Freigaben verknüpft sein,
+          über die sein Titel bei anderen steht. Nichtöffentliche Unterlagen entstehen im Ordner selbst.
+        """
+        target_restricted = target is not None and target.is_sworn_in_only()
+        if self.is_sworn_in_only():
+            return "" if target_restricted else NON_PUBLIC_MOVE_OUT
+        return NON_PUBLIC_MOVE_IN if target_restricted else ""
 
     def _folder_share_applies(self, created_by_id) -> bool:
         """
@@ -1578,6 +1762,12 @@ class MotionShare(models.Model):
     def __str__(self):
         target = self.user or self.role or self.organization or self.party_group or self.body
         return f"{self.motion.title} → {target} ({self.level})"
+
+    def save(self, *args, **kwargs):
+        """Dokumente in „Nichtöffentliche Vorgänge“ lassen sich nicht freigeben (Issue #873, Motion.can_share)."""
+        if self._state.adding and self.motion.is_sworn_in_only():
+            raise ValueError("Nichtöffentliche Unterlagen können nicht freigegeben werden.")
+        super().save(*args, **kwargs)
 
 
 class MotionDocument(AttachmentDisplayMixin, models.Model):

@@ -1,0 +1,93 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Erkannte Tagesordnungspunkte einer nichtöffentlichen Unterlage bestätigen (Issue #873).
+Kontext: meeting, motion, rows (proposal mit source_number und title, taken = schon übernommen), notice, folder_name
+{% endcomment %}
+
+{% block page_title %}Tagesordnungspunkte übernehmen{% endblock %}
+
+{% block header_title %}Tagesordnungspunkte übernehmen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ meeting.title }} · {{ meeting.start|date:"d.m.Y" }}</p>
+{% endblock %}
+
+{% block header_actions %}
+<c-ui.button variant="secondary" size="sm" href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}">
+    Zurück zur Sitzung
+</c-ui.button>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-4xl space-y-4">
+    <p class="text-sm text-gray-600 dark:text-gray-300">
+        Die Unterlage liegt im Ordner „{{ folder_name }}“:
+        <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}"
+           class="text-primary-700 dark:text-primary-300 underline">{{ motion.title }}</a>
+    </p>
+
+    {% if notice %}<c-ui.alert variant="info">{{ notice }}</c-ui.alert>{% endif %}
+
+    {% if rows %}
+    <form method="post"
+          action="{% url 'work:faction_internal_import_confirm' org_slug=organization.slug meeting_id=meeting.id motion_id=motion.id %}"
+          class="space-y-3">
+        {% csrf_token %}
+        <table class="w-full text-sm">
+            <thead>
+                <tr>
+                    <c-ui.th class="w-12"><span class="sr-only">Auswahl</span></c-ui.th>
+                    <c-ui.th class="w-20 sm:w-28">Nr.</c-ui.th>
+                    <c-ui.th>Titel</c-ui.th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for row in rows %}
+                <tr>
+                    <td class="py-1">
+                        {# Zielfläche 44 × 44 px um die Checkbox #}
+                        <label class="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
+                            <input type="checkbox"
+                                   name="auswahl"
+                                   value="{{ forloop.counter0 }}"
+                                   {% if not row.taken %}checked{% endif %}
+                                   aria-label="Punkt {{ forloop.counter }} übernehmen"
+                                   class="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                        </label>
+                    </td>
+                    <td class="py-1 pr-2">
+                        <input type="text"
+                               name="nr"
+                               value="{{ row.proposal.source_number }}"
+                               maxlength="20"
+                               aria-label="Nummer in der Unterlage"
+                               title="Nummer in der Unterlage"
+                               class="w-full h-11 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    </td>
+                    <td class="py-1">
+                        <input type="text"
+                               name="titel"
+                               value="{{ row.proposal.title }}"
+                               maxlength="500"
+                               aria-label="Titel"
+                               {% if row.taken %}aria-describedby="uebernommen-{{ forloop.counter0 }}"{% endif %}
+                               class="w-full h-11 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        {% if row.taken %}
+                        <c-ui.badge class="mt-1" id="uebernommen-{{ forloop.counter0 }}">Bereits übernommen</c-ui.badge>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            Ausgewählte Punkte werden als nichtöffentliche TOPs angelegt und mit der Unterlage verknüpft.
+        </p>
+        <c-ui.button type="submit" size="sm" icon="check">Als nichtöffentliche TOPs übernehmen</c-ui.button>
+    </form>
+    {% else %}
+    <c-ui.alert variant="warning">
+        In der Unterlage wurden keine Tagesordnungspunkte erkannt. Nichtöffentliche TOPs lassen sich in der Sitzung von Hand anlegen.
+    </c-ui.alert>
+    {% endif %}
+</div>
+{% endblock %}

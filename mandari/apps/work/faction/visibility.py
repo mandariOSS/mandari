@@ -28,6 +28,21 @@ def can_view_internal(membership) -> bool:
     return PermissionChecker(membership).can_access_non_public()
 
 
+def is_sworn_member(membership) -> bool:
+    """
+    Vereidigtes Mitglied (kein Gastzugang) mit Recht auf den nicht-öffentlichen Teil.
+
+    Gleiche Regel wie ``can_view_internal``, zusätzlich nie für Gastzugänge. Grundlage für den Ordner
+    „Nichtöffentliche Vorgänge“ im Dokumentenspeicher (Issue #873). Nutzt die zwischengespeicherten Rechte
+    der Mitgliedschaft (``Membership.has_permission``), damit Listen keine Zusatzabfragen je Aufruf auslösen.
+    """
+    if membership is None or getattr(membership, "is_guest", False):
+        return False
+    if not getattr(membership, "is_active", True) or not getattr(membership, "is_sworn_in", False):
+        return False
+    return bool(membership.has_permission("faction.view_non_public"))
+
+
 def is_item_internal(item) -> bool:
     """Gehört der TOP zum nicht-öffentlichen Teil? Unterpunkte erben ihn vom übergeordneten TOP."""
     node = item

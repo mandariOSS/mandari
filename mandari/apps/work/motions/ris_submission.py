@@ -226,6 +226,9 @@ def can_submit(motion, membership) -> tuple[bool, str]:
 
     if motion.session_application_id:
         return False, "Dieses Dokument wurde bereits eingereicht."
+    # Nichtöffentliche Unterlagen verlassen Work nicht (Issue #873)
+    if motion.is_sworn_in_only():
+        return False, "Dokumente aus „Nichtöffentliche Vorgänge“ werden nicht eingereicht."
     email_reason = submission_block_reason(motion)
     if email_reason:
         return False, email_reason

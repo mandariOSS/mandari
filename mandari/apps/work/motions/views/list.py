@@ -56,7 +56,7 @@ class MotionListView(WorkViewMixin, TemplateView):
         current_folder = None
         folder_param = self.request.GET.get("ordner")
         if folder_param:
-            current_folder = _get_org_folder_or_404(self.organization, folder_param)
+            current_folder = _get_org_folder_or_404(self.organization, folder_param, self.membership)
             subtree_ids = [current_folder.id] + [f.id for f in current_folder.get_descendants()]
             motions = motions.filter(folder_id__in=subtree_ids)
         context["current_folder"] = current_folder
@@ -187,7 +187,7 @@ class MotionListView(WorkViewMixin, TemplateView):
             for row in visible.order_by().values("folder").annotate(n=Count("id", distinct=True))
         }
 
-        flattened = _flatten_folder_tree(self.organization)
+        flattened = _flatten_folder_tree(self.organization, self.membership)
 
         # Teilbaum-Summen: Kinder vor Eltern aggregieren (Vorordnung rückwärts)
         totals = {folder.id: direct_counts.get(folder.id, 0) for folder, _ in flattened}
@@ -246,7 +246,7 @@ class DocumentFolderCreateView(WorkViewMixin, View):
         if color not in dict(DocumentFolder.COLOR_CHOICES):
             color = ""
 
-        parent = _get_org_folder_or_404(self.organization, parent_id) if parent_id else None
+        parent = _get_org_folder_or_404(self.organization, parent_id, self.membership) if parent_id else None
         list_url = reverse("work:documents", kwargs={"org_slug": self.organization.slug})
         back_url = f"{list_url}?ordner={parent.id}" if parent else list_url
 
@@ -282,7 +282,7 @@ class DocumentFolderUpdateView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         from django.core.exceptions import ValidationError
 
-        folder = _get_org_folder_or_404(self.organization, kwargs.get("folder_id"))
+        folder = _get_org_folder_or_404(self.organization, kwargs.get("folder_id"), self.membership)
         if not _can_manage_folder(self.membership, folder):
             raise PermissionDenied("Keine Berechtigung für diesen Ordner.")
 
@@ -300,7 +300,7 @@ class DocumentFolderUpdateView(WorkViewMixin, View):
         # Verschieben: "" = Wurzelebene, sonst Ziel-Ordner der Organisation
         if "parent" in request.POST:
             parent_id = request.POST.get("parent", "").strip()
-            folder.parent = _get_org_folder_or_404(self.organization, parent_id) if parent_id else None
+            folder.parent = _get_org_folder_or_404(self.organization, parent_id, self.membership) if parent_id else None
 
         try:
             folder.full_clean()
@@ -323,7 +323,7 @@ class DocumentFolderDeleteView(WorkViewMixin, View):
     permission_require_all = False
 
     def post(self, request, *args, **kwargs):
-        folder = _get_org_folder_or_404(self.organization, kwargs.get("folder_id"))
+        folder = _get_org_folder_or_404(self.organization, kwargs.get("folder_id"), self.membership)
         if not _can_manage_folder(self.membership, folder):
             raise PermissionDenied("Keine Berechtigung für diesen Ordner.")
 
@@ -353,7 +353,7 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
         from apps.accounts.models import User
         from apps.tenants.models import Membership
 
-        folder = _get_org_folder_or_404(self.organization, kwargs.get("folder_id"))
+        folder = _get_org_folder_or_404(self.organization, kwargs.get("folder_id"), self.membership)
         if not _can_manage_folder(self.membership, folder):
             return JsonResponse({"error": "Keine Berechtigung für diesen Ordner."}, status=403)
 
@@ -444,7 +444,7 @@ class MotionFolderMoveView(WorkViewMixin, View):
 
     def post(self, request, *args, **kwargs):
         folder_id = request.POST.get("folder", "").strip()
-        folder = _get_org_folder_or_404(self.organization, folder_id) if folder_id else None
+        folder = _get_org_folder_or_404(self.organization, folder_id, self.membership) if folder_id else None
 
         motion_ids = []
         for raw_id in request.POST.getlist("motion_ids"):
@@ -458,6 +458,9 @@ class MotionFolderMoveView(WorkViewMixin, View):
         guest_folder = folder is not None and folder.is_shared_with_guests()
         moved = 0
         for motion in motions:
+            # „Nichtöffentliche Vorgänge“: weder heraus noch hinein (Motion.folder_move_denied, #873)
+            if motion.folder_move_denied(folder):
+                continue
             if motion.can_edit(self.membership) and (not guest_folder or motion.can_share(self.membership)):
                 motion.folder = folder
                 motion.save(update_fields=["folder", "updated_at"])

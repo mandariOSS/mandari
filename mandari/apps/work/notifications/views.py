@@ -35,11 +35,10 @@ class NotificationCenterView(WorkViewMixin, TemplateView):
         per_page = 20
         offset = (page - 1) * per_page
 
-        notifications = Notification.objects.filter(recipient=self.membership).select_related("actor__user")[
-            offset : offset + per_page
-        ]
+        own = NotificationHub.for_recipient(self.membership)
+        notifications = own.select_related("actor__user")[offset : offset + per_page]
 
-        total = Notification.objects.filter(recipient=self.membership).count()
+        total = own.count()
 
         context["notifications"] = notifications
         context["total_count"] = total
@@ -73,7 +72,7 @@ class NotificationListPartialView(WorkViewMixin, View):
 
     def get(self, request, *args, **kwargs):
         """Return recent notifications as HTML partial."""
-        notifications = Notification.objects.filter(recipient=self.membership).select_related("actor__user")[:10]
+        notifications = NotificationHub.for_recipient(self.membership).select_related("actor__user")[:10]
 
         unread_count = NotificationHub.get_unread_count(self.membership)
 
@@ -155,10 +154,9 @@ class NotificationLatestView(WorkViewMixin, View):
         since = request.GET.get("since")
         limit = int_param(request.GET.get("limit"), 5, minimum=1, maximum=20)
 
-        notifications = Notification.objects.filter(
-            recipient=self.membership,
-            is_read=False,
-        ).select_related("actor__user")
+        notifications = (
+            NotificationHub.for_recipient(self.membership).filter(is_read=False).select_related("actor__user")
+        )
 
         if since:
             try:
