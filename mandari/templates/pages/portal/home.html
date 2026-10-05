@@ -13,7 +13,7 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
 {% block page %}
 {% if active_body %}
 <section class="bg-primary-100 dark:bg-primary-950">
-    <div class="max-w-6xl px-4 sm:px-8 py-10 sm:py-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] items-center">
+    <div class="max-w-insight px-4 sm:px-8 py-10 sm:py-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,32rem)] items-center">
         <div>
             <h1 class="text-[2rem] sm:text-[2.75rem] font-bold tracking-tight leading-[1.1] text-gray-900 dark:text-white break-words">{{ active_body.get_display_name }} transparent</h1>
             <p class="mt-4 max-w-2xl text-[1.0625rem] sm:text-[1.125rem] leading-relaxed text-gray-800 dark:text-gray-200">
@@ -39,7 +39,8 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
 </section>
 
 <c-insight.band>
-    <div class="grid gap-12 lg:grid-cols-2">
+    {# Ab 1.600 px drei Spalten, wenn es Beschlüsse gibt; dazwischen steht die dritte Liste zweispaltig darunter (Issue #841) #}
+    <div class="grid gap-12 lg:grid-cols-2{% if recent_decisions %} min-[1600px]:grid-cols-3 min-[1600px]:gap-10{% endif %}">
         <section aria-labelledby="naechste-sitzungen">
             <div class="flex items-baseline justify-between gap-4">
                 <h2 id="naechste-sitzungen" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Nächste Sitzungen</h2>
@@ -91,20 +92,27 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
             <p class="mt-4 text-gray-700 dark:text-gray-300">Noch keine Vorgänge veröffentlicht.</p>
             {% endif %}
         </section>
+
+        {% if recent_decisions %}{% include "partials/home_beschluesse.html" %}{% endif %}
     </div>
 </c-insight.band>
 
 <c-insight.band ton="grau" aria-labelledby="in-ihrer-naehe">
-    <div class="max-w-2xl">
-        <h2 id="in-ihrer-naehe" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Was passiert in Ihrer Nähe?</h2>
-        <p class="mt-2 text-[1rem] leading-relaxed text-gray-700 dark:text-gray-300">Geben Sie eine Adresse ein. Wir zeigen Vorgänge mit Ortsbezug im Umkreis, etwa Bauvorhaben oder Verkehrsplanungen.</p>
-        <form action="{% url 'insight_core:insight:neighborhood' %}" method="get" class="mt-5 flex flex-col sm:flex-row gap-3">
+    {# Ab lg Satz links, Adressfeld rechts: das Band nutzt die Breite statt einer leeren rechten Hälfte (Issue #841) #}
+    <div class="grid gap-x-12 gap-y-5 lg:grid-cols-2 lg:items-end">
+        <div class="max-w-2xl">
+            <h2 id="in-ihrer-naehe" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Was passiert in Ihrer Nähe?</h2>
+            <p class="mt-2 text-[1rem] leading-relaxed text-gray-700 dark:text-gray-300">Geben Sie eine Adresse ein. Wir zeigen Vorgänge mit Ortsbezug im Umkreis, etwa Bauvorhaben oder Verkehrsplanungen.</p>
+        </div>
+        <form action="{% url 'insight_core:insight:neighborhood' %}" method="get" class="flex flex-col sm:flex-row gap-3 lg:max-w-2xl">
             <label for="naehe-adresse" class="sr-only">Adresse oder Stadtteil</label>
             <input id="naehe-adresse" type="search" name="q" placeholder="Straße oder Stadtteil" autocomplete="off"
                 class="h-12 w-full sm:w-auto sm:flex-1 min-w-0 px-4 rounded-lg bg-band-hell border border-gray-300 dark:border-gray-700 text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
             <button type="submit" class="h-12 px-5 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-semibold">Zeigen</button>
         </form>
-        {% if home_districts %}
+    </div>
+    {% if home_districts %}
+    <div>
         <p class="mt-5 text-[0.9rem] text-gray-700 dark:text-gray-300">Oder ein Stadtteil:</p>
         <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-[0.95rem]">
             {% for d in home_districts|slice:":12" %}
@@ -113,8 +121,8 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
             {% endlocalize %}
             {% endfor %}
         </ul>
-        {% endif %}
     </div>
+    {% endif %}
 </c-insight.band>
 {% else %}
 {# Keine Kommune ermittelbar (z. B. Datenbestand entfernt); die Auswahl rendert pages/portal/select_body.html #}

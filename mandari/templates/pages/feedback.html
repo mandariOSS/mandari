@@ -1,19 +1,33 @@
 {% extends "base_insight.html" %}
 {% comment %}
-Rückmeldung ohne JavaScript (views/feedback.py): derselbe Schritt wie im Seitenende, dazu der Rückweg.
+Rückmeldung ohne JavaScript (views/feedback.py): derselbe Schritt wie im Seitenende, dazu der Rückweg. Auf breiten
+Bildschirmen steht rechts, was wir speichern, statt einer leeren Fläche neben dem Formular (Issue #841).
 {% endcomment %}
 
 {% block title %}Rückmeldung{% endblock %}
 
-{% block content %}
-<section aria-label="Rückmeldung zu einer Seite" class="max-w-3xl rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 py-6">
-    <div id="rueckmeldung-inhalt" aria-live="polite">{% include feedback_partial %}</div>
-    {% if back_url %}
-    <p class="mt-6">
-        <a href="{{ back_url }}" class="inline-flex items-center gap-1 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
-            <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i>Zurück zur Seite
-        </a>
-    </p>
-    {% endif %}
-</section>
+{% block page %}
+<c-insight.kopfband titel="Rückmeldung" />
+<c-insight.band>
+    <div class="grid gap-10 xl:gap-16 xl:grid-cols-[minmax(0,36rem)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,42rem)_minmax(0,1fr)]">
+        <section aria-label="Rückmeldung zu einer Seite">
+            <div id="rueckmeldung-inhalt" aria-live="polite">{% include feedback_partial %}</div>
+            {% if back_url %}
+            <p class="mt-6">
+                <a href="{{ back_url }}" class="inline-flex items-center gap-1 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+                    <i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i>Zurück zur Seite
+                </a>
+            </p>
+            {% endif %}
+        </section>
+        <aside aria-labelledby="rueckmeldung-daten" class="max-w-xl xl:w-full xl:justify-self-end">
+            <h2 id="rueckmeldung-daten" class="text-[1.0625rem] font-semibold text-gray-900 dark:text-white">Was wir speichern</h2>
+            <p class="mt-2 text-[0.95rem] leading-relaxed text-gray-700 dark:text-gray-300">
+                Zur Rückmeldung speichern wir nur Ihre Antwort, Ihren Satz, die Seite und den Tag. Eine IP-Adresse
+                speichern wir dazu nicht, und wir setzen kein Cookie. Wir löschen Rückmeldungen nach zwölf Monaten.
+            </p>
+            <p class="mt-3 text-[0.95rem]"><a href="{{ marketing_url }}/datenschutz/#rueckmeldung" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Mehr zum Datenschutz</a></p>
+        </aside>
+    </div>
+</c-insight.band>
 {% endblock %}

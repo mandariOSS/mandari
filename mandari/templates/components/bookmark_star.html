@@ -1,35 +1,37 @@
 {# Bookmark Star Component #}
 {# Usage: {% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="sm" %} #}
 {# size: "sm" = small icon only (for lists), "lg" = button with label (for detail heroes) #}
+{# Ohne Sprung (CLS, Issue #841): Bis Alpine läuft, hält der Knopf unsichtbar seinen Platz (x-cloak="platz"), der volle  #}
+{# Stern bleibt bis dahin aus; die kleine Variante hat eine feste Größe, damit Tabellen nicht neu umbrechen.          #}
 
 {% if size == "lg" %}
 {# Large: Button with label for detail pages #}
-<button type="button" x-data x-cloak
+<button type="button" x-data x-cloak="platz"
     @click.stop.prevent="$store.bookmarks.toggle('{{ entity_type }}', '{{ entity_id }}')"
     class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors"
     :class="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}')
         ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50'
         : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
-    :title="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}') ? 'Von Merkliste entfernen' : 'Auf Merkliste setzen'">
+    title="Auf Merkliste setzen" :title="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}') ? 'Von Merkliste entfernen' : 'Auf Merkliste setzen'">
     {# Filled star (bookmarked) #}
-    <svg x-show="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}')" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">
+    <svg x-show="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}')" x-cloak class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">
         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
     </svg>
     {# Outline star (not bookmarked) #}
     <svg x-show="!$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}')" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
     </svg>
-    <span x-text="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}') ? 'Gemerkt' : 'Merken'"></span>
+    <span x-text="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}') ? 'Gemerkt' : 'Merken'">Merken</span>
 </button>
 
 {% else %}
 {# Small: Icon only for list rows #}
-<button type="button" x-data x-cloak
+<button type="button" x-data x-cloak="platz"
     @click.stop.prevent="$store.bookmarks.toggle('{{ entity_type }}', '{{ entity_id }}')"
-    class="p-1 rounded transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
-    :title="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}') ? 'Von Merkliste entfernen' : 'Auf Merkliste setzen'">
+    class="inline-flex items-center justify-center shrink-0 w-6 h-6 rounded transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
+    title="Auf Merkliste setzen" :title="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}') ? 'Von Merkliste entfernen' : 'Auf Merkliste setzen'">
     {# Filled star (bookmarked) #}
-    <svg x-show="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}')" class="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">
+    <svg x-show="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}')" x-cloak class="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">
         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
     </svg>
     {# Outline star (not bookmarked) #}

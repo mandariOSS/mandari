@@ -1,0 +1,24 @@
+{% load insight_listen %}
+{% comment %}
+Seitenwahl der Listen im Bürgerportal (Personen, Gremien, Sitzungen, Vorgänge): behält Suche und Filter der Anfrage,
+Ziele mindestens 44 px groß, Pfeile mit Namen (Issue #841).
+{% endcomment %}
+{% if page_obj.has_other_pages %}
+<nav aria-label="Seiten" class="mt-6 flex justify-center">
+    <ul class="flex flex-wrap items-center justify-center gap-1">
+        {% if page_obj.has_previous %}
+        <li><a href="{% seiten_url page_obj.previous_page_number %}" aria-label="Vorherige Seite" class="inline-flex items-center justify-center min-w-11 h-11 px-3 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-band-grau"><i data-lucide="chevron-left" class="w-5 h-5" aria-hidden="true"></i></a></li>
+        {% endif %}
+        {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+        <li><span aria-current="page" class="inline-flex items-center justify-center min-w-11 h-11 px-3 rounded-lg bg-primary-600 text-white font-medium">{{ num }}</span></li>
+        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+        <li><a href="{% seiten_url num %}" class="inline-flex items-center justify-center min-w-11 h-11 px-3 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-band-grau">{{ num }}</a></li>
+        {% endif %}
+        {% endfor %}
+        {% if page_obj.has_next %}
+        <li><a href="{% seiten_url page_obj.next_page_number %}" aria-label="Nächste Seite" class="inline-flex items-center justify-center min-w-11 h-11 px-3 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-band-grau"><i data-lucide="chevron-right" class="w-5 h-5" aria-hidden="true"></i></a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}

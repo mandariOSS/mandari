@@ -11,9 +11,12 @@
 {#   org_slug       — Work-Portal Org-Slug (wenn gesetzt → Work-URLs)        #}
 {# ═══════════════════════════════════════════════════════════════════════════ #}
 
-{% load i18n %}
+{#   Optional je Eintrag: m.fraktion (Insight-Gremienseite) – Spalte „Fraktion“ ab md, nur wenn belegt.     #}
+{#   Spalten ohne einen einzigen Wert (Rolle, Fraktion) entfallen (Issue #841).                           #}
+{% load i18n insight_listen %}
 
 {% if items %}
+{% with sp_rolle=items|hat_wert:"role" sp_fraktion=items|hat_wert:"fraktion" %}
 {% if collapsible %}
 <details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <summary class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
@@ -45,10 +48,13 @@
                     </span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                    {{ m.role|default:"—" }}
-                </td>
-                <td class="px-4 py-3 text-sm text-gray-400 dark:text-gray-500 max-sm:hidden">
+                {% if sp_fraktion %}
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 max-md:hidden">{% if m.fraktion %}{{ m.fraktion.short_name|default:m.fraktion.name }}{% endif %}</td>
+                {% endif %}
+                {% if sp_rolle %}
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden">{{ m.role|default:"" }}</td>
+                {% endif %}
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
                     {% if show_end_date and m.end_date %}
                         bis {{ m.end_date|date:"d.m.Y" }}
                     {% elif m.start_date %}
@@ -69,6 +75,7 @@
 {% else %}
 </div>
 {% endif %}
+{% endwith %}
 
 {% elif not collapsible %}
 <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400">

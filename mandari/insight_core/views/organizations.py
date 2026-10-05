@@ -5,7 +5,8 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
-from django.db.models import Exists, OuterRef, Q, Subquery
+from django.db.models import Count, Exists, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce, NullIf
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
@@ -13,10 +14,12 @@ from apps.common.mixins import HTMXMixin
 
 from ..models import (
     OParlMeeting,
+    OParlMembership,
     OParlOrganization,
     withdrawn_q,
 )
 from ..ranking import sort_organizations_by_ranking
+from ..services import personen_liste, question_service
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -68,11 +71,23 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
             .values("start")[:1]
         )
         has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
+        # Laufende Mitgliedschaften (Spalte „Mitglieder“ auf breiten Bildschirmen, Issue #841)
+        members_sq = Subquery(
+            OParlMembership.objects.filter(organization=OuterRef("pk"), deleted=False)
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .order_by()
+            .values("organization")
+            .annotate(n=Count("pk"))
+            .values("n")[:1]
+        )
 
         base_qs = OParlOrganization.objects.filter(body=body, deleted=False).annotate(
             next_meeting=next_meeting_sq,
             last_meeting=last_meeting_sq,
             has_meetings=has_any_meeting,
+            mitglieder=Coalesce(members_sq, 0),
+            # Art des Gremiums: Klassifikation (Ausschuss, Beirat …), sonst der OParl-Typ
+            art=Coalesce(NullIf("classification", Value("")), NullIf("organization_type", Value(""))),
         )
 
         # Suche
@@ -151,6 +166,14 @@ class OrganizationDetailView(DetailView):
         )
         past_qs = all_memberships.filter(end_date__lt=today).order_by("person__family_name")
 
+        # Laufende Mitglieder mit ihrer Fraktion (Spalte „Fraktion“, Issue #841); auf Fraktionsseiten ohne
+        active = list(active_qs)
+        context["mitglieder_anzahl"] = len(active)
+        if not personen_liste.ist_fraktion(org):
+            fraktionen = question_service.get_faction_map([m.person for m in active])
+            for membership in active:
+                membership.fraktion = fraktionen.get(membership.person_id)
+
         # Sonderfall "Rat": Ratsmitglieder von anderen trennen
         is_rat = org.name == "Rat"
         context["is_rat"] = is_rat
@@ -162,10 +185,10 @@ class OrganizationDetailView(DetailView):
                 "Bürgermeister/in",
                 "Fraktionsvorsitzende/r Rat",
             ]
-            context["council_members"] = active_qs.filter(role__in=council_roles)
-            context["other_members"] = active_qs.exclude(role__in=council_roles)
+            context["council_members"] = [m for m in active if m.role in council_roles]
+            context["other_members"] = [m for m in active if m.role not in council_roles]
         else:
-            context["active_members"] = active_qs
+            context["active_members"] = active
 
         context["past_members"] = past_qs
 

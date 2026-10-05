@@ -1,0 +1,58 @@
+{# Randspalte der Gremienseite (Issue #841): nächste Sitzungen und Angaben; am Handy unter den Reitern #}
+<aside class="min-w-0 space-y-10" aria-label="Termine und Angaben">
+    {% if upcoming_meetings %}
+    <section aria-labelledby="gremium-termine">
+        <h2 id="gremium-termine" class="text-[1.125rem] font-bold tracking-tight text-gray-900 dark:text-white">Nächste Sitzungen</h2>
+        <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800">
+            {% for meeting in upcoming_meetings|slice:":3" %}
+            <li>
+                <a href="{% url 'insight_core:insight:meeting_detail' meeting.pk %}" class="group grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-3 text-[0.9rem]">
+                    <time datetime="{{ meeting.start|date:'c' }}" class="font-semibold text-gray-900 dark:text-gray-100">{{ meeting.start|date:"D, d.m." }}</time>
+                    <span class="min-w-0 text-gray-700 dark:text-gray-300">
+                        <span class="block group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4">{{ meeting.start|date:"H:i" }} Uhr</span>
+                        {% if meeting.location_name %}<span class="block text-gray-600 dark:text-gray-400 break-words">{{ meeting.location_name }}</span>{% endif %}
+                    </span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    <section aria-labelledby="gremium-angaben">
+        <h2 id="gremium-angaben" class="text-[1.125rem] font-bold tracking-tight text-gray-900 dark:text-white">Angaben</h2>
+        <dl class="mt-3 grid grid-cols-[7.5rem_minmax(0,1fr)] gap-y-2 text-[0.9rem]">
+            {% if organization.classification %}
+            <dt class="text-gray-600 dark:text-gray-400">Art</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words">{{ organization.classification }}</dd>
+            {% endif %}
+            {% if organization.short_name and organization.short_name != organization.name %}
+            <dt class="text-gray-600 dark:text-gray-400">Kurzname</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words">{{ organization.short_name }}</dd>
+            {% endif %}
+            {% if mitglieder_anzahl %}
+            <dt class="text-gray-600 dark:text-gray-400">Mitglieder</dt>
+            <dd class="text-gray-900 dark:text-gray-100 tabular-nums">{{ mitglieder_anzahl }}</dd>
+            {% endif %}
+            {% if organization.start_date %}
+            <dt class="text-gray-600 dark:text-gray-400">Beginn</dt>
+            <dd class="text-gray-900 dark:text-gray-100 tabular-nums">{{ organization.start_date|date:"d.m.Y" }}</dd>
+            {% endif %}
+            {% if organization.end_date %}
+            <dt class="text-gray-600 dark:text-gray-400">Ende</dt>
+            <dd class="text-gray-900 dark:text-gray-100 tabular-nums">{{ organization.end_date|date:"d.m.Y" }}</dd>
+            {% endif %}
+            <dt class="text-gray-600 dark:text-gray-400">Kommune</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words">{{ organization.body.get_display_name }}</dd>
+            {% if organization.website %}
+            <dt class="text-gray-600 dark:text-gray-400">Website</dt>
+            <dd>
+                <a href="{% if '://' not in organization.website %}https://{% endif %}{{ organization.website }}" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 break-all">
+                    {{ organization.website }}<span class="sr-only"> (öffnet in neuem Fenster)</span>
+                </a>
+            </dd>
+            {% endif %}
+        </dl>
+    </section>
+</aside>

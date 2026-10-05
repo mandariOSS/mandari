@@ -1,0 +1,46 @@
+{# Randspalte der Personenseite (Issue #841): Kontakt und Angaben; am Handy unter den Mitgliedschaften #}
+<aside class="min-w-0 space-y-10" aria-label="Kontakt und Angaben">
+    {% if person.email or person.phone %}
+    <section aria-labelledby="person-kontakt">
+        <h2 id="person-kontakt" class="text-[1.125rem] font-bold tracking-tight text-gray-900 dark:text-white">Kontakt</h2>
+        <dl class="mt-3 grid grid-cols-[7.5rem_minmax(0,1fr)] gap-y-2 text-[0.9rem]">
+            {% if person.email %}
+            <dt class="text-gray-600 dark:text-gray-400">E-Mail</dt>
+            <dd><a href="mailto:{{ person.email }}" class="text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 break-all">{{ person.email }}</a></dd>
+            {% endif %}
+            {% if person.phone %}
+            <dt class="text-gray-600 dark:text-gray-400">Telefon</dt>
+            <dd><a href="tel:{{ person.phone }}" class="text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ person.phone }}</a></dd>
+            {% endif %}
+        </dl>
+    </section>
+    {% endif %}
+
+    <section aria-labelledby="person-angaben">
+        <h2 id="person-angaben" class="text-[1.125rem] font-bold tracking-tight text-gray-900 dark:text-white">Angaben</h2>
+        <dl class="mt-3 grid grid-cols-[7.5rem_minmax(0,1fr)] gap-y-2 text-[0.9rem]">
+            {% if person.title %}
+            <dt class="text-gray-600 dark:text-gray-400">Titel</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words">{{ person.title }}</dd>
+            {% endif %}
+            {% if funktion %}
+            <dt class="text-gray-600 dark:text-gray-400">Funktion</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words">{{ funktion }}</dd>
+            {% endif %}
+            {% if faction %}
+            <dt class="text-gray-600 dark:text-gray-400">Fraktion</dt>
+            <dd class="break-words"><a href="{% url 'insight_core:insight:organization_detail' faction.id %}" class="text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ faction.short_name|default:faction.name }}</a></dd>
+            {% endif %}
+            {% if active_memberships %}
+            <dt class="text-gray-600 dark:text-gray-400">Gremien</dt>
+            <dd class="text-gray-900 dark:text-gray-100 tabular-nums">{{ active_memberships|length }} aktuell</dd>
+            {% endif %}
+            {% if person.gender %}
+            <dt class="text-gray-600 dark:text-gray-400">Geschlecht</dt>
+            <dd class="text-gray-900 dark:text-gray-100">{{ person.gender }}</dd>
+            {% endif %}
+            <dt class="text-gray-600 dark:text-gray-400">Kommune</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words">{{ person.body.get_display_name }}</dd>
+        </dl>
+    </section>
+</aside>

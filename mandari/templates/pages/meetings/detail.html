@@ -17,45 +17,27 @@
 <div>
     {% include "partials/tombstone_notice.html" with object=meeting %}
 
-    <c-insight.zurueck href="{% url 'insight_core:insight:meeting_list' %}">Sitzungen</c-insight.zurueck>
-
-    {# Hero #}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
-        <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+    {# Kopf wie Vorgangs-, Gremien- und Personenseite (Issue #841) #}
+    <header class="mb-8 rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-7 sm:pb-8">
+        <c-insight.zurueck href="{% url 'insight_core:insight:meeting_list' %}">Sitzungen</c-insight.zurueck>
+        <div class="flex flex-col sm:flex-row sm:items-start gap-4">
             <div class="flex-1 min-w-0">
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-                    {{ meeting.get_display_name }}
-                </h1>
-                {% if meeting.start %}
-                <p class="text-gray-600 dark:text-gray-400 mt-1">
-                    {{ meeting.start|date:"l, d. F Y" }} um {{ meeting.start|date:"H:i" }} Uhr
+                <h1 class="max-w-4xl text-[1.75rem] sm:text-[2.25rem] leading-[1.12] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">{{ meeting.get_display_name }}</h1>
+                <p class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.95rem] text-gray-700 dark:text-gray-300">
+                    {% if meeting.start %}<span>{{ meeting.start|date:"l, d. F Y" }} um {{ meeting.start|date:"H:i" }} Uhr</span>{% endif %}
+                    {% if meeting.location_name %}<span>{{ meeting.location_name }}</span>{% endif %}
+                    {% if meeting.cancelled %}<span class="font-semibold text-red-700 dark:text-red-400">Abgesagt</span>{% elif meeting.meeting_state %}<span>{{ meeting.meeting_state|capfirst }}</span>{% endif %}
                 </p>
-                {% endif %}
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-                    {% if meeting.cancelled %}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-400">
-                        Abgesagt
-                    </span>
-                    {% endif %}
-                    {% if meeting.meeting_state %}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                        {{ meeting.meeting_state }}
-                    </span>
-                    {% endif %}
-                    {% if meeting.location_name %}
-                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ meeting.location_name }}</span>
-                    {% endif %}
-                </div>
             </div>
-            <div class="flex-shrink-0">
+            <div class="shrink-0">
                 {% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="lg" %}
             </div>
         </div>
-    </div>
+    </header>
 
-    <div class="grid lg:grid-cols-3 gap-8">
+    <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
         <!-- Main Content -->
-        <div class="lg:col-span-2 space-y-6">
+        <div class="min-w-0 space-y-6">
             <!-- Agenda Items -->
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
@@ -102,7 +84,7 @@
                                 </div>
                                 {% endif %}
                                 {% if item.resolution_text %}
-                                <div class="mt-2 p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
+                                <div class="mt-2 max-w-3xl p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
                                     {{ item.resolution_text }}
                                 </div>
                                 {% endif %}

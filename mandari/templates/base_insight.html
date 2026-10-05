@@ -257,7 +257,7 @@
             {% include "partials/insight_hinweise.html" %}
             {# Seiten in Bändern überschreiben „page“ (Kopfband, Inhalt, Nebenband); alle übrigen füllen „content“ #}
             {% block page %}
-            <div class="px-4 sm:px-8 py-6 lg:py-8">
+            <div class="max-w-insight px-4 sm:px-8 py-6 lg:py-8">
                 {% block content %}{% endblock %}
                 {% include "partials/page_feedback.html" %}
             </div>

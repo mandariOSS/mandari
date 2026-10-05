@@ -6,126 +6,62 @@
 {% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ organization.name }}</c-insight.brotkrume>{% endblock %}
 
 {% block content %}
-<div x-data="{ tab: 'members' }">
-    {% include "partials/tombstone_notice.html" with object=organization %}
+{% comment %}
+Gremienseite (Issue #841): Kopf wie die Vorgangsseite, darunter Mitglieder und Sitzungen als Reiter und ab xl eine
+Randspalte mit den nächsten Sitzungen und den Angaben (früher ein eigener Reiter „Informationen“).
+{% endcomment %}
+{% include "partials/tombstone_notice.html" with object=organization %}
 
+<header class="rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-7 sm:pb-8">
     <c-insight.zurueck href="{% url 'insight_core:insight:organization_list' %}">Gremien</c-insight.zurueck>
+    <div class="flex flex-col sm:flex-row sm:items-start gap-4">
+        <div class="flex-1 min-w-0">
+            <h1 class="max-w-4xl text-[1.75rem] sm:text-[2.25rem] leading-[1.12] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">{{ organization.name }}</h1>
+            <p class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.95rem] text-gray-700 dark:text-gray-300">
+                <span>{% if organization.is_active %}Aktiv{% else %}Beendet{% endif %}</span>
+                {% if organization.classification %}<span>{{ organization.classification }}</span>{% elif organization.organization_type %}<span>{{ organization.organization_type }}</span>{% endif %}
+                {% if mitglieder_anzahl %}<span>{{ mitglieder_anzahl }} Mitglied{{ mitglieder_anzahl|pluralize:"er" }}</span>{% endif %}
+            </p>
+        </div>
+        <div class="shrink-0">
+            {% include "components/bookmark_star.html" with entity_type="organization" entity_id=organization.id size="lg" %}
+        </div>
+    </div>
+</header>
 
-    {# Hero #}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
-        <div class="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div class="flex-1 min-w-0">
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-                    {{ organization.name }}
-                </h1>
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-                    {% if organization.is_active %}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">
-                        Aktiv
-                    </span>
-                    {% else %}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                        Beendet
-                    </span>
-                    {% endif %}
-                    {% if organization.organization_type %}
-                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ organization.organization_type }}</span>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="flex-shrink-0">
-                {% include "components/bookmark_star.html" with entity_type="organization" entity_id=organization.id size="lg" %}
-            </div>
+<div class="mt-10 grid gap-12 xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+    <div class="min-w-0" x-data="{ tab: 'members' }">
+        <div class="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
+            <button type="button" @click="tab = 'members'"
+                    :class="tab === 'members' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+                    class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
+                Mitglieder &amp; Vertretungen
+            </button>
+            <button type="button" @click="tab = 'meetings'"
+                    :class="tab === 'meetings' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+                    class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
+                Sitzungskalender
+            </button>
+        </div>
+
+        {# ── Reiter: Mitglieder & Vertretungen ── #}
+        <div x-show="tab === 'members'" x-cloak class="space-y-4">
+            {% if is_rat %}
+                {% include "components/ris/membership_list.html" with items=council_members title="Ratsmitglieder" empty_text="Keine Ratsmitglieder" link_type="person" %}
+                {% include "components/ris/membership_list.html" with items=other_members title="Weitere Beteiligte" link_type="person" %}
+            {% else %}
+                {% include "components/ris/membership_list.html" with items=active_members title="Aktive Mitglieder" empty_text="Keine aktiven Mitglieder" link_type="person" %}
+            {% endif %}
+            {% include "components/ris/membership_list.html" with items=past_members title="Ehemalige Mitglieder" link_type="person" collapsible="1" show_end_date="1" %}
+        </div>
+
+        {# ── Reiter: Sitzungskalender ── #}
+        <div x-show="tab === 'meetings'" x-cloak class="space-y-4">
+            {% include "components/ris/meeting_list.html" with items=upcoming_meetings title="Kommende Sitzungen" empty_text="Keine kommenden Sitzungen geplant" %}
+            {% include "components/ris/meeting_list.html" with items=past_meetings title="Vergangene Sitzungen" collapsible="1" %}
         </div>
     </div>
 
-    {# Tabs #}
-    <div class="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
-        <button type="button" @click="tab = 'members'"
-                :class="tab === 'members' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
-                class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
-            Mitglieder &amp; Vertretungen
-        </button>
-        <button type="button" @click="tab = 'meetings'"
-                :class="tab === 'meetings' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
-                class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
-            Sitzungskalender
-        </button>
-        <button type="button" @click="tab = 'info'"
-                :class="tab === 'info' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
-                class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
-            Informationen
-        </button>
-    </div>
-
-    {# ── Tab: Mitglieder & Vertretungen — nutzt gemeinsame Komponenten ── #}
-    <div x-show="tab === 'members'" x-cloak class="space-y-4">
-        {% if is_rat %}
-            {# Rat: Ratsmitglieder + Weitere Beteiligte gesondert #}
-            {% include "components/ris/membership_list.html" with items=council_members title="Ratsmitglieder" empty_text="Keine Ratsmitglieder" link_type="person" %}
-            {% include "components/ris/membership_list.html" with items=other_members title="Weitere Beteiligte" link_type="person" %}
-        {% else %}
-            {# Alle anderen Gremien #}
-            {% include "components/ris/membership_list.html" with items=active_members title="Aktive Mitglieder" empty_text="Keine aktiven Mitglieder" link_type="person" %}
-        {% endif %}
-
-        {% include "components/ris/membership_list.html" with items=past_members title="Ehemalige Mitglieder" link_type="person" collapsible="1" show_end_date="1" %}
-    </div>
-
-    {# ── Tab: Sitzungskalender — nutzt gemeinsame Komponenten ── #}
-    <div x-show="tab === 'meetings'" x-cloak class="space-y-4">
-        {% include "components/ris/meeting_list.html" with items=upcoming_meetings title="Kommende Sitzungen" empty_text="Keine kommenden Sitzungen geplant" %}
-
-        {% include "components/ris/meeting_list.html" with items=past_meetings title="Vergangene Sitzungen" collapsible="1" %}
-    </div>
-
-    {# ── Tab: Informationen ── #}
-    <div x-show="tab === 'info'" x-cloak>
-        {% if organization.short_name or organization.classification or organization.start_date or organization.end_date or organization.website %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-            <dl class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-4">
-                {% if organization.short_name %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Kurzname</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ organization.short_name }}</dd>
-                </div>
-                {% endif %}
-                {% if organization.classification %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Klassifikation</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ organization.classification }}</dd>
-                </div>
-                {% endif %}
-                {% if organization.start_date %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Beginn</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ organization.start_date|date:"d.m.Y" }}</dd>
-                </div>
-                {% endif %}
-                {% if organization.end_date %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Ende</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ organization.end_date|date:"d.m.Y" }}</dd>
-                </div>
-                {% endif %}
-                {% if organization.website %}
-                <div class="sm:col-span-2">
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Website</dt>
-                    <dd>
-                        <a href="{% if '://' not in organization.website %}https://{% endif %}{{ organization.website }}" target="_blank" rel="noopener noreferrer"
-                           class="text-primary-600 dark:text-primary-400 hover:underline break-all">
-                            {{ organization.website }}
-                        </a>
-                    </dd>
-                </div>
-                {% endif %}
-            </dl>
-        </div>
-        {% else %}
-        <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-            Keine weiteren Informationen vorhanden
-        </div>
-        {% endif %}
-    </div>
+    {% include "pages/organizations/_randspalte.html" %}
 </div>
 {% endblock %}

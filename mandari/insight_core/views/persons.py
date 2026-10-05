@@ -5,19 +5,18 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
-from django.db.models import OuterRef, Q, Subquery
+from django.db.models import Q
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
 from apps.common.mixins import HTMXMixin
 
 from ..models import (
-    OParlMembership,
-    OParlOrganization,
     OParlPerson,
     PublicQuestion,
     withdrawn_q,
 )
+from ..services import personen_liste
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -57,6 +56,12 @@ class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
             description="Ratsmitglieder und Beteiligte der Kommunalpolitik: Wer sitzt in welchem Gremium und trifft Entscheidungen?",
             body=get_active_body(self.request),
         ).to_dict()
+        # Fraktion, Funktion und Gremien aus den laufenden Mitgliedschaften (Issue #841), eine Abfrage je Seite
+        persons = list(context["persons"])
+        angaben = personen_liste.angaben_fuer(persons)
+        for person in persons:
+            person.angaben = angaben.get(person.pk) or personen_liste.PersonAngaben()
+        context["persons"] = persons
         return context
 
     def get_queryset(self):
@@ -64,23 +69,7 @@ class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
         if not body:
             return OParlPerson.objects.none()
 
-        today = timezone.now().date()
-
         qs = OParlPerson.objects.filter(body=body, deleted=False).select_related("body")
-
-        # Ratsrolle als Annotation (falls vorhanden)
-        rat = OParlOrganization.objects.filter(body=body, name="Rat").first()
-        if rat:
-            council_role_sq = Subquery(
-                OParlMembership.objects.filter(
-                    person=OuterRef("pk"),
-                    organization=rat,
-                    role__in=COUNCIL_ROLES,
-                )
-                .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
-                .values("role")[:1]
-            )
-            qs = qs.annotate(council_role=council_role_sq)
 
         # Suche (Name + Funktion/Gremium über Mitgliedschaften)
         q = self.request.GET.get("q", "").strip()
@@ -135,6 +124,8 @@ class PersonDetailView(DetailView):
             .first()
         )
         context["council_role"] = council_membership.role if council_membership else None
+        # Wichtigste laufende Rolle für Kopf und Randspalte (wie die Personenliste, Issue #841)
+        context["funktion"] = personen_liste.funktion_aus(context["active_memberships"])
 
         # Öffentliche Fragen (bei allen Mandatsträger:innen: Rat/Hauptorgan oder Fraktion). Pausiert
         # (Issue #734): Reiter nur mit bisherigen Fragen, ohne Antwortquote und ohne „Frage stellen“.

@@ -3,7 +3,8 @@ Kommunenwechsel (Issue #783, Stufe 2) – im Dialog des Rahmens und auf der Ausw
 lange Liste: Suchfeld mit höchstens acht Vorschlägen, „In meiner Nähe“ auf Klick, „Zuletzt besucht“ aus dem Browser,
 Stöbern Land → Kreis → Kommune. Logik in frontend/alpine/kommunen-wahl.ts; ohne JavaScript schickt das Formular an
 die Seite „Kommune wählen“. Parameter: id (eindeutiger Präfix), im_dialog, stufe_start (erste Stufe des Stöberns
-fertig im Markup, nur auf der Auswahlseite). Überschriften: h3 unter dem h2 des Dialogs, auf der Seite h2.
+fertig im Markup, nur auf der Auswahlseite). Überschriften: h3 unter dem h2 des Dialogs, auf der Seite h2. Auf der Seite bleiben Suchfeld und Vorschläge lesbar
+schmal, das Stöbern nutzt auf breiten Bildschirmen drei bis vier Spalten (Issue #841).
 Ohne Sprung beim Start (CLS): Was erst mit Alpine erscheinen kann („Zuletzt besucht“), steht über Bereichen, die bis
 dahin unsichtbar ihren Platz halten (x-cloak="platz").
 {% endcomment %}
@@ -12,7 +13,7 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
     data-vorschlaege-url="{% url 'insight_core:insight:kommunen_vorschlaege' %}"
     data-naehe-url="{% url 'insight_core:insight:kommunen_naehe' %}"
     data-stoebern-url="{% url 'insight_core:insight:kommunen_stoebern' %}">
-    <form action="{% url 'insight_core:insight:kommunen' %}" method="get" role="search" @submit.prevent="suchen()">
+    <form action="{% url 'insight_core:insight:kommunen' %}" method="get" role="search" @submit.prevent="suchen()"{% if not im_dialog %} class="max-w-2xl"{% endif %}>
         <label for="{{ id }}-eingabe" class="sr-only">Kommune oder Postleitzahl</label>
         <span class="relative block">
             <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
@@ -32,7 +33,7 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
     {# flow-root: Die Abstände der Bereiche bleiben innen, der Behälter springt nicht, wenn „Zuletzt besucht“ erscheint #}
     <div id="{{ id }}-ergebnisse" class="flow-root">
         {# Vorschläge, sonst Kommunen in der Nähe, sonst zuletzt besucht #}
-        <section x-show="liste().eintraege.length" class="mt-4" x-cloak>
+        <section x-show="liste().eintraege.length" class="mt-4{% if not im_dialog %} max-w-2xl{% endif %}" x-cloak>
             <h{{ im_dialog|yesno:"3,2" }} x-show="liste().titel" x-text="liste().titel" class="text-[0.875rem] font-medium text-gray-600 dark:text-gray-400"></h{{ im_dialog|yesno:"3,2" }}>
             <ul class="mt-1 -mx-3">
                 <template x-for="(t, i) in liste().eintraege" :key="t.name + t.ort + (t.hinweis || '') + (t.url || '')">
@@ -78,7 +79,7 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
             </div>
             {% if stufe_start.eintraege %}
             {# Länder aus dem Markup, bis eine Stufe geladen ist (Text wie stoebernInfo()); ein Klick-Handler für alle #}
-            <ul x-show="!stufe" @click="stoebernKlick($event)" class="mt-2 -mx-3 grid sm:grid-cols-2 gap-x-2">
+            <ul x-show="!stufe" @click="stoebernKlick($event)" class="mt-2 -mx-3 grid sm:grid-cols-2{% if not im_dialog %} xl:grid-cols-3 2xl:grid-cols-4{% endif %} gap-x-2">
                 {% for e in stufe_start.eintraege %}
                 <li>
                     <button type="button" data-kommune-ziel data-land="{{ e.land }}"
@@ -93,7 +94,7 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
                 {% endfor %}
             </ul>
             {% endif %}
-            <ul x-show="stufe" class="mt-2 -mx-3 grid sm:grid-cols-2 gap-x-2" x-cloak>
+            <ul x-show="stufe" class="mt-2 -mx-3 grid sm:grid-cols-2{% if not im_dialog %} xl:grid-cols-3 2xl:grid-cols-4{% endif %} gap-x-2" x-cloak>
                 <template x-for="e in (stufe ? stufe.eintraege : [])" :key="(e.land || '') + (e.kreis || '') + (e.verband || '') + e.name + (e.url || '')">
                     <li>
                         <template x-if="e.art === 'gruppe'">

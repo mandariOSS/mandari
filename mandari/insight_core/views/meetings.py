@@ -10,7 +10,8 @@ from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
@@ -21,6 +22,7 @@ from apps.common.mixins import HTMXMixin
 from hub.ris import selectors as ris_selectors
 
 from ..models import (
+    OParlAgendaItem,
     OParlBody,
     OParlConsultation,
     OParlFile,
@@ -67,7 +69,19 @@ class MeetingListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
         if not body:
             return OParlMeeting.objects.none()
 
-        qs = OParlMeeting.objects.filter(body=body, deleted=False).prefetch_related("organizations")
+        # Zahl der öffentlichen Tagesordnungspunkte (Spalte „Tagesordnung“ auf breiten Bildschirmen, Issue #841)
+        tops_sq = Subquery(
+            OParlAgendaItem.objects.filter(meeting=OuterRef("pk"), public=True, deleted=False)
+            .order_by()
+            .values("meeting")
+            .annotate(n=Count("pk"))
+            .values("n")[:1]
+        )
+        qs = (
+            OParlMeeting.objects.filter(body=body, deleted=False)
+            .prefetch_related("organizations")
+            .annotate(anzahl_tops=Coalesce(tops_sq, 0))
+        )
 
         # Suche
         q = self.request.GET.get("q", "").strip()

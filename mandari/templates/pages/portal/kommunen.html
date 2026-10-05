@@ -17,8 +17,10 @@ Land → Kreis → (Gemeindeverband →) Kommune über Links. Mit JavaScript üb
 </c-insight.kopfband>
 
 <c-insight.band>
-    <div class="max-w-3xl">
+    {# Vorschläge lesbar schmal, das Stöbern auf breiten Bildschirmen in drei bis vier Spalten (Issue #841) #}
+    <div>
         {% if eingabe %}
+        <div class="max-w-3xl">
         <h2 class="text-[1.125rem] font-semibold text-gray-900 dark:text-white">{% if treffer %}Vorschläge zu „{{ eingabe }}“{% else %}Keine Kommune zu „{{ eingabe }}“ gefunden{% endif %}</h2>
         {% if treffer %}
         <ul class="mt-3 -mx-3 divide-y divide-gray-200 dark:divide-gray-800">
@@ -30,6 +32,7 @@ Land → Kreis → (Gemeindeverband →) Kommune über Links. Mit JavaScript üb
         <p class="mt-2 text-gray-700 dark:text-gray-300">Versuchen Sie es mit der Postleitzahl oder wählen Sie unten Bundesland und Kreis.</p>
         {% endif %}
         <p class="mt-6"><a href="{% url 'insight_core:insight:kommunen' %}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Nach Bundesland suchen</a></p>
+        </div>
         {% elif stufe %}
         <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <h2 class="text-[1.125rem] font-semibold text-gray-900 dark:text-white">{% if stufe.stufe == "land" %}Nach Bundesland suchen{% else %}{{ stufe.titel }}{% endif %}</h2>
@@ -38,7 +41,7 @@ Land → Kreis → (Gemeindeverband →) Kommune über Links. Mit JavaScript üb
             {% endif %}
         </div>
         {% if stufe.eintraege %}
-        <ul class="mt-3 -mx-3 grid sm:grid-cols-2 gap-x-2">
+        <ul class="mt-3 -mx-3 grid sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-x-2">
             {% for e in stufe.eintraege %}
             <li>
                 {% if e.art == "kommune" %}

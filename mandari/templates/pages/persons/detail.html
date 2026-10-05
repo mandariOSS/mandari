@@ -6,62 +6,46 @@
 {% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ person.display_name }}</c-insight.brotkrume>{% endblock %}
 
 {% block content %}
-<div x-data="{ tab: (new URLSearchParams(window.location.search).get('tab') === 'fragen') ? 'questions' : 'memberships' }">
-    {% include "partials/tombstone_notice.html" with object=person %}
+{% comment %}
+Personenseite (Issue #841): Kopf wie die Vorgangsseite, darunter Mitgliedschaften (und Fragen) und ab xl eine
+Randspalte mit Kontakt und Angaben (früher ein eigener Reiter „Informationen & Kontakt“).
+{% endcomment %}
+{% include "partials/tombstone_notice.html" with object=person %}
 
+<header class="rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-7 sm:pb-8">
     <c-insight.zurueck href="{% url 'insight_core:insight:person_list' %}">Personen</c-insight.zurueck>
-
-    {# ── Hero ── #}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
-        <div class="flex flex-col sm:flex-row sm:items-center gap-4">
-            {% include "components/person_avatar.html" with person=person size="lg" %}
-            <div class="flex-1 min-w-0">
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-                    {{ person.display_name }}
-                </h1>
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-                    {% if council_role %}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900/50 dark:text-primary-400">
-                        {{ council_role }}
-                    </span>
-                    {% endif %}
-                    {% if faction %}
-                    <a href="{% url 'insight_core:insight:organization_detail' faction.id %}" class="text-sm text-primary-700 dark:text-primary-300 hover:underline">{{ faction.short_name|default:faction.name }}</a>
-                    {% endif %}
-                    {% if person.gender %}
-                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ person.gender }}</span>
-                    {% endif %}
-                </div>
-            </div>
-            {# Kontakt-Schnellzugriff im Hero #}
-            <div class="flex flex-wrap gap-2 flex-shrink-0">
-                {% if person.email %}
-                <a href="mailto:{{ person.email }}"
-                   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-colors">
-                    <i data-lucide="mail" class="w-4 h-4"></i>
-                    E-Mail
-                </a>
-                {% endif %}
-                {% if person.phone %}
-                <a href="tel:{{ person.phone }}"
-                   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                    <i data-lucide="phone" class="w-4 h-4"></i>
-                    {{ person.phone }}
-                </a>
-                {% endif %}
-                {% include "components/bookmark_star.html" with entity_type="person" entity_id=person.id size="lg" %}
-            </div>
+    <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+        {% include "components/person_avatar.html" with person=person size="lg" %}
+        <div class="flex-1 min-w-0">
+            <h1 class="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">{{ person.display_name }}</h1>
+            {% if funktion or faction %}
+            <p class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.95rem] text-gray-700 dark:text-gray-300">
+                {% if funktion %}<span>{{ funktion }}</span>{% endif %}
+                {% if faction %}<a href="{% url 'insight_core:insight:organization_detail' faction.id %}" class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ faction.short_name|default:faction.name }}</a>{% endif %}
+            </p>
+            {% endif %}
+        </div>
+        <div class="flex flex-wrap items-center gap-2 shrink-0">
+            {% if person.email %}
+            <a href="mailto:{{ person.email }}" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-gray-900 dark:text-white hover:bg-white dark:hover:bg-gray-700 transition-colors">
+                <i data-lucide="mail" class="w-4 h-4 text-primary-700 dark:text-primary-300" aria-hidden="true"></i>
+                E-Mail schreiben
+            </a>
+            {% endif %}
+            {% include "components/bookmark_star.html" with entity_type="person" entity_id=person.id size="lg" %}
         </div>
     </div>
+</header>
 
-    {# ── Tabs ── #}
+<div class="mt-10 grid gap-12 xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+<div class="min-w-0" x-data="{ tab: (new URLSearchParams(window.location.search).get('tab') === 'fragen') ? 'questions' : 'memberships' }">
+    {% if questions_tab %}
     <div class="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
         <button type="button" @click="tab = 'memberships'"
                 :class="tab === 'memberships' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
                 class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
             Mitgliedschaften
         </button>
-        {% if questions_tab %}
         <button type="button" @click="tab = 'questions'"
                 :class="tab === 'questions' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
                 class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
@@ -70,138 +54,74 @@
             <span class="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ answer_stats.total }}</span>
             {% endif %}
         </button>
-        {% endif %}
-        <button type="button" @click="tab = 'info'"
-                :class="tab === 'info' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
-                class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
-            Informationen &amp; Kontakt
-        </button>
-    </div>
-
-    {# ── Tab: Mitgliedschaften — nutzt gemeinsame Komponente ── #}
-    <div x-show="tab === 'memberships'" x-cloak class="space-y-4">
-        {% include "components/ris/membership_list.html" with items=active_memberships title="Aktive Mitgliedschaften" empty_text="Keine aktiven Mitgliedschaften" link_type="organization" %}
-
-        {% include "components/ris/membership_list.html" with items=past_memberships title="Ehemalige Mitgliedschaften" link_type="organization" collapsible="1" show_end_date="1" %}
-    </div>
-
-    {# ── Tab: Fragen (Abgeordnetenwatch-Stil) — bei allen Mandatsträger:innen; pausiert nur mit bisherigen Fragen ── #}
-    {% if questions_tab %}
-    <div x-show="tab === 'questions'" x-cloak>
-        {% if not can_ask %}
-        {% include "components/questions_paused_notice.html" with extra_class="mb-4" %}
-        {% else %}
-        {# Header mit Stats + CTA #}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-4">
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h3 class="font-semibold text-gray-900 dark:text-white mb-1">
-                        Öffentliche Fragen an {{ person.display_name }}
-                    </h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                        {% if answer_stats.total > 0 %}
-                            {{ answer_stats.answered }} von {{ answer_stats.total }} Frage{{ answer_stats.total|pluralize:"n" }} beantwortet
-                            ({{ answer_stats.rate }} %){% if answer_stats.avg_response_days is not None %} &middot; Ø Antwort nach {{ answer_stats.avg_response_days }} Tagen{% endif %}
-                        {% else %}
-                            Noch keine Fragen gestellt
-                        {% endif %}
-                    </p>
-                </div>
-                <div class="flex items-center gap-2 flex-shrink-0">
-                    <a href="{% url 'insight_core:insight:question_portal' %}?person={{ person.id }}"
-                       class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                        Im Portal
-                    </a>
-                    <a href="{% url 'insight_core:insight:ask_question' person.id %}"
-                       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors">
-                        <i data-lucide="message-circle-question" class="w-4 h-4"></i>
-                        Frage stellen
-                    </a>
-                </div>
-            </div>
-            {% if answer_stats.total > 0 %}
-            <div class="mt-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div class="bg-green-500 h-2 rounded-full transition-all" style="width: {{ answer_stats.rate }}%"></div>
-            </div>
-            {% endif %}
-        </div>
-        {% endif %}
-
-        {% if published_questions %}
-        <div class="space-y-3">
-            {% for q in published_questions %}
-            {% include "components/question_card.html" with q=q show_recipient=False %}
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-8 text-center">
-            <i data-lucide="message-circle-question" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
-            <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">Noch keine Fragen</p>
-            <p class="text-sm text-gray-500 dark:text-gray-400">Seien Sie die erste Person, die {{ person.display_name }} eine öffentliche Frage stellt.</p>
-        </div>
-        {% endif %}
     </div>
     {% endif %}
 
-    {# ── Tab: Informationen & Kontakt ── #}
-    <div x-show="tab === 'info'" x-cloak>
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-            <dl class="grid sm:grid-cols-2 gap-x-8 gap-y-4">
-                {% if person.given_name %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Vorname</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ person.given_name }}</dd>
-                </div>
-                {% endif %}
-                {% if person.family_name %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Nachname</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ person.family_name }}</dd>
-                </div>
-                {% endif %}
-                {% if person.title %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Titel</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ person.title }}</dd>
-                </div>
-                {% endif %}
-                {% if person.gender %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Geschlecht</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ person.gender }}</dd>
-                </div>
-                {% endif %}
-                {% if council_role %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Funktion im Rat</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white">{{ council_role }}</dd>
-                </div>
-                {% endif %}
-                {% if person.email %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">E-Mail</dt>
-                    <dd>
-                        <a href="mailto:{{ person.email }}" class="text-primary-600 dark:text-primary-400 hover:underline break-all">
-                            {{ person.email }}
+    {# ── Mitgliedschaften (gemeinsame Komponente) ── #}
+    <div {% if questions_tab %}x-show="tab === 'memberships'" x-cloak {% endif %}class="space-y-4">
+        {% include "components/ris/membership_list.html" with items=active_memberships title="Aktive Mitgliedschaften" empty_text="Keine aktiven Mitgliedschaften" link_type="organization" %}
+        {% include "components/ris/membership_list.html" with items=past_memberships title="Ehemalige Mitgliedschaften" link_type="organization" collapsible="1" show_end_date="1" %}
+    </div>
+
+        {# ── Tab: Fragen (Abgeordnetenwatch-Stil) — bei allen Mandatsträger:innen; pausiert nur mit bisherigen Fragen ── #}
+        {% if questions_tab %}
+        <div x-show="tab === 'questions'" x-cloak>
+            {% if not can_ask %}
+            {% include "components/questions_paused_notice.html" with extra_class="mb-4" %}
+            {% else %}
+            {# Header mit Stats + CTA #}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-4">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white mb-1">
+                            Öffentliche Fragen an {{ person.display_name }}
+                        </h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            {% if answer_stats.total > 0 %}
+                                {{ answer_stats.answered }} von {{ answer_stats.total }} Frage{{ answer_stats.total|pluralize:"n" }} beantwortet
+                                ({{ answer_stats.rate }} %){% if answer_stats.avg_response_days is not None %} &middot; Ø Antwort nach {{ answer_stats.avg_response_days }} Tagen{% endif %}
+                            {% else %}
+                                Noch keine Fragen gestellt
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <a href="{% url 'insight_core:insight:question_portal' %}?person={{ person.id }}"
+                           class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            Im Portal
                         </a>
-                    </dd>
-                </div>
-                {% endif %}
-                {% if person.phone %}
-                <div>
-                    <dt class="text-sm text-gray-500 dark:text-gray-400">Telefon</dt>
-                    <dd>
-                        <a href="tel:{{ person.phone }}" class="text-primary-600 dark:text-primary-400 hover:underline">
-                            {{ person.phone }}
+                        <a href="{% url 'insight_core:insight:ask_question' person.id %}"
+                           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+                            <i data-lucide="message-circle-question" class="w-4 h-4"></i>
+                            Frage stellen
                         </a>
-                    </dd>
+                    </div>
+                </div>
+                {% if answer_stats.total > 0 %}
+                <div class="mt-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div class="bg-green-500 h-2 rounded-full transition-all" style="width: {{ answer_stats.rate }}%"></div>
                 </div>
                 {% endif %}
-            </dl>
-            {% if not person.email and not person.phone and not person.gender and not person.title %}
-            <p class="text-gray-500 dark:text-gray-400 text-sm">Keine weiteren Informationen verfügbar.</p>
+            </div>
+            {% endif %}
+
+            {% if published_questions %}
+            <div class="space-y-3">
+                {% for q in published_questions %}
+                {% include "components/question_card.html" with q=q show_recipient=False %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-8 text-center">
+                <i data-lucide="message-circle-question" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
+                <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">Noch keine Fragen</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Seien Sie die erste Person, die {{ person.display_name }} eine öffentliche Frage stellt.</p>
+            </div>
             {% endif %}
         </div>
-    </div>
+        {% endif %}
+</div>
+
+{% include "pages/persons/_randspalte.html" %}
 </div>
 {% endblock %}

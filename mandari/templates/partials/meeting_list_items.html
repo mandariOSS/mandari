@@ -1,4 +1,10 @@
+{% load insight_listen %}
+{% comment %}
+Sitzungsliste (Issue #841): ab xl mit der Zahl der öffentlichen Tagesordnungspunkte. Spalten ohne einen einzigen Wert
+(etwa „Ort“, wenn die Quelle keine Orte nennt) entfallen.
+{% endcomment %}
 {% if meetings %}
+{% with sp_ort=meetings|hat_wert:"location_name" sp_tops=meetings|hat_wert:"anzahl_tops" %}
 <div class="-mx-3">
     <div class="overflow-x-auto">
     <table class="w-full">
@@ -7,8 +13,9 @@
                 <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Sitzung</th>
                 <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Datum</th>
                 <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Uhrzeit</th>
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Ort</th>
-                <th class="w-10 px-2 py-3"></th>
+                {% if sp_ort %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Ort</th>{% endif %}
+                {% if sp_tops %}<th class="text-right px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-xl:hidden">Tagesordnung</th>{% endif %}
+                <th class="w-10 px-2 py-3"><span class="sr-only">Merken</span></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
@@ -25,32 +32,27 @@
                         <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
                         {% endif %}
                     </div>
-                    <div class="sm:hidden text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                         {% if meeting.start %}{{ meeting.start|date:"d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% endif %}
                         {% if meeting.location_name %} &middot; {{ meeting.location_name }}{% endif %}
                     </div>
                 </td>
-                <td class="px-3 py-3.5 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
-                    {% if meeting.start %}
-                    <time datetime="{{ meeting.start|date:'Y-m-d' }}">{{ meeting.start|date:"d.m.Y" }}</time>
-                    {% else %}
-                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
-                    {% endif %}
+                <td class="px-3 py-3.5 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if meeting.start %}<time datetime="{{ meeting.start|date:'Y-m-d' }}">{{ meeting.start|date:"d.m.Y" }}</time>{% endif %}
                 </td>
-                <td class="px-3 py-3.5 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
-                    {% if meeting.start %}
-                    {{ meeting.start|date:"H:i" }} Uhr
-                    {% else %}
-                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
-                    {% endif %}
+                <td class="px-3 py-3.5 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if meeting.start %}{{ meeting.start|date:"H:i" }} Uhr{% endif %}
                 </td>
-                <td class="px-3 py-3.5 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                    {{ meeting.location_name|default:"—" }}
-                </td>
+                {% if sp_ort %}
+                <td class="px-3 py-3.5 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden">{{ meeting.location_name|default:"" }}</td>
+                {% endif %}
+                {% if sp_tops %}
+                <td class="px-3 py-3.5 text-sm text-right text-gray-600 dark:text-gray-400 max-xl:hidden whitespace-nowrap">{% if meeting.anzahl_tops %}{{ meeting.anzahl_tops }} Punkt{{ meeting.anzahl_tops|pluralize:"e" }}{% endif %}</td>
+                {% endif %}
                 <td class="px-2 py-3">
                     <div class="flex items-center gap-1">
                         {% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="sm" %}
-                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors" aria-hidden="true"></i>
                     </div>
                 </td>
             </tr>
@@ -59,39 +61,9 @@
     </table>
     </div>
 </div>
+{% endwith %}
 
-{% if page_obj.has_other_pages %}
-<nav class="mt-6 flex justify-center">
-    <ul class="flex items-center gap-1">
-        {% if page_obj.has_previous %}
-        <li>
-            <a href="?period={{ request.GET.period|default:'upcoming' }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}&page={{ page_obj.previous_page_number }}"
-               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                <i data-lucide="chevron-left" class="w-5 h-5"></i>
-            </a>
-        </li>
-        {% endif %}
-        {% for num in page_obj.paginator.page_range %}
-            {% if page_obj.number == num %}
-            <li><span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span></li>
-            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-            <li>
-                <a href="?period={{ request.GET.period|default:'upcoming' }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}&page={{ num }}"
-                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">{{ num }}</a>
-            </li>
-            {% endif %}
-        {% endfor %}
-        {% if page_obj.has_next %}
-        <li>
-            <a href="?period={{ request.GET.period|default:'upcoming' }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}&page={{ page_obj.next_page_number }}"
-               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                <i data-lucide="chevron-right" class="w-5 h-5"></i>
-            </a>
-        </li>
-        {% endif %}
-    </ul>
-</nav>
-{% endif %}
+{% include "partials/insight_seiten.html" %}
 
 {% else %}
 <div class="py-12 text-center">

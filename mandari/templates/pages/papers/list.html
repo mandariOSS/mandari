@@ -7,7 +7,7 @@
 <c-insight.kopfband titel="Vorgänge" text="{% if active_body %}Vorlagen, Anträge und Anfragen von {{ active_body.get_display_name }} mit Beratungsverlauf und Dokumenten.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">
     <!-- Filters -->
     <div class="mb-4">
-        <form method="get" class="flex flex-col sm:flex-row gap-3" id="paper-filter-form">
+        <form method="get" class="flex flex-col sm:flex-row gap-3 max-w-4xl" id="paper-filter-form">
             <div class="relative flex-1 min-w-0">
                 <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true"></i>
                 <label for="search-papers" class="sr-only">Vorgang suchen</label>

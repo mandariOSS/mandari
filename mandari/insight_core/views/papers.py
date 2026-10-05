@@ -85,6 +85,14 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
             description="Anträge, Vorlagen und Beschlüsse der Kommunalpolitik durchsuchen und nachvollziehen.",
             body=_body,
         ).to_dict()
+        # Stand je Vorgang aus dem Beratungsverlauf (Spalte „Stand“ auf breiten Bildschirmen, Issue #841)
+        from ..services.search_presentation import statuses_for_papers
+
+        papers = list(context["papers"])
+        staende = statuses_for_papers(str(p.pk) for p in papers)
+        for paper in papers:
+            paper.stand = staende.get(str(paper.pk))
+        context["papers"] = papers
         return context
 
 

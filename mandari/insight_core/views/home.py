@@ -6,6 +6,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import json
+from datetime import timedelta
 
 from django.http import HttpResponse
 from django.shortcuts import redirect
@@ -13,9 +14,12 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from ..models import (
+    OParlAgendaItem,
     OParlBody,
+    OParlConsultation,
     OParlMeeting,
     OParlPaper,
+    withdrawn_q,
 )
 from ..services import kommunenverzeichnis, portal_stats
 from ._helpers import get_active_body, is_all_bodies_mode
@@ -23,6 +27,53 @@ from ._helpers import get_active_body, is_all_bodies_mode
 # =============================================================================
 # Portal Homepage (RIS)
 # =============================================================================
+
+#: Dritte Liste der Übersicht: so viele Ergebnisse, aus Sitzungen höchstens so viele Tage zurück
+BESCHLUESSE_ANZAHL = 4
+BESCHLUESSE_TAGE = 180
+
+
+def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> list[OParlAgendaItem]:
+    """
+    Jüngste Ergebnisse öffentlicher Tagesordnungspunkte vergangener Sitzungen (Issue #841).
+
+    Nur Punkte mit Ergebnis aus nicht abgesagten, nicht zurückgenommenen Sitzungen der letzten Monate. Jeder Punkt
+    trägt als ``vorgang`` den beratenen Vorgang (für Titel und Link), sonst ``None``.
+    """
+    jetzt = timezone.now()
+    punkte = list(
+        OParlAgendaItem.objects.filter(
+            meeting__body=body,
+            meeting__deleted=False,
+            meeting__cancelled=False,
+            meeting__start__lt=jetzt,
+            meeting__start__gte=jetzt - timedelta(days=BESCHLUESSE_TAGE),
+            public=True,
+            deleted=False,
+        )
+        .exclude(result__isnull=True)
+        .exclude(result="")
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("meeting"))
+        .select_related("meeting")
+        .prefetch_related("meeting__organizations")
+        .order_by("-meeting__start", "order", "number")[:anzahl]
+    )
+    vorgaenge: dict[str, OParlPaper] = {}
+    if punkte:
+        beratungen = (
+            OParlConsultation.objects.filter(
+                agenda_item_external_id__in=[p.external_id for p in punkte], paper__isnull=False, paper__deleted=False
+            )
+            .exclude(withdrawn_q())
+            .exclude(withdrawn_q("paper"))
+            .select_related("paper")
+        )
+        for beratung in beratungen:
+            vorgaenge.setdefault(beratung.agenda_item_external_id, beratung.paper)
+    for punkt in punkte:
+        punkt.vorgang = vorgaenge.get(punkt.external_id)
+    return punkte
 
 
 class PortalHomeView(TemplateView):
@@ -84,6 +135,9 @@ class PortalHomeView(TemplateView):
             context["recent_papers"] = OParlPaper.objects.filter(body=body, deleted=False).order_by(
                 "-date", "-oparl_created"
             )[:5]
+
+            # Zuletzt beschlossen: dritte Spalte auf breiten Bildschirmen (Issue #841)
+            context["recent_decisions"] = zuletzt_beschlossen(body)
 
             # Stadtteile für Nachbarschafts-Schnellwahl
             import os

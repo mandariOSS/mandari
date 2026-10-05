@@ -7,7 +7,7 @@ titel_id/text_id (optional): Kennungen für Titel und Satz, etwa wenn HTMX sie o
 {% endcomment %}
 <c-vars titel="" text="" ton="grau" titel_id="" text_id="" />
 <section class="{% if ton == 'marke' %}bg-primary-100 dark:bg-primary-950{% else %}bg-band-grau{% endif %}" {{ attrs }}>
-    <div class="max-w-6xl px-4 sm:px-8 py-8 sm:py-10">
+    <div class="max-w-insight px-4 sm:px-8 py-8 sm:py-10">
         <h1 {% if titel_id %}id="{{ titel_id }}" {% endif %}class="text-[1.75rem] sm:text-[2.25rem] font-bold tracking-tight leading-tight text-gray-900 dark:text-white break-words">{{ titel }}</h1>
         {% if text or text_id %}<p {% if text_id %}id="{{ text_id }}" aria-live="polite" {% endif %}class="mt-2 max-w-2xl text-[1.0625rem] leading-relaxed text-gray-700 dark:text-gray-300">{{ text }}</p>{% endif %}
         {% if slot %}<div class="mt-6">{{ slot }}</div>{% endif %}

@@ -13,16 +13,17 @@ Name, Ortsteil oder Postleitzahl, in der Nähe oder über das Stöbern Land → 
 
 {% if hat_kommunen %}
 <c-insight.band aria-label="Kommune suchen">
-    <div class="max-w-3xl">
-        {% include "components/kommunen_wahl.html" with id="auswahl" stufe_start=stoebern_start %}
-    </div>
+    {% include "components/kommunen_wahl.html" with id="auswahl" stufe_start=stoebern_start %}
 </c-insight.band>
 
 <c-insight.band ton="grau" aria-labelledby="alle-kommunen-titel">
-    <div class="max-w-2xl">
-        <h2 id="alle-kommunen-titel" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">In allen Kommunen suchen</h2>
-        <p class="mt-2 text-[1rem] leading-relaxed text-gray-700 dark:text-gray-300">Ohne Festlegung auf eine Kommune: Vorgänge, Sitzungen und Dokumente aller angebundenen Kommunen durchsuchen.</p>
-        <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="mt-5 flex flex-col sm:flex-row gap-3">
+    {# Ab lg Satz links, Suchfeld rechts: das Band nutzt die Breite statt einer leeren rechten Hälfte (Issue #841) #}
+    <div class="grid gap-x-12 gap-y-5 lg:grid-cols-2 lg:items-end">
+        <div class="max-w-2xl">
+            <h2 id="alle-kommunen-titel" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">In allen Kommunen suchen</h2>
+            <p class="mt-2 text-[1rem] leading-relaxed text-gray-700 dark:text-gray-300">Ohne Festlegung auf eine Kommune: Vorgänge, Sitzungen und Dokumente aller angebundenen Kommunen durchsuchen.</p>
+        </div>
+        <form action="{% url 'insight_core:insight:search' %}" method="get" role="search" class="flex flex-col sm:flex-row gap-3 lg:max-w-2xl">
             <label for="alle-suche" class="sr-only">In allen Kommunen suchen</label>
             <input id="alle-suche" type="search" name="q" placeholder="Thema oder Straße" autocomplete="off"
                 class="h-12 w-full sm:w-auto sm:flex-1 min-w-0 px-4 rounded-lg bg-band-hell border border-gray-300 dark:border-gray-700 text-base text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
