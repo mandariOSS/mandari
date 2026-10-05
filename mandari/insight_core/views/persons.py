@@ -5,19 +5,19 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
-from django.db.models import OuterRef, Q, Subquery
+from django.db.models import Q
 from django.utils import timezone
 from django.views.generic import DetailView, ListView
 
 from apps.common.mixins import HTMXMixin
 
 from ..models import (
-    OParlMembership,
-    OParlOrganization,
+    OParlMeeting,
     OParlPerson,
     PublicQuestion,
     withdrawn_q,
 )
+from ..services import personen_liste
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -57,6 +57,12 @@ class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
             description="Ratsmitglieder und Beteiligte der Kommunalpolitik: Wer sitzt in welchem Gremium und trifft Entscheidungen?",
             body=get_active_body(self.request),
         ).to_dict()
+        # Fraktion, Funktion und Gremien aus den laufenden Mitgliedschaften (Issue #841), eine Abfrage je Seite
+        persons = list(context["persons"])
+        angaben = personen_liste.angaben_fuer(persons)
+        for person in persons:
+            person.angaben = angaben.get(person.pk) or personen_liste.PersonAngaben()
+        context["persons"] = persons
         return context
 
     def get_queryset(self):
@@ -64,23 +70,7 @@ class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
         if not body:
             return OParlPerson.objects.none()
 
-        today = timezone.now().date()
-
         qs = OParlPerson.objects.filter(body=body, deleted=False).select_related("body")
-
-        # Ratsrolle als Annotation (falls vorhanden)
-        rat = OParlOrganization.objects.filter(body=body, name="Rat").first()
-        if rat:
-            council_role_sq = Subquery(
-                OParlMembership.objects.filter(
-                    person=OuterRef("pk"),
-                    organization=rat,
-                    role__in=COUNCIL_ROLES,
-                )
-                .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
-                .values("role")[:1]
-            )
-            qs = qs.annotate(council_role=council_role_sq)
 
         # Suche (Name + Funktion/Gremium über Mitgliedschaften)
         q = self.request.GET.get("q", "").strip()
@@ -116,9 +106,12 @@ class PersonDetailView(DetailView):
         person = self.object
         today = timezone.now().date()
 
-        # Nur bestehende Mitgliedschaften in nicht zurückgenommenen Gremien
+        # Nur bestehende Mitgliedschaften in bestehenden, nicht zurückgenommenen Gremien (gelöschte Fraktionen
+        # erschienen sonst als laufende Mitgliedschaft, Prüfung #848)
         all_memberships = (
-            person.memberships.filter(deleted=False).exclude(withdrawn_q("organization")).select_related("organization")
+            person.memberships.filter(deleted=False, organization__deleted=False)
+            .exclude(withdrawn_q("organization"))
+            .select_related("organization")
         )
         context["active_memberships"] = all_memberships.filter(
             Q(end_date__isnull=True) | Q(end_date__gte=today)
@@ -135,6 +128,24 @@ class PersonDetailView(DetailView):
             .first()
         )
         context["council_role"] = council_membership.role if council_membership else None
+        # Wichtigste laufende Rolle für den Kopf (wie die Personenliste, Issue #841)
+        context["funktion"] = personen_liste.funktion_aus(context["active_memberships"])
+        # Randspalte: nächste Sitzungen der Gremien der Person – nichts, was Kopf oder Liste schon zeigen
+        context["naechste_sitzungen"] = list(
+            OParlMeeting.objects.filter(
+                organizations__in=[m.organization_id for m in context["active_memberships"]],
+                start__gte=timezone.now(),
+                cancelled=False,
+                deleted=False,
+            )
+            .exclude(withdrawn_q())
+            .prefetch_related("organizations")
+            .distinct()
+            .order_by("start")[:3]
+        )
+        context["hat_randspalte"] = bool(
+            person.email or person.phone or person.title or person.gender or context["naechste_sitzungen"]
+        )
 
         # Öffentliche Fragen (bei allen Mandatsträger:innen: Rat/Hauptorgan oder Fraktion). Pausiert
         # (Issue #734): Reiter nur mit bisherigen Fragen, ohne Antwortquote und ohne „Frage stellen“.

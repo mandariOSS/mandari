@@ -7,10 +7,11 @@ paper_type, sort). Work bindet die Leiste später mit vollem Umfang ein (P1.12).
 Parameter: zeitraum, art (Optionen für c-suche.facette), sortierung (Liste von {value, label, checked}).
 {% endcomment %}
 <c-vars zeitraum="" art="" sortierung="" />
-<div class="mt-4 flex flex-wrap items-center gap-3">
+<div class="mt-4 flex flex-wrap items-center gap-3 2xl:mt-0 2xl:flex-col 2xl:items-start">
     <c-suche.facette titel="Zeitraum" name="period" typ="radio" :optionen="zeitraum" />
     {% if art %}<c-suche.facette titel="Art" name="paper_type" typ="checkbox" :optionen="art" />{% endif %}
-    <div class="ml-auto flex items-center gap-2">
+    {# Sortierung direkt neben den Filtern, nicht am fernen rechten Rand (Issue #841) #}
+    <div class="flex items-center gap-2">
         <label for="suche-sortierung" class="text-sm text-gray-700 dark:text-gray-300">Sortieren</label>
         <select id="suche-sortierung" name="sort" form="suche-form"
                 hx-get="{% url 'insight_core:insight:search' %}" hx-trigger="change" hx-target="#suchergebnis" hx-push-url="true"

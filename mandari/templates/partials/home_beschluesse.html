@@ -1,0 +1,26 @@
+{% comment %}
+Dritte Liste der Übersicht (Issue #841): jüngste Beschlüsse öffentlicher Tagesordnungspunkte mit Vorgang und Gremium
+(views/home.py, zuletzt_beschlossen; ohne Vertagungen und Kenntnisnahmen). Unter 1.600 px steht sie über beide Spalten mit zweispaltiger Liste, ab 1.600 px als dritte Spalte.
+Linien nur zwischen Einträgen derselben Spalte.
+{% endcomment %}
+<section aria-labelledby="zuletzt-beschlossen" class="lg:col-span-2 min-[1600px]:col-span-1">
+    <div class="flex items-baseline justify-between gap-4">
+        <h2 id="zuletzt-beschlossen" class="text-[1.375rem] font-bold tracking-tight text-gray-900 dark:text-white">Zuletzt beschlossen</h2>
+        <a href="{% url 'insight_core:insight:meeting_list' %}?period=past" class="shrink-0 text-[0.95rem] font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline">Vergangene Sitzungen</a>
+    </div>
+    <ul class="mt-4 lg:grid lg:grid-cols-2 lg:gap-x-12 min-[1600px]:block [&>li+li]:border-t lg:[&>li:nth-child(2)]:border-t-0 min-[1600px]:[&>li:nth-child(2)]:border-t [&>li]:border-gray-200 dark:[&>li]:border-gray-800">
+        {% for item in recent_decisions %}
+        <li>
+            <a href="{% if item.vorgang %}{% url 'insight_core:insight:paper_detail' item.vorgang.pk %}{% else %}{% url 'insight_core:insight:meeting_detail' item.meeting.pk %}{% endif %}" class="group grid grid-cols-[6.5rem_minmax(0,1fr)] gap-4 py-4">
+                <span class="text-[0.95rem] text-gray-900 dark:text-gray-100">
+                    <time datetime="{{ item.meeting.start|date:'c' }}" class="font-semibold">{{ item.meeting.start|date:"D, d.m." }}</time>
+                </span>
+                <span class="min-w-0">
+                    <span class="block font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{% if item.vorgang.name %}{{ item.vorgang.name|truncatechars:140 }}{% else %}{{ item.name|default:"Tagesordnungspunkt"|truncatechars:140 }}{% endif %}</span>
+                    <span class="block mt-0.5 text-[0.9rem] text-gray-600 dark:text-gray-400 break-words">{{ item.result|truncatechars:80 }}{% if item.gremium %} · {{ item.gremium }}{% endif %}</span>
+                </span>
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</section>

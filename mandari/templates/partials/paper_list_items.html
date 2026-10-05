@@ -1,14 +1,21 @@
+{% load insight_listen %}
+{% comment %}
+Vorgangsliste (Issue #841): ab 2xl mit dem Stand aus dem Beratungsverlauf (wie Vorgangsseite und Suche,
+services/search_presentation.statuses_for_papers). Spalten ohne einen einzigen Wert entfallen.
+{% endcomment %}
 {% if papers %}
+{% with sp_nr=papers|hat_wert:"reference" sp_typ=papers|hat_wert:"paper_type" sp_datum=papers|hat_wert:"date" sp_stand=papers|hat_wert:"stand.text" %}
 <div class="-mx-3">
-    <div class="overflow-x-auto">
+    <div class="relative overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="border-b border-gray-300 dark:border-gray-700">
                 <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Vorgang</th>
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Vorlagen-Nr.</th>
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Typ</th>
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Datum</th>
-                <th class="w-10 px-2 py-3"></th>
+                {% if sp_nr %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Vorlagen-Nr.</th>{% endif %}
+                {% if sp_typ %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Typ</th>{% endif %}
+                {% if sp_datum %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Datum</th>{% endif %}
+                {% if sp_stand %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-2xl:hidden">Stand</th>{% endif %}
+                <th class="w-10 px-2 py-3"><span class="sr-only">Merken</span></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
@@ -20,33 +27,39 @@
                        class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
                         {{ paper.name|default:"Vorgang" }}
                     </a>
-                    <div class="sm:hidden text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                         {% if paper.reference %}<span class="font-mono">{{ paper.reference }}</span>{% endif %}
                         {% if paper.reference and paper.paper_type %} &middot; {% endif %}
                         {% if paper.paper_type %}{{ paper.paper_type }}{% endif %}
                     </div>
                 </td>
-                <td class="px-3 py-3.5 text-sm max-sm:hidden">
-                    {% if paper.reference %}
-                    <span class="font-mono text-gray-500 dark:text-gray-400">{{ paper.reference }}</span>
-                    {% else %}
-                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                {% if sp_nr %}
+                <td class="px-3 py-3.5 text-sm max-sm:hidden whitespace-nowrap">
+                    {% if paper.reference %}<span class="font-mono text-gray-600 dark:text-gray-400">{{ paper.reference }}</span>{% endif %}
+                </td>
+                {% endif %}
+                {% if sp_typ %}
+                <td class="px-3 py-3.5 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden">{{ paper.paper_type|default:"" }}</td>
+                {% endif %}
+                {% if sp_datum %}
+                <td class="px-3 py-3.5 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if paper.date %}<time datetime="{{ paper.date|date:'Y-m-d' }}">{{ paper.date|date:"d.m.Y" }}</time>{% endif %}
+                </td>
+                {% endif %}
+                {% if sp_stand %}
+                <td class="px-3 py-3.5 text-sm text-gray-700 dark:text-gray-300 max-2xl:hidden w-[26rem]">
+                    {% if paper.stand %}
+                    <span class="flex items-baseline gap-2">
+                        <span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if paper.stand.kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif paper.stand.kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>
+                        <span>{{ paper.stand.text }}</span>
+                    </span>
                     {% endif %}
                 </td>
-                <td class="px-3 py-3.5 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                    {{ paper.paper_type|default:"—" }}
-                </td>
-                <td class="px-3 py-3.5 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
-                    {% if paper.date %}
-                    <time datetime="{{ paper.date|date:'Y-m-d' }}">{{ paper.date|date:"d.m.Y" }}</time>
-                    {% else %}
-                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
-                    {% endif %}
-                </td>
+                {% endif %}
                 <td class="px-2 py-3">
                     <div class="flex items-center gap-1">
                         {% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="sm" %}
-                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors" aria-hidden="true"></i>
                     </div>
                 </td>
             </tr>
@@ -55,39 +68,9 @@
     </table>
     </div>
 </div>
+{% endwith %}
 
-{% if page_obj.has_other_pages %}
-<nav class="mt-6 flex justify-center">
-    <ul class="flex items-center gap-1">
-        {% if page_obj.has_previous %}
-        <li>
-            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.type %}type={{ request.GET.type }}&{% endif %}page={{ page_obj.previous_page_number }}"
-               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                <i data-lucide="chevron-left" class="w-5 h-5"></i>
-            </a>
-        </li>
-        {% endif %}
-        {% for num in page_obj.paginator.page_range %}
-            {% if page_obj.number == num %}
-            <li><span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span></li>
-            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-            <li>
-                <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.type %}type={{ request.GET.type }}&{% endif %}page={{ num }}"
-                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">{{ num }}</a>
-            </li>
-            {% endif %}
-        {% endfor %}
-        {% if page_obj.has_next %}
-        <li>
-            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.type %}type={{ request.GET.type }}&{% endif %}page={{ page_obj.next_page_number }}"
-               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                <i data-lucide="chevron-right" class="w-5 h-5"></i>
-            </a>
-        </li>
-        {% endif %}
-    </ul>
-</nav>
-{% endif %}
+{% include "partials/insight_seiten.html" %}
 
 {% else %}
 <div class="py-12 text-center">

@@ -1,6 +1,6 @@
 {# Namensnennung der Quellen des Kommunenverzeichnisses (Issue #783), nur wenn es aus einer Datei importiert ist #}
 {% if kommunenverzeichnis_quellen %}
-<p class="mt-8 text-[0.8125rem] leading-relaxed text-gray-600 dark:text-gray-400" data-testid="kommunen-quellen">
+<p class="mt-8 max-w-4xl text-[0.8125rem] leading-relaxed text-gray-600 dark:text-gray-400" data-testid="kommunen-quellen">
     Verzeichnis der Kommunen:
     {% for quelle in kommunenverzeichnis_quellen %}<a href="{{ quelle.url }}" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-gray-900 dark:hover:text-white">{{ quelle.name }}</a>, <a href="{{ quelle.lizenz_url }}" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-gray-900 dark:hover:text-white">{{ quelle.lizenz }}</a>{% if not forloop.last %}; {% endif %}{% endfor %}.
 </p>

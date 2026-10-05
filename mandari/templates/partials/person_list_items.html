@@ -1,13 +1,22 @@
+{% load insight_listen %}
+{% comment %}
+Personenliste (Issue #841): Fraktion, Funktion und Gremien kommen aus den laufenden Mitgliedschaften
+(insight_core/services/personen_liste.py). Spalten erscheinen nur, wenn mindestens eine Person einen Wert hat;
+die Gremien erst auf breiten Bildschirmen (2xl), am Handy stehen Funktion und Fraktion unter dem Namen.
+{% endcomment %}
 {% if persons %}
+{% with sp_fraktion=persons|hat_wert:"angaben.fraktion" sp_funktion=persons|hat_wert:"angaben.funktion" sp_gremien=persons|hat_wert:"angaben.gremien" sp_kontakt=persons|hat_wert:"email" %}
 <div class="-mx-3">
-    <div class="overflow-x-auto">
+    <div class="relative overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="border-b border-gray-300 dark:border-gray-700">
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Name</th>
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Funktion</th>
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Kontakt</th>
-                <th class="w-10 px-2 py-3"></th>
+                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 xl:min-w-[14rem]">Name</th>
+                {% if sp_fraktion %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-md:hidden">Fraktion</th>{% endif %}
+                {% if sp_funktion %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Funktion</th>{% endif %}
+                {% if sp_gremien %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-2xl:hidden">Gremien</th>{% endif %}
+                {% if sp_kontakt %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-xl:hidden">Kontakt</th>{% endif %}
+                <th class="w-10 px-2 py-3"><span class="sr-only">Merken</span></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
@@ -17,33 +26,39 @@
                 <td class="px-3 py-3.5">
                     <div class="flex items-center gap-3">
                         {% include "components/person_avatar.html" with person=person size="sm" %}
-                        <div>
+                        <div class="min-w-0">
                             <a href="{% url 'insight_core:insight:person_detail' person.id %}"
                                class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
                                 {{ person.display_name }}
                             </a>
-                            {% if person.council_role %}
-                            <p class="text-sm text-gray-500 dark:text-gray-400 sm:hidden">{{ person.council_role }}</p>
+                            {% if person.angaben.funktion or person.angaben.fraktion %}
+                            <p class="text-sm text-gray-600 dark:text-gray-400 md:hidden">
+                                {% if person.angaben.funktion %}<span class="sm:hidden">{{ person.angaben.funktion }}</span>{% endif %}{% if person.angaben.funktion and person.angaben.fraktion %}<span class="sm:hidden" aria-hidden="true"> · </span>{% endif %}{% if person.angaben.fraktion %}<span>{{ person.angaben.fraktion.short_name|default:person.angaben.fraktion.name }}</span>{% endif %}
+                            </p>
                             {% endif %}
                         </div>
                     </div>
                 </td>
-                <td class="px-3 py-3.5 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                    {{ person.council_role|default:"—" }}
-                </td>
-                <td class="px-3 py-3.5 max-sm:hidden">
+                {% if sp_fraktion %}
+                <td class="px-3 py-3.5 text-sm text-gray-700 dark:text-gray-300 max-md:hidden">{% if person.angaben.fraktion %}{{ person.angaben.fraktion.short_name|default:person.angaben.fraktion.name }}{% endif %}</td>
+                {% endif %}
+                {% if sp_funktion %}
+                <td class="px-3 py-3.5 text-sm text-gray-700 dark:text-gray-300 max-sm:hidden">{{ person.angaben.funktion }}</td>
+                {% endif %}
+                {% if sp_gremien %}
+                <td class="px-3 py-3.5 text-sm text-gray-600 dark:text-gray-400 max-2xl:hidden">{{ person.angaben.gremien_kurz }}</td>
+                {% endif %}
+                {% if sp_kontakt %}
+                <td class="px-3 py-3.5 max-xl:hidden">
                     {% if person.email %}
-                    <a href="mailto:{{ person.email }}" class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
-                        {{ person.email }}
-                    </a>
-                    {% else %}
-                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    <a href="mailto:{{ person.email }}" class="text-sm text-primary-700 dark:text-primary-300 hover:underline break-all">{{ person.email }}</a>
                     {% endif %}
                 </td>
+                {% endif %}
                 <td class="px-2 py-3">
                     <div class="flex items-center gap-1">
                         {% include "components/bookmark_star.html" with entity_type="person" entity_id=person.id size="sm" %}
-                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors" aria-hidden="true"></i>
                     </div>
                 </td>
             </tr>
@@ -52,39 +67,9 @@
     </table>
     </div>
 </div>
+{% endwith %}
 
-{% if page_obj.has_other_pages %}
-<nav class="mt-6 flex justify-center">
-    <ul class="flex items-center gap-1">
-        {% if page_obj.has_previous %}
-        <li>
-            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}page={{ page_obj.previous_page_number }}"
-               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                <i data-lucide="chevron-left" class="w-5 h-5"></i>
-            </a>
-        </li>
-        {% endif %}
-        {% for num in page_obj.paginator.page_range %}
-            {% if page_obj.number == num %}
-            <li><span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span></li>
-            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-            <li>
-                <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}page={{ num }}"
-                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">{{ num }}</a>
-            </li>
-            {% endif %}
-        {% endfor %}
-        {% if page_obj.has_next %}
-        <li>
-            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}page={{ page_obj.next_page_number }}"
-               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                <i data-lucide="chevron-right" class="w-5 h-5"></i>
-            </a>
-        </li>
-        {% endif %}
-    </ul>
-</nav>
-{% endif %}
+{% include "partials/insight_seiten.html" %}
 
 {% else %}
 <div class="py-12 text-center">

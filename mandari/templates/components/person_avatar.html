@@ -11,11 +11,11 @@
          loading="lazy"
          referrerpolicy="no-referrer">
     <div x-show="imgError" x-cloak
-         class="w-full h-full flex items-center justify-center {% if size == 'lg' %}text-xl{% elif size == 'md' %}text-sm{% elif size == 'xs' %}text-[9px]{% else %}text-xs{% endif %} font-semibold text-gray-400 dark:text-gray-500">
+         class="w-full h-full flex items-center justify-center {% if size == 'lg' %}text-xl{% elif size == 'md' %}text-sm{% elif size == 'xs' %}text-[9px]{% else %}text-xs{% endif %} font-semibold text-gray-600 dark:text-gray-300" aria-hidden="true">
         {{ person.initials }}
     </div>
     {% else %}
-    <div class="w-full h-full flex items-center justify-center {% if size == 'lg' %}text-xl{% elif size == 'md' %}text-sm{% elif size == 'xs' %}text-[9px]{% else %}text-xs{% endif %} font-semibold text-gray-400 dark:text-gray-500">
+    <div class="w-full h-full flex items-center justify-center {% if size == 'lg' %}text-xl{% elif size == 'md' %}text-sm{% elif size == 'xs' %}text-[9px]{% else %}text-xs{% endif %} font-semibold text-gray-600 dark:text-gray-300" aria-hidden="true">
         {{ person.initials }}
     </div>
     {% endif %}

@@ -26,6 +26,12 @@ module.exports = {
           tinte: 'rgb(var(--band-tinte) / <alpha-value>)',
         },
       },
+      // Bürgerportal auf breiten Bildschirmen (Issue #841): Inhalt fließt bis 116rem (1.856 px samt Rand), darüber
+      // bleibt er links an der Seitenleiste. Ab 1.600 px Fenster (min-[1600px]:) trägt die Übersicht drei Spalten;
+      // bewusst kein eigener Bildschirm „3xl“, der würde .container in Admin und Work mitverbreitern.
+      maxWidth: {
+        insight: '116rem',
+      },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
       },

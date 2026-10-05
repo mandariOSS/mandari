@@ -6,27 +6,98 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import json
+from datetime import timedelta
 
+from django.db.models import OuterRef, Q, Subquery
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.views.generic import TemplateView
 
 from ..models import (
+    OParlAgendaItem,
     OParlBody,
+    OParlConsultation,
     OParlMeeting,
+    OParlOrganization,
     OParlPaper,
+    withdrawn_q,
 )
-from ..services import kommunenverzeichnis, portal_stats
+from ..services import kommunenverzeichnis
+from ..services.paper_status import ENTSCHEIDUNG, KEINE_ENTSCHEIDUNG, ist_beschluss
 from ._helpers import get_active_body, is_all_bodies_mode
 
 # =============================================================================
 # Portal Homepage (RIS)
 # =============================================================================
 
+#: Dritte Liste der Übersicht: so viele Ergebnisse, aus Sitzungen höchstens so viele Tage zurück
+BESCHLUESSE_ANZAHL = 4
+BESCHLUESSE_TAGE = 180
+
+
+def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> list[OParlAgendaItem]:
+    """
+    Jüngste Beschlüsse öffentlicher Tagesordnungspunkte vergangener Sitzungen (Issue #841).
+
+    Nur Punkte mit einem Ergebnis, das eine Entscheidung ist – „vertagt“, „zur Kenntnis genommen“ und ähnliche
+    (``paper_status.ist_beschluss``) bleiben außen vor –, aus nicht abgesagten, nicht zurückgenommenen Sitzungen der
+    letzten Monate. Zwei Abfragen: die Punkte (Gremium als Unterabfrage über die indizierte Zuordnung Sitzung–Gremium)
+    und danach die Beratungen dieser Punkte (``agenda_item_external_id__in``, wie die Sitzungsseite) für den Vorgang.
+    Jeder Punkt trägt ``vorgang`` (beratener Vorgang oder ``None``) und ``gremium``.
+    """
+    jetzt = timezone.now()
+    gremien = OParlOrganization.objects.filter(meetings=OuterRef("meeting_id")).order_by("name")
+    # Kenntnisnahmen, Antworten und Vertagungen ohne Entscheidungswort schon in der Abfrage aussortieren: Auch nach
+    # vielen Kenntnisnahmen erscheinen so bis zu ``anzahl`` Beschlüsse (Feinprüfung danach mit ist_beschluss)
+    keine = Q()
+    for wort in (*KEINE_ENTSCHEIDUNG, "vertagt", "zurückgestellt", "abgesetzt", "verschoben"):
+        keine |= Q(result__icontains=wort)
+    entscheidung = Q()
+    for wort in ENTSCHEIDUNG:
+        entscheidung |= Q(result__icontains=wort)
+    ohne_entscheidung = keine & ~entscheidung
+    kandidaten = (
+        OParlAgendaItem.objects.filter(
+            meeting__body=body,
+            meeting__deleted=False,
+            meeting__cancelled=False,
+            meeting__start__lt=jetzt,
+            meeting__start__gte=jetzt - timedelta(days=BESCHLUESSE_TAGE),
+            public=True,
+            deleted=False,
+        )
+        .exclude(result__isnull=True)
+        .exclude(result="")
+        .exclude(ohne_entscheidung)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("meeting"))
+        .annotate(gremium=Subquery(gremien.values("name")[:1]))
+        .select_related("meeting")
+        .order_by("-meeting__start", "order", "number")
+    )
+    # Etwas mehr laden, als gezeigt wird: seltene Schreibweisen fallen erst bei der Feinprüfung heraus
+    punkte = [punkt for punkt in kandidaten[: anzahl * 8] if ist_beschluss(punkt.result)][:anzahl]
+    vorgaenge: dict[str, OParlPaper] = {}
+    if punkte:
+        beratungen = (
+            OParlConsultation.objects.filter(
+                agenda_item_external_id__in=[p.external_id for p in punkte], paper__isnull=False, paper__deleted=False
+            )
+            .exclude(withdrawn_q())
+            .exclude(withdrawn_q("paper"))
+            .select_related("paper")
+            .order_by("pk")
+        )
+        for beratung in beratungen:
+            vorgaenge.setdefault(str(beratung.agenda_item_external_id), beratung.paper)
+    for punkt in punkte:
+        punkt.vorgang = vorgaenge.get(punkt.external_id)
+    return punkte
+
 
 class PortalHomeView(TemplateView):
-    """Portal-Startseite mit Kommune-Auswahl und Statistiken."""
+    """Portal-Startseite: Kommunenauswahl bzw. Übersicht der Kommune mit Sitzungen, Vorgängen und Beschlüssen."""
 
     template_name = "pages/portal/home.html"
     select_template_name = "pages/portal/select_body.html"
@@ -70,9 +141,6 @@ class PortalHomeView(TemplateView):
             context["recent_papers"] = None
 
         elif body:
-            # Statistiken für die aktive Kommune (aus dem Cache)
-            context["stats"] = portal_stats.body_stats(body)
-
             # Nächste Sitzungen (5 für einheitliche Listen)
             context["upcoming_meetings"] = (
                 OParlMeeting.objects.filter(body=body, start__gte=timezone.now(), cancelled=False, deleted=False)
@@ -84,6 +152,9 @@ class PortalHomeView(TemplateView):
             context["recent_papers"] = OParlPaper.objects.filter(body=body, deleted=False).order_by(
                 "-date", "-oparl_created"
             )[:5]
+
+            # Zuletzt beschlossen: dritte Spalte auf breiten Bildschirmen (Issue #841)
+            context["recent_decisions"] = zuletzt_beschlossen(body)
 
             # Stadtteile für Nachbarschafts-Schnellwahl
             import os
