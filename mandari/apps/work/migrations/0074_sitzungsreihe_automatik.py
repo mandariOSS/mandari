@@ -48,7 +48,7 @@ def bestand_uebernehmen(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("work", "0069_ris_anker"),
+        ("work", "0072_nichtoeffentliche_vorgaenge"),
     ]
 
     operations = [
@@ -148,6 +148,8 @@ class Migration(migrations.Migration):
                     ("certificate_issued", "Teilnahmenachweis ausgestellt"),
                     ("attendance_exported", "Teilnahmen-Sammel-Export erstellt"),
                     ("api_settings_changed", "Öffentliche API konfiguriert"),
+                    ("internal_document_stored", "Nichtöffentliche Unterlage abgelegt"),
+                    ("internal_document_access", "Nichtöffentliche Unterlage aufgerufen"),
                     (
                         "agenda_reminder_sent",
                         "Erinnerung zum Eintragen von TOPs versandt",
