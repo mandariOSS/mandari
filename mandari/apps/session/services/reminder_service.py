@@ -26,7 +26,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.common.email import send_email
+from apps.common import mail
 from apps.session.services import joint_meeting_service
 from apps.session.services.staff_recipients import StaffRecipients
 from apps.session.visibility import agenda_item_visible, paper_visible
@@ -71,7 +71,7 @@ def _send(tenant, kind, dedup_key, recipients, subject, body, *, dry_run=False) 
         return True
     if not _claim(tenant, kind, dedup_key, recipients):
         return False
-    ok = send_email(subject=subject, body=body, to=recipients, fail_silently=True)
+    ok = mail.send(kind="session.frist", subject=subject, body=body, to=recipients, fail_silently=True)
     if not ok:
         logger.warning("Erinnerung %s (%s) konnte nicht versendet werden.", kind, dedup_key)
     return ok

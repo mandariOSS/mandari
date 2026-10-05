@@ -16,7 +16,7 @@ from django.core.cache import cache
 from django.core.mail import EmailMessage
 from django.core.mail.backends.smtp import EmailBackend as SMTPEmailBackend
 
-from apps.common import email as email_modul
+from apps.common import mail
 from apps.common.email_backend import SiteSettingsEmailBackend
 from apps.common.mail_backends import SMTP_BACKEND, build_backend, send_with, smtp_options
 
@@ -81,7 +81,7 @@ def test_send_email_ueber_sitesettings_smtp(settings: Any, monkeypatch: pytest.M
 
     monkeypatch.setattr(SMTPEmailBackend, "send_messages", merken)
 
-    assert email_modul.send_email("Betreff", "Text", ["ziel@example.org"]) is True
+    assert mail.send(kind="test", subject="Betreff", body="Text", to=["ziel@example.org"]) is True
     assert len(gesendet) == 1 and gesendet[0].to == ["ziel@example.org"]
 
 

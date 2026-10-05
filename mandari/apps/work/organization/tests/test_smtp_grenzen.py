@@ -14,7 +14,8 @@ from typing import Any
 
 import pytest
 
-from apps.common.org_email import OrgMailError, get_organization_connection
+from apps.common.mail.config import organization_backend
+from apps.common.org_email import OrgMailError
 from apps.work.organization import services
 from apps.work.organization.services import ServiceError
 
@@ -110,7 +111,7 @@ def test_versand_verbindet_nicht_ins_interne_netz(org: Any, oeffentliche_aufloes
     org.smtp_port = 587
     org.save()
 
-    verbindung: Any = get_organization_connection
+    verbindung: Any = organization_backend
     with pytest.raises(OrgMailError):
         verbindung(org)
 

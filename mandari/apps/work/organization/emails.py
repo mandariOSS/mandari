@@ -2,8 +2,9 @@
 """
 Zugangs-Mails einer Organisation: Einladungen, Gastzugänge, Selbstregistrierung und Freischaltung.
 
-Versand über den Weg, den die Organisation in den E-Mail-Einstellungen gewählt hat
-(:func:`apps.common.org_email.send_org_email`): eigenes SMTP, sonst der mandari-Standardversand.
+Versand über den Mail-Dienst (``apps.common.mail``) auf dem Weg, den die Organisation in den
+E-Mail-Einstellungen gewählt hat: eigenes SMTP, sonst der mandari-Standardversand. Mailart
+``work.zugang.<vorlage>``.
 Links, mit denen sich ein Passwort setzen lässt, gehen immer über mandari. Antworten landen bei der
 Kontaktadresse der Organisation, sofern hinterlegt. Jede Mail geht an genau eine Adresse, damit
 Empfänger einander nicht sehen. Ein Versandfehler bricht den fachlichen Ablauf nie ab – er wird
@@ -21,8 +22,8 @@ from django.urls import reverse
 
 from apps.accounts.orphaned_accounts import ABGELEHNT_TAGE
 from apps.accounts.two_factor_policy import two_factor_required
-from apps.common.email import render_email, send_email
-from apps.common.org_email import send_org_email
+from apps.common import mail
+from apps.common.email import render_email
 
 if TYPE_CHECKING:
     from apps.accounts.models import User
@@ -63,18 +64,16 @@ def send_organization_mail(
         reply_to = [organization.contact_email]
     try:
         html_body, text_body = render_email(f"{TEMPLATE_DIR}/{template}", {"organization": organization, **context})
-        if via_organization:
-            return send_org_email(
-                organization,
-                subject=subject,
-                body=text_body,
-                html_body=html_body,
-                to=[to],
-                reply_to=reply_to,
-                fail_silently=True,
-            )
-        return send_email(
-            subject=subject, body=text_body, to=[to], html_body=html_body, reply_to=reply_to, fail_silently=True
+        return mail.send(
+            kind=f"work.zugang.{template.removesuffix('.html')}",
+            subject=subject,
+            body=text_body,
+            html_body=html_body,
+            to=[to],
+            reply_to=reply_to,
+            organization=organization,
+            via_organization=via_organization,
+            fail_silently=True,
         )
     except Exception:  # noqa: BLE001 – der Versand darf den fachlichen Ablauf nicht abbrechen
         logger.exception("Mail %s der Organisation %s konnte nicht versendet werden", template, organization.slug)

@@ -362,7 +362,7 @@ def alarm_text(alarme: list[Befund], befunde: list[Befund]) -> str:
 
 def sende_alarme(befunde: list[Befund], *, dry_run: bool = False) -> list[Befund]:
     """Verschickt eine Sammelmail für alle fälligen Alarme; Rückgabe: die gemeldeten Befunde."""
-    from apps.common.email import send_email
+    from apps.common import mail
     from insight_core.services.source_health import get_alert_emails
 
     alarme = faellige_alarme(befunde, dry_run=dry_run)
@@ -372,7 +372,8 @@ def sende_alarme(befunde: list[Befund], *, dry_run: bool = False) -> list[Befund
     if not empfaenger:
         logger.warning("Service-Level-Alarm ohne Empfänger (INSIGHT_ALERT_EMAILS leer): %s", [b.key for b in alarme])
         return alarme
-    send_email(
+    mail.send(
+        kind="betrieb.alarm",
         subject=f"[mandari] Service-Level-Alarm: {len(alarme)} Befund(e)",
         body=alarm_text(alarme, befunde),
         to=empfaenger,

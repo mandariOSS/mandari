@@ -142,7 +142,7 @@ class TestMail:
         def kaputt(*args: Any, **kwargs: Any) -> bool:
             raise ConnectionError("SMTP nicht erreichbar")
 
-        monkeypatch.setattr("apps.common.email.send_email", kaputt)
+        monkeypatch.setattr("apps.common.mail.delivery.send_with", kaputt)
         user = make_user()
         with django_capture_on_commit_callbacks(execute=True):
             assert PasswordService.change_password(user, PASSWORD, NEW_PASSWORD)[0]

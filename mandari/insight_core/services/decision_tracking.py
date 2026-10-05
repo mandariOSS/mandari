@@ -20,9 +20,9 @@ import logging
 from typing import Any
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.utils import timezone
 
+from apps.common import mail
 from apps.common.email import render_email
 
 logger = logging.getLogger(__name__)
@@ -185,23 +185,22 @@ def public_url(item) -> str:
 # =============================================================================
 
 
-def _from_email() -> str:
-    return getattr(settings, "INSIGHT_DIGEST_FROM_EMAIL", "") or getattr(
-        settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"
-    )
+def _from_email() -> str | None:
+    """Eigener Absender der Abo-Mails; ohne Angabe der Absender der Plattform."""
+    return getattr(settings, "INSIGHT_DIGEST_FROM_EMAIL", "") or None
 
 
 def _send(subject: str, template: str, context: dict, recipient: str) -> bool:
     try:
         html_message, text_message = render_email(template, context)
-        send_mail(
+        return mail.send(
+            kind="insight.beschluss",
             subject=subject,
-            message=text_message,
+            body=text_message,
+            html_body=html_message,
             from_email=_from_email(),
-            recipient_list=[recipient],
-            html_message=html_message,
+            to=[recipient],
         )
-        return True
     except Exception as exc:  # Mailfehler dürfen die Seite nicht brechen
         logger.warning("Beschluss-Abo-Mail an %s fehlgeschlagen: %s", recipient, exc)
         return False

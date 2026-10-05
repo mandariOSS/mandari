@@ -12,10 +12,10 @@ import logging
 from typing import Any
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.tasks import TaskContext, task
 from django.template.loader import render_to_string
 
+from apps.common import mail
 from apps.common.email import render_email
 
 logger = logging.getLogger(__name__)
@@ -28,11 +28,15 @@ def send_notification_email_task(notification_id: str):
 
     This task is scheduled to run in the background after a notification is created.
     Idempotent: a notification whose email was already sent is skipped (at-least-once delivery).
+    Versand über den Mail-Dienst auf dem Weg der Organisation der Empfängerin (eigenes SMTP oder
+    mandari-Standard, Issue #528); der Auftrag versendet selbst, statt einen zweiten einzureihen.
     """
     from apps.work.notifications.models import Notification, NotificationPreference
 
     try:
-        notification = Notification.objects.select_related("recipient__user", "actor__user").get(id=notification_id)
+        notification = Notification.objects.select_related(
+            "recipient__user", "recipient__organization", "actor__user"
+        ).get(id=notification_id)
     except Notification.DoesNotExist:
         logger.error(f"Notification {notification_id} not found")
         return
@@ -76,12 +80,14 @@ def send_notification_email_task(notification_id: str):
 
     # Send email
     try:
-        send_mail(
+        mail.send(
+            kind="work.benachrichtigung",
             subject=notification.title,
-            message=text_content,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"),
-            recipient_list=[recipient_email],
-            html_message=html_content,
+            body=text_content,
+            html_body=html_content,
+            to=[recipient_email],
+            organization=notification.recipient.organization,
+            sofort=True,
         )
 
         # Mark as sent

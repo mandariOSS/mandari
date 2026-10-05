@@ -103,6 +103,23 @@ und ein Ergebnis und gehören nicht in den Änderungsfeed.
   `mandari_worker_rss_bytes`; Alarm bei toten Aufträgen und bei fehlendem Heartbeat.
 - Betriebsdoku: Die Beispiel-Crontab enthält nur noch Aufgaben des Betriebssystems.
 
+## Nachtrag zur Umsetzung des Mail-Dienstes (#528)
+
+Umgesetzt in `apps/common/mail/` (Einstieg `mail.send`). Die Entscheidung bleibt; präzisiert wurde:
+
+- **Inhalt nicht im Auftrag:** Eine Mail entsteht in der Fachfunktion (Vorlage, Links, Anhänge) und
+  liegt bis zum Versand verschlüsselt im Postausgang `common_mail_outbox`, mit dem Mandantenschlüssel der
+  Organisation bzw. ohne Organisation mit dem Hauptschlüssel. Der Auftrag `deliver_mail` (Warteschlange
+  `mail`) bekommt nur die Kennung der Zeile. Nach dem Versand wird der Inhalt gelöscht.
+- **Idempotenz:** Ein optionaler Schlüssel (etwa Ereignis und Empfänger) legt dieselbe Mail nur einmal
+  an; der Auftrag versendet nur wartende Zeilen. Zwischen Versand und Vermerk bleibt das Fenster der
+  Zustellung mindestens einmal.
+- **Endgültige Fehler:** dauerhafte Ablehnung durch den Server (5xx außer Anmeldung, alle Empfänger)
+  und unlesbarer Inhalt; sonst Wiederholung wie bei jedem Auftrag.
+- **Schalter je Mailart** (`MAIL_QUEUE`), Rückweg durch Leeren. Mails, deren Ergebnis die Oberfläche
+  oder der Vorgang sofort braucht (Testmails, Einreichung per E-Mail, Ladung), gehen bewusst im Aufruf
+  raus (`sofort=True`); ein Test begrenzt diese Stellen.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md) (Worker, Leases, Überwachung)

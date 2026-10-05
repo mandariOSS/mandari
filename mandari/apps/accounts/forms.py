@@ -20,9 +20,9 @@ from django.contrib.auth.forms import (
 )
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 
+from apps.common import mail
 from apps.common.email import render_email
 
 User = get_user_model()
@@ -132,7 +132,8 @@ class PasswordResetForm(DjangoPasswordResetForm):
     ) -> None:
         """Wie Django, aber die HTML-Fassung läuft durch das Basis-Layout und den Inliner.
 
-        Die Textfassung kommt weiterhin aus ``email_template_name`` (gepflegtes ``.txt``).
+        Die Textfassung kommt weiterhin aus ``email_template_name`` (gepflegtes ``.txt``). Versand über
+        den Mail-Dienst auf dem Weg der Plattform (Mailart ``konto.passwort``).
         """
         subject = "".join(render_to_string(subject_template_name, context).splitlines())
         if html_email_template_name:
@@ -140,10 +141,9 @@ class PasswordResetForm(DjangoPasswordResetForm):
         else:
             html_body, body = None, render_to_string(email_template_name, context)
 
-        message = EmailMultiAlternatives(subject, body, from_email, [to_email])
-        if html_body:
-            message.attach_alternative(html_body, "text/html")
-        message.send()
+        mail.send(
+            kind="konto.passwort", subject=subject, body=body, html_body=html_body, from_email=from_email, to=[to_email]
+        )
 
 
 class SetPasswordForm(DjangoSetPasswordForm):

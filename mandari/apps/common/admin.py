@@ -171,32 +171,15 @@ class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
     @action(description="Test-E-Mail senden")
     def test_email(self, request, object_id):
         """Send a test email to verify SMTP settings."""
-        from django.core.mail import EmailMessage
+        from apps.common import mail
 
-        from apps.common.mail_backends import build_backend, send_with
-
-        settings = SiteSettings.get_settings()
         config = SiteSettings.get_email_config()
 
         try:
-            # Backend mit den aktuellen Einstellungen aufbauen (Django ≥ 6.1, #80)
-            connection = build_backend(
-                config["EMAIL_BACKEND"],
-                host=config["EMAIL_HOST"],
-                port=config["EMAIL_PORT"],
-                username=config["EMAIL_HOST_USER"],
-                password=config["EMAIL_HOST_PASSWORD"],
-                use_tls=config["EMAIL_USE_TLS"],
-                use_ssl=config["EMAIL_USE_SSL"],
-                timeout=config["EMAIL_TIMEOUT"],
-            )
-
-            # Create and send test email
-            from_email = config["DEFAULT_FROM_EMAIL"]
-            if settings.default_from_name:
-                from_email = f"{settings.default_from_name} <{config['DEFAULT_FROM_EMAIL']}>"
-
-            email = EmailMessage(
+            # Sofort über den Weg der Plattform: Das Ergebnis zeigt der Admin an
+            mail.send(
+                kind="betrieb.testmail",
+                sofort=True,
                 subject="Mandari Test-E-Mail",
                 body=(
                     "Dies ist eine Test-E-Mail von Mandari.\n\n"
@@ -204,10 +187,8 @@ class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
                     f"TLS: {config['EMAIL_USE_TLS']}, SSL: {config['EMAIL_USE_SSL']}\n\n"
                     "Wenn Sie diese E-Mail erhalten, funktioniert die Konfiguration."
                 ),
-                from_email=from_email,
                 to=[request.user.email],
             )
-            send_with(connection, email)
 
             messages.success(request, f"Test-E-Mail wurde erfolgreich an {request.user.email} gesendet.")
         except Exception:
@@ -347,7 +328,7 @@ class ProblemReportAdmin(ModelAdmin):
     def mark_resolved_and_notify(self, request, queryset):
         from django.utils import timezone
 
-        from apps.common.email import send_email
+        from apps.common import mail
 
         notified = 0
         for report in queryset:
@@ -363,7 +344,8 @@ class ProblemReportAdmin(ModelAdmin):
                     + (f"Anmerkung unseres Teams: {report.admin_note}\n\n" if report.admin_note else "")
                     + "Mit freundlichen Grüßen\nDein mandari-Team"
                 )
-                if send_email(
+                if mail.send(
+                    kind="plattform.fehlermeldung",
                     subject=f"Rückmeldung zu deiner Fehlermeldung {report.reference}",
                     body=body,
                     to=[recipient],

@@ -88,6 +88,8 @@ x-app-environment: &app-environment
   INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
   # Zeitpläne im Worker statt Host-Cron (DEPLOYMENT.md, „Geplante Aufgaben“): einzelne abschalten
   EVENTS_SCHEDULES_DISABLED: ${EVENTS_SCHEDULES_DISABLED:-}
+  # Mailarten, die als Auftrag (Warteschlange mail) statt in der Anfrage rausgehen, siehe .env.example
+  MAIL_QUEUE: ${MAIL_QUEUE:-}
   # Wer den Text der RIS-Dateien erkennt: ingestor (Standard) oder worker (Aufträge in ocr), siehe .env.example
   TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
   # Adressraum je Tesseract-Unterprozess der Anwendung (Import, Aufträge in ocr): im worker-heavy belegt der

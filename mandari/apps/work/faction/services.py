@@ -212,12 +212,13 @@ class FactionMeetingEmailService:
             )
 
         try:
-            # Versand über den konfigurierten Weg der Organisation —
-            # eigenes SMTP oder mandari-Standard (Issue #65)
-            from apps.common.org_email import send_org_email
+            # Versand über den Weg der Organisation – eigenes SMTP oder mandari-Standard (Issue #65);
+            # Tagesordnung (ggf. mit NÖ-Teil) liegt bis zum Versand mit ihrem Schlüssel verschlüsselt
+            from apps.common import mail
 
-            send_org_email(
-                meeting.organization,
+            mail.send(
+                kind="work.fraktion.einladung",
+                organization=meeting.organization,
                 subject=subject,
                 body=text_content,
                 html_body=html_content,
@@ -372,11 +373,12 @@ class FactionMeetingEmailService:
             text_content = f"Erinnerung: {meeting.title} findet in {hours_before} Stunden statt."
 
         try:
-            # Versand über den konfigurierten Weg der Organisation (Issue #65)
-            from apps.common.org_email import send_org_email
+            # Versand über den Weg der Organisation (Issue #65)
+            from apps.common import mail
 
-            send_org_email(
-                meeting.organization,
+            mail.send(
+                kind="work.fraktion.erinnerung",
+                organization=meeting.organization,
                 subject=subject,
                 body=text_content,
                 html_body=html_content,

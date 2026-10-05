@@ -182,8 +182,8 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
 def _send_confirmation_email(subscriber):
     """Sendet Double-Opt-In-Bestätigungsmail."""
     from django.conf import settings as django_settings
-    from django.core.mail import send_mail
 
+    from apps.common import mail
     from apps.common.email import render_email
 
     site_url = getattr(django_settings, "SITE_URL", "http://localhost:8000")
@@ -200,17 +200,14 @@ def _send_confirmation_email(subscriber):
         },
     )
 
-    from_email = getattr(django_settings, "INSIGHT_DIGEST_FROM_EMAIL", "") or getattr(
-        django_settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"
-    )
-
     try:
-        send_mail(
+        mail.send(
+            kind="insight.abo",
             subject=subject,
-            message=text_message,
-            from_email=from_email,
-            recipient_list=[subscriber.email],
-            html_message=html_message,
+            body=text_message,
+            html_body=html_message,
+            from_email=getattr(django_settings, "INSIGHT_DIGEST_FROM_EMAIL", "") or None,
+            to=[subscriber.email],
         )
     except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to send confirmation email: {e}")

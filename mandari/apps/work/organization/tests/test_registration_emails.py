@@ -240,7 +240,7 @@ def use_own_smtp(org: Any) -> None:
 def test_einladung_laeuft_ueber_smtp_der_organisation(org: Any, reviewer: Any) -> None:
     use_own_smtp(org)
     with mock.patch(
-        "apps.common.org_email.get_organization_connection",
+        "apps.common.mail.config.organization_backend",
         return_value=build_backend("django.core.mail.backends.locmem.EmailBackend"),
     ) as connection:
         services.invite_member(org, reviewer.user, "eingeladen@example.org", [], "Hallo <script>")
@@ -263,7 +263,7 @@ def test_smtp_fehler_faellt_auf_mandari_standardversand_zurueck(org: Any, review
     use_own_smtp(org)
     assert org.smtp_fallback_to_mandari is True
     pending = pending_membership(org, "anfrage@example.org")
-    with mock.patch("apps.common.org_email.get_organization_connection", return_value=FailingBackend()):
+    with mock.patch("apps.common.mail.config.organization_backend", return_value=FailingBackend()):
         assert services.approve_registration(pending, actor=reviewer) is True
     message = mails_to("anfrage@example.org")[0]
     assert "fraktion@example.org" not in message.from_email
@@ -274,7 +274,7 @@ def test_ohne_rueckfall_meldet_work_den_versandfehler(client_for: Any, org: Any,
     org.smtp_fallback_to_mandari = False
     org.save()
     pending = pending_membership(org, "anfrage@example.org")
-    with mock.patch("apps.common.org_email.get_organization_connection", return_value=FailingBackend()):
+    with mock.patch("apps.common.mail.config.organization_backend", return_value=FailingBackend()):
         response = client_for(reviewer.user).post(
             reverse("work:member_approve", kwargs={"org_slug": org.slug, "membership_id": pending.id})
         )
@@ -287,7 +287,7 @@ def test_ohne_rueckfall_meldet_work_den_versandfehler(client_for: Any, org: Any,
 def test_passwort_links_fuer_gaeste_laufen_nie_ueber_fremdes_smtp(org: Any, make_member: Any) -> None:
     inviter = make_member(org, ["guests.invite"], email="einladend@example.org", is_admin=True)
     use_own_smtp(org)
-    with mock.patch("apps.common.org_email.get_organization_connection") as connection:
+    with mock.patch("apps.common.mail.config.organization_backend") as connection:
         services.invite_guest(
             org, inviter, email="gast@example.org", note="", share_level="view", document_ids=[], folder_ids=[]
         )

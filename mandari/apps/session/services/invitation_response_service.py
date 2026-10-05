@@ -29,7 +29,8 @@ from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.common.email import render_email, send_email
+from apps.common import mail
+from apps.common.email import render_email
 from apps.session import audit
 from apps.session.models import (
     SessionAttendance,
@@ -119,10 +120,14 @@ def _send(
     to: str,
     tenant: SessionTenant,
     attachments: list[tuple[str, Any, str]] | None = None,
+    kind: str = "session.rueckmeldung",
+    sofort: bool = False,
 ) -> None:
     """Mail im gemeinsamen Layout versenden; Fehler werden an den Aufrufer weitergereicht."""
     html, text = render_email(template, context)
-    send_email(
+    mail.send(
+        kind=kind,
+        sofort=sofort,
         subject=subject,
         body=text,
         html_body=html,
@@ -172,7 +177,11 @@ def send_invitation_mail(
     attachments: list[tuple[str, Any, str]] | None,
     format_info: meeting_format_service.MeetingFormatInfo | None = None,
 ) -> None:
-    """Ladung bzw. Nachladung an einen Empfänger (E-Mail oder Portal-Hinweis) versenden."""
+    """Ladung bzw. Nachladung an einen Empfänger (E-Mail oder Portal-Hinweis) versenden.
+
+    Sofort und nicht als Auftrag: Der Versand je Empfänger wird als Zustellung der Ladung vermerkt
+    (Ladungsfrist); scheitert er, sieht der Sitzungsdienst das sofort.
+    """
     context = _mail_context(recipient, format_info)
     context.update({"message": message, "supplementary": supplementary, "has_attachments": bool(attachments)})
     _send(
@@ -182,6 +191,8 @@ def send_invitation_mail(
         to=recipient.email,
         tenant=recipient.dispatch.meeting.tenant,
         attachments=attachments if recipient.channel == "email" else None,
+        kind="session.ladung",
+        sofort=True,
     )
 
 

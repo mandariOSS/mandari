@@ -26,7 +26,8 @@ from django.core import mail
 from django.template.loader import get_template
 
 from apps.accounts.forms import PasswordResetForm
-from apps.common.email import html_to_text, render_email, send_template_email
+from apps.common import mail as mail_dienst
+from apps.common.email import html_to_text, render_email
 
 SNAPSHOT_DIR = Path(__file__).parent / "snapshots" / "emails"
 BASE_TEMPLATE = "emails/base_email.html"
@@ -786,7 +787,8 @@ def test_render_email_prefers_txt_sibling(org: Any, make_member: Any) -> None:
 
 @pytest.mark.django_db
 def test_send_template_email_sends_multipart(org: Any, make_member: Any) -> None:
-    ok = send_template_email(
+    ok = mail_dienst.send_template(
+        kind="insight.fragen",
         subject="Testmail",
         template_name="emails/questions/published",
         context=questions_published(org, make_member),

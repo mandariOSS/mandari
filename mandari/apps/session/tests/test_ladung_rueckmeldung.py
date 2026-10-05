@@ -167,7 +167,7 @@ def test_fehlgeschlagene_zustellung_wird_nicht_als_versandt_gefuehrt(
     def kaputt(**_kwargs: Any) -> bool:
         raise ConnectionError("SMTP nicht erreichbar")
 
-    monkeypatch.setattr(invitation_response_service, "send_email", kaputt)
+    monkeypatch.setattr("apps.common.mail.send", kaputt)
 
     dispatch = _versenden(welt)
 

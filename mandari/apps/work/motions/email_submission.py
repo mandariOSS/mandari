@@ -7,7 +7,9 @@ zu mandari Session, hat diese Vorrang (``ris_submission``); sonst geht der Antra
 Organisationseinstellungen gepflegten Verwaltungskontakte:
 
 - je Empfänger eine eigene Mail (Empfänger sehen einander nicht) über den Mailweg der
-  Organisation (eigenes SMTP oder mandari-Versand, ``apps.common.org_email``),
+  Organisation (eigenes SMTP oder mandari-Versand, Mail-Dienst ``apps.common.mail``), sofort und nicht
+  als Auftrag: Ob die Mail angenommen wurde, entscheidet über die Einreichung und wird je Empfänger
+  vermerkt,
 - Antragstext als PDF (wie der Export, mit Briefkopf) und die Anhänge des Dokuments (#584),
 - Antworten gehen an die einreichende Person,
 - in jeder Mail ein persönlicher Link, mit dem die Verwaltung den Eingang bestätigt
@@ -214,8 +216,8 @@ def _send_to(
     message: str,
     attachments: list[tuple[str, bytes, str]],
 ) -> bool:
+    from apps.common import mail
     from apps.common.email import render_email
-    from apps.common.org_email import send_org_email
 
     organization = motion.organization
     context = {
@@ -231,8 +233,10 @@ def _send_to(
     reply_to = [submission.submitted_by_email] if submission.submitted_by_email else None
     try:
         return bool(
-            send_org_email(
-                organization,
+            mail.send(
+                kind="work.antrag.einreichung",
+                organization=organization,
+                sofort=True,
                 subject=submission.subject,
                 body=text_body,
                 html_body=html_body,

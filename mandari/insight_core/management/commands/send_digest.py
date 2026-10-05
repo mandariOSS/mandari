@@ -12,9 +12,9 @@ Usage: python manage.py send_digest
 import logging
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
 
+from apps.common import mail
 from apps.common.einmalig import EinmaligMixin
 from apps.common.email import render_email
 
@@ -58,9 +58,7 @@ class Command(EinmaligMixin, BaseCommand):
 
         max_alerts = getattr(settings, "INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL", 20)
         site_url = getattr(settings, "SITE_URL", "http://localhost:8000")
-        from_email = getattr(settings, "INSIGHT_DIGEST_FROM_EMAIL", "") or getattr(
-            settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"
-        )
+        from_email = getattr(settings, "INSIGHT_DIGEST_FROM_EMAIL", "") or None
 
         # Find subscribers with unsent alerts
         subscribers = InsightSubscriber.objects.filter(
@@ -116,12 +114,13 @@ class Command(EinmaligMixin, BaseCommand):
 
             # Send
             try:
-                send_mail(
+                mail.send(
+                    kind="insight.digest",
                     subject=subject,
-                    message=text_message,
+                    body=text_message,
+                    html_body=html_message,
                     from_email=from_email,
-                    recipient_list=[subscriber.email],
-                    html_message=html_message,
+                    to=[subscriber.email],
                 )
 
                 # Log digest

@@ -219,39 +219,24 @@ class SiteSettings(models.Model):
     @classmethod
     def get_email_config(cls) -> dict:
         """
-        Get email configuration dict.
+        SMTP-Zugang und Absender der Plattform als Wörterbuch (``EMAIL_*``-Schlüssel).
 
-        Returns settings from database if set, otherwise from Django settings.
-        If email_host is configured in SiteSettings, automatically uses SMTP backend.
+        Dieselbe Auflösung wie im Mail-Dienst (``apps.common.mail.config.platform_config``): Ist hier ein
+        SMTP-Server eingetragen, gelten diese Werte, sonst die aus der Umgebung.
         """
-        from django.conf import settings as django_settings
+        from apps.common.mail.config import platform_config
 
-        site_settings = cls.get_settings()
-
-        # If email_host is set in SiteSettings, use SMTP backend automatically
-        if site_settings.email_host:
-            backend = "django.core.mail.backends.smtp.EmailBackend"
-        else:
-            backend = django_settings.MAIL_BACKEND
-
+        config = platform_config()
         return {
-            "EMAIL_BACKEND": backend,
-            "EMAIL_HOST": site_settings.email_host or django_settings.SMTP_FALLBACK["host"],
-            "EMAIL_PORT": site_settings.email_port
-            if site_settings.email_host
-            else django_settings.SMTP_FALLBACK["port"],
-            "EMAIL_HOST_USER": site_settings.email_host_user or django_settings.SMTP_FALLBACK["username"],
-            "EMAIL_HOST_PASSWORD": site_settings.get_email_host_password() or django_settings.SMTP_FALLBACK["password"],
-            "EMAIL_USE_TLS": site_settings.email_use_tls
-            if site_settings.email_host
-            else django_settings.SMTP_FALLBACK["use_tls"],
-            "EMAIL_USE_SSL": site_settings.email_use_ssl
-            if site_settings.email_host
-            else django_settings.SMTP_FALLBACK["use_ssl"],
-            "EMAIL_TIMEOUT": site_settings.email_timeout
-            if site_settings.email_host
-            else django_settings.SMTP_FALLBACK["timeout"],
-            "DEFAULT_FROM_EMAIL": site_settings.default_from_email or django_settings.DEFAULT_FROM_EMAIL,
+            "EMAIL_BACKEND": config.backend,
+            "EMAIL_HOST": config.host,
+            "EMAIL_PORT": config.port,
+            "EMAIL_HOST_USER": config.username,
+            "EMAIL_HOST_PASSWORD": config.password,
+            "EMAIL_USE_TLS": config.use_tls,
+            "EMAIL_USE_SSL": config.use_ssl,
+            "EMAIL_TIMEOUT": config.timeout,
+            "DEFAULT_FROM_EMAIL": config.from_address,
         }
 
 
@@ -535,3 +520,69 @@ class IdentifierBase(models.Model):
 
     def __str__(self) -> str:
         return self.url
+
+
+class MailOutbox(models.Model):
+    """
+    Postausgang des Mail-Dienstes (Issue #528): eine Mail, bis der Auftrag sie versendet hat.
+
+    Der Auftrag ``apps.common.mail.outbox.deliver_mail`` (Warteschlange ``mail``) bekommt nur die
+    Kennung dieser Zeile; Empfänger, Inhalt und Anhänge stehen verschlüsselt darin, mit dem
+    Mandantenschlüssel der Organisation (``payload_encrypted``) oder, ohne Organisation, mit dem
+    Hauptschlüssel (``payload_platform_encrypted``). Nach dem Versand wird der Inhalt gelöscht; die Zeile
+    bleibt ohne Inhalt als Nachweis (Art, Weg, Zeitpunkte) und verfällt mit ihrer Frist
+    (``apps.common.mail.outbox.purge``). Der Idempotenzschlüssel verhindert, dass dieselbe Mail
+    (etwa je Ereignis und Empfänger) zweimal in den Postausgang kommt.
+    """
+
+    class Status(models.TextChoices):
+        WARTEND = "wartend", "Wartet auf Versand"
+        VERSENDET = "versendet", "Versendet"
+        FEHLGESCHLAGEN = "fehlgeschlagen", "Endgültig fehlgeschlagen"
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    kind = models.CharField(max_length=64, verbose_name="Mailart")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.WARTEND, verbose_name="Status")
+    organization = models.ForeignKey(
+        "tenants.Organization",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Organisation",
+        help_text="Versandweg und Mandantenschlüssel; leer bei Mails der Plattform",
+    )
+    via_organization = models.BooleanField(default=True, verbose_name="Über den Weg der Organisation")
+    payload_encrypted = models.BinaryField(
+        blank=True, null=True, editable=False, verbose_name="Inhalt (Mandantenschlüssel)"
+    )
+    payload_platform_encrypted = models.BinaryField(
+        blank=True, null=True, editable=False, verbose_name="Inhalt (Hauptschlüssel)"
+    )
+    idempotency_key = models.CharField(
+        max_length=255, null=True, blank=True, unique=True, verbose_name="Idempotenzschlüssel"
+    )
+    attempts = models.PositiveSmallIntegerField(default=0, verbose_name="Versuche")
+    route = models.CharField(max_length=20, blank=True, verbose_name="Genutzter Weg")
+    error_code = models.CharField(max_length=200, blank=True, verbose_name="Fehlerklasse")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Angelegt am")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Beendet am")
+
+    class Meta:
+        verbose_name = "Mail im Postausgang"
+        verbose_name_plural = "Postausgang"
+        db_table = "common_mail_outbox"
+        indexes = [models.Index(fields=["status", "finished_at"], name="common_mail_status_idx")]
+
+    def __str__(self) -> str:
+        return f"{self.kind} ({self.get_status_display()})"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        import uuid as _uuid
+
+        if self.id is None:
+            self.id = _uuid.uuid4()
+        super().save(*args, **kwargs)
+
+    def get_encryption_organization(self) -> Any:
+        return self.organization
