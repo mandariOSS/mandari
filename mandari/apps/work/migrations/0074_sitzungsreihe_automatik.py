@@ -48,7 +48,7 @@ def bestand_uebernehmen(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("work", "0072_nichtoeffentliche_vorgaenge"),
+        ("work", "0073_standard_tagesordnung"),
     ]
 
     operations = [
