@@ -118,3 +118,25 @@ Stand der Phasen (in #527 als Kommentar fortgeschrieben):
 - [ ] Signale und Ingestor-Indexierung im Folge-Release entfernt (#527)
 
 Früheste Umschaltung damit: nach Abschluss von #821 und 7 Tagen Vergleich danach.
+
+## 5. RIS-Projektor für Session-Mandanten (#536 → #537)
+
+Heute übernehmen der Ingestor (Abruf der eigenen Session-Schnittstelle) bzw. `SessionMirror` und
+Direktschreiber in Session die Daten der Session-Mandanten in den RIS-Bestand. Künftig schreibt ihn nur das
+Abonnement `ris.session_projektor` (`hub/projections/ris_session.py`, transaktional).
+
+| | Schatten | Aktiv | Rückfall |
+|---|---|---|---|
+| Abonnement | `RIS_SESSION_PROJECTOR=schatten` (schreibt die Schatten-Quelle `hub_ris_schatten`) | mit #537 | `RIS_SESSION_PROJECTOR=aus` |
+| Alter Weg | Ingestor-Abgleich der Session-Quelle, Direktschreiber an | mit #537 aus | wieder an |
+| Vollbau | `manage.py ris_projektor_schatten aufbauen` | mit #537 | – |
+| Vergleich | `manage.py ris_projektor_schatten vergleichen [--json]` | – | – |
+| Stand | `manage.py ris_projektor_schatten status`, `mandari_ris_projector_rows_total` | – | `ris_projektor_schatten loeschen --ja --abonnement` |
+
+Bekannte Lücken: Session meldet Körperschaft, Wahlperioden, Gremien, Personen und Mitgliedschaften noch
+nicht (#860). Stand der Phasen (in #536/#537 fortgeschrieben):
+
+- [x] Abonnement mit Schattenziel, Vollbau, Vergleich und Doppelzustellungstest (#536)
+- [ ] Schatten in Produktion für einen Mandanten (Session-Ereignisse für ihn eingeschaltet)
+- [ ] Vergleich 14 Tage ohne unerklärte Abweichung (Akzeptanz #536)
+- [ ] Lücken aus #860 geschlossen, Meldungen der Übernahme und Umschalten (#537), Rückfallprobe

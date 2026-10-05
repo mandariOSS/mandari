@@ -404,6 +404,23 @@ Umgesetzt in `apps/work/notifications/abonnement.py` (Regeln je Ereignistyp) und
 - **Schattenbetrieb ohne Schattenziel:** Die Regel läuft im Sicherungspunkt ohne Mail und wird
   zurückgerollt; gezählt wird, ob der bisherige Weg dieselbe Benachrichtigung angelegt hat.
 
+## Nachtrag zum RIS-Projektor für Session-Mandanten (#536)
+
+Umgesetzt in `hub/projections/ris_session.py` (Abonnement `ris.session_projektor`, Zerlegen, Schreiben),
+`hub/projections/ris_vergleich.py` (Vergleich mit dem Bestand) und `apps/session/ris_projektion.py` (Session als
+Quelle). Die Entscheidung bleibt; präzisiert wurde:
+
+- **Schattenziel neben dem Bestand:** Die Schatten-Quelle ist eine eigene Tabelle (`hub_ris_schatten`) mit den
+  Spalten und Bezügen, die der Projektor in den RIS-Bestand schriebe – keine zweite Quelle in den
+  `oparl_*`-Tabellen. Alles, was den Bestand liest (Bürgerportal, Suche, Sitemaps, OParl, Feed, Work,
+  Aufträge), sieht sie so nicht; ein Test hält fest, dass nur der Projektor und sein Vergleich sie kennen.
+- **Eine Serialisierung:** Das Ereignis ist Auslöser; das Objekt entsteht aus dem aktuellen Stand mit der
+  Abbildung und Auswahl der Session-Schnittstelle, die Spalten mit denselben Funktionen wie beim Spiegel
+  (`hub/ris/uebernahme.py`). Session reicht die Sicht als `Quelle` herein; die Drehscheibe importiert sie nicht.
+- **Meldungen erst mit dem Umschalten:** Das Schreiben liefert je Zeile, was sich geändert hat; mit #537 wird
+  daraus in derselben Transaktion je Änderung am Bestand ein `ris.*`-Ereignis (Kennung des Bestands, Quelle als
+  Mandant, Kommune als `body_id`). Im Schatten meldet der Projektor nichts.
+
 ## Nachtrag zu den Nachweisen (#514)
 
 Die Qualitätsziele und die Fitnessfunktion oben sind belegt; Tests, Messwerte und Grenzen stehen in

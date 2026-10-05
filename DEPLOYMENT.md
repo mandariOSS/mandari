@@ -664,6 +664,75 @@ Abonnement in der Datenbank auf `schatten`, schreibt es weiter nur den Schatteni
 `loeschen` verweigert sich, solange das Abonnement noch in den Schattenindex schreibt (Schalter oder
 Zustand `schatten`); `--abonnement` zusätzlich, solange es überhaupt zugestellt wird.
 
+### RIS-Projektor für Session-Mandanten (Schattenbetrieb)
+
+Heute übernehmen der Ingestor (Abruf der eigenen Session-Schnittstelle) bzw. `sync_session_insight` und
+Direktschreiber in Session die Daten der Session-Mandanten in den RIS-Bestand. Künftig schreibt ihn nur das
+Abonnement `ris.session_projektor` aus den Ereignissen von mandari Session (Issue #536, Umschalten in #537).
+Vor dem Umschalten läuft es im Schattenbetrieb: Es schreibt dieselben Zeilen in eine **Schatten-Quelle** neben
+dem RIS-Bestand (eigene Tabelle). Bürgerportal, Suche, Sitemaps, OParl-Schnittstelle, Änderungsfeed, Snapshot,
+Work und die Aufträge des Bestands lesen sie nicht; der Projektor meldet im Schatten keine Ereignisse.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `RIS_SESSION_PROJECTOR` | `aus` (Standard) oder `schatten`; `aktiv` erst mit #537 |
+| `RIS_SESSION_PROJECTOR_TENANTS` | Session-Mandanten des Schattenbetriebs (Kennungen, kommagetrennt; leer = alle) |
+
+- Jedes Ereignis ist nur Auslöser: Das Objekt entsteht aus dem aktuellen Stand in Session mit derselben
+  Abbildung und Auswahl des Öffentlichen wie die Session-Schnittstelle, die Zeilen mit denselben Spalten wie
+  beim Spiegel (`hub.ris.uebernahme`). Nichtöffentliches gelangt nicht in die Schatten-Quelle;
+  Zurückgenommenes bleibt als Zeile mit Grund, ohne Inhalte.
+- Projiziert werden nur Mandanten, die im Bürgerportal veröffentlichen (wie die Quelle des Spiegels).
+- Voraussetzung sind Session-Ereignisse für den Mandanten (`SESSION_EVENTS=schatten` oder das Feld
+  „Ereignisse an die Datendrehscheibe“ am Mandanten) und der Worker (Rolle `dispatch`, Warteschlange
+  `default`). Ohne Session-Ereignisse bleibt die Schatten-Quelle auf dem Stand des Vollbaus.
+- Für Körperschaft, Wahlperioden, Gremien, Personen und Mitgliedschaften meldet Session noch keine Ereignisse
+  (#860): Ihre Änderungen nach dem Vollbau erscheinen im Vergleich als Abweichung.
+
+```bash
+python manage.py ris_projektor_schatten status                      # Schalter, Cursor, Rückstand, Zeilen
+python manage.py ris_projektor_schatten aufbauen --mandant <uuid> --trocken
+python manage.py ris_projektor_schatten aufbauen --mandant <uuid>  # Vollbau aus Session
+python manage.py ris_projektor_schatten vergleichen --json          # je Typ: fehlt, überzählig, abweichend
+python manage.py ris_projektor_schatten loeschen --ja [--abonnement]  # Rückweg
+```
+
+**Einschalten (Compose), gestuft:** erst ein Mandant, dann messen, dann erweitern.
+
+1. Vorher messen: `ris_projektor_schatten status` und `docker stats --no-stream` (Speicher von `worker`).
+2. Session-Ereignisse für den Mandanten einschalten (Feld am Mandanten auf `schatten`), sofern noch aus.
+3. In der `.env` `RIS_SESSION_PROJECTOR=schatten` und `RIS_SESSION_PROJECTOR_TENANTS=<Kennung>` setzen,
+   dann `docker compose up -d worker mandari`. Das Abonnement legt der Worker beim Start an (Zustand
+   `schatten`, Beginn am Ende des Journals).
+4. Erst danach den Vollbau: `docker compose run --rm --no-deps mandari python manage.py
+   ris_projektor_schatten aufbauen --mandant <Kennung> --trocken`, dann ohne `--trocken` (eigener Container,
+   nicht im Worker). Läuft der Vollbau vor dem Abonnement, fehlt, was dazwischen geschieht.
+5. Vergleich frühestens nach dem nächsten Abgleich des Ingestors (sonst ist der Bestand der ältere Teil).
+
+**Messung (Akzeptanz #536: 0 Abweichungen über 14 Tage):** täglich nach dem Abgleich des Ingestors
+`ris_projektor_schatten vergleichen --mandant <Kennung> --json > vergleich-<Datum>.json` und das Ergebnis
+(`abweichungen`, je Typ `fehlt`, `ueberzaehlig`, `abweichend`, `felder`) im Issue festhalten. Ausgegeben
+werden nur Zahlen, Feldnamen und Kennungen des Bestands. Dazu `mandari_events_lag_seconds{subscription=
+"ris.session_projektor"}`, geparkte Ereignisse (Admin „Abonnements“) und
+`mandari_ris_projector_events_total{result}` / `mandari_ris_projector_rows_total{type,result}`.
+
+**Abweichungen lesen:** Zeitstempel der Quelle und Rohdaten zählen nicht; leerer Text gilt wie ein fehlender
+Wert. Erwartet und erklärbar sind:
+
+- zeitlicher Versatz: Der Ingestor gleicht periodisch ab, der Projektor sofort. Zwischen Änderung in Session
+  und nächstem Abgleich ist der Bestand der ältere Teil; der nächste Vergleich nach dem Abgleich zeigt das.
+- Körperschaft, Wahlperioden, Gremien, Personen, Mitgliedschaften (#860), solange Session sie nicht meldet.
+- Felder, die der Ingestor anders schreibt als der Spiegel (`hub.ris.uebernahme`): Befund für #537, denn mit
+  dem Umschalten schreibt der Projektor sie wie der Spiegel.
+
+Jede andere Abweichung ist ein Befund vor dem Umschalten (fehlendes Ereignis in Session oder Fehler im
+Projektor): Kennung aus `beispiele` nehmen, in Session und im Bestand nachsehen.
+
+**Rückweg:** `RIS_SESSION_PROJECTOR=aus`, `docker compose up -d worker mandari`, dann
+`python manage.py ris_projektor_schatten loeschen --ja --abonnement`. Der RIS-Bestand ist nie betroffen;
+`loeschen` verweigert sich, solange das Abonnement zugestellt wird. Der Eingriff steht im
+Sicherheitsprotokoll.
+
 ### Abfrage der Volltextsuche (`SEARCH_RANKING`)
 
 Insight und Work suchen mit derselben Abfrage. `v2` (Standard) verlangt alle Wörter, behandelt Straßen

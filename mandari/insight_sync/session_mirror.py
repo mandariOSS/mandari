@@ -23,12 +23,11 @@ die Session-OParl-API liefert per Konstruktion nur öffentliche Daten
 import json
 import logging
 import urllib.request
-from datetime import UTC, date, datetime
 from urllib.parse import quote
 
 from django.utils import timezone
-from mandari_oparl.extensions import agenda_item_columns, meeting_columns
 
+from hub.ris import uebernahme
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -58,50 +57,8 @@ MODEL_BY_TYPE_SUFFIX = {
 }
 
 
-def _parse_dt(value):
-    """Zeitpunkt lesen; ein reines Datum (OParl ``File.date``) gilt wie im Ingestor als Mitternacht UTC."""
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
-def _parse_date(value):
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(value[:10])
-    except ValueError:
-        return None
-
-
-def _location_text(data):
-    """
-    Ort und Anschrift einer Sitzung als Text – gleiche Abbildung wie der Ingestor
-    (``ingestor/src/sync/processor.py``, ``process_meeting``).
-
-    Der Ort gehört zur Sitzung und steht im Bestand als Text an ihr, nicht als eigenes Location-Objekt;
-    so verschwindet er mit der Sitzung. Die Textfelder ``mandari:location*`` gelten, wo sie vorhanden
-    sind (abgekündigt); ohne sie ergibt das eingebettete Location-Objekt denselben Text: Gebäude vor
-    Raum, Anschrift mit Postleitzahl und Ort.
-    """
-    location = data.get("location")
-    if not isinstance(location, dict):
-        location = {}
-    locality = " ".join(part for part in (location.get("postalCode"), location.get("locality")) if part)
-    name = (
-        data.get("mandari:locationName")
-        or data.get("mandari:locationRoom")
-        or location.get("description")
-        or location.get("room")
-    )
-    address = data.get("mandari:locationAddress") or ", ".join(
-        part for part in (location.get("streetAddress"), locality) if part
-    )
-    return name or None, address or None
+#: Zeitpunkte wie bei jedem Schreiber des Bestands; die Spalten je Typ stehen in ``hub.ris.uebernahme``
+_parse_dt = uebernahme.parse_dt
 
 
 def _default_fetch(url):
@@ -166,14 +123,7 @@ class SessionMirror:
         return {"defaults": defaults, "create_defaults": {**defaults, "id": self.ids.id(external_id)}}
 
     def _base_defaults(self, data):
-        return {
-            "oparl_created": _parse_dt(data.get("created")),
-            "oparl_modified": _parse_dt(data.get("modified")),
-            "raw_json": data,
-            "deleted": False,
-            "deleted_at": None,
-            "deletion_reason": None,
-        }
+        return uebernahme.base(data)
 
     def _handle_tombstone(self, data) -> bool:
         """Tombstone (deleted: true) auf den lokalen Spiegel anwenden."""
@@ -194,19 +144,7 @@ class SessionMirror:
             external_id=data.get("id", ""),
             **self._upsert_args(
                 data,
-                {
-                    "source": self.source,
-                    "name": data.get("name") or "Unbekannt",
-                    "short_name": data.get("shortName"),
-                    "website": data.get("website"),
-                    "classification": data.get("classification"),
-                    "organization_list_url": data.get("organization"),
-                    "person_list_url": data.get("person"),
-                    "meeting_list_url": data.get("meeting"),
-                    "paper_list_url": data.get("paper"),
-                    "membership_list_url": data.get("membership"),
-                    **self._base_defaults(data),
-                },
+                {"source": self.source, **uebernahme.body(data), **self._base_defaults(data)},
             ),
         )
         if not body.slug:
@@ -227,13 +165,7 @@ class SessionMirror:
             external_id=data.get("id", ""),
             **self._upsert_args(
                 data,
-                {
-                    "body": body,
-                    "name": data.get("name"),
-                    "start_date": _parse_date(data.get("startDate")),
-                    "end_date": _parse_date(data.get("endDate")),
-                    **self._base_defaults(data),
-                },
+                {"body": body, **uebernahme.legislative_term(data), **self._base_defaults(data)},
             ),
         )
         self.stats["legislative_terms"] += 1
@@ -243,42 +175,15 @@ class SessionMirror:
             external_id=data.get("id", ""),
             **self._upsert_args(
                 data,
-                {
-                    "body": body,
-                    "name": data.get("name"),
-                    "short_name": data.get("shortName"),
-                    "organization_type": data.get("organizationType"),
-                    "classification": data.get("classification"),
-                    "start_date": _parse_date(data.get("startDate")),
-                    "end_date": _parse_date(data.get("endDate")),
-                    "website": data.get("website"),
-                    **self._base_defaults(data),
-                },
+                {"body": body, **uebernahme.organization(data), **self._base_defaults(data)},
             ),
         )
         self.stats["organizations"] += 1
 
     def _upsert_person(self, body, data):
-        title = data.get("title")
-        if isinstance(title, list):
-            title = " ".join(str(t) for t in title if t)
-        email = data.get("email")
-        if isinstance(email, list):
-            email = email[0] if email else None
         person, _created = OParlPerson.objects.update_or_create(
             external_id=data.get("id", ""),
-            **self._upsert_args(
-                data,
-                {
-                    "body": body,
-                    "name": data.get("name"),
-                    "family_name": data.get("familyName"),
-                    "given_name": data.get("givenName"),
-                    "title": title,
-                    "email": email,
-                    **self._base_defaults(data),
-                },
-            ),
+            **self._upsert_args(data, {"body": body, **uebernahme.person(data), **self._base_defaults(data)}),
         )
         self.stats["persons"] += 1
         for membership in data.get("membership", []) or []:
@@ -298,10 +203,7 @@ class SessionMirror:
                 {
                     "person": person,
                     "organization": organization,
-                    "role": data.get("role"),
-                    "voting_right": bool(data.get("votingRight", True)),
-                    "start_date": _parse_date(data.get("startDate")),
-                    "end_date": _parse_date(data.get("endDate")),
+                    **uebernahme.membership(data),
                     **self._base_defaults(data),
                 },
             ),
@@ -317,13 +219,7 @@ class SessionMirror:
                     "body": body,
                     "paper": paper,
                     "meeting": meeting,
-                    "name": data.get("name"),
-                    "file_name": data.get("fileName"),
-                    "mime_type": data.get("mimeType"),
-                    "size": data.get("size"),
-                    "access_url": data.get("accessUrl"),
-                    "download_url": data.get("downloadUrl"),
-                    "file_date": _parse_dt(data.get("date")),
+                    **uebernahme.file(data),
                     **self._base_defaults(data),
                 },
             ),
@@ -331,25 +227,10 @@ class SessionMirror:
         self.stats["files"] += 1
 
     def _upsert_meeting(self, body, data):
-        location_name, location_address = _location_text(data)
+        # Ort als Text an der Sitzung, Genehmigung der Niederschrift (Issue #525): ``uebernahme.meeting``
         meeting, _created = OParlMeeting.objects.update_or_create(
             external_id=data.get("id", ""),
-            **self._upsert_args(
-                data,
-                {
-                    "body": body,
-                    "name": data.get("name"),
-                    "meeting_state": data.get("meetingState"),
-                    "cancelled": bool(data.get("cancelled", False)),
-                    "start": _parse_dt(data.get("start")),
-                    "end": _parse_dt(data.get("end")),
-                    "location_name": location_name,
-                    "location_address": location_address,
-                    # Genehmigung der Niederschrift (Issue #525)
-                    **meeting_columns(data),
-                    **self._base_defaults(data),
-                },
-            ),
+            **self._upsert_args(data, {"body": body, **uebernahme.meeting(data), **self._base_defaults(data)}),
         )
         org_refs = [ref for ref in data.get("organization", []) if isinstance(ref, str)]
         if org_refs:
@@ -375,14 +256,8 @@ class SessionMirror:
                 data,
                 {
                     "meeting": meeting,
-                    "number": data.get("number"),
-                    "order": data.get("order"),
-                    "name": data.get("name"),
-                    "public": bool(data.get("public", True)),
-                    "result": data.get("result"),
-                    "resolution_text": data.get("resolutionText"),
                     # Beschlussfassung: Nummer, Abstimmung, Einzelstimmen, Umsetzung (Issue #525)
-                    **agenda_item_columns(data),
+                    **uebernahme.agenda_item(data),
                     **self._base_defaults(data),
                 },
             ),
@@ -394,14 +269,7 @@ class SessionMirror:
             external_id=data.get("id", ""),
             **self._upsert_args(
                 data,
-                {
-                    "body": body,
-                    "name": data.get("name"),
-                    "reference": data.get("reference"),
-                    "paper_type": data.get("paperType"),
-                    "date": _parse_date(data.get("date")),
-                    **self._base_defaults(data),
-                },
+                {"body": body, **uebernahme.paper(data), **self._base_defaults(data)},
             ),
         )
         main_file = data.get("mainFile")
@@ -417,22 +285,10 @@ class SessionMirror:
         return paper
 
     def _upsert_consultation(self, body, paper, data):
-        meeting_ref = data.get("meeting")
-        item_ref = data.get("agendaItem")
         OParlConsultation.objects.update_or_create(
             external_id=data.get("id", ""),
             **self._upsert_args(
-                data,
-                {
-                    "body": body,
-                    "paper": paper,
-                    "paper_external_id": data.get("paper"),
-                    "meeting_external_id": meeting_ref if isinstance(meeting_ref, str) else None,
-                    "agenda_item_external_id": item_ref if isinstance(item_ref, str) else None,
-                    "role": data.get("role"),
-                    "authoritative": bool(data.get("authoritative", False)),
-                    **self._base_defaults(data),
-                },
+                data, {"body": body, "paper": paper, **uebernahme.consultation(data), **self._base_defaults(data)}
             ),
         )
         self.stats["consultations"] += 1
