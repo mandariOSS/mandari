@@ -145,6 +145,11 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
   value: {{ .Values.events.producers | toString | quote }}
 - name: OPARL_CHANGES_ENABLED
   value: {{ .Values.events.changesFeed | toString | quote }}
+# Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+- name: EVENTS_JOURNAL_PURGE_ENABLED
+  value: {{ .Values.events.journalPurge | default false | toString | quote }}
+- name: EVENTS_JOURNAL_RETENTION_DAYS
+  value: {{ .Values.events.journalRetentionDays | default 90 | toString | quote }}
 {{- if .Values.events.workerPushUrl }}
 - name: WORKER_PUSH_URL
   value: {{ .Values.events.workerPushUrl | quote }}

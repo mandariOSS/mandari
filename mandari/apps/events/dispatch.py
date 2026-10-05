@@ -58,7 +58,7 @@ from django.db import DatabaseError, close_old_connections, connection, transact
 from django.db.models import Exists, Max, OuterRef
 from django.db.models.functions import Now
 
-from . import leases
+from . import leases, pruning
 from .metrics import DEAD, DELIVERED, DELIVERY_FAILURES
 from .models import Event, ParkedEvent, ParkedState, Subscription, SubscriptionState
 from .registry import Delivery, Subscriber, TargetUnavailableError
@@ -573,27 +573,71 @@ def first_seq_since(since: datetime) -> int | None:
     )
 
 
-def rewind(name: str, from_seq: int) -> tuple[int, int] | None:
+@dataclass(frozen=True)
+class Replay:
+    """Ergebnis von ``replay``: Cursor vorher und nachher, aufgehobene geparkte Ereignisse."""
+
+    before: int
+    after: int
+    #: geparkte Ereignisse ab der Folgenummer; die Zustellung erreicht sie wieder in Reihenfolge
+    parked_removed: int = 0
+
+    @property
+    def changed(self) -> bool:
+        return self.before != self.after
+
+
+def replay(name: str, from_seq: int) -> Replay | None:
     """Nachspielen: Das Abonnement bekommt die Ereignisse ab Folgenummer ``from_seq`` erneut zugestellt.
 
-    Setzt den Cursor auf ``from_seq - 1``, nur rückwärts; gibt den alten und neuen Cursor zurück
-    (``None``, wenn es das Abonnement nicht gibt). Unter der Zeilensperre: Ein laufender Lauf eines
-    externen Handlers verwirft danach sein Ergebnis, weil sich der Cursor geändert hat. Der Handler
-    muss das Nachspielen vertragen (Idempotenz); bereits geparkte Ereignisse bleiben geparkt.
+    Setzt den Cursor auf ``from_seq - 1``, nur rückwärts (``None``, wenn es das Abonnement nicht gibt);
+    gilt in jedem Zustand, auch im Schattenbetrieb und pausiert. Zugestellt wird im laufenden Worker,
+    nicht hier. Der Handler muss das Nachspielen vertragen (Idempotenz). Wiederholt mit derselben
+    Folgenummer ändert es nichts mehr.
+
+    **Abstimmung mit dem laufenden Worker:** Alles geschieht unter der Zeilensperre des Abonnements. Ein
+    Lauf einer Datenbank-Sicht wartet darauf bzw. hält sie selbst bis zum Festschreiben; ein laufender
+    Lauf eines externen Handlers verwirft danach sein Ergebnis, weil sich der Cursor geändert hat, und
+    eine laufende Wiederholung schließt nur Zeilen ab, die es noch gibt. Mit dem Aufräumen des Journals
+    (``events_purge``) stimmt es sich über ``pruning.lock`` ab: Ein Löschschritt läuft vorher zu Ende oder
+    sieht danach den zurückgesetzten Cursor.
+
+    **Parken je Objekt:** Geparkte Ereignisse ab ``from_seq`` werden aufgehoben. Die Zustellung erreicht
+    sie mit dem zurückgesetzten Cursor wieder, in Folgenummer-Reihenfolge, und parkt neu, was weiter
+    scheitert oder hinter einem älteren geparkten Ereignis desselben Objekts steht. Blieben sie geparkt,
+    würden davor liegende, schon zugestellte Ereignisse desselben Objekts hinter ihnen mitgeparkt und
+    erst nach ihnen erneut zugestellt (falsche Reihenfolge).
     """
     if from_seq < 1:
         raise ValueError("Folgenummern beginnen bei 1")
     with transaction.atomic():
+        # Erst die Abstimmung mit dem Aufräumen (pruning.lock), dann die Zeilensperre: Ein Löschschritt liest
+        # den Cursor erst nach diesem Festschreiben und löscht nichts, was hier wieder gebraucht wird.
+        pruning.lock(shared=False)
         vorher = Subscription.objects.select_for_update().filter(name=name).values_list("cursor_seq", flat=True).first()
         if vorher is None:
             return None
         neu = from_seq - 1
         if neu > vorher:
             raise ValueError("Nachspielen setzt den Cursor nur zurück (Ereignisse überspringen ist nicht vorgesehen)")
-        if neu != vorher:
-            _cursor_setzen(name, neu)
-            logger.warning("Abonnement %s: Cursor für Nachspielen von %s auf %s zurückgesetzt", name, vorher, neu)
-    return vorher, neu
+        if neu == vorher:
+            return Replay(before=vorher, after=neu)
+        aufgehoben, _ = ParkedEvent.objects.filter(subscription=name, event_seq__gte=from_seq).delete()
+        _cursor_setzen(name, neu)
+        logger.warning(
+            "Abonnement %s: Cursor für Nachspielen von %s auf %s zurückgesetzt, %s geparkte Ereignisse aufgehoben",
+            name,
+            vorher,
+            neu,
+            aufgehoben,
+        )
+    return Replay(before=vorher, after=neu, parked_removed=aufgehoben)
+
+
+def rewind(name: str, from_seq: int) -> tuple[int, int] | None:
+    """Wie ``replay``; gibt nur den alten und neuen Cursor zurück."""
+    ergebnis = replay(name, from_seq)
+    return None if ergebnis is None else (ergebnis.before, ergebnis.after)
 
 
 def repair_chains(name: str) -> int:

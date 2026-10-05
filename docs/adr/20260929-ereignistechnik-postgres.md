@@ -335,7 +335,7 @@ bleibt; präzisiert wurde:
   `docs/MONITORING.md`): Rückstand über fünf Minuten, tote Ereignisse, Sequenzierer-Stau über fünf
   Minuten, dazu Hinweise auf viele blockierte Ereignisse und einen gestörten Weckruf.
 - **Nachgezogen:** Nachspielen ab Folgenummer oder Zeitpunkt (Admin-Aktion am Abonnement und
-  `events_dispatch --replay`, beide über `dispatch.rewind` und mit Eintrag im Sicherheitsprotokoll), die
+  `events_dispatch --replay`, beide über `dispatch.replay` und mit Eintrag im Sicherheitsprotokoll), die
   Push-Prüfung „Worker lebt“ (#574), die Übersicht der Worker-Prozesse im Admin und der Kontext je
   Auftrag: Ereignisse eines Auftrags tragen seine Kennung als Korrelations-ID und `system:<auftrag>`
   als Auslöser (`task_runner.execute`). Folgeereignisse eines Handlers setzen weiterhin selbst
@@ -437,6 +437,26 @@ Die Qualitätsziele und die Fitnessfunktion oben sind belegt; Tests, Messwerte u
   registrierte Abonnement einen Test, der jedes Ereignis zweimal zustellt (`DOPPELZUSTELLUNG`).
 - **Rückstau:** Die Latenz bei Rückstau hängt an seiner Größe; abgebaut wird mit mehreren tausend
   Ereignissen je Sekunde und Abonnement (gemessen ohne die Kosten des Handlers).
+
+## Nachtrag zu Nachspielen und Aufbewahrung (#511)
+
+- **Nachspielen** (`events_dispatch --replay`, Admin) hebt geparkte Ereignisse des Abonnements ab der
+  Folgenummer auf. Die Zustellung erreicht sie mit dem zurückgesetzten Cursor wieder und parkt neu, was weiter
+  scheitert. Blieben sie geparkt, würden davor liegende, schon zugestellte Ereignisse desselben Objekts hinter
+  ihnen mitgeparkt und erst nach ihnen zugestellt. Ketten, deren Kopf vor der Folgenummer liegt, bleiben mit
+  ihrem Kopf stehen.
+- **Aufbewahrung** (`events_purge`, `apps.events.aufbewahrung`): Statt Monatspartitionen löscht ein Zeitplan im
+  Worker einen Anfang des Journals in Stapeln (Partitionierung bleibt der Weg ab einer Größenschwelle). Die
+  Grenze ist die kleinste aus Frist (Tagesbeginn in UTC vor `EVENTS_JOURNAL_RETENTION_DAYS`, nie kürzer als die
+  Gültigkeit der Feed-Cursor), kleinstem Cursor aller Abonnements und dem neuesten Ereignis, das für die Prüfung
+  nach einer Wiederherstellung und den Start neuer Abonnements stehen bleibt. Geparkte und unnummerierte Zeilen
+  bleiben. Festgehalten wird in `events_pruning` für die ganze geplante Grenze im ersten Stapel. Schalter
+  `EVENTS_JOURNAL_PURGE_ENABLED`, Standard aus. Die Frist ist mindestens 90 Tage (Spezifikation N7);
+  kleinere Werte sind ein Konfigurationsfehler.
+- **Aufräumen und Nachspielen gleichzeitig:** Jeder Löschstapel nimmt die Transaktionssperre
+  `pruning.lock` geteilt, bevor er den kleinsten Cursor liest, ein Nachspielen nimmt sie exklusiv, bevor es
+  den Cursor zurücksetzt. Ein Stapel löscht also nie mit einem Cursor, den ein gleichzeitiges Nachspielen
+  schon zurückgesetzt hat. Die Zustellung nimmt die Sperre nicht.
 
 ## Bezug
 

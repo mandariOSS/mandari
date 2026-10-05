@@ -88,6 +88,11 @@ x-app-environment: &app-environment
   INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
   # Zeitpläne im Worker statt Host-Cron (DEPLOYMENT.md, „Geplante Aufgaben“): einzelne abschalten
   EVENTS_SCHEDULES_DISABLED: ${EVENTS_SCHEDULES_DISABLED:-}
+  # Aufbewahrung von Journal und Aufträgen (siehe .env.example); das Journal räumt der Zeitplan nur, wenn eingeschaltet
+  EVENTS_JOURNAL_PURGE_ENABLED: ${EVENTS_JOURNAL_PURGE_ENABLED:-false}
+  EVENTS_JOURNAL_RETENTION_DAYS: ${EVENTS_JOURNAL_RETENTION_DAYS:-90}
+  EVENTS_TASKS_DONE_RETENTION_DAYS: ${EVENTS_TASKS_DONE_RETENTION_DAYS:-14}
+  EVENTS_TASKS_DEAD_RETENTION_DAYS: ${EVENTS_TASKS_DEAD_RETENTION_DAYS:-90}
   # Mailarten, die als Auftrag (Warteschlange mail) statt in der Anfrage rausgehen, siehe .env.example
   MAIL_QUEUE: ${MAIL_QUEUE:-}
   MAIL_QUEUE_MAX_BYTES: ${MAIL_QUEUE_MAX_BYTES:-20971520}

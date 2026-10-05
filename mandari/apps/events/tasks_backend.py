@@ -299,7 +299,7 @@ def enqueue_once(task: Task[P, R], idempotency_key: str, /, *args: P.args, **kwa
     """Reiht ``task`` höchstens einmal je Idempotenzschlüssel ein.
 
     Der Schlüssel gilt je Auftragstyp und so lange, wie die Zeile aufbewahrt wird (erledigt 14 Tage,
-    tot 90 Tage). Ein doppelter Aufruf liefert das Ergebnis des vorhandenen Auftrags, auch wenn
+    tot 90 Tage, ``task_retention``). Ein doppelter Aufruf liefert das Ergebnis des vorhandenen Auftrags, auch wenn
     dieser schon gelaufen oder gescheitert ist. Mit einem anderen Backend (z. B. dem sofort
     ausführenden) gibt es keine Aufzeichnung; dann wird wie bei ``enqueue`` jedes Mal ausgeführt.
     """
@@ -309,11 +309,45 @@ def enqueue_once(task: Task[P, R], idempotency_key: str, /, *args: P.args, **kwa
     return task.enqueue(*args, **kwargs)
 
 
-#: Aufbewahrung beendeter Aufträge (ADR A4): erledigte 14 Tage, tote und endgültig fehlgeschlagene 90 Tage
+#: Aufbewahrung beendeter Aufträge (ADR A4): erledigte 14 Tage, tote und endgültig fehlgeschlagene 90 Tage.
+#: Abweichend einstellbar (``EVENTS_TASKS_DONE_RETENTION_DAYS``, ``EVENTS_TASKS_DEAD_RETENTION_DAYS``).
 KEEP_DONE: Final = timedelta(days=14)
 KEEP_FAILED: Final = timedelta(days=90)
 #: Zeilen je Löschschritt; kurze Transaktionen statt einer langen Sperre
 PURGE_BATCH: Final = 5000
+
+
+def task_retention() -> tuple[timedelta, timedelta]:
+    """Aufbewahrung erledigter und toter bzw. endgültig fehlgeschlagener Aufträge (je mindestens ein Tag)."""
+    from django.conf import settings
+
+    fristen = []
+    for name, standard in (
+        ("EVENTS_TASKS_DONE_RETENTION_DAYS", KEEP_DONE),
+        ("EVENTS_TASKS_DEAD_RETENTION_DAYS", KEEP_FAILED),
+    ):
+        tage = int(getattr(settings, name, standard.days))
+        if tage < 1:
+            raise ImproperlyConfigured(f"{name} muss mindestens 1 sein.")
+        fristen.append(timedelta(days=tage))
+    return fristen[0], fristen[1]
+
+
+def _beendet_nach_frist(now: datetime | None = None) -> list[tuple[str, datetime]]:
+    jetzt = now or timezone.now()
+    erledigt, tot = task_retention()
+    return [
+        (TaskStatus.ERLEDIGT, jetzt - erledigt),
+        (TaskStatus.FEHLGESCHLAGEN, jetzt - tot),
+        (TaskStatus.TOT, jetzt - tot),
+    ]
+
+
+def count_finished(now: datetime | None = None) -> int:
+    """Wie viele beendete Aufträge ``purge_finished`` jetzt löschen würde (Probelauf)."""
+    return sum(
+        TaskRow.objects.filter(status=status, finished_at__lt=vor).count() for status, vor in _beendet_nach_frist(now)
+    )
 
 
 def purge_finished(now: datetime | None = None, batch: int = PURGE_BATCH) -> int:
@@ -322,19 +356,11 @@ def purge_finished(now: datetime | None = None, batch: int = PURGE_BATCH) -> int
     Mit den Zeilen verfallen auch ihre Idempotenzschlüssel (``enqueue_once``). Wartende und laufende
     Aufträge bleiben unberührt.
     """
-    jetzt = now or timezone.now()
-    regeln = (
-        (TaskStatus.ERLEDIGT, KEEP_DONE),
-        (TaskStatus.FEHLGESCHLAGEN, KEEP_FAILED),
-        (TaskStatus.TOT, KEEP_FAILED),
-    )
     geloescht = 0
-    for status, frist in regeln:
+    for status, vor in _beendet_nach_frist(now):
         while True:
             schritt = list(
-                TaskRow.objects.filter(status=status, finished_at__lt=jetzt - frist).values_list("pk", flat=True)[
-                    :batch
-                ]
+                TaskRow.objects.filter(status=status, finished_at__lt=vor).values_list("pk", flat=True)[:batch]
             )
             if not schritt:
                 break
