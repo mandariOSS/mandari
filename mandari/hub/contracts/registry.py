@@ -27,7 +27,7 @@ from typing import Any, Final, cast
 
 from .envelope import Envelope
 from .naming import COMMAND, EVENT, Kind
-from .rules import document_problems, parse_visibility
+from .rules import document_problems, parse_visibility, person_fields
 from .validation import ContractViolationError, envelope_problems, instance_problems, validator_for
 
 SCHEMA_ROOT: Final = Path(__file__).resolve().parent / "schemas"
@@ -74,6 +74,11 @@ class Contract:
     @property
     def examples(self) -> list[Any]:
         return copy.deepcopy(list(self._schema.get("examples", [])))
+
+    @property
+    def person_fields(self) -> tuple[str, ...]:
+        """Felder der Nutzlast, die eine Person nennen (``x-person``, nur personenbezogene Ereignisse)."""
+        return person_fields(self._schema)
 
     @classmethod
     def from_document(cls, name: str, version: int, document: Mapping[str, Any]) -> Contract:
@@ -151,6 +156,14 @@ class Registry:
         """JSON Schema der Nutzlast für Typ und Version (Kopie); ``UnknownContractError``, wenn es fehlt."""
         return self.get(name, version).schema
 
+    def person_fields(self) -> dict[tuple[str, int], tuple[str, ...]]:
+        """Je Ereignistyp und Version die Felder, die eine Person nennen (nur Verträge mit solchen Feldern)."""
+        return {
+            (contract.name, contract.version): contract.person_fields
+            for contract in self.contracts(EVENT)
+            if contract.person_fields
+        }
+
     # --- Prüfen -----------------------------------------------------------------------------
 
     def payload_problems(self, name: str, version: int, payload: object) -> list[str]:
@@ -219,3 +232,8 @@ def load_registry(root: Path = SCHEMA_ROOT) -> Registry:
 def get_registry() -> Registry:
     """Register der ausgelieferten Schemas (einmal je Prozess geladen)."""
     return load_registry(SCHEMA_ROOT)
+
+
+def person_fields_by_contract() -> dict[tuple[str, int], tuple[str, ...]]:
+    """Personenfelder der ausgelieferten Verträge (für ``apps.events.datenschutz``)."""
+    return get_registry().person_fields()

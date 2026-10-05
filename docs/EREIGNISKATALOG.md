@@ -10,6 +10,10 @@ Regeln für Namen, Sichtbarkeit und Änderungen stehen in
 ändert sich nur ergänzend (neue optionale Felder, neue Codes); alles andere ergibt eine neue Version.
 Die CI prüft das und erzeugt diese Datei neu (`scripts/check_event_contracts.py`).
 
+In der Spalte „Pflicht“ kennzeichnet „Inhalt“ ein Inhaltsfeld eines Befehls und „Person“ ein Feld, das
+eine Person nennt: Nach einer DSGVO-Löschung (`redact`) wird die Nutzlast personenbezogener Einträge,
+die diese Person nennen, im Journal geleert.
+
 ## Übersicht
 
 | Typ | Art | Versionen | Eigentümer | Sichtbarkeit | Titel |
@@ -87,7 +91,7 @@ Schema: [`envelope/v1.json`](../mandari/hub/contracts/envelope/v1.json)
 | Feld | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
 | `meeting` | ja | Zeichenkette (uuid) | Sitzung. |
-| `person` | ja | Zeichenkette (uuid) | Geladene Person. |
+| `person` | ja, Person | Zeichenkette (uuid) | Geladene Person. |
 | `response` | ja | Code: `confirmed`, `declined` | confirmed (Zusage) oder declined (Absage). |
 | `substitute_requested` | nein | Wahrheitswert | Bei einer Absage: Vertretung erbeten. |
 | `source` | nein | Code: `link`, `portal`, `staff` | Weg der Rückmeldung. |
@@ -129,7 +133,7 @@ Beispiel 2:
 |---|---|---|---|
 | `membership` | ja | Zeichenkette (uuid) | Kennung der Mitgliedschaft. |
 | `organization` | ja | Zeichenkette (uuid) | Organisation. |
-| `user` | ja | Zeichenkette (uuid) | Konto der Person. |
+| `user` | ja, Person | Zeichenkette (uuid) | Konto der Person. |
 | `change` | ja | Code: `added`, `roles_changed`, `permissions_changed`, `deactivated`, `reactivated`, `removed` | added, roles_changed, permissions_changed, deactivated, reactivated, removed. |
 | `changed` | nein | Liste aus Zeichenkette (Muster `^[a-z][A-Za-z0-9_]{0,63}$`) (1 bis 64 Einträge) | Geänderte Felder der Mitgliedschaft. |
 
@@ -169,7 +173,7 @@ Beispiel 2:
 
 | Feld | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `user` | ja | Zeichenkette (uuid) | Kennung des Kontos. |
+| `user` | ja, Person | Zeichenkette (uuid) | Kennung des Kontos. |
 | `step` | ja | Code: `created`, `confirmed` | created (angelegt) oder confirmed (bestätigt). |
 | `via` | nein | Code: `invitation`, `self_registration`, `admin` | Weg: invitation (Einladung), self_registration (Selbstregistrierung), admin. |
 | `organization` | nein | Zeichenkette (uuid) | Organisation, über die das Konto entstand. |
@@ -867,7 +871,7 @@ Beispiel 2:
 | Feld | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
 | `allowance` | ja | Zeichenkette (uuid) | Kennung der Abrechnungsposition. |
-| `person` | ja | Zeichenkette (uuid) | Empfangende Person. |
+| `person` | ja, Person | Zeichenkette (uuid) | Empfangende Person. |
 | `kind` | ja | Code: `meeting`, `monthly` | meeting (Sitzungsgeld je Sitzung) oder monthly (Monatspauschale). |
 | `meeting` | nein | Zeichenkette (uuid) | Sitzung (bei kind meeting). |
 

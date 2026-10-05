@@ -27,6 +27,7 @@
     },
     "user": {
       "description": "Konto der Person.",
+      "x-person": true,
       "type": "string",
       "format": "uuid"
     },

@@ -95,6 +95,8 @@ def field_rows(schema: Mapping[str, Any], root: Mapping[str, Any], prefix: str =
         flags = "ja" if name in required else "nein"
         if isinstance(sub, dict) and sub.get("x-content"):
             flags += ", Inhalt"
+        if isinstance(sub, dict) and sub.get("x-person") is True:
+            flags += ", Person"
         description = str(sub.get("description", "")) if isinstance(sub, dict) else ""
         yield (f"`{label}`", flags, describe_type(sub, root), _prose(description))
         if isinstance(sub, dict) and isinstance(sub.get("properties"), dict):
@@ -151,6 +153,10 @@ def render_catalog(registry: Registry, envelope: Mapping[str, Any]) -> str:
         "[Verträge für Ereignisse und Befehle](adr/20260929-ereignisvertraege.md). Eine bestehende Version",
         "ändert sich nur ergänzend (neue optionale Felder, neue Codes); alles andere ergibt eine neue Version.",
         "Die CI prüft das und erzeugt diese Datei neu (`scripts/check_event_contracts.py`).",
+        "",
+        "In der Spalte „Pflicht“ kennzeichnet „Inhalt“ ein Inhaltsfeld eines Befehls und „Person“ ein Feld, das",
+        "eine Person nennt: Nach einer DSGVO-Löschung (`redact`) wird die Nutzlast personenbezogener Einträge,",
+        "die diese Person nennen, im Journal geleert.",
         "",
         "## Übersicht",
         "",

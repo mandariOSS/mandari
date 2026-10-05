@@ -15,6 +15,7 @@
   "properties": {
     "user": {
       "description": "Kennung des Kontos.",
+      "x-person": true,
       "type": "string",
       "format": "uuid"
     },

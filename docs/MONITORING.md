@@ -300,6 +300,16 @@ Dieselben Eingriffe gibt es auf der Kommandozeile (`manage.py events_dispatch --
 `--retry-parked`, `--discard-parked`, `--replay`); auch sie stehen im Sicherheitsprotokoll (Quelle
 `kommandozeile`, ohne Konto).
 
+**DSGVO-Löschung im Journal** (Issue #511): `manage.py events_neutralize --person <uuid> [--dry-run]` leert die
+Nutzlast aller Journaleinträge mit Sichtbarkeit `personenbezogen`, deren Objekt die Person ist oder deren
+Personenfeld (`x-person` im Vertrag, im Ereigniskatalog „Person“) sie nennt. Die Kennung bleibt (Zeile,
+Ereignis-ID, Objekt, Folgenummer); der Eingriff steht im Sicherheitsprotokoll (Aktion `journal_neutralisiert`
+mit Anzahl). Mit `EVENTS_REDACT_NEUTRALIZE=true` (Standard aus) legt jedes veröffentlichte Ereignis mit
+`operation=redact` dafür in derselben Transaktion den Auftrag `apps.events.datenschutz.journal_neutralisieren`
+(Warteschlange `default`) an. Einschalten: zuerst einmal von Hand mit `--dry-run` für eine Test-Kennung, dann
+den Schalter; messen über `mandari_tasks_dead` und das Protokoll des Workers (`… personenbezogene Nutzlasten
+neutralisiert`). Rückweg: Schalter aus; Geleertes kommt nur aus der Sicherung zurück.
+
 Ereignisse, die ein Auftrag veröffentlicht, tragen die Kennung des Auftrags als Korrelations-ID und
 `system:<auftrag>` als Auslöser; so findet man im Journal, was ein Auftrag ausgelöst hat.
 

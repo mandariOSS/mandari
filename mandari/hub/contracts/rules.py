@@ -34,6 +34,12 @@ nimmt also nie beliebiges JSON an. Ereignisse haben nie Inhaltsfelder: Sie lande
 Änderungsfeed und bei Abonnenten; Inhalte holt der Empfänger berechtigt beim Eigentümer. Ein Befehl
 geht dagegen nur an den Eigentümer, und der Befehlsweg gibt seinen Inhalt weder in Logs noch in
 Fehlermeldungen oder Ereignisse weiter.
+
+**Personenfelder in Ereignissen (Issue #511):** Ein Feld der Nutzlast, das eine Person nennt (Konto,
+geladene oder empfangende Person), trägt ``"x-person": true``. Wird eine Person nach DSGVO gelöscht
+(``redact``), leert die Plattform die Nutzlast der personenbezogenen Journaleinträge, deren Personenfeld
+sie nennt (``apps.events.datenschutz``). Erlaubt nur in Ereignissen der Klasse ``personenbezogen``, nur
+an Feldern der obersten Ebene vom Typ Zeichenkette mit Format ``uuid``.
 """
 
 from __future__ import annotations
@@ -62,6 +68,8 @@ KNOWN_OWNERS: Final[tuple[str, ...]] = (
 
 #: Kennzeichen eines Inhaltsfelds (nur in Befehlen, siehe oben).
 CONTENT_KEYWORD: Final = "x-content"
+#: Kennzeichen eines Felds, das eine Person nennt (nur in personenbezogenen Ereignissen, siehe oben).
+PERSON_KEYWORD: Final = "x-person"
 
 #: Größte Länge, bis zu der eine Zeichenkette mit Muster noch als Kennung gilt.
 IDENTIFIER_MAX_LENGTH: Final = 255
@@ -198,6 +206,46 @@ def content_leaves(schema: Mapping[str, Any]) -> dict[str, int | None]:
         for leaf_pointer, leaf in _leaves(node, pointer):
             leaves[leaf_pointer] = _limit(leaf.get("maxLength"))
     return leaves
+
+
+def person_fields(schema: Mapping[str, Any]) -> tuple[str, ...]:
+    """Felder der obersten Ebene mit ``x-person`` (Namen in Dokumentreihenfolge)."""
+    properties = schema.get("properties")
+    if not isinstance(properties, Mapping):
+        return ()
+    return tuple(
+        name for name, sub in properties.items() if isinstance(sub, Mapping) and sub.get(PERSON_KEYWORD) is True
+    )
+
+
+def person_problems(schema: Mapping[str, Any], kind: object, visibility: frozenset[str]) -> list[str]:
+    """Verstöße gegen die Regeln für Personenfelder: nur in personenbezogenen Ereignissen, oberste Ebene, uuid."""
+    problems: list[str] = []
+    properties = schema.get("properties")
+    oben = {
+        id(sub) for sub in (properties.values() if isinstance(properties, Mapping) else ()) if isinstance(sub, Mapping)
+    }
+    for pointer, node in _person_nodes(schema, "#"):
+        if node[PERSON_KEYWORD] is not True:
+            problems.append(f"{pointer}: {PERSON_KEYWORD} muss true sein")
+        elif kind != EVENT:
+            problems.append(f"{pointer}: {PERSON_KEYWORD} gibt es nur in Ereignissen")
+        elif "personenbezogen" not in visibility:
+            problems.append(f"{pointer}: {PERSON_KEYWORD} nur in Ereignissen der Klasse personenbezogen")
+        elif id(node) not in oben:
+            problems.append(f"{pointer}: {PERSON_KEYWORD} nur an Feldern der obersten Ebene")
+        elif node.get("type") != "string" or node.get("format") != "uuid":
+            problems.append(f"{pointer}: {PERSON_KEYWORD} nur an Zeichenketten im Format uuid")
+    return problems
+
+
+def _person_nodes(node: object, pointer: str) -> Iterator[tuple[str, Mapping[str, Any]]]:
+    if not isinstance(node, Mapping):
+        return
+    if PERSON_KEYWORD in node:
+        yield pointer, node
+    for child_pointer, child in _children(node, pointer):
+        yield from _person_nodes(child, child_pointer)
 
 
 def _leaves(node: object, pointer: str) -> Iterator[tuple[str, Mapping[str, Any]]]:
@@ -357,6 +405,7 @@ def document_problems(name: str, version: int, document: object) -> list[str]:
     if domain in INTERNAL_DOMAINS and "oeffentlich" in visibility:
         problems.append(f"Bereich „{domain}“ ist intern und darf nicht oeffentlich sein")
     problems += content_problems(document, kind)
+    problems += person_problems(document, kind, visibility)
     restricted = sorted(visibility & RESTRICTED_VISIBILITIES)
     if restricted:
         open_paths = free_text_paths(document, skip_content=kind == COMMAND)
