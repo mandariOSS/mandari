@@ -285,3 +285,87 @@ def test_dialog_zeigt_die_tagesordnung_der_neuen_sitzung(
     assert 'name="standard_agenda"' in html
     assert "Beschlüsse" in html and "Personalien" in html and "Termine" in html
     assert 'name="video_link"' in html
+
+
+@pytest.mark.django_db
+def test_vorschau_nennt_den_ersten_top_wie_die_anlage(
+    org: Any, vorsitz: Any, standard: list[FactionStandardAgendaItem], client_for: Any
+) -> None:
+    client = client_for(vorsitz.user)
+    liste = reverse("work:faction", kwargs={"org_slug": org.slug})
+
+    ohne_vorsitzung = client.get(liste).context["standard_agenda_preview"]["approval_title"]
+    FactionMeeting.objects.create(
+        organization=org, title="Letzte", start=timezone.now() - timedelta(days=7), status="completed"
+    )
+    mit_vorsitzung = client.get(liste).context["standard_agenda_preview"]["approval_title"]
+
+    assert ohne_vorsitzung == "Tagesordnung festlegen"
+    assert mit_vorsitzung == "Tagesordnung festlegen und letztes Protokoll genehmigen"
+    assert _anlegen(client, org).agenda_items.get(is_approval_item=True).title == mit_vorsitzung
+
+
+@pytest.mark.django_db
+def test_einstellungen_zeigen_keine_rohen_platzhalter(
+    org: Any, vorsitz: Any, standard: list[FactionStandardAgendaItem], client_for: Any
+) -> None:
+    org.settings = {"faction": {"first_agenda_title_with_previous": "TO und Protokoll vom {datum_letzte_sitzung}"}}
+    org.save(update_fields=["settings"])
+
+    html = (
+        client_for(vorsitz.user)
+        .get(reverse("work:organization_faction_settings", kwargs={"org_slug": org.slug}))
+        .content.decode()
+    )
+
+    # Die Karte der Standard-Tagesordnung (die Vorlage selbst steht weiter im Eingabefeld der Titelvorlage)
+    karte = html[html.index("Diese Punkte erhält jede neu angelegte") : html.index("Neuer Standardpunkt")]
+    assert "{datum_letzte_sitzung}" not in karte
+    assert "Tagesordnung festlegen und letztes Protokoll genehmigen" in karte
+
+
+@pytest.mark.django_db
+def test_hinweis_dass_vorausgeplante_termine_unveraendert_bleiben(org: Any, vorsitz: Any, client_for: Any) -> None:
+    url = reverse("work:organization_faction_settings", kwargs={"org_slug": org.slug})
+
+    antwort = client_for(vorsitz.user).post(url, {"section": "add_standard_item", "title": "Termine"}, follow=True)
+
+    html = antwort.content.decode()
+    assert "vorausgeplante Termine der Sitzungsreihen, bleiben unverändert" in html
+    assert "vorausgeplante Termine einer Sitzungsreihe, bleiben unverändert" in html
+
+
+@pytest.mark.django_db
+def test_zu_langer_videolink_wird_abgewiesen(org: Any, vorsitz: Any, client_for: Any) -> None:
+    zu_lang = "https://meet.example.org/" + "x" * 200
+    client = client_for(vorsitz.user)
+
+    antwort = client.post(
+        reverse("work:faction", kwargs={"org_slug": org.slug}),
+        {"title": "Sitzung", "start_date": "2030-03-04", "start_time": "18:00", "video_link": zu_lang},
+        follow=True,
+    )
+
+    assert "Der Videolink darf höchstens 200 Zeichen lang sein." in antwort.content.decode()
+    assert not FactionMeeting.objects.filter(organization=org).exists()
+    assert 'maxlength="200"' in client.get(reverse("work:faction", kwargs={"org_slug": org.slug})).content.decode()
+
+
+@pytest.mark.django_db
+def test_zu_langer_videolink_beim_bearbeiten_wird_abgewiesen(org: Any, vorsitz: Any, client_for: Any) -> None:
+    meeting = _anlegen(client_for(vorsitz.user), org, video_link="https://meet.example.org/fraktion")
+    url = reverse("work:faction_action", kwargs={"org_slug": org.slug, "meeting_id": meeting.id})
+
+    client_for(vorsitz.user).post(
+        url,
+        {
+            "action": "update",
+            "title": "Umbenannt",
+            "is_virtual": "on",
+            "video_link": "https://meet.example.org/" + "x" * 200,
+        },
+    )
+
+    meeting.refresh_from_db()
+    assert meeting.title == "Fraktionssitzung"
+    assert meeting.video_link == "https://meet.example.org/fraktion"

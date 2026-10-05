@@ -1,11 +1,11 @@
 {# Fraktions-Einstellungen: Standard-Tagesordnung jeder neuen Sitzung (Issue #872), eigene Formulare je Aktion #}
-{# Kontext: faction_settings, standard_agenda_rows, standard_agenda_empty, standard_agenda_locked, standard_agenda_may_internal, standard_agenda_suggestion #}
-<c-ui.card title="Standard-Tagesordnung" subtitle="Diese Punkte erhält jede neue Fraktionssitzung, auch aus Sitzungsreihen. Bestehende Sitzungen bleiben unverändert.">
+{# Kontext: faction_settings, standard_agenda_approval_title, standard_agenda_rows, standard_agenda_empty, standard_agenda_locked, standard_agenda_may_internal, standard_agenda_suggestion #}
+<c-ui.card title="Standard-Tagesordnung" subtitle="Diese Punkte erhält jede neu angelegte Fraktionssitzung, auch aus Sitzungsreihen. Bereits angelegte Sitzungen, auch vorausgeplante Termine einer Sitzungsreihe, bleiben unverändert; dort ergänzen Sie Punkte in der Sitzung selbst.">
     <ol class="text-sm divide-y divide-gray-100 dark:divide-gray-700/50">
         {% if faction_settings.auto_create_approval_item %}
         <li class="flex items-center gap-3 py-2">
             <span class="w-10 text-gray-500 tabular-nums">1</span>
-            <span class="flex-1 text-gray-900 dark:text-white">{{ faction_settings.first_agenda_title_with_previous|default:"Tagesordnung festlegen und letztes Protokoll genehmigen" }}</span>
+            <span class="flex-1 text-gray-900 dark:text-white">{{ standard_agenda_approval_title }}</span>
             <span class="text-xs text-gray-500">automatisch, genehmigt das letzte Protokoll</span>
         </li>
         {% endif %}

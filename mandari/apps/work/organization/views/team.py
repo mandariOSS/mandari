@@ -145,6 +145,13 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
         messages.success(request, "Anmeldesicherheit gespeichert.")
 
 
+#: Hinweis nach Änderungen an der Standard-Tagesordnung (Issue #872): sie gilt nur für neu angelegte Sitzungen
+_STANDARD_AGENDA_SCOPE = (
+    "Bereits angelegte Sitzungen, auch vorausgeplante Termine der Sitzungsreihen, bleiben unverändert; "
+    "dort ergänzen Sie Punkte in der Sitzung selbst."
+)
+
+
 class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
     """Faction meeting settings tab in organization settings."""
 
@@ -278,11 +285,14 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         title = services.add_standard_agenda_item(
             self.organization, request.POST, may_view_internal=can_view_internal(self.membership)
         )
-        messages.success(request, f"„{title}“ steht ab sofort auf der Tagesordnung jeder neuen Sitzung.")
+        messages.success(
+            request,
+            f"„{title}“ steht ab sofort auf der Tagesordnung jeder neu angelegten Sitzung. {_STANDARD_AGENDA_SCOPE}",
+        )
 
     def _add_standard_suggestion(self, request):
         count = services.add_standard_agenda_suggestion(self.organization)
-        messages.success(request, f"{count} Standardpunkte übernommen.")
+        messages.success(request, f"{count} Standardpunkte übernommen. {_STANDARD_AGENDA_SCOPE}")
 
     def _move_standard_item(self, request):
         services.move_standard_agenda_item(

@@ -112,12 +112,17 @@
     {% if my_proposals %}
     <ul class="mt-3 space-y-1">
         {% for item in my_proposals %}
-        <li class="flex items-center justify-between gap-2 text-sm">
-            <span class="text-gray-700 dark:text-gray-300 truncate">{{ item.title }}</span>
-            {% if item.is_rejected %}
-            <c-ui.badge color="red">Abgelehnt</c-ui.badge>
-            {% else %}
-            <c-ui.badge color="amber">Wartet auf Genehmigung</c-ui.badge>
+        <li class="text-sm">
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-gray-700 dark:text-gray-300 truncate">{{ item.title }}</span>
+                {% if item.is_rejected %}
+                <c-ui.badge color="red">Abgelehnt</c-ui.badge>
+                {% else %}
+                <c-ui.badge color="amber">Wartet auf Genehmigung</c-ui.badge>
+                {% endif %}
+            </div>
+            {% if item.is_rejected and item.rejection_reason %}
+            <p class="text-xs text-gray-500 mt-0.5">Begründung: {{ item.rejection_reason }}</p>
             {% endif %}
         </li>
         {% endfor %}

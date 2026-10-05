@@ -16,6 +16,11 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
+#: Videolink (Issue #872): ``FactionMeeting.video_link`` ist ein URLField mit Höchstlänge – längere Links werden
+#: mit fester Meldung abgewiesen statt mit einem Datenbankfehler
+VIDEO_LINK_MAX_LENGTH = FactionMeeting._meta.get_field("video_link").max_length or 200
+VIDEO_LINK_TOO_LONG = f"Der Videolink darf höchstens {VIDEO_LINK_MAX_LENGTH} Zeichen lang sein."
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -117,9 +122,9 @@ def _get_meeting_context(view, meeting):
     can_propose = checker.can_propose_agenda_items()
     can_create_directly = checker.can_create_agenda_items_directly()
     # TOPs direkt eintragen (Issue #872): Verwaltung der Sitzung oder agenda.create (Ratsmitglieder)
-    from ..agenda import AGENDA_OPEN_STATUSES, PROPOSAL_OPEN_STATUSES
+    from ..agenda import open_for_members, open_for_proposals
 
-    can_add_items = can_edit or (can_create_directly and meeting.status in AGENDA_OPEN_STATUSES)
+    can_add_items = can_edit or (can_create_directly and open_for_members(meeting))
 
     # Beschlussfähigkeit (Issue #69): Anzeige während/nach der Sitzung
     from ..quorum import faction_quorum_status
@@ -163,13 +168,18 @@ def _get_meeting_context(view, meeting):
     protocol_entry_count = protocol_entries_qs.count()
 
     # TOP-Vorschläge: NÖ-Vorschläge sind für Nicht-Vereidigte unsichtbar
-    pending_proposals = meeting.agenda_items.filter(proposal_status="proposed").select_related("proposed_by__user")
-    if not can_view_internal:
-        pending_proposals = pending_proposals.exclude(visibility="internal")
+    # (Organisation mitladen: die Beschreibung wird je Vorschlag mit ihrem Schlüssel entschlüsselt)
+    pending_proposals = meeting.agenda_items.filter(proposal_status="proposed").select_related(
+        "proposed_by__user", "meeting__organization"
+    )
     # Eigene Vorschläge mit Stand (offen/abgelehnt) für die Vorschlagenden
     my_proposals = meeting.agenda_items.filter(
         proposed_by=view.membership, proposal_status__in=["proposed", "rejected"]
     ).order_by("proposed_at")
+    if not can_view_internal:
+        pending_proposals = pending_proposals.exclude(visibility="internal")
+        # Auch eigene NÖ-Vorschläge nur, solange die Vereidigung besteht
+        my_proposals = my_proposals.exclude(visibility="internal")
 
     return {
         "meeting": meeting,
@@ -199,7 +209,7 @@ def _get_meeting_context(view, meeting):
         "invitation_dispatch_at": invitation_dispatch_at(meeting, inv_settings),
         "invitation_settings": inv_settings,
         "can_add_items": can_add_items,
-        "can_propose_agenda": can_propose and not can_create_directly and meeting.status in PROPOSAL_OPEN_STATUSES,
+        "can_propose_agenda": can_propose and not can_create_directly and open_for_proposals(meeting),
         "can_approve_proposals": checker.can_approve_agenda_items(),
         "pending_proposals": pending_proposals,
         "my_proposals": my_proposals,

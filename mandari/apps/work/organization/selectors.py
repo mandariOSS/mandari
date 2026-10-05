@@ -925,8 +925,9 @@ def standard_agenda_context(
     """
     Standard-Tagesordnung für die Einstellungen (Issue #872): Zeilen mit der Nummer, die der Punkt in einer neuen
     Sitzung erhält. Nicht-öffentliche Punkte nur für Vereidigte (NÖ strikt, Issue #64), sonst nur ihre Anzahl.
+    Der Titel des Genehmigungs-TOPs erscheint ohne rohe Platzhalter.
     """
-    from apps.work.faction.agenda import format_number, standard_items
+    from apps.work.faction.agenda import approval_title_preview, format_number, standard_items
 
     items = list(standard_items(organization))
     public = [item for item in items if item.visibility == "public"]
@@ -936,6 +937,9 @@ def standard_agenda_context(
     if may_view_internal:
         rows += [(format_number("internal", position), item) for position, item in enumerate(internal, start=1)]
     return {
+        "standard_agenda_approval_title": approval_title_preview(
+            (organization.settings or {}).get("faction", {}), has_previous=True
+        ),
         "standard_agenda_rows": rows,
         "standard_agenda_empty": not items,
         "standard_agenda_locked": 0 if may_view_internal else len(internal),

@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 
 from django.contrib import messages
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
@@ -25,6 +26,8 @@ from ..models import (
 logger = logging.getLogger(__name__)
 from ..visibility import can_view_internal, can_view_item
 from ._helpers import (
+    VIDEO_LINK_MAX_LENGTH,
+    VIDEO_LINK_TOO_LONG,
     _apply_approval_item_decision,
     _get_meeting_context,
     _htmx_response,
@@ -134,8 +137,13 @@ class FactionActionView(WorkViewMixin, View):
         return meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
 
     def _can_add_items(self, meeting):
-        """TOPs direkt eintragen: wer die Tagesordnung verwaltet, oder mit ``agenda.create`` (Ratsmitglieder)."""
-        return self._can_manage_agenda(meeting) or self.membership.has_permission("agenda.create")
+        """
+        TOPs direkt eintragen: wer die Tagesordnung verwaltet, oder mit ``agenda.create`` (Ratsmitglieder) – dann
+        nur, solange die Sitzung offen und ihr Protokoll nicht genehmigt ist (wie die Oberfläche, Issue #872).
+        """
+        if self._can_manage_agenda(meeting):
+            return True
+        return self.membership.has_permission("agenda.create") and agenda.open_for_members(meeting)
 
     def _can_protocol(self, meeting):
         """Wer darf Protokolleinträge/Beschlüsse erfassen (solange Protokoll nicht genehmigt)."""
@@ -249,7 +257,11 @@ class FactionActionView(WorkViewMixin, View):
 
         meeting.location = request.POST.get("location", "")
         meeting.is_virtual = request.POST.get("is_virtual") == "on"
-        meeting.video_link = request.POST.get("video_link", "") if meeting.is_virtual else ""
+        video_link = request.POST.get("video_link", "").strip() if meeting.is_virtual else ""
+        if len(video_link) > VIDEO_LINK_MAX_LENGTH:
+            messages.error(request, VIDEO_LINK_TOO_LONG)
+            return self._redirect_detail(meeting)
+        meeting.video_link = video_link
 
         new_status = request.POST.get("status")
         if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES) and self._may_set_status(new_status):
@@ -346,22 +358,29 @@ class FactionActionView(WorkViewMixin, View):
             if visibility == "internal" and not can_view_internal(self.membership):
                 return HttpResponse(status=403)
 
-        # Auto-generate number — offene und abgelehnte Vorschläge zählen nicht mit (Issue #872)
-        if parent:
-            child_count = parent.children.count() + 1
-            number = f"{parent.number}.{child_count}"
-        else:
-            number = agenda.next_number(meeting, visibility)
+        # Auto-generate number — offene und abgelehnte Vorschläge zählen nicht mit (Issue #872). Die Sitzung ist
+        # bis zum Speichern gesperrt, damit gleichzeitige Einträge verschiedene Nummern erhalten.
+        with transaction.atomic():
+            agenda.lock_meeting(meeting)
+            if parent:
+                child_count = parent.children.count() + 1
+                number = f"{parent.number}.{child_count}"
+            else:
+                number = agenda.next_number(meeting, visibility)
 
-        item = FactionAgendaItem(
-            meeting=meeting,
-            title=title,
-            number=number,
-            visibility=visibility,
-            order=agenda.next_order(meeting),
-            parent=parent,
-        )
-        item.save()
+            item = FactionAgendaItem(
+                meeting=meeting,
+                title=title,
+                number=number,
+                visibility=visibility,
+                order=agenda.next_order(meeting),
+                parent=parent,
+            )
+            item.save()
+            if parent is None:
+                # Gleicht Altbestand aus, in dem offene oder abgelehnte Vorschläge noch mitgezählt wurden
+                agenda.renumber(meeting, visibility)
+                item.refresh_from_db(fields=["number"])
 
         description = request.POST.get("description", "").strip()
         if description:
@@ -906,6 +925,10 @@ class FactionActionView(WorkViewMixin, View):
         # Berechtigte ein, das ersetzt aber keine Prüfung im Handler.
         if not self.membership.has_permission("agenda.propose") and not self.membership.has_permission("agenda.create"):
             messages.error(request, "Keine Berechtigung zum Einreichen von Vorschlägen.")
+            return self._redirect_detail(meeting)
+        # Vorschläge nur vor Sitzungsbeginn – wie die Oberfläche (Issue #872)
+        if not agenda.open_for_proposals(meeting):
+            messages.error(request, "Für diese Sitzung können keine TOPs mehr vorgeschlagen werden.")
             return self._redirect_detail(meeting)
 
         title = request.POST.get("title", "").strip()

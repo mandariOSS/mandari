@@ -15,7 +15,7 @@ Sitzungen entstehen: der Anlage von Hand (``FactionMeetingListView.post``) und d
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from django.db import transaction
 from django.db.models import Max, QuerySet
@@ -33,6 +33,31 @@ ACTIVE = "active"
 AGENDA_OPEN_STATUSES = ("draft", "planned", "invited", "ongoing")
 #: Sitzungen, für die noch TOPs vorgeschlagen werden können (vor Sitzungsbeginn)
 PROPOSAL_OPEN_STATUSES = ("draft", "planned", "invited")
+#: Titel des Genehmigungs-TOPs ohne eigene Vorlage (wie ``FactionMeeting.create_approval_agenda_item``)
+APPROVAL_TITLE_WITH_PREVIOUS = "Tagesordnung festlegen und letztes Protokoll genehmigen"
+APPROVAL_TITLE_NO_PREVIOUS = "Tagesordnung festlegen"
+
+
+def open_for_members(meeting: FactionMeeting) -> bool:
+    """Dürfen Mitglieder mit ``agenda.create``, die die Sitzung nicht verwalten, noch TOPs eintragen?"""
+    return meeting.status in AGENDA_OPEN_STATUSES and not meeting.protocol_approved
+
+
+def open_for_proposals(meeting: FactionMeeting) -> bool:
+    """Können für die Sitzung noch TOPs vorgeschlagen werden (vor Sitzungsbeginn)?"""
+    return meeting.status in PROPOSAL_OPEN_STATUSES
+
+
+def lock_meeting(meeting: FactionMeeting) -> None:
+    """
+    Sitzung bis zum Ende der laufenden Transaktion sperren.
+
+    Nummer und Reihenfolge neuer TOPs werden so nacheinander vergeben: Zwei gleichzeitige Annahmen oder
+    Einträge in derselben Sitzung erhalten nicht dieselbe Nummer. Nur innerhalb von ``transaction.atomic``.
+    """
+    from .models import FactionMeeting
+
+    list(FactionMeeting.objects.select_for_update().filter(pk=meeting.pk).values_list("pk", flat=True))
 
 
 def numbered_items(meeting: FactionMeeting, visibility: str) -> QuerySet[FactionAgendaItem]:
@@ -93,6 +118,36 @@ def standard_items(organization: Organization) -> QuerySet[FactionStandardAgenda
     return FactionStandardAgendaItem.objects.filter(organization=organization).order_by("order", "created_at")
 
 
+def approval_title_preview(faction_settings: dict[str, Any], *, has_previous: bool) -> str:
+    """
+    Titel des Genehmigungs-TOPs für Vorschau und Einstellungen.
+
+    Eine eigene Vorlage mit Platzhaltern (etwa ``{datum_letzte_sitzung}``) füllt erst die Sitzung; bis dahin
+    steht der Standardtitel da statt der rohen Platzhalter.
+    """
+    if has_previous:
+        key, default = "first_agenda_title_with_previous", APPROVAL_TITLE_WITH_PREVIOUS
+    else:
+        key, default = "first_agenda_title_no_previous", APPROVAL_TITLE_NO_PREVIOUS
+    title = str(faction_settings.get(key) or "")
+    if not title or "{" in title:
+        return default
+    return title
+
+
+def new_meeting_has_previous(organization: Organization) -> bool:
+    """
+    Erhielte eine neue Sitzung eine Vorsitzung (und damit „… und letztes Protokoll genehmigen“)?
+
+    Wie bei der Anlage (``FactionMeetingListView.post``): die letzte begonnene oder abgeschlossene Sitzung, sofern
+    sie nicht schon einer anderen Sitzung als Vorsitzung zugeordnet ist.
+    """
+    from .models import FactionMeeting
+
+    previous = cast(Any, FactionMeeting).find_previous_meeting(organization)
+    return previous is not None and not FactionMeeting.objects.filter(previous_meeting=previous).exists()
+
+
 def standard_agenda_preview(organization: Organization, *, may_view_internal: bool) -> dict[str, Any]:
     """
     Tagesordnung, die eine neue Sitzung erhält (Dialog „Neue Sitzung“): erster TOP und Standard-TOPs.
@@ -101,13 +156,15 @@ def standard_agenda_preview(organization: Organization, *, may_view_internal: bo
     """
     faction_settings = (organization.settings or {}).get("faction", {})
     items = list(standard_items(organization))
-    title = faction_settings.get("first_agenda_title_with_previous") or ""
-    if not title or "{" in title:
-        # Platzhalter füllt erst die Sitzung; die Vorschau nennt den Standardtitel
-        title = "Tagesordnung festlegen und letztes Protokoll genehmigen"
+    approval_item = faction_settings.get("auto_create_approval_item", True)
+    title = (
+        approval_title_preview(faction_settings, has_previous=new_meeting_has_previous(organization))
+        if approval_item
+        else ""
+    )
     internal = [item for item in items if item.visibility == "internal"]
     return {
-        "approval_item": faction_settings.get("auto_create_approval_item", True),
+        "approval_item": approval_item,
         "approval_title": title,
         "public": [item for item in items if item.visibility == "public"],
         "internal": internal if may_view_internal else [],

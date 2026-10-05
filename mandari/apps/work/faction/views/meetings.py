@@ -23,7 +23,7 @@ from ..models import (
 logger = logging.getLogger(__name__)
 from ..agenda import apply_standard_agenda, standard_agenda_preview
 from ..visibility import can_view_internal
-from ._helpers import _get_meeting_context
+from ._helpers import VIDEO_LINK_MAX_LENGTH, VIDEO_LINK_TOO_LONG, _get_meeting_context
 
 # Platzhalter in der Panel-URL (identisch mit PANEL_ITEM_PLACEHOLDER in frontend/alpine/faction-detail.ts)
 PANEL_ITEM_PLACEHOLDER = uuid.UUID(int=0)
@@ -149,6 +149,9 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
         from ..services import safe_link_url
 
         video_link = request.POST.get("video_link", "").strip()
+        if len(video_link) > VIDEO_LINK_MAX_LENGTH:
+            messages.error(request, VIDEO_LINK_TOO_LONG)
+            return redirect("work:faction", org_slug=self.organization.slug)
         if video_link and not safe_link_url(video_link):
             messages.error(request, "Bitte einen gültigen Videolink angeben (https://…).")
             return redirect("work:faction", org_slug=self.organization.slug)
