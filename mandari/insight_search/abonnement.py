@@ -129,7 +129,6 @@ _CONTEXT_CHANGES: Final = frozenset({"added", "scheduled", "deleted"})
 _CONTEXT_NEUTRAL: Final = frozenset({"moved", "withdrawn"})
 #: Rücknahme eines Objekts (Löschmarkierung der Quelle, Rücknahme durch Session)
 _DEPUBLISHED: Final = "ris.object.depublished"
-_ORGANIZATION_CHANGED: Final = "ris.organization.changed"
 #: Sichtbarkeiten je Ereignistyp, die den Suchindex betreffen; alle übrigen Typen nur ``oeffentlich``.
 #: Ein Ereignis ist nur Auslöser: Jedes Dokument entsteht aus dem RIS-Bestand mit derselben Auswahl wie
 #: ``reindex_elasticsearch``, nie aus der Nutzlast. Die Texterkennung ist laut Vertrag ``intern``
@@ -283,8 +282,12 @@ def changes_context(ereignis: Event) -> bool:
 
 
 def organization_change(ereignis: Event) -> str | None:
-    """``neu`` (neu erkannt), ``name`` (umbenannt oder unbekannt was) oder ``None`` (andere Felder, andere Typen)."""
-    if ereignis.type != _ORGANIZATION_CHANGED:
+    """
+    Änderung eines Gremiums (``ris.organization.changed``): ``neu`` (neu erkannt), ``name`` (umbenannt oder
+    unbekannt, was) oder ``None`` (andere Felder, Rücknahme, andere Objekttypen). Die Rücknahme ändert keine
+    Namen: Sitzungen und Vorgänge nennen auch ein gelöschtes Gremium weiter.
+    """
+    if ereignis.aggregate_type != "Organization" or ereignis.type == _DEPUBLISHED:
         return None
     nutzlast = _nutzlast(ereignis)
     if nutzlast.get("change") == "added":
