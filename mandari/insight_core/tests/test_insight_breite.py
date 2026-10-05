@@ -573,3 +573,76 @@ class TestRollen:
         angaben = angaben_fuer([person])[person.pk]
         assert angaben.funktion == f"Vorsitzende, {voll}"
         assert angaben.gremien == [voll]
+
+    @pytest.mark.parametrize(
+        ("gremium", "rolle", "erwartet"),
+        [
+            ("Rat der Stadt Beispiel", "Beratendes Mitglied", "Beratendes Mitglied, Rat der Stadt Beispiel"),
+            ("Rat der Stadt Beispiel", "stellv. Mitglied", "stellv. Mitglied, Rat der Stadt Beispiel"),
+            ("Rat der Stadt Beispiel", "Mitglied", "Ratsmitglied"),
+            ("Regionalrat", "stellvertretendes Mitglied", "stellvertretendes Mitglied, Regionalrat"),
+            ("Regionalrat", "Mitglied", "Mitglied Regionalrat"),
+        ],
+    )
+    def test_hauptorgan_nur_schlichte_mitglieder_als_mandat(
+        self, body: OParlBody, gremium: str, rolle: str, erwartet: str
+    ) -> None:
+        """Stellvertretende und beratende Mitglieder sind keine Ratsmitglieder (Gegenprüfung #848)."""
+        organ = _org(body, "h", gremium, short_name=gremium, classification="Rat" if "Rat " in gremium else "")
+        person = _person(body, "p", "Paula Beispiel")
+        _mitglied(person, organ, rolle)
+        assert angaben_fuer([person])[person.pk].funktion == erwartet
+
+
+class TestZuletztBeschlossenGegenpruefung:
+    def test_beschluss_hat_vorrang_vor_kenntnis(self) -> None:
+        from insight_core.services.paper_status import ist_beschluss
+
+        assert ist_beschluss("beschlossen; Kenntnis der Stellungnahme")
+        assert ist_beschluss("Einstimmig angenommen, im Übrigen zur Kenntnis genommen")
+        assert not ist_beschluss("zur Kenntnis genommen")
+        assert not ist_beschluss("vertagt")
+
+    def test_viele_kenntnisnahmen_verdraengen_die_beschluesse_nicht(self, rat: dict[str, Any]) -> None:
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from insight_core.views.home import zuletzt_beschlossen
+
+        neu = OParlMeeting.objects.create(
+            external_id=f"{RIS}/meeting/viel",
+            body=rat["body"],
+            name="Sitzung",
+            start=timezone.now() - timedelta(days=1),
+        )
+        alt = OParlMeeting.objects.create(
+            external_id=f"{RIS}/meeting/alt", body=rat["body"], name="Sitzung", start=timezone.now() - timedelta(days=9)
+        )
+        for nummer in range(40):
+            OParlAgendaItem.objects.create(
+                external_id=f"{RIS}/item/viel{nummer}",
+                meeting=neu,
+                number=str(nummer),
+                order=nummer,
+                result="zur Kenntnis genommen",
+            )
+        for nummer in range(4):
+            OParlAgendaItem.objects.create(
+                external_id=f"{RIS}/item/alt{nummer}",
+                meeting=alt,
+                number=str(nummer),
+                order=nummer,
+                result="beschlossen",
+            )
+        with CaptureQueriesContext(connection) as abfragen:
+            punkte = zuletzt_beschlossen(rat["body"])
+        assert [p.result for p in punkte] == ["beschlossen"] * 4
+        assert len(abfragen.captured_queries) == 2
+
+
+def test_kuerzel_bleibt_kurzname() -> None:
+    """Echte Kürzel bleiben, nichtssagend kurze werden durch den vollen Namen ersetzt."""
+    from insight_core.services.personen_liste import _org_name
+
+    assert _org_name(OParlOrganization(name="SPD-Fraktion", short_name="SPD", organization_type="Fraktion")) == "SPD"
+    assert _org_name(OParlOrganization(name="Regionalrat", short_name="RR")) == "Regionalrat"

@@ -206,20 +206,27 @@ def _is_deferred(result: str | None) -> bool:
 
 
 #: Ergebnisse ohne Entscheidung in der Sache (Wortanfänge, klein geschrieben): Kenntnisnahme, Antwort, Rücknahme
-_KEINE_ENTSCHEIDUNG: Final = ("kenntnis", "beantwortet", "zurückgezogen", "erledigt durch")
+KEINE_ENTSCHEIDUNG: Final = ("kenntnis", "beantwortet", "zurückgezogen", "erledigt durch")
+#: Wörter einer Entscheidung; sie haben Vorrang („beschlossen; Kenntnis der Stellungnahme“ ist ein Beschluss)
+ENTSCHEIDUNG: Final = ("beschloss", "angenommen", "abgelehnt", "zugestimmt", "genehmigt", "gewählt", "bestätigt")
 
 
 def ist_beschluss(result: str | None) -> bool:
     """
     Ist das Ergebnis eine Entscheidung in der Sache (Liste „Zuletzt beschlossen“, Issue #841)?
 
-    Nein bei leeren, vertagten oder abgesetzten Ergebnissen und bei „zur Kenntnis genommen“, „Kenntnisnahme“,
-    „beantwortet“ und „zurückgezogen“.
+    Ja bei Wörtern einer Entscheidung („beschlossen“, „abgelehnt“ …), auch wenn zusätzlich eine Kenntnisnahme genannt
+    ist. Nein bei leeren, vertagten oder abgesetzten Ergebnissen und bei „zur Kenntnis genommen“, „Kenntnisnahme“,
+    „beantwortet“ und „zurückgezogen“ ohne Entscheidung.
     """
     text = _clean(result).lower()
-    if not text or _is_deferred(result):
+    if not text:
         return False
-    return not any(wort in text for wort in _KEINE_ENTSCHEIDUNG)
+    if any(wort in text for wort in ENTSCHEIDUNG):
+        return True
+    if _is_deferred(result):
+        return False
+    return not any(wort in text for wort in KEINE_ENTSCHEIDUNG)
 
 
 def _shorten(text: str, limit: int = _RESULT_MAX_CHARS) -> str:

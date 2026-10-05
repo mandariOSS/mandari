@@ -8,7 +8,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 import json
 from datetime import timedelta
 
-from django.db.models import OuterRef, Subquery
+from django.db.models import OuterRef, Q, Subquery
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -24,7 +24,7 @@ from ..models import (
     withdrawn_q,
 )
 from ..services import kommunenverzeichnis
-from ..services.paper_status import ist_beschluss
+from ..services.paper_status import ENTSCHEIDUNG, KEINE_ENTSCHEIDUNG, ist_beschluss
 from ._helpers import get_active_body, is_all_bodies_mode
 
 # =============================================================================
@@ -48,6 +48,15 @@ def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> li
     """
     jetzt = timezone.now()
     gremien = OParlOrganization.objects.filter(meetings=OuterRef("meeting_id")).order_by("name")
+    # Kenntnisnahmen, Antworten und Vertagungen ohne Entscheidungswort schon in der Abfrage aussortieren: Auch nach
+    # vielen Kenntnisnahmen erscheinen so bis zu ``anzahl`` Beschlüsse (Feinprüfung danach mit ist_beschluss)
+    keine = Q()
+    for wort in (*KEINE_ENTSCHEIDUNG, "vertagt", "zurückgestellt", "abgesetzt", "verschoben"):
+        keine |= Q(result__icontains=wort)
+    entscheidung = Q()
+    for wort in ENTSCHEIDUNG:
+        entscheidung |= Q(result__icontains=wort)
+    ohne_entscheidung = keine & ~entscheidung
     kandidaten = (
         OParlAgendaItem.objects.filter(
             meeting__body=body,
@@ -60,14 +69,15 @@ def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> li
         )
         .exclude(result__isnull=True)
         .exclude(result="")
+        .exclude(ohne_entscheidung)
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("meeting"))
         .annotate(gremium=Subquery(gremien.values("name")[:1]))
         .select_related("meeting")
         .order_by("-meeting__start", "order", "number")
     )
-    # Etwas mehr laden, als gezeigt wird: Vertagungen und Kenntnisnahmen fallen danach heraus
-    punkte = [punkt for punkt in kandidaten[: anzahl * 4] if ist_beschluss(punkt.result)][:anzahl]
+    # Etwas mehr laden, als gezeigt wird: seltene Schreibweisen fallen erst bei der Feinprüfung heraus
+    punkte = [punkt for punkt in kandidaten[: anzahl * 8] if ist_beschluss(punkt.result)][:anzahl]
     vorgaenge: dict[str, OParlPaper] = {}
     if punkte:
         beratungen = (
