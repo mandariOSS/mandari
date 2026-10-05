@@ -40,9 +40,9 @@ _PRIVATE_USE_MAP: Final = {
     "\uf0e8": "→",
     "\uf0d8": "→",
 }
-_PRIVATE_USE: Final = re.compile("[\ue000-\uf8ff]")
+_PRIVATE_USE: Final = re.compile(r"[\ue000-\uf8ff]")
 #: C0-Steuerzeichen (ohne Tab/Zeilenumbruch, die zu Leerraum werden), DEL und das Ersatzzeichen U+FFFD
-_CONTROL: Final = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ufffd]")
+_CONTROL: Final = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ufffd]")
 #: Offene Silbentrennung „fol- gender“; nicht vor Bindewörtern („Geh- und Radweg“, „Ein- oder Ausfahrt“)
 _HYPHENATION: Final = re.compile(r"(?<=[a-zäöüß])-\s+(?!(?:und|oder|bzw|sowie|bis|als|noch)\b)(?=[a-zäöüß])")
 _SPACE: Final = re.compile(r"\s+")
