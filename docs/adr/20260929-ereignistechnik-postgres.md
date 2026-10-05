@@ -218,8 +218,14 @@ Entscheidung bleibt; präzisiert wurde:
   `ris.consultation.changed` (`added`, `scheduled`, `changed`), `ris.file.changed` (`added`,
   `replaced`, `renamed`) und für die Löschmarkierung jedes Typs `ris.object.depublished` mit
   Grund `quelle_geloescht` und Operation `delete`. Ein nach einer Löschmarkierung wieder
-  geliefertes Objekt gilt als neu. Für Änderungen an Gremien, Personen, Mitgliedschaften, Orten,
-  Wahlperioden und Kommunen gibt es noch keinen Vertrag; sie melden nur ihre Löschmarkierung.
+  geliefertes Objekt gilt als neu. Gremien und Personen melden Änderungen seit #821
+  (`ris.organization.changed`, `ris.person.changed`), Mitgliedschaften, Orte, Wahlperioden und
+  Kommunen seit #553 (`ris.membership.changed`, `ris.location.changed`,
+  `ris.legislativeterm.changed`, `ris.body.changed`), je mit `added` oder `changed`.
+- **Zuordnungen folgen der Quelle (#553):** Nennt die Quelle ein Gremium einer Sitzung oder einen Ort
+  einer Vorlage nicht mehr (oder keines davon im Bestand), entfernt der Abgleich die Zuordnung in der
+  Transaktion des Upserts; das Ereignis nennt dann `organization` bzw. `location`. Die übernommenen
+  Koordinaten (`OParlPaper.locations`, Herkunft `oparl`) räumt der Georef-Lauf in Django auf.
 - **Hülle:** Mandant ist die Quelle (`source:<uuid>`), `body_id` die Kommune, Auslöser
   `system:ingestor`. `occurred_at` ist der Änderungszeitpunkt laut Quelle, sofern er nicht in der
   Zukunft liegt, sonst der Zeitpunkt des Abgleichs. Alle Ereignisse des Abgleichs einer Kommune
