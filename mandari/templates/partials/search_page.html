@@ -12,11 +12,14 @@ Kontext: insight_core.services.search_page.build_context.
 Ab 2xl: Treffer wachsen mit der Breite, Filter und Sortierung stehen als Spalte daneben und bleiben beim Scrollen
 sichtbar (Issue #841). Die Filter stehen im Quelltext vor der Liste, damit Reihenfolge und Tastaturweg am Handy gleich
 bleiben; nur die Spalte wird verschoben. Die Lesebreite begrenzen die Treffer selbst (Ausschnitt), nicht die Spalte.
+Was in der Spalte #suchergebnis tauscht, springt danach an den Anfang der Suche (show:#suche-anfang:top), sonst landet
+man nach dem Filtern tief unten am Ende der neuen Liste. Der Anker hat erst ab 2xl eine Box, darunter springt nichts
+(Handy und Tablet wie bisher). Spalte 16rem: Die Liste bleibt ab 2xl mindestens 54rem breit.
 {% endcomment %}
 <c-insight.band aria-labelledby="treffer-titel">
     <h2 id="treffer-titel" class="sr-only">Treffer</h2>
     <input type="hidden" name="result_type" value="{{ params.result_type }}" form="suche-form">
-    <div class="2xl:grid 2xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:gap-x-12 2xl:items-start">
+    <div class="2xl:grid 2xl:grid-cols-[minmax(0,1fr)_16rem] 2xl:gap-x-12 2xl:items-start">
     {% if tabs %}<div class="2xl:col-start-1"><c-suche.reiter :tabs="tabs" /></div>{% endif %}
     {% if not fallback or active_filters or place_url %}
     <div class="2xl:col-start-2 2xl:row-start-1 2xl:row-span-6 2xl:sticky 2xl:top-20 2xl:max-h-[calc(100vh-6rem)] 2xl:overflow-y-auto 2xl:px-1 2xl:pt-2 2xl:pb-4">
@@ -25,7 +28,7 @@ bleiben; nur die Spalte wird verschoben. Die Lesebreite begrenzen die Treffer se
         {% endif %}
         {% if active_filters or place_url %}
         <p class="mt-4 text-sm text-gray-700 dark:text-gray-300">
-            {% for f in active_filters %}{{ f.label }} · <c-suche.textlink href="{{ f.url }}" hx-get="{{ f.url }}" hx-target="#suchergebnis" hx-push-url="true">entfernen</c-suche.textlink>{% if not forloop.last %}<span aria-hidden="true"> · </span>{% endif %}{% endfor %}
+            {% for f in active_filters %}{{ f.label }} · <c-suche.textlink href="{{ f.url }}" hx-get="{{ f.url }}" hx-target="#suchergebnis" hx-swap="innerHTML show:#suche-anfang:top" hx-push-url="true">entfernen</c-suche.textlink>{% if not forloop.last %}<span aria-hidden="true"> · </span>{% endif %}{% endfor %}
             {% if place_url %}Ohne Ortsband · <c-suche.textlink href="{{ place_url }}">Ortsband zeigen</c-suche.textlink>{% endif %}
         </p>
         {% endif %}

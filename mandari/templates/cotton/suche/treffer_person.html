@@ -3,12 +3,12 @@
 Kurzer Suchtreffer ohne Ausschnitt (Konzept Insight-Suche, P0.6): Person oder Gremium.
   <ol><c-suche.treffer-person :treffer="t" /></ol>
 Parameter: treffer (Dict aus present_groups) mit url, title (SafeString) und context (z. B. ["Gremium", "Ausschuss"]).
-Ab 60rem Listenbreite steht die Kontextzeile rechts wie bei c-suche.treffer-vorgang (Issue #841).
+Ab 54rem Listenbreite steht die Kontextzeile rechts wie bei c-suche.treffer-vorgang (Issue #841).
 {% endcomment %}
 <c-vars treffer="" />
-<li class="py-4 border-t border-gray-200 dark:border-gray-700 first:border-t-0 [@container(min-width:60rem)]:grid [@container(min-width:60rem)]:grid-cols-[minmax(0,1fr)_14rem] [@container(min-width:60rem)]:gap-x-8">
-    {% if treffer.context %}<p class="text-sm text-gray-600 dark:text-gray-400 [@container(min-width:60rem)]:col-start-2 [@container(min-width:60rem)]:row-start-1 [@container(min-width:60rem)]:pt-0.5">{{ treffer.context|join:" · " }}</p>{% endif %}
-    <h3 class="mt-0.5 [@container(min-width:60rem)]:mt-0 [@container(min-width:60rem)]:col-start-1 [@container(min-width:60rem)]:row-start-1 text-[1.0625rem] font-semibold leading-snug text-gray-900 dark:text-white break-words">
+<li class="py-4 border-t border-gray-200 dark:border-gray-700 first:border-t-0 [@container(min-width:54rem)]:grid [@container(min-width:54rem)]:grid-cols-[minmax(0,1fr)_14rem] [@container(min-width:54rem)]:gap-x-8">
+    {% if treffer.context %}<p class="text-sm text-gray-600 dark:text-gray-400 [@container(min-width:54rem)]:col-start-2 [@container(min-width:54rem)]:row-start-1 [@container(min-width:54rem)]:pt-0.5">{{ treffer.context|join:" · " }}</p>{% endif %}
+    <h3 class="mt-0.5 [@container(min-width:54rem)]:mt-0 [@container(min-width:54rem)]:col-start-1 [@container(min-width:54rem)]:row-start-1 text-[1.0625rem] font-semibold leading-snug text-gray-900 dark:text-white break-words">
         <a href="{{ treffer.url }}" class="hover:underline underline-offset-4 decoration-primary-600">{{ treffer.title }}</a>
     </h3>
 </li>

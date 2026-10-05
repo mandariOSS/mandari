@@ -13,6 +13,8 @@ Filter, Liste). Ergebnisse kommen serverseitig; Live-Suche, Filter und Reiter ta
 und schreiben die Adresse fort (hx-push-url). Filter liegen außerhalb des Formulars und gehören per form="suche-form" dazu.
 {% endcomment %}
 {% block page %}
+{# Sprungziel nach Filtern in der klebenden Spalte; nur ab 2xl mit Box, darunter springt nichts (Issue #841) #}
+<div id="suche-anfang" class="hidden 2xl:block scroll-mt-20" aria-hidden="true"></div>
 <c-insight.kopfband titel_id="suche-titel" text_id="suche-zahl"
     titel="{% if query and active_body %}„{{ query }}“ in {{ active_body.get_display_name }}{% elif query %}„{{ query }}“{% else %}Suche{% endif %}"
     text="{% if count_sentence %}{{ count_sentence }}{% elif not query %}Vorgänge, Sitzungen, Dokumente, Personen und Gremien{% if active_body %} von {{ active_body.get_display_name }}{% endif %}. Für Straßen genügt der Name.{% endif %}">

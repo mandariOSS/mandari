@@ -14,11 +14,12 @@ Parameter: zeitraum, art (Optionen für c-suche.facette), sortierung (Liste von 
         <c-suche.facette titel="Zeitraum" name="period" typ="radio" :optionen="zeitraum" />
         {% if art %}<c-suche.facette titel="Art" name="paper_type" typ="checkbox" :optionen="art" />{% endif %}
     </div>
-    {# Sortierung direkt neben den Filtern, nicht am fernen rechten Rand (Issue #841) #}
+    {# Sortierung neben den Filtern; ab 2xl klebt sie mit, dann nach dem Austausch an den Anfang (Anker #suche-anfang, Issue #841) #}
     <div class="flex items-center gap-2">
         <label for="suche-sortierung" class="text-sm text-gray-700 dark:text-gray-300">Sortieren</label>
         <select id="suche-sortierung" name="sort" form="suche-form"
-                hx-get="{% url 'insight_core:insight:search' %}" hx-trigger="change" hx-target="#suchergebnis" hx-push-url="true"
+                hx-get="{% url 'insight_core:insight:search' %}" hx-trigger="change" hx-target="#suchergebnis"
+                hx-swap="innerHTML show:#suche-anfang:top" hx-push-url="true"
                 hx-include="#suche-form, [form='suche-form']"
                 class="min-h-11 pl-3 pr-8 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
             {% for o in sortierung %}<option value="{{ o.value }}" {% if o.checked %}selected{% endif %}>{{ o.label }}</option>{% endfor %}

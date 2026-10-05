@@ -281,13 +281,31 @@ MESSUNG_RAHMEN = """() => {
   const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return {l: r.left, r: r.right, t: r.top, h: r.height}; };
   const rahmen = [...document.querySelectorAll('.max-w-insight')].map(box).filter((r) => r.r - r.l > 0);
   const ausschnitte = [...document.querySelectorAll('#treffer-liste p.leading-relaxed')].map((p) => p.getBoundingClientRect().width);
+  const titel = box(document.querySelector('#treffer-liste > li h3'));
+  const kontext = box(document.querySelector('#treffer-liste > li > p'));
   return {
     mainL: main.left, mainR: main.right, rechts,
     rahmen, liste: box(document.querySelector('#treffer-liste')),
     filter: box(document.querySelector('#suche-sortierung')?.closest('[class*="2xl:sticky"]')),
     ausschnitt: Math.max(0, ...ausschnitte),
+    kontextAlsSpalte: titel && kontext ? kontext.l > titel.l + 1 : null,
   };
 }"""
+
+#: Lage nach einem Austausch von #suchergebnis: Bildlauf, Trefferzahl im Kopfband, Reiter, erster Treffer, Fokus
+LAGE = """() => {
+  const oben = (sel) => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect().top : null; };
+  const fokus = document.activeElement;
+  return {
+    scrollY: window.scrollY, hoehe: window.innerHeight,
+    zahl: oben('#suche-zahl'), reiter: oben('nav[aria-label="Arten der Treffer"]'), erster: oben('#treffer-liste > li'),
+    fokus: fokus === document.body ? 'BODY' : (fokus.id || fokus.tagName), fokusText: fokus.innerText || '',
+    fokusOben: fokus.getBoundingClientRect().top,
+  };
+}"""
+
+#: Austausch abgeschlossen: keine Anfrage mehr unterwegs, nichts mehr im Tausch oder beim Setzen
+AUSGETAUSCHT = "() => !document.querySelector('.htmx-request, .htmx-swapping, .htmx-settling')"
 
 
 class _Suchdienst:
@@ -374,6 +392,10 @@ def test_suche_und_detailseite_fuellen_die_breite(
         if m["liste"] and breite >= 1536:
             assert m["filter"]["h"] >= 300, "Filterspalte mit offenen Listen statt drei Knöpfen über leerer Fläche"
             assert m["filter"]["l"] - m["liste"]["r"] <= 64, "Trefferspalte reicht bis an die Filterspalte"
+        if m["liste"]:
+            # Ab 1.366 px durchgehend dieselbe Anordnung: Kontext als Spalte rechts, auch wenn ab 1.536 px die
+            # Filterspalte daneben steht (vorher sprang er bis etwa 1.630 px wieder über den Titel)
+            assert m["kontextAlsSpalte"], f"Kontext bei {breite} px über dem Titel statt als Spalte rechts"
 
 
 def test_filterspalte_bleibt_sichtbar_und_filtert(page: Any, goto: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -388,7 +410,75 @@ def test_filterspalte_bleibt_sichtbar_und_filtert(page: Any, goto: Any, monkeypa
 
     page.get_by_role("group", name="Zeitraum").get_by_role("link", name="Letzte 2 Jahre").click()
     page.wait_for_url("**period=2y**")
+    page.wait_for_function(AUSGETAUSCHT)
     gewaehlt = page.get_by_role("group", name="Zeitraum").locator('[aria-current="true"]')
     assert "Letzte 2 Jahre" in gewaehlt.inner_text()
     # Die Felder der Ausklapplisten tragen den Stand weiter, wenn das Suchfeld abgeschickt wird
     assert page.evaluate("() => document.querySelector('input[name=period]:checked').value") == "2y"
+    _am_anfang_der_liste(page.evaluate(LAGE), "Filter")
+
+    # Die Sortierung steht ebenfalls in der klebenden Spalte
+    page.mouse.wheel(0, 1200)
+    page.wait_for_function("() => window.scrollY > 600")
+    page.select_option("#suche-sortierung", "newest")
+    page.wait_for_url("**sort=newest**")
+    page.wait_for_function(AUSGETAUSCHT)
+    _am_anfang_der_liste(page.evaluate(LAGE), "Sortierung")
+
+
+def _am_anfang_der_liste(lage: dict[str, Any], was: str) -> None:
+    """Nach dem Filtern aus der Tiefe der Liste: neue Trefferzahl, Reiter und erster Treffer stehen im Bild."""
+    kopfzeile = 64
+    for teil in ("zahl", "reiter", "erster"):
+        assert lage[teil] is not None and kopfzeile <= lage[teil] < lage["hoehe"], (
+            f"{was}: {teil} bei {lage[teil]} px außerhalb des sichtbaren Bereichs (scrollY {lage['scrollY']})"
+        )
+
+
+def test_filterspalte_mit_tastatur(page: Any, goto: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enter auf einer Option: Der Fokus bleibt auf der Option, statt an den Seitenanfang zu fallen (WCAG 2.4.3)."""
+    welt = _mit_suche(monkeypatch)
+    goto(f"/insight/kommune/{welt['body'].pk}/")
+    page.set_viewport_size({"width": 1913, "height": 1000})
+    goto("/insight/suche/?q=Stadtpark")
+    page.mouse.wheel(0, 1200)
+    page.wait_for_function("() => window.scrollY > 600")
+
+    page.get_by_role("group", name="Art").get_by_role("link", name="Antrag").focus()
+    page.keyboard.press("Enter")
+    page.wait_for_url("**paper_type=Antrag**")
+    page.wait_for_function(AUSGETAUSCHT)
+    lage = page.evaluate(LAGE)
+    assert lage["fokus"] != "BODY", "Fokus nach dem Austausch auf dem Seitenanfang"
+    assert "Antrag" in lage["fokusText"] and "(gewählt)" in lage["fokusText"], lage
+    assert 64 <= lage["fokusOben"] < lage["hoehe"], f"Fokussierte Option außerhalb des Bilds: {lage}"
+    _am_anfang_der_liste(lage, "Tastatur")
+
+    # Weiter mit Tab: Die nächste Option ist dran, nicht der Anfang der Seite
+    page.keyboard.press("Tab")
+    assert page.evaluate("() => document.activeElement.id") == "filter-paper_type-mitteilung"
+
+
+@pytest.mark.parametrize("breite", [390, 1280])
+def test_unter_2xl_bleibt_die_seite_nach_dem_sortieren_stehen(
+    page: Any, goto: Any, monkeypatch: pytest.MonkeyPatch, breite: int
+) -> None:
+    """Unter 2xl klebt nichts: Sortieren und Filtern lassen die Seite stehen wie bisher (Handy und Tablet unverändert)."""
+    welt = _mit_suche(monkeypatch)
+    goto(f"/insight/kommune/{welt['body'].pk}/")
+    page.set_viewport_size({"width": breite, "height": 844})
+    goto("/insight/suche/?q=Stadtpark")
+    # So weit scrollen, dass die Sortierung knapp unter der Kopfzeile steht
+    page.evaluate(
+        "() => window.scrollTo(0, document.querySelector('#suche-sortierung').getBoundingClientRect().top"
+        " + window.scrollY - 120)"
+    )
+    page.wait_for_function("() => window.scrollY > 100")
+    vorher = page.evaluate("() => window.scrollY")
+
+    page.select_option("#suche-sortierung", "newest")
+    page.wait_for_url("**sort=newest**")
+    page.wait_for_function(AUSGETAUSCHT)
+
+    nachher = page.evaluate("() => window.scrollY")
+    assert abs(nachher - vorher) <= 2, f"Seite bei {breite} px nach dem Sortieren von {vorher} auf {nachher} gesprungen"

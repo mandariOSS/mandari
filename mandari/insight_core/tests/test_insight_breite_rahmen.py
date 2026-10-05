@@ -5,8 +5,10 @@ Insight auf breiten Bildschirmen, Nachmessung nach #848 (Issue #841).
 - Sehr breite Bildschirme: Kopfzeile, Hinweise, Bänder, Inhaltsrahmen und Fuß stehen mittig in der Fläche neben der
   Seitenleiste (``max-w-insight mx-auto``) statt links mit einseitiger Leerfläche rechts.
 - Suche ab 2xl: Die Trefferspalte wächst mit der Breite, die Filterspalte zeigt Zeitraum und Art als offene Listen mit
-  Zählern und bleibt beim Scrollen sichtbar. Die Formularfelder der Ausklapplisten tragen weiter den Stand.
-- Treffer ordnen ihre Kontextzeile ab 60rem Listenbreite als Spalte rechts an (Container-Abfrage, nicht Fensterbreite).
+  Zählern und bleibt beim Scrollen sichtbar. Die Formularfelder der Ausklapplisten tragen weiter den Stand. Was in der
+  klebenden Spalte filtert oder sortiert, springt danach an den Anfang der Suche (Anker nur ab 2xl, darunter wie
+  bisher); jede Option hat eine feste, eindeutige id (Tastaturfokus).
+- Treffer ordnen ihre Kontextzeile ab 54rem Listenbreite als Spalte rechts an (Container-Abfrage, nicht Fensterbreite).
 """
 
 from __future__ import annotations
@@ -28,7 +30,8 @@ from insight_core.services.search_page import SearchParams, build_context
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES = ROOT / "templates"
 RIS = "https://ris.rahmen.example/oparl"
-BREIT = "[@container(min-width:60rem)]:"
+BREIT = "[@container(min-width:54rem)]:"
+NACH_OBEN = 'hx-swap="innerHTML show:#suche-anfang:top"'
 
 
 class _Dienst:
@@ -121,6 +124,23 @@ def test_optionen_tragen_ihre_adresse(db: Any) -> None:
     # gewählte Art wird abgewählt, andere kommt hinzu; Seite beginnt wieder bei 1
     assert art["Antrag"] == (True, "?q=Kita&period=2y")
     assert art["Vorlage"] == (False, "?q=Kita&period=2y&paper_type=Antrag&paper_type=Vorlage")
+    assert [o["kennung"] for o in kontext["art_options"]] == ["vorlage", "antrag"]
+
+
+class _DienstMitAehnlichenArten(_Dienst):
+    def facet_counts(self, query: str, **_: Any) -> dict[str, Any]:
+        arten = {"Ergänzung": 4, "Erganzung": 3, "Ergänzung-2": 2, "§§": 1, "": 1}
+        return {"paper_types": arten, "periods": {}}
+
+
+def test_arten_mit_gleicher_kurzform_bekommen_eindeutige_kennungen(db: Any) -> None:
+    """Die id der Option hängt am Wert (Fokus nach dem Austausch), darf aber nie doppelt vorkommen."""
+    params = SearchParams.from_get(QueryDict("q=Kita"))
+
+    kontext = build_context(_DienstMitAehnlichenArten(), params, None, None, date(2026, 10, 5))
+
+    kennungen = [o["kennung"] for o in kontext["art_options"]]
+    assert kennungen == ["erganzung", "erganzung-2", "erganzung-2-2", "art", "art-2"]
 
 
 def test_filterliste_als_links_mit_gewaehlter_option() -> None:
@@ -135,6 +155,10 @@ def test_filterliste_als_links_mit_gewaehlter_option() -> None:
     assert 'id="filterliste-paper_type"' in html
     assert html.count('aria-current="true"') == 1 and "(gewählt)" in html
     assert html.count('hx-target="#suchergebnis"') == 2 and 'hx-push-url="true"' in html
+    # Die Spalte klebt: nach dem Austausch an den Seitenanfang statt ans Ende der neuen Liste (Prüfung #867)
+    assert html.count(NACH_OBEN) == 2
+    # Feste id je Option: HTMX setzt den Tastaturfokus nach dem Austausch darauf zurück (WCAG 2.4.3)
+    assert 'id="filter-paper_type-antrag"' in html and 'id="filter-paper_type-vorlage"' in html
     assert 'href="?q=x&amp;paper_type=Antrag&amp;paper_type=Vorlage"' in html
     # keine Formularfelder: den Stand tragen die Felder der Ausklapplisten
     assert "<input" not in html and 'data-lucide="check"' in html
@@ -151,7 +175,7 @@ def test_suchseite_mit_wachsender_trefferspalte_und_fester_filterspalte(
 
     html = client.get("/insight/suche/?q=Stadtpark&period=2y").content.decode()
 
-    assert "2xl:grid-cols-[minmax(0,1fr)_18rem]" in html
+    assert "2xl:grid-cols-[minmax(0,1fr)_16rem]" in html
     assert "2xl:sticky 2xl:top-20 2xl:max-h-[calc(100vh-6rem)] 2xl:overflow-y-auto" in html
     assert 'id="treffer-liste" class="mt-2 [container-type:inline-size]"' in html
     # Ausklapplisten bis 2xl, offene Listen ab 2xl
@@ -163,12 +187,25 @@ def test_suchseite_mit_wachsender_trefferspalte_und_fester_filterspalte(
     assert re.search(r'name="period" value="2y" form="suche-form" checked', html)
     kennungen = re.findall(r'\sid="([^"]+)"', html)
     assert len(kennungen) == len(set(kennungen))
+    assert {"filter-period-alle", "filter-period-2y", "filter-paper_type-vorlage", "filter-paper_type-antrag"} <= set(
+        kennungen
+    )
+    # Sortierung und „entfernen“ stehen ebenfalls in der klebenden Spalte
+    sortierung = html.split('id="suche-sortierung"', 1)[1].split(">", 1)[0]
+    assert NACH_OBEN in sortierung
+    entfernen = html.split("Zeitraum: ", 1)[1].split("entfernen", 1)[0]
+    assert NACH_OBEN in entfernen
+    # Sprungziel vor dem Kopfband, nur ab 2xl mit Box: Handy und Tablet springen nicht (Ausklapplisten wie bisher)
+    anker = '<div id="suche-anfang" class="hidden 2xl:block scroll-mt-20" aria-hidden="true"></div>'
+    assert anker in html and html.index(anker) < html.index('id="suche-form"')
+    ausklappliste = html.split('<div class="contents 2xl:hidden">', 1)[1].split('id="suche-sortierung"', 1)[0]
+    assert "hx-swap=" not in ausklappliste
 
 
 # --- Treffer mit Kontextspalte ----------------------------------------------------------------------------
 
 
-def test_treffer_kontext_als_spalte_ab_60rem_listenbreite() -> None:
+def test_treffer_kontext_als_spalte_ab_54rem_listenbreite() -> None:
     treffer = {
         "url": "/insight/vorgaenge/1/",
         "title": "Sanierung des Stadtparks",
@@ -196,9 +233,9 @@ def test_neue_klassen_stehen_im_gebauten_css() -> None:
     css = (ROOT / "static/css/styles.css").read_text(encoding="utf-8")
     for teil in (
         "container-type:inline-size",
-        "@container(min-width:60rem)",
+        "@container(min-width:54rem)",
         r".\32xl\:sticky{position:sticky}",
-        r".\32xl\:grid-cols-\[minmax\(0\2c 1fr\)_18rem\]",
-        r".\[\@container\(min-width\:60rem\)\]\:grid-cols-\[minmax\(0\2c 1fr\)_14rem\]",
+        r".\32xl\:grid-cols-\[minmax\(0\2c 1fr\)_16rem\]",
+        r".\[\@container\(min-width\:54rem\)\]\:grid-cols-\[minmax\(0\2c 1fr\)_14rem\]",
     ):
         assert teil in css, teil

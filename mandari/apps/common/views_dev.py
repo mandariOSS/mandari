@@ -62,12 +62,12 @@ def ui_kit_context() -> dict[str, object]:
             {"key": "files", "label": "Dokumente", "count": "126", "url": "#", "active": False},
         ],
         "demo_zeitraum": [
-            {"value": "", "label": "Beliebig", "count": None, "checked": True},
-            {"value": "2y", "label": "Letzte 2 Jahre", "count": "31", "checked": False},
+            {"value": "", "label": "Beliebig", "count": None, "checked": True, "url": "#"},
+            {"value": "2y", "label": "Letzte 2 Jahre", "count": "31", "checked": False, "url": "#"},
         ],
         "demo_art": [
-            {"value": "Vorlage", "count": "64", "checked": True},
-            {"value": "Antrag", "count": "9", "checked": False},
+            {"value": "Vorlage", "count": "64", "checked": True, "url": "#"},
+            {"value": "Antrag", "count": "9", "checked": False, "url": "#"},
         ],
         "demo_sortierung": [
             {"value": "relevance", "label": "Relevanz", "checked": True},

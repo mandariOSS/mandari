@@ -189,6 +189,8 @@ class TestUiKitPreview:
             assert marker in html, marker
         # Keine unaufgelösten Cotton-Tags im Ergebnis
         assert not re.search(r"<c-[a-z]", html)
+        # Vorschaudaten vollständig: keine Links ohne Ziel (z. B. Filterspalte der Suche ab 2xl, #867)
+        assert 'href=""' not in html and 'hx-get=""' not in html
 
     def test_preview_url_is_hidden_without_debug(self, client: Client, settings: Any) -> None:
         settings.DEBUG = False

@@ -483,7 +483,7 @@ class TestBreiteNachPruefung:
         seite = (TEMPLATES / "partials/search_page.html").read_text(encoding="utf-8")
         assert "ml-auto" not in leiste
         # Seit der Nachmessung wächst die Trefferspalte mit (test_insight_breite_rahmen.py), die Filter stehen daneben
-        assert "2xl:grid-cols-[minmax(0,1fr)_18rem]" in seite
+        assert "2xl:grid-cols-[minmax(0,1fr)_16rem]" in seite
 
 
 class TestZuletztBeschlossen:
