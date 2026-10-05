@@ -15,6 +15,7 @@ die bisherigen Fragen ohne Antwortquoten (``views/questions.py``).
 import logging
 from collections import defaultdict
 from datetime import timedelta
+from typing import Any
 
 from django.conf import settings
 from django.db.models import Count, Exists, OuterRef, Q
@@ -134,14 +135,26 @@ def mandate_holders_queryset(body):
     )
 
 
-def get_faction(person):
-    """Aktive Fraktion einer Person (OParlOrganization) oder None."""
-    from ..models import OParlMembership
+def _faction_memberships() -> Any:
+    """
+    Laufende, sichtbare Fraktionsmitgliedschaften: ohne gelöschte Mitgliedschaften und Fraktionen und ohne von
+    mandari Session zurückgenommene Fraktionen (Issue #841 – vorher erschienen sie als Fraktion der Person).
+    """
+    from ..models import OParlMembership, withdrawn_q
 
-    membership = (
-        OParlMembership.objects.filter(person=person)
+    return (
+        OParlMembership.objects.filter(deleted=False, organization__deleted=False)
         .filter(_active_membership_q())
         .filter(_faction_org_q())
+        .exclude(withdrawn_q("organization"))
+    )
+
+
+def get_faction(person: Any) -> Any:
+    """Aktive Fraktion einer Person (OParlOrganization) oder None."""
+    membership = (
+        _faction_memberships()
+        .filter(person=person)
         .select_related("organization")
         .order_by("organization__name")
         .first()
@@ -151,18 +164,12 @@ def get_faction(person):
 
 def get_faction_map(persons) -> dict:
     """{person_id: OParlOrganization} für viele Personen in einer Abfrage."""
-    from ..models import OParlMembership
-
     ids = {p.id for p in persons}
     if not ids:
         return {}
     result = {}
     memberships = (
-        OParlMembership.objects.filter(person_id__in=ids)
-        .filter(_active_membership_q())
-        .filter(_faction_org_q())
-        .select_related("organization")
-        .order_by("organization__name")
+        _faction_memberships().filter(person_id__in=ids).select_related("organization").order_by("organization__name")
     )
     for m in memberships:
         result.setdefault(m.person_id, m.organization)

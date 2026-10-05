@@ -205,3 +205,34 @@ def test_handy_und_tablet_ohne_seitlichen_ueberlauf(page: Any, goto: Any, breite
     ergebnisse = _messen(page, goto, breite, _seiten(welt))
     ueberlauf = {pfad: m["scroll"] for pfad, m in ergebnisse.items() if m["scroll"] > breite + 1}
     assert not ueberlauf, f"Seitlicher Überlauf bei {breite} px: {ueberlauf}"
+
+
+@pytest.mark.parametrize("breite", [1280, 1366, 1536])
+def test_lange_adresse_ohne_seitlichen_ueberlauf(page: Any, goto: Any, breite: int) -> None:
+    """Eine lange E-Mail-Adresse in der Personenliste lässt die Seite nicht seitlich scrollen (Prüfung #848)."""
+    welt = _kommune()
+    person = OParlPerson.objects.get(external_id=f"{RIS}/person/1")
+    person.email = "vorname.nachname-doppelname.sehr-lange-adresse@fraktion-buergerforum.breitenstadt.example"
+    person.save()
+    goto(f"/insight/kommune/{welt['body'].pk}/")
+    ergebnisse = _messen(page, goto, breite, ["/insight/personen/"])
+    assert ergebnisse["/insight/personen/"]["scroll"] <= breite + 1, ergebnisse
+
+
+def test_gremium_randspalte_erst_ab_1440(page: Any, goto: Any) -> None:
+    """Bis 1.440 px steht die Randspalte unter den Mitgliedern, die Tabelle behält die volle Breite (Prüfung #848)."""
+    welt = _kommune()
+    goto(f"/insight/kommune/{welt['body'].pk}/")
+    lagen = {}
+    for breite in (1280, 1440):
+        page.set_viewport_size({"width": breite, "height": 900})
+        goto(f"/insight/gremien/{welt['rat'].pk}/")
+        lagen[breite] = page.evaluate(
+            """() => {
+              const tabelle = document.querySelector('main table').getBoundingClientRect();
+              const rand = document.querySelector('main aside').getBoundingClientRect();
+              return {tabelleUnten: tabelle.bottom, randOben: rand.top, randLinks: rand.left, tabelleRechts: tabelle.right};
+            }"""
+        )
+    assert lagen[1280]["randOben"] >= lagen[1280]["tabelleUnten"], lagen
+    assert lagen[1440]["randLinks"] > lagen[1440]["tabelleRechts"], lagen

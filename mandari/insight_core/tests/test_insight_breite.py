@@ -301,6 +301,8 @@ class TestUebersicht:
 
 class TestDetailseiten:
     def test_gremium_mit_fraktionen_und_randspalte(self, rat: dict[str, Any]) -> None:
+        rat["rat"].website = "https://rat.example.org"
+        rat["rat"].save()
         html = _client(rat["body"]).get(f"/insight/gremien/{rat['rat'].pk}/").content.decode()
         assert 'aria-label="Termine und Angaben"' in html
         assert "3 Mitglieder" in html
@@ -310,7 +312,7 @@ class TestDetailseiten:
 
     def test_person_mit_funktion_und_randspalte(self, rat: dict[str, Any]) -> None:
         html = _client(rat["body"]).get(f"/insight/personen/{rat['ob'].pk}/").content.decode()
-        assert 'aria-label="Kontakt und Angaben"' in html
+        assert 'aria-label="Kontakt und Termine"' in html
         assert "Oberbürgermeisterin" in html
         assert "olga@example.org" in html
 
@@ -335,3 +337,239 @@ class TestBreite:
         assert 'class="max-w-insight px-4 sm:px-8 py-6 lg:py-8"' in (TEMPLATES / "base_insight.html").read_text(
             encoding="utf-8"
         )
+
+
+# =============================================================================
+# Nachbesserung nach der Prüfung von PR #848
+# =============================================================================
+
+
+def _randspalte(html: str) -> str:
+    return _ausschnitt(r'<aside class="min-w-0 space-y-10".*?</aside>', html)
+
+
+def _ohne_kopf(html: str) -> str:
+    """Seiteninhalt ohne Kopfzeile, Seitenleiste und Fuß (dort stehen Kommune und Bereich ohnehin)."""
+    return _ausschnitt(r"<main.*?</main>", html)
+
+
+class TestFraktionNurSichtbar:
+    """Gelöschte und von Session zurückgenommene Fraktionen erscheinen nirgends als Fraktion einer Person."""
+
+    def _alte_fraktionen(self, rat: dict[str, Any]) -> None:
+        geloescht = _org(
+            rat["body"], "f-alt", "Fraktion Geloescht", short_name="Geloescht", organization_type="Fraktion"
+        )
+        geloescht.deleted = True
+        geloescht.save()
+        zurueck = OParlOrganization.objects.create(
+            external_id="https://mandari.example/session/x/api/oparl/organization/9/",
+            body=rat["body"],
+            name="Fraktion Zurueckgenommen",
+            short_name="Zurueckgenommen",
+            organization_type="Fraktion",
+            deleted=True,
+        )
+        # Alphabetisch vor „Fraktion Mitte“: ohne Filter gewinnen sie
+        for org in (geloescht, zurueck):
+            _mitglied(rat["mitglied"], org, "Mitglied")
+            _mitglied(rat["buerger"], org, "Mitglied")
+
+    def test_fraktionshilfen_filtern(self, rat: dict[str, Any]) -> None:
+        from insight_core.services import question_service
+
+        self._alte_fraktionen(rat)
+        assert question_service.get_faction(rat["mitglied"]) == rat["fraktion"]
+        assert question_service.get_faction(rat["buerger"]) is None
+        karte = question_service.get_faction_map([rat["mitglied"], rat["buerger"]])
+        assert karte == {rat["mitglied"].pk: rat["fraktion"]}
+
+    def test_gremienseite_ohne_alte_fraktionen(self, rat: dict[str, Any]) -> None:
+        self._alte_fraktionen(rat)
+        html = _client(rat["body"]).get(f"/insight/gremien/{rat['ausschuss'].pk}/").content.decode()
+        mitglieder = _ausschnitt(r"Aktive Mitglieder.*?</table>", html)
+        assert "Mitte" in mitglieder
+        assert "Geloescht" not in mitglieder and "Zurueckgenommen" not in mitglieder
+
+    def test_personenseite_nennt_die_fraktion_nur_im_kopf(self, rat: dict[str, Any]) -> None:
+        self._alte_fraktionen(rat)
+        html = _client(rat["body"]).get(f"/insight/personen/{rat['mitglied'].pk}/").content.decode()
+        kopf = _ausschnitt(r'<header class="rounded-2xl.*?</header>', html)
+        assert kopf.count(">Mitte</a>") == 1
+        assert "Zurueckgenommen" not in kopf and "Geloescht" not in kopf
+        # Außerhalb des Kopfs nur als Zeile der Mitgliedschaften („Fraktion Mitte“), nicht noch einmal als Angabe
+        rest = _ohne_kopf(html).replace(kopf, "").replace("Fraktion Mitte", "")
+        assert "Mitte" not in rest
+        # Gelöschte Fraktionen auch nicht als laufende Mitgliedschaft
+        assert "Geloescht" not in _ohne_kopf(html) and "Zurueckgenommen" not in _ohne_kopf(html)
+
+
+class TestKeineDoppelungen:
+    def test_person_randspalte_wiederholt_den_kopf_nicht(self, rat: dict[str, Any]) -> None:
+        sitzung = OParlMeeting.objects.create(
+            external_id=f"{RIS}/meeting/r1", body=rat["body"], name="Sitzung", start=timezone.now() + timedelta(days=3)
+        )
+        sitzung.organizations.add(rat["ausschuss"])
+        html = _client(rat["body"]).get(f"/insight/personen/{rat['mitglied'].pk}/").content.decode()
+        rand = _randspalte(html)
+        assert "Nächste Sitzungen" in rand and "Hauptausschuss" in rand
+        for doppelt in ("Ratsmitglied", "Mitte", "aktuell", "Funktion", "Kommune"):
+            assert doppelt not in rand, doppelt
+
+    def test_person_ohne_inhalte_ohne_randspalte(self, rat: dict[str, Any]) -> None:
+        html = _client(rat["body"]).get(f"/insight/personen/{rat['ehemalig'].pk}/").content.decode()
+        assert '<aside class="min-w-0 space-y-10"' not in html
+        assert "min-[1440px]:grid-cols" not in html
+
+    def test_gremium_randspalte_wiederholt_den_kopf_nicht(self, rat: dict[str, Any]) -> None:
+        rat["rat"].start_date = date(2024, 7, 1)
+        rat["rat"].save()
+        html = _client(rat["body"]).get(f"/insight/gremien/{rat['rat'].pk}/").content.decode()
+        rand = _randspalte(html)
+        assert "01.07.2024" in rand
+        for doppelt in (">Art<", ">Mitglieder<", ">Kommune<", "Stadt Beispiel"):
+            assert doppelt not in rand, doppelt
+
+    def test_sitzung_ohne_beginn_und_ort_in_den_angaben(self, rat: dict[str, Any]) -> None:
+        start = timezone.now() + timedelta(days=4)
+        sitzung = OParlMeeting.objects.create(
+            external_id=f"{RIS}/meeting/d1",
+            body=rat["body"],
+            name="Sitzung",
+            start=start,
+            end=start + timedelta(hours=2),
+            location_name="Ratssaal",
+            location_address="Markt 1",
+        )
+        html = _client(rat["body"]).get(f"/insight/termine/{sitzung.pk}/").content.decode()
+        assert ">Beginn</dt>" not in html and ">Ort</dt>" not in html
+        assert ">Ende</dt>" in html and "Markt 1" in html
+        assert _ohne_kopf(html).count("Ratssaal") == 1
+
+    def test_rueckmeldung_nennt_die_loeschfrist_einmal(self) -> None:
+        aside = (TEMPLATES / "pages/feedback.html").read_text(encoding="utf-8")
+        formular = (TEMPLATES / "partials/page_feedback.html").read_text(encoding="utf-8")
+        assert "zwölf Monaten" in formular
+        assert "zwölf Monaten" not in aside
+
+
+class TestBreiteNachPruefung:
+    def test_randspalten_erst_ab_1440(self, rat: dict[str, Any]) -> None:
+        rat["rat"].website = "https://rat.example.org"
+        rat["rat"].save()
+        client = _client(rat["body"])
+        for pfad in (f"/insight/gremien/{rat['rat'].pk}/", f"/insight/personen/{rat['ob'].pk}/"):
+            html = client.get(pfad).content.decode()
+            assert "min-[1440px]:grid-cols-[minmax(0,1fr)_20rem]" in html, pfad
+            assert "xl:grid-cols-[minmax(0,1fr)_21rem]" not in html, pfad
+
+    @pytest.mark.parametrize(
+        "datei",
+        [
+            "partials/person_list_items.html",
+            "partials/organization_list_items.html",
+            "partials/meeting_list_items.html",
+            "partials/paper_list_items.html",
+        ],
+    )
+    def test_scrollbehaelter_haelt_sr_only_kopf(self, datei: str) -> None:
+        """Ohne ``relative`` am Scrollbehälter entkommt der sr-only-Kopf „Merken“, die Seite scrollt seitlich."""
+        inhalt = (TEMPLATES / datei).read_text(encoding="utf-8")
+        assert '<div class="relative overflow-x-auto">' in inhalt
+        assert 'whitespace-nowrap">{{ person.email' not in inhalt
+
+    def test_suche_lesebreite_und_sortierung_neben_den_filtern(self) -> None:
+        leiste = (TEMPLATES / "cotton/suche/filterleiste.html").read_text(encoding="utf-8")
+        seite = (TEMPLATES / "partials/search_page.html").read_text(encoding="utf-8")
+        assert "ml-auto" not in leiste
+        assert "2xl:grid-cols-[minmax(0,60rem)_minmax(16rem,22rem)]" in seite
+
+
+class TestZuletztBeschlossen:
+    def _sitzung(self, rat: dict[str, Any], key: str, tage: int) -> OParlMeeting:
+        sitzung = OParlMeeting.objects.create(
+            external_id=f"{RIS}/meeting/{key}",
+            body=rat["body"],
+            name="Sitzung",
+            start=timezone.now() - timedelta(days=tage),
+        )
+        sitzung.organizations.add(rat["rat"])
+        return sitzung
+
+    def test_zwei_abfragen_ohne_korrelierte_unterabfrage(self, rat: dict[str, Any]) -> None:
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from insight_core.views.home import zuletzt_beschlossen
+
+        sitzung = self._sitzung(rat, "q", 3)
+        for nummer in range(3):
+            top = OParlAgendaItem.objects.create(
+                external_id=f"{RIS}/item/q{nummer}",
+                meeting=sitzung,
+                number=str(nummer),
+                order=nummer,
+                result="beschlossen",
+            )
+            paper = OParlPaper.objects.create(external_id=f"{RIS}/paper/q{nummer}", body=rat["body"], name=f"V{nummer}")
+            OParlConsultation.objects.create(
+                external_id=f"{RIS}/consultation/q{nummer}",
+                body=rat["body"],
+                paper=paper,
+                agenda_item_external_id=top.external_id,
+            )
+        with CaptureQueriesContext(connection) as abfragen:
+            punkte: list[Any] = list(zuletzt_beschlossen(rat["body"]))
+        # Punkte, dann Beratungen per agenda_item_external_id__in – keine Unterabfrage je Zeile
+        assert len(abfragen.captured_queries) == 2
+        assert "oparl_consultations" not in abfragen.captured_queries[0]["sql"]
+        assert [p.vorgang.name for p in punkte] == ["V0", "V1", "V2"]
+        assert all(p.gremium == "Rat der Stadt Beispiel" for p in punkte)
+
+    def test_ohne_vertagt_und_kenntnisnahme(self, rat: dict[str, Any]) -> None:
+        from insight_core.views.home import zuletzt_beschlossen
+
+        sitzung = self._sitzung(rat, "k", 2)
+        ergebnisse = ["vertagt", "zur Kenntnis genommen", "Kenntnisnahme", "beantwortet", "mehrheitlich beschlossen"]
+        for nummer, ergebnis in enumerate(ergebnisse):
+            OParlAgendaItem.objects.create(
+                external_id=f"{RIS}/item/k{nummer}",
+                meeting=sitzung,
+                number=str(nummer),
+                order=nummer,
+                name=f"TOP {ergebnis}",
+                result=ergebnis,
+            )
+        assert [p.result for p in zuletzt_beschlossen(rat["body"])] == ["mehrheitlich beschlossen"]
+
+
+class TestRollen:
+    def test_schreibweisen_und_allgemeine_rollen(self, body: OParlBody) -> None:
+        rat = _org(body, "r", "Rat der Stadt Beispiel", classification="Rat")
+        ausschuss = _org(
+            body, "a", "Ausschuss für Schule und Sport", short_name="Ausschuss", classification="Ausschuss"
+        )
+        sb = _person(body, "sb", "Sina Buerger")
+        _mitglied(sb, ausschuss, "Sachk. Bürger/in (mit Stimmr.)")
+        am = _person(body, "am", "Anton Ausschuss")
+        _mitglied(am, ausschuss, "Ausschussmitglied")
+        st = _person(body, "st", "Stella Stellv")
+        _mitglied(st, ausschuss, "Stellv. Mitglied")
+        vo = _person(body, "vo", "Viktor Vorsitz")
+        _mitglied(vo, rat, "Vorsitz")
+        angaben = angaben_fuer([sb, am, st, vo])
+        assert angaben[sb.pk].funktion == "Sachk. Bürger/in (mit Stimmr.)"
+        assert angaben[am.pk].funktion == ""
+        assert angaben[st.pk].funktion == ""
+        assert angaben[vo.pk].funktion == "Vorsitz, Rat der Stadt Beispiel"
+        # Nichtssagender Kurzname („Ausschuss“): die Spalte zeigt den vollen Namen
+        assert angaben[am.pk].gremien == ["Ausschuss für Schule und Sport"]
+
+    def test_abgeschnittener_kurzname(self, body: OParlBody) -> None:
+        voll = "Ausschuss für Soziales, Gesundheit und Arbeit"
+        ausschuss = _org(body, "s", voll, short_name=voll[:40], classification="Ausschuss")
+        person = _person(body, "v", "Vera Vorsitz")
+        _mitglied(person, ausschuss, "Vorsitzende")
+        angaben = angaben_fuer([person])[person.pk]
+        assert angaben.funktion == f"Vorsitzende, {voll}"
+        assert angaben.gremien == [voll]

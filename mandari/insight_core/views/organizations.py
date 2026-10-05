@@ -193,17 +193,25 @@ class OrganizationDetailView(DetailView):
         context["past_members"] = past_qs
 
         # Sitzungen
-        context["upcoming_meetings"] = OParlMeeting.objects.filter(
-            organizations=org,
-            start__gte=now,
-            cancelled=False,
-            deleted=False,
-        ).order_by("start")[:10]
+        context["upcoming_meetings"] = list(
+            OParlMeeting.objects.filter(
+                organizations=org,
+                start__gte=now,
+                cancelled=False,
+                deleted=False,
+            ).order_by("start")[:10]
+        )
         context["past_meetings"] = OParlMeeting.objects.filter(
             organizations=org,
             start__lt=now,
             deleted=False,
         ).order_by("-start")[:10]
+
+        # Randspalte (Issue #841): nur Angaben, die der Kopf nicht zeigt; ohne Inhalt keine Randspalte
+        kurzname = org.short_name if org.short_name and org.short_name != org.name else ""
+        context["kurzname"] = kurzname
+        context["hat_angaben"] = bool(kurzname or org.start_date or org.end_date or org.website)
+        context["hat_randspalte"] = context["hat_angaben"] or bool(context["upcoming_meetings"])
 
         # SEO-Kontext
         from ..seo import get_organization_seo

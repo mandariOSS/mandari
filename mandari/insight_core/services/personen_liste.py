@@ -9,6 +9,7 @@ laufenden Mitgliedschaften: die wichtigste Rolle je Person, eine Abfrage für di
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
@@ -22,6 +23,17 @@ from .question_service import COUNCIL_ORG_NAMES
 
 #: Rollen ohne eigene Aussage („Mitglied“) – sie sagen nur, dass jemand dabei ist
 ALLGEMEINE_ROLLEN = {"", "-", "–", "—", "mitglied", "ordentliches mitglied", "member", "ratsmitglied"}
+#: Auch allgemein: „Ausschussmitglied“, „Stellv. Mitglied“, „stellvertretendes Mitglied“, „Fraktionsmitglied“ …
+_ALLGEMEIN_MUSTER = re.compile(
+    r"(ordentliches|beratendes|stellv\.?|stellvertretendes|ausschuss|fraktions|rats|gremien)?[\s-]*mitglied(er)?"
+)
+#: Sachkundige Bürgerinnen und Bürger in allen üblichen Schreibweisen („Sachk. Bürger/in (mit Stimmr.)“)
+_SACHKUNDIG = re.compile(r"(^|\W)sachk(undig|\.)", re.IGNORECASE)
+#: Vorsitz-Rollen, die ohne Gremium nichtssagend sind („Vorsitz“, „stellv. Vorsitzende“)
+_VORSITZ = re.compile(r"^(stellv\.?\s*|stellvertretende[rs]?\s*|\d\.\s*stellv\.?\s*)?vorsitz", re.IGNORECASE)
+#: Kurznamen ohne Aussage: dann lieber der volle Name des Gremiums
+_NICHTSSAGEND = {"ausschuss", "gremium", "fraktion", "beirat", "rat", "kommission", "arbeitskreis", "sonstiges"}
+
 #: So viele Gremien nennt die Liste namentlich, der Rest als Zahl
 GREMIEN_NAMENTLICH = 2
 
@@ -59,11 +71,20 @@ def ist_hauptorgan(org: OParlOrganization) -> bool:
 
 
 def _allgemein(rolle: str | None) -> bool:
-    return (rolle or "").strip().lower() in ALLGEMEINE_ROLLEN
+    text = (rolle or "").strip().lower()
+    return text in ALLGEMEINE_ROLLEN or bool(_ALLGEMEIN_MUSTER.fullmatch(text))
 
 
 def _org_name(org: OParlOrganization) -> str:
-    return org.short_name or org.name or ""
+    """Name eines Gremiums für die Liste: Kurzname nur, wenn er etwas sagt, sonst der volle Name."""
+    kurz = (org.short_name or "").strip()
+    voll = (org.name or "").strip()
+    nichtssagend = {wert.lower() for wert in (org.classification, org.organization_type) if wert} | _NICHTSSAGEND
+    # Abgeschnittene Kurznamen („Ausschuss für Soziales, Gesundheit und A“) sind Anfänge des vollen Namens
+    abgeschnitten = bool(voll) and voll != kurz and voll.startswith(kurz)
+    if kurz and kurz.lower() not in nichtssagend and len(kurz) >= 3 and not abgeschnitten:
+        return kurz
+    return voll or kurz
 
 
 def funktion_aus(mitgliedschaften: Iterable[OParlMembership]) -> str:
@@ -80,7 +101,10 @@ def funktion_aus(mitgliedschaften: Iterable[OParlMembership]) -> str:
         org = m.organization
         rolle = (m.role or "").strip()
         if ist_hauptorgan(org):
-            if not _allgemein(rolle):
+            if _VORSITZ.match(rolle):
+                # „Vorsitz“ allein sagt nicht, wovon: mit Gremium
+                kandidat = (100, f"{rolle}, {_org_name(org)}")
+            elif not _allgemein(rolle):
                 kandidat = (100, rolle)
             elif "rat" in (org.name or "").lower():
                 kandidat = (60, "Ratsmitglied")
@@ -88,7 +112,7 @@ def funktion_aus(mitgliedschaften: Iterable[OParlMembership]) -> str:
                 kandidat = (60, f"Mitglied {_org_name(org)}")
         elif ist_fraktion(org):
             kandidat = (80, rolle) if not _allgemein(rolle) else (0, "")
-        elif "sachkundig" in rolle.lower():
+        elif _SACHKUNDIG.search(rolle):
             kandidat = (50, rolle)
         elif not _allgemein(rolle):
             kandidat = (40, f"{rolle}, {_org_name(org)}")

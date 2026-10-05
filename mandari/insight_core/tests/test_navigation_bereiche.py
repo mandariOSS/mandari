@@ -189,7 +189,8 @@ class TestSitzungsende:
         sitzung = self._sitzung(kommune, tag.replace(hour=17), tag)
         html = _seite(besucher, "meeting_detail", sitzung.pk)
         assert ">Ende</dt>" not in html
-        assert ">Beginn</dt>" in html
+        # Der Beginn steht im Kopf der Sitzungsseite (Issue #841), nicht noch einmal in den Angaben
+        assert "um 17:00 Uhr" in html
 
     def test_ende_am_selben_tag_nur_mit_uhrzeit(self, besucher: Client, kommune: OParlBody) -> None:
         tag = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=2)

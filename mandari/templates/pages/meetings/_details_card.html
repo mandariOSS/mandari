@@ -1,5 +1,5 @@
 {% load l10n %}
-{# Seitenleiste der Sitzung: Karte des Sitzungsorts und Angaben (Beginn, Ende, Ort, Adresse) #}
+{# Seitenleiste der Sitzung: Karte des Sitzungsorts und weitere Angaben (Ende, Adresse) #}
 {% if location_coordinates %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="p-4 border-b border-gray-200 dark:border-gray-700">
@@ -18,18 +18,11 @@
 </div>
 {% endif %}
 
-<!-- Info Card -->
+{# Weitere Angaben: Beginn und Ort stehen schon im Kopf der Seite (Issue #841), hier nur Ende und Adresse #}
+{% if meeting.end and meeting.start and meeting.end > meeting.start or meeting.end and not meeting.start or meeting.location_address %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
     <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
     <dl class="space-y-4">
-        {% if meeting.start %}
-        <div>
-            <dt class="text-sm text-gray-500 dark:text-gray-400">Beginn</dt>
-            <dd class="font-medium text-gray-900 dark:text-white">
-                {{ meeting.start|date:"d.m.Y H:i" }} Uhr
-            </dd>
-        </div>
-        {% endif %}
         {% if meeting.end and meeting.start and meeting.end > meeting.start or meeting.end and not meeting.start %}
         {# Ein Ende vor oder gleich dem Beginn (oft Mitternacht ohne Uhrzeit aus der Quelle) ist keine Angabe #}
         <div>
@@ -37,12 +30,6 @@
             <dd class="font-medium text-gray-900 dark:text-white" data-testid="sitzung-ende">
                 {% if meeting.start and meeting.end|date:"Ymd" == meeting.start|date:"Ymd" %}{{ meeting.end|date:"H:i" }}{% else %}{{ meeting.end|date:"d.m.Y H:i" }}{% endif %} Uhr
             </dd>
-        </div>
-        {% endif %}
-        {% if meeting.location_name %}
-        <div>
-            <dt class="text-sm text-gray-500 dark:text-gray-400">Ort</dt>
-            <dd class="font-medium text-gray-900 dark:text-white">{{ meeting.location_name }}</dd>
         </div>
         {% endif %}
         {% if meeting.location_address %}
@@ -53,3 +40,4 @@
         {% endif %}
     </dl>
 </div>
+{% endif %}

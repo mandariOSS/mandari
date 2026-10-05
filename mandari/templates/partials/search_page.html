@@ -8,19 +8,29 @@ Kontext: insight_core.services.search_page.build_context.
 <span hx-swap-oob="innerHTML:#suche-zahl">{{ count_sentence }}</span>
 {% endif %}
 {% if place_band %}{% include "partials/search_ortsband.html" with band=place_band %}{% endif %}
+{% comment %}
+Ab 2xl: Treffer in Lesebreite links, Filter und Sortierung als Spalte daneben (Issue #841). Die Filter stehen im
+Quelltext vor der Liste, damit Reihenfolge und Tastaturweg am Handy gleich bleiben; nur die Spalte wird verschoben.
+{% endcomment %}
 <c-insight.band aria-labelledby="treffer-titel">
     <h2 id="treffer-titel" class="sr-only">Treffer</h2>
     <input type="hidden" name="result_type" value="{{ params.result_type }}" form="suche-form">
-    {% if tabs %}<c-suche.reiter :tabs="tabs" />{% endif %}
-    {% if not fallback %}
-    <c-suche.filterleiste :zeitraum="period_options" :art="art_options" :sortierung="sort_options" />
+    <div class="2xl:grid 2xl:grid-cols-[minmax(0,60rem)_minmax(16rem,22rem)] 2xl:gap-x-16 2xl:items-start">
+    {% if tabs %}<div class="2xl:col-start-1"><c-suche.reiter :tabs="tabs" /></div>{% endif %}
+    {% if not fallback or active_filters or place_url %}
+    <div class="2xl:col-start-2 2xl:row-start-1 2xl:row-span-6 2xl:pt-2">
+        {% if not fallback %}
+        <c-suche.filterleiste :zeitraum="period_options" :art="art_options" :sortierung="sort_options" />
+        {% endif %}
+        {% if active_filters or place_url %}
+        <p class="mt-4 text-sm text-gray-700 dark:text-gray-300">
+            {% for f in active_filters %}{{ f.label }} · <c-suche.textlink href="{{ f.url }}" hx-get="{{ f.url }}" hx-target="#suchergebnis" hx-push-url="true">entfernen</c-suche.textlink>{% if not forloop.last %}<span aria-hidden="true"> · </span>{% endif %}{% endfor %}
+            {% if place_url %}Ohne Ortsband · <c-suche.textlink href="{{ place_url }}">Ortsband zeigen</c-suche.textlink>{% endif %}
+        </p>
+        {% endif %}
+    </div>
     {% endif %}
-    {% if active_filters or place_url %}
-    <p class="mt-4 text-sm text-gray-700 dark:text-gray-300">
-        {% for f in active_filters %}{{ f.label }} · <c-suche.textlink href="{{ f.url }}" hx-get="{{ f.url }}" hx-target="#suchergebnis" hx-push-url="true">entfernen</c-suche.textlink>{% if not forloop.last %}<span aria-hidden="true"> · </span>{% endif %}{% endfor %}
-        {% if place_url %}Ohne Ortsband · <c-suche.textlink href="{{ place_url }}">Ortsband zeigen</c-suche.textlink>{% endif %}
-    </p>
-    {% endif %}
+    <div class="min-w-0 2xl:col-start-1">
     {% if similar_spelling %}
     <p class="mt-4 text-[0.95rem] text-gray-800 dark:text-gray-200">Keine genauen Treffer für „{{ query }}“. Ergebnisse für ähnliche Schreibweisen:</p>
     {% endif %}
@@ -48,4 +58,6 @@ Kontext: insight_core.services.search_page.build_context.
     {% if insight_subscriptions_enabled %}
     <p class="mt-8"><c-suche.textlink href="{% url 'insight_core:insight:notifications' %}?keyword={{ query|urlencode }}">Bei neuen Treffern zu „{{ query }}“ benachrichtigen</c-suche.textlink></p>
     {% endif %}
+    </div>
+    </div>
 </c-insight.band>

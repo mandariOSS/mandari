@@ -7,8 +7,8 @@
 
 {% block content %}
 {% comment %}
-Gremienseite (Issue #841): Kopf wie die Vorgangsseite, darunter Mitglieder und Sitzungen als Reiter und ab xl eine
-Randspalte mit den nächsten Sitzungen und den Angaben (früher ein eigener Reiter „Informationen“).
+Gremienseite (Issue #841): Kopf wie die Vorgangsseite, darunter Mitglieder und Sitzungen als Reiter und ab 1.440 px
+eine Randspalte mit den nächsten Sitzungen und Angaben (früher Reiter „Informationen“), nur wenn es Inhalte gibt.
 {% endcomment %}
 {% include "partials/tombstone_notice.html" with object=organization %}
 
@@ -29,7 +29,7 @@ Randspalte mit den nächsten Sitzungen und den Angaben (früher ein eigener Reit
     </div>
 </header>
 
-<div class="mt-10 grid gap-12 xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+<div class="mt-10 grid gap-12{% if hat_randspalte %} min-[1440px]:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]{% endif %}">
     <div class="min-w-0" x-data="{ tab: 'members' }">
         <div class="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
             <button type="button" @click="tab = 'members'"
@@ -62,6 +62,6 @@ Randspalte mit den nächsten Sitzungen und den Angaben (früher ein eigener Reit
         </div>
     </div>
 
-    {% include "pages/organizations/_randspalte.html" %}
+    {% if hat_randspalte %}{% include "pages/organizations/_randspalte.html" %}{% endif %}
 </div>
 {% endblock %}

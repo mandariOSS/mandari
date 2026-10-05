@@ -6,7 +6,7 @@ services/search_presentation.statuses_for_papers). Spalten ohne einen einzigen W
 {% if papers %}
 {% with sp_nr=papers|hat_wert:"reference" sp_typ=papers|hat_wert:"paper_type" sp_datum=papers|hat_wert:"date" sp_stand=papers|hat_wert:"stand.text" %}
 <div class="-mx-3">
-    <div class="overflow-x-auto">
+    <div class="relative overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="border-b border-gray-300 dark:border-gray-700">

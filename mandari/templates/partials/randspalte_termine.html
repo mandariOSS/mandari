@@ -1,0 +1,20 @@
+{% comment %}
+Nächste Sitzungen in der Randspalte einer Detailseite (Issue #841). Parameter: sitzungen (höchstens drei),
+titel_id, mit_gremium (Personenseite: Gremium statt Ort, denn der Ort steht auf der Sitzungsseite).
+{% endcomment %}
+<section aria-labelledby="{{ titel_id }}">
+    <h2 id="{{ titel_id }}" class="text-[1.125rem] font-bold tracking-tight text-gray-900 dark:text-white">Nächste Sitzungen</h2>
+    <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800">
+        {% for meeting in sitzungen|slice:":3" %}
+        <li>
+            <a href="{% url 'insight_core:insight:meeting_detail' meeting.pk %}" class="group grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-3 text-[0.9rem]">
+                <time datetime="{{ meeting.start|date:'c' }}" class="font-semibold text-gray-900 dark:text-gray-100">{{ meeting.start|date:"D, d.m." }}</time>
+                <span class="min-w-0 text-gray-700 dark:text-gray-300">
+                    <span class="block group-hover:text-primary-700 dark:group-hover:text-primary-300 group-hover:underline underline-offset-4 break-words">{% if mit_gremium %}{{ meeting.get_display_name }}{% else %}{{ meeting.start|date:"H:i" }} Uhr{% endif %}</span>
+                    {% if mit_gremium %}<span class="block text-gray-600 dark:text-gray-400">{{ meeting.start|date:"H:i" }} Uhr</span>{% elif meeting.location_name %}<span class="block text-gray-600 dark:text-gray-400 break-words">{{ meeting.location_name }}</span>{% endif %}
+                </span>
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</section>

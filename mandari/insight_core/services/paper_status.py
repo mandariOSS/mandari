@@ -205,6 +205,23 @@ def _is_deferred(result: str | None) -> bool:
     return False
 
 
+#: Ergebnisse ohne Entscheidung in der Sache (Wortanfänge, klein geschrieben): Kenntnisnahme, Antwort, Rücknahme
+_KEINE_ENTSCHEIDUNG: Final = ("kenntnis", "beantwortet", "zurückgezogen", "erledigt durch")
+
+
+def ist_beschluss(result: str | None) -> bool:
+    """
+    Ist das Ergebnis eine Entscheidung in der Sache (Liste „Zuletzt beschlossen“, Issue #841)?
+
+    Nein bei leeren, vertagten oder abgesetzten Ergebnissen und bei „zur Kenntnis genommen“, „Kenntnisnahme“,
+    „beantwortet“ und „zurückgezogen“.
+    """
+    text = _clean(result).lower()
+    if not text or _is_deferred(result):
+        return False
+    return not any(wort in text for wort in _KEINE_ENTSCHEIDUNG)
+
+
 def _shorten(text: str, limit: int = _RESULT_MAX_CHARS) -> str:
     """Auf höchstens ``limit`` Zeichen an einer Wortgrenze kürzen, mit „…“ am Ende."""
     if len(text) <= limit:

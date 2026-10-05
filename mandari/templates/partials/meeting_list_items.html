@@ -6,7 +6,7 @@ Sitzungsliste (Issue #841): ab xl mit der Zahl der öffentlichen Tagesordnungspu
 {% if meetings %}
 {% with sp_ort=meetings|hat_wert:"location_name" sp_tops=meetings|hat_wert:"anzahl_tops" %}
 <div class="-mx-3">
-    <div class="overflow-x-auto">
+    <div class="relative overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="border-b border-gray-300 dark:border-gray-700">

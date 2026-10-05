@@ -6,7 +6,7 @@ Spalten ohne einen einzigen Wert (etwa „Nächste Sitzung“ in der Sommerpause
 {% if organizations %}
 {% with sp_art=organizations|hat_wert:"art" sp_mitglieder=organizations|hat_wert:"mitglieder" sp_naechste=organizations|hat_wert:"next_meeting" sp_letzte=organizations|hat_wert:"last_meeting" %}
 <div class="-mx-3">
-    <div class="overflow-x-auto">
+    <div class="relative overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="border-b border-gray-300 dark:border-gray-700">

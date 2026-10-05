@@ -7,8 +7,8 @@
 
 {% block content %}
 {% comment %}
-Personenseite (Issue #841): Kopf wie die Vorgangsseite, darunter Mitgliedschaften (und Fragen) und ab xl eine
-Randspalte mit Kontakt und Angaben (früher ein eigener Reiter „Informationen & Kontakt“).
+Personenseite (Issue #841): Kopf wie die Vorgangsseite, darunter Mitgliedschaften (und Fragen) und ab 1.440 px eine
+Randspalte mit Kontakt, Terminen und Angaben (früher Reiter „Informationen & Kontakt“), nur wenn es dafür Inhalte gibt.
 {% endcomment %}
 {% include "partials/tombstone_notice.html" with object=person %}
 
@@ -37,7 +37,7 @@ Randspalte mit Kontakt und Angaben (früher ein eigener Reiter „Informationen 
     </div>
 </header>
 
-<div class="mt-10 grid gap-12 xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+<div class="mt-10 grid gap-12{% if hat_randspalte %} min-[1440px]:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]{% endif %}">
 <div class="min-w-0" x-data="{ tab: (new URLSearchParams(window.location.search).get('tab') === 'fragen') ? 'questions' : 'memberships' }">
     {% if questions_tab %}
     <div class="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
@@ -122,6 +122,6 @@ Randspalte mit Kontakt und Angaben (früher ein eigener Reiter „Informationen 
         {% endif %}
 </div>
 
-{% include "pages/persons/_randspalte.html" %}
+{% if hat_randspalte %}{% include "pages/persons/_randspalte.html" %}{% endif %}
 </div>
 {% endblock %}

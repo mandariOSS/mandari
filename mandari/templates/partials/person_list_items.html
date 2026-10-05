@@ -7,7 +7,7 @@ die Gremien erst auf breiten Bildschirmen (2xl), am Handy stehen Funktion und Fr
 {% if persons %}
 {% with sp_fraktion=persons|hat_wert:"angaben.fraktion" sp_funktion=persons|hat_wert:"angaben.funktion" sp_gremien=persons|hat_wert:"angaben.gremien" sp_kontakt=persons|hat_wert:"email" %}
 <div class="-mx-3">
-    <div class="overflow-x-auto">
+    <div class="relative overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="border-b border-gray-300 dark:border-gray-700">
@@ -51,7 +51,7 @@ die Gremien erst auf breiten Bildschirmen (2xl), am Handy stehen Funktion und Fr
                 {% if sp_kontakt %}
                 <td class="px-3 py-3.5 max-xl:hidden">
                     {% if person.email %}
-                    <a href="mailto:{{ person.email }}" class="text-sm text-primary-700 dark:text-primary-300 hover:underline whitespace-nowrap">{{ person.email }}</a>
+                    <a href="mailto:{{ person.email }}" class="text-sm text-primary-700 dark:text-primary-300 hover:underline break-all">{{ person.email }}</a>
                     {% endif %}
                 </td>
                 {% endif %}

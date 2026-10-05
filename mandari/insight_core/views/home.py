@@ -8,7 +8,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 import json
 from datetime import timedelta
 
-from django.db.models import OuterRef, Subquery, UUIDField
+from django.db.models import OuterRef, Subquery
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -24,6 +24,7 @@ from ..models import (
     withdrawn_q,
 )
 from ..services import kommunenverzeichnis
+from ..services.paper_status import ist_beschluss
 from ._helpers import get_active_body, is_all_bodies_mode
 
 # =============================================================================
@@ -37,23 +38,17 @@ BESCHLUESSE_TAGE = 180
 
 def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> list[OParlAgendaItem]:
     """
-    Jüngste Ergebnisse öffentlicher Tagesordnungspunkte vergangener Sitzungen (Issue #841).
+    Jüngste Beschlüsse öffentlicher Tagesordnungspunkte vergangener Sitzungen (Issue #841).
 
-    Nur Punkte mit Ergebnis aus nicht abgesagten, nicht zurückgenommenen Sitzungen der letzten Monate. Beratener
-    Vorgang (``vorgang_id``, ``vorgang_name``) und Gremium (``gremium``) kommen als Unterabfragen mit – eine Abfrage
-    für die ganze Liste (Performance-Budget der Startseite).
+    Nur Punkte mit einem Ergebnis, das eine Entscheidung ist – „vertagt“, „zur Kenntnis genommen“ und ähnliche
+    (``paper_status.ist_beschluss``) bleiben außen vor –, aus nicht abgesagten, nicht zurückgenommenen Sitzungen der
+    letzten Monate. Zwei Abfragen: die Punkte (Gremium als Unterabfrage über die indizierte Zuordnung Sitzung–Gremium)
+    und danach die Beratungen dieser Punkte (``agenda_item_external_id__in``, wie die Sitzungsseite) für den Vorgang.
+    Jeder Punkt trägt ``vorgang`` (beratener Vorgang oder ``None``) und ``gremium``.
     """
     jetzt = timezone.now()
-    beratungen = (
-        OParlConsultation.objects.filter(
-            agenda_item_external_id=OuterRef("external_id"), paper__isnull=False, paper__deleted=False
-        )
-        .exclude(withdrawn_q())
-        .exclude(withdrawn_q("paper"))
-        .order_by("pk")
-    )
     gremien = OParlOrganization.objects.filter(meetings=OuterRef("meeting_id")).order_by("name")
-    return list(
+    kandidaten = (
         OParlAgendaItem.objects.filter(
             meeting__body=body,
             meeting__deleted=False,
@@ -67,14 +62,28 @@ def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> li
         .exclude(result="")
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("meeting"))
-        .annotate(
-            vorgang_id=Subquery(beratungen.values("paper_id")[:1], output_field=UUIDField()),
-            vorgang_name=Subquery(beratungen.values("paper__name")[:1]),
-            gremium=Subquery(gremien.values("name")[:1]),
-        )
+        .annotate(gremium=Subquery(gremien.values("name")[:1]))
         .select_related("meeting")
-        .order_by("-meeting__start", "order", "number")[:anzahl]
+        .order_by("-meeting__start", "order", "number")
     )
+    # Etwas mehr laden, als gezeigt wird: Vertagungen und Kenntnisnahmen fallen danach heraus
+    punkte = [punkt for punkt in kandidaten[: anzahl * 4] if ist_beschluss(punkt.result)][:anzahl]
+    vorgaenge: dict[str, OParlPaper] = {}
+    if punkte:
+        beratungen = (
+            OParlConsultation.objects.filter(
+                agenda_item_external_id__in=[p.external_id for p in punkte], paper__isnull=False, paper__deleted=False
+            )
+            .exclude(withdrawn_q())
+            .exclude(withdrawn_q("paper"))
+            .select_related("paper")
+            .order_by("pk")
+        )
+        for beratung in beratungen:
+            vorgaenge.setdefault(str(beratung.agenda_item_external_id), beratung.paper)
+    for punkt in punkte:
+        punkt.vorgang = vorgaenge.get(punkt.external_id)
+    return punkte
 
 
 class PortalHomeView(TemplateView):
