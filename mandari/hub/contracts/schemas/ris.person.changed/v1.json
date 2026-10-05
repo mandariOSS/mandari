@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.person.changed:v1",
+  "title": "Person geändert",
+  "description": "Eine Person wurde neu erkannt (added) oder geändert (changed), etwa Name, Titel oder Mitgliedschaften. Aggregat: Person. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "person",
+    "change"
+  ],
+  "properties": {
+    "person": {
+      "description": "Kanonische Kennung der Person.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "change": {
+      "description": "Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert).",
+      "type": "string",
+      "enum": [
+        "added",
+        "changed"
+      ]
+    },
+    "changed": {
+      "description": "Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. familyName, membership); bei change changed.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    }
+  },
+  "examples": [
+    {
+      "person": "6d1e2f3a-4b5c-5d6e-8f7a-9b0c1d2e3f4a",
+      "change": "added"
+    },
+    {
+      "person": "6d1e2f3a-4b5c-5d6e-8f7a-9b0c1d2e3f4a",
+      "change": "changed",
+      "changed": [
+        "familyName",
+        "membership"
+      ]
+    }
+  ]
+}

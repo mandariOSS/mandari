@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.organization.changed:v1",
+  "title": "Gremium geändert",
+  "description": "Ein Gremium wurde neu erkannt (added) oder geändert (changed), etwa Name, Art oder Zeitraum. Aggregat: Organization. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "organization",
+    "change"
+  ],
+  "properties": {
+    "organization": {
+      "description": "Kanonische Kennung des Gremiums.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "change": {
+      "description": "Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert).",
+      "type": "string",
+      "enum": [
+        "added",
+        "changed"
+      ]
+    },
+    "changed": {
+      "description": "Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. name, organizationType); bei change changed.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    }
+  },
+  "examples": [
+    {
+      "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f",
+      "change": "added"
+    },
+    {
+      "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f",
+      "change": "changed",
+      "changed": [
+        "name",
+        "shortName"
+      ]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 """
 Ausgelieferte Schemas des Startumfangs (Issue #518): 27 Ereignistypen und vier Befehle mit
 Eigentümer, Sichtbarkeit und Beispielen; keine Freitextfelder bei nichtöffentlichen und
-personenbezogenen Daten.
+personenbezogenen Daten. Seither ergänzt: Änderungen an Gremien und Personen (Issue #821).
 """
 
 from __future__ import annotations
@@ -43,6 +43,8 @@ STARTUMFANG: dict[str, tuple[str, str, frozenset[str]]] = {
     "ris.protocol.approved": (EVENT, "hub.ris", frozenset({NOE})),
     "ris.protocol.published": (EVENT, "hub.ris", frozenset({OE})),
     "ris.object.depublished": (EVENT, "hub.ris", frozenset({OE})),
+    "ris.organization.changed": (EVENT, "hub.ris", frozenset({OE})),
+    "ris.person.changed": (EVENT, "hub.ris", frozenset({OE})),
     "ris.source.published": (EVENT, "hub.ris", frozenset({OE})),
     "submission.received": (EVENT, "apps.session", frozenset({NOE})),
     "submission.status_changed": (EVENT, "apps.session", frozenset({NOE})),
@@ -115,7 +117,7 @@ def _vertrag(register: Registry, name: str) -> Contract:
 
 
 def test_register_enthaelt_genau_den_startumfang(register: Registry) -> None:
-    assert len(register.names(EVENT)) == 27
+    assert len(register.names(EVENT)) == 29
     assert len(register.names(COMMAND)) == 4
     assert set(register.names()) == set(STARTUMFANG)
     assert all(register.versions(name) == (1,) for name in STARTUMFANG)

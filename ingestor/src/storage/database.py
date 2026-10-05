@@ -1348,8 +1348,10 @@ class DatabaseStorage:
         person: ProcessedPerson,
         body_id: UUID,
     ) -> UUID:
-        """Insert or update a person."""
+        """Insert or update a person; Zeile und Ereignis (``ris.person.changed``) in einer Transaktion."""
         async with self.get_session() as session:
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlPerson, person.external_id) if emit else None
             stmt = pg_insert(OParlPerson).values(
                 id=person.id,
                 external_id=person.external_id,
@@ -1392,6 +1394,9 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             person_id = result.scalar_one()
+            if emit:
+                drafts = ris_events.person_events(person_id, person.raw_json or {}, prior)
+                await self._emit(session, body_id, drafts, person.oparl_modified)
             await session.commit()
 
             self._person_uuid_cache[person.external_id] = person_id
@@ -1404,8 +1409,10 @@ class DatabaseStorage:
         org: ProcessedOrganization,
         body_id: UUID,
     ) -> UUID:
-        """Insert or update an organization."""
+        """Insert or update an organization; Zeile und Ereignis (``ris.organization.changed``) in einer Transaktion."""
         async with self.get_session() as session:
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlOrganization, org.external_id) if emit else None
             stmt = pg_insert(OParlOrganization).values(
                 id=org.id,
                 external_id=org.external_id,
@@ -1448,6 +1455,9 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             org_id = result.scalar_one()
+            if emit:
+                drafts = ris_events.organization_events(org_id, org.raw_json or {}, prior)
+                await self._emit(session, body_id, drafts, org.oparl_modified)
             await session.commit()
 
             self._organization_uuid_cache[org.external_id] = org_id
@@ -2121,6 +2131,9 @@ class DatabaseStorage:
         ``reset_attempts=False``: Die Datei wird zurückgestellt, bevor ihre Bearbeitung begann (robots.txt
         nicht erreichbar); der Abbruchzähler bleibt, sonst liefe eine Datei, an der der Worker schon starb,
         wieder parallel statt einzeln und zuletzt (Issue #817).
+
+        Liegt ein Text vor (``completed`` mit ``text_content``), meldet ``ris.file.text_extracted`` das in
+        derselben Transaktion (Issue #821): Wer auf das Ereignis hin den Bestand liest, sieht den Text.
         """
         from datetime import datetime
 
@@ -2155,8 +2168,11 @@ class DatabaseStorage:
             if status == "completed":
                 values["text_extracted_at"] = datetime.now(UTC)
 
-            stmt = update(OParlFile).where(OParlFile.id == file_id).values(**values)
-            await session.execute(stmt)
+            stmt = update(OParlFile).where(OParlFile.id == file_id).values(**values).returning(OParlFile.body_id)
+            body_id = (await session.execute(stmt)).scalar_one_or_none()
+            if status == "completed" and text_content and await self._events_for(session, body_id):
+                drafts = ris_events.text_extracted_events(file_id, method, len(text_content))
+                await self._emit(session, body_id, drafts)
             await session.commit()
 
     # ========== Dokumentablage nach SHA-256 (Issue #788) ==========

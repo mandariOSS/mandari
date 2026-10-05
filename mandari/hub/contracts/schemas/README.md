@@ -7,7 +7,8 @@ und prüft sie; ein Verstoß lässt `manage.py check` (Kennung `hub_contracts.E0
 fehlschlagen.
 
 Ausgeliefert ist der Startumfang: 27 Ereignistypen und die Befehle `submission.submit`,
-`submission.withdraw`, `attendance.respond` und `invitation.acknowledge`. Art, Eigentümer und
+`submission.withdraw`, `attendance.respond` und `invitation.acknowledge`; seither ergänzt um
+`ris.organization.changed` und `ris.person.changed` (#821). Art, Eigentümer und
 Sichtbarkeit je Typ, die Inhaltsfelder mit jedem Unterfeld und seiner Längengrenze sowie die
 verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
 

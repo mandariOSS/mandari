@@ -164,6 +164,16 @@ heißt; die Entscheidung bleibt unverändert.
 - Prüfung 5 (`publish()` nur im Paket aus `x-owner`) ist damit noch nicht automatisiert: Abonnenten nennen
   dieselben Typen, und `ris.*` entsteht in `hub.ris` und im Ingestor.
 
+## Nachtrag: Änderungen an Gremien und Personen (#821)
+
+Der Startumfang kannte für Gremien und Personen nur die Rücknahme (`ris.object.depublished`). Das
+Abonnement `suchindex` braucht auch ihre Änderungen, etwa wenn ein Gremium umbenannt wird. Neu sind
+`ris.organization.changed` und `ris.person.changed` (je v1, `oeffentlich`): Kennung, Art der Änderung
+(`added` für neu erkannt oder nach einer Rücknahme wieder geliefert, `changed`) und die Namen der
+geänderten Felder, wie bei `ris.agendaitem.changed`. Erzeuger ist vorerst der Ingestor mit demselben
+fachlichen Vergleich wie für die übrigen Typen (Listen als Mengen, leere Werte gleich fehlenden).
+Session meldet Gremien und Personen nicht; eine weitere Sichtbarkeitsklasse ließe sich additiv ergänzen.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),
