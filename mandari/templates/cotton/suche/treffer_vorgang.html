@@ -6,14 +6,18 @@ Parameter: treffer (Dict aus insight_core.services.search_presentation.present_g
   kind, url, title (SafeString), context (Liste: Art, Aktenzeichen, Gremium, Datum), status, status_kind,
   snippet (SafeString), fundstelle {label, url}, others [{label, url}].
 Aufbau: Kontextzeile, Titel als Link, Stand-Satz, sauberer Ausschnitt, Fundstelle; weitere Dokumente mit Treffer
-klappen ohne JavaScript per <details> auf. Eine Ebene, Linie nur zwischen Listeneinträgen.
+klappen ohne JavaScript per <details> auf. Eine Ebene, Linie nur zwischen Listeneinträgen. Ist die Trefferliste
+mindestens 54rem breit (Container-Abfrage auf #treffer-liste, Issue #841), steht die Kontextzeile als Spalte rechts.
+54rem: Daneben bleibt eine volle Lesezeile, Tablets quer (Liste unter 54rem) behalten die Zeile über dem Titel, und
+ab 2xl (Filterspalte daneben) bleibt die Spalte durchgehend, statt bis etwa 1.630 px wieder umzuspringen.
 {% endcomment %}
 <c-vars treffer="" />
-<li class="py-5 border-t border-gray-200 dark:border-gray-700 first:border-t-0">
+<li class="py-5 border-t border-gray-200 dark:border-gray-700 first:border-t-0 [@container(min-width:54rem)]:grid [@container(min-width:54rem)]:grid-cols-[minmax(0,1fr)_14rem] [@container(min-width:54rem)]:gap-x-8">
     {% if treffer.context %}
-    <p class="text-sm text-gray-600 dark:text-gray-400">{% for teil in treffer.context %}{% if forloop.first %}<span class="font-medium text-gray-800 dark:text-gray-200">{{ teil }}</span>{% else %} · {{ teil }}{% endif %}{% endfor %}</p>
+    <p class="text-sm text-gray-600 dark:text-gray-400 [@container(min-width:54rem)]:col-start-2 [@container(min-width:54rem)]:row-start-1 [@container(min-width:54rem)]:pt-0.5">{% for teil in treffer.context %}{% if not forloop.first %}<span class="[@container(min-width:54rem)]:hidden"> · </span>{% endif %}<span class="[@container(min-width:54rem)]:block{% if forloop.first %} font-medium text-gray-800 dark:text-gray-200{% endif %}">{{ teil }}</span>{% endfor %}</p>
     {% endif %}
-    <h3 class="mt-1 text-[1.0625rem] sm:text-lg font-semibold leading-snug text-gray-900 dark:text-white break-words">
+    <div class="min-w-0 [@container(min-width:54rem)]:col-start-1 [@container(min-width:54rem)]:row-start-1">
+    <h3 class="mt-1 [@container(min-width:54rem)]:mt-0 text-[1.0625rem] sm:text-lg font-semibold leading-snug text-gray-900 dark:text-white break-words">
         <a href="{{ treffer.url }}" class="hover:underline underline-offset-4 decoration-primary-600">{{ treffer.title }}</a>
     </h3>
     {% if treffer.status %}
@@ -46,4 +50,5 @@ klappen ohne JavaScript per <details> auf. Eine Ebene, Linie nur zwischen Listen
         </ul>
     </details>
     {% endif %}
+    </div>
 </li>

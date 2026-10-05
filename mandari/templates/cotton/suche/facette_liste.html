@@ -1,0 +1,32 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Ein Filter der Suche als offene Liste für die Filterspalte ab 2xl (Issue #841): Jede Option ist ein Link auf die
+Suche mit gewählter bzw. abgewählter Option, mit HTMX tauscht er nur #suchergebnis aus. Die Formularfelder bleiben in
+c-suche.facette (dort ab 2xl ausgeblendet) und tragen den Stand weiter, wenn das Suchfeld abgeschickt wird.
+Die Spalte klebt beim Scrollen: Nach dem Austausch springt die Seite an den Anfang der Suche (show:#suche-anfang:top,
+Anker in pages/search.html), damit neue Trefferzahl und beste Treffer im Bild sind statt des Listenendes. Die feste id
+je Option (Wert als Kurzform, eindeutige „kennung“ aus build_context) hält den Tastaturfokus.
+  <c-suche.facette-liste titel="Art" name="paper_type" :optionen="art_options" mehrfach />
+Parameter: titel, name (Parameter wie in SearchQuery, für die Kennung der Gruppe), optionen (Liste von
+{value, label?, kennung?, count?, checked, url}), mehrfach (Kästchen statt Kreis: mehrere Optionen wählbar).
+{% endcomment %}
+<c-vars titel="" name="" optionen="" mehrfach="" />
+<div role="group" aria-labelledby="filterliste-{{ name }}">
+    <p id="filterliste-{{ name }}" class="text-sm font-semibold text-gray-900 dark:text-white">{{ titel }}</p>
+    <ul class="mt-1">
+        {% for o in optionen %}
+        <li>
+            <a id="filter-{{ name }}-{{ o.kennung|default:o.value|slugify|default:'alle' }}" href="{{ o.url }}" hx-get="{{ o.url }}"
+               hx-target="#suchergebnis" hx-swap="innerHTML show:#suche-anfang:top" hx-push-url="true"
+               {% if o.checked %}aria-current="true"{% endif %}
+               class="group flex items-center gap-2.5 min-h-9 text-[0.95rem] text-gray-800 dark:text-gray-200">
+                <span class="shrink-0 grid place-items-center w-4 h-4 border {% if mehrfach %}rounded{% else %}rounded-full{% endif %} {% if o.checked %}border-primary-700 dark:border-primary-300{% if mehrfach %} bg-primary-700 dark:bg-primary-300{% endif %}{% else %}border-gray-400 dark:border-gray-500{% endif %}" aria-hidden="true">
+                    {% if o.checked %}{% if mehrfach %}<i data-lucide="check" class="w-3 h-3 text-white dark:text-gray-900"></i>{% else %}<span class="w-2 h-2 rounded-full bg-primary-700 dark:bg-primary-300"></span>{% endif %}{% endif %}
+                </span>
+                <span class="flex-1 min-w-0 group-hover:underline underline-offset-4 {% if o.checked %}font-medium text-gray-900 dark:text-white{% endif %}">{{ o.label|default:o.value }}{% if o.checked %}<span class="sr-only"> (gewählt)</span>{% endif %}</span>
+                {% if o.count is not None %}<span class="tabular-nums text-sm text-gray-600 dark:text-gray-400">{{ o.count }}</span>{% endif %}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</div>

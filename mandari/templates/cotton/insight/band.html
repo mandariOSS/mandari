@@ -6,5 +6,5 @@ Karte in der Karte. „hell“ für den Hauptinhalt, „grau“ für Ergänzende
 {% endcomment %}
 <c-vars ton="hell" />
 <section class="{% if ton == 'grau' %}bg-band-grau{% else %}bg-band-hell{% endif %}" {{ attrs }}>
-    <div class="max-w-insight px-4 sm:px-8 py-8 sm:py-12">{{ slot }}</div>
+    <div class="max-w-insight mx-auto px-4 sm:px-8 py-8 sm:py-12">{{ slot }}</div>
 </section>

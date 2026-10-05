@@ -17,6 +17,7 @@ from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any, Final
 
 from django.utils.http import urlencode
+from django.utils.text import slugify
 
 from .search_presentation import count_sentence, normalize_paper_type, present_groups
 
@@ -156,6 +157,8 @@ def build_context(
     if params.paper_types:
         paper_type = [raw for label in params.paper_types for raw in raw_by_label.get(label, [])] or ["∅"]
 
+    arten = sorted(art_counts.items(), key=lambda item: -item[1])[:12]
+
     tab = next(t for t in TABS if t[0] == params.result_type)
     kinds = tab[3]
     if params.paper_types:
@@ -216,17 +219,30 @@ def build_context(
         "next_url": params.url(page=params.page + 1),
         "tabs": tabs,
         "art_options": [
-            {"value": label, "count": _zahl(n), "checked": label in params.paper_types}
-            for label, n in sorted(art_counts.items(), key=lambda item: -item[1])
-        ][:12],
+            {
+                "value": label,
+                "kennung": kennung,
+                "count": _zahl(n),
+                "checked": label in params.paper_types,
+                "url": _art_url(params, label),
+            }
+            for (label, n), kennung in zip(arten, _kennungen([label for label, _n in arten]), strict=True)
+        ],
         "period_options": [
-            {"value": "", "label": "Beliebig", "count": None, "checked": not params.period},
+            {
+                "value": "",
+                "label": "Beliebig",
+                "count": None,
+                "checked": not params.period,
+                "url": params.url(period=""),
+            },
             *(
                 {
                     "value": value,
                     "label": label,
                     "count": _zahl(facets["periods"].get(value)),
                     "checked": value == params.period,
+                    "url": params.url(period=value),
                 }
                 for value, label, _von, _bis in PERIODS
             ),
@@ -243,6 +259,31 @@ def build_context(
         context["without_filters_count"] = count_sentence(ohne["counts"])
         context["without_filters_url"] = params.url(period="", paper_types=[])
     return context
+
+
+def _art_url(params: SearchParams, label: str) -> str:
+    """Adresse, die eine Art in der Filterspalte wählt bzw. wieder abwählt (offene Liste ab 2xl, Issue #841)."""
+    if label in params.paper_types:
+        return params.url(paper_types=[a for a in params.paper_types if a != label])
+    return params.url(paper_types=[*params.paper_types, label])
+
+
+def _kennungen(werte: list[str]) -> list[str]:
+    """Feste, eindeutige Kurzform je Art für die id der Option in der Filterspalte (Issue #841).
+
+    HTMX setzt den Tastaturfokus nach dem Austausch über die id zurück; die Kurzform hängt daher nur am Wert. Werte,
+    die gleich gekürzt würden („Ergänzung“, „Erganzung“), bekommen eine laufende Nummer, damit keine id doppelt ist.
+    """
+    vergeben: set[str] = set()
+    kennungen: list[str] = []
+    for wert in werte:
+        basis = slugify(wert) or "art"
+        kennung, nummer = basis, 2
+        while kennung in vergeben:
+            kennung, nummer = f"{basis}-{nummer}", nummer + 1
+        vergeben.add(kennung)
+        kennungen.append(kennung)
+    return kennungen
 
 
 def _zahl(value: int | None) -> str | None:

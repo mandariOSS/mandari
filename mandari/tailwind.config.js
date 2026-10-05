@@ -27,8 +27,10 @@ module.exports = {
         },
       },
       // Bürgerportal auf breiten Bildschirmen (Issue #841): Inhalt fließt bis 116rem (1.856 px samt Rand), darüber
-      // bleibt er links an der Seitenleiste. Ab 1.600 px Fenster (min-[1600px]:) trägt die Übersicht drei Spalten;
-      // bewusst kein eigener Bildschirm „3xl“, der würde .container in Admin und Work mitverbreitern.
+      // steht der Rahmen (Kopfzeile, Hinweise, Bänder, Inhalt, Fuß) mittig neben der Seitenleiste (mx-auto) statt
+      // links mit einseitiger Leerfläche; bis zur Kante würden Tabellen und Zeilen über 2.200 px lang. Ab 1.600 px
+      // Fenster (min-[1600px]:) trägt die Übersicht drei Spalten; bewusst kein eigener Bildschirm „3xl“, der würde
+      // .container in Admin und Work mitverbreitern.
       maxWidth: {
         insight: '116rem',
       },
