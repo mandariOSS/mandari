@@ -188,6 +188,46 @@ class FactionSuspensionRule(models.Model):
         return f"{self.schedule.name}: nach {self.ris_organization.name}"
 
 
+class FactionStandardAgendaItem(models.Model):
+    """
+    Punkt der Standard-Tagesordnung einer Organisation (Issue #872).
+
+    Jede neu angelegte Fraktionssitzung erhält diese Punkte, auch Sitzungen aus einer Sitzungsreihe
+    (:func:`apps.work.faction.agenda.apply_standard_agenda`). Der erste TOP „Tagesordnung festlegen und
+    letztes Protokoll genehmigen“ gehört nicht dazu: Ihn legt weiterhin der Genehmigungsablauf an
+    (``FactionMeeting.create_approval_agenda_item``). Bestehende Sitzungen bleiben unverändert.
+    """
+
+    VISIBILITY_CHOICES = [
+        ("public", "Öffentlich"),
+        ("internal", "Nicht-öffentlich"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    organization = models.ForeignKey(
+        "tenants.Organization",
+        on_delete=models.CASCADE,
+        related_name="faction_standard_agenda_items",
+        verbose_name="Organisation",
+    )
+    title = models.CharField(max_length=500, verbose_name="Titel")
+    visibility = models.CharField(
+        max_length=20, choices=VISIBILITY_CHOICES, default="public", verbose_name="Sichtbarkeit"
+    )
+    order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Standard-TOP"
+        verbose_name_plural = "Standard-Tagesordnung"
+        ordering = ["order", "created_at"]
+
+    def __str__(self):
+        return self.title
+
+
 class FactionMeeting(EncryptionMixin, models.Model):
     """
     Internal faction/organization meeting.
@@ -605,6 +645,16 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
         related_name="approval_agenda_items",
         verbose_name="Genehmigt Sitzung",
         help_text="Die vorherige Sitzung deren Protokoll hier genehmigt wird",
+    )
+
+    # Herkunft aus der Standard-Tagesordnung der Organisation (Issue #872)
+    standard_item = models.ForeignKey(
+        FactionStandardAgendaItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="meeting_items",
+        verbose_name="Aus Standard-TOP",
     )
 
     # Link to public agenda item

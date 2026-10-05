@@ -76,6 +76,7 @@ from apps.work.faction.models import (
     FactionMeetingException,
     FactionMeetingSchedule,
     FactionProtocolEntry,
+    FactionStandardAgendaItem,
     FactionSuspensionRule,
 )
 from apps.work.meetings import services as meeting_services
@@ -733,6 +734,18 @@ CASES: list[Case] = [
         foreign={"reihe": {"schedule_id": "{a_schedule}"}},
     ),
     _reihe("delete_rule", rule_id="{rule}", foreign={"regel": {"rule_id": "{a_rule}"}}),
+    # Standard-Tagesordnung (Issue #872)
+    _reihe("add_standard_item", title="Presse", visibility="public"),
+    _reihe("add_standard_suggestion"),
+    _reihe(
+        "move_standard_item",
+        item_id="{standard_item}",
+        direction="up",
+        foreign={"standard_top": {"item_id": "{a_standard_item}"}},
+    ),
+    _reihe(
+        "delete_standard_item", item_id="{standard_item}", foreign={"standard_top": {"item_id": "{a_standard_item}"}}
+    ),
     Case(
         "organization_api_settings",
         "api_save",
@@ -1144,6 +1157,8 @@ class _Builder:
             schedule=schedule, original_date=HEUTE + timedelta(days=30), exception_type="cancelled"
         )
         rule = FactionSuspensionRule.objects.create(schedule=schedule, ris_organization=committee)
+        FactionStandardAgendaItem.objects.create(organization=org, title="Beschlüsse", order=1)
+        standard_item = FactionStandardAgendaItem.objects.create(organization=org, title="Termine", order=2)
 
         # Aufgaben
         task = Task.objects.create(
@@ -1244,6 +1259,7 @@ class _Builder:
             "schedule": schedule,
             "exception": exception,
             "rule": rule,
+            "standard_item": standard_item,
             "task": task,
             "label": label,
             "task_checklist": task_checklist,

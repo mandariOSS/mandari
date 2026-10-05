@@ -329,7 +329,10 @@ def test_migration_leert_zielsitzung_und_behaelt_die_spalte(org: Any, autorin: A
             cursor.execute("SELECT target_meeting_id FROM work_motion WHERE id = %s", [motion.pk.hex])
             row = cursor.fetchone()
         assert row is not None and row[0] is None
-        FactionMeeting.objects.filter(pk=sitzung.pk).delete()  # kein verwaister Verweis mehr
+        # kein verwaister Verweis mehr – mit dem Modell dieses Migrationsstands: Das heutige Modell kennt
+        # Spalten späterer Migrationen (z. B. TOP-Herkunft aus der Standard-Tagesordnung, #872)
+        nachher = executor.loader.project_state([NACHHER]).apps
+        nachher.get_model("work", "FactionMeeting").objects.filter(pk=sitzung.pk).delete()
 
         # Wiederholbar
         MIGRATION.zielsitzung_leeren(executor.loader.project_state([VORHER]).apps, None)

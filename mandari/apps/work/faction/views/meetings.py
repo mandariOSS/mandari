@@ -21,10 +21,20 @@ from ..models import (
 )
 
 logger = logging.getLogger(__name__)
-from ._helpers import _get_meeting_context
+from ..agenda import apply_standard_agenda, standard_agenda_preview
+from ..visibility import can_view_internal
+from ._helpers import VIDEO_LINK_MAX_LENGTH, VIDEO_LINK_TOO_LONG, _get_meeting_context
 
 # Platzhalter in der Panel-URL (identisch mit PANEL_ITEM_PLACEHOLDER in frontend/alpine/faction-detail.ts)
 PANEL_ITEM_PLACEHOLDER = uuid.UUID(int=0)
+
+
+def _wants_standard_agenda(form) -> bool:
+    """
+    Standard-TOPs übernehmen? Der Dialog bietet sie als vorausgewähltes Kästchen an (``standard_agenda_offered``);
+    nur wer es abwählt, legt die Sitzung ohne sie an.
+    """
+    return not form.get("standard_agenda_offered") or form.get("standard_agenda") == "on"
 
 
 class FactionMeetingListView(WorkViewMixin, TemplateView):
@@ -99,6 +109,12 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
         context["certificate_default_to"] = today
         context["can_export_attendance"] = can_confirm_attendance(self.membership)
 
+        # Dialog „Neue Sitzung“: Tagesordnung, die die Sitzung erhält (Issue #872)
+        if self.membership.has_permission("faction.create"):
+            context["standard_agenda_preview"] = standard_agenda_preview(
+                self.organization, may_view_internal=can_view_internal(self.membership)
+            )
+
         return context
 
     def post(self, request, *args, **kwargs):
@@ -129,15 +145,26 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
             messages.error(request, "Ungültiges Datum oder Uhrzeit.")
             return redirect("work:faction", org_slug=self.organization.slug)
 
+        # Videolink (Issue #872): gleich beim Planen, nur als http(s)-Adresse; ein Link macht die Sitzung online
+        from ..services import safe_link_url
+
+        video_link = request.POST.get("video_link", "").strip()
+        if len(video_link) > VIDEO_LINK_MAX_LENGTH:
+            messages.error(request, VIDEO_LINK_TOO_LONG)
+            return redirect("work:faction", org_slug=self.organization.slug)
+        if video_link and not safe_link_url(video_link):
+            messages.error(request, "Bitte einen gültigen Videolink angeben (https://…).")
+            return redirect("work:faction", org_slug=self.organization.slug)
+
         # Create meeting
         meeting = FactionMeeting(
             organization=self.organization,
             created_by=self.membership,
             title=title,
             start=start_datetime,
-            location=request.POST.get("location", ""),
-            is_virtual=request.POST.get("is_virtual") == "on",
-            video_link=request.POST.get("video_link", "") if request.POST.get("is_virtual") == "on" else "",
+            location=request.POST.get("location", "").strip(),
+            is_virtual=request.POST.get("is_virtual") == "on" or bool(video_link),
+            video_link=video_link,
             description=request.POST.get("description", ""),
             status="draft" if request.POST.get("save_as") == "draft" else "planned",
             meeting_number=FactionMeeting.get_next_meeting_number(self.organization),
@@ -162,6 +189,10 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
             from ..services import ProtocolApprovalService
 
             ProtocolApprovalService.auto_create_approval_item(meeting)
+
+        # Standard-Tagesordnung (Issue #872): im Dialog abwählbar, sonst immer übernommen
+        if _wants_standard_agenda(request.POST):
+            apply_standard_agenda(meeting)
 
         messages.success(request, "Sitzung erfolgreich erstellt.")
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)

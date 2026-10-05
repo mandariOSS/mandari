@@ -624,7 +624,9 @@ class AgendaProposalService:
 
     Allows members with 'agenda.propose' permission to suggest agenda items
     for upcoming meetings. These proposals must be reviewed and approved
-    by members with 'agenda.manage' permission.
+    by members with 'agenda.approve' permission (Vorsitz, Stellvertretung,
+    Geschäftsführung; Issue #872). Erst angenommene Vorschläge stehen mit
+    Nummer auf der Tagesordnung.
     """
 
     @classmethod
@@ -671,32 +673,100 @@ class AgendaProposalService:
         return item
 
     @classmethod
-    def _notify_managers(cls, meeting, item, proposed_by):
-        """Notify members with agenda.manage permission about the new proposal."""
+    def approvers(cls, meeting, item):
+        """
+        Wer über den Vorschlag entscheidet: aktive Mitglieder mit ``agenda.approve`` (Issue #872).
+
+        NÖ strikt (Issue #64): Vorschläge für den nicht-öffentlichen Teil sehen nur Vereidigte.
+        Gastzugänge haben keine Rechte (``PermissionChecker``).
+        """
         from apps.common.permissions import PermissionChecker
-        from apps.work.notifications.models import NotificationType
-        from apps.work.notifications.services import NotificationHub
 
         from .visibility import can_view_item
 
-        # Find all members with agenda.manage permission — NÖ strikt (Issue #64):
-        # Vorschläge für den nicht-öffentlichen Teil sehen nur Vereidigte
-        managers = []
-        for membership in meeting.organization.memberships.filter(is_active=True):
-            checker = PermissionChecker(membership)
-            if checker.has_permission("agenda.manage") and can_view_item(item, membership):
-                managers.append(membership)
+        approvers = []
+        memberships = meeting.organization.memberships.filter(is_active=True, is_guest=False).prefetch_related(
+            "roles__permissions", "individual_permissions", "denied_permissions"
+        )
+        for membership in memberships:
+            if PermissionChecker(membership).can_approve_agenda_items() and can_view_item(item, membership):
+                approvers.append(membership)
+        return approvers
 
-        if managers:
-            NotificationHub.send_bulk(
-                recipients=managers,
-                notification_type=NotificationType.FACTION_MEETING_UPDATED,
-                title="Neuer TOP-Vorschlag",
-                message=f'{proposed_by.user.get_display_name()} hat einen TOP vorgeschlagen: "{item.title}"',
-                link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
-                actor=proposed_by,
-                metadata={"meeting_id": str(meeting.id), "item_id": str(item.id)},
+    @staticmethod
+    def _meeting_date(meeting) -> str:
+        return timezone.localtime(meeting.start).strftime("%d.%m.%Y")
+
+    @classmethod
+    def _notify_managers(cls, meeting, item, proposed_by):
+        """Vorsitz, Stellvertretung und Geschäftsführung (``agenda.approve``) über den Vorschlag informieren."""
+        from apps.work.notifications.models import NotificationType
+        from apps.work.notifications.services import NotificationHub
+
+        managers = [m for m in cls.approvers(meeting, item) if m.id != proposed_by.id]
+        if not managers:
+            return
+
+        if item.visibility == "internal":
+            # NÖ strikt (Issue #64): Benachrichtigungen samt E-Mail gehen bei Abwesenheit auch an die Vertretung,
+            # die nicht vereidigt sein muss. Titel und Inhalt stehen daher nur in der Sitzung.
+            title = "Neuer nicht-öffentlicher TOP-Vorschlag"
+            message = (
+                f"Für die Sitzung am {cls._meeting_date(meeting)} liegt ein neuer nicht-öffentlicher TOP-Vorschlag "
+                "vor. Details stehen nur in der Sitzung."
             )
+        else:
+            title = "Neuer TOP-Vorschlag"
+            message = f'{proposed_by.user.get_display_name()} hat einen TOP vorgeschlagen: "{item.title}"'
+
+        NotificationHub.send_bulk(
+            recipients=managers,
+            notification_type=NotificationType.FACTION_MEETING_UPDATED,
+            title=title,
+            message=message,
+            link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
+            actor=proposed_by,
+            metadata={"meeting_id": str(meeting.id), "item_id": str(item.id)},
+        )
+
+    @classmethod
+    def _notify_decision(cls, item, reviewed_by, *, accepted: bool, reason: str = "") -> None:
+        """
+        Vorschlagende Person über die Entscheidung informieren (eigener Typ, je Einstellung abschaltbar, Issue #70).
+
+        Nicht-öffentliche Vorschläge ohne Titel und Begründung (NÖ strikt, Issue #64): Die Benachrichtigung geht bei
+        Abwesenheit auch an die Vertretung; die Begründung steht in der Sitzung bei den eigenen Vorschlägen.
+        """
+        if not item.proposed_by:
+            return
+        from apps.work.notifications.models import NotificationType
+        from apps.work.notifications.services import NotificationHub
+
+        meeting = item.meeting
+        outcome = "angenommen" if accepted else "nicht angenommen"
+        if item.visibility == "internal":
+            message = (
+                f"Ihr nicht-öffentlicher TOP-Vorschlag für die Sitzung am {cls._meeting_date(meeting)} wurde "
+                f"{outcome}. Details stehen nur in der Sitzung."
+            )
+        else:
+            message = f'Ihr Vorschlag "{item.title}" wurde {outcome}.'
+            if reason:
+                message += f" Grund: {reason}"
+
+        NotificationHub.send(
+            recipient=item.proposed_by,
+            notification_type=NotificationType.FACTION_PROPOSAL_DECIDED,
+            title="TOP-Vorschlag angenommen" if accepted else "TOP-Vorschlag abgelehnt",
+            message=message,
+            link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
+            actor=reviewed_by,
+            metadata={
+                "meeting_id": str(item.meeting_id),
+                "item_id": str(item.id),
+                "decision": "accepted" if accepted else "rejected",
+            },
+        )
 
     @classmethod
     def accept_proposal(cls, item, reviewed_by, assign_number: str = None):
@@ -711,32 +781,37 @@ class AgendaProposalService:
         Returns:
             True if accepted, False if already processed
         """
-        if not item.accept_proposal(reviewed_by):
-            return False
+        from django.db import transaction
 
-        if assign_number:
-            item.number = assign_number
-            item.save(update_fields=["number"])
+        from . import agenda
+        from .models import FactionAgendaItem
 
-        logger.info(f"Agenda proposal accepted: '{item.title}' by {reviewed_by.user.email}")
-
-        # Notify the proposer
-        if item.proposed_by:
-            from apps.work.notifications.models import NotificationType
-            from apps.work.notifications.services import NotificationHub
-
-            # Eigener Benachrichtigungstyp für Vorschlags-Entscheidungen
-            # (Issue #70) — je Typ in den Einstellungen abschaltbar
-            NotificationHub.send(
-                recipient=item.proposed_by,
-                notification_type=NotificationType.FACTION_PROPOSAL_DECIDED,
-                title="TOP-Vorschlag angenommen",
-                message=f'Dein Vorschlag "{item.title}" wurde angenommen.',
-                link=f"/work/{item.meeting.organization.slug}/faction/{item.meeting.id}/",
-                actor=reviewed_by,
-                metadata={"meeting_id": str(item.meeting_id), "item_id": str(item.id), "decision": "accepted"},
+        with transaction.atomic():
+            # Sitzung und Vorschlag sperren: gleichzeitige Annahmen erhalten verschiedene Nummern, ein doppelter
+            # Klick entscheidet (und benachrichtigt) nur einmal (Issue #872)
+            agenda.lock_meeting(item.meeting)
+            current = (
+                FactionAgendaItem.objects.select_for_update().filter(pk=item.pk, proposal_status="proposed").first()
             )
+            if current is None:
+                return False
 
+            # Nummer und Platz am Ende des jeweiligen Teils — ermittelt, solange der Vorschlag noch nicht mitzählt
+            number = assign_number or agenda.next_number(item.meeting, current.visibility)
+            order = agenda.next_order(item.meeting)
+
+            if not current.accept_proposal(reviewed_by):
+                return False
+            current.number = number
+            current.order = order
+            current.save(update_fields=["number", "order"])
+            if not assign_number:
+                # Gleicht Altbestand aus, in dem offene oder abgelehnte Vorschläge noch mitgezählt wurden
+                agenda.renumber(item.meeting, current.visibility)
+
+        item.refresh_from_db()
+        logger.info(f"Agenda proposal accepted: '{item.title}' by {reviewed_by.user.email}")
+        cls._notify_decision(item, reviewed_by, accepted=True)
         return True
 
     @classmethod
@@ -752,31 +827,21 @@ class AgendaProposalService:
         Returns:
             True if rejected, False if already processed
         """
-        if not item.reject_proposal(reviewed_by, reason):
-            return False
+        from django.db import transaction
 
-        logger.info(f"Agenda proposal rejected: '{item.title}' by {reviewed_by.user.email}")
+        from .models import FactionAgendaItem
 
-        # Notify the proposer
-        if item.proposed_by:
-            from apps.work.notifications.models import NotificationType
-            from apps.work.notifications.services import NotificationHub
-
-            message = f'Dein Vorschlag "{item.title}" wurde nicht angenommen.'
-            if reason:
-                message += f" Grund: {reason}"
-
-            # Eigener Benachrichtigungstyp für Vorschlags-Entscheidungen (Issue #70)
-            NotificationHub.send(
-                recipient=item.proposed_by,
-                notification_type=NotificationType.FACTION_PROPOSAL_DECIDED,
-                title="TOP-Vorschlag abgelehnt",
-                message=message,
-                link=f"/work/{item.meeting.organization.slug}/faction/{item.meeting.id}/",
-                actor=reviewed_by,
-                metadata={"meeting_id": str(item.meeting_id), "item_id": str(item.id), "decision": "rejected"},
+        with transaction.atomic():
+            # Doppelter Klick oder zwei Genehmigende gleichzeitig: nur eine Entscheidung und eine Benachrichtigung
+            current = (
+                FactionAgendaItem.objects.select_for_update().filter(pk=item.pk, proposal_status="proposed").first()
             )
+            if current is None or not current.reject_proposal(reviewed_by, reason):
+                return False
 
+        item.refresh_from_db()
+        logger.info(f"Agenda proposal rejected: '{item.title}' by {reviewed_by.user.email}")
+        cls._notify_decision(item, reviewed_by, accepted=False, reason=reason)
         return True
 
     @classmethod

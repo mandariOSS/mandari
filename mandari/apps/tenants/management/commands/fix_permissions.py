@@ -15,7 +15,9 @@ Aufruf:
 
 ``--fix`` ändert nie:
 - vorhandene Rollen – auch angepasste Standardrollen behalten Rechte, Flags und Priorität
-  (bewusst zurücksetzen: Rollenverwaltung im Work-Portal oder ``setup_roles --force``),
+  (bewusst zurücksetzen: Rollenverwaltung im Work-Portal oder ``setup_roles --force``). Fehlt einer
+  Standardrolle ein Recht, das der heutige Standard vorsieht (z. B. ``agenda.approve`` für die
+  Geschäftsführung, Issue #872), nennt der Befehl es nur als Hinweis,
 - die Rollen von Mitgliedschaften. Mitgliedschaften ohne Rolle werden nur gelistet; eine Rolle
   erhalten sie ausschließlich mit ``--assign-role`` (nur zusammen mit ``--org``, nie eine Rolle mit
   Vollzugriff, nie Gast-Zugänge, die ohne Rollen vorgesehen sind).
@@ -213,10 +215,31 @@ class Command(BaseCommand):
                 "Rollenverwaltung wiederherstellen)",
                 empty,
             )
-        if not missing_roles and not empty and admin_roles:
+        behind = self._roles_behind_default(roles)
+        if behind:
+            self._note(
+                "Standardrolle(n) ohne Rechte, die der heutige Standard vorsieht – bleiben unverändert (bei Bedarf "
+                "in der Rollenverwaltung ergänzen oder auf den Standard zurücksetzen)",
+                behind,
+            )
+        if not missing_roles and not empty and not behind and admin_roles:
             self.stdout.write(self.style.SUCCESS("  OK – Rollen vollständig"))
 
         self._check_memberships(org, assign_role)
+
+    @staticmethod
+    def _roles_behind_default(roles: Sequence[Role]) -> list[str]:
+        """Standardrollen (nach Namen), denen Rechte aus ``DEFAULT_ROLES`` fehlen, als „Rolle: recht, …“."""
+        behind = []
+        for role in sorted(roles, key=lambda r: r.name):
+            definition = Role.get_default_definition(role.name)
+            if definition is None or role.is_admin or not getattr(role, "permission_count", 0):
+                continue
+            granted = set(role.permissions.values_list("codename", flat=True))
+            missing = sorted(set(cast(list[str], definition.get("permissions", []))) - granted)
+            if missing:
+                behind.append(f"{role.name}: {', '.join(missing)}")
+        return behind
 
     def _check_memberships(self, org: Organization, assign_role: Role | None) -> None:
         memberships: QuerySet[Membership] = (

@@ -295,7 +295,7 @@
                     </button>
                 </div>
 
-                <div class="p-4 space-y-4" x-data="{ isVirtual: false }">
+                <div class="p-4 space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Titel <span class="text-red-500">*</span>
@@ -329,19 +329,18 @@
                                placeholder="z.B. Fraktionsbüro, Rathaus Raum 203">
                     </div>
 
+                    {# Videolink gleich beim Planen (Issue #872): ein Link macht die Sitzung zur Online-Sitzung #}
                     <div class="space-y-3">
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" name="is_virtual" x-model="isVirtual"
-                                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
-                            <span class="text-sm text-gray-700 dark:text-gray-300">Online-Teilnahme</span>
-                        </label>
-                        <div x-show="isVirtual" x-transition>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Video-Link</label>
-                            <input type="url" name="video_link"
+                        <div>
+                            <label for="create-video-link" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Videolink</label>
+                            <input type="url" name="video_link" id="create-video-link" maxlength="200"
                                    class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm"
                                    placeholder="https://meet.example.com/...">
                         </div>
+                        <c-form.checkbox name="is_virtual" label="Online-Teilnahme (auch ohne Videolink)" />
                     </div>
+
+                    {% include "work/faction/partials/_create_standard_agenda.html" with preview=standard_agenda_preview %}
 
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>

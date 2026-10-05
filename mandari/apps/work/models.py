@@ -14,6 +14,7 @@ from apps.work.faction.models import (
     FactionMeeting,
     FactionMeetingException,
     FactionMeetingSchedule,
+    FactionStandardAgendaItem,
     FactionSuspensionRule,
 )
 from apps.work.meetings.models import (
@@ -75,6 +76,7 @@ __all__ = [
     "FactionMeetingSchedule",
     "FactionMeetingException",
     "FactionSuspensionRule",
+    "FactionStandardAgendaItem",
     "FactionAgendaItem",
     "FactionAttendance",
     "FactionAuditLog",

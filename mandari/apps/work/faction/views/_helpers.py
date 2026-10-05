@@ -16,6 +16,11 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
+#: Videolink (Issue #872): ``FactionMeeting.video_link`` ist ein URLField mit Höchstlänge – längere Links werden
+#: mit fester Meldung abgewiesen statt mit einem Datenbankfehler
+VIDEO_LINK_MAX_LENGTH = FactionMeeting._meta.get_field("video_link").max_length or 200
+VIDEO_LINK_TOO_LONG = f"Der Videolink darf höchstens {VIDEO_LINK_MAX_LENGTH} Zeichen lang sein."
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -31,9 +36,10 @@ def _get_meeting_context(view, meeting):
 
     checker = PermissionChecker(view.membership)
 
-    # Agenda items (top-level only, children via prefetch)
+    # Agenda items (top-level only, children via prefetch) — Vorschläge stehen erst nach der
+    # Genehmigung auf der Tagesordnung (Issue #872), offene erscheinen nur unter „Offene Vorschläge“
     agenda_items = (
-        meeting.agenda_items.filter(parent__isnull=True)
+        meeting.agenda_items.filter(parent__isnull=True, proposal_status="active")
         .select_related("related_agenda_item", "approves_meeting", "decision")
         .prefetch_related(
             "protocol_entries", "protocol_entries__speaker__user", "protocol_entries__action_assignee__user", "children"
@@ -115,6 +121,10 @@ def _get_meeting_context(view, meeting):
 
     can_propose = checker.can_propose_agenda_items()
     can_create_directly = checker.can_create_agenda_items_directly()
+    # TOPs direkt eintragen (Issue #872): Verwaltung der Sitzung oder agenda.create (Ratsmitglieder)
+    from ..agenda import open_for_members, open_for_proposals
+
+    can_add_items = can_edit or (can_create_directly and open_for_members(meeting))
 
     # Beschlussfähigkeit (Issue #69): Anzeige während/nach der Sitzung
     from ..quorum import faction_quorum_status
@@ -158,9 +168,18 @@ def _get_meeting_context(view, meeting):
     protocol_entry_count = protocol_entries_qs.count()
 
     # TOP-Vorschläge: NÖ-Vorschläge sind für Nicht-Vereidigte unsichtbar
-    pending_proposals = meeting.agenda_items.filter(proposal_status="proposed")
+    # (Organisation mitladen: die Beschreibung wird je Vorschlag mit ihrem Schlüssel entschlüsselt)
+    pending_proposals = meeting.agenda_items.filter(proposal_status="proposed").select_related(
+        "proposed_by__user", "meeting__organization"
+    )
+    # Eigene Vorschläge mit Stand (offen/abgelehnt) für die Vorschlagenden
+    my_proposals = meeting.agenda_items.filter(
+        proposed_by=view.membership, proposal_status__in=["proposed", "rejected"]
+    ).order_by("proposed_at")
     if not can_view_internal:
         pending_proposals = pending_proposals.exclude(visibility="internal")
+        # Auch eigene NÖ-Vorschläge nur, solange die Vereidigung besteht
+        my_proposals = my_proposals.exclude(visibility="internal")
 
     return {
         "meeting": meeting,
@@ -189,9 +208,11 @@ def _get_meeting_context(view, meeting):
         "can_release_invitations": _can_release(view.membership),
         "invitation_dispatch_at": invitation_dispatch_at(meeting, inv_settings),
         "invitation_settings": inv_settings,
-        "can_propose_agenda": can_propose and not can_create_directly,
-        "can_approve_proposals": checker.can_approve_agenda_items() or view.membership.has_permission("agenda.manage"),
+        "can_add_items": can_add_items,
+        "can_propose_agenda": can_propose and not can_create_directly and open_for_proposals(meeting),
+        "can_approve_proposals": checker.can_approve_agenda_items(),
         "pending_proposals": pending_proposals,
+        "my_proposals": my_proposals,
         "protocol_entries": protocol_entries,
         "protocol_entry_count": protocol_entry_count,
         "available_members": available_members,
@@ -245,28 +266,10 @@ def _apply_approval_item_decision(agenda_item, decision, meeting, membership):
 
 
 def _renumber_items(meeting, visibility):
-    """Renumber items after reordering to maintain consistent numbering."""
-    items = meeting.agenda_items.filter(visibility=visibility, parent__isnull=True, is_approval_item=False).order_by(
-        "order"
-    )
+    """Renumber items after reordering — offene und abgelehnte Vorschläge bleiben ohne Nummer (Issue #872)."""
+    from ..agenda import renumber
 
-    prefix = "NÖ " if visibility == "internal" else ""
-    start_num = 1
-
-    if visibility == "public" and meeting.agenda_items.filter(is_approval_item=True).exists():
-        start_num = 2
-
-    for i, item in enumerate(items, start=start_num):
-        new_number = f"{prefix}{i}"
-        if item.number != new_number:
-            item.number = new_number
-            item.save(update_fields=["number"])
-
-        for j, child in enumerate(item.children.order_by("order"), start=1):
-            child_number = f"{new_number}.{j}"
-            if child.number != child_number:
-                child.number = child_number
-                child.save(update_fields=["number"])
+    renumber(meeting, visibility)
 
 
 # ---------------------------------------------------------------------------

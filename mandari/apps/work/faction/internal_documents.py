@@ -344,21 +344,20 @@ def confirm_items(
     """
     Bestätigte Vorschläge als nichtöffentliche TOPs anlegen, fortlaufend nach den vorhandenen NÖ-TOPs
     nummeriert und mit der Unterlage verknüpft. Die Nummer der Unterlage steht in der Beschreibung.
+    Offene oder abgelehnte TOP-Vorschläge zählen bei Nummer und Reihenfolge nicht mit (``agenda``, Issue #872).
 
     Wiederholbar: Schon übernommene Vorschläge (``taken_keys``) entstehen kein zweites Mal, auch nicht bei
     doppeltem Absenden – die Sitzung ist dafür während der Übernahme gesperrt.
     """
-    from .models import FactionAgendaItem, FactionMeeting
+    from . import agenda
+    from .models import FactionAgendaItem
 
     created: list[FactionAgendaItem] = []
     with transaction.atomic():
-        FactionMeeting.objects.select_for_update().filter(pk=meeting.pk).first()
+        agenda.lock_meeting(meeting)
         taken = taken_keys(meeting, motion)
-        existing = meeting.agenda_items.filter(visibility="internal", parent__isnull=True).exclude(
-            is_approval_item=True
-        )
-        next_number = existing.count() + 1
-        order = meeting.agenda_items.count() + 1
+        next_number = agenda.numbered_items(meeting, "internal").count() + 1
+        order = agenda.next_order(meeting)
         for proposal in selected:
             key = _proposal_key(proposal.source_number, proposal.title)
             if key in taken:

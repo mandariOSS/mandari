@@ -197,7 +197,7 @@ ALL_PERMS = [
     "protocols.approve",
     "protocols.publish",
     "agenda.create",
-    "agenda.manage",
+    "agenda.approve",
 ]
 
 chair_user, chair_ms, chair = make_member(org, "vorsitz@example.org", ALL_PERMS, sworn=True)
@@ -891,7 +891,7 @@ check("Panel NÖ-TOP (Vereidigter) -> 200", resp.status_code == 200, f"got {resp
 manager2_user, manager2_ms, manager2 = make_member(
     org,
     "verwaltung2@example.org",
-    ["faction.view_public", "faction.manage", "agenda.manage", "protocols.create"],
+    ["faction.view_public", "faction.manage", "agenda.approve", "protocols.create"],
     sworn=False,
 )
 

@@ -827,11 +827,12 @@ DEFAULT_ROLES = {
             "faction.create",
             "faction.edit",
             "faction.manage",
-            # Agenda - full control
+            # Agenda - full control, genehmigt TOP-Vorschläge wie Vorsitz und Stellvertretung (Issue #872)
             "agenda.view",
             "agenda.create",
             "agenda.edit",
             "agenda.delete",
+            "agenda.approve",
             "agenda.reorder",
             # NO voting, can speak
             "speaking.automatic",

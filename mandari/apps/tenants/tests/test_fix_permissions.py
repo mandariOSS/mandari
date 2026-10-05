@@ -181,3 +181,17 @@ def test_angepasste_rolle_mit_vollzugriff_wird_nicht_vergeben(org: Organization)
     with pytest.raises(CommandError, match="Vollzugriff"):
         _run("--org", org.slug, "--assign-role", "Parteimitglied", "--fix")
     assert not ohne_rolle.roles.exists()
+
+
+def test_fehlende_standardrechte_nur_als_hinweis(org: Organization) -> None:
+    """Issue #872: ``agenda.approve`` für die Geschäftsführung nennt der Befehl, ergänzt es aber nicht."""
+    geschaeftsfuehrung = Role.objects.get(organization=org, name="Geschäftsführung")
+    geschaeftsfuehrung.permissions.remove(*geschaeftsfuehrung.permissions.filter(codename="agenda.approve"))
+    vorher = _stand(org)
+
+    ausgabe = _run("--fix")
+
+    assert "Geschäftsführung: agenda.approve" in ausgabe
+    assert "Nichts zu ergänzen." in ausgabe
+    assert _stand(org) == vorher
+    assert "agenda.approve" not in _codes(Role.objects.get(organization=org, name="Geschäftsführung"))
