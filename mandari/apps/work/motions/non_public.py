@@ -10,8 +10,9 @@ Ordner „Nichtöffentliche Vorgänge“ abgelegt (``DocumentFolder.non_public_f
 - Der erkannte Text liegt verschlüsselt im Dokumentinhalt wie bei anderen Work-Dokumenten. Eine unverschlüsselte
   Suchkopie am Anhang (``MotionDocument.text_content``) entsteht bewusst nicht.
 - Die Texterkennung läuft nur im eigenen Betrieb (pypdf, Tesseract), nie über einen externen Dienst.
-- Ablage, Aufrufe, Downloads und Exporte stehen in der Änderungshistorie der Fraktionssitzungen
-  (``FactionAuditLog``, als nichtöffentlich gekennzeichnet).
+- Ablage und Lesezugriffe stehen in der Änderungshistorie der Fraktionssitzungen (``FactionAuditLog``, als
+  nichtöffentlich gekennzeichnet): Aufruf im Editor, frühere Fassungen, Download, Export und die TOP-Auswahl der
+  Fraktionssitzung. Live-Bearbeitung und Kommentare laufen im bereits protokollierten Editoraufruf.
 """
 
 from __future__ import annotations
@@ -43,6 +44,8 @@ OCR_MAX_PAGES = 10
 ACCESS_OPENED = "geöffnet"
 ACCESS_DOWNLOADED = "heruntergeladen"
 ACCESS_EXPORTED = "exportiert"
+ACCESS_REVISION = "frühere Fassung geöffnet"
+ACCESS_PROPOSALS = "zur TOP-Auswahl geöffnet"
 
 #: Feste Meldungen
 UNREADABLE = "Die Datei konnte nicht gelesen werden. Bitte prüfen Sie, ob es eine unbeschädigte PDF-Datei ist."
@@ -149,6 +152,35 @@ def store(
         document.save()
     _log(motion, author, None, "internal_document_stored", {"seiten": extracted.page_count or 0})
     return motion
+
+
+def hidden_document_ids(membership: Membership | None) -> list[str]:
+    """
+    Kennungen (als Text, wie in ``Notification.metadata``) der Unterlagen in „Nichtöffentliche Vorgänge“, die
+    ``membership`` nicht öffnen darf – etwa nach Entzug der Vereidigung.
+
+    Für vereidigte Mitglieder leer, ohne Abfrage. Sonst eine kleine Abfrage nach dem Ordner und nur, wenn es ihn
+    gibt, eine zweite nach seinen Dokumenten.
+    """
+    from apps.work.faction.visibility import is_sworn_member
+
+    from .models import DocumentFolder, Motion, sworn_in_only_q
+
+    if membership is None or is_sworn_member(membership):
+        return []
+    folder_ids = list(
+        DocumentFolder.objects.filter(organization_id=membership.organization_id)
+        .filter(sworn_in_only_q(""))
+        .values_list("id", flat=True)
+    )
+    if not folder_ids:
+        return []
+    return [
+        str(pk)
+        for pk in Motion.objects.filter(
+            organization_id=membership.organization_id, folder_id__in=folder_ids
+        ).values_list("id", flat=True)
+    ]
 
 
 def log_access(

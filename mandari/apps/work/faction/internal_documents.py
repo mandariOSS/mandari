@@ -17,10 +17,13 @@ stellvertretender Vorsitz) oder Fraktionssitzungen verwalten (``faction.manage``
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from django.core.cache import cache
 from django.db import transaction
 
 from .visibility import is_sworn_member
@@ -30,6 +33,8 @@ if TYPE_CHECKING:
 
     from .models import FactionAgendaItem, FactionMeeting
 
+logger = logging.getLogger(__name__)
+
 #: Sitzungen, deren Tagesordnung sich noch ändern lässt (wie ``can_edit`` der Sitzungsansicht)
 EDITABLE_MEETING_STATUSES = ("draft", "planned", "invited", "ongoing")
 
@@ -37,6 +42,14 @@ EDITABLE_MEETING_STATUSES = ("draft", "planned", "invited", "ongoing")
 MAX_PROPOSALS = 60
 MAX_TITLE = 500
 MAX_SOURCE_NUMBER = 20
+
+#: Erkannte Vorschläge bleiben so lange zwischengespeichert (verschlüsselt mit dem Schlüssel der Organisation),
+#: damit die Rückkehr zur Auswahl die Texterkennung nicht wiederholt
+PROPOSALS_CACHE_SECONDS = 24 * 60 * 60
+
+#: Beschreibung übernommener TOPs mit der Nummer in der Unterlage
+SOURCE_NOTE = "Nr. {} der nichtöffentlichen Unterlage"
+_SOURCE_NOTE_RE = re.compile(r"^Nr\. (?P<num>.+) der nichtöffentlichen Unterlage$")
 
 #: Feste Meldungen
 NOT_ALLOWED = "Nichtöffentliche Unterlagen lesen nur vereidigte Mitglieder ein, die die Tagesordnung genehmigen."
@@ -74,10 +87,15 @@ class AgendaProposal:
 
 
 def can_import(membership: Membership | None, meeting: FactionMeeting) -> bool:
-    """Darf die Person nichtöffentliche Unterlagen für diese Sitzung einlesen und TOPs übernehmen?"""
+    """
+    Darf die Person nichtöffentliche Unterlagen für diese Sitzung einlesen und TOPs übernehmen?
+
+    Neben dem Genehmigungsrecht braucht sie das Recht, Dokumente zu sehen (``motions.view``): Die Unterlage liegt im
+    Dokumentenspeicher, und die Auswahl der TOPs öffnet sie dort.
+    """
     if membership is None or meeting.organization_id != membership.organization_id:
         return False
-    if not is_sworn_member(membership):
+    if not is_sworn_member(membership) or not membership.has_permission("motions.view"):
         return False
     return membership.has_permission("agenda.approve") or membership.has_permission("faction.manage")
 
@@ -208,16 +226,67 @@ def import_document(meeting: FactionMeeting, membership: Membership, uploaded_fi
         title=title,
         extracted=extracted,
     )
-    return ImportResult(motion=motion, proposals=parse_agenda_items(extracted.lines), notice=extracted.notice)
+    proposals = parse_agenda_items(extracted.lines)
+    document = _source_document(motion)
+    if document is not None:
+        _remember(motion, document, proposals, extracted.notice)
+    return ImportResult(motion=motion, proposals=proposals, notice=extracted.notice)
+
+
+def _source_document(motion: Any) -> Any:
+    """PDF-Anhang der Unterlage (der zuerst abgelegte)."""
+    return motion.documents.filter(mime_type="application/pdf").order_by("uploaded_at").first()
+
+
+def _cache_key(motion: Any, document: Any) -> str:
+    return f"work:faction:noe-vorschlaege:{motion.id}:{document.id}"
+
+
+def _remember(motion: Any, document: Any, proposals: list[AgendaProposal], notice: str) -> None:
+    """Vorschläge verschlüsselt zwischenspeichern; ohne Zwischenspeicher wird bei Bedarf neu erkannt."""
+    from apps.common.encryption import TenantEncryption
+
+    payload = json.dumps({"vorschlaege": [[p.source_number, p.title] for p in proposals], "hinweis": notice})
+    try:
+        token = TenantEncryption(motion.organization).encrypt(payload)
+        cache.set(_cache_key(motion, document), token, PROPOSALS_CACHE_SECONDS)
+    except Exception:
+        logger.warning("Vorschläge der Unterlage %s nicht zwischengespeichert", motion.id, exc_info=True)
+
+
+def _recall(motion: Any, document: Any) -> tuple[list[AgendaProposal], str] | None:
+    """Zwischengespeicherte Vorschläge, ``None`` ohne (lesbaren) Eintrag."""
+    from apps.common.encryption import TenantEncryption
+
+    try:
+        token = cache.get(_cache_key(motion, document))
+        if token is None:
+            return None
+        data = json.loads(TenantEncryption(motion.organization).decrypt(token))
+        proposals = [
+            AgendaProposal(source_number=str(number)[:MAX_SOURCE_NUMBER], title=str(title)[:MAX_TITLE])
+            for number, title in data["vorschlaege"][:MAX_PROPOSALS]
+        ]
+        return proposals, str(data.get("hinweis") or "")
+    except Exception:
+        # Unlesbar (etwa nach einem Schlüsselwechsel): neu erkennen
+        logger.warning("Zwischengespeicherte Vorschläge der Unterlage %s unlesbar", motion.id, exc_info=True)
+        return None
 
 
 def proposals_for(motion: Any) -> tuple[list[AgendaProposal], str]:
-    """Vorschläge einer bereits abgelegten Unterlage erneut aus ihrem PDF-Anhang erkennen (Rückkehr zur Auswahl)."""
+    """
+    Vorschläge einer bereits abgelegten Unterlage (Rückkehr zur Auswahl): aus dem verschlüsselten Zwischenspeicher,
+    sonst erneut aus dem PDF-Anhang erkannt.
+    """
     from apps.work.motions import non_public
 
-    document = motion.documents.filter(mime_type="application/pdf").order_by("uploaded_at").first()
+    document = _source_document(motion)
     if document is None:
         return [], ""
+    remembered = _recall(motion, document)
+    if remembered is not None:
+        return remembered
     try:
         with document.file.open("rb") as handle:
             data = handle.read()
@@ -226,7 +295,31 @@ def proposals_for(motion: Any) -> tuple[list[AgendaProposal], str]:
     extracted = non_public.extract(data, document.filename)
     if extracted is None:
         return [], ""
-    return parse_agenda_items(extracted.lines), extracted.notice
+    proposals = parse_agenda_items(extracted.lines)
+    _remember(motion, document, proposals, extracted.notice)
+    return proposals, extracted.notice
+
+
+def _proposal_key(source_number: str, title: str) -> tuple[str, str]:
+    return " ".join(source_number.split()).casefold(), " ".join(title.split()).casefold()
+
+
+def taken_keys(meeting: FactionMeeting, motion: Any) -> set[tuple[str, str]]:
+    """
+    Schon übernommene Vorschläge: TOPs dieser Sitzung, die mit der Unterlage verknüpft sind, als (Nummer in der
+    Unterlage, Titel). Gleichlautende Titel mit anderer Nummer (etwa mehrere „Grundstücksangelegenheiten“) bleiben
+    eigene Vorschläge.
+    """
+    keys: set[tuple[str, str]] = set()
+    for item in meeting.agenda_items.filter(related_motions=motion):
+        match = _SOURCE_NOTE_RE.match(cast(Any, item).get_description_decrypted() or "")
+        keys.add(_proposal_key(match.group("num") if match else "", item.title))
+    return keys
+
+
+def is_taken(proposal: AgendaProposal, taken: set[tuple[str, str]]) -> bool:
+    """Ist der Vorschlag schon als TOP übernommen (``taken_keys``)?"""
+    return _proposal_key(proposal.source_number, proposal.title) in taken
 
 
 def selected_proposals(*, numbers: list[str], titles: list[str], chosen: list[str]) -> list[AgendaProposal]:
@@ -251,17 +344,26 @@ def confirm_items(
     """
     Bestätigte Vorschläge als nichtöffentliche TOPs anlegen, fortlaufend nach den vorhandenen NÖ-TOPs
     nummeriert und mit der Unterlage verknüpft. Die Nummer der Unterlage steht in der Beschreibung.
+
+    Wiederholbar: Schon übernommene Vorschläge (``taken_keys``) entstehen kein zweites Mal, auch nicht bei
+    doppeltem Absenden – die Sitzung ist dafür während der Übernahme gesperrt.
     """
-    from .models import FactionAgendaItem
+    from .models import FactionAgendaItem, FactionMeeting
 
     created: list[FactionAgendaItem] = []
     with transaction.atomic():
+        FactionMeeting.objects.select_for_update().filter(pk=meeting.pk).first()
+        taken = taken_keys(meeting, motion)
         existing = meeting.agenda_items.filter(visibility="internal", parent__isnull=True).exclude(
             is_approval_item=True
         )
         next_number = existing.count() + 1
         order = meeting.agenda_items.count() + 1
         for proposal in selected:
+            key = _proposal_key(proposal.source_number, proposal.title)
+            if key in taken:
+                continue
+            taken.add(key)
             item = FactionAgendaItem(
                 meeting=meeting,
                 title=proposal.title[:MAX_TITLE],
@@ -270,9 +372,7 @@ def confirm_items(
                 order=order,
             )
             if proposal.source_number:
-                cast(Any, item).set_description_encrypted(
-                    f"Nr. {proposal.source_number} der nichtöffentlichen Unterlage"
-                )
+                cast(Any, item).set_description_encrypted(SOURCE_NOTE.format(proposal.source_number))
             item.save()
             item.related_motions.add(motion)
             created.append(item)

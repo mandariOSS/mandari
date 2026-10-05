@@ -491,3 +491,113 @@ def test_keine_nachrichten_und_kein_export_nach_entzug(
     dienst = DsgvoExportService()
     beteiligt = dienst._collect_document_involvement(vereidigt2, org)
     assert all(GEHEIM not in eintrag["title"] for eintrag in beteiligt)
+
+
+@pytest.mark.django_db
+def test_fruehere_fassungen_in_der_aenderungshistorie(
+    org: Any, unterlage: Motion, vereidigt: Any, nicht_vereidigt: Any, client_for: Any
+) -> None:
+    from apps.work.motions.models import MotionRevision
+
+    fassung = MotionRevision(motion=unterlage, version=1, changed_by=vereidigt)
+    cast(Any, fassung).set_content_encrypted(f"<p>{GEHEIM}</p>")
+    fassung.save()
+    url = _url("document_revision_detail", org, motion_id=unterlage.id, revision_id=fassung.id)
+
+    assert client_for(nicht_vereidigt.user).get(url).status_code == 403
+    assert not FactionAuditLog.objects.filter(action="internal_document_access").exists()
+    antwort = client_for(vereidigt.user).get(url)
+    assert antwort.status_code == 200 and GEHEIM in antwort.content.decode()
+    eintrag = FactionAuditLog.objects.get(action="internal_document_access")
+    assert eintrag.is_internal and eintrag.changes == {"zugriff": non_public.ACCESS_REVISION}
+    assert eintrag.membership == vereidigt
+
+
+def _datenexport(person: Any, org: Any) -> str:
+    import json
+
+    from apps.work.organization.export_service import DsgvoExportService
+
+    return json.dumps(DsgvoExportService().collect_user_data(person.user, person, org), ensure_ascii=False, default=str)
+
+
+def _spuren_anlegen(unterlage: Motion, vereidigt: Any, vereidigt2: Any, client_for: Any, org: Any) -> None:
+    """Vermerke, Änderungshistorie und eine Nachricht der Person ``vereidigt`` zur Unterlage."""
+    from django.utils import timezone
+
+    from apps.work.motions.models import MotionChecklistItem, MotionRevision
+    from apps.work.notifications.services import NotificationHub
+
+    fassung = MotionRevision(motion=unterlage, version=1, changed_by=vereidigt, change_summary="Erste Fassung")
+    cast(Any, fassung).set_content_encrypted("<p>Inhalt</p>")
+    fassung.save()
+    MotionChecklistItem.objects.create(
+        motion=unterlage, title="Prüfen", is_completed=True, completed_by=vereidigt, completed_at=timezone.now()
+    )
+    MotionComment.objects.create(
+        motion=unterlage, author=vereidigt2, content="Erledigt", resolved_by=vereidigt, resolved_at=timezone.now()
+    )
+    client_for(vereidigt.user).get(_url("document_editor", org, motion_id=unterlage.id))
+    kommentar = MotionComment.objects.create(motion=unterlage, author=vereidigt2, content=f"Zu {GEHEIM}")
+    cast(Any, NotificationHub).notify_motion_comment(kommentar, vereidigt2)
+    assert Notification.objects.filter(recipient=vereidigt, metadata__motion_id=str(unterlage.id)).exists()
+
+
+@pytest.mark.django_db
+def test_datenexport_nach_entzug_ohne_titel_und_auszuege(
+    org: Any, unterlage: Motion, vereidigt: Any, vereidigt2: Any, client_for: Any
+) -> None:
+    _spuren_anlegen(unterlage, vereidigt, vereidigt2, client_for, org)
+    # Solange die Person vereidigt ist, enthält ihr Export die Unterlage
+    assert GEHEIM in _datenexport(vereidigt, org)
+
+    vereidigt.is_sworn_in = False
+    vereidigt.save(update_fields=["is_sworn_in"])
+    export = _datenexport(vereidigt, org)
+
+    assert GEHEIM not in export
+    # Art und Zeitpunkt bleiben (Auskunft), Titel und Auszüge nicht
+    from apps.work.organization.export_service import NON_PUBLIC_CONTENT, NON_PUBLIC_DOCUMENT, DsgvoExportService
+
+    vermerke = DsgvoExportService()._collect_vermerke(vereidigt, org)
+    dokumente = [v for v in vermerke if v["area"] == "Dokumente"]
+    assert {v["action"] for v in dokumente} >= {
+        "Version gespeichert",
+        "Anhang hochgeladen",
+        "Checklistenpunkt erledigt",
+        "Kommentar als erledigt markiert",
+    }
+    assert all(v["object"] == NON_PUBLIC_DOCUMENT for v in dokumente if v["action"] != "Ordner angelegt")
+    historie = [v for v in vermerke if v["action"] == "Änderung protokolliert"]
+    assert historie and all(NON_PUBLIC_CONTENT in v["object"] for v in historie)
+    nachrichten = DsgvoExportService()._collect_notifications(vereidigt)["notifications"]
+    assert nachrichten and all(n["message"] == NON_PUBLIC_DOCUMENT for n in nachrichten)
+
+
+@pytest.mark.django_db
+def test_benachrichtigungen_nach_entzug_ausgeblendet(
+    org: Any, unterlage: Motion, vereidigt: Any, vereidigt2: Any, client_for: Any
+) -> None:
+    from django.core.cache import cache
+
+    from apps.work.notifications.services import NotificationHub
+
+    kommentar = MotionComment.objects.create(motion=unterlage, author=vereidigt2, content=f"Zu {GEHEIM}")
+    cast(Any, NotificationHub).notify_motion_comment(kommentar, vereidigt2)
+    urls = [_url("notifications", org), _url("notifications_partial", org), _url("notification_latest", org)]
+    client = client_for(vereidigt.user)
+    assert all(GEHEIM in client.get(url).content.decode() for url in urls)
+    assert client.get(_url("notification_count", org)).json()["count"] == 1
+
+    vereidigt.is_sworn_in = False
+    vereidigt.save(update_fields=["is_sworn_in"])
+    cache.clear()
+
+    for url in urls:
+        assert GEHEIM not in client.get(url).content.decode(), url
+    assert client.get(_url("notification_count", org)).json()["count"] == 0
+    # Gespeichert bleibt die Nachricht (kein Datenverlust); nach erneuter Vereidigung erscheint sie wieder
+    assert Notification.objects.filter(recipient=vereidigt).count() == 1
+    vereidigt.is_sworn_in = True
+    vereidigt.save(update_fields=["is_sworn_in"])
+    assert GEHEIM in client.get(urls[0]).content.decode()

@@ -17,7 +17,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
     dependencies = [
         ("tenants", "0025_recht_dokumente_ehemaliger_mitglieder"),
-        ("work", "0068_benachrichtigung_aus_ereignis"),
+        ("work", "0069_ris_anker"),
     ]
 
     operations = [

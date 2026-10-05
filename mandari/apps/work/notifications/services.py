@@ -835,15 +835,28 @@ class NotificationHub:
         return f"notif_count_{membership.id}"
 
     @classmethod
+    def for_recipient(cls, membership):
+        """
+        Benachrichtigungen der Person für Glocke und Benachrichtigungszentrale.
+
+        Nachrichten zu Unterlagen in „Nichtöffentliche Vorgänge“, die die Person nicht (mehr) öffnen darf – etwa
+        nach Entzug der Vereidigung –, bleiben gespeichert, erscheinen aber nicht (Issue #873).
+        """
+        from apps.work.motions.non_public import hidden_document_ids
+
+        notifications = Notification.objects.filter(recipient=membership)
+        hidden = hidden_document_ids(membership)
+        if hidden:
+            notifications = notifications.exclude(metadata__motion_id__in=hidden)
+        return notifications
+
+    @classmethod
     def get_unread_count(cls, membership) -> int:
         """Get count of unread notifications for a user (cached for 30 seconds)."""
         cache_key = cls._get_count_cache_key(membership)
         count = cache.get(cache_key)
         if count is None:
-            count = Notification.objects.filter(
-                recipient=membership,
-                is_read=False,
-            ).count()
+            count = cls.for_recipient(membership).filter(is_read=False).count()
             cache.set(cache_key, count, 30)  # 30 seconds TTL
         return count
 

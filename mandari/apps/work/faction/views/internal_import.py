@@ -76,13 +76,16 @@ class _InternalImportMixin(WorkViewMixin):
         notice: str = "",
     ) -> HttpResponse:
         folder = motion.folder
+        # Schon übernommene Vorschläge (erneutes Öffnen der Auswahl) sind gekennzeichnet und nicht vorausgewählt
+        taken = internal_documents.taken_keys(meeting, motion)
+        rows = [{"proposal": p, "taken": internal_documents.is_taken(p, taken)} for p in proposals]
         return self._render(
             request,
             CONFIRM_TEMPLATE,
             {
                 "meeting": meeting,
                 "motion": motion,
-                "proposals": proposals,
+                "rows": rows,
                 "notice": notice,
                 "folder_name": folder.name if folder is not None else "",
             },
@@ -139,6 +142,7 @@ class FactionInternalImportConfirmView(_InternalImportMixin, ContextMixin, View)
             return self._not_editable(request, meeting)
         motion = self._motion(kwargs["motion_id"])
         proposals, notice = internal_documents.proposals_for(motion)
+        non_public.log_access(motion, self._member, request, non_public.ACCESS_PROPOSALS)
         return self._confirm(request, meeting, motion, proposals, notice)
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
@@ -161,5 +165,8 @@ class FactionInternalImportConfirmView(_InternalImportMixin, ContextMixin, View)
                 motion_id=motion.id,
             )
         created = internal_documents.confirm_items(meeting, self._member, motion, selected)
-        messages.success(request, f"{len(created)} nichtöffentliche TOPs übernommen.")
+        message = f"{len(created)} nichtöffentliche TOPs übernommen."
+        if len(created) < len(selected):
+            message += f" {len(selected) - len(created)} waren bereits übernommen."
+        messages.success(request, message)
         return redirect("work:faction_detail", org_slug=self._org.slug, meeting_id=meeting.id)

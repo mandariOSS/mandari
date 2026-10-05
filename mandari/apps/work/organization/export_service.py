@@ -41,10 +41,37 @@ class Vermerk:
     describe: Callable[[Any], str]
     select: tuple[str, ...] = ()
     exclude: dict[str, Any] = field(default_factory=dict)
+    #: Nichtöffentlich: Bedingung (Q-Objekt) für Einträge, deren Beschreibung nur vereidigte Mitglieder erhalten.
+    #: Alle anderen erhalten statt der Beschreibung ``describe_locked`` – Art und Zeitpunkt bleiben im Export.
+    non_public: Callable[[], Any] | None = None
+    describe_locked: Callable[[Any], str] | None = None
+
+
+#: Platzhalter für nichtöffentliche Inhalte im Export nicht vereidigter Personen (wie im Protokoll, Issue #64)
+NON_PUBLIC_DOCUMENT = "[nichtöffentliche Unterlage]"
+NON_PUBLIC_CONTENT = "[nichtöffentlicher Inhalt]"
 
 
 def _motion_title(obj: Any) -> str:
     return str(obj.motion.title)
+
+
+def _in_non_public_folder() -> Any:
+    """Vermerk an einem Dokument in „Nichtöffentliche Vorgänge“ (Issue #873)."""
+    from apps.work.motions.models import sworn_in_only_q
+
+    return sworn_in_only_q("motion__folder")
+
+
+def _internal_audit_entry() -> Any:
+    """Eintrag der Änderungshistorie zu nichtöffentlichen Inhalten (TOPs, Unterlagen; Issue #64, #873)."""
+    from django.db.models import Q
+
+    return Q(is_internal=True)
+
+
+def _audit_entry(obj: Any, object_repr: str) -> str:
+    return f"{obj.action}: {object_repr}" + (f" (IP {obj.ip_address})" if obj.ip_address else "")
 
 
 VERMERKE: tuple[Vermerk, ...] = (
@@ -135,7 +162,9 @@ VERMERKE: tuple[Vermerk, ...] = (
         "Änderung protokolliert",
         "organization",
         "created_at",
-        lambda o: f"{o.action}: {o.object_repr}" + (f" (IP {o.ip_address})" if o.ip_address else ""),
+        lambda o: _audit_entry(o, o.object_repr),
+        non_public=_internal_audit_entry,
+        describe_locked=lambda o: _audit_entry(o, NON_PUBLIC_CONTENT),
     ),
     # Sitzungsvorbereitung
     Vermerk(
@@ -165,6 +194,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "created_at",
         lambda o: f"{o.motion.title} (Version {o.version})",
         select=("motion",),
+        non_public=_in_non_public_folder,
     ),
     Vermerk(
         "MotionDocument.uploaded_by",
@@ -174,6 +204,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "uploaded_at",
         lambda o: f"{o.motion.title}: {o.filename}",
         select=("motion",),
+        non_public=_in_non_public_folder,
     ),
     Vermerk(
         "MotionEmailSubmission.submitted_by",
@@ -183,6 +214,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "sent_at",
         lambda o: f"{o.motion.title}: {o.subject}",
         select=("motion",),
+        non_public=_in_non_public_folder,
     ),
     Vermerk(
         "MotionChecklistItem.completed_by",
@@ -192,6 +224,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "completed_at",
         lambda o: f"{o.motion.title}: {o.title}",
         select=("motion",),
+        non_public=_in_non_public_folder,
     ),
     Vermerk(
         "MotionComment.resolved_by",
@@ -201,6 +234,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "resolved_at",
         _motion_title,
         select=("motion",),
+        non_public=_in_non_public_folder,
     ),
     Vermerk(
         "MotionShare.created_by",
@@ -210,6 +244,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "created_at",
         lambda o: f"{o.motion.title} ({o.get_level_display()})",
         select=("motion",),
+        non_public=_in_non_public_folder,
     ),
     Vermerk(
         "MotionShare.user",
@@ -219,6 +254,7 @@ VERMERKE: tuple[Vermerk, ...] = (
         "created_at",
         lambda o: f"{o.motion.title} ({o.get_level_display()})",
         select=("motion",),
+        non_public=_in_non_public_folder,
     ),
     Vermerk(
         "FolderGuestShare.created_by",
@@ -1016,22 +1052,29 @@ class DsgvoExportService:
     # -------------------------------------------------------------------------
 
     def _collect_notifications(self, membership) -> dict:
+        from apps.work.motions.non_public import hidden_document_ids
         from apps.work.notifications.models import Notification, NotificationPreference
 
         # All notifications (not limited to 100)
         notifications = Notification.objects.filter(recipient=membership).order_by("-created_at")
+        # Nachrichten zu Unterlagen in „Nichtöffentliche Vorgänge“ (Issue #873): ohne Vereidigung – auch nach
+        # deren Entzug – nur Art und Zeitpunkt, nicht Titel und Auszüge
+        hidden = set(hidden_document_ids(membership))
 
-        notif_list = [
-            {
-                "type": n.notification_type,
-                "title": n.title,
-                "message": n.message or "",
-                "link": n.link or "",
-                "is_read": n.is_read,
-                "created_at": _dt(n.created_at),
-            }
-            for n in notifications
-        ]
+        notif_list = []
+        for n in notifications:
+            metadata = n.metadata if isinstance(n.metadata, dict) else {}
+            locked = bool(hidden) and str(metadata.get("motion_id") or "") in hidden
+            notif_list.append(
+                {
+                    "type": n.notification_type,
+                    "title": NON_PUBLIC_DOCUMENT if locked else n.title,
+                    "message": NON_PUBLIC_DOCUMENT if locked else (n.message or ""),
+                    "link": n.link or "",
+                    "is_read": n.is_read,
+                    "created_at": _dt(n.created_at),
+                }
+            )
 
         # Preferences
         preferences = None
@@ -1116,11 +1159,19 @@ class DsgvoExportService:
     # -------------------------------------------------------------------------
 
     def _collect_vermerke(self, membership, organization) -> list:
-        """Alle Bearbeitungsvermerke aus VERMERKE, neueste zuerst."""
+        """
+        Alle Bearbeitungsvermerke aus VERMERKE, neueste zuerst.
+
+        Nichtöffentliches (``Vermerk.non_public``) beschreiben die Vermerke nur für vereidigte Mitglieder; alle
+        anderen – auch nach Entzug der Vereidigung – erhalten Art und Zeitpunkt mit einem Platzhalter (Issue #873).
+        """
         from django.apps import apps as django_apps
+        from django.db.models import BooleanField, Case, Value, When
 
         from apps.tenants.models import Membership
+        from apps.work.faction.visibility import is_sworn_member
 
+        sworn = is_sworn_member(membership)
         rows: list[tuple[Any, dict]] = []
         for vermerk in VERMERKE:
             model_name, field_name = vermerk.ref.split(".")
@@ -1129,15 +1180,26 @@ class DsgvoExportService:
             queryset = model.objects.filter(**{field_name: target, vermerk.org_path: organization})
             if vermerk.exclude:
                 queryset = queryset.exclude(**vermerk.exclude)
+            masked = vermerk.non_public is not None and not sworn
+            if masked:
+                queryset = queryset.annotate(
+                    export_locked=Case(
+                        When(vermerk.non_public(), then=Value(True)), default=Value(False), output_field=BooleanField()
+                    )
+                )
             for obj in queryset.select_related(*vermerk.select):
                 when = getattr(obj, vermerk.when)
+                if masked and obj.export_locked:
+                    description = vermerk.describe_locked(obj) if vermerk.describe_locked else NON_PUBLIC_DOCUMENT
+                else:
+                    description = vermerk.describe(obj)
                 rows.append(
                     (
                         when,
                         {
                             "area": vermerk.area,
                             "action": vermerk.action,
-                            "object": vermerk.describe(obj),
+                            "object": description,
                             "at": _dt(when),
                         },
                     )

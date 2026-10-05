@@ -440,3 +440,119 @@ def test_kalender_und_oeffentliche_schnittstelle(
     antwort = client.get(f"/api/public/v1/fraktionen/{zugang.token}/sitzungen/{sitzung.id}/")
     assert antwort.status_code == 200
     assert TITEL_1 not in antwort.content.decode() and uebernommen.title not in antwort.content.decode()
+
+
+# =============================================================================
+# Wiederholte Übernahme, Zwischenspeicher, Änderungshistorie, Datenexport
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_doppelt_absenden_legt_keine_tops_doppelt_an(
+    org: Any, sitzung: FactionMeeting, vorsitz: Any, client_for: Any
+) -> None:
+    gleich = "Grundstuecksangelegenheiten"
+    zeilen = ["Nichtöffentlicher Teil", f"N 1 {gleich}", f"N 2 {gleich}", f"N 3 {TITEL_2}"]
+    client = client_for(vorsitz.user)
+    _hochladen(client, org, sitzung, _text_pdf(zeilen))
+    unterlage = Motion.objects.get(organization=org)
+    url = _uebernehmen_url(org, sitzung, unterlage)
+    auswahl = {"nr": ["N 1", "N 2", "N 3"], "titel": [gleich, gleich, TITEL_2], "auswahl": ["0", "1"]}
+
+    client.post(url, auswahl)
+    # Gleicher Titel, andere Nummer: zwei eigene TOPs
+    assert FactionAgendaItem.objects.filter(meeting=sitzung).count() == 2
+    erneut = client.post(url, {**auswahl, "auswahl": ["0", "1", "2"]}, follow=True)
+
+    titel = sorted(FactionAgendaItem.objects.filter(meeting=sitzung).values_list("title", flat=True))
+    assert titel == [gleich, gleich, TITEL_2]
+    assert "2 waren bereits übernommen" in erneut.content.decode()
+    # Die Auswahl kennzeichnet Übernommenes und wählt es nicht vor
+    seite = client.get(url).content.decode()
+    assert seite.count("Bereits übernommen") == 3
+    assert "checked" not in seite.split("<tbody", 1)[1]
+
+
+@pytest.mark.django_db
+def test_rueckkehr_zur_auswahl_ohne_erneute_texterkennung(
+    org: Any, sitzung: FactionMeeting, vorsitz: Any, client_for: Any
+) -> None:
+    from django.core.cache import cache
+
+    erkannt = OcrResult(text="\n".join(UNTERLAGE_ZEILEN), pages_rendered=1)
+    client = client_for(vorsitz.user)
+    with mock.patch("mandari_dokumente.texterkennung.ocr_pdf", return_value=erkannt) as ocr:
+        _hochladen(client, org, sitzung, _gescannte_pdf())
+        unterlage = Motion.objects.get(organization=org)
+        anhang = MotionDocument.objects.get(motion=unterlage)
+        for _ in range(2):
+            assert TITEL_1 in client.get(_uebernehmen_url(org, sitzung, unterlage)).content.decode()
+        assert ocr.call_count == 1
+
+        # Zwischengespeichert nur verschlüsselt
+        gespeichert = cache.get(internal_documents._cache_key(unterlage, anhang))
+        assert isinstance(gespeichert, bytes) and TITEL_1.encode() not in gespeichert
+
+        # Ohne Zwischenspeicher wird neu erkannt
+        cache.delete(internal_documents._cache_key(unterlage, anhang))
+        assert TITEL_1 in client.get(_uebernehmen_url(org, sitzung, unterlage)).content.decode()
+        assert ocr.call_count == 2
+
+
+@pytest.mark.django_db
+def test_auswahl_steht_in_der_aenderungshistorie(
+    org: Any, sitzung: FactionMeeting, vorsitz: Any, client_for: Any
+) -> None:
+    from apps.work.faction.models import FactionAuditLog
+    from apps.work.motions import non_public
+
+    client = client_for(vorsitz.user)
+    _hochladen(client, org, sitzung, _text_pdf())
+    unterlage = Motion.objects.get(organization=org)
+    client.get(_uebernehmen_url(org, sitzung, unterlage))
+
+    eintrag = FactionAuditLog.objects.get(action="internal_document_access")
+    assert eintrag.is_internal and eintrag.membership == vorsitz
+    assert eintrag.changes == {"zugriff": non_public.ACCESS_PROPOSALS}
+
+
+@pytest.mark.django_db
+def test_einlesen_braucht_das_recht_dokumente_zu_sehen(
+    org: Any, sitzung: FactionMeeting, make_member: Any, client_for: Any
+) -> None:
+    ohne_dokumente = _vereidigt(
+        make_member(org, ["faction.view_public", "faction.view_non_public", "agenda.approve"], email="ohne@example.org")
+    )
+    detail = reverse("work:faction_detail", kwargs={"org_slug": org.slug, "meeting_id": sitzung.id})
+    client = client_for(ohne_dokumente.user)
+
+    assert not internal_documents.can_import(ohne_dokumente, sitzung)
+    assert _einlesen_url(org, sitzung) not in client.get(detail).content.decode()
+    assert _hochladen(client, org, sitzung, _text_pdf()).status_code == 403
+    assert not Motion.objects.filter(organization=org).exists()
+
+
+@pytest.mark.django_db
+def test_datenexport_des_vorsitzes_nach_entzug_ohne_titel(
+    org: Any, sitzung: FactionMeeting, uebernommen: Motion, vorsitz: Any, client_for: Any
+) -> None:
+    import json
+
+    from apps.work.organization.export_service import DsgvoExportService
+
+    client = client_for(vorsitz.user)
+    client.get(reverse("work:document_editor", kwargs={"org_slug": org.slug, "motion_id": uebernommen.id}))
+    client.get(_uebernehmen_url(org, sitzung, uebernommen))
+
+    def export() -> str:
+        daten = DsgvoExportService().collect_user_data(vorsitz.user, vorsitz, org)
+        return json.dumps(daten, ensure_ascii=False, default=str)
+
+    vorher = export()
+    assert uebernommen.title in vorher
+
+    vorsitz.is_sworn_in = False
+    vorsitz.save(update_fields=["is_sworn_in"])
+    nachher = export()
+    for geheim in (uebernommen.title, TITEL_1, TITEL_2):
+        assert geheim not in nachher, geheim

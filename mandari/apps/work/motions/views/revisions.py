@@ -74,6 +74,11 @@ class DocumentRevisionDetailAPIView(WorkViewMixin, View):
 
         # Gäste: nur Versionen ab Beginn ihrer Freigabe (sonst 404 wie unbekannt)
         revision = get_object_or_404(motion.revisions_for(self.membership), id=kwargs.get("revision_id"))
+        # „Nichtöffentliche Vorgänge“ (Issue #873): auch frühere Fassungen stehen in der Änderungshistorie
+        if motion.is_sworn_in_only():
+            from .. import non_public
+
+            non_public.log_access(motion, self.membership, request, non_public.ACCESS_REVISION)
 
         return JsonResponse(
             {

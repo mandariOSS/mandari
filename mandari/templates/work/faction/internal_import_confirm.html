@@ -1,7 +1,7 @@
 {% extends "work/base_work.html" %}
 {% comment %}
 Erkannte Tagesordnungspunkte einer nichtöffentlichen Unterlage bestätigen (Issue #873).
-Kontext: meeting, motion, proposals (source_number, title), notice, folder_name
+Kontext: meeting, motion, rows (proposal mit source_number und title, taken = schon übernommen), notice, folder_name
 {% endcomment %}
 
 {% block page_title %}Tagesordnungspunkte übernehmen{% endblock %}
@@ -27,44 +27,53 @@ Kontext: meeting, motion, proposals (source_number, title), notice, folder_name
 
     {% if notice %}<c-ui.alert variant="info">{{ notice }}</c-ui.alert>{% endif %}
 
-    {% if proposals %}
+    {% if rows %}
     <form method="post"
           action="{% url 'work:faction_internal_import_confirm' org_slug=organization.slug meeting_id=meeting.id motion_id=motion.id %}"
           class="space-y-3">
         {% csrf_token %}
         <table class="w-full text-sm">
             <thead>
-                <tr class="text-left text-xs font-semibold text-gray-500 dark:text-gray-400">
-                    <th scope="col" class="w-8 py-2"><span class="sr-only">Auswahl</span></th>
-                    <th scope="col" class="w-20 sm:w-28 py-2 pr-2">Nr.</th>
-                    <th scope="col" class="py-2">Titel</th>
+                <tr>
+                    <c-ui.th class="w-12"><span class="sr-only">Auswahl</span></c-ui.th>
+                    <c-ui.th class="w-20 sm:w-28">Nr.</c-ui.th>
+                    <c-ui.th>Titel</c-ui.th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-                {% for proposal in proposals %}
+                {% for row in rows %}
                 <tr>
-                    <td class="py-1.5">
-                        <input type="checkbox"
-                               name="auswahl"
-                               value="{{ forloop.counter0 }}"
-                               checked
-                               aria-label="Punkt {{ forloop.counter }} übernehmen">
+                    <td class="py-1">
+                        {# Zielfläche 44 × 44 px um die Checkbox #}
+                        <label class="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
+                            <input type="checkbox"
+                                   name="auswahl"
+                                   value="{{ forloop.counter0 }}"
+                                   {% if not row.taken %}checked{% endif %}
+                                   aria-label="Punkt {{ forloop.counter }} übernehmen"
+                                   class="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                        </label>
                     </td>
-                    <td class="py-1.5 pr-2">
+                    <td class="py-1 pr-2">
                         <input type="text"
                                name="nr"
-                               value="{{ proposal.source_number }}"
+                               value="{{ row.proposal.source_number }}"
                                maxlength="20"
-                               aria-label="Nummer in der Unterlage" title="Nummer in der Unterlage"
-                               class="w-full h-8 px-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
+                               aria-label="Nummer in der Unterlage"
+                               title="Nummer in der Unterlage"
+                               class="w-full h-11 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                     </td>
-                    <td class="py-1.5">
+                    <td class="py-1">
                         <input type="text"
                                name="titel"
-                               value="{{ proposal.title }}"
+                               value="{{ row.proposal.title }}"
                                maxlength="500"
                                aria-label="Titel"
-                               class="w-full h-8 px-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
+                               {% if row.taken %}aria-describedby="uebernommen-{{ forloop.counter0 }}"{% endif %}
+                               class="w-full h-11 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        {% if row.taken %}
+                        <c-ui.badge class="mt-1" id="uebernommen-{{ forloop.counter0 }}">Bereits übernommen</c-ui.badge>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
