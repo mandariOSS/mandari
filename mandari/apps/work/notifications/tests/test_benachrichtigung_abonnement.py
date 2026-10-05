@@ -384,3 +384,63 @@ def test_schluessel_als_teilindex_ohne_tabellensperre() -> None:
     assert migration.Migration.atomic is False
     assert "CONCURRENTLY" in migration._concurrently.__code__.co_consts
     assert 'WHERE "event_key" IS NOT NULL' in migration.CREATE_SQL
+
+
+def test_aus_vertretung_bekommt_mail_auch_ohne_mail_an_den_empfaenger(
+    settings: Any, org: Any, zustaendig: Any, vertretung: Any
+) -> None:
+    """Wie bisher: Benachrichtigt eine Stelle ohne Mail (die eigentliche Mail geht separat an den Empfänger),
+    erhält die Vertretung trotzdem eine Mail „[Vertretung] …“."""
+    from apps.work.notifications.services import NotificationHub
+
+    settings.WORK_NOTIFICATION_SUBSCRIPTION = "aus"
+    NotificationHub.send(
+        recipient=zustaendig,
+        notification_type=NotificationType.FACTION_MEETING_REMINDER,
+        title="Erinnerung: Fraktionssitzung",
+        message="beginnt bald",
+        send_email=False,
+    )
+    assert [m.to for m in mail.outbox] == [["vertretung@example.org"]]
+    assert mail.outbox[0].subject.startswith("[Vertretung]")
+
+
+class _Cursor:
+    def __init__(self, ungueltig: bool) -> None:
+        self.ungueltig = ungueltig
+
+    def __enter__(self) -> _Cursor:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def execute(self, sql: str, params: list[str]) -> None:
+        assert params == ["uniq_notification_event_key"]
+
+    def fetchone(self) -> tuple[bool] | None:
+        return (True,) if self.ungueltig else (False,)
+
+
+class _SchemaEditor:
+    """Ersatz für PostgreSQL: merkt sich die Anweisungen."""
+
+    def __init__(self, ungueltig: bool) -> None:
+        self.anweisungen: list[str] = []
+        self.connection: Any = type("Verbindung", (), {"vendor": "postgresql"})()
+        self.connection.cursor = lambda: _Cursor(ungueltig)
+
+    def execute(self, sql: str) -> None:
+        self.anweisungen.append(sql)
+
+
+@pytest.mark.parametrize("ungueltig", [True, False])
+def test_abgebrochener_indexbau_wird_ersetzt(ungueltig: bool) -> None:
+    import importlib
+
+    migration = importlib.import_module("apps.work.migrations.0068_benachrichtigung_aus_ereignis")
+    editor = _SchemaEditor(ungueltig)
+    migration.index_anlegen(None, editor)
+    erwartet = ['DROP INDEX CONCURRENTLY IF EXISTS "uniq_notification_event_key"'] if ungueltig else []
+    assert editor.anweisungen[:-1] == erwartet
+    assert editor.anweisungen[-1].startswith('CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "uniq_notification')

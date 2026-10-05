@@ -653,7 +653,9 @@ mit demselben Idempotenzschlüssel als Auftrag ein (Warteschlange `mail`).
 | `schatten` | zusätzlich Ereignisse; das Abonnement legt nichts an, sondern vergleicht mit dem bisherigen Weg (`mandari_notification_subscription_total{result="gleich"\|"fehlt"}`) |
 | `aktiv` | nur noch über das Abonnement; Änderung und Ereignis sind atomar |
 
-**Einschalten in Stufen:** `schatten` setzen, Anwendung und Worker neu starten, einige Tage beobachten
+**Einschalten in Stufen:** Zuerst müssen Aufträge im Worker laufen: Steht `TASKS_BACKEND` noch auf dem
+Standard (`immediate`), erst wie unter „Umschalten der Aufträge“ auf `journal` umstellen und einige Tage
+beobachten. Dann `schatten` setzen, Anwendung und Worker neu starten, einige Tage beobachten
 (`result="fehlt"` bleibt bei null, `mandari_events_lag_seconds{subscription="benachrichtigung"}` klein).
 Dann umschalten: im Admin („Ereignistechnik → Abonnements“) `benachrichtigung` pausieren und
 „Fortsetzen (aktiv)“ (der Schalter allein ändert den Zustand in der Datenbank nicht), danach

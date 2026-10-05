@@ -146,7 +146,10 @@ class NotificationHub:
                 metadata=metadata,
                 event_key=f"{event_key}:vertretung" if event_key else None,
                 direct_since=direct_since,
-                send_email=send_email,
+                # Aus einem Ereignis: Mail wie beim Empfänger (im Schatten keine). Sonst wie bisher immer mit
+                # Mail – Aufrufer ohne Mail (Einladung, Erinnerung, Gast-Freigabe) versenden ihre Mail selbst
+                # an den Empfänger, nicht an die Vertretung.
+                send_email=send_email if event_key else True,
             )
 
         return notification
