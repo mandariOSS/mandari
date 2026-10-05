@@ -7,7 +7,7 @@ mandari work. Code: `apps/work/organization/emails.py` (Versand), `services.py` 
 
 ## Versandweg
 
-Alle Mails laufen über `apps.common.org_email.send_org_email`, also über den Weg, den die
+Alle Mails laufen über den Mail-Dienst `apps.common.mail` mit der Organisation, also über den Weg, den die
 Organisation unter *Organisation → E-Mail-Einstellungen* gewählt hat:
 
 - **mandari-Standardversand** (Voreinstellung; auch wenn „eigenes SMTP“ gewählt, aber kein Server
