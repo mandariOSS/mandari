@@ -210,7 +210,7 @@ class OParlSourceAdmin(ModelAdmin):
         return status_text(color, label)
 
     @admin.display(description="Scraper-Status")
-    def scraper_status_display(self, obj):
+    def scraper_status_display(self, obj: OParlSource) -> str:
         """
         Zustand einer Scraper-Quelle (aus sync_config["scraper_state"]):
         letzter Lauf, Parse-Quote, robots.txt-Sperre; dazu Lücken des Laufs und eine
