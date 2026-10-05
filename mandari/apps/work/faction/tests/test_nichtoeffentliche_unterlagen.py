@@ -299,6 +299,31 @@ def test_bestaetigung_legt_nichtoeffentliche_tops_an(
 
 
 @pytest.mark.django_db
+def test_offene_und_abgelehnte_vorschlaege_zaehlen_bei_der_uebernahme_nicht_mit(
+    org: Any, sitzung: FactionMeeting, vorsitz: Any, sachkundig: Any, client_for: Any
+) -> None:
+    """Wie beim Eintragen von Hand (Issue #872): Vorschläge haben keine Nummer und keinen Platz."""
+    for status, order in (("proposed", 7), ("rejected", 8)):
+        FactionAgendaItem.objects.create(
+            meeting=sitzung,
+            title=f"Vorschlag {status}",
+            number="",
+            visibility="internal",
+            order=order,
+            proposal_status=status,
+            proposed_by=sachkundig,
+        )
+    client = client_for(vorsitz.user)
+    _hochladen(client, org, sitzung, _text_pdf())
+    unterlage = Motion.objects.get(organization=org)
+
+    client.post(_uebernehmen_url(org, sitzung, unterlage), {"nr": ["N 1"], "titel": [TITEL_1], "auswahl": ["0"]})
+
+    top = FactionAgendaItem.objects.get(meeting=sitzung, proposal_status="active")
+    assert (top.number, top.order) == ("NÖ 1", 1)
+
+
+@pytest.mark.django_db
 def test_geschaeftsfuehrung_darf_einlesen(
     org: Any, sitzung: FactionMeeting, geschaeftsfuehrung: Any, client_for: Any
 ) -> None:
