@@ -327,7 +327,7 @@ Beispiel 2:
 
 ### ris.file.text_extracted v1
 
-**Text einer Anlage erkannt.** Der Text einer Datei wurde extrahiert (Anreicherung, schreibt nur der Auftrag zur Texterkennung). Aggregat: File. Den Text liest der Empfänger aus dem RIS-Bestand.
+**Text einer Anlage erkannt.** Der Text einer Datei wurde extrahiert (Anreicherung). Es schreiben der OCR-Worker des Ingestors und der Auftrag file.extract_text der Anwendung, je nach TEXT_EXTRACTION_RUNNER, mit denselben Regeln. Aggregat: File. Den Text liest der Empfänger aus dem RIS-Bestand.
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`

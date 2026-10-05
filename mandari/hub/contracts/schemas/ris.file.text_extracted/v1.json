@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:mandari:event:ris.file.text_extracted:v1",
   "title": "Text einer Anlage erkannt",
-  "description": "Der Text einer Datei wurde extrahiert (Anreicherung, schreibt nur der Auftrag zur Texterkennung). Aggregat: File. Den Text liest der Empfänger aus dem RIS-Bestand.",
+  "description": "Der Text einer Datei wurde extrahiert (Anreicherung). Es schreiben der OCR-Worker des Ingestors und der Auftrag file.extract_text der Anwendung, je nach TEXT_EXTRACTION_RUNNER, mit denselben Regeln. Aggregat: File. Den Text liest der Empfänger aus dem RIS-Bestand.",
   "x-kind": "event",
   "x-owner": "hub.ris",
   "x-visibility": "intern",

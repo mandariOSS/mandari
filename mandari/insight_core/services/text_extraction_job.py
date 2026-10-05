@@ -281,7 +281,8 @@ def _defer(file: OParlFile) -> str:
 
 def _store_result(file: OParlFile, result: ExtractionResult, sha256: str | None) -> None:
     """
-    Ergebnis über ``save()`` speichern: der Suchindex folgt wie bei ``extract_texts`` (Signal).
+    Ergebnis über ``save()`` speichern: der Suchindex folgt wie bei ``extract_texts`` (Signal), und zwar erst nach
+    dem Commit (``index_file`` mit ``transaction.on_commit``).
 
     Mit Text meldet ``ris.file.text_extracted`` das Ergebnis in derselben Transaktion wie im Ingestor
     (``hub.ris.text_extraction``, Issue #821). Scheitert nur das Ereignis, gilt das Ergebnis trotzdem

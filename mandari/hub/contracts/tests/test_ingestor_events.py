@@ -240,8 +240,11 @@ def test_texterkennung_wie_im_auftrag_der_anwendung() -> None:
     """Ingestor und Auftrag ``file.extract_text`` (``hub.ris.text_extraction``) melden denselben Text gleich."""
     from hub.ris import text_extraction
 
-    vertrag = get_registry().schema("ris.file.text_extracted", 1)["properties"]["method"]
+    schema = get_registry().schema("ris.file.text_extracted", 1)
+    vertrag = schema["properties"]["method"]
     assert vertrag["pattern"] == ris_events._METHOD.pattern == text_extraction._METHOD.pattern
+    # Der Vertrag nennt beide Erzeuger (nicht mehr „nur der Auftrag“)
+    assert "OCR-Worker des Ingestors" in schema["description"] and "file.extract_text" in schema["description"]
     assert ris_events.METHOD_UNKNOWN == text_extraction.METHOD_UNKNOWN
     for verfahren, zeichen in (("pypdf", 18342), ("Tesseract", 12), ("OCR (alt)", 0), (None, None), ("x" * 40, 5)):
         (ereignis,) = ris_events.text_extracted_events(cid(FILE), verfahren, zeichen)

@@ -196,6 +196,34 @@ def test_auftrag_meldet_erkannten_text_intern(body: OParlBody, tmp_path: Path, s
 
 
 @pytest.mark.django_db
+def test_suchindex_folgt_dem_ergebnis_erst_nach_dem_commit(
+    body: OParlBody, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, django_capture_on_commit_callbacks: Any
+) -> None:
+    """
+    Das Ergebnis wird mit seinem Ereignis in einer Transaktion gespeichert; der Suchindex (Signal ``index_file``)
+    darf es erst nach dem Commit sehen, sonst stünde bei einem Rückrollen ein Stand im Index, den es nie gab.
+    """
+    from insight_core import signals
+
+    indexiert: list[str] = []
+    monkeypatch.setattr(signals, "_index_document", lambda index, doc_id, doc: indexiert.append(f"{index}/{doc_id}"))
+    datei = _datei(body, text_extraction_status="processing")
+    ergebnis = ExtractionResult("Beschluss zum Radweg", "pypdf", 1)
+
+    with (
+        mock.patch.object(document_extraction, "download_to_file", side_effect=lambda *a, **k: _geladen(tmp_path)),
+        mock.patch.object(text_extraction_job, "extract_text", return_value=ergebnis),
+        django_capture_on_commit_callbacks(execute=False) as nach_dem_commit,
+    ):
+        assert text_extraction_job.extract_file(str(datei.pk)) == text_extraction_job.ERLEDIGT
+        assert indexiert == [], "nicht in der Transaktion"
+
+    for rueckruf in nach_dem_commit:
+        rueckruf()
+    assert f"files/{datei.pk}" in indexiert
+
+
+@pytest.mark.django_db
 def test_ohne_schalter_oder_bei_fehler_bleibt_das_ergebnis_ohne_ereignis(
     body: OParlBody, tmp_path: Path, settings: Any
 ) -> None:
