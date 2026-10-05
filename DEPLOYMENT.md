@@ -545,8 +545,11 @@ Voraussetzung ist `TASKS_BACKEND=journal` mit laufendem Worker für die Wartesch
 `plattform.einladung`, `plattform.fehlermeldung`, `insight.*`, `betrieb.alarm`, `betrieb.quellen`.
 Immer sofort, weil die Oberfläche bzw. der Vorgang das Ergebnis braucht: Testmails
 (`betrieb.testmail`, `work.testmail`), die Einreichung per E-Mail (`work.antrag.einreichung`) und die
-Ladung (`session.ladung`, Zustellung je Empfänger). Benachrichtigungsmails (`work.benachrichtigung`)
-laufen schon als eigener Auftrag und versenden darin direkt.
+Ladung (`session.ladung`, Zustellung je Empfänger). Ebenfalls sofort gehen Mails über das eigene SMTP
+einer Organisation, die keinen Ersatzweg über mandari erlaubt: Ihr Scheitern muss in der Oberfläche
+sichtbar bleiben. Benachrichtigungsmails (`work.benachrichtigung`) laufen schon als eigener Auftrag und
+versenden darin direkt. Vorübergehende SMTP-Antworten (4xx, etwa Greylisting) werden wiederholt, nur
+dauerhafte (5xx) beenden den Versand sofort.
 
 **Einschalten in Stufen**, jeweils Anwendung neu starten und `mandari_mail_total` sowie
 `mandari_tasks_oldest_queued_seconds{queue="mail"}` beobachten:
@@ -558,7 +561,8 @@ laufen schon als eigener Auftrag und versenden darin direkt.
 **Rückweg:** `MAIL_QUEUE` leeren und die Anwendung neu starten; Mails gehen wieder sofort raus. Was schon
 im Postausgang liegt, versendet der Worker trotzdem. Vor einem Rückfall auf ein Image ohne Mail-Dienst
 erst den Postausgang leeren lassen (`mandari_tasks_queued{queue="mail"}` = 0), sonst kennt der ältere
-Worker den Auftrag nicht.
+Worker den Auftrag nicht. `python manage.py postausgang` zeigt Zeilen je Zustand und verwaiste Zeilen
+(wartend ohne Auftrag); `--einreihen` reiht sie neu ein, `--verwerfen` gibt sie auf und löscht den Inhalt.
 
 ### Suchindex als Abonnement (Schattenbetrieb)
 

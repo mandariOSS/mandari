@@ -644,6 +644,7 @@ def send_reminder_mail(
         subject=subject,
         to=recipient.email,
         tenant=recipient.dispatch.meeting.tenant,
+        kind="session.erinnerung",
     )
     recipient.reminder_count += 1
     recipient.last_reminded_at = timezone.now()

@@ -8,9 +8,20 @@ zurückgerollt, gibt es weder Zeile noch Auftrag noch Mail. Der Auftrag bekommt 
 Zeile.
 
 **Wiederholung:** Scheitert der Versand, wirft der Auftrag; der Runner wiederholt ihn mit wachsender
-Wartezeit (Standard acht Versuche). Endgültig ist ein Fehler, wenn der Server alle Empfänger oder die
-Nachricht dauerhaft ablehnt (5xx außer Anmeldung) oder der Inhalt nicht mehr lesbar ist; dann und nach
-dem letzten Versuch steht die Zeile auf „fehlgeschlagen“, und ihr Inhalt wird gelöscht.
+Wartezeit (Standard acht Versuche). Endgültig ist ein Fehler nur, wenn der Server dauerhaft ablehnt –
+alle Empfänger mit 5xx, Absender oder Nachricht mit 5xx außer Anmeldung – oder der Inhalt nicht mehr
+lesbar ist. Vorübergehende Antworten (4xx, etwa 421 oder Greylisting mit 451) werden wiederholt. Nach
+einem endgültigen Fehler und nach dem letzten Versuch steht die Zeile auf „fehlgeschlagen“, ihr Inhalt
+wird gelöscht. Die Ausnahme des Auftrags nennt nur Fehlerklasse und SMTP-Codes (Protokoll des Runners
+ohne Empfängeradressen).
+
+**Verwaiste Zeilen:** Stirbt der Auftrag, ohne ``deliver_mail`` auszuführen (etwa ein älterer Worker, der
+den Auftragstyp nicht kennt), bleibt die Zeile „wartend“. ``manage.py postausgang`` zeigt solche Zeilen,
+``--einreihen`` reiht sie neu ein, ``--verwerfen`` löscht ihren Inhalt.
+
+**Schlüssel:** Mails einer Organisation versiegelt ihr Mandantenschlüssel, alle übrigen der
+Hauptschlüssel – auch die des Sitzungsdienstes: Die Plattform kennt die Fachmodule nicht und damit
+keinen Session-Mandanten, und der Inhalt liegt nur bis zum Versand im Postausgang.
 
 **Idempotenz:** Ein Idempotenzschlüssel (z. B. je Ereignis und Empfänger) legt dieselbe Mail nur einmal
 an. Der Auftrag versendet nur Zeilen im Zustand „wartend“ und setzt sie danach auf „versendet“; eine
@@ -105,23 +116,45 @@ def put(
             if vorhanden is None:
                 raise
             return vorhanden, False
-        deliver_mail.enqueue(str(row.pk))
+        _einreihen(row)
     MAILS.labels(kind=kind, route="postausgang", result="queued").inc()
     return row, True
 
 
+def _einreihen(row: Any, backend: Any = None) -> None:
+    """Versandauftrag für die Zeile einreihen und seine Kennung an der Zeile vermerken."""
+    from apps.common.models import MailOutbox
+
+    if backend is None:
+        ergebnis = deliver_mail.enqueue(str(row.pk))
+    else:
+        ergebnis = backend.enqueue(deliver_mail, [str(row.pk)], {})
+    row.task_id = str(ergebnis.id)
+    MailOutbox.objects.filter(pk=row.pk).update(task_id=row.task_id)
+
+
+def _dauerhaft(code: object) -> bool:
+    try:
+        return 500 <= int(str(code)) < 600
+    except (TypeError, ValueError):
+        return False
+
+
 def _permanent(exc: BaseException) -> bool:
-    """Lehnt der Server dauerhaft ab (alle Empfänger, Absender oder Nachricht, 5xx außer Anmeldung)?"""
-    ursache: BaseException | None = exc
-    while ursache is not None:
-        if isinstance(ursache, smtplib.SMTPRecipientsRefused):
-            return True
-        if isinstance(ursache, smtplib.SMTPResponseException) and not isinstance(
-            ursache, smtplib.SMTPAuthenticationError
-        ):
-            return 500 <= int(ursache.smtp_code) < 600
-        ursache = ursache.__cause__
+    """Lehnt der Server dauerhaft ab? Alle Empfänger mit 5xx bzw. Absender/Nachricht mit 5xx außer Anmeldung.
+
+    4xx (vorübergehend: 421 Dienst nicht verfügbar, 450/451 Greylisting, Ratenbegrenzung) wird wiederholt.
+    """
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        codes = [antwort[0] for antwort in exc.recipients.values()]
+        return bool(codes) and all(_dauerhaft(code) for code in codes)
+    if isinstance(exc, smtplib.SMTPResponseException) and not isinstance(exc, smtplib.SMTPAuthenticationError):
+        return _dauerhaft(exc.smtp_code)
     return False
+
+
+class MailVersandError(Exception):
+    """Versand gescheitert; die Meldung nennt nur Fehlerklasse und SMTP-Codes (Protokoll des Runners)."""
 
 
 def _max_attempts() -> int:
@@ -168,20 +201,59 @@ def deliver_mail(context: TaskContext[Any, Any], outbox_id: str) -> str:
         raise PermanentTaskError("Mail im Postausgang nicht lesbar") from None
 
     route = config.resolve(row.organization, via_organization=row.via_organization)
+    fehler: BaseException | None = None
     try:
         genutzt = delivery.deliver(mail, route, kind=row.kind)
-    except Exception as exc:
-        code = type(exc).__name__
-        if _permanent(exc) or attempt >= _max_attempts():
-            _abschliessen(row.pk, MailOutbox.Status.FEHLGESCHLAGEN, attempt=attempt, route=route.name, error_code=code)
-            logger.error("Postausgang: Mail %s (%s) endgültig nicht versendet (%s)", row.pk, row.kind, code)
-            if _permanent(exc):
-                raise PermanentTaskError(code) from exc
-        else:
-            MailOutbox.objects.filter(pk=row.pk).update(attempts=attempt, error_code=code)
-        raise
-    _abschliessen(row.pk, MailOutbox.Status.VERSENDET, attempt=attempt, route=genutzt)
-    return genutzt
+    except Exception as exc:  # noqa: BLE001 – ohne Stacktrace weiter (SMTP-Ausnahmen nennen Empfänger)
+        fehler = exc
+    if fehler is None:
+        _abschliessen(row.pk, MailOutbox.Status.VERSENDET, attempt=attempt, route=genutzt)
+        return genutzt
+
+    code = delivery.fehlercode(fehler)
+    dauerhaft = _permanent(fehler)
+    if dauerhaft or attempt >= _max_attempts():
+        _abschliessen(row.pk, MailOutbox.Status.FEHLGESCHLAGEN, attempt=attempt, route=route.name, error_code=code)
+        logger.error("Postausgang: Mail %s (%s) endgültig nicht versendet (%s)", row.pk, row.kind, code)
+        if dauerhaft:
+            raise PermanentTaskError(code) from None
+    else:
+        MailOutbox.objects.filter(pk=row.pk).update(attempts=attempt, error_code=code)
+    raise MailVersandError(code) from None
+
+
+def verwaist(aelter_als: timedelta = timedelta(minutes=15), now: datetime | None = None) -> Any:
+    """Wartende Zeilen ohne wartenden oder laufenden Auftrag (älter als ``aelter_als``)."""
+    from apps.common.models import MailOutbox
+    from apps.events.models import Task as TaskRow
+    from apps.events.models import TaskStatus
+
+    lebend = TaskRow.objects.filter(status__in=(TaskStatus.WARTEND, TaskStatus.LAEUFT)).values_list("pk", flat=True)
+    lebende = {str(pk) for pk in lebend.filter(task_path=deliver_mail.module_path)}
+    kandidaten = MailOutbox.objects.filter(
+        status=MailOutbox.Status.WARTEND, created_at__lt=(now or timezone.now()) - aelter_als
+    )
+    return [row for row in kandidaten.order_by("created_at") if not row.task_id or row.task_id not in lebende]
+
+
+def neu_einreihen(rows: list[Any]) -> int:
+    """Verwaiste Zeilen neu einreihen (immer in ``events_task``, auch ohne umgestelltes Backend)."""
+    from apps.events.tasks_backend import journal_backend
+
+    backend = journal_backend()
+    for row in rows:
+        with transaction.atomic():
+            _einreihen(row, backend)
+    return len(rows)
+
+
+def verwerfen(rows: list[Any]) -> int:
+    """Verwaiste Zeilen aufgeben: „fehlgeschlagen“, Inhalt gelöscht."""
+    from apps.common.models import MailOutbox
+
+    for row in rows:
+        _abschliessen(row.pk, MailOutbox.Status.FEHLGESCHLAGEN, attempt=row.attempts, error_code="verworfen")
+    return len(rows)
 
 
 def purge(now: datetime | None = None, batch: int = PURGE_BATCH) -> int:

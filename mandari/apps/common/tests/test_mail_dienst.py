@@ -8,10 +8,12 @@ Ohne Schalter (``MAIL_QUEUE`` leer) geht jede Mail wie bisher im Aufruf raus. Mi
 
 from __future__ import annotations
 
+import logging
 import re
 import smtplib
 from collections.abc import Iterator
 from datetime import timedelta
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -20,6 +22,7 @@ import pytest
 from django.core import mail as django_mail
 from django.core.cache import cache
 from django.core.mail.backends.base import BaseEmailBackend
+from django.core.management import call_command
 from django.db import transaction
 from django.tasks import task_backends
 from django.utils import timezone
@@ -260,6 +263,89 @@ def test_smtp_fehler_wird_wiederholt(journal: JournalBackend) -> None:
     assert len(django_mail.outbox) == 1
     zeile.refresh_from_db()
     assert (zeile.status, zeile.attempts) == (MailOutbox.Status.VERSENDET, 2)
+
+
+@pytest.mark.parametrize(
+    "fehler",
+    [
+        smtplib.SMTPRecipientsRefused({"empfang@example.org": (451, b"greylisted")}),
+        smtplib.SMTPRecipientsRefused({"empfang@example.org": (421, b"zu viele Verbindungen")}),
+        smtplib.SMTPRecipientsRefused({"empfang@example.org": (550, b"unbekannt"), "b@example.org": (451, b"spaeter")}),
+        smtplib.SMTPSenderRefused(421, b"Dienst nicht verfuegbar", "absender@example.org"),
+        smtplib.SMTPDataError(451, b"lokaler Fehler"),
+    ],
+    ids=["greylisting-451", "ratenbegrenzung-421", "gemischt", "absender-421", "daten-451"],
+)
+def test_vorlaeufige_ablehnung_wird_wiederholt(journal: JournalBackend, fehler: Exception) -> None:
+    """4xx ist vorübergehend: kein Mailverlust, die Mail wartet mit Inhalt auf den nächsten Versuch."""
+    _senden()
+    with mock.patch("apps.common.mail.delivery.send_with", side_effect=fehler):
+        assert run_pending() == 1
+    assert TaskRow.objects.get().status == TaskStatus.WARTEND
+    zeile = MailOutbox.objects.get()
+    assert zeile.status == MailOutbox.Status.WARTEND and zeile.payload_platform_encrypted
+
+
+def test_protokolle_ohne_empfaengeradressen(journal: JournalBackend, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    _senden(to=["geheim@example.org"])
+    abgelehnt = smtplib.SMTPRecipientsRefused({"geheim@example.org": (451, b"greylisted geheim@example.org")})
+    with mock.patch("apps.common.mail.delivery.send_with", side_effect=abgelehnt):
+        run_pending()
+        assert _senden(to=["geheim@example.org"], kind="konto.sicherheit", sofort=True, fail_silently=True) is False
+    assert "geheim@example.org" not in caplog.text
+    assert "SMTPRecipientsRefused 451" in caplog.text
+
+
+def test_eigenes_smtp_ohne_ersatzweg_bleibt_im_aufruf(journal: JournalBackend, org: Any) -> None:
+    """#65: Scheitern ohne Ersatzweg muss der Auslöser sehen – auch mit Schalter kein Postausgang."""
+    _eigenes_smtp(org, ersatzweg=False)
+    with mock.patch("apps.common.mail.config.organization_backend", return_value=Kaputt()):
+        with pytest.raises(OrgMailError):
+            _senden(kind="work.zugang.invitation", organization=org)
+        assert _senden(kind="work.zugang.invitation", organization=org, fail_silently=True) is False
+    assert not MailOutbox.objects.exists() and not TaskRow.objects.exists()
+
+    _eigenes_smtp(org, ersatzweg=True)
+    assert _senden(kind="work.zugang.invitation", organization=org) is True
+    assert MailOutbox.objects.count() == 1, "mit Ersatzweg wie jede andere Mail als Auftrag"
+
+
+def test_empfaenger_als_zeichenkette_wird_abgelehnt() -> None:
+    # Programmierfehler, kein Versandfehler: auch mit fail_silently eine Ausnahme
+    with pytest.raises(TypeError):
+        _senden(to="empfang@example.org", fail_silently=True)
+    with pytest.raises(TypeError):
+        _senden(reply_to="antwort@example.org", fail_silently=True)
+    assert not django_mail.outbox
+
+
+def test_verwaiste_zeilen_neu_einreihen_oder_verwerfen(journal: JournalBackend) -> None:
+    _senden(to=["eins@example.org"])
+    _senden(to=["zwei@example.org"])
+    # Ein älterer Worker kannte den Auftrag nicht und hat ihn aufgegeben
+    TaskRow.objects.update(status=TaskStatus.TOT)
+    MailOutbox.objects.update(created_at=timezone.now() - timedelta(hours=1))
+    ausgabe = StringIO()
+    call_command("postausgang", stdout=ausgabe)
+    assert "verwaist: 2" in ausgabe.getvalue() and "@" not in ausgabe.getvalue()
+
+    eins = MailOutbox.objects.order_by("created_at").first()
+    assert eins is not None
+    outbox.neu_einreihen([eins])
+    assert run_pending() == 1
+    assert [m.to for m in django_mail.outbox] == [["eins@example.org"]]
+
+    call_command("postausgang", "--verwerfen", stdout=StringIO())
+    zwei = MailOutbox.objects.exclude(pk=eins.pk).get()
+    assert zwei.status == MailOutbox.Status.FEHLGESCHLAGEN and zwei.payload_platform_encrypted is None
+    assert outbox.verwaist(timedelta(0)) == []
+
+
+def test_compose_reicht_die_groessengrenze_durch() -> None:
+    compose = (QUELLE.parent / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "MAIL_QUEUE: ${MAIL_QUEUE:-}" in compose
+    assert "MAIL_QUEUE_MAX_BYTES: ${MAIL_QUEUE_MAX_BYTES:-" in compose
 
 
 def test_abgelehnte_empfaenger_sind_endgueltig(journal: JournalBackend) -> None:

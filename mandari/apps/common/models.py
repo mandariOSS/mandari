@@ -563,6 +563,7 @@ class MailOutbox(models.Model):
         max_length=255, null=True, blank=True, unique=True, verbose_name="Idempotenzschlüssel"
     )
     attempts = models.PositiveSmallIntegerField(default=0, verbose_name="Versuche")
+    task_id = models.CharField(max_length=64, blank=True, default="", verbose_name="Versandauftrag")
     route = models.CharField(max_length=20, blank=True, verbose_name="Genutzter Weg")
     error_code = models.CharField(max_length=200, blank=True, verbose_name="Fehlerklasse")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Angelegt am")

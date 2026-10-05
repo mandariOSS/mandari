@@ -18,8 +18,10 @@ Mail-Dienst der Plattform (Issue #528): der einzige Einstieg für ausgehende Mai
 - **Versand als Auftrag:** Passt die Mailart zu ``MAIL_QUEUE`` und läuft das Backend ``journal``,
   landet die Mail verschlüsselt im Postausgang und ein Auftrag der Warteschlange ``mail`` versendet sie
   mit Wiederholung (``apps.common.mail.outbox``). Sonst – und mit ``sofort=True``, etwa für Testmails,
-  deren Ergebnis die Oberfläche anzeigt – geht sie wie bisher im Aufruf raus. ``MAIL_QUEUE`` leeren ist
-  der Rückweg; was schon im Postausgang liegt, versendet der Worker trotzdem.
+  deren Ergebnis die Oberfläche anzeigt – geht sie wie bisher im Aufruf raus. Ebenfalls sofort geht eine
+  Mail über das eigene SMTP einer Organisation, die keinen Ersatzweg erlaubt: Ihr Scheitern muss der
+  Auslöser sehen (#65), im Auftrag stünde es nur im Protokoll. ``MAIL_QUEUE`` leeren ist der Rückweg; was
+  schon im Postausgang liegt, versendet der Worker trotzdem.
 - **Metrik:** ``mandari_mail_total{kind, route, result}`` (``sent``, ``failed``, ``queued``, ``expired``),
   dazu wie bisher ``mandari_emails_total{result}``.
 
@@ -86,6 +88,8 @@ def send(
     (Links zum Setzen eines Passworts). ``from_email`` gilt nur auf dem Weg der Plattform.
     """
     check_kind(kind)
+    if isinstance(to, str) or isinstance(reply_to, str):
+        raise TypeError("to und reply_to sind Listen von Adressen, keine Zeichenkette")
     empfaenger = tuple(adresse for adresse in to if adresse)
     if not empfaenger:
         return False
@@ -100,7 +104,10 @@ def send(
             attachments=tuple(Attachment.of(anhang) for anhang in attachments or ()),
         )
         grenze = int(getattr(settings, "MAIL_QUEUE_MAX_BYTES", DEFAULT_QUEUE_MAX_BYTES))
-        if not sofort and queue_enabled(kind) and nachricht.size <= grenze:
+        weg = config.resolve(organization, via_organization=via_organization)
+        # Eigenes SMTP ohne Ersatzweg: Scheitern muss sichtbar sein (#65), also im Aufruf
+        sichtbar_scheitern = weg.name == config.ORGANISATION and weg.fallback is None
+        if not sofort and not sichtbar_scheitern and queue_enabled(kind) and nachricht.size <= grenze:
             outbox.put(
                 nachricht,
                 kind=kind,
@@ -109,12 +116,13 @@ def send(
                 idempotency_key=idempotency_key,
             )
             return True
-        delivery.deliver(nachricht, config.resolve(organization, via_organization=via_organization), kind=kind)
+        delivery.deliver(nachricht, weg, kind=kind)
         return True
-    except Exception:
+    except Exception as exc:
         if not fail_silently:
             raise
-        logger.warning("Mail (%s) nicht versendet", kind, exc_info=True)
+        # Ohne Stacktrace: SMTP-Ausnahmen nennen Empfängeradressen
+        logger.warning("Mail (%s) nicht versendet (%s)", kind, delivery.fehlercode(exc))
         return False
 
 

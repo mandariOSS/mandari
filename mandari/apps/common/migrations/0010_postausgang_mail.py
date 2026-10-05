@@ -2,8 +2,11 @@
 """
 Postausgang des Mail-Dienstes (Issue #528): neue Tabelle ``common_mail_outbox``.
 
-Rein additiv. Ein älteres Image kennt die Tabelle nicht und versendet wie bisher sofort; Zeilen, die
-dabei noch warten, versendet der Worker nach der Rückkehr zur neuen Version.
+Rein additiv. Ein älteres Image kennt die Tabelle nicht und versendet wie bisher sofort. Was beim
+Rückfall noch im Postausgang wartet, versendet es nicht: Sein Worker kennt den Auftrag
+``apps.common.mail.outbox.deliver_mail`` nicht und wiederholt ihn bis „tot“. Deshalb vor einem Rückfall
+den Postausgang leer laufen lassen; nach der Rückkehr zur neuen Version reiht
+``manage.py postausgang --einreihen`` liegen gebliebene Zeilen neu ein.
 """
 
 import django.db.models.deletion
@@ -73,6 +76,15 @@ class Migration(migrations.Migration):
                     "attempts",
                     models.PositiveSmallIntegerField(
                         default=0, verbose_name="Versuche"
+                    ),
+                ),
+                (
+                    "task_id",
+                    models.CharField(
+                        blank=True,
+                        default="",
+                        max_length=64,
+                        verbose_name="Versandauftrag",
                     ),
                 ),
                 (
