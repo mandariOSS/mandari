@@ -236,10 +236,11 @@ class AgendaItemPosition(EncryptionMixin, models.Model):
 
         Returns:
             dict: {agenda_item_id des aktuellen TOPs: [{gremium, sitzung,
-                   datum, meeting_id, position, position_display, outcome,
+                   datum (ISO, zum Sortieren), datum_display (TT.MM.JJJJ), meeting_id, position, position_display, outcome,
                    outcome_display, reasoning, is_final}, ...]}
         """
         from django.db.models import Q
+        from django.utils import timezone
 
         from insight_core.models import OParlConsultation
 
@@ -294,6 +295,9 @@ class AgendaItemPosition(EncryptionMixin, models.Model):
                 "gremium": committee,
                 "sitzung": meeting.get_display_name() if meeting else "",
                 "datum": meeting.start.isoformat() if meeting and meeting.start else "",
+                "datum_display": timezone.localtime(meeting.start).strftime("%d.%m.%Y")
+                if meeting and meeting.start
+                else "",
                 "meeting_id": str(meeting.id) if meeting else None,
                 "position": pos.position,
                 "position_display": pos.get_position_display(),

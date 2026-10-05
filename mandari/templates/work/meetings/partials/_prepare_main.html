@@ -203,7 +203,7 @@
                                        class="inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs rounded-full border bg-gray-50 dark:bg-gray-900/60 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-primary-300 dark:hover:border-primary-700 transition-colors"
                                        :title="cp.reasoning ? 'Begründung: ' + cp.reasoning : ''">
                                         <span class="font-medium text-gray-800 dark:text-gray-100" x-text="cp.gremium || cp.sitzung"></span>
-                                        <span x-show="cp.datum" x-text="cp.datum"></span>
+                                        <span x-show="cp.datum_display" x-text="cp.datum_display"></span>
                                         <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium" :class="posChip(cp.position)">
                                             <span class="w-1.5 h-1.5 rounded-full" :class="posDot(cp.position)"></span>
                                             <span x-text="cp.position_display"></span>
