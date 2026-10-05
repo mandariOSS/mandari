@@ -492,7 +492,8 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 | `apps.work.schedules.fraktionseinladungen_senden` | alle `FACTION_INVITATION_INTERVAL_MINUTES` (15) min | automatische Einladungen und Freigabe-Hinweise |
 | `apps.work.schedules.fraktionssitzungen_erzeugen` | alle `FACTION_SCHEDULE_INTERVAL_MINUTES` (60) min | Sitzungen aus Sitzungsreihen |
 | `apps.events.schedules.idempotenzschluessel_aufraeumen` | täglich 03:40 | Idempotenzschlüssel nach `EVENTS_IDEMPOTENCY_RETENTION_DAYS` |
-| `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach 14, tote und fehlgeschlagene nach 90 Tagen |
+| `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach `EVENTS_TASKS_DONE_RETENTION_DAYS` (14), tote und fehlgeschlagene nach `EVENTS_TASKS_DEAD_RETENTION_DAYS` (90) Tagen |
+| `befehl:events_purge` | täglich 04:10, nur mit `EVENTS_JOURNAL_PURGE_ENABLED` (Standard aus) | Journal nach `EVENTS_JOURNAL_RETENTION_DAYS` (90), nie über den kleinsten Cursor; `docs/MONITORING.md`, „Nachspielen und Aufräumen des Journals“ |
 
 `python manage.py events_scheduler --list` zeigt alle Zeitpläne mit dem zuletzt geplanten Termin. Auch Sync
 einer Quelle und Löschen einer Kommune aus dem Admin laufen als Auftrag im Worker (Warteschlange

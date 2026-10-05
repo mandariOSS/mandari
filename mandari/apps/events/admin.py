@@ -55,7 +55,7 @@ from unfold.widgets import UnfoldAdminBigIntegerFieldWidget, UnfoldAdminTextInpu
 from apps.accounts.security_audit import record_operation
 from apps.common.admin_mixins import ImmutableAdminMixin, status_pill
 
-from . import dispatch, metrics, presence, registry
+from . import dispatch, metrics, presence, pruning, registry
 from .eingriffe import parked_identifiers
 from .models import (
     Event,
@@ -279,17 +279,24 @@ class SubscriptionAdmin(_NurAdministratoren, ModelAdmin):  # type: ignore[misc]
         for name in queryset.order_by("name").values_list("name", flat=True):
             try:
                 with transaction.atomic():
-                    ergebnis = dispatch.rewind(name, ab_seq)
-                    if ergebnis is None or ergebnis[0] == ergebnis[1]:
+                    ergebnis = dispatch.replay(name, ab_seq)
+                    if ergebnis is None or not ergebnis.changed:
                         unveraendert.append(name)
                         continue
-                    vorher, nachher = ergebnis
-                    record_operation(request, "abonnement_nachspielen", abonnement=name, vorher=vorher, nachher=nachher)
+                    record_operation(
+                        request,
+                        "abonnement_nachspielen",
+                        abonnement=name,
+                        vorher=ergebnis.before,
+                        nachher=ergebnis.after,
+                        geparkt_aufgehoben=ergebnis.parked_removed,
+                    )
             except ValueError:
                 # Cursor steht schon vor der Folgenummer: Nachspielen überspringt nie Ereignisse
                 unveraendert.append(name)
                 continue
-            zurueckgesetzt.append(f"{name} (Cursor {vorher} → {nachher})")
+            geparkt = f", {ergebnis.parked_removed} geparkte aufgehoben" if ergebnis.parked_removed else ""
+            zurueckgesetzt.append(f"{name} (Cursor {ergebnis.before} → {ergebnis.after}{geparkt})")
         if zurueckgesetzt:
             messages.success(
                 request,
@@ -299,6 +306,12 @@ class SubscriptionAdmin(_NurAdministratoren, ModelAdmin):  # type: ignore[misc]
             messages.warning(
                 request,
                 f"Unverändert (Cursor steht schon vor Folgenummer {ab_seq}): {', '.join(unveraendert)}.",
+            )
+        aufgeraeumt = pruning.pruned_through(ab_seq)
+        if zurueckgesetzt and aufgeraeumt is not None:
+            messages.warning(
+                request,
+                f"Das Journal ist bis Folgenummer {aufgeraeumt} aufgeräumt; nachgespielt wird nur, was es noch enthält.",
             )
         return None
 

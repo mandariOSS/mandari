@@ -320,7 +320,13 @@ def test_nachspielen_ab_folgenummer_erst_nach_formular(admin: Client) -> None:
     assert antwort.status_code == 302
     assert _cursor_jetzt() == erstes.seq  # zweites und drittes werden erneut zugestellt
     assert _eingriffe() == [
-        {"aktion": "abonnement_nachspielen", "abonnement": NAME, "vorher": drittes.seq, "nachher": erstes.seq}
+        {
+            "aktion": "abonnement_nachspielen",
+            "abonnement": NAME,
+            "vorher": drittes.seq,
+            "nachher": erstes.seq,
+            "geparkt_aufgehoben": 0,
+        }
     ]
     eintrag = SecurityAuditLog.objects.get(event="betrieb")
     assert eintrag.user_ref is not None and eintrag.entry_hash

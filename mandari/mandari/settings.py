@@ -363,6 +363,20 @@ EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBU
 # gilt der Schlüssel als neu. Aufgeräumt wird täglich per Zeitplan (apps/events/schedules.py).
 EVENTS_IDEMPOTENCY_RETENTION_DAYS = int(os.environ.get("EVENTS_IDEMPOTENCY_RETENTION_DAYS", "30"))
 
+# Aufbewahrung der Ereignistechnik (apps.events.aufbewahrung, manage.py events_purge, Issue #511): Journal in
+# Tagen (Spezifikation: mindestens 90; nie kürzer als OPARL_CHANGES_RETENTION_DAYS, nie über den kleinsten Cursor
+# eines Abonnements), beendete Aufträge: erledigte und tote bzw. endgültig fehlgeschlagene. Das Journal räumt der
+# Zeitplan befehl:events_purge nur mit EVENTS_JOURNAL_PURGE_ENABLED auf (Standard aus); Aufträge räumt der
+# Zeitplan auftraege_aufraeumen immer auf.
+EVENTS_JOURNAL_PURGE_ENABLED = os.environ.get("EVENTS_JOURNAL_PURGE_ENABLED", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+EVENTS_JOURNAL_RETENTION_DAYS = int(os.environ.get("EVENTS_JOURNAL_RETENTION_DAYS", "90"))
+EVENTS_TASKS_DONE_RETENTION_DAYS = int(os.environ.get("EVENTS_TASKS_DONE_RETENTION_DAYS", "14"))
+EVENTS_TASKS_DEAD_RETENTION_DAYS = int(os.environ.get("EVENTS_TASKS_DEAD_RETENTION_DAYS", "90"))
+
 # Worker (manage.py events_worker, Issues #509, #515): Braucht diese Installation einen laufenden
 # Worker? Dann melden /health/ und /health/ready/ "degraded" und der Admin einen Hinweis, solange
 # keiner die nötigen Rollen bedient (apps.events.presence). "true": alle Rollen; "false": nie (etwa

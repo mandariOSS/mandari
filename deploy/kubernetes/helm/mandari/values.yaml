@@ -53,6 +53,10 @@ events:
   producers: false
   # Änderungsfeed und Snapshot je Kommune (OPARL_CHANGES_ENABLED); erst nach den Erzeugern
   changesFeed: false
+  # Journal nach der Frist aufräumen (EVENTS_JOURNAL_PURGE_ENABLED, täglich im Worker); vorher
+  # `manage.py events_purge --dry-run` prüfen. Frist in Tagen, nie kürzer als die Gültigkeit der Feed-Cursor.
+  journalPurge: false
+  journalRetentionDays: 90
   # „Worker lebt“ an die Statusseite (WORKER_PUSH_URL, externer Endpunkt von Gatus); das Token
   # WORKER_PUSH_TOKEN über app.extraEnvFromSecret
   workerPushUrl: ""

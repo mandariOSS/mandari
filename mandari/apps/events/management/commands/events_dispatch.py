@@ -20,8 +20,11 @@ Rolle (``--roles dispatch``); der Befehl bleibt für Betrieb und Fehlersuche.
     manage.py events_dispatch --replay suchindex --from-seq 1200        # ab Folgenummer erneut zustellen
     manage.py events_dispatch --replay suchindex --since 2026-10-01T00:00  # ab Erfassungszeitpunkt
 
-Nachspielen (``--replay``) setzt nur den Cursor zurück; zugestellt wird im laufenden Worker bzw. mit
-``--once``. Der Handler muss wiederholte Ereignisse vertragen (Idempotenz).
+Nachspielen (``--replay``, in Spezifikation und Issues „events replay“) setzt nur den Cursor zurück und hebt
+geparkte Ereignisse ab der Folgenummer auf (``dispatch.replay``); zugestellt wird im laufenden Worker bzw. mit
+``--once``. Es gilt auch für Abonnements im Schattenbetrieb. Der Handler muss wiederholte Ereignisse vertragen
+(Idempotenz). Liegt die Folgenummer im aufgeräumten Teil des Journals (``events_purge``), weist der Befehl darauf
+hin; nachgespielt wird, was das Journal noch enthält.
 
 Nachspielen, erneut Zustellen und Verwerfen sind Eingriffe: Sie stehen wie im Admin im
 Sicherheitsprotokoll (``apps.events.eingriffe``, Quelle ``kommandozeile``), in derselben Transaktion.
@@ -42,14 +45,15 @@ from django.db.models import Count
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from apps.events import pruning
 from apps.events.dispatch import (
     POLL_INTERVAL,
     Dispatcher,
     discard_parked,
     first_seq_since,
     head_seq,
+    replay,
     retry_parked,
-    rewind,
 )
 from apps.events.eingriffe import parked_identifiers, record_command
 from apps.events.models import ParkedEvent, ParkedState, Subscription
@@ -145,23 +149,37 @@ class Command(BaseCommand):
                 return
         try:
             with transaction.atomic():
-                ergebnis = rewind(name, ab_seq)
-                if ergebnis is not None and ergebnis[0] != ergebnis[1]:
+                ergebnis = replay(name, ab_seq)
+                if ergebnis is not None and ergebnis.changed:
                     record_command(
                         "events_dispatch",
                         "abonnement_nachspielen",
                         abonnement=name,
-                        vorher=ergebnis[0],
-                        nachher=ergebnis[1],
+                        vorher=ergebnis.before,
+                        nachher=ergebnis.after,
+                        geparkt_aufgehoben=ergebnis.parked_removed,
                     )
         except ValueError as exc:
             raise CommandError(f"Nachspielen nicht möglich: {exc}") from None
         if ergebnis is None:
             raise CommandError(f"Abonnement {name} gibt es nicht (noch nie zugestellt).")
-        vorher, neu = ergebnis
         self.stdout.write(
-            f"Abonnement {name}: Cursor {vorher} -> {neu}; Ereignisse ab Folgenummer {neu + 1} werden erneut zugestellt."
+            f"Abonnement {name}: Cursor {ergebnis.before} -> {ergebnis.after}; Ereignisse ab Folgenummer "
+            f"{ergebnis.after + 1} werden erneut zugestellt."
         )
+        if ergebnis.parked_removed:
+            self.stdout.write(
+                f"{ergebnis.parked_removed} geparkte Ereignisse ab dieser Folgenummer aufgehoben; die Zustellung "
+                "erreicht sie wieder in Reihenfolge."
+            )
+        aufgeraeumt = pruning.pruned_through(ab_seq)
+        if aufgeraeumt is not None:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Das Journal ist bis Folgenummer {aufgeraeumt} aufgeräumt; nachgespielt wird nur, was es "
+                    "noch enthält. Was davor lag, bringt nur ein Vollaufbau der Sicht zurück."
+                )
+            )
 
     @staticmethod
     def _geparkt(parked_id: int, eingriff: Callable[[int], bool], aktion: str) -> bool:

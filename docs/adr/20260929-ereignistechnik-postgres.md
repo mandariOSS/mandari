@@ -438,6 +438,21 @@ Die Qualitätsziele und die Fitnessfunktion oben sind belegt; Tests, Messwerte u
 - **Rückstau:** Die Latenz bei Rückstau hängt an seiner Größe; abgebaut wird mit mehreren tausend
   Ereignissen je Sekunde und Abonnement (gemessen ohne die Kosten des Handlers).
 
+## Nachtrag zu Nachspielen und Aufbewahrung (#511)
+
+- **Nachspielen** (`events_dispatch --replay`, Admin) hebt geparkte Ereignisse des Abonnements ab der
+  Folgenummer auf. Die Zustellung erreicht sie mit dem zurückgesetzten Cursor wieder und parkt neu, was weiter
+  scheitert. Blieben sie geparkt, würden davor liegende, schon zugestellte Ereignisse desselben Objekts hinter
+  ihnen mitgeparkt und erst nach ihnen zugestellt. Ketten, deren Kopf vor der Folgenummer liegt, bleiben mit
+  ihrem Kopf stehen.
+- **Aufbewahrung** (`events_purge`, `apps.events.aufbewahrung`): Statt Monatspartitionen löscht ein Zeitplan im
+  Worker einen Anfang des Journals in Stapeln (Partitionierung bleibt der Weg ab einer Größenschwelle). Die
+  Grenze ist die kleinste aus Frist (Tagesbeginn in UTC vor `EVENTS_JOURNAL_RETENTION_DAYS`, nie kürzer als die
+  Gültigkeit der Feed-Cursor), kleinstem Cursor aller Abonnements und dem neuesten Ereignis, das für die Prüfung
+  nach einer Wiederherstellung und den Start neuer Abonnements stehen bleibt. Geparkte und unnummerierte Zeilen
+  bleiben. Festgehalten wird in `events_pruning` für die ganze geplante Grenze im ersten Stapel. Schalter
+  `EVENTS_JOURNAL_PURGE_ENABLED`, Standard aus.
+
 ## Bezug
 
 - [A1 Schichtenmodell](20260929-schichtenmodell.md), [A3 Sequenzierer](20260929-sequenzierer.md),

@@ -283,8 +283,9 @@ den Betrieb“, mit Konto, Adresse, Aktion und Kennungen, ohne Inhalte):
 - **Abonnements:** Zustand, Warteschlange, Cursor, Rückstand (wie `mandari_events_lag_seconds`, rot ab
   300 s) und geparkte Ereignisse je Zustand. Aktionen: Pausieren (nichts mehr zustellen, der Cursor
   bleibt stehen), Fortsetzen (aktiv) und Fortsetzen im Schattenbetrieb – beide nur für pausierte –
-  sowie Nachspielen ab Folgenummer oder Zeitpunkt (Zwischenseite; setzt den Cursor nur zurück, der
-  laufende Worker stellt erneut zu; der Handler muss das vertragen).
+  sowie Nachspielen ab Folgenummer oder Zeitpunkt (Zwischenseite; setzt den Cursor nur zurück und hebt
+  geparkte Ereignisse ab dieser Folgenummer auf, der laufende Worker stellt erneut zu; der Handler muss
+  das vertragen).
 - **Geparkte Ereignisse:** standardmäßig der Kopf jeder Kette je Objekt (wiederholen oder tot) mit der
   Zahl seiner Folgeereignisse; „Alle Ereignisse“ bzw. der Filter nach Zustand zeigt auch die
   blockierten. Aktionen: Erneut versuchen (nur das erste Ereignis eines Objekts, mit allen Versuchen) und
@@ -302,6 +303,37 @@ Dieselben Eingriffe gibt es auf der Kommandozeile (`manage.py events_dispatch --
 
 Ereignisse, die ein Auftrag veröffentlicht, tragen die Kennung des Auftrags als Korrelations-ID und
 `system:<auftrag>` als Auslöser; so findet man im Journal, was ein Auftrag ausgelöst hat.
+
+### Nachspielen und Aufräumen des Journals (Issue #511)
+
+**Nachspielen** (`manage.py events_dispatch --replay <abonnement> --from-seq N` bzw. `--since 2026-10-01T00:00`,
+im Admin „Nachspielen“): setzt den Cursor auf N − 1 zurück, auch im Schattenbetrieb und pausiert, und hebt
+geparkte Ereignisse des Abonnements ab N auf. Zugestellt wird im laufenden Worker in Folgenummer-Reihenfolge;
+was weiter scheitert, wird neu geparkt. Ein laufender Batch eines externen Ziels verwirft sein Ergebnis, eine
+Datenbank-Sicht wartet auf die Zeilensperre. Ein zweiter Aufruf mit derselben Folgenummer ändert nichts.
+Liegt N im aufgeräumten Teil, weist der Befehl darauf hin; nachgespielt wird, was das Journal noch enthält.
+Ablauf für eine Datenbank-Sicht: Abonnement pausieren, Sicht leeren, nachspielen ab 1 (solange das Journal
+nicht aufgeräumt ist, sonst Vollaufbau der Sicht), fortsetzen, Rückstand (`mandari_events_lag_seconds`) beobachten.
+
+**Aufräumen** (`manage.py events_purge`, Probelauf mit `--dry-run`): löscht Zeilen des Journals, die vor
+`EVENTS_JOURNAL_RETENTION_DAYS` (Standard 90, nie kürzer als `OPARL_CHANGES_RETENTION_DAYS`) Tagen erfasst
+wurden, ab Tagesbeginn in UTC. Es löscht nie über den kleinsten Cursor eines Abonnements hinaus (auch pausiert
+und im Schatten), nie das neueste Ereignis, keine geparkten und keine unnummerierten Zeilen. Die Ausgabe nennt
+die Grenze und was sie setzt (Frist, ein Abonnement, das neueste Ereignis). Bleibt ein pausiertes oder
+verwaistes Abonnement lange stehen, hält es das Aufräumen auf: In der Ausgabe steht es als Grenze, dann
+fortsetzen oder (nach Prüfung) die Zeile des Abonnements löschen. Gelöscht wird in Stapeln (`--batch`, Standard
+5000 Zeilen je Transaktion, `--pause` zwischen den Stapeln); jedes Aufräumen steht in `events_pruning`, das
+der Änderungsfeed für seine `410`-Prüfung liest. Beendete Aufträge räumt der Zeitplan `auftraege_aufraeumen`
+täglich (erledigte nach `EVENTS_TASKS_DONE_RETENTION_DAYS`, Standard 14, tote und fehlgeschlagene nach
+`EVENTS_TASKS_DEAD_RETENTION_DAYS`, Standard 90 Tagen); `events_purge --nur auftraege` tut dasselbe von Hand.
+
+Das Journal räumt der Zeitplan `befehl:events_purge` täglich um 04:10 Uhr nur mit
+`EVENTS_JOURNAL_PURGE_ENABLED=true` (Standard aus). Ein Lauf hört nach 50 Minuten auf, der nächste setzt fort.
+Einschalten gestuft: erst `events_purge --dry-run` (Grenze und Anzahl plausibel?), dann ein Lauf von Hand mit
+`--max-seconds 600 --pause 0.2` und Blick auf Datenbanklast und Rückstand der Abonnements, dann der Schalter.
+Messen: Ausgabe des Laufs im Protokoll des Workers (`Journal aufgeräumt: … Zeilen`), Größe von
+`events_event`, `select max(through_seq), max(recorded_before) from events_pruning`. Rückweg: Schalter aus
+oder `EVENTS_SCHEDULES_DISABLED=befehl:events_purge`; Gelöschtes kommt nur aus der Sicherung zurück.
 
 ### Worker für die Statusseite (Issue #574)
 

@@ -52,3 +52,11 @@ def horizon() -> Horizon | None:
     if stand["seq"] is None or stand["before"] is None:
         return None
     return Horizon(through_seq=int(stand["seq"]), recorded_before=stand["before"])
+
+
+def pruned_through(seq: int) -> int | None:
+    """Kann die Folgenummer ``seq`` aufgeräumt sein? Dann die höchste aufgeräumte Folgenummer, sonst ``None``."""
+    stand = horizon()
+    if stand is None or seq > stand.through_seq:
+        return None
+    return stand.through_seq
