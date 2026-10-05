@@ -21,6 +21,7 @@ einmal (``protocol_sent_at``, vor dem Senden in der Datenbank beansprucht). Der 
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -138,6 +139,53 @@ def send_protocol(meeting: Any) -> int:
     return sent
 
 
+def _due_window(organization: Any, settings: dict[str, Any], now: datetime) -> Any:
+    """
+    Sitzungen der Organisation, deren Protokoll im Fenster ``[Einschalten, jetzt]`` fällig wird.
+
+    Gefiltert wird in der Datenbank: fällig = Bezugszeitpunkt + Verzögerung, also Bezugszeitpunkt zwischen
+    Einschalten minus Verzögerung und jetzt minus Verzögerung. Ältere Sitzungen (vor dem Einschalten)
+    bekommen nie ``protocol_sent_at`` und würden sonst bei jedem Lauf erneut geladen.
+    """
+    from django.db.models.functions import Coalesce
+
+    from .models import FactionMeeting
+
+    since = settings["protocol_dispatch_since"]
+    if since is None:
+        return FactionMeeting.objects.none()
+    delay = timedelta(hours=settings["protocol_dispatch_delay_hours"])
+    meetings = FactionMeeting.objects.filter(
+        organization=organization, status="completed", protocol_sent_at__isnull=True
+    )
+    if settings["protocol_dispatch"] == "after_completion":
+        return meetings.annotate(versand_bezug=Coalesce("end", "start")).filter(
+            versand_bezug__gte=since - delay, versand_bezug__lte=now - delay
+        )
+    if settings["protocol_dispatch"] == "after_approval":
+        return meetings.filter(
+            protocol_approved=True,
+            protocol_approved_at__gte=since - delay,
+            protocol_approved_at__lte=now - delay,
+        )
+    return FactionMeeting.objects.none()
+
+
+def _candidates(now: datetime) -> Iterator[tuple[Any, dict[str, Any]]]:
+    """Kandidaten je eingeschalteter Organisation, mit deren Einstellungen."""
+    from apps.tenants.models import Organization
+
+    organizations = Organization.objects.filter(
+        is_active=True,
+        settings__faction__protocol_dispatch__in=["after_completion", "after_approval"],
+    )
+    for organization in organizations:
+        settings = get_protocol_dispatch_settings(organization)
+        for meeting in _due_window(organization, settings, now):
+            meeting.organization = organization
+            yield meeting, settings
+
+
 def run_faction_protocol_pass(now: datetime | None = None) -> dict[str, Any]:
     """
     Periodischer Protokollversand (Zeitplan ``fraktionsprotokolle_versenden``).
@@ -160,15 +208,7 @@ def run_faction_protocol_pass(now: datetime | None = None) -> dict[str, Any]:
 
     try:
         stats = {"meetings": 0, "sent": 0}
-        meetings = FactionMeeting.objects.filter(
-            status="completed",
-            protocol_sent_at__isnull=True,
-            organization__is_active=True,
-            organization__settings__faction__protocol_dispatch__in=["after_completion", "after_approval"],
-        ).select_related("organization")
-
-        for meeting in meetings:
-            settings = get_protocol_dispatch_settings(meeting.organization)
+        for meeting, settings in _candidates(now):
             due_at = protocol_due_at(meeting, settings)
             since = settings["protocol_dispatch_since"]
             if due_at is None or due_at > now or since is None or due_at < since:

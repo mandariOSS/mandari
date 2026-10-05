@@ -2025,9 +2025,12 @@ def update_schedule_automation(
     from apps.work.faction.models import FactionMeeting
 
     schedule = _schedule(organization, schedule_id)
-    for name, value in _parse_automation(data).items():
+    automation = _parse_automation(data)
+    for name, value in automation.items():
         setattr(schedule, name, value)
-    schedule.save()
+    # Nur die Automatik-Felder schreiben: Ein gleichzeitiger Erzeugungslauf rückt generated_until vor;
+    # ein volles save() schriebe den alten Stand zurück und gelöschte Termine kämen wieder
+    schedule.save(update_fields=list(automation))
     updated = 0
     for meeting in FactionMeeting.objects.filter(
         schedule=schedule,
@@ -2052,7 +2055,8 @@ def toggle_schedule(organization: Organization, schedule_id: Any) -> FactionMeet
     """Sitzungsreihe pausieren/aktivieren."""
     schedule = _schedule(organization, schedule_id)
     schedule.is_active = not schedule.is_active
-    schedule.save()
+    # Nur den Schalter schreiben (generated_until gehört dem Erzeugungslauf, siehe update_schedule_automation)
+    schedule.save(update_fields=["is_active"])
     return schedule
 
 

@@ -3,9 +3,10 @@
 Auswahlfeld. Optionen kommen aus dem gebundenen Django-Feld (field.field.choices) oder aus dem Slot.
   <c-form.select :field="form.role" label="Rolle" placeholder="Bitte wählen" required />
   <c-form.select name="sort" label="Sortierung"><option value="date">Datum</option></c-form.select>
+  id="…" (optional) setzt die ID, wenn derselbe Name mehrfach auf der Seite steht (sonst id_<name>).
 {% endcomment %}
-<c-vars field="" name="" label="" placeholder="" help="" required="" autofocus="" class="" />
-{% with fname=field.name|default:name %}{% with auto_id="id_"|add:fname %}{% firstof field.id_for_label auto_id as fid %}
+<c-vars field="" name="" id="" label="" placeholder="" help="" required="" autofocus="" class="" />
+{% with fname=field.name|default:name %}{% with auto_id="id_"|add:fname %}{% firstof id field.id_for_label auto_id as fid %}
 <div class="{{ class }}" {{ attrs }}>
     {% if label %}
     <label for="{{ fid }}" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

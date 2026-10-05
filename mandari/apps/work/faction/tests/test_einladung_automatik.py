@@ -353,3 +353,115 @@ def test_erinnerung_ohne_zusagen_geht_an_alle_eingeladenen(org: Any, make_member
     empfaenger = sorted(m.to[0] for m in mail.outbox)
     # Ohne Rückmeldungen: alle Eingeladenen außer Absagen; mit Rückmeldungen nur Zusagen (hier keine)
     assert empfaenger == [eingeladen.user.email]
+
+
+# =============================================================================
+# Deaktivierte Mitglieder bekommen weder Einladung noch Erinnerung
+# =============================================================================
+
+
+def _deaktivieren(membership: Any) -> None:
+    """Wie ``deactivate_member``: Die Teilnahmen an schon angelegten Sitzungen bleiben stehen."""
+    membership.is_active = False
+    membership.save(update_fields=["is_active"])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("rsvp_enabled", [False, True])
+def test_erinnerung_nicht_an_deaktivierte_mitglieder(org: Any, make_member: Any, rsvp_enabled: bool) -> None:
+    from apps.work.notifications.models import Notification
+
+    aktiv = make_member(org, ["faction.view_public"], email="aktiv@example.org")
+    ausgeschieden = make_member(org, ["faction.view_public"], email="ausgeschieden@example.org")
+    meeting = _meeting(
+        org, invitation_sent=True, rsvp_enabled=rsvp_enabled, video_link="https://video.example.org/raum"
+    )
+    if rsvp_enabled:
+        FactionAttendance.objects.filter(meeting=meeting).update(status="confirmed")
+    _deaktivieren(ausgeschieden)
+
+    mail.outbox = []
+    run_faction_reminder_pass(now=MONTAG_18 - timedelta(hours=24))
+
+    assert [m.to for m in mail.outbox] == [[aktiv.user.email]]
+    assert not Notification.objects.filter(recipient=ausgeschieden).exists()
+    assert Notification.objects.filter(recipient=aktiv).count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("update", [False, True])
+def test_einladung_nicht_an_deaktivierte_mitglieder(org: Any, make_member: Any, update: bool) -> None:
+    from apps.work.notifications.models import Notification
+
+    aktiv = make_member(org, ["faction.view_public"], email="aktiv@example.org")
+    ausgeschieden = make_member(org, ["faction.view_public"], email="ausgeschieden@example.org")
+    meeting = _meeting(org)
+    _top(meeting, "Haushalt 2027", 1)
+    _deaktivieren(ausgeschieden)
+
+    mail.outbox = []
+    dispatch_invitations(meeting, update=update)
+
+    assert [m.to for m in mail.outbox] == [[aktiv.user.email]]
+    assert not Notification.objects.filter(recipient=ausgeschieden).exists()
+    assert Notification.objects.filter(recipient=aktiv).count() == 1
+
+
+# =============================================================================
+# Hängender Anspruch auf den Erstversand (Prozess beendet)
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_erstversand_merkt_sich_den_anspruch(org: Any, make_member: Any) -> None:
+    make_member(org, ["faction.view_public"], email="mitglied@example.org")
+    meeting = _meeting(org)
+    jetzt = MONTAG_18 - timedelta(hours=24)
+
+    assert dispatch_invitations_once(meeting, now=jetzt) == 1
+
+    meeting.refresh_from_db()
+    assert meeting.invitation_claimed_at == jetzt
+    assert meeting.invitation_sent_at is not None
+
+
+@pytest.mark.django_db
+def test_haengender_anspruch_wird_nach_frist_freigegeben_und_erneut_versendet(org: Any, make_member: Any) -> None:
+    mitglied = make_member(org, ["faction.view_public"], email="mitglied@example.org")
+    meeting = _meeting(org)
+    jetzt = MONTAG_18 - timedelta(hours=24)
+    # Prozess nach dem Anspruch beendet: versandt markiert, aber nie abgeschlossen
+    FactionMeeting.objects.filter(pk=meeting.pk).update(
+        invitation_sent=True, invitation_claimed_at=jetzt - timedelta(minutes=31)
+    )
+
+    mail.outbox = []
+    stats = run_faction_invitation_pass(now=jetzt)
+
+    meeting.refresh_from_db()
+    assert stats["released_claims"] == 1
+    assert stats["dispatched"] == 1
+    assert [m.to for m in mail.outbox] == [[mitglied.user.email]]
+    assert meeting.invitation_sent is True
+    assert meeting.invitation_sent_at is not None
+    assert meeting.status == "invited"
+
+
+@pytest.mark.django_db
+def test_junger_oder_alter_anspruch_ohne_zeitpunkt_bleibt_stehen(org: Any, make_member: Any) -> None:
+    make_member(org, ["faction.view_public"], email="mitglied@example.org")
+    laeuft = _meeting(org)
+    altbestand = _meeting(org)
+    jetzt = MONTAG_18 - timedelta(hours=24)
+    # Ein Versand läuft gerade noch; ein Anspruch aus einer Version ohne Zeitpunkt wird nicht angefasst
+    FactionMeeting.objects.filter(pk=laeuft.pk).update(
+        invitation_sent=True, invitation_claimed_at=jetzt - timedelta(minutes=29)
+    )
+    FactionMeeting.objects.filter(pk=altbestand.pk).update(invitation_sent=True)
+
+    mail.outbox = []
+    stats = run_faction_invitation_pass(now=jetzt)
+
+    assert stats["released_claims"] == 0
+    assert mail.outbox == []
+    assert set(FactionMeeting.objects.values_list("invitation_sent", flat=True)) == {True}

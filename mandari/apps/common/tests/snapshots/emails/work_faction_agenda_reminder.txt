@@ -16,7 +16,7 @@ Ort: Rathaus, Raum 204
 
 TOP 1 Haushalt 2027
 TOP 2 Antrag Radwegkonzept
-NÖ 1 Personalie Geschäftsstelle (nichtöffentlich)
+TOP NÖ 1 Personalie Geschäftsstelle (nichtöffentlich)
 
 [Tagesordnungspunkt eintragen](https://mandari.example/work/fraktion-test/faction/00000000-0000-0000-0000-000000000501/)
 

@@ -27,6 +27,18 @@ _REMINDER_LOCK_KEY = "faction:reminder:lock"
 _REMINDER_LOCK_TIMEOUT = 10 * 60
 
 
+def invitation_attendances(meeting, *, update: bool = False):
+    """
+    Teilnahmen, an die eine Einladung geht (Mail und In-App): Erstversand an alle Eingeladenen,
+    Aktualisierung an alle außer Absagen – jeweils nur aktive Mitglieder. Beim Deaktivieren bleiben
+    die Teilnahmen an schon angelegten Sitzungen stehen; sie dürfen keine Einladung mehr auslösen.
+    """
+    attendances = meeting.attendances.filter(membership__isnull=False, membership__is_active=True)
+    if update:
+        return attendances.exclude(status="declined")
+    return attendances.filter(status="invited")
+
+
 class FactionMeetingEmailService:
     """
     Service for sending faction meeting emails (Issue #59).
@@ -129,10 +141,7 @@ class FactionMeetingEmailService:
 
         Returns the count of successfully sent emails.
         """
-        if update:
-            attendances = meeting.attendances.filter(membership__isnull=False).exclude(status="declined")
-        else:
-            attendances = meeting.attendances.filter(status="invited", membership__isnull=False)
+        attendances = invitation_attendances(meeting, update=update)
 
         # Gastzugänge (nur freigegebene Dokumente) erhalten keine Einladungen zu Fraktionssitzungen
         attendances = attendances.exclude(membership__is_guest=True).select_related("membership__user")
@@ -318,12 +327,12 @@ class FactionMeetingEmailService:
 
         Returns the count of successfully sent emails.
         """
+        # Nur aktive Mitglieder: Teilnahmen an schon angelegten Sitzungen bleiben beim Deaktivieren stehen
+        active = meeting.attendances.filter(membership__isnull=False, membership__is_active=True)
         if meeting.rsvp_enabled:
-            recipients = meeting.attendances.filter(status__in=["confirmed", "tentative"], membership__isnull=False)
+            recipients = active.filter(status__in=["confirmed", "tentative"])
         else:
-            recipients = meeting.attendances.filter(membership__isnull=False, membership__is_guest=False).exclude(
-                status__in=["declined", "absent", "excused"]
-            )
+            recipients = active.filter(membership__is_guest=False).exclude(status__in=["declined", "absent", "excused"])
         attendances = list(recipients.select_related("membership__user"))
         sent_count = 0
 

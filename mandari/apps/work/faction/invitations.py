@@ -33,7 +33,9 @@ Automatik der Reihe (Issue #871):
   die TOPs eintragen oder vorschlagen dürfen, eine einstellbare Zahl Stunden vor dem geplanten Versand.
 - **Genau einmal:** Erinnerung und Erstversand werden vor dem Senden in der Datenbank beansprucht
   (bedingtes UPDATE); ein zweiter Lauf oder Worker findet nichts mehr. Scheitert der Versand als
-  Ganzes, wird der Anspruch zurückgegeben und der nächste Lauf versucht es erneut.
+  Ganzes, wird der Anspruch zurückgegeben und der nächste Lauf versucht es erneut. Wird der Prozess
+  mitten im Erstversand beendet, gibt der Einladungslauf den hängenden Anspruch nach
+  ``INVITATION_CLAIM_STALE_MINUTES`` frei (mit Warnung im Log) und versendet erneut.
 """
 
 import logging
@@ -71,6 +73,9 @@ RELEASE_NOTICE_FINAL_HOURS = 3
 
 # TOP-Erinnerung höchstens zwei Wochen vor dem geplanten Versand
 AGENDA_REMINDER_MAX_HOURS = 24 * 14
+
+# Ein Anspruch auf den Erstversand, der so lange nicht abgeschlossen ist, gilt als hängend (Prozess beendet)
+INVITATION_CLAIM_STALE_MINUTES = 30
 
 
 # =============================================================================
@@ -232,7 +237,7 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
     Returns:
         Anzahl versendeter E-Mails.
     """
-    from .services import FactionMeetingEmailService
+    from .services import FactionMeetingEmailService, invitation_attendances
 
     settings = get_invitation_settings(meeting.organization)
     service = FactionMeetingEmailService()
@@ -247,7 +252,7 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
         # Opt-out: alle eingeladenen Mitglieder gelten als angemeldet – nur mit Zu- und Absagen
         # (Issue #871); ohne sie bleibt die Teilnahme offen, bis die Anwesenheit erfasst wird
         if settings["invitation_mode"] == "opt_out" and meeting.rsvp_enabled:
-            for attendance in meeting.attendances.filter(status="invited", membership__isnull=False):
+            for attendance in invitation_attendances(meeting):
                 attendance.status = "confirmed"
                 attendance.save(update_fields=["status", "updated_at"])
 
@@ -260,24 +265,70 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
     return sent_count
 
 
-def dispatch_invitations_once(meeting) -> int | None:
+def dispatch_invitations_once(meeting, now=None) -> int | None:
     """
     Erstversand genau einmal (Issue #871): beansprucht den Versand vor dem Senden in der Datenbank.
+
+    Der Anspruch trägt seinen Zeitpunkt (``invitation_claimed_at``). Endet der Prozess zwischen Anspruch
+    und Abschluss, gibt der Einladungslauf ihn nach ``INVITATION_CLAIM_STALE_MINUTES`` frei.
 
     Returns:
         Anzahl versendeter E-Mails, ``None`` wenn schon ein anderer Lauf oder Klick verschickt hat.
     """
     from .models import FactionMeeting
 
-    claimed = FactionMeeting.objects.filter(pk=meeting.pk, invitation_sent=False).update(invitation_sent=True)
+    claimed = FactionMeeting.objects.filter(pk=meeting.pk, invitation_sent=False).update(
+        invitation_sent=True, invitation_claimed_at=now or timezone.now()
+    )
     if not claimed:
         return None
     try:
         return dispatch_invitations(meeting)
     except Exception:
         # Versand als Ganzes gescheitert (z. B. PDF): Anspruch zurückgeben, der nächste Lauf versucht es erneut
-        FactionMeeting.objects.filter(pk=meeting.pk, invitation_sent_at__isnull=True).update(invitation_sent=False)
+        FactionMeeting.objects.filter(pk=meeting.pk, invitation_sent_at__isnull=True).update(
+            invitation_sent=False, invitation_claimed_at=None
+        )
         raise
+
+
+def release_stale_invitation_claims(now) -> int:
+    """
+    Hängende Ansprüche auf den Erstversand freigeben (Issue #871).
+
+    Hängend heißt: beansprucht vor mehr als ``INVITATION_CLAIM_STALE_MINUTES`` Minuten, aber nie
+    abgeschlossen (``invitation_sent_at`` leer, Status noch „Entwurf“ oder „Geplant“) – der Prozess
+    wurde etwa beim Deploy oder wegen Speichermangels beendet. Ohne Freigabe bliebe die Sitzung ohne
+    Einladung stehen, weil der Lauf nur unversandte Sitzungen betrachtet. Nach der Freigabe versendet
+    der Lauf erneut an alle Eingeladenen; wer vor dem Abbruch schon eine Mail bekam, erhält sie doppelt.
+    Ansprüche aus Versionen vor diesem Feld (``invitation_claimed_at`` leer) bleiben unberührt.
+
+    Returns:
+        Anzahl freigegebener Ansprüche.
+    """
+    from .models import FactionMeeting
+
+    stale = FactionMeeting.objects.filter(
+        invitation_sent=True,
+        invitation_sent_at__isnull=True,
+        invitation_claimed_at__lt=now - timedelta(minutes=INVITATION_CLAIM_STALE_MINUTES),
+        status__in=["draft", "planned"],
+        start__gt=now,
+    )
+    released = 0
+    for meeting_id, claimed_at in stale.values_list("pk", "invitation_claimed_at"):
+        # Bedingt: nur genau diesen Anspruch zurückgeben, falls der Versand doch noch abschließt
+        if FactionMeeting.objects.filter(
+            pk=meeting_id, invitation_sent_at__isnull=True, invitation_claimed_at=claimed_at
+        ).update(invitation_sent=False, invitation_claimed_at=None):
+            logger.warning(
+                "Einladungsversand nicht abgeschlossen (meeting=%s, beansprucht %s): Anspruch freigegeben, "
+                "der Lauf versendet erneut",
+                meeting_id,
+                claimed_at.isoformat(),
+            )
+            released += 1
+    return released
 
 
 def _claim_timestamp(meeting, field: str, now) -> bool:
@@ -383,10 +434,9 @@ def _notify_invitations(meeting, *, update: bool) -> None:
         from apps.work.notifications.models import NotificationType
         from apps.work.notifications.services import NotificationHub
 
-        if update:
-            attendances = meeting.attendances.filter(membership__isnull=False).exclude(status="declined")
-        else:
-            attendances = meeting.attendances.filter(status="invited", membership__isnull=False)
+        from .services import invitation_attendances
+
+        attendances = invitation_attendances(meeting, update=update)
         recipients = [a.membership for a in attendances.select_related("membership__user")]
         if not recipients:
             return
@@ -557,7 +607,13 @@ def run_faction_invitation_pass(now=None) -> dict:
         return {"skipped": "lock"}
 
     try:
-        stats = {"meetings": 0, "dispatched": 0, "notices": 0, "agenda_reminders": 0}
+        stats = {
+            "meetings": 0,
+            "dispatched": 0,
+            "notices": 0,
+            "agenda_reminders": 0,
+            "released_claims": release_stale_invitation_claims(now),
+        }
         meetings = FactionMeeting.objects.filter(
             status__in=["draft", "planned"],
             invitation_sent=False,
@@ -587,7 +643,7 @@ def run_faction_invitation_pass(now=None) -> dict:
             if dispatches_automatically(meeting, settings):
                 if now >= dispatch_at:
                     try:
-                        sent_count = dispatch_invitations_once(meeting)
+                        sent_count = dispatch_invitations_once(meeting, now=now)
                     except Exception:
                         logger.exception("Automatischer Einladungsversand fehlgeschlagen (meeting=%s)", meeting.id)
                         continue

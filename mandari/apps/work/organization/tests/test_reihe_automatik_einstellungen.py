@@ -163,3 +163,62 @@ def test_organisationseinstellungen_fuer_erinnerung_und_protokollversand(
     assert faction["protocol_dispatch"] == "after_approval"
     assert faction["protocol_dispatch_delay_hours"] == 12
     assert faction["protocol_dispatch_since"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("aktion", ["automatik", "pausieren"])
+def test_einstellungen_schreiben_den_erzeugt_bis_stand_nicht_zurueck(
+    org: Any, reihe: FactionMeetingSchedule, monkeypatch: pytest.MonkeyPatch, aktion: str
+) -> None:
+    from datetime import date
+
+    from apps.work.organization import services
+
+    FactionMeetingSchedule.objects.filter(pk=reihe.pk).update(generated_until=date(2026, 11, 30))
+    veraltet = FactionMeetingSchedule.objects.get(pk=reihe.pk)
+    # Der Erzeugungslauf rückt den Stand vor, während das Formular noch mit dem alten Objekt arbeitet
+    FactionMeetingSchedule.objects.filter(pk=reihe.pk).update(generated_until=date(2026, 12, 28))
+    monkeypatch.setattr(services, "_schedule", lambda organization, schedule_id: veraltet)
+
+    if aktion == "automatik":
+        services.update_schedule_automation(org, reihe.id, services.ScheduleAutomationInput(rsvp_enabled=True))
+    else:
+        services.toggle_schedule(org, reihe.id)
+
+    reihe.refresh_from_db()
+    assert reihe.generated_until == date(2026, 12, 28)
+    if aktion == "automatik":
+        assert reihe.rsvp_enabled is True
+    else:
+        assert reihe.is_active is False
+
+
+@pytest.mark.django_db
+def test_automatik_formular_je_reihe_mit_eigenen_feldern_und_stand(
+    org: Any, manager: Any, client_for: Any, reihe: FactionMeetingSchedule
+) -> None:
+    import re
+
+    zweite = FactionMeetingSchedule.objects.create(
+        organization=org,
+        name="Zweite Reihe",
+        weekday=2,
+        time=time(18, 0),
+        rsvp_enabled=True,
+        auto_invite=True,
+        auto_invite_weekday=4,
+        auto_invite_time=time(17, 30),
+    )
+
+    html = client_for(manager.user).get(settings_url(org)).content.decode()
+
+    for key in (reihe.id, zweite.id, "neu"):
+        for feld in ("rsvp_enabled", "auto_invite", "auto_invite_weekday", "auto_invite_time"):
+            assert html.count(f'id="{feld}_{key}"') == 1, (feld, key)
+            assert f'for="{feld}_{key}"' in html, (feld, key)
+    assert re.search(rf'name="rsvp_enabled" id="rsvp_enabled_{zweite.id}"\s+checked', html)
+    assert re.search(rf'name="auto_invite" id="auto_invite_{zweite.id}"\s+checked', html)
+    assert not re.search(rf'name="rsvp_enabled" id="rsvp_enabled_{reihe.id}"\s+checked', html)
+    assert not re.search(r'name="rsvp_enabled" id="rsvp_enabled_neu"\s+checked', html)
+    assert '<option value="4" selected>Freitag</option>' in html
+    assert re.search(rf'name="auto_invite_time" id="auto_invite_time_{zweite.id}"\s+value="17:30"', html)

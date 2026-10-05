@@ -381,6 +381,9 @@ class FactionMeeting(EncryptionMixin, models.Model):
     # Automatik (Issue #871): Erinnerung zum Eintragen von TOPs und Protokollversand je Sitzung höchstens einmal
     agenda_reminder_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="TOP-Erinnerung versandt am")
     protocol_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Protokoll versandt am")
+    # Erstversand beansprucht am (Issue #871): Bleibt ein Anspruch ohne ``invitation_sent_at`` hängen
+    # (Prozess beendet), gibt ihn der Einladungslauf nach einer Frist frei und versendet erneut.
+    invitation_claimed_at = models.DateTimeField(blank=True, null=True, verbose_name="Einladungsversand beansprucht am")
 
     # Teilnahme-Workflow (Issue #67): Nach der Sitzung bestätigt der
     # Vorstand (Vorsitz/stellv. Vorsitz) die Teilnahmen final — mit

@@ -3,10 +3,11 @@
 Formularfeld (Label, Eingabe, Hilfetext, Fehler) für gebundene Django-Felder oder freie Felder.
   <c-form.field :field="form.email" label="E-Mail-Adresse" type="email" placeholder="…" autocomplete="email" autofocus required />
   <c-form.field name="remember" label="…" />  (ohne gebundenes Feld)
+  id="…" (optional) setzt die ID, wenn derselbe Name mehrfach auf der Seite steht (sonst id_<name>).
 Fehler werden dem Eingabefeld per aria-describedby und aria-invalid zugeordnet.
 {% endcomment %}
-<c-vars field="" name="" label="" type="text" value="" placeholder="" help="" autocomplete="" required="" autofocus="" class="" />
-{% with fname=field.name|default:name %}{% with auto_id="id_"|add:fname %}{% firstof field.id_for_label auto_id as fid %}
+<c-vars field="" name="" id="" label="" type="text" value="" placeholder="" help="" autocomplete="" required="" autofocus="" class="" />
+{% with fname=field.name|default:name %}{% with auto_id="id_"|add:fname %}{% firstof id field.id_for_label auto_id as fid %}
 <div class="{{ class }}" {{ attrs }}>
     {% if label %}
     <label for="{{ fid }}" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

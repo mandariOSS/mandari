@@ -2,11 +2,11 @@
 {# Kontext: faction_settings #}
 <c-ui.card>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Erinnerung und Protokollversand</h3>
-    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-        Beides ist standardmäßig aus. Die Mails gehen über den E-Mail-Versand der Organisation, je Sitzung höchstens einmal.
-    </p>
-
     <div class="space-y-6">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+            Beides ist standardmäßig aus. Die Mails gehen über den E-Mail-Versand der Organisation, je Sitzung höchstens einmal.
+        </p>
+
         <div class="space-y-3">
             <c-form.checkbox name="agenda_reminder_enabled" label="Erinnerung zum Eintragen von TOPs senden"
                              :checked="faction_settings.agenda_reminder_enabled" />

@@ -8,7 +8,8 @@ weiter Sitzungen und Reihen anlegen kann):
 - Reihe: ``rsvp_enabled`` (Zu- und Absagen), ``auto_invite`` mit Wochentag und Uhrzeit (automatische
   Einladung zum festen Zeitpunkt), ``generated_until`` (bis wohin die Reihe Termine angelegt hat).
 - Sitzung: ``rsvp_enabled``, ``agenda_reminder_sent_at`` (Erinnerung zum Eintragen von TOPs),
-  ``protocol_sent_at`` (automatischer Protokollversand).
+  ``protocol_sent_at`` (automatischer Protokollversand), ``invitation_claimed_at`` (Erstversand
+  beansprucht; hängende Ansprüche gibt der Einladungslauf nach einer Frist frei).
 - Änderungshistorie: zwei neue Aktionen (nur Auswahlliste, keine Schemaänderung).
 
 Bestand (Entscheidung vom 05.10.2026: Zu- und Absagen sind auch für bestehende Organisationen und Reihen
@@ -55,6 +56,11 @@ class Migration(migrations.Migration):
             model_name="factionmeeting",
             name="agenda_reminder_sent_at",
             field=models.DateTimeField(blank=True, null=True, verbose_name="TOP-Erinnerung versandt am"),
+        ),
+        migrations.AddField(
+            model_name="factionmeeting",
+            name="invitation_claimed_at",
+            field=models.DateTimeField(blank=True, null=True, verbose_name="Einladungsversand beansprucht am"),
         ),
         migrations.AddField(
             model_name="factionmeeting",
