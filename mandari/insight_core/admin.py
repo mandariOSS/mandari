@@ -213,9 +213,12 @@ class OParlSourceAdmin(ModelAdmin):
     def scraper_status_display(self, obj):
         """
         Zustand einer Scraper-Quelle (aus sync_config["scraper_state"]):
-        letzter Lauf, Parse-Quote, robots.txt-Sperre.
+        letzter Lauf, Parse-Quote, robots.txt-Sperre; dazu Lücken des Laufs und eine
+        greifende Bremse des Löschabgleichs (Issue #556).
         Anlage einer Scraper-Quelle: siehe docs/SCRAPER_SOURCES.md.
         """
+        from .services.source_health import incomplete_types, tombstone_braked
+
         if not obj.is_scraper_source:
             return "— (keine Scraper-Quelle)"
         state = (obj.sync_config or {}).get("scraper_state") or {}
@@ -228,13 +231,21 @@ class OParlSourceAdmin(ModelAdmin):
             return "Noch kein Lauf"
         quota = last_run.get("parse_quota")
         quota_str = f"{quota:.0%}" if isinstance(quota, (int, float)) else "?"
-        return (
+        text = (
             f"Letzter Lauf: {last_run.get('at', '?')} | "
             f"Parse-Quote: {quota_str} | "
             f"gespeichert: {last_run.get('entities_stored', '?')} | "
             f"unverändert: {last_run.get('unchanged_skipped', '?')} | "
             f"Seiten: {last_run.get('pages_fetched', '?')}"
         )
+        hinweise = []
+        if luecken := incomplete_types(last_run):
+            hinweise.append(f"unvollständig: {luecken}")
+        if gebremst := tombstone_braked(last_run):
+            hinweise.append(f"Löschabgleich gebremst: {gebremst}")
+        if not hinweise:
+            return text
+        return format_html("{} | {}", text, status_text("#d97706", " | ".join(hinweise)))
 
     @admin.display(description="Sync-Status")
     def sync_status_display(self, obj):

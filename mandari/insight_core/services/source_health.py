@@ -119,7 +119,31 @@ def scraper_run_findings(source) -> dict:
     if last_run.get("full") and not last_run.get("entities_stored") and not last_run.get("unchanged_skipped"):
         befund["status"] = "critical" if befund["status"] == "critical" else "warning"
         befund["reasons"].append("Voll-Lauf ohne Entitäten-Zufluss: keine Sitzungen/Vorlagen gespeichert oder erkannt")
+    gebremst = tombstone_braked(last_run)
+    if gebremst:
+        # Issue #556: Solange die Bremse greift, ist der Löschabgleich dieses Typs ausgesetzt
+        befund["status"] = "critical" if befund["status"] == "critical" else "warning"
+        befund["reasons"].append(
+            f"Löschabgleich gebremst: {gebremst} – mehr fehlende Objekte als erlaubt, es wird nichts markiert. "
+            "Quelle prüfen; bei echter Massenlöschung SCRAPER_TOMBSTONE_MAX_MISSING vorübergehend anheben"
+        )
     return befund
+
+
+def tombstone_braked(last_run: dict) -> str:
+    """Typen, deren Löschabgleich die Bremse im letzten Scraper-Lauf ausgesetzt hat (``""``: keiner)."""
+    gebremst = last_run.get("tombstone_braked")
+    if not isinstance(gebremst, dict):
+        return ""
+    return ", ".join(f"{typ} ({anzahl} fehlen)" for typ, anzahl in sorted(gebremst.items()))
+
+
+def incomplete_types(last_run: dict) -> str:
+    """Typen, deren Liste der letzte Scraper-Lauf nicht ganz gelesen hat, mit Grund (``""``: keiner)."""
+    luecken = last_run.get("incomplete")
+    if not isinstance(luecken, dict):
+        return ""
+    return ", ".join(f"{typ} ({grund})" for typ, grund in sorted(luecken.items()))
 
 
 def _site_url() -> str:

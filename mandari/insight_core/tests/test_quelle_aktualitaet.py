@@ -75,3 +75,31 @@ def test_liste_der_quellen_zeigt_die_spalte(admin_client: Client) -> None:
     inhalt = antwort.content.decode()
     assert "Vollständig abgeglichen" in inhalt
     assert "vor 2 Tag(en), seither mit Lücken" in inhalt
+
+
+def _scraper_quelle(**last_run: object) -> OParlSource:
+    return OParlSource(
+        name="Quelle",
+        url=URL,
+        sync_config={"source_type": "scraper:sessionnet", "scraper_state": {"last_run": last_run}},
+    )
+
+
+def test_scraper_status_ohne_luecke_ohne_hinweis() -> None:
+    quelle = _scraper_quelle(at="x", parse_quota=1.0, incomplete={}, tombstone_braked={})
+    anzeige = str(_admin().scraper_status_display(quelle))
+    assert anzeige.startswith("Letzter Lauf: x")
+    assert "unvollständig" not in anzeige and "gebremst" not in anzeige
+
+
+def test_scraper_status_nennt_luecken_und_bremse() -> None:
+    """Eine dauerhaft greifende Bremse setzt den Löschabgleich still aus: Der Admin nennt sie."""
+    quelle = _scraper_quelle(
+        at="x",
+        parse_quota=1.0,
+        incomplete={"meeting": "Kalender 09/2026 nicht lesbar"},
+        tombstone_braked={"organization": 11},
+    )
+    anzeige = str(_admin().scraper_status_display(quelle))
+    assert "unvollständig: meeting (Kalender 09/2026 nicht lesbar)" in anzeige
+    assert "Löschabgleich gebremst: organization (11 fehlen)" in anzeige
