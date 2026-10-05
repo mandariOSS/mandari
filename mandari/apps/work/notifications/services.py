@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone
 
 from .models import Notification, NotificationPreference, NotificationType
@@ -124,7 +125,14 @@ class NotificationHub:
         if send_email:
             cls._queue_email(notification)
 
-        logger.info(f"Notification sent: {notification_type} to {recipient.user.email}")
+        # Erst nach dem Commit und ohne Adresse: Eine im Schattenbetrieb zurückgerollte Benachrichtigung
+        # erscheint nicht im Protokoll (Rückrufe eines zurückgerollten Sicherungspunkts verfallen)
+        recipient_id, notification_id = recipient.id, notification.id
+        transaction.on_commit(
+            lambda: logger.info(
+                "Benachrichtigung %s (%s) an Mitgliedschaft %s", notification_id, notification_type, recipient_id
+            )
+        )
 
         # Deputy forwarding: if recipient is absent and has a deputy
         if not _forwarded:
@@ -138,6 +146,7 @@ class NotificationHub:
                 metadata=metadata,
                 event_key=f"{event_key}:vertretung" if event_key else None,
                 direct_since=direct_since,
+                send_email=send_email,
             )
 
         return notification
@@ -155,7 +164,17 @@ class NotificationHub:
 
     @classmethod
     def _forward_to_deputy(
-        cls, recipient, notification_type, title, message, link, actor, metadata, event_key=None, direct_since=None
+        cls,
+        recipient,
+        notification_type,
+        title,
+        message,
+        link,
+        actor,
+        metadata,
+        event_key=None,
+        direct_since=None,
+        send_email=True,
     ):
         """Forward notification to deputy if recipient is currently absent."""
         try:
@@ -187,6 +206,7 @@ class NotificationHub:
                     _forwarded=True,
                     event_key=event_key,
                     direct_since=direct_since,
+                    send_email=send_email,
                 )
         except Exception as e:
             logger.error(f"Failed to forward notification to deputy: {e}")
@@ -378,12 +398,13 @@ class NotificationHub:
         send_email: bool = True,
         direct_since: datetime | None = None,
     ):
-        """Notify task assignee/creator about a new comment."""
+        """Notify task assignee/creator about a new comment (``commenter`` None: nicht mehr zuzuordnen)."""
         recipients = set()
+        commenter_id = commenter.id if commenter is not None else None
 
-        if task.assigned_to and task.assigned_to.id != commenter.id:
+        if task.assigned_to and task.assigned_to.id != commenter_id:
             recipients.add(task.assigned_to)
-        if task.created_by and task.created_by.id != commenter.id:
+        if task.created_by and task.created_by.id != commenter_id:
             recipients.add(task.created_by)
 
         if not recipients:
@@ -416,11 +437,12 @@ class NotificationHub:
         send_email: bool = True,
         direct_since: datetime | None = None,
     ):
-        """Notify creator and assignee when someone else completes a task."""
+        """Notify creator and assignee when someone else completes a task (``completer`` None: unbekannt)."""
         recipients = set()
-        if task.created_by and task.created_by.id != completer.id:
+        completer_id = completer.id if completer is not None else None
+        if task.created_by and task.created_by.id != completer_id:
             recipients.add(task.created_by)
-        if task.assigned_to and task.assigned_to.id != completer.id:
+        if task.assigned_to and task.assigned_to.id != completer_id:
             recipients.add(task.assigned_to)
 
         if not recipients:

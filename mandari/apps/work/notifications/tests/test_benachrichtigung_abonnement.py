@@ -8,6 +8,10 @@ Betrieb der Sequenzierer; hier ``nummerieren`` wie im Test der Zustellung.
 
 from __future__ import annotations
 
+import logging
+import os
+import subprocess
+import sys
 from collections.abc import Iterator
 from typing import Any
 
@@ -243,3 +247,140 @@ def test_umschalten_ohne_doppelte_benachrichtigung(
     assert _zustellen(spec) == 1
     assert len(_benachrichtigungen(zustaendig, NotificationType.TASK_ASSIGNED)) == 1
     assert len(mail.outbox) == 1
+
+
+def test_schalter_aktiv_abonnement_noch_im_schatten(
+    settings: Any, leeres_register: dict[str, Subscriber], org: Any, ersteller: Any, zustaendig: Any
+) -> None:
+    """Anwendung schon aktiv (bisheriger Weg aus), Abonnement in der Datenbank noch im Schatten: keine Lücke."""
+    spec = _abonnement(settings, "schatten")
+    settings.WORK_NOTIFICATION_SUBSCRIPTION = "aktiv"
+    _aufgabe(org, ersteller, zustaendig)
+    assert not Notification.objects.exists()
+
+    assert _zustellen(spec) == 1
+    assert len(_benachrichtigungen(zustaendig, NotificationType.TASK_ASSIGNED)) == 1
+    assert [m.to for m in mail.outbox] == [["zustaendig@example.org"]]
+
+
+@pytest.fixture
+def vertretung(org: Any, make_member: Any, zustaendig: Any) -> Any:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.work.organization.models import MemberAbsence
+
+    vertreterin = make_member(org, ["tasks.view"], email="vertretung@example.org")
+    heute = timezone.now().date()
+    MemberAbsence.objects.create(
+        organization=org,
+        membership=zustaendig,
+        start_date=heute - timedelta(days=1),
+        end_date=heute + timedelta(days=1),
+        deputy=vertreterin,
+        notify_deputy=True,
+    )
+    return vertreterin
+
+
+def test_vertretung_einmal_je_ereignis(
+    settings: Any,
+    leeres_register: dict[str, Subscriber],
+    org: Any,
+    ersteller: Any,
+    zustaendig: Any,
+    vertretung: Any,
+) -> None:
+    spec = _abonnement(settings)
+    _aufgabe(org, ersteller, zustaendig)
+    _zustellen(spec)
+
+    [ereignis] = Event.objects.all()
+    [weitergeleitet] = _benachrichtigungen(vertretung, NotificationType.TASK_ASSIGNED)
+    assert weitergeleitet.title.startswith("[Vertretung]")
+    assert weitergeleitet.event_key == f"{ereignis.event_id}:vertretung:{vertretung.pk}"
+    assert sorted(m.to[0] for m in mail.outbox) == ["vertretung@example.org", "zustaendig@example.org"]
+
+    assert ereignis.seq is not None
+    rewind(abonnement.NAME, ereignis.seq)
+    deliver_batch(spec)
+    assert len(_benachrichtigungen(vertretung, NotificationType.TASK_ASSIGNED)) == 1
+    assert len(mail.outbox) == 2
+
+
+def test_schatten_versendet_auch_an_die_vertretung_nichts(
+    settings: Any,
+    leeres_register: dict[str, Subscriber],
+    org: Any,
+    ersteller: Any,
+    zustaendig: Any,
+    vertretung: Any,
+) -> None:
+    spec = _abonnement(settings, "schatten")
+    _aufgabe(org, ersteller, zustaendig)
+    mails = len(mail.outbox)  # bisheriger Weg: Zuständige und Vertretung
+
+    _zustellen(spec)
+    assert len(mail.outbox) == mails
+    assert Notification.objects.filter(event_key__isnull=False).count() == 0
+
+
+def test_erledigt_ohne_zuordenbaren_ausloeser_benachrichtigt_beide(
+    settings: Any, leeres_register: dict[str, Subscriber], org: Any, ersteller: Any, zustaendig: Any
+) -> None:
+    spec = _abonnement(settings)
+    task = _aufgabe(org, ersteller, zustaendig)
+    services.toggle_completion(task, zustaendig)
+    # Auslöser inzwischen ohne Mitgliedschaft in der Organisation
+    Event.objects.filter(type="work.task.completed").update(actor_ref="user:00000000-0000-4000-8000-000000000001")
+
+    _zustellen(spec)
+    assert len(_benachrichtigungen(ersteller, NotificationType.TASK_COMPLETED)) == 1
+    assert len(_benachrichtigungen(zustaendig, NotificationType.TASK_COMPLETED)) == 1
+
+
+def test_protokoll_ohne_adressen_und_ohne_zurueckgerollte(
+    settings: Any,
+    leeres_register: dict[str, Subscriber],
+    org: Any,
+    ersteller: Any,
+    zustaendig: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    spec = _abonnement(settings, "schatten")
+    _aufgabe(org, ersteller, zustaendig)
+    _zustellen(spec)
+    assert "zustaendig@example.org" not in caplog.text
+    assert "Notification sent" not in caplog.text
+
+
+def test_abonnement_verlangt_auftraege_im_worker() -> None:
+    """Ohne JournalBackend liefe der Mailversand in der Zustelltransaktion: Start verweigert."""
+    from django.conf import settings as django_settings
+
+    umgebung = {**os.environ, "WORK_NOTIFICATION_SUBSCRIPTION": "aktiv", "TASKS_BACKEND": ""}
+    befehl = [sys.executable, "-c", "import mandari.settings"]
+    ohne = subprocess.run(befehl, cwd=django_settings.BASE_DIR, env=umgebung, capture_output=True, text=True)
+    assert ohne.returncode != 0 and "TASKS_BACKEND=journal" in ohne.stderr
+
+    umgebung["TASKS_BACKEND"] = "journal"
+    mit = subprocess.run(befehl, cwd=django_settings.BASE_DIR, env=umgebung, capture_output=True, text=True)
+    assert mit.returncode == 0, mit.stderr[-500:]
+
+
+def test_schluessel_als_teilindex_ohne_tabellensperre() -> None:
+    """Eindeutig nur über gesetzte Schlüssel, ohne _like-Index; Index CONCURRENTLY außerhalb einer Transaktion."""
+    import importlib
+
+    from django.db.models import UniqueConstraint
+
+    feld: Any = Notification._meta.get_field("event_key")
+    assert not feld.unique and not feld.db_index
+    [regel] = [c for c in Notification._meta.constraints if c.name == "uniq_notification_event_key"]
+    assert isinstance(regel, UniqueConstraint) and regel.condition is not None
+    migration = importlib.import_module("apps.work.migrations.0068_benachrichtigung_aus_ereignis")
+    assert migration.Migration.atomic is False
+    assert "CONCURRENTLY" in migration._concurrently.__code__.co_consts
+    assert 'WHERE "event_key" IS NOT NULL' in migration.CREATE_SQL

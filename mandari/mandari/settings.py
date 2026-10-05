@@ -837,6 +837,14 @@ TASKS = {
     }
 }
 
+# Benachrichtigungen als Abonnement (Issue #529) brauchen Aufträge im Worker: Mit dem sofort ausführenden
+# Backend liefe der Mailversand in der Transaktion der Zustellung (ein Rollback nähme die Benachrichtigung
+# zurück, nicht aber die schon versendete Mail).
+if WORK_NOTIFICATION_SUBSCRIPTION != "aus" and TASKS["default"]["BACKEND"] != _TASK_BACKENDS["journal"]:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("WORK_NOTIFICATION_SUBSCRIPTION schatten/aktiv braucht TASKS_BACKEND=journal.")
+
 # =============================================================================
 # Email Configuration
 # =============================================================================

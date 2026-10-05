@@ -17,9 +17,12 @@ die häufigste Quelle von Benachrichtigungen.
 - **Schattenbetrieb:** Die Regel läuft in einem Sicherungspunkt ohne Mail, der wieder zurückgerollt
   wird; verglichen wird mit dem, was der bisherige Weg in der Anfrage angelegt hat
   (``mandari_notification_subscription_total{result="gleich"|"fehlt"}``).
-- **Umschalten ohne Doppel:** Auch im Live-Betrieb legt die Regel keine Benachrichtigung an, die der
-  bisherige Weg kurz zuvor schon angelegt hat (gleicher Empfänger, Typ und Bezug). So ist die Reihenfolge
-  egal, in der Abonnement (Admin) und Anwendung (Schalter) umgestellt werden.
+- **Umschalten ohne Doppel und ohne Lücke:** Auch im Live-Betrieb legt die Regel keine Benachrichtigung an,
+  die der bisherige Weg kurz zuvor schon angelegt hat (gleicher Empfänger, Typ und Bezug). Steht das
+  Abonnement in der Datenbank noch auf ``schatten``, liest der Worker aber schon ``aktiv``, arbeitet der
+  Handler wie aktiv (der bisherige Weg ist dann aus). Maßgeblich ist der Schalter des Workers: Er muss
+  spätestens mit der Anwendung auf ``aktiv`` gehen, sonst vergleicht er nur, während die Anwendung schon
+  nicht mehr benachrichtigt (siehe DEPLOYMENT.md, „Benachrichtigungen als Abonnement“).
 
 Schalter ``WORK_NOTIFICATION_SUBSCRIPTION`` (``aus``, ``schatten``, ``aktiv``), siehe
 ``apps/work/subscribers.py``.
@@ -32,6 +35,7 @@ from collections.abc import Callable, Mapping
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Final
 
+from django.conf import settings
 from django.db import transaction
 from prometheus_client import Counter
 
@@ -87,6 +91,10 @@ def _aufgabe(event: Event) -> Any:
     )
 
 
+def _schalter_aktiv() -> bool:
+    return str(getattr(settings, "WORK_NOTIFICATION_SUBSCRIPTION", "aus")) == "aktiv"
+
+
 def _hub() -> Any:
     from apps.work.notifications.services import NotificationHub
 
@@ -113,11 +121,14 @@ def aufgabe_zugewiesen(event: Event, **optionen: Any) -> list[Any]:
 
 
 def aufgabe_erledigt(event: Event, **optionen: Any) -> list[Any]:
-    """``work.task.completed``: Ersteller:in und Zuständige, außer wer erledigt hat."""
+    """``work.task.completed``: Ersteller:in und Zuständige, außer wer erledigt hat.
+
+    Ist der Auslöser nicht mehr als Mitgliedschaft zuzuordnen, gehen beide Benachrichtigungen raus (wie bisher).
+    """
     task = _aufgabe(event)
-    actor = _actor(event, task.organization_id) if task is not None else None
-    if task is None or actor is None:
+    if task is None:
         return []
+    actor = _actor(event, task.organization_id)
     return list(_hub().notify_task_completed(task, actor, event_key=str(event.event_id), **optionen))
 
 
@@ -133,7 +144,7 @@ def aufgabe_kommentiert(event: Event, **optionen: Any) -> list[Any]:
         .filter(pk=_uuid(event.payload.get("comment")), task=task, activity_type="comment")
         .first()
     )
-    if kommentar is None or kommentar.actor is None:
+    if kommentar is None:
         return []
     return list(_hub().notify_task_comment(task, kommentar, kommentar.actor, event_key=str(event.event_id), **optionen))
 
@@ -168,7 +179,9 @@ def benachrichtigung(events: list[Event], delivery: Delivery) -> None:
         regel = REGELN.get(event.type)
         if regel is None:
             continue
-        if delivery.shadow:
+        # Schalter schon "aktiv", Abonnement in der Datenbank noch im Schatten: Der bisherige Weg ist aus,
+        # vergleichen hieße benachrichtigen fällt aus; direct_since verhindert Doppel aus der Übergangszeit
+        if delivery.shadow and not _schalter_aktiv():
             _vergleichen(event, regel)
             continue
         angelegt = regel(event, direct_since=event.occurred_at - SCHATTEN_FENSTER)

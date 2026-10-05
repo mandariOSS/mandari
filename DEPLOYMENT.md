@@ -655,13 +655,17 @@ mit demselben Idempotenzschlüssel als Auftrag ein (Warteschlange `mail`).
 
 **Einschalten in Stufen:** `schatten` setzen, Anwendung und Worker neu starten, einige Tage beobachten
 (`result="fehlt"` bleibt bei null, `mandari_events_lag_seconds{subscription="benachrichtigung"}` klein).
-Dann umschalten: Das Abonnement steht in der Datenbank auf `schatten`, der Schalter allein ändert das
-nicht. Erst im Admin („Ereignistechnik → Abonnements“) `benachrichtigung` pausieren und „Fortsetzen
-(aktiv)“, danach `WORK_NOTIFICATION_SUBSCRIPTION=aktiv` und Anwendung und Worker neu starten. In dieser
-Reihenfolge entsteht weder eine doppelte noch eine fehlende Benachrichtigung: Das aktive Abonnement
-überspringt, was der bisherige Weg kurz zuvor schon angelegt hat. Voraussetzung: Sequenzierer und
-Zustellung laufen (Worker), am besten mit `TASKS_BACKEND=journal`, damit die Mail nicht in der Zustellung
-versendet wird.
+Dann umschalten: im Admin („Ereignistechnik → Abonnements“) `benachrichtigung` pausieren und
+„Fortsetzen (aktiv)“ (der Schalter allein ändert den Zustand in der Datenbank nicht), danach
+`WORK_NOTIFICATION_SUBSCRIPTION=aktiv` setzen und **erst den Worker, dann die Anwendung** neu starten
+(`docker compose up -d worker` vor `docker compose up -d mandari`). Doppelte Benachrichtigungen entstehen
+dabei nicht: Das aktive Abonnement überspringt, was der bisherige Weg kurz zuvor schon angelegt hat. Liest
+der Worker schon `aktiv`, arbeitet er auch dann wie aktiv, wenn das Abonnement in der Datenbank noch auf
+`schatten` steht. Eine Lücke entsteht nur, wenn die Anwendung schon `aktiv` liest (kein Weg in der
+Anfrage mehr), der Worker aber noch `schatten` – daher die Reihenfolge der Neustarts.
+
+Voraussetzung: Sequenzierer und Zustellung laufen (Worker) und `TASKS_BACKEND=journal`; ohne startet die
+Anwendung mit `schatten` oder `aktiv` nicht (sonst liefe der Mailversand in der Transaktion der Zustellung).
 
 **Rückweg:** `aus` und Neustart; Benachrichtigungen entstehen wieder in der Anfrage. Ereignisse, die das
 Abonnement noch nicht zugestellt hat, bleiben im Journal liegen (ohne Benachrichtigung); vor dem
