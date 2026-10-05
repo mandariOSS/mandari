@@ -10,6 +10,7 @@ der Dateien wird je Block gebündelt aufgelöst (Abfragezähler).
 
 from __future__ import annotations
 
+import importlib
 import math
 import uuid
 from datetime import timedelta
@@ -40,9 +41,8 @@ from insight_search.tests.test_suchindex_abonnement import Kommune, _abonnement,
 
 
 def _sitzung(body: OParlBody, name: str = "Rat", **felder: Any) -> OParlMeeting:
-    return OParlMeeting.objects.create(
-        external_id=f"https://ris.example/meeting/{uuid.uuid4()}", body=body, name=name, start=timezone.now(), **felder
-    )
+    felder.setdefault("external_id", f"https://ris.example/meeting/{uuid.uuid4()}")
+    return OParlMeeting.objects.create(body=body, name=name, start=timezone.now(), **felder)
 
 
 def _beratung(body: OParlBody, vorgang: OParlPaper, sitzung: OParlMeeting | None, **felder: Any) -> OParlConsultation:
@@ -266,8 +266,8 @@ def test_dateien_ohne_abfragen_je_datei(kommune: Kommune, django_assert_max_num_
     erwartet = {pk: file_to_doc(OParlFile.objects.select_related("paper").get(pk=pk)) for pk in kennungen}
     assert all(doc["meeting_name"] and doc["organization_names"] == ["Bauausschuss"] for doc in erwartet.values())
 
-    # Köpfe, Kontext (Beratungen, Sitzungen, ihre Gremien, Punkte), Texte je zehn Dateien
-    with django_assert_max_num_queries(1 + 4 + math.ceil(len(kennungen) / 10)):
+    # Köpfe, Kontext (Beratungen, vorhandene und gewählte Sitzungen, ihre Gremien, Punkte), Texte je zehn Dateien
+    with django_assert_max_num_queries(1 + 5 + math.ceil(len(kennungen) / 10)):
         dokumente = dict(iter_documents("files", kennungen))
 
     assert len(kennungen) == 20
@@ -276,23 +276,119 @@ def test_dateien_ohne_abfragen_je_datei(kommune: Kommune, django_assert_max_num_
 
 @pytest.mark.django_db
 def test_dateikontext_eindeutig_und_ohne_zurueckgenommenes(kommune: Kommune) -> None:
-    """Gleichrangige Beratungen: die kleinste Kennung; Federführung geht vor; Zurückgenommenes zählt nicht."""
+    """
+    Rang der Beratungen, unabhängig vom Zeitpunkt: federführend, dann mit Sitzung im Bestand, dann die
+    kleinste Kennung natürlich sortiert; Zurückgenommenes zählt nicht.
+    """
     body = kommune("Beispielstadt")
     vorgang = _vorgang(body)
-    sitzung_b, sitzung_a = _sitzung(body, name="Sitzung B"), _sitzung(body, name="Sitzung A")
-    # In umgekehrter Reihenfolge angelegt: Die Datenbank liefert B zuerst, die Kennung entscheidet für A
-    _beratung(body, vorgang, sitzung_b, external_id="https://ris.example/consultation/b")
-    _beratung(body, vorgang, sitzung_a, external_id="https://ris.example/consultation/a")
+    sitzung_10, sitzung_9 = _sitzung(body, name="Sitzung 10"), _sitzung(body, name="Sitzung 9")
+    # In umgekehrter Reihenfolge angelegt: Die Datenbank liefert 10 zuerst, als Text käme 10 vor 9
+    _beratung(body, vorgang, sitzung_10, external_id="https://ris.example/consultation/10")
+    _beratung(body, vorgang, sitzung_9, external_id="https://ris.example/consultation/9")
+    # Kleinere Kennung, aber ohne Sitzung bzw. mit einer, die es nicht (mehr) gibt: zählt nach denen mit Sitzung
+    _beratung(body, vorgang, None, external_id="https://ris.example/consultation/1")
+    _beratung(body, vorgang, None, external_id="https://ris.example/consultation/2", meeting_external_id="weg")
     datei = _datei(body, vorgang)
-    assert file_contexts([datei])[datei.pk]["meeting_name"] == "Sitzung A"
+    assert file_contexts([datei])[datei.pk]["meeting_name"] == "Sitzung 9"
 
-    # Von mandari Session zurückgenommen (gelöscht, Kennung der Session-Schnittstelle): zählt nicht
+    # Von mandari Session zurückgenommen (gelöscht, Kennung der Session-Schnittstelle): zählt nicht, ebenso
+    # eine Beratung, deren Sitzung zurückgenommen ist
     session = "https://mandari.example/api/oparl/session/consultation/1"
     zurueckgenommen = _sitzung(body, name="Sitzung Z")
     _beratung(body, vorgang, zurueckgenommen, external_id=session, authoritative=True, deleted=True)
-    assert file_contexts([datei])[datei.pk]["meeting_name"] == "Sitzung A"
+    abgesetzt = _sitzung(
+        body, name="Sitzung S", deleted=True, external_id="https://mandari.example/api/oparl/session/meeting/1"
+    )
+    _beratung(body, vorgang, abgesetzt, external_id="https://ris.example/consultation/3")
+    assert file_contexts([datei])[datei.pk]["meeting_name"] == "Sitzung 9"
 
     federfuehrend = _sitzung(body, name="Sitzung F")
     _beratung(body, vorgang, federfuehrend, external_id="https://ris.example/consultation/z", authoritative=True)
     assert file_contexts([datei])[datei.pk]["meeting_name"] == "Sitzung F"
     assert file_to_doc(OParlFile.objects.get(pk=datei.pk))["meeting_name"] == "Sitzung F"  # einzeln gleich
+
+
+# --- Lange Batches, Migration ---------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_umbenennung_meldet_lebenszeichen_je_paket(
+    settings: Any, leeres_register: dict[str, Subscriber], es: FakeElasticsearch, kommune: Kommune
+) -> None:
+    """Viele abhängige Dokumente: Der Handler meldet je gesendetem Paket ein Lebenszeichen (``Delivery.alive``)."""
+    spec = _abonnement(settings)
+    body = kommune("Beispielstadt")
+    gremium = _gremium(body)
+    sitzung = _sitzung(body)
+    sitzung.organizations.add(gremium)
+    dateien = [_datei(body, None, meeting=sitzung, name=f"Anlage {nummer}") for nummer in range(150)]
+    nutzlast = {"organization": str(gremium.pk), "change": "changed", "changed": ["name"]}
+    _ereignis("ris.organization.changed", gremium, body, payload=nutzlast)
+    schlaege: list[int] = []
+
+    deliver_batch(spec, progress=lambda: schlaege.append(1))
+
+    assert len(es.indizes["schatten-files"].docs) == len(dateien)
+    # nach dem Bestimmen der Ziele und nach jedem vollen Paket (152 Dokumente: ein volles Paket)
+    assert len(schlaege) >= 1 + (len(dateien) + 2) // abonnement.BULK_ACTIONS
+
+
+def test_migration_legt_indizes_ohne_sperre_an() -> None:
+    """``CREATE INDEX CONCURRENTLY`` auf PostgreSQL, ohne Transaktion; ein ungültiger Rest wird ersetzt."""
+    migration = importlib.import_module("insight_core.migrations.0051_beratung_kontext_indizes")
+
+    class Cursor:
+        def __enter__(self) -> Cursor:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, sql: str, parameter: list[str]) -> None:
+            self.name = parameter[0]
+
+        def fetchone(self) -> tuple[bool] | None:
+            # Vom abgebrochenen Lauf übrig: nur der erste Index, und der ist ungültig
+            return (True,) if self.name == "oparl_cons_meeting_ext" else None
+
+    class Verbindung:
+        vendor = "postgresql"
+
+        def cursor(self) -> Cursor:
+            return Cursor()
+
+    class Editor:
+        connection = Verbindung()
+
+        def __init__(self) -> None:
+            self.sql: list[str] = []
+
+        def execute(self, sql: str) -> None:
+            self.sql.append(sql)
+
+    assert migration.Migration.atomic is False
+    vor, zurueck = Editor(), Editor()
+    migration.indizes_anlegen(None, vor)
+    migration.indizes_entfernen(None, zurueck)
+
+    assert vor.sql == [
+        'DROP INDEX CONCURRENTLY IF EXISTS "oparl_cons_meeting_ext"',
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS "oparl_cons_meeting_ext" ON "oparl_consultations" '
+        '("meeting_external_id")',
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS "oparl_cons_agenda_ext" ON "oparl_consultations" '
+        '("agenda_item_external_id")',
+    ]
+    assert zurueck.sql == [
+        'DROP INDEX CONCURRENTLY IF EXISTS "oparl_cons_agenda_ext"',
+        'DROP INDEX CONCURRENTLY IF EXISTS "oparl_cons_meeting_ext"',
+    ]
+
+
+@pytest.mark.django_db
+def test_indizes_stehen_in_der_datenbank() -> None:
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        vorhanden = connection.introspection.get_constraints(cursor, "oparl_consultations")
+    assert {"oparl_cons_meeting_ext", "oparl_cons_agenda_ext"} <= set(vorhanden)

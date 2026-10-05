@@ -224,6 +224,7 @@ def _zustellen(spec: Subscriber, ereignisse: list[Event], delivery: Delivery) ->
         if ereignis.aggregate_id in gesperrt:
             ausgang.blockiert.append(ereignis)
             continue
+        delivery.alive()
         try:
             _aufrufen(spec, [ereignis], delivery)
         except TargetUnavailableError:
@@ -270,7 +271,9 @@ def _lesen(spec: Subscriber, cursor: int) -> tuple[list[Event], int, bool]:
     return ereignisse, ende, False
 
 
-def _strom_zustellen(spec: Subscriber, stand: _Stand, ereignisse: list[Event]) -> _Ausgang:
+def _strom_zustellen(
+    spec: Subscriber, stand: _Stand, ereignisse: list[Event], progress: Callable[[], None] | None = None
+) -> _Ausgang:
     objekte = {ereignis.aggregate_id for ereignis in ereignisse}
     geparkt = set(
         ParkedEvent.objects.filter(subscription=spec.name, aggregate_id__in=objekte)
@@ -278,7 +281,7 @@ def _strom_zustellen(spec: Subscriber, stand: _Stand, ereignisse: list[Event]) -
         .distinct()
     )
     zustellbar = [ereignis for ereignis in ereignisse if ereignis.aggregate_id not in geparkt]
-    ausgang = _zustellen(spec, zustellbar, Delivery(subscription=spec.name, shadow=stand.shadow))
+    ausgang = _zustellen(spec, zustellbar, Delivery(subscription=spec.name, shadow=stand.shadow, progress=progress))
     ausgang.blockiert += [ereignis for ereignis in ereignisse if ereignis.aggregate_id in geparkt]
     return ausgang
 
@@ -318,7 +321,7 @@ def _strom_abschliessen(spec: Subscriber, stand: _Stand, ausgang: _Ausgang, curs
     return RunResult(delivered=len(ausgang.zugestellt), parked=len(zeilen), more=mehr or nachgerueckt > 0)
 
 
-def _fortlaufend(spec: Subscriber) -> RunResult:
+def _fortlaufend(spec: Subscriber, progress: Callable[[], None] | None = None) -> RunResult:
     if spec.transactional:
         with transaction.atomic():
             stand = _stand(spec, sperren=True)
@@ -327,7 +330,7 @@ def _fortlaufend(spec: Subscriber) -> RunResult:
             ereignisse, cursor, mehr = _lesen(spec, stand.cursor)
             if cursor == stand.cursor:
                 return RunResult()
-            ausgang = _strom_zustellen(spec, stand, ereignisse)
+            ausgang = _strom_zustellen(spec, stand, ereignisse, progress)
             return _strom_abschliessen(spec, stand, ausgang, cursor, mehr)
 
     stand = _stand(spec, sperren=False)
@@ -336,7 +339,7 @@ def _fortlaufend(spec: Subscriber) -> RunResult:
     ereignisse, cursor, mehr = _lesen(spec, stand.cursor)
     if cursor == stand.cursor:
         return RunResult()
-    ausgang = _strom_zustellen(spec, stand, ereignisse)
+    ausgang = _strom_zustellen(spec, stand, ereignisse, progress)
     with transaction.atomic():
         aktuell = _stand(spec, sperren=True)
         if aktuell.cursor != stand.cursor:
@@ -447,7 +450,7 @@ def _ereignisse_zu(faellig: list[ParkedEvent]) -> list[Event]:
     return list(Event.objects.filter(seq__in=[geparkt.event_seq for geparkt in faellig]).order_by("seq"))
 
 
-def _wiederholen(spec: Subscriber) -> RunResult:
+def _wiederholen(spec: Subscriber, progress: Callable[[], None] | None = None) -> RunResult:
     if spec.transactional:
         with transaction.atomic():
             stand = _stand(spec, sperren=True)
@@ -457,7 +460,7 @@ def _wiederholen(spec: Subscriber) -> RunResult:
             if not faellig:
                 return RunResult()
             ereignisse = _ereignisse_zu(faellig)
-            delivery = Delivery(subscription=spec.name, shadow=stand.shadow, retry=True)
+            delivery = Delivery(subscription=spec.name, shadow=stand.shadow, retry=True, progress=progress)
             ausgang = _zustellen(spec, ereignisse, delivery)
             return _wiederholung_abschliessen(spec, stand, faellig, {_seq(e) for e in ereignisse}, ausgang)
 
@@ -468,7 +471,8 @@ def _wiederholen(spec: Subscriber) -> RunResult:
     if not faellig:
         return RunResult()
     ereignisse = _ereignisse_zu(faellig)
-    ausgang = _zustellen(spec, ereignisse, Delivery(subscription=spec.name, shadow=stand.shadow, retry=True))
+    delivery = Delivery(subscription=spec.name, shadow=stand.shadow, retry=True, progress=progress)
+    ausgang = _zustellen(spec, ereignisse, delivery)
     with transaction.atomic():
         aktuell = _stand(spec, sperren=True)
         # Nur Zeilen abschließen, die seitdem niemand verändert hat (anderer Prozess, Verwerfen im Admin)
@@ -484,13 +488,14 @@ def _wiederholen(spec: Subscriber) -> RunResult:
 # --- ein Lauf ------------------------------------------------------------------------------------
 
 
-def deliver_batch(spec: Subscriber) -> RunResult:
+def deliver_batch(spec: Subscriber, progress: Callable[[], None] | None = None) -> RunResult:
     """Ein Lauf für ein Abonnement: fällige Wiederholungen, dann der nächste Batch ab dem Cursor.
 
     Wirft ``TargetUnavailableError``, wenn der Handler das Ziel als nicht erreichbar meldet; dann
-    ist von diesem Schritt nichts festgeschrieben.
+    ist von diesem Schritt nichts festgeschrieben. ``progress`` bekommt der Handler als
+    ``Delivery.progress``: sein Lebenszeichen während eines langen Batches.
     """
-    return _wiederholen(spec) + _fortlaufend(spec)
+    return _wiederholen(spec, progress) + _fortlaufend(spec, progress)
 
 
 # --- Eingriffe (Betrieb und Admin-Seite ``apps.events.admin``) ------------------------------------
@@ -648,13 +653,42 @@ class SubscriptionLoop:
         self._pause = min(PAUSE_MAX, max(PAUSE_MIN, self._pause * 2))
         self._paused_until = time.monotonic() + self._pause
 
-    def drain(self, stop: threading.Event | None = None) -> int:
-        """Stellt zu, bis nichts Fälliges mehr übrig ist; gibt die Zahl zugestellter Ereignisse zurück."""
+    def keep_alive(self, beat: Callable[[], None] | None = None) -> None:
+        """
+        Lebenszeichen während eines Batches (``Delivery.alive``, Issue #821): meldet ``beat`` und verlängert
+        die eigene Lease, wenn das fällig ist.
+
+        Ein Batch darf länger dauern als die Lease (30 s) und als ``STALE_AFTER`` des Workers (300 s), etwa
+        wenn das Abonnement ``suchindex`` nach der Umbenennung eines Gremiums tausende Dokumente neu baut.
+        Ohne Lebenszeichen hielte der Worker die Rolle für hängend und startete neu, bevor der Batch
+        festgeschrieben ist. Verlängert wird nur außerhalb einer Transaktion (ein Handler mit
+        ``transactional=True`` läuft in einer; dort käme die Verlängerung erst mit dem Commit an) und nur
+        die eigene Lease: Ist sie verloren, arbeitet der Batch zu Ende, und das Festschreiben verwirft sein
+        Ergebnis, falls ein anderer Prozess ihn schon abgeschlossen hat.
+        """
+        if beat is not None:
+            beat()
+        if not self.is_leader or connection.in_atomic_block:
+            return
+        if time.monotonic() - self._renewed_at >= leases.RENEW_INTERVAL.total_seconds():
+            self.is_leader = leases.acquire(self.spec.lease_name, self.holder)
+            if self.is_leader:
+                self._renewed_at = time.monotonic()
+
+    def drain(self, stop: threading.Event | None = None, beat: Callable[[], None] | None = None) -> int:
+        """
+        Stellt zu, bis nichts Fälliges mehr übrig ist; gibt die Zahl zugestellter Ereignisse zurück.
+
+        ``beat`` meldet je Batch und, über ``Delivery.alive``, während eines Batches ein Lebenszeichen.
+        """
         gesamt = 0
+        lebenszeichen = functools.partial(self.keep_alive, beat)
         # Die Lease wird auch in einer Pause erneuert: Ein anderer Worker käme an das Ziel auch nicht heran
         while (stop is None or not stop.is_set()) and self.ensure_lease() and not self.paused:
+            if beat is not None:
+                beat()
             try:
-                ergebnis = deliver_batch(self.spec)
+                ergebnis = deliver_batch(self.spec, lebenszeichen)
             except TargetUnavailableError:
                 self._aussetzen()
                 logger.warning(
@@ -683,7 +717,8 @@ class SubscriptionLoop:
 
         ``wake`` (vom Weckruf, ``apps.events.wakeup``) beendet die Wartezeit vorzeitig. Es wird vor dem
         Zustellen zurückgesetzt, damit eine Meldung während des Zustellens nicht verloren geht.
-        ``beat`` meldet jeden Durchlauf als Lebenszeichen (``events_worker``).
+        ``beat`` meldet jeden Durchlauf als Lebenszeichen (``events_worker``), dazu jeden Batch und den
+        Fortschritt eines langen Batches (``drain``, ``Delivery.alive``).
         """
         try:
             while not stop.is_set():
@@ -693,7 +728,7 @@ class SubscriptionLoop:
                     wake.clear()
                 close_old_connections()  # eine im Warten veraltete Verbindung nicht weiterverwenden
                 try:
-                    self.drain(stop)
+                    self.drain(stop, beat)
                 except DatabaseError:
                     logger.warning("Zustellung %s: Datenbankfehler, neuer Versuch folgt", self.spec.name, exc_info=True)
                     self.is_leader = False

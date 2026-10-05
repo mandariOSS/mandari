@@ -156,7 +156,7 @@ def iter_documents(index: str, ids: Iterable[uuid.UUID]) -> Iterator[tuple[uuid.
 def _iter_files(kennungen: list[uuid.UUID]) -> Iterator[tuple[uuid.UUID, dict[str, Any] | None]]:
     """
     Dateien in Blöcken von ``_CHUNK``: der Kontext je Block mit wenigen Abfragen (``file_contexts``), die
-    Texte danach in Abschnitten von ``_CHUNK_FILES``. Je Block also 1 + höchstens 4 + Block/``_CHUNK_FILES``
+    Texte danach in Abschnitten von ``_CHUNK_FILES``. Je Block also 1 + höchstens 5 + Block/``_CHUNK_FILES``
     Abfragen, gleich an wie vielen Vorgängen und Sitzungen die Dateien hängen.
     """
     for start in range(0, len(kennungen), _CHUNK):

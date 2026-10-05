@@ -9,7 +9,8 @@ Single source of truth for both signal-based indexing and bulk reindex.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable
+import re
+from collections.abc import Container, Iterable
 from typing import Any
 
 #: Textvorschau eines Vorgangs: höchstens so viele Zeichen je Datei und insgesamt
@@ -205,22 +206,36 @@ def _single_file_context(file: Any) -> dict[str, Any]:
         return {}
 
 
-def _consultation_rank(consultation: Any) -> tuple[bool, str]:
-    """Reihenfolge der Beratungen eines Vorgangs: Federführung zuerst, dann nach Kennung der Quelle."""
-    return (not consultation.authoritative, consultation.external_id or "")
+_ZIFFERN = re.compile(r"([0-9]+)")
+
+
+def natural_key(text: str) -> tuple[tuple[int, int | str], ...]:
+    """Natürliche Sortierung: Zahlen als Zahlen, ``…/consultation/9`` vor ``…/consultation/10``."""
+    return tuple((0, int(teil)) if index % 2 else (1, teil) for index, teil in enumerate(_ZIFFERN.split(text)) if teil)
+
+
+def _consultation_rank(consultation: Any, sitzungen: Container[str]) -> tuple[bool, bool, tuple[Any, ...]]:
+    """
+    Reihenfolge der Beratungen eines Vorgangs, unabhängig vom Zeitpunkt: zuerst die federführende
+    (``authoritative``), dann eine mit Sitzung im Bestand (``sitzungen``: Kennungen der Sitzungen, die es gibt
+    und die nicht zurückgenommen sind), dann nach Kennung der Quelle, natürlich sortiert.
+    """
+    hat_sitzung = bool(consultation.meeting_external_id) and consultation.meeting_external_id in sitzungen
+    return (not consultation.authoritative, not hat_sitzung, natural_key(consultation.external_id or ""))
 
 
 def file_contexts(files: Iterable[Any]) -> dict[Any, dict[str, Any]]:
     """
     Kontext je Datei (Gremien, Sitzung, Tagesordnungspunkt), gebündelt für beliebig viele Dateien.
 
-    Höchstens vier Abfragen: Beratungen, Sitzungen mit ihren Gremien, Tagesordnungspunkte. Dazu kommt nur
-    für eine Sitzung ohne benannte Gremien, deren Gremien die Quelle nennt, die Namensauflösung von
-    ``get_display_name``. Die Dateien brauchen ``pk``, ``paper_id`` und ``meeting_id``.
+    Höchstens fünf Abfragen: Beratungen, vorhandene Sitzungen der Beratungen, gewählte Sitzungen mit ihren
+    Gremien, Tagesordnungspunkte. Dazu kommt nur für eine Sitzung ohne benannte Gremien, deren Gremien die
+    Quelle nennt, die Namensauflösung von ``get_display_name``. Die Dateien brauchen ``pk``, ``paper_id``
+    und ``meeting_id``.
 
     Kette: Datei → Vorgang → Beratung → Sitzung (→ Gremien) und Tagesordnungspunkt; ohne Sitzung über die
-    Beratung gilt die Sitzung, an der die Datei direkt hängt. Je Vorgang zählt die federführende Beratung,
-    bei mehreren gleichrangigen die mit der kleinsten Kennung der Quelle (``_consultation_rank``).
+    Beratung gilt die Sitzung, an der die Datei direkt hängt. Je Vorgang zählt eine Beratung nach
+    ``_consultation_rank``: federführend, mit Sitzung im Bestand, kleinste Kennung (natürlich sortiert).
     Von mandari Session zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte bleiben außen vor,
     wie in der Dokumentliste (``withdrawn_q``).
 
@@ -235,14 +250,22 @@ def file_contexts(files: Iterable[Any]) -> dict[Any, dict[str, Any]]:
     vorgaenge = {datei.paper_id for datei in dateien if datei.paper_id}
     beratung_je_vorgang: dict[Any, Any] = {}
     if vorgaenge:
-        beratungen = (
+        beratungen = list(
             OParlConsultation.objects.filter(paper_id__in=vorgaenge)
             .exclude(withdrawn_q())
             .only("pk", "paper_id", "external_id", "authoritative", "meeting_external_id", "agenda_item_external_id")
         )
+        verweise = {b.meeting_external_id for b in beratungen if b.meeting_external_id}
+        vorhanden: set[str] = set()
+        if verweise:
+            vorhanden = set(
+                OParlMeeting.objects.filter(external_id__in=verweise)
+                .exclude(withdrawn_q())
+                .values_list("external_id", flat=True)
+            )
         for kandidat in beratungen:
             bisher = beratung_je_vorgang.get(kandidat.paper_id)
-            if bisher is None or _consultation_rank(kandidat) < _consultation_rank(bisher):
+            if bisher is None or _consultation_rank(kandidat, vorhanden) < _consultation_rank(bisher, vorhanden):
                 beratung_je_vorgang[kandidat.paper_id] = kandidat
 
     mit_sitzung = [b for b in beratung_je_vorgang.values() if b.meeting_external_id]

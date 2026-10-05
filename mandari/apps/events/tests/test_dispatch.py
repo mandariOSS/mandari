@@ -630,6 +630,47 @@ def test_nur_der_inhaber_der_lease_stellt_zu(leeres_register: dict[str, Subscrib
     assert leases.acquire(spec.lease_name, "noch-einer"), "freigegeben"
 
 
+@pytest.mark.django_db(transaction=True)  # ohne umschließende Testtransaktion, wie im Betrieb
+@pytest.mark.parametrize("transaktional", [False, True])
+def test_langer_batch_meldet_lebenszeichen_und_verlaengert_die_lease(
+    leeres_register: dict[str, Subscriber], monkeypatch: pytest.MonkeyPatch, transaktional: bool
+) -> None:
+    """
+    Issue #821: Ein Batch darf länger dauern als die Lease (30 s) und ``STALE_AFTER`` des Workers. Der Handler
+    meldet über ``Delivery.alive`` Lebenszeichen; die Schleife gibt sie an den Worker weiter und verlängert
+    die fällige Lease, aber nicht in der Transaktion eines transaktionalen Handlers (dort käme die
+    Verlängerung erst mit dem Commit an).
+    """
+    schlaege: list[str] = []
+    verlaengert: list[bool] = []
+    original = leases.acquire
+
+    def zaehlen(name: str, holder: str, *args: Any, **kwargs: Any) -> bool:
+        verlaengert.append(True)
+        return original(name, holder, *args, **kwargs)
+
+    def lange(events: list[Event], delivery: Delivery) -> None:
+        schlaege.append("handler")
+        schleife._renewed_at -= leases.RENEW_INTERVAL.total_seconds() + 1  # als wäre die Erneuerung fällig
+        verlaengert.clear()
+        monkeypatch.setattr(leases, "acquire", zaehlen)
+        delivery.alive()
+        monkeypatch.setattr(leases, "acquire", original)
+
+    spec = _abo(lange, transactional=transaktional)
+    nummeriert()
+    schleife = SubscriptionLoop(spec)
+
+    assert schleife.drain(beat=lambda: schlaege.append("beat")) == 1
+
+    # je Batch ein Lebenszeichen, dazu das aus dem Handler
+    assert schlaege[0] == "beat"
+    assert schlaege[schlaege.index("handler") + 1] == "beat"
+    assert verlaengert == ([] if transaktional else [True])
+    assert schleife.is_leader
+    schleife.release()
+
+
 class _WeckerMitBlick:
     """Wecksignal, das beim Warten festhält, ob der wartende Faden eine Datenbankverbindung belegt."""
 

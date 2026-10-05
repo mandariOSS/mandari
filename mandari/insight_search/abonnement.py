@@ -56,6 +56,10 @@ Obergrenze an Dokumenten (``SEARCH_INDEX_SHADOW_MAX_DOCS``, Prüfung je Batch): 
 werden vorhandene Dokumente weiter aktualisiert und gelöscht, neue nicht mehr angelegt
 (``skipped_limit``). Dateitexte werden einzeln gebaut und in Paketen bis 8 MB gesendet.
 
+**Dauer:** Ein Batch kann tausende abhängige Dokumente neu bauen (Gremium umbenannt). Der Handler meldet
+deshalb je gesendetem Paket ein Lebenszeichen (``Delivery.alive``); die Zustellung leitet es an den Worker
+weiter und verlängert die Lease (Issue #821).
+
 **Kennzahlen:** Rückstand ``mandari_events_lag_seconds{subscription="suchindex"}`` (Zustellung),
 Ergebnis je Dokument ``mandari_search_subscription_documents_total{target,result}`` (hier).
 """
@@ -384,8 +388,13 @@ def _aktion(operation: Operation) -> tuple[dict[str, Any], str | None]:
     return {"index": kopf}, json.dumps(operation.document, ensure_ascii=False, default=str)
 
 
-def write(es: Any, operations: Iterable[Operation], tally: Tally) -> None:
-    """Sendet die Operationen in Paketen (Anzahl und Größe begrenzt) und zählt das Ergebnis je Dokument."""
+def write(es: Any, operations: Iterable[Operation], tally: Tally, alive: Callable[[], None] | None = None) -> None:
+    """
+    Sendet die Operationen in Paketen (Anzahl und Größe begrenzt) und zählt das Ergebnis je Dokument.
+
+    ``alive`` meldet nach jedem Paket ein Lebenszeichen (``Delivery.alive``): Ein Batch, der viele abhängige
+    Dokumente neu baut, dauert sonst länger, als der Worker eine Rolle ohne Lebenszeichen hinnimmt.
+    """
     paket: list[Any] = []
     anzahl = groesse = 0
     for operation in operations:
@@ -398,6 +407,8 @@ def write(es: Any, operations: Iterable[Operation], tally: Tally) -> None:
         if anzahl >= BULK_ACTIONS or groesse >= BULK_BYTES:
             _senden(es, paket, tally)
             paket, anzahl, groesse = [], 0, 0
+            if alive is not None:
+                alive()
     if paket:
         _senden(es, paket, tally)
 
@@ -497,6 +508,7 @@ def suchindex(events: list[Event], delivery: Delivery) -> None:
     shadow = delivery.shadow or settings.SEARCH_INDEX_SUBSCRIPTION != "aktiv"
     bodies = shadow_bodies() if shadow else None
     ziele, uebergangen = affected(events, bodies)
+    delivery.alive()
     tally = Tally(skipped_body=uebergangen)
     ziel = "schatten" if shadow else "live"
     if not ziele:
@@ -511,7 +523,8 @@ def suchindex(events: list[Event], delivery: Delivery) -> None:
                 ensure_shadow_indices(es)
             obergrenze = int(settings.SEARCH_INDEX_SHADOW_MAX_DOCS)
             full = bool(obergrenze) and shadow_document_count(es) >= obergrenze
-        write(es, _operationen(es, ziele, shadow=shadow, bodies=bodies, full=full, tally=tally), tally)
+        operationen = _operationen(es, ziele, shadow=shadow, bodies=bodies, full=full, tally=tally)
+        write(es, operationen, tally, delivery.alive)
 
     try:
         _mit_ziel(schreiben)
