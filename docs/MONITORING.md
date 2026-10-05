@@ -312,11 +312,15 @@ geparkte Ereignisse des Abonnements ab N auf. Zugestellt wird im laufenden Worke
 was weiter scheitert, wird neu geparkt. Ein laufender Batch eines externen Ziels verwirft sein Ergebnis, eine
 Datenbank-Sicht wartet auf die Zeilensperre. Ein zweiter Aufruf mit derselben Folgenummer ändert nichts.
 Liegt N im aufgeräumten Teil, weist der Befehl darauf hin; nachgespielt wird, was das Journal noch enthält.
+Mit einem gleichzeitig laufenden Aufräumen stimmt sich das Nachspielen über eine Transaktionssperre ab: Es
+wartet höchstens auf einen Löschstapel, danach löscht das Aufräumen nichts mehr, was der zurückgesetzte Cursor
+braucht.
 Ablauf für eine Datenbank-Sicht: Abonnement pausieren, Sicht leeren, nachspielen ab 1 (solange das Journal
 nicht aufgeräumt ist, sonst Vollaufbau der Sicht), fortsetzen, Rückstand (`mandari_events_lag_seconds`) beobachten.
 
 **Aufräumen** (`manage.py events_purge`, Probelauf mit `--dry-run`): löscht Zeilen des Journals, die vor
-`EVENTS_JOURNAL_RETENTION_DAYS` (Standard 90, nie kürzer als `OPARL_CHANGES_RETENTION_DAYS`) Tagen erfasst
+`EVENTS_JOURNAL_RETENTION_DAYS` (Standard und Minimum 90, nie kürzer als `OPARL_CHANGES_RETENTION_DAYS`; ein
+kleinerer Wert ist ein Konfigurationsfehler, der Lauf bricht ab und löscht nichts) Tagen erfasst
 wurden, ab Tagesbeginn in UTC. Es löscht nie über den kleinsten Cursor eines Abonnements hinaus (auch pausiert
 und im Schatten), nie das neueste Ereignis, keine geparkten und keine unnummerierten Zeilen. Die Ausgabe nennt
 die Grenze und was sie setzt (Frist, ein Abonnement, das neueste Ereignis). Bleibt ein pausiertes oder

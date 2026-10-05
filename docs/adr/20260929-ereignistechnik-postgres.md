@@ -335,7 +335,7 @@ bleibt; präzisiert wurde:
   `docs/MONITORING.md`): Rückstand über fünf Minuten, tote Ereignisse, Sequenzierer-Stau über fünf
   Minuten, dazu Hinweise auf viele blockierte Ereignisse und einen gestörten Weckruf.
 - **Nachgezogen:** Nachspielen ab Folgenummer oder Zeitpunkt (Admin-Aktion am Abonnement und
-  `events_dispatch --replay`, beide über `dispatch.rewind` und mit Eintrag im Sicherheitsprotokoll), die
+  `events_dispatch --replay`, beide über `dispatch.replay` und mit Eintrag im Sicherheitsprotokoll), die
   Push-Prüfung „Worker lebt“ (#574), die Übersicht der Worker-Prozesse im Admin und der Kontext je
   Auftrag: Ereignisse eines Auftrags tragen seine Kennung als Korrelations-ID und `system:<auftrag>`
   als Auslöser (`task_runner.execute`). Folgeereignisse eines Handlers setzen weiterhin selbst
@@ -451,7 +451,12 @@ Die Qualitätsziele und die Fitnessfunktion oben sind belegt; Tests, Messwerte u
   Gültigkeit der Feed-Cursor), kleinstem Cursor aller Abonnements und dem neuesten Ereignis, das für die Prüfung
   nach einer Wiederherstellung und den Start neuer Abonnements stehen bleibt. Geparkte und unnummerierte Zeilen
   bleiben. Festgehalten wird in `events_pruning` für die ganze geplante Grenze im ersten Stapel. Schalter
-  `EVENTS_JOURNAL_PURGE_ENABLED`, Standard aus.
+  `EVENTS_JOURNAL_PURGE_ENABLED`, Standard aus. Die Frist ist mindestens 90 Tage (Spezifikation N7);
+  kleinere Werte sind ein Konfigurationsfehler.
+- **Aufräumen und Nachspielen gleichzeitig:** Jeder Löschstapel nimmt die Transaktionssperre
+  `pruning.lock` geteilt, bevor er den kleinsten Cursor liest, ein Nachspielen nimmt sie exklusiv, bevor es
+  den Cursor zurücksetzt. Ein Stapel löscht also nie mit einem Cursor, den ein gleichzeitiges Nachspielen
+  schon zurückgesetzt hat. Die Zustellung nimmt die Sperre nicht.
 
 ## Bezug
 

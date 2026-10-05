@@ -25,9 +25,12 @@ Sicherheitsprotokoll.
     <div class="flex flex-col gap-6 max-w-4xl">
         <p>
             Nachspielen setzt den Cursor zurück: Das Abonnement bekommt die Ereignisse ab der Folgenummer erneut
-            zugestellt, im laufenden Worker. Der Handler muss wiederholte Ereignisse vertragen. Bereits geparkte
-            Ereignisse bleiben geparkt. Steht der Cursor schon davor, bleibt das Abonnement unverändert. Der
-            Eingriff wird mit Ihrem Admin-Konto im Sicherheitsprotokoll festgehalten.
+            zugestellt, im laufenden Worker. Der Handler muss wiederholte Ereignisse vertragen. Geparkte
+            Ereignisse ab dieser Folgenummer, auch tote samt Versuchen und Fehlercode, werden aufgehoben und in
+            Reihenfolge erneut zugestellt; was weiter scheitert, wird neu geparkt. Liegt der Kopf einer Kette
+            davor, bleibt er geparkt. Steht der Cursor schon davor, bleibt das Abonnement unverändert. Der
+            Eingriff lässt sich nicht rückgängig machen und wird mit Ihrem Admin-Konto im Sicherheitsprotokoll
+            festgehalten.
         </p>
 
         {% component "unfold/components/card.html" with title="Diese Abonnements nachspielen" %}

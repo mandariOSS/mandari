@@ -4,7 +4,7 @@ Admin-Seite der Ereignistechnik (Issue #510): Abonnements mit Rückstand, gepark
 
 - **Abonnements:** Zustand, Cursor, Rückstand (wie ``mandari_events_lag_seconds``) und geparkte
   Ereignisse je Zustand. Pausieren und Fortsetzen (aktiv oder im Schattenbetrieb) über
-  ``dispatch.set_state``; Nachspielen ab Folgenummer oder Zeitpunkt über ``dispatch.rewind`` (mit
+  ``dispatch.set_state``; Nachspielen ab Folgenummer oder Zeitpunkt über ``dispatch.replay`` (mit
   Zwischenseite, wie ``events_dispatch --replay``).
 - **Geparkte Ereignisse:** standardmäßig nur der Kopf jeder Kette je Objekt mit der Zahl seiner
   Folgeereignisse, statt einer langen Liste blockierter Ereignisse. Erneut versuchen
@@ -253,10 +253,11 @@ class SubscriptionAdmin(_NurAdministratoren, ModelAdmin):  # type: ignore[misc]
         description="Nachspielen ab Folgenummer oder Zeitpunkt (Cursor zurücksetzen)", permissions=["eingriff"]
     )
     def nachspielen(self, request: HttpRequest, queryset: QuerySet[Subscription]) -> TemplateResponse | None:
-        """Setzt den Cursor zurück (``dispatch.rewind``); zugestellt wird im laufenden Worker.
+        """Setzt den Cursor zurück und hebt geparkte Ereignisse ab der Folgenummer auf (``dispatch.replay``).
 
-        Erst die abgeschickte Zwischenseite (POST mit ``post=ja`` und gültigem Formular) greift ein.
-        Der Cursor geht nur zurück: Steht er schon davor, bleibt das Abonnement unverändert.
+        Zugestellt wird im laufenden Worker. Erst die abgeschickte Zwischenseite (POST mit ``post=ja`` und
+        gültigem Formular) greift ein. Der Cursor geht nur zurück: Steht er schon davor, bleibt das Abonnement
+        unverändert.
         """
         form = NachspielenForm(request.POST if request.POST.get("post") == "ja" else None)
         if not form.is_valid():

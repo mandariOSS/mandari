@@ -58,7 +58,7 @@ from django.db import DatabaseError, close_old_connections, connection, transact
 from django.db.models import Exists, Max, OuterRef
 from django.db.models.functions import Now
 
-from . import leases
+from . import leases, pruning
 from .metrics import DEAD, DELIVERED, DELIVERY_FAILURES
 from .models import Event, ParkedEvent, ParkedState, Subscription, SubscriptionState
 from .registry import Delivery, Subscriber, TargetUnavailableError
@@ -598,7 +598,9 @@ def replay(name: str, from_seq: int) -> Replay | None:
     **Abstimmung mit dem laufenden Worker:** Alles geschieht unter der Zeilensperre des Abonnements. Ein
     Lauf einer Datenbank-Sicht wartet darauf bzw. hält sie selbst bis zum Festschreiben; ein laufender
     Lauf eines externen Handlers verwirft danach sein Ergebnis, weil sich der Cursor geändert hat, und
-    eine laufende Wiederholung schließt nur Zeilen ab, die es noch gibt.
+    eine laufende Wiederholung schließt nur Zeilen ab, die es noch gibt. Mit dem Aufräumen des Journals
+    (``events_purge``) stimmt es sich über ``pruning.lock`` ab: Ein Löschschritt läuft vorher zu Ende oder
+    sieht danach den zurückgesetzten Cursor.
 
     **Parken je Objekt:** Geparkte Ereignisse ab ``from_seq`` werden aufgehoben. Die Zustellung erreicht
     sie mit dem zurückgesetzten Cursor wieder, in Folgenummer-Reihenfolge, und parkt neu, was weiter
@@ -609,6 +611,9 @@ def replay(name: str, from_seq: int) -> Replay | None:
     if from_seq < 1:
         raise ValueError("Folgenummern beginnen bei 1")
     with transaction.atomic():
+        # Erst die Abstimmung mit dem Aufräumen (pruning.lock), dann die Zeilensperre: Ein Löschschritt liest
+        # den Cursor erst nach diesem Festschreiben und löscht nichts, was hier wieder gebraucht wird.
+        pruning.lock(shared=False)
         vorher = Subscription.objects.select_for_update().filter(name=name).values_list("cursor_seq", flat=True).first()
         if vorher is None:
             return None

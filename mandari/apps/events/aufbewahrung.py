@@ -8,14 +8,15 @@ Gelöscht wird immer ein **Anfang** des Journals: nummerierte Zeilen unter einer
 kurzen Transaktionen. Die Grenze ist die kleinste von vier Schranken:
 
 - **Frist:** die erste Folgenummer, die seit dem Stichtag erfasst wurde. Stichtag ist der Beginn des Tages
-  (UTC), der ``EVENTS_JOURNAL_RETENTION_DAYS`` (Standard 90) zurückliegt, mindestens aber so weit, wie Cursor
+  (UTC), der ``EVENTS_JOURNAL_RETENTION_DAYS`` (Standard und Minimum 90) zurückliegt, mindestens aber so weit, wie Cursor
   des Änderungsfeeds gelten (``OPARL_CHANGES_RETENTION_DAYS``). Ein Cursor trägt seinen Ausgabetag; was nach
   der Ausgabe eines gültigen Cursors erfasst wurde, bleibt also vorhanden, und das Sicherheitsnetz des Feeds
   (``hub.api.changes``, ``410``) spricht für gültige Cursor nie an. Ein Snapshot gibt einen frischen Cursor aus
   und braucht keine alten Zeilen.
 - **Abonnements:** nichts über dem kleinsten Cursor, auch nicht von pausierten Abonnements und solchen im
   Schattenbetrieb. Ein Abonnement verliert nie ein Ereignis, das es noch nicht verarbeitet hat. Vor jedem
-  Stapel wird der kleinste Cursor neu gelesen (Nachspielen, neue Abonnements).
+  Stapel wird der kleinste Cursor neu gelesen (Nachspielen, neue Abonnements), unter der geteilten Sperre
+  ``pruning.lock``, die ein Nachspielen exklusiv nimmt.
 - **Ende des Journals:** Das neueste nummerierte Ereignis bleibt. Die Prüfung nach einer Wiederherstellung
   (``apps.events.wiederherstellung``) vergleicht Cursor mit dem Ende des Journals, neue Abonnements beginnen
   dort (``dispatch.ensure_subscription``).
@@ -26,8 +27,10 @@ Festgehalten wird das Aufräumen in ``events_pruning`` (``apps.events.pruning``)
 Transaktion wie dessen Löschen und für die ganze geplante Grenze. Bricht der Lauf ab, hält der Eintrag also eher
 zu viel als zu wenig fest; für Leser mit eigenem Stand (Änderungsfeed) ist das die sichere Seite.
 
-Laufen Aufräumen und Nachspielen gleichzeitig, können Ereignisse unter der Grenze fehlen, die ein eben
-zurückgesetztes Abonnement erneut bekäme; nachgespielt wird, was das Journal noch enthält
+Laufen Aufräumen und Nachspielen gleichzeitig, stimmen sie sich über ``pruning.lock`` ab: Ein Löschschritt
+sieht entweder den zurückgesetzten Cursor und lässt dessen Ereignisse stehen, oder er ist schon
+festgeschrieben, bevor das Nachspielen den Cursor zurücksetzt. Dann fehlt, was er gelöscht hat, so wie bei
+jedem Nachspielen in den aufgeräumten Teil; nachgespielt wird, was das Journal noch enthält
 (``events_dispatch --replay`` weist darauf hin).
 """
 
@@ -51,8 +54,9 @@ from .models import Event, ParkedEvent, Subscription
 
 logger = logging.getLogger(__name__)
 
-#: Aufbewahrung des Journals in Tagen (Spezifikation N7: mindestens 90)
+#: Aufbewahrung des Journals in Tagen; kürzer lässt die Spezifikation (N7) nicht zu
 DEFAULT_RETENTION_DAYS: Final = 90
+MIN_RETENTION_DAYS: Final = 90
 #: Zeilen je Löschschritt: kurze Transaktionen, keine lange Sperre
 PURGE_BATCH: Final = 5000
 
@@ -64,10 +68,14 @@ LEER: Final = "leer"
 
 
 def retention_days() -> int:
-    """Aufbewahrung in Tagen: ``EVENTS_JOURNAL_RETENTION_DAYS``, mindestens die Gültigkeit der Feed-Cursor."""
+    """Aufbewahrung in Tagen: ``EVENTS_JOURNAL_RETENTION_DAYS``, mindestens die Gültigkeit der Feed-Cursor.
+
+    Unter 90 Tagen (Spezifikation N7) gilt die Einstellung als Fehler: Aufgeräumt wird dann nicht, statt
+    still mit einer kürzeren Frist zu löschen.
+    """
     journal = int(getattr(settings, "EVENTS_JOURNAL_RETENTION_DAYS", DEFAULT_RETENTION_DAYS))
-    if journal < 1:
-        raise ImproperlyConfigured("EVENTS_JOURNAL_RETENTION_DAYS muss mindestens 1 sein.")
+    if journal < MIN_RETENTION_DAYS:
+        raise ImproperlyConfigured(f"EVENTS_JOURNAL_RETENTION_DAYS muss mindestens {MIN_RETENTION_DAYS} sein.")
     feed = int(getattr(settings, "OPARL_CHANGES_RETENTION_DAYS", DEFAULT_RETENTION_DAYS))
     return max(journal, feed)
 
@@ -160,6 +168,8 @@ def purge(
             logger.info("Journal aufräumen: Zeitgrenze erreicht nach %s Zeilen; der nächste Lauf setzt fort", geloescht)
             return PurgeResult(deleted=geloescht, stopped_early=True)
         with transaction.atomic():
+            # Erst die Abstimmung mit dem Nachspielen, dann den Cursor lesen (pruning.lock)
+            pruning.lock(shared=True)
             kleinster = Subscription.objects.aggregate(m=Min("cursor_seq"))["m"]
             grenze = journal_plan.boundary if kleinster is None else min(journal_plan.boundary, kleinster + 1)
             schritt = list(_loeschbar(grenze, letzte).order_by("seq").values_list("pk", "seq")[:batch])

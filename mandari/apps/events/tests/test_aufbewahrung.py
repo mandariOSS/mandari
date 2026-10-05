@@ -10,23 +10,28 @@ gültige Cursor des Änderungsfeeds noch erreichen.
 from __future__ import annotations
 
 import itertools
+import threading
 import time as zeitmodul
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
 from io import StringIO
 from typing import Any
 
+import psycopg
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db import connection
 from django.utils import timezone
 
 from apps.events import aufbewahrung, pruning, wiederherstellung
+from apps.events.dispatch import replay
 from apps.events.models import Event, ParkedEvent, ParkedState, Subscription, SubscriptionState, Task, TaskStatus
 from apps.events.schedule import Cron, ScheduleRegistry
 from apps.events.tasks_backend import count_finished, purge_finished
-from apps.events.tests.hilfen import ereignis_anlegen, nummeriert
+from apps.events.tests.hilfen import ereignis_anlegen, nummeriert, nur_postgres
 
 pytestmark = pytest.mark.django_db
 
@@ -57,13 +62,25 @@ def test_stichtag_ist_tagesbeginn_und_nie_vor_der_gueltigkeit_der_feed_cursor(se
     aeltester_gueltiger_tag = (JETZT - timedelta(days=90)).date()
     assert aufbewahrung.cutoff(JETZT) <= datetime.combine(aeltester_gueltiger_tag, time.min, tzinfo=UTC)
 
-    settings.EVENTS_JOURNAL_RETENTION_DAYS = 30  # kürzer als die Zusage des Feeds: der Feed gewinnt
-    assert aufbewahrung.retention_days() == 90
+    settings.OPARL_CHANGES_RETENTION_DAYS = 120  # Feed-Cursor gelten länger als die Frist: der Feed gewinnt
+    assert aufbewahrung.retention_days() == 120
+    settings.OPARL_CHANGES_RETENTION_DAYS = 90
     settings.EVENTS_JOURNAL_RETENTION_DAYS = 120
     assert aufbewahrung.retention_days() == 120
-    settings.EVENTS_JOURNAL_RETENTION_DAYS = 0
-    with pytest.raises(ImproperlyConfigured, match="mindestens 1"):
+
+
+@pytest.mark.parametrize("tage", [0, 1, 30, 89])
+def test_frist_unter_90_tagen_ist_ein_konfigurationsfehler(settings: Any, tage: int) -> None:
+    """Spezifikation N7: Das Journal bleibt mindestens 90 Tage; eine kürzere Frist löscht nichts."""
+    settings.EVENTS_JOURNAL_RETENTION_DAYS = tage
+    settings.OPARL_CHANGES_RETENTION_DAYS = 120  # auch wenn der Feed die Frist ohnehin verlängerte
+    with pytest.raises(ImproperlyConfigured, match="mindestens 90"):
         aufbewahrung.retention_days()
+    _ereignis(200)
+    _ereignis(1)
+    with pytest.raises(CommandError, match="Fristen ungültig"):
+        call_command("events_purge", "--nur", "journal", stdout=StringIO())
+    assert Event.objects.count() == 2
 
 
 def test_loescht_nach_frist_und_haelt_das_aufraeumen_fest() -> None:
@@ -112,6 +129,88 @@ def test_cursor_wird_vor_jedem_stapel_neu_gelesen() -> None:
 
     aufbewahrung.purge(plan, batch=1)
     assert _seqs() == [e.seq for e in ereignisse[3:]]
+
+
+#: Frist für Warten auf Sperren in den Tests gegen PostgreSQL (Cluster-Last in der CI)
+FRIST = 30.0
+
+
+def _wartet_auf_abstimmung(beobachter: psycopg.Connection[Any], faden: threading.Thread) -> bool:
+    """Wartet ein anderer Prozess auf die Sperre ``pruning.lock``? Höchstens ``FRIST`` Sekunden, solange ``faden`` läuft."""
+    ende = zeitmodul.monotonic() + FRIST
+    while faden.is_alive() and zeitmodul.monotonic() < ende:
+        # Ein Schlüssel aus 64 Bit steht in pg_locks geteilt: obere Hälfte classid, untere objid
+        zeile = beobachter.execute(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted "
+            "AND classid::bigint = %s AND objid::bigint = %s",
+            [pruning.LOCK_KEY >> 32, pruning.LOCK_KEY & 0xFFFFFFFF],
+        ).fetchone()
+        if zeile and zeile[0]:
+            return True
+        zeitmodul.sleep(0.02)
+    return False
+
+
+def _im_faden(ziel: Callable[[], object]) -> tuple[threading.Thread, list[BaseException]]:
+    fehler: list[BaseException] = []
+
+    def lauf() -> None:
+        try:
+            ziel()
+        except BaseException as exc:  # noqa: BLE001 – im Hauptfaden prüfen
+            fehler.append(exc)
+        finally:
+            connection.close()
+
+    faden = threading.Thread(target=lauf)
+    faden.start()
+    return faden, fehler
+
+
+@pytest.mark.django_db(transaction=True)
+def test_loeschschritt_wartet_auf_ein_laufendes_nachspielen(pg_verbindungen: Callable[..., Any]) -> None:
+    """Ein Nachspielen, das noch nicht festgeschrieben ist: Der Löschschritt liest den Cursor erst danach."""
+    nur_postgres()
+    ereignisse = [_ereignis(200 - i) for i in range(6)]
+    _abonnement("test.a", ereignisse[-1].seq or 0)
+    plan = aufbewahrung.plan(JETZT)
+    assert plan.boundary == ereignisse[-1].seq
+
+    nachspielen = pg_verbindungen(autocommit=False)  # hält die Sperre wie dispatch.replay bis zum Festschreiben
+    nachspielen.execute("SELECT pg_advisory_xact_lock(%s)", [pruning.LOCK_KEY])
+    nachspielen.execute("UPDATE events_subscription SET cursor_seq = %s WHERE name = 'test.a'", [ereignisse[2].seq])
+    faden, fehler = _im_faden(lambda: aufbewahrung.purge(plan, batch=1))
+    gewartet = _wartet_auf_abstimmung(pg_verbindungen(), faden)
+    nachspielen.commit()
+    faden.join(FRIST)
+
+    assert not fehler, fehler
+    assert gewartet, "der Löschschritt wartet auf das Nachspielen"
+    assert _seqs() == [e.seq for e in ereignisse[3:]], "was das zurückgesetzte Abonnement braucht, bleibt"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_nachspielen_wartet_auf_einen_laufenden_loeschschritt(pg_verbindungen: Callable[..., Any]) -> None:
+    nur_postgres()
+    ereignisse = [_ereignis(200 - i) for i in range(3)]
+    _abonnement("test.a", ereignisse[-1].seq or 0)
+
+    loeschschritt = pg_verbindungen(autocommit=False)  # hält die Sperre wie ein Stapel von aufbewahrung.purge
+    loeschschritt.execute("SELECT pg_advisory_xact_lock_shared(%s)", [pruning.LOCK_KEY])
+    faden, fehler = _im_faden(lambda: replay("test.a", ereignisse[1].seq or 0))
+    gewartet = _wartet_auf_abstimmung(pg_verbindungen(), faden)
+    loeschschritt.commit()
+    faden.join(FRIST)
+
+    assert not fehler, fehler
+    assert gewartet, "das Nachspielen wartet auf den Löschschritt"
+    assert Subscription.objects.get(name="test.a").cursor_seq == ereignisse[0].seq
+
+
+@pytest.mark.django_db(transaction=True)
+def test_abstimmung_nur_in_einer_transaktion() -> None:
+    with pytest.raises(RuntimeError, match="Transaktion"):
+        pruning.lock(shared=True)
 
 
 def test_neuestes_ereignis_bleibt_und_die_wiederherstellungspruefung_passt() -> None:

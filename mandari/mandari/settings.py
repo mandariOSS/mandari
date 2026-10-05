@@ -364,10 +364,10 @@ EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBU
 EVENTS_IDEMPOTENCY_RETENTION_DAYS = int(os.environ.get("EVENTS_IDEMPOTENCY_RETENTION_DAYS", "30"))
 
 # Aufbewahrung der Ereignistechnik (apps.events.aufbewahrung, manage.py events_purge, Issue #511): Journal in
-# Tagen (Spezifikation: mindestens 90; nie kürzer als OPARL_CHANGES_RETENTION_DAYS, nie über den kleinsten Cursor
-# eines Abonnements), beendete Aufträge: erledigte und tote bzw. endgültig fehlgeschlagene. Das Journal räumt der
-# Zeitplan befehl:events_purge nur mit EVENTS_JOURNAL_PURGE_ENABLED auf (Standard aus); Aufträge räumt der
-# Zeitplan auftraege_aufraeumen immer auf.
+# Tagen (Spezifikation: mindestens 90, kleinere Werte lehnt events_purge ab; nie kürzer als
+# OPARL_CHANGES_RETENTION_DAYS, nie über den kleinsten Cursor eines Abonnements), beendete Aufträge: erledigte
+# und tote bzw. endgültig fehlgeschlagene. Das Journal räumt der Zeitplan befehl:events_purge nur mit
+# EVENTS_JOURNAL_PURGE_ENABLED auf (Standard aus); Aufträge räumt der Zeitplan auftraege_aufraeumen immer auf.
 EVENTS_JOURNAL_PURGE_ENABLED = os.environ.get("EVENTS_JOURNAL_PURGE_ENABLED", "false").strip().lower() in (
     "1",
     "true",

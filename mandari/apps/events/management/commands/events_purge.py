@@ -3,7 +3,7 @@
 Journal und beendete Aufträge nach ihren Fristen löschen (Issue #511, Spezifikation 4.9).
 
 - **Journal** (``apps.events.aufbewahrung``): Zeilen, die vor ``EVENTS_JOURNAL_RETENTION_DAYS`` Tagen
-  (Standard 90, mindestens so lange wie Cursor des Änderungsfeeds gelten) erfasst wurden – aber nie über dem
+  (Standard und Minimum 90, mindestens so lange wie Cursor des Änderungsfeeds gelten) erfasst wurden – aber nie über dem
   kleinsten Cursor eines Abonnements, nie das neueste Ereignis, nie geparkte Ereignisse. In Stapeln, je
   Stapel eine kurze Transaktion; festgehalten in ``events_pruning``.
 - **Aufträge** (``apps.events.tasks_backend.purge_finished``): erledigte nach
@@ -65,8 +65,8 @@ class Command(EinmaligMixin, BaseCommand):
                 self._auftraege(options["dry_run"])
         except ImproperlyConfigured:
             raise CommandError(
-                "Fristen ungültig: EVENTS_JOURNAL_RETENTION_DAYS, EVENTS_TASKS_DONE_RETENTION_DAYS und "
-                "EVENTS_TASKS_DEAD_RETENTION_DAYS müssen mindestens 1 sein."
+                f"Fristen ungültig: EVENTS_JOURNAL_RETENTION_DAYS muss mindestens {aufbewahrung.MIN_RETENTION_DAYS} "
+                "sein, EVENTS_TASKS_DONE_RETENTION_DAYS und EVENTS_TASKS_DEAD_RETENTION_DAYS mindestens 1."
             ) from None
 
     def _journal(self, options: dict[str, Any]) -> None:
