@@ -297,11 +297,11 @@ def papers_of_organizations(ids: Iterable[uuid.UUID]) -> list[tuple[uuid.UUID, u
     """
     gremien_je_kommune: dict[uuid.UUID | None, dict[str, uuid.UUID]] = {}
     for abschnitt in batched(dict.fromkeys(ids), _CHUNK):
-        for gremium, kennung, kommune in OParlOrganization.objects.filter(pk__in=abschnitt).values_list(
+        for gremium, kennung, gremium_kommune in OParlOrganization.objects.filter(pk__in=abschnitt).values_list(
             "pk", "external_id", "body_id"
         ):
             if kennung:
-                gremien_je_kommune.setdefault(kommune, {})[kennung] = gremium
+                gremien_je_kommune.setdefault(gremium_kommune, {})[kennung] = gremium
     ergebnis: list[tuple[uuid.UUID, uuid.UUID]] = []
     for kommune, gremien in gremien_je_kommune.items():
         nennt = Q()
