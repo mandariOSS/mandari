@@ -669,6 +669,8 @@ if TEXT_EXTRACTION_RUNNER not in ("ingestor", "worker"):
 # TEXT_EXTRACTION_MAX_ATTEMPTS Abbrüchen gescheitert („Speichergrenze“). Die Prüfung „texterkennung“
 # (/health/worker/) meldet Dateien, die trotzdem länger hängen.
 TEXT_EXTRACTION_STALE_MINUTES = int(os.environ.get("TEXT_EXTRACTION_STALE_MINUTES", "60"))
+# Statusprüfung „texterkennung“: rot erst ab so vielen aufgegebenen Dateien je 24 h (einzelne Riesenscans sind erwartbar)
+TEXT_EXTRACTION_GIVE_UP_ALERT = int(os.environ.get("TEXT_EXTRACTION_GIVE_UP_ALERT", "5"))
 TEXT_EXTRACTION_MAX_ATTEMPTS = int(os.environ.get("TEXT_EXTRACTION_MAX_ATTEMPTS", "3"))
 TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", "50"))
 # Je Lauf des Zeitplans höchstens so viele Aufträge einreihen bzw. wartend halten (nur mit Runner "worker")

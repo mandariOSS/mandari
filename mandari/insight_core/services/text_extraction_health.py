@@ -16,8 +16,9 @@ nach mehreren Abbrüchen als gescheitert auf (Grund „Speichergrenze“). Gemes
   Zeitpunkt der Aufgabe (``text_extracted_at``, beim Aufgeben gesetzt), nicht ``updated_at``: Spätere Änderungen
   der Zeile (Dokumentablage, Abgleich, Sync) verlängern das Fenster sonst ohne neuen Abbruch.
 
-Die Prüfung ``texterkennung`` in ``/health/worker/`` (Statusseite) scheitert bei hängenden oder aufgegebenen
-Dateien; wie ``gescheitert`` bleibt sie nach einer aufgegebenen Datei 24 Stunden rot.
+Die Prüfung ``texterkennung`` in ``/health/worker/`` (Statusseite) scheitert bei hängenden Dateien und, sobald in
+24 Stunden mindestens ``TEXT_EXTRACTION_GIVE_UP_ALERT`` Dateien (Standard 5) aufgegeben wurden. Einzelne aufgegebene
+Dateien (meist übergroße Scans) sind erwartbar: Sie stehen im Detailtext und im Betriebsmonitor, ohne Alarm (#842).
 """
 
 from __future__ import annotations
@@ -87,11 +88,16 @@ def extraction_health(now: datetime | None = None) -> ExtractionHealth:
     )
 
 
+def give_up_alert() -> int:
+    """Ab so vielen aufgegebenen Dateien je 24 Stunden scheitert die Prüfung (mindestens 1)."""
+    return max(1, int(getattr(settings, "TEXT_EXTRACTION_GIVE_UP_ALERT", 5)))
+
+
 def check_text_extraction() -> Check:
     """Prüfung ``texterkennung`` für ``/health/worker/``; Text ohne Inhalte, nur Zahlen."""
     stand = extraction_health()
     return Check(
-        stand.haengend == 0 and stand.aufgegeben == 0,
+        stand.haengend == 0 and stand.aufgegeben < give_up_alert(),
         (
             f"{stand.haengend} Dateien hängen, {stand.abgebrochen} nach Abbruch erneut eingeplant, "
             f"{stand.aufgegeben} nach wiederholtem Abbruch aufgegeben (24 h)"

@@ -62,16 +62,32 @@ def test_haengende_dateien_ueber_der_zeitgrenze() -> None:
 
 
 @pytest.mark.django_db
-def test_aufgegebene_dateien_24_stunden_rot() -> None:
+def test_aufgegebene_dateien_ab_der_schwelle_24_stunden_rot(settings: Any) -> None:
+    settings.TEXT_EXTRACTION_GIVE_UP_ALERT = 2
     _datei(text_extraction_status="pending", text_extraction_attempts=1)
-    datei = _datei(text_extraction_status="failed", text_extraction_attempts=3, text_extracted_at=timezone.now())
+    erste = _datei(text_extraction_status="failed", text_extraction_attempts=3, text_extracted_at=timezone.now())
 
     stand = extraction_health()
     assert (stand.abgebrochen, stand.aufgegeben) == (1, 1)
+    assert check_text_extraction().ok
+
+    zweite = _datei(text_extraction_status="failed", text_extraction_attempts=3, text_extracted_at=timezone.now())
     assert not check_text_extraction().ok
 
-    OParlFile.objects.filter(pk=datei.pk).update(text_extracted_at=timezone.now() - timedelta(hours=25))
+    OParlFile.objects.filter(pk__in=[erste.pk, zweite.pk]).update(
+        text_extracted_at=timezone.now() - timedelta(hours=25)
+    )
     assert check_text_extraction().ok
+
+
+@pytest.mark.django_db
+def test_einzelne_aufgegebene_datei_ohne_alarm_aber_im_detail() -> None:
+    """Standard 5: ein übergroßer Scan macht die Statusseite nicht rot (#842), die Zahl bleibt sichtbar."""
+    _datei(text_extraction_status="failed", text_extraction_attempts=3, text_extracted_at=timezone.now())
+
+    ergebnis = check_text_extraction()
+    assert ergebnis.ok
+    assert "1 nach wiederholtem Abbruch aufgegeben (24 h)" in ergebnis.detail
 
 
 @pytest.mark.django_db
@@ -89,7 +105,8 @@ def test_spaetere_aenderung_der_zeile_verlaengert_das_fenster_nicht() -> None:
 
 
 @pytest.mark.django_db
-def test_statusseite_je_pruefung(client: Client) -> None:
+def test_statusseite_je_pruefung(client: Client, settings: Any) -> None:
+    settings.TEXT_EXTRACTION_GIVE_UP_ALERT = 1
     assert "texterkennung" in status.CHECKS
     assert client.get("/health/worker/?pruefung=texterkennung").status_code == 200
 
