@@ -107,6 +107,8 @@ x-app-environment: &app-environment
   SEARCH_INDEX_SUBSCRIPTION: ${SEARCH_INDEX_SUBSCRIPTION:-aus}
   SEARCH_INDEX_SHADOW_BODIES: ${SEARCH_INDEX_SHADOW_BODIES:-}
   SEARCH_INDEX_SHADOW_MAX_DOCS: ${SEARCH_INDEX_SHADOW_MAX_DOCS:-100000}
+  # Benachrichtigungen als Abonnement (aus, schatten, aktiv; siehe .env.example), Standard aus
+  WORK_NOTIFICATION_SUBSCRIPTION: ${WORK_NOTIFICATION_SUBSCRIPTION:-aus}
   # Abfrage der Volltextsuche (v2 Standard, v1 = bisherige Abfrage als Rückfall; siehe .env.example)
   SEARCH_RANKING: ${SEARCH_RANKING:-v2}
   SEARCH_RECENCY_WEIGHT: ${SEARCH_RECENCY_WEIGHT:-1.0}

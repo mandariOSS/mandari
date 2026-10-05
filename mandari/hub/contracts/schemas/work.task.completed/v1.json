@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:work.task.completed:v1",
+  "title": "Aufgabe erledigt",
+  "description": "Eine Aufgabe wurde als erledigt markiert. Aggregat: Task.",
+  "x-kind": "event",
+  "x-owner": "apps.work",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task",
+    "organization"
+  ],
+  "properties": {
+    "task": {
+      "description": "Kennung der Aufgabe.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "organization": {
+      "description": "Organisation der Aufgabe.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "task": "fedcba98-7654-4321-8fed-cba987654321",
+      "organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d"
+    }
+  ]
+}

@@ -681,6 +681,40 @@ unberührt. **Rückfall:** `SEARCH_RANKING=v1` in der `.env`, dann `docker compo
 **Messen** (nur lesend, gibt nur Zahlen und Aktenzeichen aus):
 `docker exec mandari python manage.py suchqualitaet messen --ranking v1 --ranking v2`.
 
+### Benachrichtigungen als Abonnement
+
+Benachrichtigungen entstehen künftig aus Ereignissen der Datendrehscheibe statt in der Anfrage
+(Issue #529). Den Anfang machen Aufgaben: `work.task.assigned`, `work.task.completed` und
+`work.task.commented`. Das Abonnement `benachrichtigung` (Worker, Rolle `dispatch`, Warteschlange
+`default`) legt daraus die Benachrichtigungen an – eine je Ereignis und Empfänger – und reiht die Mail
+mit demselben Idempotenzschlüssel als Auftrag ein (Warteschlange `mail`).
+
+| `WORK_NOTIFICATION_SUBSCRIPTION` | Bedeutung |
+|---|---|
+| `aus` (Standard) | wie bisher: Benachrichtigung und Mail entstehen in der Anfrage, keine Ereignisse |
+| `schatten` | zusätzlich Ereignisse; das Abonnement legt nichts an, sondern vergleicht mit dem bisherigen Weg (`mandari_notification_subscription_total{result="gleich"\|"fehlt"}`) |
+| `aktiv` | nur noch über das Abonnement; Änderung und Ereignis sind atomar |
+
+**Einschalten in Stufen:** Zuerst müssen Aufträge im Worker laufen: Steht `TASKS_BACKEND` noch auf dem
+Standard (`immediate`), erst wie unter „Umschalten der Aufträge“ auf `journal` umstellen und einige Tage
+beobachten. Dann `schatten` setzen, Anwendung und Worker neu starten, einige Tage beobachten
+(`result="fehlt"` bleibt bei null, `mandari_events_lag_seconds{subscription="benachrichtigung"}` klein).
+Dann umschalten: im Admin („Ereignistechnik → Abonnements“) `benachrichtigung` pausieren und
+„Fortsetzen (aktiv)“ (der Schalter allein ändert den Zustand in der Datenbank nicht), danach
+`WORK_NOTIFICATION_SUBSCRIPTION=aktiv` setzen und **erst den Worker, dann die Anwendung** neu starten
+(`docker compose up -d worker` vor `docker compose up -d mandari`). Doppelte Benachrichtigungen entstehen
+dabei nicht: Das aktive Abonnement überspringt, was der bisherige Weg kurz zuvor schon angelegt hat. Liest
+der Worker schon `aktiv`, arbeitet er auch dann wie aktiv, wenn das Abonnement in der Datenbank noch auf
+`schatten` steht. Eine Lücke entsteht nur, wenn die Anwendung schon `aktiv` liest (kein Weg in der
+Anfrage mehr), der Worker aber noch `schatten` – daher die Reihenfolge der Neustarts.
+
+Voraussetzung: Sequenzierer und Zustellung laufen (Worker) und `TASKS_BACKEND=journal`; ohne startet die
+Anwendung mit `schatten` oder `aktiv` nicht (sonst liefe der Mailversand in der Transaktion der Zustellung).
+
+**Rückweg:** `aus` und Neustart; Benachrichtigungen entstehen wieder in der Anfrage. Ereignisse, die das
+Abonnement noch nicht zugestellt hat, bleiben im Journal liegen (ohne Benachrichtigung); vor dem
+Umschalten deshalb warten, bis der Rückstand des Abonnements null ist.
+
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 
 Den Text der RIS-Dateien erkennt eine Implementierung, die Bibliothek `mandari_dokumente` in `shared/`

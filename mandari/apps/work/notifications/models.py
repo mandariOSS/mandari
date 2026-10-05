@@ -195,6 +195,12 @@ class Notification(models.Model):
     # Metadata (flexible storage for type-specific data)
     metadata = models.JSONField(default=dict, blank=True, verbose_name="Metadaten")
 
+    # Herkunft aus der Datendrehscheibe (Issue #529): "<event_id>:<mitgliedschaft>", eindeutig – eine
+    # Benachrichtigung je Ereignis und Empfänger, auch wenn das Ereignis erneut zugestellt wird
+    event_key = models.CharField(
+        max_length=120, null=True, blank=True, editable=False, verbose_name="Ereignis und Empfänger"
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -206,6 +212,14 @@ class Notification(models.Model):
             models.Index(fields=["recipient", "is_read", "-created_at"]),
             models.Index(fields=["recipient", "notification_type"]),
             models.Index(fields=["created_at"]),
+        ]
+        constraints = [
+            # Teilindex: nur Benachrichtigungen aus Ereignissen (work/0068, CONCURRENTLY angelegt)
+            models.UniqueConstraint(
+                fields=["event_key"],
+                condition=models.Q(event_key__isnull=False),
+                name="uniq_notification_event_key",
+            ),
         ]
 
     def __str__(self):

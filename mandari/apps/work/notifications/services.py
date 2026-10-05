@@ -26,10 +26,11 @@ Usage:
 """
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, cast
 
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone
 
 from .models import Notification, NotificationPreference, NotificationType
@@ -60,6 +61,8 @@ class NotificationHub:
         metadata: dict = None,
         send_email: bool = True,
         _forwarded: bool = False,  # Recursion guard for deputy forwarding
+        event_key: str | None = None,
+        direct_since: datetime | None = None,
     ) -> Notification | None:
         """
         Send a notification to a single user.
@@ -74,6 +77,10 @@ class NotificationHub:
             metadata: Optional additional data
             send_email: Whether to send email (subject to user preferences)
             _forwarded: Internal flag to prevent recursive deputy forwarding
+            event_key: Kennung des Ereignisses der Datendrehscheibe (Abonnement ``benachrichtigung``):
+                höchstens eine Benachrichtigung je Ereignis und Empfänger, Mailauftrag mit demselben Schlüssel
+            direct_since: Umschalten (Issue #529): keine Benachrichtigung, wenn der bisherige Weg in der
+                Anfrage dieselbe seit diesem Zeitpunkt schon angelegt hat
 
         Returns:
             The created Notification instance, or None if filtered out
@@ -92,6 +99,13 @@ class NotificationHub:
         except Exception:
             logger.exception("Benachrichtigungseinstellungen konnten nicht geprüft werden")
 
+        # Aus einem Ereignis: einmal je Ereignis und Empfänger (erneute Zustellung legt nichts an)
+        key = f"{event_key}:{recipient.id}" if event_key else None
+        if key and Notification.objects.filter(event_key=key).exists():
+            return None
+        if direct_since and cls.already_direct(recipient, notification_type, metadata, direct_since):
+            return None
+
         # Create the notification
         notification = Notification.objects.create(
             recipient=recipient,
@@ -101,6 +115,7 @@ class NotificationHub:
             link=link,
             actor=actor,
             metadata=metadata or {},
+            event_key=key,
         )
 
         # Invalidate count cache for recipient
@@ -110,7 +125,14 @@ class NotificationHub:
         if send_email:
             cls._queue_email(notification)
 
-        logger.info(f"Notification sent: {notification_type} to {recipient.user.email}")
+        # Erst nach dem Commit und ohne Adresse: Eine im Schattenbetrieb zurückgerollte Benachrichtigung
+        # erscheint nicht im Protokoll (Rückrufe eines zurückgerollten Sicherungspunkts verfallen)
+        recipient_id, notification_id = recipient.id, notification.id
+        transaction.on_commit(
+            lambda: logger.info(
+                "Benachrichtigung %s (%s) an Mitgliedschaft %s", notification_id, notification_type, recipient_id
+            )
+        )
 
         # Deputy forwarding: if recipient is absent and has a deputy
         if not _forwarded:
@@ -122,12 +144,41 @@ class NotificationHub:
                 link=link,
                 actor=actor,
                 metadata=metadata,
+                event_key=f"{event_key}:vertretung" if event_key else None,
+                direct_since=direct_since,
+                # Aus einem Ereignis: Mail wie beim Empfänger (im Schatten keine). Sonst wie bisher immer mit
+                # Mail – Aufrufer ohne Mail (Einladung, Erinnerung, Gast-Freigabe) versenden ihre Mail selbst
+                # an den Empfänger, nicht an die Vertretung.
+                send_email=send_email if event_key else True,
             )
 
         return notification
 
     @classmethod
-    def _forward_to_deputy(cls, recipient, notification_type, title, message, link, actor, metadata):
+    def already_direct(cls, recipient, notification_type: str, metadata: dict | None, since: datetime) -> bool:
+        """Hat der bisherige Weg (ohne Ereignis) diese Benachrichtigung seit ``since`` schon angelegt?"""
+        return Notification.objects.filter(
+            recipient=recipient,
+            notification_type=notification_type,
+            event_key__isnull=True,
+            metadata=metadata or {},
+            created_at__gte=since,
+        ).exists()
+
+    @classmethod
+    def _forward_to_deputy(
+        cls,
+        recipient,
+        notification_type,
+        title,
+        message,
+        link,
+        actor,
+        metadata,
+        event_key=None,
+        direct_since=None,
+        send_email=True,
+    ):
         """Forward notification to deputy if recipient is currently absent."""
         try:
             from apps.work.organization.models import MemberAbsence
@@ -156,6 +207,9 @@ class NotificationHub:
                     actor=actor,
                     metadata=metadata,
                     _forwarded=True,
+                    event_key=event_key,
+                    direct_since=direct_since,
+                    send_email=send_email,
                 )
         except Exception as e:
             logger.error(f"Failed to forward notification to deputy: {e}")
@@ -171,6 +225,8 @@ class NotificationHub:
         actor=None,
         metadata: dict = None,
         send_email: bool = True,
+        event_key: str | None = None,
+        direct_since: datetime | None = None,
     ) -> list:
         """
         Send notifications to multiple users.
@@ -200,6 +256,8 @@ class NotificationHub:
                 actor=actor,
                 metadata=metadata,
                 send_email=send_email,
+                event_key=event_key,
+                direct_since=direct_since,
             )
             if notification:
                 notifications.append(notification)
@@ -272,10 +330,15 @@ class NotificationHub:
             if prefs.email_digest != "instant":
                 return
 
-            # Mail-Auftrag (Warteschlange "mail"): mit TASKS_BACKEND=journal im Runner, sonst sofort
+            # Mail-Auftrag (Warteschlange "mail"): mit TASKS_BACKEND=journal im Runner, sonst sofort.
+            # Aus einem Ereignis mit Idempotenzschlüssel je Ereignis und Empfänger (Issue #529).
+            from apps.events.tasks_backend import enqueue_once
             from apps.work.background_tasks import send_notification_email_task
 
-            cast(Any, send_notification_email_task).enqueue(str(notification.id))
+            if notification.event_key:
+                enqueue_once(cast(Any, send_notification_email_task), notification.event_key, str(notification.id))
+            else:
+                cast(Any, send_notification_email_task).enqueue(str(notification.id))
 
         except Exception as e:
             logger.error(f"Failed to queue notification email: {e}")
@@ -308,6 +371,10 @@ class NotificationHub:
         task,
         assignee,  # Membership
         assigner,  # Membership
+        *,
+        event_key: str | None = None,
+        send_email: bool = True,
+        direct_since: datetime | None = None,
     ):
         """Notify user when a task is assigned to them."""
         return cls.send(
@@ -318,6 +385,9 @@ class NotificationHub:
             link=f"/work/{task.organization.slug}/tasks/?open={task.id}",
             actor=assigner,
             metadata={"task_id": str(task.id)},
+            event_key=event_key,
+            send_email=send_email,
+            direct_since=direct_since,
         )
 
     @classmethod
@@ -326,13 +396,18 @@ class NotificationHub:
         task,
         comment,  # TaskActivity mit activity_type="comment"
         commenter,  # Membership
+        *,
+        event_key: str | None = None,
+        send_email: bool = True,
+        direct_since: datetime | None = None,
     ):
-        """Notify task assignee/creator about a new comment."""
+        """Notify task assignee/creator about a new comment (``commenter`` None: nicht mehr zuzuordnen)."""
         recipients = set()
+        commenter_id = commenter.id if commenter is not None else None
 
-        if task.assigned_to and task.assigned_to.id != commenter.id:
+        if task.assigned_to and task.assigned_to.id != commenter_id:
             recipients.add(task.assigned_to)
-        if task.created_by and task.created_by.id != commenter.id:
+        if task.created_by and task.created_by.id != commenter_id:
             recipients.add(task.created_by)
 
         if not recipients:
@@ -350,6 +425,9 @@ class NotificationHub:
             link=f"/work/{task.organization.slug}/tasks/?open={task.id}",
             actor=commenter,
             metadata={"task_id": str(task.id), "comment_id": str(comment.id)},
+            event_key=event_key,
+            send_email=send_email,
+            direct_since=direct_since,
         )
 
     @classmethod
@@ -357,12 +435,17 @@ class NotificationHub:
         cls,
         task,
         completer,  # Membership
+        *,
+        event_key: str | None = None,
+        send_email: bool = True,
+        direct_since: datetime | None = None,
     ):
-        """Notify creator and assignee when someone else completes a task."""
+        """Notify creator and assignee when someone else completes a task (``completer`` None: unbekannt)."""
         recipients = set()
-        if task.created_by and task.created_by.id != completer.id:
+        completer_id = completer.id if completer is not None else None
+        if task.created_by and task.created_by.id != completer_id:
             recipients.add(task.created_by)
-        if task.assigned_to and task.assigned_to.id != completer.id:
+        if task.assigned_to and task.assigned_to.id != completer_id:
             recipients.add(task.assigned_to)
 
         if not recipients:
@@ -376,6 +459,9 @@ class NotificationHub:
             link=f"/work/{task.organization.slug}/tasks/?open={task.id}",
             actor=completer,
             metadata={"task_id": str(task.id)},
+            event_key=event_key,
+            send_email=send_email,
+            direct_since=direct_since,
         )
 
     @classmethod

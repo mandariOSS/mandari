@@ -390,6 +390,20 @@ Umgesetzt in `apps/session/hub_events.py` (Erfassung in den Fachfunktionen) und
   kanonische aus der Adresse des TOP mit dem Zusatz `voting`. Die Rücknahme eines Ergebnisses meldet
   `ris.object.depublished` der Abstimmung (`zurueckgenommen`) und die Änderung des TOP.
 
+## Nachtrag zum Abonnement `benachrichtigung` (#529)
+
+Umgesetzt in `apps/work/notifications/abonnement.py` (Regeln je Ereignistyp) und
+`apps/work/tasks/ereignisse.py` (Erzeuger). Die Entscheidung bleibt; präzisiert wurde:
+
+- **Sicht mit externem Effekt:** Das Abonnement läuft transaktional; Benachrichtigungen und der
+  Mailauftrag entstehen in der Transaktion der Zustellung. Der Mailauftrag trägt den
+  Idempotenzschlüssel `<event_id>:<empfänger>`, die Benachrichtigung denselben Schlüssel eindeutig
+  (`event_key`); Nachspielen legt nichts doppelt an.
+- **Empfänger beim Eigentümer:** Das Ereignis nennt Aufgabe, Organisation und gegebenenfalls Zuständige
+  bzw. Kommentar; wer benachrichtigt wird, liest die Regel bei der Zustellung aus der Aufgabe.
+- **Schattenbetrieb ohne Schattenziel:** Die Regel läuft im Sicherungspunkt ohne Mail und wird
+  zurückgerollt; gezählt wird, ob der bisherige Weg dieselbe Benachrichtigung angelegt hat.
+
 ## Nachtrag zu den Nachweisen (#514)
 
 Die Qualitätsziele und die Fitnessfunktion oben sind belegt; Tests, Messwerte und Grenzen stehen in
