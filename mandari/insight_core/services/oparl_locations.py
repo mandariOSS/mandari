@@ -91,13 +91,15 @@ def apply_oparl_locations(paper, save: bool = True) -> bool:
 
     - source="oparl" hat höchste Priorität (steht vorn, gewinnt bei Dedup <50m)
     - bestehende Einträge (manual, extrahierte) bleiben erhalten
+    - die Verknüpfung ist die Quelle: Entfernt der Ingestor einen Ort von der Vorlage (oder alle,
+      Issue #553), verschwinden auch die übernommenen Einträge mit source="oparl"
     - Rückgabe: True, wenn sich paper.locations geändert hat
     """
     oparl_entries = build_oparl_location_entries(paper)
-    if not oparl_entries:
+    existing = paper.locations if isinstance(paper.locations, list) else []
+    if not oparl_entries and not any(isinstance(loc, dict) and loc.get("source") == "oparl" for loc in existing):
         return False
 
-    existing = paper.locations if isinstance(paper.locations, list) else []
     # Alte oparl-Einträge ersetzen (Quelle ist die M2M-Verknüpfung)
     others = [
         loc
