@@ -21,6 +21,7 @@
     },
     "person": {
       "description": "Empfangende Person.",
+      "x-person": true,
       "type": "string",
       "format": "uuid"
     },

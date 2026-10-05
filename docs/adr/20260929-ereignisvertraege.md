@@ -174,6 +174,31 @@ geänderten Felder, wie bei `ris.agendaitem.changed`. Erzeuger ist vorerst der I
 fachlichen Vergleich wie für die übrigen Typen (Listen als Mengen, leere Werte gleich fehlenden).
 Session meldet Gremien und Personen nicht; eine weitere Sichtbarkeitsklasse ließe sich additiv ergänzen.
 
+## Nachtrag: Personenfelder für die DSGVO-Löschung (#511)
+
+- Felder der Nutzlast, die eine Person nennen, tragen `"x-person": true`: `attendance.response_recorded.person`,
+  `core.membership.changed.user`, `core.user.registered.user`, `session.allowance.approved.person`. Erlaubt nur
+  in Ereignissen der Klasse `personenbezogen`, nur auf der obersten Ebene und nur an Zeichenketten im Format
+  `uuid` (Register und Tests prüfen das). `session.payment.exported` nennt keine Person, nur
+  Abrechnungspositionen.
+- Die Kennzeichnung ist eine Anmerkung `x-…` und damit additiv. Veröffentlicht ein Eigentümer ein Ereignis mit
+  `operation=redact` zu einer Person, leert die Plattform die Nutzlast der personenbezogenen Journaleinträge,
+  deren Objekt die Person ist oder deren Personenfeld sie nennt (Forgettable Payloads in der einfachsten Form:
+  Die Kennung bleibt, die Felder werden leer). Danach erfüllen diese Einträge ihr Schema nicht mehr; Abonnenten
+  personenbezogener Typen müssen eine leere Nutzlast vertragen. Heute abonniert niemand solche Typen.
+- **Welche Person ein `redact` meint**, bestimmt das Ereignis selbst: die Personenfelder seiner Nutzlast laut
+  Vertrag seines Typs und seiner Version, dazu sein Objekt nur, wenn das Objekt eine Person ist (Objekttyp
+  `User`). Das Objekt eines `redact` ist sonst kein Personenmerkmal: Bei `attendance.response_recorded` ist es
+  die Sitzung, bei `core.membership.changed` die Mitgliedschaft, bei `session.allowance.approved` die
+  Abrechnungsposition. „Zu dieser Person“ gehören Einträge, deren Objekt diese Person ist (Objekttyp `User`)
+  oder deren Personenfeld sie nennt. Nennt das Ereignis keine Person (etwa ein `redact` öffentlicher
+  RIS-Daten), entsteht kein Auftrag.
+- Der Auftrag `journal_neutralisieren` entsteht je genannter Person in derselben Transaktion wie das Ereignis
+  und immer in `events_task` (`tasks_backend.journal_backend`), auch wenn `TASKS_BACKEND` Aufträge sonst sofort
+  ausführt: Das Durchsuchen des Journals gehört in den Worker, nicht in die Anfrage des Eigentümers.
+- Die Plattform liest die Kennzeichnung nicht selbst aus den Schemas (sie kennt die Drehscheibe nicht):
+  `hub.contracts` hängt die Liste beim Start bei `apps.events.datenschutz` ein.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),

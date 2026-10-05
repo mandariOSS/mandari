@@ -358,6 +358,13 @@ EVENTS_DB_DIRECT_URL = os.environ.get("EVENTS_DB_DIRECT_URL", "")
 # Formatprüfungen der Hülle, die Verträge sichern die Tests der Produzenten.
 EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBUG)).lower() in ("true", "1", "yes")
 
+# DSGVO (apps.events.datenschutz, Issue #511): Nach publish(..., operation="redact") die Nutzlast
+# personenbezogener Journaleinträge zu den Personen leeren, die das Ereignis nennt (Objekt vom Typ User oder
+# Personenfeld laut Vertrag; die Kennung bleibt). Der Auftrag entsteht in derselben Transaktion, immer in
+# events_task, und läuft im Worker, auch ohne TASKS_BACKEND=journal. Standard aus; von Hand:
+# manage.py events_neutralize --person <uuid> [--dry-run].
+EVENTS_REDACT_NEUTRALIZE = os.environ.get("EVENTS_REDACT_NEUTRALIZE", "false").strip().lower() in ("1", "true", "yes")
+
 # Befehle (hub.commands, Issue #539): So viele Tage bleibt ein Idempotenzschlüssel samt Quittung
 # gespeichert. Bis dahin erhält eine Wiederholung mit demselben Schlüssel dieselbe Quittung, danach
 # gilt der Schlüssel als neu. Aufgeräumt wird täglich per Zeitplan (apps/events/schedules.py).

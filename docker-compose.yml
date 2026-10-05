@@ -84,6 +84,8 @@ x-app-environment: &app-environment
   TASKS_MAX_TASKS_PER_PROCESS: ${TASKS_MAX_TASKS_PER_PROCESS:-1000}
   TASKS_MAX_MEMORY_MB: ${TASKS_MAX_MEMORY_MB:-400}
   EVENTS_DB_DIRECT_URL: ${EVENTS_DB_DIRECT_URL:-}
+  # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (siehe .env.example), Standard aus
+  EVENTS_REDACT_NEUTRALIZE: ${EVENTS_REDACT_NEUTRALIZE:-false}
   EVENTS_WORKER_REQUIRED: ${EVENTS_WORKER_REQUIRED:-}
   INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
   # Zeitpläne im Worker statt Host-Cron (DEPLOYMENT.md, „Geplante Aufgaben“): einzelne abschalten

@@ -21,6 +21,7 @@
     },
     "person": {
       "description": "Geladene Person.",
+      "x-person": true,
       "type": "string",
       "format": "uuid"
     },

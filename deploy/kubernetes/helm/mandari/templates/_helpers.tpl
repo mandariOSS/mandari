@@ -154,6 +154,9 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
 - name: WORKER_PUSH_URL
   value: {{ .Values.events.workerPushUrl | quote }}
 {{- end }}
+# DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+- name: EVENTS_REDACT_NEUTRALIZE
+  value: {{ .Values.events.redactNeutralize | default false | toString | quote }}
 {{- if .Values.tracing.otlpEndpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ .Values.tracing.otlpEndpoint | quote }}

@@ -334,6 +334,13 @@ def publish(
         validator(envelope(event))
 
     event.save(force_insert=True, using=using)
+    if event.operation == Operation.REDACT:
+        # DSGVO: personenbezogene Nutzlasten zu den Personen neutralisieren, die das Ereignis nennt (Auftrag in
+        # dieser Transaktion, nur mit EVENTS_REDACT_NEUTRALIZE und nur über die Standard-Datenbank;
+        # apps.events.datenschutz)
+        from .datenschutz import after_redact
+
+        after_redact(event, using)
     return event
 
 
