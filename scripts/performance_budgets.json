@@ -1,12 +1,12 @@
 {
   "insight_startseite": {
     "beschreibung": "Insight: Startseite der Kommune",
-    "abfragen": 16,
+    "abfragen": 11,
     "ms": 500
   },
   "insight_einstieg_koerperschaft": {
     "beschreibung": "Insight: Einstieg einer Körperschaft (/insight/k/<slug>/, Issue #317)",
-    "abfragen": 15,
+    "abfragen": 10,
     "ms": 500
   },
   "insight_suche": {

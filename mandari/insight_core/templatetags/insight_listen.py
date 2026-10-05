@@ -56,4 +56,4 @@ def seiten_url(context: Any, nummer: int) -> str:
     if params is None:
         return f"?page={nummer}"
     params["page"] = str(nummer)
-    return "?" + params.urlencode()
+    return "?" + str(params.urlencode())

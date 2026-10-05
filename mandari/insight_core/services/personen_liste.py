@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Any
 
 from django.db.models import Q
 from django.utils import timezone
@@ -98,7 +99,7 @@ def funktion_aus(mitgliedschaften: Iterable[OParlMembership]) -> str:
     return beste[1]
 
 
-def angaben_fuer(personen: Iterable[OParlPerson], stichtag: date | None = None) -> dict:
+def angaben_fuer(personen: Iterable[OParlPerson], stichtag: date | None = None) -> dict[Any, PersonAngaben]:
     """``{person_id: PersonAngaben}`` aus den laufenden Mitgliedschaften, eine Abfrage für alle Personen."""
     ids = [p.pk for p in personen]
     if not ids:
@@ -112,10 +113,10 @@ def angaben_fuer(personen: Iterable[OParlPerson], stichtag: date | None = None) 
         .select_related("organization")
         .order_by("organization__name")
     )
-    je_person: dict = {pid: [] for pid in ids}
+    je_person: dict[Any, list[OParlMembership]] = {pid: [] for pid in ids}
     for m in mitgliedschaften:
         je_person[m.person_id].append(m)
-    ergebnis = {}
+    ergebnis: dict[Any, PersonAngaben] = {}
     for pid, liste in je_person.items():
         angaben = PersonAngaben(funktion=funktion_aus(liste))
         for m in liste:

@@ -8,6 +8,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 import json
 from datetime import timedelta
 
+from django.db.models import OuterRef, Subquery, UUIDField
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -18,10 +19,11 @@ from ..models import (
     OParlBody,
     OParlConsultation,
     OParlMeeting,
+    OParlOrganization,
     OParlPaper,
     withdrawn_q,
 )
-from ..services import kommunenverzeichnis, portal_stats
+from ..services import kommunenverzeichnis
 from ._helpers import get_active_body, is_all_bodies_mode
 
 # =============================================================================
@@ -37,11 +39,21 @@ def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> li
     """
     Jüngste Ergebnisse öffentlicher Tagesordnungspunkte vergangener Sitzungen (Issue #841).
 
-    Nur Punkte mit Ergebnis aus nicht abgesagten, nicht zurückgenommenen Sitzungen der letzten Monate. Jeder Punkt
-    trägt als ``vorgang`` den beratenen Vorgang (für Titel und Link), sonst ``None``.
+    Nur Punkte mit Ergebnis aus nicht abgesagten, nicht zurückgenommenen Sitzungen der letzten Monate. Beratener
+    Vorgang (``vorgang_id``, ``vorgang_name``) und Gremium (``gremium``) kommen als Unterabfragen mit – eine Abfrage
+    für die ganze Liste (Performance-Budget der Startseite).
     """
     jetzt = timezone.now()
-    punkte = list(
+    beratungen = (
+        OParlConsultation.objects.filter(
+            agenda_item_external_id=OuterRef("external_id"), paper__isnull=False, paper__deleted=False
+        )
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .order_by("pk")
+    )
+    gremien = OParlOrganization.objects.filter(meetings=OuterRef("meeting_id")).order_by("name")
+    return list(
         OParlAgendaItem.objects.filter(
             meeting__body=body,
             meeting__deleted=False,
@@ -55,29 +67,18 @@ def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> li
         .exclude(result="")
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("meeting"))
+        .annotate(
+            vorgang_id=Subquery(beratungen.values("paper_id")[:1], output_field=UUIDField()),
+            vorgang_name=Subquery(beratungen.values("paper__name")[:1]),
+            gremium=Subquery(gremien.values("name")[:1]),
+        )
         .select_related("meeting")
-        .prefetch_related("meeting__organizations")
         .order_by("-meeting__start", "order", "number")[:anzahl]
     )
-    vorgaenge: dict[str, OParlPaper] = {}
-    if punkte:
-        beratungen = (
-            OParlConsultation.objects.filter(
-                agenda_item_external_id__in=[p.external_id for p in punkte], paper__isnull=False, paper__deleted=False
-            )
-            .exclude(withdrawn_q())
-            .exclude(withdrawn_q("paper"))
-            .select_related("paper")
-        )
-        for beratung in beratungen:
-            vorgaenge.setdefault(beratung.agenda_item_external_id, beratung.paper)
-    for punkt in punkte:
-        punkt.vorgang = vorgaenge.get(punkt.external_id)
-    return punkte
 
 
 class PortalHomeView(TemplateView):
-    """Portal-Startseite mit Kommune-Auswahl und Statistiken."""
+    """Portal-Startseite: Kommunenauswahl bzw. Übersicht der Kommune mit Sitzungen, Vorgängen und Beschlüssen."""
 
     template_name = "pages/portal/home.html"
     select_template_name = "pages/portal/select_body.html"
@@ -121,9 +122,6 @@ class PortalHomeView(TemplateView):
             context["recent_papers"] = None
 
         elif body:
-            # Statistiken für die aktive Kommune (aus dem Cache)
-            context["stats"] = portal_stats.body_stats(body)
-
             # Nächste Sitzungen (5 für einheitliche Listen)
             context["upcoming_meetings"] = (
                 OParlMeeting.objects.filter(body=body, start__gte=timezone.now(), cancelled=False, deleted=False)

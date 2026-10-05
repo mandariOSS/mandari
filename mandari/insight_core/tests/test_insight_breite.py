@@ -111,6 +111,12 @@ def _kopfzeile(html: str) -> list[str]:
     return [re.sub(r"<[^>]+>", "", th).strip() for th in re.findall(r"<th\b[^>]*>(.*?)</th>", thead.group(1), re.S)]
 
 
+def _ausschnitt(muster: str, html: str) -> str:
+    treffer = re.search(muster, html, re.S)
+    assert treffer, muster
+    return treffer.group(0)
+
+
 def _tabelle(html: str) -> str:
     tabelle = re.search(r"<table.*?</table>", html, re.S)
     assert tabelle, "keine Tabelle"
@@ -124,9 +130,11 @@ def _tabelle(html: str) -> str:
 
 class TestHatWert:
     def test_platzhalter_gelten_als_leer(self) -> None:
-        for wert in (None, "", " ", "—", "-", "–", 0, [], False):
+        leer: list[object] = [None, "", " ", "—", "-", "–", 0, [], False]
+        belegt: list[object] = ["Ratsmitglied", 3, ["Hauptausschuss"], date(2026, 1, 1)]
+        for wert in leer:
             assert ist_leer(wert), wert
-        for wert in ("Ratsmitglied", 3, ["Hauptausschuss"], date(2026, 1, 1)):
+        for wert in belegt:
             assert not ist_leer(wert), wert
 
     def test_punkte_fuer_tiefe_und_schluessel(self) -> None:
@@ -198,7 +206,7 @@ class TestPersonenliste:
         for nummer in range(55):
             _person(body, f"p{nummer}", f"Paula Muster{nummer:02d}")
         html = _client(body).get("/insight/personen/?q=Paula Muster").content.decode()
-        seiten = re.search(r'<nav aria-label="Seiten".*?</nav>', html, re.S).group(0)
+        seiten = _ausschnitt(r'<nav aria-label="Seiten".*?</nav>', html)
         assert 'href="?q=Paula+Muster&amp;page=2"' in seiten
         assert 'aria-label="Nächste Seite"' in seiten
         assert 'aria-current="page"' in seiten
@@ -209,7 +217,7 @@ class TestGremienliste:
         html = _client(rat["body"]).get("/insight/gremien/?tab=all").content.decode()
         assert _kopfzeile(html) == ["Gremium", "Art", "Mitglieder", "Merken"]
         # Rat: drei laufende Mitgliedschaften (die beendete zählt nicht)
-        zeile = re.search(r"Rat der Stadt Beispiel.*?</tr>", html, re.S).group(0)
+        zeile = _ausschnitt(r"Rat der Stadt Beispiel.*?</tr>", html)
         assert re.search(r">\s*3\s*<", zeile)
         assert "—" not in _tabelle(html)
 
@@ -296,7 +304,7 @@ class TestDetailseiten:
         html = _client(rat["body"]).get(f"/insight/gremien/{rat['rat'].pk}/").content.decode()
         assert 'aria-label="Termine und Angaben"' in html
         assert "3 Mitglieder" in html
-        mitglieder = re.search(r"Aktive Mitglieder.*?</table>", html, re.S).group(0)
+        mitglieder = _ausschnitt(r"Aktive Mitglieder.*?</table>", html)
         assert "Mitte" in mitglieder
         assert "—" not in mitglieder
 

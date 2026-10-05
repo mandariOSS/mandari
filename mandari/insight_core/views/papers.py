@@ -78,12 +78,12 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
 
         from ..seo import get_page_seo
 
-        _body = get_active_body(self.request)
+        # Dieselbe Kommune wie oben, ohne zweite Abfrage (Performance-Budget der Vorgangsliste)
         context["seo"] = get_page_seo(
             self.request,
             title="Vorgänge & Beschlüsse",
             description="Anträge, Vorlagen und Beschlüsse der Kommunalpolitik durchsuchen und nachvollziehen.",
-            body=_body,
+            body=body,
         ).to_dict()
         # Stand je Vorgang aus dem Beratungsverlauf (Spalte „Stand“ auf breiten Bildschirmen, Issue #841)
         from ..services.search_presentation import statuses_for_papers
