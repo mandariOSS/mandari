@@ -9,22 +9,29 @@ Ablauf (Zeitplan ``ris_verknuepfungen_abgleichen`` im Worker, Befehl ``ris_verkn
    Verknüpfungen mit einem Tagesordnungspunkt erfasst ein Signal sofort, damit die Kennung den Stand beim
    Verknüpfen trägt; der Abgleich holt fehlende Anker nach und räumt Anker ohne Verknüpfung weg.
 2. **Prüfen:** Sitzungen, an denen sich seit der letzten Prüfung etwas geändert hat und die seit ``RUHEZEIT``
-   ruhen, und Vorlagen, die sich geändert haben oder entfallen sind.
+   ruhen, und Vorlagen, die sich geändert haben oder entfallen sind. Bei unveränderten Sitzungen gilt die Kennung
+   weiter als bestätigt (``bestaetigt_am``).
 3. **Umhängen:** Hat ein Punkt bzw. eine Vorlage genau einen Nachfolger, wandern die Datensätze der Organisation
-   dorthin (nur der Fremdschlüssel; verschlüsselte Inhalte bleiben unberührt, ``updated_at`` auch). Hat das Ziel
-   schon einen Datensatz derselben Person bzw. Organisation (private Notiz, Redebeitrag, Position), bleibt der
-   alte, wo er ist – es wird nichts zusammengeführt. Jeder Umzug steht mit den Kennungen der Datensätze in
-   ``RisNeuzuordnung``.
+   dorthin (nur der Fremdschlüssel; verschlüsselte Inhalte bleiben unberührt, ``updated_at`` auch). Es wandern nur
+   Datensätze, die zum beschriebenen Stand gehören. Am alten Objekt bleiben – als ``zurueckgelassen`` und nie
+   wieder automatisch umgehängt –
+   - Datensätze, deren Gegenstück am Ziel schon steht (private Notiz, Redebeitrag, Position derselben Person bzw.
+     Organisation; es wird nichts zusammengeführt),
+   - an Tagesordnungspunkten Datensätze, die nach der letzten Bestätigung angelegt wurden: Sie können schon den
+     neuen Inhalt der Zeile meinen,
+   - Datensätze, deren Umzug jemand zurückgedreht hat (``zurueckdrehen``).
+   Jeder Umzug steht mit den Kennungen der Datensätze in ``RisNeuzuordnung``. Danach beschreibt der Anker das, was
+   am Objekt heute steht; ein zweiter Lauf bewegt nichts mehr.
 4. **Nicht zuordnen statt falsch zuordnen:** Steht unter der alten Kennung inzwischen ein anderer Punkt und gibt
    es keinen eindeutigen Nachfolger, bleibt alles, wo es ist; die Vorbereitung zeigt „Nicht zugeordnet“ mit dem
-   früheren Titel.
+   früheren Titel, ebenso an Punkten mit Zurückgelassenem.
 
 Mandantentrennung: Anker, Entscheidung, Umhängen, Protokoll und Hinweis gelten je Organisation; die Regeln lesen
 nur den RIS-Bestand. Organisation und Autor eines Datensatzes bleiben, ein Nachfolger liegt immer in derselben
 Sitzung bzw. Kommune.
 
-``WORK_RIS_RELINK``: ``aktiv`` (Standard) hängt um, ``probe`` pflegt nur Anker und meldet, was geschähe,
-``aus`` tut nichts.
+``WORK_RIS_RELINK``: ``aus`` (Standard) tut nichts, ``probe`` pflegt nur Anker und meldet, was geschähe, ``aktiv``
+hängt um. Rückweg: ``zurueckdrehen`` bzw. Befehl ``ris_neuzuordnung_zurueckdrehen``.
 """
 
 from __future__ import annotations
@@ -32,20 +39,20 @@ from __future__ import annotations
 import logging
 import uuid
 from collections import defaultdict
-from collections.abc import Iterable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 from typing import Any, cast
 
 from django.apps import apps
 from django.conf import settings
 from django.core.cache import cache
-from django.db import DatabaseError, models, transaction
+from django.db import DatabaseError, IntegrityError, models, transaction
 from django.db.models.signals import post_save
 from django.utils import timezone
 
 from hub.ris import neuveroeffentlichung as ris_neu
-from hub.ris.neuveroeffentlichung import TopKennung, VorlagenKennung, Zuordnung
+from hub.ris.neuveroeffentlichung import TopKennung, TopStand, VorlagenKennung, Zuordnung
 
 from .models import RisAnker, RisNeuzuordnung
 
@@ -53,12 +60,17 @@ logger = logging.getLogger(__name__)
 
 #: Eine Sitzung wird erst geprüft, wenn sie so lange unverändert ist (kein halber Stand mitten im Abruf).
 RUHEZEIT = timedelta(minutes=10)
+#: Entfallene oder mehrdeutige Vorlagen sucht der Abgleich höchstens so oft erneut (Suche über die Drucksachennummer).
+NEUPRUEFUNG = timedelta(hours=6)
 #: Sitzungen je Lesevorgang
 STAPEL = 50
 _SPERRE = "work:ris_verknuepfungen_abgleichen"
 _SPERRE_SEKUNDEN = 30 * 60
 
 MODI = ("aus", "probe", "aktiv")
+
+#: je Verknüpfung (``Verknuepfung.name``) die Kennungen von Datensätzen
+Datensaetze = dict[str, list[str]]
 
 
 @dataclass(frozen=True)
@@ -78,6 +90,11 @@ class Verknuepfung:
     @property
     def name(self) -> str:
         return f"{self.modell}.{self.feld}"
+
+    @property
+    def angelegt(self) -> str | None:
+        """Spalte mit dem Zeitpunkt der Anlage (Zwischentabellen kennen keinen)."""
+        return None if self.m2m else "created_at"
 
     def tabelle(self) -> tuple[type[models.Model], str, tuple[str, ...]]:
         """(Tabelle, Spalte mit der Kennung des RIS-Objekts, Spalten der Eindeutigkeit)."""
@@ -123,6 +140,7 @@ VORLAGEN_VERKNUEPFUNGEN = (
     ),
 )
 VERKNUEPFUNGEN = {RisAnker.ART_TOP: TOP_VERKNUEPFUNGEN, RisAnker.ART_VORLAGE: VORLAGEN_VERKNUEPFUNGEN}
+_NACH_NAME = {(art, v.name): v for art, liste in VERKNUEPFUNGEN.items() for v in liste}
 
 _STATUS = {
     ris_neu.BESTAETIGT: RisAnker.AKTUELL,
@@ -133,6 +151,8 @@ _STATUS = {
 
 #: (Organisation, RIS-Objekt)
 Schluessel = tuple[Any, uuid.UUID]
+#: heutige Beschreibung eines Objekts, wenn es auf der Tagesordnung steht bzw. nicht gelöscht ist
+Heute = Callable[[uuid.UUID], Any]
 
 
 @dataclass
@@ -147,9 +167,12 @@ class Bericht:
     umgehaengt: int = 0
     datensaetze: int = 0
     konflikte: int = 0
+    juenger: int = 0
     nicht_zugeordnet: int = 0
     entfallen: int = 0
     mehrdeutig: int = 0
+    #: Sitzungen bzw. Organisationen, deren Abgleich an einem Datenbankfehler scheiterte (nächster Lauf versucht es)
+    fehler: int = 0
     #: Probe: (Art, bisheriges Objekt, Ergebnis, Nachfolger)
     geplant: list[tuple[str, str, str, str | None]] = field(default_factory=list)
 
@@ -158,19 +181,46 @@ class Bericht:
         zahlen["geplant"] = len(self.geplant)
         return zahlen
 
+    def uebernehmen(self, teil: Bericht) -> None:
+        """Zahlen eines erfolgreich abgeschlossenen Teils übernehmen."""
+        for feld in fields(self):
+            wert = getattr(teil, feld.name)
+            if isinstance(wert, int) and not isinstance(wert, bool):
+                setattr(self, feld.name, getattr(self, feld.name) + wert)
+        self.geplant.extend(teil.geplant)
+
 
 @dataclass
 class _Umhaengung:
-    verschoben: dict[str, list[str]] = field(default_factory=dict)
-    konflikte: dict[str, list[str]] = field(default_factory=dict)
+    verschoben: Datensaetze = field(default_factory=dict)
+    #: Gegenstück am Ziel
+    konflikte: Datensaetze = field(default_factory=dict)
+    #: nach der letzten Bestätigung angelegt
+    juenger: Datensaetze = field(default_factory=dict)
 
     @property
     def anzahl(self) -> int:
         return sum(len(v) for v in self.verschoben.values())
 
     @property
-    def anzahl_konflikte(self) -> int:
-        return sum(len(v) for v in self.konflikte.values())
+    def geblieben(self) -> Datensaetze:
+        return _vereinen(self.konflikte, self.juenger)
+
+    @property
+    def leer(self) -> bool:
+        return not (self.verschoben or self.konflikte or self.juenger)
+
+
+def _vereinen(*teile: Mapping[str, Iterable[Any]]) -> Datensaetze:
+    gesamt: dict[str, set[str]] = defaultdict(set)
+    for teil in teile:
+        for name, pks in (teil or {}).items():
+            gesamt[name].update(str(pk) for pk in pks)
+    return {name: sorted(pks) for name, pks in sorted(gesamt.items()) if pks}
+
+
+def _titel(anker: RisAnker) -> str:
+    return str((anker.kennung or {}).get("title") or "")
 
 
 # =============================================================================
@@ -213,7 +263,10 @@ def anker_sichern(art: str, objekt: object, organisation: Any) -> None:
                 organization_id=organisation,
                 art=art,
                 objekt=pk,
-                defaults={"kennung": kennung.as_dict() if kennung else {}},
+                defaults={
+                    "kennung": kennung.as_dict() if kennung else {},
+                    "bestaetigt_am": timezone.now() if kennung else None,
+                },
             )
     except DatabaseError:
         # Die Verknüpfung selbst ist gespeichert; der Abgleich legt den Anker beim nächsten Lauf an.
@@ -239,12 +292,30 @@ def register() -> None:
         post_save.connect(_beim_speichern, sender=apps.get_model(modell), dispatch_uid=f"ris_anker_{modell}")
 
 
-def _anker_pflegen(art: str, bericht: Bericht) -> None:
-    """Fehlende Anker anlegen, leere Kennungen erfassen, Anker ohne Verknüpfung entfernen."""
+def _reste_pruefen(art: str, anker: RisAnker) -> None:
+    """Zurückgelassenes, das nicht mehr am Objekt hängt (gelöscht, zurückgedreht), aus dem Anker streichen."""
+    bleiben: Datensaetze = {}
+    for name, pks in (anker.zurueckgelassen or {}).items():
+        verknuepfung = _NACH_NAME.get((art, name))
+        if verknuepfung is None or not pks:
+            continue
+        tabelle, spalte, _ = verknuepfung.tabelle()
+        da = tabelle._base_manager.filter(pk__in=pks, **{spalte: anker.objekt}).values_list("pk", flat=True)
+        if da:
+            bleiben[name] = sorted(str(pk) for pk in da)
+    if bleiben != anker.zurueckgelassen:
+        felder: dict[str, Any] = {"zurueckgelassen": bleiben}
+        if not bleiben:
+            felder["frueherer_titel"] = ""
+        RisAnker.objects.filter(pk=anker.pk).update(**felder)
+
+
+def _anker_pflegen(art: str, bericht: Bericht, jetzt: datetime) -> None:
+    """Fehlende Anker anlegen, leere Kennungen erfassen, Anker ohne Verknüpfung entfernen, Reste prüfen."""
     # Erst die Anker, dann die Verknüpfungen lesen: Ein dazwischen angelegter Anker wird so nicht entfernt.
     vorhanden: dict[Schluessel, RisAnker] = {
         (a.organization_id, a.objekt): a
-        for a in RisAnker.objects.filter(art=art).only("pk", "organization_id", "objekt", "kennung")
+        for a in RisAnker.objects.filter(art=art).only("pk", "organization_id", "objekt", "kennung", "zurueckgelassen")
     }
     verknuepft = verknuepfte_objekte(art)
 
@@ -263,6 +334,7 @@ def _anker_pflegen(art: str, bericht: Bericht) -> None:
                 art=art,
                 objekt=objekt,
                 kennung=kennungen[objekt].as_dict() if objekt in kennungen else {},
+                bestaetigt_am=jetzt if objekt in kennungen else None,
             )
             for organisation, objekt in neu
         ],
@@ -271,7 +343,10 @@ def _anker_pflegen(art: str, bericht: Bericht) -> None:
     bericht.anker_neu += len(angelegt)
     for anker in leer:
         if anker.objekt in kennungen:
-            RisAnker.objects.filter(pk=anker.pk).update(kennung=kennungen[anker.objekt].as_dict())
+            RisAnker.objects.filter(pk=anker.pk).update(kennung=kennungen[anker.objekt].as_dict(), bestaetigt_am=jetzt)
+    for paar, anker in vorhanden.items():
+        if paar in verknuepft and anker.zurueckgelassen:
+            _reste_pruefen(art, anker)
 
 
 # =============================================================================
@@ -279,27 +354,56 @@ def _anker_pflegen(art: str, bericht: Bericht) -> None:
 # =============================================================================
 
 
-def _umhaengen(art: str, organisation: Any, umzuege: dict[uuid.UUID, uuid.UUID]) -> dict[uuid.UUID, _Umhaengung]:
+def _umhaengen(
+    art: str,
+    organisation: Any,
+    umzuege: dict[uuid.UUID, uuid.UUID],
+    bleiben: Mapping[uuid.UUID, Mapping[str, Iterable[str]]],
+    schwelle: Mapping[uuid.UUID, datetime | None] | None,
+) -> tuple[dict[uuid.UUID, _Umhaengung], dict[uuid.UUID, Datensaetze]]:
     """
-    Hängt die Datensätze der Organisation von ``von`` nach ``nach`` um; ein Datensatz, dessen Gegenstück am Ziel
-    bleibt, bleibt selbst stehen (Konflikt, nichts wird zusammengeführt).
+    Hängt die Datensätze der Organisation von ``von`` nach ``nach`` um und gibt je ``von`` zurück, was umzog und
+    was blieb, dazu je Objekt die Datensätze vor dem Umhängen.
 
-    Ketten und Tausch innerhalb einer Sitzung gehen in einem Durchgang. Steht die Eindeutigkeit nur in der Logik
-    (Position je Organisation), zählt der Endzustand; steht sie in der Datenbank, auch jeder Zwischenstand – ein
-    Tausch zweier Punkte mit Notizen derselben Person bleibt dann stehen.
+    Es bleiben: Zurückgelassenes (``bleiben``), mit ``schwelle`` (Tagesordnungspunkte) Datensätze, die nach der
+    letzten Bestätigung angelegt wurden, und Datensätze, deren Gegenstück am Ziel bleibt (Konflikt, nichts wird
+    zusammengeführt). Ketten und Tausch innerhalb einer Sitzung gehen in einem Durchgang. Steht die Eindeutigkeit
+    nur in der Logik (Position je Organisation), zählt der Endzustand; steht sie in der Datenbank, auch jeder
+    Zwischenstand – ein Tausch zweier Punkte mit Notizen derselben Person bleibt dann stehen.
     """
     ergebnis = {von: _Umhaengung() for von in umzuege}
+    vorher: dict[uuid.UUID, Datensaetze] = defaultdict(dict)
     objekte = set(umzuege) | set(umzuege.values())
     for verknuepfung in VERKNUEPFUNGEN[art]:
+        name = verknuepfung.name
         tabelle, spalte, eindeutig = verknuepfung.tabelle()
         manager = tabelle._base_manager
+        angelegt = verknuepfung.angelegt if schwelle is not None else None
+        spalten = ["pk", spalte, *eindeutig, *([angelegt] if angelegt else [])]
         auswahl = manager.filter(**{f"{spalte}__in": objekte, verknuepfung.organisation: organisation})
-        zeilen = [(pk, objekt, tuple(werte)) for pk, objekt, *werte in auswahl.values_list("pk", spalte, *eindeutig)]
-        offen = [(pk, objekt, schluessel) for pk, objekt, schluessel in zeilen if objekt in umzuege]
+        fest = {objekt: {str(pk) for pk in (reste or {}).get(name, ())} for objekt, reste in bleiben.items()}
+
+        offen: list[tuple[Any, uuid.UUID, tuple[Any, ...]]] = []
+        stehend: list[tuple[Any, uuid.UUID, tuple[Any, ...]]] = []
+        for werte in auswahl.values_list(*spalten):
+            pk, objekt = werte[0], werte[1]
+            zeile = (pk, objekt, tuple(werte[2 : 2 + len(eindeutig)]))
+            vorher[objekt].setdefault(name, []).append(str(pk))
+            if objekt not in umzuege or str(pk) in fest.get(objekt, ()):
+                stehend.append(zeile)
+                continue
+            if angelegt is not None and schwelle is not None:
+                grenze = schwelle.get(objekt)
+                if grenze is None or werte[-1] is None or werte[-1] > grenze:
+                    ergebnis[objekt].juenger.setdefault(name, []).append(str(pk))
+                    stehend.append(zeile)
+                    continue
+            offen.append(zeile)
+
         # Schlüssel, die am jeweiligen Objekt belegt sind: im Endzustand nur die bleibenden, sonst die heutigen
         belegt: dict[tuple[Any, tuple[Any, ...]], Any] = {}
-        for pk, objekt, schluessel in zeilen:
-            if eindeutig and None not in schluessel and (verknuepfung.db_eindeutig or objekt not in umzuege):
+        for pk, objekt, schluessel in stehend + (offen if verknuepfung.db_eindeutig else []):
+            if eindeutig and None not in schluessel:
                 belegt.setdefault((objekt, schluessel), pk)
 
         weiter = True
@@ -319,50 +423,104 @@ def _umhaengen(art: str, organisation: Any, umzuege: dict[uuid.UUID, uuid.UUID])
                     if belegt.get((von, schluessel)) == pk:
                         del belegt[(von, schluessel)]
                     belegt[(nach, schluessel)] = pk
-                ergebnis[von].verschoben.setdefault(verknuepfung.name, []).append(str(pk))
+                ergebnis[von].verschoben.setdefault(name, []).append(str(pk))
             offen = rest
         for pk, von, _ in offen:
-            ergebnis[von].konflikte.setdefault(verknuepfung.name, []).append(str(pk))
-    return ergebnis
+            ergebnis[von].konflikte.setdefault(name, []).append(str(pk))
+    return ergebnis, dict(vorher)
+
+
+def _status_setzen(felder: dict[str, Any], anker: RisAnker, status: str, jetzt: datetime) -> None:
+    if status != anker.status:
+        felder.update(status=status, status_seit=jetzt)
+
+
+def _bewerten(
+    art: str, organisation: Any, anker: RisAnker, zuordnung: Zuordnung, jetzt: datetime, bericht: Bericht
+) -> None:
+    """Ein Anker ohne Umzug: bestätigt, nicht zugeordnet, entfallen oder mehrdeutig."""
+    status = _STATUS[zuordnung.ergebnis]
+    felder: dict[str, Any] = {"geprueft_am": jetzt}
+    if zuordnung.ergebnis == ris_neu.BESTAETIGT:
+        felder["bestaetigt_am"] = jetzt
+        if zuordnung.kennung is not None:
+            felder["kennung"] = zuordnung.kennung.as_dict()
+    if status != anker.status:
+        RisNeuzuordnung.objects.create(
+            organization_id=organisation, art=art, von=anker.objekt, ergebnis=zuordnung.ergebnis
+        )
+        if status == RisAnker.NICHT_ZUGEORDNET:
+            bericht.nicht_zugeordnet += 1
+        elif status == RisAnker.ENTFALLEN:
+            bericht.entfallen += 1
+        elif status == RisAnker.MEHRDEUTIG:
+            bericht.mehrdeutig += 1
+    _status_setzen(felder, anker, status, jetzt)
+    RisAnker.objects.filter(pk=anker.pk).update(**felder)
+
+
+def _nach_umzug(anker: RisAnker, umhaengung: _Umhaengung, zuzug: Any, heute: Any, jetzt: datetime) -> None:
+    """
+    Anker eines Objekts, von dem die Daten weggezogen sind. Was blieb, ist zurückgelassen; der Anker beschreibt
+    danach, was heute am Objekt steht (zugezogene Daten bzw. der heutige Punkt), oder entfällt ganz.
+    """
+    reste = _vereinen(anker.zurueckgelassen, umhaengung.geblieben)
+    titel = _titel(anker) if umhaengung.geblieben else anker.frueherer_titel
+    felder: dict[str, Any] = {"zurueckgelassen": reste, "frueherer_titel": titel if reste else "", "geprueft_am": jetzt}
+    if zuzug is None and not reste:
+        RisAnker.objects.filter(pk=anker.pk).delete()  # am Objekt hängt nichts mehr
+        return
+    kennung = zuzug if zuzug is not None else heute
+    if kennung is not None:
+        felder.update(kennung=kennung.as_dict(), bestaetigt_am=jetzt)
+        _status_setzen(felder, anker, RisAnker.AKTUELL, jetzt)
+    else:
+        # Gelöscht bzw. nicht mehr auf der Tagesordnung: Es hängt nur noch Zurückgelassenes daran.
+        _status_setzen(felder, anker, RisAnker.ENTFALLEN, jetzt)
+    RisAnker.objects.filter(pk=anker.pk).update(**felder)
+
+
+def _mit_zuzug(anker: RisAnker, zuordnung: Zuordnung, zuzug: Any, hier: Datensaetze, jetzt: datetime) -> None:
+    """
+    Anker eines Objekts, an das Daten gezogen sind, ohne dass es selbst umzog. War es selbst ein anderer Punkt
+    (nicht zugeordnet, mehrdeutig), gehören seine bisherigen Datensätze zum früheren Stand und bleiben zurückgelassen.
+    """
+    felder: dict[str, Any] = {"kennung": zuzug.as_dict(), "geprueft_am": jetzt, "bestaetigt_am": jetzt}
+    if zuordnung.ergebnis != ris_neu.BESTAETIGT:
+        reste = _vereinen(anker.zurueckgelassen, hier)
+        felder.update(zurueckgelassen=reste, frueherer_titel=_titel(anker) if reste else anker.frueherer_titel)
+    _status_setzen(felder, anker, RisAnker.AKTUELL, jetzt)
+    RisAnker.objects.filter(pk=anker.pk).update(**felder)
 
 
 def _anwenden(
     art: str,
     organisation: Any,
     entscheidungen: list[tuple[RisAnker, Zuordnung]],
-    stehend: set[uuid.UUID] | None,
+    heute: Heute,
     jetzt: datetime,
     bericht: Bericht,
 ) -> None:
     """Entscheidungen einer Organisation (für eine Sitzung bzw. die Vorlagen) umsetzen."""
+    anker_an = {a.objekt: a for a, _ in entscheidungen}
     umzuege = {a.objekt: z.ziel for a, z in entscheidungen if z.ergebnis == ris_neu.NACHFOLGER and z.ziel is not None}
-    umhaengungen = _umhaengen(art, organisation, umzuege) if umzuege else {}
+    umhaengungen: dict[uuid.UUID, _Umhaengung] = {}
+    vorher: dict[uuid.UUID, Datensaetze] = {}
+    if umzuege:
+        schwelle = {von: anker_an[von].bestaetigt_am for von in umzuege} if art == RisAnker.ART_TOP else None
+        bleiben = {objekt: a.zurueckgelassen or {} for objekt, a in anker_an.items()}
+        umhaengungen, vorher = _umhaengen(art, organisation, umzuege, bleiben, schwelle)
 
+    # Ziele, an die Datensätze gezogen sind, mit ihrer heutigen Beschreibung
+    zuzug: dict[uuid.UUID, Any] = {}
     for anker, zuordnung in entscheidungen:
-        if anker.objekt in umzuege:
+        umhaengung = umhaengungen.get(anker.objekt)
+        if umhaengung is None:
             continue
-        status = _STATUS[zuordnung.ergebnis]
-        felder: dict[str, Any] = {"geprueft_am": jetzt}
-        if zuordnung.ergebnis == ris_neu.BESTAETIGT and zuordnung.kennung is not None:
-            felder["kennung"] = zuordnung.kennung.as_dict()
-        if status != anker.status:
-            felder.update(status=status, status_seit=jetzt)
-            RisNeuzuordnung.objects.create(
-                organization_id=organisation, art=art, von=anker.objekt, ergebnis=zuordnung.ergebnis
-            )
-            if status == RisAnker.NICHT_ZUGEORDNET:
-                bericht.nicht_zugeordnet += 1
-            elif status == RisAnker.ENTFALLEN:
-                bericht.entfallen += 1
-            elif status == RisAnker.MEHRDEUTIG:
-                bericht.mehrdeutig += 1
-        RisAnker.objects.filter(pk=anker.pk).update(**felder)
-
-    mit_rest: set[uuid.UUID] = set()
-    for anker, zuordnung in entscheidungen:
-        if anker.objekt not in umzuege:
-            continue
-        umhaengung = umhaengungen[anker.objekt]
+        if umhaengung.verschoben and zuordnung.ziel is not None:
+            zuzug[zuordnung.ziel] = zuordnung.kennung
+        if umhaengung.leer:
+            continue  # nichts Bewegliches mehr am Objekt (alles zurückgelassen): kein Umzug, kein Protokoll
         RisNeuzuordnung.objects.create(
             organization_id=organisation,
             art=art,
@@ -371,40 +529,43 @@ def _anwenden(
             ergebnis=ris_neu.NACHFOLGER,
             verschoben=umhaengung.verschoben,
             konflikte=umhaengung.konflikte,
+            juenger=umhaengung.juenger,
         )
-        bericht.umgehaengt += 1
+        bericht.umgehaengt += 1 if umhaengung.anzahl else 0
         bericht.datensaetze += umhaengung.anzahl
-        bericht.konflikte += umhaengung.anzahl_konflikte
+        bericht.konflikte += sum(len(v) for v in umhaengung.konflikte.values())
+        bericht.juenger += sum(len(v) for v in umhaengung.juenger.values())
         logger.info(
             "RIS-Neuveröffentlichung: %s %s → %s, %s Datensätze umgehängt, %s geblieben",
             art,
             anker.objekt,
             zuordnung.ziel,
             umhaengung.anzahl,
-            umhaengung.anzahl_konflikte,
+            sum(len(v) for v in umhaengung.geblieben.values()),
         )
-        if umhaengung.konflikte:
-            mit_rest.add(anker.objekt)
-            steht = stehend is not None and anker.objekt in stehend
-            RisAnker.objects.filter(pk=anker.pk).update(
-                status=RisAnker.NICHT_ZUGEORDNET if steht else RisAnker.ENTFALLEN, status_seit=jetzt, geprueft_am=jetzt
-            )
-        else:
-            RisAnker.objects.filter(pk=anker.pk).delete()
 
     for anker, zuordnung in entscheidungen:
-        ziel = umzuege.get(anker.objekt)
-        if ziel is None or ziel in mit_rest or zuordnung.kennung is None:
+        objekt = anker.objekt
+        if objekt in umzuege:
+            _nach_umzug(anker, umhaengungen[objekt], zuzug.get(objekt), heute(objekt), jetzt)
+        elif objekt in zuzug:
+            _mit_zuzug(anker, zuordnung, zuzug[objekt], vorher.get(objekt, {}), jetzt)
+        else:
+            _bewerten(art, organisation, anker, zuordnung, jetzt, bericht)
+
+    for ziel, kennung in zuzug.items():
+        if ziel in anker_an or kennung is None:
             continue
         RisAnker.objects.update_or_create(
             organization_id=organisation,
             art=art,
             objekt=ziel,
             defaults={
-                "kennung": zuordnung.kennung.as_dict(),
+                "kennung": kennung.as_dict(),
                 "status": RisAnker.AKTUELL,
                 "status_seit": jetzt,
                 "geprueft_am": jetzt,
+                "bestaetigt_am": jetzt,
             },
         )
 
@@ -432,6 +593,72 @@ def _melden(art: str, entscheidungen: list[tuple[RisAnker, Zuordnung]], bericht:
         logger.info("RIS-Neuveröffentlichung (Probe): %s %s %s %s", art, anker.objekt, zuordnung.ergebnis, ziel)
 
 
+def _bestaetigen(entscheidungen: list[tuple[RisAnker, Zuordnung]], jetzt: datetime) -> None:
+    """Probe: bestätigte Anker fortschreiben (Kennung, Zeitpunkte); sonst ändert die Probe nichts."""
+    for anker, zuordnung in entscheidungen:
+        if zuordnung.ergebnis != ris_neu.BESTAETIGT:
+            continue
+        felder: dict[str, Any] = {"geprueft_am": jetzt, "bestaetigt_am": jetzt}
+        if zuordnung.kennung is not None:
+            felder["kennung"] = zuordnung.kennung.as_dict()
+        RisAnker.objects.filter(pk=anker.pk).update(**felder)
+
+
+def _teil_anwenden(
+    art: str,
+    bezeichnung: object,
+    entscheidungen: list[tuple[RisAnker, Zuordnung]],
+    heute: Heute,
+    *,
+    anwenden: bool,
+    jetzt: datetime,
+    bericht: Bericht,
+) -> None:
+    """Eine Sitzung bzw. die Vorlagen: in einer Transaktion, ein Datenbankfehler betrifft nur diesen Teil."""
+    teil = Bericht(modus=bericht.modus)
+    try:
+        with transaction.atomic():
+            if anwenden:
+                for organisation, eigene in _je_organisation(entscheidungen).items():
+                    _anwenden(art, organisation, eigene, heute, jetzt, teil)
+            else:
+                _bestaetigen(entscheidungen, jetzt)
+                _melden(art, entscheidungen, teil)
+    except DatabaseError:
+        bericht.fehler += 1
+        logger.warning(
+            "RIS-Abgleich: %s %s übersprungen; der nächste Lauf versucht es erneut.", art, bezeichnung, exc_info=True
+        )
+        return
+    bericht.uebernehmen(teil)
+
+
+def _heute_tops(stand: list[TopStand]) -> Heute:
+    nach_id = {s.id: s for s in stand}
+
+    def heute(objekt: uuid.UUID) -> TopKennung | None:
+        eintrag = nach_id.get(objekt)
+        if eintrag is None or not eintrag.auf_tagesordnung:
+            return None
+        return ris_neu.bestaetigte_kennung(eintrag, stand)
+
+    return heute
+
+
+def _bestaetigung_fortschreiben(
+    gruppen: Mapping[str, list[tuple[RisAnker, TopKennung]]], sitzungen: Iterable[uuid.UUID], jetzt: datetime
+) -> None:
+    """Unveränderte Sitzungen: Was beim letzten Bestätigen galt, gilt bis jetzt (später Angelegtes wandert mit)."""
+    ids = [
+        anker.pk
+        for sitzung in sitzungen
+        for anker, _ in gruppen.get(str(sitzung), [])
+        if anker.status == RisAnker.AKTUELL and anker.geprueft_am is not None
+    ]
+    for start in range(0, len(ids), 500):
+        RisAnker.objects.filter(pk__in=ids[start : start + 500], status=RisAnker.AKTUELL).update(bestaetigt_am=jetzt)
+
+
 def _tops_abgleichen(bericht: Bericht, *, anwenden: bool, alle: bool, jetzt: datetime) -> None:
     gruppen: dict[str, list[tuple[RisAnker, TopKennung]]] = defaultdict(list)
     for anker in RisAnker.objects.filter(art=RisAnker.ART_TOP):
@@ -442,13 +669,15 @@ def _tops_abgleichen(bericht: Bericht, *, anwenden: bool, alle: bool, jetzt: dat
         return
 
     if alle:
-        sitzungen = [uuid.UUID(m) for m in gruppen]
+        sitzungen = sorted((uuid.UUID(m) for m in gruppen), key=str)
     else:
         seit: dict[str, datetime | None] = {}
         for m, liste in gruppen.items():
             zeitpunkte = [a.geprueft_am for a, _ in liste]
             seit[m] = None if None in zeitpunkte else min(z for z in zeitpunkte if z is not None)
-        sitzungen = sorted(ris_neu.sitzungen_geaendert(seit, ruhig_seit=jetzt - RUHEZEIT))
+        lage = ris_neu.sitzungen_pruefen(seit, ruhig_seit=jetzt - RUHEZEIT)
+        sitzungen = sorted(lage.geaendert, key=str)
+        _bestaetigung_fortschreiben(gruppen, lage.unveraendert, jetzt)
 
     for start in range(0, len(sitzungen), STAPEL):
         stapel = sitzungen[start : start + STAPEL]
@@ -459,13 +688,30 @@ def _tops_abgleichen(bericht: Bericht, *, anwenden: bool, alle: bool, jetzt: dat
                 (anker, ris_neu.top_zuordnen(kennung, anker.objekt, stand)) for anker, kennung in gruppen[str(sitzung)]
             ]
             bericht.geprueft += len(entscheidungen)
-            if not anwenden:
-                _melden(RisAnker.ART_TOP, entscheidungen, bericht)
-                continue
-            stehend = {s.id for s in stand if s.auf_tagesordnung}
-            with transaction.atomic():
-                for organisation, eigene in _je_organisation(entscheidungen).items():
-                    _anwenden(RisAnker.ART_TOP, organisation, eigene, stehend, jetzt, bericht)
+            _teil_anwenden(
+                RisAnker.ART_TOP,
+                sitzung,
+                entscheidungen,
+                _heute_tops(stand),
+                anwenden=anwenden,
+                jetzt=jetzt,
+                bericht=bericht,
+            )
+
+
+def _vorlage_faellig(
+    anker: RisAnker, stand: ris_neu.VorlagenStand | None, *, ruhig_seit: datetime, jetzt: datetime
+) -> bool:
+    """Geänderte Vorlagen nach der Ruhezeit; entfallene und mehrdeutige nur mit Abstand (``NEUPRUEFUNG``)."""
+    if stand is not None and stand.geaendert is not None and stand.geaendert > ruhig_seit:
+        return False  # in Bewegung
+    if anker.geprueft_am is None:
+        return True
+    unveraendert = stand is not None and (stand.geaendert is None or stand.geaendert <= anker.geprueft_am)
+    if anker.status == RisAnker.AKTUELL:
+        return not unveraendert
+    kuerzlich = anker.geprueft_am > jetzt - NEUPRUEFUNG
+    return not ((unveraendert or stand is None) and kuerzlich)
 
 
 def _vorlagen_abgleichen(bericht: Bericht, *, anwenden: bool, alle: bool, jetzt: datetime) -> None:
@@ -480,16 +726,8 @@ def _vorlagen_abgleichen(bericht: Bericht, *, anwenden: bool, alle: bool, jetzt:
     entscheidungen: list[tuple[RisAnker, Zuordnung]] = []
     for anker, kennung in anker_liste:
         stand = staende.get(anker.objekt)
-        if not alle:
-            unveraendert = (
-                stand is not None
-                and anker.geprueft_am is not None
-                and anker.status == RisAnker.AKTUELL
-                and (stand.geaendert is None or stand.geaendert <= anker.geprueft_am)
-            )
-            in_bewegung = stand is not None and stand.geaendert is not None and stand.geaendert > ruhig_seit
-            if unveraendert or in_bewegung:
-                continue
+        if not alle and not _vorlage_faellig(anker, stand, ruhig_seit=ruhig_seit, jetzt=jetzt):
+            continue
         gesucht = (kennung.body, ris_neu.reference_key(kennung.reference))
         if (stand is None or stand.geloescht) and gesucht not in kandidaten:
             kandidaten[gesucht] = ris_neu.vorlagen_mit_nummer(kennung)
@@ -497,14 +735,15 @@ def _vorlagen_abgleichen(bericht: Bericht, *, anwenden: bool, alle: bool, jetzt:
             (anker, ris_neu.vorlage_zuordnen(kennung, anker.objekt, stand, kandidaten.get(gesucht, [])))
         )
     bericht.geprueft += len(entscheidungen)
-    if not entscheidungen:
-        return
-    if not anwenden:
-        _melden(RisAnker.ART_VORLAGE, entscheidungen, bericht)
-        return
-    with transaction.atomic():
-        for organisation, eigene in _je_organisation(entscheidungen).items():
-            _anwenden(RisAnker.ART_VORLAGE, organisation, eigene, None, jetzt, bericht)
+
+    def heute(objekt: uuid.UUID) -> VorlagenKennung | None:
+        eintrag = staende.get(objekt)
+        return eintrag.kennung if eintrag is not None and not eintrag.geloescht else None
+
+    for organisation, eigene in _je_organisation(entscheidungen).items():
+        _teil_anwenden(
+            RisAnker.ART_VORLAGE, organisation, eigene, heute, anwenden=anwenden, jetzt=jetzt, bericht=bericht
+        )
 
 
 def abgleichen(*, modus: str | None = None, alle: bool = False, jetzt: datetime | None = None) -> Bericht:
@@ -525,12 +764,113 @@ def abgleichen(*, modus: str | None = None, alle: bool = False, jetzt: datetime 
     try:
         jetzt = jetzt or timezone.now()
         for art in (RisAnker.ART_TOP, RisAnker.ART_VORLAGE):
-            _anker_pflegen(art, bericht)
+            _anker_pflegen(art, bericht, jetzt)
         anwenden = modus == "aktiv"
         _tops_abgleichen(bericht, anwenden=anwenden, alle=alle, jetzt=jetzt)
         _vorlagen_abgleichen(bericht, anwenden=anwenden, alle=alle, jetzt=jetzt)
     finally:
         cache.delete(_SPERRE)
+    return bericht
+
+
+# =============================================================================
+# Rückweg
+# =============================================================================
+
+
+@dataclass
+class Rueckbericht:
+    """Ergebnis von ``zurueckdrehen``."""
+
+    gesperrt: bool = False
+    eintraege: int = 0
+    datensaetze: int = 0
+    #: (Protokolleintrag, Verknüpfung, Datensatz): hängt nicht mehr am Ziel oder scheitert an einer Eindeutigkeit
+    nicht_moeglich: list[tuple[str, str, str]] = field(default_factory=list)
+
+
+def _festhalten(eintrag: RisNeuzuordnung, datensaetze: Datensaetze) -> None:
+    """Zurückgedrehte Datensätze bleiben am früheren Objekt und ziehen nie wieder automatisch um."""
+    anker = RisAnker.objects.filter(
+        organization_id=eintrag.organization_id, art=eintrag.art, objekt=eintrag.von
+    ).first()
+    if anker is not None:
+        RisAnker.objects.filter(pk=anker.pk).update(
+            zurueckgelassen=_vereinen(anker.zurueckgelassen, datensaetze),
+            frueherer_titel=anker.frueherer_titel or _titel(anker),
+            geprueft_am=None,
+        )
+        return
+    kennung = _kennungen(eintrag.art, [eintrag.von]).get(eintrag.von)
+    RisAnker.objects.create(
+        organization_id=eintrag.organization_id,
+        art=eintrag.art,
+        objekt=eintrag.von,
+        kennung=kennung.as_dict() if kennung else {},
+        bestaetigt_am=timezone.now(),
+        zurueckgelassen=_vereinen(datensaetze),
+        frueherer_titel=kennung.title if kennung else "",
+    )
+
+
+def zurueckdrehen(eintraege: Iterable[RisNeuzuordnung], *, probe: bool = False) -> Rueckbericht:
+    """
+    Dreht Umzüge aus dem Protokoll zurück (Rückweg im Betrieb, Befehl ``ris_neuzuordnung_zurueckdrehen``).
+
+    Datensätze, die noch am Ziel hängen, kommen an ihr früheres Objekt und bleiben dort (``zurueckgelassen``).
+    Jüngste Umzüge zuerst, damit Ketten aufgehen; was an einer Eindeutigkeit scheitert, versucht der nächste
+    Durchgang erneut. Inhalte und ``updated_at`` bleiben unberührt.
+    """
+    liste = sorted(
+        (e for e in eintraege if e.ergebnis == ris_neu.NACHFOLGER and e.nach and e.zurueckgedreht_am is None),
+        key=lambda e: e.erfolgt_am,
+        reverse=True,
+    )
+    bericht = Rueckbericht(eintraege=len(liste))
+    offen = [(e, name, str(pk)) for e in liste for name, pks in (e.verschoben or {}).items() for pk in pks]
+    if probe:
+        bericht.datensaetze = len(offen)
+        return bericht
+    if not cache.add(_SPERRE, "1", timeout=_SPERRE_SEKUNDEN):
+        return Rueckbericht(gesperrt=True)
+    try:
+        zurueck: dict[uuid.UUID, Datensaetze] = defaultdict(dict)
+        with transaction.atomic():
+            weiter = True
+            while offen and weiter:
+                weiter = False
+                rest = []
+                for eintrag, name, pk in offen:
+                    verknuepfung = _NACH_NAME.get((eintrag.art, name))
+                    if verknuepfung is None:
+                        bericht.nicht_moeglich.append((str(eintrag.pk), name, pk))
+                        continue
+                    tabelle, spalte, _ = verknuepfung.tabelle()
+                    try:
+                        with transaction.atomic():
+                            anzahl = tabelle._base_manager.filter(pk=pk, **{spalte: eintrag.nach}).update(
+                                **{spalte: eintrag.von}
+                            )
+                    except IntegrityError:
+                        rest.append((eintrag, name, pk))
+                        continue
+                    weiter = True
+                    if anzahl:
+                        zurueck[eintrag.pk].setdefault(name, []).append(pk)
+                        bericht.datensaetze += 1
+                    else:
+                        bericht.nicht_moeglich.append((str(eintrag.pk), name, pk))
+                offen = rest
+            bericht.nicht_moeglich.extend((str(e.pk), name, pk) for e, name, pk in offen)
+            jetzt = timezone.now()
+            for eintrag in liste:
+                if zurueck.get(eintrag.pk):
+                    _festhalten(eintrag, zurueck[eintrag.pk])
+                RisNeuzuordnung.objects.filter(pk=eintrag.pk).update(zurueckgedreht_am=jetzt)
+    finally:
+        cache.delete(_SPERRE)
+    for eintrag_pk, name, pk in bericht.nicht_moeglich:
+        logger.warning("RIS-Neuzuordnung %s: %s %s nicht zurückgedreht", eintrag_pk, name, pk)
     return bericht
 
 
@@ -556,12 +896,10 @@ def hinweise_fuer_tops(organisation: Any, agenda_item_ids: Iterable[object]) -> 
     if not ids or organisation is None:
         return {}
     hinweise: dict[uuid.UUID, Hinweis] = {}
-    zeilen = (
-        RisAnker.objects.filter(organization=organisation, art=RisAnker.ART_TOP, objekt__in=ids)
-        .exclude(status=RisAnker.AKTUELL)
-        .values_list("objekt", "status", "kennung")
+    zeilen = RisAnker.objects.filter(organization=organisation, art=RisAnker.ART_TOP, objekt__in=ids).values_list(
+        "objekt", "status", "kennung", "zurueckgelassen", "frueherer_titel"
     )
-    for objekt, status, daten in zeilen:
+    for objekt, status, daten, reste, frueherer_titel in zeilen:
         kennung = TopKennung.from_dict(daten)
         if status in (RisAnker.NICHT_ZUGEORDNET, RisAnker.MEHRDEUTIG):
             frueher = f" („{kennung.title}“)" if kennung and kennung.title else ""
@@ -574,5 +912,12 @@ def hinweise_fuer_tops(organisation: Any, agenda_item_ids: Iterable[object]) -> 
             hinweise[objekt] = Hinweis(
                 "Nicht mehr auf der Tagesordnung",
                 "Der Punkt steht nicht mehr auf der Tagesordnung. Notizen und Positionen bleiben erhalten.",
+            )
+        elif reste:
+            frueher = f" („{frueherer_titel}“)" if frueherer_titel else ""
+            hinweise[objekt] = Hinweis(
+                "Nicht zugeordnet",
+                "Das Ratsinformationssystem hat die Tagesordnung neu veröffentlicht. Einzelne Notizen oder Positionen "
+                f"an diesem Punkt stammen von einem früheren Stand{frueher}.",
             )
     return hinweise

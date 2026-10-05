@@ -7,7 +7,8 @@ Läuft als Zeitplan im Worker; der Befehl ist für Prüfung und Betrieb:
     python manage.py ris_verknuepfungen_abgleichen --dry-run --alle   # nur melden, alle Sitzungen und Vorlagen
     python manage.py ris_verknuepfungen_abgleichen                    # wie der Zeitplan (WORK_RIS_RELINK)
 
-``--dry-run`` legt fehlende Anker an (Kennung des heutigen Stands), hängt aber nichts um.
+``--dry-run`` pflegt die Anker (legt fehlende mit der Kennung des heutigen Stands an, schreibt bestätigte fort),
+hängt aber nichts um. Rückweg: ``ris_neuzuordnung_zurueckdrehen``.
 """
 
 from __future__ import annotations

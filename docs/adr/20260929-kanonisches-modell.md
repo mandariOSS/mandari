@@ -107,13 +107,17 @@ ohne Löschmeldung), und beim Abruf aus Sitzungsseiten steht die Nummer in der A
 Inhalte über die Zeilen verschiebt. Work hält deshalb je verknüpftem Tagesordnungspunkt und je verknüpfter Vorlage
 einen **fachlichen Anker** (`apps.work.ris.models.RisAnker`): Sitzung, Nummer, Name, öffentlich, beratene Vorlagen
 mit Drucksachennummer bzw. Kommune und Drucksachennummer. Was „derselbe Punkt“ ist, entscheidet die Drehscheibe
-(`hub/ris/neuveroeffentlichung.py`): dieselbe Vorlage, sonst derselbe Name; Nachfolger nur aus derselben Sitzung
-bzw. Kommune und nur eindeutig. Ein Zeitplan im Worker hängt die Work-Daten um (nur der Fremdschlüssel, Inhalte
-bleiben verschlüsselt und unverändert) und protokolliert jeden Umzug (`RisNeuzuordnung`). Im Zweifel bleibt alles,
-wo es ist, und die Vorbereitung zeigt „Nicht zugeordnet“. Damit ist die Fitnessfunktion „Neuveröffentlichung
-erhält Kennungen und Verknüpfungen von Notizen“ als Test umgesetzt
-(`apps/work/ris/tests/test_neuveroeffentlichung.py`). Neuveröffentlichte Sitzungen (neue Kennung der Sitzung)
-deckt das nicht ab.
+(`hub/ris/neuveroeffentlichung.py`): dieselbe Vorlage, sonst derselbe Name, öffentlich/nichtöffentlich gleich;
+berät die Sitzung dieselbe Vorlage an mehreren Punkten, zählen diese Geschwister nie als Nachfolger. Nachfolger nur
+aus derselben Sitzung bzw. Kommune und nur eindeutig. Ein Zeitplan im Worker hängt die Work-Daten um (nur der
+Fremdschlüssel, Inhalte bleiben verschlüsselt und unverändert) und protokolliert jeden Umzug (`RisNeuzuordnung`).
+Datensätze, deren Gegenstück am Ziel steht oder die nach der letzten Bestätigung angelegt wurden, bleiben als
+„zurückgelassen“ am alten Punkt und ziehen nie wieder automatisch um; danach beschreibt der Anker, was am Punkt
+steht, sodass ein weiterer Lauf nichts bewegt. Im Zweifel bleibt alles, wo es ist, und die Vorbereitung zeigt
+„Nicht zugeordnet“. Der Weg ist ein Schalter (`WORK_RIS_RELINK`, Standard aus) mit Probe und Rückweg
+(`ris_neuzuordnung_zurueckdrehen`). Damit ist die Fitnessfunktion „Neuveröffentlichung erhält Kennungen und
+Verknüpfungen von Notizen“ als Test umgesetzt (`apps/work/ris/tests/test_neuveroeffentlichung.py`).
+Neuveröffentlichte Sitzungen (neue Kennung der Sitzung) und Dateien deckt das nicht ab (#868).
 
 ## Alternativen
 

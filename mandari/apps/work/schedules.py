@@ -13,7 +13,7 @@ idempotent und durch eine Cache-Sperre gegen parallele Läufe geschützt:
   Sitzungen aus Sitzungsreihen (Issue #61).
 - ``ris_verknuepfungen_abgleichen``: alle ``WORK_RIS_RELINK_INTERVAL_MINUTES`` (Standard 15) Minuten Work-Daten
   nach einer Neuveröffentlichung im RIS an den Nachfolger des Tagesordnungspunkts bzw. der Vorlage hängen
-  (Issue #547).
+  (Issue #547); tut nichts, solange ``WORK_RIS_RELINK`` auf ``aus`` (Standard) steht.
 """
 
 from __future__ import annotations

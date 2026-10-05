@@ -491,6 +491,7 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 | `apps.work.schedules.fraktionserinnerungen_senden` | alle `FACTION_REMINDER_INTERVAL_MINUTES` (15) min | Erinnerungen an Fraktionssitzungen |
 | `apps.work.schedules.fraktionseinladungen_senden` | alle `FACTION_INVITATION_INTERVAL_MINUTES` (15) min | automatische Einladungen und Freigabe-Hinweise |
 | `apps.work.schedules.fraktionssitzungen_erzeugen` | alle `FACTION_SCHEDULE_INTERVAL_MINUTES` (60) min | Sitzungen aus Sitzungsreihen |
+| `apps.work.schedules.ris_verknuepfungen_abgleichen` | alle `WORK_RIS_RELINK_INTERVAL_MINUTES` (15) min | Work-Daten nach Neuveröffentlichung im RIS umhängen (`WORK_RIS_RELINK`, Standard aus) |
 | `apps.events.schedules.idempotenzschluessel_aufraeumen` | täglich 03:40 | Idempotenzschlüssel nach `EVENTS_IDEMPOTENCY_RETENTION_DAYS` |
 | `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach `EVENTS_TASKS_DONE_RETENTION_DAYS` (14), tote und fehlgeschlagene nach `EVENTS_TASKS_DEAD_RETENTION_DAYS` (90) Tagen |
 | `befehl:events_purge` | täglich 04:10, nur mit `EVENTS_JOURNAL_PURGE_ENABLED` (Standard aus) | Journal nach `EVENTS_JOURNAL_RETENTION_DAYS` (90), nie über den kleinsten Cursor; `docs/MONITORING.md`, „Nachspielen und Aufräumen des Journals“ |
@@ -781,26 +782,40 @@ Anfrage mehr), der Worker aber noch `schatten` – daher die Reihenfolge der Neu
 Voraussetzung: Sequenzierer und Zustellung laufen (Worker) und `TASKS_BACKEND=journal`; ohne startet die
 Anwendung mit `schatten` oder `aktiv` nicht (sonst liefe der Mailversand in der Transaktion der Zustellung).
 
+**Rückweg:** `aus` und Neustart; Benachrichtigungen entstehen wieder in der Anfrage. Ereignisse, die das
+Abonnement noch nicht zugestellt hat, bleiben im Journal liegen (ohne Benachrichtigung); vor dem
+Umschalten deshalb warten, bis der Rückstand des Abonnements null ist.
+
 ### Work-Daten nach Neuveröffentlichung im RIS
 
 Veröffentlicht ein RIS eine Tagesordnung oder Vorlage neu (Löschmarkierung und Neuanlage, neue Adressen,
 Umnummerierung bei Quellen mit Nummer in der Adresse), hängt der Zeitplan `ris_verknuepfungen_abgleichen`
 (Worker, alle `WORK_RIS_RELINK_INTERVAL_MINUTES`, Standard 15 Minuten) Notizen, Positionen, Redebeiträge,
 Dokumente, Aufgaben und Kommentare an den Nachfolger in derselben Sitzung bzw. Kommune um (Issue #547). Nur
-eindeutige Fälle; sonst zeigt die Vorbereitung „Nicht zugeordnet“. Jeder Umzug steht mit den Kennungen der
-Datensätze in der Tabelle `work_risneuzuordnung`.
+eindeutige Fälle; sonst zeigt die Vorbereitung „Nicht zugeordnet“. Datensätze, die nach der letzten Bestätigung
+eines Punkts angelegt wurden oder deren Gegenstück am Ziel schon steht, bleiben am alten Punkt (mit Hinweis) und
+ziehen nie wieder automatisch um. Jeder Umzug steht mit den Kennungen der Datensätze in der Tabelle
+`work_risneuzuordnung`.
 
 | `WORK_RIS_RELINK` | Bedeutung |
 |---|---|
-| `aktiv` (Standard) | Anker pflegen, eindeutige Fälle umhängen |
-| `probe` | Anker pflegen, nur melden (Log `apps.work.ris.verknuepfungen`) |
-| `aus` | kein Abgleich, keine Anker |
+| `aus` (Standard) | kein Abgleich, keine Anker (die Migration legt nur leere Anker an) |
+| `probe` | Anker pflegen, nur melden (Log `apps.work.ris.verknuepfungen`), nichts umhängen |
+| `aktiv` | Anker pflegen, eindeutige Fälle umhängen |
 
-Prüfen ohne Änderung: `docker exec mandari python manage.py ris_verknuepfungen_abgleichen --dry-run --alle`.
+**Einschalten in Stufen:** Der erste Lauf prüft jede Sitzung mit Work-Daten und hängt auch Bezüge um, die schon
+vor dem Update verloren waren (Punkte, die heute gelöscht neben ihrem Nachfolger stehen). Deshalb zuerst ansehen,
+was geschähe: `docker exec mandari python manage.py ris_verknuepfungen_abgleichen --dry-run --alle` (legt Anker
+an, hängt nichts um) und die Liste stichprobenartig gegen die Tagesordnungen prüfen. Optional `probe` setzen,
+Worker neu starten und einige Tage das Log beobachten. Dann `aktiv` setzen und den Worker neu starten
+(`docker compose up -d worker`); die Anwendung braucht den Schalter nur für das Signal beim Verknüpfen und
+sollte denselben Wert lesen.
 
-**Rückweg:** `aus` und Neustart; Benachrichtigungen entstehen wieder in der Anfrage. Ereignisse, die das
-Abonnement noch nicht zugestellt hat, bleiben im Journal liegen (ohne Benachrichtigung); vor dem
-Umschalten deshalb warten, bis der Rückstand des Abonnements null ist.
+**Rückweg:** `WORK_RIS_RELINK=aus` (oder `probe`) und Worker neu starten; danach erfolgte Umzüge zurückdrehen:
+`docker exec mandari python manage.py ris_neuzuordnung_zurueckdrehen --seit <Zeitpunkt des Einschaltens> --dry-run`,
+dann ohne `--dry-run` (einzelne Umzüge mit `--eintrag <Kennung>`). Zurückgedrehte Datensätze hängen wieder am
+früheren Punkt bzw. an der früheren Vorlage und ziehen von dort nie wieder automatisch um. Ein älteres Image läuft
+ohne Rückbau der Migrationen (zwei neue Tabellen).
 
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 

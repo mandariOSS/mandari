@@ -82,9 +82,33 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
+                    "bestaetigt_am",
+                    models.DateTimeField(
+                        blank=True,
+                        help_text="Bis hierhin beschrieb die Kennung das Objekt; später angelegte Datensätze wandern nicht mit",
+                        null=True,
+                        verbose_name="Zuletzt bestätigt",
+                    ),
+                ),
+                (
                     "status_seit",
                     models.DateTimeField(
                         blank=True, null=True, verbose_name="Status seit"
+                    ),
+                ),
+                (
+                    "zurueckgelassen",
+                    models.JSONField(
+                        blank=True, default=dict, verbose_name="Zurückgelassen"
+                    ),
+                ),
+                (
+                    "frueherer_titel",
+                    models.CharField(
+                        blank=True,
+                        help_text="Titel des Stands, von dem Zurückgelassenes stammt",
+                        max_length=300,
+                        verbose_name="Früherer Titel",
                     ),
                 ),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
@@ -155,8 +179,22 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
+                    "juenger",
+                    models.JSONField(
+                        blank=True,
+                        default=dict,
+                        verbose_name="Nicht umgehängt (jünger)",
+                    ),
+                ),
+                (
                     "erfolgt_am",
                     models.DateTimeField(auto_now_add=True, verbose_name="Erfolgt am"),
+                ),
+                (
+                    "zurueckgedreht_am",
+                    models.DateTimeField(
+                        blank=True, null=True, verbose_name="Zurückgedreht am"
+                    ),
                 ),
                 (
                     "organization",

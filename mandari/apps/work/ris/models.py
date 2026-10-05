@@ -51,7 +51,19 @@ class RisAnker(models.Model):
     )
     status = models.CharField("Status", max_length=20, choices=STATUS_CHOICES, default=AKTUELL)
     geprueft_am = models.DateTimeField("Zuletzt geprüft", blank=True, null=True)
+    bestaetigt_am = models.DateTimeField(
+        "Zuletzt bestätigt",
+        blank=True,
+        null=True,
+        help_text="Bis hierhin beschrieb die Kennung das Objekt; später angelegte Datensätze wandern nicht mit",
+    )
     status_seit = models.DateTimeField("Status seit", blank=True, null=True)
+    #: je Verknüpfung die Kennungen der Datensätze, die von einem früheren Stand stammen und deshalb nie
+    #: automatisch umziehen (Gegenstück am Ziel, nach der letzten Bestätigung angelegt, von Hand zurückgedreht)
+    zurueckgelassen = models.JSONField("Zurückgelassen", default=dict, blank=True)
+    frueherer_titel = models.CharField(
+        "Früherer Titel", max_length=300, blank=True, help_text="Titel des Stands, von dem Zurückgelassenes stammt"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -83,7 +95,10 @@ class RisNeuzuordnung(models.Model):
     verschoben = models.JSONField("Umgehängt", default=dict, blank=True)
     #: je Modell die Kennungen der Datensätze, die wegen eines Gegenstücks am Ziel bleiben mussten
     konflikte = models.JSONField("Nicht umgehängt", default=dict, blank=True)
+    #: je Modell die Kennungen der Datensätze, die nach der letzten Bestätigung angelegt wurden und bleiben
+    juenger = models.JSONField("Nicht umgehängt (jünger)", default=dict, blank=True)
     erfolgt_am = models.DateTimeField("Erfolgt am", auto_now_add=True)
+    zurueckgedreht_am = models.DateTimeField("Zurückgedreht am", blank=True, null=True)
 
     class Meta:
         verbose_name = "RIS-Neuzuordnung"

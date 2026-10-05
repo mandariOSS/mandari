@@ -19,11 +19,16 @@ den RIS-Bestand; was an den Objekten hängt (Notizen, Positionen), verschiebt da
 Regeln, im Zweifel keine Zuordnung:
 
 - Ein Punkt bleibt derselbe, wenn er dieselbe Vorlage berät (Kennung oder Drucksachennummer). Ohne Vorlage zählt
-  der Name, dazu öffentlich/nichtöffentlich; leichte Korrekturen des Namens erkennt nur der Punkt selbst.
+  der Name; öffentlich/nichtöffentlich muss in beiden Fällen gleich sein. Leichte Korrekturen des Namens erkennt
+  nur der Punkt selbst.
+- Berät die Sitzung dieselbe Vorlage an mehreren Punkten (Einbringung und Beschluss), hält die Kennung diese
+  **Geschwister** beim Bestätigen fest. Ein Geschwister ist nie der Nachfolger, und über die Vorlage zählt dann nur
+  ein Punkt mit ähnlichem Namen. Dasselbe gilt, wenn unbekannt ist, ob es Geschwister gab (Kennung eines Punkts,
+  der beim Erfassen schon nicht mehr auf der Tagesordnung stand).
 - Ein Nachfolger kommt nur aus derselben Sitzung und muss eindeutig sein; mehrere Treffer grenzen Name und Nummer
   ein, sonst ``mehrdeutig``.
 - Eine Vorlage hat einen Nachfolger nur, wenn sie gelöscht ist und genau eine andere Vorlage derselben Kommune
-  dieselbe Drucksachennummer trägt.
+  dieselbe Drucksachennummer und einen ähnlichen Namen trägt.
 """
 
 from __future__ import annotations
@@ -95,6 +100,9 @@ class TopKennung:
     public: bool = True
     papers: tuple[str, ...] = ()
     references: tuple[str, ...] = ()
+    #: andere Punkte der Sitzung, die beim Bestätigen derselbe Punkt nach ``gleicher_top`` waren:
+    #: ``((Kennung, Name), …)``; ``None``: unbekannt (der Punkt stand beim Erfassen nicht auf der Tagesordnung)
+    geschwister: tuple[tuple[str, str], ...] | None = None
 
     @property
     def mit_vorlage(self) -> bool:
@@ -109,6 +117,7 @@ class TopKennung:
             "public": self.public,
             "papers": list(self.papers),
             "references": list(self.references),
+            "geschwister": None if self.geschwister is None else [list(g) for g in self.geschwister],
         }
 
     @classmethod
@@ -124,6 +133,7 @@ class TopKennung:
             public=bool(data.get("public", True)),
             papers=tuple(sorted({str(p) for p in data.get("papers") or ()})),
             references=tuple(sorted({str(r) for r in data.get("references") or () if r})),
+            geschwister=_geschwister_lesen(data.get("geschwister")),
         )
 
     def mit_vorlagen_von(self, frueher: TopKennung) -> TopKennung:
@@ -131,6 +141,16 @@ class TopKennung:
         if self.mit_vorlage or not frueher.mit_vorlage:
             return self
         return replace(self, papers=frueher.papers, references=frueher.references)
+
+
+def _geschwister_lesen(value: Any) -> tuple[tuple[str, str], ...] | None:
+    if not isinstance(value, list):
+        return None
+    paare = set()
+    for eintrag in value:
+        if isinstance(eintrag, list | tuple) and len(eintrag) == 2:
+            paare.add((str(eintrag[0]), str(eintrag[1])))
+    return tuple(sorted(paare))
 
 
 @dataclass(frozen=True)
@@ -174,14 +194,27 @@ def _kennung(row: Mapping[str, Any], vorlagen: list[tuple[str, str]]) -> TopKenn
 _TOP_FELDER = ("id", "external_id", "meeting_id", "number", "name", "public", "deleted")
 
 
+#: Sitzungen je Lesevorgang
+SITZUNGEN_JE_ABFRAGE = 50
+
+
 def top_kennungen(agenda_item_ids: Iterable[object]) -> dict[uuid.UUID, TopKennung]:
-    """Heutige Beschreibung der Tagesordnungspunkte (fehlende Kennungen fehlen im Ergebnis)."""
-    ids = [pk for pk in (_uuid(v) for v in agenda_item_ids) if pk]
+    """
+    Heutige Beschreibung der Tagesordnungspunkte samt Geschwistern (``bestaetigte_kennung``); fehlende Kennungen
+    fehlen im Ergebnis.
+    """
+    ids = {pk for pk in (_uuid(v) for v in agenda_item_ids) if pk}
     if not ids:
         return {}
-    rows = list(OParlAgendaItem.objects.filter(pk__in=ids).values(*_TOP_FELDER))
-    vorlagen = _vorlagen_je_top(row["external_id"] for row in rows)
-    return {row["id"]: _kennung(row, vorlagen.get(row["external_id"], [])) for row in rows}
+    sitzung_je_punkt = dict(OParlAgendaItem.objects.filter(pk__in=ids).values_list("id", "meeting_id"))
+    sitzungen = sorted(set(sitzung_je_punkt.values()), key=str)
+    result: dict[uuid.UUID, TopKennung] = {}
+    for start in range(0, len(sitzungen), SITZUNGEN_JE_ABFRAGE):
+        for staende in tagesordnungen(sitzungen[start : start + SITZUNGEN_JE_ABFRAGE]).values():
+            for stand in staende:
+                if stand.id in sitzung_je_punkt:
+                    result[stand.id] = bestaetigte_kennung(stand, staende)
+    return result
 
 
 def _adressen_der_tagesordnung(value: Any) -> frozenset[str] | None:
@@ -237,16 +270,28 @@ def tagesordnungen(meeting_ids: Iterable[object]) -> dict[uuid.UUID, list[TopSta
     return result
 
 
-def sitzungen_geaendert(seit: Mapping[Any, datetime | None], *, ruhig_seit: datetime | None = None) -> set[uuid.UUID]:
+@dataclass(frozen=True)
+class Sitzungslage:
+    """Welche Sitzungen seit ihrer letzten Prüfung geändert sind (``sitzungen_pruefen``)."""
+
+    #: geändert und seitdem ruhig: jetzt prüfen
+    geaendert: frozenset[uuid.UUID]
+    #: seit dem Zeitpunkt unverändert: was damals galt, gilt noch
+    unveraendert: frozenset[uuid.UUID]
+
+
+def sitzungen_pruefen(seit: Mapping[Any, datetime | None], *, ruhig_seit: datetime | None = None) -> Sitzungslage:
     """
-    Sitzungen, an denen sich seit dem jeweiligen Zeitpunkt etwas geändert hat (Sitzung oder einer ihrer Punkte).
+    Sitzungen, an denen sich seit dem jeweiligen Zeitpunkt etwas geändert hat (Sitzung oder einer ihrer Punkte),
+    und solche, an denen sich nichts geändert hat.
 
     ``None`` als Zeitpunkt: noch nie geprüft. Mit ``ruhig_seit`` fallen Sitzungen weg, die sich danach noch
-    geändert haben – ein Abgleich mitten im Abruf einer Tagesordnung sähe einen halben Stand.
+    geändert haben – ein Abgleich mitten im Abruf einer Tagesordnung sähe einen halben Stand. Sie stehen in keiner
+    der beiden Mengen, ebenso Sitzungen, die es nicht mehr gibt.
     """
     zeitpunkte = {pk: since for pk, since in ((_uuid(k), v) for k, v in seit.items()) if pk}
     if not zeitpunkte:
-        return set()
+        return Sitzungslage(frozenset(), frozenset())
     ids = list(zeitpunkte)
     sitzung = dict(OParlMeeting.objects.filter(pk__in=ids).values_list("id", "updated_at"))
     punkte = dict(
@@ -255,17 +300,17 @@ def sitzungen_geaendert(seit: Mapping[Any, datetime | None], *, ruhig_seit: date
         .annotate(zuletzt=Max("updated_at"))
         .values_list("meeting_id", "zuletzt")
     )
-    result = set()
+    geaendert, unveraendert = set(), set()
     for pk, since in zeitpunkte.items():
         if pk not in sitzung:
             continue
         stempel = [s for s in (sitzung.get(pk), punkte.get(pk)) if s is not None]
         zuletzt = max(stempel) if stempel else None
-        if ruhig_seit is not None and zuletzt is not None and zuletzt > ruhig_seit:
-            continue
-        if since is None or (zuletzt is not None and zuletzt > since):
-            result.add(pk)
-    return result
+        if since is not None and (zuletzt is None or zuletzt <= since):
+            unveraendert.add(pk)
+        elif ruhig_seit is None or zuletzt is None or zuletzt <= ruhig_seit:
+            geaendert.add(pk)
+    return Sitzungslage(frozenset(geaendert), frozenset(unveraendert))
 
 
 @dataclass(frozen=True)
@@ -284,21 +329,45 @@ def _gleich_ueber_vorlage(anker: TopKennung, kennung: TopKennung) -> bool | None
     return bool(set(anker.papers) & set(kennung.papers)) or bool(set(anker.references) & set(kennung.references))
 
 
+def _aehnlich(a: str, b: str) -> bool:
+    """Gleicher oder leicht geänderter Name (Tippfehler, Ergänzung); leere Namen sind nie ähnlich."""
+    return bool(a) and bool(b) and (a == b or SequenceMatcher(None, a, b).ratio() >= AEHNLICH_AB)
+
+
 def gleicher_top(anker: TopKennung, kennung: TopKennung) -> bool:
-    """Beschreiben beide denselben fachlichen Punkt (strenge Regel für Nachfolger)?"""
+    """Grundregel: dieselbe Vorlage, sonst derselbe Name; öffentlich/nichtöffentlich jeweils gleich."""
+    if anker.public != kennung.public:
+        return False
     ueber_vorlage = _gleich_ueber_vorlage(anker, kennung)
     if ueber_vorlage is not None:
         return ueber_vorlage
-    return bool(anker.name) and anker.name == kennung.name and anker.public == kennung.public
+    return bool(anker.name) and anker.name == kennung.name
+
+
+def _derselbe_punkt(anker: TopKennung, kennung: TopKennung) -> bool:
+    """
+    ``gleicher_top`` mit Rücksicht auf Geschwister: Stand dieselbe Vorlage beim Bestätigen an mehreren Punkten
+    (oder ist das unbekannt), genügt die Vorlage nicht – der Name muss ähnlich sein und darf nicht der eines
+    Geschwisters sein.
+    """
+    if not gleicher_top(anker, kennung):
+        return False
+    if _gleich_ueber_vorlage(anker, kennung) is None or anker.geschwister == ():
+        return True
+    andere = {name for _, name in anker.geschwister or ()} - {anker.name}
+    return kennung.name not in andere and _aehnlich(anker.name, kennung.name)
+
+
+def _ist_geschwister(anker: TopKennung, stand: TopStand) -> bool:
+    """Der Punkt stand beim Bestätigen schon als eigener Punkt neben dem Anker (gleiche Zeile, gleicher Name)."""
+    return (str(stand.id), stand.kennung.name) in set(anker.geschwister or ())
 
 
 def _korrigiert(anker: TopKennung, kennung: TopKennung) -> bool:
     """Leicht geänderter Name desselben Punkts (gilt nur für den Punkt selbst, nicht für Nachfolger)."""
     if _gleich_ueber_vorlage(anker, kennung) is False or anker.public != kennung.public:
         return False
-    if not anker.name or not kennung.name:
-        return False
-    return SequenceMatcher(None, anker.name, kennung.name).ratio() >= AEHNLICH_AB
+    return _aehnlich(anker.name, kennung.name)
 
 
 def _eingrenzen(anker: TopKennung, treffer: list[TopStand]) -> list[TopStand]:
@@ -312,28 +381,49 @@ def _eingrenzen(anker: TopKennung, treffer: list[TopStand]) -> list[TopStand]:
     return treffer
 
 
+def bestaetigte_kennung(ziel: TopStand, stand: Iterable[TopStand], frueher: TopKennung | None = None) -> TopKennung:
+    """
+    Beschreibung eines Punkts, wie sie ein Anker nach dem Bestätigen trägt: mit den Geschwistern aus der heutigen
+    Tagesordnung (``None``, wenn der Punkt selbst nicht darauf steht) und ggf. den Vorlagen der früheren
+    Beschreibung, solange die Quelle keine Beratung liefert.
+    """
+    kennung = ziel.kennung.mit_vorlagen_von(frueher) if frueher is not None else ziel.kennung
+    if not ziel.auf_tagesordnung:
+        return replace(kennung, geschwister=None)
+    geschwister = {
+        (str(s.id), s.kennung.name)
+        for s in stand
+        if s.id != ziel.id and s.auf_tagesordnung and gleicher_top(kennung, s.kennung)
+    }
+    return replace(kennung, geschwister=tuple(sorted(geschwister)))
+
+
 def top_zuordnen(anker: TopKennung, objekt: object, stand: Iterable[TopStand]) -> Zuordnung:
     """
     Wo steht der mit ``anker`` beschriebene Punkt heute? ``objekt`` ist die Zeile, an der die Daten hängen,
-    ``stand`` die Tagesordnung seiner Sitzung (``tagesordnungen``).
+    ``stand`` die Tagesordnung seiner Sitzung (``tagesordnungen``). Die Kennung im Ergebnis ist die bestätigte
+    Beschreibung des Ziels (``bestaetigte_kennung``).
     """
     pk = _uuid(objekt)
     staende = list(stand)
     selbst = next((s for s in staende if s.id == pk), None)
     steht = selbst is not None and selbst.auf_tagesordnung
 
-    if selbst is not None and steht and gleicher_top(anker, selbst.kennung):
-        return Zuordnung(BESTAETIGT, selbst.id, selbst.kennung.mit_vorlagen_von(anker))
+    if selbst is not None and steht and _derselbe_punkt(anker, selbst.kennung):
+        return Zuordnung(BESTAETIGT, selbst.id, bestaetigte_kennung(selbst, staende, anker))
 
-    treffer = _eingrenzen(
-        anker, [s for s in staende if s.id != pk and s.auf_tagesordnung and gleicher_top(anker, s.kennung)]
-    )
+    kandidaten = [
+        s
+        for s in staende
+        if s.id != pk and s.auf_tagesordnung and not _ist_geschwister(anker, s) and _derselbe_punkt(anker, s.kennung)
+    ]
+    treffer = _eingrenzen(anker, kandidaten)
     if len(treffer) == 1:
-        return Zuordnung(NACHFOLGER, treffer[0].id, treffer[0].kennung.mit_vorlagen_von(anker))
+        return Zuordnung(NACHFOLGER, treffer[0].id, bestaetigte_kennung(treffer[0], staende, anker))
     if len(treffer) > 1:
         return Zuordnung(MEHRDEUTIG)
     if selbst is not None and steht and _korrigiert(anker, selbst.kennung):
-        return Zuordnung(BESTAETIGT, selbst.id, selbst.kennung.mit_vorlagen_von(anker))
+        return Zuordnung(BESTAETIGT, selbst.id, bestaetigte_kennung(selbst, staende, anker))
     return Zuordnung(ABWEICHEND if steht else ENTFALLEN)
 
 
@@ -421,6 +511,7 @@ def vorlage_zuordnen(
     if stand is not None and not stand.geloescht:
         return Zuordnung(BESTAETIGT, stand.id, stand.kennung)
     gesucht = reference_key(anker.reference)
+    # Auch ein einzelner Treffer braucht einen ähnlichen Namen: Nummern ohne Jahresteil werden wiederverwendet.
     treffer = [
         k
         for k in kandidaten
@@ -429,6 +520,7 @@ def vorlage_zuordnen(
         and gesucht
         and k.kennung.body == anker.body
         and reference_key(k.kennung.reference) == gesucht
+        and _aehnlich(anker.name, k.kennung.name)
     ]
     if len(treffer) > 1:
         treffer = [k for k in treffer if k.kennung.name == anker.name] or treffer
