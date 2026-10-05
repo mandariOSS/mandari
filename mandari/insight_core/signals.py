@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
@@ -154,10 +155,20 @@ def delete_organization(sender, instance, **kwargs):
 @receiver(post_save, sender=OParlFile)
 def index_file(sender, instance, **kwargs):
     """
-    Indexiert eine Datei nach dem Speichern.
+    Indexiert eine Datei nach dem Speichern, und zwar erst nach dem Commit (``transaction.on_commit``).
 
-    Nur wenn text_content vorhanden ist.
-    Aktualisiert auch das Parent-Paper (file_contents_preview).
+    Speichert ein Aufrufer in einer Transaktion (etwa die Texterkennung zusammen mit ihrem Ereignis), käme
+    der Suchindex sonst vor dem Commit an: Rollt die Transaktion zurück, stünde im Index ein Stand, den es
+    nie gab, und das Dokument entstünde aus einem Bestand, den noch niemand sonst sieht. Ohne Transaktion
+    läuft die Indexierung wie bisher sofort.
+    """
+    update_fields = kwargs.get("update_fields")
+    transaction.on_commit(lambda: _index_file_now(instance, update_fields))
+
+
+def _index_file_now(instance: OParlFile, update_fields: Any) -> None:
+    """
+    Indexiert eine Datei (nur mit ``text_content``) und aktualisiert ihren Vorgang (``file_contents_preview``).
     """
     # Tombstone oder in der Quelle nicht mehr abrufbar (Löschabgleich, #787): aus dem Index entfernen
     if instance.deleted or getattr(instance, "source_missing_since", None):
@@ -166,7 +177,6 @@ def index_file(sender, instance, **kwargs):
 
     # Nur indexieren wenn Text vorhanden
     if not instance.text_content:
-        update_fields = kwargs.get("update_fields")
         if update_fields and "text_content" in update_fields:
             # Text verworfen (Inhalt in der Quelle geändert): alten Stand nicht weiter finden lassen
             remove_file_from_index(instance)

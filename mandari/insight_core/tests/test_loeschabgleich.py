@@ -332,18 +332,24 @@ class TestSperre:
         assert "Entfernter Text" not in html
         assert "weg.pdf" not in html
 
-    def test_suchindex_verliert_gesperrte_datei(self, body: OParlBody, tmp_path: Path, monkeypatch: Any) -> None:
+    def test_suchindex_verliert_gesperrte_datei(
+        self, body: OParlBody, tmp_path: Path, monkeypatch: Any, django_capture_on_commit_callbacks: Any
+    ) -> None:
         geloescht: list[str] = []
         monkeypatch.setattr(signals, "_delete_document", lambda index, doc_id: geloescht.append(f"{index}/{doc_id}"))
         datei = _datei(body, tmp_path)
-        file_reconcile.mark_missing(datei, timezone.now())
+        with django_capture_on_commit_callbacks(execute=True):  # der Index folgt nach dem Commit
+            file_reconcile.mark_missing(datei, timezone.now())
         assert geloescht == [f"files/{datei.id}"]
 
-    def test_verworfener_text_verlaesst_den_index(self, body: OParlBody, tmp_path: Path, monkeypatch: Any) -> None:
+    def test_verworfener_text_verlaesst_den_index(
+        self, body: OParlBody, tmp_path: Path, monkeypatch: Any, django_capture_on_commit_callbacks: Any
+    ) -> None:
         geloescht: list[str] = []
         monkeypatch.setattr(signals, "_delete_document", lambda index, doc_id: geloescht.append(f"{index}/{doc_id}"))
         datei = _datei(body, tmp_path)
-        file_reconcile.verify(datei, _client(_liefert(PDF_NEU)))
+        with django_capture_on_commit_callbacks(execute=True):  # der Index folgt nach dem Commit
+            file_reconcile.verify(datei, _client(_liefert(PDF_NEU)))
         assert f"files/{datei.id}" in geloescht
 
 

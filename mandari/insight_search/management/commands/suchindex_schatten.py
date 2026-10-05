@@ -232,6 +232,11 @@ class Command(BaseCommand):
                 self.stdout.write(zeile if kommune.gleich else self.style.WARNING(zeile))
                 if kommune.felder:
                     self.stdout.write("    Felder: " + ", ".join(f"{feld} {n}" for feld, n in kommune.felder.items()))
+                    if kommune.schatten_veraltet:
+                        veraltet = ", ".join(f"{feld} {n}" for feld, n in kommune.schatten_veraltet.items())
+                        self.stdout.write(self.style.WARNING(f"    Schatten weicht vom Bestand ab: {veraltet}"))
+                    else:
+                        self.stdout.write("    Schatten entspricht dem Bestand (Live-Index veraltet)")
                 for titel, beispiele in (
                     ("fehlt", kommune.beispiele_fehlt),
                     ("überzählig", kommune.beispiele_ueberzaehlig),

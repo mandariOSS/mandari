@@ -541,9 +541,17 @@ unverändert weiterläuft.
   `reindex_elasticsearch`) und schreibt sie mit externer Version gleich der Folgenummer: Ein älterer
   Stand verliert, wiederholte oder nachgespielte Ereignisse schaden nicht.
 - Abhängige Dokumente: Eine Datei oder Beratung aktualisiert auch ihren Vorgang; ein Vorgang bzw.
-  eine Sitzung aktualisiert die indexierbaren Dateien, die direkt an ihm bzw. ihr hängen.
-- Berücksichtigt werden öffentliche Ereignisse und die Texterkennung (`ris.file.text_extracted`,
-  laut Vertrag `intern`): Die Dokumente entstehen in beiden Fällen nur aus dem RIS-Bestand.
+  eine Sitzung aktualisiert die indexierbaren Dateien, die direkt an ihm bzw. ihr hängen. Den Kontext
+  einer Datei (`meeting_name`, `meeting_date`, `organization_names`, `agenda_number`) ziehen Sitzung,
+  Tagesordnungspunkt und Beratung für die Dateien der dort beratenen Vorgänge nach, aber nur, wenn
+  sich ein Feld ändert, das in den Kontext eingeht (Sitzung: Name, Beginn, Gremien; Punkt: Nummer;
+  Beratung: Sitzung, Punkt, Federführung). Ein neues Gremium aktualisiert die Vorgänge, die es nennen;
+  ein umbenanntes zusätzlich seine Sitzungen und deren Dateien (selten, dann Tausende Dokumente).
+- Personen und Gremien kommen über `ris.person.changed` und `ris.organization.changed`, erkannte
+  Texte über `ris.file.text_extracted` (Ingestor und Auftrag `file.extract_text`, Issue #821).
+- Jedes Ereignis ist nur Auslöser; die Dokumente entstehen aus dem RIS-Bestand. Ausgewertet werden
+  öffentliche Ereignisse, die Texterkennung (laut Vertrag `intern`) und Tagesordnungspunkte auch
+  `nichtoeffentlich` (die Quelle veröffentlicht sie mit Nummer, das Portal zeigt sie so).
 - Ist Elasticsearch nicht erreichbar, wartet die Zustellung und stellt denselben Batch erneut zu;
   lehnt es ein Dokument ab, wird nur dessen Ereignis geparkt (Admin „Abonnements“).
 - Ist die Obergrenze erreicht, werden vorhandene Dokumente weiter aktualisiert, aber keine neuen
@@ -553,19 +561,27 @@ unverändert weiterläuft.
 - Nachspielen, erneut Zustellen, Verwerfen und `loeschen` stehen wie die Eingriffe im Admin im
   Sicherheitsprotokoll (Ereignis „Eingriff in den Betrieb“, Quelle `kommandozeile`).
 
-**Erwartete, erklärbare Abweichungen im Vergleich** (bis Issue #821 erledigt ist):
+**Abweichungen im Vergleich lesen:** Weicht ein Feld ab, prüft der Vergleich die Stichprobe gegen den
+aktuellen Bestand. „Schatten entspricht dem Bestand (Live-Index veraltet)“ ist erwartet; „Schatten
+weicht vom Bestand ab“ ist ein Befund vor dem Umschalten (#527), außer bei offenem Rückstand des
+Abonnements (Zeile „Abonnement …“ oben).
 
-- Dateien, deren Text nach dem Vollbau erkannt wurde: Die Texterkennung meldet noch kein Ereignis
-  (`ris.file.text_extracted` hat einen Vertrag, aber keinen Erzeuger). Sie fehlen im Schattenindex,
-  ebenso ihr Text in der Vorschau des Vorgangs.
-- Gremien und Personen: Für sie gibt es nur Löschmeldungen; Änderungen erreichen den Schattenindex
-  erst über einen neuen Vollbau.
-- Dateien an Vorgängen: `meeting_name` und `meeting_date` kommen aus der Sitzung der Beratung; eine
-  geänderte Sitzung aktualisiert nur die Dateien, die direkt an ihr hängen. `agenda_number` folgt dem
-  Tagesordnungspunkt, dessen Ereignisse (`ris.agendaitem.*`) das Abonnement nicht bekommt.
-- `organization_names` von Sitzungen, Vorgängen und Dateien: Ein umbenanntes Gremium ändert sie erst
-  mit dem nächsten Ereignis des jeweiligen Objekts.
-- Felder, die der Ingestor im Live-Index mit eigenem Dokumentbauer anders schreibt.
+**Erwartete, erklärbare Abweichungen** (Issue #821; der Live-Index ist hier der veraltete Teil):
+
+- Kontext von Dateien (`meeting_name`, `meeting_date`, `organization_names`, `agenda_number`) und
+  `organization_names` von Vorgängen und Sitzungen: Im Live-Index schreibt sie nur Django beim
+  Speichern oder `reindex_elasticsearch`; der Ingestor lässt sie bei seinem Teil-Update aus. Ändert
+  der Abgleich eine Sitzung, einen Tagesordnungspunkt, eine Beratung oder ein Gremium, zieht nur das
+  Abonnement nach.
+- Seit #821 ist der Dateikontext eindeutig: Hat ein Vorgang mehrere gleichrangige Beratungen,
+  entscheidet die Kennung der Quelle (vorher die Reihenfolge der Datenbank), und von mandari Session
+  zurückgenommene Beratungen, Sitzungen und Punkte zählen nicht mehr. Live-Dokumente aus der Zeit
+  davor weichen ab, bis sie neu gebaut werden (`reindex_elasticsearch --body <Kennung> --index files`).
+- Felder, die der Ingestor im Live-Index mit eigenem Dokumentbauer anders schreibt, etwa fehlende
+  `access_url`, `paper_name`, `paper_reference` bei Dateien, die nur er angelegt hat.
+- Bewusst ohne Nachzug: Erscheint ein Gremium erst nach seinen Sitzungen im Bestand, ordnet der
+  Ingestor es ihnen erst beim nächsten Abgleich der Sitzung zu (dann `ris.meeting.changed`). Bis dahin
+  ist der Name der Sitzung in beiden Indizes gleich alt.
 
 Alles andere ist ein Befund vor dem Umschalten (#527).
 

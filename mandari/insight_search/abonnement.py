@@ -17,21 +17,31 @@ Datenbank auf ``schatten``.
 **Ablauf je Batch:**
 
 1. Aus den Ereignissen die betroffenen Dokumente bestimmen (``affected``): Sitzung, Vorgang, Datei,
-   Person, Gremium über ``aggregate_type``. Abhängige Dokumente: Eine Datei oder Beratung betrifft
-   zusätzlich ihren Vorgang (Textvorschau, Dateinamen, Gremien), wie heute die Signale; ein Vorgang
-   bzw. eine Sitzung die indexierbaren Dateien, die direkt an ihm bzw. ihr hängen (Name und
-   Aktenzeichen des Vorgangs, Name und Datum der Sitzung). Nur öffentliche Ereignisse, dazu die
-   Texterkennung (``ris.file.text_extracted``, laut Vertrag ``intern``: eine Anreicherung ohne Inhalt;
-   das Dokument entsteht wie jedes andere nur aus dem RIS-Bestand). Im Schattenbetrieb nur die
-   gewählten Kommunen (``SEARCH_INDEX_SHADOW_BODIES``).
+   Person, Gremium über ``aggregate_type``. Dazu die abhängigen Dokumente (Issue #821):
 
-   **Bekannte Lücken** (Issue #821, Voraussetzung für #527): Sitzung über die Beratung → Dateien der
-   beratenen Vorgänge (``meeting_name``/``meeting_date``), Tagesordnungspunkt → Dateien
-   (``agenda_number``, ``ris.agendaitem.*`` ist nicht abonniert), Gremium → ``organization_names``
-   von Sitzungen, Vorgängen und Dateien; für Gremien und Personen gibt es nur Löschmeldungen.
+   - Datei oder Beratung → ihr Vorgang (Textvorschau, Dateinamen, Gremien), wie heute die Signale;
+   - Vorgang bzw. Sitzung → die Dateien, die direkt an ihm bzw. ihr hängen (Name und Aktenzeichen des
+     Vorgangs, Name und Datum der Sitzung);
+   - **Dateikontext** (``meeting_name``, ``meeting_date``, ``organization_names``, ``agenda_number``):
+     Sitzung, Tagesordnungspunkt und Beratung → die Dateien der Vorgänge, die dort beraten werden. Nur
+     wenn sich ein Feld ändert, das in den Kontext eingeht (``_CONTEXT_FIELDS``), das Objekt neu ist,
+     gelöscht oder zurückgenommen wird: Eine Ratssitzung berät Dutzende Vorgänge mit je mehreren
+     Dateien, und jede Datei trägt ihren ganzen Text;
+   - **Gremium:** neu erkannt → die Vorgänge, deren Beratungen es nennen; umbenannt → zusätzlich seine
+     Sitzungen mit deren Dateien und den Dateien der dort beratenen Vorgänge. Ein umbenanntes großes
+     Gremium betrifft Tausende Dokumente; das ist selten und läuft in Abschnitten.
+
+   **Sichtbarkeit:** Ein Ereignis ist nur Auslöser; jedes Dokument entsteht aus dem RIS-Bestand mit
+   derselben Auswahl wie ``reindex_elasticsearch``, nie aus der Nutzlast. Ausgewertet werden öffentliche
+   Ereignisse und je Typ die Klassen aus ``_VISIBILITY_BY_TYPE``: die Texterkennung (``intern``, eine
+   Anreicherung ohne Inhalt) und Tagesordnungspunkte (auch ``nichtoeffentlich``: Die Quelle
+   veröffentlicht einen nichtöffentlichen Punkt mit Nummer, und das Portal zeigt ihn so; sein Ereignis
+   betrifft nur den Kontext von Dateien, nie ein eigenes Dokument). Im Schattenbetrieb nur die
+   gewählten Kommunen (``SEARCH_INDEX_SHADOW_BODIES``).
 2. Jedes Dokument aus dem **aktuellen** Bestand bauen (``insight_core.services.search_projection``,
    Dokumentbauer wie ``reindex_elasticsearch``). Gehört das Objekt nicht (mehr) in den Index, wird
-   sein Dokument gelöscht.
+   sein Dokument gelöscht. Dateien lösen ihren Kontext je Block gemeinsam auf (wenige Abfragen je
+   Block statt drei bis fünf je Datei).
 3. Schreiben mit **externer Version gleich Folgenummer** (``version_type=external``): Ein älterer
    Stand verliert gegen einen neueren (Konflikt 409, gezählt als ``stale``). Wiederholte oder
    nachgespielte Ereignisse schaden deshalb nicht (Zustellung mindestens einmal, Idempotenz hier).
@@ -45,6 +55,10 @@ nichts wird geparkt. Lehnt Elasticsearch einzelne Dokumente ab (z. B. Feldtyp), 
 Obergrenze an Dokumenten (``SEARCH_INDEX_SHADOW_MAX_DOCS``, Prüfung je Batch): Ist sie erreicht,
 werden vorhandene Dokumente weiter aktualisiert und gelöscht, neue nicht mehr angelegt
 (``skipped_limit``). Dateitexte werden einzeln gebaut und in Paketen bis 8 MB gesendet.
+
+**Dauer:** Ein Batch kann tausende abhängige Dokumente neu bauen (Gremium umbenannt). Der Handler meldet
+deshalb je gesendetem Paket ein Lebenszeichen (``Delivery.alive``); die Zustellung leitet es an den Worker
+weiter und verlängert die Lease (Issue #821).
 
 **Kennzahlen:** Rückstand ``mandari_events_lag_seconds{subscription="suchindex"}`` (Zustellung),
 Ergebnis je Dokument ``mandari_search_subscription_documents_total{target,result}`` (hier).
@@ -65,7 +79,14 @@ from prometheus_client import Counter
 
 from apps.events import Delivery, TargetUnavailableError
 from apps.events.models import Event, Visibility
-from insight_core.services.search_projection import iter_documents, related_file_ids, related_paper_ids
+from insight_core.services.search_projection import (
+    context_file_ids,
+    iter_documents,
+    meetings_of_organizations,
+    papers_of_organizations,
+    related_file_ids,
+    related_paper_ids,
+)
 from insight_search.indices import INDEXES, SHADOW_PREFIX, ensure_shadow_indices, shadow_name
 
 logger = logging.getLogger(__name__)
@@ -76,6 +97,9 @@ TYPES: Final = (
     "ris.paper.*",
     "ris.file.*",
     "ris.consultation.*",
+    "ris.agendaitem.*",
+    "ris.organization.*",
+    "ris.person.*",
     "ris.object.depublished",
 )
 #: Ereignisse je Batch: Ein Batch kann ebenso viele Dateitexte bauen
@@ -94,11 +118,30 @@ INDEX_BY_AGGREGATE: Final[Mapping[str, str]] = {
 _PAPER_DEPENDENTS: Final = ("File", "Consultation")
 #: Objekttypen, deren Änderung die Dokumente der Dateien ändert, die an ihnen hängen
 _FILE_OWNERS: Final = ("Paper", "Meeting")
+#: Ereignistypen, die den Kontext von Dateien ändern können, und je Objekttyp die Felder (Namen wie im
+#: Vertrag), die in den Kontext eingehen. Ein Ereignis ohne Feldliste zählt immer.
+_CONTEXT_EVENTS: Final = frozenset(
+    {"ris.meeting.scheduled", "ris.meeting.changed", "ris.agendaitem.changed", "ris.consultation.changed"}
+)
+_CONTEXT_FIELDS: Final[Mapping[str, frozenset[str]]] = {
+    "Meeting": frozenset({"name", "start", "organization"}),
+    "AgendaItem": frozenset({"number"}),
+    "Consultation": frozenset({"meeting", "agendaItem", "agendaitem", "authoritative"}),
+}
+#: Arten einer Änderung (Feld ``change``), die den Kontext immer betreffen bzw. nie
+_CONTEXT_CHANGES: Final = frozenset({"added", "scheduled", "deleted"})
+_CONTEXT_NEUTRAL: Final = frozenset({"moved", "withdrawn"})
+#: Rücknahme eines Objekts (Löschmarkierung der Quelle, Rücknahme durch Session)
+_DEPUBLISHED: Final = "ris.object.depublished"
 #: Sichtbarkeiten je Ereignistyp, die den Suchindex betreffen; alle übrigen Typen nur ``oeffentlich``.
-#: Die Texterkennung ist laut Vertrag ``intern`` (Anreicherung, Nutzlast ohne Inhalt); das Dokument der
-#: Datei entsteht trotzdem nur aus dem RIS-Bestand mit derselben Auswahl wie ``reindex_elasticsearch``.
+#: Ein Ereignis ist nur Auslöser: Jedes Dokument entsteht aus dem RIS-Bestand mit derselben Auswahl wie
+#: ``reindex_elasticsearch``, nie aus der Nutzlast. Die Texterkennung ist laut Vertrag ``intern``
+#: (Anreicherung, Nutzlast ohne Inhalt). Einen nichtöffentlichen Tagesordnungspunkt veröffentlicht die
+#: Quelle mit Nummer (``public: false``), das Portal zeigt ihn so; sein Ereignis ändert nur den Kontext
+#: von Dateien (``agenda_number``), ein eigenes Dokument hat er nicht.
 _VISIBILITY_BY_TYPE: Final[Mapping[str, frozenset[str]]] = {
     "ris.file.text_extracted": frozenset({Visibility.OEFFENTLICH.value, Visibility.INTERN.value}),
+    "ris.agendaitem.changed": frozenset({Visibility.OEFFENTLICH.value, Visibility.NICHTOEFFENTLICH.value}),
 }
 _PUBLIC: Final = frozenset({Visibility.OEFFENTLICH.value})
 
@@ -214,24 +257,69 @@ def relevant(ereignis: Event) -> bool:
     return str(ereignis.visibility) in _VISIBILITY_BY_TYPE.get(ereignis.type, _PUBLIC)
 
 
+def _nutzlast(ereignis: Event) -> Mapping[str, Any]:
+    return ereignis.payload if isinstance(ereignis.payload, dict) else {}
+
+
+def changes_context(ereignis: Event) -> bool:
+    """
+    Ändert das Ereignis den Kontext der Dateien, die über eine Beratung an seinem Objekt hängen?
+
+    Ja bei einer Rücknahme, bei einem neuen oder gelöschten Objekt und wenn ein Feld aus
+    ``_CONTEXT_FIELDS`` geändert ist; ohne Feldliste im Zweifel ja. Ein verschobener oder abgesetzter
+    Tagesordnungspunkt behält seine Nummer (sonst nennt ``changed`` sie).
+    """
+    felder = _CONTEXT_FIELDS.get(ereignis.aggregate_type)
+    if felder is None:
+        return False
+    if ereignis.type == _DEPUBLISHED:
+        return True
+    if ereignis.type not in _CONTEXT_EVENTS:
+        return False
+    nutzlast = _nutzlast(ereignis)
+    if nutzlast.get("change") in _CONTEXT_CHANGES:
+        return True
+    geaendert = nutzlast.get("changed")
+    if isinstance(geaendert, list):
+        return bool(felder.intersection(geaendert))
+    return nutzlast.get("change") not in _CONTEXT_NEUTRAL
+
+
+def organization_change(ereignis: Event) -> str | None:
+    """
+    Änderung eines Gremiums (``ris.organization.changed``): ``neu`` (neu erkannt), ``name`` (umbenannt oder
+    unbekannt, was) oder ``None`` (andere Felder, Rücknahme, andere Objekttypen). Die Rücknahme ändert keine
+    Namen: Sitzungen und Vorgänge nennen auch ein gelöschtes Gremium weiter.
+    """
+    if ereignis.aggregate_type != "Organization" or ereignis.type == _DEPUBLISHED:
+        return None
+    nutzlast = _nutzlast(ereignis)
+    if nutzlast.get("change") == "added":
+        return "neu"
+    geaendert = nutzlast.get("changed")
+    return "name" if not isinstance(geaendert, list) or "name" in geaendert else None
+
+
 def affected(events: Iterable[Event], bodies: frozenset[str] | None = None) -> tuple[dict[Target, int], int]:
     """Betroffene Dokumente mit der höchsten Folgenummer, die sie betrifft; dazu die Zahl übergangener Ereignisse.
 
     ``bodies``: nur Ereignisse dieser Kommunen (Kennungen klein geschrieben); ``None`` = alle.
-    Nichtöffentliche Ereignisse betreffen den Suchindex nicht (``relevant``).
+    Welche Sichtbarkeiten zählen, steht je Typ in ``_VISIBILITY_BY_TYPE`` (``relevant``).
     """
     ziele: dict[Target, int] = {}
     uebergangen = 0
     abhaengige: dict[str, dict[uuid.UUID, int]] = {}
     besitzer: dict[str, dict[uuid.UUID, int]] = {}
+    kontext: dict[str, dict[uuid.UUID, int]] = {}
+    gremien: dict[str, dict[uuid.UUID, int]] = {}
 
     def merken(ziel: Target, seq: int) -> None:
         if ziele.get(ziel, -1) < seq:
             ziele[ziel] = seq
 
-    def vormerken(je_typ: dict[str, dict[uuid.UUID, int]], ereignis: Event, seq: int) -> None:
-        objekte = je_typ.setdefault(ereignis.aggregate_type, {})
-        objekte[ereignis.aggregate_id] = max(objekte.get(ereignis.aggregate_id, -1), seq)
+    def vormerken(je_typ: dict[str, dict[uuid.UUID, int]], art: str, objekt: uuid.UUID, seq: int) -> None:
+        objekte = je_typ.setdefault(art, {})
+        objekte[objekt] = max(objekte.get(objekt, -1), seq)
 
     for ereignis in events:
         if not relevant(ereignis):
@@ -240,25 +328,47 @@ def affected(events: Iterable[Event], bodies: frozenset[str] | None = None) -> t
             uebergangen += 1
             continue
         seq = _seq(ereignis)
-        index = INDEX_BY_AGGREGATE.get(ereignis.aggregate_type)
+        art, objekt = ereignis.aggregate_type, ereignis.aggregate_id
+        index = INDEX_BY_AGGREGATE.get(art)
         if index is not None:
-            merken(Target(index, ereignis.aggregate_id), seq)
-        if ereignis.aggregate_type in _PAPER_DEPENDENTS:
-            nutzlast = ereignis.payload if isinstance(ereignis.payload, dict) else {}
-            vorgang = _uuid(nutzlast.get("paper"))
+            merken(Target(index, objekt), seq)
+        if art in _PAPER_DEPENDENTS:
+            vorgang = _uuid(_nutzlast(ereignis).get("paper"))
             if vorgang is not None:
                 merken(Target("papers", vorgang), seq)
-            vormerken(abhaengige, ereignis, seq)
-        if ereignis.aggregate_type in _FILE_OWNERS:
-            vormerken(besitzer, ereignis, seq)
+            vormerken(abhaengige, art, objekt, seq)
+        if art in _FILE_OWNERS:
+            vormerken(besitzer, art, objekt, seq)
+        if changes_context(ereignis):
+            vormerken(kontext, art, objekt, seq)
+        aenderung = organization_change(ereignis)
+        if aenderung is not None:
+            vormerken(gremien, aenderung, objekt, seq)
 
+    # Gremien: Ein umbenanntes Gremium ändert seine Sitzungen (deren Dokument, ihre Dateien und die
+    # Dateien der dort beratenen Vorgänge), ein neues wie ein umbenanntes die Vorgänge, die es nennen
+    umbenannt = gremien.get("name", {})
+    for sitzung, gremium in meetings_of_organizations(umbenannt):
+        merken(Target("meetings", sitzung), umbenannt[gremium])
+        vormerken(besitzer, "Meeting", sitzung, umbenannt[gremium])
+        vormerken(kontext, "Meeting", sitzung, umbenannt[gremium])
+    nennende: dict[uuid.UUID, int] = {}
+    for objekte in gremien.values():
+        for gremium, seq in objekte.items():
+            nennende[gremium] = max(nennende.get(gremium, -1), seq)
+    for vorgang, gremium in papers_of_organizations(nennende):
+        merken(Target("papers", vorgang), nennende[gremium])
     # Der Vorgang laut Bestand (die Nutzlast nennt ihn nicht immer, etwa bei einer Rücknahme)
-    for aggregate_type, objekte in abhaengige.items():
-        for objekt, vorgang in related_paper_ids(aggregate_type, objekte).items():
+    for art, objekte in abhaengige.items():
+        for objekt, vorgang in related_paper_ids(art, objekte).items():
             merken(Target("papers", vorgang), objekte[objekt])
     # Die Dateien eines Vorgangs bzw. einer Sitzung
-    for aggregate_type, objekte in besitzer.items():
-        for datei, objekt in related_file_ids(aggregate_type, objekte).items():
+    for art, objekte in besitzer.items():
+        for datei, objekt in related_file_ids(art, objekte).items():
+            merken(Target("files", datei), objekte[objekt])
+    # Die Dateien, deren Kontext über eine Beratung an einer Sitzung, einem Punkt oder einer Beratung hängt
+    for art, objekte in kontext.items():
+        for datei, objekt in context_file_ids(art, objekte):
             merken(Target("files", datei), objekte[objekt])
     return ziele, uebergangen
 
@@ -278,8 +388,13 @@ def _aktion(operation: Operation) -> tuple[dict[str, Any], str | None]:
     return {"index": kopf}, json.dumps(operation.document, ensure_ascii=False, default=str)
 
 
-def write(es: Any, operations: Iterable[Operation], tally: Tally) -> None:
-    """Sendet die Operationen in Paketen (Anzahl und Größe begrenzt) und zählt das Ergebnis je Dokument."""
+def write(es: Any, operations: Iterable[Operation], tally: Tally, alive: Callable[[], None] | None = None) -> None:
+    """
+    Sendet die Operationen in Paketen (Anzahl und Größe begrenzt) und zählt das Ergebnis je Dokument.
+
+    ``alive`` meldet nach jedem Paket ein Lebenszeichen (``Delivery.alive``): Ein Batch, der viele abhängige
+    Dokumente neu baut, dauert sonst länger, als der Worker eine Rolle ohne Lebenszeichen hinnimmt.
+    """
     paket: list[Any] = []
     anzahl = groesse = 0
     for operation in operations:
@@ -292,6 +407,8 @@ def write(es: Any, operations: Iterable[Operation], tally: Tally) -> None:
         if anzahl >= BULK_ACTIONS or groesse >= BULK_BYTES:
             _senden(es, paket, tally)
             paket, anzahl, groesse = [], 0, 0
+            if alive is not None:
+                alive()
     if paket:
         _senden(es, paket, tally)
 
@@ -391,6 +508,7 @@ def suchindex(events: list[Event], delivery: Delivery) -> None:
     shadow = delivery.shadow or settings.SEARCH_INDEX_SUBSCRIPTION != "aktiv"
     bodies = shadow_bodies() if shadow else None
     ziele, uebergangen = affected(events, bodies)
+    delivery.alive()
     tally = Tally(skipped_body=uebergangen)
     ziel = "schatten" if shadow else "live"
     if not ziele:
@@ -405,7 +523,8 @@ def suchindex(events: list[Event], delivery: Delivery) -> None:
                 ensure_shadow_indices(es)
             obergrenze = int(settings.SEARCH_INDEX_SHADOW_MAX_DOCS)
             full = bool(obergrenze) and shadow_document_count(es) >= obergrenze
-        write(es, _operationen(es, ziele, shadow=shadow, bodies=bodies, full=full, tally=tally), tally)
+        operationen = _operationen(es, ziele, shadow=shadow, bodies=bodies, full=full, tally=tally)
+        write(es, operationen, tally, delivery.alive)
 
     try:
         _mit_ziel(schreiben)

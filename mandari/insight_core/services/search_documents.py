@@ -9,6 +9,8 @@ Single source of truth for both signal-based indexing and bulk reindex.
 from __future__ import annotations
 
 import contextlib
+import re
+from collections.abc import Container, Iterable
 from typing import Any
 
 #: Textvorschau eines Vorgangs: höchstens so viele Zeichen je Datei und insgesamt
@@ -153,9 +155,8 @@ def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, A
 
     Args:
         file: OParlFile instance.
-        context_info: Optional pre-computed context dict with organization_names,
-                      meeting_name, meeting_date, agenda_number.
-                      If None, attempts to resolve via DB queries.
+        context_info: Kontext aus ``file_contexts`` (Gremien, Sitzung, TOP); ein leeres Dict heißt „ohne
+                      Sitzung“. ``None``: Der Kontext wird für diese eine Datei nachgeschlagen.
     """
     text_preview = ""
     if file.text_content:
@@ -185,48 +186,129 @@ def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, A
         "agenda_number": None,
     }
 
+    if context_info is None:
+        # Einzelne Datei (Signal, reindex_elasticsearch): Kontext hier nachschlagen
+        context_info = _single_file_context(file)
     if context_info:
         doc["organization_names"] = context_info.get("organization_names", [])
         doc["meeting_name"] = context_info.get("meeting_name")
         doc["meeting_date"] = context_info.get("meeting_date")
         doc["agenda_number"] = context_info.get("agenda_number")
-    else:
-        # Resolve context from DB (used by signal-based indexing)
-        _resolve_file_context(file, doc)
 
     return doc
 
 
-def _resolve_file_context(file, doc: dict[str, Any]) -> None:
-    """Resolve file context (organization, meeting, agenda) from DB."""
+def _single_file_context(file: Any) -> dict[str, Any]:
+    """Kontext einer einzelnen Datei; ein Fehler darf das Speichern (Signal) nicht verhindern."""
     try:
-        from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting
-
-        meeting = None
-        agenda_number = None
-
-        if file.paper_id:
-            # File → Paper → Consultation → Meeting
-            consultation = OParlConsultation.objects.filter(paper_id=file.paper_id).order_by("-authoritative").first()
-            if consultation and consultation.meeting_external_id:
-                meeting = (
-                    OParlMeeting.objects.filter(external_id=consultation.meeting_external_id)
-                    .prefetch_related("organizations")
-                    .first()
-                )
-                if consultation.agenda_item_external_id:
-                    ai = OParlAgendaItem.objects.filter(external_id=consultation.agenda_item_external_id).first()
-                    if ai:
-                        agenda_number = ai.number
-
-        if not meeting and file.meeting_id:
-            meeting = OParlMeeting.objects.filter(pk=file.meeting_id).prefetch_related("organizations").first()
-
-        if meeting:
-            org_names = [org.name for org in meeting.organizations.all() if org.name]
-            doc["organization_names"] = org_names
-            doc["meeting_name"] = meeting.get_display_name()
-            doc["meeting_date"] = meeting.start.isoformat() if meeting.start else None
-            doc["agenda_number"] = agenda_number
+        return file_contexts([file]).get(file.pk, {})
     except Exception:
-        pass
+        return {}
+
+
+_ZIFFERN = re.compile(r"([0-9]+)")
+
+
+def natural_key(text: str) -> tuple[tuple[int, int | str], ...]:
+    """Natürliche Sortierung: Zahlen als Zahlen, ``…/consultation/9`` vor ``…/consultation/10``."""
+    return tuple((0, int(teil)) if index % 2 else (1, teil) for index, teil in enumerate(_ZIFFERN.split(text)) if teil)
+
+
+def _consultation_rank(consultation: Any, sitzungen: Container[str]) -> tuple[bool, bool, tuple[Any, ...]]:
+    """
+    Reihenfolge der Beratungen eines Vorgangs, unabhängig vom Zeitpunkt: zuerst die federführende
+    (``authoritative``), dann eine mit Sitzung im Bestand (``sitzungen``: Kennungen der Sitzungen, die es gibt
+    und die nicht zurückgenommen sind), dann nach Kennung der Quelle, natürlich sortiert.
+    """
+    hat_sitzung = bool(consultation.meeting_external_id) and consultation.meeting_external_id in sitzungen
+    return (not consultation.authoritative, not hat_sitzung, natural_key(consultation.external_id or ""))
+
+
+def file_contexts(files: Iterable[Any]) -> dict[Any, dict[str, Any]]:
+    """
+    Kontext je Datei (Gremien, Sitzung, Tagesordnungspunkt), gebündelt für beliebig viele Dateien.
+
+    Höchstens fünf Abfragen: Beratungen, vorhandene Sitzungen der Beratungen, gewählte Sitzungen mit ihren
+    Gremien, Tagesordnungspunkte. Dazu kommt nur für eine Sitzung ohne benannte Gremien, deren Gremien die
+    Quelle nennt, die Namensauflösung von ``get_display_name``. Die Dateien brauchen ``pk``, ``paper_id``
+    und ``meeting_id``.
+
+    Kette: Datei → Vorgang → Beratung → Sitzung (→ Gremien) und Tagesordnungspunkt; ohne Sitzung über die
+    Beratung gilt die Sitzung, an der die Datei direkt hängt. Je Vorgang zählt eine Beratung nach
+    ``_consultation_rank``: federführend, mit Sitzung im Bestand, kleinste Kennung (natürlich sortiert).
+    Von mandari Session zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte bleiben außen vor,
+    wie in der Dokumentliste (``withdrawn_q``).
+
+    Rückgabe: Datei (``pk``) → ``{organization_names, meeting_name, meeting_date, agenda_number}``; leer,
+    wenn sich keine Sitzung findet.
+    """
+    from django.db.models import Q
+
+    from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, withdrawn_q
+
+    dateien = list(files)
+    vorgaenge = {datei.paper_id for datei in dateien if datei.paper_id}
+    beratung_je_vorgang: dict[Any, Any] = {}
+    if vorgaenge:
+        beratungen = list(
+            OParlConsultation.objects.filter(paper_id__in=vorgaenge)
+            .exclude(withdrawn_q())
+            .only("pk", "paper_id", "external_id", "authoritative", "meeting_external_id", "agenda_item_external_id")
+        )
+        verweise = {b.meeting_external_id for b in beratungen if b.meeting_external_id}
+        vorhanden: set[str] = set()
+        if verweise:
+            vorhanden = set(
+                OParlMeeting.objects.filter(external_id__in=verweise)
+                .exclude(withdrawn_q())
+                .values_list("external_id", flat=True)
+            )
+        for kandidat in beratungen:
+            bisher = beratung_je_vorgang.get(kandidat.paper_id)
+            if bisher is None or _consultation_rank(kandidat, vorhanden) < _consultation_rank(bisher, vorhanden):
+                beratung_je_vorgang[kandidat.paper_id] = kandidat
+
+    mit_sitzung = [b for b in beratung_je_vorgang.values() if b.meeting_external_id]
+    sitzungen_ext = {b.meeting_external_id for b in mit_sitzung}
+    sitzungen_pk = {datei.meeting_id for datei in dateien if datei.meeting_id}
+    sitzung_je_ext: dict[str, Any] = {}
+    sitzung_je_pk: dict[Any, Any] = {}
+    if sitzungen_ext or sitzungen_pk:
+        for geladen in (
+            OParlMeeting.objects.filter(Q(external_id__in=sitzungen_ext) | Q(pk__in=sitzungen_pk))
+            .exclude(withdrawn_q())
+            .prefetch_related("organizations")
+        ):
+            sitzung_je_ext[geladen.external_id] = geladen
+            sitzung_je_pk[geladen.pk] = geladen
+
+    punkte_ext = {b.agenda_item_external_id for b in mit_sitzung if b.agenda_item_external_id}
+    nummer_je_punkt: dict[str, Any] = {}
+    if punkte_ext:
+        nummer_je_punkt = dict(
+            OParlAgendaItem.objects.filter(external_id__in=punkte_ext)
+            .exclude(withdrawn_q())
+            .values_list("external_id", "number")
+        )
+
+    kontexte: dict[Any, dict[str, Any]] = {}
+    for datei in dateien:
+        sitzung: Any = None
+        nummer: str | None = None
+        beratung: Any = beratung_je_vorgang.get(datei.paper_id) if datei.paper_id else None
+        if beratung is not None and beratung.meeting_external_id:
+            sitzung = sitzung_je_ext.get(beratung.meeting_external_id)
+            if beratung.agenda_item_external_id:
+                nummer = nummer_je_punkt.get(beratung.agenda_item_external_id)
+        if sitzung is None and datei.meeting_id:
+            sitzung = sitzung_je_pk.get(datei.meeting_id)
+        if sitzung is None:
+            kontexte[datei.pk] = {}
+            continue
+        kontexte[datei.pk] = {
+            "organization_names": [org.name for org in sitzung.organizations.all() if org.name],
+            "meeting_name": sitzung.get_display_name(),
+            "meeting_date": sitzung.start.isoformat() if sitzung.start else None,
+            "agenda_number": nummer,
+        }
+    return kontexte

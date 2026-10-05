@@ -122,12 +122,39 @@ def test_vergleich_zeigt_fehlende_ueberzaehlige_und_abweichende(
     assert (ergebnis["abweichend"], ergebnis["stichprobe"]) == (1, 2)
     assert ergebnis["felder"] == {"name": 1}
     assert ergebnis["beispiele_abweichend"] == [str(abweichend.pk)]
+    # Der Bestand sagt „Ausschuss“: Veraltet ist der Schatten
+    assert ergebnis["schatten_veraltet"] == {"name": 1}
 
     text = _befehl("vergleichen", "--index", "meetings", "--kommune", kennung)
     assert "fehlt 1  überzählig 1  abweichend 1/2" in text
     assert "Felder: name 1" in text
+    assert "Schatten weicht vom Bestand ab: name 1" in text
     with pytest.raises(SystemExit):
         _befehl("vergleichen", "--index", "meetings", "--streng")
+
+
+@pytest.mark.django_db
+def test_vergleich_erkennt_veralteten_live_index(es: FakeElasticsearch, kommune: Kommune) -> None:
+    """Issue #821: Abhängige Felder zieht nur das Abonnement nach; dann ist der Live-Index veraltet, nicht der Schatten."""
+    body = kommune("Beispielstadt")
+    sitzung = _sitzung(body, "Bauausschuss")
+    es.ablegen("schatten-meetings", meeting_to_doc(sitzung))
+    es.ablegen("meetings", {**meeting_to_doc(sitzung), "organization_names": ["Alter Name"]})
+    weg = _sitzung(body, "Abgesagt")
+    es.ablegen("meetings", meeting_to_doc(weg))
+    es.ablegen("schatten-meetings", {**meeting_to_doc(weg), "name": "anders"})
+    OParlMeeting.objects.filter(pk=weg.pk).update(deleted=True)
+
+    daten = json.loads(_befehl("vergleichen", "--index", "meetings", "--json"))
+
+    ergebnis = daten["indizes"][0]["kommunen"][0]
+    assert ergebnis["felder"] == {"name": 1, "organization_names": 1}
+    # Gehört ein Dokument nicht mehr in den Index, ist der Schatten veraltet (er hätte es löschen müssen)
+    assert ergebnis["schatten_veraltet"] == {"(nicht im Bestand)": 1}
+
+    OParlMeeting.objects.filter(pk=weg.pk).update(deleted=False, name="anders")
+    text = _befehl("vergleichen", "--index", "meetings")
+    assert "Schatten entspricht dem Bestand (Live-Index veraltet)" in text
 
 
 @pytest.mark.django_db
@@ -151,7 +178,7 @@ def test_status_nennt_abonnement_rueckstand_und_groesse(settings: Any, es: FakeE
     settings.SEARCH_INDEX_SUBSCRIPTION = "schatten"
     Subscription.objects.create(name="suchindex", cursor_seq=0, state=SubscriptionState.SCHATTEN)
     nummeriert(type="ris.meeting.changed")
-    nummeriert(type="ris.agendaitem.changed")  # gehört nicht zum Abonnement
+    nummeriert(type="ris.voting.recorded")  # gehört nicht zum Abonnement
     es.ablegen("schatten-papers", {"id": "1", "name": "x"})
 
     ausgabe = _befehl("status")

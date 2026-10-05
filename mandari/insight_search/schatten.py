@@ -12,7 +12,11 @@ Ausgabe macht der Befehl.
   ersetzt (andere Kommunen bzw. Indizes), plus die Dokumente des Vollbaus.
 - ``compare``: je Index und Kommune die Zahl der Dokumente im Bestand (Datenbank), im Live- und im
   Schattenindex, fehlende und überzählige Dokumente des Schattenindex und eine Stichprobe gemeinsamer
-  Dokumente mit den Feldern, die abweichen. Dazu, ob die Abbildungen (Felder) gleich sind.
+  Dokumente mit den Feldern, die abweichen. Dazu, ob die Abbildungen (Felder) gleich sind. Weicht ein
+  Feld ab, entscheidet der aktuelle Bestand, welche Seite veraltet ist (``schatten_veraltet``): Der
+  Live-Index zieht abhängige Felder (Kontext von Dateien, Gremien) nur beim Speichern in Django nach,
+  das Abonnement mit jedem Ereignis (Issue #821). Veraltet ist der Schatten nur bei offenem Rückstand
+  oder einer echten Lücke im Abonnement.
 - ``status``: Schalter, Abonnement (Zustand, Cursor, Rückstand, geparkte Ereignisse) und Größe der
   Schattenindizes samt Speicher von Elasticsearch.
 - ``drop``: löscht die Schattenindizes, auf Wunsch auch das Abonnement (Cursor und Geparktes). Ob das
@@ -38,7 +42,7 @@ from django.db.models.functions import Now
 from apps.events.dispatch import head_seq
 from apps.events.models import Event, ParkedEvent, Subscription, SubscriptionState
 from apps.events.registry import type_filter
-from insight_core.services.search_projection import count_documents, iter_all_documents
+from insight_core.services.search_projection import count_documents, iter_all_documents, iter_documents
 from insight_search import abonnement
 from insight_search.indices import INDEXES, ensure_shadow_indices, shadow_name
 
@@ -240,6 +244,9 @@ class BodyComparison:
     beispiele_fehlt: list[str]
     beispiele_ueberzaehlig: list[str]
     beispiele_abweichend: list[str]
+    #: Abweichende Felder, in denen der Schatten nicht dem aktuellen Bestand entspricht (sonst ist der
+    #: Live-Index veraltet); ``BESTAND_FEHLT``: Das Dokument gehört nicht mehr in den Index
+    schatten_veraltet: dict[str, int] = field(default_factory=dict)
 
     @property
     def gleich(self) -> bool:
@@ -307,6 +314,33 @@ def differing_fields(live: dict[str, Any], schatten: dict[str, Any]) -> list[str
     )
 
 
+#: Feldname in ``schatten_veraltet`` für ein Dokument, das nicht mehr in den Index gehört
+BESTAND_FEHLT: Final = "(nicht im Bestand)"
+
+
+def _bestand(index: str, kennungen: Iterable[str]) -> dict[str, dict[str, Any] | None]:
+    """Aktuelle Dokumente aus dem Bestand (wie das Abonnement sie baut); ``None``: gehört nicht in den Index."""
+    gueltig: list[uuid.UUID] = []
+    for kennung in kennungen:
+        try:
+            gueltig.append(uuid.UUID(kennung))
+        except ValueError:
+            continue
+    return {str(kennung): dokument for kennung, dokument in iter_documents(index, gueltig)}
+
+
+def stale_shadow_fields(live: dict[str, Any], schatten: dict[str, Any], bestand: dict[str, Any] | None) -> list[str]:
+    """Abweichende Felder, in denen der Schatten nicht dem aktuellen Bestand entspricht."""
+    if bestand is None:
+        return [BESTAND_FEHLT]
+    return [
+        feld
+        for feld in differing_fields(live, schatten)
+        if _normalisiert(schatten.get(feld)) != _normalisiert(bestand.get(feld))
+        or (feld in schatten) != (feld in bestand)
+    ]
+
+
 def _quellen(es: Any, name: str, kennungen: list[str]) -> dict[str, dict[str, Any]]:
     if not kennungen:
         return {}
@@ -350,6 +384,14 @@ def compare_body(
         if unterschiede:
             abweichend.append(kennung)
             felder.update(unterschiede)
+    veraltet: Counter[str] = Counter()
+    bestand_quellen = _bestand(index, abweichend) if abweichend else {}
+    for kennung in abweichend:
+        veraltet.update(
+            stale_shadow_fields(
+                live_quellen.get(kennung, {}), schatten_quellen.get(kennung, {}), bestand_quellen.get(kennung)
+            )
+        )
     try:
         bestand = count_documents(index, [uuid.UUID(kommune)])
     except ValueError:
@@ -367,6 +409,7 @@ def compare_body(
         beispiele_fehlt=fehlt[:examples],
         beispiele_ueberzaehlig=ueberzaehlig[:examples],
         beispiele_abweichend=sorted(abweichend)[:examples],
+        schatten_veraltet=dict(sorted(veraltet.items())),
     )
 
 

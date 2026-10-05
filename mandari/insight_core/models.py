@@ -875,7 +875,7 @@ class OParlMeeting(SourceDeletionModel):
     def __str__(self):
         return self.get_display_name()
 
-    def get_display_name(self):
+    def get_display_name(self) -> str:
         """Gibt den Gremiennamen zurück statt des generischen 'Sitzung'."""
         # 1. M2M-Beziehung (Django-Signals, manuell gepflegt)
         orgs = self.organizations.all()[:2]
@@ -1432,6 +1432,11 @@ class OParlConsultation(SourceDeletionModel):
         db_table = "oparl_consultations"
         verbose_name = "Beratung"
         verbose_name_plural = "Beratungen"
+        # Abhängigkeiten des Suchindex-Abonnements: Beratungen zu einer Sitzung bzw. einem Punkt (#821)
+        indexes = [
+            models.Index(fields=["meeting_external_id"], name="oparl_cons_meeting_ext"),
+            models.Index(fields=["agenda_item_external_id"], name="oparl_cons_agenda_ext"),
+        ]
 
     def __str__(self):
         return f"Beratung {self.role or ''} - {self.paper or self.external_id}"

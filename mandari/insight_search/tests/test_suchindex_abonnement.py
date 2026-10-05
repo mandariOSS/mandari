@@ -21,7 +21,16 @@ from apps.events.dispatch import deliver_batch, ensure_subscription, rewind
 from apps.events.models import Event, ParkedEvent, Subscription, SubscriptionState
 from apps.events.registry import Subscriber, get
 from apps.events.tests.hilfen import nummeriert
-from insight_core.models import OParlBody, OParlConsultation, OParlFile, OParlMeeting, OParlPaper
+from insight_core.models import (
+    OParlAgendaItem,
+    OParlBody,
+    OParlConsultation,
+    OParlFile,
+    OParlMeeting,
+    OParlOrganization,
+    OParlPaper,
+    OParlPerson,
+)
 from insight_core.services.search_documents import paper_to_doc
 from insight_core.services.search_projection import iter_documents
 from insight_search import abonnement, subscribers
@@ -45,6 +54,9 @@ def _ereignis(typ: str, objekt: Any, body: OParlBody | None, **felder: Any) -> E
         OParlPaper: "Paper",
         OParlFile: "File",
         OParlConsultation: "Consultation",
+        OParlAgendaItem: "AgendaItem",
+        OParlOrganization: "Organization",
+        OParlPerson: "Person",
     }[type(objekt)]
     daten: dict[str, Any] = {
         "type": typ,
@@ -101,7 +113,10 @@ def test_schalter_schatten_registriert_externes_abonnement(
     assert spec.shadow and not spec.transactional
     assert spec.queue == "index"
     assert spec.matches("ris.meeting.changed") and spec.matches("ris.object.depublished")
-    assert not spec.matches("ris.agendaitem.changed")
+    # Issue #821: Tagesordnungspunkte (Dateikontext), Gremien und Personen
+    assert spec.matches("ris.agendaitem.changed")
+    assert spec.matches("ris.organization.changed") and spec.matches("ris.person.changed")
+    assert not spec.matches("ris.voting.recorded")
     assert Subscription.objects.get(name=abonnement.NAME).state == SubscriptionState.SCHATTEN
 
 

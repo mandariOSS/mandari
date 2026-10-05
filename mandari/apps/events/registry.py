@@ -36,7 +36,7 @@ import functools
 import operator
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from django.core.exceptions import ImproperlyConfigured
@@ -75,6 +75,19 @@ class Delivery:
     shadow: bool
     #: Wiederholung geparkter Ereignisse statt fortlaufender Zustellung
     retry: bool = False
+    #: Lebenszeichen der Zustellung (``alive``); im Dauerbetrieb belegt die Schleife es
+    progress: Callable[[], None] | None = field(default=None, compare=False, repr=False)
+
+    def alive(self) -> None:
+        """
+        Meldet, dass ein lange laufender Handler noch arbeitet (Issue #821).
+
+        Der Worker hält eine Rolle für hängend, wenn sie ``STALE_AFTER`` Sekunden kein Lebenszeichen gibt,
+        und die Lease des Abonnements läuft nach 30 s ab. Ein Handler, der für einen Batch lange braucht
+        (etwa tausende Dokumente neu baut), ruft ``alive()`` deshalb regelmäßig auf, z. B. je Paket.
+        """
+        if self.progress is not None:
+            self.progress()
 
 
 Handler = Callable[[list["Event"], Delivery], None]
