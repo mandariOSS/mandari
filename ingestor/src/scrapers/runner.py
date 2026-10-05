@@ -197,7 +197,8 @@ class ScraperSyncRunner:
                 gaps = "; ".join(f"{t}: {r}" for t, r in sorted(adapter.stats.incomplete.items()))
                 console.print(
                     f"[yellow]Scraper-Lauf {self.source.name} nicht vollständig "
-                    f"({adapter.stats.failed_pages} Seiten nicht lesbar{'; ' + gaps if gaps else ''})[/yellow]"
+                    f"({adapter.stats.failed_pages - adapter.stats.gone_pages} Seiten gestört"
+                    f"{'; ' + gaps if gaps else ''})[/yellow]"
                 )
 
             # Verschwinde-Erkennung: nur nach durchgelaufenen, fehlerfreien Full-Crawls und nur für
@@ -226,6 +227,7 @@ class ScraperSyncRunner:
                 "tombstoned": deleted_count,
                 "complete": complete,
                 "failed_pages": adapter.stats.failed_pages,
+                "gone_pages": adapter.stats.gone_pages,
                 "incomplete": dict(sorted(adapter.stats.incomplete.items())),
                 "tombstone_braked": braked,
             }

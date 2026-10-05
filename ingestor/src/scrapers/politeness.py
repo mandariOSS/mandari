@@ -61,6 +61,9 @@ class PoliteFetcher:
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()  # max_concurrent=1: serialisiert alle Requests
         self.pages_fetched = 0
+        #: HTTP-Status der letzten Antwort von :meth:`fetch_text` (``None``: keine Antwort, etwa Netzfehler).
+        #: Unterscheidet „die Quelle sagt, die Seite gibt es nicht“ (404/410) von einer Störung (Issue #556).
+        self.last_status: int | None = None
 
     async def __aenter__(self) -> PoliteFetcher:
         self._client = httpx.AsyncClient(
@@ -115,6 +118,7 @@ class PoliteFetcher:
             raise RobotsDisallowedError(url)
 
         last_error: str | None = None
+        self.last_status = None
 
         for attempt in range(self.max_retries):
             async with self._lock:
@@ -125,11 +129,13 @@ class PoliteFetcher:
                     response = await self._client.get(url)
                 except httpx.HTTPError as e:
                     last_error = str(e)
+                    self.last_status = None
                     metrics.record_http_error(self.source_name, "request_error")
                     continue
 
             self.pages_fetched += 1
             metrics.record_scraper_page(self.source_name)
+            self.last_status = response.status_code
 
             if response.status_code == 200:
                 return response.text

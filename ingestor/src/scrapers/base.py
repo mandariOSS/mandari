@@ -222,8 +222,10 @@ class ScrapeStats:
     detail_pages_parsed: int = 0
     parse_failures: int = 0
     entities_parsed: int = 0
-    #: Seiten ohne verwertbare Antwort: Fehler, Sperr-, Prüf- oder fremde Seite
+    #: Seiten ohne verwertbare Antwort: Fehler, Sperr-, Prüf- oder fremde Seite, toter Verweis
     failed_pages: int = 0
+    #: davon tote Verweise: Die Quelle beantwortet die Seite selbst mit 404/410
+    gone_pages: int = 0
     #: Objekttypen, deren Liste dieser Lauf nicht vollständig gelesen hat, je mit dem ersten Grund
     incomplete: dict[str, str] = field(default_factory=dict)
     #: Objekte, die eine Liste nennt, deren Detailseite aber nicht lesbar war: Es gibt sie in der Quelle
@@ -238,8 +240,17 @@ class ScrapeStats:
 
     @property
     def complete(self) -> bool:
-        """Hat der Lauf alles gelesen, was er lesen wollte (keine Lücke, kein Parse-Fehler)?"""
-        return not self.incomplete and not self.failed_pages and not self.parse_failures
+        """
+        Hat der Lauf gelesen, was die Quelle anbietet? Jede Liste ganz und keine Seite gestört.
+
+        Gestört heißt: Netzfehler, Zeitüberschreitung, 4xx außer 404/410, 5xx, Sperr- oder fremde Seite.
+        Ein toter Verweis (404/410) oder eine einzelne nicht auswertbare Detailseite (etwa eine Vorlage ohne
+        Betreff) macht den Lauf nicht unvollständig, sonst rückte die Aktualität einer Quelle mit einem
+        dauerhaft toten Verweis nie vor. Gehäuft fallen sie in der Parse-Quote auf: Bricht sie ein, meldet
+        der Läufer einen Fehler, und der Lauf zählt nicht als vollständig. Eine nicht lesbare Liste (auch
+        404) hält der Adapter in :attr:`incomplete` fest.
+        """
+        return not self.incomplete and self.failed_pages <= self.gone_pages
 
     def mark_incomplete(self, reason: str, *entity_types: str) -> None:
         """Die Listen dieser Objekttypen sind in diesem Lauf nicht vollständig gelesen (erster Grund zählt)."""

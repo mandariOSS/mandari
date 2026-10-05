@@ -27,7 +27,7 @@ Ausgabe: synthetische OParl-1.1-Dicts für die bestehende Pipeline.
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -35,7 +35,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
-from mandari_oparl.abgleich import detect_gate
+from mandari_oparl.abgleich import detect_gate, is_gone
 
 from src.metrics import metrics
 from src.redaction import MaskingConsole
@@ -56,9 +56,16 @@ TZ_BERLIN = ZoneInfo("Europe/Berlin")
 
 _TIME_RANGE_RE = re.compile(r"^(\d{1,2}:\d{2})(?:\s*-\s*(\d{1,2}:\d{2}))?(?:\s*Uhr)?$")
 _DATE_RE = re.compile(r"(\d{2}\.\d{2}\.\d{4})")
-#: Jede Seite einer SessionNet-Instanz trägt deren Layout (Klassen ``smc…``) oder nennt das Produkt. Fehlt
-#: beides, kam eine fremde Seite zurück: eine Sperr-, Prüf- oder Hinweisseite (Issue #556).
-_SESSIONNET_PAGE_RE = re.compile(r"class=[\"'][^\"']*\bsmc|sessionnet", re.IGNORECASE)
+#: Jede Seite einer SessionNet-Instanz trägt deren Layout (Klassen ``smc…``), und die Parser lesen nur
+#: dieses. Fehlt es, kam eine fremde Seite zurück: eine Sperr-, Prüf- oder Hinweisseite (Issue #556).
+#: Der Produktname allein genügt nicht: Prüfseiten übernehmen die angefragte Adresse (üblicher
+#: Installationspfad ``/sessionnet/…``) in Formular, Weiterleitung oder Titel.
+_SMC_LAYOUT_RE = re.compile(r"class=[\"'][^\"']*\bsmc", re.IGNORECASE)
+
+
+def is_sessionnet_page(html: str) -> bool:
+    """Trägt die Seite das SessionNet-Layout (und ist damit keine Sperr-, Prüf- oder Hinweisseite)?"""
+    return _SMC_LAYOUT_RE.search(html) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +130,15 @@ class MeetingStub:
 
     def sort_key(self) -> tuple:
         return (self.date or "", self.ksinr)
+
+
+def is_calendar_page(html: str) -> bool:
+    """
+    Trägt die Seite den Monatskalender (si0040)? Er hat je Tag eine Zelle ``td.silink``, auch an Tagen
+    ohne Sitzung; ein Monat ohne Sitzungen hat sie also ebenfalls. Fehlen sie, ist die Seite nicht lesbar
+    (etwa eine Hinweis- oder Prüfseite im SessionNet-Layout) und ergibt keine leere Liste (Issue #556).
+    """
+    return BeautifulSoup(html, "html.parser").select_one("td.silink") is not None
 
 
 def parse_calendar(html: str) -> list[MeetingStub]:
@@ -561,23 +577,33 @@ class SessionNetAdapter:
 
     # -------------------- Hilfen --------------------
 
-    async def _fetch(self, url: str, is_detail: bool = False) -> str | None:
+    async def _fetch(
+        self, url: str, is_detail: bool = False, expected: Callable[[str], bool] | None = None
+    ) -> str | None:
         """
         Seite holen; ``None``, wenn sie nicht lesbar ist (Fehler oder fremde Seite, Issue #556).
 
-        Eine Seite ohne SessionNet-Aufbau (Sperr-, Prüf- oder Hinweisseite mit Status 200) wird nicht
+        Eine Seite ohne SessionNet-Layout (Sperr-, Prüf- oder Hinweisseite mit Status 200) wird nicht
         ausgewertet: Geparst ergäbe sie eine leere Liste, und der Läufer schlösse daraus auf Löschungen.
+        ``expected`` prüft zusätzlich den Aufbau der erwarteten Seite (etwa den Kalender).
         """
         if is_detail:
             self.stats.detail_pages_attempted += 1
         html = await self.fetcher.fetch_text(url)
-        if html is not None and not _SESSIONNET_PAGE_RE.search(html):
+        if html is not None and not is_sessionnet_page(html):
             art = detect_gate(200, html) or "fremder Aufbau"
             console.print(f"[yellow]Scraper: keine SessionNet-Seite ({art}), nicht ausgewertet: {url}[/yellow]")
             metrics.record_scraper_parse_failure(self.fetcher.source_name, "fremde_seite")
             html = None
+        elif html is not None and expected is not None and not expected(html):
+            console.print(f"[yellow]Scraper: Seite ohne erwarteten Aufbau, nicht ausgewertet: {url}[/yellow]")
+            metrics.record_scraper_parse_failure(self.fetcher.source_name, "fremde_seite")
+            html = None
         if html is None:
             self.stats.failed_pages += 1
+            # Ein toter Verweis ist keine Störung: Die Quelle sagt selbst, dass es die Seite nicht gibt
+            if is_gone(getattr(self.fetcher, "last_status", None)):
+                self.stats.gone_pages += 1
         else:
             self.stats.pages_fetched += 1
         return html
@@ -594,7 +620,7 @@ class SessionNetAdapter:
         for ext in ("asp", "php"):
             self.urls.ext = ext
             html = await self.fetcher.fetch_text(self.urls.page("si0040"))
-            if html and "sessionnet" in html.lower():
+            if html and is_sessionnet_page(html):
                 console.print(f"[dim]SessionNet-Variante erkannt: .{ext}[/dim]")
                 return
         self.urls.ext = "asp"
@@ -873,7 +899,8 @@ class SessionNetAdapter:
                 self.stats.mark_incomplete("Detailseiten-Budget erreicht", "meeting", "paper", "consultation")
                 break
             cal_html = await self._fetch(
-                self.urls.page("si0040", **plan.params(), __cjahr=year, __cmonat=month, __canz=1)
+                self.urls.page("si0040", **plan.params(), __cjahr=year, __cmonat=month, __canz=1),
+                expected=is_calendar_page,
             )
             if not cal_html:
                 self.stats.parse_failures += 1

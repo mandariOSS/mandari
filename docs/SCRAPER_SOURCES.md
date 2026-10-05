@@ -231,19 +231,37 @@ werden in Elasticsearch indexiert.
   zu tombstonen).
 - **Nur vollständige Full-Crawls zählen** (Issue #556): Ist eine Seite
   nicht lesbar (Netzfehler, Zeitüberschreitung, 4xx, 5xx) oder keine
-  SessionNet-Seite (Sperr-, Prüf- oder Hinweisseite mit Status 200),
-  endet der Crawl am Detailseiten-Budget oder fehlt ein Kalendermonat,
-  bleibt der betroffene Typ in diesem Lauf unvollständig: Seine Zähler
-  bleiben stehen. Eine Sitzung, die der Kalender nennt, deren Seite aber
-  nicht lesbar ist, gilt als gesehen. `scraper_state.last_run` nennt
-  `complete`, `failed_pages` und je Typ den Grund (`incomplete`).
+  SessionNet-Seite, endet der Crawl am Detailseiten-Budget oder fehlt ein
+  Kalendermonat, bleibt der betroffene Typ in diesem Lauf unvollständig:
+  Seine Zähler bleiben stehen. Eine Sitzung, die der Kalender nennt, deren
+  Seite aber nicht lesbar ist, gilt als gesehen. `scraper_state.last_run`
+  nennt `complete`, `failed_pages` (davon tote Verweise: `gone_pages`) und
+  je Typ den Grund (`incomplete`).
+- **Keine SessionNet-Seite** ist jede Seite ohne das SessionNet-Layout
+  (Klassen `smc…`), also Sperr-, Prüf- und Hinweisseiten mit Status 200 –
+  auch wenn sie den Produktnamen nennen: Prüfseiten übernehmen die
+  angefragte Adresse (üblicher Installationspfad `/sessionnet/…`) in
+  Formular, Weiterleitung oder Titel. Eine Kalenderseite muss zudem die
+  Tageszeilen des Monats tragen (`td.silink`, auch an Tagen ohne Sitzung);
+  fehlen sie, ist der Monat nicht lesbar und ergibt keine leere Liste.
 - **Bremse**: Fehlen in einem Lauf mehr als 10 Objekte eines Typs
   (`SCRAPER_TOMBSTONE_MAX_MISSING`), zählt der Lauf keines davon
-  (`last_run.tombstone_braked`, Konsole „gebremst“) – Quelle prüfen.
+  (`last_run.tombstone_braked`, Konsole „gebremst“) – Quelle prüfen. Der
+  Betriebsmonitor zeigt die Quelle dann als „Warnung“ („Löschabgleich
+  gebremst“), der Admin nennt unter „Scraper-Status“ gebremste und
+  unvollständige Typen.
 - **Aktualität**: Der Admin zeigt je Quelle den letzten vollständigen
-  Abgleich („Vollständig abgeglichen“). Ein abgebrochener Crawl setzt
-  `last_sync` und den Fehlerstatus der Quelle nicht mehr zurück; nach
-  mehreren Fehlschlägen greift die Schonung wie bei OParl-Quellen.
+  Abgleich („Vollständig abgeglichen“). Vollständig heißt: jede Liste ganz
+  gelesen und keine Seite gestört (Netzfehler, Zeitüberschreitung, 4xx außer
+  404/410, 5xx, Sperr- oder fremde Seite). Ein toter Verweis auf eine
+  Detailseite (die Quelle antwortet selbst mit 404/410) und eine einzelne
+  nicht auswertbare Detailseite (etwa eine Vorlage ohne Betreff) zählen
+  nicht, sonst rückte die Aktualität bei einem dauerhaft toten Verweis nie
+  vor; gehäuft fallen sie über die Parse-Quote auf (unter 80 % gilt der
+  Lauf als fehlerhaft und damit nicht als vollständig). Ein abgebrochener
+  Crawl setzt `last_sync` und den Fehlerstatus der Quelle nicht mehr
+  zurück; nach mehreren Fehlschlägen greift die Schonung wie bei
+  OParl-Quellen.
 
 ### Monitoring
 

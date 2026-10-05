@@ -29,16 +29,19 @@ from src.scrapers import politeness
 from src.scrapers import runner as runner_module
 from src.scrapers.politeness import PoliteFetcher
 from src.scrapers.runner import ScraperSyncRunner
+from src.scrapers.sessionnet import is_calendar_page, is_sessionnet_page, parse_calendar
 from src.storage.database import DatabaseStorage
 from src.sync.orchestrator import SyncOrchestrator, sync_complete
 from src.sync.processor import OParlProcessor
 from tests.test_sessionnet_mehrere_koerperschaften import (
     BASE_URL,
+    FIXTURES,
     SEPTEMBER,
     FakeOrchestrator,
     FakeSource,
     SamtgemeindeFetcher,
     body_url,
+    make_adapter,
 )
 
 KOERPERSCHAFT_1 = uuid5(UUID(int=0), body_url(1))
@@ -56,6 +59,28 @@ SPERRSEITE = (
 )
 #: Hinweisseite ohne SessionNet-Aufbau (Wartung), ebenfalls mit Status 200
 HINWEISSEITE = "<html><body><h1>Wartungsarbeiten</h1><p>Bitte später erneut versuchen.</p></body></html>"
+#: Proof-of-Work-Prüfseite (Status 200), die die angefragte Adresse samt üblichem Installationspfad in ihr
+#: Formular übernimmt: Der Produktname steht darin, das SessionNet-Layout fehlt
+SPERRSEITE_MIT_PFAD = (
+    "<!DOCTYPE html><html><head><title>Sicherheitsprüfung</title></head><body>"
+    "<form method='post' action='/sessionnet/sessionnetbi/si0040.php?__cjahr=2026&amp;__cmonat=9'>"
+    "<altcha-widget challengeurl='/altcha/challenge'></altcha-widget><button>Weiter</button></form>"
+    "</body></html>"
+)
+#: Hinweisseite im SessionNet-Layout ohne den Inhalt der angefragten Seite (Status 200)
+SESSIONNET_HINWEISSEITE = (
+    "<!DOCTYPE html><html><head><title>SessionNet | Hinweis</title></head>"
+    "<body id='smc_body' class='smc-body'><div id='page-content'><p class='smc-hinweis'>"
+    "Die Anwendung ist zurzeit nicht verfügbar.</p></div></body></html>"
+)
+
+#: Antworten mit Status 200, die keine lesbare Seite sind (der PoliteFetcher liefert sie aus)
+SEITEN_MIT_STATUS_200 = {
+    "sperrseite": SPERRSEITE,
+    "sperrseite_mit_pfad": SPERRSEITE_MIT_PFAD,
+    "hinweisseite": HINWEISSEITE,
+    "sessionnet_hinweisseite": SESSIONNET_HINWEISSEITE,
+}
 
 FEHLERFAELLE = [
     "nicht_erreichbar",
@@ -68,7 +93,9 @@ FEHLERFAELLE = [
     "500",
     "503",
     "sperrseite",
+    "sperrseite_mit_pfad",
     "hinweisseite",
+    "sessionnet_hinweisseite",
 ]
 
 
@@ -77,10 +104,8 @@ def _antwort(fall: str, request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("Verbindung abgelehnt", request=request)
     if fall == "zeitueberschreitung":
         raise httpx.ReadTimeout("keine Antwort", request=request)
-    if fall == "sperrseite":
-        return httpx.Response(200, text=SPERRSEITE)
-    if fall == "hinweisseite":
-        return httpx.Response(200, text=HINWEISSEITE)
+    if fall in SEITEN_MIT_STATUS_200:
+        return httpx.Response(200, text=SEITEN_MIT_STATUS_200[fall])
     return httpx.Response(int(fall), text="<html><body>Fehler</body></html>")
 
 
@@ -121,14 +146,16 @@ class Orchestrator(FakeOrchestrator):
 def abruf(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """
     Echter PoliteFetcher gegen die Fixtures. ``abruf["stoerung"] = (passt, fall)`` ersetzt die Antworten
-    der passenden Seiten durch den Fehlerfall.
+    der passenden Seiten durch den Fehlerfall, ``abruf["antwort"]`` (optional) durch eine eigene Antwort.
     """
-    zustand: dict[str, Any] = {"stoerung": None}
+    zustand: dict[str, Any] = {"stoerung": None, "antwort": None}
     seiten = SamtgemeindeFetcher()
 
     async def handler(request: httpx.Request) -> httpx.Response:
         stoerung = zustand["stoerung"]
         if stoerung is not None and stoerung[0](request):
+            if zustand["antwort"] is not None:
+                return zustand["antwort"](request)
             return _antwort(stoerung[1], request)
         text = await seiten.fetch_text(str(request.url))
         return httpx.Response(200, text=text) if text is not None else httpx.Response(404)
@@ -189,6 +216,7 @@ async def test_kalender_nicht_lesbar_markiert_keine_sitzung(abruf: dict[str, Any
     orchestrator, result = await _lauf()
 
     assert SITZUNG_ALT not in orchestrator.marked
+    assert SITZUNG_1003 not in orchestrator.marked
     # Die Gremienliste kam vollständig: Dort schließt der Abgleich weiter
     assert GREMIUM_ALT in orchestrator.marked
     last_run = orchestrator.storage.state["last_run"]
@@ -214,7 +242,7 @@ async def test_gremienliste_nicht_lesbar_markiert_kein_gremium(abruf: dict[str, 
     assert orchestrator.storage.source_syncs == [{"full": True, "complete": False}]
 
 
-@pytest.mark.parametrize("fall", ["500", "nicht_erreichbar", "sperrseite"])
+@pytest.mark.parametrize("fall", ["500", "nicht_erreichbar", "sperrseite", "sperrseite_mit_pfad"])
 async def test_teilantwort_sitzungsseite_nicht_lesbar(abruf: dict[str, Any], fall: str) -> None:
     """Der Kalender nennt die Sitzung, ihre Seite ist nicht lesbar: Es gibt sie, sie fehlt nicht."""
     abruf["stoerung"] = (lambda r: r.url.path.endswith("/si0057.asp") and r.url.params["__ksinr"] == "1003", fall)
@@ -290,12 +318,115 @@ async def test_inkrementeller_lauf_markiert_nie(abruf: dict[str, Any]) -> None:
     assert orchestrator.storage.source_syncs == [{"full": False, "complete": True}]
 
 
+#: Vorlagenseite im SessionNet-Layout ohne Betreff: nicht auswertbar, aber keine Störung
+VORLAGE_OHNE_BETREFF = "<html><body class='smc-body'><div id='page-content'></div></body></html>"
+
+
+@pytest.mark.parametrize(
+    ("fall", "vollstaendig"),
+    [
+        ("404", True),
+        ("410", True),
+        ("ohne_betreff", True),
+        ("403", False),
+        ("500", False),
+        ("nicht_erreichbar", False),
+        ("sperrseite_mit_pfad", False),
+    ],
+)
+async def test_toter_verweis_auf_vorlage_ist_keine_stoerung(
+    abruf: dict[str, Any], fall: str, vollstaendig: bool
+) -> None:
+    """
+    Nennt eine Tagesordnung eine Vorlage, deren Seite die Quelle selbst mit 404/410 beantwortet (toter
+    Verweis) oder die keinen Betreff trägt, hat der Lauf trotzdem alles gelesen, was die Quelle anbietet:
+    Die Aktualität rückt vor. Eine gestörte Vorlagenseite (Fehler, Sperrseite) lässt sie stehen.
+    """
+    vorlage_5001 = f"{BASE_URL}vo0050.asp?__kvonr=5001"
+
+    def antwort(request: httpx.Request) -> httpx.Response:
+        if fall == "ohne_betreff":
+            return httpx.Response(200, text=VORLAGE_OHNE_BETREFF)
+        return _antwort(fall, request)
+
+    abruf["stoerung"] = (lambda r: str(r.url) == vorlage_5001, fall)
+    abruf["antwort"] = antwort
+
+    orchestrator, result = await _lauf()
+
+    last_run = orchestrator.storage.state["last_run"]
+    assert result.success, result.errors
+    assert last_run["complete"] is vollstaendig
+    assert last_run["incomplete"] == {}
+    assert last_run["gone_pages"] == (1 if fall in ("404", "410") else 0)
+    assert orchestrator.storage.source_syncs == [{"full": True, "complete": vollstaendig}]
+    # Der Löschabgleich hängt nicht daran: Listen vollständig, die Vorlage zählt als gesehen
+    assert sorted(orchestrator.marked) == sorted([GREMIUM_ALT, SITZUNG_ALT])
+
+
+# ---------------------------------------------------------------------------
+# Erkennung lesbarer SessionNet-Seiten
+# ---------------------------------------------------------------------------
+
+
+def test_fixtures_sind_sessionnet_seiten() -> None:
+    seiten = sorted(FIXTURES.parent.glob("*/*.html"))
+    assert seiten
+    for seite in seiten:
+        assert is_sessionnet_page(seite.read_text(encoding="utf-8")), seite.name
+    kalender = sorted(FIXTURES.parent.glob("*/si0040*.html"))
+    assert kalender
+    for seite in kalender:
+        assert is_calendar_page(seite.read_text(encoding="utf-8")), seite.name
+
+
+@pytest.mark.parametrize("fall", sorted(SEITEN_MIT_STATUS_200))
+def test_sperr_und_hinweisseiten_sind_kein_kalender(fall: str) -> None:
+    html = SEITEN_MIT_STATUS_200[fall]
+    assert not is_calendar_page(html)
+    assert is_sessionnet_page(html) is (fall == "sessionnet_hinweisseite")
+
+
+def test_monat_ohne_sitzungen_ist_lesbarer_kalender() -> None:
+    """Ein Monat ohne Sitzungen hat die Tageszeilen ohne Eintrag: lesbar, die Liste ist leer."""
+    tage = "".join(
+        f"<tr><td class='smc-t-cn991 smc_fct_day'><span class='weekday'>{tag}</span></td>"
+        "<td data-label='Sitzung' class='smc-t-cn991 silink'></td></tr>"
+        for tag in range(1, 31)
+    )
+    html = (
+        "<html><body class='smc-body'><table id='smc_page_si0040_contenttable1' class='smc-table'>"
+        f"<tbody>{tage}</tbody></table></body></html>"
+    )
+    assert is_sessionnet_page(html)
+    assert is_calendar_page(html)
+    assert parse_calendar(html) == []
+
+
+async def test_variante_nicht_an_sperrseite_erkannt() -> None:
+    """Eine Prüfseite unter dem .asp-Pfad nennt „sessionnet“, ist aber keine Seite der Instanz."""
+
+    class Abruf(SamtgemeindeFetcher):
+        async def fetch_text(self, url: str) -> str | None:
+            self.requests.append(url)
+            if url.endswith("si0040.asp"):
+                return SPERRSEITE_MIT_PFAD
+            return (FIXTURES / "si0040_cpanr1_2026-09.html").read_text(encoding="utf-8")
+
+    adapter = make_adapter(None, Abruf())
+    adapter.config.variant = None
+
+    await adapter.detect_variant()
+
+    assert adapter.urls.ext == "php"
+
+
 # ---------------------------------------------------------------------------
 # PoliteFetcher: jeder Fehlerfall ist „keine Seite“, nie „leere Seite“
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("fall", [f for f in FEHLERFAELLE if f not in ("sperrseite", "hinweisseite")])
+@pytest.mark.parametrize("fall", [f for f in FEHLERFAELLE if f not in SEITEN_MIT_STATUS_200])
 async def test_politefetcher_liefert_bei_fehlern_keine_seite(monkeypatch: pytest.MonkeyPatch, fall: str) -> None:
     async def ohne_pause(_seconds: float) -> None:
         return None

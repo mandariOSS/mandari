@@ -117,6 +117,9 @@ Metadaten), Transparenz- und Open-Data-Portale über DCAT-AP.de, Finanzverfahren
   Status 200), ein erreichtes Detailseiten-Budget und nicht lesbare Kalendermonate machen den Typ für
   diesen Lauf unvollständig: Seine Zähler bleiben stehen, nichts wird markiert. Nennt eine Liste ein
   Objekt, dessen Detailseite nicht lesbar ist, gilt es als gesehen.
+- **Aufbau der Quelle** heißt bei SessionNet: das Layout der Instanz (Klassen `smc…`), nicht der
+  Produktname – Prüfseiten übernehmen die angefragte Adresse samt Installationspfad. Eine Liste muss
+  zudem ihren eigenen Aufbau tragen (Kalender: die Tageszeilen des Monats, auch ohne Sitzung).
 - **Bremse:** Fehlen in einem vollständigen Lauf mehr Objekte eines Typs als
   `SCRAPER_TOMBSTONE_MAX_MISSING` (Vorgabe 10), zählt der Lauf keines davon (`last_run.tombstone_braked`)
   – dieselbe Regel wie `FILE_RECONCILE_MAX_MISSING` beim Löschabgleich der Dokumente.
@@ -128,7 +131,9 @@ Metadaten), Transparenz- und Open-Data-Portale über DCAT-AP.de, Finanzverfahren
   Fehlerobjekt weiter „diese Liste gibt es hier nicht“ (OParl 1.0).
 - **Aktualität:** `OParlSource.last_successful_sync` bzw. `last_successful_full_sync` – letzter Abgleich
   ohne Lücke (jede Kommune lesbar, jede Liste ganz, kein Sperr- oder Störungsbefund; Texterkennung und
-  Suchindex zählen nicht). `last_sync` zählt weiter jeden durchgelaufenen Abgleich; ein abgebrochener
+  Suchindex zählen nicht). Bei Scraper-Quellen zählen tote Verweise auf Detailseiten (404/410 der Quelle)
+  und einzelne nicht auswertbare Detailseiten nicht als Lücke; gehäuft fallen sie über die Parse-Quote
+  auf, die den Lauf dann als fehlerhaft wertet. `last_sync` zählt weiter jeden durchgelaufenen Abgleich; ein abgebrochener
   Scraper-Lauf setzt weder `last_sync` noch den Fehlerstatus der Quelle zurück. Admin: Spalte
   „Vollständig abgeglichen“ mit dem Hinweis „seither mit Lücken“; Änderungsfeed: Feld `freshness`
   ([A10, Nachtrag #556](20260929-aenderungsfeed-format.md)).
