@@ -147,6 +147,9 @@ class Bestand:
             {"id": BODY, "type": "https://schema.oparl.org/1.1/Body", "name": "Musterstadt"}, BODY
         )
         self.body_id = await self.storage.upsert_body(body, self.source_id)
+        # Die Kommune meldet sich selbst (``ris.body.changed``, #553); die Tests zählen ab hier.
+        async with self.storage._engine.begin() as conn:
+            await conn.execute(text("DELETE FROM events_event"))
         return self
 
     async def paper(self, **felder: Any) -> uuid.UUID:
@@ -274,6 +277,8 @@ async def test_ausgenommene_quelle_schreibt_keine_ereignisse(bestand: Bestand, m
         {"id": nachbar_url, "type": "https://schema.oparl.org/1.1/Body", "name": "Nachbarstadt"}, nachbar_url
     )
     nachbar_id = await speicher.upsert_body(nachbar, nachbar_quelle)
+    (kommune,) = await bestand.ereignisse()
+    assert (kommune["type"], kommune["tenant_ref"]) == ("ris.body.changed", f"source:{nachbar_quelle}")
     await speicher.update_source_sync_config(bestand.source_id, {database.SYNC_CONFIG_EVENTS_KEY: False})
     speicher.clear_uuid_caches()
 
@@ -285,13 +290,17 @@ async def test_ausgenommene_quelle_schreibt_keine_ereignisse(bestand: Bestand, m
         return await original(session, model, external_id)
 
     monkeypatch.setattr(speicher, "_prior", prior)
+    umbenannt = bestand.processor.process_body(
+        {"id": BODY, "type": "https://schema.oparl.org/1.1/Body", "name": "Stadt Musterstadt"}, BODY
+    )
+    await speicher.upsert_body(umbenannt, bestand.source_id)
     await bestand.meeting(agendaItem=[top()], invitation=datei())
     await bestand.paper(consultation=[{"id": CONSULTATION, "type": "https://schema.oparl.org/1.1/Consultation"}])
     await bestand.paper(name="Mehr Bänke")
     assert await speicher.mark_entity_deleted("agendaitem", ITEM) is not None
     assert await speicher.mark_entity_deleted("paper", PAPER) is not None
     # Wie ausgeschaltet: geschrieben wird, aber ohne Ereignis und ohne Abfrage des bisherigen Stands.
-    assert await bestand.ereignisse() == []
+    assert await bestand.ereignisse() == [kommune]
     assert gelesen == []
     assert await bestand.wert("SELECT name FROM oparl_papers") == "Mehr Bänke"
 
@@ -300,7 +309,7 @@ async def test_ausgenommene_quelle_schreibt_keine_ereignisse(bestand: Bestand, m
     await speicher.upsert_paper(
         bestand.processor.process_paper({"id": nachbar_vorlage, "name": "Radweg"}, nachbar_url), nachbar_id
     )
-    (ereignis,) = await bestand.ereignisse()
+    _, ereignis = await bestand.ereignisse()
     assert (ereignis["type"], ereignis["tenant_ref"]) == ("ris.paper.released", f"source:{nachbar_quelle}")
     assert gelesen == [nachbar_vorlage]
 
@@ -309,7 +318,7 @@ async def test_ausgenommene_quelle_schreibt_keine_ereignisse(bestand: Bestand, m
     speicher.clear_uuid_caches()
     await bestand.meeting(agendaItem=[top()], invitation=datei())
     await bestand.meeting(name="Rat (Sondersitzung)", agendaItem=[top()], invitation=datei())
-    assert [(e["type"], e["payload"].get("changed")) for e in (await bestand.ereignisse())[1:]] == [
+    assert [(e["type"], e["payload"].get("changed")) for e in (await bestand.ereignisse())[2:]] == [
         ("ris.agendaitem.changed", None),  # war als gelöscht markiert und ist wieder da
         ("ris.meeting.changed", ["name"]),
     ]
@@ -505,14 +514,15 @@ async def test_orte_der_vorlage_in_der_transaktion_des_ereignisses(bestand: Best
     """Der eingebettete Ort steht vor der Vorlage im Bestand; Zuordnung und Ereignis teilen die Transaktion."""
     paper_id = await bestand.paper(location=[ort()])
 
-    (ereignis,) = await bestand.ereignisse()
+    ort_neu, ereignis = await bestand.ereignisse()
+    assert ort_neu["payload"] == {"location": str(canonical_id(LOCATION)), "change": "added"}
     assert ereignis["type"] == "ris.paper.released"
     assert await bestand.wert(ORTE_DER_VORLAGE.format("oparllocation_id"), id=paper_id) == canonical_id(LOCATION)
     assert await bestand.wert(ORTE_DER_VORLAGE.format("xmin::text"), id=paper_id) == ereignis["xid_text"]
 
     # Vollabgleich ohne Änderung: Die Zuordnung besteht, kein Ereignis
     await bestand.paper(location=[ort()])
-    assert len(await bestand.ereignisse()) == 1
+    assert len(await bestand.ereignisse()) == 2
     assert await bestand.wert(ORTE_DER_VORLAGE.format("count(*)"), id=paper_id) == 1
 
 
@@ -521,14 +531,16 @@ async def test_ort_erst_spaeter_im_bestand_meldet_die_vorlage(bestand: Bestand) 
     assert await bestand.wert("SELECT count(*) FROM oparl_papers_locations") == 0
 
     await bestand.ort()
+    _, ort_neu = await bestand.ereignisse()
+    assert ort_neu["type"] == "ris.location.changed"
     await bestand.paper(location=[LOCATION])
-    _, ereignis = await bestand.ereignisse()
+    *_, ereignis = await bestand.ereignisse()
     assert ereignis["type"] == "ris.paper.changed"
     assert ereignis["payload"] == {"paper": str(paper_id), "changed": ["location"]}
     assert await bestand.wert(ORTE_DER_VORLAGE.format("xmin::text"), id=paper_id) == ereignis["xid_text"]
 
     await bestand.paper(location=[LOCATION])
-    assert len(await bestand.ereignisse()) == 2
+    assert len(await bestand.ereignisse()) == 3
 
 
 async def test_ohne_tabelle_der_ortszuordnung_bleiben_vorlage_und_ereignis(bestand: Bestand) -> None:
@@ -541,8 +553,8 @@ async def test_ohne_tabelle_der_ortszuordnung_bleiben_vorlage_und_ereignis(besta
         async with bestand.storage._engine.begin() as conn:
             await conn.execute(text("ALTER TABLE oparl_papers_locations_fehlt RENAME TO oparl_papers_locations"))
 
-    (ereignis,) = await bestand.ereignisse()
-    assert ereignis["type"] == "ris.paper.released"
+    ort_neu, ereignis = await bestand.ereignisse()
+    assert (ort_neu["type"], ereignis["type"]) == ("ris.location.changed", "ris.paper.released")
     assert await bestand.wert("SELECT xmin::text FROM oparl_papers WHERE id = :id", id=paper_id) == ereignis["xid_text"]
     assert await bestand.wert("SELECT count(*) FROM oparl_locations") == 1
 
@@ -559,7 +571,94 @@ async def test_scheitert_die_ortszuordnung_gibt_es_weder_vorlage_noch_ereignis(b
             await conn.execute(text("ALTER TABLE oparl_papers_locations DROP CONSTRAINT nie"))
 
     assert await bestand.wert("SELECT count(*) FROM oparl_papers") == 0
-    assert await bestand.ereignisse() == []
+    # Der eingebettete Ort steht in seiner eigenen Transaktion vorher im Bestand
+    assert [e["type"] for e in await bestand.ereignisse()] == ["ris.location.changed"]
+
+
+# --- Zuordnungen folgen der Quelle (Issue #553) ------------------------------------------------------------
+
+
+async def test_sitzung_ohne_gremien_entfernt_die_zuordnung(bestand: Bestand) -> None:
+    """Nennt die Quelle kein Gremium mehr (oder keines im Bestand), bleibt keine alte Zuordnung stehen."""
+    org_id = await bestand.gremium()
+    meeting_id = await bestand.meeting(organization=[ORG])
+    assert await bestand.wert(GREMIEN_DER_SITZUNG.format("oparlorganization_id"), id=meeting_id) == org_id
+
+    await bestand.meeting()
+    assert await bestand.wert(GREMIEN_DER_SITZUNG.format("count(*)"), id=meeting_id) == 0
+    *_, ereignis = await bestand.ereignisse()
+    assert (ereignis["type"], ereignis["payload"]["changed"]) == ("ris.meeting.changed", ["organization"])
+    assert "organizations" not in ereignis["payload"]
+    anzahl = len(await bestand.ereignisse())
+    await bestand.meeting()
+    assert len(await bestand.ereignisse()) == anzahl
+
+    # Wieder zugeordnet, dann ein Gremium, das nicht im Bestand ist: auch dann nicht das alte
+    await bestand.meeting(organization=[ORG])
+    assert await bestand.wert(GREMIEN_DER_SITZUNG.format("count(*)"), id=meeting_id) == 1
+    await bestand.meeting(organization=[f"{BASE}/organization/unbekannt"])
+    assert await bestand.wert(GREMIEN_DER_SITZUNG.format("count(*)"), id=meeting_id) == 0
+    *_, ereignis = await bestand.ereignisse()
+    assert ereignis["payload"]["changed"] == ["organization"]
+
+
+async def test_vorlage_ohne_ort_entfernt_die_zuordnung(bestand: Bestand) -> None:
+    """Entfernt die Quelle einen Ort, verschwindet seine Zuordnung; Vorlage und Ereignis in einer Transaktion."""
+    zweiter = f"{BASE}/location/2"
+    paper_id = await bestand.paper(location=[ort(), ort(id=zweiter, description="Marktplatz")])
+    assert await bestand.wert(ORTE_DER_VORLAGE.format("count(*)"), id=paper_id) == 2
+
+    await bestand.paper(location=[ort()])
+    assert await bestand.wert(ORTE_DER_VORLAGE.format("oparllocation_id"), id=paper_id) == canonical_id(LOCATION)
+    *_, ereignis = await bestand.ereignisse()
+    assert ereignis["payload"] == {"paper": str(paper_id), "changed": ["location"]}
+    vorlage = await bestand.wert("SELECT xmin::text FROM oparl_papers WHERE id = :id", id=paper_id)
+    assert vorlage == ereignis["xid_text"]
+
+    await bestand.paper()
+    assert await bestand.wert(ORTE_DER_VORLAGE.format("count(*)"), id=paper_id) == 0
+    *_, ereignis = await bestand.ereignisse()
+    assert ereignis["payload"] == {"paper": str(paper_id), "changed": ["location"]}
+    # Die Orte selbst bleiben im Bestand
+    assert await bestand.wert("SELECT count(*) FROM oparl_locations") == 2
+    anzahl = len(await bestand.ereignisse())
+    await bestand.paper()
+    assert len(await bestand.ereignisse()) == anzahl
+
+
+async def test_entfernte_zuordnung_nur_mit_dem_upsert(bestand: Bestand, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scheitert das Ereignis, bleiben Vorlage, Sitzung und ihre bisherigen Zuordnungen unverändert."""
+    await bestand.gremium()
+    meeting_id = await bestand.meeting(organization=[ORG])
+    paper_id = await bestand.paper(location=[ort()])
+
+    async def abbrechen(session: AsyncSession, neue: Any) -> list[uuid.UUID]:
+        raise RuntimeError("Abbruch vor dem Commit")
+
+    monkeypatch.setattr(events, "publish_many", abbrechen)
+    with pytest.raises(RuntimeError, match="Abbruch"):
+        await bestand.meeting()
+    with pytest.raises(RuntimeError, match="Abbruch"):
+        await bestand.paper()
+    assert await bestand.wert(GREMIEN_DER_SITZUNG.format("count(*)"), id=meeting_id) == 1
+    assert await bestand.wert(ORTE_DER_VORLAGE.format("count(*)"), id=paper_id) == 1
+
+
+async def test_zuordnungen_folgen_der_quelle_auch_ohne_ereignisse(bestand: Bestand) -> None:
+    """Das Entfernen ist Teil des Abgleichs, nicht der Ereignisse: auch mit ausgeschaltetem Schalter."""
+    await bestand.gremium()
+    meeting_id = await bestand.meeting(organization=[ORG])
+    paper_id = await bestand.paper(location=[ort()])
+    aus = await _speicher(events_enabled=False)
+    try:
+        verarbeiter = bestand.processor
+        sitzung = {"id": MEETING, "type": "https://schema.oparl.org/1.1/Meeting", "name": "Rat"}
+        await aus.upsert_meeting(verarbeiter.process_meeting(sitzung, BODY), bestand.body_id)
+        await aus.upsert_paper(verarbeiter.process_paper({"id": PAPER, "name": "Bänke"}, BODY), bestand.body_id)
+    finally:
+        await aus.close()
+    assert await bestand.wert(GREMIEN_DER_SITZUNG.format("count(*)"), id=meeting_id) == 0
+    assert await bestand.wert(ORTE_DER_VORLAGE.format("count(*)"), id=paper_id) == 0
 
 
 # --- Nur echte Änderungen -----------------------------------------------------------------------------------
@@ -806,7 +905,7 @@ async def test_loeschmarkierung_eines_nichtoeffentlichen_punkts_wird_nicht_oeffe
 
 
 async def test_loeschmarkierung_von_gremium_person_und_mitgliedschaft(bestand: Bestand) -> None:
-    """Gremien und Personen melden Neues (#821), Mitgliedschaften nicht; alle drei melden ihre Rücknahme."""
+    """Gremien, Personen (#821) und Mitgliedschaften (#553) melden Neues und ihre Rücknahme."""
     org_url, person_url, mitgliedschaft_url = f"{BASE}/organization/1", f"{BASE}/person/1", f"{BASE}/membership/1"
     verarbeiter = bestand.processor
     organisation = {"id": org_url, "type": "https://schema.oparl.org/1.1/Organization", "name": "Rat"}
@@ -822,16 +921,16 @@ async def test_loeschmarkierung_von_gremium_person_und_mitgliedschaft(bestand: B
     assert await bestand.storage.upsert_membership(
         verarbeiter.process_membership(mitgliedschaft, BODY), bestand.body_id
     )
-    # Für Änderungen an Mitgliedschaften gibt es noch keinen Vertrag.
     assert [(e["type"], e["payload"]["change"]) for e in await bestand.ereignisse()] == [
         ("ris.organization.changed", "added"),
         ("ris.person.changed", "added"),
+        ("ris.membership.changed", "added"),
     ]
 
     for typ, url in (("membership", mitgliedschaft_url), ("person", person_url), ("organization", org_url)):
         assert await bestand.storage.mark_entity_deleted(typ, url) == canonical_id(url)
 
-    ereignisse = (await bestand.ereignisse())[2:]
+    ereignisse = (await bestand.ereignisse())[3:]
     assert [e["payload"]["object_type"] for e in ereignisse] == ["Membership", "Person", "Organization"]
     assert {e["type"] for e in ereignisse} == {"ris.object.depublished"}
     assert {e["body_id"] for e in ereignisse} == {bestand.body_id}
@@ -878,6 +977,126 @@ async def test_gremium_und_person_melden_neu_geaendert_und_wieder_geliefert(best
     *_, depubliziert, wieder = await bestand.ereignisse()
     assert depubliziert["type"] == "ris.object.depublished"
     assert wieder["payload"] == {"organization": str(org_id), "change": "added"}
+
+
+async def test_mitgliedschaft_meldet_neu_geaendert_und_wieder_geliefert(bestand: Bestand) -> None:
+    """``ris.membership.changed`` (#553): mit Person und Gremium; eingebettet ohne Rückverweis keine Änderung."""
+    verarbeiter = bestand.processor
+    person_url, mitgliedschaft_url = f"{BASE}/person/1", f"{BASE}/membership/1"
+    org_id = await bestand.gremium()
+    person = {"id": person_url, "type": "https://schema.oparl.org/1.1/Person", "name": "Ratsmitglied"}
+    person_id = await bestand.storage.upsert_person(verarbeiter.process_person(person, BODY), bestand.body_id)
+
+    async def mitgliedschaft(**felder: Any) -> uuid.UUID | None:
+        daten = {
+            "id": mitgliedschaft_url,
+            "type": "https://schema.oparl.org/1.1/Membership",
+            "person": person_url,
+            "organization": ORG,
+            "role": "Mitglied",
+            **felder,
+        }
+        daten = {key: wert for key, wert in daten.items() if wert is not None}
+        return await bestand.storage.upsert_membership(verarbeiter.process_membership(daten, BODY), bestand.body_id)
+
+    membership_id = await mitgliedschaft(modified="2026-09-01T10:00:00+02:00")
+    *_, neu = await bestand.ereignisse()
+    assert neu["payload"] == {
+        "membership": str(membership_id),
+        "change": "added",
+        "person": str(person_id),
+        "organization": str(org_id),
+    }
+    assert (neu["aggregate_type"], neu["body_id"], neu["tenant_ref"]) == (
+        "Membership",
+        bestand.body_id,
+        f"source:{bestand.source_id}",
+    )
+    mitglied = await bestand.wert("SELECT xmin::text FROM oparl_memberships WHERE id = :id", id=membership_id)
+    assert mitglied == neu["xid_text"]
+
+    # In der Person eingebettet fehlt der Rückverweis; neuer Zeitstempel und leere Werte zählen nicht
+    anzahl = len(await bestand.ereignisse())
+    eingebettet = {
+        "id": mitgliedschaft_url,
+        "type": "https://schema.oparl.org/1.1/Membership",
+        "organization": ORG,
+        "role": "Mitglied",
+        "endDate": "",
+        "modified": "2026-10-01T10:00:00+02:00",
+    }
+    verarbeitet = verarbeiter.process_membership(eingebettet, BODY)
+    verarbeitet.person_external_id = person_url
+    assert await bestand.storage.upsert_membership(verarbeitet, bestand.body_id) == membership_id
+    assert len(await bestand.ereignisse()) == anzahl
+
+    await mitgliedschaft(role="Vorsitz", endDate="2026-09-30")
+    *_, geaendert = await bestand.ereignisse()
+    assert (geaendert["payload"]["change"], geaendert["payload"]["changed"]) == ("changed", ["endDate", "role"])
+
+    await bestand.storage.mark_entity_deleted("membership", mitgliedschaft_url)
+    await mitgliedschaft(role="Vorsitz", endDate="2026-09-30")
+    *_, depubliziert, wieder = await bestand.ereignisse()
+    assert depubliziert["type"] == "ris.object.depublished"
+    assert wieder["payload"]["change"] == "added"
+
+
+async def test_ort_meldet_aenderungen_ohne_rueckreferenzen(bestand: Bestand) -> None:
+    """``ris.location.changed`` (#553): Rückreferenzen der Liste zählen nicht, Geodaten schon."""
+    location_id = await bestand.ort()
+    (neu,) = await bestand.ereignisse()
+    assert neu["payload"] == {"location": str(location_id), "change": "added"}
+    assert await bestand.wert("SELECT xmin::text FROM oparl_locations") == neu["xid_text"]
+
+    async def ort_schreiben(**felder: Any) -> uuid.UUID:
+        verarbeitet = bestand.processor.process_location(ort(**felder), BODY)
+        return await bestand.storage.upsert_location(verarbeitet, bestand.body_id)
+
+    await ort_schreiben(papers=[PAPER], meetings=[MEETING], bodies=[BODY], modified="2026-10-01T10:00:00+02:00")
+    assert len(await bestand.ereignisse()) == 1
+
+    await ort_schreiben(geojson={"type": "Point", "coordinates": [7.62, 51.96]})
+    _, geaendert = await bestand.ereignisse()
+    assert geaendert["payload"] == {"location": str(location_id), "change": "changed", "changed": ["geojson"]}
+
+
+async def test_kommune_und_wahlperiode_melden_aenderungen(bestand: Bestand) -> None:
+    """``ris.body.changed`` und ``ris.legislativeterm.changed`` (#553), je in der Transaktion des Upserts."""
+    term_url = f"{BASE}/legislativeterm/1"
+    wahlperiode = {
+        "id": term_url,
+        "type": "https://schema.oparl.org/1.1/LegislativeTerm",
+        "name": "2025 bis 2030",
+        "startDate": "2025-11-01",
+    }
+
+    async def kommune(**felder: Any) -> uuid.UUID:
+        daten = {"id": BODY, "type": "https://schema.oparl.org/1.1/Body", "name": "Musterstadt", **felder}
+        return await bestand.storage.upsert_body(bestand.processor.process_body(daten, BODY), bestand.source_id)
+
+    # Unverändert (Bestand legt die Kommune an): kein Ereignis
+    await kommune(modified="2026-10-01T10:00:00+02:00")
+    assert await bestand.ereignisse() == []
+
+    await kommune(legislativeTerm=[wahlperiode])
+    geaendert, periode = await bestand.ereignisse()
+    assert geaendert["payload"] == {"body": str(bestand.body_id), "change": "changed", "changed": ["legislativeTerm"]}
+    assert (geaendert["aggregate_id"], geaendert["body_id"]) == (bestand.body_id, bestand.body_id)
+    kommune_xmin = await bestand.wert("SELECT xmin::text FROM oparl_bodies WHERE id = :id", id=bestand.body_id)
+    assert kommune_xmin == geaendert["xid_text"]
+    term_id = canonical_id(term_url)
+    assert periode["payload"] == {"legislative_term": str(term_id), "change": "added"}
+    assert periode["aggregate_type"] == "LegislativeTerm"
+
+    # Aus der eigenen Liste mit Rückverweis auf die Kommune: keine Änderung
+    liste = bestand.processor.process_legislative_term(wahlperiode | {"body": BODY}, BODY)
+    await bestand.storage.upsert_legislative_term(liste, bestand.body_id)
+    assert len(await bestand.ereignisse()) == 2
+
+    await kommune(legislativeTerm=[wahlperiode | {"endDate": "2030-10-31"}])
+    *_, kommune_neu, periode_neu = await bestand.ereignisse()
+    assert kommune_neu["payload"]["changed"] == ["legislativeTerm"]
+    assert periode_neu["payload"] == {"legislative_term": str(term_id), "change": "changed", "changed": ["endDate"]}
 
 
 async def test_texterkennung_meldet_den_text_in_derselben_transaktion(bestand: Bestand) -> None:

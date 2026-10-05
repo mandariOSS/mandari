@@ -24,12 +24,16 @@ die diese Person nennen, im Journal geleert.
 | `core.user.registered` | Ereignis | 1 | `apps.accounts` | personenbezogen | Konto angelegt oder bestätigt |
 | `invitation.acknowledge` | Befehl | 1 | `apps.session` | personenbezogen | Empfang einer Ladung bestätigen |
 | `ris.agendaitem.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Tagesordnung geändert |
+| `ris.body.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Kommune geändert |
 | `ris.consultation.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Beratungsfolge geändert |
 | `ris.file.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Anlage geändert |
 | `ris.file.text_extracted` | Ereignis | 1 | `hub.ris` | intern | Text einer Anlage erkannt |
+| `ris.legislativeterm.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Wahlperiode geändert |
+| `ris.location.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Ort geändert |
 | `ris.meeting.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Sitzung geändert |
 | `ris.meeting.invited` | Ereignis | 1 | `hub.ris` | nichtoeffentlich | Ladung versendet |
 | `ris.meeting.scheduled` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Sitzung angesetzt |
+| `ris.membership.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Mitgliedschaft geändert |
 | `ris.object.depublished` | Ereignis | 1 | `hub.ris` | oeffentlich | Objekt zurückgenommen |
 | `ris.organization.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Gremium geändert |
 | `ris.paper.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Vorlage geändert |
@@ -252,6 +256,43 @@ Beispiel 3:
 }
 ```
 
+### ris.body.changed v1
+
+**Kommune geändert.** Eine Kommune (OParl-Body) wurde in ihrer Quelle neu erkannt (added) oder geändert (changed), etwa Name, Webseite oder Wahlperioden. Aggregat: Body. Ob die Kommune im Bürgerportal veröffentlicht ist, meldet ris.source.published; die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+
+- Art: Ereignis
+- Eigentümer: `hub.ris`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.body.changed/v1.json`](../mandari/hub/contracts/schemas/ris.body.changed/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `body` | ja | Zeichenkette (uuid) | Kanonische Kennung der Kommune. |
+| `change` | ja | Code: `added`, `changed` | Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert). |
+| `changed` | nein | Liste aus Zeichenkette (Muster `^[a-z][A-Za-z0-9_]{0,63}$`) (1 bis 64 Einträge) | Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. name, website, legislativeTerm); bei change changed. |
+
+Beispiel 1:
+
+```json
+{
+  "body": "7e8f9a0b-1c2d-5e3f-8a4b-5c6d7e8f9a0b",
+  "change": "added"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "body": "7e8f9a0b-1c2d-5e3f-8a4b-5c6d7e8f9a0b",
+  "change": "changed",
+  "changed": [
+    "legislativeTerm",
+    "website"
+  ]
+}
+```
+
 ### ris.consultation.changed v1
 
 **Beratungsfolge geändert.** Eine Station der Beratungsfolge einer Vorlage wurde angelegt, terminiert, weitergeleitet, geändert oder entfernt. Aggregat: Consultation. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
@@ -365,6 +406,79 @@ Beispiel 2:
 }
 ```
 
+### ris.legislativeterm.changed v1
+
+**Wahlperiode geändert.** Eine Wahlperiode einer Kommune wurde neu erkannt (added) oder geändert (changed), etwa Name oder Zeitraum. Aggregat: LegislativeTerm. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+
+- Art: Ereignis
+- Eigentümer: `hub.ris`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.legislativeterm.changed/v1.json`](../mandari/hub/contracts/schemas/ris.legislativeterm.changed/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `legislative_term` | ja | Zeichenkette (uuid) | Kanonische Kennung der Wahlperiode. |
+| `change` | ja | Code: `added`, `changed` | Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert). |
+| `changed` | nein | Liste aus Zeichenkette (Muster `^[a-z][A-Za-z0-9_]{0,63}$`) (1 bis 64 Einträge) | Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. name, startDate, endDate); bei change changed. |
+
+Beispiel 1:
+
+```json
+{
+  "legislative_term": "2c3d4e5f-6a7b-5c8d-9e0f-1a2b3c4d5e6f",
+  "change": "added"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "legislative_term": "2c3d4e5f-6a7b-5c8d-9e0f-1a2b3c4d5e6f",
+  "change": "changed",
+  "changed": [
+    "endDate"
+  ]
+}
+```
+
+### ris.location.changed v1
+
+**Ort geändert.** Ein Ort wurde neu erkannt (added) oder geändert (changed), etwa Beschreibung, Anschrift oder Geodaten. Aggregat: Location. Die Rücknahme meldet ris.object.depublished. Ob ein Ort einer Vorlage oder Sitzung zugeordnet ist, meldet deren Ereignis (Feld location). Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+
+- Art: Ereignis
+- Eigentümer: `hub.ris`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.location.changed/v1.json`](../mandari/hub/contracts/schemas/ris.location.changed/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `location` | ja | Zeichenkette (uuid) | Kanonische Kennung des Orts. |
+| `change` | ja | Code: `added`, `changed` | Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert). |
+| `changed` | nein | Liste aus Zeichenkette (Muster `^[a-z][A-Za-z0-9_]{0,63}$`) (1 bis 64 Einträge) | Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. description, streetAddress, geojson); bei change changed. |
+
+Beispiel 1:
+
+```json
+{
+  "location": "4b5c6d7e-8f9a-5b0c-9d1e-2f3a4b5c6d7e",
+  "change": "added"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "location": "4b5c6d7e-8f9a-5b0c-9d1e-2f3a4b5c6d7e",
+  "change": "changed",
+  "changed": [
+    "geojson",
+    "streetAddress"
+  ]
+}
+```
+
 ### ris.meeting.changed v1
 
 **Sitzung geändert.** Eine Sitzung wurde geändert, verlegt oder abgesagt. Aggregat: Meeting. changed nennt die geänderten Felder; cancelled zeigt eine Absage direkt an. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
@@ -473,6 +587,49 @@ Beispiel 2:
 ```json
 {
   "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
+}
+```
+
+### ris.membership.changed v1
+
+**Mitgliedschaft geändert.** Eine Mitgliedschaft einer Person in einem Gremium wurde neu erkannt (added) oder geändert (changed), etwa Rolle, Stimmrecht oder Zeitraum. Aggregat: Membership. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+
+- Art: Ereignis
+- Eigentümer: `hub.ris`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.membership.changed/v1.json`](../mandari/hub/contracts/schemas/ris.membership.changed/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `membership` | ja | Zeichenkette (uuid) | Kanonische Kennung der Mitgliedschaft. |
+| `change` | ja | Code: `added`, `changed` | Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert). |
+| `changed` | nein | Liste aus Zeichenkette (Muster `^[a-z][A-Za-z0-9_]{0,63}$`) (1 bis 64 Einträge) | Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. role, votingRight, endDate); bei change changed. |
+| `person` | nein | Zeichenkette (uuid) | Person, die Mitglied ist. |
+| `organization` | nein | Zeichenkette (uuid) | Gremium, in dem die Person Mitglied ist. |
+
+Beispiel 1:
+
+```json
+{
+  "membership": "6a1c9e2f-3b4d-5e6f-8a7b-9c0d1e2f3a4b",
+  "change": "added",
+  "person": "1d2e3f4a-5b6c-5d7e-8f9a-0b1c2d3e4f5a",
+  "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "membership": "6a1c9e2f-3b4d-5e6f-8a7b-9c0d1e2f3a4b",
+  "change": "changed",
+  "changed": [
+    "endDate",
+    "role"
+  ],
+  "person": "1d2e3f4a-5b6c-5d7e-8f9a-0b1c2d3e4f5a",
+  "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f"
 }
 ```
 

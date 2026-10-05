@@ -17,14 +17,17 @@ File            ``ris.file.changed`` (``added``, ``replaced``, ``renamed``),
                 ``ris.file.text_extracted`` (Text erkannt, Sichtbarkeit ``intern``)
 Organization    ``ris.organization.changed`` (``added``, ``changed``)
 Person          ``ris.person.changed`` (``added``, ``changed``)
+Membership      ``ris.membership.changed`` (``added``, ``changed``)
+Location        ``ris.location.changed`` (``added``, ``changed``)
+LegislativeTerm ``ris.legislativeterm.changed`` (``added``, ``changed``)
+Body            ``ris.body.changed`` (``added``, ``changed``)
 alle Typen      ``ris.object.depublished`` (Löschmarkierung der Quelle)
 ==============  =====================================================================
 
 Die Löschmarkierung eines nichtöffentlichen Tagesordnungspunkts ist keine Rücknahme (öffentliche
 Empfänger haben ihn nie gesehen): Sie erscheint als ``ris.agendaitem.changed`` mit ``deleted``.
 
-Für Mitgliedschaften, Orte, Wahlperioden und Kommunen gibt es noch keinen Vertrag für Änderungen;
-sie melden nur ihre Löschmarkierung.
+Jeder Typ des RIS-Bestands meldet damit Änderungen und Löschmarkierung (Issue #553).
 
 Regeln:
 
@@ -36,7 +39,8 @@ Regeln:
   ``modified`` und der Content-Hash zählen auf keiner Ebene: Manche Quellen stempeln sie bei jedem
   Abruf neu. Der
   Rückverweis auf das übergeordnete Objekt (``meeting`` am Tagesordnungspunkt, ``paper`` an der
-  Beratung, ``paper``/``meeting``/``agendaItem`` an der Datei) zählt ebenfalls nicht: Eingebettet
+  Beratung, ``paper``/``meeting``/``agendaItem`` an der Datei, ``person`` an der Mitgliedschaft,
+  ``body`` an der Wahlperiode, die Rückreferenzen eines Orts) zählt ebenfalls nicht: Eingebettet
   fehlt er, in der eigenen Liste steht er, und jeder Vollabgleich schriebe sonst beide Fassungen
   abwechselnd.
 - **Zuordnungen zählen mit.** Ändert ein Abgleich nur die Zuordnung im Bestand und nicht das Objekt
@@ -115,6 +119,14 @@ ORDERED_FIELDS: Final = frozenset({"geojson"})
 AGENDA_ITEM_BACKREFS: Final = frozenset({"meeting"})
 CONSULTATION_BACKREFS: Final = frozenset({"paper"})
 FILE_BACKREFS: Final = frozenset({"paper", "meeting", "agendaItem"})
+#: In einer Person eingebettet fehlt der Mitgliedschaft die Person (OParl 1.1, ``Membership.person``).
+MEMBERSHIP_BACKREFS: Final = frozenset({"person"})
+#: In der Kommune eingebettet fehlt der Wahlperiode die Kommune (``LegislativeTerm.body``).
+LEGISLATIVE_TERM_BACKREFS: Final = frozenset({"body"})
+#: Rückreferenzen eines Orts gibt die Quelle nur aus, wenn er nicht eingebettet ist (OParl 1.1,
+#: ``Location``); sie ändern sich außerdem mit jeder Vorlage oder Sitzung, die den Ort nennt. Ob ein
+#: Ort einer Vorlage oder Sitzung zugeordnet ist, meldet deren Ereignis.
+LOCATION_BACKREFS: Final = frozenset({"bodies", "organizations", "persons", "meetings", "papers"})
 #: Felder einer Datei, deren Änderung eine neue Fassung bedeutet (``replaced``).
 FILE_CONTENT_FIELDS: Final = frozenset(
     {
@@ -438,18 +450,33 @@ def file_events(
 
 
 def _changed_events(
-    event_type: str, aggregate_type: str, key: str, object_id: UUID, raw: Mapping[str, Any], prior: Prior | None
+    event_type: str,
+    aggregate_type: str,
+    key: str,
+    object_id: UUID,
+    raw: Mapping[str, Any],
+    prior: Prior | None,
+    *,
+    ignore: Iterable[str] = (),
+    refs: Mapping[str, UUID | None] | None = None,
 ) -> list[Draft]:
-    """``added`` für ein neu erkanntes oder wieder geliefertes Objekt, sonst ``changed`` mit den geänderten Feldern."""
+    """
+    ``added`` für ein neu erkanntes oder wieder geliefertes Objekt, sonst ``changed`` mit den geänderten Feldern.
+
+    ``ignore``: Rückverweise, die nicht zählen. ``refs``: Bezüge, die die Nutzlast zusätzlich nennt (ohne ``None``).
+    """
     payload: dict[str, Any] = {key: str(object_id)}
     if prior is None or prior.deleted:
         payload["change"] = "added"
-        return [Draft(event_type, aggregate_type, object_id, payload)]
-    names = field_names(differing_keys(prior.raw_json, raw))
-    if not names:
-        return []
-    payload["change"] = "changed"
-    payload["changed"] = names
+    else:
+        names = field_names(differing_keys(prior.raw_json, raw, ignore))
+        if not names:
+            return []
+        payload["change"] = "changed"
+        payload["changed"] = names
+    for name, ref in (refs or {}).items():
+        if ref is not None:
+            payload[name] = str(ref)
     return [Draft(event_type, aggregate_type, object_id, payload)]
 
 
@@ -461,6 +488,57 @@ def organization_events(organization_id: UUID, raw: Mapping[str, Any], prior: Pr
 def person_events(person_id: UUID, raw: Mapping[str, Any], prior: Prior | None) -> list[Draft]:
     """``ris.person.changed``: Person neu erkannt (``added``) oder geändert (``changed``)."""
     return _changed_events("ris.person.changed", "Person", "person", person_id, raw, prior)
+
+
+def membership_events(
+    membership_id: UUID,
+    raw: Mapping[str, Any],
+    prior: Prior | None,
+    *,
+    person_id: UUID | None = None,
+    organization_id: UUID | None = None,
+) -> list[Draft]:
+    """
+    ``ris.membership.changed``: Mitgliedschaft neu erkannt (``added``) oder geändert (``changed``).
+
+    Die Nutzlast nennt Person und Gremium (Kennungen der Zeilen im Bestand), damit Empfänger etwa die
+    Funktion einer Person nachziehen, ohne die Mitgliedschaft zu lesen.
+    """
+    return _changed_events(
+        "ris.membership.changed",
+        "Membership",
+        "membership",
+        membership_id,
+        raw,
+        prior,
+        ignore=MEMBERSHIP_BACKREFS,
+        refs={"person": person_id, "organization": organization_id},
+    )
+
+
+def location_events(location_id: UUID, raw: Mapping[str, Any], prior: Prior | None) -> list[Draft]:
+    """``ris.location.changed``: Ort neu erkannt (``added``) oder geändert (``changed``), ohne Rückreferenzen."""
+    return _changed_events(
+        "ris.location.changed", "Location", "location", location_id, raw, prior, ignore=LOCATION_BACKREFS
+    )
+
+
+def legislative_term_events(term_id: UUID, raw: Mapping[str, Any], prior: Prior | None) -> list[Draft]:
+    """``ris.legislativeterm.changed``: Wahlperiode neu erkannt (``added``) oder geändert (``changed``)."""
+    return _changed_events(
+        "ris.legislativeterm.changed",
+        "LegislativeTerm",
+        "legislative_term",
+        term_id,
+        raw,
+        prior,
+        ignore=LEGISLATIVE_TERM_BACKREFS,
+    )
+
+
+def body_events(body_id: UUID, raw: Mapping[str, Any], prior: Prior | None) -> list[Draft]:
+    """``ris.body.changed``: Kommune in ihrer Quelle neu erkannt (``added``) oder geändert (``changed``)."""
+    return _changed_events("ris.body.changed", "Body", "body", body_id, raw, prior)
 
 
 def method_code(method: str | None) -> str:

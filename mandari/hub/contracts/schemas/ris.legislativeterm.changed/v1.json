@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.legislativeterm.changed:v1",
+  "title": "Wahlperiode geändert",
+  "description": "Eine Wahlperiode einer Kommune wurde neu erkannt (added) oder geändert (changed), etwa Name oder Zeitraum. Aggregat: LegislativeTerm. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "legislative_term",
+    "change"
+  ],
+  "properties": {
+    "legislative_term": {
+      "description": "Kanonische Kennung der Wahlperiode.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "change": {
+      "description": "Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert).",
+      "type": "string",
+      "enum": [
+        "added",
+        "changed"
+      ]
+    },
+    "changed": {
+      "description": "Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. name, startDate, endDate); bei change changed.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    }
+  },
+  "examples": [
+    {
+      "legislative_term": "2c3d4e5f-6a7b-5c8d-9e0f-1a2b3c4d5e6f",
+      "change": "added"
+    },
+    {
+      "legislative_term": "2c3d4e5f-6a7b-5c8d-9e0f-1a2b3c4d5e6f",
+      "change": "changed",
+      "changed": [
+        "endDate"
+      ]
+    }
+  ]
+}

@@ -29,6 +29,8 @@ BODY = uuid.UUID("7e8f9a0b-1c2d-5e3f-8a4b-5c6d7e8f9a0b")
 BASE = "https://ris.example.org/oparl"
 MEETING, PAPER, ITEM, FILE = (f"{BASE}/{art}/1" for art in ("meeting", "paper", "agendaitem", "file"))
 CONSULTATION, ORG, PERSON = f"{BASE}/consultation/1", f"{BASE}/organization/1", f"{BASE}/person/1"
+MEMBERSHIP, LOCATION, TERM = f"{BASE}/membership/1", f"{BASE}/location/1", f"{BASE}/legislativeterm/1"
+KOMMUNE = f"{BASE}/body/1"
 
 
 def _laden() -> ModuleType:
@@ -58,6 +60,10 @@ def _alle_ereignisse() -> list[tuple[str, Any]]:
     datei = {"id": FILE, "name": "Anlage 1", "accessUrl": f"{FILE}/download", "size": 1000}
     gremium = {"id": ORG, "name": "Rat", "organizationType": "Gremium", "membership": [f"{BASE}/membership/1"]}
     person = {"id": PERSON, "name": "Ratsmitglied", "familyName": "Muster", "membership": [f"{BASE}/membership/1"]}
+    mitgliedschaft = {"id": MEMBERSHIP, "person": PERSON, "organization": ORG, "role": "Mitglied"}
+    ort = {"id": LOCATION, "description": "Stadtpark", "geojson": {"type": "Point", "coordinates": [7.6, 51.9]}}
+    wahlperiode = {"id": TERM, "name": "2025 bis 2030", "startDate": "2025-11-01", "body": KOMMUNE}
+    kommune = {"id": KOMMUNE, "name": "Musterstadt", "legislativeTerm": [wahlperiode]}
     viele_felder = vorlage | {f"feld{i:03d}": i for i in range(100)} | {"mandari:publicAccess": "stream"}
     sitzung_id, vorlage_id, punkt_id = cid(MEETING), cid(PAPER), cid(ITEM)
     gruppen: dict[str, list[Any]] = {
@@ -131,6 +137,28 @@ def _alle_ereignisse() -> list[tuple[str, Any]]:
         "Person geändert": ris_events.person_events(
             cid(PERSON), person | {"title": ["Dr."], "membership": [f"{BASE}/membership/2"]}, Prior(person)
         ),
+        "Mitgliedschaft neu": ris_events.membership_events(
+            cid(MEMBERSHIP), mitgliedschaft, None, person_id=cid(PERSON), organization_id=cid(ORG)
+        ),
+        "Mitgliedschaft beendet": ris_events.membership_events(
+            cid(MEMBERSHIP),
+            mitgliedschaft | {"endDate": "2026-09-30"},
+            Prior(mitgliedschaft),
+            person_id=cid(PERSON),
+            organization_id=cid(ORG),
+        ),
+        "Ort neu": ris_events.location_events(cid(LOCATION), ort, None),
+        "Ort verlegt": ris_events.location_events(
+            cid(LOCATION), ort | {"geojson": {"type": "Point", "coordinates": [7.7, 51.9]}}, Prior(ort)
+        ),
+        "Wahlperiode neu": ris_events.legislative_term_events(cid(TERM), wahlperiode, None),
+        "Wahlperiode geändert": ris_events.legislative_term_events(
+            cid(TERM), wahlperiode | {"endDate": "2030-10-31"}, Prior(wahlperiode)
+        ),
+        "Kommune neu": ris_events.body_events(BODY, kommune, None),
+        "Kommune geändert": ris_events.body_events(
+            BODY, kommune | {"website": "https://musterstadt.example.org"}, Prior(kommune)
+        ),
         "Löschmarkierung eines nichtöffentlichen Punkts": ris_events.depublished_events(
             "agendaitem", punkt_id, public=False, meeting_id=sitzung_id
         ),
@@ -147,7 +175,7 @@ EREIGNISSE = _alle_ereignisse()
 
 def test_jeder_weg_bildet_ein_ereignis() -> None:
     namen = {name for name, _ in EREIGNISSE}
-    assert len(namen) == 31 + len(ris_events.AGGREGATE_TYPES)
+    assert len(namen) == 39 + len(ris_events.AGGREGATE_TYPES)
     # Wechsel in den nichtöffentlichen Teil: Rücknahme für öffentliche Empfänger und die Änderung selbst
     assert [e.type for name, e in EREIGNISSE if name == "Punkt wird nichtöffentlich"] == [
         "ris.object.depublished",
@@ -194,6 +222,10 @@ def test_ingestor_meldet_nur_vertraege_der_drehscheibe() -> None:
         ("ris.file.text_extracted", 1),
         ("ris.organization.changed", 1),
         ("ris.person.changed", 1),
+        ("ris.membership.changed", 1),
+        ("ris.location.changed", 1),
+        ("ris.legislativeterm.changed", 1),
+        ("ris.body.changed", 1),
         ("ris.object.depublished", 1),
     }
     for typ, version in typen:
@@ -217,6 +249,10 @@ def test_feldnamen_wie_im_vertrag() -> None:
         "ris.consultation.changed",
         "ris.organization.changed",
         "ris.person.changed",
+        "ris.membership.changed",
+        "ris.location.changed",
+        "ris.legislativeterm.changed",
+        "ris.body.changed",
     ):
         changed = register.schema(typ, 1)["properties"]["changed"]
         assert changed["items"]["pattern"] == ris_events._FIELD_NAME.pattern
@@ -254,3 +290,28 @@ def test_texterkennung_wie_im_auftrag_der_anwendung() -> None:
             "intern",
             "File",
         )
+
+
+def test_uebrige_typen_nur_bei_fachlicher_aenderung() -> None:
+    """Mitgliedschaft, Ort, Wahlperiode, Kommune (#553): Vergleich wie bei den übrigen, Rückverweise zählen nicht."""
+    mitgliedschaft = {"id": MEMBERSHIP, "person": PERSON, "organization": ORG, "role": "Mitglied"}
+    # In der Person eingebettet fehlt der Rückverweis auf die Person
+    eingebettet = {key: wert for key, wert in mitgliedschaft.items() if key != "person"}
+    assert ris_events.membership_events(cid(MEMBERSHIP), eingebettet, Prior(mitgliedschaft)) == []
+    assert ris_events.membership_events(cid(MEMBERSHIP), mitgliedschaft, Prior(eingebettet)) == []
+    ort = {"id": LOCATION, "description": "Stadtpark", "papers": [PAPER], "meetings": [MEETING]}
+    assert ris_events.location_events(cid(LOCATION), {"id": LOCATION, "description": "Stadtpark"}, Prior(ort)) == []
+    wahlperiode = {"id": TERM, "name": "2025 bis 2030", "body": f"{BASE}/body/1"}
+    assert ris_events.legislative_term_events(cid(TERM), wahlperiode | {"body": None}, Prior(wahlperiode)) == []
+    kommune = {"id": f"{BASE}/body/1", "name": "Musterstadt", "legislativeTerm": [wahlperiode, {"id": "x"}]}
+    umsortiert = kommune | {"legislativeTerm": kommune["legislativeTerm"][::-1], "modified": "2026-10-05"}
+    assert ris_events.body_events(BODY, umsortiert, Prior(kommune)) == []
+    (rolle,) = ris_events.membership_events(
+        cid(MEMBERSHIP), mitgliedschaft | {"role": "Vorsitz"}, Prior(mitgliedschaft), person_id=cid(PERSON)
+    )
+    assert rolle.payload == {
+        "membership": str(cid(MEMBERSHIP)),
+        "change": "changed",
+        "changed": ["role"],
+        "person": str(cid(PERSON)),
+    }

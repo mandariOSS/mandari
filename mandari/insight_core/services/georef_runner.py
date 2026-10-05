@@ -57,6 +57,21 @@ def run_auto_georef_pass(limit: int | None = None) -> dict:
         cache.delete(_LOCK_KEY)
 
 
+def _papers_with_stale_oparl_locations(limit: int) -> list:
+    """
+    Vorgänge ohne verknüpften OParl-Ort, deren Verortung noch Einträge mit Herkunft ``oparl`` trägt.
+
+    Der Ingestor entfernt die Verknüpfung, wenn die Quelle einen Ort nicht mehr nennt (Issue #553);
+    die übernommenen Koordinaten räumt ``apply_oparl_locations`` hier auf. Gesucht wird über die
+    Tabelle der Verortungen (automatische Zeilen mit Herkunft ``oparl``), nicht im JSON.
+    """
+    from insight_core.models import OParlPaper, PaperLocation
+
+    stale = PaperLocation.objects.filter(source="oparl", status=PaperLocation.STATUS_AUTO)
+    paper_ids = stale.filter(paper__oparl_locations__isnull=True).values_list("paper_id", flat=True).distinct()[:limit]
+    return list(OParlPaper.objects.filter(pk__in=list(paper_ids)).prefetch_related("oparl_locations"))
+
+
 def _run_pass(limit: int) -> dict:
     from django.db.models import Exists, OuterRef
 
@@ -77,7 +92,7 @@ def _run_pass(limit: int) -> dict:
         .prefetch_related("oparl_locations")
         .order_by("-updated_at")[: max(limit, 200)]
     )
-    for paper in backfill_qs:
+    for paper in [*backfill_qs, *_papers_with_stale_oparl_locations(max(limit, 200))]:
         try:
             if apply_oparl_locations(paper):
                 stats["oparl_backfilled"] += 1

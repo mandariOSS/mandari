@@ -199,6 +199,19 @@ Session meldet Gremien und Personen nicht; eine weitere Sichtbarkeitsklasse lie�
 - Die Plattform liest die Kennzeichnung nicht selbst aus den Schemas (sie kennt die Drehscheibe nicht):
   `hub.contracts` hängt die Liste beim Start bei `apps.events.datenschutz` ein.
 
+## Nachtrag: Mitgliedschaften, Orte, Wahlperioden und Kommunen (#553)
+
+Nach demselben Muster melden jetzt alle Typen des RIS-Bestands ihre Änderungen, nicht nur ihre
+Rücknahme: `ris.membership.changed`, `ris.location.changed`, `ris.legislativeterm.changed` und
+`ris.body.changed` (je v1, `oeffentlich`, `added` oder `changed` mit den geänderten Feldern). Die
+Mitgliedschaft nennt zusätzlich Person und Gremium (optionale Kennungen), damit etwa die Suche die
+Funktion einer Person nachzieht, ohne die Mitgliedschaft zu lesen; sie ist eine öffentliche Person des
+RIS, kein Personenfeld (`x-person`) im Sinne des Nachtrags zu #511. Rückverweise, die eine Quelle nur
+außerhalb der Einbettung ausgibt (`person` an der Mitgliedschaft, `body` an der Wahlperiode, die
+Rückreferenzen eines Orts), zählen nicht als Änderung. `ris.body.changed` meldet die Kommune, wie ihre
+Quelle sie beschreibt; ob sie im Bürgerportal veröffentlicht ist, bleibt `ris.source.published`.
+Erzeuger ist der Ingestor; Session meldet diese Typen nicht.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),

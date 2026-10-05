@@ -30,7 +30,7 @@ from mandari_oparl import (
     ProcessedPerson,
 )
 from mandari_oparl.extensions import AGENDA_ITEM_COLUMNS, MEETING_COLUMNS
-from sqlalchemy import and_, func, or_, select, text, update
+from sqlalchemy import and_, bindparam, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -706,6 +706,19 @@ class DatabaseStorage:
         origin = await self._origin(session, body_id)
         return origin.source_id is not None and origin.events
 
+    async def _source_emits(self, session: AsyncSession, source_id: UUID) -> bool:
+        """
+        Ob Änderungen aus dieser Quelle Ereignisse schreiben (Schalter und Ausnahme in ``sync_config``).
+
+        Für die Kommune selbst: Vor ihrem ersten Upsert gibt es keine Zeile, über die ``_events_for``
+        die Quelle fände.
+        """
+        if not self.events_enabled:
+            return False
+        found = await session.execute(select(OParlSource.sync_config).where(OParlSource.id == source_id))
+        sync_config = found.scalar_one_or_none()
+        return not (isinstance(sync_config, dict) and sync_config.get(SYNC_CONFIG_EVENTS_KEY) is False)
+
     async def _origin(self, session: AsyncSession, body_id: UUID) -> _Origin:
         """Herkunft der Ereignisse einer Kommune (zwischengespeichert bis zum Ende des Zyklus)."""
         origin = self._origin_cache.get(body_id)
@@ -833,9 +846,13 @@ class DatabaseStorage:
         """
         Insert or update a body.
 
-        Returns the body UUID.
+        Returns the body UUID. Zeile und Ereignis (``ris.body.changed``) entstehen in einer Transaktion.
+        Die Herkunft der Ereignisse ergibt sich erst nach dem Upsert (eine neue Kommune hat vorher keine
+        Zeile); ob die Quelle ausgenommen ist, steht vorher an der Quelle selbst.
         """
         async with self.get_session() as session:
+            emit = await self._source_emits(session, source_id)
+            prior = await self._prior(session, OParlBody, body.external_id) if emit else None
             stmt = pg_insert(OParlBody).values(
                 id=body.id,
                 external_id=body.external_id,
@@ -890,6 +907,9 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             body_id = result.scalar_one()
+            if emit and await self._events_for(session, body_id):
+                drafts = ris_events.body_events(body_id, body.raw_json or {}, prior)
+                await self._emit(session, body_id, drafts, body.oparl_modified)
             await session.commit()
 
             # Cache the UUID
@@ -1163,12 +1183,21 @@ class DatabaseStorage:
         Ordnet einer Sitzung ihre Gremien zu (``oparl_meetings_organizations``), in der Transaktion
         des Upserts und ohne eigenen Commit.
 
-        Ist keines der Gremien im Bestand, bleibt die bisherige Zuordnung stehen. ``compare``: vorher
-        die bisherige Zuordnung lesen. Rückgabe ``True``, wenn sie sich dadurch geändert hat (nur mit
-        ``compare``; für das Ereignis).
+        Nennt die Quelle kein Gremium mehr oder ist keines davon im Bestand, wird die bisherige
+        Zuordnung entfernt (Issue #553): Die Zuordnung folgt dem Objekt der Quelle, sonst nennte das
+        Ereignis ``organization`` als geändert, der Bestand aber noch das alte Gremium. ``compare``:
+        vorher die bisherige Zuordnung lesen. Rückgabe ``True``, wenn sie sich dadurch geändert hat
+        (beim Entfernen immer, sonst nur mit ``compare``; für das Ereignis).
         """
         if not org_ids:
-            return False
+            removed = await session.execute(
+                text(
+                    "DELETE FROM oparl_meetings_organizations WHERE oparlmeeting_id = :mid "
+                    "RETURNING oparlorganization_id"
+                ),
+                {"mid": meeting_id},
+            )
+            return removed.first() is not None
         changed = False
         if compare:
             before = await session.execute(
@@ -1263,10 +1292,9 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             paper_id = result.scalar_one()
-            # Link official OParl locations (M2M table managed by Django), vor dem Commit
-            locations_changed = False
-            if paper.location_external_ids:
-                locations_changed = await self._link_paper_locations(session, paper_id, paper.location_external_ids)
+            # Link official OParl locations (M2M table managed by Django), vor dem Commit. Auch ohne Orte:
+            # Nennt die Quelle keinen mehr, wird die bisherige Zuordnung entfernt (Issue #553).
+            locations_changed = await self._link_paper_locations(session, paper_id, paper.location_external_ids)
             if emit:
                 drafts = ris_events.paper_events(
                     paper_id, paper.raw_json or {}, prior, locations_changed=locations_changed
@@ -1304,7 +1332,12 @@ class DatabaseStorage:
         Jeder Fehler beim Zuordnen bricht deshalb den Upsert ab; Vorlage und Ereignis werden nie
         ohne die Zuordnung festgeschrieben.
 
-        Rückgabe ``True``, wenn ein Ort neu zugeordnet wurde (für das Ereignis).
+        Die Zuordnung folgt dem Objekt der Quelle (Issue #553): Orte, die die Quelle nicht mehr nennt
+        oder die nicht im Bestand sind, werden entfernt, auch wenn sie keinen Ort mehr nennt. Die
+        übernommenen Koordinaten (``OParlPaper.locations``, Herkunft ``oparl``) räumt Django danach
+        auf (``apply_oparl_locations`` im Georef-Lauf); der Ingestor schreibt dieses Feld nie.
+
+        Rückgabe ``True``, wenn ein Ort neu zugeordnet oder entfernt wurde (für das Ereignis).
         """
         if self._paper_locations_table is None:
             found = await session.execute(text("SELECT to_regclass('oparl_papers_locations') IS NOT NULL"))
@@ -1314,9 +1347,23 @@ class DatabaseStorage:
         if not self._paper_locations_table:
             return False
 
-        stmt = select(OParlLocation.id).where(OParlLocation.external_id.in_(location_external_ids))
-        location_ids = [row[0] for row in (await session.execute(stmt)).fetchall()]
-        added = False
+        location_ids: list[UUID] = []
+        if location_external_ids:
+            stmt = select(OParlLocation.id).where(OParlLocation.external_id.in_(location_external_ids))
+            location_ids = [row[0] for row in (await session.execute(stmt)).fetchall()]
+        # Entfernen, was die Quelle nicht mehr nennt (Index über oparlpaper_id, oparllocation_id)
+        if location_ids:
+            remove = text(
+                "DELETE FROM oparl_papers_locations WHERE oparlpaper_id = :pid "
+                "AND oparllocation_id NOT IN :lids RETURNING oparllocation_id"
+            ).bindparams(bindparam("lids", expanding=True))
+            removed = await session.execute(remove, {"pid": paper_id, "lids": location_ids})
+        else:
+            removed = await session.execute(
+                text("DELETE FROM oparl_papers_locations WHERE oparlpaper_id = :pid RETURNING oparllocation_id"),
+                {"pid": paper_id},
+            )
+        changed = removed.first() is not None
         for loc_id in location_ids:
             inserted = await session.execute(
                 text(
@@ -1325,8 +1372,8 @@ class DatabaseStorage:
                 ),
                 {"pid": paper_id, "lid": loc_id},
             )
-            added = inserted.first() is not None or added
-        return added
+            changed = inserted.first() is not None or changed
+        return changed
 
     async def get_paper_uuid(self, external_id: str) -> UUID | None:
         """Get a paper's UUID by external ID (cached)."""
@@ -1677,8 +1724,10 @@ class DatabaseStorage:
         location: ProcessedLocation,
         body_id: UUID,
     ) -> UUID:
-        """Insert or update a location."""
+        """Insert or update a location; Zeile und Ereignis (``ris.location.changed``) in einer Transaktion."""
         async with self.get_session() as session:
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlLocation, location.external_id) if emit else None
             stmt = pg_insert(OParlLocation).values(
                 id=location.id,
                 external_id=location.external_id,
@@ -1719,6 +1768,9 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             location_id = result.scalar_one()
+            if emit:
+                drafts = ris_events.location_events(location_id, location.raw_json or {}, prior)
+                await self._emit(session, body_id, drafts, location.oparl_modified)
             await session.commit()
             return location_id
 
@@ -1803,7 +1855,12 @@ class DatabaseStorage:
         membership: ProcessedMembership,
         body_id: UUID,
     ) -> UUID | None:
-        """Insert or update a membership. Returns None if FKs can't be resolved."""
+        """
+        Insert or update a membership. Returns None if FKs can't be resolved.
+
+        Zeile und Ereignis (``ris.membership.changed``) entstehen in einer Transaktion; die Kommune der
+        Ereignisse ist ``body_id`` (die Tabelle selbst hat keine).
+        """
         # Resolve person and organization UUIDs (both required by Django schema).
         # Cache-first with targeted DB fallback (no global cache pre-load).
         person_id = None
@@ -1822,6 +1879,8 @@ class DatabaseStorage:
             return None
 
         async with self.get_session() as session:
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlMembership, membership.external_id) if emit else None
             stmt = pg_insert(OParlMembership).values(
                 id=membership.id,
                 external_id=membership.external_id,
@@ -1861,6 +1920,15 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             membership_id = result.scalar_one()
+            if emit:
+                drafts = ris_events.membership_events(
+                    membership_id,
+                    membership.raw_json or {},
+                    prior,
+                    person_id=person_id,
+                    organization_id=organization_id,
+                )
+                await self._emit(session, body_id, drafts, membership.oparl_modified)
             await session.commit()
             return membership_id
 
@@ -1871,8 +1939,10 @@ class DatabaseStorage:
         term: ProcessedLegislativeTerm,
         body_id: UUID,
     ) -> UUID:
-        """Insert or update a legislative term."""
+        """Insert or update a legislative term; Zeile und Ereignis (``ris.legislativeterm.changed``) zusammen."""
         async with self.get_session() as session:
+            emit = await self._events_for(session, body_id)
+            prior = await self._prior(session, OParlLegislativeTerm, term.external_id) if emit else None
             stmt = pg_insert(OParlLegislativeTerm).values(
                 id=term.id,
                 external_id=term.external_id,
@@ -1907,6 +1977,9 @@ class DatabaseStorage:
 
             result = await session.execute(stmt)
             term_id = result.scalar_one()
+            if emit:
+                drafts = ris_events.legislative_term_events(term_id, term.raw_json or {}, prior)
+                await self._emit(session, body_id, drafts, term.oparl_modified)
             await session.commit()
             return term_id
 

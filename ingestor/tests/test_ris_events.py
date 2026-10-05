@@ -632,3 +632,41 @@ def test_verweise_umgezogener_quellen_tragen_die_kennungen_der_basis() -> None:
         "meeting": str(cid(MEETING)),
         "agenda_item": str(cid(ITEM)),
     }
+
+
+# --- Mitgliedschaft, Ort, Wahlperiode, Kommune (Issue #553) ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("bilden", "schluessel", "rueckverweise"),
+    [
+        (ris_events.membership_events, "membership", {"person": f"{BASE}/person/1"}),
+        (ris_events.location_events, "location", {"papers": [PAPER], "meetings": [MEETING], "bodies": [BASE]}),
+        (ris_events.legislative_term_events, "legislative_term", {"body": f"{BASE}/body/1"}),
+        (ris_events.body_events, "body", {}),
+    ],
+)
+def test_uebrige_typen_neu_unveraendert_geaendert(bilden: Any, schluessel: str, rueckverweise: dict[str, Any]) -> None:
+    objekt_id = cid(f"{BASE}/{schluessel}/1")
+    alt = {"id": f"{BASE}/{schluessel}/1", "name": "A", "liste": ["x", "y"], **rueckverweise}
+    (neu,) = bilden(objekt_id, alt, None)
+    assert neu.payload == {schluessel: str(objekt_id), "change": "added"}
+    assert (neu.visibility, neu.operation) == ("oeffentlich", "upsert")
+    (wieder,) = bilden(objekt_id, alt, Prior(alt, deleted=True))
+    assert wieder.payload["change"] == "added"
+    # Rückverweise fehlen (eingebettet), Liste umsortiert, Zeitstempel neu, leerer Wert: keine Änderung
+    gleich = {"id": alt["id"], "name": "A", "liste": ["y", "x"], "modified": "2026-10-05", "leer": ""}
+    assert bilden(objekt_id, gleich, Prior(alt)) == []
+    (geaendert,) = bilden(objekt_id, gleich | {"name": "B", "mandari:extra": 1}, Prior(alt))
+    assert geaendert.payload == {schluessel: str(objekt_id), "change": "changed", "changed": ["mandari_extra", "name"]}
+
+
+def test_mitgliedschaft_nennt_person_und_gremium_nur_wenn_bekannt() -> None:
+    objekt_id = cid(f"{BASE}/membership/1")
+    (beide,) = ris_events.membership_events(
+        objekt_id, {}, None, person_id=cid(f"{BASE}/person/1"), organization_id=cid(ORG)
+    )
+    assert beide.payload["person"] == str(cid(f"{BASE}/person/1"))
+    assert beide.payload["organization"] == str(cid(ORG))
+    (ohne,) = ris_events.membership_events(objekt_id, {}, None)
+    assert ohne.payload == {"membership": str(objekt_id), "change": "added"}
