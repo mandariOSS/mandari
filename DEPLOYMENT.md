@@ -489,9 +489,10 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 | `insight_sync.schedules.haengende_syncs_bereinigen` | alle 5 min | Sync-Protokolle, die länger als 15 min laufen, als fehlgeschlagen markieren |
 | `insight_core.schedules.verortung_automatisch` | alle `GEOREF_AUTO_INTERVAL_MINUTES` (15) min | begrenzter Verortungslauf (`GEOREF_AUTO_ENABLED`, `GEOREF_AUTO_LIMIT`) |
 | `apps.work.schedules.fraktionserinnerungen_senden` | alle `FACTION_REMINDER_INTERVAL_MINUTES` (15) min | Erinnerungen an Fraktionssitzungen |
-| `apps.work.schedules.fraktionseinladungen_senden` | alle `FACTION_INVITATION_INTERVAL_MINUTES` (15) min | automatische Einladungen und Freigabe-Hinweise |
+| `apps.work.schedules.fraktionseinladungen_senden` | alle `FACTION_INVITATION_INTERVAL_MINUTES` (15) min | automatische Einladungen (auch zum festen Zeitpunkt einer Reihe), Freigabe-Hinweise, Erinnerungen zum Eintragen von TOPs |
 | `apps.work.schedules.fraktionssitzungen_erzeugen` | alle `FACTION_SCHEDULE_INTERVAL_MINUTES` (60) min | Sitzungen aus Sitzungsreihen |
 | `apps.work.schedules.ris_verknuepfungen_abgleichen` | alle `WORK_RIS_RELINK_INTERVAL_MINUTES` (15) min | Work-Daten nach Neuveröffentlichung im RIS umhängen (`WORK_RIS_RELINK`, Standard aus) |
+| `apps.work.schedules.fraktionsprotokolle_versenden` | alle `FACTION_PROTOCOL_INTERVAL_MINUTES` (15) min | automatischer Protokollversand, wenn die Organisation ihn eingeschaltet hat |
 | `apps.events.schedules.idempotenzschluessel_aufraeumen` | täglich 03:40 | Idempotenzschlüssel nach `EVENTS_IDEMPOTENCY_RETENTION_DAYS` |
 | `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach `EVENTS_TASKS_DONE_RETENTION_DAYS` (14), tote und fehlgeschlagene nach `EVENTS_TASKS_DEAD_RETENTION_DAYS` (90) Tagen |
 | `befehl:events_purge` | täglich 04:10, nur mit `EVENTS_JOURNAL_PURGE_ENABLED` (Standard aus) | Journal nach `EVENTS_JOURNAL_RETENTION_DAYS` (90), nie über den kleinsten Cursor; `docs/MONITORING.md`, „Nachspielen und Aufräumen des Journals“ |

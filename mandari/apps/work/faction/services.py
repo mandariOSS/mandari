@@ -190,6 +190,8 @@ class FactionMeetingEmailService:
             "is_update": update,
             "invitation_mode": invitation_mode,
             "is_opt_out": invitation_mode == "opt_out",
+            # Zu- und Absagen nur, wenn für die Sitzung eingeschaltet (Issue #871)
+            "rsvp_enabled": meeting.rsvp_enabled,
             "meeting_url": meeting_url,
         }
 
@@ -209,6 +211,7 @@ class FactionMeetingEmailService:
                 meeting_url=meeting_url,
                 update=update,
                 opt_out=invitation_mode == "opt_out",
+                rsvp=meeting.rsvp_enabled,
             )
 
         try:
@@ -236,7 +239,15 @@ class FactionMeetingEmailService:
             return False
 
     def _get_simple_invitation_text(
-        self, meeting, user, public_items=None, internal_items=None, meeting_url="", update=False, opt_out=False
+        self,
+        meeting,
+        user,
+        public_items=None,
+        internal_items=None,
+        meeting_url="",
+        update=False,
+        opt_out=False,
+        rsvp=False,
     ) -> str:
         """Generate simple text fallback for invitation email."""
         intro = (
@@ -281,15 +292,15 @@ class FactionMeetingEmailService:
             for item in internal_items:
                 lines.append(f"TOP {item.number}: {item.title}")
 
-        rsvp_line = (
-            "Du bist angemeldet. Falls du nicht teilnehmen kannst, sage bitte in der Sitzungsansicht ab (Absagen)."
-            if opt_out
-            else "Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen)."
-        )
+        if rsvp:
+            rsvp_line = (
+                "Du bist angemeldet. Falls du nicht teilnehmen kannst, sage bitte in der Sitzungsansicht ab (Absagen)."
+                if opt_out
+                else "Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen)."
+            )
+            lines.extend(["", rsvp_line])
         lines.extend(
             [
-                "",
-                rsvp_line,
                 "",
                 "Viele Grüße,",
                 f"{meeting.organization.name}",
@@ -302,15 +313,18 @@ class FactionMeetingEmailService:
 
     def send_reminder(self, meeting, hours_before: int = 24) -> int:
         """
-        Send reminder emails to confirmed attendees.
+        Erinnerung verschicken: mit Zu- und Absagen an Zusagen und Vielleicht-Antworten, ohne sie
+        (Issue #871) an alle eingeladenen Mitglieder außer Gästen und Absagen.
 
         Returns the count of successfully sent emails.
         """
-        attendances = list(
-            meeting.attendances.filter(status__in=["confirmed", "tentative"], membership__isnull=False).select_related(
-                "membership__user"
+        if meeting.rsvp_enabled:
+            recipients = meeting.attendances.filter(status__in=["confirmed", "tentative"], membership__isnull=False)
+        else:
+            recipients = meeting.attendances.filter(membership__isnull=False, membership__is_guest=False).exclude(
+                status__in=["declined", "absent", "excused"]
             )
-        )
+        attendances = list(recipients.select_related("membership__user"))
         sent_count = 0
 
         for attendance in attendances:

@@ -16,7 +16,7 @@ import os
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -389,6 +389,7 @@ def work_faction_invitation(org: Any, make_member: Any) -> dict[str, Any]:
         "is_update": False,
         "invitation_mode": "opt_in",
         "is_opt_out": False,
+        "rsvp_enabled": True,
     }
 
 
@@ -396,6 +397,19 @@ def work_faction_reminder(org: Any, make_member: Any) -> dict[str, Any]:
     context = _faction_meeting(org, make_member)
     del context["public_agenda_items"], context["internal_agenda_items"]
     return {**context, "hours_before": 24}
+
+
+def work_faction_agenda_reminder(org: Any, make_member: Any) -> dict[str, Any]:
+    context = _faction_meeting(org, make_member)
+    del context["attendance"]
+    return {**context, "dispatch_at": WHEN - timedelta(days=3)}
+
+
+def work_faction_protocol(org: Any, make_member: Any) -> dict[str, Any]:
+    context = _faction_meeting(org, make_member)
+    for key in ("attendance", "public_agenda_items", "internal_agenda_items"):
+        del context[key]
+    return {**context, "internal": True}
 
 
 def work_notification(org: Any, make_member: Any) -> dict[str, Any]:
@@ -681,6 +695,8 @@ CASES = [
     ),
     MailCase("work_faction_invitation", "work/faction/email/invitation.html", work_faction_invitation),
     MailCase("work_faction_reminder", "work/faction/email/reminder.html", work_faction_reminder),
+    MailCase("work_faction_agenda_reminder", "work/faction/email/agenda_reminder.html", work_faction_agenda_reminder),
+    MailCase("work_faction_protocol", "work/faction/email/protocol.html", work_faction_protocol),
     MailCase("work_notification", "work/notifications/email/notification.html", work_notification),
     MailCase("work_org_invitation", "work/organization/email/invitation.html", work_org_invitation),
     MailCase("work_org_guest_access", "work/organization/email/guest_access.html", work_org_guest_access),

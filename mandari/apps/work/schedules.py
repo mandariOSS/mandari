@@ -14,6 +14,11 @@ idempotent und durch eine Cache-Sperre gegen parallele Läufe geschützt:
 - ``ris_verknuepfungen_abgleichen``: alle ``WORK_RIS_RELINK_INTERVAL_MINUTES`` (Standard 15) Minuten Work-Daten
   nach einer Neuveröffentlichung im RIS an den Nachfolger des Tagesordnungspunkts bzw. der Vorlage hängen
   (Issue #547); tut nichts, solange ``WORK_RIS_RELINK`` auf ``aus`` (Standard) steht.
+- ``fraktionsprotokolle_versenden``: alle ``FACTION_PROTOCOL_INTERVAL_MINUTES`` (Standard 15) Minuten
+  automatischer Protokollversand, falls die Organisation ihn eingeschaltet hat (Issue #871).
+
+Die Erinnerung zum Eintragen von TOPs und die automatische Einladung zum festen Zeitpunkt einer Reihe
+(Issue #871) laufen im Einladungslauf mit.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from apps.events.schedule import every
 
 from .faction.generation import run_faction_schedule_pass
 from .faction.invitations import run_faction_invitation_pass
+from .faction.protocol_dispatch import run_faction_protocol_pass
 from .faction.services import run_faction_reminder_pass
 from .ris.verknuepfungen import abgleichen
 
@@ -59,3 +65,10 @@ def fraktionssitzungen_erzeugen() -> None:
 def ris_verknuepfungen_abgleichen() -> dict[str, object]:
     """Hängt Work-Daten nach einer Neuveröffentlichung im RIS um (``WORK_RIS_RELINK``)."""
     return abgleichen().as_dict()
+
+
+@every(minutes=_minuten("FACTION_PROTOCOL_INTERVAL_MINUTES", 15))
+@task
+def fraktionsprotokolle_versenden() -> None:
+    """Versendet fällige Protokolle von Fraktionssitzungen (nur wenn die Organisation es eingeschaltet hat)."""
+    run_faction_protocol_pass()

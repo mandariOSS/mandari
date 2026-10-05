@@ -132,12 +132,15 @@ def _get_meeting_context(view, meeting):
     quorum = faction_quorum_status(meeting) if meeting.status in ("ongoing", "completed") else None
 
     # Einladungslogik (Issue #62): Freigabe-Status für die Sidebar
+    from ..invitations import auto_invite_schedule, get_invitation_settings, invitation_dispatch_at
     from ..invitations import can_release_invitations as _can_release
-    from ..invitations import get_invitation_settings, invitation_dispatch_at
 
     inv_settings = get_invitation_settings(view.organization)
+    # Reihe mit automatischer Einladung zum festen Zeitpunkt (Issue #871): ohne Freigabe
+    invitation_auto_schedule = auto_invite_schedule(meeting)
     invitation_release_pending = (
         inv_settings["invitation_dispatch"] == "approval"
+        and invitation_auto_schedule is None
         and not meeting.invitation_sent
         and meeting.invitation_released_at is None
         and meeting.status in ("draft", "planned")
@@ -208,6 +211,7 @@ def _get_meeting_context(view, meeting):
         "can_release_invitations": _can_release(view.membership),
         "invitation_dispatch_at": invitation_dispatch_at(meeting, inv_settings),
         "invitation_settings": inv_settings,
+        "invitation_auto_schedule": invitation_auto_schedule,
         "can_add_items": can_add_items,
         "can_propose_agenda": can_propose and not can_create_directly and open_for_proposals(meeting),
         "can_approve_proposals": checker.can_approve_agenda_items(),

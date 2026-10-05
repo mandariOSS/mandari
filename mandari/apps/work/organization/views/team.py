@@ -202,6 +202,7 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         if section:
             handler = {
                 "add_schedule": self._add_schedule,
+                "update_schedule_automation": self._update_schedule_automation,
                 "toggle_schedule": self._toggle_schedule,
                 "delete_schedule": self._delete_schedule,
                 "add_exception": self._add_exception,
@@ -239,9 +240,17 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
                 recurrence=request.POST.get("recurrence", "weekly"),
                 default_location=request.POST.get("default_location", "").strip(),
                 default_video_link=request.POST.get("default_video_link", "").strip(),
+                automation=services.schedule_automation_from_form(request.POST),
             ),
         )
         messages.success(request, f"Sitzungsreihe '{schedule.name}' angelegt. Termine werden automatisch erzeugt.")
+
+    def _update_schedule_automation(self, request):
+        schedule, updated = services.save_schedule_automation(self.organization, request.POST)
+        message = f"Automatik der Sitzungsreihe '{schedule.name}' gespeichert."
+        if updated:
+            message += f" Zu- und Absagen bei {updated} kommenden Terminen angepasst."
+        messages.success(request, message)
 
     def _toggle_schedule(self, request):
         schedule = services.toggle_schedule(self.organization, request.POST.get("schedule_id"))
@@ -253,14 +262,17 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         messages.success(request, f"Sitzungsreihe '{name}' gelöscht. Bereits erzeugte Sitzungen bleiben bestehen.")
 
     def _add_exception(self, request):
-        services.add_schedule_exception(
+        cancelled = services.add_schedule_exception(
             self.organization,
             request.POST.get("schedule_id"),
             original_date=request.POST.get("original_date", "").strip(),
             end_date=request.POST.get("end_date", "").strip(),
             reason=request.POST.get("reason", "").strip(),
         )
-        messages.success(request, "Ausnahmezeitraum gespeichert — Termine im Zeitraum entfallen ersatzlos.")
+        message = "Ausnahmezeitraum gespeichert — Termine im Zeitraum entfallen ersatzlos."
+        if cancelled:
+            message += f" {cancelled} schon angelegte Termine entfallen."
+        messages.success(request, message)
 
     def _delete_exception(self, request):
         services.delete_schedule_exception(self.organization, request.POST.get("exception_id"))

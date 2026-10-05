@@ -262,6 +262,9 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, VIDEO_LINK_TOO_LONG)
             return self._redirect_detail(meeting)
         meeting.video_link = video_link
+        # Zu- und Absagen je Sitzung (Issue #871); nur Formulare mit dem Feld ändern den Schalter
+        if "rsvp_field" in request.POST:
+            meeting.rsvp_enabled = request.POST.get("rsvp_enabled") == "on"
 
         new_status = request.POST.get("status")
         if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES) and self._may_set_status(new_status):
@@ -293,10 +296,15 @@ class FactionActionView(WorkViewMixin, View):
                 messages.warning(request, "Aktualisierung versendet. Keine E-Mails versendet.")
         else:
             # Zentraler Versandweg (Issue #62): wendet den Opt-in/Opt-out-
-            # Modus der Organisation an und setzt die Versand-Metadaten
-            sent_count = dispatch_invitations(meeting)
+            # Modus der Organisation an und setzt die Versand-Metadaten;
+            # genau einmal, auch wenn der Einladungslauf gleichzeitig versendet (Issue #871)
+            from ..invitations import dispatch_invitations_once
 
-            if sent_count > 0:
+            sent_count = dispatch_invitations_once(meeting)
+
+            if sent_count is None:
+                messages.info(request, "Die Einladungen wurden gerade bereits versendet.")
+            elif sent_count > 0:
                 messages.success(request, f"Einladungen an {sent_count} Mitglieder versendet.")
             else:
                 messages.warning(request, "Einladungsstatus aktualisiert. Keine E-Mails versendet.")
@@ -729,8 +737,9 @@ class FactionActionView(WorkViewMixin, View):
     # -- Attendance handlers -------------------------------------------
 
     def _respond(self, request, meeting):
-        # Nach der finalen Bestätigung (Issue #67) sind Teilnahme-Änderungen gesperrt
-        if meeting.attendance_confirmed_at is not None:
+        # Nach der finalen Bestätigung (Issue #67) sind Teilnahme-Änderungen gesperrt; Zu- und Absagen
+        # nur, wenn sie für die Sitzung eingeschaltet sind (Issue #871)
+        if meeting.attendance_confirmed_at is not None or not meeting.rsvp_enabled:
             return HttpResponse(status=403)
         try:
             attendance = meeting.attendances.get(membership=self.membership)

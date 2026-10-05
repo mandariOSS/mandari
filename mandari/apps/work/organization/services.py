@@ -1817,7 +1817,8 @@ def update_parties(organization: Organization, party_ids: list[str], new_party_n
 def save_faction_settings(organization: Organization, membership: Membership, form: Mapping[str, str]) -> None:
     """Workflow-, Einladungs-, Beschlussfähigkeits- und Titel-Einstellungen der Fraktionssitzungen speichern."""
     from apps.common.quorum import QUORUM_RULES
-    from apps.work.faction.invitations import INVITATION_DISPATCH_MODES, INVITATION_MODES
+    from apps.work.faction.invitations import AGENDA_REMINDER_MAX_HOURS, INVITATION_DISPATCH_MODES, INVITATION_MODES
+    from apps.work.faction.protocol_dispatch import PROTOCOL_DISPATCH_MAX_DELAY_HOURS, PROTOCOL_DISPATCH_MODES
 
     settings = organization.settings or {}
     faction_settings = settings.get("faction", {})
@@ -1844,6 +1845,28 @@ def save_faction_settings(organization: Organization, membership: Membership, fo
     except (TypeError, ValueError):
         pass
 
+    # Erinnerung zum Eintragen von TOPs (Issue #871): Standard aus
+    faction_settings["agenda_reminder_enabled"] = form.get("agenda_reminder_enabled") == "on"
+    try:
+        reminder_hours = int(form.get("agenda_reminder_hours", ""))
+        faction_settings["agenda_reminder_hours"] = max(1, min(reminder_hours, AGENDA_REMINDER_MAX_HOURS))
+    except (TypeError, ValueError):
+        pass
+
+    # Automatischer Protokollversand (Issue #871): Standard aus. Beim Einschalten zählt erst, was danach
+    # fällig wird – ältere Protokolle gehen nicht nachträglich raus.
+    protocol_dispatch = form.get("protocol_dispatch", "")
+    if protocol_dispatch in PROTOCOL_DISPATCH_MODES:
+        was_off = faction_settings.get("protocol_dispatch", "off") not in ("after_completion", "after_approval")
+        faction_settings["protocol_dispatch"] = protocol_dispatch
+        if protocol_dispatch != "off" and (was_off or not faction_settings.get("protocol_dispatch_since")):
+            faction_settings["protocol_dispatch_since"] = timezone.now().isoformat()
+    try:
+        delay_hours = int(form.get("protocol_dispatch_delay_hours", ""))
+        faction_settings["protocol_dispatch_delay_hours"] = max(0, min(delay_hours, PROTOCOL_DISPATCH_MAX_DELAY_HOURS))
+    except (TypeError, ValueError):
+        pass
+
     # Beschlussfähigkeit (Issue #69): nur Datenfeld/Erweiterungspunkt
     quorum_rule = form.get("quorum_rule", "")
     if quorum_rule in QUORUM_RULES:
@@ -1863,6 +1886,7 @@ def save_faction_settings(organization: Organization, membership: Membership, fo
 def faction_settings_with_defaults(organization: Organization) -> dict[str, Any]:
     """Aktuelle Fraktionssitzungs-Einstellungen, fehlende Schlüssel mit Standardwerten ergänzt."""
     from apps.work.faction.invitations import INVITATION_DEFAULTS
+    from apps.work.faction.protocol_dispatch import PROTOCOL_DISPATCH_DEFAULTS
 
     settings = organization.settings or {}
     faction_settings: dict[str, Any] = dict(settings.get("faction", {}))
@@ -1875,8 +1899,10 @@ def faction_settings_with_defaults(organization: Organization) -> dict[str, Any]
         "first_agenda_title_with_previous": "Tagesordnung festlegen und letztes Protokoll genehmigen",
         "first_agenda_title_no_previous": "Tagesordnung festlegen",
         "first_agenda_description": "",
-        # Einladungslogik (Issue #62)
+        # Einladungslogik (Issue #62), TOP-Erinnerung (Issue #871)
         **INVITATION_DEFAULTS,
+        # Protokollversand (Issue #871)
+        **PROTOCOL_DISPATCH_DEFAULTS,
         # Beschlussfähigkeit (Issue #69): Erweiterungspunkt — aktuell nur die Mehrheitsregel
         "quorum_rule": "majority",
     }
@@ -1899,6 +1925,57 @@ class ScheduleInput:
     recurrence: str = "weekly"
     default_location: str = ""
     default_video_link: str = ""
+    automation: ScheduleAutomationInput | None = None
+
+
+@dataclass
+class ScheduleAutomationInput:
+    """Automatik einer Sitzungsreihe (Issue #871): Zu- und Absagen, automatische Einladung."""
+
+    rsvp_enabled: bool = False
+    auto_invite: bool = False
+    invite_weekday_raw: str = ""
+    invite_time_raw: str = ""
+
+
+def schedule_automation_from_form(form: Mapping[str, str]) -> ScheduleAutomationInput:
+    """Automatik der Reihe aus dem Formular (Issue #871); fehlende Checkboxen bedeuten „aus“."""
+    return ScheduleAutomationInput(
+        rsvp_enabled=form.get("rsvp_enabled") == "on",
+        auto_invite=form.get("auto_invite") == "on",
+        invite_weekday_raw=(form.get("auto_invite_weekday") or "").strip(),
+        invite_time_raw=(form.get("auto_invite_time") or "").strip(),
+    )
+
+
+def _parse_automation(data: ScheduleAutomationInput) -> dict[str, Any]:
+    """Automatik-Felder prüfen; automatische Einladung braucht Wochentag und Uhrzeit."""
+    from datetime import time as _time
+
+    from apps.work.faction.models import FactionMeetingSchedule
+
+    weekday: int | None = None
+    at_time: _time | None = None
+    if data.invite_weekday_raw:
+        try:
+            weekday = int(data.invite_weekday_raw)
+        except ValueError as exc:
+            raise ServiceError("Ungültiger Wochentag für die Einladung.") from exc
+        if weekday not in dict(FactionMeetingSchedule.WEEKDAY_CHOICES):
+            raise ServiceError("Ungültiger Wochentag für die Einladung.")
+    if data.invite_time_raw:
+        try:
+            at_time = _time.fromisoformat(data.invite_time_raw)
+        except ValueError as exc:
+            raise ServiceError("Ungültige Uhrzeit für die Einladung.") from exc
+    if data.auto_invite and (weekday is None or at_time is None):
+        raise ServiceError("Für die automatische Einladung bitte Wochentag und Uhrzeit angeben.")
+    return {
+        "rsvp_enabled": data.rsvp_enabled,
+        "auto_invite": data.auto_invite,
+        "auto_invite_weekday": weekday,
+        "auto_invite_time": at_time,
+    }
 
 
 def add_schedule(organization: Organization, data: ScheduleInput) -> FactionMeetingSchedule:
@@ -1915,6 +1992,7 @@ def add_schedule(organization: Organization, data: ScheduleInput) -> FactionMeet
     recurrence = data.recurrence if data.recurrence in dict(FactionMeetingSchedule.RECURRENCE_CHOICES) else "weekly"
     if weekday not in dict(FactionMeetingSchedule.WEEKDAY_CHOICES):
         weekday = 0
+    automation = _parse_automation(data.automation or ScheduleAutomationInput())
     return FactionMeetingSchedule.objects.create(
         organization=organization,
         name=data.name,
@@ -1924,7 +2002,43 @@ def add_schedule(organization: Organization, data: ScheduleInput) -> FactionMeet
         duration_minutes=duration,
         default_location=data.default_location,
         default_video_link=data.default_video_link,
+        **automation,
     )
+
+
+def save_schedule_automation(organization: Organization, form: Mapping[str, str]) -> tuple[FactionMeetingSchedule, int]:
+    """Automatik einer Sitzungsreihe aus dem Formular speichern (``schedule_id`` und Automatik-Felder)."""
+    return update_schedule_automation(organization, form.get("schedule_id"), schedule_automation_from_form(form))
+
+
+@transaction.atomic
+def update_schedule_automation(
+    organization: Organization, schedule_id: Any, data: ScheduleAutomationInput
+) -> tuple[FactionMeetingSchedule, int]:
+    """
+    Automatik einer Sitzungsreihe speichern (Issue #871).
+
+    Zu- und Absagen gelten auch für die schon angelegten, noch nicht eingeladenen Termine der Reihe;
+    die automatische Einladung rechnet ohnehin je Sitzung aus der Reihe. Liefert die Reihe und die Zahl
+    der angepassten Termine.
+    """
+    from apps.work.faction.models import FactionMeeting
+
+    schedule = _schedule(organization, schedule_id)
+    for name, value in _parse_automation(data).items():
+        setattr(schedule, name, value)
+    schedule.save()
+    updated = 0
+    for meeting in FactionMeeting.objects.filter(
+        schedule=schedule,
+        start__gt=timezone.now(),
+        status__in=["draft", "planned"],
+        invitation_sent=False,
+    ).exclude(rsvp_enabled=schedule.rsvp_enabled):
+        meeting.rsvp_enabled = schedule.rsvp_enabled
+        meeting.save(update_fields=["rsvp_enabled", "updated_at"])
+        updated += 1
+    return schedule, updated
 
 
 def _schedule(organization: Organization, schedule_id: Any) -> FactionMeetingSchedule:
@@ -1950,20 +2064,32 @@ def delete_schedule(organization: Organization, schedule_id: Any) -> str:
     return name
 
 
+@transaction.atomic
 def add_schedule_exception(
     organization: Organization, schedule_id: Any, *, original_date: str, end_date: str, reason: str
-) -> None:
-    """Ausnahmezeitraum speichern — Termine im Zeitraum entfallen ersatzlos."""
+) -> int:
+    """
+    Ausnahmezeitraum speichern — Termine im Zeitraum entfallen ersatzlos.
+
+    Auch schon angelegte, noch nicht eingeladene Termine der Reihe im Zeitraum entfallen (Issue #871).
+    Liefert deren Anzahl.
+    """
+    from apps.work.faction.generation import cancel_meetings_in_exception
     from apps.work.faction.models import FactionMeetingException
 
     schedule = _schedule(organization, schedule_id)
     if not original_date:
         raise ServiceError("Bitte ein Datum angeben.")
-    FactionMeetingException.objects.update_or_create(
-        schedule=schedule,
-        original_date=original_date,
-        defaults={"end_date": end_date or None, "exception_type": "cancelled", "reason": reason},
-    )
+    try:
+        exception, _created = FactionMeetingException.objects.update_or_create(
+            schedule=schedule,
+            original_date=original_date,
+            defaults={"end_date": end_date or None, "exception_type": "cancelled", "reason": reason},
+        )
+    except ValidationError as exc:
+        raise ServiceError("Bitte gültige Daten angeben.") from exc
+    exception.refresh_from_db()
+    return cancel_meetings_in_exception(exception)
 
 
 def delete_schedule_exception(organization: Organization, exception_id: Any) -> None:

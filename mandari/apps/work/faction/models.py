@@ -74,6 +74,29 @@ class FactionMeetingSchedule(models.Model):
     default_location = models.CharField(max_length=500, blank=True, verbose_name="Standard-Ort")
     default_video_link = models.URLField(blank=True, verbose_name="Standard-Video-Link")
 
+    # Automatik der Reihe (Issue #871): Zu-/Absagen und automatische Einladung sind je Reihe
+    # einschaltbar und standardmäßig aus. Die Datenbank-Vorgabe hält ältere Abbilder lauffähig.
+    rsvp_enabled = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Zu- und Absagen",
+        help_text="Erzeugte Sitzungen sammeln Zu- und Absagen",
+    )
+    auto_invite = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Automatisch einladen",
+        help_text="Einladungen gehen zum festen Zeitpunkt ohne Freigabe raus, mit der Tagesordnung von diesem Zeitpunkt",
+    )
+    auto_invite_weekday = models.PositiveSmallIntegerField(
+        choices=WEEKDAY_CHOICES, blank=True, null=True, verbose_name="Einladung am Wochentag"
+    )
+    auto_invite_time = models.TimeField(blank=True, null=True, verbose_name="Einladung um")
+
+    # Erzeugt bis (Issue #871): Solltermine bis zu diesem Datum hat die Reihe schon angelegt.
+    # Gelöschte Termine kommen dadurch nicht wieder; die Reihe setzt mit dem nächsten Termin fort.
+    generated_until = models.DateField(blank=True, null=True, verbose_name="Termine erzeugt bis")
+
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -85,6 +108,11 @@ class FactionMeetingSchedule(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_weekday_display()}, {self.time})"
+
+    @property
+    def auto_invite_ready(self) -> bool:
+        """Automatische Einladung eingeschaltet und mit Wochentag und Uhrzeit vollständig?"""
+        return bool(self.auto_invite and self.auto_invite_weekday is not None and self.auto_invite_time is not None)
 
 
 class FactionMeetingException(models.Model):
@@ -347,6 +375,12 @@ class FactionMeeting(EncryptionMixin, models.Model):
     release_notice_final_sent_at = models.DateTimeField(
         blank=True, null=True, verbose_name="Freigabe-Hinweis (3 h) versandt am"
     )
+
+    # Zu- und Absagen (Issue #871): standardmäßig aus, je Sitzung einschaltbar
+    rsvp_enabled = models.BooleanField(default=False, db_default=False, verbose_name="Zu- und Absagen")
+    # Automatik (Issue #871): Erinnerung zum Eintragen von TOPs und Protokollversand je Sitzung höchstens einmal
+    agenda_reminder_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="TOP-Erinnerung versandt am")
+    protocol_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Protokoll versandt am")
 
     # Teilnahme-Workflow (Issue #67): Nach der Sitzung bestätigt der
     # Vorstand (Vorsitz/stellv. Vorsitz) die Teilnahmen final — mit
@@ -1271,6 +1305,8 @@ class FactionAuditLog(models.Model):
         # Ordner „Nichtöffentliche Vorgänge“ im Dokumentenspeicher (Issue #873)
         ("internal_document_stored", "Nichtöffentliche Unterlage abgelegt"),
         ("internal_document_access", "Nichtöffentliche Unterlage aufgerufen"),
+        ("agenda_reminder_sent", "Erinnerung zum Eintragen von TOPs versandt"),
+        ("protocol_sent", "Protokoll versandt"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

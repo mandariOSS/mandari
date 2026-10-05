@@ -1,0 +1,21 @@
+# Protokoll der Fraktionssitzung
+
+Fraktion Test
+
+Hallo Anna,
+
+anbei das Protokoll der folgenden Sitzung als PDF.
+
+Fraktionssitzung September
+
+Datum: Montag, 14. September 2026
+Stand: Entwurf, noch nicht genehmigt
+Fassung: intern, mit nichtöffentlichem Teil
+
+Die interne Fassung enthält den nichtöffentlichen Teil und ist nur für vereidigte Mitglieder bestimmt.
+
+[Zur Sitzung im Work-Portal](https://mandari.example/work/fraktion-test/faction/00000000-0000-0000-0000-000000000501/)
+
+Diese E-Mail wurde automatisch von Fraktion Test versendet.
+
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

@@ -1,0 +1,37 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Protokoll der Fraktionssitzung{% endblock %}
+{% block preheader %}{{ meeting.title }} vom {{ meeting.start|date:"d.m.Y" }}{% endblock %}
+{% block content %}
+<h1 class="h1">Protokoll der Fraktionssitzung</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Hallo {{ user.first_name|default:user.email }},</p>
+<p>anbei das Protokoll der folgenden Sitzung als PDF.</p>
+<div class="card">
+    <p><strong>{{ meeting.title }}</strong></p>
+    <table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+            <td class="key">Datum:</td>
+            <td>{{ meeting.start|date:"l, d. F Y" }}</td>
+        </tr>
+        <tr>
+            <td class="key">Stand:</td>
+            <td>{% if meeting.protocol_approved %}genehmigt am {{ meeting.protocol_approved_at|date:"d.m.Y" }}{% else %}Entwurf, noch nicht genehmigt{% endif %}</td>
+        </tr>
+        <tr>
+            <td class="key">Fassung:</td>
+            <td>{% if internal %}intern, mit nichtöffentlichem Teil{% else %}öffentlicher Teil{% endif %}</td>
+        </tr>
+    </table>
+</div>
+{% if internal %}
+<p class="muted small">Die interne Fassung enthält den nichtöffentlichen Teil und ist nur für vereidigte Mitglieder bestimmt.</p>
+{% endif %}
+{% if meeting_url %}
+<div class="btn-wrap">
+    <a class="btn" href="{{ meeting_url }}">Zur Sitzung im Work-Portal</a>
+</div>
+{% endif %}
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch von {{ organization.name }} versendet.</p>
+{% endblock %}

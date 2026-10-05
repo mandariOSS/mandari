@@ -19,6 +19,7 @@ Nicht-Vereidigte vollständig ("Gesperrte Information").
 """
 
 import logging
+from typing import Any
 
 from apps.common import audit_core
 
@@ -108,7 +109,16 @@ def resolve_is_internal(instance) -> bool:
 # =============================================================================
 
 
-def log_event(action, instance, *, organization=None, membership=None, changes=None, request=None, is_internal=None):
+def log_event(
+    action: str,
+    instance: Any,
+    *,
+    organization: Any = None,
+    membership: Any = None,
+    changes: dict[str, Any] | None = None,
+    request: Any = None,
+    is_internal: bool | None = None,
+) -> Any:
     """
     Audit-Eintrag für ein Fraktions-Objekt schreiben.
 
