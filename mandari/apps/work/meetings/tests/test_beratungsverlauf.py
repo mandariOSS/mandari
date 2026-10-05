@@ -2,7 +2,7 @@
 """„Im Beratungsverlauf“ in der Sitzungsvorbereitung: Positionen aus anderen Gremien zur selben Vorlage."""
 
 import datetime
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -47,7 +47,7 @@ def test_beratungsverlauf_zeigt_datum_lesbar_und_sortiert_nach_iso(org: Any) -> 
         )
     AgendaItemPosition.objects.create(organization=org, agenda_item=top_ausschuss, position="for")
 
-    eintraege = AgendaItemPosition.get_cross_positions_for_items(org, [top_rat])[top_rat.id]
+    eintraege = cast(Any, AgendaItemPosition).get_cross_positions_for_items(org, [top_rat])[top_rat.id]
 
     assert len(eintraege) == 1
     eintrag = eintraege[0]
