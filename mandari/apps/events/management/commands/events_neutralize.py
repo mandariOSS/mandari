@@ -2,8 +2,8 @@
 """
 DSGVO: personenbezogene Nutzlasten im Journal zu einer Person neutralisieren (``apps.events.datenschutz``).
 
-Leert die Nutzlast der Journaleinträge mit Sichtbarkeit ``personenbezogen``, deren Objekt die Person ist oder
-deren Personenfeld (``x-person`` im Vertrag) sie nennt. Die Kennung bleibt (Zeile, Ereignis-ID, Objekt,
+Leert die Nutzlast der Journaleinträge mit Sichtbarkeit ``personenbezogen``, deren Objekt die Person ist
+(Objekttyp ``User``) oder deren Personenfeld (``x-person`` im Vertrag) sie nennt. Die Kennung bleibt (Zeile, Ereignis-ID, Objekt,
 Folgenummer). Wiederholbar. Der Eingriff steht im Sicherheitsprotokoll (Quelle ``kommandozeile``).
 
 Nach einem ``redact`` geschieht dasselbe als Auftrag, wenn ``EVENTS_REDACT_NEUTRALIZE`` eingeschaltet ist; dieser

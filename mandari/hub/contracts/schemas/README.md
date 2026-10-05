@@ -81,7 +81,11 @@ verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
   empfangende Person), ist gekennzeichnet. Nur in Ereignissen der Klasse `personenbezogen`, nur auf der
   obersten Ebene, nur Zeichenketten im Format `uuid`. Nach einer DSGVO-Löschung (`redact`) leert die
   Plattform die Nutzlast der personenbezogenen Journaleinträge, die diese Person nennen
-  (`apps.events.datenschutz`); die Liste hält `hub/contracts/tests/test_schemas.py` fest.
+  (`apps.events.datenschutz`); die Liste hält `hub/contracts/tests/test_personenfelder.py` fest.
+  **Welche Person ein `redact` meint**, steht im Ereignis selbst: die Personenfelder seiner Nutzlast und
+  sein Objekt nur dann, wenn es eine Person ist (Objekttyp `User`). Ein `redact` der Rückmeldung einer
+  Person zu einer Sitzung (Objekt `Meeting`) meint diese Person, nicht die Sitzung; Einträge anderer
+  Personen derselben Sitzung bleiben. Nennt das Ereignis keine Person, wird nichts geleert.
 - **`examples`**: mindestens ein gültiges Beispiel.
 - **Meldungen ohne Werte:** Verstöße nennen JSON-Pfad, Regel und Feldnamen. Schlüssel aus der
   Nutzlast erscheinen nur, wenn sie wie ein Feldname aussehen (`^[a-z][a-z0-9_]{0,39}$`), sonst als

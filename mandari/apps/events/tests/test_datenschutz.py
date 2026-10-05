@@ -2,9 +2,10 @@
 """
 DSGVO: personenbezogene Nutzlasten im Journal neutralisieren (``apps.events.datenschutz``, Issue #511).
 
-Nach einem ``redact`` zu einer Person werden die Journaleinträge mit Sichtbarkeit ``personenbezogen`` zu dieser
-Person neutralisiert: Die Kennung bleibt, die Felder werden leer. Welche Felder eine Person nennen, steht in den
-Verträgen (``x-person``), eingehängt von ``hub.contracts``.
+Nach einem ``redact`` werden die Journaleinträge mit Sichtbarkeit ``personenbezogen`` zu den Personen
+neutralisiert, die das Ereignis nennt (Objekt vom Typ ``User`` oder Personenfeld laut Vertrag): Die Kennung
+bleibt, die Felder werden leer. Welche Felder eine Person nennen, steht in den Verträgen (``x-person``),
+eingehängt von ``hub.contracts``. Der Auftrag landet immer in ``events_task``, nie sofort in der Anfrage.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ from django.core.management.base import CommandError
 from django.db import transaction
 
 from apps.events import datenschutz, publish, tenant_ref
-from apps.events.models import Event, Operation, Visibility
+from apps.events.models import Event, Operation, Task, Visibility
+from apps.events.task_runner import run_pending
 from apps.events.tests.hilfen import ereignis_anlegen
 
 pytestmark = pytest.mark.django_db
@@ -27,11 +29,11 @@ pytestmark = pytest.mark.django_db
 ORG = uuid.UUID("3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d")
 
 
-def _personenbezogen(typ: str, aggregat: uuid.UUID, **nutzlast: Any) -> Event:
+def _personenbezogen(typ: str, aggregat: uuid.UUID, aggregat_typ: str = "Meeting", **nutzlast: Any) -> Event:
     return ereignis_anlegen(
         type=typ,
         version=1,
-        aggregate_type="Objekt",
+        aggregate_type=aggregat_typ,
         aggregate_id=aggregat,
         visibility=Visibility.PERSONENBEZOGEN,
         payload=nutzlast,
@@ -51,7 +53,7 @@ def test_personenfelder_kommen_aus_den_vertraegen() -> None:
 def test_neutralisiert_nur_personenbezogene_eintraege_zu_dieser_person() -> None:
     person, andere = uuid.uuid4(), uuid.uuid4()
     sitzung = uuid.uuid4()
-    konto = _personenbezogen("core.user.registered", person, user=str(person), step="created")
+    konto = _personenbezogen("core.user.registered", person, "User", user=str(person), step="created")
     zusage = _personenbezogen(
         "attendance.response_recorded", sitzung, meeting=str(sitzung), person=str(person), response="declined"
     )
@@ -87,75 +89,156 @@ def test_neutralisiert_nur_personenbezogene_eintraege_zu_dieser_person() -> None
 
 def test_ohne_vertraege_nur_das_objekt(monkeypatch: pytest.MonkeyPatch) -> None:
     person, sitzung = uuid.uuid4(), uuid.uuid4()
-    konto = _personenbezogen("core.user.registered", person, user=str(person), step="created")
+    konto = _personenbezogen("core.user.registered", person, "User", user=str(person), step="created")
     zusage = _personenbezogen(
         "attendance.response_recorded", sitzung, meeting=str(sitzung), person=str(person), response="declined"
+    )
+    # Dieselbe Kennung als Objekt eines anderen Typs ist keine Person
+    gleiche_kennung = _personenbezogen(
+        "attendance.response_recorded", person, meeting=str(person), person=str(uuid.uuid4()), response="confirmed"
     )
     vorher = datenschutz.set_person_fields_provider(None)
     try:
         assert datenschutz.neutralize(person) == 1
     finally:
         datenschutz.set_person_fields_provider(vorher)
-    assert _nutzlasten()[konto.event_id] == {} and _nutzlasten()[zusage.event_id] != {}
+    nachher = _nutzlasten()
+    assert nachher[konto.event_id] == {}
+    assert nachher[zusage.event_id] != {} and nachher[gleiche_kennung.event_id] != {}
+
+
+def _publish_redact(typ: str, aggregat: tuple[str, uuid.UUID], nutzlast: dict[str, Any]) -> Event:
+    return publish(
+        typ,
+        version=1,
+        aggregate=aggregat,
+        tenant=tenant_ref("org", ORG),
+        visibility=Visibility.PERSONENBEZOGEN,
+        payload=nutzlast,
+        operation=Operation.REDACT,
+    )
+
+
+def _auftraege() -> list[Any]:
+    """Argumente der eingereihten Aufträge zum Neutralisieren."""
+    pfad = datenschutz.journal_neutralisieren.module_path
+    return list(Task.objects.filter(task_path=pfad).order_by("pk").values_list("args", flat=True))
+
+
+def _ereignis(typ: str, aggregat_typ: str, aggregat: uuid.UUID, **nutzlast: Any) -> Event:
+    return Event(type=typ, version=1, aggregate_type=aggregat_typ, aggregate_id=aggregat, payload=nutzlast)
+
+
+def test_personen_eines_redact_stehen_im_ereignis() -> None:
+    person, sitzung = uuid.uuid4(), uuid.uuid4()
+    konto = _ereignis("core.user.registered", "User", person, user=str(person), step="confirmed")
+    assert datenschutz.persons_of(konto) == [person]
+    absage = _ereignis(
+        "attendance.response_recorded",
+        "Meeting",
+        sitzung,
+        meeting=str(sitzung),
+        person=str(person),
+        response="declined",
+    )
+    assert datenschutz.persons_of(absage) == [person], "die Sitzung ist keine Person"
+    ris = _ereignis(
+        "ris.object.depublished", "Person", person, object_type="Person", object=str(person), reason="datenschutz"
+    )
+    assert datenschutz.persons_of(ris) == [], "öffentliche Daten: kein Personenfeld, kein Konto"
+    kaputt = _ereignis("attendance.response_recorded", "Meeting", sitzung, meeting=str(sitzung), person="keine-kennung")
+    assert datenschutz.persons_of(kaputt) == []
+
+
+def test_redact_einer_rueckmeldung_neutralisiert_nur_die_person_nicht_die_sitzung(settings: Any) -> None:
+    """Aggregat der Rückmeldung ist die Sitzung: Andere Personen derselben Sitzung bleiben unberührt."""
+    settings.EVENTS_REDACT_NEUTRALIZE = True
+    person_a, person_b, sitzung = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    konto_a = _personenbezogen("core.user.registered", person_a, "User", user=str(person_a), step="created")
+    zusage_a = _personenbezogen(
+        "attendance.response_recorded", sitzung, meeting=str(sitzung), person=str(person_a), response="confirmed"
+    )
+    zusage_b = _personenbezogen(
+        "attendance.response_recorded", sitzung, meeting=str(sitzung), person=str(person_b), response="confirmed"
+    )
+    vorher = _nutzlasten()
+
+    with transaction.atomic():
+        absage = _publish_redact(
+            "attendance.response_recorded",
+            ("Meeting", sitzung),
+            {"meeting": str(sitzung), "person": str(person_a), "response": "declined"},
+        )
+    assert _auftraege() == [{"args": [str(person_a)], "kwargs": {}}]
+    assert run_pending(["default"]) == 1
+
+    nachher = _nutzlasten()
+    assert nachher[konto_a.event_id] == {} and nachher[zusage_a.event_id] == {} and nachher[absage.event_id] == {}
+    assert nachher[zusage_b.event_id] == vorher[zusage_b.event_id], "fremde Person derselben Sitzung bleibt"
+
+
+def test_redact_ohne_person_legt_keinen_auftrag_an(settings: Any) -> None:
+    settings.EVENTS_REDACT_NEUTRALIZE = True
+    person = uuid.uuid4()
+    with transaction.atomic():
+        publish(
+            "ris.object.depublished",
+            version=1,
+            aggregate=("Person", person),
+            tenant=tenant_ref("source", uuid.uuid4()),
+            visibility=Visibility.OEFFENTLICH,
+            payload={"object_type": "Person", "object": str(person), "reason": "datenschutz"},
+            operation=Operation.REDACT,
+        )
+    assert _auftraege() == []
+
+
+def test_redact_ueber_andere_datenbank_legt_keinen_auftrag_an(settings: Any) -> None:
+    settings.EVENTS_REDACT_NEUTRALIZE = True
+    person = uuid.uuid4()
+    konto = _ereignis("core.user.registered", "User", person, user=str(person), step="confirmed")
+    assert datenschutz.after_redact(konto, "andere") == 0
+    assert _auftraege() == []
 
 
 def _redact(person: uuid.UUID) -> None:
     with transaction.atomic():
-        publish(
-            "core.user.registered",
-            version=1,
-            aggregate=("User", person),
-            tenant=tenant_ref("org", ORG),
-            visibility=Visibility.PERSONENBEZOGEN,
-            payload={"user": str(person), "step": "confirmed"},
-            operation=Operation.REDACT,
-        )
+        _publish_redact("core.user.registered", ("User", person), {"user": str(person), "step": "confirmed"})
 
 
-def test_redact_neutralisiert_nur_mit_schalter(settings: Any) -> None:
+def test_redact_neutralisiert_nur_mit_schalter_und_nur_im_worker(settings: Any) -> None:
     person = uuid.uuid4()
-    alt = _personenbezogen("core.user.registered", person, user=str(person), step="created")
+    alt = _personenbezogen("core.user.registered", person, "User", user=str(person), step="created")
 
     settings.EVENTS_REDACT_NEUTRALIZE = False
     _redact(person)
-    assert _nutzlasten()[alt.event_id] != {}
+    assert _auftraege() == [] and _nutzlasten()[alt.event_id] != {}
 
     settings.EVENTS_REDACT_NEUTRALIZE = True
-    _redact(person)  # Tests führen Aufträge sofort aus (settings_test.TASKS)
+    # Die Tests führen Aufträge sonst sofort aus (settings_test.TASKS, wie ohne TASKS_BACKEND in Produktion);
+    # das Neutralisieren landet trotzdem in events_task und läuft nicht in der Anfrage
+    _redact(person)
+    assert _auftraege() == [{"args": [str(person)], "kwargs": {}}]
+    assert _nutzlasten()[alt.event_id] != {}
+    assert run_pending(["default"]) == 1
     assert all(nutzlast == {} for nutzlast in _nutzlasten().values())
 
 
-def test_redact_legt_den_auftrag_in_derselben_transaktion_an(settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_redact_legt_den_auftrag_in_derselben_transaktion_an(settings: Any) -> None:
     settings.EVENTS_REDACT_NEUTRALIZE = True
-    eingereiht: list[tuple[Any, ...]] = []
-
-    class Auftrag:
-        @staticmethod
-        def enqueue(*args: Any) -> None:
-            eingereiht.append(args)
-
-    monkeypatch.setattr(datenschutz, "journal_neutralisieren", Auftrag())
     person = uuid.uuid4()
     with pytest.raises(RuntimeError), transaction.atomic():
-        publish(
-            "core.user.registered",
-            version=1,
-            aggregate=("User", person),
-            tenant=tenant_ref("org", ORG),
-            visibility=Visibility.PERSONENBEZOGEN,
-            payload={"user": str(person), "step": "confirmed"},
-            operation=Operation.REDACT,
-        )
-        assert eingereiht == [(str(person),)]
+        _publish_redact("core.user.registered", ("User", person), {"user": str(person), "step": "confirmed"})
+        assert _auftraege() == [{"args": [str(person)], "kwargs": {}}]
         raise RuntimeError("Rücknahme der fachlichen Änderung")
-    assert not Event.objects.exists()
+    assert not Event.objects.exists() and _auftraege() == []
 
 
 def test_befehl_mit_probelauf_und_sicherheitsprotokoll() -> None:
     from apps.accounts.models import SecurityAuditLog
 
     person = uuid.uuid4()
-    konto = _personenbezogen("core.user.registered", person, user=str(person), step="created")
+    konto = _personenbezogen("core.user.registered", person, "User", user=str(person), step="created")
 
     ausgabe = StringIO()
     call_command("events_neutralize", "--person", str(person), "--dry-run", stdout=ausgabe)

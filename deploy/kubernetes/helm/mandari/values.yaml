@@ -56,6 +56,10 @@ events:
   # „Worker lebt“ an die Statusseite (WORKER_PUSH_URL, externer Endpunkt von Gatus); das Token
   # WORKER_PUSH_TOKEN über app.extraEnvFromSecret
   workerPushUrl: ""
+  # DSGVO: Nach einem Ereignis mit operation=redact die Nutzlast personenbezogener Journaleinträge zu den
+  # genannten Personen leeren (EVENTS_REDACT_NEUTRALIZE, Auftrag im Worker); vorher
+  # `manage.py events_neutralize --person <uuid> --dry-run` prüfen.
+  redactNeutralize: false
 
 # -----------------------------------------------------------------------------
 # Anwendung (Django)

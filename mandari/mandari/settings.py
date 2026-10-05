@@ -359,8 +359,10 @@ EVENTS_DB_DIRECT_URL = os.environ.get("EVENTS_DB_DIRECT_URL", "")
 EVENTS_VALIDATE_CONTRACTS = os.environ.get("EVENTS_VALIDATE_CONTRACTS", str(DEBUG)).lower() in ("true", "1", "yes")
 
 # DSGVO (apps.events.datenschutz, Issue #511): Nach publish(..., operation="redact") die Nutzlast
-# personenbezogener Journaleinträge zu dieser Person leeren (Auftrag in derselben Transaktion; die Kennung bleibt).
-# Standard aus; von Hand: manage.py events_neutralize --person <uuid> [--dry-run].
+# personenbezogener Journaleinträge zu den Personen leeren, die das Ereignis nennt (Objekt vom Typ User oder
+# Personenfeld laut Vertrag; die Kennung bleibt). Der Auftrag entsteht in derselben Transaktion, immer in
+# events_task, und läuft im Worker, auch ohne TASKS_BACKEND=journal. Standard aus; von Hand:
+# manage.py events_neutralize --person <uuid> [--dry-run].
 EVENTS_REDACT_NEUTRALIZE = os.environ.get("EVENTS_REDACT_NEUTRALIZE", "false").strip().lower() in ("1", "true", "yes")
 
 # Befehle (hub.commands, Issue #539): So viele Tage bleibt ein Idempotenzschlüssel samt Quittung
