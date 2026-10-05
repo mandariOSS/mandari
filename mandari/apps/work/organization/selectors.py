@@ -551,10 +551,13 @@ def guest_shared_folders(organization: Organization, user: User) -> list[Documen
 
 
 def shareable_documents(organization: Organization, membership: Membership) -> QuerySet[Motion]:
-    """Dokumente, die der Einladende freigeben darf: eigene und org-sichtbare, die er selbst sieht (visible_to)."""
-    from apps.work.motions.models import Motion
+    """
+    Dokumente, die der Einladende freigeben darf: eigene und org-sichtbare, die er selbst sieht (visible_to) –
+    nie aus „Nichtöffentliche Vorgänge“ (Issue #873).
+    """
+    from apps.work.motions.models import Motion, exclude_sworn_in_only
 
-    visible = cast("QuerySet[Motion]", cast(Any, Motion).visible_to(membership))
+    visible = cast("QuerySet[Motion]", exclude_sworn_in_only(cast(Any, Motion).visible_to(membership)))
     return visible.filter(Q(visibility="organization") | Q(author=membership)).order_by("-updated_at")
 
 
@@ -809,7 +812,7 @@ def activity_timeline(organization: Organization, membership: Membership, *, lim
     """Letzte Aktivitäten (Aufgaben, Anträge, Anwesenheiten, Vorbereitungen) nach Datum absteigend."""
     from apps.work.faction.models import FactionAttendance
     from apps.work.meetings.models import MeetingPreparation
-    from apps.work.motions.models import Motion
+    from apps.work.motions.models import Motion, exclude_sworn_in_only
     from apps.work.tasks.models import Task
 
     timeline: list[dict[str, Any]] = []
@@ -826,7 +829,9 @@ def activity_timeline(organization: Organization, membership: Membership, *, lim
                 "detail": "Erledigt" if t.is_completed else f"Status: {t.get_status_display()}",
             }
         )
-    for m in Motion.objects.filter(organization=organization, author=membership).order_by("-updated_at")[:5]:
+    # Nichtöffentliche Unterlagen nur, solange die Person vereidigt ist (Issue #873)
+    own_motions = exclude_sworn_in_only(Motion.objects.filter(organization=organization, author=membership), membership)
+    for m in own_motions.order_by("-updated_at")[:5]:
         timeline.append(
             {
                 "date": m.updated_at,

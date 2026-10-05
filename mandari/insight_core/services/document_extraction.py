@@ -149,25 +149,36 @@ class RobotsUnreachableError(DocumentDownloadError):
         self.reason = reason
 
 
-def extraction_config(ocr_max_pages: int | None = None) -> ExtractionConfig:
-    """Grenzen der Texterkennung und Mistral-Zugang aus den Einstellungen; ``ocr_max_pages`` begrenzt enger."""
+def extraction_config(ocr_max_pages: int | None = None, *, allow_external: bool = True) -> ExtractionConfig:
+    """
+    Grenzen der Texterkennung und Mistral-Zugang aus den Einstellungen; ``ocr_max_pages`` begrenzt enger.
+
+    ``allow_external=False``: nur Erkennung im eigenen Betrieb (pypdf, Tesseract), nie ein externer Dienst –
+    für vertrauliche Unterlagen wie nichtöffentliche Sitzungsunterlagen (Issue #873).
+    """
     max_pages = int(getattr(settings, "OCR_MAX_PAGES", 100))
     if ocr_max_pages is not None:
         max_pages = max(0, min(max_pages, ocr_max_pages))
+    if not allow_external:
+        return ExtractionConfig(ocr=_ocr_limits(max_pages), mistral=MistralConfig())
     return ExtractionConfig(
-        ocr=OcrLimits(
-            dpi=int(getattr(settings, "OCR_DPI", 200)),
-            max_pixels=int(float(getattr(settings, "OCR_MAX_MEGAPIXELS", 8)) * 1_000_000),
-            memory_limit_mb=int(getattr(settings, "OCR_MEMORY_LIMIT_MB", 1024)),
-            page_timeout=float(getattr(settings, "OCR_PAGE_TIMEOUT", 120)),
-            file_budget=float(getattr(settings, "OCR_FILE_BUDGET_SECONDS", 1200)),
-            max_pages=max_pages,
-        ),
+        ocr=_ocr_limits(max_pages),
         mistral=MistralConfig(
             api_key=str(getattr(settings, "MISTRAL_API_KEY", "") or ""),
             model=str(getattr(settings, "MISTRAL_OCR_MODEL", "pixtral-12b-2409")),
             requests_per_minute=int(getattr(settings, "MISTRAL_OCR_RATE_LIMIT", 60)),
         ),
+    )
+
+
+def _ocr_limits(max_pages: int) -> OcrLimits:
+    return OcrLimits(
+        dpi=int(getattr(settings, "OCR_DPI", 200)),
+        max_pixels=int(float(getattr(settings, "OCR_MAX_MEGAPIXELS", 8)) * 1_000_000),
+        memory_limit_mb=int(getattr(settings, "OCR_MEMORY_LIMIT_MB", 1024)),
+        page_timeout=float(getattr(settings, "OCR_PAGE_TIMEOUT", 120)),
+        file_budget=float(getattr(settings, "OCR_FILE_BUDGET_SECONDS", 1200)),
+        max_pages=max_pages,
     )
 
 
@@ -283,6 +294,8 @@ def extract_text_from_file(
     mime_type: str | None = None,
     file_name: str = "",
     ocr_max_pages: int | None = None,
+    *,
+    allow_external: bool = True,
 ) -> tuple[str, bool, int | None, str]:
     """
     Text aus Binärdaten mit der gemeinsamen Texterkennung.
@@ -292,6 +305,7 @@ def extract_text_from_file(
     der Prozess endet, löscht sie ``purge_leftover_temp_files`` nach ``TEMP_MAX_AGE_SECONDS``. ``ocr_max_pages``
     begrenzt die erkannten Seiten (etwa beim Import im laufenden Seitenaufruf). Scheitert die Erkennung an der
     Speichergrenze, ist das Ergebnis leer (Methode ``none``); Aufrufer brechen deshalb nie ab.
+    ``allow_external=False`` schließt externe Dienste (Mistral) aus, siehe ``extraction_config``.
 
     Returns:
         Tuple mit (text, ocr_performed, page_count, extraction_method)
@@ -302,7 +316,9 @@ def extract_text_from_file(
     try:
         with os.fdopen(handle, "wb") as target:
             target.write(data)
-        result = extract_text(path, mime_type, file_name, extraction_config(ocr_max_pages))
+        result = extract_text(
+            path, mime_type, file_name, extraction_config(ocr_max_pages, allow_external=allow_external)
+        )
     except OcrMemoryLimitError:
         logger.warning("Texterkennung an der Speichergrenze für %s", file_name or "Datei")
         return "", False, None, METHOD_NONE

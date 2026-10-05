@@ -1,0 +1,84 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Erkannte Tagesordnungspunkte einer nichtöffentlichen Unterlage bestätigen (Issue #873).
+Kontext: meeting, motion, proposals (source_number, title), notice, folder_name
+{% endcomment %}
+
+{% block page_title %}Tagesordnungspunkte übernehmen{% endblock %}
+
+{% block header_title %}Tagesordnungspunkte übernehmen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ meeting.title }} · {{ meeting.start|date:"d.m.Y" }}</p>
+{% endblock %}
+
+{% block header_actions %}
+<c-ui.button variant="secondary" size="sm" href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}">
+    Zurück zur Sitzung
+</c-ui.button>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-4xl space-y-4">
+    <p class="text-sm text-gray-600 dark:text-gray-300">
+        Die Unterlage liegt im Ordner „{{ folder_name }}“:
+        <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}"
+           class="text-primary-700 dark:text-primary-300 underline">{{ motion.title }}</a>
+    </p>
+
+    {% if notice %}<c-ui.alert variant="info">{{ notice }}</c-ui.alert>{% endif %}
+
+    {% if proposals %}
+    <form method="post"
+          action="{% url 'work:faction_internal_import_confirm' org_slug=organization.slug meeting_id=meeting.id motion_id=motion.id %}"
+          class="space-y-3">
+        {% csrf_token %}
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="text-left text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    <th scope="col" class="w-8 py-2"><span class="sr-only">Auswahl</span></th>
+                    <th scope="col" class="w-20 sm:w-28 py-2 pr-2">Nr.</th>
+                    <th scope="col" class="py-2">Titel</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for proposal in proposals %}
+                <tr>
+                    <td class="py-1.5">
+                        <input type="checkbox"
+                               name="auswahl"
+                               value="{{ forloop.counter0 }}"
+                               checked
+                               aria-label="Punkt {{ forloop.counter }} übernehmen">
+                    </td>
+                    <td class="py-1.5 pr-2">
+                        <input type="text"
+                               name="nr"
+                               value="{{ proposal.source_number }}"
+                               maxlength="20"
+                               aria-label="Nummer in der Unterlage" title="Nummer in der Unterlage"
+                               class="w-full h-8 px-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
+                    </td>
+                    <td class="py-1.5">
+                        <input type="text"
+                               name="titel"
+                               value="{{ proposal.title }}"
+                               maxlength="500"
+                               aria-label="Titel"
+                               class="w-full h-8 px-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            Ausgewählte Punkte werden als nichtöffentliche TOPs angelegt und mit der Unterlage verknüpft.
+        </p>
+        <c-ui.button type="submit" size="sm" icon="check">Als nichtöffentliche TOPs übernehmen</c-ui.button>
+    </form>
+    {% else %}
+    <c-ui.alert variant="warning">
+        In der Unterlage wurden keine Tagesordnungspunkte erkannt. Nichtöffentliche TOPs lassen sich in der Sitzung von Hand anlegen.
+    </c-ui.alert>
+    {% endif %}
+</div>
+{% endblock %}

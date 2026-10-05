@@ -16,14 +16,15 @@ from ..models import (
 )
 
 
-def _flatten_folder_tree(organization):
+def _flatten_folder_tree(organization, membership=None):
     """
     Alle Ordner der Organisation als Vorordnungs-Liste [(folder, depth)].
 
     Grundlage für die Ordner-Spalte in der Dokumentliste und die
-    "Verschieben nach"-Dropdowns (Einrückung über depth).
+    "Verschieben nach"-Dropdowns (Einrückung über depth). Mit ``membership``
+    fehlt „Nichtöffentliche Vorgänge“ samt Inhalt für alle, die ihn nicht öffnen dürfen (Issue #873).
     """
-    folders = list(DocumentFolder.objects.filter(organization=organization))
+    folders = list(DocumentFolder.visible_to(organization, membership))
     children_map = {}
     for folder in folders:
         children_map.setdefault(folder.parent_id, []).append(folder)
@@ -41,15 +42,20 @@ def _flatten_folder_tree(organization):
     return result
 
 
-def _get_org_folder_or_404(organization, folder_id):
-    """Ordner org-gebunden laden; ungültige IDs und fremde Ordner → 404."""
+def _get_org_folder_or_404(organization, folder_id, membership=None):
+    """
+    Ordner org-gebunden laden; ungültige IDs und fremde Ordner → 404.
+
+    Mit ``membership``: „Nichtöffentliche Vorgänge“ (und darunter) nur für vereidigte Mitglieder, sonst 404
+    wie ein fremder Ordner (Issue #873).
+    """
     from django.http import Http404
 
     try:
         folder_uuid = uuid.UUID(str(folder_id))
     except (ValueError, AttributeError):
         raise Http404("Ordner nicht gefunden") from None
-    return get_object_or_404(DocumentFolder, id=folder_uuid, organization=organization)
+    return get_object_or_404(DocumentFolder.visible_to(organization, membership), id=folder_uuid)
 
 
 def _broadcast_doc_reload(motion, version=None):
@@ -82,6 +88,10 @@ def _can_manage_folder(membership, folder) -> bool:
     bestehenden Dokumente-Erstellrecht, fremde nur mit Organisationsverwaltung.
     Bewusst KEINE neue Berechtigung — konsistent zu motions.*/organization.edit.
     """
+    # „Nichtöffentliche Vorgänge“ verwaltet Work selbst: kein Umbenennen, Verschieben, Löschen, Freigeben (#873).
+    # Unterordner kann er nicht haben (DocumentFolder.clean), daher genügt das Kennzeichen ohne Abfrage.
+    if folder.sworn_in_only:
+        return False
     if membership.has_permission("organization.edit"):
         return True
     return folder.created_by_id == membership.id and membership.has_permission("motions.create")

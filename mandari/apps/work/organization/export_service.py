@@ -589,9 +589,13 @@ class DsgvoExportService:
             MotionDocument,
             MotionRevision,
             MotionShare,
+            exclude_sworn_in_only,
         )
 
-        motions = Motion.objects.filter(organization=organization, author=membership).order_by("-created_at")
+        # Nichtöffentliche Unterlagen nur, solange die Person vereidigt ist (Issue #873)
+        motions = exclude_sworn_in_only(
+            Motion.objects.filter(organization=organization, author=membership), membership
+        ).order_by("-created_at")
 
         result = []
         for m in motions:
@@ -671,18 +675,23 @@ class DsgvoExportService:
         """
         from django.db.models import Q
 
-        from apps.work.motions.models import Motion, MotionApproval, MotionComment
+        from apps.work.motions.models import Motion, MotionApproval, MotionComment, exclude_sworn_in_only
 
-        comments = (
-            MotionComment.objects.filter(author=membership, motion__organization=organization)
-            .exclude(motion__author=membership)
-            .order_by("created_at")
-        )
-        approvals = (
-            MotionApproval.objects.filter(approver=membership, motion__organization=organization)
-            .exclude(motion__author=membership)
-            .order_by("created_at")
-        )
+        # Nichtöffentliche Unterlagen nur, solange die Person vereidigt ist (Issue #873)
+        comments = exclude_sworn_in_only(
+            MotionComment.objects.filter(author=membership, motion__organization=organization).exclude(
+                motion__author=membership
+            ),
+            membership,
+            prefix="motion__folder",
+        ).order_by("created_at")
+        approvals = exclude_sworn_in_only(
+            MotionApproval.objects.filter(approver=membership, motion__organization=organization).exclude(
+                motion__author=membership
+            ),
+            membership,
+            prefix="motion__folder",
+        ).order_by("created_at")
         comments_by_motion: dict[Any, list[dict]] = {}
         for c in comments:
             comments_by_motion.setdefault(c.motion_id, []).append(
@@ -706,7 +715,7 @@ class DsgvoExportService:
             )
 
         motions = (
-            Motion.objects.filter(organization=organization)
+            exclude_sworn_in_only(Motion.objects.filter(organization=organization), membership)
             .exclude(author=membership)
             .filter(
                 Q(responsible=membership)

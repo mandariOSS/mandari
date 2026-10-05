@@ -69,12 +69,22 @@ def _visible(membership: Membership) -> Any:
     return cast(Any, Motion).visible_to(membership)
 
 
+def _selectable(membership: Membership) -> Any:
+    """
+    Wählbare Bezugsanträge: sichtbar, aber nie aus „Nichtöffentliche Vorgänge“ – deren Titel stünde sonst am
+    Änderungsantrag bei Personen, die die Unterlage nicht öffnen dürfen (Issue #873).
+    """
+    from .models import exclude_sworn_in_only
+
+    return exclude_sworn_in_only(_visible(membership))
+
+
 def _visible_document(membership: Membership, raw_id: str) -> Motion | None:
-    """Dokument der Organisation, das die Person sehen darf und das nicht im Papierkorb liegt."""
+    """Dokument der Organisation, das die Person sehen darf, nicht im Papierkorb und als Bezug wählbar."""
     pk = _uuid(raw_id) if raw_id else None
     if pk is None:
         return None
-    return cast("Motion | None", _visible(membership).filter(pk=pk).exclude(status="deleted").first())
+    return cast("Motion | None", _selectable(membership).filter(pk=pk).exclude(status="deleted").first())
 
 
 def _uuid(raw: str) -> uuid.UUID | None:
@@ -107,7 +117,7 @@ def search_documents(motion: Motion, membership: Membership, query: str) -> list
     if len(query) < MIN_QUERY_LENGTH:
         return []
     candidates = (
-        _visible(membership)
+        _selectable(membership)
         .exclude(pk=motion.pk)
         .exclude(parent_motion=motion)
         .filter(title__icontains=query)

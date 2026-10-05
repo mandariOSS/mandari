@@ -1218,6 +1218,9 @@ class FactionAuditLog(models.Model):
         ("certificate_issued", "Teilnahmenachweis ausgestellt"),
         ("attendance_exported", "Teilnahmen-Sammel-Export erstellt"),
         ("api_settings_changed", "Öffentliche API konfiguriert"),
+        # Ordner „Nichtöffentliche Vorgänge“ im Dokumentenspeicher (Issue #873)
+        ("internal_document_stored", "Nichtöffentliche Unterlage abgelegt"),
+        ("internal_document_access", "Nichtöffentliche Unterlage aufgerufen"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

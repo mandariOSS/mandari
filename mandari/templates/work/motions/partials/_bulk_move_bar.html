@@ -10,7 +10,9 @@ Alpine-Scope: documentManager (selectedIds, bulkTargetFolder, moveDocuments). Ko
             class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none">
         <option value="">Alle Dokumente (Wurzel)</option>
         {% for entry in folder_entries %}
+        {% if not entry.folder.sworn_in_only %}
         <option value="{{ entry.folder.id }}">{% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }}</option>
+        {% endif %}
         {% endfor %}
     </select>
     <c-ui.button size="sm" @click="moveDocuments(selectedIds, bulkTargetFolder)">Verschieben</c-ui.button>

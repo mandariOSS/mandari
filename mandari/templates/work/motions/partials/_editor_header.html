@@ -187,7 +187,11 @@
                     </div>
                 </div>
 
-                {% if can_share %}
+                {% if is_sworn_in_only %}
+                <span class="p-2 text-amber-600 dark:text-amber-400" title="Nichtöffentlich: nur vereidigte Mitglieder, keine Freigaben">
+                    <i data-lucide="lock" class="w-5 h-5"></i>
+                </span>
+                {% elif can_share %}
                 <!-- Share Button (opens modal) -->
                 <button type="button" @click="showShareModal = true"
                         class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Teilen">

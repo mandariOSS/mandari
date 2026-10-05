@@ -531,6 +531,17 @@ urlpatterns = [
         faction_views.FactionAttachmentDownloadView.as_view(),
         name="faction_attachment_download",
     ),
+    # Nichtöffentliche Unterlage einlesen und als NÖ-TOPs übernehmen (Issue #873)
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/nichtoeffentlich/einlesen/",
+        faction_views.FactionInternalImportView.as_view(),
+        name="faction_internal_import",
+    ),
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/nichtoeffentlich/<uuid:motion_id>/",
+        faction_views.FactionInternalImportConfirmView.as_view(),
+        name="faction_internal_import_confirm",
+    ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/niederschrift/<slug:variant>.pdf",
         faction_views.FactionProtocolPdfView.as_view(),

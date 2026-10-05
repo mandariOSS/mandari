@@ -14,9 +14,11 @@ Optional: button_class (Klassen des Auslösers, Standard: Kartenvariante)
         <button type="button" @click="moveDocuments(['{{ motion.id }}'], ''); open = false"
                 class="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Alle Dokumente (Wurzel)</button>
         {% for entry in folder_entries %}
+        {% if not entry.folder.sworn_in_only %}
         <button type="button" @click="moveDocuments(['{{ motion.id }}'], '{{ entry.folder.id }}'); open = false"
                 class="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 truncate"
                 style="padding-left: calc(0.75rem + {{ entry.indent }}px)">{{ entry.folder.name }}</button>
+        {% endif %}
         {% endfor %}
     </div>
 </div>

@@ -169,6 +169,8 @@ def _get_meeting_context(view, meeting):
         "public_agenda_items": public_items,
         "internal_agenda_items": internal_items,
         "can_view_internal": can_view_internal,
+        # Nichtöffentliche Unterlage (PDF) einlesen und TOPs vorschlagen (Issue #873)
+        "can_import_internal_documents": _can_import_internal(view.membership, meeting),
         "locked_internal_count": locked_internal_count,
         "locked_placeholder": LOCKED_PLACEHOLDER,
         "attendances": attendances,
@@ -199,6 +201,12 @@ def _get_meeting_context(view, meeting):
         "org_slug": view.organization.slug,
         "membership": view.membership,
     }
+
+
+def _can_import_internal(membership, meeting) -> bool:
+    from ..internal_documents import can_import, is_editable
+
+    return is_editable(meeting) and can_import(membership, meeting)
 
 
 def _render_partial(template_name, context, request=None):

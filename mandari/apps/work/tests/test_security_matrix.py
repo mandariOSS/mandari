@@ -512,6 +512,13 @@ CASES: list[Case] = [
     # --- Fraktionssitzungen ---
     Case("faction", data={"title": "Neue Sitzung", "start_date": IN_60_TAGEN, "start_time": "18:00"}),
     Case("faction_settings"),
+    # Nichtöffentliche Unterlage einlesen und als NÖ-TOPs übernehmen (Issue #873)
+    Case("faction_internal_import", path={"meeting_id": "fmeeting"}, files={"datei": "anlage.pdf"}),
+    Case(
+        "faction_internal_import_confirm",
+        path={"meeting_id": "fmeeting", "motion_id": "motion"},
+        data={"nr": ["N 1"], "titel": ["Vertragssache"], "auswahl": ["0"]},
+    ),
     _fraktion("start"),
     _fraktion("end", meeting="fmeeting_ongoing"),
     _fraktion("cancel"),

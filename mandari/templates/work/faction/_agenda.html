@@ -86,6 +86,17 @@
         {% endif %}
     </div>
     {% endif %}
+
+    {# Nichtöffentliche Unterlage (PDF) einlesen, nur Vereidigte mit Genehmigungsrecht (Issue #873) #}
+    {% if can_import_internal_documents %}
+    <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-sm">
+        <a href="{% url 'work:faction_internal_import' org_slug=org_slug meeting_id=meeting.id %}"
+           class="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400 hover:underline">
+            <i data-lucide="file-lock" class="w-4 h-4"></i>
+            Nichtöffentliche Unterlage (PDF) einlesen
+        </a>
+    </div>
+    {% endif %}
 </div>
 
 {# Proposals section #}

@@ -369,10 +369,15 @@ def speech_content_for(note: AgendaSpeechNote | None, membership: Membership) ->
 
 
 def linkable_documents(membership: Membership, query: str, *, limit: int = 50) -> list[Motion]:
-    """Dokumente der Organisation, die als Redebeitrag verknüpfbar sind (Sichtbarkeit des Mitglieds)."""
-    from apps.work.motions.models import Motion
+    """
+    Dokumente der Organisation, die als Redebeitrag verknüpfbar sind (Sichtbarkeit des Mitglieds), nie aus
+    „Nichtöffentliche Vorgänge“ (Issue #873).
+    """
+    from apps.work.motions.models import Motion, exclude_sworn_in_only
 
-    docs = cast("QuerySet[Motion]", cast(Any, Motion).visible_to(membership)).order_by("-updated_at")
+    docs = cast("QuerySet[Motion]", exclude_sworn_in_only(cast(Any, Motion).visible_to(membership))).order_by(
+        "-updated_at"
+    )
     if query:
         docs = docs.filter(title__icontains=query)
     return list(docs[:limit])
@@ -383,7 +388,7 @@ def find_linkable_document(organization: Organization, membership: Membership, d
     from apps.work.motions.models import Motion
 
     document = Motion.objects.filter(id=document_id, organization=organization).first()
-    if document is None or not document.can_access(membership):
+    if document is None or not document.can_access(membership) or document.is_sworn_in_only():
         return None
     return document
 
