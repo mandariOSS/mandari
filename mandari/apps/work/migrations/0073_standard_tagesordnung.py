@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("tenants", "0025_recht_dokumente_ehemaliger_mitglieder"),
-        ("work", "0069_ris_anker"),
+        ("work", "0072_nichtoeffentliche_vorgaenge"),
     ]
 
     operations = [
