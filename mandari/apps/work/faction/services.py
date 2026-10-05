@@ -624,7 +624,9 @@ class AgendaProposalService:
 
     Allows members with 'agenda.propose' permission to suggest agenda items
     for upcoming meetings. These proposals must be reviewed and approved
-    by members with 'agenda.manage' permission.
+    by members with 'agenda.approve' permission (Vorsitz, Stellvertretung,
+    Geschäftsführung; Issue #872). Erst angenommene Vorschläge stehen mit
+    Nummer auf der Tagesordnung.
     """
 
     @classmethod
@@ -671,21 +673,33 @@ class AgendaProposalService:
         return item
 
     @classmethod
-    def _notify_managers(cls, meeting, item, proposed_by):
-        """Notify members with agenda.manage permission about the new proposal."""
+    def approvers(cls, meeting, item):
+        """
+        Wer über den Vorschlag entscheidet: aktive Mitglieder mit ``agenda.approve`` (Issue #872).
+
+        NÖ strikt (Issue #64): Vorschläge für den nicht-öffentlichen Teil sehen nur Vereidigte.
+        Gastzugänge haben keine Rechte (``PermissionChecker``).
+        """
         from apps.common.permissions import PermissionChecker
-        from apps.work.notifications.models import NotificationType
-        from apps.work.notifications.services import NotificationHub
 
         from .visibility import can_view_item
 
-        # Find all members with agenda.manage permission — NÖ strikt (Issue #64):
-        # Vorschläge für den nicht-öffentlichen Teil sehen nur Vereidigte
-        managers = []
-        for membership in meeting.organization.memberships.filter(is_active=True):
-            checker = PermissionChecker(membership)
-            if checker.has_permission("agenda.manage") and can_view_item(item, membership):
-                managers.append(membership)
+        approvers = []
+        memberships = meeting.organization.memberships.filter(is_active=True, is_guest=False).prefetch_related(
+            "roles__permissions", "individual_permissions", "denied_permissions"
+        )
+        for membership in memberships:
+            if PermissionChecker(membership).can_approve_agenda_items() and can_view_item(item, membership):
+                approvers.append(membership)
+        return approvers
+
+    @classmethod
+    def _notify_managers(cls, meeting, item, proposed_by):
+        """Vorsitz, Stellvertretung und Geschäftsführung (``agenda.approve``) über den Vorschlag informieren."""
+        from apps.work.notifications.models import NotificationType
+        from apps.work.notifications.services import NotificationHub
+
+        managers = [m for m in cls.approvers(meeting, item) if m.id != proposed_by.id]
 
         if managers:
             NotificationHub.send_bulk(
@@ -711,12 +725,19 @@ class AgendaProposalService:
         Returns:
             True if accepted, False if already processed
         """
+        from . import agenda
+
+        # Nummer und Platz am Ende des jeweiligen Teils (Issue #872) — ermittelt, solange der Vorschlag
+        # noch nicht mitzählt
+        number = assign_number or agenda.next_number(item.meeting, item.visibility)
+        order = agenda.next_order(item.meeting)
+
         if not item.accept_proposal(reviewed_by):
             return False
 
-        if assign_number:
-            item.number = assign_number
-            item.save(update_fields=["number"])
+        item.number = number
+        item.order = order
+        item.save(update_fields=["number", "order"])
 
         logger.info(f"Agenda proposal accepted: '{item.title}' by {reviewed_by.user.email}")
 

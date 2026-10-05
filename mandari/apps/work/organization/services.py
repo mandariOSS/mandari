@@ -1990,3 +1990,107 @@ def delete_suspension_rule(organization: Organization, rule_id: Any) -> None:
     from apps.work.faction.models import FactionSuspensionRule
 
     FactionSuspensionRule.objects.filter(id=rule_id, schedule__organization=organization).delete()
+
+
+# -- Standard-Tagesordnung (Issue #872) -----------------------------------------
+
+#: Übliche Grundstruktur, mit einem Klick übernehmbar (TOP 1 legt der Genehmigungsablauf an)
+STANDARD_AGENDA_SUGGESTION = ("Beschlüsse", "Politische Arbeit", "Termine", "Presse und Social Media", "Sonstiges")
+STANDARD_AGENDA_TITLE_MAX = 500
+
+
+def _standard_agenda_item(organization: Organization, item_id: Any, *, may_view_internal: bool) -> Any:
+    """Standard-TOP der Organisation; nicht-öffentliche nur für Vereidigte (NÖ strikt, Issue #64)."""
+    import uuid
+
+    from apps.work.faction.models import FactionStandardAgendaItem
+
+    try:
+        pk = uuid.UUID(str(item_id))
+    except (TypeError, ValueError, AttributeError):
+        pk = None
+    item = FactionStandardAgendaItem.objects.filter(id=pk, organization=organization).first() if pk else None
+    if item is None or (item.visibility == "internal" and not may_view_internal):
+        raise ServiceError("Standard-TOP nicht gefunden.")
+    return item
+
+
+def _next_standard_agenda_order(organization: Organization) -> int:
+    from django.db.models import Max
+
+    from apps.work.faction.models import FactionStandardAgendaItem
+
+    highest = FactionStandardAgendaItem.objects.filter(organization=organization).aggregate(highest=Max("order"))
+    return (highest["highest"] or 0) + 1
+
+
+def add_standard_agenda_item(organization: Organization, form: Mapping[str, str], *, may_view_internal: bool) -> str:
+    """Punkt (Formular: ``title``, ``visibility``) am Ende der Standard-Tagesordnung anlegen; liefert den Titel."""
+    from apps.work.faction.models import FactionStandardAgendaItem
+
+    title = (form.get("title") or "").strip()
+    visibility = form.get("visibility") or "public"
+    if not title:
+        raise ServiceError("Bitte einen Titel angeben.")
+    if len(title) > STANDARD_AGENDA_TITLE_MAX:
+        raise ServiceError(f"Der Titel darf höchstens {STANDARD_AGENDA_TITLE_MAX} Zeichen lang sein.")
+    if visibility not in ("public", "internal"):
+        visibility = "public"
+    if visibility == "internal" and not may_view_internal:
+        raise ServiceError("Nicht-öffentliche Standard-TOPs können nur vereidigte Mitglieder anlegen.")
+    FactionStandardAgendaItem.objects.create(
+        organization=organization,
+        title=title,
+        visibility=visibility,
+        order=_next_standard_agenda_order(organization),
+    )
+    return title
+
+
+@transaction.atomic
+def add_standard_agenda_suggestion(organization: Organization) -> int:
+    """Übliche Grundstruktur übernehmen, nur solange die Standard-Tagesordnung leer ist; liefert die Anzahl."""
+    from apps.work.faction.models import FactionStandardAgendaItem
+
+    if FactionStandardAgendaItem.objects.filter(organization=organization).exists():
+        raise ServiceError("Die Standard-Tagesordnung enthält bereits Punkte.")
+    # Einzeln anlegen, damit jede Anlage in der Änderungshistorie steht
+    for position, title in enumerate(STANDARD_AGENDA_SUGGESTION, start=1):
+        FactionStandardAgendaItem.objects.create(
+            organization=organization, title=title, visibility="public", order=position
+        )
+    return len(STANDARD_AGENDA_SUGGESTION)
+
+
+def delete_standard_agenda_item(organization: Organization, form: Mapping[str, str], *, may_view_internal: bool) -> str:
+    """Punkt (Formular: ``item_id``) entfernen; TOPs bestehender Sitzungen bleiben. Liefert den Titel."""
+    item = _standard_agenda_item(organization, form.get("item_id"), may_view_internal=may_view_internal)
+    title = str(item.title)
+    item.delete()
+    return title
+
+
+@transaction.atomic
+def move_standard_agenda_item(organization: Organization, form: Mapping[str, str], *, may_view_internal: bool) -> None:
+    """Punkt (Formular: ``item_id``, ``direction`` up/down) innerhalb seines Teils um eine Position verschieben."""
+    from apps.work.faction.agenda import standard_items
+
+    item = _standard_agenda_item(organization, form.get("item_id"), may_view_internal=may_view_internal)
+    direction = form.get("direction")
+    if direction not in ("up", "down"):
+        raise ServiceError("Ungültige Richtung.")
+    items = list(standard_items(organization).select_for_update())
+    # Reihenfolge lückenlos machen, damit der Tausch auch bei gleichen Werten wirkt
+    for position, entry in enumerate(items, start=1):
+        if entry.order != position:
+            entry.order = position
+            entry.save(update_fields=["order", "updated_at"])
+    same_part = [entry for entry in items if entry.visibility == item.visibility]
+    index = next(i for i, entry in enumerate(same_part) if entry.pk == item.pk)
+    target = index - 1 if direction == "up" else index + 1
+    if not 0 <= target < len(same_part):
+        return
+    first, second = same_part[index], same_part[target]
+    first.order, second.order = second.order, first.order
+    first.save(update_fields=["order", "updated_at"])
+    second.save(update_fields=["order", "updated_at"])

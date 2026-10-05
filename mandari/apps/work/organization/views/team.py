@@ -12,6 +12,7 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.work.faction.models import FactionMeetingSchedule
+from apps.work.faction.visibility import can_view_internal
 
 from .. import selectors, services
 from ..services import ServiceError
@@ -176,6 +177,16 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         # Gremien-Auswahl aus den OParl-Organizations der verknüpften Kommune(n)
         context["ris_organizations"] = selectors.all_ris_organizations(self.organization)
         context["schedule_horizon_days"] = getattr(django_settings, "FACTION_SCHEDULE_HORIZON_DAYS", 90)
+
+        # Standard-Tagesordnung (Issue #872): NÖ-Punkte nur für Vereidigte (NÖ strikt, Issue #64)
+        context.update(
+            selectors.standard_agenda_context(
+                self.organization,
+                may_view_internal=can_view_internal(self.membership),
+                approval_item=bool(context["faction_settings"]["auto_create_approval_item"]),
+            )
+        )
+        context["standard_agenda_suggestion"] = services.STANDARD_AGENDA_SUGGESTION
         return context
 
     def post(self, request, *args, **kwargs):
@@ -190,6 +201,10 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
                 "delete_exception": self._delete_exception,
                 "add_rule": self._add_rule,
                 "delete_rule": self._delete_rule,
+                "add_standard_item": self._add_standard_item,
+                "add_standard_suggestion": self._add_standard_suggestion,
+                "move_standard_item": self._move_standard_item,
+                "delete_standard_item": self._delete_standard_item,
             }.get(section)
             if handler is None:
                 messages.error(request, "Ungültige Aktion.")
@@ -256,6 +271,29 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
     def _delete_rule(self, request):
         services.delete_suspension_rule(self.organization, request.POST.get("rule_id"))
         messages.success(request, "Ausfallregel entfernt.")
+
+    # -- Standard-Tagesordnung (Issue #872) --------------------------------
+
+    def _add_standard_item(self, request):
+        title = services.add_standard_agenda_item(
+            self.organization, request.POST, may_view_internal=can_view_internal(self.membership)
+        )
+        messages.success(request, f"„{title}“ steht ab sofort auf der Tagesordnung jeder neuen Sitzung.")
+
+    def _add_standard_suggestion(self, request):
+        count = services.add_standard_agenda_suggestion(self.organization)
+        messages.success(request, f"{count} Standardpunkte übernommen.")
+
+    def _move_standard_item(self, request):
+        services.move_standard_agenda_item(
+            self.organization, request.POST, may_view_internal=can_view_internal(self.membership)
+        )
+
+    def _delete_standard_item(self, request):
+        title = services.delete_standard_agenda_item(
+            self.organization, request.POST, may_view_internal=can_view_internal(self.membership)
+        )
+        messages.success(request, f"„{title}“ entfernt. Bereits angelegte Sitzungen behalten ihre TOPs.")
 
 
 class OrganizationDocumentsView(WorkViewMixin, TemplateView):

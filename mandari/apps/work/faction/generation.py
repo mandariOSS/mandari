@@ -295,6 +295,14 @@ def generate_meetings_for_schedule(schedule, now=None) -> dict:
             except Exception:
                 logger.exception("Genehmigungs-TOP konnte nicht erstellt werden (meeting=%s)", meeting.id)
 
+        # Standard-Tagesordnung der Organisation (Issue #872), eigene Funktion in agenda.py
+        from apps.work.faction.agenda import apply_standard_agenda
+
+        try:
+            apply_standard_agenda(meeting)
+        except Exception:
+            logger.exception("Standard-Tagesordnung konnte nicht übernommen werden (meeting=%s)", meeting.id)
+
         stats["created"] += 1
 
     return stats

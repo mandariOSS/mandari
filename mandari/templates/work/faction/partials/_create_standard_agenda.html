@@ -1,0 +1,31 @@
+{# Dialog „Neue Sitzung“: Tagesordnung, die die Sitzung erhält – erster TOP und Standard-TOPs (Issue #872) #}
+{# Kontext: preview (approval_item, approval_title, public, internal, locked_internal, count), organization, membership #}
+{% load permission_tags %}
+{% if preview.approval_item or preview.count %}
+<fieldset class="space-y-2">
+    <legend class="text-sm font-medium text-gray-700 dark:text-gray-300">Tagesordnung</legend>
+    <ol class="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+        {% if preview.approval_item %}
+        <li><span class="text-gray-500 tabular-nums">1</span> {{ preview.approval_title }}</li>
+        {% endif %}
+        {% for item in preview.public %}
+        <li><span class="text-gray-500 tabular-nums">{% if preview.approval_item %}{{ forloop.counter|add:1 }}{% else %}{{ forloop.counter }}{% endif %}</span> {{ item.title }}</li>
+        {% endfor %}
+        {% for item in preview.internal %}
+        <li><span class="text-gray-500 tabular-nums">NÖ {{ forloop.counter }}</span> {{ item.title }}</li>
+        {% endfor %}
+        {% if preview.locked_internal %}
+        <li class="text-gray-500">+ {{ preview.locked_internal }} nicht-öffentliche{{ preview.locked_internal|pluralize:"r Punkt, Punkte" }} (nur für Vereidigte sichtbar)</li>
+        {% endif %}
+    </ol>
+    {% if preview.count %}
+    <input type="hidden" name="standard_agenda_offered" value="1">
+    <c-form.checkbox name="standard_agenda" label="Standardpunkte übernehmen" checked />
+    {% elif membership|has_perm:"faction.manage" %}
+    <p class="text-xs text-gray-500">
+        Eine Standard-Tagesordnung für jede Sitzung legen Sie in den
+        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}" class="text-primary-600 hover:underline">Einstellungen</a> fest.
+    </p>
+    {% endif %}
+</fieldset>
+{% endif %}

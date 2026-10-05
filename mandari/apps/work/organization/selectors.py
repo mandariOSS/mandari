@@ -919,6 +919,30 @@ def faction_schedules(organization: Organization) -> QuerySet[FactionMeetingSche
     )
 
 
+def standard_agenda_context(
+    organization: Organization, *, may_view_internal: bool, approval_item: bool
+) -> dict[str, Any]:
+    """
+    Standard-Tagesordnung für die Einstellungen (Issue #872): Zeilen mit der Nummer, die der Punkt in einer neuen
+    Sitzung erhält. Nicht-öffentliche Punkte nur für Vereidigte (NÖ strikt, Issue #64), sonst nur ihre Anzahl.
+    """
+    from apps.work.faction.agenda import format_number, standard_items
+
+    items = list(standard_items(organization))
+    public = [item for item in items if item.visibility == "public"]
+    internal = [item for item in items if item.visibility == "internal"]
+    first = 2 if approval_item else 1
+    rows = [(format_number("public", position), item) for position, item in enumerate(public, start=first)]
+    if may_view_internal:
+        rows += [(format_number("internal", position), item) for position, item in enumerate(internal, start=1)]
+    return {
+        "standard_agenda_rows": rows,
+        "standard_agenda_empty": not items,
+        "standard_agenda_locked": 0 if may_view_internal else len(internal),
+        "standard_agenda_may_internal": may_view_internal,
+    }
+
+
 def find_schedule(organization: Organization, schedule_id: Any) -> FactionMeetingSchedule | None:
     """Sitzungsreihe der Organisation oder ``None``."""
     from apps.work.faction.models import FactionMeetingSchedule

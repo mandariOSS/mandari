@@ -12,6 +12,7 @@ from django.views.generic import View
 
 from apps.common.mixins import WorkViewMixin
 
+from .. import agenda
 from .. import services as faction_services
 from ..models import (
     FactionAgendaItem,
@@ -131,6 +132,10 @@ class FactionActionView(WorkViewMixin, View):
     def _can_manage_agenda(self, meeting):
         """Ersteller der Sitzung oder faction.manage — entspricht can_edit in der UI."""
         return meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
+
+    def _can_add_items(self, meeting):
+        """TOPs direkt eintragen: wer die Tagesordnung verwaltet, oder mit ``agenda.create`` (Ratsmitglieder)."""
+        return self._can_manage_agenda(meeting) or self.membership.has_permission("agenda.create")
 
     def _can_protocol(self, meeting):
         """Wer darf Protokolleinträge/Beschlüsse erfassen (solange Protokoll nicht genehmigt)."""
@@ -315,7 +320,7 @@ class FactionActionView(WorkViewMixin, View):
     # -- Agenda handlers -----------------------------------------------
 
     def _add_item(self, request, meeting):
-        if not self._can_manage_agenda(meeting) and not self.membership.has_permission("agenda.create"):
+        if not self._can_add_items(meeting):
             return HttpResponse(status=403)
 
         title = request.POST.get("title", "").strip()
@@ -341,27 +346,19 @@ class FactionActionView(WorkViewMixin, View):
             if visibility == "internal" and not can_view_internal(self.membership):
                 return HttpResponse(status=403)
 
-        # Auto-generate number
+        # Auto-generate number — offene und abgelehnte Vorschläge zählen nicht mit (Issue #872)
         if parent:
             child_count = parent.children.count() + 1
             number = f"{parent.number}.{child_count}"
         else:
-            existing = meeting.agenda_items.filter(visibility=visibility, parent__isnull=True).exclude(
-                is_approval_item=True
-            )
-            next_num = existing.count() + 1
-
-            if visibility == "public" and meeting.agenda_items.filter(is_approval_item=True).exists():
-                next_num += 1
-
-            number = f"NÖ {next_num}" if visibility == "internal" else str(next_num)
+            number = agenda.next_number(meeting, visibility)
 
         item = FactionAgendaItem(
             meeting=meeting,
             title=title,
             number=number,
             visibility=visibility,
-            order=meeting.agenda_items.count() + 1,
+            order=agenda.next_order(meeting),
             parent=parent,
         )
         item.save()
@@ -450,11 +447,7 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse(status=403)
 
         if item and direction in ("up", "down"):
-            siblings = list(
-                meeting.agenda_items.filter(
-                    visibility=item.visibility, parent__isnull=True, is_approval_item=False
-                ).order_by("order")
-            )
+            siblings = list(agenda.numbered_items(meeting, item.visibility).order_by("order"))
 
             current_index = None
             for i, s in enumerate(siblings):
@@ -943,7 +936,8 @@ class FactionActionView(WorkViewMixin, View):
         return self._refresh_or_redirect(request, meeting)
 
     def _accept_proposal(self, request, meeting):
-        if not self.membership.has_permission("agenda.manage"):
+        # Genehmigen dürfen Vorsitz, Stellvertretung und Geschäftsführung (Recht agenda.approve, Issue #872)
+        if not self.membership.has_permission("agenda.approve"):
             messages.error(request, "Keine Berechtigung zum Annehmen von Vorschlägen.")
             return self._redirect_detail(meeting)
 
@@ -963,7 +957,7 @@ class FactionActionView(WorkViewMixin, View):
         return self._refresh_or_redirect(request, meeting)
 
     def _reject_proposal(self, request, meeting):
-        if not self.membership.has_permission("agenda.manage"):
+        if not self.membership.has_permission("agenda.approve"):
             messages.error(request, "Keine Berechtigung zum Ablehnen von Vorschlägen.")
             return self._redirect_detail(meeting)
 

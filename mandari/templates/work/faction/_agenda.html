@@ -1,5 +1,5 @@
 {# Agenda partial — rendered via HTMX into #agenda-container #}
-{# Variables: meeting, public_agenda_items, internal_agenda_items, can_edit, can_view_internal, attendances, org_slug #}
+{# Variables: meeting, public_agenda_items, internal_agenda_items, can_edit, can_add_items, can_view_internal, attendances, org_slug #}
 {% load permission_tags %}
 
 {# Agenda card #}
@@ -64,8 +64,8 @@
         {% endif %}
     </div>
 
-    {# Add TOP buttons #}
-    {% if can_edit %}
+    {# Add TOP buttons — Verwaltung der Sitzung oder Ratsmitglieder mit agenda.create (Issue #872) #}
+    {% if can_add_items %}
     <div class="p-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-2 gap-3">
         <button type="button" @click="$dispatch('open-add-item', { visibility: 'public' })"
                 class="py-3 text-sm font-medium text-primary-600 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 rounded-lg flex items-center justify-center gap-2">
@@ -99,64 +99,68 @@
     {% endif %}
 </div>
 
-{# Proposals section #}
+{# TOP vorschlagen (agenda.propose, z. B. Sachkundige) — der Vorsitz genehmigt (Issue #872) #}
 {% if can_propose_agenda and meeting.status in 'draft,planned,invited' %}
-<div class="mt-4 bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/20 dark:to-blue-900/20 rounded-xl border border-primary-200 dark:border-primary-800 p-4">
-    <div class="flex items-center justify-between">
+<div class="mt-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+    <div class="flex items-center justify-between gap-3">
         <div>
-            <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                <i data-lucide="lightbulb" class="w-4 h-4 text-primary-600"></i>
-                TOP vorschlagen
-            </h4>
-            <p class="text-xs text-gray-500 mt-0.5">Als sachkundige/r Bürger*in können Sie Themen zur Beratung vorschlagen.</p>
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white">TOP vorschlagen</h4>
+            <p class="text-xs text-gray-500 mt-0.5">Vorsitz, Stellvertretung oder Geschäftsführung nehmen Ihren Vorschlag in die Tagesordnung auf.</p>
         </div>
-        <button type="button" @click="$dispatch('open-proposal')"
-                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 shadow-sm rounded-lg hover:bg-primary-700 flex items-center gap-2">
-            <i data-lucide="plus" class="w-4 h-4"></i>
-            Vorschlagen
-        </button>
+        <c-ui.button size="sm" icon="plus" @click="$dispatch('open-proposal')">Vorschlagen</c-ui.button>
     </div>
+    {% if my_proposals %}
+    <ul class="mt-3 space-y-1">
+        {% for item in my_proposals %}
+        <li class="flex items-center justify-between gap-2 text-sm">
+            <span class="text-gray-700 dark:text-gray-300 truncate">{{ item.title }}</span>
+            {% if item.is_rejected %}
+            <c-ui.badge color="red">Abgelehnt</c-ui.badge>
+            {% else %}
+            <c-ui.badge color="amber">Wartet auf Genehmigung</c-ui.badge>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
 </div>
 {% endif %}
 
-{# Pending proposals for managers #}
+{# Offene Vorschläge für Vorsitz, Stellvertretung und Geschäftsführung (agenda.approve) #}
 {% if can_approve_proposals and pending_proposals %}
 <div class="mt-4 bg-white dark:bg-gray-800 rounded-xl border border-amber-200 dark:border-amber-800">
-    <div class="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-t-xl border-b border-amber-200 dark:border-amber-800">
-        <h4 class="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
-            <i data-lucide="lightbulb" class="w-5 h-5"></i>
-            Offene Vorschläge ({{ pending_proposals|length }})
-        </h4>
-    </div>
+    <h4 class="px-4 py-3 text-sm font-semibold text-amber-800 dark:text-amber-200 border-b border-amber-200 dark:border-amber-800">
+        Offene Vorschläge ({{ pending_proposals|length }})
+    </h4>
     <div class="divide-y divide-amber-100 dark:divide-amber-800/50">
         {% for item in pending_proposals %}
         <div class="p-4">
-            <div class="mb-3">
-                <h5 class="font-medium text-gray-900 dark:text-white">{{ item.title }}</h5>
-                {% if item.proposed_by %}
-                <p class="text-xs text-gray-500 mt-1">
-                    Vorgeschlagen von {{ item.proposed_by.user.get_display_name }} · {{ item.proposed_at|date:"d.m.Y H:i" }}
-                </p>
-                {% endif %}
-            </div>
-            <div class="flex gap-2">
+            <h5 class="font-medium text-gray-900 dark:text-white">{{ item.title }}{% if item.visibility == 'internal' %} <c-ui.badge color="amber">Nicht-öffentlich</c-ui.badge>{% endif %}</h5>
+            {% with desc=item.get_description_decrypted %}
+            {% if desc %}<p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ desc|truncatewords:40 }}</p>{% endif %}
+            {% endwith %}
+            {% if item.proposed_by %}
+            <p class="text-xs text-gray-500 mt-1">
+                Vorgeschlagen von {{ item.proposed_by.user.get_display_name }} · {{ item.proposed_at|date:"d.m.Y H:i" }}
+            </p>
+            {% endif %}
+            <div class="mt-3 flex flex-wrap items-center gap-2">
                 <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
-                      hx-target="#agenda-container" hx-swap="innerHTML" class="flex-1">
+                      hx-target="#agenda-container" hx-swap="innerHTML">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="accept_proposal">
                     <input type="hidden" name="item_id" value="{{ item.id }}">
-                    <button type="submit" class="w-full py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 flex items-center justify-center gap-1">
-                        <i data-lucide="check" class="w-4 h-4"></i> Annehmen
-                    </button>
+                    <c-ui.button type="submit" size="sm" variant="success" icon="check">Annehmen</c-ui.button>
                 </form>
                 <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
-                      hx-target="#agenda-container" hx-swap="innerHTML" class="flex-1">
+                      hx-target="#agenda-container" hx-swap="innerHTML" class="flex flex-1 items-center gap-2 min-w-[16rem]">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="reject_proposal">
                     <input type="hidden" name="item_id" value="{{ item.id }}">
-                    <button type="submit" class="w-full py-2 text-sm font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100 flex items-center justify-center gap-1">
-                        <i data-lucide="x" class="w-4 h-4"></i> Ablehnen
-                    </button>
+                    <label for="reason-{{ item.id }}" class="sr-only">Begründung der Ablehnung</label>
+                    <input type="text" name="reason" id="reason-{{ item.id }}" maxlength="500" placeholder="Begründung (optional)"
+                           class="flex-1 min-w-0 px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <c-ui.button type="submit" size="sm" variant="secondary" icon="x">Ablehnen</c-ui.button>
                 </form>
             </div>
         </div>

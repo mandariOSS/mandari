@@ -91,7 +91,7 @@ def resolve_is_internal(instance) -> bool:
     """Betrifft das Objekt den nicht-öffentlichen Teil (Issue #64)?"""
     try:
         model_name = instance.__class__.__name__
-        if model_name == "FactionAgendaItem":
+        if model_name in ("FactionAgendaItem", "FactionStandardAgendaItem"):
             return instance.visibility == "internal"
         agenda_item = getattr(instance, "agenda_item", None)
         if agenda_item is not None:
@@ -306,6 +306,7 @@ def register():
         FactionMeetingException,
         FactionMeetingSchedule,
         FactionProtocolEntry,
+        FactionStandardAgendaItem,
         FactionSuspensionRule,
     )
 
@@ -319,6 +320,7 @@ def register():
         FactionMeetingSchedule,
         FactionMeetingException,
         FactionSuspensionRule,
+        FactionStandardAgendaItem,
     ]
 
     for model in audited_models:
