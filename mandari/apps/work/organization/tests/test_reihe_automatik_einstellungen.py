@@ -98,6 +98,42 @@ def test_automatik_speichern_passt_kommende_termine_an(
 
 
 @pytest.mark.django_db
+def test_reihe_ausschalten_laesst_vorhandene_zu_und_absagen_unveraendert(
+    org: Any, manager: Any, client_for: Any, reihe: FactionMeetingSchedule
+) -> None:
+    """Entscheidung vom 05.10.2026: Umgeschaltet wird nur die Einstellung, Rückmeldungen bleiben vollständig."""
+    from apps.work.faction.models import FactionAttendance
+
+    FactionMeetingSchedule.objects.filter(pk=reihe.pk).update(rsvp_enabled=True)
+    termin = FactionMeeting.objects.create(
+        organization=org, title="Termin", start=timezone.now() + timedelta(days=10), schedule=reihe, rsvp_enabled=True
+    )
+    FactionAttendance.objects.create(
+        meeting=termin,
+        membership=manager,
+        status="declined",
+        response_message="Im Urlaub",
+        responded_at=timezone.now(),
+    )
+
+    def teilnahmen() -> list[dict[str, Any]]:
+        return list(FactionAttendance.objects.filter(meeting=termin).values())
+
+    vorher = teilnahmen()
+    client = client_for(manager.user)
+
+    client.post(settings_url(org), _automatik(reihe))
+    termin.refresh_from_db()
+    assert termin.rsvp_enabled is False
+    assert teilnahmen() == vorher
+
+    client.post(settings_url(org), _automatik(reihe, rsvp_enabled="on"))
+    termin.refresh_from_db()
+    assert termin.rsvp_enabled is True
+    assert teilnahmen() == vorher
+
+
+@pytest.mark.django_db
 def test_automatische_einladung_braucht_wochentag_und_uhrzeit(
     org: Any, manager: Any, client_for: Any, reihe: FactionMeetingSchedule
 ) -> None:

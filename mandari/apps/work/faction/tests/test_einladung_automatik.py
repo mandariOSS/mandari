@@ -319,6 +319,44 @@ def test_zusage_nur_wenn_eingeschaltet(org: Any, make_member: Any, client_for: A
     assert FactionAttendance.objects.get(meeting=meeting, membership=mitglied).status == "confirmed"
 
 
+def _teilnahmen(meeting: FactionMeeting) -> list[dict[str, Any]]:
+    return sorted(FactionAttendance.objects.filter(meeting=meeting).values(), key=lambda zeile: str(zeile["id"]))
+
+
+@pytest.mark.django_db
+def test_ausschalten_laesst_vorhandene_zu_und_absagen_unveraendert_und_sichtbar(
+    org: Any, make_member: Any, client_for: Any
+) -> None:
+    """Entscheidung vom 05.10.2026: Umgeschaltet wird nur die Einstellung, Rückmeldungen bleiben vollständig."""
+    chair = make_member(org, ["faction.view_public", "faction.manage"], email="vorsitz@example.org")
+    mitglied = make_member(org, ["faction.view_public"], email="mitglied@example.org")
+    meeting = _meeting(org, start=MONTAG_18 + timedelta(days=400), rsvp_enabled=True)
+    FactionAttendance.objects.filter(meeting=meeting, membership=chair).update(status="confirmed")
+    FactionAttendance.objects.filter(meeting=meeting, membership=mitglied).update(
+        status="declined", response_message="Im Urlaub", responded_at=MONTAG_18
+    )
+    vorher = _teilnahmen(meeting)
+    action = reverse("work:faction_action", kwargs={"org_slug": org.slug, "meeting_id": meeting.id})
+    detail = reverse("work:faction_detail", kwargs={"org_slug": org.slug, "meeting_id": meeting.id})
+    felder = {"action": "update", "title": meeting.title, "start_date": "2027-11-30", "start_time": "18:00"}
+    vorsitz = client_for(chair.user)
+    leser = client_for(mitglied.user)
+
+    vorsitz.post(action, {**felder, "rsvp_field": "1"})
+    meeting.refresh_from_db()
+    assert meeting.rsvp_enabled is False
+    assert _teilnahmen(meeting) == vorher
+    html = leser.get(detail).content.decode()
+    assert "Meine Teilnahme" not in html
+    assert "Zugesagt" in html and "Abgesagt" in html, "Rückmeldungen bleiben in der Teilnehmerliste sichtbar"
+
+    vorsitz.post(action, {**felder, "rsvp_field": "1", "rsvp_enabled": "on"})
+    meeting.refresh_from_db()
+    assert meeting.rsvp_enabled is True
+    assert _teilnahmen(meeting) == vorher
+    assert "Meine Teilnahme" in leser.get(detail).content.decode()
+
+
 @pytest.mark.django_db
 def test_einladung_bittet_nur_mit_eingeschalteten_rueckmeldungen_um_zu_oder_absage(org: Any, make_member: Any) -> None:
     _org_settings(org, invitation_mode="opt_out")

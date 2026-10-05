@@ -4,7 +4,9 @@ Datenmigration der Reihen-Automatik (Issue #871): Bestand vorher = nachher.
 
 - ``generated_until`` übernimmt je Reihe den spätesten angelegten Solltermin (gelöschte Termine kommen nicht zurück).
 - Zu- und Absagen sind für den Bestand aus; nur kommende, schon eingeladene Sitzungen behalten sie.
-- Teilnahmen (auch Zu- und Absagen) bleiben unverändert, nichts wird gelöscht.
+- Teilnahmen (auch Zu- und Absagen samt Begründung und Zeitpunkt) bleiben Feld für Feld unverändert, ebenso alle
+  vorhandenen Spalten der Sitzungen und Reihen; nichts wird gelöscht (Entscheidung vom 05.10.2026: nur die
+  Einstellung wird umgeschaltet).
 """
 
 from __future__ import annotations
@@ -18,6 +20,15 @@ from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 MIGRATION_SUFFIX = "_sitzungsreihe_automatik"
+
+
+def _zeilen(model: Any, spalten: list[str]) -> list[dict[str, Any]]:
+    """Alle Zeilen mit den angegebenen Spalten, stabil sortiert."""
+    return sorted(model.objects.values(*spalten), key=lambda zeile: str(zeile["id"]))
+
+
+def _spalten(model: Any) -> list[str]:
+    return [feld.attname for feld in model._meta.concrete_fields]
 
 
 def _knoten() -> tuple[tuple[str, str], list[tuple[str, str]]]:
@@ -59,9 +70,28 @@ def test_migration_uebernimmt_bestand_ohne_verlust() -> None:
         geplant = sitzung("Geplant", kuenftig, status="planned")
         vorbei = sitzung("Vorbei", vergangen, status="completed", invitation_sent=True)
         abgesagt = sitzung("Abgesagt", kuenftig, status="cancelled", invitation_sent=True)
-        zusage = attendance_model.objects.create(meeting=eingeladen, membership=membership, status="confirmed")
-        teilnahmen_vorher = sorted(attendance_model.objects.values_list("id", "status"))
-        sitzungen_vorher = meeting_model.objects.count()
+        zusage = attendance_model.objects.create(
+            meeting=eingeladen,
+            membership=membership,
+            status="confirmed",
+            response_message="Komme etwas später",
+            responded_at=timezone.now() - timedelta(days=1),
+        )
+        absage = attendance_model.objects.create(
+            meeting=geplant,
+            membership=membership,
+            status="declined",
+            response_message="Im Urlaub",
+            responded_at=timezone.now() - timedelta(days=2),
+        )
+        attendance_model.objects.create(meeting=vorbei, membership=membership, status="present")
+        attendance_model.objects.create(meeting=vorbei, is_guest=True, guest_name="Gast", status="excused")
+        teilnahme_spalten = _spalten(attendance_model)
+        sitzung_spalten = _spalten(meeting_model)
+        reihe_spalten = _spalten(schedule_model)
+        teilnahmen_vorher = _zeilen(attendance_model, teilnahme_spalten)
+        sitzungen_vorher = _zeilen(meeting_model, sitzung_spalten)
+        reihen_vorher = _zeilen(schedule_model, reihe_spalten)
 
         executor = MigrationExecutor(connection)
         executor.migrate([nachher])
@@ -77,9 +107,12 @@ def test_migration_uebernimmt_bestand_ohne_verlust() -> None:
         assert meeting_neu.objects.get(pk=eingeladen.pk).rsvp_enabled is True
         for pk in (geplant.pk, vorbei.pk, abgesagt.pk):
             assert meeting_neu.objects.get(pk=pk).rsvp_enabled is False
-        assert meeting_neu.objects.count() == sitzungen_vorher
-        assert sorted(attendance_neu.objects.values_list("id", "status")) == teilnahmen_vorher
+        # Bestand vorher = nachher: jede vorhandene Spalte jeder Zeile unverändert, keine Zeile weniger
+        assert _zeilen(attendance_neu, teilnahme_spalten) == teilnahmen_vorher
+        assert _zeilen(meeting_neu, sitzung_spalten) == sitzungen_vorher
+        assert _zeilen(schedule_neu, reihe_spalten) == reihen_vorher
         assert attendance_neu.objects.get(pk=zusage.pk).status == "confirmed"
+        assert attendance_neu.objects.get(pk=absage.pk).response_message == "Im Urlaub"
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
