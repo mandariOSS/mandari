@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from apps.work.organization import selectors as organization_selectors
 from apps.work.organization.selectors import MyCommittees
+from apps.work.ris.verknuepfungen import Hinweis, hinweise_fuer_tops
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -579,6 +580,8 @@ class PreparationData:
     cross_positions: dict[Any, list[dict[str, Any]]] = field(default_factory=dict)
     file_annotation_counts: dict[Any, int] = field(default_factory=dict)
     consultations_by_paper: dict[Any, list[dict[str, Any]]] = field(default_factory=dict)
+    #: TOPs, deren Arbeitsdaten nach einer Neuveröffentlichung nicht sicher zu ihnen gehören (Issue #547)
+    ris_hinweise: dict[Any, Hinweis] = field(default_factory=dict)
 
     @property
     def stats(self) -> dict[str, int]:
@@ -736,4 +739,5 @@ def load_preparation_data(organization: Organization, membership: Membership, me
         cross_positions=cross_positions(organization, agenda_items),
         file_annotation_counts=_file_annotation_counts(organization, papers_by_item),
         consultations_by_paper=resolve_consultations(paper_ids, meeting),
+        ris_hinweise=hinweise_fuer_tops(organization, (item.id for item in agenda_items)),
     )

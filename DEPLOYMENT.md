@@ -781,6 +781,23 @@ Anfrage mehr), der Worker aber noch `schatten` – daher die Reihenfolge der Neu
 Voraussetzung: Sequenzierer und Zustellung laufen (Worker) und `TASKS_BACKEND=journal`; ohne startet die
 Anwendung mit `schatten` oder `aktiv` nicht (sonst liefe der Mailversand in der Transaktion der Zustellung).
 
+### Work-Daten nach Neuveröffentlichung im RIS
+
+Veröffentlicht ein RIS eine Tagesordnung oder Vorlage neu (Löschmarkierung und Neuanlage, neue Adressen,
+Umnummerierung bei Quellen mit Nummer in der Adresse), hängt der Zeitplan `ris_verknuepfungen_abgleichen`
+(Worker, alle `WORK_RIS_RELINK_INTERVAL_MINUTES`, Standard 15 Minuten) Notizen, Positionen, Redebeiträge,
+Dokumente, Aufgaben und Kommentare an den Nachfolger in derselben Sitzung bzw. Kommune um (Issue #547). Nur
+eindeutige Fälle; sonst zeigt die Vorbereitung „Nicht zugeordnet“. Jeder Umzug steht mit den Kennungen der
+Datensätze in der Tabelle `work_risneuzuordnung`.
+
+| `WORK_RIS_RELINK` | Bedeutung |
+|---|---|
+| `aktiv` (Standard) | Anker pflegen, eindeutige Fälle umhängen |
+| `probe` | Anker pflegen, nur melden (Log `apps.work.ris.verknuepfungen`) |
+| `aus` | kein Abgleich, keine Anker |
+
+Prüfen ohne Änderung: `docker exec mandari python manage.py ris_verknuepfungen_abgleichen --dry-run --alle`.
+
 **Rückweg:** `aus` und Neustart; Benachrichtigungen entstehen wieder in der Anfrage. Ereignisse, die das
 Abonnement noch nicht zugestellt hat, bleiben im Journal liegen (ohne Benachrichtigung); vor dem
 Umschalten deshalb warten, bis der Rückstand des Abonnements null ist.

@@ -119,6 +119,8 @@ x-app-environment: &app-environment
   # RIS-Projektor für Session-Mandanten im Schattenbetrieb (aus, schatten; siehe .env.example), Standard aus
   RIS_SESSION_PROJECTOR: ${RIS_SESSION_PROJECTOR:-aus}
   RIS_SESSION_PROJECTOR_TENANTS: ${RIS_SESSION_PROJECTOR_TENANTS:-}
+  # Work-Daten folgen dem RIS über Neuveröffentlichungen (aktiv, probe, aus; siehe .env.example), Standard aktiv
+  WORK_RIS_RELINK: ${WORK_RIS_RELINK:-aktiv}
   # Abfrage der Volltextsuche (v2 Standard, v1 = bisherige Abfrage als Rückfall; siehe .env.example)
   SEARCH_RANKING: ${SEARCH_RANKING:-v2}
   SEARCH_RECENCY_WEIGHT: ${SEARCH_RECENCY_WEIGHT:-1.0}

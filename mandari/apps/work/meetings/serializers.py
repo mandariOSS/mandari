@@ -321,12 +321,15 @@ def serialize_prepared_item(entry: PreparedItem, index: int, data: PreparationDa
     position = entry.position
     speech = entry.own_speech
     paper = entry.primary_paper
+    # Nach einer Neuveröffentlichung nicht zuzuordnen oder nicht mehr auf der Tagesordnung (Issue #547)
+    hinweis = None if item.deletion_label else data.ris_hinweise.get(item.id)
     return {
         "id": str(item.id),
         "number": item.number or str(index + 1),
         "name": item.name or "Ohne Titel",
         # Im RIS-Bestand gelöscht oder zurückgezogen (Issue #524): Hinweis statt Fehler, die Arbeitsdaten bleiben
-        "withdrawn": item.deletion_label,
+        "withdrawn": item.deletion_label or (hinweis.titel if hinweis else ""),
+        "withdrawnHint": hinweis.text if hinweis else "",
         # Position (org-weit)
         "position": position.position if position else "open",
         "isFinal": position.is_final if position else False,

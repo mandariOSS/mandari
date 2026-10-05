@@ -107,6 +107,8 @@
                                   x-text="'TOP ' + selectedItem.number"></span>
                             <h2 class="flex-1 text-lg font-semibold leading-snug text-gray-900 dark:text-white" x-text="selectedItem.name"></h2>
                         </div>
+                        <!-- Nach Neuveröffentlichung im RIS nicht zuzuordnen (Issue #547) -->
+                        <p x-show="selectedItem.withdrawnHint" class="mt-2 text-sm text-amber-700 dark:text-amber-400" x-text="selectedItem.withdrawnHint"></p>
                         <!-- Vorlage -->
                         <template x-if="selectedItem.paper">
                             <div class="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700">

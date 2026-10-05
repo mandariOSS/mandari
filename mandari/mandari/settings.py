@@ -637,6 +637,15 @@ if WORK_NOTIFICATION_SUBSCRIPTION not in ("aus", "schatten", "aktiv"):
     from django.core.exceptions import ImproperlyConfigured
 
     raise ImproperlyConfigured("WORK_NOTIFICATION_SUBSCRIPTION muss aus, schatten oder aktiv sein.")
+# Work-Daten folgen Tagesordnungspunkten und Vorlagen über Neuveröffentlichungen des RIS (Issue #547,
+# apps/work/ris/verknuepfungen.py): "aktiv" (Standard) hängt Notizen, Positionen und Kommentare an den Nachfolger
+# um, "probe" pflegt nur die Anker und meldet im Protokoll, was geschähe, "aus" schaltet den Abgleich ab.
+WORK_RIS_RELINK = os.environ.get("WORK_RIS_RELINK", "aktiv").strip().lower() or "aktiv"
+if WORK_RIS_RELINK not in ("aus", "probe", "aktiv"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("WORK_RIS_RELINK muss aus, probe oder aktiv sein.")
+WORK_RIS_RELINK_INTERVAL_MINUTES = int(os.environ.get("WORK_RIS_RELINK_INTERVAL_MINUTES", "15"))
 SEARCH_INDEX_SHADOW_BODIES = [
     teil.strip().lower() for teil in os.environ.get("SEARCH_INDEX_SHADOW_BODIES", "").split(",") if teil.strip()
 ]
