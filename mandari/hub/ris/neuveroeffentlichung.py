@@ -23,8 +23,10 @@ Regeln, im Zweifel keine Zuordnung:
   nur der Punkt selbst.
 - Berät die Sitzung dieselbe Vorlage an mehreren Punkten (Einbringung und Beschluss), hält die Kennung diese
   **Geschwister** beim Bestätigen fest. Ein Geschwister ist nie der Nachfolger, und über die Vorlage zählt dann nur
-  ein Punkt mit ähnlichem Namen. Dasselbe gilt, wenn unbekannt ist, ob es Geschwister gab (Kennung eines Punkts,
-  der beim Erfassen schon nicht mehr auf der Tagesordnung stand).
+  ein Punkt mit ähnlichem Namen. Ist unbekannt, ob es Geschwister gab (Kennung eines Punkts, der beim Erfassen schon
+  nicht mehr auf der Tagesordnung stand, etwa beim ersten Abgleich nach dem Einschalten), gilt das ebenso, und
+  Nachfolger ist nur ein Punkt unter derselben Nummer: Ein gleichnamiger Punkt derselben Vorlage unter anderer
+  Nummer könnte ein Geschwister gewesen sein.
 - Ein Nachfolger kommt nur aus derselben Sitzung und muss eindeutig sein; mehrere Treffer grenzen Name und Nummer
   ein, sonst ``mehrdeutig``.
 - Eine Vorlage hat einen Nachfolger nur, wenn sie gelöscht ist und genau eine andere Vorlage derselben Kommune
@@ -363,6 +365,19 @@ def _ist_geschwister(anker: TopKennung, stand: TopStand) -> bool:
     return (str(stand.id), stand.kennung.name) in set(anker.geschwister or ())
 
 
+def _kann_nachfolger_sein(anker: TopKennung, stand: TopStand) -> bool:
+    """
+    Ein anderer Punkt der Sitzung kommt als Nachfolger in Frage: auf der Tagesordnung, kein Geschwister und derselbe
+    Punkt. Sind die Geschwister unbekannt, nur unter derselben Nummer – sonst könnte etwa der Beschluss neben der
+    abgesetzten Einbringung derselben Vorlage (beide mit dem Titel der Vorlage) als Nachfolger gelten.
+    """
+    if not stand.auf_tagesordnung or _ist_geschwister(anker, stand):
+        return False
+    if anker.geschwister is None and reference_key(stand.kennung.number) != reference_key(anker.number):
+        return False
+    return _derselbe_punkt(anker, stand.kennung)
+
+
 def _korrigiert(anker: TopKennung, kennung: TopKennung) -> bool:
     """Leicht geänderter Name desselben Punkts (gilt nur für den Punkt selbst, nicht für Nachfolger)."""
     if _gleich_ueber_vorlage(anker, kennung) is False or anker.public != kennung.public:
@@ -412,11 +427,7 @@ def top_zuordnen(anker: TopKennung, objekt: object, stand: Iterable[TopStand]) -
     if selbst is not None and steht and _derselbe_punkt(anker, selbst.kennung):
         return Zuordnung(BESTAETIGT, selbst.id, bestaetigte_kennung(selbst, staende, anker))
 
-    kandidaten = [
-        s
-        for s in staende
-        if s.id != pk and s.auf_tagesordnung and not _ist_geschwister(anker, s) and _derselbe_punkt(anker, s.kennung)
-    ]
+    kandidaten = [s for s in staende if s.id != pk and _kann_nachfolger_sein(anker, s)]
     treffer = _eingrenzen(anker, kandidaten)
     if len(treffer) == 1:
         return Zuordnung(NACHFOLGER, treffer[0].id, bestaetigte_kennung(treffer[0], staende, anker))

@@ -12,7 +12,6 @@ die neu veröffentlichte Sitzung ab (``uhr.abruf``), und nach der Ruhezeit läuf
 
 from __future__ import annotations
 
-import importlib
 import json
 import os
 import re
@@ -22,8 +21,7 @@ from typing import Any, cast
 
 import pytest
 from django.core.management import call_command
-from django.db import IntegrityError, connection, models
-from django.db.migrations.executor import MigrationExecutor
+from django.db import IntegrityError, models
 from django.utils import timezone
 
 from apps.common.tests.factories import OrganizationFactory
@@ -534,17 +532,50 @@ def test_vorlage_an_zwei_punkten_neu_veroeffentlicht(org: Any, ris: Ris, mitglie
     assert not AgendaItemNote.objects.filter(agenda_item=beschluss).exists()
 
 
-def test_rueckwirkend_ohne_bekannte_geschwister(org: Any, ris: Ris, mitglied: Any, uhr: Uhr) -> None:
-    """Erster Lauf nach dem Update: Der Punkt war schon vorher abgesetzt, seine Geschwister sind unbekannt."""
+@pytest.mark.parametrize("titel", [None, "Radweg Ostring"])
+def test_rueckwirkend_ohne_bekannte_geschwister(
+    org: Any, ris: Ris, mitglied: Any, uhr: Uhr, settings: Any, titel: str | None
+) -> None:
+    """
+    Erster Lauf nach dem Einschalten: Der Punkt war schon vorher abgesetzt, seine Geschwister sind unbekannt – auch
+    wenn beide Punkte den Titel der Vorlage tragen, ist der andere kein Nachfolger.
+    """
+    settings.WORK_RIS_RELINK = "aus"  # Verknüpfungen aus der Zeit vor dem Einschalten: ohne Anker
     _, _, einbringung, beschluss = _einbringung_und_beschluss(ris)
+    if titel:
+        OParlAgendaItem.objects.filter(pk__in=[einbringung.pk, beschluss.pk]).update(name=titel)
     daten = _arbeitsdaten(org, mitglied, einbringung)
     einbringung.mark_deleted()
-    RisAnker.objects.update(kennung={}, bestaetigt_am=None)  # Stand nach der Datenmigration
+    assert not RisAnker.objects.exists()
 
-    uhr.lauf()
+    settings.WORK_RIS_RELINK = "aktiv"
+    bericht = uhr.lauf()
 
     _haengt_an(daten, einbringung)
-    assert RisAnker.objects.get(objekt=einbringung.id).kennung["geschwister"] is None
+    assert not AgendaItemNote.objects.filter(agenda_item=beschluss).exists()
+    assert bericht.umgehaengt == 0
+    anker = RisAnker.objects.get(objekt=einbringung.id)
+    assert anker.kennung["geschwister"] is None and anker.status == RisAnker.ENTFALLEN
+
+
+def test_rueckwirkend_neu_veroeffentlicht_unter_derselben_nummer(
+    org: Any, ris: Ris, mitglied: Any, uhr: Uhr, settings: Any
+) -> None:
+    """Vor dem Einschalten neu veröffentlicht: Der Punkt unter derselben Nummer ist der Nachfolger, nicht das Geschwister."""
+    settings.WORK_RIS_RELINK = "aus"
+    sitzung, vorlage, einbringung, beschluss = _einbringung_und_beschluss(ris)
+    OParlAgendaItem.objects.filter(pk__in=[einbringung.pk, beschluss.pk]).update(name="Radweg Ostring")
+    daten = _arbeitsdaten(org, mitglied, einbringung)
+    einbringung.mark_deleted()
+    neu = ris.top(sitzung, "top/5b", "5", "Radweg Ostring")
+    ris.beraten(vorlage, neu, je_punkt=True)
+    ris.tagesordnung(sitzung, ["top/5b", "top/9"])
+
+    settings.WORK_RIS_RELINK = "aktiv"
+    uhr.lauf()
+
+    _haengt_an(daten, neu)
+    assert not AgendaItemNote.objects.filter(agenda_item=beschluss).exists()
 
 
 def test_juengere_datensaetze_bleiben_mit_hinweis(org: Any, ris: Ris, mitglied: Any, uhr: Uhr) -> None:
@@ -573,6 +604,31 @@ def test_juengere_datensaetze_bleiben_mit_hinweis(org: Any, ris: Ris, mitglied: 
     assert hinweise_fuer_tops(org, [zeile_5.id])[zeile_5.id].titel == "Nicht zugeordnet"
     assert _ruhig(uhr, sitzung, alle=True).umgehaengt == 0
     assert AgendaItemNote.objects.get(pk=jung.pk).agenda_item_id == zeile_5.id
+
+
+@pytest.mark.parametrize("wie", ["geloescht", "nicht_mehr_gelistet"])
+def test_juengere_datensaetze_an_abgesetzter_zeile_ziehen_mit(
+    org: Any, ris: Ris, mitglied: Any, uhr: Uhr, wie: str
+) -> None:
+    """Ohne neuen Inhalt an der alten Zeile gehört auch kurz vor der Neuveröffentlichung Geschriebenes zum Punkt."""
+    sitzung = ris.sitzung(tagesordnung=["top/1"])
+    alt = ris.top(sitzung, "top/1", "1", "Haushalt")
+    frueh = _verschluesselt(AgendaItemNote, organization=org, agenda_item=alt, author=mitglied)
+    uhr.lauf()
+    jung = _verschluesselt(AgendaItemNote, organization=org, agenda_item=alt, author=mitglied)
+    AgendaItemNote.objects.filter(pk=jung.pk).update(created_at=uhr.danach())
+
+    # gelöscht und neu angelegt bzw. ohne Löschmeldung unter neuer Adresse gelistet
+    neu = _republiziert(ris, alt, "top/1b") if wie == "geloescht" else ris.top(sitzung, "top/1b", "1", "Haushalt")
+    ris.tagesordnung(sitzung, ["top/1b"])
+    uhr.abruf(sitzung)
+    bericht = uhr.lauf()
+
+    assert AgendaItemNote.objects.get(pk=frueh.pk).agenda_item_id == neu.id
+    assert AgendaItemNote.objects.get(pk=jung.pk).agenda_item_id == neu.id
+    assert bericht.juenger == 0 and bericht.datensaetze == 2
+    assert not RisAnker.objects.filter(objekt=alt.id).exists(), "am alten Punkt hängt nichts mehr"
+    assert hinweise_fuer_tops(org, [alt.id, neu.id]) == {}
 
 
 def test_nach_nicht_zugeordnet_angelegtes_bleibt(org: Any, ris: Ris, mitglied: Any, uhr: Uhr) -> None:
@@ -888,44 +944,29 @@ def test_zeitplan_ist_registriert() -> None:
     assert eintrag is not None and eintrag.trigger == Every(timedelta(minutes=15))
 
 
-# =============================================================================
-# Datenmigration
-# =============================================================================
-
-MIGRATION = importlib.import_module("apps.work.migrations.0070_ris_anker_erfassen")
-NACHHER = ("work", "0070_ris_anker_erfassen")
-VORHER = MIGRATION.Migration.dependencies[0]
-
-
-@pytest.mark.django_db(transaction=True)
-def test_migration_legt_anker_fuer_den_bestand_an(org: Any, ris: Ris, mitglied: Any) -> None:
+def test_erster_lauf_erfasst_den_bestand(org: Any, ris: Ris, mitglied: Any, uhr: Uhr, settings: Any) -> None:
+    """
+    Nach dem Einschalten bekommen Verknüpfungen aus der Zeit davor ihren Anker mit dem heutigen Stand (keine
+    Datenmigration: Mit ``aus`` schreibt das Update nichts außer zwei leeren Tabellen).
+    """
+    settings.WORK_RIS_RELINK = "aus"
     sitzung = ris.sitzung()
     vorlage = ris.vorlage("paper/1", "V/1")
     item = ris.top(sitzung, "top/1", "1", "Haushalt", vorlage=vorlage)
     _verschluesselt(AgendaItemNote, organization=org, agenda_item=item, author=mitglied)
     _verschluesselt(PaperComment, organization=org, paper=vorlage, author=mitglied)
     ohne = ris.top(sitzung, "top/2", "2", "Ohne Arbeitsdaten")
+    assert not RisAnker.objects.exists()
 
-    executor = MigrationExecutor(connection)
-    executor.migrate([VORHER])
-    try:
-        RisAnker.objects.all().delete()  # Stand vor dem Update: Verknüpfungen ohne Anker
-        executor = MigrationExecutor(connection)
-        executor.migrate([NACHHER])
-        assert sorted(RisAnker.objects.values_list("art", "objekt", "kennung")) == [
-            (RisAnker.ART_TOP, item.id, {}),
-            (RisAnker.ART_VORLAGE, vorlage.id, {}),
-        ]
-        assert not RisAnker.objects.filter(objekt=ohne.id).exists()
+    settings.WORK_RIS_RELINK = "probe"
+    bericht = uhr.lauf(modus="probe")
 
-        # Wiederholbar
-        MIGRATION.anker_anlegen(executor.loader.project_state([NACHHER]).apps, None)
-        assert RisAnker.objects.count() == 2
-
-        # Der erste Abgleich erfasst die Kennung
-        abgleichen(modus="aktiv", jetzt=_spaeter())
-        assert RisAnker.objects.get(objekt=item.id).kennung["references"] == ["v/1"]
-        assert RisAnker.objects.get(objekt=vorlage.id).kennung["reference"] == "V/1"
-    finally:
-        executor = MigrationExecutor(connection)
-        executor.migrate(executor.loader.graph.leaf_nodes())
+    assert bericht.anker_neu == 2 and bericht.umgehaengt == 0
+    assert sorted(RisAnker.objects.values_list("art", "objekt")) == [
+        (RisAnker.ART_TOP, item.id),
+        (RisAnker.ART_VORLAGE, vorlage.id),
+    ]
+    assert not RisAnker.objects.filter(objekt=ohne.id).exists()
+    assert RisAnker.objects.get(objekt=item.id).kennung["references"] == ["v/1"]
+    assert RisAnker.objects.get(objekt=vorlage.id).kennung["reference"] == "V/1"
+    assert uhr.lauf(modus="probe").anker_neu == 0, "wiederholbar"

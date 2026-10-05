@@ -17,8 +17,8 @@ Ablauf (Zeitplan ``ris_verknuepfungen_abgleichen`` im Worker, Befehl ``ris_verkn
    wieder automatisch umgehängt –
    - Datensätze, deren Gegenstück am Ziel schon steht (private Notiz, Redebeitrag, Position derselben Person bzw.
      Organisation; es wird nichts zusammengeführt),
-   - an Tagesordnungspunkten Datensätze, die nach der letzten Bestätigung angelegt wurden: Sie können schon den
-     neuen Inhalt der Zeile meinen,
+   - an Tagesordnungspunkten, deren Zeile noch auf der Tagesordnung steht, Datensätze, die nach der letzten
+     Bestätigung angelegt wurden: Sie können schon den neuen Inhalt der Zeile meinen,
    - Datensätze, deren Umzug jemand zurückgedreht hat (``zurueckdrehen``).
    Jeder Umzug steht mit den Kennungen der Datensätze in ``RisNeuzuordnung``. Danach beschreibt der Anker das, was
    am Objekt heute steht; ein zweiter Lauf bewegt nichts mehr.
@@ -365,9 +365,10 @@ def _umhaengen(
     Hängt die Datensätze der Organisation von ``von`` nach ``nach`` um und gibt je ``von`` zurück, was umzog und
     was blieb, dazu je Objekt die Datensätze vor dem Umhängen.
 
-    Es bleiben: Zurückgelassenes (``bleiben``), mit ``schwelle`` (Tagesordnungspunkte) Datensätze, die nach der
-    letzten Bestätigung angelegt wurden, und Datensätze, deren Gegenstück am Ziel bleibt (Konflikt, nichts wird
-    zusammengeführt). Ketten und Tausch innerhalb einer Sitzung gehen in einem Durchgang. Steht die Eindeutigkeit
+    Es bleiben: Zurückgelassenes (``bleiben``), an den Objekten in ``schwelle`` (Tagesordnungspunkte, deren Zeile
+    noch auf der Tagesordnung steht) Datensätze, die nach der letzten Bestätigung angelegt wurden, und Datensätze,
+    deren Gegenstück am Ziel bleibt (Konflikt, nichts wird zusammengeführt). Ketten und Tausch innerhalb einer
+    Sitzung gehen in einem Durchgang. Steht die Eindeutigkeit
     nur in der Logik (Position je Organisation), zählt der Endzustand; steht sie in der Datenbank, auch jeder
     Zwischenstand – ein Tausch zweier Punkte mit Notizen derselben Person bleibt dann stehen.
     """
@@ -392,8 +393,8 @@ def _umhaengen(
             if objekt not in umzuege or str(pk) in fest.get(objekt, ()):
                 stehend.append(zeile)
                 continue
-            if angelegt is not None and schwelle is not None:
-                grenze = schwelle.get(objekt)
+            if angelegt is not None and schwelle is not None and objekt in schwelle:
+                grenze = schwelle[objekt]
                 if grenze is None or werte[-1] is None or werte[-1] > grenze:
                     ergebnis[objekt].juenger.setdefault(name, []).append(str(pk))
                     stehend.append(zeile)
@@ -507,7 +508,13 @@ def _anwenden(
     umhaengungen: dict[uuid.UUID, _Umhaengung] = {}
     vorher: dict[uuid.UUID, Datensaetze] = {}
     if umzuege:
-        schwelle = {von: anker_an[von].bestaetigt_am for von in umzuege} if art == RisAnker.ART_TOP else None
+        # Jüngeres kann nur dort schon einen neuen Inhalt meinen, wo die alte Zeile noch auf der Tagesordnung steht;
+        # an einem gelöschten bzw. nicht mehr gelisteten Punkt gehört alles zum früheren Stand.
+        schwelle = (
+            {von: anker_an[von].bestaetigt_am for von in umzuege if heute(von) is not None}
+            if art == RisAnker.ART_TOP
+            else None
+        )
         bleiben = {objekt: a.zurueckgelassen or {} for objekt, a in anker_an.items()}
         umhaengungen, vorher = _umhaengen(art, organisation, umzuege, bleiben, schwelle)
 

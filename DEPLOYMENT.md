@@ -792,19 +792,21 @@ Veröffentlicht ein RIS eine Tagesordnung oder Vorlage neu (Löschmarkierung und
 Umnummerierung bei Quellen mit Nummer in der Adresse), hängt der Zeitplan `ris_verknuepfungen_abgleichen`
 (Worker, alle `WORK_RIS_RELINK_INTERVAL_MINUTES`, Standard 15 Minuten) Notizen, Positionen, Redebeiträge,
 Dokumente, Aufgaben und Kommentare an den Nachfolger in derselben Sitzung bzw. Kommune um (Issue #547). Nur
-eindeutige Fälle; sonst zeigt die Vorbereitung „Nicht zugeordnet“. Datensätze, die nach der letzten Bestätigung
-eines Punkts angelegt wurden oder deren Gegenstück am Ziel schon steht, bleiben am alten Punkt (mit Hinweis) und
-ziehen nie wieder automatisch um. Jeder Umzug steht mit den Kennungen der Datensätze in der Tabelle
+eindeutige Fälle; sonst zeigt die Vorbereitung „Nicht zugeordnet“. Datensätze, deren Gegenstück am Ziel schon
+steht oder die nach der letzten Bestätigung eines Punkts angelegt wurden, dessen Zeile noch auf der
+Tagesordnung steht (sie können deren neuen Inhalt meinen), bleiben am alten Punkt (mit Hinweis) und ziehen nie
+wieder automatisch um. Jeder Umzug steht mit den Kennungen der Datensätze in der Tabelle
 `work_risneuzuordnung`.
 
 | `WORK_RIS_RELINK` | Bedeutung |
 |---|---|
-| `aus` (Standard) | kein Abgleich, keine Anker (die Migration legt nur leere Anker an) |
+| `aus` (Standard) | kein Abgleich, keine Anker (die Migration legt nur zwei leere Tabellen an) |
 | `probe` | Anker pflegen, nur melden (Log `apps.work.ris.verknuepfungen`), nichts umhängen |
 | `aktiv` | Anker pflegen, eindeutige Fälle umhängen |
 
-**Einschalten in Stufen:** Der erste Lauf prüft jede Sitzung mit Work-Daten und hängt auch Bezüge um, die schon
-vor dem Update verloren waren (Punkte, die heute gelöscht neben ihrem Nachfolger stehen). Deshalb zuerst ansehen,
+**Einschalten in Stufen:** Der erste Lauf legt die Anker mit dem heutigen Stand an, prüft jede Sitzung mit
+Work-Daten und hängt auch Bezüge um, die schon vor dem Einschalten verloren waren (Punkte, die heute gelöscht
+neben ihrem Nachfolger unter derselben Nummer stehen). Deshalb zuerst ansehen,
 was geschähe: `docker exec mandari python manage.py ris_verknuepfungen_abgleichen --dry-run --alle` (legt Anker
 an, hängt nichts um) und die Liste stichprobenartig gegen die Tagesordnungen prüfen. Optional `probe` setzen,
 Worker neu starten und einige Tage das Log beobachten. Dann `aktiv` setzen und den Worker neu starten
@@ -815,7 +817,7 @@ sollte denselben Wert lesen.
 `docker exec mandari python manage.py ris_neuzuordnung_zurueckdrehen --seit <Zeitpunkt des Einschaltens> --dry-run`,
 dann ohne `--dry-run` (einzelne Umzüge mit `--eintrag <Kennung>`). Zurückgedrehte Datensätze hängen wieder am
 früheren Punkt bzw. an der früheren Vorlage und ziehen von dort nie wieder automatisch um. Ein älteres Image läuft
-ohne Rückbau der Migrationen (zwei neue Tabellen).
+ohne Rückbau der Migration (zwei neue Tabellen).
 
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 

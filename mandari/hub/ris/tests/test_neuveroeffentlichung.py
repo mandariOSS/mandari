@@ -164,13 +164,40 @@ def test_geschwister_ist_kein_nachfolger() -> None:
     assert (zuordnung.ergebnis, zuordnung.ziel) == (NACHFOLGER, neu.id)
 
 
-@pytest.mark.parametrize(("name", "ergebnis"), [("Radweg – Beschluss", ENTFALLEN), ("Radweg Einbringung", NACHFOLGER)])
-def test_unbekannte_geschwister_verlangen_aehnlichen_namen(name: str, ergebnis: str) -> None:
+@pytest.mark.parametrize(
+    ("name", "nummer", "ergebnis"),
+    [
+        ("Radweg – Beschluss", "5", ENTFALLEN),
+        ("Radweg Einbringung", "5", NACHFOLGER),
+        # gleichnamig unter anderer Nummer: kann das Geschwister gewesen sein (TOP-Titel = Titel der Vorlage)
+        ("Radweg – Einbringung", "9", ENTFALLEN),
+    ],
+)
+def test_unbekannte_geschwister_verlangen_aehnlichen_namen_und_dieselbe_nummer(
+    name: str, nummer: str, ergebnis: str
+) -> None:
     """Kennung erst nach dem Absetzen erfasst: Über die Vorlage allein zählt dann kein Punkt."""
     anker = _top("Radweg – Einbringung", "5", vorlagen=("v/1",), geschwister=None)
     selbst = _stand(anker, steht=False)
-    kandidat = _stand(_top(name, "9", vorlagen=("v/1",)))
+    kandidat = _stand(_top(name, nummer, vorlagen=("v/1",)))
     assert top_zuordnen(anker, selbst.id, [selbst, kandidat]).ergebnis == ergebnis
+
+
+@pytest.mark.parametrize(("nummer", "ergebnis"), [("2", NACHFOLGER), (" 2 ", NACHFOLGER), ("7", ENTFALLEN)])
+def test_unbekannte_geschwister_ohne_vorlage_nur_unter_derselben_nummer(nummer: str, ergebnis: str) -> None:
+    anker = _top("Mitteilungen", "2", geschwister=None)
+    selbst = _stand(anker, steht=False)
+    kandidat = _stand(_top("Mitteilungen", nummer))
+    assert top_zuordnen(anker, selbst.id, [selbst, kandidat]).ergebnis == ergebnis
+
+
+def test_bekannte_geschwister_erlauben_neue_nummer() -> None:
+    """Im laufenden Betrieb sind die Geschwister bekannt: Ein neu veröffentlichter Punkt darf umnummeriert sein."""
+    alt = _stand(_top("Mitteilungen", "2"))
+    anker = bestaetigte_kennung(alt, [alt])
+    abgesetzt = TopStand(id=alt.id, kennung=alt.kennung, auf_tagesordnung=False, geloescht=True)
+    neu = _stand(_top("Mitteilungen", "7"))
+    assert top_zuordnen(anker, alt.id, [abgesetzt, neu]).ziel == neu.id
 
 
 def test_zeilenverschiebung_mit_geschwistern() -> None:
