@@ -119,7 +119,7 @@ def _vertrag(register: Registry, name: str) -> Contract:
 
 
 def test_register_enthaelt_genau_den_startumfang(register: Registry) -> None:
-    assert len(register.names(EVENT)) == 29
+    assert len(register.names(EVENT)) == 31
     assert len(register.names(COMMAND)) == 4
     assert set(register.names()) == set(STARTUMFANG)
     assert all(register.versions(name) == (1,) for name in STARTUMFANG)
