@@ -54,13 +54,13 @@ def test_symbolschriftmuster_trifft_genau_den_privatbereich(alle_zeichen: str) -
     assert set(darstellung._PRIVATE_USE.findall(alle_zeichen)) == gemeint
 
 
-@pytest.mark.parametrize("zeichen", ["\x01", "\x08", "\x0b", "\x0c", "\x0e", "\x1f", "\x7f", "�"])
+@pytest.mark.parametrize("zeichen", ["\x01", "\x08", "\x0b", "\x0c", "\x0e", "\x1f", "\x7f", "\ufffd"])
 def test_steuerzeichen_an_den_bereichsgrenzen_werden_leerraum(zeichen: str) -> None:
     assert darstellung.clean_snippet(f"Haushalt{zeichen}2027") == "Haushalt 2027"
 
 
 def test_privatbereich_an_den_grenzen_verschwindet() -> None:
-    assert darstellung.clean_snippet("Ziel und Weg") == "Ziel und Weg"
+    assert darstellung.clean_snippet("Ziel\ue000 und\uf8ff Weg") == "Ziel und Weg"
 
 
 def test_gewoehnlicher_text_bleibt_unveraendert() -> None:
