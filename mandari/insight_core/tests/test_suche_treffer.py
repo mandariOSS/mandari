@@ -35,6 +35,42 @@ def test_symbolschrift_und_steuerzeichen_verschwinden() -> None:
     assert darstellung.clean_snippet(roh) == "Ausbau der• nördlichen Straße • Punkt → Ziel"
 
 
+@pytest.fixture(scope="module")
+def alle_zeichen() -> str:
+    """Jeder Unicode-Codepunkt außer den Surrogaten, als eine Zeichenkette."""
+    return "".join(chr(codepunkt) for codepunkt in range(0x110000) if not 0xD800 <= codepunkt <= 0xDFFF)
+
+
+def test_steuerzeichenmuster_trifft_genau_die_gemeinten_zeichen(alle_zeichen: str) -> None:
+    """C0-Steuerzeichen ohne Tab, Zeilenumbruch und Wagenrücklauf, dazu DEL und U+FFFD – sonst nichts."""
+    gemeint = {chr(c) for c in (*range(0x00, 0x09), 0x0B, 0x0C, *range(0x0E, 0x20), 0x7F, 0xFFFD)}
+
+    assert set(darstellung._CONTROL.findall(alle_zeichen)) == gemeint
+
+
+def test_symbolschriftmuster_trifft_genau_den_privatbereich(alle_zeichen: str) -> None:
+    gemeint = {chr(c) for c in range(0xE000, 0xF900)}
+
+    assert set(darstellung._PRIVATE_USE.findall(alle_zeichen)) == gemeint
+
+
+@pytest.mark.parametrize("zeichen", ["\x01", "\x08", "\x0b", "\x0c", "\x0e", "\x1f", "\x7f", "�"])
+def test_steuerzeichen_an_den_bereichsgrenzen_werden_leerraum(zeichen: str) -> None:
+    assert darstellung.clean_snippet(f"Haushalt{zeichen}2027") == "Haushalt 2027"
+
+
+def test_privatbereich_an_den_grenzen_verschwindet() -> None:
+    assert darstellung.clean_snippet("Ziel und Weg") == "Ziel und Weg"
+
+
+def test_gewoehnlicher_text_bleibt_unveraendert() -> None:
+    ascii_druckbar = "".join(chr(c) for c in range(0x21, 0x7F))
+    latin1_druckbar = "".join(chr(c) for c in range(0xA1, 0x100))
+    text = f"{ascii_druckbar} {latin1_druckbar} „Straße“ – 5 € · Ölmühle → Übung 豈 \U0001f5f3"
+
+    assert darstellung.clean_snippet(text) == text
+
+
 @pytest.mark.parametrize(
     ("roh", "sauber"),
     [
