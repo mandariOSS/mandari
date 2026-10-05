@@ -48,6 +48,7 @@ from mandari_dokumente import (
     OcrMemoryLimitError,
     extract_text,
 )
+from mandari_oparl.abgleich import looks_like_html
 from mandari_oparl.robots import KIND_FILES, RETRY_UNREACHABLE_SECONDS
 
 from src.client.host_pacing import host_pacer
@@ -99,11 +100,6 @@ def blob_root() -> Path | None:
         return None
     path = Path(root)
     return path / "sha256" if path.is_dir() else None
-
-
-def looks_like_html(data: bytes) -> bool:
-    head = data[:512].lstrip().lower()
-    return head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<html" in head[:200]
 
 
 class TextExtractor:

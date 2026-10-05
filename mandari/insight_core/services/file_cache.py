@@ -40,6 +40,7 @@ from django.conf import settings
 from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from mandari_oparl.abgleich import looks_like_html
 
 from . import robots
 
@@ -243,11 +244,6 @@ def disk_free_bytes() -> int:
 
 def has_room_for(size: int) -> bool:
     return disk_free_bytes() - size > min_free_bytes()
-
-
-def looks_like_html(data: bytes) -> bool:
-    head = data[:512].lstrip().lower()
-    return head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<html" in head[:200]
 
 
 def content_type_for(file_obj, fallback: str = "application/octet-stream") -> str:

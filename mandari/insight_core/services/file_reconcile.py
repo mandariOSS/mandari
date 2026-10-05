@@ -49,6 +49,7 @@ import httpx
 from django.conf import settings
 from django.db.models import F, Q, QuerySet
 from django.utils import timezone
+from mandari_oparl.abgleich import GONE_STATUS, THROTTLE_STATUS, brake_engaged, looks_like_html
 
 from . import file_cache, file_robots
 
@@ -71,8 +72,6 @@ BRAKED = "gebremst"
 MAX_ERRORS_PER_HOST = 5
 #: Ein wegen 404/410 gesperrtes Dokument nach so vielen Tagen erneut prüfen
 RECHECK_DAYS = (1, 7, 25)
-#: Statuscodes, mit denen ein Host bremst
-_THROTTLE_STATUS = (429, 503)
 #: Inhaltstypen einer Hinweis- oder Fehlerseite (weiche 404)
 _HTML_TYPES = ("text/html", "application/xhtml+xml")
 
@@ -270,7 +269,7 @@ class Run:
         key = _source_key(file_obj)
         self._pending[key].append((file_obj, now))
         self._missing[key] += 1
-        if self._missing[key] > self.max_missing and key not in self.braked:
+        if brake_engaged(self._missing[key], self.max_missing) and key not in self.braked:
             self.braked.add(key)
             logger.warning(
                 "Löschabgleich: Quelle %s liefert in diesem Lauf mehr als %d Dokumente nicht mehr – "
@@ -360,17 +359,17 @@ def verify(file_obj: Any, client: httpx.Client, *, now: datetime | None = None, 
         except httpx.HTTPError as exc:
             logger.info("Abgleich %s: %s", file_obj.pk, type(exc).__name__)
             return ERROR
-        if status in (404, 410):
+        if status in GONE_STATUS:
             if run is not None and not file_obj.source_missing_since:
                 run.defer_missing(file_obj, now)
             else:
                 mark_missing(file_obj, now)
             return MISSING
-        if status in _THROTTLE_STATUS:
+        if status in THROTTLE_STATUS:
             return THROTTLED
         if status != 200 or not size:
             return ERROR
-        if file_cache.looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
+        if looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
             # Hinweis- oder Wartungsseite statt der Datei: nichts daraus schließen
             return ERROR
         if file_obj.sha256_hash == sha256:
@@ -405,7 +404,7 @@ def head_check(file_obj: Any, client: httpx.Client, *, now: datetime | None = No
     except httpx.HTTPError as exc:
         logger.info("Stichprobe %s: %s", file_obj.pk, type(exc).__name__)
         return ERROR
-    if response.status_code in _THROTTLE_STATUS:
+    if response.status_code in THROTTLE_STATUS:
         # Der Host bremst: kein GET hinterher, der Lauf lässt ihn in Ruhe
         return THROTTLED
     if response.status_code >= 400:

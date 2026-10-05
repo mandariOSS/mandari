@@ -13,6 +13,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.decorators.http import require_GET
+from mandari_oparl.abgleich import looks_like_html
 
 from ..models import (
     OParlAgendaItem,
@@ -482,7 +483,7 @@ def _fetch_live(file_obj, url, filename, force_download):
     content_type = file_cache.content_type_for(
         file_obj, (download.content_type or "application/octet-stream").split(";")[0]
     )
-    if file_cache.looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
+    if looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
         spool.close()
         return _file_proxy_error(
             "Quelle liefert derzeit keine Datei",
