@@ -11,6 +11,9 @@ idempotent und durch eine Cache-Sperre gegen parallele Läufe geschützt:
   automatische Einladungen und Freigabe-Hinweise (Issue #62).
 - ``fraktionssitzungen_erzeugen``: alle ``FACTION_SCHEDULE_INTERVAL_MINUTES`` (Standard 60) Minuten
   Sitzungen aus Sitzungsreihen (Issue #61).
+- ``ris_verknuepfungen_abgleichen``: alle ``WORK_RIS_RELINK_INTERVAL_MINUTES`` (Standard 15) Minuten Work-Daten
+  nach einer Neuveröffentlichung im RIS an den Nachfolger des Tagesordnungspunkts bzw. der Vorlage hängen
+  (Issue #547); tut nichts, solange ``WORK_RIS_RELINK`` auf ``aus`` (Standard) steht.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from apps.events.schedule import every
 from .faction.generation import run_faction_schedule_pass
 from .faction.invitations import run_faction_invitation_pass
 from .faction.services import run_faction_reminder_pass
+from .ris.verknuepfungen import abgleichen
 
 
 def _minuten(name: str, standard: int) -> int:
@@ -48,3 +52,10 @@ def fraktionseinladungen_senden() -> None:
 def fraktionssitzungen_erzeugen() -> None:
     """Erzeugt Fraktionssitzungen aus Sitzungsreihen."""
     run_faction_schedule_pass()
+
+
+@every(minutes=_minuten("WORK_RIS_RELINK_INTERVAL_MINUTES", 15))
+@task
+def ris_verknuepfungen_abgleichen() -> dict[str, object]:
+    """Hängt Work-Daten nach einer Neuveröffentlichung im RIS um (``WORK_RIS_RELINK``)."""
+    return abgleichen().as_dict()

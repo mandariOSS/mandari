@@ -100,6 +100,27 @@ eigenen, nullable Spalten, nicht nur in `raw_json`:
   Spalten in derselben Form aus, die Session liefert. Das Beschluss-Tracking in Bürgerportal und Work liest
   noch Session-Tabellen; es zieht mit #538 auf diese Felder um (nach dem Umschalten auf den Projektor, #537).
 
+## Nachtrag: Verknüpfungen aus Work über Neuveröffentlichungen (#547)
+
+Stabile Kennungen allein reichen nicht: Manche Quellen veröffentlichen einen Stand unter neuen Adressen (mit oder
+ohne Löschmeldung), und beim Abruf aus Sitzungsseiten steht die Nummer in der Adresse, sodass eine Einfügung die
+Inhalte über die Zeilen verschiebt. Work hält deshalb je verknüpftem Tagesordnungspunkt und je verknüpfter Vorlage
+einen **fachlichen Anker** (`apps.work.ris.models.RisAnker`): Sitzung, Nummer, Name, öffentlich, beratene Vorlagen
+mit Drucksachennummer bzw. Kommune und Drucksachennummer. Was „derselbe Punkt“ ist, entscheidet die Drehscheibe
+(`hub/ris/neuveroeffentlichung.py`): dieselbe Vorlage, sonst derselbe Name, öffentlich/nichtöffentlich gleich;
+berät die Sitzung dieselbe Vorlage an mehreren Punkten, zählen diese Geschwister nie als Nachfolger; sind sie
+unbekannt (Punkt schon vor dem ersten Abgleich abgesetzt), zählt nur ein Punkt unter derselben Nummer. Nachfolger nur
+aus derselben Sitzung bzw. Kommune und nur eindeutig. Ein Zeitplan im Worker hängt die Work-Daten um (nur der
+Fremdschlüssel, Inhalte bleiben verschlüsselt und unverändert) und protokolliert jeden Umzug (`RisNeuzuordnung`).
+Datensätze, deren Gegenstück am Ziel steht oder die nach der letzten Bestätigung an einer Zeile angelegt wurden,
+die noch auf der Tagesordnung steht (sie können deren neuen Inhalt meinen), bleiben als „zurückgelassen“ am alten
+Punkt und ziehen nie wieder automatisch um; danach beschreibt der Anker, was am Punkt
+steht, sodass ein weiterer Lauf nichts bewegt. Im Zweifel bleibt alles, wo es ist, und die Vorbereitung zeigt
+„Nicht zugeordnet“. Der Weg ist ein Schalter (`WORK_RIS_RELINK`, Standard aus) mit Probe und Rückweg
+(`ris_neuzuordnung_zurueckdrehen`). Damit ist die Fitnessfunktion „Neuveröffentlichung erhält Kennungen und
+Verknüpfungen von Notizen“ als Test umgesetzt (`apps/work/ris/tests/test_neuveroeffentlichung.py`).
+Neuveröffentlichte Sitzungen (neue Kennung der Sitzung) und Dateien deckt das nicht ab (#868).
+
 ## Alternativen
 
 - **Interne Session-Modelle als gemeinsames Modell.** Bindet Work, Portal und App an Session;

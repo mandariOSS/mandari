@@ -57,6 +57,8 @@ export interface PreparedItem {
   name: string
   /** „Zurückgezogen“ bzw. „In der Quelle gelöscht“, leer solange es den TOP im RIS gibt (Issue #524) */
   withdrawn: string
+  /** Erklärung, wenn die Arbeitsdaten nach einer Neuveröffentlichung nicht sicher zu diesem TOP gehören (Issue #547) */
+  withdrawnHint: string
   position: string
   isFinal: boolean
   reasoning: string

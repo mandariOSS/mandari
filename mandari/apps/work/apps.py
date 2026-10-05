@@ -30,3 +30,8 @@ class WorkConfig(AppConfig):
         from apps.work.organization import member_data
 
         member_data.register()
+
+        # Verknüpfungen mit Tagesordnungspunkten: fachlichen Anker beim Verknüpfen festhalten (Issue #547)
+        from apps.work.ris import verknuepfungen
+
+        verknuepfungen.register()

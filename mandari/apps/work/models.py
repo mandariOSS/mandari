@@ -42,6 +42,9 @@ from apps.work.notifications.models import (
 # Organization
 from apps.work.organization.models import DataExport, MemberAbsence, MemberChangeRequest
 
+# Verknüpfungen mit dem RIS-Bestand (Issue #547)
+from apps.work.ris.models import RisAnker, RisNeuzuordnung
+
 # Support
 from apps.work.support.models import (
     SupportTicket,
@@ -90,4 +93,7 @@ __all__ = [
     "MemberChangeRequest",
     "MemberAbsence",
     "DataExport",
+    # RIS-Verknüpfungen
+    "RisAnker",
+    "RisNeuzuordnung",
 ]
