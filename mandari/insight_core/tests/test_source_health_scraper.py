@@ -81,3 +81,28 @@ def test_oparl_quelle_und_scraper_ohne_lauf_unberuehrt(db: Any) -> None:
     frisch = _scraper(db)
     befund = scraper_run_findings(frisch)
     assert befund["is_scraper"] is True and befund["reasons"] == [] and befund["parse_quota"] is None
+
+
+@pytest.mark.django_db
+def test_gebremster_loeschabgleich_warnt(db: Any) -> None:
+    """Issue #556: Greift die Bremse, ist der Löschabgleich ausgesetzt – das fällt im Monitor auf."""
+    quelle = _scraper(
+        db,
+        at="x",
+        full=True,
+        parse_quota=1.0,
+        detail_pages_attempted=40,
+        entities_stored=3,
+        tombstone_braked={"organization": 11},
+    )
+    item = evaluate_source(quelle)
+    assert item["status"] == "warning"
+    assert any("Löschabgleich gebremst: organization (11 fehlen)" in r for r in item["reasons"])
+
+
+@pytest.mark.django_db
+def test_ungebremster_lauf_bleibt_ok(db: Any) -> None:
+    quelle = _scraper(
+        db, at="x", full=True, parse_quota=1.0, detail_pages_attempted=40, entities_stored=3, tombstone_braked={}
+    )
+    assert evaluate_source(quelle)["status"] == "ok"

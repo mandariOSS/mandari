@@ -372,6 +372,7 @@ class FakeStorage:
         self.synced_bodies: list[UUID] = []
         self.state: dict[str, Any] = {}
         self.active: dict[tuple[str, UUID], set[str]] = {}
+        self.source_syncs: list[dict[str, bool]] = []
 
     async def upsert_body(self, processed, source_id) -> UUID:
         body_id = uuid5(UUID(int=0), processed.external_id)
@@ -388,8 +389,8 @@ class FakeStorage:
     async def update_body_sync_time(self, body_id) -> None:
         self.synced_bodies.append(body_id)
 
-    async def update_source_sync_time(self, source_id, full_sync=False) -> None:
-        return None
+    async def update_source_sync_time(self, source_id, full_sync=False, complete=False) -> None:
+        self.source_syncs.append({"full": full_sync, "complete": complete})
 
     async def get_active_meeting_ids_in_window(self, body_id, start, end) -> set[str]:
         return set(self.active.get(("meeting", body_id), set()))
@@ -500,3 +501,6 @@ async def test_runner_legt_je_koerperschaft_einen_body_an(fixture_fetcher):
     assert [deleted for _, deleted in orchestrator.indexed] == [1, 0, 0]
     assert storage.synced_bodies == [uuid[body_url(n)] for n in (1, 2, 3)]
     assert set(storage.state["list_snapshots"]) == {"p1:2026-09", "p2:2026-09", "p3:2026-09"}
+    # Vollständig gelesen: Die Quelle gilt als aktuell (Issue #556)
+    assert storage.state["last_run"]["complete"] is True
+    assert storage.source_syncs == [{"full": True, "complete": True}]

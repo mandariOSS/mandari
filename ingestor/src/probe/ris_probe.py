@@ -27,6 +27,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from mandari_oparl.abgleich import detect_gate
 from mandari_oparl.crawler import product_token
 from mandari_oparl.robots import STATE_UNREACHABLE, RobotsTxt
 
@@ -66,22 +67,6 @@ def _hostname_matches(host: str, domain: str) -> bool:
     """Exakter Host oder Subdomain – kein Teilstring-Vergleich."""
     host = host.split(":")[0]
     return host == domain or host.endswith("." + domain)
-
-
-_GATE_MARKERS = {
-    "browser_verification": (
-        "just a moment",
-        "verifying your browser",
-        "checking your browser",
-        "browser-verifikation",
-        "browser verification",
-        "cf-chl",
-        "challenge-platform",
-        "cf_chl_opt",
-    ),
-    "proof_of_work": ("altcha", "proof-of-work", "proof of work", "pow-challenge", "anubis"),
-    "waf_forbidden": ("access denied", "request blocked", "zugriff verweigert", "web application firewall"),
-}
 
 
 @dataclass
@@ -149,20 +134,6 @@ def fingerprint(html: str, url: str = "", headers: dict[str, str] | None = None)
     if "/bi/" in url and re.search(r"\b(si|to|vo)\d{4}\.(asp|php)", text):
         return "sessionnet"
     return "unbekannt"
-
-
-def detect_gate(status: int | None, html: str, headers: dict[str, str] | None = None) -> str | None:
-    """Bot-Gate oder WAF-Seite erkennen; ``None`` = keine Sperre erkennbar."""
-    text = (html or "").lower()
-    kopf = {k.lower(): v.lower() for k, v in (headers or {}).items()}
-    if kopf.get("cf-mitigated") == "challenge":
-        return "browser_verification"
-    for art, marker in _GATE_MARKERS.items():
-        if any(m in text for m in marker):
-            return art
-    if status in (403, 429, 503) and "cloudflare" in kopf.get("server", ""):
-        return "waf_forbidden"
-    return None
 
 
 def robots_verdict(robots_txt: str | None, user_agent: str, paths: list[str]) -> tuple[str, str]:

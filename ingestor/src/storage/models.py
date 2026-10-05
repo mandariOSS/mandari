@@ -48,6 +48,9 @@ class OParlSource(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_full_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Aktualität (Issue #556): letzter vollständig erfolgreicher Abgleich bzw. Vollabgleich, ohne Lücke
+    last_successful_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_successful_full_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     # User-Agent je Quelle (Issue #123); leer = Standard aus settings.user_agent
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)

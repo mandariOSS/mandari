@@ -106,6 +106,38 @@ Metadaten), Transparenz- und Open-Data-Portale über DCAT-AP.de, Finanzverfahren
   der Webhook-Nutzlast erlaubt nur Kennungen und Cursor.
 - Monitoring: Zustellfehler und Rückstand je Adapter, Aktualität je Quelle.
 
+## Nachtrag zur Umsetzung (#556)
+
+- **Löschsignale** sind OParl `deleted: true` (Ingestor) und `404`/`410` einer Dokumentadresse
+  (Löschabgleich der Dokumente in Django, per GET bestätigt, vor dem Löschen erneut geprüft). Der
+  OParl-Abgleich schließt nie aus dem Fehlen eines Objekts.
+- **Vollständig gelungener Vollabgleich** gilt nur für Scraper-Quellen ohne Löschsignal. Der Adapter
+  hält je Objekttyp fest, ob er die Liste ganz gelesen hat. Nicht lesbare Seiten (Netzfehler,
+  Zeitüberschreitung, 4xx, 5xx), Seiten ohne den Aufbau der Quelle (Sperr-, Prüf- oder Hinweisseite mit
+  Status 200), ein erreichtes Detailseiten-Budget und nicht lesbare Kalendermonate machen den Typ für
+  diesen Lauf unvollständig: Seine Zähler bleiben stehen, nichts wird markiert. Nennt eine Liste ein
+  Objekt, dessen Detailseite nicht lesbar ist, gilt es als gesehen.
+- **Aufbau der Quelle** heißt bei SessionNet: das Layout der Instanz (Klassen `smc…`), nicht der
+  Produktname – Prüfseiten übernehmen die angefragte Adresse samt Installationspfad. Eine Liste muss
+  zudem ihren eigenen Aufbau tragen (Kalender: die Tageszeilen des Monats, auch ohne Sitzung).
+- **Bremse:** Fehlen in einem vollständigen Lauf mehr Objekte eines Typs als
+  `SCRAPER_TOMBSTONE_MAX_MISSING` (Vorgabe 10), zählt der Lauf keines davon (`last_run.tombstone_braked`)
+  – dieselbe Regel wie `FILE_RECONCILE_MAX_MISSING` beim Löschabgleich der Dokumente.
+- **Eine Regel für beide Abgleiche:** `mandari_oparl.abgleich` (shared) hält Löschstatus, Bremsstatus,
+  die Erkennung von HTML- und Sperrseiten und die Bremse für Ingestor und Django. Der Löschabgleich der
+  Dokumente bleibt der einzige Löschweg für Dokumente; der Ingestor bekommt keinen zweiten.
+- **Teilantworten im OParl-Abgleich:** Eine Folgeseite ohne Liste (Fehlerobjekt, anderes JSON, leer)
+  bricht die Liste wie ein HTTP-Fehler ab (`ListFetchError`); auf der ersten Seite heißt ein
+  Fehlerobjekt weiter „diese Liste gibt es hier nicht“ (OParl 1.0).
+- **Aktualität:** `OParlSource.last_successful_sync` bzw. `last_successful_full_sync` – letzter Abgleich
+  ohne Lücke (jede Kommune lesbar, jede Liste ganz, kein Sperr- oder Störungsbefund; Texterkennung und
+  Suchindex zählen nicht). Bei Scraper-Quellen zählen tote Verweise auf Detailseiten (404/410 der Quelle)
+  und einzelne nicht auswertbare Detailseiten nicht als Lücke; gehäuft fallen sie über die Parse-Quote
+  auf, die den Lauf dann als fehlerhaft wertet. `last_sync` zählt weiter jeden durchgelaufenen Abgleich; ein abgebrochener
+  Scraper-Lauf setzt weder `last_sync` noch den Fehlerstatus der Quelle zurück. Admin: Spalte
+  „Vollständig abgeglichen“ mit dem Hinweis „seither mit Lücken“; Änderungsfeed: Feld `freshness`
+  ([A10, Nachtrag #556](20260929-aenderungsfeed-format.md)).
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md), [A5 Verträge](20260929-ereignisvertraege.md),

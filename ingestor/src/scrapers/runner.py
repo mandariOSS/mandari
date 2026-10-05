@@ -11,7 +11,12 @@ Text-Extraktion und Elasticsearch-Indexierung. Der Kern bleibt unverändert.
 - Content-Hash je Entität ("mandari:contentHash" im raw_json) — Upsert nur
   bei Differenz; "modified" ist die Crawl-Zeit des letzten echten Updates
 - Verschwinden: erst nach N (Default 3) Full-Crawls ohne Sichtung wird
-  mark_entity_deleted gesetzt (Tombstone, nie physisches Löschen)
+  mark_entity_deleted gesetzt (Tombstone, nie physisches Löschen). Es zählen nur
+  vollständige Full-Crawls: Für einen Typ, dessen Liste der Lauf nicht ganz gelesen hat
+  (Fehler, Sperr- oder fremde Seite, Detailseiten-Budget), bleibt jeder Zähler stehen;
+  fehlen mehr Objekte als die Bremse erlaubt, ebenso (Issue #556, mandari_oparl.abgleich)
+- Aktualität: last_sync nur nach einem durchgelaufenen Crawl; der letzte vollständig
+  erfolgreiche Abgleich (ohne jede Lücke) steht getrennt an der Quelle
 
 Eine Quelle kann mehrere Körperschaften liefern (SessionNet-Instanz einer
 Samtgemeinde mit ihren Mitgliedsgemeinden): je Körperschaft ein Body, jede
@@ -24,6 +29,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from mandari_oparl.abgleich import brake_engaged
 from mandari_oparl.robots import robots_override
 
 from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED, ERROR_KIND_SERVER_ERROR_SERIES
@@ -31,7 +37,7 @@ from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers import get_adapter
-from src.scrapers.base import CrawlWindow, ScraperConfig
+from src.scrapers.base import CrawlWindow, ScraperConfig, ScrapeStats
 from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError, RobotsUnreachableError
 from src.storage.events import start_correlation
 
@@ -185,11 +191,24 @@ class ScraperSyncRunner:
                     f"{adapter.stats.detail_pages_attempted} Detailseiten)"
                 )
 
-            # Verschwinde-Erkennung: nur nach vollständigen, fehlerfreien
-            # Full-Crawls zählen; Tombstone erst nach N Sichtungs-Ausfällen.
+            # Vollständig erfolgreich: durchgelaufen, ohne Fehler und ohne Lücke (Issue #556)
+            complete = crawl_completed and not result.errors and adapter.stats.complete
+            if crawl_completed and not complete:
+                gaps = "; ".join(f"{t}: {r}" for t, r in sorted(adapter.stats.incomplete.items()))
+                console.print(
+                    f"[yellow]Scraper-Lauf {self.source.name} nicht vollständig "
+                    f"({adapter.stats.failed_pages - adapter.stats.gone_pages} Seiten gestört"
+                    f"{'; ' + gaps if gaps else ''})[/yellow]"
+                )
+
+            # Verschwinde-Erkennung: nur nach durchgelaufenen, fehlerfreien Full-Crawls und nur für
+            # Typen, deren Liste vollständig gelesen wurde; Tombstone erst nach N Sichtungs-Ausfällen.
             deleted_count = 0
+            braked: dict[str, int] = {}
             if full and crawl_completed and not result.errors:
-                deleted_count = await self._handle_missing(list(body_ids.values()), window, seen, state, es_deletions)
+                deleted_count = await self._handle_missing(
+                    list(body_ids.values()), window, seen, state, es_deletions, adapter.stats, braked
+                )
 
             # Zustand persistieren
             snapshots = dict(state.get("list_snapshots") or {})
@@ -206,6 +225,11 @@ class ScraperSyncRunner:
                 "entities_stored": sum(stats.values()),
                 "unchanged_skipped": skipped_unchanged,
                 "tombstoned": deleted_count,
+                "complete": complete,
+                "failed_pages": adapter.stats.failed_pages,
+                "gone_pages": adapter.stats.gone_pages,
+                "incomplete": dict(sorted(adapter.stats.incomplete.items())),
+                "tombstone_braked": braked,
             }
             await self.storage.update_scraper_state(self.source.url, state)
 
@@ -237,9 +261,12 @@ class ScraperSyncRunner:
                 result.errors.extend(index_stats["errors"])
                 pending_deletions = {}
 
-        for body_id in body_ids.values():
-            await self.storage.update_body_sync_time(body_id)
-        await self.storage.update_source_sync_time(self.source.id, full_sync=full)
+        # Nur ein durchgelaufener Crawl ist ein Abgleich: Ein abgebrochener setzte sonst den Fehlerstatus
+        # zurück, den er eben festgehalten hat, und die Quelle gälte als aktuell (Issue #556)
+        if crawl_completed:
+            for body_id in body_ids.values():
+                await self.storage.update_body_sync_time(body_id)
+            await self.storage.update_source_sync_time(self.source.id, full_sync=full, complete=complete)
 
         for entity_type, count in stats.items():
             field_name = _RESULT_FIELD_BY_TYPE.get(entity_type)
@@ -272,6 +299,8 @@ class ScraperSyncRunner:
         seen: dict[str, set[str]],
         state: dict[str, Any],
         es_deletions: dict[str, list[str]],
+        stats: ScrapeStats,
+        braked: dict[str, int],
     ) -> int:
         """
         Zählt nicht mehr gesichtete Objekte hoch und tombstonet nach
@@ -279,19 +308,36 @@ class ScraperSyncRunner:
         Wieder auftauchende Objekte werden vom Upsert-Pfad automatisch
         reaktiviert (deleted=False im update_set). Kandidaten sind die aktiven
         Objekte aller Bodies der Quelle.
+
+        Nicht vollständig gelesene Typen (``stats.incomplete``) und Typen, bei denen mehr Objekte fehlen,
+        als die Bremse erlaubt (``braked``), lassen ihre Zähler stehen: Aus einer Lücke folgt nichts.
+        Objekte, die eine Liste nennt, deren Detailseite aber nicht lesbar war, gelten als gesehen.
         """
         threshold = max(1, settings.scraper_tombstone_full_crawls)
         missing_state: dict[str, dict[str, int]] = {k: dict(v) for k, v in (state.get("missing") or {}).items()}
         deleted_count = 0
 
         for entity_type in TOMBSTONE_ENTITY_TYPES:
+            if entity_type in stats.incomplete:
+                console.print(
+                    f"[yellow]  Löschabgleich {entity_type} ausgesetzt: {stats.incomplete[entity_type]}[/yellow]"
+                )
+                continue
             candidates: set[str] = set()
             for body_id in body_ids:
                 if entity_type == "meeting":
                     candidates |= await self.storage.get_active_meeting_ids_in_window(body_id, window.start, window.end)
                 else:
                     candidates |= await self.storage.get_active_external_ids_for_body(entity_type, body_id)
-            seen_ids = seen.get(entity_type, set())
+            seen_ids = seen.get(entity_type, set()) | stats.listed.get(entity_type, set())
+            unseen = candidates - seen_ids
+            if brake_engaged(len(unseen), settings.scraper_tombstone_max_missing):
+                braked[entity_type] = len(unseen)
+                console.print(
+                    f"[bold red]  Löschabgleich {entity_type} gebremst: {len(unseen)} Objekte fehlen "
+                    f"(Grenze {settings.scraper_tombstone_max_missing}), nichts gezählt - Quelle prüfen[/bold red]"
+                )
+                continue
             counters = missing_state.setdefault(entity_type, {})
 
             # Wieder gesehen -> Zähler zurücksetzen
@@ -299,7 +345,7 @@ class ScraperSyncRunner:
                 if external_id in seen_ids or external_id not in candidates:
                     del counters[external_id]
 
-            for external_id in candidates - seen_ids:
+            for external_id in unseen:
                 counters[external_id] = counters.get(external_id, 0) + 1
                 if counters[external_id] >= threshold:
                     marked = await self.orchestrator._mark_deleted({"id": external_id}, entity_type, es_deletions)

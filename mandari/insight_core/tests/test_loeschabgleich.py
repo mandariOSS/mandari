@@ -521,6 +521,93 @@ class TestBremse:
         assert not OParlFile.objects.filter(source_missing_since__isnull=False).exists()
 
 
+#: Prüfseite eines Bot-Schutzes, mit Status 200 statt der Datei ausgeliefert
+SPERRSEITE = (
+    b"<!DOCTYPE html><html><head><title>Just a moment...</title></head><body>"
+    b"<script src='/cdn-cgi/challenge-platform/h/b/orchestrate'></script></body></html>"
+)
+
+
+class _Abbruch(httpx.SyncByteStream):
+    """Teilantwort: Die Verbindung bricht mitten in der Datei ab."""
+
+    def __iter__(self) -> Any:
+        yield PDF_NEU[:8]
+        raise httpx.RemoteProtocolError("peer closed connection without sending complete message body")
+
+
+def _stoerung(fall: str) -> Handler:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if fall == "nicht_erreichbar":
+            raise httpx.ConnectError("Verbindung abgelehnt", request=request)
+        if fall == "zeitueberschreitung":
+            raise httpx.ReadTimeout("keine Antwort", request=request)
+        if fall == "sperrseite":
+            return httpx.Response(200, content=SPERRSEITE, headers={"content-type": "text/html"})
+        if fall == "teilantwort":
+            if request.method == "HEAD":
+                return httpx.Response(200, headers={"content-length": str(len(PDF_NEU))})
+            return httpx.Response(200, stream=_Abbruch(), headers={"content-type": "application/pdf"})
+        return httpx.Response(int(fall))
+
+    return handler
+
+
+#: Keiner dieser Fälle ist ein Löschsignal (``mandari_oparl.abgleich``, Issue #556)
+STOERUNGEN = [
+    "nicht_erreichbar",
+    "zeitueberschreitung",
+    "401",
+    "403",
+    "451",
+    "429",
+    "500",
+    "502",
+    "503",
+    "sperrseite",
+    "teilantwort",
+]
+
+
+class TestNichtErreichbarIstNichtGeloescht:
+    """
+    Nur ``404``/``410`` (per GET bestätigt) sperren ein Dokument; jeder andere Fehlerfall lässt Dokument,
+    Kopie und Text unberührt (gleiche Regeln wie der Scraper-Abgleich im Ingestor, Issue #556).
+    """
+
+    @staticmethod
+    def _unberuehrt(datei: OParlFile) -> None:
+        datei.refresh_from_db()
+        assert datei.source_missing_since is None
+        assert not datei.deleted
+        assert not file_reconcile.is_blocked(datei)
+        assert datei.text_content == "Text mit Namen"
+        assert datei.sha256_hash == hashlib.sha256(PDF_ALT).hexdigest()
+
+    @pytest.mark.parametrize("fall", STOERUNGEN)
+    def test_abgleich_sperrt_nicht(self, body: OParlBody, tmp_path: Path, fall: str) -> None:
+        datei = _datei(body, tmp_path)
+        ergebnis = file_reconcile.verify(datei, _client(_stoerung(fall)))
+        assert ergebnis in (file_reconcile.ERROR, file_reconcile.THROTTLED)
+        self._unberuehrt(datei)
+
+    @pytest.mark.parametrize("fall", STOERUNGEN)
+    def test_stichprobe_sperrt_nicht(self, body: OParlBody, tmp_path: Path, fall: str) -> None:
+        datei = _datei(body, tmp_path)
+        ergebnis = file_reconcile.head_check(datei, _client(_stoerung(fall)))
+        assert ergebnis in (file_reconcile.ERROR, file_reconcile.THROTTLED, file_reconcile.PRESENT)
+        self._unberuehrt(datei)
+
+    @pytest.mark.parametrize("fall", STOERUNGEN)
+    def test_stoerung_hebt_sperre_nicht_auf(self, body: OParlBody, tmp_path: Path, fall: str) -> None:
+        """Umgekehrt gilt ein gesperrtes Dokument erst wieder als vorhanden, wenn die Quelle es liefert."""
+        seit = timezone.now() - timedelta(days=3)
+        datei = _datei(body, tmp_path, source_missing_since=seit)
+        file_reconcile.verify(datei, _client(_stoerung(fall)))
+        datei.refresh_from_db()
+        assert datei.source_missing_since == seit
+
+
 class TestRuheJeHost:
     def test_429_ohne_get_und_host_ruht(self, body: OParlBody, tmp_path: Path) -> None:
         for name in ("a.pdf", "b.pdf"):

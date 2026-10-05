@@ -215,6 +215,19 @@ Delta-Dateien von Lokaal Beslist in Flandern.
   Journal (kanonische Kennung des Body) und nennen die Rücknahme mit demselben Grund, jede unter ihrer
   Adresse des Objekts.
 
+## Nachtrag zur Umsetzung (#556, Aktualität je Quelle)
+
+- **Feld `freshness`:** Für eine aus einem Fremd-RIS geerntete Kommune nennt die Antwort des Feeds
+  `{"synced_at": …, "full_synced_at": …}`: den letzten vollständig erfolgreichen Abgleich bzw.
+  Vollabgleich ihrer Quelle (ISO 8601, `null` = noch keiner). Vollständig heißt: jede Kommune der Quelle
+  lesbar, jede Liste ganz gelesen, kein Sperr- oder Störungsbefund
+  ([A9, Nachtrag #556](20260929-adapter-rahmen.md)). Eine leere Seite bedeutet damit „nichts Neues seit
+  diesem Stand der Quelle“, nicht „nichts Neues in der Quelle“.
+- **Session-Mandanten** führen ihren Bestand selbst und nennen das Feld nicht.
+- **Additiv:** Abnehmer, die das Feld nicht kennen, sind nicht betroffen. Es ändert sich mit jedem
+  vollständigen Abgleich und damit auch der `ETag`; Nichtöffentliches bleibt unsichtbar, weil der
+  Abgleich unabhängig davon läuft, was er findet.
+
 ## Bezug
 
 - [A3 Sequenzierer](20260929-sequenzierer.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),

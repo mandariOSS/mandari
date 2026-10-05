@@ -267,7 +267,9 @@ def _existing(kind: str, ids: Collection[uuid.UUID]) -> set[uuid.UUID]:
     return found
 
 
-def _feed(output: BestandMapping, pk: uuid.UUID, epoch: str) -> changes.Feed:
+def _feed(
+    output: BestandMapping, pk: uuid.UUID, epoch: str, freshness: changes.Freshness | None = None
+) -> changes.Feed:
     uris = output.uris
 
     def addresses(kind: str, ids: Collection[uuid.UUID]) -> dict[uuid.UUID, str]:
@@ -277,7 +279,12 @@ def _feed(output: BestandMapping, pk: uuid.UUID, epoch: str) -> changes.Feed:
         return {object_id: uris.obj(kind, object_id) for object_id in _existing(kind, ids)}
 
     return changes.Feed(
-        body_id=pk, url=uris.changes(pk), snapshot_url=uris.snapshot(pk), addresses=addresses, epoch=epoch
+        body_id=pk,
+        url=uris.changes(pk),
+        snapshot_url=uris.snapshot(pk),
+        addresses=addresses,
+        epoch=epoch,
+        freshness=freshness,
     )
 
 
@@ -309,13 +316,25 @@ def _feed_or_unavailable(
     state = publication.body_state(pk)
     if state is not None and state.withdrawn:
         return changes.withdrawn_response(request)
-    found = OParlBody.objects.filter(pk=pk).values_list("is_listed", "source__sync_config").first()
+    found = (
+        OParlBody.objects.filter(pk=pk)
+        .values_list(
+            "is_listed",
+            "source__sync_config",
+            "source_id",
+            "source__last_successful_sync",
+            "source__last_successful_full_sync",
+        )
+        .first()
+    )
     if found is None:
         return error_response(404, "Kommune (Body) nicht gefunden.")
-    listed, config = found
+    listed, config, source_id, synced_at, full_synced_at = found
     if not listed:
         return _unknown_list(segment)
-    return _feed(output, pk, publication.retracted_at(config))
+    # Aktualität der Quelle (Issue #556): Der Feed ist nur so aktuell wie ihr letzter vollständiger Abgleich
+    freshness = None if source_id is None else changes.Freshness(synced_at=synced_at, full_synced_at=full_synced_at)
+    return _feed(output, pk, publication.retracted_at(config), freshness)
 
 
 @endpoint

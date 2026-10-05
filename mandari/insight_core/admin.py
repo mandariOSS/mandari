@@ -5,6 +5,7 @@ Django Admin Konfiguration für OParl-Models.
 Verwendet Django Unfold für modernes Admin-Interface.
 """
 
+from datetime import datetime
 from typing import Any
 
 from django import forms
@@ -135,6 +136,7 @@ class OParlSourceAdmin(ModelAdmin):
         "health_display",
         "sync_status_display",
         "last_sync_ago",
+        "last_successful_sync_ago",
         "body_count",
     ]
     list_filter = ["is_active", SourceHealthListFilter, SourceTypeListFilter]
@@ -145,6 +147,8 @@ class OParlSourceAdmin(ModelAdmin):
         "updated_at",
         "last_sync",
         "last_full_sync",
+        "last_successful_sync",
+        "last_successful_full_sync",
         "oparl_version",
         "scraper_status_display",
         "last_error",
@@ -206,12 +210,15 @@ class OParlSourceAdmin(ModelAdmin):
         return status_text(color, label)
 
     @admin.display(description="Scraper-Status")
-    def scraper_status_display(self, obj):
+    def scraper_status_display(self, obj: OParlSource) -> str:
         """
         Zustand einer Scraper-Quelle (aus sync_config["scraper_state"]):
-        letzter Lauf, Parse-Quote, robots.txt-Sperre.
+        letzter Lauf, Parse-Quote, robots.txt-Sperre; dazu Lücken des Laufs und eine
+        greifende Bremse des Löschabgleichs (Issue #556).
         Anlage einer Scraper-Quelle: siehe docs/SCRAPER_SOURCES.md.
         """
+        from .services.source_health import incomplete_types, tombstone_braked
+
         if not obj.is_scraper_source:
             return "— (keine Scraper-Quelle)"
         state = (obj.sync_config or {}).get("scraper_state") or {}
@@ -224,13 +231,21 @@ class OParlSourceAdmin(ModelAdmin):
             return "Noch kein Lauf"
         quota = last_run.get("parse_quota")
         quota_str = f"{quota:.0%}" if isinstance(quota, (int, float)) else "?"
-        return (
+        text = (
             f"Letzter Lauf: {last_run.get('at', '?')} | "
             f"Parse-Quote: {quota_str} | "
             f"gespeichert: {last_run.get('entities_stored', '?')} | "
             f"unverändert: {last_run.get('unchanged_skipped', '?')} | "
             f"Seiten: {last_run.get('pages_fetched', '?')}"
         )
+        hinweise = []
+        if luecken := incomplete_types(last_run):
+            hinweise.append(f"unvollständig: {luecken}")
+        if gebremst := tombstone_braked(last_run):
+            hinweise.append(f"Löschabgleich gebremst: {gebremst}")
+        if not hinweise:
+            return text
+        return format_html("{} | {}", text, status_text("#d97706", " | ".join(hinweise)))
 
     @admin.display(description="Sync-Status")
     def sync_status_display(self, obj):
@@ -248,12 +263,9 @@ class OParlSourceAdmin(ModelAdmin):
             return mark_safe('<span style="color: #ca8a04;">Veraltet</span>')
         return mark_safe('<span style="color: #dc2626;">Sehr alt</span>')
 
-    @admin.display(description="Letzter Sync")
-    def last_sync_ago(self, obj):
-        if not obj.last_sync:
-            return "-"
-
-        age = timezone.now() - obj.last_sync
+    @staticmethod
+    def _ago(moment: datetime) -> str:
+        age = timezone.now() - moment
         if age.days > 0:
             return f"vor {age.days} Tag(en)"
         hours = int(age.total_seconds() / 3600)
@@ -261,6 +273,25 @@ class OParlSourceAdmin(ModelAdmin):
             return f"vor {hours} Std."
         minutes = int(age.total_seconds() / 60)
         return f"vor {minutes} Min."
+
+    @admin.display(description="Letzter Sync")
+    def last_sync_ago(self, obj):
+        if not obj.last_sync:
+            return "-"
+        return self._ago(obj.last_sync)
+
+    @admin.display(description="Vollständig abgeglichen", ordering="last_successful_sync")
+    def last_successful_sync_ago(self, obj: OParlSource) -> str:
+        """
+        Aktualität der Quelle (Issue #556): letzter Abgleich ohne Lücke. Hatten spätere Abgleiche Lücken
+        (eine Liste brach ab, eine Seite war gesperrt), steht das daneben.
+        """
+        if not obj.last_successful_sync:
+            return status_text("#d97706", "noch nie") if obj.last_sync else "-"
+        text = self._ago(obj.last_successful_sync)
+        if obj.last_sync and obj.last_sync > obj.last_successful_sync:
+            return status_text("#d97706", f"{text}, seither mit Lücken")
+        return text
 
     @admin.display(description="Bodies")
     def body_count(self, obj):

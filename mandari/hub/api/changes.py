@@ -59,6 +59,12 @@ Cursors ein, ein Cursor aus einem früheren Abschnitt ergibt ``410`` mit dem Ver
 Ob und wann eine Kommune Feed und Snapshot anbietet, legt die Ausgabe fest (beim Aggregator: nur
 veröffentlichte und gelistete Kommunen, ``hub.api.aggregator``).
 
+**Aktualität (Issue #556):** Für eine aus einem Fremd-RIS geerntete Kommune nennt die Antwort unter
+``freshness`` den letzten vollständig erfolgreichen Abgleich ihrer Quelle (``synced_at``) und Vollabgleich
+(``full_synced_at``); ``null`` heißt: noch keiner. Eine leere Seite heißt „nichts Neues seit diesem Stand
+der Quelle“, nicht „nichts Neues in der Quelle“. Session-Mandanten führen ihren Bestand selbst und nennen
+das Feld nicht.
+
 **Schalter:** ``OPARL_CHANGES_ENABLED`` (Standard aus). Solange die Erzeuger der Ereignisse einer
 Installation nicht laufen, wäre der Feed leer und würde Abnehmern vortäuschen, es habe sich nichts
 geändert.
@@ -132,6 +138,18 @@ Addresses = Callable[[str, Collection[uuid.UUID]], Mapping[uuid.UUID, str]]
 
 
 @dataclass(frozen=True)
+class Freshness:
+    """
+    Aktualität einer geernteten Kommune (Issue #556): letzter vollständig erfolgreicher Abgleich bzw.
+    Vollabgleich ihrer Quelle (``OParlSource.last_successful_sync``/``last_successful_full_sync``).
+    ``None``: noch keiner.
+    """
+
+    synced_at: datetime | None
+    full_synced_at: datetime | None
+
+
+@dataclass(frozen=True)
 class Feed:
     """
     Der Änderungsfeed einer Kommune in einer Ausgabe.
@@ -142,6 +160,7 @@ class Feed:
     - ``epoch``: Abschnitt des Bestands, für den Cursor gelten. Ändert sich der Bestand am Journal
       vorbei (Rücknahme einer ganzen Kommune), wechselt die Ausgabe den Abschnitt; Cursor aus einem
       früheren gelten dann als abgelaufen (``410`` mit Verweis auf den Snapshot). Leer: der erste.
+    - ``freshness``: Aktualität der Quelle einer geernteten Kommune; ``None`` (Session): nicht ausgegeben
     """
 
     body_id: uuid.UUID
@@ -149,6 +168,7 @@ class Feed:
     snapshot_url: str
     addresses: Addresses
     epoch: str = ""
+    freshness: Freshness | None = None
 
 
 # =============================================================================
@@ -497,14 +517,18 @@ def changes_response(request: HttpRequest, feed: Feed) -> HttpResponse:
 
     entries, last = _read(feed, after, limit, day)
     position = encode_cursor(feed.body_id, last, day, feed.epoch)
-    return json_response(
-        {
-            "data": entries,
-            "cursor": position,
-            "links": {
-                "self": _link(feed, token or None, request),
-                "next": _link(feed, position, request),
-                "snapshot": feed.snapshot_url,
-            },
+    page: dict[str, object] = {
+        "data": entries,
+        "cursor": position,
+        "links": {
+            "self": _link(feed, token or None, request),
+            "next": _link(feed, position, request),
+            "snapshot": feed.snapshot_url,
+        },
+    }
+    if feed.freshness is not None:
+        page["freshness"] = {
+            "synced_at": iso(feed.freshness.synced_at),
+            "full_synced_at": iso(feed.freshness.full_synced_at),
         }
-    )
+    return json_response(page)

@@ -201,6 +201,9 @@ class Settings(BaseSettings):
     # Objekte werden erst nach N aufeinanderfolgenden Full-Crawls ohne
     # Sichtung als geloescht markiert (Tombstone, nie physisch).
     scraper_tombstone_full_crawls: int = 3
+    # Bremse (Issue #556, wie FILE_RECONCILE_MAX_MISSING beim Datei-Löschabgleich): Fehlen in einem
+    # vollständigen Full-Crawl mehr Objekte eines Typs, zählt der Lauf für diesen Typ keines davon.
+    scraper_tombstone_max_missing: int = 10
 
 
 @lru_cache
