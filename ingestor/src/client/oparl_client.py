@@ -68,6 +68,11 @@ class FetchResult:
     error_kind: str | None = None
 
 
+def _is_list_page(data: Any) -> bool:
+    """Ist die Antwort eine Seite einer OParl-Liste (``data`` als Liste, oder eine Liste ohne Hülle)?"""
+    return isinstance(data, list) or (isinstance(data, dict) and isinstance(data.get("data"), list))
+
+
 class ListFetchError(Exception):
     """
     Eine Objektliste (oder eine ihrer Seiten) war nicht abrufbar.
@@ -768,6 +773,21 @@ class OParlClient:
                 console.print(f"[red]Error fetching {current_url}: {result.error}[/red]")
                 self._health(current_url).note_failed_list(url)
                 raise ListFetchError(url, current_url, result)
+
+            # Eine Folgeseite ohne Liste (leer, Fehlerobjekt, anderes JSON) ist eine Teilantwort (Issue #556):
+            # Die Liste bricht mittendrin ab. Auf der ersten Seite heißt ein Fehlerobjekt dagegen „diese Liste
+            # gibt es hier nicht“ (OParl 1.0).
+            if pages_fetched > 0 and not _is_list_page(result.data):
+                reason = oparl_error_message(result.data) if is_oparl_error(result.data) else "keine Liste"
+                console.print(f"[red]Liste {url} bricht ab ({reason}): {current_url}[/red]")
+                self._health(current_url).note_failed_list(url)
+                partial = FetchResult(
+                    url=current_url,
+                    data=None,
+                    status_code=result.status_code,
+                    error=f"Folgeseite ohne Liste ({reason})",
+                )
+                raise ListFetchError(url, current_url, partial)
 
             if result.data is None:
                 break

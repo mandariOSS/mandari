@@ -229,6 +229,21 @@ werden in Elasticsearch indexiert.
   automatisch auf. Erfasst werden derzeit Sitzungen im Crawl-Fenster und
   Gremien (konservativ, um Historie außerhalb des Fensters nie fälschlich
   zu tombstonen).
+- **Nur vollständige Full-Crawls zählen** (Issue #556): Ist eine Seite
+  nicht lesbar (Netzfehler, Zeitüberschreitung, 4xx, 5xx) oder keine
+  SessionNet-Seite (Sperr-, Prüf- oder Hinweisseite mit Status 200),
+  endet der Crawl am Detailseiten-Budget oder fehlt ein Kalendermonat,
+  bleibt der betroffene Typ in diesem Lauf unvollständig: Seine Zähler
+  bleiben stehen. Eine Sitzung, die der Kalender nennt, deren Seite aber
+  nicht lesbar ist, gilt als gesehen. `scraper_state.last_run` nennt
+  `complete`, `failed_pages` und je Typ den Grund (`incomplete`).
+- **Bremse**: Fehlen in einem Lauf mehr als 10 Objekte eines Typs
+  (`SCRAPER_TOMBSTONE_MAX_MISSING`), zählt der Lauf keines davon
+  (`last_run.tombstone_braked`, Konsole „gebremst“) – Quelle prüfen.
+- **Aktualität**: Der Admin zeigt je Quelle den letzten vollständigen
+  Abgleich („Vollständig abgeglichen“). Ein abgebrochener Crawl setzt
+  `last_sync` und den Fehlerstatus der Quelle nicht mehr zurück; nach
+  mehreren Fehlschlägen greift die Schonung wie bei OParl-Quellen.
 
 ### Monitoring
 

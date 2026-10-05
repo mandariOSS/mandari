@@ -167,6 +167,19 @@ class SyncResult:
     host_findings: list[dict[str, Any]] = field(default_factory=list)
 
 
+def sync_complete(body_results: list[dict[str, Any]], missed_bodies: list[str], client: OParlClient) -> bool:
+    """
+    Ist der Abgleich einer Quelle vollständig erfolgreich (Issue #556)?
+
+    Ja, wenn jede Kommune lesbar war, jede ihrer Listen ganz gelesen wurde (keine abgebrochene
+    Paginierung, keine Teilantwort) und kein Host gesperrt oder gestört war. Nur dann gilt die Quelle
+    als aktuell (``last_successful_sync``); Text-Extraktion und Suchindex zählen nicht dazu.
+    """
+    if missed_bodies or client.host_findings():
+        return False
+    return all(not body_result.get("incomplete") for body_result in body_results)
+
+
 class SyncOrchestrator:
     """
     Orchestrates the OParl synchronization process.
@@ -275,6 +288,7 @@ class SyncOrchestrator:
         self,
         client: OParlClient,
         url: str,
+        missed: list[str] | None = None,
     ) -> tuple[str, list[dict[str, Any]], str | None]:
         """
         Detect whether a URL points to a Body, Body-List, or System.
@@ -291,6 +305,8 @@ class SyncOrchestrator:
         Args:
             client: OParl HTTP client
             url: The URL to detect
+            missed: nimmt Adressen auf, unter denen Kommunen nicht lesbar waren (weitere Seiten der
+                Kommunenliste, einzelne Kommunen); der Abgleich ist dann nicht vollständig (Issue #556)
 
         Returns:
             Tuple of (type_name, list_of_body_dicts, oparl_version), wobei
@@ -325,6 +341,10 @@ class SyncOrchestrator:
                 first_type = items[0].get("type", "") if isinstance(items[0], dict) else ""
                 if first_type.endswith("/Body"):
                     console.print(f"[green]Detected: Body list ({len(items)} bodies)[/green]")
+                    links = response.get("links")
+                    if missed is not None and isinstance(links, dict) and links.get("next"):
+                        # Nur die erste Seite der Kommunenliste wird gelesen
+                        missed.append(str(links["next"]))
                     return "body_list", items, oparl_version
 
         # Case 3: System object -> follow body reference
@@ -332,7 +352,7 @@ class SyncOrchestrator:
             body_ref = response.get("body")
             if body_ref:
                 console.print(f"[green]Detected: System -> fetching bodies from {body_ref}[/green]")
-                bodies = await self._fetch_bodies(client, body_ref)
+                bodies = await self._fetch_bodies(client, body_ref, missed)
                 return "system", bodies, oparl_version or detect_oparl_version(bodies)
 
         raise ValueError(f"URL is neither Body, Body-List, nor System: {url}\nResponse type: {type_str or 'unknown'}")
@@ -362,12 +382,15 @@ class SyncOrchestrator:
             return data, candidate
         return None, url
 
-    async def _fetch_bodies(self, client: OParlClient, body_ref: Any) -> list[dict[str, Any]]:
+    async def _fetch_bodies(
+        self, client: OParlClient, body_ref: Any, missed: list[str] | None = None
+    ) -> list[dict[str, Any]]:
         """
         Löst das ``body``-Feld eines System-Objekts in Body-Dicts auf.
 
         Varianten: Listen-URL (Standard, auch OParl 1.0 ``/oparl/Body``),
-        Liste von Body-URLs oder bereits eingebettete Body-Objekte.
+        Liste von Body-URLs oder bereits eingebettete Body-Objekte. Eine nicht lesbare
+        Body-URL wird übersprungen und in ``missed`` vermerkt (Issue #556).
         """
         if isinstance(body_ref, str):
             return await client.fetch_list_all(body_ref)
@@ -381,6 +404,8 @@ class SyncOrchestrator:
                     data = result.data
                     if isinstance(data, dict) and not is_oparl_error(data):
                         bodies.extend(OParlClient._extract_items(data))
+                    elif missed is not None:
+                        missed.append(entry)
         return bodies
 
     async def sync_body_url(
@@ -434,7 +459,8 @@ class SyncOrchestrator:
             ) as client:
                 # Auto-detect URL type
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
-                url_type, bodies_data, oparl_version = await self.auto_detect_url(client, url)
+                missed_bodies: list[str] = []
+                url_type, bodies_data, oparl_version = await self.auto_detect_url(client, url, missed_bodies)
 
                 if not bodies_data:
                     result.errors.append(f"No bodies found at {url}")
@@ -475,7 +501,7 @@ class SyncOrchestrator:
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
-                            return {"errors": [str(e)]}
+                            return {"errors": [str(e)], "incomplete": ["body"]}
 
                 body_results = await asyncio.gather(
                     *[sync_body_wrapper(bd) for bd in bodies_data],
@@ -496,8 +522,9 @@ class SyncOrchestrator:
                     result.consultations_synced += body_result.get("consultations", 0)
                     result.errors.extend(body_result.get("errors", []))
 
-                # Update sync timestamp
-                await self.storage.update_source_sync_time(source_id, full_sync=full)
+                # Update sync timestamp; vollständig nur ohne Lücke (Issue #556)
+                complete = sync_complete(body_results, missed_bodies, client)
+                await self.storage.update_source_sync_time(source_id, full_sync=full, complete=complete)
                 result.http_stats = client.stats
                 result.success = True
                 await self._apply_host_findings(result, client)
@@ -722,7 +749,8 @@ class SyncOrchestrator:
 
                 # Fetch all bodies
                 console.print("[blue]Fetching bodies list...[/blue]")
-                bodies_data = await self._fetch_bodies(client, body_list_url)
+                missed_bodies: list[str] = []
+                bodies_data = await self._fetch_bodies(client, body_list_url, missed_bodies)
                 console.print(f"[dim]Found {len(bodies_data)} bodies[/dim]")
 
                 # Filter bodies if requested
@@ -758,7 +786,7 @@ class SyncOrchestrator:
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
-                            return {"errors": [str(e)]}
+                            return {"errors": [str(e)], "incomplete": ["body"]}
 
                 # Run all body syncs in parallel (bounded by semaphore)
                 body_results = await asyncio.gather(
@@ -780,8 +808,9 @@ class SyncOrchestrator:
                     result.consultations_synced += body_result.get("consultations", 0)
                     result.errors.extend(body_result.get("errors", []))
 
-                # Update sync timestamp
-                await self.storage.update_source_sync_time(source_id, full_sync=full)
+                # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556)
+                complete = not body_filter and sync_complete(body_results, missed_bodies, client)
+                await self.storage.update_source_sync_time(source_id, full_sync=full, complete=complete)
                 result.http_stats = client.stats
                 result.success = True
                 await self._apply_host_findings(result, client)
@@ -871,6 +900,8 @@ class SyncOrchestrator:
             "agenda_items": 0,
             "consultations": 0,
             "errors": [],
+            # Objekttypen, deren Liste nicht vollständig gelesen wurde (Issue #556)
+            "incomplete": [],
         }
 
         body_name = body_data.get("name", "Unknown")
@@ -979,12 +1010,14 @@ class SyncOrchestrator:
 
             if isinstance(org_result, Exception):
                 stats["errors"].append(f"Organizations: {org_result}")
+                stats["incomplete"].append("organization")
             else:
                 stats["organizations"] = org_result
                 progress.update(task1, completed=org_result, total=org_result)
 
             if isinstance(person_result, Exception):
                 stats["errors"].append(f"Persons: {person_result}")
+                stats["incomplete"].append("person")
             else:
                 stats["persons"] = person_result
                 progress.update(task2, completed=person_result, total=person_result)
@@ -1013,12 +1046,14 @@ class SyncOrchestrator:
 
             if isinstance(meeting_result, Exception):
                 stats["errors"].append(f"Meetings: {meeting_result}")
+                stats["incomplete"].append("meeting")
             else:
                 stats["meetings"] = meeting_result
                 progress.update(task4, completed=meeting_result, total=meeting_result)
 
             if isinstance(paper_result, Exception):
                 stats["errors"].append(f"Papers: {paper_result}")
+                stats["incomplete"].append("paper")
             else:
                 stats["papers"] = paper_result
                 progress.update(task5, completed=paper_result, total=paper_result)
@@ -1044,24 +1079,28 @@ class SyncOrchestrator:
 
             if isinstance(location_result, Exception):
                 stats["errors"].append(f"Locations: {location_result}")
+                stats["incomplete"].append("location")
             else:
                 stats["locations"] = location_result
                 progress.update(task6, completed=location_result, total=location_result)
 
             if isinstance(agenda_item_result, Exception):
                 stats["errors"].append(f"AgendaItems: {agenda_item_result}")
+                stats["incomplete"].append("agendaitem")
             else:
                 stats["agenda_items"] = agenda_item_result
                 progress.update(task7, completed=agenda_item_result, total=agenda_item_result)
 
             if isinstance(file_result, Exception):
                 stats["errors"].append(f"Files: {file_result}")
+                stats["incomplete"].append("file")
             else:
                 stats["files"] = file_result
                 progress.update(task8, completed=file_result, total=file_result)
 
             if isinstance(consultation_result, Exception):
                 stats["errors"].append(f"Consultations: {consultation_result}")
+                stats["incomplete"].append("consultation")
             else:
                 stats["consultations"] = consultation_result
                 progress.update(task9, completed=consultation_result, total=consultation_result)

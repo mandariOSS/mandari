@@ -209,13 +209,25 @@ class ScraperAdapter(Protocol):
 
 @dataclass
 class ScrapeStats:
-    """Parse-Quoten-Statistik eines Crawl-Laufs."""
+    """
+    Statistik eines Crawl-Laufs: Parse-Quote und Vollständigkeit (Issue #556).
+
+    Aus dem Fehlen eines Objekts schließt der Läufer nur, wenn der Lauf dessen Liste vollständig gelesen
+    hat (``mandari_oparl.abgleich``). Nicht lesbare Seiten (Fehler, Sperr- oder fremde Seite), ein
+    erreichtes Detailseiten-Budget und unvollständige Listen hält der Adapter hier fest.
+    """
 
     pages_fetched: int = 0
     detail_pages_attempted: int = 0
     detail_pages_parsed: int = 0
     parse_failures: int = 0
     entities_parsed: int = 0
+    #: Seiten ohne verwertbare Antwort: Fehler, Sperr-, Prüf- oder fremde Seite
+    failed_pages: int = 0
+    #: Objekttypen, deren Liste dieser Lauf nicht vollständig gelesen hat, je mit dem ersten Grund
+    incomplete: dict[str, str] = field(default_factory=dict)
+    #: Objekte, die eine Liste nennt, deren Detailseite aber nicht lesbar war: Es gibt sie in der Quelle
+    listed: dict[str, set[str]] = field(default_factory=dict)
 
     @property
     def parse_quota(self) -> float:
@@ -223,6 +235,20 @@ class ScrapeStats:
         if self.detail_pages_attempted == 0:
             return 1.0
         return self.detail_pages_parsed / self.detail_pages_attempted
+
+    @property
+    def complete(self) -> bool:
+        """Hat der Lauf alles gelesen, was er lesen wollte (keine Lücke, kein Parse-Fehler)?"""
+        return not self.incomplete and not self.failed_pages and not self.parse_failures
+
+    def mark_incomplete(self, reason: str, *entity_types: str) -> None:
+        """Die Listen dieser Objekttypen sind in diesem Lauf nicht vollständig gelesen (erster Grund zählt)."""
+        for entity_type in entity_types:
+            self.incomplete.setdefault(entity_type, reason)
+
+    def mark_listed(self, entity_type: str, external_id: str) -> None:
+        """Die Liste nennt das Objekt, seine Detailseite war nicht lesbar: Es fehlt nicht."""
+        self.listed.setdefault(entity_type, set()).add(external_id)
 
 
 # ---------------------------------------------------------------------------

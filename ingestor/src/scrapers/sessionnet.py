@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
+from mandari_oparl.abgleich import detect_gate
 
 from src.metrics import metrics
 from src.redaction import MaskingConsole
@@ -55,6 +56,9 @@ TZ_BERLIN = ZoneInfo("Europe/Berlin")
 
 _TIME_RANGE_RE = re.compile(r"^(\d{1,2}:\d{2})(?:\s*-\s*(\d{1,2}:\d{2}))?(?:\s*Uhr)?$")
 _DATE_RE = re.compile(r"(\d{2}\.\d{2}\.\d{4})")
+#: Jede Seite einer SessionNet-Instanz trägt deren Layout (Klassen ``smc…``) oder nennt das Produkt. Fehlt
+#: beides, kam eine fremde Seite zurück: eine Sperr-, Prüf- oder Hinweisseite (Issue #556).
+_SESSIONNET_PAGE_RE = re.compile(r"class=[\"'][^\"']*\bsmc|sessionnet", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -558,10 +562,23 @@ class SessionNetAdapter:
     # -------------------- Hilfen --------------------
 
     async def _fetch(self, url: str, is_detail: bool = False) -> str | None:
+        """
+        Seite holen; ``None``, wenn sie nicht lesbar ist (Fehler oder fremde Seite, Issue #556).
+
+        Eine Seite ohne SessionNet-Aufbau (Sperr-, Prüf- oder Hinweisseite mit Status 200) wird nicht
+        ausgewertet: Geparst ergäbe sie eine leere Liste, und der Läufer schlösse daraus auf Löschungen.
+        """
         if is_detail:
             self.stats.detail_pages_attempted += 1
         html = await self.fetcher.fetch_text(url)
-        if html is not None:
+        if html is not None and not _SESSIONNET_PAGE_RE.search(html):
+            art = detect_gate(200, html) or "fremder Aufbau"
+            console.print(f"[yellow]Scraper: keine SessionNet-Seite ({art}), nicht ausgewertet: {url}[/yellow]")
+            metrics.record_scraper_parse_failure(self.fetcher.source_name, "fremde_seite")
+            html = None
+        if html is None:
+            self.stats.failed_pages += 1
+        else:
             self.stats.pages_fetched += 1
         return html
 
@@ -755,11 +772,14 @@ class SessionNetAdapter:
             gr_html = self._gremien_html[plan.cpanr]
         else:
             gr_html = await self._fetch(self.urls.page("gr0040", **plan.params()))
+        if not gr_html:
+            self.stats.mark_incomplete("Gremienliste nicht lesbar", "organization", "person", "membership")
         if gr_html:
             orgs = parse_organizations(gr_html)
             if not orgs:
                 self.stats.parse_failures += 1
                 metrics.record_scraper_parse_failure(self.fetcher.source_name, "gr0040")
+                self.stats.mark_incomplete("Gremienliste ohne Gremien", "organization", "person", "membership")
             for org in orgs:
                 external_id = self.urls.external_id("kp0040", __kgrnr=org["kgrnr"])
                 org_by_name[org["name"]] = external_id
@@ -786,6 +806,7 @@ class SessionNetAdapter:
             memberships: list[dict[str, Any]] = []
             for org in org_dicts:
                 if not self._budget_left():
+                    self.stats.mark_incomplete("Detailseiten-Budget erreicht", "person", "membership")
                     break
                 kgrnr = _query_int(org["id"], "__kgrnr")
                 if kgrnr is None:
@@ -794,6 +815,7 @@ class SessionNetAdapter:
                 if not html:
                     self.stats.parse_failures += 1
                     metrics.record_scraper_parse_failure(self.fetcher.source_name, "kp0040")
+                    self.stats.mark_incomplete("Mitgliederliste nicht lesbar", "person", "membership")
                     continue
                 rows = parse_members(html)
                 self.stats.detail_pages_parsed += 1
@@ -848,6 +870,7 @@ class SessionNetAdapter:
                     f"[yellow]Scraper: Detailseiten-Budget erreicht "
                     f"({budget}) — Crawl endet vor {month:02d}/{year}[/yellow]"
                 )
+                self.stats.mark_incomplete("Detailseiten-Budget erreicht", "meeting", "paper", "consultation")
                 break
             cal_html = await self._fetch(
                 self.urls.page("si0040", **plan.params(), __cjahr=year, __cmonat=month, __canz=1)
@@ -855,6 +878,9 @@ class SessionNetAdapter:
             if not cal_html:
                 self.stats.parse_failures += 1
                 metrics.record_scraper_parse_failure(self.fetcher.source_name, "si0040")
+                self.stats.mark_incomplete(
+                    f"Kalender {month:02d}/{year} nicht lesbar", "meeting", "paper", "consultation"
+                )
                 continue
             stubs = sorted(parse_calendar(cal_html), key=MeetingStub.sort_key)
             if plan.cpanr is not None and plan.menu_name:
@@ -884,21 +910,30 @@ class SessionNetAdapter:
 
             for stub in stubs:
                 if not self._budget_left():
+                    self.stats.mark_incomplete("Detailseiten-Budget erreicht", "meeting", "paper", "consultation")
                     break
                 meeting = await self._build_meeting(stub, body_id, org_by_name)
                 if meeting is None:
+                    # Der Kalender nennt die Sitzung: Es gibt sie, nur ihre Seite war nicht lesbar
+                    self.stats.mark_listed("meeting", self.urls.external_id("si0057", __ksinr=stub.ksinr))
+                    self.stats.mark_incomplete(f"Sitzung {stub.ksinr} nicht lesbar", "paper", "consultation")
                     continue
                 meetings.append(meeting)
                 # Vorlagen der TOPs nachladen (dedupliziert je Lauf)
                 for consultation in meeting.pop("mandari:consultations", []):
                     kvonr = consultation.pop("mandari:kvonr")
                     consultations.append(with_content_hash(consultation))
-                    if kvonr in fetched_papers or not self._budget_left():
+                    if kvonr in fetched_papers:
+                        continue
+                    if not self._budget_left():
+                        self.stats.mark_incomplete("Detailseiten-Budget erreicht", "paper")
                         continue
                     fetched_papers.add(kvonr)
                     paper = await self._build_paper(kvonr, body_id)
                     if paper is not None:
                         papers.append(paper)
+                    else:
+                        self.stats.mark_listed("paper", self.urls.external_id("vo0050", __kvonr=kvonr))
 
             self.stats.entities_parsed += len(papers) + len(meetings) + len(consultations)
             if papers:
