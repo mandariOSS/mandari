@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.location.changed:v1",
+  "title": "Ort geändert",
+  "description": "Ein Ort wurde neu erkannt (added) oder geändert (changed), etwa Beschreibung, Anschrift oder Geodaten. Aggregat: Location. Die Rücknahme meldet ris.object.depublished. Ob ein Ort einer Vorlage oder Sitzung zugeordnet ist, meldet deren Ereignis (Feld location). Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "location",
+    "change"
+  ],
+  "properties": {
+    "location": {
+      "description": "Kanonische Kennung des Orts.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "change": {
+      "description": "Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert).",
+      "type": "string",
+      "enum": [
+        "added",
+        "changed"
+      ]
+    },
+    "changed": {
+      "description": "Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. description, streetAddress, geojson); bei change changed.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    }
+  },
+  "examples": [
+    {
+      "location": "4b5c6d7e-8f9a-5b0c-9d1e-2f3a4b5c6d7e",
+      "change": "added"
+    },
+    {
+      "location": "4b5c6d7e-8f9a-5b0c-9d1e-2f3a4b5c6d7e",
+      "change": "changed",
+      "changed": [
+        "geojson",
+        "streetAddress"
+      ]
+    }
+  ]
+}

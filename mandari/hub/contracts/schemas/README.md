@@ -8,7 +8,8 @@ fehlschlagen.
 
 Ausgeliefert ist der Startumfang: 27 Ereignistypen und die Befehle `submission.submit`,
 `submission.withdraw`, `attendance.respond` und `invitation.acknowledge`; seither ergänzt um
-`ris.organization.changed` und `ris.person.changed` (#821). Art, Eigentümer und
+`ris.organization.changed` und `ris.person.changed` (#821) sowie `ris.membership.changed`,
+`ris.location.changed`, `ris.legislativeterm.changed` und `ris.body.changed` (#553). Art, Eigentümer und
 Sichtbarkeit je Typ, die Inhaltsfelder mit jedem Unterfeld und seiner Längengrenze sowie die
 verwendeten Muster hält `hub/contracts/tests/test_schemas.py` fest.
 

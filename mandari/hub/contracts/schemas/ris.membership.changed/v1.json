@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.membership.changed:v1",
+  "title": "Mitgliedschaft geändert",
+  "description": "Eine Mitgliedschaft einer Person in einem Gremium wurde neu erkannt (added) oder geändert (changed), etwa Rolle, Stimmrecht oder Zeitraum. Aggregat: Membership. Die Rücknahme meldet ris.object.depublished. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "membership",
+    "change"
+  ],
+  "properties": {
+    "membership": {
+      "description": "Kanonische Kennung der Mitgliedschaft.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "change": {
+      "description": "Art der Änderung: added (neu erkannt oder nach einer Rücknahme wieder geliefert), changed (geändert).",
+      "type": "string",
+      "enum": [
+        "added",
+        "changed"
+      ]
+    },
+    "changed": {
+      "description": "Geänderte Felder im kanonischen Modell (Namen wie in OParl, z. B. role, votingRight, endDate); bei change changed.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "person": {
+      "description": "Person, die Mitglied ist.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "organization": {
+      "description": "Gremium, in dem die Person Mitglied ist.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "membership": "6a1c9e2f-3b4d-5e6f-8a7b-9c0d1e2f3a4b",
+      "change": "added",
+      "person": "1d2e3f4a-5b6c-5d7e-8f9a-0b1c2d3e4f5a",
+      "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f"
+    },
+    {
+      "membership": "6a1c9e2f-3b4d-5e6f-8a7b-9c0d1e2f3a4b",
+      "change": "changed",
+      "changed": [
+        "endDate",
+        "role"
+      ],
+      "person": "1d2e3f4a-5b6c-5d7e-8f9a-0b1c2d3e4f5a",
+      "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f"
+    }
+  ]
+}

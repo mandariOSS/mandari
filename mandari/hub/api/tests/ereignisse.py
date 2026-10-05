@@ -22,10 +22,14 @@ from hub.contracts import Envelope, get_registry
 #: ``ris.object.depublished`` nennt den Typ in der Nutzlast (``object_type``).
 AGGREGATE: dict[str, tuple[str, str]] = {
     "ris.agendaitem.changed": ("AgendaItem", "agenda_item"),
+    "ris.body.changed": ("Body", "body"),
     "ris.consultation.changed": ("Consultation", "consultation"),
     "ris.file.changed": ("File", "file"),
+    "ris.legislativeterm.changed": ("LegislativeTerm", "legislative_term"),
+    "ris.location.changed": ("Location", "location"),
     "ris.meeting.changed": ("Meeting", "meeting"),
     "ris.meeting.scheduled": ("Meeting", "meeting"),
+    "ris.membership.changed": ("Membership", "membership"),
     "ris.object.depublished": ("", "object"),
     "ris.organization.changed": ("Organization", "organization"),
     "ris.paper.changed": ("Paper", "paper"),
