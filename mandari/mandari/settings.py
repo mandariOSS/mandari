@@ -124,6 +124,8 @@ INSTALLED_APPS = [
     "apps.events",
     # Datendrehscheibe: Vertragsregister für Ereignisse und Befehle, ohne Modelle (docs/adr/20260929-ereignisvertraege.md)
     "hub.contracts",
+    # Datendrehscheibe: Sichten aus Ereignissen, vorerst die Schatten-Quelle des RIS-Projektors (Issue #536)
+    "hub.projections",
     "apps.provisioning",
     "apps.work",
     # Mandari Session RIS (OSS - AGPL-3.0-or-later)
@@ -631,6 +633,28 @@ if SEARCH_INDEX_SHADOW_MAX_DOCS < 0:
     from django.core.exceptions import ImproperlyConfigured
 
     raise ImproperlyConfigured("SEARCH_INDEX_SHADOW_MAX_DOCS darf nicht negativ sein (0 = keine Grenze).")
+# RIS-Projektor für Session-Mandanten (hub.projections.ris_session, Issue #536): "aus" (Standard) registriert
+# kein Abonnement. "schatten" schreibt aus den Ereignissen von mandari Session die Schatten-Quelle neben dem
+# RIS-Bestand (eigene Tabelle, nach außen unsichtbar); Vergleich mit dem Spiegel:
+# manage.py ris_projektor_schatten vergleichen. Den Bestand selbst schreibt der Projektor erst mit dem
+# Umschalten (Issue #537). Mandanten: Kennungen der Session-Mandanten (UUID), kommagetrennt; leer = alle.
+RIS_SESSION_PROJECTOR = os.environ.get("RIS_SESSION_PROJECTOR", "aus").strip().lower() or "aus"
+if RIS_SESSION_PROJECTOR not in ("aus", "schatten"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("RIS_SESSION_PROJECTOR muss aus oder schatten sein (aktiv erst mit Issue #537).")
+RIS_SESSION_PROJECTOR_TENANTS = [
+    teil.strip().lower() for teil in os.environ.get("RIS_SESSION_PROJECTOR_TENANTS", "").split(",") if teil.strip()
+]
+for _mandant in RIS_SESSION_PROJECTOR_TENANTS:
+    try:
+        uuid.UUID(_mandant)
+    except ValueError:
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(
+            "RIS_SESSION_PROJECTOR_TENANTS: nur Kennungen von Session-Mandanten (UUID), kommagetrennt."
+        ) from None
 
 # Abfrage der Volltextsuche (Konzept Insight-Suche, P0): "v2" (Standard) sucht alle Wörter (UND), Straßen
 # mit optionalem Grundwort, Unschärfe nur als Rückfall, mit begrenztem Aktualitätsbonus und Mindestrelevanz;

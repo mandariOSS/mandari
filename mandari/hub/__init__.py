@@ -16,6 +16,8 @@ Unterpakete:
   RIS-Bestand und die eine Serialisierung, die auch die Schnittstelle der Session-Mandanten ausgibt
 - ``hub.commands``: Befehle an den Eigentümer der Daten (Dispatcher, Quittung, Idempotenz, Clients)
 - ``hub.contracts``: Vertragsregister (Ereignishülle, Schemas je Typ und Version)
+- ``hub.projections``: Sichten aus Ereignissen, zuerst der RIS-Projektor für Session-Mandanten mit seiner
+  Schatten-Quelle (Issue #536)
 - ``hub.ris``: kanonisches RIS-Modell (OParl 1.1 mit gekennzeichneten Erweiterungen), die Abbildungen
   der Quellen darauf (``hub.ris.mapping``) und die Lese-Fassade des RIS-Bestands für die Fachmodule
   (``hub.ris.selectors``)

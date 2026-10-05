@@ -31,10 +31,17 @@ DOPPELZUSTELLUNG = {
     "benachrichtigung": (
         "apps/work/notifications/tests/test_benachrichtigung_abonnement.py::test_doppelte_zustellung_benachrichtigt_einmal"
     ),
+    "ris.session_projektor": (
+        "apps/session/tests/test_ris_projektor.py::test_doppelte_zustellung_aendert_die_schatten_quelle_nicht"
+    ),
     "suchindex": "insight_search/tests/test_suchindex_abonnement.py::test_wiederholung_und_veralteter_stand_schaden_nicht",
 }
 #: Schalter, unter denen sich Abonnements registrieren (alle eingeschaltet, damit keines fehlt)
-SCHALTER = {"SEARCH_INDEX_SUBSCRIPTION": "aktiv", "WORK_NOTIFICATION_SUBSCRIPTION": "aktiv"}
+SCHALTER = {
+    "SEARCH_INDEX_SUBSCRIPTION": "aktiv",
+    "WORK_NOTIFICATION_SUBSCRIPTION": "aktiv",
+    "RIS_SESSION_PROJECTOR": "schatten",
+}
 
 
 @pytest.mark.django_db(transaction=True)
