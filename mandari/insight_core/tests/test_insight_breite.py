@@ -334,7 +334,7 @@ class TestBreite:
         assert "max-w-6xl" not in inhalt
 
     def test_inhaltsrahmen_im_layout(self) -> None:
-        assert 'class="max-w-insight px-4 sm:px-8 py-6 lg:py-8"' in (TEMPLATES / "base_insight.html").read_text(
+        assert 'class="max-w-insight mx-auto px-4 sm:px-8 py-6 lg:py-8"' in (TEMPLATES / "base_insight.html").read_text(
             encoding="utf-8"
         )
 
@@ -482,7 +482,8 @@ class TestBreiteNachPruefung:
         leiste = (TEMPLATES / "cotton/suche/filterleiste.html").read_text(encoding="utf-8")
         seite = (TEMPLATES / "partials/search_page.html").read_text(encoding="utf-8")
         assert "ml-auto" not in leiste
-        assert "2xl:grid-cols-[minmax(0,60rem)_minmax(16rem,22rem)]" in seite
+        # Seit der Nachmessung wächst die Trefferspalte mit (test_insight_breite_rahmen.py), die Filter stehen daneben
+        assert "2xl:grid-cols-[minmax(0,1fr)_18rem]" in seite
 
 
 class TestZuletztBeschlossen:

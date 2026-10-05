@@ -1,15 +1,19 @@
 {# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
 {% comment %}
 Filterleiste der Suche (Konzept Insight-Suche 3.4, Umfang „einfach“ für Insight): Zeitraum, Art, Sortierung.
+Bis 2xl eine Zeile mit Ausklapplisten über den Treffern, ab 2xl eine Spalte mit offenen Listen (c-suche.facette-liste).
 Alle Felder gehören per form="suche-form" zum Suchformular im Kopfband; Parameternamen wie SearchQuery (period,
 paper_type, sort). Work bindet die Leiste später mit vollem Umfang ein (P1.12).
   <c-suche.filterleiste :zeitraum="period_options" :art="art_options" :sortierung="sort_options" />
 Parameter: zeitraum, art (Optionen für c-suche.facette), sortierung (Liste von {value, label, checked}).
 {% endcomment %}
 <c-vars zeitraum="" art="" sortierung="" />
-<div class="mt-4 flex flex-wrap items-center gap-3 2xl:mt-0 2xl:flex-col 2xl:items-start">
-    <c-suche.facette titel="Zeitraum" name="period" typ="radio" :optionen="zeitraum" />
-    {% if art %}<c-suche.facette titel="Art" name="paper_type" typ="checkbox" :optionen="art" />{% endif %}
+<div class="mt-4 flex flex-wrap items-center gap-3 2xl:mt-0 2xl:block">
+    {# Ab 2xl stehen die Filter als offene Listen in der Spalte; die Felder hier tragen dann nur den Stand (Issue #841) #}
+    <div class="contents 2xl:hidden">
+        <c-suche.facette titel="Zeitraum" name="period" typ="radio" :optionen="zeitraum" />
+        {% if art %}<c-suche.facette titel="Art" name="paper_type" typ="checkbox" :optionen="art" />{% endif %}
+    </div>
     {# Sortierung direkt neben den Filtern, nicht am fernen rechten Rand (Issue #841) #}
     <div class="flex items-center gap-2">
         <label for="suche-sortierung" class="text-sm text-gray-700 dark:text-gray-300">Sortieren</label>
@@ -19,5 +23,9 @@ Parameter: zeitraum, art (Optionen für c-suche.facette), sortierung (Liste von 
                 class="min-h-11 pl-3 pr-8 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
             {% for o in sortierung %}<option value="{{ o.value }}" {% if o.checked %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
         </select>
+    </div>
+    <div class="hidden 2xl:block 2xl:mt-6 2xl:space-y-6">
+        <c-suche.facette-liste titel="Zeitraum" name="period" :optionen="zeitraum" />
+        {% if art %}<c-suche.facette-liste titel="Art" name="paper_type" :optionen="art" mehrfach />{% endif %}
     </div>
 </div>

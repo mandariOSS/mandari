@@ -187,7 +187,7 @@
     <div class="pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-[17rem] min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
         {# Kopfzeile des Inhalts (Variante A, Issue #783): Brotkrumen mit Kommune, Suche, Dunkelmodus #}
         <header class="sticky top-0 z-30 pt-[env(safe-area-inset-top)] bg-band-hell/95 dark:bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
-            <div class="h-16 px-4 sm:px-8 flex items-center gap-2 sm:gap-6">
+            <div class="max-w-insight mx-auto h-16 px-4 sm:px-8 flex items-center gap-2 sm:gap-6">
                 {# Am Handy: Wortmarke, Kommune (öffnet den Wechsel) und Suche; die Bereiche liegen in der Leiste unten #}
                 <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" class="lg:hidden shrink-0 text-[1.15rem] font-bold tracking-tight leading-none text-gray-900 dark:text-white" aria-label="mandari Insight, Übersicht">mandari<span class="text-indigo-600 dark:text-indigo-400" aria-hidden="true">.</span></a>
                 <div class="lg:hidden flex-1 min-w-0">
@@ -257,7 +257,7 @@
             {% include "partials/insight_hinweise.html" %}
             {# Seiten in Bändern überschreiben „page“ (Kopfband, Inhalt, Nebenband); alle übrigen füllen „content“ #}
             {% block page %}
-            <div class="max-w-insight px-4 sm:px-8 py-6 lg:py-8">
+            <div class="max-w-insight mx-auto px-4 sm:px-8 py-6 lg:py-8">
                 {% block content %}{% endblock %}
                 {% include "partials/page_feedback.html" %}
             </div>

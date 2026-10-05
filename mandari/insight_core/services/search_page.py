@@ -216,17 +216,29 @@ def build_context(
         "next_url": params.url(page=params.page + 1),
         "tabs": tabs,
         "art_options": [
-            {"value": label, "count": _zahl(n), "checked": label in params.paper_types}
+            {
+                "value": label,
+                "count": _zahl(n),
+                "checked": label in params.paper_types,
+                "url": _art_url(params, label),
+            }
             for label, n in sorted(art_counts.items(), key=lambda item: -item[1])
         ][:12],
         "period_options": [
-            {"value": "", "label": "Beliebig", "count": None, "checked": not params.period},
+            {
+                "value": "",
+                "label": "Beliebig",
+                "count": None,
+                "checked": not params.period,
+                "url": params.url(period=""),
+            },
             *(
                 {
                     "value": value,
                     "label": label,
                     "count": _zahl(facets["periods"].get(value)),
                     "checked": value == params.period,
+                    "url": params.url(period=value),
                 }
                 for value, label, _von, _bis in PERIODS
             ),
@@ -243,6 +255,13 @@ def build_context(
         context["without_filters_count"] = count_sentence(ohne["counts"])
         context["without_filters_url"] = params.url(period="", paper_types=[])
     return context
+
+
+def _art_url(params: SearchParams, label: str) -> str:
+    """Adresse, die eine Art in der Filterspalte wählt bzw. wieder abwählt (offene Liste ab 2xl, Issue #841)."""
+    if label in params.paper_types:
+        return params.url(paper_types=[a for a in params.paper_types if a != label])
+    return params.url(paper_types=[*params.paper_types, label])
 
 
 def _zahl(value: int | None) -> str | None:
