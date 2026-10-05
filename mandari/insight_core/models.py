@@ -234,6 +234,20 @@ class OParlSource(models.Model):
     is_active = models.BooleanField(default=True)
     last_sync = models.DateTimeField(blank=True, null=True)
     last_full_sync = models.DateTimeField(blank=True, null=True)
+    # Aktualität (Issue #556): letzter Abgleich, der alles gelesen hat (jede Kommune, jede Liste ganz, keine
+    # Sperr- oder Teilantwort). last_sync/last_full_sync zählen auch Läufe mit Lücken. Setzt der Ingestor.
+    last_successful_sync = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Letzter vollständiger Abgleich",
+        help_text="Letzter Abgleich ohne Lücke: jede Kommune und jede Liste ganz gelesen.",
+    )
+    last_successful_full_sync = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Letzter vollständiger Vollabgleich",
+        help_text="Letzter Vollabgleich ohne Lücke. Nur danach darf ein Scraper-Abgleich auf Löschungen schließen.",
+    )
     sync_config = models.JSONField(default=dict, blank=True)
     # User-Agent je Quelle (Issue #123): leer = Standard des Ingestors
     user_agent = models.CharField(

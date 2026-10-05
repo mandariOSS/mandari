@@ -5,6 +5,7 @@ Django Admin Konfiguration für OParl-Models.
 Verwendet Django Unfold für modernes Admin-Interface.
 """
 
+from datetime import datetime
 from typing import Any
 
 from django import forms
@@ -135,6 +136,7 @@ class OParlSourceAdmin(ModelAdmin):
         "health_display",
         "sync_status_display",
         "last_sync_ago",
+        "last_successful_sync_ago",
         "body_count",
     ]
     list_filter = ["is_active", SourceHealthListFilter, SourceTypeListFilter]
@@ -145,6 +147,8 @@ class OParlSourceAdmin(ModelAdmin):
         "updated_at",
         "last_sync",
         "last_full_sync",
+        "last_successful_sync",
+        "last_successful_full_sync",
         "oparl_version",
         "scraper_status_display",
         "last_error",
@@ -248,12 +252,9 @@ class OParlSourceAdmin(ModelAdmin):
             return mark_safe('<span style="color: #ca8a04;">Veraltet</span>')
         return mark_safe('<span style="color: #dc2626;">Sehr alt</span>')
 
-    @admin.display(description="Letzter Sync")
-    def last_sync_ago(self, obj):
-        if not obj.last_sync:
-            return "-"
-
-        age = timezone.now() - obj.last_sync
+    @staticmethod
+    def _ago(moment: datetime) -> str:
+        age = timezone.now() - moment
         if age.days > 0:
             return f"vor {age.days} Tag(en)"
         hours = int(age.total_seconds() / 3600)
@@ -261,6 +262,25 @@ class OParlSourceAdmin(ModelAdmin):
             return f"vor {hours} Std."
         minutes = int(age.total_seconds() / 60)
         return f"vor {minutes} Min."
+
+    @admin.display(description="Letzter Sync")
+    def last_sync_ago(self, obj):
+        if not obj.last_sync:
+            return "-"
+        return self._ago(obj.last_sync)
+
+    @admin.display(description="Vollständig abgeglichen", ordering="last_successful_sync")
+    def last_successful_sync_ago(self, obj: OParlSource) -> str:
+        """
+        Aktualität der Quelle (Issue #556): letzter Abgleich ohne Lücke. Hatten spätere Abgleiche Lücken
+        (eine Liste brach ab, eine Seite war gesperrt), steht das daneben.
+        """
+        if not obj.last_successful_sync:
+            return status_text("#d97706", "noch nie") if obj.last_sync else "-"
+        text = self._ago(obj.last_successful_sync)
+        if obj.last_sync and obj.last_sync > obj.last_successful_sync:
+            return status_text("#d97706", f"{text}, seither mit Lücken")
+        return text
 
     @admin.display(description="Bodies")
     def body_count(self, obj):

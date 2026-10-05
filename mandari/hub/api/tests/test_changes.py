@@ -827,3 +827,43 @@ def test_stand_der_kommune_ist_ihr_neuestes_oeffentliches_ereignis(kommune: OPar
     _verborgenes(kommune)
 
     assert changes.head(kommune.pk) == letztes.seq
+
+
+# =============================================================================
+# Aktualität je Quelle (Issue #556)
+# =============================================================================
+
+
+def test_feed_nennt_den_letzten_vollstaendigen_abgleich_der_quelle(kommune: OParlBody) -> None:
+    source = kommune.source
+    assert source is not None
+    # Der letzte Lauf hatte Lücken: maßgeblich ist der letzte vollständige, nicht der letzte überhaupt
+    source.last_sync = datetime(2026, 9, 30, 9, 0, tzinfo=UTC)
+    source.last_successful_sync = datetime(2026, 9, 30, 8, 0, tzinfo=UTC)
+    source.last_successful_full_sync = datetime(2026, 9, 27, 2, 0, tzinfo=UTC)
+    source.save(update_fields=["last_sync", "last_successful_sync", "last_successful_full_sync"])
+
+    seite = _feed(kommune)
+
+    assert seite["freshness"] == {
+        "synced_at": "2026-09-30T08:00:00+00:00",
+        "full_synced_at": "2026-09-27T02:00:00+00:00",
+    }
+
+
+def test_ohne_vollstaendigen_abgleich_ist_die_aktualitaet_leer(kommune: OParlBody) -> None:
+    assert _feed(kommune)["freshness"] == {"synced_at": None, "full_synced_at": None}
+
+
+def test_ohne_quelle_keine_aktualitaet() -> None:
+    """Ohne geerntete Quelle (Session-Mandant) führt der Bestand sich selbst: kein Feld ``freshness``."""
+    from django.test import RequestFactory
+
+    feed = changes.Feed(
+        body_id=uuid.uuid4(),
+        url=f"{API}/body/x/changes",
+        snapshot_url=f"{API}/body/x/snapshot",
+        addresses=lambda _art, _ids: {},
+    )
+    antwort = changes.changes_response(RequestFactory().get("/changes"), feed)
+    assert "freshness" not in json.loads(antwort.content)

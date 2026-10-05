@@ -272,6 +272,7 @@ curl "https://mandari.de/oparl/v1/body/<uuid>/changes?after=<cursor>"
 | Eintrag `modified` | Zeitpunkt der Änderung |
 | Eintrag `reason` | bei `delete` immer: `quelle_geloescht`, `zurueckgenommen` oder `nichtoeffentlich` (nennt die Quelle keinen Grund, `quelle_geloescht`); bei `redact`: `datenschutz` |
 | Eintrag `cursor` | Stand unmittelbar nach diesem Eintrag |
+| `freshness` | nur bei Kommunen aus einem Fremd-RIS: `synced_at` und `full_synced_at`, der letzte vollständig erfolgreiche Abgleich bzw. Vollabgleich ihrer Quelle (`null` = noch keiner). Eine leere Seite heißt „nichts Neues seit diesem Stand der Quelle“ |
 
 **So liest ein Abnehmer:**
 
