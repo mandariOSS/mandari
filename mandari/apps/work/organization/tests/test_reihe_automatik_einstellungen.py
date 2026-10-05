@@ -116,7 +116,7 @@ def test_reihe_ausschalten_laesst_vorhandene_zu_und_absagen_unveraendert(
         responded_at=timezone.now(),
     )
 
-    def teilnahmen() -> list[dict[str, Any]]:
+    def teilnahmen() -> list[Any]:
         return list(FactionAttendance.objects.filter(meeting=termin).values())
 
     vorher = teilnahmen()

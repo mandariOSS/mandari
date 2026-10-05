@@ -319,7 +319,7 @@ def test_zusage_nur_wenn_eingeschaltet(org: Any, make_member: Any, client_for: A
     assert FactionAttendance.objects.get(meeting=meeting, membership=mitglied).status == "confirmed"
 
 
-def _teilnahmen(meeting: FactionMeeting) -> list[dict[str, Any]]:
+def _teilnahmen(meeting: FactionMeeting) -> list[Any]:
     return sorted(FactionAttendance.objects.filter(meeting=meeting).values(), key=lambda zeile: str(zeile["id"]))
 
 
