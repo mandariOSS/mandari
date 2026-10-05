@@ -856,6 +856,14 @@ SMTP_FALLBACK = {
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@mandari.de")
 SERVER_EMAIL = os.environ.get("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
 
+# Mail-Dienst (apps.common.mail, Issue #528): Mailarten, die als Auftrag (Warteschlange "mail") statt in
+# der Anfrage versendet werden – kommagetrennte Muster wie "work.*,konto.passwort" oder "*" für alle.
+# Wirkt nur mit TASKS_BACKEND=journal und laufendem Worker. Leer (Standard) = wie bisher sofort; das ist
+# auch der Rückweg. Mails im Postausgang versendet der Worker unabhängig vom Schalter.
+MAIL_QUEUE = [muster.strip() for muster in os.environ.get("MAIL_QUEUE", "").split(",") if muster.strip()]
+# Größere Mails (Texte und Anhänge, Bytes) gehen sofort raus, statt im Postausgang zu liegen
+MAIL_QUEUE_MAX_BYTES = int(os.environ.get("MAIL_QUEUE_MAX_BYTES", str(20 * 1024 * 1024)))
+
 # Django ≥ 6.1 (Issue #80): Versandwege heißen MAILERS. Der Standardweg ist das
 # SiteSettings-Backend (Zugangsdaten aus dem Admin, Fallback auf die EMAIL_*-Werte
 # oben). Organisationseigenes SMTP wird zur Laufzeit aufgebaut (apps.common.mail_backends).

@@ -522,6 +522,48 @@ der letzten Minute in `events_worker` gemeldet hat.
 (`docker compose ps worker worker-heavy`, Admin-Hinweis), dann `TASKS_BACKEND=journal` in der
 `.env` setzen und Anwendung und Worker neu starten.
 
+### Mailversand als Auftrag
+
+Alle Mails gehen über den Mail-Dienst `apps.common.mail` (Issue #528): eine Konfigurationsauflösung
+(Systemeinstellungen, sonst `EMAIL_*`; für Organisationen mit eigenem SMTP deren Server mit Ersatzweg
+über die Plattform) und die Metrik `mandari_mail_total{kind, route, result}`. Mit `MAIL_QUEUE`
+verlassen Mails die Anfrage: Sie liegen verschlüsselt im Postausgang (`common_mail_outbox`, mit dem
+Mandantenschlüssel der Organisation bzw. dem Hauptschlüssel), ein Auftrag der Warteschlange `mail`
+versendet sie und wiederholt bei Fehlern mit wachsender Wartezeit. Nach dem Versand wird der Inhalt
+gelöscht, die Zeile ohne Inhalt nach 14 Tagen (fehlgeschlagen nach 90 Tagen).
+
+| Einstellung | Bedeutung |
+|---|---|
+| `MAIL_QUEUE` | kommagetrennte Muster über Mailarten, z. B. `work.*,konto.*` oder `*`; leer (Standard) = wie bisher sofort |
+| `MAIL_QUEUE_MAX_BYTES` | größere Mails (Texte und Anhänge) gehen sofort raus, Standard 20 MB |
+
+Voraussetzung ist `TASKS_BACKEND=journal` mit laufendem Worker für die Warteschlange `mail`; ohne
+`journal` wirkt `MAIL_QUEUE` nicht. Mailarten: `konto.passwort`, `konto.sicherheit`,
+`work.zugang.<vorlage>` (Einladung, Gastzugang, Registrierung), `work.fraktion.einladung`,
+`work.fraktion.erinnerung`, `work.fraktion.freigabe`, `work.benachrichtigung`, `session.zugang`,
+`session.vorlage`, `session.rueckmeldung`, `session.erinnerung`, `session.frist`,
+`plattform.einladung`, `plattform.fehlermeldung`, `insight.*`, `betrieb.alarm`, `betrieb.quellen`.
+Immer sofort, weil die Oberfläche bzw. der Vorgang das Ergebnis braucht: Testmails
+(`betrieb.testmail`, `work.testmail`), die Einreichung per E-Mail (`work.antrag.einreichung`) und die
+Ladung (`session.ladung`, Zustellung je Empfänger). Ebenfalls sofort gehen Mails über das eigene SMTP
+einer Organisation, die keinen Ersatzweg über mandari erlaubt: Ihr Scheitern muss in der Oberfläche
+sichtbar bleiben. Benachrichtigungsmails (`work.benachrichtigung`) laufen schon als eigener Auftrag und
+versenden darin direkt. Vorübergehende SMTP-Antworten (4xx, etwa Greylisting) werden wiederholt, nur
+dauerhafte (5xx) beenden den Versand sofort.
+
+**Einschalten in Stufen**, jeweils Anwendung neu starten und `mandari_mail_total` sowie
+`mandari_tasks_oldest_queued_seconds{queue="mail"}` beobachten:
+
+1. `MAIL_QUEUE=work.fraktion.*,work.zugang.*` – die Mails mit Anhängen bzw. vielen Empfängern.
+2. `MAIL_QUEUE=work.*,session.*,plattform.*,betrieb.*,insight.*`
+3. `MAIL_QUEUE=*` – auch Konto-Mails (Passwort, Sicherheitshinweise).
+
+**Rückweg:** `MAIL_QUEUE` leeren und die Anwendung neu starten; Mails gehen wieder sofort raus. Was schon
+im Postausgang liegt, versendet der Worker trotzdem. Vor einem Rückfall auf ein Image ohne Mail-Dienst
+erst den Postausgang leeren lassen (`mandari_tasks_queued{queue="mail"}` = 0), sonst kennt der ältere
+Worker den Auftrag nicht. `python manage.py postausgang` zeigt Zeilen je Zustand und verwaiste Zeilen
+(wartend ohne Auftrag); `--einreihen` reiht sie neu ein, `--verwerfen` gibt sie auf und löscht den Inhalt.
+
 ### Suchindex als Abonnement (Schattenbetrieb)
 
 Heute schreiben Django-Signale, der Ingestor und `reindex_elasticsearch` den Suchindex. Künftig

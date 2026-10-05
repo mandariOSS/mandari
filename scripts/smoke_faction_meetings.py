@@ -1564,7 +1564,8 @@ check("Online-Teilnahme zählt voll fürs Quorum", q["voting_present"] == 3 and 
 print()
 print("=== Phase O: Eigene Absender-Mail (SMTP gemockt) ===")
 
-from apps.common.org_email import OrgMailError, send_org_email  # noqa: E402
+from apps.common import mail as _mail_dienst  # noqa: E402
+from apps.common.org_email import OrgMailError  # noqa: E402
 from apps.common.mail_backends import build_backend as _build_backend  # noqa: E402
 
 org.mail_sender_mode = "smtp"
@@ -1589,9 +1590,14 @@ def _locmem_connection(organization):
     return _build_backend("django.core.mail.backends.locmem.EmailBackend")
 
 
+def send_org_email(organization, **angaben):
+    """Mail über den Weg der Organisation (Mail-Dienst, Issue #528), sofort wie in der Anfrage ohne Schalter."""
+    return _mail_dienst.send(kind="work.testmail", organization=organization, **angaben)
+
+
 # Erfolgsfall: Versand über das (gemockte) Organisations-SMTP mit eigener Absender-Adresse
 mail.outbox = []
-with mock.patch("apps.common.org_email.get_organization_connection", _locmem_connection):
+with mock.patch("apps.common.mail.config.organization_backend", _locmem_connection):
     ok = send_org_email(org, subject="O-TEST-EIGENES-SMTP", body="Test", to=["vereidigt@example.org"])
 check("Versand über eigenes SMTP -> OK", ok is True and len(mail.outbox) == 1)
 check(
@@ -1602,7 +1608,7 @@ check(
 
 # Fehlerfall MIT Fallback: mandari-Versand übernimmt (sichtbar im Log, Mail kommt an)
 mail.outbox = []
-with mock.patch("apps.common.org_email.get_organization_connection", side_effect=OSError("SMTP kaputt")):
+with mock.patch("apps.common.mail.config.organization_backend", side_effect=OSError("SMTP kaputt")):
     ok = send_org_email(org, subject="O-TEST-FALLBACK", body="Test", to=["vereidigt@example.org"])
 check("SMTP-Fehler mit Fallback -> zugestellt", ok is True and len(mail.outbox) == 1)
 check(
@@ -1615,7 +1621,7 @@ check(
 org.smtp_fallback_to_mandari = False
 org.save(update_fields=["smtp_fallback_to_mandari"])
 mail.outbox = []
-with mock.patch("apps.common.org_email.get_organization_connection", side_effect=OSError("SMTP kaputt")):
+with mock.patch("apps.common.mail.config.organization_backend", side_effect=OSError("SMTP kaputt")):
     try:
         send_org_email(org, subject="O-TEST-HART", body="Test", to=["vereidigt@example.org"])
         check("Ohne Fallback: OrgMailError", False)
@@ -1640,7 +1646,7 @@ resp = chair.post(
 )
 mo = FactionMeeting.objects.filter(organization=org, title="SMTP-Sitzung O").first()
 mail.outbox = []
-with mock.patch("apps.common.org_email.get_organization_connection", _locmem_connection):
+with mock.patch("apps.common.mail.config.organization_backend", _locmem_connection):
     resp = chair.post(f"{base}/faction/{mo.id}/action/", {"action": "invite"})
 check("Einladungen über Org-SMTP versendet", len(mail.outbox) > 0)
 check(
@@ -1663,7 +1669,7 @@ resp = chair.post(
 )
 mo2 = FactionMeeting.objects.filter(organization=org, title="SMTP-Sitzung O2").first()
 mail.outbox = []
-with mock.patch("apps.common.org_email.get_organization_connection", side_effect=OSError("SMTP kaputt")):
+with mock.patch("apps.common.mail.config.organization_backend", side_effect=OSError("SMTP kaputt")):
     resp = chair.post(f"{base}/faction/{mo2.id}/action/", {"action": "invite"})
 check("Ohne Fallback: keine einzige Mail (sichtbares Fehlschlagen)", len(mail.outbox) == 0)
 
@@ -1724,7 +1730,7 @@ check("Leeres Passwortfeld lässt Passwort unverändert", org.get_smtp_password(
 
 # Testmail über den konfigurierten Weg
 mail.outbox = []
-with mock.patch("apps.common.org_email.get_organization_connection", _locmem_connection):
+with mock.patch("apps.common.mail.config.organization_backend", _locmem_connection):
     resp = chair.post(f"{base}/organization/email-settings/", {"action": "send_test"})
 check(
     "Testmail versendet (an den Auslöser, über Org-SMTP)",

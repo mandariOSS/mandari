@@ -6,8 +6,8 @@ E-Mail-Werkzeuge für Mandari.
   wandelt die CSS-Klassen per ``css_inline`` in ``style=``-Attribute um und liefert die
   Text-Alternative gleich mit: aus dem ``.txt``-Geschwistertemplate, sonst per ``html2text``
   aus dem HTML (Issue #175).
-- ``send_email`` / ``send_template_email`` versenden über die SMTP-Konfiguration aus den
-  SiteSettings (Fallback: Django-Settings).
+
+Versendet wird über den Mail-Dienst ``apps.common.mail`` (``mail.send``, ``mail.send_template``).
 """
 
 from __future__ import annotations
@@ -18,14 +18,9 @@ from typing import Any
 
 import css_inline
 import html2text
-from django.core.mail import EmailMessage, EmailMultiAlternatives
-from django.core.mail.backends.base import BaseEmailBackend
 from django.http import HttpRequest
 from django.template import TemplateDoesNotExist
 from django.template.loader import render_to_string
-
-from apps.common.mail_backends import build_backend, send_with
-from apps.common.metrics import EMAILS
 
 logger = logging.getLogger(__name__)
 
@@ -37,45 +32,11 @@ _BLANK_LINES_RE = re.compile(r"\n{3,}")
 _MD_ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!])")
 
 
-def get_email_connection() -> BaseEmailBackend:
-    """
-    Get an email connection using SiteSettings or Django settings.
-
-    Returns a configured email connection ready for sending.
-    """
-    from .models import SiteSettings
-
-    config = SiteSettings.get_email_config()
-
-    return build_backend(
-        config["EMAIL_BACKEND"],
-        host=config["EMAIL_HOST"],
-        port=config["EMAIL_PORT"],
-        username=config["EMAIL_HOST_USER"],
-        password=config["EMAIL_HOST_PASSWORD"],
-        use_tls=config["EMAIL_USE_TLS"],
-        use_ssl=config["EMAIL_USE_SSL"],
-        timeout=config["EMAIL_TIMEOUT"],
-    )
-
-
 def get_from_email() -> str:
-    """
-    Get the default from email address with name.
+    """Absender der Plattform als ``Name <adresse>`` (``apps.common.mail.config.platform_from_email``)."""
+    from apps.common.mail.config import platform_from_email
 
-    Returns formatted "Name <email>" string.
-    """
-    from .models import SiteSettings
-
-    site_settings = SiteSettings.get_settings()
-    config = SiteSettings.get_email_config()
-
-    email: str = config["DEFAULT_FROM_EMAIL"]
-    name: str = site_settings.default_from_name
-
-    if name:
-        return f"{name} <{email}>"
-    return email
+    return platform_from_email()
 
 
 # =============================================================================
@@ -135,144 +96,3 @@ def render_email(
     except TemplateDoesNotExist:
         text = html_to_text(html)
     return inline_css(html), text
-
-
-# =============================================================================
-# Versand
-# =============================================================================
-
-
-def send_email(
-    subject: str,
-    body: str,
-    to: list[str],
-    from_email: str | None = None,
-    html_body: str | None = None,
-    reply_to: list[str] | None = None,
-    attachments: list[tuple[str, Any, str]] | None = None,
-    fail_silently: bool = False,
-    connection: BaseEmailBackend | None = None,
-) -> bool:
-    """
-    Send an email using configured SMTP settings.
-
-    Args:
-        subject: Email subject
-        body: Plain text body
-        to: List of recipient email addresses
-        from_email: Override from address (optional)
-        html_body: HTML body (optional, for multipart emails)
-        reply_to: Reply-to addresses (optional)
-        attachments: List of (filename, content, mimetype) tuples
-        fail_silently: Don't raise exceptions on errors
-        connection: Override email connection (optional) — genutzt vom
-            organisationseigenen SMTP-Versand (Issue #65)
-
-    Returns:
-        True if email was sent successfully, False otherwise
-    """
-    try:
-        connection = connection or get_email_connection()
-        sender = from_email or get_from_email()
-
-        email: EmailMessage
-        if html_body:
-            # Multipart email (plain + HTML)
-            email = EmailMultiAlternatives(
-                subject=subject,
-                body=body,
-                from_email=sender,
-                to=to,
-                reply_to=reply_to,
-            )
-            email.attach_alternative(html_body, "text/html")
-        else:
-            # Plain text email
-            email = EmailMessage(
-                subject=subject,
-                body=body,
-                from_email=sender,
-                to=to,
-                reply_to=reply_to,
-            )
-
-        # Add attachments
-        if attachments:
-            for filename, content, mimetype in attachments:
-                email.attach(filename, content, mimetype)
-
-        # Versand über das aufgebaute Backend (Django ≥ 6.1: kein connection-Argument mehr,
-        # Issue #80). Die fail_silently-Semantik übernimmt der umschließende try/except.
-        send_with(connection, email)
-        EMAILS.labels(result="sent").inc()
-        logger.info(f"Email sent successfully to {', '.join(to)}: {subject}")
-        return True
-
-    except Exception as e:
-        EMAILS.labels(result="failed").inc()
-        logger.error(f"Failed to send email to {', '.join(to)}: {e}")
-        if not fail_silently:
-            raise
-        return False
-
-
-def send_template_email(
-    subject: str,
-    template_name: str,
-    context: dict[str, Any],
-    to: list[str],
-    from_email: str | None = None,
-    reply_to: list[str] | None = None,
-    fail_silently: bool = False,
-) -> bool:
-    """
-    Send an email using a Django template.
-
-    ``template_name`` ist der Basisname ohne Endung (z. B. ``emails/contact/confirmation``).
-    Gibt es ``<name>.html``, wird es über :func:`render_email` gerendert (Inliner, Text-
-    Alternative aus ``<name>.txt`` oder html2text); gibt es nur ``<name>.txt``, geht die Mail
-    als reiner Text.
-
-    Args:
-        subject: Email subject
-        template_name: Base template name (without extension)
-        context: Template context dictionary
-        to: List of recipient email addresses
-        from_email: Override from address (optional)
-        reply_to: Reply-to addresses (optional)
-        fail_silently: Don't raise exceptions on errors
-
-    Returns:
-        True if email was sent successfully, False otherwise
-    """
-    html_body: str | None
-    text_body: str | None
-    try:
-        html_body, text_body = render_email(f"{template_name}.html", context)
-    except TemplateDoesNotExist:
-        html_body = None
-        try:
-            text_body = render_to_string(f"{template_name}.txt", context)
-        except TemplateDoesNotExist:
-            text_body = None
-    except Exception as exc:
-        logger.error(f"Failed to render email template {template_name}: {exc}")
-        if not fail_silently:
-            raise
-        return False
-
-    if not text_body:
-        logger.error(f"No email templates found for {template_name}")
-        if not fail_silently:
-            raise ValueError(f"No email templates found for {template_name}")
-        return False
-
-    return send_email(
-        subject=subject,
-        body=text_body,
-        to=to,
-        from_email=from_email,
-        html_body=html_body,
-        reply_to=reply_to,
-        fail_silently=fail_silently,
-    )

@@ -351,14 +351,15 @@ def send_verification_email(question) -> bool:
     Gespeichert ist nur der Hash des Bestätigungstokens; ohne frisch erzeugtes Token enthält die Mail
     einen neuen Link.
     """
-    from apps.common.email import send_template_email
+    from apps.common import mail
 
     if _paused("Bestätigungsmail"):
         return False
     site_url = _site_url()
     verify_url = f"{site_url}/insight/fragen/verifizieren/{question.token_for_link()}/"
 
-    return send_template_email(
+    return mail.send_template(
+        kind="insight.fragen",
         subject=f"Bitte bestätigen Sie Ihre Frage an {question.recipient.display_name}",
         template_name="emails/questions/verification",
         context={"question": question, "verify_url": verify_url, "site_url": site_url},
@@ -369,7 +370,7 @@ def send_verification_email(question) -> bool:
 
 def send_question_notification_to_recipient(question) -> bool:
     """Benachrichtigt Ratsmitglied über freigeschaltete Frage."""
-    from apps.common.email import send_template_email
+    from apps.common import mail
 
     if _paused("Mail an das Ratsmitglied"):
         return False
@@ -378,7 +379,8 @@ def send_question_notification_to_recipient(question) -> bool:
         return False
 
     site_url = _site_url()
-    return send_template_email(
+    return mail.send_template(
+        kind="insight.fragen",
         subject=f"Neue Frage von {question.questioner_name}",
         template_name="emails/questions/notification",
         context={
@@ -394,12 +396,13 @@ def send_question_notification_to_recipient(question) -> bool:
 
 def send_question_published_to_questioner(question) -> bool:
     """Fragesteller:in: Frage ist jetzt öffentlich (mit Link)."""
-    from apps.common.email import send_template_email
+    from apps.common import mail
 
     if _paused("Mail an die Fragesteller:in"):
         return False
     site_url = _site_url()
-    return send_template_email(
+    return mail.send_template(
+        kind="insight.fragen",
         subject=f"Ihre Frage an {question.recipient.display_name} ist jetzt öffentlich",
         template_name="emails/questions/published",
         context={
@@ -414,12 +417,13 @@ def send_question_published_to_questioner(question) -> bool:
 
 def send_answer_notification_to_questioner(question) -> bool:
     """Benachrichtigt Fragesteller:in über veröffentlichte Antwort."""
-    from apps.common.email import send_template_email
+    from apps.common import mail
 
     if _paused("Mail über die Antwort"):
         return False
     site_url = _site_url()
-    return send_template_email(
+    return mail.send_template(
+        kind="insight.fragen",
         subject=f"{question.recipient.display_name} hat Ihre Frage beantwortet",
         template_name="emails/questions/answer_notification",
         context={
@@ -434,7 +438,7 @@ def send_answer_notification_to_questioner(question) -> bool:
 
 def send_answer_reminder(question) -> bool:
     """Sendet Erinnerung an Ratsmitglied."""
-    from apps.common.email import send_template_email
+    from apps.common import mail
 
     if _paused("Erinnerung"):
         return False
@@ -442,7 +446,8 @@ def send_answer_reminder(question) -> bool:
         return False
 
     site_url = _site_url()
-    return send_template_email(
+    return mail.send_template(
+        kind="insight.fragen",
         subject=f"Erinnerung: Unbeantwortete Frage von {question.questioner_name}",
         template_name="emails/questions/answer_reminder",
         context={
@@ -457,7 +462,7 @@ def send_answer_reminder(question) -> bool:
 
 def send_moderation_notification(question, kind: str = "question") -> bool:
     """Moderator:innen: neue Frage bzw. neue Antwort wartet auf Freigabe."""
-    from apps.common.email import send_template_email
+    from apps.common import mail
 
     if _paused("Moderations-Hinweis"):
         return False
@@ -471,7 +476,8 @@ def send_moderation_notification(question, kind: str = "question") -> bool:
         subject = f"Antwort wartet auf Freigabe: {question.subject}"
     else:
         subject = f"Neue Ratsfrage wartet auf Freigabe: {question.subject}"
-    return send_template_email(
+    return mail.send_template(
+        kind="insight.fragen",
         subject=subject,
         template_name="emails/questions/moderation",
         context={

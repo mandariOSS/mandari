@@ -1164,7 +1164,8 @@ def save_email_settings(organization: Organization, data: EmailSettingsInput) ->
 
 def send_test_email(organization: Organization, recipient: str) -> str:
     """Testmail über den konfigurierten Versandweg senden (Issue #65); liefert die Erfolgsmeldung."""
-    from apps.common.org_email import OrgMailError, send_org_email
+    from apps.common import mail
+    from apps.common.org_email import OrgMailError
 
     if not recipient:
         raise ServiceError("Dein Benutzerkonto hat keine E-Mail-Adresse.")
@@ -1181,12 +1182,15 @@ def send_test_email(organization: Organization, recipient: str) -> str:
         ]
     )
     try:
-        ok = send_org_email(
-            organization,
+        # Sofort: Die Oberfläche meldet, ob der konfigurierte Weg funktioniert
+        ok = mail.send(
+            kind="work.testmail",
             subject=f"Testmail: E-Mail-Versand von {organization.name}",
             body=body,
             to=[recipient],
+            organization=organization,
             fail_silently=False,
+            sofort=True,
         )
     except OrgMailError as exc:
         logger.warning("Testmail über Organisations-SMTP fehlgeschlagen (org=%s): %s", organization.slug, exc)

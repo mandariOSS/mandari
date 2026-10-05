@@ -101,14 +101,14 @@ def test_mailauftrag_ist_idempotent(journal: JournalBackend, mitglied: Any) -> N
 
 def test_smtp_fehler_wird_im_runner_wiederholt(journal: JournalBackend, mitglied: Any) -> None:
     _benachrichtigen(mitglied)
-    with mock.patch("apps.work.background_tasks.send_mail", side_effect=OSError("SMTP nicht erreichbar")):
+    with mock.patch("apps.common.mail.delivery.send_with", side_effect=OSError("SMTP nicht erreichbar")):
         assert run_pending() == 1
     zeile = TaskRow.objects.get()
     assert (zeile.status, zeile.attempts, zeile.result_code) == (TaskStatus.WARTEND, 1, "builtins.OSError")
 
 
 def test_smtp_fehler_ohne_umschalten_bricht_die_anfrage_nicht_ab(mitglied: Any) -> None:
-    with mock.patch("apps.work.background_tasks.send_mail", side_effect=OSError("SMTP nicht erreichbar")):
+    with mock.patch("apps.common.mail.delivery.send_with", side_effect=OSError("SMTP nicht erreichbar")):
         notification = _benachrichtigen(mitglied)
     notification.refresh_from_db()
     assert not notification.email_sent

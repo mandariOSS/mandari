@@ -519,14 +519,15 @@ def get_alert_emails() -> list[str]:
 
 
 def _send_health_mail(kind: str, subject: str, context: dict) -> bool:
-    from apps.common.email import send_template_email
+    from apps.common import mail
 
     recipients = get_alert_emails()
     if not recipients:
         logger.warning("Betriebsmonitor: keine Alarm-Empfänger konfiguriert.")
         return False
     context = {"kind": kind, "site_url": _site_url(), "monitoring_url": f"{_site_url()}/admin/monitoring/", **context}
-    return send_template_email(
+    return mail.send_template(
+        kind="betrieb.quellen",
         subject=subject,
         template_name="emails/monitoring/source_health",
         context=context,

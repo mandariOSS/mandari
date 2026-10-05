@@ -185,7 +185,8 @@ das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 | `mandari_db_pool_requests_waiting` | – | Anfragen, die auf eine Pool-Verbindung warten |
 | `mandari_db_connections_open` | – | nur ohne Pool: offene Verbindungen laut `pg_stat_activity` |
 | `mandari_cache_keyspace_hits_total`, `…_misses_total`, `mandari_cache_hit_ratio` | – | Redis `INFO stats` (serverweit); ohne Redis-Backend nicht vorhanden |
-| `mandari_emails_total` | `result` (`sent`, `failed`) | Versandversuche über `apps.common.email` |
+| `mandari_emails_total` | `result` (`sent`, `failed`) | Versandversuche über den Mail-Dienst (`apps.common.mail`) |
+| `mandari_mail_total` | `kind`, `route`, `result` | Mails des Mail-Dienstes je Mailart (z. B. `work.fraktion.einladung`) und Weg (`plattform`, `organisation`, `ersatzweg` = eigenes SMTP gescheitert, Versand über die Plattform; `postausgang` beim Einreihen). `result`: `sent`, `failed` (je Versuch), `queued` (als Auftrag eingereiht), `expired` (Inhalt im Postausgang nicht lesbar). Den Rückstand des Postausgangs zeigen `mandari_tasks_queued{queue="mail"}` und `mandari_tasks_oldest_queued_seconds{queue="mail"}`, endgültig gescheiterte Mails `mandari_tasks_dead{queue="mail"}` |
 | `mandari_pdf_documents_total`, `mandari_pdf_generation_seconds` | `result` | PDF-Erzeugung an der zentralen Stelle `apps.common.pdf.html_to_pdf` |
 | `mandari_transcription_jobs` | `status` | wartende und laufende Transkriptionsaufträge |
 | `mandari_events_sequencer_blocked_seconds` | – | Ereignistechnik: wie lange eine offene Transaktion den Sequenzierer schon aufhält, auch aus einer anderen Datenbank desselben PostgreSQL-Clusters; 0 = nichts aufgehalten. Alarm ab 300 s (`apps/events/metrics.py`, beim Abruf aus der Datenbank gemessen) |

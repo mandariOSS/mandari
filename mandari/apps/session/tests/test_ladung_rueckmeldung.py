@@ -167,7 +167,7 @@ def test_fehlgeschlagene_zustellung_wird_nicht_als_versandt_gefuehrt(
     def kaputt(**_kwargs: Any) -> bool:
         raise ConnectionError("SMTP nicht erreichbar")
 
-    monkeypatch.setattr(invitation_response_service, "send_email", kaputt)
+    monkeypatch.setattr("apps.common.mail.send", kaputt)
 
     dispatch = _versenden(welt)
 
@@ -630,3 +630,19 @@ def test_auskunft_enthaelt_ladungen_und_rueckmeldung(welt: Welt) -> None:
 
     assert daten["ladungen"][0]["empfang_bestaetigt_ueber"] == "Rückmeldelink"
     assert daten["anwesenheiten"][0]["grund"] == GRUND
+
+
+def test_erinnerung_zur_ladung_ist_mailart_erinnerung(welt: Welt, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Erinnerungen gehen als ``session.erinnerung``, nicht als Rückmeldung (Schalter je Mailart, Metrik)."""
+    recipient = _empfaenger(_versenden(welt), welt.member)
+    arten: list[str] = []
+
+    def merken(**kwargs: Any) -> bool:
+        arten.append(kwargs["kind"])
+        return True
+
+    monkeypatch.setattr("apps.common.mail.send", merken)
+    invitation_response_service.send_reminder_mail(
+        recipient, subject="Erinnerung", missing_acknowledgement=True, missing_response=False
+    )
+    assert arten == ["session.erinnerung"]

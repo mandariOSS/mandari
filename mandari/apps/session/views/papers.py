@@ -76,7 +76,7 @@ def notify_creator_rejected(tenant, paper, comment, *, stelle=""):
     Gilt für die Zurückweisung im Freigabelauf und für die einer Mitzeichnungsstation (``stelle``:
     zurückweisendes Amt) – in beiden Fällen ist die Vorlage danach wieder im Entwurf.
     """
-    from apps.common.email import send_email
+    from apps.common import mail
 
     creator = paper.created_by
     recipients = sorted(
@@ -95,7 +95,8 @@ def notify_creator_rejected(tenant, paper, comment, *, stelle=""):
         f"Mit freundlichen Grüßen\n{tenant.name}"
     )
     try:
-        send_email(
+        mail.send(
+            kind="session.vorlage",
             subject=f"Vorlage zurückgewiesen: {paper.display_reference}",
             body=body,
             to=recipients,
@@ -812,7 +813,7 @@ class PaperWorkflowView(SessionViewMixin, View):
         return sorted(emails - {self.session_user.user.email})
 
     def _notify_approvers(self, paper):
-        from apps.common.email import send_email
+        from apps.common import mail
 
         recipients = self._approver_emails(paper)
         if not recipients:
@@ -828,7 +829,8 @@ class PaperWorkflowView(SessionViewMixin, View):
             f"Mit freundlichen Grüßen\n{self.session_tenant.name}"
         )
         try:
-            send_email(
+            mail.send(
+                kind="session.vorlage",
                 subject=f"Vorlage zur Freigabe: {paper.display_reference}",
                 body=body,
                 to=recipients,

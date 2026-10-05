@@ -29,7 +29,7 @@ from typing import Any
 
 from django.utils import timezone
 
-from apps.common.email import send_email
+from apps.common import mail
 from apps.session.models import (
     SessionAttendance,
     SessionInvitationRecipient,
@@ -189,7 +189,8 @@ def send(target: Target, meeting: SessionMeeting) -> bool:
             "Zu- oder Absage von Ihnen vor. Bitte melden Sie sich beim Sitzungsdienst zurück.\n"
         )
         return bool(
-            send_email(
+            mail.send(
+                kind="session.erinnerung",
                 subject=f"[{tenant.name}] Bitte Rückmeldung: {meeting.name} am {start_local.strftime('%d.%m.%Y')}",
                 body=body,
                 to=[target.email],

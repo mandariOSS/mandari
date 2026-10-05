@@ -18,7 +18,8 @@ from django.conf import settings as django_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.common.email import get_from_email, send_template_email
+from apps.common import mail
+from apps.common.email import get_from_email
 from apps.session.models import SessionInvitation
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,8 @@ def send_user_invitation(invitation: SessionInvitation) -> bool:
         "accept_url": accept_url(invitation),
     }
     try:
-        return send_template_email(
+        return mail.send_template(
+            kind="session.zugang",
             subject=f"Einladung zum Sitzungsdienst {invitation.tenant.name}",
             template_name=TEMPLATE,
             context=context,

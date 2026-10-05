@@ -173,7 +173,7 @@ def contact_submit(request):
     # Send notification emails
     CONTACT_EMAIL = "hello@mandari.de"
     try:
-        from apps.common.email import send_template_email
+        from apps.common import mail
 
         subject_map = {
             "demo": "Demo-Anfrage",
@@ -190,7 +190,8 @@ def contact_submit(request):
 
         email_subject = f"[Mandari] {subject_map.get(subject, 'Kontaktanfrage')} von {name}"
 
-        notification_sent = send_template_email(
+        notification_sent = mail.send_template(
+            kind="insight.kontakt",
             subject=email_subject,
             template_name="emails/contact/notification",
             context=email_context,
@@ -204,7 +205,8 @@ def contact_submit(request):
         # Die Bestätigung geht an eine frei eingetragene Adresse: je Adresse gedrosselt und ohne die
         # eingegebenen Texte, damit das Formular kein Werkzeug für Mails an Dritte ist
         if not throttle.mail_address_exceeded(email):
-            confirmation_sent = send_template_email(
+            confirmation_sent = mail.send_template(
+                kind="insight.kontakt",
                 subject="Ihre Anfrage bei Mandari - Bestätigung",
                 template_name="emails/contact/confirmation",
                 context={"contact": contact},

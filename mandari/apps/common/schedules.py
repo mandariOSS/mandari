@@ -10,13 +10,17 @@ nachgeholt. Abschalten je Befehl: ``EVENTS_SCHEDULES_DISABLED=befehl:<name>``.
 Die Liste steht an einer Stelle, damit sie sich mit einer bestehenden Crontab vergleichen lässt; die
 Befehle selbst gehören den Fachmodulen. Auf dem Host bleiben nur Aufgaben des Betriebssystems
 (Datensicherung, Journal-Alarm, Neustart ungesunder Container).
+
+Dazu ``postausgang_aufraeumen``: täglich um 03:55 Uhr Zeilen des Postausgangs des Mail-Dienstes nach
+ihrer Frist löschen (``apps.common.mail.outbox.purge``, Issue #528).
 """
 
 from __future__ import annotations
 
 from django.conf import settings
+from django.tasks import task
 
-from apps.events.schedule import ScheduleRegistry
+from apps.events.schedule import ScheduleRegistry, cron
 from apps.events.verwaltungsbefehle import befehl_als_zeitplan
 
 
@@ -82,3 +86,12 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
 
 
 registrieren()
+
+
+@cron("55 3 * * *")
+@task
+def postausgang_aufraeumen() -> int:
+    """Löscht Zeilen des Postausgangs nach ihrer Frist (versendet 14, fehlgeschlagen 90 Tage)."""
+    from apps.common.mail.outbox import purge
+
+    return purge()

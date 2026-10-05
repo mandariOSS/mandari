@@ -222,7 +222,7 @@ def test_mailfehler_bricht_die_einreichung_nicht_ab(
     def kaputt(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("SMTP nicht erreichbar")
 
-    monkeypatch.setattr("apps.work.organization.emails.send_org_email", kaputt)
+    monkeypatch.setattr("apps.common.mail.send", kaputt)
     application = submit(motion, author, commit)
     motion.refresh_from_db()
     assert motion.status == "submitted" and motion.session_application_id == application.pk

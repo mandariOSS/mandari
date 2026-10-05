@@ -13,7 +13,7 @@ damit eine Änderung durch Dritte auffällt:
 
 Beendete Sitzungen erscheinen nur auf der Seite (die Person hat sie dort selbst beendet).
 
-Versand nach dem Commit über die SMTP-Konfiguration der Plattform. Fehler beim Anlegen oder
+Versand nach dem Commit über den Mail-Dienst auf dem Weg der Plattform (Mailart ``konto.sicherheit``). Fehler beim Anlegen oder
 Versenden verhindern die Änderung nie; sie landen im Betriebslog.
 """
 
@@ -70,7 +70,8 @@ def notify(user: Any, notification_type: str, title: str, message: str, *, reque
 
 def send_mail(notification_id: Any) -> bool:
     """Hinweis-Mail versenden und ``email_sent`` setzen; ``False`` bei Fehlschlag (nie eine Ausnahme)."""
-    from apps.common.email import render_email, send_email
+    from apps.common import mail
+    from apps.common.email import render_email
 
     try:
         notification = SecurityNotification.objects.select_related("user").get(pk=notification_id)
@@ -83,11 +84,14 @@ def send_mail(notification_id: Any) -> bool:
             "reset_url": f"{site_url}{reverse('accounts:password_reset')}",
         }
         html, text = render_email("accounts/emails/security_notification.html", context)
-        sent = send_email(
+        sent = mail.send(
+            kind="konto.sicherheit",
             subject=f"Sicherheitshinweis: {notification.title}",
             body=text,
             html_body=html,
             to=[user.email],
+            # Ein Hinweis ist ein Ereignis für eine Person: höchstens eine Mail, auch bei Wiederholung
+            idempotency_key=f"konto.sicherheit:{notification.pk}",
             fail_silently=True,
         )
     except Exception:

@@ -54,29 +54,24 @@ class SiteSettingsEmailBackend(SMTPBackend):
         )
 
     def _get_config(self) -> dict:
-        """
-        Get email configuration from SiteSettings with fallback to Django settings.
-        """
+        """Zugang der Plattform aus dem Mail-Dienst (Systemeinstellungen, sonst Umgebung)."""
         from django.conf import settings as django_settings
 
         try:
-            from .models import SiteSettings
+            from apps.common.mail.config import platform_config
 
-            site_settings = SiteSettings.get_settings()
-
-            # Use SiteSettings if email_host is configured, otherwise fallback
-            if site_settings.email_host:
-                return {
-                    "host": site_settings.email_host,
-                    "port": site_settings.email_port,
-                    "username": site_settings.email_host_user,
-                    "password": site_settings.get_email_host_password(),
-                    "use_tls": site_settings.email_use_tls,
-                    "use_ssl": site_settings.email_use_ssl,
-                    "timeout": site_settings.email_timeout,
-                }
+            config = platform_config()
+            return {
+                "host": config.host,
+                "port": config.port,
+                "username": config.username,
+                "password": config.password,
+                "use_tls": config.use_tls,
+                "use_ssl": config.use_ssl,
+                "timeout": config.timeout,
+            }
         except Exception as e:
-            logger.warning(f"Could not load SiteSettings: {e}")
+            logger.warning("Systemeinstellungen nicht lesbar, Zugang aus der Umgebung (%s)", type(e).__name__)
 
         # Fallback: SMTP-Zugang aus der Umgebung (settings.SMTP_FALLBACK, Issue #80)
         fallback = dict(getattr(django_settings, "SMTP_FALLBACK", {}) or {})

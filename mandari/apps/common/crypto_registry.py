@@ -100,11 +100,15 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     EncryptedField("common.AISettings", "api_key_encrypted", KeyKind.MASTER),
     EncryptedField("minutes.ComputeSettings", "client_secret_encrypted", KeyKind.MASTER),
     EncryptedField("minutes.ComputeSettings", "s3_secret_key_encrypted", KeyKind.MASTER),
+    # Postausgang des Mail-Dienstes (Issue #528): Mails der Plattform bis zum Versand
+    EncryptedField("common.MailOutbox", "payload_platform_encrypted", KeyKind.MASTER, batch_size=_LARGE),
     # --- Zweiter Faktor ------------------------------------------------------------------------
     EncryptedField("accounts.TwoFactorDevice", "secret_encrypted", KeyKind.TWO_FACTOR),
     EncryptedField("accounts.TwoFactorDevice", "backup_codes_encrypted", KeyKind.TWO_FACTOR),
     # --- Organisation (Work): Zugangsdaten mit eigenem Getter/Setter ----------------------------
     *_tenant("tenants.Organization", "smtp_password_encrypted", "ai_api_key_encrypted", paths=(SELF,)),
+    # Postausgang des Mail-Dienstes (Issue #528): Mails einer Organisation bis zum Versand, mit Anhängen
+    *_tenant("common.MailOutbox", "payload_encrypted", paths=_ORG, batch_size=_LARGE),
     # --- Work ----------------------------------------------------------------------------------
     *_tenant("work.FactionMeeting", "protocol_encrypted", paths=_ORG),
     *_tenant("work.FactionAgendaItem", "description_encrypted", "decision_encrypted", paths=("meeting__organization",)),

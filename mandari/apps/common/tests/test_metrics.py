@@ -129,28 +129,37 @@ def test_ausnahme_zaehlt_als_5xx(rf: RequestFactory) -> None:
 
 @pytest.mark.django_db
 def test_mailversand_wird_gezaehlt() -> None:
-    from apps.common.email import send_email
+    from apps.common import mail as mail_dienst
 
     vorher = _sample("mandari_emails_total", result="sent")
-    send_email("Test", "Hallo", ["empfang@example.org"])
+    je_art = _sample("mandari_mail_total", kind="konto.passwort", route="plattform", result="sent")
+    mail_dienst.send(kind="konto.passwort", subject="Test", body="Hallo", to=["empfang@example.org"])
 
     assert len(mail.outbox) == 1
     assert _sample("mandari_emails_total", result="sent") == vorher + 1
+    assert _sample("mandari_mail_total", kind="konto.passwort", route="plattform", result="sent") == je_art + 1
 
 
 @pytest.mark.django_db
 def test_fehlgeschlagener_mailversand_wird_gezaehlt(monkeypatch: pytest.MonkeyPatch) -> None:
-    from apps.common import email as email_modul
-    from apps.common.email import send_email
+    from apps.common import mail as mail_dienst
+    from apps.common.mail import delivery
 
     def scheitert(backend: object, message: object) -> int:
         raise ConnectionError("SMTP weg")
 
-    monkeypatch.setattr(email_modul, "send_with", scheitert)
+    monkeypatch.setattr(delivery, "send_with", scheitert)
     vorher = _sample("mandari_emails_total", result="failed")
+    je_art = _sample("mandari_mail_total", kind="konto.passwort", route="plattform", result="failed")
 
-    assert send_email("Test", "Hallo", ["empfang@example.org"], fail_silently=True) is False
+    assert (
+        mail_dienst.send(
+            kind="konto.passwort", subject="Test", body="Hallo", to=["empfang@example.org"], fail_silently=True
+        )
+        is False
+    )
     assert _sample("mandari_emails_total", result="failed") == vorher + 1
+    assert _sample("mandari_mail_total", kind="konto.passwort", route="plattform", result="failed") == je_art + 1
 
 
 def test_pdf_erzeugung_wird_gezaehlt() -> None:

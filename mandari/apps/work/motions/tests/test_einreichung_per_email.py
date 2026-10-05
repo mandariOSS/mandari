@@ -192,7 +192,7 @@ def test_session_verbindung_hat_vorrang(
 def test_scheitert_der_versand_ueberall_bleibt_nichts_gespeichert(
     org: Any, antrag: Motion, autorin: Any, kontakte: list[Any], client_for: Any
 ) -> None:
-    with mock.patch("apps.common.org_email.send_org_email", side_effect=RuntimeError("smtp kaputt GEHEIM")):
+    with mock.patch("apps.common.mail.send", side_effect=RuntimeError("smtp kaputt GEHEIM")):
         antwort = _einreichen(client_for(autorin.user), org, antrag, kontakte)
     texte = [str(m) for m in get_messages(antwort.wsgi_request)]
     assert any("konnte nicht versendet werden" in t for t in texte), texte
@@ -205,16 +205,16 @@ def test_scheitert_der_versand_ueberall_bleibt_nichts_gespeichert(
 def test_teilweiser_versandfehler_wird_vermerkt(
     org: Any, antrag: Motion, autorin: Any, kontakte: list[Any], client_for: Any
 ) -> None:
-    from apps.common import org_email
+    from apps.common import mail as mail_dienst
 
-    echt = org_email.send_org_email
+    echt = mail_dienst.send
 
-    def einmal_kaputt(organization: Any, **kwargs: Any) -> bool:
+    def einmal_kaputt(**kwargs: Any) -> bool:
         if kwargs["to"] == ["ob@stadt.example"]:
             raise RuntimeError("abgelehnt")
-        return bool(echt(organization, **kwargs))
+        return bool(echt(**kwargs))
 
-    with mock.patch("apps.common.org_email.send_org_email", side_effect=einmal_kaputt):
+    with mock.patch("apps.common.mail.send", side_effect=einmal_kaputt):
         antwort = _einreichen(client_for(autorin.user), org, antrag, kontakte)
     texte = [str(m) for m in get_messages(antwort.wsgi_request)]
     assert any("Nicht zugestellt an: OB-Büro" in t for t in texte), texte
@@ -320,12 +320,12 @@ def test_zweiter_aufruf_waehrend_des_versands_versendet_nichts(
     antrag: Motion, autorin: Any, kontakte: list[Any]
 ) -> None:
     """Doppelklick oder zwei Personen: Der zweite Aufruf sieht die laufende Einreichung."""
-    from apps.common import org_email
+    from apps.common import mail as mail_dienst
 
-    echt = org_email.send_org_email
+    echt = mail_dienst.send
     zweiter: list[str] = []
 
-    def mit_zweitem_aufruf(organization: Any, **kwargs: Any) -> bool:
+    def mit_zweitem_aufruf(**kwargs: Any) -> bool:
         if not zweiter:
             try:
                 email_submission.submit_by_email(
@@ -338,9 +338,9 @@ def test_zweiter_aufruf_waehrend_des_versands_versendet_nichts(
                 zweiter.append("versendet")
             except ris_submission.SubmissionError as exc:
                 zweiter.append(str(exc))
-        return bool(echt(organization, **kwargs))
+        return bool(echt(**kwargs))
 
-    with mock.patch("apps.common.org_email.send_org_email", side_effect=mit_zweitem_aufruf):
+    with mock.patch("apps.common.mail.send", side_effect=mit_zweitem_aufruf):
         email_submission.submit_by_email(
             antrag, autorin, contact_ids=[str(k.pk) for k in kontakte], subject="Antrag", message=""
         )
@@ -353,16 +353,17 @@ def test_zweiter_aufruf_waehrend_des_versands_versendet_nichts(
 def test_versand_laeuft_ohne_offene_transaktion(antrag: Motion, autorin: Any, kontakte: list[Any]) -> None:
     from django.db import connection
 
-    from apps.common import org_email
+    from apps.common import mail as mail_dienst
 
-    echt = org_email.send_org_email
+    echt = mail_dienst.send
     in_transaktion: list[bool] = []
 
-    def beobachten(organization: Any, **kwargs: Any) -> bool:
-        in_transaktion.append(connection.in_atomic_block)
-        return bool(echt(organization, **kwargs))
+    def beobachten(**kwargs: Any) -> bool:
+        if kwargs["kind"] == "work.antrag.einreichung":  # nicht die Kopie an die einreichende Person
+            in_transaktion.append(connection.in_atomic_block)
+        return bool(echt(**kwargs))
 
-    with mock.patch("apps.common.org_email.send_org_email", side_effect=beobachten):
+    with mock.patch("apps.common.mail.send", side_effect=beobachten):
         email_submission.submit_by_email(
             antrag, autorin, contact_ids=[str(k.pk) for k in kontakte], subject="Antrag", message=""
         )

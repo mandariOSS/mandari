@@ -78,10 +78,11 @@ def _send_admin_invitation(org: Organization, invitation: UserInvitation, accept
     Einladungs-Mail an den künftigen Org-Admin im gemeinsamen Mail-Layout über den
     mandari-Standardversand (Site-Einstellungen). False bei Versandfehler (#239).
     """
-    from apps.common.email import send_template_email
+    from apps.common import mail
 
     try:
-        return send_template_email(
+        return mail.send_template(
+            kind="plattform.einladung",
             subject=f"Deine neue mandari work Organisation: {org.name}",
             template_name="emails/provisioning/admin_invitation",
             context={"organization": org, "invitation": invitation, "accept_url": accept_url},
