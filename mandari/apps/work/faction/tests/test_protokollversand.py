@@ -171,20 +171,19 @@ def test_lauf_laedt_nur_sitzungen_im_faelligkeitsfenster(
 
     _einschalten(org, make_member, monkeypatch, modus, 24)
     make_member(org, LESEN, email="mitglied@example.org")
-    genehmigt = {"protocol_approved": True, "protocol_status": "approved"}
+
+    def genehmigt(am: datetime) -> dict[str, Any]:
+        if modus != "after_approval":
+            return {}
+        return {"protocol_approved": True, "protocol_status": "approved", "protocol_approved_at": am}
+
     # Altbestand vor dem Einschalten: bekommt nie protocol_sent_at und darf den Lauf nicht wachsen lassen
     for tage in range(1, 6):
         start = EINGESCHALTET - timedelta(days=30 * tage)
-        felder = {**genehmigt, "protocol_approved_at": start + timedelta(days=2)} if modus == "after_approval" else {}
-        _sitzung(org, start=start, status="completed", **felder)
+        _sitzung(org, start=start, status="completed", **genehmigt(start + timedelta(days=2)))
     # Noch nicht fällig
-    felder = {**genehmigt, "protocol_approved_at": ENDE + timedelta(days=2)} if modus == "after_approval" else {}
-    _sitzung(org, start=SITZUNG + timedelta(days=2), status="completed", **felder)
-    faellig = _sitzung(
-        org,
-        status="completed",
-        **({**genehmigt, "protocol_approved_at": ENDE} if modus == "after_approval" else {}),
-    )
+    _sitzung(org, start=SITZUNG + timedelta(days=2), status="completed", **genehmigt(ENDE + timedelta(days=2)))
+    faellig = _sitzung(org, status="completed", **genehmigt(ENDE))
 
     geprueft: list[Any] = []
     original = protocol_dispatch.protocol_due_at
