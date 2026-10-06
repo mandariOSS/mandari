@@ -4,7 +4,7 @@ Checkliste, Anhänge, Aktivität mit Kommentar-Formular. Alpine-Scope: kanbanBoa
 Kontext: task, organization, membership, shared_members, checklist_items, attachments, activities
 {% endcomment %}
 {# Header #}
-<div class="px-6 pt-5 pb-4 bg-gradient-to-b from-gray-50/80 to-white dark:from-gray-900/50 dark:to-gray-800">
+<div class="px-6 pt-5 pb-4 bg-gray-50 dark:bg-gray-900/50">
     <div class="flex items-start gap-3">
         <div class="flex-1 min-w-0">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white leading-tight {% if task.is_completed %}line-through opacity-60{% endif %}">
@@ -76,7 +76,7 @@ Kontext: task, organization, membership, shared_members, checklist_items, attach
                 {% if task.visibility == 'private' %}
                 <span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3 h-3 text-gray-400"></i> Privat</span>
                 {% elif task.visibility == 'shared' %}
-                <span class="inline-flex items-center gap-1"><i data-lucide="users" class="w-3 h-3 text-violet-500"></i> Geteilt</span>
+                <span class="inline-flex items-center gap-1"><i data-lucide="users" class="w-3 h-3 text-primary-500"></i> Geteilt</span>
                 {% else %}
                 <span class="inline-flex items-center gap-1"><i data-lucide="building" class="w-3 h-3 text-green-500"></i> Organisation</span>
                 {% endif %}

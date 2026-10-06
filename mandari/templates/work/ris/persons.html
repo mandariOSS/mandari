@@ -19,7 +19,7 @@
 {% else %}
 
 <!-- Search -->
-<div class="fade-up mb-6">
+<div class="mb-6">
     <form method="get">
         <div class="relative max-w-md">
             <i data-lucide="search" class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
@@ -32,14 +32,14 @@
 
 <!-- Persons Table -->
 {% if persons %}
-<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Name</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Funktion</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Kontakt</th>
+                <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400">Name</th>
+                <c-ui.th plain class="max-sm:hidden">Funktion</c-ui.th>
+                <c-ui.th plain class="max-sm:hidden">Kontakt</c-ui.th>
                 <th class="w-10 px-2 py-3"></th>
             </tr>
         </thead>
@@ -84,7 +84,7 @@
 </div>
 
 {% if persons.has_other_pages %}
-<nav class="fade-up d2 mt-6 flex justify-center">
+<nav class="mt-6 flex justify-center">
     <ul class="flex items-center gap-1">
         {% if persons.has_previous %}
         <li>
@@ -117,7 +117,7 @@
 {% endif %}
 
 {% else %}
-<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
     <i data-lucide="user" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Personen gefunden</h3>
     <p class="text-gray-500 dark:text-gray-400">

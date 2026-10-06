@@ -443,7 +443,8 @@ def _ns(**attributes: Any) -> Any:
 
 
 def _eva() -> Any:
-    return _ns(first_name="Eva", email="eva@example.org")
+    # get_full_name wie User.get_full_name(): Systemmails grüßen in Sie-Form mit vollem Namen (Issue #851)
+    return _ns(first_name="Eva", get_full_name="Eva Beispiel", email="eva@example.org")
 
 
 def work_org_invitation(org: Any, make_member: Any) -> dict[str, Any]:

@@ -14,16 +14,16 @@
 {% csrf_token %}
 <div class="space-y-6">
     <!-- Followed committees -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="landmark" class="w-4 h-4 text-gray-400"></i>
                 Meine Gremien
             </h4>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Wähle die Gremien, die dich interessieren. Das Dashboard und der Reiter „Meine Gremien“
+                Wählen Sie die Gremien, die Sie interessieren. Das Dashboard und der Reiter „Meine Gremien“
                 unter „Meine Sitzungen“ zeigen dann bevorzugt Sitzungen und Dokumente dieser Gremien.
-                Ohne Auswahl gelten deine zugewiesenen Gremien bzw. alle Gremien der Organisation.
+                Ohne Auswahl gelten Ihre zugewiesenen Gremien bzw. alle Gremien der Organisation.
             </p>
         </div>
         <div class="px-6 py-4">
@@ -54,15 +54,15 @@
 
     <!-- Assigned committees (read-only info) -->
     {% if assigned_committees %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-50">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="badge-check" class="w-4 h-4 text-gray-400"></i>
                 Zugewiesene Gremien
             </h4>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Diese Gremien wurden dir von der Organisation zugewiesen. Änderungen kannst du
-                über den Tab „Anträge" beantragen. Solange du oben nichts auswählst, werden sie
+                Diese Gremien wurden Ihnen von der Organisation zugewiesen. Änderungen können Sie
+                über den Reiter „Anträge“ beantragen. Solange Sie oben nichts auswählen, werden sie
                 für die Personalisierung verwendet.
             </p>
         </div>
@@ -95,15 +95,15 @@
 {% csrf_token %}
 <input type="hidden" name="action" value="save_expertise">
 <div class="space-y-6">
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-100">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="lightbulb" class="w-4 h-4 text-gray-400"></i>
                 Meine Fachgebiete
             </h4>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Wähle Themen, in denen du Fachwissen hast. Bei Dokumenten mit diesen Themen
-                wirst du in der Kachel „Kompetenz im Thema“ als Ansprechperson vorgeschlagen.
+                Wählen Sie Themen, in denen Sie Fachwissen haben. Bei Dokumenten mit diesen Themen
+                werden Sie im Abschnitt „Kompetenz im Thema“ als Ansprechperson vorgeschlagen.
             </p>
         </div>
         <div class="px-6 py-4">

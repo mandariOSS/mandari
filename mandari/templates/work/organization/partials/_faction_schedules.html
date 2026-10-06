@@ -47,14 +47,14 @@
             {% csrf_token %}
             <input type="hidden" name="section" value="update_schedule_automation">
             <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
-            <p class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Automatik</p>
+            <p class="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Automatik</p>
             {% include "work/organization/partials/_faction_schedule_automation.html" %}
             <c-ui.button type="submit" size="sm" class="mt-3">Automatik speichern</c-ui.button>
         </form>
 
         {# Urlaubszeiträume / manuelle Ausnahmen #}
         <div class="mt-4">
-            <p class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Ausnahmen / Urlaubszeiträume</p>
+            <p class="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Ausnahmen / Urlaubszeiträume</p>
             {% for exception in schedule.exceptions.all %}
             <div class="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100 dark:border-gray-700/50 last:border-0">
                 <p class="text-sm text-gray-700 dark:text-gray-300">
@@ -93,7 +93,7 @@
 
         {# RIS-Ausfallregeln #}
         <div class="mt-4">
-            <p class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">RIS-Ausfallregeln</p>
+            <p class="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">RIS-Ausfallregeln</p>
             {% for rule in schedule.suspension_rules.all %}
             <div class="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100 dark:border-gray-700/50 last:border-0">
                 <p class="text-sm text-gray-700 dark:text-gray-300">

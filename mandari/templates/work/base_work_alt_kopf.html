@@ -1,19 +1,22 @@
-{# Teil des bisherigen Rahmens (work/base_work_alt.html), unverändert ausgelagert (Issue #852) #}
+{# Teil des bisherigen Rahmens (work/base_work_alt.html), ausgelagert (Issue #852); Stufe 0 (#851): Knöpfe mit aria-label, Escape schließt #}
 {% load static permission_tags %}
 <!-- Top Bar -->
 <div class="work-topbar z-30">
     <div class="flex items-center gap-1">
         <!-- Mobile menu button -->
-        <button type="button" @click="sidebarOpen = !sidebarOpen"
+        <button type="button" @click="sidebarOpen = !sidebarOpen" x-ref="menuButton"
                 class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Menü">
-            <i data-lucide="menu" class="w-5 h-5"></i>
+                aria-label="Menü" aria-controls="work-navigation" aria-haspopup="dialog"
+                :aria-expanded="sidebarOpen ? 'true' : 'false'" aria-expanded="false">
+            <i data-lucide="menu" class="w-5 h-5" aria-hidden="true"></i>
         </button>
 
         <!-- Desktop: Sidebar collapse toggle -->
         <button type="button" @click="sidebarCollapsed = !sidebarCollapsed; localStorage.setItem('sidebarCollapsed', sidebarCollapsed)"
                 class="hidden lg:flex p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                :title="sidebarCollapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'">
+                :aria-label="sidebarCollapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'"
+                aria-label="Seitenleiste einklappen" aria-controls="work-navigation"
+                :aria-expanded="sidebarCollapsed ? 'false' : 'true'" aria-expanded="true">
             <i x-show="!sidebarCollapsed" data-lucide="panel-left-close" class="w-5 h-5"></i>
             <i x-show="sidebarCollapsed" data-lucide="panel-left-open" class="w-5 h-5" x-cloak></i>
         </button>
@@ -26,7 +29,7 @@
         <!-- Dark Mode Toggle -->
         <button type="button" @click="darkMode = !darkMode"
                 class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Dunkelmodus umschalten">
+                aria-label="Dunkelmodus" :aria-pressed="darkMode ? 'true' : 'false'" aria-pressed="false">
             <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
             <i data-lucide="moon" class="w-5 h-5 dark:hidden"></i>
         </button>
@@ -87,7 +90,7 @@
         }" class="relative">
             <button type="button" @click="open = !open; if(open) fetchNotifications()"
                     class="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                    title="Benachrichtigungen">
+                    aria-label="Benachrichtigungen" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false">
                 <i data-lucide="bell" class="w-5 h-5"></i>
                 <span x-show="unreadCount > 0"
                       x-text="unreadCount > 99 ? '99+' : unreadCount"
@@ -96,7 +99,7 @@
             </button>
 
             <div x-show="open"
-                 @click.outside="open = false"
+                 @click.outside="open = false" @keydown.escape.window="open = false"
                  x-cloak
                  class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
                 <!-- Header -->
@@ -109,8 +112,8 @@
                             Alle gelesen
                         </button>
                         <a href="{% url 'work:notifications' org_slug=organization.slug %}"
-                           class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-                            <i data-lucide="settings" class="w-4 h-4"></i>
+                           class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" aria-label="Benachrichtigungen einstellen">
+                            <i data-lucide="settings" class="w-4 h-4" aria-hidden="true"></i>
                         </a>
                     </div>
                 </div>
@@ -159,7 +162,8 @@
              @pwa-installed.window="canInstall = false"
              class="relative">
             <button type="button" @click="open = !open"
-                    class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+                    class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                    aria-label="Benutzermenü" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false">
                 <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center text-primary-600 dark:text-primary-400 font-medium text-sm">
                     {% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}
                 </div>
@@ -167,7 +171,7 @@
             </button>
 
             <div x-show="open"
-                 @click.outside="open = false"
+                 @click.outside="open = false" @keydown.escape.window="open = false"
                  x-cloak
                  class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
                 <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
@@ -197,7 +201,7 @@
                 </div>
                 {% if user_organizations|length > 1 %}
                 <hr class="my-1 border-gray-200 dark:border-gray-700">
-                <div class="px-4 py-1 text-xs font-medium text-gray-400 uppercase tracking-wide">Organisation wechseln</div>
+                <div class="px-4 py-1 text-xs font-medium text-gray-400">Organisation wechseln</div>
                 {% for user_org in user_organizations %}
                 {% if user_org.organization_id != organization.id %}
                 <a href="{% url 'work:dashboard' org_slug=user_org.organization.slug %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">

@@ -26,7 +26,7 @@
 {% else %}
 
 <!-- Ampel -->
-<div class="fade-up grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
     <a href="?status=open" class="bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors hover:border-gray-300 dark:hover:border-gray-600 {% if filter_status == 'open' %}border-primary-400 dark:border-primary-500{% else %}border-gray-200 dark:border-gray-700{% endif %}">
         <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ tracking_stats.open }}</p>
         <p class="text-sm text-gray-500 dark:text-gray-400">Offen</p>
@@ -46,7 +46,7 @@
 </div>
 
 <!-- Filter -->
-<div class="fade-up flex flex-wrap items-center gap-4 mb-6">
+<div class="flex flex-wrap items-center gap-4 mb-6">
     <form method="get" class="flex flex-wrap items-center gap-3 w-full">
         <div class="relative flex-1 min-w-[220px]">
             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
@@ -84,15 +84,15 @@
 </div>
 
 {% if items %}
-<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Beschluss</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-md:hidden">Gremium / Sitzung</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Umsetzung</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-lg:hidden">Zuständig / Frist</th>
+                <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400">Beschluss</th>
+                <c-ui.th plain class="max-md:hidden">Gremium / Sitzung</c-ui.th>
+                <c-ui.th plain>Umsetzung</c-ui.th>
+                <c-ui.th plain class="max-lg:hidden">Zuständig / Frist</c-ui.th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -152,14 +152,14 @@
 </div>
 
 {% if page_obj.has_other_pages %}
-<nav class="fade-up d2 mt-6 flex justify-center gap-2 text-sm">
+<nav class="mt-6 flex justify-center gap-2 text-sm">
     {% if page_obj.has_previous %}<a href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">Zurück</a>{% endif %}
     <span class="px-3 py-1.5 text-gray-500">Seite {{ page_obj.number }} von {{ paginator.num_pages }}</span>
     {% if page_obj.has_next %}<a href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">Weiter</a>{% endif %}
 </nav>
 {% endif %}
 {% else %}
-<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
     <i data-lucide="gavel" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
     <p class="text-gray-600 dark:text-gray-300">Keine Beschlüsse für diese Auswahl.</p>
 </div>

@@ -37,8 +37,8 @@ AccessVariant = Literal["welcome", "approved", "reactivated"]
 
 ACCESS_SUBJECTS: dict[str, str] = {
     "welcome": "Willkommen bei {name}",
-    "approved": "Dein Zugang zu {name} ist freigeschaltet",
-    "reactivated": "Dein Zugang zu {name} ist wieder aktiv",
+    "approved": "Ihr Zugang zu {name} ist freigeschaltet",
+    "reactivated": "Ihr Zugang zu {name} ist wieder aktiv",
 }
 
 
@@ -99,7 +99,7 @@ def send_registration_confirmation(organization: Organization, user: User, token
     return send_organization_mail(
         organization,
         template="registration_confirm.html",
-        subject=f"Bitte bestätige deine Registrierung bei {organization.name}",
+        subject=f"Bitte bestätigen Sie Ihre Registrierung bei {organization.name}",
         to=user.email,
         context={"user": user, "confirm_url": confirm_url, "valid_hours": valid_hours},
     )
@@ -111,7 +111,7 @@ def send_registration_received(membership: Membership) -> bool:
     return send_organization_mail(
         organization,
         template="registration_received.html",
-        subject=f"Deine Registrierung bei {organization.name} ist eingegangen",
+        subject=f"Ihre Registrierung bei {organization.name} ist eingegangen",
         to=membership.user.email,
         context={"user": membership.user, "membership": membership},
     )
@@ -166,7 +166,7 @@ def send_registration_rejected(organization: Organization, user: User, reason: s
     return send_organization_mail(
         organization,
         template="registration_rejected.html",
-        subject=f"Deine Registrierungsanfrage bei {organization.name}",
+        subject=f"Ihre Registrierungsanfrage bei {organization.name}",
         to=user.email,
         context={"user": user, "reason": reason, "retention_days": ABGELEHNT_TAGE},
     )

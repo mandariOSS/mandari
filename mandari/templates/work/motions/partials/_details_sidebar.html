@@ -12,7 +12,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
 
     <!-- Zuständigkeit -->
     <div>
-        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
             <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
             Zuständigkeit
         </h4>
@@ -57,7 +57,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
 
     <!-- Themen -->
     <div>
-        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
             <i data-lucide="tags" class="w-3.5 h-3.5"></i>
             Themen
         </h4>
@@ -95,7 +95,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
     <!-- Ordner (reine Ablage-Struktur, keine Sichtbarkeit; für Gäste unsichtbar) -->
     {% if not membership.is_guest %}
     <div>
-        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
             <i data-lucide="folder" class="w-3.5 h-3.5"></i>
             Ordner
         </h4>
@@ -124,7 +124,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
     <!-- Kompetenz im Thema -->
     {% if competent_members %}
     <div class="bg-primary-50/50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 rounded-xl p-3">
-        <h4 class="text-xs font-bold text-primary-700 dark:text-primary-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <h4 class="text-xs font-bold text-primary-700 dark:text-primary-300 mb-2 flex items-center gap-1.5">
             <i data-lucide="lightbulb" class="w-3.5 h-3.5"></i>
             Kompetenz im Thema
         </h4>
@@ -144,7 +144,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
 
     <!-- Frist -->
     <div>
-        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
             <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i>
             Frist
         </h4>
@@ -168,7 +168,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
 
     <!-- Freigaben -->
     <div>
-        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
             <i data-lucide="file-check" class="w-3.5 h-3.5"></i>
             Freigaben
             {% if approval_summary.total %}
@@ -179,7 +179,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
         {% if my_pending_approval %}
         <!-- Entscheiden-Block für die angefragte Person -->
         <div class="mb-3 p-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-900/10">
-            <p class="text-sm font-medium text-gray-900 dark:text-white mb-1">Deine Freigabe wurde angefragt</p>
+            <p class="text-sm font-medium text-gray-900 dark:text-white mb-1">Ihre Freigabe wurde angefragt</p>
             <p class="text-xs text-gray-500 mb-2">Als {{ my_pending_approval.get_approval_type_display }}</p>
             <textarea id="approval-decide-comment" rows="2" placeholder="Kommentar (optional)"
                       class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-amber-500 mb-2"></textarea>

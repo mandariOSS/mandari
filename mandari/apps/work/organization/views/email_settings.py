@@ -77,6 +77,6 @@ class OrganizationEmailSettingsView(WorkViewMixin, TemplateView):
             messages.warning(
                 request,
                 "Server, Port oder Benutzer haben sich geändert – das gespeicherte Passwort wurde verworfen. "
-                "Bitte gib es erneut ein.",
+                "Bitte geben Sie es erneut ein.",
             )
         messages.success(request, "E-Mail-Einstellungen gespeichert.")

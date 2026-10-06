@@ -11,7 +11,7 @@
     <span class="px-2.5 py-1 text-xs font-medium rounded-full
         {% if ticket.status == 'open' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
         {% elif ticket.status == 'in_progress' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
-        {% elif ticket.status == 'waiting' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+        {% elif ticket.status == 'waiting' %}bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300
         {% elif ticket.status == 'resolved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
         {% else %}bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300{% endif %}">
         {{ ticket.get_status_display }}
@@ -53,7 +53,7 @@
     <!-- Main Content -->
     <div class="lg:col-span-2 space-y-6">
         <!-- Original Description -->
-        <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-start gap-4">
                 <div class="flex-shrink-0 w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
                     <span class="text-sm font-medium text-primary-700 dark:text-primary-300">
@@ -100,7 +100,7 @@
         </div>
 
         <!-- Message Thread (HTMX auto-refresh) -->
-        <div class="fade-up d1" id="message-thread"
+        <div id="message-thread"
              hx-get="{% url 'work:support_messages_partial' org_slug=organization.slug ticket_id=ticket.id %}?count={{ messages|length }}"
              hx-trigger="every 5s"
              hx-swap="innerHTML"
@@ -123,7 +123,7 @@
 
         <!-- Reply Form -->
         {% if ticket.status not in 'closed' %}
-        <div class="fade-up d2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-4">Antworten</h3>
             <form method="post" enctype="multipart/form-data" x-data="{ files: [] }">
                 {% csrf_token %}
@@ -189,7 +189,7 @@
                         <span class="px-2.5 py-1 text-xs font-medium rounded-full
                             {% if ticket.status == 'open' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
                             {% elif ticket.status == 'in_progress' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
-                            {% elif ticket.status == 'waiting' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+                            {% elif ticket.status == 'waiting' %}bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300
                             {% elif ticket.status == 'resolved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
                             {% else %}bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300{% endif %}">
                             {{ ticket.get_status_display }}

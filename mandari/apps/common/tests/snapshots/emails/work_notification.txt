@@ -11,7 +11,7 @@ Fraktion Test
 
 [Details anzeigen](https://mandari.example/work/fraktion-test/tasks/00000000-0000-0000-0000-000000000602/)
 
-Du erhältst diese E-Mail, weil du Benachrichtigungen für Fraktion Test aktiviert hast.
+Sie erhalten diese E-Mail, weil Sie Benachrichtigungen für Fraktion Test aktiviert haben.
 [Einstellungen anpassen](https://mandari.example/work/fraktion-test/notifications/preferences/)
 
 mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

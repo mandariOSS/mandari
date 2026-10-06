@@ -16,7 +16,7 @@
 {% endblock %}
 
 {% block work_content %}
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden fade-up">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for type in types %}
         <div class="px-5 py-4 flex items-center justify-between">
@@ -69,8 +69,8 @@
         </div>
         {% empty %}
         <div class="px-5 py-12 text-center">
-            <div class="w-16 h-16 mx-auto mb-4 bg-violet-100 dark:bg-violet-900/30 rounded-full flex items-center justify-center">
-                <i data-lucide="layers" class="w-8 h-8 text-violet-500 dark:text-violet-400"></i>
+            <div class="w-16 h-16 mx-auto mb-4 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+                <i data-lucide="layers" class="w-8 h-8 text-primary-500 dark:text-primary-400"></i>
             </div>
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Dokumenttypen vorhanden</h3>
             <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">

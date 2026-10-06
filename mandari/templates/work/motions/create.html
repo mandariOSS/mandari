@@ -15,7 +15,7 @@
         {% if current_folder %}
         <!-- Ordner-Ablage: Dokument landet im aktuell gewählten Ordner -->
         <input type="hidden" name="folder" value="{{ current_folder.id }}">
-        <p class="fade-up flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 -mb-2">
+        <p class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 -mb-2">
             <i data-lucide="folder" class="w-4 h-4 {% if current_folder.color %}text-{{ current_folder.color }}-500{% else %}text-gray-400{% endif %}"></i>
             Wird abgelegt in: <span class="font-medium text-gray-700 dark:text-gray-300">{{ current_folder.name }}</span>
         </p>
@@ -37,7 +37,7 @@
         {% if bezug_parent %}
         <!-- Änderungsantrag (Issue #735): Bezugsantrag und vorgeschlagene Sichtbarkeit, eigene Rechte -->
         <input type="hidden" name="parent_motion" value="{{ bezug_parent.id }}">
-        <c-ui.card title="Änderungsantrag" class="fade-up" data-testid="aenderungsantrag-bezug">
+        <c-ui.card title="Änderungsantrag" data-testid="aenderungsantrag-bezug">
             <p class="text-sm text-gray-700 dark:text-gray-300 mb-4">Zu „{{ bezug_parent.title }}“</p>
             {% if can_choose_visibility %}
             <fieldset>
@@ -66,7 +66,7 @@
         {% endif %}
 
         <!-- Document Type Selection -->
-        <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Dokumenttyp</h3>
 
             <div class="mb-4">
@@ -98,7 +98,7 @@
         </div>
 
         <!-- Basic Information -->
-        <div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Grundinformationen</h3>
 
             <!-- Title -->
@@ -178,14 +178,14 @@
 
         <!-- AI Assistant Info -->
         {% if ai_available %}
-        <div class="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl border border-purple-200 dark:border-purple-800 p-6">
+        <div class="bg-primary-50 dark:bg-primary-900/20 rounded-xl border border-primary-200 dark:border-primary-800 p-6">
             <div class="flex items-start gap-4">
-                <div class="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                    <i data-lucide="sparkles" class="w-6 h-6 text-purple-600 dark:text-purple-400"></i>
+                <div class="p-3 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
+                    <i data-lucide="sparkles" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
                 </div>
                 <div>
-                    <h3 class="font-medium text-purple-900 dark:text-purple-100">KI-Assistent verfügbar</h3>
-                    <p class="text-sm text-purple-700 dark:text-purple-300 mt-1">
+                    <h3 class="font-medium text-primary-900 dark:text-primary-100">KI-Assistent verfügbar</h3>
+                    <p class="text-sm text-primary-700 dark:text-primary-300 mt-1">
                         Im nächsten Schritt steht Ihnen ein KI-Assistent zur Seite, der Ihnen beim Formulieren,
                         Verbessern und formalen Prüfen Ihrer Texte hilft.
                     </p>

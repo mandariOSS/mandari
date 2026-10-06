@@ -513,7 +513,7 @@ Text:
 #: Hinweis, wenn ein Speichern auf einen inzwischen geänderten Stand trifft.
 KONFLIKT_HINWEIS = (
     "Das Dokument wurde inzwischen an anderer Stelle geändert. "
-    "Lade die Seite neu, um den aktuellen Stand zu sehen, oder überschreibe ihn bewusst."
+    "Laden Sie die Seite neu, um den aktuellen Stand zu sehen, oder überschreiben Sie ihn bewusst."
 )
 
 

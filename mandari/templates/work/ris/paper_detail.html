@@ -26,7 +26,7 @@
     <!-- Main Content -->
     <div class="lg:col-span-2 space-y-6">
         <!-- Paper Info -->
-        <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h1 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">{{ paper.name }}</h1>
 
             <div class="flex flex-wrap gap-3 mb-4">
@@ -52,7 +52,7 @@
 
         <!-- Files -->
         {% if files %}
-        <div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 class="font-semibold text-gray-900 dark:text-white">
                     Dokumente ({{ files|length }})
@@ -92,7 +92,7 @@
 
         <!-- Consultations -->
         {% if consultations %}
-        <div class="fade-up d2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 class="font-semibold text-gray-900 dark:text-white">Beratungsfolge</h2>
             </div>
@@ -150,31 +150,31 @@
             <dl class="space-y-4 text-sm">
                 {% if paper.reference %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Vorlagen-Nr.</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Vorlagen-Nr.</dt>
                     <dd class="font-mono text-gray-900 dark:text-white">{{ paper.reference }}</dd>
                 </div>
                 {% endif %}
                 {% if paper.paper_type %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Typ</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Typ</dt>
                     <dd class="text-gray-900 dark:text-white">{{ paper.paper_type }}</dd>
                 </div>
                 {% endif %}
                 {% if paper.date %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Datum</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Datum</dt>
                     <dd class="text-gray-900 dark:text-white">{{ paper.date|date:"d.m.Y" }}</dd>
                 </div>
                 {% endif %}
                 {% if paper.oparl_created %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Erstellt im RIS</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Erstellt im RIS</dt>
                     <dd class="text-gray-900 dark:text-white">{{ paper.oparl_created|date:"d.m.Y H:i" }}</dd>
                 </div>
                 {% endif %}
                 {% if paper.oparl_modified %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Zuletzt geändert</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Zuletzt geändert</dt>
                     <dd class="text-gray-900 dark:text-white">{{ paper.oparl_modified|date:"d.m.Y H:i" }}</dd>
                 </div>
                 {% endif %}

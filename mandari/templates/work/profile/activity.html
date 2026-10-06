@@ -13,7 +13,7 @@
 
 <div class="space-y-6">
     <!-- Statistics Grid -->
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 fade-up">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         <!-- Tasks -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
             <div class="flex items-center gap-2 mb-2">
@@ -39,8 +39,8 @@
         <!-- Meeting Attendance -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
             <div class="flex items-center gap-2 mb-2">
-                <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                    <i data-lucide="users" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+                <div class="w-8 h-8 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                    <i data-lucide="users" class="w-4 h-4 text-primary-600 dark:text-primary-400"></i>
                 </div>
             </div>
             <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ meetings_present }}</p>
@@ -62,7 +62,7 @@
     <!-- Detailed Stats -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Meeting Stats -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-50">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Sitzungsteilnahme</h4>
             </div>
@@ -101,7 +101,7 @@
         </div>
 
         <!-- Task & Comment Stats -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-75">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Beiträge</h4>
             </div>
@@ -131,7 +131,7 @@
     </div>
 
     <!-- Timeline -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-100">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="clock" class="w-4 h-4 text-gray-400"></i>
@@ -144,9 +144,9 @@
             {% for item in timeline %}
             <div class="px-6 py-4 flex items-center gap-4">
                 <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0
-                    {% if item.color == 'green' %}bg-green-100 dark:bg-green-900/30{% elif item.color == 'blue' %}bg-blue-100 dark:bg-blue-900/30{% elif item.color == 'indigo' %}bg-indigo-100 dark:bg-indigo-900/30{% elif item.color == 'purple' %}bg-purple-100 dark:bg-purple-900/30{% elif item.color == 'amber' %}bg-amber-100 dark:bg-amber-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                    {% if item.color == 'green' %}bg-green-100 dark:bg-green-900/30{% elif item.color == 'blue' %}bg-blue-100 dark:bg-blue-900/30{% elif item.color == 'indigo' %}bg-indigo-100 dark:bg-indigo-900/30{% elif item.color == 'purple' %}bg-primary-100 dark:bg-primary-900/30{% elif item.color == 'amber' %}bg-amber-100 dark:bg-amber-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
                     <i data-lucide="{{ item.icon }}" class="w-4 h-4
-                        {% if item.color == 'green' %}text-green-600 dark:text-green-400{% elif item.color == 'blue' %}text-blue-600 dark:text-blue-400{% elif item.color == 'indigo' %}text-indigo-600 dark:text-indigo-400{% elif item.color == 'purple' %}text-purple-600 dark:text-purple-400{% elif item.color == 'amber' %}text-amber-600 dark:text-amber-400{% else %}text-gray-500{% endif %}"></i>
+                        {% if item.color == 'green' %}text-green-600 dark:text-green-400{% elif item.color == 'blue' %}text-blue-600 dark:text-blue-400{% elif item.color == 'indigo' %}text-indigo-600 dark:text-indigo-400{% elif item.color == 'purple' %}text-primary-600 dark:text-primary-400{% elif item.color == 'amber' %}text-amber-600 dark:text-amber-400{% else %}text-gray-500{% endif %}"></i>
                 </div>
                 <div class="flex-1 min-w-0">
                     <p class="text-sm text-gray-900 dark:text-white truncate">{{ item.title }}</p>

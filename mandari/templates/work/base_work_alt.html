@@ -19,6 +19,10 @@
     <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
     <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
 
+    <!-- Schrift Inter aus dem eigenen Ursprung wie im Bürgerportal (Issue #851) -->
+    <link rel="preload" href="{% static 'vendor/inter/inter-latin.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'css/schrift-inter.css' %}">
+
     <!-- TailwindCSS -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 

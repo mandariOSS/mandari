@@ -24,10 +24,10 @@
 
 <div x-data="{ tab: '{{ active_tab }}' }">
     <!-- Hero Section -->
-    <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
         <div class="flex items-start gap-4">
-            <div class="flex-shrink-0 p-3 bg-purple-50/70 dark:bg-purple-900/20 rounded-xl">
-                <i data-lucide="building-2" class="w-7 h-7 text-purple-500 dark:text-purple-400"></i>
+            <div class="flex-shrink-0 p-3 bg-primary-50/70 dark:bg-primary-900/20 rounded-xl">
+                <i data-lucide="building-2" class="w-7 h-7 text-primary-500 dark:text-primary-400"></i>
             </div>
             <div class="flex-1">
                 <div class="flex items-center gap-3 mb-2">
@@ -43,7 +43,7 @@
                     <span class="px-3 py-1 bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-full text-sm">{{ org.organization_type }}</span>
                     {% endif %}
                     {% if org.short_name %}
-                    <span class="px-3 py-1 bg-purple-50/70 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-full text-sm">{{ org.short_name }}</span>
+                    <span class="px-3 py-1 bg-primary-50/70 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded-full text-sm">{{ org.short_name }}</span>
                     {% endif %}
                     {% if org.classification %}
                     <span class="px-3 py-1 bg-blue-50/70 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-full text-sm">{{ org.classification }}</span>
@@ -93,59 +93,59 @@
 
     <!-- Tab: Informationen -->
     <div x-show="tab === 'info'" x-cloak>
-        <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h2 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                 <i data-lucide="info" class="w-4 h-4 text-primary-500"></i>
                 Informationen
             </h2>
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Name</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Name</dt>
                     <dd class="text-gray-900 dark:text-white font-medium">{{ org.name }}</dd>
                 </div>
                 {% if org.short_name %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Kurzname</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Kurzname</dt>
                     <dd class="text-gray-900 dark:text-white">{{ org.short_name }}</dd>
                 </div>
                 {% endif %}
                 {% if org.organization_type %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Typ</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Typ</dt>
                     <dd class="text-gray-900 dark:text-white">{{ org.organization_type }}</dd>
                 </div>
                 {% endif %}
                 {% if org.classification %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Klassifizierung</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Klassifizierung</dt>
                     <dd class="text-gray-900 dark:text-white">{{ org.classification }}</dd>
                 </div>
                 {% endif %}
                 {% if org.start_date %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Gründung</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Gründung</dt>
                     <dd class="text-gray-900 dark:text-white">{{ org.start_date|date:"d.m.Y" }}</dd>
                 </div>
                 {% endif %}
                 {% if org.end_date %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Aufgelöst</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Aufgelöst</dt>
                     <dd class="text-gray-900 dark:text-white">{{ org.end_date|date:"d.m.Y" }}</dd>
                 </div>
                 {% endif %}
                 {% if org.website %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Website</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Website</dt>
                     <dd><a href="{{ org.website }}" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:underline">{{ org.website }}</a></dd>
                 </div>
                 {% endif %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Aktive Mitglieder</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Aktive Mitglieder</dt>
                     <dd class="text-gray-900 dark:text-white">{{ active_members.count }}</dd>
                 </div>
                 {% if past_members.count %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Ehemalige Mitglieder</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Ehemalige Mitglieder</dt>
                     <dd class="text-gray-900 dark:text-white">{{ past_members.count }}</dd>
                 </div>
                 {% endif %}

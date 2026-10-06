@@ -14,7 +14,7 @@
     <!-- Left Column: Status & Deputy Info -->
     <div class="space-y-4">
         <!-- Current Status -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Status</h4>
             </div>
@@ -48,7 +48,7 @@
         </div>
 
         <!-- Deputy For -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-25">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Meine Stellvertretungen</h4>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Wo ich aktuell als Stellvertreter eingetragen bin</p>
@@ -81,7 +81,7 @@
     <!-- Right Column: Create & List -->
     <div class="lg:col-span-2 space-y-6">
         <!-- Create Absence -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-25">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="create_absence">
@@ -152,7 +152,7 @@
 
         <!-- Current & Future Absences -->
         {% if active_absences %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-50">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Geplante & Aktuelle Abwesenheiten</h4>
             </div>
@@ -171,9 +171,9 @@
                                     {{ absence.start_date|date:"d.m.Y" }} – {{ absence.end_date|date:"d.m.Y" }}
                                 </p>
                                 {% if absence.is_current %}
-                                <span class="inline-flex px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded uppercase tracking-wide leading-none">Aktiv</span>
+                                <span class="inline-flex px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded leading-none">Aktiv</span>
                                 {% else %}
-                                <span class="inline-flex px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded uppercase tracking-wide leading-none">Geplant</span>
+                                <span class="inline-flex px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded leading-none">Geplant</span>
                                 {% endif %}
                             </div>
                             <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -201,7 +201,7 @@
 
         <!-- Past Absences -->
         {% if past_absences %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-75">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Vergangene Abwesenheiten</h4>
             </div>

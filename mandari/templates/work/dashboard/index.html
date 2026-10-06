@@ -9,71 +9,47 @@
 {% include "work/partials/hinweisband.html" %}
 
 <!-- ===== Hero Section (Insight-style: title left, image right) ===== -->
-<section class="fade-up mb-8">
+<section class="mb-8">
+    {# Stufe 0 (Issue #851): ohne Farbchips, Farbknöpfe und Datumskacheln; Rollen, Gremien und Filter als Text #}
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div class="lg:col-span-3">
-            <h1 class="text-3xl lg:text-4xl font-extrabold text-gray-900 dark:text-white mb-3">
+            <p class="text-sm text-gray-600 dark:text-gray-400">{{ organization.name }} &middot; {{ today|date:"l, d. F Y" }}</p>
+            <h1 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
                 {% if request.user.display_name %}Hallo, {{ request.user.display_name }}{% else %}Willkommen{% endif %}
             </h1>
-            <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-1">
-                {{ organization.name }} &ndash; {{ today|date:"l, d. F Y" }}
-            </p>
             {% if membership.roles.all or my_committees %}
-            <div class="flex flex-wrap gap-1.5 mb-5">
-                {% for role in membership.roles.all|slice:":3" %}
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border"
-                      style="background-color: {{ role.color }}10; color: {{ role.color }}; border-color: {{ role.color }}25;">
-                    {{ role.name }}
-                </span>
-                {% endfor %}
-                {% for committee in my_committees %}
-                <a href="{% url 'work:profile_committees' org_slug=organization.slug %}"
-                   class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
-                   title="Meine Gremien bearbeiten">
-                    <i data-lucide="landmark" class="w-3 h-3"></i>
-                    {{ committee.short_name|default:committee.name|truncatechars:28 }}
-                </a>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="mb-5"></div>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400" data-testid="start-rollen-gremien">
+                {% for role in membership.roles.all|slice:":3" %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                {% if my_committees %}{% if membership.roles.all %} &middot; {% endif %}Ihre Gremien:
+                {% for committee in my_committees %}{{ committee.short_name|default:committee.name|truncatechars:28 }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                (<a href="{% url 'work:profile_committees' org_slug=organization.slug %}" class="text-primary-700 dark:text-primary-400 underline underline-offset-2">ändern</a>){% endif %}
+            </p>
             {% endif %}
 
-            <!-- Search -->
-            <form action="{% url 'work:ris_search' org_slug=organization.slug %}" method="get">
+            <form action="{% url 'work:ris_search' org_slug=organization.slug %}" method="get" role="search" class="mt-4">
                 <div class="relative max-w-xl">
-                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 pointer-events-none"></i>
-                    <input type="text" name="q"
-                           placeholder="Vorg&auml;nge, Sitzungen, Gremien oder Personen durchsuchen&hellip;"
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"></i>
+                    <input type="search" name="q" aria-label="Ratsinformation durchsuchen"
+                           placeholder="Ratsinformation durchsuchen …"
                            autocomplete="off"
-                           class="w-full pl-12 pr-4 py-3.5 text-[15px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all outline-none shadow-sm">
+                           class="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                 </div>
             </form>
 
-            <!-- Quick Actions -->
-            <div class="flex flex-wrap gap-2 mt-3 max-w-xl">
-                <a href="{% url 'work:document_create' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800/40 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-all">
-                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Neuer Antrag
-                </a>
-                {# Akzentfarben aus dem alten Design: Fraktion=Purple, Ratsinfo=Cyan, Support=Rose #}
-                <a href="{% url 'work:faction' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-all">
-                    <i data-lucide="users" class="w-3.5 h-3.5"></i> Fraktion
-                </a>
-                <a href="{% url 'work:ris_overview' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/30 transition-all">
-                    <i data-lucide="building-2" class="w-3.5 h-3.5"></i> Ratsinformation
-                </a>
-                <a href="{% url 'work:support' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all">
-                    <i data-lucide="life-buoy" class="w-3.5 h-3.5"></i> Support
-                </a>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-sm">
+                <c-ui.button href="{% url 'work:document_create' org_slug=organization.slug %}" icon="plus" size="sm">Neuer Antrag</c-ui.button>
+                <a href="{% url 'work:faction' org_slug=organization.slug %}" class="font-medium text-primary-700 dark:text-primary-400 hover:underline">Fraktionssitzungen</a>
+                <a href="{% url 'work:ris_overview' org_slug=organization.slug %}" class="font-medium text-primary-700 dark:text-primary-400 hover:underline">Ratsinformation</a>
+                <a href="{% url 'work:support' org_slug=organization.slug %}" class="font-medium text-primary-700 dark:text-primary-400 hover:underline">Support</a>
             </div>
         </div>
         {% with primary_body=organization.get_primary_body %}
         {% if primary_body and primary_body.hero_image %}
         <div class="lg:col-span-2 hidden lg:block">
-            <div class="relative overflow-hidden rounded-2xl shadow-lg">
-                <img src="{{ primary_body.hero_image.url }}" alt="{{ organization.name }}" class="w-full h-64 object-cover">
+            <div class="relative overflow-hidden rounded-lg">
+                <img src="{{ primary_body.hero_image.url }}" alt="{{ organization.name }}" class="w-full h-56 object-cover">
                 {% if primary_body.hero_image_credit %}
-                <p class="absolute bottom-0 right-0 px-2 py-1 text-[10px] text-white/70 bg-black/30 rounded-tl-lg">{{ primary_body.hero_image_credit }}</p>
+                <p class="absolute bottom-0 right-0 px-2 py-1 text-[10px] text-white/80 bg-black/40 rounded-tl-lg">{{ primary_body.hero_image_credit }}</p>
                 {% endif %}
             </div>
         </div>
@@ -82,171 +58,118 @@
     </div>
 </section>
 
-<!-- ===== Three Columns: Sitzungen | Aufgaben | Dokumente ===== -->
-<section class="fade-up d1 mb-8">
+<section class="mb-8">
     {% if has_my_committees %}
-    <div class="flex items-center justify-end gap-2 mb-3 text-xs">
+    <p class="mb-3 text-sm text-gray-600 dark:text-gray-400" data-testid="start-filter">
         {% if dashboard_personalized %}
-        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800/40">
-            <i data-lucide="filter" class="w-3 h-3"></i> Gefiltert auf „Meine Gremien"
-        </span>
-        <a href="?alle=1" class="font-semibold text-primary-600 dark:text-primary-400 hover:underline">Alle anzeigen</a>
+        Gezeigt werden Sitzungen und Dokumente Ihrer Gremien.
+        <a href="?alle=1" class="font-medium text-primary-700 dark:text-primary-400 underline underline-offset-2">Alle anzeigen</a>
         {% else %}
-        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
-            <i data-lucide="globe" class="w-3 h-3"></i> Alle Inhalte der Organisation
-        </span>
-        <a href="{% url 'work:dashboard' org_slug=organization.slug %}" class="font-semibold text-primary-600 dark:text-primary-400 hover:underline">Nur meine Gremien</a>
+        Gezeigt werden alle Inhalte der Organisation.
+        <a href="{% url 'work:dashboard' org_slug=organization.slug %}" class="font-medium text-primary-700 dark:text-primary-400 underline underline-offset-2">Nur meine Gremien</a>
         {% endif %}
-        <a href="{% url 'work:profile_committees' org_slug=organization.slug %}" class="text-gray-400 dark:text-gray-500 hover:underline" title="Meine Gremien bearbeiten">
-            <i data-lucide="settings-2" class="w-3.5 h-3.5"></i>
-        </a>
-    </div>
+    </p>
     {% endif %}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        <!-- Sitzungen -->
         <div>
-            <div class="flex items-center justify-between mb-1">
-                <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <i data-lucide="calendar-days" class="w-4 h-4 text-blue-500"></i>
-                    Kommende Sitzungen
-                </h2>
-                <a href="{% url 'work:meetings' org_slug=organization.slug %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5">
-                    Alle ansehen <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
-                </a>
+            <div class="flex items-baseline justify-between gap-2 mb-1">
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">Kommende Sitzungen</h2>
+                <a href="{% url 'work:meetings' org_slug=organization.slug %}" class="text-sm font-medium text-primary-700 dark:text-primary-400 hover:underline">Alle ansehen</a>
             </div>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Deine n&auml;chsten Fraktions- und Gremien-Termine</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">Ihre nächsten Fraktions- und Gremientermine</p>
 
             {% if upcoming_meetings %}
-            <div class="item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
+            <div class="item-list bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
                 {% for meeting in upcoming_meetings %}
                 <a href="{% url meeting.url_name org_slug=organization.slug meeting_id=meeting.id %}"
-                   class="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
-                    {# Datums-Box: Fraktionssitzungen Purple, Gremien-Termine Blau (altes Farbschema) #}
-                    <div class="flex flex-col items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg leading-none {% if meeting.type == 'faction' %}bg-purple-50 dark:bg-purple-900/20{% else %}bg-blue-50 dark:bg-blue-900/20{% endif %}">
-                        <span class="text-lg font-extrabold {% if meeting.type == 'faction' %}text-purple-600 dark:text-purple-400{% else %}text-blue-600 dark:text-blue-400{% endif %}">{{ meeting.start|date:"d" }}</span>
-                        <span class="text-[10px] font-bold uppercase tracking-wide mt-0.5 {% if meeting.type == 'faction' %}text-purple-500 dark:text-purple-400{% else %}text-blue-500 dark:text-blue-400{% endif %}">{{ meeting.start|date:"M" }}</span>
+                   class="group flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                    <div class="w-12 shrink-0 leading-tight">
+                        <span class="block text-xs text-gray-600 dark:text-gray-400">{{ meeting.start|date:"D" }}</span>
+                        <span class="block text-sm font-semibold tabular-nums text-gray-900 dark:text-white">{{ meeting.start|date:"d.m." }}</span>
                     </div>
                     <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-1.5">
-                            <span class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">{{ meeting.title }}</span>
-                            {% if meeting.type == "faction" %}
-                            <span class="flex-shrink-0 px-1 py-px text-[9px] font-bold rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">FK</span>
-                            {% endif %}
-                        </div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2.5 mt-0.5">
-                            {% if meeting.subtitle %}<span class="truncate">{{ meeting.subtitle|truncatechars:30 }}</span>{% endif %}
-                            {% if meeting.start %}<span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> {{ meeting.start|date:"H:i" }}</span>{% endif %}
-                            {% if meeting.location %}<span class="flex items-center gap-1 truncate"><i data-lucide="map-pin" class="w-3 h-3 flex-shrink-0"></i> {{ meeting.location|truncatechars:20 }}</span>{% endif %}
-                        </div>
+                        <span class="block text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-400 truncate">{{ meeting.title }}</span>
+                        <span class="flex flex-wrap gap-x-2 text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                            {% if meeting.type == "faction" %}<span>Fraktionssitzung</span>{% elif meeting.subtitle %}<span class="truncate">{{ meeting.subtitle|truncatechars:30 }}</span>{% endif %}
+                            {% if meeting.start %}<span>{{ meeting.start|date:"H:i" }} Uhr</span>{% endif %}
+                            {% if meeting.location %}<span class="truncate">{{ meeting.location|truncatechars:24 }}</span>{% endif %}
+                        </span>
                     </div>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0"></i>
+                    <i data-lucide="chevron-right" class="w-4 h-4 mt-1 text-gray-400 dark:text-gray-500 shrink-0" aria-hidden="true"></i>
                 </a>
                 {% endfor %}
             </div>
             {% else %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
-                <p class="text-sm text-gray-400 dark:text-gray-500">Keine anstehenden Sitzungen</p>
-            </div>
+            <p class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-6 text-center text-sm text-gray-600 dark:text-gray-400">Keine anstehenden Sitzungen</p>
             {% endif %}
         </div>
 
-        <!-- Aufgaben -->
         <div>
-            <div class="flex items-center justify-between mb-1">
-                <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <i data-lucide="check-square" class="w-4 h-4 text-amber-500"></i>
-                    Meine Aufgaben
-                </h2>
-                <a href="{% url 'work:tasks' org_slug=organization.slug %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5">
-                    Alle ansehen <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
-                </a>
+            <div class="flex items-baseline justify-between gap-2 mb-1">
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">Meine Aufgaben</h2>
+                <a href="{% url 'work:tasks' org_slug=organization.slug %}" class="text-sm font-medium text-primary-700 dark:text-primary-400 hover:underline">Alle ansehen</a>
             </div>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Offene Aufgaben, die dir zugewiesen sind</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">Offene Aufgaben, die Ihnen zugewiesen sind</p>
 
             {% if my_tasks %}
-            <div class="item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
+            <div class="item-list bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
                 {% for task in my_tasks %}
                 <a href="{% url 'work:tasks' org_slug=organization.slug %}?open={{ task.id }}"
-                   class="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
-                    <div class="flex items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg leading-none
-                        {% if task.priority == 'urgent' %}bg-red-50 dark:bg-red-900/20
-                        {% elif task.priority == 'high' %}bg-orange-50 dark:bg-orange-900/20
-                        {% else %}bg-gray-50 dark:bg-gray-700/50{% endif %}">
-                        {% if task.priority == "urgent" %}
-                        <i data-lucide="alert-circle" class="w-5 h-5 text-red-500 dark:text-red-400"></i>
-                        {% elif task.priority == "high" %}
-                        <i data-lucide="arrow-up-circle" class="w-5 h-5 text-orange-500 dark:text-orange-400"></i>
-                        {% elif task.status == "in_progress" %}
-                        <i data-lucide="loader" class="w-5 h-5 text-blue-500 dark:text-blue-400"></i>
-                        {% else %}
-                        <i data-lucide="circle" class="w-5 h-5 text-gray-400 dark:text-gray-500"></i>
-                        {% endif %}
-                    </div>
+                   class="group flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                    {% if task.priority == "urgent" %}
+                    <i data-lucide="alert-circle" class="w-4 h-4 mt-0.5 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true"></i>
+                    {% elif task.priority == "high" %}
+                    <i data-lucide="arrow-up-circle" class="w-4 h-4 mt-0.5 shrink-0 text-orange-600 dark:text-orange-400" aria-hidden="true"></i>
+                    {% else %}
+                    <i data-lucide="circle" class="w-4 h-4 mt-0.5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true"></i>
+                    {% endif %}
                     <div class="min-w-0 flex-1">
-                        <div class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">{{ task.title }}</div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2.5 mt-0.5">
+                        <span class="block text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-400 truncate">{{ task.title }}</span>
+                        <span class="flex flex-wrap gap-x-2 text-xs text-gray-600 dark:text-gray-400 mt-0.5">
                             <span>{{ task.get_status_display }}</span>
-                            {% if task.due_date %}<span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> {{ task.due_date|date:"d.m." }}</span>{% endif %}
-                        </div>
+                            {% if task.priority == "urgent" or task.priority == "high" %}<span>Priorität {{ task.get_priority_display|lower }}</span>{% endif %}
+                            {% if task.due_date %}<span>fällig {{ task.due_date|date:"d.m." }}</span>{% endif %}
+                        </span>
                     </div>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0"></i>
+                    <i data-lucide="chevron-right" class="w-4 h-4 mt-1 text-gray-400 dark:text-gray-500 shrink-0" aria-hidden="true"></i>
                 </a>
                 {% endfor %}
             </div>
             {% else %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
-                <p class="text-sm text-gray-400 dark:text-gray-500">Keine offenen Aufgaben</p>
-            </div>
+            <p class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-6 text-center text-sm text-gray-600 dark:text-gray-400">Keine offenen Aufgaben</p>
             {% endif %}
         </div>
 
-        <!-- Dokumente -->
         <div>
-            <div class="flex items-center justify-between mb-1">
-                <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <i data-lucide="file-text" class="w-4 h-4 text-cyan-500"></i>
-                    Aktuelle Dokumente
-                </h2>
-                <a href="{% url 'work:motions' org_slug=organization.slug %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5">
-                    Alle ansehen <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
-                </a>
+            <div class="flex items-baseline justify-between gap-2 mb-1">
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">Aktuelle Dokumente</h2>
+                <a href="{% url 'work:motions' org_slug=organization.slug %}" class="text-sm font-medium text-primary-700 dark:text-primary-400 hover:underline">Alle ansehen</a>
             </div>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Zuletzt bearbeitete Antr&auml;ge und Dokumente</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">Zuletzt bearbeitete Anträge und Dokumente</p>
 
             {% if recent_documents %}
-            <div class="item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
+            <div class="item-list bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
                 {% for doc in recent_documents %}
                 <a href="{% url 'work:motion_detail' org_slug=organization.slug motion_id=doc.id %}"
-                   class="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
-                    <div class="flex flex-col items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg bg-primary-50 dark:bg-primary-900/20 leading-none">
-                        <span class="text-lg font-extrabold text-primary-600 dark:text-primary-400">{{ doc.updated_at|date:"d" }}</span>
-                        <span class="text-[10px] font-bold text-primary-500 dark:text-primary-400 uppercase tracking-wide mt-0.5">{{ doc.updated_at|date:"M" }}</span>
-                    </div>
+                   class="group flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40">
                     <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-1.5">
-                            <span class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">{{ doc.title }}</span>
-                            {% if doc.status == "draft" %}
-                            <span class="flex-shrink-0 w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500"></span>
-                            {% elif doc.status == "review" or doc.status == "internal_review" %}
-                            <span class="flex-shrink-0 w-2 h-2 rounded-full bg-yellow-400 dark:bg-yellow-500"></span>
-                            {% elif doc.status == "approved" or doc.status == "submitted" %}
-                            <span class="flex-shrink-0 w-2 h-2 rounded-full bg-green-400 dark:bg-green-500"></span>
-                            {% endif %}
-                        </div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2.5 mt-0.5">
-                            <span>{{ doc.get_status_display }}</span>
+                        <span class="block text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-400 truncate">{{ doc.title }}</span>
+                        <span class="flex flex-wrap items-center gap-x-2 text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                            <span class="inline-flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full shrink-0 {% if doc.status == 'review' or doc.status == 'internal_review' %}bg-yellow-500{% elif doc.status == 'approved' or doc.status == 'submitted' %}bg-green-500{% else %}bg-gray-400 dark:bg-gray-500{% endif %}" aria-hidden="true"></span>
+                                {{ doc.get_status_display }}
+                            </span>
                             {% if doc.motion_type %}<span class="truncate">{{ doc.motion_type.name }}</span>{% endif %}
-                        </div>
+                            <span>geändert {{ doc.updated_at|date:"d.m." }}</span>
+                        </span>
                     </div>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0"></i>
+                    <i data-lucide="chevron-right" class="w-4 h-4 mt-1 text-gray-400 dark:text-gray-500 shrink-0" aria-hidden="true"></i>
                 </a>
                 {% endfor %}
             </div>
             {% else %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
-                <p class="text-sm text-gray-400 dark:text-gray-500">Noch keine Dokumente vorhanden</p>
-            </div>
+            <p class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-6 text-center text-sm text-gray-600 dark:text-gray-400">Noch keine Dokumente vorhanden</p>
             {% endif %}
         </div>
 

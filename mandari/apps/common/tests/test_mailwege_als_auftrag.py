@@ -94,7 +94,7 @@ def test_registrierung_mit_bestaetigung(client: Client, org: Any) -> None:
         },
     )
     nachricht = _erst_im_runner("neu@example.org", "work.zugang.registration_confirm")
-    assert "Bitte bestätige deine Registrierung" in nachricht.subject
+    assert "Bitte bestätigen Sie Ihre Registrierung" in nachricht.subject
 
 
 def test_einladung_der_organisation_ueber_ihr_smtp(org: Any, make_member: Any) -> None:

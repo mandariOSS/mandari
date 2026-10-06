@@ -140,24 +140,6 @@
   }
 }
 
-/* Gestaffeltes Einblenden der Profilkarten (.fade-up aus dem Work-Layout) ohne style-Attribut.
-   Zwei Klassen im Selektor: schlägt die animation-Kurzform von .fade-up unabhängig von der Reihenfolge. */
-.fade-up.fade-delay-25 {
-  animation-delay: 25ms;
-}
-.fade-up.fade-delay-50 {
-  animation-delay: 50ms;
-}
-.fade-up.fade-delay-75 {
-  animation-delay: 75ms;
-}
-.fade-up.fade-delay-100 {
-  animation-delay: 100ms;
-}
-.fade-up.fade-delay-150 {
-  animation-delay: 150ms;
-}
-
 /* Nachbarschaft (templates/pages/neighborhood.html): Kartenhöhe und Suchumkreis (vorher Inline-Stil, #783) */
 #neighborhood-map {
   height: 400px;

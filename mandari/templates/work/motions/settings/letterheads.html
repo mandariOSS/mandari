@@ -16,18 +16,18 @@
 {% endblock %}
 
 {% block work_content %}
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden fade-up">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for letterhead in letterheads %}
         <div class="px-5 py-4 flex items-center justify-between">
             <div class="flex items-center gap-4">
-                <div class="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                    <i data-lucide="image" class="w-5 h-5 text-purple-600 dark:text-purple-400"></i>
+                <div class="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
+                    <i data-lucide="image" class="w-5 h-5 text-primary-600 dark:text-primary-400"></i>
                 </div>
                 <div>
                     <div class="flex items-center gap-2">
                         <h3 class="font-medium text-gray-900 dark:text-white">{{ letterhead.name }}</h3>
-                        <span class="px-2 py-0.5 text-xs {% if letterhead.is_generated %}bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300{% else %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300{% endif %} rounded">
+                        <span class="px-2 py-0.5 text-xs {% if letterhead.is_generated %}bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300{% else %}bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300{% endif %} rounded">
                             {% if letterhead.is_generated %}Generiert{% else %}PDF{% endif %}
                         </span>
                         {% if letterhead.is_default %}

@@ -36,7 +36,7 @@
 <p class="empty">Keine Vorschl&auml;ge vorhanden.</p>
 {% endif %}
 
-<h3>Protokolleintr&auml;ge zu deiner Person</h3>
+<h3>Protokolleintr&auml;ge zu Ihrer Person</h3>
 {% if data.faction.protocol_entries %}
 {% for e in data.faction.protocol_entries %}
 <div class="content-block"><strong>{{ e.meeting }} &ndash; {{ e.role }} ({{ e.created_at }}):</strong> {{ e.content }}{% if e.action_due_date %} (f&auml;llig {{ e.action_due_date }}){% endif %}</div>
@@ -117,7 +117,7 @@
 <!-- 16. Activity records -->
 <div class="page-break"></div>
 <h2>16. Bearbeitungsvermerke</h2>
-<p class="note">Vorg&auml;nge, die du ausgel&ouml;st hast; die Inhalte selbst geh&ouml;ren der Organisation.</p>
+<p class="note">Vorg&auml;nge, die Sie ausgel&ouml;st haben; die Inhalte selbst geh&ouml;ren der Organisation.</p>
 {% if data.vermerke %}
 <table>
     <tr><th class="col-date">Zeitpunkt</th><th class="col-15">Bereich</th><th class="col-25">Vorgang</th><th>Gegenstand</th></tr>

@@ -105,7 +105,7 @@ class TestOrganisation:
         slug = _anmelden(login, admin)
         goto(f"/work/{slug}/organization/parties/")
         wait_for_component(page, "partyManager")
-        kurzname = page.locator('input[name="short_name"][placeholder="SPD"]')
+        kurzname = page.locator('input[name="short_name"][placeholder="Kürzel"]')
         expect(kurzname).to_have_count(0)
         page.get_by_role("button", name="Fraktion hinzufügen").click()
         expect(kurzname).to_be_visible()

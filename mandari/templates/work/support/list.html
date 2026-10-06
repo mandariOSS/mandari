@@ -18,7 +18,7 @@
 
 {% block work_content %}
 <!-- Quick Help Cards -->
-<div class="fade-up grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
     <a href="{% hilfe_url 'start' %}" target="_blank" rel="noopener"
        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-600 transition-colors group">
         <div class="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg w-fit mb-4 group-hover:bg-blue-200 dark:group-hover:bg-blue-800/40 transition-colors">
@@ -53,8 +53,8 @@
     </div>
 
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-        <div class="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg w-fit mb-4">
-            <i data-lucide="mail" class="w-6 h-6 text-purple-600 dark:text-purple-400"></i>
+        <div class="p-3 bg-primary-100 dark:bg-primary-900/30 rounded-lg w-fit mb-4">
+            <i data-lucide="mail" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
         </div>
         <h3 class="font-medium text-gray-900 dark:text-white mb-2">Kontakt</h3>
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
@@ -67,7 +67,7 @@
 </div>
 
 <!-- Hilfethemen: Anleitungen in der Dokumentation (Issue #589) -->
-<div class="fade-up d1 mb-8">
+<div class="mb-8">
     <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Hilfethemen</h2>
         <c-ui.help-link topic="faq">Häufige Fragen</c-ui.help-link>
@@ -85,7 +85,7 @@
 </div>
 
 <!-- Tickets Section -->
-<div class="fade-up d2">
+<div>
     <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Meine Tickets</h2>
 
@@ -114,7 +114,7 @@
                 {% elif ticket.status == 'in_progress' %}
                 <span class="w-3 h-3 rounded-full bg-amber-500"></span>
                 {% elif ticket.status == 'waiting' %}
-                <span class="w-3 h-3 rounded-full bg-purple-500"></span>
+                <span class="w-3 h-3 rounded-full bg-primary-500"></span>
                 {% elif ticket.status == 'resolved' %}
                 <span class="w-3 h-3 rounded-full bg-green-500"></span>
                 {% else %}
@@ -150,7 +150,7 @@
                 <span class="px-2.5 py-1 text-xs font-medium rounded-full
                     {% if ticket.status == 'open' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
                     {% elif ticket.status == 'in_progress' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
-                    {% elif ticket.status == 'waiting' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+                    {% elif ticket.status == 'waiting' %}bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300
                     {% elif ticket.status == 'resolved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
                     {% else %}bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300{% endif %}">
                     {{ ticket.get_status_display }}

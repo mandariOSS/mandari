@@ -23,7 +23,7 @@
     {% include "work/tasks/partials/_board_filters.html" %}
 
     <!-- Kanban Board: auf Mobil horizontales Scroll-Snapping der Spalten (.kanban-board in static/css/input.css), ab md 3-Spalten-Grid -->
-    <div class="kanban-board fade-up d1 grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="kanban-board grid grid-cols-1 md:grid-cols-3 gap-6">
         {% include "work/tasks/partials/_kanban_column.html" with status="todo" title="Zu erledigen" icon="circle" color="blue" tasks=todo_tasks empty_text="Keine Aufgaben" quick_add=True %}
         {% include "work/tasks/partials/_kanban_column.html" with status="in_progress" title="In Bearbeitung" icon="loader" color="amber" tasks=in_progress_tasks empty_text="Keine aktiven Aufgaben" quick_add=True %}
         {% include "work/tasks/partials/_kanban_column.html" with status="done" title="Erledigt" icon="check-circle" color="green" tasks=done_tasks empty_text="Noch nichts erledigt" quick_add=False %}

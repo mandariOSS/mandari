@@ -20,6 +20,7 @@ from django.views.generic import TemplateView, View
 logger = logging.getLogger("apps.work.motions")
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.stats_text import documents_sentence
 
 from ..administration_feedback import with_administration_reference
 from ..models import (
@@ -157,6 +158,8 @@ class MotionListView(WorkViewMixin, TemplateView):
             "in_consultation": all_motions.filter(status__in=["at_admin", "on_agenda"]).count(),
             "overdue": all_motions.filter(due_date__lt=today).exclude(status__in=Motion.CLOSED_STATUSES).count(),
         }
+        # Zahlen im Satz statt als Zählerkacheln (Issue #851)
+        context["stats_sentence"] = documents_sentence(context["stats"])
 
         # Filter out 'deleted' from visible status choices
         context["status_choices"] = [(value, label) for value, label in Motion.STATUS_CHOICES if value != "deleted"]

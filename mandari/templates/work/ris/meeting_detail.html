@@ -33,13 +33,13 @@
     <!-- Main Content -->
     <div class="lg:col-span-2 space-y-6">
         <!-- Meeting Info -->
-        <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-start gap-4 mb-4">
                 <div class="flex-shrink-0 text-center px-3 py-2 bg-primary-50/70 dark:bg-primary-900/20 rounded-lg">
                     <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
                         {{ meeting.start|date:"d" }}
                     </div>
-                    <div class="text-sm text-primary-500 dark:text-primary-400 uppercase">{{ meeting.start|date:"M" }}</div>
+                    <div class="text-sm text-primary-500 dark:text-primary-400">{{ meeting.start|date:"M" }}</div>
                 </div>
                 <div class="flex-1">
                     <h1 class="text-xl font-semibold text-gray-900 dark:text-white mb-2 {% if meeting.cancelled %}line-through{% endif %}">
@@ -70,7 +70,7 @@
                 <div class="flex flex-wrap gap-2">
                     {% for org in organizations %}
                     <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}"
-                       class="inline-flex items-center px-3 py-1 bg-purple-50/70 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-full text-sm hover:bg-purple-100/70 dark:hover:bg-purple-800/30 transition-colors">
+                       class="inline-flex items-center px-3 py-1 bg-primary-50/70 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded-full text-sm hover:bg-primary-100/70 dark:hover:bg-primary-800/30 transition-colors">
                         {{ org.short_name|default:org.name }}
                     </a>
                     {% endfor %}
@@ -80,7 +80,7 @@
         </div>
 
         <!-- Agenda -->
-        <div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 class="font-semibold text-gray-900 dark:text-white">Tagesordnung</h2>
             </div>
@@ -146,22 +146,22 @@
             <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
             <dl class="space-y-4 text-sm">
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Datum</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Datum</dt>
                     <dd class="text-gray-900 dark:text-white">{{ meeting.start|date:"l, d.m.Y" }}</dd>
                 </div>
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Uhrzeit</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Uhrzeit</dt>
                     <dd class="text-gray-900 dark:text-white">{{ meeting.start|date:"H:i" }} Uhr</dd>
                 </div>
                 {% if meeting.location_name %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Ort</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Ort</dt>
                     <dd class="text-gray-900 dark:text-white">{{ meeting.location_name }}</dd>
                 </div>
                 {% endif %}
                 {% if meeting.oparl_modified %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Aktualisiert</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Aktualisiert</dt>
                     <dd class="text-gray-900 dark:text-white">{{ meeting.oparl_modified|date:"d.m.Y H:i" }}</dd>
                 </div>
                 {% endif %}

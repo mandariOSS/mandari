@@ -24,7 +24,7 @@
 
 <div x-data="{ tab: '{{ active_tab }}' }">
     {# Hero Section — gleiches Design wie Insight #}
-    <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
         <div class="flex items-center gap-5">
             <div class="flex-shrink-0 w-16 h-16 bg-amber-50/70 dark:bg-amber-900/20 rounded-full flex items-center justify-center">
                 <span class="text-xl font-bold text-amber-600 dark:text-amber-400">
@@ -79,41 +79,41 @@
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
                 {% if person.family_name %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Nachname</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Nachname</dt>
                     <dd class="text-gray-900 dark:text-white font-medium">{{ person.family_name }}</dd>
                 </div>
                 {% endif %}
                 {% if person.given_name %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Vorname</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Vorname</dt>
                     <dd class="text-gray-900 dark:text-white font-medium">{{ person.given_name }}</dd>
                 </div>
                 {% endif %}
                 {% if person.title %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Titel</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Titel</dt>
                     <dd class="text-gray-900 dark:text-white">{{ person.title }}</dd>
                 </div>
                 {% endif %}
                 {% if person.email %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">E-Mail</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">E-Mail</dt>
                     <dd><a href="mailto:{{ person.email }}" class="text-primary-600 dark:text-primary-400 hover:underline">{{ person.email }}</a></dd>
                 </div>
                 {% endif %}
                 {% if person.phone %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Telefon</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Telefon</dt>
                     <dd><a href="tel:{{ person.phone }}" class="text-primary-600 dark:text-primary-400 hover:underline">{{ person.phone }}</a></dd>
                 </div>
                 {% endif %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Aktive Gremien</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Aktive Gremien</dt>
                     <dd class="text-gray-900 dark:text-white">{{ active_memberships.count }}</dd>
                 </div>
                 {% if past_memberships.count %}
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-1">Ehemalige Gremien</dt>
+                    <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Ehemalige Gremien</dt>
                     <dd class="text-gray-900 dark:text-white">{{ past_memberships.count }}</dd>
                 </div>
                 {% endif %}

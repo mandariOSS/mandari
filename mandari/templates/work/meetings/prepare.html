@@ -80,7 +80,7 @@
 {% elif meeting %}
 {% include "work/meetings/partials/_withdrawn_notice.html" %}
 {{ prepare_config|json_script:"prepare-config" }}
-<div x-data="preparationApp" @keydown.window="handleKeydown($event)" class="fade-up">
+<div x-data="preparationApp" @keydown.window="handleKeydown($event)">
 
     <!-- ================= Kopfzeile: Fortschritt · Auto-Save · Aktionen ================= -->
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mb-4 px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">

@@ -193,6 +193,13 @@ class TestOtherComponents:
         assert "<h3" in render('<c-ui.empty-state title="Leer">x</c-ui.empty-state>')
         assert 'scope="col"' in render("<c-ui.th>Spalte</c-ui.th>")
 
+    def test_th_plain_ohne_versalien(self) -> None:
+        """Work setzt Spaltenköpfe in normaler Schreibung (Issue #851); Session behält die Versalien."""
+        assert "uppercase" in render("<c-ui.th>Spalte</c-ui.th>")
+        html = render('<c-ui.th plain class="max-sm:hidden">Spalte</c-ui.th>')
+        assert "uppercase" not in html and "tracking-wider" not in html
+        assert 'scope="col"' in html and "max-sm:hidden" in html
+
 
 class TestRahmen:
     """Gemeinsame Bausteine der Navigation von Insight und Work (Issue #852)."""
@@ -338,7 +345,8 @@ class TestPanelComponents:
         assert "(3)" in html
         assert "Inhalt" in html
         assert 'data-lucide="plus"' in html
-        assert "uppercase tracking-wider" in html
+        # Überschrift in normaler Schreibung statt Versalien (Issue #851)
+        assert "uppercase" not in html
 
     def test_panel_section_hides_zero_count(self) -> None:
         html = render('<c-ui.panel-section title="Anhänge" :count="n">x</c-ui.panel-section>', n=0)

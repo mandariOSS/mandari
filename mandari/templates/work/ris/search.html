@@ -19,7 +19,7 @@
 {% else %}
 
 <!-- Search Input + Filter -->
-<div class="fade-up mb-6">
+<div class="mb-6">
     <form method="get" class="max-w-4xl space-y-3">
         <div class="relative max-w-2xl">
             <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
@@ -92,7 +92,7 @@
 
 {% if search_query or date_from or date_to or committee_filter or paper_type_filter %}
 <!-- Results Summary -->
-<div class="fade-up d1 mb-6 flex items-center justify-between">
+<div class="mb-6 flex items-center justify-between">
     <p class="text-gray-600 dark:text-gray-400">
         {{ total_results }} Ergebnisse{% if search_query %} für "<span class="font-medium text-gray-900 dark:text-white">{{ search_query }}</span>"{% endif %}
     </p>
@@ -105,11 +105,11 @@
 
 {% if es_results %}
 <!-- Elasticsearch-Treffer: einheitliche Liste mit Highlights -->
-<div class="fade-up d2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700 overflow-hidden">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700 overflow-hidden">
     {% for hit in es_results %}
     {% if hit.type == 'paper' %}
     <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-blue-500 mb-0.5">
+        <div class="flex items-center gap-2 text-[11px] font-semibold text-blue-500 mb-0.5">
             <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Vorgang
             {% if hit.paper_type %}<span class="normal-case font-normal text-gray-400">· {{ hit.paper_type }}</span>{% endif %}
             {% if hit.date %}<span class="normal-case font-normal text-gray-400">· {{ hit.date|slice:":10" }}</span>{% endif %}
@@ -120,7 +120,7 @@
     {% elif hit.type == 'file' %}
     {% comment %}Ohne zugehörigen Vorgang bleibt der Treffer ein Anker ohne Ziel: ein Element statt zwei bedingter Tags.{% endcomment %}
     <a {% if hit.paper_id %}href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=hit.paper_id %}" {% endif %}class="group block px-6 py-3 {% if hit.paper_id %}hover:bg-gray-50 dark:hover:bg-gray-700/50 {% endif %}transition-colors">
-        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-teal-500 mb-0.5">
+        <div class="flex items-center gap-2 text-[11px] font-semibold text-teal-500 mb-0.5">
             <i data-lucide="file-search" class="w-3.5 h-3.5"></i> Dokument (Volltext-Treffer)
             {% if hit.meeting_date %}<span class="normal-case font-normal text-gray-400">· {{ hit.meeting_date|slice:":10" }}</span>{% endif %}
         </div>
@@ -132,7 +132,7 @@
     </a>
     {% elif hit.type == 'meeting' %}
     <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-green-500 mb-0.5">
+        <div class="flex items-center gap-2 text-[11px] font-semibold text-green-500 mb-0.5">
             <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sitzung
             {% if hit.start %}<span class="normal-case font-normal text-gray-400">· {{ hit.start|slice:":10" }}</span>{% endif %}
         </div>
@@ -141,14 +141,14 @@
     </a>
     {% elif hit.type == 'organization' %}
     <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-purple-500 mb-0.5">
+        <div class="flex items-center gap-2 text-[11px] font-semibold text-primary-500 mb-0.5">
             <i data-lucide="building-2" class="w-3.5 h-3.5"></i> Gremium
         </div>
         <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit.formatted.name %}{{ hit.formatted.name }}{% else %}{{ hit.name }}{% endif %}</p>
     </a>
     {% elif hit.type == 'person' %}
     <a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-500 mb-0.5">
+        <div class="flex items-center gap-2 text-[11px] font-semibold text-amber-500 mb-0.5">
             <i data-lucide="user" class="w-3.5 h-3.5"></i> Person
         </div>
         <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit.formatted.name %}{{ hit.formatted.name }}{% else %}{{ hit.name }}{% endif %}</p>
@@ -159,7 +159,7 @@
 
 <!-- Pagination -->
 {% if pages > 1 %}
-<div class="fade-up mt-6 flex items-center justify-center gap-2">
+<div class="mt-6 flex items-center justify-center gap-2">
     {% if page > 1 %}
     <a href="?q={{ search_query|urlencode }}&von={{ date_from }}&bis={{ date_to }}&gremium={{ committee_filter|urlencode }}&art={{ paper_type_filter|urlencode }}&typ={{ result_type_filter }}&kommune={{ body_filter }}&seite={{ page|add:'-1' }}"
        class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-primary-500">&larr; Zurück</a>
@@ -173,13 +173,13 @@
 {% endif %}
 
 {% elif total_results > 0 %}
-<div class="fade-up d2 space-y-6">
+<div class="space-y-6">
 
     <!-- Papers -->
     {% if results.papers %}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-2">
+            <h2 class="text-xs font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-2">
                 <i data-lucide="file-text" class="w-4 h-4 text-blue-500"></i>
                 Vorgänge ({{ results.papers|length }})
             </h2>
@@ -210,7 +210,7 @@
     {% if results.meetings %}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-2">
+            <h2 class="text-xs font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-2">
                 <i data-lucide="calendar" class="w-4 h-4 text-green-500"></i>
                 Sitzungen ({{ results.meetings|length }})
             </h2>
@@ -241,8 +241,8 @@
     {% if results.organizations %}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                <i data-lucide="building-2" class="w-4 h-4 text-purple-500"></i>
+            <h2 class="text-xs font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                <i data-lucide="building-2" class="w-4 h-4 text-primary-500"></i>
                 Gremien ({{ results.organizations|length }})
             </h2>
             <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
@@ -271,7 +271,7 @@
     {% if results.persons %}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-2">
+            <h2 class="text-xs font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-2">
                 <i data-lucide="users" class="w-4 h-4 text-amber-500"></i>
                 Personen ({{ results.persons|length }})
             </h2>
@@ -297,7 +297,7 @@
 
 </div>
 {% else %}
-<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
     <i data-lucide="search-x" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Ergebnisse</h3>
     <p class="text-gray-500 dark:text-gray-400">Ihre Suche ergab keine Treffer. Versuchen Sie einen anderen Suchbegriff.</p>
@@ -306,7 +306,7 @@
 
 {% else %}
 <!-- Empty State -->
-<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
     <i data-lucide="search" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Suche starten</h3>
     <p class="text-gray-500 dark:text-gray-400">Geben Sie einen Suchbegriff ein, um in Vorgängen, Sitzungen, Gremien und Personen zu suchen.</p>

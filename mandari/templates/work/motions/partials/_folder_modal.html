@@ -15,11 +15,11 @@ Kontext: folder_color_choices, folder_entries
             {% csrf_token %}
             <input type="hidden" name="parent" :value="folderModal.parent">
 
-            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Name</label>
+            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Name</label>
             <input type="text" name="name" x-model="folderModal.name" required maxlength="100"
                    class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 mb-4">
 
-            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Farbe</label>
+            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Farbe</label>
             <input type="hidden" name="color" :value="folderModal.color">
             <div class="flex flex-wrap items-center gap-2 mb-4">
                 <button type="button" @click="folderModal.color = ''"
@@ -33,7 +33,7 @@ Kontext: folder_color_choices, folder_entries
                 {% endfor %}
             </div>
 
-            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1"
+            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1"
                    x-text="folderModal.mode === 'create' ? 'Anlegen in' : 'Verschieben nach'"></label>
             <select x-model="folderModal.parent"
                     class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 mb-4">

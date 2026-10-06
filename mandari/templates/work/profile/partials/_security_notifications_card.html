@@ -2,7 +2,7 @@
 Karte „Sicherheitshinweise“: letzte sicherheitsrelevante Änderungen am Konto (apps/accounts/security_notifications.py).
 Kontext: security_notifications (neueste zuerst; is_read gilt für den Stand vor diesem Aufruf)
 {% endcomment %}
-<c-ui.card title="Sicherheitshinweise" subtitle="Letzte Änderungen an Passwort, zweitem Faktor und Sitzungen" padding="none" class="fade-up">
+<c-ui.card title="Sicherheitshinweise" subtitle="Letzte Änderungen an Passwort, zweitem Faktor und Sitzungen" padding="none">
     {% if security_notifications %}
     <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
         {% for hinweis in security_notifications %}

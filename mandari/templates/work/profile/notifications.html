@@ -14,7 +14,7 @@
     {% csrf_token %}
     <div class="space-y-6">
         <!-- Global Settings -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Allgemein</h4>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Globale Einstellungen für Benachrichtigungen</p>
@@ -53,7 +53,7 @@
         </div>
 
         <!-- Quiet Hours -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-25"
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700"
              x-data="{ quietEnabled: {{ preferences.quiet_hours_enabled|yesno:'true,false' }} }">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Ruhezeiten</h4>
@@ -62,8 +62,8 @@
             <div class="px-6 py-6 space-y-4">
                 <label class="flex items-center justify-between cursor-pointer">
                     <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
-                            <i data-lucide="moon" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+                        <div class="w-9 h-9 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="moon" class="w-4 h-4 text-primary-600 dark:text-primary-400"></i>
                         </div>
                         <span class="text-sm font-medium text-gray-900 dark:text-white">Ruhezeiten aktivieren</span>
                     </div>
@@ -92,7 +92,7 @@
         </div>
 
         <!-- Per-Type Settings -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-50">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Benachrichtigungstypen</h4>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Für jeden Typ festlegen, ob In-App und/oder E-Mail</p>
@@ -104,18 +104,17 @@
                 {% for category in categories %}
                 <div class="px-6 py-4">
                     <div class="flex items-center gap-2 mb-3">
-                        <div class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0
-                            {% if category.grouper == 'meetings' %}bg-blue-100 dark:bg-blue-900/30{% elif category.grouper == 'tasks' %}bg-purple-100 dark:bg-purple-900/30{% elif category.grouper == 'motions' %}bg-indigo-100 dark:bg-indigo-900/30{% elif category.grouper == 'faction' %}bg-violet-100 dark:bg-violet-900/30{% elif category.grouper == 'organization' %}bg-green-100 dark:bg-green-900/30{% elif category.grouper == 'support' %}bg-orange-100 dark:bg-orange-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                        <div class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 bg-gray-100 dark:bg-gray-700">
                             <i data-lucide="{% if category.grouper == 'meetings' %}calendar{% elif category.grouper == 'tasks' %}clipboard-list{% elif category.grouper == 'motions' %}file-text{% elif category.grouper == 'faction' %}users{% elif category.grouper == 'organization' %}building{% elif category.grouper == 'support' %}headphones{% else %}bell{% endif %}"
-                               class="w-3.5 h-3.5 {% if category.grouper == 'meetings' %}text-blue-600 dark:text-blue-400{% elif category.grouper == 'tasks' %}text-purple-600 dark:text-purple-400{% elif category.grouper == 'motions' %}text-indigo-600 dark:text-indigo-400{% elif category.grouper == 'faction' %}text-violet-600 dark:text-violet-400{% elif category.grouper == 'organization' %}text-green-600 dark:text-green-400{% elif category.grouper == 'support' %}text-orange-600 dark:text-orange-400{% else %}text-gray-500 dark:text-gray-400{% endif %}"></i>
+                               class="w-3.5 h-3.5 text-gray-500 dark:text-gray-400"></i>
                         </div>
-                        <h5 class="text-sm font-semibold text-gray-900 dark:text-white capitalize">{{ category.grouper }}</h5>
+                        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">{% if category.grouper == 'meetings' %}Sitzungen{% elif category.grouper == 'tasks' %}Aufgaben{% elif category.grouper == 'motions' %}Dokumente{% elif category.grouper == 'faction' %}Fraktion{% elif category.grouper == 'organization' %}Organisation{% elif category.grouper == 'support' %}Support{% elif category.grouper == 'system' %}System{% else %}{{ category.grouper }}{% endif %}</h5>
                     </div>
 
                     <!-- Header row -->
                     <div class="hidden sm:flex items-center justify-end gap-6 mb-2 pr-1">
-                        <span class="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-12 text-center">In-App</span>
-                        <span class="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-12 text-center">E-Mail</span>
+                        <span class="text-[11px] font-medium text-gray-400 dark:text-gray-500 w-12 text-center">In-App</span>
+                        <span class="text-[11px] font-medium text-gray-400 dark:text-gray-500 w-12 text-center">E-Mail</span>
                     </div>
 
                     <div class="space-y-1">

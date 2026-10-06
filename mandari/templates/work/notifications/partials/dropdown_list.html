@@ -11,7 +11,7 @@
                         {% if notification.color == 'blue' %}bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400{% endif %}
                         {% if notification.color == 'green' %}bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400{% endif %}
                         {% if notification.color == 'red' %}bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-400{% endif %}
-                        {% if notification.color == 'purple' %}bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-400{% endif %}
+                        {% if notification.color == 'purple' %}bg-primary-100 text-primary-600 dark:bg-primary-900 dark:text-primary-400{% endif %}
                         {% if notification.color == 'orange' %}bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-400{% endif %}
                         {% if notification.color == 'yellow' %}bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-400{% endif %}
                         {% if notification.color == 'indigo' %}bg-indigo-100 text-indigo-600 dark:bg-indigo-900 dark:text-indigo-400{% endif %}
@@ -43,8 +43,8 @@
     {% endfor %}
 {% else %}
     <div class="p-6 text-center">
-        <div class="w-12 h-12 mx-auto mb-3 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center">
-            <i data-lucide="bell-off" class="w-6 h-6 text-purple-400 dark:text-purple-500"></i>
+        <div class="w-12 h-12 mx-auto mb-3 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+            <i data-lucide="bell-off" class="w-6 h-6 text-primary-400 dark:text-primary-500"></i>
         </div>
         <p class="text-sm text-gray-500 dark:text-gray-400">Keine Benachrichtigungen</p>
     </div>

@@ -3,7 +3,7 @@ Filterleiste des Aufgaben-Boards (Meine/Alle, Suche, Priorität, Label, Person, 
 Kontext: view_mode, show_completed, search_query, priority_choices, priority_filter, labels, label_filter,
 members, assignee_filter, overdue_only, stats
 {% endcomment %}
-<div class="fade-up mb-6 flex flex-wrap items-center gap-4">
+<div class="mb-6 flex flex-wrap items-center gap-4">
     <div class="flex items-center bg-gray-100 dark:bg-gray-900 rounded-lg p-1">
         <a href="?view=my{% if show_completed %}&completed=1{% endif %}"
            class="px-4 py-1.5 text-sm font-medium rounded-md {% if view_mode == 'my' %}bg-white dark:bg-gray-800 shadow text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white{% endif %}">
