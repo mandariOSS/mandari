@@ -17,7 +17,7 @@ Anmerkungen je Seite rechts neben dem Blatt (organisationsweit, wie bisher). Am 
             <template x-for="(u, ui) in sichtbareUnterlagen" :key="u.schluessel">
                 <button type="button" role="tab" :id="'unterlage-' + ui" :aria-selected="unterlageIndex === ui ? 'true' : 'false'"
                         :tabindex="unterlageIndex === ui || (aktiveIstWeitere && ui === 0) ? 0 : -1"
-                        aria-controls="unterlage-flaeche" @click="waehleUnterlage(ui)" :title="u.name">
+                        aria-controls="unterlage-flaeche" @click="waehleUnterlage(ui)" :title="u.name + (u.meta ? ' – ' + u.meta : '')">
                     <i :data-lucide="u.istLink ? 'link' : 'file-text'" aria-hidden="true"></i>
                     <span class="txt" x-text="u.name"></span>
                     <span class="vb-zahl-klein" x-show="u.quelle.annotations > 0" x-text="u.quelle.annotations"

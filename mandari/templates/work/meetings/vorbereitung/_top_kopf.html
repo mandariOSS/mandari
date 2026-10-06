@@ -21,7 +21,7 @@ Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt).
             <span class="vb-warn" x-show="selectedItem && selectedItem.withdrawn" x-text="selectedItem ? selectedItem.withdrawn : ''"></span>
             <span class="vb-noe" x-show="selectedItem && selectedItem.isPublic === false">Nichtöffentlich</span>
             <span class="txt" x-show="selectedItem && selectedItem.paper"
-                  x-text="selectedItem && selectedItem.paper ? [selectedItem.paper.paperType, selectedItem.paper.reference, rolleHier].filter(Boolean).join(' · ') : ''"></span>
+                  x-text="vorlageZeile"></span>
             <span class="txt" x-show="selectedItem && !selectedItem.paper">Ohne Vorlage</span>
             <button type="button" class="vb-textlink" x-show="unterlagen.length === 0 && !docsLoading" @click="anlageOffen = true">Anlage hinzufügen</button>
         </p>

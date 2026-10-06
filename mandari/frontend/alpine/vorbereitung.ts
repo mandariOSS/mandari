@@ -257,6 +257,14 @@ export function vorbereitung() {
       const hier = this.beratungsfolge.find((c) => c.isCurrent)
       return hier ? String(hier.role || '') : ''
     },
+    /** Art, Aktenzeichen und Rolle dieser Sitzung; der Titel der Vorlage nur, wenn er vom TOP abweicht */
+    get vorlageZeile(): string {
+      const item = this.selectedItem
+      const paper = item?.paper
+      if (!item || !paper) return ''
+      const titel = paper.name && paper.name.trim() !== item.name.trim() ? paper.name : ''
+      return [titel, paper.paperType, paper.reference, this.rolleHier].filter(Boolean).join(' · ')
+    },
     get verlauf(): Array<Record<string, unknown>> {
       return (this.selectedItem?.crossPositions || []) as Array<Record<string, unknown>>
     },
