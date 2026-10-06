@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 from django.core import mail
-from django.core.exceptions import FieldDoesNotExist
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.urls import reverse
@@ -205,9 +204,7 @@ def rahmen_einstellen(organisation: Any, rahmen: str) -> None:
     """Bisheriger oder neuer Rahmen von Work (Schalter je Organisation aus #852); ohne Schalter nur der bisherige."""
     if rahmen == "bisher":
         return
-    try:
-        Organization._meta.get_field("work_new_design")
-    except FieldDoesNotExist:
+    if "work_new_design" not in {feld.name for feld in Organization._meta.get_fields()}:
         pytest.skip("Schalter für den neuen Rahmen (#852) ist auf diesem Stand noch nicht vorhanden")
     organisation.work_new_design = True
     organisation.save(update_fields=["work_new_design"])
