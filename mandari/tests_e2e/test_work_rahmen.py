@@ -29,6 +29,8 @@ MESSUNG = """() => {
 }"""
 
 SEITEN = ("", "meetings/", "faction/", "ris/", "ris/search/", "documents/", "tasks/", "team/")
+#: Höchstwartezeit, bis der Fokus nach dem Schließen eines Dialogs wieder auf dem auslösenden Knopf liegt
+FOKUS_RUECKGABE_MS = 2000
 
 
 @pytest.fixture
@@ -98,7 +100,9 @@ class TestNeuerRahmen:
         expect(page.locator('#raum-dialog a[aria-current="true"]')).to_contain_text(neu.organization.name)
         page.keyboard.press("Escape")
         expect(page.locator("#raum-dialog")).to_be_hidden()
-        assert _fokus(page) == "raum-dialog"
+        # Der Fokus kehrt nach dem Schließen asynchron zurück ($nextTick bzw. Rückgabe der Fokusfalle, je ein
+        # setTimeout): abwarten statt sofort abfragen, ein verlorener Fokus scheitert weiterhin
+        expect(knopf).to_be_focused(timeout=FOKUS_RUECKGABE_MS)
         problems.assert_clean("Suche und Raum-Dialog")
 
     def test_schmale_leiste(self, page: Any, goto: Any, login: Any, neu: Any, screenshot: Any) -> None:
@@ -148,7 +152,7 @@ class TestNeuerRahmen:
         screenshot("work-rahmen-handy-mehr")
         page.keyboard.press("Escape")
         expect(blatt).to_be_hidden()
-        assert _fokus(page) == "work-mehr"
+        expect(mehr).to_be_focused(timeout=FOKUS_RUECKGABE_MS)
         problems.assert_clean("Leiste unten und Blatt Mehr")
 
 
