@@ -39,29 +39,10 @@
     </form>
 </c-ui.alpine-modal>
 
-{# TOP löschen #}
-<c-ui.alpine-modal show="showDeleteModal">
-    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
-          hx-target="#agenda-container" hx-swap="innerHTML"
-          @htmx:after-request="if ($event.detail.successful) { showDeleteModal = false; }">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="delete_item">
-        <input type="hidden" name="item_id" x-bind:value="deleteItemId">
-
-        <div class="p-6 text-center">
-            <div class="w-16 h-16 mx-auto mb-4 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-                <i data-lucide="trash-2" class="w-8 h-8 text-red-600 dark:text-red-400"></i>
-            </div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">TOP löschen?</h3>
-            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2" x-text="deleteItemTitle"></p>
-        </div>
-
-        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
-            <c-ui.button variant="ghost" @click="showDeleteModal = false">Abbrechen</c-ui.button>
-            <c-ui.button type="submit" variant="danger">Löschen</c-ui.button>
-        </div>
-    </form>
-</c-ui.alpine-modal>
+{# TOP löschen (Issue #897): Folgen und ggf. die Eingabe lädt factionDetail.openDeleteItem() beim Öffnen #}
+<c-ui.modal id="delete-item-modal" title="TOP löschen" size="sm">
+    <div id="delete-item-body"></div>
+</c-ui.modal>
 
 {# Abstimmung erfassen #}
 <c-ui.alpine-modal show="showDecisionModal">

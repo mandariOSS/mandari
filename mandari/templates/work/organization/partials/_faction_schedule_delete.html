@@ -1,0 +1,32 @@
+{% comment %}
+Sitzungsreihe endgültig löschen (Issue #897) – Dialog je Reihe, nur mit faction.delete. Nennt die Folgen mit Zahlen,
+bietet das Pausieren als schonende Alternative an und verlangt den Namen der Reihe als ausdrückliche Eingabe.
+Öffnen: document.getElementById('delete-schedule-<id>').showModal().
+Kontext: schedule mit schedule.deletion (apps.work.faction.deletion.ScheduleDeletion).
+{% endcomment %}
+<c-ui.modal id="delete-schedule-{{ schedule.id }}" title="Sitzungsreihe löschen" size="sm">
+    <p class="text-sm text-gray-700 dark:text-gray-300">
+        „{{ schedule.name }}“ wird gelöscht, neue Termine entstehen nicht mehr. Bereits angelegte Termine bleiben
+        bestehen{% if schedule.deletion.upcoming %}, auch {{ schedule.deletion.upcoming }} kommende – sie lassen sich bei Bedarf einzeln absagen{% endif %}.
+    </p>
+    {% include "work/faction/partials/_delete_impact.html" with impact=schedule.deletion.impact %}
+
+    {% if schedule.is_active %}
+    <form method="post" class="mt-4 flex items-start justify-between gap-3">
+        {% csrf_token %}
+        <input type="hidden" name="section" value="toggle_schedule">
+        <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+        <p class="text-sm text-gray-700 dark:text-gray-300">Lieber pausieren? Die Reihe bleibt mit Ausnahmen und Regeln erhalten, es entstehen nur keine neuen Termine.</p>
+        <c-ui.button type="submit" variant="secondary" size="sm" class="shrink-0">Pausieren</c-ui.button>
+    </form>
+    {% endif %}
+
+    {% if schedule.deletion.impact %}
+    <form method="post" class="mt-5" x-data="deleteConfirmation" data-phrases="{{ schedule.deletion.phrases_json }}">
+        {% csrf_token %}
+        <input type="hidden" name="section" value="delete_schedule">
+        <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+        {% include "work/faction/partials/_delete_confirmation.html" with needs_input=True input_id=schedule.deletion.input_id label="Zur Bestätigung den Namen der Reihe eingeben:" expected=schedule.name %}
+    </form>
+    {% endif %}
+</c-ui.modal>

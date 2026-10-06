@@ -9,13 +9,14 @@ from django.db import transaction
 from django.http import HttpResponse
 from django.http.response import HttpResponseRedirectBase
 from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import View
 from django_htmx.http import HttpResponseClientRedirect
 
 from apps.common.mixins import WorkViewMixin
 
-from .. import agenda
+from .. import agenda, deletion
 from .. import services as faction_services
 from ..models import (
     FactionAgendaItem,
@@ -54,6 +55,7 @@ class FactionActionView(WorkViewMixin, View):
             "end": self._end,
             "cancel": self._cancel,
             "delete": self._delete,
+            "delete_preview": self._delete_preview,
             "update_status": self._update_status,
             # Meeting
             "update": self._update_meeting,
@@ -63,6 +65,7 @@ class FactionActionView(WorkViewMixin, View):
             "add_item": self._add_item,
             "edit_item": self._edit_item,
             "delete_item": self._delete_item,
+            "delete_item_preview": self._delete_item_preview,
             "move_item": self._move_item,
             # Protocol
             "add_entry": self._add_entry,
@@ -217,16 +220,50 @@ class FactionActionView(WorkViewMixin, View):
             meeting.save()
         return self._refresh_or_redirect(request, meeting, "Sitzung abgesagt.")
 
-    def _delete(self, request, meeting):
-        can_delete = meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
-        if not can_delete:
-            messages.error(request, "Keine Berechtigung zum Löschen.")
-            return self._redirect_detail(meeting)
+    def _rejected(self, request, meeting, message, status):
+        """Abgelehntes Löschen: HTMX mit Status und fester Meldung (Hinweis im Dialog), sonst Meldung und Detailseite."""
+        if self.is_htmx:
+            return HttpResponse(message, status=status, content_type="text/plain; charset=utf-8")
+        messages.error(request, message)
+        return self._redirect_detail(meeting)
 
+    def _delete(self, request, meeting):
+        """Sitzung endgültig löschen – nur mit ``faction.delete`` und Datum oder Titel als Eingabe (Issue #897)."""
         title = meeting.title
-        meeting.delete()
-        messages.success(request, f"Sitzung '{title}' wurde gelöscht.")
-        return redirect("work:faction", org_slug=self.organization.slug)
+        try:
+            deletion.delete_meeting(meeting, self.membership, request.POST.get("confirmation", ""))
+        except deletion.DeletionNotAllowedError:
+            return self._rejected(request, meeting, deletion.NOT_ALLOWED, 403)
+        except deletion.DeletionNotConfirmedError:
+            return self._rejected(request, meeting, deletion.NOT_CONFIRMED_MEETING, 400)
+        except deletion.DeletionBlockedError:
+            return self._rejected(request, meeting, deletion.BLOCKED, 400)
+
+        messages.success(request, f"Sitzung „{title}“ wurde gelöscht.")
+        target = reverse("work:faction", kwargs={"org_slug": self.organization.slug})
+        # HTMX folgte sonst der Umleitung und tauschte die Liste samt Rahmen in den Dialog (Issue #895)
+        if self.is_htmx:
+            return HttpResponseClientRedirect(target)
+        return redirect(target)
+
+    def _delete_preview(self, request, meeting):
+        """Bestätigungsdialog zum Löschen mit den aktuellen Folgen (Issue #897); nur mit ``faction.delete``."""
+        if not deletion.can_delete(self.membership):
+            return HttpResponse(deletion.NOT_ALLOWED, status=403, content_type="text/plain; charset=utf-8")
+        try:
+            impact = deletion.impact_of(meeting)
+        except deletion.DeletionBlockedError:
+            return HttpResponse(deletion.BLOCKED, status=400, content_type="text/plain; charset=utf-8")
+        context = {
+            "meeting": meeting,
+            "impact": impact,
+            "phrases_json": deletion.phrases_json(deletion.meeting_phrases(meeting)),
+            "can_cancel": self._can_manage_meeting(meeting) and meeting.status not in ("completed", "cancelled"),
+            "organization": self.organization,
+            "org_slug": self.organization.slug,
+        }
+        html = _render_partial("work/faction/partials/_delete_meeting_dialog.html", context, request=request)
+        return _htmx_response(html)
 
     def _update_status(self, request, meeting):
         if not self._can_manage_meeting(meeting):
@@ -445,20 +482,30 @@ class FactionActionView(WorkViewMixin, View):
         messages.success(request, f"TOP {item.number} aktualisiert.")
         return self._redirect_detail(meeting)
 
-    def _delete_item(self, request, meeting):
+    def _deletable_item(self, request, meeting):
+        """TOP zum Löschen: (TOP, None) oder (None, Antwort bei fehlendem Recht)."""
         if not self._can_manage_agenda(meeting):
-            return HttpResponse(status=403)
-
-        item_id = request.POST.get("item_id")
-        item = FactionAgendaItem.objects.filter(id=item_id, meeting=meeting, is_approval_item=False).first()
-
+            return None, HttpResponse(status=403)
+        item = deletion.deletable_item(meeting, request.POST.get("item_id"))
         # NÖ strikt (Issue #64): Nicht-Vereidigte können NÖ-TOPs nicht löschen
         if item and not can_view_item(item, self.membership):
-            return HttpResponse(status=403)
+            return None, HttpResponse(status=403)
+        return item, None
+
+    def _delete_item(self, request, meeting):
+        item, denied = self._deletable_item(request, meeting)
+        if denied:
+            return denied
 
         if item:
-            item.delete()
-            _renumber_items(meeting, item.visibility if item else "public")
+            # Verschwinden Inhalte mit, nur mit Nummer oder Titel als Eingabe (Issue #897)
+            try:
+                deletion.delete_agenda_item(item, request.POST.get("confirmation", ""))
+            except deletion.DeletionNotConfirmedError:
+                return self._rejected(request, meeting, deletion.NOT_CONFIRMED_ITEM, 400)
+            except deletion.DeletionBlockedError:
+                return self._rejected(request, meeting, deletion.BLOCKED, 400)
+            _renumber_items(meeting, item.visibility)
 
         if self.is_htmx:
             html = self._render_agenda(request, meeting)
@@ -466,6 +513,28 @@ class FactionActionView(WorkViewMixin, View):
 
         messages.success(request, "TOP gelöscht.")
         return self._redirect_detail(meeting)
+
+    def _delete_item_preview(self, request, meeting):
+        """Bestätigungsdialog zum Löschen eines TOPs mit den Folgen (Issue #897)."""
+        item, denied = self._deletable_item(request, meeting)
+        if denied:
+            return denied
+        if item is None:
+            return HttpResponse(status=404)
+        try:
+            impact = deletion.impact_of(item)
+        except deletion.DeletionBlockedError:
+            return HttpResponse(deletion.BLOCKED, status=400, content_type="text/plain; charset=utf-8")
+        context = {
+            "meeting": meeting,
+            "item": item,
+            "impact": impact,
+            "phrases_json": deletion.phrases_json(deletion.item_phrases(item) if impact.has_content else []),
+            "organization": self.organization,
+            "org_slug": self.organization.slug,
+        }
+        html = _render_partial("work/faction/partials/_delete_item_dialog.html", context, request=request)
+        return _htmx_response(html)
 
     def _move_item(self, request, meeting):
         if not self._can_manage_agenda(meeting):

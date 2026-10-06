@@ -107,6 +107,10 @@ def _get_meeting_context(view, meeting):
     )
 
     can_manage_attendance = view.membership.has_permission("faction.manage")
+    # Endgültiges Löschen nur mit dem Recht dafür (Issue #897)
+    from ..deletion import can_delete as _can_delete
+
+    can_delete = _can_delete(view.membership)
 
     # Teilnahme-Workflow (Issue #67): finale Bestätigung durch den Vorstand
     from ..invitations import can_confirm_attendance as _can_confirm
@@ -199,6 +203,7 @@ def _get_meeting_context(view, meeting):
         "my_attendance": my_attendance,
         "attendance_stats": attendance_stats,
         "can_edit": can_edit,
+        "can_delete": can_delete,
         "is_protocol_phase": is_protocol_phase,
         "can_protocol": can_protocol,
         "can_add_addendum": can_add_addendum,

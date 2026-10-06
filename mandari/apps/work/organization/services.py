@@ -2077,11 +2077,27 @@ def toggle_schedule(organization: Organization, schedule_id: Any) -> FactionMeet
     return schedule
 
 
-def delete_schedule(organization: Organization, schedule_id: Any) -> str:
-    """Sitzungsreihe löschen (bereits erzeugte Sitzungen bleiben); liefert den Namen."""
-    schedule = _schedule(organization, schedule_id)
+def delete_schedule(organization: Organization, membership: Membership, form: Mapping[str, str]) -> str:
+    """
+    Sitzungsreihe endgültig löschen (bereits erzeugte Sitzungen bleiben); liefert den Namen.
+
+    Nur mit dem Recht ``faction.delete`` und dem Namen der Reihe als ausdrücklicher Eingabe (Formularfelder
+    ``schedule_id`` und ``confirmation``, Issue #897).
+    """
+    from django.core.exceptions import PermissionDenied
+
+    from apps.work.faction import deletion
+
+    if not deletion.can_delete(membership):
+        raise PermissionDenied(deletion.NOT_ALLOWED)
+    schedule = _schedule(organization, form.get("schedule_id"))
     name = schedule.name
-    schedule.delete()
+    try:
+        deletion.delete_schedule(schedule, membership, form.get("confirmation", ""))
+    except deletion.DeletionNotConfirmedError as exc:
+        raise ServiceError(deletion.NOT_CONFIRMED_SCHEDULE) from exc
+    except deletion.DeletionBlockedError as exc:
+        raise ServiceError(deletion.BLOCKED) from exc
     return name
 
 

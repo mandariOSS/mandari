@@ -299,7 +299,8 @@ def audit_post_delete(sender, instance, **kwargs):
     organization_id = getattr(instance, "organization_id", None)
     if organization_id is not None and is_organization_deleting(organization_id):
         return
-    log_event("delete", instance)
+    # Endgültiges Löschen mit Freigabe (Issue #897): Zahlen der mitgelöschten Daten im Eintrag des Objekts
+    log_event("delete", instance, changes=getattr(instance, "_audit_delete_changes", None))
 
 
 def register():

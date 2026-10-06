@@ -33,14 +33,15 @@
                         {% if schedule.is_active %}Pausieren{% else %}Aktivieren{% endif %}
                     </button>
                 </form>
-                <form method="post" x-data @submit.prevent="confirmAction({title: 'Sitzungsreihe löschen', message: 'Sitzungsreihe wirklich löschen? Bereits erzeugte Sitzungen bleiben bestehen.', confirmText: 'Löschen', variant: 'danger'}).then(ok => ok && $el.submit())">
-                    {% csrf_token %}
-                    <input type="hidden" name="section" value="delete_schedule">
-                    <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
-                    <button type="submit" class="px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100">Löschen</button>
-                </form>
+                {% if can_delete_schedules %}
+                <button type="button" x-data @click="document.getElementById('delete-schedule-{{ schedule.id }}').showModal()"
+                        aria-haspopup="dialog" aria-controls="delete-schedule-{{ schedule.id }}"
+                        class="px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100">Löschen …</button>
+                {% endif %}
             </div>
         </div>
+        {# Endgültig löschen nur mit faction.delete: Folgen, Pausieren als Alternative, Name als Eingabe (Issue #897) #}
+        {% if can_delete_schedules %}{% include "work/organization/partials/_faction_schedule_delete.html" %}{% endif %}
 
         {# Automatik der Reihe (Issue #871) #}
         <form method="post" class="mt-4">

@@ -61,16 +61,32 @@ def test_faction_settings_page_uses_alpine_preview_without_inline_script(
 
 
 @pytest.mark.django_db
-def test_faction_settings_lists_schedules_with_confirm_dialog(org: Any, manager: Any, client_for: Any) -> None:
+def test_faction_settings_lists_schedules_with_confirm_dialog(org: Any, make_member: Any, client_for: Any) -> None:
+    # Löschen nur mit faction.delete, im Dialog mit Folgen und dem Namen als Eingabe (Issue #897)
+    loeschberechtigt = make_member(org, [*MANAGE_PERMISSIONS, "faction.delete"], email="loeschen@example.org")
     FactionMeetingSchedule.objects.create(
         organization=org, name="Wöchentliche Fraktionssitzung", weekday=0, time="18:00"
     )
 
-    response = client_for(manager.user).get(settings_url(org))
+    response = client_for(loeschberechtigt.user).get(settings_url(org))
     html = response.content.decode()
 
     assert response.status_code == 200
     assert "Wöchentliche Fraktionssitzung" in html
-    assert "confirmAction({title: 'Sitzungsreihe löschen'" in html
+    assert 'x-data="deleteConfirmation"' in html
     assert 'name="section" value="delete_schedule"' in html
     assert "onsubmit=" not in html
+
+
+@pytest.mark.django_db
+def test_faction_settings_without_delete_permission_hide_schedule_delete(
+    org: Any, manager: Any, client_for: Any
+) -> None:
+    FactionMeetingSchedule.objects.create(
+        organization=org, name="Wöchentliche Fraktionssitzung", weekday=0, time="18:00"
+    )
+
+    html = client_for(manager.user).get(settings_url(org)).content.decode()
+
+    assert "Wöchentliche Fraktionssitzung" in html
+    assert 'name="section" value="delete_schedule"' not in html

@@ -1,0 +1,29 @@
+{% comment %}
+Fraktionssitzung endgültig löschen (Issue #897) – Inhalt von #delete-meeting-modal, beim Öffnen geladen (Aktion
+delete_preview, nur mit faction.delete). Nennt die Folgen mit Zahlen, bietet das Absagen als schonende Alternative an
+und verlangt das Datum der Sitzung (der Titel geht auch) als ausdrückliche Eingabe.
+Kontext: meeting, impact, phrases_json, can_cancel, org_slug.
+{% endcomment %}
+<p class="text-sm text-gray-700 dark:text-gray-300">
+    „{{ meeting.title }}“ vom {{ meeting.start|date:"d.m.Y" }} wird mit allem gelöscht, was dazugehört.
+    Das lässt sich nicht rückgängig machen.
+</p>
+{% include "work/faction/partials/_delete_impact.html" %}
+
+{% if can_cancel %}
+<form class="mt-4 flex items-start justify-between gap-3"
+      hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+      hx-vals='{"action": "cancel"}'>
+    {% csrf_token %}
+    <p class="text-sm text-gray-700 dark:text-gray-300">Lieber absagen? Die Sitzung bleibt mit allen Daten erhalten und erscheint als „Abgesagt“.</p>
+    <c-ui.button type="submit" variant="secondary" size="sm" class="shrink-0">Sitzung absagen</c-ui.button>
+</form>
+{% endif %}
+
+<form class="mt-5"
+      hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-swap="none"
+      x-data="deleteConfirmation" data-phrases="{{ phrases_json }}" @htmx:response-error.stop="showError($event)">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="delete">
+    {% include "work/faction/partials/_delete_confirmation.html" with needs_input=True input_id="delete-meeting-confirmation" label="Zur Bestätigung das Datum der Sitzung eingeben:" expected=meeting.start|date:"d.m.Y" %}
+</form>

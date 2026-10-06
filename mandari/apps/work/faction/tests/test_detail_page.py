@@ -75,14 +75,15 @@ def test_detail_page_provides_json_config_and_no_inline_script(
     expected = reverse(
         "work:faction_item_panel", kwargs={"org_slug": org.slug, "meeting_id": meeting.id, "item_id": PLACEHOLDER}
     )
-    assert config == {"panelUrlTemplate": expected}
+    action_url = reverse("work:faction_action", kwargs={"org_slug": org.slug, "meeting_id": meeting.id})
+    assert config == {"actionUrl": action_url, "panelUrlTemplate": expected}
     assert PLACEHOLDER in expected
 
     # Modale und Panel kommen aus den Partials, Ereignisse aus den Agenda-Partials bleiben gemappt
     for marker in (
         '@open-item-panel.window="openItemPanel($event.detail.id)"',
         'x-show="showItemModal"',
-        'x-show="showDeleteModal"',
+        'id="delete-item-modal"',
         'x-show="showDecisionModal"',
         'x-show="showProposalModal"',
         'x-show="showAddAttendeeModal"',

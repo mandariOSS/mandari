@@ -1,5 +1,12 @@
-{# Fraktionssitzung – Modale rund um die Sitzung: TOP vorschlagen, Teilnehmer hinzufügen, Sitzung bearbeiten #}
-{# Kontext: organization, meeting, available_members; Zustand aus x-data="factionDetail" (showProposalModal, showAddAttendeeModal, showEditModal) #}
+{# Fraktionssitzung – Modale rund um die Sitzung: TOP vorschlagen, Teilnehmer hinzufügen, Sitzung bearbeiten, löschen #}
+{# Kontext: organization, meeting, available_members, can_delete; Zustand aus x-data="factionDetail" (showProposalModal, showAddAttendeeModal, showEditModal) #}
+
+{# Sitzung endgültig löschen (Issue #897): nur mit faction.delete; Folgen und Eingabe lädt factionDetail.openDeleteMeeting() #}
+{% if can_delete %}
+<c-ui.modal id="delete-meeting-modal" title="Sitzung endgültig löschen" size="sm">
+    <div id="delete-meeting-body"></div>
+</c-ui.modal>
+{% endif %}
 
 {# TOP vorschlagen #}
 <c-ui.alpine-modal show="showProposalModal">

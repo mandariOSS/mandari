@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.faction import deletion
 from apps.work.faction.models import FactionMeetingSchedule
 from apps.work.faction.visibility import can_view_internal
 
@@ -177,8 +178,12 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
             ("{nr}", "Nummer der aktuellen Sitzung"),
         ]
 
-        # Sitzungsreihen + Ausfallregeln (Issue #61)
-        context["schedules"] = selectors.faction_schedules(self.organization)
+        # Sitzungsreihen + Ausfallregeln (Issue #61); Löschen nur mit faction.delete und Folgen im Dialog (Issue #897)
+        schedules = selectors.faction_schedules(self.organization)
+        context["can_delete_schedules"] = deletion.can_delete(self.membership)
+        context["schedules"] = (
+            deletion.with_deletion_details(schedules) if context["can_delete_schedules"] else schedules
+        )
         context["weekday_choices"] = FactionMeetingSchedule.WEEKDAY_CHOICES
         context["recurrence_choices"] = FactionMeetingSchedule.RECURRENCE_CHOICES
         # Gremien-Auswahl aus den OParl-Organizations der verknüpften Kommune(n)
@@ -258,8 +263,8 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         messages.success(request, f"Sitzungsreihe '{schedule.name}' {state}.")
 
     def _delete_schedule(self, request):
-        name = services.delete_schedule(self.organization, request.POST.get("schedule_id"))
-        messages.success(request, f"Sitzungsreihe '{name}' gelöscht. Bereits erzeugte Sitzungen bleiben bestehen.")
+        name = services.delete_schedule(self.organization, self.membership, request.POST)
+        messages.success(request, f"Sitzungsreihe „{name}“ gelöscht. Bereits erzeugte Sitzungen bleiben bestehen.")
 
     def _add_exception(self, request):
         cancelled = services.add_schedule_exception(

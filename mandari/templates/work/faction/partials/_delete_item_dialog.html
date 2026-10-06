@@ -1,0 +1,27 @@
+{% comment %}
+TOP löschen (Issue #897) – Inhalt von #delete-item-modal, beim Öffnen geladen (Aktion delete_item_preview). Nennt die
+Folgen; verschwinden Inhalte mit (Unterpunkte, Protokoll, Beschluss, Anhänge), verlangt der Dialog die Nummer des TOPs
+(der Titel geht auch). Nach dem Löschen tauscht die Antwort die Tagesordnung und der Dialog schließt sich.
+Kontext: meeting, item, impact, phrases_json, org_slug.
+{% endcomment %}
+<p class="text-sm text-gray-700 dark:text-gray-300">
+    {% if item.number %}TOP {{ item.number }} {% endif %}„{{ item.title }}“ wird
+    {% if impact.has_content %}mit allem gelöscht, was dazugehört. Das lässt sich nicht rückgängig machen.{% else %}gelöscht.{% endif %}
+</p>
+{% include "work/faction/partials/_delete_impact.html" %}
+
+<form class="mt-5"
+      hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+      hx-target="#agenda-container" hx-swap="innerHTML" data-after-request="close-dialog"
+      x-data="deleteConfirmation" data-phrases="{{ phrases_json }}" @htmx:response-error.stop="showError($event)">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="delete_item">
+    <input type="hidden" name="item_id" value="{{ item.id }}">
+    {% if not impact.has_content %}
+    {% include "work/faction/partials/_delete_confirmation.html" with needs_input=False submit_label="TOP löschen" %}
+    {% elif item.number %}
+    {% include "work/faction/partials/_delete_confirmation.html" with needs_input=True input_id="delete-item-confirmation" label="Zur Bestätigung die Nummer des TOPs eingeben:" expected=item.number %}
+    {% else %}
+    {% include "work/faction/partials/_delete_confirmation.html" with needs_input=True input_id="delete-item-confirmation" label="Zur Bestätigung den Titel des TOPs eingeben:" expected=item.title %}
+    {% endif %}
+</form>
