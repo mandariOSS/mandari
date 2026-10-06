@@ -176,9 +176,13 @@ function getBaseExtensions(options: EditorOptions) {
   ]
 }
 
-/** Gemeinsame editorProps: Paste-Cleanup für Word/Google-Docs-HTML */
+/**
+ * Gemeinsame editorProps: Paste-Cleanup für Word/Google-Docs-HTML; Name des Textfelds (TipTap setzt
+ * `role="textbox"`, ohne Namen bleibt es für Bildschirmleser unbeschriftet)
+ */
 function getEditorProps() {
   return {
+    attributes: { 'aria-label': 'Text des Dokuments', 'aria-multiline': 'true' },
     transformPastedHTML: (html: string) => cleanPastedHtml(html),
   }
 }

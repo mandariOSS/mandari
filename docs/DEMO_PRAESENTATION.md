@@ -106,7 +106,7 @@ Link `/insight/kommune/<uuid>/` erreichbar.
 
 | Schritt | Wer | Klickpfad | Zeigt |
 |---|---|---|---|
-| 1 | Fraktionsvorsitz (`demo-vorsitz@…`) | Work-Antrag öffnen → Symbol „Bei Verwaltung einreichen“ → Zielgremium wählen, Bestätigung anhaken → „Jetzt einreichen“ | Eingangsnummer `A/<Jahr>/…` im Editor-Kopf, Status „Eingereicht“ |
+| 1 | Fraktionsvorsitz (`demo-vorsitz@…`) | Work-Antrag öffnen → Menü „Ablauf“ → „Bei der Verwaltung einreichen“ (bisherige Ansicht: Symbol „Bei Verwaltung einreichen“) → Zielgremium wählen, Bestätigung anhaken → „Jetzt einreichen“ | Eingangsnummer `A/<Jahr>/…` im Editor (Infozeile unter der Werkzeugleiste), Status „Eingereicht“ |
 | 2 | Verwaltung (`demo-verwaltung@…`) | Session A → Anträge → Tempo-30-Antrag → „In Vorlage umwandeln“ → Gremium prüfen → „In Vorlage umwandeln“ | Vorlage mit Nummer aus dem Kreis (`22-…` bzw. `AN/…/<Jahr>`) |
 | 3 | Verwaltung | Sitzungen → „Hauptausschuss (Demo-Drehbuch)“ → Beratungsfolge am Jugendzentrum-TOP → Stift → „Öffentlicher Tagesordnungspunkt“ abwählen → Speichern | TOP wandert in den nichtöffentlichen Teil; im zweiten Fenster (abgemeldet, Bürgerportal-Sitzung) ist er nach dem Neuladen verschwunden |
 | 4 | – | OParl-System-URL im Browser; `…/api/oparl/agendaitem/<id>/` | JSON; der TOP ist nur noch als gelöschtes Objekt (`deleted: true`) abrufbar |

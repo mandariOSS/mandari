@@ -1,0 +1,47 @@
+{% comment %}
+Suchen und Ersetzen im Dokumenteditor (Strg+F). Alpine-Komponente documentEditor.
+{% endcomment %}
+<!-- Suchen & Ersetzen Panel (Strg+F) -->
+<div x-show="searchOpen" x-cloak
+     class="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-2 bg-gray-50 dark:bg-gray-800/60 flex-shrink-0"
+     @keydown.escape.stop="closeSearch()">
+    <div class="flex items-center gap-1">
+        <input type="text" x-model="searchTerm" x-ref="searchInput"
+               @input.debounce.200ms="runSearch()"
+               @keydown.enter.prevent="$event.shiftKey ? findPrev() : findNext()"
+               placeholder="Suchen..."
+               class="w-44 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary-500">
+        <button type="button" @click="searchMatchCase = !searchMatchCase; runSearch()"
+                :class="{ 'bg-gray-200 dark:bg-gray-600': searchMatchCase }"
+                class="px-1.5 py-1 rounded text-xs font-semibold hover:bg-gray-200 dark:hover:bg-gray-700"
+                title="Groß-/Kleinschreibung beachten">Aa</button>
+        <span class="text-xs text-gray-500 dark:text-gray-400 min-w-[3rem] text-center"
+              x-text="searchTotal ? (searchCurrent + '/' + searchTotal) : (searchTerm ? '0/0' : '')"></span>
+        <button type="button" @click="findPrev()" :disabled="!searchTotal"
+                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40" title="Vorheriger Treffer (Umschalt+Enter)">
+            <i data-lucide="chevron-up" class="w-4 h-4"></i>
+        </button>
+        <button type="button" @click="findNext()" :disabled="!searchTotal"
+                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40" title="Nächster Treffer (Enter)">
+            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+        </button>
+    </div>
+    <div class="flex items-center gap-1">
+        <input type="text" x-model="replaceTerm"
+               @keydown.enter.prevent="replaceCurrent()"
+               placeholder="Ersetzen durch..."
+               class="w-44 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary-500">
+        <button type="button" @click="replaceCurrent()" :disabled="!searchTotal"
+                class="px-2 py-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 border border-gray-300 dark:border-gray-600">
+            Ersetzen
+        </button>
+        <button type="button" @click="replaceAll()" :disabled="!searchTotal"
+                class="px-2 py-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 border border-gray-300 dark:border-gray-600">
+            Alle ersetzen
+        </button>
+    </div>
+    <button type="button" @click="closeSearch()"
+            class="ml-auto p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Suche schließen (Esc)">
+        <i data-lucide="x" class="w-4 h-4"></i>
+    </button>
+</div>

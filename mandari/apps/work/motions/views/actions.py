@@ -22,7 +22,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import IMPORTABLE_DOCUMENTS, MB, validate_upload
 from apps.work.notifications.services import NotificationHub
 
-from .. import references
+from .. import references, vorschlaege
 from ..forms import (
     AIAssistantForm,
     MotionCommentForm,
@@ -166,11 +166,17 @@ class MotionCommentView(WorkViewMixin, View):
         if not motion.can_comment(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
-        form = MotionCommentForm(request.POST, motion=motion)
+        # Änderungsvorschlag (Modus „Vorschlagen“, #856): Ersatz für die markierte Stelle; ohne eigene Notiz
+        # beschreibt der Kommentartext den Vorschlag
+        data, vorschlag, grund = vorschlaege.kommentar_anfrage(request.POST)
+        if grund:
+            return JsonResponse({"error": grund}, status=400)
+        form = MotionCommentForm(data, motion=motion)
         if form.is_valid():
             comment = form.save(commit=False)
             comment.motion = motion
             comment.author = self.membership
+            comment.vorschlag = vorschlag
             # Use client-provided mark_id for inline comments, or generate one
             if comment.selected_text:
                 client_mark_id = request.POST.get("mark_id")
@@ -196,6 +202,7 @@ class MotionCommentView(WorkViewMixin, View):
                             "created_at": comment.created_at.isoformat(),
                             "mark_id": str(comment.mark_id) if comment.mark_id else None,
                             "selected_text": comment.selected_text or None,
+                            "vorschlag": comment.vorschlag,
                         },
                     }
                 )
@@ -615,8 +622,23 @@ class MotionCommentResolveView(WorkViewMixin, View):
         if not comment.motion.can_access(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
+        # Änderungsvorschlag (#856): annehmen oder ablehnen; annehmen darf nur, wer den Text gerade bearbeiten darf
+        entscheidung = vorschlaege.entscheidung_aus(request.POST)
+        if comment.vorschlag is not None and entscheidung:
+            if not vorschlaege.darf_entscheiden(comment, self.membership, entscheidung):
+                return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+            if comment.is_resolved:
+                # Schon entschieden (z. B. Wiederholung derselben Anfrage): nichts überschreiben
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "mark_id": str(comment.mark_id) if comment.mark_id else None,
+                        "vorschlag_angenommen": comment.vorschlag_angenommen,
+                    }
+                )
+            comment.vorschlag_angenommen = entscheidung == vorschlaege.ANNEHMEN
         # Only author or someone with edit permission can resolve
-        if comment.author != self.membership and not self.membership.has_permission("motions.edit_all"):
+        elif comment.author != self.membership and not self.membership.has_permission("motions.edit_all"):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         comment.is_resolved = True
@@ -629,6 +651,7 @@ class MotionCommentResolveView(WorkViewMixin, View):
                 {
                     "success": True,
                     "mark_id": str(comment.mark_id) if comment.mark_id else None,
+                    "vorschlag_angenommen": comment.vorschlag_angenommen,
                 }
             )
 

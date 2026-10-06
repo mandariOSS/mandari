@@ -1,0 +1,179 @@
+{% comment %}
+Menüs des neuen Antragseditors (Teil von #856) als Partials: Menüleiste Datei … Ablauf, Stand und Ablauf, „Weitere“
+und die Speicheranzeige. Ein Weg je Aktion: Stand-Knopf, Menü „Ablauf“ und Ablaufleiste rufen dieselben Schritte auf.
+Seltenes steht hier statt in der Werkzeugleiste (eine Leiste statt drei). Alle Punkte rufen vorhandene Funktionen auf.
+Kontext: motion, ablauf, darf_steuern, can_edit, can_share, can_delete, can_submit_ris, is_guest, is_sworn_in_only, ris_application,
+organization; Alpine-Komponente documentEditor (menue, befehl, panelOeffnen, ablaufDialog, …).
+{% endcomment %}
+
+{% partialdef gespeichert %}
+<button type="button" class="ke-gespeichert hidden lg:inline-flex" @click="save()" :disabled="saving" title="Jetzt speichern (Strg+S)"
+        :title="speicherStoerung === 'anmeldung' ? 'Bitte melden Sie sich in einem anderen Tab neu an. Ihre Änderungen bleiben hier und werden danach gespeichert.' : (speicherStoerung ? 'Ihre Änderungen bleiben erhalten und werden gespeichert, sobald es wieder geht. Jetzt erneut versuchen (Strg+S)' : (lastSaved ? 'Gespeichert ' + lastSaved + '. ' : '') + 'Jetzt speichern (Strg+S)')">
+    <span x-show="saving && !speicherStoerung" x-cloak>Speichert …</span>
+    <span x-show="speicherStoerung === 'verbindung'" x-cloak class="text-amber-700 dark:text-amber-400">Keine Verbindung, wird wiederholt</span>
+    <span x-show="speicherStoerung === 'server'" x-cloak class="text-amber-700 dark:text-amber-400">Wird erneut versucht …</span>
+    <span x-show="speicherStoerung === 'anmeldung'" x-cloak class="text-red-600 dark:text-red-400">Anmeldung abgelaufen</span>
+    <span x-show="!saving && saveError && !speicherStoerung" x-cloak class="text-red-600 dark:text-red-400">Nicht gespeichert</span>
+    <span x-show="!saving && !saveError && hasUnsavedChanges() && !(collabEnabled && collabStatus === 'connected')" x-cloak>Ungespeicherte Änderungen</span>
+    <span x-show="!saving && !saveError && (!hasUnsavedChanges() || (collabEnabled && collabStatus === 'connected'))"><i data-lucide="check" class="w-3.5 h-3.5" aria-hidden="true"></i>Gespeichert</span>
+</button>
+{% endpartialdef %}
+
+{% partialdef leiste %}
+{% for key, label in menue_leiste %}
+<div class="relative" role="none">
+    <button type="button" role="menuitem" class="ke-leistenpunkt" data-menue-knopf="{{ key }}" @click="menueUmschalten('{{ key }}')"
+            aria-haspopup="menu" :aria-expanded="(menue === '{{ key }}').toString()" aria-expanded="false">{{ label }}</button>
+    <div x-show="menue === '{{ key }}'" x-cloak class="ke-menue{% if key == 'ablauf' %} ke-menue-breit{% endif %}" role="menu" aria-label="{{ label }}">
+        {% if key == 'datei' %}{% partial datei %}{% elif key == 'bearbeiten' %}{% partial bearbeiten %}{% elif key == 'ansicht' %}{% partial ansicht %}{% elif key == 'einfuegen' %}{% partial einfuegen %}{% elif key == 'format' %}{% partial format %}{% else %}{% partial ablauf %}{% endif %}
+    </div>
+</div>
+{% endfor %}
+{% endpartialdef %}
+
+{% partialdef datei %}
+{% if can_share %}
+<button type="button" role="menuitem" class="ke-mp" @click="menueSchliessen(); showShareModal = true"><i data-lucide="share-2" aria-hidden="true"></i>Teilen …</button>
+{% elif is_sworn_in_only %}
+<p class="ke-menue-hinweis"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich: nur vereidigte Mitglieder, keine Freigaben</p>
+{% endif %}
+<a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf" target="_blank" rel="noopener"><i data-lucide="eye" aria-hidden="true"></i>Vorschau (PDF)</a>
+<a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=docx"><i data-lucide="download" aria-hidden="true"></i>Herunterladen als Word</a>
+<div role="separator" class="ke-trenn"></div>
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('details')"><i data-lucide="sliders-horizontal" aria-hidden="true"></i>Details und Zuständigkeit</button>
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('verlauf')"><i data-lucide="history" aria-hidden="true"></i>Fassungen und Verlauf</button>
+{% if can_edit %}
+<div role="separator" class="ke-trenn"></div>
+<button type="button" role="menuitem" class="ke-mp" @click="menueSchliessen(); save()"><i data-lucide="save" aria-hidden="true"></i>Speichern<kbd>Strg+S</kbd></button>
+{% endif %}
+{% if can_delete %}
+<button type="button" role="menuitem" class="ke-mp ke-mp-gefahr" @click="menueSchliessen(); confirmDelete()"><i data-lucide="trash-2" aria-hidden="true"></i>In den Papierkorb …</button>
+{% endif %}
+{% endpartialdef %}
+
+{% partialdef bearbeiten %}
+{% if can_edit %}
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="befehl('undo')"><i data-lucide="undo-2" aria-hidden="true"></i>Rückgängig<kbd>Strg+Z</kbd></button>
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="befehl('redo')"><i data-lucide="redo-2" aria-hidden="true"></i>Wiederholen<kbd>Strg+Y</kbd></button>
+<button type="button" role="menuitem" class="ke-mp" @click="menueSchliessen(); openSearch()"><i data-lucide="search" aria-hidden="true"></i>Suchen und ersetzen<kbd>Strg+F</kbd></button>
+{% else %}
+<p class="ke-menue-hinweis">Sie können dieses Dokument nur lesen.</p>
+{% endif %}
+{% endpartialdef %}
+
+{% partialdef ansicht %}
+{% if can_edit %}
+<p class="ke-menue-gruppe">Modus</p>
+<button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'bearbeiten').toString()" @click="modusSetzen('bearbeiten')"><i data-lucide="pencil" aria-hidden="true"></i>Bearbeiten</button>
+<button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'vorschlagen').toString()" @click="modusSetzen('vorschlagen')"><i data-lucide="pencil-line" aria-hidden="true"></i>Vorschlagen</button>
+<button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'ansehen').toString()" @click="modusSetzen('ansehen')"><i data-lucide="eye" aria-hidden="true"></i>Ansehen</button>
+<div role="separator" class="ke-trenn"></div>
+{% endif %}
+<button type="button" role="menuitemcheckbox" class="ke-mp hidden min-[1600px]:flex" :aria-checked="gliederungAn.toString()" @click="gliederungUmschalten()"><i data-lucide="list-tree" aria-hidden="true"></i>Gliederung</button>
+<button type="button" role="menuitemcheckbox" class="ke-mp" :aria-checked="seitenansicht.toString()" @click="seitenansichtUmschalten()"><i data-lucide="file" aria-hidden="true"></i>Seitenansicht mit Briefpapier</button>
+<div role="separator" class="ke-trenn"></div>
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('kommentare')"><i data-lucide="message-square" aria-hidden="true"></i>Alle Kommentare</button>
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('aufgaben')"><i data-lucide="list-checks" aria-hidden="true"></i>Aufgaben und Checkliste</button>
+{% if can_edit and not is_guest and not is_sworn_in_only %}
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('ki')"><i data-lucide="sparkles" aria-hidden="true"></i>KI-Assistent</button>
+{% endif %}
+<div role="separator" class="ke-trenn"></div>
+{% if can_edit %}
+<p class="ke-menue-hinweis"><span x-text="wordCount"></span>&nbsp;Wörter, <span x-text="charCount"></span>&nbsp;Zeichen<span x-show="seitenansicht">, Seite <span x-text="currentPage"></span> von <span x-text="pageCount"></span></span></p>
+{% endif %}
+<a role="menuitem" class="ke-mp" href="?ansicht=bisher"><i data-lucide="rotate-ccw" aria-hidden="true"></i>Bisherige Ansicht</a>
+{% endpartialdef %}
+
+{% partialdef einfuegen %}
+{% if can_edit %}
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="kommentarStarten()"><i data-lucide="message-square-plus" aria-hidden="true"></i>Kommentar<kbd>Strg+Alt+M</kbd></button>
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="vorschlagStarten()"><i data-lucide="pencil-line" aria-hidden="true"></i>Änderungsvorschlag</button>
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="menueSchliessen(); openLinkDialog()"><i data-lucide="link" aria-hidden="true"></i>Link<kbd>Strg+K</kbd></button>
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="menueSchliessen(); showImageModal = true"><i data-lucide="image" aria-hidden="true"></i>Bild …</button>
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="menueSchliessen(); $dispatch('editor-table-cmd', 'insertTable')"><i data-lucide="table" aria-hidden="true"></i>Tabelle</button>
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="befehl('pageBreak')"><i data-lucide="file-output" aria-hidden="true"></i>Seitenumbruch<kbd>Strg+Enter</kbd></button>
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="befehl('horizontalRule')"><i data-lucide="minus" aria-hidden="true"></i>Trennlinie</button>
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('details')"><i data-lucide="paperclip" aria-hidden="true"></i>Anlage …</button>
+{% else %}
+<p class="ke-menue-hinweis">Sie können dieses Dokument nur lesen.</p>
+{% endif %}
+{% endpartialdef %}
+
+{% partialdef format %}
+{% if can_edit %}
+{% for wert, label in absatzformate %}
+<button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(absatzformatWert === '{{ wert }}').toString()" @mousedown.prevent @click="absatzformat('{{ wert }}')">{{ label }}</button>
+{% endfor %}
+<div role="separator" class="ke-trenn"></div>
+{% for cmd, label, icon, kurz in zeichenformate %}
+<button type="button" role="menuitemcheckbox" class="ke-mp" :aria-checked="(!!formats.{{ cmd }}).toString()" @mousedown.prevent @click="befehl('{{ cmd }}')"><i data-lucide="{{ icon }}" aria-hidden="true"></i>{{ label }}{% if kurz %}<kbd>{{ kurz }}</kbd>{% endif %}</button>
+{% endfor %}
+<p class="ke-menue-gruppe">Textfarbe</p>
+<div class="ke-farben" role="group" aria-label="Textfarbe">
+    <button type="button" role="menuitem" class="ke-farbe" data-farbe="" :aria-pressed="(!formats.textColor).toString()" aria-label="Standardfarbe" @mousedown.prevent @click="$dispatch('editor-color-cmd', ''); menueSchliessen()"></button>
+    {% for farbe, name in textfarben %}
+    <button type="button" role="menuitem" class="ke-farbe" data-farbe="{{ farbe }}" :aria-pressed="(formats.textColor === '{{ farbe }}').toString()" aria-label="{{ name }}" @mousedown.prevent @click="$dispatch('editor-color-cmd', '{{ farbe }}'); menueSchliessen()"></button>
+    {% endfor %}
+</div>
+<div role="separator" class="ke-trenn"></div>
+{% for wert, label, icon in ausrichtungen %}
+<button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(formats.textAlign === '{{ wert }}').toString()" @mousedown.prevent @click="befehl('align', 0, '{{ wert }}')"><i data-lucide="{{ icon }}" aria-hidden="true"></i>{{ label }}</button>
+{% endfor %}
+<div role="separator" class="ke-trenn"></div>
+<button type="button" role="menuitemcheckbox" class="ke-mp" :aria-checked="(formats.list === 'task').toString()" @mousedown.prevent @click="befehl('taskList')"><i data-lucide="list-checks" aria-hidden="true"></i>Aufgabenliste</button>
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="befehl('indent')"><i data-lucide="indent-increase" aria-hidden="true"></i>Einrücken<kbd>Tab</kbd></button>
+<button type="button" role="menuitem" class="ke-mp" @mousedown.prevent @click="befehl('outdent')"><i data-lucide="indent-decrease" aria-hidden="true"></i>Ausrücken<kbd>Umschalt+Tab</kbd></button>
+{% else %}
+<p class="ke-menue-hinweis">Sie können dieses Dokument nur lesen.</p>
+{% endif %}
+{% endpartialdef %}
+
+{% partialdef ablauf %}
+<p class="ke-menue-gruppe">Ablauf des Antrags</p>
+<ol class="ke-ablaufliste">
+    {% for stufe in ablauf.stufen %}
+    <li data-zustand="{{ stufe.zustand }}">
+        <span class="ke-kreis" aria-hidden="true">{% if stufe.zustand == 'erledigt' %}<i data-lucide="check" class="w-3.5 h-3.5"></i>{% else %}{{ forloop.counter }}{% endif %}</span>
+        <span><b>{{ stufe.label }}</b>{% if stufe.zustand == 'erledigt' %}<span class="sr-only">, erledigt</span>{% elif stufe.zustand == 'aktuell' %}<span class="sr-only">, aktuell</span>{% endif %}<small>{{ stufe.unter }}</small></span>
+    </li>
+    {% endfor %}
+</ol>
+{% if ablauf.aktion %}
+<button type="button" role="menuitem" class="ke-mp ke-mp-jetzt" @click="ablaufDialog('{{ ablauf.aktion }}')"><i data-lucide="arrow-right" aria-hidden="true"></i>{{ ablauf.aktion_label }}<span class="ke-hinweis">Jetzt dran</span></button>
+{% endif %}
+{% if darf_steuern %}
+<p class="ke-menue-gruppe">Status ändern (aktuell: {{ motion.get_status_display }})</p>
+{% for value, label in motion.allowed_next_statuses %}
+<button type="button" role="menuitem" class="ke-mp" @click="menueSchliessen(); ablaufStatus('{{ value }}')">{{ label }}</button>
+{% empty %}
+<p class="ke-menue-hinweis">Keine Übergänge möglich</p>
+{% endfor %}
+<div role="separator" class="ke-trenn"></div>
+{% endif %}
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('details')"><i data-lucide="file-check" aria-hidden="true"></i>Freigaben und Verwaltung</button>
+{% if can_submit_ris and motion.is_submittable or ris_application and can_submit_ris %}
+<a role="menuitem" class="ke-mp" href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"><i data-lucide="landmark" aria-hidden="true"></i>{% if ris_application %}Stand bei der Verwaltung{% else %}Bei der Verwaltung einreichen{% endif %}</a>
+{% endif %}
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('verlauf')"><i data-lucide="history" aria-hidden="true"></i>Fassungen und Verlauf</button>
+{% endpartialdef %}
+
+{% partialdef weitere %}
+{% partial datei %}
+<div role="separator" class="ke-trenn"></div>
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('kommentare')"><i data-lucide="message-square" aria-hidden="true"></i>Alle Kommentare</button>
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('aufgaben')"><i data-lucide="list-checks" aria-hidden="true"></i>Aufgaben und Checkliste</button>
+{% if can_edit and not is_guest and not is_sworn_in_only %}
+<button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('ki')"><i data-lucide="sparkles" aria-hidden="true"></i>KI-Assistent</button>
+{% endif %}
+{% if can_edit %}
+<button type="button" role="menuitem" class="ke-mp lg:hidden" @click="menueSchliessen(); openSearch()"><i data-lucide="search" aria-hidden="true"></i>Suchen und ersetzen</button>
+{% endif %}
+<a role="menuitem" class="ke-mp" href="?ansicht=bisher"><i data-lucide="rotate-ccw" aria-hidden="true"></i>Bisherige Ansicht</a>
+<div role="separator" class="ke-trenn"></div>
+{# Aus der Kopfzeile des Rahmens, die im Editor entfällt #}
+{% if work_rahmen.suche_url %}
+<a role="menuitem" class="ke-mp" href="{{ work_rahmen.suche_url }}"><i data-lucide="search" aria-hidden="true"></i>Ratsinformationen durchsuchen</a>
+{% endif %}
+<button type="button" role="menuitemcheckbox" class="ke-mp" :aria-checked="darkMode.toString()" aria-checked="false"
+        @click="darkMode = !darkMode; menueSchliessen()"><i data-lucide="moon" aria-hidden="true"></i>Dunkler Modus</button>
+{% endpartialdef %}

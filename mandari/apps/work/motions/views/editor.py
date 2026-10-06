@@ -19,9 +19,10 @@ import contextlib
 
 from apps.common.formatting import member_initials, member_name
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import neues_design
 from apps.work.sanitize import safe_editor_html, sanitize_editor_html
 
-from .. import references
+from .. import editor_neu, references, vorschlaege
 from ..forms import (
     MotionCommentForm,
     MotionStatusForm,
@@ -39,6 +40,11 @@ from ..models import (
 )
 from ..services import FremdeAuswahlError, MotionAIService, document_type_for, letterhead_for, speicherkonflikt
 from ._helpers import _broadcast_doc_reload, _flatten_folder_tree, _get_org_folder_or_404
+
+#: Neuer Antragseditor (Teil von #856) bzw. der bisherige; ``?ansicht=bisher`` öffnet den bisherigen auch bei
+#: eingeschaltetem neuen Erscheinungsbild (Rückweg, falls eine Funktion fehlt)
+EDITOR_NEU = "work/motions/editor_neu.html"
+EDITOR_BISHER = "work/motions/editor.html"
 
 
 def _current_content(motion) -> str:
@@ -215,6 +221,12 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
     permission_required = "motions.view"
     guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
 
+    def _neuer_editor(self) -> bool:
+        return neues_design(self.organization) and self.request.GET.get("ansicht") != "bisher"
+
+    def get_template_names(self) -> list[str]:
+        return [EDITOR_NEU if self._neuer_editor() else EDITOR_BISHER]
+
     def _get_access_level(self, motion):
         """
         Determine access level: 'view', 'comment', 'edit', or 'admin'.
@@ -270,9 +282,14 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 inline_comments_data.append(
                     {
                         "id": str(comment.id),
+                        "author_id": str(comment.author_id) if comment.author_id else "",
                         "mark_id": str(comment.mark_id),
                         "content": comment.content,
                         "selected_text": comment.selected_text or "",
+                        # Änderungsvorschlag (#856): Ersatz für die Stelle, None = gewöhnlicher Kommentar
+                        "vorschlag": comment.vorschlag,
+                        "vorschlag_angenommen": comment.vorschlag_angenommen,
+                        "notiz": vorschlaege.notiz(comment),
                         "author_name": member_name(comment.author),
                         "author_initials": member_initials(comment.author),
                         "created_at": comment.created_at.isoformat(),
@@ -427,6 +444,21 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         cursor_colors = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"]
         context["collab_color"] = cursor_colors[hash(str(self.request.user.id)) % len(cursor_colors)]
 
+        # Neuer Editor (Teil von #856): Ablauf Entwurf → Abstimmung → Freigabe → Einreichung über die vorhandenen
+        # Status, Freigabe-Anfragen und Einreichungswege; der bisherige Editor braucht das nicht
+        neu = self._neuer_editor()
+        if neu:
+            context |= editor_neu.kontext(
+                motion=motion,
+                membership=self.membership,
+                organization=self.organization,
+                comments=comments,
+                approvals=approvals,
+                # Status steuern wie MotionStatusView: Bearbeiten-Stufe ohne Status-Sperre (die Sperre gilt nur dem
+                # Text), sonst ließe sich ein freigegebener Antrag im Editor nicht mehr einreichen
+                darf_steuern=motion.can_edit(self.membership) and not context["is_guest"],
+            )
+
         # Konfiguration für die Alpine-Komponente `documentEditor`
         # (frontend/alpine/document-editor.ts), im Template per json_script
         context["editor_config"] = self._build_editor_config(
@@ -437,6 +469,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             letterheads_json=letterheads_json,
             inline_comments_data=inline_comments_data,
             collab_color=context["collab_color"],
+            neu=neu,
         )
 
         return context
@@ -451,6 +484,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         letterheads_json,
         inline_comments_data,
         collab_color,
+        neu=False,
     ) -> dict:
         """Server-Werte für den Editor als ein JSON-Objekt (keine String-Interpolation in JS)."""
         org_slug = self.organization.slug
@@ -504,6 +538,12 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             "letterhead": letterhead_config,
             "letterheads": letterheads_json,
             "inlineComments": inline_comments_data,
+            # Ansicht des Editors: „neu“ (Kommentare am Rand, Ablauf in der Kopfzeile) oder „bisher“
+            "ansicht": "neu" if neu else "bisher",
+            "status": motion.status,
+            # Kommentare erledigen dürfen ihre Verfasser und wer alle Dokumente bearbeiten darf (MotionCommentResolveView)
+            "membershipId": str(self.membership.id),
+            "erledigenAlle": self.membership.has_permission("motions.edit_all"),
             "urls": {
                 "comment": reverse("work:document_comment", kwargs=motion_kwargs),
                 "status": reverse("work:document_status", kwargs=motion_kwargs),
@@ -511,6 +551,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 "ai": reverse("work:document_ai", kwargs={"org_slug": org_slug}),
                 "revisions": reverse("work:document_revisions", kwargs=motion_kwargs),
                 "checklist": reverse("work:document_checklist", kwargs=motion_kwargs),
+                # POST: Zustimmung (Freigabe) bei einem Mitglied anfragen (Dialog „Zur Abstimmung geben“)
+                "approvalRequest": reverse("work:document_approval_request", kwargs=motion_kwargs),
             },
         }
 

@@ -1,0 +1,84 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Neuer Antragseditor (Teil von #856, Svens Wahl E1+E2 vom 05.10.2026): eine Kopfzeile mit Titel, Stand, Speicheranzeige,
+Menü Datei … Ablauf und Ablaufleiste; eine Werkzeugleiste; Gliederung links, Text über die Breite, Kommentare am Rand
+neben ihrer Stelle. Nur bei eingeschaltetem neuen Erscheinungsbild (Organization.work_new_design); der bisherige
+Editor (editor.html) bleibt unverändert und ist über „Ansicht → Bisherige Ansicht“ (?ansicht=bisher) erreichbar.
+Dieselbe Alpine-Komponente documentEditor, dieselben Daten und Endpunkte wie bisher.
+{% endcomment %}
+
+{% block page_title %}{{ motion.title }}{% endblock %}
+
+{% block work_extra_head %}
+{% load django_vite %}{% vite_asset 'frontend/editor/index.ts' %}
+{% include "work/motions/partials/_editor_styles.html" %}
+{% endblock %}
+
+{% comment %}Eine Kopfzeile (Prototyp E1+E2): Der Kopf des Editors ersetzt die Kopfzeile des Rahmens und bringt Glocke,
+Suche und Dunkelmodus selbst mit (partials/neu/_kopf.html).{% endcomment %}
+{% block rahmen_kopf %}{% endblock %}
+
+{% block work_header %}{% endblock %}
+
+{% block work_content %}
+{{ editor_config|json_script:"document-editor-config" }}
+{% if ablauf.aktion == "abstimmung" %}{{ abstimmung_vorauswahl|json_script:"editor-abstimmung-vorauswahl" }}{% endif %}
+<div class="editor-wrapper ke-editor" x-data="documentEditor" data-ansicht="neu"
+     @click="menueKlick($event)" @click.outside="menueSchliessen()" @keydown="menueTaste($event)"
+     :class="{ 'ke-seiten': seitenansicht, 'ke-mit-panel': panel !== '', 'ke-ohne-gliederung': !gliederungAn || !gliederung.length }">
+    {% include "work/motions/partials/_editor_konflikt.html" %}
+    {% include "work/motions/partials/neu/_kopf.html" %}
+
+    <form id="motion-form" method="post" class="hidden">{% csrf_token %}</form>
+
+    <div class="ke-flaeche">
+        <div class="ke-scroll">
+            <div class="ke-raster">
+                <nav class="ke-gliederung" aria-label="Gliederung" x-show="gliederungAn && gliederung.length" x-cloak>
+                    <h2 class="ke-gliederung-titel">Gliederung</h2>
+                    <ul>
+                        <template x-for="eintrag in gliederung" :key="eintrag.index">
+                            <li :data-ebene="eintrag.ebene"><a href="#" @click.prevent="zuUeberschrift(eintrag.index)" x-text="eintrag.text"></a></li>
+                        </template>
+                    </ul>
+                </nav>
+
+                <div class="ke-blatt">
+                    {% include "work/motions/partials/neu/_blattkopf.html" %}
+                    {% if can_edit %}
+                    <div id="editor-container" class="editor-page" data-ke-text x-show="!historyMode"></div>
+                    {% include "work/motions/partials/_editor_history_view.html" %}
+                    {% else %}
+                    <div class="content-readonly" data-ke-text>
+                        {% if motion_content %}{{ motion_content }}{% else %}<p class="text-gray-500">Kein Inhalt vorhanden.</p>{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <aside class="ke-rand-spalte" aria-label="Kommentare am Rand" x-show="!panel">
+                    {% include "work/motions/partials/neu/_rand.html#karten" %}
+                </aside>
+            </div>
+        </div>
+
+        {% include "work/motions/partials/neu/_rand.html#panel" %}
+    </div>
+
+    {# Handy: Kommentare als Blatt #}
+    <div class="ke-mobil-leiste lg:hidden" x-show="!panel">
+        <button type="button" class="ke-knopf w-full justify-center" @click="panelOeffnen('kommentare')">
+            <i data-lucide="message-square" class="w-4 h-4" aria-hidden="true"></i>Kommentare
+            <span class="text-gray-500" x-show="randKarten.length" x-text="randKarten.length"></span>
+        </button>
+    </div>
+
+    {% if can_edit %}
+    {% include "work/motions/partials/_editor_link_popups.html" %}
+    <template id="editor-initial-content">{{ motion_content }}</template>
+    {% endif %}
+
+    {% include "work/motions/partials/_editor_popups.html" %}
+    {% include "work/motions/partials/neu/_vorschlag.html" %}
+    {% include "work/motions/partials/neu/_dialoge.html" %}
+</div>
+{% endblock %}
