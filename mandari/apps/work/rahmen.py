@@ -8,11 +8,16 @@ Vorlage. Der Kontextprozessor ``rahmen_kontext`` gibt den Wert als ``work_neues_
 ``work/base_work.html`` erweitert damit entweder den neuen (``work/base_work_neu.html``) oder den bisherigen Rahmen
 (``work/base_work_alt.html``). Der bisherige Rahmen bleibt unverändert, bis Sven den neuen freigibt.
 
-Navigation des neuen Rahmens: sechs Bereiche (Start, Sitzungen, Dokumente, Aufgaben, Team, Recherche), darunter
-Einstellungen, Hilfe und die Person. Welcher Bereich aktiv ist, folgt aus dem Namen der aufgerufenen Adresse; die
-rund 70 Seiten brauchen dafür keine eigene Angabe. Sitzungen und Recherche haben Reiter über die vorhandenen Listen:
-Jede bisherige Seite bleibt unter ihrer Adresse erreichbar, das Ratsinformationssystem bleibt vollständig in Work
-(Entscheidung Sven vom 06.10.2026: keine RIS-Seite fällt weg).
+Navigation des neuen Rahmens: kompakte Seitenleiste mit Start, Sitzungen, Fraktionssitzungen, Dokumente, Aufgaben,
+Team und Recherche, darunter Einstellungen, Hilfe und die Person (Entscheidung Sven vom 06.10.2026: kompakt, aber
+„Fraktionssitzungen“ als eigener Eintrag, im Kern die bisherige Gliederung). Welcher Bereich aktiv ist, folgt aus dem
+Namen der aufgerufenen Adresse; die rund 70 Seiten brauchen dafür keine eigene Angabe. Sitzungen und Recherche haben
+Reiter über die vorhandenen Listen, die Recherche zusätzlich Unterpunkte in der Seitenleiste (aufklappbar, auf ihren
+Seiten offen). Jede bisherige Seite bleibt unter ihrer Adresse erreichbar, das Ratsinformationssystem bleibt
+vollständig in Work (Entscheidung Sven vom 06.10.2026: keine RIS-Seite fällt weg).
+
+``aria-current``: ``page`` nur am Eintrag, der genau auf die geöffnete Seite zeigt; ``true`` am Bereich (bzw.
+Unterpunkt), in dem die Seite liegt, z. B. „Recherche“ auf einem Vorgang.
 """
 
 from __future__ import annotations
@@ -37,22 +42,29 @@ def neues_design(organization: Any) -> bool:
 
 @dataclass(frozen=True)
 class Ziel:
-    """Eintrag der Navigation: Schlüssel, Beschriftung, Adressname (``work:…``) und Symbol (Lucide)."""
+    """Eintrag der Navigation: Schlüssel, Beschriftung, Adressname (``work:…``), Symbol (Lucide), Kurzform."""
 
     key: str
     label: str
     url_name: str
     icon: str = ""
+    #: Beschriftung in der Leiste unten am Handy, wenn die volle zu lang ist
+    kurz: str = ""
 
 
 BEREICHE: tuple[Ziel, ...] = (
     Ziel("start", "Start", "work:dashboard", "house"),
     Ziel("sitzungen", "Sitzungen", "work:meetings", "calendar-days"),
+    Ziel("fraktionssitzungen", "Fraktionssitzungen", "work:faction", "users", kurz="Fraktion"),
     Ziel("dokumente", "Dokumente", "work:documents", "file-text"),
     Ziel("aufgaben", "Aufgaben", "work:tasks", "square-check"),
-    Ziel("team", "Team", "work:team", "users"),
+    Ziel("team", "Team", "work:team", "contact"),
     Ziel("recherche", "Recherche", "work:ris_overview", "library"),
 )
+#: Leiste unten am Handy (danach „Mehr“), Entscheidung Sven vom 06.10.2026
+LEISTE_UNTEN: tuple[str, ...] = ("start", "sitzungen", "fraktionssitzungen", "recherche")
+#: Adressen, die dieselbe Seite wie der Bereich zeigen
+GLEICHE_SEITE: dict[str, str] = {"dashboard_explicit": "dashboard"}
 #: Gäste sehen nur, was ihnen freigegeben ist (wie im bisherigen Rahmen)
 GAST_BEREICHE: tuple[Ziel, ...] = (Ziel("dokumente", "Freigegebene Dokumente", "work:guest_documents", "file-lock"),)
 EINSTELLUNGEN = Ziel("einstellungen", "Einstellungen", "work:organization", "settings")
@@ -60,23 +72,31 @@ HILFE = Ziel("hilfe", "Hilfe und Support", "work:support", "circle-help")
 PERSON = Ziel("person", "Profil", "work:profile", "user")
 BENACHRICHTIGUNGEN = Ziel("benachrichtigungen", "Benachrichtigungen", "work:notifications", "bell")
 
-#: Reiter über den vorhandenen Listen; der erste ist die Startseite des Bereichs
+#: Seiten des Ratsinformationssystems in der Reihenfolge der bisherigen Seitenleiste (Suche zuletzt)
+_RIS_SEITEN: tuple[Ziel, ...] = (
+    Ziel("vorgaenge", "Vorgänge", "work:ris_papers"),
+    Ziel("beschluesse", "Beschlüsse", "work:ris_decisions"),
+    Ziel("gremien", "Gremien", "work:ris_organizations"),
+    Ziel("personen", "Personen", "work:ris_persons"),
+    Ziel("dokumente", "Dokumente", "work:ris_files"),
+    Ziel("karte", "Karte", "work:ris_map"),
+    Ziel("suche", "Suche", "work:ris_search"),
+)
+
+#: Reiter über den vorhandenen Listen; der erste ist die Startseite des Bereichs. Fraktionssitzungen sind seit der
+#: Entscheidung vom 06.10.2026 ein eigener Bereich und kein Reiter mehr unter „Sitzungen“.
 REITER: dict[str, tuple[Ziel, ...]] = {
     "sitzungen": (
         Ziel("fuer_mich", "Für mich", "work:meetings"),
-        Ziel("fraktion", "Fraktion", "work:faction"),
         Ziel("alle_gremien", "Alle Gremien", "work:ris_meetings"),
     ),
-    "recherche": (
-        Ziel("uebersicht", "Übersicht", "work:ris_overview"),
-        Ziel("suche", "Suche", "work:ris_search"),
-        Ziel("vorgaenge", "Vorgänge", "work:ris_papers"),
-        Ziel("beschluesse", "Beschlüsse", "work:ris_decisions"),
-        Ziel("gremien", "Gremien", "work:ris_organizations"),
-        Ziel("personen", "Personen", "work:ris_persons"),
-        Ziel("dokumente", "Dokumente", "work:ris_files"),
-        Ziel("karte", "Karte", "work:ris_map"),
-    ),
+    "recherche": (Ziel("uebersicht", "Übersicht", "work:ris_overview"), *_RIS_SEITEN),
+}
+
+#: Unterpunkte in der Seitenleiste (aufklappbar): alle bisherigen Einträge der Gruppe „Ratsinformation“; die
+#: Übersicht ist der Bereich selbst, die Sitzungen der Gremien liegen zugleich unter „Sitzungen › Alle Gremien“.
+UNTERPUNKTE: dict[str, tuple[Ziel, ...]] = {
+    "recherche": (Ziel("alle_gremien", "Sitzungen der Gremien", "work:ris_meetings"), *_RIS_SEITEN),
 }
 
 #: Seiten mit fester Einordnung: Adressname → (Bereich, Reiter, eigene Brotkrume)
@@ -88,6 +108,7 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "session_invitations": ("sitzungen", None, "Ladungen der Verwaltung"),
     "ris_meetings": ("sitzungen", "alle_gremien", None),
     "ris_meeting_detail": ("sitzungen", "alle_gremien", None),
+    "faction": ("fraktionssitzungen", None, None),
     "guest_documents": ("dokumente", None, None),
     "ris_overview": ("recherche", "uebersicht", None),
     "ris_search": ("recherche", "suche", None),
@@ -106,7 +127,7 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
 #: Übrige Seiten nach dem Anfang ihres Adressnamens (Reihenfolge zählt: längere Anfänge zuerst)
 PRAEFIXE: tuple[tuple[str, str, str | None], ...] = (
     ("meeting", "sitzungen", "fuer_mich"),
-    ("faction", "sitzungen", "fraktion"),
+    ("faction", "fraktionssitzungen", None),
     ("session_invitation", "sitzungen", None),
     ("document", "dokumente", None),
     ("motion", "dokumente", None),
@@ -162,8 +183,37 @@ def _url(ziel: Ziel, org_slug: str) -> str:
         return ""
 
 
-def _eintrag(ziel: Ziel, org_slug: str, aktiv: bool) -> dict[str, Any]:
-    return {"key": ziel.key, "label": ziel.label, "icon": ziel.icon, "url": _url(ziel, org_slug), "aktiv": aktiv}
+def _ist_seite(ziel: Ziel, url_name: str) -> bool:
+    """True, wenn der Eintrag genau auf die geöffnete Seite zeigt."""
+    return ziel.url_name == f"work:{GLEICHE_SEITE.get(url_name, url_name)}"
+
+
+def aria_current(ziel: Ziel, url_name: str, enthaelt: bool) -> str:
+    """``page`` für die geöffnete Seite selbst, ``true`` für den Bereich bzw. Unterpunkt, in dem sie liegt, sonst leer."""
+    if _ist_seite(ziel, url_name):
+        return "page"
+    return "true" if enthaelt else ""
+
+
+def _eintrag(ziel: Ziel, org_slug: str, aktiv: bool, url_name: str = "") -> dict[str, Any]:
+    return {
+        "key": ziel.key,
+        "label": ziel.label,
+        "kurz": ziel.kurz or ziel.label,
+        "icon": ziel.icon,
+        "url": _url(ziel, org_slug),
+        "aktiv": aktiv,
+        "current": aria_current(ziel, url_name, aktiv) if aktiv else "",
+    }
+
+
+def _unterpunkte(bereich_key: str, org_slug: str, url_name: str) -> list[dict[str, Any]]:
+    """Unterpunkte eines Bereichs; enthalten ist die Seite, wenn sie in Bereich und Reiter des Ziels liegt."""
+    lage = einordnen(url_name)[:2]
+    return [
+        _eintrag(z, org_slug, _ist_seite(z, url_name) or lage == einordnen(z.url_name.split(":", 1)[1])[:2], url_name)
+        for z in UNTERPUNKTE.get(bereich_key, ())
+    ]
 
 
 def raum_art(organization: Any) -> str:
@@ -209,29 +259,35 @@ def navigation(organization: Any, membership: Any, url_name: str) -> dict[str, A
     bereich, reiter_key, seite = einordnen(url_name)
 
     hauptbereiche = GAST_BEREICHE if ist_gast else BEREICHE
-    bereiche = [_eintrag(z, slug, z.key == bereich) for z in hauptbereiche]
+    bereiche = [_eintrag(z, slug, z.key == bereich, url_name) for z in hauptbereiche]
+    for eintrag in bereiche:
+        unterpunkte = [] if ist_gast else _unterpunkte(eintrag["key"], slug, url_name)
+        eintrag["unterpunkte"] = unterpunkte
+        # Offen auf den Seiten des Bereichs und auf jeder Seite, die einer der Unterpunkte zeigt
+        eintrag["offen"] = bool(unterpunkte) and (eintrag["aktiv"] or any(u["aktiv"] for u in unterpunkte))
 
     unten: list[dict[str, Any]] = []
     if not ist_gast:
         if membership is not None and membership.has_permission("organization.view"):
-            unten.append(_eintrag(EINSTELLUNGEN, slug, bereich == "einstellungen"))
-        unten.append(_eintrag(HILFE, slug, bereich == "hilfe"))
+            unten.append(_eintrag(EINSTELLUNGEN, slug, bereich == "einstellungen", url_name))
+        unten.append(_eintrag(HILFE, slug, bereich == "hilfe", url_name))
 
-    # Leiste unten am Handy: Start, Sitzungen, Dokumente, Recherche und „Mehr“ (Konzept W8)
+    # Leiste unten am Handy: Start, Sitzungen, Fraktion, Recherche und „Mehr“ (Entscheidung vom 06.10.2026)
+    benachrichtigungen = _eintrag(BENACHRICHTIGUNGEN, slug, bereich == "benachrichtigungen", url_name)
     if ist_gast:
         leiste_unten = bereiche
-        mehr = [_eintrag(BENACHRICHTIGUNGEN, slug, bereich == "benachrichtigungen")]
+        mehr = [benachrichtigungen]
     else:
-        leiste_unten = [b for b in bereiche if b["key"] in ("start", "sitzungen", "dokumente", "recherche")]
-        mehr = [b for b in bereiche if b["key"] in ("aufgaben", "team")]
-        mehr.append(_eintrag(BENACHRICHTIGUNGEN, slug, bereich == "benachrichtigungen"))
+        leiste_unten = [b for b in bereiche if b["key"] in LEISTE_UNTEN]
+        mehr = [b for b in bereiche if b["key"] not in LEISTE_UNTEN]
+        mehr.append(benachrichtigungen)
         mehr.extend(unten)
     mehr_aktiv = any(m["aktiv"] for m in mehr) or bereich == "person"
 
     # Reiter nur auf den Listen selbst; Detailseiten tragen den Weg in den Brotkrumen
     reiter_ziele = () if ist_gast else REITER.get(bereich or "", ())
-    reiter_aktuell = next((z for z in reiter_ziele if z.url_name == f"work:{url_name}"), None)
-    reiter = [_eintrag(z, slug, z is reiter_aktuell) for z in reiter_ziele] if reiter_aktuell else []
+    reiter_aktuell = next((z for z in reiter_ziele if _ist_seite(z, url_name)), None)
+    reiter = [_eintrag(z, slug, z is reiter_aktuell, url_name) for z in reiter_ziele] if reiter_aktuell else []
 
     return {
         "bereich": bereich,

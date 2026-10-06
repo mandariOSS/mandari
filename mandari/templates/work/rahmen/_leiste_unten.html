@@ -1,13 +1,13 @@
 {% comment %}
-Am Handy (unter lg) die Leiste unten mit Start, Sitzungen, Dokumente, Recherche und „Mehr“ (Issue #852, Konzept W8)
-sowie das Blatt „Mehr“ mit Aufgaben, Team, Benachrichtigungen, Einstellungen, Hilfe, Raum, Dunkelmodus, Profil und
-Abmelden. Das Blatt ist ein modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt auf „Mehr“ zurück.
-Bausteine wie in Insight (c-rahmen.tab, c-rahmen.blatt-link).
+Am Handy (unter lg) die Leiste unten mit Start, Sitzungen, Fraktion, Recherche und „Mehr“ (Issue #852, Entscheidung
+Sven vom 06.10.2026) sowie das Blatt „Mehr“ mit Dokumente, Aufgaben, Team, Benachrichtigungen, Einstellungen, Hilfe,
+Raum, Dunkelmodus, Profil und Abmelden. Das Blatt ist ein modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt
+auf „Mehr“ zurück. Bausteine wie in Insight (c-rahmen.tab, c-rahmen.blatt-link). Nicht im Druck.
 {% endcomment %}
-<nav aria-label="Hauptbereiche" class="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+<nav aria-label="Hauptbereiche" class="lg:hidden print:!hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
     <ul class="grid {% if work_rahmen.ist_gast %}grid-cols-2{% else %}grid-cols-5{% endif %} max-w-xl mx-auto">
         {% for b in work_rahmen.leiste_unten %}
-        <li><c-rahmen.tab href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv">{% if work_rahmen.ist_gast %}Freigaben{% else %}{{ b.label }}{% endif %}</c-rahmen.tab></li>
+        <li><c-rahmen.tab href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}">{% if work_rahmen.ist_gast %}Freigaben{% else %}{{ b.kurz }}{% endif %}</c-rahmen.tab></li>
         {% endfor %}
         <li>
             <button type="button" x-ref="mehrButton" @click="openMehr()" aria-haspopup="dialog" aria-controls="work-mehr"
@@ -22,7 +22,7 @@ Bausteine wie in Insight (c-rahmen.tab, c-rahmen.blatt-link).
     </ul>
 </nav>
 
-<div x-show="mehrOffen" class="lg:hidden fixed inset-0 z-[60]" @keydown.escape.window="mehrOffen && closeMehr()" x-cloak>
+<div x-show="mehrOffen" class="lg:hidden print:!hidden fixed inset-0 z-[60]" @keydown.escape.window="mehrOffen && closeMehr()" x-cloak>
     <div x-show="mehrOffen" x-transition.opacity class="absolute inset-0 bg-gray-950/40 dark:bg-black/60" @click="closeMehr()" aria-hidden="true"></div>
     <div id="work-mehr" role="dialog" aria-modal="true" aria-labelledby="work-mehr-titel" x-trap.noscroll="mehrOffen" x-show="mehrOffen"
          x-transition:enter="transition-transform duration-200 ease-out motion-reduce:transition-none"
@@ -40,7 +40,7 @@ Bausteine wie in Insight (c-rahmen.tab, c-rahmen.blatt-link).
         <nav aria-label="Weitere Bereiche" class="px-2">
             <ul class="space-y-0.5">
                 {% for b in work_rahmen.mehr %}
-                <li><c-rahmen.blatt-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv">{{ b.label }}</c-rahmen.blatt-link></li>
+                <li><c-rahmen.blatt-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}">{{ b.label }}</c-rahmen.blatt-link></li>
                 {% endfor %}
             </ul>
         </nav>
