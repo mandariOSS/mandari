@@ -20,7 +20,6 @@ from playwright.sync_api import expect
 
 from apps.common.management.commands.setup_demo_environment import _minimal_pdf
 from apps.work.meetings.models import AgendaItemPosition, AgendaPrivateNote
-from apps.work.meetings.views import prepare as prepare_view
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -40,9 +39,10 @@ mimetypes.add_type("text/javascript", ".mjs")
 
 
 @pytest.fixture
-def schalter_an(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Neues Design an (Übergang bis zum Schalter je Organisation aus #852); der Live-Server läuft im Testprozess."""
-    monkeypatch.setattr(prepare_view, "neues_design_aktiv", lambda organization: True)
+def schalter_an(admin: Any) -> None:
+    """Neues Erscheinungsbild für die Organisation einschalten (Schalter aus #852)."""
+    admin.organization.work_new_design = True
+    admin.organization.save(update_fields=["work_new_design"])
 
 
 def _sitzung(admin: Any, tmp_path: Path, anzahl: int = 3) -> OParlMeeting:

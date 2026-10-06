@@ -14,34 +14,11 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.common.params import json_body
-from apps.work.neues_design import neues_design_aktiv
 
-from .. import selectors, services
+from .. import selectors, services, vorbereitung
 from ..models import AgendaItemNote, AgendaItemPosition
 from ..serializers import build_prepare_config
 from ._helpers import unauthorized
-
-#: Seite im neuen Design (#856): Tagesordnung, Unterlagen groß, Arbeit der Fraktion, Leiste unten
-NEUE_VORLAGE = "work/meetings/vorbereitung/seite.html"
-#: Abfrageparameter für die bisherige Ansicht bei eingeschaltetem neuen Design (dieselben Daten)
-BISHERIGE_ANSICHT = "bisher"
-#: Vier gleichrangige Positionen in der Leiste (in dieser Reihenfolge); alle übrigen stehen unter „Andere …“
-HAUPT_POSITIONEN = ("for", "against", "abstain", "open")
-#: Farbklasse des Positionspunkts (static/css/work-vorbereitung.css), immer zusammen mit dem Text
-POSITIONS_KLASSEN = {"for": "zustimmung", "against": "ablehnung", "abstain": "enthaltung", "open": "offen"}
-
-
-def positionen_fuer_leiste() -> dict[str, list[tuple[str, str, str]] | list[tuple[str, str]]]:
-    """Positionen für Leiste, Blatt und Legende der neuen Vorbereitung (Werte aus ``POSITION_CHOICES``)."""
-    labels = {code: str(label) for code, label in AgendaItemPosition.POSITION_CHOICES}
-    return {
-        "positionen_haupt": [(code, labels[code], POSITIONS_KLASSEN[code]) for code in HAUPT_POSITIONEN],
-        "positionen_andere": [(code, label) for code, label in labels.items() if code not in HAUPT_POSITIONEN],
-        "positionen_alle": [
-            (code, labels[code], POSITIONS_KLASSEN.get(code, "andere"))
-            for code in (*HAUPT_POSITIONEN, *(c for c in labels if c not in HAUPT_POSITIONEN))
-        ],
-    }
 
 
 class MeetingPrepareView(WorkViewMixin, TemplateView):
@@ -51,19 +28,17 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
     permission_required = "meetings.prepare"
 
     def neue_ansicht(self) -> bool:
-        """Neues Design nur mit Schalter der Organisation und ohne ausdrücklichen Wunsch nach der bisherigen Ansicht."""
-        return neues_design_aktiv(self.organization) and self.request.GET.get("ansicht") != BISHERIGE_ANSICHT
+        """Neue Seite (#856) nur mit Schalter der Organisation und ohne ``?ansicht=bisher``."""
+        return vorbereitung.neue_ansicht(self.organization, self.request.GET)
 
     def get_template_names(self) -> list[str]:
         if self.neue_ansicht():
-            return [NEUE_VORLAGE]
+            return [vorbereitung.NEUE_VORLAGE]
         return [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "meetings"
-        # Bei eingeschaltetem neuen Design führt ein Link zurück; ohne Schalter bleibt die Seite wie bisher
-        context["neues_design"] = neues_design_aktiv(self.organization)
 
         bodies = selectors.organization_bodies(self.organization)
         if bodies is None:
@@ -87,7 +62,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         context["outcome_choices"] = AgendaItemPosition.OUTCOME_CHOICES
         context["visibility_choices"] = AgendaItemNote.VISIBILITY_CHOICES
         context["stats"] = data.stats
-        context.update(positionen_fuer_leiste())
+        context |= vorbereitung.positionen_fuer_leiste()
 
         # Daten für die Alpine-Komponente `preparationApp` (frontend/alpine/prepare-meeting.ts):
         # ein JSON-Objekt für den Client (json_script im Template), keine String-Interpolation in JS

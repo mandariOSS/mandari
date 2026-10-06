@@ -17,7 +17,7 @@
 
 {% block header_actions %}
 <c-ui.help-link topic="sitzungen" class="mr-2" />
-{% if neues_design and meeting %}
+{% if work_neues_design and meeting %}
 <a href="{{ request.path }}" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline mr-2">Zur neuen Ansicht</a>
 {% endif %}
 {% if meeting %}

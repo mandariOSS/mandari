@@ -19,8 +19,7 @@ import pytest
 from apps.common.tests.factories import OrganizationFactory
 from apps.work.meetings.models import AgendaItemPosition, AgendaPrivateNote, AgendaSpeechNote
 from apps.work.meetings.serializers import set_encrypted
-from apps.work.meetings.views import prepare as prepare_view
-from apps.work.neues_design import SCHALTER_FELD, neues_design_aktiv
+from apps.work.meetings.vorbereitung import neue_ansicht, positionen_fuer_leiste
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -40,9 +39,10 @@ BISHER = "work/meetings/prepare.html"
 
 
 @pytest.fixture
-def schalter_an(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Neues Design für alle Organisationen an (Übergang bis zum Schalter aus #852)."""
-    monkeypatch.setattr(prepare_view, "neues_design_aktiv", lambda organization: True)
+def schalter_an(org: Any) -> None:
+    """Neues Erscheinungsbild für die Organisation einschalten (Schalter aus #852)."""
+    org.work_new_design = True
+    org.save(update_fields=["work_new_design"])
 
 
 @pytest.fixture
@@ -90,11 +90,23 @@ def _config(response: Any) -> dict[str, Any]:
     return dict(json.loads(match.group(1)))
 
 
-def test_hilfsfunktion_liest_schalter_der_organisation() -> None:
-    assert neues_design_aktiv(None) is False
-    assert neues_design_aktiv(SimpleNamespace()) is False
-    assert neues_design_aktiv(SimpleNamespace(**{SCHALTER_FELD: False})) is False
-    assert neues_design_aktiv(SimpleNamespace(**{SCHALTER_FELD: True})) is True
+def test_auswahl_folgt_schalter_und_bisheriger_ansicht() -> None:
+    an = SimpleNamespace(work_new_design=True)
+    assert neue_ansicht(None, {}) is False
+    assert neue_ansicht(SimpleNamespace(work_new_design=False), {}) is False
+    assert neue_ansicht(an, {}) is True
+    assert neue_ansicht(an, {"ansicht": "bisher"}) is False
+    assert neue_ansicht(an, {"ansicht": "anders"}) is True
+
+
+def test_positionen_vier_gleichrangig_und_alle_uebrigen_unter_andere() -> None:
+    werte = positionen_fuer_leiste()
+    haupt = [code for code, _label, _klasse in werte["positionen_haupt"]]
+    andere = [code for code, _label in werte["positionen_andere"]]
+
+    assert haupt == ["for", "against", "abstain", "open"]
+    assert sorted(haupt + andere) == sorted(code for code, _ in AgendaItemPosition.POSITION_CHOICES)
+    assert [code for code, _label, _klasse in werte["positionen_alle"]] == haupt + andere
 
 
 def test_schalter_aus_zeigt_die_bisherige_seite_unveraendert(
