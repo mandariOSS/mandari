@@ -13,6 +13,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.common.params import int_param
 
+from . import ankuendigung
 from .models import Notification, NotificationType
 from .services import NotificationHub
 
@@ -118,6 +119,8 @@ class NotificationMarkReadView(WorkViewMixin, View):
                 notification.mark_as_read()
                 # Invalidate count cache
                 NotificationHub.invalidate_count_cache(self.membership)
+                # Ankündigung (Glocke oder Hinweisband auf Start): gelesen in allen Organisationen der Person
+                ankuendigung.gelesen(notification)
                 return JsonResponse({"success": True})
             except Notification.DoesNotExist:
                 return JsonResponse({"success": False, "error": "Not found"}, status=404)

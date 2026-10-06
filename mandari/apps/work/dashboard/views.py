@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.dashboard.hinweise import hinweis_fuer_start
 from apps.work.organization.selectors import my_committees
 
 
@@ -20,6 +21,8 @@ class DashboardView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "dashboard"
         context["today"] = timezone.now()
+        # Hinweisband oben: höchstens ein Hinweis, etwa die neueste ungelesene Ankündigung (Issue #857)
+        context["hinweis"] = hinweis_fuer_start(self.membership)
 
         # "Meine Gremien" personalization: filter meetings/documents to the
         # user's committees unless they explicitly requested the org-wide view.

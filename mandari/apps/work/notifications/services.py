@@ -26,6 +26,7 @@ Usage:
 """
 
 import logging
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import Any, cast
 
@@ -33,7 +34,7 @@ from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Notification, NotificationPreference, NotificationType
+from .models import ANNOUNCEMENT_WITHDRAWN_KEY, Notification, NotificationPreference, NotificationType
 
 logger = logging.getLogger(__name__)
 
@@ -832,7 +833,11 @@ class NotificationHub:
     @classmethod
     def _get_count_cache_key(cls, membership) -> str:
         """Generate cache key for notification count."""
-        return f"notif_count_{membership.id}"
+        return cls._count_cache_key_for_id(membership.id)
+
+    @staticmethod
+    def _count_cache_key_for_id(membership_id: Any) -> str:
+        return f"notif_count_{membership_id}"
 
     @classmethod
     def for_recipient(cls, membership):
@@ -840,11 +845,16 @@ class NotificationHub:
         Benachrichtigungen der Person für Glocke und Benachrichtigungszentrale.
 
         Nachrichten zu Unterlagen in „Nichtöffentliche Vorgänge“, die die Person nicht (mehr) öffnen darf – etwa
-        nach Entzug der Vereidigung –, bleiben gespeichert, erscheinen aber nicht (Issue #873).
+        nach Entzug der Vereidigung –, bleiben gespeichert, erscheinen aber nicht (Issue #873). Dasselbe gilt für
+        zurückgezogene Ankündigungen (Issue #857).
         """
         from apps.work.motions.non_public import hidden_document_ids
 
-        notifications = Notification.objects.filter(recipient=membership)
+        notifications = Notification.objects.filter(recipient=membership).exclude(
+            # Zurückgezogene Ankündigungen bleiben gespeichert, erscheinen aber nicht mehr (Issue #857)
+            notification_type=NotificationType.ANNOUNCEMENT,
+            metadata__has_key=ANNOUNCEMENT_WITHDRAWN_KEY,
+        )
         hidden = hidden_document_ids(membership)
         if hidden:
             notifications = notifications.exclude(metadata__motion_id__in=hidden)
@@ -867,14 +877,29 @@ class NotificationHub:
         cache.delete(cache_key)
 
     @classmethod
+    def invalidate_count_caches(cls, membership_ids: Iterable[Any]) -> None:
+        """Zähler mehrerer Mitgliedschaften verwerfen (Kennungen genügen)."""
+        keys = [cls._count_cache_key_for_id(membership_id) for membership_id in set(membership_ids)]
+        if keys:
+            cache.delete_many(keys)
+
+    @classmethod
     def mark_all_as_read(cls, membership) -> int:
         """Mark all notifications as read for a user."""
-        count = Notification.objects.filter(
-            recipient=membership,
-            is_read=False,
-        ).update(is_read=True, read_at=timezone.now())
+        from . import ankuendigung
+
+        unread = Notification.objects.filter(recipient=membership, is_read=False)
+        # Ankündigungen gelten für die Person: auch in ihren anderen Organisationen gelesen (Issue #857)
+        announcement_keys = list(
+            unread.filter(notification_type=NotificationType.ANNOUNCEMENT).values_list(
+                f"metadata__{ankuendigung.METADATEN_SCHLUESSEL}", flat=True
+            )
+        )
+        count = unread.update(is_read=True, read_at=timezone.now())
         # Invalidate cache after marking as read
         cls.invalidate_count_cache(membership)
+        if announcement_keys:
+            ankuendigung.gelesen_fuer_person(membership.user_id, announcement_keys)
         return count
 
     @classmethod

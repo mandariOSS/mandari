@@ -23,6 +23,7 @@ from django.utils import timezone
 
 from apps.common.management.commands import setup_demo_environment as basisdemo
 from apps.common.management.commands.setup_demo_environment import (
+    DEMO_ANKUENDIGUNG,
     DEMO_ANTRAG_TRINKBRUNNEN,
     DEMO_BODY_SLUG,
     DEMO_ORG_SLUG,
@@ -45,6 +46,7 @@ from apps.tenants.models import Membership
 from apps.work.meetings.selectors import load_preparation_data
 from apps.work.meetings.serializers import serialize_prepared_item
 from apps.work.models import FactionMeeting
+from apps.work.notifications.models import Notification, NotificationType
 from insight_core.models import OParlFile, OParlMeeting
 
 #: Ein Sonntag: Die kommende Ratssitzung (+14 Tage) fiele ohne Ausgleich wieder auf einen Sonntag
@@ -178,3 +180,19 @@ class TestBasisdemo:
         assert antrag.status == "converted"
         assert SessionPaper.objects.get(source_application=antrag).pk == vorlage.pk
         assert SessionAgendaItem.objects.get(paper=vorlage).meeting.name == DEMO_RATSSITZUNG
+
+    def test_ankuendigung_fuer_die_mitglieder_ohne_gast(self) -> None:
+        """Hinweisband auf Start und Glocke zeigen in der Demo eine neutrale Ankündigung (Issue #857)."""
+        self.aufbauen()
+        self.aufbauen()
+
+        ankuendigungen = Notification.objects.filter(
+            notification_type=NotificationType.ANNOUNCEMENT, recipient__organization__slug=DEMO_ORG_SLUG
+        )
+        assert sorted(ankuendigungen.values_list("recipient__user__email", flat=True)) == sorted(
+            [DEMO_USERS["mitglied"]["email"], DEMO_USERS["vorsitz"]["email"]]
+        )
+        benachrichtigung = ankuendigungen.first()
+        assert benachrichtigung is not None
+        assert (benachrichtigung.title, benachrichtigung.link) == (DEMO_ANKUENDIGUNG["titel"], DEMO_ANKUENDIGUNG["link"])
+        assert benachrichtigung.metadata.get("rueckmeldung") is True
