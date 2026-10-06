@@ -165,6 +165,12 @@
   min-height: 500px;
   border-radius: 0 0 0.75rem 0.75rem;
 }
+/* Karten (Leaflet) bilden einen eigenen Stapelkontext: Ihre Ebenen (z-index bis 1000) bleiben in der Karte und
+   schieben sich beim Scrollen nicht über Kopfzeile, Menüs oder Dialoge. Gilt für alle Karten (Insight und Work). */
+.leaflet-container {
+  isolation: isolate;
+  z-index: 0;
+}
 #map .leaflet-control-zoom {
   border: none !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
