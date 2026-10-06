@@ -126,6 +126,20 @@ class TestFormField:
         html = render('<c-form.errors :form="form" />', form=UiKitDemoForm())
         assert html.strip() == ""
 
+    def test_explicit_id_for_repeated_names(self) -> None:
+        # Derselbe Name mehrfach auf einer Seite (z. B. je Sitzungsreihe): eigene ID, Label bleibt zugeordnet
+        html = render(
+            '<c-form.checkbox name="aktiv" id="aktiv_1" label="Aktiv" />'
+            '<c-form.select name="tag" id="tag_1" label="Tag"><option value="0">Montag</option></c-form.select>'
+            '<c-form.field name="zeit" id="zeit_1" type="time" label="Zeit" />'
+        )
+        for name, fid in (("aktiv", "aktiv_1"), ("tag", "tag_1"), ("zeit", "zeit_1")):
+            assert f'name="{name}" id="{fid}"' in html
+            assert f'for="{fid}"' in html
+            assert f'id="id_{name}"' not in html
+        # Ohne Angabe bleibt die ID aus dem Namen
+        assert 'name="aktiv" id="id_aktiv"' in render('<c-form.checkbox name="aktiv" label="Aktiv" />')
+
 
 class TestOtherComponents:
     def test_alert_roles(self) -> None:

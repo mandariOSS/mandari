@@ -1,0 +1,55 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Tagesordnungspunkte eintragen{% endblock %}
+{% block preheader %}{{ meeting.title }} am {{ meeting.start|date:"d.m.Y" }}: Die Einladung ist für {{ dispatch_at|date:"d.m.Y" }}, {{ dispatch_at|time:"H:i" }} Uhr geplant.{% endblock %}
+{% block content %}
+<h1 class="h1">Tagesordnungspunkte eintragen</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Hallo {{ user.first_name|default:user.email }},</p>
+<p>für die folgende Sitzung können jetzt Tagesordnungspunkte eingetragen oder vorgeschlagen werden. Die Einladung mit der Tagesordnung ist für <strong>{{ dispatch_at|date:"l, d.m.Y" }}, {{ dispatch_at|time:"H:i" }} Uhr</strong> geplant.</p>
+<div class="card">
+    <p><strong>{{ meeting.title }}</strong></p>
+    <table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+            <td class="key">Datum:</td>
+            <td>{{ meeting.start|date:"l, d. F Y" }}</td>
+        </tr>
+        <tr>
+            <td class="key">Uhrzeit:</td>
+            <td>{{ meeting.start|time:"H:i" }} Uhr</td>
+        </tr>
+        {% if meeting.location %}
+        <tr>
+            <td class="key">Ort:</td>
+            <td>{{ meeting.location }}</td>
+        </tr>
+        {% endif %}
+    </table>
+</div>
+<h2 class="h2">Bisherige Tagesordnung</h2>
+{% if public_agenda_items or internal_agenda_items %}
+<table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
+    {% for item in public_agenda_items %}
+    <tr>
+        <td class="key"><span class="badge">TOP {{ item.number }}</span></td>
+        <td>{{ item.title }}</td>
+    </tr>
+    {% endfor %}
+    {% for item in internal_agenda_items %}
+    <tr>
+        <td class="key"><span class="badge">TOP {{ item.number }}</span></td>
+        <td>{{ item.title }} <span class="muted small">(nichtöffentlich)</span></td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="muted">Noch keine Tagesordnungspunkte.</p>
+{% endif %}
+{% if meeting_url %}
+<div class="btn-wrap">
+    <a class="btn" href="{{ meeting_url }}">Tagesordnungspunkt eintragen</a>
+</div>
+{% endif %}
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch von {{ organization.name }} versendet.</p>
+{% endblock %}

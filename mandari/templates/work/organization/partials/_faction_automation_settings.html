@@ -1,0 +1,30 @@
+{# Fraktions-Einstellungen: TOP-Erinnerung und automatischer Protokollversand (Issue #871), Teil des Haupt-Formulars #}
+{# Kontext: faction_settings #}
+<c-ui.card>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Erinnerung und Protokollversand</h3>
+    <div class="space-y-6">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+            Beides ist standardmäßig aus. Die Mails gehen über den E-Mail-Versand der Organisation, je Sitzung höchstens einmal.
+        </p>
+
+        <div class="space-y-3">
+            <c-form.checkbox name="agenda_reminder_enabled" label="Erinnerung zum Eintragen von TOPs senden"
+                             :checked="faction_settings.agenda_reminder_enabled" />
+            <c-form.field name="agenda_reminder_hours" type="number" label="Stunden vor dem geplanten Einladungsversand"
+                          value="{{ faction_settings.agenda_reminder_hours }}"
+                          help="1 bis 336. Die Mail geht an alle Eingeladenen, die TOPs eintragen oder vorschlagen dürfen, und nennt die bisherige Tagesordnung." />
+        </div>
+
+        <div class="space-y-3">
+            <c-form.select name="protocol_dispatch" label="Protokoll automatisch versenden"
+                           help="Empfänger sind alle Mitglieder mit Leserecht für Protokolle. Vereidigte mit vollem Leserecht erhalten die interne Fassung, alle anderen den öffentlichen Teil. Ältere Protokolle werden beim Einschalten nicht nachträglich versendet.">
+                <option value="off" {% if faction_settings.protocol_dispatch == "off" %}selected{% endif %}>Aus</option>
+                <option value="after_completion" {% if faction_settings.protocol_dispatch == "after_completion" %}selected{% endif %}>Nach Ende der Sitzung</option>
+                <option value="after_approval" {% if faction_settings.protocol_dispatch == "after_approval" %}selected{% endif %}>Nach Genehmigung des Protokolls</option>
+            </c-form.select>
+            <c-form.field name="protocol_dispatch_delay_hours" type="number" label="Stunden danach"
+                          value="{{ faction_settings.protocol_dispatch_delay_hours }}"
+                          help="0 bis 720, z. B. 24: einen Tag nach Sitzungsende bzw. nach der Genehmigung." />
+        </div>
+    </div>
+</c-ui.card>

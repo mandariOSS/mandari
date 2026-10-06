@@ -167,6 +167,8 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
             video_link=video_link,
             description=request.POST.get("description", ""),
             status="draft" if request.POST.get("save_as") == "draft" else "planned",
+            # Zu- und Absagen sind standardmäßig aus und je Sitzung einschaltbar (Issue #871)
+            rsvp_enabled=request.POST.get("rsvp_enabled") == "on",
             meeting_number=FactionMeeting.get_next_meeting_number(self.organization),
         )
 

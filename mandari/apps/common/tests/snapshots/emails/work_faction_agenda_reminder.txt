@@ -1,0 +1,25 @@
+# Tagesordnungspunkte eintragen
+
+Fraktion Test
+
+Hallo Anna,
+
+für die folgende Sitzung können jetzt Tagesordnungspunkte eingetragen oder vorgeschlagen werden. Die Einladung mit der Tagesordnung ist für Freitag, 11.09.2026, 18:30 Uhr geplant.
+
+Fraktionssitzung September
+
+Datum: Montag, 14. September 2026
+Uhrzeit: 18:30 Uhr
+Ort: Rathaus, Raum 204
+
+## Bisherige Tagesordnung
+
+TOP 1 Haushalt 2027
+TOP 2 Antrag Radwegkonzept
+TOP NÖ 1 Personalie Geschäftsstelle (nichtöffentlich)
+
+[Tagesordnungspunkt eintragen](https://mandari.example/work/fraktion-test/faction/00000000-0000-0000-0000-000000000501/)
+
+Diese E-Mail wurde automatisch von Fraktion Test versendet.
+
+mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

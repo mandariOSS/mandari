@@ -93,6 +93,10 @@
                 <c-form.field name="video_link" label="Video-Link" type="url" :value="meeting.video_link"
                               placeholder="https://meet.example.com/..." x-show="isVirtual" x-transition />
             </div>
+            <div>
+                <input type="hidden" name="rsvp_field" value="1">
+                <c-form.checkbox name="rsvp_enabled" label="Zu- und Absagen sammeln" :checked="meeting.rsvp_enabled" />
+            </div>
             <c-form.textarea name="description" label="Beschreibung" rows="3" :value="meeting.description" />
         </div>
 

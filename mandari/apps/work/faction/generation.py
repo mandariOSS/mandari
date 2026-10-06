@@ -16,7 +16,12 @@ Ausfallregeln (modular, je Regel eine Prüf-Funktion):
 
 Ausgefallene Termine werden ersatzlos gestrichen: Sie werden als Sitzung
 mit Status "cancelled" und Ausfallgrund angelegt (als "entfällt" sichtbar),
-es wird nicht verschoben.
+es wird nicht verschoben. Eine nachträglich eingetragene Pause streicht auch
+schon angelegte, noch nicht eingeladene Termine (``cancel_meetings_in_exception``).
+
+Erzeugt bis (Issue #871): Die Reihe merkt sich, bis zu welchem Solltermin sie
+angelegt hat (``generated_until``). Ein gelöschter Termin kommt deshalb nicht
+wieder; die Reihe setzt mit dem nächsten Termin fort.
 
 Läuft periodisch als Zeitplan im Worker (apps/work/schedules.py, Issue #515) — analog
 zum Erinnerungslauf (Issue #59) und Auto-Georef-Lauf.
@@ -26,6 +31,7 @@ import logging
 from datetime import datetime, timedelta
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -121,10 +127,10 @@ def previous_occurrence(schedule, date):
 
 
 def _occurrence_start(schedule, date):
-    """Aware-Beginn-Zeitpunkt eines Solltermins."""
+    """Aware-Beginn-Zeitpunkt eines Solltermins (Ortszeit der Installation, Sommerzeit inklusive)."""
     start = datetime.combine(date, schedule.time)
     if timezone.is_naive(start):
-        start = timezone.make_aware(start)
+        start = timezone.make_aware(start, timezone.get_default_timezone())
     return start
 
 
@@ -217,10 +223,18 @@ def generate_meetings_for_schedule(schedule, now=None) -> dict:
     from apps.work.faction.models import FactionMeeting
 
     now = now or timezone.now()
-    today = timezone.localtime(now).date()
+    today = timezone.localtime(now, timezone.get_default_timezone()).date()
     horizon_end = today + timedelta(days=_horizon_days())
 
     stats = {"created": 0, "cancelled": 0, "skipped": 0}
+
+    # Erzeugt bis (Issue #871): Solltermine bis generated_until sind schon angelegt worden.
+    # Was danach gelöscht wurde, bleibt gelöscht – die Reihe beginnt hinter dem Wasserstand.
+    from_date = today
+    if schedule.generated_until is not None and schedule.generated_until >= today:
+        from_date = schedule.generated_until + timedelta(days=1)
+    if from_date > horizon_end:
+        return stats
 
     exceptions = list(schedule.exceptions.all())
     rules = list(schedule.suspension_rules.filter(is_active=True).select_related("ris_organization"))
@@ -233,7 +247,7 @@ def generate_meetings_for_schedule(schedule, now=None) -> dict:
     organization = schedule.organization
     faction_settings = (organization.settings or {}).get("faction", {})
 
-    for date in occurrence_dates(schedule, today, horizon_end):
+    for date in occurrence_dates(schedule, from_date, horizon_end):
         if date in existing_dates:
             stats["skipped"] += 1
             continue
@@ -257,6 +271,8 @@ def generate_meetings_for_schedule(schedule, now=None) -> dict:
             location=schedule.default_location,
             is_virtual=bool(schedule.default_video_link),
             video_link=schedule.default_video_link,
+            # Zu- und Absagen wie in der Reihe eingestellt (Issue #871, Standard aus)
+            rsvp_enabled=schedule.rsvp_enabled,
             created_by=None,
         )
 
@@ -305,7 +321,51 @@ def generate_meetings_for_schedule(schedule, now=None) -> dict:
 
         stats["created"] += 1
 
+    # Wasserstand nur vorwärts und ohne save(): Die Änderungshistorie soll nicht stündlich die Reihe nennen
+    from apps.work.faction.models import FactionMeetingSchedule
+
+    FactionMeetingSchedule.objects.filter(pk=schedule.pk).filter(
+        Q(generated_until__isnull=True) | Q(generated_until__lt=horizon_end)
+    ).update(generated_until=horizon_end)
+    schedule.generated_until = max(horizon_end, schedule.generated_until or horizon_end)
+
     return stats
+
+
+def cancel_meetings_in_exception(exception, now=None) -> int:
+    """
+    Nachträglich eingetragene Pause (Issue #871): schon angelegte Termine im Zeitraum entfallen.
+
+    Betrifft nur Termine der Reihe, die noch bevorstehen, nicht eingeladen sind und im Status
+    Entwurf/Geplant stehen. Eingeladene Sitzungen sagt der Vorsitz selbst ab (die Eingeladenen sollen
+    davon erfahren). Nur der Status wechselt; Tagesordnung und Notizen bleiben, die Absage lässt sich
+    über den Status wieder zurücknehmen.
+
+    Returns:
+        Anzahl der Termine, die entfallen.
+    """
+    from apps.work.faction.models import FactionMeeting
+
+    if exception.exception_type == "special":
+        return 0
+    now = now or timezone.now()
+    end = exception.end_date or exception.original_date
+    reason = f"Entfällt: {exception.reason or 'Manuelle Ausnahme'}"[:300]
+    meetings = FactionMeeting.objects.filter(
+        schedule=exception.schedule,
+        scheduled_date__gte=exception.original_date,
+        scheduled_date__lte=end,
+        status__in=["draft", "planned"],
+        invitation_sent=False,
+        start__gt=now,
+    )
+    count = 0
+    for meeting in meetings:
+        meeting.status = "cancelled"
+        meeting.cancellation_reason = reason
+        meeting.save(update_fields=["status", "cancellation_reason", "updated_at"])
+        count += 1
+    return count
 
 
 def run_faction_schedule_pass(now=None) -> dict:

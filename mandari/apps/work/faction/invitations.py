@@ -22,10 +22,24 @@ es wird schlicht auditiert, WER es war (Issue #66).
 Baut auf dem vorhandenen Versand (Issue #59: ICS/PDF/Nachladung) und der
 Sitzungserzeugung (Issue #61) auf; der periodische Lauf hängt wie
 Erinnerungen/Erzeugung an einem Zeitplan im Worker (apps/work/schedules.py).
+
+Automatik der Reihe (Issue #871):
+
+- **Automatische Einladung zum festen Zeitpunkt** je Reihe (Standard aus), z. B. am letzten
+  Freitag vor der Sitzung um 18 Uhr – ohne Freigabe und mit der Tagesordnung von diesem Zeitpunkt.
+  Gerechnet wird in der Ortszeit der Installation (``TIME_ZONE``) samt Sommerzeit. Für Sitzungen
+  ohne solche Reihe gelten Vorlauf und Versandart der Organisation unverändert.
+- **Erinnerung zum Eintragen von TOPs** (Organisationseinstellung, Standard aus): eine Mail an alle,
+  die TOPs eintragen oder vorschlagen dürfen, eine einstellbare Zahl Stunden vor dem geplanten Versand.
+- **Genau einmal:** Erinnerung und Erstversand werden vor dem Senden in der Datenbank beansprucht
+  (bedingtes UPDATE); ein zweiter Lauf oder Worker findet nichts mehr. Scheitert der Versand als
+  Ganzes, wird der Anspruch zurückgegeben und der nächste Lauf versucht es erneut. Wird der Prozess
+  mitten im Erstversand beendet, gibt der Einladungslauf den hängenden Anspruch nach
+  ``INVITATION_CLAIM_STALE_MINUTES`` frei (mit Warnung im Log) und versendet erneut.
 """
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.conf import settings as django_settings
 from django.utils import timezone
@@ -45,11 +59,23 @@ INVITATION_DEFAULTS = {
     "invitation_mode": "opt_in",
     "invitation_lead_hours": 72,
     "invitation_dispatch": "automatic",
+    # Erinnerung zum Eintragen von TOPs (Issue #871): Stunden vor dem geplanten Einladungsversand
+    "agenda_reminder_enabled": False,
+    "agenda_reminder_hours": 24,
 }
+
+# Wer TOPs eintragen oder vorschlagen darf, bekommt die TOP-Erinnerung
+AGENDA_REMINDER_PERMISSIONS = ("agenda.create", "agenda.propose", "agenda.manage", "faction.manage")
 
 # Freigabe-Hinweise: Standardvorlauf vor dem geplanten Versandzeitpunkt
 RELEASE_NOTICE_FIRST_HOURS = 24
 RELEASE_NOTICE_FINAL_HOURS = 3
+
+# TOP-Erinnerung höchstens zwei Wochen vor dem geplanten Versand
+AGENDA_REMINDER_MAX_HOURS = 24 * 14
+
+# Ein Anspruch auf den Erstversand, der so lange nicht abgeschlossen ist, gilt als hängend (Prozess beendet)
+INVITATION_CLAIM_STALE_MINUTES = 30
 
 
 # =============================================================================
@@ -76,13 +102,61 @@ def get_invitation_settings(organization) -> dict:
     except (TypeError, ValueError):
         pass
 
+    result["agenda_reminder_enabled"] = faction_settings.get("agenda_reminder_enabled") is True
+    try:
+        hours = int(faction_settings.get("agenda_reminder_hours", result["agenda_reminder_hours"]))
+        result["agenda_reminder_hours"] = max(1, min(hours, AGENDA_REMINDER_MAX_HOURS))
+    except (TypeError, ValueError):
+        pass
+
     return result
 
 
+def fixed_dispatch_at(start: datetime, weekday: int, at_time) -> datetime:
+    """
+    Letzter Zeitpunkt „Wochentag, Uhrzeit“ vor Sitzungsbeginn (Issue #871).
+
+    Gerechnet in der Ortszeit der Installation (``TIME_ZONE``), damit „freitags 18 Uhr“ auch über
+    die Zeitumstellung hinweg 18 Uhr Ortszeit bleibt. Fällt der Zeitpunkt auf den Sitzungstag und
+    liegt nicht vor dem Beginn, gilt derselbe Wochentag eine Woche früher.
+    """
+    tz = timezone.get_default_timezone()
+    local_start = timezone.localtime(start, tz)
+    day = local_start.date() - timedelta(days=(local_start.weekday() - weekday) % 7)
+    candidate = timezone.make_aware(datetime.combine(day, at_time), tz)
+    if candidate >= start:
+        candidate = timezone.make_aware(datetime.combine(day - timedelta(days=7), at_time), tz)
+    return candidate
+
+
+def auto_invite_schedule(meeting):
+    """Reihe der Sitzung, wenn sie automatisch zum festen Zeitpunkt einlädt (Issue #871), sonst ``None``."""
+    if meeting.schedule_id is None:
+        return None
+    schedule = meeting.schedule
+    return schedule if schedule.auto_invite_ready else None
+
+
 def invitation_dispatch_at(meeting, settings: dict | None = None):
-    """Geplanter Versandzeitpunkt (Sitzungsbeginn minus Vorlauf)."""
+    """Geplanter Versandzeitpunkt: fester Zeitpunkt der Reihe, sonst Sitzungsbeginn minus Vorlauf."""
+    schedule = auto_invite_schedule(meeting)
+    if schedule is not None:
+        return fixed_dispatch_at(meeting.start, schedule.auto_invite_weekday, schedule.auto_invite_time)
     settings = settings or get_invitation_settings(meeting.organization)
     return meeting.start - timedelta(hours=settings["invitation_lead_hours"])
+
+
+def dispatches_automatically(meeting, settings: dict | None = None) -> bool:
+    """
+    Geht die Einladung zum Versandzeitpunkt ohne weiteren Klick raus?
+
+    Ja bei einer Reihe mit automatischer Einladung (auch im Freigabe-Modus der Organisation), bei
+    Versandart „automatisch“ und nach erteilter Freigabe.
+    """
+    if auto_invite_schedule(meeting) is not None:
+        return True
+    settings = settings or get_invitation_settings(meeting.organization)
+    return settings["invitation_dispatch"] == "automatic" or meeting.invitation_released_at is not None
 
 
 def get_board_members(organization):
@@ -163,7 +237,7 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
     Returns:
         Anzahl versendeter E-Mails.
     """
-    from .services import FactionMeetingEmailService
+    from .services import FactionMeetingEmailService, invitation_attendances
 
     settings = get_invitation_settings(meeting.organization)
     service = FactionMeetingEmailService()
@@ -175,9 +249,10 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
     _notify_invitations(meeting, update=update)
 
     if not update:
-        # Opt-out: alle eingeladenen Mitglieder gelten als angemeldet
-        if settings["invitation_mode"] == "opt_out":
-            for attendance in meeting.attendances.filter(status="invited", membership__isnull=False):
+        # Opt-out: alle eingeladenen Mitglieder gelten als angemeldet – nur mit Zu- und Absagen
+        # (Issue #871); ohne sie bleibt die Teilnahme offen, bis die Anwesenheit erfasst wird
+        if settings["invitation_mode"] == "opt_out" and meeting.rsvp_enabled:
+            for attendance in invitation_attendances(meeting):
                 attendance.status = "confirmed"
                 attendance.save(update_fields=["status", "updated_at"])
 
@@ -188,6 +263,164 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
         meeting.save(update_fields=["invitation_sent", "invitation_sent_at", "status", "updated_at"])
 
     return sent_count
+
+
+def dispatch_invitations_once(meeting, now=None) -> int | None:
+    """
+    Erstversand genau einmal (Issue #871): beansprucht den Versand vor dem Senden in der Datenbank.
+
+    Der Anspruch trägt seinen Zeitpunkt (``invitation_claimed_at``). Endet der Prozess zwischen Anspruch
+    und Abschluss, gibt der Einladungslauf ihn nach ``INVITATION_CLAIM_STALE_MINUTES`` frei.
+
+    Returns:
+        Anzahl versendeter E-Mails, ``None`` wenn schon ein anderer Lauf oder Klick verschickt hat.
+    """
+    from .models import FactionMeeting
+
+    claimed = FactionMeeting.objects.filter(pk=meeting.pk, invitation_sent=False).update(
+        invitation_sent=True, invitation_claimed_at=now or timezone.now()
+    )
+    if not claimed:
+        return None
+    try:
+        return dispatch_invitations(meeting)
+    except Exception:
+        # Versand als Ganzes gescheitert (z. B. PDF): Anspruch zurückgeben, der nächste Lauf versucht es erneut
+        FactionMeeting.objects.filter(pk=meeting.pk, invitation_sent_at__isnull=True).update(
+            invitation_sent=False, invitation_claimed_at=None
+        )
+        raise
+
+
+def release_stale_invitation_claims(now) -> int:
+    """
+    Hängende Ansprüche auf den Erstversand freigeben (Issue #871).
+
+    Hängend heißt: beansprucht vor mehr als ``INVITATION_CLAIM_STALE_MINUTES`` Minuten, aber nie
+    abgeschlossen (``invitation_sent_at`` leer, Status noch „Entwurf“ oder „Geplant“) – der Prozess
+    wurde etwa beim Deploy oder wegen Speichermangels beendet. Ohne Freigabe bliebe die Sitzung ohne
+    Einladung stehen, weil der Lauf nur unversandte Sitzungen betrachtet. Nach der Freigabe versendet
+    der Lauf erneut an alle Eingeladenen; wer vor dem Abbruch schon eine Mail bekam, erhält sie doppelt.
+    Ansprüche aus Versionen vor diesem Feld (``invitation_claimed_at`` leer) bleiben unberührt.
+
+    Returns:
+        Anzahl freigegebener Ansprüche.
+    """
+    from .models import FactionMeeting
+
+    stale = FactionMeeting.objects.filter(
+        invitation_sent=True,
+        invitation_sent_at__isnull=True,
+        invitation_claimed_at__lt=now - timedelta(minutes=INVITATION_CLAIM_STALE_MINUTES),
+        status__in=["draft", "planned"],
+        start__gt=now,
+    )
+    released = 0
+    for meeting_id, claimed_at in stale.values_list("pk", "invitation_claimed_at"):
+        # Bedingt: nur genau diesen Anspruch zurückgeben, falls der Versand doch noch abschließt
+        if FactionMeeting.objects.filter(
+            pk=meeting_id, invitation_sent_at__isnull=True, invitation_claimed_at=claimed_at
+        ).update(invitation_sent=False, invitation_claimed_at=None):
+            logger.warning(
+                "Einladungsversand nicht abgeschlossen (meeting=%s, beansprucht %s): Anspruch freigegeben, "
+                "der Lauf versendet erneut",
+                meeting_id,
+                claimed_at.isoformat(),
+            )
+            released += 1
+    return released
+
+
+def _claim_timestamp(meeting, field: str, now) -> bool:
+    """Zeitstempel ``field`` setzen, falls noch leer (bedingtes UPDATE); True, wenn dieser Aufruf ihn bekam."""
+    from .models import FactionMeeting
+
+    claimed = FactionMeeting.objects.filter(pk=meeting.pk, **{f"{field}__isnull": True}).update(**{field: now})
+    if claimed:
+        setattr(meeting, field, now)
+    return bool(claimed)
+
+
+def _release_timestamp(meeting, field: str, now) -> None:
+    """Anspruch zurückgeben (nur den eigenen Zeitstempel)."""
+    from .models import FactionMeeting
+
+    FactionMeeting.objects.filter(pk=meeting.pk, **{field: now}).update(**{field: None})
+    setattr(meeting, field, None)
+
+
+# =============================================================================
+# Erinnerung zum Eintragen von TOPs (Issue #871)
+# =============================================================================
+
+
+def agenda_reminder_recipients(meeting) -> list:
+    """Eingeladene Mitglieder (ohne Gäste und Absagen), die TOPs eintragen oder vorschlagen dürfen."""
+    attendances = (
+        meeting.attendances.filter(membership__isnull=False, membership__is_active=True, membership__is_guest=False)
+        .exclude(status="declined")
+        .select_related("membership__user", "membership__organization")
+    )
+    recipients = []
+    for attendance in attendances:
+        membership = attendance.membership
+        if any(membership.has_permission(code) for code in AGENDA_REMINDER_PERMISSIONS):
+            recipients.append(membership)
+    return recipients
+
+
+def send_agenda_reminder(meeting, dispatch_at) -> int:
+    """
+    Erinnerung zum Eintragen von TOPs verschicken (über den Versandweg der Organisation).
+
+    Die Mail nennt die bisherige Tagesordnung – den nichtöffentlichen Teil nur für Vereidigte – und den
+    geplanten Versand der Einladung.
+
+    Returns:
+        Anzahl versendeter E-Mails.
+    """
+    from apps.common import mail
+    from apps.common.email import render_email
+
+    from .services import FactionMeetingEmailService
+    from .visibility import can_view_internal
+
+    meeting_url = FactionMeetingEmailService().get_meeting_url(meeting)
+    active = meeting.agenda_items.filter(proposal_status="active", parent__isnull=True).order_by("order", "number")
+    public_items = list(active.filter(visibility="public"))
+    internal_items = list(active.filter(visibility="internal"))
+    local_dispatch = timezone.localtime(dispatch_at, timezone.get_default_timezone())
+
+    sent = 0
+    for membership in agenda_reminder_recipients(meeting):
+        user = membership.user
+        if not user.email:
+            continue
+        context = {
+            "meeting": meeting,
+            "organization": meeting.organization,
+            "user": user,
+            "dispatch_at": local_dispatch,
+            "public_agenda_items": public_items,
+            "internal_agenda_items": internal_items if can_view_internal(membership) else [],
+            "meeting_url": meeting_url,
+        }
+        try:
+            html_body, text_body = render_email("work/faction/email/agenda_reminder.html", context)
+            if mail.send(
+                kind="work.fraktion.top_erinnerung",
+                organization=meeting.organization,
+                subject=f"TOPs eintragen: {meeting.title}",
+                body=text_body,
+                html_body=html_body,
+                to=[user.email],
+                fail_silently=True,
+            ):
+                sent += 1
+        except Exception:
+            # Eine Adresse darf die übrigen nicht aufhalten; das Log nennt keine Empfänger
+            logger.exception("TOP-Erinnerung nicht versendet (meeting=%s)", meeting.id)
+    return sent
 
 
 def _notify_invitations(meeting, *, update: bool) -> None:
@@ -201,10 +434,9 @@ def _notify_invitations(meeting, *, update: bool) -> None:
         from apps.work.notifications.models import NotificationType
         from apps.work.notifications.services import NotificationHub
 
-        if update:
-            attendances = meeting.attendances.filter(membership__isnull=False).exclude(status="declined")
-        else:
-            attendances = meeting.attendances.filter(status="invited", membership__isnull=False)
+        from .services import invitation_attendances
+
+        attendances = invitation_attendances(meeting, update=update)
         recipients = [a.membership for a in attendances.select_related("membership__user")]
         if not recipients:
             return
@@ -252,7 +484,7 @@ def release_invitations(meeting, membership) -> bool:
 
     settings = get_invitation_settings(meeting.organization)
     if timezone.now() >= invitation_dispatch_at(meeting, settings):
-        dispatch_invitations(meeting)
+        dispatch_invitations_once(meeting)
     return True
 
 
@@ -346,18 +578,24 @@ def _send_release_notice(meeting, dispatch_at, *, final: bool) -> int:
 
 def run_faction_invitation_pass(now=None) -> dict:
     """
-    Periodischer Einladungslauf (Issue #62).
+    Periodischer Einladungslauf (Issues #62, #871).
 
     - Versandart "automatic": Einladungen werden zum konfigurierten
       Vorlaufzeitpunkt automatisch versendet (einmalig je Sitzung).
+    - Reihe mit automatischer Einladung: Versand zum festen Zeitpunkt der
+      Reihe, ohne Freigabe (auch im Freigabe-Modus der Organisation).
     - Versandart "approval": Vorstand/Vorsitz erhalten 24 h und 3 h vor dem
       geplanten Versandzeitpunkt einen Freigabe-Hinweis (je einmal);
       versendet wird erst nach Freigabe.
+    - TOP-Erinnerung (falls eingeschaltet): einmal je Sitzung im Fenster vor
+      dem geplanten Versand.
 
-    Ein Cache-Lock verhindert parallele Läufe (mehrere Worker/Prozesse).
+    Ein Cache-Lock verhindert parallele Läufe (mehrere Worker/Prozesse); den
+    Erstversand und die TOP-Erinnerung sichert zusätzlich ein Anspruch in der
+    Datenbank ab (genau einmal).
 
     Returns:
-        Statistik-Dict (dispatched, notices bzw. skipped-Grund).
+        Statistik-Dict (dispatched, notices, agenda_reminders bzw. skipped-Grund).
     """
     from django.core.cache import cache
 
@@ -369,24 +607,47 @@ def run_faction_invitation_pass(now=None) -> dict:
         return {"skipped": "lock"}
 
     try:
-        stats = {"meetings": 0, "dispatched": 0, "notices": 0}
+        stats = {
+            "meetings": 0,
+            "dispatched": 0,
+            "notices": 0,
+            "agenda_reminders": 0,
+            "released_claims": release_stale_invitation_claims(now),
+        }
         meetings = FactionMeeting.objects.filter(
             status__in=["draft", "planned"],
             invitation_sent=False,
             start__gt=now,
             organization__is_active=True,
-        ).select_related("organization")
+        ).select_related("organization", "schedule")
 
         for meeting in meetings:
             settings = get_invitation_settings(meeting.organization)
             dispatch_at = invitation_dispatch_at(meeting, settings)
 
-            if settings["invitation_dispatch"] == "automatic" or meeting.invitation_released_at is not None:
+            if _agenda_reminder_due(meeting, settings, dispatch_at, now) and _claim_timestamp(
+                meeting, "agenda_reminder_sent_at", now
+            ):
+                try:
+                    sent = send_agenda_reminder(meeting, dispatch_at)
+                except Exception:
+                    # Erneut versuchen im nächsten Lauf; die Einladung selbst soll davon nicht abhängen
+                    logger.exception("TOP-Erinnerung fehlgeschlagen (meeting=%s)", meeting.id)
+                    _release_timestamp(meeting, "agenda_reminder_sent_at", now)
+                else:
+                    from .audit import log_event
+
+                    log_event("agenda_reminder_sent", meeting, is_internal=False, changes={"empfaenger": sent})
+                    stats["agenda_reminders"] += 1
+
+            if dispatches_automatically(meeting, settings):
                 if now >= dispatch_at:
                     try:
-                        dispatch_invitations(meeting)
+                        sent_count = dispatch_invitations_once(meeting, now=now)
                     except Exception:
                         logger.exception("Automatischer Einladungsversand fehlgeschlagen (meeting=%s)", meeting.id)
+                        continue
+                    if sent_count is None:
                         continue
                     stats["meetings"] += 1
                     stats["dispatched"] += 1
@@ -418,12 +679,20 @@ def run_faction_invitation_pass(now=None) -> dict:
                 stats["meetings"] += 1
                 stats["notices"] += 1
 
-        if stats["dispatched"] or stats["notices"]:
+        if stats["dispatched"] or stats["notices"] or stats["agenda_reminders"]:
             logger.info(
-                "Fraktions-Einladungslauf: %d versendet, %d Freigabe-Hinweis(e)",
+                "Fraktions-Einladungslauf: %d versendet, %d Freigabe-Hinweis(e), %d TOP-Erinnerung(en)",
                 stats["dispatched"],
                 stats["notices"],
+                stats["agenda_reminders"],
             )
         return stats
     finally:
         cache.delete(_INVITATION_LOCK_KEY)
+
+
+def _agenda_reminder_due(meeting, settings: dict, dispatch_at, now) -> bool:
+    """TOP-Erinnerung fällig: eingeschaltet, noch nicht versandt und im Fenster vor dem geplanten Versand."""
+    if not settings["agenda_reminder_enabled"] or meeting.agenda_reminder_sent_at is not None:
+        return False
+    return dispatch_at - timedelta(hours=settings["agenda_reminder_hours"]) <= now < dispatch_at

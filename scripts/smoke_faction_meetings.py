@@ -237,11 +237,14 @@ resp = chair.post(
         "start_date": timezone.localtime(start1).strftime("%Y-%m-%d"),
         "start_time": timezone.localtime(start1).strftime("%H:%M"),
         "location": "Fraktionsbüro Raum 1",
+        # Zu- und Absagen sind standardmäßig aus (Issue #871); diese Sitzung prüft sie ausdrücklich
+        "rsvp_enabled": "on",
     },
 )
 check("Sitzung anlegen -> Redirect", resp.status_code == 302, f"got {resp.status_code}")
 meeting1 = FactionMeeting.objects.filter(organization=org, title="Fraktionssitzung Eins").first()
 check("Sitzung existiert", meeting1 is not None)
+check("Zu- und Absagen eingeschaltet", meeting1.rsvp_enabled is True)
 check("Anwesenheiten für alle Mitglieder", meeting1.attendances.count() == 4, str(meeting1.attendances.count()))
 approval1 = meeting1.agenda_items.filter(is_approval_item=True).first()
 check("Genehmigungs-TOP automatisch erstellt", approval1 is not None)
@@ -1091,6 +1094,8 @@ resp = chair.post(
         "title": "Freigabe-Sitzung K4",
         "start_date": timezone.localtime(start4).strftime("%Y-%m-%d"),
         "start_time": timezone.localtime(start4).strftime("%H:%M"),
+        # Opt-out wirkt nur mit Zu- und Absagen (Issue #871)
+        "rsvp_enabled": "on",
     },
 )
 meeting4 = FactionMeeting.objects.filter(organization=org, title="Freigabe-Sitzung K4").first()
@@ -1210,6 +1215,7 @@ check(
 check("Status nach Auto-Versand = invited", meeting6.status == "invited")
 optin_states = set(meeting6.attendances.filter(membership__isnull=False).values_list("status", flat=True))
 check("Opt-in: Status bleibt 'Eingeladen'", optin_states == {"invited"}, str(optin_states))
+check("Standard: Zu- und Absagen aus (Issue #871)", meeting6.rsvp_enabled is False)
 check(
     "Auto-Versand auditiert (invitation_sent)",
     FactionAuditLog.objects.filter(organization=org, action="invitation_sent", object_id=meeting6.id).exists(),

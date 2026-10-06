@@ -27,6 +27,18 @@ _REMINDER_LOCK_KEY = "faction:reminder:lock"
 _REMINDER_LOCK_TIMEOUT = 10 * 60
 
 
+def invitation_attendances(meeting, *, update: bool = False):
+    """
+    Teilnahmen, an die eine Einladung geht (Mail und In-App): Erstversand an alle Eingeladenen,
+    Aktualisierung an alle außer Absagen – jeweils nur aktive Mitglieder. Beim Deaktivieren bleiben
+    die Teilnahmen an schon angelegten Sitzungen stehen; sie dürfen keine Einladung mehr auslösen.
+    """
+    attendances = meeting.attendances.filter(membership__isnull=False, membership__is_active=True)
+    if update:
+        return attendances.exclude(status="declined")
+    return attendances.filter(status="invited")
+
+
 class FactionMeetingEmailService:
     """
     Service for sending faction meeting emails (Issue #59).
@@ -129,10 +141,7 @@ class FactionMeetingEmailService:
 
         Returns the count of successfully sent emails.
         """
-        if update:
-            attendances = meeting.attendances.filter(membership__isnull=False).exclude(status="declined")
-        else:
-            attendances = meeting.attendances.filter(status="invited", membership__isnull=False)
+        attendances = invitation_attendances(meeting, update=update)
 
         # Gastzugänge (nur freigegebene Dokumente) erhalten keine Einladungen zu Fraktionssitzungen
         attendances = attendances.exclude(membership__is_guest=True).select_related("membership__user")
@@ -190,6 +199,8 @@ class FactionMeetingEmailService:
             "is_update": update,
             "invitation_mode": invitation_mode,
             "is_opt_out": invitation_mode == "opt_out",
+            # Zu- und Absagen nur, wenn für die Sitzung eingeschaltet (Issue #871)
+            "rsvp_enabled": meeting.rsvp_enabled,
             "meeting_url": meeting_url,
         }
 
@@ -209,6 +220,7 @@ class FactionMeetingEmailService:
                 meeting_url=meeting_url,
                 update=update,
                 opt_out=invitation_mode == "opt_out",
+                rsvp=meeting.rsvp_enabled,
             )
 
         try:
@@ -236,7 +248,15 @@ class FactionMeetingEmailService:
             return False
 
     def _get_simple_invitation_text(
-        self, meeting, user, public_items=None, internal_items=None, meeting_url="", update=False, opt_out=False
+        self,
+        meeting,
+        user,
+        public_items=None,
+        internal_items=None,
+        meeting_url="",
+        update=False,
+        opt_out=False,
+        rsvp=False,
     ) -> str:
         """Generate simple text fallback for invitation email."""
         intro = (
@@ -281,15 +301,15 @@ class FactionMeetingEmailService:
             for item in internal_items:
                 lines.append(f"TOP {item.number}: {item.title}")
 
-        rsvp_line = (
-            "Du bist angemeldet. Falls du nicht teilnehmen kannst, sage bitte in der Sitzungsansicht ab (Absagen)."
-            if opt_out
-            else "Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen)."
-        )
+        if rsvp:
+            rsvp_line = (
+                "Du bist angemeldet. Falls du nicht teilnehmen kannst, sage bitte in der Sitzungsansicht ab (Absagen)."
+                if opt_out
+                else "Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen)."
+            )
+            lines.extend(["", rsvp_line])
         lines.extend(
             [
-                "",
-                rsvp_line,
                 "",
                 "Viele Grüße,",
                 f"{meeting.organization.name}",
@@ -302,15 +322,18 @@ class FactionMeetingEmailService:
 
     def send_reminder(self, meeting, hours_before: int = 24) -> int:
         """
-        Send reminder emails to confirmed attendees.
+        Erinnerung verschicken: mit Zu- und Absagen an Zusagen und Vielleicht-Antworten, ohne sie
+        (Issue #871) an alle eingeladenen Mitglieder außer Gästen und Absagen.
 
         Returns the count of successfully sent emails.
         """
-        attendances = list(
-            meeting.attendances.filter(status__in=["confirmed", "tentative"], membership__isnull=False).select_related(
-                "membership__user"
-            )
-        )
+        # Nur aktive Mitglieder: Teilnahmen an schon angelegten Sitzungen bleiben beim Deaktivieren stehen
+        active = meeting.attendances.filter(membership__isnull=False, membership__is_active=True)
+        if meeting.rsvp_enabled:
+            recipients = active.filter(status__in=["confirmed", "tentative"])
+        else:
+            recipients = active.filter(membership__is_guest=False).exclude(status__in=["declined", "absent", "excused"])
+        attendances = list(recipients.select_related("membership__user"))
         sent_count = 0
 
         for attendance in attendances:

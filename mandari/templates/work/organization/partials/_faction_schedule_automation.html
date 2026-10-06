@@ -1,0 +1,25 @@
+{# Felder der Automatik einer Sitzungsreihe (Issue #871): Zu- und Absagen, automatische Einladung zum festen Zeitpunkt #}
+{# Kontext: schedule (leer bei neuer Reihe), weekday_choices; ohne eigenes <form>. IDs je Reihe, weil mehrere Reihen auf der Seite stehen #}
+{% with key=schedule.id|default:"neu" %}
+<div class="space-y-3">
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <c-form.checkbox name="rsvp_enabled" id="rsvp_enabled_{{ key }}" label="Zu- und Absagen sammeln"
+                         checked="{{ schedule.rsvp_enabled|yesno:'1,' }}" />
+        <c-form.checkbox name="auto_invite" id="auto_invite_{{ key }}" label="Automatisch einladen"
+                         checked="{{ schedule.auto_invite|yesno:'1,' }}" />
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <c-form.select name="auto_invite_weekday" id="auto_invite_weekday_{{ key }}" label="Einladung am" placeholder="Wochentag wählen">
+            {% for value, label in weekday_choices %}
+            <option value="{{ value }}" {% if schedule.auto_invite_weekday == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </c-form.select>
+        <c-form.field name="auto_invite_time" id="auto_invite_time_{{ key }}" type="time" label="Einladung um"
+                      value="{{ schedule.auto_invite_time|time:'H:i' }}" />
+    </div>
+    <p class="text-xs text-gray-500 dark:text-gray-400">
+        Beides standardmäßig aus. Die automatische Einladung geht am letzten gewählten Wochentag vor der Sitzung zur Uhrzeit raus,
+        ohne Freigabe und mit der Tagesordnung von diesem Zeitpunkt.
+    </p>
+</div>
+{% endwith %}

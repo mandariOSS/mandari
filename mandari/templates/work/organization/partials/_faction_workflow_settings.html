@@ -99,7 +99,7 @@
 
     <div class="space-y-4">
         <c-form.select name="invitation_mode" label="Teilnahme-Modus"
-                       help='Im Opt-out-Modus stehen alle Eingeladenen nach dem Versand auf „Zugesagt" und können absagen.'>
+                       help='Gilt für Sitzungen mit Zu- und Absagen (je Sitzung bzw. Sitzungsreihe einschaltbar, standardmäßig aus). Im Opt-out-Modus stehen alle Eingeladenen nach dem Versand auf „Zugesagt" und können absagen.'>
             <option value="opt_in" {% if faction_settings.invitation_mode == "opt_in" %}selected{% endif %}>Opt-in — Teilnehmende melden sich an (Zusagen)</option>
             <option value="opt_out" {% if faction_settings.invitation_mode == "opt_out" %}selected{% endif %}>Opt-out — Teilnehmende gelten als angemeldet und melden sich ab</option>
         </c-form.select>
@@ -118,7 +118,7 @@
         </div>
 
         <c-form.select name="invitation_dispatch" label="Versandart"
-                       help="Im Freigabe-Modus werden Vorstand/Vorsitz 24 h und 3 h vor dem geplanten Versandzeitpunkt benachrichtigt (in-App und E-Mail; E-Mails in den Benachrichtigungseinstellungen abschaltbar). Der stellv. Vorsitz darf direkt freigeben — dokumentiert wird, wer freigegeben hat.">
+                       help="Im Freigabe-Modus werden Vorstand/Vorsitz 24 h und 3 h vor dem geplanten Versandzeitpunkt benachrichtigt (in-App und E-Mail; E-Mails in den Benachrichtigungseinstellungen abschaltbar). Der stellv. Vorsitz darf direkt freigeben — dokumentiert wird, wer freigegeben hat. Eine Sitzungsreihe kann stattdessen automatisch zu einem festen Zeitpunkt einladen (siehe Sitzungsreihen).">
             <option value="automatic" {% if faction_settings.invitation_dispatch == "automatic" %}selected{% endif %}>Automatisch zum Vorlaufzeitpunkt</option>
             <option value="approval" {% if faction_settings.invitation_dispatch == "approval" %}selected{% endif %}>Erst nach Freigabe durch Vorstand/Vorsitz</option>
         </c-form.select>
