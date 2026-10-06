@@ -1,0 +1,44 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Personen im neuen Erscheinungsbild (Issues #852, #853; Recherche › Personen): Suche nach Name und E-Mail (Parameter
+q, page wie bisher), je Person Funktion im Rat, Kontakt und „Für die Fraktion“: ob ein Mitglied der Organisation mit
+ihr verknüpft ist (mit members.view). Ab 1.280 px zwei Spalten. Die bisherige Seite bleibt work/ris/persons.html.
+{% endcomment %}
+
+{% block page_title %}Personen{% endblock %}
+
+{% block header_title %}Personen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{% if body %}{{ paginator.count }} Person{{ paginator.count|pluralize:"en" }} aus {{ body.get_display_name }}{% if search_query %} für „{{ search_query }}“{% endif %}, nach Nachnamen.{% endif %}</p>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<form method="get" role="search" class="flex flex-wrap items-center gap-2">
+    <label for="personen-suche" class="sr-only">Person suchen</label>
+    <input id="personen-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Name oder E-Mail" class="ris-feld w-full sm:w-80">
+    <button type="submit" class="h-9 px-3 rounded-md bg-primary-600 hover:bg-primary-700 text-sm font-medium text-white">Suchen</button>
+    {% if search_query %}<a href="{% url 'work:ris_persons' org_slug=organization.slug %}" class="text-sm ris-link">Zurücksetzen</a>{% endif %}
+</form>
+
+{% if persons %}
+<ul class="mt-4 xl:grid xl:grid-cols-2 xl:gap-x-12 min-[1800px]:grid-cols-3 xl:[&>li:nth-child(2)]:border-t-0 min-[1800px]:[&>li:nth-child(3)]:border-t-0" data-testid="personenliste">
+    {% for person in persons %}
+    <li class="ris-zeile flex items-start gap-3">
+        {% include "components/person_avatar.html" with person=person size="sm" %}
+        <div class="min-w-0 flex-1">
+            <a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=person.id %}" class="ris-titel">{{ person.display_name }}</a>
+            {% if person.council_role or person.konto %}<p class="mt-0.5 ris-meta">{{ person.council_role|default:"" }}{% if person.council_role and person.konto %} · {% endif %}{% if person.konto %}Ihre Organisation{% endif %}</p>{% endif %}
+            {% if person.email %}<p class="mt-1.5 text-sm"><a href="mailto:{{ person.email }}" class="ris-link break-all">{{ person.email }}</a></p>{% endif %}
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% include "work/ris/neu/_seiten.html" with seite=persons %}
+{% else %}
+<p class="mt-6 ris-meta">{% if search_query %}Für „{{ search_query }}“ gibt es keine Person. <a href="{% url 'work:ris_persons' org_slug=organization.slug %}" class="ris-link">Zurücksetzen</a>{% else %}Es sind noch keine Personen vorhanden.{% endif %}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

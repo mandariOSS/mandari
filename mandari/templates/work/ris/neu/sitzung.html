@@ -1,0 +1,109 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Sitzung eines Gremiums im neuen Erscheinungsbild (Issues #852, #853): Kopf mit Termin, Ort und einer Hauptaktion
+(„Sitzung vorbereiten“ mit meetings.prepare), Tagesordnung mit allen Vorlagen je Punkt und je Punkt „Für die
+Fraktion“ (Position, Notizen), daneben Vorbereitungsstand, Dokumente zur Sitzung, Gremien und Angaben.
+Kontext: apps/work/ris/neu.sitzung; die bisherige Seite bleibt work/ris/meeting_detail.html.
+{% endcomment %}
+
+{% block page_title %}{% if meeting %}{{ meeting.get_display_name|truncatechars:50 }}{% else %}Sitzung{% endif %}{% endblock %}
+{% block brotkrumen_aktuell %}{% if meeting %}<c-insight.brotkrume>{{ meeting.get_display_name|truncatechars:60 }}{% if meeting.start %}, {{ meeting.start|date:"d.m.Y" }}{% endif %}</c-insight.brotkrume>{% endif %}{% endblock %}
+
+{% block work_header %}
+<header class="work-page-header">
+    <c-insight.zurueck href="{% url 'work:ris_meetings' org_slug=organization.slug %}">Sitzungen der Gremien</c-insight.zurueck>
+    {% if meeting %}
+    <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <div class="min-w-0">
+            <h1 class="work-page-title{% if meeting.cancelled %} line-through{% endif %}">{{ meeting.get_display_name }}</h1>
+            <p class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+                {% if meeting.start %}<span>{{ meeting.start|date:"l, j. F Y" }}, {{ meeting.start|date:"H:i" }}{% if meeting.end %}–{{ meeting.end|date:"H:i" }}{% endif %} Uhr</span>{% endif %}
+                {% if meeting.location_name %}<span>{{ meeting.location_name }}</span>{% endif %}
+                {% if meeting.cancelled %}<span class="font-semibold text-red-700 dark:text-red-400">Abgesagt</span>{% elif meeting.meeting_state %}<span>{{ meeting.meeting_state|capfirst }}</span>{% endif %}
+            </p>
+        </div>
+        {% if darf_vorbereiten and not meeting.cancelled %}<c-ui.button href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}">Sitzung vorbereiten</c-ui.button>{% endif %}
+    </div>
+    {% else %}
+    <h1 class="work-page-title">Sitzung</h1>
+    {% endif %}
+</header>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <section aria-labelledby="tagesordnung-titel" class="min-w-0">
+        <h2 id="tagesordnung-titel" class="ris-h2">Tagesordnung{% if tagesordnung %} <span class="font-normal text-gray-600 dark:text-gray-400">· {{ tagesordnung|length }} Punkt{{ tagesordnung|length|pluralize:"e" }}</span>{% endif %}</h2>
+        {% if tagesordnung %}
+        <ol class="mt-2" data-testid="tagesordnung">
+            {% for e in tagesordnung %}
+            <li class="ris-zeile grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3">
+                <span class="tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ e.item.number|default:forloop.counter }}</span>
+                <div class="min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white break-words">{{ e.item.name|default:"Tagesordnungspunkt" }}</p>
+                    {% if not e.item.public %}<p class="ris-meta">Nichtöffentlich</p>{% endif %}
+                    {% if e.item.result %}<p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">Ergebnis: {{ e.item.result }}</p>{% endif %}
+                    {% for paper in e.papers %}
+                    <p class="mt-1 text-sm"><a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}" class="ris-link break-words">{{ paper.name|default:"Vorgang" }}</a>{% if paper.reference %}<span class="ris-meta"> · {{ paper.reference }}</span>{% endif %}</p>
+                    {% endfor %}
+                    {% if e.position or e.notizen %}
+                    <p class="mt-1.5 text-sm text-gray-800 dark:text-gray-200">Für die Fraktion: {% if e.position %}{% include "work/ris/neu/_position.html" with position=e.position %}{% endif %}{% if e.position and e.notizen %} · {% endif %}{% if e.notizen %}{{ e.notizen }} Notiz{{ e.notizen|pluralize:"en" }}{% endif %}</p>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <p class="mt-3 ris-meta">Zu dieser Sitzung ist keine Tagesordnung veröffentlicht.</p>
+        {% endif %}
+    </section>
+
+    <aside class="min-w-0 space-y-8" aria-label="Für die Fraktion und Angaben">
+        <section aria-labelledby="fraktion-titel" class="ris-fraktion">
+            <h2 id="fraktion-titel" class="ris-h2">Für die Fraktion</h2>
+            {% if darf_sitzungen and stand %}
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200">{% if stand.vorlagen %}Positionen zu {{ stand.positionen }} von {{ stand.vorlagen }} Vorlage{{ stand.vorlagen|pluralize:"n" }} auf der Tagesordnung.{% else %}Auf der Tagesordnung steht keine Vorlage.{% endif %}</p>
+            {% endif %}
+            {% if dokumente %}
+            <ul class="mt-3 space-y-2 text-sm">
+                {% for d in dokumente %}
+                <li><a href="{{ d.url }}" class="ris-link break-words">{{ d.titel }}</a><span class="ris-meta"> · {{ d.status }}</span></li>
+                {% endfor %}
+            </ul>
+            {% elif not stand %}
+            <p class="mt-2 ris-meta">Zu dieser Sitzung gibt es noch keine Vorbereitung und keine Dokumente der Fraktion.</p>
+            {% endif %}
+            <p class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                {% if darf_vorbereiten and not meeting.cancelled %}<a href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}" class="ris-link">Vorbereitung öffnen</a>{% endif %}
+                {% if darf_dokument_anlegen %}<a href="{% url 'work:document_create' org_slug=organization.slug %}" class="ris-link">Neues Dokument</a>{% endif %}
+            </p>
+        </section>
+
+        {% if organizations %}
+        <section aria-labelledby="gremien-titel">
+            <h2 id="gremien-titel" class="ris-h2">Gremien</h2>
+            <ul class="mt-2 space-y-1 text-sm">
+                {% for org in organizations %}
+                <li><a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}" class="ris-link">{{ org.name|default:org.short_name }}</a></li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        <section aria-labelledby="angaben-titel">
+            <h2 id="angaben-titel" class="ris-h2">Angaben</h2>
+            <dl class="mt-2 ris-angaben">
+                {% if meeting.start %}<dt>Datum</dt><dd class="tabular-nums">{{ meeting.start|date:"l, d.m.Y" }}</dd>
+                <dt>Uhrzeit</dt><dd class="tabular-nums">{{ meeting.start|date:"H:i" }}{% if meeting.end %}–{{ meeting.end|date:"H:i" }}{% endif %} Uhr</dd>{% endif %}
+                {% if meeting.location_name %}<dt>Ort</dt><dd>{{ meeting.location_name }}</dd>{% endif %}
+                {% if meeting.oparl_modified %}<dt>Stand der Quelle</dt><dd class="tabular-nums">{{ meeting.oparl_modified|date:"d.m.Y, H:i" }} Uhr</dd>{% endif %}
+            </dl>
+            <p class="mt-3 text-sm"><a href="{% url 'work:meetings_calendar' org_slug=organization.slug %}" class="ris-link">Im Kalender anzeigen</a></p>
+        </section>
+    </aside>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Person im neuen Erscheinungsbild (Issues #852, #853): Mitgliedschaften (ehemalige aufklappbar) statt Reitern, daneben
+„Für die Fraktion“ (Konto in der Organisation, wenn verknüpft, mit members.view) und Informationen und Kontakt.
+Kontext: apps/work/ris/neu.person; die bisherige Seite bleibt work/ris/person_detail.html.
+{% endcomment %}
+
+{% block page_title %}{% if person %}{{ person.name|default:person.display_name }}{% else %}Person{% endif %}{% endblock %}
+{% block brotkrumen_aktuell %}{% if person %}<c-insight.brotkrume>{{ person.display_name|truncatechars:60 }}</c-insight.brotkrume>{% endif %}{% endblock %}
+
+{% block work_header %}
+<header class="work-page-header">
+    <c-insight.zurueck href="{% url 'work:ris_persons' org_slug=organization.slug %}">Personen</c-insight.zurueck>
+    {% if person %}
+    <div class="flex items-center gap-4">
+        {% include "components/person_avatar.html" with person=person size="md" %}
+        <div class="min-w-0">
+            <h1 class="work-page-title">{{ person.display_name }}</h1>
+            <p class="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+                {% if person.title %}<span>{{ person.title }}</span>{% endif %}
+                {% for m in active_memberships %}{% if m.role %}<span>{{ m.role }}{% if m.organization.short_name or m.organization.name %}, {{ m.organization.short_name|default:m.organization.name }}{% endif %}</span>{% endif %}{% endfor %}
+            </p>
+        </div>
+    </div>
+    {% else %}
+    <h1 class="work-page-title">Person</h1>
+    {% endif %}
+</header>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <section aria-labelledby="mitgliedschaften-titel" class="min-w-0">
+        <h2 id="mitgliedschaften-titel" class="ris-h2">Mitgliedschaften</h2>
+        {% if active_memberships %}
+        <ul class="mt-2 xl:grid xl:grid-cols-2 xl:gap-x-12 xl:[&>li:nth-child(2)]:border-t-0" data-testid="person-mitgliedschaften">
+            {% for m in active_memberships %}
+            <li class="ris-zeile">
+                <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=m.organization.id %}" class="ris-titel">{{ m.organization.name|default:m.organization.short_name }}</a>
+                <p class="mt-0.5 ris-meta">{{ m.role|default:"Mitglied" }}{% if m.start_date %} · seit {{ m.start_date|date:"d.m.Y" }}{% endif %}</p>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mt-2 ris-meta">Keine aktiven Mitgliedschaften.</p>
+        {% endif %}
+        {% if past_memberships %}
+        <details class="mt-4">
+            <summary class="cursor-pointer text-sm ris-link">Ehemalige Mitgliedschaften ({{ past_memberships|length }})</summary>
+            <ul class="mt-2 xl:grid xl:grid-cols-2 xl:gap-x-12 xl:[&>li:nth-child(2)]:border-t-0">
+                {% for m in past_memberships %}
+                <li class="ris-zeile">
+                    <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=m.organization.id %}" class="ris-titel">{{ m.organization.name|default:m.organization.short_name }}</a>
+                    <p class="mt-0.5 ris-meta">{{ m.role|default:"Mitglied" }}{% if m.end_date %} · bis {{ m.end_date|date:"d.m.Y" }}{% endif %}</p>
+                </li>
+                {% endfor %}
+            </ul>
+        </details>
+        {% endif %}
+    </section>
+
+    <aside class="min-w-0 space-y-8" aria-label="Für die Fraktion und Kontakt">
+        <section aria-labelledby="fraktion-titel" class="ris-fraktion">
+            <h2 id="fraktion-titel" class="ris-h2">Für die Fraktion</h2>
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200">{% if konto %}Mitglied Ihrer Organisation: Das Konto „{{ konto }}“ ist mit dieser Person verknüpft.{% elif darf_mitglieder %}Kein Mitglied Ihrer Organisation ist mit dieser Person verknüpft.{% else %}Ob diese Person zu Ihrer Organisation gehört, sehen Sie mit dem Recht, die Mitgliederliste anzuzeigen.{% endif %}</p>
+        </section>
+
+        <section aria-labelledby="kontakt-titel">
+            <h2 id="kontakt-titel" class="ris-h2">Informationen und Kontakt</h2>
+            <dl class="mt-2 ris-angaben">
+                {% if person.family_name %}<dt>Nachname</dt><dd>{{ person.family_name }}</dd>{% endif %}
+                {% if person.given_name %}<dt>Vorname</dt><dd>{{ person.given_name }}</dd>{% endif %}
+                {% if person.title %}<dt>Titel</dt><dd>{{ person.title }}</dd>{% endif %}
+                {% if person.email %}<dt>E-Mail</dt><dd><a href="mailto:{{ person.email }}" class="ris-link break-all">{{ person.email }}</a></dd>{% endif %}
+                {% if person.phone %}<dt>Telefon</dt><dd><a href="tel:{{ person.phone }}" class="ris-link">{{ person.phone }}</a></dd>{% endif %}
+                <dt>Aktive Gremien</dt><dd class="tabular-nums">{{ active_memberships|length }}</dd>
+                {% if past_memberships %}<dt>Ehemalige</dt><dd class="tabular-nums">{{ past_memberships|length }}</dd>{% endif %}
+            </dl>
+        </section>
+    </aside>
+</div>
+{% endif %}
+{% endblock %}
