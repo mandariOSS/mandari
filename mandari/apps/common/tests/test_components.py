@@ -212,6 +212,8 @@ class TestRahmen:
             '<c-insight.nav-link href="/k/" icon="map" area="karte">Karte</c-insight.nav-link>', insight_area="karte"
         )
         assert 'aria-current="page"' in html and "rahmen-eintrag" in html
+        # Beschriftung wie vor #852: die Navigationstests von Insight lesen sie über genau diese Klassen
+        assert '<span class="flex-1 min-w-0 truncate">Karte</span>' in html and "rahmen-label" not in html
         tab = render('<c-insight.tab href="/k/" icon="map" area="karte">Karte</c-insight.tab>', insight_area="karte")
         assert 'aria-current="page"' in tab and "bg-primary-100" in tab
         blatt = render(
