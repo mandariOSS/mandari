@@ -169,7 +169,7 @@ def test_mitglied_ohne_vorbereitungsrecht_bekommt_keinen_vorbereiten_link(
     """Parteimitglied (Standardrolle ohne „meetings.prepare“): Start ohne Link in die Vorbereitung (dort 403)."""
     from apps.common.permissions import DEFAULT_ROLES
 
-    rechte = DEFAULT_ROLES["party_member"]["permissions"]
+    rechte = cast(list[str], DEFAULT_ROLES["party_member"]["permissions"])
     assert "meetings.prepare" not in rechte and "meetings.view" in rechte
     mitglied = make_member(welt.org, rechte, email="parteimitglied@example.org")
     mitglied.oparl_committees.add(welt.ausschuss)
