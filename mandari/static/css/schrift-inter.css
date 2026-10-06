@@ -2,7 +2,8 @@
 /*
  * Schrift Inter aus dem eigenen Ursprung (keine Anfrage an Dritte), dieselben Dateien wie im Bürgerportal
  * (templates/base_insight.html). Relative Adressen: Der Manifest-Speicher schreibt sie beim collectstatic auf
- * die Namen mit Inhalts-Hash um. Work bindet die Datei in templates/work/base_work.html ein (Issue #851).
+ * die Namen mit Inhalts-Hash um. Der bisherige Rahmen von Work bindet die Datei in
+ * templates/work/base_work_alt.html ein (Issue #851).
  */
 @font-face {
     font-family: 'Inter';

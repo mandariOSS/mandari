@@ -8,8 +8,9 @@
 
 {% include "work/partials/hinweisband.html" %}
 
-{# Stufe 0 (Issue #851): ohne Farbchips, Farbknöpfe und Datumskacheln; Rollen, Gremien und Filter als Text #}
+<!-- ===== Hero Section (Insight-style: title left, image right) ===== -->
 <section class="mb-8">
+    {# Stufe 0 (Issue #851): ohne Farbchips, Farbknöpfe und Datumskacheln; Rollen, Gremien und Filter als Text #}
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div class="lg:col-span-3">
             <p class="text-sm text-gray-600 dark:text-gray-400">{{ organization.name }} &middot; {{ today|date:"l, d. F Y" }}</p>

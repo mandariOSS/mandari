@@ -14,6 +14,8 @@ Geprüft wird, was die Stufe zusagt, ohne dass eine Funktion wegfällt:
   gekennzeichnet.
 - Die alte Navigation kennzeichnet die aktive Seite, benennt die Knöpfe per ``aria-label`` und ist am Handy
   ein Dialog.
+- Die umgebauten Seiten antworten im alten und im neuen Rahmen (#852) für Vorsitz, Mitglied, Sachkundige,
+  nicht Vereidigte und Gäste ohne Serverfehler.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from __future__ import annotations
 import re
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.contrib.staticfiles import finders
@@ -29,6 +31,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.common.formatting import count_label, format_count, join_parts
+from apps.common.tests import factories
+from apps.tenants.models import Permission, Role
 from apps.work.faction.models import FactionMeeting
 from apps.work.motions.models import Motion
 from apps.work.stats_text import documents_sentence, faction_meetings_sentence, ris_overview_sentence
@@ -60,6 +64,17 @@ def _klassen(text: str) -> list[str]:
     return [token for wert in CLASS_RE.findall(text) for token in wert.split()]
 
 
+def _alter_rahmen() -> dict[str, str]:
+    """Der bisherige Rahmen (Schalter aus, #852): ``work/base_work_alt.html`` samt ausgelagerter Teile.
+
+    ``work/base_work.html`` ist seit #852 nur noch der Verteiler auf den alten bzw. neuen Rahmen; Änderungen am
+    bisherigen Rahmen stehen in ``base_work_alt*.html``.
+    """
+    dateien = {p.name: p.read_text(encoding="utf-8") for p in sorted(WORK.glob("base_work_alt*.html"))}
+    assert "base_work_alt.html" in dateien and "base_work_alt_stil.html" in dateien, sorted(dateien)
+    return dateien
+
+
 @pytest.fixture
 def vorsitz(org: Any, make_member: Any) -> Any:
     return make_member(org, is_admin=True, email="vorsitz@example.org")
@@ -72,10 +87,12 @@ def vorsitz(org: Any, make_member: Any) -> Any:
 
 class TestSchriftUndSprache:
     def test_inter_kommt_aus_dem_eigenen_ursprung(self) -> None:
-        basis = (WORK / "base_work.html").read_text(encoding="utf-8")
+        basis = _alter_rahmen()["base_work_alt.html"]
         assert "{% static 'css/schrift-inter.css' %}" in basis
         assert "{% static 'vendor/inter/inter-latin.woff2' %}" in basis
-        assert "fonts.googleapis" not in basis and "fonts.gstatic" not in basis
+        # Beide Rahmen laden keine Schrift von Dritten (der neue bringt Inter selbst mit, #852)
+        for text in (*_alter_rahmen().values(), (WORK / "base_work_neu.html").read_text(encoding="utf-8")):
+            assert "fonts.googleapis" not in text and "fonts.gstatic" not in text
 
         css_pfad = finders.find("css/schrift-inter.css")
         assert css_pfad, "css/schrift-inter.css fehlt"
@@ -113,12 +130,16 @@ class TestRuhigesErscheinungsbild:
     def test_keine_einblend_animation(self) -> None:
         funde = [rel for rel, text in _work_vorlagen() if {"fade-up", "d1", "d2", "d3", "d4"} & set(_klassen(text))]
         assert not funde, funde
-        assert "fade-up" not in (WORK / "base_work.html").read_text(encoding="utf-8")
+        # Auch die Animation selbst (@keyframes, .fade-up, .d1–.d4) ist aus dem Stil des alten Rahmens entfernt
+        for name, text in _alter_rahmen().items():
+            assert "fade-up" not in text and "animation-delay" not in text, name
 
     def test_keine_versalien_ueberschriften(self) -> None:
         funde = [rel for rel, text in _work_vorlagen(ohne=("/pdf/", "/email/")) if "uppercase" in _klassen(text)]
         assert not funde, funde
-        assert "text-transform: uppercase" not in (WORK / "base_work.html").read_text(encoding="utf-8")
+        # Gruppenüberschriften der Leiste im alten Rahmen: normale Schreibung (CSS in base_work_alt_stil.html)
+        for name, text in _alter_rahmen().items():
+            assert "text-transform: uppercase" not in text, name
 
     def test_kein_lila_cyan_oder_rose_als_schmuckfarbe(self) -> None:
         # Sitzungsvorbereitung: Positions- und Abschnittsfarben sind dort Kategorien mit Legende (Vertagen und
@@ -319,3 +340,68 @@ class TestNavigation:
         ):
             assert attribut in leiste.group(0), attribut
         assert 'aria-label="Menü schließen"' in html
+
+
+# ---------------------------------------------------------------------------
+# Beide Rahmen, alle Rollen (der Schalter wird nach dem Deploy für alle Organisationen umgelegt)
+# ---------------------------------------------------------------------------
+
+#: Seiten, die Stufe 0 umbaut, samt Start, Aufgaben und Profil
+STUFE0_SEITEN = (
+    "dashboard",
+    "documents",
+    "faction",
+    "faction_detail",
+    "ris_overview",
+    "ris_search",
+    "team",
+    "meetings",
+    "tasks",
+    "support",
+    "notifications",
+    "profile",
+)
+ROLLEN = {
+    "vorsitz": ("Fraktionsvorsitz", True),
+    "mitglied": ("Fraktionsmitglied", True),
+    "sachkundig": ("Sachkundige/r Bürger/in", True),
+    "nicht_vereidigt": ("Fraktionsmitglied", False),
+}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("neues_design", [False, True], ids=["alter_rahmen", "neuer_rahmen"])
+@pytest.mark.parametrize("rolle", [*ROLLEN, "gast"])
+def test_seiten_fuer_jede_rolle_in_beiden_rahmen(org: Any, client_for: Any, neues_design: bool, rolle: str) -> None:
+    Permission.sync_permissions()
+    Role.create_default_roles(org)
+    org.work_new_design = neues_design
+    org.save(update_fields=["work_new_design"])
+    sitzung = FactionMeeting.objects.create(
+        organization=org, title="Wochensitzung", start=timezone.now() + timedelta(days=3), status="planned"
+    )
+    if rolle == "gast":
+        mitglied = cast(Any, factories.MembershipFactory)(organization=org, is_guest=True, roles=[])
+    else:
+        name, vereidigt = ROLLEN[rolle]
+        mitglied = cast(Any, factories.MembershipFactory)(
+            organization=org, is_sworn_in=vereidigt, roles=[Role.objects.get(organization=org, name=name)]
+        )
+    client = client_for(mitglied.user)
+    erreicht = []
+    for seite in STUFE0_SEITEN:
+        kwargs: dict[str, Any] = {"meeting_id": sitzung.id} if seite == "faction_detail" else {}
+        antwort = client.get(reverse(f"work:{seite}", kwargs={"org_slug": org.slug, **kwargs}), follow=True)
+        # Fehlende Rechte enden in 403 oder einer Weiterleitung, nie in einem Serverfehler
+        assert antwort.status_code in (200, 403), (seite, antwort.status_code)
+        if antwort.status_code == 200:
+            html = antwort.content.decode()
+            assert ('data-rahmen="neu"' in html) is neues_design, seite
+            erreicht.append(seite)
+    if rolle == "gast":
+        assert "dashboard" in erreicht  # Weiterleitung auf die freigegebenen Dokumente
+    else:
+        # Mitglieder erreichen Start, Fraktionssitzungen und Ratsinformation in beiden Rahmen
+        assert {"dashboard", "faction", "faction_detail", "ris_overview", "profile"} <= set(erreicht), erreicht
+    if rolle == "vorsitz":
+        assert set(erreicht) == set(STUFE0_SEITEN)
