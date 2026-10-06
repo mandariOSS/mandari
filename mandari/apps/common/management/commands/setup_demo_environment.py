@@ -61,6 +61,14 @@ DEMO_START_DATE = date(2024, 7, 1)
 #: Ratssitzung gesetzt hat (durchgehende Vorführung Work → Session)
 DEMO_ANTRAG_TRINKBRUNNEN = "Antrag: Öffentliche Trinkwasserbrunnen in der Innenstadt (Demo)"
 DEMO_RATSSITZUNG = "Ratssitzung (Demo, kommend)"
+#: Ankündigung für die Musterfraktion (Hinweisband auf Start und Glocke, Issue #857); neutral, gilt für jeden Stand
+DEMO_ANKUENDIGUNG = {
+    "schluessel": "demo-was-ist-neu",
+    "titel": "Was ist neu in Work",
+    "text": "In der Hilfe lesen Sie, was sich in Work zuletzt geändert hat.",
+    "link": "https://docs.mandari.de/work/was-ist-neu/",
+    "linktext": "Was ist neu",
+}
 
 DEMO_USERS = {
     "vorsitz": {
@@ -994,6 +1002,31 @@ class Command(BaseCommand):
                 defaults={"visibility": "internal"},
             )
         self._count("Work: Fraktionssitzung")
+
+        # --- Ankündigung im Hinweisband auf Start (Issue #857) ----------
+        # Über denselben Befehl wie im Betrieb (idempotent über den Schlüssel); Text gilt unabhängig vom Stand
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        call_command(
+            "work_ankuendigung",
+            "--schluessel",
+            DEMO_ANKUENDIGUNG["schluessel"],
+            "--titel",
+            DEMO_ANKUENDIGUNG["titel"],
+            "--text",
+            DEMO_ANKUENDIGUNG["text"],
+            "--link",
+            DEMO_ANKUENDIGUNG["link"],
+            "--linktext",
+            DEMO_ANKUENDIGUNG["linktext"],
+            "--rueckmeldung",
+            "--organisation",
+            DEMO_ORG_SLUG,
+            stdout=StringIO(),
+        )
+        self._count("Work: Ankündigung")
 
         return org
 

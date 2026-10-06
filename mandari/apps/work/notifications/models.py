@@ -138,6 +138,10 @@ def preference_hint(notification_type: str) -> str:
     return PREFERENCE_HINTS.get(notification_type, "")
 
 
+#: Metadaten-Schlüssel einer zurückgezogenen Ankündigung (Issue #857): Glocke, Zähler und Hinweisband blenden sie
+#: aus, die Benachrichtigung bleibt gespeichert
+ANNOUNCEMENT_WITHDRAWN_KEY = "zurueckgezogen_am"
+
 #: Immer aktive Arten – nicht im Formular, gespeicherte Einstellungen werden ignoriert:
 #: - Registrierungsanfrage: Hinweis an die Verwaltenden; ohne ihn bliebe eine Anfrage unbemerkt liegen.
 ALWAYS_ACTIVE_TYPES: frozenset[str] = frozenset({NotificationType.REGISTRATION_REQUEST.value})

@@ -13,6 +13,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.common.params import int_param
 
+from . import ankuendigung
 from .models import Notification, NotificationType
 from .services import NotificationHub
 
@@ -118,6 +119,8 @@ class NotificationMarkReadView(WorkViewMixin, View):
                 notification.mark_as_read()
                 # Invalidate count cache
                 NotificationHub.invalidate_count_cache(self.membership)
+                # Ankündigung (Glocke oder Hinweisband auf Start): gelesen in allen Organisationen der Person
+                ankuendigung.gelesen(notification)
                 return JsonResponse({"success": True})
             except Notification.DoesNotExist:
                 return JsonResponse({"success": False, "error": "Not found"}, status=404)
@@ -154,8 +157,13 @@ class NotificationLatestView(WorkViewMixin, View):
         since = request.GET.get("since")
         limit = int_param(request.GET.get("limit"), 5, minimum=1, maximum=20)
 
+        # Ankündigungen stehen im Hinweisband auf Start und in der Glocke, nicht zusätzlich als Einblendung bei
+        # jedem Seitenaufruf (Issue #857); im Zähler bleiben sie
         notifications = (
-            NotificationHub.for_recipient(self.membership).filter(is_read=False).select_related("actor__user")
+            NotificationHub.for_recipient(self.membership)
+            .filter(is_read=False)
+            .exclude(notification_type=NotificationType.ANNOUNCEMENT)
+            .select_related("actor__user")
         )
 
         if since:

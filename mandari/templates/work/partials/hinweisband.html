@@ -1,0 +1,33 @@
+{% comment %}
+Hinweisband oben auf Start (Issue #857): höchstens ein Hinweis zur Zeit, Auswahl in apps/work/dashboard/hinweise.py.
+Wegklicken und Folgen des Links markieren den Hinweis als gelesen; danach erscheint er nicht mehr, auch nicht in den
+anderen Organisationen der Person. Erwartet „hinweis“ (Hinweis oder leer). Gleiches Band im bisherigen und im neuen Rahmen.
+{% endcomment %}
+{% if hinweis %}
+<section id="hinweisband" aria-labelledby="hinweisband-titel" data-testid="hinweisband"
+         class="mb-6 flex items-start gap-3 rounded-md bg-primary-50 px-4 py-3 text-sm text-gray-700 dark:bg-primary-900/20 dark:text-gray-300">
+    <i data-lucide="{{ hinweis.icon }}" class="mt-0.5 h-4 w-4 flex-none text-primary-600 dark:text-primary-400" aria-hidden="true"></i>
+    <div class="min-w-0 flex-1">
+        <h2 id="hinweisband-titel" class="font-semibold text-gray-900 dark:text-white">{{ hinweis.titel }}</h2>
+        <p class="mt-0.5">
+            {{ hinweis.text }}
+            {% if hinweis.link %}
+            <a href="{{ hinweis.link }}"
+               hx-post="{{ hinweis.gelesen_url }}" hx-swap="none" data-after-request="follow-href"
+               class="whitespace-nowrap font-medium text-primary-700 underline underline-offset-2 hover:no-underline dark:text-primary-300">{{ hinweis.linktext }}</a>
+            {% endif %}
+            {% if hinweis.rueckmeldung_url %}
+            <span class="text-gray-400 dark:text-gray-500" aria-hidden="true">&middot;</span>
+            <a href="{{ hinweis.rueckmeldung_url }}"
+               class="whitespace-nowrap font-medium text-primary-700 underline underline-offset-2 hover:no-underline dark:text-primary-300">Rückmeldung geben</a>
+            {% endif %}
+        </p>
+    </div>
+    <button type="button"
+            hx-post="{{ hinweis.gelesen_url }}" hx-target="#hinweisband" hx-swap="delete" data-after-request="follow-href"
+            class="-m-1 flex-none rounded p-1 text-gray-500 hover:bg-primary-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-primary-900/40 dark:hover:text-white"
+            aria-label="Hinweis ausblenden" title="Ausblenden">
+        <i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i>
+    </button>
+</section>
+{% endif %}
