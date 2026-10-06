@@ -1,0 +1,48 @@
+{% comment %}
+Leiste unten, fest: Position der Fraktion (vier gleichrangige Werte als Optionsfelder, weitere unter „Andere …“,
+endgültig), Stand der Vorbereitung, voriger und nächster TOP. Am Handy: Knopf „Position“ (öffnet das Blatt) und
+TOP-Wechsel. Die Positionspunkte stehen immer mit Text.
+{% endcomment %}
+<div class="vb-leiste" role="region" aria-label="Position und TOP-Wechsel">
+    <template x-if="selectedItem">
+        <div class="vb-leiste-position">
+            <span class="beschriftung" id="leiste-position">Position</span>
+            <div class="vb-positionen" role="radiogroup" aria-labelledby="leiste-position">
+                {% for code, label, klasse in positionen_haupt %}
+                <label class="vb-pos">
+                    <input type="radio" name="position-leiste" value="{{ code }}" :checked="selectedItem.position === '{{ code }}'" @change="setPosition('{{ code }}')">
+                    <span class="punkt {{ klasse }}" aria-hidden="true"></span>{{ label }}
+                </label>
+                {% endfor %}
+            </div>
+            <select class="vb-eingabe vb-auswahl vb-andere" :class="istAndere && 'gewaehlt'" aria-label="Andere Position"
+                    :value="istAndere ? selectedItem.position : ''" @change="setzeAndere($event.target.value)">
+                <option value="">Andere …</option>
+                {% for code, label in positionen_andere %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+            </select>
+            <label class="vb-haken">
+                <input type="checkbox" x-model="selectedItem.isFinal" @change="endgueltigSetzen()"> endgültig
+            </label>
+        </div>
+    </template>
+    <template x-if="selectedItem">
+        <button type="button" class="vb-knopf vb-pos-mobil" @click="oeffneBlatt('position')" aria-haspopup="dialog">
+            <span class="punkt" :class="positionsKlasse(selectedItem.position)" aria-hidden="true"></span>
+            Position: <b x-text="posLabel(selectedItem.position)"></b>
+            <span x-show="selectedItem.isFinal">, endgültig</span>
+        </button>
+    </template>
+    <span class="vb-stand" :title="standText"><span class="lang" x-text="standText"></span><span class="kurz" x-text="standKurz"></span></span>
+    <nav class="vb-leiste-nav" aria-label="TOP wechseln">
+        <button type="button" class="vb-nachbar" @click="zuTop(vorigerTop)" :disabled="!vorigerTop" aria-label="Voriger TOP"
+                :title="vorigerTop ? 'TOP ' + vorigerTop.number + ': ' + vorigerTop.name : ''">
+            <i data-lucide="chevron-left" aria-hidden="true"></i>
+            <span><small>Voriger TOP</small><b><span x-text="vorigerTop ? vorigerTop.number : ''"></span><span class="t" x-text="vorigerTop ? ' ' + vorigerTop.name : ''"></span></b></span>
+        </button>
+        <button type="button" class="vb-nachbar weiter" @click="zuTop(naechsterTop)" :disabled="!naechsterTop" aria-label="Nächster TOP"
+                :title="naechsterTop ? 'TOP ' + naechsterTop.number + ': ' + naechsterTop.name : ''">
+            <span><small>Nächster TOP</small><b><span x-text="naechsterTop ? naechsterTop.number : ''"></span><span class="t" x-text="naechsterTop ? ' ' + naechsterTop.name : ''"></span></b></span>
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+        </button>
+    </nav>
+</div>

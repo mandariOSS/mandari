@@ -1,0 +1,51 @@
+{% comment %}
+Arbeit der Fraktion zum TOP, eine Ebene mit Reitern (Muster „Tabs“, Pfeiltasten wechseln): Begründung der Position
+und Ergebnis, eigene Notiz, Diskussion der Organisation, Redebeitrag. Der gewählte Reiter bleibt beim TOP-Wechsel.
+Position selbst steht in der Leiste unten.
+{% endcomment %}
+<section class="vb-feld" aria-label="Arbeit der Fraktion">
+    <div class="vb-reiter" role="tablist" aria-label="Arbeit der Fraktion" @keydown="reiterTaste($event)">
+        <button type="button" role="tab" id="reiter-begruendung" aria-controls="feld-begruendung" @click="reiterWaehlen('begruendung')"
+                :aria-selected="reiter === 'begruendung' ? 'true' : 'false'" :tabindex="reiter === 'begruendung' ? 0 : -1">
+            Begründung<span class="vb-punkt-hinweis" x-show="selectedItem && selectedItem.reasoning && selectedItem.reasoning.trim()"></span>
+        </button>
+        <button type="button" role="tab" id="reiter-notiz" aria-controls="feld-notiz" @click="reiterWaehlen('notiz')"
+                :aria-selected="reiter === 'notiz' ? 'true' : 'false'" :tabindex="reiter === 'notiz' ? 0 : -1">
+            Notiz<span class="vb-punkt-hinweis" x-show="selectedItem && selectedItem.privateNote && selectedItem.privateNote.trim()"></span>
+        </button>
+        <button type="button" role="tab" id="reiter-diskussion" aria-controls="feld-diskussion" @click="reiterWaehlen('diskussion')"
+                :aria-selected="reiter === 'diskussion' ? 'true' : 'false'" :tabindex="reiter === 'diskussion' ? 0 : -1">
+            Diskussion<span class="vb-zahl-klein" x-show="selectedItem && selectedItem.notesCount > 0" x-text="selectedItem ? selectedItem.notesCount : ''"></span>
+        </button>
+        <button type="button" role="tab" id="reiter-rede" aria-controls="feld-rede" @click="reiterWaehlen('rede')"
+                :aria-selected="reiter === 'rede' ? 'true' : 'false'" :tabindex="reiter === 'rede' ? 0 : -1">
+            Redebeitrag<span class="vb-punkt-hinweis" x-show="selectedItem && (selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument)"></span>
+        </button>
+    </div>
+    <template x-if="selectedItem">
+        <div class="vb-feld-koerper">
+            <div id="feld-begruendung" role="tabpanel" aria-labelledby="reiter-begruendung" class="vb-feld-inhalt" x-show="reiter === 'begruendung'">
+                <label for="reasoning-input" class="vb-feldname">Begründung der Position <span class="leise">für die Organisation sichtbar</span></label>
+                <textarea id="reasoning-input" class="vb-eingabe vb-wachsend" x-model="selectedItem.reasoning"
+                          @input="queueItemSave('reasoning', selectedItem, item => savePositionFields(item, { reasoning: item.reasoning }))"
+                          placeholder="Warum diese Position? Kurz, für die Fraktion"></textarea>
+                <label for="outcome-select" class="vb-feldname">Ergebnis der Beratung <span class="leise">nach der Sitzung</span></label>
+                <select id="outcome-select" class="vb-eingabe vb-auswahl" x-model="selectedItem.outcome" @change="saveOutcome()">
+                    {% for code, label in outcome_choices %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div id="feld-notiz" role="tabpanel" aria-labelledby="reiter-notiz" class="vb-feld-inhalt" x-show="reiter === 'notiz'" x-cloak>
+                <label for="notiz-eingabe" class="vb-feldname">Meine Notiz <span class="leise"><i data-lucide="lock" aria-hidden="true"></i> nur für Sie sichtbar</span></label>
+                <textarea id="notiz-eingabe" class="vb-eingabe vb-wachsend" x-model="selectedItem.privateNote"
+                          @input="queueItemSave('private-note', selectedItem, item => savePrivateNote(item))"
+                          placeholder="Eigene Gedanken, Fragen, Stichworte zu diesem TOP"></textarea>
+            </div>
+            <div id="feld-diskussion" role="tabpanel" aria-labelledby="reiter-diskussion" class="vb-feld-inhalt vb-diskussion" x-show="reiter === 'diskussion'" x-cloak>
+                {% include "work/meetings/vorbereitung/_diskussion.html" %}
+            </div>
+            <div id="feld-rede" role="tabpanel" aria-labelledby="reiter-rede" class="vb-feld-inhalt vb-rede" x-show="reiter === 'rede'" x-cloak>
+                {% include "work/meetings/vorbereitung/_redebeitrag.html" %}
+            </div>
+        </div>
+    </template>
+</section>

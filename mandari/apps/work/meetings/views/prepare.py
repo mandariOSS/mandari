@@ -15,7 +15,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.common.params import json_body
 
-from .. import selectors, services
+from .. import selectors, services, vorbereitung
 from ..models import AgendaItemNote, AgendaItemPosition
 from ..serializers import build_prepare_config
 from ._helpers import unauthorized
@@ -26,6 +26,15 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
 
     template_name = "work/meetings/prepare.html"
     permission_required = "meetings.prepare"
+
+    def neue_ansicht(self) -> bool:
+        """Neue Seite (#856) nur mit Schalter der Organisation und ohne ``?ansicht=bisher``."""
+        return vorbereitung.neue_ansicht(self.organization, self.request.GET)
+
+    def get_template_names(self) -> list[str]:
+        if self.neue_ansicht():
+            return [vorbereitung.NEUE_VORLAGE]
+        return [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -53,6 +62,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         context["outcome_choices"] = AgendaItemPosition.OUTCOME_CHOICES
         context["visibility_choices"] = AgendaItemNote.VISIBILITY_CHOICES
         context["stats"] = data.stats
+        context |= vorbereitung.positionen_fuer_leiste()
 
         # Daten für die Alpine-Komponente `preparationApp` (frontend/alpine/prepare-meeting.ts):
         # ein JSON-Objekt für den Client (json_script im Template), keine String-Interpolation in JS

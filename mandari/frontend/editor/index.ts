@@ -3,8 +3,8 @@
  *
  * Vite-Einstieg der Editor-Seiten: setzt `window.MandariEditor` (Fabriken, Diff,
  * Briefkopf) und registriert die Alpine-Komponenten `documentEditor`
- * (frontend/alpine/document-editor.ts) und `preparationApp`
- * (frontend/alpine/prepare-meeting.ts).
+ * (frontend/alpine/document-editor.ts), `preparationApp`
+ * (frontend/alpine/prepare-meeting.ts) und `vorbereitung` (frontend/alpine/vorbereitung.ts).
  */
 
 import { Editor } from '@tiptap/core'
@@ -21,6 +21,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Alpine from 'alpinejs'
 import { documentEditor } from '../alpine/document-editor'
 import { preparationApp } from '../alpine/prepare-meeting'
+import { vorbereitung } from '../alpine/vorbereitung'
 import type { CollabOptions, CollabResult, CollabUser } from './collaboration'
 import { initCollaboration } from './collaboration'
 import { renderDiff } from './diff'
@@ -332,3 +333,5 @@ window.MandariEditor = MandariEditor
 // Vite teilt den Alpine-Chunk, es ist dieselbe Instanz wie in main.ts.
 Alpine.data('documentEditor', documentEditor)
 Alpine.data('preparationApp', preparationApp)
+// Sitzungsvorbereitung im neuen Design (#856), baut auf preparationApp auf
+Alpine.data('vorbereitung', vorbereitung)

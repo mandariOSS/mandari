@@ -55,6 +55,8 @@ export interface PreparedItem {
   id: string
   number: string
   name: string
+  /** Öffentlicher Teil der Tagesordnung (nur die neue Vorbereitung gliedert danach, #856) */
+  isPublic?: boolean
   /** „Zurückgezogen“ bzw. „In der Quelle gelöscht“, leer solange es den TOP im RIS gibt (Issue #524) */
   withdrawn: string
   /** Erklärung, wenn die Arbeitsdaten nach einer Neuveröffentlichung nicht sicher zu diesem TOP gehören (Issue #547) */
@@ -532,7 +534,9 @@ export const preparationApp = defineComponent(() => {
       this._suppressEditorSave = true
       this.speechEditor.commands.setContent(content)
       this._suppressEditorSave = false
-      this.speechEditor.setEditable(!this.speechReadonly)
+      // Ohne Update-Ereignis: setEditable meldet sonst eine Änderung, und das Öffnen eines TOPs speicherte einen
+      // (leeren) Redebeitrag (#887)
+      this.speechEditor.setEditable(!this.speechReadonly, false)
       if (focus && !this.speechReadonly) this.speechEditor.commands.focus()
     },
 
@@ -582,7 +586,8 @@ export const preparationApp = defineComponent(() => {
           this._suppressEditorSave = true
           this.speechEditor.commands.setContent('')
           this._suppressEditorSave = false
-          this.speechEditor.setEditable(true)
+          // Ohne Update-Ereignis, sonst legt das Löschen sofort wieder einen leeren Redebeitrag an (#887)
+          this.speechEditor.setEditable(true, false)
         }
       }
     },
@@ -628,7 +633,7 @@ export const preparationApp = defineComponent(() => {
       this._suppressEditorSave = true
       this.speechEditor.commands.setContent(html)
       this._suppressEditorSave = false
-      this.speechEditor.setEditable(!this.speechReadonly)
+      this.speechEditor.setEditable(!this.speechReadonly, false)
       if (this._editorItem) {
         this._editorItem.speechContent = this.speechReadonly ? this._editorItem.speechContent : html
       }

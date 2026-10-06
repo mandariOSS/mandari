@@ -6,6 +6,8 @@
  * giving a WYSIWYG preview of the final exported document.
  */
 
+import { ladePdfJs } from './pdfjs-laden'
+
 export interface LetterheadOptions {
   /** URL to the letterhead PDF file */
   pdfUrl: string
@@ -31,7 +33,7 @@ export async function renderLetterhead(options: LetterheadOptions): Promise<() =
   const { pdfUrl, container, opacity = 0.25, margins } = options
 
   // Dynamically load PDF.js from vendor path
-  const pdfjsLib = await loadPdfJs()
+  const pdfjsLib = await ladePdfJs()
   if (!pdfjsLib) {
     console.warn('PDF.js could not be loaded. Letterhead preview disabled.')
     return () => {}
@@ -102,26 +104,4 @@ export async function renderLetterhead(options: LetterheadOptions): Promise<() =
     console.error('Error rendering letterhead:', error)
     return () => {}
   }
-}
-
-/**
- * PDF.js bei Bedarf laden (eigener Vite-Chunk, nur auf Editor-Seiten mit Briefkopf-PDF).
- * Der Worker kommt als gehashte Datei aus dem Manifest.
- */
-type PdfJsModule = typeof import('pdfjs-dist')
-let pdfjsPromise: Promise<PdfJsModule | null> | null = null
-
-function loadPdfJs(): Promise<PdfJsModule | null> {
-  if (!pdfjsPromise) {
-    pdfjsPromise = Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')])
-      .then(([pdfjsLib, worker]) => {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default
-        return pdfjsLib
-      })
-      .catch((err) => {
-        console.warn('PDF.js konnte nicht geladen werden:', err)
-        return null
-      })
-  }
-  return pdfjsPromise
 }

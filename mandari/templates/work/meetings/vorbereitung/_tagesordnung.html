@@ -1,0 +1,52 @@
+{% comment %}
+Tagesordnung: kompakt auch bei 81 TOPs. Je Zeile Nummer, Titel (zwei Zeilen, ganz im Tooltip), Stand als Punkt mit
+Text für Screenreader und kleine Merkzeichen (endgültig, Redebeitrag, eigene Notiz, Beiträge). Breit eine Spalte,
+mittel eine schmale Leiste aus Nummern und Stand (ausklappbar mit Titeln), am Handy ein Blatt.
+{% endcomment %}
+<nav id="top-navigator" class="vb-liste" aria-label="Tagesordnung" :class="blatt === 'tagesordnung' && 'blatt-offen'"
+     @keydown.escape="schliesseBlatt()">
+    <div class="vb-liste-kopf">
+        <div class="vb-blatt-kopf">
+            <h2>Tagesordnung</h2>
+            <button type="button" class="vb-knopf vb-leise vb-ik" @click="schliesseBlatt()" aria-label="Tagesordnung schließen">
+                <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+        </div>
+        <button type="button" class="vb-knopf vb-leise vb-ik vb-liste-auf" @click="oeffneBlatt('tagesordnung')"
+                aria-label="Tagesordnung mit Titeln zeigen" title="Tagesordnung mit Titeln zeigen">
+            <i data-lucide="panel-left-open" aria-hidden="true"></i>
+        </button>
+        <input type="search" x-model="search" class="vb-eingabe" placeholder="TOP suchen" aria-label="TOP suchen">
+    </div>
+    <template x-for="gruppe in gruppen" :key="gruppe.titel">
+        <div>
+            <p class="vb-liste-gruppe" x-show="gruppe.titel" x-text="gruppe.titel"></p>
+            <ol class="vb-tl">
+                <template x-for="item in gruppe.items" :key="item.id">
+                    <li>
+                        <button type="button" class="vb-tl-zeile" :id="'nav-item-' + item.id" @click="selectItem(item.id)"
+                                :aria-current="selectedItemId === item.id ? 'true' : null" :class="!item.paper && 'formal'"
+                                :title="'TOP ' + item.number + ': ' + item.name">
+                            <span class="nr" x-text="item.number"></span>
+                            <span class="vb-tl-text">
+                                <span class="titel" x-text="item.name"></span>
+                                <span class="vb-tl-meta" x-show="item.withdrawn || item.isFinal || item.hasSpeechNote || item.speechLinkedDocument || (item.privateNote && item.privateNote.trim()) || item.notesCount > 0">
+                                    <span class="vb-warn" x-show="item.withdrawn" x-text="item.withdrawn" :title="item.withdrawnHint"></span>
+                                    <span x-show="item.isFinal" title="Position endgültig"><i data-lucide="lock" aria-hidden="true"></i><span class="sr-only">endgültig</span></span>
+                                    <span x-show="item.hasSpeechNote || item.speechLinkedDocument" title="Redebeitrag vorhanden"><i data-lucide="mic" aria-hidden="true"></i><span class="sr-only">Redebeitrag</span></span>
+                                    <span x-show="item.privateNote && item.privateNote.trim()" title="Eigene Notiz vorhanden"><i data-lucide="sticky-note" aria-hidden="true"></i><span class="sr-only">Notiz</span></span>
+                                    <span x-show="item.notesCount > 0" title="Beiträge in der Diskussion"><i data-lucide="message-circle" aria-hidden="true"></i><span x-text="item.notesCount"></span><span class="sr-only"> Beiträge</span></span>
+                                </span>
+                            </span>
+                            <span class="punkt" :class="positionsKlasse(item.position)" x-show="item.paper || item.position !== 'open'"
+                                  :title="posLabel(item.position)"></span>
+                            <span class="sr-only" x-show="item.paper || item.position !== 'open'" x-text="'Position: ' + posLabel(item.position)"></span>
+                        </button>
+                    </li>
+                </template>
+            </ol>
+        </div>
+    </template>
+    <p class="vb-leer-text klein" x-show="filteredItems.length === 0" x-cloak>Keine TOPs gefunden.</p>
+    <p class="vb-liste-fuss">Pfeiltasten wechseln den TOP</p>
+</nav>

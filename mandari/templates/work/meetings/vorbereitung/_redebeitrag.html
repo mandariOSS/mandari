@@ -1,0 +1,65 @@
+{% comment %}
+Eigener Redebeitrag zum TOP (TipTap über window.MandariEditor, schreibgeschützt bei verknüpftem Dokument), Titel,
+Dauer, Teilen mit der Organisation, Teleprompter, Löschen; darunter geteilte Redebeiträge anderer.
+{% endcomment %}
+<template x-if="selectedItem.speechLinkedDocument">
+    <p class="vb-rede-verknuepft">
+        <i data-lucide="link" aria-hidden="true"></i>
+        <span>Als Redebeitrag verknüpft:
+            <template x-if="selectedItem.speechLinkedDocument.title">
+                <a class="vb-textlink" :href="`/work/${orgSlug}/motions/${selectedItem.speechLinkedDocument.id}/`" target="_blank" rel="noopener"
+                   x-text="selectedItem.speechLinkedDocument.title"></a>
+            </template>
+            <template x-if="!selectedItem.speechLinkedDocument.title"><em>Dokument ohne Zugriff</em></template>
+            – der Inhalt wird schreibgeschützt übernommen.
+        </span>
+        <button type="button" class="vb-textlink" @click="unlinkDocument()">Verknüpfung lösen</button>
+    </p>
+</template>
+<input type="text" class="vb-eingabe" x-model="selectedItem.speechTitle" aria-label="Titel des Redebeitrags"
+       @input="queueItemSave('speech-title', selectedItem, item => saveSpeechFields(item, { title: item.speechTitle }))"
+       placeholder="Titel des Redebeitrags (optional)">
+<div class="vb-rede-editor" :class="speechReadonly && 'nur-lesen'">
+    <div class="vb-rede-wz" x-show="!speechReadonly" role="toolbar" aria-label="Formatierung">
+        <button type="button" class="vb-wz-knopf" title="Fett (Strg+B)" aria-label="Fett" :aria-pressed="speechFormats.bold ? 'true' : 'false'"
+                @click="speechEditor && speechEditor.chain().focus().toggleBold().run()"><i data-lucide="bold" aria-hidden="true"></i></button>
+        <button type="button" class="vb-wz-knopf" title="Kursiv (Strg+I)" aria-label="Kursiv" :aria-pressed="speechFormats.italic ? 'true' : 'false'"
+                @click="speechEditor && speechEditor.chain().focus().toggleItalic().run()"><i data-lucide="italic" aria-hidden="true"></i></button>
+        <button type="button" class="vb-wz-knopf" title="Unterstrichen (Strg+U)" aria-label="Unterstrichen" :aria-pressed="speechFormats.underline ? 'true' : 'false'"
+                @click="speechEditor && speechEditor.chain().focus().toggleUnderline().run()"><i data-lucide="underline" aria-hidden="true"></i></button>
+        <span class="vb-wz-trenn" aria-hidden="true"></span>
+        <button type="button" class="vb-wz-knopf" title="Aufzählung" aria-label="Aufzählung" :aria-pressed="speechFormats.list === 'bullet' ? 'true' : 'false'"
+                @click="speechEditor && speechEditor.chain().focus().toggleBulletList().run()"><i data-lucide="list" aria-hidden="true"></i></button>
+        <button type="button" class="vb-wz-knopf" title="Nummerierte Liste" aria-label="Nummerierte Liste" :aria-pressed="speechFormats.list === 'ordered' ? 'true' : 'false'"
+                @click="speechEditor && speechEditor.chain().focus().toggleOrderedList().run()"><i data-lucide="list-ordered" aria-hidden="true"></i></button>
+    </div>
+    <p class="vb-rede-hinweis" x-show="speechReadonly"><i data-lucide="lock" aria-hidden="true"></i> Schreibgeschützt – der Inhalt kommt aus dem verknüpften Dokument.</p>
+    <div class="vb-rede-text speech-editor" x-ref="speechEditorEl" @click="!speechReadonly && speechEditor && speechEditor.commands.focus()"></div>
+</div>
+<div class="vb-rede-fuss">
+    <label class="vb-klein-label">Dauer
+        <input type="text" class="vb-eingabe vb-dauer" x-model="speechDurationText" @change="saveSpeechDuration()"
+               inputmode="numeric" pattern="[0-9]{1,2}:[0-9]{2}" placeholder="mm:ss" aria-label="Dauer in Minuten und Sekunden">
+    </label>
+    <label class="vb-haken">
+        <input type="checkbox" x-model="selectedItem.speechShared" @change="saveSpeechFields(selectedItem, { is_shared: selectedItem.speechShared })">
+        Mit Organisation teilen
+    </label>
+    <span class="vb-platz"></span>
+    <a id="teleprompter-link" class="vb-textlink" :href="teleprompterUrl()" target="_blank" rel="noopener"
+       x-show="selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument">Teleprompter</a>
+    <button type="button" class="vb-textlink" x-show="!selectedItem.speechLinkedDocument"
+            @click="docModalOpen = true; docQuery = ''; docResults = []; searchDocs()">Dokument verknüpfen</button>
+    <button type="button" class="vb-textlink gefahr" x-show="selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument"
+            @click="deleteSpeech()">Redebeitrag löschen</button>
+</div>
+<template x-if="selectedItem.sharedSpeeches && selectedItem.sharedSpeeches.length > 0">
+    <div class="vb-rede-geteilt">
+        <h3>Geteilte Redebeiträge aus der Organisation</h3>
+        <ul>
+            <template x-for="(s, si) in selectedItem.sharedSpeeches" :key="si">
+                <li><b x-text="s.author"></b><p x-text="stripHtml(s.content)"></p></li>
+            </template>
+        </ul>
+    </div>
+</template>

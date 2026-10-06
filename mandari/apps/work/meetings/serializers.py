@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from apps.common.formatting import member_name
 from apps.work.sanitize import sanitize_editor_html
@@ -188,6 +189,20 @@ def serialize_speech_note(note: AgendaSpeechNote | None, membership: Membership)
     }
 
 
+def has_speech_content(note: AgendaSpeechNote | None) -> bool:
+    """
+    Gilt der eigene Redebeitrag als vorhanden?
+
+    Leere Einträge (ohne Titel, Text, Dauer und verknüpftes Dokument) zählen nicht: Das Öffnen eines TOPs hat bis
+    #887 solche Einträge angelegt. Sie bleiben in der Datenbank unverändert, werden nur nicht als Redebeitrag gezeigt.
+    """
+    if note is None:
+        return False
+    if note.title or note.estimated_duration or note.linked_document_id:
+        return True
+    return bool(strip_tags(decrypted(note, "content")).strip())
+
+
 def serialize_shared_speech(note: AgendaSpeechNote) -> dict[str, Any]:
     """Geteilter Redebeitrag eines anderen Mitglieds (Autor + bereinigter Inhalt)."""
     return {
@@ -327,6 +342,8 @@ def serialize_prepared_item(entry: PreparedItem, index: int, data: PreparationDa
         "id": str(item.id),
         "number": item.number or str(index + 1),
         "name": item.name or "Ohne Titel",
+        # Öffentlicher oder nichtöffentlicher Teil der Tagesordnung (Gliederung der TOP-Liste, #856)
+        "isPublic": bool(item.public),
         # Im RIS-Bestand gelöscht oder zurückgezogen (Issue #524): Hinweis statt Fehler, die Arbeitsdaten bleiben
         "withdrawn": item.deletion_label or (hinweis.titel if hinweis else ""),
         "withdrawnHint": hinweis.text if hinweis else "",
@@ -341,7 +358,7 @@ def serialize_prepared_item(entry: PreparedItem, index: int, data: PreparationDa
         # Private Notiz (pro User)
         "privateNote": decrypted(entry.private_note, "content") if entry.private_note else "",
         # Redebeitrag (pro User)
-        "hasSpeechNote": bool(speech),
+        "hasSpeechNote": has_speech_content(speech),
         "speechTitle": speech.title if speech else "",
         "speechContent": sanitize_editor_html(decrypted(speech, "content")) if speech else "",
         "speechDuration": speech.estimated_duration if speech else 0,

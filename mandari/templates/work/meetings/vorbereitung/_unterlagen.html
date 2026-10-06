@@ -1,0 +1,92 @@
+{% comment %}
+Unterlagen des TOPs groß: Reiter je Datei (erst RIS, dann eigene Anlagen), Überlauf „n weitere“, Werkzeuge
+(Schrift kleiner/größer, Anmerkungen, im neuen Tab öffnen, Anlage hinzufügen). PDFs zeigt die Blattansicht (pdf.js,
+frontend/alpine/pdf-blatt.ts) in x-ref="blatt"; Links und andere Dateien bekommen einen Knopf zum Öffnen.
+Anmerkungen je Seite rechts neben dem Blatt (organisationsweit, wie bisher). Am Handy ist der Bereich ein Blatt.
+{% endcomment %}
+<section class="vb-unterlagen" aria-label="Unterlagen" :class="blatt === 'unterlagen' && 'blatt-offen'"
+         @keydown.escape="blatt === 'unterlagen' && schliesseBlatt()">
+    <div class="vb-blatt-kopf">
+        <h2 x-text="selectedItem ? 'Unterlagen zu TOP ' + selectedItem.number : 'Unterlagen'"></h2>
+        <button type="button" class="vb-knopf vb-leise vb-ik" @click="schliesseBlatt()" aria-label="Unterlagen schließen">
+            <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="vb-reiterleiste" x-ref="unterlagenleiste">
+        <div class="vb-reiter-liste" role="tablist" aria-label="Unterlagen des TOPs" @keydown="unterlagenTaste($event)">
+            <template x-for="(u, ui) in sichtbareUnterlagen" :key="u.schluessel">
+                <button type="button" role="tab" :id="'unterlage-' + ui" :aria-selected="unterlageIndex === ui ? 'true' : 'false'"
+                        :tabindex="unterlageIndex === ui || (aktiveIstWeitere && ui === 0) ? 0 : -1"
+                        aria-controls="unterlage-flaeche" @click="waehleUnterlage(ui)" :title="u.name + (u.meta ? ' – ' + u.meta : '')">
+                    <i :data-lucide="u.istLink ? 'link' : 'file-text'" aria-hidden="true"></i>
+                    <span class="txt" x-text="u.name"></span>
+                    <span class="vb-zahl-klein" x-show="u.quelle.annotations > 0" x-text="u.quelle.annotations"
+                          :title="u.quelle.annotations + ' Anmerkungen'"></span>
+                </button>
+            </template>
+        </div>
+        <div class="vb-menue-anker" x-show="weitereUnterlagen.length > 0" @click.outside="weitereOffen = false" @keydown.escape="weitereOffen = false">
+            <button type="button" class="vb-weitere" :class="aktiveIstWeitere && 'aktiv'" @click="weitereOffen = !weitereOffen"
+                    aria-haspopup="menu" :aria-expanded="weitereOffen ? 'true' : 'false'">
+                <span class="txt" x-text="aktiveIstWeitere && aktiveUnterlage ? aktiveUnterlage.name : weitereUnterlagen.length + ' weitere'"></span>
+                <i data-lucide="chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="vb-menue" role="menu" x-show="weitereOffen" x-cloak x-transition.opacity>
+                <template x-for="(u, wi) in weitereUnterlagen" :key="u.schluessel">
+                    <button type="button" role="menuitemradio" @click="waehleUnterlage(sichtbareUnterlagen.length + wi)"
+                            :aria-checked="unterlageIndex === sichtbareUnterlagen.length + wi ? 'true' : 'false'">
+                        <i :data-lucide="u.istLink ? 'link' : 'file-text'" aria-hidden="true"></i><span x-text="u.name"></span>
+                    </button>
+                </template>
+            </div>
+        </div>
+        <div class="vb-werkzeuge">
+            <span class="vb-werkzeuge-pdf" x-show="aktiveUnterlage && aktiveUnterlage.istPdf">
+                <button type="button" class="vb-knopf vb-leise vb-wz" @click="zoomen(-1)" :disabled="zoomStufe === 0"
+                        aria-label="Schrift kleiner" title="Schrift kleiner">A−</button>
+                <button type="button" class="vb-knopf vb-leise vb-wz" @click="zoomen(1)" :disabled="zoomStufe >= zoomMax"
+                        aria-label="Schrift größer" title="Schrift größer">A+</button>
+                <button type="button" class="vb-knopf vb-leise vb-wz" @click="anmerkungenOffen = !anmerkungenOffen"
+                        :aria-pressed="anmerkungenOffen ? 'true' : 'false'" title="Anmerkungen zu Seiten">
+                    <i data-lucide="message-square-text" aria-hidden="true"></i>
+                    <span class="sr-only">Anmerkungen</span><span class="vb-zahl-klein" x-show="annotations.length > 0" x-text="annotations.length"></span>
+                </button>
+            </span>
+            <a class="vb-knopf vb-leise vb-ik" x-show="aktiveUnterlage && aktiveUnterlage.oeffnen" :href="aktiveUnterlage ? aktiveUnterlage.oeffnen : '#'"
+               target="_blank" rel="noopener noreferrer" aria-label="Im neuen Tab öffnen" title="Im neuen Tab öffnen">
+                <i data-lucide="external-link" aria-hidden="true"></i>
+            </a>
+            <button type="button" class="vb-knopf vb-leise vb-ik" @click="anlageOffen = true" aria-label="Anlage hinzufügen" title="Anlage hinzufügen">
+                <i data-lucide="paperclip" aria-hidden="true"></i>
+            </button>
+        </div>
+    </div>
+    <div class="vb-unterlage" id="unterlage-flaeche" role="tabpanel" :aria-labelledby="'unterlage-' + unterlageIndex">
+        <template x-if="aktiveUnterlage && aktiveUnterlage.eigene">
+            <p class="vb-unterlage-meta">
+                <span x-text="aktiveUnterlage.meta"></span>
+                <span x-show="aktiveUnterlage.eigene.is_from_other_item">· über die Vorlage aus einem anderen Gremium</span>
+                <span x-show="aktiveUnterlage.eigene.share_across_committees && !aktiveUnterlage.eigene.is_from_other_item">· an der Vorlage, in allen beratenden Gremien sichtbar</span>
+                <button type="button" class="vb-textlink gefahr" @click="deleteDoc(aktiveUnterlage.eigene)"
+                        x-show="aktiveUnterlage.eigene.added_by === currentUser && !aktiveUnterlage.eigene.is_from_other_item">Entfernen</button>
+            </p>
+        </template>
+        <div class="vb-unterlage-koerper">
+            <div class="vb-blatt" x-ref="blatt" tabindex="0" role="region" data-eigene-tasten
+                 :aria-label="aktiveUnterlage ? 'Unterlage: ' + aktiveUnterlage.name : 'Unterlage'"
+                 :class="blattZustand === '' && 'leer'"></div>
+            <p class="vb-laden" x-show="blattZustand === 'laedt'" x-cloak role="status">Unterlage wird geladen …</p>
+            <div class="vb-unterlage-leer" x-show="blattZustand === 'fehler'" x-cloak>
+                <p>Die Unterlage lässt sich hier nicht anzeigen.</p>
+                <a class="vb-knopf" :href="aktiveUnterlage ? aktiveUnterlage.oeffnen : '#'" target="_blank" rel="noopener noreferrer">Im neuen Tab öffnen</a>
+            </div>
+            <div class="vb-unterlage-leer" x-show="aktiveUnterlage && !aktiveUnterlage.istPdf" x-cloak>
+                <p x-text="aktiveUnterlage ? aktiveUnterlage.name : ''" class="name"></p>
+                <p x-text="aktiveUnterlage && aktiveUnterlage.istLink ? 'Link auf eine andere Seite' : 'Diese Datei lässt sich hier nicht anzeigen.'"></p>
+                <a class="vb-knopf" :href="aktiveUnterlage ? aktiveUnterlage.oeffnen : '#'" target="_blank" rel="noopener noreferrer"
+                   x-text="aktiveUnterlage && aktiveUnterlage.istLink ? 'Link öffnen' : 'Datei öffnen'"></a>
+            </div>
+            {% include "work/meetings/vorbereitung/_anmerkungen.html" %}
+        </div>
+    </div>
+</section>

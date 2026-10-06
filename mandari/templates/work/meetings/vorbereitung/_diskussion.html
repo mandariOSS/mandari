@@ -1,0 +1,50 @@
+{% comment %}
+Diskussion der Organisation zum TOP (bei TOPs mit Vorlage gremienübergreifend über die Vorlage), Echtzeit per
+WebSocket, sonst alle 5 Sekunden. Neuester Beitrag oben, Eingabe unten fest. Enter sendet, Umschalt+Enter bricht um.
+{% endcomment %}
+<p class="vb-live" aria-live="off">
+    <span x-show="realtime === 'ws'" title="Echtzeit-Verbindung aktiv"><span class="vb-live-punkt"></span>Live</span>
+    <span x-show="realtime === 'poll'" title="Aktualisierung alle 5 Sekunden">Aktualisiert alle 5 Sekunden</span>
+</p>
+<ol class="vb-beitraege" x-ref="threadList">
+    <template x-for="note in thread" :key="note.id">
+        <li :class="(note.is_recommendation || note.is_decision) && 'position'">
+            <p class="wer">
+                <b x-text="note.author"></b>
+                <span x-text="fmtDateTime(note.created_at)"></span>
+                <button type="button" class="vb-loeschen" x-show="note.is_own" @click="deleteComment(note.id)" aria-label="Beitrag löschen" title="Beitrag löschen">
+                    <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+            </p>
+            <p class="text" x-text="note.content"></p>
+            <p class="zusatz">
+                <span x-show="note.is_recommendation || note.is_decision" class="vb-marke">Position der Fraktion</span>
+                <span x-text="note.visibility_display"></span>
+                <span x-show="note.organization && note.is_own_org === false" x-text="'· ' + note.organization"></span>
+                <template x-if="note.origin">
+                    <a class="vb-textlink" :href="`/work/${orgSlug}/meetings/${note.origin.meeting_id}/prepare/`" x-text="'aus ' + note.origin.label"></a>
+                </template>
+            </p>
+        </li>
+    </template>
+</ol>
+<p class="vb-leer-text klein" x-show="thread.length === 0 && !threadLoading">Noch keine Beiträge zu diesem TOP.</p>
+<div class="vb-schreiben">
+    <label for="beitrag-neu" class="sr-only">Beitrag für die Organisation</label>
+    <textarea id="beitrag-neu" rows="3" class="vb-eingabe" x-model="newComment" placeholder="Beitrag für die Fraktion (Enter sendet)"
+              @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); postComment(); }"></textarea>
+    <div class="vb-schreiben-fuss">
+        <label class="vb-klein-label">Sichtbar für
+            <select id="thread-visibility" class="vb-eingabe vb-auswahl klein" x-model="commentVisibility">
+                {% for code, label in visibility_choices %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="vb-haken" title="Beitrag als Position der Fraktion markieren">
+            <input type="checkbox" x-model="commentIsPosition"> Position der Fraktion
+        </label>
+        <span class="vb-platz"></span>
+        <button type="button" class="vb-knopf" @click="postComment()" :disabled="!newComment.trim()">
+            <i data-lucide="send" aria-hidden="true"></i>Senden
+        </button>
+    </div>
+</div>
