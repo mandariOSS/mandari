@@ -162,7 +162,7 @@
                 {% elif can_submit_ris %}
                 {% if motion.is_submittable %}
                 <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
-                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Bei der Verwaltung einreichen" title="Bei der Verwaltung einreichen">
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Bei Verwaltung einreichen" title="Bei Verwaltung einreichen">
                     <i data-lucide="send" class="w-5 h-5"></i>
                 </a>
                 {% endif %}

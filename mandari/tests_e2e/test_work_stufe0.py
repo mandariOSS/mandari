@@ -91,9 +91,11 @@ def test_menue_am_handy_ist_ein_dialog(page: Any, live_server: Any, vorsitz: Any
     aktiv = leiste.locator('a[aria-current="page"]')
     expect(aktiv).to_have_count(1)
     expect(aktiv).to_contain_text("Dokumente")
-    # Der Fokus bleibt in der Leiste
-    page.keyboard.press("Tab")
-    assert page.evaluate("() => document.getElementById('work-navigation').contains(document.activeElement)")
+    # Die Fokusfalle setzt den Fokus in die Leiste (x-trap aktiviert sich nach dem Öffnen) und hält ihn dort
+    im_menue = "() => document.getElementById('work-navigation').contains(document.activeElement)"
+    page.wait_for_function(im_menue, timeout=5000)
+    page.keyboard.press("Shift+Tab")
+    assert page.evaluate(im_menue)
 
     page.keyboard.press("Escape")
     expect(leiste).to_be_hidden()

@@ -7,7 +7,7 @@ Geprüft wird, was die Stufe zusagt, ohne dass eine Funktion wegfällt:
 - Inter kommt aus dem eigenen Ursprung, Texte stehen in Sie-Form (Ausnahme: Mails, die die Organisation
   an ihre Mitglieder schickt, ``work/faction/email/``), kein Platzhalter nennt eine bestimmte Partei.
 - Keine Einblend-Animation, keine Versalien-Überschriften und kein Lila/Violett/Cyan/Rosé als Schmuckfarbe
-  in den Work-Templates (Positionsfarben der Sitzungsvorbereitung bis zu deren Neuentwurf ausgenommen).
+  in den Work-Templates (Positions- und Abschnittsfarben der Sitzungsvorbereitung bis zu deren Neuentwurf ausgenommen).
 - Dokumente, Fraktionssitzungen und RIS-Übersicht nennen ihre Zahlen im Satz statt in Zählerkacheln; der
   Teilnahmenachweis steht unter „Weiteres“ nach der Liste.
 - Nebenbefunde: „Einladen“ und „Vorbereiten“ je einmal, keine Sitzungsnummer „#—“, Gast in der Teamliste
@@ -121,18 +121,20 @@ class TestRuhigesErscheinungsbild:
         assert "text-transform: uppercase" not in (WORK / "base_work.html").read_text(encoding="utf-8")
 
     def test_kein_lila_cyan_oder_rose_als_schmuckfarbe(self) -> None:
-        # Positionsfarben (Vertagen = Lila) bleiben bis zum Neuentwurf der Vorbereitung (#856) eine Kategorie
-        positionen = {
+        # Sitzungsvorbereitung: Positions- und Abschnittsfarben sind dort Kategorien mit Legende (Vertagen und
+        # Redebeitrag = Lila); sie bleiben bis zum Neuentwurf der Vorbereitung (#856) unverändert
+        vorbereitung = (
             "meetings/_summary.html",
             "meetings/partials/_prepare_main.html",
             "meetings/partials/_prepare_modals.html",
-        }
+        )
         muster = re.compile(r"(?<![\w-])(?:[a-z-]+:)*[a-z-]+-(?:purple|violet|cyan|rose|pink|fuchsia)-\d")
-        funde = []
-        for rel, text in _work_vorlagen(ohne=("/pdf/", "/email/")):
-            for zeile in text.splitlines():
-                if muster.search(zeile) and not (rel in positionen and "'defer'" in zeile):
-                    funde.append(f"{rel}: {zeile.strip()[:80]}")
+        funde = [
+            f"{rel}: {zeile.strip()[:80]}"
+            for rel, text in _work_vorlagen(ohne=("/pdf/", "/email/", *vorbereitung))
+            for zeile in text.splitlines()
+            if muster.search(zeile)
+        ]
         assert not funde, funde
 
 

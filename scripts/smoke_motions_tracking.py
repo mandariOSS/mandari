@@ -350,7 +350,7 @@ check("Ungültiger Genehmigungstyp abgelehnt", resp.status_code == 400)
 
 # Angefragte Person sieht Entscheiden-Block
 resp = c_approver.get(f"{BASE}/{motion3.id}/")
-check("Entscheiden-Block sichtbar", "Deine Freigabe wurde angefragt" in resp.content.decode())
+check("Entscheiden-Block sichtbar", "Ihre Freigabe wurde angefragt" in resp.content.decode())
 
 decide_url = f"{BASE}/{motion3.id}/approvals/{approval.id}/decide/"
 resp = ajax_post(c_expert, decide_url, {"decision": "approve"})
