@@ -27,6 +27,7 @@ Zustand, Speichern und Echtzeit: Alpine-Komponente `vorbereitung` (frontend/alpi
 </div>
 {% elif meeting %}
 {{ prepare_config|json_script:"prepare-config" }}
+{{ aufgaben_config|json_script:"vorbereitung-aufgaben" }}
 <div class="vb" x-data="vorbereitung" @keydown.window="handleKeydown($event)">
     {% include "work/meetings/vorbereitung/_kopf.html" %}
     <div class="vb-flaeche">

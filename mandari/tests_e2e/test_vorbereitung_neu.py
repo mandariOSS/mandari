@@ -4,8 +4,9 @@ Sitzungsvorbereitung im neuen Design (#856) im Browser.
 
 Kernpfade bei eingeschaltetem Schalter der Organisation: Tagesordnung links, Vorlage groß in der Blattansicht
 (pdf.js), Position in der Leiste unten, Begründung und eigene Notiz rechts – gespeichert in der Datenbank,
-TOP-Wechsel per Leiste und Pfeiltaste mit Sprungmarke in der Adresse, eine lange Tagesordnung (81 TOPs) und
-das Handy mit Blättern. Dazu axe-core ohne kritische/schwere Befunde und Bildschirmfotos (hell, dunkel, Handy).
+TOP-Wechsel per Leiste und Pfeiltaste mit Sprungmarke in der Adresse, eine lange Tagesordnung (81 TOPs),
+das Handy mit Blättern und Aufgaben aus dem TOP (anlegen, abhaken). Dazu axe-core ohne kritische/schwere Befunde und Bildschirmfotos
+(hell, dunkel, Handy).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from playwright.sync_api import expect
 
 from apps.common.management.commands.setup_demo_environment import _minimal_pdf
 from apps.work.meetings.models import AgendaItemPosition, AgendaPrivateNote
+from apps.work.tasks.models import Task
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -257,3 +259,84 @@ class TestVorbereitungNeu:
         page.get_by_role("button", name="Nächster TOP").click()
         _warte_auf_top(page, str(tops[2].id))
         problems.assert_clean("Vorbereitung am Handy")
+
+    def test_aufgabe_aus_dem_top(
+        self,
+        page: Any,
+        goto: Any,
+        login: Any,
+        admin: Any,
+        problems: BrowserProblems,
+        axe: Any,
+        screenshot: Any,
+        schalter_an: None,
+        tmp_path: Path,
+    ) -> None:
+        meeting = _sitzung(admin, tmp_path)
+        top = OParlAgendaItem.objects.get(meeting=meeting, number="2")
+        page.set_viewport_size({"width": 1280, "height": 800})
+        login(admin.user.email, PASSWORD)
+        goto(f"/work/{admin.organization.slug}/meetings/{meeting.id}/prepare/#top-{top.id}")
+        wait_for_component(page, "vorbereitung")
+        _warte_auf_top(page, str(top.id))
+
+        # Reiter „Aufgaben“: leer, Zuständig steht auf der eigenen Person; Anlegen zeigt die Aufgabe sofort
+        page.get_by_role("tab", name="Aufgaben").click()
+        expect(page.locator("#feld-aufgaben")).to_contain_text("Noch keine Aufgaben aus diesem TOP.")
+        expect(page.get_by_label("Zuständig")).to_have_value(str(admin.id))
+        page.get_by_label("Neue Aufgabe").fill("Rückfrage an die Verwaltung stellen")
+        page.get_by_label("Fällig am").fill("2026-10-19")
+        page.get_by_role("button", name="Anlegen").click()
+        eintrag = page.locator(".vb-aufgaben li", has_text="Rückfrage an die Verwaltung stellen")
+        expect(eintrag).to_contain_text("fällig 19.10.2026")
+        expect(page.get_by_role("tab", name="Aufgaben")).to_contain_text("1")
+
+        task = Task.objects.get(title="Rückfrage an die Verwaltung stellen")
+        assert task.related_agenda_item_id == top.id
+        assert task.related_meeting_id == meeting.id
+        assert task.assigned_to_id == admin.id
+
+        # Abhaken wie auf der Karte im Aufgabenboard (Endpunkt des Boards)
+        haken = page.get_by_role("checkbox", name="Erledigt: Rückfrage an die Verwaltung stellen")
+        with page.expect_response(lambda r: "/tasks/api/" in r.url) as antwort:
+            haken.check()
+        assert antwort.value.ok
+        expect(haken).to_be_checked()
+        task.refresh_from_db()
+        assert task.is_completed
+
+        # Der Reiter bleibt beim TOP-Wechsel, die Liste folgt dem TOP
+        page.get_by_role("button", name="Nächster TOP").click()
+        expect(page.locator("#feld-aufgaben")).to_contain_text("Noch keine Aufgaben aus diesem TOP.")
+        page.get_by_role("button", name="Voriger TOP").click()
+        expect(eintrag).to_be_visible()
+
+        problems.assert_clean("Vorbereitung, Aufgaben")
+        befunde = axe()
+        assert not befunde.failing, befunde.describe()
+        screenshot("vorbereitung_neu_1280_aufgaben")
+        # Breiter Bildschirm: Blatt zeichnet in der neuen Breite neu, Zuständig, Fällig und Anlegen in einer Zeile
+        breite = page.locator(".vb-seite").first.bounding_box()["width"]
+        page.set_viewport_size({"width": 2560, "height": 1300})
+        page.wait_for_function(
+            "(b) => document.querySelector('.vb-seite').getBoundingClientRect().width > b + 50", arg=breite
+        )
+        expect(eintrag).to_be_visible()
+        screenshot("vorbereitung_neu_2560_aufgaben")
+
+        # Handy: alle fünf Reiter erreichbar (kurze Beschriftung), Aufgabe und Formular ohne seitliches Überlaufen
+        page.set_viewport_size({"width": 390, "height": 844})
+        reiter = page.get_by_role("tab", name="Aufgaben")
+        expect(reiter).to_have_attribute("aria-selected", "true")
+        expect(page.get_by_role("tab", name="Rede")).to_be_visible()
+        leiste = page.evaluate(
+            "() => { const l = document.querySelector('.vb-reiter');"
+            " return {voll: l.scrollWidth, sichtbar: l.clientWidth,"
+            " reiter: [...l.querySelectorAll('[role=tab]')].map((t) => Math.round(t.getBoundingClientRect().width))} }"
+        )
+        assert leiste["voll"] <= leiste["sichtbar"], leiste
+        eintrag.scroll_into_view_if_needed()
+        expect(eintrag).to_be_in_viewport()
+        expect(page.get_by_label("Neue Aufgabe")).to_be_visible()
+        assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+        screenshot("vorbereitung_neu_390_aufgaben")

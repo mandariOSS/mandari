@@ -1,6 +1,7 @@
 {% comment %}
 Arbeit der Fraktion zum TOP, eine Ebene mit Reitern (Muster „Tabs“, Pfeiltasten wechseln): Begründung der Position
-und Ergebnis, eigene Notiz, Diskussion der Organisation, Redebeitrag. Der gewählte Reiter bleibt beim TOP-Wechsel.
+und Ergebnis, eigene Notiz, Diskussion der Organisation, Redebeitrag, Aufgaben aus dem TOP (mit Recht auf Aufgaben).
+Der gewählte Reiter bleibt beim TOP-Wechsel.
 Position selbst steht in der Leiste unten.
 {% endcomment %}
 <section class="vb-feld" aria-label="Arbeit der Fraktion">
@@ -19,8 +20,14 @@ Position selbst steht in der Leiste unten.
         </button>
         <button type="button" role="tab" id="reiter-rede" aria-controls="feld-rede" @click="reiterWaehlen('rede')"
                 :aria-selected="reiter === 'rede' ? 'true' : 'false'" :tabindex="reiter === 'rede' ? 0 : -1">
-            Redebeitrag<span class="vb-punkt-hinweis" x-show="selectedItem && (selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument)"></span>
+            <span class="lang">Redebeitrag</span><span class="kurz">Rede</span><span class="vb-punkt-hinweis" x-show="selectedItem && (selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument)"></span>
         </button>
+        <template x-if="aufgabenConfig.darfSehen">
+            <button type="button" role="tab" id="reiter-aufgaben" aria-controls="feld-aufgaben" @click="reiterWaehlen('aufgaben')"
+                    :aria-selected="reiter === 'aufgaben' ? 'true' : 'false'" :tabindex="reiter === 'aufgaben' ? 0 : -1">
+                Aufgaben<span class="vb-zahl-klein" x-show="aufgabenZahl > 0" x-text="aufgabenZahl"></span>
+            </button>
+        </template>
     </div>
     <template x-if="selectedItem">
         <div class="vb-feld-koerper">
@@ -45,6 +52,9 @@ Position selbst steht in der Leiste unten.
             </div>
             <div id="feld-rede" role="tabpanel" aria-labelledby="reiter-rede" class="vb-feld-inhalt vb-rede" x-show="reiter === 'rede'" x-cloak>
                 {% include "work/meetings/vorbereitung/_redebeitrag.html" %}
+            </div>
+            <div id="feld-aufgaben" role="tabpanel" aria-labelledby="reiter-aufgaben" class="vb-feld-inhalt" x-show="reiter === 'aufgaben'" x-cloak>
+                {% include "work/meetings/vorbereitung/_aufgaben.html" %}
             </div>
         </div>
     </template>

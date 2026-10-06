@@ -81,13 +81,20 @@ def _sync_completion(task: Task, *, previous_status: str | None = None) -> None:
 
 @transaction.atomic
 def create_task(
-    task: Task, organization: Organization, membership: Membership, *, related_motion_id: str | None = None
+    task: Task,
+    organization: Organization,
+    membership: Membership,
+    *,
+    related_motion_id: str | None = None,
+    related_agenda_item: Any = None,
 ) -> Task:
     """
     Speichert eine über das Formular vorbereitete Aufgabe (``form.save(commit=False)``).
 
     Setzt Organisation, Ersteller, Standard-Zuweisung, optionale Dokument-Verknüpfung und
     die Position am Spaltenende; protokolliert und benachrichtigt bei Fremdzuweisung.
+    ``related_agenda_item``: TOP aus der Sitzungsvorbereitung (#856), vom Aufrufer bereits an
+    die Org-Grenze gebunden; die Sitzung wird mit verknüpft.
     """
     task.organization = organization
     task.created_by = membership
@@ -97,6 +104,9 @@ def create_task(
         motion = selectors.find_motion(organization, membership, related_motion_id)
         if motion is not None:
             task.related_motion = motion
+    if related_agenda_item is not None:
+        task.related_agenda_item = related_agenda_item
+        task.related_meeting_id = related_agenda_item.meeting_id
     task.position = selectors.next_position(organization, task.status)
     task.save()
     log_activity(task, membership, "created")

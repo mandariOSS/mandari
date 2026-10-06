@@ -294,6 +294,7 @@
   .vb-reiter [role="tab"] { font-size: 14px; }
   .vb-reiter [role="tab"][aria-selected="true"] { color: var(--vb-tinte); font-weight: 600; border-bottom-color: var(--vb-work); }
   .vb-reiter .vb-zahl-klein { margin-left: 2px; }
+  .vb-reiter .kurz { display: none; }
   .vb-feld-koerper { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .vb-feld-inhalt { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 14px 20px 16px; }
   .vb-feld-inhalt > .vb-feldname ~ .vb-feldname { margin-top: 16px; }
@@ -341,6 +342,19 @@
   .vb-rede-geteilt ul { list-style: none; margin: 0; padding: 0; }
   .vb-rede-geteilt li { padding: 6px 0; border-top: 1px solid var(--vb-linie); font-size: 13px; }
   .vb-rede-geteilt p { margin: 2px 0 0; color: var(--vb-text2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* Aufgaben aus dem TOP */
+  .vb-aufgaben { list-style: none; margin: 0; padding: 0; }
+  .vb-aufgaben li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--vb-linie); font-size: 14px; line-height: 1.45; }
+  .vb-aufgabe-haken { accent-color: var(--vb-work); width: 16px; height: 16px; margin: 3px 0 0; cursor: pointer; }
+  .vb-aufgabe-haken:disabled { cursor: default; }
+  .vb-aufgaben li.erledigt .was > span:first-child { color: var(--vb-text2); text-decoration: line-through; }
+  .vb-aufgaben .was { min-width: 0; overflow-wrap: anywhere; }
+  .vb-aufgaben small { display: block; font-size: 12.5px; color: var(--vb-text2); }
+  /* Titel über die ganze Breite (wichtigstes Feld), darunter Zuständig, Fällig und Anlegen */
+  .vb-aufgabe-neu { display: grid; grid-template-columns: minmax(0, 1fr) 9.5rem auto; gap: 8px; margin-top: 12px; align-items: start; }
+  .vb-aufgabe-neu input[type="text"], .vb-aufgabe-neu .vb-fehler { grid-column: 1 / -1; }
+  .vb-fehler { margin: 0; font-size: 13px; color: var(--vb-abl); }
 
   /* ---------- Leiste unten ---------- */
   .vb-leiste {
@@ -433,8 +447,12 @@
     .vb-liste:not(.blatt-offen) .vb-tl-zeile > .punkt { margin-top: 0; }
     .vb-leiste .beschriftung { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     .vb-andere { width: 7.5rem; }
-    .vb-stand .lang { display: none; }
-    .vb-stand .kurz { display: inline; }
+    .vb-stand .lang, .vb-reiter .lang { display: none; }
+    .vb-stand .kurz, .vb-reiter .kurz { display: inline; }
+    /* Fünf Reiter (mit Aufgaben) passen in die schmale Spalte: engerer Abstand, Bedienschrift 13 px */
+    .vb-reiter { gap: 12px; padding: 0 12px; }
+    .vb-reiter [role="tab"] { font-size: 13px; }
+    .vb-aufgabe-neu { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   }
   /* ---------- Ab 90rem: Tagesordnung mit Titeln links, TOP-Wechsel mit Titel ---------- */
   @container vb (min-width: 90rem) {
@@ -476,7 +494,9 @@
     .vb-mobil-unterlagen .vb-knopf { height: 40px; flex: none; max-width: 78vw; }
     .vb-mobil-unterlagen .vb-knopf span { overflow: hidden; text-overflow: ellipsis; }
     .vb-feld { border-top: 1px solid var(--vb-linie); }
-    .vb-reiter { padding-left: 16px; gap: 16px; }
+    /* Fünf Reiter passen ab 390 px nebeneinander (Bedienschrift 13 px); darunter scrollt die Leiste zum gewählten */
+    .vb-reiter { padding: 0 12px; gap: 10px; }
+    .vb-reiter [role="tab"] { font-size: 13px; padding: 0; }
     .vb-feld-inhalt { overflow: visible; padding: 14px 16px 20px; }
     .vb-diskussion { overflow: visible; }
     .vb-wachsend { min-height: 11rem; }
@@ -501,5 +521,9 @@
     .vb-nachbar.weiter { padding: 0; }
     .vb-nachbar > span { display: none; }
     .vb-link-zeile { grid-template-columns: minmax(0, 1fr); }
+    .vb-reiter .lang { display: none; }
+    .vb-reiter .kurz { display: inline; }
+    .vb-aufgabe-neu { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .vb-aufgabe-neu input, .vb-aufgabe-neu select, .vb-aufgabe-neu .vb-knopf { height: 40px; }
   }
 }

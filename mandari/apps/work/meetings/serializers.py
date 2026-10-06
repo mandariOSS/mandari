@@ -21,6 +21,7 @@ from apps.work.sanitize import sanitize_editor_html
 
 if TYPE_CHECKING:
     from apps.tenants.models import Membership, Organization
+    from apps.work.tasks.models import Task
     from insight_core.models import OParlFile, OParlMeeting
 
     from .models import (
@@ -208,6 +209,24 @@ def serialize_shared_speech(note: AgendaSpeechNote) -> dict[str, Any]:
     return {
         "author": member_name(note.author),
         "content": sanitize_editor_html(decrypted(note, "content")),
+    }
+
+
+def serialize_agenda_task(task: Task, org_slug: str, *, darf_abhaken: bool) -> dict[str, Any]:
+    """
+    Aufgabe aus einem TOP für den Reiter „Aufgaben“ der neuen Vorbereitung (#856); Link öffnet sie im Board.
+
+    ``darf_abhaken``: Das Mitglied darf die Aufgabe bearbeiten (``tasks.services.can_edit_task``) und sie damit wie
+    auf der Karte im Board als erledigt markieren.
+    """
+    return {
+        "id": str(task.id),
+        "title": task.title,
+        "assignee": member_name(task.assigned_to) if task.assigned_to_id else "",
+        "due": task.due_date.strftime("%d.%m.%Y") if task.due_date else "",
+        "done": bool(task.is_completed),
+        "canToggle": darf_abhaken,
+        "url": f"{reverse('work:tasks', kwargs={'org_slug': org_slug})}?open={task.id}",
     }
 
 

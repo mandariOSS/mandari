@@ -127,6 +127,12 @@ urlpatterns = [
         meetings_views.SpeechNoteAPIView.as_view(),
         name="meeting_speech_api",
     ),
+    # Aufgaben aus einem TOP (neue Vorbereitung, #856)
+    path(
+        "<slug:org_slug>/meetings/<uuid:meeting_id>/tasks/<uuid:item_id>/",
+        meetings_views.AgendaTasksAPIView.as_view(),
+        name="meeting_tasks_api",
+    ),
     # Verknüpfbare Dokumente für "Dokument als Redebeitrag"
     path(
         "<slug:org_slug>/meetings/speech-documents/",

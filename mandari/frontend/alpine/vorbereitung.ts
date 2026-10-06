@@ -8,7 +8,9 @@
  *
  * - Unterlagen des TOPs als Reiter (Vorlage, Anlagen, eigene Anlagen; Überlauf „n weitere“) mit
  *   Blattansicht über pdf.js und Schriftgröße A−/A+ (frontend/alpine/pdf-blatt.ts)
- * - Reiter der Arbeitsspalte (Begründung, Notiz, Diskussion, Redebeitrag), gemerkt im Browser
+ * - Reiter der Arbeitsspalte (Begründung, Notiz, Diskussion, Redebeitrag, Aufgaben), gemerkt im Browser
+ * - Aufgaben aus dem TOP (Liste, Anlegen, Abhaken über das Aufgabenboard;
+ *   `{{ aufgaben_config|json_script:"vorbereitung-aufgaben" }}`)
  * - Leiste unten: Position, voriger und nächster TOP, Stand der Vorbereitung
  * - Tagesordnung als Schublade bzw. Blatt, Unterlagen und Position als Blatt am Handy
  * - Sprungmarke `#top-<id>` in der Adresse (Neuladen bleibt beim TOP)
@@ -18,6 +20,8 @@
  */
 
 import type { Magics, XDataContext } from 'alpinejs'
+import { csrfToken } from '../js/csrf'
+import { readJsonScript } from '../js/json-script'
 import { type BlattZustand, PdfBlatt } from './pdf-blatt'
 import { type PreparedFile, type PreparedItem, preparationApp, type SupplementaryDoc } from './prepare-meeting'
 
@@ -44,8 +48,41 @@ export interface Unterlage {
   eigene: SupplementaryDoc | null
 }
 
-export type Reiter = 'begruendung' | 'notiz' | 'diskussion' | 'rede'
+export type Reiter = 'begruendung' | 'notiz' | 'diskussion' | 'rede' | 'aufgaben'
 export type Blatt = '' | 'tagesordnung' | 'unterlagen' | 'position'
+
+/** Reiter „Aufgaben“: Rechte, Zahl je TOP, Zuweisungsliste (aus dem View) */
+export interface AufgabenConfig {
+  darfSehen: boolean
+  darfAnlegen: boolean
+  zahlen: Record<string, number>
+  ich: string
+  /** Endpunkt des Aufgabenboards (Aktion `toggle_complete`) */
+  abhaken: string
+  mitglieder: Array<{ id: string; name: string }>
+}
+
+export interface Aufgabe {
+  id: string
+  title: string
+  assignee: string
+  due: string
+  done: boolean
+  /** Das Mitglied darf die Aufgabe bearbeiten und damit abhaken */
+  canToggle: boolean
+  url: string
+  /** Abhaken läuft gerade (nur im Browser) */
+  sendet?: boolean
+}
+
+const KEINE_AUFGABEN: AufgabenConfig = {
+  darfSehen: false,
+  darfAnlegen: false,
+  zahlen: {},
+  ich: '',
+  abhaken: '',
+  mitglieder: [],
+}
 
 interface Gruppe {
   titel: string
@@ -59,7 +96,7 @@ export const ZOOM = [0.6, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5]
 const ZOOM_NORMAL = 3
 const SPEICHER_ZOOM = 'mandari.vorbereitung.zoom'
 const SPEICHER_REITER = 'mandari.vorbereitung.reiter'
-const REITER: Reiter[] = ['begruendung', 'notiz', 'diskussion', 'rede']
+const REITER: Reiter[] = ['begruendung', 'notiz', 'diskussion', 'rede', 'aufgaben']
 /** Unter dieser Breite der Fläche (CSS: 60rem) gilt die Handy-Anordnung: ein TOP je Bildschirm */
 const SCHMAL = 960
 /** Weitere Positionen hinter „Andere …“ (vier gleichrangige Werte stehen als Knöpfe in der Leiste) */
@@ -164,6 +201,9 @@ export function vorbereitung() {
 
   const gespeicherterZoom = Number.parseInt(lesen(SPEICHER_ZOOM) || '', 10)
   const gespeicherterReiter = lesen(SPEICHER_REITER) as Reiter | null
+  const aufgabenConfig = readJsonScript<AufgabenConfig>('vorbereitung-aufgaben') || KEINE_AUFGABEN
+  const reiterListe = REITER.filter((r) => r !== 'aufgaben' || aufgabenConfig.darfSehen)
+  const meetingsBasis = `/work/${basis.orgSlug}/meetings`
 
   return erweitere(basis, {
     unterlageIndex: 0,
@@ -176,7 +216,17 @@ export function vorbereitung() {
     seite: 1,
     seitenzahl: 0,
     anmerkungenOffen: false,
-    reiter: (gespeicherterReiter && REITER.includes(gespeicherterReiter) ? gespeicherterReiter : 'notiz') as Reiter,
+    reiter: (gespeicherterReiter && reiterListe.includes(gespeicherterReiter)
+      ? gespeicherterReiter
+      : 'notiz') as Reiter,
+    aufgabenConfig,
+    aufgaben: [] as Aufgabe[],
+    aufgabenLaden: false,
+    aufgabeTitel: '',
+    aufgabeZustaendig: aufgabenConfig.ich,
+    aufgabeFaellig: '',
+    aufgabeFehler: '',
+    aufgabeSendet: false,
     blatt: '' as Blatt,
     kopfOffen: false,
     menueOffen: false,
@@ -229,6 +279,9 @@ export function vorbereitung() {
       if (this.saveError) return 'Nicht gespeichert'
       if (this.lastSavedAt) return `Gespeichert ${this.lastSavedAt}`
       return 'Automatisch gespeichert'
+    },
+    get aufgabenZahl(): number {
+      return (this.selectedItemId && this.aufgabenConfig.zahlen[this.selectedItemId]) || 0
     },
     get topIndex(): number {
       return this.items.findIndex((i) => i.id === this.selectedItemId)
@@ -312,6 +365,9 @@ export function vorbereitung() {
       this.weitereOffen = false
       if (this.blatt === 'tagesordnung' || this.blatt === 'position') this.blatt = ''
       this.zeigeUnterlage()
+      this.aufgaben = []
+      this.aufgabeFehler = ''
+      if (this.reiter === 'aufgaben') void this.ladeAufgaben()
       try {
         window.history.replaceState(null, '', `#top-${itemId}`)
       } catch {
@@ -466,21 +522,112 @@ export function vorbereitung() {
       this.reiter = reiter
       merken(SPEICHER_REITER, reiter)
       if (reiter === 'rede') void this.syncSpeechEditor()
+      if (reiter === 'aufgaben') void this.ladeAufgaben()
+      // Am Handy passen nicht alle Reiter in die Breite: den gewählten in den Blick holen
+      void this.$nextTick(() =>
+        document.getElementById(`reiter-${reiter}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }),
+      )
     },
 
     /** Pfeiltasten in der Reiterleiste (Muster „Tabs“ der WAI-ARIA-Praxis) */
     reiterTaste(e: KeyboardEvent): void {
-      const i = REITER.indexOf(this.reiter)
+      const i = reiterListe.indexOf(this.reiter)
       let neu = i
-      if (e.key === 'ArrowRight') neu = (i + 1) % REITER.length
-      else if (e.key === 'ArrowLeft') neu = (i - 1 + REITER.length) % REITER.length
+      if (e.key === 'ArrowRight') neu = (i + 1) % reiterListe.length
+      else if (e.key === 'ArrowLeft') neu = (i - 1 + reiterListe.length) % reiterListe.length
       else if (e.key === 'Home') neu = 0
-      else if (e.key === 'End') neu = REITER.length - 1
+      else if (e.key === 'End') neu = reiterListe.length - 1
       else return
       e.preventDefault()
       e.stopPropagation()
-      this.reiterWaehlen(REITER[neu])
-      void this.$nextTick(() => document.getElementById(`reiter-${REITER[neu]}`)?.focus())
+      this.reiterWaehlen(reiterListe[neu])
+      void this.$nextTick(() => document.getElementById(`reiter-${reiterListe[neu]}`)?.focus())
+    },
+
+    // ---------- Aufgaben aus dem TOP ----------
+    aufgabenUrl(itemId: string): string {
+      return `${meetingsBasis}/${this.meetingId}/tasks/${itemId}/`
+    },
+
+    async ladeAufgaben(): Promise<void> {
+      const item = this.selectedItem
+      if (!item || !this.aufgabenConfig.darfSehen) return
+      this.aufgabenLaden = true
+      try {
+        const data = await this.fetchJson(this.aufgabenUrl(item.id))
+        if (this.selectedItemId !== item.id) return
+        if (!data) {
+          this.aufgabeFehler = 'Die Aufgaben ließen sich nicht laden. Bitte die Seite neu laden.'
+          return
+        }
+        this.aufgaben = (data.tasks || []) as Aufgabe[]
+        this.aufgabenConfig.zahlen[item.id] = this.aufgaben.length
+      } finally {
+        this.aufgabenLaden = false
+      }
+    },
+
+    async aufgabeAnlegen(): Promise<void> {
+      const item = this.selectedItem
+      const titel = this.aufgabeTitel.trim()
+      if (!item || !titel || this.aufgabeSendet) return
+      this.aufgabeSendet = true
+      this.aufgabeFehler = ''
+      try {
+        const resp = await fetch(this.aufgabenUrl(item.id), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+          body: JSON.stringify({ title: titel, assigned_to: this.aufgabeZustaendig, due_date: this.aufgabeFaellig }),
+        })
+        const data = (await resp.json().catch(() => null)) as { task?: Aufgabe; error?: string } | null
+        if (!resp.ok || !data?.task) {
+          this.aufgabeFehler = data?.error || 'Die Aufgabe konnte nicht angelegt werden.'
+          return
+        }
+        if (this.selectedItemId === item.id) {
+          this.aufgaben = [data.task, ...this.aufgaben]
+          this.aufgabenConfig.zahlen[item.id] = this.aufgaben.length
+        }
+        this.aufgabeTitel = ''
+        this.aufgabeFaellig = ''
+      } catch {
+        this.aufgabeFehler = 'Keine Verbindung. Bitte erneut versuchen.'
+      } finally {
+        this.aufgabeSendet = false
+      }
+    },
+
+    /**
+     * Erledigt umschalten wie die Karte im Aufgabenboard (ohne Protokolleintrag, wieder offen = „Zu erledigen“).
+     * `x-model` hat `done` beim Klick schon umgestellt; misslingt die Anfrage, gilt wieder der vorige Stand.
+     */
+    async aufgabeUmschalten(a: Aufgabe): Promise<void> {
+      const vorher = !a.done
+      if (!a.canToggle || a.sendet || !this.aufgabenConfig.abhaken) {
+        a.done = vorher
+        return
+      }
+      a.sendet = true
+      this.aufgabeFehler = ''
+      try {
+        const resp = await fetch(this.aufgabenConfig.abhaken, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrfToken() },
+          body: new URLSearchParams({ action: 'toggle_complete', task_id: a.id }),
+        })
+        const data = (await resp.json().catch(() => null)) as { is_completed?: boolean } | null
+        if (!resp.ok || typeof data?.is_completed !== 'boolean') {
+          a.done = vorher
+          this.aufgabeFehler = 'Die Aufgabe ließ sich nicht ändern. Bitte erneut versuchen.'
+          return
+        }
+        a.done = data.is_completed
+      } catch {
+        a.done = vorher
+        this.aufgabeFehler = 'Keine Verbindung. Bitte erneut versuchen.'
+      } finally {
+        a.sendet = false
+      }
     },
 
     // ---------- Position ----------

@@ -19,8 +19,12 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.common.params import date_param, text_param, uuid_param
 from apps.common.uploads import DOCUMENTS, validate_upload
 from apps.work.sanitize import sanitize_editor_html
+from apps.work.tasks import selectors as task_selectors
+from apps.work.tasks import services as task_services
+from apps.work.tasks.models import Task
 
 from . import consumers, selectors
 from .models import (
@@ -49,6 +53,8 @@ if TYPE_CHECKING:
     from insight_core.models import OParlAgendaItem, OParlMeeting, OParlPaper
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+#: Länge des Aufgabentitels (wie ``Task.title``)
+MAX_TASK_TITLE = 200
 
 
 class PreparationError(Exception):
@@ -546,3 +552,38 @@ def delete_file_annotation(organization: Organization, membership: Membership, a
         raise PreparationError("Nur der Autor darf löschen", status=403)
     annotation.delete()
     return True
+
+
+def create_agenda_task(
+    organization: Organization, agenda_item: OParlAgendaItem, membership: Membership, payload: Mapping[str, Any]
+) -> Task:
+    """
+    Aufgabe aus einem TOP der Sitzungsvorbereitung (#856).
+
+    Titel (Pflicht), optional Zuständige:r (aktives Mitglied der eigenen Organisation, kein Gastzugang) und
+    Fälligkeit. Die Aufgabe ist für die Organisation sichtbar und mit TOP und Sitzung verknüpft. Geschrieben wird
+    über das Aufgaben-Modul (``create_task``: Aktivitätsprotokoll, Ereignis bzw. Benachrichtigung bei Zuweisung an
+    andere). Ohne Zuständige:n gilt wie im Aufgabenboard die anlegende Person.
+    """
+    titel = text_param(payload.get("title"))
+    if not titel:
+        raise PreparationError("Bitte einen Titel für die Aufgabe angeben.")
+    if len(titel) > MAX_TASK_TITLE:
+        raise PreparationError("Der Titel ist zu lang (höchstens 200 Zeichen).")
+
+    zustaendig = None
+    if payload.get("assigned_to"):
+        zustaendig_id = uuid_param(payload.get("assigned_to"))
+        if zustaendig_id:
+            zustaendig = task_selectors.assignable_members(organization).filter(id=zustaendig_id).first()
+        if zustaendig is None:
+            raise PreparationError("Die zuständige Person gehört nicht zur Organisation.")
+
+    faellig = None
+    if payload.get("due_date"):
+        faellig = date_param(payload.get("due_date"))
+        if faellig is None:
+            raise PreparationError("Bitte ein gültiges Datum für die Fälligkeit angeben.")
+
+    task = Task(title=titel, visibility="organization", due_date=faellig, assigned_to=zustaendig)
+    return task_services.create_task(task, organization, membership, related_agenda_item=agenda_item)

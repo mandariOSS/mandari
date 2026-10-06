@@ -73,6 +73,14 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
             data=data,
             current_user_name=self.request.user.get_display_name(),
         )
+        if self.neue_ansicht():
+            context["aufgaben_config"] = vorbereitung.aufgaben_config(
+                self.organization,
+                self.membership,
+                [item.id for item in data.agenda_items],
+                darf_sehen=self.has_permission("tasks.view"),
+                darf_anlegen=self.has_permission("tasks.create"),
+            )
         return context
 
     def post(self, request, *args, **kwargs):
