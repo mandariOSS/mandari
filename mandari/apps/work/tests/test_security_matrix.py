@@ -340,6 +340,13 @@ CASES: list[Case] = [
     ),
     Case("meeting_file_annotation_delete", path={"annotation_id": "annotation"}, method="delete"),
     Case(
+        "meeting_tasks_api",
+        path=RIS_ITEM,
+        data={"title": "Aufgabe aus dem TOP", "assigned_to": "{member}", "due_date": IN_60_TAGEN},
+        method="json",
+        foreign={"zustaendig": {"assigned_to": "{a_member}"}},
+    ),
+    Case(
         "paper_comments_api",
         path={"paper_id": "paper"},
         data={"content": "Kommentar", "visibility": "organization"},

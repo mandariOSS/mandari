@@ -31,6 +31,9 @@ from .api_documents import (
     SupplementaryDocumentAPIView,
     SupplementaryDocumentDownloadView,
 )
+from .api_tasks import (
+    AgendaTasksAPIView,
+)
 from .list import (
     MeetingCalendarEventsView,
     MeetingCalendarView,
@@ -53,6 +56,7 @@ from .teleprompter import (
 __all__ = [
     "AgendaNotesAPIView",
     "AgendaPositionAPIView",
+    "AgendaTasksAPIView",
     "FileAnnotationAPIView",
     "MeetingCalendarEventsView",
     "MeetingCalendarView",

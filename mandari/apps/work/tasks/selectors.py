@@ -106,6 +106,37 @@ def tasks_for_motion(organization: Organization, membership: Membership, motion:
     return visible_tasks(organization, membership, base=base).order_by("is_completed", "due_date", "-created_at")
 
 
+def tasks_for_agenda_item(organization: Organization, membership: Membership, agenda_item_id: Any) -> QuerySet[Task]:
+    """
+    Aufgaben aus einem TOP der Sitzungsvorbereitung (#856), die das Mitglied sehen darf.
+
+    Gastzugänge sehen keine Aufgaben (wie bei Dokumenten). Offene zuerst, dann nach Fälligkeit. ``created_by`` wird
+    mitgeladen, weil die Liste je Aufgabe ``can_edit_task`` prüft (sonst eine Abfrage je Aufgabe).
+    """
+    if membership.is_guest:
+        return Task.objects.none()
+    base = Task.objects.filter(organization=organization, related_agenda_item_id=agenda_item_id).select_related(
+        "assigned_to__user", "created_by"
+    )
+    return visible_tasks(organization, membership, base=base).order_by("is_completed", "due_date", "-created_at")
+
+
+def task_counts_for_agenda_items(
+    organization: Organization, membership: Membership, agenda_item_ids: list[Any]
+) -> dict[str, int]:
+    """Anzahl sichtbarer Aufgaben je TOP (Schlüssel: TOP-ID als Text) für die Reiter der Vorbereitung."""
+    if membership.is_guest or not agenda_item_ids:
+        return {}
+    base = Task.objects.filter(organization=organization, related_agenda_item_id__in=agenda_item_ids)
+    counts: dict[str, int] = {}
+    # Mit der Aufgaben-ID abfragen: ``visible_tasks`` ist DISTINCT, nur die TOP-ID ergäbe höchstens 1 je TOP
+    for _task_id, item_id in visible_tasks(organization, membership, base=base).values_list(
+        "id", "related_agenda_item_id"
+    ):
+        counts[str(item_id)] = counts.get(str(item_id), 0) + 1
+    return counts
+
+
 def own_tasks(membership: Membership, *, base: QuerySet[Task]) -> QuerySet[Task]:
     """Ansicht "Meine Aufgaben": erstellt, zugewiesen oder mit dem Mitglied geteilt."""
     return base.filter(
@@ -205,6 +236,11 @@ def labels_by_name(organization: Organization) -> dict[str, TaskLabel]:
 def active_members(organization: Organization) -> QuerySet[Membership]:
     """Aktive Mitglieder der Organisation (Zuweisungsliste)."""
     return organization.memberships.filter(is_active=True).select_related("user")
+
+
+def assignable_members(organization: Organization) -> QuerySet[Membership]:
+    """Aktive Mitglieder ohne Gastzugänge: zuständig für Aufgaben aus der Sitzungsvorbereitung (Gäste sehen keine)."""
+    return active_members(organization).filter(is_guest=False)
 
 
 def memberships_by_email(organization: Organization) -> dict[str, Membership]:
