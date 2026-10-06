@@ -9,7 +9,7 @@ Vorlage. Der Kontextprozessor ``rahmen_kontext`` gibt den Wert als ``work_neues_
 (``work/base_work_alt.html``). Der bisherige Rahmen bleibt unverändert, bis Sven den neuen freigibt.
 
 Navigation des neuen Rahmens: kompakte Seitenleiste mit Start, Sitzungen, Fraktionssitzungen, Dokumente, Aufgaben,
-Team und Recherche, darunter Einstellungen, Hilfe und die Person (Entscheidung Sven vom 06.10.2026: kompakt, aber
+Team und Recherche, darunter Einstellungen, Hilfe und die Person (Entscheidung im Issue vom 06.10.2026: kompakt, aber
 „Fraktionssitzungen“ als eigener Eintrag, im Kern die bisherige Gliederung). Welcher Bereich aktiv ist, folgt aus dem
 Namen der aufgerufenen Adresse; die rund 70 Seiten brauchen dafür keine eigene Angabe. Sitzungen und Recherche haben
 Reiter über die vorhandenen Listen, die Recherche zusätzlich Unterpunkte in der Seitenleiste (aufklappbar, auf ihren
@@ -61,7 +61,7 @@ BEREICHE: tuple[Ziel, ...] = (
     Ziel("team", "Team", "work:team", "contact"),
     Ziel("recherche", "Recherche", "work:ris_overview", "library"),
 )
-#: Leiste unten am Handy (danach „Mehr“), Entscheidung Sven vom 06.10.2026
+#: Leiste unten am Handy (danach „Mehr“), Entscheidung im Issue vom 06.10.2026
 LEISTE_UNTEN: tuple[str, ...] = ("start", "sitzungen", "fraktionssitzungen", "recherche")
 #: Adressen, die dieselbe Seite wie der Bereich zeigen
 GLEICHE_SEITE: dict[str, str] = {"dashboard_explicit": "dashboard"}

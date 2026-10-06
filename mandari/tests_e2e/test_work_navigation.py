@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Navigation des neuen Rahmens im Browser, Teil 2 (Issue #852, Entscheidung Sven vom 06.10.2026).
+Navigation des neuen Rahmens im Browser, Teil 2 (Issue #852, Entscheidung vom 06.10.2026).
 
 Geprüft: „Fraktionssitzungen“ ist ein eigener Eintrag der Seitenleiste. Die Unterpunkte der Recherche klappen per
 Knopf (auch per Tastatur) auf und zu, führen auf die Seiten des Ratsinformationssystems (aria-current „page“ am

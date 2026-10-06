@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Rahmen von Work, Teil 2 (Issue #852): Navigation nach Svens Entscheidung vom 06.10.2026.
+Rahmen von Work, Teil 2 (Issue #852): Navigation nach der Entscheidung im Issue vom 06.10.2026.
 
 Geprüft: Die Seitenleiste ist kompakt und hat „Fraktionssitzungen“ als eigenen Eintrag (Start, Sitzungen,
 Fraktionssitzungen, Dokumente, Aufgaben, Team, Recherche); „Sitzungen“ hat die Reiter „Für mich“ und „Alle Gremien“;
