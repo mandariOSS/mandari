@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.utils import timezone
 
 from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
@@ -216,6 +216,83 @@ def papers_of_agenda_item(agenda_item: OParlAgendaItem) -> QuerySet[OParlPaper]:
         .exclude(withdrawn_q("paper"))
     )
     return OParlPaper.objects.filter(id__in=consultations.values("paper_id")).distinct()
+
+
+@dataclass(frozen=True)
+class AgendaOverview:
+    """Umfang einer Tagesordnung: Zahl der Punkte und die Punkte, unter denen eine Vorlage beraten wird."""
+
+    items: int
+    with_paper: frozenset[uuid.UUID]
+
+
+def agenda_overview(meeting_ids: Iterable[object]) -> dict[uuid.UUID, AgendaOverview]:
+    """
+    Je Sitzung die Zahl der Tagesordnungspunkte und die Punkte mit Vorlage (ohne zurückgenommene Beratungen),
+    für den Vorbereitungsstand („2 von 9 Vorlagen“). Eine Abfrage für alle Sitzungen; Sitzungen ohne Punkte fehlen.
+    """
+    ids = [pk for pk in (_uuid(value) for value in meeting_ids) if pk is not None]
+    if not ids:
+        return {}
+    mit_vorlage = (
+        OParlConsultation.objects.filter(agenda_item_external_id=OuterRef("external_id"), paper__isnull=False)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+    )
+    zeilen = (
+        OParlAgendaItem.objects.filter(meeting_id__in=ids)
+        .annotate(hat_vorlage=Exists(mit_vorlage))
+        .values_list("meeting_id", "id", "hat_vorlage")
+    )
+    anzahl: dict[uuid.UUID, int] = {}
+    vorlagen: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for meeting_id, item_id, hat_vorlage in zeilen:
+        anzahl[meeting_id] = anzahl.get(meeting_id, 0) + 1
+        if hat_vorlage:
+            vorlagen.setdefault(meeting_id, set()).add(item_id)
+    return {mid: AgendaOverview(items=n, with_paper=frozenset(vorlagen.get(mid, ()))) for mid, n in anzahl.items()}
+
+
+@dataclass(frozen=True)
+class PaperOnAgenda:
+    """Vorlage auf der Tagesordnung einer Sitzung: die Vorlage und die früheste Sitzung im gefragten Zeitraum."""
+
+    paper: OParlPaper
+    meeting: OParlMeeting
+
+
+def papers_on_agendas(
+    meetings_qs: QuerySet[OParlMeeting], *, limit: int = 5, exclude_papers: Iterable[uuid.UUID] = ()
+) -> list[PaperOnAgenda]:
+    """
+    Vorlagen, die in den gegebenen Sitzungen beraten werden (ohne zurückgenommene Beratungen), neueste Vorlage
+    zuerst, je Vorlage einmal mit der frühesten dieser Sitzungen. Zwei Abfragen.
+    """
+    sitzungen = {m.external_id: m for m in meetings_qs.order_by("start")}
+    if not sitzungen:
+        return []
+    beratungen = (
+        OParlConsultation.objects.filter(meeting_external_id__in=list(sitzungen), paper__isnull=False)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .exclude(paper_id__in=list(exclude_papers))
+        .select_related("paper")
+        .order_by("-paper__date", "-paper__oparl_created")
+    )
+    gefunden: dict[uuid.UUID, PaperOnAgenda] = {}
+    for beratung in beratungen:
+        sitzung = sitzungen.get(beratung.meeting_external_id or "")
+        vorlage = beratung.paper
+        if sitzung is None or vorlage is None:
+            continue
+        bisher = gefunden.get(vorlage.pk)
+        if bisher is None:
+            if len(gefunden) >= limit:
+                continue
+            gefunden[vorlage.pk] = PaperOnAgenda(paper=vorlage, meeting=sitzung)
+        elif sitzung.start and bisher.meeting.start and sitzung.start < bisher.meeting.start:
+            gefunden[vorlage.pk] = PaperOnAgenda(paper=vorlage, meeting=sitzung)
+    return list(gefunden.values())
 
 
 # =============================================================================

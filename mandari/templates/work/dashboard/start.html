@@ -1,0 +1,115 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Start im neuen Rahmen (Issue #852): ein Satz mit dem Stand und höchstens eine Hauptaktion im Kopfband, darunter
+„Nächste Sitzungen“ mit Vorbereitungsstand, „Für Sie“ und „Neu in Ihren Gremien“. Keine Zählerkacheln, keine
+Farbchips. Ab 1.600 px drei Spalten, darunter stehen die neuen Vorlagen in voller Breite.
+Daten: apps/work/dashboard/views.py und selectors.py; der bisherige Start bleibt work/dashboard/index.html.
+Oben im Inhalt das Hinweisband wie im bisherigen Start (Issue #857): work/partials/hinweisband.html mit dem Kontext
+„hinweis“ aus DashboardView; ohne Hinweis wird es nicht geladen.
+{% endcomment %}
+
+{% block page_title %}Start{% endblock %}
+
+{% block work_header %}
+<header class="work-page-header">
+    <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <div class="min-w-0">
+            <p class="text-sm text-gray-600 dark:text-gray-400">{{ organization.name }} · {{ today|date:"l, j. F Y" }}</p>
+            <h1 class="work-page-title mt-1">Start</h1>
+            <p class="work-page-subtitle" data-testid="start-satz">{{ start_satz }}</p>
+        </div>
+        {% if start_aktion %}<c-ui.button href="{{ start_aktion.url }}">{{ start_aktion.label }}</c-ui.button>{% endif %}
+    </div>
+</header>
+{% endblock %}
+
+{% block work_content %}
+{% if hinweis %}{% include "work/partials/hinweisband.html" %}{% endif %}
+<div class="grid gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] min-[1600px]:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]">
+
+    <section aria-labelledby="start-sitzungen">
+        <div class="flex items-baseline justify-between gap-4">
+            <h2 id="start-sitzungen" class="text-lg font-semibold text-gray-900 dark:text-white">Nächste Sitzungen</h2>
+            <a href="{% url 'work:meetings' org_slug=organization.slug %}" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Alle Sitzungen</a>
+        </div>
+        {% if has_my_committees %}
+        <p class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+            {% if dashboard_personalized %}Nur Sitzungen Ihrer Gremien und der Fraktion. <a href="?alle=1" class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Alle anzeigen</a>
+            {% else %}Alle Sitzungen der Organisation. <a href="{% url 'work:dashboard' org_slug=organization.slug %}" class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Nur Ihre Gremien</a>{% endif %}
+            · <a href="{% url 'work:profile_committees' org_slug=organization.slug %}" class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Gremien wählen</a>
+        </p>
+        {% endif %}
+        {% if upcoming_meetings %}
+        <ul class="mt-2">
+            {% for s in upcoming_meetings %}
+            <li class="grid grid-cols-[4rem_minmax(0,1fr)] sm:grid-cols-[4.5rem_minmax(0,1fr)_auto] gap-x-4 gap-y-1 py-4 border-t border-gray-200 dark:border-gray-800 first:border-t-0">
+                <p class="tabular-nums leading-tight">
+                    <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ s.start|date:"D" }}</span>
+                    <span class="block text-lg font-bold text-gray-900 dark:text-white">{{ s.start|date:"d.m." }}</span>
+                    <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ s.start|date:"H:i" }}</span>
+                </p>
+                <div class="min-w-0">
+                    <a href="{% url s.url_name org_slug=organization.slug meeting_id=s.id %}" class="font-semibold text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ s.title }}</a>
+                    <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400">
+                        {% if s.type == "faction" %}Fraktion{% if s.location %} · {% endif %}{% endif %}{{ s.location }}{% if s.stand.tops %}{% if s.location %} · {% endif %}{{ s.stand.tops }} TOP{{ s.stand.tops|pluralize:"s" }}{% endif %}
+                    </p>
+                    <p class="mt-1 text-sm text-gray-800 dark:text-gray-200">
+                        {% if s.type == "faction" %}{{ s.stand_text }}
+                        {% elif s.stand.vorlagen %}Positionen: {{ s.stand.positionen }} von {{ s.stand.vorlagen }} Vorlage{{ s.stand.vorlagen|pluralize:"n" }}
+                        {% else %}Noch keine Vorlagen auf der Tagesordnung{% endif %}
+                    </p>
+                </div>
+                <a href="{% if s.type == 'faction' %}{% url 'work:faction_detail' org_slug=organization.slug meeting_id=s.id %}{% else %}{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=s.id %}{% endif %}"
+                   class="col-start-2 sm:col-start-3 sm:row-start-1 justify-self-start sm:self-center inline-flex items-center gap-1 text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+                    {% if s.type == "faction" %}Öffnen{% else %}Vorbereiten{% endif %}<span class="sr-only">: {{ s.title }}, {{ s.start|date:"d.m." }}</span>
+                    <i data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true"></i>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">In den nächsten Wochen stehen keine Sitzungen an.</p>
+        {% endif %}
+    </section>
+
+    <section aria-labelledby="start-fuer-sie">
+        <div class="flex items-baseline justify-between gap-4">
+            <h2 id="start-fuer-sie" class="text-lg font-semibold text-gray-900 dark:text-white">Für Sie</h2>
+            <a href="{% url 'work:document_create' org_slug=organization.slug %}" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Neues Dokument</a>
+        </div>
+        {% if fuer_sie %}
+        <ul class="mt-2">
+            {% for e in fuer_sie %}
+            <li class="py-4 border-t border-gray-200 dark:border-gray-800 first:border-t-0">
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ e.art }}</p>
+                <a href="{{ e.url }}" class="mt-0.5 block font-semibold text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ e.titel }}</a>
+                <p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ e.zeile }}</p>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">Gerade wartet nichts auf Sie: keine offenen Aufgaben, keine Freigaben, keine Dokumente in Arbeit.</p>
+        {% endif %}
+    </section>
+
+    <section aria-labelledby="start-neu" class="xl:col-span-2 min-[1600px]:col-span-1">
+        <div class="flex items-baseline justify-between gap-4">
+            <h2 id="start-neu" class="text-lg font-semibold text-gray-900 dark:text-white">{% if dashboard_personalized %}Neu in Ihren Gremien{% else %}Neue Vorlagen{% endif %}</h2>
+            <a href="{% url 'work:ris_papers' org_slug=organization.slug %}" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Recherche</a>
+        </div>
+        {% if neu_in_gremien %}
+        <ul class="mt-2 xl:grid xl:grid-cols-3 xl:gap-x-10 min-[1600px]:block">
+            {% for v in neu_in_gremien %}
+            <li class="py-4 border-t border-gray-200 dark:border-gray-800 first:border-t-0 xl:border-t-0 min-[1600px]:border-t min-[1600px]:first:border-t-0">
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ v.art }}</p>
+                <a href="{{ v.url }}" class="mt-0.5 block font-semibold text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ v.titel }}</a>
+                <p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ v.zeile }}</p>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">Auf den Tagesordnungen der nächsten sechs Wochen stehen keine Vorlagen.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
