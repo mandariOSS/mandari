@@ -368,6 +368,51 @@ def cancel_meetings_in_exception(exception, now=None) -> int:
     return count
 
 
+def _schedule_lock_key(schedule_id) -> str:
+    """Sperre je Reihe (Issue #896): Zeitplanlauf und sofortige Erzeugung schließen sich je Reihe aus."""
+    return f"{_SCHEDULE_LOCK_KEY}:{schedule_id}"
+
+
+def _generate_locked(schedule, now=None) -> dict | None:
+    """
+    Reihe unter ihrer Sperre erzeugen; ``None``, wenn sie gerade an anderer Stelle erzeugt wird.
+
+    Den Wasserstand nach dem Sperren frisch lesen: Der Zeitplanlauf hält die Reihen seit seinem Beginn im Speicher.
+    Mit altem Stand kämen inzwischen gelöschte Termine wieder (``generated_until``, Issue #871).
+    """
+    from django.core.cache import cache
+
+    key = _schedule_lock_key(schedule.pk)
+    if not cache.add(key, "1", timeout=_SCHEDULE_LOCK_TIMEOUT):
+        return None
+    try:
+        schedule.refresh_from_db(fields=["generated_until"])
+        return generate_meetings_for_schedule(schedule, now=now)
+    finally:
+        cache.delete(key)
+
+
+def generate_meetings_now(schedule) -> dict | None:
+    """
+    Termine einer Reihe sofort erzeugen (Issue #896): nach dem Anlegen und nach Änderungen an der Reihe.
+
+    Der stündliche Zeitplan bleibt für das Weiterrollen zuständig. Erzeugt er die Reihe gerade, übernimmt er das
+    (dieselbe Sperre je Reihe, kein doppeltes Anlegen). Pausierte Reihen erzeugen nichts. Fehler werden nur
+    protokolliert: Die Änderung an der Reihe ist gespeichert, der nächste Lauf holt die Termine nach.
+    """
+    from apps.work.faction.models import FactionMeetingSchedule
+
+    try:
+        # Gespeicherten Stand lesen: Nach dem Anlegen hält das Objekt die Formularwerte (Uhrzeit als Text)
+        schedule = FactionMeetingSchedule.objects.select_related("organization").filter(pk=schedule.pk).first()
+        if schedule is None or not schedule.is_active or not schedule.organization.is_active:
+            return None
+        return _generate_locked(schedule)
+    except Exception:
+        logger.exception("Sofortige Sitzungserzeugung fehlgeschlagen (schedule=%s)", schedule.pk)
+        return None
+
+
 def run_faction_schedule_pass(now=None) -> dict:
     """
     Periodischer Erzeugungslauf (Issue #61).
@@ -394,9 +439,12 @@ def run_faction_schedule_pass(now=None) -> dict:
         )
         for schedule in schedules:
             try:
-                result = generate_meetings_for_schedule(schedule, now=now)
+                result = _generate_locked(schedule, now=now)
             except Exception:
                 logger.exception("Sitzungserzeugung fehlgeschlagen (schedule=%s)", schedule.id)
+                continue
+            if result is None:
+                # Die Reihe wird gerade sofort nach einer Änderung erzeugt (Issue #896)
                 continue
             stats["schedules"] += 1
             stats["created"] += result["created"]

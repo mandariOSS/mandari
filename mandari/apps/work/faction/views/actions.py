@@ -7,9 +7,11 @@ from datetime import datetime
 from django.contrib import messages
 from django.db import transaction
 from django.http import HttpResponse
+from django.http.response import HttpResponseRedirectBase
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views.generic import View
+from django_htmx.http import HttpResponseClientRedirect
 
 from apps.common.mixins import WorkViewMixin
 
@@ -87,7 +89,14 @@ class FactionActionView(WorkViewMixin, View):
 
         handler = handlers.get(action)
         if handler:
-            return handler(request, meeting)
+            response = handler(request, meeting)
+            # Umleitung nach einer HTMX-Aktion (Issue #895): htmx folgt einer 302 selbst und tauscht die ganze
+            # Zielseite samt Rahmen in den Teilbereich (z. B. die Liste in die Seitenleiste nach dem Löschen).
+            # HX-Redirect lässt stattdessen den Browser die Seite neu laden.
+            is_redirect = isinstance(response, HttpResponseRedirectBase)
+            if self.is_htmx and is_redirect and not isinstance(response, HttpResponseClientRedirect):
+                return HttpResponseClientRedirect(response.url)
+            return response
 
         if self.is_htmx:
             return HttpResponse(status=400)

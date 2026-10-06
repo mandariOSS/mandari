@@ -1993,7 +1993,7 @@ def add_schedule(organization: Organization, data: ScheduleInput) -> FactionMeet
     if weekday not in dict(FactionMeetingSchedule.WEEKDAY_CHOICES):
         weekday = 0
     automation = _parse_automation(data.automation or ScheduleAutomationInput())
-    return FactionMeetingSchedule.objects.create(
+    schedule = FactionMeetingSchedule.objects.create(
         organization=organization,
         name=data.name,
         recurrence=recurrence,
@@ -2004,6 +2004,8 @@ def add_schedule(organization: Organization, data: ScheduleInput) -> FactionMeet
         default_video_link=data.default_video_link,
         **automation,
     )
+    _generate_schedule_now(schedule)
+    return schedule
 
 
 def save_schedule_automation(organization: Organization, form: Mapping[str, str]) -> tuple[FactionMeetingSchedule, int]:
@@ -2044,6 +2046,18 @@ def update_schedule_automation(
     return schedule, updated
 
 
+def _generate_schedule_now(schedule: FactionMeetingSchedule) -> None:
+    """
+    Termine der Reihe sofort erzeugen (Issue #896), nicht erst beim stündlichen Zeitplanlauf.
+
+    Erst nach dem Speichern der Änderung: Die Sperre je Reihe schützt vor doppeltem Anlegen nur, wenn der
+    Zeitplanlauf die schon gespeicherten Termine und den Wasserstand sieht.
+    """
+    from apps.work.faction.generation import generate_meetings_now
+
+    transaction.on_commit(lambda: generate_meetings_now(schedule))
+
+
 def _schedule(organization: Organization, schedule_id: Any) -> FactionMeetingSchedule:
     schedule = selectors.find_schedule(organization, schedule_id)
     if schedule is None:
@@ -2057,6 +2071,9 @@ def toggle_schedule(organization: Organization, schedule_id: Any) -> FactionMeet
     schedule.is_active = not schedule.is_active
     # Nur den Schalter schreiben (generated_until gehört dem Erzeugungslauf, siehe update_schedule_automation)
     schedule.save(update_fields=["is_active"])
+    if schedule.is_active:
+        # Wiederaufnahme: Termine ab heute sofort, ohne Nachholen der Pause (Issue #896)
+        _generate_schedule_now(schedule)
     return schedule
 
 
@@ -2093,14 +2110,26 @@ def add_schedule_exception(
     except ValidationError as exc:
         raise ServiceError("Bitte gültige Daten angeben.") from exc
     exception.refresh_from_db()
-    return cancel_meetings_in_exception(exception)
+    cancelled = cancel_meetings_in_exception(exception)
+    # Termine hinter dem Wasserstand legt die Reihe gleich mit, die im Zeitraum als „Entfällt“ (Issue #896)
+    _generate_schedule_now(schedule)
+    return cancelled
 
 
 def delete_schedule_exception(organization: Organization, exception_id: Any) -> None:
-    """Ausnahme entfernen (nur innerhalb der Organisation)."""
+    """Ausnahme entfernen (nur innerhalb der Organisation); schon entfallene Termine bleiben abgesagt."""
     from apps.work.faction.models import FactionMeetingException
 
-    FactionMeetingException.objects.filter(id=exception_id, schedule__organization=organization).delete()
+    exception = (
+        FactionMeetingException.objects.filter(id=exception_id, schedule__organization=organization)
+        .select_related("schedule__organization")
+        .first()
+    )
+    if exception is None:
+        return
+    schedule = exception.schedule
+    exception.delete()
+    _generate_schedule_now(schedule)
 
 
 def add_suspension_rule(organization: Organization, schedule_id: Any, ris_organization_id: Any) -> str:
