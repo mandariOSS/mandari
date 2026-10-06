@@ -397,7 +397,7 @@ def test_leerer_top_geht_wie_bisher_ohne_eingabe(sitzung: FactionMeeting, vorsit
 
 @pytest.mark.django_db
 def test_top_vorschau_ohne_agendarecht_und_fremder_top(
-    org: Any, make_member: Any, sitzung: FactionMeeting, client_for: Any
+    org: Any, make_member: Any, sitzung: FactionMeeting, stellvertretung: Any, client_for: Any
 ) -> None:
     mitglied = _mitglied(org, make_member, "faction_member", "mitglied@example.org")
     fremd = FactionMeeting.objects.create(organization=org, title="Andere", start=timezone.make_aware(START))
@@ -406,10 +406,10 @@ def test_top_vorschau_ohne_agendarecht_und_fremder_top(
 
     ohne_recht = _aktion(client_for(mitglied.user), sitzung, action="delete_item_preview", item_id=str(haushalt.id))
     falscher_top = _aktion(
-        client_for(sitzung.created_by.user), sitzung, action="delete_item_preview", item_id=str(fremder_top.id)
+        client_for(stellvertretung.user), sitzung, action="delete_item_preview", item_id=str(fremder_top.id)
     )
     kaputte_kennung = _aktion(
-        client_for(sitzung.created_by.user), sitzung, action="delete_item_preview", item_id="kein-uuid"
+        client_for(stellvertretung.user), sitzung, action="delete_item_preview", item_id="kein-uuid"
     )
 
     assert ohne_recht.status_code == 403
@@ -510,7 +510,7 @@ def test_reihe_einer_anderen_organisation_bleibt(
 ) -> None:
     from apps.common.tests.factories import OrganizationFactory
 
-    andere = OrganizationFactory(name="Andere Fraktion", slug="andere-fraktion")
+    andere: Any = OrganizationFactory(name="Andere Fraktion", slug="andere-fraktion")  # type: ignore[no-untyped-call]
     admin = make_member(andere, [], email="admin@andere.example.org", is_admin=True)
 
     client_for(admin.user).post(
