@@ -5,6 +5,9 @@ Umleitungen nach HTMX-Aktionen einer Fraktionssitzung (Issue #895).
 htmx folgt einer 302 selbst und tauscht die ganze Zielseite samt Rahmen in den Teilbereich, aus dem die Aktion kam
 (nach dem Löschen stand die Liste in der Seitenleiste der Sitzung). Bei HTMX-Anfragen antwortet der Aktions-Endpunkt
 deshalb mit ``HX-Redirect``; der Browser lädt die Zielseite vollständig. Ohne HTMX bleibt es bei der 302.
+
+Löschen braucht seit Issue #897 ``faction.delete`` und das Datum der Sitzung als Eingabe; eine Ablehnung beim
+Löschen leitet nicht um, sondern steht als Meldung im Dialog (403 bzw. 400).
 """
 
 from __future__ import annotations
@@ -16,10 +19,11 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.work.faction import deletion
 from apps.work.faction.models import FactionMeeting
 
 HTMX = {"HTTP_HX_REQUEST": "true"}
-VORSITZ_RECHTE = ["faction.view_public", "faction.create", "faction.manage", "faction.start"]
+VORSITZ_RECHTE = ["faction.view_public", "faction.create", "faction.manage", "faction.start", "faction.delete"]
 
 
 @pytest.fixture
@@ -56,6 +60,11 @@ def _detail(meeting: FactionMeeting) -> str:
     return reverse("work:faction_detail", kwargs={"org_slug": meeting.organization.slug, "meeting_id": meeting.id})
 
 
+def _datum(meeting: FactionMeeting) -> str:
+    """Eingabe zur Freigabe des Löschens (Issue #897): das Datum der Sitzung."""
+    return deletion.meeting_phrases(meeting)[0]
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("neuer_rahmen", [False, True], ids=["alter-rahmen", "neuer-rahmen"])
 def test_htmx_loeschen_leitet_per_hx_redirect_auf_die_liste(
@@ -64,7 +73,7 @@ def test_htmx_loeschen_leitet_per_hx_redirect_auf_die_liste(
     org.work_new_design = neuer_rahmen
     org.save(update_fields=["work_new_design"])
 
-    response = _aktion(client_for(vorsitz.user), sitzung, htmx=True, action="delete")
+    response = _aktion(client_for(vorsitz.user), sitzung, htmx=True, action="delete", confirmation=_datum(sitzung))
 
     assert response.status_code == 200
     assert response["HX-Redirect"] == _liste(org)
@@ -77,7 +86,7 @@ def test_htmx_loeschen_leitet_per_hx_redirect_auf_die_liste(
 def test_ohne_htmx_bleibt_die_umleitung_auf_die_liste(
     org: Any, vorsitz: Any, sitzung: FactionMeeting, client_for: Any
 ) -> None:
-    response = _aktion(client_for(vorsitz.user), sitzung, htmx=False, action="delete")
+    response = _aktion(client_for(vorsitz.user), sitzung, htmx=False, action="delete", confirmation=_datum(sitzung))
 
     assert response.status_code == 302
     assert response["Location"] == _liste(org)
@@ -88,7 +97,6 @@ def test_ohne_htmx_bleibt_die_umleitung_auf_die_liste(
 @pytest.mark.parametrize(
     "daten",
     [
-        {"action": "delete"},
         {"action": "cancel"},
         {"action": "start"},
         {"action": "update_status", "status": "cancelled"},
@@ -103,6 +111,27 @@ def test_htmx_aktion_ohne_recht_leitet_per_hx_redirect_auf_die_sitzung(
     assert response.status_code == 200
     assert response["HX-Redirect"] == _detail(sitzung)
     assert response.content == b""
+    sitzung.refresh_from_db()
+    assert sitzung.status == "planned"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("person", "status", "meldung"),
+    [("mitglied", 403, deletion.NOT_ALLOWED), ("vorsitz", 400, deletion.NOT_CONFIRMED_MEETING)],
+    ids=["ohne-recht", "ohne-eingabe"],
+)
+def test_htmx_loeschen_abgelehnt_ohne_umleitung_mit_meldung(
+    request: Any, sitzung: FactionMeeting, client_for: Any, person: str, status: int, meldung: str
+) -> None:
+    member = request.getfixturevalue(person)
+
+    response = _aktion(client_for(member.user), sitzung, htmx=True, action="delete")
+
+    assert response.status_code == status
+    assert not response.has_header("HX-Redirect"), "die Meldung steht im Dialog, keine Umleitung"
+    assert not response.has_header("Location")
+    assert response.content.decode() == meldung
     sitzung.refresh_from_db()
     assert sitzung.status == "planned"
 
