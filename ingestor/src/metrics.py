@@ -410,7 +410,8 @@ class MetricsCollector:
         async def metrics_handler(request: Any) -> Any:
             """Handle /metrics endpoint."""
             output = generate_latest(self.registry)
-            return web.Response(body=output, content_type=CONTENT_TYPE_LATEST)
+            # CONTENT_TYPE_LATEST enthält „charset=…“; aiohttp lehnt das in content_type ab, daher als Kopfzeile
+            return web.Response(body=output, headers={"Content-Type": CONTENT_TYPE_LATEST})
 
         async def health_handler(request: Any) -> Any:
             """Handle /health endpoint."""
