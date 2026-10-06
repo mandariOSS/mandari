@@ -32,6 +32,7 @@ from typing import Any, cast
 
 from django.core.cache import cache
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from .models import ANNOUNCEMENT_WITHDRAWN_KEY, Notification, NotificationPreference, NotificationType
@@ -840,7 +841,7 @@ class NotificationHub:
         return f"notif_count_{membership_id}"
 
     @classmethod
-    def for_recipient(cls, membership):
+    def for_recipient(cls, membership: Any) -> QuerySet[Notification]:
         """
         Benachrichtigungen der Person für Glocke und Benachrichtigungszentrale.
 

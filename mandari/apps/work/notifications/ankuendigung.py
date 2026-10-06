@@ -50,7 +50,7 @@ LINKTEXT_MAX = 40
 LINKTEXT_STANDARD = "Mehr dazu"
 
 
-class UngueltigeAnkuendigung(ValueError):
+class AnkuendigungError(ValueError):
     """Angaben einer Ankündigung sind unvollständig oder unzulässig."""
 
 
@@ -77,22 +77,22 @@ class Ankuendigung:
     rueckmeldung: bool = False
 
     def pruefen(self) -> None:
-        """Wirft ``UngueltigeAnkuendigung`` mit einer Meldung für den Aufruf, wenn eine Angabe nicht passt."""
+        """Wirft ``AnkuendigungError`` mit einer Meldung für den Aufruf, wenn eine Angabe nicht passt."""
         if not SCHLUESSEL_MUSTER.match(self.schluessel):
-            raise UngueltigeAnkuendigung(
+            raise AnkuendigungError(
                 "Der Schlüssel besteht aus Kleinbuchstaben, Ziffern und Bindestrichen (höchstens 60 Zeichen), "
                 "etwa work-update-2026-11."
             )
         if not self.titel.strip() or len(self.titel) > TITEL_MAX:
-            raise UngueltigeAnkuendigung(f"Der Titel ist Pflicht und hat höchstens {TITEL_MAX} Zeichen.")
+            raise AnkuendigungError(f"Der Titel ist Pflicht und hat höchstens {TITEL_MAX} Zeichen.")
         if not self.text.strip() or len(self.text) > TEXT_MAX:
-            raise UngueltigeAnkuendigung(f"Der Text ist Pflicht und hat höchstens {TEXT_MAX} Zeichen.")
+            raise AnkuendigungError(f"Der Text ist Pflicht und hat höchstens {TEXT_MAX} Zeichen.")
         if self.link and (len(self.link) > LINK_MAX or not _link_zulaessig(self.link)):
-            raise UngueltigeAnkuendigung("Der Link beginnt mit https:// oder ist ein Pfad dieser Installation (/…).")
+            raise AnkuendigungError("Der Link beginnt mit https:// oder ist ein Pfad dieser Installation (/…).")
         if len(self.linktext) > LINKTEXT_MAX:
-            raise UngueltigeAnkuendigung(f"Der Linktext hat höchstens {LINKTEXT_MAX} Zeichen.")
+            raise AnkuendigungError(f"Der Linktext hat höchstens {LINKTEXT_MAX} Zeichen.")
         if self.linktext and not self.link:
-            raise UngueltigeAnkuendigung("Ein Linktext braucht einen Link.")
+            raise AnkuendigungError("Ein Linktext braucht einen Link.")
 
     def metadaten(self) -> dict[str, Any]:
         daten: dict[str, Any] = {METADATEN_SCHLUESSEL: self.schluessel}
@@ -240,7 +240,7 @@ def zurueckziehen(schluessel: str, *, probelauf: bool = False) -> int:
     ungelesen bleiben unverändert. Gibt die Zahl der betroffenen Benachrichtigungen zurück.
     """
     if not SCHLUESSEL_MUSTER.match(schluessel):
-        raise UngueltigeAnkuendigung("Unbekannter Schlüssel.")
+        raise AnkuendigungError("Unbekannter Schlüssel.")
     offen = _zu_schluessel(schluessel).exclude(metadata__has_key=METADATEN_ZURUECKGEZOGEN)
     if probelauf:
         return offen.count()

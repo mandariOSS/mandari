@@ -194,5 +194,8 @@ class TestBasisdemo:
         )
         benachrichtigung = ankuendigungen.first()
         assert benachrichtigung is not None
-        assert (benachrichtigung.title, benachrichtigung.link) == (DEMO_ANKUENDIGUNG["titel"], DEMO_ANKUENDIGUNG["link"])
+        assert (benachrichtigung.title, benachrichtigung.link) == (
+            DEMO_ANKUENDIGUNG["titel"],
+            DEMO_ANKUENDIGUNG["link"],
+        )
         assert benachrichtigung.metadata.get("rueckmeldung") is True

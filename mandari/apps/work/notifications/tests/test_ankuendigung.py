@@ -8,14 +8,19 @@ from typing import Any
 
 import pytest
 from django.core import mail
+from django.core.exceptions import FieldDoesNotExist
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.urls import reverse
 
-from apps.common.tests.factories import MembershipFactory, OrganizationFactory, RoleFactory, UserFactory
+from apps.common.tests import factories
+from apps.tenants.models import Organization
 from apps.work.notifications import ankuendigung
 from apps.work.notifications.models import Notification, NotificationPreference, NotificationType
 from apps.work.notifications.services import NotificationHub
+
+#: Fabriken sind nicht typisiert
+fabriken: Any = factories
 
 TITEL = "Großes Update"
 TEXT = "Neues Design und bessere Recherche."
@@ -53,14 +58,18 @@ def start(client: Any, org: Any) -> Any:
 @pytest.fixture
 def zwei_orgs(org: Any, make_member: Any) -> dict[str, Any]:
     """Zwei Organisationen; eine Person in beiden, dazu je ein weiteres Mitglied, ein Gast und Inaktive."""
-    andere = OrganizationFactory(name="Andere Fraktion", slug="andere-fraktion")
+    andere = fabriken.OrganizationFactory(name="Andere Fraktion", slug="andere-fraktion")
     beide = make_member(org, ["dashboard.view"], email="beide@example.org")
-    zweite = MembershipFactory(
-        user=beide.user, organization=andere, roles=[RoleFactory(organization=andere, permissions=["dashboard.view"])]
+    zweite = fabriken.MembershipFactory(
+        user=beide.user,
+        organization=andere,
+        roles=[fabriken.RoleFactory(organization=andere, permissions=["dashboard.view"])],
     )
     nur_b = make_member(andere, ["dashboard.view"], email="b@example.org")
     nur_a = make_member(org, ["dashboard.view"], email="a@example.org")
-    gast = MembershipFactory(user=UserFactory(email="gast@example.org"), organization=org, is_guest=True)
+    gast = fabriken.MembershipFactory(
+        user=fabriken.UserFactory(email="gast@example.org"), organization=org, is_guest=True
+    )
     inaktiv = make_member(org, ["dashboard.view"], email="inaktiv@example.org")
     inaktiv.is_active = False
     inaktiv.save(update_fields=["is_active"])
@@ -152,9 +161,7 @@ class TestBefehl:
     )
     def test_unzulaessiger_link(self, zwei_orgs: dict[str, Any], link: str) -> None:
         with pytest.raises(CommandError, match="Link"):
-            call_command(
-                "work_ankuendigung", "--schluessel", "x-1", "--titel", TITEL, "--text", TEXT, "--link", link
-            )
+            call_command("work_ankuendigung", "--schluessel", "x-1", "--titel", TITEL, "--text", TEXT, "--link", link)
 
         assert not ankuendigungen().exists()
 
@@ -194,22 +201,41 @@ class TestBefehl:
         assert not Notification.objects.filter(title__startswith="[Vertretung]").exists()
 
 
+def rahmen_einstellen(organisation: Any, rahmen: str) -> None:
+    """Bisheriger oder neuer Rahmen von Work (Schalter je Organisation aus #852); ohne Schalter nur der bisherige."""
+    if rahmen == "bisher":
+        return
+    try:
+        Organization._meta.get_field("work_new_design")
+    except FieldDoesNotExist:
+        pytest.skip("Schalter für den neuen Rahmen (#852) ist auf diesem Stand noch nicht vorhanden")
+    organisation.work_new_design = True
+    organisation.save(update_fields=["work_new_design"])
+
+
 @pytest.mark.django_db
 class TestHinweisband:
-    def test_start_zeigt_die_ungelesene_ankuendigung(self, zwei_orgs: dict[str, Any], client_for: Any) -> None:
+    @pytest.mark.parametrize("rahmen", ["bisher", "neu"])
+    def test_start_zeigt_die_ungelesene_ankuendigung(
+        self, zwei_orgs: dict[str, Any], client_for: Any, rahmen: str
+    ) -> None:
+        rahmen_einstellen(zwei_orgs["a"], rahmen)
         ankuendigen("--rueckmeldung")
 
         response = start(client_for(zwei_orgs["nur_a"].user), zwei_orgs["a"])
 
         assert response.status_code == 200
         inhalt = response.content.decode()
-        assert 'data-testid="hinweisband"' in inhalt
+        assert inhalt.count('data-testid="hinweisband"') == 1
         assert TITEL in inhalt and TEXT in inhalt
         assert f'href="{LINK}"' in inhalt and "Was ist neu" in inhalt
         assert "Rückmeldung geben" in inhalt
         assert reverse("work:support", kwargs={"org_slug": zwei_orgs["a"].slug}) in inhalt
 
-    def test_ohne_ankuendigung_kein_band(self, zwei_orgs: dict[str, Any], client_for: Any) -> None:
+    @pytest.mark.parametrize("rahmen", ["bisher", "neu"])
+    def test_ohne_ankuendigung_kein_band(self, zwei_orgs: dict[str, Any], client_for: Any, rahmen: str) -> None:
+        rahmen_einstellen(zwei_orgs["a"], rahmen)
+
         response = start(client_for(zwei_orgs["nur_a"].user), zwei_orgs["a"])
 
         assert 'data-testid="hinweisband"' not in response.content.decode()
@@ -293,14 +319,14 @@ class TestHinweisband:
         assert 'data-testid="hinweisband"' not in start(client, zwei_orgs["a"]).content.decode()
         assert ankuendigungen(recipient=mitglied, metadata__ankuendigung="erste", is_read=False).exists()
 
-    def test_fremde_benachrichtigung_laesst_sich_nicht_lesen(
-        self, zwei_orgs: dict[str, Any], client_for: Any
-    ) -> None:
+    def test_fremde_benachrichtigung_laesst_sich_nicht_lesen(self, zwei_orgs: dict[str, Any], client_for: Any) -> None:
         ankuendigen()
         fremd = ankuendigungen(recipient=zwei_orgs["beide_a"]).get()
 
         antwort = client_for(zwei_orgs["nur_a"].user).post(
-            reverse("work:notification_mark_read", kwargs={"org_slug": zwei_orgs["a"].slug, "notification_id": fremd.id})
+            reverse(
+                "work:notification_mark_read", kwargs={"org_slug": zwei_orgs["a"].slug, "notification_id": fremd.id}
+            )
         )
 
         assert antwort.status_code == 404
@@ -326,12 +352,26 @@ class TestGlocke:
         assert TITEL in liste["html"]
         assert liste["unread_count"] == 1
 
+    def test_keine_einblendung_bei_jedem_seitenaufruf(self, zwei_orgs: dict[str, Any], client_for: Any) -> None:
+        mitglied = zwei_orgs["nur_a"]
+        Notification.objects.create(
+            recipient=mitglied, notification_type=NotificationType.TASK_ASSIGNED, title="Aufgabe", message="x"
+        )
+        ankuendigen()
+
+        neueste = (
+            client_for(mitglied.user)
+            .get(reverse("work:notification_latest", kwargs={"org_slug": zwei_orgs["a"].slug}))
+            .json()
+        )
+
+        assert [eintrag["title"] for eintrag in neueste["notifications"]] == ["Aufgabe"]
+        assert neueste["count"] == 2
+
 
 @pytest.mark.django_db
 class TestZurueckziehen:
-    def test_zurueckziehen_blendet_aus_und_behaelt_die_daten(
-        self, zwei_orgs: dict[str, Any], client_for: Any
-    ) -> None:
+    def test_zurueckziehen_blendet_aus_und_behaelt_die_daten(self, zwei_orgs: dict[str, Any], client_for: Any) -> None:
         ankuendigen()
         vorher = {n.id: (n.title, n.message, n.is_read, n.read_at) for n in ankuendigungen()}
         mitglied = zwei_orgs["nur_a"]

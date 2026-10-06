@@ -28,15 +28,17 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from apps.tenants.models import Organization
 from apps.work.notifications.ankuendigung import (
     Ankuendigung,
+    AnkuendigungError,
     Bericht,
-    UngueltigeAnkuendigung,
     ankuendigen,
     zurueckziehen,
 )
 
 
 class Command(BaseCommand):
-    help = "Legt eine Ankündigung für die aktiven Mitglieder in Work an (Glocke und Hinweisband auf Start, keine E-Mail)."
+    help = (
+        "Legt eine Ankündigung für die aktiven Mitglieder in Work an (Glocke und Hinweisband auf Start, keine E-Mail)."
+    )
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
@@ -88,7 +90,7 @@ class Command(BaseCommand):
                 mit_gaesten=options["mit_gaesten"],
                 probelauf=probelauf,
             )
-        except UngueltigeAnkuendigung as fehler:
+        except AnkuendigungError as fehler:
             raise CommandError(str(fehler)) from fehler
         self._ausgeben(bericht, probelauf)
 
@@ -104,7 +106,7 @@ class Command(BaseCommand):
     def _zurueckziehen(self, schluessel: str, probelauf: bool) -> None:
         try:
             anzahl = zurueckziehen(schluessel, probelauf=probelauf)
-        except UngueltigeAnkuendigung as fehler:
+        except AnkuendigungError as fehler:
             raise CommandError(str(fehler)) from fehler
         if probelauf:
             self.stdout.write(f"Probelauf: würde {anzahl} Benachrichtigungen zurückziehen.")
