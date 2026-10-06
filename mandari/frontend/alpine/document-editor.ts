@@ -10,6 +10,7 @@
  */
 
 import type { Editor } from '@tiptap/core'
+import { type AiTarget, applyAiSuggestion, captureAiTarget, textOfRange } from '../editor/ai-range'
 import type { CollabUser } from '../editor/collaboration'
 import type { FormatState } from '../editor/index'
 import { defineComponent } from '../js/alpine/component'
@@ -115,6 +116,10 @@ export interface ChatMessage {
   content: string
   hasAction?: boolean
   actionContent?: string | null
+  /** Markierte Stelle, für die der Vorschlag gilt (Schlüssel in `aiTargets`) */
+  targetId?: number | null
+  /** Hinweis unter dem Vorschlag, z. B. warum er sich nicht übernehmen lässt */
+  hint?: string
 }
 
 export interface Revision {
@@ -158,6 +163,15 @@ export const documentEditor = defineComponent(() => {
   // Identitätsprüfungen von ProseMirror ("Applying a mismatched transaction").
   let editor: Editor | null = null
   let autoSaveInterval: number | null = null
+  // Markierte Stellen der KI-Vorschläge (Teil von #856): außerhalb des reaktiven Zustands, weil sie
+  // Editor-Positionen und Ereignis-Abos halten
+  const aiTargets = new Map<number, AiTarget>()
+  let aiTargetSeq = 0
+
+  function releaseAiTargets(): void {
+    for (const target of aiTargets.values()) target.release()
+    aiTargets.clear()
+  }
 
   return {
     updatedAt: Date.now(),
@@ -209,6 +223,9 @@ export const documentEditor = defineComponent(() => {
     aiPreviewActive: false,
     aiPreviewContent: '',
     aiOriginalContent: '',
+    aiPreviewTargetId: null as number | null,
+    // Markierter Text, auf den sich KI-Aktionen beziehen (Anzeige im KI-Bereich)
+    aiSelectionText: '',
     previewMode: 'suggested',
     // Kommentar-Sidebar
     showResolvedComments: false,
@@ -449,6 +466,7 @@ export const documentEditor = defineComponent(() => {
           this.updatedAt = Date.now()
           this.formats = state
           this._checkTextSelection()
+          this._updateAiSelection()
         },
         onPageCount: (count, currentPage) => {
           this.pageCount = count
@@ -483,6 +501,7 @@ export const documentEditor = defineComponent(() => {
             this.updatedAt = Date.now()
             this.formats = state
             this._checkTextSelection()
+            this._updateAiSelection()
           },
           onPageCount: (count, currentPage) => {
             this.pageCount = count
@@ -541,6 +560,8 @@ export const documentEditor = defineComponent(() => {
         this.collabDestroy()
         this.collabDestroy = null
       }
+      // Gemerkte Stellen gehören zum alten Editor und lassen sich nicht mehr übernehmen
+      releaseAiTargets()
       if (editor) {
         editor.destroy()
         editor = null
@@ -702,6 +723,13 @@ export const documentEditor = defineComponent(() => {
       this.commentPopupExpanded = false
       this.inlineCommentText = ''
       this.inlineSelectedText = ''
+    },
+
+    /** Markierten Text für den KI-Bereich nachführen (bleibt stehen, wenn der Fokus in den Chat wechselt) */
+    _updateAiSelection(): void {
+      if (!editor) return
+      const { from, to, empty } = editor.state.selection
+      this.aiSelectionText = empty ? '' : textOfRange(editor.state.doc, from, to).trim()
     },
 
     // === Kommentardetails (Klick auf bestehende Markierung) ===
@@ -1555,8 +1583,14 @@ export const documentEditor = defineComponent(() => {
         if (container) container.scrollTop = container.scrollHeight
       })
 
-      const text = editor ? this.getContent() : ''
-      const selectedText = this.selectedText || ''
+      // Vorschläge (alles außer dem Chat) gelten für die markierte Stelle: Nur sie geht an die KI, und nur
+      // sie wird beim Übernehmen ersetzt. Ohne Markierung liest die KI den ganzen Text wie bisher, ihr
+      // Vorschlag lässt sich dann aber nicht übernehmen (nie das ganze Dokument ersetzen, Teil von #856).
+      const isSuggestion = action !== 'chat'
+      const target = editor ? captureAiTarget(editor) : null
+      const text = isSuggestion && target ? target.text : editor ? this.getContent() : ''
+      const selectedText = target ? target.text : ''
+      let targetUsed = false
       const historyPayload = this.chatMessages
         .filter((m) => m.role === 'user' || m.role === 'ai')
         .slice(-8)
@@ -1592,11 +1626,20 @@ export const documentEditor = defineComponent(() => {
           let content = ''
           let hasAction = false
           let actionContent: string | null = null
+          let targetId: number | null = null
+          let hint = ''
 
           if (data.content) {
             content = bereinigeKiHtml(String(data.content).replace(/\n/g, '<br>'))
-            hasAction = action !== 'chat'
             actionContent = data.content
+            if (isSuggestion && target) {
+              hasAction = true
+              targetId = ++aiTargetSeq
+              aiTargets.set(targetId, target)
+              targetUsed = true
+            } else if (isSuggestion) {
+              hint = 'Zum Übernehmen markieren Sie die Stelle im Text und wählen die Aktion erneut.'
+            }
           }
           if (Array.isArray(data.suggestions) && data.suggestions.length > 0) {
             content += '<ul class="mt-2 space-y-1">'
@@ -1607,7 +1650,7 @@ export const documentEditor = defineComponent(() => {
           }
           if (!content) content = 'Keine Vorschlaege verfuegbar.'
 
-          this.chatMessages.push({ role: 'ai', content, hasAction, actionContent })
+          this.chatMessages.push({ role: 'ai', content, hasAction, actionContent, targetId, hint })
         } else {
           this.chatMessages.push({
             role: 'ai',
@@ -1623,6 +1666,9 @@ export const documentEditor = defineComponent(() => {
         })
       }
 
+      // Stelle ohne übernehmbaren Vorschlag (Fehler, Chat, leere Antwort) nicht weiter verfolgen
+      if (target && !targetUsed) target.release()
+
       this.aiLoading = false
       void this.$nextTick(() => {
         const container = this.$refs.chatMessages
@@ -1630,29 +1676,75 @@ export const documentEditor = defineComponent(() => {
       })
     },
 
-    applyAiContent(content: string | null | undefined): void {
-      if (content && editor) {
-        this.aiOriginalContent = this.getContent()
-        // Vorschau per x-html: nur bereinigt (frontend/js/ki-ausgabe.ts)
-        this.aiPreviewContent = bereinigeKiHtml(content)
-        this.previewMode = 'suggested'
-        this.aiPreviewActive = true
+    applyAiContent(content: string | null | undefined, targetId: number | null = null): void {
+      const target = targetId === null ? undefined : aiTargets.get(targetId)
+      if (!content || !editor || !target) {
+        showToast(
+          'Dieser Vorschlag lässt sich nicht mehr übernehmen. Markieren Sie die Stelle und fragen Sie erneut.',
+          'warning',
+        )
+        return
       }
+      // Original ist nur die markierte Stelle (Text), nicht das ganze Dokument
+      this.aiOriginalContent = escapeHtml(target.text).replace(/\n/g, '<br>')
+      // Vorschau per x-html: nur bereinigt (frontend/js/ki-ausgabe.ts)
+      this.aiPreviewContent = bereinigeKiHtml(content)
+      this.aiPreviewTargetId = targetId
+      this.previewMode = 'suggested'
+      this.aiPreviewActive = true
     },
 
     closeAiPreview(): void {
       this.aiPreviewActive = false
       this.aiPreviewContent = ''
       this.aiOriginalContent = ''
+      this.aiPreviewTargetId = null
       this.previewMode = 'suggested'
     },
 
-    applyAiPreview(): void {
-      if (this.aiPreviewContent && editor) {
-        this.setContent(this.aiPreviewContent)
-        this.chatMessages.push({ role: 'ai', content: 'Änderungen wurden in den Editor übernommen.' })
-        this.closeAiPreview()
+    /** Vorschlag verwerfen: Nachricht entfernen, Stelle nicht weiter verfolgen */
+    discardAiMessage(index: number): void {
+      const message = this.chatMessages[index]
+      if (!message) return
+      if (message.targetId != null) {
+        aiTargets.get(message.targetId)?.release()
+        aiTargets.delete(message.targetId)
       }
+      this.chatMessages.splice(index, 1)
+    },
+
+    /**
+     * Vorschlag nur an der markierten Stelle einsetzen (nie das ganze Dokument). Hat jemand die Stelle
+     * inzwischen geändert, bleibt alles, wie es ist, und der Vorschlag lässt sich neu anfragen.
+     */
+    applyAiPreview(): void {
+      const targetId = this.aiPreviewTargetId
+      const target = targetId === null ? undefined : aiTargets.get(targetId)
+      if (!this.aiPreviewContent || !editor || !target || targetId === null) {
+        this.closeAiPreview()
+        return
+      }
+      let result: ReturnType<typeof applyAiSuggestion> = 'failed'
+      try {
+        result = applyAiSuggestion(editor, target, this.aiPreviewContent)
+      } catch (error) {
+        console.error('KI-Vorschlag konnte nicht eingesetzt werden:', error)
+      }
+      if (result === 'applied') {
+        aiTargets.delete(targetId)
+        for (const message of this.chatMessages) {
+          if (message.targetId === targetId) message.hasAction = false
+        }
+        this.chatMessages.push({ role: 'ai', content: 'Der Vorschlag wurde an der markierten Stelle übernommen.' })
+      } else {
+        const text =
+          result === 'changed'
+            ? 'Die markierte Stelle wurde inzwischen geändert. Der Vorschlag wurde nicht übernommen.'
+            : 'Der Vorschlag ließ sich nicht einsetzen, ohne anderen Text zu ändern. Es wurde nichts übernommen.'
+        showToast(text, 'warning')
+        this.chatMessages.push({ role: 'ai', content: text })
+      }
+      this.closeAiPreview()
     },
 
     // === Versionsverlauf ===
