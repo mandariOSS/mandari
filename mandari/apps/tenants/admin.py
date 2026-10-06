@@ -110,7 +110,7 @@ class OrganizationAdmin(ModelAdmin):
         "is_active",
         "created_at",
     ]
-    list_filter = ["is_active", "party_group", "body", "require_2fa"]
+    list_filter = ["is_active", "party_group", "body", "require_2fa", "work_new_design"]
     search_fields = ["name", "slug"]
     prepopulated_fields = {"slug": ["name"]}
     filter_horizontal = ["oparl_organizations", "bodies", "parties"]
@@ -196,7 +196,7 @@ class OrganizationAdmin(ModelAdmin):
                 "classes": ("collapse",),
             },
         ),
-        ("Einstellungen", {"fields": ("settings", "require_2fa", "is_active")}),
+        ("Einstellungen", {"fields": ("settings", "require_2fa", "work_new_design", "is_active")}),
         (
             "System",
             {"fields": ("encryption_key", "created_at", "updated_at"), "classes": ("collapse",)},

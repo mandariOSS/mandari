@@ -12,6 +12,10 @@ Geprüft wird jede Vorlage mit ``{% extends "…" %}``: Jeder Block auf oberster
 einem anderen Block geschachtelt) muss in einer Vorfahrin definiert sein. Blöcke, die in einem
 anderen Block stehen, definieren selbst neue Blöcke und sind immer gültig.
 
+Wählt eine Vorlage ihre Elternvorlage zur Laufzeit aus festen Namen (``work/base_work.html``:
+``{% extends work_neues_design|yesno:"work/base_work_neu.html,work/base_work_alt.html" %}``, Issue #852),
+muss ein Block in jeder dieser Ketten stehen – sonst ginge er in einem der beiden Rahmen verloren.
+
 Aufruf (aus dem Repo-Wurzelverzeichnis): ``python scripts/check_template_blocks.py`` – Exitcode 1 bei Befunden.
 """
 
@@ -26,6 +30,8 @@ TEMPLATE_DIRS = [ROOT / "templates", *sorted(ROOT.glob("apps/*/templates")), *so
 
 TAG_RE = re.compile(r"{%-?\s*(block|endblock|extends)\b\s*([^%]*?)\s*-?%}")
 COMMENT_RE = re.compile(r"{%\s*comment\s*%}.*?{%\s*endcomment\s*%}|{#.*?#}", re.S)
+#: feste Vorlagennamen in einer zur Laufzeit gewählten Elternvorlage
+KANDIDAT_RE = re.compile(r"[\w./-]+\.html")
 
 
 def _find(name: str) -> Path | None:
@@ -37,7 +43,11 @@ def _find(name: str) -> Path | None:
 
 
 def _parse(path: Path) -> tuple[str | None, list[str], set[str]]:
-    """(Elternvorlage, Blöcke oberster Ebene, alle definierten Blöcke)."""
+    """(Elternvorlage, Blöcke oberster Ebene, alle definierten Blöcke).
+
+    Bei einer zur Laufzeit gewählten Elternvorlage aus festen Namen (``var|yesno:"a.html,b.html"``) stehen alle
+    Kandidaten durch ``|`` getrennt in der Elternvorlage.
+    """
     text = COMMENT_RE.sub("", path.read_text(encoding="utf-8"))
     parent: str | None = None
     top: list[str] = []
@@ -48,6 +58,10 @@ def _parse(path: Path) -> tuple[str | None, list[str], set[str]]:
             m = re.match(r"""["']([^"']+)["']""", arg)
             if m:
                 parent = m.group(1)
+            else:
+                kandidaten = KANDIDAT_RE.findall(arg)
+                if kandidaten:
+                    parent = "|".join(kandidaten)
         elif tag == "block":
             name = arg.split()[0] if arg else ""
             alle.add(name)
@@ -60,7 +74,15 @@ def _parse(path: Path) -> tuple[str | None, list[str], set[str]]:
 
 
 def _ahnen_bloecke(name: str, gesehen: set[str]) -> set[str] | None:
-    """Alle Blöcke der Vererbungskette ab ``name``; None, wenn die Kette nicht auflösbar ist."""
+    """Alle Blöcke der Vererbungskette ab ``name``; None, wenn die Kette nicht auflösbar ist.
+
+    Mehrere Kandidaten (``a.html|b.html``): nur Blöcke, die jede Kette kennt.
+    """
+    if "|" in name:
+        ketten = [_ahnen_bloecke(kandidat, set(gesehen)) for kandidat in name.split("|")]
+        if any(kette is None for kette in ketten):
+            return None
+        return set.intersection(*(kette for kette in ketten if kette is not None))
     if name in gesehen:
         return set()
     gesehen.add(name)

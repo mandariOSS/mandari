@@ -194,6 +194,32 @@ class TestOtherComponents:
         assert 'scope="col"' in render("<c-ui.th>Spalte</c-ui.th>")
 
 
+class TestRahmen:
+    """Gemeinsame Bausteine der Navigation von Insight und Work (Issue #852)."""
+
+    def test_nav_link_aktiv_ueber_bereich_oder_schalter(self) -> None:
+        aktiv = render(
+            '<c-rahmen.nav-link href="/a/" icon="map" area="karte" aktuell="karte">Karte</c-rahmen.nav-link>'
+        )
+        assert 'aria-current="page"' in aktiv and "bg-band-hell" in aktiv
+        inaktiv = render('<c-rahmen.nav-link href="/a/" icon="map" area="karte" aktuell="">Karte</c-rahmen.nav-link>')
+        assert "aria-current" not in inaktiv
+        dicht = render('<c-rahmen.nav-link href="/a/" icon="map" :aktiv="an" dicht>Karte</c-rahmen.nav-link>', an=True)
+        assert 'aria-current="page"' in dicht and "h-9" in dicht and "rahmen-label" in dicht
+
+    def test_insight_nutzt_die_gemeinsamen_bausteine(self) -> None:
+        html = render(
+            '<c-insight.nav-link href="/k/" icon="map" area="karte">Karte</c-insight.nav-link>', insight_area="karte"
+        )
+        assert 'aria-current="page"' in html and "rahmen-eintrag" in html
+        tab = render('<c-insight.tab href="/k/" icon="map" area="karte">Karte</c-insight.tab>', insight_area="karte")
+        assert 'aria-current="page"' in tab and "bg-primary-100" in tab
+        blatt = render(
+            '<c-insight.blatt-link href="/k/" icon="map" area="karte">Karte</c-insight.blatt-link>', insight_area="x"
+        )
+        assert "aria-current" not in blatt
+
+
 class TestUiKitPreview:
     def test_preview_template_renders_all_components(self) -> None:
         html = render_to_string("dev/ui_kit.html", ui_kit_context())

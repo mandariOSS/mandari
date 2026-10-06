@@ -1,0 +1,200 @@
+{# Teil des bisherigen Rahmens (work/base_work_alt.html), unverändert ausgelagert (Issue #852) #}
+{% load static permission_tags %}
+<!-- Sidebar -->
+<aside class="work-sidebar" :class="{ 'open': sidebarOpen, 'collapsed': sidebarCollapsed }">
+    <!-- Organization Header -->
+    <div class="work-org-header">
+        {% with org_logo=organization.effective_logo %}
+        <a href="/" class="work-org-logo {% if not org_logo %}has-fallback{% endif %}" {% if not org_logo and organization.primary_color %}style="background: {{ organization.primary_color }}20; color: color-mix(in srgb, {{ organization.primary_color }} 55%, #111827);"{% endif %}>
+            {% if org_logo %}
+                <img src="{{ org_logo.url }}" alt="{{ organization.name }}">
+            {% else %}
+                {{ organization.name|slice:":2"|upper }}
+            {% endif %}
+        </a>
+        {% endwith %}
+        <div class="work-org-info">
+            <div class="work-org-name">{{ organization.name }}</div>
+            {% if organization.party_group %}
+            <div class="work-org-type">{{ organization.party_group.name }}</div>
+            {% elif organization.get_primary_body %}
+            <div class="work-org-type">{{ organization.get_primary_body.name }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 py-4 overflow-y-auto overflow-x-hidden">
+        {% if membership.is_guest %}
+        <!-- Gast-Navigation: nur freigegebene Dokumente + Konto -->
+        <a href="{% url 'work:guest_documents' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'guest_documents' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Freigegebene Dokumente' : ''">
+            <i data-lucide="file-lock" class="w-5 h-5"></i>
+            <span class="nav-label">Freigegebene Dokumente</span>
+        </a>
+
+        <div class="work-nav-section"><span class="nav-label">Konto</span></div>
+
+        <a href="{% url 'work:profile' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'profile' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Profil' : ''">
+            <i data-lucide="user" class="w-5 h-5"></i>
+            <span class="nav-label">Profil</span>
+        </a>
+        {% else %}
+        <!-- Hauptbereich -->
+        <a href="{% url 'work:dashboard' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'dashboard' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Dashboard' : ''">
+            <i data-lucide="layout-dashboard"></i>
+            <span class="nav-label">Dashboard</span>
+        </a>
+
+        <div class="work-nav-section"><span class="nav-label">Arbeit</span></div>
+
+        <a href="{% url 'work:meetings' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'meetings' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Meine Sitzungen' : ''">
+            <i data-lucide="calendar"></i>
+            <span class="nav-label">Meine Sitzungen</span>
+        </a>
+
+        <a href="{% url 'work:documents' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'documents' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Dokumente' : ''">
+            <i data-lucide="file-text"></i>
+            <span class="nav-label">Dokumente</span>
+        </a>
+
+        <a href="{% url 'work:faction' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'faction' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Fraktionssitzungen' : ''">
+            <i data-lucide="users"></i>
+            <span class="nav-label">Fraktionssitzungen</span>
+        </a>
+
+        <a href="{% url 'work:tasks' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'tasks' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Aufgaben' : ''">
+            <i data-lucide="check-square"></i>
+            <span class="nav-label">Aufgaben</span>
+        </a>
+
+        <a href="{% url 'work:team' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'team' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Team' : ''">
+            <i data-lucide="contact"></i>
+            <span class="nav-label">Team</span>
+        </a>
+
+        <div class="work-nav-section"><span class="nav-label">Ratsinformation</span></div>
+
+        <a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_subnav == 'ris_overview' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Übersicht' : ''">
+            <i data-lucide="layout-dashboard"></i>
+            <span class="nav-label">Übersicht</span>
+        </a>
+
+        <a href="{% url 'work:ris_meetings' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_subnav == 'ris_meetings' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Sitzungen' : ''">
+            <i data-lucide="calendar-days"></i>
+            <span class="nav-label">Sitzungen</span>
+        </a>
+
+        <a href="{% url 'work:ris_papers' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_subnav == 'ris_papers' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Vorgänge' : ''">
+            <i data-lucide="file-text"></i>
+            <span class="nav-label">Vorgänge</span>
+        </a>
+
+        <a href="{% url 'work:ris_decisions' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_subnav == 'ris_decisions' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Beschlüsse' : ''">
+            <i data-lucide="gavel"></i>
+            <span class="nav-label">Beschlüsse</span>
+        </a>
+
+        <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_subnav == 'ris_organizations' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Gremien' : ''">
+            <i data-lucide="building-2"></i>
+            <span class="nav-label">Gremien</span>
+        </a>
+
+        <a href="{% url 'work:ris_persons' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_subnav == 'ris_persons' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Personen' : ''">
+            <i data-lucide="users"></i>
+            <span class="nav-label">Personen</span>
+        </a>
+
+        <a href="{% url 'work:ris_files' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_subnav == 'ris_files' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Dokumente' : ''">
+            <i data-lucide="files"></i>
+            <span class="nav-label">Dokumente</span>
+        </a>
+
+        <a href="{% url 'work:ris_map' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_subnav == 'ris_map' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Karte' : ''">
+            <i data-lucide="map"></i>
+            <span class="nav-label">Karte</span>
+        </a>
+
+        <a href="{% url 'work:ris_search' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_subnav == 'ris_search' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Suche' : ''">
+            <i data-lucide="search"></i>
+            <span class="nav-label">Suche</span>
+        </a>
+
+        {% if membership|has_perm:"organization.view" %}
+        <div class="work-nav-section"><span class="nav-label">Verwaltung</span></div>
+
+        <a href="{% url 'work:organization' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'organization' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Einstellungen' : ''">
+            <i data-lucide="settings"></i>
+            <span class="nav-label">Einstellungen</span>
+        </a>
+        {% endif %}
+
+        <a href="{% url 'work:support' org_slug=organization.slug %}"
+           class="work-nav-item {% if active_nav == 'support' %}active{% endif %}"
+           :title="sidebarCollapsed ? 'Support' : ''">
+            <i data-lucide="help-circle"></i>
+            <span class="nav-label">Support</span>
+        </a>
+        {% endif %}
+    </nav>
+
+    <!-- User Info (Bottom) -->
+    <div class="border-t border-gray-200 dark:border-gray-700 p-4">
+        <div class="flex items-center gap-3 user-info-area">
+            <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center text-primary-600 dark:text-primary-400 font-medium text-sm shrink-0">
+                {% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}
+            </div>
+            <div class="flex-1 min-w-0 user-info-details">
+                <div class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {% if request.user.display_name %}{{ request.user.display_name }}{% else %}{{ request.user.email }}{% endif %}
+                </div>
+                <div class="text-xs text-gray-500 truncate">
+                    {% if membership.is_guest %}
+                        Gast
+                    {% else %}
+                    {% for role in membership.roles.all|slice:":2" %}
+                        {{ role.name }}{% if not forloop.last %}, {% endif %}
+                    {% empty %}
+                        Mitglied
+                    {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</aside>

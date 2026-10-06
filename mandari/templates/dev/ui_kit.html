@@ -181,6 +181,20 @@
         </c-insight.timeline>
     </c-ui.card>
 
+    <c-ui.card title="Rahmen: Leiste, Leiste unten, Blatt „Mehr“" subtitle="c-rahmen.nav-link / c-rahmen.tab / c-rahmen.blatt-link – href, icon, area + aktuell oder aktiv; nav-link mit dicht (Work)">
+        <div class="grid gap-6 sm:grid-cols-3">
+            <ul class="space-y-0.5 rounded-lg bg-band-grau p-2.5">
+                <li><c-rahmen.nav-link href="#" icon="house" :aktiv="True" dicht>Start</c-rahmen.nav-link></li>
+                <li><c-rahmen.nav-link href="#" icon="calendar-days" dicht>Sitzungen</c-rahmen.nav-link></li>
+            </ul>
+            <ul class="grid grid-cols-2 rounded-lg border border-gray-200 dark:border-gray-700">
+                <li><c-rahmen.tab href="#" icon="house" area="start" aktuell="start">Start</c-rahmen.tab></li>
+                <li><c-rahmen.tab href="#" icon="library" area="recherche" aktuell="start">Recherche</c-rahmen.tab></li>
+            </ul>
+            <ul><li><c-rahmen.blatt-link href="#" icon="square-check" :aktiv="True">Aufgaben</c-rahmen.blatt-link></li></ul>
+        </div>
+    </c-ui.card>
+
     <c-ui.card title="Suche: Treffer" subtitle="c-suche.textlink – href; c-suche.reiter – tabs; c-suche.filterleiste – zeitraum, art, sortierung (c-suche.facette); c-suche.treffer-vorgang / -person – treffer">
         <p class="mb-4 text-sm">Zeitraum: Letzte 2 Jahre · <c-suche.textlink href="#">entfernen</c-suche.textlink></p>
         <c-suche.reiter :tabs="demo_reiter" />

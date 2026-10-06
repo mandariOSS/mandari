@@ -356,6 +356,17 @@ class Organization(models.Model):
         verbose_name="2FA erforderlich",
         help_text="Alle Mitglieder müssen 2FA aktivieren",
     )
+    # Neues Erscheinungsbild von Work (Issue #852): Seitenleiste wie Insight, Suche in der Kopfzeile, Leiste
+    # unten am Handy. Standard aus, der bisherige Rahmen bleibt bis zur Freigabe; je Organisation einschaltbar.
+    work_new_design = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Neues Erscheinungsbild in Work",
+        help_text=(
+            "Schaltet für diese Organisation den neuen Rahmen von Work ein (Seitenleiste mit sechs Bereichen, "
+            "Suche in der Kopfzeile, Leiste unten am Handy). Aus: bisheriger Rahmen. Daten ändern sich nicht."
+        ),
+    )
 
     # === SELF-REGISTRATION ===
 
