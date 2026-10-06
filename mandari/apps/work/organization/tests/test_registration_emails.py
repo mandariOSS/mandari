@@ -103,7 +103,7 @@ def test_registrierung_verlangt_bestaetigung_und_informiert_freigebende(
     user = User.objects.get(email="neu@example.org")
     assert not Membership.objects.filter(user=user, organization=org).exists()
     assert "_auth_user_id" not in client.session
-    assert subjects_to("neu@example.org") == [f"Bitte bestätige deine Registrierung bei {org.name}"]
+    assert subjects_to("neu@example.org") == [f"Bitte bestätigen Sie Ihre Registrierung bei {org.name}"]
     assert not mails_to("freigabe@example.org")
 
     path = confirm_path(mails_to("neu@example.org")[0])
@@ -122,7 +122,7 @@ def test_registrierung_verlangt_bestaetigung_und_informiert_freigebende(
     user.refresh_from_db()
     assert user.email_verified is True
 
-    assert subjects_to("neu@example.org") == [f"Deine Registrierung bei {org.name} ist eingegangen"]
+    assert subjects_to("neu@example.org") == [f"Ihre Registrierung bei {org.name} ist eingegangen"]
     request_mails = mails_to("freigabe@example.org")
     assert [message.subject for message in request_mails] == [f"Neue Registrierungsanfrage für {org.name}"]
     assert request_mails[0].reply_to == ["neu@example.org"]
@@ -183,7 +183,7 @@ def test_freischalten_informiert_die_person(client_for: Any, org: Any, reviewer:
     pending.refresh_from_db()
     assert pending.is_active is True
     assert pending.registration_requested_at is None
-    assert subjects_to("anfrage@example.org") == [f"Dein Zugang zu {org.name} ist freigeschaltet"]
+    assert subjects_to("anfrage@example.org") == [f"Ihr Zugang zu {org.name} ist freigeschaltet"]
 
 
 def test_ablehnen_schickt_begruendung_escaped(client_for: Any, org: Any, reviewer: Any) -> None:
@@ -195,7 +195,7 @@ def test_ablehnen_schickt_begruendung_escaped(client_for: Any, org: Any, reviewe
     assert response.status_code == 302
     assert not Membership.objects.filter(id=pending.id).exists()
     message = mails_to("anfrage@example.org")[0]
-    assert message.subject == f"Deine Registrierungsanfrage bei {org.name}"
+    assert message.subject == f"Ihre Registrierungsanfrage bei {org.name}"
     assert "Nur für Mitglieder" in message.body
     html = message.alternatives[0][0]
     assert "&lt;b&gt;Nur für Mitglieder&lt;/b&gt;" in html
@@ -221,7 +221,7 @@ def test_reaktivierung_informiert_per_mail(org: Any, make_member: Any, reviewer:
     verwaltung = make_member(org, ["members.edit", "dashboard.view"], email="verwaltung@example.org")
     services.deactivate_member(org, plain_member, reviewer.user)
     assert services.reactivate_member(org, plain_member, verwaltung) is True
-    assert subjects_to("mitglied@example.org") == [f"Dein Zugang zu {org.name} ist wieder aktiv"]
+    assert subjects_to("mitglied@example.org") == [f"Ihr Zugang zu {org.name} ist wieder aktiv"]
 
 
 # ---------------------------------------------------------------------------

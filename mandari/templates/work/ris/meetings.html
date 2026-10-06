@@ -19,7 +19,7 @@
 {% else %}
 
 <!-- Period Tabs -->
-<div class="fade-up flex flex-wrap items-center gap-4 mb-6 border-b border-gray-200 dark:border-gray-700">
+<div class="flex flex-wrap items-center gap-4 mb-6 border-b border-gray-200 dark:border-gray-700">
     <div class="flex gap-2">
         <a href="?view=upcoming{% if selected_org %}&org={{ selected_org }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
            class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if view_mode == 'upcoming' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
@@ -57,15 +57,15 @@
 
 <!-- Meetings Table -->
 {% if meetings %}
-<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Sitzung</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Datum</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Uhrzeit</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Ort</th>
+                <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400">Sitzung</th>
+                <c-ui.th plain class="max-sm:hidden">Datum</c-ui.th>
+                <c-ui.th plain class="max-sm:hidden">Uhrzeit</c-ui.th>
+                <c-ui.th plain class="max-sm:hidden">Ort</c-ui.th>
                 <th class="w-10 px-2 py-3"></th>
             </tr>
         </thead>
@@ -125,7 +125,7 @@
 </div>
 
 {% if meetings.has_other_pages %}
-<nav class="fade-up d2 mt-6 flex justify-center">
+<nav class="mt-6 flex justify-center">
     <ul class="flex items-center gap-1">
         {% if meetings.has_previous %}
         <li>
@@ -158,7 +158,7 @@
 {% endif %}
 
 {% else %}
-<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
     <i data-lucide="calendar" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Sitzungen gefunden</h3>
     <p class="text-gray-500 dark:text-gray-400">

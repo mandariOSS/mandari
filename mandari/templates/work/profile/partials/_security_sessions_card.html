@@ -2,7 +2,7 @@
 Karte „Aktive Sitzungen“ mit Beenden einzelner bzw. aller anderen Sitzungen (Bestätigung per confirmAction).
 Kontext: sessions (mit is_current)
 {% endcomment %}
-<c-ui.card title="Aktive Sitzungen" subtitle="Geräte, auf denen Sie angemeldet sind" padding="none" class="fade-up fade-delay-75">
+<c-ui.card title="Aktive Sitzungen" subtitle="Geräte, auf denen Sie angemeldet sind" padding="none">
     {% if sessions|length > 1 %}
     <c-slot name="actions">
         <form method="post" x-data
@@ -33,7 +33,7 @@ Kontext: sessions (mit is_current)
                             {{ session.device_name|default:"Unbekanntes Gerät" }}
                         </p>
                         {% if session.is_current %}
-                        <c-ui.badge color="primary" class="uppercase tracking-wide">Aktuell</c-ui.badge>
+                        <c-ui.badge color="primary">Aktuell</c-ui.badge>
                         {% endif %}
                     </div>
                     <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-0.5">

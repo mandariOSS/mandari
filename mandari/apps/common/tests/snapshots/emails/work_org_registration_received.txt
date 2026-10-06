@@ -1,14 +1,14 @@
-# Deine Registrierung ist eingegangen
+# Ihre Registrierung ist eingegangen
 
 Fraktion Test
 
-Hallo Eva,
+Guten Tag Eva Beispiel,
 
-danke, deine E-Mail-Adresse ist bestätigt. Deine Anfrage liegt jetzt bei Fraktion Test zur Freischaltung.
+vielen Dank, Ihre E-Mail-Adresse ist bestätigt. Ihre Anfrage liegt jetzt bei Fraktion Test zur Freischaltung.
 
 Wie geht es weiter?
 
-Sobald eine berechtigte Person deinen Zugang freischaltet, erhältst du eine weitere E-Mail an eva@example.org. Bis dahin musst du nichts tun.
+Sobald eine berechtigte Person Ihren Zugang freischaltet, erhalten Sie eine weitere E-Mail an eva@example.org. Bis dahin müssen Sie nichts tun.
 
 Fragen zur Freischaltung beantwortet Fraktion Test.
 

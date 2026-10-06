@@ -19,7 +19,7 @@
             <div class="comment-popup-card" @click.stop>
                 <!-- Selected text preview -->
                 <div class="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
-                    <p class="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Markierter Text</p>
+                    <p class="text-[11px] font-medium text-gray-400 dark:text-gray-500 mb-1">Markierter Text</p>
                     <p class="text-sm text-gray-700 dark:text-gray-300 italic line-clamp-2"
                        x-text="'&quot;' + inlineSelectedText.substring(0, 120) + (inlineSelectedText.length > 120 ? '...' : '') + '&quot;'"></p>
                 </div>
@@ -203,9 +203,9 @@
          @keydown.escape.window="if (aiPreviewActive) closeAiPreview()">
         <div role="dialog" aria-modal="true" aria-label="KI-Vorschau" x-trap.inert.noscroll="aiPreviewActive"
              class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden m-4 flex flex-col">
-            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-primary-50 dark:bg-primary-900/20">
                 <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center">
+                    <div class="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center">
                         <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
                     </div>
                     <div>
@@ -221,13 +221,13 @@
             <div class="flex-1 overflow-y-auto p-6">
                 <div class="flex items-center gap-2 mb-4">
                     <button type="button" @click="previewMode = 'suggested'"
-                            :class="previewMode === 'suggested' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700'"
+                            :class="previewMode === 'suggested' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'bg-gray-100 dark:bg-gray-700'"
                             class="px-3 py-1.5 text-sm font-medium rounded-lg">Vorschlag</button>
                     <button type="button" @click="previewMode = 'original'"
-                            :class="previewMode === 'original' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700'"
+                            :class="previewMode === 'original' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'bg-gray-100 dark:bg-gray-700'"
                             class="px-3 py-1.5 text-sm font-medium rounded-lg">Original</button>
                     <button type="button" @click="previewMode = 'diff'"
-                            :class="previewMode === 'diff' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700'"
+                            :class="previewMode === 'diff' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'bg-gray-100 dark:bg-gray-700'"
                             class="px-3 py-1.5 text-sm font-medium rounded-lg">Vergleich</button>
                 </div>
                 <div class="prose dark:prose-invert max-w-none p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 min-h-[200px]">
@@ -240,11 +240,11 @@
                     <template x-if="previewMode === 'diff'">
                         <div>
                             <div class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded border-l-4 border-red-400">
-                                <span class="text-xs font-medium text-red-600 dark:text-red-400 uppercase">Entfernt</span>
+                                <span class="text-xs font-medium text-red-600 dark:text-red-400">Entfernt</span>
                                 <div x-html="aiOriginalContent" class="mt-1 text-sm line-through opacity-70"></div>
                             </div>
                             <div class="p-3 bg-green-50 dark:bg-green-900/20 rounded border-l-4 border-green-400">
-                                <span class="text-xs font-medium text-green-600 dark:text-green-400 uppercase">Hinzugefügt</span>
+                                <span class="text-xs font-medium text-green-600 dark:text-green-400">Hinzugefügt</span>
                                 <div x-html="aiPreviewContent" class="mt-1 text-sm"></div>
                             </div>
                         </div>
@@ -257,7 +257,7 @@
                     Abbrechen
                 </button>
                 <button type="button" @click="applyAiPreview()"
-                        class="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg hover:from-purple-700 hover:to-purple-800 flex items-center gap-2">
+                        class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 flex items-center gap-2">
                     <i data-lucide="check" class="w-4 h-4"></i>
                     Übernehmen
                 </button>

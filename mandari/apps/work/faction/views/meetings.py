@@ -14,6 +14,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.stats_text import faction_meetings_sentence
 
 from ..models import (
     FactionAttendance,
@@ -96,6 +97,8 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
             "upcoming": all_meetings.filter(start__gte=today_start).count(),
             "pending_protocol": all_meetings.filter(status="completed", protocol_approved=False).count(),
         }
+        # Zahlen im Satz statt als Zählerkacheln (Issue #851)
+        context["stats_sentence"] = faction_meetings_sentence(context["stats"])
 
         context["status_choices"] = FactionMeeting.STATUS_CHOICES
 

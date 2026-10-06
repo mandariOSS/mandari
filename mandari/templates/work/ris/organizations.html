@@ -19,7 +19,7 @@
 {% else %}
 
 <!-- Search -->
-<div class="fade-up mb-6">
+<div class="mb-6">
     <form method="get">
         <input type="hidden" name="tab" value="{{ tab }}">
         <div class="relative max-w-md">
@@ -32,7 +32,7 @@
 </div>
 
 <!-- Tabs -->
-<div class="fade-up d1 flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
+<div class="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
     <a href="?tab=active{% if search_query %}&q={{ search_query }}{% endif %}"
        class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if tab == 'active' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
         Aktiv ({{ active_count|default:0 }})
@@ -45,14 +45,14 @@
 
 <!-- Organizations Table -->
 {% if organizations %}
-<div class="fade-up d2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Gremium</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Nächste Sitzung</th>
-                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Letzte Sitzung</th>
+                <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400">Gremium</th>
+                <c-ui.th plain class="max-sm:hidden">Nächste Sitzung</c-ui.th>
+                <c-ui.th plain class="max-sm:hidden">Letzte Sitzung</c-ui.th>
                 <th class="w-10 px-2 py-3"></th>
             </tr>
         </thead>
@@ -110,7 +110,7 @@
 </div>
 
 {% if organizations.has_other_pages %}
-<nav class="fade-up d3 mt-6 flex justify-center">
+<nav class="mt-6 flex justify-center">
     <ul class="flex items-center gap-1">
         {% if organizations.has_previous %}
         <li>
@@ -143,7 +143,7 @@
 {% endif %}
 
 {% else %}
-<div class="fade-up d2 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
     <i data-lucide="users" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Gremien gefunden</h3>
     <p class="text-gray-500 dark:text-gray-400">

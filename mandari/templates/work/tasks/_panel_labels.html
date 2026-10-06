@@ -2,12 +2,12 @@
 <div x-data="labelPicker" class="relative">
     <div class="flex items-center gap-2 mb-3">
         <div class="flex items-center gap-1.5">
-            <i data-lucide="tag" class="w-4 h-4 text-purple-500"></i>
+            <i data-lucide="tag" class="w-4 h-4 text-primary-500"></i>
             <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Labels</span>
         </div>
         {% if can_edit %}
         <button type="button" @click="open = !open"
-                class="p-0.5 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded transition-colors">
+                class="p-0.5 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded transition-colors">
             <i data-lucide="plus" class="w-3.5 h-3.5"></i>
         </button>
         {% endif %}
@@ -44,7 +44,7 @@
     <div x-show="open" x-cloak x-transition @click.outside="open = false"
          class="absolute z-10 left-0 mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
         <div class="p-2 border-b border-gray-100 dark:border-gray-700">
-            <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2 px-2">Verfügbare Labels</p>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-2 px-2">Verfügbare Labels</p>
             {% for label in available_labels %}
             <div class="flex items-center gap-1 group">
                 <button type="button"
@@ -79,7 +79,7 @@
         {# Neues Label erstellen (Label-Verwaltung: tasks.manage) #}
         {% if can_manage_labels %}
         <div class="p-2 bg-gray-50/50 dark:bg-gray-900/30">
-            <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2 px-2">Neues Label</p>
+            <p class="text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-2 px-2">Neues Label</p>
             <form @submit.prevent="createLabel($event)"
                   hx-post="{% url 'work:task_labels' org_slug=organization.slug %}"
                   hx-swap="none"

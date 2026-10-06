@@ -1,0 +1,60 @@
+{% comment %}
+Fraktionssitzungen › Weiteres (Issue #851): Teilnahmenachweis und Sammel-Export stehen unter der Liste statt über ihr.
+Kontext: organization, membership, certificate_default_from, certificate_default_to, can_export_attendance
+{% endcomment %}
+{% if not membership.is_guest %}
+<section class="mt-8" aria-labelledby="weiteres-titel" data-testid="fraktion-weiteres">
+    <h2 id="weiteres-titel" class="text-base font-semibold text-gray-900 dark:text-white">Weiteres</h2>
+    <div class="mt-2 divide-y divide-gray-200 dark:divide-gray-700 border-y border-gray-200 dark:border-gray-700">
+        <details class="py-3">
+            <summary class="cursor-pointer text-sm font-medium text-primary-700 dark:text-primary-400 hover:underline">
+                Teilnahmenachweis erstellen
+            </summary>
+            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                PDF mit Ihren vom Vorstand bestätigten Teilnahmen, mit Prüfcode und QR-Verifikation.
+            </p>
+            <form method="get" action="{% url 'work:faction_certificate' org_slug=organization.slug %}" class="mt-3 flex flex-wrap items-end gap-3">
+                <div>
+                    <label for="nachweis-von" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Von</label>
+                    <input type="date" id="nachweis-von" name="from" value="{{ certificate_default_from|date:'Y-m-d' }}"
+                           class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg">
+                </div>
+                <div>
+                    <label for="nachweis-bis" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Bis</label>
+                    <input type="date" id="nachweis-bis" name="to" value="{{ certificate_default_to|date:'Y-m-d' }}"
+                           class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg">
+                </div>
+                <c-ui.button type="submit" size="sm" icon="file-down">Nachweis (PDF)</c-ui.button>
+            </form>
+        </details>
+        {% if can_export_attendance %}
+        <details class="py-3">
+            <summary class="cursor-pointer text-sm font-medium text-primary-700 dark:text-primary-400 hover:underline">
+                Sammel-Export der Teilnahmen
+            </summary>
+            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Alle bestätigten Teilnahmen je Person, zum Beispiel für die Verwaltung.</p>
+            <form method="get" action="{% url 'work:faction_attendance_export' org_slug=organization.slug %}" class="mt-3 flex flex-wrap items-end gap-3">
+                <div>
+                    <label for="sammel-von" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Von</label>
+                    <input type="date" id="sammel-von" name="from" value="{{ certificate_default_from|date:'Y-m-d' }}"
+                           class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg">
+                </div>
+                <div>
+                    <label for="sammel-bis" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Bis</label>
+                    <input type="date" id="sammel-bis" name="to" value="{{ certificate_default_to|date:'Y-m-d' }}"
+                           class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg">
+                </div>
+                <div>
+                    <label for="sammel-format" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Format</label>
+                    <select id="sammel-format" name="format" class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg">
+                        <option value="pdf">PDF</option>
+                        <option value="csv">CSV</option>
+                    </select>
+                </div>
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="users">Sammel-Export</c-ui.button>
+            </form>
+        </details>
+        {% endif %}
+    </div>
+</section>
+{% endif %}

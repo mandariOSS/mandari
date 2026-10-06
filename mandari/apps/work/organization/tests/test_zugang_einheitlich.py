@@ -88,7 +88,7 @@ def test_freischalten_benachrichtigt_auf_jedem_weg_gleich(org: Any, admin: Any, 
     anfrage.refresh_from_db()
     assert anfrage.is_active is True
     assert anfrage.registration_requested_at is None
-    assert _betreffe("anfrage@example.org") == [f"Dein Zugang zu {org.name} ist freigeschaltet"]
+    assert _betreffe("anfrage@example.org") == [f"Ihr Zugang zu {org.name} ist freigeschaltet"]
     # Die übrigen Freigebenden erfahren vom neuen Mitglied, die handelnde Person nicht
     assert _beitrittsnachrichten(freigabe) == 1
     assert _beitrittsnachrichten(admin) == 0
@@ -102,7 +102,7 @@ def test_reaktivieren_meldet_keinen_neuen_beitritt(org: Any, admin: Any, freigab
 
     ehemalig.refresh_from_db()
     assert ehemalig.is_active is True
-    assert _betreffe("ehemalig@example.org") == [f"Dein Zugang zu {org.name} ist wieder aktiv"]
+    assert _betreffe("ehemalig@example.org") == [f"Ihr Zugang zu {org.name} ist wieder aktiv"]
     assert _beitrittsnachrichten(freigabe) == 0
 
 

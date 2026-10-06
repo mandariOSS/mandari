@@ -11,7 +11,7 @@
 {% include "work/organization/_tabs.html" %}
 
 <!-- E-Mail / Absender (Issue #65) -->
-<div class="space-y-6 fade-up">
+<div class="space-y-6">
     <form method="post" class="space-y-6">
         {% csrf_token %}
         <input type="hidden" name="action" value="save">
@@ -137,7 +137,7 @@
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Testmail senden</h3>
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Sendet eine Testmail an deine eigene Adresse ({{ request.user.email }}) über den
+            Sendet eine Testmail an Ihre eigene Adresse ({{ request.user.email }}) über den
             aktuell gespeicherten Versandweg.
         </p>
         <form method="post">

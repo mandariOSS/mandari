@@ -13,7 +13,7 @@
 {{ exports_data|json_script:"data-exports" }}
 <div class="space-y-6">
     <!-- DSGVO Data Export -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up"
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700"
          x-data="dataExport"
          data-active="{{ has_active_export|yesno:'true,false' }}"
          data-status-url="{% url 'work:export_status' org_slug=organization.slug export_id='00000000-0000-0000-0000-000000000000' %}"
@@ -141,7 +141,7 @@
     </div>
 
     <!-- Activity Log -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-50">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="scroll-text" class="w-4 h-4 text-gray-400"></i>
@@ -181,7 +181,7 @@
     </div>
 
     <!-- Stored Data Overview -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up fade-delay-100">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <i data-lucide="database" class="w-4 h-4 text-gray-400"></i>
@@ -217,7 +217,7 @@
     </div>
 
     <!-- Account Deletion -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900/50 fade-up fade-delay-150"
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900/50"
          x-data="{ showDelete: false }">
         <div class="px-6 py-4 border-b border-red-200 dark:border-red-900/50">
             <h4 class="text-[15px] font-bold text-red-700 dark:text-red-400 flex items-center gap-2">

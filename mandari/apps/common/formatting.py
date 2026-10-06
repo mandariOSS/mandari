@@ -8,6 +8,7 @@ dieselbe bleiben.
 """
 
 import re
+from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -81,6 +82,30 @@ def format_money(amount: Decimal) -> str:
     """Betrag deutsch mit zwei Nachkommastellen und Euro-Zeichen, z. B. „1.000,50 €“."""
     text = f"{amount:,.2f}".replace(",", " ").replace(".", ",").replace(" ", ".")
     return f"{text} €"
+
+
+def format_count(n: int) -> str:
+    """Ganze Zahl mit Tausenderpunkt: „1.234“."""
+    return f"{n:,}".replace(",", ".")
+
+
+def count_label(n: int, singular: str, plural: str | None = None) -> str:
+    """
+    Anzahl mit Wort, Tausender mit Punkt: „1 Entwurf“, „3 Entwürfe“, „1.234 Vorgänge“.
+
+    Ohne ``plural`` bleibt das Wort unverändert („2 eingereicht“). Zahlen stehen in Work im Satz statt
+    in Zählerkacheln (Issue #851).
+    """
+    word = singular if n == 1 or plural is None else plural
+    return f"{format_count(n)} {word}"
+
+
+def join_parts(parts: Iterable[str]) -> str:
+    """Teile als Aufzählung im Satz: „a“, „a und b“, „a, b und c“; leere Teile entfallen."""
+    items = [part for part in parts if part]
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " und " + items[-1]
 
 
 def human_size(size: float, *, whole_bytes: bool = False) -> str:

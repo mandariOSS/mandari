@@ -68,7 +68,9 @@ def test_list_page_provides_json_config_and_no_inline_script(
     used_templates = {t.name for t in response.templates if t.name}
     for partial in ("_folder_sidebar", "_list_filters", "_grid_view", "_table_view", "_folder_modal"):
         assert f"work/motions/partials/{partial}.html" in used_templates, partial
-    assert "cotton/ui/kpi_tile.html" in used_templates
+    # Zahlen stehen als Satz im Seitenkopf statt in Kennzahl-Kacheln (Issue #851)
+    assert "cotton/ui/kpi_tile.html" not in used_templates
+    assert 'data-testid="dokumente-stand"' in html
 
 
 @pytest.mark.django_db

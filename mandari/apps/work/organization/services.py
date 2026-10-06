@@ -312,7 +312,7 @@ def accept_invitation(invitation: UserInvitation, user: User) -> str:
     organization = invitation.organization
     if (user.email or "").strip().lower() != (invitation.email or "").strip().lower():
         raise ServiceError(
-            "Diese Einladung gilt für eine andere E-Mail-Adresse. Bitte melde dich mit dem eingeladenen Konto an."
+            "Diese Einladung gilt für eine andere E-Mail-Adresse. Bitte melden Sie sich mit dem eingeladenen Konto an."
         )
     existing = selectors.find_membership(organization, user)
     if existing:
@@ -320,7 +320,7 @@ def accept_invitation(invitation: UserInvitation, user: User) -> str:
             message = "Sie sind bereits Mitglied dieser Organisation."
         else:
             raise ServiceError(
-                "Dein Zugang zu dieser Organisation ist deaktiviert. Bitte wende dich an ihre Verwaltung."
+                "Ihr Zugang zu dieser Organisation ist deaktiviert. Bitte wenden Sie sich an ihre Verwaltung."
             )
     else:
         membership = Membership.objects.create(
@@ -779,7 +779,7 @@ def confirm_self_registration(organization: Organization, token: EmailVerificati
     """Bestätigungslink einlösen (einmalig), Adresse als bestätigt markieren und beitreten."""
     user = token.user
     if user.email.lower() != token.email.lower():
-        raise ServiceError("Dieser Link gehört zu einer früheren E-Mail-Adresse. Bitte registriere dich erneut.")
+        raise ServiceError("Dieser Link gehört zu einer früheren E-Mail-Adresse. Bitte registrieren Sie sich erneut.")
     _ensure_registration_open(organization, user.email)
     token.verified_at = timezone.now()
     token.save(update_fields=["verified_at"])
@@ -1168,7 +1168,7 @@ def send_test_email(organization: Organization, recipient: str) -> str:
     from apps.common.org_email import OrgMailError
 
     if not recipient:
-        raise ServiceError("Dein Benutzerkonto hat keine E-Mail-Adresse.")
+        raise ServiceError("Ihr Benutzerkonto hat keine E-Mail-Adresse.")
     route = "eigenes SMTP" if organization.mail_sender_mode == "smtp" and organization.smtp_host else "mandari-Standard"
     body = "\n".join(
         [

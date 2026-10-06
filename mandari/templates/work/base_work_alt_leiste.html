@@ -1,7 +1,11 @@
-{# Teil des bisherigen Rahmens (work/base_work_alt.html), unverändert ausgelagert (Issue #852) #}
+{# Teil des bisherigen Rahmens (work/base_work_alt.html), ausgelagert (Issue #852); Stufe 0 (#851): aktive Seite, am Handy Dialog #}
 {% load static permission_tags %}
 <!-- Sidebar -->
-<aside class="work-sidebar" :class="{ 'open': sidebarOpen, 'collapsed': sidebarCollapsed }">
+<aside id="work-navigation" class="work-sidebar" :class="{ 'open': sidebarOpen, 'collapsed': sidebarCollapsed }"
+       aria-label="Navigation"
+       :role="sidebarOpen ? 'dialog' : null" :aria-modal="sidebarOpen ? 'true' : null"
+       x-trap.noscroll="sidebarOpen"
+       @keydown.escape.window="if (sidebarOpen) { sidebarOpen = false; $refs.menuButton.focus() }">
     <!-- Organization Header -->
     <div class="work-org-header">
         {% with org_logo=organization.effective_logo %}
@@ -23,12 +27,17 @@
         </div>
     </div>
 
+    <button type="button" class="lg:hidden absolute top-3 right-3 p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+            @click="sidebarOpen = false; $refs.menuButton.focus()" aria-label="Menü schließen">
+        <i data-lucide="x" class="w-5 h-5" aria-hidden="true"></i>
+    </button>
+
     <!-- Navigation -->
-    <nav class="flex-1 py-4 overflow-y-auto overflow-x-hidden">
+    <nav class="flex-1 py-4 overflow-y-auto overflow-x-hidden" aria-label="Bereiche">
         {% if membership.is_guest %}
         <!-- Gast-Navigation: nur freigegebene Dokumente + Konto -->
         <a href="{% url 'work:guest_documents' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'guest_documents' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'guest_documents' %}active{% endif %}" {% if active_nav == 'guest_documents' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Freigegebene Dokumente' : ''">
             <i data-lucide="file-lock" class="w-5 h-5"></i>
             <span class="nav-label">Freigegebene Dokumente</span>
@@ -37,7 +46,7 @@
         <div class="work-nav-section"><span class="nav-label">Konto</span></div>
 
         <a href="{% url 'work:profile' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'profile' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'profile' %}active{% endif %}" {% if active_nav == 'profile' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Profil' : ''">
             <i data-lucide="user" class="w-5 h-5"></i>
             <span class="nav-label">Profil</span>
@@ -45,7 +54,7 @@
         {% else %}
         <!-- Hauptbereich -->
         <a href="{% url 'work:dashboard' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'dashboard' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'dashboard' %}active{% endif %}" {% if active_nav == 'dashboard' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Dashboard' : ''">
             <i data-lucide="layout-dashboard"></i>
             <span class="nav-label">Dashboard</span>
@@ -54,35 +63,35 @@
         <div class="work-nav-section"><span class="nav-label">Arbeit</span></div>
 
         <a href="{% url 'work:meetings' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'meetings' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'meetings' %}active{% endif %}" {% if active_nav == 'meetings' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Meine Sitzungen' : ''">
             <i data-lucide="calendar"></i>
             <span class="nav-label">Meine Sitzungen</span>
         </a>
 
         <a href="{% url 'work:documents' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'documents' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'documents' %}active{% endif %}" {% if active_nav == 'documents' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Dokumente' : ''">
             <i data-lucide="file-text"></i>
             <span class="nav-label">Dokumente</span>
         </a>
 
         <a href="{% url 'work:faction' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'faction' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'faction' %}active{% endif %}" {% if active_nav == 'faction' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Fraktionssitzungen' : ''">
             <i data-lucide="users"></i>
             <span class="nav-label">Fraktionssitzungen</span>
         </a>
 
         <a href="{% url 'work:tasks' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'tasks' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'tasks' %}active{% endif %}" {% if active_nav == 'tasks' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Aufgaben' : ''">
             <i data-lucide="check-square"></i>
             <span class="nav-label">Aufgaben</span>
         </a>
 
         <a href="{% url 'work:team' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'team' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'team' %}active{% endif %}" {% if active_nav == 'team' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Team' : ''">
             <i data-lucide="contact"></i>
             <span class="nav-label">Team</span>
@@ -91,63 +100,63 @@
         <div class="work-nav-section"><span class="nav-label">Ratsinformation</span></div>
 
         <a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_subnav == 'ris_overview' %}active{% endif %}"
+           class="work-nav-item {% if active_subnav == 'ris_overview' %}active{% endif %}" {% if active_subnav == 'ris_overview' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Übersicht' : ''">
             <i data-lucide="layout-dashboard"></i>
             <span class="nav-label">Übersicht</span>
         </a>
 
         <a href="{% url 'work:ris_meetings' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_subnav == 'ris_meetings' %}active{% endif %}"
+           class="work-nav-item {% if active_subnav == 'ris_meetings' %}active{% endif %}" {% if active_subnav == 'ris_meetings' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Sitzungen' : ''">
             <i data-lucide="calendar-days"></i>
             <span class="nav-label">Sitzungen</span>
         </a>
 
         <a href="{% url 'work:ris_papers' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_subnav == 'ris_papers' %}active{% endif %}"
+           class="work-nav-item {% if active_subnav == 'ris_papers' %}active{% endif %}" {% if active_subnav == 'ris_papers' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Vorgänge' : ''">
             <i data-lucide="file-text"></i>
             <span class="nav-label">Vorgänge</span>
         </a>
 
         <a href="{% url 'work:ris_decisions' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_subnav == 'ris_decisions' %}active{% endif %}"
+           class="work-nav-item {% if active_subnav == 'ris_decisions' %}active{% endif %}" {% if active_subnav == 'ris_decisions' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Beschlüsse' : ''">
             <i data-lucide="gavel"></i>
             <span class="nav-label">Beschlüsse</span>
         </a>
 
         <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_subnav == 'ris_organizations' %}active{% endif %}"
+           class="work-nav-item {% if active_subnav == 'ris_organizations' %}active{% endif %}" {% if active_subnav == 'ris_organizations' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Gremien' : ''">
             <i data-lucide="building-2"></i>
             <span class="nav-label">Gremien</span>
         </a>
 
         <a href="{% url 'work:ris_persons' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_subnav == 'ris_persons' %}active{% endif %}"
+           class="work-nav-item {% if active_subnav == 'ris_persons' %}active{% endif %}" {% if active_subnav == 'ris_persons' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Personen' : ''">
             <i data-lucide="users"></i>
             <span class="nav-label">Personen</span>
         </a>
 
         <a href="{% url 'work:ris_files' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_subnav == 'ris_files' %}active{% endif %}"
+           class="work-nav-item {% if active_subnav == 'ris_files' %}active{% endif %}" {% if active_subnav == 'ris_files' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Dokumente' : ''">
             <i data-lucide="files"></i>
             <span class="nav-label">Dokumente</span>
         </a>
 
         <a href="{% url 'work:ris_map' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_subnav == 'ris_map' %}active{% endif %}"
+           class="work-nav-item {% if active_subnav == 'ris_map' %}active{% endif %}" {% if active_subnav == 'ris_map' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Karte' : ''">
             <i data-lucide="map"></i>
             <span class="nav-label">Karte</span>
         </a>
 
         <a href="{% url 'work:ris_search' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_subnav == 'ris_search' %}active{% endif %}"
+           class="work-nav-item {% if active_subnav == 'ris_search' %}active{% endif %}" {% if active_subnav == 'ris_search' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Suche' : ''">
             <i data-lucide="search"></i>
             <span class="nav-label">Suche</span>
@@ -157,7 +166,7 @@
         <div class="work-nav-section"><span class="nav-label">Verwaltung</span></div>
 
         <a href="{% url 'work:organization' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'organization' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'organization' %}active{% endif %}" {% if active_nav == 'organization' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Einstellungen' : ''">
             <i data-lucide="settings"></i>
             <span class="nav-label">Einstellungen</span>
@@ -165,7 +174,7 @@
         {% endif %}
 
         <a href="{% url 'work:support' org_slug=organization.slug %}"
-           class="work-nav-item {% if active_nav == 'support' %}active{% endif %}"
+           class="work-nav-item {% if active_nav == 'support' %}active{% endif %}" {% if active_nav == 'support' %}aria-current="page"{% endif %}
            :title="sidebarCollapsed ? 'Support' : ''">
             <i data-lucide="help-circle"></i>
             <span class="nav-label">Support</span>

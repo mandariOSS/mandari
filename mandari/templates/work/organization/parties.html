@@ -10,7 +10,7 @@
 {% block work_content %}
 {% include "work/organization/_tabs.html" %}
 
-<div class="space-y-8 fade-up">
+<div class="space-y-8">
 
     {# ================================================================== #}
     {# Verwaltungskontakte                                                 #}
@@ -135,12 +135,12 @@
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div>
                         <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Name *</label>
-                        <input type="text" name="name" required placeholder="SPD-Fraktion"
+                        <input type="text" name="name" required placeholder="Name der Fraktion"
                                class="w-full px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Kurzname *</label>
-                        <input type="text" name="short_name" required placeholder="SPD" maxlength="20"
+                        <input type="text" name="short_name" required placeholder="Kürzel" maxlength="20"
                                class="w-full px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
                     <div>
@@ -286,7 +286,7 @@
         </div>
         {% else %}
         <p class="text-sm text-gray-500 text-center py-6 bg-gray-50 dark:bg-gray-900 rounded-lg">
-            Noch keine Fraktionen konfiguriert. Klicke oben auf "Fraktion hinzufügen".
+            Noch keine Fraktionen konfiguriert. Klicken Sie oben auf „Fraktion hinzufügen“.
         </p>
         {% endif %}
     </div>

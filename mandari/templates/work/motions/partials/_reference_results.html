@@ -17,7 +17,7 @@ documents, papers (Paare Vorlage/Anzeige) bzw. meetings (Paare Sitzung/Anzeige),
     <p class="px-3 py-2 text-xs text-gray-400">Keine Sitzung gefunden.</p>
     {% endfor %}
     {% else %}
-    <p class="px-3 pt-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Dokumente</p>
+    <p class="px-3 pt-2 text-[10px] font-bold text-gray-400">Dokumente</p>
     {% for document in documents %}
     <form data-submit-handler="motion-meta" action="{{ meta_url }}">
         <input type="hidden" name="action" value="set_parent">
@@ -27,7 +27,7 @@ documents, papers (Paare Vorlage/Anzeige) bzw. meetings (Paare Sitzung/Anzeige),
     {% empty %}
     <p class="px-3 py-2 text-xs text-gray-400">Kein Dokument gefunden.</p>
     {% endfor %}
-    <p class="px-3 pt-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">RIS-Vorlagen</p>
+    <p class="px-3 pt-2 text-[10px] font-bold text-gray-400">RIS-Vorlagen</p>
     {% for paper, label in papers %}
     <form data-submit-handler="motion-meta" action="{{ meta_url }}">
         <input type="hidden" name="action" value="set_parent">

@@ -1,19 +1,19 @@
 {% extends "emails/base_email.html" %}
 {% block subject %}Registrierungsanfrage{% endblock %}
-{% block preheader %}Neuigkeiten zu deiner Anfrage bei {{ organization.name }}.{% endblock %}
+{% block preheader %}Neuigkeiten zu Ihrer Anfrage bei {{ organization.name }}.{% endblock %}
 {% block content %}
-<h1 class="h1">Deine Registrierungsanfrage</h1>
+<h1 class="h1">Ihre Registrierungsanfrage</h1>
 <p class="muted">{{ organization.name }}</p>
-<p>Hallo {{ user.first_name|default:user.email }},</p>
-<p>deine Anfrage, {{ organization.name }} auf mandari beizutreten, wurde nicht freigeschaltet.</p>
+<p>Guten Tag{% if user.get_full_name %} {{ user.get_full_name }}{% endif %},</p>
+<p>Ihre Anfrage, {{ organization.name }} auf mandari beizutreten, wurde nicht freigeschaltet.</p>
 {% if reason %}
 <div class="card">
     <p class="label">Begründung</p>
     <p class="pre">{{ reason }}</p>
 </div>
 {% endif %}
-<p>Falls es sich um ein Versehen handelt, wende dich bitte direkt an {{ organization.name }}{% if organization.contact_email %} ({{ organization.contact_email }}){% endif %}.</p>
-<p class="muted">Dein Konto auf mandari wird {{ retention_days }} Tage nach dieser Ablehnung automatisch gelöscht, sofern du bis dahin keiner Organisation angehörst.</p>
+<p>Falls es sich um ein Versehen handelt, wenden Sie sich bitte direkt an {{ organization.name }}{% if organization.contact_email %} ({{ organization.contact_email }}){% endif %}.</p>
+<p class="muted">Ihr Konto auf mandari wird {{ retention_days }} Tage nach dieser Ablehnung automatisch gelöscht, sofern Sie bis dahin keiner Organisation angehören.</p>
 {% endblock %}
 {% block footer %}
 <p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>

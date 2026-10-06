@@ -1,17 +1,17 @@
-# Bitte bestätige deine E-Mail-Adresse
+# Bitte bestätigen Sie Ihre E-Mail-Adresse
 
 Fraktion Test
 
-Hallo Eva,
+Guten Tag Eva Beispiel,
 
-du hast dich bei Fraktion Test auf mandari registriert. Bitte bestätige, dass diese E-Mail-Adresse dir gehört – erst danach geht es weiter.
+Sie haben sich bei Fraktion Test auf mandari registriert. Bitte bestätigen Sie, dass diese E-Mail-Adresse Ihnen gehört – erst danach geht es weiter.
 
 [Registrierung bestätigen](https://mandari.example/accounts/register/fraktion-test/bestaetigen/beispiel-token/)
 
-Der Link ist 48 Stunden gültig. Falls der Knopf nicht funktioniert, kopiere diese Adresse in deinen Browser:
+Der Link ist 48 Stunden gültig. Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:
 https://mandari.example/accounts/register/fraktion-test/bestaetigen/beispiel-token/
 
-Du hast dich nicht registriert? Dann ignoriere diese E-Mail. Ohne Bestätigung entsteht keine Anfrage, und niemand erhält Zugang.
+Sie haben sich nicht registriert? Dann ignorieren Sie diese E-Mail. Ohne Bestätigung entsteht keine Anfrage, und niemand erhält Zugang.
 
 Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
 

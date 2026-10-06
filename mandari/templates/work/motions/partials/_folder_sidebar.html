@@ -10,9 +10,9 @@ Kontext: folder_entries, current_folder, root_document_count, filter_query, can_
         <i data-lucide="folder-tree" class="w-4 h-4 text-gray-500"></i>
     </button>
 
-    <div x-show="folderPanelOpen" class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+    <div x-show="folderPanelOpen" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
         <div class="flex items-center justify-between mb-2 px-1">
-            <h3 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ordner</h3>
+            <h3 class="text-xs font-bold text-gray-500 dark:text-gray-400">Ordner</h3>
             <div class="flex items-center gap-1">
                 {% if can_create_folder %}
                 <button type="button" title="Neuer Ordner{% if current_folder %} in „{{ current_folder.name }}“{% endif %}"

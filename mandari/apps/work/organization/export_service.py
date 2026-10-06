@@ -249,7 +249,7 @@ VERMERKE: tuple[Vermerk, ...] = (
     Vermerk(
         "MotionShare.user",
         "Dokumente",
-        "Dokument für dich freigegeben",
+        "Dokument für Sie freigegeben",
         "motion__organization",
         "created_at",
         lambda o: f"{o.motion.title} ({o.get_level_display()})",
@@ -268,7 +268,7 @@ VERMERKE: tuple[Vermerk, ...] = (
     Vermerk(
         "FolderGuestShare.user",
         "Dokumente",
-        "Ordner für dich freigegeben",
+        "Ordner für Sie freigegeben",
         "folder__organization",
         "created_at",
         lambda o: f"{o.folder.name} ({o.get_level_display()})",

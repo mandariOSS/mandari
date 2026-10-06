@@ -2,20 +2,20 @@
 Tabellenansicht (Tracking-Tabelle) der Dokumentenliste (viewMode === 'list'). Alpine-Scope: documentManager.
 Kontext: motion_rows, motions (Seite), paginator, folder_entries, current_folder, organization, Filtervariablen
 {% endcomment %}
-<div x-show="viewMode === 'list'" class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+<div x-show="viewMode === 'list'" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="overflow-x-auto">
         <table class="w-full text-sm">
             <thead>
-                <tr class="text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                <tr class="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                     <th class="pl-4 pr-1 py-3 w-8"></th>
-                    <c-ui.th>Titel</c-ui.th>
-                    <c-ui.th>Typ</c-ui.th>
-                    <c-ui.th>Status</c-ui.th>
-                    <c-ui.th>Verantwortlich</c-ui.th>
-                    <c-ui.th>Themen</c-ui.th>
-                    <c-ui.th>Frist</c-ui.th>
-                    <c-ui.th>Fortschritt</c-ui.th>
-                    <c-ui.th>Aktualisiert</c-ui.th>
+                    <c-ui.th plain>Titel</c-ui.th>
+                    <c-ui.th plain>Typ</c-ui.th>
+                    <c-ui.th plain>Status</c-ui.th>
+                    <c-ui.th plain>Verantwortlich</c-ui.th>
+                    <c-ui.th plain>Themen</c-ui.th>
+                    <c-ui.th plain>Frist</c-ui.th>
+                    <c-ui.th plain>Fortschritt</c-ui.th>
+                    <c-ui.th plain>Aktualisiert</c-ui.th>
                     <th class="px-2 py-3 w-10"></th>
                 </tr>
             </thead>
@@ -28,7 +28,7 @@ Kontext: motion_rows, motions (Seite), paginator, folder_entries, current_folder
                     <td class="pl-4 pr-1 py-3" @click.stop>
                         <input type="checkbox" value="{{ motion.id }}" x-model="selectedIds"
                                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                               title="Für Verschieben auswählen">
+                               aria-label="„{{ motion.title|truncatechars:60 }}“ zum Verschieben auswählen" title="Für Verschieben auswählen">
                     </td>
                     <!-- Titel (+ Einrückung für Änderungsanträge) -->
                     <td class="px-4 py-3 max-w-xs">

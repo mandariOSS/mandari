@@ -15,7 +15,7 @@
         {% csrf_token %}
 
         <!-- Section 1: Basics -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Grundeinstellungen</h3>
 
             <div class="space-y-4">
@@ -84,7 +84,7 @@
         </div>
 
         <!-- Section 2: Administrator -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                 <input type="checkbox" name="is_admin" id="is_admin"
                        {% if role.is_admin %}checked{% endif %}
@@ -103,7 +103,7 @@
         </div>
 
         <!-- Section 3: Permissions -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up"
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
              x-show="!isAdmin" x-transition>
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Berechtigungen</h3>
             <p class="text-sm text-gray-500 mb-6">Wählen Sie die Berechtigungen für diese Rolle aus.</p>

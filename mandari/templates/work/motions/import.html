@@ -19,7 +19,7 @@
 <div class="max-w-2xl mx-auto">
     {{ import_config|json_script:"document-import-config" }}
     <form method="post" enctype="multipart/form-data"
-          class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+          class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
           x-data="documentImport"
           @submit="onSubmit($event)">
         {% csrf_token %}

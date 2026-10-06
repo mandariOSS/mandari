@@ -18,7 +18,7 @@
 {% block work_content %}
 <div class="max-w-2xl mx-auto">
     <!-- Gast-Kontingent -->
-    <div class="mb-6 fade-up rounded-xl border p-4 flex items-center gap-3
+    <div class="mb-6 rounded-xl border p-4 flex items-center gap-3
                 {% if guest_limit_reached %}bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800{% else %}bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800{% endif %}">
         <i data-lucide="user-round" class="w-5 h-5 {% if guest_limit_reached %}text-red-500{% else %}text-teal-500{% endif %}"></i>
         <div class="text-sm {% if guest_limit_reached %}text-red-800 dark:text-red-200{% else %}text-teal-800 dark:text-teal-200{% endif %}">
@@ -31,7 +31,7 @@
         </div>
     </div>
 
-    <form method="post" class="space-y-6 fade-up">
+    <form method="post" class="space-y-6">
         {% csrf_token %}
 
         <!-- Email -->

@@ -35,7 +35,7 @@
 
         {# Number badge #}
         <span class="flex-shrink-0 min-w-[2.5rem] h-10 px-3 rounded-lg flex items-center justify-center text-sm font-semibold
-            {% if item.is_approval_item %}bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400
+            {% if item.is_approval_item %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400
             {% elif is_internal %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400
             {% else %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400{% endif %}">
             {{ item.number }}
@@ -47,7 +47,7 @@
                 <div>
                     <h4 class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ item.title }}</h4>
                     {% if item.is_approval_item and item.approves_meeting %}
-                    <p class="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
+                    <p class="text-xs text-primary-600 dark:text-primary-400 mt-0.5">
                         Genehmigt: {{ item.approves_meeting.title }} ({{ item.approves_meeting.start|date:"d.m.Y" }})
                     </p>
                     {% endif %}

@@ -96,10 +96,18 @@
     }
 
     /* Hide text labels and user info in collapsed state */
-    .work-sidebar.collapsed .nav-label,
     .work-sidebar.collapsed .work-org-info,
     .work-sidebar.collapsed .user-info-details {
         display: none;
+    }
+    /* Eingeklappt: Beschriftung nur optisch verbergen, Screenreader lesen sie weiter (Issue #851) */
+    .work-sidebar.collapsed .nav-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
     }
 
     /* User area collapsed */

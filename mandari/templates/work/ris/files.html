@@ -22,7 +22,7 @@
 {% else %}
 
 <!-- Search -->
-<div class="fade-up mb-6">
+<div class="mb-6">
     <form method="get">
         <div class="relative max-w-md">
             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
@@ -35,7 +35,7 @@
 
 <!-- Files List -->
 {% if files %}
-<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for file in files %}
         <div class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors {% if file.access_url or file.download_url %}cursor-pointer{% endif %}"
@@ -121,7 +121,7 @@
 
 <!-- Pagination -->
 {% if files.has_other_pages %}
-<nav class="fade-up d2 mt-6 flex justify-center">
+<nav class="mt-6 flex justify-center">
     <ul class="flex items-center gap-1">
         {% if files.has_previous %}
         <li>
@@ -154,7 +154,7 @@
 {% endif %}
 
 {% else %}
-<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
     <i data-lucide="files" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Dokumente gefunden</h3>
     <p class="text-gray-500 dark:text-gray-400">

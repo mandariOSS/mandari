@@ -11,7 +11,7 @@
 {% include "work/organization/_tabs.html" %}
 
 <!-- Settings Content -->
-<div class="space-y-6 fade-up">
+<div class="space-y-6">
 
     <!-- Card 1: Organisation & Erscheinung -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
@@ -251,7 +251,7 @@
             <div class="flex items-center gap-3 px-4 py-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl">
                 <i data-lucide="landmark" class="w-5 h-5 text-primary-500 flex-shrink-0"></i>
                 <div class="min-w-0">
-                    <p class="text-[11px] font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-400">Stadt/Kommune</p>
+                    <p class="text-[11px] font-semibold text-primary-600 dark:text-primary-400">Stadt/Kommune</p>
                     <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
                         {% if home_body %}{{ home_body.get_display_name }}{% else %}<span class="text-amber-600 dark:text-amber-400">Nicht zugeordnet</span>{% endif %}
                     </p>
@@ -260,7 +260,7 @@
             <div class="flex items-center gap-3 px-4 py-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl">
                 <i data-lucide="flag" class="w-5 h-5 text-primary-500 flex-shrink-0"></i>
                 <div class="min-w-0">
-                    <p class="text-[11px] font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-400">Partei</p>
+                    <p class="text-[11px] font-semibold text-primary-600 dark:text-primary-400">Partei</p>
                     <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
                         {% if primary_party %}{{ primary_party.name }}{% else %}<span class="text-amber-600 dark:text-amber-400">Nicht zugeordnet</span>{% endif %}
                     </p>
@@ -317,7 +317,7 @@
 
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Partei per Name hinzufügen</label>
-                <input type="text" name="new_party" placeholder="z.B. Volt Deutschland"
+                <input type="text" name="new_party" placeholder="Name der Partei"
                        class="w-full max-w-md px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                 <p class="mt-1 text-xs text-gray-500">Nur bestehende Parteien. Fehlt eine Partei, legt der mandari-Support sie an.</p>
             </div>

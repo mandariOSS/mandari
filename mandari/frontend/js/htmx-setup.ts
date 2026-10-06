@@ -131,7 +131,7 @@ export function setupHtmx(): void {
     if (!detail.question) return
     event.preventDefault()
     void confirmAction({
-      title: 'Bist du sicher?',
+      title: 'Sind Sie sicher?',
       message: detail.question,
       confirmText: 'Bestätigen',
       variant: 'danger',

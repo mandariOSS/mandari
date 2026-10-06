@@ -13,8 +13,8 @@ Rolle: Mitglied
 
 [Anfrage prüfen](https://mandari.example/work/fraktion-test/organization/members/)
 
-Freischalten oder ablehnen kannst du in der Mitgliederverwaltung. Die Person wird in beiden Fällen automatisch per E-Mail informiert.
+Freischalten oder ablehnen können Sie in der Mitgliederverwaltung. Die Person wird in beiden Fällen automatisch per E-Mail informiert.
 
-Du erhältst diese E-Mail, weil du in Fraktion Test Mitglieder einladen darfst.
+Sie erhalten diese E-Mail, weil Sie in Fraktion Test Mitglieder einladen dürfen.
 
 mandari — Open Source unter AGPL-3.0-or-later, © Sven Konopka · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

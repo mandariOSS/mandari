@@ -1,20 +1,21 @@
 {% load member_tags %}
     <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex-shrink-0">
-        <div class="flex items-center justify-between">
-            <div class="flex items-center gap-4">
+        {# Titel nimmt die freie Breite statt höchstens 28rem; die Aktionen rechts schrumpfen nicht (Issue #851) #}
+        <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-4 flex-1 min-w-0">
                 <a href="{% url 'work:documents' org_slug=organization.slug %}"
-                   class="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                   class="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Zurück zu den Dokumenten">
+                    <i data-lucide="arrow-left" class="w-5 h-5" aria-hidden="true"></i>
                 </a>
-                <div>
+                <div class="flex-1 min-w-0">
                     {% if can_edit %}
-                    <input type="text" x-model="title" x-ref="titleInput"
-                           class="text-lg font-semibold bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white w-full max-w-md"
-                           placeholder="Titel eingeben...">
+                    <input type="text" x-model="title" x-ref="titleInput" aria-label="Titel"
+                           class="text-lg font-semibold bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white w-full"
+                           placeholder="Titel eingeben …">
                     {% else %}
-                    <h1 class="text-lg font-semibold text-gray-900 dark:text-white">{{ motion.title }}</h1>
+                    <h1 class="text-lg font-semibold text-gray-900 dark:text-white break-words">{{ motion.title }}</h1>
                     {% endif %}
-                    <div class="flex items-center gap-2 text-sm text-gray-500">
+                    <div class="flex flex-wrap items-center gap-2 text-sm text-gray-500">
                         {% if can_edit and not is_guest %}
                         <!-- Dokumenttyp-Dropdown -->
                         <div x-data="{ open: false }" class="relative">
@@ -76,7 +77,7 @@
                             {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
                             {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
                             {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
-                            {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+                            {% elif motion.status == 'completed' %}bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300
                             {% elif motion.status == 'adopted' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
                             {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
                             {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
@@ -107,12 +108,12 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 shrink-0">
                 <!-- Collaboration Presence -->
                 <template x-if="collabEnabled">
-                    <div class="flex items-center gap-2 mr-2">
+                    <div class="flex items-center gap-3 mr-2">
                         <!-- Connection Status -->
-                        <span class="collab-status text-gray-500 dark:text-gray-400">
+                        <span class="collab-status whitespace-nowrap text-gray-500 dark:text-gray-400">
                             <span class="collab-status-dot" :class="collabStatus"></span>
                             <span x-text="collabStatus === 'connected' ? 'Online' : (collabStatus === 'connecting' ? 'Verbindung wird hergestellt...' : 'Offline')"
                                   :class="collabStatus === 'connected' ? 'text-green-600 dark:text-green-400' : (collabStatus === 'disconnected' ? 'text-red-500' : '')"></span>
@@ -124,7 +125,7 @@
                                 <template x-for="u in collabUsers.slice(0, 5)" :key="u.name">
                                     <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-white dark:ring-gray-800 cursor-default"
                                          :style="'background-color: ' + u.color"
-                                         :title="u.name === collabUserName ? u.name + ' (Du)' : u.name"
+                                         :title="u.name === collabUserName ? u.name + ' (Sie)' : u.name"
                                          x-text="u.name.charAt(0).toUpperCase()">
                                     </div>
                                 </template>
@@ -139,8 +140,8 @@
 
                 <!-- Mobile Sidebar Toggle -->
                 <button type="button" @click="showMobileSidebar = !showMobileSidebar"
-                        class="xl:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <i data-lucide="panel-right" class="w-5 h-5"></i>
+                        class="xl:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Seitenspalte ein- und ausblenden">
+                    <i data-lucide="panel-right" class="w-5 h-5" aria-hidden="true"></i>
                 </button>
 
                 {% if ris_application and not is_guest %}
@@ -161,7 +162,7 @@
                 {% elif can_submit_ris %}
                 {% if motion.is_submittable %}
                 <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
-                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Bei Verwaltung einreichen">
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Bei der Verwaltung einreichen" title="Bei der Verwaltung einreichen">
                     <i data-lucide="send" class="w-5 h-5"></i>
                 </a>
                 {% endif %}
@@ -169,7 +170,7 @@
 
                 <!-- Export Dropdown -->
                 <div x-data="{ open: false }" class="relative">
-                    <button type="button" @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Exportieren">
+                    <button type="button" @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Exportieren" title="Exportieren" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false">
                         <i data-lucide="download" class="w-5 h-5"></i>
                     </button>
                     <div x-show="open" @click.away="open = false" x-cloak
@@ -194,7 +195,7 @@
                 {% elif can_share %}
                 <!-- Share Button (opens modal) -->
                 <button type="button" @click="showShareModal = true"
-                        class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Teilen">
+                        class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Teilen" title="Teilen">
                     <i data-lucide="share-2" class="w-5 h-5"></i>
                 </button>
                 {% endif %}
@@ -203,7 +204,7 @@
                 {% if not is_guest %}
                 <!-- Status Dropdown -->
                 <div x-data="{ open: false }" class="relative">
-                    <button type="button" @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Status ändern">
+                    <button type="button" @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Status ändern" title="Status ändern" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false">
                         <i data-lucide="flag" class="w-5 h-5"></i>
                     </button>
                     <div x-show="open" @click.away="open = false" x-cloak
@@ -222,7 +223,7 @@
                 {% if can_delete %}
                 <!-- More Actions -->
                 <div x-data="{ open: false }" class="relative">
-                    <button type="button" @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Mehr">
+                    <button type="button" @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Weitere Aktionen" title="Weitere Aktionen" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false">
                         <i data-lucide="more-vertical" class="w-5 h-5"></i>
                     </button>
                     <div x-show="open" @click.away="open = false" x-cloak

@@ -4,7 +4,7 @@
 
 {% block header_title %}Dokumente{% endblock %}
 {% block header_subtitle %}
-<p class="work-page-subtitle">{{ stats.total }} Dokumente · {{ stats.draft }} Entwürfe</p>
+<p class="work-page-subtitle" data-testid="dokumente-stand">{{ stats_sentence }}</p>
 {% endblock %}
 
 {% block header_actions %}
@@ -17,16 +17,7 @@
 {% block work_content %}
 {{ document_manager_config|json_script:"document-manager-config" }}
 <div x-data="documentManager">
-    <!-- Stats Tiles -->
-    <div class="fade-up grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        <c-ui.kpi-tile label="Gesamt" value="{{ stats.total }}" />
-        <c-ui.kpi-tile label="Entwürfe" value="{{ stats.draft }}" tone="muted" />
-        <c-ui.kpi-tile label="Eingereicht" value="{{ stats.submitted }}" tone="blue" />
-        <c-ui.kpi-tile label="In Beratung" value="{{ stats.in_consultation }}" tone="indigo" />
-        <c-ui.kpi-tile label="Überfällig" value="{{ stats.overdue }}" tone="{% if stats.overdue %}red{% else %}default{% endif %}" />
-        <c-ui.kpi-tile label="Erledigt" value="{{ stats.completed }}" tone="purple" />
-    </div>
-
+    {# Zählerkacheln entfallen, die Zahlen stehen als Satz im Seitenkopf (Issue #851) #}
     {% include "work/motions/partials/_folder_select_mobile.html" %}
 
     <div class="flex items-start gap-5">

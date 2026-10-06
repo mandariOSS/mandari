@@ -4,23 +4,18 @@
 
 {% block header_title %}{{ meeting.title }}{% endblock %}
 {% block header_subtitle %}
-<div class="flex flex-wrap items-center gap-2 mt-2">
-    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
-        {% if meeting.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
-        {% elif meeting.status == 'ongoing' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 animate-pulse
-        {% elif meeting.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
-        {% elif meeting.status == 'cancelled' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
-        {% else %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300{% endif %}">
-        {% if meeting.status == 'ongoing' %}<span class="w-2 h-2 bg-green-500 rounded-full mr-1.5"></span>{% endif %}
+{# Status als Punkt mit Text statt als Farbchip; Sitzungsnummer nur, wenn vergeben (sonst stand „#—“, Issue #851) #}
+<p class="work-page-subtitle flex flex-wrap items-center gap-x-2" data-testid="sitzung-kopf">
+    <span class="inline-flex items-center gap-1.5 font-medium text-gray-900 dark:text-white">
+        <span class="w-2 h-2 rounded-full shrink-0 {% if meeting.status == 'ongoing' %}bg-green-500{% elif meeting.status == 'cancelled' %}bg-red-500{% elif meeting.status == 'planned' or meeting.status == 'invited' %}bg-primary-500{% else %}bg-gray-400 dark:bg-gray-500{% endif %}" aria-hidden="true"></span>
         {{ meeting.get_status_display }}
     </span>
-    <span class="text-sm text-gray-500">
-        #{{ meeting.meeting_number|default:"—" }} ·
-        {{ meeting.start|date:"l, d. F Y" }} um {{ meeting.start|time:"H:i" }} Uhr
-        {% if meeting.location %} · {{ meeting.location }}{% endif %}
-        {% if meeting.is_virtual %} · <span class="text-blue-500">Online</span>{% endif %}
-    </span>
-</div>
+    <span>&middot;</span>
+    {% if meeting.meeting_number %}<span>Nr. {{ meeting.meeting_number }}</span><span>&middot;</span>{% endif %}
+    <span>{{ meeting.start|date:"l, d. F Y" }} um {{ meeting.start|time:"H:i" }} Uhr</span>
+    {% if meeting.location %}<span>&middot;</span><span>{{ meeting.location }}</span>{% endif %}
+    {% if meeting.is_virtual %}<span>&middot;</span><span>Online</span>{% endif %}
+</p>
 {% endblock %}
 
 {% block header_actions %}
@@ -47,16 +42,16 @@
 
         {# Ausfall-Hinweis (Issue #61): ersatzlos gestrichener Termin #}
         {% if meeting.status == 'cancelled' and meeting.cancellation_reason %}
-        <c-ui.alert variant="error" icon="calendar-x" class="fade-up">Dieser Termin entfällt ersatzlos: {{ meeting.cancellation_reason }}</c-ui.alert>
+        <c-ui.alert variant="error" icon="calendar-x">Dieser Termin entfällt ersatzlos: {{ meeting.cancellation_reason }}</c-ui.alert>
         {% endif %}
 
         {# Hinweis: Protokoll der vorherigen Sitzung noch nicht genehmigt #}
         {% if meeting.previous_meeting and not meeting.previous_meeting.protocol_approved %}
-        <c-ui.alert variant="warning" icon="alert-triangle" class="fade-up">Protokoll der vorherigen Sitzung ({{ meeting.previous_meeting.start|date:"d.m.Y" }}) noch nicht genehmigt</c-ui.alert>
+        <c-ui.alert variant="warning" icon="alert-triangle">Protokoll der vorherigen Sitzung ({{ meeting.previous_meeting.start|date:"d.m.Y" }}) noch nicht genehmigt</c-ui.alert>
         {% endif %}
 
         {# Tagesordnung (HTMX-Ziel) — lädt sich nach Panel-Aktionen selbst neu (agenda-refresh) #}
-        <div id="agenda-container" class="fade-up d1"
+        <div id="agenda-container"
              hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
              hx-vals='{"action": "refresh_agenda"}'
              hx-trigger="agenda-refresh from:body"
