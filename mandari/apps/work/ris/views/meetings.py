@@ -79,8 +79,10 @@ class RISMeetingDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
 
         meeting = get_object_or_404(selectors.meetings_in_bodies(bodies), id=kwargs.get("meeting_id"))
         context["meeting"] = meeting
-        context["agenda_items"] = selectors.agenda_items_with_papers(meeting)
         context["organizations"] = meeting.organizations.all()
         if self.neu:
+            # Tagesordnung mit allen Vorlagen in einer Abfrage und „Für die Fraktion“ (statt einer Abfrage je Punkt)
             context |= neu.sitzung(self.organization, self.membership, meeting)
+            return context
+        context["agenda_items"] = selectors.agenda_items_with_papers(meeting)
         return context
