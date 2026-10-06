@@ -222,8 +222,12 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
 
         context.update(_get_meeting_context(self, meeting))
         # Konfiguration der Alpine-Komponente `factionDetail` (frontend/alpine/faction-detail.ts):
-        # Panel-URL mit Platzhalter-UUID, die clientseitig durch die TOP-ID ersetzt wird
+        # Panel-URL mit Platzhalter-UUID, die clientseitig durch die TOP-ID ersetzt wird; Aktions-URL für die
+        # Löschdialoge, die ihre Folgen beim Öffnen laden (Issue #897)
         context["detail_config"] = {
+            "actionUrl": reverse(
+                "work:faction_action", kwargs={"org_slug": self.organization.slug, "meeting_id": meeting.id}
+            ),
             "panelUrlTemplate": reverse(
                 "work:faction_item_panel",
                 kwargs={

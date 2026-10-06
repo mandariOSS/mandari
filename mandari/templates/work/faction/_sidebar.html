@@ -204,13 +204,14 @@
 {# Einladung: Freigabe (Issue #62) bzw. geplanter automatischer Versand (Issue #871) #}
 {% include "work/faction/partials/_sidebar_invitation.html" %}
 
-{# Actions card #}
-{% if can_edit %}
+{# Actions card – Löschen nur mit faction.delete, mit Folgen und Eingabe im Dialog (Issue #897) #}
+{% if can_edit or can_delete %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">
     <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
         <i data-lucide="zap" class="w-4 h-4 text-primary-600"></i>
         Aktionen
     </h4>
+    {% if can_edit %}
 
     {# „Einladen“ und „Aktualisierung senden“ stehen nur noch im Seitenkopf (vorher doppelt, Issue #851) #}
     {% if meeting.status == 'completed' and not meeting.protocol_approved %}
@@ -239,15 +240,14 @@
     </form>
     {% endif %}
 
-    <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
-          hx-vals='{"action": "delete"}'
-          hx-confirm="Sitzung unwiderruflich löschen?"
-          class="w-full">
-        {% csrf_token %}
-        <button type="submit" class="w-full py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center justify-center gap-2">
-            <i data-lucide="trash-2" class="w-4 h-4"></i>
-            Löschen
-        </button>
-    </form>
+    {% endif %}
+
+    {% if can_delete %}
+    <button type="button" @click="$dispatch('open-delete-meeting')" aria-haspopup="dialog" aria-controls="delete-meeting-modal"
+            class="w-full py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg flex items-center justify-center gap-2">
+        <i data-lucide="trash-2" class="w-4 h-4"></i>
+        Sitzung löschen …
+    </button>
+    {% endif %}
 </div>
 {% endif %}

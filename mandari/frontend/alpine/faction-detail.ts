@@ -1,19 +1,23 @@
 /**
  * Fraktionssitzung – Detailseite (Alpine-Komponente `factionDetail`).
  *
- * Hält den Zustand der Modale (TOP anlegen/bearbeiten, löschen, Abstimmung, Vorschlag,
- * Teilnehmer, Sitzung bearbeiten) und des Slide-over-Panels, dessen Inhalt per HTMX
- * geladen wird. Die Agenda-Partials öffnen die Modale über Fenster-Events
- * (`open-add-item`, `open-edit-item`, …), die im Template auf die Methoden gemappt sind.
+ * Hält den Zustand der Modale (TOP anlegen/bearbeiten, Abstimmung, Vorschlag, Teilnehmer,
+ * Sitzung bearbeiten) und des Slide-over-Panels, dessen Inhalt per HTMX geladen wird.
+ * Die Agenda-Partials öffnen die Modale über Fenster-Events (`open-add-item`, `open-edit-item`, …),
+ * die im Template auf die Methoden gemappt sind. Die Löschdialoge für Sitzung und TOP (natives
+ * `<dialog>`, Issue #897) laden ihre Folgen beim Öffnen frisch vom Server.
  * Die Konfiguration kommt aus dem View per `{{ detail_config|json_script:"faction-detail-config" }}`.
  *
  * Markup: `templates/work/faction/detail.html` und die `partials/_detail_*`-Partials.
  */
 
 import { defineComponent } from '../js/alpine/component'
+import { showToast } from '../js/alpine/toast'
 import { readJsonScript } from '../js/json-script'
 
 export interface FactionDetailConfig {
+  /** Aktions-URL der Sitzung (Löschdialoge laden dort ihre Folgen, Issue #897) */
+  actionUrl: string
   /** URL des TOP-Panels; PANEL_ITEM_PLACEHOLDER steht an Stelle der TOP-ID */
   panelUrlTemplate: string
 }
@@ -32,34 +36,48 @@ export interface AgendaItemEventDetail {
 }
 
 const CONFIG_ID = 'faction-detail-config'
-const ERROR_TOAST_MS = 5000
+const LOADING_TEXT = 'Folgen werden ermittelt …'
 
 function errorMessage(xhr: XMLHttpRequest | undefined): string {
   const status = xhr ? xhr.status : 0
-  if (status === 403) return 'Keine Berechtigung für diese Aktion.'
+  const type = xhr?.getResponseHeader('Content-Type') ?? ''
+  const plain = type.startsWith('text/plain') ? (xhr?.responseText ?? '').trim() : ''
+  if (status === 403) return plain || 'Keine Berechtigung für diese Aktion.'
   if (status === 400) return xhr?.responseText || 'Ungültige Eingabe.'
   if (status >= 500) return 'Serverfehler — bitte erneut versuchen.'
   return 'Ein Fehler ist aufgetreten.'
 }
 
-/** Fehlermeldung als Toast im Nachrichten-Container, sonst als Browser-Hinweis */
+/** Fehlermeldung als Hinweis (Toast-Container beider Rahmen) */
 function showHtmxError(event: Event): void {
   const detail = (event as CustomEvent<{ xhr?: XMLHttpRequest }>).detail
-  const msg = errorMessage(detail?.xhr)
-  const container = document.querySelector('.messages-container')
-  if (!container) {
-    window.alert(msg)
-    return
+  showToast(errorMessage(detail?.xhr), 'error')
+}
+
+/**
+ * Löschdialog öffnen und seinen Inhalt (Folgen, Eingabe) frisch vom Server laden (Issue #897).
+ * Lehnt der Server ab (fehlendes Recht), schließt sich der Dialog wieder; die Meldung erscheint als Hinweis.
+ */
+function openDeleteDialog(dialogId: string, bodyId: string, url: string, values: Record<string, string>): void {
+  const dialog = document.getElementById(dialogId)
+  const body = document.getElementById(bodyId)
+  if (!(dialog instanceof HTMLDialogElement) || !body || !url) return
+  const loading = document.createElement('p')
+  loading.className = 'text-sm text-gray-500 dark:text-gray-400'
+  loading.textContent = LOADING_TEXT
+  body.replaceChildren(loading)
+  if (!dialog.open) dialog.showModal()
+  const closeIfEmpty = () => {
+    if (body.contains(loading)) dialog.close()
   }
-  const toast = document.createElement('div')
-  toast.className = 'mb-2 p-3 rounded-xl border text-sm bg-red-50 border-red-200 text-red-700'
-  toast.textContent = msg
-  container.appendChild(toast)
-  window.setTimeout(() => toast.remove(), ERROR_TOAST_MS)
+  void window.htmx.ajax('post', url, { target: body, swap: 'innerHTML', values }).then(closeIfEmpty, closeIfEmpty)
 }
 
 export const factionDetail = defineComponent(() => ({
-  config: (readJsonScript<FactionDetailConfig>(CONFIG_ID) ?? { panelUrlTemplate: '' }) as FactionDetailConfig,
+  config: (readJsonScript<FactionDetailConfig>(CONFIG_ID) ?? {
+    actionUrl: '',
+    panelUrlTemplate: '',
+  }) as FactionDetailConfig,
 
   // TOP-Modal (anlegen/bearbeiten)
   showItemModal: false,
@@ -69,11 +87,6 @@ export const factionDetail = defineComponent(() => ({
   itemTitle: '',
   itemDescription: '',
   parentId: '',
-
-  // Lösch-Modal
-  showDeleteModal: false,
-  deleteItemId: '',
-  deleteItemTitle: '',
 
   // Abstimmungs-Modal
   showDecisionModal: false,
@@ -135,9 +148,14 @@ export const factionDetail = defineComponent(() => ({
   },
 
   openDeleteItem(detail: AgendaItemEventDetail) {
-    this.deleteItemId = detail.id ?? ''
-    this.deleteItemTitle = detail.title ?? ''
-    this.showDeleteModal = true
+    openDeleteDialog('delete-item-modal', 'delete-item-body', this.config.actionUrl, {
+      action: 'delete_item_preview',
+      item_id: detail.id ?? '',
+    })
+  },
+
+  openDeleteMeeting() {
+    openDeleteDialog('delete-meeting-modal', 'delete-meeting-body', this.config.actionUrl, { action: 'delete_preview' })
   },
 
   openDecision(detail: AgendaItemEventDetail) {

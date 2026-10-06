@@ -35,10 +35,12 @@ Alpine.data('documentImport', documentImport)
 
 // ---- Satz B (#174): Fraktionssitzung, TOP-Panel, Fraktions-Einstellungen ----------
 import { agendaItemPanel } from '../alpine/agenda-item-panel'
+import { deleteConfirmation } from '../alpine/delete-confirmation'
 import { factionDetail } from '../alpine/faction-detail'
 import { factionTitlePreview } from '../alpine/faction-title-preview'
 
 Alpine.data('agendaItemPanel', agendaItemPanel)
+Alpine.data('deleteConfirmation', deleteConfirmation)
 Alpine.data('factionDetail', factionDetail)
 Alpine.data('factionTitlePreview', factionTitlePreview)
 

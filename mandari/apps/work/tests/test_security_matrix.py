@@ -531,6 +531,9 @@ CASES: list[Case] = [
     _fraktion("end", meeting="fmeeting_ongoing"),
     _fraktion("cancel"),
     _fraktion("delete"),
+    # Bestätigungsdialoge mit den Folgen (Issue #897): nur lesend, aber nur mit dem jeweiligen Recht
+    _fraktion("delete_preview"),
+    _fraktion("delete_item_preview", item_id="{fitem}", foreign={"top": {"item_id": "{a_fitem}"}}),
     _fraktion("update_status", status="invited"),
     _fraktion("update", title="Sitzung geändert", start_date=IN_65_TAGEN, start_time="19:00"),
     _fraktion("invite"),

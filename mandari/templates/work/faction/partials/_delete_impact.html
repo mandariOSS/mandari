@@ -1,0 +1,32 @@
+{% comment %}
+Folgen eines endgültigen Löschens (Issue #897): was mitgelöscht wird und was nur den Bezug verliert, mit Zahlen.
+Kontext: impact (apps.work.faction.deletion.DeletionImpact; None = geschützte Verweise sperren das Löschen).
+{% endcomment %}
+{% if impact is None %}
+<p class="mt-3 text-sm text-red-700 dark:text-red-400">Löschen nicht möglich: Andere Daten verweisen noch auf diesen Eintrag.</p>
+{% else %}
+{% if impact.deleted %}
+<h3 class="mt-4 text-sm font-semibold text-gray-900 dark:text-white">Wird mitgelöscht</h3>
+<dl class="mt-1 text-sm">
+    {% for line in impact.deleted %}
+    <div class="flex justify-between gap-4 py-1 border-b border-gray-100 dark:border-gray-700/60 last:border-0">
+        <dt class="text-gray-700 dark:text-gray-300">{{ line.label }}</dt>
+        <dd class="font-medium tabular-nums text-gray-900 dark:text-white">{{ line.count }}</dd>
+    </div>
+    {% endfor %}
+</dl>
+{% else %}
+<p class="mt-3 text-sm text-gray-600 dark:text-gray-400">Weitere Daten hängen nicht daran.</p>
+{% endif %}
+{% if impact.kept %}
+<h3 class="mt-4 text-sm font-semibold text-gray-900 dark:text-white">Bleibt erhalten, verliert den Bezug</h3>
+<dl class="mt-1 text-sm">
+    {% for line in impact.kept %}
+    <div class="flex justify-between gap-4 py-1 border-b border-gray-100 dark:border-gray-700/60 last:border-0">
+        <dt class="text-gray-700 dark:text-gray-300">{{ line.label }}</dt>
+        <dd class="font-medium tabular-nums text-gray-900 dark:text-white">{{ line.count }}</dd>
+    </div>
+    {% endfor %}
+</dl>
+{% endif %}
+{% endif %}

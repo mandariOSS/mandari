@@ -1,0 +1,19 @@
+{% comment %}
+Ausdrückliche Bestätigung eines endgültigen Löschens (Issue #897) – im Formular mit x-data="deleteConfirmation"
+und data-phrases (frontend/alpine/delete-confirmation.ts). Ohne passende Eingabe bleibt der Knopf gesperrt; der Server
+prüft die Eingabe beim Absenden noch einmal. „Abbrechen“ schließt das umgebende <c-ui.modal> (data-close-modal).
+Kontext: needs_input, input_id, label, expected (wird hervorgehoben), submit_label (Standard „Endgültig löschen“).
+{% endcomment %}
+{% if needs_input %}
+<label for="{{ input_id }}" class="block text-sm text-gray-700 dark:text-gray-300">
+    {{ label }} <span class="font-semibold text-gray-900 dark:text-white">{{ expected }}</span>
+</label>
+<input id="{{ input_id }}" name="confirmation" type="text" x-model="value" @input="error = ''"
+       autocomplete="off" spellcheck="false" autofocus
+       class="mt-1 w-full h-8 px-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+{% endif %}
+<p x-show="error" x-text="error" x-cloak role="alert" class="mt-2 text-sm text-red-700 dark:text-red-400"></p>
+<div class="mt-4 flex justify-end gap-2">
+    <c-ui.button variant="ghost" size="sm" data-close-modal>Abbrechen</c-ui.button>
+    <c-ui.button type="submit" variant="danger" size="sm" x-bind:disabled="!matches">{{ submit_label|default:"Endgültig löschen" }}</c-ui.button>
+</div>

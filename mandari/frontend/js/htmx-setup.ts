@@ -5,10 +5,11 @@
  *
  * - `data-autosave="panel"`: vor der Anfrage `panel-autosaving`, nach Erfolg `panel-autosaved`
  *   als Window-Event (Anzeige „wird gespeichert …“ in Alpine-Komponenten).
- * - `data-after-request="reload|reset|follow-href|notification-read"` nach erfolgreicher Anfrage:
+ * - `data-after-request="reload|reset|follow-href|notification-read|close-dialog"` nach erfolgreicher Anfrage:
  *   Seite neu laden; Formular zurücksetzen (optional `data-blur="<Selektor>"`); dem eigenen
  *   `href` folgen, sonst `notification:marked-read` auslösen; Benachrichtigung als gelesen
- *   darstellen (Hervorhebung und Punkt im Elternelement `data-parent` entfernen, Button entfernen).
+ *   darstellen (Hervorhebung und Punkt im Elternelement `data-parent` entfernen, Button entfernen);
+ *   das umgebende `<dialog>` schließen.
  */
 
 import htmx from 'htmx.org'
@@ -64,6 +65,9 @@ function afterRequest(el: HTMLElement): void {
       else window.dispatchEvent(new CustomEvent('notification:marked-read'))
       break
     }
+    case 'close-dialog':
+      el.closest('dialog')?.close()
+      break
     case 'notification-read': {
       const parent = el.closest<HTMLElement>(el.dataset.parent ?? '.p-4')
       parent?.classList.remove('bg-primary-50/50', 'dark:bg-primary-900/10')
