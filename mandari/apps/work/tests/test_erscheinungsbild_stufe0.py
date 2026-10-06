@@ -373,8 +373,8 @@ ROLLEN = {
 @pytest.mark.parametrize("neues_design", [False, True], ids=["alter_rahmen", "neuer_rahmen"])
 @pytest.mark.parametrize("rolle", [*ROLLEN, "gast"])
 def test_seiten_fuer_jede_rolle_in_beiden_rahmen(org: Any, client_for: Any, neues_design: bool, rolle: str) -> None:
-    Permission.sync_permissions()
-    Role.create_default_roles(org)
+    cast(Any, Permission).sync_permissions()
+    cast(Any, Role).create_default_roles(org)
     org.work_new_design = neues_design
     org.save(update_fields=["work_new_design"])
     sitzung = FactionMeeting.objects.create(
