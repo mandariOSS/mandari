@@ -276,3 +276,75 @@
 .map-container.is-empty #map {
   filter: grayscale(0.6) opacity(0.5);
 }
+
+/* ---- Neuer Rahmen von Work (Issue #852, templates/work/base_work_neu.html) ------------------------------------
+   Nur unter html[data-rahmen="neu"]; der bisherige Rahmen (work/base_work_alt.html) bringt seine Regeln selbst mit.
+   Kopfzeile, Kopfband, Reiter und Inhalt enden bei derselben Breite wie Insight (116rem samt Rand, #841): Der Rand
+   wächst auf breiten Bildschirmen, damit Inhalt und Kopf mittig stehen und links bündig bleiben – auch auf Seiten,
+   die ihren Kopf selbst setzen. */
+@layer components {
+  [data-rahmen="neu"] {
+    --rahmen-rand: 1rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (min-width: 640px) {
+    [data-rahmen="neu"] {
+      --rahmen-rand: 2rem;
+    }
+  }
+  [data-rahmen="neu"] .rahmen-zeile,
+  [data-rahmen="neu"] .work-page-header,
+  [data-rahmen="neu"] .work-page-content {
+    padding-inline: max(var(--rahmen-rand), calc((100% - 116rem) / 2 + var(--rahmen-rand)));
+  }
+  [data-rahmen="neu"] .work-page-header {
+    @apply bg-band-grau py-5;
+  }
+  [data-rahmen="neu"] .work-page-title {
+    @apply m-0 text-2xl font-bold tracking-tight text-gray-900 dark:text-white break-words;
+  }
+  [data-rahmen="neu"] .work-page-subtitle {
+    @apply mt-1 max-w-3xl text-sm text-gray-600 dark:text-gray-400;
+  }
+  [data-rahmen="neu"] .work-page-content {
+    @apply flex-1 py-6;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Raumzeichen: Kürzel der Organisation in ihrer Farbe (--raum-farbe aus dem Layout, serverseitig geprüft);
+     die Bedienung bleibt Indigo (Konzept W10). Gemischt mit Tinte bzw. Weiß, damit der Kontrast nicht an der
+     Farbe der Organisation hängt. */
+  [data-rahmen="neu"] .raumzeichen {
+    background: color-mix(in srgb, var(--raum-farbe, #4f46e5) 14%, white);
+    color: color-mix(in srgb, var(--raum-farbe, #4f46e5) 50%, #111827);
+  }
+  [data-rahmen="neu"].dark .raumzeichen {
+    background: color-mix(in srgb, var(--raum-farbe, #4f46e5) 30%, #111827);
+    color: color-mix(in srgb, var(--raum-farbe, #4f46e5) 30%, white);
+  }
+
+  /* Schmale Leiste (Seitenleiste einklappen, wie im bisherigen Rahmen): nur Symbole, Beschriftungen bleiben für
+     Bildschirmleser. Zustand aus localStorage „sidebarCollapsed“ (frontend/alpine/work-rahmen.ts). */
+  @media (min-width: 1024px) {
+    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste {
+      width: 4rem;
+    }
+    [data-rahmen="neu"][data-leiste="schmal"] .work-main {
+      padding-left: 4rem;
+    }
+    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-label {
+      @apply sr-only;
+    }
+    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-eintrag {
+      @apply justify-center px-0;
+    }
+  }
+}
+
+/* Personenmenü (templates/work/rahmen/_person.html) steht fest über der Person; bei schmaler Leiste rechts neben ihr */
+@media (min-width: 1024px) {
+  [data-rahmen="neu"][data-leiste="schmal"] .person-menue {
+    left: 4.5rem;
+    bottom: 0.75rem;
+  }
+}

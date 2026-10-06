@@ -1,0 +1,29 @@
+{% comment %}
+Person unten in der Leiste (Issue #852): Name und Rolle, Menü mit Profil, Sicherheit, Benachrichtigungen, App
+installieren (nur wenn der Browser es anbietet) und Abmelden. Escape und Klick daneben schließen das Menü.
+{% endcomment %}
+<div x-data="workPerson" class="relative" @keydown.escape="schliessen()" @click.outside="schliessen(false)"
+     @pwa-installable.window="canInstall = true" @pwa-installed.window="canInstall = false">
+    <button type="button" x-ref="knopf" @click="umschalten()" aria-haspopup="menu" aria-controls="person-menue" :aria-expanded="offen.toString()" aria-expanded="false"
+            class="rahmen-eintrag w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left hover:bg-band-hell/70">
+        <span class="w-7 h-7 shrink-0 inline-flex items-center justify-center rounded-full bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200 text-xs font-semibold" aria-hidden="true">{% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}</span>
+        <span class="rahmen-label flex-1 min-w-0">
+            <span class="block text-sm font-semibold text-gray-900 dark:text-white truncate">{% if request.user.display_name %}{{ request.user.display_name }}{% else %}{{ request.user.email }}{% endif %}</span>
+            <span class="block text-xs text-gray-600 dark:text-gray-400 truncate">{% if membership.is_guest %}Gast{% else %}{% for role in membership.roles.all|slice:":2" %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% empty %}Mitglied{% endfor %}{% endif %}</span>
+        </span>
+        <i data-lucide="chevrons-up-down" class="rahmen-label w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+        <span class="sr-only">– Konto</span>
+    </button>
+    <div id="person-menue" x-show="offen" x-cloak role="menu" aria-label="Konto"
+         class="person-menue [&_svg]:text-gray-500 fixed left-2.5 bottom-[calc(3.75rem+env(safe-area-inset-bottom))] w-64 rounded-lg bg-band-hell py-1.5 shadow-xl ring-1 ring-gray-900/10 dark:ring-white/10 z-50">
+        <p class="px-3.5 pt-1 pb-2 text-xs text-gray-600 dark:text-gray-400 truncate">{{ request.user.email }}</p>
+        <a role="menuitem" href="{% url 'work:profile' org_slug=organization.slug %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="user" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Profil</a>
+        <a role="menuitem" href="{% url 'work:security' org_slug=organization.slug %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="shield" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Sicherheit</a>
+        <a role="menuitem" href="{% url 'work:profile_notifications' org_slug=organization.slug %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="bell" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Benachrichtigungen einstellen</a>
+        <div x-show="canInstall && !installHidden" x-cloak class="flex items-center">
+            <button type="button" role="menuitem" @click="installApp()" class="flex-1 flex items-center gap-3 h-9 px-3.5 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="download" class="w-4 h-4 shrink-0" aria-hidden="true"></i>App installieren</button>
+            <button type="button" @click.stop="hideInstall()" class="w-8 h-8 mr-1.5 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-gray-800 dark:hover:text-gray-200" aria-label="Installationshinweis ausblenden"><i data-lucide="x" class="w-3.5 h-3.5" aria-hidden="true"></i></button>
+        </div>
+        <a role="menuitem" href="{% url 'accounts:logout' %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="log-out" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Abmelden</a>
+    </div>
+</div>

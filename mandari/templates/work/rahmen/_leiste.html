@@ -1,0 +1,45 @@
+{% comment %}
+Seitenleiste des neuen Rahmens (Issue #852, Konzept Variante A): graue Fläche wie in Insight, oben Wortmarke und
+Raum-Knopf (Organisation wechseln, immer sichtbar), sechs Bereiche, unten Einstellungen, Hilfe und die Person. Nur ab
+lg; am Handy übernehmen Leiste unten und Blatt „Mehr“ (_leiste_unten.html). Einklappbar wie bisher: Dann zeigt sie
+nur Symbole (data-leiste="schmal", static/css/input.css).
+{% endcomment %}
+<aside id="work-navigation" aria-label="Navigation"
+       class="rahmen-leiste hidden lg:flex fixed inset-y-0 left-0 z-40 w-60 flex-col overflow-y-auto overflow-x-hidden bg-band-grau pb-[env(safe-area-inset-bottom)]">
+    <div class="h-12 shrink-0 flex items-center px-4">
+        <a href="{{ work_rahmen.start_url }}" class="inline-flex items-baseline gap-1 leading-none text-gray-900 dark:text-white" aria-label="mandari Work, Start">
+            <span class="text-[1.05rem] font-bold tracking-tight">m<span class="rahmen-label">andari</span><span class="text-primary-600 dark:text-primary-400" aria-hidden="true">.</span></span>
+            <span class="rahmen-label text-[0.95rem] font-semibold text-primary-700 dark:text-primary-300">Work</span>
+        </a>
+    </div>
+
+    <div class="px-2.5">
+        <button type="button" @click="raumOeffnen($el)" aria-haspopup="dialog" aria-controls="raum-dialog"
+                class="rahmen-eintrag w-full flex items-center gap-2.5 rounded-lg bg-band-hell px-2 py-2 text-left ring-1 ring-transparent hover:ring-gray-300 dark:hover:ring-gray-600">
+            {% include "work/rahmen/_raumzeichen.html" %}
+            <span class="rahmen-label flex-1 min-w-0">
+                <span class="block text-sm font-semibold leading-tight text-gray-900 dark:text-white line-clamp-2">{{ organization.name }}</span>
+                {% if work_rahmen.raum_art %}<span class="block mt-0.5 text-xs text-gray-600 dark:text-gray-400 truncate">{{ work_rahmen.raum_art }}</span>{% endif %}
+            </span>
+            <i data-lucide="chevrons-up-down" class="rahmen-label w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+            <span class="sr-only">– Raum wechseln</span>
+        </button>
+    </div>
+
+    <nav class="mt-4 px-2.5" aria-label="Bereiche">
+        <ul class="space-y-0.5">
+            {% for b in work_rahmen.bereiche %}
+            <li><c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" dicht>{{ b.label }}</c-rahmen.nav-link></li>
+            {% endfor %}
+        </ul>
+    </nav>
+
+    <div class="mt-auto px-2.5 pt-6 pb-3">
+        <ul class="space-y-0.5">
+            {% for b in work_rahmen.unten %}
+            <li><c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" dicht>{{ b.label }}</c-rahmen.nav-link></li>
+            {% endfor %}
+            <li class="pt-1">{% include "work/rahmen/_person.html" %}</li>
+        </ul>
+    </div>
+</aside>

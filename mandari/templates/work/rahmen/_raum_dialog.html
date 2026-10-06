@@ -1,0 +1,36 @@
+{% comment %}
+Raum wechseln (Issue #852, Konzept W9): alle Organisationen des Kontos, die geöffnete markiert. Ersetzt den Eintrag
+„Organisation wechseln“ im Benutzermenü des bisherigen Rahmens und ist auch mit nur einer Organisation erreichbar.
+Modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt auf den Raum-Knopf zurück. Am Handy ein Blatt von unten.
+{% endcomment %}
+<div x-show="raumOffen" x-cloak class="fixed inset-0 z-[70]" @keydown.escape.window="raumOffen && raumSchliessen()">
+    <div x-show="raumOffen" x-transition.opacity class="absolute inset-0 bg-gray-950/40 dark:bg-black/60" @click="raumSchliessen()" aria-hidden="true"></div>
+    <div id="raum-dialog" role="dialog" aria-modal="true" aria-labelledby="raum-dialog-titel" x-trap.noscroll="raumOffen" x-show="raumOffen"
+         class="absolute inset-x-0 bottom-0 sm:bottom-auto sm:left-1/2 sm:top-[12vh] sm:-translate-x-1/2 sm:w-[28rem] max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-xl bg-band-hell shadow-2xl ring-1 ring-gray-900/10 dark:ring-white/10 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div class="flex items-center justify-between gap-3 px-4 pt-3">
+            <h2 id="raum-dialog-titel" class="text-base font-semibold text-gray-900 dark:text-white">Raum wechseln</h2>
+            <button type="button" @click="raumSchliessen()" aria-label="Schließen"
+                    class="inline-flex items-center justify-center w-10 h-10 -mr-2 rounded-md text-gray-600 dark:text-gray-300 hover:bg-band-grau">
+                <i data-lucide="x" class="w-5 h-5" aria-hidden="true"></i>
+            </button>
+        </div>
+        <ul class="px-2 pt-1">
+            {% for raum in work_rahmen.raeume %}
+            <li>
+                <a href="{{ raum.url }}" {% if raum.aktuell %}aria-current="true"{% endif %}
+                   class="flex items-center gap-3 px-2.5 py-2 rounded-md {% if raum.aktuell %}bg-primary-50 dark:bg-primary-900/30{% else %}hover:bg-band-grau{% endif %}">
+                    {% if raum.aktuell %}{% include "work/rahmen/_raumzeichen.html" %}{% else %}<span class="w-8 h-8 shrink-0 inline-flex items-center justify-center rounded-md bg-band-grau text-xs font-semibold text-gray-700 dark:text-gray-300" aria-hidden="true">{{ raum.kuerzel }}</span>{% endif %}
+                    <span class="flex-1 min-w-0">
+                        <span class="block text-sm font-semibold text-gray-900 dark:text-white truncate">{{ raum.name }}</span>
+                        <span class="block text-xs text-gray-600 dark:text-gray-400">{% if raum.gast %}Gastzugang{% else %}Mitglied{% endif %}</span>
+                    </span>
+                    {% if raum.aktuell %}<span class="text-xs font-medium text-primary-700 dark:text-primary-300">Geöffnet</span>{% endif %}
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if work_rahmen.raeume|length < 2 %}
+        <p class="px-4 pt-2 text-sm text-gray-600 dark:text-gray-400">Sind Sie in weiteren Organisationen Mitglied, wechseln Sie hier zwischen ihnen.</p>
+        {% endif %}
+    </div>
+</div>

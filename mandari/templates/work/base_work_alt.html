@@ -1,0 +1,115 @@
+{% load static permission_tags %}
+<!DOCTYPE html>
+<html lang="de" class="scroll-smooth"
+      x-data="{ darkMode: localStorage.getItem('darkMode') === 'true' }"
+      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
+      :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="Mandari Work - {{ organization.name }}">
+    <meta name="theme-color" content="{{ organization.primary_color|default:'#4f46e5' }}">
+    <meta name="robots" content="noindex, nofollow">
+    {% include "pwa/meta.html" %}
+
+    <title>{% block page_title %}Work{% endblock %} | {{ organization.name }}</title>
+
+    <!-- Favicon (Brand "m." — Quelle: marketing-website/scripts/generate_logo.py) -->
+    <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
+
+    <!-- TailwindCSS -->
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <!-- Frontend-Bundle (HTMX, Alpine, Icons, Toasts, Bestätigungsdialog) über Vite-Manifest -->
+    {% load django_vite %}{% vite_hmr_client %}
+    {% vite_asset 'frontend/js/main.ts' %}
+    {% vite_asset 'frontend/js/work.ts' %}
+
+    <!-- Real-time Notifications -->
+    <script src="{% static 'js/notifications.js' %}"></script>
+
+    {% include "work/base_work_alt_stil.html" %}
+    {% include "work/base_work_alt_stil_kopf.html" %}
+    {% block work_extra_head %}{% endblock %}
+</head>
+
+<body class="bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}">
+    {% if demo_instance %}{% include "partials/demo_hinweis.html" %}{% endif %}
+    <div class="work-layout" x-data="{
+        sidebarOpen: false,
+        sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
+        docViewerUrl: '',
+        docViewerName: '',
+        docViewerMeta: '',
+        docViewerLoading: false,
+        docViewerError: false,
+        _docTimeout: null,
+        openDoc(url, name, meta) {
+            this.docViewerUrl = url;
+            this.docViewerName = name || 'Dokument';
+            this.docViewerMeta = meta || '';
+            this.docViewerLoading = true;
+            this.docViewerError = false;
+            clearTimeout(this._docTimeout);
+            this._docTimeout = setTimeout(() => {
+                if (this.docViewerLoading) {
+                    this.docViewerLoading = false;
+                    this.docViewerError = true;
+                }
+            }, 30000);
+        }
+    }">
+        <!-- Mobile Sidebar Overlay -->
+        <div class="work-sidebar-overlay"
+             :class="{ 'open': sidebarOpen }"
+             @click="sidebarOpen = false"></div>
+
+        {% include "work/base_work_alt_leiste.html" %}
+
+        <!-- Main Content -->
+        <main class="work-main" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+            {% include "work/base_work_alt_kopf.html" %}
+
+            <!-- Page Header -->
+            {% block work_header %}
+            <header class="work-page-header">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <h1 class="work-page-title">{% block header_title %}{% endblock %}</h1>
+                        {% block header_subtitle %}{% endblock %}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        {% block header_actions %}{% endblock %}
+                    </div>
+                </div>
+            </header>
+            {% endblock %}
+
+            <!-- Page Content -->
+            <div class="work-page-content">
+                {% block work_content %}{% endblock %}
+            </div>
+        </main>
+
+        <!-- Document Viewer Modal -->
+        {% include "components/document_viewer.html" %}
+    </div>
+
+    <!-- Confirm Dialog (Komponente: frontend/js/alpine/confirm-dialog.ts) -->
+    {% include "work/rahmen/_bestaetigung.html" %}
+
+    <!-- Toast Notifications -->
+    {% include "partials/toasts.html" %}
+
+    <!-- PWA: Service Worker + iOS-Installationshinweis -->
+    {% include "pwa/register_sw.html" %}
+    {% include "pwa/ios_install_hint.html" %}
+
+    {% block extra_scripts %}{% endblock %}
+    {# Brotkrumen zeigt nur der neue Rahmen (#852); der Block steht hier, damit Seiten ihn für beide Rahmen setzen dürfen #}
+    {% if False %}{% block brotkrumen_aktuell %}{% endblock %}{% endif %}
+</body>
+</html>

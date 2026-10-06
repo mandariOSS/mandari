@@ -83,7 +83,16 @@ class TestToken:
         for wert in ("#6366f1", "#4f46e5", "#4338ca", "#818cf8", "99,102,241", "99, 102, 241"):
             assert wert not in text, wert
 
-    @pytest.mark.parametrize("vorlage", ["work/base_work.html", "session/base_session.html", "base.html"])
+    @pytest.mark.parametrize(
+        "vorlage",
+        [
+            "work/base_work.html",
+            "work/base_work_neu.html",
+            "work/base_work_alt.html",
+            "session/base_session.html",
+            "base.html",
+        ],
+    )
     def test_work_und_session_bleiben_indigo(self, vorlage: str) -> None:
         """Nur das Bürgerportal setzt die Kennung; Work, Session und Konto erben Indigo aus ``:root``."""
         text = (BASIS / "templates" / vorlage).read_text(encoding="utf-8")

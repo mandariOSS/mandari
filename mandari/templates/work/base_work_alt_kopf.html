@@ -1,0 +1,218 @@
+{# Teil des bisherigen Rahmens (work/base_work_alt.html), unverändert ausgelagert (Issue #852) #}
+{% load static permission_tags %}
+<!-- Top Bar -->
+<div class="work-topbar z-30">
+    <div class="flex items-center gap-1">
+        <!-- Mobile menu button -->
+        <button type="button" @click="sidebarOpen = !sidebarOpen"
+                class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Menü">
+            <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
+
+        <!-- Desktop: Sidebar collapse toggle -->
+        <button type="button" @click="sidebarCollapsed = !sidebarCollapsed; localStorage.setItem('sidebarCollapsed', sidebarCollapsed)"
+                class="hidden lg:flex p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                :title="sidebarCollapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'">
+            <i x-show="!sidebarCollapsed" data-lucide="panel-left-close" class="w-5 h-5"></i>
+            <i x-show="sidebarCollapsed" data-lucide="panel-left-open" class="w-5 h-5" x-cloak></i>
+        </button>
+
+        <!-- Breadcrumb / Title for mobile -->
+        <span class="lg:hidden font-medium ml-1">{{ organization.name }}</span>
+    </div>
+
+    <div class="flex items-center gap-2">
+        <!-- Dark Mode Toggle -->
+        <button type="button" @click="darkMode = !darkMode"
+                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Dunkelmodus umschalten">
+            <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+            <i data-lucide="moon" class="w-5 h-5 dark:hidden"></i>
+        </button>
+
+        <!-- Notifications -->
+        <div x-data="{
+            open: false,
+            unreadCount: 0,
+            notifications: [],
+            loading: false,
+            init() {
+                this.fetchCount();
+                // Poll for new notifications every 30 seconds
+                setInterval(() => this.fetchCount(), 30000);
+                // Listen for notification marked-read events
+                window.addEventListener('notification:marked-read', () => {
+                    this.fetchNotifications();
+                });
+            },
+            async fetchCount() {
+                try {
+                    const response = await fetch('{% url 'work:notification_count' org_slug=organization.slug %}');
+                    const data = await response.json();
+                    this.unreadCount = data.count;
+                } catch (e) {
+                    console.error('Failed to fetch notification count:', e);
+                }
+            },
+            async fetchNotifications() {
+                if (this.loading) return;
+                this.loading = true;
+                try {
+                    const response = await fetch('{% url 'work:notifications_partial' org_slug=organization.slug %}');
+                    const data = await response.json();
+                    this.$refs.notificationList.innerHTML = data.html;
+                    this.unreadCount = data.unread_count;
+                } catch (e) {
+                    console.error('Failed to fetch notifications:', e);
+                }
+                this.loading = false;
+            },
+            async markAllRead() {
+                try {
+                    const response = await fetch('{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        }
+                    });
+                    if (response.ok) {
+                        this.unreadCount = 0;
+                        await this.fetchNotifications();
+                    }
+                } catch (e) {
+                    console.error('Failed to mark all as read:', e);
+                }
+            }
+        }" class="relative">
+            <button type="button" @click="open = !open; if(open) fetchNotifications()"
+                    class="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                    title="Benachrichtigungen">
+                <i data-lucide="bell" class="w-5 h-5"></i>
+                <span x-show="unreadCount > 0"
+                      x-text="unreadCount > 99 ? '99+' : unreadCount"
+                      class="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full px-1">
+                </span>
+            </button>
+
+            <div x-show="open"
+                 @click.outside="open = false"
+                 x-cloak
+                 class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
+                <!-- Header -->
+                <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <h3 class="font-semibold text-sm">Benachrichtigungen</h3>
+                    <div class="flex items-center gap-2">
+                        <button type="button" @click="markAllRead()"
+                                x-show="unreadCount > 0"
+                                class="text-xs text-primary-600 dark:text-primary-400 hover:underline">
+                            Alle gelesen
+                        </button>
+                        <a href="{% url 'work:notifications' org_slug=organization.slug %}"
+                           class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                            <i data-lucide="settings" class="w-4 h-4"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Notification List -->
+                <div x-ref="notificationList" class="max-h-96 overflow-y-auto">
+                    <div class="p-4 text-center text-sm text-gray-500" x-show="loading">
+                        <i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto mb-2"></i>
+                        Lade...
+                    </div>
+                    <div class="p-4 text-center text-sm text-gray-500" x-show="!loading && !$refs.notificationList?.innerHTML?.trim()">
+                        Keine Benachrichtigungen
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-center">
+                    <a href="{% url 'work:notifications' org_slug=organization.slug %}"
+                       class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                        Alle anzeigen
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Menu -->
+        <div x-data="{
+                open: false,
+                canInstall: !!window.mandariInstallPrompt,
+                installHidden: localStorage.getItem('pwaInstallHidden') === '1',
+                async installApp() {
+                    const prompt = window.mandariInstallPrompt;
+                    if (!prompt) return;
+                    prompt.prompt();
+                    const choice = await prompt.userChoice;
+                    window.mandariInstallPrompt = null;
+                    this.canInstall = false;
+                    if (choice && choice.outcome === 'dismissed') this.hideInstall();
+                },
+                hideInstall() {
+                    this.installHidden = true;
+                    localStorage.setItem('pwaInstallHidden', '1');
+                }
+             }"
+             @pwa-installable.window="canInstall = true"
+             @pwa-installed.window="canInstall = false"
+             class="relative">
+            <button type="button" @click="open = !open"
+                    class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+                <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center text-primary-600 dark:text-primary-400 font-medium text-sm">
+                    {% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}
+                </div>
+                <i data-lucide="chevron-down" class="w-4 h-4 hidden sm:block"></i>
+            </button>
+
+            <div x-show="open"
+                 @click.outside="open = false"
+                 x-cloak
+                 class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+                    <div class="font-medium text-sm">{% if request.user.display_name %}{{ request.user.display_name }}{% else %}{{ request.user.email }}{% endif %}</div>
+                    <div class="text-xs text-gray-500">{{ request.user.email }}</div>
+                </div>
+                <a href="{% url 'work:profile' org_slug=organization.slug %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="user" class="w-4 h-4 inline mr-2"></i>
+                    Profil
+                </a>
+                <a href="{% url 'work:security' org_slug=organization.slug %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="shield" class="w-4 h-4 inline mr-2"></i>
+                    Sicherheit
+                </a>
+                {# App-Installation (Android/Chromium): nur wenn beforeinstallprompt verfügbar, wegklickbar #}
+                <div x-show="canInstall && !installHidden" x-cloak class="flex items-center">
+                    <button type="button" @click="installApp()"
+                            class="flex-1 flex items-center text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                        App installieren
+                    </button>
+                    <button type="button" @click.stop="hideInstall()"
+                            class="p-2 mr-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                            title="Nicht mehr anzeigen" aria-label="Installationshinweis ausblenden">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                {% if user_organizations|length > 1 %}
+                <hr class="my-1 border-gray-200 dark:border-gray-700">
+                <div class="px-4 py-1 text-xs font-medium text-gray-400 uppercase tracking-wide">Organisation wechseln</div>
+                {% for user_org in user_organizations %}
+                {% if user_org.organization_id != organization.id %}
+                <a href="{% url 'work:dashboard' org_slug=user_org.organization.slug %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="building" class="w-4 h-4 inline mr-2"></i>
+                    {{ user_org.organization.name }}{% if user_org.is_guest %} <span class="text-xs text-gray-400">(Gast)</span>{% endif %}
+                </a>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+                <hr class="my-1 border-gray-200 dark:border-gray-700">
+                <a href="{% url 'admin:logout' %}" class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="log-out" class="w-4 h-4 inline mr-2"></i>
+                    Abmelden
+                </a>
+            </div>
+        </div>
+    </div>
+</div>

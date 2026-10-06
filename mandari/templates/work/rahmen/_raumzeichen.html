@@ -1,0 +1,11 @@
+{% comment %}
+Raumzeichen der geöffneten Organisation (Issue #852): Logo, sonst Kürzel in der Farbe der Organisation (.raumzeichen,
+static/css/input.css). Mit ``klein`` für die Kopfzeile am Handy. Rein schmückend: Der Name steht immer daneben.
+{% endcomment %}
+{% with logo=organization.effective_logo %}
+{% if logo %}
+<img src="{{ logo.url }}" alt="" class="{% if klein %}w-7 h-7{% else %}w-8 h-8{% endif %} shrink-0 rounded-md bg-white object-contain p-0.5 ring-1 ring-gray-200 dark:ring-gray-700">
+{% else %}
+<span class="raumzeichen {% if klein %}w-7 h-7 text-[0.7rem]{% else %}w-8 h-8 text-xs{% endif %} shrink-0 inline-flex items-center justify-center rounded-md font-semibold" aria-hidden="true">{{ work_rahmen.raum_kuerzel }}</span>
+{% endif %}
+{% endwith %}
