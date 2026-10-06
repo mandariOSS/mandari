@@ -14,13 +14,14 @@ im neuen und antwortet.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.conf import settings
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from apps.common.tests import factories
 from apps.tenants.models import Organization
 from apps.work import rahmen
 
@@ -281,9 +282,7 @@ def test_kein_eintrag_der_bisherigen_navigation_fehlt(neu: Organization, admin: 
 
 @pytest.mark.django_db
 def test_gast_behaelt_freigaben_und_profil(neu: Organization, client_for: Any) -> None:
-    from apps.common.tests import factories
-
-    gast = factories.MembershipFactory(organization=neu, is_guest=True, roles=[])
+    gast = cast(Any, factories.MembershipFactory)(organization=neu, is_guest=True, roles=[])
     html = _html(client_for(gast.user).get(_url("guest_documents", neu)))
     assert f'href="{_url("guest_documents", neu)}"' in _leiste(html)
     assert f'href="{_url("profile", neu)}"' in html
