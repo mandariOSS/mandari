@@ -271,6 +271,35 @@
   filter: grayscale(0.6) opacity(0.5);
 }
 
+/* Karte der Recherche in Work (templates/work/ris/partials/_karte.html, Issue #853): vorher Inline-Stil. Die Fläche
+   füllt den Bildschirm unter Kopf, Reitern und Zeitraum; Popups aus frontend/alpine/ris-karte.ts. */
+.ris-karte-flaeche {
+  height: max(20rem, calc(100dvh - 25rem));
+  border-radius: 0.375rem;
+}
+@media (min-width: 1024px) {
+  .ris-karte-flaeche {
+    height: max(28rem, calc(100dvh - 19.5rem));
+  }
+}
+.dark .ris-karte-flaeche .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9);
+}
+.ris-karte-popup {
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.ris-karte-popup a {
+  font-weight: 600;
+  color: rgb(var(--primary-700));
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ris-karte-popup p {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+}
+
 /* ---- Neuer Rahmen von Work (Issue #852, templates/work/base_work_neu.html) ------------------------------------
    Nur unter html[data-rahmen="neu"]; der bisherige Rahmen (work/base_work_alt.html) bringt seine Regeln selbst mit.
    Kopfzeile, Kopfband, Reiter und Inhalt enden bei derselben Breite wie Insight (116rem samt Rand, #841): Der Rand

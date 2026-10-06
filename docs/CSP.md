@@ -113,7 +113,7 @@ Inline-Skripte (13, alle mit Nonce):
 |---|---|---|
 | `admin/index.html` | Diagramme (Chart.js) im Admin | eigenes Modul; Admin braucht ohnehin eine eigene Policy (Abschnitt 5) |
 | `components/chatbot_popup.html`, `pages/chat.html` | Chat mit Markdown-Ausgabe (`x-html`) | zusammen mit dem Alpine-CSP-Build (x-html ersetzen) |
-| `pages/map.html`, `pages/neighborhood.html`, `pages/portal/home.html`, `pages/meetings/detail.html`, `work/ris/map.html` | Leaflet-Karten | gemeinsames Kartenmodul in `frontend/js/`, Leaflet als Vendor-Skript vorher geladen |
+| `pages/map.html`, `pages/neighborhood.html`, `pages/portal/home.html`, `pages/meetings/detail.html` | Leaflet-Karten | gemeinsames Kartenmodul in `frontend/js/`, Leaflet als Vendor-Skript vorher geladen (die Karte der Recherche in Work ist seit #853 die Alpine-Komponente `risKarte`) |
 | `pages/meetings/calendar.html`, `work/meetings/calendar.html` | FullCalendar | gemeinsames Kalendermodul |
 | `work/meetings/teleprompter.html` | Teleprompter | Alpine-Komponente |
 | `session/meetings/detail.html` | Drag-and-drop der Tagesordnung | Verhalten `data-reorder-url` in `form-behaviors.ts` |

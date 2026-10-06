@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from django.db.models import Exists, OuterRef, Q, QuerySet, Subquery
+from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 
 from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
@@ -437,6 +437,60 @@ def memberships_of_person(person: OParlPerson, *, bodies: Bodies | None = None) 
 def locations(bodies: Bodies) -> QuerySet[OParlLocation]:
     """Orte der Kommunen (eigene Location-Objekte der Quellen, nicht die Ortsangaben an Sitzungen)."""
     return OParlLocation.objects.filter(body__in=bodies)
+
+
+@dataclass(frozen=True)
+class PaperPlace:
+    """Ein verorteter Vorgang auf einer Karte: Punkt, Ortsbezeichnung und Angaben der Vorlage."""
+
+    paper_id: uuid.UUID
+    latitude: float
+    longitude: float
+    place: str
+    title: str
+    reference: str
+    paper_date: date | None
+
+
+#: Kartenausschnitt als (West, Süd, Ost, Nord) in Grad
+Area = tuple[float, float, float, float]
+
+
+def paper_places(
+    bodies: Bodies, *, area: Area | None = None, since: date | None = None, limit: int = 2000
+) -> list[PaperPlace]:
+    """
+    Verortungen von Vorgängen der Kommunen für Karten, neueste Vorgänge zuerst, höchstens ``limit`` Punkte.
+
+    Liest die Tabelle der Verortungen (Index auf Kommune, Breite, Länge) statt des JSON am Vorgang, ohne entfernte
+    Verortungen und ohne Vorgänge, die in der Quelle gelöscht oder zurückgenommen sind. ``area`` begrenzt auf einen
+    Kartenausschnitt, ``since`` auf Vorgänge ab diesem Datum (Vorgänge ohne Datum fallen dann heraus). Eine Abfrage.
+    """
+    from insight_core.models import PaperLocation
+
+    rows = PaperLocation.objects.filter(body__in=bodies, paper__deleted=False).exclude(
+        status=PaperLocation.STATUS_REMOVED
+    )
+    if area is not None:
+        west, south, east, north = area
+        rows = rows.filter(latitude__gte=south, latitude__lte=north, longitude__gte=west, longitude__lte=east)
+    if since is not None:
+        rows = rows.filter(paper__date__gte=since)
+    rows = rows.order_by(F("paper__date").desc(nulls_last=True), "paper_id", "pk")
+    return [
+        PaperPlace(
+            paper_id=paper_id,
+            latitude=float(lat),
+            longitude=float(lon),
+            place=str(place or ""),
+            title=str(title or reference or "Vorgang"),
+            reference=str(reference or ""),
+            paper_date=paper_date,
+        )
+        for paper_id, lat, lon, place, title, reference, paper_date in rows.values_list(
+            "paper_id", "latitude", "longitude", "name", "paper__name", "paper__reference", "paper__date"
+        )[: max(limit, 0)]
+    ]
 
 
 # =============================================================================
