@@ -302,3 +302,35 @@ def test_personen_und_mitgliedschaften(bestand: Bestand) -> None:
     assert ris.memberships_of_person(bestand.person).count() == 2
     nur_eigene = ris.memberships_of_person(bestand.person, bodies=_eigene(bestand))
     assert [mitgliedschaft.organization for mitgliedschaft in nur_eigene] == [bestand.rat]
+
+
+# --- Startseite in Work (Issue #852) --------------------------------------------------------------------------
+
+
+def test_tagesordnung_uebersicht_zaehlt_punkte_und_vorlagen(bestand: Bestand) -> None:
+    uebersicht = ris.agenda_overview([bestand.kommend.id, bestand.vergangen.id, "keine-kennung"])
+    assert uebersicht == {bestand.kommend.id: ris.AgendaOverview(items=2, with_paper=frozenset({bestand.top1.id}))}
+    assert ris.agenda_overview([]) == {}
+
+
+def test_vorlagen_auf_tagesordnungen_mit_fruehester_sitzung(bestand: Bestand, jetzt: datetime) -> None:
+    spaeter = _sitzung(bestand.body, jetzt + timedelta(days=20), bestand.rat, name="Rat im Juli")
+    top = OParlAgendaItem.objects.create(external_id=_kennung("agendaitems"), meeting=spaeter, number="1", order=1)
+    for sitzung, punkt, vorlage in ((spaeter, top, bestand.vorlage), (spaeter, top, bestand.alte_vorlage)):
+        OParlConsultation.objects.create(
+            external_id=_kennung("consultations"),
+            body=bestand.body,
+            paper=vorlage,
+            paper_external_id=vorlage.external_id,
+            meeting_external_id=sitzung.external_id,
+            agenda_item_external_id=punkt.external_id,
+        )
+    sitzungen = OParlMeeting.objects.filter(pk__in=[bestand.kommend.pk, spaeter.pk])
+    treffer = ris.papers_on_agendas(sitzungen, limit=5)
+    # neueste Vorlage zuerst, je Vorlage einmal mit der frühesten Sitzung
+    assert [(t.paper, t.meeting) for t in treffer] == [
+        (bestand.vorlage, bestand.kommend),
+        (bestand.alte_vorlage, spaeter),
+    ]
+    assert len(ris.papers_on_agendas(sitzungen, limit=1)) == 1
+    assert ris.papers_on_agendas(OParlMeeting.objects.none()) == []

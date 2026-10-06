@@ -3,12 +3,16 @@
 Dashboard views for the Work module.
 """
 
+from typing import Any
+
 from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.dashboard import selectors
 from apps.work.dashboard.hinweise import hinweis_fuer_start
 from apps.work.organization.selectors import my_committees
+from apps.work.rahmen import neues_design
 
 
 class DashboardView(WorkViewMixin, TemplateView):
@@ -16,6 +20,12 @@ class DashboardView(WorkViewMixin, TemplateView):
 
     template_name = "work/dashboard/index.html"
     permission_required = "dashboard.view"
+
+    def get_template_names(self) -> list[str]:
+        """Im neuen Erscheinungsbild (Schalter je Organisation, Issue #852) die neue Startseite."""
+        if neues_design(self.organization):
+            return ["work/dashboard/start.html"]
+        return [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -47,7 +57,31 @@ class DashboardView(WorkViewMixin, TemplateView):
         # Recent documents
         context["recent_documents"] = self.get_recent_documents(my_committee_ids)
 
+        if neues_design(self.organization):
+            context.update(self.get_start_context(context["upcoming_meetings"], my_committee_ids))
         return context
+
+    def get_start_context(self, sitzungen: list[dict[str, Any]], committee_ids: set[Any] | None) -> dict[str, Any]:
+        """Startseite im neuen Rahmen: Vorbereitungsstand je Sitzung, Satz und Hauptaktion, Für Sie, neue Vorlagen."""
+        stand = selectors.vorbereitungsstand(self.organization, [s["id"] for s in sitzungen if s["type"] == "ris"])
+        for sitzung in sitzungen:
+            sitzung["stand"] = stand.get(sitzung["id"])
+            if sitzung["type"] == "faction":
+                sitzung["stand_text"] = selectors.stand_fraktionssitzung(sitzung)
+        # Ohne „meetings.prepare“ (z. B. Parteimitglieder) führen Hauptaktion und Zeilenlink auf die Sitzung selbst
+        darf_vorbereiten = self.has_permission("meetings.prepare")
+        satz, aktion = selectors.satz_und_hauptaktion(
+            self.organization, sitzungen, stand, darf_vorbereiten=darf_vorbereiten
+        )
+        return {
+            "start_satz": satz,
+            "start_aktion": aktion,
+            "darf_vorbereiten": darf_vorbereiten,
+            "fuer_sie": selectors.fuer_sie(self.organization, self.membership),
+            "neu_in_gremien": selectors.neu_in_gremien(
+                self.organization, list(committee_ids) if committee_ids else None
+            ),
+        }
 
     def get_upcoming_meetings(self, my_committee_ids=None):
         """
@@ -84,6 +118,8 @@ class DashboardView(WorkViewMixin, TemplateView):
                     "start": meeting.start,
                     "location": meeting.location if not meeting.is_virtual else "Online",
                     "status": meeting.status,
+                    "status_display": meeting.get_status_display(),
+                    "invitation_sent": meeting.invitation_sent,
                     "url_name": "work:faction_detail",
                     "url_kwargs": {"org_slug": self.organization.slug, "meeting_id": meeting.id},
                 }

@@ -1,0 +1,192 @@
+{# Teil des bisherigen Rahmens (work/base_work_alt.html), unverändert ausgelagert (Issue #852) #}
+<style nonce="{{ csp_nonce }}">
+    /* Organization Header in Sidebar */
+    .work-org-header {
+        padding: 16px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .work-sidebar.collapsed .work-org-header {
+        justify-content: center;
+        padding: 12px;
+    }
+
+    .dark .work-org-header {
+        border-color: #374151;
+    }
+
+    .work-org-logo {
+        height: 36px;
+        max-width: 120px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    /* Fallback (kein Logo): farbiges Quadrat mit Initialen */
+    .work-org-logo.has-fallback {
+        width: 40px;
+        height: 40px;
+        background: #e5e7eb;
+        font-weight: 600;
+        color: #6b7280;
+    }
+
+    .work-sidebar.collapsed .work-org-logo {
+        height: 32px;
+        max-width: 36px;
+    }
+    .work-sidebar.collapsed .work-org-logo.has-fallback {
+        width: 36px;
+        height: 36px;
+    }
+
+    .work-org-logo img {
+        height: 100%;
+        width: auto;
+        max-width: 100%;
+        object-fit: contain;
+    }
+
+    .work-org-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .work-org-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: #111827;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .dark .work-org-name {
+        color: #f3f4f6;
+    }
+
+    .work-org-type {
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .dark .work-org-type {
+        color: #9ca3af;
+    }
+
+    /* Scrollbar styling for sidebar nav */
+    .work-sidebar nav::-webkit-scrollbar {
+        width: 4px;
+    }
+    .work-sidebar nav::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .work-sidebar nav::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 2px;
+    }
+    .dark .work-sidebar nav::-webkit-scrollbar-thumb {
+        background: #4b5563;
+    }
+
+    /* Hide text labels and user info in collapsed state */
+    .work-sidebar.collapsed .nav-label,
+    .work-sidebar.collapsed .work-org-info,
+    .work-sidebar.collapsed .user-info-details {
+        display: none;
+    }
+
+    /* User area collapsed */
+    .work-sidebar.collapsed .user-info-area {
+        justify-content: center;
+    }
+
+    /* Page Header */
+    .work-page-header {
+        padding: 20px 32px;
+        background: #faf9f7;
+        border-bottom: 1px solid #e5e7eb20;
+    }
+
+    .dark .work-page-header {
+        background: #111827;
+        border-color: #37415140;
+    }
+
+    .work-page-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0;
+    }
+
+    .dark .work-page-title {
+        color: #f3f4f6;
+    }
+
+    .work-page-subtitle {
+        font-size: 14px;
+        color: #6b7280;
+        margin-top: 4px;
+    }
+
+    .dark .work-page-subtitle {
+        color: #9ca3af;
+    }
+
+    /* Page Content */
+    .work-page-content {
+        padding: 24px 32px;
+        flex: 1;
+    }
+
+    @media (max-width: 640px) {
+        .work-page-header,
+        .work-page-content {
+            padding: 16px;
+        }
+    }
+
+    /* Safe-Areas (PWA-Standalone auf iOS/Android mit viewport-fit=cover) */
+    .work-sidebar {
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .work-org-header {
+        padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    }
+    .work-page-content {
+        padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    }
+    @media (max-width: 640px) {
+        .work-page-content {
+            padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        }
+    }
+
+    /* Top bar */
+    .work-topbar {
+        height: calc(52px + env(safe-area-inset-top, 0px));
+        padding-top: env(safe-area-inset-top, 0px);
+        position: sticky;
+        top: 0;
+        background: rgba(250, 249, 247, 0.8);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 24px;
+    }
+
+    .dark .work-topbar {
+        background: rgba(17, 24, 39, 0.8);
+        border-color: #374151;
+    }
+</style>

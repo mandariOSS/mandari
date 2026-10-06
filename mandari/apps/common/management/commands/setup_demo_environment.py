@@ -772,6 +772,8 @@ class Command(BaseCommand):
                 "party_group": party,
                 "is_active": True,
                 "plan": "community",
+                # Neues Erscheinungsbild von Work zuerst in der Demo (Issue #852)
+                "work_new_design": True,
             },
         )
         org.oparl_organizations.set([self._insight_refs["orgs"]["fraktion-bunte-liste"]])

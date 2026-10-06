@@ -2,13 +2,8 @@
 {% comment %}
 Eintrag der Insight-Navigation (Seitenleiste, Issue #783, Variante A).
   <c-insight.nav-link href="…" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.nav-link>
-Aktiv, wenn ``area`` dem Bereich der Seite entspricht (``insight_area`` aus dem Kontextprozessor): weiße Fläche auf
-der grauen Leiste, Symbol in der Kennfarbe und aria-current="page", damit Bildschirmleser den Ort nennen.
+Aktiv, wenn ``area`` dem Bereich der Seite entspricht (``insight_area`` aus dem Kontextprozessor). Das Markup teilt
+sich Insight mit Work: c-rahmen.nav-link (Issue #852).
 {% endcomment %}
 <c-vars href="" icon="" area="" />
-<a href="{{ href }}"
-    class="flex items-center gap-3 h-10 px-3 rounded-lg text-[0.95rem] {% if area and area == insight_area %}bg-band-hell font-semibold text-gray-900 dark:text-white shadow-[0_1px_2px_rgba(17,24,39,0.06)]{% else %}font-medium text-gray-700 dark:text-gray-300 hover:bg-band-hell/70 hover:text-gray-900 dark:hover:text-white{% endif %}"
-    {% if area and area == insight_area %}aria-current="page"{% endif %} {{ attrs }}>
-    <i data-lucide="{{ icon }}" class="w-[18px] h-[18px] shrink-0 {% if area and area == insight_area %}text-primary-600 dark:text-primary-400{% else %}text-gray-500 dark:text-gray-400{% endif %}" aria-hidden="true"></i>
-    <span class="flex-1 min-w-0 truncate">{{ slot }}</span>
-</a>
+<c-rahmen.nav-link href="{{ href }}" icon="{{ icon }}" area="{{ area }}" aktuell="{{ insight_area }}" :attrs="attrs">{{ slot }}</c-rahmen.nav-link>

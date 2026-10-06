@@ -274,6 +274,7 @@ TEMPLATES = [
                 "insight_core.context_processors.navigation_context",
                 "insight_core.context_processors.active_body",
                 "apps.common.demo.demo_context",  # Hinweis in der Demo-Instanz (Issue #99)
+                "apps.work.rahmen.rahmen_kontext",  # neues Erscheinungsbild von Work je Organisation (Issue #852)
             ],
         },
     },

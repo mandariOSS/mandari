@@ -1,0 +1,45 @@
+{# Bestätigungsdialog beider Rahmen (Komponente: frontend/js/alpine/confirm-dialog.ts) #}
+<div x-data="confirmDialog" @keydown.escape.window="dismiss()">
+
+    <div x-show="open" x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+         @click.self="dismiss()">
+        <div x-show="open"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 scale-95"
+             class="bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 w-full max-w-sm overflow-hidden">
+            <div class="p-6 text-center">
+                <!-- Icon -->
+                <div class="mx-auto w-12 h-12 rounded-full flex items-center justify-center mb-4"
+                     :class="variant === 'danger' ? 'bg-red-100 dark:bg-red-900/30' : variant === 'warning' ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-blue-100 dark:bg-blue-900/30'">
+                    <i :data-lucide="variant === 'info' ? 'info' : 'triangle-alert'"
+                       class="w-6 h-6"
+                       :class="variant === 'danger' ? 'text-red-600 dark:text-red-400' : variant === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'"></i>
+                </div>
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-1" x-text="title"></h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400" x-text="message"></p>
+            </div>
+            <div class="flex gap-3 px-6 pb-5">
+                <button @click="dismiss()" type="button"
+                        class="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                    Abbrechen
+                </button>
+                <button @click="accept()" type="button" x-ref="confirmBtn"
+                        class="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg"
+                        :class="variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : variant === 'warning' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary-600 hover:bg-primary-700'"
+                        x-text="confirmText">
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

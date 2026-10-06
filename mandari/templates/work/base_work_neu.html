@@ -1,0 +1,145 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="de" class="scroll-smooth" data-rahmen="neu" x-data="workRahmen" :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    {# viewport-fit=cover: sonst liefert env(safe-area-inset-*) auf iOS überall 0 (Leiste unten, Blätter) #}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="mandari Work – {{ organization.name }}">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="robots" content="noindex, nofollow">
+    {% include "pwa/meta.html" %}
+
+    <title>{% block page_title %}Work{% endblock %} | {{ organization.name }}</title>
+
+    <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
+
+    {# Schrift Inter, selbst gehostet wie in Insight (keine Anfrage an Dritte) #}
+    <link rel="preload" href="{% static 'vendor/inter/inter-latin.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    {% load django_vite %}{% vite_hmr_client %}
+    {% vite_asset 'frontend/js/main.ts' %}
+    {% vite_asset 'frontend/js/work.ts' %}
+    {# Benachrichtigungen als Hinweis, sobald neue eintreffen (wie im bisherigen Rahmen) #}
+    <script src="{% static 'js/notifications.js' %}"></script>
+
+    <style nonce="{{ csp_nonce }}">
+        [x-cloak] { display: none !important; }
+        @font-face {
+            font-family: 'Inter';
+            font-style: normal;
+            font-weight: 400 700;
+            font-display: swap;
+            src: url("{% static 'vendor/inter/inter-latin.woff2' %}") format('woff2');
+            unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+        }
+        @font-face {
+            font-family: 'Inter';
+            font-style: normal;
+            font-weight: 400 700;
+            font-display: swap;
+            src: url("{% static 'vendor/inter/inter-latin-ext.woff2' %}") format('woff2');
+            unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+        }
+        /* Farbe der Organisation nur im Raumzeichen (Konzept W10), serverseitig auf #rrggbb geprüft (apps/work/rahmen.py) */
+        :root { --raum-farbe: {{ work_rahmen.raum_farbe|default:'#4f46e5' }}; }
+    </style>
+    {% block work_extra_head %}{% endblock %}
+</head>
+
+<body class="min-h-screen bg-band-hell text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}">
+    {% if demo_instance %}{% include "partials/demo_hinweis.html" with ueber_leiste=True %}{% endif %}
+    <a href="#inhalt" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white">Zum Inhalt springen</a>
+
+    {% include "work/rahmen/_leiste.html" %}
+
+    {# Seitliche Safe-Area (Querformat mit Aussparung); unten Platz für die Leiste am Handy #}
+    <div class="work-main min-h-screen flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-60 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
+        {# Kopfzeile: Brotkrumen, Suche (Strg+K), Glocke, Dunkelmodus; am Handy Raum, Suche und Glocke #}
+        <header class="sticky top-0 z-30 shrink-0 pt-[env(safe-area-inset-top)] bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
+            <div class="rahmen-zeile h-12 flex items-center gap-2 sm:gap-4">
+                <button type="button" @click="leisteUmschalten()"
+                        class="hidden lg:inline-flex items-center justify-center w-8 h-8 -ml-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-band-grau dark:text-gray-400 dark:hover:text-white"
+                        :aria-label="leisteSchmal ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'" aria-label="Seitenleiste einklappen"
+                        :aria-expanded="(!leisteSchmal).toString()" aria-controls="work-navigation">
+                    <i data-lucide="panel-left" class="w-[18px] h-[18px]" aria-hidden="true"></i>
+                </button>
+                <button type="button" @click="raumOeffnen($el)" aria-haspopup="dialog" aria-controls="raum-dialog"
+                        class="lg:hidden flex-1 min-w-0 inline-flex items-center gap-2 h-11 text-left font-semibold text-gray-900 dark:text-white">
+                    {% include "work/rahmen/_raumzeichen.html" with klein=True %}
+                    <span class="truncate">{{ organization.name }}</span><span class="sr-only">– Raum wechseln</span>
+                    <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+                </button>
+                <nav aria-label="Brotkrumen" class="hidden lg:block flex-1 min-w-0 text-sm">
+                    <ol class="flex items-center gap-1.5 min-w-0 text-gray-600 dark:text-gray-400">
+                        {% for krume in work_rahmen.brotkrumen %}
+                        <li class="flex items-center gap-1.5 {% if forloop.last %}min-w-0{% else %}shrink-0{% endif %}">
+                            {% if not forloop.first %}<i data-lucide="chevron-right" class="w-3.5 h-3.5 shrink-0 text-gray-400" aria-hidden="true"></i>{% endif %}
+                            {% if krume.aktuell or not krume.url %}
+                            <span aria-current="page" class="truncate font-medium text-gray-900 dark:text-gray-100">{{ krume.label }}</span>
+                            {% else %}
+                            <a href="{{ krume.url }}" class="truncate hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{{ krume.label }}</a>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                        {% block brotkrumen_aktuell %}{% endblock %}
+                    </ol>
+                </nav>
+                {% if work_rahmen.suche_url %}
+                <form action="{{ work_rahmen.suche_url }}" method="get" role="search" class="hidden lg:block w-[22rem] max-w-[40%]">
+                    <label for="kopf-suche" class="sr-only">Ratsinformationen durchsuchen</label>
+                    <span class="relative block">
+                        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+                        <input id="kopf-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …" autocomplete="off" aria-keyshortcuts="Control+K"
+                               class="w-full h-9 pl-9 pr-16 rounded-md bg-band-grau border border-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                        <kbd class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-xs text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true">Strg K</kbd>
+                    </span>
+                </form>
+                <a href="{{ work_rahmen.suche_url }}" class="lg:hidden inline-flex items-center justify-center w-11 h-11 rounded-md text-gray-700 dark:text-gray-300 hover:bg-band-grau" aria-label="Suche">
+                    <i data-lucide="search" class="w-5 h-5" aria-hidden="true"></i>
+                </a>
+                {% endif %}
+                {% include "work/rahmen/_glocke.html" %}
+                <button type="button" @click="darkMode = !darkMode"
+                        class="hidden lg:inline-flex items-center justify-center w-9 h-9 rounded-md text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-band-grau"
+                        :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'" aria-label="Zum dunklen Modus wechseln" :aria-pressed="darkMode.toString()">
+                    <i x-show="!darkMode" data-lucide="moon" class="w-[18px] h-[18px]" aria-hidden="true"></i>
+                    <i x-show="darkMode" data-lucide="sun" class="w-[18px] h-[18px]" aria-hidden="true" x-cloak></i>
+                </button>
+            </div>
+        </header>
+
+        <main id="inhalt" tabindex="-1" class="flex-1 flex flex-col min-h-0 focus:outline-none">
+            {% block work_header %}
+            <header class="work-page-header">
+                <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+                    <div class="min-w-0">
+                        <h1 class="work-page-title">{% block header_title %}{% endblock %}</h1>
+                        {% block header_subtitle %}{% endblock %}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">{% block header_actions %}{% endblock %}</div>
+                </div>
+            </header>
+            {% endblock %}
+            {% include "work/rahmen/_reiter.html" %}
+            <div class="work-page-content">
+                {% block work_content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    {% include "work/rahmen/_leiste_unten.html" %}
+    {% include "work/rahmen/_raum_dialog.html" %}
+    {% include "components/document_viewer.html" %}
+    {% include "work/rahmen/_bestaetigung.html" %}
+    {% include "partials/toasts.html" %}
+    {% include "pwa/register_sw.html" %}
+    {% include "pwa/ios_install_hint.html" %}
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

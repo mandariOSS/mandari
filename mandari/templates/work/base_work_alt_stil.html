@@ -1,0 +1,207 @@
+{# Teil des bisherigen Rahmens (work/base_work_alt.html), unverändert ausgelagert (Issue #852) #}
+<style nonce="{{ csp_nonce }}">
+    [x-cloak] { display: none !important; }
+    .item-list a, .item-list a:visited { color: inherit; }
+    /* Konsistente Tap-Highlights: eigene hover/active-Zustände statt grauem Standard-Blitz */
+    a, button, [role="button"], input, select, textarea, label, summary {
+        -webkit-tap-highlight-color: transparent;
+    }
+    @keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-up { animation: fade-up .4s cubic-bezier(.16,1,.3,1) both; }
+    .d1 { animation-delay: .06s; }
+    .d2 { animation-delay: .12s; }
+    .d3 { animation-delay: .18s; }
+    .d4 { animation-delay: .24s; }
+
+    /* Organization Color Variables */
+    :root {
+        --org-color: {{ organization.primary_color|default:'#4f46e5' }};
+        --org-color-light: {{ organization.primary_color|default:'#4f46e5' }}15;
+        --org-color-dark: {{ organization.primary_color|default:'#4f46e5' }}30;
+        --org-color-text: {{ organization.primary_color|default:'#4f46e5' }};
+        --sidebar-w: 260px;
+        --sidebar-collapsed-w: 64px;
+    }
+
+    /* Work Portal Layout */
+    .work-layout {
+        display: flex;
+        min-height: 100vh;
+    }
+
+    /* Sidebar */
+    .work-sidebar {
+        width: var(--sidebar-w);
+        background: white;
+        border-right: 1px solid #e5e7eb;
+        display: flex;
+        flex-direction: column;
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 40;
+        transition: width 0.2s cubic-bezier(.4,0,.2,1), transform 0.2s ease;
+        overflow: hidden;
+    }
+
+    .work-sidebar.collapsed {
+        width: var(--sidebar-collapsed-w);
+    }
+
+    .dark .work-sidebar {
+        background: #111827;
+        border-color: #374151;
+    }
+
+    /* Mobile sidebar — Grenze passend zu Tailwind lg (min-width:1024px):
+       bei exakt 1024px (iPad Pro quer) sonst Sidebar off-canvas UND
+       Menü-Button versteckt. */
+    @media (max-width: 1023.98px) {
+        .work-sidebar {
+            width: var(--sidebar-w) !important;
+            transform: translateX(-100%);
+        }
+        .work-sidebar.open {
+            transform: translateX(0);
+        }
+        .work-sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 30;
+        }
+        .work-sidebar-overlay.open {
+            display: block;
+        }
+    }
+
+    /* Main Content */
+    .work-main {
+        flex: 1;
+        /* Verhindert, dass breite Inhalte (Tabellen, lange Wörter) das
+           Flex-Item über die Viewport-Breite hinaus aufblähen —
+           innere overflow-x-auto-Container übernehmen das Scrollen. */
+        min-width: 0;
+        margin-left: var(--sidebar-w);
+        background: #faf9f7;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        transition: margin-left 0.2s cubic-bezier(.4,0,.2,1);
+    }
+
+    .work-main.sidebar-collapsed {
+        margin-left: var(--sidebar-collapsed-w);
+    }
+
+    .dark .work-main {
+        background: #111827;
+    }
+
+    @media (max-width: 1023.98px) {
+        .work-main {
+            margin-left: 0 !important;
+        }
+    }
+
+    /* Sidebar Navigation */
+    .work-nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        color: #4b5563;
+        font-size: 14px;
+        font-weight: 500;
+        border-radius: 8px;
+        margin: 1px 8px;
+        transition: all 0.15s ease;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+
+    .work-nav-item:hover {
+        background: #f3f4f6;
+        color: #111827;
+    }
+
+    .work-nav-item.active {
+        background: var(--org-color-light, #eef2ff);
+        /* Organisationsfarbe für Text abgedunkelt: helle Primärfarben (Standard #6366f1) erreichen auf der
+           Tönung sonst keine 4,5:1 (BITV 1.4.3, #176); der Balken behält die reine Farbe */
+        color: color-mix(in srgb, var(--org-color, #4f46e5) 65%, #111827);
+        font-weight: 600;
+        box-shadow: inset 3px 0 0 var(--org-color, #4f46e5);
+        padding-left: 9px;
+    }
+
+    .dark .work-nav-item {
+        color: #9ca3af;
+    }
+
+    .dark .work-nav-item:hover {
+        background: #1f2937;
+        color: #f3f4f6;
+    }
+
+    .dark .work-nav-item.active {
+        background: var(--org-color-dark, #312e81);
+        color: var(--org-color-text, #a5b4fc);
+        font-weight: 600;
+        box-shadow: inset 3px 0 0 var(--org-color, #4f46e5);
+        padding-left: 9px;
+    }
+
+    .work-nav-item i {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+    }
+
+    /* Collapsed sidebar: center icons, hide text */
+    .work-sidebar.collapsed .work-nav-item {
+        justify-content: center;
+        padding: 10px;
+        margin: 1px 6px;
+    }
+
+    .work-sidebar.collapsed .work-nav-item.active {
+        padding-left: 10px;
+        box-shadow: inset 3px 0 0 var(--org-color, #4f46e5);
+    }
+
+    /* Sidebar Section */
+    .dark .work-nav-section {
+        color: #9ca3af;
+    }
+    .work-nav-section {
+        padding: 12px 12px 6px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #6b7280; /* 4,6:1 auf Weiß (BITV 1.4.3), #176 */
+        white-space: nowrap;
+        overflow: hidden;
+    }
+
+    .work-sidebar.collapsed .work-nav-section {
+        text-align: center;
+        padding: 10px 4px 4px;
+        font-size: 0;
+    }
+    .work-sidebar.collapsed .work-nav-section::after {
+        content: '';
+        display: block;
+        width: 16px;
+        height: 1px;
+        background: #d1d5db;
+        margin: 0 auto;
+    }
+    .dark .work-sidebar.collapsed .work-nav-section::after {
+        background: #4b5563;
+    }
+
+</style>

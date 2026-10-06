@@ -1,12 +1,8 @@
 {# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
 {% comment %}
-Eintrag im Blatt „Mehr“ der Leiste unten (Issue #783, Stufe 3): große Fläche für den Daumen, aktiver Bereich mit
-aria-current="page".
+Eintrag im Blatt „Mehr“ der Leiste unten (Issue #783, Stufe 3).
   <c-insight.blatt-link href="…" icon="landmark" area="gremien">Gremien</c-insight.blatt-link>
+Aktiv, wenn ``area`` dem Bereich der Seite entspricht; das Markup teilt sich Insight mit Work: c-rahmen.blatt-link (Issue #852).
 {% endcomment %}
 <c-vars href="" icon="" area="" />
-<a href="{{ href }}" {% if area and area == insight_area %}aria-current="page"{% endif %}
-    class="flex items-center gap-4 min-h-12 px-3 rounded-lg text-[1.0625rem] {% if area and area == insight_area %}bg-primary-50 dark:bg-primary-900/40 font-semibold text-gray-900 dark:text-white{% else %}font-medium text-gray-800 dark:text-gray-200 hover:bg-band-grau{% endif %}">
-    <i data-lucide="{{ icon }}" class="w-[22px] h-[22px] shrink-0 {% if area and area == insight_area %}text-primary-700 dark:text-primary-300{% else %}text-gray-500 dark:text-gray-400{% endif %}" aria-hidden="true"></i>
-    <span class="flex-1 min-w-0 truncate">{{ slot }}</span>
-</a>
+<c-rahmen.blatt-link href="{{ href }}" icon="{{ icon }}" area="{{ area }}" aktuell="{{ insight_area }}">{{ slot }}</c-rahmen.blatt-link>

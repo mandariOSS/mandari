@@ -1,0 +1,32 @@
+{% comment %}
+Glocke in der Kopfzeile (Issue #852, vorher Inline-Objekt im Layout): Zahl ungelesener Benachrichtigungen, Liste beim
+Öffnen, „Alle gelesen“, Einstellungen und „Alle anzeigen“. Komponente workGlocke (frontend/alpine/work-rahmen.ts).
+{% endcomment %}
+<div x-data="workGlocke" class="relative" @keydown.escape="schliessen()" @click.outside="schliessen(false)"
+     data-zahl-url="{% url 'work:notification_count' org_slug=organization.slug %}"
+     data-liste-url="{% url 'work:notifications_partial' org_slug=organization.slug %}"
+     data-gelesen-url="{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}">
+    <button type="button" x-ref="knopf" @click="umschalten()" :aria-label="beschriftung" aria-label="Benachrichtigungen"
+            aria-haspopup="true" aria-controls="glocke-liste" :aria-expanded="offen.toString()" aria-expanded="false"
+            class="relative inline-flex items-center justify-center w-11 h-11 lg:w-9 lg:h-9 rounded-md text-gray-700 dark:text-gray-300 hover:bg-band-grau">
+        <i data-lucide="bell" class="w-5 h-5 lg:w-[18px] lg:h-[18px]" aria-hidden="true"></i>
+        <span x-show="anzahl > 0" x-cloak x-text="anzahl > 99 ? '99+' : anzahl" aria-hidden="true"
+              class="absolute top-1 right-1 lg:-top-0.5 lg:-right-0.5 min-w-[1.05rem] h-[1.05rem] px-1 inline-flex items-center justify-center rounded-full bg-primary-600 text-[0.65rem] font-bold leading-none text-white"></span>
+    </button>
+    <div id="glocke-liste" x-show="offen" x-cloak role="region" aria-label="Benachrichtigungen"
+         class="fixed inset-x-2 top-[calc(3.25rem+env(safe-area-inset-top))] sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-80 rounded-lg bg-band-hell shadow-xl ring-1 ring-gray-900/10 dark:ring-white/10 z-50 overflow-hidden">
+        <div class="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="text-sm font-semibold text-gray-900 dark:text-white">Benachrichtigungen</h2>
+            <div class="flex items-center gap-3">
+                <button type="button" x-show="anzahl > 0" @click="alleGelesen()" class="text-xs font-medium text-primary-700 dark:text-primary-300 hover:underline">Alle gelesen</button>
+                <a href="{% url 'work:profile_notifications' org_slug=organization.slug %}" class="inline-flex text-gray-500 hover:text-gray-800 dark:hover:text-gray-200" aria-label="Benachrichtigungen einstellen"><i data-lucide="settings" class="w-4 h-4" aria-hidden="true"></i></a>
+            </div>
+        </div>
+        <div x-ref="liste" class="max-h-96 overflow-y-auto"></div>
+        <p x-show="laedt && !geladen" class="px-4 py-6 text-center text-sm text-gray-600 dark:text-gray-400">Lädt …</p>
+        <p x-show="geladen && !$refs.liste.innerHTML.trim()" x-cloak class="px-4 py-6 text-center text-sm text-gray-600 dark:text-gray-400">Keine Benachrichtigungen</p>
+        <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-center">
+            <a href="{% url 'work:notifications' org_slug=organization.slug %}" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline">Alle anzeigen</a>
+        </div>
+    </div>
+</div>
