@@ -178,11 +178,16 @@ def stand_fraktionssitzung(sitzung: dict[str, Any]) -> str:
 
 
 def satz_und_hauptaktion(
-    organization: Any, sitzungen: list[dict[str, Any]], stand: dict[uuid.UUID, Stand]
+    organization: Any,
+    sitzungen: list[dict[str, Any]],
+    stand: dict[uuid.UUID, Stand],
+    *,
+    darf_vorbereiten: bool = True,
 ) -> tuple[str, dict[str, str] | None]:
     """
     Ein Satz mit dem Stand für das Kopfband und höchstens eine Hauptaktion: die nächste Gremiensitzung mit
-    Vorlagen vorbereiten. Ohne Sitzungen ein ruhiger Satz ohne Aktion.
+    Vorlagen vorbereiten. Ohne das Recht ``meetings.prepare`` (etwa Parteimitglieder) führt die Aktion auf die
+    Sitzung selbst statt in die Vorbereitung, die sonst mit 403 endet. Ohne Sitzungen ein ruhiger Satz ohne Aktion.
     """
     teile: list[str] = []
     aktion = None
@@ -195,9 +200,10 @@ def satz_und_hauptaktion(
         vorlagen = "Vorlage" if s.vorlagen == 1 else "Vorlagen"
         teile.append(f"{naechste_ris['title']} am {wann}: {s.positionen} von {s.vorlagen} {vorlagen} mit Position.")
         aktion = {
-            "label": f"Sitzung am {wann} vorbereiten",
+            "label": f"Sitzung am {wann} {'vorbereiten' if darf_vorbereiten else 'öffnen'}",
             "url": reverse(
-                "work:meeting_prepare", kwargs={"org_slug": organization.slug, "meeting_id": naechste_ris["id"]}
+                "work:meeting_prepare" if darf_vorbereiten else "work:meeting_detail",
+                kwargs={"org_slug": organization.slug, "meeting_id": naechste_ris["id"]},
             ),
         }
     fraktion = next((s for s in sitzungen if s["type"] == "faction"), None)

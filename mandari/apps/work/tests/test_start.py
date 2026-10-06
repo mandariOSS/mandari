@@ -8,6 +8,7 @@ bisherige Start; Daten anderer Organisationen erscheinen nicht.
 from __future__ import annotations
 
 import copy
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -159,6 +160,37 @@ def test_start_zeigt_stand_fuer_sie_und_neue_vorlagen(welt: Welt, client_for: An
     assert "Jugendbeirat" not in html
     # keine Zählerkacheln, kein Gruß in Riesenschrift
     assert "Hallo," not in html and "text-4xl" not in html
+
+
+@pytest.mark.django_db
+def test_mitglied_ohne_vorbereitungsrecht_bekommt_keinen_vorbereiten_link(
+    welt: Welt, client_for: Any, make_member: Any
+) -> None:
+    """Parteimitglied (Standardrolle ohne „meetings.prepare“): Start ohne Link in die Vorbereitung (dort 403)."""
+    from apps.common.permissions import DEFAULT_ROLES
+
+    rechte = DEFAULT_ROLES["party_member"]["permissions"]
+    assert "meetings.prepare" not in rechte and "meetings.view" in rechte
+    mitglied = make_member(welt.org, rechte, email="parteimitglied@example.org")
+    mitglied.oparl_committees.add(welt.ausschuss)
+
+    html = _start(client_for, mitglied)
+    kwargs = {"org_slug": welt.org.slug, "meeting_id": welt.sitzung.id}
+    assert reverse("work:meeting_prepare", kwargs=kwargs) not in html
+    assert re.search(r"Sitzung am [^<]*vorbereiten", html) is None
+    assert re.search(r">\s*Vorbereiten<", html) is None
+    detail = reverse("work:meeting_detail", kwargs=kwargs)
+    # Titel, Zeilenlink „Öffnen“ und Hauptaktion „Sitzung am … öffnen“ zeigen auf die Sitzung
+    assert html.count(f'href="{detail}"') == 3
+    assert "0 von 2 Vorlagen mit Position" in html
+    satz, aktion = selectors.satz_und_hauptaktion(
+        welt.org,
+        [{"type": "ris", "id": welt.sitzung.id, "title": "Hauptausschuss", "start": welt.sitzung.start}],
+        {welt.sitzung.id: selectors.Stand(tops=3, vorlagen=2, positionen=0)},
+        darf_vorbereiten=False,
+    )
+    assert aktion is not None and aktion["url"] == detail and aktion["label"].endswith("öffnen")
+    assert client_for(mitglied.user).get(detail).status_code == 200
 
 
 @pytest.mark.django_db

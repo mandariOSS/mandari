@@ -59,9 +59,9 @@ Oben im Inhalt das Hinweisband wie im bisherigen Start (Issue #857): work/partia
                         {% else %}Noch keine Vorlagen auf der Tagesordnung{% endif %}
                     </p>
                 </div>
-                <a href="{% if s.type == 'faction' %}{% url 'work:faction_detail' org_slug=organization.slug meeting_id=s.id %}{% else %}{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=s.id %}{% endif %}"
+                <a href="{% if s.type == 'ris' and darf_vorbereiten %}{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=s.id %}{% else %}{% url s.url_name org_slug=organization.slug meeting_id=s.id %}{% endif %}"
                    class="col-start-2 sm:col-start-3 sm:row-start-1 justify-self-start sm:self-center inline-flex items-center gap-1 text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
-                    {% if s.type == "faction" %}Öffnen{% else %}Vorbereiten{% endif %}<span class="sr-only">: {{ s.title }}, {{ s.start|date:"d.m." }}</span>
+                    {% if s.type == "ris" and darf_vorbereiten %}Vorbereiten{% else %}Öffnen{% endif %}<span class="sr-only">: {{ s.title }}, {{ s.start|date:"d.m." }}</span>
                     <i data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true"></i>
                 </a>
             </li>

@@ -68,10 +68,15 @@ class DashboardView(WorkViewMixin, TemplateView):
             sitzung["stand"] = stand.get(sitzung["id"])
             if sitzung["type"] == "faction":
                 sitzung["stand_text"] = selectors.stand_fraktionssitzung(sitzung)
-        satz, aktion = selectors.satz_und_hauptaktion(self.organization, sitzungen, stand)
+        # Ohne „meetings.prepare“ (z. B. Parteimitglieder) führen Hauptaktion und Zeilenlink auf die Sitzung selbst
+        darf_vorbereiten = self.has_permission("meetings.prepare")
+        satz, aktion = selectors.satz_und_hauptaktion(
+            self.organization, sitzungen, stand, darf_vorbereiten=darf_vorbereiten
+        )
         return {
             "start_satz": satz,
             "start_aktion": aktion,
+            "darf_vorbereiten": darf_vorbereiten,
             "fuer_sie": selectors.fuer_sie(self.organization, self.membership),
             "neu_in_gremien": selectors.neu_in_gremien(
                 self.organization, list(committee_ids) if committee_ids else None
