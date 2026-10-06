@@ -2132,8 +2132,15 @@ def delete_schedule_exception(organization: Organization, exception_id: Any) -> 
     _generate_schedule_now(schedule)
 
 
-def add_suspension_rule(organization: Organization, schedule_id: Any, ris_organization_id: Any) -> str:
-    """Ausfallregel anlegen (Gremium nur aus den OParl-Organizations der verknüpften Kommune(n)); liefert den Gremiennamen."""
+@transaction.atomic
+def add_suspension_rule(organization: Organization, schedule_id: Any, ris_organization_id: Any) -> tuple[str, int]:
+    """
+    Ausfallregel anlegen (Gremium nur aus den OParl-Organizations der verknüpften Kommune(n)).
+
+    Schon angelegte, noch nicht eingeladene Termine der Reihe, die nach der Regel entfallen, entfallen sofort
+    (Issue #896, wie bei Pausen). Liefert den Gremiennamen und deren Anzahl.
+    """
+    from apps.work.faction.generation import cancel_meetings_by_ris_rules
     from apps.work.faction.models import FactionSuspensionRule
 
     schedule = _schedule(organization, schedule_id)
@@ -2141,7 +2148,7 @@ def add_suspension_rule(organization: Organization, schedule_id: Any, ris_organi
     if ris_org is None:
         raise ServiceError("Gremium nicht gefunden.")
     FactionSuspensionRule.objects.get_or_create(schedule=schedule, ris_organization=ris_org)
-    return str(ris_org.name)
+    return str(ris_org.name), cancel_meetings_by_ris_rules(schedule)
 
 
 def delete_suspension_rule(organization: Organization, rule_id: Any) -> None:

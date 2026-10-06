@@ -368,6 +368,40 @@ def cancel_meetings_in_exception(exception, now=None) -> int:
     return count
 
 
+def cancel_meetings_by_ris_rules(schedule, now=None) -> int:
+    """
+    Nachträglich eingetragene RIS-Ausfallregel (Issue #896): schon angelegte Termine entfallen nach der Regel.
+
+    Seit die Reihe ihre Termine sofort anlegt, gibt es sie meist schon, wenn die Regel dazukommt. Dieselben Grenzen
+    wie bei Pausen (:func:`cancel_meetings_in_exception`): nur bevorstehende, nicht eingeladene Termine in
+    Entwurf/Geplant; nur der Status wechselt, die Absage lässt sich über den Status wieder zurücknehmen.
+
+    Returns:
+        Anzahl der Termine, die entfallen.
+    """
+    from apps.work.faction.models import FactionMeeting
+
+    now = now or timezone.now()
+    rules = list(schedule.suspension_rules.filter(is_active=True).select_related("ris_organization"))
+    meetings = FactionMeeting.objects.filter(
+        schedule=schedule,
+        scheduled_date__isnull=False,
+        status__in=["draft", "planned"],
+        invitation_sent=False,
+        start__gt=now,
+    )
+    count = 0
+    for meeting in meetings:
+        reason = check_ris_rules(schedule, meeting.scheduled_date, rules=rules)
+        if not reason:
+            continue
+        meeting.status = "cancelled"
+        meeting.cancellation_reason = reason[:300]
+        meeting.save(update_fields=["status", "cancellation_reason", "updated_at"])
+        count += 1
+    return count
+
+
 def _schedule_lock_key(schedule_id) -> str:
     """Sperre je Reihe (Issue #896): Zeitplanlauf und sofortige Erzeugung schließen sich je Reihe aus."""
     return f"{_SCHEDULE_LOCK_KEY}:{schedule_id}"

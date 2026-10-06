@@ -202,3 +202,28 @@ def test_fehler_bei_der_sofortigen_erzeugung_verhindert_das_anlegen_nicht(
     assert not FactionMeeting.objects.filter(schedule=reihe).exists()
     assert cache.add(generation._schedule_lock_key(reihe.pk), "1"), "Sperre wieder frei"
     cache.delete(generation._schedule_lock_key(reihe.pk))
+
+
+@pytest.mark.django_db
+def test_neue_ris_regel_sagt_schon_angelegte_termine_ab(
+    org: Any, manager: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Die Termine gibt es meist schon, wenn die Regel dazukommt; wie bei Pausen nur nicht eingeladene."""
+    reihe = _reihe(org)
+    generation.generate_meetings_now(reihe)
+    erster, zweiter, dritter = _soll_termine()
+    FactionMeeting.objects.filter(schedule=reihe, scheduled_date=erster).update(invitation_sent=True, status="invited")
+
+    def _regel(schedule: Any, datum: date, rules: Any = None) -> str | None:
+        return "Entfällt nach Sitzung von Rat" if datum in (erster, zweiter) else None
+
+    monkeypatch.setattr(generation, "check_ris_rules", _regel)
+
+    assert generation.cancel_meetings_by_ris_rules(reihe) == 1
+
+    termine = _termine(reihe)
+    assert termine[erster].status == "invited", "Eingeladene sagt der Vorsitz selbst ab"
+    assert termine[zweiter].status == "cancelled"
+    assert termine[zweiter].cancellation_reason == "Entfällt nach Sitzung von Rat"
+    assert termine[zweiter].attendances.exists(), "Anwesenheiten bleiben erhalten"
+    assert termine[dritter].status == "planned"

@@ -279,13 +279,13 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         messages.success(request, "Ausnahme entfernt.")
 
     def _add_rule(self, request):
-        name = services.add_suspension_rule(
+        name, cancelled = services.add_suspension_rule(
             self.organization, request.POST.get("schedule_id"), request.POST.get("ris_organization_id")
         )
-        messages.success(
-            request,
-            f"Ausfallregel gespeichert: Nach einer Sitzung von '{name}' entfällt die nächste Fraktionssitzung.",
-        )
+        message = f"Ausfallregel gespeichert: Nach einer Sitzung von '{name}' entfällt die nächste Fraktionssitzung."
+        if cancelled:
+            message += f" {cancelled} schon angelegte Termine entfallen."
+        messages.success(request, message)
 
     def _delete_rule(self, request):
         services.delete_suspension_rule(self.organization, request.POST.get("rule_id"))

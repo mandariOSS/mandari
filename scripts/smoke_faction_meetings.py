@@ -696,6 +696,15 @@ today = timezone.localdate()
 first_occ = today + timedelta(days=3)
 weekday = first_occ.weekday()
 
+# Der Opt-in-POST in Phase E hat die übrigen Checkboxen (u.a.
+# auto_create_approval_item) auf False gesetzt — für die Erzeugung wieder an.
+# Vor dem Anlegen der Reihe: Sie erzeugt ihre Termine sofort (Issue #896)
+org.refresh_from_db()
+_settings = org.settings or {}
+_settings.setdefault("faction", {})["auto_create_approval_item"] = True
+org.settings = _settings
+org.save(update_fields=["settings"])
+
 # Reihe über die Einstellungs-UI anlegen (faction.manage erforderlich)
 resp = chair.post(
     f"{base}/organization/faction-settings/",
@@ -711,6 +720,10 @@ resp = chair.post(
 )
 schedule = FactionMeetingSchedule.objects.filter(organization=org, name="Wöchentliche Fraktionssitzung").first()
 check("Sitzungsreihe über UI angelegt", schedule is not None)
+check(
+    "Termine sofort beim Anlegen erzeugt (Issue #896)",
+    FactionMeeting.objects.filter(schedule=schedule, scheduled_date=first_occ, status="planned").exists(),
+)
 
 # Ausfallregel 1: Urlaubszeitraum um den 2. Termin
 occ2 = first_occ + timedelta(days=7)
@@ -760,14 +773,6 @@ check(
     FactionSuspensionRule.objects.filter(schedule=schedule, ris_organization=rat).exists(),
 )
 
-# Der Opt-in-POST in Phase E hat die übrigen Checkboxen (u.a.
-# auto_create_approval_item) auf False gesetzt — für die Erzeugung wieder an
-org.refresh_from_db()
-_settings = org.settings or {}
-_settings.setdefault("faction", {})["auto_create_approval_item"] = True
-org.settings = _settings
-org.save(update_fields=["settings"])
-
 # Erzeugungslauf (rollierender Horizont, Standard 90 Tage)
 stats = run_faction_schedule_pass()
 expected_dates = []
@@ -808,9 +813,10 @@ check(
     m_occ3 is not None and m_occ3.status == "cancelled" and "Rat" in m_occ3.cancellation_reason,
     m_occ3.cancellation_reason if m_occ3 else "fehlt",
 )
+# Schon angelegte Termine entfallen nachträglich (Pause/Regel, Issue #871/#896): Anwesenheiten bleiben erhalten
 check(
-    "Entfallene Termine ohne Einladung/Anwesenheiten",
-    m_occ2 is not None and m_occ2.invitation_sent is False and m_occ2.attendances.count() == 0,
+    "Entfallene Termine ohne Einladung",
+    all(m is not None and m.invitation_sent is False for m in (m_occ2, m_occ3)),
 )
 check(
     "Kein Verschieben: kein Ersatztermin",
@@ -840,11 +846,14 @@ check(
 # Historisierung (Issue #66): Erzeugung und Ausfälle im Audit
 check(
     "Audit: automatisch erzeugte Termine protokolliert",
-    FactionAuditLog.objects.filter(organization=org, action="generated").count() == planned_count,
+    FactionAuditLog.objects.filter(organization=org, action="generated").count() == len(expected_dates),
 )
 check(
     "Audit: entfallene Termine protokolliert",
-    FactionAuditLog.objects.filter(organization=org, action="auto_cancelled").count() == 2,
+    FactionAuditLog.objects.filter(
+        organization=org, action="status", object_id__in=[m_occ2.id, m_occ3.id] if m_occ2 and m_occ3 else []
+    ).count()
+    == 2,
 )
 
 # Entfällt-Anzeige in Liste und Detail
