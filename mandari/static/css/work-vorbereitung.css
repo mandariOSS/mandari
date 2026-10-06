@@ -1,0 +1,505 @@
+/* Sitzungsvorbereitung im neuen Design (#856): templates/work/meetings/vorbereitung/, Alpine-Komponente `vorbereitung`.
+   Aufbau wie die freigegebene Sitzungsansicht der Fraktionssitzung: Tagesordnung | Unterlagen groß | Arbeit der Fraktion,
+   Kopf oben, Leiste unten fest. Maße nach „Gestalten ohne KI-Slop“ (Arbeitsplattform): Bedienschrift 13–14 px, Kopf 44 px,
+   Leiste 48 px, Bedienelemente 28–32 px, Radius 4–6 px, Linien nur zum Trennen der Bereiche, keine Kästen in Kästen.
+   Die Breiten richten sich nach dem Platz der Fläche (Container-Abfragen), nicht nach dem Fenster: Die Seitenleiste von Work
+   ist ein- oder ausgeklappt, und der neue Rahmen (#852) bringt eine eigene. Ab 90rem Tagesordnung mit Titeln links,
+   ab 60rem als schmale Leiste aus Nummern und Stand (ausklappbar), darunter ein TOP je Bildschirm mit Blättern für
+   Tagesordnung, Unterlagen und Position. */
+@layer components {
+  /* Die Seite füllt die Höhe unter der Kopfzeile des Rahmens; nur die Bereiche darin scrollen */
+  .work-main:has(.vb) { height: 100dvh; min-height: 0; }
+  .work-page-content:has(> .vb) { padding: 0; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  /* Demo-Hinweis (fest unten links) nicht über die Leiste legen */
+  body:has(.vb-leiste) #demo-hinweis { bottom: 60px; }
+
+  .vb, .vb-rand {
+    --vb-tinte: #1f2430;
+    --vb-text2: #535a68;
+    --vb-text3: #687080;
+    --vb-linie: #e4e7ec;
+    --vb-linie-stark: #cdd2da;
+    --vb-flaeche: #fff;
+    --vb-grau-hell: #f6f7f9;
+    --vb-papier: #eceef2;
+    --vb-work: rgb(var(--primary-600));
+    --vb-work-text: rgb(var(--primary-700));
+    --vb-work-flaeche: rgb(var(--primary-50));
+    --vb-zust: #15803d;
+    --vb-abl: #b91c1c;
+    --vb-enth: #b45309;
+    --vb-andere: #475569;
+    --vb-offen: #9aa1ad;
+    --vb-warn: #92400e;
+    --vb-warn-flaeche: #fffbeb;
+    color: var(--vb-tinte);
+  }
+  .dark .vb, .dark .vb-rand {
+    --vb-tinte: #f3f4f6;
+    --vb-text2: #a3aab6;
+    --vb-text3: #8f97a5;
+    --vb-linie: #2d3748;
+    --vb-linie-stark: #4b5563;
+    --vb-flaeche: #111827;
+    --vb-grau-hell: #1f2937;
+    --vb-papier: #0b0f19;
+    --vb-work: rgb(var(--primary-400));
+    --vb-work-text: rgb(var(--primary-300));
+    --vb-work-flaeche: rgb(var(--primary-900) / .45);
+    --vb-zust: #4ade80;
+    --vb-abl: #f87171;
+    --vb-enth: #fbbf24;
+    --vb-andere: #94a3b8;
+    --vb-offen: #6b7280;
+    --vb-warn: #fcd34d;
+    --vb-warn-flaeche: rgb(120 53 15 / .25);
+  }
+  .vb {
+    container: vb / inline-size;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--vb-flaeche);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .vb-rand { padding: 24px 32px; }
+  .vb-seitentitel { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+  .vb-leer-text { color: var(--vb-text2); margin: 0 0 12px; }
+  .vb-leer-text.klein { font-size: 13px; padding: 8px 0; }
+  .vb .leise, .vb-dialog .leise { color: var(--vb-text2); font-weight: 400; }
+  .vb .leise svg { width: 12px; height: 12px; display: inline; vertical-align: -1px; }
+  .vb :focus-visible { outline: 2px solid var(--vb-work); outline-offset: 2px; border-radius: 4px; }
+
+  /* ---------- Bedienelemente ---------- */
+  .vb-knopf {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px;
+    border-radius: 6px; border: 1px solid var(--vb-linie-stark); background: var(--vb-flaeche); color: var(--vb-tinte);
+    font-size: 13.5px; font-weight: 500; white-space: nowrap; text-decoration: none; cursor: pointer;
+  }
+  .vb-knopf:hover:not(:disabled) { background: var(--vb-grau-hell); }
+  .vb-knopf:disabled { opacity: .45; cursor: default; }
+  .vb-knopf svg { width: 16px; height: 16px; flex: none; }
+  .vb-knopf.vb-leise { border-color: transparent; background: transparent; }
+  .vb-knopf.vb-leise:hover:not(:disabled) { background: var(--vb-grau-hell); }
+  .vb-knopf.vb-ik { width: 32px; padding: 0; }
+  .vb-knopf.vb-wz { height: 28px; min-width: 28px; padding: 0 6px; font-size: 13px; }
+  .vb-knopf[aria-pressed="true"], .vb-knopf[aria-expanded="true"] { background: var(--vb-work-flaeche); color: var(--vb-work-text); }
+  .vb-textlink {
+    color: var(--vb-work-text); background: none; border: 0; padding: 0; cursor: pointer; font-size: inherit;
+    text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  }
+  .vb-textlink:hover { text-decoration-color: currentColor; }
+  .vb-textlink.gefahr { color: var(--vb-abl); }
+  .vb-textlink.klein { font-size: 12.5px; }
+  .vb-eingabe {
+    border: 1px solid var(--vb-linie-stark); border-radius: 6px; background: var(--vb-flaeche); color: inherit; font-size: 14px;
+  }
+  input.vb-eingabe { height: 32px; padding: 0 10px; }
+  textarea.vb-eingabe { width: 100%; padding: 8px 10px; line-height: 1.55; resize: vertical; display: block; }
+  .vb-eingabe::placeholder { color: var(--vb-text3); }
+  .vb-eingabe:focus { outline: none; border-color: var(--vb-work); box-shadow: 0 0 0 1px var(--vb-work); }
+  select.vb-auswahl {
+    height: 32px; padding: 0 28px 0 10px; appearance: none; -webkit-appearance: none; cursor: pointer;
+    background: var(--vb-flaeche) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23687080' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center / 14px;
+  }
+  select.vb-auswahl.klein { height: 28px; font-size: 12.5px; }
+  select.vb-auswahl.gewaehlt { border-color: var(--vb-work); background-color: var(--vb-work-flaeche); font-weight: 600; }
+  .vb-haken { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .vb-haken input { accent-color: var(--vb-work); width: 16px; height: 16px; margin: 0; }
+  .vb-klein-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--vb-text2); }
+  .vb-feldname { display: block; font-size: 13px; font-weight: 500; margin: 0 0 6px; }
+  .vb-zahl-klein { font-size: 12px; font-weight: 500; color: var(--vb-text3); font-variant-numeric: tabular-nums; }
+  .vb-punkt-hinweis { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--vb-work); margin-left: 5px; vertical-align: 2px; }
+  .vb-platz { flex: 1 1 auto; min-width: 0; }
+  .vb-ikon { display: inline-flex; }
+  .vb-ikon svg { width: 14px; height: 14px; }
+  .vb-warn { color: var(--vb-enth); font-weight: 500; }
+  .vb-noe { color: var(--vb-abl); font-weight: 500; }
+  .vb .wer { display: flex; align-items: baseline; gap: 6px; margin: 0; font-size: 12.5px; }
+  .vb .wer b { font-weight: 600; }
+  .vb .wer span { color: var(--vb-text3); }
+  .vb .text { margin: 2px 0 0; font-size: 14px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+  .vb-loeschen {
+    margin-left: auto; min-width: 24px; min-height: 24px; display: inline-grid; place-items: center; padding: 0;
+    border: 0; border-radius: 4px; background: none; color: var(--vb-text3); cursor: pointer;
+  }
+  .vb-loeschen:hover { color: var(--vb-abl); background: var(--vb-grau-hell); }
+  .vb-loeschen svg { width: 14px; height: 14px; }
+
+  /* Positionen: Punkt immer mit Text */
+  .vb .punkt, .vb-dialog .punkt { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--vb-andere); }
+  .vb .punkt.zustimmung, .vb-dialog .punkt.zustimmung { background: var(--vb-zust); }
+  .vb .punkt.ablehnung, .vb-dialog .punkt.ablehnung { background: var(--vb-abl); }
+  .vb .punkt.enthaltung, .vb-dialog .punkt.enthaltung { background: var(--vb-enth); }
+  .vb .punkt.offen, .vb-dialog .punkt.offen { background: transparent; box-shadow: inset 0 0 0 1.5px var(--vb-offen); }
+
+  /* Menüs */
+  .vb-menue-anker { position: relative; display: flex; align-items: center; }
+  .vb-menue {
+    position: absolute; top: calc(100% + 4px); left: 0; min-width: 14rem; max-width: 22rem; padding: 4px 0; z-index: 70;
+    background: var(--vb-flaeche); border: 1px solid var(--vb-linie); border-radius: 8px; box-shadow: 0 8px 24px rgba(17, 24, 39, .12);
+  }
+  .vb-menue.rechts { left: auto; right: 0; }
+  .vb-menue > [role^="menuitem"] {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 6px 12px; border: 0; background: none;
+    font-size: 13.5px; text-align: left; color: inherit; text-decoration: none; cursor: pointer;
+  }
+  .vb-menue > [role^="menuitem"]:hover, .vb-menue > [role^="menuitem"]:focus { background: var(--vb-grau-hell); outline: none; }
+  .vb-menue > [aria-checked="true"] { font-weight: 600; }
+  .vb-menue svg { width: 16px; height: 16px; color: var(--vb-text3); flex: none; }
+  .vb-menue span { overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---------- Kopf ---------- */
+  .vb-kopf { flex: none; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px 0 8px; border-bottom: 1px solid var(--vb-linie); min-width: 0; }
+  .vb-kopf-titel { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .vb-kopf-titel h1 { margin: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vb-kopf-meta { font-size: 13px; color: var(--vb-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vb-gespeichert { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; font-size: 12px; color: var(--vb-text3); white-space: nowrap; }
+  .vb-gespeichert.fehler { color: var(--vb-abl); }
+  .vb-hinweis { flex: none; margin: 0; padding: 6px 16px; font-size: 13px; color: var(--vb-warn); background: var(--vb-warn-flaeche); border-bottom: 1px solid var(--vb-linie); }
+
+  /* ---------- Fläche ---------- */
+  .vb-flaeche { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; }
+  .vb-fokus { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+
+  /* Tagesordnung */
+  .vb-liste { display: none; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--vb-flaeche); border-right: 1px solid var(--vb-linie); padding-bottom: 8px; }
+  .vb-liste-kopf { position: sticky; top: 0; z-index: 2; background: var(--vb-flaeche); padding: 8px 12px 6px; }
+  .vb-liste-kopf input { width: 100%; height: 30px; font-size: 13px; }
+  .vb-liste-gruppe { margin: 0; padding: 10px 14px 2px; font-size: 12px; color: var(--vb-text3); }
+  .vb-tl { list-style: none; margin: 0; padding: 0; }
+  .vb-tl-zeile {
+    position: relative; display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) 10px; gap: 6px; align-items: start; width: 100%;
+    padding: 6px 12px; border: 0; border-left: 2px solid transparent; background: none; text-align: left;
+    font-size: 13.5px; line-height: 1.35; color: var(--vb-tinte); cursor: pointer;
+  }
+  .vb-tl-zeile:hover { background: var(--vb-grau-hell); }
+  .vb-tl-zeile[aria-current="true"] { background: var(--vb-work-flaeche); border-left-color: var(--vb-work); }
+  .vb-tl-zeile[aria-current="true"] .titel { font-weight: 600; }
+  .vb-tl-zeile.formal { color: var(--vb-text2); }
+  .vb-tl-zeile .nr { color: var(--vb-text3); font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .vb-tl-text { min-width: 0; }
+  .vb-tl-zeile .titel { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .vb-tl-zeile > .punkt { margin-top: 5px; }
+  .vb-tl-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; font-size: 11.5px; color: var(--vb-text3); }
+  .vb-tl-meta > span { display: inline-flex; align-items: center; gap: 2px; }
+  .vb-tl-meta svg { width: 12px; height: 12px; }
+  .vb-liste-fuss { margin: 0; padding: 12px 14px 4px; font-size: 12px; color: var(--vb-text3); }
+  .vb-liste-auf { display: none; }
+
+  /* Kopf des TOPs mit Beratungsverlauf */
+  .vb-mobil-nav, .vb-mobil-unterlagen { display: none; }
+  .vb-topkopf { flex: none; display: flex; align-items: flex-start; gap: 16px; padding: 10px 20px 10px 24px; min-width: 0; }
+  .vb-topkopf-text { flex: 1 1 auto; min-width: 0; }
+  .vb-top-h { margin: 0; font-size: 18px; line-height: 1.35; font-weight: 700; letter-spacing: -.01em; outline: none; }
+  .vb-top-nr { color: var(--vb-text3); font-weight: 600; font-variant-numeric: tabular-nums; margin-right: 4px; }
+  .vb-top-zeile2 { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 2px 0 0; font-size: 13.5px; color: var(--vb-text2); }
+  .vb-top-hinweis { margin: 4px 0 0; font-size: 13px; color: var(--vb-warn); }
+  .vb-verlauf { display: flex; align-items: baseline; gap: 2px 10px; margin-top: 4px; font-size: 13.5px; line-height: 1.45; min-width: 0; }
+  .vb-verlauf-h { flex: none; display: inline-flex; align-items: center; gap: 5px; color: var(--vb-text2); font-weight: 600; }
+  .vb-verlauf-h svg { width: 14px; height: 14px; color: var(--vb-text3); align-self: center; }
+  .vb-verlauf ul { list-style: none; margin: 0; padding: 0; min-width: 0; flex: 1 1 auto; }
+  .vb-verlauf li { color: var(--vb-text2); display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+  .vb-topkopf.offen .vb-verlauf li { display: block; margin-bottom: 2px; }
+  .vb-verlauf .wo { color: var(--vb-tinte); font-weight: 500; text-decoration: none; }
+  .vb-verlauf a.wo:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .vb-verlauf b { color: var(--vb-tinte); font-weight: 600; }
+  .vb-verlauf .punkt { margin: 0 5px 0 4px; vertical-align: 1px; }
+  .vb-folge { display: flex; align-items: baseline; gap: 2px 10px; margin-top: 6px; font-size: 13.5px; }
+  .vb-folge ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 18px; }
+  .vb-folge li[aria-current="true"] { font-weight: 600; }
+  .vb-folge a { color: var(--vb-tinte); }
+  .vb-mehr { flex: none; margin-top: 4px; font-size: 13px; }
+
+  .vb-arbeit { flex: 1 1 auto; min-height: 0; display: block; }
+
+  /* Unterlagen */
+  .vb-unterlagen { display: none; flex-direction: column; min-height: 0; min-width: 0; background: var(--vb-flaeche); }
+  .vb-blatt-kopf { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--vb-linie); }
+  .vb-blatt-kopf h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .vb-blatt-kopf.sichtbar, .blatt-offen > .vb-blatt-kopf, .blatt-offen > .vb-liste-kopf > .vb-blatt-kopf { display: flex; }
+  .vb-liste-kopf > .vb-blatt-kopf { padding: 0 0 6px; border: 0; }
+  .vb-reiterleiste { flex: none; display: flex; align-items: stretch; gap: 4px 12px; min-height: 40px; padding: 0 8px 0 20px; border-bottom: 1px solid var(--vb-linie); min-width: 0; }
+  .vb-reiter-liste { display: flex; gap: 16px; min-width: 0; overflow: hidden; }
+  .vb-reiter-liste [role="tab"], .vb-reiter [role="tab"] {
+    display: inline-flex; align-items: center; gap: 5px; padding: 0 2px; margin-bottom: -1px; border: 0;
+    border-bottom: 2px solid transparent; background: none; color: var(--vb-text2); font-size: 13.5px; white-space: nowrap; cursor: pointer;
+  }
+  .vb-reiter-liste [role="tab"]:hover, .vb-reiter [role="tab"]:hover { color: var(--vb-tinte); }
+  .vb-reiter-liste [role="tab"][aria-selected="true"] { color: var(--vb-tinte); font-weight: 600; border-bottom-color: var(--vb-tinte); }
+  .vb-reiter-liste [role="tab"] { flex: 0 1 auto; min-width: 0; }
+  .vb-reiter-liste svg { width: 13px; height: 13px; color: var(--vb-text3); flex: none; }
+  .vb-reiter-liste .txt { max-width: 14rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .vb-weitere {
+    display: inline-flex; align-items: center; gap: 4px; height: 100%; max-width: 15rem; padding: 0 4px; border: 0;
+    border-bottom: 2px solid transparent; background: none; color: var(--vb-text2); font-size: 13.5px; white-space: nowrap; cursor: pointer;
+  }
+  .vb-weitere:hover { color: var(--vb-tinte); }
+  .vb-weitere.aktiv { color: var(--vb-tinte); font-weight: 600; border-bottom-color: var(--vb-tinte); }
+  .vb-weitere .txt { overflow: hidden; text-overflow: ellipsis; }
+  .vb-weitere svg { width: 14px; height: 14px; flex: none; }
+  .vb-werkzeuge { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; }
+  .vb-werkzeuge-pdf { display: contents; }
+  .vb-unterlage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .vb-unterlage-meta { flex: none; display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0; padding: 6px 20px; font-size: 12.5px; color: var(--vb-text2); border-bottom: 1px solid var(--vb-linie); }
+  .vb-unterlage-koerper { flex: 1 1 auto; min-height: 0; display: flex; position: relative; }
+  .vb-blatt { flex: 1 1 auto; min-width: 0; overflow: auto; background: var(--vb-papier); outline-offset: -2px; }
+  .vb-blatt.leer { display: none; }
+  .vb-seiten { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px 24px 40px; min-width: min-content; --scale-round-x: 1px; --scale-round-y: 1px; }
+  .vb-seite { position: relative; flex: none; background: #fff; box-shadow: 0 1px 3px rgba(17, 24, 39, .14); }
+  .vb-seite canvas { display: block; width: 100%; height: 100%; }
+  .vb-laden { position: absolute; top: 0; left: 0; margin: 16px 24px; font-size: 13px; color: var(--vb-text2); }
+  .vb-unterlage-leer {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    padding: 24px; text-align: center; color: var(--vb-text2); background: var(--vb-flaeche);
+  }
+  .vb-unterlage-leer p { margin: 0; max-width: 32rem; }
+  .vb-unterlage-leer .name { color: var(--vb-tinte); font-weight: 600; overflow-wrap: anywhere; }
+
+  /* Textebene von pdf.js (nach web/pdf_viewer.css, nur was die Blattansicht braucht): Text markieren und suchen */
+  .vb-seite .textLayer {
+    position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1; text-align: initial; letter-spacing: normal; word-spacing: normal;
+    -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: CanvasText; z-index: 0;
+    --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size));
+  }
+  .vb-seite .textLayer span, .vb-seite .textLayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+  .vb-seite .textLayer > :not(.markedContent), .vb-seite .textLayer .markedContent span:not(.markedContent) {
+    z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height));
+    --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+  }
+  .vb-seite .textLayer .markedContent { display: contents; }
+  .vb-seite .textLayer ::selection { background: rgb(79 70 229 / .28); }
+  .vb-seite .textLayer br::selection { background: transparent; }
+  .vb-seite .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+
+  /* Anmerkungen zur Seite */
+  .vb-anmerkungen { flex: none; width: 17rem; display: flex; flex-direction: column; min-height: 0; background: var(--vb-flaeche); border-left: 1px solid var(--vb-linie); }
+  .vb-anm-kopf { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; border-bottom: 1px solid var(--vb-linie); }
+  .vb-anm-kopf h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .vb-anm-kopf .leise { margin-right: auto; font-size: 12px; }
+  .vb-anm-liste { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 12px; }
+  .vb-anm-liste ul { list-style: none; margin: 2px 0 10px; padding: 0; }
+  .vb-anm-liste li { padding: 6px 0; border-bottom: 1px solid var(--vb-linie); }
+  .vb-anm-liste .text { font-size: 13px; }
+  .vb-anm-neu { flex: none; display: grid; gap: 6px; padding: 8px 12px 12px; border-top: 1px solid var(--vb-linie); }
+  .vb-anm-neu textarea { font-size: 13.5px; resize: none; }
+  .vb-anm-seite { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--vb-text2); }
+  .vb-anm-seite input { width: 4.5rem; height: 28px; }
+
+  /* Arbeit der Fraktion */
+  .vb-feld { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--vb-flaeche); }
+  .vb-reiter { flex: none; display: flex; gap: 18px; min-height: 40px; padding: 0 16px 0 20px; border-bottom: 1px solid var(--vb-linie); overflow-x: auto; scrollbar-width: none; }
+  .vb-reiter [role="tab"] { font-size: 14px; }
+  .vb-reiter [role="tab"][aria-selected="true"] { color: var(--vb-tinte); font-weight: 600; border-bottom-color: var(--vb-work); }
+  .vb-reiter .vb-zahl-klein { margin-left: 2px; }
+  .vb-feld-koerper { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .vb-feld-inhalt { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 14px 20px 16px; }
+  .vb-feld-inhalt > .vb-feldname ~ .vb-feldname { margin-top: 16px; }
+  .vb-feld-inhalt textarea.vb-eingabe { font-size: 15px; }
+  .vb-wachsend { flex: 1 1 auto; min-height: 12rem; resize: none; }
+  .vb-feld-inhalt > select.vb-auswahl { align-self: flex-start; min-width: 14rem; }
+
+  .vb-diskussion { overflow: hidden; padding-bottom: 12px; }
+  .vb-live { flex: none; margin: 0 0 4px; min-height: 16px; font-size: 12px; color: var(--vb-text3); }
+  .vb-live-punkt { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--vb-zust); margin-right: 5px; vertical-align: 1px; }
+  .vb-beitraege { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .vb-beitraege li { padding: 10px 0; border-top: 1px solid var(--vb-linie); }
+  .vb-beitraege li:first-child { border-top: 0; }
+  .vb-beitraege li.position { padding-left: 10px; box-shadow: inset 2px 0 0 var(--vb-work); }
+  .vb-beitraege .zusatz { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 4px 0 0; font-size: 12px; color: var(--vb-text3); }
+  .vb-marke { color: var(--vb-work-text); font-weight: 600; }
+  .vb-schreiben { flex: none; padding-top: 10px; border-top: 1px solid var(--vb-linie); }
+  .vb-feld-inhalt .vb-schreiben textarea.vb-eingabe { font-size: 14px; resize: none; }
+  .vb-schreiben-fuss { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+
+  .vb-rede { gap: 10px; }
+  .vb-rede-verknuepft { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--vb-work-flaeche); font-size: 13px; }
+  .vb-rede-verknuepft svg { width: 14px; height: 14px; margin-top: 3px; flex: none; }
+  .vb-rede-editor { flex: 1 1 auto; min-height: 14rem; display: flex; flex-direction: column; border: 1px solid var(--vb-linie-stark); border-radius: 6px; overflow: hidden; }
+  .vb-rede-editor.nur-lesen { background: var(--vb-grau-hell); }
+  .vb-rede-wz { flex: none; display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--vb-linie); }
+  .vb-wz-knopf { width: 28px; height: 28px; display: inline-grid; place-items: center; border: 0; border-radius: 4px; background: none; color: var(--vb-text2); cursor: pointer; }
+  .vb-wz-knopf:hover, .vb-wz-knopf[aria-pressed="true"] { background: var(--vb-grau-hell); color: var(--vb-tinte); }
+  .vb-wz-knopf svg { width: 16px; height: 16px; }
+  .vb-wz-trenn { width: 1px; height: 16px; margin: 0 6px; background: var(--vb-linie-stark); }
+  .vb-rede-hinweis { flex: none; display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 10px; font-size: 12.5px; color: var(--vb-text2); border-bottom: 1px solid var(--vb-linie); }
+  .vb-rede-hinweis svg { width: 14px; height: 14px; }
+  .vb-rede-text { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 14px; cursor: text; }
+  .vb-rede-text .ProseMirror { min-height: 100%; outline: none; font-size: 15px; line-height: 1.6; }
+  .vb-rede-text .ProseMirror p { margin: 0 0 .6em; }
+  .vb-rede-text .ProseMirror ul { list-style: disc; padding-left: 1.4em; margin: 0 0 .6em; }
+  .vb-rede-text .ProseMirror ol { list-style: decimal; padding-left: 1.4em; margin: 0 0 .6em; }
+  .vb-rede-text .ProseMirror h1, .vb-rede-text .ProseMirror h2 { font-size: 1.15em; font-weight: 600; margin: .8em 0 .4em; }
+  .vb-rede-text .ProseMirror h3 { font-size: 1.05em; font-weight: 600; margin: .8em 0 .4em; }
+  .vb-rede-text .ProseMirror blockquote { border-left: 3px solid var(--vb-linie-stark); padding-left: .75rem; color: var(--vb-text2); margin: 0 0 .6em; }
+  .vb-rede-text .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--vb-text3); float: left; height: 0; pointer-events: none; }
+  .vb-rede-fuss { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 13px; }
+  .vb-dauer { width: 4.5rem; text-align: center; }
+  .vb-rede-geteilt h3 { margin: 4px 0; font-size: 13px; font-weight: 600; }
+  .vb-rede-geteilt ul { list-style: none; margin: 0; padding: 0; }
+  .vb-rede-geteilt li { padding: 6px 0; border-top: 1px solid var(--vb-linie); font-size: 13px; }
+  .vb-rede-geteilt p { margin: 2px 0 0; color: var(--vb-text2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* ---------- Leiste unten ---------- */
+  .vb-leiste {
+    flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; min-height: 48px; min-width: 0;
+    padding: 6px 12px 6px 20px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--vb-linie); background: var(--vb-flaeche);
+  }
+  .vb-leiste-position { display: flex; align-items: center; gap: 8px 10px; min-width: 0; }
+  .vb-leiste .beschriftung { font-size: 13px; font-weight: 600; flex: none; }
+  .vb-positionen { display: flex; gap: 4px; border: 0; margin: 0; padding: 0; min-width: 0; }
+  .vb-pos {
+    position: relative; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px; border-radius: 6px;
+    border: 1px solid var(--vb-linie-stark); background: var(--vb-flaeche); font-size: 13.5px; white-space: nowrap; cursor: pointer;
+  }
+  .vb-pos:hover { background: var(--vb-grau-hell); }
+  .vb-pos input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .vb-pos:has(input:checked) { border-color: var(--vb-work); background: var(--vb-work-flaeche); font-weight: 600; }
+  .vb-pos:has(input:focus-visible) { outline: 2px solid var(--vb-work); outline-offset: 2px; }
+  .vb-andere { width: 9.5rem; }
+  .vb-pos-mobil { display: none; }
+  .vb-stand { margin-left: auto; font-size: 13px; color: var(--vb-text2); white-space: nowrap; }
+  .vb-stand .kurz { display: none; }
+  .vb-leiste-nav { display: flex; gap: 4px; flex: 0 1 auto; min-width: 0; }
+  .vb-nachbar {
+    display: flex; align-items: center; gap: 6px; height: 36px; min-width: 0; padding: 0 10px 0 6px; text-align: left;
+    border: 1px solid var(--vb-linie-stark); border-radius: 6px; background: none; color: var(--vb-tinte); cursor: pointer;
+  }
+  .vb-nachbar.weiter { padding: 0 6px 0 10px; }
+  .vb-nachbar:hover:not(:disabled) { background: var(--vb-grau-hell); }
+  .vb-nachbar:disabled { opacity: .4; cursor: default; }
+  .vb-nachbar > span { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+  .vb-nachbar.weiter > span { text-align: right; }
+  .vb-nachbar small, .vb-nachbar .t { display: none; }
+  .vb-nachbar small { font-size: 12px; color: var(--vb-text3); }
+  .vb-nachbar b { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vb-nachbar svg { width: 16px; height: 16px; flex: none; color: var(--vb-text2); }
+
+  /* Blätter, Schleier, Dialoge */
+  .vb-schleier { position: fixed; inset: 0; z-index: 60; background: rgba(17, 24, 39, .32); }
+  .vb-pos-blatt { display: none; }
+  .vb-dialog { padding: 16px 20px 20px; font-size: 14px; color: var(--vb-tinte); }
+  .vb-dialog h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+  .vb-dialog-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .vb-dialog-kopf h2 { margin: 0; }
+  .vb-dialog .vb-feldname { margin-top: 14px; }
+  .vb-dialog-text { min-height: 14rem; margin-top: 8px; font-size: 15px; }
+  .vb-dialog-fuss { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+  .vb-legende { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+  .vb-legende li { display: flex; align-items: center; gap: 10px; }
+  .vb-legende svg { width: 16px; height: 16px; color: var(--vb-text2); }
+  .vb-datei { font-size: 13.5px; }
+  .vb-link-zeile { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 12px; }
+  .vb-dok-treffer { list-style: none; margin: 8px 0; padding: 0; max-height: 18rem; overflow-y: auto; }
+  .vb-dok-treffer button { display: flex; flex-direction: column; width: 100%; padding: 8px 10px; border: 0; border-radius: 6px; background: none; text-align: left; cursor: pointer; color: inherit; }
+  .vb-dok-treffer button:hover { background: var(--vb-grau-hell); }
+  .vb-dok-treffer span { font-size: 12px; color: var(--vb-text3); }
+  .vb-dialog .klein { font-size: 12.5px; }
+
+  .vb-nur-schmal { display: none; }
+  .vb-menue > .vb-nur-schmal { display: none; }
+
+  /* ---------- Ab 60rem: Unterlagen | Arbeit, Tagesordnung als schmale Leiste (ausklappbar) ---------- */
+  @container vb (min-width: 60rem) {
+    .vb-flaeche { grid-template-columns: 3.5rem minmax(0, 1fr); }
+    .vb-liste { display: flex; }
+    .vb-arbeit { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(20rem, 1fr); border-top: 1px solid var(--vb-linie); }
+    /* TOP ohne Unterlagen: keine leere Spalte, die Arbeit nimmt die Breite (Anlage hinzufügen steht im Kopf) */
+    .vb-arbeit.ohne-unterlagen { grid-template-columns: minmax(0, 1fr); }
+    .vb-arbeit.ohne-unterlagen .vb-unterlagen { display: none; }
+    .vb-arbeit.ohne-unterlagen .vb-feld-inhalt { max-width: 72rem; }
+    .vb-arbeit.ohne-unterlagen .vb-reiter, .vb-arbeit.ohne-unterlagen .vb-feld-inhalt { padding-left: 24px; }
+    .vb-unterlagen { display: flex; border-right: 1px solid var(--vb-linie); }
+    .vb-liste.blatt-offen {
+      position: absolute; top: 0; bottom: 0; left: 0; width: min(22rem, 85%); z-index: 61;
+      box-shadow: 8px 0 24px rgba(17, 24, 39, .14);
+    }
+    .vb-pos-blatt { display: none !important; }
+  }
+  /* Schmale Leiste: Nummer und Stand je TOP, Titel im Tooltip und für Screenreader; die Leiste unten wird knapper */
+  @container vb (min-width: 60rem) and (max-width: 89.99rem) {
+    .vb-liste:not(.blatt-offen) .vb-liste-kopf { display: flex; justify-content: center; padding: 6px 0 2px; }
+    .vb-liste:not(.blatt-offen) .vb-liste-kopf input,
+    .vb-liste:not(.blatt-offen) .vb-liste-gruppe,
+    .vb-liste:not(.blatt-offen) .vb-liste-fuss,
+    .vb-liste:not(.blatt-offen) .vb-tl-meta { display: none; }
+    .vb-liste:not(.blatt-offen) .vb-liste-auf { display: inline-flex; }
+    .vb-liste:not(.blatt-offen) .vb-tl-zeile { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; font-size: 12.5px; }
+    .vb-liste:not(.blatt-offen) .vb-tl-zeile .nr { text-align: center; }
+    .vb-liste:not(.blatt-offen) .vb-tl-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .vb-liste:not(.blatt-offen) .vb-tl-zeile > .punkt { margin-top: 0; }
+    .vb-leiste .beschriftung { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .vb-andere { width: 7.5rem; }
+    .vb-stand .lang { display: none; }
+    .vb-stand .kurz { display: inline; }
+  }
+  /* ---------- Ab 90rem: Tagesordnung mit Titeln links, TOP-Wechsel mit Titel ---------- */
+  @container vb (min-width: 90rem) {
+    .vb-flaeche { grid-template-columns: clamp(15rem, 12cqw, 19rem) minmax(0, 1fr); }
+    .vb-arbeit { grid-template-columns: minmax(0, 1.2fr) minmax(22rem, 1fr); }
+    .vb-liste, .vb-liste.blatt-offen { position: static; width: auto; box-shadow: none; }
+    .vb-liste .vb-blatt-kopf { display: none !important; }
+    .vb-schleier { display: none !important; }
+    .vb-nachbar { height: 40px; border-color: transparent; max-width: clamp(10rem, 13cqw, 20rem); }
+    .vb-nachbar small, .vb-nachbar .t { display: inline; }
+    .vb-nachbar small { display: block; }
+    .vb-topkopf, .vb-reiterleiste { padding-left: 28px; }
+  }
+  /* Sehr breit: großzügigere Ränder, Arbeit etwas breiter (Notizen höher und breiter, Svens Rückmeldung) */
+  @container vb (min-width: 120rem) {
+    .vb-arbeit { grid-template-columns: minmax(0, 1.15fr) minmax(26rem, 1fr); }
+    .vb-feld-inhalt { padding: 16px 28px 20px; }
+    .vb-reiter { padding-left: 28px; }
+  }
+
+  /* ---------- Unter 60rem (Handy, schmale Fenster): ein TOP je Bildschirm, Blätter von unten ---------- */
+  @container vb (max-width: 59.99rem) {
+    .vb-nur-breit, .vb-liste-fuss { display: none; }
+    .vb-gespeichert:not(.fehler) .vb-speichertext { display: none; }
+    .vb-menue > .vb-nur-schmal { display: flex; }
+    .vb-kopf-meta { display: none; }
+    .vb-fokus { overflow-y: auto; }
+    .vb-mobil-nav {
+      display: flex; align-items: center; gap: 4px; padding: 4px 8px; position: sticky; top: 0; z-index: 3;
+      background: var(--vb-flaeche); border-bottom: 1px solid var(--vb-linie);
+    }
+    .vb-mobil-stand { font-size: 13px; color: var(--vb-text2); padding-right: 8px; }
+    .vb-topkopf { padding: 12px 16px 8px; }
+    .vb-verlauf { display: block; margin-top: 8px; }
+    .vb-verlauf-h { margin-bottom: 2px; }
+    .vb-verlauf li { display: block; }
+    .vb-folge { display: block; }
+    .vb-mobil-unterlagen { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 12px; scrollbar-width: none; }
+    .vb-mobil-unterlagen .vb-knopf { height: 40px; flex: none; max-width: 78vw; }
+    .vb-mobil-unterlagen .vb-knopf span { overflow: hidden; text-overflow: ellipsis; }
+    .vb-feld { border-top: 1px solid var(--vb-linie); }
+    .vb-reiter { padding-left: 16px; gap: 16px; }
+    .vb-feld-inhalt { overflow: visible; padding: 14px 16px 20px; }
+    .vb-diskussion { overflow: visible; }
+    .vb-wachsend { min-height: 11rem; }
+    .vb-rede-editor { min-height: 16rem; }
+    .vb-liste.blatt-offen, .vb-unterlagen.blatt-offen, .vb-pos-blatt {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 61; border-radius: 12px 12px 0 0; border: 0;
+      background: var(--vb-flaeche); box-shadow: 0 -8px 24px rgba(17, 24, 39, .14);
+    }
+    .vb-liste.blatt-offen { display: flex; max-height: 82dvh; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+    .vb-unterlagen.blatt-offen { display: flex; height: 88dvh; }
+    .vb-unterlagen.blatt-offen .vb-reiterleiste { padding-left: 12px; }
+    .vb-anmerkungen { position: absolute; top: 0; right: 0; bottom: 0; width: min(17rem, 90%); box-shadow: -8px 0 24px rgba(17, 24, 39, .12); }
+    .vb-pos-blatt { display: block; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+    .vb-pos-blatt-inhalt { display: grid; gap: 14px; padding: 12px 16px 8px; }
+    .vb-positionen.senkrecht { flex-direction: column; gap: 6px; }
+    .vb-positionen.senkrecht .vb-pos, .vb-positionen.senkrecht select { height: 44px; width: 100%; font-size: 15px; }
+    .vb-leiste { flex-wrap: nowrap; gap: 8px; padding-left: 12px; }
+    .vb-leiste-position, .vb-stand { display: none; }
+    .vb-pos-mobil { display: inline-flex; flex: 1 1 auto; justify-content: flex-start; height: 40px; min-width: 0; overflow: hidden; }
+    .vb-pos-mobil b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+    .vb-nachbar { height: 40px; width: 44px; justify-content: center; padding: 0; }
+    .vb-nachbar.weiter { padding: 0; }
+    .vb-nachbar > span { display: none; }
+    .vb-link-zeile { grid-template-columns: minmax(0, 1fr); }
+  }
+}

@@ -1,0 +1,52 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Sitzungsvorbereitung im neuen Design (#856) – nur bei eingeschaltetem Schalter der Organisation
+(apps/work/neues_design.py); sonst bleibt work/meetings/prepare.html. Aufbau wie die laufende Fraktionssitzung:
+Tagesordnung links, Unterlagen des TOPs groß in der Mitte, Arbeit der Fraktion rechts, Leiste unten mit Position
+und TOP-Wechsel. Am Handy ein TOP je Bildschirm, Tagesordnung, Unterlagen und Position als Blatt.
+Zustand, Speichern und Echtzeit: Alpine-Komponente `vorbereitung` (frontend/alpine/vorbereitung.ts), die auf
+`preparationApp` aufbaut. Gestaltung: static/css/work-vorbereitung.css.
+{% endcomment %}
+
+{% block page_title %}Vorbereitung: {{ meeting.get_display_name|default:"Sitzung" }}{% endblock %}
+
+{% block work_extra_head %}
+{% load django_vite %}{% vite_asset 'frontend/editor/index.ts' %}
+{% endblock %}
+
+{% block work_header %}{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="vb-rand">{% include "work/ris/partials/_no_body_notice.html" %}</div>
+{% elif meeting and not prepared_items %}
+<div class="vb-rand">
+    <h1 class="vb-seitentitel">{{ meeting.committee_name|default:meeting.name|default:"Sitzung" }} vorbereiten</h1>
+    <p class="vb-leer-text">Zu dieser Sitzung gibt es noch keine Tagesordnung. Sobald das Ratsinformationssystem sie veröffentlicht, erscheint sie hier.</p>
+    <a class="vb-textlink" href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}">Zur Sitzung</a>
+</div>
+{% elif meeting %}
+{{ prepare_config|json_script:"prepare-config" }}
+<div class="vb" x-data="vorbereitung" @keydown.window="handleKeydown($event)">
+    {% include "work/meetings/vorbereitung/_kopf.html" %}
+    <div class="vb-flaeche">
+        {% include "work/meetings/vorbereitung/_tagesordnung.html" %}
+        <section class="vb-fokus" aria-labelledby="top-titel">
+            {% include "work/meetings/vorbereitung/_top_kopf.html" %}
+            <div class="vb-arbeit" :class="unterlagen.length === 0 && 'ohne-unterlagen'">
+                {% include "work/meetings/vorbereitung/_unterlagen.html" %}
+                {% include "work/meetings/vorbereitung/_feld.html" %}
+            </div>
+        </section>
+    </div>
+    {% include "work/meetings/vorbereitung/_leiste.html" %}
+    <div class="vb-schleier" x-show="blatt" x-cloak x-transition.opacity @click="schliesseBlatt()"></div>
+    {% include "work/meetings/vorbereitung/_dialoge.html" %}
+</div>
+{% else %}
+<div class="vb-rand">
+    <p class="vb-leer-text">Die Sitzung wurde nicht gefunden.</p>
+    <a class="vb-textlink" href="{% url 'work:meetings' org_slug=organization.slug %}">Zur Übersicht der Sitzungen</a>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,44 @@
+{% comment %}
+Anmerkungen zu Seiten der geöffneten PDF-Unterlage (für die Organisation sichtbar, wie bisher). Die Seite der neuen
+Anmerkung folgt der sichtbaren Seite der Blattansicht; „Seite n“ springt dorthin.
+{% endcomment %}
+<aside class="vb-anmerkungen" x-show="anmerkungenOffen && aktiveUnterlage && aktiveUnterlage.istPdf" x-cloak
+       aria-labelledby="anmerkungen-titel">
+    <div class="vb-anm-kopf">
+        <h3 id="anmerkungen-titel">Anmerkungen <span class="vb-zahl-klein" x-text="annotations.length"></span></h3>
+        <span class="leise">für die Organisation</span>
+        <button type="button" class="vb-knopf vb-leise vb-ik" @click="anmerkungenOffen = false" aria-label="Anmerkungen schließen">
+            <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="vb-anm-liste">
+        <template x-for="gruppe in annotationGroups" :key="gruppe.page">
+            <div>
+                <button type="button" class="vb-textlink klein" @click="previewGotoPage(gruppe.page)" x-text="'Seite ' + gruppe.page"></button>
+                <ul>
+                    <template x-for="a in gruppe.entries" :key="a.id">
+                        <li>
+                            <p class="wer"><b x-text="a.author"></b> <span x-text="fmtDateTime(a.created_at)"></span>
+                                <button type="button" class="vb-loeschen" x-show="a.is_own" @click="deleteAnnotation(a)" aria-label="Anmerkung löschen" title="Anmerkung löschen">
+                                    <i data-lucide="x" aria-hidden="true"></i>
+                                </button>
+                            </p>
+                            <p class="text" x-text="a.content"></p>
+                        </li>
+                    </template>
+                </ul>
+            </div>
+        </template>
+        <p class="vb-leer-text klein" x-show="annotations.length === 0 && !annotationsLoading">Noch keine Anmerkungen zu dieser Unterlage.</p>
+        <p class="vb-leer-text klein" x-show="annotationsLoading">Anmerkungen werden geladen …</p>
+    </div>
+    <div class="vb-anm-neu" id="anmerkung-neu">
+        <label class="vb-anm-seite">Zu Seite
+            <input type="number" min="1" :max="seitenzahl || null" x-model.number="newAnnotationPage" class="vb-eingabe">
+        </label>
+        <textarea rows="2" x-model="newAnnotationText" class="vb-eingabe" aria-label="Neue Anmerkung"
+                  @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); addAnnotation(); }"
+                  placeholder="Anmerkung (Enter speichert)"></textarea>
+        <button type="button" class="vb-knopf" @click="addAnnotation()" :disabled="!newAnnotationText.trim()">Speichern</button>
+    </div>
+</aside>
