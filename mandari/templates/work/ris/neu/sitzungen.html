@@ -1,0 +1,56 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Sitzungen der Gremien im neuen Erscheinungsbild (Issues #852, #853; Bereich Sitzungen, Reiter „Alle Gremien“):
+Kommende, vergangene oder alle Sitzungen, Filter Gremium und Jahr wie bisher (Parameter view, org, year, page), je
+Sitzung der Vorbereitungsstand der Fraktion. Die bisherige Seite bleibt work/ris/meetings.html.
+{% endcomment %}
+
+{% block page_title %}Sitzungen der Gremien{% endblock %}
+
+{% block header_title %}Sitzungen der Gremien{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{% if body %}Alle Gremien von {{ body.get_display_name }}{% if paginator %}: {{ paginator.count }} {% if view_mode == "past" %}vergangene{% elif view_mode == "all" %}{% else %}kommende{% endif %} Sitzung{{ paginator.count|pluralize:"en" }}{% if selected_year %} in {{ selected_year }}{% endif %}{% endif %}.{% endif %} Vorbereiten können Sie direkt aus der Liste.</p>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+    <nav aria-label="Zeitraum" class="inline-flex rounded-md bg-band-grau p-0.5 text-sm">
+        {% for wert, name in ansichten %}
+        <a href="{% querystring view=wert page=None %}" {% if view_mode == wert %}aria-current="page"{% endif %}
+           class="inline-flex items-center h-8 px-3 rounded font-medium {% if view_mode == wert %}bg-band-hell text-gray-900 dark:text-white shadow-sm{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">{{ name }}</a>
+        {% endfor %}
+    </nav>
+    <form method="get" class="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="view" value="{{ view_mode }}">
+        <label for="filter-gremium" class="sr-only">Gremium</label>
+        <select id="filter-gremium" name="org" data-autosubmit class="ris-feld max-w-[16rem]">
+            <option value="">Alle Gremien</option>
+            {% for org in organizations %}
+            <option value="{{ org.id }}" {% if selected_org == org.id|slugify %}selected{% endif %}>{{ org.short_name|default:org.name }}</option>
+            {% endfor %}
+        </select>
+        <label for="filter-jahr" class="sr-only">Jahr</label>
+        <select id="filter-jahr" name="year" data-autosubmit class="ris-feld">
+            <option value="">Alle Jahre</option>
+            {% for year in years %}
+            <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>
+            {% endfor %}
+        </select>
+        <noscript><button type="submit" class="ris-link text-sm">Anwenden</button></noscript>
+        {% if selected_org or selected_year %}<a href="{% querystring org=None year=None page=None %}" class="text-sm ris-link">Filter zurücksetzen</a>{% endif %}
+    </form>
+</div>
+
+{% if meetings %}
+<ul class="mt-4 xl:grid xl:grid-cols-2 xl:gap-x-12 min-[1800px]:grid-cols-3 xl:[&>li:nth-child(2)]:border-t-0 min-[1800px]:[&>li:nth-child(3)]:border-t-0" data-testid="sitzungsliste">
+    {% for s in meetings %}{% include "work/ris/neu/_sitzung_zeile.html" %}{% endfor %}
+</ul>
+{% include "work/ris/neu/_seiten.html" with seite=meetings %}
+{% else %}
+<p class="mt-6 ris-meta">{% if view_mode == "upcoming" %}Es sind keine kommenden Sitzungen angesetzt.{% else %}In diesem Zeitraum gibt es keine Sitzungen.{% endif %}{% if selected_org or selected_year %} <a href="{% querystring org=None year=None page=None %}" class="ris-link">Filter zurücksetzen</a>{% endif %}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

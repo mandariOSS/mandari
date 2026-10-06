@@ -1,0 +1,64 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Vorgänge im neuen Erscheinungsbild (Issues #852, #853; Recherche › Vorgänge): Suche über Titel und Nummer, Art und
+Jahr wie bisher (Parameter q, type, year, page), je Vorgang der Stand-Satz aus dem Beratungsverlauf (wie Insight)
+und „Für die Fraktion“: zuletzt gesetzte Position und Dokumente der Organisation. Ab 1.536 px steht der Stand in
+einer eigenen Spalte. Kontext: apps/work/ris/neu.vorgaenge; die bisherige Seite bleibt work/ris/papers.html.
+{% endcomment %}
+
+{% block page_title %}Vorgänge{% endblock %}
+
+{% block header_title %}Vorgänge{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{% if body %}{{ paginator.count }} Vorgang{{ paginator.count|pluralize:"e" }} aus {{ body.get_display_name }}{% if search_query or selected_type or selected_year %} für Ihre Auswahl{% endif %}, neueste zuerst. {% endif %}Volltext über alle Dokumente bietet die Suche.</p>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<form method="get" role="search" class="flex flex-wrap items-center gap-2">
+    <label for="vorgaenge-suche" class="sr-only">Vorgang suchen</label>
+    <input id="vorgaenge-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Titel oder Vorlagen-Nr."
+           class="ris-feld w-full sm:w-80">
+    <label for="vorgaenge-art" class="sr-only">Art</label>
+    <select id="vorgaenge-art" name="type" data-autosubmit class="ris-feld max-w-[14rem]">
+        <option value="">Alle Arten</option>
+        {% for art in paper_types %}{% if art %}<option value="{{ art }}" {% if selected_type == art %}selected{% endif %}>{{ art }}</option>{% endif %}{% endfor %}
+    </select>
+    <label for="vorgaenge-jahr" class="sr-only">Jahr</label>
+    <select id="vorgaenge-jahr" name="year" data-autosubmit class="ris-feld">
+        <option value="">Alle Jahre</option>
+        {% for year in years %}<option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="h-9 px-3 rounded-md bg-primary-600 hover:bg-primary-700 text-sm font-medium text-white">Suchen</button>
+    {% if search_query or selected_type or selected_year %}<a href="{% url 'work:ris_papers' org_slug=organization.slug %}" class="text-sm ris-link">Zurücksetzen</a>{% endif %}
+    <a href="{% url 'work:ris_search' org_slug=organization.slug %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}" class="text-sm ris-link sm:ml-auto">Volltextsuche</a>
+</form>
+
+{% if papers %}
+<div class="mt-5 hidden md:grid md:grid-cols-[minmax(0,1fr)_15rem] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,26rem)_15rem] gap-x-8 pb-2 border-b border-gray-200 dark:border-gray-800 ris-meta">
+    <span>Vorgang</span><span class="hidden 2xl:block">Stand</span><span>Für die Fraktion</span>
+</div>
+<ul class="md:mt-0 mt-4" data-testid="vorgangsliste">
+    {% for paper in papers %}
+    <li class="ris-zeile grid gap-x-8 gap-y-1 md:grid-cols-[minmax(0,1fr)_15rem] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,26rem)_15rem]">
+        <div class="min-w-0">
+            <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}" class="ris-titel">{{ paper.name|default:"Vorgang" }}</a>
+            <p class="mt-0.5 ris-meta">{% if paper.paper_type %}{{ paper.paper_type }}{% endif %}{% if paper.paper_type and paper.reference %} · {% endif %}{% if paper.reference %}<span class="tabular-nums">{{ paper.reference }}</span>{% endif %}{% if paper.date %}{% if paper.paper_type or paper.reference %} · {% endif %}<time class="tabular-nums" datetime="{{ paper.date|date:'Y-m-d' }}">{{ paper.date|date:"d.m.Y" }}</time>{% endif %}</p>
+            {% if paper.stand %}<p class="2xl:hidden mt-1 text-sm text-gray-800 dark:text-gray-200">{{ paper.stand.text }}</p>{% endif %}
+        </div>
+        <p class="hidden 2xl:block text-sm text-gray-800 dark:text-gray-200">{{ paper.stand.text|default:"" }}</p>
+        <div class="text-sm text-gray-800 dark:text-gray-200">
+            {% if paper.position %}<p><span class="md:hidden">Position: </span>{% include "work/ris/neu/_position.html" with position=paper.position %}</p>{% endif %}
+            {% for d in paper.dokumente|slice:":2" %}<p class="mt-0.5"><a href="{{ d.url }}" class="ris-link break-words">{{ d.titel|truncatechars:40 }}</a></p>{% endfor %}
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% include "work/ris/neu/_seiten.html" with seite=papers %}
+{% else %}
+<p class="mt-6 ris-meta">{% if search_query or selected_type or selected_year %}Für diese Auswahl gibt es keine Vorgänge. <a href="{% url 'work:ris_papers' org_slug=organization.slug %}" class="ris-link">Zurücksetzen</a>{% else %}Es sind noch keine Vorgänge vorhanden.{% endif %}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

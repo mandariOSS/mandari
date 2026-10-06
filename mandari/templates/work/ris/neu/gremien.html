@@ -1,0 +1,56 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Gremien im neuen Erscheinungsbild (Issues #852, #853; Recherche › Gremien): aktive oder alle Gremien mit Zahl, Suche
+nach Name (Parameter tab, q, page wie bisher), je Gremium nächste und letzte Sitzung und „Für die Fraktion“: ob es
+eines der eigenen Gremien ist. Kontext: apps/work/ris/neu.gremien; die bisherige Seite bleibt work/ris/organizations.html.
+{% endcomment %}
+
+{% block page_title %}Gremien{% endblock %}
+
+{% block header_title %}Gremien{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{% if body %}{{ active_count|default:0 }} aktive von {{ all_count|default:0 }} Gremien in {{ body.get_display_name }}, Rat und Ausschüsse zuerst. {% endif %}Gremien, denen Sie folgen, sind als „Ihr Gremium“ markiert.</p>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+    <nav aria-label="Auswahl" class="inline-flex rounded-md bg-band-grau p-0.5 text-sm">
+        <a href="{% querystring tab='active' page=None %}" {% if tab == 'active' %}aria-current="page"{% endif %}
+           class="inline-flex items-center h-8 px-3 rounded font-medium {% if tab == 'active' %}bg-band-hell text-gray-900 dark:text-white shadow-sm{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">Aktiv ({{ active_count|default:0 }})</a>
+        <a href="{% querystring tab='all' page=None %}" {% if tab == 'all' %}aria-current="page"{% endif %}
+           class="inline-flex items-center h-8 px-3 rounded font-medium {% if tab == 'all' %}bg-band-hell text-gray-900 dark:text-white shadow-sm{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">Alle ({{ all_count|default:0 }})</a>
+    </nav>
+    <form method="get" role="search" class="flex items-center gap-2 w-full sm:w-auto">
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <label for="gremien-suche" class="sr-only">Gremium suchen</label>
+        <input id="gremien-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Gremium suchen" class="ris-feld flex-1 sm:w-72">
+        <button type="submit" class="h-9 px-3 rounded-md bg-primary-600 hover:bg-primary-700 text-sm font-medium text-white">Suchen</button>
+    </form>
+</div>
+
+{% if organizations %}
+<div class="mt-5 hidden md:grid md:grid-cols-[minmax(0,1fr)_9rem_9rem_10rem] gap-x-6 pb-2 border-b border-gray-200 dark:border-gray-800 ris-meta">
+    <span>Gremium</span><span>Nächste Sitzung</span><span>Letzte Sitzung</span><span>Für die Fraktion</span>
+</div>
+<ul class="mt-4 md:mt-0" data-testid="gremienliste">
+    {% for org in organizations %}
+    <li class="ris-zeile grid gap-x-6 gap-y-1 md:grid-cols-[minmax(0,1fr)_9rem_9rem_10rem] md:items-baseline">
+        <div class="min-w-0">
+            <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}" class="ris-titel">{{ org.name|default:org.short_name }}</a>
+            {% if org.classification or org.organization_type %}<p class="mt-0.5 ris-meta">{{ org.classification|default:org.organization_type }}</p>{% endif %}
+        </div>
+        <p class="text-sm tabular-nums text-gray-800 dark:text-gray-200"><span class="md:hidden ris-meta">Nächste Sitzung: </span>{% if org.next_meeting %}{{ org.next_meeting|date:"d.m.Y" }}{% else %}<span class="text-gray-500">–</span>{% endif %}</p>
+        <p class="text-sm tabular-nums text-gray-800 dark:text-gray-200"><span class="md:hidden ris-meta">Letzte Sitzung: </span>{% if org.last_meeting %}{{ org.last_meeting|date:"d.m.Y" }}{% else %}<span class="text-gray-500">–</span>{% endif %}</p>
+        <p class="text-sm text-gray-800 dark:text-gray-200">{% if org.ihr_gremium %}Ihr Gremium{% else %}<span class="hidden md:inline text-gray-500">–</span>{% endif %}</p>
+    </li>
+    {% endfor %}
+</ul>
+{% include "work/ris/neu/_seiten.html" with seite=organizations %}
+{% else %}
+<p class="mt-6 ris-meta">{% if search_query %}Für „{{ search_query }}“ gibt es kein Gremium.{% elif tab == 'all' %}Es gibt keine Gremien.{% else %}Es gibt keine aktiven Gremien. <a href="{% querystring tab='all' page=None %}" class="ris-link">Alle Gremien anzeigen</a>{% endif %}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -33,6 +33,11 @@ import { documentImport } from '../alpine/document-import'
 
 Alpine.data('documentImport', documentImport)
 
+// ---- Recherche im neuen Erscheinungsbild (#853): Dokumentzeile von Insight (Text aufklappen) ----------------
+import { documentText } from '../alpine/insight'
+
+Alpine.data('documentText', documentText)
+
 // ---- Satz B (#174): Fraktionssitzung, TOP-Panel, Fraktions-Einstellungen ----------
 import { agendaItemPanel } from '../alpine/agenda-item-panel'
 import { deleteConfirmation } from '../alpine/delete-confirmation'

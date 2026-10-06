@@ -6,6 +6,8 @@ Provides wrapped versions of insight_core views with organization context,
 giving users access to their municipality's council information system.
 """
 
+from apps.work.rahmen import neues_design
+
 from .. import selectors
 
 
@@ -15,7 +17,22 @@ class RISBodiesMixin:
 
     Eine Organisation kann mit mehreren OParl-Bodies verknüpft sein
     (Organization.bodies M2M + primärer FK Organization.body).
+
+    Im neuen Erscheinungsbild (Schalter je Organisation, Issues #852/#853) nimmt eine View mit ``neue_vorlage``
+    diese Vorlage aus ``work/ris/neu/``; ``neu`` sagt der View, ob sie den Kontext dafür ergänzen soll.
     """
+
+    #: Vorlage im neuen Erscheinungsbild; leer = dieselbe Vorlage wie bisher
+    neue_vorlage = ""
+
+    @property
+    def neu(self):
+        return bool(self.neue_vorlage) and neues_design(self.organization)
+
+    def get_template_names(self):
+        if self.neu:
+            return [self.neue_vorlage]
+        return super().get_template_names()
 
     def get_bodies(self):
         """Alle verknüpften Kommunen als QuerySet (für body__in-Filter)."""

@@ -389,6 +389,104 @@ def files_of_paper(paper: OParlPaper) -> QuerySet[OParlFile]:
     return OParlFile.objects.filter(paper=paper)
 
 
+def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
+    """
+    Beratungsverlauf einer Vorlage, chronologisch (ohne Termin am Ende), wie ihn der Stand-Satz und der Zeitstrahl
+    (``insight_core.services.paper_status``) erwarten: je Beratung ``consultation``, ``meeting``, ``agenda_item``,
+    ``date``, ``organization_name``, ``organization_count``, ``agenda_number``, ``result``, ``public``, ``role`` und
+    ``authoritative``. Zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte fehlen. Höchstens vier Abfragen.
+    """
+    consultations = list(OParlConsultation.objects.filter(paper=paper).exclude(withdrawn_q()))
+    if not consultations:
+        return []
+    meeting_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
+    item_ids = [c.agenda_item_external_id for c in consultations if c.agenda_item_external_id]
+    sitzungen = {
+        m.external_id: m
+        for m in OParlMeeting.objects.filter(external_id__in=meeting_ids)
+        .exclude(withdrawn_q())
+        .prefetch_related("organizations")
+    }
+    punkte = {
+        a.external_id: a
+        for a in OParlAgendaItem.objects.filter(external_id__in=item_ids)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("meeting"))
+    }
+    verlauf: list[dict[str, Any]] = []
+    for consultation in consultations:
+        sitzung = sitzungen.get(consultation.meeting_external_id or "")
+        punkt = punkte.get(consultation.agenda_item_external_id or "")
+        gremien = [o for o in sitzung.organizations.all() if o.name] if sitzung else []
+        verlauf.append(
+            {
+                "consultation": consultation,
+                "meeting": sitzung,
+                "agenda_item": punkt,
+                "date": sitzung.start if sitzung else None,
+                "organization_name": sitzung.get_display_name() if sitzung else None,
+                "organization_count": len(gremien) or None,
+                "agenda_number": punkt.number if punkt else None,
+                "result": punkt.result if punkt else None,
+                "public": punkt.public if punkt else True,
+                "role": consultation.role,
+                "authoritative": consultation.authoritative,
+            }
+        )
+    verlauf.sort(key=lambda eintrag: (eintrag["date"] is None, eintrag["date"] or timezone.now()))
+    return verlauf
+
+
+def agenda_items_of_papers(paper_ids: Iterable[object]) -> dict[uuid.UUID, set[uuid.UUID]]:
+    """
+    Je Vorlage die Tagesordnungspunkte, unter denen sie beraten wird (ohne zurückgenommene Beratungen), etwa um
+    Positionen einer Organisation den Vorlagen einer Liste zuzuordnen. Zwei Abfragen für alle Vorlagen.
+    """
+    ids = [pk for pk in (_uuid(value) for value in paper_ids) if pk is not None]
+    if not ids:
+        return {}
+    beratungen = (
+        OParlConsultation.objects.filter(paper_id__in=ids)
+        .exclude(withdrawn_q())
+        .exclude(agenda_item_external_id__isnull=True)
+        .exclude(agenda_item_external_id="")
+        .values_list("paper_id", "agenda_item_external_id")
+    )
+    vorlagen_je_punkt: dict[str, set[uuid.UUID]] = {}
+    for paper_id, punkt in beratungen:
+        if punkt:
+            vorlagen_je_punkt.setdefault(punkt, set()).add(paper_id)
+    ergebnis: dict[uuid.UUID, set[uuid.UUID]] = {}
+    punkte = OParlAgendaItem.objects.filter(external_id__in=list(vorlagen_je_punkt)).values_list("id", "external_id")
+    for item_id, external_id in punkte:
+        for paper_id in vorlagen_je_punkt.get(external_id, ()):
+            ergebnis.setdefault(paper_id, set()).add(item_id)
+    return ergebnis
+
+
+def papers_of_agenda_items(agenda_items: Iterable[OParlAgendaItem]) -> dict[uuid.UUID, list[OParlPaper]]:
+    """
+    Vorlagen je Tagesordnungspunkt (ohne zurückgenommene Beratungen und Vorlagen), in einer Abfrage für alle Punkte
+    einer Sitzung statt einer je Punkt. Punkte ohne Vorlage fehlen.
+    """
+    punkte = {item.external_id: item.pk for item in agenda_items if item.external_id}
+    if not punkte:
+        return {}
+    beratungen = (
+        OParlConsultation.objects.filter(agenda_item_external_id__in=list(punkte), paper__isnull=False)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .select_related("paper")
+        .order_by("paper__reference", "paper__name", "paper_id")
+    )
+    ergebnis: dict[uuid.UUID, list[OParlPaper]] = {}
+    for beratung in beratungen:
+        liste = ergebnis.setdefault(punkte[beratung.agenda_item_external_id or ""], [])
+        if beratung.paper is not None and all(p.pk != beratung.paper_id for p in liste):
+            liste.append(beratung.paper)
+    return ergebnis
+
+
 # =============================================================================
 # Gremien und Personen
 # =============================================================================

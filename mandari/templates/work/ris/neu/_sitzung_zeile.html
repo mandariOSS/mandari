@@ -1,0 +1,33 @@
+{% comment %}
+Eine Sitzung als Zeile (Übersicht, Sitzungen der Gremien, Gremium): Tag, Datum und Uhrzeit links, Gremium, Ort und
+„Für die Fraktion“ (Vorbereitungsstand aus apps.work.ris.neu) in der Mitte, rechts „Vorbereiten“ mit dem Recht
+meetings.prepare. Parameter: s (OParlMeeting, optional s.stand), darf_vorbereiten.
+{% endcomment %}
+{% with titel=s.get_display_name %}
+<li class="ris-zeile grid grid-cols-[4.5rem_minmax(0,1fr)] sm:grid-cols-[4.5rem_minmax(0,1fr)_auto] gap-x-4 gap-y-1">
+    <p class="tabular-nums leading-tight">
+        {% if s.start %}
+        <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ s.start|date:"D Y" }}</span>
+        <span class="block text-lg font-bold text-gray-900 dark:text-white{% if s.cancelled %} line-through{% endif %}">{{ s.start|date:"d.m." }}</span>
+        <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ s.start|date:"H:i" }}</span>
+        {% else %}<span class="block ris-meta">Termin offen</span>{% endif %}
+    </p>
+    <div class="min-w-0">
+        <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=s.id %}" class="ris-titel">{{ titel }}</a>
+        {% if s.cancelled %}<span class="ml-1 text-sm font-medium text-red-700 dark:text-red-400">abgesagt</span>{% endif %}
+        {% if s.location_name or s.name and s.name != titel and s.name|lower != "sitzung" %}
+        <p class="mt-0.5 ris-meta">{% if s.name and s.name != titel and s.name|lower != "sitzung" %}{{ s.name }}{% if s.location_name %} · {% endif %}{% endif %}{{ s.location_name|default:"" }}</p>
+        {% endif %}
+        {% if s.stand and s.stand.vorlagen %}
+        <p class="mt-1 text-sm text-gray-800 dark:text-gray-200">Für die Fraktion: Positionen zu {{ s.stand.positionen }} von {{ s.stand.vorlagen }} Vorlage{{ s.stand.vorlagen|pluralize:"n" }}</p>
+        {% endif %}
+    </div>
+    {% if darf_vorbereiten and not s.cancelled %}
+    <a href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=s.id %}"
+       class="col-start-2 sm:col-start-3 sm:row-start-1 justify-self-start sm:self-center inline-flex items-center gap-1 text-sm ris-link">
+        Vorbereiten<span class="sr-only">: {{ titel }}{% if s.start %}, {{ s.start|date:"d.m.Y" }}{% endif %}</span>
+        <i data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true"></i>
+    </a>
+    {% endif %}
+</li>
+{% endwith %}
