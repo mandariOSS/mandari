@@ -25,5 +25,6 @@ Dateiname `JJJJMMTT-kurztitel.md`. Status: vorgeschlagen, angenommen, abgelöst.
 | [20261002-koerperschaften-im-mandanten.md](20261002-koerperschaften-im-mandanten.md) | Körperschaften im Mandanten: Der Mandant ist die Verwaltung, die Körperschaft die rechtliche Einheit | angenommen |
 | [20261003-rechte-mit-geltungsbereich.md](20261003-rechte-mit-geltungsbereich.md) | Rechte mit Geltungsbereich in Session: Objektart und Aktion, Zuweisung für Bereich und Zeitraum | angenommen |
 | [20261004-texterkennung-shared.md](20261004-texterkennung-shared.md) | Texterkennung als eine Bibliothek in `shared/` und als Auftrag `file.extract_text` | angenommen |
+| [20261007-live-uebertragung.md](20261007-live-uebertragung.md) | Live-Übertragungen: Anbieter-Adapter, Einblendungsprofile als Daten, keine Bild- und Tonspeicherung | angenommen |
 
 Die Einträge „Datendrehscheibe A1–A11“ gehören zusammen (Epic #476); die Reihenfolge der Nummern entspricht den Abhängigkeiten.

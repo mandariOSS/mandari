@@ -286,7 +286,8 @@ verify_installation() {
         "${COMPOSE_PROJECT_NAME}-caddy:Caddy" \
         "${COMPOSE_PROJECT_NAME}-ingestor:Ingestor" \
         "${COMPOSE_PROJECT_NAME}-worker:Worker" \
-        "${COMPOSE_PROJECT_NAME}-worker-heavy:Worker OCR/KI"; do
+        "${COMPOSE_PROJECT_NAME}-worker-heavy:Worker OCR/KI" \
+        "${COMPOSE_PROJECT_NAME}-worker-live:Worker Live"; do
         container="${entry%%:*}"
         label="${entry#*:}"
         local status
@@ -772,10 +773,10 @@ if [ "$RESTORE_MODE" = true ]; then
     fi
     if [ "$SEQUENCE_RAISED" != true ]; then
         # Ohne angehobene Folgenummer darf kein Sequenzierer laufen
-        docker compose stop worker worker-heavy >> "$BACKUP_LOG" 2>&1 || true
+        docker compose stop worker worker-heavy worker-live >> "$BACKUP_LOG" 2>&1 || true
         warn "Worker angehalten. Folgenummer von Hand anheben, dann den Worker starten:"
         warn "  docker exec $APP_CONTAINER python manage.py events_after_restore --apply"
-        warn "  docker compose up -d worker worker-heavy"
+        warn "  docker compose up -d worker worker-heavy worker-live"
     fi
     printf "  %-30s " "Mandari"
     if wait_for_healthy "$APP_CONTAINER" 90; then

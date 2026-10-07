@@ -57,7 +57,8 @@ def test_auftraege_ueber_das_journal_brauchen_runner_und_zeitplaene(ohne_bedarf:
 
 def test_noetige_warteschlangen_ohne_abgeschaltete(ohne_bedarf: Any) -> None:
     ohne_bedarf.TASKS = journal_einstellungen(concurrency={"ai": 0})
-    assert presence.required_queues() == set(ohne_bedarf.TASK_QUEUES) - {"ai"}
+    # live ruht ohne Einstellung (Parallelität 0, Live-Übertragungen ausgeschaltet)
+    assert presence.required_queues() == set(ohne_bedarf.TASK_QUEUES) - {"ai", "live"}
 
 
 def test_ereignisse_des_ingestors_brauchen_den_sequenzierer(ohne_bedarf: Any) -> None:

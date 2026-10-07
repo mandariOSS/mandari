@@ -58,6 +58,9 @@ dependencies = [
 
     # Utilities
     "pillow>=10.3.0",  # Security: fixes heap buffer overflow, DoS, eval injection
+    # Einzelbilder aus HLS-Übertragungen für die Live-Übertragung (hub/live, #915): FFmpeg als Bibliothek im Wheel
+    # (LGPL), kein ffmpeg-Programm im Image; Bilder bleiben im Speicher
+    "av>=16.0.0",
     "cryptography>=50.0.1",
     # Sicherheitsschlüssel/Passkeys (WebAuthn/FIDO2)
     "webauthn>=3.0.1",

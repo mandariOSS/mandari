@@ -36,19 +36,20 @@ WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
 # weiter, bräche ein Durchlauf ab. Überschreibbar per Umgebung oder .env, z. B.
 # WORKER_SERVICES="ingestor minutes-orchestrator ocr-worker". Dienste, die Compose nicht kennt,
 # werden übersprungen (bei der Vorgabe ohne Hinweis).
-WORKER_SERVICES_DEFAULT="ingestor minutes-orchestrator worker worker-heavy"
+WORKER_SERVICES_DEFAULT="ingestor minutes-orchestrator worker worker-heavy worker-live"
 
 # Dienste mit dem Anwendungs-Image, die nach den Migrationen immer auf das neue Image wechseln
 # (Issue #479) – auch wenn ein eigenes WORKER_SERVICES sie nicht nennt; dann laufen sie während
 # der Migrationen weiter. Nicht definierte Dienste werden übersprungen.
-APP_IMAGE_SERVICES="minutes-orchestrator worker worker-heavy"
+APP_IMAGE_SERVICES="minutes-orchestrator worker worker-heavy worker-live"
 
 # Worker für Ereignisse, Aufträge und Zeitpläne (manage.py events_worker, Issue #509): stehen wie
 # die übrigen Worker während der Migrationen, starten aber VOR dem Umschalten der Anwendung
 # (Reihenfolge Migration → Worker → Web). So arbeitet der neue Stand Aufträge und Ereignisse der
-# neuen Webprozesse von Anfang an ab. worker-heavy bedient nur ocr und ai (docker-compose.yml).
+# neuen Webprozesse von Anfang an ab. worker-heavy bedient nur ocr und ai, worker-live nur live
+# (docker-compose.yml).
 # Nicht definierte Dienste werden übersprungen.
-EARLY_WORKER_SERVICES="worker worker-heavy"
+EARLY_WORKER_SERVICES="worker worker-heavy worker-live"
 
 # Anwendungs-Images mit IMAGE_TAG; nur falls "docker compose config --images" nichts liefert
 APP_IMAGES_DEFAULT="ghcr.io/mandarioss/mandari ghcr.io/mandarioss/ingestor ghcr.io/mandarioss/website"
@@ -425,7 +426,7 @@ verify_installation() {
     local containers="mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor"
     # Die Worker nur prüfen, wenn die Installation sie definiert (ältere Compose-Dateien ohne sie)
     local svc
-    for svc in $(defined_services "worker worker-heavy"); do
+    for svc in $(defined_services "worker worker-heavy worker-live"); do
         containers="$containers mandari-$svc"
     done
 
@@ -446,6 +447,7 @@ verify_installation() {
             mandari-ingestor)    label="Ingestor" ;;
             mandari-worker)      label="Worker" ;;
             mandari-worker-heavy) label="Worker OCR/KI" ;;
+            mandari-worker-live) label="Worker Live" ;;
         esac
 
         printf "  %-14s " "$label"

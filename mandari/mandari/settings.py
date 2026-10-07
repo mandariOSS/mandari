@@ -126,6 +126,8 @@ INSTALLED_APPS = [
     "hub.contracts",
     # Datendrehscheibe: Sichten aus Ereignissen, vorerst die Schatten-Quelle des RIS-Projektors (Issue #536)
     "hub.projections",
+    # Datendrehscheibe: Live-Übertragungen von Gremiensitzungen (Issue #915, docs/LIVE_UEBERTRAGUNG.md)
+    "hub.live",
     "apps.provisioning",
     "apps.work",
     # Mandari Session RIS (OSS - AGPL-3.0-or-later)
@@ -857,7 +859,17 @@ EVENTS_SCHEDULES_DISABLED = [
 # Runner ``manage.py events_tasks`` (eigener Prozess bzw. Container). Ohne laufenden Runner
 # bleiben Aufträge liegen – erst den Runner starten, dann umschalten.
 # Ein vollständiger Importpfad eines anderen Backends ist ebenfalls erlaubt.
-TASK_QUEUES = ["default", "mail", "index", "ocr", "ai", "adapter"]
+TASK_QUEUES = ["default", "mail", "index", "ocr", "ai", "adapter", "live"]
+
+# Live-Übertragungen von Gremiensitzungen (Issue #915, docs/LIVE_UEBERTRAGUNG.md): Status der Streaming-Anbieter rund
+# um die Sitzungen, Einzelbilder per Texterkennung (nur im Speicher). Aus = keine Anfragen nach außen, kein Zeitplan,
+# die Warteschlange live ruht (Parallelität 0, kein Worker nötig).
+LIVE_UEBERTRAGUNG_AKTIV = os.environ.get("LIVE_UEBERTRAGUNG_AKTIV", "false").lower() in ("1", "true", "yes")
+LIVE_TESSERACT_CMD = os.environ.get("LIVE_TESSERACT_CMD", "tesseract")
+LIVE_TESSDATA_DIR = os.environ.get("LIVE_TESSDATA_DIR", "")
+LIVE_OCR_MEMORY_LIMIT_MB = int(os.environ.get("LIVE_OCR_MEMORY_LIMIT_MB", "256"))
+LIVE_OCR_TIMEOUT_SECONDS = int(os.environ.get("LIVE_OCR_TIMEOUT_SECONDS", "20"))
+LIVE_PROTOKOLL_TAGE = int(os.environ.get("LIVE_PROTOKOLL_TAGE", "90"))
 _TASK_BACKENDS = {
     "immediate": "django.tasks.backends.immediate.ImmediateBackend",
     "journal": "apps.events.tasks_backend.JournalBackend",
@@ -874,6 +886,9 @@ TASKS = {
         "OPTIONS": {
             "max_tasks_per_process": int(os.environ.get("TASKS_MAX_TASKS_PER_PROCESS", "1000")),
             "max_memory_mb": int(os.environ.get("TASKS_MAX_MEMORY_MB", "400")),
+            # Warteschlange live (Issue #915): ein Leseauftrag und die Statusabfrage zugleich (Dienst worker-live);
+            # aus = 0, dann erwartet die Anwesenheitsprüfung keinen Worker für live
+            "concurrency": {"live": 2 if LIVE_UEBERTRAGUNG_AKTIV else 0},
             "tasks": {
                 # Verwaltungsbefehle als Zeitpläne (Issue #516): eigene Zeitgrenze je Befehl, höchstens
                 # 3600 s; der Prozess endet vorher (apps.events.verwaltungsbefehle)
@@ -887,6 +902,10 @@ TASKS = {
                 # Texterkennung einer Datei (Issue #530): Zeitbudget je Datei (OCR_FILE_BUDGET_SECONDS) plus Abruf;
                 # Abbrüche zählt die Datei selbst (TEXT_EXTRACTION_MAX_ATTEMPTS)
                 "insight_core.background_tasks.file_extract_text": {"timeout": 1800, "max_attempts": 3},
+                # Live-Übertragungen (Issue #915): ein Leseauftrag dauert rund 50 s, die Statusabfrage Sekunden; beide
+                # nicht wiederholen, der Zeitplan reiht jede Minute neu ein
+                "hub.live.auftraege.live_bilder_lesen": {"timeout": 120, "max_attempts": 1},
+                "hub.live.schedules.live_status_abfragen": {"timeout": 120, "max_attempts": 1},
             },
         },
     }

@@ -120,6 +120,13 @@ Umgesetzt in `apps/common/mail/` (Einstieg `mail.send`). Die Entscheidung bleibt
   oder der Vorgang sofort braucht (Testmails, Einreichung per E-Mail, Ladung), gehen bewusst im Aufruf
   raus (`sofort=True`); ein Test begrenzt diese Stellen.
 
+## Nachtrag: Warteschlange `live` (#915)
+
+Für Live-Übertragungen ([Live-Übertragung](20261007-live-uebertragung.md)) gibt es die Warteschlange `live` mit
+der Standard-Parallelität 0: Sie ruht, solange `LIVE_UEBERTRAGUNG_AKTIV` aus ist, und die Anwesenheitsprüfung
+erwartet dann keinen Worker für sie. Eingeschaltet setzt die Anwendung 2; bedient wird sie vom eigenen Dienst
+`worker-live`, damit Leseaufträge (je rund 50 Sekunden) nie hinter Texterkennung oder Mailversand warten.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md) (Worker, Leases, Überwachung)

@@ -42,6 +42,13 @@ AGGREGATE: dict[str, tuple[str, str]] = {
     "ris.source.published": ("Body", "body"),
     "ris.voting.recorded": ("Voting", "voting"),
 }
+#: Öffentliche ``ris.*``-Typen, die bewusst keinen Eintrag im Feed ergeben: Live-Übertragungen (Issue #915) haben
+#: den eigenen Objekttyp ``Broadcast`` und ändern den RIS-Bestand nicht
+OHNE_EINTRAG: dict[str, tuple[str, str]] = {
+    "ris.broadcast.started": ("Broadcast", "broadcast"),
+    "ris.broadcast.agenda_item_started": ("Broadcast", "broadcast"),
+    "ris.broadcast.ended": ("Broadcast", "broadcast"),
+}
 
 T0 = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
 TENANT = "source:3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d"
@@ -64,7 +71,7 @@ def huelle(
 ) -> Envelope:
     """Hülle eines Ereignisses; Nutzlast aus dem ersten Beispiel des Vertrags, Kennung des Objekts ersetzt."""
     vertrag = get_registry().latest(typ)
-    objekttyp, feld = AGGREGATE[typ]
+    objekttyp, feld = AGGREGATE[typ] if typ in AGGREGATE else OHNE_EINTRAG[typ]
     inhalt = dict(nutzlast if nutzlast is not None else vertrag.examples[0])
     objekt = objekt or uuid.uuid4()
     inhalt[feld] = str(objekt)

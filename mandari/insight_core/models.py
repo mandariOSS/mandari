@@ -2830,3 +2830,33 @@ class PersonFraktion(models.Model):
     def hinweis(self) -> str:
         """Öffentlicher Hinweis auf die Quelle, z. B. „laut Einblendung der Live-Übertragung“."""
         return self.HINWEISE.get(self.quelle, "")
+
+
+class PersonFraktionBeleg(models.Model):
+    """Wortmeldung einer Live-Übertragung, deren Einblendung schon als Fraktion verbucht ist (Issue #915, #916).
+
+    Macht die Übernahme aus ``ris.broadcast.speaker_changed`` idempotent (``services/fraktionen_live.py``): Jede
+    Wortmeldung zählt höchstens einmal als Lesung, auch wenn das Ereignis erneut zugestellt oder die Ableitung für
+    vorhandene Wortmeldungen nachgeholt wird. Gespeichert werden nur Kennungen: kein gelesener Text, keine Zeit der
+    Wortmeldung. Die Kennung der Wortmeldung ist bewusst kein Fremdschlüssel; die Wortmeldungen gehören ``hub.live``.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    wortmeldung = models.UUIDField("Wortmeldung", unique=True, help_text="Kennung der Wortmeldung in hub.live")
+    zuordnung = models.ForeignKey(
+        PersonFraktion,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="belege_wortmeldungen",
+        verbose_name="Fraktionszuordnung",
+    )
+    angelegt = models.DateTimeField("Verbucht", auto_now_add=True)
+
+    class Meta:
+        db_table = "insight_person_fraktion_belege"
+        verbose_name = "Beleg einer Fraktionszuordnung"
+        verbose_name_plural = "Belege von Fraktionszuordnungen"
+
+    def __str__(self) -> str:
+        return str(self.wortmeldung)

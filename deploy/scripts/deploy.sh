@@ -11,8 +11,8 @@
 #   MANDARI_DIR      Installationsverzeichnis mit .env und Compose-Dateien   (Standard /opt/mandari)
 #   COMPOSE_FILES    Compose-Dateien, durch Leerzeichen getrennt              (Standard docker-compose.yml)
 #   APP_SERVICE      Dienst der Django-Anwendung                              (Standard mandari)
-#   WORKER_SERVICES  Dienste, die waehrend der Migration stehen sollen, nach   (Standard: worker
-#                    der Migration VOR der Anwendung starten und nach dem      und worker-heavy,
+#   WORKER_SERVICES  Dienste, die waehrend der Migration stehen sollen, nach   (Standard: worker,
+#                    der Migration VOR der Anwendung starten und nach dem      worker-heavy, worker-live,
 #                    Umschalten geprueft werden (Migration -> Worker -> Web)   falls definiert,
 #                                                                              und ingestor)
 #   WORKER_CHECK_SECONDS  so lange nach dem Start keine Worker-Beendigung      (Standard 60, 0 = aus)
@@ -52,11 +52,12 @@ cd "$MANDARI_DIR"
 DC="docker compose"
 for f in $COMPOSE_FILES; do DC="$DC -f $f"; done
 if [ -z "$WORKER_SERVICES" ]; then
-  # Vorgabe: die Worker fuer Ereignisse und Auftraege (manage.py events_worker: worker, worker-heavy),
+  # Vorgabe: die Worker fuer Ereignisse und Auftraege (manage.py events_worker: worker, worker-heavy,
+  # worker-live),
   # soweit die Compose-Datei sie kennt, und der Ingestor. Aeltere, handgepflegte Dateien ohne diese
   # Dienste laufen so unveraendert weiter.
   DIENSTE=$($DC config --services < /dev/null 2>/dev/null || true)
-  for svc in worker worker-heavy; do
+  for svc in worker worker-heavy worker-live; do
     if printf '%s\n' "$DIENSTE" | grep -x "$svc" > /dev/null; then
       WORKER_SERVICES="$WORKER_SERVICES $svc"
     fi

@@ -60,6 +60,8 @@ insight_patterns = [
     path("termine/kalender.ics", views.calendar_feed, name="calendar_feed"),
     path("termine/jahresplan/", views.MeetingYearPlanView.as_view(), name="meeting_year_plan"),
     path("termine/<uuid:pk>/", views.MeetingDetailView.as_view(), name="meeting_detail"),
+    # Live-Seite einer Sitzung (Issue #915): bewusst nicht verlinkt, noindex
+    path("termine/<uuid:pk>/live/", views.meeting_live, name="meeting_live"),
     path("termine/partials/calendar-events/", views.calendar_events, name="calendar_events"),
     # Dokumente (Files)
     path("dokumente/", views.FileListView.as_view(), name="file_list"),

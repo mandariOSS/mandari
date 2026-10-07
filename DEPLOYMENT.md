@@ -463,10 +463,13 @@ derselben Umgebung wie die Anwendung:
 |---|---|---|
 | `worker` | alle Rollen; Aufträge und Abonnements aus `default`, `mail`, `index`, `adapter` | 1 GB (Runner-Neustart ab 400 MB; der Rest für die Verwaltungsbefehle der Zeitpläne, die als eigene Prozesse laufen) |
 | `worker-heavy` | nur `tasks`; Aufträge aus `ocr` und `ai` (Texterkennung, KI) | 1 GB (Runner-Neustart ab 800 MB) |
+| `worker-live` | nur `tasks`; Aufträge aus `live` (Live-Übertragungen, [LIVE_UEBERTRAGUNG.md](docs/LIVE_UEBERTRAGUNG.md)); wartet nur, solange `LIVE_UEBERTRAGUNG_AKTIV` aus ist | 512 MB (Runner-Neustart ab 400 MB) |
 
 Getrennt sind sie, weil jeder Neustart eines Runners (Zahl der Aufträge, Speichergrenze) auf seinen
 längsten laufenden Auftrag wartet, bei `ocr` bis zu 30 Minuten; Mails und Suchindex warten so nie
-auf die Texterkennung. `worker-heavy` ist nicht der OCR-Worker aus dem Ingestor-Image.
+auf die Texterkennung. `worker-heavy` ist nicht der OCR-Worker aus dem Ingestor-Image. `worker-live` hält die
+Leseaufträge laufender Übertragungen (je rund 50 Sekunden) frei von beidem. Kubernetes (Helm) kennt ihn noch
+nicht: Dort `live` in `worker.queues` aufnehmen, bevor `LIVE_UEBERTRAGUNG_AKTIV` eingeschaltet wird.
 
 | Installation | Wo | Lebenszeichen |
 |---|---|---|

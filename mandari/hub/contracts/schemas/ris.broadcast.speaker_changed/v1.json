@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.broadcast.speaker_changed:v1",
+  "title": "Wortmeldung in der Übertragung",
+  "description": "Laut Einblendung der Kommune (zweimal gleich gelesen) ist eine andere Person am Wort (hub.live, Issue #915). Aggregat: Broadcast. Ohne Ende und ohne Dauer: Redezeiten werden nicht erfasst. Gelesenen Namen, Fraktion und Funktion liest ein berechtigter Empfänger über hub.live.selectors.",
+  "x-kind": "event",
+  "x-owner": "hub.live",
+  "x-visibility": "intern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "broadcast",
+    "meeting",
+    "speech",
+    "assignment"
+  ],
+  "properties": {
+    "broadcast": {
+      "description": "Kennung der Übertragung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "meeting": {
+      "description": "Kanonische Kennung der Sitzung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "speech": {
+      "description": "Kennung der Wortmeldung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "section": {
+      "description": "Kennung des laufenden Abschnitts der Übertragung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "person": {
+      "description": "Kanonische Kennung der zugeordneten Person (fehlt ohne Zuordnung).",
+      "type": "string",
+      "format": "uuid"
+    },
+    "assignment": {
+      "description": "Zuordnung der Person: eindeutig, unsicher oder keine.",
+      "type": "string",
+      "enum": [
+        "eindeutig",
+        "unsicher",
+        "keine"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "speech": "2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+      "section": "1d2e3f4a-5b6c-4d7e-8f9a-0b1c2d3e4f5a",
+      "person": "3f4a5b6c-7d8e-4f9a-0b1c-2d3e4f5a6b7c",
+      "assignment": "eindeutig"
+    },
+    {
+      "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "speech": "2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+      "assignment": "keine"
+    }
+  ]
+}

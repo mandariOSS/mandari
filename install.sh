@@ -37,6 +37,7 @@ WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
 PROXY_CONTAINER="${COMPOSE_PROJECT_NAME}-caddy"
 WORKER_CONTAINER="${COMPOSE_PROJECT_NAME}-worker"
 WORKER_HEAVY_CONTAINER="${COMPOSE_PROJECT_NAME}-worker-heavy"
+WORKER_LIVE_CONTAINER="${COMPOSE_PROJECT_NAME}-worker-live"
 
 # Anwendungs-Images (siehe docker-compose.yml): Alle drei laufen mit demselben IMAGE_TAG
 APP_IMAGES="ghcr.io/mandarioss/mandari ghcr.io/mandarioss/ingestor ghcr.io/mandarioss/website"
@@ -644,15 +645,19 @@ start_services() {
     configure_oparl_sources
 
     # --- Phase 2b: Worker für Ereignisse, Aufträge und Zeitpläne (nach den Migrationen) ---
-    # worker: alle Rollen ohne ocr/ai; worker-heavy: nur Aufträge aus ocr und ai (docker-compose.yml)
+    # worker: alle Rollen ohne ocr/ai/live; worker-heavy: nur Aufträge aus ocr und ai; worker-live: nur live
+    # (Live-Übertragungen, docs/LIVE_UEBERTRAGUNG.md; ohne Schalter wartet er nur), siehe docker-compose.yml
     log "Starte Worker..."
-    docker compose up -d worker worker-heavy >> "$INSTALL_LOG" 2>&1
+    docker compose up -d worker worker-heavy worker-live >> "$INSTALL_LOG" 2>&1
 
     printf "  %-30s " "Worker"
     if wait_for_healthy "$WORKER_CONTAINER" 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     printf "  %-30s " "Worker OCR/KI"
     if wait_for_healthy "$WORKER_HEAVY_CONTAINER" 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
+
+    printf "  %-30s " "Worker Live"
+    if wait_for_healthy "$WORKER_LIVE_CONTAINER" 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     # --- Phase 3: Website (Wagtail) ---
     log "Starte Website..."
@@ -877,7 +882,7 @@ verify_installation() {
     local all_ok=true
 
     # Check each container
-    for container in mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor mandari-worker mandari-worker-heavy; do
+    for container in mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor mandari-worker mandari-worker-heavy mandari-worker-live; do
         local status
         local health
         status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
@@ -894,6 +899,7 @@ verify_installation() {
             mandari-ingestor)   label="Ingestor" ;;
             mandari-worker)     label="Worker" ;;
             mandari-worker-heavy) label="Worker OCR/KI" ;;
+            mandari-worker-live) label="Worker Live" ;;
         esac
 
         printf "  %-14s " "$label"
