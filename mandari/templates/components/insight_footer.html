@@ -7,6 +7,8 @@
                 {% if page_body %}Die Daten stammen aus dem Ratsinformationssystem von {{ page_body.get_display_name }}.{% else %}Öffentliche Ratsinformationen der Kommunen aus ihren Ratsinformationssystemen.{% endif %}
                 {% if page_body.last_sync %}Letzter Abgleich: {{ page_body.last_sync|date:"d.m.Y, H:i" }} Uhr.{% endif %}
             </p>
+            {# Absolute Adresse auch im Selbstbetrieb: Die Seite über mandari steht nur auf mandari.de (Issue #914) #}
+            <p class="mt-3 text-[0.9375rem] leading-relaxed">Dieses Bürgerportal läuft mit <a href="https://mandari.de/ratsinformationssystem/" class="underline underline-offset-4 hover:text-white">mandari, dem offenen Ratsinformationssystem</a>.</p>
         </div>
         <nav aria-label="Bürgerportal">
             <p class="text-[0.875rem] text-gray-400">Bürgerportal</p>

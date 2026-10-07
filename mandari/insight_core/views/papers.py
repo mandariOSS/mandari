@@ -151,7 +151,7 @@ class PaperDetailView(DetailView):
         # SEO-Kontext
         from ..seo import get_paper_seo
 
-        context["seo"] = get_paper_seo(paper, self.request).to_dict()
+        context["seo"] = get_paper_seo(paper, self.request, stand=status).to_dict()
 
         return context
 

@@ -399,7 +399,7 @@ class MeetingDetailView(DetailView):
         try:
             from ..seo import get_meeting_seo
 
-            context["seo"] = get_meeting_seo(meeting, self.request).to_dict()
+            context["seo"] = get_meeting_seo(meeting, self.request, agenda_count=len(agenda_items)).to_dict()
         except Exception:
             import logging
 

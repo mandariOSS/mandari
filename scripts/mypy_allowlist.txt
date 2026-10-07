@@ -205,7 +205,6 @@ insight_core.management.commands.send_digest
 insight_core.management.commands.send_question_reminders
 insight_core.models
 insight_core.ranking
-insight_core.seo
 insight_core.services.body_deletion
 insight_core.services.decision_tracking
 insight_core.services.file_cache

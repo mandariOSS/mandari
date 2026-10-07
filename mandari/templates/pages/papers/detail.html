@@ -1,7 +1,8 @@
 {% extends "base_insight.html" %}
 {% load static %}
 
-{% block title %}{{ paper.reference|default:paper.name }}{% endblock %}
+{% block title %}{% firstof seo.title paper.reference paper.name %}{% endblock %}
+{% block title_suffix %}mandari Insight{% endblock %}
 
 {% block extra_head %}
 {% if paper_locations or plan_areas %}

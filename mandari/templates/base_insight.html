@@ -16,7 +16,7 @@
     {% if seo.author %}<meta name="author" content="{{ seo.author }}">{% endif %}
     {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
 
-    <title>{% block title %}mandari{% endblock %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}</title>
+    <title>{% block title %}mandari{% endblock %} | {% block title_suffix %}{% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}{% endblock %}</title>
 
     <!-- Canonical URL -->
     {% if seo.canonical_url %}
@@ -41,6 +41,9 @@
     <!-- JSON-LD Structured Data -->
     {% if seo.json_ld %}
     <script type="application/ld+json">{{ seo.json_ld }}</script>
+    {% endif %}
+    {% if seo.json_ld_brotkrumen %}
+    <script type="application/ld+json">{{ seo.json_ld_brotkrumen }}</script>
     {% endif %}
 
     <!-- Favicon (Brand "m." — Quelle: marketing-website/scripts/generate_logo.py) -->

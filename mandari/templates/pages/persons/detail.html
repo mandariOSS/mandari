@@ -1,7 +1,8 @@
 {% extends "base_insight.html" %}
 {% load static %}
 
-{% block title %}{{ person.display_name }}{% endblock %}
+{% block title %}{% if seo.title %}{{ seo.title }}{% else %}{{ person.display_name }}{% endif %}{% endblock %}
+{% block title_suffix %}mandari Insight{% endblock %}
 
 {% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ person.display_name }}</c-insight.brotkrume>{% endblock %}
 

@@ -1,6 +1,7 @@
 {% extends "base_insight.html" %}
 
-{% block title %}{{ item.name }} – Umsetzungsstand{% endblock %}
+{% block title %}{% if seo.title %}{{ seo.title }}{% else %}{{ item.name }} – Umsetzungsstand{% endif %}{% endblock %}
+{% block title_suffix %}mandari Insight{% endblock %}
 
 {% block content %}
 <div class="max-w-4xl">

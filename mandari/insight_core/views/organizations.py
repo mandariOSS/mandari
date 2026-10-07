@@ -216,6 +216,11 @@ class OrganizationDetailView(DetailView):
         # SEO-Kontext
         from ..seo import get_organization_seo
 
-        context["seo"] = get_organization_seo(org, self.request).to_dict()
+        context["seo"] = get_organization_seo(
+            org,
+            self.request,
+            mitglieder=context["mitglieder_anzahl"],
+            naechste_sitzung=next(iter(context["upcoming_meetings"]), None),
+        ).to_dict()
 
         return context
