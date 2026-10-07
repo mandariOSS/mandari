@@ -54,7 +54,7 @@ Zusammenfassung ins Menü.
         </div>
     </div>
 </header>
-<p class="vb-hinweis" role="alert" x-show="saveRetrying > 0 && saveAnmeldung" x-cloak>
+<p class="vb-hinweis" x-show="saveRetrying > 0 && saveAnmeldung" x-cloak>
     <span x-text="saveStatusText"></span>
     <a :href="anmeldeAdresse" target="_blank" rel="noopener"
        x-text="saveAnmeldung === 'zweiter_faktor' ? 'Zweiten Faktor einrichten' : 'In neuem Tab anmelden'"></a>

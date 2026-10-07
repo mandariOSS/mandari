@@ -314,11 +314,13 @@ export const preparationApp = defineComponent(() => {
     /** Ausführlicher Speicherstand (bisherige Ansicht; in der neuen Ansicht als Tooltip und Hinweis) */
     get saveStatusText(): string {
       if (this.saveRetrying > 0) {
+        // Nicht in der Vorbereitung weiterarbeiten: der neue Tab dient nur der Anmeldung, sonst überschreibt
+        // die hier wartende (ältere) Eingabe später eine dort neu getroffene Entscheidung
         if (this.saveAnmeldung === 'zweiter_faktor') {
-          return 'Nicht gespeichert: Ihr Konto muss zuerst einen zweiten Faktor einrichten. Bitte in einem neuen Tab erledigen und diese Seite offen lassen, danach wird automatisch gespeichert.'
+          return 'Nicht gespeichert: Ihr Konto muss zuerst einen zweiten Faktor einrichten. Bitte in einem neuen Tab erledigen, ihn dann schließen und hier weiterarbeiten. Ihre Eingabe wird danach automatisch gespeichert.'
         }
         if (this.saveAnmeldung) {
-          return 'Nicht gespeichert: Ihre Anmeldung ist abgelaufen. Bitte in einem neuen Tab neu anmelden und diese Seite offen lassen, danach wird automatisch gespeichert.'
+          return 'Nicht gespeichert: Ihre Anmeldung ist abgelaufen. Bitte in einem neuen Tab anmelden, ihn dann schließen und hier weiterarbeiten. Ihre Eingabe wird danach automatisch gespeichert.'
         }
         if (this.saveOffline) {
           return 'Nicht gespeichert: keine Verbindung. Bitte die Seite offen lassen, gespeichert wird, sobald die Verbindung wieder steht.'
@@ -332,10 +334,17 @@ export const preparationApp = defineComponent(() => {
     },
     /** Ziel des Hinweises bei abgelaufener Anmeldung bzw. fehlendem zweiten Faktor (öffnet im neuen Tab) */
     get anmeldeAdresse(): string {
-      const ziel = this.saveAnmeldungZiel
-      // Nur Pfade derselben Herkunft (kein //fremd.example)
-      if (this.saveAnmeldung === 'zweiter_faktor' && ziel.startsWith('/') && !ziel.startsWith('//')) return ziel
-      return '/accounts/login/?next=' + encodeURIComponent(window.location.pathname)
+      if (this.saveAnmeldung === 'zweiter_faktor' && this.saveAnmeldungZiel) {
+        // Nur Ziele derselben Herkunft
+        try {
+          const ziel = new URL(this.saveAnmeldungZiel, window.location.origin)
+          if (ziel.origin === window.location.origin) return ziel.pathname + ziel.search
+        } catch {
+          /* ungültig: Anmeldeseite */
+        }
+      }
+      // Ohne Rücksprung in die Vorbereitung (siehe saveStatusText)
+      return '/accounts/login/'
     },
     get annotationGroups(): Array<{ page: number; entries: Annotation[] }> {
       const byPage: Record<number, Annotation[]> = {}
@@ -355,7 +364,6 @@ export const preparationApp = defineComponent(() => {
         this.selectItem(this.items[0].id)
         if (window.innerWidth >= 1280) this.mobileTab = 'main'
       }
-      window.addEventListener('beforeunload', () => this.teardownRealtime())
       this.startSpeicherwache()
     },
 
@@ -447,6 +455,12 @@ export const preparationApp = defineComponent(() => {
      */
     startSpeicherwache(): void {
       speicherstandMelden = (stand) => this.uebernehmeSpeicherstand(stand)
+      // Echtzeit erst beim tatsächlichen Verlassen abbauen (nicht in beforeunload: bricht man dort ab, bliebe die
+      // Seite ohne Echtzeit); aus dem Zurück-Speicher des Browsers wieder verbinden
+      window.addEventListener('pagehide', () => this.teardownRealtime())
+      window.addEventListener('pageshow', (e: PageTransitionEvent) => {
+        if (e.persisted) this.connectRealtime()
+      })
       const verbergen = () => {
         speicher.verbergen = true
         this.flushTimers()
@@ -489,7 +503,10 @@ export const preparationApp = defineComponent(() => {
       }
     },
 
-    /** Einmal senden (Anlegen, Löschen, Hochladen, Verknüpfen): eine Wiederholung könnte doppelt anlegen */
+    /**
+     * Einmal senden (Anlegen, Löschen, Hochladen, Verknüpfen): eine Wiederholung könnte doppelt anlegen.
+     * Reiht sich hinter laufende bzw. wartende Aktualisierungen derselben Adresse ein.
+     */
     async apiSave(url: string, body?: unknown, method = 'POST'): Promise<JsonResponse | null> {
       const ergebnis = await speicher.senden({ url, body, method })
       if (ergebnis.ok) return ergebnis.daten
@@ -498,16 +515,16 @@ export const preparationApp = defineComponent(() => {
     },
 
     /**
-     * Felder eines Ziels aktualisieren (Position, Notiz, Redebeitrag …): neuester Stand gewinnt, bei Störung wird
-     * automatisch wiederholt. `null` auch, wenn ein neuerer Stand diesen ersetzt hat.
+     * Felder eines Ziels aktualisieren (Position, Notiz, Redebeitrag …): je Adresse der Reihe nach, Felder einer
+     * wartenden Aktualisierung werden zusammengeführt, bei Störung wird automatisch wiederholt. `null` auch, wenn
+     * ein späterer Stand diesen übernommen hat.
      */
     async apiSaveStand(
       url: string,
       fields: Record<string, unknown>,
       bezeichnung: string,
     ): Promise<JsonResponse | null> {
-      const schluessel = url + '|' + Object.keys(fields).sort().join(',')
-      const ergebnis = await speicher.senden({ url, body: fields, schluessel, bezeichnung })
+      const ergebnis = await speicher.senden({ url, body: fields, wiederholbar: true, bezeichnung })
       if (ergebnis.ok) return ergebnis.daten
       if (!ergebnis.ersetzt) console.error('Speichern fehlgeschlagen:', url, ergebnis.meldung)
       return null

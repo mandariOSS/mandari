@@ -4,15 +4,19 @@
  * Bisher ging eine Eingabe verloren, wenn ein Speichern scheiterte (Neustart beim Deploy, kurze Netzstörung):
  * Die Oberfläche zeigte „Nicht gespeichert“, wiederholte aber nichts. Hier gilt:
  *
- * - Aufträge mit Schlüssel (Feld eines Ziels, z. B. Position oder Notiz zu einem TOP) sind Aktualisierungen.
- *   Je Schlüssel läuft höchstens eine Anfrage; kommt ein neuerer Stand, ersetzt er den noch nicht gesendeten.
- *   So überschreibt nie ein älterer Stand einen neueren. Bei Störung (keine Antwort, 408/425/429/502/503/504)
- *   wird mit steigender Wartezeit wiederholt, solange die Seite offen ist.
- * - Abgelaufene Anmeldung bzw. fehlender zweiter Faktor halten die Aufträge an; sie werden erneut gesendet, sobald
- *   die Seite wieder Fokus bekommt, und sonst alle 30 s (Anmeldung in einem anderen Tab genügt).
- * - Aufträge ohne Schlüssel (Anlegen, Löschen, Hochladen) werden genau einmal gesendet: Eine Wiederholung könnte
+ * - Je Adresse (Position, Notiz, Redebeitrag eines TOPs …) läuft höchstens eine Anfrage, die übrigen warten in
+ *   einer Reihe. So kommen Anfragen an dasselbe Ziel in der Reihenfolge der Eingabe an, und ein älterer Stand
+ *   überschreibt nie einen neueren (auch nicht zwischen Feldern wie Position und Begründung oder zwischen
+ *   Inhalt und Löschen eines Redebeitrags).
+ * - Aktualisierungen (`wiederholbar`) werden mit der direkt folgenden Aktualisierung derselben Adresse
+ *   zusammengeführt (neuere Felder gewinnen) und bei Störung (keine Antwort, Zeitüberschreitung,
+ *   408/425/429/502/503/504) mit steigender Wartezeit wiederholt, solange die Seite offen ist; 500 bis zu
+ *   dreimal (z. B. kurz nach einem Deploy).
+ * - Abgelaufene Anmeldung bzw. fehlender zweiter Faktor halten Aktualisierungen an; sie werden erneut gesendet,
+ *   sobald die Seite wieder Fokus bekommt, und sonst alle 30 s (Anmeldung in einem anderen Tab genügt).
+ * - Alles andere (Anlegen, Löschen, Hochladen, Verknüpfen) wird genau einmal gesendet: Eine Wiederholung könnte
  *   doppelt anlegen. Die Eingabe bleibt beim Aufrufer stehen.
- * - Endgültige Fehler (400, 403, 404, 500 …) werden nicht wiederholt.
+ * - Endgültige Fehler (400, 403, 404 …) werden nicht wiederholt.
  *
  * Das Modul kennt kein Alpine; der Stand wird über `beiAenderung` gemeldet.
  */
@@ -27,9 +31,9 @@ export interface SpeicherAuftrag {
   method?: string
   /** JSON-Objekt oder FormData */
   body?: unknown
-  /** Gleiches Ziel: nur der neueste Stand wird gesendet, der Reihe nach, mit Wiederholung bei Störung */
-  schluessel?: string
-  /** Für Meldungen, z. B. „Position“ oder „Redebeitrag“ */
+  /** Aktualisierung von Feldern (idempotent): zusammenführen und bei Störung wiederholen */
+  wiederholbar?: boolean
+  /** Für Meldungen, z. B. „Position zu TOP 2“ */
   bezeichnung?: string
 }
 
@@ -41,15 +45,15 @@ export type SpeicherErgebnis =
 export type Anmeldeproblem = '' | 'abgelaufen' | 'zweiter_faktor'
 
 export interface SpeicherStand {
-  /** Anfragen unterwegs bzw. direkt dahinter eingereiht */
+  /** Anfragen unterwegs bzw. eingereiht */
   sendet: number
-  /** Aufträge, die nach einer Störung noch nicht gespeichert sind (warten oder werden gerade wiederholt) */
+  /** Aktualisierungen, die nach einer Störung noch nicht gespeichert sind (warten oder werden gerade wiederholt) */
   wiederholt: number
   offline: boolean
   anmeldung: Anmeldeproblem
   /** Adresse zum Einrichten des zweiten Faktors (aus der Antwort des Servers) */
   anmeldungZiel: string
-  /** Endgültig gescheitert (nicht wiederholbar); leer, wenn nichts offen ist */
+  /** Zuletzt endgültig gescheitert (nicht wiederholbar); leer, wenn nichts offen ist */
   fehler: string
   zuletztGespeichert: Date | null
 }
@@ -60,33 +64,39 @@ export interface SpeicherOptionen {
   wartezeitenMs?: number[]
   /** Abstand der Versuche bei abgelaufener Anmeldung */
   anmeldungWartezeitMs?: number
+  /** Zeitlimit je Anfrage einer Aktualisierung (danach gilt sie als gestört und wird wiederholt) */
+  zeitlimitMs?: number
   fetch?: typeof fetch
 }
 
 const WARTEZEITEN_MS = [1000, 2000, 4000, 8000, 15000, 30000]
 const ANMELDUNG_WARTEZEIT_MS = 30000
+const ZEITLIMIT_MS = 30000
 /** Antworten, bei denen die Anfrage nicht (sicher) verarbeitet wurde und eine Wiederholung hilft */
 const VORUEBERGEHEND = new Set([408, 425, 429, 502, 503, 504])
-/** Browser begrenzen keepalive-Anfragen auf 64 KiB je Seite */
+/** Versuche bei 500 (Serverfehler, z. B. direkt nach einem Deploy), danach endgültig */
+const VERSUCHE_BEI_500 = 3
+/** Browser begrenzen alle gleichzeitig laufenden keepalive-Anfragen zusammen auf 64 KiB */
 const KEEPALIVE_GRENZE = 60000
 
 interface Eintrag {
   auftrag: SpeicherAuftrag
   versuche: number
-  /** gerade unterwegs mit keepalive (überlebt das Verlassen der Seite) */
-  keepalive: boolean
+  /** Bytes, die gerade mit keepalive unterwegs sind (überleben das Verlassen der Seite); 0 = ohne keepalive */
+  keepalive: number
   aufloesen: (ergebnis: SpeicherErgebnis) => void
 }
 
 interface Platz {
   laufend: Eintrag | null
-  naechster: Eintrag | null
+  schlange: Eintrag[]
   timer: ReturnType<typeof setTimeout> | null
 }
 
 type Antwortart =
   | { art: 'ok'; daten: JsonAntwort }
   | { art: 'stoerung' }
+  | { art: 'serverfehler'; status: number }
   | { art: 'anmeldung'; problem: Exclude<Anmeldeproblem, ''>; ziel: string }
   | { art: 'fehler'; meldung: string }
 
@@ -106,34 +116,49 @@ async function bewerte(resp: Response): Promise<Antwortart> {
   // Abgelaufene Anmeldung: Django leitet auf die Anmeldeseite um, fetch folgt und liefert HTML
   if (resp.redirected && !istJson(resp)) return { art: 'anmeldung', problem: 'abgelaufen', ziel: '' }
   if (resp.status === 401) return { art: 'anmeldung', problem: 'abgelaufen', ziel: '' }
-  if (resp.status === 403) {
-    const daten = istJson(resp) ? await leseJson(resp) : null
-    if (daten?.error === 'two_factor_setup_required') {
-      return { art: 'anmeldung', problem: 'zweiter_faktor', ziel: String(daten.redirect || '') }
-    }
-    // 403 als HTML = CSRF-Prüfung (Token nach neuer Anmeldung in einem anderen Tab gewechselt)
-    if (!daten) return { art: 'anmeldung', problem: 'abgelaufen', ziel: '' }
-    return { art: 'fehler', meldung: typeof daten.error === 'string' ? daten.error : 'keine Berechtigung' }
-  }
   if (VORUEBERGEHEND.has(resp.status)) return { art: 'stoerung' }
-  if (!resp.ok) {
-    const daten = istJson(resp) ? await leseJson(resp) : null
-    const meldung = typeof daten?.error === 'string' ? daten.error : `Fehler ${resp.status}`
-    return { art: 'fehler', meldung }
+  if (resp.ok) {
+    const daten = await leseJson(resp)
+    return daten ? { art: 'ok', daten } : { art: 'fehler', meldung: 'unerwartete Antwort des Servers' }
   }
-  const daten = await leseJson(resp)
-  if (!daten) return { art: 'fehler', meldung: 'unerwartete Antwort des Servers' }
-  return { art: 'ok', daten }
+  const daten = istJson(resp) ? await leseJson(resp) : null
+  if (resp.status === 403 && daten?.error === 'two_factor_setup_required') {
+    return { art: 'anmeldung', problem: 'zweiter_faktor', ziel: String(daten.redirect || '') }
+  }
+  if (resp.status === 500) return { art: 'serverfehler', status: 500 }
+  if (typeof daten?.error === 'string') return { art: 'fehler', meldung: daten.error }
+  return { art: 'fehler', meldung: resp.status === 403 ? 'Zugriff verweigert' : `Fehler ${resp.status}` }
+}
+
+function istObjekt(wert: unknown): wert is Record<string, unknown> {
+  return typeof wert === 'object' && wert !== null && !(wert instanceof FormData) && !Array.isArray(wert)
+}
+
+/** Zwei Aktualisierungen derselben Adresse lassen sich zu einer zusammenführen (die spätere gewinnt je Feld) */
+function zusammenfuehrbar(a: Eintrag, b: Eintrag): boolean {
+  return (
+    !!a.auftrag.wiederholbar &&
+    !!b.auftrag.wiederholbar &&
+    (a.auftrag.method || 'POST') === (b.auftrag.method || 'POST') &&
+    istObjekt(a.auftrag.body) &&
+    istObjekt(b.auftrag.body)
+  )
+}
+
+function bytes(text: string): number {
+  return new TextEncoder().encode(text).length
 }
 
 export class Speicherdienst {
   /** Seite wird verborgen bzw. verlassen: kleine Anfragen mit keepalive senden */
   verbergen = false
 
+  /** Je Adresse eine Reihe */
   private plaetze = new Map<string, Platz>()
-  /** Endgültig gescheiterte Aufträge je Schlüssel (bis derselbe Schlüssel gespeichert wird) */
+  /** Endgültig gescheiterte Aufträge (Aktualisierungen je Adresse, sonst je Auftrag) mit Meldung */
   private fehlgeschlagen = new Map<string, string>()
   private zaehler = 0
+  private keepaliveBytes = 0
   private anmeldung: Anmeldeproblem = ''
   private anmeldungZiel = ''
   private offline = false
@@ -141,55 +166,57 @@ export class Speicherdienst {
   private readonly beiAenderung: (stand: SpeicherStand) => void
   private readonly wartezeiten: number[]
   private readonly anmeldungWartezeit: number
+  private readonly zeitlimit: number
   private readonly abrufen: typeof fetch
 
   constructor(optionen: SpeicherOptionen = {}) {
     this.beiAenderung = optionen.beiAenderung || (() => {})
     this.wartezeiten = optionen.wartezeitenMs?.length ? optionen.wartezeitenMs : WARTEZEITEN_MS
     this.anmeldungWartezeit = optionen.anmeldungWartezeitMs ?? ANMELDUNG_WARTEZEIT_MS
+    this.zeitlimit = optionen.zeitlimitMs ?? ZEITLIMIT_MS
     this.abrufen = optionen.fetch || ((...args: Parameters<typeof fetch>) => fetch(...args))
   }
 
   /**
-   * Auftrag senden. Die Anfrage startet synchron (wichtig beim Verlassen der Seite), außer derselbe Schlüssel
-   * ist gerade unterwegs; dann folgt sie direkt danach. Das Ergebnis kommt erst, wenn gespeichert, endgültig
-   * gescheitert oder durch einen neueren Stand ersetzt.
+   * Auftrag senden. Die Anfrage startet synchron (wichtig beim Verlassen der Seite), außer an dieselbe Adresse
+   * läuft schon eine bzw. es wird auf eine Wiederholung gewartet; dann reiht sie sich ein. Das Ergebnis kommt,
+   * wenn gespeichert, endgültig gescheitert oder durch einen späteren Stand ersetzt (zusammengeführt).
    */
   senden(auftrag: SpeicherAuftrag): Promise<SpeicherErgebnis> {
-    const schluessel = auftrag.schluessel || `einzel-${++this.zaehler}`
     return new Promise<SpeicherErgebnis>((aufloesen) => {
-      const eintrag: Eintrag = { auftrag, versuche: 0, keepalive: false, aufloesen }
-      let platz = this.plaetze.get(schluessel)
+      let platz = this.plaetze.get(auftrag.url)
       if (!platz) {
-        platz = { laufend: null, naechster: null, timer: null }
-        this.plaetze.set(schluessel, platz)
+        platz = { laufend: null, schlange: [], timer: null }
+        this.plaetze.set(auftrag.url, platz)
       }
-      if (platz.naechster) {
-        // Älterer, noch nicht gesendeter Stand: der neue ersetzt ihn und übernimmt die Zahl der Versuche
-        eintrag.versuche = platz.naechster.versuche
-        platz.naechster.aufloesen({ ok: false, ersetzt: true })
+      const eintrag: Eintrag = { auftrag, versuche: 0, keepalive: 0, aufloesen }
+      const letzter = platz.schlange[platz.schlange.length - 1]
+      if (letzter && zusammenfuehrbar(letzter, eintrag)) {
+        platz.schlange[platz.schlange.length - 1] = this.zusammenfuehren(letzter, eintrag)
+      } else {
+        platz.schlange.push(eintrag)
       }
-      platz.naechster = eintrag
-      if (!platz.laufend && (!platz.timer || this.anmeldung)) {
-        // Wartet der Platz auf eine Wiederholung, bleibt es dabei; nur bei abgelaufener Anmeldung sofort probieren
-        this.starte(schluessel, platz)
-      }
+      // Wartet die Adresse auf eine Wiederholung, bleibt es dabei; nur bei abgelaufener Anmeldung sofort probieren
+      if (!platz.laufend && (!platz.timer || this.anmeldung)) this.starte(platz)
       this.melde()
     })
   }
 
   /** Alles, was auf eine Wiederholung wartet, sofort senden (wieder online, Seite wieder im Vordergrund) */
   jetztWiederholen(): void {
-    for (const [schluessel, platz] of this.plaetze) {
-      if (platz.timer && !platz.laufend && platz.naechster) this.starte(schluessel, platz)
+    for (const platz of this.plaetze.values()) {
+      if (platz.timer && !platz.laufend) this.starte(platz)
     }
   }
 
-  /** Beim Verlassen nachfragen? Nur, wenn ein Stand noch nicht sicher unterwegs ist. */
+  /** Beim Verlassen nachfragen? Wenn eine Eingabe noch nicht sicher unterwegs bzw. endgültig nicht gespeichert ist. */
   mussWarnen(): boolean {
     for (const platz of this.plaetze.values()) {
-      if (platz.naechster) return true
+      if (platz.schlange.length > 0) return true
       if (platz.laufend && !platz.laufend.keepalive) return true
+    }
+    for (const schluessel of this.fehlgeschlagen.keys()) {
+      if (schluessel.startsWith('stand:')) return true
     }
     return false
   }
@@ -198,20 +225,19 @@ export class Speicherdienst {
     let sendet = 0
     let wiederholt = 0
     for (const platz of this.plaetze.values()) {
-      for (const e of [platz.laufend, platz.naechster]) {
+      for (const e of [platz.laufend, ...platz.schlange]) {
         if (!e) continue
         if (e.versuche > 0) wiederholt++
         else sendet++
       }
     }
-    const fehler = [...this.fehlgeschlagen.values()].pop() || ''
     return {
       sendet,
       wiederholt,
       offline: this.offline,
       anmeldung: this.anmeldung,
       anmeldungZiel: this.anmeldungZiel,
-      fehler,
+      fehler: [...this.fehlgeschlagen.values()].pop() || '',
       zuletztGespeichert: this.zuletztGespeichert,
     }
   }
@@ -222,20 +248,33 @@ export class Speicherdienst {
     this.beiAenderung(this.stand())
   }
 
-  private starte(schluessel: string, platz: Platz): void {
-    const eintrag = platz.naechster
-    if (!eintrag) return
+  /** `spaeter` ersetzt `frueher`: Felder zusammengeführt, die Zahl der Versuche bleibt erhalten */
+  private zusammenfuehren(frueher: Eintrag, spaeter: Eintrag): Eintrag {
+    frueher.aufloesen({ ok: false, ersetzt: true })
+    return {
+      auftrag: {
+        ...spaeter.auftrag,
+        body: { ...(frueher.auftrag.body as object), ...(spaeter.auftrag.body as object) },
+      },
+      versuche: Math.max(frueher.versuche, spaeter.versuche),
+      keepalive: 0,
+      aufloesen: spaeter.aufloesen,
+    }
+  }
+
+  private starte(platz: Platz): void {
     if (platz.timer) {
       clearTimeout(platz.timer)
       platz.timer = null
     }
-    platz.naechster = null
+    const eintrag = platz.schlange.shift()
+    if (!eintrag) return
     platz.laufend = eintrag
-    void this.uebertrage(schluessel, platz, eintrag)
+    void this.uebertrage(platz, eintrag)
   }
 
-  private async uebertrage(schluessel: string, platz: Platz, eintrag: Eintrag): Promise<void> {
-    const { url, method = 'POST', body } = eintrag.auftrag
+  private async uebertrage(platz: Platz, eintrag: Eintrag): Promise<void> {
+    const { url, method = 'POST', body, wiederholbar } = eintrag.auftrag
     const headers: Record<string, string> = {
       // Aus dem Cookie, nicht aus dem Meta-Tag: nach einer neuen Anmeldung im anderen Tab ist nur das Cookie aktuell
       'X-CSRFToken': csrfTokenAktuell(),
@@ -249,7 +288,15 @@ export class Speicherdienst {
       headers['Content-Type'] = 'application/json'
       daten = JSON.stringify(body)
     }
-    eintrag.keepalive = this.verbergen && typeof daten === 'string' && daten.length < KEEPALIVE_GRENZE
+    if (this.verbergen && typeof daten === 'string') {
+      const groesse = bytes(daten)
+      if (this.keepaliveBytes + groesse < KEEPALIVE_GRENZE) {
+        eintrag.keepalive = groesse
+        this.keepaliveBytes += groesse
+      }
+    }
+    const zeitlimit =
+      wiederholbar && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(this.zeitlimit) : null
     let antwort: Antwortart
     try {
       const resp = await this.abrufen(url, {
@@ -257,54 +304,74 @@ export class Speicherdienst {
         headers,
         body: daten,
         credentials: 'same-origin',
-        keepalive: eintrag.keepalive,
+        keepalive: eintrag.keepalive > 0,
+        ...(zeitlimit ? { signal: zeitlimit } : {}),
       })
       antwort = await bewerte(resp)
     } catch {
       antwort = { art: 'stoerung' }
     }
-    this.verarbeite(schluessel, platz, eintrag, antwort)
+    this.keepaliveBytes -= eintrag.keepalive
+    eintrag.keepalive = 0
+    this.verarbeite(platz, eintrag, antwort)
   }
 
-  private verarbeite(schluessel: string, platz: Platz, eintrag: Eintrag, antwort: Antwortart): void {
+  private verarbeite(platz: Platz, eintrag: Eintrag, antwort: Antwortart): void {
     platz.laufend = null
-    const wiederholbar = !!eintrag.auftrag.schluessel
+    const { url, wiederholbar } = eintrag.auftrag
 
     if (antwort.art === 'ok') {
       this.offline = false
-      this.anmeldung = ''
-      this.anmeldungZiel = ''
       this.zuletztGespeichert = new Date()
-      this.fehlgeschlagen.delete(schluessel)
-      // Einmal-Fehler (ohne Schlüssel) gelten wie bisher als erledigt, sobald wieder etwas gespeichert wurde
-      for (const k of [...this.fehlgeschlagen.keys()]) if (k.startsWith('einzel-')) this.fehlgeschlagen.delete(k)
-      eintrag.aufloesen({ ok: true, daten: antwort.daten })
-    } else if (antwort.art === 'fehler' || !wiederholbar) {
-      const meldung = this.meldungFuer(eintrag, antwort)
-      this.fehlgeschlagen.set(schluessel, meldung)
-      if (antwort.art === 'anmeldung') this.setzeAnmeldung(antwort)
-      eintrag.aufloesen({ ok: false, ersetzt: false, meldung })
-    } else {
-      // Störung oder Anmeldung: Stand behalten und später erneut senden (ein neuerer Stand ersetzt ihn)
-      eintrag.versuche++
-      if (platz.naechster) {
-        platz.naechster.versuche = Math.max(platz.naechster.versuche, eintrag.versuche)
-        eintrag.aufloesen({ ok: false, ersetzt: true })
-      } else {
-        platz.naechster = eintrag
+      this.fehlgeschlagen.delete(`stand:${url}`)
+      // Einmal-Fehler gelten wie bisher als erledigt, sobald wieder etwas gespeichert wurde
+      for (const k of [...this.fehlgeschlagen.keys()]) {
+        if (k.startsWith('einzel:')) this.fehlgeschlagen.delete(k)
       }
-      if (antwort.art === 'anmeldung') this.setzeAnmeldung(antwort)
-      else this.offline = typeof navigator !== 'undefined' && navigator.onLine === false
-      this.plane(schluessel, platz, antwort.art === 'anmeldung')
+      eintrag.aufloesen({ ok: true, daten: antwort.daten })
+      if (this.anmeldung) {
+        // Wieder angemeldet: alles, was auf die Anmeldung wartet, jetzt senden
+        this.anmeldung = ''
+        this.anmeldungZiel = ''
+        this.jetztWiederholen()
+      }
+    } else if (wiederholbar && this.nochmal(eintrag, antwort)) {
+      // Stand behalten und später erneut senden; eine direkt folgende Aktualisierung wird angehängt
+      eintrag.versuche++
+      const naechster = platz.schlange[0]
+      if (naechster && zusammenfuehrbar(eintrag, naechster)) {
+        platz.schlange[0] = this.zusammenfuehren(eintrag, naechster)
+      } else {
+        platz.schlange.unshift(eintrag)
+      }
+      if (antwort.art === 'anmeldung') {
+        this.anmeldung = antwort.problem
+        this.anmeldungZiel = antwort.ziel
+      } else {
+        this.offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      }
+      this.plane(platz, antwort.art === 'anmeldung')
+    } else {
+      const meldung = this.meldungFuer(eintrag, antwort)
+      const schluessel = wiederholbar ? `stand:${url}` : `einzel:${++this.zaehler}`
+      // Neu einsortieren, damit die jüngste Meldung angezeigt wird
+      this.fehlgeschlagen.delete(schluessel)
+      this.fehlgeschlagen.set(schluessel, meldung)
+      eintrag.aufloesen({ ok: false, ersetzt: false, meldung })
     }
 
-    if (platz.naechster && !platz.timer) this.starte(schluessel, platz)
-    if (!platz.laufend && !platz.naechster && !platz.timer) this.plaetze.delete(schluessel)
+    if (platz.schlange.length > 0 && !platz.timer && !platz.laufend) this.starte(platz)
+    if (!platz.laufend && platz.schlange.length === 0 && !platz.timer) this.plaetze.delete(url)
     this.melde()
   }
 
-  private plane(schluessel: string, platz: Platz, anmeldung: boolean): void {
-    const versuch = platz.naechster?.versuche || 1
+  private nochmal(eintrag: Eintrag, antwort: Antwortart): boolean {
+    if (antwort.art === 'stoerung' || antwort.art === 'anmeldung') return true
+    return antwort.art === 'serverfehler' && eintrag.versuche + 1 < VERSUCHE_BEI_500
+  }
+
+  private plane(platz: Platz, anmeldung: boolean): void {
+    const versuch = platz.schlange[0]?.versuche || 1
     const basis = anmeldung
       ? this.anmeldungWartezeit
       : this.wartezeiten[Math.min(versuch - 1, this.wartezeiten.length - 1)]
@@ -312,18 +379,14 @@ export class Speicherdienst {
     const wartezeit = Math.round(basis * (0.85 + Math.random() * 0.3))
     platz.timer = setTimeout(() => {
       platz.timer = null
-      if (platz.naechster && !platz.laufend) this.starte(schluessel, platz)
+      if (!platz.laufend) this.starte(platz)
     }, wartezeit)
-  }
-
-  private setzeAnmeldung(antwort: Extract<Antwortart, { art: 'anmeldung' }>): void {
-    this.anmeldung = antwort.problem
-    this.anmeldungZiel = antwort.ziel
   }
 
   private meldungFuer(eintrag: Eintrag, antwort: Antwortart): string {
     const was = eintrag.auftrag.bezeichnung || 'Änderung'
     if (antwort.art === 'fehler') return `${was} nicht gespeichert: ${antwort.meldung}`
+    if (antwort.art === 'serverfehler') return `${was} nicht gespeichert: Fehler auf dem Server`
     if (antwort.art === 'anmeldung') return `${was} nicht gespeichert: Anmeldung abgelaufen`
     return `${was} nicht gespeichert: keine Verbindung zum Server`
   }

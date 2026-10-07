@@ -84,9 +84,11 @@ async function test(name, fn) {
   }
 }
 
+const S = { wiederholbar: true }
+
 await test('Erfolg: Daten zurück, Stand ohne Fehler, CSRF-Token aus dem Cookie', async () => {
   const { d, aufrufe } = dienst([json({ success: true })])
-  const e = await d.senden({ url: '/x/', body: { position: 'for' }, schluessel: 'k' })
+  const e = await d.senden({ url: '/x/', body: { position: 'for' }, ...S })
   assert.equal(e.ok, true)
   assert.deepEqual(e.daten, { success: true })
   assert.equal(aufrufe[0].opts.headers['X-CSRFToken'], 'token-aus-cookie')
@@ -101,31 +103,43 @@ await test('Erfolg: Daten zurück, Stand ohne Fehler, CSRF-Token aus dem Cookie'
 
 await test('Neustart (502, dann Netzfehler) wird automatisch wiederholt und gespeichert', async () => {
   const { d, aufrufe, staende } = dienst([json({}, 502), new TypeError('Failed to fetch'), json({ success: true })])
-  const e = await d.senden({ url: '/x/', body: { position: 'for' }, schluessel: 'k' })
+  const e = await d.senden({ url: '/x/', body: { position: 'for' }, ...S })
   assert.equal(e.ok, true)
   assert.equal(aufrufe.length, 3)
-  assert.ok(staende.some((s) => s.wiederholt === 1), 'Zwischenstand meldet die Wiederholung')
+  assert.ok(
+    staende.some((s) => s.wiederholt === 1),
+    'Zwischenstand meldet die Wiederholung',
+  )
   assert.equal(d.stand().wiederholt, 0)
 })
 
 await test('503, 504 und 429 gelten als vorübergehend', async () => {
   for (const status of [503, 504, 429]) {
     const { d, aufrufe } = dienst([json({}, status), json({ success: true })])
-    const e = await d.senden({ url: '/x/', body: { a: 1 }, schluessel: 'k' })
+    const e = await d.senden({ url: '/x/', body: { a: 1 }, ...S })
     assert.equal(e.ok, true, `Status ${status}`)
     assert.equal(aufrufe.length, 2, `Status ${status}`)
   }
 })
 
-await test('Während eine Anfrage läuft: nur der neueste Stand folgt, ältere werden ersetzt', async () => {
+await test('500 wird bei Aktualisierungen bis zu dreimal versucht, dann endgültig gemeldet', async () => {
+  const { d, aufrufe } = dienst([json({}, 500)])
+  const e = await d.senden({ url: '/x/', body: { a: 1 }, ...S, bezeichnung: 'Notiz' })
+  assert.equal(e.ok, false)
+  assert.equal(e.meldung, 'Notiz nicht gespeichert: Fehler auf dem Server')
+  assert.equal(aufrufe.length, 3)
+  assert.equal(d.mussWarnen(), true, 'Eingabe ist nicht gespeichert: beim Verlassen nachfragen')
+})
+
+await test('Während eine Anfrage läuft: wartende Stände werden zusammengeführt, der neueste gewinnt', async () => {
   let freigeben
   const erste = new Promise((r) => {
     freigeben = r
   })
   const { d, aufrufe } = dienst([() => erste.then(() => json({ success: true })), json({ success: true })])
-  const a = d.senden({ url: '/x/', body: { content: 'A' }, schluessel: 'k' })
-  const b = d.senden({ url: '/x/', body: { content: 'AB' }, schluessel: 'k' })
-  const c = d.senden({ url: '/x/', body: { content: 'ABC' }, schluessel: 'k' })
+  const a = d.senden({ url: '/x/', body: { content: 'A' }, ...S })
+  const b = d.senden({ url: '/x/', body: { content: 'AB' }, ...S })
+  const c = d.senden({ url: '/x/', body: { content: 'ABC' }, ...S })
   assert.equal(aufrufe.length, 1, 'zweite Anfrage wartet auf die erste')
   assert.equal(d.mussWarnen(), true)
   freigeben()
@@ -138,12 +152,12 @@ await test('Während eine Anfrage läuft: nur der neueste Stand folgt, ältere w
   )
 })
 
-await test('Nach einer Störung ersetzt ein neuer Stand den wartenden (kein alter Stand überschreibt)', async () => {
+await test('Nach einer Störung übernimmt ein neuer Stand den wartenden (kein alter Stand überschreibt)', async () => {
   const { d, aufrufe } = dienst([json({}, 502), json({ success: true })])
-  const alt = d.senden({ url: '/x/', body: { content: 'alt' }, schluessel: 'k' })
+  const alt = d.senden({ url: '/x/', body: { content: 'alt' }, ...S })
   await pause(2)
   assert.equal(d.stand().wiederholt, 1)
-  const neu = d.senden({ url: '/x/', body: { content: 'neu' }, schluessel: 'k' })
+  const neu = d.senden({ url: '/x/', body: { content: 'neu' }, ...S })
   assert.deepEqual(await alt, { ok: false, ersetzt: true })
   assert.equal((await neu).ok, true)
   assert.deepEqual(
@@ -152,11 +166,60 @@ await test('Nach einer Störung ersetzt ein neuer Stand den wartenden (kein alte
   )
 })
 
-await test('Verschiedene Schlüssel laufen unabhängig', async () => {
+await test('Verschiedene Felder derselben Adresse laufen nacheinander, nie gleichzeitig (B1)', async () => {
+  let freigeben
+  const erste = new Promise((r) => {
+    freigeben = r
+  })
+  const { d, aufrufe } = dienst([() => erste.then(() => json({ success: true })), json({ success: true })])
+  const p = d.senden({ url: '/pos/', body: { position: 'for' }, ...S })
+  const o = d.senden({ url: '/pos/', body: { outcome: 'accepted' }, ...S })
+  const r = d.senden({ url: '/pos/', body: { reasoning: 'X' }, ...S })
+  assert.equal(aufrufe.length, 1)
+  freigeben()
+  await Promise.all([p, o, r])
+  assert.deepEqual(
+    aufrufe.map((x) => x.body),
+    [{ position: 'for' }, { outcome: 'accepted', reasoning: 'X' }],
+  )
+})
+
+await test('Scheitert die Position, wird sie mit der wartenden Begründung zusammen wiederholt (B1)', async () => {
+  let antwort
+  const erste = new Promise((r) => {
+    antwort = r
+  })
+  const { d, aufrufe } = dienst([() => erste, json({ success: true })])
+  const p = d.senden({ url: '/pos/', body: { position: 'for' }, ...S })
+  const r = d.senden({ url: '/pos/', body: { reasoning: 'X' }, ...S })
+  antwort(json({}, 502))
+  assert.deepEqual(await p, { ok: false, ersetzt: true })
+  assert.equal((await r).ok, true)
+  assert.deepEqual(
+    aufrufe.map((x) => x.body),
+    [{ position: 'for' }, { position: 'for', reasoning: 'X' }],
+  )
+})
+
+await test('Löschen wartet hinter der Wiederholung desselben Redebeitrags, nichts entsteht neu (B2)', async () => {
+  const { d, aufrufe } = dienst([json({}, 502), json({ success: true })])
+  const inhalt = d.senden({ url: '/speech/', body: { content: 'alt' }, ...S })
+  await pause(2)
+  const loeschen = d.senden({ url: '/speech/', method: 'DELETE' })
+  assert.equal(aufrufe.length, 1, 'Löschen wartet, bis der Inhalt gespeichert ist')
+  assert.equal((await inhalt).ok, true)
+  assert.equal((await loeschen).ok, true)
+  assert.deepEqual(
+    aufrufe.map((x) => x.opts.method),
+    ['POST', 'POST', 'DELETE'],
+  )
+})
+
+await test('Verschiedene Adressen laufen unabhängig', async () => {
   const { d, aufrufe } = dienst([json({ success: true })])
   const [a, b] = await Promise.all([
-    d.senden({ url: '/p/', body: { position: 'for' }, schluessel: 'p|position' }),
-    d.senden({ url: '/p/', body: { outcome: 'accepted' }, schluessel: 'p|outcome' }),
+    d.senden({ url: '/top1/', body: { position: 'for' }, ...S }),
+    d.senden({ url: '/top2/', body: { position: 'against' }, ...S }),
   ])
   assert.equal(a.ok && b.ok, true)
   assert.equal(aufrufe.length, 2)
@@ -164,39 +227,48 @@ await test('Verschiedene Schlüssel laufen unabhängig', async () => {
 
 await test('400 wird nicht wiederholt; Meldung nennt das Ziel; erfolgreiches Speichern räumt den Fehler weg', async () => {
   const { d, aufrufe } = dienst([json({ error: 'Ungültige Position' }, 400), json({ success: true })])
-  const e = await d.senden({ url: '/x/', body: { position: '?' }, schluessel: 'k', bezeichnung: 'Position zu TOP 2' })
+  const e = await d.senden({ url: '/x/', body: { position: '?' }, ...S, bezeichnung: 'Position zu TOP 2' })
   assert.equal(e.ok, false)
   assert.equal(e.ersetzt, false)
   assert.equal(e.meldung, 'Position zu TOP 2 nicht gespeichert: Ungültige Position')
   assert.equal(aufrufe.length, 1)
   assert.equal(d.stand().fehler, 'Position zu TOP 2 nicht gespeichert: Ungültige Position')
-  assert.equal(d.mussWarnen(), false, 'endgültige Fehler halten niemanden auf der Seite')
-  await d.senden({ url: '/x/', body: { position: 'for' }, schluessel: 'k' })
+  await d.senden({ url: '/x/', body: { position: 'for' }, ...S })
   assert.equal(d.stand().fehler, '')
-})
-
-await test('404 und 500 werden nicht wiederholt', async () => {
-  for (const status of [404, 500]) {
-    const { d, aufrufe } = dienst([json({}, status)])
-    const e = await d.senden({ url: '/x/', body: { a: 1 }, schluessel: 'k' })
-    assert.equal(e.ok, false, `Status ${status}`)
-    assert.equal(aufrufe.length, 1, `Status ${status}`)
-  }
-})
-
-await test('Ohne Schlüssel (Anlegen) wird auch bei Störung nur einmal gesendet', async () => {
-  const { d, aufrufe } = dienst([json({}, 502)])
-  const e = await d.senden({ url: '/notes/', body: { content: 'Hallo' } })
-  assert.equal(e.ok, false)
-  assert.match(e.meldung, /keine Verbindung/)
-  await pause(40)
-  assert.equal(aufrufe.length, 1)
   assert.equal(d.mussWarnen(), false)
 })
 
+await test('Angezeigt wird die jüngste Fehlermeldung (B7)', async () => {
+  const { d } = dienst([json({ error: 'kaputt' }, 400)])
+  await d.senden({ url: '/p/', body: { a: 1 }, ...S, bezeichnung: 'P' })
+  await d.senden({ url: '/n/', body: { a: 1 }, ...S, bezeichnung: 'N' })
+  await d.senden({ url: '/p/', body: { a: 2 }, ...S, bezeichnung: 'P' })
+  assert.equal(d.stand().fehler, 'P nicht gespeichert: kaputt')
+})
+
+await test('404 wird nicht wiederholt', async () => {
+  const { d, aufrufe } = dienst([json({}, 404)])
+  const e = await d.senden({ url: '/x/', body: { a: 1 }, ...S })
+  assert.equal(e.ok, false)
+  assert.equal(aufrufe.length, 1)
+})
+
+await test('Einmal-Aufträge (Anlegen) werden auch bei Störung oder 500 nur einmal gesendet', async () => {
+  for (const antwort of [json({}, 502), json({}, 500)]) {
+    const { d, aufrufe } = dienst([antwort])
+    const e = await d.senden({ url: '/notes/', body: { content: 'Hallo' } })
+    assert.equal(e.ok, false)
+    await pause(40)
+    assert.equal(aufrufe.length, 1)
+    assert.equal(d.mussWarnen(), false)
+  }
+})
+
 await test('Abgelaufene Anmeldung (Umleitung auf HTML): Stand bleibt, wird nach neuer Anmeldung gesendet', async () => {
-  const { d, aufrufe } = dienst([html(200, { redirected: true }), json({ success: true })], { anmeldungWartezeitMs: 10000 })
-  const e = d.senden({ url: '/x/', body: { content: 'Text' }, schluessel: 'k' })
+  const { d, aufrufe } = dienst([html(200, { redirected: true }), json({ success: true })], {
+    anmeldungWartezeitMs: 10000,
+  })
+  const e = d.senden({ url: '/x/', body: { content: 'Text' }, ...S })
   await pause(2)
   const s = d.stand()
   assert.equal(s.anmeldung, 'abgelaufen')
@@ -208,11 +280,33 @@ await test('Abgelaufene Anmeldung (Umleitung auf HTML): Stand bleibt, wird nach 
   assert.equal(d.stand().anmeldung, '')
 })
 
+await test('Nach erfolgreicher Anmeldung werden auch die übrigen wartenden Adressen sofort gesendet (B7)', async () => {
+  const antworten = new Map([
+    ['/a/', [html(200, { redirected: true }), json({ success: true })]],
+    ['/b/', [json({ success: true })]],
+  ])
+  const aufrufe = []
+  const d = new Speicherdienst({
+    fetch: async (url) => {
+      aufrufe.push(url)
+      return antworten.get(url).shift()
+    },
+    wartezeitenMs: [10],
+    anmeldungWartezeitMs: 10000,
+  })
+  const a = d.senden({ url: '/a/', body: { x: 1 }, ...S })
+  await pause(2)
+  assert.equal(d.stand().anmeldung, 'abgelaufen')
+  await d.senden({ url: '/b/', body: { x: 1 }, ...S })
+  assert.equal((await a).ok, true, 'ohne 10 s auf den Timer zu warten')
+  assert.deepEqual(aufrufe, ['/a/', '/b/', '/a/'])
+})
+
 await test('403 two_factor_setup_required: Hinweis mit Ziel, Stand bleibt', async () => {
   const { d } = dienst([json({ error: 'two_factor_setup_required', redirect: '/accounts/2fa/' }, 403)], {
     anmeldungWartezeitMs: 10000,
   })
-  void d.senden({ url: '/x/', body: { content: 'Text' }, schluessel: 'k' })
+  void d.senden({ url: '/x/', body: { content: 'Text' }, ...S })
   await pause(2)
   const s = d.stand()
   assert.equal(s.anmeldung, 'zweiter_faktor')
@@ -220,32 +314,35 @@ await test('403 two_factor_setup_required: Hinweis mit Ziel, Stand bleibt', asyn
   assert.equal(s.wiederholt, 1)
 })
 
-await test('403 als HTML (CSRF nach neuer Anmeldung) gilt als Anmeldeproblem und wird wiederholt', async () => {
-  const { d, aufrufe } = dienst([html(403), json({ success: true })])
-  const e = await d.senden({ url: '/x/', body: { a: 1 }, schluessel: 'k' })
-  assert.equal(e.ok, true)
-  assert.equal(aufrufe.length, 2)
+await test('403 als HTML (z. B. Recht entzogen) ist endgültig, keine Dauerschleife (B4)', async () => {
+  const { d, aufrufe } = dienst([html(403)])
+  const e = await d.senden({ url: '/x/', body: { a: 1 }, ...S, bezeichnung: 'Notiz' })
+  assert.equal(e.ok, false)
+  assert.equal(e.meldung, 'Notiz nicht gespeichert: Zugriff verweigert')
+  await pause(40)
+  assert.equal(aufrufe.length, 1)
+  assert.equal(d.stand().anmeldung, '')
 })
 
 await test('403 mit JSON-Fehler (keine Berechtigung) ist endgültig', async () => {
   const { d, aufrufe } = dienst([json({ error: 'Unauthorized' }, 403)])
-  const e = await d.senden({ url: '/x/', body: { a: 1 }, schluessel: 'k', bezeichnung: 'Notiz' })
+  const e = await d.senden({ url: '/x/', body: { a: 1 }, ...S, bezeichnung: 'Notiz' })
   assert.equal(e.ok, false)
   assert.equal(e.meldung, 'Notiz nicht gespeichert: Unauthorized')
   assert.equal(aufrufe.length, 1)
 })
 
-await test('Beim Verlassen: kleine Anfragen mit keepalive, keine Rückfrage; große ohne keepalive, mit Rückfrage', async () => {
+await test('Beim Verlassen: kleine Anfragen mit keepalive, keine Rückfrage; große ohne, mit Rückfrage', async () => {
   let freigeben
   const offen = new Promise((r) => {
     freigeben = r
   })
   const { d, aufrufe } = dienst([() => offen.then(() => json({ success: true }))])
   d.verbergen = true
-  const klein = d.senden({ url: '/x/', body: { content: 'kurz' }, schluessel: 'a' })
+  const klein = d.senden({ url: '/a/', body: { content: 'kurz' }, ...S })
   assert.equal(aufrufe[0].opts.keepalive, true)
   assert.equal(d.mussWarnen(), false)
-  const gross = d.senden({ url: '/x/', body: { content: 'x'.repeat(70000) }, schluessel: 'b' })
+  const gross = d.senden({ url: '/b/', body: { content: 'x'.repeat(70000) }, ...S })
   assert.equal(aufrufe[1].opts.keepalive, false)
   assert.equal(d.mussWarnen(), true)
   freigeben()
@@ -253,9 +350,28 @@ await test('Beim Verlassen: kleine Anfragen mit keepalive, keine Rückfrage; gro
   assert.equal(d.mussWarnen(), false)
 })
 
+await test('keepalive: Grenze in Bytes über alle laufenden Anfragen (B6)', async () => {
+  let freigeben
+  const offen = new Promise((r) => {
+    freigeben = r
+  })
+  const { d, aufrufe } = dienst([() => offen.then(() => json({ success: true }))])
+  d.verbergen = true
+  // 20.000 Zeichen „ä“ = 40.000 Bytes: die erste passt, die zweite nicht mehr dazu
+  const a = d.senden({ url: '/a/', body: { content: 'ä'.repeat(20000) }, ...S })
+  const b = d.senden({ url: '/b/', body: { content: 'ä'.repeat(20000) }, ...S })
+  assert.equal(aufrufe[0].opts.keepalive, true)
+  assert.equal(aufrufe[1].opts.keepalive, false)
+  freigeben()
+  await Promise.all([a, b])
+  // Nach dem Ende ist das Kontingent wieder frei
+  await d.senden({ url: '/c/', body: { content: 'ä'.repeat(20000) }, ...S })
+  assert.equal(aufrufe[2].opts.keepalive, true)
+})
+
 await test('Senden startet synchron (nötig beim Verlassen der Seite)', async () => {
   const { d, aufrufe } = dienst([json({ success: true })])
-  const e = d.senden({ url: '/x/', body: { a: 1 }, schluessel: 'k' })
+  const e = d.senden({ url: '/x/', body: { a: 1 }, ...S })
   assert.equal(aufrufe.length, 1)
   await e
 })

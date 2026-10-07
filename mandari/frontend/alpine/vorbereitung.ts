@@ -338,7 +338,6 @@ export function vorbereitung() {
       const ziel = this.topAusAdresse()
       if (ziel) this.selectItem(ziel)
       else if (this.items.length > 0) this.selectItem(this.items[0].id)
-      window.addEventListener('beforeunload', () => this.teardownRealtime())
       this.startSpeicherwache()
       this.beobachteReiterleiste()
     },
