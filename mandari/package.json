@@ -54,6 +54,7 @@
     "vite": "^8.3.1"
   },
   "overrides": {
-    "shell-quote": "^1.12.0"
+    "shell-quote": "^1.12.0",
+    "postcss-selector-parser": "^7.1.6"
   }
 }
