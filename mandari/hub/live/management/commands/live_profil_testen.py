@@ -35,7 +35,8 @@ def _bild_aus_video(pfad: Path, sekunde: float) -> Image.Image:
             if spur.time_base is not None:
                 container.seek(int(sekunde / spur.time_base), stream=spur)
             for bild in container.decode(spur):
-                return bild.to_image()
+                ergebnis: Image.Image = bild.to_image()  # type: ignore[no-untyped-call]
+                return ergebnis
     except (av.FFmpegError, IndexError) as fehler:
         raise CommandError("Weder Bild noch lesbares Video") from fehler
     raise CommandError("Kein Bild an dieser Stelle")
@@ -76,7 +77,7 @@ class Command(BaseCommand):
         if not pfad.is_file():
             raise CommandError("Datei nicht gefunden")
         try:
-            bild = Image.open(pfad)
+            bild: Image.Image = Image.open(pfad)
             bild.load()
         except (UnidentifiedImageError, OSError):
             bild = _bild_aus_video(pfad, optionen["sekunde"])

@@ -277,7 +277,7 @@ def test_unbekanntes_ergebnis(journal: JournalBackend, kennung: str) -> None:
 def test_standardwerte_der_warteschlangen() -> None:
     optionen = JournalOptions.from_settings({}, frozenset(QUEUES))
     assert dict(optionen.concurrency) == dict(DEFAULT_CONCURRENCY)
-    assert optionen.concurrency == {"default": 4, "mail": 2, "index": 2, "ocr": 1, "ai": 1, "adapter": 2}
+    assert optionen.concurrency == {"default": 4, "mail": 2, "index": 2, "ocr": 1, "ai": 1, "adapter": 2, "live": 0}
     assert optionen.max_attempts == 8
 
 

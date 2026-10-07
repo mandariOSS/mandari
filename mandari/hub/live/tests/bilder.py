@@ -48,7 +48,7 @@ def mpegts(bilder: int = 3, groesse: tuple[int, int] = (320, 180)) -> bytes:
         spur.pix_fmt = "yuv420p"
         for nummer in range(bilder):
             bild = Image.new("RGB", groesse, (nummer * 40, 96, 112))
-            for paket in spur.encode(av.VideoFrame.from_image(bild)):
+            for paket in spur.encode(av.VideoFrame.from_image(bild)):  # type: ignore[no-untyped-call]
                 container.mux(paket)
         for paket in spur.encode():
             container.mux(paket)

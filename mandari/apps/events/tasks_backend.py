@@ -60,6 +60,9 @@ DEFAULT_CONCURRENCY: Final[Mapping[str, int]] = {
     "ocr": 1,
     "ai": 1,
     "adapter": 2,
+    # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md): ruht ohne Einstellung; eingeschaltet setzt die Anwendung die
+    # Parallelität, bedient wird sie vom Dienst worker-live
+    "live": 0,
 }
 QUEUES: Final[tuple[str, ...]] = tuple(DEFAULT_CONCURRENCY)
 #: Zeitgrenze je Warteschlange in Sekunden, wenn für den Auftragstyp nichts eingestellt ist
@@ -70,6 +73,7 @@ DEFAULT_TIMEOUTS: Final[Mapping[str, float]] = {
     "ocr": 1800,
     "ai": 900,
     "adapter": 900,
+    "live": 120,
 }
 #: Zeitgrenze für Warteschlangen ohne eigenen Wert
 FALLBACK_TIMEOUT: Final = 300.0

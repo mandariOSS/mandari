@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import difflib
 import re
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
@@ -55,7 +56,7 @@ def aehnlichkeit(gelesen: str | None, im_ris: str | None) -> float | None:
     return round(difflib.SequenceMatcher(None, a, b[: len(a) + 10]).ratio(), 2)
 
 
-def tagesordnungspunkt(meeting_id: object, nummer: str) -> OParlAgendaItem | None:
+def tagesordnungspunkt(meeting_id: uuid.UUID, nummer: str) -> OParlAgendaItem | None:
     """Öffentlicher, nicht gelöschter Tagesordnungspunkt der Sitzung mit der Nummer."""
     gesucht = normalisiere_nummer(nummer)
     if gesucht is None:
@@ -95,7 +96,7 @@ def _exakt(name: str, personen: Iterable[OParlPerson]) -> list[OParlPerson]:
     return [p for p in personen if name in _namen(p)]
 
 
-def gremiumsmitglieder(organization_id: object, stichtag: date) -> list[OParlPerson]:
+def gremiumsmitglieder(organization_id: uuid.UUID, stichtag: date) -> list[OParlPerson]:
     """Personen mit Mitgliedschaft im Gremium am Stichtag (ohne gelöschte)."""
     mitgliedschaften = (
         OParlMembership.objects.filter(organization_id=organization_id, deleted=False, person__deleted=False)
@@ -109,7 +110,7 @@ def gremiumsmitglieder(organization_id: object, stichtag: date) -> list[OParlPer
     return list(personen.values())
 
 
-def person_zuordnen(gelesen: str, *, meeting: OParlMeeting, organization_id: object) -> Personentreffer:
+def person_zuordnen(gelesen: str, *, meeting: OParlMeeting, organization_id: uuid.UUID) -> Personentreffer:
     """Ordnet einen gelesenen Namen einer Person zu (siehe Moduldokumentation)."""
     name = vergleichsname(gelesen)
     if len(name) < 3:

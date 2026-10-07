@@ -24,7 +24,7 @@ from insight_core.models import OParlOrganization
 pytestmark = pytest.mark.django_db
 
 
-def _zeilen(beginn: datetime) -> list[dict[str, Any]]:
+def _zeilen(beginn: datetime) -> list[Any]:
     def zeit(sekunden: int) -> str:
         return (beginn + timedelta(seconds=sekunden)).isoformat()
 

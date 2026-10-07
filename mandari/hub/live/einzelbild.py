@@ -98,7 +98,8 @@ def bild_aus_segment(daten: bytes) -> Image.Image:
                     break
                 for bild in paket.decode():
                     if isinstance(bild, av.VideoFrame):
-                        return bild.to_image()
+                        ergebnis: Image.Image = bild.to_image()  # type: ignore[no-untyped-call]
+                        return ergebnis
     except av.FFmpegError as fehler:
         raise KeinBildError(f"Segment nicht dekodierbar ({type(fehler).__name__})") from fehler
     raise KeinBildError("kein dekodierbares Bild im Segment")

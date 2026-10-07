@@ -13,7 +13,7 @@ from .models import Broadcast, BroadcastLog, BroadcastSection, BroadcastSource, 
 
 
 @admin.register(BroadcastSource)
-class BroadcastSourceAdmin(ModelAdmin):
+class BroadcastSourceAdmin(ModelAdmin):  # type: ignore[misc]
     list_display = ("organization", "body", "provider", "active", "interval_seconds", "updated_at")
     list_filter = ("active", "provider")
     raw_id_fields = ("body", "organization")
@@ -21,7 +21,7 @@ class BroadcastSourceAdmin(ModelAdmin):
     search_fields = ("identifier", "organization__name")
 
 
-class BroadcastSectionInline(TabularInline):
+class BroadcastSectionInline(TabularInline):  # type: ignore[misc]
     model = BroadcastSection
     extra = 0
     fields = ("number", "agenda_item", "title_read", "title_similarity", "origin", "started_at", "ended_at")
@@ -29,7 +29,7 @@ class BroadcastSectionInline(TabularInline):
 
 
 @admin.register(Broadcast)
-class BroadcastAdmin(ModelAdmin):
+class BroadcastAdmin(ModelAdmin):  # type: ignore[misc]
     list_display = ("meeting", "source", "status", "started_at", "ended_at", "frames_read", "frames_without_overlay")
     list_filter = ("status",)
     raw_id_fields = ("meeting", "source", "current_section", "current_speech")
@@ -47,14 +47,14 @@ class BroadcastAdmin(ModelAdmin):
 
 
 @admin.register(BroadcastSection)
-class BroadcastSectionAdmin(ModelAdmin):
+class BroadcastSectionAdmin(ModelAdmin):  # type: ignore[misc]
     list_display = ("number", "broadcast", "agenda_item", "title_similarity", "origin", "started_at", "ended_at")
     list_filter = ("origin",)
     raw_id_fields = ("broadcast", "agenda_item")
 
 
 @admin.register(BroadcastSpeech)
-class BroadcastSpeechAdmin(ModelAdmin):
+class BroadcastSpeechAdmin(ModelAdmin):  # type: ignore[misc]
     """Wortmeldungen: Person korrigierbar (Zuordnung von Hand auf „eindeutig“ setzen)."""
 
     list_display = ("name_read", "faction_read", "function_read", "person", "assignment", "readings", "started_at")
@@ -65,7 +65,7 @@ class BroadcastSpeechAdmin(ModelAdmin):
 
 
 @admin.register(BroadcastLog)
-class BroadcastLogAdmin(ModelAdmin):
+class BroadcastLogAdmin(ModelAdmin):  # type: ignore[misc]
     """Protokoll nur lesen."""
 
     list_display = ("at", "kind", "broadcast", "source")

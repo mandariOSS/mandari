@@ -27,7 +27,7 @@ EMBED = "0a1b2c3d-4e5f-11ee-8a9b-0c1d2e3f4a5b"
 def test_register_kennt_3q_und_hls() -> None:
     assert {"3q", "hls"} <= set(codes())
     assert anbieter("3q").name == "3Q"
-    assert "https://playout.3qsdn.com" in player_urspruenge()
+    assert player_urspruenge() == ("https://playout.3qsdn.com",), "nur 3Q bettet einen Player ein"
     with pytest.raises(KeyError):
         anbieter("unbekannt")
 
