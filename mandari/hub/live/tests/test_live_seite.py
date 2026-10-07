@@ -17,6 +17,7 @@ from django.utils import timezone
 
 from hub.live import selectors
 from hub.live.models import Broadcast, BroadcastSpeech, BroadcastStatus
+from hub.live.services import WIEDERAUFNAHME
 from hub.live.tests.conftest import EMBED_ID, Welt, kennung
 from insight_core.models import OParlMeeting, OParlOrganization
 
@@ -83,7 +84,7 @@ def test_aktualisierung_nur_der_live_teil_und_204_ohne_neues(client: Client, wel
     assert client.get(_url(welt.sitzung), {"teil": "stand", "v": version.group(1)}).status_code == 200
 
 
-def test_beendet_mit_verlauf_ohne_aktualisierung(client: Client, welt: Welt, laufend: Broadcast) -> None:
+def test_beendet_mit_verlauf(client: Client, welt: Welt, laufend: Broadcast) -> None:
     laufend.status = BroadcastStatus.BEENDET
     laufend.ended_at = timezone.localtime(welt.jetzt).replace(hour=18, minute=25)
     laufend.save()
@@ -91,7 +92,19 @@ def test_beendet_mit_verlauf_ohne_aktualisierung(client: Client, welt: Welt, lau
     assert "Die Übertragung wurde um 18:25 Uhr beendet." in html
     assert "Am Wort" not in html, "nach dem Ende spricht niemand mehr"
     assert "Gisela Gast" in html and "Erika Muster" in html, "der Verlauf bleibt"
-    assert "hx-trigger" not in html
+
+
+def test_beendet_fragt_nur_waehrend_moeglicher_wiederaufnahme_nach(
+    client: Client, welt: Welt, laufend: Broadcast
+) -> None:
+    """Nach einer langen Pause kann die Übertragung wieder anlaufen; so lange fragt die Seite weiter nach."""
+    laufend.status = BroadcastStatus.BEENDET
+    laufend.ended_at = timezone.now() - WIEDERAUFNAHME + timedelta(minutes=5)
+    laufend.save()
+    assert "hx-trigger" in client.get(_url(welt.sitzung)).content.decode()
+    laufend.ended_at = timezone.now() - WIEDERAUFNAHME - timedelta(minutes=5)
+    laufend.save()
+    assert "hx-trigger" not in client.get(_url(welt.sitzung)).content.decode()
 
 
 def test_geplant_ohne_uebertragung(client: Client, welt: Welt) -> None:

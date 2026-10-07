@@ -12,8 +12,9 @@ Bewusst nicht verlinkt (kein Menü, kein Link auf der Sitzungsseite) und ``noind
   Seite in ihrer Content-Security-Policy die Player-Ursprünge der registrierten Anbieter (``frame-src``); sonst gilt
   dieselbe Richtlinie, die der Reverse Proxy für alle Seiten setzt.
 - **Offizielle Quelle:** Hat die Quelle eine Seite der Kommune, steht der Link darauf in jedem Zustand da.
-- **Aktualisierung:** Der Live-Teil lädt sich per htmx alle 15 Sekunden neu (``?teil=stand``), solange die
-  Übertragung nicht beendet ist. Den Player-Bereich schickt die Antwort nur bei einem Statuswechsel mit
+- **Aktualisierung:** Der Live-Teil lädt sich per htmx alle 15 Sekunden neu (``?teil=stand``), solange sich der
+  Status noch ändern kann (``LiveStand.nachfragen``), nach dem Ende also noch, solange die Übertragung nach einer
+  Pause wieder anlaufen kann. Den Player-Bereich schickt die Antwort nur bei einem Statuswechsel mit
   (``hx-swap-oob``); ein laufender Player wird sonst nicht angefasst.
 """
 

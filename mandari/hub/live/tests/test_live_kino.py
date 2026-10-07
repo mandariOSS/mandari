@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Live-Seite und Kinomodus (Issue #915): Knopf und Player nur bei laufender Übertragung (auch mit ``?player=1``),
-Link auf die offizielle Übertragung in jedem Zustand, Player-Bereich in der Aktualisierung nur beim Statuswechsel,
-Kinoansicht ohne Rahmen von Insight mit Links in neuem Tab.
+Link auf die offizielle Übertragung in jedem Zustand, Player-Bereich in der Aktualisierung nur beim Statuswechsel
+(auch beim Wiederanlaufen nach dem Ende), Kinoansicht ohne Rahmen von Insight mit Links in neuem Tab.
 """
 
 from __future__ import annotations
@@ -146,6 +146,17 @@ def test_aktualisierung_tauscht_player_bereich_nur_beim_statuswechsel(
     teil = client.get(url(welt.sitzung), {"teil": "stand", "player": "1", "v": _version(teil)}).content.decode()
     assert f'id="{bereich}"' in teil and 'hx-swap-oob="true"' in teil
     assert "<iframe" not in teil and "Übertragung laden" not in teil
+    assert "hx-trigger" in teil, "nach einer langen Pause kann die Übertragung wieder anlaufen"
+
+    # Übertragung läuft nach der Pause wieder an: Knopf bzw. Player kommen ohne Neuladen der Seite zurück
+    beendet = _version(teil)
+    broadcast.status = BroadcastStatus.LIVE
+    broadcast.save()
+    teil = client.get(url(welt.sitzung), {"teil": "stand", "player": "1", "v": beendet}).content.decode()
+    assert f'id="{bereich}"' in teil and 'hx-swap-oob="true"' in teil
+    assert f'<iframe src="{EINBETTUNG}"' in teil
+    ohne_zustimmung = client.get(url(welt.sitzung), {"teil": "stand", "v": beendet}).content.decode()
+    assert "Übertragung laden" in ohne_zustimmung and EINBETTUNG not in ohne_zustimmung
 
 
 def test_kinoansicht(client: Client, welt: Welt, laufend: Broadcast) -> None:

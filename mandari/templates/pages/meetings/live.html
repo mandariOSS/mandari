@@ -2,9 +2,10 @@
 {% comment %}
 Live-Seite einer Sitzung (Issue #915), bewusst nicht verlinkt. Erwartet: stand (hub.live.selectors.LiveStand), meeting,
 abspielbar, player, zustimmung, statuswechsel, aktualisierung, version. Knopf und Player gibt es nur, solange die
-Übertragung läuft. Der Teil „jetzt“ lädt sich per htmx neu (?teil=stand), solange die Übertragung nicht beendet ist;
-der Verlauf kommt dabei außer der Reihe (hx-swap-oob) mit, der Player-Bereich nur bei einem Statuswechsel (ein
-laufender Player lädt sonst nicht neu). Keine Redezeiten, nur Beginnzeiten.
+Übertragung läuft. Der Teil „jetzt“ lädt sich per htmx neu (?teil=stand), solange sich der Status noch ändern kann
+(stand.nachfragen, auch nach dem Ende, falls sie nach einer Pause wieder anläuft); der Verlauf kommt dabei außer
+der Reihe (hx-swap-oob) mit, der Player-Bereich nur bei einem Statuswechsel (ein laufender Player lädt sonst nicht
+neu). Keine Redezeiten, nur Beginnzeiten.
 {% endcomment %}
 
 {% block title %}Live: {{ meeting.get_display_name }}{% endblock %}
@@ -78,7 +79,7 @@ laufender Player lädt sonst nicht neu). Keine Redezeiten, nur Beginnzeiten.
                     </div>
                 </dl>
                 {% endif %}
-                {% if stand.status != "beendet" and stand.status != "nicht_uebertragen" %}
+                {% if stand.nachfragen %}
                 <span hidden hx-get="?teil=stand{% if zustimmung %}&amp;player=1{% endif %}&amp;v={{ version|urlencode }}" hx-trigger="every {{ aktualisierung }}s" hx-target="#live-jetzt" hx-swap="innerHTML"></span>
                 {% endif %}
                 {% if teil %}<div hx-swap-oob="innerHTML:#live-verlauf">{% partial verlauf %}</div>{% endif %}
