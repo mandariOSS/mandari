@@ -141,7 +141,32 @@ nicht (#860). Stand der Phasen (in #536/#537 fortgeschrieben):
 - [ ] Vergleich 14 Tage ohne unerklärte Abweichung (Akzeptanz #536)
 - [ ] Lücken aus #860 geschlossen, Meldungen der Übernahme und Umschalten (#537), Rückfallprobe
 
-## 6. Nachfolger der Texterkennung (#919)
+## 6. Dokumentkette (#919)
+
+Heute laden OCR-Worker und Sync des Ingestors, Dokument-Cache, Vorschau und Auftrag `file.extract_text` dieselbe
+Datei unabhängig voneinander; ein Abruffehler endet als gescheiterte Texterkennung. Künftig gibt es einen Weg zur
+Quelle (`hub.ris.abruf`) und einen Weg zur Erkennung (Auftrag `file.extract_text` im Dienst `worker-heavy`, liest
+nur aus Ablage und Objektspeicher), später verbunden über Ereignisse
+(`docs/adr/20261007-dokumentkette.md`). Ablauf und Befehle: `DEPLOYMENT.md`, „Dokumentkette einschalten“.
+
+| | Etappe 2: Erkennung im Worker | Etappe 3: Ereigniskette | Rückfall |
+|---|---|---|---|
+| Schalter | `TASKS_BACKEND=journal`, dann `TEXT_EXTRACTION_RUNNER=worker` (Anwendung, Worker, Ingestor gleich) | `DOCUMENT_FETCH_SUBSCRIPTION=schatten`, dann `aktiv` | `TEXT_EXTRACTION_RUNNER=ingestor` bzw. `DOCUMENT_FETCH_SUBSCRIPTION=aus` |
+| Alter Weg | OCR-Worker und Sync des Ingestors ruhen, laden keine Dateien | Zeitpläne `cache_files` und `texterkennung_einplanen` gehen in `dokumentkette_nachholen` auf | wieder an |
+| Bestand | `dokumentkette umschalten` (Stichtag je Quelle) vor dem Schalter; `dokumentkette nacharbeiten` nach Freigabe | – | vor einem älteren Image `dokumentkette zuruecksetzen` |
+| Stand | `mandari_files_*`, `mandari_tasks_*{queue="ocr"}` (`docs/MONITORING.md`, „Dokumentkette“) | dazu `mandari_events_lag_seconds{subscription="ris.dokumentkette"}` | – |
+
+Abbruchkriterien zusätzlich zu Abschnitt 3: Abrufe einer Quelle scheitern häufiger als vor dem Umschalten; eine
+Datei wird mehr als einmal bei der Quelle abgerufen (außer im Löschabgleich); der Rückstand
+(`mandari_files_stored_without_text`, `mandari_files_fetch_retry_due`) wächst über Stunden.
+
+- [ ] ADR angenommen (#919)
+- [ ] Etappe 1 ausgeliefert (Abrufweg, Zustände, Befehle `dokumentkette …`)
+- [ ] Etappe 2 eingeschaltet, Rückfallprobe (`TEXT_EXTRACTION_RUNNER=ingestor` und zurück) in der ersten Woche, 7 Tage ohne Abbruchkriterium; Nacharbeit nach Freigabe
+- [ ] Etappe 3 im Schatten, Vergleich, aktiv mit Rückfallprobe
+- [ ] Aufräumen im Folge-Release: Extractor und `extract-daemon` im Ingestor, `INGESTOR_STORES_FILES`, `TEXT_EXTRACTION_RUNNER`, Zeitpläne `cache_files` und `texterkennung_einplanen`
+
+## 7. Nachfolger der Texterkennung (#919)
 
 Neuer Text (`ris.file.text_extracted`) stößt die Verortung seines Vorgangs an und verwirft dessen
 KI-Zusammenfassung (ADR Dokumentkette, `docs/adr/20261007-dokumentkette.md`, Abschnitt 9). Beide Abonnements

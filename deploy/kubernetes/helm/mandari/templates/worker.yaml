@@ -11,7 +11,8 @@ längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails, Suche und L
 nicht auf die Texterkennung. Alle warten per initContainer auf das Datenbankschema.
 
 Parameter von "mandari.workerDeployment": root (Kontext des Charts), name (Namensteil und
-Komponente), replicas, maxMemoryMb, resources, args (zusätzliche Argumente).
+Komponente), replicas, maxMemoryMb, resources, args (zusätzliche Argumente), extraEnv (nur für
+dieses Deployment, nach app.extraEnv und worker.extraEnv).
 */ -}}
 {{- define "mandari.workerDeployment" -}}
 {{- $root := .root -}}
@@ -87,6 +88,10 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            {{- range $key, $value := .extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
           {{- if $root.Values.app.extraEnvFromSecret }}
           envFrom:
             - secretRef:
@@ -157,7 +162,7 @@ spec:
 {{ include "mandari.workerDeployment" (dict "root" . "name" "worker" "replicas" .Values.worker.replicas "maxMemoryMb" .Values.worker.maxMemoryMb "resources" .Values.worker.resources "args" $args) }}
 {{- if $heavy.enabled }}
 ---
-{{ include "mandari.workerDeployment" (dict "root" . "name" "worker-heavy" "replicas" $heavy.replicas "maxMemoryMb" $heavy.maxMemoryMb "resources" $heavy.resources "args" (concat (list "--roles" "tasks" "--queues" $heavy.queues) $heavy.extraArgs)) }}
+{{ include "mandari.workerDeployment" (dict "root" . "name" "worker-heavy" "replicas" $heavy.replicas "maxMemoryMb" $heavy.maxMemoryMb "resources" $heavy.resources "args" (concat (list "--roles" "tasks" "--queues" $heavy.queues) $heavy.extraArgs) "extraEnv" $heavy.extraEnv) }}
 {{- end }}
 {{- if $live.enabled }}
 ---

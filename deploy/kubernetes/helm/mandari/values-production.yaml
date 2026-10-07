@@ -90,8 +90,9 @@ worker:
       requests:
         cpu: 250m
         memory: 512Mi
+      # Runner (800 MB) plus ein Tesseract-Unterprozess (worker.heavy.extraEnv, 2048 MB)
       limits:
-        memory: 1Gi
+        memory: 3Gi
 
 persistence:
   # Ohne ReadWriteMany bleibt app.replicas bei 1.

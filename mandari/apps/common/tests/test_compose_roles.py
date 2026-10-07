@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -106,14 +107,110 @@ def test_texterkennung_und_ki_in_eigenem_worker() -> None:
     live = set(str(_option(basis["worker-live"]["command"], "--queues")).split(","))
     assert haupt_queues | {"ocr", "ai"} | live == set(settings.TASK_QUEUES), "zusammen jede Warteschlange"
 
-    # sonst wie der Hauptworker: Image, Umgebung, Volumes, Lebenszeichen, Neustart bei Hängern
-    for schluessel in ("image", "environment", "volumes", "healthcheck", "labels", "depends_on", "stop_grace_period"):
+    # sonst wie der Hauptworker: Image, Volumes, Lebenszeichen, Neustart bei Hängern
+    for schluessel in ("image", "volumes", "healthcheck", "labels", "depends_on", "stop_grace_period"):
         assert ocr[schluessel] == haupt[schluessel], schluessel
     assert ocr["container_name"] != haupt["container_name"]
     datei = _option(ocr["command"], "--heartbeat-file")
     assert datei and datei in " ".join(ocr["healthcheck"]["test"])
-    grenze = int(str(_option(ocr["command"], "--max-memory-mb")))
-    assert ocr["mem_limit"] == "1g" and grenze < 1024, "eigenes Limit, Runner startet vorher neu"
+
+
+def _vorgabe(wert: str) -> str:
+    """Vorgabe aus ``${NAME:-vorgabe}``."""
+    treffer = re.fullmatch(r"\$\{(\w+):-([^}]*)\}", wert)
+    assert treffer, wert
+    return treffer.group(2)
+
+
+def _megabyte(wert: str) -> int:
+    zahl, einheit = re.fullmatch(r"(\d+)([gm])", wert.lower()).groups()  # type: ignore[union-attr]
+    return int(zahl) * (1024 if einheit == "g" else 1)
+
+
+def test_dokumentkette_texterkennung_im_worker_heavy() -> None:
+    """
+    ADR Dokumentkette (#919), Abschnitt 8: Die Erkennung liest nur aus Ablage und Objektspeicher; worker-heavy
+    braucht deshalb dieselbe Ablage und dieselben OBJ_*-Variablen wie die Anwendung, Parallelität 1 in ocr und
+    eine eigene Speichergrenze, unter der Runner und ein Tesseract-Unterprozess zugleich Platz haben.
+    """
+    modul = _lade_skript()
+    basis = modul._lade(modul.BASIS)["services"]
+    haupt, ocr, anwendung = basis["worker"], basis["worker-heavy"], basis["mandari"]
+    umgebung = ocr["environment"]
+
+    assert "mandari_files:/app/files" in ocr["volumes"], "Dokumentablage eingehängt"
+    assert umgebung["OPARL_FILES_ROOT"] == "/app/files"
+    for name in (
+        "OBJ_ENABLED",
+        "OBJ_ENDPOINT",
+        "OBJ_BUCKET",
+        "OBJ_KEY",
+        "OBJ_SECRET",
+        "OBJ_REGION",
+        "OBJ_CACHE_MAX_GB",
+    ):
+        assert umgebung[name] == anwendung["environment"][name], name
+    # Umgebung wie die Anwendung; eigen ist nur der Adressraum je Tesseract-Unterprozess
+    assert set(umgebung) == set(haupt["environment"])
+    assert {k for k in umgebung if umgebung[k] != haupt["environment"][k]} == {"OCR_MEMORY_LIMIT_MB"}
+    # Eigene Variable: OCR_MEMORY_LIMIT_MB in der .env träfe auch Anwendung (1 GB) und Ingestor (512 MB)
+    assert umgebung["OCR_MEMORY_LIMIT_MB"].startswith("${WORKER_HEAVY_OCR_MEMORY_LIMIT_MB:-")
+    assert ocr["mem_limit"].startswith("${WORKER_HEAVY_MEM_LIMIT:-")
+
+    assert _option(ocr["command"], "--concurrency") == "ocr=1", "eine Erkennung zugleich"
+    limit = _megabyte(_vorgabe(ocr["mem_limit"]))
+    runner = int(str(_option(ocr["command"], "--max-memory-mb")))
+    tesseract = int(_vorgabe(umgebung["OCR_MEMORY_LIMIT_MB"]))
+    assert limit == 3 * 1024, "Richtwert des ADR"
+    assert tesseract >= 2048, "Seitengrenze wie in Produktion (#817)"
+    assert runner + tesseract < limit, "Runner und Tesseract passen unter das Limit, der Runner startet vorher neu"
+
+
+def test_schalter_der_dokumentkette_bleiben_aus_und_gleich() -> None:
+    """Standard bleibt der Ingestor; Anwendung, Worker und Ingestor lesen denselben Schalter (sonst arbeiten zwei)."""
+    modul = _lade_skript()
+    basis = modul._lade(modul.BASIS)["services"]
+    anwendung, ingestor = basis["mandari"]["environment"], basis["ingestor"]["environment"]
+
+    assert anwendung["TEXT_EXTRACTION_RUNNER"] == ingestor["TEXT_EXTRACTION_RUNNER"]
+    assert anwendung["TEXT_EXTRACTION_RUNNER"] == "${TEXT_EXTRACTION_RUNNER:-ingestor}"
+    assert anwendung["TASKS_BACKEND"] == "${TASKS_BACKEND:-immediate}"
+    # Abruf im Worker schreibt in dieselbe Ablage wie der Ingestor: gleiche Schutzgrenze für freien Platz
+    assert anwendung["FILE_CACHE_MIN_FREE_GB"] == ingestor["FILE_CACHE_MIN_FREE_GB"]
+    assert anwendung["TEXT_EXTRACTION_QUEUE_DEPTH"] == "${TEXT_EXTRACTION_QUEUE_DEPTH:-20}"
+
+
+def test_env_beispiel_nennt_die_grenzen_des_worker_heavy() -> None:
+    text = (SKRIPT.parents[1] / ".env.example").read_text(encoding="utf-8")
+    for name in ("WORKER_HEAVY_MEM_LIMIT", "WORKER_HEAVY_OCR_MEMORY_LIMIT_MB", "TEXT_EXTRACTION_QUEUE_DEPTH"):
+        assert f"# {name}=" in text, name
+
+
+def test_helm_worker_heavy_mit_eigener_grenze() -> None:
+    """Helm wie Compose: 3Gi, eigene Seitengrenze nur im worker-heavy (worker.heavy.extraEnv)."""
+    import yaml
+
+    chart = SKRIPT.parents[1] / "deploy" / "kubernetes" / "helm" / "mandari"
+    heavy = yaml.safe_load((chart / "values.yaml").read_text(encoding="utf-8"))["worker"]["heavy"]
+    assert heavy["resources"]["limits"]["memory"] == "3Gi"
+    assert heavy["maxMemoryMb"] + int(heavy["extraEnv"]["OCR_MEMORY_LIMIT_MB"]) < 3 * 1024
+    produktion = yaml.safe_load((chart / "values-production.yaml").read_text(encoding="utf-8"))["worker"]["heavy"]
+    assert produktion["resources"]["limits"]["memory"] == "3Gi"
+    vorlage = (chart / "templates" / "worker.yaml").read_text(encoding="utf-8")
+    assert '"extraEnv" $heavy.extraEnv' in vorlage, "worker.heavy.extraEnv erreicht nur worker-heavy"
+
+
+def test_helm_schalter_der_texterkennung_erreicht_auch_den_ingestor() -> None:
+    """TEXT_EXTRACTION_RUNNER in der gemeinsamen Umgebung: der Ingestor kennt kein app.extraEnv."""
+    import yaml
+
+    chart = SKRIPT.parents[1] / "deploy" / "kubernetes" / "helm" / "mandari"
+    werte = yaml.safe_load((chart / "values.yaml").read_text(encoding="utf-8"))
+    assert werte["textExtraction"]["runner"] == "ingestor", "Standard bleibt der Ingestor"
+    hilfen = (chart / "templates" / "_helpers.tpl").read_text(encoding="utf-8")
+    gemeinsam = hilfen[hilfen.index('define "mandari.commonEnv"') :]
+    assert "- name: TEXT_EXTRACTION_RUNNER" in gemeinsam[: gemeinsam.index("{{- end -}}")]
+    assert "mandari.commonEnv" in (chart / "templates" / "ingestor.yaml").read_text(encoding="utf-8")
 
 
 def test_live_uebertragungen_in_eigenem_worker() -> None:
@@ -157,3 +254,86 @@ def test_worker_lebt_meldung_erreicht_den_worker() -> None:
     umgebung = modul._lade(modul.BASIS)["services"]["worker"]["environment"]
     assert umgebung["WORKER_PUSH_URL"] == "${WORKER_PUSH_URL:-}", "Standard: keine Meldung"
     assert "WORKER_PUSH_TOKEN" in umgebung
+
+
+def test_doku_der_dokumentkette_nennt_befehle_kennzahlen_und_alarme() -> None:
+    """Befehls- und Metriknamen wie im ADR Dokumentkette (#919); jeder Beispielalarm ist in MONITORING.md erklärt."""
+    import yaml
+
+    wurzel = SKRIPT.parents[1]
+    deployment = (wurzel / "DEPLOYMENT.md").read_text(encoding="utf-8")
+    for befehl in ("umschalten", "nacharbeiten", "zuruecksetzen"):
+        assert f"manage.py dokumentkette {befehl}" in deployment, befehl
+    # Stichtag vor dem Umschalten der Erkennung, sonst gälte für bisher nicht abgelegte Quellen kein Altbestand
+    assert deployment.index("manage.py dokumentkette umschalten") < deployment.index("**Schritt 3: Erkennung im Worker")
+
+    monitoring = (wurzel / "docs" / "MONITORING.md").read_text(encoding="utf-8")
+    for metrik in (
+        "mandari_files_fetch_queued",
+        "mandari_files_fetch_retry_due",
+        "mandari_files_fetch_errors_total",
+        "mandari_files_stored_without_text",
+        "mandari_files_text_outdated",
+    ):
+        assert f"| `{metrik}` |" in monitoring, metrik
+    regeln = yaml.safe_load(
+        (wurzel / "deploy" / "monitoring" / "prometheus-alerts.example.yml").read_text(encoding="utf-8")
+    )
+    gruppe = next(g for g in regeln["groups"] if g["name"] == "mandari-dokumentkette")
+    for regel in gruppe["rules"]:
+        assert f"`{regel['alert']}`" in monitoring, regel["alert"]
+
+
+def _abschnitt(text: str, ueberschrift: str) -> str:
+    """Text eines Markdown-Abschnitts bis zur nächsten Überschrift derselben oder höheren Ebene."""
+    ebene = ueberschrift.split(" ", 1)[0]
+    beginn = text.index(ueberschrift + "\n")
+    rest = text[beginn + len(ueberschrift) :]
+    ende = re.search(rf"^#{{1,{len(ebene)}}} ", rest, re.M)
+    return rest[: ende.start()] if ende else rest
+
+
+def test_doku_der_dokumentkette_passt_zu_befehl_pruefungen_und_warteschlange_ocr() -> None:
+    """
+    Abgleich mit der Umsetzung (#936, #942): Schritte und Optionen von ``dokumentkette`` gibt es im Befehl, die
+    genannten Prüfungen in ``/health/worker/``, die Warnschwellen nennen ``dokumentabruf`` und ``dokumenttext``,
+    und ``ocr`` (Parallelität 1, Tiefe ``TEXT_EXTRACTION_QUEUE_DEPTH``) hat einen eigenen Alarm statt
+    „Auftragsrückstand“.
+    """
+    import yaml
+
+    from apps.events.status import CHECKS
+    from hub.ris.management.commands.dokumentkette import Command
+
+    wurzel = SKRIPT.parents[1]
+    deployment = (wurzel / "DEPLOYMENT.md").read_text(encoding="utf-8")
+    einschalten = _abschnitt(deployment, "### Dokumentkette einschalten (Issue #919)")
+    monitoring = (wurzel / "docs" / "MONITORING.md").read_text(encoding="utf-8")
+    kette = _abschnitt(monitoring, "## Dokumentkette")
+
+    parser = Command().create_parser("manage.py", "dokumentkette")
+    aktion = next(a for a in parser._actions if a.dest == "schritt")
+    assert isinstance(aktion.choices, dict)
+    schritte: dict[str, Any] = aktion.choices
+    aufrufe = re.findall(r"manage\.py dokumentkette (\w+)((?:\s+--[\w-]+)*)", einschalten)
+    assert {schritt for schritt, _ in aufrufe} >= {"umschalten", "nacharbeiten", "zuruecksetzen"}
+    for schritt, optionen in aufrufe:
+        assert schritt in schritte, schritt
+        for option in optionen.split():
+            assert option in schritte[schritt]._option_string_actions, (schritt, option)
+    assert "nacharbeiten --help" not in einschalten, "Die Option zum Ausführen heißt --ausfuehren"
+    assert "`--ausfuehren`" in einschalten
+    assert "--ausfuehren" in schritte["nacharbeiten"]._option_string_actions
+
+    for name in re.findall(r"pruefung=(\w+)", einschalten + kette):
+        assert name in CHECKS, name
+    assert "?pruefung=dokumentabruf" in kette and "?pruefung=dokumenttext" in kette
+
+    regeln = yaml.safe_load(
+        (wurzel / "deploy" / "monitoring" / "prometheus-alerts.example.yml").read_text(encoding="utf-8")
+    )
+    alle = {r["alert"]: r for g in regeln["groups"] for r in g["rules"]}
+    assert 'queue!="ocr"' in alle["MandariAuftragsrueckstand"]["expr"]
+    steht = alle["MandariTexterkennungSteht"]["expr"]
+    assert 'mandari_tasks_oldest_queued_seconds{queue="ocr"}' in steht
+    assert 'mandari_tasks_running{queue="ocr"}' in steht

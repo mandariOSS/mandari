@@ -212,6 +212,7 @@ das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 | `mandari_worker_rss_bytes` | `role` | belegter Arbeitsspeicher des Runners (`role="tasks"`); oberhalb von `TASKS_MAX_MEMORY_MB` startet er neu; nur im Prozess des Runners |
 | `mandari_worker_role_up` | `role` | 1, solange die Rolle im Worker arbeitet (Faden lebt und hat sich innerhalb von `--stale-after`, Standard 300 s, gemeldet), sonst 0; nur im Worker (`manage.py events_worker`) |
 | `mandari_worker_role_beat_age_seconds` | `role` | Sekunden seit dem letzten Lebenszeichen der Rolle, bei `dispatch` das älteste ihrer Abonnements; nur im Worker |
+| `mandari_files_*` | | Abruf, Ablage und Texterkennung der RIS-Dateien, Abschnitt „Dokumentkette“ |
 
 `view` ist der URL-Name samt Namensraum (z. B. `session:meeting_detail`), nie der konkrete
 Pfad – sonst würde jede ID ein neues Label erzeugen. Nicht auflösbare Pfade laufen unter
@@ -270,8 +271,12 @@ einbinden, Empfänger über Alertmanager). Schwellen und Begründung:
 | Sequenzierer aufgehalten | `mandari_events_sequencer_blocked_seconds > 300` | 5 min | Eine lange offene Transaktion (auch einer anderen Datenbank im Cluster) hält die Vergabe auf. `pg_stat_activity` nach der ältesten Transaktion durchsehen |
 | Sequenzierer im Rückstand | `mandari_events_sequencer_lag_seconds > 300` | 5 min | Kein Sequenzierer läuft oder er hängt; ohne Folgenummer stellt niemand zu |
 | Tote Aufträge | `mandari_tasks_dead > 0` | sofort | Ein Auftrag ist endgültig gescheitert; Ursache im Protokoll des Runners |
-| Auftragsrückstand | `mandari_tasks_oldest_queued_seconds > 900` | 10 min | Kein Runner bedient die Warteschlange oder sie kommt nicht nach |
+| Auftragsrückstand | `mandari_tasks_oldest_queued_seconds{queue!="ocr"} > 900` | 10 min | Kein Runner bedient die Warteschlange oder sie kommt nicht nach. `ocr` misst „Texterkennung steht“: Dort wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu `TEXT_EXTRACTION_QUEUE_DEPTH`), lange Wartezeiten sind bei vielen Scans normal |
 | Weckruf gestört | `mandari_events_listener_up == 0` | 15 min | Nur Hinweis: Die Abfrage alle paar Sekunden trägt weiter, die Zustellung ist nur langsamer |
+| Abruffehler je Quelle | Fehler der letzten 6 h > 20 und mehr als dreimal so viele wie zur selben Zeit am Vortag | 30 min | Die Quelle ist gestört oder bremst uns; Betriebsmonitor (Gesundheit, Schonung) und Fehlercodes in `mandari_files_fetch_errors_total` |
+| Texterkennung steht | `mandari_tasks_oldest_queued_seconds{queue="ocr"} > 900` und `mandari_tasks_running{queue="ocr"}` 0 | 15 min | Aufträge `file.extract_text` warten, aber keiner läuft: `worker-heavy` gesund, bedient er `ocr`, Speicherabbrüche? |
+| Rückstand der Texterkennung wächst | `mandari_files_stored_without_text` > 100 und höher als vor 6 h | 3 h | Erwartet nach `dokumentkette nacharbeiten`; sonst `worker-heavy`, `mandari_tasks_running{queue="ocr"}` und die Prüfungen `texterkennung` und `dokumenttext` |
+| Fällige Wiederholungen des Abrufs stauen sich | `mandari_files_fetch_retry_due` > 50 und höher als vor 6 h | 3 h | Abrufe warten auf Worker, Drossel je Host oder Quellen-Schonung |
 
 Die Dauer fängt kurze Spitzen ab: Direkt nach dem Commit einer langen Transaktion sind Rückstand und
 Sequenzierer-Rückstand kurz hoch, ohne dass etwas klemmt. Die Werte der Ereignistechnik misst jeder
@@ -479,6 +484,41 @@ external-endpoints:
 Das Grafana-Dashboard (`deploy/monitoring/grafana-mandari.json`) zeigt dieselben Größen als
 Verlauf: Rückstand von Sequenzierer und Abonnements, wartende Aufträge und Wartezeit, Gescheitertes,
 Fehlversuche je Grund, Rollen und Speicher des Workers.
+
+## Dokumentkette
+
+Abruf, Ablage und Texterkennung der RIS-Dateien (Issue #919, `docs/adr/20261007-dokumentkette.md`, Abschnitt 10).
+Einschalten, Prüfen und Abbruchkriterien beim Umschalten: `DEPLOYMENT.md`, „Dokumentkette einschalten“.
+
+| Metrik | Labels | Bedeutung |
+|---|---|---|
+| `mandari_files_fetch_queued` | – | Dateien, die abgelegt werden und deren Abruf jetzt ansteht (`none`, fällige `retry` bzw. `error`, verfallene Beanspruchung) |
+| `mandari_files_fetch_retry_due` | – | davon fällige Wiederholungen (Abrufzustand `retry`). Wiederholt wird nach 15 min, 1 h, 6 h, 24 h und 72 h, danach gilt `error` (wöchentlich ein neuer Versuch) |
+| `mandari_files_fetch_errors_total` | `source`, `code` | gescheiterte Abrufe je Quelle (Kennung der Quelle) und Fehlercode (`fetch_error`): `timeout`, `verbindung`, `http_429`, `http_5xx`, `http_4xx`, `leer`, `robots_unerreichbar`, `nicht_gefunden` (404/410), `html` (HTML statt Datei), `robots`, `zu_gross`, `ziel_gesperrt`, `keine_adresse`; zählt im Prozess, der abruft, Alarme deshalb mit `sum` |
+| `mandari_files_stored_without_text` | – | abgelegte Inhalte (`local_status = ok`), deren Erkennung wartet oder läuft: der Rückstand der Erkennung. Gelöschte, gesperrte und geleerte Dateien zählen nicht |
+| `mandari_files_text_outdated` | – | abgelegte Inhalte mit Text aus einer älteren Version der Erkennung (`text_extraction_version`) bzw. mit angeforderter Neuerkennung (`extract_texts --reprocess`). Das Sicherheitsnetz plant sie nach den wartenden schrittweise neu ein; der alte Text bleibt bis dahin stehen. Kein Alarm |
+
+Die Zustandszahlen (`…_queued`, `…_retry_due`, `…_stored_without_text`, `…_text_outdated`) misst jeder Prozess
+beim Abruf von `/metrics/` aus der Datenbank (eine Minute zwischengespeichert), Anwendung und Worker also
+gleichermaßen; Alarme fassen sie mit `max` zusammen. Dazu gehören die Größen der Warteschlangen:
+`mandari_tasks_queued{queue="ocr"}`, `mandari_tasks_running{queue="ocr"}` und `mandari_tasks_dead{queue="ocr"}`
+(Erkennung im Dienst `worker-heavy`) sowie dessen Speicher (`docker stats`, Limit `WORKER_HEAVY_MEM_LIMIT`).
+
+**Warnschwellen**
+
+| Schwelle | Wo | Bedeutung, erster Schritt |
+|---|---|---|
+| fällige Wiederholungen des Abrufs liegen länger als 6 h | `/health/worker/?pruefung=dokumentabruf` (`DOCUMENT_FETCH_RETRY_ALERT_HOURS`; Gatus `worker-dokumentabruf`) | Der Abruf kommt nicht nach oder steht: läuft `cache_files`, ist die Platte voll, ist der Takt je Host belegt? Quellen in Schonung zählen nicht |
+| abgelegte Inhalte warten länger als 24 h auf ihren Text | `/health/worker/?pruefung=dokumenttext` (`TEXT_EXTRACTION_BACKLOG_ALERT_HOURS`, nur mit `TEXT_EXTRACTION_RUNNER=worker`; Gatus `worker-dokumenttext`) | Die Erkennung steht: `worker-heavy` gesund, `mandari_tasks_running{queue="ocr"}`, Prüfung `texterkennung` |
+| Aufträge in `ocr` warten, keiner läuft | Prometheus `MandariTexterkennungSteht` | wie die Zeile davor |
+| Abruffehler einer Quelle mehr als dreimal so häufig wie am Vortag (und über 20 in 6 h) | Prometheus `MandariAbrufFehlerJeQuelle` | Quelle gestört oder sperrt uns; Fehlercodes ansehen, Betriebsmonitor |
+| `mandari_files_stored_without_text` wächst über Stunden | Prometheus `MandariTexterkennungRueckstauWaechst` | nach `dokumentkette nacharbeiten` oder einer neuen Erkennungsversion erwartet, sonst wie oben |
+| `mandari_files_fetch_retry_due` wächst über Stunden | Prometheus `MandariAbrufWiederholungenStauen` | wie die erste Zeile |
+
+Ein Abruffehler ändert den Zustand der Texterkennung nie; `failed` bei der Erkennung heißt nur noch „Inhalt
+nicht lesbar“ oder „Speichergrenze“. Steigt die Zahl gescheiterter Erkennungen, liegt es also an den Dateien oder
+am Speicher von `worker-heavy`, nicht an der Quelle. Die Erkennung ruft nie bei der Quelle ab: Lädt der Ingestor
+nach dem Umschalten noch Dateien, ist `TEXT_EXTRACTION_RUNNER` nicht überall gleich gesetzt.
 
 ## Service-Level-Alarme
 

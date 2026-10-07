@@ -62,9 +62,13 @@ x-app-environment: &app-environment
   # (siehe Dienst caddy und docs/FILE_CACHE.md, „Auslieferung über den Webserver“). Standard aus.
   FILE_ACCEL_REDIRECT: ${FILE_ACCEL_REDIRECT:-false}
   # Ablage nach SHA-256 mit Referenzzählung (docs/FILE_CACHE.md, „Ablage nach SHA-256“); der Ingestor legt
-  # Dateien, die er für den Text lädt, selbst ab (Volume mandari_files im Dienst ingestor)
+  # Dateien, die er für den Text lädt, selbst ab (Volume mandari_files im Dienst ingestor). Mit
+  # TEXT_EXTRACTION_RUNNER=worker lädt er keine Dateien mehr, INGESTOR_STORES_FILES wirkt dann nicht
   FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}
   INGESTOR_STORES_FILES: ${INGESTOR_STORES_FILES:-true}
+  # Abrufe in die Ablage warten unterhalb dieses freien Platzes (GB), statt die Platte zu füllen; derselbe Wert
+  # wie im Dienst ingestor, beide schreiben in mandari_files
+  FILE_CACHE_MIN_FREE_GB: ${FILE_CACHE_MIN_FREE_GB:-15}
   # S3-kompatibler Objektspeicher (docs/FILE_CACHE.md, „Objektspeicher“), Standard aus. Zugangsdaten nie im Repo:
   # aus der .env oder einer eigenen Umgebungsdatei, die Compose zusätzlich liest (--env-file, siehe FILE_CACHE.md)
   OBJ_ENABLED: ${OBJ_ENABLED:-false}
@@ -84,7 +88,9 @@ x-app-environment: &app-environment
   INSIGHT_SUBSCRIPTIONS_ENABLED: ${INSIGHT_SUBSCRIPTIONS_ENABLED:-false}
   # Ratsfragen im Bürgerportal (siehe .env.example), Standard aus (pausiert)
   INSIGHT_QUESTIONS_ENABLED: ${INSIGHT_QUESTIONS_ENABLED:-false}
-  # Aufträge, Ereignisse und Worker (siehe .env.example und DEPLOYMENT.md, „Worker“)
+  # Aufträge, Ereignisse und Worker (siehe .env.example und DEPLOYMENT.md, „Worker“). journal (Aufträge im
+  # Worker) ist Voraussetzung für TEXT_EXTRACTION_RUNNER=worker; erst umschalten, wenn worker und
+  # worker-heavy laufen (DEPLOYMENT.md, „Dokumentkette einschalten“)
   TASKS_BACKEND: ${TASKS_BACKEND:-immediate}
   TASKS_MAX_TASKS_PER_PROCESS: ${TASKS_MAX_TASKS_PER_PROCESS:-1000}
   TASKS_MAX_MEMORY_MB: ${TASKS_MAX_MEMORY_MB:-400}
@@ -107,10 +113,16 @@ x-app-environment: &app-environment
   # Mailarten, die als Auftrag (Warteschlange mail) statt in der Anfrage rausgehen, siehe .env.example
   MAIL_QUEUE: ${MAIL_QUEUE:-}
   MAIL_QUEUE_MAX_BYTES: ${MAIL_QUEUE_MAX_BYTES:-20971520}
-  # Wer den Text der RIS-Dateien erkennt: ingestor (Standard) oder worker (Aufträge in ocr), siehe .env.example
+  # Wer den Text der RIS-Dateien erkennt (docs/adr/20261007-dokumentkette.md, DEPLOYMENT.md):
+  #   ingestor (Standard): OCR-Worker bzw. Sync des Ingestors, der jede Datei selbst lädt
+  #   worker: Aufträge file.extract_text in der Warteschlange ocr (Dienst worker-heavy), lesen nur aus Ablage
+  #           und Objektspeicher; braucht TASKS_BACKEND=journal. Gilt zugleich für den Dienst ingestor
   TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
-  # Adressraum je Tesseract-Unterprozess der Anwendung (Import, Aufträge in ocr): im worker-heavy belegt der
-  # Runner selbst bis 800 MB, der Container hat 1 GB
+  # Höchstens so viele Aufträge der Texterkennung warten oder laufen zugleich (Zeitplan und extract_texts ohne
+  # --limit; nur mit TEXT_EXTRACTION_RUNNER=worker)
+  TEXT_EXTRACTION_QUEUE_DEPTH: ${TEXT_EXTRACTION_QUEUE_DEPTH:-20}
+  # Adressraum je Tesseract-Unterprozess in Anwendung und worker (1 GB); worker-heavy hat eine eigene Grenze
+  # (WORKER_HEAVY_OCR_MEMORY_LIMIT_MB)
   OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-512}
   # Für die Zeitpläne der Betriebsprüfungen, die jetzt im Worker laufen: Empfänger der Alarme,
   # Statusseite für den Verfügbarkeitsbericht, Metriken der Anwendung über ihren Dienstnamen
@@ -365,10 +377,11 @@ services:
   # Gleiches Image und dieselbe Umgebung wie die Anwendung. Starten nach den
   # Migrationen und vor der Anwendung (update.sh, deploy/scripts/deploy.sh).
   # /metrics und /health auf Port 9091 nur im internen Netz (nicht veröffentlicht).
-  # Zwei Dienste: worker (alle Rollen, alle Warteschlangen außer ocr und ai) und
-  # worker-heavy (nur Aufträge aus ocr und ai). Jeder Neustart eines Runners wartet
-  # auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails
-  # und Suche nicht auf die Texterkennung. Einzelheiten: DEPLOYMENT.md, „Worker“.
+  # Drei Dienste: worker (alle Rollen, alle Warteschlangen außer ocr, ai und live),
+  # worker-heavy (nur Aufträge aus ocr und ai, 3 GB) und worker-live (nur live). Jeder
+  # Neustart eines Runners wartet auf seinen längsten laufenden Auftrag (ocr bis 30 min);
+  # getrennt warten Mails und Suche nicht auf die Texterkennung. Einzelheiten:
+  # DEPLOYMENT.md, „Worker“.
   # ===========================================================================
   worker: &worker-dienst
     image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
@@ -417,8 +430,11 @@ services:
       retries: 3
       start_period: 60s
 
-  # Texterkennung und KI (Warteschlangen ocr, ai): eigener Runner mit mehr Speicher,
-  # sonst wie worker (Umgebung, Volumes, Healthcheck über die Heartbeat-Datei)
+  # Texterkennung und KI (Warteschlangen ocr, ai; docs/adr/20261007-dokumentkette.md, Abschnitt 8): eigener
+  # Runner mit mehr Speicher, sonst wie worker – dieselbe Umgebung (auch OBJ_* für den Objektspeicher), die
+  # Dokumentablage mandari_files unter /app/files, Healthcheck über die Heartbeat-Datei. Die Erkennung liest nur
+  # aus Ablage und Objektspeicher und ruft nie bei der Quelle ab. Er arbeitet erst mit TASKS_BACKEND=journal und
+  # TEXT_EXTRACTION_RUNNER=worker; bis dahin wartet er (DEPLOYMENT.md, „Dokumentkette einschalten“).
   worker-heavy:
     <<: *worker-dienst
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}-worker-heavy
@@ -430,12 +446,21 @@ services:
       - tasks
       - --queues
       - ocr,ai
+      # Eine Erkennung zugleich: Das Speicherlimit ist auf einen Tesseract-Unterprozess ausgelegt
+      - --concurrency
+      - ocr=1
       - --max-memory-mb
       - "800"
       - --heartbeat-file
       - /tmp/mandari-worker.heartbeat
-    # Der Runner startet oberhalb von 800 MB (--max-memory-mb) neu, bevor das Limit greift
-    mem_limit: 1g
+    environment:
+      <<: *app-environment
+      # Adressraum je Tesseract-Unterprozess (Seitengrenzen aus #817). Eigene Variable, denn OCR_MEMORY_LIMIT_MB
+      # gilt auch für Anwendung und worker (1 GB) und den Ingestor (512 MB)
+      OCR_MEMORY_LIMIT_MB: ${WORKER_HEAVY_OCR_MEMORY_LIMIT_MB:-2048}
+    # Runner bis 800 MB (startet darüber neu) plus ein Tesseract-Unterprozess bis WORKER_HEAVY_OCR_MEMORY_LIMIT_MB.
+    # Wer das Limit senkt, senkt die Seitengrenze mit (Limit minus 1 GB)
+    mem_limit: ${WORKER_HEAVY_MEM_LIMIT:-3g}
 
   # Live-Übertragungen (Warteschlange live, docs/LIVE_UEBERTRAGUNG.md): Statusabfrage je Minute und Leseaufträge
   # (~50 s, Einzelbild + Texterkennung nur im Speicher). Eigener Runner, damit lange OCR- oder Mailaufträge die
@@ -556,7 +581,8 @@ services:
       # Der Sync erkennt den Text selbst (TEXT_EXTRACTION_ENABLED): Adressraum je Tesseract-Unterprozess
       # deutlich unter dem Speicherlimit des Containers (512 MB) halten (#817)
       OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-384}
-      # worker: die Aufträge der Anwendung erkennen den Text, Sync und OCR-Worker ruhen (gleich wie dort)
+      # worker: die Aufträge der Anwendung (worker-heavy) erkennen den Text, Sync und OCR-Worker ruhen und laden
+      # keine Dateien mehr (gleicher Wert wie bei der Anwendung)
       TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
       # Externe Texterkennung und Positivliste wie in der Anwendung (Issue #950), Standard aus
       KI_ERLAUBTE_HOSTS: ${KI_ERLAUBTE_HOSTS:-}

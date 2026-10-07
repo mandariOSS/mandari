@@ -170,6 +170,9 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
   value: {{ .messageIdDomain | quote }}
 {{- end }}
 {{- end }}
+# Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+- name: TEXT_EXTRACTION_RUNNER
+  value: {{ .Values.textExtraction.runner | default "ingestor" | quote }}
 {{- if .Values.tracing.otlpEndpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ .Values.tracing.otlpEndpoint | quote }}

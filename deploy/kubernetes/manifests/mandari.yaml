@@ -319,6 +319,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -413,6 +416,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -631,6 +637,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -738,6 +747,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -933,6 +945,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -1039,6 +1054,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -1245,6 +1263,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -1353,6 +1374,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -1408,6 +1432,8 @@ spec:
             # (überschreibbar mit app.extraEnv bzw. worker.extraEnv)
             - name: METRICS_URL
               value: "http://mandari:80/metrics/"
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "2048"
           ports:
             - name: metrics
               containerPort: 9091
@@ -1433,7 +1459,7 @@ spec:
             failureThreshold: 3
           resources:
             limits:
-              memory: 1Gi
+              memory: 3Gi
             requests:
               cpu: 100m
               memory: 256Mi
@@ -1559,6 +1585,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -1669,6 +1698,9 @@ spec:
             - name: EVENTS_REDACT_NEUTRALIZE
               value: "false"
             # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            # Wer den Text der RIS-Dateien erkennt: Anwendung, Worker und Ingestor lesen denselben Wert
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
