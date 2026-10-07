@@ -48,7 +48,7 @@ from .kommunen import (
     kommunen_stoebern,
     kommunen_vorschlaege,
 )
-from .live import meeting_live
+from .live import meeting_live, meeting_live_kino
 from .maps import (
     MapView,
     map_markers,
@@ -170,6 +170,7 @@ __all__ = [
     "manage_subscription",
     "map_markers",
     "meeting_live",
+    "meeting_live_kino",
     "neighborhood_autocomplete",
     "neighborhood_results",
     "page_feedback",

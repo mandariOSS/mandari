@@ -12,8 +12,10 @@
  * - `data-filter-param="status"` auf Select: bei Änderung den Query-Parameter setzen.
  * - `data-href="URL"` auf Zeilen/Karten: Klick navigiert, außer auf innere Links,
  *   Buttons oder Formularfelder.
- * - `data-action="reload|back|print|select|click-target|clear-target|share|confirm-submit"` auf Buttons
- *   (`data-target` als Selektor für click-/clear-target und confirm-submit, `data-share-title` für share).
+ * - `data-action="reload|back|print|select|click-target|clear-target|share|confirm-submit|fullscreen"` auf Buttons
+ *   (`data-target` als Selektor für click-/clear-target, confirm-submit und fullscreen, `data-share-title` für share).
+ *   `fullscreen` schaltet das Element `data-target` in den Vollbildmodus und wieder heraus (Esc beendet ihn auch);
+ *   solche Knöpfe stehen mit `hidden` im Markup und erscheinen nur, wenn der Browser Vollbild für Elemente kann.
  *   `confirm-submit` fragt mit dem Bestätigungsdialog (`data-confirm-title`, `data-confirm-message`,
  *   `data-confirm-text`, `data-confirm-variant`) und sendet dann das Formular `data-target` ab.
  * - `data-post="URL"` auf Buttons: bestätigter POST per fetch (`data-confirm-title`,
@@ -111,6 +113,12 @@ function runAction(el: HTMLElement, event: Event): void {
     case 'confirm-submit': {
       const form = target ? document.querySelector(target) : null
       if (form instanceof HTMLFormElement) void confirmSubmit(el, form)
+      break
+    }
+    case 'fullscreen': {
+      const ziel = target ? document.querySelector(target) : null
+      if (document.fullscreenElement) void document.exitFullscreen()
+      else if (ziel instanceof HTMLElement) void ziel.requestFullscreen()
       break
     }
     default:
@@ -246,7 +254,22 @@ export function handleChange(event: Event): void {
   }
 }
 
+const FULLSCREEN = '[data-action="fullscreen"]'
+
+/** Vollbild-Knöpfe nur zeigen, wenn der Browser Elemente im Vollbild zeigen kann; `aria-pressed` folgt dem Zustand. */
+export function installFullscreen(root: Document = document): void {
+  for (const knopf of Array.from(root.querySelectorAll<HTMLElement>(FULLSCREEN))) {
+    knopf.hidden = !root.fullscreenEnabled
+  }
+  root.addEventListener('fullscreenchange', () => {
+    for (const knopf of Array.from(root.querySelectorAll<HTMLElement>(FULLSCREEN))) {
+      knopf.setAttribute('aria-pressed', String(root.fullscreenElement !== null))
+    }
+  })
+}
+
 export function installActions(root: Document = document): void {
+  installFullscreen(root)
   root.addEventListener('click', handleClick)
   root.addEventListener('submit', handleSubmit)
   root.addEventListener('change', handleChange)

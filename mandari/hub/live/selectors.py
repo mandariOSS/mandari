@@ -66,6 +66,8 @@ class LiveStand:
     verlauf: list[AbschnittStand]
     #: Wortmeldungen vor dem ersten erkannten TOP
     ohne_abschnitt: list[WortmeldungStand]
+    #: Anzeigename der Körperschaft (Link „Offizielle Übertragung“)
+    koerperschaft: str = ""
 
     @property
     def laeuft(self) -> bool:
@@ -194,6 +196,7 @@ def live_stand(meeting_id: uuid.UUID) -> LiveStand | None:
         am_wort=am_wort,
         verlauf=list(reversed(verlauf)),
         ohne_abschnitt=ohne_abschnitt,
+        koerperschaft=meeting.body.get_display_name() if meeting.body is not None else "",
     )
 
 

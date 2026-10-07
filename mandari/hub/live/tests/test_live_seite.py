@@ -16,13 +16,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from hub.live import selectors
-from hub.live.models import (
-    Broadcast,
-    BroadcastSection,
-    BroadcastSpeech,
-    BroadcastStatus,
-    SpeechAssignment,
-)
+from hub.live.models import Broadcast, BroadcastSpeech, BroadcastStatus
 from hub.live.tests.conftest import EMBED_ID, Welt, kennung
 from insight_core.models import OParlMeeting, OParlOrganization
 
@@ -31,42 +25,6 @@ pytestmark = pytest.mark.django_db
 
 def _url(meeting: OParlMeeting) -> str:
     return reverse("insight_core:insight:meeting_live", args=[meeting.pk])
-
-
-@pytest.fixture
-def laufend(welt: Welt) -> Broadcast:
-    broadcast = Broadcast.objects.create(
-        source=welt.quelle,
-        meeting=welt.sitzung,
-        status=BroadcastStatus.LIVE,
-        started_at=timezone.localtime(welt.jetzt).replace(hour=16, minute=15),
-    )
-    abschnitt = BroadcastSection.objects.create(
-        broadcast=broadcast, agenda_item=welt.top5, number="5", started_at=welt.jetzt
-    )
-    unbekannt = BroadcastSpeech.objects.create(
-        broadcast=broadcast,
-        section=abschnitt,
-        name_read="Gisela Gast",
-        function_read="Bürgermeisterin",
-        started_at=welt.jetzt,
-        assignment=SpeechAssignment.KEINE,
-    )
-    am_wort = BroadcastSpeech.objects.create(
-        broadcast=broadcast,
-        section=abschnitt,
-        person=welt.muster,
-        name_read="Erika Muster",
-        faction_read="Fraktion A",
-        started_at=welt.jetzt + timedelta(minutes=2),
-        assignment=SpeechAssignment.EINDEUTIG,
-        readings=3,
-    )
-    assert unbekannt.pk != am_wort.pk
-    broadcast.current_section = abschnitt
-    broadcast.current_speech = am_wort
-    broadcast.save()
-    return broadcast
 
 
 def test_laufende_uebertragung(client: Client, welt: Welt, laufend: Broadcast) -> None:
