@@ -145,9 +145,10 @@ def test_doppelte_zustellung_verbucht_einmal(
     _am_wort(welt, laufend, "Erika Muster", "Fraktion A", 120)
     assert _zustellen(spec) == 3
     vorher = sorted(PersonFraktion.objects.values_list("person_id", "bezeichnung", "status", "belege"))
-    assert [(b, s, n) for _, b, s, n in vorher] == sorted(
-        [("Fraktion A", "bestaetigt", 2), ("Fraktion B", "bestaetigt", 1)]
-    )
+    assert sorted((b, s, n) for _, b, s, n in vorher) == [
+        ("Fraktion A", "bestaetigt", 2),
+        ("Fraktion B", "bestaetigt", 1),
+    ]
 
     erstes = Event.objects.filter(type=TYP).order_by("seq").first()
     assert erstes is not None and erstes.seq is not None
