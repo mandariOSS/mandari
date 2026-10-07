@@ -147,7 +147,8 @@ def kuerzen(wert: Any, limit: int) -> str:
     if len(text) <= limit:
         return text
     cut = text[: limit - 1]
-    if " " in cut:
+    # Endet der Schnitt mitten im Wort, fällt das angeschnittene Wort weg; ein ganzes Wort davor bleibt
+    if text[limit - 1] != " " and " " in cut:
         cut = cut[: cut.rindex(" ")]
     return cut.rstrip(" ,;:-–") + "…"
 
@@ -594,10 +595,10 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
 
 
 def get_question_seo(question: Any, request: HttpRequest) -> SEOContext:
-    """SEO-Kontext für eine öffentliche Ratsfrage (schema.org QAPage)."""
+    """SEO-Kontext einer öffentlichen Ratsfrage (schema.org QAPage): „{Betreff} – Frage an {Name}, {Kommune}“."""
     person = question.recipient
-    body_name = question.body.get_display_name() if question.body else ""
-    title = f"{question.subject} – Frage an {person.display_name}"[:60]
+    body_name = _kommune(question.body)
+    title = mit_kommune(f"{kuerzen(question.subject, TITEL_BETREFF_MAX)} – Frage an {person.display_name}", body_name)
     description = question.question_text[:157].rstrip() + ("…" if len(question.question_text) > 157 else "")
 
     question_ld = {

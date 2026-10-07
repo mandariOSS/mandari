@@ -33,7 +33,9 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
     OParlSource,
+    PublicQuestion,
 )
+from insight_core.seo import kuerzen
 
 pytestmark = pytest.mark.django_db
 
@@ -45,8 +47,8 @@ ZUSAMMENFASSUNG = (
 )
 
 
-def _zeit(*teile: int) -> datetime:
-    return timezone.make_aware(datetime(*teile))
+def _zeit(jahr: int, monat: int, tag: int, stunde: int = 0, minute: int = 0) -> datetime:
+    return timezone.make_aware(datetime(jahr, monat, tag, stunde, minute))
 
 
 def _id() -> str:
@@ -448,6 +450,50 @@ class TestUebersichtDerKommune:
         description = _meta(_seite(Client(), "/insight/k/muenster/"), "name", "description")
 
         assert len(description) <= 160 and description.endswith("…")
+
+
+# =============================================================================
+# Ratsfrage
+# =============================================================================
+
+
+def test_ratsfrage_mit_kommune(muenster: OParlBody) -> None:
+    person = _person(muenster, "Erika Muster", (_gremium(muenster, "Rat"), "Mitglied"))
+    frage = PublicQuestion.objects.create(
+        body=muenster,
+        recipient=person,
+        questioner_name="Bert",
+        questioner_email="bert@example.org",
+        subject="Sanierung der Grundschule am Hafen",
+        question_text="Wann wird die Grundschule saniert?",
+        status="published",
+        published_at=timezone.now(),
+    )
+    seite = _seite(Client(), f"/insight/fragen/{frage.id}/")
+
+    assert _titel(seite) == "Sanierung der Grundschule am Hafen – Frage an Erika Muster, Münster | mandari Insight"
+    assert _meta(seite, "property", "og:title") == "Sanierung der Grundschule am Hafen – Frage an Erika Muster, Münster"
+
+
+# =============================================================================
+# Kürzen an der Wortgrenze
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ("text", "limit", "gekuerzt"),
+    [
+        # Der Schnitt fällt genau auf das Ende eines Worts: Das ganze Wort bleibt
+        ("Radweg an der Hafenstraße wird gebaut", 26, "Radweg an der Hafenstraße…"),
+        # Der Schnitt fällt mitten in ein Wort: Es fällt weg
+        ("Radweg an der Hafenstraße wird gebaut", 24, "Radweg an der…"),
+        ("Radweg an der Hafenstraße", 25, "Radweg an der Hafenstraße"),
+        ("Bebauungsplan,  Südviertel", 15, "Bebauungsplan…"),
+    ],
+)
+def test_kuerzen_an_der_wortgrenze(text: str, limit: int, gekuerzt: str) -> None:
+    assert kuerzen(text, limit) == gekuerzt
+    assert len(kuerzen(text, limit)) <= limit
 
 
 # =============================================================================

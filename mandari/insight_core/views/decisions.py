@@ -157,11 +157,6 @@ class DecisionDetailView(TemplateView):
         # Kommune der Seite folgt dem Beschluss (Deep-Links aus E-Mails)
         if str(self.request.session.get("active_body_id")) != str(body.id):
             self.request.session["active_body_id"] = str(body.id)
-        status_label = decision_tracking.PUBLIC_STATUS_LABELS.get(
-            item.implementation_status, item.get_implementation_status_display()
-        )
-        from ..seo import get_decision_seo
-
         context.update(
             {
                 "active_body": body,
@@ -169,8 +164,9 @@ class DecisionDetailView(TemplateView):
                 "item": item,
                 "tenant": item.meeting.tenant,
                 "timeline": decision_tracking.timeline(item),
-                "status_label": status_label,
-                "seo": get_decision_seo(item, body, str(status_label), self.request).to_dict(),
+                "status_label": decision_tracking.PUBLIC_STATUS_LABELS.get(
+                    item.implementation_status, item.get_implementation_status_display()
+                ),
                 "overdue": bool(
                     item.implementation_deadline
                     and item.implementation_status != "done"
@@ -185,6 +181,10 @@ class DecisionDetailView(TemplateView):
                 "can_subscribe": getattr(self, "visibility", None) == decision_tracking.VISIBLE,
             }
         )
+        # Titel mit Kommune, Description und strukturierte Daten aus dem schon Geladenen (Issue #914)
+        from ..seo import get_decision_seo
+
+        context["seo"] = get_decision_seo(item, body, str(context["status_label"]), self.request).to_dict()
         return context
 
     def post(self, request, *args, **kwargs):
