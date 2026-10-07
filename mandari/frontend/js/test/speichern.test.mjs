@@ -369,6 +369,60 @@ await test('keepalive: Grenze in Bytes über alle laufenden Anfragen (B6)', asyn
   assert.equal(aufrufe[2].opts.keepalive, true)
 })
 
+await test('Gespeicherte Position räumt die verlorene Begründung nicht weg (N1)', async () => {
+  const { d } = dienst([json({}, 500), json({}, 500), json({}, 500), json({ success: true })])
+  const r = await d.senden({ url: '/pos/', body: { reasoning: 'X' }, ...S, bezeichnung: 'Begründung' })
+  assert.equal(r.ok, false)
+  await d.senden({ url: '/pos/', body: { position: 'for' }, ...S })
+  assert.equal(d.stand().fehler, 'Begründung nicht gespeichert: Fehler auf dem Server')
+  assert.equal(d.mussWarnen(), true)
+  await d.senden({ url: '/pos/', body: { reasoning: 'X' }, ...S })
+  assert.equal(d.stand().fehler, '')
+  assert.equal(d.mussWarnen(), false)
+})
+
+await test('Löschen räumt verlorene Felder desselben Ziels weg', async () => {
+  const { d } = dienst([json({ error: 'kaputt' }, 400), json({ success: true })])
+  await d.senden({ url: '/speech/', body: { content: 'X' }, ...S })
+  assert.equal(d.mussWarnen(), true)
+  await d.senden({ url: '/speech/', method: 'DELETE' })
+  assert.equal(d.mussWarnen(), false)
+})
+
+await test('Störungen zählen nicht zur Grenze für 500 (N2: 502, 502, 500, dann ok)', async () => {
+  const { d, aufrufe } = dienst([json({}, 502), json({}, 502), json({}, 500), json({ success: true })])
+  const e = await d.senden({ url: '/x/', body: { a: 1 }, ...S })
+  assert.equal(e.ok, true)
+  assert.equal(aufrufe.length, 4)
+})
+
+await test('Zeitlimit auch für Einmal-Aufträge: hängendes Löschen gibt die Reihe frei (N5)', async () => {
+  const aufrufe = []
+  let zaehler = 0
+  const d = new Speicherdienst({
+    zeitlimitMs: 20,
+    wartezeitenMs: [10],
+    fetch: (url, opts) => {
+      aufrufe.push(opts.method)
+      zaehler++
+      if (zaehler === 1) {
+        // erste Anfrage hängt, bis das Zeitlimit sie abbricht
+        return new Promise((_, ablehnen) => {
+          opts.signal.addEventListener('abort', () => ablehnen(new DOMException('Zeitlimit', 'TimeoutError')))
+        })
+      }
+      return Promise.resolve(json({ success: true }))
+    },
+  })
+  const loeschen = d.senden({ url: '/speech/', method: 'DELETE' })
+  const inhalt = d.senden({ url: '/speech/', body: { content: 'neu' }, ...S })
+  const e = await loeschen
+  assert.equal(e.ok, false)
+  assert.match(e.meldung, /keine Verbindung/)
+  assert.equal((await inhalt).ok, true)
+  assert.deepEqual(aufrufe, ['DELETE', 'POST'])
+})
+
 await test('Senden startet synchron (nötig beim Verlassen der Seite)', async () => {
   const { d, aufrufe } = dienst([json({ success: true })])
   const e = d.senden({ url: '/x/', body: { a: 1 }, ...S })

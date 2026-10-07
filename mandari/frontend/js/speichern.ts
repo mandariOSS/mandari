@@ -82,9 +82,17 @@ const KEEPALIVE_GRENZE = 60000
 interface Eintrag {
   auftrag: SpeicherAuftrag
   versuche: number
+  /** davon mit Antwort 500 (eigene Grenze, Störungen zählen nicht mit) */
+  serverfehler: number
   /** Bytes, die gerade mit keepalive unterwegs sind (überleben das Verlassen der Seite); 0 = ohne keepalive */
   keepalive: number
   aufloesen: (ergebnis: SpeicherErgebnis) => void
+}
+
+/** Endgültig gescheitert: Meldung und – bei Aktualisierungen – die Felder, die noch nicht gespeichert sind */
+interface Fehlschlag {
+  meldung: string
+  felder: Set<string>
 }
 
 interface Platz {
@@ -155,8 +163,8 @@ export class Speicherdienst {
 
   /** Je Adresse eine Reihe */
   private plaetze = new Map<string, Platz>()
-  /** Endgültig gescheiterte Aufträge (Aktualisierungen je Adresse, sonst je Auftrag) mit Meldung */
-  private fehlgeschlagen = new Map<string, string>()
+  /** Endgültig gescheiterte Aufträge (Aktualisierungen je Adresse, sonst je Auftrag) */
+  private fehlgeschlagen = new Map<string, Fehlschlag>()
   private zaehler = 0
   private keepaliveBytes = 0
   private anmeldung: Anmeldeproblem = ''
@@ -189,7 +197,7 @@ export class Speicherdienst {
         platz = { laufend: null, schlange: [], timer: null }
         this.plaetze.set(auftrag.url, platz)
       }
-      const eintrag: Eintrag = { auftrag, versuche: 0, keepalive: 0, aufloesen }
+      const eintrag: Eintrag = { auftrag, versuche: 0, serverfehler: 0, keepalive: 0, aufloesen }
       const letzter = platz.schlange[platz.schlange.length - 1]
       if (letzter && zusammenfuehrbar(letzter, eintrag)) {
         platz.schlange[platz.schlange.length - 1] = this.zusammenfuehren(letzter, eintrag)
@@ -237,7 +245,7 @@ export class Speicherdienst {
       offline: this.offline,
       anmeldung: this.anmeldung,
       anmeldungZiel: this.anmeldungZiel,
-      fehler: [...this.fehlgeschlagen.values()].pop() || '',
+      fehler: [...this.fehlgeschlagen.values()].pop()?.meldung || '',
       zuletztGespeichert: this.zuletztGespeichert,
     }
   }
@@ -257,6 +265,7 @@ export class Speicherdienst {
         body: { ...(frueher.auftrag.body as object), ...(spaeter.auftrag.body as object) },
       },
       versuche: Math.max(frueher.versuche, spaeter.versuche),
+      serverfehler: Math.max(frueher.serverfehler, spaeter.serverfehler),
       keepalive: 0,
       aufloesen: spaeter.aufloesen,
     }
@@ -274,7 +283,7 @@ export class Speicherdienst {
   }
 
   private async uebertrage(platz: Platz, eintrag: Eintrag): Promise<void> {
-    const { url, method = 'POST', body, wiederholbar } = eintrag.auftrag
+    const { url, method = 'POST', body } = eintrag.auftrag
     const headers: Record<string, string> = {
       // Aus dem Cookie, nicht aus dem Meta-Tag: nach einer neuen Anmeldung im anderen Tab ist nur das Cookie aktuell
       'X-CSRFToken': csrfTokenAktuell(),
@@ -295,8 +304,12 @@ export class Speicherdienst {
         this.keepaliveBytes += groesse
       }
     }
+    // Zeitlimit für alles außer Uploads (die dürfen bei langsamer Verbindung dauern): eine hängende Anfrage
+    // hielte sonst die ganze Reihe ihrer Adresse auf
     const zeitlimit =
-      wiederholbar && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(this.zeitlimit) : null
+      !(body instanceof FormData) && typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(this.zeitlimit)
+        : null
     let antwort: Antwortart
     try {
       const resp = await this.abrufen(url, {
@@ -308,6 +321,8 @@ export class Speicherdienst {
         ...(zeitlimit ? { signal: zeitlimit } : {}),
       })
       antwort = await bewerte(resp)
+      // Zeitlimit lief ab, während die Antwort gelesen wurde: Störung, kein endgültiger Fehler
+      if (antwort.art === 'fehler' && zeitlimit?.aborted) antwort = { art: 'stoerung' }
     } catch {
       antwort = { art: 'stoerung' }
     }
@@ -318,12 +333,12 @@ export class Speicherdienst {
 
   private verarbeite(platz: Platz, eintrag: Eintrag, antwort: Antwortart): void {
     platz.laufend = null
-    const { url, wiederholbar } = eintrag.auftrag
+    const { url, wiederholbar, body, method = 'POST' } = eintrag.auftrag
 
     if (antwort.art === 'ok') {
       this.offline = false
       this.zuletztGespeichert = new Date()
-      this.fehlgeschlagen.delete(`stand:${url}`)
+      this.erledige(url, method, body)
       // Einmal-Fehler gelten wie bisher als erledigt, sobald wieder etwas gespeichert wurde
       for (const k of [...this.fehlgeschlagen.keys()]) {
         if (k.startsWith('einzel:')) this.fehlgeschlagen.delete(k)
@@ -338,6 +353,7 @@ export class Speicherdienst {
     } else if (wiederholbar && this.nochmal(eintrag, antwort)) {
       // Stand behalten und später erneut senden; eine direkt folgende Aktualisierung wird angehängt
       eintrag.versuche++
+      if (antwort.art === 'serverfehler') eintrag.serverfehler++
       const naechster = platz.schlange[0]
       if (naechster && zusammenfuehrbar(eintrag, naechster)) {
         platz.schlange[0] = this.zusammenfuehren(eintrag, naechster)
@@ -354,9 +370,11 @@ export class Speicherdienst {
     } else {
       const meldung = this.meldungFuer(eintrag, antwort)
       const schluessel = wiederholbar ? `stand:${url}` : `einzel:${++this.zaehler}`
+      const felder = new Set(this.fehlgeschlagen.get(schluessel)?.felder)
+      if (wiederholbar && istObjekt(body)) for (const feld of Object.keys(body)) felder.add(feld)
       // Neu einsortieren, damit die jüngste Meldung angezeigt wird
       this.fehlgeschlagen.delete(schluessel)
-      this.fehlgeschlagen.set(schluessel, meldung)
+      this.fehlgeschlagen.set(schluessel, { meldung, felder })
       eintrag.aufloesen({ ok: false, ersetzt: false, meldung })
     }
 
@@ -367,7 +385,24 @@ export class Speicherdienst {
 
   private nochmal(eintrag: Eintrag, antwort: Antwortart): boolean {
     if (antwort.art === 'stoerung' || antwort.art === 'anmeldung') return true
-    return antwort.art === 'serverfehler' && eintrag.versuche + 1 < VERSUCHE_BEI_500
+    return antwort.art === 'serverfehler' && eintrag.serverfehler + 1 < VERSUCHE_BEI_500
+  }
+
+  /**
+   * Endgültigen Fehler einer Adresse erst löschen, wenn alle damals gescheiterten Felder gespeichert sind
+   * (eine gespeicherte Position räumt nicht die verlorene Begründung weg) bzw. das Ziel gelöscht wurde.
+   */
+  private erledige(url: string, method: string, body: unknown): void {
+    const schluessel = `stand:${url}`
+    const offen = this.fehlgeschlagen.get(schluessel)
+    if (!offen) return
+    if (method === 'DELETE') {
+      this.fehlgeschlagen.delete(schluessel)
+      return
+    }
+    if (!istObjekt(body)) return
+    for (const feld of Object.keys(body)) offen.felder.delete(feld)
+    if (offen.felder.size === 0) this.fehlgeschlagen.delete(schluessel)
   }
 
   private plane(platz: Platz, anmeldung: boolean): void {
