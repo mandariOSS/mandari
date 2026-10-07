@@ -7,6 +7,8 @@ fertig im Markup, nur auf der Auswahlseite). Überschriften: h3 unter dem h2 des
 schmal, das Stöbern nutzt auf breiten Bildschirmen drei bis vier Spalten (Issue #841).
 Ohne Sprung beim Start (CLS): Was erst mit Alpine erscheinen kann („Zuletzt besucht“), steht über Bereichen, die bis
 dahin unsichtbar ihren Platz halten (x-cloak="platz").
+„noch nicht verfügbar“ steht nur in data-text und kommt per x-text in die Zeile: Der Dialog steckt in jeder Insight-Seite,
+als Text (auch in <template>) läse ein Crawler die Seite als Fehlerseite (Soft-404, Issue #914).
 {% endcomment %}
 {% load humanize %}
 <div x-data="kommunenWahl" @keydown="tasten($event)" {% if im_dialog %}data-im-dialog{% endif %}{% if stufe_start.eintraege %} data-stufe-start{% endif %}
@@ -53,7 +55,7 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
                                     <span class="block font-medium text-gray-700 dark:text-gray-300 truncate" x-text="t.name"></span>
                                     <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate" x-text="zweiteZeile(t)"></span>
                                 </span>
-                                <span class="sm:shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400">noch nicht verfügbar</span>
+                                <span class="sm:shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400" data-text="noch nicht verfügbar" x-text="$el.dataset.text"></span>
                             </div>
                         </template>
                     </li>
@@ -118,7 +120,7 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
                         <template x-if="e.art === 'kommune' && !e.verfuegbar">
                             <div class="px-3 py-2.5">
                                 <span class="block font-medium text-gray-700 dark:text-gray-300 truncate" x-text="e.name"></span>
-                                <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">noch nicht verfügbar</span>
+                                <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400" data-text="noch nicht verfügbar" x-text="$el.dataset.text"></span>
                             </div>
                         </template>
                     </li>
