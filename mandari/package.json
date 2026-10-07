@@ -36,8 +36,8 @@
     "alpinejs": "^3.17.4",
     "diff": "^9.0.0",
     "htmx.org": "^2.0.11",
-    "lucide": "^1.49.0",
-    "pdfjs-dist": "^6.0.0",
+    "lucide": "^1.51.0",
+    "pdfjs-dist": "^6.4.299",
     "y-indexeddb": "^9.0.12",
     "y-websocket": "^3.1.0",
     "yjs": "^13.6.33"
@@ -45,13 +45,13 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@types/alpinejs": "^3.17.0",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
     "axe-core": "^4.13.0",
     "concurrently": "^10.0.5",
     "esbuild": "^0.28.2",
     "tailwindcss": "^3.4.1",
     "typescript": "^7.0.2",
-    "vite": "^8.3.1"
+    "vite": "^8.3.2"
   },
   "overrides": {
     "shell-quote": "^1.12.0"
