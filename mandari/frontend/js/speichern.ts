@@ -33,8 +33,11 @@ export interface SpeicherAuftrag {
   body?: unknown
   /** Aktualisierung von Feldern (idempotent): zusammenführen und bei Störung wiederholen */
   wiederholbar?: boolean
-  /** Für Meldungen, z. B. „Position zu TOP 2“ */
-  bezeichnung?: string
+  /**
+   * Für Meldungen, z. B. „Position zu TOP 2“; als Funktion aus den tatsächlich gesendeten Feldern gebildet
+   * (zusammengeführte Aktualisierungen nennen dann alle Felder)
+   */
+  bezeichnung?: string | ((body: Record<string, unknown>) => string)
 }
 
 export type SpeicherErgebnis =
@@ -306,9 +309,11 @@ export class Speicherdienst {
     }
     // Zeitlimit für alles außer Uploads (die dürfen bei langsamer Verbindung dauern): eine hängende Anfrage
     // hielte sonst die ganze Reihe ihrer Adresse auf
+    // Einmal-Aufträge bekommen mehr Zeit: Bricht ein Anlegen ab, das der Server doch noch ausführt, entstünde beim
+    // erneuten Klick ein doppelter Eintrag
     const zeitlimit =
       !(body instanceof FormData) && typeof AbortSignal.timeout === 'function'
-        ? AbortSignal.timeout(this.zeitlimit)
+        ? AbortSignal.timeout(eintrag.auftrag.wiederholbar ? this.zeitlimit : this.zeitlimit * 3)
         : null
     let antwort: Antwortart
     try {
@@ -419,7 +424,9 @@ export class Speicherdienst {
   }
 
   private meldungFuer(eintrag: Eintrag, antwort: Antwortart): string {
-    const was = eintrag.auftrag.bezeichnung || 'Änderung'
+    const { bezeichnung, body } = eintrag.auftrag
+    const was =
+      (typeof bezeichnung === 'function' ? (istObjekt(body) ? bezeichnung(body) : '') : bezeichnung) || 'Änderung'
     if (antwort.art === 'fehler') return `${was} nicht gespeichert: ${antwort.meldung}`
     if (antwort.art === 'serverfehler') return `${was} nicht gespeichert: Fehler auf dem Server`
     if (antwort.art === 'anmeldung') return `${was} nicht gespeichert: Anmeldung abgelaufen`

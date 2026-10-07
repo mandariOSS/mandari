@@ -423,6 +423,20 @@ await test('Zeitlimit auch für Einmal-Aufträge: hängendes Löschen gibt die R
   assert.deepEqual(aufrufe, ['DELETE', 'POST'])
 })
 
+await test('Meldung nennt alle Felder einer zusammengeführten Aktualisierung', async () => {
+  let antwort
+  const erste = new Promise((r) => {
+    antwort = r
+  })
+  const { d } = dienst([() => erste, json({ error: 'kaputt' }, 400)])
+  const benenne = (body) => `${Object.keys(body).join(', ')} zu TOP 2`
+  void d.senden({ url: '/pos/', body: { position: 'for' }, ...S, bezeichnung: benenne })
+  const r = d.senden({ url: '/pos/', body: { reasoning: 'X' }, ...S, bezeichnung: benenne })
+  antwort(json({}, 502))
+  const e = await r
+  assert.equal(e.meldung, 'position, reasoning zu TOP 2 nicht gespeichert: kaputt')
+})
+
 await test('Senden startet synchron (nötig beim Verlassen der Seite)', async () => {
   const { d, aufrufe } = dienst([json({ success: true })])
   const e = d.senden({ url: '/x/', body: { a: 1 }, ...S })

@@ -15,7 +15,7 @@ import type { FormatState } from '../editor/index'
 import { defineComponent } from '../js/alpine/component'
 import { confirmAction } from '../js/alpine/confirm-dialog'
 import { readJsonScript } from '../js/json-script'
-import { type JsonAntwort, Speicherdienst, type SpeicherStand } from '../js/speichern'
+import { type JsonAntwort, type SpeicherAuftrag, Speicherdienst, type SpeicherStand } from '../js/speichern'
 
 // ---- Konfiguration aus dem View -------------------------------------------------
 
@@ -181,6 +181,14 @@ const POSITION_CHIPS: Record<string, string> = {
   refer: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
   amended: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
   info: 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+}
+
+/** Bezeichnung der Positionsfelder in Speichermeldungen („Begründung zu TOP 2 nicht gespeichert …“) */
+const POSITIONSFELDER: Record<string, string> = {
+  position: 'Position',
+  reasoning: 'Begründung',
+  outcome: 'Ergebnis',
+  is_final: 'Endgültig-Markierung',
 }
 
 const SUMMARY_ERROR = '<p class="text-sm text-red-600">Zusammenfassung konnte nicht geladen werden.</p>'
@@ -522,7 +530,7 @@ export const preparationApp = defineComponent(() => {
     async apiSaveStand(
       url: string,
       fields: Record<string, unknown>,
-      bezeichnung: string,
+      bezeichnung: SpeicherAuftrag['bezeichnung'],
     ): Promise<JsonResponse | null> {
       const ergebnis = await speicher.senden({ url, body: fields, wiederholbar: true, bezeichnung })
       if (ergebnis.ok) return ergebnis.daten
@@ -551,11 +559,11 @@ export const preparationApp = defineComponent(() => {
       void this.savePositionFields(this.selectedItem, { outcome: this.selectedItem.outcome })
     },
     async savePositionFields(item: PreparedItem, fields: Record<string, unknown>): Promise<void> {
-      await this.apiSaveStand(
-        `${base}/${this.meetingId}/position/${item.id}/`,
-        fields,
-        `Position zu TOP ${item.number}`,
-      )
+      const benenne = (body: Record<string, unknown>) =>
+        `${Object.keys(body)
+          .map((feld) => POSITIONSFELDER[feld] || feld)
+          .join(', ')} zu TOP ${item.number}`
+      await this.apiSaveStand(`${base}/${this.meetingId}/position/${item.id}/`, fields, benenne)
     },
 
     // ---------- Private Notiz ----------
