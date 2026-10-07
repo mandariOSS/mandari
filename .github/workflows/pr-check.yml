@@ -758,8 +758,8 @@ jobs:
           # Parallel auf allen Kernen (pytest-xdist; je Worker eine Kopie der Vorlage), Tests einer Datei
           # bleiben auf einem Worker. --durations zeigt die langsamsten Tests für gezielte Arbeit.
           # Coverage-Gate (Issue #157) im Job "Test-Ergebnis" über alle Teile zusammen.
-          pytest -n auto --dist loadfile -m "not migrationen" --teil ${{ matrix.teil }}/3 \
-            --teil-protokoll "$RUNNER_TEMP/testteil" -q -rfE --durations=25 \
+          pytest -n auto --dist loadfile -m "not migrationen" --teil=${{ matrix.teil }}/3 \
+            --teil-protokoll="$RUNNER_TEMP/testteil" -q -rfE --durations=25 \
             --cov=apps --cov=hub --cov=insight_core --cov-report= --ignore=tests_e2e
           mv .coverage "$RUNNER_TEMP/testteil/coverage-teil.daten"
 
@@ -866,7 +866,7 @@ jobs:
         run: |
           cd mandari
           # Jeder Test braucht seine eigene Zeit; --dist load verteilt sie einzeln auf die Worker
-          pytest -n auto --dist load -m migrationen --teil-protokoll "$RUNNER_TEMP/testteil" -q -rfE \
+          pytest -n auto --dist load -m migrationen --teil-protokoll="$RUNNER_TEMP/testteil" -q -rfE \
             --durations=0 --cov=apps --cov=hub --cov=insight_core --cov-report= --ignore=tests_e2e
           mv .coverage "$RUNNER_TEMP/testteil/coverage-migrationstests.daten"
 

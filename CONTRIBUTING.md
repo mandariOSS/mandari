@@ -99,7 +99,7 @@ hat. Den Volllauf auf `dev` startet jede Nacht `.github/workflows/nachtlauf.yml`
 
 Die Django-Testsuite läuft in drei parallelen Teilen (Job „Test“, Issue #935):
 
-- **Aufteilung:** `--teil N/3` verteilt ganze Testdateien nach den gemessenen Laufzeiten in
+- **Aufteilung:** `--teil=N/3` verteilt ganze Testdateien nach den gemessenen Laufzeiten in
   `mandari/testdauern.json` (`apps/common/tests/testlauf.py`). Neue Dateien zählen mit der mittleren
   Dauer je Test. Wird ein Teil merklich länger als die anderen, `testdauern.json` durch die Datei aus
   dem Artefakt `test-ergebnis` eines aktuellen Laufs ersetzen.

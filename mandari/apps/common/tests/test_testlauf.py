@@ -72,7 +72,8 @@ def _waechter(element: _Element) -> Generator[None, object, object]:
 
 
 # Ersatz für MigrationExecutor.migrate im Aufrufteil des Tests (nicht über die Fixture monkeypatch: deren Abbau
-# käme erst nach dem Wächter dieses Tests selbst und hinterließe dessen Hülle)
+# käme erst nach dem Wächter dieses Tests selbst und hinterließe dessen Hülle). Aufgerufen wird über eine Variable,
+# sonst hielte die Erkennung diese Tests selbst für Migrationstests.
 
 
 def test_waechter_laesst_ungekennzeichnete_migration_scheitern() -> None:
@@ -81,7 +82,8 @@ def test_waechter_laesst_ungekennzeichnete_migration_scheitern() -> None:
         patch.setattr(MigrationExecutor, "migrate", lambda self, *args, **kwargs: aufrufe.append(args))
         lauf = _waechter(_Element(gekennzeichnet=False))
         next(lauf)
-        MigrationExecutor.migrate(cast(MigrationExecutor, None), [("events", None)])
+        migrieren = MigrationExecutor.migrate
+        migrieren(cast(MigrationExecutor, None), [("events", None)])
         with pytest.raises(pytest.fail.Exception, match="nicht als Migrationstest gekennzeichnet"):
             lauf.send(None)
     assert aufrufe == [([("events", None)],)], "der Aufruf selbst geht durch"
@@ -92,7 +94,8 @@ def test_waechter_laesst_gekennzeichnete_und_migrationsfreie_tests_durch() -> No
         patch.setattr(MigrationExecutor, "migrate", lambda self, *args, **kwargs: None)
         lauf = _waechter(_Element(gekennzeichnet=True))
         next(lauf)
-        MigrationExecutor.migrate(cast(MigrationExecutor, None), [])
+        migrieren = MigrationExecutor.migrate
+        migrieren(cast(MigrationExecutor, None), [])
         with pytest.raises(StopIteration):
             lauf.send(None)
 

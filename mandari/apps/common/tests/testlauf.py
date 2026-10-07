@@ -11,13 +11,15 @@ Migrationstests
     Test ohne Kennzeichen trotzdem Migrationen ab (etwa über eine Hilfsfunktion), scheitert er mit einem
     Hinweis; dann ``@pytest.mark.migrationen`` setzen.
 
-Aufteilung (``--teil N/M``)
+Aufteilung (``--teil=N/M``)
     Führt nur Teil N von M aus. Verteilt werden ganze Testdateien nach den gemessenen Laufzeiten in
     ``mandari/testdauern.json``: die längste zuerst, jeweils auf den Teil mit der bisher kleinsten Summe.
     Dateien ohne Messwert zählen mit der mittleren Dauer je Test. Die Aufteilung hängt nur von den
     gesammelten Tests und dieser Datei ab und ist deshalb in jedem Teil und jedem xdist-Worker dieselbe.
+    Die Optionen dieser Erweiterung mit "=" angeben (``--teil=1/3``, ``--teil-protokoll=DIR``): Ohne Pfadangaben
+    liest pytest die Befehlszeile vor dem Laden der Erweiterung und hielte den Wert sonst für einen Pfad.
 
-Protokoll (``--teil-protokoll VERZEICHNIS``)
+Protokoll (``--teil-protokoll=VERZEICHNIS``)
     ``auswahl.json``: alle gesammelten Tests, die Migrationstests darunter, die Kandidaten nach ``-m`` und
     die Tests dieses Teils (geschrieben vom ersten xdist-Worker bzw. ohne xdist vom Lauf selbst).
     ``ergebnis.json``: je Test das Ergebnis und je Datei die Laufzeit (geschrieben vom steuernden Prozess).

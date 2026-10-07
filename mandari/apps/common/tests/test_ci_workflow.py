@@ -255,8 +255,9 @@ def test_test_job_in_teilen_ohne_migrationstests_mit_vorlage() -> None:
     assert job["strategy"]["fail-fast"] is False
     aufruf = _pytest_aufruf("test")
     assert '-m "not migrationen"' in aufruf
-    assert f"--teil ${{{{ matrix.teil }}}}/{len(teile)}" in aufruf
-    assert "--teil-protokoll" in aufruf and "--cov=apps" in aufruf
+    assert f"--teil=${{{{ matrix.teil }}}}/{len(teile)}" in aufruf
+    # Mit "=": Ohne Pfadangaben hielte pytest den Wert sonst vor dem Laden der Erweiterung für einen Pfad
+    assert "--teil-protokoll=" in aufruf and "--cov=apps" in aufruf
     vorlage = [s for s in job["steps"] if "MANDARI_TEST_DB_VORLAGE" in s.get("env", {})]
     assert len(vorlage) == 1 and "pytest " in vorlage[0]["run"]
     # Das Ergebnis prüft genau so viele Teile, wie die Matrix startet
@@ -268,7 +269,7 @@ def test_migrationstests_im_eigenen_job() -> None:
     job = _jobs()["migrationstests"]
     assert job["if"] == "needs.changes.outputs.migrationen == 'true'"
     aufruf = _pytest_aufruf("migrationstests")
-    assert "-m migrationen" in aufruf and "--teil-protokoll" in aufruf and "--cov=apps" in aufruf
+    assert "-m migrationen" in aufruf and "--teil-protokoll=" in aufruf and "--cov=apps" in aufruf
     assert "postgres" in job["services"]
 
 
