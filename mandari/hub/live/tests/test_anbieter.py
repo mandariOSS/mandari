@@ -181,3 +181,68 @@ def test_abruf_nur_https_mit_user_agent_und_grenzen(monkeypatch: pytest.MonkeyPa
             abruf.hole("https://a.example/kaputt", http=client)
     assert gesehen[0].headers["User-Agent"] == "mandari (+https://mandari.de)"
     assert abruf.client().headers["User-Agent"] == "mandari (+https://mandari.de)"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://cdn.example/live.m3u8",
+        "https://localhost/live.m3u8",
+        "https://cdn.localhost/live.m3u8",
+        "https://postgres:5432/",
+        "https://127.0.0.1/live.m3u8",
+        "https://10.0.0.5/live.m3u8",
+        "https://192.168.1.1/live.m3u8",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://[::1]/live.m3u8",
+        "https://[::ffff:127.0.0.1]/live.m3u8",
+        "https://2130706433/live.m3u8",
+        "https://0x7f000001/live.m3u8",
+    ],
+)
+def test_abruf_nur_oeffentliche_https_ziele(url: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover – darf nicht aufgerufen werden
+        raise AssertionError(f"Abruf von {request.url}")
+
+    with _client(handler) as client, pytest.raises(AnbieterError):
+        abruf.hole(url, http=client)
+
+
+def test_abruf_oeffentliche_ziele_erlaubt() -> None:
+    for url in ("https://cdn.example/a.m3u8", "https://93.184.215.14/a", "https://xn--bcher-kva.example/a"):
+        assert abruf.ziel_pruefen(url).scheme == "https"
+
+
+def test_abruf_folgt_weiterleitungen_nur_auf_gepruefte_ziele(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    gesehen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gesehen.append(str(request.url))
+        ziele = {
+            "/start": "https://cdn.example/relativ",
+            "/relativ": "/ziel",
+            "/ziel": None,
+            "/nach-http": "http://cdn.example/ziel",
+            "/nach-intern": "https://10.0.0.5/admin",
+            "/nach-dienst": "https://redis:6379/",
+            "/kreis": "/kreis",
+        }
+        ziel = ziele[request.url.path]
+        if ziel is None:
+            return httpx.Response(200, content=b"#EXTM3U")
+        return httpx.Response(302, headers={"Location": ziel})
+
+    with _client(handler) as client:
+        assert abruf.hole("https://a.example/start", http=client) == b"#EXTM3U"
+        assert gesehen == ["https://a.example/start", "https://cdn.example/relativ", "https://cdn.example/ziel"]
+        for start in ("/nach-http", "/nach-intern", "/nach-dienst"):
+            gesehen.clear()
+            with pytest.raises(AnbieterError):
+                abruf.hole(f"https://a.example{start}", http=client)
+            assert gesehen == [f"https://a.example{start}"], "das unzulässige Ziel wird nicht abgerufen"
+        gesehen.clear()
+        with pytest.raises(AnbieterError, match="Weiterleitungen"):
+            abruf.hole("https://a.example/kreis", http=client)
+        assert len(gesehen) == abruf.MAX_WEITERLEITUNGEN + 1
+    assert abruf.client().follow_redirects is False
