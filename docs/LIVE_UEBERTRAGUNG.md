@@ -107,4 +107,10 @@ Leseaufträge und Statusabfragen liegen.
 - Den genauen Live-Wert von `playoutState` bei 3Q kennen wir noch nicht: „live“ heißt online und weder `pre` noch
   `post`. Das Protokoll hält die Rohdaten fest, damit sich das nach der ersten Sitzung prüfen lässt.
 - Je Übertragung läuft höchstens ein Leseauftrag; `worker-live` hat zwei Plätze (Lesen und Statusabfrage).
-  Mehrere gleichzeitige Übertragungen brauchen mehr Plätze (`--concurrency live=N`) und Speicher.
+  Laufen mehrere Quellen zugleich live (mehrere Gremien oder Kommunen), warten Statusabfrage und Leseaufträge
+  aufeinander, die Abfrage kann sich dann um bis zu etwa 50 Sekunden verzögern. Die Parallelität muss deshalb mit
+  der Zahl gleichzeitig laufender Quellen steigen: N = Quellen + 1 (`--concurrency live=N` beim Dienst
+  `worker-live` in `docker-compose.yml`; ohne die Option gilt der Standardwert aus `settings.py`), dazu je Platz
+  Speicher für einen Tesseract-Aufruf (`LIVE_OCR_MEMORY_LIMIT_MB`) mehr.
+- Abrufe folgen Weiterleitungen nur auf https-Adressen mit öffentlichem Namen (`hub/live/anbieter/http.py`). Ein
+  Name, der erst bei der Auflösung auf eine Adresse im eigenen Netz zeigt, wird noch nicht abgefangen.

@@ -142,6 +142,35 @@ def test_geplant_ohne_uebertragung(client: Client, welt: Welt) -> None:
     assert "Noch keine Einträge." in html
 
 
+def test_vergangene_sitzung_ohne_uebertragung_nicht_uebertragen(client: Client, welt: Welt) -> None:
+    """Ohne Übertragungsdatensatz und lange nach dem Beginn: „nicht übertragen“, keine Abfrage alle 15 s mehr."""
+    welt.sitzung.start = timezone.now() - timedelta(days=90)
+    welt.sitzung.save()
+    html = client.get(_url(welt.sitzung)).content.decode()
+    assert "Diese Sitzung wurde nicht übertragen." in html
+    assert "hx-trigger" not in html
+    welt.sitzung.start = timezone.now() - timedelta(hours=2)
+    welt.sitzung.save()
+    html = client.get(_url(welt.sitzung)).content.decode()
+    assert "Die Übertragung hat noch nicht begonnen." in html, "kurz nach dem Beginn kann sie noch kommen"
+    assert "hx-trigger" in html
+
+
+def test_kopf_nennt_das_gremium_nur_einmal(client: Client, welt: Welt) -> None:
+    """Die Überschrift ist meist schon der Gremiumsname; die Zeile darunter wiederholt ihn dann nicht."""
+
+    def kopf() -> str:
+        html = client.get(_url(welt.sitzung)).content.decode()
+        treffer = re.search(r'<header class="mb-6.*?</header>', html, re.DOTALL)
+        assert treffer is not None
+        return treffer.group(0)
+
+    assert re.findall(r">\s*Rat\s*<", kopf()) == [">Rat<"], "nur die Überschrift"
+    zweites = OParlOrganization.objects.create(external_id=kennung("organizations"), body=welt.body, name="Ausschuss")
+    welt.sitzung.organizations.add(zweites)
+    assert "<span>Rat</span>" in kopf(), "gemeinsame Sitzung: die Zeile nennt das Gremium der Übertragung"
+
+
 def test_ohne_quelle_404(client: Client, welt: Welt) -> None:
     andere = OParlOrganization.objects.create(external_id=kennung("organizations"), body=welt.body, name="Ausschuss")
     sitzung = OParlMeeting.objects.create(external_id=kennung("meetings"), body=welt.body, start=timezone.now())

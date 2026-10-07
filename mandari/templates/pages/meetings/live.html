@@ -15,7 +15,7 @@ beendet ist; der Verlauf kommt dabei außer der Reihe (hx-swap-oob) mit. Keine R
         <c-insight.zurueck href="{% url 'insight_core:insight:meeting_detail' meeting.pk %}">Zur Sitzung</c-insight.zurueck>
         <h1 class="max-w-4xl text-[1.75rem] sm:text-[2rem] leading-[1.15] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">{{ meeting.get_display_name }}</h1>
         <p class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.95rem] text-gray-700 dark:text-gray-300">
-            {% if stand.gremium %}<span>{{ stand.gremium }}</span>{% endif %}
+            {% if stand.gremium and stand.gremium != meeting.get_display_name %}<span>{{ stand.gremium }}</span>{% endif %}
             {% if meeting.start %}<span>{{ meeting.start|date:"l, d. F Y" }}, {{ meeting.start|date:"H:i" }} Uhr</span>{% endif %}
             <a href="{% url 'insight_core:insight:meeting_detail' meeting.pk %}" class="underline underline-offset-4 hover:text-gray-900 dark:hover:text-white">Tagesordnung</a>
         </p>

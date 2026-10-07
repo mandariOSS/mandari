@@ -4,6 +4,8 @@ Lesezugriffe auf die Live-Übertragungen (Issue #915).
 
 - ``live_stand(meeting_id)``: alles für die öffentliche Live-Seite in Insight (Sitzung, Status, Player, jetzt
   laufender TOP, wer am Wort ist, Verlauf). ``None``, wenn es für kein Gremium der Sitzung eine Quelle gibt.
+  Ohne Übertragungsdatensatz gilt eine Sitzung als ``geplant``, länger als ``NICHT_UEBERTRAGEN_NACH`` nach ihrem
+  Beginn als ``nicht_uebertragen`` (die Seite fragt dann nicht mehr nach).
 - ``wortmeldung(speech_id)``: Angaben einer Wortmeldung für Abonnenten von ``ris.broadcast.speaker_changed``
   (z. B. die Fraktionszuordnung, Issue #916): Person, Kommune, gelesene Fraktion bzw. Funktion, Zuordnung und Zahl
   gleicher Lesungen.
@@ -18,11 +20,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from django.conf import settings
+from django.utils import timezone
 
 from insight_core.models import OParlConsultation, OParlMeeting
 
 from .anbieter import anbieter
 from .models import Broadcast, BroadcastSection, BroadcastSource, BroadcastSpeech, BroadcastStatus, SpeechAssignment
+from .services import NICHT_UEBERTRAGEN_NACH
 
 
 @dataclass(frozen=True)
@@ -121,6 +125,13 @@ def _abschnitt(
     )
 
 
+def _ohne_uebertragung(meeting: OParlMeeting) -> str:
+    """Status einer Sitzung, für die es (noch) keine Übertragung gibt."""
+    if meeting.start is not None and timezone.now() - meeting.start > NICHT_UEBERTRAGEN_NACH:
+        return BroadcastStatus.NICHT_UEBERTRAGEN
+    return BroadcastStatus.GEPLANT
+
+
 def live_stand(meeting_id: uuid.UUID) -> LiveStand | None:
     """Stand der Live-Seite einer Sitzung (siehe Moduldokumentation)."""
     meeting = (
@@ -171,7 +182,7 @@ def live_stand(meeting_id: uuid.UUID) -> LiveStand | None:
     return LiveStand(
         meeting=meeting,
         gremium=quelle.organization.name or "",
-        status=broadcast.status if broadcast is not None else BroadcastStatus.GEPLANT,
+        status=broadcast.status if broadcast is not None else _ohne_uebertragung(meeting),
         begonnen_am=broadcast.started_at if broadcast is not None else None,
         beendet_am=broadcast.ended_at if broadcast is not None else None,
         einbettung_url=adapter.einbettung_url(quelle.identifier),
