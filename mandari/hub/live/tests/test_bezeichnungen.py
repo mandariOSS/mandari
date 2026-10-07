@@ -36,7 +36,7 @@ BEKANNT = ["Fraktion Grün-Süd", "Liste Musterstadt", "Internationale Fraktion 
         ("Liste Mussterstadt", "Liste Musterstadt"),
         # unbekannt oder zu kurz für einen Anfang: unverändert; Kürzel müssen genau gleich sein
         ("Fraktion B", "Fraktion B"),
-        ("Liste Musterstadt FDP", "Liste Musterstadt FDP"),
+        ("Liste Musterstadt ABC", "Liste Musterstadt ABC"),
         ("Inter", "Inter"),
         ("", ""),
         (None, None),
@@ -53,7 +53,7 @@ def test_mehrdeutiger_anfang_bleibt_unveraendert() -> None:
 
 def test_doppelt_gelesener_umlaut() -> None:
     """Die Texterkennung liest „ü“ gelegentlich als „uü“: in langen Wörtern ein Lesefehler."""
-    assert kanonisch("Die Gruünen Musterstadt", ["Die Grünen Musterstadt"]) == "Die Grünen Musterstadt"
+    assert kanonisch("Die Suüdliste Musterstadt", ["Die Südliste Musterstadt"]) == "Die Südliste Musterstadt"
 
 
 def test_kuerzel_werden_nie_verwechselt() -> None:

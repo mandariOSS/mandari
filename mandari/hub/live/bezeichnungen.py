@@ -2,8 +2,8 @@
 """
 Gelesene Fraktionen auf bekannte Bezeichnungen abbilden (Issue #915).
 
-Die Texterkennung liest dieselbe Fraktion unterschiedlich: Umlaute fehlen oder sind verstümmelt („Grünen“,
-„Grunen“, „Gru�nen“), lange Bezeichnungen sind abgeschnitten („Internationale Fraktion Die PA…“). Ohne Abgleich
+Die Texterkennung liest dieselbe Fraktion unterschiedlich: Umlaute fehlen oder sind verstümmelt („Südliste“,
+„Sudliste“, „Su�dliste“), lange Bezeichnungen sind abgeschnitten („Internationale Fraktion Beisp…“). Ohne Abgleich
 entstünden Dubletten, und die Entprellung hielte jede Lesart für einen Personenwechsel.
 
 **Bekannte Bezeichnungen einer Kommune** (``bekannte_fraktionen``): zuerst die des Profils (``fraktionen``), dann die
@@ -11,10 +11,10 @@ bisher gelesenen (Wortmeldungen aller Übertragungen der Kommune, häufigste zue
 nur der Anfang einer anderen ist, zählt nicht (sie war abgeschnitten).
 
 **Abgleich** (``kanonisch``) in der Vergleichsform (``lesung.vereinfacht``: klein, ohne Umlautzeichen), Wort für
-Wort: Wörter ab ``MIN_WORT`` Zeichen dürfen sich ähneln (``AEHNLICH``, Lesefehler wie „Gruünen“ statt „Grünen“),
+Wort: Wörter ab ``MIN_WORT`` Zeichen dürfen sich ähneln (``AEHNLICH``, Lesefehler wie „Suüdliste“ statt „Südliste“),
 kürzere Wörter wie Parteikürzel müssen genau gleich sein („Fraktion FDP“ ist nie „Fraktion SPD“).
 
-1. gleich → die bekannte Bezeichnung (hat die Lesung mehr Umlaute, die Lesung: „Grunen“ war verlesen);
+1. gleich → die bekannte Bezeichnung (hat die Lesung mehr Umlaute, die Lesung: „Sudliste“ war verlesen);
 2. eine bekannte ist der Anfang der Lesung (ganze Wörter) → die Lesung (vollständiger als die bekannte);
 3. gleich bis auf Lesefehler → die ähnlichste bekannte;
 4. die Lesung (mindestens ``MIN_PRAEFIX`` Zeichen) ist der Anfang genau einer bekannten, das letzte Wort darf
@@ -81,7 +81,7 @@ def kanonisch(gelesen: str | None, bekannte: Sequence[str]) -> str | None:
     formen = [(b, _form(b)) for b in bekannte if b and _form(b)]
     for bekannt, bekannt_form in formen:
         if bekannt_form == form:
-            # Gleiche Bezeichnung: die Schreibweise mit Umlauten gilt („Grunen“ war verlesen)
+            # Gleiche Bezeichnung: die Schreibweise mit Umlauten gilt („Sudliste“ war verlesen)
             return gelesen if _umlaute(gelesen) > _umlaute(bekannt) else bekannt
     if any(form.startswith(f + " ") for _, f in formen):
         return gelesen

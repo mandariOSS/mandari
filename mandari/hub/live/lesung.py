@@ -93,7 +93,7 @@ def buchstaben(text: str) -> int:
 def vereinfacht(text: str) -> str:
     """
     Vergleichsform: klein, Umlaute und Akzente auf den Grundbuchstaben (ü → u, ß → ss), ohne Satzzeichen, einfache
-    Leerzeichen. Die Texterkennung verliert Umlaute oft („Grunen“, „Gru�nen“): Ersatzzeichen (U+FFFD) und
+    Leerzeichen. Die Texterkennung verliert Umlaute oft („Sudliste“, „Su�dliste“): Ersatzzeichen (U+FFFD) und
     alleinstehende Umlautpunkte fallen weg, so sind die Lesarten gleich.
     """
     text = text.lower().replace("ß", "ss").replace("�", "").replace("¨", "")
