@@ -29,6 +29,33 @@ Lesungen in Folge. Meldet der Anbieter das Ende (bei 3Q die Tafel `post`; das St
 15 Minuten lang kein Signal oder endet das Zeitfenster, ist die Übertragung beendet. Lief bis 3 Stunden nach Beginn
 nichts, gilt die Sitzung als nicht übertragen.
 
+## TOP-Zuordnung
+
+Eine gelesene TOP-Angabe (Nummer und Titel) wird einem öffentlichen Tagesordnungspunkt **der Sitzung der
+Übertragung** zugeordnet; Punkte anderer Sitzungen kommen nie in Frage (`hub/live/zuordnung.py`, `top_zuordnen`).
+Die Texterkennung verliert gern den Punkt der Nummer („TOP 1.1“ wird „11“), und dem gelesenen Titel fehlt
+manchmal der erste Buchstabe. Deshalb:
+
+1. **Lesarten der Nummer:** „11“ zählt auch als „1.1“, „111“ als „11.1“, „1.11“ und „1.1.1“; eine Nummer mit Punkt
+   nur als sie selbst.
+2. **Titelprüfung:** Der gelesene Titel wird mit dem Titel jedes Tagesordnungspunkts der Sitzung verglichen
+   (Kleinschreibung, Umlaute auf den Grundbuchstaben, ohne Satzzeichen und „…“; ein fehlender erster Buchstabe und
+   ein abgeschnittenes Ende kosten kaum etwas).
+3. **Entscheidung:** zuerst eine Lesart der Nummer, deren Titel ab `titel_zur_nummer` (Standard 0,6) passt
+   (Sicherheit `nummer_titel`); sonst der Punkt mit dem ähnlichsten Titel ab `titel_allein` (Standard 0,75), auch
+   ohne passende Nummer, wenn der Titel lang genug ist und klar vor dem zweitbesten liegt (`titel`); sonst die
+   gelesene Nummer selbst mit niedriger Sicherheit (`nummer`); ohne Treffer kein Tagesordnungspunkt (`keine`).
+   Beide Schwellen stehen im Einblendungsprofil und lassen sich je Quelle anpassen (0,3 bis 1).
+4. **Entprellung** über den so bestimmten Tagesordnungspunkt, nicht über die gelesene Nummer: „11“ mit dem Titel
+   von TOP 1.1 und „1.1“ sind derselbe TOP und bestätigen einander.
+
+Von Hand gesetzte TOPs (`abschnitt_von_hand`) gelten ohne Lesarten und Titelprüfung. Das TOP-Feld des Profils
+liest nur Ziffern, Punkt und „TOP“ (`tessedit_char_whitelist`), solange das Profil das Standardmuster `top_muster`
+nutzt; mit `"zeichen": ""` im Feld `top` lässt sich das abschalten.
+
+Die Live-Seite und der Kinomodus verlinken den TOP auf den Tagesordnungspunkt in der Sitzungsseite
+(`/insight/termine/<sitzung>/#top-<tagesordnungspunkt>`); eine Vorlage dazu steht nur als Nebenlink „Vorlage“ da.
+
 ## Einstellungen
 
 | Variable | Standard | Bedeutung |
@@ -74,6 +101,13 @@ Leseaufträge und Statusabfragen liegen.
    sich auch im Admin (Live-Übertragungen → Übertragungsquellen) bearbeiten; es wird beim Speichern geprüft.
    Bekannte Fraktionsbezeichnungen der Kommune können unter `fraktionen` stehen, Funktionsbezeichnungen, die
    nicht als Fraktion gelten sollen, unter `funktionen`.
+
+   **Vorlage geändert:** Ändert sich eine Vorlage (z. B. „balken_unten_dreizeilig“: Titel ab 0,545 statt 0,555,
+   damit der erste Buchstabe nicht fehlt), zieht die Migration `hub_live.0002_top_zuordnung` gespeicherte Profile
+   nach, deren Ausschnitte noch genau der alten Vorlage entsprechen; angepasste Profile bleiben, wie sie sind.
+   Sonst setzt `live_quelle_einrichten --gremium … --profil balken_unten_dreizeilig` das Profil neu auf die
+   Vorlage. Das ersetzt das ganze Profil, also eigene Angaben wie `fraktionen` danach wieder eintragen (oder
+   `--profil-datei` mit dem angepassten Profil nutzen).
 4. **Einschalten:** `live_quelle_einrichten --gremium … --aktiv` und (einmal je Installation)
    `LIVE_UEBERTRAGUNG_AKTIV=true`.
 5. **Prüfen:** Während der nächsten Sitzung im Admin unter „Übertragungen“ Status und Abschnitte ansehen, die
@@ -86,8 +120,20 @@ Leseaufträge und Statusabfragen liegen.
   Lesung, Bildgröße, Balken ja/nein), `zustand` (Wechsel mit Grund), `fehler` (Ort und fester Fehlertext).
 - **Übertragung:** `frames_read` und `frames_without_overlay` zeigen, wie oft die Einblendung fehlte. Viele Bilder
   ohne Einblendung bei laufender Debatte deuten auf eine falsche Balkenerkennung im Profil.
-- **TOP-Abschnitte:** `title_similarity` vergleicht den gelesenen Titel mit dem Titel im RIS. Werte deutlich
-  unter 0,5 deuten auf eine falsch gelesene Nummer oder eine abweichende Nummerierung.
+- **TOP-Abschnitte:** `number_read` ist die gelesene Nummer, `number` die des zugeordneten Tagesordnungspunkts.
+  `title_similarity` vergleicht den gelesenen Titel mit dem Titel dieses Punkts, `confidence` sagt, worauf die
+  Zuordnung beruht (`nummer_titel`, `titel`, `nummer`, `keine`; leer bei Abschnitten von vor der Titelprüfung).
+  Viele Abschnitte mit `nummer` oder niedriger Ähnlichkeit deuten auf einen schlecht sitzenden Ausschnitt im Profil
+  oder eine abweichende Nummerierung.
+- **TOP-Abschnitte neu zuordnen:** Wurden Abschnitte noch falsch zugeordnet (vor der Titelprüfung oder mit einem
+  schlechten Profil), ordnet `python manage.py live_abschnitte_neu_zuordnen --uebertragung <uuid> --probelauf`
+  sie anhand der protokollierten Lesungen (TOP und Titel je Lesung) neu zu und zeigt nur die Änderungen; ohne
+  `--probelauf` wird gespeichert. Der Befehl korrigiert Zuordnungen, ergänzt gelesene Nummer und Sicherheit, führt
+  Abschnitte desselben TOP zusammen (Wortmeldungen wandern mit) und hängt Wortmeldungen an den Abschnitt, der bei
+  ihrem Beginn lief. Von Hand gesetzte Abschnitte bleiben. Der bisherige Stand landet vorher im Protokoll (Art
+  `zustand`, Grund `neuzuordnung`). Er sendet **keine Ereignisse**: Abonnenten haben auf die ursprünglichen
+  reagiert. Ein zweiter Lauf ändert nichts mehr. Grenze: Lesungen, die das Protokoll schon aufgeräumt hat
+  (`LIVE_PROTOKOLL_TAGE`), fehlen; Abschnitte außerhalb des Zeitraums der Lesungen bleiben unverändert.
 - **Wortmeldungen:** Zuordnung `eindeutig`, `unsicher` oder `keine`. Die Person lässt sich im Admin korrigieren;
   die Live-Seite verlinkt Personen nur bei `eindeutig`.
 - **Fraktionen:** Aus Wortmeldungen mit Person und gelesener Fraktion leitet das Abonnement

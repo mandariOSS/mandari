@@ -178,8 +178,11 @@ def test_kinoansicht(client: Client, welt: Welt, laufend: Broadcast) -> None:
     html = antwort.content.decode()
     assert f'<iframe src="{EINBETTUNG}"' in html
     assert re.search(r"frame-src [^;]*https://playout\.3qsdn\.com", antwort["Content-Security-Policy"])
-    # Links öffnen in neuem Tab, damit das Video weiterläuft
+    # Links öffnen in neuem Tab, damit das Video weiterläuft; der TOP führt zum Tagesordnungspunkt der Sitzung
+    top = reverse("insight_core:insight:meeting_detail", args=[welt.sitzung.pk]) + f"#top-{welt.top5.pk}"
+    assert re.search(r'<a href="' + re.escape(top) + r'"[^>]*>TOP 5 – Neubau einer Grundschule</a>', html)
     for ziel in (
+        top,
         reverse("insight_core:insight:paper_detail", args=[welt.vorlage.pk]),
         reverse("insight_core:insight:person_detail", args=[welt.muster.pk]),
         QUELLE,

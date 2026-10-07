@@ -28,14 +28,25 @@ def _url(meeting: OParlMeeting) -> str:
     return reverse("insight_core:insight:meeting_live", args=[meeting.pk])
 
 
+def _top_url(welt: Welt) -> str:
+    """Tagesordnungspunkt 5 auf der Seite der Sitzung (Sprungmarke ``top-<uuid>``)."""
+    return reverse("insight_core:insight:meeting_detail", args=[welt.sitzung.pk]) + f"#top-{welt.top5.pk}"
+
+
 def test_laufende_uebertragung(client: Client, welt: Welt, laufend: Broadcast) -> None:
     antwort = client.get(_url(welt.sitzung))
     assert antwort.status_code == 200
     html = antwort.content.decode()
     assert "Die Übertragung läuft seit 16:15 Uhr." in html
     assert "TOP 5 – Neubau einer Grundschule" in html
-    # TOP mit Vorlage → Link auf die Vorlage; Person eindeutig → Link auf die Personenseite
-    assert reverse("insight_core:insight:paper_detail", args=[welt.vorlage.pk]) in html
+    # TOP → Tagesordnungspunkt auf der Seite dieser Sitzung (Sprungmarke), jetzt und im Verlauf; die Vorlage nur
+    # als Nebenlink. Person eindeutig → Link auf die Personenseite
+    top = _top_url(welt)
+    assert html.count(f'<a href="{top}"') == 2, "jetzt laufender TOP und Verlauf"
+    assert re.search(r'<a href="' + re.escape(top) + r'"[^>]*>TOP 5 – Neubau einer Grundschule</a>', html)
+    vorlage = reverse("insight_core:insight:paper_detail", args=[welt.vorlage.pk])
+    assert re.search(r'<a href="' + re.escape(vorlage) + r'"[^>]*>Vorlage<span class="sr-only"> zu TOP 5</span>', html)
+    assert not re.search(r'<a href="' + re.escape(vorlage) + r'"[^>]*>TOP', html), "Vorlage nicht als Hauptziel"
     assert reverse("insight_core:insight:person_detail", args=[welt.muster.pk]) in html
     assert "Erika Muster</a> (Fraktion A)" in html
     # ohne Zuordnung nur Text, Funktion statt Fraktion
@@ -162,6 +173,26 @@ def test_inaktive_quelle_ohne_uebertragung_404(client: Client, welt: Welt, setti
 def test_sitzungsseite_verlinkt_die_live_seite_nicht(client: Client, welt: Welt, laufend: Broadcast) -> None:
     html = client.get(reverse("insight_core:insight:meeting_detail", args=[welt.sitzung.pk])).content.decode()
     assert _url(welt.sitzung) not in html
+
+
+def test_sitzungsseite_hat_sprungmarken_je_tagesordnungspunkt(client: Client, welt: Welt) -> None:
+    """Ziel der TOP-Links der Live-Seite: je Tagesordnungspunkt eine stabile Sprungmarke unter dem festen Kopf."""
+    html = client.get(reverse("insight_core:insight:meeting_detail", args=[welt.sitzung.pk])).content.decode()
+    for punkt in (welt.top1, welt.top5, welt.top51):
+        marke = re.search(r'<div id="top-' + str(punkt.pk) + r'" class="([^"]*)"', html)
+        assert marke is not None, punkt.number
+        assert "scroll-mt-20" in marke.group(1).split()
+
+
+def test_top_ohne_tagesordnungspunkt_ohne_link(client: Client, welt: Welt, laufend: Broadcast) -> None:
+    """Ist der gelesene TOP keinem Tagesordnungspunkt zugeordnet, steht er ohne Link da (keine Vorlage geraten)."""
+    abschnitt = laufend.current_section
+    assert abschnitt is not None
+    abschnitt.agenda_item, abschnitt.number = None, "9"
+    abschnitt.save()
+    html = client.get(_url(welt.sitzung)).content.decode()
+    assert "TOP 9" in html and "#top-" not in html
+    assert reverse("insight_core:insight:paper_detail", args=[welt.vorlage.pk]) not in html
 
 
 def test_wortmeldung_fuer_abonnenten(welt: Welt, laufend: Broadcast) -> None:

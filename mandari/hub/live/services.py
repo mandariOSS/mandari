@@ -23,6 +23,11 @@ lesen. Ein Wechsel von TOP oder Person gilt erst nach ``bestaetigungen`` gleiche
 entsteht ein TOP-Abschnitt (``ris.broadcast.agenda_item_started``) bzw. eine Wortmeldung
 (``ris.broadcast.speaker_changed``). Wortmeldungen haben nur einen Beginn: Redezeiten werden nicht erfasst.
 
+**TOP-Zuordnung.** Jede Lesung wird mit Nummer und Titel einem Tagesordnungspunkt der Sitzung der Übertragung
+zugeordnet (``zuordnung.top_zuordnen``: Lesarten der Nummer mit Titelprüfung). Entprellt wird über den so
+bestimmten Tagesordnungspunkt (``TopTreffer.schluessel``), nicht über die gelesene Nummer: „11“ mit dem Titel von
+TOP 1.1 und „1.1“ sind derselbe TOP.
+
 **Schalter.** ``LIVE_UEBERTRAGUNG_AKTIV`` (Standard aus): aus = keine Anfragen nach außen, keine Aufträge.
 """
 
@@ -61,7 +66,7 @@ from .models import (
 )
 from .ocr import Erkenner, OcrError, tesseract
 from .profil import Einblendungsprofil, ProfilError, lade_profil
-from .zuordnung import aehnlichkeit, normalisiere_nummer, person_zuordnen, tagesordnungspunkt
+from .zuordnung import TopTreffer, abschnittsschluessel, normalisiere_nummer, person_zuordnen, top_zuordnen
 
 logger = logging.getLogger(__name__)
 
@@ -367,17 +372,43 @@ def _kandidat(entprellung: dict[str, Any], art: str, wert: Any, noetig: int) -> 
     return False
 
 
+def abschnitt_schluessel(abschnitt: BroadcastSection | None) -> str | None:
+    """Schlüssel eines Abschnitts für die Entprellung (wie ``TopTreffer.schluessel``)."""
+    if abschnitt is None:
+        return None
+    return abschnittsschluessel(abschnitt.agenda_item_id, abschnitt.number)
+
+
+def top_wechsel(entprellung: dict[str, Any], aktuell: str | None, treffer: TopTreffer | None, noetig: int) -> bool:
+    """
+    Entprellung des TOP über den Schlüssel des Treffers (``aktuell``: Schlüssel des laufenden Abschnitts);
+    ``True``, wenn nach ``noetig`` gleichen Lesungen ein neuer Abschnitt beginnt. Auch die Neuzuordnung nutzt das.
+    """
+    if treffer is None:
+        return False
+    if treffer.schluessel == aktuell:
+        entprellung.pop("top", None)
+        return False
+    return _kandidat(entprellung, "top", treffer.schluessel, noetig)
+
+
 def _neuer_abschnitt(
-    broadcast: Broadcast, nummer: str, titel: str | None, jetzt: datetime, origin: str = SectionOrigin.EINBLENDUNG
+    broadcast: Broadcast,
+    treffer: TopTreffer,
+    titel: str | None,
+    jetzt: datetime,
+    origin: str = SectionOrigin.EINBLENDUNG,
 ) -> BroadcastSection:
     BroadcastSection.objects.filter(broadcast=broadcast, ended_at__isnull=True).update(ended_at=jetzt)
-    punkt = tagesordnungspunkt(broadcast.meeting_id, nummer)
+    punkt = treffer.punkt
     abschnitt = BroadcastSection.objects.create(
         broadcast=broadcast,
         agenda_item=punkt,
-        number=nummer,
+        number=treffer.nummer,
+        number_read=treffer.gelesen,
         title_read=(titel or "")[:500],
-        title_similarity=aehnlichkeit(titel, punkt.name if punkt else None),
+        title_similarity=treffer.titel_aehnlichkeit,
+        confidence=treffer.sicherheit,
         origin=origin,
         started_at=jetzt,
     )
@@ -391,7 +422,7 @@ def _neuer_abschnitt(
             "meeting": str(broadcast.meeting_id),
             "section": str(abschnitt.pk),
             "agenda_item": str(punkt.pk) if punkt else None,
-            "number": nummer,
+            "number": treffer.nummer,
             "origin": str(origin),
         },
     )
@@ -439,6 +470,19 @@ def lesung_verarbeiten(
     broadcast_id: uuid.UUID | str, lesung: Lesung, jetzt: datetime, profil: Einblendungsprofil
 ) -> Verarbeitung:
     """Entprellt eine Lesung und führt TOP-Abschnitt und Wortmeldung (eine Transaktion)."""
+    # Zuordnung vor der Sperre: Die Titelprüfung vergleicht mit allen Punkten der Sitzung und dauert bei langen
+    # Tagesordnungen spürbar; die Sitzung einer Übertragung ändert sich nicht
+    treffer: TopTreffer | None = None
+    if lesung.balken:
+        meeting_id = Broadcast.objects.filter(pk=broadcast_id).values_list("meeting_id", flat=True).first()
+        if meeting_id is not None:
+            treffer = top_zuordnen(
+                meeting_id,
+                lesung.top,
+                lesung.titel,
+                titel_zur_nummer=profil.titel_zur_nummer,
+                titel_allein=profil.titel_allein,
+            )
     with transaction.atomic():
         broadcast = (
             Broadcast.objects.select_for_update(of=("self",))
@@ -458,13 +502,9 @@ def lesung_verarbeiten(
         abschnitt: BroadcastSection | None = None
         wortmeldung: BroadcastSpeech | None = None
 
-        nummer = normalisiere_nummer(lesung.top)
-        aktuell = broadcast.current_section.number if broadcast.current_section else None
-        if nummer and nummer != aktuell:
-            if _kandidat(entprellung, "top", nummer, profil.bestaetigungen):
-                abschnitt = _neuer_abschnitt(broadcast, nummer, lesung.titel, jetzt)
-        elif nummer:
-            entprellung.pop("top", None)
+        aktuell = abschnitt_schluessel(broadcast.current_section)
+        if treffer is not None and top_wechsel(entprellung, aktuell, treffer, profil.bestaetigungen):
+            abschnitt = _neuer_abschnitt(broadcast, treffer, lesung.titel, jetzt)
 
         if lesung.name:
             if lesung.fraktion:
@@ -499,7 +539,11 @@ def abschnitt_von_hand(broadcast: Broadcast, nummer: str, jetzt: datetime | None
         gesperrt = (
             Broadcast.objects.select_for_update(of=("self",)).select_related("source", "meeting").get(pk=broadcast.pk)
         )
-        abschnitt = _neuer_abschnitt(gesperrt, gesucht, None, jetzt or timezone.now(), SectionOrigin.HAND)
+        # Von Hand gilt die Nummer der Verwaltung: keine Lesarten, keine Titelprüfung
+        treffer = top_zuordnen(gesperrt.meeting_id, gesucht, None, varianten=False)
+        if treffer is None:  # nicht erreichbar: die Nummer hat Ziffern (oben geprüft)
+            raise ValueError("TOP-Nummer ohne Ziffern")
+        abschnitt = _neuer_abschnitt(gesperrt, treffer, None, jetzt or timezone.now(), SectionOrigin.HAND)
         gesperrt.debounce = {k: v for k, v in (gesperrt.debounce or {}).items() if k != "top"}
         gesperrt.save()
     return abschnitt

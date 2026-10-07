@@ -159,24 +159,27 @@ def lies_bild(bild: Image.Image, profil: Einblendungsprofil, erkenner: Erkenner 
 
     top: str | None = None
     if "top" in felder:
-        top = top_nummer(erkenner(feldbild(bild, felder["top"]), felder["top"].psm), profil)
+        feld = felder["top"]
+        top = top_nummer(erkenner(feldbild(bild, feld), feld.psm, feld.zeichen), profil)
 
     name: str | None = None
     if "name" in felder:
-        name = nur_text(erkenner(feldbild(bild, felder["name"]), felder["name"].psm))
+        feld = felder["name"]
+        name = nur_text(erkenner(feldbild(bild, feld), feld.psm, feld.zeichen))
         if name and buchstaben(name) < profil.name_mindestbuchstaben:
             name = None
 
     fraktion: str | None = None
     funktion: str | None = None
     if name and "fraktion" in felder:
-        gelesen = ohne_top(nur_text(erkenner(feldbild(bild, felder["fraktion"]), felder["fraktion"].psm)), profil)
+        feld = felder["fraktion"]
+        gelesen = ohne_top(nur_text(erkenner(feldbild(bild, feld), feld.psm, feld.zeichen)), profil)
         fraktion, funktion = trenne_funktion(gelesen, profil.funktionen)
 
     titel: str | None = None
     if "titel" in felder:
         feld = felder["titel"]
-        zeilen = [z.strip() for z in erkenner(feldbild(bild, feld), feld.psm).splitlines() if z.strip()]
+        zeilen = [z.strip() for z in erkenner(feldbild(bild, feld), feld.psm, feld.zeichen).splitlines() if z.strip()]
         titel = " ".join(zeilen[: feld.zeilen]) or None
 
     return Lesung(

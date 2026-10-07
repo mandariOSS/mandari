@@ -4,7 +4,8 @@ Live-Übertragungen von Gremiensitzungen (Issue #915).
 
 - ``BroadcastSource``: Übertragungsquelle je Gremium (Anbieter, Kennung, Einblendungsprofil, Takt).
 - ``Broadcast``: Übertragung einer Sitzung mit Zustand, Entprellung und aktuellem Stand.
-- ``BroadcastSection``: Abschnitt je Tagesordnungspunkt (Beginn, Ende, Zuordnung).
+- ``BroadcastSection``: Abschnitt je Tagesordnungspunkt (Beginn, Ende, Zuordnung mit gelesener Nummer,
+  Titelähnlichkeit und Sicherheit, ``hub.live.zuordnung.top_zuordnen``).
 - ``BroadcastSpeech``: Wortmeldung (Person laut Einblendung, Zeitpunkt des Beginns). Bewusst ohne Ende und ohne
   Dauer: Redezeiten werden nicht erfasst.
 - ``BroadcastLog``: Protokoll der Abfragen, Lesungen, Zustandswechsel und Fehler für die Auswertung, 90 Tage.
@@ -135,6 +136,15 @@ class SectionOrigin(models.TextChoices):
     HAND = "hand", "von Hand"
 
 
+class SectionConfidence(models.TextChoices):
+    """Wie sicher ein Abschnitt seinem Tagesordnungspunkt zugeordnet ist (``hub.live.zuordnung``)."""
+
+    NUMMER_UND_TITEL = "nummer_titel", "Nummer und Titel passen"
+    TITEL = "titel", "nur der Titel passt"
+    NUMMER = "nummer", "nur die Nummer (niedrig)"
+    KEINE = "keine", "kein Tagesordnungspunkt"
+
+
 class BroadcastSection(models.Model):
     """Abschnitt einer Übertragung je Tagesordnungspunkt."""
 
@@ -148,9 +158,24 @@ class BroadcastSection(models.Model):
         related_name="+",
         verbose_name="Tagesordnungspunkt",
     )
-    number = models.CharField("TOP-Nummer", max_length=20)
+    number = models.CharField(
+        "TOP-Nummer", max_length=20, help_text="des zugeordneten Tagesordnungspunkts, sonst die gelesene"
+    )
+    # db_default: Ein älteres Image legt Abschnitte ohne diese Felder an (Rückfall ohne Rückbau)
+    number_read = models.CharField(
+        "gelesene Nummer", max_length=20, blank=True, default="", db_default="", help_text="leer = vor der Titelprüfung"
+    )
     title_read = models.CharField("gelesener Titel", max_length=500, blank=True, default="")
     title_similarity = models.FloatField("Ähnlichkeit zum Titel im RIS", null=True, blank=True)
+    confidence = models.CharField(
+        "Sicherheit der Zuordnung",
+        max_length=20,
+        choices=SectionConfidence.choices,
+        blank=True,
+        default="",
+        db_default="",
+        help_text="leer = vor der Titelprüfung",
+    )
     origin = models.CharField("Quelle", max_length=20, choices=SectionOrigin.choices, default=SectionOrigin.EINBLENDUNG)
     started_at = models.DateTimeField("begonnen am")
     ended_at = models.DateTimeField("beendet am", null=True, blank=True)

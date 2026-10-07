@@ -140,6 +140,57 @@ def welt(db: Any, jetzt: datetime) -> Welt:
     )
 
 
+#: Erfundene Tagesordnung mit Nummern, die ohne Punkt verwechselbar sind (1.1 und 11, 1.2 und 12)
+TAGESORDNUNG: dict[str, str] = {
+    "1": "Eröffnung und Feststellung der Tagesordnung",
+    "1.1": "Bericht der Verwaltung zum Radverkehrskonzept",
+    "1.2": "Bebauungsplan Nr. 47 Am Mühlenbach",
+    "2": "Haushaltssatzung 2027 der Musterstadt",
+    "11": "Anfragen der Fraktionen",
+    "11.1": "Anfrage zur Straßenbeleuchtung im Ortsteil Nord",
+    "12": "Mitteilungen der Verwaltung",
+}
+
+
+@dataclass
+class Tagesordnung:
+    """Sitzung mit TAGESORDNUNG und laufender Übertragung, dazu eine zweite Sitzung mit denselben Nummern."""
+
+    sitzung: OParlMeeting
+    punkte: dict[str, OParlAgendaItem]
+    andere: OParlMeeting
+    andere_punkte: dict[str, OParlAgendaItem]
+    broadcast: Broadcast
+
+
+def _sitzung_mit_tagesordnung(welt: Welt, beginn: datetime) -> tuple[OParlMeeting, dict[str, OParlAgendaItem]]:
+    sitzung = OParlMeeting.objects.create(
+        external_id=kennung("meetings"), body=welt.body, name="Sitzung des Rates", start=beginn
+    )
+    sitzung.organizations.set([welt.rat])
+    punkte = {
+        nummer: OParlAgendaItem.objects.create(
+            external_id=kennung("agendaitems"), meeting=sitzung, number=nummer, order=reihe, name=name
+        )
+        for reihe, (nummer, name) in enumerate(TAGESORDNUNG.items(), start=1)
+    }
+    return sitzung, punkte
+
+
+@pytest.fixture
+def tagesordnung(welt: Welt) -> Tagesordnung:
+    andere, andere_punkte = _sitzung_mit_tagesordnung(welt, welt.jetzt - timedelta(days=7))
+    sitzung, punkte = _sitzung_mit_tagesordnung(welt, welt.jetzt - timedelta(hours=2))
+    broadcast = Broadcast.objects.create(
+        source=welt.quelle,
+        meeting=sitzung,
+        status=BroadcastStatus.LIVE,
+        started_at=welt.jetzt - timedelta(hours=2),
+        stream={"stream_id": "63961", "hls_url": "https://cdn.example/live.m3u8", "embed_url": None},
+    )
+    return Tagesordnung(sitzung, punkte, andere, andere_punkte, broadcast)
+
+
 @pytest.fixture
 def laufend(welt: Welt) -> Broadcast:
     """Laufende Übertragung seit 16:15 Uhr: TOP 5 mit Vorlage, zwei Wortmeldungen, Erika Muster am Wort."""

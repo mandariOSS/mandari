@@ -9,10 +9,12 @@ Profil. Aufbau (Version 1)::
       "version": 1,
       "balken": {"box": [0.6, 0.83, 0.98, 0.95], "farbregeln": [["b", "r", 25], ["g", "r", 10]], "mindestanteil": 0.35},
       "felder": {
-        "top": {"box": [0.36, 0.87, 0.555, 0.94], "psm": 7, "vergroesserung": 3, "schwelle": 175},
+        "top": {"box": [0.36, 0.87, 0.545, 0.94], "psm": 7, "vergroesserung": 3, "schwelle": 175},
         "name": {...}, "fraktion": {...}, "titel": {..., "zeilen": 3}
       },
       "top_muster": "<regulärer Ausdruck mit genau einer Gruppe für die TOP-Nummer>",
+      "titel_zur_nummer": 0.6,
+      "titel_allein": 0.75,
       "name_mindestbuchstaben": 4,
       "funktionen": ["Oberbürgermeister", ...],
       "fraktionen": ["Fraktion A", ...],
@@ -26,14 +28,22 @@ Profil. Aufbau (Version 1)::
   ``r``, ``g``, ``b``). Ohne Balken wird nichts gelesen.
 - **Felder:** nur ``top``, ``name``, ``fraktion`` und ``titel``. Uhren und Redezeiten gibt es als Feld bewusst
   nicht. Je Feld: ``psm`` (Seitenaufteilung für Tesseract), ``vergroesserung`` (ganzzahlig), ``schwelle``
-  (Graustufe, ab der ein Bildpunkt als Schrift gilt) und ``helle_schrift`` (Standard: helle Schrift auf dunklem
-  Balken).
+  (Graustufe, ab der ein Bildpunkt als Schrift gilt), ``helle_schrift`` (Standard: helle Schrift auf dunklem
+  Balken) und ``zeichen`` (erlaubte Zeichen für Tesseract, ``tessedit_char_whitelist``; leer = alle).
+- **TOP-Feld nur mit Ziffern, Punkt und „TOP“:** Ohne Angabe ``zeichen`` liest das Feld ``top`` nur
+  ``TOP_ZEICHEN``, solange das Profil das Standardmuster ``top_muster`` nutzt. Sonst verliert die Texterkennung
+  Punkte („TOP 1.1“ → „11“) oder liest Buchstaben als Ziffern. Ein eigenes Muster (andere Beschriftung) liest
+  ohne Einschränkung; ``"zeichen": ""`` schaltet sie ab. Die Vorgabe steht bewusst nicht in den Vorlagen: Ein
+  älteres Image kennt die Angabe nicht und lehnte ein Profil mit ihr ab (Rückfall ohne Profiländerung).
 - **Funktionsbezeichnungen** (Oberbürgermeisterin, Beigeordneter, Stadtkämmerin, Verwaltung …) stehen in der
   Einblendung oft dort, wo sonst die Fraktion steht. Sie gelten als Funktion, nicht als Fraktion. Verglichen wird
   unscharf und ohne Groß-/Kleinschreibung (``lesung.ist_funktion``), „Oberburgermeister“ ist also auch eine Funktion.
 - **Fraktionen** (optional): bekannte Bezeichnungen der Kommune. Gelesene Fraktionen werden auf sie abgebildet
   (Umlautfehler, abgeschnittene Bezeichnungen, ``hub.live.bezeichnungen``); zusätzlich zählen die bisher gelesenen.
 - **Bestätigungen:** Ein Wechsel von TOP oder Person gilt erst, wenn er so oft hintereinander gleich gelesen wurde.
+- **Titelprüfung** (``titel_zur_nummer``, ``titel_allein``, je 0,3 bis 1): Schwellen der Zuordnung gelesener TOPs
+  zu Tagesordnungspunkten (``hub.live.zuordnung.top_zuordnen``). Ab ``titel_zur_nummer`` bestätigt der Titel eine
+  Lesart der Nummer („11“ als 1.1), ab ``titel_allein`` entscheidet der Titel auch ohne passende Nummer.
 
 ``VORLAGEN`` liefert eine allgemeine Vorlage („Balken unten, dreizeilig“) mit den am Prototyp geprüften Werten.
 """
@@ -88,8 +98,17 @@ STANDARD_FUNKTIONEN: Final[tuple[str, ...]] = (
 )
 
 _TOP_MUSTER: Final = r"\bT\s*[O0]\s*P\s*[:.]?\s*(\d{1,3}(?:\s*\.\s*\d{1,2})?)"
+#: Erlaubte Zeichen des TOP-Felds beim Standardmuster: Ziffern, Punkt und „TOP“ (Punkte bleiben erhalten)
+TOP_ZEICHEN: Final = "0123456789.TOP"
+#: Erlaubte Zeichen einer Angabe ``zeichen`` (geht als ein Argument an Tesseract)
+_ZEICHEN: Final = re.compile(r"[0-9A-Za-zÄÖÜäöüß.,:;()/\-]{1,100}")
+#: Ab dieser Titelähnlichkeit bestätigt der gelesene Titel eine Lesart der Nummer (z. B. „11“ als 1.1)
+TITEL_ZUR_NUMMER: Final = 0.6
+#: Ab dieser Titelähnlichkeit entscheidet der Titel allein, auch wenn keine Lesart der Nummer passt
+TITEL_ALLEIN: Final = 0.75
 
-#: Allgemeine Vorlagen; die Werte von „balken_unten_dreizeilig“ sind gegen eine Aufzeichnung geprüft (Issue #915)
+#: Allgemeine Vorlagen; die Werte von „balken_unten_dreizeilig“ sind an echten Einblendungen geprüft (Issue #915).
+#: Titel ab 0.545 (vorher 0.555: der erste Buchstabe fehlte); das TOP-Feld endet dort und ragt nicht hinein.
 VORLAGEN: Final[Mapping[str, Mapping[str, Any]]] = {
     "balken_unten_dreizeilig": {
         "version": VERSION,
@@ -100,13 +119,15 @@ VORLAGEN: Final[Mapping[str, Mapping[str, Any]]] = {
             "mindestanteil": 0.35,
         },
         "felder": {
-            "top": {"box": [0.36, 0.87, 0.555, 0.94], "psm": 7, "vergroesserung": 3, "schwelle": 175},
+            "top": {"box": [0.36, 0.87, 0.545, 0.94], "psm": 7, "vergroesserung": 3, "schwelle": 175},
             "name": {"box": [0.05, 0.825, 0.42, 0.878], "psm": 7, "vergroesserung": 3, "schwelle": 175},
             # bis 0.36: lange Bezeichnungen wurden bei 0.33 abgeschnitten; „TOP“ beginnt rechts davon (geprüft)
             "fraktion": {"box": [0.05, 0.87, 0.36, 0.925], "psm": 7, "vergroesserung": 3, "schwelle": 175},
-            "titel": {"box": [0.555, 0.82, 1.0, 0.955], "psm": 6, "vergroesserung": 2, "schwelle": 175, "zeilen": 3},
+            "titel": {"box": [0.545, 0.82, 1.0, 0.955], "psm": 6, "vergroesserung": 2, "schwelle": 175, "zeilen": 3},
         },
         "top_muster": _TOP_MUSTER,
+        "titel_zur_nummer": TITEL_ZUR_NUMMER,
+        "titel_allein": TITEL_ALLEIN,
         "name_mindestbuchstaben": 4,
         "funktionen": list(STANDARD_FUNKTIONEN),
         "fraktionen": [],
@@ -166,6 +187,8 @@ class Feld:
     schwelle: int
     helle_schrift: bool = True
     zeilen: int = 1
+    #: Erlaubte Zeichen für Tesseract (leer = alle)
+    zeichen: str = ""
 
 
 @dataclass(frozen=True)
@@ -179,6 +202,8 @@ class Einblendungsprofil:
     funktionen: tuple[str, ...]
     bestaetigungen: int
     fraktionen: tuple[str, ...] = ()
+    titel_zur_nummer: float = TITEL_ZUR_NUMMER
+    titel_allein: float = TITEL_ALLEIN
 
 
 def vorlage(name: str) -> dict[str, Any]:
@@ -243,12 +268,12 @@ def _balken(wert: object, probleme: list[str]) -> Balken | None:
     return Balken(box=box, farbregeln=tuple(regeln), mindestanteil=anteil)
 
 
-def _feld(name: str, wert: object, probleme: list[str]) -> Feld | None:
+def _feld(name: str, wert: object, probleme: list[str], standard_zeichen: str = "") -> Feld | None:
     stelle = f"felder.{name}"
     if not isinstance(wert, Mapping):
         probleme.append(f"{stelle}: Objekt erwartet")
         return None
-    unbekannt = set(wert) - {"box", "psm", "vergroesserung", "schwelle", "helle_schrift", "zeilen"}
+    unbekannt = set(wert) - {"box", "psm", "vergroesserung", "schwelle", "helle_schrift", "zeilen", "zeichen"}
     if unbekannt:
         probleme.append(f"{stelle}: unbekannte Angaben {sorted(unbekannt)}")
     box = _box(wert.get("box"), f"{stelle}.box", probleme)
@@ -267,9 +292,37 @@ def _feld(name: str, wert: object, probleme: list[str]) -> Feld | None:
     hell = wert.get("helle_schrift", True)
     if not isinstance(hell, bool):
         probleme.append(f"{stelle}.helle_schrift: true oder false erwartet")
-    if box is None or psm is None or faktor is None or schwelle is None or zeilen is None or not isinstance(hell, bool):
+    zeichen = wert.get("zeichen", standard_zeichen)
+    if not isinstance(zeichen, str) or (zeichen and not _ZEICHEN.fullmatch(zeichen)):
+        probleme.append(f"{stelle}.zeichen: bis zu 100 Buchstaben, Ziffern oder Satzzeichen (.,:;()/-) erwartet")
+        zeichen = None
+    if (
+        box is None
+        or psm is None
+        or faktor is None
+        or schwelle is None
+        or zeilen is None
+        or not isinstance(hell, bool)
+        or zeichen is None
+    ):
         return None
-    return Feld(box=box, psm=psm, vergroesserung=faktor, schwelle=schwelle, helle_schrift=hell, zeilen=zeilen)
+    return Feld(
+        box=box,
+        psm=psm,
+        vergroesserung=faktor,
+        schwelle=schwelle,
+        helle_schrift=hell,
+        zeilen=zeilen,
+        zeichen=zeichen,
+    )
+
+
+def _schwelle(daten: Mapping[str, Any], name: str, standard: float, probleme: list[str]) -> float:
+    wert = _zahl(daten.get(name, standard))
+    if wert is None or not 0.3 <= wert <= 1.0:
+        probleme.append(f"{name}: Zahl von 0,3 bis 1 erwartet")
+        return standard
+    return wert
 
 
 def pruefe_profil(daten: object) -> list[str]:
@@ -290,6 +343,7 @@ def lade_profil(daten: object) -> Einblendungsprofil:
         probleme.append(f"version: {VERSION} erwartet")
     balken = _balken(daten.get("balken"), probleme)
 
+    roh_muster = daten.get("top_muster", _TOP_MUSTER)
     felder: dict[str, Feld] = {}
     roh_felder = daten.get("felder")
     if not isinstance(roh_felder, Mapping):
@@ -303,12 +357,13 @@ def lade_profil(daten: object) -> Einblendungsprofil:
                 if name in PFLICHTFELDER:
                     probleme.append(f"felder.{name}: fehlt")
                 continue
-            feld = _feld(name, roh_felder[name], probleme)
+            # Standardmuster: TOP-Feld nur mit Ziffern, Punkt und „TOP“ (siehe Moduldokumentation)
+            standard_zeichen = TOP_ZEICHEN if name == "top" and roh_muster == _TOP_MUSTER else ""
+            feld = _feld(name, roh_felder[name], probleme, standard_zeichen)
             if feld is not None:
                 felder[name] = feld
 
     muster: re.Pattern[str] | None = None
-    roh_muster = daten.get("top_muster", _TOP_MUSTER)
     if not isinstance(roh_muster, str) or not 0 < len(roh_muster) <= 300:
         probleme.append("top_muster: regulärer Ausdruck mit höchstens 300 Zeichen erwartet")
     else:
@@ -343,6 +398,10 @@ def lade_profil(daten: object) -> Einblendungsprofil:
     bestaetigungen = _ganzzahl(daten.get("bestaetigungen", 2), 1, 5)
     if bestaetigungen is None:
         probleme.append("bestaetigungen: ganze Zahl von 1 bis 5 erwartet")
+    zur_nummer = _schwelle(daten, "titel_zur_nummer", TITEL_ZUR_NUMMER, probleme)
+    allein = _schwelle(daten, "titel_allein", TITEL_ALLEIN, probleme)
+    if allein < zur_nummer:
+        probleme.append("titel_allein: mindestens so groß wie titel_zur_nummer erwartet")
 
     if probleme or balken is None or muster is None or mindestbuchstaben is None or bestaetigungen is None:
         raise ProfilError(probleme or ["Profil unvollständig"])
@@ -354,4 +413,6 @@ def lade_profil(daten: object) -> Einblendungsprofil:
         funktionen=tuple(f.strip() for f in funktionen),
         bestaetigungen=bestaetigungen,
         fraktionen=tuple(f.strip() for f in fraktionen),
+        titel_zur_nummer=zur_nummer,
+        titel_allein=allein,
     )

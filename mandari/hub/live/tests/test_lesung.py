@@ -25,20 +25,25 @@ from hub.live.lesung import (
     vereinfacht,
 )
 from hub.live.ocr import Erkenner
-from hub.live.profil import STANDARD_FUNKTIONEN, lade_profil, vorlage
+from hub.live.profil import STANDARD_FUNKTIONEN, TOP_ZEICHEN, lade_profil, vorlage
 from hub.live.tests.bilder import einblendung
 
 PROFIL = lade_profil(vorlage("balken_unten_dreizeilig"))
 
 
-def _erkenner(*texte: str) -> tuple[list[int], Erkenner]:
-    """Ersatz für Tesseract: gibt die Texte in der Reihenfolge der Felder zurück (top, name, fraktion, titel)."""
+def _erkenner(*texte: str, zeichen: list[str] | None = None) -> tuple[list[int], Erkenner]:
+    """
+    Ersatz für Tesseract: gibt die Texte in der Reihenfolge der Felder zurück (top, name, fraktion, titel); die
+    erlaubten Zeichen je Aufruf landen in zeichen.
+    """
     aufrufe: list[int] = []
     folge: Iterator[str] = iter(texte)
 
-    def erkennen(bild: Image.Image, psm: int) -> str:
+    def erkennen(bild: Image.Image, psm: int, erlaubt: str) -> str:
         assert bild.mode == "L", "zweifarbiges Graustufenbild"
         aufrufe.append(psm)
+        if zeichen is not None:
+            zeichen.append(erlaubt)
         return next(folge)
 
     return aufrufe, erkennen
@@ -67,6 +72,20 @@ def test_felder_in_reihenfolge_mit_psm_des_profils() -> None:
     assert lesung.fraktion == "Fraktion A"
     assert lesung.funktion is None
     assert lesung.titel == "Haushaltssatzung 2027 weiter", "höchstens drei Zeilen"
+
+
+def test_top_feld_nur_mit_ziffern_punkt_und_top() -> None:
+    """Das TOP-Feld liest nur Ziffern, Punkt und „TOP“ (sonst verliert Tesseract den Punkt), die übrigen alles."""
+    zeichen: list[str] = []
+    _, erkennen = _erkenner("TOP1.1", "Erika Muster", "Fraktion A", "Titel", zeichen=zeichen)
+    assert lies_bild(einblendung(), PROFIL, erkennen).top == "1.1"
+    assert zeichen == [TOP_ZEICHEN, "", "", ""]
+    assert TOP_ZEICHEN == "0123456789.TOP"
+
+
+def test_tesseract_bekommt_die_erlaubten_zeichen() -> None:
+    assert ocr._befehl(7, TOP_ZEICHEN)[-2:] == ["-c", "tessedit_char_whitelist=0123456789.TOP"]
+    assert not any("whitelist" in teil for teil in ocr._befehl(7))
 
 
 def test_funktion_statt_fraktion() -> None:
@@ -135,3 +154,13 @@ def test_lesung_mit_tesseract() -> None:
     assert lesung.top == "3.1"
     assert lesung.name == "Erika Muster"
     assert lesung.fraktion == "Fraktion A"
+
+
+@pytest.mark.skipif(not ocr.sprache_verfuegbar(), reason="Tesseract mit Sprachdaten deu nicht installiert")
+@pytest.mark.parametrize("top", ["TOP 1.1", "TOP 1.2", "TOP 11", "TOP 12.3"])
+def test_tesseract_behaelt_den_punkt_und_den_ersten_buchstaben(top: str) -> None:
+    """Titel beginnt knapp links der alten Grenze 0.555: Mit dem Ausschnitt ab 0.545 fehlt der erste Buchstabe nicht."""
+    bild = einblendung(top=top, titel="Neubau einer Grundschule", titel_links=0.548)
+    lesung = lies_bild(bild, PROFIL)
+    assert lesung.top == top.removeprefix("TOP ")
+    assert (lesung.titel or "").startswith("Neubau"), lesung.titel
