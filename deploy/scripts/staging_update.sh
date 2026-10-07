@@ -10,8 +10,10 @@
 # Ablauf eines Laufs:
 #   1. Sperre (immer nur ein Lauf), Schutz gegen eine falsch konfigurierte Zielumgebung
 #   2. Ziel ermitteln: das neueste Commit auf $GITHUB_BRANCH, fuer das der Release-Lauf (Images gebaut
-#      und veroeffentlicht) UND die CI erfolgreich waren. Als CI zaehlt der Lauf nach dem Push auf den
-#      Zweig oder der Lauf in der Merge-Queue fuer genau dieses Commit.
+#      und veroeffentlicht) UND die CI erfolgreich waren. Als CI zaehlt der Lauf in der Merge-Queue fuer
+#      genau dieses Commit oder ein Lauf direkt auf dem Zweig (von Hand oder nachts gestartet, aeltere
+#      Laeufe nach Push). Seit Issue #935 startet ein Push auf dev keine CI mehr: Auf dev landet genau
+#      das Commit, das die Queue geprueft hat (gleiche Commit-Kennung).
 #   3. Mit dem laufenden Tag (IMAGE_TAG in $MANDARI_DIR/.env) vergleichen. Gleich oder aelter: Ende.
 #   4. deploy.sh plan <tag> (Images ziehen, migrate --plan, check), dann deploy.sh apply <tag>
 #      (Sicherung, Migration, Umschalten, Anwendungs- und Worker-Pruefung, bei Fehlschlag Rueckfall).
@@ -163,19 +165,22 @@ ist_sha() {
 # --- 2. Ziel ermitteln --------------------------------------------------------------------------
 api "actions/workflows/$RELEASE_WORKFLOW/runs?branch=$GITHUB_BRANCH&event=push&status=success&per_page=30" \
   "$ARBEIT/release.json" || fehler "GitHub-API nicht erreichbar (Release-Laeufe)"
-api "actions/workflows/$CI_WORKFLOW/runs?branch=$GITHUB_BRANCH&event=push&status=success&per_page=50" \
-  "$ARBEIT/ci_push.json" || fehler "GitHub-API nicht erreichbar (CI-Laeufe nach Push)"
+# Laeufe direkt auf dem Zweig: workflow_dispatch (von Hand, Nachtlauf) und aeltere push-Laeufe. Pull Requests
+# mit diesem Zweig als Quelle (dev -> main) pruefen eine Zusammenfuehrung, nicht das Commit selbst.
+api "actions/workflows/$CI_WORKFLOW/runs?branch=$GITHUB_BRANCH&status=success&per_page=50" \
+  "$ARBEIT/ci_zweig.json" || fehler "GitHub-API nicht erreichbar (CI-Laeufe auf dem Zweig)"
 api "actions/workflows/$CI_WORKFLOW/runs?event=merge_group&status=success&per_page=50" \
   "$ARBEIT/ci_queue.json" || fehler "GitHub-API nicht erreichbar (CI-Laeufe der Merge-Queue)"
-for antwort in release ci_push ci_queue; do
+for antwort in release ci_zweig ci_queue; do
   jq -e 'has("workflow_runs")' "$ARBEIT/$antwort.json" > /dev/null 2>&1 \
     || fehler "Antwort der GitHub-API nicht lesbar ($antwort)"
 done
 
-# Gruene CI: nach Push auf den Zweig oder in dessen Merge-Queue (Zweig gh-readonly-queue/<zweig>/...)
+# Gruene CI: in der Merge-Queue des Zweigs (gh-readonly-queue/<zweig>/...) oder direkt auf dem Zweig
 {
   jq -r --arg b "$GITHUB_BRANCH" \
-    '.workflow_runs[]? | select(.conclusion == "success" and .head_branch == $b) | .head_sha' "$ARBEIT/ci_push.json"
+    '.workflow_runs[]? | select(.conclusion == "success" and .head_branch == $b)
+     | select((.event // "") != "pull_request") | .head_sha' "$ARBEIT/ci_zweig.json"
   jq -r --arg b "$GITHUB_BRANCH" \
     '.workflow_runs[]? | select(.conclusion == "success")
      | select((.head_branch // "") | startswith("gh-readonly-queue/" + $b + "/")) | .head_sha' "$ARBEIT/ci_queue.json"

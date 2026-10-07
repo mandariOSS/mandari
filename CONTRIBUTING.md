@@ -90,13 +90,35 @@ Alle Prüfungen laufen auch in der CI und müssen grün sein.
 Im Pull Request startet die CI nur die Jobs, deren Bereich die Änderung berührt (Job „Geänderte
 Bereiche“ in `.github/workflows/pr-check.yml`; eine reine Ingestor-Änderung braucht zum Beispiel
 keine Django-Testsuite). Maßgeblich ist der Job **„CI-Ergebnis“**: Er ist grün, wenn jeder nötige Job
-bestanden hat. Änderungen an `.github/` oder an Abhängigkeitsdateien, jeder Push auf `dev` und
-`main` sowie jeder Lauf in der Merge-Queue lassen alle Jobs laufen. Wer einen neuen Job anlegt,
+bestanden hat. Änderungen an `.github/` oder an Abhängigkeitsdateien, jeder Push auf `main`
+sowie jeder Lauf in der Merge-Queue lassen alle Jobs laufen. Wer einen neuen Job anlegt,
 trägt ihn unter `needs` von `ci-ergebnis` ein (ein Test prüft das).
+
+Ein Push auf `dev` startet keine CI: Auf `dev` landet genau das Commit, das die Merge-Queue geprüft
+hat. Den Volllauf auf `dev` startet jede Nacht `.github/workflows/nachtlauf.yml`.
+
+Die Django-Testsuite läuft in drei parallelen Teilen (Job „Test“, Issue #935):
+
+- **Aufteilung:** `--teil=N/3` verteilt ganze Testdateien nach den gemessenen Laufzeiten in
+  `mandari/testdauern.json` (`apps/common/tests/testlauf.py`). Neue Dateien zählen mit der mittleren
+  Dauer je Test. Wird ein Teil merklich länger als die anderen, `testdauern.json` durch die Datei aus
+  dem Artefakt `test-ergebnis` eines aktuellen Laufs ersetzen.
+- **Testdatenbank:** Jeder Job migriert einmal eine Vorlage (`scripts/testdb_vorlage.py`); jeder
+  xdist-Worker bekommt eine Kopie (`CREATE DATABASE … TEMPLATE`, Variable `MANDARI_TEST_DB_VORLAGE`)
+  statt alle Migrationen selbst abzuspielen.
+- **Migrationstests:** Tests, die Migrationen zurück- und wieder vorspielen (`….migrate(...)` oder
+  `call_command("migrate", ...)` im Test), bekommen automatisch das Kennzeichen `migrationen` und
+  laufen im eigenen Job „Migrationstests“: im Pull Request und in der Merge-Queue nur, wenn
+  Migrationen oder Migrationstests geändert sind, sonst bei jedem Volllauf (Push auf `main`, Nacht-
+  und Wochenlauf, manueller Start). Migriert ein Test über eine Hilfsfunktion, erkennt die Automatik
+  ihn nicht, und er scheitert mit einem Hinweis; dann `@pytest.mark.migrationen` setzen.
+- **Ergebnis:** Der Job „Test-Ergebnis“ führt die Coverage aller Teile zusammen, prüft die
+  Coverage-Grenze und belegt, dass jeder gesammelte Test genau einmal lief (Tabelle „Tests je Teil“
+  in der Zusammenfassung des Laufs).
 
 Zwei Grenzen des Filters: Die E2E-Tests laufen im Pull Request nur bei Templates, Frontend, Settings,
 Anmeldung, Editor und den Views der Seiten, die sie aufrufen. Ändert ein PR etwa einen Service, der
-den Kontext einer solchen Seite liefert, fällt ein Fehler im Browser erst beim Lauf auf `dev` auf.
+den Kontext einer solchen Seite liefert, fällt ein Fehler im Browser erst in der Merge-Queue auf.
 Wer eine E2E-Seite mittelbar ändert, startet den Lauf deshalb besser von Hand (Actions → CI →
 „Run workflow“ auf dem eigenen Branch, das startet alle Jobs). Und sobald CodeQL im Workflow statt
 im Default-Setup läuft, analysiert es je PR nur die betroffenen Sprachen; Code Scanning weist dann
@@ -105,7 +127,8 @@ erwartet und blockiert nichts.
 
 ```bash
 cd mandari
-uv run pytest                                    # über 5.000 Tests; die CI braucht parallel rund 8 Minuten
+uv run pytest                                    # über 10.000 Tests, auch die Migrationstests
+uv run pytest -n auto -m "not migrationen"       # wie ein Teil der CI: parallel, ohne Migrationstests
 uv run pytest apps/work/tasks -q                 # einzelne App
 ```
 
