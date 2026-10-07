@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.person.faction_assigned:v1",
+  "title": "Fraktion einer Person zugeordnet",
+  "description": "Einer Person wurde in ihrer Körperschaft eine Fraktion zugeordnet, die das RIS nicht über OParl liefert, oder eine solche Zuordnung hat sich geändert (Zeitraum, Gremium, Ablehnung). Quelle ist die Einblendung einer Live-Übertragung, die Pflege von Hand oder OParl. Gemeldet wird nur, was bestätigt ist oder war; Vorschläge bleiben intern. Aggregat: Person. Die Nutzlast enthält nur Kennungen, Codes und Daten; Bezeichnung und Partei liest der Empfänger aus dem RIS-Bestand.",
+  "x-kind": "event",
+  "x-owner": "hub.ris",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "assignment",
+    "person",
+    "source",
+    "status"
+  ],
+  "properties": {
+    "assignment": {
+      "description": "Kennung der Fraktionszuordnung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "person": {
+      "description": "Kanonische Kennung der Person.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": {
+      "description": "Quelle der Zuordnung: einblendung (Einblendung einer Live-Übertragung), hand (von Hand gepflegt), oparl (aus dem RIS).",
+      "type": "string",
+      "enum": [
+        "einblendung",
+        "hand",
+        "oparl"
+      ]
+    },
+    "status": {
+      "description": "Stand der Zuordnung: bestaetigt (gilt im angegebenen Zeitraum) oder abgelehnt (gilt nicht mehr, war falsch zugeordnet).",
+      "type": "string",
+      "enum": [
+        "bestaetigt",
+        "abgelehnt"
+      ]
+    },
+    "organization": {
+      "description": "Kanonische Kennung der Fraktion als Gremium im RIS, falls es sie dort gibt.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "valid_from": {
+      "description": "Beginn der Zuordnung.",
+      "type": "string",
+      "format": "date"
+    },
+    "valid_until": {
+      "description": "Ende der Zuordnung; fehlt, solange sie läuft.",
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "examples": [
+    {
+      "assignment": "0b6f3c2a-1d4e-4f5a-9b8c-7d6e5f4a3b2c",
+      "person": "6d1e2f3a-4b5c-5d6e-8f7a-9b0c1d2e3f4a",
+      "source": "einblendung",
+      "status": "bestaetigt",
+      "valid_from": "2026-10-07"
+    },
+    {
+      "assignment": "0b6f3c2a-1d4e-4f5a-9b8c-7d6e5f4a3b2c",
+      "person": "6d1e2f3a-4b5c-5d6e-8f7a-9b0c1d2e3f4a",
+      "source": "hand",
+      "status": "bestaetigt",
+      "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f",
+      "valid_from": "2025-11-01",
+      "valid_until": "2026-09-30"
+    }
+  ]
+}

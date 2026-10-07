@@ -11,7 +11,7 @@ Verknüpfung.
 Die Prüfung ist generisch und folgt den Relationen der Modelle (``_meta``): Innerhalb von insight_core geht
 sie der Lösch-Kaskade nach (eine Sitzung nimmt ihre TOPs und Dateien mit), jede Relation aus einem anderen
 Modul zählt als Verweis – unabhängig von ``on_delete``. Neue Verweise anderer Module sind damit ohne
-Anpassung abgedeckt.
+Anpassung abgedeckt. Gepflegte Daten in insight_core selbst (``GEPFLEGTE_MODELLE``) zählen ebenso.
 
 Alles läuft als Datenbankabfrage mit Unterabfragen; es werden keine Objekte in den Speicher geladen, auch
 nicht für eine ganze Kommune.
@@ -32,6 +32,9 @@ from django.db.models.fields.reverse_related import ForeignObjectRel
 # Apps, deren Daten gemeinsam mit den RIS-Objekten gelöscht werden dürfen. insight_sync verweist nur mit
 # Protokollen (SyncLog, SET_NULL) auf Quellen; das sind Betriebsdaten, keine Arbeitsdaten.
 RIS_APP_LABELS = frozenset({"insight_core", "insight_sync"})
+#: Gepflegte Daten in diesen Apps, die wie Arbeitsdaten anderer Module zählen: Sie entstehen nicht aus der Quelle und
+#: kämen mit ihr nicht wieder. Fraktionszuordnungen (Issue #916) sind zum Teil von Hand gepflegt.
+GEPFLEGTE_MODELLE = frozenset({"insight_core.PersonFraktion"})
 
 ModelType = type[models.Model]
 
@@ -64,7 +67,7 @@ def _reverse_relations(model: ModelType) -> list[ForeignObjectRel]:
 
 
 def _is_foreign(model: ModelType) -> bool:
-    return model._meta.app_label not in RIS_APP_LABELS
+    return model._meta.app_label not in RIS_APP_LABELS or model._meta.label in GEPFLEGTE_MODELLE
 
 
 def _cascades(rel: ForeignObjectRel) -> bool:

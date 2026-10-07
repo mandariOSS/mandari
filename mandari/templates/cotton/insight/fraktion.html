@@ -1,0 +1,8 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Fraktion einer Person in Listen (Issue #916): aus OParl schlicht; aus Insight gepflegt bzw. aus der Einblendung der
+Live-Übertragung gepunktet unterstrichen, die Quelle als Tooltip und für Bildschirmleser.
+  <c-insight.fraktion :angaben="person.angaben" />
+{% endcomment %}
+<c-vars angaben="" />
+{% if angaben.fraktion_hinweis %}<span class="underline decoration-dotted decoration-gray-400 underline-offset-4" title="{{ angaben.fraktion_hinweis }}">{{ angaben.fraktion_name }}<span class="sr-only"> ({{ angaben.fraktion_hinweis }})</span></span>{% else %}{{ angaben.fraktion_name }}{% endif %}

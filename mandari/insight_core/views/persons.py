@@ -17,7 +17,7 @@ from ..models import (
     PublicQuestion,
     withdrawn_q,
 )
-from ..services import personen_liste
+from ..services import fraktionen, personen_liste
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -154,6 +154,8 @@ class PersonDetailView(DetailView):
         enabled = question_service.questions_enabled()
         context["can_ask"] = enabled and (bool(council_membership) or question_service.is_mandate_holder(person))
         context["faction"] = question_service.get_faction(person)
+        # Ohne Fraktion aus OParl: bestätigte Zuordnung aus Insight, mit Hinweis auf die Quelle (Issue #916)
+        context["fraktion_lokal"] = None if context["faction"] else fraktionen.aktuelle_fraktion(person, person.body)
         if context["can_ask"] or not enabled:
             context["published_questions"] = PublicQuestion.objects.filter(
                 recipient=person,

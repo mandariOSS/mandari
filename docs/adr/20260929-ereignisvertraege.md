@@ -212,6 +212,20 @@ Rückreferenzen eines Orts), zählen nicht als Änderung. `ris.body.changed` mel
 Quelle sie beschreibt; ob sie im Bürgerportal veröffentlicht ist, bleibt `ris.source.published`.
 Erzeuger ist der Ingestor; Session meldet diese Typen nicht.
 
+## Nachtrag: Fraktionszuordnung ohne OParl-Fraktion (#916)
+
+Viele Kommunen liefern keine Fraktionsmitgliedschaften. Insight ordnet Personen deshalb selbst eine Fraktion zu
+(`insight_core.PersonFraktion`): aus der Einblendung einer Live-Übertragung, von Hand oder aus OParl. Neu ist
+`ris.person.faction_assigned` (v1, `oeffentlich` wie `ris.person.changed`, Aggregat `Person`). Die Nutzlast nennt
+Kennung der Zuordnung, Person, Quelle (`einblendung`, `hand`, `oparl`), Stand (`bestaetigt`, `abgelehnt`) und
+optional das Gremium im RIS sowie den Zeitraum (`valid_from`, `valid_until`, Format `date`). Bezeichnung und Partei
+sind Freitext und stehen nicht darin. Gemeldet wird jede Änderung an einer bestätigten Zuordnung und die Ablehnung
+einer bisher bestätigten; Vorschläge bleiben intern. Beendet eine neue Zuordnung die bisherige, gibt es zwei
+Ereignisse (die alte mit `valid_until`, die neue). Erzeuger ist `hub.ris.faction_assignment`, aufgerufen von
+`insight_core.services.fraktionen` im selben `transaction.atomic`-Block wie die Änderung, mit den Schaltern des
+Ingestors (`INGESTOR_EVENTS_ENABLED`, `sync_config["events_enabled"]`). Im Änderungsfeed erscheint das Ereignis
+als Änderung der Person, die Suche aktualisiert sie wie bei `ris.person.changed`.
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),

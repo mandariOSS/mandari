@@ -1,11 +1,12 @@
 {% load insight_listen %}
 {% comment %}
 Personenliste (Issue #841): Fraktion, Funktion und Gremien kommen aus den laufenden Mitgliedschaften
-(insight_core/services/personen_liste.py). Spalten erscheinen nur, wenn mindestens eine Person einen Wert hat;
+(insight_core/services/personen_liste.py); ohne Fraktion aus OParl gilt die bestätigte Zuordnung aus Insight mit
+Quellenhinweis (Issue #916). Spalten erscheinen nur, wenn mindestens eine Person einen Wert hat;
 die Gremien erst auf breiten Bildschirmen (2xl), am Handy stehen Funktion und Fraktion unter dem Namen.
 {% endcomment %}
 {% if persons %}
-{% with sp_fraktion=persons|hat_wert:"angaben.fraktion" sp_funktion=persons|hat_wert:"angaben.funktion" sp_gremien=persons|hat_wert:"angaben.gremien" sp_kontakt=persons|hat_wert:"email" %}
+{% with sp_fraktion=persons|hat_wert:"angaben.fraktion_name" sp_funktion=persons|hat_wert:"angaben.funktion" sp_gremien=persons|hat_wert:"angaben.gremien" sp_kontakt=persons|hat_wert:"email" %}
 <div class="-mx-3">
     <div class="relative overflow-x-auto">
     <table class="w-full">
@@ -31,16 +32,16 @@ die Gremien erst auf breiten Bildschirmen (2xl), am Handy stehen Funktion und Fr
                                class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
                                 {{ person.display_name }}
                             </a>
-                            {% if person.angaben.funktion or person.angaben.fraktion %}
+                            {% if person.angaben.funktion or person.angaben.fraktion_name %}
                             <p class="text-sm text-gray-600 dark:text-gray-400 md:hidden">
-                                {% if person.angaben.funktion %}<span class="sm:hidden">{{ person.angaben.funktion }}</span>{% endif %}{% if person.angaben.funktion and person.angaben.fraktion %}<span class="sm:hidden" aria-hidden="true"> · </span>{% endif %}{% if person.angaben.fraktion %}<span>{{ person.angaben.fraktion.short_name|default:person.angaben.fraktion.name }}</span>{% endif %}
+                                {% if person.angaben.funktion %}<span class="sm:hidden">{{ person.angaben.funktion }}</span>{% endif %}{% if person.angaben.funktion and person.angaben.fraktion_name %}<span class="sm:hidden" aria-hidden="true"> · </span>{% endif %}{% if person.angaben.fraktion_name %}<span><c-insight.fraktion :angaben="person.angaben" /></span>{% endif %}
                             </p>
                             {% endif %}
                         </div>
                     </div>
                 </td>
                 {% if sp_fraktion %}
-                <td class="px-3 py-3.5 text-sm text-gray-700 dark:text-gray-300 max-md:hidden">{% if person.angaben.fraktion %}{{ person.angaben.fraktion.short_name|default:person.angaben.fraktion.name }}{% endif %}</td>
+                <td class="px-3 py-3.5 text-sm text-gray-700 dark:text-gray-300 max-md:hidden">{% if person.angaben.fraktion_name %}<c-insight.fraktion :angaben="person.angaben" />{% endif %}</td>
                 {% endif %}
                 {% if sp_funktion %}
                 <td class="px-3 py-3.5 text-sm text-gray-700 dark:text-gray-300 max-sm:hidden">{{ person.angaben.funktion }}</td>
