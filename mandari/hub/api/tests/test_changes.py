@@ -32,7 +32,7 @@ from apps.events.models import Event
 from hub.api import aggregator, changes
 from hub.api.http import BadRequestError
 from hub.api.tests import ereignisse
-from hub.api.tests.ereignisse import AGGREGATE, T0, TENANT, huelle, naechste_nummer, schreiben
+from hub.api.tests.ereignisse import AGGREGATE, OHNE_EINTRAG, T0, TENANT, huelle, naechste_nummer, schreiben
 from hub.contracts import EVENT, ContractViolationError, Envelope, get_registry
 from insight_core import publication
 from insight_core.models import (
@@ -116,7 +116,9 @@ def ereignis(typ: str, body: uuid.UUID | None, objekt: uuid.UUID | None = None, 
     bestand = angaben.pop("bestand", True)
     angelegt = ereignisse.ereignis(typ, body, objekt, **angaben)
     kommune = OParlBody.objects.filter(pk=body).first() if body else None
-    gegenstand = changes._subject(angelegt)
+    # Nur Objekttypen, die der Feed nennen kann (``changes.events``); Live-Übertragungen etwa nicht
+    im_feed = angelegt.aggregate_type in changes.KINDS or angelegt.aggregate_type in changes.CARRIERS
+    gegenstand = changes._subject(angelegt) if im_feed else None
     if bestand and kommune is not None and gegenstand is not None:
         _im_bestand(kommune, *gegenstand)
     return angelegt
@@ -263,14 +265,18 @@ def test_jeder_oeffentliche_ereignistyp_des_registers_ist_eingeordnet(kommune: O
         for vertrag in get_registry().contracts(EVENT)
         if vertrag.name.startswith(changes.TYPE_PREFIX) and "oeffentlich" in vertrag.visibility
     }
-    assert oeffentlich == set(AGGREGATE), "neuer Ereignistyp: in AGGREGATE einordnen"
+    assert oeffentlich == set(AGGREGATE) | set(OHNE_EINTRAG), "neuer Ereignistyp: in AGGREGATE einordnen"
 
     erwartet = []
     for typ in sorted(oeffentlich):
         for beispiel in get_registry().latest(typ).examples:
             # Ein Ereignis zum Body nennt die Kommune selbst
-            objekt = kommune.pk if AGGREGATE[typ][0] == "Body" else None
+            objekt = kommune.pk if typ in AGGREGATE and AGGREGATE[typ][0] == "Body" else None
             angelegt = ereignis(typ, kommune.pk, objekt, nutzlast=beispiel, operation=_operation(typ, beispiel))
+            if typ in OHNE_EINTRAG:
+                # Live-Übertragungen (Issue #915): eigener Objekttyp, kein Eintrag im Feed
+                assert angelegt.aggregate_type not in changes.KINDS
+                continue
             if angelegt.aggregate_type in changes.KINDS:
                 art = changes.KINDS[angelegt.aggregate_type]
                 erwartet.append(
@@ -286,7 +292,8 @@ def test_jeder_oeffentliche_ereignistyp_des_registers_ist_eingeordnet(kommune: O
     eintraege = _feed(kommune, limit="1000")["data"]
 
     assert [(e["type"], e["id"]) for e in eintraege] == erwartet
-    assert len(eintraege) == Event.objects.count()
+    assert len(eintraege) == Event.objects.exclude(type__in=OHNE_EINTRAG).count()
+    assert Event.objects.filter(type__in=OHNE_EINTRAG).exists()
 
 
 def test_abstimmung_erscheint_als_aenderung_ihres_tagesordnungspunkts(kommune: OParlBody) -> None:

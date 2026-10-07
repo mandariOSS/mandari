@@ -53,6 +53,10 @@ STARTUMFANG: dict[str, tuple[str, str, frozenset[str]]] = {
     "ris.legislativeterm.changed": (EVENT, "hub.ris", frozenset({OE})),
     "ris.body.changed": (EVENT, "hub.ris", frozenset({OE})),
     "ris.source.published": (EVENT, "hub.ris", frozenset({OE})),
+    "ris.broadcast.started": (EVENT, "hub.live", frozenset({OE})),
+    "ris.broadcast.agenda_item_started": (EVENT, "hub.live", frozenset({OE})),
+    "ris.broadcast.speaker_changed": (EVENT, "hub.live", frozenset({INTERN})),
+    "ris.broadcast.ended": (EVENT, "hub.live", frozenset({OE})),
     "submission.received": (EVENT, "apps.session", frozenset({NOE})),
     "submission.status_changed": (EVENT, "apps.session", frozenset({NOE})),
     "attendance.response_recorded": (EVENT, "apps.session", frozenset({PB})),
@@ -109,6 +113,7 @@ MUSTER: dict[str, int] = {
     "^[a-z][a-z0-9_]{0,31}$": 32,  # Code
     "^[0-9a-f]{64}$": 64,  # SHA-256
     "^SG-[0-9]{4}-[0-9]{4,6}$": 14,  # Eingangsnummer
+    "^[0-9]{1,3}(?:[.][0-9]{1,3}){0,3}$": 15,  # TOP-Nummer in Normalform (Live-Übertragung, Issue #915)
 }
 
 _FELDNAME = re.compile(r"[a-z][a-z0-9_]{0,39}")
@@ -126,7 +131,7 @@ def _vertrag(register: Registry, name: str) -> Contract:
 
 
 def test_register_enthaelt_genau_den_startumfang(register: Registry) -> None:
-    assert len(register.names(EVENT)) == 36
+    assert len(register.names(EVENT)) == 40
     assert len(register.names(COMMAND)) == 4
     assert set(register.names()) == set(STARTUMFANG)
     assert all(register.versions(name) == (1,) for name in STARTUMFANG)

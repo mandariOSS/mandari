@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.broadcast.ended:v1",
+  "title": "Live-Übertragung beendet",
+  "description": "Die Übertragung einer Sitzung ist beendet (hub.live, Issue #915). Aggregat: Broadcast. reason nennt, woran das Ende erkannt wurde.",
+  "x-kind": "event",
+  "x-owner": "hub.live",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "broadcast",
+    "meeting",
+    "reason"
+  ],
+  "properties": {
+    "broadcast": {
+      "description": "Kennung der Übertragung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "meeting": {
+      "description": "Kanonische Kennung der Sitzung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "reason": {
+      "description": "anbieter (Anbieter meldet das Ende), ohne_signal (länger kein Stream), zeitfenster (Ende des Zeitfensters) oder hand (Verwaltung).",
+      "type": "string",
+      "enum": [
+        "anbieter",
+        "ohne_signal",
+        "zeitfenster",
+        "hand"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "reason": "anbieter"
+    }
+  ]
+}

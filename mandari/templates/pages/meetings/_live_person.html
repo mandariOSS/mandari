@@ -1,0 +1,2 @@
+{% comment %}Wortmeldung der Live-Seite (Issue #915). Erwartet: wortmeldung (hub.live.selectors.WortmeldungStand); Link nur bei eindeutiger Zuordnung.{% endcomment %}
+{% if wortmeldung.person_id %}<a href="{% url 'insight_core:insight:person_detail' wortmeldung.person_id %}" class="underline underline-offset-4 hover:text-primary-700 dark:hover:text-primary-300">{{ wortmeldung.name }}</a>{% else %}{{ wortmeldung.name }}{% endif %}{% if wortmeldung.fraktion %} ({{ wortmeldung.fraktion }}){% elif wortmeldung.funktion %}, {{ wortmeldung.funktion }}{% endif %}

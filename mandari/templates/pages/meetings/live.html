@@ -1,0 +1,116 @@
+{% extends "base_insight.html" %}
+{% comment %}
+Live-Seite einer Sitzung (Issue #915), bewusst nicht verlinkt. Erwartet: stand (hub.live.selectors.LiveStand), meeting,
+player, aktualisierung, version. Der Teil „jetzt“ lädt sich per htmx neu (?teil=stand), solange die Übertragung nicht
+beendet ist; der Verlauf kommt dabei außer der Reihe (hx-swap-oob) mit. Keine Redezeiten, nur Beginnzeiten.
+{% endcomment %}
+
+{% block title %}Live: {{ meeting.get_display_name }}{% endblock %}
+
+{% block brotkrumen_aktuell %}<c-insight.brotkrume>Live: {{ meeting.get_display_name }}</c-insight.brotkrume>{% endblock %}
+
+{% block content %}
+<div>
+    <header class="mb-6 rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-6">
+        <c-insight.zurueck href="{% url 'insight_core:insight:meeting_detail' meeting.pk %}">Zur Sitzung</c-insight.zurueck>
+        <h1 class="max-w-4xl text-[1.75rem] sm:text-[2rem] leading-[1.15] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">{{ meeting.get_display_name }}</h1>
+        <p class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.95rem] text-gray-700 dark:text-gray-300">
+            {% if stand.gremium %}<span>{{ stand.gremium }}</span>{% endif %}
+            {% if meeting.start %}<span>{{ meeting.start|date:"l, d. F Y" }}, {{ meeting.start|date:"H:i" }} Uhr</span>{% endif %}
+            <a href="{% url 'insight_core:insight:meeting_detail' meeting.pk %}" class="underline underline-offset-4 hover:text-gray-900 dark:hover:text-white">Tagesordnung</a>
+        </p>
+    </header>
+
+    <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div class="min-w-0 space-y-6">
+            <section aria-label="Übertragung">
+                {% if player %}
+                <iframe src="{{ stand.einbettung_url }}" title="Übertragung: {{ meeting.get_display_name }}"
+                        class="block w-full aspect-video rounded-lg bg-black" allow="autoplay; fullscreen; picture-in-picture"
+                        allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+                {% elif stand.einbettung_url %}
+                <div class="flex w-full aspect-video flex-col items-center justify-center gap-4 rounded-lg bg-gray-900 px-6 text-center text-gray-100">
+                    <p class="max-w-xl text-[0.95rem] leading-relaxed">
+                        Die Übertragung kommt von der Kommune über {{ stand.anbieter_name }}. Wenn Sie sie laden, gehen
+                        Daten wie Ihre IP-Adresse an diesen Anbieter.
+                    </p>
+                    <c-ui.button href="?player=1" icon="play">Übertragung laden</c-ui.button>
+                </div>
+                {% elif stand.seiten_url %}
+                <p class="text-[0.95rem] text-gray-700 dark:text-gray-300">
+                    Die Übertragung läuft auf der Seite der Kommune:
+                    <a href="{{ stand.seiten_url }}" target="_blank" rel="noopener noreferrer" class="underline underline-offset-4">Zur Übertragung</a>
+                </p>
+                {% endif %}
+            </section>
+
+            <div id="live-jetzt" aria-live="polite">
+                {% partialdef jetzt inline %}
+                <p class="text-[0.95rem] font-medium text-gray-900 dark:text-white" data-testid="live-status">
+                    {% if stand.status == "live" %}<span class="inline-block w-2 h-2 mr-2 rounded-full bg-red-600 align-middle" aria-hidden="true"></span>Die Übertragung läuft seit {{ stand.begonnen_am|date:"H:i" }} Uhr.
+                    {% elif stand.status == "beendet" %}Die Übertragung wurde um {{ stand.beendet_am|date:"H:i" }} Uhr beendet.
+                    {% elif stand.status == "nicht_uebertragen" %}Diese Sitzung wurde nicht übertragen.
+                    {% else %}Die Übertragung hat noch nicht begonnen.{% endif %}
+                </p>
+                {% if stand.laeuft %}
+                <dl class="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <dt class="text-sm text-gray-600 dark:text-gray-400">Jetzt</dt>
+                        <dd class="mt-1 text-[1.0625rem] text-gray-900 dark:text-white">
+                            {% if stand.jetzt_abschnitt %}{% include "pages/meetings/_live_top.html" with abschnitt=stand.jetzt_abschnitt %}{% else %}noch kein Tagesordnungspunkt erkannt{% endif %}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm text-gray-600 dark:text-gray-400">Am Wort</dt>
+                        <dd class="mt-1 text-[1.0625rem] text-gray-900 dark:text-white">
+                            {% if stand.am_wort %}{% include "pages/meetings/_live_person.html" with wortmeldung=stand.am_wort %}{% else %}–{% endif %}
+                        </dd>
+                    </div>
+                </dl>
+                {% endif %}
+                {% if stand.status != "beendet" and stand.status != "nicht_uebertragen" %}
+                <span hidden hx-get="?teil=stand&amp;v={{ version|urlencode }}" hx-trigger="every {{ aktualisierung }}s" hx-target="#live-jetzt" hx-swap="innerHTML"></span>
+                {% endif %}
+                {% if teil %}<div hx-swap-oob="innerHTML:#live-verlauf">{% partial verlauf %}</div>{% endif %}
+                {% endpartialdef %}
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+                TOP und Namen liest mandari während der Übertragung automatisch aus der Einblendung der Kommune. Bild und
+                Ton speichern wir nicht. Fehler sind möglich; maßgeblich ist die Niederschrift.
+            </p>
+        </div>
+
+        <section aria-labelledby="verlauf-titel">
+            <h2 id="verlauf-titel" class="text-[1.0625rem] font-semibold text-gray-900 dark:text-white">Verlauf</h2>
+            <div id="live-verlauf">
+                {% partialdef verlauf inline %}
+                {% if stand.verlauf or stand.ohne_abschnitt %}
+                <ol class="mt-3 space-y-4">
+                    {% for abschnitt in stand.verlauf %}
+                    <li>
+                        <p class="text-[0.95rem] text-gray-900 dark:text-white"><span class="tabular-nums text-gray-600 dark:text-gray-400">{{ abschnitt.begonnen_am|date:"H:i" }}</span> {% include "pages/meetings/_live_top.html" %}</p>
+                        {% if abschnitt.wortmeldungen %}
+                        <ul class="mt-1 ml-12 space-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+                            {% for wortmeldung in abschnitt.wortmeldungen %}<li><span class="tabular-nums text-gray-500 dark:text-gray-400">{{ wortmeldung.begonnen_am|date:"H:i" }}</span> {% include "pages/meetings/_live_person.html" %}</li>{% endfor %}
+                        </ul>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                    {% if stand.ohne_abschnitt %}
+                    <li>
+                        <p class="text-[0.95rem] text-gray-600 dark:text-gray-400">Vor dem ersten Tagesordnungspunkt</p>
+                        <ul class="mt-1 ml-12 space-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+                            {% for wortmeldung in stand.ohne_abschnitt %}<li><span class="tabular-nums text-gray-500 dark:text-gray-400">{{ wortmeldung.begonnen_am|date:"H:i" }}</span> {% include "pages/meetings/_live_person.html" %}</li>{% endfor %}
+                        </ul>
+                    </li>
+                    {% endif %}
+                </ol>
+                {% else %}
+                <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">Noch keine Einträge.</p>
+                {% endif %}
+                {% endpartialdef %}
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

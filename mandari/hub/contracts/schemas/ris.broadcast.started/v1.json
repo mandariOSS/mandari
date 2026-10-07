@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mandari:event:ris.broadcast.started:v1",
+  "title": "Live-Übertragung begonnen",
+  "description": "Der Streaming-Anbieter meldet, dass die Übertragung einer Sitzung läuft (hub.live, Issue #915). Aggregat: Broadcast (eigener Typ, damit weder Änderungsfeed noch Suchindex reagieren). Die Nutzlast enthält nur Kennungen und Codes; den Stand liest der Empfänger über hub.live.selectors.",
+  "x-kind": "event",
+  "x-owner": "hub.live",
+  "x-visibility": "oeffentlich",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "broadcast",
+    "meeting"
+  ],
+  "properties": {
+    "broadcast": {
+      "description": "Kennung der Übertragung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "meeting": {
+      "description": "Kanonische Kennung der Sitzung.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "organization": {
+      "description": "Kanonische Kennung des Gremiums.",
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "examples": [
+    {
+      "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+      "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+      "organization": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"
+    }
+  ]
+}
