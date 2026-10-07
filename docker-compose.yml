@@ -136,6 +136,10 @@ x-app-environment: &app-environment
   OPARL_SNAPSHOT_PARALLEL: ${OPARL_SNAPSHOT_PARALLEL:-2}
   # AI (optional)
   NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+  # Live-Übertragungen von Gremiensitzungen (docs/LIVE_UEBERTRAGUNG.md), Standard aus: aus = keine Anfragen an
+  # Streaming-Anbieter, kein Zeitplan; an = Dienst worker-live bedient die Warteschlange live
+  LIVE_UEBERTRAGUNG_AKTIV: ${LIVE_UEBERTRAGUNG_AKTIV:-false}
+  LIVE_PROTOKOLL_TAGE: ${LIVE_PROTOKOLL_TAGE:-90}
   # „Worker lebt“ an die Statusseite (docs/MONITORING.md, „Worker“); leer = keine Meldung
   WORKER_PUSH_URL: ${WORKER_PUSH_URL:-}
   WORKER_PUSH_TOKEN: ${WORKER_PUSH_TOKEN:-}
@@ -404,6 +408,31 @@ services:
       - /tmp/mandari-worker.heartbeat
     # Der Runner startet oberhalb von 800 MB (--max-memory-mb) neu, bevor das Limit greift
     mem_limit: 1g
+
+  # Live-Übertragungen (Warteschlange live, docs/LIVE_UEBERTRAGUNG.md): Statusabfrage je Minute und Leseaufträge
+  # (~50 s, Einzelbild + Texterkennung nur im Speicher). Eigener Runner, damit lange OCR- oder Mailaufträge die
+  # Lesungen nicht aufhalten. Parallelität fest 2 (eine Übertragung + Statusabfrage), auch wenn der Schalter
+  # LIVE_UEBERTRAGUNG_AKTIV aus ist: Dann gibt es keine Aufträge, der Runner wartet nur.
+  worker-live:
+    <<: *worker-dienst
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-worker-live
+    command:
+      - python
+      - manage.py
+      - events_worker
+      - --roles
+      - tasks
+      - --queues
+      - live
+      - --concurrency
+      - live=2
+      - --max-memory-mb
+      - "400"
+      - --heartbeat-file
+      - /tmp/mandari-worker.heartbeat
+    # Der Runner startet oberhalb von 400 MB neu; Tesseract-Unterprozesse (je höchstens LIVE_OCR_MEMORY_LIMIT_MB)
+    # brauchen den Rest
+    mem_limit: 512m
 
   # ===========================================================================
   # Protokollierung: Orchestrator der GPU-Rechenknoten (centron)

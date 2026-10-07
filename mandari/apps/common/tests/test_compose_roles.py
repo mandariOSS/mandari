@@ -103,7 +103,8 @@ def test_texterkennung_und_ki_in_eigenem_worker() -> None:
     haupt_queues = set(str(_option(haupt["command"], "--queues")).split(","))
     assert _option(haupt["command"], "--roles") is None, "der Hauptworker hat alle Rollen"
     assert not haupt_queues & {"ocr", "ai"}, "der Hauptworker wartet nie auf die Texterkennung"
-    assert haupt_queues | {"ocr", "ai"} == set(settings.TASK_QUEUES), "zusammen jede Warteschlange"
+    live = set(str(_option(basis["worker-live"]["command"], "--queues")).split(","))
+    assert haupt_queues | {"ocr", "ai"} | live == set(settings.TASK_QUEUES), "zusammen jede Warteschlange"
 
     # sonst wie der Hauptworker: Image, Umgebung, Volumes, Lebenszeichen, Neustart bei Hängern
     for schluessel in ("image", "environment", "volumes", "healthcheck", "labels", "depends_on", "stop_grace_period"):
@@ -113,6 +114,29 @@ def test_texterkennung_und_ki_in_eigenem_worker() -> None:
     assert datei and datei in " ".join(ocr["healthcheck"]["test"])
     grenze = int(str(_option(ocr["command"], "--max-memory-mb")))
     assert ocr["mem_limit"] == "1g" and grenze < 1024, "eigenes Limit, Runner startet vorher neu"
+
+
+def test_live_uebertragungen_in_eigenem_worker() -> None:
+    """Issue #915: Leseaufträge (~50 s) warten nie hinter Texterkennung oder Mail; Schalter erreicht den Worker."""
+    modul = _lade_skript()
+    basis = modul._lade(modul.BASIS)["services"]
+    haupt, live = basis["worker"], basis["worker-live"]
+
+    assert _option(live["command"], "--roles") == "tasks"
+    assert _option(live["command"], "--queues") == "live"
+    assert "live" not in str(_option(haupt["command"], "--queues")).split(",")
+    # Feste Parallelität: Der Worker startet auch bei ausgeschaltetem Schalter (Parallelität laut Einstellung 0)
+    assert _option(live["command"], "--concurrency") == "live=2"
+    for schluessel in ("image", "environment", "volumes", "healthcheck", "labels", "depends_on", "stop_grace_period"):
+        assert live[schluessel] == haupt[schluessel], schluessel
+    datei = _option(live["command"], "--heartbeat-file")
+    assert datei and datei in " ".join(live["healthcheck"]["test"])
+    grenze = int(str(_option(live["command"], "--max-memory-mb")))
+    assert live["mem_limit"] == "512m" and grenze < 512, "eigenes Limit, Runner startet vorher neu"
+    assert live["environment"]["LIVE_UEBERTRAGUNG_AKTIV"] == "${LIVE_UEBERTRAGUNG_AKTIV:-false}", "Standard aus"
+    for rolle in ("web", "data"):
+        assert modul._lade(modul.ROLLEN[rolle])["services"]["worker-live"]["profiles"] == ["aus"]
+    assert "DATA_HOST" in modul._lade(modul.ROLLEN["worker"])["services"]["worker-live"]["environment"]["DATABASE_URL"]
 
 
 def test_rollen_worker_mit_direktverbindung_fuer_den_weckruf() -> None:
